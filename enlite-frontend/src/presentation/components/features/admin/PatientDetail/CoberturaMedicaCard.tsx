@@ -5,11 +5,14 @@ import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
 import { PatientCoverageEditDrawer } from './edit/PatientCoverageEditDrawer';
+import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 
 interface CoberturaMedicaCardProps {
   patient: PatientDetail;
   /** Called after a successful edit so the page can refetch the detail. */
   onSaved?: () => void;
+  /** Spec 014 US-D1: pedido de foco do checklist ("falta cobertura") — abre este drawer. */
+  focusRequest?: DrawerFocusRequest | null;
 }
 
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
@@ -25,9 +28,10 @@ function Field({ label, value }: { label: string; value: string | null | undefin
   );
 }
 
-export function CoberturaMedicaCard({ patient, onSaved }: CoberturaMedicaCardProps) {
+export function CoberturaMedicaCard({ patient, onSaved, focusRequest }: CoberturaMedicaCardProps) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
+  useAutoOpenDrawer(focusRequest, 'COVERAGE', () => setEditing(true));
   // Spec 012, US-B3: as verificadas por CÓDIGO do catálogo (traduzidas); o escalar antigo
   // (`insuranceVerified`, rótulo cru do ClickUp) só aparece quando não há código nenhum.
   const codes = patient.insuranceVerifiedCodes ?? [];
@@ -68,10 +72,8 @@ export function CoberturaMedicaCard({ patient, onSaved }: CoberturaMedicaCardPro
             value={verifiedLabel}
           />
         </div>
-        <Field
-          label={t('admin.patients.detail.coverageCard.emergencyNumbers')}
-          value={null}
-        />
+        {/* Spec 014 US-D2: "Números de Emergencia" REMOVIDO — era `value={null}` fixo, sem
+            coluna no schema (decisão Gabriel 03/09, item 9). */}
         <Field
           label={t('admin.patients.detail.coverageCard.credential')}
           value={patient.affiliateId}

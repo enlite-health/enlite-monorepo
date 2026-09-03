@@ -153,4 +153,69 @@ describe('PatientContractedServicesEditDrawer', () => {
     expect(onClose).toHaveBeenCalled();
     vi.useRealTimers();
   });
+
+  // ── Spec 014 US-D4 (lex D4 AUTORIZADO): a UNIÃO do dirty das linhas decide a confirmação ──
+  describe('confirmação ao fechar com mudanças (US-D4)', () => {
+    it('editar um campo de um serviço existente → backdrop abre confirmação em vez de fechar', async () => {
+      mockList.mockResolvedValue([SERVICE]);
+      render(<PatientContractedServicesEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
+      await screen.findByTestId(`contracted-service-form-${SERVICE.id}`);
+      fireEvent.change(screen.getByTestId('svc-providersNeeded-1'), { target: { value: '6' } });
+      fireEvent.click(screen.getByTestId('patient-contracted-services-edit-backdrop'));
+      expect(screen.getByTestId('discard-changes-confirm')).toBeVisible();
+      fireEvent.click(screen.getByTestId('discard-changes-keep-editing'));
+      expect(screen.getByTestId('svc-providersNeeded-1')).toHaveValue(6);
+    });
+
+    it('abrir "+ Nuevo servicio" sem digitar nada → Escape fecha direto (form novo ainda não é dirty)', async () => {
+      mockList.mockResolvedValue([]);
+      render(<PatientContractedServicesEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
+      await waitFor(() => expect(mockList).toHaveBeenCalled());
+      fireEvent.click(screen.getByTestId('contracted-service-add'));
+      expect(screen.getByTestId('contracted-service-new')).toBeVisible();
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
+    });
+
+    it('digitar no "+ Nuevo servicio" → Escape abre confirmação; "Descartar" fecha de verdade', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      mockList.mockResolvedValue([]);
+      const onClose = vi.fn();
+      render(<PatientContractedServicesEditDrawer patient={patientDetailFixture} onClose={onClose} onSaved={vi.fn()} />);
+      await waitFor(() => expect(mockList).toHaveBeenCalled());
+      fireEvent.click(screen.getByTestId('contracted-service-add'));
+      fireEvent.change(screen.getByTestId('svc-providersNeeded-1'), { target: { value: '3' } });
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.getByTestId('discard-changes-confirm')).toBeVisible();
+      fireEvent.click(screen.getByTestId('discard-changes-discard'));
+      vi.advanceTimersByTime(300);
+      expect(onClose).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it('cancelar o "+ Nuevo servicio" limpa o dirty — Escape volta a fechar direto', async () => {
+      mockList.mockResolvedValue([]);
+      render(<PatientContractedServicesEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
+      await waitFor(() => expect(mockList).toHaveBeenCalled());
+      fireEvent.click(screen.getByTestId('contracted-service-add'));
+      fireEvent.change(screen.getByTestId('svc-providersNeeded-1'), { target: { value: '3' } });
+      fireEvent.click(screen.getByTestId('contracted-service-new-cancel'));
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
+    });
+
+    it('salvar um serviço existente com sucesso volta a ficar limpo — Escape fecha direto depois', async () => {
+      mockList.mockResolvedValueOnce([SERVICE]).mockResolvedValueOnce([{ ...SERVICE, providersNeeded: 5 }]);
+      const { AdminContractedServicesApiService } = await import('@infrastructure/http/AdminContractedServicesApiService');
+      (AdminContractedServicesApiService.updateContractedService as ReturnType<typeof vi.fn>).mockResolvedValue({});
+      render(<PatientContractedServicesEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
+      await screen.findByTestId(`contracted-service-form-${SERVICE.id}`);
+      fireEvent.change(screen.getByTestId('svc-providersNeeded-1'), { target: { value: '5' } });
+      fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
+      await waitFor(() => expect(AdminContractedServicesApiService.updateContractedService).toHaveBeenCalled());
+      await waitFor(() => expect(mockList).toHaveBeenCalledTimes(2));
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
+    });
+  });
 });

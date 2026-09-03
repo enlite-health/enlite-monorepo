@@ -1,6 +1,6 @@
 {
-  "id": "84e558de-cce1-4b29-bd97-86de1812a295",
-  "clickupTaskId": "E2E-CONTRACT-FIXTURE-A2",
+  "id": "3bf4da8f-9a37-42ba-9193-0c8f1fa8006e",
+  "clickupTaskId": "E2E-CONTRACT-FIXTURE-D255",
   "firstName": "Contrato",
   "lastName": "Fixture",
   "birthDate": null,
@@ -14,7 +14,9 @@
   "dependencyLevel": null,
   "clinicalSpecialty": null,
   "clinicalSegments": null,
-  "serviceType": null,
+  "serviceType": [
+    "AT"
+  ],
   "deviceType": "HOME",
   "additionalComments": null,
   "additionalCommentsUpdatedAt": null,
@@ -24,7 +26,7 @@
   "emergencyInstructionsUpdatedBy": null,
   "hasJudicialProtection": null,
   "hasCud": null,
-  "hasConsent": null,
+  "hasConsent": true,
   "insuranceInformed": "OSDE 210 (fixture)",
   "insuranceVerified": null,
   "cityLocality": null,
@@ -34,24 +36,21 @@
   "chatIds": {},
   "familyChatId": null,
   "providersChatId": null,
-  "status": "ON_HOLD",
-  "admissionStatus": "DONE",
-  "onHoldReason": "INSURER",
-  "onHoldNote": "nota de fixture (sintética)",
-  "serviceStartDate": "2026-09-01T00:00:00.000Z",
-  "insuranceVerifiedCodes": [
-    "OSDE"
-  ],
-  "deviceTypes": [
-    "HOME",
-    "SCHOOL"
-  ],
+  "status": "PENDING_ADMISSION",
+  "admissionStatus": "PENDING_ADMISSION",
+  "onHoldReason": null,
+  "onHoldNote": null,
+  "serviceStartDate": null,
+  "insuranceVerifiedCodes": [],
+  "insuranceVerifiedEntries": [],
+  "deviceTypes": [],
   "needsAttention": false,
   "attentionReasons": [],
-  "lastCaseNumber": 990777,
+  "phoneMatchesResponsible": false,
+  "lastCaseNumber": 990778,
   "responsibles": [
     {
-      "id": "e4340ac5-255b-455e-9f44-ac90998b20b4",
+      "id": "cae15d70-bf3c-43d1-8005-e9bdf6e15fcb",
       "firstName": "Marta",
       "lastName": "Fixture",
       "relationship": "PARENT",
@@ -66,7 +65,7 @@
   ],
   "addresses": [
     {
-      "id": "438826e8-a53b-4874-ad8e-b74cc41964e9",
+      "id": "71e13451-b09f-44e7-ace0-6a8b3850d0d5",
       "addressType": "primary",
       "addressFormatted": "Av. Fixture 123, CABA, AR",
       "addressRaw": "Av. Fixture 123",
@@ -162,7 +161,7 @@
   ],
   "professionals": [
     {
-      "id": "46e3ffb9-445c-40bb-9af1-9d672007883a",
+      "id": "a22a10e1-bb65-4d11-bd9f-8efe016ec884",
       "name": "Dra. Fixture Tratante",
       "phone": "+5491100000022",
       "email": "",
@@ -170,12 +169,10 @@
       "isTeam": false
     }
   ],
-  "createdAt": "2026-09-03T12:26:10.088Z",
-  "updatedAt": "2026-09-03T12:26:11.118Z",
   "contractedServices": [
     {
-      "id": "54a27de8-2418-4151-8887-c150548caa7d",
-      "patientId": "84e558de-cce1-4b29-bd97-86de1812a295",
+      "id": "2b252d40-f8c0-4cbb-ac8a-03539701a693",
+      "patientId": "3bf4da8f-9a37-42ba-9193-0c8f1fa8006e",
       "serviceCode": "AT",
       "professionalProfile": "Perfil sintético de fixture — busca AT con experiencia en movilidad reducida.",
       "providersNeeded": 2,
@@ -192,26 +189,19 @@
       "active": true,
       "endedAt": null,
       "country": "AR",
-      "deviceTypes": [
-        "HOME"
-      ],
-      "providers": [
-        {
-          "id": "e6435681-6182-4e7a-91fb-d040765cf87e",
-          "serviceId": "54a27de8-2418-4151-8887-c150548caa7d",
-          "workerId": "763fce15-6ead-4612-8db1-211751b9623e",
-          "workerName": null,
-          "weeklyHours": 20,
-          "active": true,
-          "endedAt": null,
-          "country": "AR",
-          "createdAt": "2026-09-03T15:34:15.954Z",
-          "updatedAt": "2026-09-03T15:34:15.954Z"
-        }
-      ],
-      "createdAt": "2026-09-03T15:34:15.840Z",
-      "updatedAt": "2026-09-03T15:34:15.840Z",
+      "deviceTypes": [],
+      "providers": [],
+      "createdAt": "2026-09-03T20:43:15.857Z",
+      "updatedAt": "2026-09-03T20:43:15.857Z",
       "hourlyValueRedacted": false
     }
-  ]
+  ],
+  "createdAt": "2026-09-03T20:43:07.953Z",
+  "updatedAt": "2026-09-03T20:43:15.857Z",
+  "completeness": {
+    "missing": [],
+    "blocking": [],
+    "ready": true,
+    "canActivate": true
+  }
 }

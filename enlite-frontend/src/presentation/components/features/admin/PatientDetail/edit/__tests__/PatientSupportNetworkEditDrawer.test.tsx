@@ -170,7 +170,9 @@ describe('PatientSupportNetworkEditDrawer — todos os ramos', () => {
     fireEvent.change(screen.getByTestId('psn-lastName-0'), { target: { value: ' ' } });
     fireEvent.change(screen.getByTestId('psn-email-0'), { target: { value: 'invalido' } });
     fireEvent.click(screen.getByTestId('psn-save'));
-    expect((await screen.findAllByText(/at least 1 character/)).length).toBe(2);
+    // Spec 014 (US-D4): a mensagem do zod é a CHAVE i18n, traduzida no render (`terr`) — nunca
+    // mais o default em inglês do zod ("String must contain at least 1 character(s)").
+    expect((await screen.findAllByText(t('admin.patients.editDrawer.requiredField'))).length).toBe(2);
     expect(screen.getByText(/Invalid email/)).toBeInTheDocument();
     expect(updatePatientSection).not.toHaveBeenCalled();
   });
@@ -184,5 +186,33 @@ describe('PatientSupportNetworkEditDrawer — todos os ramos', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(2), { timeout: 2000 });
     fireEvent.keyDown(document, { key: 'a' });
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  // ── Spec 014 US-D4 (lex D4 AUTORIZADO): drawer não perde trabalho ──────────────────────
+  describe('confirmação ao fechar com mudanças (US-D4)', () => {
+    it('COM mudança (editar um nome) → Escape abre confirmação em vez de fechar', () => {
+      renderDrawer();
+      fireEvent.change(screen.getByTestId('psn-firstName-0'), { target: { value: 'Otro Nombre' } });
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.getByTestId('discard-changes-confirm')).toBeVisible();
+      fireEvent.click(screen.getByTestId('discard-changes-keep-editing'));
+      expect(screen.getByTestId('psn-firstName-0')).toHaveValue('Otro Nombre');
+    });
+
+    it('adicionar uma linha (useFieldArray) também conta como dirty', () => {
+      renderDrawer();
+      fireEvent.click(screen.getByTestId('psn-add'));
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.getByTestId('discard-changes-confirm')).toBeVisible();
+    });
+
+    it('"Descartar cambios" fecha de verdade', async () => {
+      const onClose = vi.fn();
+      render(<PatientSupportNetworkEditDrawer patientId={PATIENT_ID} responsibles={[responsible]} onClose={onClose} onSaved={vi.fn()} />);
+      fireEvent.change(screen.getByTestId('psn-firstName-0'), { target: { value: 'Otro Nombre' } });
+      fireEvent.keyDown(document, { key: 'Escape' });
+      fireEvent.click(screen.getByTestId('discard-changes-discard'));
+      await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1), { timeout: 1500 });
+    });
   });
 });

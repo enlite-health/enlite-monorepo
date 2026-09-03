@@ -16,6 +16,8 @@ import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import { RELATIONSHIP_CODES } from '@domain/entities/patientEnums';
+import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
+import { DiscardChangesConfirm } from './DiscardChangesConfirm';
 
 interface Props {
   patientId: string;
@@ -33,9 +35,13 @@ const PANEL_SOURCE = 'admin_manual';
 // Campo opcional nasce como '' (defaultValues/append) e `source` SEMPRE vem — do
 // detalhe ou de PANEL_SOURCE no append; o tipo é `string` e o submit não carrega
 // fallback para um `undefined` que nunca chega.
+// Spec 014 (US-D4): a mensagem é a CHAVE i18n (mesmo padrão de workerRegistrationSchemas.ts/
+// LoginPage.tsx) — o zod não sabe de locale, então guarda a chave e o render traduz (`terr`
+// abaixo). Sem isso o zodResolver caía no default em inglês do zod ("String must contain at
+// least 1 character(s)"), visível na UI em espanhol.
 const rowSchema = z.object({
-  firstName: z.string().trim().min(1),
-  lastName: z.string().trim().min(1),
+  firstName: z.string().trim().min(1, 'admin.patients.editDrawer.requiredField'),
+  lastName: z.string().trim().min(1, 'admin.patients.editDrawer.requiredField'),
   relationship: z.string().trim(),
   phone: z.string().trim(),
   email: z.union([z.literal(''), z.string().trim().email()]),
@@ -60,12 +66,14 @@ type FormValues = z.infer<typeof schema>;
 export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClose, onSaved }: Props): JSX.Element {
   const { t } = useTranslation();
   const te = (k: string) => t(`admin.patients.editDrawer.${k}`);
+  /** Traduz o `message` do zod, que carrega a CHAVE i18n (não o texto) — ver o comentário do schema. */
+  const terr = (msg?: string): string | undefined => (msg ? t(msg) : undefined);
 
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const { register, handleSubmit, control, watch, setValue, formState: { errors } } = useForm<FormValues>({
+  const { register, handleSubmit, control, watch, setValue, formState: { errors, isDirty } } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       responsibles: (responsibles ?? []).map((r) => ({
@@ -101,12 +109,18 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
 
   const handleClose = (): void => { setShow(false); setTimeout(onClose, CLOSE_MS); };
 
+  // Spec 014 (US-D4, lex D4 AUTORIZADO): isDirty do react-hook-form cobre também
+  // add/remove de linha do useFieldArray, não só edição de campo.
+  const { confirmingClose, requestClose, keepEditing, confirmDiscard } = useConfirmDiscardClose({
+    isDirty,
+    onConfirmedClose: handleClose,
+  });
+
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') requestClose(); };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [requestClose]);
 
   /** Enforce a single primary: selecting one clears the rest. */
   const selectPrimary = (index: number): void => {
@@ -153,9 +167,10 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
 
   return (
     <>
+      {confirmingClose && <DiscardChangesConfirm onKeepEditing={keepEditing} onDiscard={confirmDiscard} />}
       <div
         className={`fixed inset-0 bg-black/50 z-40 transition-opacity duration-300 ${show ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-        onClick={handleClose}
+        onClick={requestClose}
         data-testid="patient-support-edit-backdrop"
       />
       <div
@@ -171,7 +186,7 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
             <Button type="button" variant="primary" size="sm" onClick={handleSubmit(onSubmit)} isLoading={busy} className="w-32" data-testid="psn-save">
               {te('save')}
             </Button>
-            <button type="button" onClick={handleClose} aria-label={te('close')} className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded">
+            <button type="button" onClick={requestClose} aria-label={te('close')} className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -191,15 +206,15 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
                 </button>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <FormField label={te('firstName')} htmlFor={`psn-firstName-${index}`} required error={errors.responsibles?.[index]?.firstName?.message}>
+                <FormField label={te('firstName')} htmlFor={`psn-firstName-${index}`} required error={terr(errors.responsibles?.[index]?.firstName?.message)}>
                   <InputWithIcon id={`psn-firstName-${index}`} inputSize="compact" data-testid={`psn-firstName-${index}`} {...register(`responsibles.${index}.firstName` as const)} />
                 </FormField>
-                <FormField label={te('lastName')} htmlFor={`psn-lastName-${index}`} required error={errors.responsibles?.[index]?.lastName?.message}>
+                <FormField label={te('lastName')} htmlFor={`psn-lastName-${index}`} required error={terr(errors.responsibles?.[index]?.lastName?.message)}>
                   <InputWithIcon id={`psn-lastName-${index}`} inputSize="compact" data-testid={`psn-lastName-${index}`} {...register(`responsibles.${index}.lastName` as const)} />
                 </FormField>
                 <FormField label={te('relationship')} htmlFor={`psn-rel-${index}`} optional>
                   <Controller control={control} name={`responsibles.${index}.relationship` as const} render={({ field }) => (
-                    <SelectField id={`psn-rel-${index}`} inputSize="compact" options={relationshipOptions} placeholder={te('unset')} value={field.value} onChange={field.onChange} data-testid={`psn-rel-${index}`} />
+                    <SelectField id={`psn-rel-${index}`} inputSize="compact" options={relationshipOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`psn-rel-${index}`} />
                   )} />
                 </FormField>
                 <FormField label={te('phone')} htmlFor={`psn-phone-${index}`} optional>
@@ -210,7 +225,7 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
                 </FormField>
                 <FormField label={te('documentType')} htmlFor={`psn-documentType-${index}`} optional>
                   <Controller control={control} name={`responsibles.${index}.documentType` as const} render={({ field }) => (
-                    <SelectField id={`psn-documentType-${index}`} inputSize="compact" options={documentTypeOptions} placeholder={te('unset')} value={field.value} onChange={field.onChange} data-testid={`psn-documentType-${index}`} />
+                    <SelectField id={`psn-documentType-${index}`} inputSize="compact" options={documentTypeOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`psn-documentType-${index}`} />
                   )} />
                 </FormField>
                 <FormField label={te('documentNumber')} htmlFor={`psn-documentNumber-${index}`} optional>

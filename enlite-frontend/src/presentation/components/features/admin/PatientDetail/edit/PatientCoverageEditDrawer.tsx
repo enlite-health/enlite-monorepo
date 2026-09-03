@@ -11,6 +11,8 @@ import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import type { SelectOption } from '@presentation/components/molecules/SelectField';
+import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
+import { DiscardChangesConfirm } from './DiscardChangesConfirm';
 
 interface Props {
   patient: PatientDetail;
@@ -72,12 +74,25 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
 
   const handleClose = (): void => { setShow(false); setTimeout(onClose, CLOSE_MS); };
 
+  // Spec 014 (US-D4, lex D4 AUTORIZADO): dirty = algum campo mudou vs. o valor com que o
+  // drawer abriu. `editableInitialCodes` já é a baseline correta (não a união com o ClickUp —
+  // ver o comentário da função acima), então comparar `selected` contra ele é a mesma régua
+  // que `onSubmit` já usa pra decidir o PATCH.
+  const isDirty =
+    name !== (patient.insuranceInformed ?? '') ||
+    affiliate !== (patient.affiliateId ?? '') ||
+    [...selected].sort().join(',') !== [...editableInitialCodes].sort().join(',');
+
+  const { confirmingClose, requestClose, keepEditing, confirmDiscard } = useConfirmDiscardClose({
+    isDirty,
+    onConfirmedClose: handleClose,
+  });
+
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') requestClose(); };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [requestClose]);
 
   const labelOf = (code: string) => t(`admin.patients.insuranceProviderOptions.${code}`, code);
   const options: SelectOption[] = codes.map((code) => ({ value: code, label: labelOf(code) }));
@@ -109,9 +124,10 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
 
   return (
     <>
+      {confirmingClose && <DiscardChangesConfirm onKeepEditing={keepEditing} onDiscard={confirmDiscard} />}
       <div
         className={`fixed inset-0 bg-black/50 z-40 transition-opacity duration-300 ${show ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-        onClick={handleClose}
+        onClick={requestClose}
         data-testid="patient-coverage-edit-backdrop"
       />
       <div
@@ -127,7 +143,7 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
             <Button type="button" variant="primary" size="sm" onClick={onSubmit} isLoading={busy} className="w-32" data-testid="pcv-save">
               {te('save')}
             </Button>
-            <button type="button" onClick={handleClose} aria-label={te('close')} className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded">
+            <button type="button" onClick={requestClose} aria-label={te('close')} className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -150,7 +166,7 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
                 ))}
               </div>
             )}
-            <MultiSelect id="pcv-codes" options={options} value={selected} onChange={setSelected} placeholder={te('unset')} />
+            <MultiSelect id="pcv-codes" options={options} value={selected} onChange={setSelected} placeholder={te('selectPlaceholder')} />
             {/* O que está marcado, por extenso: o botão do MultiSelect só diz "N seleccionados". */}
             <div className="flex flex-wrap gap-1 mt-1" data-testid="pcv-codes-selected">
               {selected.map((code) => (
@@ -160,7 +176,7 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
               ))}
             </div>
           </FormField>
-          <FormField label={tc('credential')} htmlFor="pcv-affiliate" optional>
+          <FormField label={tc('credential')} htmlFor="pcv-affiliate" hint={te('affiliateHint')} optional>
             <InputWithIcon id="pcv-affiliate" inputSize="compact" value={affiliate} onChange={(e) => setAffiliate(e.target.value)} data-testid="pcv-affiliate" />
           </FormField>
           {submitError && <Text size="sm" className="text-red-600" data-testid="pcv-error">{submitError}</Text>}

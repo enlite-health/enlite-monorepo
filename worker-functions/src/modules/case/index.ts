@@ -122,9 +122,20 @@ export type { CreatePatientInput } from './application/CreatePatientUseCase';
 export {
   ActivatePatientUseCase,
   PatientNotFoundError,
+  PatientNotReadyError,
   NoActiveAddressError,
 } from './application/ActivatePatientUseCase';
 export type { ActivatePatientResult } from './application/ActivatePatientUseCase';
+export {
+  computePatientCompleteness,
+  isMinor,
+  PATIENT_COMPLETENESS_CODES,
+} from './domain/PatientCompleteness';
+export type {
+  PatientCompletenessCode,
+  PatientCompletenessInput,
+  PatientCompletenessResult,
+} from './domain/PatientCompleteness';
 
 // Infrastructure (exposed for explicit consumers like backfill scripts)
 export { PatientIdentityRepository } from './infrastructure/PatientIdentityRepository';

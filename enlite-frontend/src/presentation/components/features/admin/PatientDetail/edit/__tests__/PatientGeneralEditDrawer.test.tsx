@@ -133,7 +133,9 @@ describe('PatientGeneralEditDrawer — todos os campos e ramos', () => {
     fireEvent.change(screen.getByTestId('pge-email'), { target: { value: 'nao-e-email' } });
     fireEvent.click(screen.getByTestId('pge-save'));
     await screen.findAllByText(/Invalid email/);
-    expect(await screen.findByText(/at least 1 character/)).toBeInTheDocument();
+    // Spec 014 (US-D4): a mensagem do zod é a CHAVE i18n, traduzida no render (`terr`) — nunca
+    // mais o default em inglês do zod.
+    expect(await screen.findByText(t('admin.patients.editDrawer.requiredField'))).toBeInTheDocument();
     expect(updatePatientSection).not.toHaveBeenCalled();
   });
 
@@ -210,5 +212,42 @@ describe('PatientGeneralEditDrawer — data de nascimento', () => {
     fireEvent.change(inputs.slice(-1)[0] as HTMLElement, { target: { value: '' } });
     fireEvent.click(screen.getAllByTestId('pge-save').slice(-1)[0] as HTMLElement);
     await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patientDetailFixture.id, 'general', { serviceStartDate: null }));
+  });
+
+  // ── Spec 014 US-D4 (lex D4 AUTORIZADO): drawer não perde trabalho ──────────────────────
+  describe('confirmação ao fechar com mudanças (US-D4)', () => {
+    it('SEM mudança → Escape fecha direto', () => {
+      render(<PatientGeneralEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
+    });
+
+    it('COM mudança → Escape abre confirmação; "Seguir editando" mantém o valor', () => {
+      render(<PatientGeneralEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
+      fireEvent.change(screen.getByTestId('pge-lastName'), { target: { value: 'Outro Apellido' } });
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.getByTestId('discard-changes-confirm')).toBeVisible();
+      fireEvent.click(screen.getByTestId('discard-changes-keep-editing'));
+      expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
+      expect(screen.getByTestId('pge-lastName')).toHaveValue('Outro Apellido');
+    });
+
+    it('"Descartar cambios" fecha o drawer de verdade', async () => {
+      const onClose = vi.fn();
+      render(<PatientGeneralEditDrawer patient={patientDetailFixture} onClose={onClose} onSaved={vi.fn()} />);
+      fireEvent.change(screen.getByTestId('pge-lastName'), { target: { value: 'Outro Apellido' } });
+      fireEvent.keyDown(document, { key: 'Escape' });
+      fireEvent.click(screen.getByTestId('discard-changes-discard'));
+      await waitFor(() => expect(onClose).toHaveBeenCalled(), { timeout: 1000 });
+    });
+
+    it('SALVAR nunca pergunta, mesmo com mudança pendente', async () => {
+      const onSaved = vi.fn();
+      render(<PatientGeneralEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={onSaved} />);
+      fireEvent.change(screen.getByTestId('pge-lastName'), { target: { value: 'Outro Apellido' } });
+      fireEvent.click(screen.getByTestId('pge-save'));
+      await waitFor(() => expect(onSaved).toHaveBeenCalled());
+      expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
+    });
   });
 });

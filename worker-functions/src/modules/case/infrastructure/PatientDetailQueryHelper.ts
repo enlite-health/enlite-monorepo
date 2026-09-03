@@ -12,6 +12,7 @@ import {
   type ActiveVacancy,
 } from '../application/AddressAvailabilityCalculator';
 import type { ContractedServiceDetail } from './PatientContractedServiceRepository';
+import { phoneMatchesResponsible } from '../domain/PhoneMatch';
 
 const PATIENT_DETAIL_SQL = `
   SELECT
@@ -389,6 +390,10 @@ export async function fetchPatientDetail(
     deviceTypes: p.deviceTypes ?? [],
     needsAttention: p.needsAttention,
     attentionReasons: p.attentionReasons ?? [],
+    // Spec 014 (US-D3, lex D3.1): `phone_whatsapp` do paciente coincide (últimos 8 dígitos) com
+    // o telefone de ALGUM responsável — o front mostra o aviso de re-atribuição antes do rename
+    // "Teléfono del Responsable"→"WhatsApp del paciente" virar definitivo para este registro.
+    phoneMatchesResponsible: phoneMatchesResponsible(p.phoneWhatsapp, responsibles.map((r) => r.phone)),
     lastCaseNumber: p.lastCaseNumber != null ? Number(p.lastCaseNumber) : null,
     responsibles,
     addresses,

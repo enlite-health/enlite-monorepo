@@ -48,6 +48,13 @@ export const patientDetailFixture: PatientDetail = {
   deviceTypes: [],
   needsAttention: false,
   attentionReasons: [],
+  // Spec 014 (US-D1): coerente com os campos acima — sem cobertura informada, sem serviço
+  // contratado ativo (contractedServices: []) → COVERAGE + CONTRACTED_SERVICE faltando.
+  // D255 (QA-caça rodada 1): nenhum dos dois é ADDRESS → blocking:[] (não bloqueia o activate),
+  // mesmo com missing não vazio.
+  completeness: { missing: ['COVERAGE', 'CONTRACTED_SERVICE'], blocking: [], ready: false, canActivate: true },
+  // Spec 014 (US-D3): últimos 8 dígitos de '+55 (11) 91571-1717' × '(11) 99852-0481' — diferentes.
+  phoneMatchesResponsible: false,
   responsibles: [
     {
       id: 'r1',
@@ -140,6 +147,11 @@ export const patientDetailMinimal: PatientDetail = {
   deviceTypes: [],
   needsAttention: false,
   attentionReasons: [],
+  // Spec 014 (US-D1): paciente vazio — tudo falta (ADULTO por birthDate null → RESPONSIBLE
+  // não é exigido; ver `isMinor` no domínio compartilhado).
+  // D255: ADDRESS está em missing → entra em blocking, canActivate:false.
+  completeness: { missing: ['ADDRESS', 'COVERAGE', 'CONTRACTED_SERVICE', 'CONSENT'], blocking: ['ADDRESS'], ready: false, canActivate: false },
+  phoneMatchesResponsible: false,
   responsibles: [],
   addresses: [],
   professionals: [],

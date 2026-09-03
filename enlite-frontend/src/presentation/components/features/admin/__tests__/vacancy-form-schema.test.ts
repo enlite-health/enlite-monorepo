@@ -11,6 +11,7 @@ import {
   STATUS_OPTIONS,
   DEFAULT_FORM_VALUES,
   buildVacancyPayload,
+  vacancyFormSchema,
   type VacancyFormData,
 } from '../vacancy-form-schema';
 
@@ -47,6 +48,7 @@ const minimalFormData: VacancyFormData = {
   title: 'Test',
   required_professions: ['AT'],
   providers_needed: 1,
+  patientAddressId: 'addr-1',
   schedule: [{ days: ['lun'], timeFrom: '08:00', timeTo: '16:00' }],
   status: 'SEARCHING',
   meet_links: ['https://meet.google.com/abc-defg-hij', undefined, undefined],
@@ -115,5 +117,30 @@ describe('buildVacancyPayload — status in output is canonical', () => {
       const result = buildVacancyPayload(data, null);
       expect(result.status).toBe(value);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// patientAddressId — spec 014 (US-D6, lex D6.1): "Dirección" obrigatória no zod,
+// inclusive em modo edição (não é um campo diferente por modo — o form é o mesmo).
+// ---------------------------------------------------------------------------
+
+describe('vacancyFormSchema — patientAddressId obrigatório (US-D6)', () => {
+  it('sem patientAddressId (string vazia) → falha a validação com o código addressRequired', () => {
+    const result = vacancyFormSchema.safeParse({ ...minimalFormData, patientAddressId: '' });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const issue = result.error.issues.find((i) => i.path[0] === 'patientAddressId');
+      expect(issue?.message).toBe('addressRequired');
+    }
+  });
+
+  it('com patientAddressId preenchido → passa', () => {
+    const result = vacancyFormSchema.safeParse(minimalFormData);
+    expect(result.success).toBe(true);
+  });
+
+  it('DEFAULT_FORM_VALUES.patientAddressId nasce vazio (sem endereço pré-selecionado)', () => {
+    expect(DEFAULT_FORM_VALUES.patientAddressId).toBe('');
   });
 });

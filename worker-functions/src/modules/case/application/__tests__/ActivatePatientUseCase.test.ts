@@ -46,18 +46,32 @@ jest.mock('firebase-functions', () => ({
 import {
   ActivatePatientUseCase,
   PatientNotFoundError,
+  PatientNotReadyError,
   NoActiveAddressError,
 } from '../ActivatePatientUseCase';
+import { computePatientCompleteness } from '../../domain/PatientCompleteness';
 
 // ── Query dispatcher ──────────────────────────────────────────────────────────
 
 interface DispatchOpts {
-  patientRow?: { id: string; status: string; case_number: number | null } | null;
+  patientRow?: {
+    id: string;
+    status: string;
+    case_number: number | null;
+    /** Spec 014 (SUP-D1): omitido = paciente MAIOR, com consentimento e cobertura informada —
+     * "pronto" nos 3 critérios que o gate exige, para os testes pré-existentes (que testam
+     * ENDEREÇO/serviço/status, não completude) não precisarem repetir os 3 campos. */
+    birth_date?: string | null;
+    has_consent?: boolean | null;
+    insurance_informed?: string | null;
+  } | null;
   addressIds?: string[];
   /** Spec 013 bloco C: `patient_contracted_services` ATIVOS deste paciente (a query já filtra
    * `WHERE active` — um serviço inativo simplesmente não aparece aqui, o mesmo shape de "zero
    * serviços declarados"). Omitido = comportamento pré-existente (fallback, sem serviço). */
   activeServices?: Array<{ id: string; providers_needed: number | null }>;
+  /** Spec 014: `patient_responsibles` deste paciente (só importa quando `birth_date` é menor). */
+  responsibleCount?: number;
 }
 
 function programClient(opts: DispatchOpts): { seen: string[] } {
@@ -69,9 +83,18 @@ function programClient(opts: DispatchOpts): { seen: string[] } {
     seen.push(sql);
     if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return {};
     if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
-      return opts.patientRow
-        ? { rowCount: 1, rows: [opts.patientRow] }
-        : { rowCount: 0, rows: [] };
+      if (!opts.patientRow) return { rowCount: 0, rows: [] };
+      // `?? default` trataria `null` explícito (ex.: "sem cobertura") IGUAL a "não passei o
+      // campo" — usa `in` para distinguir "ausente → padrão pronto" de "presente e null → o
+      // teste QUER esse critério faltando".
+      const row = {
+        ...opts.patientRow,
+        birth_date: 'birth_date' in opts.patientRow ? opts.patientRow.birth_date : null,
+        has_consent: 'has_consent' in opts.patientRow ? opts.patientRow.has_consent : true,
+        insurance_informed:
+          'insurance_informed' in opts.patientRow ? opts.patientRow.insurance_informed : 'OSDE',
+      };
+      return { rowCount: 1, rows: [row] };
     }
     if (sql.includes('FROM patient_addresses')) {
       const rows = (opts.addressIds ?? []).map((id) => ({ id }));
@@ -80,6 +103,9 @@ function programClient(opts: DispatchOpts): { seen: string[] } {
     if (sql.includes('FROM patient_contracted_services')) {
       const rows = opts.activeServices ?? [];
       return { rowCount: rows.length, rows };
+    }
+    if (sql.includes('FROM patient_responsibles')) {
+      return { rowCount: 1, rows: [{ count: opts.responsibleCount ?? 0 }] };
     }
     if (sql.includes('nextval')) {
       return { rows: [{ vn: String(100 + nextvalIdx++) }] };
@@ -197,7 +223,13 @@ describe('ActivatePatientUseCase', () => {
       seen.push(sql);
       if (sql === 'BEGIN' || sql === 'ROLLBACK') return {};
       if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
-        return { rowCount: 1, rows: [{ id: 'pat-boom', status: 'PENDING_ADMISSION', case_number: 1 }] };
+        return {
+          rowCount: 1,
+          rows: [{
+            id: 'pat-boom', status: 'PENDING_ADMISSION', case_number: 1,
+            birth_date: null, has_consent: true, insurance_informed: 'OSDE',
+          }],
+        };
       }
       if (sql.includes('FROM patient_addresses')) return { rowCount: 1, rows: [{ id: 'addr-1' }] };
       if (sql.includes('nextval')) throw 'plain string rejection'; // eslint-disable-line no-throw-literal
@@ -319,7 +351,13 @@ describe('ActivatePatientUseCase', () => {
     mockClient.query.mockImplementation(async (sql: string) => {
       if (sql === 'BEGIN' || sql === 'ROLLBACK') return {};
       if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
-        return { rowCount: 1, rows: [{ id: 'pat-4', status: 'PENDING_ADMISSION', case_number: 3 }] };
+        return {
+          rowCount: 1,
+          rows: [{
+            id: 'pat-4', status: 'PENDING_ADMISSION', case_number: 3,
+            birth_date: null, has_consent: true, insurance_informed: 'OSDE',
+          }],
+        };
       }
       if (sql.includes('FROM patient_addresses')) return { rows: [] }; // rowCount ausente
       return { rowCount: 0, rows: [] };
@@ -345,5 +383,194 @@ describe('ActivatePatientUseCase', () => {
       'conexão caiu no meio do SELECT',
     );
     expect(mockClient.release).toHaveBeenCalledTimes(1);
+  });
+
+  // ── Spec 014 (US-D1/SUP-D1, lex D1.1/D1.2): checklist único, GATE = SÓ ADDRESS ──────────
+  // Decisão do Gabriel 03/09 (medida na réplica de produção: 370 pacientes vivos, 23 com
+  // has_consent=true — `has_consent` só é gravado pelo espelho do ClickUp/formulário público,
+  // nunca pelo painel): RESPONSIBLE/COVERAGE/CONSENT ficam SÓ no checklist informativo
+  // (`computePatientCompleteness`/`GET /:id`), nunca bloqueiam `POST /activate`. Exatamente
+  // como CONTRACTED_SERVICE (testes s/u abaixo, que já provavam o mesmo padrão pré-existente).
+
+  it('n. sem consentimento → NÃO bloqueia o activate (só ADDRESS bloqueia); computePatientCompleteness ainda reporta CONSENT em missing (checklist)', async () => {
+    const { seen } = programClient({
+      patientRow: { id: 'pat-noconsent', status: 'PENDING_ADMISSION', case_number: 10, has_consent: false },
+      addressIds: ['addr-1'],
+    });
+
+    const result = await new ActivatePatientUseCase().execute('pat-noconsent');
+    expect(result.alreadyActive).toBe(false);
+    expect(countSql(seen, 'INSERT INTO job_postings')).toBe(1);
+    expect(countSql(seen, 'COMMIT')).toBe(1);
+
+    const { missing } = computePatientCompleteness({
+      birthDate: null,
+      hasConsent: false,
+      insuranceInformed: 'OSDE',
+      activeAddressCount: 1,
+      activeResponsibleCount: 0,
+      activeContractedServiceCount: 0,
+    });
+    expect(missing).toContain('CONSENT');
+  });
+
+  it('o. sem cobertura informada → NÃO bloqueia o activate; missing ainda contém COVERAGE (checklist)', async () => {
+    const { seen } = programClient({
+      patientRow: { id: 'pat-nocov', status: 'PENDING_ADMISSION', case_number: 11, insurance_informed: null },
+      addressIds: ['addr-1'],
+    });
+
+    const result = await new ActivatePatientUseCase().execute('pat-nocov');
+    expect(result.alreadyActive).toBe(false);
+    expect(countSql(seen, 'INSERT INTO job_postings')).toBe(1);
+
+    const { missing } = computePatientCompleteness({
+      birthDate: null,
+      hasConsent: true,
+      insuranceInformed: null,
+      activeAddressCount: 1,
+      activeResponsibleCount: 0,
+      activeContractedServiceCount: 0,
+    });
+    expect(missing).toContain('COVERAGE');
+  });
+
+  it('p. paciente MENOR sem responsável → NÃO bloqueia o activate; missing ainda contém RESPONSIBLE (checklist)', async () => {
+    const { seen } = programClient({
+      patientRow: { id: 'pat-minor', status: 'PENDING_ADMISSION', case_number: 12, birth_date: '2015-01-01' },
+      addressIds: ['addr-1'],
+      responsibleCount: 0,
+    });
+
+    const result = await new ActivatePatientUseCase().execute('pat-minor');
+    expect(result.alreadyActive).toBe(false);
+    expect(countSql(seen, 'INSERT INTO job_postings')).toBe(1);
+
+    const { missing } = computePatientCompleteness({
+      birthDate: '2015-01-01',
+      hasConsent: true,
+      insuranceInformed: 'OSDE',
+      activeAddressCount: 1,
+      activeResponsibleCount: 0,
+      activeContractedServiceCount: 0,
+    });
+    expect(missing).toContain('RESPONSIBLE');
+  });
+
+  it('v. SEM endereço E sem consentimento/cobertura/responsável (menor) ao mesmo tempo → ainda assim NoActiveAddressError (só ADDRESS decide), nunca PatientNotReadyError genérico', async () => {
+    const { seen } = programClient({
+      patientRow: {
+        id: 'pat-multi-missing',
+        status: 'PENDING_ADMISSION',
+        case_number: 20,
+        birth_date: '2015-01-01',
+        has_consent: false,
+        insurance_informed: null,
+      },
+      addressIds: [],
+      responsibleCount: 0,
+    });
+
+    const err = await new ActivatePatientUseCase().execute('pat-multi-missing').catch((e) => e);
+    expect(err).toBeInstanceOf(NoActiveAddressError);
+    expect((err as PatientNotReadyError).missing).toEqual(['ADDRESS']);
+    expect(countSql(seen, 'INSERT INTO job_postings')).toBe(0);
+    expect(countSql(seen, 'ROLLBACK')).toBe(1);
+  });
+
+  it('q. paciente MENOR com ≥1 responsável → RESPONSIBLE não bloqueia (ativa normalmente)', async () => {
+    const { seen } = programClient({
+      patientRow: { id: 'pat-minor-ok', status: 'PENDING_ADMISSION', case_number: 13, birth_date: '2015-01-01' },
+      addressIds: ['addr-1'],
+      responsibleCount: 1,
+    });
+
+    const result = await new ActivatePatientUseCase().execute('pat-minor-ok');
+    expect(result.alreadyActive).toBe(false);
+    expect(countSql(seen, 'INSERT INTO job_postings')).toBe(1);
+  });
+
+  it('r. paciente ADULTO SEM responsável ativa normalmente (RESPONSIBLE não é exigido de maior)', async () => {
+    const { seen } = programClient({
+      patientRow: { id: 'pat-adult-ok', status: 'PENDING_ADMISSION', case_number: 14 },
+      addressIds: ['addr-1'],
+      responsibleCount: 0,
+    });
+
+    const result = await new ActivatePatientUseCase().execute('pat-adult-ok');
+    expect(result.alreadyActive).toBe(false);
+    expect(countSql(seen, 'INSERT INTO job_postings')).toBe(1);
+  });
+
+  it(
+    's. ZERO serviço contratado ativo NÃO bloqueia o gate (fallback do bloco C, decisão declarada' +
+      ' no docblock) — mesmo assim CONTRACTED_SERVICE apareceria no checklist da ficha',
+    async () => {
+      const { seen } = programClient({
+        patientRow: { id: 'pat-noservice-ok', status: 'PENDING_ADMISSION', case_number: 15 },
+        addressIds: ['addr-1'],
+        // activeServices ausente → [] → CONTRACTED_SERVICE estaria em `missing`, mas não em
+        // `blocking` — é exatamente o comportamento pré-existente (testes c/l/m acima).
+      });
+
+      const result = await new ActivatePatientUseCase().execute('pat-noservice-ok');
+      expect(result.alreadyActive).toBe(false);
+      expect(countSql(seen, 'INSERT INTO job_postings')).toBe(1);
+
+      // Prova de que o gate LÊ a mesma função do checklist em vez de reimplementar a regra:
+      // para o MESMO estado do paciente, `computePatientCompleteness` (a função que também
+      // alimenta `GET /:id`) AINDA reporta CONTRACTED_SERVICE em `missing` — só não entra no
+      // `blocking` do activate. Se alguém duplicar a lógica em vez de importar a função, este
+      // teste não capta a divergência sozinho; o de baixo (t) capta.
+      const { missing } = computePatientCompleteness({
+        birthDate: null,
+        hasConsent: true,
+        insuranceInformed: 'OSDE',
+        activeAddressCount: 1,
+        activeResponsibleCount: 0,
+        activeContractedServiceCount: 0,
+      });
+      expect(missing).toEqual(['CONTRACTED_SERVICE']);
+    },
+  );
+
+  it('u. driver devolve rowCount undefined para o SELECT de serviços (?? 0) → CONTRACTED_SERVICE some do missing sem quebrar (não bloqueia mesmo assim)', async () => {
+    const { seen } = programClient({
+      patientRow: { id: 'pat-svc-undef', status: 'PENDING_ADMISSION', case_number: 16 },
+      addressIds: ['addr-1'],
+    });
+    const original = mockClient.query.getMockImplementation()!;
+    mockClient.query.mockImplementation(async (sql: string, params?: unknown) => {
+      if (sql.includes('FROM patient_contracted_services')) return { rows: [] }; // rowCount ausente
+      return original(sql, params);
+    });
+
+    const result = await new ActivatePatientUseCase().execute('pat-svc-undef');
+    expect(result.alreadyActive).toBe(false);
+    expect(countSql(seen, 'INSERT INTO job_postings')).toBe(1);
+  });
+
+  it('t. o gate importa PATIENT_COMPLETENESS_CODES/computePatientCompleteness do módulo de domínio — não reimplementa os códigos', () => {
+    // Lex D1.2: constante única. Se o arquivo do use case declarasse sua PRÓPRIA lista de
+    // códigos (cópia, drift possível), este `grep` estrutural pegaria — a fonte é IMPORTADA.
+    const source = require('fs').readFileSync(
+      require('path').join(__dirname, '../ActivatePatientUseCase.ts'),
+      'utf-8',
+    );
+    expect(source).toMatch(/import\s*\{\s*\n?\s*computePatientCompleteness/);
+    expect(source).not.toMatch(/const\s+PATIENT_COMPLETENESS_CODES\s*=/);
+  });
+
+  it('w. (QA-caça rodada 1, item conserto D255) o gate lê `blocking` de computePatientCompleteness — não reimplementa "só ADDRESS bloqueia" com missing.includes', () => {
+    // A causa-raiz do defeito 2 do QA-caça: o gate comparava `missing.includes('ADDRESS')`
+    // direto, uma cópia local da regra "ADDRESS é o único bloqueante" que só por coincidência
+    // batia com ACTIVATION_BLOCKING_CODES. Fonte única: o use case lê `blocking` (já filtrado
+    // pela constante) em vez de reimplementar o filtro.
+    const source = require('fs').readFileSync(
+      require('path').join(__dirname, '../ActivatePatientUseCase.ts'),
+      'utf-8',
+    );
+    expect(source).not.toMatch(/missing\.includes\(\s*['"]ADDRESS['"]\s*\)/);
+    expect(source).toMatch(/blocking/);
   });
 });

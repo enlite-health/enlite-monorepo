@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -31,6 +31,11 @@ interface Props {
   index: number;
   onSaved: () => void;
   onCancelNew?: () => void;
+  /** Spec 014 (US-D4): avisa o pai (`PatientContractedServicesEditDrawer`) sempre que ESTA
+   * linha tem mudança não salva — o drawer não tem "Guardar" próprio (cada linha salva sozinha,
+   * ver docblock do pai), então o "dirty" que decide a confirmação de fechar é a UNIÃO do dirty
+   * de todas as linhas + o formulário "+ Nuevo servicio" em aberto. */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 // Todos os campos numéricos ficam STRING no formulário (molde dos demais drawers do painel —
@@ -40,7 +45,9 @@ interface Props {
 const numericString = z.string().refine((v) => v.trim() === '' || !Number.isNaN(Number(v)), 'invalid number');
 
 const schema = z.object({
-  serviceCode: z.string().min(1),
+  // Spec 014 (US-D4): chave i18n como mensagem (mesmo padrão de PatientSupportNetworkEditDrawer/
+  // workerRegistrationSchemas.ts) — sem ela o zodResolver caía no default em inglês do zod.
+  serviceCode: z.string().min(1, 'admin.patients.editDrawer.requiredField'),
   professionalProfile: z.string(),
   providersNeeded: numericString,
   authorizedHours: numericString,
@@ -102,14 +109,14 @@ export async function deactivateService(
  * (PATCH, Merge Patch parcial) quando existe. `hourlyValue` fica DESABILITADO quando o backend
  * redigiu (lex C-c.4) — evita o operador não-admin sobrescrever um valor que não pode ver.
  */
-export function ContractedServiceFormRow({ patientId, service, index, onSaved, onCancelNew }: Props): JSX.Element {
+export function ContractedServiceFormRow({ patientId, service, index, onSaved, onCancelNew, onDirtyChange }: Props): JSX.Element {
   const { t } = useTranslation();
   const te = (k: string) => t(`admin.patients.editDrawer.${k}`);
   const isNew = service === null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { register, handleSubmit, control } = useForm<FormValues>({
+  const { register, handleSubmit, control, reset, formState: { isDirty } } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       serviceCode: service?.serviceCode ?? '',
@@ -128,6 +135,11 @@ export function ContractedServiceFormRow({ patientId, service, index, onSaved, o
       deviceTypeCodes: service?.deviceTypes ?? [],
     },
   });
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDirty]);
 
   const serviceOptions: SelectOption[] = SERVICE_CODES.map((s) => ({
     value: s,
@@ -199,6 +211,11 @@ export function ContractedServiceFormRow({ patientId, service, index, onSaved, o
           deviceTypeCodes: values.deviceTypeCodes,
         });
       }
+      // Marca o formulário como "limpo de novo" (o `defaultValues` capturado no mount não
+      // muda sozinho quando o pai reidrata `service` depois do refetch — sem isto, `isDirty`
+      // ficaria `true` para sempre após a 1ª edição salva, e a confirmação de "descartar
+      // cambios" apareceria ao fechar mesmo sem NADA pendente).
+      reset(values);
       onSaved();
     } catch {
       setError(isNew ? te('createServiceError') : te('updateServiceError'));
@@ -237,7 +254,7 @@ export function ContractedServiceFormRow({ patientId, service, index, onSaved, o
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <FormField label={te('selectServiceCode')} htmlFor={`svc-code-${index}`} required>
           <Controller control={control} name="serviceCode" render={({ field }) => (
-            <SelectField id={`svc-code-${index}`} inputSize="compact" options={serviceOptions} placeholder={te('unset')} value={field.value} onChange={field.onChange} disabled={!isNew} data-testid={`svc-code-${index}`} />
+            <SelectField id={`svc-code-${index}`} inputSize="compact" options={serviceOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} disabled={!isNew} data-testid={`svc-code-${index}`} />
           )} />
         </FormField>
         <FormField label={te('providersNeeded')} htmlFor={`svc-providersNeeded-${index}`} optional>
@@ -251,7 +268,7 @@ export function ContractedServiceFormRow({ patientId, service, index, onSaved, o
         </FormField>
         <FormField label={te('careLocation')} htmlFor={`svc-careLocation-${index}`} optional>
           <Controller control={control} name="careLocation" render={({ field }) => (
-            <SelectField id={`svc-careLocation-${index}`} inputSize="compact" options={careLocationOptions} placeholder={te('unset')} value={field.value} onChange={field.onChange} data-testid={`svc-careLocation-${index}`} />
+            <SelectField id={`svc-careLocation-${index}`} inputSize="compact" options={careLocationOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`svc-careLocation-${index}`} />
           )} />
         </FormField>
         <FormField label={te('hourlyValue')} htmlFor={`svc-hourlyValue-${index}`} optional>
@@ -261,7 +278,7 @@ export function ContractedServiceFormRow({ patientId, service, index, onSaved, o
             <InputWithIcon id={`svc-hourlyValue-${index}`} type="number" inputSize="compact" data-testid={`svc-hourlyValue-${index}`} {...register('hourlyValue')} />
           )}
         </FormField>
-        <FormField label={te('version')} htmlFor={`svc-version-${index}`} optional>
+        <FormField label={te('version')} htmlFor={`svc-version-${index}`} hint={te('versionHint')} optional>
           <InputWithIcon id={`svc-version-${index}`} inputSize="compact" data-testid={`svc-version-${index}`} {...register('version')} />
         </FormField>
         <FormField label={te('startDate')} htmlFor={`svc-startDate-${index}`} optional>
@@ -269,29 +286,29 @@ export function ContractedServiceFormRow({ patientId, service, index, onSaved, o
         </FormField>
         <FormField label={te('contractType')} htmlFor={`svc-contractType-${index}`} optional>
           <Controller control={control} name="contractType" render={({ field }) => (
-            <SelectField id={`svc-contractType-${index}`} inputSize="compact" options={contractTypeOptions} placeholder={te('unset')} value={field.value} onChange={field.onChange} data-testid={`svc-contractType-${index}`} />
+            <SelectField id={`svc-contractType-${index}`} inputSize="compact" options={contractTypeOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`svc-contractType-${index}`} />
           )} />
         </FormField>
         <FormField label={te('taxCondition')} htmlFor={`svc-taxCondition-${index}`} optional>
           <Controller control={control} name="taxCondition" render={({ field }) => (
-            <SelectField id={`svc-taxCondition-${index}`} inputSize="compact" options={taxConditionOptions} placeholder={te('unset')} value={field.value} onChange={field.onChange} data-testid={`svc-taxCondition-${index}`} />
+            <SelectField id={`svc-taxCondition-${index}`} inputSize="compact" options={taxConditionOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`svc-taxCondition-${index}`} />
           )} />
         </FormField>
         <FormField label={te('supervisionFrequency')} htmlFor={`svc-supervisionFrequency-${index}`} optional>
           <Controller control={control} name="supervisionFrequency" render={({ field }) => (
-            <SelectField id={`svc-supervisionFrequency-${index}`} inputSize="compact" options={supervisionOptions} placeholder={te('unset')} value={field.value} onChange={field.onChange} data-testid={`svc-supervisionFrequency-${index}`} />
+            <SelectField id={`svc-supervisionFrequency-${index}`} inputSize="compact" options={supervisionOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`svc-supervisionFrequency-${index}`} />
           )} />
         </FormField>
         <FormField label={te('guardShift')} htmlFor={`svc-guardShift-${index}`} optional>
           <Controller control={control} name="guardShift" render={({ field }) => (
-            <SelectField id={`svc-guardShift-${index}`} inputSize="compact" options={guardShiftOptions} placeholder={te('unset')} value={field.value} onChange={field.onChange} data-testid={`svc-guardShift-${index}`} />
+            <SelectField id={`svc-guardShift-${index}`} inputSize="compact" options={guardShiftOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`svc-guardShift-${index}`} />
           )} />
         </FormField>
       </div>
 
       <FormField label={te('deviceTypes')} htmlFor={`svc-devices-${index}`} optional>
         <Controller control={control} name="deviceTypeCodes" render={({ field }) => (
-          <MultiSelect options={deviceOptions} value={field.value} onChange={field.onChange} placeholder={te('unset')} id={`svc-devices-${index}`} />
+          <MultiSelect options={deviceOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id={`svc-devices-${index}`} />
         )} />
       </FormField>
 

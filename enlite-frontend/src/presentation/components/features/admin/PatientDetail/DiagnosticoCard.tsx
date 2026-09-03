@@ -6,11 +6,14 @@ import { Button } from '@presentation/components/atoms/Button';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
 import { PatientClinicalEditDrawer } from './edit/PatientClinicalEditDrawer';
 import { ClinicalLongText } from './ClinicalLongText';
+import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 
 interface DiagnosticoCardProps {
   patient: PatientDetail;
   /** Called after a successful edit so the page can refetch the detail. */
   onSaved?: () => void;
+  /** Spec 014 US-D1: pedido de foco do checklist ("falta consentimiento") — abre este drawer. */
+  focusRequest?: DrawerFocusRequest | null;
 }
 
 function Field({ label, value }: { label: string; value: string | null }) {
@@ -24,13 +27,16 @@ function Field({ label, value }: { label: string; value: string | null }) {
 
 function BoolField({ label, value }: { label: string; value: boolean | null }) {
   const { t } = useTranslation();
-  const display = value === null ? null : value ? t('common.yes', 'Sim') : t('common.no', 'Não');
+  // Spec 014 US-D3: "Sim/Não" → "Sí/No" — `common.yes`/`common.no` não existiam em NENHUM
+  // locale (não só no fallback morto): o texto pt-BR aparecia sempre, mesmo com a UI em es-AR.
+  const display = value === null ? null : value ? t('common.yes') : t('common.no');
   return <Field label={label} value={display} />;
 }
 
-export function DiagnosticoCard({ patient, onSaved }: DiagnosticoCardProps) {
+export function DiagnosticoCard({ patient, onSaved, focusRequest }: DiagnosticoCardProps) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
+  useAutoOpenDrawer(focusRequest, 'CONSENT', () => setEditing(true));
 
   // US-B4: dispositivos por catálogo, traduzidos. US-B8: "Tipos de patologías - ICHOM" /
   // "Especialidad" saíram do card (o segmento é máscara do projeto terapêutico, não da admissão).
@@ -76,14 +82,11 @@ export function DiagnosticoCard({ patient, onSaved }: DiagnosticoCardProps) {
           redactedMessage={patient.emergencyInstructionsRedacted ? t('admin.patients.detail.diagnosisCard.emergencyRedacted') : null}
         />
         <Field label={`${t('admin.patients.detail.diagnosisCard.devices')}:`} value={devicesLabel} />
-        <BoolField label={`${t('admin.patients.detail.diagnosisCard.hasFollowUp')}:`} value={null} />
-        <BoolField label={`${t('admin.patients.detail.diagnosisCard.receivesMoney')}:`} value={null} />
-        <BoolField label={`${t('admin.patients.detail.diagnosisCard.aggressiveBehavior')}:`} value={null} />
-        <BoolField label={`${t('admin.patients.detail.diagnosisCard.suicidalIdeation')}:`} value={null} />
-        <Field label={`${t('admin.patients.detail.diagnosisCard.patientReport')}:`} value={null} />
+        {/* Spec 014 US-D2: ¿Ya tiene acompañamiento?/¿Recibe dinero?/Conducta agresiva/
+            Pensamiento suicida/Relato/Comentarios REMOVIDOS — eram `value={null}` fixo, sem
+            campo em `patients` nesta spec (decisão Gabriel 03/09, item 9). */}
         <BoolField label={`${t('admin.patients.detail.diagnosisCard.protectionCertificate')}:`} value={patient.hasJudicialProtection} />
         <BoolField label={`${t('admin.patients.detail.diagnosisCard.disabilityCertificate')}:`} value={patient.hasCud} />
-        <Field label={`${t('admin.patients.detail.diagnosisCard.comments')}:`} value={null} />
       </div>
     </div>
   );

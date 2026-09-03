@@ -70,6 +70,29 @@ describe('usePatientKanban — admission_status', () => {
     expect(err).toBe('Failed to move patient');
   });
 
+  // Spec 014 (US-D5, lex D5.1): quando o backend manda `code` (enum), o hook devolve o CÓDIGO,
+  // nunca o texto cru — quem traduz para o toast é a página, com i18n (nunca eco de campo do
+  // paciente). `code` vem de `PatientApiError` — a classe REAL usada pelo cliente HTTP.
+  it('erro com `code` (PatientApiError real) → devolve o código, não a mensagem', async () => {
+    class FakePatientApiError extends Error {
+      readonly code?: string;
+      constructor(message: string, code?: string) {
+        super(message);
+        this.code = code;
+      }
+    }
+    updatePatientStatus.mockRejectedValueOnce(
+      new FakePatientApiError('No se puede activar el paciente Juan Pérez', 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED'),
+    );
+    const { result } = renderHook(() => usePatientKanban());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    let err: string | null = null;
+    await act(async () => { err = await result.current.moveStatus('a', 'DONE'); });
+    expect(err).toBe('PATIENT_STATUS_TRANSITION_NOT_ALLOWED');
+    // nunca o texto com o nome do paciente
+    expect(err).not.toContain('Juan Pérez');
+  });
+
   it('erro ao carregar vira `error`; refetch recarrega; fetch concorrente é ignorado', async () => {
     listPatientsForKanban.mockRejectedValueOnce(new Error('boom')).mockRejectedValueOnce('x');
     const { result } = renderHook(() => usePatientKanban());

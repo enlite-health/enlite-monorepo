@@ -64,7 +64,15 @@ async function openDetail(page: Page, patientId: string): Promise<Record<string,
       .catch(() => null);
     await page.goto(`/admin/patients/${patientId}`);
     const res = await detail;
-    if (res) return ((await res.json()) as { data: Record<string, any> }).data;
+    if (res) {
+      try {
+        return ((await res.json()) as { data: Record<string, any> }).data;
+      } catch {
+        // Corpo descartado por navegação concorrente: desde a spec 014 (D5) criar paciente já
+        // abre a ficha sozinho, e o GET dessa navegação pode ser o capturado aqui enquanto o
+        // `goto` acima o interrompe ("No resource with given identifier"). Tenta de novo.
+      }
+    }
   }
   throw new Error(`GET /api/admin/patients/${patientId} não observado em 2 tentativas`);
 }
@@ -111,7 +119,7 @@ test.describe('Spec 011 bloco A — a ficha mostra e não apaga dado do paciente
     await expect(equipe).toHaveScreenshot('bloco-a-equipo-tratante.png', { maxDiffPixelRatio: 0.05 });
 
     // A2 + A3 — aba Servicio Contratado: endereço de rua e cobertura.
-    await page.getByRole('button', { name: /Servicio Contratado/i }).click();
+    await page.getByTestId('patient-profile-tabs').getByRole('button', { name: /Servicio Contratado/i }).click(); // spec 014: escopado — checklist de completude pode render chip com o mesmo texto
     const localizacoes = page.getByTestId('localizacoes-card');
     await expect(localizacoes).toContainText(seed.addressFormatted);
     expect(await localizacoes.locator('table').evaluate((el) => el.closest('[data-clarity-mask="True"]') !== null)).toBe(true);
@@ -195,7 +203,7 @@ test.describe('Spec 011 bloco A — a ficha mostra e não apaga dado do paciente
     expect(data.insuranceInformed).toBe(coverage);
     expect(data.contactEmail).toBe(email);
     await expect(page.getByTestId('patient-contact-email')).toHaveText(email, { timeout: 30_000 });
-    await page.getByRole('button', { name: /Servicio Contratado/i }).click();
+    await page.getByTestId('patient-profile-tabs').getByRole('button', { name: /Servicio Contratado/i }).click(); // spec 014: escopado — checklist de completude pode render chip com o mesmo texto
     await expect(page.getByTestId('cobertura-medica-card')).toContainText(coverage);
   });
 });

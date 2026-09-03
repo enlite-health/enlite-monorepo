@@ -122,4 +122,50 @@ describe('PatientAddressDrawer — editar logística', () => {
     render(<PatientAddressDrawer patientId="p1" address={{ ...existing, addressFormatted: null, addressRaw: 'Cru 9' }} onClose={vi.fn()} onSaved={vi.fn()} />);
     expect(screen.getAllByTestId('pad-address-readonly').slice(-1)[0]).toHaveTextContent('Cru 9');
   });
+
+  // ── Spec 014 US-D4 (lex D4 AUTORIZADO): drawer não perde trabalho ──────────────────────
+  describe('confirmação ao fechar com mudanças (US-D4)', () => {
+    it('SEM mudança → Escape fecha direto', async () => {
+      const onClose = vi.fn();
+      render(<PatientAddressDrawer patientId="p1" address={existing} onClose={onClose} onSaved={vi.fn()} />);
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
+      await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    });
+
+    it('COM mudança (corredor) → Escape abre confirmação; "Seguir editando" mantém o valor', () => {
+      render(<PatientAddressDrawer patientId="p1" address={existing} onClose={vi.fn()} onSaved={vi.fn()} />);
+      fireEvent.change(screen.getByTestId('pad-corridor'), { target: { value: 'Sul' } });
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.getByTestId('discard-changes-confirm')).toBeVisible();
+      fireEvent.click(screen.getByTestId('discard-changes-keep-editing'));
+      expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
+      expect(screen.getByTestId('pad-corridor')).toHaveValue('Sul');
+    });
+
+    it('"Descartar cambios" fecha de verdade', async () => {
+      const onClose = vi.fn();
+      render(<PatientAddressDrawer patientId="p1" address={existing} onClose={onClose} onSaved={vi.fn()} />);
+      fireEvent.change(screen.getByTestId('pad-corridor'), { target: { value: 'Sul' } });
+      fireEvent.keyDown(document, { key: 'Escape' });
+      fireEvent.click(screen.getByTestId('discard-changes-discard'));
+      await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1), { timeout: 1000 });
+    });
+
+    it('modo CRIAR: digitar o endereço → backdrop abre confirmação', () => {
+      render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={vi.fn()} />);
+      fireEvent.change(screen.getByTestId('pad-address'), { target: { value: 'Av. Corrientes 1234' } });
+      fireEvent.click(screen.getByTestId('patient-address-backdrop'));
+      expect(screen.getByTestId('discard-changes-confirm')).toBeVisible();
+    });
+
+    it('SALVAR nunca pergunta, mesmo com mudança pendente', async () => {
+      const onSaved = vi.fn();
+      render(<PatientAddressDrawer patientId="p1" address={existing} onClose={vi.fn()} onSaved={onSaved} />);
+      fireEvent.change(screen.getByTestId('pad-corridor'), { target: { value: 'Sul' } });
+      fireEvent.click(screen.getByTestId('pad-save'));
+      await waitFor(() => expect(onSaved).toHaveBeenCalled());
+      expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
+    });
+  });
 });

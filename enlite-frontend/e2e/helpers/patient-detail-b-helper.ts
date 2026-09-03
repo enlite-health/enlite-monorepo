@@ -18,10 +18,15 @@ export function seedActivePatient(): { patientId: string; stamp: string } {
   return { patientId, stamp };
 }
 
-/** Paciente ainda no funil (PENDING_ADMISSION), SEM endereço — é o que o fluxo "domicílio na ficha → ativar" precisa. */
+/** Paciente ainda no funil (PENDING_ADMISSION), SEM endereço — é o que o fluxo "domicílio na ficha → ativar" precisa.
+ * Spec 014 (SUP-D1): `hasConsent`/`insuranceInformed` setados — sem isso `POST /activate` (o
+ * passo final do teste B2, regressão) voltaria 422 pelo novo gate de completude. */
 export function seedAdmissionPatient(): { patientId: string; stamp: string } {
   const stamp = Date.now().toString().slice(-6);
-  const { patientId } = insertTestPatient({ status: 'PENDING_ADMISSION', firstName: 'BlocoB', lastName: `Admision${stamp}`, withAddress: false });
+  const { patientId } = insertTestPatient({
+    status: 'PENDING_ADMISSION', firstName: 'BlocoB', lastName: `Admision${stamp}`,
+    withAddress: false, hasConsent: true, insuranceInformed: 'OSDE',
+  });
   runSQL(`UPDATE patients SET case_number = ${900000 + Number(stamp) % 90000}, phone_whatsapp = '+5491100000044' WHERE id = '${patientId}'`);
   return { patientId, stamp };
 }

@@ -107,7 +107,15 @@ export function usePatientKanban(country?: string) {
       return null;
     } catch (err) {
       setGroups(previous);
-      return err instanceof Error ? err.message : 'Failed to move patient';
+      // Spec 014 (US-D5, lex D5.1): devolve o CÓDIGO de enum quando o backend manda um
+      // (`PatientApiError.code` — PATIENT_STATUS_TRANSITION_NOT_ALLOWED/ON_HOLD_REASON_REQUIRED),
+      // nunca o texto cru — a página traduz o código, nunca ecoa `err.message` no toast. Erro
+      // sem código (rede, 500 genérico) cai na mensagem, que é o único dado que existe ali.
+      if (err instanceof Error) {
+        const code = (err as { code?: string }).code;
+        return code ?? err.message;
+      }
+      return 'Failed to move patient';
     }
   }, [setGroups]);
 

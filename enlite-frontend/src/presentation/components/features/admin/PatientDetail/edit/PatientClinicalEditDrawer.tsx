@@ -15,6 +15,8 @@ import { SelectField, type SelectOption } from '@presentation/components/molecul
 import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
 import { ClinicalTextareaField } from './ClinicalTextareaField';
 import { DEVICE_TYPE_CODES } from '@domain/entities/patientEnums';
+import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
+import { DiscardChangesConfirm } from './DiscardChangesConfirm';
 
 interface Props {
   patient: PatientDetail;
@@ -73,7 +75,7 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const { register, handleSubmit, control, watch } = useForm<FormValues>({
+  const { register, handleSubmit, control, watch, formState: { isDirty } } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       diagnosis: patient.diagnosis ?? '',
@@ -95,12 +97,17 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
 
   const handleClose = (): void => { setShow(false); setTimeout(onClose, CLOSE_MS); };
 
+  // Spec 014 (US-D4, lex D4 AUTORIZADO): reusa o `isDirty` que o react-hook-form já calcula.
+  const { confirmingClose, requestClose, keepEditing, confirmDiscard } = useConfirmDiscardClose({
+    isDirty,
+    onConfirmedClose: handleClose,
+  });
+
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') requestClose(); };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [requestClose]);
 
   const dependencyOptions: SelectOption[] = DEPENDENCY_LEVELS.map((d) => ({ value: d, label: t(`admin.patients.dependencyOptions.${d}`, { defaultValue: d }) }));
   const deviceOptions: SelectOption[] = DEVICE_TYPE_CODES.map((d) => ({ value: d, label: t(`admin.patients.deviceTypeOptions.${d}`, { defaultValue: d }) }));
@@ -145,16 +152,17 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
   const boolField = (name: 'hasJudicialProtection' | 'hasCud' | 'hasConsent', label: string, testid: string) => (
     <FormField label={label} htmlFor={testid} optional>
       <Controller control={control} name={name} render={({ field }) => (
-        <SelectField inputSize="compact" options={boolOptions} placeholder={te('unset')} value={field.value} onChange={field.onChange} data-testid={testid} />
+        <SelectField inputSize="compact" options={boolOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={testid} />
       )} />
     </FormField>
   );
 
   return (
     <>
+      {confirmingClose && <DiscardChangesConfirm onKeepEditing={keepEditing} onDiscard={confirmDiscard} />}
       <div
         className={`fixed inset-0 bg-black/50 z-40 transition-opacity duration-300 ${show ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-        onClick={handleClose}
+        onClick={requestClose}
         data-testid="patient-clinical-edit-backdrop"
       />
       <div
@@ -170,7 +178,7 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
             <Button type="button" variant="primary" size="sm" onClick={handleSubmit(onSubmit)} isLoading={busy} className="w-32" data-testid="pce-save">
               {te('save')}
             </Button>
-            <button type="button" onClick={handleClose} aria-label={te('close')} className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded">
+            <button type="button" onClick={requestClose} aria-label={te('close')} className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -205,17 +213,17 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormField label={t('admin.patients.dependencyLabel', { defaultValue: 'Dependencia' })} htmlFor="pce-dependency" optional>
               <Controller control={control} name="dependencyLevel" render={({ field }) => (
-                <SelectField inputSize="compact" options={dependencyOptions} placeholder={te('unset')} value={field.value} onChange={field.onChange} data-testid="pce-dependency" />
+                <SelectField inputSize="compact" options={dependencyOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid="pce-dependency" />
               )} />
             </FormField>
             <FormField label={te('deviceType')} htmlFor="pce-device" optional>
               <Controller control={control} name="deviceTypes" render={({ field }) => (
-                <MultiSelect options={deviceOptions} value={field.value} onChange={field.onChange} placeholder={te('unset')} id="pce-device" />
+                <MultiSelect options={deviceOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id="pce-device" />
               )} />
             </FormField>
             <FormField label={tc('serviceType')} htmlFor="pce-serviceType" optional>
               <Controller control={control} name="serviceType" render={({ field }) => (
-                <MultiSelect options={serviceOptions} value={field.value} onChange={field.onChange} placeholder={te('unset')} id="pce-serviceType" />
+                <MultiSelect options={serviceOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id="pce-serviceType" />
               )} />
             </FormField>
           </div>

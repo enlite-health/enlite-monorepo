@@ -179,6 +179,17 @@ export const patientDetailContractSchema = z
     deviceTypes: z.array(z.string()),
     needsAttention: z.boolean(),
     attentionReasons: z.array(z.string()),
+    // Spec 014 (US-D1, lex D1.1): SÓ neste contrato (o do detalhe) — lista/kanban não têm.
+    // D255/QA-caça: `blocking`/`canActivate` — só ADDRESS bloqueia o activate de verdade.
+    completeness: z
+      .object({
+        missing: z.array(z.enum(['ADDRESS', 'RESPONSIBLE', 'COVERAGE', 'CONTRACTED_SERVICE', 'CONSENT'])),
+        blocking: z.array(z.enum(['ADDRESS', 'RESPONSIBLE', 'COVERAGE', 'CONTRACTED_SERVICE', 'CONSENT'])),
+        ready: z.boolean(),
+        canActivate: z.boolean(),
+      })
+      .strict(),
+    phoneMatchesResponsible: z.boolean(),
     responsibles: z.array(responsibleSchema),
     addresses: z.array(addressSchema),
     professionals: z.array(professionalSchema),

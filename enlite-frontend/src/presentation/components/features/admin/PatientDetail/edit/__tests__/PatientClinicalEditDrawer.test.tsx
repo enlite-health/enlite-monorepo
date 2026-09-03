@@ -191,4 +191,32 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
     await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patientDetailMinimal.id, 'clinical', { deviceTypes: ['HOME'] }));
     expect(await screen.findByTestId('pce-error')).toHaveTextContent('Erro ao salvar');
   });
+
+  // ── Spec 014 US-D4 (lex D4 AUTORIZADO): drawer não perde trabalho ──────────────────────
+  describe('confirmação ao fechar com mudanças (US-D4)', () => {
+    it('SEM mudança → Escape fecha direto', () => {
+      render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
+    });
+
+    it('COM mudança (diagnóstico) → Escape abre confirmação; "Seguir editando" preserva o valor', () => {
+      render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
+      fireEvent.change(screen.getByTestId('pce-diagnosis'), { target: { value: 'F32' } });
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.getByTestId('discard-changes-confirm')).toBeVisible();
+      fireEvent.click(screen.getByTestId('discard-changes-keep-editing'));
+      expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
+      expect(screen.getByTestId('pce-diagnosis')).toHaveValue('F32');
+    });
+
+    it('"Descartar cambios" fecha de verdade', async () => {
+      const onClose = vi.fn();
+      render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={onClose} onSaved={vi.fn()} />);
+      fireEvent.change(screen.getByTestId('pce-diagnosis'), { target: { value: 'F32' } });
+      fireEvent.keyDown(document, { key: 'Escape' });
+      fireEvent.click(screen.getByTestId('discard-changes-discard'));
+      await waitFor(() => expect(onClose).toHaveBeenCalled(), { timeout: 1000 });
+    });
+  });
 });

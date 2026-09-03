@@ -14,11 +14,14 @@ import {
 import { Button } from '@presentation/components/atoms/Button';
 import type { PatientDetail, PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
 import { PatientContractedServicesEditDrawer } from './edit/PatientContractedServicesEditDrawer';
+import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 
 interface ServicosContratadosCardProps {
   patient: PatientDetail;
   /** Called after a successful edit so the page can refetch the detail. */
   onSaved?: () => void;
+  /** Spec 014 US-D1: pedido de foco do checklist ("falta servicio contratado") — abre o drawer. */
+  focusRequest?: DrawerFocusRequest | null;
 }
 
 const EMPTY = '—';
@@ -95,9 +98,10 @@ function ServiceRow({ service, t }: { service: PatientContractedServiceDetail; t
   );
 }
 
-export function ServicosContratadosCard({ patient, onSaved }: ServicosContratadosCardProps) {
+export function ServicosContratadosCard({ patient, onSaved, focusRequest }: ServicosContratadosCardProps) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
+  useAutoOpenDrawer(focusRequest, 'CONTRACTED_SERVICE', () => setEditing(true));
   const services = patient.contractedServices;
 
   return (

@@ -62,7 +62,14 @@ async function openDetail(page: Page, patientId: string): Promise<Record<string,
       .catch(() => null);
     await page.goto(`/admin/patients/${patientId}`);
     const res = await detail;
-    if (res) return ((await res.json()) as { data: Record<string, any> }).data;
+    if (res) {
+      try {
+        return ((await res.json()) as { data: Record<string, any> }).data;
+      } catch {
+        // Corpo descartado por navegação concorrente (spec 014 D5: criar paciente abre a ficha
+        // sozinho, e o `goto` acima interrompe esse GET). Mesma guarda do bloco A. Tenta de novo.
+      }
+    }
   }
   throw new Error(`GET /api/admin/patients/${patientId} não observado em 2 tentativas`);
 }
@@ -132,7 +139,7 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
   test('B2 — criar domicílio na ficha (drawer com mapa + logística) e ativar sem sair dela', async ({ page }, testInfo) => {
     await loginAsRealStaff(page);
     await openDetail(page, admission.patientId);
-    await page.getByRole('button', { name: /Servicio Contratado/i }).click();
+    await page.getByTestId('patient-profile-tabs').getByRole('button', { name: /Servicio Contratado/i }).click(); // spec 014: escopado — checklist de completude pode render chip com o mesmo texto
     const card = page.getByTestId('localizacoes-card');
     await expect(card).toContainText('Sin datos cargados');
     await page.getByTestId('new-address-btn').click();
@@ -176,7 +183,7 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
   test('B3 — duas coberturas verificadas por código do catálogo', async ({ page }, testInfo) => {
     await loginAsRealStaff(page);
     await openDetail(page, active.patientId);
-    await page.getByRole('button', { name: /Servicio Contratado/i }).click();
+    await page.getByTestId('patient-profile-tabs').getByRole('button', { name: /Servicio Contratado/i }).click(); // spec 014: escopado — checklist de completude pode render chip com o mesmo texto
     await page.getByTestId('edit-coverage-btn').click();
     const drawer = page.getByTestId('patient-coverage-edit-drawer');
     await expect(drawer).toBeVisible();

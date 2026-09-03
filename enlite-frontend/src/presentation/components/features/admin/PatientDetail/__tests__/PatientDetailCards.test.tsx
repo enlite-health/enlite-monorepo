@@ -144,16 +144,24 @@ describe('PatientIdentityCard', () => {
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
   });
 
-  it('has Edit button that is disabled', () => {
+  // Spec 014 US-D2 (decisão Gabriel 03/09, item 9): o botão "Editar" fantasma (disabled, sem
+  // ação) SOME — a edição de identidade já vive no card "Informações Gerais" (mesmo dado).
+  it('não tem mais o botão "Editar" fantasma no cabeçalho', () => {
     render(<PatientIdentityCard patient={patientDetailFixture} />);
-    const editButton = screen.getByText('Editar');
-    expect(editButton.closest('button')).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument();
   });
 
-  it('clicking disabled Edit button does not throw', () => {
-    render(<PatientIdentityCard patient={patientDetailFixture} />);
-    const editButton = screen.getByText('Editar');
-    expect(() => fireEvent.click(editButton)).not.toThrow();
+  // Spec 014 US-D3 (lex D3.1): o rótulo do telefone do PACIENTE deixa de ser "Teléfono del
+  // Responsable" (rótulo errado, medido em produção: 5/37 casos com dado mal atribuído).
+  it('spec 014 US-D3: o telefone do paciente usa o rótulo "WhatsApp do paciente"', () => {
+    render(<PatientIdentityCard patient={{ ...patientDetailFixture, phoneMatchesResponsible: false }} />);
+    expect(screen.getByText(/WhatsApp do paciente/)).toBeInTheDocument();
+  });
+
+  // Spec 014 US-D2: "Desligamento" era `value={null}` fixo (sem coluna no banco) — removido.
+  it('spec 014 US-D2: não mostra mais o campo fantasma "Desligamento"', () => {
+    render(<PatientIdentityCard patient={{ ...patientDetailFixture, phoneMatchesResponsible: false }} />);
+    expect(screen.queryByText(/Desligamento/i)).not.toBeInTheDocument();
   });
 
   it('renders "—" for admission date when createdAt is an empty string (formatDate cannot parse it)', () => {
@@ -380,33 +388,20 @@ describe('DiagnosticoCard', () => {
 
 // ── ProjetoTerapeuticoCard ───────────────────────────────────────────────────
 
+// Spec 014 US-D2 (decisão Gabriel 03/09, item 9): card sem dado nenhum vira "título +
+// Próximamente REAL" — nem tabela vazia, nem botão disabled, nem busca decorativa.
 describe('ProjetoTerapeuticoCard', () => {
   it('renders card title Projeto Terapêutico', () => {
     render(<ProjetoTerapeuticoCard />);
     expect(screen.getByText('Projeto Terapêutico')).toBeInTheDocument();
   });
 
-  it('renders empty state in version table', () => {
+  it('mostra "Próximamente" — sem tabela, sem botão, sem busca', () => {
     render(<ProjetoTerapeuticoCard />);
-    expect(screen.getByText('Sem dados cadastrados')).toBeInTheDocument();
-  });
-
-  it('has disabled Novo button', () => {
-    render(<ProjetoTerapeuticoCard />);
-    const novoButton = screen.getByText('Novo');
-    expect(novoButton.closest('button')).toBeDisabled();
-  });
-
-  it('has disabled Editar button', () => {
-    render(<ProjetoTerapeuticoCard />);
-    const editButton = screen.getByText('Editar');
-    expect(editButton.closest('button')).toBeDisabled();
-  });
-
-  it('clicking Novo does not throw', () => {
-    render(<ProjetoTerapeuticoCard />);
-    const novoButton = screen.getByText('Novo');
-    expect(() => fireEvent.click(novoButton)).not.toThrow();
+    expect(screen.getByText('Em breve')).toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
   });
 });
 
@@ -438,90 +433,65 @@ describe('EquipeTratanteCard', () => {
     expect(screen.getByText('Sem dados cadastrados')).toBeInTheDocument();
   });
 
-  it('has disabled Novo button', () => {
+  // Spec 014 US-D2: o botão "Nuevo" fantasma (disabled, sem ação — não há endpoint de criar
+  // profissional nesta spec) e a busca decorativa `readOnly` SOMEM; a tabela real fica.
+  it('não tem mais o botão "Novo" fantasma nem a busca decorativa', () => {
     render(<EquipeTratanteCard professionals={[]} />);
-    const novoButton = screen.getByText('Novo');
-    expect(novoButton.closest('button')).toBeDisabled();
-  });
-
-  it('search input is readonly', () => {
-    render(<EquipeTratanteCard professionals={[]} />);
-    const input = screen.getByPlaceholderText('Pesquisar');
-    expect(input).toHaveAttribute('readonly');
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Pesquisar')).not.toBeInTheDocument();
   });
 });
 
 // ── SupervisaoCard ───────────────────────────────────────────────────────────
 
+// Spec 014 US-D2: card sem dado nenhum vira "título + Próximamente REAL".
 describe('SupervisaoCard', () => {
   it('renders card title Supervisão', () => {
     render(<SupervisaoCard />);
     expect(screen.getByText('Supervisão')).toBeInTheDocument();
   });
 
-  it('renders empty state table', () => {
+  it('mostra "Em breve" — sem tabela, sem botão, sem busca', () => {
     render(<SupervisaoCard />);
-    expect(screen.getByText('Sem dados cadastrados')).toBeInTheDocument();
-  });
-
-  it('has disabled Novo button', () => {
-    render(<SupervisaoCard />);
-    const novoButton = screen.getByText('Novo');
-    expect(novoButton.closest('button')).toBeDisabled();
-  });
-
-  it('clicking Novo does not throw', () => {
-    render(<SupervisaoCard />);
-    const novoButton = screen.getByText('Novo');
-    expect(() => fireEvent.click(novoButton)).not.toThrow();
+    expect(screen.getByText('Em breve')).toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
   });
 });
 
 // ── RelatoriosAtendimentosCard ───────────────────────────────────────────────
 
+// Spec 014 US-D2: card sem dado nenhum vira "título + Próximamente REAL".
 describe('RelatoriosAtendimentosCard', () => {
   it('renders card title Relatórios de Atendimentos', () => {
     render(<RelatoriosAtendimentosCard />);
     expect(screen.getByText('Relatórios de Atendimentos')).toBeInTheDocument();
   });
 
-  it('renders empty state table', () => {
+  it('mostra "Em breve" — sem tabela, sem botões, sem busca', () => {
     render(<RelatoriosAtendimentosCard />);
-    expect(screen.getByText('Sem dados cadastrados')).toBeInTheDocument();
-  });
-
-  it('has disabled Edit button', () => {
-    render(<RelatoriosAtendimentosCard />);
-    const editButton = screen.getByText('Editar');
-    expect(editButton.closest('button')).toBeDisabled();
-  });
-
-  it('has disabled Novo button', () => {
-    render(<RelatoriosAtendimentosCard />);
-    const novoButton = screen.getByText('Novo');
-    expect(novoButton.closest('button')).toBeDisabled();
-  });
-
-  it('clicking Novo does not throw', () => {
-    render(<RelatoriosAtendimentosCard />);
-    const novoButton = screen.getByText('Novo');
-    expect(() => fireEvent.click(novoButton)).not.toThrow();
+    expect(screen.getByText('Em breve')).toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
   });
 });
 
 // ── PatientProfileTabs ───────────────────────────────────────────────────────
 
 describe('PatientProfileTabs', () => {
-  it('renders all 7 tabs', () => {
+  // Spec 014 US-D2: "Dados Financeiros" e "Agendamentos" SAÍRAM do tab bar — só tinham o
+  // placeholder genérico "Em breve" atrás, nenhum card real (decisão Gabriel 03/09, item 9).
+  it('renders the 6 tabs with real content — "Dados Financeiros"/"Agendamentos" não existem mais', () => {
     const onTabChange = vi.fn();
     render(<PatientProfileTabs activeTab="clinicalData" onTabChange={onTabChange} />);
     expect(screen.getByText('Dados Clínicos')).toBeInTheDocument();
     expect(screen.getByText('Rede de Apoio')).toBeInTheDocument();
     expect(screen.getByText('Serviço Contratado')).toBeInTheDocument();
-    expect(screen.getByText('Dados Financeiros')).toBeInTheDocument();
+    expect(screen.getByText('Vagas')).toBeInTheDocument();
     expect(screen.getByText('Enquadre')).toBeInTheDocument();
-    expect(screen.getByText('Agendamentos')).toBeInTheDocument();
     expect(screen.getByText('Histórico')).toBeInTheDocument();
+    expect(screen.queryByText('Dados Financeiros')).not.toBeInTheDocument();
+    expect(screen.queryByText('Agendamentos')).not.toBeInTheDocument();
   });
 
   it('active tab has primary background class', () => {
@@ -594,10 +564,10 @@ describe('FamiliaresCard', () => {
     expect(novoButton.closest('button')).toBeDisabled();
   });
 
-  it('search input is readonly', () => {
+  // Spec 014 US-D2: a busca decorativa `readOnly` some.
+  it('não tem mais a busca decorativa', () => {
     render(<FamiliaresCard responsibles={[]} />);
-    const input = screen.getByPlaceholderText('Pesquisar');
-    expect(input).toHaveAttribute('readonly');
+    expect(screen.queryByPlaceholderText('Pesquisar')).not.toBeInTheDocument();
   });
 
   it('renders multiple responsibles when array has more than one', () => {
@@ -653,16 +623,18 @@ describe('CoberturaMedicaCard', () => {
     expect(screen.getByText('0000000000000000')).toBeInTheDocument();
   });
 
-  it('renders "—" for emergency numbers (column missing in schema)', () => {
+  // Spec 014 US-D2: "Números de Emergência" era `value={null}` fixo, sem coluna no schema —
+  // removido (decisão Gabriel 03/09, item 9).
+  it('não mostra mais o campo fantasma "Números de Emergência"', () => {
     render(<CoberturaMedicaCard patient={withInsurance} />);
-    // Multiple "—" may exist; assert the label is present at least
-    expect(screen.getByText('Números de Emergência')).toBeInTheDocument();
+    expect(screen.queryByText('Números de Emergência')).not.toBeInTheDocument();
   });
 
   it('renders "—" when insurance fields are null', () => {
     render(<CoberturaMedicaCard patient={patientDetailMinimal} />);
     const dashes = screen.getAllByText('—');
-    expect(dashes.length).toBeGreaterThanOrEqual(4);
+    // 3 campos reais (provedor, verificada, credencial) — "Números de Emergência" foi removido.
+    expect(dashes.length).toBeGreaterThanOrEqual(3);
   });
 
   it('spec 012 US-B3: Editar abre o drawer de cobertura; onSaved é repassado', async () => {
@@ -779,47 +751,19 @@ describe('LocalizacoesCard', () => {
 
 // ── EnquadreTerapeuticoCard ──────────────────────────────────────────────────
 
+// Spec 014 US-D2: card sem dado nenhum (kanban de 4 colunas sempre vazias) vira "título +
+// Próximamente REAL".
 describe('EnquadreTerapeuticoCard', () => {
   it('renders card title', () => {
     render(<EnquadreTerapeuticoCard />);
     expect(screen.getByText('Enquadre Terapêutico')).toBeInTheDocument();
   });
 
-  it('renders the 3 summary fields', () => {
+  it('mostra "Em breve" — sem colunas, sem botões', () => {
     render(<EnquadreTerapeuticoCard />);
-    expect(screen.getByText('Prazo de pagamento')).toBeInTheDocument();
-    expect(screen.getByText('Detalhes do Enquadre')).toBeInTheDocument();
-    expect(screen.getByText('Capacidade')).toBeInTheDocument();
-  });
-
-  it('renders all 4 kanban columns', () => {
-    render(<EnquadreTerapeuticoCard />);
-    expect(screen.getByTestId('enquadre-column-interview')).toBeInTheDocument();
-    expect(screen.getByTestId('enquadre-column-selected')).toBeInTheDocument();
-    expect(screen.getByTestId('enquadre-column-inService')).toBeInTheDocument();
-    expect(screen.getByTestId('enquadre-column-rejected')).toBeInTheDocument();
-  });
-
-  it('renders kanban column titles in pt-BR', () => {
-    render(<EnquadreTerapeuticoCard />);
-    expect(screen.getByText('Entrevista')).toBeInTheDocument();
-    expect(screen.getByText('Selecionados(as)')).toBeInTheDocument();
-    expect(screen.getByText('Em Atendimento')).toBeInTheDocument();
-    expect(screen.getByText('Rejeitado')).toBeInTheDocument();
-  });
-
-  it('all "Adicionar novo" buttons are disabled', () => {
-    render(<EnquadreTerapeuticoCard />);
-    const btns = screen.getAllByText('Adicionar novo');
-    expect(btns.length).toBe(4);
-    btns.forEach((btn) => {
-      expect(btn.closest('button')).toBeDisabled();
-    });
-  });
-
-  it('renders empty state message', () => {
-    render(<EnquadreTerapeuticoCard />);
-    expect(screen.getByText('Sem enquadres cadastrados')).toBeInTheDocument();
+    expect(screen.getByText('Em breve')).toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('enquadre-column-interview')).not.toBeInTheDocument();
   });
 });
 

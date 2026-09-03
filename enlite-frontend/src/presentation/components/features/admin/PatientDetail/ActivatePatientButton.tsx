@@ -7,6 +7,7 @@ import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { useToast } from '@presentation/hooks/useToast';
+import { ACTIVATABLE_STATUSES } from '@domain/entities/PatientCompleteness';
 
 interface Props {
   patientId: string;
@@ -14,9 +15,6 @@ interface Props {
   /** Called after a successful activation so the page can refetch. */
   onActivated: () => void;
 }
-
-/** Statuses from which activation is allowed (hidden once ACTIVE). */
-const ACTIVATABLE = new Set(['ADMISSION', 'PENDING_ADMISSION']);
 
 /**
  * "Activar paciente" — visible only when the patient is in an activatable
@@ -33,7 +31,7 @@ export function ActivatePatientButton({ patientId, status, onActivated }: Props)
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (!status || !ACTIVATABLE.has(status)) return null;
+  if (!status || !(ACTIVATABLE_STATUSES as readonly string[]).includes(status)) return null;
 
   const handleConfirm = async (): Promise<void> => {
     setError(null);
@@ -45,7 +43,15 @@ export function ActivatePatientButton({ patientId, status, onActivated }: Props)
       onActivated();
     } catch (err) {
       if (err instanceof PatientApiError && err.status === 422) {
-        setError(ta('noAddress'));
+        // Spec 014 US-D1: os MESMOS códigos e i18n do checklist da ficha, nunca o texto cru do
+        // servidor (`err.message`) — `details.missing` vem do backend (`PatientNotReadyError`).
+        const missing = (err.details?.missing as string[] | undefined) ?? [];
+        if (missing.length > 0) {
+          const items = missing.map((code) => t(`admin.patients.detail.completeness.items.${code}`, code)).join(', ');
+          setError(ta('notReady').replace('{{items}}', items));
+        } else {
+          setError(ta('noAddress'));
+        }
       } else {
         setError(err instanceof Error ? err.message : ta('error'));
       }

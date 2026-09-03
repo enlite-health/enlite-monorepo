@@ -11,6 +11,7 @@ import { GetPatientByIdUseCase } from '../../application/GetPatientByIdUseCase';
 import { projectPatientClinicalForActor, clinicalCellsOf, canReadPatientClinical, PATIENT_CLINICAL_READ_CELL } from '../../application/patientClinicalAccess';
 import { projectContractedServiceForActor, actorRolesOf } from '../../application/contractedServiceHourlyValueAccess';
 import { GetPatientFunnelUseCase } from '../../application/GetPatientFunnelUseCase';
+import { computePatientCompleteness } from '../../domain/PatientCompleteness';
 import { patientFunnelQuerySchema } from '../../application/patientFunnelSchema';
 import {
   CreatePatientUseCase,
@@ -20,7 +21,7 @@ import {
 import {
   ActivatePatientUseCase,
   PatientNotFoundError,
-  NoActiveAddressError,
+  PatientNotReadyError,
 } from '../../application/ActivatePatientUseCase';
 import {
   PatientService,
@@ -387,8 +388,15 @@ export class AdminPatientsController {
         res.status(404).json({ success: false, error: 'Patient not found' });
         return;
       }
-      if (err instanceof NoActiveAddressError) {
-        res.status(422).json({ success: false, error: err.message });
+      if (err instanceof PatientNotReadyError) {
+        // Spec 014 US-D1: mesmos códigos do checklist (`completeness.missing`), para o front
+        // traduzir com o MESMO i18n em vez de repetir a frase crua do backend.
+        res.status(422).json({
+          success: false,
+          error: err.message,
+          code: 'PATIENT_NOT_READY',
+          details: { missing: err.missing },
+        });
         return;
       }
       const e = err instanceof Error ? err : new Error(String(err));
@@ -551,7 +559,31 @@ export class AdminPatientsController {
       if (canReadPatientClinical(cells)) {
         logger.info({ msg: 'patient_clinical.read', uid: AuthMiddleware.getAuthContext(req)?.principal.id ?? null, patientId: parsed.data.id, country: (result.patient as { country?: string | null }).country ?? null, decision: 'allowed' });
       }
-      res.status(200).json({ success: true, data: projected });
+
+      // Spec 014 (US-D1, lex D1.1): `completeness` SÓ aqui — a lista e o kanban (listPatients,
+      // listPatientsForKanban) continuam com `needsAttention` booleano + `attentionReasons` (enum
+      // fechado), nunca `missing`. Mesma função (`computePatientCompleteness`) que decide o gate
+      // de `POST /activate` — nunca uma cópia da regra (`ActivatePatientUseCase`).
+      const detail = result.patient as unknown as {
+        birthDate: string | Date | null;
+        hasConsent: boolean | null;
+        insuranceInformed: string | null;
+        addresses?: unknown[];
+        responsibles?: unknown[];
+        contractedServices?: Array<{ active: boolean }>;
+      };
+      const completeness = computePatientCompleteness({
+        birthDate: detail.birthDate,
+        hasConsent: detail.hasConsent,
+        insuranceInformed: detail.insuranceInformed,
+        activeAddressCount: Array.isArray(detail.addresses) ? detail.addresses.length : 0,
+        activeResponsibleCount: Array.isArray(detail.responsibles) ? detail.responsibles.length : 0,
+        activeContractedServiceCount: Array.isArray(detail.contractedServices)
+          ? detail.contractedServices.filter((s) => s.active).length
+          : 0,
+      });
+
+      res.status(200).json({ success: true, data: { ...projected, completeness } });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientsController:getPatientById' });

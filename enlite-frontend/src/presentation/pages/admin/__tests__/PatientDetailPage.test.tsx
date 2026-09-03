@@ -69,7 +69,7 @@ describe('PatientDetailPage', () => {
     expect(navigate).toHaveBeenCalledWith('/admin/patients');
   });
 
-  it('abas: rede de apoio, serviço contratado (cobertura + localizações editáveis), vagas, encuadre, histórico (Historial), placeholder', () => {
+  it('abas: rede de apoio, serviço contratado (cobertura + localizações editáveis), vagas, encuadre, histórico (Historial)', () => {
     render(<PatientDetailPage />);
     fireEvent.click(screen.getByText("Rede de Apoio"));
     expect(screen.getByTestId('familiares-card')).toBeInTheDocument();
@@ -83,7 +83,52 @@ describe('PatientDetailPage', () => {
     expect(screen.getAllByText(/Enquadre|Encuadre/i).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByText("Histórico"));
     expect(screen.getByTestId('history-stub')).toHaveTextContent(patientDetailFixture.id);
-    fireEvent.click(screen.getByText("Dados Financeiros"));
-    expect(screen.getByText(new RegExp("Dados Financeiros" + ' —'))).toBeInTheDocument();
+  });
+
+  // Spec 014 US-D2 (decisão Gabriel 03/09, item 9): as abas "Dados Financeiros"/"Agendamentos"
+  // saíram do tab bar — só tinham o placeholder genérico atrás, nenhum card real.
+  it('"Dados Financeiros" e "Agendamentos" não aparecem mais no tab bar', () => {
+    render(<PatientDetailPage />);
+    expect(screen.queryByText("Dados Financeiros")).not.toBeInTheDocument();
+    expect(screen.queryByText("Agendamentos")).not.toBeInTheDocument();
+  });
+
+  // Spec 014 US-D5: a ficha ganha um botão "Ver no Kanban".
+  it('botão "Ver no Kanban" navega para /admin/patients/kanban', () => {
+    render(<PatientDetailPage />);
+    fireEvent.click(screen.getByTestId('view-in-kanban-btn'));
+    expect(navigate).toHaveBeenCalledWith('/admin/patients/kanban');
+  });
+
+  // Spec 014 US-D1: clicar num item do checklist troca de aba E pede foco ao card certo.
+  it('clicar num item do checklist de completude troca para a aba certa (Cobertura → Serviço Contratado)', () => {
+    // QA-caça rodada 1, item conserto 3: o checklist só aparece em status ACTIVATABLE —
+    // o beforeEach default é ACTIVE (não ativável), então este teste precisa de um status
+    // que o mostre.
+    detail.patient = { ...(detail.patient as object), status: 'PENDING_ADMISSION' };
+    render(<PatientDetailPage />);
+    // A fixture tem COVERAGE/CONTRACTED_SERVICE faltando — o checklist aparece por default.
+    fireEvent.click(screen.getByText('Cobertura'));
+    // Foco foi para a aba "contractedService" — o card de cobertura fica visível.
+    expect(screen.getByTestId('edit-coverage-btn')).toBeInTheDocument();
+  });
+
+  // QA-caça rodada 1, item conserto 3 (🟡3): o checklist aparecia INCONDICIONALMENTE, mesmo em
+  // paciente ACTIVE (já aprovado) — ruído permanente sem ação possível, o D2 queria matar UI
+  // morta. RED antes do conserto: o checklist aparecia mesmo aqui.
+  it('status:ACTIVE (fora de ACTIVATABLE_STATUSES) → checklist de completude AUSENTE (nada a ativar)', () => {
+    // beforeEach já semeia status:'ACTIVE' — não precisa override.
+    render(<PatientDetailPage />);
+    expect(screen.queryByTestId('completeness-checklist')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('completeness-checklist-ready')).not.toBeInTheDocument();
+    expect(screen.queryByText('Cobertura')).not.toBeInTheDocument();
+  });
+
+  it('status:ADMISSION (ACTIVATABLE) → checklist de completude PRESENTE', () => {
+    detail.patient = { ...(detail.patient as object), status: 'ADMISSION' };
+    render(<PatientDetailPage />);
+    expect(
+      screen.queryByTestId('completeness-checklist') ?? screen.queryByTestId('completeness-checklist-ready'),
+    ).toBeInTheDocument();
   });
 });

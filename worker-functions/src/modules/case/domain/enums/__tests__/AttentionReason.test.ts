@@ -15,6 +15,10 @@ describe('ATTENTION_REASONS', () => {
   it('contains CASE_NUMBER_CONFLICT', () => {
     expect(ATTENTION_REASONS).toContain('CASE_NUMBER_CONFLICT');
   });
+
+  it('contains INCOMPLETE_ADMISSION (spec 014, QA-caça rodada 1, item 1)', () => {
+    expect(ATTENTION_REASONS).toContain('INCOMPLETE_ADMISSION');
+  });
 });
 
 describe('isAttentionReason', () => {
@@ -24,6 +28,10 @@ describe('isAttentionReason', () => {
 
   it('returns true for CASE_NUMBER_CONFLICT', () => {
     expect(isAttentionReason('CASE_NUMBER_CONFLICT')).toBe(true);
+  });
+
+  it('returns true for INCOMPLETE_ADMISSION', () => {
+    expect(isAttentionReason('INCOMPLETE_ADMISSION')).toBe(true);
   });
 
   it('returns false for unknown string', () => {

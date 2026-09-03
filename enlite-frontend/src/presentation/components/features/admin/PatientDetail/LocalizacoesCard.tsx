@@ -14,6 +14,7 @@ import {
 import { Button } from '@presentation/components/atoms/Button';
 import type { PatientAddressDetail } from '@domain/entities/PatientDetail';
 import { PatientAddressDrawer } from './edit/PatientAddressDrawer';
+import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 
 interface LocalizacoesCardProps {
   addresses: PatientAddressDetail[];
@@ -21,14 +22,17 @@ interface LocalizacoesCardProps {
   patientId?: string;
   /** Called after a successful create/edit so the page can refetch the detail. */
   onSaved?: () => void;
+  /** Spec 014 US-D1: pedido de foco do checklist ("falta domicilio") — abre a criação. */
+  focusRequest?: DrawerFocusRequest | null;
 }
 
-export function LocalizacoesCard({ addresses, patientId, onSaved }: LocalizacoesCardProps) {
+export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }: LocalizacoesCardProps) {
   const { t } = useTranslation();
   const rows = addresses ?? [];
   const empty = '—';
   // null = fechado · undefined = criar · objeto = editar a logística daquele endereço
   const [drawer, setDrawer] = useState<PatientAddressDetail | undefined | null>(null);
+  useAutoOpenDrawer(focusRequest, 'ADDRESS', () => setDrawer(undefined));
 
   return (
     <div

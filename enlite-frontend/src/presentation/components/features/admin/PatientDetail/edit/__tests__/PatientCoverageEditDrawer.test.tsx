@@ -18,6 +18,7 @@ function t(key: string, opts?: any): string {
   return key;
 }
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t }) }));
+const te = (k: string): string => t(`admin.patients.editDrawer.${k}`);
 
 const updatePatientSection = vi.fn();
 const listInsuranceProviders = vi.fn();
@@ -169,5 +170,68 @@ describe('PatientCoverageEditDrawer', () => {
     await waitFor(() => expect(listInsuranceProviders).toHaveBeenCalled());
     expect(screen.queryByTestId('pcv-codes-locked')).not.toBeInTheDocument();
     expect(screen.getByTestId('pcv-codes-selected')).toHaveTextContent('OSDE');
+  });
+
+  // ── Spec 014 US-D4 (lex D4 AUTORIZADO): drawer não perde trabalho ──────────────────────
+  describe('confirmação ao fechar com mudanças (US-D4)', () => {
+    it('SEM mudança → Escape fecha direto, sem confirmação', () => {
+      render(<PatientCoverageEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
+    });
+
+    it('COM mudança (nome) → Escape abre confirmação em vez de fechar', () => {
+      render(<PatientCoverageEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
+      fireEvent.change(screen.getByTestId('pcv-name'), { target: { value: 'Nueva OS' } });
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.getByTestId('discard-changes-confirm')).toBeVisible();
+    });
+
+    it('"Seguir editando" mantém o drawer aberto e o valor digitado', () => {
+      render(<PatientCoverageEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
+      fireEvent.change(screen.getByTestId('pcv-name'), { target: { value: 'Nueva OS' } });
+      fireEvent.keyDown(document, { key: 'Escape' });
+      fireEvent.click(screen.getByTestId('discard-changes-keep-editing'));
+      expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
+      expect(screen.getByTestId('pcv-name')).toHaveValue('Nueva OS');
+      expect(screen.getByTestId('patient-coverage-edit-drawer')).toBeInTheDocument();
+    });
+
+    it('"Descartar cambios" chama onClose (via o mesmo handleClose com timeout, como antes)', () => {
+      vi.useFakeTimers();
+      const onClose = vi.fn();
+      render(<PatientCoverageEditDrawer patient={patient} onClose={onClose} onSaved={vi.fn()} />);
+      fireEvent.change(screen.getByTestId('pcv-name'), { target: { value: 'Nueva OS' } });
+      fireEvent.keyDown(document, { key: 'Escape' });
+      fireEvent.click(screen.getByTestId('discard-changes-discard'));
+      expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
+      vi.advanceTimersByTime(300);
+      expect(onClose).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it('backdrop e botão X seguem a MESMA régua (dirty → confirmação)', () => {
+      render(<PatientCoverageEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
+      fireEvent.change(screen.getByTestId('pcv-affiliate'), { target: { value: 'AF-999' } });
+      fireEvent.click(screen.getByTestId('patient-coverage-edit-backdrop'));
+      expect(screen.getByTestId('discard-changes-confirm')).toBeVisible();
+      fireEvent.click(screen.getByTestId('discard-changes-keep-editing'));
+      fireEvent.click(screen.getByLabelText(te('close')));
+      expect(screen.getByTestId('discard-changes-confirm')).toBeVisible();
+    });
+
+    it('SALVAR nunca pergunta, mesmo com mudança pendente', async () => {
+      const onSaved = vi.fn();
+      render(<PatientCoverageEditDrawer patient={patient} onClose={vi.fn()} onSaved={onSaved} />);
+      fireEvent.change(screen.getByTestId('pcv-name'), { target: { value: 'Nueva OS' } });
+      fireEvent.click(screen.getByTestId('pcv-save'));
+      await waitFor(() => expect(onSaved).toHaveBeenCalled());
+      expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
+    });
+
+    it('hint do nº de afiliado aparece no FormField', () => {
+      render(<PatientCoverageEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
+      expect(screen.getByText(te('affiliateHint'))).toBeVisible();
+    });
   });
 });

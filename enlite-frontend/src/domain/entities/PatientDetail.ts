@@ -7,7 +7,8 @@
 
 import type { PatientChatIdMap, PatientChatRoleSpec } from '@domain/value-objects/patientChatRole';
 import type { PatientCoverageSectionPayload } from './PatientCoverage';
-
+import type { PatientCompleteness } from './PatientCompleteness';
+export type { PatientCompleteness, PatientCompletenessCode } from './PatientCompleteness';
 // Spec 012 (bloco B): estado v2 / Historial em `PatientLifecycle.ts`, cobertura em
 // `PatientCoverage.ts`, logística do endereço em `PatientAddress.ts` — este arquivo já
 // batia no teto de 400 linhas do validador.
@@ -20,7 +21,6 @@ export type { PatientKanbanItem, PatientFunnelData } from './PatientLifecycle';
 // vem direto de `PatientContractedService.ts`; reexportar tudo aqui estourava o teto de 400).
 export type { PatientContractedServiceDetail, PatientContractedServiceProvider } from './PatientContractedService';
 import type { PatientContractedServiceDetail } from './PatientContractedService';
-
 export interface PatientResponsibleDetail {
   id: string;
   firstName: string | null;
@@ -170,6 +170,10 @@ export interface PatientDetail {
   deviceTypes: string[];
   needsAttention: boolean;
   attentionReasons: string[];
+  /** Checklist de completude (spec 014 US-D1) — SÓ aqui, nunca na lista/kanban. */
+  completeness: PatientCompleteness;
+  /** Spec 014 (US-D3): `phoneWhatsapp` coincide com o de um responsável. */
+  phoneMatchesResponsible: boolean;
   responsibles: PatientResponsibleDetail[];
   addresses: PatientAddressDetail[];
   professionals: PatientProfessionalDetail[];

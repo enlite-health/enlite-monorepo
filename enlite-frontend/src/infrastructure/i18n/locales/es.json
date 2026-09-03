@@ -107,7 +107,9 @@
     "logout": "Salir",
     "multiSelect": {
       "selectedCount": "{{count}} seleccionados"
-    }
+    },
+    "yes": "Sí",
+    "no": "No"
   },
   "sidebar": {
     "expandMenu": "Expandir menú",
@@ -2206,7 +2208,8 @@
           "cityMin": "La localidad debe tener al menos 2 caracteres",
           "serviceDeviceTypesMin": "Seleccioná al menos un dispositivo de servicio",
           "ageRangeMinInvalid": "La edad mínima debe ser al menos 18 años",
-          "ageRangeInvalid": "La edad máxima debe ser mayor o igual a la mínima"
+          "ageRangeInvalid": "La edad máxima debe ser mayor o igual a la mínima",
+          "addressRequired": "Seleccioná el domicilio donde se presta el servicio"
         }
       },
       "prescreening": {
@@ -2406,6 +2409,10 @@
       "validationBanner": {
         "title": "Faltan datos para crear la vacante:"
       },
+      "sectionCaseAndProfile": "Caso y perfil profesional",
+      "sectionScheduleAndDates": "Meet y fechas",
+      "sectionStatusAndLocation": "Estado y ubicación",
+      "sectionConditions": "Condiciones de la vacante",
       "publishDate": "Fecha de publicación",
       "closingDate": "Fecha de encerramento",
       "status": "Estado",
@@ -2823,7 +2830,8 @@
         "cancel": "Cancelar",
         "successToast": "Paciente activado — {{count}} vacantes borrador creadas",
         "noAddress": "Agregá al menos una localización antes de activar.",
-        "error": "No se pudo activar el paciente"
+        "error": "No se pudo activar el paciente",
+        "notReady": "No se puede activar: falta {{items}}."
       },
       "editDrawer": {
         "generalTitle": "Editar información general",
@@ -2882,7 +2890,15 @@
         "updateServiceError": "No se pudo actualizar el servicio",
         "associateProviderError": "No se pudo asociar el prestador",
         "selectServiceCode": "Servicio",
-        "selectWorker": "Seleccioná un prestador"
+        "selectWorker": "Seleccioná un prestador",
+        "discardChangesTitle": "¿Descartar los cambios?",
+        "discardChangesBody": "Tenés cambios sin guardar en este formulario. Si cerrás ahora, se van a perder.",
+        "discardChangesKeepEditing": "Seguir editando",
+        "discardChangesDiscard": "Descartar cambios",
+        "selectPlaceholder": "Seleccioná…",
+        "affiliateHint": "Número de afiliado tal como figura en la credencial de la cobertura.",
+        "versionHint": "Versión del servicio contratado (si la cobertura la identifica por versión, no por fecha).",
+        "requiredField": "Este campo es obligatorio"
       },
       "kanban": {
         "title": "Pacientes — Kanban",
@@ -2899,7 +2915,12 @@
           "DONE": "Activo"
         },
         "contactOfResponsible": "Contacto del responsable",
-        "responsible": "Responsable"
+        "responsible": "Responsable",
+        "dragHint": "Arrastrá una tarjeta para cambiar el estado del paciente.",
+        "moveErrorCodes": {
+          "PATIENT_STATUS_TRANSITION_NOT_ALLOWED": "Ese cambio de estado no está permitido.",
+          "ON_HOLD_REASON_REQUIRED": "Para poner en espera hace falta indicar el motivo."
+        }
       },
       "countryLabel": "País",
       "countryOptions": {
@@ -2955,7 +2976,7 @@
       "noPatients": "No se encontraron pacientes",
       "searchLabel": "Buscar",
       "searchPlaceholder": "Nombre o documento",
-      "attentionLabel": "Estado",
+      "attentionLabel": "Atención",
       "attentionOptions": {
         "all": "Todos",
         "complete": "Completos",
@@ -2964,7 +2985,8 @@
       "reasonLabel": "Motivo",
       "reasonOptions": {
         "all": "Todos",
-        "MISSING_INFO": "Falta información"
+        "MISSING_INFO": "Falta información",
+        "INCOMPLETE_ADMISSION": "Admisión incompleta"
       },
       "specialtyLabel": "Especialidad",
       "specialtyOptions": {
@@ -3068,7 +3090,14 @@
           "documentNumber": "Número del documento",
           "email": "Email",
           "patientEmail": "Email del paciente",
-          "address": "Dirección:"
+          "address": "Dirección:",
+          "patientWhatsapp": "WhatsApp del paciente",
+          "phoneMatchWarning": "Este número coincide con el del responsable {{name}}.",
+          "movePhoneToResponsible": "Mover al responsable",
+          "keepPhone": "Mantener",
+          "movePhoneConfirmTitle": "Mover el número al responsable",
+          "movePhoneConfirmBody": "Se va a borrar el WhatsApp del paciente (el del responsable no se toca). ¿Confirmás?",
+          "movePhoneSuccess": "Número movido — el WhatsApp del paciente quedó vacío."
         },
         "documentTypes": {
           "CPF": "CPF",
@@ -3307,7 +3336,24 @@
           "neighborhood": "Zona / Barrio",
           "corridor": "Corredor logístico",
           "accessNotes": "Logística y acceso"
-        }
+        },
+        "completeness": {
+          "title": "Para activar falta:",
+          "pendingTitle": "Pendiente para la admisión completa:",
+          "readyTitle": "Listo para activar",
+          "readyBody": "El domicilio y los demás requisitos que bloquean la activación están completos.",
+          "completeTitle": "Admisión completa",
+          "completeBody": "El paciente cumple todos los requisitos de la admisión.",
+          "itemLinkAria": "Ir a completar {{item}}",
+          "items": {
+            "ADDRESS": "Domicilio",
+            "RESPONSIBLE": "Responsable",
+            "COVERAGE": "Cobertura",
+            "CONTRACTED_SERVICE": "Servicio contratado",
+            "CONSENT": "Consentimiento"
+          }
+        },
+        "viewInKanban": "Ver en Kanban"
       },
       "statusOptions": {
         "SOLICITANTE": "Solicitante",

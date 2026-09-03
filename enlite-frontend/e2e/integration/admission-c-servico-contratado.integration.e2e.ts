@@ -123,7 +123,10 @@ test.describe('Spec 013 bloco C — serviço contratado como entidade @integrati
     await openDetail(page, seed.patientId);
 
     // O card mora na aba "Servicio Contratado" — a ficha abre em "Datos Clínicos".
-    await forceClick(page.getByRole('button', { name: 'Servicio Contratado' }));
+    // Spec 014: o checklist de completude (US-D1) pode render um chip "Servicio contratado"
+    // quando o paciente não tem serviço ativo — escopar ao tab bar evita ambiguidade de locator
+    // (achado ao rodar esta suíte em regressão do bloco D).
+    await forceClick(page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Servicio Contratado' }));
 
     // ── #PEND-08 vivo: sem serviço, o card mostra o empty state real, não 5 colunas fantasma ──
     await expect(page.getByTestId('servicos-contratados-card')).toBeVisible();

@@ -189,4 +189,30 @@ describe('ContractedServiceFormRow', () => {
     expect(setBusy).toHaveBeenNthCalledWith(1, true);
     expect(setBusy).toHaveBeenNthCalledWith(2, false);
   });
+
+  // ── Spec 014 US-D4 (lex D4 AUTORIZADO): a linha avisa o pai quando fica dirty ───────────
+  describe('onDirtyChange (US-D4)', () => {
+    it('editar um campo chama onDirtyChange(true)', () => {
+      const onDirtyChange = vi.fn();
+      render(<ContractedServiceFormRow patientId="pat1" service={SERVICE} index={1} onSaved={vi.fn()} onDirtyChange={onDirtyChange} />);
+      onDirtyChange.mockClear();
+      fireEvent.change(screen.getByTestId('svc-version-1'), { target: { value: 'v2' } });
+      expect(onDirtyChange).toHaveBeenCalledWith(true);
+    });
+
+    it('salvar com sucesso volta a chamar onDirtyChange(false) — o form fica limpo de novo', async () => {
+      mockUpdate.mockResolvedValue({ ...SERVICE, version: 'v2' });
+      const onDirtyChange = vi.fn();
+      render(<ContractedServiceFormRow patientId="pat1" service={SERVICE} index={1} onSaved={vi.fn()} onDirtyChange={onDirtyChange} />);
+      fireEvent.change(screen.getByTestId('svc-version-1'), { target: { value: 'v2' } });
+      expect(onDirtyChange).toHaveBeenCalledWith(true);
+      fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
+      await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
+    });
+
+    it('sem onDirtyChange (prop opcional ausente) não quebra ao editar', () => {
+      render(<ContractedServiceFormRow patientId="pat1" service={SERVICE} index={1} onSaved={vi.fn()} />);
+      expect(() => fireEvent.change(screen.getByTestId('svc-version-1'), { target: { value: 'v2' } })).not.toThrow();
+    });
+  });
 });

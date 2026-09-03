@@ -152,7 +152,22 @@ describe('AdminPatientsController.getPatientById', () => {
       await controller.getPatientById(req, res);
 
       expect(res.status).toHaveBeenCalledWith(200);
-      expect((res as any).json).toHaveBeenCalledWith({ success: true, data: patient });
+      // Spec 014 (lex D1.1): `completeness` entra SÓ no detalhe — fixture sem addresses/
+      // contractedServices, então ambos ficam faltando (paciente ADULTO: RESPONSIBLE não exigido).
+      // D255/QA-caça: `blocking` = missing ∩ ACTIVATION_BLOCKING_CODES (só ADDRESS bloqueia o
+      // activate); CONTRACTED_SERVICE fica em missing mas não em blocking.
+      expect((res as any).json).toHaveBeenCalledWith({
+        success: true,
+        data: {
+          ...patient,
+          completeness: {
+            missing: ['ADDRESS', 'CONTRACTED_SERVICE'],
+            blocking: ['ADDRESS'],
+            ready: false,
+            canActivate: false,
+          },
+        },
+      });
     });
 
     it('ponto único (D211.2): sem células (engine não decidiu) devolve as instruções de emergência; células sem `patient_clinical:read` → null + redacted', async () => {
@@ -202,6 +217,85 @@ describe('AdminPatientsController.getPatientById', () => {
       expect(jsonArg.data.responsibles).toHaveLength(1);
       expect(jsonArg.data.addresses).toHaveLength(1);
       expect(jsonArg.data.professionals).toHaveLength(1);
+    });
+  });
+
+  describe('Cenário 1b — completeness (spec 014 US-D1, lex D1.1/D1.2)', () => {
+    it('todos os critérios satisfeitos → ready:true, missing:[]', async () => {
+      const patient = makePatientDetail({
+        addresses: [{ id: 'a1', addressType: 'primary' }],
+        contractedServices: [{ active: true }],
+      });
+      mockFindDetailById.mockResolvedValue(patient);
+
+      const [req, res] = mockReqRes({ id: PATIENT_ID });
+      await controller.getPatientById(req, res);
+
+      expect((res as any).json.mock.calls[0][0].data.completeness).toEqual({
+        missing: [],
+        blocking: [],
+        ready: true,
+        canActivate: true,
+      });
+    });
+
+    it('serviço contratado INATIVO não conta — CONTRACTED_SERVICE continua em missing', async () => {
+      const patient = makePatientDetail({
+        addresses: [{ id: 'a1', addressType: 'primary' }],
+        contractedServices: [{ active: false }],
+      });
+      mockFindDetailById.mockResolvedValue(patient);
+
+      const [req, res] = mockReqRes({ id: PATIENT_ID });
+      await controller.getPatientById(req, res);
+
+      expect((res as any).json.mock.calls[0][0].data.completeness.missing).toContain('CONTRACTED_SERVICE');
+    });
+
+    it('paciente MENOR sem responsável → RESPONSIBLE em missing', async () => {
+      const patient = makePatientDetail({
+        birthDate: new Date(new Date().getFullYear() - 5, 0, 1), // 5 anos
+        addresses: [{ id: 'a1', addressType: 'primary' }],
+        contractedServices: [{ active: true }],
+        responsibles: [],
+      });
+      mockFindDetailById.mockResolvedValue(patient);
+
+      const [req, res] = mockReqRes({ id: PATIENT_ID });
+      await controller.getPatientById(req, res);
+
+      expect((res as any).json.mock.calls[0][0].data.completeness.missing).toContain('RESPONSIBLE');
+    });
+
+    it('sem consentimento (hasConsent false) → CONSENT em missing', async () => {
+      const patient = makePatientDetail({
+        addresses: [{ id: 'a1', addressType: 'primary' }],
+        contractedServices: [{ active: true }],
+        hasConsent: false,
+      } as never);
+      mockFindDetailById.mockResolvedValue(patient);
+
+      const [req, res] = mockReqRes({ id: PATIENT_ID });
+      await controller.getPatientById(req, res);
+
+      const completeness = (res as any).json.mock.calls[0][0].data.completeness;
+      expect(completeness.missing).toEqual(['CONSENT']);
+      // D255: CONSENT não bloqueia o activate — só ADDRESS bloqueia.
+      expect(completeness.blocking).toEqual([]);
+      expect(completeness.canActivate).toBe(true);
+    });
+
+    it('lex D1.2: nenhum código do checklist nomeia conteúdo clínico', async () => {
+      const patient = makePatientDetail();
+      mockFindDetailById.mockResolvedValue(patient);
+
+      const [req, res] = mockReqRes({ id: PATIENT_ID });
+      await controller.getPatientById(req, res);
+
+      const { missing } = (res as any).json.mock.calls[0][0].data.completeness;
+      for (const code of missing) {
+        expect(['ADDRESS', 'RESPONSIBLE', 'COVERAGE', 'CONTRACTED_SERVICE', 'CONSENT']).toContain(code);
+      }
     });
   });
 
@@ -440,6 +534,21 @@ describe('AdminPatientsController.listPatients — caseNumber', () => {
 
       const jsonArg = (res as any).json.mock.calls[0][0];
       expect(jsonArg.data[0].caseNumber).toBeNull();
+    });
+  });
+
+  describe('Cenário 13 — contrato D1.1 (spec 014): `missing` NUNCA na lista, só booleano', () => {
+    it('a linha da lista tem needsAttention (booleano) e attentionReasons (enum), e NÃO tem `completeness`/`missing`', async () => {
+      mockList.mockResolvedValue({ rows: [{ ...baseRow, needsAttention: true, attentionReasons: ['NO_CONTACT_CHANNEL'] }], total: 1 });
+
+      const [req, res] = mockReqResWithQuery({});
+      await controller.listPatients(req, res);
+
+      const row = (res as any).json.mock.calls[0][0].data[0];
+      expect(typeof row.needsAttention).toBe('boolean');
+      expect(Array.isArray(row.attentionReasons)).toBe(true);
+      expect(row).not.toHaveProperty('completeness');
+      expect(row).not.toHaveProperty('missing');
     });
   });
 

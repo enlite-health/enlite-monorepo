@@ -7,6 +7,7 @@ import { derivePatientSla } from '../domain/PatientSla';
 import { isLeadPlaceholderName, maskEmail } from '../domain/LeadContact';
 import { DECRYPT_BATCH } from '@shared/security/decryptBatch';
 import { logger } from '@shared/logging';
+import { computePatientCompleteness, ACTIVATABLE_STATUSES } from '../domain/PatientCompleteness';
 
 // ── Detail types ──────────────────────────────────────────────────────────────
 
@@ -134,6 +135,9 @@ export interface PatientDetailRow {
   deviceTypes: string[];
   needsAttention: boolean;
   attentionReasons: string[];
+  /** Spec 014 (US-D3, lex D3.1): `phoneWhatsapp` coincide (últimos 8 dígitos) com o telefone de
+   * algum responsável — SÓ no detalhe, nunca na lista/kanban. */
+  phoneMatchesResponsible: boolean;
   // Related
   responsibles: PatientResponsibleDetail[];
   addresses: PatientAddressDetail[];
@@ -318,6 +322,22 @@ export class PatientQueryRepository {
                                AS "addressesCount",
         (${effectiveCaseNumber})::int
                                AS "caseNumber",
+        -- QA-caça rodada 1, item conserto 1 (D1.1/D255): insumos de computePatientCompleteness
+        -- para DERIVAR needsAttention/attentionReasons aqui mesmo — nunca missing[] sai desta
+        -- query (só os booleanos). EXISTS/booleano (correlated subquery, UMA query só — sem
+        -- N+1 em código); ADDRESS reusa "addressesCount" acima em vez de duplicar o EXISTS.
+        -- Nenhuma coluna cifrada (KMS) entra aqui: has_consent/birth_date/insurance_informed
+        -- não são PII encriptada.
+        p.birth_date            AS "birthDate",
+        p.has_consent           AS "hasConsent",
+        COALESCE(p.insurance_informed, p.health_insurance_name)
+                               AS "insuranceInformed",
+        EXISTS (SELECT 1 FROM patient_responsibles pr
+                 WHERE pr.patient_id = p.id)
+                               AS "hasActiveResponsible",
+        EXISTS (SELECT 1 FROM patient_contracted_services pcs
+                 WHERE pcs.patient_id = p.id AND pcs.active)
+                               AS "hasActiveContractedService",
         created_at             AS "createdAt",
         updated_at             AS "updatedAt",
         -- SLA (Fase 4): quando o paciente entrou no status ATUAL. MAX(created_at)
@@ -388,6 +408,33 @@ export class PatientQueryRepository {
       const stageEnteredAt =
         row.stageEnteredAt != null ? new Date(row.stageEnteredAt as string) : null;
       const sla = derivePatientSla(row.status, stageEnteredAt, now);
+      const addressesCountNum = parseInt(row.addressesCount as unknown as string, 10) || 0;
+
+      // QA-caça rodada 1, item conserto 1 (D1.1/D255): a MESMA função do checklist decide se
+      // esta linha está incompleta — nunca uma cópia da regra. `missing[]` fica só aqui dentro
+      // (nunca sai no payload da lista/kanban — lex D1.1); o que sai é needsAttention/
+      // attentionReasons, já OR-ados com o legado.
+      const { missing } = computePatientCompleteness({
+        birthDate: (row.birthDate as string | Date | null) ?? null,
+        hasConsent: (row.hasConsent as boolean | null) ?? null,
+        insuranceInformed: (row.insuranceInformed as string | null) ?? null,
+        activeAddressCount: addressesCountNum,
+        activeResponsibleCount: row.hasActiveResponsible === true ? 1 : 0,
+        activeContractedServiceCount: row.hasActiveContractedService === true ? 1 : 0,
+        now,
+      });
+      const isActivatableStatus = (ACTIVATABLE_STATUSES as readonly (string | null)[]).includes(
+        row.status as string | null,
+      );
+      const incompleteAdmission = isActivatableStatus && missing.length > 0;
+      const needsAttentionDerived = row.needsAttention === true || incompleteAdmission;
+      const legacyReasons: string[] = row.attentionReasons ?? [];
+      const attentionReasonsDerived = incompleteAdmission
+        ? legacyReasons.includes('INCOMPLETE_ADMISSION')
+          ? legacyReasons
+          : [...legacyReasons, 'INCOMPLETE_ADMISSION']
+        : legacyReasons;
+
       return {
         id: row.id,
         isTest: row.isTest === true,
@@ -403,9 +450,9 @@ export class PatientQueryRepository {
         sex: row.sex,
         status: row.status,
         admissionStatus: (row.admissionStatus as string | null) ?? 'DONE',
-        needsAttention: row.needsAttention,
-        attentionReasons: row.attentionReasons ?? [],
-        addressesCount: parseInt(row.addressesCount as unknown as string, 10) || 0,
+        needsAttention: needsAttentionDerived,
+        attentionReasons: attentionReasonsDerived,
+        addressesCount: addressesCountNum,
         caseNumber: row.caseNumber != null ? parseInt(row.caseNumber as unknown as string, 10) : null,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,

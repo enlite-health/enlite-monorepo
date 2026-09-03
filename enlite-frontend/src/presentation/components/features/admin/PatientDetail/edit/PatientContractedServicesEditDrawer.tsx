@@ -7,6 +7,8 @@ import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { ContractedServiceFormRow } from './ContractedServiceFormRow';
+import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
+import { DiscardChangesConfirm } from './DiscardChangesConfirm';
 
 interface Props {
   patient: PatientDetail;
@@ -43,6 +45,16 @@ export function PatientContractedServicesEditDrawer({ patient, onClose, onSaved 
   const [addingNew, setAddingNew] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [dirty, setDirty] = useState(false);
+  // Spec 014 (US-D4): este drawer não tem "Guardar" próprio — cada linha (`ContractedServiceFormRow`)
+  // salva sozinha. `unsavedRows` é a UNIÃO do dirty de cada linha renderizada (existentes + "+ Nuevo
+  // servicio" em aberto, chave 'new'); qualquer entrada `true` bloqueia o fechar direto.
+  const [unsavedRows, setUnsavedRows] = useState<Record<string, boolean>>({});
+  const hasUnsavedWork = Object.values(unsavedRows).some(Boolean);
+  // Sem guarda de "já era esse valor": o child só chama isto quando o SEU `isDirty` muda de
+  // valor (useEffect com `[isDirty]` na dependência — ver ContractedServiceFormRow), então uma
+  // chamada redundante nunca acontece por este caminho; um guarda aqui seria branch morto.
+  const setRowDirty = (key: string, rowDirty: boolean): void =>
+    setUnsavedRows((prev) => ({ ...prev, [key]: rowDirty }));
 
   const refetch = async (): Promise<void> => {
     try {
@@ -72,24 +84,35 @@ export function PatientContractedServicesEditDrawer({ patient, onClose, onSaved 
     setTimeout(onClose, CLOSE_MS);
   };
 
+  const { confirmingClose, requestClose, keepEditing, confirmDiscard } = useConfirmDiscardClose({
+    isDirty: hasUnsavedWork,
+    onConfirmedClose: handleClose,
+  });
+
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') requestClose(); };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [requestClose]);
 
   const handleChildSaved = async (): Promise<void> => {
     setAddingNew(false);
+    setUnsavedRows((prev) => { const next = { ...prev }; delete next.new; return next; });
     setDirty(true);
     await refetch();
   };
 
+  const handleCancelNew = (): void => {
+    setAddingNew(false);
+    setUnsavedRows((prev) => { const next = { ...prev }; delete next.new; return next; });
+  };
+
   return (
     <>
+      {confirmingClose && <DiscardChangesConfirm onKeepEditing={keepEditing} onDiscard={confirmDiscard} />}
       <div
         className={`fixed inset-0 bg-black/50 z-40 transition-opacity duration-300 ${show ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-        onClick={handleClose}
+        onClick={requestClose}
         data-testid="patient-contracted-services-edit-backdrop"
       />
       <div
@@ -101,7 +124,7 @@ export function PatientContractedServicesEditDrawer({ patient, onClose, onSaved 
       >
         <div className="flex items-center justify-between px-8 py-5 border-b border-slate-100 shrink-0">
           <Heading level={3} weight="semibold" color="primary">{te('contractedServicesTitle')}</Heading>
-          <button type="button" onClick={handleClose} aria-label={te('close')} className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded">
+          <button type="button" onClick={requestClose} aria-label={te('close')} className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -122,6 +145,7 @@ export function PatientContractedServicesEditDrawer({ patient, onClose, onSaved 
               service={svc}
               index={i + 1}
               onSaved={handleChildSaved}
+              onDirtyChange={(d) => setRowDirty(svc.id, d)}
             />
           ))}
 
@@ -131,7 +155,8 @@ export function PatientContractedServicesEditDrawer({ patient, onClose, onSaved 
               service={null}
               index={services.length + 1}
               onSaved={handleChildSaved}
-              onCancelNew={() => setAddingNew(false)}
+              onCancelNew={handleCancelNew}
+              onDirtyChange={(d) => setRowDirty('new', d)}
             />
           )}
 

@@ -199,6 +199,21 @@ export default defineConfig({
         '**/src/presentation/pages/admin/PatientDetailPage.tsx': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
+        // Spec 014 bloco D (03/09): checklist de completude (US-D1), placeholder real dos cards
+        // vazios (US-D2), aviso de telefone coincidente (US-D3), navegação Kanban↔ficha (US-D5).
+        // Medidos 100 nos 4 eixos na suíte inteira ao serem criados/tocados neste bloco.
+        '**/src/domain/entities/PatientCompleteness.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/hooks/admin/useAutoOpenDrawer.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/components/features/admin/PatientDetail/{CompletenessChecklist,PlaceholderCard,SupervisaoCard,RelatoriosAtendimentosCard,EnquadreTerapeuticoCard,ProjetoTerapeuticoCard,ActivatePatientButton,PatientProfileTabs}.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/pages/admin/PatientKanbanPage.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
         '**/src/presentation/components/features/admin/PatientDetail/edit/ClinicalTextareaField.tsx': {
           statements: 100,
           branches: 100,

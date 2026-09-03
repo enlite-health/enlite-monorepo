@@ -93,6 +93,23 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // Spec 014 (bloco D, US-D1/lex D1.1/D1.2): critério ÚNICO de "pronto para ativar",
+    // lido tanto pelo checklist da ficha quanto pelo gate de POST /activate — regressão
+    // aqui faz os dois divergirem em silêncio.
+    'src/modules/case/domain/PatientCompleteness.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Spec 014 (US-D3, lex D3.1, MEDIDO 03/09 em PRODUÇÃO: 5/37 pacientes com telefone tinham o
+    // do responsável no campo próprio) — decide se a ficha mostra o aviso de re-atribuição.
+    'src/modules/case/domain/PhoneMatch.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     'src/modules/case/infrastructure/{PatientClinicalRepository,PatientDetailQueryHelper,PatientQueryRepository}.ts': {
       statements: 100,
       branches: 100,

@@ -12,6 +12,8 @@ import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import { ServiceAreaMap } from '@presentation/components/molecules/ServiceAreaMap';
+import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
+import { DiscardChangesConfirm } from './DiscardChangesConfirm';
 
 interface Props {
   patientId: string;
@@ -57,12 +59,24 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
 
   const handleClose = (): void => { setShow(false); setTimeout(onClose, CLOSE_MS); };
 
+  // Spec 014 (US-D4, lex D4 AUTORIZADO): editando, só os 3 campos de logística contam
+  // (o endereço em si é somente-leitura aqui); criando, qualquer campo preenchido conta.
+  const isDirty = editing
+    ? neighborhood !== (address.neighborhood ?? '') ||
+      corridor !== (address.logisticsCorridor ?? '') ||
+      access !== (address.accessNotes ?? '')
+    : formatted !== '' || raw !== '' || type !== 'secondary' || neighborhood !== '' || corridor !== '' || access !== '';
+
+  const { confirmingClose, requestClose, keepEditing, confirmDiscard } = useConfirmDiscardClose({
+    isDirty,
+    onConfirmedClose: handleClose,
+  });
+
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') requestClose(); };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [requestClose]);
 
   const typeOptions: SelectOption[] = ADDRESS_TYPES.map((v) => ({ value: v, label: ta(`type_${v}`) }));
   const nz = (v: string): string | null => { const s = v.trim(); return s ? s : null; };
@@ -111,9 +125,10 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
 
   return (
     <>
+      {confirmingClose && <DiscardChangesConfirm onKeepEditing={keepEditing} onDiscard={confirmDiscard} />}
       <div
         className={`fixed inset-0 bg-black/50 z-40 transition-opacity duration-300 ${show ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-        onClick={handleClose}
+        onClick={requestClose}
         data-testid="patient-address-backdrop"
       />
       <div
@@ -129,7 +144,7 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
             <Button type="button" variant="primary" size="sm" onClick={onSubmit} isLoading={busy} className="w-32" data-testid="pad-save">
               {te('save')}
             </Button>
-            <button type="button" onClick={handleClose} aria-label={te('close')} className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded">
+            <button type="button" onClick={requestClose} aria-label={te('close')} className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded">
               <X className="w-5 h-5" />
             </button>
           </div>

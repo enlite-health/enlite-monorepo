@@ -2,6 +2,10 @@ import * as functions from 'firebase-functions';
 import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { buildInsertQuery, buildInsertParams } from '@modules/matching';
+import {
+  computePatientCompleteness,
+  type PatientCompletenessCode,
+} from '../domain/PatientCompleteness';
 
 /**
  * Thrown when the patient does not exist (or was soft-deleted). The controller
@@ -15,17 +19,39 @@ export class PatientNotFoundError extends Error {
 }
 
 /**
+ * Thrown when the patient is not ready to activate — spec 014 US-D1/SUP-D1, lex D1.1/D1.2.
+ * `missing` is computed by the SAME function (`computePatientCompleteness`) that feeds the
+ * checklist on `GET /:id` — the gate here and the codes shown in the ficha never drift apart
+ * because both read from one place. The controller maps this to 422 with `{code:
+ * 'PATIENT_NOT_READY', details: { missing } }`.
+ */
+export class PatientNotReadyError extends Error {
+  readonly missing: PatientCompletenessCode[];
+
+  constructor(patientId: string, missing: PatientCompletenessCode[]) {
+    super(`No se puede activar el paciente: falta ${missing.join(', ')}. (patientId=${patientId})`);
+    this.name = 'PatientNotReadyError';
+    this.missing = missing;
+  }
+}
+
+/**
  * Thrown when the patient has zero non-archived addresses. Activation generates
  * one draft vacancy PER location — with no location there is nothing to create,
  * so we refuse (422) instead of moving the patient to ACTIVE with no vacancy.
+ *
+ * A `PatientNotReadyError` specialised to `missing: ['ADDRESS']` — kept as its own named class
+ * (rather than folded into the generic one) because it predates spec 014 and existing callers
+ * (`AdminPatientsController`, its tests) already narrow on this exact type; the message text is
+ * also unchanged from before this spec. `instanceof PatientNotReadyError` still holds for it.
  */
-export class NoActiveAddressError extends Error {
+export class NoActiveAddressError extends PatientNotReadyError {
   constructor(patientId: string) {
-    super(
-      `No se puede activar el paciente sin ninguna localización (dirección activa). ` +
-        `Agregá al menos una dirección antes de activar. (patientId=${patientId})`,
-    );
+    super(patientId, ['ADDRESS']);
     this.name = 'NoActiveAddressError';
+    this.message =
+      `No se puede activar el paciente sin ninguna localización (dirección activa). ` +
+      `Agregá al menos una dirección antes de activar. (patientId=${patientId})`;
   }
 }
 
@@ -78,6 +104,16 @@ export interface ActivatePatientResult {
  * only skips on is_test — NOT on is_draft. These are incomplete rascunhos
  * ('A convenir', no requirements) that must be completed by hand before they
  * recruit anyone, so firing matchmaking here would be wrong.
+ *
+ * GATE de POST /activate (spec 014, decisão do Gabriel 03/09): bloqueia SÓ por ADDRESS — os
+ * demais códigos de `computePatientCompleteness` (RESPONSIBLE/COVERAGE/CONTRACTED_SERVICE/
+ * CONSENT) são checklist informativo (`GET /:id` → `completeness.missing[]`), não bloqueio.
+ * Medido na réplica de produção (só contagens): 370 pacientes vivos, apenas 23 com
+ * `has_consent=true` — o campo só é gravado pelo espelho do ClickUp e pelo formulário público,
+ * nunca pelo painel; dos 6 candidatos a ativar no dia da medição, 4 estavam sem consentimento.
+ * Bloquear por CONSENT/RESPONSIBLE/COVERAGE travaria a operação quase inteira hoje. Isto
+ * restaura o comportamento de antes do bloco D (um agente anterior tinha ampliado o gate para
+ * os 4 códigos não-clínicos; revertido aqui). Reversível a qualquer momento pelo Gabriel.
  */
 export class ActivatePatientUseCase {
   private readonly pool: Pool;
@@ -93,8 +129,16 @@ export class ActivatePatientUseCase {
     try {
       await client.query('BEGIN');
 
-      const patientRes = await client.query<{ id: string; status: string; case_number: number | null }>(
-        `SELECT id, status, case_number
+      const patientRes = await client.query<{
+        id: string;
+        status: string;
+        case_number: number | null;
+        birth_date: string | Date | null;
+        has_consent: boolean | null;
+        insurance_informed: string | null;
+      }>(
+        `SELECT id, status, case_number, birth_date, has_consent,
+                COALESCE(insurance_informed, health_insurance_name) AS insurance_informed
            FROM patients
           WHERE id = $1 AND deleted_at IS NULL
           FOR UPDATE`,
@@ -106,7 +150,7 @@ export class ActivatePatientUseCase {
         throw new PatientNotFoundError(patientId);
       }
 
-      const { status, case_number } = patientRes.rows[0];
+      const { status, case_number, birth_date, has_consent, insurance_informed } = patientRes.rows[0];
 
       // Idempotent: already ACTIVE → do not create a second set of vacancies.
       if (status === 'ACTIVE') {
@@ -123,11 +167,6 @@ export class ActivatePatientUseCase {
         [patientId],
       );
 
-      if ((addrRes.rowCount ?? 0) === 0) {
-        // Throw — the single catch below rolls back once (avoids double ROLLBACK).
-        throw new NoActiveAddressError(patientId);
-      }
-
       // Spec 013 bloco C: services declared for this patient, ACTIVE only. Zero rows here is
       // the case for every patient today (the entity nasceu vazia) — the loop below falls back
       // to one draft per address, exactly like before this feature.
@@ -138,6 +177,40 @@ export class ActivatePatientUseCase {
           ORDER BY created_at ASC`,
         [patientId],
       );
+
+      const respRes = await client.query<{ count: number }>(
+        `SELECT COUNT(*)::int AS count FROM patient_responsibles WHERE patient_id = $1`,
+        [patientId],
+      );
+
+      // Spec 014 (US-D1/SUP-D1, lex D1.1/D1.2): `computePatientCompleteness` continua a fonte
+      // ÚNICA do checklist — `missing[]`/`ready` no `GET /:id` cobre os 5 códigos
+      // (ADDRESS/RESPONSIBLE/COVERAGE/CONTRACTED_SERVICE/CONSENT), informativo. `blocking` já
+      // vem filtrado por ACTIVATION_BLOCKING_CODES (D255) — o gate abaixo LÊ blocking, nunca
+      // reimplementa "quais códigos bloqueiam" comparando `missing` a um código fixo (QA-caça
+      // rodada 1, defeito 2: a cópia local só bloqueava ADDRESS por coincidência).
+      const { blocking } = computePatientCompleteness({
+        birthDate: birth_date,
+        hasConsent: has_consent,
+        insuranceInformed: insurance_informed,
+        activeAddressCount: addrRes.rowCount ?? 0,
+        activeResponsibleCount: respRes.rows[0]?.count ?? 0,
+        activeContractedServiceCount: serviceRes.rowCount ?? 0,
+      });
+
+      // GATE do POST /activate = SÓ ADDRESS (decisão do Gabriel, 03/09, revertendo o que o
+      // agente anterior do bloco D tinha feito — bloquear também por RESPONSIBLE/COVERAGE/
+      // CONSENT). Medido na réplica de produção (só contagens, D165): 370 pacientes vivos, 23
+      // com has_consent=true — `has_consent` hoje só é gravado pelo espelho do ClickUp e pelo
+      // formulário público, NUNCA pelo painel. Dos 6 candidatos a ativar no dia da medição, 4
+      // estavam sem consentimento: bloquear por CONSENT/RESPONSIBLE/COVERAGE travaria a
+      // operação quase inteira. O gate volta ao comportamento de antes do bloco D (só
+      // ADDRESS); os demais códigos ficam no checklist como pendência informativa, não como
+      // bloqueio — reversível: é só ACTIVATION_BLOCKING_CODES ganhar mais códigos (PatientCompleteness.ts).
+      if (blocking.length > 0) {
+        // Throw — the single catch below rolls back once (avoids double ROLLBACK).
+        throw new NoActiveAddressError(patientId);
+      }
 
       const pairs: Array<{ addressId: string; serviceId: string | null; providersNeeded: number | null }> =
         serviceRes.rowCount && serviceRes.rowCount > 0
@@ -226,7 +299,7 @@ export class ActivatePatientUseCase {
       } catch {
         /* transaction already closed */
       }
-      if (!(err instanceof PatientNotFoundError) && !(err instanceof NoActiveAddressError)) {
+      if (!(err instanceof PatientNotFoundError) && !(err instanceof PatientNotReadyError)) {
         functions.logger.error('activate_patient.failed', {
           patientId,
           error: err instanceof Error ? err.message : String(err),
