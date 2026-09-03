@@ -24,6 +24,8 @@ import { EnquadreTerapeuticoCard } from '@presentation/components/features/admin
 import { PatientVacanciesCard } from '@presentation/components/features/admin/PatientDetail/PatientVacanciesCard';
 import { ActivatePatientButton } from '@presentation/components/features/admin/PatientDetail/ActivatePatientButton';
 import { PatientChatIdsCard } from '@presentation/components/features/admin/PatientDetail/PatientChatIdsCard';
+import { PatientStatusControl } from '@presentation/components/features/admin/PatientDetail/PatientStatusControl';
+import { PatientStatusHistoryCard } from '@presentation/components/features/admin/PatientDetail/PatientStatusHistoryCard';
 
 const COUNTRY_FLAG: Record<string, string> = {
   AR: '🇦🇷',
@@ -78,6 +80,8 @@ export default function PatientDetailPage() {
           </Heading>
         </div>
         <div className="flex items-center gap-3 shrink-0 ml-4">
+          {/* Spec 012 US-B7: estado clínico v2 (só depois da admissão); antes, o botão Activar. */}
+          <PatientStatusControl patient={patient} onSaved={refetch} />
           <ActivatePatientButton
             patientId={patient.id}
             status={patient.status}
@@ -107,14 +111,14 @@ export default function PatientDetailPage() {
           <>
             <DiagnosticoCard patient={patient} onSaved={refetch} />
             <ProjetoTerapeuticoCard />
-            <EquipeTratanteCard professionals={patient.professionals ?? []} />
+            <EquipeTratanteCard professionals={patient.professionals} />
             <SupervisaoCard />
             <RelatoriosAtendimentosCard />
           </>
         )}
         {activeTab === 'supportNetwork' && (
           <>
-            <FamiliaresCard responsibles={patient.responsibles ?? []} patientId={patient.id} onSaved={refetch} />
+            <FamiliaresCard responsibles={patient.responsibles} patientId={patient.id} onSaved={refetch} />
             {/* Chat IDs dos grupos do Periskope — a chave de join da auditoria
                 de informes (Candela). Fica na rede de apoio porque é onde a
                 família e a equipe de prestadores já são tratadas. */}
@@ -123,14 +127,14 @@ export default function PatientDetailPage() {
         )}
         {activeTab === 'contractedService' && (
           <>
-            <CoberturaMedicaCard patient={patient} />
-            <LocalizacoesCard addresses={patient.addresses ?? []} />
+            <CoberturaMedicaCard patient={patient} onSaved={refetch} />
+            <LocalizacoesCard addresses={patient.addresses} patientId={patient.id} onSaved={refetch} />
             <ServicosContratadosCard patient={patient} onSaved={refetch} />
           </>
         )}
         {activeTab === 'vacancies' && (
           <PatientVacanciesCard
-            patientId={id ?? ''}
+            patientId={patient.id}
             vacancies={vacancies}
             isLoading={vacanciesLoading}
             error={vacanciesError}
@@ -142,11 +146,15 @@ export default function PatientDetailPage() {
             <EnquadreTerapeuticoCard />
           </>
         )}
+        {activeTab === 'history' && (
+          <PatientStatusHistoryCard patientId={patient.id} />
+        )}
         {activeTab !== 'clinicalData'
           && activeTab !== 'supportNetwork'
           && activeTab !== 'contractedService'
           && activeTab !== 'vacancies'
-          && activeTab !== 'matching' && (
+          && activeTab !== 'matching'
+          && activeTab !== 'history' && (
           <PlaceholderTab label={t(`admin.patients.detail.tabs.${activeTab}`)} />
         )}
       </div>

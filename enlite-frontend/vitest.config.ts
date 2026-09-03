@@ -151,6 +151,31 @@ export default defineConfig({
         '**/src/presentation/components/features/admin/PatientDetail/edit/{PatientGeneralEditDrawer,PatientSupportNetworkEditDrawer}.tsx': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
+        // Spec 012 bloco B (03/09): estado v2 (controle + Historial), cobertura por catálogo,
+        // domicílio na ficha, dispositivo/parentesco por enum, Kanban por admission_status.
+        // Nascem/ficam em 100% medidos na suíte inteira — entram no mesmo PR.
+        '**/src/domain/entities/patientEnums.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/hooks/admin/usePatientKanban.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/components/features/admin/PatientDetail/{PatientStatusControl,PatientStatusHistoryCard,CoberturaMedicaCard,FamiliaresCard,PatientGeneralInfoCard}.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/components/features/admin/PatientDetail/edit/{PatientCoverageEditDrawer,PatientAddressDrawer,PatientClinicalEditDrawer}.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/components/features/admin/PatientCreateModal/PatientCreateModal.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        // Mediram 100 nos quatro eixos na suíte inteira (03/09, modo CI) ao serem tocados pelo bloco B.
+        '**/src/infrastructure/http/AdminPatientsApiService.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/pages/admin/PatientDetailPage.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
         '**/src/presentation/components/features/admin/PatientDetail/edit/ClinicalTextareaField.tsx': {
           statements: 100,
           branches: 100,

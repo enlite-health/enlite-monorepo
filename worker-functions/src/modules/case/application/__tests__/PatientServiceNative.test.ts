@@ -209,24 +209,25 @@ describe('PatientService — native write path (migration 251)', () => {
     const seen: Array<{ sql: string; params?: unknown[] }> = [];
     _queryImpl = async (sql: string, params?: unknown[]) => {
       seen.push({ sql, params });
-      if (sql.startsWith('UPDATE patients SET status')) {
-        return { rowCount: 1, rows: [{ id: 'nat-004' }] };
-      }
-      return undefined;
+      // v2 (spec 012): o serviço lê o status atual (FOR UPDATE) antes de escrever.
+      if (sql.startsWith('SELECT status FROM patients')) return { rowCount: 1, rows: [{ status: 'ADMISSION' }] };
+      if (/^UPDATE patients/.test(sql)) return { rowCount: 1, rows: [{ id: 'nat-004' }] };
+      return { rows: [], rowCount: 0 };
     };
 
     const result = await service.moveStatus('nat-004', 'PENDING_ADMISSION');
 
     expect(result).toEqual({ id: 'nat-004', status: 'PENDING_ADMISSION' });
-    const update = seen.find(s => s.sql.startsWith('UPDATE patients SET status'));
+    const update = seen.find(s => /^UPDATE patients/.test(s.sql));
     expect(update).toBeDefined();
     expect(update!.sql).not.toContain('origin');
-    expect(update!.params).toEqual(['nat-004', 'PENDING_ADMISSION']);
+    // v2: motivo/nota vão NULL fora de ON_HOLD
+    expect(update!.params).toEqual(['nat-004', 'PENDING_ADMISSION', null, null]);
   });
 
   it('b2. moveStatus throws Patient not found when no row matches', async () => {
     _queryImpl = async (sql: string) =>
-      sql.startsWith('UPDATE patients SET status') ? { rowCount: 0, rows: [] } : undefined;
+      sql.startsWith('SELECT status FROM patients') ? { rowCount: 0, rows: [] } : { rows: [], rowCount: 0 };
 
     await expect(service.moveStatus('missing', 'ACTIVE')).rejects.toThrow(/not found/i);
   });

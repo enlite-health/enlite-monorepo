@@ -23,10 +23,6 @@ interface FamiliaresCardProps {
   onSaved?: () => void;
 }
 
-function formatRelationship(value: string | null, fallback: string): string {
-  if (!value) return fallback;
-  return value;
-}
 
 export function FamiliaresCard({ responsibles, patientId, onSaved }: FamiliaresCardProps) {
   const { t } = useTranslation();
@@ -93,7 +89,8 @@ export function FamiliaresCard({ responsibles, patientId, onSaved }: FamiliaresC
                 : null;
               return (
                 <TableRow key={r.id} className="align-top">
-                  <TableCell>{formatRelationship(r.relationship, empty)}</TableCell>
+                  {/* Spec 012 US-B5: o parentesco é ENUM (139) — traduzido, com fallback no cru. */}
+                  <TableCell>{r.relationship ? t(`admin.patients.detail.relationshipOptions.${r.relationship}`, r.relationship) : empty}</TableCell>
                   <TableCell unwrapped>
                     <div className="flex flex-col">
                       <Text as="span" size="sm">{docTypeLabel ?? empty}</Text>

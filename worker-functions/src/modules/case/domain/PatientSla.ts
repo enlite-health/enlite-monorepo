@@ -3,7 +3,7 @@
  *
  * Cada estágio ativo do funil tem um teto de horas aceitável; passar disso é
  * um `slaBreached` (a recrutadora/admissão precisa agir). Estágios terminais
- * (ACTIVE já admitido; SUSPENDED/DISCONTINUED/DISCHARGED encerrados) NÃO têm
+ * (ACTIVE e os demais estados clínicos v2: ON_HOLD/SEARCHING/REPLACEMENT/SUSPENDED/DISCHARGED) NÃO têm
  * SLA — nada a cobrar. Derivação pura e determinística → testável sem banco.
  *
  * `stageEnteredAt` vem do patient_status_history (MAX(created_at) para o
@@ -19,8 +19,12 @@ export const PATIENT_SLA_THRESHOLDS_HOURS: Readonly<Record<string, number | null
   ADMISSION: 48,
   PENDING_ADMISSION: 72,
   ACTIVE: null,
+  // PatientStatus v2 (spec 012): estados clínicos não têm SLA de admissão. SUP-B7: sem
+  // derivação por horas (decisão 3) — ON_HOLD/SEARCHING/REPLACEMENT NÃO viram cobrança aqui.
+  ON_HOLD: null,
+  SEARCHING: null,
+  REPLACEMENT: null,
   SUSPENDED: null,
-  DISCONTINUED: null,
   DISCHARGED: null,
 };
 

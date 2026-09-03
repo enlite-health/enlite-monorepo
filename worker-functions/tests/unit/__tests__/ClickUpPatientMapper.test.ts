@@ -655,7 +655,7 @@ describe('ClickUpPatientMapper', () => {
     expect(result!.status).toBe('ADMISSION');
   });
 
-  it('(v3) ClickUp status "baja" → patient status DISCONTINUED', () => {
+  it('(v3) ClickUp status "baja" → patient status DISCHARGED (PatientStatus v2, spec 012)', () => {
     const task = makeTask('task-v3', 'Torres, María', 'baja', [
       { name: 'Nombre de Paciente', value: 'María' },
       { name: 'Apellido del Paciente', value: 'Torres' },
@@ -663,7 +663,7 @@ describe('ClickUpPatientMapper', () => {
 
     const result = mapper.map(task);
     expect(result).not.toBeNull();
-    expect(result!.status).toBe('DISCONTINUED');
+    expect(result!.status).toBe('DISCHARGED');
   });
 
   it('(v4) unknown ClickUp status → patient status null (no crash)', () => {

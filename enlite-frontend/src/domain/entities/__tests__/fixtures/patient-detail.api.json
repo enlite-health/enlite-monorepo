@@ -1,5 +1,5 @@
 {
-  "id": "66c44d5a-9bf3-4c89-9362-ec4ede6b8919",
+  "id": "84e558de-cce1-4b29-bd97-86de1812a295",
   "clickupTaskId": "E2E-CONTRACT-FIXTURE-A2",
   "firstName": "Contrato",
   "lastName": "Fixture",
@@ -15,7 +15,7 @@
   "clinicalSpecialty": null,
   "clinicalSegments": null,
   "serviceType": null,
-  "deviceType": null,
+  "deviceType": "HOME",
   "additionalComments": null,
   "additionalCommentsUpdatedAt": null,
   "additionalCommentsUpdatedBy": null,
@@ -34,19 +34,30 @@
   "chatIds": {},
   "familyChatId": null,
   "providersChatId": null,
-  "status": "ADMISSION",
+  "status": "ON_HOLD",
+  "admissionStatus": "DONE",
+  "onHoldReason": "INSURER",
+  "onHoldNote": "nota de fixture (sintética)",
+  "serviceStartDate": "2026-09-01T00:00:00.000Z",
+  "insuranceVerifiedCodes": [
+    "OSDE"
+  ],
+  "deviceTypes": [
+    "HOME",
+    "SCHOOL"
+  ],
   "needsAttention": false,
   "attentionReasons": [],
-  "lastCaseNumber": null,
+  "lastCaseNumber": 990777,
   "responsibles": [
     {
-      "id": "33ece701-71e7-4270-8d53-c3b0850753cf",
-      "firstName": "Resp",
+      "id": "e4340ac5-255b-455e-9f44-ac90998b20b4",
+      "firstName": "Marta",
       "lastName": "Fixture",
       "relationship": "PARENT",
-      "phone": "+5491100000001",
-      "email": "resp.fixture@example.test",
-      "documentNumber": "11222333",
+      "phone": "+5491100000021",
+      "email": "",
+      "documentNumber": "22999999",
       "documentType": "DNI",
       "isPrimary": true,
       "displayOrder": 1,
@@ -55,15 +66,19 @@
   ],
   "addresses": [
     {
-      "id": "cf680305-a6d6-48f8-8d21-5cd576de068a",
+      "id": "438826e8-a53b-4874-ad8e-b74cc41964e9",
       "addressType": "primary",
       "addressFormatted": "Av. Fixture 123, CABA, AR",
       "addressRaw": "Av. Fixture 123",
-      "complement": "Piso 2",
+      "complement": null,
       "displayOrder": 1,
       "lat": -34.6,
-      "lng": -58.38,
+      "lng": -58.4,
       "isPrimary": true,
+      "neighborhood": "Palermo",
+      "logisticsCorridor": "Norte",
+      "accessNotes": "Timbre 2B (fixture)",
+      "country": "AR",
       "availability": {
         "totalCoveredHours": 0,
         "maxHours": 168,
@@ -147,14 +162,14 @@
   ],
   "professionals": [
     {
-      "id": "87990781-a578-4337-a0f5-1927c837d31b",
+      "id": "46e3ffb9-445c-40bb-9af1-9d672007883a",
       "name": "Dra. Fixture Tratante",
-      "phone": "+5491100000002",
-      "email": "prof.fixture@example.test",
+      "phone": "+5491100000022",
+      "email": "",
       "displayOrder": 1,
       "isTeam": false
     }
   ],
-  "createdAt": "2026-09-03T10:31:34.485Z",
-  "updatedAt": "2026-09-03T10:31:34.485Z"
+  "createdAt": "2026-09-03T12:26:10.088Z",
+  "updatedAt": "2026-09-03T12:26:11.118Z"
 }

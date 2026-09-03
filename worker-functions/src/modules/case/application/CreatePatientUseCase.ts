@@ -10,6 +10,8 @@ import type { Profession } from '../../worker/domain/enums/Profession';
 export interface CreatePatientInput {
   firstName: string;
   lastName?: string;
+  /** US-B6 (spec 012). */
+  birthDate?: Date;
   phoneWhatsapp?: string;
   contactEmail?: string;
   documentType?: DocumentType;
@@ -59,6 +61,7 @@ export class CreatePatientUseCase {
     const nativeInput: CreateNativePatientInput = {
       firstName: input.firstName,
       lastName: input.lastName,
+      birthDate: input.birthDate ?? null,
       // Deliberate edge default: the create modal has no country selector yet
       // (task 86ajy085e) even though the panel FILTERS by AR|BR — a BR patient
       // created here lands as AR and vanishes from BR-filtered views. When the

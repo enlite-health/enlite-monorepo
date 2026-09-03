@@ -14,6 +14,7 @@ import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon'
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
 import { ClinicalTextareaField } from './ClinicalTextareaField';
+import { DEVICE_TYPE_CODES } from '@domain/entities/patientEnums';
 
 interface Props {
   patient: PatientDetail;
@@ -22,10 +23,8 @@ interface Props {
 }
 
 const DEPENDENCY_LEVELS = ['SEVERE', 'VERY_SEVERE', 'MODERATE', 'MILD'] as const;
-const CLINICAL_SPECIALTIES = [
-  'INTELLECTUAL_DISABILITY', 'NEUROLOGICAL', 'MOTOR_LIMITATIONS', 'ASD', 'PSYCHIATRIC',
-  'SOCIAL_VULNERABILITY', 'GERIATRIC', 'SPECIFIC_PATHOLOGY', 'CUSTOM',
-] as const;
+// US-B8 (spec 012, `2026-08-26a#DEC-09`): "Especialidad" SAIU do drawer — o segmento vira máscara
+// do projeto terapêutico, derivado do CID; o segmento continua chegando pelo espelho do ClickUp.
 const SERVICE_TYPES = ['AT', 'CAREGIVER', 'NURSE', 'KINESIOLOGIST', 'PSYCHOLOGIST'] as const;
 const CLOSE_MS = 300;
 /** Teto das observações gerais (REQ-01). O banco é TEXT; o teto é da tela, para o contador ter referência. */
@@ -34,24 +33,26 @@ export const GENERAL_NOTES_MAX = 4000;
 // tri-state boolean flag as select: '' (unset/null) | 'true' | 'false'
 const BOOL_VALUES = ['', 'true', 'false'] as const;
 
+// Todo campo nasce preenchido em `defaultValues` ('' / []) — o tipo diz isso e o submit deixa de
+// carregar fallbacks para um `undefined` que nunca chega (mesmo padrão do bloco A, spec 011).
 const schema = z.object({
-  diagnosis: z.string().optional(),
-  additionalComments: z.string().max(GENERAL_NOTES_MAX).optional(),
-  emergencyInstructions: z.string().max(GENERAL_NOTES_MAX).optional(),
-  deviceType: z.string().optional(),
-  dependencyLevel: z.string().optional(),
-  clinicalSpecialty: z.string().optional(),
-  serviceType: z.array(z.string()).optional(),
-  hasJudicialProtection: z.string().optional(),
-  hasCud: z.string().optional(),
-  hasConsent: z.string().optional(),
+  diagnosis: z.string(),
+  additionalComments: z.string().max(GENERAL_NOTES_MAX),
+  emergencyInstructions: z.string().max(GENERAL_NOTES_MAX),
+  // US-B4: códigos de `device_types` (multi) — texto livre dava 23503 (FK desde a 308).
+  deviceTypes: z.array(z.string()),
+  dependencyLevel: z.string(),
+  serviceType: z.array(z.string()),
+  hasJudicialProtection: z.string(),
+  hasCud: z.string(),
+  hasConsent: z.string(),
 });
 type FormValues = z.infer<typeof schema>;
 
 function boolToStr(v: boolean | null): string {
   return v === null || v === undefined ? '' : v ? 'true' : 'false';
 }
-function strToBool(v: string | undefined): boolean | null {
+function strToBool(v: string): boolean | null {
   if (v === 'true') return true;
   if (v === 'false') return false;
   return null;
@@ -78,9 +79,8 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
       diagnosis: patient.diagnosis ?? '',
       additionalComments: patient.additionalComments ?? '',
       emergencyInstructions: patient.emergencyInstructions ?? '',
-      deviceType: patient.deviceType ?? '',
+      deviceTypes: patient.deviceTypes ?? [],
       dependencyLevel: patient.dependencyLevel ?? '',
-      clinicalSpecialty: patient.clinicalSpecialty ?? '',
       serviceType: patient.serviceType ?? [],
       hasJudicialProtection: boolToStr(patient.hasJudicialProtection),
       hasCud: boolToStr(patient.hasCud),
@@ -103,7 +103,7 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
   }, []);
 
   const dependencyOptions: SelectOption[] = DEPENDENCY_LEVELS.map((d) => ({ value: d, label: t(`admin.patients.dependencyOptions.${d}`, { defaultValue: d }) }));
-  const specialtyOptions: SelectOption[] = CLINICAL_SPECIALTIES.map((s) => ({ value: s, label: t(`admin.patients.specialtyOptions.${s}`, { defaultValue: s }) }));
+  const deviceOptions: SelectOption[] = DEVICE_TYPE_CODES.map((d) => ({ value: d, label: t(`admin.patients.deviceTypeOptions.${d}`, { defaultValue: d }) }));
   const serviceOptions: SelectOption[] = SERVICE_TYPES.map((s) => ({ value: s, label: t(`admin.patients.detail.contractedServicesCard.serviceTypes.${s}`, { defaultValue: s }) }));
   const boolOptions: SelectOption[] = BOOL_VALUES.map((v) => ({
     value: v,
@@ -113,15 +113,16 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
   const onSubmit = async (values: FormValues): Promise<void> => {
     setSubmitError(null);
     const payload: PatientClinicalSectionPayload = {};
-    const nz = (v: string | undefined): string | null => { const s = (v ?? '').trim(); return s ? s : null; };
+    const nz = (v: string): string | null => { const s = v.trim(); return s ? s : null; };
     if (nz(values.diagnosis) !== (patient.diagnosis ?? null)) payload.diagnosis = nz(values.diagnosis);
     if (nz(values.additionalComments) !== (patient.additionalComments ?? null)) payload.additionalComments = nz(values.additionalComments);
     // Redigido para este ator: o campo nem entra no formulário como valor real — nunca sobrescrever.
     if (!patient.emergencyInstructionsRedacted && nz(values.emergencyInstructions) !== (patient.emergencyInstructions ?? null)) payload.emergencyInstructions = nz(values.emergencyInstructions);
-    if (nz(values.deviceType) !== (patient.deviceType ?? null)) payload.deviceType = nz(values.deviceType);
+    // Conjunto: só vai quando muda (comparado sem ordem) — "re-salvar sem mudança não altera linhas".
+    const devs = values.deviceTypes;
+    if ([...devs].sort().join(',') !== [...(patient.deviceTypes ?? [])].sort().join(',')) payload.deviceTypes = devs;
     if (nz(values.dependencyLevel) !== (patient.dependencyLevel ?? null)) payload.dependencyLevel = nz(values.dependencyLevel);
-    if (nz(values.clinicalSpecialty) !== (patient.clinicalSpecialty ?? null)) payload.clinicalSpecialty = nz(values.clinicalSpecialty);
-    const svc = values.serviceType ?? [];
+    const svc = values.serviceType;
     if (JSON.stringify(svc) !== JSON.stringify(patient.serviceType ?? [])) payload.serviceType = svc;
     if (strToBool(values.hasJudicialProtection) !== (patient.hasJudicialProtection ?? null)) payload.hasJudicialProtection = strToBool(values.hasJudicialProtection);
     if (strToBool(values.hasCud) !== (patient.hasCud ?? null)) payload.hasCud = strToBool(values.hasCud);
@@ -144,7 +145,7 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
   const boolField = (name: 'hasJudicialProtection' | 'hasCud' | 'hasConsent', label: string, testid: string) => (
     <FormField label={label} htmlFor={testid} optional>
       <Controller control={control} name={name} render={({ field }) => (
-        <SelectField inputSize="compact" options={boolOptions} placeholder={te('unset')} value={field.value ?? ''} onChange={field.onChange} data-testid={testid} />
+        <SelectField inputSize="compact" options={boolOptions} placeholder={te('unset')} value={field.value} onChange={field.onChange} data-testid={testid} />
       )} />
     </FormField>
   );
@@ -204,20 +205,17 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormField label={t('admin.patients.dependencyLabel', { defaultValue: 'Dependencia' })} htmlFor="pce-dependency" optional>
               <Controller control={control} name="dependencyLevel" render={({ field }) => (
-                <SelectField inputSize="compact" options={dependencyOptions} placeholder={te('unset')} value={field.value ?? ''} onChange={field.onChange} data-testid="pce-dependency" />
-              )} />
-            </FormField>
-            <FormField label={t('admin.patients.specialtyLabel', { defaultValue: 'Especialidad' })} htmlFor="pce-specialty" optional>
-              <Controller control={control} name="clinicalSpecialty" render={({ field }) => (
-                <SelectField inputSize="compact" options={specialtyOptions} placeholder={te('unset')} value={field.value ?? ''} onChange={field.onChange} data-testid="pce-specialty" />
+                <SelectField inputSize="compact" options={dependencyOptions} placeholder={te('unset')} value={field.value} onChange={field.onChange} data-testid="pce-dependency" />
               )} />
             </FormField>
             <FormField label={te('deviceType')} htmlFor="pce-device" optional>
-              <InputWithIcon id="pce-device" inputSize="compact" data-testid="pce-device" {...register('deviceType')} />
+              <Controller control={control} name="deviceTypes" render={({ field }) => (
+                <MultiSelect options={deviceOptions} value={field.value} onChange={field.onChange} placeholder={te('unset')} id="pce-device" />
+              )} />
             </FormField>
             <FormField label={tc('serviceType')} htmlFor="pce-serviceType" optional>
               <Controller control={control} name="serviceType" render={({ field }) => (
-                <MultiSelect options={serviceOptions} value={field.value ?? []} onChange={field.onChange} placeholder={te('unset')} id="pce-serviceType" />
+                <MultiSelect options={serviceOptions} value={field.value} onChange={field.onChange} placeholder={te('unset')} id="pce-serviceType" />
               )} />
             </FormField>
           </div>

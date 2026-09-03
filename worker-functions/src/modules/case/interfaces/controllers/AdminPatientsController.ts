@@ -23,9 +23,14 @@ import {
 } from '../../application/ActivatePatientUseCase';
 import {
   PatientService,
+  PatientStatusTransitionError,
+  OnHoldReasonRequiredError,
   type PatientGeneralSectionData,
   type PatientRelatedInput,
 } from '../../application/PatientService';
+import { DeviceTypeUnknownError } from '../../infrastructure/PatientDeviceTypeRepository';
+import { InsuranceProviderUnknownError } from '../../infrastructure/PatientInsuranceVerifiedRepository';
+import { fetchPatientStatusHistory } from '../../infrastructure/PatientStatusHistoryQueryHelper';
 import type { PatientStatus } from '../../domain/enums/PatientStatus';
 import {
   SECTION_SCHEMAS,
@@ -46,6 +51,11 @@ const createPatientAddressSchema = z.object({
   address_raw: z.string().optional(),
   address_type: z.enum(['primary', 'secondary', 'service']).default('secondary'),
   display_order: z.number().int().positive().optional(),
+  // Spec 012, US-B2 (mig 316): logística por endereço. Zona = `neighborhood` (lex C2.7).
+  neighborhood: z.string().trim().min(1).max(120).nullable().optional(),
+  logistics_corridor: z.string().trim().min(1).max(200).nullable().optional(),
+  // Texto livre sobre o domicílio — teto no servidor (lex C2.6), nunca em log/erro (C2.3).
+  access_notes: z.string().trim().min(1).max(2000).nullable().optional(),
 });
 
 const patientIdSchema = z.object({
@@ -212,6 +222,10 @@ export class AdminPatientsController {
       res.status(403).json({ success: false, error: 'Forbidden', details: { field: 'emergencyInstructions', cell: PATIENT_CLINICAL_READ_CELL } });
       return;
     }
+    // lex C3.4 (spec 012): trilha de escrita do nº de afiliado SEM valor — uid, paciente, seção.
+    if ('affiliateId' in (bodyResult.data as Record<string, unknown>)) {
+      logger.info({ msg: 'patient_affiliate_id.write', uid: AuthMiddleware.getAuthContext(req)?.principal.id ?? null, patientId: id, section });
+    }
 
     try {
       const exists = await this.db.query('SELECT id FROM patients WHERE id = $1 AND deleted_at IS NULL', [id]);
@@ -230,6 +244,11 @@ export class AdminPatientsController {
       );
       res.status(200).json({ success: true, data: { id } });
     } catch (err: unknown) {
+      // Código fora do catálogo (device_types / insurance_providers): erro do cliente, não do servidor.
+      if (err instanceof DeviceTypeUnknownError || err instanceof InsuranceProviderUnknownError) {
+        res.status(422).json({ success: false, error: err.message, code: err.code, details: { codes: err.codes } });
+        return;
+      }
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientsController:updatePatientSection', section });
       res.status(500).json({
@@ -241,9 +260,10 @@ export class AdminPatientsController {
   }
 
   /**
-   * PUT /api/admin/patients/:id/status — used by the kanban to move a card.
-   * Body: { status }. A value outside PatientStatus is a 400 (validated here,
-   * before hitting the service). 404 when the patient does not exist.
+   * PUT /api/admin/patients/:id/status — Kanban (funil) e select da ficha (estado clínico v2).
+   * Body: { status, onHoldReason?, onHoldNote?, changeSource? }. Fora do vocabulário → 400;
+   * transição fora de patient_status_transitions ou ON_HOLD sem motivo → 422 com código de enum;
+   * `onHoldNote` só escreve quem pode LER texto clínico restrito (ponto único, D211.2) → 403.
    */
   async updatePatientStatus(req: Request, res: Response): Promise<void> {
     const paramsResult = adminPatientParamsSchema.safeParse(req.params);
@@ -267,12 +287,29 @@ export class AdminPatientsController {
     }
 
     const { id } = paramsResult.data;
-    const { status } = bodyResult.data;
+    const { status, onHoldReason, onHoldNote, changeSource } = bodyResult.data;
+
+    if (onHoldNote != null && !canReadPatientClinical(clinicalCellsOf(req))) {
+      res.status(403).json({ success: false, error: 'Forbidden', details: { field: 'onHoldNote', cell: PATIENT_CLINICAL_READ_CELL } });
+      return;
+    }
 
     try {
-      const result = await this.patientService.moveStatus(id, status as PatientStatus);
+      const result = await this.patientService.moveStatus(id, status as PatientStatus, {
+        onHoldReason: (onHoldReason ?? null) as import('../../domain/enums/OnHoldReason').OnHoldReason | null,
+        onHoldNote: onHoldNote ?? null,
+        changeSource: changeSource ?? 'admin_panel',
+      });
       res.status(200).json({ success: true, data: { id: result.id, status: result.status } });
     } catch (err: unknown) {
+      if (err instanceof PatientStatusTransitionError) {
+        res.status(422).json({ success: false, error: err.message, code: err.code, details: { from: err.from, to: err.to } });
+        return;
+      }
+      if (err instanceof OnHoldReasonRequiredError) {
+        res.status(422).json({ success: false, error: err.message, code: err.code });
+        return;
+      }
       const e = err instanceof Error ? err : new Error(String(err));
       if (/not found/i.test(e.message)) {
         res.status(404).json({ success: false, error: 'Patient not found' });
@@ -284,6 +321,32 @@ export class AdminPatientsController {
         error: 'Failed to update patient status',
         details: e.message,
       });
+    }
+  }
+
+  /**
+   * GET /api/admin/patients/:id/status-history — a aba Historial (spec 012, US-B7).
+   * Quando / de → para / origem. SEM ator (lex C7.2) e SEM `on_hold_note` (C7.3): a tabela
+   * (254) não os tem, de propósito.
+   */
+  async getPatientStatusHistory(req: Request, res: Response): Promise<void> {
+    const parsed = adminPatientParamsSchema.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(400).json({ success: false, error: 'Invalid params', details: parsed.error.flatten() });
+      return;
+    }
+    try {
+      const exists = await this.db.query('SELECT id FROM patients WHERE id = $1 AND deleted_at IS NULL', [parsed.data.id]);
+      if (exists.rows.length === 0) {
+        res.status(404).json({ success: false, error: 'Patient not found' });
+        return;
+      }
+      const history = await fetchPatientStatusHistory(this.db, parsed.data.id);
+      res.status(200).json({ success: true, data: { history } });
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientsController:getPatientStatusHistory' });
+      res.status(500).json({ success: false, error: 'Failed to get patient status history' });
     }
   }
 
@@ -400,6 +463,8 @@ export class AdminPatientsController {
         documentNumber: row.documentNumber,
         sex: row.sex,
         status: row.status,
+        // Spec 012: o Kanban lê o funil de admissão (mig 313), não o estado clínico v2.
+        admissionStatus: row.admissionStatus,
         needsAttention: row.needsAttention,
         isTest: row.isTest,
         attentionReasons: row.attentionReasons,
@@ -510,7 +575,7 @@ export class AdminPatientsController {
     }
 
     const { patientId } = paramsResult.data;
-    const { address_formatted, address_raw, address_type, display_order } = bodyResult.data;
+    const { address_formatted, address_raw, address_type, display_order, neighborhood, logistics_corridor, access_notes } = bodyResult.data;
 
     try {
       const displayOrderValue = display_order ?? null;
@@ -533,23 +598,37 @@ export class AdminPatientsController {
         id: string; patient_id: string; address_formatted: string;
         address_raw: string | null; address_type: string;
       }>(
+        // `country` explícito, do paciente (mig 316, lex C2.8) — o trigger cobre quem não manda;
+        // aqui mandamos mesmo assim, para o INSERT dizer o que faz.
         `INSERT INTO patient_addresses
-           (patient_id, address_formatted, address_raw, address_type, display_order, source, lat, lng)
+           (patient_id, address_formatted, address_raw, address_type, display_order, source, lat, lng,
+            neighborhood, logistics_corridor, access_notes, country)
          VALUES ($1, $2, $3, $4,
            COALESCE($5, (SELECT COALESCE(MAX(display_order), 0) + 1 FROM patient_addresses WHERE patient_id = $1 AND archived_at IS NULL)),
-           'admin_manual', $6, $7)
+           'admin_manual', $6, $7, $8, $9, $10,
+           (SELECT country FROM patients WHERE id = $1))
          RETURNING id, patient_id, address_formatted, address_raw, address_type`,
-        [patientId, address_formatted, address_raw ?? null, address_type, displayOrderValue, lat, lng],
+        [patientId, address_formatted, address_raw ?? null, address_type, displayOrderValue, lat, lng,
+          neighborhood ?? null, logistics_corridor ?? null, access_notes ?? null],
       );
 
+      // Trilha SEM valor (lex C2.3): quem, paciente, e o TAMANHO do que foi gravado.
+      logger.info({
+        msg: 'patient_address.created',
+        uid: AuthMiddleware.getAuthContext(req)?.principal.id ?? null,
+        patientId,
+        addressId: result.rows[0].id,
+        accessNotesLen: (access_notes ?? '').length,
+        logisticsCorridorLen: (logistics_corridor ?? '').length,
+      });
       res.status(201).json({ success: true, data: result.rows[0] });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
-      reportError(e, { source: 'AdminPatientsController:createPatientAddress' });
+      // lex C2.3: nada do corpo na resposta — um erro do Postgres pode ecoar a linha inteira.
+      reportError(e, { source: 'AdminPatientsController:createPatientAddress', patientId });
       res.status(500).json({
         success: false,
         error: 'Failed to create patient address',
-        details: e.message,
       });
     }
   }

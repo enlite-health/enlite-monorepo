@@ -23,18 +23,15 @@ function Field({ label, value }: { label: string; value: string | null }) {
 
 function calculateAge(birthDateIso: string | null): number | null {
   if (!birthDateIso) return null;
-  try {
-    const birth = new Date(birthDateIso);
-    const today = new Date();
-    let age = today.getFullYear() - birth.getFullYear();
-    const m = today.getMonth() - birth.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
-      age -= 1;
-    }
-    return age;
-  } catch {
-    return null;
+  // `new Date(...)` e os getters nunca lançam: um try/catch aqui era ramo morto (spec 012, DoD 100%).
+  const birth = new Date(birthDateIso);
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const m = today.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+    age -= 1;
   }
+  return age;
 }
 
 function getAgeBracket(age: number | null): string | null {
@@ -90,6 +87,8 @@ export function PatientGeneralInfoCard({ patient, onSaved }: PatientGeneralInfoC
         <Field label={`${t('admin.patients.detail.generalInfoCard.age')}:`} value={ageDisplay} />
         <Field label={`${t('admin.patients.detail.generalInfoCard.ageBracket')}:`} value={ageBracket} />
         <Field label={`${t('admin.patients.detail.generalInfoCard.sex')}:`} value={sexLabel} />
+        {/* US-B9 (spec 012): data de início do serviço — nativa do painel, não deriva da vaga. */}
+        <Field label={`${t('admin.patients.detail.generalInfoCard.serviceStartDate')}:`} value={formatBirthDate(patient.serviceStartDate)} />
         <Field label={`${t('admin.patients.detail.generalInfoCard.gender')}:`} value={null} />
         <Field label={`${t('admin.patients.detail.generalInfoCard.sexualOrientation')}:`} value={null} />
         <Field label={`${t('admin.patients.detail.generalInfoCard.racialOrigin')}:`} value={null} />

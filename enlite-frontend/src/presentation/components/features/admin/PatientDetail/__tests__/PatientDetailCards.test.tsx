@@ -48,8 +48,13 @@ vi.mock('react-router-dom', () => ({
 // AdminApiService — só usado no PATCH do PatientClinicalEditDrawer (DiagnosticoCard).
 // Nenhum outro card deste arquivo clica em "salvar", então mockar aqui é seguro.
 const updatePatientSection = vi.fn();
+// Spec 012: o drawer de cobertura lê o catálogo ao abrir (cai no seed dos 33 se falhar).
+const listInsuranceProviders = vi.fn().mockResolvedValue([]);
 vi.mock('@infrastructure/http/AdminApiService', () => ({
-  AdminApiService: { updatePatientSection: (...a: unknown[]) => updatePatientSection(...a) },
+  AdminApiService: {
+    updatePatientSection: (...a: unknown[]) => updatePatientSection(...a),
+    listInsuranceProviders: (...a: unknown[]) => listInsuranceProviders(...a),
+  },
 }));
 
 // ── Imports (after mocks) ────────────────────────────────────────────────────
@@ -104,9 +109,19 @@ describe('PatientIdentityCard', () => {
     }
   });
 
-  it('keeps the legacy EM_ADMISSAO label for the legacy status value', () => {
+  it('status fora do vocabulário v2 cai no valor cru (fallback do i18n), nunca em branco', () => {
     render(<PatientIdentityCard patient={{ ...patientDetailFixture, status: 'EM_ADMISSAO' }} />);
-    expect(screen.getByText('Em Admissão')).toBeInTheDocument();
+    expect(screen.getByTestId('patient-status-badge')).toHaveTextContent('EM_ADMISSAO');
+  });
+
+  it('spec 012 US-B7: ON_HOLD mostra o estado v2 traduzido + o motivo da espera (rótulo, nunca a nota)', () => {
+    render(<PatientIdentityCard patient={{ ...patientDetailFixture, status: 'ON_HOLD', admissionStatus: 'DONE', onHoldReason: 'INSURER', onHoldNote: 'nota clinica 7c2a' }} />);
+    expect(screen.getByTestId('patient-status-badge')).toHaveTextContent('Em espera');
+    expect(screen.getByTestId('patient-on-hold-reason')).toHaveTextContent('Convênio / obra social');
+    expect(screen.queryByText(/7c2a/)).not.toBeInTheDocument();
+    // sem motivo → sem badge de motivo
+    render(<PatientIdentityCard patient={{ ...patientDetailFixture, status: 'ON_HOLD', onHoldReason: null }} />);
+    expect(screen.getAllByTestId('patient-on-hold-reason')).toHaveLength(1);
   });
 
   it('renders phone whatsapp value', () => {
@@ -651,10 +666,23 @@ describe('CoberturaMedicaCard', () => {
     expect(dashes.length).toBeGreaterThanOrEqual(4);
   });
 
-  it('Editar button is disabled', () => {
+  it('spec 012 US-B3: Editar abre o drawer de cobertura; onSaved é repassado', async () => {
+    const onSaved = vi.fn();
+    render(<CoberturaMedicaCard patient={withInsurance} onSaved={onSaved} />);
+    const btn = screen.getByTestId('edit-coverage-btn');
+    expect(btn).not.toBeDisabled();
+    fireEvent.click(btn);
+    expect(screen.getByTestId('patient-coverage-edit-drawer')).toBeInTheDocument();
+    // sem onSaved também não quebra (ramo `onSaved?.()`)
     render(<CoberturaMedicaCard patient={withInsurance} />);
-    const btn = screen.getByText('Editar').closest('button');
-    expect(btn).toBeDisabled();
+    fireEvent.click(screen.getAllByTestId('edit-coverage-btn')[1]);
+    expect(screen.getAllByTestId('patient-coverage-edit-drawer')).toHaveLength(2);
+  });
+
+  it('spec 012 US-B3: verificadas por CÓDIGO aparecem traduzidas e têm precedência sobre o escalar cru', () => {
+    render(<CoberturaMedicaCard patient={{ ...withInsurance, insuranceVerifiedCodes: ['OSDE', 'SWISS_MEDICAL', 'CODIGO_NOVO'] }} />);
+    expect(screen.getByTestId('coverage-verified')).toHaveTextContent('OSDE, Swiss Medical, CODIGO_NOVO');
+    expect(screen.queryByText('Plano Unimed Empresarial')).not.toBeInTheDocument();
   });
 });
 
@@ -686,10 +714,34 @@ describe('LocalizacoesCard', () => {
     expect(screen.getByText('Sem dados cadastrados')).toBeInTheDocument();
   });
 
-  it('Novo button is disabled', () => {
+  it('Novo fica desabilitado sem patientId; com patientId abre o drawer de criação (spec 012 US-B2)', () => {
     render(<LocalizacoesCard addresses={[]} />);
-    const btn = screen.getByText('Novo').closest('button');
-    expect(btn).toBeDisabled();
+    expect(screen.getByTestId('new-address-btn')).toBeDisabled();
+    render(<LocalizacoesCard addresses={[]} patientId="p1" />);
+    const btn = screen.getAllByTestId('new-address-btn')[1];
+    expect(btn).not.toBeDisabled();
+    fireEvent.click(btn);
+    expect(screen.getByTestId('patient-address-drawer')).toBeInTheDocument();
+    expect(screen.getByTestId('pad-address')).toBeInTheDocument(); // modo criar
+  });
+
+  it('spec 012 US-B2: zona / corredor / acesso por endereço, dentro do bloco mascarado; lápis abre a edição da logística', () => {
+    const onSaved = vi.fn();
+    render(<LocalizacoesCard addresses={patientDetailFixture.addresses} patientId="p1" onSaved={onSaved} />);
+    expect(screen.getByText('Bela Vista')).toBeInTheDocument();
+    expect(screen.getByText('Centro')).toBeInTheDocument();
+    const access = screen.getByText('Portaria 24h, interfone 701');
+    expect(access.closest('[data-clarity-mask="True"]')).not.toBeNull();
+    fireEvent.click(screen.getByTestId('edit-address-addr1'));
+    expect(screen.getByTestId('patient-address-drawer')).toBeInTheDocument();
+    expect(screen.getByTestId('pad-address-readonly')).toHaveTextContent('Rua Augusta, 975 - São Paulo/SP');
+    expect(screen.getByTestId('pad-access')).toHaveValue('Portaria 24h, interfone 701');
+  });
+
+  it('sem patientId não há coluna de edição; endereço sem logística mostra —', () => {
+    render(<LocalizacoesCard addresses={[{ ...patientDetailFixture.addresses[0], neighborhood: null, logisticsCorridor: null, accessNotes: null }]} />);
+    expect(screen.queryByTestId('edit-address-addr1')).not.toBeInTheDocument();
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(3);
   });
 
   it('renders multiple addresses with sequential generic names', () => {
@@ -705,6 +757,10 @@ describe('LocalizacoesCard', () => {
         lat: null,
         lng: null,
         isPrimary: false,
+        neighborhood: null,
+        logisticsCorridor: null,
+        accessNotes: null,
+        country: 'BR',
       },
     ];
     render(<LocalizacoesCard addresses={many} />);
@@ -824,7 +880,7 @@ describe('EquipeTratanteCard — lê o contrato da API (A2, lex C2.1/C2.2)', () 
 });
 
 describe('LocalizacoesCard — lê o contrato da API (A2, lex C2.1)', () => {
-  const base = { id: 'a1', addressType: 'primary', complement: 'Piso 2', displayOrder: 1, lat: -34.6, lng: -58.38, isPrimary: true };
+  const base = { id: 'a1', addressType: 'primary', complement: 'Piso 2', displayOrder: 1, lat: -34.6, lng: -58.38, isPrimary: true, neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'AR' };
 
   it('renderiza addressFormatted (`fullAddress` nunca existiu na API)', () => {
     render(<LocalizacoesCard addresses={[{ ...base, addressFormatted: 'Av. Contrato 123, CABA, AR', addressRaw: 'Av. Contrato 123' }]} />);
@@ -860,7 +916,7 @@ describe('PatientIdentityCard — e-mail do paciente em claro com máscara do Cl
   });
 
   it('o endereço do cabeçalho lê addresses[0].addressFormatted (A2)', () => {
-    render(<PatientIdentityCard patient={{ ...patientDetailFixture, addresses: [{ id: 'a1', addressType: 'primary', addressFormatted: 'Rua Contrato, 1 - SP', addressRaw: null, complement: null, displayOrder: 1, lat: null, lng: null, isPrimary: true }] }} />);
+    render(<PatientIdentityCard patient={{ ...patientDetailFixture, addresses: [{ id: 'a1', addressType: 'primary', addressFormatted: 'Rua Contrato, 1 - SP', addressRaw: null, complement: null, displayOrder: 1, lat: null, lng: null, isPrimary: true, neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'BR' }] }} />);
     expect(screen.getByText('Rua Contrato, 1 - SP')).toBeInTheDocument();
   });
 });
@@ -882,7 +938,7 @@ describe('cards tocados na spec 011 — ramos defensivos', () => {
   });
 
   it('PatientIdentityCard: sem endereço formatado, o cabeçalho cai no texto cru do operador', () => {
-    render(<PatientIdentityCard patient={{ ...patientDetailFixture, addresses: [{ id: 'a1', addressType: 'primary', addressFormatted: null, addressRaw: 'Rua Crua 77', complement: null, displayOrder: 1, lat: null, lng: null, isPrimary: true }] }} />);
+    render(<PatientIdentityCard patient={{ ...patientDetailFixture, addresses: [{ id: 'a1', addressType: 'primary', addressFormatted: null, addressRaw: 'Rua Crua 77', complement: null, displayOrder: 1, lat: null, lng: null, isPrimary: true, neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'BR' }] }} />);
     expect(screen.getByText('Rua Crua 77')).toBeInTheDocument();
   });
 });
@@ -890,7 +946,7 @@ describe('cards tocados na spec 011 — ramos defensivos', () => {
 // ── QA caça 🔴2 (spec 011, rodada 2): rua no card de identidade com máscara e rótulo i18n ──
 
 describe('PatientIdentityCard — endereço com data-clarity-mask (lex C2.1)', () => {
-  const addr = { id: 'a1', addressType: 'primary', addressFormatted: 'Rua Mascarada, 9 - SP', addressRaw: null, complement: null, displayOrder: 1, lat: null, lng: null, isPrimary: true };
+  const addr = { id: 'a1', addressType: 'primary', addressFormatted: 'Rua Mascarada, 9 - SP', addressRaw: null, complement: null, displayOrder: 1, lat: null, lng: null, isPrimary: true, neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'BR' };
 
   it('a rua fica dentro de um container com data-clarity-mask="True" e o rótulo vem do i18n', () => {
     render(<PatientIdentityCard patient={{ ...patientDetailFixture, addresses: [addr] }} />);

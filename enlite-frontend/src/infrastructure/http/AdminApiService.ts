@@ -281,7 +281,10 @@ class AdminApiServiceClass {
   getPatientVacancies(patientId: string) { return AdminPatientsApiService.getPatientVacancies(patientId); }
   createPatient(payload: Parameters<typeof AdminPatientsApiService.createPatient>[0]) { return AdminPatientsApiService.createPatient(payload); }
   updatePatientSection(...args: Parameters<typeof AdminPatientsApiService.updatePatientSection>) { return AdminPatientsApiService.updatePatientSection(...args); }
-  updatePatientStatus(id: string, status: string) { return AdminPatientsApiService.updatePatientStatus(id, status); }
+  updatePatientStatus(...args: Parameters<typeof AdminPatientsApiService.updatePatientStatus>) { return AdminPatientsApiService.updatePatientStatus(...args); }
+  getPatientStatusHistory(id: string) { return AdminPatientsApiService.getPatientStatusHistory(id); }
+  listInsuranceProviders() { return AdminPatientsApiService.listInsuranceProviders(); }
+  updatePatientAddressLogistics(...args: Parameters<typeof AdminPatientsApiService.updatePatientAddressLogistics>) { return AdminPatientsApiService.updatePatientAddressLogistics(...args); }
   getPatientChatCandidates(id: string, limit?: number) { return AdminPatientsApiService.getPatientChatCandidates(id, limit); }
   updatePatientChatIds(...args: Parameters<typeof AdminPatientsApiService.updatePatientChatIds>) { return AdminPatientsApiService.updatePatientChatIds(...args); }
   listChatGroups(...args: Parameters<typeof AdminPatientsApiService.listChatGroups>) { return AdminPatientsApiService.listChatGroups(...args); }

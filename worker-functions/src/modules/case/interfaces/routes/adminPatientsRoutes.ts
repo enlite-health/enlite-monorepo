@@ -4,6 +4,8 @@ import { AdminPatientChatIdsController } from '../controllers/AdminPatientChatId
 import { AdminPatientChatRolesController } from '../controllers/AdminPatientChatRolesController';
 import { AuthMiddleware } from '@modules/identity';
 import { AdminPatientsMapController } from '../controllers/AdminPatientsMapController';
+import { AdminPatientAddressesController } from '../controllers/AdminPatientAddressesController';
+import { AdminInsuranceProvidersController } from '../controllers/AdminInsuranceProvidersController';
 
 /**
  * Admin patients routes — mounted at /api/admin.
@@ -18,6 +20,8 @@ export function createAdminPatientsRoutes(
   chatIdsController: AdminPatientChatIdsController = new AdminPatientChatIdsController(),
   chatRolesController: AdminPatientChatRolesController = new AdminPatientChatRolesController(),
   mapController: AdminPatientsMapController = new AdminPatientsMapController(),
+  addressesController: AdminPatientAddressesController = new AdminPatientAddressesController(),
+  insuranceProvidersController: AdminInsuranceProvidersController = new AdminInsuranceProvidersController(),
 ): Router {
   const router = Router();
   const staffOnly = authMiddleware.requireStaff();
@@ -45,6 +49,16 @@ export function createAdminPatientsRoutes(
   );
   router.delete('/patient-chat-roles/:code', adminOnly, (req: Request, res: Response) =>
     chatRolesController.delete(req, res),
+  );
+
+  // ── CATÁLOGO de coberturas (migration 311; spec 012, US-B3) ────────────────
+  // Mesma régua dos papéis de chat: LEITURA é staff (o drawer precisa dos códigos), ESCRITA é
+  // admin (muda o vocabulário de todos os pacientes). Sem tela. Caminho fora de /patients/*.
+  router.get('/catalogs/insurance-providers', staffOnly, (req: Request, res: Response) =>
+    insuranceProvidersController.list(req, res),
+  );
+  router.post('/catalogs/insurance-providers', adminOnly, (req: Request, res: Response) =>
+    insuranceProvidersController.create(req, res),
   );
 
   // ── Lista de TODOS os grupos que a org enxerga no Periskope ────────────────
@@ -100,6 +114,10 @@ export function createAdminPatientsRoutes(
   router.post('/patients/:patientId/addresses', staffOnly, (req: Request, res: Response) =>
     controller.createPatientAddress(req, res),
   );
+  // Logística por endereço (spec 012, US-B2). 4 segmentos: não colide com o PATCH /:id/:section.
+  router.patch('/patients/:patientId/addresses/:addressId', staffOnly, (req: Request, res: Response) =>
+    addressesController.updatePatientAddress(req, res),
+  );
 
   // Patient vacancies — all job_postings for a patient, newest first
   router.get('/patients/:id/vacancies', staffOnly, (req: Request, res: Response) =>
@@ -111,11 +129,15 @@ export function createAdminPatientsRoutes(
   // they never collide with the addresses/vacancies routes (distinct methods or
   // distinct literal segments). The fully-dynamic PATCH /:id/:section goes LAST —
   // it is PATCH-only (no other PATCH route exists) and its :section is validated
-  // against a hard whitelist (general|clinical|support-network|service).
+  // against a hard whitelist (general|clinical|coverage|support-network|service).
 
   // PUT /patients/:id/status — kanban move (change lifecycle status)
   router.put('/patients/:id/status', staffOnly, (req: Request, res: Response) =>
     controller.updatePatientStatus(req, res),
+  );
+  // Historial (spec 012, US-B7): quando / de → para / origem — sem ator, sem on_hold_note.
+  router.get('/patients/:id/status-history', staffOnly, (req: Request, res: Response) =>
+    controller.getPatientStatusHistory(req, res),
   );
 
   // POST /patients/:id/activate — approve → generate one draft vacancy per location

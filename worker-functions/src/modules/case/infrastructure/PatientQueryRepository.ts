@@ -41,6 +41,14 @@ export interface PatientAddressDetail {
   lng: number | null;
   /** True when address_type === 'primary'. */
   isPrimary: boolean;
+  /** Zona/bairro (coluna `neighborhood`, mig 147 — spec 012 lex C2.7: não duplicar). */
+  neighborhood: string | null;
+  /** Corredor logístico por endereço (mig 316). */
+  logisticsCorridor: string | null;
+  /** Logística e acesso — texto livre sobre o domicílio (mig 316; lex C2: fora do mcp_ro, nunca em log). */
+  accessNotes: string | null;
+  /** Jurisdição do endereço (mig 316). */
+  country: string | null;
   /** Computed availability for this address based on active vacancies. */
   availability: import('../application/AddressAvailabilityCalculator').AddressAvailability;
 }
@@ -106,6 +114,24 @@ export interface PatientDetailRow {
   providersChatId: string | null;
   // Status / flags
   status: string | null;
+  /** Funil de admissão (mig 313): SOLICITANTE | ADMISSION | PENDING_ADMISSION | DONE. */
+  admissionStatus: string;
+  /** Motivo da espera quando status = ON_HOLD (mig 314). */
+  onHoldReason: string | null;
+  /** Texto clínico RESTRITO (mig 314, pacote D211.2) — redigido no ponto único quando o ator não pode ler. */
+  onHoldNote: string | null;
+  /** Data de início do serviço (mig 317). */
+  serviceStartDate: Date | null;
+  /** Coberturas verificadas por CÓDIGO (mig 312), ordem do catálogo. */
+  insuranceVerifiedCodes: string[];
+  /**
+   * As mesmas coberturas, COM origem (spec 012, QA 🟡3/SUP-B5) — o drawer usa `source` para
+   * distinguir o que veio do ClickUp (chip travado) do que o painel gravou (editável no
+   * multi-select). `insuranceVerifiedCodes` continua existindo, sem origem, para compat.
+   */
+  insuranceVerifiedEntries: Array<{ code: string; source: string }>;
+  /** Dispositivos (códigos de device_types, mig 307), ordem do catálogo. */
+  deviceTypes: string[];
   needsAttention: boolean;
   attentionReasons: string[];
   // Related
@@ -133,6 +159,8 @@ export interface PatientListRow {
   sex: string | null;
   /** Patient lifecycle status (kanban column). Null for rows whose ClickUp status is unrecognised. */
   status: string | null;
+  /** Funil de admissão (mig 313) — é ESTA a coluna do Kanban de pacientes (spec 012). */
+  admissionStatus: string;
   needsAttention: boolean;
   attentionReasons: string[];
   /** Registro sintético do synthetic monitoring — alvo do sweeper (migration 257). */
@@ -275,6 +303,7 @@ export class PatientQueryRepository {
         document_number        AS "documentNumber",
         sex,
         status,
+        admission_status       AS "admissionStatus",
         needs_attention        AS "needsAttention",
         is_test                AS "isTest",
         attention_reasons      AS "attentionReasons",
@@ -367,6 +396,7 @@ export class PatientQueryRepository {
         documentNumber: row.documentNumber,
         sex: row.sex,
         status: row.status,
+        admissionStatus: (row.admissionStatus as string | null) ?? 'DONE',
         needsAttention: row.needsAttention,
         attentionReasons: row.attentionReasons ?? [],
         addressesCount: parseInt(row.addressesCount as unknown as string, 10) || 0,

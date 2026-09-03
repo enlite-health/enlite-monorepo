@@ -55,8 +55,10 @@ export const CLICKUP_TO_VACANCY_STATUS: Record<string, VacancyStatusMapping> = {
   'suspendido temporariamente': { patientStatus: 'SUSPENDED', jobPostingStatus: 'SUSPENDED' },
   // ClickUp: "Suspendido Temporalmente" (ES variant)
   'suspendido temporalmente':   { patientStatus: 'SUSPENDED', jobPostingStatus: 'SUSPENDED' },
-  // ClickUp: "Baja"
-  'baja':                   { patientStatus: 'DISCONTINUED', jobPostingStatus: 'CLOSED' },
+  // ClickUp: "Baja" — PatientStatus v2 (spec 012, migration 314): DISCONTINUED saiu do
+  // vocabulário; "baja" É o DISCHARGED da decisão 2. Sem isto, o backfill da 314 seria desfeito
+  // pelo primeiro webhook de cada paciente em Baja.
+  'baja':                   { patientStatus: 'DISCHARGED', jobPostingStatus: 'CLOSED' },
   // ClickUp: "Alta"
   'alta':                   { patientStatus: 'DISCHARGED', jobPostingStatus: 'CLOSED' },
   // ClickUp: "En espera" — paciente ativo, vaga pausada por razão operacional

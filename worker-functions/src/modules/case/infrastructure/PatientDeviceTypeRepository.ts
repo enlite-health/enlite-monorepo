@@ -48,6 +48,15 @@ export interface PatientDeviceTypeResult {
   quarantined: number;
 }
 
+/** Código fora do catálogo ATIVO de `device_types` (spec 012, US-B4) — o controller devolve 422. */
+export class DeviceTypeUnknownError extends Error {
+  readonly code = 'DEVICE_TYPE_UNKNOWN';
+  constructor(readonly codes: string[]) {
+    super(`Unknown device type code(s): ${codes.join(', ')}`);
+    this.name = 'DeviceTypeUnknownError';
+  }
+}
+
 export class PatientDeviceTypeRepository {
   private poolMemo?: Pool;
 
@@ -160,11 +169,22 @@ export class PatientDeviceTypeRepository {
       accepted = c.accepted;
       rejected = c.rejected;
 
-      await cli.query('DELETE FROM patient_device_types WHERE patient_id = $1', [input.patientId]);
+      // Apaga SÓ as linhas desta origem: o que o painel gravou (source='admin_manual') sobrevive
+      // ao próximo webhook — mesma lição do QA 🔴1 do bloco A (replaceBySource dos responsáveis)
+      // e a mesma regra que `PatientInsuranceVerifiedRepository.replaceForPatient` já aplica.
+      await cli.query('DELETE FROM patient_device_types WHERE patient_id = $1 AND source = $2', [input.patientId, source]);
       for (const code of accepted) {
+        // `ON CONFLICT`: a PK é (patient_id, device_type) SEM source (migration 307) — se o
+        // painel já tiver gravado este mesmo código, o DELETE acima (escopado à origem) não o
+        // apaga, e este INSERT bateria de frente com a linha existente. Sem o guard, isolar o
+        // DELETE por origem trocaria "apaga o alheio" por "explode 23505" no mesmo código
+        // vindo das duas origens — pior que o defeito original. Último escritor decide o
+        // `source` da linha compartilhada, igual ao comportamento anterior (DELETE+INSERT do
+        // conjunto inteiro já dava a mesma primazia a quem escrevia por último).
         await cli.query(
           `INSERT INTO patient_device_types (patient_id, device_type, source)
-           VALUES ($1, $2, $3)`,
+           VALUES ($1, $2, $3)
+           ON CONFLICT (patient_id, device_type) DO UPDATE SET source = EXCLUDED.source`,
           [input.patientId, code, source]);
       }
 
@@ -200,6 +220,59 @@ export class PatientDeviceTypeRepository {
     }
 
     return { outcome: 'written', received: input.read.labels.length, accepted, rejected, quarantined };
+  }
+
+  /**
+   * O drawer clínico do painel grava CÓDIGOS do catálogo (spec 012, US-B4). Antes disto o drawer
+   * gravava texto livre em `patients.device_type`, que é FK desde a 308 → 23503 no meio do PATCH.
+   *
+   *   - código fora do catálogo ativo → DeviceTypeUnknownError (422), sem escrever nada;
+   *   - conjunto IGUAL ao persistido → nada é tocado (aceite da US-B4: "re-salvar sem mudança não
+   *     altera linhas" — e o trigger da 310 não bate `updated_at` à toa);
+   *   - conjunto diferente → DELETE + INSERT com source='admin_manual'. O escalar é o trigger.
+   */
+  async replaceCodesForPatient(
+    patientId: string,
+    codes: readonly string[],
+    client?: PoolClient,
+  ): Promise<{ changed: boolean; codes: string[] }> {
+    const wanted = Array.from(new Set(codes));
+    const proprio = !client;
+    const cli = client ?? await this.pool.connect();
+    try {
+      if (proprio) await cli.query('BEGIN');
+      const catalogo = await cli.query<{ code: string }>('SELECT code FROM device_types WHERE active');
+      const ativos = new Set(catalogo.rows.map(r => r.code));
+      const desconhecidos = wanted.filter(c => !ativos.has(c));
+      if (desconhecidos.length > 0) throw new DeviceTypeUnknownError(desconhecidos);
+
+      await cli.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`device_type:${patientId}`]);
+      const atual = await cli.query<{ device_type: string }>(
+        'SELECT device_type FROM patient_device_types WHERE patient_id = $1', [patientId]);
+      const existentes = new Set(atual.rows.map(r => r.device_type));
+      const igual = existentes.size === wanted.length && wanted.every(c => existentes.has(c));
+      if (igual) {
+        if (proprio) await cli.query('COMMIT');
+        return { changed: false, codes: wanted };
+      }
+
+      // Apaga SÓ as linhas do PAINEL: o que o webhook do ClickUp gravou (source='clickup')
+      // sobrevive a este PATCH — mesma regra do lado webhook, acima.
+      await cli.query('DELETE FROM patient_device_types WHERE patient_id = $1 AND source = $2', [patientId, 'admin_manual']);
+      for (const code of wanted) {
+        await cli.query(
+          `INSERT INTO patient_device_types (patient_id, device_type, source) VALUES ($1, $2, $3)
+           ON CONFLICT (patient_id, device_type) DO UPDATE SET source = EXCLUDED.source`,
+          [patientId, code, 'admin_manual']);
+      }
+      if (proprio) await cli.query('COMMIT');
+      return { changed: true, codes: wanted };
+    } catch (err) {
+      if (proprio) await cli.query('ROLLBACK');
+      throw err;
+    } finally {
+      if (proprio) cli.release();
+    }
   }
 
   /** Leitura interna. */

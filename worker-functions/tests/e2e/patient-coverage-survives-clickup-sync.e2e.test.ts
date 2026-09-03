@@ -66,7 +66,9 @@ function makeClickUpTask(taskId: string) {
 function makeStubResolver(): ClickUpFieldResolver {
   return {
     resolveDropdown: () => null, resolveLabel: () => null, resolveLabels: () => [],
-    getFieldType: () => null, dropdownFieldNames: [], labelsFieldNames: [],
+    // Preflight 1.11 (migrations 304-310): `null` = campo renomeado/apagado → o mapper recusa
+    // a task inteira de propósito. O stub diz que os campos EXISTEM.
+    getFieldType: () => 'drop_down', dropdownFieldNames: [], labelsFieldNames: [],
     getDropdownOptions: () => ({}), getLabelsOptions: () => ({}),
   } as unknown as ClickUpFieldResolver;
 }

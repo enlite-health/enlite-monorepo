@@ -23,7 +23,8 @@
 import type { Request } from 'express';
 
 export const PATIENT_CLINICAL_READ_CELL = 'patient_clinical:read';
-export const CLINICAL_RESTRICTED_FIELDS = ['emergencyInstructions', 'emergencyInstructionsUpdatedAt', 'emergencyInstructionsUpdatedBy'] as const;
+// Spec 012 (lex C7.1-a): `onHoldNote` é a terceira instância da classe — mesmo ponto único.
+export const CLINICAL_RESTRICTED_FIELDS = ['emergencyInstructions', 'emergencyInstructionsUpdatedAt', 'emergencyInstructionsUpdatedBy', 'onHoldNote'] as const;
 
 export function canReadPatientClinical(cells: readonly string[] | null | undefined): boolean {
   if (cells === null || cells === undefined) return true; // engine não decidiu → o que a rota devolvia antes
@@ -40,9 +41,9 @@ export function clinicalCellsOf(req: Request): readonly string[] | null {
  * Projeta a ficha para o ator: campos restritos viram null + `emergencyInstructionsRedacted: true`.
  * Devolve o MESMO objeto quando o ator pode ler (sem cópia — a ficha é grande).
  */
-export function projectPatientClinicalForActor<T extends Record<string, unknown>>(patient: T, cells: readonly string[] | null | undefined): T & { emergencyInstructionsRedacted?: true } {
+export function projectPatientClinicalForActor<T extends Record<string, unknown>>(patient: T, cells: readonly string[] | null | undefined): T & { emergencyInstructionsRedacted?: true; onHoldNoteRedacted?: true } {
   if (canReadPatientClinical(cells)) return patient;
-  const out: Record<string, unknown> = { ...patient, emergencyInstructionsRedacted: true };
+  const out: Record<string, unknown> = { ...patient, emergencyInstructionsRedacted: true, onHoldNoteRedacted: true };
   for (const f of CLINICAL_RESTRICTED_FIELDS) out[f] = null;
-  return out as T & { emergencyInstructionsRedacted: true };
+  return out as T & { emergencyInstructionsRedacted: true; onHoldNoteRedacted: true };
 }

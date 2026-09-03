@@ -113,13 +113,17 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('altera diagnóstico, dispositivo, dependência, especialidade, tipo de serviço e os 3 selects tri-state — manda tudo no payload', async () => {
-    render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
+  it('altera diagnóstico, dispositivo (multi-select do catálogo), dependência, tipo de serviço e os 3 selects tri-state — manda tudo no payload; especialidade NÃO existe mais (US-B8)', async () => {
+    const { container } = render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.queryByTestId('pce-specialty')).not.toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/Especialidade|ICHOM/);
 
     fireEvent.change(screen.getByTestId('pce-diagnosis'), { target: { value: 'CID novo' } });
-    fireEvent.change(screen.getByTestId('pce-device'), { target: { value: 'Cadeira de rodas' } });
+    // US-B4: dispositivo é multi-select de códigos do catálogo (HOME + SCHOOL), nunca texto livre
+    fireEvent.click(container.querySelector('#pce-device button') as HTMLElement);
+    fireEvent.click(screen.getByText('Domiciliar'));
+    fireEvent.click(screen.getByText('Escolar'));
     fireEvent.change(screen.getByTestId('pce-dependency'), { target: { value: 'MODERATE' } });
-    fireEvent.change(screen.getByTestId('pce-specialty'), { target: { value: 'GERIATRIC' } });
     // hasJudicialProtection: false → true (strToBool 'true')
     fireEvent.change(screen.getByTestId('pce-hasJudicialProtection'), { target: { value: 'true' } });
     // hasCud: true → false (strToBool 'false')
@@ -135,9 +139,8 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
     await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
     expect(updatePatientSection).toHaveBeenCalledWith(patientDetailFixture.id, 'clinical', {
       diagnosis: 'CID novo',
-      deviceType: 'Cadeira de rodas',
+      deviceTypes: ['HOME', 'SCHOOL'],
       dependencyLevel: 'MODERATE',
-      clinicalSpecialty: 'GERIATRIC',
       serviceType: ['AT', 'CAREGIVER'],
       hasJudicialProtection: true,
       hasCud: false,
@@ -177,5 +180,15 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
     fireEvent.change(screen.getByTestId('pce-comments'), { target: { value: 'novo' } });
     fireEvent.click(screen.getByTestId('pce-save'));
     await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patientDetailFixture.id, 'clinical', { additionalComments: 'novo' }));
+  });
+
+  it('spec 012: deviceTypes ausente na ficha → conjunto vazio; escolher HOME manda deviceTypes; erro não-Error → mensagem genérica', async () => {
+    updatePatientSection.mockRejectedValueOnce('x');
+    const { container } = render(<PatientClinicalEditDrawer patient={{ ...patientDetailMinimal, deviceTypes: undefined as never }} onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.click(container.querySelector('#pce-device button') as HTMLElement);
+    fireEvent.click(screen.getByText('Domiciliar'));
+    fireEvent.click(screen.getByTestId('pce-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patientDetailMinimal.id, 'clinical', { deviceTypes: ['HOME'] }));
+    expect(await screen.findByTestId('pce-error')).toHaveTextContent('Erro ao salvar');
   });
 });

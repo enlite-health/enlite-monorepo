@@ -32,7 +32,11 @@ import { ClickUpFieldResolver } from '../src/modules/integration/infrastructure/
 import { ClickUpPatientMapper } from '../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
 import type { ClickUpTask } from '../src/modules/integration/infrastructure/clickup/ClickUpTask';
 import { SyncPatientFromClickUpTaskUseCase } from '../src/modules/integration/application/SyncPatientFromClickUpTaskUseCase';
-import { PatientSourceLabelRepository } from '../src/modules/case';
+import {
+  PatientSourceLabelRepository,
+  PatientInsuranceVerifiedRepository,
+  PatientDeviceTypeRepository,
+} from '../src/modules/case';
 import {
   checkExistingTaskIds,
   processDryRun,
@@ -151,6 +155,10 @@ async function main(): Promise<void> {
       mapper, patientService,
       // Task 2.3 — o cru vai junto do derivado, também no caminho de recuperação manual.
       sourceLabelRepository: new PatientSourceLabelRepository(),
+      // Spec 012 T001c: as deps são OBRIGATÓRIAS no use case (fiação que ninguém liga não
+      // existe) — `scripts/` está fora do tsconfig e por isso o compilador não acusou aqui.
+      insuranceRepository:   new PatientInsuranceVerifiedRepository(),
+      deviceTypeRepository:  new PatientDeviceTypeRepository(),
     });
     pool = new Pool({ connectionString: DATABASE_URL });
   }

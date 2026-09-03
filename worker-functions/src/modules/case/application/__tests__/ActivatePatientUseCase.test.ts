@@ -179,4 +179,103 @@ describe('ActivatePatientUseCase', () => {
     );
     expect(mockClient.release).toHaveBeenCalledTimes(1);
   });
+
+  it('g. erro inesperado NÃO-Error (ex.: rejeição de string) → logga com String(err) e propaga; ROLLBACK', async () => {
+    const { seen } = programClient({
+      patientRow: { id: 'pat-boom', status: 'PENDING_ADMISSION', case_number: 1 },
+      addressIds: ['addr-1'],
+    });
+    mockClient.query.mockImplementation(async (sql: string) => {
+      seen.push(sql);
+      if (sql === 'BEGIN' || sql === 'ROLLBACK') return {};
+      if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
+        return { rowCount: 1, rows: [{ id: 'pat-boom', status: 'PENDING_ADMISSION', case_number: 1 }] };
+      }
+      if (sql.includes('FROM patient_addresses')) return { rowCount: 1, rows: [{ id: 'addr-1' }] };
+      if (sql.includes('nextval')) throw 'plain string rejection'; // eslint-disable-line no-throw-literal
+      return { rowCount: 0, rows: [] };
+    });
+
+    await expect(new ActivatePatientUseCase().execute('pat-boom')).rejects.toBe(
+      'plain string rejection',
+    );
+    expect(countSql(seen, 'ROLLBACK')).toBe(1);
+    expect(mockClient.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('h. move para ACTIVE limpa on_hold_* e grava change_source=activate na mesma transação (QA 🟡2)', async () => {
+    const { seen } = programClient({
+      patientRow: { id: 'pat-oh', status: 'ON_HOLD', case_number: 55 },
+      addressIds: ['addr-1'],
+    });
+
+    await new ActivatePatientUseCase().execute('pat-oh');
+
+    const setConfigCalls = mockClient.query.mock.calls.filter(
+      ([sql]: [string]) => typeof sql === 'string' && sql.includes("set_config('app.change_source'"),
+    );
+    expect(setConfigCalls).toHaveLength(1);
+    expect(setConfigCalls[0][1]).toEqual(['activate']);
+
+    const updateCall = mockClient.query.mock.calls.find(
+      ([sql]: [string]) => typeof sql === 'string' && sql.includes('UPDATE patients SET status'),
+    );
+    expect(updateCall[0]).toContain('on_hold_reason = NULL');
+    expect(updateCall[0]).toContain('on_hold_note = NULL');
+
+    // set_config roda ANTES do UPDATE, na mesma transação (o trigger 254 lê o setting no momento do UPDATE).
+    const setConfigIdx = seen.findIndex((s) => s.includes("set_config('app.change_source'"));
+    const updateIdx = seen.findIndex((s) => s.includes('UPDATE patients SET status'));
+    expect(setConfigIdx).toBeGreaterThan(-1);
+    expect(setConfigIdx).toBeLessThan(updateIdx);
+  });
+
+  // ── Ramos pré-existentes do arquivo, sem cobertura antes desta rodada (D200: 100% do
+  // arquivo TOCADO, não só das linhas novas) ──────────────────────────────────────────
+
+  it('i. driver devolve rowCount undefined para o SELECT do paciente (?? 0) → mesmo tratamento de "não achei"', async () => {
+    mockClient.query.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK') return {};
+      if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
+        return { rows: [] }; // rowCount ausente (undefined), não `0` explícito — é o outro lado do `??`
+      }
+      return { rowCount: 0, rows: [] };
+    });
+
+    await expect(new ActivatePatientUseCase().execute('pat-undef')).rejects.toBeInstanceOf(
+      PatientNotFoundError,
+    );
+  });
+
+  it('j. driver devolve rowCount undefined para o SELECT de endereços (?? 0) → NoActiveAddressError', async () => {
+    mockClient.query.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK') return {};
+      if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
+        return { rowCount: 1, rows: [{ id: 'pat-4', status: 'PENDING_ADMISSION', case_number: 3 }] };
+      }
+      if (sql.includes('FROM patient_addresses')) return { rows: [] }; // rowCount ausente
+      return { rowCount: 0, rows: [] };
+    });
+
+    await expect(new ActivatePatientUseCase().execute('pat-4')).rejects.toBeInstanceOf(
+      NoActiveAddressError,
+    );
+  });
+
+  it('k. ROLLBACK do catch-de-fallback também falha (transação já fechada) → o erro original ainda propaga, sem 2ª exceção', async () => {
+    mockClient.query.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN') return {};
+      if (sql === 'ROLLBACK') throw new Error('connection terminated');
+      if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
+        return { rowCount: 1, rows: [{ id: 'pat-5', status: 'PENDING_ADMISSION', case_number: 3 }] };
+      }
+      if (sql.includes('FROM patient_addresses')) throw new Error('conexão caiu no meio do SELECT');
+      return { rowCount: 0, rows: [] };
+    });
+
+    await expect(new ActivatePatientUseCase().execute('pat-5')).rejects.toThrow(
+      'conexão caiu no meio do SELECT',
+    );
+    expect(mockClient.release).toHaveBeenCalledTimes(1);
+  });
 });

@@ -20,7 +20,7 @@ import type { PatientKanbanGroups } from '@hooks/admin/usePatientKanban';
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
 
 const empty: PatientKanbanGroups = {
-  SOLICITANTE: [], ADMISSION: [], PENDING_ADMISSION: [], ACTIVE: [],
+  SOLICITANTE: [], ADMISSION: [], PENDING_ADMISSION: [], DONE: [],
 };
 
 describe('largura das colunas', () => {

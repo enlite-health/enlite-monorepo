@@ -21,8 +21,11 @@ import type { PatientSourceLabelsRead } from '../infrastructure/PatientSourceLab
 import type { ClinicalSpecialty } from '../domain/enums/ClinicalSpecialty';
 import type { AttentionReason } from '../domain/enums/AttentionReason';
 import type { Profession } from '../../worker/domain/enums/Profession';
-import { isPatientStatus, type PatientStatus } from '../domain/enums/PatientStatus';
+import { isPatientStatus, isClinicalPatientStatus, type PatientStatus } from '../domain/enums/PatientStatus';
+import type { OnHoldReason } from '../domain/enums/OnHoldReason';
 import type { AdmissionCountry } from '../../matching/domain/admissionCountries';
+import { PatientDeviceTypeRepository } from '../infrastructure/PatientDeviceTypeRepository';
+import { PatientInsuranceVerifiedRepository } from '../infrastructure/PatientInsuranceVerifiedRepository';
 
 /** Strategy for handling missing contact channel during upsert. */
 export type MissingContactStrategy = 'error' | 'flag';
@@ -81,18 +84,9 @@ export interface PatientServiceUpsertInput extends PatientIdentityUpsertInput {
   clinicalSegments?: string | null;
   /** Array of professional roles the patient requires. Was string | null before migration 139. */
   serviceType?: Profession[] | null;
-  /**
-   * ⚠️ O dispositivo do paciente é MÚLTIPLO e vive em `patient_device_types`; o escalar
-   * `patients.device_type` é derivado por trigger (migration 310, ex-290; F64). O caminho do
-   * ClickUp NÃO usa esta chave: o mapper emite `deviceTypeLabels` e `upsertRelated` não a
-   * repassa ao repositório clínico (25/08/2026).
-   *
-   * Ela fica no tipo SÓ porque `PatientRelatedInput` (drawer clínico do painel,
-   * `updatePatientSection('clinical')`) é um `Pick` deste tipo e o `main` de 03/09/2026 ainda
-   * grava o escalar como texto livre por ali. Escrever o escalar diverge do conjunto — a US-B4
-   * da spec 012 troca o texto livre pelo multi-select de `device_types` e aí a chave sai.
-   */
-  deviceType?: string | null;
+  // `deviceType` SAIU (spec 012, US-B4): o conjunto vive em `patient_device_types` e o escalar
+  // `patients.device_type` é derivado por trigger (310). O drawer clínico manda `deviceTypes`
+  // (códigos) em PatientClinicalSectionData; o sync emite `deviceTypeLabels`.
   additionalComments?: string | null;
   emergencyInstructions?: string | null;
   hasJudicialProtection?: boolean | null;
@@ -130,7 +124,6 @@ export type PatientRelatedInput = Pick<
   | 'clinicalSpecialtyReadable'
   | 'clinicalSegments'
   | 'serviceType'
-  | 'deviceType'
   | 'additionalComments'
   | 'emergencyInstructions'
   | 'hasJudicialProtection'
@@ -159,7 +152,43 @@ export interface CreateNativePatientOptions {
 }
 
 /** Section-scoped partial update of a native (or any) patient. */
-export type PatientSection = 'general' | 'clinical' | 'support-network' | 'service';
+export type PatientSection = 'general' | 'clinical' | 'coverage' | 'support-network' | 'service';
+
+/** section = 'clinical' (spec 012, US-B4): o bloco clínico + os CÓDIGOS de dispositivo do catálogo. */
+export type PatientClinicalSectionData = PatientRelatedInput & { deviceTypes?: string[] };
+
+/** section = 'coverage' (spec 012, US-B3): cobertura informada, nº de afiliado, verificadas por código. */
+export interface PatientCoverageSectionData {
+  healthInsuranceName?: string | null;
+  affiliateId?: string | null;
+  insuranceVerifiedCodes?: string[];
+}
+
+/** Transição fora de `patient_status_transitions` (migration 315) — o controller devolve 422. */
+export class PatientStatusTransitionError extends Error {
+  readonly code = 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED';
+  constructor(readonly from: string | null, readonly to: string) {
+    super(`Patient status transition not allowed: ${from ?? 'null'} → ${to}`);
+    this.name = 'PatientStatusTransitionError';
+  }
+}
+
+/** ON_HOLD sem motivo (spec 012, US-B7) — o controller devolve 422. */
+export class OnHoldReasonRequiredError extends Error {
+  readonly code = 'ON_HOLD_REASON_REQUIRED';
+  constructor() {
+    super('on_hold_reason is required when status is ON_HOLD');
+    this.name = 'OnHoldReasonRequiredError';
+  }
+}
+
+export interface MoveStatusOptions {
+  onHoldReason?: OnHoldReason | null;
+  /** Texto clínico restrito (pacote D211.2) — nunca logado, nunca copiado para a history. */
+  onHoldNote?: string | null;
+  /** Vira `change_source` em patient_status_history (trigger 254, via app.change_source). */
+  changeSource: 'admin_panel' | 'kanban' | 'activate' | 'system';
+}
 
 /** Identity fields updatable via the 'general' section. */
 export interface PatientGeneralSectionData {
@@ -175,6 +204,8 @@ export interface PatientGeneralSectionData {
   healthInsuranceMemberId?: string | null;
   /** Plaintext; encrypted with KMS before storage. */
   contactEmail?: string | null;
+  /** US-B9 (spec 012): data de início do serviço — nativa, não deriva da vaga. */
+  serviceStartDate?: Date | null;
 }
 
 /**
@@ -189,6 +220,20 @@ export class PatientService {
   private responsibleRepo: PatientResponsibleRepository;
   private geocoder: GeocodingService;
   private encryptionService: KMSEncryptionService;
+  // Preguiçosos (spec 012): só a seção clínica/de cobertura do painel os usa, e construir o de
+  // cobertura abre pool — as suítes que dublam o banco não precisam saber deles.
+  private deviceTypeRepoMemo?: PatientDeviceTypeRepository;
+  private insuranceRepoMemo?: PatientInsuranceVerifiedRepository;
+
+  private get deviceTypeRepo(): PatientDeviceTypeRepository {
+    this.deviceTypeRepoMemo ??= new PatientDeviceTypeRepository();
+    return this.deviceTypeRepoMemo;
+  }
+
+  private get insuranceRepo(): PatientInsuranceVerifiedRepository {
+    this.insuranceRepoMemo ??= new PatientInsuranceVerifiedRepository();
+    return this.insuranceRepoMemo;
+  }
 
   constructor(geocoder?: GeocodingService) {
     this.identityRepo    = new PatientIdentityRepository();
@@ -544,7 +589,7 @@ export class PatientService {
   async updatePatientSection(
     patientId: string,
     section: PatientSection,
-    data: PatientGeneralSectionData | PatientRelatedInput,
+    data: PatientGeneralSectionData | PatientClinicalSectionData | PatientCoverageSectionData | PatientRelatedInput,
     /** Quem está editando (uid do staff) — hoje só a seção clínica usa (autoria de additional_comments). */
     actor?: { uid: string },
   ): Promise<{ id: string; updated: true }> {
@@ -559,7 +604,7 @@ export class PatientService {
           await this.updateGeneralSection(patientId, data as PatientGeneralSectionData, client);
           break;
         case 'clinical': {
-          const c = data as PatientRelatedInput;
+          const c = data as PatientClinicalSectionData;
           await this.clinicalRepo.upsert(
             {
               patientId,
@@ -568,7 +613,6 @@ export class PatientService {
               clinicalSpecialty:     c.clinicalSpecialty,
               clinicalSegments:      c.clinicalSegments,
               serviceType:           c.serviceType,
-              deviceType:            c.deviceType,
               additionalComments:    c.additionalComments,
               emergencyInstructions: c.emergencyInstructions,
               hasJudicialProtection: c.hasJudicialProtection,
@@ -578,6 +622,23 @@ export class PatientService {
             },
             client,
           );
+          // US-B4: dispositivo é CONJUNTO de códigos do catálogo; o escalar é o trigger da 310.
+          if (c.deviceTypes !== undefined) {
+            await this.deviceTypeRepo.replaceCodesForPatient(patientId, c.deviceTypes, client);
+          }
+          break;
+        }
+        case 'coverage': {
+          // US-B3: os dois escalares vão pelo MESMO update parcial do geral (mesma whitelist);
+          // as verificadas por código vão para patient_insurance_verified (source='admin_manual').
+          const cov = data as PatientCoverageSectionData;
+          const scalars: PatientGeneralSectionData = {};
+          if (Object.prototype.hasOwnProperty.call(cov, 'healthInsuranceName')) scalars.healthInsuranceName = cov.healthInsuranceName;
+          if (Object.prototype.hasOwnProperty.call(cov, 'affiliateId')) scalars.affiliateId = cov.affiliateId;
+          await this.updateGeneralSection(patientId, scalars, client);
+          if (cov.insuranceVerifiedCodes !== undefined) {
+            await this.insuranceRepo.replaceCodesForPatient(patientId, cov.insuranceVerifiedCodes, client);
+          }
           break;
         }
         case 'support-network': {
@@ -629,6 +690,7 @@ export class PatientService {
       phoneWhatsapp:           'phone_whatsapp',
       healthInsuranceName:     'health_insurance_name',
       healthInsuranceMemberId: 'health_insurance_member_id',
+      serviceStartDate:        'service_start_date',
     };
 
     const sets: string[] = [];
@@ -658,15 +720,29 @@ export class PatientService {
   }
 
   /**
-   * Moves a patient to a new lifecycle status. Validates the value is a known
-   * PatientStatus. Never touches `origin` (a native patient stays native).
+   * Moves a patient to a new lifecycle status — v2 (spec 012, US-B7).
+   *
+   *   - alvo CLÍNICO (ACTIVE, ON_HOLD, …): a transição (status atual → alvo) tem de existir em
+   *     `patient_status_transitions` (315); ausente → PatientStatusTransitionError (422);
+   *   - alvo DENTRO do funil de admissão (SOLICITANTE/ADMISSION/PENDING_ADMISSION): é o Kanban,
+   *     livre como sempre foi — `admission_status` acompanha pelo trigger da 313;
+   *   - ON_HOLD exige `onHoldReason`; sair de ON_HOLD LIMPA motivo e nota (nenhuma 2ª cópia);
+   *   - `changeSource` vai por `set_config('app.change_source', …, true)` na MESMA transação: é o
+   *     que o trigger da 254 grava em patient_status_history (a coluna "origem" do Historial);
+   *   - `on_hold_note` NUNCA entra no log (lex C7.1-b) nem na history (C7.3).
+   * Never touches `origin` (a native patient stays native).
    */
   async moveStatus(
     patientId: string,
     status: PatientStatus,
+    opts: MoveStatusOptions = { changeSource: 'admin_panel' },
   ): Promise<{ id: string; status: PatientStatus }> {
     if (!isPatientStatus(status)) {
       throw new Error(`Invalid patient status: ${String(status)}`);
+    }
+    const goingOnHold = status === 'ON_HOLD';
+    if (goingOnHold && !opts.onHoldReason) {
+      throw new OnHoldReasonRequiredError();
     }
 
     const db     = DatabaseConnection.getInstance();
@@ -674,14 +750,39 @@ export class PatientService {
 
     try {
       await client.query('BEGIN');
-      const res = await client.query<{ id: string }>(
-        'UPDATE patients SET status = $2, updated_at = NOW() WHERE id = $1 RETURNING id',
-        [patientId, status],
+      const current = await client.query<{ status: string | null }>(
+        'SELECT status FROM patients WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
+        [patientId],
       );
-      if ((res.rowCount ?? 0) === 0) {
+      if ((current.rowCount ?? 0) === 0 || current.rows.length === 0) {
         throw new Error(`Patient not found: ${patientId}`);
       }
+      const from = current.rows[0].status;
+
+      if (isClinicalPatientStatus(status) && from !== status) {
+        const allowed = await client.query(
+          'SELECT 1 FROM patient_status_transitions WHERE from_status = $1 AND to_status = $2',
+          [from, status],
+        );
+        if (allowed.rows.length === 0) {
+          throw new PatientStatusTransitionError(from, status);
+        }
+      }
+
+      await client.query("SELECT set_config('app.change_source', $1, true)", [opts.changeSource]);
+      await client.query(
+        `UPDATE patients
+            SET status = $2, on_hold_reason = $3, on_hold_note = $4, updated_at = NOW()
+          WHERE id = $1`,
+        // `onHoldReason` é garantido em ON_HOLD (OnHoldReasonRequiredError acima); a nota é opcional.
+        [patientId, status, goingOnHold ? opts.onHoldReason : null, goingOnHold ? opts.onHoldNote ?? null : null],
+      );
       await client.query('COMMIT');
+
+      // Trilha SEM a nota: from/to/motivo/origem. O texto é clínico restrito (D211.2).
+      functions.logger.info('patient_status.moved', {
+        patientId, from, to: status, onHoldReason: goingOnHold ? opts.onHoldReason : null, changeSource: opts.changeSource,
+      });
       return { id: patientId, status };
     } catch (err) {
       await client.query('ROLLBACK');

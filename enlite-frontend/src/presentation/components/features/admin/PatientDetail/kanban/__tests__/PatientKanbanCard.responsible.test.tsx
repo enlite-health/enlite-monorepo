@@ -27,6 +27,7 @@ function item(overrides: Partial<PatientKanbanItem> = {}): PatientKanbanItem {
     caseNumber: null,
     dependencyLevel: null,
     status: 'SOLICITANTE',
+    admissionStatus: 'SOLICITANTE',
     responsibleName: null,
     leadContactEmailMasked: null,
     leadContactIsResponsible: false,

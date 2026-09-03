@@ -183,8 +183,9 @@ describe('PatientService.moveStatus — rowCount ?? 0 nullish branch', () => {
   });
 
   it('8. rowCount undefined (driver did not report it) → treated as 0 → "not found"', async () => {
+    // v2 (spec 012): a leitura do status atual (FOR UPDATE) é quem decide "not found".
     _queryImpl = async (sql: string) =>
-      sql.startsWith('UPDATE patients SET status') ? { rows: [] } : undefined;
+      sql.startsWith('SELECT status FROM patients') ? { rows: [] } : { rows: [], rowCount: 0 };
 
     await expect(service.moveStatus('pid-rowcount', 'ACTIVE')).rejects.toThrow(/not found/i);
   });

@@ -6,6 +6,16 @@
  */
 
 import type { PatientChatIdMap, PatientChatRoleSpec } from '@domain/value-objects/patientChatRole';
+import type { PatientCoverageSectionPayload } from './PatientCoverage';
+
+// Spec 012 (bloco B): estado v2 / Historial em `PatientLifecycle.ts`, cobertura em
+// `PatientCoverage.ts`, logística do endereço em `PatientAddress.ts` — este arquivo já
+// batia no teto de 400 linhas do validador.
+export type { PatientCoverageSectionPayload } from './PatientCoverage';
+export type { UpdatePatientStatusPayload, PatientStatusHistoryEntry } from './PatientLifecycle';
+export type { InsuranceProvider } from './PatientCoverage';
+export type { PatientAddressLogisticsPayload } from './PatientAddress';
+export type { PatientKanbanItem, PatientFunnelData } from './PatientLifecycle';
 
 export interface PatientResponsibleDetail {
   id: string;
@@ -58,6 +68,14 @@ export interface PatientAddressDetail {
   lat: number | null;
   lng: number | null;
   isPrimary: boolean;
+  /** Zona/bairro — coluna `neighborhood` (mig 147; spec 012 lex C2.7: não duplicar). */
+  neighborhood: string | null;
+  /** Corredor logístico por endereço (mig 316). */
+  logisticsCorridor: string | null;
+  /** Logística e acesso — texto livre sobre o domicílio (mig 316; `data-clarity-mask` na tela). */
+  accessNotes: string | null;
+  /** Jurisdição do endereço (mig 316). */
+  country: string | null;
   availability?: AddressAvailability;
 }
 
@@ -125,7 +143,27 @@ export interface PatientDetail {
   province: string | null;
   zoneNeighborhood: string | null;
   country: string;
-  status: string | null; // 'PENDING_ADMISSION'|'ACTIVE'|'SUSPENDED'|'DISCONTINUED'|'DISCHARGED'
+  /** PatientStatus v2 (spec 012): funil (SOLICITANTE|ADMISSION|PENDING_ADMISSION) ou clínico (ACTIVE|ON_HOLD|SEARCHING|REPLACEMENT|SUSPENDED|DISCHARGED). */
+  status: string | null;
+  /** Funil de admissão (mig 313): SOLICITANTE | ADMISSION | PENDING_ADMISSION | DONE — o Kanban lê isto. */
+  admissionStatus: string;
+  /** Motivo da espera quando status = ON_HOLD (SCHOOL | INSURER | OTHER). */
+  onHoldReason: string | null;
+  /** Texto clínico RESTRITO (D211.2): null + onHoldNoteRedacted=true quando o ator não pode ler. */
+  onHoldNote: string | null;
+  onHoldNoteRedacted?: boolean;
+  /** Data de início do serviço (mig 317) — ISO; nativa do painel, não deriva da vaga. */
+  serviceStartDate: string | null;
+  /** Coberturas verificadas por CÓDIGO do catálogo (mig 312), ordem do catálogo. */
+  insuranceVerifiedCodes: string[];
+  /**
+   * As mesmas coberturas, COM origem (QA 🟡3/SUP-B5) — o drawer usa `source` para travar o chip
+   * do ClickUp (não removível) e restringir o multi-select ao que o painel gravou
+   * (`source: 'admin_manual'`). Opcional: API anterior a esta rodada não manda o campo.
+   */
+  insuranceVerifiedEntries?: Array<{ code: string; source: string }>;
+  /** Dispositivos — códigos de `device_types` (mig 307), ordem do catálogo. */
+  deviceTypes: string[];
   needsAttention: boolean;
   attentionReasons: string[];
   responsibles: PatientResponsibleDetail[];
@@ -145,6 +183,8 @@ export interface PatientDetail {
 export interface CreatePatientPayload {
   firstName: string;
   lastName?: string;
+  /** US-B6 (spec 012): yyyy-MM-dd. */
+  birthDate?: string;
   phoneWhatsapp?: string;
   contactEmail?: string;
   documentType?: string; // 'DNI'|'PASSPORT'|'CEDULA'|'LE_LC'|'CPF'
@@ -175,7 +215,7 @@ export interface PatientVacancySummary {
 // ============================================================================
 
 /** Section names accepted by PATCH /api/admin/patients/:id/:section. */
-export type PatientSectionName = 'general' | 'clinical' | 'support-network' | 'service';
+export type PatientSectionName = 'general' | 'clinical' | 'coverage' | 'support-network' | 'service';
 
 /**
  * section = 'general' — identity fields. Mirrors generalSectionSchema (backend).
@@ -190,6 +230,8 @@ export interface PatientGeneralSectionPayload {
   sex?: string | null;
   phoneWhatsapp?: string | null;
   contactEmail?: string | null;
+  /** US-B9 (spec 012): yyyy-MM-dd; null limpa. */
+  serviceStartDate?: string | null;
 }
 
 /** section = 'clinical' — mirrors clinicalSectionSchema (backend). */
@@ -198,7 +240,8 @@ export interface PatientClinicalSectionPayload {
   dependencyLevel?: string | null;
   clinicalSpecialty?: string | null;
   serviceType?: string[] | null;
-  deviceType?: string | null;
+  /** US-B4 (spec 012): códigos de `device_types` — substitui o texto livre `deviceType`. */
+  deviceTypes?: string[];
   additionalComments?: string | null;
   emergencyInstructions?: string | null;
   hasJudicialProtection?: boolean | null;
@@ -234,6 +277,7 @@ export interface PatientServiceSectionPayload {
 export type PatientSectionPayload =
   | PatientGeneralSectionPayload
   | PatientClinicalSectionPayload
+  | PatientCoverageSectionPayload
   | PatientSupportNetworkSectionPayload
   | PatientServiceSectionPayload;
 
@@ -336,53 +380,10 @@ export interface UpdatePatientStatusResult {
   status: string;
 }
 
+
 /** Result of POST /api/admin/patients/:id/activate. */
 export interface ActivatePatientResult {
   patientId: string;
   status: string; // always 'ACTIVE'
   createdVacancyIds: string[];
-}
-
-/** Row shape used by the patient kanban board (grouped by status). */
-export interface PatientKanbanItem {
-  id: string;
-  firstName: string | null;
-  lastName: string | null;
-  caseNumber: number | null;
-  dependencyLevel: string | null;
-  status: string | null;
-  // Fase 4 — rastreabilidade / SLA (aditivo; opcional para não quebrar fixtures).
-  /** ISO string of when the patient entered the current status column. */
-  stageEnteredAt?: string | null;
-  /** How long the patient has sat in the current status, in hours. */
-  hoursInStage?: number | null;
-  /** True when hoursInStage crossed the configured SLA threshold. */
-  slaBreached?: boolean;
-  /** The SLA threshold (hours) that applies to the current status. */
-  slaThresholdHours?: number | null;
-  // ── Desempate do lead sem nome (lex 30/08) ───────────────────────────────
-  /**
-   * E-mail de contato JÁ MASCARADO pelo servidor (`jo***@gmail.com`). Presente
-   * só nas fichas cujo nome é o placeholder 'Solicitante' — nas demais é null,
-   * e o endereço cru NUNCA chega ao browser (a máscara é do servidor, C1).
-   */
-  /** Nome do responsável primário — a identidade do card quando o paciente
-   *  ainda não tem nome (D249). Texto claro; a coluna não é cifrada. */
-  responsibleName: string | null;
-  leadContactEmailMasked?: string | null;
-  /** true quando o contato acima é do responsável, não do paciente (C6). */
-  leadContactIsResponsible?: boolean;
-}
-
-/**
- * Fase 4 — funnel/traceability aggregate returned by
- * GET /api/admin/patients/funnel?country=&from=&to=.
- * The four headline stages plus the raw per-status counts.
- */
-export interface PatientFunnelData {
-  solicitantes: number;
-  admision: number;
-  agendadas: number;
-  vacantes: number;
-  byStatus: Record<string, number>;
 }

@@ -2767,7 +2767,9 @@
         "phone": "Telefone",
         "email": "E-mail",
         "documentType": "Tipo de documento",
-        "documentNumber": "Número do documento"
+        "documentNumber": "Número do documento",
+        "coverageTitle": "Editar cobertura médica",
+        "coverageFromClickup": "(do ClickUp)"
       },
       "kanban": {
         "title": "Pacientes — Kanban",
@@ -2780,7 +2782,8 @@
           "SOLICITANTE": "Solicitante",
           "ADMISSION": "Admissão",
           "PENDING_ADMISSION": "Aguardando financeiro",
-          "ACTIVE": "Ativo"
+          "ACTIVE": "Ativo",
+          "DONE": "Ativo"
         },
         "contactOfResponsible": "Contato do responsável",
         "responsible": "Responsável"
@@ -2832,7 +2835,8 @@
         "healthInsuranceMemberId": "Número de afiliado",
         "serviceSection": "Serviço requerido",
         "serviceType": "Tipo de serviço",
-        "saveError": "Erro ao criar o paciente"
+        "saveError": "Erro ao criar o paciente",
+        "birthDate": "Data de nascimento"
       },
       "errorLoading": "Erro ao carregar pacientes",
       "noPatients": "Nenhum paciente encontrado",
@@ -2977,7 +2981,8 @@
           "racialOrigin": "Origem racial",
           "religion": "Religião",
           "languages": "Idiomas",
-          "ageYears": "{{count}} anos"
+          "ageYears": "{{count}} anos",
+          "serviceStartDate": "Início do serviço"
         },
         "diagnosisCard": {
           "title": "Diagnóstico",
@@ -3000,7 +3005,8 @@
           "priorityHigh": "Alta",
           "priorityUrgent": "Urgente",
           "emergencyInstructions": "Instruções de emergência",
-          "emergencyRedacted": "Você não tem permissão para ver as instruções de emergência."
+          "emergencyRedacted": "Você não tem permissão para ver as instruções de emergência.",
+          "devices": "Dispositivo"
         },
         "therapeuticProjectCard": {
           "title": "Projeto Terapêutico",
@@ -3055,14 +3061,19 @@
           "providerName": "Nome da Cobertura",
           "plan": "Plano do Paciente",
           "emergencyNumbers": "Números de Emergência",
-          "credential": "Credencial"
+          "credential": "Credencial",
+          "verified": "Cobertura verificada"
         },
         "locationsCard": {
           "title": "Localizações",
           "tableName": "Nome",
           "tableAddress": "Endereço",
           "tableNote": "Observação",
-          "addressGeneric": "Endereço {{index}}"
+          "addressGeneric": "Endereço {{index}}",
+          "tableZone": "Zona / Bairro",
+          "tableCorridor": "Corredor logístico",
+          "tableAccess": "Logística e acesso",
+          "editAddress": "Editar"
         },
         "contractedServicesCard": {
           "title": "Serviços Contratados",
@@ -3120,7 +3131,117 @@
           "groupsFound": "{{shown}} de {{total}} grupo(s)",
           "usedByPatients": "{{count}} paciente(s) usam este grupo",
           "clear": "Remover"
+        },
+        "relationshipOptions": {
+          "CHILD": "Filho/a",
+          "PARENT": "Mãe / Pai",
+          "SIBLING": "Irmão/ã",
+          "NEPHEW": "Sobrinho/a",
+          "GRANDCHILD": "Neto/a",
+          "GUARDIAN": "Tutor/a",
+          "FRIEND": "Amigo/a",
+          "PARTNER": "Companheiro/a",
+          "OTHER": "Outro"
+        },
+        "addressDrawer": {
+          "createTitle": "Nova localização",
+          "editTitle": "Editar logística",
+          "address": "Endereço",
+          "addressRequired": "Informe o endereço",
+          "addressRaw": "Endereço informado (texto livre)",
+          "type": "Tipo",
+          "type_primary": "Principal",
+          "type_secondary": "Secundário",
+          "type_service": "Serviço",
+          "neighborhood": "Zona / Bairro",
+          "corridor": "Corredor logístico",
+          "accessNotes": "Logística e acesso"
         }
+      },
+      "statusOptions": {
+        "SOLICITANTE": "Solicitante",
+        "ADMISSION": "Em admissão",
+        "PENDING_ADMISSION": "Aguardando financeiro",
+        "ACTIVE": "Ativo",
+        "ON_HOLD": "Em espera",
+        "SEARCHING": "Busca",
+        "REPLACEMENT": "Substituição",
+        "SUSPENDED": "Suspenso",
+        "DISCHARGED": "Baixa"
+      },
+      "onHoldReasonOptions": {
+        "SCHOOL": "Escola",
+        "INSURER": "Convênio / obra social",
+        "OTHER": "Outro"
+      },
+      "deviceTypeOptions": {
+        "HOME": "Domiciliar",
+        "SCHOOL": "Escolar",
+        "INSTITUTIONAL": "Institucional",
+        "INPATIENT": "Internação",
+        "TRANSPORT": "Transporte"
+      },
+      "status": {
+        "title": "Estado",
+        "save": "Mudar",
+        "reason": "Motivo da espera",
+        "note": "Nota",
+        "notePlaceholder": "Por que o serviço está em espera?",
+        "noteRedacted": "Você não tem permissão para ver a nota.",
+        "transitionNotAllowed": "Transição não permitida: {{from}} → {{to}}",
+        "reasonRequired": "Informe o motivo da espera",
+        "error": "Não foi possível mudar o estado",
+        "sources": {
+          "admin_panel": "Painel",
+          "kanban": "Kanban",
+          "insert": "Criação",
+          "backfill": "Carga inicial",
+          "activate": "Ativação",
+          "system": "Sistema"
+        },
+        "historyCard": {
+          "title": "Histórico de estados",
+          "when": "Quando",
+          "from": "De",
+          "to": "Para",
+          "source": "Origem",
+          "error": "Não foi possível carregar o histórico"
+        }
+      },
+      "insuranceProviderOptions": {
+        "API": "API",
+        "ACCORD_SALUD": "Accord Salud",
+        "ASISOC": "ASISOC",
+        "AVALIAN": "Avalian",
+        "BANCARIOS": "Bancarios",
+        "CASA": "CASA",
+        "DAS": "DAS",
+        "GALENO": "Galeno",
+        "MHM": "MHM",
+        "MEDICUS": "Medicus",
+        "HTAL_BRITANICO": "Htal Británico",
+        "OSPJN": "OSPJN",
+        "OSPECOM": "OSPECOM",
+        "OSMECON": "OSMECON",
+        "OSDE": "OSDE",
+        "OMINT": "Omint",
+        "OSPOCE": "OSPOCE",
+        "OGORMAN": "O'Gorman",
+        "OSPATCA": "OSPATCA",
+        "OBSBA": "ObSBA",
+        "OSPELSYM": "Ospelsym",
+        "OSTEE_LUZ_MEDICA": "Ostee Luz Médica",
+        "OSDEPYM": "Osdepym",
+        "OTHER": "Outra",
+        "PFA_SUPERINTENDENCIA": "PFA Superintendencia de Bienestar",
+        "PRIVATE": "Privado",
+        "SANIDAD": "SANIDAD",
+        "SWISS_MEDICAL": "Swiss Medical",
+        "UP": "UP",
+        "OSPICHA": "OSPICHA",
+        "USUOMRA": "USUOMRA",
+        "PREVENCION_SALUD": "Prevención Salud",
+        "IOSCOR": "IOSCOR"
       }
     },
     "pendingAddressReview": {
@@ -3488,8 +3609,10 @@
         "ADMISSION": "Em admissão",
         "PENDING_ADMISSION": "Aguardando financeiro",
         "SOLICITANTE": "Solicitante",
+        "ON_HOLD": "Em espera",
+        "SEARCHING": "Busca",
+        "REPLACEMENT": "Substituição",
         "SUSPENDED": "Suspenso",
-        "DISCONTINUED": "Baixa",
         "DISCHARGED": "Alta"
       },
       "onlyOpenVacancies": "Só com vagas abertas",

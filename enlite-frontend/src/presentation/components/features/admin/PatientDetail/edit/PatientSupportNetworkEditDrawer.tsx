@@ -15,6 +15,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
+import { RELATIONSHIP_CODES } from '@domain/entities/patientEnums';
 
 interface Props {
   patientId: string;
@@ -86,6 +87,11 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
   const documentTypeOptions: SelectOption[] = DOCUMENT_TYPES.map((d) => ({
     value: d,
     label: t(`admin.patients.detail.documentTypes.${d}`, { defaultValue: d }),
+  }));
+  // Spec 012 US-B5: os 9 códigos da migration 139 (CHECK) — texto livre dava 23514.
+  const relationshipOptions: SelectOption[] = RELATIONSHIP_CODES.map((r) => ({
+    value: r,
+    label: t(`admin.patients.detail.relationshipOptions.${r}`, { defaultValue: r }),
   }));
 
   useEffect(() => {
@@ -192,7 +198,9 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
                   <InputWithIcon id={`psn-lastName-${index}`} inputSize="compact" data-testid={`psn-lastName-${index}`} {...register(`responsibles.${index}.lastName` as const)} />
                 </FormField>
                 <FormField label={te('relationship')} htmlFor={`psn-rel-${index}`} optional>
-                  <InputWithIcon id={`psn-rel-${index}`} inputSize="compact" data-testid={`psn-rel-${index}`} {...register(`responsibles.${index}.relationship` as const)} />
+                  <Controller control={control} name={`responsibles.${index}.relationship` as const} render={({ field }) => (
+                    <SelectField id={`psn-rel-${index}`} inputSize="compact" options={relationshipOptions} placeholder={te('unset')} value={field.value} onChange={field.onChange} data-testid={`psn-rel-${index}`} />
+                  )} />
                 </FormField>
                 <FormField label={te('phone')} htmlFor={`psn-phone-${index}`} optional>
                   <InputWithIcon id={`psn-phone-${index}`} inputSize="compact" data-testid={`psn-phone-${index}`} {...register(`responsibles.${index}.phone` as const)} />

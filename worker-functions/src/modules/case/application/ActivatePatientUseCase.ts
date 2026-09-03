@@ -159,9 +159,17 @@ export class ActivatePatientUseCase {
         createdVacancyIds.push(insRes.rows[0].id);
       }
 
-      // Move to ACTIVE in the SAME transaction (same UPDATE as PatientService.moveStatus).
+      // Move to ACTIVE in the SAME transaction — replicating exactly what
+      // `PatientService.moveStatus` does (it cannot be called directly here: it opens its
+      // OWN connection/transaction, which would break the single-transaction atomicity this
+      // use case depends on — see the class docblock). QA 🟡2: the previous bare
+      // `UPDATE ... SET status='ACTIVE'` left `on_hold_reason`/`on_hold_note` stale when
+      // activating a patient that was ON_HOLD, and left `patient_status_history.change_source`
+      // NULL because nothing set `app.change_source` before the UPDATE that the migration-254
+      // trigger reads from.
+      await client.query("SELECT set_config('app.change_source', $1, true)", ['activate']);
       await client.query(
-        `UPDATE patients SET status = 'ACTIVE', updated_at = NOW() WHERE id = $1`,
+        `UPDATE patients SET status = 'ACTIVE', on_hold_reason = NULL, on_hold_note = NULL, updated_at = NOW() WHERE id = $1`,
         [patientId],
       );
 

@@ -9,6 +9,8 @@
 jest.mock('../../controllers/AdminPatientChatIdsController', () => ({ AdminPatientChatIdsController: jest.fn().mockImplementation(() => ({})) }));
 jest.mock('../../controllers/AdminPatientChatRolesController', () => ({ AdminPatientChatRolesController: jest.fn().mockImplementation(() => ({})) }));
 jest.mock('../../controllers/AdminPatientsMapController', () => ({ AdminPatientsMapController: jest.fn().mockImplementation(() => ({})) }));
+jest.mock('../../controllers/AdminPatientAddressesController', () => ({ AdminPatientAddressesController: jest.fn().mockImplementation(() => ({})) }));
+jest.mock('../../controllers/AdminInsuranceProvidersController', () => ({ AdminInsuranceProvidersController: jest.fn().mockImplementation(() => ({})) }));
 
 import express from 'express';
 import request from 'supertest';
@@ -17,6 +19,8 @@ import type { AdminPatientsController } from '../../controllers/AdminPatientsCon
 import type { AdminPatientChatIdsController } from '../../controllers/AdminPatientChatIdsController';
 import type { AdminPatientChatRolesController } from '../../controllers/AdminPatientChatRolesController';
 import type { AdminPatientsMapController } from '../../controllers/AdminPatientsMapController';
+import type { AdminPatientAddressesController } from '../../controllers/AdminPatientAddressesController';
+import type { AdminInsuranceProvidersController } from '../../controllers/AdminInsuranceProvidersController';
 import type { AuthMiddleware } from '@modules/identity';
 
 type Handler = (req: express.Request, res: express.Response) => void;
@@ -30,10 +34,13 @@ const controller = {
   createPatientAddress: c('createPatientAddress'), listPatientVacancies: c('listPatientVacancies'),
   updatePatientStatus: c('updatePatientStatus'), activatePatient: c('activatePatient'),
   updatePatientTestFlag: c('updatePatientTestFlag'), purgeTestPatient: c('purgeTestPatient'), updatePatientSection: c('updatePatientSection'),
+  getPatientStatusHistory: c('getPatientStatusHistory'),
 } as unknown as AdminPatientsController;
 const chatIds = { getChatGroups: c('getChatGroups'), getChatMap: c('getChatMap'), getChatCandidates: c('getChatCandidates'), updateChatIds: c('updateChatIds') } as unknown as AdminPatientChatIdsController;
 const chatRoles = { list: c('rolesList'), create: c('rolesCreate'), update: c('rolesUpdate'), delete: c('rolesDelete') } as unknown as AdminPatientChatRolesController;
 const mapController = { getMapPoints: c('getMapPoints') } as unknown as AdminPatientsMapController;
+const addresses = { updatePatientAddress: c('updatePatientAddress') } as unknown as AdminPatientAddressesController;
+const providers = { list: c('providersList'), create: c('providersCreate') } as unknown as AdminInsuranceProvidersController;
 
 const seen: string[] = [];
 const guard = (label: string) => (req: express.Request, _res: express.Response, next: express.NextFunction) => { seen.push(`${label} ${req.method} ${req.path}`); next(); };
@@ -41,7 +48,7 @@ const authMiddleware = { requireStaff: () => guard('staff'), requireAdmin: () =>
 
 const app = express();
 app.use(express.json());
-app.use('/api/admin', createAdminPatientsRoutes(controller, authMiddleware, chatIds, chatRoles, mapController));
+app.use('/api/admin', createAdminPatientsRoutes(controller, authMiddleware, chatIds, chatRoles, mapController, addresses, providers));
 
 const ID = '11111111-1111-1111-1111-111111111111';
 
@@ -71,6 +78,12 @@ describe('createAdminPatientsRoutes', () => {
     ['patch', `/patients/${ID}/test-flag`, 'updatePatientTestFlag', 'admin'],
     ['delete', `/patients/${ID}`, 'purgeTestPatient', 'admin'],
     ['patch', `/patients/${ID}/clinical`, 'updatePatientSection', 'staff'],
+    // Spec 012 (bloco B): catálogo de coberturas, Historial, logística por endereço, seção coverage.
+    ['get', '/catalogs/insurance-providers', 'providersList', 'staff'],
+    ['post', '/catalogs/insurance-providers', 'providersCreate', 'admin'],
+    ['get', `/patients/${ID}/status-history`, 'getPatientStatusHistory', 'staff'],
+    ['patch', `/patients/${ID}/addresses/${ID}`, 'updatePatientAddress', 'staff'],
+    ['patch', `/patients/${ID}/coverage`, 'updatePatientSection', 'staff'],
   ];
 
   it.each(cases)('%s %s → %s (guarda %s)', async (method, path, handler, guardLabel) => {
@@ -92,5 +105,7 @@ describe('createAdminPatientsRoutes', () => {
     const paths = (router.stack as Array<{ route?: { path: string } }>).map((l) => l.route?.path).filter(Boolean);
     expect(paths).toContain('/patients/map');
     expect(paths).toContain('/chat-groups');
+    expect(paths).toContain('/catalogs/insurance-providers');
+    expect(paths).toContain('/patients/:patientId/addresses/:addressId');
   });
 });

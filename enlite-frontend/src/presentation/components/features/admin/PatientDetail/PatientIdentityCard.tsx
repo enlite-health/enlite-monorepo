@@ -9,31 +9,18 @@ interface PatientIdentityCardProps {
   patient: PatientDetail;
 }
 
+// PatientStatus v2 (spec 012, US-B7): funil de admissão + seis estados clínicos. O rótulo vem
+// de `admin.patients.statusOptions.<STATUS>` (mesmo vocabulário do select, do Kanban e do Historial).
 const STATUS_COLORS: Record<string, string> = {
+  SOLICITANTE: 'bg-slate-100 text-slate-700',
+  ADMISSION: 'bg-blue-100 text-blue-700',
   PENDING_ADMISSION: 'bg-yellow-100 text-yellow-700',
   ACTIVE: 'bg-green-100 text-green-700',
+  ON_HOLD: 'bg-amber-100 text-amber-700',
+  SEARCHING: 'bg-sky-100 text-sky-700',
+  REPLACEMENT: 'bg-indigo-100 text-indigo-700',
   SUSPENDED: 'bg-orange-100 text-orange-700',
-  DISCONTINUED: 'bg-red-100 text-red-700',
   DISCHARGED: 'bg-gray-100 text-gray-600',
-  EM_ADMISSAO: 'bg-yellow-100 text-yellow-700',
-  EM_ATENDIMENTO: 'bg-green-100 text-green-700',
-  PACIENTE_COM_ALTA: 'bg-gray-100 text-gray-600',
-  CANCELADO: 'bg-red-100 text-red-700',
-};
-
-const STATUS_I18N_MAP: Record<string, string> = {
-  // D195 (26/08): o estado leva o nome do motivo real da espera — "Aguardando
-  // financeiro" — o mesmo que a coluna do Kanban de pacientes. Antes a ficha
-  // dizia "En Admisión" para o mesmo estado.
-  PENDING_ADMISSION: 'admin.patients.detail.patientStatus.PENDING_ADMISSION',
-  ACTIVE: 'admin.patients.detail.patientStatus.EM_ATENDIMENTO',
-  SUSPENDED: 'admin.patients.detail.patientStatus.EM_ATENDIMENTO',
-  DISCONTINUED: 'admin.patients.detail.patientStatus.CANCELADO',
-  DISCHARGED: 'admin.patients.detail.patientStatus.PACIENTE_COM_ALTA',
-  EM_ADMISSAO: 'admin.patients.detail.patientStatus.EM_ADMISSAO',
-  EM_ATENDIMENTO: 'admin.patients.detail.patientStatus.EM_ATENDIMENTO',
-  PACIENTE_COM_ALTA: 'admin.patients.detail.patientStatus.PACIENTE_COM_ALTA',
-  CANCELADO: 'admin.patients.detail.patientStatus.CANCELADO',
 };
 
 function Field({ label, value, testId }: { label: string; value: string | null; testId?: string }) {
@@ -98,7 +85,11 @@ export function PatientIdentityCard({ patient }: PatientIdentityCardProps) {
   const fullName = [patient.firstName, patient.lastName].filter(Boolean).join(' ') || '—';
   const statusKey = patient.status ?? '';
   const statusColor = STATUS_COLORS[statusKey] ?? 'bg-gray-100 text-gray-600';
-  const statusLabel = STATUS_I18N_MAP[statusKey] ? t(STATUS_I18N_MAP[statusKey]) : statusKey || '—';
+  const statusLabel = statusKey ? t(`admin.patients.statusOptions.${statusKey}`, statusKey) : '—';
+  // Motivo da espera (rótulo de catálogo, não a nota): só quando o estado é ON_HOLD.
+  const onHoldReasonLabel = statusKey === 'ON_HOLD' && patient.onHoldReason
+    ? t(`admin.patients.onHoldReasonOptions.${patient.onHoldReason}`, patient.onHoldReason)
+    : null;
   const address = buildAddress(patient);
   const primaryResponsible = patient.responsibles?.find((r) => r.isPrimary) ?? patient.responsibles?.[0] ?? null;
 
@@ -116,11 +107,18 @@ export function PatientIdentityCard({ patient }: PatientIdentityCardProps) {
             {fullName}
           </Heading>
           <div className="flex flex-wrap items-center gap-2 mt-1">
-            <span className={`inline-flex px-2.5 py-0.5 rounded-full ${statusColor}`}>
+            <span className={`inline-flex px-2.5 py-0.5 rounded-full ${statusColor}`} data-testid="patient-status-badge">
               <Text as="span" size="xs" weight="medium" color="inherit">
                 {statusLabel}
               </Text>
             </span>
+            {onHoldReasonLabel && (
+              <span className="inline-flex px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700" data-testid="patient-on-hold-reason">
+                <Text as="span" size="xs" weight="medium" color="inherit">
+                  {onHoldReasonLabel}
+                </Text>
+              </span>
+            )}
             {patient.lastCaseNumber != null && (
               <span className="inline-flex px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-700">
                 <Text as="span" size="xs" weight="semibold" color="inherit">

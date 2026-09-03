@@ -20,8 +20,16 @@ export type { AcquisitionChannel } from './domain/enums/AcquisitionChannel';
 export { ACQUISITION_CHANNELS, isAcquisitionChannel } from './domain/enums/AcquisitionChannel';
 export type { AttentionReason } from './domain/enums/AttentionReason';
 export { ATTENTION_REASONS, isAttentionReason } from './domain/enums/AttentionReason';
-export type { PatientStatus } from './domain/enums/PatientStatus';
-export { PATIENT_STATUSES, isPatientStatus } from './domain/enums/PatientStatus';
+export type { PatientStatus, ClinicalPatientStatus, AdmissionFunnelStatus } from './domain/enums/PatientStatus';
+export {
+  PATIENT_STATUSES, CLINICAL_PATIENT_STATUSES, ADMISSION_FUNNEL_STATUSES,
+  isPatientStatus, isClinicalPatientStatus, isAdmissionFunnelStatus,
+} from './domain/enums/PatientStatus';
+// Spec 012 (bloco B): motivo de espera e funil de admissão em coluna própria.
+export type { OnHoldReason } from './domain/enums/OnHoldReason';
+export { ON_HOLD_REASONS, isOnHoldReason } from './domain/enums/OnHoldReason';
+export type { AdmissionStatus } from './domain/enums/AdmissionStatus';
+export { ADMISSION_STATUSES, isAdmissionStatus } from './domain/enums/AdmissionStatus';
 
 // Domain types
 export type { PatientIdentity } from './domain/PatientIdentity';
@@ -50,11 +58,16 @@ export type {
 export { validateContactChannel } from './domain/PatientResponsible';
 
 // Application
-export { PatientService } from './application/PatientService';
+export {
+  PatientService,
+  PatientStatusTransitionError,
+  OnHoldReasonRequiredError,
+} from './application/PatientService';
 export type {
   PatientServiceUpsertInput,
   UpsertFromClickUpOptions,
   MissingContactStrategy,
+  MoveStatusOptions,
 } from './application/PatientService';
 export {
   PatientChatIdsService,
@@ -134,8 +147,12 @@ export type {
 // Task 3.3 (`campos-admissao`): a Cobertura Verificada MÚLTIPLA. Migration 305.
 export {
   PatientInsuranceVerifiedRepository,
+  InsuranceProviderUnknownError,
   classifyInsuranceLabels,
 } from './infrastructure/PatientInsuranceVerifiedRepository';
+// Spec 012, US-B3: o catálogo de coberturas (migration 311).
+export { InsuranceProviderRepository, InsuranceProviderExistsError } from './infrastructure/InsuranceProviderRepository';
+export type { InsuranceProviderRow, CreateInsuranceProviderInput } from './infrastructure/InsuranceProviderRepository';
 export type {
   PatientInsuranceVerifiedWriteInput,
   PatientInsuranceVerifiedResult,
@@ -143,7 +160,7 @@ export type {
   PatientInsuranceVerifiedOutcome,
 } from './infrastructure/PatientInsuranceVerifiedRepository';
 // Task 4.2 (`campos-admissao`): o Tipo de Dispositivo MÚLTIPLO. Migrations 307 e 290.
-export { PatientDeviceTypeRepository } from './infrastructure/PatientDeviceTypeRepository';
+export { PatientDeviceTypeRepository, DeviceTypeUnknownError } from './infrastructure/PatientDeviceTypeRepository';
 export type {
   PatientDeviceTypeWriteInput,
   PatientDeviceTypeResult,
@@ -181,6 +198,8 @@ export type {
 
 // Interfaces
 export { AdminPatientsController } from './interfaces/controllers/AdminPatientsController';
+export { AdminPatientAddressesController } from './interfaces/controllers/AdminPatientAddressesController';
+export { AdminInsuranceProvidersController } from './interfaces/controllers/AdminInsuranceProvidersController';
 export { AdminPatientsMapController } from './interfaces/controllers/AdminPatientsMapController';
 export { AdminPatientChatIdsController } from './interfaces/controllers/AdminPatientChatIdsController';
 export { AdminPatientChatRolesController } from './interfaces/controllers/AdminPatientChatRolesController';

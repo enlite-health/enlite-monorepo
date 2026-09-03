@@ -32,9 +32,10 @@ export function DiagnosticoCard({ patient, onSaved }: DiagnosticoCardProps) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
 
-  const specialtyLabel = patient.clinicalSpecialty
-    ? t(`admin.patients.specialtyOptions.${patient.clinicalSpecialty}`, patient.clinicalSpecialty)
-    : null;
+  // US-B4: dispositivos por catálogo, traduzidos. US-B8: "Tipos de patologías - ICHOM" /
+  // "Especialidad" saíram do card (o segmento é máscara do projeto terapêutico, não da admissão).
+  const devices = (patient.deviceTypes ?? []).map((d) => t(`admin.patients.deviceTypeOptions.${d}`, d));
+  const devicesLabel = devices.length > 0 ? devices.join(', ') : null;
 
   return (
     <div className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
@@ -74,7 +75,7 @@ export function DiagnosticoCard({ patient, onSaved }: DiagnosticoCardProps) {
           updatedBy={patient.emergencyInstructionsUpdatedBy}
           redactedMessage={patient.emergencyInstructionsRedacted ? t('admin.patients.detail.diagnosisCard.emergencyRedacted') : null}
         />
-        <Field label={`${t('admin.patients.detail.diagnosisCard.pathologyTypes')}:`} value={specialtyLabel} />
+        <Field label={`${t('admin.patients.detail.diagnosisCard.devices')}:`} value={devicesLabel} />
         <BoolField label={`${t('admin.patients.detail.diagnosisCard.hasFollowUp')}:`} value={null} />
         <BoolField label={`${t('admin.patients.detail.diagnosisCard.receivesMoney')}:`} value={null} />
         <BoolField label={`${t('admin.patients.detail.diagnosisCard.aggressiveBehavior')}:`} value={null} />

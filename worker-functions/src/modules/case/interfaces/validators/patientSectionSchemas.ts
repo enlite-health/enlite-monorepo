@@ -4,6 +4,8 @@ import { SEXES } from '../../domain/enums/Sex';
 import { DEPENDENCY_LEVELS } from '../../domain/enums/DependencyLevel';
 import { CLINICAL_SPECIALTIES } from '../../domain/enums/ClinicalSpecialty';
 import { PATIENT_STATUSES } from '../../domain/enums/PatientStatus';
+import { ON_HOLD_REASONS } from '../../domain/enums/OnHoldReason';
+import { RELATIONSHIPS } from '../../domain/enums/Relationship';
 import { PROFESSIONS } from '@modules/worker';
 
 /**
@@ -17,6 +19,16 @@ import { PROFESSIONS } from '@modules/worker';
  */
 
 const professionEnum = z.enum(PROFESSIONS as unknown as [string, ...string[]]);
+
+/**
+ * Forma de CÓDIGO de catálogo (device_types.code, insurance_providers.code): a mesma dos CHECKs
+ * `*_code_upper` das migrations 307/311. Validar a forma aqui (400) e o pertencimento ao catálogo
+ * no repositório (422) — o catálogo muda sem deploy, então o schema não pode listá-lo.
+ */
+const catalogCode = z.string().regex(/^[A-Z][A-Z0-9_]*$/, 'código de catálogo: MAIÚSCULAS, dígitos e _');
+
+/** Teto de `on_hold_note` no servidor (lex C7.1-f) — espelhado no CHECK da migration 314. */
+export const ON_HOLD_NOTE_MAX = 2000;
 
 /** section = 'general' → identity fields (PatientGeneralSectionData). */
 export const generalSectionSchema = z
@@ -32,10 +44,16 @@ export const generalSectionSchema = z
     healthInsuranceName: z.string().trim().min(1).nullable().optional(),
     healthInsuranceMemberId: z.string().trim().min(1).nullable().optional(),
     contactEmail: z.string().trim().email().nullable().optional(),
+    /** US-B9 (migration 317): data de início do serviço — nativa do painel, não deriva da vaga. */
+    serviceStartDate: z.coerce.date().nullable().optional(),
   })
   .strict();
 
-/** section = 'clinical' → the full clinical block (PatientRelatedInput clinical subset). */
+/**
+ * section = 'clinical' → the full clinical block (PatientRelatedInput clinical subset).
+ * US-B4: `deviceType` (texto livre) SAIU — `patients.device_type` é FK (308) e derivado (310);
+ * o drawer manda `deviceTypes`, códigos de `device_types`, que vão para `patient_device_types`.
+ */
 export const clinicalSectionSchema = z
   .object({
     diagnosis: z.string().nullable().optional(),
@@ -43,7 +61,7 @@ export const clinicalSectionSchema = z
     clinicalSpecialty: z.enum(CLINICAL_SPECIALTIES as unknown as [string, ...string[]]).nullable().optional(),
     clinicalSegments: z.string().nullable().optional(),
     serviceType: z.array(professionEnum).nullable().optional(),
-    deviceType: z.string().nullable().optional(),
+    deviceTypes: z.array(catalogCode).optional(),
     additionalComments: z.string().nullable().optional(),
     emergencyInstructions: z.string().max(4000).nullable().optional(),
     hasJudicialProtection: z.boolean().nullable().optional(),
@@ -52,11 +70,25 @@ export const clinicalSectionSchema = z
   })
   .strict();
 
+/**
+ * section = 'coverage' (US-B3) → cobertura informada (texto), nº de afiliado e as coberturas
+ * VERIFICADAS por código do catálogo (insurance_providers). IVA e tipo de contratação NÃO
+ * entram aqui — são do contrato/pagador (lex C3.3), bloco C.
+ */
+export const coverageSectionSchema = z
+  .object({
+    healthInsuranceName: z.string().trim().min(1).nullable().optional(),
+    affiliateId: z.string().trim().min(1).nullable().optional(),
+    insuranceVerifiedCodes: z.array(catalogCode).optional(),
+  })
+  .strict();
+
 const responsibleInputSchema = z
   .object({
     firstName: z.string().trim().min(1),
     lastName: z.string().trim().min(1),
-    relationship: z.string().trim().min(1).nullable().optional(),
+    // US-B5: a coluna tem CHECK desde a 139 — recusar aqui é 400 legível, lá seria 23514 → 500.
+    relationship: z.enum(RELATIONSHIPS as unknown as [string, ...string[]]).nullable().optional(),
     phone: z.string().trim().min(1).nullable().optional(),
     email: z.string().trim().email().nullable().optional(),
     documentType: z.string().trim().min(1).nullable().optional(),
@@ -88,6 +120,7 @@ export const serviceSectionSchema = z
 export const SECTION_SCHEMAS = {
   general: generalSectionSchema,
   clinical: clinicalSectionSchema,
+  coverage: coverageSectionSchema,
   'support-network': supportNetworkSectionSchema,
   service: serviceSectionSchema,
 } as const;
@@ -97,10 +130,19 @@ export type PatientSectionName = keyof typeof SECTION_SCHEMAS;
 /** Route params for PATCH /:id/:section — id is a UUID, section is a known name. */
 export const patientSectionParamSchema = z.object({
   id: z.string().uuid({ message: 'id must be a valid UUID' }),
-  section: z.enum(['general', 'clinical', 'support-network', 'service']),
+  section: z.enum(['general', 'clinical', 'coverage', 'support-network', 'service']),
 });
 
-/** Body for PUT /api/admin/patients/:id/status. */
-export const patientStatusSchema = z.object({
-  status: z.enum(PATIENT_STATUSES as unknown as [string, ...string[]]),
-});
+/**
+ * Body for PUT /api/admin/patients/:id/status (v2). ON_HOLD leva motivo (obrigatório — validado
+ * no serviço, que conhece o estado atual) e nota (teto 2000, lex C7.1-f).
+ */
+export const patientStatusSchema = z
+  .object({
+    status: z.enum(PATIENT_STATUSES as unknown as [string, ...string[]]),
+    onHoldReason: z.enum(ON_HOLD_REASONS as unknown as [string, ...string[]]).nullable().optional(),
+    onHoldNote: z.string().max(ON_HOLD_NOTE_MAX).nullable().optional(),
+    /** Origem da mudança → `change_source` na history (Historial). Default: admin_panel. */
+    changeSource: z.enum(['admin_panel', 'kanban']).optional(),
+  })
+  .strict();

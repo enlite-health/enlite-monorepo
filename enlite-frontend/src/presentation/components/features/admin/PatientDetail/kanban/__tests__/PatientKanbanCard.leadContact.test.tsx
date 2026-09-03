@@ -32,6 +32,7 @@ function lead(overrides: Partial<PatientKanbanItem> = {}): PatientKanbanItem {
     caseNumber: null,
     dependencyLevel: null,
     status: 'SOLICITANTE',
+    admissionStatus: 'SOLICITANTE',
     responsibleName: null,
     leadContactEmailMasked: 'jo***@gmail.com',
     leadContactIsResponsible: false,

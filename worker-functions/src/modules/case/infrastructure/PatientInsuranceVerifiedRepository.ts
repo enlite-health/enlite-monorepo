@@ -76,9 +76,33 @@ export function classifyInsuranceLabels(labels: readonly unknown[]): {
   return { accepted, rejected };
 }
 
+/** Código fora do catálogo ATIVO de `insurance_providers` (spec 012, US-B3) — o controller devolve 422. */
+export class InsuranceProviderUnknownError extends Error {
+  readonly code = 'INSURANCE_PROVIDER_UNKNOWN';
+  constructor(readonly codes: string[]) {
+    super(`Unknown insurance provider code(s): ${codes.join(', ')}`);
+    this.name = 'InsuranceProviderUnknownError';
+  }
+}
+
+/**
+ * Ordinal a partir do qual o PAINEL grava (spec 012). O sync usa 1..N; separar as faixas é o que
+ * evita colisão na PK (patient_id, ordinal) quando as duas origens coexistem numa ficha.
+ */
+export const PANEL_ORDINAL_BASE = 1000;
+
 export class PatientInsuranceVerifiedRepository {
   private pool: Pool;
   constructor() { this.pool = DatabaseConnection.getInstance().getPool(); }
+
+  /** ConceptMap rótulo → código, lido do BANCO a cada escrita (o catálogo muda sem deploy). */
+  private async aliasMap(cli: PoolClient): Promise<Map<string, string>> {
+    const r = await cli.query<{ label: string; code: string }>(
+      `SELECT a.label, a.code FROM insurance_provider_aliases a
+         JOIN insurance_providers p ON p.code = a.code
+        WHERE a.source = 'clickup'`);
+    return new Map(r.rows.map(x => [x.label, x.code]));
+  }
 
   /**
    * Substitui o conjunto de coberturas de UM paciente.
@@ -113,12 +137,18 @@ export class PatientInsuranceVerifiedRepository {
       // Lock consultivo pelo paciente: dois syncs simultâneos do mesmo paciente não
       // intercalam DELETE e INSERT, que é como nasce conjunto pela metade.
       await cli.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`insurance:${input.patientId}`]);
-      await cli.query('DELETE FROM patient_insurance_verified WHERE patient_id = $1', [input.patientId]);
+      // Spec 012: o código canônico vai JUNTO do cru (migration 312), traduzido pelo ConceptMap no
+      // momento da escrita — NULL quando o rótulo ainda não tem alias (nada se perde: o cru fica).
+      const aliases = await this.aliasMap(cli);
+      // Apaga SÓ as linhas desta origem: o que o painel gravou (source='admin_manual') sobrevive ao
+      // próximo webhook — a mesma lição do QA 🔴1 do bloco A (replaceBySource dos responsáveis).
+      await cli.query('DELETE FROM patient_insurance_verified WHERE patient_id = $1 AND source = $2', [input.patientId, source]);
       for (let i = 0; i < accepted.length; i++) {
         await cli.query(
-          `INSERT INTO patient_insurance_verified (patient_id, ordinal, raw_label, source)
-           VALUES ($1, $2, $3, $4)`,
-          [input.patientId, i + 1, accepted[i], source]);
+          `INSERT INTO patient_insurance_verified (patient_id, ordinal, raw_label, source, provider_code)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (patient_id, raw_label) DO NOTHING`,
+          [input.patientId, i + 1, accepted[i], source, aliases.get(accepted[i]) ?? null]);
       }
       if (proprio) await cli.query('COMMIT');
     } catch (err) {
@@ -140,6 +170,59 @@ export class PatientInsuranceVerifiedRepository {
     }
 
     return { outcome: 'written', received: input.read.labels.length, accepted, rejected };
+  }
+
+  /**
+   * O drawer "Cobertura Médica" grava por CÓDIGO (spec 012, US-B3): substitui o conjunto que o
+   * PAINEL gravou (source='admin_manual'); as linhas do sync do ClickUp não são tocadas.
+   *   - código fora do catálogo ativo → InsuranceProviderUnknownError (422), sem escrever;
+   *   - `raw_label` = o próprio código (é o literal escolhido na tela);
+   *   - ordinal a partir de PANEL_ORDINAL_BASE; `ON CONFLICT (patient_id, raw_label) DO NOTHING`
+   *     quando o ClickUp já trouxe a mesma cobertura com o mesmo literal.
+   */
+  async replaceCodesForPatient(
+    patientId: string,
+    codes: readonly string[],
+    client?: PoolClient,
+  ): Promise<{ codes: string[] }> {
+    const wanted = Array.from(new Set(codes));
+    const proprio = !client;
+    const cli = client ?? await this.pool.connect();
+    try {
+      if (proprio) await cli.query('BEGIN');
+      const catalogo = await cli.query<{ code: string }>('SELECT code FROM insurance_providers WHERE active');
+      const ativos = new Set(catalogo.rows.map(r => r.code));
+      const desconhecidos = wanted.filter(c => !ativos.has(c));
+      if (desconhecidos.length > 0) throw new InsuranceProviderUnknownError(desconhecidos);
+
+      await cli.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`insurance:${patientId}`]);
+      await cli.query('DELETE FROM patient_insurance_verified WHERE patient_id = $1 AND source = $2', [patientId, 'admin_manual']);
+      for (let i = 0; i < wanted.length; i++) {
+        await cli.query(
+          `INSERT INTO patient_insurance_verified (patient_id, ordinal, raw_label, source, provider_code)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (patient_id, raw_label) DO NOTHING`,
+          [patientId, PANEL_ORDINAL_BASE + i, wanted[i], 'admin_manual', wanted[i]]);
+      }
+      if (proprio) await cli.query('COMMIT');
+      return { codes: wanted };
+    } catch (err) {
+      if (proprio) await cli.query('ROLLBACK');
+      throw err;
+    } finally {
+      if (proprio) cli.release();
+    }
+  }
+
+  /** Os CÓDIGOS distintos do paciente (qualquer origem), na ordem do catálogo — o que a ficha mostra. */
+  async findCodesByPatientId(patientId: string): Promise<string[]> {
+    const r = await this.pool.query<{ provider_code: string }>(
+      `SELECT DISTINCT piv.provider_code, p.sort_order
+         FROM patient_insurance_verified piv
+         JOIN insurance_providers p ON p.code = piv.provider_code
+        WHERE piv.patient_id = $1 AND piv.provider_code IS NOT NULL
+        ORDER BY p.sort_order, piv.provider_code`, [patientId]);
+    return r.rows.map(x => x.provider_code);
   }
 
   /** Leitura interna. ⚠️ C-D: não expor `rawLabel` em rota de API sem novo parecer do `lex`. */

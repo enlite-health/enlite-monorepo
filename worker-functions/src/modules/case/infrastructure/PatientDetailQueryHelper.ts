@@ -67,6 +67,37 @@ const PATIENT_DETAIL_SQL = `
                 FROM patient_chat_ids c
                WHERE c.patient_id = p.id), '{}'::jsonb) AS "chatIds",
     status,
+    -- Spec 012 (bloco B): funil em coluna própria (313), estado v2 + motivo de espera (314),
+    -- data de início do serviço (317). on_hold_note é texto clínico restrito: a redação por
+    -- permissão acontece DEPOIS, no ponto único (projectPatientClinicalForActor).
+    admission_status         AS "admissionStatus",
+    on_hold_reason           AS "onHoldReason",
+    p.on_hold_note           AS "onHoldNote",
+    service_start_date       AS "serviceStartDate",
+    -- Cobertura VERIFICADA por código (312) e dispositivo múltiplo (307): arrays na ordem do catálogo.
+    COALESCE((SELECT array_agg(x.provider_code ORDER BY x.sort_order, x.provider_code)
+                FROM (SELECT DISTINCT piv.provider_code, ip.sort_order
+                        FROM patient_insurance_verified piv
+                        JOIN insurance_providers ip ON ip.code = piv.provider_code
+                       WHERE piv.patient_id = p.id AND piv.provider_code IS NOT NULL) x), '{}'::text[])
+                             AS "insuranceVerifiedCodes",
+    -- QA 3 (SUP-B5): a MESMA união, com source -- o drawer usa para travar o chip do ClickUp
+    -- (não removível ali) e restringir o multi-select ao que o painel gravou. DISTINCT
+    -- (provider_code, source) colapsa 2 raw_labels da MESMA origem que mapeiam pro mesmo
+    -- código; a mesma cobertura em origens diferentes vira 2 entradas (é o par que a tela precisa
+    -- distinguir).
+    COALESCE((SELECT jsonb_agg(jsonb_build_object('code', x.provider_code, 'source', x.source)
+                                ORDER BY x.sort_order, x.provider_code, x.source)
+                FROM (SELECT DISTINCT piv.provider_code, piv.source, ip.sort_order
+                        FROM patient_insurance_verified piv
+                        JOIN insurance_providers ip ON ip.code = piv.provider_code
+                       WHERE piv.patient_id = p.id AND piv.provider_code IS NOT NULL) x), '[]'::jsonb)
+                             AS "insuranceVerifiedEntries",
+    COALESCE((SELECT array_agg(pdt.device_type ORDER BY d.sort_order, d.code)
+                FROM patient_device_types pdt
+                JOIN device_types d ON d.code = pdt.device_type
+               WHERE pdt.patient_id = p.id), '{}'::text[])
+                             AS "deviceTypes",
     needs_attention          AS "needsAttention",
     attention_reasons        AS "attentionReasons",
     -- Mesma fonte da lista (PatientQueryRepository): usa patients.case_number
@@ -101,7 +132,8 @@ async function fetchRelated(pool: Pool, patientId: string) {
       // operator. Archived rows still exist in the table to preserve historic
       // vacancies that point to them — see migration 198 and
       // docs/features/vacancy-creation/06-endereco-servico.md.
-      `SELECT id, address_type, address_formatted, address_raw, complement, display_order, lat, lng
+      `SELECT id, address_type, address_formatted, address_raw, complement, display_order, lat, lng,
+              neighborhood, logistics_corridor, access_notes, country
          FROM patient_addresses
         WHERE patient_id = $1
           AND archived_at IS NULL
@@ -189,6 +221,11 @@ function mapAddresses(rows: any[], vacancyRows: ActiveVacancy[]): PatientAddress
     lat: a.lat != null ? parseFloat(a.lat) : null,
     lng: a.lng != null ? parseFloat(a.lng) : null,
     isPrimary: a.address_type === 'primary',
+    // Spec 012, US-B2: logística POR endereço (316); zona = `neighborhood` (147, lex C2.7).
+    neighborhood: a.neighborhood ?? null,
+    logisticsCorridor: a.logistics_corridor ?? null,
+    accessNotes: a.access_notes ?? null,
+    country: a.country ?? null,
     availability: computeAddressAvailability(a.id, vacancyRows),
   }));
 }
@@ -262,6 +299,13 @@ export async function fetchPatientDetail(
     chatIds: p.chatIds ?? {},
     ...legacyChatIdAliases(p.chatIds ?? {}),
     status: p.status,
+    admissionStatus: p.admissionStatus ?? 'DONE',
+    onHoldReason: p.onHoldReason ?? null,
+    onHoldNote: p.onHoldNote ?? null,
+    serviceStartDate: p.serviceStartDate ?? null,
+    insuranceVerifiedCodes: p.insuranceVerifiedCodes ?? [],
+    insuranceVerifiedEntries: p.insuranceVerifiedEntries ?? [],
+    deviceTypes: p.deviceTypes ?? [],
     needsAttention: p.needsAttention,
     attentionReasons: p.attentionReasons ?? [],
     lastCaseNumber: p.lastCaseNumber != null ? Number(p.lastCaseNumber) : null,

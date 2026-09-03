@@ -34,6 +34,8 @@ const schema = z.object({
   documentNumber: z.string().trim(),
   birthDate: z.string(),
   sex: z.string(),
+  /** US-B9 (spec 012): yyyy-MM-dd ou '' — não deriva da vaga. */
+  serviceStartDate: z.string(),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -70,6 +72,7 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
       documentNumber: patient.documentNumber ?? '',
       birthDate: toDateInput(patient.birthDate),
       sex: patient.sex ?? '',
+      serviceStartDate: toDateInput(patient.serviceStartDate),
     },
   });
 
@@ -119,6 +122,8 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
     // mexer não pode virar PATCH {birthDate:null} nem bumpar updated_at (QA 🟡3).
     const birth = values.birthDate.trim();
     if (birth !== toDateInput(patient.birthDate)) payload.birthDate = birth || null;
+    const start = values.serviceStartDate.trim();
+    if (start !== toDateInput(patient.serviceStartDate)) payload.serviceStartDate = start || null;
 
     if (Object.keys(payload).length === 0) { handleClose(); return; }
 
@@ -184,6 +189,9 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
             </FormField>
             <FormField label={td('generalInfoCard.birthDate')} htmlFor="pge-birthDate" optional>
               <InputWithIcon id="pge-birthDate" type="date" inputSize="compact" data-testid="pge-birthDate" {...register('birthDate')} />
+            </FormField>
+            <FormField label={td('generalInfoCard.serviceStartDate')} htmlFor="pge-serviceStartDate" optional>
+              <InputWithIcon id="pge-serviceStartDate" type="date" inputSize="compact" data-testid="pge-serviceStartDate" {...register('serviceStartDate')} />
             </FormField>
             <FormField label={td('generalInfoCard.sex')} htmlFor="pge-sex" optional>
               <Controller control={control} name="sex" render={({ field }) => (

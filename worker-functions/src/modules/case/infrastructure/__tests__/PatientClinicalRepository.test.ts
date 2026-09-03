@@ -100,14 +100,16 @@ describe('PatientClinicalRepository.upsert', () => {
     const repo = new PatientClinicalRepository();
     await repo.upsert({
       patientId: PATIENT, diagnosis: 'D', dependencyLevel: 'HIGH' as never, clinicalSegments: null, serviceType: ['AT'] as never,
-      deviceType: 'silla', additionalComments: 'obs', hasJudicialProtection: true, hasCud: false, hasConsent: null,
+      additionalComments: 'obs', hasJudicialProtection: true, hasCud: false, hasConsent: null,
       clinicalSpecialty: 'ASD' as never, actorUid: null,
     });
     const { sql, params } = lastCall();
-    expect(sql).toMatch(/has_consent = COALESCE\(\$11, has_consent\)/);
-    expect(params).toEqual([PATIENT, 'D', 'HIGH', null, ['AT'], 'silla', 'obs', null, true, false, null, 'ASD']);
-    expect(sql).toMatch(/clinical_specialty\s+= \$12/);
-    expect(sql).toMatch(/additional_comments_updated_by = \$8/);
+    expect(sql).toMatch(/has_consent = COALESCE\(\$10, has_consent\)/);
+    expect(params).toEqual([PATIENT, 'D', 'HIGH', null, ['AT'], 'obs', null, true, false, null, 'ASD']);
+    expect(sql).toMatch(/clinical_specialty\s+= \$11/);
+    expect(sql).toMatch(/additional_comments_updated_by = \$7/);
+    // Spec 012 US-B4: o escalar device_type NÃO é escrito por aqui (FK 308, derivado 310).
+    expect(sql).not.toMatch(/device_type/);
   });
 
   it('clinicalSpecialtyReadable=false (2.2/rodada 4, D167 no DERIVADO): clinical_specialty NÃO entra no SET; null com readable ausente/true GRAVA null (D-E)', async () => {

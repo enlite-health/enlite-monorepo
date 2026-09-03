@@ -192,4 +192,23 @@ describe('PatientGeneralEditDrawer — data de nascimento', () => {
     await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
     expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'general', { birthDate: '1961-04-19' });
   });
+
+  it('spec 012 US-B9: início do serviço — sem data e sem mexer não manda; preencher manda; limpar manda null', async () => {
+    const onClose = vi.fn();
+    render(<PatientGeneralEditDrawer patient={{ ...patientDetailFixture, serviceStartDate: null }} onClose={onClose} onSaved={vi.fn()} />);
+    expect(screen.getByTestId('pge-serviceStartDate')).toHaveValue('');
+    fireEvent.click(screen.getByTestId('pge-save'));
+    await waitFor(() => expect(onClose).toHaveBeenCalled(), { timeout: 1500 });
+    expect(updatePatientSection).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByTestId('pge-serviceStartDate'), { target: { value: '2026-09-15' } });
+    fireEvent.click(screen.getByTestId('pge-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patientDetailFixture.id, 'general', { serviceStartDate: '2026-09-15' }));
+    updatePatientSection.mockClear();
+    render(<PatientGeneralEditDrawer patient={{ ...patientDetailFixture, serviceStartDate: '2026-09-01T00:00:00Z' }} onClose={vi.fn()} onSaved={vi.fn()} />);
+    const inputs = screen.getAllByTestId('pge-serviceStartDate');
+    expect(inputs.slice(-1)[0]).toHaveValue('2026-09-01');
+    fireEvent.change(inputs.slice(-1)[0] as HTMLElement, { target: { value: '' } });
+    fireEvent.click(screen.getAllByTestId('pge-save').slice(-1)[0] as HTMLElement);
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patientDetailFixture.id, 'general', { serviceStartDate: null }));
+  });
 });

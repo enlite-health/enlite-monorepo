@@ -58,6 +58,16 @@ describe('CreatePatientUseCase', () => {
     });
   });
 
+  it('a2. US-B6 (spec 012): birthDate do modal vai para o paciente nativo; ausente → null', async () => {
+    const createNativePatient = jest.fn().mockResolvedValue({ id: 'nat-b6', created: true });
+    const useCase = new CreatePatientUseCase({ createNativePatient } as never);
+    const d = new Date('2015-06-20T00:00:00Z');
+    await useCase.execute({ firstName: 'Nina', birthDate: d });
+    expect(createNativePatient.mock.calls[0][0]).toMatchObject({ firstName: 'Nina', birthDate: d });
+    await useCase.execute({ firstName: 'Sem' });
+    expect(createNativePatient.mock.calls[1][0]).toMatchObject({ birthDate: null });
+  });
+
   it('b. passes firstName through and nulls the omitted fields', async () => {
     const createNativePatient = jest.fn().mockResolvedValue({ id: 'pat-002', created: true });
     const useCase = new CreatePatientUseCase(makeService(createNativePatient));

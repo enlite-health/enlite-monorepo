@@ -27,10 +27,10 @@ describe('patientClinicalAccess', () => {
     const red = projectPatientClinicalForActor(patient, []);
     expect(red).not.toBe(patient);
     expect(red.emergencyInstructionsRedacted).toBe(true);
-    for (const f of CLINICAL_RESTRICTED_FIELDS) expect(red[f]).toBeNull();
+    for (const f of CLINICAL_RESTRICTED_FIELDS) expect((red as Record<string, unknown>)[f]).toBeNull();
     expect(red.diagnosis).toBe('x'); expect(red.additionalComments).toBe('ok');
     expect(patient.emergencyInstructions).toBe('Llamar 107'); // original intacto
-    expect(CLINICAL_RESTRICTED_FIELDS).toEqual(['emergencyInstructions', 'emergencyInstructionsUpdatedAt', 'emergencyInstructionsUpdatedBy']);
+    expect(CLINICAL_RESTRICTED_FIELDS).toEqual(['emergencyInstructions', 'emergencyInstructionsUpdatedAt', 'emergencyInstructionsUpdatedBy', 'onHoldNote']);
   });
 
   it('C7: a flag de redação sai mesmo com o campo NULL — não revela se existe conteúdo', () => {

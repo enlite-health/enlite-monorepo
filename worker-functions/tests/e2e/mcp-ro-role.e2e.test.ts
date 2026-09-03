@@ -128,6 +128,42 @@ describe('Role enlite_mcp_ro — SELECT por coluna em patients (D216) @integrati
     expect(priv.rows[0]).toEqual({ t: false, c: false });
   });
 
+  it('spec 012 lex C2.1: patient_addresses.access_notes é negado à role (colunas irmãs passam); C3.1: provider_code não reabre patient_insurance_verified', async () => {
+    const { rows: [a] } = await admin.query<{ id: string }>(
+      `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, access_notes) VALUES ($1, 'primary', 'Calle Falsa 123', $2) RETURNING id`,
+      [patientId, CLINICAL_TEXT],
+    );
+    try {
+      await expect(ro.query('SELECT access_notes FROM patient_addresses WHERE id = $1', [a.id])).rejects.toThrow(/permission denied for table patient_addresses/);
+      await expect(ro.query('SELECT * FROM patient_addresses WHERE id = $1', [a.id])).rejects.toThrow(/permission denied for table patient_addresses/);
+      // colunas não sensíveis seguem legíveis (item 1: contagem/rótulo sempre)
+      const ok = await ro.query('SELECT id, address_type, country, neighborhood, logistics_corridor FROM patient_addresses WHERE id = $1', [a.id]);
+      expect(ok.rows).toEqual([{ id: a.id, address_type: 'primary', country: 'AR', neighborhood: null, logistics_corridor: null }]);
+      const priv = await admin.query<{ t: boolean; c: boolean; n: boolean }>(
+        `SELECT has_table_privilege('enlite_mcp_ro', 'public.patient_addresses', 'SELECT') AS t,
+                has_column_privilege('enlite_mcp_ro', 'public.patient_addresses', 'access_notes', 'SELECT') AS c,
+                has_column_privilege('enlite_mcp_ro', 'public.patient_addresses', 'neighborhood', 'SELECT') AS n`,
+      );
+      expect(priv.rows[0]).toEqual({ t: false, c: false, n: true });
+      // CONTROLE POSITIVO (D157): GRANT reabre; REVOKE fecha
+      await admin.query('GRANT SELECT (access_notes) ON public.patient_addresses TO enlite_mcp_ro');
+      try {
+        expect((await ro.query<{ access_notes: string }>('SELECT access_notes FROM patient_addresses WHERE id = $1', [a.id])).rows[0].access_notes).toBe(CLINICAL_TEXT);
+      } finally {
+        await admin.query('REVOKE SELECT (access_notes) ON public.patient_addresses FROM enlite_mcp_ro');
+      }
+      await expect(ro.query('SELECT access_notes FROM patient_addresses WHERE id = $1', [a.id])).rejects.toThrow(/permission denied/);
+    } finally {
+      await admin.query('DELETE FROM patient_addresses WHERE id = $1', [a.id]);
+    }
+    // C3.1: a coluna nova (312) herda a revogação da tabela inteira
+    await expect(ro.query('SELECT provider_code FROM patient_insurance_verified LIMIT 1')).rejects.toThrow(/permission denied for table patient_insurance_verified/);
+    // patients: as colunas novas do bloco B NÃO entraram na lista positiva (lex C7.1-d / B9)
+    for (const col of ['on_hold_note', 'on_hold_reason', 'service_start_date', 'admission_status']) {
+      await expect(ro.query(`SELECT ${col} FROM patients WHERE id = $1`, [patientId])).rejects.toThrow(/permission denied for table patients/);
+    }
+  });
+
   it('CONTROLE POSITIVO (D157): GRANT da coluna reabre a leitura; REVOKE fecha de novo', async () => {
     await admin.query('GRANT SELECT (diagnosis) ON public.patients TO enlite_mcp_ro');
     try {
