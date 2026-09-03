@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Eye, CalendarDays } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
+import { resolveDateLocale, SHORT_DATE_OPTIONS } from '@presentation/utils/dateLocale';
 import { toDisplayName } from '@domain/value-objects/displayName';
 import {
   Table,
@@ -68,10 +69,15 @@ function StatusBadge({ needsAttention, reasons }: { needsAttention: boolean; rea
   );
 }
 
+/**
+ * `||` e não `??`: o `??` só desvia de `null`/`undefined`, então com
+ * `documentNumber: ''` a função devolvia STRING VAZIA e engolia o tipo — o
+ * documento sumia da célula. O ramo `?? '—'` também era inalcançável (a 1ª
+ * guarda já cobria os dois vazios) e era o único branch descoberto do arquivo.
+ */
 function formatDocument(type: string | null, number: string | null): string {
-  if (!type && !number) return '—';
   if (type && number) return `${type} ${number}`;
-  return number ?? type ?? '—';
+  return number || type || '—';
 }
 
 /**
@@ -89,25 +95,15 @@ function formatServiceType(t: ReturnType<typeof useTranslation>['t'], types: str
 /**
  * Data do registro: dd/mm/aaaa no locale ativo.
  *
- * ⚠️ Duplicação CONSCIENTE do mapa de locale que já existe em
- * `WorkersTable.tsx:44` e `PatientDetail/ClinicalLongText.tsx:19` — as duas
- * anteriores a este PR. Não dá para reusar nenhuma: são funções privadas de
- * módulo, e a semântica difere. A `formatDate` da WorkersTable devolve `'—'`
- * (ela preenche uma COLUNA própria); esta devolve `null`, porque a data mora
- * como 2ª linha da célula do nome e um traço solto ali vira sujeira. Esta
- * também guarda `NaN` (data inválida), o que a vizinha não faz.
- * Unificar as três num util compartilhado é trabalho à parte — está na lista
- * de follow-up do PR, e mexeria em 2 telas fora do escopo desta mudança.
+ * O mapa de locale vem do util compartilhado (`resolveDateLocale`); o
+ * FALLBACK é local de propósito: aqui a data mora como linha extra da célula
+ * do nome, então ausência vira `null` (linha some) e não `'—'` (traço solto).
  */
 function formatRegisteredAt(iso: string | null, locale: string): string | null {
   if (!iso) return null;
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString(locale === 'es' ? 'es-AR' : 'pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
+  return date.toLocaleDateString(resolveDateLocale(locale), SHORT_DATE_OPTIONS);
 }
 
 function formatDependency(t: ReturnType<typeof useTranslation>['t'], level: string | null): string {
@@ -135,7 +131,7 @@ export function PatientsTable({ patients, onRowClick }: PatientsTableProps): JSX
           <TableHead className="whitespace-nowrap hidden md:table-cell">
             {t('admin.patients.table.dependency')}
           </TableHead>
-          <TableHead className="whitespace-nowrap hidden lg:table-cell">
+          <TableHead className="whitespace-nowrap hidden xl:table-cell">
             {t('admin.patients.table.specialty')}
           </TableHead>
           <TableHead className="whitespace-nowrap hidden md:table-cell">
@@ -164,6 +160,7 @@ export function PatientsTable({ patients, onRowClick }: PatientsTableProps): JSX
               const responsibleName = toDisplayName(row.responsibleName) || null;
               const registeredAt = formatRegisteredAt(row.createdAt, i18n.language);
               const serviceLabel = formatServiceType(t, row.serviceType);
+              const specialtyLabel = formatSpecialty(t, row.clinicalSpecialty);
               const caseLabel = row.caseNumber != null
                 ? `${t('admin.patients.codeColumn')} #${row.caseNumber}`
                 : '—';
@@ -223,8 +220,14 @@ export function PatientsTable({ patients, onRowClick }: PatientsTableProps): JSX
                   <TableCell weight="medium" className="whitespace-nowrap hidden md:table-cell">
                     {formatDependency(t, row.dependencyLevel)}
                   </TableCell>
-                  <TableCell weight="medium" className="whitespace-nowrap hidden lg:table-cell">
-                    {formatSpecialty(t, row.clinicalSpecialty)}
+                  <TableCell unwrapped className="hidden xl:table-cell max-w-[130px]">
+                    {/* Era a coluna mais larga da tabela (198px, a única que ainda
+                        tinha `nowrap`) e sozinha respondia pelos 47px que faziam
+                        a linha do Estado ser cortada em 1280. Mesmo tratamento do
+                        Servicio e do Nombre: 2 linhas no máximo, inteiro no title. */}
+                    <Text as="span" size="sm" weight="medium" color="inherit" className="line-clamp-2" title={specialtyLabel}>
+                      {specialtyLabel}
+                    </Text>
                   </TableCell>
                   <TableCell unwrapped className="hidden md:table-cell max-w-[180px]">
                     {/* Alias é longo ("Acompañante Terapéutico + Cuidador"): com

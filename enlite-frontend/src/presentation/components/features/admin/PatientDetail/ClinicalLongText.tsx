@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { resolveDateLocale, SHORT_DATE_OPTIONS } from '@presentation/utils/dateLocale';
 import { Text } from '@presentation/components/atoms/Text';
 
 interface ClinicalLongTextProps {
@@ -16,8 +17,7 @@ interface ClinicalLongTextProps {
 function formatDateTime(iso: string, locale: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  const dateLocale = locale === 'es' ? 'es-AR' : 'pt-BR';
-  return d.toLocaleString(dateLocale, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString(resolveDateLocale(locale), { ...SHORT_DATE_OPTIONS, hour: '2-digit', minute: '2-digit' });
 }
 
 /**
