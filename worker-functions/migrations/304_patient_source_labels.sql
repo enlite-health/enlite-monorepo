@@ -1,5 +1,5 @@
 -- ============================================================
--- Migration 284: patient_source_labels — o RÓTULO CRU da origem, múltiplo, teto 3
+-- Migration 304: patient_source_labels — o RÓTULO CRU da origem, múltiplo, teto 3
 --
 -- Task 2.2 da change `campos-admissao` (openspec/changes/campos-admissao).
 -- Decisões que mandam aqui: D-A.2 (o cru é sempre persistido), D-B (o derivado fica,

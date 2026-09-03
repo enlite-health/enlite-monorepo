@@ -2,7 +2,7 @@
  * verificar-4.2-divergencia.ts — o escalar derivado bate com o conjunto?
  *
  * `patients.device_type` deixou de ser co-escrito e passou a ser DERIVADO de
- * `patient_device_types` pelo trigger da migration 290 (F64). Este script mede se os dois
+ * `patient_device_types` pelo trigger da migration 310 (F64). Este script mede se os dois
  * concordam — e é o único jeito de saber, porque divergência aqui não gera erro, não gera log
  * e não muda o `success:true` do webhook. É a F43 aplicada a este campo.
  *
@@ -60,7 +60,7 @@ async function medir(c: PoolClient): Promise<void> {
   if (div > 0) {
     console.log('\n✘ REPROVA: há paciente cujo escalar não é o que o trigger calcularia.');
     console.log('  Causa provável: alguém voltou a escrever `patients.device_type` direto');
-    console.log('  (ver PatientClinicalRepository), ou o trigger da 290 não está instalado.');
+    console.log('  (ver PatientClinicalRepository), ou o trigger da 310 não está instalado.');
     process.exitCode = 1;
   } else {
     console.log('\n✔ escalar e conjunto concordam em todos os pacientes.');

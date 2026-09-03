@@ -7,16 +7,16 @@
  * e a regra dura de que **"não consegui ler" nunca vira "está vazio"** (D167/F41).
  *
  * NÃO herda a aceitação livre de rótulo. Cobertura grava o rótulo cru (`raw_label`) e o limite
- * é só "não-vazio". Aqui a coluna tem **FK para `device_types(code)`** (migration 287), então
+ * é só "não-vazio". Aqui a coluna tem **FK para `device_types(code)`** (migration 307), então
  * um valor fora do catálogo não é um dado ruim: é um **`23503` estourando no meio do webhook**.
  * Por isso este repositório traduz e valida ANTES de escrever, e o que não traduz vai para
  * QUARENTENA em `patient_source_labels` — a tabela que existe exatamente para isso, e o mesmo
- * caminho que a migration 288 usou para os valores legados.
+ * caminho que a migration 308 usou para os valores legados.
  *
  * ── Por que não há teto ─────────────────────────────────────────────────────
  * O limite é o catálogo: a FK impede tipo inexistente, e a PK `(patient_id, device_type)`
  * impede duplicata ⇒ um paciente não pode ter mais tipos do que tipos existem. Teto numérico
- * espelhando catálogo editável vira mentira no primeiro tipo novo (migration 289).
+ * espelhando catálogo editável vira mentira no primeiro tipo novo (migration 309).
  *
  * ⚠️ C1 do parecer do `lex`: nada aqui emite rótulo em log. Sai nome de campo e CONTAGEM.
  *    `INPATIENT` e `INSTITUTIONAL` revelam regime de cuidado — são dado de saúde.
@@ -124,7 +124,7 @@ export class PatientDeviceTypeRepository {
   /**
    * Substitui o conjunto de tipos de dispositivo de UM paciente.
    *
-   * O escalar `patients.device_type` **não é tocado aqui**: o trigger da migration 290 o
+   * O escalar `patients.device_type` **não é tocado aqui**: o trigger da migration 310 o
    * recalcula a partir desta tabela. Escrever os dois seria o dual-write que a F64 mediu.
    *
    * NÃO APAGA quando a origem não pôde ser lida: `read.readable === false` devolve
@@ -168,8 +168,8 @@ export class PatientDeviceTypeRepository {
           [input.patientId, code, source]);
       }
 
-      // Quarentena do que o ConceptMap não conhece — mesmo destino da migration 288.
-      // `ordinal` cresce a partir de 1; `Tipo de Dispositivo` é o campo SEM teto (migration 289),
+      // Quarentena do que o ConceptMap não conhece — mesmo destino da migration 308.
+      // `ordinal` cresce a partir de 1; `Tipo de Dispositivo` é o campo SEM teto (migration 309),
       // então não há como isto ser recusado por cardinalidade.
       for (let i = 0; i < c.unmappedLabels.length; i++) {
         await cli.query(

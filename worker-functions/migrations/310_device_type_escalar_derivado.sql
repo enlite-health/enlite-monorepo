@@ -1,4 +1,4 @@
--- 290 — `patients.device_type` vira DERIVADO de `patient_device_types`, e para de ser co-escrito
+-- 310 — `patients.device_type` vira DERIVADO de `patient_device_types`, e para de ser co-escrito
 --
 -- ── O defeito que esta migration existe para fechar (F64) ───────────────────
 -- Medido em 25/08/2026, em três passos:
@@ -33,7 +33,7 @@
 -- O escalar guarda UM tipo; a tabela guarda o conjunto. Qual dos N vira o escalar precisa ser
 -- determinístico, senão dois recálculos da mesma linha dão respostas diferentes e ninguém
 -- percebe. `ORDER BY d.sort_order, d.code` — `sort_order` é a ordem de produto (quem cria o
--- tipo no painel escolhe a posição, sem DEFAULT, ver migration 287) e `code` é o desempate
+-- tipo no painel escolhe a posição, sem DEFAULT, ver migration 307) e `code` é o desempate
 -- final, que existe porque `sort_order` é UNIQUE hoje mas a régua não pode depender disso.
 --
 -- Rollback:
@@ -93,7 +93,7 @@ CREATE TRIGGER trg_sync_patient_device_type_escalar
   EXECUTE FUNCTION fn_sync_patient_device_type_escalar();
 
 COMMENT ON FUNCTION fn_sync_patient_device_type_escalar() IS
-  'Recalcula patients.device_type a partir de patient_device_types (migration 290). O escalar é '
+  'Recalcula patients.device_type a partir de patient_device_types (migration 310). O escalar é '
   'DERIVADO: nenhum caminho de aplicação escreve nele. Desempate: sort_order do catálogo, depois '
   'code. Ver F64 — antes desta migration o repositório gravava NULL a cada webhook, porque o '
   'mapper nunca produzia o campo e a escrita era incondicional.';

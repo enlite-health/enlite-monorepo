@@ -949,7 +949,7 @@ describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () 
       'insuranceVerifiedReadable',
       'insuranceVerifiedLabels',
       // Task 4.2 — o Tipo de Dispositivo múltiplo. NÃO há `deviceType` escalar irmão aqui,
-      // diferente da cobertura: `patients.device_type` é derivado por trigger (migration 290),
+      // diferente da cobertura: `patients.device_type` é derivado por trigger (migration 310),
       // e `PatientClinicalUpsertInput` nem aceita mais o campo (F64).
       'deviceTypeLabels',
       'serviceType', 'additionalComments',

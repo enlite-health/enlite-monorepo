@@ -1,7 +1,7 @@
--- 286 — teto por CAMPO em `patient_source_labels`: `Tipo de Dispositivo` vai a 5
+-- 306 — teto por CAMPO em `patient_source_labels`: `Tipo de Dispositivo` vai a 5
 --
 -- ── Por que o teto único de 3 não serve para este campo ─────────────────────
--- A migration 284 pôs `CHECK (ordinal BETWEEN 1 AND 3)` — uma constante única para todos os
+-- A migration 304 pôs `CHECK (ordinal BETWEEN 1 AND 3)` — uma constante única para todos os
 -- campos. O 3 veio da D166/D-C, e a justificativa escrita foi: *"o teto de 3 bate com o
 -- comportamento real da operação em `Tipo de Dispositivo`, cujo máximo observado é 3 (F35)"*.
 --
@@ -32,7 +32,7 @@
 -- com nome novo por baixo desta regra. A constraint envelhece junto com o resto, de forma
 -- barulhenta, não silenciosa.
 --
--- Rollback: restaurar o CHECK de 284 (abaixo, comentado). ⚠️ Só é seguro se nenhum paciente
+-- Rollback: restaurar o CHECK de 304 (abaixo, comentado). ⚠️ Só é seguro se nenhum paciente
 -- tiver 4+ dispositivos — senão o `ALTER` falha, que é o comportamento correto: o banco recusa
 -- apagar dado para caber numa regra mais estreita.
 --   ALTER TABLE patient_source_labels DROP CONSTRAINT patient_source_labels_ceiling_por_campo;

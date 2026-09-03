@@ -1,4 +1,4 @@
--- 287 — `Tipo de Dispositivo`: catálogo em INGLÊS + relação múltipla por paciente
+-- 307 — `Tipo de Dispositivo`: catálogo em INGLÊS + relação múltipla por paciente
 --
 -- ── A decisão, e de quem é ──────────────────────────────────────────────────
 -- Gabriel, 25/08, sobre onde mora o valor canônico múltiplo:
@@ -7,7 +7,7 @@
 --    dispositivo. Como TODO Enum no sistema, ele precisa ser um ENUM em INGLÊS e quem traduz
 --    ele é o frontend."*
 --
--- Duas consequências que mudam o desenho em relação à 285 (cobertura):
+-- Duas consequências que mudam o desenho em relação à 305 (cobertura):
 --   1. **Catálogo é TABELA, não CHECK.** Um `CHECK` não é referenciável por FK e exige migration
 --      para cada valor novo. Uma tabela dá as duas coisas que ele pediu: FK a partir de outras
 --      tabelas e adicionar/remover tipo sem deploy.
@@ -16,7 +16,7 @@
 --      traduz para a tela é o frontend. É a mesma regra de `clinical_specialty` (ASD,
 --      NEUROLOGICAL…) e de `serviceMap` (AT, CAREGIVER…).
 --
--- ── Por que não tem `ordinal`, diferente da 285 ─────────────────────────────
+-- ── Por que não tem `ordinal`, diferente da 305 ─────────────────────────────
 -- Cobertura tem ordem (1º, 2º) porque a origem manda uma lista ordenada e o 1º alimenta o
 -- escalar. Dispositivo é um CONJUNTO: um paciente tem `HOME` e `SCHOOL`, sem que um seja o
 -- primeiro. A PK `(patient_id, device_type)` já garante unicidade — não há como duplicar, e não
@@ -24,7 +24,7 @@
 --
 -- ── Teto ────────────────────────────────────────────────────────────────────
 -- Não há teto aqui, e é deliberado: a FK para `device_types` já limita ao catálogo, e um
--- paciente não pode ter mais tipos do que tipos existem. É o mesmo raciocínio da migration 286
+-- paciente não pode ter mais tipos do que tipos existem. É o mesmo raciocínio da migration 306
 -- (teto = cardinalidade do catálogo ⇒ truncar é impossível), obtido de graça pela FK.
 --
 -- Rollback: `DROP TABLE patient_device_types; DROP TABLE device_types;` — as duas nascem vazias
@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS device_types (
 --   1. **É many→one, e a coluna era one→one.** Já sabemos que acontece: `clinicalSpecialtyMap`
 --      colapsa 14 opções do ClickUp em 9 valores (F32). No dia em que a operação criar
 --      "Domiciliario Nocturno" e quiser que caia em HOME, uma coluna não guarda dois rótulos.
---   2. **Sem `UNIQUE`, era chave de join que duplica em silêncio.** A migration 288 faz
+--   2. **Sem `UNIQUE`, era chave de join que duplica em silêncio.** A migration 308 faz
 --      `UPDATE ... WHERE p.device_type = d.source_label`; com dois matches, `UPDATE ... FROM`
 --      escolhe um **arbitrariamente**, e isso não é erro em Postgres.
 --   3. **Contradizia a tabela irmã:** `patient_device_types.source DEFAULT 'clickup'` declara
@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS device_type_aliases (
   source TEXT NOT NULL DEFAULT 'clickup',
   label  TEXT NOT NULL,
   code   TEXT NOT NULL REFERENCES device_types(code) ON UPDATE CASCADE,
-  -- A PK garante o que a 288 precisa: um rótulo mapeia para EXATAMENTE um código.
+  -- A PK garante o que a 308 precisa: um rótulo mapeia para EXATAMENTE um código.
   -- E permite N rótulos por código, que é o que a operação vai precisar.
   CONSTRAINT device_type_aliases_pkey PRIMARY KEY (source, label),
   CONSTRAINT device_type_aliases_label_not_blank CHECK (btrim(label) <> '')
@@ -90,7 +90,7 @@ COMMENT ON TABLE device_types IS
 
 COMMENT ON TABLE device_type_aliases IS
   'ConceptMap: rótulo da origem → `device_types.code`. Separado do catálogo porque o mapeamento '
-  'é many→one e porque a PK (source, label) é o que garante que a tradução da migration 288 não '
+  'é many→one e porque a PK (source, label) é o que garante que a tradução da migration 308 não '
   'case com dois códigos em silêncio.';
 
 

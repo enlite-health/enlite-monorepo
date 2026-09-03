@@ -2,7 +2,7 @@
  * 4.2 — o teto por campo, e a trava que impede SQL e TypeScript de divergirem.
  *
  * ── Por que este arquivo existe ─────────────────────────────────────────────
- * A migration 286 deu teto **5** a `Tipo de Dispositivo` (catálogo de 5 opções, autorizado pelo
+ * A migration 306 deu teto **5** a `Tipo de Dispositivo` (catálogo de 5 opções, autorizado pelo
  * Gabriel em 25/08 condicionado a serem 5 — medido: são). Os demais campos seguem em 3.
  *
  * Isso cria DUAS declarações do mesmo limite: o `CHECK` no banco e
@@ -28,10 +28,10 @@ import {
   classify,
 } from '../../../src/modules/case/infrastructure/PatientSourceLabelRepository';
 
-const MIGRATION = path.join(__dirname, '../../../migrations/289_device_type_sem_teto_no_cru.sql');
+const MIGRATION = path.join(__dirname, '../../../migrations/309_device_type_sem_teto_no_cru.sql');
 
 describe('4.2 — teto por campo: o SQL e o TypeScript dizem a MESMA coisa', () => {
-  it('a migration 289 existe e declara o CHECK por campo', () => {
+  it('a migration 309 existe e declara o CHECK por campo', () => {
     expect(fs.existsSync(MIGRATION)).toBe(true);
     const sql = fs.readFileSync(MIGRATION, 'utf-8');
     expect(sql).toContain('patient_source_labels_ceiling_por_campo');
@@ -60,7 +60,7 @@ describe('4.2 — teto por campo: o SQL e o TypeScript dizem a MESMA coisa', () 
   });
 
   it('CONTROLE POSITIVO: o CHECK NÃO carrega mais um número para dispositivo', () => {
-    // Era `THEN 5` na 286. Se o número voltar, a contradição voltou: teto fixo espelhando
+    // Era `THEN 5` na 306. Se o número voltar, a contradição voltou: teto fixo espelhando
     // catálogo editável vira mentira no primeiro tipo novo criado pelo painel.
     const sql = fs.readFileSync(MIGRATION, 'utf-8');
     console.log(`>>> 4.2/controle | achou "THEN <numero>" no CHECK? ${/THEN\s*\d+/.test(sql.split('\n').filter(l=>!l.trim().startsWith('--')).join('\n'))}`);

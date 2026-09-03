@@ -72,7 +72,7 @@ export interface PatientServiceUpsertInput extends PatientIdentityUpsertInput {
    * Task 4.2 — a lista de `Tipo de Dispositivo`, destinada a `patient_device_types`.
    *
    * Não há campo escalar irmão, diferente da cobertura: `patients.device_type` é derivado
-   * por trigger a partir desta tabela (migration 290). Ver F64 — o escalar co-escrito era
+   * por trigger a partir desta tabela (migration 310). Ver F64 — o escalar co-escrito era
    * apagado a cada webhook, porque o mapper nunca produzia o valor e a escrita era
    * incondicional.
    */

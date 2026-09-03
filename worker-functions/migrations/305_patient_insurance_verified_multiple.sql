@@ -1,4 +1,4 @@
--- 285 — `Cobertura Verificada` múltipla (Fase 3 da change `campos-admissao`, D-D)
+-- 305 — `Cobertura Verificada` múltipla (Fase 3 da change `campos-admissao`, D-D)
 --
 -- ── O QUE ESTA MIGRATION CONSERTA ───────────────────────────────────────────
 -- `patients.insurance_verified` é `TEXT` escalar desde a 037. O campo VIVO no ClickUp é
@@ -14,7 +14,7 @@
 -- na Fase 2 — colapsando o que a origem distinguia.
 --
 -- ── POR QUE TABELA E NÃO ARRAY ──────────────────────────────────────────────
--- Mesmo desenho da 284, e pelo mesmo motivo: array não tem ORDINAL estável nem constraint
+-- Mesmo desenho da 304, e pelo mesmo motivo: array não tem ORDINAL estável nem constraint
 -- por item. Aqui não há teto de 3 (o de segmento veio do D-C); o teto é o CATÁLOGO, que tem
 -- 33 opções — e ele é conferido no código, não aqui, porque catálogo muda sem migration.
 --
@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS patient_insurance_verified (
 );
 
 -- A MESMA cobertura duas vezes no mesmo paciente é erro da origem, não dado. Sem isto,
--- reordenar opções no ClickUp geraria duplicata em vez de recusa (a lição da 284).
+-- reordenar opções no ClickUp geraria duplicata em vez de recusa (a lição da 304).
 CREATE UNIQUE INDEX IF NOT EXISTS uq_patient_insurance_verified_value
   ON patient_insurance_verified (patient_id, raw_label);
 

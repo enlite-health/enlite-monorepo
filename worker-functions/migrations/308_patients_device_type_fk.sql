@@ -1,4 +1,4 @@
--- 288 — `patients.device_type` vira FK para `device_types`
+-- 308 — `patients.device_type` vira FK para `device_types`
 --
 -- Decisão do Gabriel, 25/08: *"patients.device_type agora vai ser um FK, igual qualquer outro
 -- lugar que use esse valor."*
@@ -17,7 +17,7 @@
 --
 -- ⇒ Três passos, nesta ordem, e cada um faz uma coisa só:
 --   1. TRADUZIR o que dá para traduzir: espanhol → código em inglês, usando o `source_label` do
---      catálogo que a 287 criou. Não é adivinhação — é a mesma tabela que o mapper usa.
+--      catálogo que a 307 criou. Não é adivinhação — é a mesma tabela que o mapper usa.
 --   2. FALHAR ALTO no que não dá: valor fora do catálogo aborta a migration com a CONTAGEM na
 --      mensagem. Ninguém apaga nada; alguém olha.
 --   3. Só então a FK.
@@ -51,7 +51,7 @@ UPDATE patients p
 -- **Nada se perde**: o dado sai de uma coluna que ninguém lê e vai para a tabela de
 -- reversibilidade, auditável, com `source` dizendo de onde veio. O deploy passa.
 INSERT INTO patient_source_labels (patient_id, field_name, ordinal, raw_label, source)
-SELECT p.id, 'Tipo de Dispositivo', 1, p.device_type, 'migration-288-quarentena'
+SELECT p.id, 'Tipo de Dispositivo', 1, p.device_type, 'migration-308-quarentena'
   FROM patients p
  WHERE p.device_type IS NOT NULL
    AND NOT EXISTS (SELECT 1 FROM device_types d WHERE d.code = p.device_type)
@@ -68,7 +68,7 @@ UPDATE patients p
 ALTER TABLE patients
   DROP CONSTRAINT IF EXISTS patients_device_type_fkey;
 
--- `ON UPDATE CASCADE` pela mesma razão da 287: chave natural sem cascade trava o rename.
+-- `ON UPDATE CASCADE` pela mesma razão da 307: chave natural sem cascade trava o rename.
 ALTER TABLE patients
   ADD CONSTRAINT patients_device_type_fkey
   FOREIGN KEY (device_type) REFERENCES device_types(code) ON UPDATE CASCADE;

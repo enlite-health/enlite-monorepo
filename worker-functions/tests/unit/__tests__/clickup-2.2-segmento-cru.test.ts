@@ -25,7 +25,7 @@
  *   defeito 7  a trava de alvo lê a URL com o parser de QUEM CONECTA.
  *   defeito 8  a recusa repetida não vira linha nova nem aviso novo.
  *
- * ⚠️ O TETO DE VERDADE É O DO BANCO (migration 284: PK + CHECK, sem quarta posição). Este
+ * ⚠️ O TETO DE VERDADE É O DO BANCO (migration 304: PK + CHECK, sem quarta posição). Este
  *    arquivo prova a camada que grita e trunca com registro; a prova de que o BANCO recusa
  *    está em `scripts/verificar-2.2-teto-no-banco.ts`, e a dos defeitos 2/3/4/8 contra um
  *    Postgres de verdade está em `scripts/verificar-2.2-defeitos.ts` — ambos rodados contra
@@ -533,7 +533,7 @@ describe('2.2/defeito 8 — recusa repetida não acumula linha nem afoga o alarm
     expect(rejeicoes(repetida.chamadas)).toHaveLength(1);
   });
 
-  // ⚠️ O índice único que torna o dedupe ESTRUTURAL vive na migration 284, e a régua dele NÃO
+  // ⚠️ O índice único que torna o dedupe ESTRUTURAL vive na migration 304, e a régua dele NÃO
   // mora aqui de propósito: a árvore-sombra do guardian é montada com `src`, `tests`,
   // `jest.config.js`, `tsconfig.json` e `package.json` — `migrations/` não entra, e um teste que
   // lesse aquele arquivo ficaria vermelho na sombra por ausência do arquivo, não por defeito.

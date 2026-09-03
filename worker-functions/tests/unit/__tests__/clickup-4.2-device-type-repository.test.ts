@@ -5,7 +5,7 @@
  *   1. `readable:false` NÃO apaga (D167/F41) — renomear o campo no ClickUp não pode esvaziar
  *      o dispositivo de 253 pacientes com log verde.
  *   2. Rótulo que o ConceptMap não conhece vai para QUARENTENA, não para um `23503` no meio
- *      do webhook. A coluna tem FK (migration 287): valor desconhecido não é dado ruim, é
+ *      do webhook. A coluna tem FK (migration 307): valor desconhecido não é dado ruim, é
  *      exceção de banco derrubando o sync do paciente inteiro.
  *   3. Dois rótulos que caem no MESMO código viram uma linha só — a PK recusaria, e recusar
  *      aqui com motivo é o que faz a contagem bater.
@@ -27,7 +27,7 @@ import { PatientDeviceTypeRepository } from '@modules/case';
 
 const PACIENTE = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 
-/** ConceptMap de mentira, com os 5 rótulos reais medidos no catálogo vivo (migration 287). */
+/** ConceptMap de mentira, com os 5 rótulos reais medidos no catálogo vivo (migration 307). */
 const ALIASES = [
   { label: 'Domiciliario',  code: 'HOME' },
   { label: 'Escolar',       code: 'SCHOOL' },
@@ -88,7 +88,7 @@ describe('PatientDeviceTypeRepository.replaceForPatient', () => {
     expect(inserts.map(i => i.params[1])).toEqual(['SCHOOL', 'HOME']);
     // O conjunto é SUBSTITUÍDO, não acrescentado.
     expect(chamadas.some(c => c.sql.includes('DELETE FROM patient_device_types'))).toBe(true);
-    // E o escalar NÃO é tocado aqui: quem o calcula é o trigger da migration 290 (F64).
+    // E o escalar NÃO é tocado aqui: quem o calcula é o trigger da migration 310 (F64).
     expect(chamadas.some(c => /UPDATE\s+patients/i.test(c.sql))).toBe(false);
   });
 

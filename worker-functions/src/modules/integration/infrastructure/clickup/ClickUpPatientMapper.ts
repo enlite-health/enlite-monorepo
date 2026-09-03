@@ -109,7 +109,7 @@ export const PATIENT_CATALOG_FIELDS: readonly CatalogFieldExpectation[] = [
  * a mesma cobertura passava a viver em DUAS tabelas, com regras diferentes.
  *
  * ── Por que a cobertura sai daqui, e não a tabela específica ────────────────
- * `patient_insurance_verified` (migration 285) é a fonte da cobertura, e é a forma certa:
+ * `patient_insurance_verified` (migration 305) é a fonte da cobertura, e é a forma certa:
  * **sem teto**, porque o limite é o catálogo de 33 opções. `patient_source_labels` tem
  * **teto 3** por campo (D-C, decisão sobre segmento clínico). Manter as duas significaria uma
  * cobertura truncada no 4º valor numa tabela e íntegra na outra — divergência silenciosa entre
@@ -126,7 +126,7 @@ export const PATIENT_CATALOG_FIELDS: readonly CatalogFieldExpectation[] = [
  */
 export const PATIENT_FIELDS_SEM_CRU_GENERICO: readonly string[] = [
   'Cobertura Verificada',
-  // Task 4.2, pela MESMA razão da cobertura: `patient_device_types` (migration 287) é a fonte
+  // Task 4.2, pela MESMA razão da cobertura: `patient_device_types` (migration 307) é a fonte
   // do conjunto, com FK para o catálogo. Deixar o campo também no cru genérico criaria duas
   // cópias com regras diferentes — e aqui seria pior que na cobertura, porque o cru guarda o
   // rótulo em espanhol e a tabela guarda o CÓDIGO em inglês: duas cópias que nem se parecem.
@@ -305,7 +305,7 @@ export class ClickUpPatientMapper {
     // Task 4.2 — o `Tipo de Dispositivo`, múltiplo (5 opções no catálogo vivo). Mesma leitura
     // da cobertura: pelo tipo VIVO, preservando a distinção entre "vazio de verdade" e "não
     // consegui ler" (D167). O escalar `patients.device_type` NÃO é escrito por aqui: ele é
-    // derivado da tabela do conjunto por trigger (migration 290 / F64).
+    // derivado da tabela do conjunto por trigger (migration 310 / F64).
     const dispositivoRead    = resolveCatalogValue(this.resolver, 'Tipo de Dispositivo', cf['Tipo de Dispositivo']);
     const serviceLabel       = this.resolver.resolveDropdown('Servicio', asIndexable('Servicio', cf['Servicio']));
 

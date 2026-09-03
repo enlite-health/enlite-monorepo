@@ -9,7 +9,7 @@
  *
  * ── A diferença em relação ao backfill da cobertura, e ela é estrutural ─────
  * A cobertura grava o rótulo CRU e aceita qualquer string não-vazia. Aqui a coluna tem **FK
- * para `device_types(code)`** (migration 287): o rótulo em espanhol precisa ser TRADUZIDO
+ * para `device_types(code)`** (migration 307): o rótulo em espanhol precisa ser TRADUZIDO
  * pelo ConceptMap (`device_type_aliases`) antes de virar linha, e o que não traduz **não pode
  * ser inserido** — seria `23503` no meio do laço, derrubando o backfill inteiro no primeiro
  * rótulo novo que a operação tenha criado.
@@ -22,7 +22,7 @@
  * migração inteira ficar pela metade, que é pior que não começar.)
  *
  * ── O escalar NÃO é escrito por este script ────────────────────────────────
- * `patients.device_type` é derivado por trigger (migration 290). Cada INSERT aqui dispara o
+ * `patients.device_type` é derivado por trigger (migration 310). Cada INSERT aqui dispara o
  * recálculo. Depois de rodar, conferir com `scripts/verificar-4.2-divergencia.ts`.
  *
  * `--dry-run` é o DEFAULT. `--executar` exige `--esperado` e recusa se o obtido divergir —
@@ -77,7 +77,7 @@ async function main(): Promise<void> {
       `SELECT label, code FROM device_type_aliases WHERE source = 'clickup'`);
     const porRotulo = new Map(aliases.rows.map(r => [r.label, r.code]));
     console.log(`ConceptMap: ${porRotulo.size} rótulo(s) traduzível(is)`);
-    if (porRotulo.size === 0) throw new Error('ConceptMap VAZIO — a migration 287 não rodou neste alvo');
+    if (porRotulo.size === 0) throw new Error('ConceptMap VAZIO — a migration 307 não rodou neste alvo');
 
     const resolver = await ClickUpFieldResolver.fromList(LIST_ID, { token });
     const porTarefa = new Map<string, string[]>();

@@ -4,7 +4,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 /**
  * PatientSourceLabelRepository — o RÓTULO CRU da origem, ao lado do derivado.
  *
- * Task 2.2 da change `campos-admissao`. Tabelas: migration 284.
+ * Task 2.2 da change `campos-admissao`. Tabelas: migration 304.
  *
  * ── POR QUE ISTO EXISTE ──────────────────────────────────────────────────────
  * O mapper colapsa DE PROPÓSITO as opções do ClickUp em enums nossos (F32:
@@ -17,7 +17,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
  *
  * ── O TETO É DO BANCO; ISTO É A CAMADA QUE NÃO DEIXA ELE ESTOURAR EM SILÊNCIO ─
  * `patient_source_labels` só tem três posições por (paciente, campo) — PK + CHECK, sem
- * caminho para uma quarta linha (migration 284). Esta classe NÃO é o teto: ela é quem
+ * caminho para uma quarta linha (migration 304). Esta classe NÃO é o teto: ela é quem
  * GRITA E TRUNCA COM REGISTRO em vez de deixar o INSERT explodir ou de descartar calado
  * (Risks do `design.md`). Se esta classe sumisse, o banco continuaria recusando o 4º.
  *
@@ -68,18 +68,18 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
  *   deixa de gritar a mesma coisa toda rodada.
  */
 
-/** O teto. Espelha o CHECK `patient_source_labels_ceiling_3` da migration 284. */
+/** O teto. Espelha o CHECK `patient_source_labels_ceiling_3` da migration 304. */
 /**
  * Teto PADRÃO de rótulos crus por (paciente, campo). D166/D-C, sobre segmento clínico.
  *
- * ⚠️ Não é mais o único: a migration 286 deu teto **5** a `Tipo de Dispositivo`, igual à
+ * ⚠️ Não é mais o único: a migration 306 deu teto **5** a `Tipo de Dispositivo`, igual à
  * cardinalidade do catálogo dele — com isso truncar vira impossível em vez de administrado
  * (C-E′ do parecer do `lex`). Use `tetoDoCampo()`, nunca esta constante direto.
  */
 export const PATIENT_SOURCE_LABEL_CEILING = 3;
 
 /**
- * Tetos por campo que FOGEM do padrão. Espelha o `CHECK` da migration 286.
+ * Tetos por campo que FOGEM do padrão. Espelha o `CHECK` da migration 306.
  *
  * ⚠️ **Duas constantes escritas à mão divergem em silêncio** — é o F20/F49/F51 desta casa, e já
  * mordeu 4× nesta change. Por isso existe um teste que LÊ a migration e compara com este mapa:
@@ -87,7 +87,7 @@ export const PATIENT_SOURCE_LABEL_CEILING = 3;
  * ele fica vermelho — o banco recusaria a escrita e o TypeScript acharia que podia.
  */
 export const PATIENT_SOURCE_LABEL_CEILING_POR_CAMPO: Readonly<Record<string, number | null>> = {
-  // `null` = SEM teto. Ver migration 289: o limite deste campo é a FK de
+  // `null` = SEM teto. Ver migration 309: o limite deste campo é a FK de
   // `patient_device_types` para `device_types`, que se ajusta sozinha quando o catálogo muda.
   // A versão anterior punha `5` aqui, espelhando a cardinalidade do catálogo — e o catálogo
   // virou editável sem deploy no mesmo dia, o que tornava o 5 uma mentira no 6º tipo criado.
@@ -455,7 +455,7 @@ export class PatientSourceLabelRepository {
    * Suprime TODO rótulo cru e TODA linha de recusa de um paciente. É o cumprimento real da
    * **C-B do parecer do `lex` (24/08)** — e ele existe porque a alternativa não funcionava.
    *
-   * ── O que a migration 284 afirmava, e por que era falso ──────────────────────
+   * ── O que a migration 304 afirmava, e por que era falso ──────────────────────
    * As duas tabelas têm `patient_id ... REFERENCES patients(id) ON DELETE CASCADE`, e o
    * comentário da migration apresentava esse CASCADE como o cumprimento dos arts. 4º inc. 5 e
    * 16 da Ley 25.326. **O CASCADE nunca dispara.** Medido: `grep -rn "DELETE FROM patients"`
@@ -745,7 +745,7 @@ interface ClassifiedLabels {
 export function classify(
   labels: readonly unknown[] | null | undefined,
   /**
-   * ⚠️ O teto é POR CAMPO desde a migration 286, então `classify` precisa saber de qual campo
+   * ⚠️ O teto é POR CAMPO desde a migration 306, então `classify` precisa saber de qual campo
    * se trata. Default `''` cai no teto padrão (3) — nenhum chamador antigo muda de comportamento,
    * e quem quer o teto maior tem de dizer qual campo é.
    */
@@ -807,7 +807,7 @@ function descreve(value: unknown): string {
 }
 
 function firstFreeOrdinal(usados: readonly number[], fieldName: string): number {
-  // ⚠️ O teto é POR CAMPO desde a migration 286. Com o teto fixo em 3 aqui, o banco aceitaria
+  // ⚠️ O teto é POR CAMPO desde a migration 306. Com o teto fixo em 3 aqui, o banco aceitaria
   // o 4º dispositivo (CHECK permite até 5) e esta função devolveria erro — código mais estreito
   // que o banco é tão errado quanto o contrário, e mais difícil de achar.
   // Sem teto ⇒ a próxima posição livre é sempre alcançável; o limite superior aqui é só uma
@@ -845,7 +845,7 @@ async function lockField(executor: PoolClient, patientId: string, fieldName: str
 
 /**
  * Uma linha por (paciente, campo, rótulo, motivo) — nunca uma por re-sync (defeito 8). O
- * índice único é do BANCO (migration 284), não uma convenção daqui: "regra que só existe na
+ * índice único é do BANCO (migration 304), não uma convenção daqui: "regra que só existe na
  * aplicação é probabilidade" (D-C).
  *
  * Devolve quantas recusas eram INÉDITAS e quantas devem GRITAR nesta rodada.

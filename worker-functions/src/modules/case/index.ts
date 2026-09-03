@@ -131,7 +131,7 @@ export type {
   UpdateChatRoleInput,
   SharedGroupConflict,
 } from './infrastructure/PatientChatRolesRepository';
-// Task 3.3 (`campos-admissao`): a Cobertura Verificada MÚLTIPLA. Migration 285.
+// Task 3.3 (`campos-admissao`): a Cobertura Verificada MÚLTIPLA. Migration 305.
 export {
   PatientInsuranceVerifiedRepository,
   classifyInsuranceLabels,
@@ -142,7 +142,7 @@ export type {
   PatientInsuranceVerifiedRow,
   PatientInsuranceVerifiedOutcome,
 } from './infrastructure/PatientInsuranceVerifiedRepository';
-// Task 4.2 (`campos-admissao`): o Tipo de Dispositivo MÚLTIPLO. Migrations 287 e 290.
+// Task 4.2 (`campos-admissao`): o Tipo de Dispositivo MÚLTIPLO. Migrations 307 e 290.
 export { PatientDeviceTypeRepository } from './infrastructure/PatientDeviceTypeRepository';
 export type {
   PatientDeviceTypeWriteInput,
@@ -150,7 +150,7 @@ export type {
   PatientDeviceTypeOutcome,
 } from './infrastructure/PatientDeviceTypeRepository';
 
-// Task 2.2 (`campos-admissao`): o rótulo CRU da origem, ao lado do derivado. Migration 284.
+// Task 2.2 (`campos-admissao`): o rótulo CRU da origem, ao lado do derivado. Migration 304.
 export {
   PatientSourceLabelRepository,
   PatientSourceLabelCeilingError,

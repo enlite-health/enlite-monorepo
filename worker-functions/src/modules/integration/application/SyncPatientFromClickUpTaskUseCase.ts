@@ -338,7 +338,7 @@ export class SyncPatientFromClickUpTaskUseCase {
    * ⚠️ O MODO DE FALHA AQUI É DIFERENTE do da cobertura, e vale dizer qual é.
    * Na cobertura, falhar depois do COMMIT deixa o escalar preenchido e a tabela vazia — duas
    * cópias divergindo. Aqui não existe escalar co-escrito: `patients.device_type` é derivado
-   * da tabela por trigger (migration 290). Então falhar aqui deixa o conjunto **desatualizado**,
+   * da tabela por trigger (migration 310). Então falhar aqui deixa o conjunto **desatualizado**,
    * e o escalar desatualizado JUNTO, coerente com ele. Não há divergência interna; há atraso.
    *
    * Isso é melhor, mas não é invisível de graça: quem detecta é
