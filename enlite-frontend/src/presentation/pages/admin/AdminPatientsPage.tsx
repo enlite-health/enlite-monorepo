@@ -114,6 +114,7 @@ export function AdminPatientsPage(): JSX.Element {
         serviceType: p.serviceType ?? [],
         needsAttention: p.needsAttention ?? false,
         attentionReasons: p.attentionReasons ?? [],
+        createdAt: p.createdAt ?? null,
       })),
     [rawPatients],
   );
