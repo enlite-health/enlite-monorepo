@@ -2962,6 +2962,7 @@
         "specialty": "Especialidad",
         "service": "Servicio",
         "status": "Estado",
+        "registeredAt": "Fecha de registro",
         "view": "Ver"
       },
       "statusBadge": {

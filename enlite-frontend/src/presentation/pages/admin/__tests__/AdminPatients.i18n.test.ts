@@ -72,6 +72,7 @@ const REQUIRED_KEYS = [
   'table.specialty',
   'table.service',
   'table.status',
+  'table.registeredAt',
   'table.view',
   // Status badge
   'statusBadge.complete',

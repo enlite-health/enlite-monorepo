@@ -2883,6 +2883,7 @@
         "specialty": "Especialidade",
         "service": "Serviço",
         "status": "Status",
+        "registeredAt": "Data do registro",
         "view": "Ver"
       },
       "statusBadge": {

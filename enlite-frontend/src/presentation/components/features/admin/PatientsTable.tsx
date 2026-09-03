@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Eye } from 'lucide-react';
+import { Eye, CalendarDays } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import { toDisplayName } from '@domain/value-objects/displayName';
 import {
@@ -26,6 +26,7 @@ export interface PatientRow {
   serviceType: string[];
   needsAttention: boolean;
   attentionReasons: string[];
+  createdAt: string | null;
 }
 
 interface PatientsTableProps {
@@ -73,9 +74,40 @@ function formatDocument(type: string | null, number: string | null): string {
   return number ?? type ?? '—';
 }
 
-function formatServiceType(types: string[]): string {
+/**
+ * Servicio traz o ENUM canônico (AT, CAREGIVER, ...). A tela mostra o alias.
+ * Reusa o mesmo dicionário do card "Servicios Contratados" do detalhe — uma
+ * fonte só de alias por enum. Fallback: o próprio enum, se o alias não existir.
+ */
+function formatServiceType(t: ReturnType<typeof useTranslation>['t'], types: string[]): string {
   if (!types || types.length === 0) return '—';
-  return types.join(' + ');
+  return types
+    .map((svc) => t(`admin.patients.detail.contractedServicesCard.serviceTypes.${svc}`, svc))
+    .join(' + ');
+}
+
+/**
+ * Data do registro: dd/mm/aaaa no locale ativo.
+ *
+ * ⚠️ Duplicação CONSCIENTE do mapa de locale que já existe em
+ * `WorkersTable.tsx:44` e `PatientDetail/ClinicalLongText.tsx:19` — as duas
+ * anteriores a este PR. Não dá para reusar nenhuma: são funções privadas de
+ * módulo, e a semântica difere. A `formatDate` da WorkersTable devolve `'—'`
+ * (ela preenche uma COLUNA própria); esta devolve `null`, porque a data mora
+ * como 2ª linha da célula do nome e um traço solto ali vira sujeira. Esta
+ * também guarda `NaN` (data inválida), o que a vizinha não faz.
+ * Unificar as três num util compartilhado é trabalho à parte — está na lista
+ * de follow-up do PR, e mexeria em 2 telas fora do escopo desta mudança.
+ */
+function formatRegisteredAt(iso: string | null, locale: string): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(locale === 'es' ? 'es-AR' : 'pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
 }
 
 function formatDependency(t: ReturnType<typeof useTranslation>['t'], level: string | null): string {
@@ -89,7 +121,7 @@ function formatSpecialty(t: ReturnType<typeof useTranslation>['t'], specialty: s
 }
 
 export function PatientsTable({ patients, onRowClick }: PatientsTableProps): JSX.Element {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const safePatients = patients ?? [];
 
   return (
@@ -130,6 +162,8 @@ export function PatientsTable({ patients, onRowClick }: PatientsTableProps): JSX
               // D249: sem nome do paciente, o traço fica no lugar dele e quem
               // identifica a ficha é o responsável, na linha de baixo.
               const responsibleName = toDisplayName(row.responsibleName) || null;
+              const registeredAt = formatRegisteredAt(row.createdAt, i18n.language);
+              const serviceLabel = formatServiceType(t, row.serviceType);
               const caseLabel = row.caseNumber != null
                 ? `${t('admin.patients.codeColumn')} #${row.caseNumber}`
                 : '—';
@@ -142,19 +176,43 @@ export function PatientsTable({ patients, onRowClick }: PatientsTableProps): JSX
                   <TableCell unwrapped className="w-10">
                     <Eye className="w-5 h-5 text-gray-800" aria-label={t('admin.patients.table.view')} />
                   </TableCell>
-                  <TableCell weight="medium">
-                    <span className="block" data-testid={`patient-row-${row.id}-name`}>
-                      {fullName || '—'}
-                    </span>
-                    {!fullName && responsibleName && (
-                      // O átomo `Text` não repassa props extras — o testid vive
-                      // no span, como no PatientKanbanCard.
-                      <span className="block truncate" data-testid={`patient-row-${row.id}-responsible`}>
-                        <Text as="span" size="xs" color="secondary">
-                          {t('admin.patients.kanban.responsible')}: {responsibleName}
+                  <TableCell unwrapped className="max-w-[185px]">
+                    <div className="flex flex-col">
+                      {/* `truncate` e não `nowrap`: nome longo ("Rodríguez de la
+                          Fuente, María Guadalupe") com nowrap alarga a tabela e
+                          joga a coluna Estado para fora da tela — o mesmo defeito
+                          que o `line-clamp` resolve no Servicio. Nome inteiro no
+                          title. O átomo `Text` não repassa props extras — testid
+                          e title vivem no span, como no PatientKanbanCard. */}
+                      <span
+                        className="block truncate"
+                        data-testid={`patient-row-${row.id}-name`}
+                        title={fullName || undefined}
+                      >
+                        <Text as="span" size="sm" weight="medium" color="inherit">
+                          {fullName || '—'}
                         </Text>
                       </span>
-                    )}
+                      {!fullName && responsibleName && (
+                        <span className="block truncate" data-testid={`patient-row-${row.id}-responsible`}>
+                          <Text as="span" size="xs" color="secondary">
+                            {t('admin.patients.kanban.responsible')}: {responsibleName}
+                          </Text>
+                        </span>
+                      )}
+                      {registeredAt && (
+                        <span
+                          className="inline-flex items-center gap-1 text-gray-700"
+                          title={`${t('admin.patients.table.registeredAt')}: ${registeredAt}`}
+                          aria-label={`${t('admin.patients.table.registeredAt')}: ${registeredAt}`}
+                        >
+                          <CalendarDays className="w-3 h-3 shrink-0" aria-hidden="true" />
+                          <Text as="span" size="xs" color="muted">
+                            {registeredAt}
+                          </Text>
+                        </span>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell weight="medium" className="whitespace-nowrap">
                     {formatDocument(row.documentType, row.documentNumber)}
@@ -168,8 +226,14 @@ export function PatientsTable({ patients, onRowClick }: PatientsTableProps): JSX
                   <TableCell weight="medium" className="whitespace-nowrap hidden lg:table-cell">
                     {formatSpecialty(t, row.clinicalSpecialty)}
                   </TableCell>
-                  <TableCell weight="medium" className="whitespace-nowrap hidden md:table-cell">
-                    {formatServiceType(row.serviceType)}
+                  <TableCell unwrapped className="hidden md:table-cell max-w-[180px]">
+                    {/* Alias é longo ("Acompañante Terapéutico + Cuidador"): com
+                        nowrap ele empurrava a coluna Estado para fora da tela, e
+                        solto ele esticava a linha. 2 linhas no máximo, o resto no
+                        title — a linha continua com 72px. */}
+                    <Text as="span" size="sm" weight="medium" color="inherit" className="line-clamp-2" title={serviceLabel}>
+                      {serviceLabel}
+                    </Text>
                   </TableCell>
                   <TableCell unwrapped className="whitespace-nowrap">
                     <StatusBadge
