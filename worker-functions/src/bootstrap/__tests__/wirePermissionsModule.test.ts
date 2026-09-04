@@ -59,7 +59,7 @@ function setup(pool: never = poolStub): { app: express.Express; registered: stri
 function comMigracaoMarcada(boundary: PermissionsBoundary): void {
   jest
     .spyOn(boundary.permissions.assertStaffHasGroup, 'execute')
-    .mockResolvedValue({ tenantId: 'tenant', count: 0, migrated: true });
+    .mockResolvedValue({ tenantId: 'tenant', count: 0, migrated: true, marker: true ? 'done' : null });
 }
 
 describe('wirePermissionsModule', () => {
@@ -227,7 +227,7 @@ describe('wirePermissionsModule', () => {
       const { app, boundary } = setup();
       jest
         .spyOn(boundary.permissions.assertStaffHasGroup, 'execute')
-        .mockResolvedValue({ tenantId: 'tenant', count: 3, migrated: false });
+        .mockResolvedValue({ tenantId: 'tenant', count: 3, migrated: false, marker: false ? 'done' : null });
 
       await expect(runPermissionsBootTasks(app, boundary)).rejects.toThrow(/iam\.rollout_state/);
     });
@@ -237,7 +237,7 @@ describe('wirePermissionsModule', () => {
       const { app, boundary } = setup();
       const execute = jest
         .spyOn(boundary.permissions.assertStaffHasGroup, 'execute')
-        .mockResolvedValue({ tenantId: 'tenant', count: 3, migrated: false });
+        .mockResolvedValue({ tenantId: 'tenant', count: 3, migrated: false, marker: false ? 'done' : null });
       jest.spyOn(boundary.permissions.assertStaffHasGroup, 'alertOnBoot').mockResolvedValue();
 
       await expect(runPermissionsBootTasks(app, boundary)).resolves.toBeUndefined();
@@ -295,7 +295,7 @@ describe('wirePermissionsModule', () => {
       const { app, boundary } = setup();
       jest
         .spyOn(boundary.permissions.assertStaffHasGroup, 'execute')
-        .mockResolvedValue({ tenantId: 'tenant', count: 42, migrated: true });
+        .mockResolvedValue({ tenantId: 'tenant', count: 42, migrated: true, marker: true ? 'done' : null });
       const alerta = jest.spyOn(boundary.permissions.assertStaffHasGroup, 'alertOnBoot').mockResolvedValue();
 
       await expect(runPermissionsBootTasks(app, boundary)).resolves.toBeUndefined();

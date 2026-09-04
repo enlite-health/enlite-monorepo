@@ -329,6 +329,8 @@ export async function montarAppComTodasFamilias(opts: MontarAppCompletoOpts): Pr
 
   opts.montarRotas({ app, auth, permissions: boundary.middleware, modulo: boundary.permissions });
 
+  // Salva e restaura no fechamento: suítes paralelas compartilham o process.env do worker.
+  const secretAnterior = process.env.INTERNAL_TOKEN_SECRET;
   process.env.INTERNAL_TOKEN_SECRET = opts.internalSecret;
   wirePermissionsModule({
     app,
@@ -350,7 +352,14 @@ export async function montarAppComTodasFamilias(opts: MontarAppCompletoOpts): Pr
     servidor,
     url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`,
     invalidar: (uids) => boundary.permissions.client.invalidate(uids),
-    fechar: () => new Promise<void>((resolve) => servidor.close(() => resolve())),
+    fechar: () =>
+      new Promise<void>((resolve) =>
+        servidor.close(() => {
+          if (secretAnterior === undefined) delete process.env.INTERNAL_TOKEN_SECRET;
+          else process.env.INTERNAL_TOKEN_SECRET = secretAnterior;
+          resolve();
+        }),
+      ),
     modulo: boundary.permissions,
   };
 }

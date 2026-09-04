@@ -8,9 +8,9 @@
  * dariam três estados de carregamento e a chance de renderizar com meia
  * verdade.
  *
- * `enforcement` (D268) é INJETADO, nunca lido daqui — o módulo `permissions`
- * não conhece `process.env` (`grep -rn "PERMISSION_ENGINE_ENABLED"
- * src/modules/identity/permissions` = 0). O wiring (`wirePermissionsModule.ts`)
+ * `enforcement` (D268) é INJETADO, nunca lido daqui — nenhum arquivo do módulo
+ * `permissions` lê `PERMISSION_ENGINE_ENABLED` (só comentários a citam; o
+ * `PermissionService` lê outra env, o TTL do cache). O wiring (`wirePermissionsModule.ts`)
  * lê `isEnvFlagOn('PERMISSION_ENGINE_ENABLED')` UMA vez, no boot, e passa o
  * booleano para `createPermissionsModule` — a mesma fonte de verdade que o
  * `PermissionMiddleware` usa para decidir se a request é gated de verdade.

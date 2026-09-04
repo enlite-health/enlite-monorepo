@@ -124,7 +124,7 @@ export { createMeAuthzRouter } from './interface/meAuthzRoute';
 export type { MeAuthzRouterDeps } from './interface/meAuthzRoute';
 
 // ── Use cases (a API do painel monta em cima destes) ─────────────────────────
-export { AssertNoActiveStaffWithoutGroupUseCase, ROLLOUT_MARKER_KEY } from './application/AssertNoActiveStaffWithoutGroupUseCase';
+export { AssertNoActiveStaffWithoutGroupUseCase, ROLLOUT_MARKER_KEY, ROLLOUT_MARKER_DONE } from './application/AssertNoActiveStaffWithoutGroupUseCase';
 export { GetMyAuthzUseCase } from './application/GetMyAuthzUseCase';
 export { ListPermissionCatalogUseCase } from './application/ListPermissionCatalogUseCase';
 export { QueryPermissionAuditUseCase } from './application/QueryPermissionAuditUseCase';

@@ -222,7 +222,7 @@ describe('AssertNoActiveStaffWithoutGroupUseCase', () => {
 
   it('mede a contagem e o marcador de rollout', async () => {
     const useCase = new AssertNoActiveStaffWithoutGroupUseCase(authz(4), rolloutRepo(null));
-    expect(await useCase.execute('t')).toEqual({ tenantId: 't', count: 4, migrated: false });
+    expect(await useCase.execute('t')).toEqual({ tenantId: 't', count: 4, migrated: false, marker: null });
   });
 
   it('lê o marcador pela chave combinada com o script da migração', async () => {
@@ -230,6 +230,11 @@ describe('AssertNoActiveStaffWithoutGroupUseCase', () => {
     const report = await new AssertNoActiveStaffWithoutGroupUseCase(authz(0), rollout).execute('t');
     expect(rollout.get).toHaveBeenCalledWith(ROLLOUT_MARKER_KEY);
     expect(report.migrated).toBe(true);
+  });
+
+  it('linha com OUTRO valor não é "migrado" — e o valor cru sobe para o log dizer o que achou', async () => {
+    const report = await new AssertNoActiveStaffWithoutGroupUseCase(authz(0), rolloutRepo('rolled_back')).execute('t');
+    expect(report).toEqual({ tenantId: 't', count: 0, migrated: false, marker: 'rolled_back' });
   });
 
   it('alertOnBoot NUNCA lança — nem com o banco fora (lex C2)', async () => {

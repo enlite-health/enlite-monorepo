@@ -148,7 +148,14 @@ describe('C1 — engine ligado com as 12 famílias de uma vez (HTTP real, banco 
   }
 
   async function limpar(): Promise<void> {
-    await limparIamFixtures(pool, { uids: [SEM_GRUPO_UID, WORKER_UID, ...uidsComCelula], grupos: gruposCriados });
+    // Um run interrompido deixa `perm-all-*` para trás e o próximo quebraria na PK: varre por prefixo,
+    // não só pelo que ESTE processo lembra de ter criado.
+    const orfaos = await pool.query<{ firebase_uid: string }>(`SELECT firebase_uid FROM users WHERE firebase_uid LIKE 'perm-all-e2e-%'`);
+    const gruposOrfaos = await pool.query<{ name: string }>(`SELECT name FROM iam.permission_groups WHERE name LIKE 'Perm All E2E%'`);
+    await limparIamFixtures(pool, {
+      uids: [...new Set([SEM_GRUPO_UID, WORKER_UID, ...uidsComCelula, ...orfaos.rows.map((r) => r.firebase_uid)])],
+      grupos: [...new Set([...gruposCriados, ...gruposOrfaos.rows.map((r) => r.name)])],
+    });
     for (const [resource, action] of celulasCriadas) {
       await pool.query(
         `DELETE FROM iam.group_permissions WHERE permission_id IN

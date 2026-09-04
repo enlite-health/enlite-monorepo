@@ -43,8 +43,7 @@ import { PgEffectiveAuthzRepository } from '@modules/identity/permissions/infras
 import { PgRolloutStateRepository } from '@modules/identity/permissions/infrastructure/PgRolloutStateRepository';
 import {
   AssertNoActiveStaffWithoutGroupUseCase,
-  ROLLOUT_MARKER_KEY,
-} from '@modules/identity/permissions/application/AssertNoActiveStaffWithoutGroupUseCase';
+  ROLLOUT_MARKER_KEY, ROLLOUT_MARKER_DONE } from '@modules/identity/permissions/application/AssertNoActiveStaffWithoutGroupUseCase';
 // Caminho ESTREITO de propósito — `@modules/identity` (o barrel) reexporta rotas
 // e infra que puxam tipagem Express (`req.user`) que só compila no contexto de
 // `src/index.ts`; via `ts-node` com este script como entrypoint isso quebrava o
@@ -61,10 +60,10 @@ const EXECUTE = process.argv.includes('--execute');
  *  gate em si é `countActiveStaffWithoutGroup`, via `AssertNoActiveStaffWithoutGroupUseCase`
  *  (não duplicado aqui). Sem isto, "0 sem grupo" fica indistinguível de
  *  "0 porque não havia ninguém para checar" no log. */
-async function countActiveStaff(pool: Pool): Promise<number> {
+async function countActiveStaff(pool: Pool, tenantId: string): Promise<number> {
   const r = await pool.query<{ n: number }>(
-    `SELECT count(*)::int AS n FROM users WHERE status = 'ACTIVE' AND role = ANY($1)`,
-    [STAFF_ROLES as unknown as string[]],
+    `SELECT count(*)::int AS n FROM users WHERE status = 'ACTIVE' AND role = ANY($1) AND tenant_id = $2`,
+    [STAFF_ROLES as unknown as string[], tenantId],
   );
   return r.rows[0]?.n ?? 0;
 }
@@ -73,7 +72,10 @@ async function countActiveStaff(pool: Pool): Promise<number> {
  * Mede o gate (F12) e, se `write`, grava o marcador quando coerente.
  *   · marcador já 'done'         → mantém, avisa, não recalcula nada.
  *   · staff ACTIVE sem grupo > 0 → NÃO marca; `write` também sai com código 2
- *     (aplicou o plano, mas o ambiente ainda não pode ligar o engine).
+ *     (⚠️ o PLANO FOI APLICADO — o 2 significa "aplicado, mas o ambiente ainda não pode
+ *     ligar o engine"; um wrapper de CI não deve ler 2 como "nada aconteceu").
+ *   · crash entre o apply e o marcador: re-rodar o MESMO arquivo fecha — o plano vem
+ *     vazio, `applyPlan` retorna cedo e este relatório roda mesmo assim (idempotente).
  *   · 0 sem grupo                → `write` grava; `--dry` só relata o que faria.
  */
 async function reportRollout(
@@ -88,7 +90,14 @@ async function reportRollout(
   const report = await gate.execute(tenantId);
 
   if (report.migrated) {
-    console.log(`[iam-config] marcador ${ROLLOUT_MARKER_KEY} já é 'done' — mantido`);
+    console.log(`[iam-config] marcador ${ROLLOUT_MARKER_KEY} já é '${ROLLOUT_MARKER_DONE}' — mantido`);
+    return;
+  }
+  if (report.marker !== null) {
+    // Linha existe com outro valor: não é "migrado" e não se sobrescreve às cegas — alguém escreveu
+    // aquilo de propósito (rollback, ensaio). Diz o valor e deixa a decisão para o operador.
+    console.error(`[iam-config] marcador ${ROLLOUT_MARKER_KEY} existe com valor '${report.marker}' (≠ '${ROLLOUT_MARKER_DONE}') — não sobrescrito; decida à mão`);
+    if (opts.write) process.exitCode = 2;
     return;
   }
   if (report.count > 0) {
@@ -98,14 +107,14 @@ async function reportRollout(
     return;
   }
 
-  const total = await countActiveStaff(pool);
+  const total = await countActiveStaff(pool, tenantId);
   if (!opts.write) {
-    console.log(`[iam-config] DRY-RUN: marcaria ${ROLLOUT_MARKER_KEY} = done (${total} staff ativos, 0 sem grupo) — não grava (--dry)`);
+    console.log(`[iam-config] DRY-RUN: marcaria ${ROLLOUT_MARKER_KEY} = ${ROLLOUT_MARKER_DONE} (${total} staff ativos, 0 sem grupo) — não grava (--dry)`);
     return;
   }
   const note = `iam-config-import ${basename(opts.file!)}@${snapshotHash(opts.desired!)} ${new Date().toISOString()}`;
-  await new PgRolloutStateRepository(pool).set(ROLLOUT_MARKER_KEY, 'done', note);
-  console.log(`[iam-config] marcador ${ROLLOUT_MARKER_KEY} = done (${total} staff ativos, 0 sem grupo)`);
+  await new PgRolloutStateRepository(pool).set(ROLLOUT_MARKER_KEY, ROLLOUT_MARKER_DONE, note);
+  console.log(`[iam-config] marcador ${ROLLOUT_MARKER_KEY} = ${ROLLOUT_MARKER_DONE} (${total} staff ativos, 0 sem grupo)`);
 }
 
 async function main(): Promise<void> {
