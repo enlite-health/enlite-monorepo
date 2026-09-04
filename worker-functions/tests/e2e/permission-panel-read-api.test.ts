@@ -70,6 +70,23 @@ describe('API de leitura do painel de acessos (HTTP real, banco real)', () => {
     return { status: res.status, body: (await res.json().catch(() => ({}))) as Record<string, unknown> };
   }
 
+  /** POST — só a `/permission-audit/query`, que é a única rota de leitura que aceita corpo (C6). */
+  async function chamarPost(
+    caminho: string,
+    uid: string | null,
+    corpo: unknown,
+  ): Promise<{ status: number; body: Record<string, unknown> }> {
+    const res = await fetch(`${app.url}${caminho}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(uid ? { Authorization: tokenMock(uid) } : {}),
+      },
+      body: JSON.stringify(corpo),
+    });
+    return { status: res.status, body: (await res.json().catch(() => ({}))) as Record<string, unknown> };
+  }
+
   async function limpar(): Promise<void> {
     await pool.query(`DELETE FROM iam.country_features WHERE feature_key = $1`, [FEATURE_E2E]);
     await limparIamFixtures(pool, { uids: Object.values(U), grupos: [GRUPO_GESTAO, GRUPO_SEM_CELULA] });
@@ -347,12 +364,17 @@ describe('API de leitura do painel de acessos (HTTP real, banco real)', () => {
       expect(Array.isArray(res.body.entries)).toBe(true);
     });
 
-    it('a negativa que acabou de acontecer aparece na trilha', async () => {
+    it('a negativa que acabou de acontecer aparece na trilha, filtrada por `userId` no CORPO do POST', async () => {
       await chamar('/api/admin/permission-groups', U.semCelula);
       // A trilha é assíncrona fail-safe (nunca segura a request) — daí a espera.
       await new Promise((r) => setTimeout(r, 400));
 
-      const res = await chamar(`/api/admin/permission-audit?userId=${U.semCelula}&limit=50`, U.gestora);
+      // `userId` saiu da query (C6, uid não pode cair no log de request do
+      // Cloud Run) — o filtro por pessoa agora só existe no corpo do POST.
+      const res = await chamarPost('/api/admin/permission-audit/query', U.gestora, {
+        userId: U.semCelula,
+        limit: 50,
+      });
 
       expect(res.status).toBe(200);
       const linhas = res.body.entries as Array<{ userId: string; resource: string; decision: string }>;
@@ -363,8 +385,30 @@ describe('API de leitura do painel de acessos (HTTP real, banco real)', () => {
       expect((await chamar('/api/admin/permission-audit?limit=5000', U.gestora)).status).toBe(400);
     });
 
+    it('🔴 `?userId=` no GET NÃO filtra mais — zod descarta a chave desconhecida, a rota ignora', async () => {
+      // Escolha: ignorar (não 400) — o schema da query não usa `.strict()`, e
+      // nenhuma outra query desta família usa; adicionar `.strict()` só aqui
+      // seria uma exceção sem motivo local. Prova: um uid que NUNCA apareceu na
+      // trilha, e mesmo assim a resposta não fica vazia — se o filtro ainda
+      // funcionasse, `entries` seria `[]`.
+      const uidFantasma = 'panel-e2e-nao-existe-em-lugar-nenhum';
+      const res = await chamar(`/api/admin/permission-audit?userId=${uidFantasma}&limit=50`, U.gestora);
+
+      expect(res.status).toBe(200);
+      const linhas = res.body.entries as Array<{ userId: string }>;
+      expect(linhas.length).toBeGreaterThan(0);
+      expect(linhas.some((l) => l.userId === uidFantasma)).toBe(false);
+    });
+
     it('🔴 staff SEM a célula → 403 na rota, antes mesmo de a função do banco opinar', async () => {
       const res = await chamar('/api/admin/permission-audit', U.semCelula);
+
+      expect(res.status).toBe(403);
+      expect(res.body.entries).toBeUndefined();
+    });
+
+    it('🔴 `POST .../query` também exige a célula — staff SEM ela → 403', async () => {
+      const res = await chamarPost('/api/admin/permission-audit/query', U.semCelula, { limit: 10 });
 
       expect(res.status).toBe(403);
       expect(res.body.entries).toBeUndefined();

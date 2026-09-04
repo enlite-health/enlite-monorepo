@@ -122,6 +122,16 @@ const FeaturesQuery = z.object({ country: z.enum(COUNTRY_CODES).optional() });
  * 400 em vez de deixar virar `NaN` silencioso.
  */
 const AuditQuery = z.object({
+  resource: z.string().min(1).max(64).optional(),
+  since: z.coerce.date().optional(),
+  until: z.coerce.date().optional(),
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
+});
+
+// `userId` saiu da query string em `GET /permission-audit` (parecer jurídico,
+// condição C6 — uid de funcionário não pode cair no log de request do Cloud
+// Run). O filtro por pessoa sobrevive só aqui, em `POST .../query`, no corpo.
+const AuditBody = z.object({
   userId: z.string().min(1).max(128).optional(),
   resource: z.string().min(1).max(64).optional(),
   since: z.coerce.date().optional(),
@@ -241,10 +251,32 @@ export function createPermissionPanelRoutes(deps: PermissionPanelDeps): Router {
       return;
     }
 
-    responder(res, 'permission audit', async () => ({
-      entries: await deps.audit.execute(query.data),
-    }));
+    executarAuditoria(deps, res, query.data);
+  });
+
+  // POST, não GET: é a única forma de filtrar por `userId` sem o uid cair na
+  // URL (parecer jurídico, C6). Continua exigindo `permission_management:read`
+  // — mesma `portao` das rotas GET acima; é POST só na forma, leitura na regra.
+  router.post('/permission-audit/query', ...portao, (req, res) => {
+    const body = AuditBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ success: false, error: 'Invalid request body' });
+      return;
+    }
+
+    executarAuditoria(deps, res, body.data);
   });
 
   return router;
+}
+
+/** Compartilhado pelo `GET` e pelo `POST .../query` — mesmo use case, mesma resposta. */
+function executarAuditoria(
+  deps: PermissionPanelDeps,
+  res: Response,
+  filtro: { userId?: string; resource?: string; since?: Date; until?: Date; limit?: number },
+): void {
+  responder(res, 'permission audit', async () => ({
+    entries: await deps.audit.execute(filtro),
+  }));
 }

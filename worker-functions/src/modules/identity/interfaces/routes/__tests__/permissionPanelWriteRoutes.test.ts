@@ -31,7 +31,7 @@ const ESPERADO: Record<string, string> = {
   'POST /permission-groups/:id/countries': 'permission_management:write',
   'DELETE /permission-groups/:id/countries/:country': 'permission_management:write',
   'POST /permission-groups/:id/members': 'permission_management:write',
-  'DELETE /permission-groups/:id/members/:userId': 'permission_management:write',
+  'DELETE /permission-groups/:id/members': 'permission_management:write',
   'PUT /country-features/:country/:featureKey': 'permission_management:write',
 };
 
@@ -93,7 +93,7 @@ describe('createPermissionPanelWriteRoutes — declaração', () => {
     expect(rotas.map((r) => `${r.method} ${r.path} → ${r.cell ? cellKey(r.cell.resource, r.cell.action) : null}`).sort()).toEqual([
       'DELETE /api/admin/permission-groups/:id → permission_management:write',
       'DELETE /api/admin/permission-groups/:id/countries/:country → permission_management:write',
-      'DELETE /api/admin/permission-groups/:id/members/:userId → permission_management:write',
+      'DELETE /api/admin/permission-groups/:id/members → permission_management:write',
       'PATCH /api/admin/permission-groups/:id → permission_management:write',
       'POST /api/admin/permission-groups → permission_management:write',
       'POST /api/admin/permission-groups/:id/countries → permission_management:write',
@@ -201,9 +201,9 @@ describe('cada rota chega no use case certo, com o payload certo', () => {
     expect(d.addMember).toHaveBeenCalledWith({ tenantId: TENANT, groupId: ID, userId: 'uid-1' });
   });
 
-  it('DELETE /:id/members/:userId', async () => {
+  it('DELETE /:id/members — userId no CORPO, não no path (C6)', async () => {
     const { app, d } = build();
-    await request(app).delete(`/api/admin/permission-groups/${ID}/members/uid-1`).expect(200);
+    await request(app).delete(`/api/admin/permission-groups/${ID}/members`).send({ userId: 'uid-1' }).expect(200);
     expect(d.removeMember).toHaveBeenCalledWith({ tenantId: TENANT, groupId: ID, userId: 'uid-1' });
   });
 
@@ -249,7 +249,7 @@ describe('zod na borda — recusa ANTES de qualquer ida ao banco', () => {
     await request(app).post('/api/admin/permission-groups/nao-uuid/countries').send({ country: 'AR', reason: 'x' }).expect(400);
     await request(app).delete('/api/admin/permission-groups/nao-uuid/countries/AR').expect(400);
     await request(app).post('/api/admin/permission-groups/nao-uuid/members').send({ userId: 'u' }).expect(400);
-    await request(app).delete('/api/admin/permission-groups/nao-uuid/members/u').expect(400);
+    await request(app).delete('/api/admin/permission-groups/nao-uuid/members').send({ userId: 'u' }).expect(400);
     expect(Object.values(d).every((m) => m.mock.calls.length === 0)).toBe(true);
   });
 
@@ -280,6 +280,12 @@ describe('zod na borda — recusa ANTES de qualquer ida ao banco', () => {
     const { app, d } = build();
     await request(app).post(`/api/admin/permission-groups/${ID}/members`).send({}).expect(400);
     expect(d.addMember).not.toHaveBeenCalled();
+  });
+
+  it('remoção de membro sem userId no CORPO é 400 — mesmo schema do POST', async () => {
+    const { app, d } = build();
+    await request(app).delete(`/api/admin/permission-groups/${ID}/members`).send({}).expect(400);
+    expect(d.removeMember).not.toHaveBeenCalled();
   });
 
   it('`cellKeys` que não é lista é 400', async () => {
@@ -326,7 +332,7 @@ describe('erro de domínio → HTTP: é o contrato que a tela lê', () => {
     // problema: o que o sistema recusa é o ESTADO resultante.
     const { app } = build({ removeMember: jest.fn().mockRejectedValue(new PermissionError('last_manager', 'deixaria zero gestores')) });
 
-    const res = await request(app).delete(`/api/admin/permission-groups/${ID}/members/uid-1`).expect(409);
+    const res = await request(app).delete(`/api/admin/permission-groups/${ID}/members`).send({ userId: 'uid-1' }).expect(409);
 
     expect(res.body.code).toBe('last_manager');
     expect(res.body.error).toBe('A operação deixaria a empresa sem nenhum gestor de acessos.');

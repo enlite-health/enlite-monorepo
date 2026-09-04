@@ -261,10 +261,46 @@ painel(
   'Trilha de decisões de permissão',
   'O gate real NÃO está na rota: está em `iam.query_audit` (mig 279/280), que exige a célula do ator ' +
     'no GUC e registra o próprio ato de auditar (lex C7). A role do app não tem SELECT na tabela. ' +
-    'Filtros: `userId`, `resource`, `since`, `until`, `limit` (1..1000, default 200). ' +
+    'Filtros: `resource`, `since`, `until`, `limit` (1..1000, default 200) — `userId` NÃO é filtro de ' +
+    'query aqui (parecer jurídico, C6: uid não pode cair no log de request do Cloud Run); use ' +
+    '`POST /api/admin/permission-audit/query` para filtrar por pessoa. ' +
     'A vista nunca expõe conteúdo de dado pessoal — só identificadores e metadados.',
   z.object({ entries: z.array(AuditRowSchema) }),
 );
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/admin/permission-audit/query',
+  tags: ['Painel · Acessos'],
+  summary: 'Trilha de decisões de permissão, filtrada por pessoa',
+  description:
+    'Mesma leitura de `GET /api/admin/permission-audit` — só existe como POST porque `userId` é o ' +
+    'único jeito de filtrar por pessoa sem o uid cair na URL (parecer jurídico, C6). Exige a MESMA ' +
+    '`permission_management:read`; é POST na forma, leitura na regra.',
+  security: [{ firebaseAuth: [] }],
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            userId: z.string().max(128).optional(),
+            resource: z.string().max(64).optional(),
+            since: z.string().datetime().optional(),
+            until: z.string().datetime().optional(),
+            limit: z.number().int().min(1).max(1000).optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: { description: 'OK.', content: { 'application/json': { schema: z.object({ entries: z.array(AuditRowSchema) }) } } },
+    400: { description: 'Corpo inválido.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Sem `permission_management:read`.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
 
 // ── ESCRITA (F4) ─────────────────────────────────────────────────────────────
 //
@@ -326,8 +362,10 @@ escrita('post', '/api/admin/permission-groups/{id}/members', 'Adiciona membro ao
   'O vínculo guarda quem concedeu.',
   z.object({ userId: z.string().max(128) }));
 
-escrita('delete', '/api/admin/permission-groups/{id}/members/{userId}', 'Remove membro do grupo',
-  'Marca `removed_at`, não apaga. Recusado com 409 `last_manager` se fosse o último gestor — inclusive quando a pessoa remove a si mesma.');
+escrita('delete', '/api/admin/permission-groups/{id}/members', 'Remove membro do grupo',
+  'Marca `removed_at`, não apaga. Recusado com 409 `last_manager` se fosse o último gestor — inclusive quando a pessoa remove a si mesma. ' +
+    '`userId` vai no CORPO, não no path — uid de funcionário não pode cair no log de request do Cloud Run (parecer jurídico, C6).',
+  z.object({ userId: z.string().max(128) }));
 
 escrita('put', '/api/admin/country-features/{country}/{featureKey}', 'Liga/desliga uma feature num país',
   'Override do painel sobre o padrão do manifest. Motivo obrigatório; a mudança anterior vai para `country_feature_changes`.',

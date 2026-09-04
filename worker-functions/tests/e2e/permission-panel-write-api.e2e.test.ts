@@ -195,7 +195,8 @@ describe('escrita do painel — caminho feliz, efeito no banco (F4)', () => {
   });
 
   it('DELETE /members remove marcando `removed_at` — a linha não é apagada', async () => {
-    const res = await chamar('DELETE', `/api/admin/permission-groups/${idTrabalho}/members/${GESTOR}`);
+    // userId vai no CORPO, não no path — uid não pode cair no log de request do Cloud Run (C6).
+    const res = await chamar('DELETE', `/api/admin/permission-groups/${idTrabalho}/members`, { userId: GESTOR });
 
     expect(res.status).toBe(200);
     const r = await pool.query(

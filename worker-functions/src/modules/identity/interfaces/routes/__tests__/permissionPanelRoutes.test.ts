@@ -43,6 +43,7 @@ const ESPERADO: Record<string, string> = {
   'GET /permission-groups/:id/members': 'permission_management:read',
   'GET /country-features': 'permission_management:read',
   'GET /permission-audit': 'permission_management:read',
+  'POST /permission-audit/query': 'permission_management:read',
 };
 
 const ID = '11111111-1111-4111-8111-111111111111';
@@ -108,6 +109,7 @@ function build(over: Partial<Dubles> = {}) {
 
 function appCom(router: express.Router) {
   const app = express();
+  app.use(express.json());
   app.use('/api/admin', router);
   return app;
 }
@@ -123,7 +125,7 @@ describe('createPermissionPanelRoutes — declaração', () => {
     expect(undeclaredRoutes(scanExpressRouter(build().router), () => true)).toEqual([]);
   });
 
-  it('🔴 as 6 rotas declaram `permission_management:read` — sem isso o sync mata a trilha', () => {
+  it('🔴 as 7 rotas declaram `permission_management:read` — sem isso o sync mata a trilha', () => {
     const declarado = Object.fromEntries(
       scanExpressRouter(build().router).map((route) => [
         `${route.method} ${route.path}`,
@@ -147,6 +149,7 @@ describe('createPermissionPanelRoutes — declaração', () => {
       'GET /api/admin/permission-groups/:id → permission_management:read',
       'GET /api/admin/permission-groups/:id/members → permission_management:read',
       'GET /api/admin/permissions/catalog → permission_management:read',
+      'POST /api/admin/permission-audit/query → permission_management:read',
     ]);
   });
 
@@ -391,6 +394,9 @@ describe('GET /country-features', () => {
   });
 });
 
+const POST = (router: express.Router, caminho: string, corpo: Record<string, unknown>) =>
+  request(appCom(router)).post(`/api/admin${caminho}`).send(corpo);
+
 describe('GET /permission-audit', () => {
   it('devolve a trilha, e o `resourceId` mascarado chega como o banco mandou', async () => {
     const { router, d } = build();
@@ -404,14 +410,21 @@ describe('GET /permission-audit', () => {
   it('repassa os filtros já tipados — data vira Date, limite vira número', async () => {
     const { router, d } = build();
 
-    await GET(router, `/permission-audit?userId=uid-1&resource=worker_pii&since=2026-08-01&limit=50`).expect(200);
+    await GET(router, `/permission-audit?resource=worker_pii&since=2026-08-01&limit=50`).expect(200);
 
     expect(d.audit).toHaveBeenCalledWith({
-      userId: 'uid-1',
       resource: 'worker_pii',
       since: new Date('2026-08-01'),
       limit: 50,
     });
+  });
+
+  it('🔴 `userId` na query NÃO filtra mais (C6) — o zod descarta a chave e o use case recebe sem ela', async () => {
+    const { router, d } = build();
+
+    await GET(router, '/permission-audit?userId=uid-1&limit=50').expect(200);
+
+    expect(d.audit).toHaveBeenCalledWith({ limit: 50 });
   });
 
   it('`limit` não numérico é 400 — não um `NaN` que o use case clamparia em silêncio', async () => {
@@ -434,6 +447,61 @@ describe('GET /permission-audit', () => {
     const { router } = build({ audit: jest.fn().mockRejectedValue(new Error('permission denied')) });
 
     const res = await GET(router, '/permission-audit').expect(500);
+
+    expect(res.body).toEqual({ success: false, error: 'Failed to read permission audit' });
+  });
+});
+
+describe('POST /permission-audit/query — o único jeito de filtrar por userId (C6)', () => {
+  it('devolve a trilha filtrada por userId, no CORPO — mesmo use case do GET', async () => {
+    const { router, d } = build();
+
+    const res = await POST(router, '/permission-audit/query', {
+      userId: 'uid-1',
+      resource: 'worker_pii',
+      since: '2026-08-01',
+      until: '2026-08-05',
+      limit: 50,
+    }).expect(200);
+
+    expect(res.body.entries[0]).toMatchObject({ resourceId: '<oculto>', decision: 'ALLOW' });
+    expect(d.audit).toHaveBeenCalledWith({
+      userId: 'uid-1',
+      resource: 'worker_pii',
+      since: new Date('2026-08-01'),
+      until: new Date('2026-08-05'),
+      limit: 50,
+    });
+  });
+
+  it('corpo vazio é aceito — todos os filtros são opcionais, igual ao GET', async () => {
+    const { router, d } = build();
+
+    await POST(router, '/permission-audit/query', {}).expect(200);
+
+    expect(d.audit).toHaveBeenCalledWith({});
+  });
+
+  it('`limit` acima do teto é 400', async () => {
+    const { router, d } = build();
+
+    await POST(router, '/permission-audit/query', { limit: 5000 }).expect(400);
+
+    expect(d.audit).not.toHaveBeenCalled();
+  });
+
+  it('corpo malformado (`limit` não numérico) é 400', async () => {
+    const { router, d } = build();
+
+    await POST(router, '/permission-audit/query', { limit: 'abc' }).expect(400);
+
+    expect(d.audit).not.toHaveBeenCalled();
+  });
+
+  it('falha da função de auditoria é 500 — mesmo tratamento de erro do GET', async () => {
+    const { router } = build({ audit: jest.fn().mockRejectedValue(new Error('permission denied')) });
+
+    const res = await POST(router, '/permission-audit/query', { userId: 'uid-1' }).expect(500);
 
     expect(res.body).toEqual({ success: false, error: 'Failed to read permission audit' });
   });

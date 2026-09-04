@@ -52,6 +52,26 @@ describe('AdminPermissionsApiService — envelope × corpo nu', () => {
     expect(fetchMock.mock.calls[0][0]).toMatch(/permission-audit\?resource=worker&limit=50$/);
   });
 
+  it('🔴 `userId` preenchido: a trilha vai por POST, com o uid no CORPO (C6)', async () => {
+    fetchMock.mockResolvedValue(resposta(200, { entries: [] }));
+    await AdminPermissionsApiService.queryAudit({ userId: 'u-1', resource: 'worker', limit: 50 });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url).replace(/^https?:\/\/[^/]+/, '')).toBe('/api/admin/permission-audit/query');
+    expect((init as RequestInit).method).toBe('POST');
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ userId: 'u-1', resource: 'worker', limit: 50 });
+  });
+
+  it('🔴 removeMember: userId vai no CORPO do DELETE, não no path (C6)', async () => {
+    fetchMock.mockResolvedValue(resposta(200, { success: true, data: {} }));
+    await AdminPermissionsApiService.removeMember('g', 'u-1');
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url).replace(/^https?:\/\/[^/]+/, '')).toBe('/api/admin/permission-groups/g/members');
+    expect((init as RequestInit).method).toBe('DELETE');
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ userId: 'u-1' });
+  });
+
   it('cada escrita bate na rota certa', async () => {
     fetchMock.mockResolvedValue(resposta(200, { success: true, data: {} }));
     await AdminPermissionsApiService.updateGroup('g', { name: 'n' });
@@ -60,6 +80,7 @@ describe('AdminPermissionsApiService — envelope × corpo nu', () => {
     await AdminPermissionsApiService.grantCountry('g', 'AR', 'r');
     await AdminPermissionsApiService.revokeCountry('g', 'AR');
     await AdminPermissionsApiService.addMember('g', 'u');
+    await AdminPermissionsApiService.removeMember('g', 'u');
     await AdminPermissionsApiService.setCountryFeature('AR', 'screen:x', { enabled: true, reason: 'r' });
     await AdminPermissionsApiService.getGroup('g');
     await AdminPermissionsApiService.listMembers('g');
@@ -72,6 +93,7 @@ describe('AdminPermissionsApiService — envelope × corpo nu', () => {
       'POST /api/admin/permission-groups/g/countries',
       'DELETE /api/admin/permission-groups/g/countries/AR',
       'POST /api/admin/permission-groups/g/members',
+      'DELETE /api/admin/permission-groups/g/members',
       'PUT /api/admin/country-features/AR/screen%3Ax',
       'GET /api/admin/permission-groups/g',
       'GET /api/admin/permission-groups/g/members',

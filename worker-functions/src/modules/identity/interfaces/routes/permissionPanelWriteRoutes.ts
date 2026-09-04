@@ -108,7 +108,6 @@ const DefinirCelulas = z.object({
 const ConcederPais = z.object({ country: z.enum(COUNTRY_CODES), reason: Motivo });
 const PaisParam = z.object({ id: z.string().uuid(), country: z.enum(COUNTRY_CODES) });
 const MembroBody = z.object({ userId: z.string().min(1).max(128) });
-const MembroParam = z.object({ id: z.string().uuid(), userId: z.string().min(1).max(128) });
 const FeatureParam = z.object({ country: z.enum(COUNTRY_CODES), featureKey: z.string().min(3).max(120) });
 const FeatureBody = z.object({ enabled: z.boolean(), config: z.unknown().optional(), reason: Motivo });
 
@@ -240,11 +239,16 @@ export function createPermissionPanelWriteRoutes(deps: PermissionPanelWriteDeps)
     );
   });
 
-  router.delete('/permission-groups/:id/members/:userId', ...portao, (req, res) => {
-    const params = MembroParam.safeParse(req.params);
-    if (!params.success) return invalido(res, 'group id or user id');
+  // DELETE sem :userId no path: uid de funcionário não pode cair no log de
+  // request do Cloud Run (parecer jurídico, condição C6). Corpo, não query —
+  // simetria exata com o POST acima, mesmo schema `MembroBody`.
+  router.delete('/permission-groups/:id/members', ...portao, (req, res) => {
+    const params = IdParam.safeParse(req.params);
+    if (!params.success) return invalido(res, 'group id');
+    const body = MembroBody.safeParse(req.body);
+    if (!body.success) return invalido(res, 'member payload');
     responder(res, 'remove member', () =>
-      g.removeMember.execute({ tenantId, groupId: params.data.id, userId: params.data.userId }),
+      g.removeMember.execute({ tenantId, groupId: params.data.id, userId: body.data.userId }),
     );
   });
 

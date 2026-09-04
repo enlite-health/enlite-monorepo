@@ -286,7 +286,7 @@ describe('4.1b — bateria de abuso da escrita do painel (HTTP e banco reais)', 
       ['POST', '/api/admin/permission-groups/:id/countries', { country: 'BR', reason: 'x' }],
       ['DELETE', '/api/admin/permission-groups/:id/countries/AR', undefined],
       ['POST', '/api/admin/permission-groups/:id/members', { userId: 'abuse-e2e-comum' }],
-      ['DELETE', '/api/admin/permission-groups/:id/members/abuse-e2e-comum', undefined],
+      ['DELETE', '/api/admin/permission-groups/:id/members', { userId: 'abuse-e2e-comum' }],
       ['PUT', '/api/admin/country-features/BR/screen:abuse-e2e', { enabled: true, reason: 'x' }],
     ];
 
@@ -339,7 +339,13 @@ describe('4.1b — bateria de abuso da escrita do painel (HTTP e banco reais)', 
       const alvo = criado.body.groupId as string;
 
       // As rotas de membro e de revogação precisam de algo para operar.
-      if (caminho.includes('/members/')) {
+      // ⚠️ Desde que `userId` saiu do path (C6), POST e DELETE de membro têm o
+      // MESMO `caminho` (`.../members`) — só `metodo` distingue. Sem checar o
+      // método aqui, o `DELETE` também cairia neste `if`, adicionaria membro DE
+      // NOVO (inofensivo) mas nada garantiria que ele existisse ANTES do
+      // `DELETE` de teste; o predicado por `metodo` é o que faz o setup rodar
+      // só para quem remove.
+      if (metodo === 'DELETE' && caminho.endsWith('/members')) {
         await chamar('POST', `/api/admin/permission-groups/${alvo}/members`, U.gestor, { userId: U.comum });
       }
       if (caminho.includes('/countries/')) {
@@ -371,7 +377,9 @@ describe('4.1b — bateria de abuso da escrita do painel (HTTP e banco reais)', 
     });
 
     it('🔴 caminho 1: o gestor não se REMOVE do próprio grupo', async () => {
-      const res = await chamar('DELETE', `/api/admin/permission-groups/${idGestao}/members/${U.gestor}`, U.gestor);
+      const res = await chamar('DELETE', `/api/admin/permission-groups/${idGestao}/members`, U.gestor, {
+        userId: U.gestor,
+      });
 
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('last_manager');
@@ -410,7 +418,9 @@ describe('4.1b — bateria de abuso da escrita do painel (HTTP e banco reais)', 
       app.invalidar([U.comum, U.gestor]);
       expect(await gestoresAtivos()).toBe(2);
 
-      const res = await chamar('DELETE', `/api/admin/permission-groups/${idGestao}/members/${U.gestor}`, U.comum);
+      const res = await chamar('DELETE', `/api/admin/permission-groups/${idGestao}/members`, U.comum, {
+        userId: U.gestor,
+      });
 
       expect(res.status).toBe(200);
       expect(await gestoresAtivos()).toBe(1);

@@ -138,6 +138,15 @@ class AdminPermissionsApiServiceClass {
   }
 
   async queryAudit(filters: AuditFilters = {}): Promise<PermissionAuditRow[]> {
+    // `userId` saiu da query string do GET (parecer jurídico, C6: uid não pode
+    // cair no log de request do Cloud Run) — com filtro por pessoa, o corpo vai
+    // no POST; sem ele, o GET de sempre. Menos ramificação do que sempre usar
+    // POST: a rota GET, mais cacheável, continua sendo o caminho comum.
+    if (filters.userId) {
+      return (
+        await this.request<{ entries: PermissionAuditRow[] }>('POST', '/api/admin/permission-audit/query', filters)
+      ).entries;
+    }
     const params = new URLSearchParams();
     for (const [k, v] of Object.entries(filters)) {
       if (v !== undefined && v !== '') params.set(k, String(v));
@@ -177,7 +186,9 @@ class AdminPermissionsApiServiceClass {
   }
 
   async removeMember(id: string, userId: string): Promise<{ removed: number }> {
-    return this.request('DELETE', `/api/admin/permission-groups/${id}/members/${encodeURIComponent(userId)}`);
+    // userId vai no CORPO, não no path — uid de funcionário não pode cair no
+    // log de request do Cloud Run (parecer jurídico, C6).
+    return this.request('DELETE', `/api/admin/permission-groups/${id}/members`, { userId });
   }
 
   async setCountryFeature(

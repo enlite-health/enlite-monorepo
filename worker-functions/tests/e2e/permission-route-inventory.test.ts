@@ -82,21 +82,25 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'PATCH /api/admin/users/:id/role → permission_management:write',
         'POST /api/admin/users → user_management:write',
         'POST /api/admin/users/:id/reset-password → user_management:write',
-        // ── admin.permissions (6) — a leitura do painel (F3). São estas linhas
-        // que mantêm `permission_management:read` viva no catálogo: sem nenhuma
-        // delas o sync descontinua a célula e `iam.query_audit` responde 42501
-        // para todos. Ordenadas como o `.sort()` acima devolve.
+        // ── admin.permissions (7) — a leitura do painel (F3) + o POST de
+        // leitura da C6. São estas linhas que mantêm `permission_management:read`
+        // viva no catálogo: sem nenhuma delas o sync descontinua a célula e
+        // `iam.query_audit` responde 42501 para todos. Ordenadas como o `.sort()`
+        // acima devolve.
         'GET /api/admin/country-features → permission_management:read',
         'GET /api/admin/permission-audit → permission_management:read',
         'GET /api/admin/permission-groups → permission_management:read',
         'GET /api/admin/permission-groups/:id → permission_management:read',
         'GET /api/admin/permission-groups/:id/members → permission_management:read',
         'GET /api/admin/permissions/catalog → permission_management:read',
+        // POST na FORMA (a C6 tira `userId` da query), `:read` na REGRA — a
+        // exceção declarada à convenção "POST é sempre `:write`" desta família.
+        'POST /api/admin/permission-audit/query → permission_management:read',
         // ── admin.permissions, ESCRITA (9) — a F4. Todas `:write`, e o portão
         // real delas é o `SECURITY DEFINER` da mig 279, não este `perm.require`.
         'DELETE /api/admin/permission-groups/:id → permission_management:write',
         'DELETE /api/admin/permission-groups/:id/countries/:country → permission_management:write',
-        'DELETE /api/admin/permission-groups/:id/members/:userId → permission_management:write',
+        'DELETE /api/admin/permission-groups/:id/members → permission_management:write',
         'PATCH /api/admin/permission-groups/:id → permission_management:write',
         'POST /api/admin/permission-groups → permission_management:write',
         'POST /api/admin/permission-groups/:id/countries → permission_management:write',
