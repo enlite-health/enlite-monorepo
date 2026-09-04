@@ -10,8 +10,10 @@ vi.mock('@presentation/hooks/useAdminAuth', () => ({
   useAdminAuth: () => ({ adminProfile: { role: EnliteRole.RECRUITER } }),
 }));
 
-const contrato = (features: AuthzContract['features']): AuthzContract => ({
-  uid: 'u', tenantId: 't', status: 'ACTIVE', permissions: ['permission_management:read'], countries: ['BR'], groups: [], features,
+// M1 (D268) — `enforcement: 'on'` default: estes testes exercitam a régua de
+// screen:* por MAPA; o freio de rollout (`useFeature.test.tsx`) tem sua própria suíte.
+const contrato = (features: AuthzContract['features'], enforcement: AuthzContract['enforcement'] = 'on'): AuthzContract => ({
+  uid: 'u', tenantId: 't', status: 'ACTIVE', permissions: ['permission_management:read'], countries: ['BR'], groups: [], features, enforcement,
 });
 
 describe('useAdminNavItems — B2 (D268): item de menu some quando screen:* está desligada no país', () => {

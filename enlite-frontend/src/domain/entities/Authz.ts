@@ -77,15 +77,33 @@ export function shouldShowWelcomeNoGroup(authz: AuthzContract | null, status: Au
   return semGrupo || inativo;
 }
 
+/** Qual das duas mensagens da `WelcomeNoGroupPage` — só chamado quando `shouldShowWelcomeNoGroup` já é true. */
+export type WelcomeNoGroupReason = 'sem-grupo' | 'inativo';
+
+/**
+ * `inativo` tem prioridade: uma conta `SUSPENDED`/`DEACTIVATED` com grupos
+ * vivos não está "sem grupo" — está inativa, e a mensagem tem que dizer isso,
+ * não sugerir que basta pedir grupo pro gestor de acessos.
+ */
+export function welcomeNoGroupReason(authz: AuthzContract): WelcomeNoGroupReason {
+  const inativo = authz.status !== null && authz.status !== 'ACTIVE';
+  return inativo ? 'inativo' : 'sem-grupo';
+}
+
 /** Uma decisão de `useFeature` — o `reason` é só para o warn (nunca aparece na UI). */
 export interface FeatureDecision {
   enabled: boolean;
-  reason: 'enabled' | 'disabled' | 'missing-map' | 'missing-key' | 'no-actor-country';
+  reason: 'enabled' | 'disabled' | 'missing-map' | 'missing-key' | 'no-actor-country' | 'enforcement-off';
 }
 
 /**
- * B1 (D268) — pura, sem React: fail-OPEN por MAPA (ausente/vazio, ou ator sem
- * país único — não há campo de país PRÓPRIO no contrato hoje, só a união dos
+ * B1/M1 (D268) — pura, sem React: `enforcement !== 'on'` (inclusive ausente)
+ * SEMPRE renderiza — o mesmo freio de rollout que `shouldShowWelcomeNoGroup`
+ * já usa (D268: nada de ABAC no `main` antes da D113), agora um único
+ * interruptor pra toda a UI do ABAC, não só pro welcome.
+ *
+ * Com a régua ligada: fail-OPEN por MAPA (ausente/vazio, ou ator sem país
+ * único — não há campo de país PRÓPRIO no contrato hoje, só a união dos
  * países dos grupos; com 0 ou >1 país a leitura é ambígua e a régua abre),
  * fail-CLOSED só por CHAVE presente e `enabled:false`. Chave ausente no mapa
  * também abre (mapa incompleto não é "decidido false").
@@ -94,7 +112,9 @@ export function featureEnabledFor(
   features: AuthzContract['features'] | null | undefined,
   countries: readonly string[] | null | undefined,
   featureKey: string,
+  enforcement: Enforcement | undefined,
 ): FeatureDecision {
+  if (enforcement !== 'on') return { enabled: true, reason: 'enforcement-off' };
   if (!countries || countries.length !== 1) return { enabled: true, reason: 'no-actor-country' };
   const country = countries[0];
   const mapaDoPais = features?.[country];

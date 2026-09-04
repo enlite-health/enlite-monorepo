@@ -13,10 +13,16 @@ const pronto = (permissions: string[]) =>
     authz: { uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {} } as AuthzContract,
   });
 
-const prontoFeatures = (countries: string[], features: AuthzContract['features']) =>
+// M1 (D268) — default `enforcement: 'on'`: estes casos exercitam a régua de
+// MAPA do `FeatureGate`/`FeatureRouteGate`; o freio de rollout tem describe própria em `useFeature.test.tsx`.
+const prontoFeatures = (
+  countries: string[],
+  features: AuthzContract['features'],
+  enforcement: AuthzContract['enforcement'] = 'on',
+) =>
   useAdminAuthStore.setState({
     authzStatus: 'ready',
-    authz: { uid: 'u', tenantId: 't', status: 'ACTIVE', permissions: [], countries, groups: [], features } as AuthzContract,
+    authz: { uid: 'u', tenantId: 't', status: 'ACTIVE', permissions: [], countries, groups: [], features, enforcement } as AuthzContract,
   });
 
 describe('Gated — as três posturas', () => {

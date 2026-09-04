@@ -2,7 +2,7 @@ import { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
-import { shouldShowWelcomeNoGroup } from '@domain/entities/Authz';
+import { shouldShowWelcomeNoGroup, welcomeNoGroupReason } from '@domain/entities/Authz';
 import { WelcomeNoGroupPage } from '@presentation/pages/admin/WelcomeNoGroupPage';
 
 interface AdminProtectedRouteProps {
@@ -40,8 +40,10 @@ export function AdminProtectedRoute({ children }: AdminProtectedRouteProps) {
   }
 
   if (shouldShowWelcomeNoGroup(authz, authzStatus)) {
-    console.log('[AdminProtectedRoute] enforcement=on e sem grupo/conta inativa — WelcomeNoGroupPage');
-    return <WelcomeNoGroupPage />;
+    // `authz` não é null aqui — `shouldShowWelcomeNoGroup` só é true com `authz` presente.
+    const reason = welcomeNoGroupReason(authz!);
+    console.log(`[AdminProtectedRoute] enforcement=on, WelcomeNoGroupPage (reason=${reason})`);
+    return <WelcomeNoGroupPage reason={reason} />;
   }
 
   console.log('[AdminProtectedRoute] Autorizado, renderizando children');

@@ -3338,6 +3338,8 @@
     "welcomeNoGroup": {
       "title": "¡Bienvenido/a a Enlite!",
       "message": "Tu cuenta todavía no tiene un grupo de acceso asignado. Hablá con el gestor de accesos de tu equipo para que te agregue a uno.",
+      "inactiveTitle": "Cuenta inactiva",
+      "inactiveMessage": "Tu cuenta está inactiva. Hablá con el gestor de accesos de tu equipo.",
       "logout": "Cerrar sesión"
     },
     "access": {

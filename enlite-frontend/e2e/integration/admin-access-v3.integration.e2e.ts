@@ -242,7 +242,10 @@ test.describe('Welcome sem grupo (A1) e feature por país (B2) — integração 
     await loginAs(page, STAFF);
     await page.goto('/admin');
     await expect(page.getByRole('heading', { name: 'Usuarios Administradores' })).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText('admin.welcomeNoGroup.title')).toHaveCount(0);
+    // BAIXA (gate rodada 4): a chave crua de i18n nunca é renderizada — essa
+    // asserção era morta (sempre passava, ligada ou desligada). Texto
+    // traduzido, mesmo padrão do teste 3 abaixo.
+    await expect(page.getByText(/no tiene un grupo de acceso|não tem um grupo de acesso/i)).toHaveCount(0);
   });
 
   test('3. sai do grupo → welcome de novo', async ({ page, request }) => {

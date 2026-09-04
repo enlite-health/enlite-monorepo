@@ -5,9 +5,16 @@
  * que este mapa continua ⊇ o manifest via a MESMA fixture gerada por
  * `scripts/sync-permission-catalog.mjs`).
  *
- * Usado em DOIS pontos só, de propósito (nada mais lê isto):
- *  - `adminNavigation.tsx` — filtra o item de menu pelo `navHref`;
- *  - `App.tsx` — envolve a(s) `<Route>` da tela com `FeatureRouteGate`.
+ * Usado em TRÊS pontos (B1/D268):
+ *  - `adminNavigation.tsx` — DERIVA `featureByHref` deste mapa (via `navHref`)
+ *    pra filtrar o item de menu; NÃO reescreve a lista à mão;
+ *  - `App.tsx` — envolve cada `<Route>` da tela com `FeatureRouteGate`,
+ *    passando a chave `screen:*` correspondente como literal (por
+ *    legibilidade — a paridade com `routes[]` abaixo é travada por
+ *    `screenFeatureMap.test.ts`, que lê `App.tsx` como texto, não por import);
+ *  - `screenFeatureMap.test.ts` — confere as DUAS pontas acima: toda rota
+ *    `/admin/*` gateada em App.tsx bate com `routes[]` aqui (nos dois
+ *    sentidos), e todo `navHref` existe de fato em `adminNavigation.tsx`.
  *
  * `screen:ana-care` não tem tela nem rota hoje (medido: grep em src/presentation
  * não acha nada) — entra com `semConsumidorHoje` explícito, nunca ausente do

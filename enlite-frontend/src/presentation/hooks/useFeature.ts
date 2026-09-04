@@ -37,7 +37,8 @@ function avisarUmaVez(reason: FeatureDecision['reason'], featureKey: string): vo
 export function useFeature(featureKey: string): boolean {
   const features = useAdminAuthStore((s) => s.authz?.features ?? null);
   const countries = useAdminAuthStore((s) => s.authz?.countries ?? null);
-  const decision = featureEnabledFor(features, countries, featureKey);
+  const enforcement = useAdminAuthStore((s) => s.authz?.enforcement);
+  const decision = featureEnabledFor(features, countries, featureKey, enforcement);
 
   useEffect(() => {
     if (MOTIVOS_FAIL_OPEN.has(decision.reason)) avisarUmaVez(decision.reason, featureKey);

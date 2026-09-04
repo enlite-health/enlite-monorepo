@@ -44,10 +44,44 @@ function arquivosTs(dir: string, acc: string[] = []): string[] {
   return acc;
 }
 
-/** Extrai os atributos de uma tag JSX de abertura (`<Nome attr1 attr2=".." ...>`), em blocos multilinha. */
+/**
+ * Extrai os atributos de uma tag JSX de abertura (`<Nome attr1 attr2=".." ...>`).
+ *
+ * NÃO usa `[^>]*` até o primeiro `>` — isso para dentro de QUALQUER attr que
+ * tenha uma arrow function (`onClick={() => save()}`), porque `=>` tem um
+ * `>` no meio. Em vez disso varre caractere a caractere contando profundidade
+ * de `{}` (o `>` de uma arrow function está dentro de um `{...}` de attr —
+ * só o `>` em profundidade 0 fecha a tag) e ignorando `>` dentro de strings.
+ */
 function tagsAbertura(texto: string, nomeComponente: string): string[] {
-  const re = new RegExp(`<${nomeComponente}\\b([^>]*)>`, 'gs');
-  return [...texto.matchAll(re)].map((m) => m[1]);
+  const resultados: string[] = [];
+  const abertura = new RegExp(`<${nomeComponente}\\b`, 'g');
+  let m: RegExpExecArray | null;
+  while ((m = abertura.exec(texto)) !== null) {
+    const inicio = m.index + m[0].length;
+    let i = inicio;
+    let profundidade = 0;
+    let aspas: string | null = null;
+    while (i < texto.length) {
+      const ch = texto[i];
+      if (aspas) {
+        if (ch === '\\') { i += 2; continue; }
+        if (ch === aspas) aspas = null;
+      } else if (ch === '"' || ch === "'" || ch === '`') {
+        aspas = ch;
+      } else if (ch === '{') {
+        profundidade++;
+      } else if (ch === '}') {
+        profundidade--;
+      } else if (ch === '>' && profundidade === 0) {
+        break;
+      }
+      i++;
+    }
+    resultados.push(texto.slice(inicio, i));
+    abertura.lastIndex = i;
+  }
+  return resultados;
 }
 
 /**
@@ -81,6 +115,33 @@ function constantesDeString(arquivos: string[]): Map<string, string> {
   return mapa;
 }
 
+/**
+ * `useCellAccess('recurso').canWrite` (encadeado) OU
+ * `const { canWrite } = useCellAccess('recurso')` (destructure — a forma que
+ * `GroupDetailPage.tsx`/`CountryFeaturesPage.tsx` de fato usam). `.canWrite`
+ * é o ÚNICO sinal de escrita que o hook expõe (ver docstring de
+ * `useCellAccess.ts`) — `canRead`/`level` sozinhos NÃO consomem `:write`
+ * (`AccessGate.tsx` só lê `.level`/`.status`, nunca `.canWrite` — não conta).
+ */
+function celulasViaUseCellAccess(texto: string, constantes: Map<string, string>): string[] {
+  const recursos: string[] = [];
+  for (const m of texto.matchAll(/useCellAccess\(\s*'([a-z0-9_]+)'\s*\)\s*\.\s*canWrite\b/g)) {
+    recursos.push(m[1]);
+  }
+  for (const m of texto.matchAll(/useCellAccess\(\s*([A-Z][A-Z0-9_]*)\s*\)\s*\.\s*canWrite\b/g)) {
+    const resource = constantes.get(m[1]);
+    if (resource) recursos.push(resource);
+  }
+  for (const m of texto.matchAll(/const\s*\{[^}]*\bcanWrite\b[^}]*\}\s*=\s*useCellAccess\(\s*'([a-z0-9_]+)'\s*\)/g)) {
+    recursos.push(m[1]);
+  }
+  for (const m of texto.matchAll(/const\s*\{[^}]*\bcanWrite\b[^}]*\}\s*=\s*useCellAccess\(\s*([A-Z][A-Z0-9_]*)\s*\)/g)) {
+    const resource = constantes.get(m[1]);
+    if (resource) recursos.push(resource);
+  }
+  return recursos;
+}
+
 /** As células `resource:action` com consumidor comprovado em src/. */
 function celulasConsumidas(): Set<string> {
   const arquivos = arquivosTs(SRC);
@@ -102,6 +163,10 @@ function celulasConsumidas(): Set<string> {
       const resource = atributoResource(attrs, constantes);
       const atLeast = atributo(attrs, 'atLeast');
       if (resource && atLeast === 'write') consumidas.add(`${resource}:write`);
+    }
+
+    for (const resource of celulasViaUseCellAccess(texto, constantes)) {
+      consumidas.add(`${resource}:write`);
     }
   }
   return consumidas;

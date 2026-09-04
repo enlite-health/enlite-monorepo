@@ -11,10 +11,10 @@ vi.mock('@presentation/hooks/useAdminAuth', () => ({
   useAdminAuth: () => ({ logout }),
 }));
 
-function montar() {
+function montar(reason?: 'sem-grupo' | 'inativo') {
   return render(
     <MemoryRouter>
-      <WelcomeNoGroupPage />
+      <WelcomeNoGroupPage reason={reason} />
     </MemoryRouter>,
   );
 }
@@ -22,10 +22,24 @@ function montar() {
 describe('WelcomeNoGroupPage — genérica, sem menu operacional', () => {
   beforeEach(() => logout.mockClear());
 
-  it('mostra título e mensagem genéricos (chaves i18n, sem nome/e-mail de ninguém)', () => {
+  it('reason default (sem-grupo, sem prop) mostra título e mensagem de sem-grupo (chaves i18n, sem nome/e-mail de ninguém)', () => {
     montar();
     expect(screen.getByText('admin.welcomeNoGroup.title')).toBeInTheDocument();
     expect(screen.getByText('admin.welcomeNoGroup.message')).toBeInTheDocument();
+  });
+
+  it('reason="sem-grupo" explícito — mesma mensagem do default', () => {
+    montar('sem-grupo');
+    expect(screen.getByText('admin.welcomeNoGroup.title')).toBeInTheDocument();
+    expect(screen.getByText('admin.welcomeNoGroup.message')).toBeInTheDocument();
+  });
+
+  it('reason="inativo" mostra a mensagem de conta inativa, NUNCA a de sem-grupo (chaves i18n, sem nome/e-mail de ninguém)', () => {
+    montar('inativo');
+    expect(screen.getByText('admin.welcomeNoGroup.inactiveTitle')).toBeInTheDocument();
+    expect(screen.getByText('admin.welcomeNoGroup.inactiveMessage')).toBeInTheDocument();
+    expect(screen.queryByText('admin.welcomeNoGroup.title')).not.toBeInTheDocument();
+    expect(screen.queryByText('admin.welcomeNoGroup.message')).not.toBeInTheDocument();
   });
 
   it('não renderiza nenhum link de navegação operacional (sem menu)', () => {

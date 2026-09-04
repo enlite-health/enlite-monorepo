@@ -33,28 +33,75 @@ function arquivosTs(dir: string, acc: string[] = []): string[] {
   return acc;
 }
 
-/** Chaves literais em `useFeature('k')` / `feature="k"` (FeatureGate e FeatureRouteGate usam a mesma prop). */
-function chavesDoFront(): Map<string, string[]> {
+// Chave `namespace:nome` — mesmo padrão de `screenFeatureMap.ts`, mas SEM
+// restringir a minúscula: uma chave em caixa errada tem que ser CAPTURADA
+// (pra cair como órfã no manifest, vermelho de verdade) em vez de escapar
+// do regex e passar batido.
+const RE_CHAVE = '[a-zA-Z]+:[a-zA-Z0-9._-]+';
+const RE_USE_FEATURE_LITERAL = new RegExp(`useFeature\\(\\s*(["'])(${RE_CHAVE})\\1`, 'g');
+const RE_FEATURE_ATTR_LITERAL = new RegExp(`feature=(["'])(${RE_CHAVE})\\1`, 'g');
+const RE_USE_FEATURE_NAO_LITERAL = /useFeature\(\s*([A-Za-z_$][A-Za-z0-9_$.]*)\s*\)/g;
+const RE_FEATURE_ATTR_NAO_LITERAL = /feature=\{\s*([A-Za-z_$][A-Za-z0-9_$.]*)\s*\}/g;
+
+/**
+ * `feature` — o nome do parâmetro que `FeatureGate.tsx`/`FeatureRouteGate.tsx`
+ * recebem e repassam a `useFeature(feature)`; não é uma chave hardcoded, é o
+ * forward do próprio prop (mesmo espírito do `resource` em `ActionButton.tsx`
+ * pro `ui-gate-debt.test.ts`) — não conta como "chave não-literal".
+ */
+const IDENTIFICADOR_DE_FORWARD = 'feature';
+
+interface AchadosFront {
+  /** chave → arquivos onde aparece literal. */
+  usos: Map<string, string[]>;
+  /** `useFeature(CONST)` / `feature={CONST}` — chave que não dá pra achar por grep. */
+  naoLiterais: string[];
+}
+
+/**
+ * Chaves em `useFeature('k'|"k")` / `feature="k"|'k'` (FeatureGate e
+ * FeatureRouteGate usam a mesma prop) — aspas simples OU duplas, qualquer
+ * caixa. `useFeature(CONST)`/`feature={CONST}` (chave por constante, não
+ * literal) vira achado em `naoLiterais` em vez de ser ignorado em silêncio.
+ */
+function chavesDoFront(): AchadosFront {
   const usos = new Map<string, string[]>();
-  const re = /useFeature\(\s*'([a-z]+:[a-z0-9.-]+)'|feature=["']([a-z]+:[a-z0-9.-]+)["']/g;
+  const naoLiterais: string[] = [];
   for (const f of arquivosTs(SRC)) {
     const texto = readFileSync(f, 'utf8');
-    for (const m of texto.matchAll(re)) {
-      const chave = m[1] ?? m[2];
-      usos.set(chave, [...(usos.get(chave) ?? []), f.replace(SRC, 'src')]);
+    const rel = f.replace(SRC, 'src');
+
+    for (const m of texto.matchAll(RE_USE_FEATURE_LITERAL)) {
+      usos.set(m[2], [...(usos.get(m[2]) ?? []), rel]);
+    }
+    for (const m of texto.matchAll(RE_FEATURE_ATTR_LITERAL)) {
+      usos.set(m[2], [...(usos.get(m[2]) ?? []), rel]);
+    }
+    for (const m of texto.matchAll(RE_USE_FEATURE_NAO_LITERAL)) {
+      if (m[1] === IDENTIFICADOR_DE_FORWARD) continue;
+      naoLiterais.push(`chave não-literal em ${rel}: useFeature(${m[1]})`);
+    }
+    for (const m of texto.matchAll(RE_FEATURE_ATTR_NAO_LITERAL)) {
+      if (m[1] === IDENTIFICADOR_DE_FORWARD) continue;
+      naoLiterais.push(`chave não-literal em ${rel}: feature={${m[1]}}`);
     }
   }
-  return usos;
+  return { usos, naoLiterais };
 }
 
 describe('paridade front × manifest das chaves de feature', () => {
   it('o front nomeia ao menos uma chave — senão a régua não mede nada', () => {
-    expect(chavesDoFront().size).toBeGreaterThan(0);
+    expect(chavesDoFront().usos.size).toBeGreaterThan(0);
   });
 
   it('🔴 toda chave nomeada no front existe no manifest', () => {
-    const orfas = [...chavesDoFront()].filter(([chave]) => !CHAVES.has(chave));
+    const orfas = [...chavesDoFront().usos].filter(([chave]) => !CHAVES.has(chave));
     expect(orfas, `chaves sem entrada no manifest: ${JSON.stringify(orfas)}`).toEqual([]);
+  });
+
+  it('🔴 nenhuma chave dinâmica (constante, não literal) fora do forward de prop conhecido', () => {
+    const { naoLiterais } = chavesDoFront();
+    expect(naoLiterais, JSON.stringify(naoLiterais, null, 2)).toEqual([]);
   });
 
   it('o fixture é o manifest, não uma cópia envelhecida (monorepo)', () => {

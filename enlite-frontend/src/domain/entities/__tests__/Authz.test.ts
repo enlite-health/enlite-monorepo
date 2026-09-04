@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { accessLevelFor, hasCell, shouldShowWelcomeNoGroup, featureEnabledFor, type AuthzContract } from '../Authz';
+import { accessLevelFor, hasCell, shouldShowWelcomeNoGroup, welcomeNoGroupReason, featureEnabledFor, type AuthzContract } from '../Authz';
 
 /**
  * A tabela-verdade da regra por componente. É pura de propósito: se ela
@@ -71,30 +71,58 @@ describe('shouldShowWelcomeNoGroup (A1/D268)', () => {
   });
 });
 
-describe('featureEnabledFor (B1/D268)', () => {
+describe('welcomeNoGroupReason — qual das 2 mensagens (Welcome/D268)', () => {
+  const base: AuthzContract = {
+    uid: 'u', tenantId: 't', status: 'ACTIVE', permissions: [], countries: [], groups: [{ id: 'g1', name: 'G' }], features: {},
+  };
+
+  it('sem grupo, status ACTIVE → sem-grupo', () => {
+    expect(welcomeNoGroupReason({ ...base, groups: [] })).toBe('sem-grupo');
+  });
+
+  it('status SUSPENDED (com ou sem grupo) → inativo, tem prioridade sobre sem-grupo', () => {
+    expect(welcomeNoGroupReason({ ...base, status: 'SUSPENDED' })).toBe('inativo');
+    expect(welcomeNoGroupReason({ ...base, status: 'SUSPENDED', groups: [] })).toBe('inativo');
+  });
+
+  it('status DEACTIVATED → inativo', () => {
+    expect(welcomeNoGroupReason({ ...base, status: 'DEACTIVATED' })).toBe('inativo');
+  });
+
+  it('status null (nunca setado) → sem-grupo, não inativo', () => {
+    expect(welcomeNoGroupReason({ ...base, status: null, groups: [] })).toBe('sem-grupo');
+  });
+});
+
+describe('featureEnabledFor (B1/M1/D268)', () => {
   const features = { AR: { 'screen:talentum': { enabled: true, config: null }, 'screen:ana-care': { enabled: false, config: null } } };
 
-  it('mapa ausente/vazio → fail-OPEN (missing-map)', () => {
-    expect(featureEnabledFor(undefined, ['AR'], 'screen:talentum')).toEqual({ enabled: true, reason: 'missing-map' });
-    expect(featureEnabledFor({}, ['AR'], 'screen:talentum')).toEqual({ enabled: true, reason: 'missing-map' });
-    expect(featureEnabledFor({ AR: {} }, ['AR'], 'screen:talentum')).toEqual({ enabled: true, reason: 'missing-map' });
+  it('M1: enforcement off (ou ausente) → SEMPRE renderiza, mesmo com chave enabled:false no mapa', () => {
+    expect(featureEnabledFor(features, ['AR'], 'screen:ana-care', 'off')).toEqual({ enabled: true, reason: 'enforcement-off' });
+    expect(featureEnabledFor(features, ['AR'], 'screen:ana-care', undefined)).toEqual({ enabled: true, reason: 'enforcement-off' });
   });
 
-  it('ator sem país único (0 ou >1) → fail-OPEN (no-actor-country)', () => {
-    expect(featureEnabledFor(features, [], 'screen:talentum')).toEqual({ enabled: true, reason: 'no-actor-country' });
-    expect(featureEnabledFor(features, ['AR', 'BR'], 'screen:talentum')).toEqual({ enabled: true, reason: 'no-actor-country' });
-    expect(featureEnabledFor(features, null, 'screen:talentum')).toEqual({ enabled: true, reason: 'no-actor-country' });
+  it('mapa ausente/vazio (enforcement on) → fail-OPEN (missing-map)', () => {
+    expect(featureEnabledFor(undefined, ['AR'], 'screen:talentum', 'on')).toEqual({ enabled: true, reason: 'missing-map' });
+    expect(featureEnabledFor({}, ['AR'], 'screen:talentum', 'on')).toEqual({ enabled: true, reason: 'missing-map' });
+    expect(featureEnabledFor({ AR: {} }, ['AR'], 'screen:talentum', 'on')).toEqual({ enabled: true, reason: 'missing-map' });
   });
 
-  it('mapa presente, chave enabled:false → fail-CLOSED (disabled)', () => {
-    expect(featureEnabledFor(features, ['AR'], 'screen:ana-care')).toEqual({ enabled: false, reason: 'disabled' });
+  it('ator sem país único (0 ou >1), enforcement on → fail-OPEN (no-actor-country)', () => {
+    expect(featureEnabledFor(features, [], 'screen:talentum', 'on')).toEqual({ enabled: true, reason: 'no-actor-country' });
+    expect(featureEnabledFor(features, ['AR', 'BR'], 'screen:talentum', 'on')).toEqual({ enabled: true, reason: 'no-actor-country' });
+    expect(featureEnabledFor(features, null, 'screen:talentum', 'on')).toEqual({ enabled: true, reason: 'no-actor-country' });
   });
 
-  it('chave ausente no mapa do país → fail-OPEN (missing-key)', () => {
-    expect(featureEnabledFor(features, ['AR'], 'screen:workers')).toEqual({ enabled: true, reason: 'missing-key' });
+  it('mapa presente, chave enabled:false, enforcement on → fail-CLOSED (disabled)', () => {
+    expect(featureEnabledFor(features, ['AR'], 'screen:ana-care', 'on')).toEqual({ enabled: false, reason: 'disabled' });
   });
 
-  it('mapa presente, chave enabled:true → renderiza (enabled)', () => {
-    expect(featureEnabledFor(features, ['AR'], 'screen:talentum')).toEqual({ enabled: true, reason: 'enabled' });
+  it('chave ausente no mapa do país, enforcement on → fail-OPEN (missing-key)', () => {
+    expect(featureEnabledFor(features, ['AR'], 'screen:workers', 'on')).toEqual({ enabled: true, reason: 'missing-key' });
+  });
+
+  it('mapa presente, chave enabled:true, enforcement on → renderiza (enabled)', () => {
+    expect(featureEnabledFor(features, ['AR'], 'screen:talentum', 'on')).toEqual({ enabled: true, reason: 'enabled' });
   });
 });

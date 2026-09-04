@@ -4,6 +4,7 @@ import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
 import { EnliteRole } from '@domain/entities/EnliteRole';
 import { useCellAccess } from '@presentation/hooks/useCellAccess';
 import { useFeature } from '@presentation/hooks/useFeature';
+import { SCREEN_FEATURE_MAP } from './screenFeatureMap';
 
 export const useAdminNavItems = (): AppSidebarNavItem[] => {
   const { t } = useTranslation();
@@ -13,24 +14,30 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
   // toda rota da família exige. Sem ela, o item não existe no menu.
   const { canRead: canSeeAccess } = useCellAccess('permission_management');
 
-  // B2 (D268) — disponibilidade por país (SCREEN_FEATURE_MAP), aplicada ao
-  // item de menu. Nº fixo de chamadas (Rules of Hooks) — as 6 chaves screen:*
-  // que hoje têm item de topo; `screen:talentum`/`screen:ana-care` não têm
-  // (ver screenFeatureMap.ts) e por isso não entram aqui.
-  const dashboardOn = useFeature('screen:management-dashboard');
-  const vacanciesOn = useFeature('screen:vacancies');
-  const workersOn = useFeature('screen:workers');
-  const patientsOn = useFeature('screen:patients');
-  const funnelOn = useFeature('screen:funnel');
-  const accessOn = useFeature('screen:access-permissions');
-  const featureByHref: Record<string, boolean> = {
-    '/admin/dashboard': dashboardOn,
-    '/admin/vacancies': vacanciesOn,
-    '/admin/workers': workersOn,
-    '/admin/patients': patientsOn,
-    '/admin/recruitment': funnelOn,
-    '/admin/access': accessOn,
+  // B1 (D268) — disponibilidade por país, uma verdade só: `SCREEN_FEATURE_MAP`.
+  // Nº fixo de chamadas (Rules of Hooks) — as 6 chaves screen:* que hoje têm
+  // item de topo (`navHref` no mapa); `screen:talentum`/`screen:ana-care` não
+  // têm (ver screenFeatureMap.ts) e por isso não entram aqui.
+  const valorPorChave: Record<string, boolean> = {
+    'screen:management-dashboard': useFeature('screen:management-dashboard'),
+    'screen:vacancies': useFeature('screen:vacancies'),
+    'screen:workers': useFeature('screen:workers'),
+    'screen:patients': useFeature('screen:patients'),
+    'screen:funnel': useFeature('screen:funnel'),
+    'screen:access-permissions': useFeature('screen:access-permissions'),
   };
+  // Deriva `href → ligada?` do mapa (via `navHref`) — sem lista à mão. Uma
+  // chave sem hook chamado acima (screen:talentum/ana-care) fica de fora.
+  const featureByHref: Record<string, boolean> = {};
+  for (const [chave, entrada] of Object.entries(SCREEN_FEATURE_MAP)) {
+    if (entrada.navHref && chave in valorPorChave) featureByHref[entrada.navHref] = valorPorChave[chave];
+  }
+  // `/admin/recruitment/blocked-attempts` (item admin-only, ver `adminItems`
+  // abaixo) não é o `navHref` de nenhuma chave — é sub-rota de `screen:funnel`
+  // (ver `routes` de `screen:funnel` em screenFeatureMap.ts). Sem esta linha
+  // o item ficava morto no menu quando `screen:funnel` está off: a ROTA nega
+  // (App.tsx já gateia), mas o link continuava visível.
+  featureByHref['/admin/recruitment/blocked-attempts'] = valorPorChave['screen:funnel'];
 
   const baseItems: AppSidebarNavItem[] = [
     {

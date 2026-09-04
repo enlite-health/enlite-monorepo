@@ -77,10 +77,11 @@ describe('AdminProtectedRoute — tabela-verdade da A1 (D268), ponto único que 
     expect(screen.queryByText('admin.welcomeNoGroup.title')).not.toBeInTheDocument();
   });
 
-  it('status !== ACTIVE (enforcement on, com grupo) → welcome', () => {
+  it('status !== ACTIVE (enforcement on, com grupo) → welcome com a mensagem de INATIVO, não a de sem-grupo', () => {
     useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato({ enforcement: 'on', status: 'SUSPENDED' }) });
     montar();
-    expect(screen.getByText('admin.welcomeNoGroup.title')).toBeInTheDocument();
+    expect(screen.getByText('admin.welcomeNoGroup.inactiveTitle')).toBeInTheDocument();
+    expect(screen.queryByText('admin.welcomeNoGroup.title')).not.toBeInTheDocument();
   });
 
   it('Firebase ainda carregando (isLoading) → não renderiza nada, nem welcome nem painel', () => {
