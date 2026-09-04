@@ -385,19 +385,16 @@ describe('API de leitura do painel de acessos (HTTP real, banco real)', () => {
       expect((await chamar('/api/admin/permission-audit?limit=5000', U.gestora)).status).toBe(400);
     });
 
-    it('🔴 `?userId=` no GET NÃO filtra mais — zod descarta a chave desconhecida, a rota ignora', async () => {
-      // Escolha: ignorar (não 400) — o schema da query não usa `.strict()`, e
-      // nenhuma outra query desta família usa; adicionar `.strict()` só aqui
-      // seria uma exceção sem motivo local. Prova: um uid que NUNCA apareceu na
-      // trilha, e mesmo assim a resposta não fica vazia — se o filtro ainda
-      // funcionasse, `entries` seria `[]`.
+    it('`?userId=` no GET é 400 — fail-closed: `.strict()` recusa a chave desconhecida em vez de servir a trilha de TODO MUNDO sob o cabeçalho de um filtro que não rodou', async () => {
+      // Decisão (contra deploy-skew): uma aba com bundle ANTIGO que ainda manda
+      // `?userId=X` (de antes do uid sair da query, C6) não pode receber 200
+      // com a trilha INTEIRA por baixo de um filtro que silenciosamente não
+      // filtrou nada — o cliente leria isso como "a trilha de X". `.strict()`
+      // faz o zod recusar a request com 400 em vez de descartar a chave.
       const uidFantasma = 'panel-e2e-nao-existe-em-lugar-nenhum';
       const res = await chamar(`/api/admin/permission-audit?userId=${uidFantasma}&limit=50`, U.gestora);
 
-      expect(res.status).toBe(200);
-      const linhas = res.body.entries as Array<{ userId: string }>;
-      expect(linhas.length).toBeGreaterThan(0);
-      expect(linhas.some((l) => l.userId === uidFantasma)).toBe(false);
+      expect(res.status).toBe(400);
     });
 
     it('🔴 staff SEM a célula → 403 na rota, antes mesmo de a função do banco opinar', async () => {

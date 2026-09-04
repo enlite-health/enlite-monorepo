@@ -356,6 +356,13 @@ describe('4.1b — bateria de abuso da escrita do painel (HTTP e banco reais)', 
 
       // 200 estrito: `not.toBe(403)` aceitaria 404 de rota quebrada.
       expect(res.status).toBe(200);
+      // M6: `iam.remove_member` devolve `removed: 0` SEM erro quando a pessoa
+      // não é membro — `res.status === 200` sozinho passaria mesmo se o `POST`
+      // de setup (linha 349) não tivesse rodado. `removed === 1` prova que foi
+      // o `U.comum` inserido acima que saiu, não um no-op disfarçado de sucesso.
+      if (metodo === 'DELETE' && caminho.endsWith('/members')) {
+        expect(res.body.removed).toBe(1);
+      }
     });
   });
 

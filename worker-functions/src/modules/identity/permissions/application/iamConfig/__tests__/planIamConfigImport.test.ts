@@ -16,6 +16,7 @@ const target = (current: IamConfigSnapshot, over: Partial<IamTargetState> = {}):
   current,
   catalog: new Set(['permission_management:write', 'worker:read', 'worker:write', 'vacancy:read']),
   knownEmails: new Set(['gestor@e.com', 'ana@e.com', 'bob@e.com']),
+  archivedGroupNames: new Set(),
   ...over,
 });
 
@@ -92,7 +93,7 @@ describe('planIamConfigImport', () => {
     ]);
   });
 
-  it('feature com config diferente gera set; igual por valor não gera; tenant e version errados são erro', () => {
+  it('feature com config diferente gera set; igual por valor não gera', () => {
     const cur = base({ countryFeatures: [{ country: 'AR', featureKey: 'screen:talentum', enabled: true, config: { a: 1 } }] });
     const igual = base({ countryFeatures: [{ country: 'AR', featureKey: 'screen:talentum', enabled: true, config: { a: 1 } }] });
     expect(planIamConfigImport(igual, target(cur)).ops).toEqual([]);
@@ -100,7 +101,40 @@ describe('planIamConfigImport', () => {
     expect(planIamConfigImport(dif, target(cur)).ops).toEqual([
       { kind: 'set_country_feature', country: 'AR', featureKey: 'screen:talentum', enabled: true, config: { a: 2 } },
     ]);
-    const errado = { ...base(), tenantId: 'x', version: 2 as unknown as 1 };
-    expect(planIamConfigImport(errado, target(base())).errors.map((e) => e.code)).toEqual(['unsupported_version', 'tenant_mismatch']);
+  });
+
+  it('version não suportada é erro', () => {
+    const errado = { ...base(), version: 2 as unknown as 1 };
+    expect(planIamConfigImport(errado, target(base())).errors).toEqual([
+      { code: 'unsupported_version', detail: 'version=2' },
+    ]);
+  });
+
+  it('M5: tenant do JSON diferente do tenant do ALVO é erro — `current.tenantId` vem do BANCO, independente de `desired.tenantId` (o caminho real: o script resolve o tenant do alvo antes de montar `current`, nunca ecoa o que o JSON declara)', () => {
+    const desiredTenantErrado = { ...base(), tenantId: 'outro-tenant-do-json' };
+    // `target(base())` monta `current` com o tenant do ALVO (T) — igual ao que
+    // `repo.exportSnapshot(await repo.resolveTenantId())` devolveria no script
+    // real, e completamente independente do `tenantId` que veio no JSON acima.
+    const plan = planIamConfigImport(desiredTenantErrado, target(base()));
+    expect(plan.errors).toEqual([{ code: 'tenant_mismatch', detail: `snapshot=outro-tenant-do-json alvo=${T}` }]);
+  });
+
+  it('M3: remover membro cujo e-mail não tem conta conhecida no alvo é ERRO do plano, não `remove_member` (dry-run acusa, applyOp nunca vê a op) — o membro conhecido continua saindo normalmente', () => {
+    const desired = base();
+    desired.groups[1].members = ['ana@e.com']; // 'ana' fica; 'fantasma' não está no desejado nem em knownEmails
+    const cur = base();
+    cur.groups[1].members = ['ana@e.com', 'fantasma@e.com'];
+    const plan = planIamConfigImport(desired, target(cur, { knownEmails: new Set(['gestor@e.com', 'ana@e.com']) }));
+    expect(plan.errors).toEqual([{ code: 'unknown_member_on_remove', detail: 'Recrutador: fantasma@e.com sem conta conhecida no alvo' }]);
+    expect(plan.ops).toEqual([]);
+  });
+
+  it('M4: grupo desejado que existe ARQUIVADO no alvo é ERRO nomeado no plano, sem tentar create_group (a UNIQUE da 206 não é parcial)', () => {
+    const desired = base({
+      groups: [...base().groups, { name: 'Financeiro', description: 'x', isSystem: false, cells: [], countries: [], members: [] }],
+    });
+    const plan = planIamConfigImport(desired, target(base(), { archivedGroupNames: new Set(['Financeiro']) }));
+    expect(plan.errors).toEqual([{ code: 'archived_group_name_conflict', detail: "grupo 'Financeiro' existe arquivado no alvo — desarquivar ou renomear" }]);
+    expect(plan.ops.some((o) => o.kind === 'create_group')).toBe(false);
   });
 });

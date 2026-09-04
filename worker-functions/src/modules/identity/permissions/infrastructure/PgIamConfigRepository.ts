@@ -16,6 +16,23 @@ import { normalizeSnapshot } from '../application/iamConfig/snapshot';
 
 interface GroupRow { id: string; name: string; description: string | null; is_system: boolean }
 
+/**
+ * "Staff elegível" para a configuração IAM (M3) — fonte ÚNICA usada nos DOIS
+ * lugares deste repositório (o `members` de `exportSnapshot` e
+ * `staffUidsByEmail`). Antes cada um tinha o seu: `exportSnapshot` não
+ * filtrava role nenhuma, e um membro com role fora desta lista aparecia em
+ * `current.members` sem que `staffUidsByEmail` o reconhecesse — o planner
+ * emitia `remove_member` para um e-mail que `applyOp` não achava, e a
+ * transação abortava no MEIO, depois de um dry-run limpo.
+ *
+ * ⚠️ Não importa de `identity/domain/EnliteRole` de propósito: a fronteira do
+ * módulo (`permissions/__tests__/moduleBoundary.test.ts`, D115 §7) proíbe
+ * `permissions/**` de importar de fora de si mesmo — é o que mantém o módulo
+ * extraível para o permission-service num `git mv`. Os valores têm de
+ * continuar iguais aos de `EnliteRole.STAFF_ROLES` à mão (mesmos 3 papéis).
+ */
+const STAFF_ROLES = ['admin', 'recruiter', 'community_manager'] as const;
+
 export class PgIamConfigRepository {
   constructor(private readonly pool: Pool) {}
 
@@ -38,8 +55,9 @@ export class PgIamConfigRepository {
     );
     const members = await this.pool.query<{ group_id: string; email: string }>(
       `SELECT ug.group_id, u.email FROM iam.user_groups ug JOIN users u ON u.firebase_uid = ug.user_id
-        WHERE ug.group_id = ANY($1) AND ug.removed_at IS NULL AND u.email IS NOT NULL`,
-      [groups.rows.map((g) => g.id)],
+        WHERE ug.group_id = ANY($1) AND ug.removed_at IS NULL AND u.email IS NOT NULL
+          AND u.role = ANY($2)`,
+      [groups.rows.map((g) => g.id), STAFF_ROLES as unknown as string[]],
     );
     const features = await this.pool.query<{ country: string; feature_key: string; enabled: boolean; config: unknown }>(
       `SELECT country, feature_key, enabled, config FROM iam.country_features WHERE source = 'override'`,
@@ -68,11 +86,44 @@ export class PgIamConfigRepository {
     return new Set(r.rows.map((x) => cellKey(x.resource, x.action)));
   }
 
-  /** e-mail (minúsculo) → uid dos staff com conta no alvo. */
+  /**
+   * Nomes de grupo ARQUIVADOS do alvo (M4). `exportSnapshot` só devolve grupos
+   * vivos (contrato do snapshot); sem isto o planner não sabe que um nome
+   * "ausente" pode estar arquivado, e tenta `create_group` — a UNIQUE
+   * `(tenant_id, name)` da 206 não é parcial (cobre arquivado também) e o
+   * INSERT estoura 23505 no meio da transação, depois de um dry-run limpo.
+   */
+  async archivedGroupNames(tenantId: string): Promise<Set<string>> {
+    const r = await this.pool.query<{ name: string }>(
+      `SELECT name FROM iam.permission_groups WHERE tenant_id = $1 AND archived_at IS NOT NULL`,
+      [tenantId],
+    );
+    return new Set(r.rows.map((x) => x.name));
+  }
+
+  /**
+   * O tenant que o BANCO-ALVO efetivamente serve (M5) — não o `tenantId` que
+   * vem dentro do JSON `desired`. É o que torna a guarda `tenant_mismatch` do
+   * planner real: se o script chamar `exportSnapshot(desired.tenantId)`, o
+   * `current.tenantId` vira sempre igual ao `desired.tenantId` por construção,
+   * e um JSON com tenant errado nunca é pego.
+   */
+  async resolveTenantId(): Promise<string> {
+    const r = await this.pool.query<{ id: string }>(`SELECT iam.current_tenant_id() AS id`);
+    return r.rows[0].id;
+  }
+
+  /**
+   * e-mail (minúsculo) → uid dos staff com conta no alvo. MESMO filtro de role
+   * do `members` em `exportSnapshot` (M3): as duas pontas precisam concordar em
+   * quem é "staff elegível", senão o planner vê um membro em `current` que esta
+   * função não reconhece, e o `remove_member` explode a transação em `applyOp`.
+   */
   async staffUidsByEmail(): Promise<Map<string, string>> {
     const r = await this.pool.query<{ email: string; firebase_uid: string }>(
       `SELECT lower(email) AS email, firebase_uid FROM users
-        WHERE role IN ('admin', 'recruiter', 'community_manager') AND email IS NOT NULL`,
+        WHERE role = ANY($1) AND email IS NOT NULL`,
+      [STAFF_ROLES as unknown as string[]],
     );
     return new Map(r.rows.map((x) => [x.email, x.firebase_uid]));
   }

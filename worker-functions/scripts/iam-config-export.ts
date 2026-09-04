@@ -13,11 +13,7 @@ import { Pool } from 'pg';
 import { PgIamConfigRepository } from '@modules/identity/permissions/infrastructure/PgIamConfigRepository';
 import { canonicalJson, snapshotHash } from '@modules/identity/permissions/application/iamConfig';
 import { ENLITE_TENANT_ID } from '@modules/identity/permissions/domain/tenant';
-
-function argValue(flag: string): string | undefined {
-  const i = process.argv.indexOf(flag);
-  return i >= 0 ? process.argv[i + 1] : undefined;
-}
+import { argValue } from './lib/cliArgs';
 
 async function main(): Promise<void> {
   const url = process.env.DATABASE_URL;

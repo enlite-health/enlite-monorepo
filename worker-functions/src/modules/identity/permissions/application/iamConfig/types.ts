@@ -50,7 +50,13 @@ export type IamImportOp =
   | { kind: 'set_country_feature'; country: string; featureKey: string; enabled: boolean; config: unknown | null };
 
 export interface IamImportError {
-  code: 'unknown_cell' | 'system_group_missing' | 'tenant_mismatch' | 'unsupported_version';
+  code:
+    | 'unknown_cell'
+    | 'system_group_missing'
+    | 'tenant_mismatch'
+    | 'unsupported_version'
+    | 'unknown_member_on_remove'
+    | 'archived_group_name_conflict';
   detail: string;
 }
 

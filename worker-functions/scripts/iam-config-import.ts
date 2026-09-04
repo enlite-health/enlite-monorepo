@@ -11,19 +11,21 @@
  *
  * Uso:  DATABASE_URL=<alvo> npm run iam:config:import:dry -- --file iam-config.json --actor-email gestor@enlite.health
  *       DATABASE_URL=<alvo> npm run iam:config:import     -- --file iam-config.json --actor-email ... [--archive-missing]
+ *
+ * TENANT (M5): `current` é exportado do tenant que o BANCO-ALVO efetivamente
+ * serve (`repo.resolveTenantId()` → `iam.current_tenant_id()`), NUNCA de
+ * `desired.tenantId` — senão a guarda `tenant_mismatch` do planner é inerte
+ * (comparar um valor com ele mesmo nunca diverge).
  */
 import { readFileSync } from 'fs';
 import { basename } from 'path';
 import { Pool } from 'pg';
 import { PgIamConfigRepository } from '@modules/identity/permissions/infrastructure/PgIamConfigRepository';
 import { planIamConfigImport, snapshotHash, type IamConfigSnapshot } from '@modules/identity/permissions/application/iamConfig';
+import { argValue } from './lib/cliArgs';
+import { maskEmail as mask } from './lib/maskEmail';
 
 const EXECUTE = process.argv.includes('--execute');
-const mask = (e: string) => e.replace(/^(..).*@/, '$1…@');
-function argValue(flag: string): string | undefined {
-  const i = process.argv.indexOf(flag);
-  return i >= 0 ? process.argv[i + 1] : undefined;
-}
 
 async function main(): Promise<void> {
   const url = process.env.DATABASE_URL;
@@ -35,13 +37,17 @@ async function main(): Promise<void> {
   const pool = new Pool({ connectionString: url });
   try {
     const repo = new PgIamConfigRepository(pool);
-    const [current, catalog, uids, actorUid] = await Promise.all([
-      repo.exportSnapshot(desired.tenantId),
+    // M5: o tenant do ALVO vem do banco, não do JSON — senão `current.tenantId`
+    // é sempre igual a `desired.tenantId` por construção, e a guarda nunca dispara.
+    const targetTenantId = await repo.resolveTenantId();
+    const [current, catalog, uids, actorUid, archivedGroupNames] = await Promise.all([
+      repo.exportSnapshot(targetTenantId),
       repo.liveCells(),
       repo.staffUidsByEmail(),
       repo.uidByEmail(actorEmail),
+      repo.archivedGroupNames(targetTenantId),
     ]);
-    const plan = planIamConfigImport(desired, { current, catalog, knownEmails: new Set(uids.keys()) }, {
+    const plan = planIamConfigImport(desired, { current, catalog, knownEmails: new Set(uids.keys()), archivedGroupNames }, {
       archiveMissing: process.argv.includes('--archive-missing'),
     });
 
@@ -57,7 +63,7 @@ async function main(): Promise<void> {
     if (!actorUid) throw new Error(`ator ${mask(actorEmail)} não tem conta no alvo`);
     if (!EXECUTE) return;
 
-    const n = await repo.applyPlan(plan, { tenantId: desired.tenantId, actorUid, reason: `iam-config import ${basename(file)}@${snapshotHash(desired)}` });
+    const n = await repo.applyPlan(plan, { tenantId: targetTenantId, actorUid, reason: `iam-config import ${basename(file)}@${snapshotHash(desired)}` });
     console.log(`[iam-config] aplicadas ${n} operações como ${mask(actorEmail)}`);
   } finally {
     await pool.end();

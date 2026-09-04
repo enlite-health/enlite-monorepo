@@ -96,7 +96,12 @@ describe('iam-config export/import (D208)', () => {
   });
 
   async function estadoAlvo() {
-    return { current: await repo.exportSnapshot(TENANT), catalog: await repo.liveCells(), knownEmails: new Set((await repo.staffUidsByEmail()).keys()) };
+    return {
+      current: await repo.exportSnapshot(TENANT),
+      catalog: await repo.liveCells(),
+      knownEmails: new Set((await repo.staffUidsByEmail()).keys()),
+      archivedGroupNames: await repo.archivedGroupNames(TENANT),
+    };
   }
   const ctx = async () => ({ tenantId: TENANT, actorUid: U.gestor, reason: 'e2e import' });
 

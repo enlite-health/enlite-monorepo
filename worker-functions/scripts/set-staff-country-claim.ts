@@ -25,6 +25,7 @@
 
 import { Pool } from 'pg';
 import { mergeCustomClaims } from '@modules/identity/infrastructure/mergeCustomClaims';
+import { argValue } from './lib/cliArgs';
 
 const COUNTRIES = ['AR', 'BR'] as const;
 type Country = (typeof COUNTRIES)[number];
@@ -33,11 +34,6 @@ const STAFF_ROLES = ['admin', 'recruiter', 'community_manager'];
 
 const isDryRun = !process.argv.includes('--execute');
 const showAll = process.argv.includes('--show-all');
-
-function argValue(flag: string): string | undefined {
-  const i = process.argv.indexOf(flag);
-  return i >= 0 ? process.argv[i + 1] : undefined;
-}
 
 const targetUid = argValue('--uid');
 const rawCountry = argValue('--country') ?? 'AR';

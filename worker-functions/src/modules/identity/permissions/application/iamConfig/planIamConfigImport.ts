@@ -25,6 +25,13 @@ export interface IamTargetState {
   catalog: ReadonlySet<string>;
   /** E-mails (minúsculos) de staff com conta no alvo. */
   knownEmails: ReadonlySet<string>;
+  /**
+   * Nomes de grupo ARQUIVADOS do alvo (M4). `current.groups` só tem grupos
+   * vivos (contrato do snapshot) — sem isto o planner não distingue "nome
+   * livre" de "nome existe, mas arquivado" e tenta `create_group`, que
+   * estoura a UNIQUE `(tenant_id, name)` da 206 (não é parcial).
+   */
+  archivedGroupNames: ReadonlySet<string>;
 }
 
 const diff = (want: string[], have: string[]) => ({
@@ -59,6 +66,16 @@ export function planIamConfigImport(
     if (!cur) {
       if (g.isSystem) {
         errors.push({ code: 'system_group_missing', detail: `grupo de sistema '${g.name}' não existe no alvo` });
+        continue;
+      }
+      if (target.archivedGroupNames.has(g.name)) {
+        // M4: nome existe arquivado no alvo — a UNIQUE (tenant_id, name) da 206
+        // não é parcial, então create_group aqui é 23505 garantido. O plano
+        // acusa e NÃO tenta criar; quem resolve é gente (desarquivar/renomear).
+        errors.push({
+          code: 'archived_group_name_conflict',
+          detail: `grupo '${g.name}' existe arquivado no alvo — desarquivar ou renomear`,
+        });
         continue;
       }
       ops.push({ kind: 'create_group', group: g.name, description: g.description });
@@ -98,7 +115,18 @@ export function planIamConfigImport(
       if (!target.knownEmails.has(email)) pendencies.push({ code: 'email_without_account', email, group: g.name });
       else ops.push({ kind: 'add_member', group: g.name, email });
     }
-    for (const email of remove) ops.push({ kind: 'remove_member', group: g.name, email });
+    for (const email of remove) {
+      // M3: e-mail sem conta conhecida no alvo não devia sobrar em `current`
+      // depois do filtro de role em `exportSnapshot`/`staffUidsByEmail` — mas
+      // se sobrar (fonte divergente, corrida), é ERRO do PLANO (dry-run
+      // acusa), nunca `remove_member` explodindo `applyOp` no meio da
+      // transação com "e-mail sem conta no alvo".
+      if (!target.knownEmails.has(email)) {
+        errors.push({ code: 'unknown_member_on_remove', detail: `${g.name}: ${email} sem conta conhecida no alvo` });
+      } else {
+        ops.push({ kind: 'remove_member', group: g.name, email });
+      }
+    }
   }
 
   // 5. features (override)

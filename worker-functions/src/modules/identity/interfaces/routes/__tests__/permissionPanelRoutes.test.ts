@@ -419,12 +419,13 @@ describe('GET /permission-audit', () => {
     });
   });
 
-  it('🔴 `userId` na query NÃO filtra mais (C6) — o zod descarta a chave e o use case recebe sem ela', async () => {
+  it('`userId` na query é 400 — fail-closed contra deploy-skew: uma aba com bundle antigo que ainda manda `?userId=X` (de antes do C6) não pode receber a trilha de TODO MUNDO sob o cabeçalho "trilha de X"', async () => {
     const { router, d } = build();
 
-    await GET(router, '/permission-audit?userId=uid-1&limit=50').expect(200);
+    const res = await GET(router, '/permission-audit?userId=uid-1&limit=50').expect(400);
 
-    expect(d.audit).toHaveBeenCalledWith({ limit: 50 });
+    expect(res.body).toEqual({ success: false, error: 'Invalid query parameters' });
+    expect(d.audit).not.toHaveBeenCalled();
   });
 
   it('`limit` não numérico é 400 — não um `NaN` que o use case clamparia em silêncio', async () => {

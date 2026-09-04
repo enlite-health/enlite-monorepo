@@ -45,6 +45,26 @@ describe('PgIamConfigRepository.exportSnapshot', () => {
     expect(await repo.uidByEmail('G@e.com')).toBe('u9');
     expect(await repo.uidByEmail('x')).toBeNull();
   });
+
+  it('archivedGroupNames devolve os nomes arquivados do tenant (M4)', async () => {
+    const query = jest.fn();
+    query.mockResolvedValueOnce({ rows: [{ name: 'Financeiro' }, { name: 'Super Admin' }] });
+    const repo = new PgIamConfigRepository(pool(query).pool);
+
+    expect(await repo.archivedGroupNames(T)).toEqual(new Set(['Financeiro', 'Super Admin']));
+    const s = sqls(query);
+    expect(s[0]).toContain('archived_at IS NOT NULL');
+    expect(query.mock.calls[0][1]).toEqual([T]);
+  });
+
+  it('resolveTenantId lê `iam.current_tenant_id()` — o tenant do BANCO, não o do JSON (M5)', async () => {
+    const query = jest.fn();
+    query.mockResolvedValueOnce({ rows: [{ id: T }] });
+    const repo = new PgIamConfigRepository(pool(query).pool);
+
+    expect(await repo.resolveTenantId()).toBe(T);
+    expect(sqls(query)[0]).toContain('iam.current_tenant_id()');
+  });
 });
 
 describe('PgIamConfigRepository.applyPlan', () => {

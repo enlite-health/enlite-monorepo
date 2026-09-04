@@ -50,12 +50,12 @@ import { Pool } from 'pg';
 import { randomBytes } from 'crypto';
 import { execFileSync } from 'child_process';
 import { mergeCustomClaims } from '@modules/identity/infrastructure/mergeCustomClaims';
+import { maskEmail as mask } from './lib/maskEmail';
 
 const STAFF_ROLES = ['admin', 'recruiter', 'community_manager'];
 const TENANT = '00000000-0000-0000-0000-000000000001';
 const EXECUTE = process.argv.includes('--execute');
 const CONTAS_TESTE = process.argv.includes('--contas-teste');
-const mask = (e: string) => e.replace(/^(..).*@/, '$1…@');
 
 interface Staff { email: string; display_name: string | null; role: string; department: string | null }
 
@@ -172,7 +172,7 @@ async function main(): Promise<void> {
       if (cur === 'AR') c.claimJaTinha += 1; else { await mergeCustomClaims(uid, { country: 'AR' }); c.claim += 1; }
     }
     console.log(`[espelho] IdP: criadas=${c.idpCriada} existentes=${c.idpJaTinha} · users(stage): novas=${c.linhaNova} atualizadas=${c.linhaAtualizada} uid_divergente=${c.uidDivergente} · claim AR: atribuídos=${c.claim} já_tinham=${c.claimJaTinha}`);
-    // Sempre (é leitura), na forma da 296: só staff com vínculo vivo no tenant.
+    // Sempre (é leitura), na forma da 410: só staff com vínculo vivo no tenant.
     const gestores = await stg.query(
       `SELECT count(DISTINCT u.firebase_uid) AS n
          FROM users u

@@ -120,23 +120,30 @@ const FeaturesQuery = z.object({ country: z.enum(COUNTRY_CODES).optional() });
  * redundância é de propósito: o use case é a fronteira que vale mesmo se algum
  * chamador futuro pular a rota. Aqui o papel do zod é recusar `limit=abc` com
  * 400 em vez de deixar virar `NaN` silencioso.
+ *
+ * `.strict()`: `userId` NÃO é campo desta query — e uma chave desconhecida
+ * agora é 400, não descartada em silêncio. Decisão fail-closed contra
+ * deploy-skew: uma aba com bundle ANTIGO que ainda manda `?userId=X` (de antes
+ * do uid sair da query string, C6) receberia hoje a trilha de TODO MUNDO sob o
+ * cabeçalho "trilha de X" — silencioso, sem 400, sem log. `.strict()` recusa
+ * a request em vez de servir dado errado.
  */
-const AuditQuery = z.object({
-  resource: z.string().min(1).max(64).optional(),
-  since: z.coerce.date().optional(),
-  until: z.coerce.date().optional(),
-  limit: z.coerce.number().int().min(1).max(1000).optional(),
-});
+const AuditQuery = z
+  .object({
+    resource: z.string().min(1).max(64).optional(),
+    since: z.coerce.date().optional(),
+    until: z.coerce.date().optional(),
+    limit: z.coerce.number().int().min(1).max(1000).optional(),
+  })
+  .strict();
 
 // `userId` saiu da query string em `GET /permission-audit` (parecer jurídico,
 // condição C6 — uid de funcionário não pode cair no log de request do Cloud
-// Run). O filtro por pessoa sobrevive só aqui, em `POST .../query`, no corpo.
-const AuditBody = z.object({
+// Run). O filtro por pessoa sobrevive só aqui, em `POST .../query`, no corpo —
+// por isso é a MESMA forma da `AuditQuery` mais este único campo, não uma
+// cópia (a duplicação já causou os dois se desalinharem uma vez).
+const AuditBody = AuditQuery.extend({
   userId: z.string().min(1).max(128).optional(),
-  resource: z.string().min(1).max(64).optional(),
-  since: z.coerce.date().optional(),
-  until: z.coerce.date().optional(),
-  limit: z.coerce.number().int().min(1).max(1000).optional(),
 });
 
 // ── Casca comum ──────────────────────────────────────────────────────────────
