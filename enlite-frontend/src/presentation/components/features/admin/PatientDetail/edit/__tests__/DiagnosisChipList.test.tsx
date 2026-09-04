@@ -71,14 +71,28 @@ describe('DiagnosisChipList', () => {
     expect((btn.textContent ?? '').trim().length).toBeGreaterThan(0);
   });
 
-  it('U4: clicar no CORPO do chip (não-principal) também promove', () => {
+  it('V2: clicar no CORPO do chip (não-principal) NÃO promove mais — o corpo deixou de ser clicável (a auditoria rodada 2 mediu mis-clique de 8px no X promovendo por engano)', () => {
     const onPromote = vi.fn();
     render(<DiagnosisChipList diagnoses={[chip({ isPrimary: false })]} onPromote={onPromote} onRemove={vi.fn()} />);
     fireEvent.click(screen.getByTestId('diagnosis-chip-d1'));
-    expect(onPromote).toHaveBeenCalledWith('d1');
+    expect(onPromote).not.toHaveBeenCalled();
   });
 
-  it('U4: clicar no corpo do chip JÁ principal não chama onPromote de novo', () => {
+  it('V2: clicar no corpo do chip NÃO dispara nenhuma ação — nem onPromote nem onRemove', () => {
+    const onPromote = vi.fn();
+    const onRemove = vi.fn();
+    render(<DiagnosisChipList diagnoses={[chip({ isPrimary: false })]} onPromote={onPromote} onRemove={onRemove} />);
+    fireEvent.click(screen.getByTestId('diagnosis-chip-d1'));
+    expect(onPromote).not.toHaveBeenCalled();
+    expect(onRemove).not.toHaveBeenCalled();
+  });
+
+  it('V2: o corpo do chip não tem cursor-pointer — deixou de sinalizar como clicável', () => {
+    render(<DiagnosisChipList diagnoses={[chip({ isPrimary: false })]} onPromote={vi.fn()} onRemove={vi.fn()} />);
+    expect(screen.getByTestId('diagnosis-chip-d1').className).not.toContain('cursor-pointer');
+  });
+
+  it('U4: clicar no corpo do chip JÁ principal não chama onPromote (corpo inerte, principal ou não)', () => {
     const onPromote = vi.fn();
     render(<DiagnosisChipList diagnoses={[chip({ isPrimary: true })]} onPromote={onPromote} onRemove={vi.fn()} />);
     fireEvent.click(screen.getByTestId('diagnosis-chip-d1'));

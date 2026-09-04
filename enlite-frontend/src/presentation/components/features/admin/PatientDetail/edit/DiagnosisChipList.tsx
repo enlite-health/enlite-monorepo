@@ -3,12 +3,19 @@
  *
  * 🔴 REQ-21 — cada chip mostra SÓ `d.title` (a patología, em espanhol, como veio da OMS — nunca
  * traduzida por nós, cláusula 1.2.3). `d.uri`/código NUNCA entram no DOM: nem texto, nem
- * `title=`, nem `aria-label`, nem `data-*`. O corpo do chip promove a principal; o X pede
- * confirmação inline antes de remover (`active:false` no servidor — sem DELETE físico).
+ * `title=`, nem `aria-label`, nem `data-*`. Promover e remover são ações só dos BOTÕES — o corpo
+ * do chip é inerte (V2/rodada 2); o X pede confirmação inline antes de remover (`active:false` no
+ * servidor — sem DELETE físico).
  *
  * Auditoria UX (specs/016-admissao-cid11/evidencias/ux): U3 — o X removia sem confirmação, colado
  * na estrela (mis-clique apaga diagnóstico). U4 — o botão de promover era só ícone com
- * `aria-label`, sem texto visível, e o corpo do chip não reagia ao clique.
+ * `aria-label`, sem texto visível (resolvido deixando o texto sempre visível no botão).
+ *
+ * V2 (rodada 2, item 8c) — o conserto do U4 tinha tornado o CORPO do chip inteiro clicável para
+ * promover. Medido: um clique a 8px do botão de remover (fora da hitbox dele) caiu no corpo do
+ * chip e disparou `PATCH {isPrimary:true}` em vez de `{active:false}` — o badge "Principal" migra
+ * de chip sem nenhum aviso. O corpo voltou a não fazer nada; promover só pelo botão com texto
+ * visível (já resolvia a descoberta, medido na 2ª auditoria, item 8: ENTENDE).
  */
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -45,15 +52,13 @@ export function DiagnosisChipList({
     <ul className="flex flex-col gap-2" data-testid="diagnosis-chips">
       {diagnoses.map((d) => {
         const isBusy = busyId === d.id;
-        const clickableToPromote = !d.isPrimary && !isBusy;
         const isConfirmingRemove = confirmRemoveId === d.id;
         return (
           <li
             key={d.id}
-            onClick={() => { if (clickableToPromote) onPromote(d.id); }}
             className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg border ${
               d.isPrimary ? 'border-primary bg-primary/5' : 'border-slate-200'
-            } ${clickableToPromote ? 'cursor-pointer' : ''}`}
+            }`}
             data-testid={`diagnosis-chip-${d.id}`}
           >
             <div className="flex items-center gap-2 min-w-0">

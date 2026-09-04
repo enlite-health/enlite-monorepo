@@ -8,6 +8,11 @@
  *
  * Molde de auth/seed: admissao-cid11-f3.integration.e2e.ts (auth REAL via emulador,
  * seedPatientForDiagnosis, setCatalogPromoted). Ambiente devolvido ao estado em que foi achado.
+ *
+ * RODADA 2 (depois dos 6 consertos U1-U6) — estendido, não reescrito do zero. Screenshots vão
+ * para `evidencias/ux/rodada2/`, pasta NOVA, escrita direto no repo `ebrain` (caminho absoluto,
+ * não relativo ao worktree) — a 1ª rodada escreveu relativo ao worktree, que é gitignorado, e
+ * alguém teve que copiar os PNGs manualmente pro `ebrain/specs/...` depois. Não repetir o erro.
  */
 import { test, expect, type Page } from '@playwright/test';
 import * as fs from 'fs';
@@ -24,8 +29,21 @@ const EMULATOR_PROJECT = 'demo-no-project';
 const STAFF_EMAIL = `e2e.cid11ux.${Date.now()}@enlite.health`;
 const STAFF_PASSWORD = 'TestAdmin123!';
 
-const SHOT_DIR = path.join(__dirname, '../../../specs/016-admissao-cid11/evidencias/ux');
+// RODADA 2: caminho ABSOLUTO no repo ebrain (não `path.join(__dirname, ...)` — isso cairia dentro
+// do worktree, que é gitignorado, como aconteceu na rodada 1).
+const SHOT_DIR = '/Users/gabrielstein-dev/projects/enlite/ebrain/specs/016-admissao-cid11/evidencias/ux/rodada2';
 fs.mkdirSync(SHOT_DIR, { recursive: true });
+
+// RODADA 3 (V1 + V2) — pasta NOVA, sem sobrescrever a rodada 2.
+const SHOT_DIR3 = '/Users/gabrielstein-dev/projects/enlite/ebrain/specs/016-admissao-cid11/evidencias/ux/rodada3';
+fs.mkdirSync(SHOT_DIR3, { recursive: true });
+
+async function shot3(target: Page | ReturnType<Page['locator']>, name: string): Promise<string> {
+  const file = path.join(SHOT_DIR3, name);
+  await target.screenshot({ path: file });
+  log('SHOT3', `${name} -> ${file}`);
+  return file;
+}
 
 function log(tag: string, msg: string): void {
   // eslint-disable-next-line no-console
@@ -125,19 +143,22 @@ test.use({ viewport: { width: 1600, height: 1000 } });
 
 test.describe('AUDITORIA UX — spec 016, tela de diagnóstico CID-11 (não é gate de correção)', () => {
   test.describe.configure({ mode: 'serial' });
-  test.setTimeout(240_000);
+  test.setTimeout(360_000);
 
   let patient: { patientId: string; stamp: string };
+  let patientC: { patientId: string; stamp: string }; // RODADA 2 — Parte C, paciente do zero
   const wasPromotedBefore = isCatalogPromoted();
 
   test.beforeAll(() => {
     patient = seedPatientForDiagnosis();
+    patientC = seedPatientForDiagnosis();
     setCatalogPromoted(true);
     log('ENV', `is_current antes de mexer = ${wasPromotedBefore}`);
   });
 
   test.afterAll(() => {
     cleanupPatientDeep(patient.patientId);
+    cleanupPatientDeep(patientC.patientId);
     setCatalogPromoted(wasPromotedBefore);
     const restored = isCatalogPromoted();
     log('ENV', `restaurado: is_current=${restored} (esperado=${wasPromotedBefore}) -> ${restored === wasPromotedBefore ? 'OK' : 'FALHOU'}`);
@@ -158,6 +179,14 @@ test.describe('AUDITORIA UX — spec 016, tela de diagnóstico CID-11 (não é g
     const attribution = await textOrNothing(page.getByTestId('who-attribution'));
     log('01', `texto de atribuição visível = "${attribution}"`);
 
+    // ── RODADA 3 / V1 — o controle de escopo é ESTADO, não aviso: tem que estar visível ANTES
+    // de qualquer digitação, sem depender de nenhuma busca ter rodado.
+    const scopeUsualBeforeTyping = await textOrNothing(page.getByTestId('icd-search-scope-usual'));
+    const scopeAllBeforeTyping = await textOrNothing(page.getByTestId('icd-search-scope-all'));
+    const scopeUsualCheckedBeforeTyping = await attrOrNothing(page.getByTestId('icd-search-scope-usual'), 'aria-checked');
+    log('R3-01', `V1: controle de escopo ANTES de digitar — opção habitual="${scopeUsualBeforeTyping}" (checked=${scopeUsualCheckedBeforeTyping}) | opção "todas"="${scopeAllBeforeTyping}"`);
+    await shot3(drawer, 'ux3-01-controle-visivel-antes-de-digitar.png');
+
     // ── 2. Digita 1 letra e espera (piso é 2) ────────────────────────────────────────────
     const input = page.getByTestId('icd-search-input');
     await input.fill('e');
@@ -166,6 +195,21 @@ test.describe('AUDITORIA UX — spec 016, tela de diagnóstico CID-11 (não é g
     const listboxAfter1Char = await page.getByTestId('icd-search-listbox').count();
     log('02', `depois de 1 caractere: status="${statusAfter1Char}" (null=nada visível) | listbox presente=${listboxAfter1Char > 0}`);
     await shot(drawer, 'ux-02-um-caractere.png');
+
+    // RODADA 2 — B4: a dica de 2 caracteres "pisca" enquanto ela digita rápido, ou some na hora
+    // certa e fica assim? Completa pra 2+ caracteres (dica deve sumir), depois volta pra 1 com
+    // Backspace (dica deve reaparecer) — sem nunca ficar "grudada" atrás do resultado.
+    await input.pressSequentially('sq', { delay: 30 }); // agora "esq" = 3 chars
+    await page.waitForTimeout(500); // > DEBOUNCE_MS, dá tempo do fetch resolver
+    const statusAfter3Chars = await textOrNothing(page.getByTestId('icd-search-status'));
+    log('02b', `RODADA2/B4: depois de completar pra 3 caracteres ("esq"), a dica de mínimo deveria ter SUMIDO: status-tela="${statusAfter3Chars}"`);
+    await shot(drawer, 'ux-02b-rodada2-tres-caracteres-dica-sumiu.png');
+    await input.press('Backspace');
+    await input.press('Backspace');
+    await page.waitForTimeout(400); // fica em "e" (1 char) de novo
+    const statusVoltouPara1Char = await textOrNothing(page.getByTestId('icd-search-status'));
+    log('02c', `RODADA2/B4: apagando de volta pra 1 caractere, a dica REAPARECE = "${statusVoltouPara1Char}"`);
+    await shot(drawer, 'ux-02c-rodada2-backspace-dica-reaparece.png');
 
     // ── 3. Digita rápido e erra: typos, PT, sigla, código CIE-10 ─────────────────────────
     const termos3: Array<[string, string]> = [
@@ -201,29 +245,42 @@ test.describe('AUDITORIA UX — spec 016, tela de diagnóstico CID-11 (não é g
     const codeHintAfterXxxxx = await textOrNothing(page.getByTestId('icd-search-code-hint'));
     log('04', `U6: dica de código/sigla depois de "xxxxx" (esperada AUSENTE) = "${codeHintAfterXxxxx}"`);
 
-    // ── 5. Fora dos capítulos 06/08 — filtro esconde ─────────────────────────────────────
+    // ── 5. RODADA 3 / V1 — o aviso condicional virou ESTADO permanente ──────────────────
     await searchAndWait(page, 'diabetes');
     const statusRestrito = await textOrNothing(page.getByTestId('icd-search-status'));
-    const toggleTextRestrito = await textOrNothing(page.getByTestId('icd-search-toggle-chapters'));
-    log('05', `"diabetes" com filtro padrão: status-tela="${statusRestrito}" | texto do botão de alargar="${toggleTextRestrito}"`);
+    log('05', `"diabetes" com escopo habitual: status-tela="${statusRestrito}"`);
     await shot(drawer, 'ux-05a-diabetes-filtrado.png');
-    // U1 — o filtro esconde "Diabetes mellitus tipo 1" (capítulo 05, fora de 06/08); a tela
-    // deveria avisar a contagem ANTES da lista, sem trocar o filtro padrão sozinha.
-    const outsideNoticeDiabetes = await textOrNothing(page.getByTestId('icd-search-outside-notice'));
-    log('05', `U1: aviso de resultados fora do filtro (esperado, com contagem) = "${outsideNoticeDiabetes}"`);
-    await shot(drawer, 'ux-05a2-diabetes-aviso-fora-filtro.png');
-    await page.getByTestId('icd-search-toggle-chapters').click();
+    // V1 — o aviso condicional "Hay N resultados en otras categorías" e a 2ª requisição que o
+    // sustentava foram REMOVIDOS. Prova negativa: não existem mais em lugar nenhum da tela.
+    const outsideNoticeGoneR3 = await page.getByTestId('icd-search-outside-notice').count();
+    const oldToggleGoneR3 = await page.getByTestId('icd-search-toggle-chapters').count();
+    const bodyTextR3 = await drawer.textContent().catch(() => '');
+    const oldNoticeTextGoneR3 = !(bodyTextR3 ?? '').toLowerCase().includes('otras categorías');
+    log('R3-05', `V1: aviso antigo removido do DOM = ${outsideNoticeGoneR3 === 0} | botão antigo "buscar en todas" removido = ${oldToggleGoneR3 === 0} | texto "otras categorías" não existe mais na tela = ${oldNoticeTextGoneR3}`);
+    await shot3(drawer, 'ux3-05a-sem-aviso-condicional-diabetes.png');
+
+    // troca de escopo pelo CONTROLE novo (estado permanente, não link condicional)
+    await page.getByTestId('icd-search-scope-all').click();
+    const scopeAllCheckedR3 = await attrOrNothing(page.getByTestId('icd-search-scope-all'), 'aria-checked');
+    log('R3-05', `V1: depois de clicar em "todas las categorías" — aria-checked="${scopeAllCheckedR3}"`);
     await searchAndWait(page, 'diabetes');
     const statusAmplo = await textOrNothing(page.getByTestId('icd-search-status'));
     const listboxAmploCount = await page.getByTestId('icd-search-listbox').count();
     let primeiraOpcaoAmpla: string | null = null;
     if (listboxAmploCount > 0) primeiraOpcaoAmpla = await textOrNothing(page.getByTestId('icd-search-option-0'));
     log('05', `"diabetes" com TODAS as categorias: status-tela="${statusAmplo}" listbox=${listboxAmploCount > 0} primeiraOpcao="${primeiraOpcaoAmpla}"`);
-    await shot(drawer, 'ux-05b-diabetes-todas-categorias.png');
+    log('R3-05', `V1: trocar para "todas" achou "Diabetes mellitus tipo 1" = ${(primeiraOpcaoAmpla ?? '').toLowerCase().includes('diabetes mellitus tipo 1')}`);
+    await shot3(drawer, 'ux3-05b-todas-categorias-acha-diabetes-tipo1.png');
+
+    // V1 — a escolha PERSISTE: digita outro termo sem tocar no controle e confere que continua
+    // marcado em "todas as categorías" (não volta ao padrão a cada tecla).
+    await searchAndWait(page, 'autismo');
+    const scopeAllStillCheckedR3 = await attrOrNothing(page.getByTestId('icd-search-scope-all'), 'aria-checked');
+    log('R3-05', `V1: escolha "todas" PERSISTE depois de digitar outro termo ("autismo") = ${scopeAllStillCheckedR3 === 'true'}`);
+    await shot3(drawer, 'ux3-05c-escolha-persiste-apos-nova-busca.png');
+
     // volta ao padrão (categorias habituais) pro resto do percurso
-    const toggleTextAmplo = await textOrNothing(page.getByTestId('icd-search-toggle-chapters'));
-    log('05', `texto do botão depois de alargar (pra voltar) = "${toggleTextAmplo}"`);
-    await page.getByTestId('icd-search-toggle-chapters').click();
+    await page.getByTestId('icd-search-scope-usual').click();
 
     // ── 6. Clica no resultado 2x rápido (duplo clique) ───────────────────────────────────
     let postCount = 0;
@@ -234,10 +291,10 @@ test.describe('AUDITORIA UX — spec 016, tela de diagnóstico CID-11 (não é g
     await searchAndWait(page, 'esquizofrenia');
     const option0Exists = await page.getByTestId('icd-search-option-0').count();
     log('06', `busca "esquizofrenia" (sem typo) achou opção 0? ${option0Exists > 0}`);
-    // U1 (contraprova) — "esquizofrenia" já está no capítulo 06: o filtro não esconde nada, o
-    // aviso de "resultados fora do filtro" NÃO deveria aparecer aqui.
-    const outsideNoticeEsquizofrenia = await textOrNothing(page.getByTestId('icd-search-outside-notice'));
-    log('06', `U1 (contraprova): aviso fora do filtro em "esquizofrenia" (esperado AUSENTE) = "${outsideNoticeEsquizofrenia}"`);
+    // V1 (rodada 3) — não há mais aviso condicional nenhum para checar aqui; o escopo é visível
+    // sempre, e "esquizofrenia" continua sendo buscada dentro da opção habitual (não mudou).
+    const scopeUsualDuringEsquizofrenia = await attrOrNothing(page.getByTestId('icd-search-scope-usual'), 'aria-checked');
+    log('06', `V1: escopo continua em "habitual" durante a busca de "esquizofrenia" = ${scopeUsualDuringEsquizofrenia === 'true'}`);
     if (option0Exists > 0) {
       await page.getByTestId('icd-search-option-0').dblclick({ timeout: 5_000 }).catch((e) => log('06', `dblclick lançou: ${e}`));
       await page.waitForTimeout(1500);
@@ -271,11 +328,13 @@ test.describe('AUDITORIA UX — spec 016, tela de diagnóstico CID-11 (não é g
       firstChip.locator('[data-testid^="diagnosis-chip-promote-"]'),
     );
     log('08', `U4: texto visível no botão de promover ANTES de qualquer clique = "${promoteTextBeforeBodyClick}"`);
-    // clica no CORPO do chip (não na estrela) — antes ela não sabia que só o ícone reagia
+    // RODADA 3 / V2 — o corpo do chip deixou de ser clicável (era o próprio bug do mis-clique).
+    // Clica no CORPO mesmo assim, pra provar que ele agora é INERTE.
     await firstChip.click({ position: { x: 10, y: 10 } }).catch(() => {});
     await page.waitForTimeout(300);
     const primaryBadgeAfterBodyClick = await page.locator('[data-testid^="diagnosis-chip-primary-badge-"]').count();
-    log('08', `clique no CORPO do chip promoveu a principal? badge presente = ${primaryBadgeAfterBodyClick > 0}`);
+    log('R3-08', `V2: clique no CORPO do chip promoveu a principal? badge presente = ${primaryBadgeAfterBodyClick > 0} (esperado FALSE — o corpo agora é inerte)`);
+    await shot3(page.getByTestId('diagnosis-chips'), 'ux3-08-corpo-do-chip-inerte-apos-clique.png');
     const promoteBtn = page.locator('[data-testid^="diagnosis-chip-promote-"]').first();
     const promoteBtnVisible = await promoteBtn.isVisible().catch(() => false);
     const promoteAriaLabel = await attrOrNothing(promoteBtn, 'aria-label');
@@ -289,34 +348,133 @@ test.describe('AUDITORIA UX — spec 016, tela de diagnóstico CID-11 (não é g
     log('08', `depois de clicar no ícone estrela: badge "Principal" presente = ${primaryBadgeAfter > 0}`);
     await shot(page.getByTestId('diagnosis-chips'), 'ux-08b-chip-apos-marcar-principal.png');
 
+    // ── 8c. RODADA 2 — B3: o corpo do chip promove; isso pode ter criado um problema NOVO ───
+    // Precisa de um 2º diagnóstico (não-principal) pra ter um alvo de "mis-clique ao tentar
+    // remover". Instrumenta a rede: promote e deactivate batem no MESMO endpoint PATCH, só o
+    // corpo muda (`isPrimary:true` vs `active:false`) — o corpo do PATCH prova sem ambiguidade
+    // qual ação disparou, mesmo que a contagem de elementos por prefixo (ruído já conhecido da
+    // rodada 1) minta.
+    const patchCalls: Array<{ url: string; body: string }> = [];
+    const onPatch = (req: import('@playwright/test').Request) => {
+      if (req.method() === 'PATCH' && /\/diagnoses\//.test(req.url())) {
+        patchCalls.push({ url: req.url(), body: req.postData() ?? '' });
+      }
+    };
+    page.on('request', onPatch);
+
+    await searchAndWait(page, 'depresion');
+    const depOptionForB3 = page.getByTestId('icd-search-option-0');
+    if ((await depOptionForB3.count()) > 0) {
+      await depOptionForB3.click();
+      await page.waitForTimeout(1000);
+    }
+    const chipLis = page.locator('li[data-testid^="diagnosis-chip-"]');
+    const chipCountRodada2 = await chipLis.count();
+    log('08c', `RODADA2/B3: nº de chips (li) depois do 2º diagnóstico = ${chipCountRodada2}`);
+    await shot(page.getByTestId('diagnosis-chips'), 'ux-08c-rodada2-dois-chips.png');
+
+    const primaryChipLi = chipLis.filter({ has: page.locator('[data-testid^="diagnosis-chip-primary-badge-"]') }).first();
+    const nonPrimaryChipLi = chipLis.filter({ hasNot: page.locator('[data-testid^="diagnosis-chip-primary-badge-"]') }).first();
+
+    // B3a — clicar no chip que JÁ É principal: despromove? não faz nada? confunde?
+    patchCalls.length = 0;
+    await primaryChipLi.click({ position: { x: 10, y: 10 } }).catch(() => {});
+    await page.waitForTimeout(400);
+    log('08c', `RODADA2/B3a: clicar no corpo do chip JÁ PRINCIPAL disparou algum PATCH? ${patchCalls.length > 0 ? JSON.stringify(patchCalls) : 'NENHUM (esperado — nada deveria acontecer, mas também nenhum feedback visual diz "já é o principal")'}`);
+    await shot(primaryChipLi, 'ux-08d-rodada2-clique-em-chip-ja-principal.png');
+
+    // B3b — O ACHADO MAIS CRÍTICO da rodada 2: ela MIRA no X (remover) e erra por pouco,
+    // acertando o CORPO do chip em vez do botão. Clica a poucos pixels do X (canto superior
+    // direito da linha), fora da hitbox do botão. RODADA 3 / V2 — este é o mis-clique que o
+    // conserto fecha: o corpo deixou de ser clicável, então nem PROMOVE nem REMOVE por engano.
+    const nonPrimaryBox = await nonPrimaryChipLi.boundingBox();
+    log('08c', `RODADA2/B3b: bounding box do chip não-principal = ${JSON.stringify(nonPrimaryBox)}`);
+    patchCalls.length = 0;
+    if (nonPrimaryBox) {
+      const missX = nonPrimaryBox.x + nonPrimaryBox.width - 8;
+      const missY = nonPrimaryBox.y + 6;
+      await page.mouse.click(missX, missY);
+    }
+    await page.waitForTimeout(500);
+    const promotedByMisclick = patchCalls.some((c) => c.body.includes('isPrimary'));
+    const removedByMisclick = patchCalls.some((c) => c.body.includes('active'));
+    log('08c', `RODADA2/B3b: clique perto do X (mis-clique simulado) no corpo do chip NÃO-principal -> PATCHes=${JSON.stringify(patchCalls)} | PROMOVEU sem querer=${promotedByMisclick} | REMOVEU=${removedByMisclick}`);
+    log('R3-08c', `V2: mis-clique perto do X NÃO promoveu = ${!promotedByMisclick} (esperado TRUE — nenhum PATCH deveria sair do clique no corpo)`);
+    await shot(page.getByTestId('diagnosis-chips'), 'ux-08e-rodada2-apos-misclique-perto-do-x.png');
+    await shot3(page.getByTestId('diagnosis-chips'), 'ux3-08c-misclique-nao-promove.png');
+    page.off('request', onPatch);
+
     // ── 9. Quer remover — agora exige confirmação (U3) ───────────────────────────────────
-    const removeBtn = page.locator('[data-testid^="diagnosis-chip-remove-"]').first();
+    // Usa o botão X DE VERDADE agora (mira certeira), no chip não-principal.
+    const removeBtn = nonPrimaryChipLi.locator('[data-testid^="diagnosis-chip-remove-"]').first();
     const removeVisible = await removeBtn.isVisible().catch(() => false);
     const removeAriaLabel = await attrOrNothing(removeBtn, 'aria-label');
     log('09', `botão remover: visível SEM hover/instrução = ${removeVisible} aria-label="${removeAriaLabel}"`);
     await shot(page.getByTestId('diagnosis-chips'), 'ux-09a-chip-antes-de-remover.png');
-    const chipCountBeforeRemove = await page.locator('[data-testid^="diagnosis-chip-"]').count();
     if (removeVisible) {
       await removeBtn.click();
       await page.waitForTimeout(300);
     }
     // U3 — o 1º clique no X NÃO deveria remover mais: só pede confirmação inline.
     const confirmQuestionText = await textOrNothing(
-      page.locator('[data-testid^="diagnosis-chip-remove-confirm-"]').first(),
+      nonPrimaryChipLi.locator('[data-testid^="diagnosis-chip-remove-confirm-"]').first(),
     );
-    const chipCountAfterFirstClick = await page.locator('[data-testid^="diagnosis-chip-"]').count();
-    log('09', `U3: 1º clique pede confirmação = "${confirmQuestionText}" | nº de chips ainda o mesmo (nada removido) = ${chipCountAfterFirstClick === chipCountBeforeRemove}`);
+    log('09', `U3: 1º clique pede confirmação = "${confirmQuestionText}"`);
     await shot(page.getByTestId('diagnosis-chips'), 'ux-09b-confirmacao-antes-de-remover.png');
-    const confirmRemoveBtn = page.locator('[data-testid^="diagnosis-chip-remove-confirm-btn-"]').first();
+
+    // RODADA 2 — B2: se ela clicar FORA do chip enquanto a confirmação está aberta, o que
+    // acontece? O componente não tem listener de "clique fora" (só os botões Cancelar/Quitar
+    // fecham) — confirma isso clicando num ponto neutro do drawer (o rótulo da seção) e
+    // vendo se a pergunta continua na tela indefinidamente.
+    await page.locator('label[for="icd-search-input"]').click({ timeout: 2_000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const confirmStillThereAfterOutsideClick = await textOrNothing(
+      nonPrimaryChipLi.locator('[data-testid^="diagnosis-chip-remove-confirm-"]').first(),
+    );
+    log('09', `RODADA2/B2: clicar FORA do chip com a confirmação aberta — ela continua aberta = "${confirmStillThereAfterOutsideClick}" (null = fechou sozinha; texto = ficou aberta pra sempre até ela decidir)`);
+    await shot(page.getByTestId('diagnosis-chips'), 'ux-09b2-rodada2-confirmacao-apos-clicar-fora.png');
+
+    // RODADA 2 — B2: testa o botão Cancelar explicitamente (não só o Confirmar) — cancela sem
+    // medo, sem remover nada?
+    const cancelBtn = nonPrimaryChipLi.locator('[data-testid^="diagnosis-chip-remove-cancel-"]').first();
+    const cancelBtnVisible = await cancelBtn.isVisible().catch(() => false);
+    const chipCountBeforeCancel = await chipLis.count();
+    if (cancelBtnVisible) {
+      await cancelBtn.click();
+      await page.waitForTimeout(300);
+    }
+    const chipCountAfterCancel = await chipLis.count();
+    const confirmGoneAfterCancel = await nonPrimaryChipLi.locator('[data-testid^="diagnosis-chip-remove-confirm-"]').count();
+    log('09', `RODADA2/B2: botão Cancelar visível=${cancelBtnVisible} | nº de chips antes=${chipCountBeforeCancel} depois=${chipCountAfterCancel} (esperado igual — nada foi removido) | confirmação sumiu depois de cancelar=${confirmGoneAfterCancel === 0}`);
+    await shot(page.getByTestId('diagnosis-chips'), 'ux-09b3-rodada2-apos-cancelar.png');
+
+    // Agora sim: X de novo, e confirma de verdade — fecha o ciclo original da rodada 1.
+    const chipCountBeforeRemove = await chipLis.count();
+    await removeBtn.click().catch(() => {});
+    await page.waitForTimeout(300);
+    const confirmRemoveBtn = nonPrimaryChipLi.locator('[data-testid^="diagnosis-chip-remove-confirm-btn-"]').first();
     const confirmRemoveBtnVisible = await confirmRemoveBtn.isVisible().catch(() => false);
     if (confirmRemoveBtnVisible) {
       await confirmRemoveBtn.click();
       await page.waitForTimeout(600);
     }
-    const chipsEmptyAfterRemove = await page.getByTestId('diagnosis-chips-empty').count();
+    const chipCountAfterRemove = await chipLis.count();
     const anyUndoButton = await page.getByRole('button', { name: /deshacer|undo/i }).count();
-    log('09', `depois de CONFIRMAR: removeu de fato | ficou vazio="${chipsEmptyAfterRemove > 0}" | existe botão de desfazer="${anyUndoButton > 0}"`);
+    log('09', `depois de CONFIRMAR: removeu de fato | chips antes=${chipCountBeforeRemove} depois=${chipCountAfterRemove} | existe botão de desfazer="${anyUndoButton > 0}"`);
     await shot(drawer, 'ux-09c-apos-confirmar-remocao.png');
+    // sobrou só o principal ("esquizofrenia") — remove também, pra deixar limpo pro passo 10
+    const remainingChipRemoveBtn = page.locator('li[data-testid^="diagnosis-chip-"] [data-testid^="diagnosis-chip-remove-"]').first();
+    if (await remainingChipRemoveBtn.count() > 0) {
+      await remainingChipRemoveBtn.click();
+      await page.waitForTimeout(300);
+      const finalConfirmBtn = page.locator('[data-testid^="diagnosis-chip-remove-confirm-btn-"]').first();
+      if (await finalConfirmBtn.isVisible().catch(() => false)) {
+        await finalConfirmBtn.click();
+        await page.waitForTimeout(500);
+      }
+    }
+    const chipsEmptyAfterRemove = await page.getByTestId('diagnosis-chips-empty').count();
+    log('09', `drawer ficou vazio depois de limpar os 2 diagnósticos de teste = ${chipsEmptyAfterRemove > 0}`);
 
     // ── 10. Enter em campo vazio, Esc no meio da digitação ───────────────────────────────
     await input.fill('');
@@ -397,5 +555,85 @@ test.describe('AUDITORIA UX — spec 016, tela de diagnóstico CID-11 (não é g
     log('13', `tamanho do DOM=${domContent.length} chars (REQ-21 não é o foco desta auditoria de UX)`);
 
     await page.getByRole('button', { name: 'Cerrar' }).click({ timeout: 5_000 }).catch(() => {});
+  });
+
+  // RODADA 2 — Parte C: o fluxo inteiro, sem parar, como ela faria com pressa antes do almoço.
+  // Conta MOMENTOS DE AMBIGUIDADE — pontos onde a tela não diz o que fazer e ela pararia pra
+  // perguntar pra alguém. Critério: se um passo precisa de tentativa-e-erro (não deu pra saber
+  // olhando a tela sozinha) ou de um clique que teve efeito diferente do esperado, conta 1.
+  test('Parte C — fluxo completo sem parar, cadastrando 2 diagnósticos num paciente do zero', async ({ page }) => {
+    let duvidas = 0;
+    const marcarDuvida = (motivo: string) => { duvidas += 1; log('C', `DÚVIDA #${duvidas}: ${motivo}`); };
+
+    await loginAsAdmin(page);
+    await openDetail(page, patientC.patientId);
+    const drawerC = await openDrawer(page);
+    await page.waitForTimeout(400);
+    await shot(drawerC, 'ux-c00-estado-inicial.png');
+
+    // 1) busca e escolhe o 1º diagnóstico
+    await searchAndWait(page, 'esquizofrenia');
+    const opt0 = page.getByTestId('icd-search-option-0');
+    if (await opt0.count() === 0) marcarDuvida('buscou "esquizofrenia" e não achou nada — precisaria perguntar se o termo está certo');
+    else { await opt0.click(); await page.waitForTimeout(800); }
+    await shot(page.getByTestId('diagnosis-chips'), 'ux-c01-primeiro-diagnostico.png');
+
+    // 2) busca e escolhe o 2º diagnóstico
+    await searchAndWait(page, 'depresion');
+    const opt0b = page.getByTestId('icd-search-option-0');
+    if (await opt0b.count() === 0) marcarDuvida('buscou "depresion" e não achou nada');
+    else { await opt0b.click(); await page.waitForTimeout(800); }
+    const chipLisC = page.locator('li[data-testid^="diagnosis-chip-"]');
+    const countAfter2 = await chipLisC.count();
+    if (countAfter2 !== 2) marcarDuvida(`esperava 2 chips depois de escolher 2 diagnósticos, tem ${countAfter2} — ela não teria como confirmar visualmente que os dois "pegaram"`);
+    await shot(page.getByTestId('diagnosis-chips'), 'ux-c02-dois-diagnosticos.png');
+
+    // 3) marca o 1º como principal — RODADA 3 / V2: o corpo do chip deixou de ser clicável
+    // (era o próprio bug do mis-clique). Ela usa o botão COM TEXTO VISÍVEL ("Marcar como
+    // principal"), que já resolvia a descoberta (medido na 2ª auditoria, item 8: ENTENDE).
+    const anyPrimaryBadgeBefore = await page.locator('[data-testid^="diagnosis-chip-primary-badge-"]').count();
+    if (anyPrimaryBadgeBefore === 0) marcarDuvida('nenhum diagnóstico nasce marcado como principal e a tela não diz que ISSO é obrigatório nem qual ação faz — ela só sabe se já leu o texto do botão-estrela');
+    const targetChip = chipLisC.first();
+    // prova V2: clicar no corpo NÃO promove mais (era o defeito da rodada 2)
+    await targetChip.click({ position: { x: 10, y: 10 } }).catch(() => {});
+    await page.waitForTimeout(300);
+    const primaryBadgeAfterBodyClickC = await page.locator('[data-testid^="diagnosis-chip-primary-badge-"]').count();
+    log('R3-C', `V2: clique no corpo do 1º chip promoveu? badge presente = ${primaryBadgeAfterBodyClickC > 0} (esperado FALSE)`);
+    const promoteBtnC = targetChip.locator('[data-testid^="diagnosis-chip-promote-"]').first();
+    if (await promoteBtnC.count() > 0) { await promoteBtnC.click(); await page.waitForTimeout(500); }
+    const primaryBadgeCountC = await page.locator('[data-testid^="diagnosis-chip-primary-badge-"]').count();
+    log('C', `depois de clicar no BOTÃO de promover do 1º chip: badge "Principal" presente = ${primaryBadgeCountC > 0}`);
+    await shot(page.getByTestId('diagnosis-chips'), 'ux-c03-apos-marcar-principal.png');
+
+    // 4) remove o 2º diagnóstico (2 cliques: X, depois confirmar)
+    const nonPrimaryC = chipLisC.filter({ hasNot: page.locator('[data-testid^="diagnosis-chip-primary-badge-"]') }).first();
+    const removeBtnC = nonPrimaryC.locator('[data-testid^="diagnosis-chip-remove-"]').first();
+    if (await removeBtnC.count() === 0) marcarDuvida('não achou o botão de remover do diagnóstico não-principal');
+    else {
+      await removeBtnC.click();
+      await page.waitForTimeout(300);
+      const confirmVisibleC = await nonPrimaryC.locator('[data-testid^="diagnosis-chip-remove-confirm-"]').first().isVisible().catch(() => false);
+      if (!confirmVisibleC) marcarDuvida('clicou no X e não apareceu confirmação — ela não saberia se removeu ou não');
+      await shot(page.getByTestId('diagnosis-chips'), 'ux-c04-confirmando-remocao.png');
+      const confirmBtnC = nonPrimaryC.locator('[data-testid^="diagnosis-chip-remove-confirm-btn-"]').first();
+      if (await confirmBtnC.isVisible().catch(() => false)) { await confirmBtnC.click(); await page.waitForTimeout(600); }
+    }
+    const countAfterRemoveC = await chipLisC.count();
+    if (countAfterRemoveC !== 1) marcarDuvida(`esperava sobrar 1 diagnóstico depois de remover 1 dos 2, sobrou ${countAfterRemoveC}`);
+    await shot(page.getByTestId('diagnosis-chips'), 'ux-c05-apos-remover-um.png');
+
+    // 5) fecha o drawer (sem procurar botão "Guardar" — ação já é "salvo na hora", D-263)
+    await page.getByRole('button', { name: 'Cerrar' }).click({ timeout: 5_000 }).catch(() => marcarDuvida('não achou o botão "Cerrar" em 5s'));
+    await page.waitForTimeout(500);
+    await shot(page, 'ux-c06-fechado.png');
+
+    // prova final: sobreviveu de verdade (reload), igual ao passo 11 da Parte A
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+    const finalCardText = await textOrNothing(page.getByTestId('diagnostico-card-patologias'));
+    log('C', `depois de reload: card de patologías mostra = "${finalCardText}"`);
+    await shot(page, 'ux-c07-apos-reload.png');
+
+    log('C', `RESUMO PARTE C: ${duvidas} momento(s) em que ela precisaria perguntar pra alguém`);
   });
 });

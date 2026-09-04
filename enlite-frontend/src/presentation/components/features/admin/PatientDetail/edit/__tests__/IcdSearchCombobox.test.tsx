@@ -118,110 +118,81 @@ describe('IcdSearchCombobox', () => {
     expect(listbox.innerHTML).not.toContain('6A20');
   });
 
-  it('U1: filtro esconde resultado melhor — avisa a contagem ANTES da lista', async () => {
-    search.mockImplementation((_q: unknown, opts: unknown) => {
-      const chapters = (opts as { chapters?: string } | undefined)?.chapters;
-      if (chapters === '06,08') {
-        return Promise.resolve([
-          { uri: 'u1', title: 'Neuropatía autonómica por diabetes mellitus' },
-          { uri: 'u2', title: 'Plexopatía lumbosacra diabética' },
-          { uri: 'u3', title: 'Polineuropatía diabética' },
-        ]);
-      }
-      return Promise.resolve([
-        { uri: 'u1', title: 'Neuropatía autonómica por diabetes mellitus' },
-        { uri: 'u2', title: 'Plexopatía lumbosacra diabética' },
-        { uri: 'u3', title: 'Polineuropatía diabética' },
-        { uri: 'u4', title: 'Diabetes mellitus tipo 1' },
-      ]);
-    });
+  it('V1: o controle de escopo aparece ANTES de qualquer digitação, com "categorias habituais" selecionado por padrão', () => {
+    render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
+    const usual = screen.getByTestId('icd-search-scope-usual');
+    const all = screen.getByTestId('icd-search-scope-all');
+    expect(usual).toBeInTheDocument();
+    expect(all).toBeInTheDocument();
+    expect(usual).toHaveAttribute('aria-checked', 'true');
+    expect(all).toHaveAttribute('aria-checked', 'false');
+    expect(search).not.toHaveBeenCalled();
+  });
+
+  it('V1: o rótulo do controle não usa a palavra "capítulo" nem números — só o texto do que ele descreve', () => {
+    render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
+    const usualText = screen.getByTestId('icd-search-scope-usual').textContent ?? '';
+    const allText = screen.getByTestId('icd-search-scope-all').textContent ?? '';
+    expect(usualText.toLowerCase()).not.toContain('capítulo');
+    expect(usualText).not.toMatch(/\d/);
+    expect(allText.toLowerCase()).not.toContain('capítulo');
+    expect(allText).not.toMatch(/\d/);
+  });
+
+  it('V1: alternar para "todas las categorías" muda o filtro enviado (chapters undefined) e a escolha fica marcada', async () => {
+    search.mockResolvedValue([]);
+    render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('icd-search-scope-all'));
+    expect(screen.getByTestId('icd-search-scope-all')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('icd-search-scope-usual')).toHaveAttribute('aria-checked', 'false');
+    fireEvent.change(screen.getByTestId('icd-search-input'), { target: { value: 'diabetes' } });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(search.mock.calls[0][1]).toMatchObject({ chapters: undefined });
+  });
+
+  it('V1: a escolha "todas las categorías" PERSISTE entre buscas diferentes, sem voltar ao padrão a cada tecla', async () => {
+    search.mockResolvedValue([]);
+    render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('icd-search-scope-all'));
+    fireEvent.change(screen.getByTestId('icd-search-input'), { target: { value: 'diabetes' } });
+    await vi.advanceTimersByTimeAsync(300);
+    fireEvent.change(screen.getByTestId('icd-search-input'), { target: { value: '' } });
+    fireEvent.change(screen.getByTestId('icd-search-input'), { target: { value: 'autismo' } });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(screen.getByTestId('icd-search-scope-all')).toHaveAttribute('aria-checked', 'true');
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(search.mock.calls[1][1]).toMatchObject({ chapters: undefined });
+  });
+
+  it('V1: voltar para "categorias habituais" restaura o filtro padrão (06,08)', async () => {
+    search.mockResolvedValue([]);
+    render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('icd-search-scope-all'));
+    fireEvent.click(screen.getByTestId('icd-search-scope-usual'));
+    expect(screen.getByTestId('icd-search-scope-usual')).toHaveAttribute('aria-checked', 'true');
+    fireEvent.change(screen.getByTestId('icd-search-input'), { target: { value: 'diabetes' } });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(search.mock.calls[0][1]).toMatchObject({ chapters: '06,08' });
+  });
+
+  it('V1: nenhuma 2ª requisição é disparada mais — uma busca com resultado dispara UMA chamada só', async () => {
+    search.mockResolvedValue([{ uri: 'u1', title: 'Diabetes mellitus tipo 1' }]);
     render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
     fireEvent.change(screen.getByTestId('icd-search-input'), { target: { value: 'diabetes' } });
     await vi.advanceTimersByTimeAsync(300);
-    await vi.advanceTimersByTimeAsync(0);
-    const notice = screen.getByTestId('icd-search-outside-notice');
-    expect(notice).toHaveTextContent('1');
-    // o aviso é irmão anterior do listbox no DOM — aparece ANTES da lista
-    const listbox = screen.getByTestId('icd-search-listbox');
-    expect(notice.compareDocumentPosition(listbox) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  });
-
-  it('U1: filtro NÃO esconde nada (mesma contagem dentro/fora) — sem aviso', async () => {
-    search.mockResolvedValue([{ uri: 'u1', title: 'Esquizofrenia' }]);
-    render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
-    fireEvent.change(screen.getByTestId('icd-search-input'), { target: { value: 'esquizofrenia' } });
-    await vi.advanceTimersByTimeAsync(300);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(screen.queryByTestId('icd-search-outside-notice')).not.toBeInTheDocument();
-  });
-
-  it('U1: com "buscar em todas as categorias" já ativo, não dispara a checagem extra (não há filtro pra esconder nada)', async () => {
-    search.mockResolvedValue([{ uri: 'u1', title: 'X' }]);
-    render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
-    fireEvent.click(screen.getByTestId('icd-search-toggle-chapters'));
-    fireEvent.change(screen.getByTestId('icd-search-input'), { target: { value: 'esquiso' } });
-    await vi.advanceTimersByTimeAsync(300);
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(300); // tempo de sobra pra qualquer 2ª chamada que tivesse sido disparada
     expect(search).toHaveBeenCalledTimes(1);
-    expect(screen.queryByTestId('icd-search-outside-notice')).not.toBeInTheDocument();
   });
 
-  it('U1: resposta OBSOLETA da checagem extra (chegou depois de uma busca mais nova) é descartada', async () => {
-    const outsideDeferred = deferred<{ uri: string; title: string }[]>();
-    let call = 0;
-    search.mockImplementation(() => {
-      call++;
-      if (call === 1) return Promise.resolve([{ uri: 'u1', title: 'A' }]); // 1ª busca filtrada
-      if (call === 2) return outsideDeferred.promise; // checagem extra da 1ª — fica pendente
-      if (call === 3) return Promise.resolve([{ uri: 'u2', title: 'B' }]); // 2ª busca filtrada (termo novo)
-      return Promise.resolve([{ uri: 'u2', title: 'B' }]); // checagem extra da 2ª — mesma contagem
-    });
-    render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
-    const input = screen.getByTestId('icd-search-input');
-    fireEvent.change(input, { target: { value: 'esquiso' } });
+  it('V1: o aviso antigo "resultados en otras categorías" não existe mais em lugar nenhum da tela', async () => {
+    search.mockResolvedValue([{ uri: 'u1', title: 'Diabetes mellitus tipo 1' }]);
+    const { container } = render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
+    fireEvent.change(screen.getByTestId('icd-search-input'), { target: { value: 'diabetes' } });
     await vi.advanceTimersByTimeAsync(300);
-    fireEvent.change(input, { target: { value: 'esquisofrenia' } });
-    await vi.advanceTimersByTimeAsync(300);
-    // a checagem extra da busca VELHA só responde agora — teria "1 a mais" se não fosse obsoleta
-    await act(async () => {
-      outsideDeferred.resolve([{ uri: 'u1', title: 'A' }, { uri: 'ux', title: 'X' }]);
-    });
     expect(screen.queryByTestId('icd-search-outside-notice')).not.toBeInTheDocument();
-  });
-
-  it('U1: rejeição OBSOLETA da checagem extra não gera aviso nem crash', async () => {
-    const outsideDeferred = deferred<{ uri: string; title: string }[]>();
-    outsideDeferred.promise.catch(() => {}); // evita unhandledRejection ao rejeitar mais tarde
-    let call = 0;
-    search.mockImplementation(() => {
-      call++;
-      if (call === 1) return Promise.resolve([{ uri: 'u1', title: 'A' }]);
-      if (call === 2) return outsideDeferred.promise;
-      if (call === 3) return Promise.resolve([{ uri: 'u2', title: 'B' }]);
-      return Promise.resolve([{ uri: 'u2', title: 'B' }]);
-    });
-    render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
-    const input = screen.getByTestId('icd-search-input');
-    fireEvent.change(input, { target: { value: 'esquiso' } });
-    await vi.advanceTimersByTimeAsync(300);
-    fireEvent.change(input, { target: { value: 'esquisofrenia' } });
-    await vi.advanceTimersByTimeAsync(300);
-    await act(async () => { outsideDeferred.reject(new Error('rede caiu na checagem extra')); });
-    expect(screen.queryByTestId('icd-search-outside-notice')).not.toBeInTheDocument();
-  });
-
-  it('U1: se a checagem extra (fora do filtro) falhar SEM ser obsoleta, não quebra a tela nem mostra aviso', async () => {
-    search.mockImplementation((_q: unknown, opts: unknown) => {
-      const chapters = (opts as { chapters?: string } | undefined)?.chapters;
-      if (chapters === '06,08') return Promise.resolve([{ uri: 'u1', title: 'A' }]);
-      return Promise.reject(new Error('boom'));
-    });
-    render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
-    fireEvent.change(screen.getByTestId('icd-search-input'), { target: { value: 'esquiso' } });
-    await vi.advanceTimersByTimeAsync(300);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(screen.getByTestId('icd-search-listbox')).toBeInTheDocument();
-    expect(screen.queryByTestId('icd-search-outside-notice')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('icd-search-toggle-chapters')).not.toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/otras categorías/i);
   });
 
   it('U5: reduzir de uma busca ativa para 1 caractere aborta a busca em andamento', async () => {
@@ -453,13 +424,10 @@ describe('IcdSearchCombobox', () => {
     expect(screen.queryByTestId('icd-search-listbox')).not.toBeInTheDocument();
   });
 
-  it('alargar capítulos: alterna o rótulo e envia chapters=undefined na próxima busca', async () => {
+  it('V1: clicar em "todas las categorías" marca o controle e envia chapters=undefined na próxima busca', async () => {
     search.mockResolvedValue([]);
     render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
-    const toggle = screen.getByTestId('icd-search-toggle-chapters');
-    expect(toggle).toHaveTextContent('Buscar em todas as categorias');
-    fireEvent.click(toggle);
-    expect(toggle).toHaveTextContent('Voltar às categorias habituais');
+    fireEvent.click(screen.getByTestId('icd-search-scope-all'));
 
     fireEvent.change(screen.getByTestId('icd-search-input'), { target: { value: 'esquiso' } });
     await vi.advanceTimersByTimeAsync(300);

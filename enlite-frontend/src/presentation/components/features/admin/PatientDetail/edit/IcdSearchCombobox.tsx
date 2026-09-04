@@ -17,6 +17,14 @@
  * a11y: `role="combobox"` no input, `listbox`/`option` no dropdown, `aria-activedescendant`
  * aponta pro item destacado, `aria-expanded` reflete o dropdown aberto. Teclado: setas navegam,
  * Enter escolhe o destacado, Esc fecha.
+ *
+ * V1 (rodada 2) — o aviso condicional "Hay N resultados en otras categorías" (que exigia uma 2ª
+ * requisição, sem filtro, só para contar) virou RUÍDO: medido contra o catálogo real, ele
+ * disparava em praticamente toda busca (39/9 em "esquizofrenia", 50/50 em "autismo", 6/50 em
+ * "diabetes") — uma operadora aprende a ignorar um aviso onipresente em um dia, e falha
+ * exatamente onde importa. Trocado por um ESTADO PERMANENTE: um controle sempre visível (mesmo
+ * antes de digitar) dizendo onde a busca está acontecendo, com duas opções fixas — não há mais
+ * heurística de similaridade para calibrar, nem 2ª chamada de rede.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -60,9 +68,8 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false }: IcdSearchC
   const [options, setOptions] = useState<TerminologyCandidate[]>([]);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [isOpen, setIsOpen] = useState(false);
+  /** V1: estado do escopo de busca — persiste enquanto o drawer estiver aberto (não reseta a cada tecla). */
   const [allChapters, setAllChapters] = useState(false);
-  /** U1: quantos resultados a MAIS existem fora do filtro padrão — `null` = não avisar. */
-  const [outsideCount, setOutsideCount] = useState<number | null>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -76,7 +83,6 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false }: IcdSearchC
     abortRef.current = controller;
     const requestId = ++requestIdRef.current;
     setPhase('searching');
-    setOutsideCount(null);
 
     AdminTerminologyApiService.search(q, { chapters, signal: controller.signal })
       .then((candidates) => {
@@ -85,23 +91,6 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false }: IcdSearchC
         setPhase(candidates.length === 0 ? 'empty' : 'results');
         setIsOpen(true);
         setActiveIndex(-1);
-
-        // U1: filtro padrão ativo E já achou algo — confere em UMA chamada extra (sem filtro)
-        // se há MAIS resultados escondidos, pra avisar em vez de deixar a operadora achar que a
-        // lista mostrada é tudo o que existe. Sem filtro (`chapters` undefined) não há o que
-        // esconder — não dispara a checagem.
-        if (chapters && candidates.length > 0) {
-          AdminTerminologyApiService.search(q, { signal: controller.signal })
-            .then((allCandidates) => {
-              if (requestIdRef.current !== requestId) return; // obsoleta — descartada
-              const extra = allCandidates.length - candidates.length;
-              setOutsideCount(extra > 0 ? extra : null);
-            })
-            .catch(() => {
-              if (requestIdRef.current !== requestId) return;
-              setOutsideCount(null);
-            });
-        }
       })
       .catch((err: unknown) => {
         // `abortRef.current?.abort()` só é chamado ao disparar uma busca NOVA ou ao cair abaixo
@@ -121,7 +110,6 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false }: IcdSearchC
       abortRef.current?.abort();
       requestIdRef.current++;
       setOptions([]);
-      setOutsideCount(null);
       setIsOpen(false);
       setPhase('idle');
       return;
@@ -132,7 +120,6 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false }: IcdSearchC
       abortRef.current?.abort();
       requestIdRef.current++;
       setOptions([]);
-      setOutsideCount(null);
       setIsOpen(false);
       setPhase('tooShort');
       return;
@@ -228,6 +215,44 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false }: IcdSearchC
         )}
       </div>
 
+      {/* V1 (rodada 2): ESTADO permanente, sempre visível — não é um aviso condicional. Diz onde
+          a busca está acontecendo e permite trocar, sem depender de nenhuma heurística de
+          similaridade (que já deu falso positivo em "autismo"/"depresion"). */}
+      <div
+        role="radiogroup"
+        aria-label={ta('searchScopeLabel')}
+        className="flex items-center gap-1.5"
+        data-testid={`${id}-scope`}
+      >
+        <Text as="span" size="xs" color="muted">
+          {ta('searchScopeLabel')}
+        </Text>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={!allChapters}
+          onClick={() => setAllChapters(false)}
+          className={`px-2 py-0.5 rounded-full border transition-colors ${!allChapters ? 'border-primary bg-primary/10' : 'border-slate-200'}`}
+          data-testid={`${id}-scope-usual`}
+        >
+          <Text as="span" size="xs" color={!allChapters ? 'primary' : 'muted'}>
+            {ta('searchScopeUsual')}
+          </Text>
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={allChapters}
+          onClick={() => setAllChapters(true)}
+          className={`px-2 py-0.5 rounded-full border transition-colors ${allChapters ? 'border-primary bg-primary/10' : 'border-slate-200'}`}
+          data-testid={`${id}-scope-all`}
+        >
+          <Text as="span" size="xs" color={allChapters ? 'primary' : 'muted'}>
+            {ta('searchScopeAll')}
+          </Text>
+        </button>
+      </div>
+
       {statusText && (
         <Text
           as="span"
@@ -244,12 +269,6 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false }: IcdSearchC
       {codeOrAcronymHint && (
         <Text as="span" size="xs" color="muted" data-testid={`${id}-code-hint`}>
           {ta('codeOrAcronymHint')}
-        </Text>
-      )}
-
-      {isOpen && phase === 'results' && outsideCount !== null && (
-        <Text as="span" size="xs" color="primary" data-testid={`${id}-outside-notice`}>
-          {ta('outsideFilterNotice', { count: outsideCount })}
         </Text>
       )}
 
@@ -276,17 +295,6 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false }: IcdSearchC
           ))}
         </ul>
       )}
-
-      <button
-        type="button"
-        onClick={() => setAllChapters((v) => !v)}
-        className="self-start"
-        data-testid={`${id}-toggle-chapters`}
-      >
-        <Text as="span" size="xs" color="primary" className="underline">
-          {allChapters ? ta('restrictChapters') : ta('expandChapters')}
-        </Text>
-      </button>
     </div>
   );
 }
