@@ -131,9 +131,9 @@ describe('contexto de país da aplicação contra as policies (banco real)', () 
     expect(pids[0]).toBe(pids[1]);
   });
 
-  it('contexto ausente = zero linhas (fail-closed), não "mostra tudo"', async () => {
-    const ids = await asRequest(undefined, () => visiblePatientIds(appPool));
-    expect(ids).toEqual([]);
+  it('contexto ausente = ERRO NOMEADO (411), não "mostra tudo" nem zero linhas silencioso', async () => {
+    // Até a 411, sessão sem identidade recebia [] — indistinguível de "não há pacientes".
+    await expect(asRequest(undefined, () => visiblePatientIds(appPool))).rejects.toThrow(/rls_session_without_identity/);
   });
 
   it('o país NÃO vaza para a request seguinte: o client volta ao pool limpo', async () => {
@@ -145,8 +145,8 @@ describe('contexto de país da aplicação contra as policies (banco real)', () 
     );
     expect(leftover.rows[0].country ?? '').toBe('');
 
-    const ids = await asRequest(undefined, () => visiblePatientIds(appPool));
-    expect(ids).toEqual([]);
+    // Sem contexto, a policy recusa em voz alta (411) — se o país tivesse vazado, veríamos AR.
+    await expect(asRequest(undefined, () => visiblePatientIds(appPool))).rejects.toThrow(/rls_session_without_identity/);
   });
 
   it('grant vivo de grupo abre o outro país — e a revogação vale na request seguinte', async () => {
