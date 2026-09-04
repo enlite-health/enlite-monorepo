@@ -17,7 +17,8 @@ import type { AuthMiddleware, PermissionMiddleware } from '@modules/identity';
  * contra um sistema de terceiro (Ana Care), e `execute` é ação sensível (D-P4),
  * então o ALLOW também vai para a trilha.
  */
-export const ADMIN_INTEGRATIONS_FAMILY = 'admin.integrations';
+import { ADMIN_INTEGRATIONS_FAMILY } from '@modules/identity/permissions';
+export { ADMIN_INTEGRATIONS_FAMILY };
 
 export function createAdminIntegrationsRoutes(
   authMiddleware: AuthMiddleware,

@@ -33,7 +33,8 @@ import { requireCountryScope } from '@modules/identity/interfaces/middleware/cou
  * do engine acontecesse ANTES desse sync, esta rota ficaria negada para todo
  * mundo, porque nenhum grupo poderia receber uma célula inexistente.
  */
-export const ADMIN_PATIENTS_FAMILY = 'admin.patients';
+import { ADMIN_PATIENTS_FAMILY } from '@modules/identity/permissions';
+export { ADMIN_PATIENTS_FAMILY };
 
 export function createAdminPatientsRoutes(
   controller: AdminPatientsController,

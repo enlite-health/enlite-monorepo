@@ -33,7 +33,8 @@ import { AdminDedupController } from '../controllers/dedup/AdminDedupController'
 import type { AuthMiddleware } from '../../modules/identity/interfaces/middleware/AuthMiddleware';
 import type { PermissionMiddleware } from '../../modules/identity/interfaces/middleware/PermissionMiddleware';
 
-export const ADMIN_DEDUP_FAMILY = 'admin.dedup';
+import { ADMIN_DEDUP_FAMILY } from '@modules/identity/permissions';
+export { ADMIN_DEDUP_FAMILY };
 
 export function createDedupRoutes(
   controller: AdminDedupController,

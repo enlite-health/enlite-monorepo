@@ -29,7 +29,8 @@ import type { AdminController } from '../controllers/AdminController';
 import type { AuthMiddleware } from '../middleware/AuthMiddleware';
 import type { PermissionMiddleware } from '../middleware/PermissionMiddleware';
 
-export const ADMIN_USERS_FAMILY = 'admin.users';
+import { ADMIN_USERS_FAMILY } from '@modules/identity/permissions';
+export { ADMIN_USERS_FAMILY };
 
 export function createAdminUsersRoutes(
   controller: AdminController,

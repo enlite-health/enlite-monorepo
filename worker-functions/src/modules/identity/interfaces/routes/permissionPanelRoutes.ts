@@ -68,7 +68,8 @@ import {
 import type { AuthMiddleware } from '../middleware/AuthMiddleware';
 import type { PermissionMiddleware } from '../middleware/PermissionMiddleware';
 
-export const ADMIN_PERMISSIONS_FAMILY = 'admin.permissions';
+import { ADMIN_PERMISSIONS_FAMILY } from '@modules/identity/permissions';
+export { ADMIN_PERMISSIONS_FAMILY };
 
 /**
  * Porta ESTREITA do repositório de grupos: só leitura. Ver o aviso do

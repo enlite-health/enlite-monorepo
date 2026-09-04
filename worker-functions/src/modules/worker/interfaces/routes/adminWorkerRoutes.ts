@@ -49,7 +49,8 @@ export interface AdminWorkerRouteControllers {
  * ao contrário de `admin.patients`, ela NÃO depende de
  * `PERMISSION_CATALOG_SYNC_ENABLED` ter ligado para poder ser enforçada.
  */
-export const ADMIN_WORKERS_FAMILY = 'admin.workers';
+import { ADMIN_WORKERS_FAMILY } from '@modules/identity/permissions';
+export { ADMIN_WORKERS_FAMILY };
 
 export function createAdminWorkerRoutes(
   c: AdminWorkerRouteControllers,

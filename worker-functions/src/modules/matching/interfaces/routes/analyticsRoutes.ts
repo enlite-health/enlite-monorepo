@@ -32,7 +32,8 @@ import { AuthMiddleware, type PermissionMiddleware } from '@modules/identity';
  * protege o DOSSIÊ, não o contato operacional); se a resposta for o contrário, o
  * conserto aqui também é redação de campo. Ver o handoff da change.
  */
-export const ADMIN_ANALYTICS_FAMILY = 'admin.analytics';
+import { ADMIN_ANALYTICS_FAMILY } from '@modules/identity/permissions';
+export { ADMIN_ANALYTICS_FAMILY };
 
 export function createAnalyticsRoutes(
   analyticsController: AnalyticsController,
