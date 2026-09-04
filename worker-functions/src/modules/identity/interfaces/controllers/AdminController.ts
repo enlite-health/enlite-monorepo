@@ -10,6 +10,8 @@ import { AdminRepository } from '../../infrastructure/AdminRepository';
 import { UserRepository } from '../../infrastructure/UserRepository';
 import { GoogleIdentityService } from '../../infrastructure/GoogleIdentityService';
 import { isStaffRole } from '../../domain/EnliteRole';
+import { LAST_MANAGER } from '../../application/DeleteAdminUserUseCase';
+import { MENSAGEM_POR_CODIGO, STATUS_POR_CODIGO } from '../http/permissionErrorHttp';
 
 export class AdminController {
   private deleteUserByEmailUseCase: DeleteUserByEmailUseCase;
@@ -196,6 +198,15 @@ export class AdminController {
       const { id } = req.params;
       const result = await this.deleteAdminUseCase.execute(id);
       if (result.isFailure) {
+        // O MESMO status e a MESMA frase do painel — um mapa só (permissionErrorHttp).
+        if (result.error === LAST_MANAGER) {
+          res.status(STATUS_POR_CODIGO[LAST_MANAGER]).json({
+            success: false,
+            code: LAST_MANAGER,
+            error: MENSAGEM_POR_CODIGO[LAST_MANAGER],
+          });
+          return;
+        }
         res.status(400).json({ success: false, error: result.error });
         return;
       }

@@ -19,6 +19,13 @@ import type {
 } from '../application/ports';
 import { categoryFor, cellKey, type PermissionCell } from '../domain/PermissionCell';
 import { readRows, withSystemWrite } from './dbAccess';
+import { logger } from '@shared/logging';
+
+/**
+ * Células que o banco NUNCA descontinua pelo sync (410, anti-lockout): sem elas todo
+ * gestor perde o painel de uma vez. Ausência na varredura é sintoma — vai para o log.
+ */
+export const PROTECTED_CELLS = ['permission_management:read', 'permission_management:write'] as const;
 
 const SYSTEM_LABEL = 'boot:permission-catalog-sync';
 
@@ -92,6 +99,14 @@ export class PgPermissionCatalogRepository implements PermissionCatalogRepositor
         const outcome = result.rows[0]?.outcome;
         if (outcome === 'inserted') inserted += 1;
         if (outcome === 'revived') revived += 1;
+      }
+      for (const protegida of PROTECTED_CELLS) {
+        if (!liveKeys.includes(protegida)) {
+          logger.warn(
+            { cell: protegida, ownerService },
+            '[perm] célula protegida ausente da varredura — o banco a mantém (anti-lockout, 410); conferir o perímetro de rotas',
+          );
+        }
       }
       const gone = await client.query<{ n: number }>(
         `SELECT iam.deprecate_missing_permission_cells($1, $2::text[]) AS n`,

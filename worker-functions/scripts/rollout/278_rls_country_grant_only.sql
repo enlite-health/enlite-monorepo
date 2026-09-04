@@ -15,7 +15,7 @@
 -- O QUE MUDA em relação à 274/271 (mesma tabela `patients`; satélites e
 -- vacancy_relink_audit seguem por EXISTS e NÃO precisam mudar):
 --   ANTES: sistema | country = claim (app.user_country) | grant vivo via user_groups
---   AGORA: sistema | country = ANY(iam.effective_countries(app.user_uid, tenant))
+--   AGORA: sistema | iam.session_may_see_country(country, current_user, false) — grant-only pela função SECDEF da 411
 --
 -- Por que resolver o grant DENTRO do banco (lex C3): a role confinada (`app_runtime`)
 -- NUNCA afirma os próprios países. Se a policy lesse um GUC array vindo do app
@@ -25,11 +25,12 @@
 -- serve só ao guard de UX e ao resource_access_log; a verdade é iam.*.
 -- Também elimina a janela de cache (≤30s) da RLS: revogação vale na query seguinte.
 --
--- A função é STABLE e SECURITY INVOKER: por linha o planner a avalia uma vez por
--- statement (mesmo uid), e ela só lê iam.* + users (SELECT já concedido às roles).
+-- A função da 411 é STABLE e SECURITY DEFINER (o chamador não precisa de privilégio em iam); como recebe
+-- `patients.country` (argumento dependente de coluna), o planner a avalia POR LINHA — não é içada
+-- para fora do laço. Ela só lê iam.* + users. O custo real é o gate de p95 da 5.4 (abaixo).
 -- Medição de p95 vs baseline-1.4 é gate da 5.4 (fallback sargável no design ABAC).
 --
--- REVERSÃO: scripts/rollback/278_down.sql (recria a policy da 274, com o ramo do
+-- REVERSÃO: scripts/rollback/278_down.sql (recria a policy da 411, com o ramo do
 -- claim) — testada no e2e (1.9). Executar reversão em prod = evento de segurança
 -- (lex C5 do ABAC): registrar quem/quando/por quê.
 
@@ -79,19 +80,15 @@ BEGIN
           NULLIF(current_setting('app.system_context', true), '') IS NOT NULL
           AND pg_has_role(current_user, 'app_system', 'MEMBER')
         )
-        OR country = ANY (
-          iam.effective_countries(
-            current_setting('app.user_uid', true),
-            iam.current_tenant_id()
-          )
-        )
+        OR iam.session_may_see_country(patients.country, current_user, false)
       )
   $p$;
   EXECUTE $c$
     COMMENT ON POLICY patients_country_isolation ON patients IS
       'Grant-only (rollout 278): staff vê só os países dos seus grupos VIVOS, resolvidos NO banco '
-      '(iam.effective_countries). O claim country do IdP é atributo, não permissão. Sistema '
-      'declarado (app.system_context + membro de app_system) vê tudo. Sem GUC → zero linhas.'
+      '(iam.session_may_see_country, SECDEF — 411). O claim country do IdP é atributo, não permissão. '
+      'Sistema declarado (app.system_context + membro de app_system) vê tudo. Sessão sem identidade '
+      'nenhuma → erro 42501 nomeado; com uid sem grant → zero linhas.'
   $c$;
 END
 $$;

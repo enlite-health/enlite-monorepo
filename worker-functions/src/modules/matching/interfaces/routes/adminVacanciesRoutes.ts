@@ -50,7 +50,8 @@ import { AuthMiddleware, type PermissionMiddleware } from '@modules/identity';
  * exigir `worker_pii:read` no Kanban daria a célula a todo recrutador e a
  * esvaziaria. Ver o handoff da change.
  */
-export const ADMIN_VACANCIES_FAMILY = 'admin.vacancies';
+import { ADMIN_VACANCIES_FAMILY } from '@modules/identity/permissions';
+export { ADMIN_VACANCIES_FAMILY };
 export function createAdminVacanciesRoutes(
   vacanciesController: VacanciesController,
   vacancyCrudController: VacancyCrudController,

@@ -100,6 +100,21 @@ export class AdminRepository {
     );
   }
 
+  /**
+   * O uid é o ÚNICO gestor vivo (`permission_management:write`) de algum tenant?
+   * Fonte única: `iam.is_last_manager` (410) — a mesma função que o trigger de
+   * `users` usa para recusar o DELETE. Aqui ela é PRÉ-checagem, porque o use case
+   * apaga a conta no Firebase ANTES do banco: sem isto, a recusa do banco chegaria
+   * com a conta Firebase já apagada.
+   */
+  async isLastManager(firebaseUid: string): Promise<boolean> {
+    const result = await this.pool.query<{ last: boolean }>(
+      `SELECT iam.is_last_manager($1) AS last`,
+      [firebaseUid]
+    );
+    return result.rows[0]?.last === true;
+  }
+
   async deleteByFirebaseUid(firebaseUid: string): Promise<void> {
     await this.pool.query(
       `DELETE FROM users WHERE firebase_uid = $1`,

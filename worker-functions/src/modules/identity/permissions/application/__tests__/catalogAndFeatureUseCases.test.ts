@@ -162,6 +162,37 @@ describe('GetMyAuthzUseCase', () => {
     expect(result.permissions).toEqual(['vacancy:read']);
     expect(result.features.AR['screen:talentum'].enabled).toBe(true);
   });
+
+  /**
+   * D268 — `enforcement` espelha o `engineEnabled` INJETADO no construtor,
+   * nunca uma leitura de env própria do módulo (`PermissionClient` acima nem
+   * conhece a existência da flag).
+   */
+  it('sem engineEnabled injetado, o contrato diz "off" — fail-closed no default', async () => {
+    const client = {
+      resolve: jest.fn().mockResolvedValue({ uid: 'ana', tenantId: 't', status: 'ACTIVE', permissions: [], countries: [], groups: [] }),
+      features: jest.fn().mockResolvedValue({}),
+      can: jest.fn(),
+      isFeatureAvailable: jest.fn(),
+      featureConfig: jest.fn(),
+      invalidate: jest.fn(),
+    };
+    const result = await new GetMyAuthzUseCase(client).execute({ uid: 'ana', tenantId: 't' });
+    expect(result.enforcement).toBe('off');
+  });
+
+  it('engineEnabled=false → "off"; engineEnabled=true → "on"', async () => {
+    const client = {
+      resolve: jest.fn().mockResolvedValue({ uid: 'ana', tenantId: 't', status: 'ACTIVE', permissions: [], countries: [], groups: [] }),
+      features: jest.fn().mockResolvedValue({}),
+      can: jest.fn(),
+      isFeatureAvailable: jest.fn(),
+      featureConfig: jest.fn(),
+      invalidate: jest.fn(),
+    };
+    expect((await new GetMyAuthzUseCase(client, false).execute({ uid: 'ana', tenantId: 't' })).enforcement).toBe('off');
+    expect((await new GetMyAuthzUseCase(client, true).execute({ uid: 'ana', tenantId: 't' })).enforcement).toBe('on');
+  });
 });
 
 describe('QueryPermissionAuditUseCase', () => {
@@ -184,19 +215,26 @@ describe('AssertNoActiveStaffWithoutGroupUseCase', () => {
     effectiveCountries: jest.fn(),
     countActiveStaffWithoutGroup: jest.fn().mockResolvedValue(count),
   });
+  // F12: `RolloutStateRepository` ganhou `set` (escrita do marcador pelo
+  // script de import) — este describe só exercita `get` (leitura, o caminho
+  // do boot), então `set` aqui é só para satisfazer o tipo.
+  const rolloutRepo = (value: string | null) => ({ get: jest.fn().mockResolvedValue(value), set: jest.fn() });
 
   it('mede a contagem e o marcador de rollout', async () => {
-    const useCase = new AssertNoActiveStaffWithoutGroupUseCase(authz(4), {
-      get: jest.fn().mockResolvedValue(null),
-    });
-    expect(await useCase.execute('t')).toEqual({ tenantId: 't', count: 4, migrated: false });
+    const useCase = new AssertNoActiveStaffWithoutGroupUseCase(authz(4), rolloutRepo(null));
+    expect(await useCase.execute('t')).toEqual({ tenantId: 't', count: 4, migrated: false, marker: null });
   });
 
   it('lê o marcador pela chave combinada com o script da migração', async () => {
-    const rollout = { get: jest.fn().mockResolvedValue('done') };
+    const rollout = rolloutRepo('done');
     const report = await new AssertNoActiveStaffWithoutGroupUseCase(authz(0), rollout).execute('t');
     expect(rollout.get).toHaveBeenCalledWith(ROLLOUT_MARKER_KEY);
     expect(report.migrated).toBe(true);
+  });
+
+  it('linha com OUTRO valor não é "migrado" — e o valor cru sobe para o log dizer o que achou', async () => {
+    const report = await new AssertNoActiveStaffWithoutGroupUseCase(authz(0), rolloutRepo('rolled_back')).execute('t');
+    expect(report).toEqual({ tenantId: 't', count: 0, migrated: false, marker: 'rolled_back' });
   });
 
   it('alertOnBoot NUNCA lança — nem com o banco fora (lex C2)', async () => {
@@ -207,14 +245,14 @@ describe('AssertNoActiveStaffWithoutGroupUseCase', () => {
       countActiveStaffWithoutGroup: jest.fn().mockRejectedValue(new Error('pg fora')),
     };
     await expect(
-      new AssertNoActiveStaffWithoutGroupUseCase(quebrado, { get: jest.fn() }).alertOnBoot('t', true),
+      new AssertNoActiveStaffWithoutGroupUseCase(quebrado, rolloutRepo(null)).alertOnBoot('t', true),
     ).resolves.toBeUndefined();
   });
 
   it('engine LIGADO sem o marcador de migração é o caso grave — loga como erro e segue', async () => {
     const { logger } = jest.requireMock('@shared/logging') as { logger: { error: jest.Mock; info: jest.Mock } };
     logger.error.mockClear();
-    await new AssertNoActiveStaffWithoutGroupUseCase(authz(3), { get: jest.fn().mockResolvedValue(null) })
+    await new AssertNoActiveStaffWithoutGroupUseCase(authz(3), rolloutRepo(null))
       .alertOnBoot('t', true);
     expect(logger.error).toHaveBeenCalledWith(
       expect.objectContaining({ engineEnabled: true, staffWithoutGroup: 3 }),
@@ -223,7 +261,7 @@ describe('AssertNoActiveStaffWithoutGroupUseCase', () => {
   });
 
   it('alertOnBoot cobre os três estados sem lançar', async () => {
-    const rollout = { get: jest.fn().mockResolvedValue('done') };
+    const rollout = rolloutRepo('done');
     await expect(
       new AssertNoActiveStaffWithoutGroupUseCase(authz(2), rollout).alertOnBoot('t', true),
     ).resolves.toBeUndefined();
@@ -231,7 +269,7 @@ describe('AssertNoActiveStaffWithoutGroupUseCase', () => {
       new AssertNoActiveStaffWithoutGroupUseCase(authz(0), rollout).alertOnBoot('t', true),
     ).resolves.toBeUndefined();
     await expect(
-      new AssertNoActiveStaffWithoutGroupUseCase(authz(0), { get: jest.fn().mockResolvedValue(null) })
+      new AssertNoActiveStaffWithoutGroupUseCase(authz(0), rolloutRepo(null))
         .alertOnBoot('t', false),
     ).resolves.toBeUndefined();
   });

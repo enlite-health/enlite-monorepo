@@ -31,7 +31,8 @@ import type { PermissionMiddleware } from '@modules/identity';
  * Decisão do Gabriel, 20/08. `messaging:write` NÃO existe no seed da 206: nasce
  * com as outras duas do A4 quando o A7 ligar `PERMISSION_CATALOG_SYNC_ENABLED`.
  */
-export const ADMIN_MESSAGING_FAMILY = 'admin.messaging';
+import { ADMIN_MESSAGING_FAMILY } from '@modules/identity/permissions';
+export { ADMIN_MESSAGING_FAMILY };
 
 export function createMessagingRoutes(
   messagingService: IMessagingService,

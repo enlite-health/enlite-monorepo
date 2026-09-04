@@ -29,7 +29,8 @@ import { AuthMiddleware, type PermissionMiddleware } from '@modules/identity';
  * é exatamente o isolamento de risco para o qual a família existe. Célula é
  * transversal, família é unidade de rollout — a distinção provada no A5.
  */
-export const ADMIN_ENCUADRE_FAMILY = 'admin.encuadre';
+import { ADMIN_ENCUADRE_FAMILY } from '@modules/identity/permissions';
+export { ADMIN_ENCUADRE_FAMILY };
 
 export function createWorkerEncuadreRoutes(
   encuadreController: EncuadreController,

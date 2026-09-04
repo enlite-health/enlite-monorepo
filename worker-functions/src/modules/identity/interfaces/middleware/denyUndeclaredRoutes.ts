@@ -70,6 +70,12 @@ export const GOVERNED_ROUTES: ReadonlySet<string> = new Set([
   'GET /api/workers/:id/cases',
   'GET /api/cases/:caseNumber/encuadres',
   'GET /api/cases/:caseNumber/workers',
+  // `GET /v1/me/authz` SAIU daqui em 28/08/2026: ela agora se declara isenta NA
+  // MONTAGEM (`exemptHandler`, ver `isGovernedRoute`), e é a marca que a põe no
+  // perímetro — não uma linha aqui e outra em `EXEMPT_ROUTES`. As 10 acima
+  // ficam como REDE: todas declaram célula hoje (task 3.5), mas se alguém tirar
+  // o `perm.require` de uma delas a lista ainda a mantém governada — e
+  // `undeclared`. Montagem é a fonte; a lista é o cinto para a regressão.
 ]);
 
 /**
@@ -85,13 +91,26 @@ export function isGovernedPath(path: string): boolean {
 }
 
 /**
- * Governança de uma rota IDENTIFICADA (tem método e PADRÃO de caminho): o
- * prefixo, ou a lista nomeada. É aqui que a decisão real acontece — o
- * `isGovernedPath` acima só vê o caminho concreto da request e não sabe a qual
- * padrão ele pertence.
+ * Governança de uma rota IDENTIFICADA (tem método e PADRÃO de caminho): a
+ * MARCA da montagem, o prefixo, ou a lista nomeada. É aqui que a decisão real
+ * acontece — o `isGovernedPath` acima só vê o caminho concreto da request e
+ * não sabe a qual padrão ele pertence.
+ *
+ * **Marca primeiro (28/08/2026, achado #9 da 002):** rota cujo handler declara
+ * célula (`perm.require`) ou isenção (`perm.exempt`) está no perímetro por
+ * definição — a declaração É a intenção, e ela fica onde a rota é montada, não
+ * numa lista que alguém precisa lembrar de editar. Foi assim que
+ * `GET /v1/me/authz` nasceu `not_governed`: fora do prefixo, sem linha. Rota do
+ * prestador NÃO é alcançada por isto — ela não carrega marca nenhuma — e o
+ * desvio de não-staff do motor (D119) segue valendo.
  */
 export function isGovernedRoute(route: ScannedRoute): boolean {
-  return isGovernedPath(route.path) || GOVERNED_ROUTES.has(routeKey(route.method, route.path));
+  return (
+    route.cell !== undefined ||
+    route.exempt !== undefined ||
+    isGovernedPath(route.path) ||
+    GOVERNED_ROUTES.has(routeKey(route.method, route.path))
+  );
 }
 
 export type RouteStatus = 'declared' | 'exempt' | 'pending' | 'undeclared' | 'not_governed' | 'unknown';
@@ -151,8 +170,11 @@ export class UndeclaredRouteRegistry {
 
   /** Status de uma rota JÁ identificada — sem passar pelo casamento de caminho. */
   statusOfRoute(route: ScannedRoute): RouteStatus {
-    if (!isGovernedRoute(route)) return 'not_governed';
+    // A marca da montagem responde antes de qualquer lista: célula → declarada,
+    // isenção → isenta. Só o que não está marcado passa pelo prefixo/listas.
     if (route.cell) return 'declared';
+    if (route.exempt) return 'exempt';
+    if (!isGovernedRoute(route)) return 'not_governed';
     const key = routeKey(route.method, route.path);
     if (this.exempt.has(key)) return 'exempt';
     if (this.pending.has(key)) return 'pending';

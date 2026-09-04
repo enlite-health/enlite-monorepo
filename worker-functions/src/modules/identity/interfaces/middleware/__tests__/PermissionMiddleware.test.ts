@@ -494,3 +494,4 @@ describe('as células chegam ao handler (C3 da F2)', () => {
     expect(res.body.cells).toBeNull();
   });
 });
+

@@ -73,10 +73,32 @@ export {
 export type { ActorClass } from './domain/ActorClass';
 
 // ── Catálogo derivado do código (declaração + varredura) ─────────────────────
-export { markPermissionHandler, readPermissionMetadata, PERMISSION_METADATA } from './infrastructure/catalog/permissionMetadata';
-export type { PermissionMetadata } from './infrastructure/catalog/permissionMetadata';
+export {
+  markPermissionHandler,
+  readPermissionMetadata,
+  PERMISSION_METADATA,
+  readExemptMetadata,
+  exemptHandler,
+} from './infrastructure/catalog/permissionMetadata';
+export type { PermissionMetadata, ExemptMetadata } from './infrastructure/catalog/permissionMetadata';
 export { declaredCells, cellsForaDeRota, scanExpressRouter, undeclaredRoutes, mountPathOf } from './infrastructure/catalog/scanExpressRouter';
 export type { ScannedRoute } from './infrastructure/catalog/scanExpressRouter';
+export {
+  ALL_PERMISSION_FAMILIES,
+  ADMIN_ANALYTICS_FAMILY,
+  ADMIN_DEDUP_FAMILY,
+  ADMIN_ENCUADRE_FAMILY,
+  ADMIN_INTEGRATIONS_FAMILY,
+  ADMIN_MESSAGING_FAMILY,
+  ADMIN_PATIENTS_FAMILY,
+  ADMIN_PERMISSIONS_FAMILY,
+  ADMIN_RECRUITMENT_FAMILY,
+  ADMIN_TEST_FIXTURES_FAMILY,
+  ADMIN_USERS_FAMILY,
+  ADMIN_VACANCIES_FAMILY,
+  ADMIN_WORKERS_FAMILY,
+} from './infrastructure/catalog/permissionFamilies';
+export type { PermissionFamily } from './infrastructure/catalog/permissionFamilies';
 export { buildRouteIndex } from './infrastructure/catalog/routeMatcher';
 export type { RouteIndex } from './infrastructure/catalog/routeMatcher';
 export { CATALOG_OWNER_SERVICE } from './application/SyncPermissionCatalogUseCase';
@@ -98,9 +120,11 @@ export {
 export { registerPermissionEventHandlers } from './interface/registerPermissionEventHandlers';
 export type { HandlerRegistry } from './interface/registerPermissionEventHandlers';
 export { createWellKnownPermissionsRouter } from './interface/wellKnownPermissionsRoute';
+export { createMeAuthzRouter } from './interface/meAuthzRoute';
+export type { MeAuthzRouterDeps } from './interface/meAuthzRoute';
 
 // ── Use cases (a API do painel monta em cima destes) ─────────────────────────
-export { AssertNoActiveStaffWithoutGroupUseCase, ROLLOUT_MARKER_KEY } from './application/AssertNoActiveStaffWithoutGroupUseCase';
+export { AssertNoActiveStaffWithoutGroupUseCase, ROLLOUT_MARKER_KEY, ROLLOUT_MARKER_DONE } from './application/AssertNoActiveStaffWithoutGroupUseCase';
 export { GetMyAuthzUseCase } from './application/GetMyAuthzUseCase';
 export { ListPermissionCatalogUseCase } from './application/ListPermissionCatalogUseCase';
 export { QueryPermissionAuditUseCase } from './application/QueryPermissionAuditUseCase';

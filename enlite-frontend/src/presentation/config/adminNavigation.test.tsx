@@ -6,10 +6,12 @@
  *  - Não-admin NÃO recebe adminItems (logo sem sectionStart)
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useAdminNavItems } from './adminNavigation';
 import { EnliteRole } from '@domain/entities/EnliteRole';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -120,5 +122,44 @@ describe('useAdminNavItems — Postulaciones bloqueadas é admin-only', () => {
     const items = result.current;
 
     expect(items.some((item) => item.href === BLOCKED_HREF)).toBe(false);
+  });
+});
+
+describe('useAdminNavItems — B1 (D268): blocked-attempts é sub-rota de screen:funnel e some junto', () => {
+  const BLOCKED_HREF = '/admin/recruitment/blocked-attempts';
+
+  const authzComFunnel = (funnelEnabled: boolean): AuthzContract => ({
+    uid: 'u',
+    tenantId: 't',
+    status: 'ACTIVE',
+    permissions: [],
+    countries: ['AR'],
+    groups: [],
+    features: { AR: { 'screen:funnel': { enabled: funnelEnabled, config: null } } },
+    enforcement: 'on',
+  });
+
+  afterEach(() => useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }));
+
+  it('screen:funnel DESLIGADA no país do ator remove blocked-attempts do menu admin (App.tsx já negava a rota — o link agora some junto)', () => {
+    vi.mocked(useAdminAuth).mockReturnValue({
+      adminProfile: { role: EnliteRole.ADMIN } as ReturnType<typeof useAdminAuth>['adminProfile'],
+    } as ReturnType<typeof useAdminAuth>);
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: authzComFunnel(false) });
+
+    const { result } = renderHook(() => useAdminNavItems());
+    expect(result.current.some((item) => item.href === BLOCKED_HREF)).toBe(false);
+    // O resto do menu admin-only não é afetado — só a chave screen:funnel.
+    expect(result.current.some((item) => item.href === '/admin/tags')).toBe(true);
+  });
+
+  it('screen:funnel LIGADA mantém blocked-attempts no menu admin', () => {
+    vi.mocked(useAdminAuth).mockReturnValue({
+      adminProfile: { role: EnliteRole.ADMIN } as ReturnType<typeof useAdminAuth>['adminProfile'],
+    } as ReturnType<typeof useAdminAuth>);
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: authzComFunnel(true) });
+
+    const { result } = renderHook(() => useAdminNavItems());
+    expect(result.current.some((item) => item.href === BLOCKED_HREF)).toBe(true);
   });
 });

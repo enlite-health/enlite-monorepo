@@ -37,6 +37,14 @@ export interface ResolvedAuthz {
 export interface AuthzContract extends ResolvedAuthz {
   /** country → featureKey → {enabled, config}. */
   features: Record<string, Record<string, { enabled: boolean; config: unknown }>>;
+  /**
+   * Espelha o MESMO `isEnvFlagOn('PERMISSION_ENGINE_ENABLED', env)` que o
+   * wiring já lê (D268) — nunca uma 2ª leitura de env. `groups` vem do banco
+   * independente do engine; sem este campo a tela de "sem grupo" não
+   * distingue "engine desligado" (26/28 staff sem grupo na stage é normal) de
+   * "engine ligado e a conta realmente não tem grupo".
+   */
+  enforcement: 'on' | 'off';
 }
 
 export interface EffectiveAuthzRepository {
@@ -130,12 +138,21 @@ export interface CountryFeatureRepository {
 }
 
 /**
- * Marcadores de rollout por ambiente (`iam.rollout_state`, mig 282). Só
- * leitura: quem acende é o script da migração de dados, como owner — o processo
- * não marca o próprio gate.
+ * Marcadores de rollout por ambiente (`iam.rollout_state`, mig 282).
+ *
+ * `get` é o caminho de LEITURA do processo (boot, `app_runtime`/`app_system`) —
+ * essas roles não têm INSERT/UPDATE na tabela (mig 282, REVOKE explícito): o
+ * processo nunca acende o próprio gate.
+ *
+ * `set` é o caminho de ESCRITA (F12): só quem conecta como owner (o script da
+ * migração de dados, `scripts/iam-config-import.ts`, via `pg.Pool` próprio)
+ * consegue de fato gravar — chamado pelo processo em `app_runtime`/`app_system`
+ * ele estoura 42501, que é o comportamento correto.
  */
 export interface RolloutStateRepository {
   get(key: string): Promise<string | null>;
+  /** Upsert por `key` — idempotente (2ª chamada com o mesmo valor não falha). */
+  set(key: string, value: string, note?: string | null): Promise<void>;
 }
 
 /** Uma decisão de autorização — o que vira linha em `iam.permission_audit_log`. */

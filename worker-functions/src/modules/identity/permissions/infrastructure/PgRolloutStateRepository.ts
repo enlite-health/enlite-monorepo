@@ -14,6 +14,13 @@
  *     o engine ligado, uma oscilação de conexão tirava do ar a app do
  *     prestador, os leads e os webhooks. Agora relança, e quem chama trata
  *     "não sei" pelo que é.
+ *
+ * `set` (F12) é o outro lado — ESCRITA. A classe é a MESMA usada no boot
+ * (`get`, via `app_runtime`/`app_system`) e no script de migração de dados
+ * (`get` + `set`, via `pg.Pool` como owner) porque a ACL, não o código, decide
+ * quem tem sucesso: a 282 revoga INSERT/UPDATE de `app_runtime`/`app_system` —
+ * chamar `set` no caminho do processo estoura 42501 (o comportamento certo);
+ * chamar como owner (o script) grava.
  */
 
 import type { Pool } from 'pg';
@@ -40,5 +47,20 @@ export class PgRolloutStateRepository implements RolloutStateRepository {
       }
       throw err;
     }
+  }
+
+  /**
+   * Upsert por `key`. Sem tratamento especial de erro: se a tabela não existe
+   * (ambiente sem a 282) ou a role não tem grant (42501), o chamador (o
+   * script) deve falhar alto — diferente de `get`, aqui não há "não sei"
+   * aceitável, é um passo que o operador precisa ver falhar.
+   */
+  async set(key: string, value: string, note?: string | null): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO iam.rollout_state (key, value, note)
+            VALUES ($1, $2, $3)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, note = EXCLUDED.note, updated_at = NOW()`,
+      [key, value, note ?? null],
+    );
   }
 }

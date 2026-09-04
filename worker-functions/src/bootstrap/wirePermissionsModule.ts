@@ -73,10 +73,16 @@ export interface CreateBoundaryDeps {
 
 /** Passo 1 — antes das rotas. */
 export function createPermissionsBoundary(deps: CreateBoundaryDeps): PermissionsBoundary {
+  // Fonte única (D268): a MESMA leitura que `bootTasks` (passo 3) e o
+  // `PermissionMiddleware` usam para decidir se o engine está ligado. Lida
+  // AQUI, uma vez, e INJETADA no módulo — `GetMyAuthzUseCase` (contrato
+  // `/v1/me/authz`) não lê `process.env` por conta própria.
+  const engineEnabled = isEnvFlagOn('PERMISSION_ENGINE_ENABLED');
   const permissions = createPermissionsModule({
     pool: deps.pool,
     systemPool: deps.systemPool,
     staffRoles: STAFF_ROLES,
+    engineEnabled,
   });
 
   const registry = new UndeclaredRouteRegistry();

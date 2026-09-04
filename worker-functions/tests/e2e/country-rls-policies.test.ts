@@ -193,7 +193,8 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
   });
 
   it('2b. usuário INATIVO perde o grant na hora (offboarding fail-closed)', async () => {
-    await pool.query(`UPDATE users SET is_active = false WHERE firebase_uid = $1`, [STAFF_UID]);
+    // `status` é a fonte (206); o trigger deriva is_active. A 274 olhava só is_active; a 411 olha status (276).
+    await pool.query(`UPDATE users SET status = 'DEACTIVATED' WHERE firebase_uid = $1`, [STAFF_UID]);
     try {
       const rows = await asRole('app_runtime', { userCountry: 'AR', userUid: STAFF_UID }, async (c) => {
         const res = await c.query(listTestPatients, [[IDS.patientAR, IDS.patientBR]]);
@@ -202,7 +203,7 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
       expect(rows).toHaveLength(1);
       expect(rows[0].country).toBe('AR');
     } finally {
-      await pool.query(`UPDATE users SET is_active = true WHERE firebase_uid = $1`, [STAFF_UID]);
+      await pool.query(`UPDATE users SET status = 'ACTIVE' WHERE firebase_uid = $1`, [STAFF_UID]);
     }
   });
 
@@ -217,12 +218,11 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
     expect(rows[0].country).toBe('AR');
   });
 
-  it('4. contexto ausente = ZERO linhas (fail-closed)', async () => {
-    const rows = await asRole('app_runtime', {}, async (c) => {
-      const res = await c.query(listTestPatients, [[IDS.patientAR, IDS.patientBR]]);
-      return res.rows;
-    });
-    expect(rows).toHaveLength(0);
+  it('4. contexto ausente = ERRO NOMEADO, nunca zero linhas (411: fail-closed em voz alta)', async () => {
+    // Até a 411, sessão sem identidade recebia conjunto VAZIO — indistinguível de "não há pacientes".
+    const q = asRole('app_runtime', {}, (c) => c.query(listTestPatients, [[IDS.patientAR, IDS.patientBR]]));
+    await expect(q).rejects.toMatchObject({ code: '42501' });
+    await expect(q).rejects.toThrow(/rls_session_without_identity/);
   });
 
   it('5. role de SISTEMA com contexto explícito vê tudo', async () => {
@@ -241,12 +241,9 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
     expect(rows).toHaveLength(0);
   });
 
-  it('5c. app_system SEM contexto explícito não vê nada (sistema nunca é default)', async () => {
-    const rows = await asRole('app_system', {}, async (c) => {
-      const res = await c.query(listTestPatients, [[IDS.patientAR, IDS.patientBR]]);
-      return res.rows;
-    });
-    expect(rows).toHaveLength(0);
+  it('5c. app_system SEM contexto explícito é recusada em voz alta (sistema nunca é default; 411)', async () => {
+    const q = asRole('app_system', {}, (c) => c.query(listTestPatients, [[IDS.patientAR, IDS.patientBR]]));
+    await expect(q).rejects.toThrow(/rls_session_without_identity/);
   });
 
   it('6. satélite SEGUE o pai: staff AR só vê o endereço do paciente AR', async () => {

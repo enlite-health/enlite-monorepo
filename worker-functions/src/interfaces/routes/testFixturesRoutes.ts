@@ -20,7 +20,8 @@ import type { PermissionMiddleware } from '../../modules/identity/interfaces/mid
  * seed da 206. A rota APAGA dado marcado `is_test` — `execute` é ação sensível
  * (D-P4), então o ALLOW vai para a trilha junto com a negativa.
  */
-export const ADMIN_TEST_FIXTURES_FAMILY = 'admin.test_fixtures';
+import { ADMIN_TEST_FIXTURES_FAMILY } from '@modules/identity/permissions';
+export { ADMIN_TEST_FIXTURES_FAMILY };
 
 export function createTestFixturesRoutes(
   controller: AdminTestFixturesController,

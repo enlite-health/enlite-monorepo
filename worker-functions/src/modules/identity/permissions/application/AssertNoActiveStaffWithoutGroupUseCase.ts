@@ -21,12 +21,16 @@ import type { EffectiveAuthzRepository, RolloutStateRepository } from './ports';
 
 /** Marcador que a migração de dados (grupo 5) acende neste ambiente. */
 export const ROLLOUT_MARKER_KEY = 'permission_groups_migrated';
+/** O único valor que conta como "migrado". Linha com outro valor = não migrado (e o log diz o valor). */
+export const ROLLOUT_MARKER_DONE = 'done';
 
 export interface StaffWithoutGroupReport {
   tenantId: string;
   count: number;
-  /** A migração de dados já rodou neste ambiente? */
+  /** A migração de dados já rodou neste ambiente? (`marker === 'done'`, não "existe linha") */
   migrated: boolean;
+  /** O valor cru do marcador — para o log dizer o que encontrou quando não é 'done'. */
+  marker: string | null;
 }
 
 export class AssertNoActiveStaffWithoutGroupUseCase {
@@ -40,7 +44,7 @@ export class AssertNoActiveStaffWithoutGroupUseCase {
       this.authz.countActiveStaffWithoutGroup(tenantId),
       this.rollout.get(ROLLOUT_MARKER_KEY),
     ]);
-    return { tenantId, count, migrated: marker !== null };
+    return { tenantId, count, migrated: marker === ROLLOUT_MARKER_DONE, marker };
   }
 
   /**

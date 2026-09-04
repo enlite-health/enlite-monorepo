@@ -23,7 +23,8 @@ import { AuthMiddleware, type PermissionMiddleware } from '@modules/identity';
  * silencioso que não pertence a um PR de declaração. Por isso
  * `ADMIN_RECRUITMENT_FAMILY` é exportado: a família tem que virar inteira.
  */
-export const ADMIN_RECRUITMENT_FAMILY = 'admin.recruitment';
+import { ADMIN_RECRUITMENT_FAMILY } from '@modules/identity/permissions';
+export { ADMIN_RECRUITMENT_FAMILY };
 
 export function createRecruitmentRoutes(
   recruitmentController: RecruitmentController,

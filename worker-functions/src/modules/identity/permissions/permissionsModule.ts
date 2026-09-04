@@ -41,6 +41,14 @@ export interface PermissionsModuleDeps {
   /** Papéis que contam como staff do painel (injetado: o módulo é extraível). */
   staffRoles: readonly string[];
   ttlMs?: number;
+  /**
+   * `enforcement` do contrato `/v1/me/authz` (D268) — o MESMO
+   * `isEnvFlagOn('PERMISSION_ENGINE_ENABLED')` que o wiring já lê para o
+   * `PermissionMiddleware`, injetado aqui. Default `false`: quem constrói o
+   * módulo sem passar a flag (teste antigo, script) recebe `enforcement: 'off'`,
+   * nunca uma leitura de env escondida dentro do módulo.
+   */
+  engineEnabled?: boolean;
 }
 
 export interface PermissionsModule {
@@ -104,7 +112,7 @@ export function createPermissionsModule(deps: PermissionsModuleDeps): Permission
       sync: new SyncCountryFeaturesUseCase(featuresRepo),
     },
     audit: new QueryPermissionAuditUseCase(auditRepo),
-    authz: new GetMyAuthzUseCase(client),
+    authz: new GetMyAuthzUseCase(client, deps.engineEnabled ?? false),
     assertStaffHasGroup: new AssertNoActiveStaffWithoutGroupUseCase(authzRepo, rolloutRepo),
     repositories: {
       groups: groupsRepo,
