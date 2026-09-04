@@ -37,6 +37,14 @@
  * consertar isso falhava na primeira execução — o ramo foi removido, não remendado.
  * O log final imprime SEMPRE (dry-run incluído) quantos gestores vivos a stage tem —
  * zero é falha (exit 1), nunca sucesso.
+ * O QUE ESTE SCRIPT NÃO FAZ E O QUE ELE SOBRESCREVE (medido 04/09/2026, stage):
+ * — NÃO atribui grupo a staff espelhado: os 24 users criados em 28/08 nasceram sem grupo
+ *   (`iam.user_groups` = 2, órfãs = 0, `removed_at` = 0). Filiar é a migração de dados (F12),
+ *   passo separado — não é perda de configuração, é trabalho ainda não feito.
+ * — NÃO apaga nada (sem DELETE/TRUNCATE; upsert por e-mail).
+ * — SOBRESCREVE a cada rodada, a partir de prod: `role`, `is_active = true`, `status = 'ACTIVE'`.
+ *   Se o time desativar alguém em stage para provar uma tela, o próximo espelho REATIVA.
+ *   Rodar o espelho depois que o time começou a configurar = perder essas três colunas.
  */
 import { Pool } from 'pg';
 import { randomBytes } from 'crypto';
