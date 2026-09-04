@@ -27,6 +27,13 @@ import { ClickUpFieldResolver } from '../../../infrastructure/clickup/ClickUpFie
 import { ClickUpPatientMapper, PATIENT_DROPDOWN_FIELDS } from '../../../infrastructure/clickup/ClickUpPatientMapper';
 import { PatientSourceLabelRepository } from '@modules/case';
 import { PatientInsuranceVerifiedRepository, PatientDeviceTypeRepository } from '@modules/case';
+import { ClickUpDiagnosisMapper } from '@modules/diagnosis/infrastructure/clickup/ClickUpDiagnosisMapper';
+import { ClickUpDiagnosisLabelRepository } from '@modules/diagnosis/infrastructure/clickup/ClickUpDiagnosisLabelRepository';
+import { ClickUpDiagnosisRejectionRepository } from '@modules/diagnosis/infrastructure/clickup/ClickUpDiagnosisRejectionRepository';
+import { PatientDiagnosisService } from '@modules/diagnosis/application/PatientDiagnosisService';
+import { PostgresPatientDiagnosisRepository } from '@modules/diagnosis/infrastructure/PostgresPatientDiagnosisRepository';
+import { DiagnosisSource } from '@modules/diagnosis/domain/DiagnosisSource';
+import { createTerminologyPort } from '@modules/terminology/infrastructure/TerminologyPortFactory';
 import {
   ClickUpCatalogRefresher,
   unsettledDriftThatMatters,
@@ -72,6 +79,9 @@ export class ClickUpPatientWebhookController {
     /** Task 3.3 — preguiçoso pelo mesmo motivo do de cima: o construtor abre pool. */
     private insuranceRepository?: PatientInsuranceVerifiedRepository,
     private deviceTypeRepository?: PatientDeviceTypeRepository,
+    /** spec 016 F4 — preguiçoso pelo mesmo motivo: `PostgresPatientDiagnosisRepository` e
+     *  `IcdCatalogTerminology` abrem pool no construtor. */
+    private diagnosisMapper?: ClickUpDiagnosisMapper,
   ) {}
 
   /** O repositório do cru, construído na primeira vez que alguém realmente vai gravar. */
@@ -89,6 +99,23 @@ export class ClickUpPatientWebhookController {
   private getDeviceTypeRepository(): PatientDeviceTypeRepository {
     this.deviceTypeRepository ??= new PatientDeviceTypeRepository();
     return this.deviceTypeRepository;
+  }
+
+  /**
+   * spec 016 F4 — o mapper "Tipo de Patología" → CID-11. Repositório JÁ ESCOPADO a
+   * `DiagnosisSource.CLICKUP` por construtor (Contrato de arquitetura da spec 016): este
+   * webhook é fisicamente incapaz de tocar uma linha `PANEL`.
+   */
+  private getDiagnosisMapper(): ClickUpDiagnosisMapper {
+    this.diagnosisMapper ??= new ClickUpDiagnosisMapper(
+      new ClickUpDiagnosisLabelRepository(),
+      new ClickUpDiagnosisRejectionRepository(),
+      new PatientDiagnosisService(
+        createTerminologyPort(process.env),
+        new PostgresPatientDiagnosisRepository(DiagnosisSource.CLICKUP),
+      ),
+    );
+    return this.diagnosisMapper;
   }
 
   /**
@@ -322,6 +349,7 @@ export class ClickUpPatientWebhookController {
       sourceLabelRepository: this.getSourceLabelRepository(),
       insuranceRepository:   this.getInsuranceRepository(),
       deviceTypeRepository:  this.getDeviceTypeRepository(),
+      diagnosisMapper:       this.getDiagnosisMapper(),
     });
     const syncResult = await useCase.execute(task, { onMissingContact: 'flag' }, correlationId);
 

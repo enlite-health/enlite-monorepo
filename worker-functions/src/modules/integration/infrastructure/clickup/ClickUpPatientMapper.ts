@@ -43,6 +43,14 @@ export interface ClickUpSourceLabelRead {
 }
 
 /**
+ * spec 016 F4 (US-3) — "Tipo de Patología", o espelho do ClickUp para o diagnóstico CID-11.
+ * Consumido por `resolvePatologiaLabel()` e por `ClickUpDiagnosisMapper` (para o field_name da
+ * recusa em `patient_source_label_rejections`). Declarado ANTES de `PATIENT_CATALOG_FIELDS`
+ * (que a referencia) — TDZ: um `const` só é utilizável depois de inicializado.
+ */
+export const PATOLOGIA_FIELD_NAME = 'Tipo de Patología';
+
+/**
  * Every drop_down field this mapper asks ClickUp for, by the name it asks for.
  *
  * Task 1.11: before mapping anything, the catalog is asked whether each of these still
@@ -90,6 +98,12 @@ export const PATIENT_CATALOG_FIELDS: readonly CatalogFieldExpectation[] = [
   // escapou da lista quando ela foi escrita à mão na 1.11. A trava de deriva desta task passou
   // a ser dirigida pelo CATÁLOGO (que tipo o campo tem), não pela função que o lê.
   'Equipo Tratante Multidisciplinario',
+  // spec 016 F4 (US-3): "Tipo de Patología" — o espelho do ClickUp para o diagnóstico CID-11.
+  // Entra na régua fail-closed pelo MESMO motivo dos demais: renomear/apagar este campo no
+  // ClickUp não pode fazer `resolvePatologiaLabel` devolver `null` em silêncio disfarçado de
+  // "ninguém preencheu" — a trava de deriva da 1.11 (`clickup-1.11-campo-renomeado.test.ts`)
+  // exige que TODA chamada de `resolveDropdown('<literal>')` no fonte esteja aqui.
+  PATOLOGIA_FIELD_NAME,
 ];
 
 /**
@@ -134,6 +148,12 @@ export const PATIENT_FIELDS_SEM_CRU_GENERICO: readonly string[] = [
   // traduziu (`source = 'clickup-quarentena'`), escrita pelo `PatientDeviceTypeRepository`.
   // Isso não é uma segunda cópia: é o que não coube na primeira.
   'Tipo de Dispositivo',
+  // spec 016 F4, MESMA razão: `clickup_diagnosis_labels` (migration 326) + `patient_diagnoses`
+  // (migration 325) são a fonte do diagnóstico estruturado, com o código do CID-11 resolvido
+  // via `TerminologyPort` — não o rótulo em espanhol duplicado aqui. O que não mapear vai para
+  // `patient_source_label_rejections` (reason='unmapped'), escrito por
+  // `ClickUpDiagnosisRejectionRepository` — não é uma segunda cópia, é a mesma quarentena.
+  PATOLOGIA_FIELD_NAME,
 ];
 
 export const PATIENT_DROPDOWN_FIELDS: readonly string[] =
@@ -247,6 +267,30 @@ export class ClickUpPatientMapper {
           : sourceLabelsUnreadable(leitura.reason),
       };
     });
+  }
+
+  /**
+   * spec 016 F4 (US-3) — o rótulo cru de "Tipo de Patología", para `ClickUpDiagnosisMapper`
+   * casar contra `clickup_diagnosis_labels` e sincronizar o diagnóstico CID-11.
+   *
+   * Roda o MESMO preflight de `map()`/`readSourceLabels()` (task 1.11): campo renomeado ou
+   * apagado no ClickUp lança `ClickUpUnreadableFieldError` em vez de devolver `null` travestido
+   * de "ninguém preencheu" — é a régua de deriva que exige todo `resolveDropdown('<literal>')`
+   * do fonte estar em `PATIENT_CATALOG_FIELDS` (`clickup-1.11-campo-renomeado.test.ts`).
+   *
+   * ⚠️ `SyncPatientFromClickUpTaskUseCase.persistDiagnosis` chama isto DEPOIS de `map()` já ter
+   * passado pelo MESMO preflight — em uso normal esta chamada nunca lança (o catálogo não muda
+   * no meio de uma requisição). Repetir o check aqui, redundante, é o padrão desta classe
+   * (`readSourceLabels` faz o mesmo) — barato (sem rede, sem banco) e protege contra a chamada
+   * direta desta função fora do fluxo do use case.
+   */
+  resolvePatologiaLabel(task: ClickUpTask): string | null {
+    assertReadableDropdownFields(this.resolver, PATIENT_CATALOG_FIELDS, 'ClickUpPatientMapper');
+    const cf = this.buildCustomFieldMap(task.custom_fields);
+    return this.resolver.resolveDropdown(
+      'Tipo de Patología',
+      asIndexable(PATOLOGIA_FIELD_NAME, cf[PATOLOGIA_FIELD_NAME]),
+    );
   }
 
   /**

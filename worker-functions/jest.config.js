@@ -22,6 +22,11 @@ module.exports = {
     // F1-CORREÇÃO D10: `cli-guards.ts` entrou na F1-correção (parsePromoteFlag,
     // assertReleaseMatchesApiBase) — mesma régua, mesmo motivo.
     'scripts/icd11-ingest/{rewrite-host,classify-entity,diff-engine,cli-guards}.ts',
+    // Backfill do diagnóstico (spec 016 F4, Parte 2): a lógica PURA (casamento em memória e
+    // parsing de flags) entra pelo MESMO motivo do ingestor CID-11 acima. O orquestrador
+    // (`backfill-patient-diagnosis-catalog.ts`, HTTP/DB via TerminologyPort + duas conexões)
+    // fica fora — provado pelo dry-run real contra a réplica (evidências da F4), não por mock.
+    'scripts/backfill-diagnosis-catalog/{matching,cli-guards}.ts',
   ],
   coverageDirectory: 'coverage',
 
@@ -330,6 +335,25 @@ module.exports = {
     // achado caro da F0) podia cair a 0% sem o CI piscar. `cli-guards.ts` (D10) entra pela mesma
     // régua: nasceu nesta correção, mesmo motivo dos outros três.
     'scripts/icd11-ingest/{rewrite-host,classify-entity,diff-engine,cli-guards}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Spec 016 F4, Parte 2 (backfill do diagnóstico): a lógica PURA que decide "alta confiança"
+    // (nunca inventa, D260) e o parsing de `--dry-run`/`--write` (dry-run é DEFAULT). Mesma
+    // régua do D9 acima — sem entrada aqui, uma regressão no casamento cairia sem o CI piscar.
+    'scripts/backfill-diagnosis-catalog/{matching,cli-guards}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Spec 016 F4: o espelho do ClickUp ("Tipo de Patología" → CID-11). `ClickUpDiagnosisMapper`
+    // é o Adapter que NUNCA decide por `if (source === 'CLICKUP')` (o escopo vem do repositório
+    // injetado); `ClickUpDiagnosisLabelRepository`/`ClickUpDiagnosisRejectionRepository` são as
+    // duas metades do ConceptMap (migration 326) e da recusa durável (migration 304, ampliada).
+    'src/modules/diagnosis/infrastructure/clickup/{ClickUpDiagnosisMapper,ClickUpDiagnosisLabelRepository,ClickUpDiagnosisRejectionRepository}.ts': {
       statements: 100,
       branches: 100,
       functions: 100,

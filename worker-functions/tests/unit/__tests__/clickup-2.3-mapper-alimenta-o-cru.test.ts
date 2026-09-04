@@ -40,6 +40,11 @@ const OPCOES: Record<string, string[]> = {
   // da 1.11 vê `declared_absent`, falha fechado e a suíte inteira cai com `kind=ERROR` —
   // que foi exatamente o que aconteceu ao declarar o campo. A trava funcionando.
   'Tipo de Dispositivo':                    ['Domiciliario', 'Escolar', 'Institucional', 'Internación', 'Traslado'],
+  // spec 016 F4 — o 11º campo declarado (US-3). Mesma razão das duas linhas acima: sem ele o
+  // preflight da 1.11 vê `declared_absent`, falha fechado, e a suíte inteira cai com
+  // `kind=ERROR`. Sai do cru genérico (`PATIENT_FIELDS_SEM_CRU_GENERICO`) — ver o teste
+  // "A GENERALIDADE" abaixo, que já confere isso pela LISTA, não por nome hardcoded.
+  'Tipo de Patología':                      ['Trastorno del Espectro Autista', 'Parálisis Cerebral'],
 };
 
 function resolverFalso(over: Partial<{ tipos: Record<string, string | null> }> = {}): ClickUpFieldResolver {

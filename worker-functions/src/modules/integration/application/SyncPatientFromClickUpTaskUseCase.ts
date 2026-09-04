@@ -17,6 +17,7 @@ import type { PatientService } from '../../case/application/PatientService';
 import { PatientChatIdsService } from '../../case/application/PatientChatIdsService';
 import type { PatientSourceLabelRepository } from '@modules/case';
 import type { PatientInsuranceVerifiedRepository, PatientDeviceTypeRepository } from '@modules/case';
+import type { ClickUpDiagnosisMapper } from '@modules/diagnosis/infrastructure/clickup/ClickUpDiagnosisMapper';
 
 // ── Result types ──────────────────────────────────────────────────────────────
 
@@ -60,6 +61,15 @@ export interface SyncPatientDeps {
    * cobertura: dependência opcional vira "não persistiu e ninguém soube".
    */
   deviceTypeRepository: PatientDeviceTypeRepository;
+  /**
+   * spec 016 F4 — sincroniza "Tipo de Patología" com o diagnóstico CID-11 estruturado
+   * (`patient_diagnoses`, source='CLICKUP'). OPCIONAL, diferente de `insuranceRepository`/
+   * `deviceTypeRepository`: esta é uma capacidade NOVA desta fase, e os chamadores que ainda
+   * não a passam (scripts de import em lote, `ReconcileClickUpPatientsController`) apenas não
+   * sincronizam diagnóstico por enquanto — decisão de escopo do F4, registrada no relatório,
+   * não um esquecimento. O webhook (`ClickUpPatientWebhookController.create()`) sempre passa.
+   */
+  diagnosisMapper?: ClickUpDiagnosisMapper;
 }
 
 export interface SyncPatientOptions {
@@ -198,6 +208,7 @@ export class SyncPatientFromClickUpTaskUseCase {
       await this.persistSourceLabels(task, result.id, cid);
       await this.persistInsuranceVerified(input, result.id, cid);
       await this.persistDeviceTypes(input, result.id, cid);
+      await this.persistDiagnosis(task, result.id, cid);
 
 
       // PII: não logar patientName aqui — vai pro Cloud Logging.
@@ -374,6 +385,46 @@ export class SyncPatientFromClickUpTaskUseCase {
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       functions.logger.error('clickup_patient_sync.device_type_error', {
+        patientId, error: error.message, stage: 'write', correlationId: cid,
+      });
+    }
+  }
+
+  /**
+   * spec 016 F4 — sincroniza "Tipo de Patología" com `patient_diagnoses` (source='CLICKUP'),
+   * via `ClickUpDiagnosisMapper` (que por sua vez usa o `PatientDiagnosisService`, Facade,
+   * com um repositório JÁ ESCOPADO à origem ClickUp — nunca um `if` de origem aqui nem lá).
+   *
+   * Best-effort, MESMO PADRÃO de `persistInsuranceVerified`/`persistDeviceTypes`: o paciente
+   * já foi gravado quando este passo roda, então uma falha aqui não pode derrubar o `kind` do
+   * sync — mas também não pode passar muda (log de erro com CAUSA, nunca o rótulo clínico).
+   *
+   * `diagnosisMapper` é OPCIONAL (ver `SyncPatientDeps`) — ausente, este passo é um no-op.
+   */
+  private async persistDiagnosis(task: ClickUpTask, patientId: string, cid: string): Promise<void> {
+    if (!this.deps.diagnosisMapper) return;
+
+    let label: string | null;
+    try {
+      label = this.deps.mapper.resolvePatologiaLabel(task);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      functions.logger.error('clickup_patient_sync.diagnosis_error', {
+        patientId, error: error.message, stage: 'read', correlationId: cid,
+      });
+      return;
+    }
+
+    try {
+      const outcome = await this.deps.diagnosisMapper.syncFromLabel(patientId, label);
+      functions.logger.info('clickup_patient_sync.diagnosis', {
+        patientId, kind: outcome.kind,
+        outcome: outcome.kind === 'synced' ? outcome.outcome : undefined,
+        correlationId: cid,
+      });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      functions.logger.error('clickup_patient_sync.diagnosis_error', {
         patientId, error: error.message, stage: 'write', correlationId: cid,
       });
     }
