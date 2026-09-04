@@ -86,6 +86,7 @@ export async function montarAppDeFamilia(opts: MontarAppOpts): Promise<AppDeFami
   const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
   const identity = await import('@modules/identity');
   const { createPermissionsModule } = await import('@modules/identity/permissions');
+  const { isEnvFlagOn } = await import('@shared/utils/envFlag');
 
   const db = DatabaseConnection.getInstance();
   const permissions = createPermissionsModule({
@@ -96,6 +97,10 @@ export async function montarAppDeFamilia(opts: MontarAppOpts): Promise<AppDeFami
     // no `STAFF_ROLES` tem que valer aqui sem ninguém lembrar de editar o teste.
     staffRoles: [...identity.STAFF_ROLES],
     ttlMs: opts.ttlMs ?? 0,
+    // D268 — a MESMA leitura que `createPermissionsBoundary` faz em produção,
+    // pra `enforcement` do contrato `/v1/me/authz` bater com a suíte que liga
+    // `PERMISSION_ENGINE_ENABLED` antes de montar o app.
+    engineEnabled: isEnvFlagOn('PERMISSION_ENGINE_ENABLED'),
   });
 
   const auth =

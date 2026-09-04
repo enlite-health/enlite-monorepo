@@ -14,7 +14,11 @@ import {
   wirePermissionsModule,
   type PermissionsBoundary,
 } from '../wirePermissionsModule';
-import { PERMISSION_CHANGED_EVENT, COUNTRY_FEATURE_CHANGED_EVENT } from '@modules/identity/permissions';
+import {
+  PERMISSION_CHANGED_EVENT,
+  COUNTRY_FEATURE_CHANGED_EVENT,
+  createPermissionsModule,
+} from '@modules/identity/permissions';
 
 jest.mock('@shared/logging', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -161,6 +165,60 @@ describe('wirePermissionsModule', () => {
     // caso que o guard nega e o teste de rotas denuncia.
     expect(boundary.registry.statusOf('GET', '/api/admin/coisas')).toBe('undeclared');
     expect(boundary.registry.unexpectedlyUndeclared().map((r) => r.path)).toContain('/api/admin/coisas');
+  });
+
+  describe('D268 — `enforcement` do contrato /v1/me/authz, derivado de PERMISSION_ENGINE_ENABLED', () => {
+    /**
+     * A MESMA leitura que o gate de boot usa (`isEnvFlagOn`), só que aqui a
+     * prova é o efeito ponta a ponta: o valor injetado em
+     * `createPermissionsModule` chega ao `enforcement` que `GetMyAuthzUseCase`
+     * devolve — não a implementação de `isEnvFlagOn` (já coberta em
+     * `envFlag.test.ts`), que aqui não se repete.
+     */
+    async function enforcementCom(boundary: PermissionsBoundary): Promise<string> {
+      const resolveStub = jest
+        .spyOn(boundary.permissions.repositories.authz, 'snapshot')
+        .mockResolvedValue({ uid: 'u', tenantId: 't', status: 'ACTIVE', permissions: [], countries: [], groups: [] });
+      const contrato = await boundary.permissions.authz.execute({ uid: 'u', tenantId: 't' });
+      resolveStub.mockRestore();
+      return contrato.enforcement;
+    }
+
+    it('sem a env (unset) → "off"', async () => {
+      delete process.env.PERMISSION_ENGINE_ENABLED;
+      const { boundary } = setup();
+      expect(await enforcementCom(boundary)).toBe('off');
+    });
+
+    it('PERMISSION_ENGINE_ENABLED="true" → "on"', async () => {
+      process.env.PERMISSION_ENGINE_ENABLED = 'true';
+      const { boundary } = setup();
+      expect(await enforcementCom(boundary)).toBe('on');
+    });
+
+    it('PERMISSION_ENGINE_ENABLED="false" → "off"', async () => {
+      process.env.PERMISSION_ENGINE_ENABLED = 'false';
+      const { boundary } = setup();
+      expect(await enforcementCom(boundary)).toBe('off');
+    });
+
+    it('lixo (nem "true" nem "false") → "off" — só a string exata "true" liga', async () => {
+      process.env.PERMISSION_ENGINE_ENABLED = 'yes';
+      const { boundary } = setup();
+      expect(await enforcementCom(boundary)).toBe('off');
+    });
+
+    // `createPermissionsModule` é chamado por outros wirings (o harness de e2e
+    // de família, testes isolados) que podem omitir `engineEnabled` de todo —
+    // o default do próprio `permissionsModule.ts` também tem de ser 'off'.
+    it('createPermissionsModule sem `engineEnabled` (nem passado) → contrato "off"', async () => {
+      const permissions = createPermissionsModule({ pool: poolStub, systemPool: poolStub, staffRoles: ['admin'] });
+      jest
+        .spyOn(permissions.repositories.authz, 'snapshot')
+        .mockResolvedValue({ uid: 'u', tenantId: 't', status: 'ACTIVE', permissions: [], countries: [], groups: [] });
+      const contrato = await permissions.authz.execute({ uid: 'u', tenantId: 't' });
+      expect(contrato.enforcement).toBe('off');
+    });
   });
 
   describe('gate de boot (task 3.7)', () => {

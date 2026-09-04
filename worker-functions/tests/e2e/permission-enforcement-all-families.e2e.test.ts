@@ -576,6 +576,10 @@ describe('C1 — engine ligado com as 12 famílias de uma vez (HTTP real, banco 
 
       const res = await chamar('GET', '/v1/me/authz', SEM_GRUPO_UID, app);
       expect(res.status).not.toBe(403);
+      // D268 — este app sobe pelo MESMO `createPermissionsBoundary` de
+      // produção, com `PERMISSION_ENGINE_ENABLED=true` (linha 480): o
+      // contrato tem de dizer "on", não só o status HTTP.
+      expect(res.body.enforcement).toBe('on');
     });
   });
 

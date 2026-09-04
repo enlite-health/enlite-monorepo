@@ -162,6 +162,37 @@ describe('GetMyAuthzUseCase', () => {
     expect(result.permissions).toEqual(['vacancy:read']);
     expect(result.features.AR['screen:talentum'].enabled).toBe(true);
   });
+
+  /**
+   * D268 — `enforcement` espelha o `engineEnabled` INJETADO no construtor,
+   * nunca uma leitura de env própria do módulo (`PermissionClient` acima nem
+   * conhece a existência da flag).
+   */
+  it('sem engineEnabled injetado, o contrato diz "off" — fail-closed no default', async () => {
+    const client = {
+      resolve: jest.fn().mockResolvedValue({ uid: 'ana', tenantId: 't', status: 'ACTIVE', permissions: [], countries: [], groups: [] }),
+      features: jest.fn().mockResolvedValue({}),
+      can: jest.fn(),
+      isFeatureAvailable: jest.fn(),
+      featureConfig: jest.fn(),
+      invalidate: jest.fn(),
+    };
+    const result = await new GetMyAuthzUseCase(client).execute({ uid: 'ana', tenantId: 't' });
+    expect(result.enforcement).toBe('off');
+  });
+
+  it('engineEnabled=false → "off"; engineEnabled=true → "on"', async () => {
+    const client = {
+      resolve: jest.fn().mockResolvedValue({ uid: 'ana', tenantId: 't', status: 'ACTIVE', permissions: [], countries: [], groups: [] }),
+      features: jest.fn().mockResolvedValue({}),
+      can: jest.fn(),
+      isFeatureAvailable: jest.fn(),
+      featureConfig: jest.fn(),
+      invalidate: jest.fn(),
+    };
+    expect((await new GetMyAuthzUseCase(client, false).execute({ uid: 'ana', tenantId: 't' })).enforcement).toBe('off');
+    expect((await new GetMyAuthzUseCase(client, true).execute({ uid: 'ana', tenantId: 't' })).enforcement).toBe('on');
+  });
 });
 
 describe('QueryPermissionAuditUseCase', () => {

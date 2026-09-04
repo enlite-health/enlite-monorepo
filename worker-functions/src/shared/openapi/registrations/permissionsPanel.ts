@@ -70,6 +70,12 @@ const AuthzContractSchema = registry.register(
       features: z.record(z.record(z.object({ enabled: z.boolean(), config: z.unknown() }))).openapi({
         description: 'país → featureKey → disponibilidade. `enabled:false` = a tela nem aparece.',
       }),
+      enforcement: z.enum(['on', 'off']).openapi({
+        description:
+          'Reflete `PERMISSION_ENGINE_ENABLED` no ambiente (D268). `off` = `groups` vem do banco mas ' +
+          'NENHUMA rota está de fato gateada — "sem grupo" ainda não significa "sem acesso".',
+        example: 'off',
+      }),
     })
     .openapi({
       description:
