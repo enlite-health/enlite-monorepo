@@ -15,6 +15,13 @@ module.exports = {
     // fora dos `roots`: cobertura ali era 0% "por natureza", e piso nenhum
     // mordia. Entram os dois arquivos que decidem o que vai para qual coluna.
     'scripts/sync-message-templates/{diff-engine,db}.ts',
+    // Ingestor CID-11 (spec 016 F1): a lógica PURA do crawler (reescrita de host — o achado
+    // caro da F0, 401 da OMS real — classificação de kind e o diff-engine) entra no piso pelo
+    // mesmo motivo do sync-message-templates acima. O orquestrador HTTP+DB
+    // (`ingest-icd11-catalog.ts`) fica fora, como todo outro script CLI da pasta.
+    // F1-CORREÇÃO D10: `cli-guards.ts` entrou na F1-correção (parsePromoteFlag,
+    // assertReleaseMatchesApiBase) — mesma régua, mesmo motivo.
+    'scripts/icd11-ingest/{rewrite-host,classify-entity,diff-engine,cli-guards}.ts',
   ],
   coverageDirectory: 'coverage',
 
@@ -289,6 +296,40 @@ module.exports = {
       lines: 100,
     },
     'src/shared/utils/dateFormatters.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Spec 016 F1 (CID-11): a PORTA e seus dois consumidores de teste. `TerminologyPort.ts` é só
+    // tipos (0 statements — entra pelo mesmo motivo dos outros arquivos de contrato: qualquer
+    // método novo na interface nasce sob o piso). `IcdCode` é o Value Object que responde ao
+    // defeito medido na F0 (código truncado na tela, 6A02.Z → 02.Z); `UnavailableTerminology` é
+    // o Null Object que cumpre a US-4 (falha VISÍVEL). Regressão aqui é sempre calada — código
+    // clínico errado na tela ou busca "vazia" indistinguível de "catálogo fora do ar".
+    'src/modules/terminology/domain/{TerminologyPort,IcdCode,UnavailableTerminology}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // O adaptador real (Postgres) e o fake que prova a LSP da porta (mesma bateria de teste nos
+    // dois — tests/e2e/terminology-port-contract.e2e.test.ts) + o Strategy que escolhe entre
+    // eles por configuração.
+    'src/modules/terminology/infrastructure/{IcdCatalogTerminology,InMemoryTerminology,TerminologyPortFactory}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // F1-CORREÇÃO D9: o ingestor CID-11 já estava em `collectCoverageFrom` (linha ~25) desde a
+    // F1 original, mas SEM entrada aqui — o que faz o arquivo só APARECER no relatório, nunca
+    // reprovar o build. Medido: comentar o teste de `classKind='extension'` derrubava
+    // `classify-entity.ts` para 50% de branch e `npm test -- --coverage` continuava saindo com
+    // RC=0 (evidencias/f1fix-D9-red.txt) — a lógica pura do crawler (incluindo `toLocalUri`, o
+    // achado caro da F0) podia cair a 0% sem o CI piscar. `cli-guards.ts` (D10) entra pela mesma
+    // régua: nasceu nesta correção, mesmo motivo dos outros três.
+    'scripts/icd11-ingest/{rewrite-host,classify-entity,diff-engine,cli-guards}.ts': {
       statements: 100,
       branches: 100,
       functions: 100,
