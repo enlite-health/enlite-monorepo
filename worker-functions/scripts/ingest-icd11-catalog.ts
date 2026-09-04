@@ -36,10 +36,11 @@
  */
 import axios from 'axios';
 import { Pool, type PoolClient } from 'pg';
+import { assertLocalDatabaseTarget } from '../src/shared/database/assertLocalDatabaseTarget';
 import { toLocalUri } from './icd11-ingest/rewrite-host';
 import { classifyEntity } from './icd11-ingest/classify-entity';
 import { diffCatalog, type DiffableEntity } from './icd11-ingest/diff-engine';
-import { parsePromoteFlag, assertReleaseMatchesApiBase } from './icd11-ingest/cli-guards';
+import { parsePromoteFlag, assertReleaseMatchesApiBase, parseConcurrencyFlag } from './icd11-ingest/cli-guards';
 import type { IcdEntityKind } from '../src/modules/terminology/domain/TerminologyPort';
 
 // ── CLI parsing (molde: backfill-name-trgm-bidx.ts) ─────────────────────────────────────────
@@ -92,12 +93,17 @@ export function buildRuntimeConfig(args: readonly string[], env: NodeJS.ProcessE
     promotedBy: flagValue(args, '--by') ?? env.USER ?? 'desconhecido',
     apiBase,
     release,
-    concurrency: Number(flagValue(args, '--concurrency') ?? 16),
+    concurrency: parseConcurrencyFlag(args),
   };
 }
 
 export function createPool(env: NodeJS.ProcessEnv = process.env): Pool {
   const DATABASE_URL = env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
+  // Este script ESCREVE 35.692 linhas. O gate `revisao-pr` (BLOQUEADOR 4) achou que ele era o
+  // único script de escrita do PR sem trava de alvo. REUSA a trava que já existe em
+  // `src/shared/database` — de propósito, em vez de copiar: as 3 cópias de `travaDeAlvo` nos
+  // scripts de backfill divergiram e a versão delas APROVA produção via query string.
+  assertLocalDatabaseTarget(DATABASE_URL);
   return new Pool({ connectionString: DATABASE_URL });
 }
 

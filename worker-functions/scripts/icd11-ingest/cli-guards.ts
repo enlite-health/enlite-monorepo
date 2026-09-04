@@ -74,3 +74,28 @@ export function assertReleaseMatchesApiBase(release: string, apiBase: string): v
     );
   }
 }
+
+/**
+ * Lê `--concurrency`. `Number('abc')` é `NaN`, e `NaN` workers significava CRAWL VAZIO: o
+ * ingestor imprimia `✅ Ingestão concluída` com ZERO entidades e saía com código 0 — contagem
+ * zero tratada como sucesso, que é o modo de falha que o CLAUDE.md nomeia. Achado do gate
+ * `revisao-pr` (BLOQUEADOR 4). Agora valor não-numérico, zero ou negativo é ERRO, não default
+ * silencioso: default só quando a flag está AUSENTE.
+ */
+export function parseConcurrencyFlag(args: readonly string[], padrao = 16): number {
+  const idx = args.indexOf('--concurrency');
+  if (idx === -1) return padrao;
+
+  const bruto = args[idx + 1];
+  if (bruto === undefined || bruto.startsWith('--')) {
+    throw new InvalidCliUsageError('--concurrency exige um valor inteiro positivo (ex.: --concurrency 16).');
+  }
+  const n = Number(bruto);
+  if (!Number.isInteger(n) || n < 1 || n > 64) {
+    throw new InvalidCliUsageError(
+      `--concurrency "${bruto}" não é inteiro entre 1 e 64. Valor inválido virava NaN e o crawl ` +
+        'terminava com ZERO entidades anunciando sucesso.',
+    );
+  }
+  return n;
+}

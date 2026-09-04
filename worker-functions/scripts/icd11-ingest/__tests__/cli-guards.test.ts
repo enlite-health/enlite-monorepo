@@ -1,7 +1,7 @@
 /**
  * cli-guards — F1-CORREÇÃO D10. Ver ../cli-guards.ts para o porquê.
  */
-import { parsePromoteFlag, extractReleaseFromApiBase, assertReleaseMatchesApiBase, InvalidCliUsageError } from '../cli-guards';
+import { parsePromoteFlag, extractReleaseFromApiBase, assertReleaseMatchesApiBase, InvalidCliUsageError, parseConcurrencyFlag } from '../cli-guards';
 
 describe('parsePromoteFlag', () => {
   it('flag ausente devolve undefined (uso normal: crawl)', () => {
@@ -52,5 +52,52 @@ describe('assertReleaseMatchesApiBase — a defesa de entrada que fecha o caminh
     expect(() => assertReleaseMatchesApiBase('2026-01', 'http://localhost:8085/rota-errada')).toThrow(
       InvalidCliUsageError,
     );
+  });
+});
+
+/**
+ * F1.6 — `--concurrency` (gate `revisao-pr`, BLOQUEADOR 4).
+ *
+ * `Number('abc')` é `NaN`; `NaN` workers fazia o crawl terminar com ZERO entidades e o script
+ * imprimir `✅ Ingestão concluída` com exit 0. Contagem zero tratada como sucesso — o modo de
+ * falha que o CLAUDE.md nomeia. Default só quando a flag está AUSENTE; valor ruim é ERRO.
+ */
+describe('parseConcurrencyFlag', () => {
+  it('flag ausente → default 16 (uso normal)', () => {
+    expect(parseConcurrencyFlag([])).toBe(16);
+    expect(parseConcurrencyFlag(['--release', '2026-01'])).toBe(16);
+  });
+
+  it('respeita o default recebido quando a flag está ausente', () => {
+    expect(parseConcurrencyFlag([], 8)).toBe(8);
+  });
+
+  it('valor inteiro válido passa', () => {
+    expect(parseConcurrencyFlag(['--concurrency', '1'])).toBe(1);
+    expect(parseConcurrencyFlag(['--concurrency', '32'])).toBe(32);
+    expect(parseConcurrencyFlag(['--concurrency', '64'])).toBe(64);
+  });
+
+  it('NÃO-numérico é erro — era o NaN que zerava o crawl', () => {
+    expect(() => parseConcurrencyFlag(['--concurrency', 'abc'])).toThrow(InvalidCliUsageError);
+    expect(() => parseConcurrencyFlag(['--concurrency', 'abc'])).toThrow(/não é inteiro entre 1 e 64/);
+  });
+
+  it('zero e negativo são erro (0 workers = catálogo vazio anunciando sucesso)', () => {
+    expect(() => parseConcurrencyFlag(['--concurrency', '0'])).toThrow(/não é inteiro entre 1 e 64/);
+    expect(() => parseConcurrencyFlag(['--concurrency', '-5'])).toThrow(/não é inteiro entre 1 e 64/);
+  });
+
+  it('acima do teto é erro (não vira martelo contra o container da OMS)', () => {
+    expect(() => parseConcurrencyFlag(['--concurrency', '999'])).toThrow(/não é inteiro entre 1 e 64/);
+  });
+
+  it('fracionário é erro', () => {
+    expect(() => parseConcurrencyFlag(['--concurrency', '2.5'])).toThrow(/não é inteiro entre 1 e 64/);
+  });
+
+  it('flag sem valor é erro — nunca cai no default em silêncio', () => {
+    expect(() => parseConcurrencyFlag(['--concurrency'])).toThrow(/exige um valor inteiro positivo/);
+    expect(() => parseConcurrencyFlag(['--concurrency', '--release'])).toThrow(/exige um valor inteiro positivo/);
   });
 });
