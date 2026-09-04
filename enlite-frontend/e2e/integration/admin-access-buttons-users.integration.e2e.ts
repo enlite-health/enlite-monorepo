@@ -216,11 +216,15 @@ test.describe('Botões da família USUÁRIOS ADMIN + item de menu Duplicados (D2
           VALUES ('${RECRUITER_UID}', '${RECRUITER_EMAIL}', 'E2E US Recruiter', 'recruiter', true, 'ACTIVE', '${TENANT}')`);
 
     // Grupo do admin: começa só com user_management:read (leitura nunca é
-    // gateada — é o piso pra sequer abrir /admin).
+    // gateada — é o piso pra sequer abrir /admin) + worker:read (gate rodada
+    // 6 — teste 5: TagCatalogPage é admin-only por ROLE (guard preexistente,
+    // não tocado pela D269), então precisa de conta role=admin; worker:read
+    // sem worker:write prova que a LEITURA da lista não é o que falta.
     adminGroupId = scalar(`INSERT INTO iam.permission_groups (tenant_id, name, description)
           VALUES ('${TENANT}', '${ADMIN_GROUP_NAME}', 'e2e usuarios admin — nao mexer manual')
           RETURNING id`);
     grantCell(adminGroupId, 'user_management', 'read');
+    grantCell(adminGroupId, 'worker', 'read');
     psql(`INSERT INTO iam.group_country_scopes (group_id, country, granted_by, reason)
           VALUES ('${adminGroupId}', 'AR', '${ADMIN_UID}', 'e2e setup')`);
     psql(`INSERT INTO iam.user_groups (user_id, group_id, tenant_id) VALUES ('${ADMIN_UID}', '${adminGroupId}', '${TENANT}')`);
@@ -327,5 +331,19 @@ test.describe('Botões da família USUÁRIOS ADMIN + item de menu Duplicados (D2
     await loginAs(page, RECRUITER);
     await page.goto('/admin');
     await expect(page.getByRole('link', { name: 'Duplicados' })).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('5. ADMIN com worker:read (sem worker:write) em /admin/tags: lista aparece, "Nueva Etiqueta" e editar/excluir NÃO', async ({
+    page,
+  }) => {
+    // adminGroupId nunca ganha worker:write nesta suíte — a célula
+    // permanece ausente do início ao fim deste describe.
+    await loginAs(page, ADMIN);
+    await page.goto('/admin/tags');
+    await expect(page.getByRole('heading', { name: 'Etiquetas' })).toBeVisible({ timeout: 15_000 });
+
+    await expect(page.getByRole('button', { name: 'Nueva Etiqueta' })).toHaveCount(0);
+    await expect(page.getByLabel('Editar Etiqueta')).toHaveCount(0);
+    await expect(page.getByLabel('Eliminar Etiqueta')).toHaveCount(0);
   });
 });

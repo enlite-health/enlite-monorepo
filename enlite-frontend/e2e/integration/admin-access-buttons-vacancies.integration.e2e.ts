@@ -292,6 +292,16 @@ test.describe('Botões da família vagas — desabilitar em vez de sumir (D269) 
 
     await page.getByRole('button', { name: 'Talentum', exact: true }).click();
     await expect(page.getByRole('switch')).toHaveCount(0);
+
+    // Gate rodada 6: as telas de criar vaga e configurar Talentum são
+    // alcançáveis DIRETO por URL (não só pelo botão que leva até elas) — sem
+    // `vacancy:write`/`talentum:write` a PORTA fecha (`<Navigate replace>`),
+    // não só o botão de salvar/publicar. Prova pela URL FINAL após o redirect.
+    await page.goto('/admin/vacancies/new');
+    await expect(page).toHaveURL(/\/admin\/vacancies$/, { timeout: 15_000 });
+
+    await page.goto(`/admin/vacancies/${vacancyId}/talentum`);
+    await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${vacancyId}$`), { timeout: 15_000 });
   });
 
   test('2. a conta ganha vacancy:write E talentum:write: os mesmos elementos passam a EXISTIR', async ({ page, request }) => {
