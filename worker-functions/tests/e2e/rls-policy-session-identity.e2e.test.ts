@@ -22,8 +22,8 @@
  *   5. a função é executável por PUBLIC e é SECURITY DEFINER (mecanismo, não só efeito).
  *   6. role FORA do app que declara país e uid por set_config → erro NOMEADO
  *      (`rls_role_without_session_identity`), nunca uma linha. Condição 2 do lex.
- *   7. `is_active=false` + `status='ACTIVE'` → `effective_countries` = [] e a policy nega: o precheck
- *      da 278 e a policy respondem pela MESMA função (BLOCKER 1 do gate de 04/09).
+ *   7. `status='DEACTIVATED'` → `effective_countries` = [] e a policy nega; `is_active` divergente sozinha
+ *      não muda nada (é derivada, 206). Precheck da 278, painel e policy respondem pela MESMA função.
  */
 import { Pool, PoolClient } from 'pg';
 
@@ -160,22 +160,25 @@ describe('411 — policy de país via função SECDEF, gate de role e recusa sem
     expect(r.rows[0]).toEqual({ exec: true, secdef: true });
   });
 
-  it('7. fonte única: is_active=false com status ACTIVE → effective_countries = [] E a policy nega (precheck da 278 e policy concordam)', async () => {
+  it('7. fonte única com o precheck da 278 e o painel: status DEACTIVATED → effective_countries = [] E a policy nega; is_active sozinha não é fonte', async () => {
     await pool.query(`UPDATE iam.user_groups SET removed_at = NULL WHERE user_id = $1 AND group_id = $2`, [STAFF_UID, IDS.group]);
-    // Só `is_active`: o trigger da 206 (`UPDATE OF status`) recalcularia is_active se `status` entrasse no SET.
-    // É o cenário de flags divergentes — o mesmo do teste 2b de country-rls-policies.
+    await pool.query(`UPDATE users SET status = 'DEACTIVATED' WHERE firebase_uid = $1`, [STAFF_UID]);
+    try {
+      expect((await pool.query(`SELECT iam.effective_countries($1, $2) AS c`, [STAFF_UID, TENANT])).rows[0].c).toEqual([]);
+      expect((await listar(APP_SEM_IAM, { userCountry: 'AR', userUid: STAFF_UID })).map((r) => r.country)).toEqual(['AR']);
+    } finally {
+      await pool.query(`UPDATE users SET status = 'ACTIVE' WHERE firebase_uid = $1`, [STAFF_UID]);
+    }
+    // `is_active` é derivada de `status` (trigger da 206) e deprecated: divergente sozinha, NÃO muda a
+    // decisão — a 274 olhava is_active, e apertar as funções efetivas para as duas flags fecharia células
+    // no boot sem contagem (gate de 04/09). Controle positivo com status ACTIVE e is_active divergente.
     await pool.query(`UPDATE users SET is_active = false WHERE firebase_uid = $1`, [STAFF_UID]);
     try {
-      const fx = await pool.query(`SELECT iam.effective_countries($1, $2) AS c`, [STAFF_UID, TENANT]);
-      expect(fx.rows[0].c).toEqual([]);
-      expect((await listar(APP_SEM_IAM, { userCountry: 'AR', userUid: STAFF_UID })).map((r) => r.country)).toEqual(['AR']);
+      expect((await pool.query(`SELECT iam.effective_countries($1, $2) AS c`, [STAFF_UID, TENANT])).rows[0].c).toEqual(['BR']);
+      expect((await listar(APP_SEM_IAM, { userCountry: 'AR', userUid: STAFF_UID })).map((r) => r.country)).toEqual(['AR', 'BR']);
     } finally {
       await pool.query(`UPDATE users SET is_active = true WHERE firebase_uid = $1`, [STAFF_UID]);
     }
-    // Controle positivo: com as duas flags, a mesma função devolve BR e a policy abre BR.
-    const ok = await pool.query(`SELECT iam.effective_countries($1, $2) AS c`, [STAFF_UID, TENANT]);
-    expect(ok.rows[0].c).toEqual(['BR']);
-    expect((await listar(APP_SEM_IAM, { userCountry: 'AR', userUid: STAFF_UID })).map((r) => r.country)).toEqual(['AR', 'BR']);
   });
 
   it('6. role FORA do app que declara o próprio país (e até o uid do gestor) por set_config → erro NOMEADO, nunca uma linha', async () => {

@@ -25,8 +25,9 @@
 -- serve só ao guard de UX e ao resource_access_log; a verdade é iam.*.
 -- Também elimina a janela de cache (≤30s) da RLS: revogação vale na query seguinte.
 --
--- A função da 411 é STABLE e SECURITY DEFINER (o chamador não precisa de privilégio em iam): por linha o planner a avalia uma vez por
--- statement (mesmo uid), e ela só lê iam.* + users (SELECT já concedido às roles).
+-- A função da 411 é STABLE e SECURITY DEFINER (o chamador não precisa de privilégio em iam); como recebe
+-- `patients.country` (argumento dependente de coluna), o planner a avalia POR LINHA — não é içada
+-- para fora do laço. Ela só lê iam.* + users. O custo real é o gate de p95 da 5.4 (abaixo).
 -- Medição de p95 vs baseline-1.4 é gate da 5.4 (fallback sargável no design ABAC).
 --
 -- REVERSÃO: scripts/rollback/278_down.sql (recria a policy da 411, com o ramo do

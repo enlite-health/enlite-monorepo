@@ -138,11 +138,11 @@ function rlsAwareQuery(pool: Pool, systemPool: Pool, args: QueryArgs): Promise<Q
  */
 function warnIfUnclassified(session: DbSession | undefined): void {
   if (!session) {
-    warnUnscopedQuery('[abac] query fora de request e sem escopo de sistema declarado — sob RLS falharia com 42501 (411: sessão sem identidade é recusada em voz alta, não zero linhas)');
+    warnUnscopedQuery('[abac] query fora de request e sem escopo de sistema declarado — se tocar tabela sob a policy de país, falha com 42501 ao alcançar uma linha (411); fora dela, roda sem escopo');
     return;
   }
   if (session.released) {
-    warnUnscopedQuery('[abac] query após o fim da request (contexto já liberado) — sob RLS falharia com 42501 (411: sessão sem identidade é recusada em voz alta, não zero linhas)');
+    warnUnscopedQuery('[abac] query após o fim da request (contexto já liberado) — se tocar tabela sob a policy de país, falha com 42501 ao alcançar uma linha (411); fora dela, roda sem escopo');
     return;
   }
   if (session.context || session.warnedUnclassified) return;
@@ -150,7 +150,7 @@ function warnIfUnclassified(session: DbSession | undefined): void {
   const store = loggingAls?.getStore?.();
   logger.warn(
     { method: store?.requestMethod, path: store?.requestRoute },
-    '[abac] request consultou o banco sem contexto declarado — sob RLS falharia com 42501 (411: sessão sem identidade é recusada em voz alta, não zero linhas)',
+    '[abac] request consultou o banco sem contexto declarado — se tocar tabela sob a policy de país, falha com 42501 ao alcançar uma linha (411); fora dela, roda sem escopo',
   );
 }
 

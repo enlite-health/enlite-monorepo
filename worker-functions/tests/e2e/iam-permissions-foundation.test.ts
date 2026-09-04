@@ -138,16 +138,18 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
     }
   }
 
-  /** O arquivo tem meta-comandos psql (\set, :'ack'); para o protocolo pg, tira essas 2 linhas. */
-  function rollout278SqlForPg(): string {
+  /** Os arquivos têm meta-comandos psql (\set, :'ack'); para o protocolo pg, tira essas linhas. */
+  function psqlFileForPg(rel: string): string {
     const fs = require('node:fs') as typeof import('node:fs');
     const path = require('node:path') as typeof import('node:path');
     return fs
-      .readFileSync(path.resolve(__dirname, '../../scripts/rollout/278_rls_country_grant_only.sql'), 'utf8')
+      .readFileSync(path.resolve(__dirname, rel), 'utf8')
       .split('\n')
       .filter((l) => !l.startsWith('\\set') && !l.includes(":'ack'"))
       .join('\n');
   }
+  const rollout278SqlForPg = () => psqlFileForPg('../../scripts/rollout/278_rls_country_grant_only.sql');
+  const rollback278SqlForPg = () => psqlFileForPg('../../scripts/rollback/278_down.sql');
 
   /**
    * Aplica a 278 do jeito que o operador aplica: lê quantos staff ACTIVE ficam sem
@@ -267,7 +269,7 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
     afterAll(async () => {
       const fs = await import('node:fs');
       const path = await import('node:path');
-      await pool.query(fs.readFileSync(path.resolve(__dirname, '../../scripts/rollback/278_down.sql'), 'utf8'));
+      await pool.query(rollback278SqlForPg());
     });
 
     it('sem GUC → erro NOMEADO (411, nunca vazio); bob (sem grupo) → 0 mesmo com claim BR e países forjados', async () => {
@@ -515,7 +517,7 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
       const fs = await import('node:fs');
       const path = await import('node:path');
       const up = rollout278SqlForPg();
-      const down = fs.readFileSync(path.resolve(__dirname, '../../scripts/rollback/278_down.sql'), 'utf8');
+      const down = rollback278SqlForPg();
       const list = `SELECT country FROM patients WHERE id = ANY($1) ORDER BY 1`;
       const q = () => asRole('app_runtime', { uid: U.bob, country: 'BR' }, (c) => c.query(list, [[IDS.patientAR, IDS.patientBR]]));
       // Pré-condição fail-closed: sem ack → PARA; ack errado → PARA (o "esqueci a 5.1")

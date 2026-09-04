@@ -193,7 +193,8 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
   });
 
   it('2b. usuário INATIVO perde o grant na hora (offboarding fail-closed)', async () => {
-    await pool.query(`UPDATE users SET is_active = false WHERE firebase_uid = $1`, [STAFF_UID]);
+    // `status` é a fonte (206); o trigger deriva is_active. A 274 olhava só is_active; a 411 olha status (276).
+    await pool.query(`UPDATE users SET status = 'DEACTIVATED' WHERE firebase_uid = $1`, [STAFF_UID]);
     try {
       const rows = await asRole('app_runtime', { userCountry: 'AR', userUid: STAFF_UID }, async (c) => {
         const res = await c.query(listTestPatients, [[IDS.patientAR, IDS.patientBR]]);
@@ -202,7 +203,7 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
       expect(rows).toHaveLength(1);
       expect(rows[0].country).toBe('AR');
     } finally {
-      await pool.query(`UPDATE users SET is_active = true WHERE firebase_uid = $1`, [STAFF_UID]);
+      await pool.query(`UPDATE users SET status = 'ACTIVE' WHERE firebase_uid = $1`, [STAFF_UID]);
     }
   });
 
