@@ -151,7 +151,7 @@ $$;
 COMMENT ON FUNCTION iam.deprecate_missing_permission_cells(VARCHAR, TEXT[]) IS
   'Descontinua (deprecated_at) as células DESTE serviço que sumiram do código; lista vazia levanta '
   'exceção (uma varredura falha tiraria o acesso de todo mundo). A família permission_management '
-  'NUNCA é descontinuada aqui (296, anti-lockout) — ausência vira WARNING. Nunca DELETE.';
+  'NUNCA é descontinuada aqui (410, anti-lockout) — ausência vira WARNING. Nunca DELETE.';
 
 -- ── ACL ──────────────────────────────────────────────────────────────────────────
 DO $$

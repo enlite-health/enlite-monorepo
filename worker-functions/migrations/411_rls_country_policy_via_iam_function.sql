@@ -14,6 +14,10 @@
 --   sem `app.user_uid`, sem `app.user_country`) caía nos três ramos falsos e recebia conjunto VAZIO.
 --   Para um humano lendo por ferramenta, "não há pacientes" e "você não tem identidade nesta sessão"
 --   são indistinguíveis — e ele decide acreditando no vazio. Contagem zero é falha, nunca sucesso.
+--   ⚠️ LIMITE (medido no gate de 04/09): a policy é avaliada POR LINHA. A recusa em voz alta só
+--   acontece quando a query alcança ao menos uma linha de `patients` — `WHERE id = '<inexistente>'`
+--   segue devolvendo 0 linhas em silêncio. O que a 411 garante é: NENHUMA linha sai para sessão sem
+--   identidade, e toda leitura que TOCA dado real falha nomeada. Não é "toda query sem identidade falha".
 --
 -- O QUE MUDA:
 --   1. `iam.session_may_see_country(p_country)` — SECURITY DEFINER, dona = dona de `iam.*` (a mesma
@@ -45,9 +49,16 @@
 --   • Dona de `patients` (`enlite_app`) não passa por policy (sem FORCE) — inalterado.
 --
 -- DIFERENÇAS DELIBERADAS no 3º ramo (a 274 nasceu antes da 275/276 e nunca foi atualizada):
---   `ug.removed_at IS NULL` (vínculo removido seguia dando visão), `g.archived_at IS NULL` (grupo
---   arquivado idem), `g.tenant_id` e `u.status = 'ACTIVE'` além de `u.is_active` — `users` tem
---   DUAS flags de ativo e a policy exige as duas. É o predicado da 276 + o da 274, o mais estrito.
+--   o ramo passa a ser `iam.effective_countries` — vínculo removido, grupo arquivado, tenant e as DUAS
+--   flags de ativo (`is_active` + `status`) contam; na 274, vínculo removido e grupo arquivado ainda
+--   davam visão. Precheck da 278, painel e policy passam a responder pela mesma função.
+--
+-- RESÍDUO CONHECIDO (medido no gate): `p_role` vem de `current_user` na policy e não é forjável por
+-- esse caminho; chamada DIRETA da função por role de fora morre antes, em USAGE do schema `iam`. Uma
+-- role futura COM USAGE em `iam` e fora do app poderia chamar a função à mão e obter um booleano
+-- "uid X tem país Y" (não uma linha). Revogar EXECUTE de PUBLIC não serve: a policy então falha com
+-- `permission denied for function` em vez do erro nomeado (medido). Se essa role um dia existir, o
+-- conserto é a policy passar `session_user`, não `current_user`.
 --
 -- FONTE ÚNICA: a policy é (re)criada em TRÊS lugares — aqui, `scripts/rollout/278_rls_country_grant_only.sql`
 -- (flip grant-only, F14) e `scripts/rollback/278_down.sql`. Os três passam a usar ESTA função;
@@ -61,6 +72,69 @@
 -- `tests/e2e/rls-policy-session-identity.e2e.test.ts` (role do app SEM privilégio em iam: erro nomeado
 -- sem identidade, nunca vazio; com uid em grupo com escopo, VÊ — controle positivo; role FORA do app
 -- que declara o próprio país/uid por set_config: erro nomeado, nunca uma linha).
+
+-- ── 0. `users` tem DUAS flags de ativo; as funções efetivas passam a exigir as duas ─────────
+-- A 274 (policy) olhava `is_active`; a 276 (effective_*) olhava `status`. Um staff com
+-- `is_active = false` e `status = 'ACTIVE'` tinha células e países pela 276 e nada pela policy —
+-- e o precheck da 278 (que conta com a 276) discordava da policy que ele instala (gate do PR,
+-- 04/09). Agora: staff efetivo = `is_active IS TRUE AND status = 'ACTIVE'`, nos dois lugares.
+CREATE OR REPLACE FUNCTION iam.effective_permissions(p_user_id VARCHAR, p_tenant_id UUID)
+RETURNS TEXT[]
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT COALESCE(ARRAY(
+    SELECT DISTINCT p.resource || ':' || p.action
+    FROM iam.user_groups ug
+    JOIN users u
+      ON u.firebase_uid = ug.user_id
+     AND u.status = 'ACTIVE'
+     AND u.is_active IS TRUE
+    JOIN iam.permission_groups g
+      ON g.id = ug.group_id
+     AND g.tenant_id = p_tenant_id
+     AND g.archived_at IS NULL
+    JOIN iam.group_permissions gp
+      ON gp.group_id = g.id
+    JOIN iam.permissions p
+      ON p.id = gp.permission_id
+     AND p.deprecated_at IS NULL
+    WHERE ug.user_id = p_user_id
+      AND ug.removed_at IS NULL
+    ORDER BY 1
+  ), ARRAY[]::TEXT[]);
+$$;
+COMMENT ON FUNCTION iam.effective_permissions(VARCHAR, UUID) IS
+  'União das células recurso:ação dos grupos VIVOS do staff (is_active + ACTIVE, não-arquivado, '
+  'não-removido, não-deprecated), no tenant. Sem grupo → []. Fonte única (D115; 411 exige as duas flags).';
+
+CREATE OR REPLACE FUNCTION iam.effective_countries(p_user_id VARCHAR, p_tenant_id UUID)
+RETURNS TEXT[]
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT COALESCE(ARRAY(
+    SELECT DISTINCT gcs.country
+    FROM iam.user_groups ug
+    JOIN users u
+      ON u.firebase_uid = ug.user_id
+     AND u.status = 'ACTIVE'
+     AND u.is_active IS TRUE
+    JOIN iam.permission_groups g
+      ON g.id = ug.group_id
+     AND g.tenant_id = p_tenant_id
+     AND g.archived_at IS NULL
+    JOIN iam.group_country_scopes gcs
+      ON gcs.group_id = g.id
+     AND gcs.revoked_at IS NULL
+    WHERE ug.user_id = p_user_id
+      AND ug.removed_at IS NULL
+    ORDER BY 1
+  ), ARRAY[]::TEXT[]);
+$$;
+COMMENT ON FUNCTION iam.effective_countries(VARCHAR, UUID) IS
+  'Países dos grupos VIVOS do staff (is_active + ACTIVE, não-arquivado, não-removido, escopo não-revogado), '
+  'no tenant. Sem grupo → []. Fonte única da policy de país (411), do precheck da 278 e do painel.';
 
 -- A policy sai ANTES da função (ela depende da função); é recriada no fim, apontando para a nova.
 -- A assinatura de 1 argumento é de um rascunho desta migration: não existe em stage/prod, mas
@@ -107,26 +181,10 @@ BEGIN
     RETURN FALSE;
   END IF;
 
-  -- Ramo 3: o predicado mais ESTRITO entre a 274 (is_active) e a 276 (status, grupo não
-  -- arquivado, tenant): `users` tem duas flags de "ativo" e a policy exige as duas — fail-closed.
-  RETURN EXISTS (
-    SELECT 1
-    FROM iam.user_groups ug
-    JOIN public.users u
-      ON u.firebase_uid = ug.user_id
-     AND u.is_active IS TRUE
-     AND u.status = 'ACTIVE'
-    JOIN iam.permission_groups g
-      ON g.id = ug.group_id
-     AND g.tenant_id = iam.current_tenant_id()
-     AND g.archived_at IS NULL
-    JOIN iam.group_country_scopes gcs
-      ON gcs.group_id = g.id
-     AND gcs.revoked_at IS NULL
-    WHERE ug.user_id = v_uid
-      AND ug.removed_at IS NULL
-      AND gcs.country = p_country
-  );
+  -- Ramo 3: grant de país pelos grupos VIVOS — a MESMA função que o precheck da 278 e o painel
+  -- usam (`iam.effective_countries`, 276, redefinida abaixo para exigir as duas flags de ativo).
+  -- Fonte única do predicado: policy, precheck e tela não podem discordar sobre quem vê o quê.
+  RETURN p_country = ANY (iam.effective_countries(v_uid, iam.current_tenant_id()));
 END;
 $$;
 

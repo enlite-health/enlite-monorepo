@@ -25,11 +25,11 @@
 -- serve só ao guard de UX e ao resource_access_log; a verdade é iam.*.
 -- Também elimina a janela de cache (≤30s) da RLS: revogação vale na query seguinte.
 --
--- A função é STABLE e SECURITY INVOKER: por linha o planner a avalia uma vez por
+-- A função da 411 é STABLE e SECURITY DEFINER (o chamador não precisa de privilégio em iam): por linha o planner a avalia uma vez por
 -- statement (mesmo uid), e ela só lê iam.* + users (SELECT já concedido às roles).
 -- Medição de p95 vs baseline-1.4 é gate da 5.4 (fallback sargável no design ABAC).
 --
--- REVERSÃO: scripts/rollback/278_down.sql (recria a policy da 274, com o ramo do
+-- REVERSÃO: scripts/rollback/278_down.sql (recria a policy da 411, com o ramo do
 -- claim) — testada no e2e (1.9). Executar reversão em prod = evento de segurança
 -- (lex C5 do ABAC): registrar quem/quando/por quê.
 
