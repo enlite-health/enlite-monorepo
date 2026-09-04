@@ -16,6 +16,9 @@ const target = (current: IamConfigSnapshot, over: Partial<IamTargetState> = {}):
   current,
   catalog: new Set(['permission_management:write', 'worker:read', 'worker:write', 'vacancy:read']),
   knownEmails: new Set(['gestor@e.com', 'ana@e.com', 'bob@e.com']),
+  // (M1) Por default, igual a `knownEmails` — os testes que precisam de um
+  // e-mail removível mas NÃO staff (admin rebaixado) sobrescrevem via `over`.
+  removableEmails: new Set(['gestor@e.com', 'ana@e.com', 'bob@e.com']),
   archivedGroupNames: new Set(),
   ...over,
 });
@@ -119,14 +122,40 @@ describe('planIamConfigImport', () => {
     expect(plan.errors).toEqual([{ code: 'tenant_mismatch', detail: `snapshot=outro-tenant-do-json alvo=${T}` }]);
   });
 
-  it('M3: remover membro cujo e-mail não tem conta conhecida no alvo é ERRO do plano, não `remove_member` (dry-run acusa, applyOp nunca vê a op) — o membro conhecido continua saindo normalmente', () => {
+  it('M3: remover membro cujo e-mail não tem conta NENHUMA no alvo (nem staff, nem `removableEmails`) é ERRO do plano, não `remove_member` (dry-run acusa, applyOp nunca vê a op) — o membro conhecido continua saindo normalmente. (B4) `detail` não carrega o e-mail — vai no campo estruturado', () => {
     const desired = base();
-    desired.groups[1].members = ['ana@e.com']; // 'ana' fica; 'fantasma' não está no desejado nem em knownEmails
+    desired.groups[1].members = ['ana@e.com']; // 'ana' fica; 'fantasma' não está no desejado nem em removableEmails
     const cur = base();
     cur.groups[1].members = ['ana@e.com', 'fantasma@e.com'];
-    const plan = planIamConfigImport(desired, target(cur, { knownEmails: new Set(['gestor@e.com', 'ana@e.com']) }));
-    expect(plan.errors).toEqual([{ code: 'unknown_member_on_remove', detail: 'Recrutador: fantasma@e.com sem conta conhecida no alvo' }]);
+    const plan = planIamConfigImport(
+      desired,
+      target(cur, { knownEmails: new Set(['gestor@e.com', 'ana@e.com']), removableEmails: new Set(['gestor@e.com', 'ana@e.com']) }),
+    );
+    expect(plan.errors).toEqual([{ code: 'unknown_member_on_remove', detail: 'Recrutador: sem conta conhecida no alvo', email: 'fantasma@e.com' }]);
+    expect(plan.errors[0].detail).not.toContain('@');
     expect(plan.ops).toEqual([]);
+  });
+
+  it('M1: membro rebaixado (role fora das 3 de staff) continua aparecendo em `current` — via `removableEmails` (SEM filtro de role), o plano CONSEGUE removê-lo, e sinaliza com a pendência `member_role_not_staff` em vez de bloquear com erro', () => {
+    const desired = base();
+    desired.groups[1].members = []; // snapshot desejado não quer mais 'bob' no grupo
+    const cur = base();
+    cur.groups[1].members = ['ana@e.com', 'bob@e.com']; // 'bob' é o admin rebaixado: vínculo vivo, role não é mais staff
+    const plan = planIamConfigImport(
+      desired,
+      target(cur, {
+        knownEmails: new Set(['gestor@e.com', 'ana@e.com']), // 'bob' NÃO é staff — não pode ser ADICIONADO
+        removableEmails: new Set(['gestor@e.com', 'ana@e.com', 'bob@e.com']), // mas TEM conta viva — pode ser REMOVIDO
+      }),
+    );
+    expect(plan.errors).toEqual([]);
+    expect(plan.ops).toEqual(
+      expect.arrayContaining([
+        { kind: 'remove_member', group: 'Recrutador', email: 'ana@e.com' },
+        { kind: 'remove_member', group: 'Recrutador', email: 'bob@e.com' },
+      ]),
+    );
+    expect(plan.pendencies).toEqual([{ code: 'member_role_not_staff', email: 'bob@e.com', group: 'Recrutador' }]);
   });
 
   it('M4: grupo desejado que existe ARQUIVADO no alvo é ERRO nomeado no plano, sem tentar create_group (a UNIQUE da 206 não é parcial)', () => {

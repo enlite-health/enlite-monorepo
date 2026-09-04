@@ -9,13 +9,19 @@
  * JSON é mantido; `--archive-missing` arquiva só os não-sistema. Idempotente:
  * `--execute` 2× → 0 operações na 2ª.
  *
- * Uso:  DATABASE_URL=<alvo> npm run iam:config:import:dry -- --file iam-config.json --actor-email gestor@enlite.health
- *       DATABASE_URL=<alvo> npm run iam:config:import     -- --file iam-config.json --actor-email ... [--archive-missing]
+ * Uso:  DATABASE_URL=<alvo> npm run iam:config:import:dry -- --file iam-config.json --actor-email gestor@enlite.health [--tenant <uuid>]
+ *       DATABASE_URL=<alvo> npm run iam:config:import     -- --file iam-config.json --actor-email ... [--archive-missing] [--tenant <uuid>]
  *
- * TENANT (M5): `current` é exportado do tenant que o BANCO-ALVO efetivamente
- * serve (`repo.resolveTenantId()` → `iam.current_tenant_id()`), NUNCA de
- * `desired.tenantId` — senão a guarda `tenant_mismatch` do planner é inerte
- * (comparar um valor com ele mesmo nunca diverge).
+ * TENANT (M5/M4): `current` é exportado do tenant que o BANCO-ALVO efetivamente
+ * serve — `--tenant <uuid>` se dado, senão `repo.resolveTenantId()` (→
+ * `iam.current_tenant_id()`) —, NUNCA de `desired.tenantId` — senão a guarda
+ * `tenant_mismatch` do planner é inerte (comparar um valor com ele mesmo nunca
+ * diverge). `--tenant` existe porque `resolveTenantId()` num `pg.Pool` cru sem
+ * GUC de sessão só enxerga o tenant único da mig 206 — ver o docstring de
+ * `resolveTenantId` para o que essa guarda pega e o que não pega.
+ *
+ * PII (B4): nenhum e-mail sai cru em `console.*` — todo e-mail impresso passa
+ * por `maskEmail` (`mask`), inclusive nos erros do plano.
  */
 import { readFileSync } from 'fs';
 import { basename } from 'path';
@@ -37,17 +43,25 @@ async function main(): Promise<void> {
   const pool = new Pool({ connectionString: url });
   try {
     const repo = new PgIamConfigRepository(pool);
-    // M5: o tenant do ALVO vem do banco, não do JSON — senão `current.tenantId`
-    // é sempre igual a `desired.tenantId` por construção, e a guarda nunca dispara.
-    const targetTenantId = await repo.resolveTenantId();
-    const [current, catalog, uids, actorUid, archivedGroupNames] = await Promise.all([
+    // M4: `--tenant` tem prioridade — senão o tenant do ALVO vem do banco, não
+    // do JSON (M5, inalterado): senão `current.tenantId` é sempre igual a
+    // `desired.tenantId` por construção, e a guarda nunca dispara.
+    const targetTenantId = argValue('--tenant') ?? (await repo.resolveTenantId());
+    const [current, catalog, staffUids, anyUids, actorUid, archivedGroupNames] = await Promise.all([
       repo.exportSnapshot(targetTenantId),
       repo.liveCells(),
       repo.staffUidsByEmail(),
+      repo.uidsByEmailAny(), // M1: `removableEmails` do planner — SEM filtro de role
       repo.uidByEmail(actorEmail),
       repo.archivedGroupNames(targetTenantId),
     ]);
-    const plan = planIamConfigImport(desired, { current, catalog, knownEmails: new Set(uids.keys()), archivedGroupNames }, {
+    const plan = planIamConfigImport(desired, {
+      current,
+      catalog,
+      knownEmails: new Set(staffUids.keys()),
+      removableEmails: new Set(anyUids.keys()),
+      archivedGroupNames,
+    }, {
       archiveMissing: process.argv.includes('--archive-missing'),
     });
 
@@ -57,7 +71,9 @@ async function main(): Promise<void> {
       console.log(`  ${op.kind.padEnd(20)} ${'group' in op ? op.group : ''} ${alvo}`.trimEnd());
     }
     for (const p of plan.pendencies) console.log(`  [pendência] ${p.code} ${mask(p.email)} → ${p.group}`);
-    for (const e of plan.errors) console.error(`  [ERRO] ${e.code}: ${e.detail}`);
+    // B4: `detail` não carrega e-mail — o campo estruturado `email` (quando
+    // presente) é o que vai mascarado; nunca `e.detail` cru.
+    for (const e of plan.errors) console.error(`  [ERRO] ${e.code}: ${e.detail}${e.email ? ` (${mask(e.email)})` : ''}`);
 
     if (plan.errors.length > 0) { process.exitCode = 1; return; }
     if (!actorUid) throw new Error(`ator ${mask(actorEmail)} não tem conta no alvo`);

@@ -17,4 +17,12 @@ describe('maskEmail', () => {
   it('e-mail sem @ não é tocado (regex não bate)', () => {
     expect(maskEmail('nao-e-email')).toBe('nao-e-email');
   });
+
+  it('(M6) local-part de 1 caractere fica TOTALMENTE oculto — a regex antiga (`/^(..).*@/`) deixava passar inteiro', () => {
+    expect(maskEmail('a@enlite.health')).toBe('…@enlite.health');
+  });
+
+  it('(M6) local-part vazio (e-mail começa com @) também fica totalmente oculto', () => {
+    expect(maskEmail('@enlite.health')).toBe('…@enlite.health');
+  });
 });

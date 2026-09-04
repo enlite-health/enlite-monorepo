@@ -276,19 +276,23 @@ registry.registerPath({
   description:
     'Mesma leitura de `GET /api/admin/permission-audit` — só existe como POST porque `userId` é o ' +
     'único jeito de filtrar por pessoa sem o uid cair na URL (parecer jurídico, C6). Exige a MESMA ' +
-    '`permission_management:read`; é POST na forma, leitura na regra.',
+    '`permission_management:read`; é POST na forma, leitura na regra. ' +
+    '(M7) Chave extra no corpo é 400: `AuditBody`, na rota, herda `.strict()` de `AuditQuery` — ' +
+    'fail-closed contra deploy-skew (C6), a mesma razão que motivou o `.strict()` original.',
   security: [{ firebaseAuth: [] }],
   request: {
     body: {
       content: {
         'application/json': {
-          schema: z.object({
-            userId: z.string().max(128).optional(),
-            resource: z.string().max(64).optional(),
-            since: z.string().datetime().optional(),
-            until: z.string().datetime().optional(),
-            limit: z.number().int().min(1).max(1000).optional(),
-          }),
+          schema: z
+            .object({
+              userId: z.string().max(128).optional(),
+              resource: z.string().max(64).optional(),
+              since: z.string().datetime().optional(),
+              until: z.string().datetime().optional(),
+              limit: z.number().int().min(1).max(1000).optional(),
+            })
+            .strict(),
         },
       },
     },

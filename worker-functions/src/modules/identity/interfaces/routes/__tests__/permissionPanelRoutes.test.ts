@@ -499,6 +499,15 @@ describe('POST /permission-audit/query — o único jeito de filtrar por userId 
     expect(d.audit).not.toHaveBeenCalled();
   });
 
+  it('(M7) chave extra no corpo é 400 — `AuditBody` herda `.strict()` de `AuditQuery`, e o schema do OpenAPI foi alinhado (`additionalProperties: false`) para não mentir sobre o contrato real', async () => {
+    const { router, d } = build();
+
+    const res = await POST(router, '/permission-audit/query', { userId: 'uid-1', chaveQueNaoExiste: 'x' }).expect(400);
+
+    expect(res.body).toEqual({ success: false, error: 'Invalid request body' });
+    expect(d.audit).not.toHaveBeenCalled();
+  });
+
   it('falha da função de auditoria é 500 — mesmo tratamento de erro do GET', async () => {
     const { router } = build({ audit: jest.fn().mockRejectedValue(new Error('permission denied')) });
 

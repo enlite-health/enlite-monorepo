@@ -33,15 +33,38 @@ describe('PgIamConfigRepository.exportSnapshot', () => {
     expect(s[4]).toContain("source = 'override'");
   });
 
-  it('liveCells, staffUidsByEmail e uidByEmail', async () => {
+  it('(M1) membros: SEM filtro de role — um vínculo vivo de quem foi rebaixado (role fora das 3 de staff) aparece no export igual a qualquer outro, e a query de membros leva UM parâmetro só (os group ids), não dois', async () => {
+    const query = jest.fn();
+    query.mockResolvedValueOnce({ rows: [{ id: 'g1', name: 'Recrutador', description: 'f', is_system: false }] });
+    query.mockResolvedValueOnce({ rows: [] });
+    query.mockResolvedValueOnce({ rows: [] });
+    // 'bob' tem vínculo VIVO em iam.user_groups mas o `role` dele em `users` já
+    // não é staff — o export precisa listá-lo mesmo assim (M1).
+    query.mockResolvedValueOnce({ rows: [{ group_id: 'g1', email: 'bob@e.com' }] });
+    query.mockResolvedValueOnce({ rows: [] });
+    const repo = new PgIamConfigRepository(pool(query).pool);
+
+    const snap = await repo.exportSnapshot(T);
+
+    expect(snap.groups[0].members).toEqual(['bob@e.com']);
+    const membersCall = query.mock.calls[3];
+    expect(String(membersCall[0])).not.toMatch(/u\.role/);
+    expect(membersCall[1]).toEqual([['g1']]);
+  });
+
+  it('liveCells, staffUidsByEmail, uidsByEmailAny (M1) e uidByEmail', async () => {
     const query = jest.fn();
     query.mockResolvedValueOnce({ rows: [{ resource: 'worker', action: 'read' }] });
     query.mockResolvedValueOnce({ rows: [{ email: 'a@e.com', firebase_uid: 'u1' }] });
+    query.mockResolvedValueOnce({ rows: [{ email: 'a@e.com', firebase_uid: 'u1' }, { email: 'bob@e.com', firebase_uid: 'u-bob' }] });
     query.mockResolvedValueOnce({ rows: [{ firebase_uid: 'u9' }] });
     query.mockResolvedValueOnce({ rows: [] });
     const repo = new PgIamConfigRepository(pool(query).pool);
     expect(await repo.liveCells()).toEqual(new Set(['worker:read']));
     expect(await repo.staffUidsByEmail()).toEqual(new Map([['a@e.com', 'u1']]));
+    // (M1) `uidsByEmailAny` não filtra por role — 'bob' (não-staff) aparece.
+    expect(await repo.uidsByEmailAny()).toEqual(new Map([['a@e.com', 'u1'], ['bob@e.com', 'u-bob']]));
+    expect(String(query.mock.calls[2][0])).not.toMatch(/role/);
     expect(await repo.uidByEmail('G@e.com')).toBe('u9');
     expect(await repo.uidByEmail('x')).toBeNull();
   });
@@ -81,11 +104,12 @@ describe('PgIamConfigRepository.applyPlan', () => {
 
   it('cada operação vira a SECURITY DEFINER certa, numa transação com o ator por GUC — e commita', async () => {
     const query = jest.fn().mockResolvedValue({ rows: [], rowCount: 0 });
-    // BEGIN, set_config, groupIds, staffUids, create_group → id, set_permissions ids…
+    // BEGIN, set_config, groupIds, staffUids, anyUids, create_group → id, set_permissions ids…
     query.mockResolvedValueOnce({ rows: [] }); // BEGIN
     query.mockResolvedValueOnce({ rows: [] }); // set_config
     query.mockResolvedValueOnce({ rows: [{ id: 'g1', name: 'Recrutador' }] }); // groupIds
-    query.mockResolvedValueOnce({ rows: [{ email: 'ana@e.com', firebase_uid: 'u-ana' }] }); // uids
+    query.mockResolvedValueOnce({ rows: [{ email: 'ana@e.com', firebase_uid: 'u-ana' }] }); // staffUids (M1) — usada por add_member
+    query.mockResolvedValueOnce({ rows: [{ email: 'ana@e.com', firebase_uid: 'u-ana' }] }); // anyUids (M1) — usada por remove_member
     query.mockResolvedValueOnce({ rows: [{ id: 'g2' }] }); // create_group Financeiro
     query.mockResolvedValueOnce({ rows: [] }); // update_group
     query.mockResolvedValueOnce({ rows: [] }); // archive_group
@@ -131,7 +155,8 @@ describe('PgIamConfigRepository.applyPlan', () => {
     query.mockResolvedValueOnce({ rows: [] }); // BEGIN
     query.mockResolvedValueOnce({ rows: [] }); // set_config
     query.mockResolvedValueOnce({ rows: [{ id: 'g0', name: 'Acesso Master' }] });
-    query.mockResolvedValueOnce({ rows: [{ email: 'g@e.com', firebase_uid: 'u-g' }] });
+    query.mockResolvedValueOnce({ rows: [{ email: 'g@e.com', firebase_uid: 'u-g' }] }); // staffUids
+    query.mockResolvedValueOnce({ rows: [{ email: 'g@e.com', firebase_uid: 'u-g' }] }); // anyUids
     query.mockRejectedValueOnce(Object.assign(new Error('anti-lockout'), { code: '23514' }));
     const { pool: p } = pool(query);
     const plan: IamImportPlan = { errors: [], pendencies: [], ops: [{ kind: 'remove_member', group: 'Acesso Master', email: 'g@e.com' }] };
@@ -142,18 +167,43 @@ describe('PgIamConfigRepository.applyPlan', () => {
   it('grupo ou e-mail que o plano não previu, e célula sumida entre plano e execução, abortam com mensagem própria', async () => {
     const mk = () => {
       const query = jest.fn().mockResolvedValue({ rows: [] });
-      query.mockResolvedValueOnce({ rows: [] });
-      query.mockResolvedValueOnce({ rows: [] });
-      query.mockResolvedValueOnce({ rows: [{ id: 'g1', name: 'Recrutador' }] });
-      query.mockResolvedValueOnce({ rows: [] });
+      query.mockResolvedValueOnce({ rows: [] }); // BEGIN
+      query.mockResolvedValueOnce({ rows: [] }); // set_config
+      query.mockResolvedValueOnce({ rows: [{ id: 'g1', name: 'Recrutador' }] }); // groupIds
+      query.mockResolvedValueOnce({ rows: [] }); // staffUids (vazio: 'x@e.com' não é staff)
+      query.mockResolvedValueOnce({ rows: [] }); // anyUids (vazio: 'x@e.com' também não tem conta nenhuma)
       return { query, repo: new PgIamConfigRepository(pool(query).pool) };
     };
     const a = mk();
     await expect(a.repo.applyPlan({ errors: [], pendencies: [], ops: [{ kind: 'grant_country', group: 'Nao Existe', country: 'AR' }] }, ctx)).rejects.toThrow("grupo 'Nao Existe' não existe");
     const b = mk();
     await expect(b.repo.applyPlan({ errors: [], pendencies: [], ops: [{ kind: 'add_member', group: 'Recrutador', email: 'x@e.com' }] }, ctx)).rejects.toThrow('e-mail sem conta');
+    const b2 = mk();
+    await expect(b2.repo.applyPlan({ errors: [], pendencies: [], ops: [{ kind: 'remove_member', group: 'Recrutador', email: 'x@e.com' }] }, ctx)).rejects.toThrow('e-mail sem conta no alvo');
     const c = mk();
     c.query.mockResolvedValueOnce({ rows: [{ id: 'p1' }], rowCount: 1 });
     await expect(c.repo.applyPlan({ errors: [], pendencies: [], ops: [{ kind: 'set_permissions', group: 'Recrutador', cells: ['a:read', 'b:read'] }] }, ctx)).rejects.toThrow('células desconhecidas');
+  });
+
+  it('(M1) `add_member` e `remove_member` resolvem o uid por lookups DIFERENTES: um e-mail com conta viva mas role fora de staff falha em `add_member` (staffUids) e passa em `remove_member` (anyUids)', async () => {
+    const mkComRebaixado = () => {
+      const query = jest.fn().mockResolvedValue({ rows: [] });
+      query.mockResolvedValueOnce({ rows: [] }); // BEGIN
+      query.mockResolvedValueOnce({ rows: [] }); // set_config
+      query.mockResolvedValueOnce({ rows: [{ id: 'g1', name: 'Recrutador' }] }); // groupIds
+      query.mockResolvedValueOnce({ rows: [] }); // staffUids — 'bob' NÃO é staff
+      query.mockResolvedValueOnce({ rows: [{ email: 'bob@e.com', firebase_uid: 'u-bob' }] }); // anyUids — 'bob' TEM conta
+      return { query, repo: new PgIamConfigRepository(pool(query).pool) };
+    };
+    const add = mkComRebaixado();
+    await expect(
+      add.repo.applyPlan({ errors: [], pendencies: [], ops: [{ kind: 'add_member', group: 'Recrutador', email: 'bob@e.com' }] }, ctx),
+    ).rejects.toThrow('e-mail sem conta staff no alvo');
+
+    const remove = mkComRebaixado();
+    const n = await remove.repo.applyPlan({ errors: [], pendencies: [], ops: [{ kind: 'remove_member', group: 'Recrutador', email: 'bob@e.com' }] }, ctx);
+    expect(n).toBe(1);
+    const removeCall = remove.query.mock.calls.find((c) => String(c[0]).includes('iam.remove_member'));
+    expect(removeCall?.[1]).toEqual(['g1', 'u-bob']);
   });
 });

@@ -10,6 +10,10 @@
  *     menos poder do que o time decidiu, e ninguém saberia;
  *   · e-mail sem conta no alvo é PENDÊNCIA, não erro: a pessoa entra quando a
  *     conta existir, e a 2ª execução volta a listar;
+ *   · (M1) membro vivo rebaixado (role fora das 3 de staff) é PENDÊNCIA
+ *     `member_role_not_staff`, não erro — o export lista TODO vínculo vivo, e
+ *     a remoção dele NÃO fica presa a `knownEmails` (staff-only, que vale só
+ *     para ADD);
  *   · grupo ausente do snapshot é MANTIDO (D124: nunca apagar); `archiveMissing`
  *     arquiva só grupos não-sistema;
  *   · o NOME é a chave do grupo — renomear é criar outro (SUP-5).
@@ -23,8 +27,18 @@ export interface IamTargetState {
   current: IamConfigSnapshot;
   /** Células vivas (`deprecated_at IS NULL`) do catálogo do alvo. */
   catalog: ReadonlySet<string>;
-  /** E-mails (minúsculos) de staff com conta no alvo. */
+  /** E-mails (minúsculos) de staff com conta no alvo. Vale para ADD (e para `email_without_account`). */
   knownEmails: ReadonlySet<string>;
+  /**
+   * (M1) E-mails (minúsculos) com QUALQUER conta viva no alvo, staff ou não —
+   * a lookup usada só para REMOVE. `exportSnapshot` deixou de filtrar `role`
+   * (M1): um membro vivo cujo role saiu das 3 de staff continua aparecendo em
+   * `current.members`, e removê-lo não pode depender de `knownEmails`
+   * (staff-only), senão `unknown_member_on_remove` bloqueia o plano inteiro
+   * por um vínculo que o próprio alvo confirma existir. `knownEmails` continua
+   * sendo o teto de quem pode ser ADICIONADO.
+   */
+  removableEmails: ReadonlySet<string>;
   /**
    * Nomes de grupo ARQUIVADOS do alvo (M4). `current.groups` só tem grupos
    * vivos (contrato do snapshot) — sem isto o planner não distingue "nome
@@ -116,16 +130,28 @@ export function planIamConfigImport(
       else ops.push({ kind: 'add_member', group: g.name, email });
     }
     for (const email of remove) {
-      // M3: e-mail sem conta conhecida no alvo não devia sobrar em `current`
-      // depois do filtro de role em `exportSnapshot`/`staffUidsByEmail` — mas
-      // se sobrar (fonte divergente, corrida), é ERRO do PLANO (dry-run
-      // acusa), nunca `remove_member` explodindo `applyOp` no meio da
-      // transação com "e-mail sem conta no alvo".
-      if (!target.knownEmails.has(email)) {
-        errors.push({ code: 'unknown_member_on_remove', detail: `${g.name}: ${email} sem conta conhecida no alvo` });
-      } else {
-        ops.push({ kind: 'remove_member', group: g.name, email });
+      // M1: a checagem de remoção é contra `removableEmails` (QUALQUER conta
+      // viva, sem filtro de role) — NÃO `knownEmails` (staff-only). Antes de
+      // M1, `exportSnapshot` já filtrava por role, então um membro fora das 3
+      // roles de staff nunca aparecia em `current.members`, e esta checagem
+      // usava `knownEmails` sem diferença observável. Agora que o export lista
+      // TODO vínculo vivo, usar `knownEmails` aqui bloquearia o plano inteiro
+      // (`unknown_member_on_remove`) sempre que alguém for rebaixado — o
+      // oposto do que a remoção existe para resolver.
+      if (!target.removableEmails.has(email)) {
+        // Sem conta NENHUMA no alvo — fonte divergente, corrida. Continua ERRO
+        // do PLANO (dry-run acusa), nunca `remove_member` explodindo `applyOp`
+        // no meio da transação. `detail` não carrega e-mail (B4: nunca logar
+        // PII em texto claro) — o e-mail vai no campo estruturado.
+        errors.push({ code: 'unknown_member_on_remove', detail: `${g.name}: sem conta conhecida no alvo`, email });
+        continue;
       }
+      if (!target.knownEmails.has(email)) {
+        // M1: conta existe, mas o role atual saiu das 3 de staff — sinaliza
+        // sem bloquear; a remoção segue normalmente.
+        pendencies.push({ code: 'member_role_not_staff', email, group: g.name });
+      }
+      ops.push({ kind: 'remove_member', group: g.name, email });
     }
   }
 

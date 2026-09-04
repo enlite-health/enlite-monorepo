@@ -100,6 +100,9 @@ describe('iam-config export/import (D208)', () => {
       current: await repo.exportSnapshot(TENANT),
       catalog: await repo.liveCells(),
       knownEmails: new Set((await repo.staffUidsByEmail()).keys()),
+      // (M1) `removableEmails` — mesma lookup SEM filtro de role que o script real
+      // usa para REMOVE (`uidsByEmailAny`), distinta de `knownEmails` (staff-only).
+      removableEmails: new Set((await repo.uidsByEmailAny()).keys()),
       archivedGroupNames: await repo.archivedGroupNames(TENANT),
     };
   }

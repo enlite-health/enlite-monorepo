@@ -17,13 +17,20 @@ import { normalizeSnapshot } from '../application/iamConfig/snapshot';
 interface GroupRow { id: string; name: string; description: string | null; is_system: boolean }
 
 /**
- * "Staff elegível" para a configuração IAM (M3) — fonte ÚNICA usada nos DOIS
- * lugares deste repositório (o `members` de `exportSnapshot` e
- * `staffUidsByEmail`). Antes cada um tinha o seu: `exportSnapshot` não
- * filtrava role nenhuma, e um membro com role fora desta lista aparecia em
- * `current.members` sem que `staffUidsByEmail` o reconhecesse — o planner
- * emitia `remove_member` para um e-mail que `applyOp` não achava, e a
- * transação abortava no MEIO, depois de um dry-run limpo.
+ * "Staff elegível" para a configuração IAM. Vale para `staffUidsByEmail`
+ * (a checagem de ADD — `add_member` continua exigindo staff) — NÃO para
+ * `exportSnapshot`, nem para a remoção.
+ *
+ * (M1) Até aqui esta constante também filtrava `members` em `exportSnapshot`,
+ * e o motivo do M3 original — as duas pontas precisavam concordar em quem é
+ * "staff elegível", senão `remove_member` explodia `applyOp` no meio da
+ * transação — deixou de valer: o export agora lista TODO vínculo vivo, sem
+ * filtro de role, porque um admin REBAIXADO (role saiu das 3 de staff) continua
+ * com a célula no banco (`iam.add_member` não valida role, e
+ * `effective_permissions`/`effective_countries` filtram por `status`, nunca
+ * por role) — filtrar por role no export escondia esse vínculo do
+ * `iam-config.json`, o artefato revisável "quem tem o quê". A remoção usa
+ * `uidsByEmailAny` (sem filtro de role), uma lookup PRÓPRIA, distinta desta.
  *
  * ⚠️ Não importa de `identity/domain/EnliteRole` de propósito: a fronteira do
  * módulo (`permissions/__tests__/moduleBoundary.test.ts`, D115 §7) proíbe
@@ -36,7 +43,17 @@ const STAFF_ROLES = ['admin', 'recruiter', 'community_manager'] as const;
 export class PgIamConfigRepository {
   constructor(private readonly pool: Pool) {}
 
-  /** O estado do alvo (ou da origem) na forma do snapshot — só grupos vivos, vínculos vivos, overrides. */
+  /**
+   * O estado do alvo (ou da origem) na forma do snapshot — só grupos vivos,
+   * vínculos vivos, overrides.
+   *
+   * (M1) `members` NÃO filtra por role — TODO vínculo vivo aparece, mesmo o de
+   * um usuário cujo role saiu das 3 de staff. `iam.add_member` não valida
+   * role, e `effective_permissions`/`effective_countries` filtram por
+   * `status`, nunca por role: um admin rebaixado mantém a célula concedida no
+   * banco, e o export é o artefato revisável "quem tem o quê" — filtrar por
+   * role aqui esconderia esse vínculo vivo de quem revisa o `iam-config.json`.
+   */
   async exportSnapshot(tenantId: string): Promise<IamConfigSnapshot> {
     const groups = await this.pool.query<GroupRow>(
       `SELECT id, name, description, is_system FROM iam.permission_groups
@@ -55,9 +72,8 @@ export class PgIamConfigRepository {
     );
     const members = await this.pool.query<{ group_id: string; email: string }>(
       `SELECT ug.group_id, u.email FROM iam.user_groups ug JOIN users u ON u.firebase_uid = ug.user_id
-        WHERE ug.group_id = ANY($1) AND ug.removed_at IS NULL AND u.email IS NOT NULL
-          AND u.role = ANY($2)`,
-      [groups.rows.map((g) => g.id), STAFF_ROLES as unknown as string[]],
+        WHERE ug.group_id = ANY($1) AND ug.removed_at IS NULL AND u.email IS NOT NULL`,
+      [groups.rows.map((g) => g.id)],
     );
     const features = await this.pool.query<{ country: string; feature_key: string; enabled: boolean; config: unknown }>(
       `SELECT country, feature_key, enabled, config FROM iam.country_features WHERE source = 'override'`,
@@ -107,6 +123,19 @@ export class PgIamConfigRepository {
    * planner real: se o script chamar `exportSnapshot(desired.tenantId)`, o
    * `current.tenantId` vira sempre igual ao `desired.tenantId` por construção,
    * e um JSON com tenant errado nunca é pego.
+   *
+   * (M4) O que esta função PEGA: lê `iam.current_tenant_id()` num `pg.Pool` cru
+   * — sem `app.tenant_id` setado por sessão (não há GUC de tenant fora de uma
+   * transação com `SET LOCAL`/RLS), essa função devolve a constante única da
+   * mig 206. Isso detecta divergência entre o JSON `desired` (editado à mão,
+   * por ex.) e ESSA constante — é o caso real de `tenant_mismatch` hoje.
+   *
+   * O que ela NÃO PEGA: se o operador apontar `DATABASE_URL`/`--tenant` para o
+   * banco-alvo ERRADO (produção em vez de stage, por ex.), esta função não tem
+   * como perceber — ela lê o único tenant que aquele banco conhece, e a guarda
+   * `tenant_mismatch` fica inerte contra esse erro específico (é por isso que
+   * `--tenant` no script é conferência humana, não substituto de auditoria de
+   * `DATABASE_URL`).
    */
   async resolveTenantId(): Promise<string> {
     const r = await this.pool.query<{ id: string }>(`SELECT iam.current_tenant_id() AS id`);
@@ -114,16 +143,31 @@ export class PgIamConfigRepository {
   }
 
   /**
-   * e-mail (minúsculo) → uid dos staff com conta no alvo. MESMO filtro de role
-   * do `members` em `exportSnapshot` (M3): as duas pontas precisam concordar em
-   * quem é "staff elegível", senão o planner vê um membro em `current` que esta
-   * função não reconhece, e o `remove_member` explode a transação em `applyOp`.
+   * e-mail (minúsculo) → uid dos STAFF (3 roles) com conta no alvo. Usada só
+   * para a checagem de ADD (`add_member` continua exigindo staff) — NÃO para
+   * `exportSnapshot` nem para REMOVE (M1: ver `uidsByEmailAny`).
    */
   async staffUidsByEmail(): Promise<Map<string, string>> {
     const r = await this.pool.query<{ email: string; firebase_uid: string }>(
       `SELECT lower(email) AS email, firebase_uid FROM users
         WHERE role = ANY($1) AND email IS NOT NULL`,
       [STAFF_ROLES as unknown as string[]],
+    );
+    return new Map(r.rows.map((x) => [x.email, x.firebase_uid]));
+  }
+
+  /**
+   * (M1) e-mail (minúsculo) → uid de QUALQUER conta no alvo, sem filtro de
+   * role — a lookup PRÓPRIA para REMOVE, distinta de `staffUidsByEmail` (ADD).
+   * `exportSnapshot` deixou de filtrar `members` por role, então um vínculo
+   * vivo de alguém rebaixado (role fora das 3 de staff) aparece em
+   * `current.members`; usar `staffUidsByEmail` aqui faria `remove_member`
+   * explodir `applyOp` no meio da transação com "e-mail sem conta no alvo",
+   * quando a conta existe — só não é mais staff.
+   */
+  async uidsByEmailAny(): Promise<Map<string, string>> {
+    const r = await this.pool.query<{ email: string; firebase_uid: string }>(
+      `SELECT lower(email) AS email, firebase_uid FROM users WHERE email IS NOT NULL`,
     );
     return new Map(r.rows.map((x) => [x.email, x.firebase_uid]));
   }
@@ -146,10 +190,14 @@ export class PgIamConfigRepository {
       await client.query('BEGIN');
       await client.query(`SELECT set_config('app.user_uid', $1, true)`, [args.actorUid]);
       const groupIds = await this.groupIdsByName(client, args.tenantId);
-      const uids = await this.staffUidsByEmail();
+      // M1: duas lookups distintas — `staffUids` para `add_member` (continua
+      // exigindo staff), `anyUids` para `remove_member` (sem filtro de role,
+      // senão remover um vínculo rebaixado explode aqui com "e-mail sem conta").
+      const staffUids = await this.staffUidsByEmail();
+      const anyUids = await this.uidsByEmailAny();
       let n = 0;
       for (const op of plan.ops) {
-        await this.applyOp(client, op, { tenantId: args.tenantId, reason: args.reason, groupIds, uids });
+        await this.applyOp(client, op, { tenantId: args.tenantId, reason: args.reason, groupIds, staffUids, anyUids });
         n += 1;
       }
       await client.query('COMMIT');
@@ -179,7 +227,7 @@ export class PgIamConfigRepository {
   private async applyOp(
     client: PoolClient,
     op: IamImportOp,
-    ctx: { tenantId: string; reason: string; groupIds: Map<string, string>; uids: Map<string, string> },
+    ctx: { tenantId: string; reason: string; groupIds: Map<string, string>; staffUids: Map<string, string>; anyUids: Map<string, string> },
   ): Promise<void> {
     switch (op.kind) {
       case 'create_group': {
@@ -212,12 +260,20 @@ export class PgIamConfigRepository {
       case 'revoke_country':
         await client.query(`SELECT iam.revoke_country($1, $2)`, [this.groupId(ctx.groupIds, op.group), op.country]);
         return;
-      case 'add_member':
+      case 'add_member': {
+        // Continua exigindo staff — a lookup É `staffUids` de propósito (M1).
+        const uid = ctx.staffUids.get(op.email);
+        if (!uid) throw new Error(`add_member: e-mail sem conta staff no alvo no grupo ${op.group} (o plano deveria tê-lo listado como pendência; e-mail fora da mensagem — nunca em log)`);
+        await client.query(`SELECT iam.add_member($1, $2)`, [this.groupId(ctx.groupIds, op.group), uid]);
+        return;
+      }
       case 'remove_member': {
-        const uid = ctx.uids.get(op.email);
-        if (!uid) throw new Error(`e-mail sem conta no alvo: ${op.email} (o plano deveria tê-lo listado como pendência)`);
-        const fn = op.kind === 'add_member' ? 'iam.add_member' : 'iam.remove_member';
-        await client.query(`SELECT ${fn}($1, $2)`, [this.groupId(ctx.groupIds, op.group), uid]);
+        // (M1) SEM filtro de role — resolve o vínculo mesmo se o role saiu das
+        // 3 de staff (admin rebaixado, por ex.), que é exatamente o caso que a
+        // remoção existe para fechar.
+        const uid = ctx.anyUids.get(op.email);
+        if (!uid) throw new Error(`remove_member: e-mail sem conta no alvo no grupo ${op.group} (o plano deveria tê-lo listado como pendência; e-mail fora da mensagem — nunca em log)`);
+        await client.query(`SELECT iam.remove_member($1, $2)`, [this.groupId(ctx.groupIds, op.group), uid]);
         return;
       }
       case 'set_country_feature':

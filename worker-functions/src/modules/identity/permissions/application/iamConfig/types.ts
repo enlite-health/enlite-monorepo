@@ -58,13 +58,27 @@ export interface IamImportError {
     | 'unknown_member_on_remove'
     | 'archived_group_name_conflict';
   detail: string;
+  /**
+   * (B4) Presente só em `unknown_member_on_remove` — o e-mail referenciado, em
+   * campo ESTRUTURADO. `detail` NUNCA carrega e-mail (regra dura de PII em
+   * log): antes o e-mail ia embutido na string de `detail`, e
+   * `scripts/iam-config-import.ts` imprimia `e.detail` cru com
+   * `console.error`.
+   */
+  email?: string;
 }
 
-export interface IamImportPendency {
-  code: 'email_without_account';
-  email: string;
-  group: string;
-}
+export type IamImportPendency =
+  | { code: 'email_without_account'; email: string; group: string }
+  /**
+   * (M1) Vínculo vivo no alvo cujo `role` saiu das 3 de staff (admin
+   * rebaixado, por ex.) — o export agora lista TODO vínculo vivo (sem filtro
+   * de role), e esta pendência é como o plano/relatório sinaliza o caso sem
+   * bloquear a remoção: `remove_member` resolve o uid por uma lookup própria,
+   * SEM filtro de role (distinta da de `add_member`, que continua exigindo
+   * staff).
+   */
+  | { code: 'member_role_not_staff'; email: string; group: string };
 
 export interface IamImportPlan {
   /** Na ordem de aplicação: grupos → células → países → membros → features. */
