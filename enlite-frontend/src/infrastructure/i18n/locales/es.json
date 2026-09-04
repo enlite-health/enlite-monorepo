@@ -2855,6 +2855,7 @@
           "searchScopeLabel": "Buscando en:",
           "searchScopeUsual": "Salud mental y neurología",
           "searchScopeAll": "Todas las categorías",
+          "widenScopeHint": "¿No encontrás el diagnóstico? Probá en \"Todas las categorías\".",
           "whoAttribution": "Clasificación Internacional de Enfermedades, 11.ª revisión (CIE-11), Organización Mundial de la Salud. Licencia CC BY-ND 3.0 IGO.",
           "chipsEmpty": "Todavía no se agregó ningún diagnóstico.",
           "makePrimary": "Marcar como principal",

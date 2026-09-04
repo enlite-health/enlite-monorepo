@@ -2776,6 +2776,7 @@
           "searchScopeLabel": "Buscando em:",
           "searchScopeUsual": "Saúde mental e neurologia",
           "searchScopeAll": "Todas as categorias",
+          "widenScopeHint": "Não encontrou o diagnóstico? Tente em \"Todas as categorias\".",
           "whoAttribution": "Classificação Internacional de Doenças, 11ª revisão (CID-11), Organização Mundial da Saúde. Licença CC BY-ND 3.0 IGO.",
           "chipsEmpty": "Nenhum diagnóstico adicionado ainda.",
           "makePrimary": "Marcar como principal",

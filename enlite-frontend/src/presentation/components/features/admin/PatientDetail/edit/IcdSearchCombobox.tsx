@@ -253,6 +253,20 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false }: IcdSearchC
         </button>
       </div>
 
+      {/* 🔴 O controle de escopo diz ONDE ela busca, mas não que a resposta pode estar FORA.
+          Medido: no escopo habitual, `diabetes` devolve "Neuropatía autonómica por diabetes
+          mellitus" — plausível e ERRADO, porque "Diabetes mellitus tipo 2" é capítulo 05 e fica
+          fora. Ela clica no primeiro e grava diagnóstico errado, sem nenhum sinal.
+          Convite PERMANENTE (não condicional): a versão anterior era um aviso com contagem, e ele
+          disparava em praticamente toda busca — vira ruído e ela aprende a ignorar em um dia.
+          Texto fixo não tem heurística para calibrar nem falso positivo, e aponta para o controle
+          que está logo acima. Só aparece depois de uma busca sem escolha, para não poluir o vazio. */}
+      {!allChapters && query.trim().length >= MIN_CHARS && (
+        <Text size="xs" color="muted" data-testid={`${id}-widen-hint`}>
+          {ta('widenScopeHint')}
+        </Text>
+      )}
+
       {statusText && (
         <Text
           as="span"

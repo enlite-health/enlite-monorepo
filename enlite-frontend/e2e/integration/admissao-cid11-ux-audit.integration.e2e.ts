@@ -45,6 +45,18 @@ async function shot3(target: Page | ReturnType<Page['locator']>, name: string): 
   return file;
 }
 
+// RODADA 4 — pasta NOVA, sem sobrescrever rodada1/2/3. Foco: (a) o controle de escopo permanente
+// (novo desde a rodada 2) e (b) o corpo do chip agora inerte (removido desde a rodada 2).
+const SHOT_DIR4 = '/Users/gabrielstein-dev/projects/enlite/ebrain/specs/016-admissao-cid11/evidencias/ux/rodada4';
+fs.mkdirSync(SHOT_DIR4, { recursive: true });
+
+async function shot4(target: Page | ReturnType<Page['locator']>, name: string): Promise<string> {
+  const file = path.join(SHOT_DIR4, name);
+  await target.screenshot({ path: file });
+  log('SHOT4', `${name} -> ${file}`);
+  return file;
+}
+
 function log(tag: string, msg: string): void {
   // eslint-disable-next-line no-console
   console.log(`[AUDIT ${tag}] ${msg}`);
@@ -147,11 +159,13 @@ test.describe('AUDITORIA UX — spec 016, tela de diagnóstico CID-11 (não é g
 
   let patient: { patientId: string; stamp: string };
   let patientC: { patientId: string; stamp: string }; // RODADA 2 — Parte C, paciente do zero
+  let patientD: { patientId: string; stamp: string }; // RODADA 4 — Parte D, paciente do zero
   const wasPromotedBefore = isCatalogPromoted();
 
   test.beforeAll(() => {
     patient = seedPatientForDiagnosis();
     patientC = seedPatientForDiagnosis();
+    patientD = seedPatientForDiagnosis();
     setCatalogPromoted(true);
     log('ENV', `is_current antes de mexer = ${wasPromotedBefore}`);
   });
@@ -159,6 +173,7 @@ test.describe('AUDITORIA UX — spec 016, tela de diagnóstico CID-11 (não é g
   test.afterAll(() => {
     cleanupPatientDeep(patient.patientId);
     cleanupPatientDeep(patientC.patientId);
+    cleanupPatientDeep(patientD.patientId);
     setCatalogPromoted(wasPromotedBefore);
     const restored = isCatalogPromoted();
     log('ENV', `restaurado: is_current=${restored} (esperado=${wasPromotedBefore}) -> ${restored === wasPromotedBefore ? 'OK' : 'FALHOU'}`);
@@ -186,6 +201,44 @@ test.describe('AUDITORIA UX — spec 016, tela de diagnóstico CID-11 (não é g
     const scopeUsualCheckedBeforeTyping = await attrOrNothing(page.getByTestId('icd-search-scope-usual'), 'aria-checked');
     log('R3-01', `V1: controle de escopo ANTES de digitar — opção habitual="${scopeUsualBeforeTyping}" (checked=${scopeUsualCheckedBeforeTyping}) | opção "todas"="${scopeAllBeforeTyping}"`);
     await shot3(drawer, 'ux3-01-controle-visivel-antes-de-digitar.png');
+
+    // ── RODADA 4 / item 1 — o controle é ESTADO funcional (radiogroup, aria-checked, cor muda)
+    // ou parece rótulo decorativo? role="radiogroup" com role="radio" em cada opção JÁ é sinal
+    // forte de "isto é controle", não texto solto — confirma programaticamente.
+    const scopeRole = await attrOrNothing(page.getByTestId('icd-search-scope'), 'role');
+    const scopeUsualRole = await attrOrNothing(page.getByTestId('icd-search-scope-usual'), 'role');
+    log('R4-01', `item1: role do container="${scopeRole}" (esperado radiogroup) | role da opção="${scopeUsualRole}" (esperado radio) — controle é FUNCIONAL, não decorativo = ${scopeRole === 'radiogroup' && scopeUsualRole === 'radio'}`);
+
+    // ── RODADA 4 / item 2 — "Salud mental y neurología" pode ser lido como categoria CLÍNICA do
+    // paciente/caso, em vez de filtro de busca? Evidência objetiva: comparar o ESTILO COMPUTADO do
+    // rótulo-prefixo ("Buscando en:") contra o texto da opção, e comparar o estilo da opção ATIVA
+    // contra o badge "Principal" do chip de diagnóstico (mesmo padrão visual = risco de confusão
+    // entre "isto é um filtro" e "isto é um dado clínico do paciente").
+    // Compara SPAN de texto com SPAN de texto (não o <button> inteiro, que herda font-size do
+    // body por não ter classe de tamanho própria — a classe fica no <Text> filho).
+    const scopeLabelTextStyle = await page.getByTestId('icd-search-scope').locator('span').first().evaluate((el) => {
+      const s = getComputedStyle(el);
+      return { fontSize: s.fontSize, fontWeight: s.fontWeight, color: s.color };
+    });
+    const scopeUsualTextStyle = await page.getByTestId('icd-search-scope-usual').locator('span').first().evaluate((el) => {
+      const s = getComputedStyle(el);
+      return { fontSize: s.fontSize, fontWeight: s.fontWeight, color: s.color };
+    });
+    const scopeUsualButtonStyle = await page.getByTestId('icd-search-scope-usual').evaluate((el) => {
+      const s = getComputedStyle(el);
+      return { backgroundColor: s.backgroundColor, borderColor: s.borderColor };
+    });
+    log('R4-02', `item2: rótulo-prefixo "Buscando en:" (span de texto) — fontSize=${scopeLabelTextStyle.fontSize} fontWeight=${scopeLabelTextStyle.fontWeight} color=${scopeLabelTextStyle.color} | texto da opção ativa "Salud mental y neurología" (span de texto) — fontSize=${scopeUsualTextStyle.fontSize} fontWeight=${scopeUsualTextStyle.fontWeight} color=${scopeUsualTextStyle.color}`);
+    log('R4-02', `item2: mesmo TAMANHO de fonte entre rótulo e opção (span-a-span) = ${scopeLabelTextStyle.fontSize === scopeUsualTextStyle.fontSize} | mesmo peso = ${scopeLabelTextStyle.fontWeight === scopeUsualTextStyle.fontWeight} | cor DIFERENTE (label cinza-muted vs opção ativa colorida) = ${scopeLabelTextStyle.color !== scopeUsualTextStyle.color} — a diferenciação entre "isto é o rótulo do filtro" e "isto é a opção escolhida" depende só de COR + fundo/borda do botão-pill, não de tamanho de fonte nem de um rótulo redundante tipo "(filtro)"`);
+    await shot4(page.getByTestId('icd-search-scope'), 'ux4-02-controle-de-escopo-close-up.png');
+
+    // ── RODADA 4 / item 6 — dá pra saber visualmente qual toggle está ativo? Captura o par
+    // completo de estilos computados dos DOIS botões no estado padrão (habitual ativo).
+    const scopeAllOptionStyleBefore = await page.getByTestId('icd-search-scope-all').evaluate((el) => {
+      const s = getComputedStyle(el);
+      return { backgroundColor: s.backgroundColor, borderColor: s.borderColor };
+    });
+    log('R4-06', `item6: estado inicial — habitual(ativo) bg=${scopeUsualButtonStyle.backgroundColor} border=${scopeUsualButtonStyle.borderColor} | todas(inativo) bg=${scopeAllOptionStyleBefore.backgroundColor} border=${scopeAllOptionStyleBefore.borderColor} | contraste visual entre ativo/inativo existe = ${scopeUsualButtonStyle.backgroundColor !== scopeAllOptionStyleBefore.backgroundColor || scopeUsualButtonStyle.borderColor !== scopeAllOptionStyleBefore.borderColor}`);
 
     // ── 2. Digita 1 letra e espera (piso é 2) ────────────────────────────────────────────
     const input = page.getByTestId('icd-search-input');
@@ -250,6 +303,21 @@ test.describe('AUDITORIA UX — spec 016, tela de diagnóstico CID-11 (não é g
     const statusRestrito = await textOrNothing(page.getByTestId('icd-search-status'));
     log('05', `"diabetes" com escopo habitual: status-tela="${statusRestrito}"`);
     await shot(drawer, 'ux-05a-diabetes-filtrado.png');
+    // RODADA 4 / item 3 — com "diabetes" sem resultado no escopo padrão, existe ALGUMA pista
+    // visual (texto, ícone, destaque no toggle "todas") que sugira trocar de escopo sozinha, ou
+    // ela só vê "sem resultado" genérico e teria que adivinhar que o escopo é a causa?
+    const codeHintDuringDiabetes = await page.getByTestId('icd-search-code-hint').count();
+    // status-tela sozinho não prova nada (fica "null" tanto em "sem resultado" quanto em "achou
+    // resultado" — a fase 'results' não seta statusText). Confere a LISTA de verdade.
+    const listboxDuringDiabetesUsual = await page.getByTestId('icd-search-listbox').count();
+    const diabetesUsualTitle = listboxDuringDiabetesUsual > 0 ? await textOrNothing(page.getByTestId('icd-search-option-0')) : null;
+    log('R4-03', `item3: status-tela = "${statusRestrito}" | lista de resultados presente = ${listboxDuringDiabetesUsual > 0} | 1º resultado = "${diabetesUsualTitle}" | existe MENÇÃO textual a trocar de escopo = ${/todas las categor/i.test(statusRestrito ?? '')} | dica de código/sigla por engano = ${codeHintDuringDiabetes > 0}`);
+    if (listboxDuringDiabetesUsual > 0) {
+      log('R4-03', `item3: ACHADO — "diabetes" com escopo padrão NÃO fica vazio, devolve "${diabetesUsualTitle}" (nenhuma pista diz que existe algo MELHOR em "Todas las categorías"; ela só saberia se já soubesse que o toggle existe e decidisse comparar por conta própria)`);
+    } else {
+      log('R4-03', `item3: "diabetes" com escopo padrão fica vazio — única pista de que dá pra trocar é o toggle "Todas las categorías", sempre visível ao lado (não há link dentro de um aviso condicional, esse já foi removido)`);
+    }
+    await shot4(drawer, 'ux4-03-diabetes-resultado-no-escopo-padrao.png');
     // V1 — o aviso condicional "Hay N resultados en otras categorías" e a 2ª requisição que o
     // sustentava foram REMOVIDOS. Prova negativa: não existem mais em lugar nenhum da tela.
     const outsideNoticeGoneR3 = await page.getByTestId('icd-search-outside-notice').count();
@@ -259,8 +327,26 @@ test.describe('AUDITORIA UX — spec 016, tela de diagnóstico CID-11 (não é g
     log('R3-05', `V1: aviso antigo removido do DOM = ${outsideNoticeGoneR3 === 0} | botão antigo "buscar en todas" removido = ${oldToggleGoneR3 === 0} | texto "otras categorías" não existe mais na tela = ${oldNoticeTextGoneR3}`);
     await shot3(drawer, 'ux3-05a-sem-aviso-condicional-diabetes.png');
 
+    // ── RODADA 4 / item 4 — troca de escopo com TEXTO JÁ DIGITADO (o input ainda tem "diabetes",
+    // ninguém apagou nada): a busca refaz SOZINHA, sem precisar re-digitar? Instrumenta a rede
+    // ANTES do clique e mede se um request novo sai só do clique no toggle.
+    const searchReqsOnScopeSwitch: Array<{ url: string; ts: number }> = [];
+    const onSearchReq = (req: import('@playwright/test').Request) => {
+      if (req.method() === 'GET' && /\/api\/admin\/terminology\/search/.test(req.url())) {
+        searchReqsOnScopeSwitch.push({ url: req.url(), ts: Date.now() });
+      }
+    };
+    page.on('request', onSearchReq);
+    const inputValueBeforeScopeSwitch = await page.getByTestId('icd-search-input').inputValue();
+    const clickTs = Date.now();
+
     // troca de escopo pelo CONTROLE novo (estado permanente, não link condicional)
     await page.getByTestId('icd-search-scope-all').click();
+    await page.waitForTimeout(600); // > DEBOUNCE_MS (300ms) do componente, dá tempo do fetch sair
+    page.off('request', onSearchReq);
+    log('R4-04', `item4: input ANTES do clique no toggle continuava com texto (não foi limpo) = "${inputValueBeforeScopeSwitch}" | requests de /terminology/search capturados após o clique (sem re-digitar nada) = ${JSON.stringify(searchReqsOnScopeSwitch)} | delta-ts do 1º request após o clique = ${searchReqsOnScopeSwitch[0] ? searchReqsOnScopeSwitch[0].ts - clickTs : 'N/A'}ms | BUSCA REFEZ SOZINHA = ${searchReqsOnScopeSwitch.length > 0}`);
+    await shot4(drawer, 'ux4-04-troca-de-escopo-refaz-busca-sozinha.png');
+
     const scopeAllCheckedR3 = await attrOrNothing(page.getByTestId('icd-search-scope-all'), 'aria-checked');
     log('R3-05', `V1: depois de clicar em "todas las categorías" — aria-checked="${scopeAllCheckedR3}"`);
     await searchAndWait(page, 'diabetes');
@@ -305,6 +391,20 @@ test.describe('AUDITORIA UX — spec 016, tela de diagnóstico CID-11 (não é g
     log('06', `POSTs /diagnoses disparados pelo duplo clique = ${postCount} | conteúdo dos chips = "${chipsAfterDbl}" | nº de elementos chip-* no DOM = ${chipCountAfterDbl}`);
     await shot(drawer, 'ux-06-apos-duplo-clique.png');
 
+    // ── RODADA 4 / item 5 — já tem diagnóstico escolhido; DEPOIS troca de escopo. Algo se perde
+    // (chip some, erro aparece) ou fica intacto (o escopo só afeta a BUSCA, não a seleção já feita)?
+    const chipTitlesBeforeScopeChange = await page.locator('[data-testid^="diagnosis-chip-"]').allTextContents();
+    await page.getByTestId('icd-search-scope-all').click();
+    await page.waitForTimeout(300);
+    const chipCountAfterScopeChange = await page.locator('[data-testid^="diagnosis-chip-"]').count();
+    const chipTitlesAfterScopeChange = await page.locator('[data-testid^="diagnosis-chip-"]').allTextContents();
+    const errorAfterScopeChange = await textOrNothing(page.getByTestId('diagnosis-assignment-error'));
+    log('R4-05', `item5: diagnóstico(s) escolhido(s) ANTES de trocar escopo = ${JSON.stringify(chipTitlesBeforeScopeChange)} | DEPOIS de trocar para "todas" = ${JSON.stringify(chipTitlesAfterScopeChange)} (contagem ${chipCountAfterScopeChange}) | algum aviso/susto apareceu = "${errorAfterScopeChange}" | NADA SE PERDEU = ${chipCountAfterScopeChange === chipCountAfterDbl && errorAfterScopeChange === null}`);
+    await shot4(drawer, 'ux4-05-chip-intacto-apos-trocar-escopo.png');
+    // volta ao padrão pro resto do percurso (não é o foco deste item, mas evita efeito colateral)
+    await page.getByTestId('icd-search-scope-usual').click();
+    await page.waitForTimeout(200);
+
     // ── 7. Escolhe o mesmo diagnóstico duas vezes ────────────────────────────────────────
     await searchAndWait(page, 'esquizofrenia');
     const option0Exists2 = await page.getByTestId('icd-search-option-0').count();
@@ -330,11 +430,27 @@ test.describe('AUDITORIA UX — spec 016, tela de diagnóstico CID-11 (não é g
     log('08', `U4: texto visível no botão de promover ANTES de qualquer clique = "${promoteTextBeforeBodyClick}"`);
     // RODADA 3 / V2 — o corpo do chip deixou de ser clicável (era o próprio bug do mis-clique).
     // Clica no CORPO mesmo assim, pra provar que ele agora é INERTE.
+    // RODADA 4 / item 7 — pista visual (cursor) ANTES do clique: o corpo ainda "parece" clicável
+    // (cursor: pointer) mesmo não fazendo mais nada? Mede o cursor computado no `<li>` do chip
+    // (sem hover — Playwright não aciona `:hover` via CSS aqui, mas o cursor "parado" já é o sinal
+    // que mais importa: se for `default`, não há nem a affordance estática de "isto é clicável").
+    const chipBodyCursor = await firstChip.evaluate((el) => getComputedStyle(el).cursor);
+    log('R4-07', `item7: cursor computado no corpo do chip (li) = "${chipBodyCursor}" (esperado "default"/"auto" — "pointer" seria pista falsa de que ainda é clicável)`);
+    let postDiagnosesOnBodyClick = 0;
+    let patchOnBodyClick = 0;
+    const onPostDuringBodyClick = (req: import('@playwright/test').Request) => {
+      if (req.method() === 'POST' && /\/diagnoses$/.test(req.url())) postDiagnosesOnBodyClick++;
+      if (req.method() === 'PATCH' && /\/diagnoses\//.test(req.url())) patchOnBodyClick++;
+    };
+    page.on('request', onPostDuringBodyClick);
     await firstChip.click({ position: { x: 10, y: 10 } }).catch(() => {});
     await page.waitForTimeout(300);
+    page.off('request', onPostDuringBodyClick);
+    log('R4-07', `item7: clique no corpo do chip disparou ALGUMA request (POST /diagnoses ou PATCH /diagnoses/:id) = ${postDiagnosesOnBodyClick + patchOnBodyClick > 0} (esperado FALSE — corpo inerte também na REDE, não só na UI)`);
     const primaryBadgeAfterBodyClick = await page.locator('[data-testid^="diagnosis-chip-primary-badge-"]').count();
     log('R3-08', `V2: clique no CORPO do chip promoveu a principal? badge presente = ${primaryBadgeAfterBodyClick > 0} (esperado FALSE — o corpo agora é inerte)`);
     await shot3(page.getByTestId('diagnosis-chips'), 'ux3-08-corpo-do-chip-inerte-apos-clique.png');
+    await shot4(page.getByTestId('diagnosis-chips'), 'ux4-07-corpo-do-chip-cursor-e-rede.png');
     const promoteBtn = page.locator('[data-testid^="diagnosis-chip-promote-"]').first();
     const promoteBtnVisible = await promoteBtn.isVisible().catch(() => false);
     const promoteAriaLabel = await attrOrNothing(promoteBtn, 'aria-label');
@@ -635,5 +751,99 @@ test.describe('AUDITORIA UX — spec 016, tela de diagnóstico CID-11 (não é g
     await shot(page, 'ux-c07-apos-reload.png');
 
     log('C', `RESUMO PARTE C: ${duvidas} momento(s) em que ela precisaria perguntar pra alguém`);
+  });
+
+  // RODADA 4 — Parte D: igual à Parte C, mas com um diagnóstico FORA do escopo padrão (diabetes,
+  // só aparece em "Todas las categorías"). item 10 do roteiro da rodada 4 — compara contra o
+  // resultado da rodada 2 (Parte C, escopo único, deu 1 dúvida).
+  test('RODADA 4 — Parte D: fluxo completo com 1 diagnóstico fora do escopo padrão', async ({ page }) => {
+    let duvidas = 0;
+    const marcarDuvida = (motivo: string) => { duvidas += 1; log('D', `DÚVIDA #${duvidas}: ${motivo}`); };
+
+    await loginAsAdmin(page);
+    await openDetail(page, patientD.patientId);
+    const drawerD = await openDrawer(page);
+    await page.waitForTimeout(400);
+    await shot4(drawerD, 'ux4-d00-estado-inicial.png');
+
+    // 1) busca e escolhe o 1º diagnóstico — DENTRO do escopo padrão (habitual)
+    await searchAndWait(page, 'esquizofrenia');
+    const optD0 = page.getByTestId('icd-search-option-0');
+    if (await optD0.count() === 0) marcarDuvida('buscou "esquizofrenia" (dentro do escopo padrão) e não achou nada');
+    else { await optD0.click(); await page.waitForTimeout(800); }
+    await shot4(page.getByTestId('diagnosis-chips'), 'ux4-d01-primeiro-diagnostico.png');
+
+    // 2) busca "diabetes" no escopo PADRÃO (habitual) — é o cenário do item 3/10. Descoberta ao
+    // rodar de verdade: o catálogo real TEM uma entrada chapter=08 que também contém "diabetes"
+    // no título ("Neuropatía autonómica por diabetes mellitus") — então o escopo padrão não fica
+    // vazio; ele devolve 1 resultado plausível, mas DIFERENTE do que ela provavelmente queria
+    // ("Diabetes mellitus tipo 1", chapter=05, só em "Todas las categorías"). Captura o título
+    // literal pra provar qual das duas hipóteses é real.
+    await searchAndWait(page, 'diabetes');
+    const optDiabetesDefaultScope = page.getByTestId('icd-search-option-0');
+    const foundDiabetesInDefaultScope = (await optDiabetesDefaultScope.count()) > 0;
+    const diabetesDefaultScopeTitle = foundDiabetesInDefaultScope ? await textOrNothing(optDiabetesDefaultScope) : null;
+    if (foundDiabetesInDefaultScope) {
+      marcarDuvida(`ACHADO NOVO (não estava no roteiro): "diabetes" no escopo padrão NÃO fica vazio — devolve 1 resultado plausível porém ENGANOSO: "${diabetesDefaultScopeTitle}" (uma complicação neurológica do diabetes, chapter=08) em vez do diagnóstico genérico "Diabetes mellitus tipo 1" (chapter=05, só existe em "Todas las categorías"). Se ela clicar direto no option-0 (hábito repetido nos passos anteriores), atribui um diagnóstico ERRADO sem perceber e sem nenhum aviso — não precisaria "perguntar pra alguém", erraria em silêncio`);
+    } else {
+      marcarDuvida('buscou "diabetes" no escopo padrão, não achou nada, e a tela não aponta o toggle "Todas las categorías" como causa/saída — ela teria que descobrir sozinha que precisa trocar de escopo');
+    }
+    log('D', `item3/10: título literal do option-0 em "diabetes" com escopo padrão = "${diabetesDefaultScopeTitle}"`);
+    await shot4(drawerD, 'ux4-d02-diabetes-resultado-enganoso-no-escopo-padrao.png');
+
+    // 3) troca para "Todas las categorías" e busca de novo
+    await page.getByTestId('icd-search-scope-all').click();
+    await searchAndWait(page, 'diabetes');
+    const optDiabetesAllScope = page.getByTestId('icd-search-option-0');
+    const diabetesTitleAllScope = (await optDiabetesAllScope.count()) > 0 ? await textOrNothing(optDiabetesAllScope) : null;
+    if (!diabetesTitleAllScope) marcarDuvida('trocou para "todas as categorías" e AINDA ASSIM não achou "diabetes" — bloqueio real');
+    else { await optDiabetesAllScope.click(); await page.waitForTimeout(800); }
+    const chipLisD = page.locator('li[data-testid^="diagnosis-chip-"]');
+    const countAfter2D = await chipLisD.count();
+    if (countAfter2D !== 2) marcarDuvida(`esperava 2 chips (1 dentro + 1 fora do escopo padrão), tem ${countAfter2D}`);
+    log('D', `2º diagnóstico (fora do escopo padrão) escolhido = "${diabetesTitleAllScope}" | total de chips = ${countAfter2D}`);
+    await shot4(page.getByTestId('diagnosis-chips'), 'ux4-d03-dois-diagnosticos-um-fora-do-escopo.png');
+    // volta ao padrão — não é o foco deste passo, mas evita deixar o resto do fluxo com o escopo trocado
+    await page.getByTestId('icd-search-scope-usual').click();
+
+    // 4) marca o 1º (esquizofrenia, dentro do escopo) como principal — só pelo BOTÃO com texto
+    const targetChipD = chipLisD.first();
+    const promoteBtnD = targetChipD.locator('[data-testid^="diagnosis-chip-promote-"]').first();
+    if (await promoteBtnD.count() === 0) marcarDuvida('não achou o botão de promover no 1º chip');
+    else { await promoteBtnD.click(); await page.waitForTimeout(500); }
+    const primaryBadgeCountD = await page.locator('[data-testid^="diagnosis-chip-primary-badge-"]').count();
+    if (primaryBadgeCountD === 0) marcarDuvida('clicou em "Marcar como principal" e nenhum badge "Principal" apareceu');
+    await shot4(page.getByTestId('diagnosis-chips'), 'ux4-d04-apos-marcar-principal.png');
+
+    // 5) remove o diagnóstico NÃO-principal (diabetes, o que veio de fora do escopo)
+    const nonPrimaryD = chipLisD.filter({ hasNot: page.locator('[data-testid^="diagnosis-chip-primary-badge-"]') }).first();
+    const removeBtnD = nonPrimaryD.locator('[data-testid^="diagnosis-chip-remove-"]').first();
+    if (await removeBtnD.count() === 0) marcarDuvida('não achou o botão de remover do diagnóstico não-principal (diabetes)');
+    else {
+      await removeBtnD.click();
+      await page.waitForTimeout(300);
+      const confirmVisibleD = await nonPrimaryD.locator('[data-testid^="diagnosis-chip-remove-confirm-"]').first().isVisible().catch(() => false);
+      if (!confirmVisibleD) marcarDuvida('clicou no X e não apareceu confirmação');
+      await shot4(page.getByTestId('diagnosis-chips'), 'ux4-d05-confirmando-remocao.png');
+      const confirmBtnD = nonPrimaryD.locator('[data-testid^="diagnosis-chip-remove-confirm-btn-"]').first();
+      if (await confirmBtnD.isVisible().catch(() => false)) { await confirmBtnD.click(); await page.waitForTimeout(600); }
+    }
+    const countAfterRemoveD = await chipLisD.count();
+    if (countAfterRemoveD !== 1) marcarDuvida(`esperava sobrar 1 diagnóstico, sobrou ${countAfterRemoveD}`);
+    await shot4(page.getByTestId('diagnosis-chips'), 'ux4-d06-apos-remover-um.png');
+
+    // 6) fecha o drawer
+    await page.getByRole('button', { name: 'Cerrar' }).click({ timeout: 5_000 }).catch(() => marcarDuvida('não achou o botão "Cerrar" em 5s'));
+    await page.waitForTimeout(500);
+    await shot4(page, 'ux4-d07-fechado.png');
+
+    // prova final: sobreviveu de verdade (reload)
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+    const finalCardTextD = await textOrNothing(page.getByTestId('diagnostico-card-patologias'));
+    log('D', `depois de reload: card de patologías mostra = "${finalCardTextD}"`);
+    await shot4(page, 'ux4-d08-apos-reload.png');
+
+    log('D', `RESUMO PARTE D (item 10): ${duvidas} momento(s) em que ela precisaria perguntar pra alguém — rodada 2 (Parte C, escopo único) deu 1`);
   });
 });

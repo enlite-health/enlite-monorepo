@@ -450,4 +450,36 @@ describe('IcdSearchCombobox', () => {
     expect(screen.queryByTestId('icd-search-listbox')).not.toBeInTheDocument();
     expect(screen.queryByTestId('icd-search-status')).not.toBeInTheDocument();
   });
+
+  /**
+   * O convite para alargar o escopo. Existe porque o controle de escopo diz ONDE ela busca, mas
+   * não que a resposta pode estar FORA: medido no catálogo real, `diabetes` no escopo habitual
+   * devolve "Neuropatía autonómica por diabetes mellitus" — plausível e ERRADO, porque
+   * "Diabetes mellitus tipo 2" é capítulo 05.
+   *
+   * 🔴 Este teste nasceu porque a cobertura estava 88/88 ramos e 314/314 statements COM o convite
+   * já no código e NENHUM teste afirmando o texto. Coberto não é afirmado: a linha executava e
+   * ninguém verificava o que ela renderiza.
+   */
+  it('convite para alargar o escopo: aparece no escopo habitual depois do mínimo de caracteres', () => {
+    render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
+    fireEvent.change(screen.getByTestId('icd-search-input'), { target: { value: 'di' } });
+    expect(screen.getByTestId('icd-search-widen-hint')).toHaveTextContent('Não encontrou o diagnóstico? Tente em \"Todas as categorias\".');
+  });
+
+  it('convite NÃO aparece antes do mínimo de caracteres (não polui o campo quase vazio)', () => {
+    render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
+    fireEvent.change(screen.getByTestId('icd-search-input'), { target: { value: 'd' } });
+    expect(screen.queryByTestId('icd-search-widen-hint')).not.toBeInTheDocument();
+  });
+
+  it('convite SOME quando ela já está em "todas las categorías" — não convida para onde ela já está', async () => {
+    search.mockResolvedValue([{ uri: 'u1', title: 'Diabetes mellitus tipo 2' }]);
+    render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
+    fireEvent.change(screen.getByTestId('icd-search-input'), { target: { value: 'diabetes' } });
+    expect(screen.getByTestId('icd-search-widen-hint')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('icd-search-scope-all'));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(screen.queryByTestId('icd-search-widen-hint')).not.toBeInTheDocument();
+  });
 });
