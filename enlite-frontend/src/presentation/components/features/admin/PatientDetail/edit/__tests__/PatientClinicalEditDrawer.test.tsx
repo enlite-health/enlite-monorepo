@@ -28,6 +28,29 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
   AdminApiService: { updatePatientSection: (...a: unknown[]) => updatePatientSection(...a) },
 }));
 
+// Spec 016 F3: a seção de diagnóstico vive dentro deste drawer — mockada aqui porque nenhum
+// teste deste arquivo precisa do fetch real (o próprio arquivo de testes da seção já cobre isso).
+const searchTerminology = vi.fn();
+vi.mock('@infrastructure/http/AdminTerminologyApiService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@infrastructure/http/AdminTerminologyApiService')>();
+  return {
+    TerminologyUnavailableError: actual.TerminologyUnavailableError,
+    AdminTerminologyApiService: { search: (...a: unknown[]) => searchTerminology(...a) },
+  };
+});
+const createDiagnosis = vi.fn();
+vi.mock('@infrastructure/http/AdminDiagnosisApiService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@infrastructure/http/AdminDiagnosisApiService')>();
+  return {
+    DiagnosisApiError: actual.DiagnosisApiError,
+    AdminDiagnosisApiService: {
+      create: (...a: unknown[]) => createDiagnosis(...a),
+      promote: vi.fn(),
+      deactivate: vi.fn(),
+    },
+  };
+});
+
 import { PatientClinicalEditDrawer, GENERAL_NOTES_MAX } from '../PatientClinicalEditDrawer';
 
 describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
@@ -217,6 +240,41 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
       fireEvent.keyDown(document, { key: 'Escape' });
       fireEvent.click(screen.getByTestId('discard-changes-discard'));
       await waitFor(() => expect(onClose).toHaveBeenCalled(), { timeout: 1000 });
+    });
+  });
+
+  // ── Spec 016 F3: a seção de diagnóstico é fora do react-hook-form — o refetch do pai (onSaved)
+  // só dispara ao FECHAR o drawer (nunca a cada diagnóstico), porque `PatientDetailPage` desmonta
+  // a ficha inteira (skeleton) enquanto `isLoading` — chamar onSaved por ação fechava o drawer
+  // sozinho no meio da edição (achado medido nesta sessão, e2e F3).
+  describe('diagnóstico estruturado (spec 016 F3) — refetch adiado até o drawer fechar', () => {
+    it('escolhe um diagnóstico (POST) e fecha sem tocar em mais nada → onSaved dispara (diagnosesChangedRef)', async () => {
+      searchTerminology.mockResolvedValue([{ uri: 'u1', title: 'Esquizofrenia' }]);
+      createDiagnosis.mockResolvedValue({ id: 'd1', uri: 'u1', title: 'Esquizofrenia', isPrimary: false, source: 'PANEL', active: true });
+      const onSaved = vi.fn();
+      const onClose = vi.fn();
+      render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={onClose} onSaved={onSaved} />);
+
+      fireEvent.change(screen.getByTestId('icd-search-input'), { target: { value: 'esquiso' } });
+      const option = await screen.findByTestId('icd-search-option-0', {}, { timeout: 3000 });
+      fireEvent.click(option);
+      await waitFor(() => expect(createDiagnosis).toHaveBeenCalledTimes(1));
+      await screen.findByTestId('diagnosis-chip-d1');
+
+      // Fecha sem tocar em nenhum outro campo — não passa pelo onSubmit do form.
+      fireEvent.click(screen.getByTestId('patient-clinical-edit-backdrop'));
+      await waitFor(() => expect(onClose).toHaveBeenCalled(), { timeout: 1500 });
+      expect(onSaved).toHaveBeenCalledTimes(1);
+      expect(updatePatientSection).not.toHaveBeenCalled();
+    });
+
+    it('sem escolher nenhum diagnóstico, fechar NÃO chama onSaved (diagnosesChangedRef continua false)', async () => {
+      const onSaved = vi.fn();
+      const onClose = vi.fn();
+      render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={onClose} onSaved={onSaved} />);
+      fireEvent.click(screen.getByTestId('patient-clinical-edit-backdrop'));
+      await waitFor(() => expect(onClose).toHaveBeenCalled(), { timeout: 1500 });
+      expect(onSaved).not.toHaveBeenCalled();
     });
   });
 });

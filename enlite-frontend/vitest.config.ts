@@ -275,6 +275,19 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
+        // Spec 016 F3 (04/09): front do diagnóstico CID-11 — busca+chips NOSSOS (REQ-21: código
+        // nunca no DOM), a seção que os compõe dentro do drawer clínico, e o util que ordena a
+        // patología na ficha. Nascem em 100% nos 4 eixos (medido ao criar) — entram no piso no
+        // MESMO PR, senão a régua da casa (D200) vira letra morta no primeiro toque seguinte.
+        '**/src/domain/entities/diagnosisDisplay.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/infrastructure/http/{AdminTerminologyApiService,AdminDiagnosisApiService}.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/components/features/admin/PatientDetail/edit/{IcdSearchCombobox,DiagnosisChipList,DiagnosisAssignmentSection}.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
       },
     },
   },

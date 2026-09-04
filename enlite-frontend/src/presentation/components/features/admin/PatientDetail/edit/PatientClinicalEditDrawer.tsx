@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -17,6 +17,8 @@ import { ClinicalTextareaField } from './ClinicalTextareaField';
 import { DEVICE_TYPE_CODES } from '@domain/entities/patientEnums';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
+import { DiagnosisAssignmentSection } from './DiagnosisAssignmentSection';
+import { Label } from '@presentation/components/atoms/Label';
 
 interface Props {
   patient: PatientDetail;
@@ -97,10 +99,26 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
 
   const handleClose = (): void => { setShow(false); setTimeout(onClose, CLOSE_MS); };
 
+  /**
+   * Spec 016 F3: cada ação de diagnóstico (escolher/promover/remover) já É o "salvar" — chama a
+   * API na hora, fora do submit deste formulário (Contrato de arquitetura: seção própria, sem
+   * "salvar em lote"). Só NÃO chamamos `onSaved()` (== `refetch` do pai) a cada ação: medido que
+   * `PatientDetailPage` renderiza `<DetailSkeleton />` enquanto `isLoading`, o que DESMONTA a
+   * ficha inteira — incluindo este drawer, ainda aberto — a cada refetch. Chamando `onSaved()`
+   * por diagnóstico o drawer fechava sozinho no meio da edição (sem passar por handleClose,
+   * sem animação, sem chance de escolher um segundo diagnóstico). O refetch fica para quando o
+   * drawer REALMENTE fecha — mesmo timing que os outros campos já usam (só ao fechar/salvar).
+   */
+  const diagnosesChangedRef = useRef(false);
+  const closeAndSyncDiagnoses = (): void => {
+    if (diagnosesChangedRef.current) onSaved();
+    handleClose();
+  };
+
   // Spec 014 (US-D4, lex D4 AUTORIZADO): reusa o `isDirty` que o react-hook-form já calcula.
   const { confirmingClose, requestClose, keepEditing, confirmDiscard } = useConfirmDiscardClose({
     isDirty,
-    onConfirmedClose: handleClose,
+    onConfirmedClose: closeAndSyncDiagnoses,
   });
 
   useEffect(() => {
@@ -135,7 +153,7 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
     if (strToBool(values.hasCud) !== (patient.hasCud ?? null)) payload.hasCud = strToBool(values.hasCud);
     if (strToBool(values.hasConsent) !== (patient.hasConsent ?? null)) payload.hasConsent = strToBool(values.hasConsent);
 
-    if (Object.keys(payload).length === 0) { handleClose(); return; }
+    if (Object.keys(payload).length === 0) { closeAndSyncDiagnoses(); return; }
 
     setBusy(true);
     try {
@@ -188,6 +206,16 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
           <FormField label={td('diagnosisCard.cid')} htmlFor="pce-diagnosis" optional>
             <InputWithIcon id="pce-diagnosis" inputSize="compact" data-testid="pce-diagnosis" {...register('diagnosis')} />
           </FormField>
+          {/* Spec 016 F3 (REQ-21): diagnóstico ESTRUTURADO por CID-11 — busca+chips, código
+              nunca visível. Ação própria (POST/PATCH imediato), fora do submit deste formulário. */}
+          <div className="flex flex-col gap-2 pt-2 border-t border-slate-100">
+            <Label htmlFor="icd-search-input">{te('diagnosisAssignment.sectionTitle')}</Label>
+            <DiagnosisAssignmentSection
+              patientId={patient.id}
+              initialDiagnoses={patient.diagnoses}
+              onChanged={() => { diagnosesChangedRef.current = true; }}
+            />
+          </div>
           {/* REQ-01 (D195): "observações gerais" é narrativa clínica — textarea grande com contador e
               máscara do Clarity (lex 29/08, C1.1), dentro de ClinicalTextareaField. */}
           <ClinicalTextareaField

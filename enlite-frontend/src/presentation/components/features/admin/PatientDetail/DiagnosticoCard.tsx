@@ -4,6 +4,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
+import { sortDiagnosesForCard } from '@domain/entities/diagnosisDisplay';
 import { PatientClinicalEditDrawer } from './edit/PatientClinicalEditDrawer';
 import { ClinicalLongText } from './ClinicalLongText';
 import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
@@ -42,6 +43,7 @@ export function DiagnosticoCard({ patient, onSaved, focusRequest }: DiagnosticoC
   // "Especialidad" saíram do card (o segmento é máscara do projeto terapêutico, não da admissão).
   const devices = (patient.deviceTypes ?? []).map((d) => t(`admin.patients.deviceTypeOptions.${d}`, d));
   const devicesLabel = devices.length > 0 ? devices.join(', ') : null;
+  const patologias = sortDiagnosesForCard(patient.diagnoses);
 
   return (
     <div className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
@@ -63,6 +65,32 @@ export function DiagnosticoCard({ patient, onSaved, focusRequest }: DiagnosticoC
       )}
 
       <div className="flex flex-col gap-2.5">
+        {/* Spec 016 F3 (REQ-21): patología estruturada — SÓ o título, nunca o código. Bulkhead
+            do backend (C4): `diagnosesUnavailable` distingue "não consegui ler" de "sem diagnóstico". */}
+        {patient.diagnosesUnavailable ? (
+          <Text size="sm" className="!text-red-600" data-testid="diagnostico-card-unavailable">
+            {t('admin.patients.detail.diagnosisCard.patologiesUnavailable')}
+          </Text>
+        ) : (
+          <div className="flex flex-col gap-1" data-testid="diagnostico-card-patologias">
+            {patologias.length === 0 ? (
+              <Text size="sm" color="muted" data-testid="diagnostico-card-patologias-empty">
+                {t('admin.patients.detail.diagnosisCard.patologiesEmpty')}
+              </Text>
+            ) : (
+              patologias.map((d) => (
+                <Text key={d.id} size="sm" data-testid={`diagnostico-card-patologia-${d.id}`}>
+                  {d.isPrimary && (
+                    <Text as="span" size="xs" weight="medium" color="primary" className="mr-1.5">
+                      {t('admin.patients.detail.diagnosisCard.patologiesPrimaryBadge')}:
+                    </Text>
+                  )}
+                  <Text as="span" size="sm" color="muted">{d.title}</Text>
+                </Text>
+              ))
+            )}
+          </div>
+        )}
         <Field label={`${t('admin.patients.detail.diagnosisCard.cid')}:`} value={patient.diagnosis} />
         {/* REQ-01: observações gerais — texto longo com autoria (lex C1.1: máscara do Clarity dentro do componente). */}
         <ClinicalLongText

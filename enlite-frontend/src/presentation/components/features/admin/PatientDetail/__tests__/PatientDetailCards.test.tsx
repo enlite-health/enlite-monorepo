@@ -384,6 +384,48 @@ describe('DiagnosticoCard', () => {
     await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.queryByTestId('patient-clinical-edit-drawer')).not.toBeInTheDocument(), { timeout: 1500 });
   });
+
+  // ── Spec 016 F3 (REQ-21): patología estruturada — só o título, nunca o código ──────────────
+  describe('patología estruturada (spec 016 F3)', () => {
+    const ATIVO_PRINCIPAL = { id: 'diag-1', uri: 'http://id.who.int/icd/release/11/2026-01/mms/1683919430', title: 'Esquizofrenia', isPrimary: true, source: 'PANEL', active: true };
+    const ATIVO_SECUNDARIO = { id: 'diag-2', uri: 'u2', title: 'Trastorno esquizoafectivo', isPrimary: false, source: 'PANEL', active: true };
+    const INATIVO = { id: 'diag-3', uri: 'u3', title: 'Diagnóstico dado de baixa', isPrimary: false, source: 'PANEL', active: false };
+
+    it('diagnosesUnavailable:true mostra "não foi possível carregar" — NUNCA lista vazia (bulkhead C4)', () => {
+      render(<DiagnosticoCard patient={{ ...patientDetailFixture, diagnoses: [], diagnosesUnavailable: true }} />);
+      expect(screen.getByTestId('diagnostico-card-unavailable')).toHaveTextContent('Não foi possível carregar o diagnóstico.');
+      expect(screen.queryByTestId('diagnostico-card-patologias')).not.toBeInTheDocument();
+    });
+
+    it('diagnoses:[] com diagnosesUnavailable:false mostra "sem diagnóstico registrado" (paciente sem diagnóstico de verdade)', () => {
+      render(<DiagnosticoCard patient={{ ...patientDetailFixture, diagnoses: [], diagnosesUnavailable: false }} />);
+      expect(screen.getByTestId('diagnostico-card-patologias-empty')).toHaveTextContent('Nenhum diagnóstico registrado.');
+      expect(screen.queryByTestId('diagnostico-card-unavailable')).not.toBeInTheDocument();
+    });
+
+    it('lista com diagnósticos ativos: mostra a patología (título), NUNCA o código/URI; inativo fica fora', () => {
+      render(<DiagnosticoCard patient={{ ...patientDetailFixture, diagnoses: [ATIVO_PRINCIPAL, ATIVO_SECUNDARIO, INATIVO], diagnosesUnavailable: false }} />);
+      const box = screen.getByTestId('diagnostico-card-patologias');
+      expect(box).toHaveTextContent('Esquizofrenia');
+      expect(box).toHaveTextContent('Trastorno esquizoafectivo');
+      expect(box).not.toHaveTextContent('Diagnóstico dado de baixa');
+      expect(box.innerHTML).not.toContain('1683919430');
+      expect(box.innerHTML).not.toContain('6A20');
+    });
+
+    it('o principal leva o rótulo "Principal"; o secundário não', () => {
+      render(<DiagnosticoCard patient={{ ...patientDetailFixture, diagnoses: [ATIVO_PRINCIPAL, ATIVO_SECUNDARIO], diagnosesUnavailable: false }} />);
+      const principalRow = screen.getByTestId(`diagnostico-card-patologia-${ATIVO_PRINCIPAL.id}`);
+      expect(principalRow).toHaveTextContent('Principal:');
+      const secundarioRow = screen.getByTestId(`diagnostico-card-patologia-${ATIVO_SECUNDARIO.id}`);
+      expect(secundarioRow).not.toHaveTextContent('Principal:');
+    });
+
+    it('label "Tipos de patologias - ICHOM" NUNCA aparece no card', () => {
+      render(<DiagnosticoCard patient={{ ...patientDetailFixture, diagnoses: [ATIVO_PRINCIPAL], diagnosesUnavailable: false }} />);
+      expect(screen.queryByText(/ICHOM/)).not.toBeInTheDocument();
+    });
+  });
 });
 
 // ── ProjetoTerapeuticoCard ───────────────────────────────────────────────────

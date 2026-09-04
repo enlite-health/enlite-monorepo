@@ -2843,6 +2843,26 @@
         "unset": "—",
         "saveError": "Error al guardar",
         "deviceType": "Dispositivo",
+        "diagnosisAssignment": {
+          "sectionTitle": "Diagnóstico (CIE-11)",
+          "searchPlaceholder": "Buscar diagnóstico en español...",
+          "typing": "Escribiendo…",
+          "searching": "Buscando…",
+          "noResults": "No se encontraron resultados para \"{{query}}\".",
+          "unavailable": "No pudimos conectar con el catálogo de diagnósticos. Probá de nuevo en unos minutos.",
+          "expandChapters": "Buscar en todas las categorías",
+          "restrictChapters": "Volver a las categorías habituales",
+          "whoAttribution": "Clasificación Internacional de Enfermedades, 11.ª revisión (CIE-11), Organización Mundial de la Salud. Licencia CC BY-ND 3.0 IGO.",
+          "chipsEmpty": "Todavía no se agregó ningún diagnóstico.",
+          "makePrimary": "Marcar como principal",
+          "primaryBadge": "Principal",
+          "remove": "Quitar",
+          "addError": "No se pudo agregar el diagnóstico.",
+          "notDiagnosableError": "Ese resultado no es un diagnóstico específico — elegí una categoría más concreta.",
+          "alreadyActiveError": "Ese diagnóstico ya está agregado.",
+          "updateError": "No se pudo actualizar el diagnóstico.",
+          "genericError": "No se pudo completar la acción. Probá de nuevo."
+        },
         "hasConsent": "Consentimiento",
         "responsible": "Familiar",
         "addResponsible": "Agregar familiar",
@@ -3149,7 +3169,10 @@
           "priorityUrgent": "Urgente",
           "emergencyInstructions": "Instrucciones de emergencia",
           "emergencyRedacted": "No tenés permiso para ver las instrucciones de emergencia.",
-          "devices": "Dispositivo"
+          "devices": "Dispositivo",
+          "patologiesUnavailable": "No se pudo cargar el diagnóstico.",
+          "patologiesEmpty": "Sin diagnósticos registrados.",
+          "patologiesPrimaryBadge": "Principal"
         },
         "therapeuticProjectCard": {
           "title": "Proyecto Terapéutico",
