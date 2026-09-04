@@ -15,7 +15,7 @@
  *
  * Entidades REAIS do catálogo 2026-01 (medidas via psql — mesmas de `patient-diagnoses-api.e2e.test.ts`):
  *   6A02.Z  "Trastorno del espectro autista, sin especificación"  (chapter 06)
- *   8D20    "Parálisis cerebral espástica"                        (chapter 08)
+ *   6A7Z    "Trastornos depresivos, sin especificación"            (chapter 06)
  * As duas têm linha em `clickup_diagnosis_labels` (migration 326, seed provisório).
  */
 import { Pool } from 'pg';
@@ -39,9 +39,11 @@ const TASK_PREFIX = `clickup-diag-e2e-${RUN}-`;
 
 const AUTISM_CODE = '6A02.Z';
 const AUTISM_URI  = 'http://id.who.int/icd/release/11/2026-01/mms/437815624/unspecified';
-const PARALISIS_CODE = '8D20';
+const CLICKUP_CODE = '6A7Z'; // Trastornos depresivos, sin especificación
 const PATOLOGIA = 'Tipo de Patología';
-const LABEL_MAPEADO   = 'Parálisis Cerebral';
+// Rótulo REAL do dropdown do ClickUp (lido da API em 04/09; ver migration 327). A versão
+// anterior usava 'Parálisis Cerebral', que NÃO existe lá — rótulo inventado pela 326.
+const LABEL_MAPEADO   = 'Trastorno Depresivo';
 const LABEL_NAO_MAPEADO = `Rotulo Fantasma ${RUN}`;
 
 /** Resolver falso: só o suficiente para o preflight de `ClickUpPatientMapper` passar e para
@@ -168,7 +170,7 @@ describe('spec 016 F4 — sync do ClickUp NÃO desativa/despromove o diagnóstic
       [patientId],
     );
     expect(clickupRows).toHaveLength(1);
-    expect(clickupRows[0]).toMatchObject({ active: true, is_primary: true, concept_code: PARALISIS_CODE });
+    expect(clickupRows[0]).toMatchObject({ active: true, is_primary: true, concept_code: CLICKUP_CODE });
   });
 
   it('CRITÉRIO 2: rótulo SEM mapeamento não grava nada e fica registrado (nunca inventado)', async () => {
