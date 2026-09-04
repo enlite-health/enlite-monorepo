@@ -8,12 +8,15 @@
  * origem (a mesma que o repositório está escopado a escrever).
  */
 import type { PatientDiagnosis } from '../domain/PatientDiagnosis';
-import type { PatientDiagnosisRepositoryPort } from '../domain/PatientDiagnosisRepositoryPort';
+import { PrimaryDiagnosisConflictError, type PatientDiagnosisRepositoryPort } from '../domain/PatientDiagnosisRepositoryPort';
 
 export type SetPrimaryDiagnosisResult =
   | { readonly outcome: 'ok'; readonly diagnosis: PatientDiagnosis }
   | { readonly outcome: 'not_found' }
-  | { readonly outcome: 'conflict'; readonly reason: 'inactive' };
+  // C1 (QA-caça): 'primary_race' é o 23505 do índice parcial mapeado — nunca escapa como 500.
+  // Na prática inatingível com o lock consultivo no lugar (defesa em profundidade); ver
+  // PrimaryDiagnosisConflictError.
+  | { readonly outcome: 'conflict'; readonly reason: 'inactive' | 'primary_race' };
 
 export class SetPrimaryDiagnosis {
   constructor(private readonly repo: PatientDiagnosisRepositoryPort) {}
@@ -30,11 +33,15 @@ export class SetPrimaryDiagnosis {
     // Idempotente: já é o principal — nada para reconciliar.
     if (target.isPrimary) return { outcome: 'ok', diagnosis: target };
 
-    const promoted = await this.repo.withTransaction(async (tx) => {
-      await tx.demotePrimary(patientId);
-      return tx.promotePrimary(diagnosisId, actorUid);
-    });
-
-    return { outcome: 'ok', diagnosis: promoted };
+    try {
+      const promoted = await this.repo.withTransaction(async (tx) => {
+        await tx.demotePrimary(patientId);
+        return tx.promotePrimary(diagnosisId, actorUid);
+      });
+      return { outcome: 'ok', diagnosis: promoted };
+    } catch (err) {
+      if (err instanceof PrimaryDiagnosisConflictError) return { outcome: 'conflict', reason: 'primary_race' };
+      throw err;
+    }
   }
 }

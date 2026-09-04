@@ -93,6 +93,15 @@ export class AdminPatientDiagnosesController {
         case 'concept_not_resolved':
           res.status(422).json({ success: false, error: 'conceptUri does not resolve in the terminology catalog', code: 'CONCEPT_NOT_RESOLVED' });
           return;
+        // C3 (QA-caça) — resolve, mas é capítulo ou extensão: nunca um fato clínico isolado.
+        // Mensagem NÃO ecoa o concept_code (o servidor nunca manda o código para o cliente).
+        case 'not_diagnosable':
+          res.status(422).json({ success: false, error: 'conceptUri does not identify a diagnosable concept (chapter or extension are not diagnoses)', code: 'CONCEPT_NOT_DIAGNOSABLE' });
+          return;
+        // C1 (QA-caça) — 23505 do índice de principal mapeado para 409, nunca 500.
+        case 'primary_race':
+          res.status(409).json({ success: false, error: 'Primary diagnosis change collided with a concurrent write', code: 'PRIMARY_DIAGNOSIS_RACE' });
+          return;
         case 'already_active':
           res.status(409).json({ success: false, error: 'Concept already active for this patient in this source', code: 'DIAGNOSIS_ALREADY_ACTIVE' });
           return;
@@ -134,7 +143,14 @@ export class AdminPatientDiagnosesController {
           res.status(404).json({ success: false, error: 'Diagnosis not found' });
           return;
         case 'conflict':
-          res.status(409).json({ success: false, error: 'Diagnosis is not active', code: 'DIAGNOSIS_NOT_ACTIVE' });
+          // C1 (QA-caça) — 'primary_race' é o 23505 do índice de principal mapeado (nunca 500);
+          // 'inactive'/'already_inactive' são os conflitos pré-existentes (promover/baixar um
+          // diagnóstico já inativo). Todos 409 — o código diferencia a causa.
+          res.status(409).json(
+            result.reason === 'primary_race'
+              ? { success: false, error: 'Primary diagnosis change collided with a concurrent write', code: 'PRIMARY_DIAGNOSIS_RACE' }
+              : { success: false, error: 'Diagnosis is not active', code: 'DIAGNOSIS_NOT_ACTIVE' },
+          );
           return;
         case 'ok':
           res.status(200).json({ success: true, data: toDiagnosisPublicView(result.diagnosis) });

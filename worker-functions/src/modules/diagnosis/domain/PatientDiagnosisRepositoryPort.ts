@@ -17,6 +17,24 @@
 import type { PatientDiagnosis } from './PatientDiagnosis';
 
 /**
+ * C1 (QA-caça, correções F2) — 8 rodadas de `PATCH {isPrimary:true}` concorrente em dois
+ * diagnósticos DIFERENTES do mesmo paciente mediram `{"200":9,"500":7}`: o `23505` do índice
+ * parcial único (`uq_patient_diagnoses_primary_por_origem`) escapava como 500 genérico. O
+ * `pg_advisory_xact_lock` em `PostgresPatientDiagnosisRepository.demotePrimary` SERIALIZA a
+ * troca de principal por paciente e torna este erro, na prática, inatingível pela aplicação em
+ * uso normal — fica mapeado aqui como defesa em profundidade (ex.: um `UPDATE` manual via psql
+ * que ignore o lock consultivo). Mora no DOMÍNIO (não na infraestrutura) para que
+ * `application/` possa capturá-lo sem importar `PostgresPatientDiagnosisRepository` — DIP: o
+ * adaptador concreto joga o erro do vocabulário do domínio, nunca o contrário.
+ */
+export class PrimaryDiagnosisConflictError extends Error {
+  constructor(patientId: string) {
+    super(`Troca de diagnóstico principal do paciente ${patientId} colidiu com outra escrita concorrente`);
+    this.name = 'PrimaryDiagnosisConflictError';
+  }
+}
+
+/**
  * Sem `terminologySystem` de propósito: quem grava (`RecordPatientDiagnosis`) não sabe qual
  * vocabulário está por trás da porta — só o repositório concreto (infraestrutura, fora da régua
  * do grep desta fase) sabe qual é o único vocabulário aceito hoje pela migration.

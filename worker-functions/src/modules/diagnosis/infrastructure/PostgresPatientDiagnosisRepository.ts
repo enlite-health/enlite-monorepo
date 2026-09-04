@@ -27,9 +27,10 @@ import { IcdCode } from '../../terminology/domain/IcdCode';
 import { PatientDiagnosis } from '../domain/PatientDiagnosis';
 import type { Country, ConceptLanguage, TerminologySystem } from '../domain/PatientDiagnosis';
 import { DiagnosisSource } from '../domain/DiagnosisSource';
-import type {
-  NewPatientDiagnosisInput,
-  PatientDiagnosisRepositoryPort,
+import {
+  PrimaryDiagnosisConflictError,
+  type NewPatientDiagnosisInput,
+  type PatientDiagnosisRepositoryPort,
 } from '../domain/PatientDiagnosisRepositoryPort';
 
 export class PatientDiagnosisNotFoundInScopeError extends Error {
@@ -37,6 +38,15 @@ export class PatientDiagnosisNotFoundInScopeError extends Error {
     super(`Diagnóstico ${id} não encontrado no escopo de origem ${scope.value}`);
     this.name = 'PatientDiagnosisNotFoundInScopeError';
   }
+}
+
+const PRIMARY_UNIQUE_INDEX = 'uq_patient_diagnoses_primary_por_origem';
+
+/** `error.code` 23505 (unique_violation) do Postgres, restrito ao índice de principal único. */
+function isPrimaryUniqueViolation(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const pgErr = err as { code?: unknown; constraint?: unknown };
+  return pgErr.code === '23505' && pgErr.constraint === PRIMARY_UNIQUE_INDEX;
 }
 
 interface PatientDiagnosisRow {
@@ -108,28 +118,34 @@ export class PostgresPatientDiagnosisRepository implements PatientDiagnosisRepos
   }
 
   async create(input: NewPatientDiagnosisInput): Promise<PatientDiagnosis> {
-    const { rows } = await this.runner.query<PatientDiagnosisRow>(
-      `INSERT INTO patient_diagnoses
-         (patient_id, terminology_system, concept_uri, concept_code, concept_title,
-          concept_language, concept_group, catalog_release, source, is_primary,
-          created_by, updated_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
-       RETURNING *`,
-      [
-        input.patientId,
-        TERMINOLOGY_SYSTEM,
-        input.conceptUri,
-        input.conceptCode,
-        input.conceptTitle,
-        input.conceptLanguage,
-        input.conceptGroup,
-        input.catalogRelease,
-        this.scope.value,
-        input.isPrimary,
-        input.actorUid,
-      ],
-    );
-    return toEntity(rows[0]);
+    try {
+      const { rows } = await this.runner.query<PatientDiagnosisRow>(
+        `INSERT INTO patient_diagnoses
+           (patient_id, terminology_system, concept_uri, concept_code, concept_title,
+            concept_language, concept_group, catalog_release, source, is_primary,
+            created_by, updated_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+         RETURNING *`,
+        [
+          input.patientId,
+          TERMINOLOGY_SYSTEM,
+          input.conceptUri,
+          input.conceptCode,
+          input.conceptTitle,
+          input.conceptLanguage,
+          input.conceptGroup,
+          input.catalogRelease,
+          this.scope.value,
+          input.isPrimary,
+          input.actorUid,
+        ],
+      );
+      return toEntity(rows[0]);
+    } catch (err) {
+      // C1 — ver PrimaryDiagnosisConflictError: nunca deixa o 23505 cru subir como 500.
+      if (isPrimaryUniqueViolation(err)) throw new PrimaryDiagnosisConflictError(input.patientId);
+      throw err;
+    }
   }
 
   async findById(id: string): Promise<PatientDiagnosis | null> {
@@ -177,6 +193,15 @@ export class PostgresPatientDiagnosisRepository implements PatientDiagnosisRepos
   }
 
   async demotePrimary(patientId: string): Promise<void> {
+    // C1 (QA-caça): lock consultivo POR PACIENTE, antes de tocar a linha — mesmo padrão de
+    // `PatientInsuranceVerifiedRepository`/`PatientDeviceTypeRepository` (`pg_advisory_xact_lock`,
+    // 6 arquivos de src/ já usam). `demotePrimary` é SEMPRE a primeira chamada dentro da transação
+    // de `SetPrimaryDiagnosis`/`RecordPatientDiagnosis(isPrimary:true)` — travar aqui serializa a
+    // troca de principal por paciente inteira: a 2ª transação concorrente bloqueia até a 1ª dar
+    // COMMIT/ROLLBACK, e só então enxerga o estado final (nunca mais duas em paralelo achando
+    // "não há principal" ao mesmo tempo). `_xact_` (não `pg_advisory_lock`) — solta sozinho no
+    // fim da transação, mesmo em erro; nada fica preso além da vida do client.
+    await this.runner.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`diagnosis_primary:${patientId}`]);
     await this.runner.query(
       `UPDATE patient_diagnoses SET is_primary = false, updated_at = NOW()
         WHERE patient_id = $1 AND source = $2 AND is_primary AND active`,
@@ -185,14 +210,21 @@ export class PostgresPatientDiagnosisRepository implements PatientDiagnosisRepos
   }
 
   async promotePrimary(id: string, actorUid: string): Promise<PatientDiagnosis> {
-    const { rows } = await this.runner.query<PatientDiagnosisRow>(
-      `UPDATE patient_diagnoses SET is_primary = true, updated_by = $3, updated_at = NOW()
-        WHERE id = $1 AND source = $2 AND active
-        RETURNING *`,
-      [id, this.scope.value, actorUid],
-    );
-    if (!rows[0]) throw new PatientDiagnosisNotFoundInScopeError(id, this.scope);
-    return toEntity(rows[0]);
+    try {
+      const { rows } = await this.runner.query<PatientDiagnosisRow>(
+        `UPDATE patient_diagnoses SET is_primary = true, updated_by = $3, updated_at = NOW()
+          WHERE id = $1 AND source = $2 AND active
+          RETURNING *`,
+        [id, this.scope.value, actorUid],
+      );
+      if (!rows[0]) throw new PatientDiagnosisNotFoundInScopeError(id, this.scope);
+      return toEntity(rows[0]);
+    } catch (err) {
+      // C1 — defesa em profundidade (ver PrimaryDiagnosisConflictError); o lock em demotePrimary
+      // já torna este 23505 inatingível pela aplicação em uso normal.
+      if (isPrimaryUniqueViolation(err)) throw new PrimaryDiagnosisConflictError(id);
+      throw err;
+    }
   }
 
   async deactivate(id: string, actorUid: string): Promise<PatientDiagnosis> {

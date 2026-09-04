@@ -94,8 +94,16 @@ export class AdminPatientsController {
    * Spec 016 F2 (D263): "GET /patients/:id embute diagnoses[] na mesma projeção (sem code)".
    * Escopado a PANEL — mesma decisão de desenho do AdminPatientDiagnosesController (o painel
    * não é o escritor do ClickUp; a leitura em si, via listForPatient, é global entre origens).
+   *
+   * 🔧 C7 (QA-caça, correções F2): NÃO construído no construtor. `createTerminologyPort` lança
+   * SÍNCRONO quando `TERMINOLOGY_ADAPTER` é inválido (typo no env) — construí-lo aqui derrubava
+   * `new AdminPatientsController()` no boot (`index.ts`), o que derruba a API DE PACIENTES
+   * INTEIRA por causa de uma env var que só a busca de diagnóstico usa. `getDiagnosisService()`
+   * constrói SOB DEMANDA, dentro do mesmo try/catch do bulkhead (C4) — um env inválido vira
+   * `diagnosesUnavailable: true`, nunca um processo que não sobe.
    */
-  private readonly diagnosisService: PatientDiagnosisService;
+  private readonly diagnosisServiceOverride: PatientDiagnosisService | undefined;
+  private diagnosisServiceMemo: PatientDiagnosisService | undefined;
 
   constructor(
     geocoder?: GeocodingService,
@@ -113,8 +121,18 @@ export class AdminPatientsController {
     this.activatePatientUseCase = activatePatientUseCase ?? new ActivatePatientUseCase();
     this.geocoder = geocoder ?? new GeocodingService();
     this.testFixtures = new PatientTestFixtureService(this.db);
-    this.diagnosisService =
-      diagnosisService ?? new PatientDiagnosisService(createTerminologyPort(process.env), new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL));
+    this.diagnosisServiceOverride = diagnosisService;
+  }
+
+  /** C7 — ver COMMENT do campo acima. Lança se `TERMINOLOGY_ADAPTER` for inválido; o chamador
+   * (dentro do try/catch da leitura de diagnósticos) converte isso em `diagnosesUnavailable`. */
+  private getDiagnosisService(): PatientDiagnosisService {
+    if (this.diagnosisServiceOverride) return this.diagnosisServiceOverride;
+    this.diagnosisServiceMemo ??= new PatientDiagnosisService(
+      createTerminologyPort(process.env),
+      new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL),
+    );
+    return this.diagnosisServiceMemo;
   }
 
   /**
@@ -600,18 +618,28 @@ export class AdminPatientsController {
       // Spec 016 F2 (D263): diagnóstico estruturado embutido na MESMA projeção — REQ-21, sem
       // concept_code/concept_group/catalog_release (toDiagnosisPublicView é o único ponto que
       // decide o formato público). Bulkhead deliberado: uma falha aqui (ex.: catálogo de
-      // terminologia fora do ar) NUNCA derruba a ficha inteira — o resto do detalhe do paciente
-      // já é útil sozinho. A falha é reportada (reportError), nunca silenciosa de verdade.
+      // terminologia fora do ar, OU `TERMINOLOGY_ADAPTER` mal configurado — C7) NUNCA derruba a
+      // ficha inteira — o resto do detalhe do paciente já é útil sozinho.
+      //
+      // 🔧 C4 (QA-caça, correções F2): `[]` sozinho é indistinguível de "paciente sem
+      // diagnóstico" — a operadora via card vazio num paciente que TEM diagnóstico, e o log da
+      // falha vai só para o Cloud Logging (canal que ela não lê). Mesmo padrão já usado nesta
+      // MESMA resposta (`emergencyInstructionsRedacted`, `hourlyValueRedacted`):
+      // `diagnosesUnavailable` diz qual dos dois `[]` é. A falha continua reportada
+      // (reportError), nunca silenciosa de verdade — `diagnosesUnavailable` é o que a TORNA
+      // visível também para quem lê a tela, não só para quem lê o Cloud Logging.
       let diagnoses: ReturnType<typeof toDiagnosisPublicView>[] = [];
+      let diagnosesUnavailable = false;
       try {
-        const diagnosesResult = await this.diagnosisService.listForPatient(parsed.data.id);
+        const diagnosesResult = await this.getDiagnosisService().listForPatient(parsed.data.id);
         diagnoses = diagnosesResult.found ? diagnosesResult.diagnoses.map(toDiagnosisPublicView) : [];
       } catch (diagErr: unknown) {
         const de = diagErr instanceof Error ? diagErr : new Error(String(diagErr));
         reportError(de, { source: 'AdminPatientsController:getPatientById:diagnoses', patientId: parsed.data.id });
+        diagnosesUnavailable = true;
       }
 
-      res.status(200).json({ success: true, data: { ...projected, diagnoses, completeness } });
+      res.status(200).json({ success: true, data: { ...projected, diagnoses, diagnosesUnavailable, completeness } });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientsController:getPatientById' });

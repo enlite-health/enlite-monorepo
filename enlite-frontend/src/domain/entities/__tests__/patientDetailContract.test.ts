@@ -66,7 +66,7 @@ describe('contrato PatientDetail — fixture capturada da API real', () => {
   it('cobertura gravada em health_insurance_name aparece em insuranceInformed (A3) e o e-mail chega (A4)', () => {
     const p = patientDetailContractSchema.parse(fixture);
     expect(p.insuranceInformed).toBe('OSDE 210 (fixture)');
-    expect(p.contactEmail).toBe('contrato.fixture@example.test');
+    expect(p.contactEmail).toBe('contrato.fixture.c5@example.test');
   });
 
   it('D255 (QA-caça rodada 1): completeness carrega blocking/canActivate — paciente semeado completo (missing:[]) → blocking:[] e canActivate:true', () => {
@@ -84,5 +84,23 @@ describe('contrato PatientDetail — fixture capturada da API real', () => {
   it('spec 015 (US-A6.1): providerAgeBand chega CRU no contrato — a tradução é responsabilidade da TELA, não do contrato', () => {
     const p = patientDetailContractSchema.parse(fixture);
     expect(p.contractedServices[0].providerAgeBand).toBe('AGE_30_45');
+  });
+
+  it('C5 (QA-caça, spec 016 F2): diagnoses[] chega na projeção REQ-21 (sem code/chapter/release) e diagnosesUnavailable:false quando o backend leu normalmente', () => {
+    const p = patientDetailContractSchema.parse(fixture);
+    expect(p.diagnosesUnavailable).toBe(false);
+    expect(p.diagnoses).toHaveLength(1);
+    expect(p.diagnoses[0]).toEqual({
+      id: expect.any(String),
+      uri: 'http://id.who.int/icd/release/11/2026-01/mms/437815624/unspecified',
+      title: 'Trastorno del espectro autista, sin especificación',
+      isPrimary: true,
+      source: 'PANEL',
+      active: true,
+    });
+    // Régua POSITIVA (REQ-21): nenhuma chave de vocabulário em NENHUM diagnóstico da fixture.
+    for (const key of Object.keys(p.diagnoses[0])) {
+      expect(['code', 'chapter', 'release', 'conceptCode', 'conceptGroup', 'catalogRelease']).not.toContain(key);
+    }
   });
 });

@@ -160,10 +160,14 @@ describe('AdminPatientsController.getPatientById', () => {
         success: true,
         data: {
           ...patient,
-          // Spec 016 F2 (D263): diagnoses[] embutido — o pool mockado deste arquivo não devolve
-          // linha nenhuma para a busca de diagnóstico, e o bulkhead do controller (reportError +
-          // []) garante que isso não derruba a ficha inteira.
+          // Spec 016 F2 (D263): diagnoses[] embutido — o pool mockado deste arquivo devolve
+          // `undefined` de `query()` (sem mockResolvedValue), o que faz `patientExists` lançar —
+          // o bulkhead do controller (reportError + []) garante que isso não derruba a ficha
+          // inteira. C4 (QA-caça): a falha vira `diagnosesUnavailable: true`, nunca um `[]` mudo
+          // indistinguível de "paciente sem diagnóstico" (ver teste dedicado abaixo para o
+          // caminho de SUCESSO, `diagnosesUnavailable: false`).
           diagnoses: [],
+          diagnosesUnavailable: true,
           completeness: {
             missing: ['ADDRESS', 'CONTRACTED_SERVICE'],
             blocking: ['ADDRESS'],
@@ -221,6 +225,59 @@ describe('AdminPatientsController.getPatientById', () => {
       expect(jsonArg.data.responsibles).toHaveLength(1);
       expect(jsonArg.data.addresses).toHaveLength(1);
       expect(jsonArg.data.professionals).toHaveLength(1);
+    });
+  });
+
+  describe('Spec 016 F2 — diagnoses[]/diagnosesUnavailable e o construtor lazy da porta (C4/C7, QA-caça correções)', () => {
+    afterEach(() => {
+      delete process.env.TERMINOLOGY_ADAPTER;
+    });
+
+    it('C4 — diagnosesUnavailable:false quando o serviço de diagnóstico responde normalmente (injetado por construtor)', async () => {
+      const patient = makePatientDetail();
+      mockFindDetailById.mockResolvedValue(patient);
+      const fakeDiagnosisService = { listForPatient: jest.fn().mockResolvedValue({ found: true, diagnoses: [] }) };
+      const withDiagnosis = new AdminPatientsController(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        fakeDiagnosisService as unknown as ConstructorParameters<typeof AdminPatientsController>[4],
+      );
+      const [req, res] = mockReqRes({ id: PATIENT_ID });
+      await withDiagnosis.getPatientById(req, res);
+      const data = (res as any).json.mock.calls[0][0].data;
+      expect(data.diagnosesUnavailable).toBe(false);
+      expect(data.diagnoses).toEqual([]);
+      expect(fakeDiagnosisService.listForPatient).toHaveBeenCalledWith(PATIENT_ID);
+    });
+
+    it('C7 — TERMINOLOGY_ADAPTER com typo NÃO derruba o construtor nem a rota inteira; vira diagnosesUnavailable:true, nunca crash de processo', async () => {
+      process.env.TERMINOLOGY_ADAPTER = 'postgress'; // typo real medido pelo QA-caça
+      expect(() => new AdminPatientsController()).not.toThrow();
+
+      const patient = makePatientDetail();
+      mockFindDetailById.mockResolvedValue(patient);
+      const freshController = new AdminPatientsController();
+      const [req, res] = mockReqRes({ id: PATIENT_ID });
+      await freshController.getPatientById(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      const data = (res as any).json.mock.calls[0][0].data;
+      expect(data.diagnosesUnavailable).toBe(true);
+      expect(data.diagnoses).toEqual([]);
+    });
+
+    it('reusa a MESMA porta entre chamadas (memoizado) — 2 requisições na mesma instância, nenhuma reconstrói nem lança', async () => {
+      const patient = makePatientDetail();
+      mockFindDetailById.mockResolvedValue(patient);
+      const freshController = new AdminPatientsController(); // TERMINOLOGY_ADAPTER default ('postgres')
+      const [req1, res1] = mockReqRes({ id: PATIENT_ID });
+      await freshController.getPatientById(req1, res1);
+      const [req2, res2] = mockReqRes({ id: PATIENT_ID });
+      await freshController.getPatientById(req2, res2);
+      expect(res1.status).toHaveBeenCalledWith(200);
+      expect(res2.status).toHaveBeenCalledWith(200);
     });
   });
 

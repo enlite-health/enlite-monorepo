@@ -335,6 +335,70 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // Spec 016 F2 (D263): diagnóstico estruturado do paciente. `DiagnosisSource` carrega a
+    // ordem de precedência (REGRA-03, Diego) — regredir aqui troca qual origem vence em
+    // silêncio. `PatientDiagnosis` espelha os CHECKs da migration 325 (defesa em profundidade).
+    // `PrimaryDiagnosisPolicy` é o Strategy que decide qual principal aparece na tela.
+    // `PatientDiagnosisRepositoryPort` é só tipos (0 statements, mesmo motivo de TerminologyPort).
+    'src/modules/diagnosis/domain/{DiagnosisSource,PatientDiagnosis,PrimaryDiagnosisPolicy,PatientDiagnosisRepositoryPort}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Os 3 casos de uso + a Facade (porta de entrada única — controller e webhook chamam só
+    // ela). `RecordPatientDiagnosis` é onde mora a integridade sem FK (valida na escrita via
+    // TerminologyPort); `SetPrimaryDiagnosis` é a reconciliação (índice parcial não DEFERRABLE).
+    'src/modules/diagnosis/application/{RecordPatientDiagnosis,SetPrimaryDiagnosis,DeactivatePatientDiagnosis,PatientDiagnosisService}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // O fake (prova o contrato da porta em memória, mesmo espírito de InMemoryTerminology) e o
+    // adaptador real, escopados por CONSTRUTOR (D263) — regressão no escopo é a classe de bug
+    // que esta fase existe para tornar impossível ("o escritor do ClickUp fica FISICAMENTE
+    // incapaz de tocar linha PANEL").
+    'src/modules/diagnosis/infrastructure/{InMemoryPatientDiagnosisRepository,PostgresPatientDiagnosisRepository}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // A fronteira REQ-21 (código NUNCA no navegador) + o controller HTTP + os schemas de
+    // entrada. Regressão em `DiagnosisPublicView` é o defeito medido na F0 de novo (código
+    // vazando pela API desta vez, não pela tela).
+    'src/modules/diagnosis/interfaces/DiagnosisPublicView.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/diagnosis/interfaces/validators/diagnosisSchemas.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Busca de terminologia (ISP: a tela de admissão só enxerga `search`, nunca `ancestorsOf`).
+    'src/modules/terminology/interfaces/controllers/AdminTerminologySearchController.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/terminology/interfaces/validators/terminologySearchSchema.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
   },
   verbose: true,
   testTimeout: 10000,

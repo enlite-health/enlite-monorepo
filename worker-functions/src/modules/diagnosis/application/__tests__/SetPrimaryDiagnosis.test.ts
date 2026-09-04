@@ -1,4 +1,5 @@
 import { DiagnosisSource } from '../../domain/DiagnosisSource';
+import { PrimaryDiagnosisConflictError } from '../../domain/PatientDiagnosisRepositoryPort';
 import { InMemoryPatientDiagnosisRepository } from '../../infrastructure/InMemoryPatientDiagnosisRepository';
 import { SetPrimaryDiagnosis } from '../SetPrimaryDiagnosis';
 
@@ -156,5 +157,44 @@ describe('SetPrimaryDiagnosis — reconcilia rebaixar A + promover B na MESMA tr
     const panelStillPrimary = await panelRepo.findById(panelPrimary.id);
     expect(panelStillPrimary?.isPrimary).toBe(true);
     expect(panelStillPrimary?.active).toBe(true);
+  });
+
+  it('C1 (QA-caça) — PrimaryDiagnosisConflictError vindo do repositório vira conflict/primary_race, NUNCA sobe cru (base do 409, nunca 500)', async () => {
+    const repo = buildRepo();
+    const created = await repo.create({
+      patientId: PATIENT_ID,
+      conceptUri: 'uri-1',
+      conceptCode: '6A02.Z',
+      conceptTitle: 'x',
+      conceptLanguage: 'es',
+      conceptGroup: '06',
+      catalogRelease: '2026-01',
+      isPrimary: false,
+      actorUid: 'uid-1',
+    });
+    // Simula o 23505 que o adaptador Postgres mapearia mesmo com o lock consultivo no lugar
+    // (defesa em profundidade) — withTransaction propaga o erro do domínio.
+    jest.spyOn(repo, 'withTransaction').mockRejectedValueOnce(new PrimaryDiagnosisConflictError(PATIENT_ID));
+    const useCase = new SetPrimaryDiagnosis(repo);
+    const result = await useCase.execute(PATIENT_ID, created.id, 'uid-x');
+    expect(result).toEqual({ outcome: 'conflict', reason: 'primary_race' });
+  });
+
+  it('propaga qualquer OUTRO erro do repositório intacto (não é engolido pelo catch do primary_race)', async () => {
+    const repo = buildRepo();
+    const created = await repo.create({
+      patientId: PATIENT_ID,
+      conceptUri: 'uri-1',
+      conceptCode: '6A02.Z',
+      conceptTitle: 'x',
+      conceptLanguage: 'es',
+      conceptGroup: '06',
+      catalogRelease: '2026-01',
+      isPrimary: false,
+      actorUid: 'uid-1',
+    });
+    jest.spyOn(repo, 'withTransaction').mockRejectedValueOnce(new Error('conexão perdida'));
+    const useCase = new SetPrimaryDiagnosis(repo);
+    await expect(useCase.execute(PATIENT_ID, created.id, 'uid-x')).rejects.toThrow('conexão perdida');
   });
 });

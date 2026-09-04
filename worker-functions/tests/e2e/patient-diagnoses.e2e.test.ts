@@ -125,27 +125,60 @@ describe('patient_diagnoses — Postgres real, porta fake (spec 016 F2) @integra
     expect(primaries[0].id).toBe(b.diagnosis.id);
   });
 
-  it('teste 3b — CONCORRÊNCIA: duas promoções simultâneas para o MESMO diagnóstico, nunca dois principais, nenhum 23505 escapa', async () => {
-    const repo = new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL);
-    const record = new RecordPatientDiagnosis(terminology(), repo);
-    const a = await record.execute({ patientId, conceptUri: AUTISM_A.uri, actorUid: 'e2e-test', isPrimary: true });
-    const b = await record.execute({ patientId, conceptUri: AUTISM_B.uri, actorUid: 'e2e-test' });
-    if (a.outcome !== 'created' || b.outcome !== 'created') throw new Error('setup falhou');
+  it('teste 3b — CONCORRÊNCIA: promover DOIS DIAGNÓSTICOS DIFERENTES ao mesmo tempo (8 rodadas), nunca dois principais, nenhum 23505 escapa', async () => {
+    // 🔴 C1 (QA-caça, correções F2) — INSTRUMENTO MORTO no original: as duas promoções alvejavam
+    // `b.diagnosis.id` (o MESMO id) duas vezes — duas gravações da mesma chave de índice NUNCA
+    // colidem entre si (a segunda simplesmente reafirma o mesmo estado), então o teste NÃO PODIA
+    // falhar mesmo sem lock nenhum. A régua real do QA foi 8 rodadas de PATCH concorrente em DOIS
+    // diagnósticos DIFERENTES do mesmo paciente → {"200":9,"500":7} medido. Aqui: 8 rodadas, cada
+    // uma cria A e B FRESCOS (para não colidir com o dedupe por código das rodadas anteriores) e
+    // promove os DOIS ao mesmo tempo — outcome nunca pode ser um throw/500, e ao final da rodada
+    // exatamente um dos dois fica principal.
+    const ROUNDS = 8;
+    const outcomes: string[] = [];
 
-    // Duas requisições concorrentes, cada uma com seu PRÓPRIO repositório (como duas requests
-    // HTTP simultâneas teriam) — ambas tentando promover B.
-    const results = await Promise.all([
-      new SetPrimaryDiagnosis(new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL)).execute(patientId, b.diagnosis.id, 'req-1'),
-      new SetPrimaryDiagnosis(new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL)).execute(patientId, b.diagnosis.id, 'req-2'),
-    ]);
-    expect(results.every((r) => r.outcome === 'ok')).toBe(true);
+    for (let i = 0; i < ROUNDS; i++) {
+      const repo = new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL);
+      const roundTerm = new InMemoryTerminology(
+        [
+          CHAPTER,
+          { ...AUTISM_A, uri: `${AUTISM_A.uri}-r${i}`, code: IcdCode.parse(`6A0${i % 10}.A`) },
+          { ...AUTISM_B, uri: `${AUTISM_B.uri}-r${i}`, code: IcdCode.parse(`6A0${i % 10}.B`) },
+        ],
+        { currentRelease: 'TEST-PD-E2E' },
+      );
+      const roundRecord = new RecordPatientDiagnosis(roundTerm, repo);
+      const a = await roundRecord.execute({ patientId, conceptUri: `${AUTISM_A.uri}-r${i}`, actorUid: 'e2e-test' });
+      const b = await roundRecord.execute({ patientId, conceptUri: `${AUTISM_B.uri}-r${i}`, actorUid: 'e2e-test' });
+      if (a.outcome !== 'created' || b.outcome !== 'created') throw new Error('setup falhou');
 
-    const { rows } = await pool.query<{ id: string }>(
-      'SELECT id FROM patient_diagnoses WHERE patient_id = $1 AND source = $2 AND active AND is_primary',
-      [patientId, 'PANEL'],
-    );
-    expect(rows).toHaveLength(1);
-    expect(rows[0].id).toBe(b.diagnosis.id);
+      // Duas requisições concorrentes, cada uma com seu PRÓPRIO repositório (como duas requests
+      // HTTP simultâneas teriam) — uma promove A, a OUTRA promove B — DOIS ALVOS DIFERENTES.
+      const results = await Promise.allSettled([
+        new SetPrimaryDiagnosis(new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL)).execute(patientId, a.diagnosis.id, 'req-1'),
+        new SetPrimaryDiagnosis(new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL)).execute(patientId, b.diagnosis.id, 'req-2'),
+      ]);
+      for (const r of results) {
+        outcomes.push(r.status === 'fulfilled' ? r.value.outcome : `THROW:${(r.reason as Error).message}`);
+      }
+
+      const { rows } = await pool.query<{ id: string }>(
+        'SELECT id FROM patient_diagnoses WHERE patient_id = $1 AND source = $2 AND active AND is_primary',
+        [patientId, 'PANEL'],
+      );
+      expect(rows).toHaveLength(1);
+      expect([a.diagnosis.id, b.diagnosis.id]).toContain(rows[0].id);
+
+      // Limpa a rodada — a próxima começa de novo do zero, sem herdar o principal desta.
+      await pool.query('DELETE FROM patient_diagnoses WHERE patient_id = $1', [patientId]);
+    }
+
+    // eslint-disable-next-line no-console
+    console.log('C1 — distribuição de outcomes em 8 rodadas × 2 promoções concorrentes:', JSON.stringify(
+      outcomes.reduce((acc: Record<string, number>, o) => ({ ...acc, [o]: (acc[o] ?? 0) + 1 }), {}),
+    ));
+    expect(outcomes.filter((o) => o.startsWith('THROW'))).toHaveLength(0);
+    expect(outcomes.every((o) => o === 'ok')).toBe(true);
   });
 
   it('teste 2 — o espelho do ClickUp NUNCA enxerga nem desativa o principal do PAINEL (escopo físico por construtor, D263)', async () => {

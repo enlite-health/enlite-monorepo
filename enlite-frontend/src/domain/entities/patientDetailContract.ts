@@ -33,6 +33,22 @@ const responsibleSchema = z
   })
   .strict();
 
+// Spec 016 F2 (D263), correção C5 (QA-caça): `GET /patients/:id` passou a embutir `diagnoses[]`
+// (projeção `DiagnosisPublicView` — REQ-21, sem code/chapter/release) — o schema `.strict()`
+// reprovava essa chave nova, mas o teste de drift seguia verde porque a fixture não foi
+// recapturada. Fixture recapturada da API REAL em 04/09 (docker `enlite-api` rebuildado desta
+// worktree, `AdminPatientsController.js` grep confirmado com `diagnosesUnavailable`).
+const diagnosisPublicViewSchema = z
+  .object({
+    id: z.string(),
+    uri: z.string(),
+    title: z.string(),
+    isPrimary: z.boolean(),
+    source: z.string(),
+    active: z.boolean(),
+  })
+  .strict();
+
 const availabilityRangeSchema = z.object({ start: z.string(), end: z.string() }).strict();
 
 const availabilityPerDaySchema = z
@@ -196,6 +212,11 @@ export const patientDetailContractSchema = z
     addresses: z.array(addressSchema),
     professionals: z.array(professionalSchema),
     contractedServices: z.array(contractedServiceSchema),
+    // Spec 016 F2 (D263), C5 — diagnóstico estruturado (REQ-21: sem code/chapter/release, só
+    // {id,uri,title,isPrimary,source,active}). Bulkhead do backend (C4): `diagnosesUnavailable`
+    // distingue "paciente sem diagnóstico" ([], false) de "não consegui ler" ([], true).
+    diagnoses: z.array(diagnosisPublicViewSchema),
+    diagnosesUnavailable: z.boolean(),
     lastCaseNumber: z.number().nullable().optional(),
     createdAt: isoDate,
     updatedAt: isoDate,

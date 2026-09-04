@@ -12,10 +12,19 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
 }));
 
 import { DiagnosisSource } from '../../domain/DiagnosisSource';
+import { PrimaryDiagnosisConflictError } from '../../domain/PatientDiagnosisRepositoryPort';
 import {
   PostgresPatientDiagnosisRepository,
   PatientDiagnosisNotFoundInScopeError,
 } from '../PostgresPatientDiagnosisRepository';
+
+/** Simula o 23505 real do Postgres sobre o índice parcial de principal único (C1). */
+function primaryUniqueViolation(): Error & { code: string; constraint: string } {
+  return Object.assign(new Error('duplicate key value violates unique constraint'), {
+    code: '23505',
+    constraint: 'uq_patient_diagnoses_primary_por_origem',
+  });
+}
 
 const ROW = {
   id: 'diag-1',
@@ -153,13 +162,117 @@ describe('PostgresPatientDiagnosisRepository (spec 016 F2, escopo por construtor
     expect(deactivated.active).toBe(false);
   });
 
-  it('demotePrimary: UPDATE escopado por (patient_id, source, is_primary, active)', async () => {
+  it('demotePrimary: C1 — trava o lock consultivo POR PACIENTE ANTES do UPDATE escopado (patient_id, source, is_primary, active)', async () => {
     const repo = new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL);
-    mockPoolQuery.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] }); // pg_advisory_xact_lock
+    mockPoolQuery.mockResolvedValueOnce({ rows: [], rowCount: 1 }); // UPDATE
     await repo.demotePrimary('pat-1');
-    const [sql, params] = mockPoolQuery.mock.calls[0];
+    expect(mockPoolQuery).toHaveBeenCalledTimes(2);
+    const [lockSql, lockParams] = mockPoolQuery.mock.calls[0];
+    expect(lockSql).toContain('pg_advisory_xact_lock');
+    expect(lockParams).toEqual(['diagnosis_primary:pat-1']);
+    const [sql, params] = mockPoolQuery.mock.calls[1];
     expect(sql).toContain('is_primary');
     expect(params).toEqual(['pat-1', 'PANEL']);
+  });
+
+  it('create: C1 — 23505 do índice de principal vira PrimaryDiagnosisConflictError, NUNCA o erro cru do driver', async () => {
+    const repo = new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL);
+    mockPoolQuery.mockRejectedValueOnce(primaryUniqueViolation());
+    await expect(
+      repo.create({
+        patientId: 'pat-1',
+        conceptUri: ROW.concept_uri,
+        conceptCode: ROW.concept_code,
+        conceptTitle: ROW.concept_title,
+        conceptLanguage: 'es',
+        conceptGroup: '06',
+        catalogRelease: '2026-01',
+        isPrimary: true,
+        actorUid: 'uid-1',
+      }),
+    ).rejects.toThrow(PrimaryDiagnosisConflictError);
+  });
+
+  it('create: qualquer OUTRO erro do driver sobe intacto (não é engolido pelo mapeamento do 23505)', async () => {
+    const repo = new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL);
+    mockPoolQuery.mockRejectedValueOnce(new Error('connection reset'));
+    await expect(
+      repo.create({
+        patientId: 'pat-1',
+        conceptUri: ROW.concept_uri,
+        conceptCode: ROW.concept_code,
+        conceptTitle: ROW.concept_title,
+        conceptLanguage: 'es',
+        conceptGroup: '06',
+        catalogRelease: '2026-01',
+        isPrimary: false,
+        actorUid: 'uid-1',
+      }),
+    ).rejects.toThrow('connection reset');
+  });
+
+  it('promotePrimary: C1 — 23505 do índice de principal vira PrimaryDiagnosisConflictError (defesa em profundidade; o lock já torna isto inatingível em uso normal)', async () => {
+    const repo = new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL);
+    mockPoolQuery.mockRejectedValueOnce(primaryUniqueViolation());
+    await expect(repo.promotePrimary('diag-1', 'uid-1')).rejects.toThrow(PrimaryDiagnosisConflictError);
+  });
+
+  it('create: 23505 de OUTRO índice/constraint NÃO vira PrimaryDiagnosisConflictError — sobe intacto', async () => {
+    const repo = new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL);
+    mockPoolQuery.mockRejectedValueOnce(
+      Object.assign(new Error('duplicate key'), { code: '23505', constraint: 'uq_patient_diagnoses_codigo_ativo_por_origem' }),
+    );
+    await expect(
+      repo.create({
+        patientId: 'pat-1',
+        conceptUri: ROW.concept_uri,
+        conceptCode: ROW.concept_code,
+        conceptTitle: ROW.concept_title,
+        conceptLanguage: 'es',
+        conceptGroup: '06',
+        catalogRelease: '2026-01',
+        isPrimary: false,
+        actorUid: 'uid-1',
+      }),
+    ).rejects.not.toThrow(PrimaryDiagnosisConflictError);
+  });
+
+  it('create: erro de rejeição que NÃO é objeto (ex.: string crua) não quebra o mapeamento — sobe intacto', async () => {
+    const repo = new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL);
+    mockPoolQuery.mockRejectedValueOnce('rejeição crua');
+    await expect(
+      repo.create({
+        patientId: 'pat-1',
+        conceptUri: ROW.concept_uri,
+        conceptCode: ROW.concept_code,
+        conceptTitle: ROW.concept_title,
+        conceptLanguage: 'es',
+        conceptGroup: '06',
+        catalogRelease: '2026-01',
+        isPrimary: false,
+        actorUid: 'uid-1',
+      }),
+    ).rejects.toBe('rejeição crua');
+  });
+
+  it('create: erro de rejeição `null` não quebra o mapeamento — sobe intacto', async () => {
+    const repo = new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL);
+    // eslint-disable-next-line prefer-promise-reject-errors
+    mockPoolQuery.mockReturnValueOnce(Promise.reject(null));
+    await expect(
+      repo.create({
+        patientId: 'pat-1',
+        conceptUri: ROW.concept_uri,
+        conceptCode: ROW.concept_code,
+        conceptTitle: ROW.concept_title,
+        conceptLanguage: 'es',
+        conceptGroup: '06',
+        catalogRelease: '2026-01',
+        isPrimary: false,
+        actorUid: 'uid-1',
+      }),
+    ).rejects.toBeNull();
   });
 
   it('withTransaction: BEGIN, roda fn com um repo do MESMO escopo sobre o client, COMMIT; libera o client', async () => {

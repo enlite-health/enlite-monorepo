@@ -1,15 +1,15 @@
 {
-  "id": "9960be58-4c96-4a82-a19a-f395fcf34ff0",
-  "clickupTaskId": "E2E-CONTRACT-FIXTURE-A6-1788471672",
+  "id": "64b68848-bb6a-4705-8e32-8d16c813db04",
+  "clickupTaskId": null,
   "firstName": "Contrato",
-  "lastName": "Fixture",
+  "lastName": "FixtureC5",
   "birthDate": null,
   "documentType": null,
   "documentNumber": null,
   "affiliateId": null,
   "sex": null,
   "phoneWhatsapp": null,
-  "contactEmail": "contrato.fixture@example.test",
+  "contactEmail": "contrato.fixture.c5@example.test",
   "diagnosis": null,
   "dependencyLevel": null,
   "clinicalSpecialty": null,
@@ -36,8 +36,8 @@
   "chatIds": {},
   "familyChatId": null,
   "providersChatId": null,
-  "status": "PENDING_ADMISSION",
-  "admissionStatus": "PENDING_ADMISSION",
+  "status": "ADMISSION",
+  "admissionStatus": "ADMISSION",
   "onHoldReason": null,
   "onHoldNote": null,
   "serviceStartDate": null,
@@ -47,12 +47,12 @@
   "needsAttention": false,
   "attentionReasons": [],
   "phoneMatchesResponsible": false,
-  "lastCaseNumber": 990672,
+  "lastCaseNumber": null,
   "responsibles": [
     {
-      "id": "7b215a7f-e62c-419b-aff9-1a97dc77ba3e",
+      "id": "40266a80-bac8-4477-b25c-4cd2b87b9439",
       "firstName": "Marta",
-      "lastName": "Fixture",
+      "lastName": "FixtureC5",
       "relationship": "PARENT",
       "phone": "+5491100000021",
       "email": "",
@@ -65,7 +65,7 @@
   ],
   "addresses": [
     {
-      "id": "eac5b719-7aaf-4f2e-9ea9-73408ec5dd81",
+      "id": "92818646-019c-4678-8593-017427407315",
       "addressType": "primary",
       "addressFormatted": "Av. Fixture 123, CABA, AR",
       "addressRaw": "Av. Fixture 123, CABA",
@@ -161,7 +161,7 @@
   ],
   "professionals": [
     {
-      "id": "d52bcb7d-88c4-45ec-a5c7-01fcd3921f69",
+      "id": "f4aecb46-ab41-44bf-895e-2b246d8abf35",
       "name": "Dra. Fixture Tratante",
       "phone": "",
       "email": "",
@@ -171,8 +171,8 @@
   ],
   "contractedServices": [
     {
-      "id": "970c1212-4eb6-4b51-bffc-59a3de5b9eaa",
-      "patientId": "9960be58-4c96-4a82-a19a-f395fcf34ff0",
+      "id": "664cf455-53cd-4663-bb7e-ee0c3021cf20",
+      "patientId": "64b68848-bb6a-4705-8e32-8d16c813db04",
       "serviceCode": "AT",
       "professionalProfile": "Perfil sintético de fixture — busca AT con experiencia en movilidad reducida.",
       "providersNeeded": 2,
@@ -192,13 +192,24 @@
       "country": "AR",
       "deviceTypes": [],
       "providers": [],
-      "createdAt": "2026-09-03T21:41:17.788Z",
-      "updatedAt": "2026-09-03T21:41:17.788Z",
+      "createdAt": "2026-09-04T15:34:14.210Z",
+      "updatedAt": "2026-09-04T15:34:14.210Z",
       "hourlyValueRedacted": false
     }
   ],
-  "createdAt": "2026-09-03T21:41:13.571Z",
-  "updatedAt": "2026-09-03T21:41:17.788Z",
+  "createdAt": "2026-09-04T15:33:07.806Z",
+  "updatedAt": "2026-09-04T15:34:14.163Z",
+  "diagnoses": [
+    {
+      "id": "483bc09a-8ef7-4e7c-a8e7-317ed35d46a7",
+      "uri": "http://id.who.int/icd/release/11/2026-01/mms/437815624/unspecified",
+      "title": "Trastorno del espectro autista, sin especificación",
+      "isPrimary": true,
+      "source": "PANEL",
+      "active": true
+    }
+  ],
+  "diagnosesUnavailable": false,
   "completeness": {
     "missing": [],
     "blocking": [],

@@ -98,6 +98,21 @@ export interface PatientProfessionalDetail {
   isTeam: boolean;
 }
 
+/**
+ * Diagnóstico estruturado (spec 016 F2, D263) — a projeção pública `DiagnosisPublicView` do
+ * backend (REQ-21): NUNCA carrega `code`/`chapter`/`release`, só o suficiente para a tela
+ * mostrar a patología e deixar remover/promover por clique. `uri` é opaco para o cliente — ele
+ * só a devolve no POST, nunca a interpreta.
+ */
+export interface PatientDiagnosisDetail {
+  id: string;
+  uri: string;
+  title: string;
+  isPrimary: boolean;
+  source: string;
+  active: boolean;
+}
+
 export interface PatientDetail {
   id: string;
   /** null para paciente NATIVO (criado no painel ou pelo formulário público, mig 251). */
@@ -179,6 +194,14 @@ export interface PatientDetail {
   professionals: PatientProfessionalDetail[];
   /** Serviços contratados (spec 013, bloco C) — contrato do detalhe. */
   contractedServices: PatientContractedServiceDetail[];
+  /**
+   * Diagnóstico estruturado (spec 016 F2, D263 · correção C5). Bulkhead do backend (C4): uma
+   * falha ao ler o catálogo de terminologia NUNCA derruba a ficha inteira — `diagnoses` vem
+   * `[]` e `diagnosesUnavailable: true` diz que é "não consegui ler", não "paciente sem
+   * diagnóstico" (que é `[]` + `false`). NÃO construir tela sobre isto ainda — é a F3.
+   */
+  diagnoses: PatientDiagnosisDetail[];
+  diagnosesUnavailable: boolean;
   lastCaseNumber?: number | null;
   createdAt: string; // ISO string
   updatedAt: string; // ISO string

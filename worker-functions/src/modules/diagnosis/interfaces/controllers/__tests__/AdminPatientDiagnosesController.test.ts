@@ -162,6 +162,27 @@ describe('AdminPatientDiagnosesController (spec 016 F2)', () => {
       expect(res.status).toHaveBeenCalledWith(409);
     });
 
+    it('C3 (QA-caça) — 422 quando a URI é capítulo/extensão (outcome not_diagnosable); a mensagem NÃO ecoa o concept_code', async () => {
+      const service = { recordDiagnosis: jest.fn().mockResolvedValue({ outcome: 'not_diagnosable' }) };
+      const controller = new AdminPatientDiagnosesController(service as unknown as PatientDiagnosisService);
+      const res = mockRes();
+      await controller.create(mockReq({ params: { id: PATIENT_ID }, body: { conceptUri: 'http://x' } }), res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      const [payload] = res.json.mock.calls[0];
+      expect(payload.code).toBe('CONCEPT_NOT_DIAGNOSABLE');
+      expect(JSON.stringify(payload)).not.toMatch(/6A02|XM0ZH6/);
+    });
+
+    it('C1 (QA-caça) — 409 quando o 23505 do índice de principal escapa (outcome primary_race), NUNCA 500', async () => {
+      const service = { recordDiagnosis: jest.fn().mockResolvedValue({ outcome: 'primary_race' }) };
+      const controller = new AdminPatientDiagnosesController(service as unknown as PatientDiagnosisService);
+      const res = mockRes();
+      await controller.create(mockReq({ params: { id: PATIENT_ID }, body: { conceptUri: 'http://x', isPrimary: true } }), res);
+      expect(res.status).toHaveBeenCalledWith(409);
+      const [payload] = res.json.mock.calls[0];
+      expect(payload.code).toBe('PRIMARY_DIAGNOSIS_RACE');
+    });
+
     it('201 com a Entity criada, projetada (outcome created)', async () => {
       const service = { recordDiagnosis: jest.fn().mockResolvedValue({ outcome: 'created', diagnosis: aDiagnosis() }) };
       const controller = new AdminPatientDiagnosesController(service as unknown as PatientDiagnosisService);
@@ -250,12 +271,24 @@ describe('AdminPatientDiagnosesController (spec 016 F2)', () => {
       expect(res.status).toHaveBeenCalledWith(404);
     });
 
-    it('409 quando o outcome é conflict', async () => {
+    it('409 quando o outcome é conflict (reason=already_inactive)', async () => {
       const service = { setPrimary: jest.fn(), deactivate: jest.fn().mockResolvedValue({ outcome: 'conflict', reason: 'already_inactive' }) };
       const controller = new AdminPatientDiagnosesController(service as unknown as PatientDiagnosisService);
       const res = mockRes();
       await controller.update(mockReq({ params: { id: PATIENT_ID, did: DIAGNOSIS_ID }, body: { active: false } }), res);
       expect(res.status).toHaveBeenCalledWith(409);
+      const [payload] = res.json.mock.calls[0];
+      expect(payload.code).toBe('DIAGNOSIS_NOT_ACTIVE');
+    });
+
+    it('C1 (QA-caça) — 409 com code PRIMARY_DIAGNOSIS_RACE quando o outcome é conflict/primary_race, NUNCA 500', async () => {
+      const service = { setPrimary: jest.fn().mockResolvedValue({ outcome: 'conflict', reason: 'primary_race' }), deactivate: jest.fn() };
+      const controller = new AdminPatientDiagnosesController(service as unknown as PatientDiagnosisService);
+      const res = mockRes();
+      await controller.update(mockReq({ params: { id: PATIENT_ID, did: DIAGNOSIS_ID }, body: { isPrimary: true } }), res);
+      expect(res.status).toHaveBeenCalledWith(409);
+      const [payload] = res.json.mock.calls[0];
+      expect(payload.code).toBe('PRIMARY_DIAGNOSIS_RACE');
     });
 
     it('500 quando o serviço lança', async () => {

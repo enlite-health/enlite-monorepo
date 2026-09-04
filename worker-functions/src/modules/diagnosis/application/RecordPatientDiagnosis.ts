@@ -10,7 +10,7 @@
  */
 import type { TerminologyPort, DiagnosisEntity } from '../../terminology/domain/TerminologyPort';
 import type { PatientDiagnosis } from '../domain/PatientDiagnosis';
-import type { PatientDiagnosisRepositoryPort } from '../domain/PatientDiagnosisRepositoryPort';
+import { PrimaryDiagnosisConflictError, type PatientDiagnosisRepositoryPort } from '../domain/PatientDiagnosisRepositoryPort';
 
 export interface RecordPatientDiagnosisInput {
   readonly patientId: string;
@@ -23,6 +23,14 @@ export type RecordPatientDiagnosisResult =
   | { readonly outcome: 'created'; readonly diagnosis: PatientDiagnosis }
   | { readonly outcome: 'patient_not_found' }
   | { readonly outcome: 'concept_not_resolved' }
+  // C3 (QA-caça): a URI resolve, mas não é uma entidade DIAGNOSTICÁVEL — capítulo (kind='chapter')
+  // ou código de extensão (kind='extension'), nunca um fato clínico por si só. A BUSCA já exclui
+  // os dois por padrão (IcdCatalogTerminology.search); a ESCRITA repete a regra aqui — sem FK
+  // para o catálogo (D261/D263), esta validação NA ESCRITA é a integridade.
+  | { readonly outcome: 'not_diagnosable' }
+  // C1 (QA-caça): 23505 do índice de principal mapeado — nunca escapa como 500 nem no POST com
+  // isPrimary:true (RecordPatientDiagnosis também demote+create na mesma transação).
+  | { readonly outcome: 'primary_race' }
   | { readonly outcome: 'already_active'; readonly diagnosis: PatientDiagnosis };
 
 /**
@@ -49,6 +57,11 @@ export class RecordPatientDiagnosis {
     const entity = await this.terminology.getByUri(input.conceptUri);
     if (!entity) return { outcome: 'concept_not_resolved' };
 
+    // C3 — só `kind='stem'` vira diagnóstico (cluster pós-coordenado é stem — ver fixtures do
+    // adaptador). `chapter` (o capítulo inteiro) e `extension` (código de extensão, ex.: "Plomo")
+    // resolvem no catálogo mas não são um fato clínico isolado.
+    if (entity.kind !== 'stem') return { outcome: 'not_diagnosable' };
+
     const conceptCode = entity.code.value;
     const existingActive = await this.repo.findActiveByConceptCode(input.patientId, conceptCode);
     if (existingActive) return { outcome: 'already_active', diagnosis: existingActive };
@@ -71,14 +84,19 @@ export class RecordPatientDiagnosis {
     // O índice parcial único (patient_id, source) WHERE is_primary AND active NÃO é DEFERRABLE
     // (D263) — se já existe um principal ativo nesta origem, o INSERT com is_primary=true
     // estouraria 23505. Mesma reconciliação de SetPrimaryDiagnosis: rebaixa o atual, cria o novo
-    // já principal, na MESMA transação.
-    const diagnosis = input.isPrimary
-      ? await this.repo.withTransaction(async (tx) => {
-          await tx.demotePrimary(input.patientId);
-          return tx.create(newDiagnosis);
-        })
-      : await this.repo.create(newDiagnosis);
+    // já principal, na MESMA transação (e no MESMO lock consultivo por paciente — C1).
+    try {
+      const diagnosis = input.isPrimary
+        ? await this.repo.withTransaction(async (tx) => {
+            await tx.demotePrimary(input.patientId);
+            return tx.create(newDiagnosis);
+          })
+        : await this.repo.create(newDiagnosis);
 
-    return { outcome: 'created', diagnosis };
+      return { outcome: 'created', diagnosis };
+    } catch (err) {
+      if (err instanceof PrimaryDiagnosisConflictError) return { outcome: 'primary_race' };
+      throw err;
+    }
   }
 }
