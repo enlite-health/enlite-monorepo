@@ -9,7 +9,7 @@ import {
 } from './helpers/permissionFamilyHarness';
 
 /**
- * ANTI-LOCKOUT PELOS CAMINHOS INDIRETOS (migration 296) — banco real, HTTP real.
+ * ANTI-LOCKOUT PELOS CAMINHOS INDIRETOS (migration 410) — banco real, HTTP real.
  *
  * A 279 protege o último gestor só nas três operações do painel. Esta suíte
  * prova os caminhos que ficavam de fora (spec 002 §fora-de-escopo; lex C8):
@@ -31,7 +31,7 @@ import {
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 
-describe('296 — anti-lockout pelos caminhos indiretos', () => {
+describe('410 — anti-lockout pelos caminhos indiretos', () => {
   let admin: Pool;
   let runtime: Pool;
   let system: Pool;
@@ -215,9 +215,9 @@ describe('296 — anti-lockout pelos caminhos indiretos', () => {
       const client = await system.connect();
       try {
         await client.query('BEGIN');
-        await client.query(`SELECT set_config('app.system_context', 'e2e-296', true)`);
+        await client.query(`SELECT set_config('app.system_context', 'e2e-410', true)`);
         await client.query(
-          `SELECT iam.sync_permission_cell($1, $2, 'célula de teste 296', 'Teste', 'worker-functions')`,
+          `SELECT iam.sync_permission_cell($1, $2, 'célula de teste 410', 'Teste', 'worker-functions')`,
           [CELULA_TESTE.resource, CELULA_TESTE.action],
         );
         const n = await client.query<{ n: number }>(

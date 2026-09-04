@@ -1,7 +1,10 @@
--- 296: anti-lockout pelos caminhos INDIRETOS (spec 002 §fora-de-escopo; lex C8 da 002; pré-F13)
+-- 410: anti-lockout pelos caminhos INDIRETOS (spec 002 §fora-de-escopo; lex C8 da 002; pré-F13)
 --
--- NUMERAÇÃO: salta 286-295 de propósito — a linhagem `campos-admissao` (branch ainda não
--- mergeada em 28/08/2026) ocupa esses dez números; o runner ordena por nome, gap não quebra.
+-- NUMERAÇÃO: nasceu como 296 e foi renumerada em 04/09/2026 — `296_stage_skip_reason_slot_mismatch`
+-- já existia no `main`. O trem ABAC reserva a faixa **410-419**: o maior número medido em
+-- 04/09 era 324 (`admissao-fluxo`, ainda não commitado), e a `admissao-fluxo` ganha ~5 por
+-- semana. O runner (`scripts/run-migrations-docker.js`) chaveia por nome de arquivo e ordena
+-- alfabeticamente — gap não quebra, e 3 dígitos preservam a ordem 274-285 → 410.
 --
 -- POR QUÊ: a 279 protege o último gestor (staff ACTIVE com permission_management:write
 -- vigente) SÓ nas três operações do painel: remove_member, archive_group e

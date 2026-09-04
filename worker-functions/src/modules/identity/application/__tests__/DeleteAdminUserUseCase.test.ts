@@ -1,5 +1,5 @@
 /**
- * DeleteAdminUserUseCase — o caminho (b) do anti-lockout indireto (296).
+ * DeleteAdminUserUseCase — o caminho (b) do anti-lockout indireto (410).
  *
  * A ordem do use case é Firebase → banco. Por isso a pré-checagem vem ANTES de
  * tudo: se só o trigger do banco recusasse, a conta já estaria apagada no

@@ -11,7 +11,7 @@ export class DeleteAdminUserUseCase {
 
   async execute(firebaseUid: string): Promise<Result<void>> {
     try {
-      // 0. Anti-lockout (296): o último gestor não sai por aqui. Checado ANTES do
+      // 0. Anti-lockout (410): o último gestor não sai por aqui. Checado ANTES do
       //    Firebase porque a ordem abaixo apaga a conta lá primeiro — a recusa do
       //    trigger do banco, sozinha, deixaria a pessoa sem login e ainda no IAM.
       //    (A janela entre este check e o trigger continua existindo — decisão

@@ -1,5 +1,5 @@
 /**
- * AdminController.deleteAdminUser — o contrato HTTP do anti-lockout indireto (296):
+ * AdminController.deleteAdminUser — o contrato HTTP do anti-lockout indireto (410):
  * `last_manager` do use case vira 409 com o MESMO código que o painel devolve.
  * Só este handler: o resto do controller tem as próprias suítes de rota.
  */

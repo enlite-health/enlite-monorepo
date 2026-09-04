@@ -185,7 +185,7 @@ describe('PgPermissionCatalogRepository', () => {
     expect(query.mock.calls[2][1]).toEqual(['worker-functions', ['worker:read', 'patient:delete']]);
   });
 
-  it('célula protegida ausente da varredura vira WARN — e a lista viva segue como está (296)', async () => {
+  it('célula protegida ausente da varredura vira WARN — e a lista viva segue como está (410)', async () => {
     const { logger } = jest.requireMock('@shared/logging') as { logger: { warn: jest.Mock } };
     logger.warn.mockClear();
     const query = jest.fn().mockResolvedValue({ rows: [{ outcome: 'unchanged', n: 0 }] });
