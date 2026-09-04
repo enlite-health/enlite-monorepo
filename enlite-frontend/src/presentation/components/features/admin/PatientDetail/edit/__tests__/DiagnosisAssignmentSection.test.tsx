@@ -104,13 +104,15 @@ describe('DiagnosisAssignmentSection', () => {
     expect(onChanged).toHaveBeenCalledTimes(1);
   });
 
-  it('remover: PATCH via deactivate, o chip some da lista, onChanged dispara', async () => {
+  it('remover: PATCH via deactivate (após confirmar — U3), o chip some da lista, onChanged dispara', async () => {
     deactivate.mockResolvedValue(diag({ id: 'd1', active: false }));
     const onChanged = vi.fn();
     render(
       <DiagnosisAssignmentSection patientId={PATIENT_ID} initialDiagnoses={[diag({ id: 'd1' })]} onChanged={onChanged} />,
     );
     fireEvent.click(screen.getByTestId('diagnosis-chip-remove-d1'));
+    expect(deactivate).not.toHaveBeenCalled(); // U3: só pede confirmação, ainda não remove
+    fireEvent.click(screen.getByTestId('diagnosis-chip-remove-confirm-btn-d1'));
     expect(deactivate).toHaveBeenCalledWith(PATIENT_ID, 'd1');
     await waitFor(() => expect(screen.queryByTestId('diagnosis-chip-d1')).not.toBeInTheDocument());
     expect(onChanged).toHaveBeenCalledTimes(1);
@@ -154,6 +156,7 @@ describe('DiagnosisAssignmentSection', () => {
       <DiagnosisAssignmentSection patientId={PATIENT_ID} initialDiagnoses={[diag({ id: 'd1' })]} onChanged={vi.fn()} />,
     );
     fireEvent.click(screen.getByTestId('diagnosis-chip-remove-d1'));
+    fireEvent.click(screen.getByTestId('diagnosis-chip-remove-confirm-btn-d1'));
     await waitFor(() => expect(screen.getByTestId('diagnosis-assignment-error')).toBeInTheDocument());
     expect(screen.getByTestId('diagnosis-chip-d1')).toBeInTheDocument();
   });

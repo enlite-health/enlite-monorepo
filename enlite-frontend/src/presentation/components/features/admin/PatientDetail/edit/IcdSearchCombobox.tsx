@@ -31,12 +31,24 @@ export interface IcdSearchComboboxProps {
   disabled?: boolean;
 }
 
-type Phase = 'idle' | 'typing' | 'searching' | 'results' | 'empty' | 'unavailable';
+type Phase = 'idle' | 'tooShort' | 'typing' | 'searching' | 'results' | 'empty' | 'unavailable';
 
 const DEBOUNCE_MS = 300;
 const MIN_CHARS = 2;
 /** SUP-1 (spec 016): filtro padrão de TELA — capítulos 06 (mental) e 08 (neurológico). */
 const DEFAULT_CHAPTERS = '06,08';
+
+/**
+ * U6 (auditoria UX ux-04b/ux-03d/ux-03e): `F84` (código CIE-10) e `TDAH` (sigla) voltam "sem
+ * resultado" — igual a um termo inexistente. A operadora conclui que o sistema não tem o
+ * diagnóstico. Esta heurística só decide se um AVISO extra aparece; nunca tenta resolver o
+ * código. "Parece código": letra seguida de dígito, ou dígito seguido de letra. "Parece sigla":
+ * 2-5 letras MAIÚSCULAS.
+ */
+function looksLikeCodeOrAcronym(q: string): boolean {
+  if (/^[A-Za-z]\d|^\d[A-Za-z]/.test(q)) return true;
+  return /^[A-Z]{2,5}$/.test(q);
+}
 
 export function IcdSearchCombobox({ id, onSelect, disabled = false }: IcdSearchComboboxProps): JSX.Element {
   const { t } = useTranslation();
@@ -49,6 +61,8 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false }: IcdSearchC
   const [activeIndex, setActiveIndex] = useState(-1);
   const [isOpen, setIsOpen] = useState(false);
   const [allChapters, setAllChapters] = useState(false);
+  /** U1: quantos resultados a MAIS existem fora do filtro padrão — `null` = não avisar. */
+  const [outsideCount, setOutsideCount] = useState<number | null>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -62,6 +76,7 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false }: IcdSearchC
     abortRef.current = controller;
     const requestId = ++requestIdRef.current;
     setPhase('searching');
+    setOutsideCount(null);
 
     AdminTerminologyApiService.search(q, { chapters, signal: controller.signal })
       .then((candidates) => {
@@ -70,6 +85,23 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false }: IcdSearchC
         setPhase(candidates.length === 0 ? 'empty' : 'results');
         setIsOpen(true);
         setActiveIndex(-1);
+
+        // U1: filtro padrão ativo E já achou algo — confere em UMA chamada extra (sem filtro)
+        // se há MAIS resultados escondidos, pra avisar em vez de deixar a operadora achar que a
+        // lista mostrada é tudo o que existe. Sem filtro (`chapters` undefined) não há o que
+        // esconder — não dispara a checagem.
+        if (chapters && candidates.length > 0) {
+          AdminTerminologyApiService.search(q, { signal: controller.signal })
+            .then((allCandidates) => {
+              if (requestIdRef.current !== requestId) return; // obsoleta — descartada
+              const extra = allCandidates.length - candidates.length;
+              setOutsideCount(extra > 0 ? extra : null);
+            })
+            .catch(() => {
+              if (requestIdRef.current !== requestId) return;
+              setOutsideCount(null);
+            });
+        }
       })
       .catch((err: unknown) => {
         // `abortRef.current?.abort()` só é chamado ao disparar uma busca NOVA ou ao cair abaixo
@@ -85,12 +117,24 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false }: IcdSearchC
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     const q = query.trim();
+    if (q.length === 0) {
+      abortRef.current?.abort();
+      requestIdRef.current++;
+      setOptions([]);
+      setOutsideCount(null);
+      setIsOpen(false);
+      setPhase('idle');
+      return;
+    }
+    // U5: abaixo do mínimo, mas com pelo menos 1 caractere — não é mais silêncio (era idêntico
+    // ao estado vazio); diz o piso em vez de deixar a operadora achar que nada está acontecendo.
     if (q.length < MIN_CHARS) {
       abortRef.current?.abort();
       requestIdRef.current++;
       setOptions([]);
+      setOutsideCount(null);
       setIsOpen(false);
-      setPhase('idle');
+      setPhase('tooShort');
       return;
     }
     setPhase('typing');
@@ -133,12 +177,19 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false }: IcdSearchC
       e.preventDefault();
       handleSelect(options[activeIndex]);
     } else if (e.key === 'Escape') {
+      // U2 (auditoria UX passo 10): sem isto o Esc vaza pro listener do drawer (documento) e
+      // derruba a tela inteira — a operadora só queria fechar a LISTA. `stopPropagation` numa
+      // SyntheticEvent do React também para o evento NATIVO (não bubbleia até `document`).
+      e.stopPropagation();
       setIsOpen(false);
     }
   }
 
+  const codeOrAcronymHint = phase === 'empty' && looksLikeCodeOrAcronym(query.trim());
+
   const statusText =
-    phase === 'typing' ? ta('typing')
+    phase === 'tooShort' ? ta('tooShortHint')
+    : phase === 'typing' ? ta('typing')
     : phase === 'searching' ? ta('searching')
     : phase === 'empty' ? ta('noResults', { query: query.trim() })
     : phase === 'unavailable' ? ta('unavailable')
@@ -187,6 +238,18 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false }: IcdSearchC
           data-testid={`${id}-status`}
         >
           {statusText}
+        </Text>
+      )}
+
+      {codeOrAcronymHint && (
+        <Text as="span" size="xs" color="muted" data-testid={`${id}-code-hint`}>
+          {ta('codeOrAcronymHint')}
+        </Text>
+      )}
+
+      {isOpen && phase === 'results' && outsideCount !== null && (
+        <Text as="span" size="xs" color="primary" data-testid={`${id}-outside-notice`}>
+          {ta('outsideFilterNotice', { count: outsideCount })}
         </Text>
       )}
 

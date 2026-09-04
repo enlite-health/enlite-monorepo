@@ -65,10 +65,80 @@ describe('DiagnosisChipList', () => {
     expect(onPromote).toHaveBeenCalledWith('d1');
   });
 
-  it('clicar em remover chama onRemove(id)', () => {
+  it('U4: o botão de promover tem TEXTO visível, não só aria-label', () => {
+    render(<DiagnosisChipList diagnoses={[chip()]} onPromote={vi.fn()} onRemove={vi.fn()} />);
+    const btn = screen.getByTestId('diagnosis-chip-promote-d1');
+    expect((btn.textContent ?? '').trim().length).toBeGreaterThan(0);
+  });
+
+  it('U4: clicar no CORPO do chip (não-principal) também promove', () => {
+    const onPromote = vi.fn();
+    render(<DiagnosisChipList diagnoses={[chip({ isPrimary: false })]} onPromote={onPromote} onRemove={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('diagnosis-chip-d1'));
+    expect(onPromote).toHaveBeenCalledWith('d1');
+  });
+
+  it('U4: clicar no corpo do chip JÁ principal não chama onPromote de novo', () => {
+    const onPromote = vi.fn();
+    render(<DiagnosisChipList diagnoses={[chip({ isPrimary: true })]} onPromote={onPromote} onRemove={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('diagnosis-chip-d1'));
+    expect(onPromote).not.toHaveBeenCalled();
+  });
+
+  it('U4: clicar no ícone estrela não duplica com o clique do corpo (uma chamada só)', () => {
+    const onPromote = vi.fn();
+    render(<DiagnosisChipList diagnoses={[chip({ isPrimary: false })]} onPromote={onPromote} onRemove={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('diagnosis-chip-promote-d1'));
+    expect(onPromote).toHaveBeenCalledTimes(1);
+  });
+
+  it('U4: clicar no botão de remover (dentro do chip clicável) não promove por engano', () => {
+    const onPromote = vi.fn();
+    const onRemove = vi.fn();
+    render(<DiagnosisChipList diagnoses={[chip({ isPrimary: false })]} onPromote={onPromote} onRemove={onRemove} />);
+    fireEvent.click(screen.getByTestId('diagnosis-chip-remove-d1'));
+    expect(onPromote).not.toHaveBeenCalled();
+  });
+
+  it('U4: busy — clicar no corpo do chip não promove enquanto uma ação está em andamento', () => {
+    const onPromote = vi.fn();
+    render(<DiagnosisChipList diagnoses={[chip({ isPrimary: false })]} busyId="d1" onPromote={onPromote} onRemove={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('diagnosis-chip-d1'));
+    expect(onPromote).not.toHaveBeenCalled();
+  });
+
+  it('U3: cancelar/confirmar dentro da confirmação também não deixam vazar pro clique do corpo (promote)', () => {
+    const onPromote = vi.fn();
+    render(<DiagnosisChipList diagnoses={[chip({ isPrimary: false })]} onPromote={onPromote} onRemove={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('diagnosis-chip-remove-d1'));
+    fireEvent.click(screen.getByTestId('diagnosis-chip-remove-cancel-d1'));
+    expect(onPromote).not.toHaveBeenCalled();
+  });
+
+  it('U3: clicar no X NÃO remove na hora — mostra confirmação inline primeiro', () => {
     const onRemove = vi.fn();
     render(<DiagnosisChipList diagnoses={[chip()]} onPromote={vi.fn()} onRemove={onRemove} />);
     fireEvent.click(screen.getByTestId('diagnosis-chip-remove-d1'));
+    expect(onRemove).not.toHaveBeenCalled();
+    expect(screen.getByTestId('diagnosis-chip-remove-confirm-d1')).toBeInTheDocument();
+    expect(screen.getByTestId('diagnosis-chip-d1')).toBeInTheDocument();
+  });
+
+  it('U3: cancelar a confirmação mantém o chip, sem remover', () => {
+    const onRemove = vi.fn();
+    render(<DiagnosisChipList diagnoses={[chip()]} onPromote={vi.fn()} onRemove={onRemove} />);
+    fireEvent.click(screen.getByTestId('diagnosis-chip-remove-d1'));
+    fireEvent.click(screen.getByTestId('diagnosis-chip-remove-cancel-d1'));
+    expect(onRemove).not.toHaveBeenCalled();
+    expect(screen.getByTestId('diagnosis-chip-d1')).toBeInTheDocument();
+    expect(screen.queryByTestId('diagnosis-chip-remove-confirm-d1')).not.toBeInTheDocument();
+  });
+
+  it('U3: confirmar a remoção chama onRemove(id)', () => {
+    const onRemove = vi.fn();
+    render(<DiagnosisChipList diagnoses={[chip()]} onPromote={vi.fn()} onRemove={onRemove} />);
+    fireEvent.click(screen.getByTestId('diagnosis-chip-remove-d1'));
+    fireEvent.click(screen.getByTestId('diagnosis-chip-remove-confirm-btn-d1'));
     expect(onRemove).toHaveBeenCalledWith('d1');
   });
 
