@@ -216,3 +216,132 @@ describe('iam-config export/import (D208)', () => {
     expect(() => run('scripts/iam-config-import.ts', ['--file', file, '--actor-email', email(U.gestor), '--execute'])).toThrow();
   }, 120000);
 });
+
+/**
+ * F12 — marcador `iam.rollout_state` (mig 282) gravado pelo `iam-config-import.ts`.
+ *
+ * `describe` PRÓPRIO (não aninhado no de cima) de propósito: o Jest só roda o
+ * `afterAll` de um describe DEPOIS de todos os `it`s dele — então, rodando
+ * como irmão SEGUINTE do describe acima, este só começa depois que `limpar()`
+ * já tirou U.gestor/gestor2/ana/semCelula e o grupo `CFG E2E Novo` do banco.
+ * Sem isso, "0 staff ACTIVE sem grupo" dependeria do estado que os outros
+ * `it`s deixaram (ex.: `U.gestor2` nunca entra em grupo nenhum) — frágil e
+ * fora do meu controle.
+ *
+ * O marcador já vem SEMEADO 'done' neste banco (para o gate de boot/e2e de
+ * outro arquivo) — por isso cada teste APAGA o marcador antes de rodar (senão
+ * `reportRollout` para em "já é done" e nunca mede nada), e o `afterAll`
+ * restaura o valor ORIGINAL (não um 'done' fixo) — o `beforeAll` lê e guarda.
+ */
+describe('F12 — marcador de rollout (iam.rollout_state) via iam-config-import --execute', () => {
+  const KEY = 'permission_groups_migrated';
+  const admin = new Pool({ connectionString: DATABASE_URL });
+  let original: { value: string; note: string | null } | null = null;
+
+  async function lerMarcador(): Promise<{ value: string; note: string | null } | null> {
+    const r = await admin.query<{ value: string; note: string | null }>(`SELECT value, note FROM iam.rollout_state WHERE key = $1`, [KEY]);
+    return r.rows[0] ?? null;
+  }
+  async function apagarMarcador(): Promise<void> {
+    await admin.query(`DELETE FROM iam.rollout_state WHERE key = $1`, [KEY]);
+  }
+  async function contaSemGrupo(): Promise<number> {
+    const r = await admin.query<{ n: number }>(
+      `SELECT count(*)::int AS n
+         FROM users u
+        WHERE u.status = 'ACTIVE' AND u.role IN ('admin', 'recruiter', 'community_manager')
+          AND NOT EXISTS (
+            SELECT 1 FROM iam.user_groups ug JOIN iam.permission_groups g ON g.id = ug.group_id AND g.archived_at IS NULL
+             WHERE ug.user_id = u.firebase_uid AND ug.removed_at IS NULL)`,
+    );
+    return r.rows[0].n;
+  }
+  async function contaAtivos(): Promise<number> {
+    const r = await admin.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM users WHERE status = 'ACTIVE' AND role IN ('admin', 'recruiter', 'community_manager')`,
+    );
+    return r.rows[0].n;
+  }
+  function runScript(script: string, args: string[]) {
+    return execFileSync('npx', ['ts-node', '-r', 'dotenv/config', '-r', 'tsconfig-paths/register', script, ...args], {
+      env: { ...process.env, DATABASE_URL },
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  }
+
+  beforeAll(async () => {
+    original = await lerMarcador();
+  }, 30000);
+
+  afterAll(async () => {
+    await apagarMarcador();
+    if (original) await admin.query(`INSERT INTO iam.rollout_state (key, value, note) VALUES ($1, $2, $3)`, [KEY, original.value, original.note]);
+    await admin.end();
+  });
+
+  it('todo staff ACTIVE em grupo → --execute grava o marcador done, com a contagem real no log e na nota', async () => {
+    await apagarMarcador();
+    const uid = 'f12-e2e-comgrupo';
+    const mail = `${uid}@e2e.local`;
+    await admin.query(`DELETE FROM users WHERE firebase_uid = $1`, [uid]);
+    await admin.query(
+      `INSERT INTO users (firebase_uid, email, role, status, is_active, tenant_id) VALUES ($1, $2, 'recruiter', 'ACTIVE', true, $3)`,
+      [uid, mail, TENANT],
+    );
+    const g = await admin.query<{ id: string }>(`INSERT INTO iam.permission_groups (tenant_id, name, description) VALUES ($1, 'F12 E2E Grupo', 'f12') RETURNING id`, [TENANT]);
+    await admin.query(`INSERT INTO iam.user_groups (user_id, group_id, tenant_id) VALUES ($1, $2, $3)`, [uid, g.rows[0].id, TENANT]);
+
+    try {
+      expect(await contaSemGrupo()).toBe(0); // pré-condição do cenário — se falhar, o teste não prova o que diz provar
+      const totalEsperado = await contaAtivos();
+
+      const dir = mkdtempSync(join(tmpdir(), 'iam-config-f12-'));
+      const file = join(dir, 'cfg.json');
+      runScript('scripts/iam-config-export.ts', ['--out', file]);
+      const out = runScript('scripts/iam-config-import.ts', ['--file', file, '--actor-email', mail, '--execute']);
+
+      expect(out).toContain(`marcador ${KEY} = done (${totalEsperado} staff ativos, 0 sem grupo)`);
+      const marcador = await lerMarcador();
+      expect(marcador?.value).toBe('done');
+      expect(marcador?.note).toMatch(/^iam-config-import cfg\.json@[0-9a-f]{12} \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    } finally {
+      await admin.query(`DELETE FROM iam.user_groups WHERE group_id = $1`, [g.rows[0].id]);
+      await admin.query(`DELETE FROM iam.permission_groups WHERE id = $1`, [g.rows[0].id]);
+      await admin.query(`DELETE FROM users WHERE firebase_uid = $1`, [uid]);
+    }
+  }, 60000);
+
+  it('1 staff ACTIVE sem grupo → --execute NÃO grava o marcador e sai com código 2', async () => {
+    await apagarMarcador();
+    const uid = 'f12-e2e-semgrupo';
+    const mail = `${uid}@e2e.local`;
+    await admin.query(`DELETE FROM users WHERE firebase_uid = $1`, [uid]);
+    await admin.query(
+      `INSERT INTO users (firebase_uid, email, role, status, is_active, tenant_id) VALUES ($1, $2, 'recruiter', 'ACTIVE', true, $3)`,
+      [uid, mail, TENANT],
+    );
+
+    try {
+      const semGrupoEsperado = await contaSemGrupo();
+      expect(semGrupoEsperado).toBeGreaterThan(0); // pré-condição — este uid, sem nenhum grupo
+
+      const dir = mkdtempSync(join(tmpdir(), 'iam-config-f12-'));
+      const file = join(dir, 'cfg.json');
+      runScript('scripts/iam-config-export.ts', ['--out', file]);
+
+      let erro: (Error & { status?: number | null; stdout?: string; stderr?: string }) | undefined;
+      try {
+        runScript('scripts/iam-config-import.ts', ['--file', file, '--actor-email', mail, '--execute']);
+      } catch (e) {
+        erro = e as typeof erro;
+      }
+      expect(erro).toBeDefined();
+      expect(erro?.status).toBe(2);
+      expect(`${erro?.stdout ?? ''}${erro?.stderr ?? ''}`).toContain(`marcador ${KEY} NÃO marcado — ${semGrupoEsperado} staff ativo(s) ainda sem grupo`);
+      expect(await lerMarcador()).toBeNull();
+    } finally {
+      await admin.query(`DELETE FROM users WHERE firebase_uid = $1`, [uid]);
+    }
+  }, 60000);
+});
