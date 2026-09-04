@@ -37,7 +37,6 @@
 import { ClickUpPatientMapper, extractCaseNumber, PATIENT_DROPDOWN_FIELDS } from '../../../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
 import { extractPatientChatIds } from '../../../src/modules/integration/infrastructure/clickup/extractPatientChatIds';
 import type { ClickUpTask, ClickUpTaskCustomField } from '../../../src/modules/integration/infrastructure/clickup/ClickUpTask';
-import { completaCatalogo } from '../../fixtures/clickup/completaCatalogo';
 
 // ── Mock ClickUpFieldResolver ─────────────────────────────────────────────────
 

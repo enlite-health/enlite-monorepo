@@ -23,7 +23,6 @@ import type { SyncPatientDeps } from '../../../src/modules/integration/applicati
 import type { ClickUpFieldResolver } from '../../../src/modules/integration/infrastructure/clickup/ClickUpFieldResolver';
 import type { ClickUpTask } from '../../../src/modules/integration/infrastructure/clickup/ClickUpTask';
 import type { PatientService } from '../../../src/modules/case/application/PatientService';
-import { completaCatalogo } from '../../fixtures/clickup/completaCatalogo';
 
 // ── Catálogo sintético: os 8 campos declarados, todos `drop_down` como hoje ───
 const OPCOES: Record<string, string[]> = {
