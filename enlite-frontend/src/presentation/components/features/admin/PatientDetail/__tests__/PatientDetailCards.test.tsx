@@ -9,10 +9,12 @@
  *   - i18n keys are resolved correctly
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import { patientDetailFixture, patientDetailMinimal } from './patientDetailFixture';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 
 // ── i18n mock ────────────────────────────────────────────────────────────────
 
@@ -56,6 +58,7 @@ import { SupervisaoCard } from '../SupervisaoCard';
 import { RelatoriosAtendimentosCard } from '../RelatoriosAtendimentosCard';
 import { PatientProfileTabs } from '../PatientProfileTabs';
 import { FamiliaresCard } from '../FamiliaresCard';
+import type { PatientResponsibleDetail } from '@domain/entities/PatientDetail';
 import { CoberturaMedicaCard } from '../CoberturaMedicaCard';
 import { LocalizacoesCard } from '../LocalizacoesCard';
 import { ServicosContratadosCard } from '../ServicosContratadosCard';
@@ -151,6 +154,15 @@ describe('PatientGeneralInfoCard', () => {
     expect(editButton).not.toBeDisabled();
     fireEvent.click(editButton);
     expect(screen.getByTestId('patient-general-edit-drawer')).toBeInTheDocument();
+  });
+
+  it('desconta 1 ano quando o aniversário deste ano ainda não chegou', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-10T12:00:00Z'));
+    const patient = { ...patientDetailFixture, birthDate: '2000-06-15T00:00:00Z' };
+    render(<PatientGeneralInfoCard patient={patient} />);
+    expect(screen.getByText('25 anos')).toBeInTheDocument();
+    vi.useRealTimers();
   });
 });
 
@@ -439,6 +451,35 @@ describe('FamiliaresCard', () => {
     expect(screen.getByText('Luciana Soto')).toBeInTheDocument();
     expect(screen.getByText('João Silva')).toBeInTheDocument();
   });
+
+  it('renders "—" na coluna de tipo quando documentType é nulo', () => {
+    const semDocumento = [{
+      id: 'r3', firstName: 'Marcos', lastName: 'Reis', relationship: 'FRIEND',
+      phone: null, email: null, documentType: null, documentNumber: null, isPrimary: false,
+    }];
+    render(<FamiliaresCard responsibles={semDocumento} />);
+    expect(screen.getByText('Marcos Reis')).toBeInTheDocument();
+  });
+
+  it('sem relationship e sem nome: cai no fallback (—) das duas colunas', () => {
+    const semNada = [{
+      id: 'r4', firstName: '', lastName: '', relationship: null,
+      phone: null, email: null, documentType: null, documentNumber: null, isPrimary: false,
+    }];
+    render(<FamiliaresCard responsibles={semNada} />);
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('responsibles ausente (undefined): não quebra, mostra o vazio', () => {
+    render(<FamiliaresCard responsibles={undefined as unknown as PatientResponsibleDetail[]} />);
+    expect(screen.getByText('Sem dados cadastrados')).toBeInTheDocument();
+  });
+
+  it('com patientId, clicar em Novo abre o PatientSupportNetworkEditDrawer', () => {
+    render(<FamiliaresCard responsibles={[]} patientId="patient-1" />);
+    fireEvent.click(screen.getByTestId('edit-support-btn'));
+    expect(screen.getByTestId('patient-support-edit-drawer')).toBeInTheDocument();
+  });
 });
 
 // ── CoberturaMedicaCard ──────────────────────────────────────────────────────
@@ -629,5 +670,81 @@ describe('EnquadreTerapeuticoCard', () => {
   it('renders empty state message', () => {
     render(<EnquadreTerapeuticoCard />);
     expect(screen.getByText('Sem enquadres cadastrados')).toBeInTheDocument();
+  });
+});
+
+// ── D269 — write-gate nos botões Editar/Novo (patient:write) ────────────────
+// PATCH /patients/:id/:section (general|clinical|support-network|service) →
+// patient:write. Sem a célula, com enforcement=on, o `ActionButton` (default
+// mode='hide') tira o botão do DOM — não fica desabilitado, não fica com
+// tooltip. Mesmo padrão de VacancyCaseCard.test.tsx.
+
+function comEnforcement(permissions: string[], enforcement: AuthzContract['enforcement']) {
+  useAdminAuthStore.setState({
+    authzStatus: 'ready',
+    authz: {
+      uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {}, enforcement,
+    } as AuthzContract,
+  });
+}
+
+describe('D269 — write-gate nos botões Editar/Novo (patient:write)', () => {
+  beforeEach(() => {
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+  });
+
+  it('🔴 PatientGeneralInfoCard: enforcement=on, sem patient:write → edit-general-btn SOME', () => {
+    comEnforcement([], 'on');
+    render(<PatientGeneralInfoCard patient={patientDetailFixture} />);
+    expect(screen.queryByTestId('edit-general-btn')).not.toBeInTheDocument();
+  });
+
+  it('PatientGeneralInfoCard: enforcement=on, com patient:write → edit-general-btn existe', () => {
+    comEnforcement(['patient:write'], 'on');
+    render(<PatientGeneralInfoCard patient={patientDetailFixture} />);
+    expect(screen.getByTestId('edit-general-btn')).toBeInTheDocument();
+  });
+
+  it('PatientGeneralInfoCard: enforcement OFF (ou ausente) → edit-general-btn existe mesmo sem célula', () => {
+    render(<PatientGeneralInfoCard patient={patientDetailFixture} />);
+    expect(screen.getByTestId('edit-general-btn')).toBeInTheDocument();
+  });
+
+  it('🔴 DiagnosticoCard: enforcement=on, sem patient:write → edit-clinical-btn SOME', () => {
+    comEnforcement([], 'on');
+    render(<DiagnosticoCard patient={patientDetailFixture} />);
+    expect(screen.queryByTestId('edit-clinical-btn')).not.toBeInTheDocument();
+  });
+
+  it('DiagnosticoCard: enforcement=on, com patient:write → edit-clinical-btn existe', () => {
+    comEnforcement(['patient:write'], 'on');
+    render(<DiagnosticoCard patient={patientDetailFixture} />);
+    expect(screen.getByTestId('edit-clinical-btn')).toBeInTheDocument();
+  });
+
+  it('🔴 FamiliaresCard: enforcement=on, sem patient:write → edit-support-btn SOME', () => {
+    comEnforcement([], 'on');
+    render(<FamiliaresCard responsibles={[]} patientId="test-id" />);
+    expect(screen.queryByTestId('edit-support-btn')).not.toBeInTheDocument();
+  });
+
+  it('FamiliaresCard: enforcement=on, com patient:write → edit-support-btn existe (e não desabilitado, com patientId)', () => {
+    comEnforcement(['patient:write'], 'on');
+    render(<FamiliaresCard responsibles={[]} patientId="test-id" />);
+    const btn = screen.getByTestId('edit-support-btn');
+    expect(btn).toBeInTheDocument();
+    expect(btn).not.toBeDisabled();
+  });
+
+  it('🔴 ServicosContratadosCard: enforcement=on, sem patient:write → edit-service-btn SOME', () => {
+    comEnforcement([], 'on');
+    render(<ServicosContratadosCard patient={patientDetailFixture} />);
+    expect(screen.queryByTestId('edit-service-btn')).not.toBeInTheDocument();
+  });
+
+  it('ServicosContratadosCard: enforcement=on, com patient:write → edit-service-btn existe', () => {
+    comEnforcement(['patient:write'], 'on');
+    render(<ServicosContratadosCard patient={patientDetailFixture} />);
+    expect(screen.getByTestId('edit-service-btn')).toBeInTheDocument();
   });
 });

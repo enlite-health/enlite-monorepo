@@ -84,21 +84,75 @@ describe('ReadOnlyField', () => {
   });
 });
 
-describe('ActionButton', () => {
+// D269 — `pronto` (sem `enforcement`) simula o freio de rollout DESLIGADO:
+// `prontoOn` liga a régua explicitamente, que é onde o `ActionButton` gateia.
+const prontoOn = (permissions: string[]) =>
+  useAdminAuthStore.setState({
+    authzStatus: 'ready',
+    authz: {
+      uid: 'u',
+      tenantId: 't',
+      status: 'ACTIVE',
+      permissions,
+      countries: [],
+      groups: [],
+      features: {},
+      enforcement: 'on',
+    } as AuthzContract,
+  });
+
+describe('ActionButton — D269 (mode="hide" default — correção do Gabriel: "esconder, não desabilitar")', () => {
   beforeEach(() => useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }));
 
-  it('sem write: o botão NÃO existe (não é disabled)', () => {
-    pronto(['x:read']);
-    render(<ActionButton resource="x">Salvar</ActionButton>);
+  it('(a) enforcement=on, sem célula: o botão NÃO EXISTE no DOM (nem disabled, nem title)', () => {
+    prontoOn(['x:read']);
+    const onClick = vi.fn();
+    render(<ActionButton resource="x" onClick={onClick}>Salvar</ActionButton>);
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
-  it('com write: existe e clica', () => {
-    pronto(['x:write']);
+  it('(b) enforcement=on, com a célula: existe, habilitado, e clica', () => {
+    prontoOn(['x:write']);
     const onClick = vi.fn();
     render(<ActionButton resource="x" onClick={onClick}>Salvar</ActionButton>);
-    screen.getByRole('button', { name: 'Salvar' }).click();
+    const btn = screen.getByRole('button', { name: 'Salvar' });
+    expect(btn).not.toBeDisabled();
+    btn.click();
     expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('(c) enforcement OFF (ou ausente) e sem célula: existe, habilitado — botão normal', () => {
+    pronto(['x:read']); // enforcement ausente = 'off'
+    const onClick = vi.fn();
+    render(<ActionButton resource="x" onClick={onClick}>Salvar</ActionButton>);
+    const btn = screen.getByRole('button', { name: 'Salvar' });
+    expect(btn).not.toBeDisabled();
+    btn.click();
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('(d) mode="disable" explícito: sem célula, fica desabilitado — title, data-gate, onClick não dispara', () => {
+    prontoOn(['x:read']);
+    const onClick = vi.fn();
+    render(<ActionButton resource="x" mode="disable" onClick={onClick}>Salvar</ActionButton>);
+    const btn = screen.getByRole('button', { name: 'Salvar' });
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveAttribute('aria-disabled', 'true');
+    expect(btn).toHaveAttribute('title', 'access.actionDenied');
+    expect(btn).toHaveAttribute('data-gate', 'denied');
+    btn.click();
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it('(e) action="delete": gateia pela célula x:delete, não x:write', () => {
+    prontoOn(['x:write']); // tem write, mas NÃO tem delete
+    const semDelete = render(<ActionButton resource="x" action="delete">Excluir</ActionButton>);
+    expect(screen.queryByRole('button', { name: 'Excluir' })).not.toBeInTheDocument();
+    semDelete.unmount();
+
+    prontoOn(['x:delete']);
+    render(<ActionButton resource="x" action="delete">Excluir</ActionButton>);
+    expect(screen.getByRole('button', { name: 'Excluir' })).toBeInTheDocument();
   });
 });
 

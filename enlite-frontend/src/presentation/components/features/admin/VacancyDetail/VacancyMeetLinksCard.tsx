@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CheckCircle2, AlertCircle, Circle, Loader2, ExternalLink } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 
 const MEET_LINK_REGEX = /^https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}$/;
@@ -181,7 +181,10 @@ export function VacancyMeetLinksCard({
       )}
 
       <div className="flex justify-end">
-        <Button
+        {/* PUT /vacancies/:id/meet-links → updateVacancyMeetLinks → vacancy:write. */}
+        <ActionButton
+          resource="vacancy"
+          action="write"
           variant="primary"
           size="sm"
           onClick={handleSave}
@@ -190,7 +193,7 @@ export function VacancyMeetLinksCard({
         >
           {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
           {isSaving ? t('admin.vacancyDetail.meetLinksCard.saving') : t('admin.vacancyDetail.meetLinksCard.saveLinks')}
-        </Button>
+        </ActionButton>
       </div>
     </div>
   );

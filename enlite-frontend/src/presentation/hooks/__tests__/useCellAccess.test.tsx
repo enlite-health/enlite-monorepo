@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
-import { useCellAccess, useHasCell } from '../useCellAccess';
+import { useCellAccess, useHasCell, useActionGate } from '../useCellAccess';
 import type { AuthzContract } from '@domain/entities/Authz';
 
 const contrato = (permissions: string[]): AuthzContract => ({
@@ -66,5 +66,33 @@ describe('contrato `ready` com authz nulo — estado impossível, mas o hook nã
     useAdminAuthStore.setState({ authz: null, authzStatus: 'ready' });
     expect(renderHook(() => useCellAccess('x')).result.current.level).toBe('hidden');
     expect(renderHook(() => useHasCell('x', 'read')).result.current).toBe(false);
+  });
+});
+
+// D269 — a mesma decisão do `ActionButton`, para elemento que não é `<Button>` (switch, drag).
+describe('useActionGate', () => {
+  const comEnforcement = (permissions: string[], enforcement: AuthzContract['enforcement']) =>
+    useAdminAuthStore.setState({
+      authzStatus: 'ready',
+      authz: { ...contrato(permissions), enforcement },
+    });
+
+  it('enforcement=on, sem célula: denied', () => {
+    comEnforcement(['x:read'], 'on');
+    const { result } = renderHook(() => useActionGate('x', 'write'));
+    expect(result.current).toEqual({ allowed: false, denied: true });
+  });
+
+  it('enforcement=on, com a célula: allowed', () => {
+    comEnforcement(['x:write'], 'on');
+    const { result } = renderHook(() => useActionGate('x', 'write'));
+    expect(result.current).toEqual({ allowed: true, denied: false });
+  });
+
+  it('enforcement OFF (ou ausente): sempre allowed, mesmo sem célula', () => {
+    comEnforcement([], 'off');
+    expect(renderHook(() => useActionGate('x', 'write')).result.current).toEqual({ allowed: true, denied: false });
+    useAdminAuthStore.setState({ authz: contrato([]), authzStatus: 'ready' }); // enforcement ausente
+    expect(renderHook(() => useActionGate('x', 'write')).result.current).toEqual({ allowed: true, denied: false });
   });
 });

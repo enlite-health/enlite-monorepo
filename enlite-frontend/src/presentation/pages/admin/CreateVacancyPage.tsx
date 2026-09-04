@@ -24,10 +24,11 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Stepper } from '@presentation/components/molecules/Stepper';
@@ -40,6 +41,8 @@ import { ResumeDraftVacancyDialog } from '@presentation/components/features/admi
 import { AddressHasVacancyDialog } from '@presentation/components/features/admin/VacancyModal/AddressHasVacancyDialog';
 
 export default function CreateVacancyPage(): JSX.Element {
+  // D269: a rota é alcançável por URL; sem vacancy:write, a porta fecha (não só o botão).
+  const vacancyWriteGate = useActionGate('vacancy', 'write');
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { id: routeVacancyId } = useParams<{ id: string }>();
@@ -223,6 +226,8 @@ export default function CreateVacancyPage(): JSX.Element {
 
   const isBusy = submitting || generating;
 
+  if (vacancyWriteGate.denied) return <Navigate to="/admin/vacancies" replace />;
+
   return (
     <div className="w-full min-h-screen bg-[#FFF9FC] py-10 px-6">
       <div className="max-w-[1392px] mx-auto flex flex-col gap-6">
@@ -232,7 +237,9 @@ export default function CreateVacancyPage(): JSX.Element {
           <Heading level={1} weight="semibold">
             {v('pageTitle')}
           </Heading>
-          <Button
+          <ActionButton
+            resource="vacancy"
+            action="write"
             variant="primary"
             size="sm"
             onClick={handleSave}
@@ -246,7 +253,7 @@ export default function CreateVacancyPage(): JSX.Element {
             data-testid="create-vacancy-save-btn"
           >
             {generating ? v('generatingAI') : submitting ? v('saving') : v('saveButton')}
-          </Button>
+          </ActionButton>
         </div>
 
         {/* Stepper */}

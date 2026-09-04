@@ -5,6 +5,7 @@ import { X } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import {
   DayScheduleEditor,
   type DayScheduleSlot,
@@ -155,7 +156,10 @@ export function VacancyScheduleEditModal({
           <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={saving}>
             {t('admin.vacancyDetail.scheduleEditor.cancel')}
           </Button>
-          <Button
+          {/* PUT /vacancies/:id → updateVacancy → vacancy:write. */}
+          <ActionButton
+            resource="vacancy"
+            action="write"
             type="button"
             variant="primary"
             size="sm"
@@ -167,7 +171,7 @@ export function VacancyScheduleEditModal({
             {saving
               ? t('admin.vacancyDetail.scheduleEditor.saving')
               : t('admin.vacancyDetail.scheduleEditor.save')}
-          </Button>
+          </ActionButton>
         </div>
       </aside>
     </>,

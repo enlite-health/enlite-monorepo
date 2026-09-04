@@ -11,7 +11,7 @@ import {
   TableHead,
   TableCell,
 } from '@presentation/components/atoms/Table';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import type { PatientResponsibleDetail } from '@domain/entities/PatientDetail';
 import { PatientSupportNetworkEditDrawer } from './edit/PatientSupportNetworkEditDrawer';
 
@@ -53,10 +53,11 @@ export function FamiliaresCard({ responsibles, patientId, onSaved }: FamiliaresC
               className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg font-lexend text-sm text-gray-700 bg-gray-50 cursor-default outline-none"
             />
           </div>
-          <Button variant="outline" size="sm" onClick={() => setEditing(true)} disabled={!patientId} className="flex items-center gap-1" data-testid="edit-support-btn">
+          {/* D269 — abre o drawer que faz PATCH /patients/:id/support-network → patient:write. */}
+          <ActionButton resource="patient" action="write" variant="outline" size="sm" onClick={() => setEditing(true)} disabled={!patientId} className="flex items-center gap-1" data-testid="edit-support-btn">
             <Plus className="w-4 h-4" />
             {t('admin.patients.detail.new')}
-          </Button>
+          </ActionButton>
         </div>
       </div>
 

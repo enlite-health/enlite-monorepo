@@ -3,6 +3,7 @@ import { MapPin } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { VacancyStatusBadge } from '@presentation/components/atoms/VacancyStatusBadge';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import {
   VacancyStatusEditor,
   type EditableVacancyStatus,
@@ -97,6 +98,10 @@ export function VacancyCaseCard({
   isStatusSaving,
 }: VacancyCaseCardProps) {
   const { t } = useTranslation();
+  // PUT /vacancies/:id → updateVacancy → vacancy:write. O dropdown de status
+  // (inclusive "CLOSED", o equivalente a arquivar) não é `<Button>`, então
+  // usa `useActionGate` direto — mesma leitura do `ActionButton` (D269).
+  const vacancyWriteGate = useActionGate('vacancy', 'write');
 
   const sexLabel = sex
     ? t(`admin.vacancyDetail.vacancyForm.sexOptions.${sex}`, sex)
@@ -131,7 +136,9 @@ export function VacancyCaseCard({
         <Heading level={2} color="primary" weight="medium">
           {t('admin.vacancyDetail.caseCard.caseLabel')} {caseNumber ?? '—'}
         </Heading>
-        {onStatusChange ? (
+        {/* D269 — sem vacancy:write o valor vira TEXTO (o badge), sem os
+            controles do editor (nem dropdown, nem gatilho clicável). */}
+        {onStatusChange && !vacancyWriteGate.denied ? (
           <VacancyStatusEditor
             status={status}
             isSaving={isStatusSaving}

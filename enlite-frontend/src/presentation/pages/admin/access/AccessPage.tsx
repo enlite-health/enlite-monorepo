@@ -66,7 +66,10 @@ function GroupsList(): JSX.Element {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      {/* data-testid estável para o screenshot do e2e (admin-access-panel):
+          a lista abaixo cresce quando outros specs @integration rodam em
+          paralelo contra o mesmo Postgres — este cabeçalho não. */}
+      <div className="flex items-center justify-between" data-testid="access-groups-header">
         <Heading level={2} weight="semibold" color="primary">{t('admin.access.groups.title')}</Heading>
         <div className="flex items-center gap-4">
           <Checkbox

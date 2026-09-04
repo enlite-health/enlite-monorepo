@@ -56,6 +56,8 @@ function buildProps(overrides: Partial<{
   onDelete: (id: string) => Promise<void>;
   onView: (filePath: string) => Promise<void>;
   isLoading: boolean;
+  canUpload: boolean;
+  canDelete: boolean;
 }> = {}) {
   return {
     documents: [],
@@ -485,5 +487,29 @@ describe('AdditionalDocumentsSection — upload flow', () => {
     // Do NOT fill the form — button stays disabled
     fireEvent.click(screen.getByRole('button', { name: /Subir/i }));
     expect(onUpload).not.toHaveBeenCalled();
+  });
+});
+
+// ── D269 — canUpload/canDelete (admin `worker_document:write`/`:delete`) ──────
+
+describe('AdditionalDocumentsSection — D269 canUpload/canDelete', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('canUpload=false: o botão "Agregar" some, mesmo que o form estivesse aberto antes', () => {
+    render(<AdditionalDocumentsSection {...buildProps({ canUpload: false })} />);
+    expect(screen.queryByTestId('additional-doc-add')).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/Nombre del documento/i)).not.toBeInTheDocument();
+  });
+
+  it('canDelete=false: o ícone de excluir some, o de ver continua', () => {
+    render(<AdditionalDocumentsSection {...buildProps({ documents: mockDocs, canDelete: false })} />);
+    expect(screen.queryAllByTitle('Eliminar')).toHaveLength(0);
+    expect(screen.getAllByTitle('Ver').length).toBe(mockDocs.length);
+  });
+
+  it('canUpload=true (default) e canDelete=true (default): "Agregar" e excluir existem', () => {
+    render(<AdditionalDocumentsSection {...buildProps({ documents: mockDocs })} />);
+    expect(screen.getByTestId('additional-doc-add')).toBeInTheDocument();
+    expect(screen.getAllByTitle('Eliminar').length).toBe(mockDocs.length);
   });
 });

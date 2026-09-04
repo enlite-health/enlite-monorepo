@@ -17,14 +17,16 @@
  * auto-provision (chamada real ao Firebase Admin, que não existe aqui).
  *
  * Achados de wiring incompleto (documentados linha a linha onde aparecem):
- *  - Não existe tela "sem grupo" — `/admin` (index) sempre renderiza
- *    `AdminUsersPage`, gate só por role via `AdminProtectedRoute`.
- *  - `useCellAccess`/`Gated`/`ActionButton` só são consumidos com o recurso
- *    `permission_management` (grep em `src/presentation`, ver bloco ACHADOS
- *    no relatório). `vacancy:write` não gateia o botão "Nueva Vacante".
+ *  - CONSERTADO (D268 A1): existe `WelcomeNoGroupPage` — com
+ *    `authz.enforcement === 'on'`, `AdminProtectedRoute` troca TODO o shell
+ *    `/admin/*` por ela quando o ator não tem grupo (ou está inativo), em vez
+ *    de cair em `AdminUsersPage` sem tela dedicada (teste 7).
  *  - `AuthzContract.features` (país → featureKey) não tem NENHUM consumidor em
  *    `src/presentation` — desligar uma feature por país muda o contrato, não
  *    o DOM.
+ *  - CONSERTADO (D269 Parte 3): `vacancy:write` não gateava o botão "Nueva
+ *    Vacante" — `ActionButton` agora cobre a família vagas (ver teste 8 aqui
+ *    e o arquivo dedicado `admin-access-buttons-vacancies.integration.e2e.ts`).
  */
 
 import { execFileSync } from 'child_process';
@@ -307,12 +309,17 @@ test.describe('Painel de acessos ABAC — integração real @integration', () =>
     await page.goto('/admin/access');
     await expect(page.getByText(OWN_GROUP_NAME, { exact: true })).toBeVisible({ timeout: 15_000 });
 
-    // screenshot da tela do painel da gestora — tabela mascarada (nomes de
-    // grupo levam RUN_ID/timestamp, não são determinísticos entre execuções).
-    await expect(page).toHaveScreenshot('admin-access-panel-gestora.png', {
-      fullPage: false,
-      maxDiffPixelRatio: 0.05,
-      mask: [page.locator('table')],
+    // screenshot da REGIÃO ESTÁVEL do painel (cabeçalho + checkbox + botão
+    // "Nuevo grupo"), não da tela inteira. A lista de grupos abaixo cresce
+    // quando outros specs @integration rodam em paralelo contra o MESMO
+    // Postgres (`enlite_e2e`) — mascarar só a `<table>` não bastava: o
+    // baseline foi gravado com a tabela numa altura, e a captura ao vivo
+    // com mais grupos (de outro spec) tem a tabela mais alta → a caixa
+    // mascarada muda de tamanho entre baseline e captura, e o diff estoura
+    // `maxDiffPixelRatio` mesmo sem nenhuma regressão visual real. Restringir
+    // a um locator que não inclui a `<table>` elimina a fonte de flakiness.
+    await expect(page.getByTestId('access-groups-header')).toHaveScreenshot('admin-access-panel-gestora.png', {
+      maxDiffPixelRatio: 0.002,
     });
 
     await page.getByRole('button', { name: 'Nuevo grupo' }).click();
@@ -452,25 +459,27 @@ test.describe('Painel de acessos ABAC — integração real @integration', () =>
 
   // ── V3 — telas para quem não tem célula ──────────────────────────────────
 
-  test('7. comum sem grupo: item do painel de acessos não existe no DOM', async ({ page }) => {
+  test('7. comum sem grupo: WelcomeNoGroupPage substitui o shell inteiro (D269/A1) — sem menu, sem painel de acessos', async ({ page }) => {
     // Neste ponto a comum já foi removida do grupo novo (teste 5) — está de
     // volta a "sem grupo nenhum".
     await loginAs(page, COMUM);
     await page.goto('/admin');
     await expect(page).not.toHaveURL(/.*login.*/, { timeout: 15_000 });
 
-    // ACHADO (ver relatório): não existe tela dedicada de "boas-vindas/sem
-    // grupo" em src/presentation — /admin (index) sempre renderiza
-    // AdminUsersPage, gate só por role via AdminProtectedRoute. O comentário
-    // de meAuthzRoute.ts fala da "tela de boas-vindas do grupo 4"; ela não
-    // existe no código atual — não simulamos aqui. O que É verdade: ela cai
-    // em AdminUsersPage normalmente (sem crash, sem tela dedicada).
-    await expect(page.getByRole('heading', { name: 'Usuarios Administradores' })).toBeVisible({ timeout: 15_000 });
+    // Com o engine ligado (`authz.enforcement === 'on'`), `AdminProtectedRoute`
+    // troca TODO o shell `/admin/*` pela `WelcomeNoGroupPage`
+    // (`shouldShowWelcomeNoGroup`, D268 A1) — não mais o fallback antigo de
+    // cair em `AdminUsersPage` sem tela dedicada (isso valia só com o engine
+    // desligado). Sem grupo nenhum: mensagem "sem-grupo", não "inativo".
+    await expect(page.getByRole('heading', { name: '¡Bienvenido/a a Enlite!' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Usuarios Administradores' })).toHaveCount(0);
 
+    // Sem menu operacional nessa tela (by design, ver WelcomeNoGroupPage) —
+    // o item do painel de acessos não existe no DOM.
     await expect(page.getByRole('link', { name: 'Accesos y permisos' })).toHaveCount(0);
   });
 
-  test('8. comum com vacancy:read (só leitura): vê a lista; botão de escrita NÃO é gateado (achado)', async ({
+  test('8. comum com vacancy:read (só leitura): vê a lista; botão de escrita NÃO ESTÁ NO DOM (D269 — conserto do achado)', async ({
     page,
     request,
   }) => {
@@ -494,12 +503,14 @@ test.describe('Painel de acessos ABAC — integração real @integration', () =>
     // A lista carrega — prova de que o vacancy:read real chegou até a UI.
     await expect(page.locator('table, [role="table"]').first()).toBeVisible({ timeout: 15_000 });
 
-    // ACHADO real (grep em src/presentation confirma: `vacancy` nunca aparece
-    // como `resource=` de ActionButton/Gated, nem em useCellAccess) — o botão
-    // "Nueva Vacante" (`data-testid="new-vacancy-btn"`) é um <Button> comum,
-    // sem gate nenhum. A comum, que só tem vacancy:read (sem vacancy:write),
-    // ainda VÊ o botão de escrita no DOM.
-    await expect(page.getByTestId('new-vacancy-btn')).toBeVisible({ timeout: 10_000 });
+    // D269 (Parte 3) consertou o achado: "Nueva Vacante" agora é
+    // `ActionButton` (resource="vacancy" action="write", mode="hide" default
+    // — correção do Gabriel: "esconder, não desabilitar") — a comum, que só
+    // tem vacancy:read, NÃO VÊ o botão de escrita: ele não está no DOM.
+    // Prova mais completa (várias famílias de botão, screenshot, e o caminho
+    // inverso write→aparece) está em
+    // admin-access-buttons-vacancies.integration.e2e.ts.
+    await expect(page.getByTestId('new-vacancy-btn')).toHaveCount(0);
 
     const writeCells = scalar(`SELECT COUNT(*) FROM iam.group_permissions gp
         JOIN iam.permissions p ON p.id = gp.permission_id

@@ -3565,5 +3565,8 @@
       "reload": "Recargar",
       "home": "Ir al inicio"
     }
+  },
+  "access": {
+    "actionDenied": "No tenés permiso para esta acción"
   }
 }

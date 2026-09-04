@@ -3486,5 +3486,8 @@
       "reload": "Recarregar",
       "home": "Ir para o início"
     }
+  },
+  "access": {
+    "actionDenied": "Você não tem permissão para esta ação"
   }
 }

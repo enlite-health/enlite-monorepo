@@ -11,7 +11,7 @@ import {
   TableHead,
   TableCell,
 } from '@presentation/components/atoms/Table';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
 import { PatientServiceEditDrawer } from './edit/PatientServiceEditDrawer';
 
@@ -36,10 +36,11 @@ export function ServicosContratadosCard({ patient, onSaved }: ServicosContratado
         <Heading level={1} as="h3" weight="semibold" color="primary">
           {t('admin.patients.detail.contractedServicesCard.title')}
         </Heading>
-        <Button variant="outline" size="sm" onClick={() => setEditing(true)} className="flex items-center gap-1" data-testid="edit-service-btn">
+        {/* D269 — abre o drawer que faz PATCH /patients/:id/service → patient:write. */}
+        <ActionButton resource="patient" action="write" variant="outline" size="sm" onClick={() => setEditing(true)} className="flex items-center gap-1" data-testid="edit-service-btn">
           <Plus className="w-4 h-4" />
           {t('admin.patients.detail.new')}
-        </Button>
+        </ActionButton>
       </div>
 
       {editing && (

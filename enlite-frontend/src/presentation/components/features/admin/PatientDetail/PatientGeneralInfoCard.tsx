@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
 import { PatientGeneralEditDrawer } from './edit/PatientGeneralEditDrawer';
 
@@ -72,9 +72,10 @@ export function PatientGeneralInfoCard({ patient, onSaved }: PatientGeneralInfoC
         <Heading level={1} as="h3" weight="semibold" color="primary">
           {t('admin.patients.detail.generalInfoCard.title')}
         </Heading>
-        <Button variant="outline" size="sm" onClick={() => setEditing(true)} className="w-28" data-testid="edit-general-btn">
+        {/* D269 — abre o drawer que faz PATCH /patients/:id/general → patient:write. */}
+        <ActionButton resource="patient" action="write" variant="outline" size="sm" onClick={() => setEditing(true)} className="w-28" data-testid="edit-general-btn">
           {t('admin.patients.detail.edit')}
-        </Button>
+        </ActionButton>
       </div>
 
       {editing && (

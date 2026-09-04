@@ -1,20 +1,28 @@
 {
   "debt": [
-    { "cell": "funnel:write", "motivo": "F14 — família funnel, gate de botão" },
-    { "cell": "interview:delete", "motivo": "F14 — família interview, gate de botão" },
-    { "cell": "interview:write", "motivo": "F14 — família interview, gate de botão" },
-    { "cell": "patient:write", "motivo": "F14 — família patient, gate de botão" },
-    { "cell": "prescreening:write", "motivo": "F14 — família prescreening, gate de botão" },
-    { "cell": "recruitment:write", "motivo": "F14 — família recruitment, gate de botão" },
-    { "cell": "talentum:write", "motivo": "F14 — família talentum, gate de botão" },
-    { "cell": "upload:write", "motivo": "F14 — família upload, gate de botão" },
-    { "cell": "user_management:delete", "motivo": "F14 — família user_management, gate de botão" },
-    { "cell": "user_management:write", "motivo": "F14 — família user_management, gate de botão" },
-    { "cell": "vacancy:delete", "motivo": "F14 — família vacancy, gate de botão" },
-    { "cell": "vacancy:write", "motivo": "F14 — família vacancy, gate de botão (ex.: \"Nueva Vacante\" — achado do e2e admin-access-panel.integration.e2e.ts, teste 8)" },
-    { "cell": "worker:delete", "motivo": "F14 — família worker, gate de botão" },
-    { "cell": "worker:write", "motivo": "F14 — família worker, gate de botão" },
-    { "cell": "worker_document:delete", "motivo": "F14 — família worker_document, gate de botão" },
-    { "cell": "worker_document:write", "motivo": "F14 — família worker_document, gate de botão" }
+    {
+      "cell": "interview:delete",
+      "motivo": "D269 F3 (vagas) — DELETE /interview-slots/:slotId (cancelInterviewSlot) não tem NENHUM consumidor no front: useInterviewSlots.ts existe (fetchSlots/createSlots/bookSlot/cancelSlot) mas nenhuma tela o chama. Não é gate pendente — é feature sem UI, achado da referência de vagas (grep: useInterviewSlots)."
+    },
+    {
+      "cell": "interview:write",
+      "motivo": "D269 F3 (vagas) — POST /vacancies/:id/interview-slots e POST /interview-slots/:id/book (createInterviewSlots/bookInterviewSlot) idem: useInterviewSlots.ts sem consumidor no front. O agendamento que existe hoje (KanbanBoard, coluna CONFIRMED) é moveEncuadre → funnel:write, rota diferente."
+    },
+    {
+      "cell": "recruitment:write",
+      "motivo": "D269 — única rota (POST calculate-reemplazos) é servida por ReemplazosButton/useReemplazosCalculator, componentes que NÃO estão montados em página nenhuma (código órfão). Gate entra quando o botão for montado."
+    },
+    {
+      "cell": "upload:write",
+      "motivo": "D269 — recurso \"upload\" (categoria Importação) sem nenhuma rota perm.require em worker-functions; sem consumidor possível hoje. Candidata a descontinuar pelo sync."
+    },
+    {
+      "cell": "vacancy:delete",
+      "motivo": "D269 F3 (vagas) — DELETE /vacancies/:id existe no client (deleteVacancy) mas nenhuma tela o chama; \"arquivar\" vaga é status CLOSED via vacancy:write. Sem botão, sem gate."
+    },
+    {
+      "cell": "worker:delete",
+      "motivo": "D269 — célula existe no catálogo (seed 206) mas NENHUMA rota do backend a declara (grep perm.require = 0) e nenhum botão a chama. Sem rota, não há o que gatear; candidata a descontinuar pelo sync."
+    }
   ]
 }

@@ -49,7 +49,7 @@ describe('adminAuthStore — o contrato de authz', () => {
     expect(s.adminProfile).not.toBeNull();
   });
 
-  it('fetchAuthz sozinho passa por `loading`', async () => {
+  it('fetchAuthz sozinho SEM contrato prévio passa por `loading`', async () => {
     let resolver: (v: unknown) => void = () => {};
     getMyAuthz.mockReturnValue(new Promise((r) => { resolver = r; }));
     const p = useAdminAuthStore.getState().fetchAuthz();
@@ -57,6 +57,28 @@ describe('adminAuthStore — o contrato de authz', () => {
     resolver(CONTRATO);
     await p;
     expect(useAdminAuthStore.getState().authzStatus).toBe('ready');
+  });
+
+  it('🔴 fetchAuthz COM contrato prévio: stale-while-revalidate — NUNCA passa por `loading`, o contrato velho fica até o novo chegar', async () => {
+    const antigo = { ...CONTRATO, permissions: ['worker:read'] };
+    useAdminAuthStore.setState({ authz: antigo as never, authzStatus: 'ready' });
+    let resolver: (v: unknown) => void = () => {};
+    getMyAuthz.mockReturnValue(new Promise((r) => { resolver = r; }));
+    const p = useAdminAuthStore.getState().fetchAuthz();
+    // durante o refetch: ainda `ready`, ainda com o contrato ANTIGO — nunca `loading`/vazio.
+    expect(useAdminAuthStore.getState().authzStatus).toBe('ready');
+    expect(useAdminAuthStore.getState().authz).toEqual(antigo);
+    resolver(CONTRATO);
+    await p;
+    expect(useAdminAuthStore.getState()).toMatchObject({ authzStatus: 'ready', authz: CONTRATO });
+  });
+
+  it('fetchAuthz COM contrato prévio, se a busca nova FALHA: mantém o contrato antigo (nunca vira `error`/null no meio do uso)', async () => {
+    const antigo = { ...CONTRATO, permissions: ['worker:read'] };
+    useAdminAuthStore.setState({ authz: antigo as never, authzStatus: 'ready' });
+    getMyAuthz.mockRejectedValue(new Error('500'));
+    await useAdminAuthStore.getState().fetchAuthz();
+    expect(useAdminAuthStore.getState()).toMatchObject({ authzStatus: 'ready', authz: antigo });
   });
 
   it('logout apaga o contrato — a próxima pessoa não herda células', async () => {

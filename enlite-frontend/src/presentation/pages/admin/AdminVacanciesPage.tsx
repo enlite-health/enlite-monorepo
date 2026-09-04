@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight, Plus, RefreshCw } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { Typography } from '@presentation/components/atoms/Typography';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Select } from '@presentation/components/atoms/Select';
 import { VacancyStatsCards } from '@presentation/components/features/admin/VacancyStatsCards';
@@ -239,7 +239,11 @@ export function AdminVacanciesPage(): JSX.Element {
                 {syncMessage.text}
               </Typography>
             )}
-            <Button
+            {/* D269 — referência da família vagas: célula da ROTA que o botão chama.
+                POST /workers/sync-talentum é publicado via `syncFromTalentum` → talentum:write. */}
+            <ActionButton
+              resource="talentum"
+              action="write"
               variant="outline"
               size="md"
               className="h-10 border-primary text-primary flex items-center justify-center gap-2 relative select-none"
@@ -250,6 +254,7 @@ export function AdminVacanciesPage(): JSX.Element {
               onTouchEnd={handlePressEnd}
               onContextMenu={(e) => e.preventDefault()}
               disabled={isSyncing}
+              data-testid="sync-talentum-btn"
             >
               <div
                 className="absolute inset-y-0 left-0 bg-primary/15 rounded-full pointer-events-none"
@@ -262,8 +267,11 @@ export function AdminVacanciesPage(): JSX.Element {
               <Typography variant="h3" weight="semibold" className="text-primary font-poppins text-sm relative z-10">
                 {isSyncing ? t('admin.vacancies.syncing') : t('admin.vacancies.syncTalentum')}
               </Typography>
-            </Button>
-            <Button
+            </ActionButton>
+            {/* POST /vacancies → `createVacancy` → vacancy:write. */}
+            <ActionButton
+              resource="vacancy"
+              action="write"
               variant="outline"
               size="md"
               className="w-40 h-10 border-primary text-primary flex items-center justify-center gap-3"
@@ -274,7 +282,7 @@ export function AdminVacanciesPage(): JSX.Element {
                 {t('admin.vacancies.new')}
               </Typography>
               <Plus className="w-3.5 h-3.5 text-primary" />
-            </Button>
+            </ActionButton>
           </div>
         </div>
 

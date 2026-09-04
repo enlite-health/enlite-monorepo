@@ -132,7 +132,11 @@ describe('useAdminNavItems — B1 (D268): blocked-attempts é sub-rota de screen
     uid: 'u',
     tenantId: 't',
     status: 'ACTIVE',
-    permissions: [],
+    // D269 — com enforcement 'on', tags/dedup/roles-de-grupo/bloqueadas passaram a
+    // exigir célula de leitura própria (ver adminNavigation.tsx). Estas 4 aqui
+    // garantem que o teste continua isolando SÓ o efeito de screen:funnel, sem se
+    // confundir com a ausência de célula.
+    permissions: ['worker:read', 'dedup:read', 'patient:read', 'recruitment:read'],
     countries: ['AR'],
     groups: [],
     features: { AR: { 'screen:funnel': { enabled: funnelEnabled, config: null } } },

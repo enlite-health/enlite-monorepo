@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
 import { chatRolesToDisplay, chatRoleLabel } from '@domain/value-objects/patientChatRole';
 import { usePatientChatRoles } from '@presentation/hooks/usePatientChatRoles';
@@ -54,14 +54,17 @@ export function PatientChatIdsCard({ patient, onSaved }: Props) {
     >
       <div className="flex items-center justify-between flex-wrap gap-2">
         <Heading level={1} as="h3" weight="semibold" color="primary">{tc('title')}</Heading>
-        <Button
+        {/* D269 — abre o drawer que faz PUT /patients/:id/chat-ids → patient:write. */}
+        <ActionButton
+          resource="patient"
+          action="write"
           variant="primary"
           size="sm"
           onClick={() => setEditing(true)}
           data-testid="chat-ids-edit-btn"
         >
           {tc('link')}
-        </Button>
+        </ActionButton>
       </div>
 
       <Text size="sm" color="muted">{tc('subtitle')}</Text>

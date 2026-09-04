@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, ChevronDown, ChevronRight, AlertTriangle, Loader2 } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 
 interface PrescreeningQuestion {
@@ -289,10 +290,11 @@ export function VacancyPrescreeningConfig({ vacancyId, isPublished }: VacancyPre
           )}
 
           <div className="flex justify-end">
-            <Button variant="primary" size="sm" onClick={handleSave} disabled={isSaving} className="flex items-center gap-2 px-5">
+            {/* POST /vacancies/:id/prescreening-config → savePrescreeningConfig → prescreening:write. */}
+            <ActionButton resource="prescreening" action="write" variant="primary" size="sm" onClick={handleSave} disabled={isSaving} className="flex items-center gap-2 px-5">
               {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
               {isSaving ? t(`${ps}.saving`) : t(`${ps}.save`)}
-            </Button>
+            </ActionButton>
           </div>
         </>
       )}

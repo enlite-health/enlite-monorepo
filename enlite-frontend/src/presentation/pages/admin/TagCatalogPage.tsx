@@ -4,11 +4,12 @@ import { useTranslation } from 'react-i18next';
 import { Tag, Edit2, Trash2, Plus } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
+import { ActionButton } from '@presentation/components/features/access';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { EnliteRole } from '@domain/entities/EnliteRole';
 import type { WorkerTag } from '@domain/entities/WorkerTag';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { Button } from '@presentation/components/atoms/Button';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
@@ -28,6 +29,8 @@ function getTextColor(hex: string): string {
 }
 
 export default function TagCatalogPage() {
+  // D269: criar/editar/excluir etiqueta chamam POST/PATCH/DELETE /worker-tags → worker:write.
+  const tagWriteGate = useActionGate('worker', 'write');
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { adminProfile } = useAdminAuth();
@@ -101,10 +104,10 @@ export default function TagCatalogPage() {
             {t('admin.tags.title')}
           </Heading>
         </div>
-        <Button variant="primary" size="md" onClick={handleNewTag}>
+        <ActionButton resource="worker" action="write" variant="primary" size="md" onClick={handleNewTag}>
           <Plus className="w-4 h-4" />
           {t('admin.tags.newTag')}
-        </Button>
+        </ActionButton>
       </div>
 
       {/* Content */}
@@ -151,6 +154,7 @@ export default function TagCatalogPage() {
                     </TableCell>
                     <TableCell>{tag.description ?? '—'}</TableCell>
                     <TableCell align="right" unwrapped>
+                      {!tagWriteGate.denied && (
                       <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"
@@ -169,6 +173,7 @@ export default function TagCatalogPage() {
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
+                      )}
                     </TableCell>
                   </TableRow>
                 );

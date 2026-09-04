@@ -10,7 +10,8 @@ import {
   Radio,
 } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 
 interface VacancyTalentumCardProps {
@@ -78,9 +79,14 @@ export function VacancyTalentumCard({
     return () => window.removeEventListener('beforeunload', handler);
   }, [isGenerating]);
 
+  // D269 — publicar/despublicar chama `publishToTalentum`/`unpublishFromTalentum`
+  // (POST/DELETE .../publish-talentum) → talentum:write. O switch não é
+  // `<Button>`, então usa `useActionGate` direto (mesma leitura do
+  // `ActionButton`) — SEM a célula, a linha inteira do switch some (mode
+  // "hide" é o único modo pra elemento que não é `<Button>`).
+  const talentumWriteGate = useActionGate('talentum', 'write');
   const hasQuestions = questionsCount !== null && questionsCount > 0;
-  const switchDisabled =
-    isPublishing || isUnpublishing || (questionsCount !== null && !hasQuestions);
+  const switchDisabled = isPublishing || isUnpublishing || (questionsCount !== null && !hasQuestions);
 
   const clearFeedback = useCallback(() => {
     setTimeout(() => setFeedback(null), 5000);
@@ -287,7 +293,10 @@ export function VacancyTalentumCard({
           ) : (
             <p className="text-sm text-slate-400">{t(`${tk}.noDescription`)}</p>
           )}
-          <Button
+          {/* POST /vacancies/:id/generate-ai-content → generateAIContent → vacancy:write. */}
+          <ActionButton
+            resource="vacancy"
+            action="write"
             variant="outline"
             size="sm"
             onClick={handleGenerateDescription}
@@ -300,54 +309,56 @@ export function VacancyTalentumCard({
               <RefreshCw className="w-4 h-4" />
             )}
             {isGenerating ? t(`${tk}.generating`) : t(`${tk}.regenerate`)}
-          </Button>
+          </ActionButton>
         </div>
       )}
 
-      {/* Switch */}
-      <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-sm font-medium text-slate-700">
-            {t(`${tk}.publishSwitch`)}
-          </span>
-          {!hasQuestions && questionsCount !== null && (
-            <span className="flex items-center gap-1 text-xs text-amber-600">
-              <AlertTriangle className="w-3 h-3" />
-              {t(`${tk}.noQuestions`)}
+      {/* Switch — D269: sem talentum:write, a linha inteira (label + switch) SOME. */}
+      {!talentumWriteGate.denied && (
+        <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm font-medium text-slate-700">
+              {t(`${tk}.publishSwitch`)}
             </span>
-          )}
-          {isPublished && (
-            <span className="flex items-center gap-1 text-xs text-amber-600">
-              <AlertTriangle className="w-3 h-3" />
-              {t(`${tk}.confirmUnpublish`).split('.')[0]}
-            </span>
-          )}
+            {!hasQuestions && questionsCount !== null && (
+              <span className="flex items-center gap-1 text-xs text-amber-600">
+                <AlertTriangle className="w-3 h-3" />
+                {t(`${tk}.noQuestions`)}
+              </span>
+            )}
+            {isPublished && (
+              <span className="flex items-center gap-1 text-xs text-amber-600">
+                <AlertTriangle className="w-3 h-3" />
+                {t(`${tk}.confirmUnpublish`).split('.')[0]}
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isPublished}
+            disabled={switchDisabled}
+            onClick={handleToggle}
+            className={`
+              relative inline-flex h-6 w-11 items-center rounded-full transition-colors
+              focus:outline-none focus:ring-2 focus:ring-primary/30
+              ${isPublished ? 'bg-green-500' : 'bg-slate-300'}
+              ${switchDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+            `}
+          >
+            {(isPublishing || isUnpublishing) ? (
+              <Loader2 className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 animate-spin text-white" />
+            ) : (
+              <span
+                className={`
+                  inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform
+                  ${isPublished ? 'translate-x-6' : 'translate-x-1'}
+                `}
+              />
+            )}
+          </button>
         </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={isPublished}
-          disabled={switchDisabled}
-          onClick={handleToggle}
-          className={`
-            relative inline-flex h-6 w-11 items-center rounded-full transition-colors
-            focus:outline-none focus:ring-2 focus:ring-primary/30
-            ${isPublished ? 'bg-green-500' : 'bg-slate-300'}
-            ${switchDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-          `}
-        >
-          {(isPublishing || isUnpublishing) ? (
-            <Loader2 className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 animate-spin text-white" />
-          ) : (
-            <span
-              className={`
-                inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform
-                ${isPublished ? 'translate-x-6' : 'translate-x-1'}
-              `}
-            />
-          )}
-        </button>
-      </div>
+      )}
 
       {/* Feedback */}
       {feedback && (

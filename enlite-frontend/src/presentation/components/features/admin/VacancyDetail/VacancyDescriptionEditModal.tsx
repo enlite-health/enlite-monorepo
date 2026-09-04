@@ -5,6 +5,7 @@ import { X } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 
 const MAX_CHARS = 4000;
@@ -130,7 +131,10 @@ export function VacancyDescriptionEditModal({
           <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={saving}>
             {tc('cancel')}
           </Button>
-          <Button
+          {/* PUT /vacancies/:id/talentum-description → updateTalentumDescription → talentum:write. */}
+          <ActionButton
+            resource="talentum"
+            action="write"
             type="button"
             variant="primary"
             size="sm"
@@ -140,7 +144,7 @@ export function VacancyDescriptionEditModal({
             data-testid="vacancy-description-save"
           >
             {saving ? tc('saving') : tc('save')}
-          </Button>
+          </ActionButton>
         </div>
       </aside>
     </>,

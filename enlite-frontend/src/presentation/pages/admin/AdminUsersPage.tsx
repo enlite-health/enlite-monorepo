@@ -13,7 +13,8 @@ import {
   TableHead,
   TableCell,
 } from '@presentation/components/atoms';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
 import { CreateAdminUserModal, CreateAdminUserForm } from '@presentation/components/admin/CreateAdminUserModal';
@@ -56,8 +57,12 @@ interface RoleCellProps {
 function RoleCell({ admin, canEdit, onRoleChange }: RoleCellProps): JSX.Element {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
+  // PATCH /users/:id/role → permission_management:write (não user_management:write —
+  // mexer no papel de alguém é mexer em ACESSO). `<select>` não é `<Button>`:
+  // useActionGate direto, mesma régua do ActionButton (D269).
+  const { allowed: canWriteRole } = useActionGate('permission_management', 'write');
 
-  if (!canEdit) return <RoleBadge role={admin.role} />;
+  if (!canEdit || !canWriteRole) return <RoleBadge role={admin.role} />;
 
   const handleChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const next = e.target.value as EnliteRole;
@@ -90,6 +95,11 @@ export function AdminUsersPage(): JSX.Element {
   const { t } = useTranslation();
   const { adminProfile } = useAdminAuth();
   const isAdmin = adminProfile?.role === EnliteRole.ADMIN;
+  // POST /users/:id/reset-password e DELETE /users/:id → ambas user_management:write
+  // e user_management:delete respectivamente — botões raw `<button>` (não `<Button>`),
+  // então o gate é `useActionGate` direto (mesmo padrão do `<select>` de papel acima).
+  const resetGate = useActionGate('user_management', 'write');
+  const deleteGate = useActionGate('user_management', 'delete');
 
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -171,14 +181,22 @@ export function AdminUsersPage(): JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      {/* data-testid estável para screenshot de e2e — a lista abaixo cresce
+          conforme outros specs @integration inserem contas de teste. */}
+      <div className="flex items-center justify-between" data-testid="admin-users-header">
         <Heading level={1} weight="semibold" color="primary">
           {t('admin.users.title')}
         </Heading>
         {isAdmin && (
-          <Button variant="primary" onClick={() => setShowCreateModal(true)}>
+          // POST /users → user_management:write (D269).
+          <ActionButton
+            resource="user_management"
+            action="write"
+            variant="primary"
+            onClick={() => setShowCreateModal(true)}
+          >
             {t('admin.users.create')}
-          </Button>
+          </ActionButton>
         )}
       </div>
 
@@ -215,14 +233,16 @@ export function AdminUsersPage(): JSX.Element {
                       : '—'}
                   </TableCell>
                   <TableCell unwrapped align="right" className="space-x-2">
-                    <button
-                      type="button"
-                      className="text-blue-600 hover:underline"
-                      onClick={() => handleResetPassword(admin)}
-                    >
-                      <Text as="span" size="xs" color="inherit">{t('admin.users.reset')}</Text>
-                    </button>
-                    {isAdmin && (
+                    {resetGate.allowed && (
+                      <button
+                        type="button"
+                        className="text-blue-600 hover:underline"
+                        onClick={() => handleResetPassword(admin)}
+                      >
+                        <Text as="span" size="xs" color="inherit">{t('admin.users.reset')}</Text>
+                      </button>
+                    )}
+                    {isAdmin && deleteGate.allowed && (
                       <button
                         type="button"
                         className="text-red-600 hover:underline"

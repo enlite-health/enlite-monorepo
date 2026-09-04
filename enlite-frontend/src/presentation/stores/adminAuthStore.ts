@@ -102,14 +102,24 @@ export const useAdminAuthStore = create<AdminAuthState>((set, get) => ({
   },
 
   fetchAuthz: async (): Promise<void> => {
-    set({ authzStatus: 'loading' });
+    // Stale-while-revalidate: `AdminLayout` chama isto a cada troca de área.
+    // Se JÁ existe um contrato, ele fica valendo — `authzStatus` continua
+    // `ready` — até o novo chegar; só descarta se a busca nova realmente
+    // decidir algo diferente. Sem isso, `AdminProtectedRoute` via `loading`
+    // caía no fallthrough e renderizava o layout com `Outlet` vazio: a tela
+    // de boas-vindas sumia e voltava, e o menu piscava em branco (achado real).
+    // Só quando NÃO há contrato prévio é que `loading` é honesto.
+    const { authz: anterior } = get();
+    if (!anterior) set({ authzStatus: 'loading' });
     try {
       const authz = await AdminAuthzApiService.getMyAuthz();
       set({ authz, authzStatus: 'ready' });
     } catch {
-      // Sem contrato a tela não decide nada — e não pode fingir que decidiu.
-      // Contrato vazio aqui seria lido como "sem grupo" (D114), que é mentira.
-      set({ authz: null, authzStatus: 'error' });
+      // Sem contrato prévio: a tela não decide nada, e não pode fingir que
+      // decidiu — contrato vazio aqui seria lido como "sem grupo" (D114),
+      // que é mentira. Com contrato prévio: mantém o antigo — melhor um
+      // contrato desatualizado do que a tela virar erro no meio do uso.
+      set((state) => (state.authz ? state : { authz: null, authzStatus: 'error' }));
     }
   },
 
