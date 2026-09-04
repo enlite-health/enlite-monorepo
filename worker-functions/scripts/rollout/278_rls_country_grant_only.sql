@@ -15,7 +15,7 @@
 -- O QUE MUDA em relação à 274/271 (mesma tabela `patients`; satélites e
 -- vacancy_relink_audit seguem por EXISTS e NÃO precisam mudar):
 --   ANTES: sistema | country = claim (app.user_country) | grant vivo via user_groups
---   AGORA: sistema | country = ANY(iam.effective_countries(app.user_uid, tenant))
+--   AGORA: sistema | iam.session_may_see_country(country) — grant pela função SECDEF da 411
 --
 -- Por que resolver o grant DENTRO do banco (lex C3): a role confinada (`app_runtime`)
 -- NUNCA afirma os próprios países. Se a policy lesse um GUC array vindo do app
@@ -79,19 +79,15 @@ BEGIN
           NULLIF(current_setting('app.system_context', true), '') IS NOT NULL
           AND pg_has_role(current_user, 'app_system', 'MEMBER')
         )
-        OR country = ANY (
-          iam.effective_countries(
-            current_setting('app.user_uid', true),
-            iam.current_tenant_id()
-          )
-        )
+        OR iam.session_may_see_country(patients.country)
       )
   $p$;
   EXECUTE $c$
     COMMENT ON POLICY patients_country_isolation ON patients IS
       'Grant-only (rollout 278): staff vê só os países dos seus grupos VIVOS, resolvidos NO banco '
-      '(iam.effective_countries). O claim country do IdP é atributo, não permissão. Sistema '
-      'declarado (app.system_context + membro de app_system) vê tudo. Sem GUC → zero linhas.'
+      '(iam.session_may_see_country, SECDEF — 411). O claim country do IdP é atributo, não permissão. '
+      'Sistema declarado (app.system_context + membro de app_system) vê tudo. Sessão sem identidade '
+      'nenhuma → erro 42501 nomeado; com uid sem grant → zero linhas.'
   $c$;
 END
 $$;

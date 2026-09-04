@@ -270,9 +270,8 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
       await pool.query(fs.readFileSync(path.resolve(__dirname, '../../scripts/rollback/278_down.sql'), 'utf8'));
     });
 
-    it('sem GUC → 0; bob (sem grupo) → 0 mesmo com claim BR e países forjados', async () => {
-      const none = await asRole('app_runtime', {}, (c) => c.query(list, [both]));
-      expect(none.rowCount).toBe(0);
+    it('sem GUC → erro NOMEADO (411, nunca vazio); bob (sem grupo) → 0 mesmo com claim BR e países forjados', async () => {
+      await expect(asRole('app_runtime', {}, (c) => c.query(list, [both]))).rejects.toThrow(/rls_session_without_identity/);
       const bob = await asRole('app_runtime', { uid: U.bob, country: 'BR', countries: '{AR,BR}' }, (c) => c.query(list, [both]));
       expect(bob.rowCount).toBe(0);
     });

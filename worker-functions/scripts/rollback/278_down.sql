@@ -1,4 +1,4 @@
--- ROLLBACK da migration 278 (RLS grant-only → volta à policy da 274, com o ramo do claim).
+-- ROLLBACK da migration 278 (RLS grant-only → volta à policy da 411, com o ramo do claim).
 --
 -- Fora de migrations/ de propósito: o runner NÃO aplica isto. Uso manual:
 --   psql "$DATABASE_URL" -f scripts/rollback/278_down.sql
@@ -8,6 +8,8 @@
 -- estado observável é o COMMENT ON POLICY.
 
 DROP POLICY IF EXISTS patients_country_isolation ON patients;
+-- Texto IDÊNTICO ao da 411 (claim + grant pela função SECDEF, recusa em voz alta sem identidade).
+-- Se a 411 mudar, este arquivo muda junto — é a mesma policy em três lugares (411 explica).
 CREATE POLICY patients_country_isolation ON patients
   FOR ALL
   USING (
@@ -16,18 +18,7 @@ CREATE POLICY patients_country_isolation ON patients
       AND pg_has_role(current_user, 'app_system', 'MEMBER')
     )
     OR country = current_setting('app.user_country', true)
-    OR EXISTS (
-      SELECT 1
-      FROM iam.user_groups ug
-      JOIN users u
-        ON u.firebase_uid = ug.user_id
-       AND u.is_active IS TRUE
-      JOIN iam.group_country_scopes gcs
-        ON gcs.group_id = ug.group_id
-       AND gcs.revoked_at IS NULL
-      WHERE ug.user_id = current_setting('app.user_uid', true)
-        AND gcs.country = patients.country
-    )
+    OR iam.session_may_see_country(patients.country)
   );
 COMMENT ON POLICY patients_country_isolation ON patients IS
-  'REVERTIDA para a policy da 274 (claim + grant) via scripts/rollback/278_down.sql.';
+  'REVERTIDA para a policy da 411 (claim + grant pela função iam.session_may_see_country) via scripts/rollback/278_down.sql.';
