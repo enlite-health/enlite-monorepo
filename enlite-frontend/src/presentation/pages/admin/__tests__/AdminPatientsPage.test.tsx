@@ -46,7 +46,9 @@ vi.mock('@presentation/components/features/admin/PatientCreateModal', () => ({
   PatientCreateModal: ({ onClose, onCreated }: any) => (
     <div data-testid="modal">
       <button data-testid="modal-fechar" onClick={onClose}>fechar</button>
-      <button data-testid="modal-criado" onClick={onCreated}>criado</button>
+      {/* o modal real chama `onCreated(id)` com o id do paciente criado — o mock precisa passar
+          um id, senão o handler receberia o evento de clique e o teste validaria uma URL falsa */}
+      <button data-testid="modal-criado" onClick={() => onCreated('novo-123')}>criado</button>
     </div>
   ),
 }));
@@ -270,7 +272,11 @@ describe('AdminPatientsPage — ações', () => {
     expect(navigate).toHaveBeenCalledWith('/admin/patients/kanban');
   });
 
-  it('modal abre, fecha, e ao criar volta para a 1ª página e recarrega', async () => {
+  // Atualizado no rebase da branch de admissão: o `main` (#290) escreveu este teste quando criar
+  // paciente RECARREGAVA a lista. O bloco D (spec 014, item D5) mudou o comportamento de propósito
+  // — criar paciente CAI NA FICHA, e o e2e `admission-d-ux` item 4 prova isso ponta a ponta.
+  // Recarregar a lista deixou de ser o efeito; navegar é.
+  it('modal abre, fecha, e ao criar navega para a ficha do paciente criado', async () => {
     comDados({ total: 55 });
     render(<AdminPatientsPage />);
     const u = user();
@@ -284,8 +290,7 @@ describe('AdminPatientsPage — ações', () => {
     await u.click(screen.getByLabelText('admin.patients.nextPage'));
     await u.click(screen.getByTestId('new-patient-btn'));
     await u.click(screen.getByTestId('modal-criado'));
-    expect(refetch).toHaveBeenCalled();
-    expect(ultimosFiltros().offset).toBe('0');
+    expect(navigate).toHaveBeenCalledWith('/admin/patients/novo-123');
   });
 
   it('desmontar limpa os debounces pendentes — sem setState em componente morto', async () => {

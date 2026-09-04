@@ -139,6 +139,7 @@ export default defineConfig({
           branches: 100,
           functions: 100,
           lines: 100,
+        },
         // Spec 011 bloco A (03/09): contrato da ficha, os 3 cards que passaram a
         // ler o contrato real e os 2 drawers que reenviam o que a tabela tem.
         // Nasceram/ficaram em 100% medidos na suíte inteira — entram no mesmo PR.
