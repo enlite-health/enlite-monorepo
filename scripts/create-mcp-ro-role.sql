@@ -166,7 +166,20 @@ BEGIN
     EXECUTE format('REVOKE SELECT ON public.%I FROM enlite_mcp_ro', alvo.tabela);
     EXECUTE format('GRANT SELECT (%s) ON public.%I TO enlite_mcp_ro', cols, alvo.tabela);
   END LOOP;
-  FOR alvo IN SELECT unnest(ARRAY['patient_insurance_verified','patient_device_types']) AS tabela LOOP
+  -- spec 016 F2 (D263, "o mais urgente"): patient_diagnoses NÃO TEM coluna segura —
+  -- concept_group='06' sozinho já revela saúde mental (capítulo do CID-11). Tabela inteira
+  -- revogada, no MESMO commit da migration 325 que a cria (nunca "na próxima PR").
+  -- ⚠️ spec 016 F2 (D263): o gate achou patient_source_labels E patient_source_label_rejections
+  -- FORA desta lista — raw_label das duas é rótulo cru do ClickUp (ex.: "Tipo de Patología"),
+  -- mesma classe de patient_insurance_verified/patient_device_types. Consertar só uma seria
+  -- deixar metade consertada, que é o próprio defeito (mesmo espírito do "achado #1" do QA-caça).
+  FOR alvo IN SELECT unnest(ARRAY[
+    'patient_insurance_verified',
+    'patient_device_types',
+    'patient_diagnoses',
+    'patient_source_labels',
+    'patient_source_label_rejections'
+  ]) AS tabela LOOP
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=alvo.tabela) THEN
       EXECUTE format('REVOKE SELECT ON public.%I FROM enlite_mcp_ro', alvo.tabela);
     END IF;

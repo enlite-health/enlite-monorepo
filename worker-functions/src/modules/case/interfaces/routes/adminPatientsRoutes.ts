@@ -7,6 +7,8 @@ import { AdminPatientsMapController } from '../controllers/AdminPatientsMapContr
 import { AdminPatientAddressesController } from '../controllers/AdminPatientAddressesController';
 import { AdminInsuranceProvidersController } from '../controllers/AdminInsuranceProvidersController';
 import { AdminPatientContractedServicesController } from '../controllers/AdminPatientContractedServicesController';
+import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
+import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
 
 /**
  * Admin patients routes — mounted at /api/admin.
@@ -24,6 +26,8 @@ export function createAdminPatientsRoutes(
   addressesController: AdminPatientAddressesController = new AdminPatientAddressesController(),
   insuranceProvidersController: AdminInsuranceProvidersController = new AdminInsuranceProvidersController(),
   contractedServicesController: AdminPatientContractedServicesController = new AdminPatientContractedServicesController(),
+  diagnosesController: AdminPatientDiagnosesController = new AdminPatientDiagnosesController(),
+  terminologySearchController: AdminTerminologySearchController = new AdminTerminologySearchController(),
 ): Router {
   const router = Router();
   const staffOnly = authMiddleware.requireStaff();
@@ -188,6 +192,25 @@ export function createAdminPatientsRoutes(
   );
   router.patch('/patients/:id/contracted-services/:sid/providers/:pid', staffOnly, (req: Request, res: Response) =>
     contractedServicesController.updateProvider(req, res),
+  );
+
+  // ── Diagnóstico estruturado, CID-11 (spec 016 F2, D263) ────────────────────
+  // Literais ANTES do PATCH dinâmico /:id/:section — 'diagnoses' seria capturado como :section
+  // e barrado pelo whitelist. Sem DELETE físico: baixa é PATCH { active: false }.
+  router.get('/patients/:id/diagnoses', staffOnly, (req: Request, res: Response) =>
+    diagnosesController.list(req, res),
+  );
+  router.post('/patients/:id/diagnoses', staffOnly, (req: Request, res: Response) =>
+    diagnosesController.create(req, res),
+  );
+  router.patch('/patients/:id/diagnoses/:did', staffOnly, (req: Request, res: Response) =>
+    diagnosesController.update(req, res),
+  );
+
+  // Busca de terminologia (CID-11) — não é recurso de paciente, fica fora de /patients/* de
+  // propósito (mesmo raciocínio de /chat-groups e /catalogs/insurance-providers acima).
+  router.get('/terminology/search', staffOnly, (req: Request, res: Response) =>
+    terminologySearchController.search(req, res),
   );
 
   // PATCH /patients/:id/:section — section-scoped partial edit (last: fully dynamic)

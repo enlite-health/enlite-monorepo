@@ -32,6 +32,11 @@ import {
 } from '../../application/PatientService';
 import { DeviceTypeUnknownError } from '../../infrastructure/PatientDeviceTypeRepository';
 import { InsuranceProviderUnknownError } from '../../infrastructure/PatientInsuranceVerifiedRepository';
+import { PatientDiagnosisService } from '@modules/diagnosis/application/PatientDiagnosisService';
+import { PostgresPatientDiagnosisRepository } from '@modules/diagnosis/infrastructure/PostgresPatientDiagnosisRepository';
+import { DiagnosisSource } from '@modules/diagnosis/domain/DiagnosisSource';
+import { toDiagnosisPublicView } from '@modules/diagnosis/interfaces/DiagnosisPublicView';
+import { createTerminologyPort } from '@modules/terminology/infrastructure/TerminologyPortFactory';
 import { fetchPatientStatusHistory } from '../../infrastructure/PatientStatusHistoryQueryHelper';
 import type { PatientStatus } from '../../domain/enums/PatientStatus';
 import {
@@ -85,12 +90,19 @@ export class AdminPatientsController {
   private readonly testFixtures: PatientTestFixtureService;
   private readonly db: Pool;
   private readonly geocoder: GeocodingService;
+  /**
+   * Spec 016 F2 (D263): "GET /patients/:id embute diagnoses[] na mesma projeção (sem code)".
+   * Escopado a PANEL — mesma decisão de desenho do AdminPatientDiagnosesController (o painel
+   * não é o escritor do ClickUp; a leitura em si, via listForPatient, é global entre origens).
+   */
+  private readonly diagnosisService: PatientDiagnosisService;
 
   constructor(
     geocoder?: GeocodingService,
     createPatientUseCase?: CreatePatientUseCase,
     patientService?: PatientService,
     activatePatientUseCase?: ActivatePatientUseCase,
+    diagnosisService?: PatientDiagnosisService,
   ) {
     this.repo = new PatientQueryRepository();
     this.getPatientByIdUseCase = new GetPatientByIdUseCase(this.repo);
@@ -101,6 +113,8 @@ export class AdminPatientsController {
     this.activatePatientUseCase = activatePatientUseCase ?? new ActivatePatientUseCase();
     this.geocoder = geocoder ?? new GeocodingService();
     this.testFixtures = new PatientTestFixtureService(this.db);
+    this.diagnosisService =
+      diagnosisService ?? new PatientDiagnosisService(createTerminologyPort(process.env), new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL));
   }
 
   /**
@@ -583,7 +597,21 @@ export class AdminPatientsController {
           : 0,
       });
 
-      res.status(200).json({ success: true, data: { ...projected, completeness } });
+      // Spec 016 F2 (D263): diagnóstico estruturado embutido na MESMA projeção — REQ-21, sem
+      // concept_code/concept_group/catalog_release (toDiagnosisPublicView é o único ponto que
+      // decide o formato público). Bulkhead deliberado: uma falha aqui (ex.: catálogo de
+      // terminologia fora do ar) NUNCA derruba a ficha inteira — o resto do detalhe do paciente
+      // já é útil sozinho. A falha é reportada (reportError), nunca silenciosa de verdade.
+      let diagnoses: ReturnType<typeof toDiagnosisPublicView>[] = [];
+      try {
+        const diagnosesResult = await this.diagnosisService.listForPatient(parsed.data.id);
+        diagnoses = diagnosesResult.found ? diagnosesResult.diagnoses.map(toDiagnosisPublicView) : [];
+      } catch (diagErr: unknown) {
+        const de = diagErr instanceof Error ? diagErr : new Error(String(diagErr));
+        reportError(de, { source: 'AdminPatientsController:getPatientById:diagnoses', patientId: parsed.data.id });
+      }
+
+      res.status(200).json({ success: true, data: { ...projected, diagnoses, completeness } });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientsController:getPatientById' });

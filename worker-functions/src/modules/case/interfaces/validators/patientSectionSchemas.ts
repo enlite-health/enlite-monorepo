@@ -2,7 +2,6 @@ import { z } from 'zod';
 import { DOCUMENT_TYPES } from '../../domain/enums/DocumentType';
 import { SEXES } from '../../domain/enums/Sex';
 import { DEPENDENCY_LEVELS } from '../../domain/enums/DependencyLevel';
-import { CLINICAL_SPECIALTIES } from '../../domain/enums/ClinicalSpecialty';
 import { PATIENT_STATUSES } from '../../domain/enums/PatientStatus';
 import { ON_HOLD_REASONS } from '../../domain/enums/OnHoldReason';
 import { RELATIONSHIPS } from '../../domain/enums/Relationship';
@@ -58,7 +57,10 @@ export const clinicalSectionSchema = z
   .object({
     diagnosis: z.string().nullable().optional(),
     dependencyLevel: z.enum(DEPENDENCY_LEVELS as unknown as [string, ...string[]]).nullable().optional(),
-    clinicalSpecialty: z.enum(CLINICAL_SPECIALTIES as unknown as [string, ...string[]]).nullable().optional(),
+    // clinicalSpecialty SAIU do payload da admissão (spec 016 F2, D263): 0 pacientes usam em prd
+    // (medido). A COLUNA `patients.clinical_specialty` NÃO é dropada — 229 ocorrências, e ela
+    // segue viva em `patients_ro` (o conector claude.ai lê de lá). `.strict()` faz um cliente
+    // que ainda manda o campo receber 400, nunca gravar silenciosamente.
     clinicalSegments: z.string().nullable().optional(),
     serviceType: z.array(professionEnum).nullable().optional(),
     deviceTypes: z.array(catalogCode).optional(),

@@ -160,6 +160,10 @@ describe('AdminPatientsController.getPatientById', () => {
         success: true,
         data: {
           ...patient,
+          // Spec 016 F2 (D263): diagnoses[] embutido — o pool mockado deste arquivo não devolve
+          // linha nenhuma para a busca de diagnóstico, e o bulkhead do controller (reportError +
+          // []) garante que isso não derruba a ficha inteira.
+          diagnoses: [],
           completeness: {
             missing: ['ADDRESS', 'CONTRACTED_SERVICE'],
             blocking: ['ADDRESS'],

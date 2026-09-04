@@ -12,6 +12,8 @@ jest.mock('../../controllers/AdminPatientsMapController', () => ({ AdminPatients
 jest.mock('../../controllers/AdminPatientAddressesController', () => ({ AdminPatientAddressesController: jest.fn().mockImplementation(() => ({})) }));
 jest.mock('../../controllers/AdminInsuranceProvidersController', () => ({ AdminInsuranceProvidersController: jest.fn().mockImplementation(() => ({})) }));
 jest.mock('../../controllers/AdminPatientContractedServicesController', () => ({ AdminPatientContractedServicesController: jest.fn().mockImplementation(() => ({})) }));
+jest.mock('@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController', () => ({ AdminPatientDiagnosesController: jest.fn().mockImplementation(() => ({})) }));
+jest.mock('@modules/terminology/interfaces/controllers/AdminTerminologySearchController', () => ({ AdminTerminologySearchController: jest.fn().mockImplementation(() => ({})) }));
 
 import express from 'express';
 import request from 'supertest';
@@ -23,6 +25,8 @@ import type { AdminPatientsMapController } from '../../controllers/AdminPatients
 import type { AdminPatientAddressesController } from '../../controllers/AdminPatientAddressesController';
 import type { AdminInsuranceProvidersController } from '../../controllers/AdminInsuranceProvidersController';
 import type { AdminPatientContractedServicesController } from '../../controllers/AdminPatientContractedServicesController';
+import type { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
+import type { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
 import type { AuthMiddleware } from '@modules/identity';
 
 type Handler = (req: express.Request, res: express.Response) => void;
@@ -48,6 +52,9 @@ const contractedServices = {
   list: c('csList'), create: c('csCreate'), update: c('csUpdate'),
   associateProvider: c('csAssociateProvider'), updateProvider: c('csUpdateProvider'),
 } as unknown as AdminPatientContractedServicesController;
+// Spec 016 F2 (D263): diagnóstico estruturado CID-11 — sem DELETE físico.
+const diagnoses = { list: c('diagList'), create: c('diagCreate'), update: c('diagUpdate') } as unknown as AdminPatientDiagnosesController;
+const terminologySearch = { search: c('terminologySearch') } as unknown as AdminTerminologySearchController;
 
 const seen: string[] = [];
 const guard = (label: string) => (req: express.Request, _res: express.Response, next: express.NextFunction) => { seen.push(`${label} ${req.method} ${req.path}`); next(); };
@@ -55,7 +62,7 @@ const authMiddleware = { requireStaff: () => guard('staff'), requireAdmin: () =>
 
 const app = express();
 app.use(express.json());
-app.use('/api/admin', createAdminPatientsRoutes(controller, authMiddleware, chatIds, chatRoles, mapController, addresses, providers, contractedServices));
+app.use('/api/admin', createAdminPatientsRoutes(controller, authMiddleware, chatIds, chatRoles, mapController, addresses, providers, contractedServices, diagnoses, terminologySearch));
 
 const ID = '11111111-1111-1111-1111-111111111111';
 
@@ -97,6 +104,11 @@ describe('createAdminPatientsRoutes', () => {
     ['patch', `/patients/${ID}/contracted-services/${ID}`, 'csUpdate', 'staff'],
     ['post', `/patients/${ID}/contracted-services/${ID}/providers`, 'csAssociateProvider', 'staff'],
     ['patch', `/patients/${ID}/contracted-services/${ID}/providers/${ID}`, 'csUpdateProvider', 'staff'],
+    // Spec 016 F2 (D263): diagnóstico estruturado CID-11 — literais ANTES do PATCH dinâmico.
+    ['get', `/patients/${ID}/diagnoses`, 'diagList', 'staff'],
+    ['post', `/patients/${ID}/diagnoses`, 'diagCreate', 'staff'],
+    ['patch', `/patients/${ID}/diagnoses/${ID}`, 'diagUpdate', 'staff'],
+    ['get', '/terminology/search', 'terminologySearch', 'staff'],
   ];
 
   it.each(cases)('%s %s → %s (guarda %s)', async (method, path, handler, guardLabel) => {
@@ -124,5 +136,8 @@ describe('createAdminPatientsRoutes', () => {
     expect(paths).toContain('/patients/:id/contracted-services/:sid');
     expect(paths).toContain('/patients/:id/contracted-services/:sid/providers');
     expect(paths).toContain('/patients/:id/contracted-services/:sid/providers/:pid');
+    expect(paths).toContain('/patients/:id/diagnoses');
+    expect(paths).toContain('/patients/:id/diagnoses/:did');
+    expect(paths).toContain('/terminology/search');
   });
 });
