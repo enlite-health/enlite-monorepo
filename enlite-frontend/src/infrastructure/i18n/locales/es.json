@@ -3402,7 +3402,18 @@
         "systemGroup": "Los grupos de sistema no se renombran ni se archivan.",
         "duplicateName": "Ya existe un grupo con ese nombre.",
         "error": "No se pudo completar la acción.",
-        "reasonRequired": "Escribí el motivo: queda en la trilla de auditoría."
+        "reasonRequired": "Escribí el motivo: queda en la trilla de auditoría.",
+        "transfer": {
+          "grants_one": "Este grupo da {{count}} célula en {{countries}}. Quien entra, recibe eso.",
+          "grants_other": "Este grupo da {{count}} células en {{countries}}. Quien entra, recibe eso.",
+          "rest": "Resto del equipo",
+          "filter": "Filtrar el equipo…",
+          "toMembers": "Agregar a los miembros",
+          "toRest": "Quitar de los miembros",
+          "unsaved": "Cambios sin guardar",
+          "locked": "Último gestor del equipo: no se puede quitar.",
+          "allInside": "Todo el equipo ya es miembro."
+        }
       },
       "features": {
         "title": "Funciones por país",
