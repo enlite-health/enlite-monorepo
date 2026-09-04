@@ -61,7 +61,7 @@ function safeSql(sql: string): void {
   try {
     psql(sql);
   } catch (err) {
-    // eslint-disable-next-line no-console
+     
     console.error(`[cleanup] falhou (seguindo): ${(err as Error).message}`);
   }
 }
@@ -235,7 +235,7 @@ test.describe('Welcome sem grupo (A1) e feature por país (B2) — integração 
     psql(`INSERT INTO iam.user_groups (user_id, group_id, tenant_id) VALUES ('${STAFF_UID}', '${groupId}', '${TENANT}')`);
 
     const after = await pollAuthz(request, STAFF, (b) => Array.isArray(b?.groups) && b.groups.length > 0);
-    // eslint-disable-next-line no-console
+     
     console.log(`[prova] /v1/me/authz refletiu o grupo novo em ${after.elapsedMs}ms`);
     expect(after.body.groups.length).toBeGreaterThan(0);
 
@@ -253,7 +253,7 @@ test.describe('Welcome sem grupo (A1) e feature por país (B2) — integração 
           WHERE user_id = '${STAFF_UID}' AND group_id = '${groupId}' AND removed_at IS NULL`);
 
     const after = await pollAuthz(request, STAFF, (b) => Array.isArray(b?.groups) && b.groups.length === 0);
-    // eslint-disable-next-line no-console
+     
     console.log(`[prova] /v1/me/authz refletiu a saída do grupo em ${after.elapsedMs}ms`);
     expect(after.body.groups).toEqual([]);
 
@@ -277,7 +277,7 @@ test.describe('Welcome sem grupo (A1) e feature por país (B2) — integração 
           VALUES ('AR', '${TALENTUM_KEY}', false, 'default', 'e2e:v3-setup')`);
 
     const off = await pollAuthz(request, STAFF, (b) => b?.features?.AR?.[TALENTUM_KEY]?.enabled === false);
-    // eslint-disable-next-line no-console
+     
     console.log(`[prova] screen:talentum=false refletiu em ${off.elapsedMs}ms`);
     expect(off.body.features.AR[TALENTUM_KEY].enabled).toBe(false);
     expect(off.body.countries).toEqual(['AR']); // país único — a régua de useFeature não é ambígua aqui
@@ -291,7 +291,7 @@ test.describe('Welcome sem grupo (A1) e feature por país (B2) — integração 
     psql(`UPDATE iam.country_features SET enabled = true, source = 'override', reason = 'e2e V3 — liga para provar rota acessível', updated_by = '${STAFF_UID}', updated_at = now()
           WHERE country = 'AR' AND feature_key = '${TALENTUM_KEY}'`);
     const on = await pollAuthz(request, STAFF, (b) => b?.features?.AR?.[TALENTUM_KEY]?.enabled === true);
-    // eslint-disable-next-line no-console
+     
     console.log(`[prova] screen:talentum=true refletiu em ${on.elapsedMs}ms`);
 
     await page.goto(`/admin/vacancies/${FAKE_VACANCY_ID}/talentum`);

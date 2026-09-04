@@ -75,7 +75,7 @@ function safeSql(sql: string): void {
   try {
     psql(sql);
   } catch (err) {
-    // eslint-disable-next-line no-console
+     
     console.error(`[cleanup] falhou (seguindo): ${(err as Error).message}`);
   }
 }
@@ -394,7 +394,7 @@ test.describe('Painel de acessos ABAC — integração real @integration', () =>
     expect(row).toBe('');
 
     const after = await pollStatus(request, COMUM, (s) => s !== 403);
-    // eslint-disable-next-line no-console
+     
     console.log(`[prova] comum deixou de receber 403 em ${after.elapsedMs}ms (status=${after.status})`);
     expect(after.status).not.toBe(403);
   });
@@ -419,7 +419,7 @@ test.describe('Painel de acessos ABAC — integração real @integration', () =>
     expect(removedAt).not.toBe('');
 
     const after = await pollStatus(request, COMUM, (s) => s === 403);
-    // eslint-disable-next-line no-console
+     
     console.log(`[prova] comum voltou a 403 em ${after.elapsedMs}ms`);
     expect(after.status).toBe(403);
   });
@@ -435,14 +435,14 @@ test.describe('Painel de acessos ABAC — integração real @integration', () =>
     });
 
     await page.locator('#au-user').fill(COMUM_UID);
-    // eslint-disable-next-line no-console
+     
     await page.getByRole('button', { name: 'Buscar' }).click();
-    // eslint-disable-next-line no-console
+     
     await expect(page.getByText('DENY').first()).toBeVisible({ timeout: 15_000 });
 
     expect(auditRequestUrl).toContain('/permission-audit/query');
     expect(auditRequestUrl).not.toContain(COMUM_UID);
-    // eslint-disable-next-line no-console
+     
     console.log(`[prova] URL do request de auditoria (sem uid): ${auditRequestUrl}`);
 
     const denyCount = scalar(`SELECT COUNT(*) FROM iam.permission_audit_log
@@ -536,7 +536,7 @@ test.describe('Painel de acessos ABAC — integração real @integration', () =>
     expect(dbRow).toBe('f|override');
 
     const after = await pollFeatureEnabled(request, { ...COMUM, country: 'BR' }, 'BR', FEATURE_KEY, false);
-    // eslint-disable-next-line no-console
+     
     console.log(`[prova] /v1/me/authz refletiu enabled=false em ${after.elapsedMs}ms`);
     expect(after.enabled).toBe(false);
 

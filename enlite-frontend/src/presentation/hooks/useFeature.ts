@@ -27,7 +27,7 @@ function avisarUmaVez(reason: FeatureDecision['reason'], featureKey: string): vo
   const dedupKey = `${reason}:${featureKey}`;
   if (jaAvisado.has(dedupKey)) return;
   jaAvisado.add(dedupKey);
-  // eslint-disable-next-line no-console
+   
   console.warn(
     `[useFeature] fail-open (${reason}) para "${featureKey}" — renderizando por padrão. ` +
       'Mapa de features ausente/incompleto ou ator sem país único no contrato.',
