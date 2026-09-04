@@ -196,3 +196,156 @@ export async function grupoComCelulas(
   ]);
   return id;
 }
+
+/**
+ * Garante que a célula existe em `iam.permissions` — algumas nasceram FORA do
+ * seed da mig 206 (`integration:execute`, `test_fixtures:execute`,
+ * `messaging:write`, ver A4) e só entram quando o A7 ligar
+ * `PERMISSION_CATALOG_SYNC_ENABLED`. `grupoComCelulas` falha alto se a célula
+ * não existir, então quem monta grupo para uma célula NOVA precisa chamar
+ * isto antes. `ON CONFLICT DO NOTHING`: idempotente entre suítes que
+ * compartilham célula (ex.: `dedup:execute` é usada por `admin.dedup` E por
+ * `admin.analytics`).
+ */
+export async function garantirCelula(
+  pool: Pool,
+  args: { resource: string; action: string; category: string },
+): Promise<{ criada: boolean }> {
+  const inseriu = await pool.query(
+    `INSERT INTO iam.permissions (resource, action, description, category)
+       VALUES ($1, $2, $3, $4)
+     ON CONFLICT (resource, action) DO NOTHING
+     RETURNING resource`,
+    [args.resource, args.action, `${args.resource}:${args.action} (e2e — garantida se ausente)`, args.category],
+  );
+  // `criada: true` só quando O INSERT aconteceu (RETURNING veio com linha) —
+  // é o que diz ao chamador se ele é DONO da célula e precisa apagá-la no
+  // cleanup, ou se ela já existia (seed 206 / outra suíte) e apagar destruiria
+  // dado de quem chegou primeiro.
+  return { criada: (inseriu.rowCount ?? 0) > 0 };
+}
+
+/**
+ * Controller-substituto GENÉRICO: qualquer propriedade acessada devolve um
+ * handler-marcador que responde 200 com `{ chegou: '<namespace>.<método>' }`.
+ *
+ * Por que existe: as 8 suítes de família única listam o controller inteiro à
+ * mão (às vezes 30+ métodos) porque cada uma exercita VÁRIAS rotas da família.
+ * O e2e de C1 (12 famílias juntas) exercita só UMA rota por família — mas
+ * ainda tem que MONTAR o router inteiro (a rota escolhida vem da varredura
+ * VIVA, não de uma linha fixa), e `createXRoutes(...)` só REGISTRA os
+ * handlers na montagem — nunca os invoca. Por isso um `Proxy` que responde a
+ * qualquer nome de método cobre o router inteiro sem listar métodos que o
+ * teste nunca chama, e sem arriscar `undefined is not a function` se a rota
+ * sorteada mudar. Mock do jest é proibido aqui (memória do repo) — isto não é
+ * mock de módulo: é o MESMO objeto controller-marcador que as 8 suítes já
+ * usam, só que genérico em vez de listado propriedade por propriedade.
+ */
+export function controllerStub(namespace: string): Record<string, unknown> {
+  return new Proxy(
+    {},
+    {
+      get:
+        (_target, prop) =>
+        (_req: unknown, res: { json: (body: unknown) => void }): void =>
+          res.json({ chegou: `${namespace}.${String(prop)}` }),
+    },
+  );
+}
+
+export interface AppComTodasFamilias extends AppDeFamilia {
+  /** O módulo de permissões REAL do boundary — para famílias como
+   * `admin.permissions`, que consomem use case direto em vez de controller. */
+  modulo: PermissionsModule;
+}
+
+export interface MontarAppCompletoOpts {
+  /** Monta TODAS as rotas da app — quem chama decide famílias, prefixos e ordem. */
+  montarRotas: (deps: {
+    app: Express;
+    auth: AuthMiddleware;
+    permissions: PermissionMiddleware;
+    modulo: PermissionsModule;
+  }) => void;
+  /** `AuthMiddleware` pronto — para o bloco que precisa de `MultiAuthService`
+   * de produção (chave de API real da Luz). Omitido, usa o fake do harness. */
+  auth?: AuthMiddleware;
+  /** Segredo que o guard interno (`X-Internal-Secret`) exige para o
+   * `/.well-known/permissions/routes` desta app. */
+  internalSecret: string;
+}
+
+/**
+ * Sobe a CADEIA DE VERDADE COMPLETA — não só o `PermissionMiddleware` que
+ * `montarAppDeFamilia` usa, mas os TRÊS passos do boot real
+ * (`src/bootstrap/wirePermissionsModule.ts`): `createPermissionsBoundary`
+ * (deny-by-default ANTES das rotas) → rotas → `wirePermissionsModule`
+ * (`/.well-known/permissions/routes` DEPOIS das rotas) →
+ * `runPermissionsBootTasks` (varre o router e PUBLICA o índice, do jeito que
+ * `src/index.ts` faz antes do `listen`).
+ *
+ * Por que uma função à parte de `montarAppDeFamilia`: aquela existe para
+ * UMA família de cada vez e nunca publica o índice de rotas nem monta o
+ * inventário — não há colisão entre famílias para detectar com uma peça só.
+ * Este helper é o que o e2e de C1 (as 12 famílias juntas, engine ligado)
+ * precisa: o MESMO wiring que `src/index.ts` roda em produção, para que
+ * "colisão real entre famílias" seja um achado do wiring de verdade, não de
+ * uma reimplementação paralela dele.
+ */
+export async function montarAppComTodasFamilias(opts: MontarAppCompletoOpts): Promise<AppComTodasFamilias> {
+  const express = (await import('express')).default;
+  const { correlationMiddleware } = await import('@shared/logging/correlationMiddleware');
+  const { dbSessionMiddleware } = await import('@shared/database/dbSessionMiddleware');
+  const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
+  const identity = await import('@modules/identity');
+  const { internalAuthMiddleware } = await import(
+    '@modules/notification/interfaces/middleware/InternalAuthMiddleware'
+  );
+  const { createPermissionsBoundary, wirePermissionsModule, runPermissionsBootTasks } = await import(
+    '../../../src/bootstrap/wirePermissionsModule'
+  );
+
+  const db = DatabaseConnection.getInstance();
+  const app = express();
+  app.use(express.json());
+  app.use(correlationMiddleware);
+  app.use(dbSessionMiddleware);
+  app.use(identity.mockAuthMiddleware);
+
+  const boundary = createPermissionsBoundary({ app, pool: db.getPool(), systemPool: db.getSystemPool() });
+
+  const auth =
+    opts.auth ??
+    new identity.AuthMiddleware(
+      { parseCredentials: () => null, authenticate: async () => null } as never,
+      new identity.SimplifiedAuthorizationEngine(),
+      boundary.permissions.client,
+    );
+
+  opts.montarRotas({ app, auth, permissions: boundary.middleware, modulo: boundary.permissions });
+
+  process.env.INTERNAL_TOKEN_SECRET = opts.internalSecret;
+  wirePermissionsModule({
+    app,
+    boundary,
+    events: { registerHandler: () => {} },
+    internalGuard: internalAuthMiddleware,
+  });
+
+  // O 3º passo: varre o router JÁ COM TODAS AS ROTAS montadas e publica o
+  // índice que `denyUndeclaredRoutes` e o inventário `/.well-known` leem.
+  // Sem isto o guard responde `unknown` para tudo (nasce vazio de propósito) e
+  // `undeclared`/`governedRoutes` do inventário ficam vazios também.
+  await runPermissionsBootTasks(app, boundary);
+
+  const servidor = app.listen(0);
+  await new Promise<void>((resolve) => servidor.once('listening', () => resolve()));
+
+  return {
+    servidor,
+    url: `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`,
+    invalidar: (uids) => boundary.permissions.client.invalidate(uids),
+    fechar: () => new Promise<void>((resolve) => servidor.close(() => resolve())),
+    modulo: boundary.permissions,
+  };
+}

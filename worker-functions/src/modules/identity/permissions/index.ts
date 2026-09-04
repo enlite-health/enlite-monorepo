@@ -83,6 +83,8 @@ export {
 export type { PermissionMetadata, ExemptMetadata } from './infrastructure/catalog/permissionMetadata';
 export { declaredCells, cellsForaDeRota, scanExpressRouter, undeclaredRoutes, mountPathOf } from './infrastructure/catalog/scanExpressRouter';
 export type { ScannedRoute } from './infrastructure/catalog/scanExpressRouter';
+export { ALL_PERMISSION_FAMILIES } from './infrastructure/catalog/permissionFamilies';
+export type { PermissionFamily } from './infrastructure/catalog/permissionFamilies';
 export { buildRouteIndex } from './infrastructure/catalog/routeMatcher';
 export type { RouteIndex } from './infrastructure/catalog/routeMatcher';
 export { CATALOG_OWNER_SERVICE } from './application/SyncPermissionCatalogUseCase';
