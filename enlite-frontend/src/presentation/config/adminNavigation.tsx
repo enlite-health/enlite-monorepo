@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
 import { EnliteRole } from '@domain/entities/EnliteRole';
 import { useCellAccess } from '@presentation/hooks/useCellAccess';
+import { useFeature } from '@presentation/hooks/useFeature';
 
 export const useAdminNavItems = (): AppSidebarNavItem[] => {
   const { t } = useTranslation();
@@ -11,6 +12,25 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
   // O item do painel de acessos NÃO deriva de `role`: deriva da célula que
   // toda rota da família exige. Sem ela, o item não existe no menu.
   const { canRead: canSeeAccess } = useCellAccess('permission_management');
+
+  // B2 (D268) — disponibilidade por país (SCREEN_FEATURE_MAP), aplicada ao
+  // item de menu. Nº fixo de chamadas (Rules of Hooks) — as 6 chaves screen:*
+  // que hoje têm item de topo; `screen:talentum`/`screen:ana-care` não têm
+  // (ver screenFeatureMap.ts) e por isso não entram aqui.
+  const dashboardOn = useFeature('screen:management-dashboard');
+  const vacanciesOn = useFeature('screen:vacancies');
+  const workersOn = useFeature('screen:workers');
+  const patientsOn = useFeature('screen:patients');
+  const funnelOn = useFeature('screen:funnel');
+  const accessOn = useFeature('screen:access-permissions');
+  const featureByHref: Record<string, boolean> = {
+    '/admin/dashboard': dashboardOn,
+    '/admin/vacancies': vacanciesOn,
+    '/admin/workers': workersOn,
+    '/admin/patients': patientsOn,
+    '/admin/recruitment': funnelOn,
+    '/admin/access': accessOn,
+  };
 
   const baseItems: AppSidebarNavItem[] = [
     {
@@ -136,5 +156,10 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
       ]
     : [];
 
-  return [...baseItems, ...adminItems, ...accessItems];
+  // `featureByHref[href] === false` remove o item; hrefs fora do mapa (ex.
+  // `/admin`, `/admin/tags`) não são chaves `screen:*` — ficam de fora.
+  const semFeatureDesligada = (item: AppSidebarNavItem): boolean =>
+    item.href === undefined || featureByHref[item.href] !== false;
+
+  return [...baseItems, ...adminItems, ...accessItems].filter(semFeatureDesligada);
 };

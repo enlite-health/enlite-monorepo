@@ -3256,6 +3256,11 @@
         "CHAT_ROLE_NOT_FOUND": "Esse papel não existe (alguém apagou enquanto isso?)."
       }
     },
+    "welcomeNoGroup": {
+      "title": "Bem-vindo(a) à Enlite!",
+      "message": "Sua conta ainda não tem um grupo de acesso atribuído. Fale com o gestor de acessos do seu time para que ele te adicione a um.",
+      "logout": "Sair"
+    },
     "access": {
       "title": "Acessos e permissões",
       "subtitle": "Grupos, células, países e disponibilidade por país. O que você não vê aqui, não existe para você.",

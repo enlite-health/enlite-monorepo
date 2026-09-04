@@ -3335,6 +3335,11 @@
         "CHAT_ROLE_NOT_FOUND": "Ese rol no existe (¿alguien lo eliminó mientras tanto?)."
       }
     },
+    "welcomeNoGroup": {
+      "title": "¡Bienvenido/a a Enlite!",
+      "message": "Tu cuenta todavía no tiene un grupo de acceso asignado. Hablá con el gestor de accesos de tu equipo para que te agregue a uno.",
+      "logout": "Cerrar sesión"
+    },
     "access": {
       "title": "Accesos y permisos",
       "subtitle": "Grupos, células, países y disponibilidad por país. Lo que no ves acá, no existe para vos.",
