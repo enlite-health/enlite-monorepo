@@ -51,6 +51,12 @@ COPY tsconfig.json \
 # Copiar a pasta de código fonte
 COPY src ./src
 
+# `pnpm build` roda `tsc` sobre `src` inteiro — inclusive os testes de paridade
+# (`src/test/permission-parity.test.ts`, `feature-parity.test.ts`), que importam o
+# gerador de fixtures. Sem estes dois arquivos o build da imagem morre com TS2307
+# (deploy da stage de 04/09/2026). Só o que o tsc precisa; nada disso vai para o dist.
+COPY scripts/sync-permission-catalog.mjs scripts/sync-permission-catalog.d.mts ./scripts/
+
 # Copiar pasta public com arquivos estáticos
 COPY public ./public
 
