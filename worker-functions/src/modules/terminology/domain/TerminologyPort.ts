@@ -79,9 +79,19 @@ export interface SearchOptions {
 /**
  * A porta. `application/` depende SÓ desta interface (DIP) — nunca de `IcdCatalogTerminology`
  * nem de `IcdApiTerminology` concretos. A instância entra por construtor.
+ *
+ * 🔧 F1.5-CORREÇÃO C1 (D261, parecer do CTO) — `getByUri`/`ancestorsOf` ganham `asOfRelease?`.
+ * PROVADO em transação: promover um release novo que não contém um `icd_uri` antigo faz
+ * `getByUri(uri)` (sem argumento — resolve o release CORRENTE) devolver `null`
+ * — a linha antiga continua na tabela, só inalcançável pela leitura sem release explícito.
+ * A `spec.md` promete "diagnóstico gravado em 2026-01 continua legível quando o release virar
+ * 2027-01" — falso sem este parâmetro. Sem `asOfRelease` (undefined): comportamento de HOJE,
+ * retrocompatível (resolve o release corrente). Com `asOfRelease`: busca EXATAMENTE aquele
+ * release, corrente ou não — é o que torna o diagnóstico do paciente (que grava `release` NA
+ * LINHA, ver "Contrato de arquitetura") legível para sempre, mesmo depois de o release mudar.
  */
 export interface TerminologyPort {
   search(query: string, opts?: SearchOptions): Promise<DiagnosisCandidate[]>;
-  getByUri(uri: string): Promise<DiagnosisEntity | null>;
-  ancestorsOf(uri: string): Promise<{ chapter: Chapter; block?: Block }>;
+  getByUri(uri: string, asOfRelease?: string): Promise<DiagnosisEntity | null>;
+  ancestorsOf(uri: string, asOfRelease?: string): Promise<{ chapter: Chapter; block?: Block }>;
 }

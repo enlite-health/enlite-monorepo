@@ -13,6 +13,18 @@
  * teste de contrato provar a garantia SÓ no adaptador real — exatamente o vazamento de
  * abstração que o "Contrato de arquitetura" da spec proíbe (LSP: "se só passa no real, a
  * abstração vazou"). O piso de 2 caracteres (D4) é o mesmo do adaptador real.
+ *
+ * 🔧 F1.5-CORREÇÃO C1 (D261): `getByUri`/`ancestorsOf` ganham `asOfRelease?` — o teste de
+ * contrato do C1 roda a MESMA prova (release-aware) nos DOIS adaptadores, e por isso o fake
+ * precisou ganhar uma noção de "release corrente" que ele nunca teve (documentado como limite
+ * conhecido no `describe` do D2, em `terminology-port-contract.e2e.test.ts`: "o fake não tem
+ * noção de release corrente" — isso deixa de ser inteiramente verdade agora, só para
+ * `getByUri`/`ancestorsOf`; `search()` continua sem essa noção, D2 segue Postgres-only).
+ * Retrocompatibilidade: o 2º parâmetro do construtor é OPCIONAL — nenhum teste existente o
+ * passa, e sem ele o fake se comporta EXATAMENTE como antes (última entidade de um uri repetido
+ * "ganha", sem filtrar por release nenhum — o mesmo "não tem conceito de release corrente" de
+ * sempre). Todas as entidades passadas ficam disponíveis via `asOfRelease` explícito, current
+ * release ou não.
  */
 import type {
   TerminologyPort,
@@ -75,11 +87,31 @@ function pickTitle(entity: DiagnosisEntity, lang: 'es' | 'en'): string {
   return primary ?? fallback ?? '';
 }
 
+/** C1 — opções do construtor do fake. Ver cabeçalho do arquivo. */
+export interface InMemoryTerminologyOptions {
+  /**
+   * Release que `getByUri`/`ancestorsOf` SEM `asOfRelease` devem enxergar — o equivalente, no
+   * fake, do `icd_releases.is_current` do adaptador real. Omitido (undefined): comportamento de
+   * SEMPRE (retrocompatível) — "sem asOfRelease" cai no mapa por-uri (última entidade daquele
+   * uri passada ao construtor), sem filtrar por release nenhum.
+   */
+  readonly currentRelease?: string;
+}
+
 export class InMemoryTerminology implements TerminologyPort {
   private readonly byUri = new Map<string, DiagnosisEntity>();
+  /** C1 — TODAS as entidades, por `${uri}::${release}` — permite `asOfRelease` achar uma
+   *  entidade de um release que não é (mais) o corrente, mesmo que `byUri` já tenha sido
+   *  sobrescrito por uma entidade mais nova do mesmo uri. */
+  private readonly byUriRelease = new Map<string, DiagnosisEntity>();
+  private readonly currentRelease: string | null;
 
-  constructor(entities: readonly DiagnosisEntity[] = []) {
-    for (const e of entities) this.byUri.set(e.uri, e);
+  constructor(entities: readonly DiagnosisEntity[] = [], opts: InMemoryTerminologyOptions = {}) {
+    for (const e of entities) {
+      this.byUri.set(e.uri, e);
+      this.byUriRelease.set(`${e.uri}::${e.release}`, e);
+    }
+    this.currentRelease = opts.currentRelease ?? null;
   }
 
   /** D3 — mesma garantia do adaptador real: catálogo vazio (nada carregado) é falha, não `[]`/`null`. */
@@ -87,6 +119,27 @@ export class InMemoryTerminology implements TerminologyPort {
     if (this.byUri.size === 0) {
       throw new TerminologyUnavailableError('catálogo vacío (fake sem entidades carregadas)');
     }
+  }
+
+  /**
+   * C1 — resolve qual entidade uma leitura sem release explícito enxerga. Com `asOfRelease`:
+   * busca EXATAMENTE aquele release (histórico ou corrente, tanto faz). Sem `asOfRelease`: se o
+   * construtor recebeu `currentRelease`, filtra por ele (simula `is_current`); senão, cai no
+   * comportamento de SEMPRE (`byUri`, sem noção de release) — retrocompatibilidade total com
+   * todo teste que já existia antes do C1.
+   */
+  private resolveEntity(uri: string, asOfRelease?: string): DiagnosisEntity | undefined {
+    if (asOfRelease !== undefined) return this.byUriRelease.get(`${uri}::${asOfRelease}`);
+    if (this.currentRelease !== null) return this.byUriRelease.get(`${uri}::${this.currentRelease}`);
+    return this.byUri.get(uri);
+  }
+
+  /** C1 — mesma resolução de `resolveEntity`, mas para achar um capítulo por código+release. */
+  private findChapter(chapterCode: string, release: string): DiagnosisEntity | undefined {
+    for (const e of this.byUriRelease.values()) {
+      if (e.kind === 'chapter' && e.code.value === chapterCode && e.release === release) return e;
+    }
+    return undefined;
   }
 
   async search(query: string, opts: SearchOptions = {}): Promise<DiagnosisCandidate[]> {
@@ -117,22 +170,24 @@ export class InMemoryTerminology implements TerminologyPort {
     return out;
   }
 
-  async getByUri(uri: string): Promise<DiagnosisEntity | null> {
+  async getByUri(uri: string, asOfRelease?: string): Promise<DiagnosisEntity | null> {
     this.assertLoaded();
-    return this.byUri.get(uri) ?? null;
+    return this.resolveEntity(uri, asOfRelease) ?? null;
   }
 
-  async ancestorsOf(uri: string): Promise<{ chapter: Chapter; block?: Block }> {
+  async ancestorsOf(uri: string, asOfRelease?: string): Promise<{ chapter: Chapter; block?: Block }> {
     this.assertLoaded();
-    const entity = this.byUri.get(uri);
+    const entity = this.resolveEntity(uri, asOfRelease);
     if (!entity) {
       throw new Error(`IcdCode não encontrado no catálogo (fake): ${uri}`);
     }
-    const chapterEntity = Array.from(this.byUri.values()).find(
-      (e) => e.kind === 'chapter' && e.code.value === entity.chapter,
-    );
+    // C1 — resolve o capítulo NO MESMO release da entidade encontrada (histórico ou corrente):
+    // `asOfRelease` explícito ganha; senão, o release da própria entidade já resolvida (que por
+    // sua vez já refletiu `currentRelease` dentro de `resolveEntity`, se configurado).
+    const release = asOfRelease ?? entity.release;
+    const chapterEntity = this.findChapter(entity.chapter, release);
     if (!chapterEntity) {
-      throw new Error(`Capítulo "${entity.chapter}" não está carregado no catálogo (fake)`);
+      throw new Error(`Capítulo "${entity.chapter}" não está carregado no catálogo (fake, release ${release})`);
     }
     return { chapter: { code: chapterEntity.code.value, title: pickTitle(chapterEntity, 'es') } };
   }

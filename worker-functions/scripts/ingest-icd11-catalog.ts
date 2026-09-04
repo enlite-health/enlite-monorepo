@@ -288,7 +288,94 @@ export async function upsertEntities(pool: Pool, forRelease: string, entities: C
   }
 }
 
-export async function promote(pool: Pool, forRelease: string, by: string): Promise<void> {
+/**
+ * F1.5-CORREÇÃO C2 (D261) — resultado da reconciliação que `promote()` emite. Só CONTAGEM
+ * (`governanca/classificacao-de-dados` item 1: nunca texto clínico em stdout/log) — nunca
+ * `icd_code`/`icd_title` de entidade nem qualquer coluna de `patient_diagnoses`.
+ */
+export interface PromotionReconciliation {
+  /** Release que ERA corrente antes desta promoção. `null` na primeira promoção do catálogo. */
+  readonly previousRelease: string | null;
+  readonly newRelease: string;
+  /** Quantas entidades de `previousRelease` não existem em `newRelease` (por `icd_uri`). 0
+   *  quando não há release anterior (primeira promoção) ou quando o novo é igual ao anterior. */
+  readonly orphanedEntityCount: number;
+  /** `patient_diagnoses` é F2 — ainda não existe nesta fase. `to_regclass` decide, sem quebrar. */
+  readonly patientDiagnosesTableExists: boolean;
+  /** `null` = "não verificado" (tabela não existe ainda) — NUNCA `0`, que mentiria "verificado e
+   *  limpo" (CLAUDE.md: "contagem zero é falha, nunca sucesso"). Número real só quando a tabela
+   *  existe. */
+  readonly affectedPatientCount: number | null;
+}
+
+/**
+ * C2 — conta (nunca lê texto) quantas entidades do release ANTERIOR sumiram no NOVO, e — se
+ * `patient_diagnoses` já existir (F2) — quantos pacientes apontam para elas. Roda no MESMO
+ * client/transação de `promote()` para ver o estado consistente da troca de `is_current`.
+ */
+async function reconcilePromotion(
+  client: PoolClient,
+  previousRelease: string | null,
+  newRelease: string,
+): Promise<PromotionReconciliation> {
+  let orphanedEntityCount = 0;
+  if (previousRelease && previousRelease !== newRelease) {
+    const { rows } = await client.query<{ count: string }>(
+      `SELECT count(*)::text AS count
+         FROM terminology.icd_entities old_e
+        WHERE old_e.release = $1
+          AND NOT EXISTS (
+            SELECT 1 FROM terminology.icd_entities new_e
+             WHERE new_e.release = $2 AND new_e.icd_uri = old_e.icd_uri
+          )`,
+      [previousRelease, newRelease],
+    );
+    orphanedEntityCount = Number(rows[0].count);
+  }
+
+  const { rows: regRows } = await client.query<{ reg: string | null }>(
+    `SELECT to_regclass('public.patient_diagnoses')::text AS reg`,
+  );
+  const patientDiagnosesTableExists = regRows[0]?.reg != null;
+
+  let affectedPatientCount: number | null = null;
+  if (patientDiagnosesTableExists) {
+    affectedPatientCount =
+      previousRelease && orphanedEntityCount > 0
+        ? Number(
+            (
+              await client.query<{ count: string }>(
+                `SELECT count(*)::text AS count
+                   FROM patient_diagnoses pd
+                  WHERE pd.release = $1
+                    AND NOT EXISTS (
+                      SELECT 1 FROM terminology.icd_entities new_e
+                       WHERE new_e.release = $2 AND new_e.icd_uri = pd.icd_uri
+                    )`,
+                [previousRelease, newRelease],
+              )
+            ).rows[0].count,
+          )
+        : 0;
+  }
+
+  return { previousRelease, newRelease, orphanedEntityCount, patientDiagnosesTableExists, affectedPatientCount };
+}
+
+/** C2 — só imprime NÚMEROS. Nunca `icd_code`/`icd_title`/qualquer coluna de `patient_diagnoses`. */
+function printReconciliationReport(r: PromotionReconciliation): void {
+  console.log('\n── RECONCILIAÇÃO DE RELEASE (contagem apenas — nunca texto clínico) ──');
+  console.log(`release anterior: ${r.previousRelease ?? '(nenhum — primeira promoção)'}`);
+  console.log(`release novo: ${r.newRelease}`);
+  console.log(`entidades do release anterior AUSENTES no novo (por icd_uri): ${r.orphanedEntityCount}`);
+  if (r.patientDiagnosesTableExists) {
+    console.log(`pacientes apontando para entidades ausentes: ${r.affectedPatientCount}`);
+  } else {
+    console.log('tabela patient_diagnoses ainda não existe (F2) — reconciliação de pacientes PULADA, não verificada.');
+  }
+}
+
+export async function promote(pool: Pool, forRelease: string, by: string): Promise<PromotionReconciliation> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -299,6 +386,11 @@ export async function promote(pool: Pool, forRelease: string, by: string): Promi
     if (!rows[0]) throw new Error(`Release "${forRelease}" nunca foi ingerido — rode o ingestor antes de promover.`);
     if (rows[0].entity_count === 0) throw new Error(`Release "${forRelease}" tem 0 entidades — não promovo release vazio.`);
 
+    const { rows: prevRows } = await client.query<{ release: string }>(
+      `SELECT release FROM terminology.icd_releases WHERE is_current = true`,
+    );
+    const previousRelease = prevRows[0]?.release ?? null;
+
     await client.query(
       `UPDATE terminology.icd_releases SET is_current = false, promoted_at = NULL, promoted_by = NULL WHERE is_current = true`,
     );
@@ -306,8 +398,16 @@ export async function promote(pool: Pool, forRelease: string, by: string): Promi
       `UPDATE terminology.icd_releases SET is_current = true, promoted_at = NOW(), promoted_by = $2 WHERE release = $1`,
       [forRelease, by],
     );
+
+    // C2 — reconciliação RODA DENTRO da transação (vê a troca de is_current já aplicada, ainda
+    // não commitada) mas só COMMITA se ela também não lançar — reconciliação quebrada não deve
+    // deixar a promoção pela metade.
+    const reconciliation = await reconcilePromotion(client, previousRelease, forRelease);
+
     await client.query('COMMIT');
     console.log(`✅ Release "${forRelease}" promovido a corrente por "${by}".`);
+    printReconciliationReport(reconciliation);
+    return reconciliation;
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

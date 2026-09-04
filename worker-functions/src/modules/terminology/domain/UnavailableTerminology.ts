@@ -36,11 +36,11 @@ export class UnavailableTerminology implements TerminologyPort {
     throw new TerminologyUnavailableError(this.reason);
   }
 
-  async getByUri(_uri: string): Promise<DiagnosisEntity | null> {
+  async getByUri(_uri: string, _asOfRelease?: string): Promise<DiagnosisEntity | null> {
     throw new TerminologyUnavailableError(this.reason);
   }
 
-  async ancestorsOf(_uri: string): Promise<{ chapter: Chapter; block?: Block }> {
+  async ancestorsOf(_uri: string, _asOfRelease?: string): Promise<{ chapter: Chapter; block?: Block }> {
     throw new TerminologyUnavailableError(this.reason);
   }
 }

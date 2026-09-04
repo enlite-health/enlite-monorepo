@@ -16,8 +16,22 @@
  *   - extensão (capítulo X): começa com "X", 3 a 5 caracteres depois (total 4-6), sem ponto
  *     ("XM6S30", "XE1JQ").
  * `02.Z` tem prefixo de 2 (não 4) — cai fora de toda alternativa e é REJEITADO.
+ *
+ * 🔧 F1.5-CORREÇÃO C1 (D261, parecer do CTO): D164 e D190 avisaram NOMINALMENTE que "o que se
+ * guarda num campo código pode ser `XX/YY&ZZ`" (cluster pós-coordenado da OMS: `/` liga um stem
+ * à sua extensão — `KA00.0/XS2R` —, `&` combina duas unidades — `6A02.Z&XS5W`). A regex original
+ * só aceitava UMA unidade — a violação vivia em silêncio. `ICD_UNIT_PATTERN` é a MESMA gramática
+ * de uma unidade isolada de antes (capítulo | stem | extensão); `ICD_CODE_PATTERN` aceita uma
+ * unidade sozinha OU uma cadeia de unidades separadas por `/`/`&`, sempre como STRING OPACA —
+ * a porta não interpreta semântica de cluster, só valida forma e preserva o valor INTEIRO
+ * (mesmo requisito do defeito da F0: nunca truncar). Um membro truncado (`02.Z`) dentro do
+ * cluster continua REJEITADO — `ICD_UNIT_PATTERN` é a mesma unidade de sempre, não uma unidade
+ * mais permissiva.
  */
-const ICD_CODE_PATTERN = /^([0-9]{2}|[A-Z]|[A-Z0-9]{4}(\.[A-Z0-9]{1,2})?|X[A-Z0-9]{3,5})$/;
+const ICD_UNIT_PATTERN = '(?:[0-9]{2}|[A-Z]|[A-Z0-9]{4}(?:\\.[A-Z0-9]{1,2})?|X[A-Z0-9]{3,5})';
+const ICD_CODE_PATTERN = new RegExp(`^${ICD_UNIT_PATTERN}(?:[/&]${ICD_UNIT_PATTERN})*$`);
+/** Separador de cluster pós-coordenado — usado só para derivar `.stem`, nunca na validação. */
+const CLUSTER_SEPARATOR_PATTERN = /[/&]/;
 
 export class InvalidIcdCodeError extends Error {
   constructor(rejected: unknown) {
@@ -49,6 +63,17 @@ export class IcdCode {
   /** O código INTEIRO — nunca um prefixo, nunca um sufixo. */
   get value(): string {
     return this.full;
+  }
+
+  /**
+   * C1 (D261) — o código BASE, sem extensão/cluster pós-coordenado. Para um código simples
+   * (sem `/` nem `&`) é o próprio valor. `IcdCode` continua tratando o cluster como STRING
+   * OPACA na validação — este getter é a única decomposição que a porta oferece, para quem
+   * precisar do código base (ex.: agrupar por stem) sem reimplementar o parsing do formato OMS.
+   */
+  get stem(): string {
+    const sepIndex = this.full.search(CLUSTER_SEPARATOR_PATTERN);
+    return sepIndex === -1 ? this.full : this.full.slice(0, sepIndex);
   }
 
   toString(): string {

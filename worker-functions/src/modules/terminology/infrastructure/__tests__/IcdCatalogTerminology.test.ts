@@ -261,6 +261,39 @@ describe('IcdCatalogTerminology', () => {
       expect(entity).toBeNull();
       expect(fetchSpy).not.toHaveBeenCalled();
     });
+
+    describe('F1.5-CORREÇÃO C1 (D261) — asOfRelease', () => {
+      it('com `asOfRelease`, NUNCA resolve o release corrente — usa direto o release pedido', async () => {
+        mockQuery.mockResolvedValueOnce({
+          rows: [{
+            icd_uri: 'uri-hist', code: '77', title_es: 'Histórico', title_en: null, chapter: '77',
+            release: '2026-01', kind: 'stem', is_leaf: true, parent_uri: null,
+          }],
+        });
+        const entity = await new IcdCatalogTerminology().getByUri('uri-hist', '2026-01');
+
+        expect(mockQuery).toHaveBeenCalledTimes(1); // 1 chamada só: nunca consultou icd_releases
+        const [sql, params] = mockQuery.mock.calls[0];
+        expect(sql).not.toMatch(/icd_releases/);
+        expect(params).toEqual(['uri-hist', '2026-01']);
+        expect(entity?.release).toBe('2026-01');
+      });
+
+      it('com `asOfRelease` que não existe (release nunca ingerido), devolve null — nunca lança', async () => {
+        mockQuery.mockResolvedValueOnce({ rows: [] });
+        const entity = await new IcdCatalogTerminology().getByUri('uri-x', '1999-01');
+        expect(entity).toBeNull();
+        expect(mockQuery).toHaveBeenCalledTimes(1);
+      });
+
+      it('com `asOfRelease`, schema/tabela ausente (42P01) ainda vira TerminologyUnavailableError — nunca erro cru', async () => {
+        const pgError = Object.assign(new Error('relation does not exist'), { code: '42P01' });
+        mockQuery.mockRejectedValueOnce(pgError);
+        await expect(new IcdCatalogTerminology().getByUri('uri-x', '2026-01')).rejects.toBeInstanceOf(
+          TerminologyUnavailableError,
+        );
+      });
+    });
   });
 
   describe('ancestorsOf', () => {
@@ -298,6 +331,30 @@ describe('IcdCatalogTerminology', () => {
         .mockResolvedValueOnce({ rows: [{ chapter: 'ZZ' }] })
         .mockResolvedValueOnce({ rows: [] }); // capítulo 'ZZ' não tem linha kind='chapter'
       await expect(new IcdCatalogTerminology().ancestorsOf('uri-z')).rejects.toThrow();
+    });
+
+    describe('F1.5-CORREÇÃO C1 (D261) — asOfRelease', () => {
+      it('com `asOfRelease`, NUNCA resolve o release corrente — as DUAS queries usam o release pedido', async () => {
+        mockQuery
+          .mockResolvedValueOnce({ rows: [{ chapter: '77' }] })
+          .mockResolvedValueOnce({ rows: [{ code: '77', title_es: 'Capítulo histórico', title_en: null }] });
+
+        const { chapter } = await new IcdCatalogTerminology().ancestorsOf('uri-hist', '2026-01');
+
+        expect(mockQuery).toHaveBeenCalledTimes(2); // nunca consultou icd_releases (seriam 3 chamadas)
+        expect(mockQuery.mock.calls[0][0]).not.toMatch(/icd_releases/);
+        expect(mockQuery.mock.calls[0][1]).toEqual(['uri-hist', '2026-01']);
+        expect(mockQuery.mock.calls[1][1]).toEqual(['77', '2026-01']);
+        expect(chapter).toEqual({ code: '77', title: 'Capítulo histórico' });
+      });
+
+      it('com `asOfRelease`, schema/tabela ausente (42P01) ainda vira TerminologyUnavailableError — nunca erro cru', async () => {
+        const pgError = Object.assign(new Error('relation does not exist'), { code: '42P01' });
+        mockQuery.mockRejectedValueOnce(pgError);
+        await expect(new IcdCatalogTerminology().ancestorsOf('uri-x', '2026-01')).rejects.toBeInstanceOf(
+          TerminologyUnavailableError,
+        );
+      });
     });
   });
 });

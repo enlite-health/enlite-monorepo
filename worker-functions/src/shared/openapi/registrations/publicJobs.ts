@@ -48,7 +48,9 @@ const ScheduleWeekSchema = z.object({
   is_coverage: z.boolean().openapi({ description: 'true quando o horário NÃO é a jornada de 1 pessoa — cobertura por turnos (≥3 turnos no mesmo dia) ou día completo/cama adentro (start===end). Nesse caso o card não exibe weekly_hours como "X h por semana".' }),
 }).openapi({ description: 'Tabela semanal estruturada derivada do JSONB `job_postings.schedule`.' });
 
-const PublicJobV1ItemSchema = registry.register(
+// Exportado (F1.5-CORREÇÃO C5, D261): o teste de contrato precisa varrer as chaves do schema de
+// RESPOSTA, não só o de filtro — antes só `PublicJobsV1QuerySchema` (filtro) era comparável.
+export const PublicJobV1ItemSchema = registry.register(
   'PublicJobV1Item',
   z.object({
     id: z.string().uuid().openapi({ example: '6f7c1d4a-9b2e-4c8a-9d5e-1f3b8a2c7e91' }),

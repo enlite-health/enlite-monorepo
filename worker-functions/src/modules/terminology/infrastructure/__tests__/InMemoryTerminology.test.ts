@@ -229,4 +229,77 @@ describe('InMemoryTerminology', () => {
       await expect(new InMemoryTerminology().ancestorsOf('qualquer-uri')).rejects.toThrow(TerminologyUnavailableError);
     });
   });
+
+  describe('F1.5-CORREÇÃO C1 (D261) — asOfRelease e opção `currentRelease` do construtor', () => {
+    const RELEASE_OLD = 'C1-OLD';
+    const RELEASE_NEW = 'C1-NEW';
+
+    const CAPITULO_OLD: DiagnosisEntity = {
+      uri: 'uri://c1/chapter',
+      code: IcdCode.parse('77'),
+      titleEs: 'Capítulo (old)',
+      titleEn: null,
+      chapter: '77',
+      release: RELEASE_OLD,
+      kind: 'chapter',
+      isLeaf: false,
+      parentUri: null,
+    };
+    const CAPITULO_NEW: DiagnosisEntity = {
+      uri: 'uri://c1/chapter', // MESMO uri, release diferente — 2 linhas em byUriRelease
+      code: IcdCode.parse('77'),
+      titleEs: 'Capítulo (new)',
+      titleEn: null,
+      chapter: '77',
+      release: RELEASE_NEW,
+      kind: 'chapter',
+      isLeaf: false,
+      parentUri: null,
+    };
+    const ORFAO: DiagnosisEntity = {
+      uri: 'uri://c1/orphan',
+      code: IcdCode.parse('ZO01'),
+      titleEs: 'Só existe no release antigo',
+      titleEn: null,
+      chapter: '77',
+      release: RELEASE_OLD,
+      kind: 'stem',
+      isLeaf: true,
+      parentUri: CAPITULO_OLD.uri,
+    };
+
+    function makeC1Fake(): InMemoryTerminology {
+      return new InMemoryTerminology([CAPITULO_OLD, CAPITULO_NEW, ORFAO], { currentRelease: RELEASE_NEW });
+    }
+
+    it('getByUri(uri) SEM asOfRelease, com `currentRelease` configurado, filtra pelo release corrente do construtor', async () => {
+      // ORFAO só existe em RELEASE_OLD; currentRelease do fake é RELEASE_NEW.
+      expect(await makeC1Fake().getByUri(ORFAO.uri)).toBeNull();
+    });
+
+    it('getByUri(uri, asOfRelease) IGNORA `currentRelease` e busca o release pedido', async () => {
+      const entity = await makeC1Fake().getByUri(ORFAO.uri, RELEASE_OLD);
+      expect(entity).toEqual(ORFAO);
+    });
+
+    it('getByUri(uri, asOfRelease) devolve null quando o par uri+release não existe', async () => {
+      expect(await makeC1Fake().getByUri(ORFAO.uri, 'RELEASE-INEXISTENTE')).toBeNull();
+    });
+
+    it('ancestorsOf(uri, asOfRelease) resolve o capítulo NO release pedido, mesmo não sendo o corrente', async () => {
+      const { chapter } = await makeC1Fake().ancestorsOf(ORFAO.uri, RELEASE_OLD);
+      expect(chapter).toEqual({ code: '77', title: CAPITULO_OLD.titleEs });
+    });
+
+    it('ancestorsOf(uri) SEM asOfRelease lança quando o código não existe no release corrente do construtor', async () => {
+      await expect(makeC1Fake().ancestorsOf(ORFAO.uri)).rejects.toThrow();
+    });
+
+    it('sem `currentRelease` no construtor (default), getByUri(uri) mantém o comportamento de SEMPRE — última entidade daquele uri, sem filtrar release', async () => {
+      // Sem currentRelease: cai no branch de retrocompatibilidade (this.byUri, não byUriRelease).
+      const semCurrentRelease = new InMemoryTerminology([CAPITULO_OLD, CAPITULO_NEW]);
+      const found = await semCurrentRelease.getByUri(CAPITULO_NEW.uri);
+      expect(found?.release).toBe(RELEASE_NEW); // CAPITULO_NEW foi o último inserido para esse uri
+    });
+  });
 });

@@ -29,6 +29,14 @@
  *   `string` crua vazando para quem consome a porta.
  * - D8: `limit` tem teto (`MAX_SEARCH_LIMIT`) — só este adaptador conhece o custo de uma busca
  *   maior, então só ele pode dizer não.
+ *
+ * 🔧 F1.5-CORREÇÃO C1 (D261, parecer do CTO) — `getByUri`/`ancestorsOf` ganham `asOfRelease?`.
+ * PROVADO EM TRANSAÇÃO: promover um release novo sem um `icd_uri` antigo fazia `getByUri(uri)`
+ * devolver `null` de forma INALCANÇÁVEL — a linha antiga continuava na tabela, sem API que a
+ * lesse. Sem `asOfRelease` (undefined): resolve o release CORRENTE, comportamento de hoje,
+ * retrocompatível. Com `asOfRelease`: filtra por AQUELE release, corrente ou não — nunca chama
+ * `resolveCurrentRelease()` (não precisa, e não deveria: pedir um release específico é uma
+ * pergunta diferente de "o que é buscável agora").
  */
 import type { Pool, PoolClient, QueryResultRow } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
@@ -204,14 +212,21 @@ export class IcdCatalogTerminology implements TerminologyPort {
     }
   }
 
-  async getByUri(uri: string): Promise<DiagnosisEntity | null> {
-    const currentRelease = await this.resolveCurrentRelease();
-    const { rows } = await this.pool.query<IcdEntityRow>(
-      `SELECT icd_uri, code, title_es, title_en, chapter, release, kind, is_leaf, parent_uri
-         FROM terminology.icd_entities
-        WHERE icd_uri = $1 AND release = $2`,
-      [uri, currentRelease],
-    );
+  async getByUri(uri: string, asOfRelease?: string): Promise<DiagnosisEntity | null> {
+    const release = asOfRelease ?? (await this.resolveCurrentRelease());
+    let rows: IcdEntityRow[];
+    try {
+      ({ rows } = await this.pool.query<IcdEntityRow>(
+        `SELECT icd_uri, code, title_es, title_en, chapter, release, kind, is_leaf, parent_uri
+           FROM terminology.icd_entities
+          WHERE icd_uri = $1 AND release = $2`,
+        [uri, release],
+      ));
+    } catch (err) {
+      // C1: mesmo com release explícito, schema/tabela ausente continua sendo "catálogo
+      // indisponível" (D3) — nunca um erro cru do driver.
+      throw toUnavailableError(err, 'error de infraestructura del catálogo de diagnósticos');
+    }
     const row = rows[0];
     if (!row) return null;
     return {
@@ -227,12 +242,17 @@ export class IcdCatalogTerminology implements TerminologyPort {
     };
   }
 
-  async ancestorsOf(uri: string): Promise<{ chapter: Chapter; block?: Block }> {
-    const currentRelease = await this.resolveCurrentRelease();
-    const { rows } = await this.pool.query<{ chapter: string }>(
-      `SELECT chapter FROM terminology.icd_entities WHERE icd_uri = $1 AND release = $2`,
-      [uri, currentRelease],
-    );
+  async ancestorsOf(uri: string, asOfRelease?: string): Promise<{ chapter: Chapter; block?: Block }> {
+    const release = asOfRelease ?? (await this.resolveCurrentRelease());
+    let rows: Array<{ chapter: string }>;
+    try {
+      ({ rows } = await this.pool.query<{ chapter: string }>(
+        `SELECT chapter FROM terminology.icd_entities WHERE icd_uri = $1 AND release = $2`,
+        [uri, release],
+      ));
+    } catch (err) {
+      throw toUnavailableError(err, 'error de infraestructura del catálogo de diagnósticos');
+    }
     const found = rows[0];
     if (!found) throw new TerminologyEntityNotFoundError(uri);
 
@@ -240,7 +260,7 @@ export class IcdCatalogTerminology implements TerminologyPort {
       `SELECT code, title_es, title_en
          FROM terminology.icd_entities
         WHERE kind = 'chapter' AND code = $1 AND release = $2`,
-      [found.chapter, currentRelease],
+      [found.chapter, release],
     );
     const chapterRow = chapterRows[0];
     if (!chapterRow) throw new TerminologyEntityNotFoundError(uri);
