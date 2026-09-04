@@ -1,30 +1,37 @@
 /**
  * 411 — A policy de país de `patients` decide pelo IAM SEM exigir privilégio do chamador em `iam`,
- * e recusa EM VOZ ALTA a sessão sem identidade nenhuma. Banco real.
+ * recusa EM VOZ ALTA a sessão sem identidade, e só honra as GUCs de sessão para roles do APP.
+ * Banco real, duas roles criadas pelo teste:
  *
- * A role deste teste imita `enlite_mcp_ro` (o conector claude.ai do CEO, criado fora das
- * migrations por `scripts/create-mcp-ro-role.sql`): SELECT em algumas colunas de `patients`,
- * ZERO privilégio em `iam`. Até a 411, qualquer leitura dela em `patients` morria com
- * `permission denied for schema iam` — e uma sessão sem contexto recebia conjunto VAZIO.
+ *   APP_SEM_IAM  — membro de `app_runtime` com NOINHERIT: conta como role do app
+ *                  (`pg_has_role(..., 'MEMBER')`), mas NÃO herda privilégio nenhum em `iam`.
+ *                  É a prova da CLASSE: a decisão roda com o privilégio da dona, não do chamador.
+ *   FORA_DO_APP  — imita `enlite_mcp_ro` (conector claude.ai do CEO, criado fora das migrations
+ *                  por `scripts/create-mcp-ro-role.sql`): SELECT em colunas de `patients`, zero
+ *                  em `iam`, e NÃO é membro de role do app. Achado do lex (04/09): antes da 411
+ *                  ela era fail-closed por ACIDENTE (`permission denied for schema iam`); uma
+ *                  versão da 411 sem gate de role a deixaria declarar o próprio país por
+ *                  `set_config` — e ver.
  *
  * O que cada teste prova:
  *   1. sem identidade → erro NOMEADO (`rls_session_without_identity`, 42501). Nunca vazio,
- *      nunca `permission denied for schema iam`. É o controle NEGATIVO em voz alta.
- *   2. só país na sessão → vê o país (ramo 2, inline; a função nem precisa ser chamada).
- *   3. uid em grupo com escopo BR, role SEM grant em iam → VÊ BR. É o controle POSITIVO da
- *      classe: a decisão roda com o privilégio da dona, não do chamador.
+ *      nunca `permission denied for schema iam`. Controle NEGATIVO em voz alta.
+ *   2. só país na sessão → vê o país (ramo 2, agora dentro da função).
+ *   3. uid em grupo com escopo BR, role SEM privilégio em iam → VÊ BR. Controle POSITIVO da classe.
  *   4. vínculo REMOVIDO (`removed_at`) deixa de dar visão — a 274 ignorava `removed_at`.
- *   5. a função é executável por PUBLIC (sem isso, o teste 3 seria "permission denied for
- *      function", que é o mesmo defeito com outra cara).
+ *   5. a função é executável por PUBLIC e é SECURITY DEFINER (mecanismo, não só efeito).
+ *   6. role FORA do app que declara país e uid por set_config → erro NOMEADO
+ *      (`rls_role_without_session_identity`), nunca uma linha. Condição 2 do lex.
  */
 import { Pool, PoolClient } from 'pg';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 
-describe('411 — policy de país via função SECDEF + recusa sem identidade (banco real)', () => {
+describe('411 — policy de país via função SECDEF, gate de role e recusa sem identidade (banco real)', () => {
   let pool: Pool;
-  const ROLE = 'e2e_ro_sem_iam_411';
+  const APP_SEM_IAM = 'e2e_app_sem_iam_411';
+  const FORA_DO_APP = 'e2e_fora_do_app_411';
   const TENANT = '00000000-0000-0000-0000-000000000001';
   const STAFF_UID = 'rls-411-staff-uid';
   const IDS = {
@@ -43,15 +50,26 @@ describe('411 — policy de país via função SECDEF + recusa sem identidade (b
     await p.query(`DELETE FROM patients WHERE id = ANY($1)`, [[IDS.patientAR, IDS.patientBR]]);
   }
 
+  async function dropRole(p: Pool, role: string): Promise<void> {
+    await p.query(`REVOKE ALL ON patients FROM ${role}`).catch(() => {});
+    await p.query(`REVOKE USAGE ON SCHEMA public FROM ${role}`).catch(() => {});
+    await p.query(`DROP ROLE IF EXISTS ${role}`);
+  }
+
   beforeAll(async () => {
     pool = new Pool({ connectionString: DATABASE_URL });
     await cleanup(pool);
 
-    // Role de leitura externa: colunas nomeadas em patients, NADA em iam (como a mcp_ro).
-    await pool.query(`DROP ROLE IF EXISTS ${ROLE}`);
-    await pool.query(`CREATE ROLE ${ROLE} NOLOGIN NOBYPASSRLS`);
-    await pool.query(`GRANT USAGE ON SCHEMA public TO ${ROLE}`);
-    await pool.query(`GRANT SELECT (id, country, status) ON patients TO ${ROLE}`);
+    await dropRole(pool, APP_SEM_IAM);
+    await dropRole(pool, FORA_DO_APP);
+    // Role do app SEM privilégio: membro de app_runtime, mas NOINHERIT — não herda nada de iam.
+    await pool.query(`CREATE ROLE ${APP_SEM_IAM} NOLOGIN NOBYPASSRLS NOINHERIT IN ROLE app_runtime`);
+    await pool.query(`GRANT USAGE ON SCHEMA public TO ${APP_SEM_IAM}`);
+    await pool.query(`GRANT SELECT (id, country, status) ON patients TO ${APP_SEM_IAM}`);
+    // Role de leitura externa (como a mcp_ro): colunas nomeadas em patients, NADA em iam, fora do app.
+    await pool.query(`CREATE ROLE ${FORA_DO_APP} NOLOGIN NOBYPASSRLS`);
+    await pool.query(`GRANT USAGE ON SCHEMA public TO ${FORA_DO_APP}`);
+    await pool.query(`GRANT SELECT (id, country, status) ON patients TO ${FORA_DO_APP}`);
 
     await pool.query(
       `INSERT INTO patients (id, clickup_task_id, first_name, last_name, country) VALUES
@@ -71,20 +89,20 @@ describe('411 — policy de país via função SECDEF + recusa sem identidade (b
 
   afterAll(async () => {
     await cleanup(pool);
-    await pool.query(`REVOKE ALL ON patients FROM ${ROLE}`);
-    await pool.query(`REVOKE USAGE ON SCHEMA public FROM ${ROLE}`);
-    await pool.query(`DROP ROLE IF EXISTS ${ROLE}`);
+    await dropRole(pool, APP_SEM_IAM);
+    await dropRole(pool, FORA_DO_APP);
     await pool.end();
   });
 
   async function asRole<T>(
+    role: string,
     ctx: { userCountry?: string; userUid?: string },
     fn: (client: PoolClient) => Promise<T>,
   ): Promise<T> {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query(`SET LOCAL ROLE ${ROLE}`);
+      await client.query(`SET LOCAL ROLE ${role}`);
       if (ctx.userCountry) await client.query(`SELECT set_config('app.user_country', $1, true)`, [ctx.userCountry]);
       if (ctx.userUid) await client.query(`SELECT set_config('app.user_uid', $1, true)`, [ctx.userUid]);
       return await fn(client);
@@ -93,45 +111,60 @@ describe('411 — policy de país via função SECDEF + recusa sem identidade (b
       client.release();
     }
   }
+  const listar = (role: string, ctx: { userCountry?: string; userUid?: string }) =>
+    asRole(role, ctx, async (c) => (await c.query(listTestPatients, [[IDS.patientAR, IDS.patientBR]])).rows);
 
-  it('0. a role NÃO tem privilégio em iam (premissa do teste, medida)', async () => {
-    const r = await pool.query(`SELECT has_schema_privilege($1, 'iam', 'USAGE') AS usage`, [ROLE]);
-    expect(r.rows[0].usage).toBe(false);
+  it('0. premissas medidas: nenhuma das duas roles tem privilégio em iam; só uma é do app', async () => {
+    const r = await pool.query(
+      `SELECT has_schema_privilege($1, 'iam', 'USAGE') AS app_usage, pg_has_role($1, 'app_runtime', 'MEMBER') AS app_member,
+              has_schema_privilege($2, 'iam', 'USAGE') AS fora_usage, pg_has_role($2, 'app_runtime', 'MEMBER') AS fora_member`,
+      [APP_SEM_IAM, FORA_DO_APP],
+    );
+    expect(r.rows[0]).toEqual({ app_usage: false, app_member: true, fora_usage: false, fora_member: false });
   });
 
-  it('1. sem identidade nenhuma → erro NOMEADO 42501, nunca vazio, nunca "permission denied for schema iam"', async () => {
-    const q = asRole({}, (c) => c.query(listTestPatients, [[IDS.patientAR, IDS.patientBR]]));
+  it('1. role do app sem identidade nenhuma → erro NOMEADO 42501, nunca vazio, nunca "permission denied for schema iam"', async () => {
+    const q = listar(APP_SEM_IAM, {});
     await expect(q).rejects.toMatchObject({ code: '42501' });
     await expect(q).rejects.toThrow(/rls_session_without_identity/);
     await expect(q).rejects.not.toThrow(/schema iam/);
   });
 
-  it('2. só o país na sessão → vê o país (ramo 2 inline, sem tocar em iam)', async () => {
-    const rows = await asRole({ userCountry: 'AR' }, async (c) => (await c.query(listTestPatients, [[IDS.patientAR, IDS.patientBR]])).rows);
-    expect(rows.map((r) => r.country)).toEqual(['AR']);
+  it('2. role do app só com o país na sessão → vê o país', async () => {
+    expect((await listar(APP_SEM_IAM, { userCountry: 'AR' })).map((r) => r.country)).toEqual(['AR']);
   });
 
-  it('3. controle POSITIVO da classe: uid em grupo com escopo BR, role sem grant em iam → VÊ BR', async () => {
+  it('3. controle POSITIVO da classe: uid em grupo com escopo BR, role sem privilégio em iam → VÊ BR', async () => {
     await pool.query(`INSERT INTO iam.user_groups (user_id, group_id, tenant_id) VALUES ($1, $2, $3)`, [STAFF_UID, IDS.group, TENANT]);
-    await pool.query(`INSERT INTO iam.group_country_scopes (id, group_id, country, granted_by, reason) VALUES ($1, $2, 'BR', 'rls-411-admin', 'e2e 411: controle positivo')`, [IDS.scope, IDS.group]);
-
-    const rows = await asRole({ userCountry: 'AR', userUid: STAFF_UID }, async (c) => (await c.query(listTestPatients, [[IDS.patientAR, IDS.patientBR]])).rows);
-    expect(rows.map((r) => r.country)).toEqual(['AR', 'BR']);
+    await pool.query(
+      `INSERT INTO iam.group_country_scopes (id, group_id, country, granted_by, reason) VALUES ($1, $2, 'BR', 'rls-411-admin', 'e2e 411: controle positivo')`,
+      [IDS.scope, IDS.group],
+    );
+    expect((await listar(APP_SEM_IAM, { userCountry: 'AR', userUid: STAFF_UID })).map((r) => r.country)).toEqual(['AR', 'BR']);
   });
 
   it('4. vínculo REMOVIDO (removed_at) deixa de dar visão cross-país — a 274 ignorava isso', async () => {
     await pool.query(`UPDATE iam.user_groups SET removed_at = now() WHERE user_id = $1 AND group_id = $2`, [STAFF_UID, IDS.group]);
-    const rows = await asRole({ userCountry: 'AR', userUid: STAFF_UID }, async (c) => (await c.query(listTestPatients, [[IDS.patientAR, IDS.patientBR]])).rows);
-    expect(rows.map((r) => r.country)).toEqual(['AR']);
+    expect((await listar(APP_SEM_IAM, { userCountry: 'AR', userUid: STAFF_UID })).map((r) => r.country)).toEqual(['AR']);
   });
 
   it('5. a função é executável por PUBLIC e é SECURITY DEFINER (o mecanismo, não só o efeito)', async () => {
     const r = await pool.query(
-      `SELECT has_function_privilege($1, 'iam.session_may_see_country(text)', 'EXECUTE') AS exec,
+      `SELECT has_function_privilege($1, 'iam.session_may_see_country(text, name, boolean)', 'EXECUTE') AS exec,
               (SELECT prosecdef FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                 WHERE n.nspname = 'iam' AND p.proname = 'session_may_see_country') AS secdef`,
-      [ROLE],
+      [FORA_DO_APP],
     );
     expect(r.rows[0]).toEqual({ exec: true, secdef: true });
+  });
+
+  it('6. role FORA do app que declara o próprio país (e até o uid do gestor) por set_config → erro NOMEADO, nunca uma linha', async () => {
+    // Vínculo vivo de novo: se o gate falhar, o uid forjado abriria BR — o teste tem de ter algo a proteger.
+    await pool.query(`UPDATE iam.user_groups SET removed_at = NULL WHERE user_id = $1 AND group_id = $2`, [STAFF_UID, IDS.group]);
+    for (const ctx of [{}, { userCountry: 'BR' }, { userCountry: 'AR', userUid: STAFF_UID }]) {
+      const q = listar(FORA_DO_APP, ctx);
+      await expect(q).rejects.toMatchObject({ code: '42501' });
+      await expect(q).rejects.toThrow(/rls_role_without_session_identity/);
+    }
   });
 });

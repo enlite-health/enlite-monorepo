@@ -8,7 +8,7 @@
 -- estado observável é o COMMENT ON POLICY.
 
 DROP POLICY IF EXISTS patients_country_isolation ON patients;
--- Texto IDÊNTICO ao da 411 (claim + grant pela função SECDEF, recusa em voz alta sem identidade).
+-- Texto IDÊNTICO ao da 411 (claim + grant pela função SECDEF com p_honor_claim = true, gate de role, recusa em voz alta).
 -- Se a 411 mudar, este arquivo muda junto — é a mesma policy em três lugares (411 explica).
 CREATE POLICY patients_country_isolation ON patients
   FOR ALL
@@ -17,8 +17,7 @@ CREATE POLICY patients_country_isolation ON patients
       NULLIF(current_setting('app.system_context', true), '') IS NOT NULL
       AND pg_has_role(current_user, 'app_system', 'MEMBER')
     )
-    OR country = current_setting('app.user_country', true)
-    OR iam.session_may_see_country(patients.country)
+    OR iam.session_may_see_country(patients.country, current_user, true)
   );
 COMMENT ON POLICY patients_country_isolation ON patients IS
   'REVERTIDA para a policy da 411 (claim + grant pela função iam.session_may_see_country) via scripts/rollback/278_down.sql.';

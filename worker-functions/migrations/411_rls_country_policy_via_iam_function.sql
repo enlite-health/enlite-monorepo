@@ -25,9 +25,15 @@
 --      no app) porque a policy é o único lugar que TODA leitura de `patients` atravessa, seja qual for
 --      o caminho — pool, MCP, psql. Sessão com identidade parcial (só país, só uid) NÃO levanta: o
 --      ramo correspondente decide, como antes.
---   3. Os ramos 1 (sistema) e 2 (país da sessão) ficam INLINE na policy, como na 274: o ramo 1 usa
---      `pg_has_role(current_user, ...)`, e dentro de SECDEF `current_user` seria a DONA, não o
---      chamador (armadilha provada no gate do #223). Comportamento dos ramos 1 e 2: IDÊNTICO.
+--   3. O ramo 1 (sistema) fica INLINE na policy, como na 274. Os ramos 2 (claim de país) e 3
+--      (grant) vão para a função, que recebe `current_user` DA POLICY como argumento — dentro de
+--      SECDEF `current_user` seria a DONA, não o chamador (armadilha provada no gate do #223) — e
+--      só os honra para roles do app (`app_runtime`/`app_system`). Achado do lex em 04/09: o ramo
+--      2 da 274 não tinha gate de role, e qualquer role de SQL livre (o conector do CEO) podia
+--      declarar o próprio país com `set_config` — antes da 411 ela era fail-closed POR ACIDENTE
+--      (`permission denied for schema iam`); sem o gate, a 411 a deixaria pior que antes.
+--      Role fora do app → erro 42501 nomeado (`rls_role_without_session_identity`).
+--      Comportamento para as roles do app: IDÊNTICO ao da 274 (mais as restrições abaixo).
 --
 -- O QUE NÃO MUDA (de propósito):
 --   • Quem atravessa a fronteira de país continua sendo decidido pelos grupos (`group_country_scopes`)
@@ -44,18 +50,25 @@
 --   DUAS flags de ativo e a policy exige as duas. É o predicado da 276 + o da 274, o mais estrito.
 --
 -- FONTE ÚNICA: a policy é (re)criada em TRÊS lugares — aqui, `scripts/rollout/278_rls_country_grant_only.sql`
--- (flip grant-only, F14) e `scripts/rollback/278_down.sql`. Os três passam a usar ESTA função
--- no ramo de grant; o que muda entre eles é só a presença do ramo 2 (claim de país). Foi assim que
--- a suíte e2e inteira reinstalou a policy velha por cima da 411 (o rollback da 278 tinha o texto da 274).
+-- (flip grant-only, F14) e `scripts/rollback/278_down.sql`. Os três passam a usar ESTA função;
+-- o que muda entre eles é só `p_honor_claim` (278 = false: grant-only). Foi assim que a suíte e2e
+-- inteira reinstalou a policy velha por cima da 411 (o rollback da 278 tinha o texto da 274).
 --
 -- ROLLBACK: reaplicar o bloco "4. Policy da 271 re-apontada" da 274 e `DROP FUNCTION
--- iam.session_may_see_country(text)`. Sem dado envolvido.
+-- iam.session_may_see_country(text, name, boolean)`. Sem dado envolvido.
 --
 -- PROVA: `tests/e2e/country-rls-policies.test.ts` (testes 4 e 5c passam a esperar o erro nomeado) e
--- `tests/e2e/rls-policy-session-identity.e2e.test.ts` (role SEM grant em iam: erro nomeado, nunca
--- `permission denied for schema iam`, nunca vazio; com uid em grupo com escopo, VÊ — controle positivo).
+-- `tests/e2e/rls-policy-session-identity.e2e.test.ts` (role do app SEM privilégio em iam: erro nomeado
+-- sem identidade, nunca vazio; com uid em grupo com escopo, VÊ — controle positivo; role FORA do app
+-- que declara o próprio país/uid por set_config: erro nomeado, nunca uma linha).
 
-CREATE OR REPLACE FUNCTION iam.session_may_see_country(p_country TEXT)
+-- A policy sai ANTES da função (ela depende da função); é recriada no fim, apontando para a nova.
+-- A assinatura de 1 argumento é de um rascunho desta migration: não existe em stage/prod, mas
+-- CREATE OR REPLACE com outra assinatura criaria uma sobrecarga — apaga se houver.
+DROP POLICY IF EXISTS patients_country_isolation ON patients;
+DROP FUNCTION IF EXISTS iam.session_may_see_country(TEXT);
+
+CREATE OR REPLACE FUNCTION iam.session_may_see_country(p_country TEXT, p_role NAME, p_honor_claim BOOLEAN)
 RETURNS BOOLEAN
 LANGUAGE plpgsql
 STABLE
@@ -67,6 +80,16 @@ DECLARE
   v_country TEXT := NULLIF(current_setting('app.user_country', true), '');
   v_system  TEXT := NULLIF(current_setting('app.system_context', true), '');
 BEGIN
+  -- Gate por ROLE, recebido da policy (`current_user` lá é o chamador; aqui dentro seria a dona).
+  -- Só as roles do app carregam identidade de sessão VERIFICADA (o middleware seta as GUCs a
+  -- partir do token). Qualquer outra role — mcp_ro, psql, uma role futura — pode rodar
+  -- `SELECT set_config('app.user_country', 'BR', true)` e declarar o próprio país: para ela a
+  -- GUC não é identidade, é auto-declaração. Recusa em voz alta, nunca "vazio" nem "confiar".
+  IF NOT (pg_has_role(p_role, 'app_runtime', 'MEMBER') OR pg_has_role(p_role, 'app_system', 'MEMBER')) THEN
+    RAISE EXCEPTION 'rls_role_without_session_identity: a role % não carrega identidade de sessão verificada (não é app_runtime nem app_system) — a policy de país de patients não decide para ela', p_role
+      USING ERRCODE = '42501';
+  END IF;
+
   IF v_uid IS NULL AND v_country IS NULL AND v_system IS NULL THEN
     -- Sessão sem identidade: NÃO é "zero pacientes", é "ninguém está perguntando".
     -- Mensagem sem dado pessoal; código 42501 (insufficient_privilege) — a mesma classe que
@@ -75,12 +98,17 @@ BEGIN
       USING ERRCODE = '42501';
   END IF;
 
+  -- Ramo 2 (claim de país do IdP). A 278 (grant-only, F14) chama com p_honor_claim = false.
+  IF p_honor_claim AND v_country IS NOT NULL AND v_country = p_country THEN
+    RETURN TRUE;
+  END IF;
+
   IF v_uid IS NULL THEN
     RETURN FALSE;
   END IF;
 
-  -- O predicado mais ESTRITO entre a 274 (is_active) e a 276 (status, grupo não arquivado,
-  -- tenant): `users` tem duas flags de "ativo" e a policy exige as duas — fail-closed.
+  -- Ramo 3: o predicado mais ESTRITO entre a 274 (is_active) e a 276 (status, grupo não
+  -- arquivado, tenant): `users` tem duas flags de "ativo" e a policy exige as duas — fail-closed.
   RETURN EXISTS (
     SELECT 1
     FROM iam.user_groups ug
@@ -102,14 +130,15 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION iam.session_may_see_country(TEXT) IS
-  '411: 3º ramo da policy de país de patients (uid em grupo com escopo), avaliado com o privilégio da dona de iam.* — e recusa 42501 quando a sessão não tem identidade nenhuma.';
+COMMENT ON FUNCTION iam.session_may_see_country(TEXT, NAME, BOOLEAN) IS
+  '411: ramos 2 (claim, se p_honor_claim) e 3 (uid em grupo com escopo) da policy de país de patients, avaliados com o privilégio da dona de iam.*; recusa 42501 nomeada para role fora do app e para sessão sem identidade.';
 
 -- EXECUTE a PUBLIC é o default de função nova; explícito porque é DECISÃO: toda role que a
--- policy avalie (app_runtime, app_system, enlite_mcp_ro, ...) precisa poder chamá-la.
-GRANT EXECUTE ON FUNCTION iam.session_may_see_country(TEXT) TO PUBLIC;
+-- policy avalie precisa poder chamá-la — e é a própria função que recusa as que não são do app.
+-- Chamada direta por outra role devolve só boolean (ou o erro); não expõe linha nenhuma.
+GRANT EXECUTE ON FUNCTION iam.session_may_see_country(TEXT, NAME, BOOLEAN) TO PUBLIC;
 
--- ── Policy: ramos 1 e 2 inline (idênticos à 274), ramo 3 pela função ─────────────────
+-- ── Policy: ramo 1 (sistema) inline como na 274; ramos 2 e 3 pela função, com o gate de role ─
 DROP POLICY IF EXISTS patients_country_isolation ON patients;
 CREATE POLICY patients_country_isolation ON patients
   FOR ALL
@@ -118,6 +147,5 @@ CREATE POLICY patients_country_isolation ON patients
       NULLIF(current_setting('app.system_context', true), '') IS NOT NULL
       AND pg_has_role(current_user, 'app_system', 'MEMBER')
     )
-    OR country = current_setting('app.user_country', true)
-    OR iam.session_may_see_country(patients.country)
+    OR iam.session_may_see_country(patients.country, current_user, true)
   );

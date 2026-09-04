@@ -15,7 +15,7 @@
 -- O QUE MUDA em relação à 274/271 (mesma tabela `patients`; satélites e
 -- vacancy_relink_audit seguem por EXISTS e NÃO precisam mudar):
 --   ANTES: sistema | country = claim (app.user_country) | grant vivo via user_groups
---   AGORA: sistema | iam.session_may_see_country(country) — grant pela função SECDEF da 411
+--   AGORA: sistema | iam.session_may_see_country(country, current_user, false) — grant-only pela função SECDEF da 411
 --
 -- Por que resolver o grant DENTRO do banco (lex C3): a role confinada (`app_runtime`)
 -- NUNCA afirma os próprios países. Se a policy lesse um GUC array vindo do app
@@ -79,7 +79,7 @@ BEGIN
           NULLIF(current_setting('app.system_context', true), '') IS NOT NULL
           AND pg_has_role(current_user, 'app_system', 'MEMBER')
         )
-        OR iam.session_may_see_country(patients.country)
+        OR iam.session_may_see_country(patients.country, current_user, false)
       )
   $p$;
   EXECUTE $c$
