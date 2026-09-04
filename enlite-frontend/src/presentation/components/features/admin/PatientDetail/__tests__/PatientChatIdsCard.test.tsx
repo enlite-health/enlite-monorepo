@@ -10,6 +10,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import { patientDetailFixture, patientDetailMinimal } from './patientDetailFixture';
 import type { PatientChatRoleSpec } from '@domain/value-objects/patientChatRole';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 
 /**
  * O CATÁLOGO vem da API, não de uma constante do painel — é a mudança da
@@ -444,5 +446,42 @@ describe('PatientChatIdsCard', () => {
     fireEvent.click(screen.getByTestId('chat-ids-backdrop'));
 
     await waitFor(() => expect(screen.queryByTestId('chat-ids-drawer')).toBeNull(), { timeout: 2000 });
+  });
+});
+
+// ── D269 — write-gate no botão "Vincular" (PUT /patients/:id/chat-ids → patient:write) ──
+
+function comEnforcement(permissions: string[], enforcement: AuthzContract['enforcement']) {
+  useAdminAuthStore.setState({
+    authzStatus: 'ready',
+    authz: {
+      uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {}, enforcement,
+    } as AuthzContract,
+  });
+}
+
+describe('PatientChatIdsCard — write-gate (D269)', () => {
+  beforeEach(() => {
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+  });
+
+  it('🔴 enforcement=on, sem patient:write: chat-ids-edit-btn SOME', async () => {
+    comEnforcement([], 'on');
+    render(<PatientChatIdsCard patient={patientDetailFixture} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
+    expect(screen.queryByTestId('chat-ids-edit-btn')).not.toBeInTheDocument();
+  });
+
+  it('enforcement=on, com patient:write: chat-ids-edit-btn existe', async () => {
+    comEnforcement(['patient:write'], 'on');
+    render(<PatientChatIdsCard patient={patientDetailFixture} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
+    expect(screen.getByTestId('chat-ids-edit-btn')).toBeInTheDocument();
+  });
+
+  it('enforcement OFF (ou ausente): chat-ids-edit-btn existe mesmo sem célula', async () => {
+    render(<PatientChatIdsCard patient={patientDetailFixture} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
+    expect(screen.getByTestId('chat-ids-edit-btn')).toBeInTheDocument();
   });
 });

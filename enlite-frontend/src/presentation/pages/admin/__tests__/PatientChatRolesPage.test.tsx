@@ -10,6 +10,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import type { PatientChatRoleSpec } from '@domain/value-objects/patientChatRole';
 import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 
 const translations = ptBR as Record<string, any>;
 
@@ -323,8 +325,92 @@ describe('PatientChatRolesPage', () => {
     expect(await screen.findByTestId('chat-roles-load-error')).toHaveTextContent('connection refused');
   });
 
+  it('falha ao carregar SEM Error (rejeição crua) ainda vira texto na tela', async () => {
+    listPatientChatRoles.mockRejectedValue('sem message');
+    render(<PatientChatRolesPage />);
+
+    expect(await screen.findByTestId('chat-roles-load-error')).toHaveTextContent('sem message');
+  });
+
+  it('resposta sem `usage` não quebra — cai em objeto vazio', async () => {
+    listPatientChatRoles.mockResolvedValue({ roles: ROLES, usage: undefined });
+    await renderPage();
+
+    // sem entrada de uso, a contagem cai no fallback 0
+    expect(screen.getByTestId('chat-role-usage-FAMILY')).toHaveTextContent('0');
+  });
+
+  it('papel sem entrada no mapa de uso mostra contagem 0 (apagar, linha e modal de edição)', async () => {
+    const semUso = spec('NEW_ROLE', { displayOrder: 4 });
+    listPatientChatRoles.mockResolvedValue({ roles: [...ROLES, semUso], usage: USAGE });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await renderPage();
+
+    expect(screen.getByTestId('chat-role-usage-NEW_ROLE')).toHaveTextContent('0');
+
+    fireEvent.click(screen.getByTestId('chat-role-edit-NEW_ROLE'));
+    expect(screen.getByTestId('chat-role-save')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('chat-role-delete-NEW_ROLE'));
+    await waitFor(() => expect(deletePatientChatRole).toHaveBeenCalledWith('NEW_ROLE'));
+    vi.mocked(window.confirm).mockRestore();
+  });
+
   it('nada renderiza chave de i18n crua', async () => {
     await renderPage();
     expect(screen.queryByText(/admin\.patientChatRoles/)).toBeNull();
+  });
+});
+
+// ── D269 — write-gate (POST/PATCH/DELETE /patient-chat-roles → patient:write) ──
+// "Nuevo rol" é o atom `Button` → vira `ActionButton`. As três ações de linha
+// (editar/(des)ativar/apagar) são `<button>` cru → `useActionGate` esconde a
+// `<div>` inteira das três de uma vez.
+
+function comEnforcement(permissions: string[], enforcement: AuthzContract['enforcement']) {
+  useAdminAuthStore.setState({
+    authzStatus: 'ready',
+    authz: {
+      uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {}, enforcement,
+    } as AuthzContract,
+  });
+}
+
+describe('PatientChatRolesPage — write-gate (D269)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    adminProfile.role = 'admin';
+    listPatientChatRoles.mockResolvedValue({ roles: ROLES, usage: USAGE });
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+  });
+
+  it('🔴 enforcement=on, sem patient:write: chat-role-new-btn e as ações de linha SOMEM', async () => {
+    comEnforcement([], 'on');
+    render(<PatientChatRolesPage />);
+    await screen.findByTestId('chat-roles-table');
+
+    expect(screen.queryByTestId('chat-role-new-btn')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('chat-role-edit-FAMILY')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('chat-role-toggle-FAMILY')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('chat-role-delete-FAMILY')).not.toBeInTheDocument();
+  });
+
+  it('enforcement=on, com patient:write: chat-role-new-btn e as ações de linha existem', async () => {
+    comEnforcement(['patient:write'], 'on');
+    render(<PatientChatRolesPage />);
+    await screen.findByTestId('chat-roles-table');
+
+    expect(screen.getByTestId('chat-role-new-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-role-edit-FAMILY')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-role-toggle-FAMILY')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-role-delete-FAMILY')).toBeInTheDocument();
+  });
+
+  it('enforcement OFF (ou ausente): tudo existe mesmo sem célula', async () => {
+    render(<PatientChatRolesPage />);
+    await screen.findByTestId('chat-roles-table');
+
+    expect(screen.getByTestId('chat-role-new-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-role-edit-FAMILY')).toBeInTheDocument();
   });
 });

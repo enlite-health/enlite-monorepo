@@ -29,6 +29,10 @@ interface MoveToMenuProps {
  * Alternativa de clique ao arrasto: um botão "Mover a…" que abre um menu com as
  * colunas de destino válidas (excluindo a atual). Preciso em boards com muitas
  * colunas, onde acertar a coluna arrastando é difícil.
+ *
+ * D269: sem `funnel:write` este componente nem é montado — o `KanbanCard`
+ * (chamador) decide isso, não passa `disabled` pra cá (ver `moveDisabled` em
+ * `KanbanCard.tsx` — some, não desabilita).
  */
 export function MoveToMenu({ currentStage, onMove }: MoveToMenuProps) {
   const { t } = useTranslation();

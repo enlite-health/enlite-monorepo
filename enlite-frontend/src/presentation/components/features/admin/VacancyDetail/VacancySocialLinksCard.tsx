@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 
 const CHANNELS = ['facebook', 'instagram', 'whatsapp', 'linkedin', 'site'] as const;
@@ -167,7 +167,10 @@ export function VacancySocialLinksCard({
                   </div>
                 </>
               ) : (
-                <Button
+                // POST /vacancies/:id/social-links → generateSocialLink → vacancy:write.
+                <ActionButton
+                  resource="vacancy"
+                  action="write"
                   variant="outline"
                   size="sm"
                   onClick={() => handleGenerate(channel)}
@@ -178,7 +181,7 @@ export function VacancySocialLinksCard({
                   {isLoading
                     ? t('admin.vacancyDetail.socialLinksCard.generating')
                     : t('admin.vacancyDetail.socialLinksCard.generate')}
-                </Button>
+                </ActionButton>
               )}
             </div>
           );

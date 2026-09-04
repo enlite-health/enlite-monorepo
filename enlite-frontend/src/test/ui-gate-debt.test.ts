@@ -10,9 +10,12 @@
  * Consumo detectado (estático, via grep — mesmo espírito de
  * `permission-parity.test.ts`):
  *  - `useHasCell('recurso', 'write'|'delete')` literal — a ação exata;
- *  - `<ActionButton resource="recurso" ...>` — SEMPRE consome `:write`
- *    (ActionButton.tsx: "célula `:write` autoriza esta ação");
- *  - `<Gated resource="recurso" ... atLeast="write" ...>` — idem.
+ *  - `<ActionButton resource="recurso" ...>` — consome `:write` por padrão,
+ *    ou `:${action}` quando o call site passa `action="delete"|"execute"|
+ *    "send"|"disable"` (D269 — `ActionButton` aceita ação além de escrita);
+ *  - `<Gated resource="recurso" ... atLeast="write" ...>` — idem;
+ *  - `useActionGate('recurso', 'ação')` literal — a mesma leitura do
+ *    `ActionButton`, para elemento que não é `<Button>` (switch, drag).
  *
  * "Contagem zero é falha, nunca sucesso" (CLAUDE.md): se a dívida chegar a
  * zero, o teste falha e obriga a olhar — zero aqui não é "consertamos tudo",
@@ -154,9 +157,18 @@ function celulasConsumidas(): Set<string> {
       consumidas.add(`${m[1]}:${m[2]}`);
     }
 
+    // D269 — `useActionGate('recurso', 'ação')`: a mesma leitura, para
+    // elemento que não é `<Button>` (switch, handle de drag).
+    for (const m of texto.matchAll(/useActionGate\(\s*'([a-z0-9_]+)'\s*,\s*'([a-z0-9_]+)'\s*\)/g)) {
+      consumidas.add(`${m[1]}:${m[2]}`);
+    }
+
     for (const attrs of tagsAbertura(texto, 'ActionButton')) {
       const resource = atributoResource(attrs, constantes);
-      if (resource) consumidas.add(`${resource}:write`);
+      // D269 — `action="delete"|"execute"|"send"|"disable"` muda a célula
+      // consumida; ausente continua `:write` (o default do componente).
+      const action = atributo(attrs, 'action') ?? 'write';
+      if (resource) consumidas.add(`${resource}:${action}`);
     }
 
     for (const attrs of tagsAbertura(texto, 'Gated')) {

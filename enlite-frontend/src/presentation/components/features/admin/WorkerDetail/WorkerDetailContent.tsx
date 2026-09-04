@@ -5,6 +5,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { EnliteRole } from '@domain/entities/EnliteRole';
 import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { useWorkerDetail } from '@hooks/admin/useWorkerDetail';
 import { useAdminWorkerDocuments } from '@hooks/admin/useAdminWorkerDocuments';
 import { useAdminAdditionalDocuments } from '@hooks/admin/useAdminAdditionalDocuments';
@@ -43,6 +44,12 @@ export function WorkerDetailContent({ workerId, header, renderError, allowEdit =
   const { t } = useTranslation();
   const { adminProfile } = useAdminAuth();
   const canEdit = allowEdit && adminProfile?.role === EnliteRole.ADMIN;
+  // Doc adicional: POST .../additional-documents(/upload-url) → worker_document:write;
+  // DELETE .../additional-documents/:docId → worker_document:delete. D269 — o
+  // `AdditionalDocumentsSection` é COMPARTILHADO com o autoatendimento do
+  // worker (`DocumentsTab`), então o gate mora aqui (call site admin), não no componente.
+  const additionalDocWriteGate = useActionGate('worker_document', 'write');
+  const additionalDocDeleteGate = useActionGate('worker_document', 'delete');
   const { worker, isLoading, error, refetch, patchDocuments, patchDocumentValidations } = useWorkerDetail(workerId);
   const [activeTab, setActiveTab] = useState<WorkerTab>('documents');
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -170,6 +177,8 @@ export function WorkerDetailContent({ workerId, header, renderError, allowEdit =
               onDelete={additionalDocs.deleteDocument}
               onView={additionalDocs.viewDocument}
               isLoading={additionalDocs.isLoading}
+              canUpload={!additionalDocWriteGate.denied}
+              canDelete={!additionalDocDeleteGate.denied}
             />
           </WorkerDocumentsCard>
         )}

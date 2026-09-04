@@ -23,7 +23,9 @@ const COUNTRIES = ['AR', 'BR'] as const;
  *
  * A postura vem de `useCellAccess(PANEL_RESOURCE)`: em `read` todo campo é
  * `ReadOnlyField` (texto, input nem montado), toda ação de conclusão é
- * `ActionButton` (não existe), e as checkboxes de célula viram lista.
+ * `ActionButton` (D269 — correção do Gabriel: "esconder, não desabilitar" —
+ * sem `:write` o botão SOME, `mode="hide"` default), e as checkboxes de
+ * célula viram lista.
  */
 export function GroupDetailPage(): JSX.Element {
   return (

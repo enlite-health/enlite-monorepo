@@ -8,6 +8,7 @@ import { RejectionReasonSelect } from './RejectionReasonSelect';
 import { RoleSelect } from './RoleSelect';
 import { InterviewScheduleSelect, type InterviewSchedule } from './InterviewScheduleSelect';
 import { ContactNotesModal } from '@presentation/components/features/admin/VacancyDetail/Funnel/ContactNotesModal';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import type { EncuadreRole } from '@domain/entities/EncuadreRole';
 
 interface KanbanBoardProps {
@@ -76,6 +77,14 @@ function cardProps(enc: FunnelCard, stage: string) {
 
 export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnrejectBlocked }: KanbanBoardProps) {
   const { t } = useTranslation();
+  // PUT /encuadres/:id/move, /result, POST .../blocked-applications/:id/reject|restore
+  // → todos funnel:write. Arrasto e menu de clique chamam a MESMA rota — D269
+  // (correção: "esconder, não desabilitar") tira a OFERTA das duas com o
+  // mesmo predicado: o drag não é oferecido (`isDragDisabled`, que já
+  // significa "sem listener do dnd-kit" — não é um drag "travado") e os
+  // callbacks de mover/rechazar/voltar viram `undefined`, então `KanbanCard`
+  // nem monta o `MoveToMenu`/botão (mesmo `{onX && <.../>}` de sempre).
+  const funnelWriteGate = useActionGate('funnel', 'write');
   const navigate = useNavigate();
   /**
    * Modal de motivo de rejeição. Serve dois alvos com o MESMO dropdown:
@@ -181,7 +190,7 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
         columns={columns}
         itemsOf={(columnId) => stages[columnId as keyof FunnelStages] ?? []}
         getItemId={(enc) => enc.id}
-        isDragDisabled={(enc) => !enc.encuadreId}
+        isDragDisabled={(enc) => !enc.encuadreId || funnelWriteGate.denied}
         onDrop={handleDrop}
         collapseStorageKey={`kanban-collapsed-${vacancyId}`}
         renderCard={(enc, columnId) => (
@@ -190,18 +199,24 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
             isDismissed={enc.isDismissed}
             onWorkerClick={handleWorkerClick}
             onReject={
-              enc.encuadreId
-                ? () => setShowRejectionSelect({ encuadreId: enc.encuadreId! })
-                : enc.isBlocked && !enc.isDismissed
-                  ? () => setShowRejectionSelect({ blockedId: enc.id })
-                  : undefined
+              funnelWriteGate.denied
+                ? undefined
+                : enc.encuadreId
+                  ? () => setShowRejectionSelect({ encuadreId: enc.encuadreId! })
+                  : enc.isBlocked && !enc.isDismissed
+                    ? () => setShowRejectionSelect({ blockedId: enc.id })
+                    : undefined
             }
             onUndismiss={
-              enc.isBlocked && enc.isDismissed
+              !funnelWriteGate.denied && enc.isBlocked && enc.isDismissed
                 ? () => onUnrejectBlocked(enc.id)
                 : undefined
             }
-            onMoveTo={enc.encuadreId ? (target) => handleCardMoveTo(enc.encuadreId!, target) : undefined}
+            onMoveTo={
+              !funnelWriteGate.denied && enc.encuadreId
+                ? (target) => handleCardMoveTo(enc.encuadreId!, target)
+                : undefined
+            }
             onOpenNotes={
               enc.workerId
                 ? () => setActiveNotes({ workerId: enc.workerId!, workerName: enc.workerName })

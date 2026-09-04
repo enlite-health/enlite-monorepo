@@ -4,6 +4,7 @@ import { Rocket } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
 import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { useToast } from '@presentation/hooks/useToast';
@@ -56,7 +57,10 @@ export function ActivatePatientButton({ patientId, status, onActivated }: Props)
 
   return (
     <>
-      <Button
+      {/* D269 — POST /patients/:id/activate → patient:write. */}
+      <ActionButton
+        resource="patient"
+        action="write"
         variant="primary"
         size="sm"
         onClick={() => { setError(null); setConfirming(true); }}
@@ -65,7 +69,7 @@ export function ActivatePatientButton({ patientId, status, onActivated }: Props)
       >
         <Rocket className="w-4 h-4" />
         {ta('button')}
-      </Button>
+      </ActionButton>
 
       {confirming && (
         <>

@@ -9,13 +9,29 @@ interface AdminProtectedRouteProps {
   children: ReactNode;
 }
 
+/** O mesmo spinner de tela cheia do `AdminFallback` (App.tsx) — o `loading` SEM contrato prévio usa este, não o layout com `Outlet` vazio. */
+function AuthzLoading() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background" data-testid="admin-authz-loading">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+    </div>
+  );
+}
+
 /**
  * Ponto ÚNICO de condicionamento da A1 (D268): esta rota envolve `<AdminLayout>`
  * na raiz de `/admin` (App.tsx), e TODA rota `/admin/*` é filha dele via
  * `Outlet` — então checar aqui, uma vez, cobre a família inteira sem duplicar
- * o gate em cada página. `loading`/`error` do authz caem no fallthrough
- * (renderizam `children` como sempre — a postura de cada um já existe em
- * outro lugar, ex. `AccessGate`; ver tabela-verdade em `Authz.test.ts`).
+ * o gate em cada página.
+ *
+ * `loading` COM contrato antigo (stale-while-revalidate — `fetchAuthz`
+ * preserva o `authz` anterior nesse caso) cai no fallthrough normal: os
+ * children continuam na tela com o contrato velho até o novo chegar. Só
+ * `loading` SEM nenhum contrato prévio mostra o spinner — sem isso o
+ * `AdminLayout` renderizava com `Outlet` vazio a cada troca de área (achado
+ * real, D269 Parte 2): a tela de boas-vindas sumia e voltava, e o menu
+ * aparecia com conteúdo em branco. `error` continua caindo no fallthrough —
+ * a postura de erro é de cada página (ex. `AccessGate`).
  */
 export function AdminProtectedRoute({ children }: AdminProtectedRouteProps) {
   const { isAuthenticated, isLoading, adminProfile } = useAdminAuth();
@@ -37,6 +53,11 @@ export function AdminProtectedRoute({ children }: AdminProtectedRouteProps) {
   if (!adminProfile) {
     console.log('[AdminProtectedRoute] Sem perfil admin, redirecionando para login');
     return <Navigate to="/admin/login" replace />;
+  }
+
+  if (authzStatus === 'loading' && !authz) {
+    console.log('[AdminProtectedRoute] authz loading sem contrato prévio — spinner, não Outlet vazio');
+    return <AuthzLoading />;
   }
 
   if (shouldShowWelcomeNoGroup(authz, authzStatus)) {

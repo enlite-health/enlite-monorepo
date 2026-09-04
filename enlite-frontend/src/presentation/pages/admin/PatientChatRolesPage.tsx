@@ -23,7 +23,8 @@ import { EnliteRole } from '@domain/entities/EnliteRole';
 import type { PatientChatRoleSpec } from '@domain/value-objects/patientChatRole';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
@@ -60,6 +61,12 @@ export default function PatientChatRolesPage(): JSX.Element {
     open: false,
     role: null,
   });
+  // D269 — POST/PATCH/DELETE /patient-chat-roles → patient:write (mesma
+  // célula do resto da família; ver adminPatientsRoutes.ts). Os botões de
+  // linha (editar/(des)ativar/apagar) são `<button>` cru, não o atom
+  // `Button` — por isso usam `useActionGate` direto (mesma leitura do
+  // `ActionButton`) em vez do wrapper.
+  const chatRoleWriteGate = useActionGate('patient', 'write');
 
   const fetchRoles = useCallback(async () => {
     try {
@@ -124,7 +131,9 @@ export default function PatientChatRolesPage(): JSX.Element {
           <MessagesSquare className="w-6 h-6 text-primary" />
           <Heading level={1} weight="semibold" color="primary">{tr('title')}</Heading>
         </div>
-        <Button
+        <ActionButton
+          resource="patient"
+          action="write"
           variant="primary"
           size="md"
           onClick={() => setFormModal({ open: true, role: null })}
@@ -132,7 +141,7 @@ export default function PatientChatRolesPage(): JSX.Element {
         >
           <Plus className="w-4 h-4" />
           {tr('newRole')}
-        </Button>
+        </ActionButton>
       </div>
 
       <Text size="sm" color="muted" className="mb-6">{tr('subtitle')}</Text>
@@ -212,34 +221,40 @@ export default function PatientChatRolesPage(): JSX.Element {
                       </span>
                     </TableCell>
                     <TableCell align="right" unwrapped>
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setFormModal({ open: true, role })}
-                          className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-primary transition-colors cursor-pointer"
-                          aria-label={tr('editRole')}
-                          data-testid={`chat-role-edit-${role.code}`}
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleToggleActive(role)}
-                          className="px-2 py-1 rounded hover:bg-gray-100 text-xs text-gray-600 hover:text-primary transition-colors cursor-pointer"
-                          data-testid={`chat-role-toggle-${role.code}`}
-                        >
-                          {role.isActive ? tr('deactivate') : tr('activate')}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(role)}
-                          className="p-1.5 rounded hover:bg-red-50 text-gray-500 hover:text-red-600 transition-colors cursor-pointer"
-                          aria-label={tr('deleteRole')}
-                          data-testid={`chat-role-delete-${role.code}`}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                      {/* D269 — as três ações de linha (editar/(des)ativar/apagar)
+                          chamam PATCH/DELETE /patient-chat-roles/:code → patient:write.
+                          São `<button>` cru: sem a célula, a linha inteira de
+                          ações SOME (mesma leitura do `ActionButton`, mode 'hide'). */}
+                      {!chatRoleWriteGate.denied && (
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setFormModal({ open: true, role })}
+                            className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-primary transition-colors cursor-pointer"
+                            aria-label={tr('editRole')}
+                            data-testid={`chat-role-edit-${role.code}`}
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleActive(role)}
+                            className="px-2 py-1 rounded hover:bg-gray-100 text-xs text-gray-600 hover:text-primary transition-colors cursor-pointer"
+                            data-testid={`chat-role-toggle-${role.code}`}
+                          >
+                            {role.isActive ? tr('deactivate') : tr('activate')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(role)}
+                            className="p-1.5 rounded hover:bg-red-50 text-gray-500 hover:text-red-600 transition-colors cursor-pointer"
+                            aria-label={tr('deleteRole')}
+                            data-testid={`chat-role-delete-${role.code}`}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
                     </TableCell>
                   </TableRow>
                 );

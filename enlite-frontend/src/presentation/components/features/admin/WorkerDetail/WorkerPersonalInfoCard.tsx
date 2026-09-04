@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import { getSexLabel, getGenderLabel, getLanguageLabel } from './workerDetailLabels';
 import { WorkerTagsArea } from './WorkerTagsArea';
 import type { WorkerTagSummary } from '@domain/entities/WorkerTag';
@@ -57,10 +57,12 @@ export function WorkerPersonalInfoCard({
         <Heading level={1} as="h3">
           {t('admin.workerDetail.personalInfo')}
         </Heading>
+        {/* PATCH /admin/workers/:id/profile + PUT /admin/workers/:id/service-area
+            (via WorkerEditModal) → worker:write. D269 — sem a célula, SOME. */}
         {onEdit && (
-          <Button variant="primary" size="sm" className="w-40 shrink-0" onClick={onEdit} data-testid="worker-edit-button">
+          <ActionButton resource="worker" action="write" variant="primary" size="sm" className="w-40 shrink-0" onClick={onEdit} data-testid="worker-edit-button">
             {t('admin.workerDetail.edit')}
-          </Button>
+          </ActionButton>
         )}
       </div>
 

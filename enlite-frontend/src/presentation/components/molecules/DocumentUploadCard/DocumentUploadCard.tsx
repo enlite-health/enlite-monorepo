@@ -12,6 +12,16 @@ interface DocumentUploadCardProps {
   onDelete: () => void;
   onView: () => void;
   className?: string;
+  /**
+   * D269 (admin `worker_document:write`) — quando `false`, o slot vazio deixa
+   * de ser clicável: sem `role="button"`, sem input de arquivo montado. Este
+   * componente é COMPARTILHADO com o autoatendimento do worker (`DocumentsGrid`),
+   * que não gateia por célula — por isso o default é `true` (comportamento
+   * inalterado para quem não passa a prop).
+   */
+  canUpload?: boolean;
+  /** D269 (admin `worker_document:delete`) — quando `false`, o ícone de remover SOME. Default `true`. */
+  canDelete?: boolean;
 }
 
 function FileIcon({ uploaded }: { uploaded: boolean }): JSX.Element {
@@ -29,12 +39,13 @@ function FileIcon({ uploaded }: { uploaded: boolean }): JSX.Element {
 export function DocumentUploadCard({
   label, isUploaded, isLoading = false, isRequired = false,
   onFileSelect, onDelete, onView, className = '',
+  canUpload = true, canDelete = true,
 }: DocumentUploadCardProps): JSX.Element {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleClick = (): void => {
-    if (!isUploaded && !isLoading) inputRef.current?.click();
+    if (!isUploaded && !isLoading && canUpload) inputRef.current?.click();
   };
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>): void => {
@@ -53,12 +64,13 @@ export function DocumentUploadCard({
       ? 'border-red-400 border-[2.5px]'
       : 'border-gray-700 border-[2.5px]';
 
-  const cursorClass = isUploaded || isLoading ? 'cursor-default' : 'cursor-pointer hover:border-gray-800 transition-colors';
+  const isClickableUpload = !isUploaded && canUpload;
+  const cursorClass = isUploaded || isLoading || !canUpload ? 'cursor-default' : 'cursor-pointer hover:border-gray-800 transition-colors';
 
   return (
     <div
-      role={isUploaded ? undefined : 'button'}
-      tabIndex={isUploaded ? undefined : 0}
+      role={isClickableUpload ? 'button' : undefined}
+      tabIndex={isClickableUpload ? 0 : undefined}
       onClick={handleClick}
       onKeyDown={(e) => e.key === 'Enter' && handleClick()}
       aria-label={isUploaded ? label : `Upload ${label}`}
@@ -84,12 +96,15 @@ export function DocumentUploadCard({
 
       {isUploaded && (
         <div className="absolute top-3 right-3 flex flex-col gap-2">
-          <button type="button" onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            aria-label="Remover documento" className="text-gray-800 hover:text-red-500 transition-colors">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true">
-              <path d="M7 8.4L1.4 14 0 12.6 5.6 7 0 1.4 1.4 0 7 5.6 12.6 0 14 1.4 8.4 7 14 12.6 12.6 14 7 8.4Z" />
-            </svg>
-          </button>
+          {/* D269 — sem worker_document:delete, o ícone de remover SOME. */}
+          {canDelete && (
+            <button type="button" onClick={(e) => { e.stopPropagation(); onDelete(); }}
+              aria-label="Remover documento" className="text-gray-800 hover:text-red-500 transition-colors">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true">
+                <path d="M7 8.4L1.4 14 0 12.6 5.6 7 0 1.4 1.4 0 7 5.6 12.6 0 14 1.4 8.4 7 14 12.6 12.6 14 7 8.4Z" />
+              </svg>
+            </button>
+          )}
           <button type="button" onClick={(e) => { e.stopPropagation(); onView(); }}
             aria-label="Visualizar documento" className="text-gray-800 hover:text-primary transition-colors">
             <svg width="16" height="12" viewBox="0 0 16 12" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
@@ -112,14 +127,17 @@ export function DocumentUploadCard({
         {label}
       </Text>
 
-      <input
-        ref={inputRef}
-        type="file"
-        accept="application/pdf,image/jpeg,image/png"
-        className="hidden"
-        onChange={handleFileChange}
-        aria-hidden="true"
-      />
+      {/* D269 — sem worker_document:write, o input de arquivo nem monta. */}
+      {canUpload && (
+        <input
+          ref={inputRef}
+          type="file"
+          accept="application/pdf,image/jpeg,image/png"
+          className="hidden"
+          onChange={handleFileChange}
+          aria-hidden="true"
+        />
+      )}
     </div>
   );
 }

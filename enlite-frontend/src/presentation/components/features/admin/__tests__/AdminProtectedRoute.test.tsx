@@ -64,10 +64,18 @@ describe('AdminProtectedRoute — tabela-verdade da A1 (D268), ponto único que 
     expect(screen.getByText('painel-operacional')).toBeInTheDocument();
   });
 
-  it('(loading) → nada do gate novo — renderiza children (o spinner do próprio painel, se houver, é dele)', () => {
+  it('🔴 (loading, SEM contrato prévio) → spinner, NUNCA o layout com children vazio (achado real, Parte 2)', () => {
     useAdminAuthStore.setState({ authzStatus: 'loading', authz: null });
     montar();
+    expect(screen.getByTestId('admin-authz-loading')).toBeInTheDocument();
+    expect(screen.queryByText('painel-operacional')).not.toBeInTheDocument();
+  });
+
+  it('(loading, COM contrato prévio — stale-while-revalidate) → renderiza children normalmente, sem spinner', () => {
+    useAdminAuthStore.setState({ authzStatus: 'loading', authz: contrato({ enforcement: 'on' }) });
+    montar();
     expect(screen.getByText('painel-operacional')).toBeInTheDocument();
+    expect(screen.queryByTestId('admin-authz-loading')).not.toBeInTheDocument();
   });
 
   it('(error) → renderiza children — a postura de erro é da própria página (ex. AccessGate), não welcome', () => {

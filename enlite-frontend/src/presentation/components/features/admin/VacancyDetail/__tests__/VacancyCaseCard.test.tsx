@@ -1,6 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { VacancyCaseCard } from '../VacancyCaseCard';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -114,5 +116,40 @@ describe('VacancyCaseCard — partial data (missing optional fields)', () => {
   it('does NOT render location row when patientCity and patientNeighborhood are null', () => {
     renderCard({ patientCity: null, patientNeighborhood: null });
     expect(screen.queryByText(/Buenos Aires/)).not.toBeInTheDocument();
+  });
+});
+
+// ── D269 — status editor (PUT /vacancies/:id → vacancy:write) ───────────────
+
+describe('VacancyCaseCard — status editor gate (D269)', () => {
+  beforeEach(() => {
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+  });
+
+  function comEnforcement(permissions: string[], enforcement: AuthzContract['enforcement']) {
+    useAdminAuthStore.setState({
+      authzStatus: 'ready',
+      authz: {
+        uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {}, enforcement,
+      } as AuthzContract,
+    });
+  }
+
+  it('🔴 enforcement=on, sem vacancy:write: o EDITOR não existe — vira o badge estático (texto, sem gatilho/dropdown)', () => {
+    comEnforcement([], 'on');
+    renderCard({ onStatusChange: vi.fn() });
+    expect(screen.queryByTestId('vacancy-status-editor-trigger')).not.toBeInTheDocument();
+    expect(screen.getByTestId('status-badge')).toBeInTheDocument();
+  });
+
+  it('enforcement=on, com vacancy:write: o editor existe (gatilho clicável)', () => {
+    comEnforcement(['vacancy:write'], 'on');
+    renderCard({ onStatusChange: vi.fn() });
+    expect(screen.getByTestId('vacancy-status-editor-trigger')).toBeInTheDocument();
+  });
+
+  it('enforcement OFF (ou ausente): editor existe mesmo sem célula', () => {
+    renderCard({ onStatusChange: vi.fn() }); // authz null — sem enforcement
+    expect(screen.getByTestId('vacancy-status-editor-trigger')).toBeInTheDocument();
   });
 });

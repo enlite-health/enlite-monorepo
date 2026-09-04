@@ -6,6 +6,7 @@ import { AlertTriangle } from 'lucide-react';
 import type { WorkerDocument, DocumentValidations } from '@domain/entities/Worker';
 import type { AdminDocumentType } from '@hooks/admin/useAdminWorkerDocuments';
 import { DocumentValidationBadge } from './DocumentValidationBadge';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 
 interface DocumentSlot {
   docType: AdminDocumentType;
@@ -70,6 +71,12 @@ export function WorkerDocumentsCard({
 }: WorkerDocumentsCardProps) {
   const { t } = useTranslation();
   const isAT = profession === 'AT';
+  // POST .../documents/upload-url|save → worker_document:write; DELETE
+  // .../documents/:type → worker_document:delete. D269 — repassados como
+  // `canUpload`/`canDelete` pro `DocumentUploadCard`, que é COMPARTILHADO com
+  // o autoatendimento do worker (por isso o gate mora aqui, não lá).
+  const docWriteGate = useActionGate('worker_document', 'write');
+  const docDeleteGate = useActionGate('worker_document', 'delete');
 
   // Filtra slots pela política ABAC de visibilidade por profissão:
   //   - hidden: sempre oculto
@@ -114,6 +121,8 @@ export function WorkerDocumentsCard({
           onFileSelect={(file) => onUpload(slot.docType, file)}
           onDelete={() => onDelete(slot.docType)}
           onView={() => filePath ? onView(filePath) : Promise.resolve()}
+          canUpload={!docWriteGate.denied}
+          canDelete={!docDeleteGate.denied}
         />
         <DocumentValidationBadge
           docType={slot.docType}

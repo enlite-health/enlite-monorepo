@@ -35,3 +35,23 @@ export function useHasCell(resource: string, action: string): boolean {
   const status = useAdminAuthStore((s) => s.authzStatus);
   return status === 'ready' && hasCell(authz?.permissions ?? null, resource, action);
 }
+
+export interface ActionGate {
+  /** `true` quando a ação pode prosseguir — ou porque tem a célula, ou porque a régua (D268) está OFF. */
+  allowed: boolean;
+  /** `true` SÓ quando a régua está `on` e a célula falta — o sinal pra desabilitar/esconder. */
+  denied: boolean;
+}
+
+/**
+ * A MESMA decisão do `ActionButton` (D269), para elemento que não é
+ * `<Button>` — switch, handle de drag, etc. Reusa `useHasCell`: não duplica
+ * a leitura do contrato. Só gateia com `authz.enforcement === 'on'` (D268) —
+ * `'off'`/contrato ausente é sempre `allowed`.
+ */
+export function useActionGate(resource: string, action: string): ActionGate {
+  const enforcement = useAdminAuthStore((s) => s.authz?.enforcement);
+  const hasCellForAction = useHasCell(resource, action);
+  if (enforcement !== 'on') return { allowed: true, denied: false };
+  return { allowed: hasCellForAction, denied: !hasCellForAction };
+}

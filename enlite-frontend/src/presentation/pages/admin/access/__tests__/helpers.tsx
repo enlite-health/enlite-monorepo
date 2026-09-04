@@ -13,7 +13,19 @@ export function postura(nivel: 'hidden' | 'read' | 'write' | 'loading' | 'error'
     : nivel === 'read' ? ['permission_management:read'] : ['worker:read'];
   useAdminAuthStore.setState({
     authzStatus: 'ready',
-    authz: { uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: ['AR'], groups: [], features: {} } as AuthzContract,
+    // `enforcement: 'on'` — este painel É o painel de permissões: os testes de
+    // postura (read/write) validam a régua D269 no `ActionButton`, que só
+    // gateia com a régua ligada (D268).
+    authz: {
+      uid: 'u',
+      tenantId: 't',
+      status: 'ACTIVE',
+      permissions,
+      countries: ['AR'],
+      groups: [],
+      features: {},
+      enforcement: 'on',
+    } as AuthzContract,
   });
 }
 

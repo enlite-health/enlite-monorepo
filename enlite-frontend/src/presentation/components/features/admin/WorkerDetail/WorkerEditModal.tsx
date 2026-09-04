@@ -9,7 +9,7 @@ import {
   WORKER_PROFESSIONS,
   WORKER_DOCUMENT_TYPES,
 } from '@domain/entities/Worker';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
@@ -246,7 +246,10 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
             {tm('title', 'Editar prestador')}
           </Heading>
           <div className="flex items-center gap-4">
-            <Button
+            {/* PATCH .../profile + PUT .../service-area → worker:write. D269 — sem a célula, SOME. */}
+            <ActionButton
+              resource="worker"
+              action="write"
               type="button"
               variant="primary"
               size="sm"
@@ -256,7 +259,7 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
               data-testid="we-save"
             >
               {tm('save', 'Guardar')}
-            </Button>
+            </ActionButton>
             <button
               type="button"
               onClick={handleClose}

@@ -3,6 +3,8 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { EnliteRole } from '@domain/entities/EnliteRole';
 import { WorkerTestAccountToggle } from '../WorkerTestAccountToggle';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -22,12 +24,35 @@ describe('WorkerTestAccountToggle', () => {
   beforeEach(() => {
     mockRole = EnliteRole.ADMIN;
     mockUpdate.mockReset();
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
   });
 
   it('renders nothing for non-admin roles', () => {
     mockRole = EnliteRole.RECRUITER;
     const { container } = render(<WorkerTestAccountToggle workerId="w-1" initialIsTest={false} />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('D269 — enforcement=on sem worker:write: renderiza nada, mesmo admin', () => {
+    useAdminAuthStore.setState({
+      authzStatus: 'ready',
+      authz: {
+        uid: 'u', tenantId: 't', status: 'ACTIVE', permissions: [], countries: [], groups: [], features: {}, enforcement: 'on',
+      } as AuthzContract,
+    });
+    const { container } = render(<WorkerTestAccountToggle workerId="w-1" initialIsTest={false} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('D269 — enforcement=on com worker:write: renderiza o checkbox', () => {
+    useAdminAuthStore.setState({
+      authzStatus: 'ready',
+      authz: {
+        uid: 'u', tenantId: 't', status: 'ACTIVE', permissions: ['worker:write'], countries: [], groups: [], features: {}, enforcement: 'on',
+      } as AuthzContract,
+    });
+    render(<WorkerTestAccountToggle workerId="w-1" initialIsTest={false} />);
+    expect(screen.getByTestId('worker-test-account-checkbox')).toBeInTheDocument();
   });
 
   it('renders the checkbox for admin role', () => {

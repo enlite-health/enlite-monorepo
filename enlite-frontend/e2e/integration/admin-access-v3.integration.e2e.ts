@@ -228,7 +228,7 @@ test.describe('Welcome sem grupo (A1) e feature por país (B2) — integração 
     await expect(page.getByRole('link', { name: 'Accesos y permisos' })).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Vacantes' })).toHaveCount(0);
 
-    await expect(page).toHaveScreenshot('admin-access-v3-welcome.png', { fullPage: false, maxDiffPixelRatio: 0.05, timeout: 20_000 });
+    await expect(page).toHaveScreenshot('admin-access-v3-welcome.png', { fullPage: false, maxDiffPixelRatio: 0.002, timeout: 20_000 });
   });
 
   test('2. entra no grupo {AR} → painel na request seguinte (poll)', async ({ page, request }) => {
