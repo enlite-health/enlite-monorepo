@@ -6,6 +6,16 @@
  * chave configurada, ZERO chamadas. Se alguém quebrar isso, um ambiente sem
  * chave passa a vazar em silêncio.
  */
+// `export {}` faz deste arquivo um MÓDULO. Sem nenhum import estático no topo,
+// o TypeScript o trata como script global e as consts de topo caem no escopo
+// global — colidindo com outro teste que também declara `mockFetch`
+// (`tests/unit/__tests__/TalentumDescriptionService.test.ts`). O `tsc` do CI
+// reprova com `TS2451: Cannot redeclare block-scoped variable`, e a suíte
+// inteira nem chega a rodar: a cobertura deste arquivo despenca para 38% e o
+// portão fecha. Não deu aqui porque o jest local transpila sem checar o
+// programa inteiro — foi o CI que viu.
+export {};
+
 const mockFetch = jest.fn();
 global.fetch = mockFetch as unknown as typeof fetch;
 
