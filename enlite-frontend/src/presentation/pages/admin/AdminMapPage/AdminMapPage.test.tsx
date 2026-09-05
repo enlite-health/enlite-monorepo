@@ -184,13 +184,22 @@ describe('AdminMapPage', () => {
     expect(pickerCall(mockPatients)[0]).toEqual(ancoraAR);
   });
 
-  it('escolher a opção VAZIA não abre o portão; paciente sem addressId ancora pelo id da pessoa', () => {
+  it('a opção VAZIA LIMPA a âncora e fecha o portão; paciente sem addressId ancora pelo id da pessoa', () => {
     setup();
     fireEvent.focusIn(screen.getByTestId('map-center-patient'));
-    // a opção vazia é o "des-escolher": não há ponto por trás dela
+    // antes de escolher, a opção vazia mantém o portão fechado
     pick('Centrar en un paciente…');
     expect(screen.getByTestId('map-anchor-empty')).toBeInTheDocument();
     expect(tabCall(mockWorkers)[1]).toBe(false);
+
+    // com âncora ativa, a mesma opção DESFAZ a escolha — não é um controle morto
+    escolherPaciente();
+    expect(screen.getByTestId('map-filters-block')).toBeInTheDocument();
+    pick('Centrar en un paciente…');
+    expect(screen.getByTestId('map-anchor-empty')).toBeInTheDocument();
+    expect(screen.queryByTestId('map-filters-block')).toBeNull();
+    expect(tabCall(mockWorkers)[1]).toBe(false);
+    expect(screen.queryByTestId('fake-map')).toBeNull();
 
     // P5 não tem addressId: o id do ponto cai no id do PACIENTE
     escolherPaciente('P 5 · CABA');
@@ -459,9 +468,10 @@ describe('AdminMapPage', () => {
     });
     setup();
     escolherPaciente();
-    // nada aberto: o hook recebe `null` e NÃO consulta — clicar em 40 pinos custa
-    // 40 chamadas, nunca as 500 da lista inteira
-    expect(last(mockCorridor.mock.calls)?.[0]).toBeNull();
+    // nada aberto: o painel nem monta, então NENHUMA chamada é feita — clicar em
+    // 40 pinos custa 40 chamadas, nunca as 500 da lista inteira. Zero chamadas é
+    // mais forte que "chamada com null": sem balão não há nem hook.
+    expect(mockCorridor).not.toHaveBeenCalled();
     expect(screen.queryByTestId('corridor-panel')).toBeNull();
 
     // abrindo um pino: o par é (prestador do pino, endereço do paciente-âncora)
@@ -469,9 +479,9 @@ describe('AdminMapPage', () => {
     expect(last(mockCorridor.mock.calls)?.[0]).toEqual({ country: 'AR', workerId: '1', patientAddressId: 'a-9' });
     expect(screen.getByTestId('corridor-panel')).toHaveTextContent('línea(s) sirven ambos puntos');
 
-    // quem não tem coordenada não gera par
+    // quem não tem coordenada não gera par: o painel desmonta e some da tela
     fireEvent.click(screen.getAllByTestId('map-list-item')[1]);
-    expect(last(mockCorridor.mock.calls)?.[0]).toBeNull();
+    expect(screen.queryByTestId('corridor-panel')).toBeNull();
   });
 
   it('na aba de Pacientes o par se INVERTE: a âncora é o prestador que viaja', () => {

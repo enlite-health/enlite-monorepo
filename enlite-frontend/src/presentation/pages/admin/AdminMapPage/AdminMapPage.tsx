@@ -36,13 +36,12 @@ import { CenterLabel, Field, Legend, NoLocationNotice, Step } from './mapSidebar
 import { AnchorEmptyState, AnchorPicker, type AnchorOption, type AnchorStatus, type MapAnchor } from './mapAnchor';
 import { MapCounts, MapResultsList, type ResultRow } from './mapResults';
 import { CorridorPanel } from './CorridorPanel';
-import { corridorPairFor, useCorridor } from '@hooks/admin/useCorridor';
+import { corridorPairFor } from '@hooks/admin/useCorridor';
 import { usePatientsMapPoints, useWorkersMapPoints } from '@hooks/admin/useMapPoints';
 import type { MapCountry, PatientsMapFilters, WorkersMapFilters } from '@infrastructure/http/AdminMapApiService';
 import {
   ANCHOR_PICKER_RADIUS_KM, DEFAULT_CENTER, DEFAULT_CENTER_BY_COUNTRY, DEFAULT_COUNTRY, DEFAULT_RADIUS_KM,
-  PATIENT_STATUS_COLOR, WORKER_STATUS_COLOR, anchorTextsFor, corridorLabelsFor, distanceLabel, filterOptionsFor, legendEntries,
-  patientDetails, patientPointTitle, placeLabel, sameCenter, workerDetails, workerPointTitle,
+  anchorTextsFor, buildResultRows, corridorLabelsFor, filterOptionsFor, legendEntries, placeLabel, sameCenter,
 } from './mapPageConfig';
 
 type Kind = 'workers' | 'patients';
@@ -166,13 +165,19 @@ export function AdminMapPage(): JSX.Element {
   };
   const { labels: anchorLabels, ui: anchorUi } = anchorTextsFor(t, kind);
 
+  /**
+   * Um caminho só: sem correspondência — que é o caso da opção vazia
+   * ("Centrar en un paciente…") — a âncora é LIMPA e o portão fecha de novo.
+   * Antes essa opção era um controle visível e morto: quem quisesse recomeçar
+   * clicava e a tela ignorava.
+   */
   const onPickAnchor = (id: string): void => {
-    // `undefined` é o caminho REAL da opção vazia ("Centrar en un paciente…").
-    const p = anchorCandidates.find((x) => pointIdOf(x) === id);
-    if (!p) return;
-    const picked: MapAnchor = { id, personId: p.id, name: p.name, lat: p.lat, lng: p.lng };
-    if (kind === 'workers') setPatientAnchor(picked); else setWorkerAnchor(picked);
-    setCenter({ lat: picked.lat, lng: picked.lng });
+    const found = anchorCandidates.find((x) => pointIdOf(x) === id);
+    const next: MapAnchor | null = found
+      ? { id, personId: found.id, name: found.name, lat: found.lat, lng: found.lng }
+      : null;
+    if (kind === 'workers') setPatientAnchor(next); else setWorkerAnchor(next);
+    setCenter(next ? { lat: next.lat, lng: next.lng } : DEFAULT_CENTER_BY_COUNTRY[country]);
     setSelectedId(null);
   };
 
@@ -191,31 +196,20 @@ export function AdminMapPage(): JSX.Element {
     : undefined;
 
   /** A fonte ÚNICA da lista e dos pinos. */
-  const rows = useMemo<ResultRow[]>(() => {
-    if (kind === 'workers') {
-      return workers.points.map((p) => ({
-        id: p.id, lat: p.lat, lng: p.lng, title: p.name, details: workerDetails(t, p),
-        distance: distanceLabel(p.distanceKm) || null, tooltip: workerPointTitle(t, p),
-        color: WORKER_STATUS_COLOR[p.status] ?? '#6b7280', href: `/admin/workers/${p.id}`,
-      }));
-    }
-    return patients.points.map((p) => ({
-      id: p.addressId ?? p.id, patientId: p.id, lat: p.lat, lng: p.lng, title: p.name,
-      details: patientDetails(t, p), distance: distanceLabel(p.distanceKm) || null, tooltip: patientPointTitle(t, p),
-      color: PATIENT_STATUS_COLOR[p.status] ?? '#6b7280', href: `/admin/patients/${p.id}`,
-    }));
-  }, [kind, workers.points, patients.points, t]);
+  const rows = useMemo<ResultRow[]>(
+    () => buildResultRows(t, kind, workers.points, patients.points),
+    [kind, workers.points, patients.points, t],
+  );
 
   /**
    * O par do corredor sai do pino ABERTO cruzado com a âncora. `null` enquanto
-   * nada está aberto: o hook não consulta, e clicar 40 pinos custa 40 chamadas
-   * — nunca as 500 da lista inteira.
+   * nada está aberto — e quem busca é o PAINEL, que só monta quando o balão
+   * abre: sem balão (mapa indisponível) não se gasta a cota de 60/min.
    */
   const corridorPair = useMemo(
     () => corridorPairFor(kind, country, anchor?.id ?? null, rows.find((r) => r.id === selectedId)),
     [kind, country, anchor, rows, selectedId],
   );
-  const corridor = useCorridor(corridorPair);
   const corridorLabels = corridorLabelsFor(t);
 
   // Escolher quem NÃO tem coordenada não pode ser silêncio: o mapa não muda e
@@ -378,8 +372,13 @@ export function AdminMapPage(): JSX.Element {
                 closeLabel={t('admin.map.closePopup', 'Cerrar')}
                 centerHereLabel={t('admin.map.centerHere', 'Centrar aquí')}
                 onCenterHere={onCenterHere}
+                /* A busca do corredor vive DENTRO do painel, e o painel só é
+                   montado quando o balão abre. Buscar na página gastava a cota
+                   de 60/min mesmo quando o mapa estava indisponível (sem chave
+                   do Google o balão nunca aparece) — chamada paga, resultado
+                   que ninguém via. */
                 renderExtra={(p) => (p.id === selectedId && corridorPair
-                  ? <CorridorPanel state={corridor} labels={corridorLabels} />
+                  ? <CorridorPanel pair={corridorPair} labels={corridorLabels} />
                   : null)}
                 placeholderText={t('admin.map.unavailable', 'El mapa no está disponible (sin clave de Google Maps). La lista sigue funcionando.')}
               />

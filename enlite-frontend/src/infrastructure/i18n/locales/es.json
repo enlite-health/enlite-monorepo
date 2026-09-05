@@ -3600,7 +3600,7 @@
         "error": "No se pudo calcular el recorrido.",
         "noDirect": "Ninguna línea sirve los dos puntos: habría que combinar (y se paga de nuevo).",
         "noCoverage": "Sin datos de paradas en esta zona — no podemos afirmar el recorrido.",
-        "walk": "a pie: ~{{count}} cuadras",
+        "walk": "en línea recta: ~{{count}} cuadras",
         "legs": "{{origin}} cuadras → {{destination}} cuadras"
       }
     },

@@ -8,6 +8,7 @@ import type { MapCountry, PatientMapPoint, WorkerMapPoint } from '@infrastructur
 import type { SelectOption } from '@presentation/components/atoms/Select';
 import { getCountryOptions } from '../patientsData';
 import type { CorridorLabels } from './CorridorPanel';
+import type { ResultRow } from './mapResults';
 import { WORKER_PROFESSIONS } from '@domain/entities/Worker';
 
 /**
@@ -220,7 +221,38 @@ export function corridorLabelsFor(t: TFunction): CorridorLabels {
     error: t('admin.map.corridor.error', 'No se pudo calcular el recorrido.'),
     noDirect: t('admin.map.corridor.noDirect', 'Ninguna línea sirve los dos puntos: habría que combinar (y se paga de nuevo).'),
     noCoverage: t('admin.map.corridor.noCoverage', 'Sin datos de paradas en esta zona — no podemos afirmar el recorrido.'),
-    walk: (b) => t('admin.map.corridor.walk', { defaultValue: 'a pie: ~{{count}} cuadras', count: b }),
+    // "en línea recta", NUNCA "a pie": o número vem de um ST_Distance entre os
+    // dois pontos, e caminhada real numa grade em diagonal chega a ~40% a mais.
+    // Chamar isso de "a pé" com um ícone de pegadas seria prometer precisão que
+    // o cálculo não tem — e a tela inteira existe para não fazer isso.
+    walk: (b) => t('admin.map.corridor.walk', { defaultValue: 'en línea recta: ~{{count}} cuadras', count: b }),
     legs: (o, d) => t('admin.map.corridor.legs', { defaultValue: '{{origin}} cuadras → {{destination}} cuadras', origin: o, destination: d }),
   };
+}
+
+/**
+ * Monta as linhas que a lista E o mapa consomem — o MESMO array, para os dois
+ * não terem como discordar. É derivação de dado, não orquestração, por isso
+ * mora aqui e não na página.
+ */
+export function buildResultRows(
+  t: TFunction,
+  kind: 'workers' | 'patients',
+  workers: readonly WorkerMapPoint[],
+  patients: readonly PatientMapPoint[],
+): ResultRow[] {
+  if (kind === 'workers') {
+    return workers.map((p) => ({
+      id: p.id, lat: p.lat, lng: p.lng, title: p.name, details: workerDetails(t, p),
+      distance: distanceLabel(p.distanceKm) || null, tooltip: workerPointTitle(t, p),
+      color: WORKER_STATUS_COLOR[p.status] ?? '#6b7280', href: `/admin/workers/${p.id}`,
+    }));
+  }
+  // Um ponto por ENDEREÇO: o id da linha, do pino e da seleção é o mesmo.
+  return patients.map((p) => ({
+    id: p.addressId ?? p.id, patientId: p.id, lat: p.lat, lng: p.lng, title: p.name,
+    details: patientDetails(t, p), distance: distanceLabel(p.distanceKm) || null,
+    tooltip: patientPointTitle(t, p),
+    color: PATIENT_STATUS_COLOR[p.status] ?? '#6b7280', href: `/admin/patients/${p.id}`,
+  }));
 }

@@ -106,7 +106,7 @@ describe('useMapPoints', () => {
     expect(result.current.error).toBeNull();
   });
 
-  it('ao RELIGAR, os pontos da consulta anterior não sobrevivem (a âncora podia ser de outro país)', async () => {
+  it('ao RELIGAR com a MESMA pergunta, os pontos ficam — é a volta de aba, não uma busca nova', async () => {
     vi.mocked(AdminMapApiService.getWorkersMap).mockResolvedValue(OK as never);
     const { result, rerender } = renderHook(
       ({ on }) => useWorkersMapPoints({ country: 'AR', center: CABA, radius_km: 5 }, on),
@@ -116,6 +116,23 @@ describe('useMapPoints', () => {
     rerender({ on: false });
     vi.mocked(AdminMapApiService.getWorkersMap).mockReturnValue(new Promise(() => {}) as never);
     rerender({ on: true });
+    // Apagar aqui esvaziava a lista de opções do seletor da âncora, e o combobox
+    // — sem achar o valor escolhido — voltava ao placeholder: a âncora seguia
+    // ativa e a tela dizia que não havia nenhuma.
+    expect(result.current.points).toEqual([{ id: 'w1' }]);
+    expect(result.current.isLoading).toBe(true);
+  });
+
+  it('ao RELIGAR com pergunta DIFERENTE, os pontos antigos somem (podiam ser de outro país)', async () => {
+    vi.mocked(AdminMapApiService.getWorkersMap).mockResolvedValue(OK as never);
+    const { result, rerender } = renderHook(
+      ({ on, km }) => useWorkersMapPoints({ country: 'AR', center: CABA, radius_km: km }, on),
+      { initialProps: { on: true, km: 5 } },
+    );
+    await waitFor(() => expect(result.current.points).toEqual([{ id: 'w1' }]));
+    rerender({ on: false, km: 5 });
+    vi.mocked(AdminMapApiService.getWorkersMap).mockReturnValue(new Promise(() => {}) as never);
+    rerender({ on: true, km: 25 });
     expect(result.current.points).toEqual([]);
     expect(result.current.isLoading).toBe(true);
   });

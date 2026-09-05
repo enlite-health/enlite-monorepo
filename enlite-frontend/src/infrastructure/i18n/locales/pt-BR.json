@@ -3521,7 +3521,7 @@
         "error": "Não foi possível calcular o trajeto.",
         "noDirect": "Nenhuma linha serve os dois pontos: exigiria baldeação (e paga-se de novo).",
         "noCoverage": "Sem dados de paradas nesta zona — não dá para afirmar o trajeto.",
-        "walk": "a pé: ~{{count}} quadras",
+        "walk": "em linha reta: ~{{count}} quadras",
         "legs": "{{origin}} quadras → {{destination}} quadras"
       }
     },

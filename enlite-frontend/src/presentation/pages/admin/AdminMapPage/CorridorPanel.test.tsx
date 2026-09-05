@@ -6,11 +6,18 @@
  * dado ("não tenho paradas nesta zona") como ausência de transporte — e mandar
  * ou não mandar um prestador para um caso por causa disso.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { CorridorPanel, type CorridorLabels } from './CorridorPanel';
 import { corridorLabelsFor } from './mapPageConfig';
-import type { CorridorResponse } from '@infrastructure/http/AdminMapApiService';
+import type { CorridorRequest, CorridorResponse } from '@infrastructure/http/AdminMapApiService';
+
+// O painel busca sozinho ao montar (é isso que impede a cota de ser gasta com
+// balão que não abriu). Aqui o hook é o dublê: o que se afirma é o DESENHO.
+const mockCorridor = vi.fn();
+vi.mock('@hooks/admin/useCorridor', () => ({ useCorridor: (p: unknown) => mockCorridor(p) }));
+
+const PAR: CorridorRequest = { country: 'AR', workerId: 'w-1', patientAddressId: 'a-1' };
 
 const labels: CorridorLabels = {
   title: (n) => `${n} línea(s) sirven ambos puntos`,
@@ -18,7 +25,7 @@ const labels: CorridorLabels = {
   error: 'No se pudo calcular el recorrido.',
   noDirect: 'Ninguna línea sirve los dos puntos',
   noCoverage: 'Sin datos de paradas en esta zona',
-  walk: (b) => `a pie: ~${b} cuadras`,
+  walk: (b) => `en línea recta: ~${b} cuadras`,
   legs: (o, d) => `${o} cuadras → ${d} cuadras`,
 };
 
@@ -31,10 +38,20 @@ const ok = (lines: CorridorResponse['lines']): CorridorResponse => ({
   outcome: 'ok', straightLineMeters: 1167, straightLineBlocks: 12, lines,
 });
 
-const show = (state: Parameters<typeof CorridorPanel>[0]['state']) =>
-  render(<CorridorPanel state={state} labels={labels} />);
+type Estado = { data: CorridorResponse | null; isLoading: boolean; error: string | null };
+const show = (state: Estado) => {
+  mockCorridor.mockReturnValue(state);
+  return render(<CorridorPanel pair={PAR} labels={labels} />);
+};
 
 describe('CorridorPanel', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('busca o corredor do PAR recebido, no monte do painel', () => {
+    show({ data: null, isLoading: true, error: null });
+    expect(mockCorridor).toHaveBeenCalledWith(PAR);
+  });
+
   it('mostra as linhas que servem os dois pontos, com as quadras de cada ponta', () => {
     show({ data: ok([line('6'), line('50'), line('8')]), isLoading: false, error: null });
 
@@ -45,7 +62,7 @@ describe('CorridorPanel', () => {
     expect(linhas.map((l) => l.getAttribute('data-line'))).toEqual(['6', '50', '8']);
     expect(within(linhas[0]).getByText('1 cuadras → 2 cuadras')).toBeInTheDocument();
     // a caminhada em linha reta entre as duas casas, na mesma unidade
-    expect(screen.getByTestId('corridor-walk')).toHaveTextContent('a pie: ~12 cuadras');
+    expect(screen.getByTestId('corridor-walk')).toHaveTextContent('en línea recta: ~12 cuadras');
   });
 
   it('REGRA-10: "nenhuma linha direta" é uma RESPOSTA, não um erro nem uma lista vazia', () => {
@@ -115,7 +132,7 @@ describe('CorridorPanel', () => {
 
       const l = corridorLabelsFor(t);
       expect(l.title(3)).toBe('3 línea(s) sirven ambos puntos');
-      expect(l.walk(12)).toBe('a pie: ~12 cuadras');
+      expect(l.walk(12)).toBe('en línea recta: ~12 cuadras');
       expect(l.legs(1, 2)).toBe('1 cuadras → 2 cuadras');
       expect(l.loading).toBe('Buscando líneas…');
       expect(l.error).toBe('No se pudo calcular el recorrido.');

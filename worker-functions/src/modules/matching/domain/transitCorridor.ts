@@ -79,13 +79,23 @@ export function buildCorridor(
     return { outcome: 'sem_cobertura', lines: [] };
   }
 
-  /** Para cada linha, a parada MAIS PRÓXIMA que a serve deste lado. */
+  /**
+   * Para cada linha, a parada MAIS PRÓXIMA que a serve deste lado.
+   *
+   * A chave é MODO + LINHA, nunca o nome sozinho: "8" de colectivo e "8" de trem
+   * são coisas diferentes, e cruzá-las inventaria uma conexão direta que não
+   * existe. Hoje só há dado de colectivo carregado, então isto não pode
+   * disparar — é uma trava para quando o feed de trem/subte entrar, que é
+   * exatamente quando ninguém estaria olhando para cá.
+   */
+  const keyOf = (mode: string, line: string): string => `${mode}\u0000${line}`;
   const nearestByLine = (stops: readonly TransitStop[]): Map<string, TransitStop> => {
     const best = new Map<string, TransitStop>();
     for (const stop of stops) {
       for (const line of stop.lines) {
-        const current = best.get(line);
-        if (!current || stop.distanceMeters < current.distanceMeters) best.set(line, stop);
+        const k = keyOf(stop.mode, line);
+        const current = best.get(k);
+        if (!current || stop.distanceMeters < current.distanceMeters) best.set(k, stop);
       }
     }
     return best;
@@ -95,11 +105,11 @@ export function buildCorridor(
   const fromDestination = nearestByLine(destinationStops);
 
   const lines: CorridorLine[] = [];
-  for (const [line, originStop] of fromOrigin) {
-    const destinationStop = fromDestination.get(line);
+  for (const [k, originStop] of fromOrigin) {
+    const destinationStop = fromDestination.get(k);
     if (!destinationStop) continue;
     lines.push({
-      line,
+      line: k.slice(k.indexOf('\u0000') + 1),
       mode: originStop.mode,
       originWalkMeters: Math.round(originStop.distanceMeters),
       originStopName: originStop.name,

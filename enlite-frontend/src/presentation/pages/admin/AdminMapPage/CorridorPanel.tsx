@@ -16,9 +16,10 @@
  * "não tenho dado aqui" é uma confissão. Colapsar as duas em "nada encontrado"
  * faria o operador tratar falta de dado como ausência de transporte.
  */
-import { Bus, TrainFront, Footprints, AlertTriangle } from 'lucide-react';
+import { Bus, TrainFront, MoveHorizontal, AlertTriangle } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
-import type { CorridorLine, CorridorResponse } from '@infrastructure/http/AdminMapApiService';
+import { useCorridor } from '@hooks/admin/useCorridor';
+import type { CorridorLine, CorridorRequest } from '@infrastructure/http/AdminMapApiService';
 
 export interface CorridorLabels {
   title: (n: number) => string;
@@ -47,12 +48,13 @@ function Aviso({ text, testId }: { text: string; testId: string }): JSX.Element 
 /** Quantas linhas o balão mostra antes de resumir. */
 const VISIBLE_LINES = 4;
 
-export function CorridorPanel({
-  state, labels,
-}: {
-  state: { data: CorridorResponse | null; isLoading: boolean; error: string | null };
-  labels: CorridorLabels;
-}): JSX.Element {
+/**
+ * Busca o corredor no MONTE do painel — e o painel só monta quando o balão do
+ * pino abre. Isso é o que garante que a cota de 60 chamadas/min só é gasta com
+ * algo que alguém está de fato olhando.
+ */
+export function CorridorPanel({ pair, labels }: { pair: CorridorRequest; labels: CorridorLabels }): JSX.Element {
+  const state = useCorridor(pair);
   if (state.isLoading) {
     return (
       <div className="mt-2 pt-2 border-t border-gray-100" data-testid="corridor-loading">
@@ -98,7 +100,7 @@ export function CorridorPanel({
 
       {straightLineBlocks !== null && (
         <div className="flex items-center gap-1.5 mt-2" data-testid="corridor-walk">
-          <Footprints size={13} className="text-gray-500 shrink-0" />
+          <MoveHorizontal size={13} className="text-gray-500 shrink-0" />
           <Text as="span" size="xs" color="muted">{labels.walk(straightLineBlocks)}</Text>
         </div>
       )}
