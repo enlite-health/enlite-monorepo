@@ -221,6 +221,20 @@ describe('GroupDetailPage — a regra por componente', () => {
     expect(screen.getByText('admin.access.group.noCountries')).toBeInTheDocument();
   });
 
+  it('🔒 Países vem PRIMEIRO na página e o nome sai por extenso', async () => {
+    // pedido do Gabriel (05/09). O país decide de QUE população o grupo vê
+    // alguém; as células decidem O QUE vê. Ler célula antes de país é ler na
+    // ordem errada. E sigla só é legível para quem já sabe o que ela diz.
+    postura('read');
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByTestId('g-name-readonly');
+    const secoes = screen.getAllByRole('region').map((r) => r.getAttribute('aria-labelledby'));
+    expect(secoes[0]).toBe('sec-countries');
+    // GRUPO tem countries: ['AR'] — o mock de i18n devolve a chave, então o
+    // extenso se prova pela CHAVE consultada, não pela sigla crua
+    expect(screen.getByText(/^countries\.AR ✓$/)).toBeInTheDocument();
+  });
+
   it('🔒 os campos desta tela são `compact`, não o default de 60px', async () => {
     // pedido do Gabriel (05/09): os inputs dominavam a página. O `default`
     // (h-[60px]/text-[20px]) é compartilhado com o app inteiro e NÃO muda —

@@ -155,6 +155,42 @@ function GroupDetail(): JSX.Element {
         </div>
       )}
 
+      {/* ── Países ─────────────────────────────────────────────────────── */}
+      {/* PRIMEIRO na página (pedido do Gabriel, 05/09). O país é o eixo mais
+          largo do painel: ele decide de QUE população o grupo vê alguém, e as
+          células decidem O QUE vê. Ler as células antes de saber sobre quem
+          elas incidem é ler na ordem errada.
+
+          O nome sai por EXTENSO, do dicionário `countries` que o app já tem
+          (AR·BR·UY·…) — não criei um segundo mapa: uma sigla só é legível para
+          quem já sabe o que ela quer dizer. */}
+      <section className="bg-white rounded-xl border border-gray-300 p-4 space-y-3" aria-labelledby="sec-countries">
+        <Heading level={3} weight="semibold" color="primary"><span id="sec-countries">{t('admin.access.group.countriesTitle')}</span></Heading>
+        <div className="flex flex-wrap gap-3 items-center">
+          {COUNTRIES.map((c) => {
+            const on = group.countries.includes(c);
+            const nome = t(`countries.${c}`, c);
+            return (
+              <div key={c} className="flex items-center gap-2 px-3 py-1 rounded border border-gray-300">
+                <Text as="span" size="sm" weight={on ? 'semibold' : 'normal'} color={on ? 'primary' : 'secondary'}>{nome}{on ? ' ✓' : ''}</Text>
+                {editable && (
+                  on ? (
+                    <ActionButton resource={PANEL_RESOURCE} size="sm" variant="ghost" onClick={() => run(() => AdminPermissionsApiService.revokeCountry(group.id, c))}>
+                      {t('admin.access.group.revoke')}
+                    </ActionButton>
+                  ) : (
+                    <ActionButton resource={PANEL_RESOURCE} size="sm" variant="ghost" disabled={!reason.trim()} onClick={() => run(() => AdminPermissionsApiService.grantCountry(group.id, c, reason.trim()))}>
+                      {t('admin.access.group.grant')}
+                    </ActionButton>
+                  )
+                )}
+              </div>
+            );
+          })}
+          {group.countries.length === 0 && !editable && <Text size="sm" color="secondary">{t('admin.access.group.noCountries')}</Text>}
+        </div>
+      </section>
+
       {/* ── Identidade ─────────────────────────────────────────────────── */}
       <section className="bg-white rounded-xl border border-gray-300 p-4 space-y-3" aria-labelledby="sec-id">
         <div className="flex items-center justify-between">
@@ -284,33 +320,6 @@ function GroupDetail(): JSX.Element {
             </ActionButton>
           </div>
         )}
-      </section>
-
-      {/* ── Países ─────────────────────────────────────────────────────── */}
-      <section className="bg-white rounded-xl border border-gray-300 p-4 space-y-3" aria-labelledby="sec-countries">
-        <Heading level={3} weight="semibold" color="primary"><span id="sec-countries">{t('admin.access.group.countriesTitle')}</span></Heading>
-        <div className="flex flex-wrap gap-3 items-center">
-          {COUNTRIES.map((c) => {
-            const on = group.countries.includes(c);
-            return (
-              <div key={c} className="flex items-center gap-2 px-3 py-1 rounded border border-gray-300">
-                <Text as="span" size="sm" weight={on ? 'semibold' : 'normal'} color={on ? 'primary' : 'secondary'}>{c}{on ? ' ✓' : ''}</Text>
-                {editable && (
-                  on ? (
-                    <ActionButton resource={PANEL_RESOURCE} size="sm" variant="ghost" onClick={() => run(() => AdminPermissionsApiService.revokeCountry(group.id, c))}>
-                      {t('admin.access.group.revoke')}
-                    </ActionButton>
-                  ) : (
-                    <ActionButton resource={PANEL_RESOURCE} size="sm" variant="ghost" disabled={!reason.trim()} onClick={() => run(() => AdminPermissionsApiService.grantCountry(group.id, c, reason.trim()))}>
-                      {t('admin.access.group.grant')}
-                    </ActionButton>
-                  )
-                )}
-              </div>
-            );
-          })}
-          {group.countries.length === 0 && !editable && <Text size="sm" color="secondary">{t('admin.access.group.noCountries')}</Text>}
-        </div>
       </section>
 
       {/* ── Membros ────────────────────────────────────────────────────── */}
