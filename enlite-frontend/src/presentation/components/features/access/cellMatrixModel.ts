@@ -31,9 +31,29 @@ export interface Bloco {
   colunas: string[];
 }
 
-/** As ações usadas por um conjunto de células, na ordem canônica. */
+/**
+ * As três ações que TODA categoria mostra, tenha ou não célula nelas.
+ *
+ * Decisão do Gabriel (05/09), olhando a tela: "deixar por padrão Ver, Criar e
+ * Elim., e caso a linha não tenha essa opção deixa o travessão. Fica algo
+ * simétrico." Sem elas, cada categoria terminava num x diferente — 495px na
+ * Analítica, 750 na Administración — e a página inteira ficava com o lado
+ * direito serrilhado e vazio.
+ *
+ * O custo é travessão: 24 → 41. É a troca aceita, e ela compra 5 das 9
+ * categorias terminando exatamente no mesmo lugar.
+ */
+export const COLUNAS_BASE = ['read', 'write', 'delete'] as const;
+
+/**
+ * As colunas da categoria: as três base SEMPRE, mais as ações que ela de fato
+ * usa. Ação fora da ordem canônica ganha coluna própria no fim — o catálogo é
+ * derivado do código e cresce sem passar por aqui, e célula que não aparece é
+ * célula que ninguém concede.
+ */
 export function colunasDe(cells: readonly PermissionCell[]): string[] {
-  const usadas = new Set(cells.map((c) => c.action));
+  const usadas = new Set<string>(cells.map((c) => c.action));
+  for (const a of COLUNAS_BASE) usadas.add(a);
   const conhecidas = ORDEM_ACOES.filter((a) => usadas.has(a));
   const novas = [...usadas].filter((a) => !ORDEM_ACOES.includes(a as never)).sort();
   return [...conhecidas, ...novas];

@@ -88,11 +88,12 @@ describe('CellMatrix — colunas por categoria, avulso fora da grade', () => {
     // Tirar da grade (#296) deixava a caixa sem coluna: ninguém sabia se
     // aquele checkbox era "Ver". Revertido com a tela na mão.
     montar({ catalog: [{ category: 'Analytics', cells: [celula('analytics', 'read', 'Ver relatórios.')] }] });
-    expect(colunasDo('[Analytics]')).toEqual(['[read]']);
+    // as três base aparecem mesmo sem célula: simetria entre categorias
+    expect(colunasDo('[Analytics]')).toEqual(['[read]', '[write]', '[delete]']);
     expect(within(bloco('[Analytics]')).getByRole('rowheader')).toHaveTextContent('[analytics]analytics');
     expect(screen.getByRole('checkbox', { name: 'analytics:read — Ver relatórios.' })).toBeInTheDocument();
-    // e sem nenhum travessão: a categoria tem uma ação só
-    expect(within(bloco('[Analytics]')).queryAllByRole('cell', { name: 'admin.access.group.cells.na' })).toHaveLength(0);
+    // e as duas que ela não tem viram travessão — o preço da simetria
+    expect(within(bloco('[Analytics]')).getAllByRole('cell', { name: 'admin.access.group.cells.na' })).toHaveLength(2);
   });
 
   it('a coluna que o recurso NÃO tem vira travessão, com nome no leitor de tela', () => {
@@ -122,7 +123,7 @@ describe('CellMatrix — colunas por categoria, avulso fora da grade', () => {
 
   it('ação fora da ordem canônica ganha coluna própria, no fim', () => {
     montar({ catalog: [{ category: 'X', cells: [celula('r', 'read'), celula('r', 'teleportar')] }] });
-    expect(colunasDo('[X]')).toEqual(['[read]', '[teleportar]']);
+    expect(colunasDo('[X]')).toEqual(['[read]', '[write]', '[delete]', '[teleportar]']);
   });
 
   it('marcar devolve a chave ao chamador — na grade e no avulso', async () => {
@@ -169,13 +170,14 @@ describe('montaBloco — a regra da poda', () => {
     // `b:send` é a única `send` da categoria; ela abre a coluna "Enviar", e `a`
     // ganha um travessão ali. É o preço de a caixa ter cabeçalho.
     const b = montaBloco('C', [celula('a', 'read'), celula('a', 'write'), celula('b', 'send')]);
-    expect(b.colunas).toEqual(['read', 'write', 'send']);
+    expect(b.colunas).toEqual(['read', 'write', 'delete', 'send']);
   });
 
-  it('categoria de uma ação só: uma coluna, nenhum travessão', () => {
+  it('🔒 as três base saem SEMPRE, mesmo sem célula nelas', () => {
+    // Sem isto cada categoria terminava num x diferente e a página ficava
+    // serrilhada no lado direito (decisão do Gabriel, 05/09).
     const b = montaBloco('C', [celula('a', 'read'), celula('b', 'read')]);
-    expect(b.grade.map((l) => l.resource)).toEqual(['a', 'b']);
-    expect(b.colunas).toEqual(['read']);
+    expect(b.colunas).toEqual(['read', 'write', 'delete']);
   });
 });
 
