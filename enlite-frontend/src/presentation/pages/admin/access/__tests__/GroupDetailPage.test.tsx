@@ -5,7 +5,15 @@ import { GroupDetailPage } from '../GroupDetailPage';
 import { ApiError } from '@infrastructure/http/ApiError';
 import { postura, renderRota, GRUPO, MEMBRO, CATALOGO } from './helpers';
 
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
+// o mock devolve a CHAVE; quando há interpolação, cola os valores no fim — é o
+// que torna o contador de células verificável pelo NÚMERO, não pela chave.
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (k: string, o?: unknown) => (o !== null && typeof o === 'object'
+      ? `${k} ${Object.values(o as Record<string, unknown>).map(String).join(' ')}`
+      : k),
+  }),
+}));
 vi.mock('@infrastructure/services/FirebaseAuthService', () => ({
   FirebaseAuthService: vi.fn().mockImplementation(() => ({ getIdToken: vi.fn().mockResolvedValue('t') })),
 }));
@@ -208,8 +216,31 @@ describe('GroupDetailPage — a regra por componente', () => {
     api.listMembers.mockResolvedValue([]);
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
     expect(await screen.findByText('admin.access.group.noMembers')).toBeInTheDocument();
-    expect(screen.getByText('admin.access.group.noCells')).toBeInTheDocument();
+    // o vazio de células virou o contador em zero, na linha do título
+    expect(screen.getByText('admin.access.group.cells.selected 0')).toBeInTheDocument();
     expect(screen.getByText('admin.access.group.noCountries')).toBeInTheDocument();
+  });
+
+  it('🔒 SEM catálogo o contador não sai — "0" ali seria mentira sobre acesso', async () => {
+    // o grupo TEM células no banco; o que falta é o catálogo. Dizer
+    // "Seleccionadas: 0" logo acima de "o sync não rodou" afirmaria que este
+    // grupo não dá acesso a nada. (gate `revisao-pr`, 05/09)
+    postura('write');
+    api.getCatalog.mockResolvedValue([]);
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    expect(await screen.findByText('admin.access.group.cells.empty')).toBeInTheDocument();
+    expect(screen.queryByText(/^admin\.access\.group\.cells\.selected/)).not.toBeInTheDocument();
+  });
+
+  it('🔒 o contador da linha do título conta as células marcadas, e acompanha o clique', async () => {
+    postura('write');
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    // GRUPO tem worker:read e funnel:read, ambos no catálogo
+    expect(await screen.findByText('admin.access.group.cells.selected 2')).toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText(/^worker:write/));
+    expect(screen.getByText('admin.access.group.cells.selected 3')).toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText(/^worker:read/));
+    expect(screen.getByText('admin.access.group.cells.selected 2')).toBeInTheDocument();
   });
 
   it('grupo ARQUIVADO: mesmo em write vira só leitura, e a lista de candidatos ainda é buscada só por write', async () => {

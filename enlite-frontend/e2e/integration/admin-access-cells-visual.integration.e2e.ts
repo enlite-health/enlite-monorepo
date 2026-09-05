@@ -231,6 +231,31 @@ test.describe('Células e membros — prova VISUAL @integration', () => {
     // e a definição continua acessível, no rótulo da própria caixa
     await expect(trabajadores.getByRole('checkbox', { name: /^worker_pii:read — .*DNI/ })).toHaveCount(1);
 
+    // A ORDEM é alfabética pelo RÓTULO visível, não pela chave crua (decisão do
+    // Gabriel, 05/09). É por isto que a asserção não pode ser sobre a chave: em
+    // Operaciones as chaves já vinham ordenadas (dashboard · dedup ·
+    // integration · test_fixtures) e o que a pessoa lia, não.
+    // o `th` tem dois spans: o rótulo e a chave crua embaixo — só o 1º importa
+    const rotulos = async (r: typeof trabajadores): Promise<string[]> =>
+      r.locator('th[scope="row"] > span:first-child').allTextContents();
+    expect(await rotulos(secao.getByRole('region', { name: 'Operaciones' })))
+      .toEqual(['Datos de prueba', 'Duplicados', 'Integraciones', 'Tablero']);
+    // e em Trabajadores o dossiê sobe para 3º — o custo aceito da mudança
+    expect(await rotulos(trabajadores)).toEqual([
+      'Contacto: nombre, teléfono', 'Documentos',
+      'Dossier: DNI, domicilio, datos sensibles', 'Prestador en operación',
+    ]);
+
+    // O contador da linha do título conta as caixas MARCADAS: o grupo tem 6
+    // células e todas as 6 existem no catálogo deste banco.
+    await expect(secao.getByText(/^Seleccionadas: 6$/)).toBeVisible();
+
+    // ⚠️ Esta captura NÃO é o portão da mudança acima. Medido em 05/09: a
+    // seção tem 1700px de DOM e o element screenshot pinta só 719 — 57,7% da
+    // imagem é branco puro, e Trabajadores/Vacantes ficam de fora. Somado ao
+    // `maxDiffPixelRatio: 0.02`, a reordenação inteira + o contador novo deram
+    // 0,058% de diferença e teriam PASSADO contra o PNG antigo. Quem prova a
+    // mudança são as asserções de DOM acima.
     await expect(secao).toHaveScreenshot('celulas-edicao.png', { maxDiffPixelRatio: 0.02 });
   });
 

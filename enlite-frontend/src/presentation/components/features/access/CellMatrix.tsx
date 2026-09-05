@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Text, Checkbox } from '@presentation/components/atoms';
 import type { CatalogCategory } from '@infrastructure/http/AdminPermissionsApiService';
-import { type Bloco, type Linha, cellKey, montaBloco } from './cellMatrixModel';
+import { type Bloco, type Linha, cellKey, montaBlocos } from './cellMatrixModel';
 
 interface CellMatrixProps {
   catalog: CatalogCategory[];
@@ -40,9 +40,14 @@ interface CellMatrixProps {
  */
 export function CellMatrix({ catalog, selected, saved, editable, onToggle }: CellMatrixProps): JSX.Element {
   const { t } = useTranslation();
+  // Quem ordena é o modelo, e ele ordena pelo texto VISÍVEL — por isso o
+  // resolvedor de rótulo desce daqui em vez de cada linha traduzir a sua.
   const blocos = useMemo(
-    () => catalog.map((cat) => montaBloco(cat.category, cat.cells)),
-    [catalog],
+    () => montaBlocos(catalog, {
+      categoria: (c) => t(`admin.access.group.cells.category.${c}`, c),
+      recurso: (r) => t(`admin.access.group.cells.resource.${r}`, r),
+    }),
+    [catalog, t],
   );
 
   if (catalog.length === 0) {
@@ -51,11 +56,10 @@ export function CellMatrix({ catalog, selected, saved, editable, onToggle }: Cel
 
   return (
     <div className="space-y-5" data-testid="cell-matrix">
-      {selected.size === 0 && (
-        // Grupo sem nenhuma célula não pode ficar mudo: numa matriz de `·`,
-        // "não dá acesso a nada" e "ninguém marcou ainda" desenham igual.
-        <Text size="sm" color="secondary">{t('admin.access.group.noCells')}</Text>
-      )}
+      {/* O "Sin células." que morava aqui virou o contador do cabeçalho da
+          seção (`contaSelecionadas`): ele responde a mesma ambiguidade — numa
+          matriz de `·`, "não dá acesso a nada" e "ninguém marcou ainda"
+          desenham igual — e responde para TODO valor, não só para zero. */}
       {blocos.map((bloco) => (
         <BlocoCategoria
           key={bloco.category}
@@ -80,19 +84,18 @@ interface BlocoProps {
 
 function BlocoCategoria({ bloco, selected, saved, editable, onToggle }: BlocoProps): JSX.Element {
   const { t } = useTranslation();
-  const { category, grade, colunas } = bloco;
-  const nomeCategoria = t(`admin.access.group.cells.category.${category}`, category);
+  const { rotulo, grade, colunas } = bloco;
 
   return (
-    <section aria-label={nomeCategoria}>
+    <section aria-label={rotulo}>
       {/* Categoria vem do BANCO e chega em português; sem tradução, mostra o
           valor cru — some seria pior que ficar feio. */}
       <Text as="span" size="xs" weight="medium" color="secondary" className="block pb-1">
-        {nomeCategoria}
+        {rotulo}
       </Text>
 
       <div className="overflow-x-auto">
-          <table className="border-collapse table-fixed">
+          <table className="w-full border-collapse table-fixed">
             <thead>
               <tr>
                 <th className="text-left pb-1 pr-3 border-b border-gray-300 w-[22rem]">
@@ -107,6 +110,12 @@ function BlocoCategoria({ bloco, selected, saved, editable, onToggle }: BlocoPro
                     </Text>
                   </th>
                 ))}
+                {/* A coluna de SOBRA. Sem ela a régua do cabeçalho parava na
+                    última ação — e como cada categoria tem um número de ações,
+                    cada bloco fechava num x diferente. Ela não tem largura: no
+                    `table-fixed` é ela que come o que sobrar, então a linha vai
+                    até a borda e todos os blocos terminam no mesmo lugar. */}
+                <td aria-hidden="true" className="border-b border-gray-300" />
               </tr>
             </thead>
             <tbody>
@@ -146,7 +155,7 @@ function LinhaRecurso({
     <tr className="border-b border-gray-200 last:border-b-0">
       <th scope="row" className="text-left py-1.5 pr-3 font-normal align-top">
         <Text as="span" size="xs" color="primary" className="block">
-          {t(`admin.access.group.cells.resource.${linha.resource}`, linha.resource)}
+          {linha.rotulo}
         </Text>
         <Text as="span" size="xs" color="secondary" className="block font-mono">{linha.resource}</Text>
       </th>
@@ -181,6 +190,9 @@ function LinhaRecurso({
           </td>
         );
       })}
+      {/* O par da coluna de sobra do cabeçalho: sem esta célula a régua da linha
+          também parava na última ação. */}
+      <td aria-hidden="true" />
     </tr>
   );
 }
