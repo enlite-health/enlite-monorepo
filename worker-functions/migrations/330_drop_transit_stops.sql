@@ -1,4 +1,4 @@
--- 304_drop_transit_stops.sql
+-- 330_drop_transit_stops.sql
 -- Remove `transit_stops`, criada pela 303 e nunca usada.
 --
 -- POR QUÊ: a 303 nasceu para um desenho que foi DESCARTADO no mesmo dia. A rota
@@ -14,7 +14,13 @@
 --
 -- A 303 fica no repositório de propósito: ela foi aplicada em produção e está
 -- registrada em `schema_migrations`. Apagar o arquivo esconderia um passo que
--- de fato aconteceu; o par 303→304 conta a história certa.
+-- de fato aconteceu; o par 303→330 conta a história certa.
+--
+-- Numeração: nasceu como 304 e foi renumerada para 330 no rebase — a `main`
+-- consumiu 304..329 enquanto esta branch estava aberta, e a 304 já era do
+-- `patient_source_labels`. Mesma armadilha que obrigou a renumerar a 283 em
+-- 01/09: número de migration se confere CONTRA A MAIN na hora de subir, nunca
+-- na hora de escrever.
 --
 -- Idempotente: IF EXISTS.
 
