@@ -527,7 +527,7 @@ describe('IcdSearchCombobox', () => {
   it('convite para alargar o escopo: aparece no escopo habitual depois do mínimo de caracteres', () => {
     render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
     fireEvent.change(screen.getByTestId('icd-search-input'), { target: { value: 'di' } });
-    expect(screen.getByTestId('icd-search-widen-hint')).toHaveTextContent('Não encontrou o diagnóstico? Tente em \"Todas as categorias\".');
+    expect(screen.getByTestId('icd-search-widen-hint')).toHaveTextContent('Não encontrou o diagnóstico? Tente em "Todas as categorias".');
   });
 
   it('convite NÃO aparece antes do mínimo de caracteres (não polui o campo quase vazio)', () => {

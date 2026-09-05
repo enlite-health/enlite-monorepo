@@ -82,7 +82,6 @@ async function shot4(target: Page | ReturnType<Page['locator']>, name: string): 
 }
 
 function log(tag: string, msg: string): void {
-  // eslint-disable-next-line no-console
   console.log(`[AUDIT ${tag}] ${msg}`);
 }
 
