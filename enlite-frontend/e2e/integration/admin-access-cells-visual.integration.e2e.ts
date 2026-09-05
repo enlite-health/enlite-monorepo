@@ -200,7 +200,7 @@ test.describe('Células e membros — prova VISUAL @integration', () => {
     safeSql(`DELETE FROM users WHERE firebase_uid IN ('${uids.join("','")}')`);
   });
 
-  test('1. a matriz de células, em edição: colunas por categoria e o dossiê fora da grade', async ({ page }) => {
+  test('1. a matriz de células, em edição: colunas por categoria, todo recurso é linha', async ({ page }) => {
     await loginAs(page, GESTORA);
     await page.goto(`/admin/access/groups/${grupoId}`);
     await expect(page.getByRole('heading', { name: GRUPO })).toBeVisible({ timeout: 15_000 });
@@ -223,12 +223,46 @@ test.describe('Células e membros — prova VISUAL @integration', () => {
     expect(await colunas(trabajadores)).toEqual(['Ver', 'Crear y editar', 'Elim.', 'Expor.', 'Valid.', 'Dar de baja']);
     expect(await colunas(vacantes)).toEqual(['Ver', 'Crear y editar', 'Elim.', 'Ejecutar']);
 
-    // O avulso: o dossiê saiu da grade e mostra a DEFINIÇÃO à vista — não a
-    // chave crua, que era tudo o que a tela dizia antes.
-    const avulsos = trabajadores.getByTestId('avulsos-Trabalhadores');
-    await expect(avulsos).toContainText('DNI');
-    await expect(trabajadores.getByRole('row', { name: /worker_pii/ })).toHaveCount(0);
+    // O dossiê é LINHA da grade, com a caixa embaixo de um cabeçalho nomeado.
+    // Tirá-lo da grade (#296) deixava a caixa solta e sem coluna — "não se sabe
+    // o que faz", nas palavras do Gabriel ao abrir a tela. Revertido.
+    await expect(trabajadores.getByRole('row', { name: /worker_pii/ })).toHaveCount(1);
+    await expect(trabajadores.getByRole('rowheader', { name: /worker_pii/ })).toBeVisible();
+    // e a definição continua acessível, no rótulo da própria caixa
+    await expect(trabajadores.getByRole('checkbox', { name: /^worker_pii:read — .*DNI/ })).toHaveCount(1);
 
+    // A ORDEM é alfabética pelo RÓTULO visível, não pela chave crua (decisão do
+    // Gabriel, 05/09). É por isto que a asserção não pode ser sobre a chave: em
+    // Operaciones as chaves já vinham ordenadas (dashboard · dedup ·
+    // integration · test_fixtures) e o que a pessoa lia, não.
+    // o `th` tem dois spans: o rótulo e a chave crua embaixo — só o 1º importa
+    const rotulos = async (r: typeof trabajadores): Promise<string[]> =>
+      r.locator('th[scope="row"] > span:first-child').allTextContents();
+    expect(await rotulos(secao.getByRole('region', { name: 'Operaciones' })))
+      .toEqual(['Datos de prueba', 'Duplicados', 'Integraciones', 'Tablero']);
+    // e em Trabajadores o dossiê sobe para 3º — o custo aceito da mudança
+    expect(await rotulos(trabajadores)).toEqual([
+      'Contacto: nombre, teléfono', 'Documentos',
+      'Dossier: DNI, domicilio, datos sensibles', 'Prestador en operación',
+    ]);
+
+    // O contador da linha do título conta as caixas MARCADAS: o grupo tem 6
+    // células e todas as 6 existem no catálogo deste banco.
+    await expect(secao.getByText(/^Seleccionadas: 6$/)).toBeVisible();
+
+    // ⚠️ Esta captura NÃO é o portão da mudança acima — e o baseline importa,
+    // então ele vai NOMEADO. Medido em 05/09 contra o PNG como estava no commit
+    // anterior desta branch (5202c9fe), que é o baseline desta mudança: mesma
+    // dimensão (1032x1700), e a reordenação inteira mais o contador novo deram
+    // 0,058% de diferença contra o teto de 2% — verde.
+    // A causa é o ENQUADRAMENTO: a seção tem 1700px de DOM e o element
+    // screenshot pinta 720 (57,6% da imagem é branco puro). Trabajadores e
+    // Vacantes, as duas categorias que a mudança mexe, ficam FORA da foto.
+    // Ressalva, também medida: contra `origin/stage` a asserção ficaria
+    // vermelha — mas por DIMENSÃO (1696 → 1700; `toHaveScreenshot` compara
+    // tamanho ANTES do ratio), e esses 4px vieram dos commits anteriores da
+    // branch, não desta mudança. Tripar por tamanho não é enxergar o conteúdo.
+    // Quem prova a mudança são as asserções de DOM acima.
     await expect(secao).toHaveScreenshot('celulas-edicao.png', { maxDiffPixelRatio: 0.02 });
   });
 

@@ -3316,7 +3316,6 @@
         "status": "Status",
         "since": "Desde",
         "noMembers": "Sem membros.",
-        "noCells": "Sem células.",
         "noCountries": "Sem países.",
         "notFound": "Grupo não encontrado.",
         "lastManager": "Não dá: deixaria o time sem ninguém com permission_management:write.",
@@ -3341,6 +3340,7 @@
           "changed": "alterado, não salvo",
           "empty": "O catálogo ainda não foi sincronizado.",
           "clean": "Sem alterações",
+          "selected": "Selecionadas: {{total}}",
           "pending": "+{{added}} célula(s) · −{{removed}} célula(s) · afeta {{people}} pessoa(s)",
           "action": {
             "read": "Ver",

@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Text, Checkbox } from '@presentation/components/atoms';
-import type { CatalogCategory, PermissionCell } from '@infrastructure/http/AdminPermissionsApiService';
-import { type Bloco, type Linha, cellKey, montaBloco } from './cellMatrixModel';
+import type { CatalogCategory } from '@infrastructure/http/AdminPermissionsApiService';
+import { type Bloco, type Linha, cellKey, montaBlocos } from './cellMatrixModel';
 
 interface CellMatrixProps {
   catalog: CatalogCategory[];
@@ -26,10 +26,11 @@ interface CellMatrixProps {
  *  - **colunas por CATEGORIA**, não do catálogo inteiro: as 8 ações globais
  *    davam 22×8 = 176 posições com 129 travessões (73% de buraco), porque
  *    `validate`, `send` e `disable` têm UMA célula cada e `export` tem duas;
- *  - **recurso de uma célula só sai da grade** e vira item nomeado. Numa
- *    matriz ele é uma caixa e N travessões — e os travessões pertencem às
- *    colunas de OUTRO recurso. São 6, e entre eles `worker_pii` (o dossiê),
- *    a célula mais sensível do catálogo, que aparecia como quase-vazio.
+ *
+ * TODO recurso é linha, inclusive o de uma célula: tirá-lo da grade (#296)
+ * baixava o travessão de 24 para 10 mas custava o CABEÇALHO — a caixa solta não
+ * dizia se era "Ver" — e punha dois alinhamentos no mesmo bloco. Revertido com
+ * a tela na mão.
  *
  * A `description` que o backend sempre mandou e a tela descartava é o rótulo
  * acessível de toda caixa, e o texto VISÍVEL dos avulsos.
@@ -39,9 +40,14 @@ interface CellMatrixProps {
  */
 export function CellMatrix({ catalog, selected, saved, editable, onToggle }: CellMatrixProps): JSX.Element {
   const { t } = useTranslation();
+  // Quem ordena é o modelo, e ele ordena pelo texto VISÍVEL — por isso o
+  // resolvedor de rótulo desce daqui em vez de cada linha traduzir a sua.
   const blocos = useMemo(
-    () => catalog.map((cat) => montaBloco(cat.category, cat.cells)),
-    [catalog],
+    () => montaBlocos(catalog, {
+      categoria: (c) => t(`admin.access.group.cells.category.${c}`, c),
+      recurso: (r) => t(`admin.access.group.cells.resource.${r}`, r),
+    }),
+    [catalog, t],
   );
 
   if (catalog.length === 0) {
@@ -50,11 +56,10 @@ export function CellMatrix({ catalog, selected, saved, editable, onToggle }: Cel
 
   return (
     <div className="space-y-5" data-testid="cell-matrix">
-      {selected.size === 0 && (
-        // Grupo sem nenhuma célula não pode ficar mudo: numa matriz de `·`,
-        // "não dá acesso a nada" e "ninguém marcou ainda" desenham igual.
-        <Text size="sm" color="secondary">{t('admin.access.group.noCells')}</Text>
-      )}
+      {/* O "Sin células." que morava aqui virou o contador do cabeçalho da
+          seção (`contaSelecionadas`): ele responde a mesma ambiguidade — numa
+          matriz de `·`, "não dá acesso a nada" e "ninguém marcou ainda"
+          desenham igual — e responde para TODO valor, não só para zero. */}
       {blocos.map((bloco) => (
         <BlocoCategoria
           key={bloco.category}
@@ -79,34 +84,38 @@ interface BlocoProps {
 
 function BlocoCategoria({ bloco, selected, saved, editable, onToggle }: BlocoProps): JSX.Element {
   const { t } = useTranslation();
-  const { category, grade, colunas, avulsos } = bloco;
-  const nomeCategoria = t(`admin.access.group.cells.category.${category}`, category);
+  const { rotulo, grade, colunas } = bloco;
 
   return (
-    <section aria-label={nomeCategoria}>
+    <section aria-label={rotulo}>
       {/* Categoria vem do BANCO e chega em português; sem tradução, mostra o
           valor cru — some seria pior que ficar feio. */}
       <Text as="span" size="xs" weight="medium" color="secondary" className="block pb-1">
-        {nomeCategoria}
+        {rotulo}
       </Text>
 
-      {grade.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse">
+      <div className="overflow-x-auto">
+          <table className="w-full border-collapse table-fixed">
             <thead>
               <tr>
-                <th className="text-left pb-1 pr-3 border-b border-gray-300 min-w-[13rem]">
+                <th className="text-left pb-1 pr-3 border-b border-gray-300 w-[22rem]">
                   <Text as="span" size="xs" weight="medium" color="secondary">
                     {t('admin.access.group.cells.about')}
                   </Text>
                 </th>
                 {colunas.map((col) => (
-                  <th key={col} className="pb-1 px-2 border-b border-gray-300 align-bottom">
+                  <th key={col} className="pb-1 px-2 border-b border-gray-300 align-bottom w-32">
                     <Text as="span" size="xs" weight="medium" color="secondary">
                       {t(`admin.access.group.cells.action.${col}`, col)}
                     </Text>
                   </th>
                 ))}
+                {/* A coluna de SOBRA. Sem ela a régua do cabeçalho parava na
+                    última ação — e como cada categoria tem um número de ações,
+                    cada bloco fechava num x diferente. Ela não tem largura: no
+                    `table-fixed` é ela que come o que sobrar, então a linha vai
+                    até a borda e todos os blocos terminam no mesmo lugar. */}
+                <td aria-hidden="true" className="border-b border-gray-300" />
               </tr>
             </thead>
             <tbody>
@@ -123,68 +132,9 @@ function BlocoCategoria({ bloco, selected, saved, editable, onToggle }: BlocoPro
               ))}
             </tbody>
           </table>
-        </div>
-      )}
+      </div>
 
-      {avulsos.length > 0 && (
-        <ul className="pt-1" data-testid={`avulsos-${category}`}>
-          {avulsos.map((c) => (
-            <li key={cellKey(c)}>
-              <Avulso
-                celula={c}
-                marcada={selected.has(cellKey(c))}
-                mudou={saved.includes(cellKey(c)) !== selected.has(cellKey(c))}
-                editable={editable}
-                onToggle={onToggle}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
     </section>
-  );
-}
-
-/**
- * Recurso de célula única: nome, a frase que o define, e uma caixa. Sem grade
- * e sem travessão — não há segunda ação com que comparar.
- */
-function Avulso({
-  celula, marcada, mudou, editable, onToggle,
-}: {
-  celula: PermissionCell;
-  marcada: boolean;
-  mudou: boolean;
-  editable: boolean;
-  onToggle: (key: string) => void;
-}): JSX.Element {
-  const { t } = useTranslation();
-  const key = cellKey(celula);
-  const nome = t(`admin.access.group.cells.resource.${celula.resource}`, celula.resource);
-  const definicao = celula.description ?? key;
-
-  return (
-    // Nome à ESQUERDA com a mesma largura da 1ª coluna da grade (`min-w-13rem`)
-    // e a marca logo depois: sem isto o avulso põe a caixa na margem e a grade
-    // põe na coluna — duas posições no mesmo bloco, que o teste visual pegou.
-    <div className="flex items-start gap-3 py-1.5 border-b border-gray-200 last:border-b-0">
-      <div className="min-w-0 min-w-[13rem] pr-3">
-        <Text as="span" size="xs" color="primary" className="block">{nome}</Text>
-        {/* A definição sai do tooltip e fica À VISTA: o avulso não tem vizinho
-            com que se comparar, e entre eles está o dossiê do prestador. */}
-        <Text as="span" size="xs" color="secondary" className="block">{definicao}</Text>
-      </div>
-      <div className="pt-0.5">
-        {editable ? (
-          <Checkbox id={`cell-${key}`} aria-label={`${key} — ${definicao}`} checked={marcada} onChange={() => onToggle(key)} />
-        ) : (
-          <span aria-label={`${key} — ${definicao}`}>
-            <Text as="span" size="xs" color={marcada ? 'primary' : 'secondary'}>{marcada ? '✓' : '·'}</Text>
-          </span>
-        )}
-      </div>
-      {mudou && <span className="sr-only">{t('admin.access.group.cells.changed')}</span>}
-    </div>
   );
 }
 
@@ -205,7 +155,7 @@ function LinhaRecurso({
     <tr className="border-b border-gray-200 last:border-b-0">
       <th scope="row" className="text-left py-1.5 pr-3 font-normal align-top">
         <Text as="span" size="xs" color="primary" className="block">
-          {t(`admin.access.group.cells.resource.${linha.resource}`, linha.resource)}
+          {linha.rotulo}
         </Text>
         <Text as="span" size="xs" color="secondary" className="block font-mono">{linha.resource}</Text>
       </th>
@@ -240,6 +190,9 @@ function LinhaRecurso({
           </td>
         );
       })}
+      {/* O par da coluna de sobra do cabeçalho: sem esta célula a régua da linha
+          também parava na última ação. */}
+      <td aria-hidden="true" />
     </tr>
   );
 }

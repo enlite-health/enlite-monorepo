@@ -17,6 +17,7 @@ import {
   MemberTransfer,
   CellMatrix,
   cellDiff,
+  contaSelecionadas,
   type TransferPerson,
 } from '@presentation/components/features/access';
 import { useCellAccess } from '@presentation/hooks/useCellAccess';
@@ -214,7 +215,25 @@ function GroupDetail(): JSX.Element {
 
       {/* ── Células ────────────────────────────────────────────────────── */}
       <section className="bg-white rounded-xl border border-gray-300 p-4 space-y-3" aria-labelledby="sec-cells">
-        <Heading level={3} weight="semibold" color="primary"><span id="sec-cells">{t('admin.access.group.cellsTitle')}</span></Heading>
+        {/* O contador fica na linha do título, à direita (pedido do Gabriel,
+            05/09). Ele conta o que a GRADE desenha marcado — é o que substitui
+            o "Sin células.": numa matriz de `·`, "não dá acesso a nada" e
+            "ninguém marcou ainda" desenham igual, e o número desfaz isso em
+            qualquer valor, não só no zero.
+
+            SEM catálogo ele NÃO sai. Sem catálogo a grade não desenha caixa
+            nenhuma e o `CellMatrix` diz que o sync não rodou; um "0" ali seria
+            uma afirmação FALSA sobre acesso — o grupo pode ter 12 células no
+            banco. Painel de permissão não erra para o lado do silêncio bonito:
+            quando não sei, não digo (gate `revisao-pr`, 05/09). */}
+        <div className="flex items-baseline justify-between gap-3">
+          <Heading level={3} weight="semibold" color="primary"><span id="sec-cells">{t('admin.access.group.cellsTitle')}</span></Heading>
+          {catalog.length > 0 && (
+            <Text as="span" size="xs" color="secondary" className="shrink-0">
+              {t('admin.access.group.cells.selected', { total: contaSelecionadas(catalog, cells) })}
+            </Text>
+          )}
+        </div>
 
         <CellMatrix
           catalog={catalog}
