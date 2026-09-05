@@ -161,6 +161,77 @@ export function montaBlocos(catalog: readonly CatalogCategory[], rotulos: Rotulo
 }
 
 /**
+ * A ação que todas as outras pressupõem: quem pode MEXER tem de poder VER.
+ *
+ * A regra é a *implied permission* clássica (o `matrix-auth` do Jenkins é a
+ * referência de FORMA: `Job/Configure` implica `Job/Read`). ⚠️ Lá a implicação é
+ * avaliada na AUTORIZAÇÃO e vale para todo chamador; AQUI é conveniência de
+ * TELA. O servidor aceita conjunto sem `read` (`permissionPanelWriteRoutes.ts`
+ * valida só `z.array(z.string())`) — não escreva rota supondo `write ⇒ read`. Aqui ela é deliberadamente
+ * estreita — só `read`, e só dentro do MESMO recurso. Nada de `delete` implicar
+ * `write`, nada de nível: a D128 separou `send` de `write` e a D131 separou
+ * `export` de `read` por motivo medido, e uma cadeia mais longa reconstruiria
+ * o "nível por recurso" que o CTO recusou.
+ */
+export const ACAO_BASE = 'read';
+
+/** As ações mais fortes do recurso que estão marcadas AGORA. */
+export function exigemLeitura(linha: Linha, selected: ReadonlySet<string>): string[] {
+  return Object.entries(linha.porAcao)
+    .filter(([acao, c]) => acao !== ACAO_BASE && selected.has(cellKey(c)))
+    .map(([acao]) => acao);
+}
+
+/**
+ * `Ver` fica TRAVADA enquanto qualquer ação mais forte estiver marcada.
+ *
+ * Decisão do Gabriel (05/09), contra a minha recomendação: ele preferiu travar
+ * a cascata para baixo. O preço é o que a NN/g documenta — caixa que não
+ * responde ao clique lê como "marcada e proibida" —, e é por isso que a trava
+ * NÃO pode ser muda: quem trava aparece no `title` e no rótulo acessível.
+ */
+export function leituraTravada(linha: Linha, selected: ReadonlySet<string>): boolean {
+  const leitura = linha.porAcao[ACAO_BASE];
+  if (!leitura) return false;
+  // Só trava o que JÁ está marcado. Sem esta cláusula, um grupo que chegue com
+  // `worker:export` e sem `worker:read` — combinação que o servidor aceita, e
+  // que a D131 descreve como legítima — abria com `Ver` DESMARCADA e travada:
+  // beco sem saída no painel que existe justamente para arrumar permissão.
+  // Achado do gate, executado (05/09), não deduzido.
+  if (!selected.has(cellKey(leitura))) return false;
+  return exigemLeitura(linha, selected).length > 0;
+}
+
+/**
+ * O toggle COM a implicação: marcar uma ação mais forte marca `Ver` junto.
+ *
+ * Recurso SEM `read` declarado não ganha nada — não dá para marcar o que não
+ * existe. Hoje isso vale para `integration` e `test_fixtures`, que só têm
+ * `execute`: ali dá para conceder operação sem nenhuma leitura, e o buraco é do
+ * CATÁLOGO, não desta tela.
+ */
+export function alternaCelula(
+  catalog: readonly CatalogCategory[],
+  selected: ReadonlySet<string>,
+  key: string,
+): Set<string> {
+  const proximo = new Set(selected);
+  if (proximo.has(key)) {
+    proximo.delete(key);
+    return proximo;
+  }
+  proximo.add(key);
+  const [resource, action] = key.split(':');
+  if (action === ACAO_BASE) return proximo;
+  for (const cat of catalog) {
+    for (const c of cat.cells) {
+      if (c.resource === resource && c.action === ACAO_BASE) proximo.add(cellKey(c));
+    }
+  }
+  return proximo;
+}
+
+/**
  * Quantas células o grupo dá — contadas na GRADE, não no conjunto.
  *
  * O número tem de bater com o que a pessoa vê marcado. Uma célula que o grupo

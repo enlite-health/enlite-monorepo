@@ -149,6 +149,39 @@ function daCelulas(gid: string, chaves: string[]): void {
   }
 }
 
+/**
+ * Captura a seção INTEIRA — e é aqui que morava o defeito do portão.
+ *
+ * O `Desktop Chrome` do Playwright tem viewport 1280x720, e o element
+ * screenshot NÃO rola: ele pinta o que cabe e devolve branco no resto. Medido em
+ * 05/09: a seção de células tem ~1700px de DOM e a captura pintava 720 —
+ * 57,6% de branco puro, com `Trabajadores` e `Vacantes` FORA da foto. Somado ao
+ * `maxDiffPixelRatio: 0.02` de antes, uma seção inteira mudou de posição e o
+ * teste passou verde (13.045px, ratio 0,00574).
+ *
+ * O conserto é a altura do viewport, não o teto: com a seção inteira na foto o
+ * teto pode ser apertado para 0,002, que é ruído de antialias e não mudança.
+ *
+ * A máscara é o que torna isso possível: o `RUN_ID` entra no nome do grupo e nos
+ * e-mails, então esse texto MUDA a cada corrida. Sem mascarar, o baseline nunca
+ * seria determinístico e o teto teria de ficar frouxo de novo — que é como o
+ * portão ficou cego na primeira vez.
+ */
+async function capturaSecao(
+  page: Page,
+  alvo: ReturnType<Page['locator']>,
+  nome: string,
+  mascaras: ReturnType<Page['locator']>[] = [],
+): Promise<void> {
+  const antes = page.viewportSize() ?? { width: 1280, height: 720 };
+  const caixa = await alvo.boundingBox();
+  if (!caixa) throw new Error(`sem boundingBox para ${nome}`);
+  await page.setViewportSize({ width: antes.width, height: Math.ceil(caixa.height) + 120 });
+  await page.waitForTimeout(200); // o layout reflui depois do resize
+  await expect(alvo).toHaveScreenshot(nome, { maxDiffPixelRatio: 0.002, mask: mascaras });
+  await page.setViewportSize(antes);
+}
+
 test.describe('Células e membros — prova VISUAL @integration', () => {
   test.describe.configure({ mode: 'serial' });
   test.setTimeout(120_000);
@@ -228,16 +261,24 @@ test.describe('Células e membros — prova VISUAL @integration', () => {
     // o que faz", nas palavras do Gabriel ao abrir a tela. Revertido.
     await expect(trabajadores.getByRole('row', { name: /worker_pii/ })).toHaveCount(1);
     await expect(trabajadores.getByRole('rowheader', { name: /worker_pii/ })).toBeVisible();
-    // e a definição continua acessível, no rótulo da própria caixa
-    await expect(trabajadores.getByRole('checkbox', { name: /^worker_pii:read — .*DNI/ })).toHaveCount(1);
+    // A definição continua no rótulo acessível da caixa — mas agora vem do
+    // texto CURADO em es-AR, não da `description` do catálogo (condição do
+    // parecer do `lex`, 05/09: ajuda certa não pode conviver com tooltip errado
+    // no mesmo controle). Medido no banco deste stack: a do seed para
+    // `worker_pii` é correta PORÉM está em português numa tela em espanhol; a de
+    // `worker:export` diz "Exportar listagem" e entrega o dossiê descriptografado.
+    await expect(trabajadores.getByRole('checkbox', { name: /^worker_pii:read — Ver el dossier completo.*DNI\/CUIL.*protege de forma especial/ })).toHaveCount(1);
+    // e o "?" abre o painel daquela permissão
+    await expect(trabajadores.getByRole('button', { name: /Dossier.*Qué hace este permiso/ })).toHaveCount(1);
 
     // A ORDEM é alfabética pelo RÓTULO visível, não pela chave crua (decisão do
     // Gabriel, 05/09). É por isto que a asserção não pode ser sobre a chave: em
     // Operaciones as chaves já vinham ordenadas (dashboard · dedup ·
     // integration · test_fixtures) e o que a pessoa lia, não.
-    // o `th` tem dois spans: o rótulo e a chave crua embaixo — só o 1º importa
+    // o `th` tem o par [rótulo + "?"] e a chave crua embaixo; o rótulo é o
+    // primeiro span DENTRO do primeiro span — pegar o de fora arrasta o "?"
     const rotulos = async (r: typeof trabajadores): Promise<string[]> =>
-      r.locator('th[scope="row"] > span:first-child').allTextContents();
+      r.locator('th[scope="row"] > span:first-child > span:first-child').allTextContents();
     expect(await rotulos(secao.getByRole('region', { name: 'Operaciones' })))
       .toEqual(['Datos de prueba', 'Duplicados', 'Integraciones', 'Tablero']);
     // e em Trabajadores o dossiê sobe para 3º — o custo aceito da mudança
@@ -250,20 +291,10 @@ test.describe('Células e membros — prova VISUAL @integration', () => {
     // células e todas as 6 existem no catálogo deste banco.
     await expect(secao.getByText(/^Seleccionadas: 6$/)).toBeVisible();
 
-    // ⚠️ Esta captura NÃO é o portão da mudança acima — e o baseline importa,
-    // então ele vai NOMEADO. Medido em 05/09 contra o PNG como estava no commit
-    // anterior desta branch (5202c9fe), que é o baseline desta mudança: mesma
-    // dimensão (1032x1700), e a reordenação inteira mais o contador novo deram
-    // 0,058% de diferença contra o teto de 2% — verde.
-    // A causa é o ENQUADRAMENTO: a seção tem 1700px de DOM e o element
-    // screenshot pinta 720 (57,6% da imagem é branco puro). Trabajadores e
-    // Vacantes, as duas categorias que a mudança mexe, ficam FORA da foto.
-    // Ressalva, também medida: contra `origin/stage` a asserção ficaria
-    // vermelha — mas por DIMENSÃO (1696 → 1700; `toHaveScreenshot` compara
-    // tamanho ANTES do ratio), e esses 4px vieram dos commits anteriores da
-    // branch, não desta mudança. Tripar por tamanho não é enxergar o conteúdo.
-    // Quem prova a mudança são as asserções de DOM acima.
-    await expect(secao).toHaveScreenshot('celulas-edicao.png', { maxDiffPixelRatio: 0.02 });
+    // A captura VOLTOU a ser portão: `capturaSecao` põe a seção inteira na foto
+    // e o teto caiu de 0,02 para 0,002. Antes disto ela era cega — o número e o
+    // porquê estão no docblock do helper.
+    await capturaSecao(page, secao, 'celulas-edicao.png');
   });
 
   test('2. marcar uma célula acende o diff e o botão — e o rodapé diz quantas pessoas sente', async ({ page }) => {
@@ -283,7 +314,7 @@ test.describe('Células e membros — prova VISUAL @integration', () => {
     await expect(secao.getByText(/\+1 célula\(s\)/)).toBeVisible();
     await expect(secao.getByRole('button', { name: 'Guardar células' })).toBeEnabled();
 
-    await expect(secao).toHaveScreenshot('celulas-com-diff.png', { maxDiffPixelRatio: 0.02 });
+    await capturaSecao(page, secao, 'celulas-com-diff.png');
   });
 
   test('3. a seção de membros: duas colunas, seleção acende UMA seta', async ({ page }) => {
@@ -310,7 +341,8 @@ test.describe('Células e membros — prova VISUAL @integration', () => {
     await expect(secao.getByRole('button', { name: 'Agregar a los miembros' })).toBeEnabled();
     await expect(secao.getByRole('button', { name: 'Quitar de los miembros' })).toBeDisabled();
 
-    await expect(secao).toHaveScreenshot('membros-selecionado.png', { maxDiffPixelRatio: 0.02 });
+    // os cards trazem nome e e-mail com o RUN_ID — texto novo a cada corrida
+    await capturaSecao(page, secao, 'membros-selecionado.png', [secao.getByRole('option')]);
   });
 
   test('4. read: a matriz vira ✓/· sem uma única caixa, e a coluna "Resto del equipo" não existe', async ({ page }) => {
@@ -329,6 +361,9 @@ test.describe('Células e membros — prova VISUAL @integration', () => {
     await expect(secao.getByLabel(/^worker:read/)).toHaveText('✓');
     await expect(secao.getByLabel(/^worker:write/)).toHaveText('·');
 
-    await expect(page.locator('div.space-y-8')).toHaveScreenshot('grupo-modo-leitura.png', { maxDiffPixelRatio: 0.02 });
+    await capturaSecao(page, page.locator('div.space-y-8'), 'grupo-modo-leitura.png', [
+      page.locator('#sec-id'), page.getByTestId('g-name-readonly'),
+      page.getByTestId('g-desc-readonly'), page.getByRole('listitem'),
+    ]);
   });
 });

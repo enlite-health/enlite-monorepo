@@ -4,6 +4,8 @@ import userEvent from '@testing-library/user-event';
 import { GroupDetailPage } from '../GroupDetailPage';
 import { ApiError } from '@infrastructure/http/ApiError';
 import { postura, renderRota, GRUPO, MEMBRO, CATALOGO } from './helpers';
+import es from '@infrastructure/i18n/locales/es.json';
+import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 
 // o mock devolve a CHAVE; quando há interpolação, cola os valores no fim — é o
 // que torna o contador de células verificável pelo NÚMERO, não pela chave.
@@ -96,7 +98,7 @@ describe('GroupDetailPage — a regra por componente', () => {
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
     await screen.findByLabelText('admin.access.groups.name');
     await userEvent.click(screen.getByRole('checkbox', { name: /^worker:write/ }));
-    await userEvent.type(screen.getByLabelText('admin.access.group.reason'), 'onboarding');
+    await userEvent.type(screen.getByLabelText('admin.access.group.reasonCells'), 'onboarding');
     await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.cellsSave' }));
     await waitFor(() => expect(api.setGroupPermissions).toHaveBeenCalledWith(GRUPO.id, ['funnel:read', 'worker:read', 'worker:write'], 'onboarding'));
   });
@@ -193,7 +195,8 @@ describe('GroupDetailPage — a regra por componente', () => {
     await screen.findByLabelText('admin.access.groups.name');
     const conceder = screen.getByRole('button', { name: 'admin.access.group.grant' });
     expect(conceder).toBeDisabled();
-    await userEvent.type(screen.getByLabelText('admin.access.group.reason'), 'expansão');
+    // o motivo do PAÍS é campo próprio, na seção de Países — não o de células
+    await userEvent.type(screen.getByLabelText('admin.access.group.reasonCountry'), 'expansão');
     await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.grant' }));
     await waitFor(() => expect(api.grantCountry).toHaveBeenCalledWith(GRUPO.id, 'BR', 'expansão'));
     await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.revoke' }));
@@ -221,6 +224,48 @@ describe('GroupDetailPage — a regra por componente', () => {
     expect(screen.getByText('admin.access.group.noCountries')).toBeInTheDocument();
   });
 
+  it('🔒 o motivo do país é campo PRÓPRIO — o de células não destrava Conceder', async () => {
+    // regressão que eu mesmo criei ao pôr Países como primeira seção: um estado
+    // `reason` só, com o campo visível duas seções abaixo, deixava os botões de
+    // país mortos sem dizer por quê. Achado pelo CTO (05/09).
+    postura('write');
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByLabelText('admin.access.groups.name');
+    const conceder = screen.getByRole('button', { name: 'admin.access.group.grant' });
+    expect(conceder).toBeDisabled();
+    // digitar no motivo das CÉLULAS não pode destravar o país
+    await userEvent.type(screen.getByLabelText('admin.access.group.reasonCells'), 'nada a ver');
+    expect(screen.getByRole('button', { name: 'admin.access.group.grant' })).toBeDisabled();
+    // o campo do país destrava
+    await userEvent.type(screen.getByLabelText('admin.access.group.reasonCountry'), 'expansão');
+    expect(screen.getByRole('button', { name: 'admin.access.group.grant' })).toBeEnabled();
+  });
+
+  it('🔒 Países vem PRIMEIRO na página e o nome sai por extenso', async () => {
+    // pedido do Gabriel (05/09). O país decide de QUE população o grupo vê
+    // alguém; as células decidem O QUE vê. Ler célula antes de país é ler na
+    // ordem errada. E sigla só é legível para quem já sabe o que ela diz.
+    postura('read');
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByTestId('g-name-readonly');
+    const secoes = screen.getAllByRole('region').map((r) => r.getAttribute('aria-labelledby'));
+    expect(secoes[0]).toBe('sec-countries');
+    // GRUPO tem countries: ['AR'] — o mock de i18n devolve a chave, então o
+    // extenso se prova pela CHAVE consultada, não pela sigla crua
+    expect(screen.getByText(/^countries\.AR ✓$/)).toBeInTheDocument();
+  });
+
+  it('🔒 os campos desta tela são `compact`, não o default de 60px', async () => {
+    // pedido do Gabriel (05/09): os inputs dominavam a página. O `default`
+    // (h-[60px]/text-[20px]) é compartilhado com o app inteiro e NÃO muda —
+    // quem muda é esta tela, para o tamanho já estabelecido na casa.
+    postura('write');
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    const nome = await screen.findByLabelText('admin.access.groups.name');
+    expect(nome).toHaveClass('h-12');
+    expect(nome).not.toHaveClass('h-[60px]');
+  });
+
   it('🔒 SEM catálogo o contador não sai — "0" ali seria mentira sobre acesso', async () => {
     // o grupo TEM células no banco; o que falta é o catálogo. Dizer
     // "Seleccionadas: 0" logo acima de "o sync não rodou" afirmaria que este
@@ -239,8 +284,33 @@ describe('GroupDetailPage — a regra por componente', () => {
     expect(await screen.findByText('admin.access.group.cells.selected 2')).toBeInTheDocument();
     await userEvent.click(screen.getByLabelText(/^worker:write/));
     expect(screen.getByText('admin.access.group.cells.selected 3')).toBeInTheDocument();
+    // `Ver` agora está TRAVADA por `Crear y editar` — o clique não passa
     await userEvent.click(screen.getByLabelText(/^worker:read/));
-    expect(screen.getByText('admin.access.group.cells.selected 2')).toBeInTheDocument();
+    expect(screen.getByText('admin.access.group.cells.selected 3')).toBeInTheDocument();
+    // tirando quem exigia, ela solta e volta a responder
+    await userEvent.click(screen.getByLabelText(/^worker:write/));
+    await userEvent.click(screen.getByLabelText(/^worker:read/));
+    expect(screen.getByText('admin.access.group.cells.selected 1')).toBeInTheDocument();
+  });
+
+  it('🔒 marcar Crear y editar marca Ver junto, e trava com o motivo à mostra', async () => {
+    // item 2 do Gabriel (05/09): "se eu tenho Crear y editar também preciso ter
+    // ver". A trava não pode ser muda — caixa que não responde ao clique lê como
+    // "marcada e proibida" (NN/g), então ela DIZ quem a exige.
+    postura('write');
+    api.getGroup.mockResolvedValue({ ...GRUPO, cells: [] });
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    const ver = await screen.findByLabelText(/^worker:read/);
+    expect(ver).not.toBeChecked();
+    await userEvent.click(screen.getByLabelText(/^worker:write/));
+    expect(screen.getByLabelText(/^worker:read/)).toBeChecked();
+    // lê o LOCALE REAL: procurar pela chave casaria com a chave crua, que é
+    // exatamente o defeito (a string estava gravada noutro caminho e o teste
+    // aprovava o tooltip quebrado). Achado do gate, 05/09.
+    // OS DOIS locales: o gate provou que guardar só o es.json deixava o mesmo
+    // defeito passar verde no pt-BR — meia régua não é régua.
+    for (const loc of [es, ptBR]) expect(loc.admin.access.group.cells.lockedBy).toBeTruthy();
+    expect(screen.getByLabelText(/admin\.access\.group\.cells\.lockedBy/)).toBeDisabled();
   });
 
   it('grupo ARQUIVADO: mesmo em write vira só leitura, e a lista de candidatos ainda é buscada só por write', async () => {

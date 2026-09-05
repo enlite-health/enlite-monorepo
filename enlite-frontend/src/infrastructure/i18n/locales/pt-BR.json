@@ -3302,7 +3302,6 @@
         "archived": "Grupo arquivado.",
         "cellsTitle": "O que este grupo pode fazer?",
         "cellsSave": "Salvar células",
-        "reason": "Motivo",
         "reasonPlaceholder": "Por que muda (fica na trilha)",
         "countriesTitle": "Países",
         "grant": "Conceder",
@@ -3341,6 +3340,7 @@
           "empty": "O catálogo ainda não foi sincronizado.",
           "clean": "Sem alterações",
           "selected": "Selecionadas: {{total}}",
+          "lockedBy": "Exigida por {{acoes}} — não dá para tirar sem tirar aquilo antes",
           "pending": "+{{added}} célula(s) · −{{removed}} célula(s) · afeta {{people}} pessoa(s)",
           "action": {
             "read": "Ver",
@@ -3387,8 +3387,171 @@
             "upload": "Importação de arquivos",
             "user_management": "Usuários do painel",
             "permission_management": "Acessos e permissões"
+          },
+          "help": {
+            "open": "O que esta permissão faz",
+            "close": "Fechar",
+            "actions": "O que cada caixa desta linha faz",
+            "missing": "Ainda não escrevemos a explicação desta permissão. Por enquanto, a chave técnica acima é o único confiável.",
+            "resource": {
+              "analytics": {
+                "body": "São os números do funil e da operação: quanto entra, quanto avança, onde trava. Agregado, não pessoa por pessoa.",
+                "action": {
+                  "export": "Baixar os números para um arquivo que sai do sistema.",
+                  "read": "Ver os painéis e as métricas."
+                }
+              },
+              "dashboard": {
+                "body": "É a tela de início da operação, com o resumo do dia. Sem isto, a pessoa entra no painel e não vê o panorama.",
+                "action": {
+                  "read": "Ver o painel de início."
+                }
+              },
+              "dedup": {
+                "body": "É a detecção de duplicados: a mesma pessoa cadastrada duas vezes. Ver os grupos suspeitos e fundi-los são duas permissões distintas — fundir é irreversível na prática.",
+                "action": {
+                  "execute": "Rodar a detecção e fundir os duplicados.",
+                  "read": "Ver os grupos de registros suspeitos de estarem duplicados."
+                }
+              },
+              "funnel": {
+                "body": "É o percurso do candidato dentro de uma vaga: em que etapa está cada um e quantos há em cada uma. Move pessoas entre etapas, não cria vagas.",
+                "action": {
+                  "read": "Ver o quadro do funil e em que etapa está cada candidato.",
+                  "write": "Mover candidatos de etapa."
+                }
+              },
+              "integration": {
+                "body": "São as integrações com sistemas de fora. Atenção: hoje este recurso só tem «Executar» — não existe um «Ver» para dar. Quem recebe isto pode disparar a integração sem ter nenhuma permissão de leitura, e isso é um buraco do catálogo, não desta tela.",
+                "action": {
+                  "execute": "Disparar uma integração com um sistema externo."
+                }
+              },
+              "interview": {
+                "body": "São os encuadres: a agenda, quem atende, o link da reunião e o que ficou registrado depois. É onde a coordenação decide se o prestador segue.",
+                "action": {
+                  "delete": "Cancelar um encuadre e tirá-lo da agenda.",
+                  "read": "Ver os encuadres agendados e o que ficou registrado de cada um.",
+                  "write": "Agendar, reagendar e lançar o resultado."
+                }
+              },
+              "match": {
+                "body": "É o cruzamento entre prestador e paciente: quem encaixa em qual caso por zona, disponibilidade e perfil. Não decide nada sozinho — propõe, e alguém confirma.",
+                "action": {
+                  "execute": "Rodar o cálculo de matching e gerar as sugestões.",
+                  "read": "Ver as sugestões de matching de uma vaga."
+                }
+              },
+              "messaging": {
+                "body": "É a mensageria com o prestador. Ver a conversa e MANDAR mensagem são duas coisas distintas de propósito: escrever em nome da Enlite é um poder à parte, e por isso «Enviar» não vem junto com «Criar e editar».",
+                "action": {
+                  "read": "Ler as conversas e o histórico de mensagens.",
+                  "send": "Mandar uma mensagem de verdade ao prestador, em nome da Enlite.",
+                  "write": "Editar modelos e rascunhos, sem mandar nada."
+                }
+              },
+              "patient": {
+                "body": "É o paciente e o caso dele: endereço, horários, obra social, estado de admissão. É o tronco de onde sai todo o resto — sem paciente não há vaga nem grupo. Esta permissão NÃO abre texto clínico: isso não vive no painel.",
+                "action": {
+                  "delete": "Eliminar um paciente do sistema.",
+                  "read": "Ver a lista de pacientes e abrir o detalhe do caso.",
+                  "write": "Criar um paciente e editar os dados do caso."
+                }
+              },
+              "permission_management": {
+                "body": "É esta tela. Quem a tem decide o que todo o resto do time pode fazer, e em quais países — inclusive dar mais poder a si mesmo. É a permissão para dar com menos mãos.",
+                "action": {
+                  "read": "Ver os grupos, suas células e quem são os membros, sem poder mudar nada.",
+                  "write": "Criar grupos, mudar células, conceder países e mover gente para dentro e para fora."
+                }
+              },
+              "prescreening": {
+                "body": "É o filtro de entrada: o questionário que o candidato responde antes de alguém olhar. Poupa o trabalho de descartar na mão.",
+                "action": {
+                  "read": "Ver as respostas de pré-seleção de cada candidato.",
+                  "write": "Editar as perguntas e os critérios do filtro."
+                }
+              },
+              "recruitment": {
+                "body": "É a captação: os leads que chegaram, por qual canal, e em que estado está cada conversa antes de virar prestador.",
+                "action": {
+                  "read": "Ver os leads captados e o estado de cada um.",
+                  "write": "Editar um lead e fazê-lo avançar."
+                }
+              },
+              "talentum": {
+                "body": "É a integração com o Talentum, o portal onde as buscas são publicadas. O que se toca aqui sai para fora da Enlite, para um portal público.",
+                "action": {
+                  "read": "Ver o que foi publicado no Talentum e com que estado.",
+                  "write": "Publicar uma busca no Talentum ou dar baixa nela."
+                }
+              },
+              "test_fixtures": {
+                "body": "São os dados de teste do sistema. Mesmo caso das integrações: só existe «Executar», não há um «Ver» para acompanhar.",
+                "action": {
+                  "execute": "Criar ou limpar dados de teste."
+                }
+              },
+              "upload": {
+                "body": "É a carga de arquivos em lote — planilhas que entram de uma vez, em vez de registro por registro.",
+                "action": {
+                  "read": "Ver o histórico de importações e como terminou cada uma.",
+                  "write": "Subir um arquivo e rodar a importação."
+                }
+              },
+              "user_management": {
+                "body": "São as contas do painel: quem pode entrar, com qual e-mail, ativo ou não. É o «quem é do time», distinto de «o que pode fazer», que se decide em Acessos e permissões.",
+                "action": {
+                  "delete": "Tirar alguém do painel.",
+                  "read": "Ver a lista de usuários do painel.",
+                  "write": "Convidar alguém e editar a conta dele."
+                }
+              },
+              "vacancy": {
+                "body": "É o pedido de trabalho: qual caso, onde, em que horário e com quais requisitos. Todo o funil pende disto — sem vaga não há postulação, nem matching, nem encuadre.",
+                "action": {
+                  "delete": "Eliminar uma vaga do sistema.",
+                  "read": "Ver a lista de vagas e abrir o detalhe de cada uma.",
+                  "write": "Criar uma vaga e editar suas condições."
+                }
+              },
+              "worker": {
+                "body": "É a porta de entrada do prestador em operação: a lista, a ficha profissional, o estado em que está e por quais vagas passou. O que NÃO aparece aqui são os dados de identidade nem o contato — esses vivem em duas permissões à parte, justamente para poderem ser dados separados. Abrir uma ficha fica registrado.",
+                "action": {
+                  "delete": "Hoje não faz nada. Nenhuma rota do sistema exige esta permissão, então dá-la ou não dá-la não muda o que a pessoa pode fazer. Está aqui porque o catálogo a declara.",
+                  "disable": "Dar baixa no prestador: deixa de aparecer para matching e para as vagas.",
+                  "export": "Gera um arquivo que SAI do sistema e deixa de estar sob o controle deste painel. É massivo: baixa o filtro inteiro, não um registro. Sozinho não entrega o dossiê — documento, data de nascimento e domicílio só saem se a pessoa também tiver «Dossiê: Ver»; sem isso, essas colunas caem do arquivo e o pedido volta avisando quais faltaram. O que sai, sai em claro: na base está cifrado, e o arquivo decifra.",
+                  "read": "Ver a lista e abrir a ficha profissional de qualquer prestador do país que o grupo alcança.",
+                  "write": "Editar essa ficha: dados profissionais, disponibilidade, zona, notas de operação."
+                }
+              },
+              "worker_contact": {
+                "body": "É o nome e o telefone, nada além — o mínimo para conseguir ligar para alguém. Foi separado do resto justamente para a coordenação poder contatar sem abrir o dossiê inteiro. Cada leitura de contato fica registrada.",
+                "action": {
+                  "read": "Ver nome e telefone do prestador."
+                }
+              },
+              "worker_document": {
+                "body": "São os arquivos em si, não campos de uma ficha: identidade, antecedentes, certificados. Quem tem isto leva um link de download do documento original. É uma categoria distinta do dossiê — dá para dar uma sem a outra.",
+                "action": {
+                  "delete": "Tirar um documento do legajo.",
+                  "read": "Abrir e baixar os documentos carregados do prestador.",
+                  "validate": "Aprovar ou reprovar um documento — e também retirar uma aprovação já dada.",
+                  "write": "Subir um documento novo ou substituir um existente."
+                }
+              },
+              "worker_pii": {
+                "body": "É o dossiê de identidade, e é a permissão mais pesada desta tela. Abre documento de identidade (DNI/CUIL), data de nascimento, domicílio e fotos — e dados que a lei protege de forma especial. Sem ela a pessoa continua vendo a listagem profissional; com ela vê quem a pessoa é. Cuidado com uma porta lateral: a busca por telefone devolve o MESMO dossiê, não um resumo. Abrir uma ficha fica registrado.",
+                "action": {
+                  "read": "Ver o dossiê completo de identidade: documento (DNI/CUIL), data de nascimento, domicílio e fotos, além dos dados sensíveis que a lei protege de forma especial."
+                }
+              }
+            }
           }
-        }
+        },
+        "reasonCountryPlaceholder": "Por que este grupo passa a alcançar este país",
+        "reasonCountry": "Motivo da concessão",
+        "reasonCells": "Motivo da mudança"
       },
       "features": {
         "title": "Funções por país",

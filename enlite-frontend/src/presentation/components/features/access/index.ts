@@ -7,4 +7,5 @@ export { FeatureRouteGate } from './FeatureRouteGate';
 export { MemberTransfer } from './MemberTransfer';
 export type { TransferPerson } from './MemberTransfer';
 export { CellMatrix } from './CellMatrix';
-export { cellDiff, cellKey, contaSelecionadas } from './cellMatrixModel';
+export { CellHelpDrawer } from './CellHelpDrawer';
+export { cellDiff, cellKey, contaSelecionadas, alternaCelula } from './cellMatrixModel';

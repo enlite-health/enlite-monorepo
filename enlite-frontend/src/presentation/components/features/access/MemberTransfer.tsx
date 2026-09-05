@@ -140,25 +140,47 @@ export function MemberTransfer({
 
   return (
     <div className="space-y-3" data-testid="member-transfer">
+      {/* o filtro é acessório da lista, não um campo de formulário: `compact`
+          e contido, para não pesar mais que as duas colunas que ele filtra */}
       <Input
+        inputSize="compact"
+        className="max-w-sm"
         aria-label={t('admin.access.group.transfer.filter')}
         placeholder={t('admin.access.group.transfer.filter')}
         value={filter}
         onChange={(e) => setFilter(e.target.value)}
       />
 
-      <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-start" data-clarity-mask="True">
+      {/* `Resto del equipo` à ESQUERDA e `Miembros` à DIREITA (pedido do Gabriel,
+          05/09). A direção das setas continua literal: → empurra da esquerda
+          para a direita, que agora é ENTRAR no grupo; ← devolve ao resto. Antes,
+          com as colunas trocadas, a seta apontava para o lado contrário do
+          movimento que ela fazia. */}
+      <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-stretch" data-clarity-mask="True">
         <Column
-          label={t('admin.access.group.membersTitle')}
-          people={membros}
+          label={t('admin.access.group.transfer.rest')}
+          people={resto}
           picked={picked}
-          active={side === 'in'}
-          lockedIds={lockedIds}
-          emptyKey="admin.access.group.noMembers"
-          onToggle={(uid) => alternar(uid, 'in')}
+          active={side === 'out'}
+          emptyKey="admin.access.group.transfer.allInside"
+          onToggle={(uid) => alternar(uid, 'out')}
         />
 
-        <div className="flex flex-col gap-2 pt-7">
+        {/* As setas no MEIO das LISTAS, não no topo: elas agem sobre as duas
+            listas inteiras, e ancoradas no cabeçalho pareciam pertencer a ele.
+
+            `self-center` sozinho não bastava: ele centra contra a coluna
+            INTEIRA, cabeçalho incluído, e o cabeçalho só existe de um lado da
+            conta — medido, as setas ficavam 13,5px acima do centro da caixa
+            cinza. O espaçador abaixo repete a caixa do `ColumnHead` (mesmo
+            `pb-1 border-b`, mesma linha de texto) para que o que sobra seja
+            exatamente a altura da lista; se o cabeçalho mudar, isto acompanha
+            sem número mágico. */}
+        <div className="flex flex-col space-y-1">
+          <div className="flex items-baseline pb-1 border-b border-transparent" aria-hidden="true">
+            <Text as="span" size="xs" weight="medium">&nbsp;</Text>
+          </div>
+          <div className="flex-1 flex flex-col justify-center gap-2">
           <ActionButton
             resource={resource}
             size="sm"
@@ -179,15 +201,17 @@ export function MemberTransfer({
           >
             ←
           </ActionButton>
+          </div>
         </div>
 
         <Column
-          label={t('admin.access.group.transfer.rest')}
-          people={resto}
+          label={t('admin.access.group.membersTitle')}
+          people={membros}
           picked={picked}
-          active={side === 'out'}
-          emptyKey="admin.access.group.transfer.allInside"
-          onToggle={(uid) => alternar(uid, 'out')}
+          active={side === 'in'}
+          lockedIds={lockedIds}
+          emptyKey="admin.access.group.noMembers"
+          onToggle={(uid) => alternar(uid, 'in')}
         />
       </div>
 

@@ -367,12 +367,17 @@ test.describe('Painel de acessos ABAC — integração real @integration', () =>
     await page.goto(`/admin/access/groups/${novoGroupId}`);
     await expect(page.getByRole('heading', { name: NOVO_GROUP_NAME })).toBeVisible({ timeout: 15_000 });
 
-    await page.locator('#cells-reason').fill('e2e — concede BR para prova de integração');
+    // O motivo do país é campo PRÓPRIO (`#country-reason`), na seção de Países.
+    // Era `#cells-reason`, que alimentava os dois — e depois que Países virou a
+    // primeira seção, aquele campo ficou duas seções abaixo do botão que ele
+    // destravava. E o nome do país agora sai por extenso, do dicionário
+    // `countries`: é "Brasil ✓", não "BR ✓".
     const countriesSection = page.locator('section[aria-labelledby="sec-countries"]');
-    const brRow = countriesSection.locator('div', { hasText: 'BR' }).last();
+    await page.locator('#country-reason').fill('e2e — concede BR para prova de integração');
+    const brRow = countriesSection.locator('div', { hasText: 'Brasil' }).last();
     await brRow.getByRole('button', { name: 'Conceder' }).click();
     await expect(page.getByRole('status')).toContainText('Guardado.', { timeout: 10_000 });
-    await expect(page.getByText('BR ✓')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Brasil ✓')).toBeVisible({ timeout: 10_000 });
 
     const row = scalar(`SELECT revoked_at FROM iam.group_country_scopes
         WHERE group_id='${novoGroupId}' AND country='BR' ORDER BY created_at DESC LIMIT 1`);

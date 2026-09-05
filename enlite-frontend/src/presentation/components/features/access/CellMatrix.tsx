@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Text, Checkbox } from '@presentation/components/atoms';
 import type { CatalogCategory } from '@infrastructure/http/AdminPermissionsApiService';
-import { type Bloco, type Linha, cellKey, montaBlocos } from './cellMatrixModel';
+import { CellHelpDrawer } from './CellHelpDrawer';
+import { type Bloco, type Linha, ACAO_BASE, cellKey, exigemLeitura, leituraTravada, montaBlocos } from './cellMatrixModel';
 
 interface CellMatrixProps {
   catalog: CatalogCategory[];
@@ -40,6 +41,9 @@ interface CellMatrixProps {
  */
 export function CellMatrix({ catalog, selected, saved, editable, onToggle }: CellMatrixProps): JSX.Element {
   const { t } = useTranslation();
+  // Qual recurso está com a ajuda aberta. Mora aqui, e não em cada linha, para
+  // só existir UM painel na tela.
+  const [ajuda, setAjuda] = useState<{ linha: Linha; acoes: string[] } | null>(null);
   // Quem ordena é o modelo, e ele ordena pelo texto VISÍVEL — por isso o
   // resolvedor de rótulo desce daqui em vez de cada linha traduzir a sua.
   const blocos = useMemo(
@@ -68,8 +72,18 @@ export function CellMatrix({ catalog, selected, saved, editable, onToggle }: Cel
           saved={saved}
           editable={editable}
           onToggle={onToggle}
+          onAjuda={setAjuda}
         />
       ))}
+      {/* Um painel só na tela, e ele recebe a LINHA — não um id para procurar
+          de novo. Guardar só o nome do recurso obrigava a varrer os blocos atrás
+          dele, com ramos de "não achei" que nunca aconteceriam. */}
+      <CellHelpDrawer
+        resource={ajuda?.linha.resource ?? null}
+        rotulo={ajuda?.linha.rotulo ?? ''}
+        acoes={ajuda?.acoes ?? []}
+        onClose={() => setAjuda(null)}
+      />
     </div>
   );
 }
@@ -80,9 +94,10 @@ interface BlocoProps {
   saved: readonly string[];
   editable: boolean;
   onToggle: (key: string) => void;
+  onAjuda: (ajuda: { linha: Linha; acoes: string[] }) => void;
 }
 
-function BlocoCategoria({ bloco, selected, saved, editable, onToggle }: BlocoProps): JSX.Element {
+function BlocoCategoria({ bloco, selected, saved, editable, onToggle, onAjuda }: BlocoProps): JSX.Element {
   const { t } = useTranslation();
   const { rotulo, grade, colunas } = bloco;
 
@@ -128,6 +143,7 @@ function BlocoCategoria({ bloco, selected, saved, editable, onToggle }: BlocoPro
                   saved={saved}
                   editable={editable}
                   onToggle={onToggle}
+                  onAjuda={onAjuda}
                 />
               ))}
             </tbody>
@@ -139,7 +155,7 @@ function BlocoCategoria({ bloco, selected, saved, editable, onToggle }: BlocoPro
 }
 
 function LinhaRecurso({
-  linha, colunas, selected, saved, editable, onToggle,
+  linha, colunas, selected, saved, editable, onToggle, onAjuda,
 }: {
   linha: Linha;
   colunas: readonly string[];
@@ -147,16 +163,32 @@ function LinhaRecurso({
   saved: readonly string[];
   editable: boolean;
   onToggle: (key: string) => void;
+  onAjuda: (ajuda: { linha: Linha; acoes: string[] }) => void;
 }): JSX.Element {
   const { t } = useTranslation();
   const salvas = useMemo(() => new Set(saved), [saved]);
+  // Quem exige `Ver` nesta linha — a lista some assim que a última ação forte
+  // é desmarcada, e é ela que dá NOME à trava.
+  const exigentes = exigemLeitura(linha, selected);
+  const travada = leituraTravada(linha, selected);
 
   return (
     <tr className="border-b border-gray-200 last:border-b-0">
       <th scope="row" className="text-left py-1.5 pr-3 font-normal align-top">
-        <Text as="span" size="xs" color="primary" className="block">
-          {linha.rotulo}
-        </Text>
+        <span className="flex items-center gap-1.5">
+          <Text as="span" size="xs" color="primary">{linha.rotulo}</Text>
+          {/* O "?" fica colado no rótulo do RECURSO, não em cada caixa: a
+              pergunta de quem concede é sobre a permissão inteira, não sobre
+              uma coluna. */}
+          <button
+            type="button"
+            onClick={() => onAjuda({ linha, acoes: colunas.filter((c) => linha.porAcao[c]) })}
+            aria-label={`${linha.rotulo} — ${t('admin.access.group.cells.help.open')}`}
+            className="shrink-0 w-4 h-4 rounded-full border border-gray-400 text-gray-500 leading-none hover:border-primary hover:text-primary focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <Text as="span" size="xs" color="inherit">?</Text>
+          </button>
+        </span>
         <Text as="span" size="xs" color="secondary" className="block font-mono">{linha.resource}</Text>
       </th>
       {colunas.map((col) => {
@@ -172,12 +204,38 @@ function LinhaRecurso({
         }
         const key = cellKey(celula);
         const marcada = selected.has(key);
-        const titulo = celula.description ?? key;
+        // O rótulo acessível vem do texto CURADO, não da `description` do
+        // catálogo. Condição do parecer do `lex` (05/09): escrever ajuda certa
+        // no "?" e deixar o tooltip mentindo é pior que hoje — o leitor de tela
+        // ouve o errado. Hoje ele ouve "CPF" numa tela de DNI. A `description`
+        // fica como último recurso, para célula que ainda não tem texto.
+        // `t(chave, '')` devolve o default quando a chave não existe — é assim
+        // que se pergunta "há texto curado?" sem um segundo dicionário.
+        const curado = t(`admin.access.group.cells.help.resource.${linha.resource}.action.${col}`, '');
+        const titulo = curado !== '' ? curado : (celula.description ?? key);
+        // A trava só existe na coluna `Ver`, e só enquanto houver ação forte
+        // marcada. Caixa que não responde ao clique é ambígua por natureza
+        // (NN/g): esta diz QUEM a trava, no `title` e no rótulo acessível.
+        const estaTravada = col === ACAO_BASE && travada;
+        const porQue = estaTravada
+          ? t('admin.access.group.cells.lockedBy', {
+            acoes: exigentes.map((a) => t(`admin.access.group.cells.action.${a}`, a)).join(', '),
+          })
+          : null;
         return (
           <td key={col} className="text-center py-1.5 px-2">
             {editable ? (
-              <span className="inline-flex justify-center" title={titulo}>
-                <Checkbox id={`cell-${key}`} aria-label={`${key} — ${titulo}`} checked={marcada} onChange={() => onToggle(key)} />
+              <span
+                className={`inline-flex justify-center ${estaTravada ? 'opacity-60 cursor-not-allowed' : ''}`}
+                title={porQue ?? titulo}
+              >
+                <Checkbox
+                  id={`cell-${key}`}
+                  aria-label={porQue ? `${key} — ${titulo} — ${porQue}` : `${key} — ${titulo}`}
+                  checked={marcada}
+                  disabled={estaTravada}
+                  onChange={() => onToggle(key)}
+                />
               </span>
             ) : (
               <span title={titulo} aria-label={`${key} — ${titulo}`}>

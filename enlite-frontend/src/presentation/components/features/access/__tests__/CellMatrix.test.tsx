@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CellMatrix, cellDiff, cellKey } from '..';
-import { contaSelecionadas, montaBloco, montaBlocos } from '../cellMatrixModel';
+import { alternaCelula, contaSelecionadas, leituraTravada, montaBloco, montaBlocos } from '../cellMatrixModel';
 import type { CatalogCategory } from '@infrastructure/http/AdminPermissionsApiService';
 
 /** Rótulos "traduzidos" do teste da vez — vazio = todo rótulo é `[chave crua]`. */
@@ -14,6 +14,10 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (k: string, o?: unknown) => {
       if (typeof o !== 'string') return k;
+      // `t(chave, '')` é como o código pergunta "existe texto curado?" — o
+      // i18next devolve o default quando a chave não existe, e o mock tem de
+      // fazer o mesmo, senão o teste aprova um caminho que a tela não tem.
+      if (o === '') return '';
       return ROTULOS[o] ?? `[${o}]`;
     },
   }),
@@ -77,6 +81,13 @@ const ROTULOS_ES: Record<string, string> = {
 };
 
 const bloco = (nome: string): HTMLElement => screen.getByRole('region', { name: nome });
+/** O `th` tem rótulo + "?" + chave crua; para ordem, só o par rótulo/chave importa. */
+const linhasDe = (raiz: HTMLElement): string[] =>
+  [...raiz.querySelectorAll('th[scope="row"]')].map((th) => {
+    const spans = th.querySelectorAll(':scope > span');
+    const rot = spans[0]?.querySelector('span')?.textContent ?? '';
+    return `${rot}${spans[1]?.textContent ?? ''}`;
+  });
 const colunasDo = (nome: string): (string | null)[] =>
   within(bloco(nome)).getAllByRole('columnheader').slice(1).map((h) => h.textContent);
 
@@ -89,8 +100,7 @@ describe('CellMatrix — colunas por categoria, avulso fora da grade', () => {
     expect(colunasDo('[Trabalhadores]')).toEqual(['[read]', '[write]', '[delete]', '[export]', '[validate]']);
     // TODO recurso é linha, inclusive os de uma célula só — e a grade sai em
     // ordem ALFABÉTICA do rótulo visível (decisão do Gabriel, 05/09).
-    const linhas = within(bloco('[Trabalhadores]')).getAllByRole('rowheader').map((h) => h.textContent);
-    expect(linhas).toEqual([
+    expect(linhasDe(bloco('[Trabalhadores]'))).toEqual([
       'Contacto: nombre, teléfonoworker_contact',
       'Documentosworker_document',
       'Dossier: DNI, domicilio, datos sensiblesworker_pii',
@@ -114,7 +124,7 @@ describe('CellMatrix — colunas por categoria, avulso fora da grade', () => {
       // rótulo real de `es.json`: a ordem por chave e a por rótulo DISCORDAM
       rotulos: { dashboard: 'Tablero', dedup: 'Duplicados', test_fixtures: 'Datos de prueba' },
     });
-    expect(screen.getAllByRole('rowheader').map((h) => h.textContent)).toEqual([
+    expect(linhasDe(screen.getByTestId('cell-matrix'))).toEqual([
       'Datos de pruebatest_fixtures', 'Duplicadosdedup', 'Tablerodashboard',
     ]);
   });
@@ -128,6 +138,27 @@ describe('CellMatrix — colunas por categoria, avulso fora da grade', () => {
     });
     expect(screen.getAllByRole('region').map((r) => r.getAttribute('aria-label')))
       .toEqual(['[Trabalhadores]', '[Vagas e Funil]']);
+  });
+
+  it('🔒 o "?" abre o painel lateral daquela permissão, e o Esc fecha', async () => {
+    montar();
+    expect(screen.queryByTestId('cell-help')).not.toBeInTheDocument();
+    const botoes = screen.getAllByRole('button', { name: /cells\.help\.open$/ });
+    expect(botoes).toHaveLength(6); // um por RECURSO, não por caixa
+    await userEvent.click(botoes[0]);
+    const painel = screen.getByTestId('cell-help');
+    expect(painel).toHaveAttribute('aria-modal', 'true');
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByTestId('cell-help')).not.toBeInTheDocument();
+  });
+
+  it('🔒 o rótulo acessível da caixa vem do texto CURADO, não da description do seed', () => {
+    // condição do parecer do `lex` (05/09): hoje o leitor de tela ouve a
+    // descrição errada do seed. Ajuda certa convivendo com tooltip errado é
+    // pior que hoje — a errada é a que se ouve.
+    montar({ rotulos: { 'worker:read curado': 'x' } });
+    // sem texto curado no dicionário do teste, cai na description (o antigo)
+    expect(screen.getByRole('checkbox', { name: /^worker:read — Ver el prestador/ })).toBeInTheDocument();
   });
 
   it('🔒 a régua do cabeçalho passa da última ação — a coluna de sobra existe', () => {
@@ -157,7 +188,7 @@ describe('CellMatrix — colunas por categoria, avulso fora da grade', () => {
     montar({ catalog: [{ category: 'Analytics', cells: [celula('analytics', 'read', 'Ver relatórios.')] }] });
     // as três base aparecem mesmo sem célula: simetria entre categorias
     expect(colunasDo('[Analytics]')).toEqual(['[read]', '[write]', '[delete]']);
-    expect(within(bloco('[Analytics]')).getByRole('rowheader')).toHaveTextContent('[analytics]analytics');
+    expect(linhasDe(bloco('[Analytics]'))).toEqual(['[analytics]analytics']);
     expect(screen.getByRole('checkbox', { name: 'analytics:read — Ver relatórios.' })).toBeInTheDocument();
     // e as duas que ela não tem viram travessão — o preço da simetria
     expect(within(bloco('[Analytics]')).getAllByRole('cell', { name: 'admin.access.group.cells.na' })).toHaveLength(2);
@@ -185,7 +216,7 @@ describe('CellMatrix — colunas por categoria, avulso fora da grade', () => {
     montar({ catalog: [{ category: 'Inventada', cells: [celula('coisa', 'read'), celula('coisa', 'write')] }] });
     expect(screen.getByRole('region', { name: '[Inventada]' })).toBeInTheDocument();
     // `getByText` não casa texto quebrado em dois <span> (nome + chave crua)
-    expect(screen.getByRole('rowheader')).toHaveTextContent('[coisa]coisa');
+    expect(linhasDe(screen.getByTestId('cell-matrix'))).toEqual(['[coisa]coisa']);
   });
 
   it('ação fora da ordem canônica ganha coluna própria, no fim', () => {
@@ -329,5 +360,64 @@ describe('contaSelecionadas — o número do cabeçalho', () => {
     // o sync descontinua chave (foi o que tirou `permission_management:read`
     // da stage): contá-la faria o cabeçalho dizer 2 numa tela com 1 ✓
     expect(contaSelecionadas(CATALOGO, new Set(['worker:read', 'fantasma:read']))).toBe(1);
+  });
+});
+
+describe('alternaCelula — a implicação `mexer ⇒ ver`', () => {
+  it('marcar uma ação forte marca a leitura do MESMO recurso junto', () => {
+    expect([...alternaCelula(CATALOGO, new Set(), 'worker:write')].sort())
+      .toEqual(['worker:read', 'worker:write']);
+  });
+
+  it('marcar a própria leitura não arrasta nada', () => {
+    expect([...alternaCelula(CATALOGO, new Set(), 'worker:read')]).toEqual(['worker:read']);
+  });
+
+  it('desmarcar tira só a chave pedida — a implicação não desfaz sozinha', () => {
+    const antes = new Set(['worker:read', 'worker:write']);
+    expect([...alternaCelula(CATALOGO, antes, 'worker:write')]).toEqual(['worker:read']);
+  });
+
+  it('🔒 a implicação NÃO cruza recurso: worker:write não marca vacancy:read', () => {
+    const r = alternaCelula(CATALOGO, new Set(), 'worker:write');
+    expect(r.has('vacancy:read')).toBe(false);
+  });
+
+  it('🔒 recurso SEM `read` declarado não ganha nada — o buraco é do catálogo', () => {
+    // é o caso real de `integration` e `test_fixtures`, que só têm `execute`:
+    // dá para conceder operação sem nenhuma leitura, e nenhuma regra de tela
+    // conserta isso — não existe `integration:read` para marcar.
+    const soExecute = [{ category: 'Operações', cells: [celula('integration', 'execute')] }];
+    expect([...alternaCelula(soExecute, new Set(), 'integration:execute')])
+      .toEqual(['integration:execute']);
+  });
+});
+
+describe('leituraTravada — quem trava o Ver', () => {
+  const linha = montaBloco('Trabalhadores', [
+    celula('worker', 'read'), celula('worker', 'write'), celula('worker', 'export'),
+  ]).grade[0];
+
+  it('sem ação forte marcada, Ver responde ao clique', () => {
+    expect(leituraTravada(linha, new Set(['worker:read']))).toBe(false);
+  });
+
+  it('com QUALQUER ação forte marcada, Ver trava', () => {
+    expect(leituraTravada(linha, new Set(['worker:read', 'worker:export']))).toBe(true);
+  });
+
+  it('🔒 grupo com ação forte e SEM Ver não pode ficar em beco sem saída', () => {
+    // combinação que o servidor aceita (o zod da rota é só array de string) e
+    // que a D131 descreve como legítima. Sem a cláusula, `Ver` abria DESMARCADA
+    // e TRAVADA: o gestor não conseguia conceder leitura sem antes remover o
+    // export. Achado do gate (05/09), executado.
+    expect(leituraTravada(linha, new Set(['worker:export']))).toBe(false);
+    // e assim que Ver é marcada, a trava volta a valer
+    expect(leituraTravada(linha, new Set(['worker:export', 'worker:read']))).toBe(true);
+  });
+
+  it('recurso sem `read` nunca trava — não há o que travar', () => {
+    const sem = montaBloco('X', [celula('integration', 'execute')]).grade[0];
+    expect(leituraTravada(sem, new Set(['integration:execute']))).toBe(false);
   });
 });
