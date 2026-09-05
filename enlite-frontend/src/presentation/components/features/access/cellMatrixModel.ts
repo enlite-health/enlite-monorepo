@@ -23,20 +23,12 @@ export interface Linha {
   porAcao: Record<string, PermissionCell>;
 }
 
-/** Uma categoria já dividida em quem merece grade e quem não. */
+/** Uma categoria: as linhas e as colunas QUE ELA usa. */
 export interface Bloco {
   category: string;
-  /** Recursos com 2+ ações: viram grade, com as colunas DESTA categoria. */
   grade: Linha[];
-  /** Colunas da grade — só as ações que os recursos acima realmente usam. */
+  /** Só as ações que os recursos DESTA categoria usam. */
   colunas: string[];
-  /**
-   * Recursos com UMA ação só. Fora da grade: numa matriz, viram uma linha com
-   * uma caixa e N travessões, e o pior é que os travessões pertencem às colunas
-   * de OUTRO recurso. `worker_pii` (o dossiê) é um deles — a célula mais
-   * sensível do catálogo aparecia como quase-vazio.
-   */
-  avulsos: PermissionCell[];
 }
 
 /** As ações usadas por um conjunto de células, na ordem canônica. */
@@ -63,25 +55,24 @@ export function agrupaPorRecurso(cells: readonly PermissionCell[]): Linha[] {
 }
 
 /**
- * Divide a categoria em grade e avulsos, e calcula as colunas DA CATEGORIA.
+ * A categoria inteira numa grade só — TODO recurso é linha, inclusive o de uma
+ * célula.
  *
- * Colunas por categoria, e não do catálogo inteiro, é o que mata o vazio: com
- * as 8 colunas globais são 22 recursos × 8 = 176 posições e 129 travessões
- * (73%). Por categoria, com os avulsos fora, cai para ~51 posições e ~10
- * travessões — e 5 das 9 categorias ficam sem nenhum. (D271)
+ * Tirar o recurso de célula única da grade (o que foi ao ar no #296) reduzia o
+ * travessão de 24 para 10, e o Gabriel abriu a tela: "está horrível. Espaços em
+ * branco. Um checkbox em uma linha que nem se sabe o que faz." Ele tinha razão
+ * e o número escondia: fora da grade, a caixa perde o CABEÇALHO — não dá para
+ * saber se aquele checkbox é "Ver" ou outra coisa —, e fica na margem enquanto
+ * a caixa da grade fica na coluna, dois alinhamentos no mesmo bloco.
+ *
+ * O que mata o vazio é a coluna por CATEGORIA, não tirar linha da grade:
+ *   colunas globais   176 posições · 129 travessões (73%)
+ *   por categoria      71 posições ·  24 travessões (33%), 6 das 9 sem nenhum
+ * `Analytics` vira 1×1 — uma linha, uma coluna nomeada, uma caixa embaixo dela.
  */
 export function montaBloco(category: string, cells: readonly PermissionCell[]): Bloco {
-  const linhas = agrupaPorRecurso(cells);
-  const grade = linhas.filter((l) => Object.keys(l.porAcao).length > 1);
-  const avulsos = linhas
-    .filter((l) => Object.keys(l.porAcao).length === 1)
-    .map((l) => Object.values(l.porAcao)[0]);
-  return {
-    category,
-    grade,
-    colunas: colunasDe(grade.flatMap((l) => Object.values(l.porAcao))),
-    avulsos,
-  };
+  const grade = agrupaPorRecurso(cells);
+  return { category, grade, colunas: colunasDe(cells) };
 }
 
 /**

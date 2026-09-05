@@ -200,7 +200,7 @@ test.describe('Células e membros — prova VISUAL @integration', () => {
     safeSql(`DELETE FROM users WHERE firebase_uid IN ('${uids.join("','")}')`);
   });
 
-  test('1. a matriz de células, em edição: colunas por categoria e o dossiê fora da grade', async ({ page }) => {
+  test('1. a matriz de células, em edição: colunas por categoria, todo recurso é linha', async ({ page }) => {
     await loginAs(page, GESTORA);
     await page.goto(`/admin/access/groups/${grupoId}`);
     await expect(page.getByRole('heading', { name: GRUPO })).toBeVisible({ timeout: 15_000 });
@@ -223,11 +223,13 @@ test.describe('Células e membros — prova VISUAL @integration', () => {
     expect(await colunas(trabajadores)).toEqual(['Ver', 'Crear y editar', 'Elim.', 'Expor.', 'Valid.', 'Dar de baja']);
     expect(await colunas(vacantes)).toEqual(['Ver', 'Crear y editar', 'Elim.', 'Ejecutar']);
 
-    // O avulso: o dossiê saiu da grade e mostra a DEFINIÇÃO à vista — não a
-    // chave crua, que era tudo o que a tela dizia antes.
-    const avulsos = trabajadores.getByTestId('avulsos-Trabalhadores');
-    await expect(avulsos).toContainText('DNI');
-    await expect(trabajadores.getByRole('row', { name: /worker_pii/ })).toHaveCount(0);
+    // O dossiê é LINHA da grade, com a caixa embaixo de um cabeçalho nomeado.
+    // Tirá-lo da grade (#296) deixava a caixa solta e sem coluna — "não se sabe
+    // o que faz", nas palavras do Gabriel ao abrir a tela. Revertido.
+    await expect(trabajadores.getByRole('row', { name: /worker_pii/ })).toHaveCount(1);
+    await expect(trabajadores.getByRole('rowheader', { name: /worker_pii/ })).toBeVisible();
+    // e a definição continua acessível, no rótulo da própria caixa
+    await expect(trabajadores.getByRole('checkbox', { name: /^worker_pii:read — .*DNI/ })).toHaveCount(1);
 
     await expect(secao).toHaveScreenshot('celulas-edicao.png', { maxDiffPixelRatio: 0.02 });
   });

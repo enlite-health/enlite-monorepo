@@ -67,9 +67,13 @@ describe('CellMatrix — colunas por categoria, avulso fora da grade', () => {
   it('🔒 o recorte desenhado: Trabajadores rende Ver · Crear · Elim. · Expor. · Valid.', () => {
     montar();
     expect(colunasDo('[Trabalhadores]')).toEqual(['[read]', '[write]', '[delete]', '[export]', '[validate]']);
-    // e a grade tem só quem TEM 2+ ações: worker e worker_document
+    // TODO recurso é linha, na ordem do catálogo — inclusive os de uma célula
+    // só. O dossiê vem em 3º, como desenhado; alfabético o enterraria.
     const linhas = within(bloco('[Trabalhadores]')).getAllByRole('rowheader').map((h) => h.textContent);
-    expect(linhas).toEqual(['[worker]worker', '[worker_document]worker_document']);
+    expect(linhas).toEqual([
+      '[worker]worker', '[worker_contact]worker_contact',
+      '[worker_pii]worker_pii', '[worker_document]worker_document',
+    ]);
   });
 
   it('🔒 cada categoria tem AS SUAS colunas — Vacantes não herda Expor. nem Valid.', () => {
@@ -80,22 +84,22 @@ describe('CellMatrix — colunas por categoria, avulso fora da grade', () => {
       .toHaveLength(1); // só funnel:delete
   });
 
-  it('🔒 recurso de UMA célula sai da grade e mostra a definição À VISTA', () => {
-    montar();
-    const avulsos = within(bloco('[Trabalhadores]')).getByTestId('avulsos-Trabalhadores');
-    // o dossiê é o caso que motivou a poda: era 1 caixa + 5 travessões de OUTRO recurso
-    expect(within(avulsos).getByText('Ver el dossier: DNI, domicilio, datos sensibles.')).toBeInTheDocument();
-    expect(within(avulsos).getByText('[worker_pii]')).toBeInTheDocument();
-    expect(within(avulsos).getAllByRole('checkbox')).toHaveLength(2); // worker_contact e worker_pii
-    // e não sobrou linha deles na grade
-    expect(within(bloco('[Trabalhadores]')).queryByText('[worker_pii]worker_pii')).not.toBeInTheDocument();
+  it('🔒 recurso de UMA célula é LINHA, com cabeçalho em cima da caixa', () => {
+    // Tirar da grade (#296) deixava a caixa sem coluna: ninguém sabia se
+    // aquele checkbox era "Ver". Revertido com a tela na mão.
+    montar({ catalog: [{ category: 'Analytics', cells: [celula('analytics', 'read', 'Ver relatórios.')] }] });
+    expect(colunasDo('[Analytics]')).toEqual(['[read]']);
+    expect(within(bloco('[Analytics]')).getByRole('rowheader')).toHaveTextContent('[analytics]analytics');
+    expect(screen.getByRole('checkbox', { name: 'analytics:read — Ver relatórios.' })).toBeInTheDocument();
+    // e sem nenhum travessão: a categoria tem uma ação só
+    expect(within(bloco('[Analytics]')).queryAllByRole('cell', { name: 'admin.access.group.cells.na' })).toHaveLength(0);
   });
 
   it('a coluna que o recurso NÃO tem vira travessão, com nome no leitor de tela', () => {
     montar();
-    // worker não tem `validate`; worker_document não tem `export`
+    // 4 recursos × 5 colunas = 20 posições; 10 células → 10 travessões
     expect(within(bloco('[Trabalhadores]')).getAllByRole('cell', { name: 'admin.access.group.cells.na' }))
-      .toHaveLength(2);
+      .toHaveLength(10);
   });
 
   it('🔑 a descrição do backend vira o rótulo — a chave crua deixa de ser tudo', () => {
@@ -156,24 +160,22 @@ describe('CellMatrix — colunas por categoria, avulso fora da grade', () => {
 });
 
 describe('montaBloco — a regra da poda', () => {
-  it('2+ ações vai para a grade; 1 ação vira avulso', () => {
+  it('todo recurso vira linha, independente de quantas ações tem', () => {
     const b = montaBloco('C', [celula('a', 'read'), celula('a', 'write'), celula('b', 'read')]);
-    expect(b.grade.map((l) => l.resource)).toEqual(['a']);
-    expect(b.avulsos.map((c) => c.resource)).toEqual(['b']);
+    expect(b.grade.map((l) => l.resource)).toEqual(['a', 'b']);
   });
 
-  it('as colunas saem só da GRADE — avulso não abre coluna para ninguém', () => {
-    // `b:send` é a única `send` da categoria e é avulso: não pode criar uma
-    // coluna "Enviar" que renderia um travessão em `a`.
+  it('a coluna nasce de QUALQUER célula da categoria — inclusive a de recurso só', () => {
+    // `b:send` é a única `send` da categoria; ela abre a coluna "Enviar", e `a`
+    // ganha um travessão ali. É o preço de a caixa ter cabeçalho.
     const b = montaBloco('C', [celula('a', 'read'), celula('a', 'write'), celula('b', 'send')]);
-    expect(b.colunas).toEqual(['read', 'write']);
+    expect(b.colunas).toEqual(['read', 'write', 'send']);
   });
 
-  it('categoria só de avulsos não tem grade nem coluna', () => {
+  it('categoria de uma ação só: uma coluna, nenhum travessão', () => {
     const b = montaBloco('C', [celula('a', 'read'), celula('b', 'read')]);
-    expect(b.grade).toEqual([]);
-    expect(b.colunas).toEqual([]);
-    expect(b.avulsos).toHaveLength(2);
+    expect(b.grade.map((l) => l.resource)).toEqual(['a', 'b']);
+    expect(b.colunas).toEqual(['read']);
   });
 });
 
