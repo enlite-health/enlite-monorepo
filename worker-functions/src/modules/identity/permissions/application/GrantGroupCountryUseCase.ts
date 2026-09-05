@@ -20,7 +20,7 @@ export interface GrantGroupCountryInput {
   tenantId: string;
   groupId: string;
   country: CountryCode;
-  reason: string;
+  reason: string | null;
 }
 
 export class GrantGroupCountryUseCase {
@@ -31,7 +31,11 @@ export class GrantGroupCountryUseCase {
 
   async execute(input: GrantGroupCountryInput): Promise<{ scopeId: string }> {
     const country = assertSupportedCountry(input.country);
-    const reason = assertValidReason(input.reason);
+    // Motivo opcional (mig 412). Quando vier, continua passando pelo mesmo
+    // guarda — que além do vazio bloqueia dado de pessoa no texto.
+    const reason = input.reason === null || input.reason.trim() === ''
+      ? null
+      : assertValidReason(input.reason);
     const scopeId = await mutateGroup(
       { groups: this.groups, events: this.events },
       input.tenantId,

@@ -263,9 +263,18 @@ describe('zod na borda — recusa ANTES de qualquer ida ao banco', () => {
     expect(d.setFeature).not.toHaveBeenCalled();
   });
 
-  it('🔴 concessão de país SEM motivo é 400 — o motivo é o que a trilha guarda', async () => {
+  it('🔒 concessão de país SEM motivo PASSA — e chega ao use case como null', async () => {
+    // era 400 até 05/09. Mudou por decisão do Gabriel: motivo por país não é
+    // uma justificativa que exista, e campo obrigatório sem conteúdo real vira
+    // "ok"/"." — o oposto de trilha. Quem guarda o ato é granted_by/created_at.
     const { app, d } = build();
-    await request(app).post(`/api/admin/permission-groups/${ID}/countries`).send({ country: 'BR' }).expect(400);
+    await request(app).post(`/api/admin/permission-groups/${ID}/countries`).send({ country: 'BR' }).expect(200);
+    expect(d.grantCountry).toHaveBeenCalledWith(expect.objectContaining({ country: 'BR', reason: null }));
+  });
+
+  it('🔴 país inválido continua 400 — o que amplia alcance segue validado', async () => {
+    const { app, d } = build();
+    await request(app).post(`/api/admin/permission-groups/${ID}/countries`).send({ country: 'US' }).expect(400);
     expect(d.grantCountry).not.toHaveBeenCalled();
   });
 

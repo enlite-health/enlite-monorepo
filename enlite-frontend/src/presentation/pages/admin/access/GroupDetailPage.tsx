@@ -9,10 +9,10 @@ import {
 } from '@infrastructure/http/AdminPermissionsApiService';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { AdminUser } from '@domain/entities/AdminUser';
-import { Heading, Text, Input, Textarea, Label } from '@presentation/components/atoms';
+import { Heading, Text, Input, Textarea } from '@presentation/components/atoms';
 import {
   ActionButton,
-  ReadOnlyField,
+  CampoEditavel,
   PanelErrorAlert,
   MemberTransfer,
   CellMatrix,
@@ -31,11 +31,12 @@ const COUNTRIES = ['AR', 'BR'] as const;
  * `/admin/access/groups/:id` — o grupo por inteiro: nome/descrição, células,
  * países, membros e o arquivamento.
  *
- * A postura vem de `useCellAccess(PANEL_RESOURCE)`: em `read` todo campo é
- * `ReadOnlyField` (texto, input nem montado), toda ação de conclusão é
- * `ActionButton` (D269 — correção do Gabriel: "esconder, não desabilitar" —
- * sem `:write` o botão SOME, `mode="hide"` default), e as checkboxes de
- * célula viram lista.
+ * A postura vem de `useCellAccess(PANEL_RESOURCE)`: sem `:write` o lápis de
+ * nome/descrição não sai, os botões de país viram texto, e as checkboxes de
+ * célula viram lista (D269 — "esconder, não desabilitar").
+ *
+ * Nome e descrição usam `CampoEditavel` (texto + lápis) desde 05/09; o
+ * `ReadOnlyField` continua para quem decide texto×input pela POSTURA.
  */
 export function GroupDetailPage(): JSX.Element {
   return (
@@ -61,12 +62,6 @@ function GroupDetail(): JSX.Element {
   // Edição local — só existe em `write`; em `read` os campos são texto.
   const [form, setForm] = useState({ name: '', description: '' });
   const [cells, setCells] = useState<Set<string>>(new Set());
-  // DOIS motivos, não um. Eram o mesmo estado, e o campo visível morava na
-  // seção de Células — até `ebef8613` pôr Países como a PRIMEIRA seção. A partir
-  // dali os botões de país ficavam mortos por causa de um campo duas seções
-  // abaixo, rotulado para outra coisa. Regressão minha, achada pelo CTO (05/09).
-  const [reason, setReason] = useState('');
-  const [motivoPais, setMotivoPais] = useState('');
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [candidates, setCandidates] = useState<AdminUser[]>([]);
 
@@ -126,15 +121,37 @@ function GroupDetail(): JSX.Element {
     [group?.cells, cells],
   );
 
-  async function run(acao: () => Promise<unknown>, okKey = 'admin.access.group.saved'): Promise<void> {
+  /**
+   * O PUT manda nome E descrição juntos, então confirmar um campo precisa
+   * mandar o outro — mas o outro vem do SERVIDOR, não do formulário.
+   *
+   * Antes vinha do `form`, e por isso confirmar a descrição levava junto um
+   * nome que a pessoa tinha digitado no lápis e NÃO confirmado. É a mesma
+   * classe do drawer clínico que apaga campo não editado — e o meu teste
+   * travava esse comportamento como se fosse o correto (achado do gate, 05/09).
+   */
+  const salvarCampo = (campo: 'name' | 'description'): Promise<boolean> => run(
+    () => AdminPermissionsApiService.updateGroup(group!.id, {
+      name: campo === 'name' ? form.name.trim() : group!.name,
+      description: campo === 'description'
+        ? (form.description.trim() || null)
+        : (group!.description ?? null),
+    }),
+  );
+
+  /** Devolve se a ação DEU CERTO — quem chama precisa saber para não fechar
+   *  um campo cujo save o servidor recusou. */
+  async function run(acao: () => Promise<unknown>, okKey = 'admin.access.group.saved'): Promise<boolean> {
     setError(null);
     setNotice(null);
     try {
       await acao();
       setNotice(okKey);
       await load();
+      return true;
     } catch (err) {
       setError(panelErrorKey(err));
+      return false;
     }
   }
 
@@ -160,65 +177,6 @@ function GroupDetail(): JSX.Element {
           <Text size="sm" color="primary">{t(notice)}</Text>
         </div>
       )}
-
-      {/* ── Países ─────────────────────────────────────────────────────── */}
-      {/* PRIMEIRO na página (pedido do Gabriel, 05/09). O país é o eixo mais
-          largo do painel: ele decide de QUE população o grupo vê alguém, e as
-          células decidem O QUE vê. Ler as células antes de saber sobre quem
-          elas incidem é ler na ordem errada.
-
-          O nome sai por EXTENSO, do dicionário `countries` que o app já tem
-          (AR·BR·UY·…) — não criei um segundo mapa: uma sigla só é legível para
-          quem já sabe o que ela quer dizer. */}
-      <section className="bg-white rounded-xl border border-gray-300 p-4 space-y-3" aria-labelledby="sec-countries">
-        <Heading level={3} weight="semibold" color="primary"><span id="sec-countries">{t('admin.access.group.countriesTitle')}</span></Heading>
-        <div className="flex flex-wrap gap-3 items-center">
-          {COUNTRIES.map((c) => {
-            const on = group.countries.includes(c);
-            const nome = t(`countries.${c}`, c);
-            return (
-              <div key={c} className="flex items-center gap-2 px-3 py-1 rounded border border-gray-300">
-                <Text as="span" size="sm" weight={on ? 'semibold' : 'normal'} color={on ? 'primary' : 'secondary'}>{nome}{on ? ' ✓' : ''}</Text>
-                {editable && (
-                  on ? (
-                    <ActionButton resource={PANEL_RESOURCE} size="sm" variant="ghost" onClick={() => run(() => AdminPermissionsApiService.revokeCountry(group.id, c))}>
-                      {t('admin.access.group.revoke')}
-                    </ActionButton>
-                  ) : (
-                    <ActionButton resource={PANEL_RESOURCE} size="sm" variant="ghost" disabled={!motivoPais.trim()} onClick={() => run(async () => {
-                      await AdminPermissionsApiService.grantCountry(group.id, c, motivoPais.trim());
-                      setMotivoPais('');
-                    })}>
-                      {t('admin.access.group.grant')}
-                    </ActionButton>
-                  )
-                )}
-              </div>
-            );
-          })}
-          {group.countries.length === 0 && !editable && <Text size="sm" color="secondary">{t('admin.access.group.noCountries')}</Text>}
-        </div>
-        {/* O motivo do país mora AQUI, ao lado dos botões que ele destrava — não
-            numa seção abaixo. Ele é obrigatório em três camadas do servidor
-            (zod, `assertValidReason` e a função `iam.grant_country`, que levanta
-            23502 sozinha), então esconder o campo não remove a exigência: só
-            deixa o botão morto sem dizer por quê. Revogar não pede motivo, e a
-            assimetria está certa — revogar reduz alcance. */}
-        {editable && (
-          <div className="max-w-sm">
-            {/* rótulo PRÓPRIO: dois campos chamados "Motivo" na mesma tela é a
-                mesma ambiguidade de duas caixas com o mesmo nome acessível */}
-            <Label htmlFor="country-reason">{t('admin.access.group.reasonCountry')}</Label>
-            <Input
-              id="country-reason"
-              inputSize="compact"
-              value={motivoPais}
-              placeholder={t('admin.access.group.reasonCountryPlaceholder')}
-              onChange={(e) => setMotivoPais(e.target.value)}
-            />
-          </div>
-        )}
-      </section>
 
       {/* ── Identidade ─────────────────────────────────────────────────── */}
       <section className="bg-white rounded-xl border border-gray-300 p-4 space-y-3" aria-labelledby="sec-id">
@@ -263,27 +221,90 @@ function GroupDetail(): JSX.Element {
 
             A largura também é contida: o cartão é largo porque a matriz de
             células precisa, não porque um nome de grupo precise de 1100px. */}
-        <ReadOnlyField id="g-name" label={t('admin.access.groups.name')} value={group.name} editable={editable} className="max-w-xl">
-          <Input id="g-name" inputSize="compact" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-        </ReadOnlyField>
-        <ReadOnlyField id="g-desc" label={t('admin.access.groups.description')} value={group.description} editable={editable} className="max-w-xl">
-          <Textarea id="g-desc" inputSize="compact" rows={2} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
-        </ReadOnlyField>
-        {editable && (
-          <div className="flex justify-end">
-            <ActionButton
-              resource={PANEL_RESOURCE}
-              variant="primary"
-              size="sm"
-              onClick={() => run(() => AdminPermissionsApiService.updateGroup(group.id, {
-                name: form.name.trim(),
-                description: form.description.trim() || null,
-              }))}
-            >
-              {t('admin.access.group.save')}
-            </ActionButton>
-          </div>
-        )}
+        {/* Texto com lápis ao lado; o input só nasce depois do clique (pedido do
+            Gabriel, 05/09). Antes a tela abria com tudo em campo de formulário —
+            convite a digitar onde ninguém queria mudar nada, e o dobro da altura
+            para mostrar a mesma coisa. Cancelar devolve o valor salvo. */}
+        <CampoEditavel
+          id="g-name"
+          label={t('admin.access.groups.name')}
+          value={group.name}
+          editable={editable}
+          onConfirm={() => salvarCampo('name')}
+          onCancel={() => setForm((f) => ({ ...f, name: group.name }))}
+        >
+          <Input id="g-name" inputSize="compact" value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+        </CampoEditavel>
+        <CampoEditavel
+          id="g-desc"
+          label={t('admin.access.groups.description')}
+          value={group.description}
+          editable={editable}
+          onConfirm={() => salvarCampo('description')}
+          onCancel={() => setForm((f) => ({ ...f, description: group.description ?? '' }))}
+        >
+          <Textarea id="g-desc" inputSize="compact" rows={2} value={form.description}
+            onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
+        </CampoEditavel>
+
+      </section>
+
+      {/* ── Países ─────────────────────────────────────────────────────── */}
+      {/* PRIMEIRO na página (pedido do Gabriel, 05/09). O país é o eixo mais
+          largo do painel: ele decide de QUE população o grupo vê alguém, e as
+          células decidem O QUE vê. Ler as células antes de saber sobre quem
+          elas incidem é ler na ordem errada.
+
+          O nome sai por EXTENSO, do dicionário `countries` que o app já tem
+          (AR·BR·UY·…) — não criei um segundo mapa: uma sigla só é legível para
+          quem já sabe o que ela quer dizer. */}
+      <section className="bg-white rounded-xl border border-gray-300 p-4 space-y-3" aria-labelledby="sec-countries">
+        <Heading level={3} weight="semibold" color="primary"><span id="sec-countries">{t('admin.access.group.countriesTitle')}</span></Heading>
+        <div className="flex flex-wrap gap-3 items-center">
+          {COUNTRIES.map((c) => {
+            const on = group.countries.includes(c);
+            const nome = t(`countries.${c}`, c);
+            // O PAÍS é o botão (pedido do Gabriel, 05/09). Não há "Conceder" ao
+            // lado: clicar em `Argentina` concede, clicar de novo revoga. O
+            // estado é o próprio botão — marcado (✓, fundo cheio) ou não.
+            //
+            // Sem motivo: a mig 412 tirou a exigência das três camadas
+            // (coluna, zod e a própria `iam.grant_country`). Decisão do Gabriel:
+            // "ninguém faz um grupo e coloca motivo por ser de um país ou dos
+            // dois" — e campo obrigatório sem conteúdo real vira "ok" e ".".
+            // Quem guarda o ato é `granted_by` + `created_at` + `revoked_at`.
+            // Em `read` o país é TEXTO, não botão desabilitado. `ActionButton`
+            // ESCONDE quando falta a célula de escrita (D269) — e o país virando
+            // botão fazia a seção inteira sumir para quem só lê, que é
+            // justamente quem precisa consultar o alcance do grupo.
+            if (!editable) {
+              return (
+                <span key={c} className="px-3 py-1 rounded border border-gray-300">
+                  <Text as="span" size="sm" weight={on ? 'semibold' : 'normal'} color={on ? 'primary' : 'secondary'}>
+                    {nome}{on ? ' ✓' : ''}
+                  </Text>
+                </span>
+              );
+            }
+            return (
+              <ActionButton
+                key={c}
+                resource={PANEL_RESOURCE}
+                size="sm"
+                variant={on ? 'primary' : 'outline'}
+                aria-pressed={on}
+                onClick={() => run(() => (on
+                  ? AdminPermissionsApiService.revokeCountry(group.id, c)
+                  : AdminPermissionsApiService.grantCountry(group.id, c)))}
+              >
+                {nome}{on ? ' ✓' : ''}
+              </ActionButton>
+            );
+          })}
+          {group.countries.length === 0 && !editable && <Text size="sm" color="secondary">{t('admin.access.group.noCountries')}</Text>}
+        </div>
+
       </section>
 
       {/* ── Células ────────────────────────────────────────────────────── */}
@@ -331,16 +352,15 @@ function GroupDetail(): JSX.Element {
                 })
                 : t('admin.access.group.cells.clean')}
             </Text>
-            <div className="w-full max-w-xs">
-              <Label htmlFor="cells-reason">{t('admin.access.group.reasonCells')}</Label>
-              <Input id="cells-reason" inputSize="compact" value={reason} placeholder={t('admin.access.group.reasonPlaceholder')} onChange={(e) => setReason(e.target.value)} />
-            </div>
             <ActionButton
               resource={PANEL_RESOURCE}
               variant="primary"
               size="sm"
               disabled={!diffCelulas.dirty}
-              onClick={() => run(() => AdminPermissionsApiService.setGroupPermissions(group.id, [...cells].sort(), reason.trim() || null))}
+              /* Sem motivo: o servidor o aceita nulo para células
+                 (`set_group_permissions` não o exige), e um campo obrigatório
+                 que ninguém preenche colhe "ok" e "." — pedido do Gabriel. */
+              onClick={() => run(() => AdminPermissionsApiService.setGroupPermissions(group.id, [...cells].sort(), null))}
             >
               {t('admin.access.group.cellsSave')}
             </ActionButton>
@@ -364,12 +384,12 @@ function GroupDetail(): JSX.Element {
           memberIds={members.map((m) => m.userId)}
           people={people}
           editable={editable}
-          onSave={(add, remove) => run(async () => {
+          onSave={async (add, remove) => { await run(async () => {
             // Adiciona ANTES de remover: trocar o último gestor por outro só
             // passa pelo anti-lockout do banco nessa ordem.
             for (const uid of add) await AdminPermissionsApiService.addMember(group.id, uid);
             for (const uid of remove) await AdminPermissionsApiService.removeMember(group.id, uid);
-          })}
+          }); }}
         />
       </section>
     </div>

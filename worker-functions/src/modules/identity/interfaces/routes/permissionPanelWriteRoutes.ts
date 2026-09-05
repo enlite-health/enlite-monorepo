@@ -105,7 +105,12 @@ const DefinirCelulas = z.object({
   cellKeys: z.array(z.string().min(3).max(128)).max(500),
   reason: Motivo.nullable().optional(),
 });
-const ConcederPais = z.object({ country: z.enum(COUNTRY_CODES), reason: Motivo });
+// O motivo da concessão de país é OPCIONAL desde a mig 412 (decisão do Gabriel,
+// 05/09): ninguém escreve justificativa por país, e campo obrigatório que não se
+// consegue preencher colhe "ok" e ".". A trilha vive em `granted_by` +
+// `created_at` + `revoked_at`. Quando vier, continua validado — inclusive o
+// bloqueio de dado pessoal do `assertValidReason`.
+const ConcederPais = z.object({ country: z.enum(COUNTRY_CODES), reason: Motivo.nullable().optional() });
 const PaisParam = z.object({ id: z.string().uuid(), country: z.enum(COUNTRY_CODES) });
 const MembroBody = z.object({ userId: z.string().min(1).max(128) });
 const FeatureParam = z.object({ country: z.enum(COUNTRY_CODES), featureKey: z.string().min(3).max(120) });
@@ -215,7 +220,7 @@ export function createPermissionPanelWriteRoutes(deps: PermissionPanelWriteDeps)
     const body = ConcederPais.safeParse(req.body);
     if (!body.success) return invalido(res, 'country payload');
     responder(res, 'grant country', () =>
-      g.grantCountry.execute({ tenantId, groupId: params.data.id, country: body.data.country, reason: body.data.reason }),
+      g.grantCountry.execute({ tenantId, groupId: params.data.id, country: body.data.country, reason: body.data.reason ?? null }),
     );
   });
 

@@ -367,21 +367,25 @@ test.describe('Painel de acessos ABAC — integração real @integration', () =>
     await page.goto(`/admin/access/groups/${novoGroupId}`);
     await expect(page.getByRole('heading', { name: NOVO_GROUP_NAME })).toBeVisible({ timeout: 15_000 });
 
-    // O motivo do país é campo PRÓPRIO (`#country-reason`), na seção de Países.
-    // Era `#cells-reason`, que alimentava os dois — e depois que Países virou a
-    // primeira seção, aquele campo ficou duas seções abaixo do botão que ele
-    // destravava. E o nome do país agora sai por extenso, do dicionário
-    // `countries`: é "Brasil ✓", não "BR ✓".
+    // O PAÍS é o botão: não há mais "Conceder" ao lado, nem campo de motivo.
+    // A mig 412 tirou a exigência das três camadas (coluna NOT NULL, zod da
+    // rota, e a própria `iam.grant_country`, que levantava 23502). Este teste é
+    // a prova de ponta a ponta de que o clique sozinho grava a linha.
     const countriesSection = page.locator('section[aria-labelledby="sec-countries"]');
-    await page.locator('#country-reason').fill('e2e — concede BR para prova de integração');
-    const brRow = countriesSection.locator('div', { hasText: 'Brasil' }).last();
-    await brRow.getByRole('button', { name: 'Conceder' }).click();
+    await expect(page.locator('#country-reason')).toHaveCount(0);
+    await countriesSection.getByRole('button', { name: /^Brasil/ }).click();
     await expect(page.getByRole('status')).toContainText('Guardado.', { timeout: 10_000 });
-    await expect(page.getByText('Brasil ✓')).toBeVisible({ timeout: 10_000 });
+    await expect(countriesSection.getByRole('button', { name: 'Brasil ✓' })).toHaveAttribute('aria-pressed', 'true', { timeout: 10_000 });
 
     const row = scalar(`SELECT revoked_at FROM iam.group_country_scopes
         WHERE group_id='${novoGroupId}' AND country='BR' ORDER BY created_at DESC LIMIT 1`);
     expect(row).toBe('');
+    // o efeito REAL da mig 412: a linha existe com motivo NULL, e a trilha do
+    // ato está em quem/quando — não num texto que ninguém escrevia.
+    const trilha = scalar(`SELECT coalesce(reason,'<NULL>') || '|' || (granted_by <> '') || '|' || (created_at IS NOT NULL)
+        FROM iam.group_country_scopes
+        WHERE group_id='${novoGroupId}' AND country='BR' ORDER BY created_at DESC LIMIT 1`);
+    expect(trilha).toBe('<NULL>|true|true');
   });
 
   test('4. gestora adiciona a comum ao grupo — a request seguinte de comum deixa de ser 403', async ({ page, request }) => {

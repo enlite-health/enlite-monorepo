@@ -152,4 +152,24 @@ describe('queryAudit sem filtros', () => {
     await AdminPermissionsApiService.queryAudit();
     expect(String(fetchMock.mock.calls[0][0])).toMatch(/\/api\/admin\/permission-audit$/);
   });
+
+  it('🔒 grantCountry manda `reason: null` quando não recebe motivo', async () => {
+    // a mig 412 tornou o motivo opcional; o contrato manda `null` explícito em
+    // vez de omitir a chave, para o zod da rota não ver `undefined` e o banco
+    // não receber string vazia (um terceiro estado sem significado).
+    fetchMock.mockResolvedValue(resposta(200, { success: true, data: { scopeId: 's' } }));
+    await AdminPermissionsApiService.grantCountry('g1', 'BR');
+    // procura a chamada pelo CAMINHO, não por índice: contar posição quebra
+    // quando outro teste do arquivo deixa chamada na frente.
+    const corpos = (): unknown[] => fetchMock.mock.calls
+      .filter((c) => String(c[0]).endsWith('/countries'))
+      .map((c) => JSON.parse(String((c[1] as RequestInit).body)));
+    expect(corpos()).toEqual([{ country: 'BR', reason: null }]);
+
+    await AdminPermissionsApiService.grantCountry('g1', 'AR', 'quando vier, vai');
+    expect(corpos()).toEqual([
+      { country: 'BR', reason: null },
+      { country: 'AR', reason: 'quando vier, vai' },
+    ]);
+  });
 });

@@ -3383,8 +3383,6 @@
         "cellsSave": "Guardar células",
         "reasonPlaceholder": "Por qué cambia (queda en la trilla)",
         "countriesTitle": "Países",
-        "grant": "Conceder",
-        "revoke": "Revocar",
         "membersTitle": "Miembros",
         "addMember": "Agregar miembro",
         "remove": "Quitar",
@@ -3628,9 +3626,7 @@
             }
           }
         },
-        "reasonCountryPlaceholder": "Por qué este grupo pasa a alcanzar este país",
-        "reasonCountry": "Motivo de la concesión",
-        "reasonCells": "Motivo del cambio"
+        "editField": "Editar {{campo}}"
       },
       "features": {
         "title": "Funciones por país",

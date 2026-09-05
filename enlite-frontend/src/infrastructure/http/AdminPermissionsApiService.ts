@@ -173,8 +173,9 @@ class AdminPermissionsApiServiceClass {
     return this.request('PUT', `/api/admin/permission-groups/${id}/permissions`, { cellKeys, reason: reason ?? null });
   }
 
-  async grantCountry(id: string, country: string, reason: string): Promise<{ scopeId: string }> {
-    return this.request('POST', `/api/admin/permission-groups/${id}/countries`, { country, reason });
+  /** Motivo opcional desde a mig 412 — o servidor não o exige mais. */
+  async grantCountry(id: string, country: string, reason?: string | null): Promise<{ scopeId: string }> {
+    return this.request('POST', `/api/admin/permission-groups/${id}/countries`, { country, reason: reason ?? null });
   }
 
   async revokeCountry(id: string, country: string): Promise<{ revoked: number }> {

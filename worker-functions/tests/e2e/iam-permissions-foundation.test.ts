@@ -345,9 +345,16 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
       expect(ana.c).toEqual(expect.arrayContaining(['AR', 'BR']));
     });
 
-    it('sem motivo → 23502; célula inválida → 23503; arquivar grupo de sistema → 23514', async () => {
+    it('🔒 país sem motivo NÃO levanta mais 23502 (mig 412); célula inválida → 23503; arquivar grupo de sistema → 23514', async () => {
+      // O 23502 saiu da `iam.grant_country` na mig 412 (decisão do Gabriel,
+      // 05/09). Aqui a asserção é só que a chamada PASSA — o que ela GRAVA
+      // (reason NULL) é medido no `iam-permissions-usecases`, que tem grupo
+      // próprio. Este arquivo compartilha `newGroupId` entre os testes, e
+      // revogar/reconceder aqui derrubava dois testes vizinhos: a prova não
+      // pode custar o estado de quem vem depois.
       await expect(asRole('app_runtime', { uid: U.gestor }, (c) => c.query(`SELECT iam.grant_country($1, 'AR', '  ')`, [newGroupId])))
-        .rejects.toMatchObject({ code: '23502' });
+        .resolves.toBeDefined();
+      // e o resto do guarda da função CONTINUA de pé — eu tirei só o RAISE do motivo
       await expect(asRole('app_runtime', { uid: U.gestor }, (c) => c.query(`SELECT iam.set_group_permissions($1, ARRAY[gen_random_uuid()], 'x')`, [newGroupId])))
         .rejects.toMatchObject({ code: '23503' });
       await expect(asRole('app_runtime', { uid: U.gestor }, (c) => c.query(`SELECT iam.archive_group($1)`, [masterId])))

@@ -32,6 +32,12 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({ AdminApiService: { list
 /** `.at(-1)` não existe no `lib` deste tsconfig. */
 const ultimo = <T,>(xs: T[]): T => xs[xs.length - 1];
 
+/** O nome/descrição só viram input depois do clique no lápis (pedido do Gabriel). */
+const abrirLapis = async (id: 'g-name' | 'g-desc'): Promise<HTMLElement> => {
+  await userEvent.click(await screen.findByTestId(`${id}-editar`));
+  return screen.getByLabelText(id === 'g-name' ? 'admin.access.groups.name' : 'admin.access.groups.description');
+};
+
 const ROTA = `/admin/access/groups/${GRUPO.id}`;
 const PATTERN = '/admin/access/groups/:id';
 
@@ -64,7 +70,7 @@ describe('GroupDetailPage — a regra por componente', () => {
     expect(screen.getByTestId('cell-matrix')).toBeInTheDocument();
     expect(screen.getByLabelText(/^worker:read/)).toHaveTextContent('✓');
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
-    for (const nome of ['admin.access.group.save', 'admin.access.group.archive', 'admin.access.group.cellsSave',
+    for (const nome of ['admin.access.group.archive', 'admin.access.group.cellsSave',
       'admin.access.group.addMember', 'admin.access.group.remove', 'admin.access.group.grant', 'admin.access.group.revoke']) {
       expect(screen.queryByRole('button', { name: nome })).not.toBeInTheDocument();
     }
@@ -74,13 +80,17 @@ describe('GroupDetailPage — a regra por componente', () => {
     expect(screen.getByText('maria@enlite.health')).toBeInTheDocument();
   });
 
-  it('write: inputs montados, checkboxes por célula, e cada ação de conclusão existe', async () => {
+  it('write: o lápis existe, checkboxes por célula, e cada ação de conclusão existe', async () => {
     postura('write');
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
-    expect(await screen.findByLabelText('admin.access.groups.name')).toHaveValue('Recrutadores AR');
+    // em `write` o campo é texto COM lápis; o input só nasce ao clicar nele
+    expect(await screen.findByTestId('g-name-readonly')).toHaveTextContent('Recrutadores AR');
+    expect(screen.getByTestId('g-name-editar')).toBeInTheDocument();
+    // o único textbox da tela é o motivo do país; o nome só vira input no lápis
+    expect(document.querySelector('#g-name')).toBeNull();
     expect(screen.getByRole('checkbox', { name: /^worker:read/ })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: /^worker:write/ })).not.toBeChecked();
-    for (const nome of ['admin.access.group.save', 'admin.access.group.archive', 'admin.access.group.cellsSave']) {
+    for (const nome of ['admin.access.group.archive', 'admin.access.group.cellsSave']) {
       expect(screen.getByRole('button', { name: nome })).toBeInTheDocument();
     }
     // Membros: as duas setas existem e nascem MORTAS — sem ninguém marcado,
@@ -88,26 +98,26 @@ describe('GroupDetailPage — a regra por componente', () => {
     for (const seta of ['admin.access.group.transfer.toMembers', 'admin.access.group.transfer.toRest']) {
       expect(screen.getByRole('button', { name: seta })).toBeDisabled();
     }
-    // e `Guardar` da transferência só nasce quando há mudança pendente
-    expect(screen.getAllByRole('button', { name: 'admin.access.group.save' })).toHaveLength(1);
+    // e `Guardar` não existe em repouso: o da transferência só nasce com
+    // mudança pendente, e o da identidade só existe com o campo aberto no lápis
+    expect(screen.queryByRole('button', { name: 'admin.access.group.save' })).not.toBeInTheDocument();
   });
 
   it('write: salvar células manda o conjunto INTEIRO, ordenado, com o motivo', async () => {
     postura('write');
     api.setGroupPermissions.mockResolvedValue({ cells: 3 });
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
-    await screen.findByLabelText('admin.access.groups.name');
+    await screen.findByTestId('g-name-readonly');
     await userEvent.click(screen.getByRole('checkbox', { name: /^worker:write/ }));
-    await userEvent.type(screen.getByLabelText('admin.access.group.reasonCells'), 'onboarding');
     await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.cellsSave' }));
-    await waitFor(() => expect(api.setGroupPermissions).toHaveBeenCalledWith(GRUPO.id, ['funnel:read', 'worker:read', 'worker:write'], 'onboarding'));
+    await waitFor(() => expect(api.setGroupPermissions).toHaveBeenCalledWith(GRUPO.id, ['funnel:read', 'worker:read', 'worker:write'], null));
   });
 
   it('write: arquivar pede confirmação, e só então chama a API e volta à lista', async () => {
     postura('write');
     api.archiveGroup.mockResolvedValue({ affectedMembers: 1 });
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
-    await screen.findByLabelText('admin.access.groups.name');
+    await screen.findByTestId('g-name-readonly');
     await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.archive' }));
     expect(api.archiveGroup).not.toHaveBeenCalled();
     await userEvent.click(within(screen.getByTestId('archive-confirm')).getByRole('button', { name: 'admin.access.group.archiveYes' }));
@@ -119,7 +129,7 @@ describe('GroupDetailPage — a regra por componente', () => {
     postura('write');
     api.removeMember.mockRejectedValue(new ApiError({ success: false, error: 'x', code: 'last_manager' }, 409));
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
-    await screen.findByLabelText('admin.access.groups.name');
+    await screen.findByTestId('g-name-readonly');
     const membros = screen.getByRole('listbox', { name: 'admin.access.group.membersTitle' });
     await userEvent.click(within(membros).getByRole('option', { name: /maria@enlite\.health/ }));
     await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.transfer.toRest' }));
@@ -131,7 +141,7 @@ describe('GroupDetailPage — a regra por componente', () => {
     postura('write');
     api.addMember.mockResolvedValue({ membershipId: 'm2' });
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
-    await screen.findByLabelText('admin.access.groups.name');
+    await screen.findByTestId('g-name-readonly');
     const resto = await screen.findByRole('listbox', { name: 'admin.access.group.transfer.rest' });
     const fora = within(resto).getAllByRole('option').map((o) => o.textContent);
     expect(fora.join(' ')).toContain('joao@enlite.health');
@@ -178,35 +188,59 @@ describe('GroupDetailPage — a regra por componente', () => {
     postura('write');
     api.updateGroup.mockResolvedValue(undefined);
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
-    const nome = await screen.findByLabelText('admin.access.groups.name');
-    await userEvent.clear(nome); await userEvent.type(nome, '  Novo nome ');
-    const desc = screen.getByLabelText('admin.access.groups.description');
+    await screen.findByTestId('g-name-readonly');
+    // 🔒 o rascunho do NOME fica aberto e NÃO confirmado; confirmar a DESCRIÇÃO
+    // não pode levá-lo junto. Este teste afirmava o contrário e travava o
+    // defeito como esperado — a mesma classe do drawer clínico que apaga campo
+    // não editado (achado do gate, 05/09).
+    const nome = await abrirLapis('g-name');
+    await userEvent.clear(nome); await userEvent.type(nome, 'NUNCA deve ser salvo');
+    const desc = await abrirLapis('g-desc');
     await userEvent.clear(desc);
-    await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.save' }));
-    await waitFor(() => expect(api.updateGroup).toHaveBeenCalledWith(GRUPO.id, { name: 'Novo nome', description: null }));
+    await userEvent.click(screen.getByTestId('g-desc-confirmar'));
+    await waitFor(() => expect(api.updateGroup).toHaveBeenCalledWith(GRUPO.id, {
+      name: 'Recrutadores AR', description: null,
+    }));
+
+    // e confirmando o NOME, é ele que vai — com a descrição do servidor
+    api.updateGroup.mockClear();
+    const nome2 = await abrirLapis('g-name');
+    await userEvent.clear(nome2); await userEvent.type(nome2, '  Novo nome ');
+    await userEvent.click(screen.getByTestId('g-name-confirmar'));
+    await waitFor(() => expect(api.updateGroup).toHaveBeenCalledWith(GRUPO.id, {
+      name: 'Novo nome', description: 'Quem recruta na Argentina',
+    }));
     expect(await screen.findByRole('status')).toHaveTextContent('admin.access.group.saved');
   });
 
-  it('🔴 write: conceder país exige motivo (botão desabilitado sem ele); com motivo chama a API; revogar não exige', async () => {
+  it('🔒 o PAÍS é o botão — sem "Conceder" ao lado; clicar concede, clicar de novo revoga', async () => {
+    // pedido do Gabriel (05/09). O estado é o próprio botão: `aria-pressed`
+    // diz se o grupo alcança aquele país, e não há um segundo controle.
     postura('write');
     api.grantCountry.mockResolvedValue({ scopeId: 's' });
     api.revokeCountry.mockResolvedValue({ revoked: 1 });
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
-    await screen.findByLabelText('admin.access.groups.name');
-    const conceder = screen.getByRole('button', { name: 'admin.access.group.grant' });
-    expect(conceder).toBeDisabled();
-    // o motivo do PAÍS é campo próprio, na seção de Países — não o de células
-    await userEvent.type(screen.getByLabelText('admin.access.group.reasonCountry'), 'expansão');
-    await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.grant' }));
-    await waitFor(() => expect(api.grantCountry).toHaveBeenCalledWith(GRUPO.id, 'BR', 'expansão'));
-    await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.revoke' }));
+    await screen.findByTestId('g-name-readonly');
+    expect(screen.queryByRole('button', { name: 'admin.access.group.grant' })).not.toBeInTheDocument();
+
+    const br = screen.getByRole('button', { name: /^countries\.BR/ });
+    const ar = screen.getByRole('button', { name: /^countries\.AR/ });
+    expect(br).toHaveAttribute('aria-pressed', 'false');
+    expect(ar).toHaveAttribute('aria-pressed', 'true');
+    // os dois respondem ao clique: não há mais motivo a preencher antes
+    expect(br).toBeEnabled();
+    expect(ar).toBeEnabled();
+
+    await userEvent.click(screen.getByRole('button', { name: /^countries\.BR/ }));
+    await waitFor(() => expect(api.grantCountry).toHaveBeenCalledWith(GRUPO.id, 'BR'));
+    await userEvent.click(screen.getByRole('button', { name: /^countries\.AR/ }));
     await waitFor(() => expect(api.revokeCountry).toHaveBeenCalledWith(GRUPO.id, 'AR'));
   });
 
   it('write: "Não" no arquivamento fecha a confirmação sem chamar a API', async () => {
     postura('write');
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
-    await screen.findByLabelText('admin.access.groups.name');
+    await screen.findByTestId('g-name-readonly');
     await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.archive' }));
     await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.archiveNo' }));
     expect(screen.queryByTestId('archive-confirm')).not.toBeInTheDocument();
@@ -224,34 +258,38 @@ describe('GroupDetailPage — a regra por componente', () => {
     expect(screen.getByText('admin.access.group.noCountries')).toBeInTheDocument();
   });
 
-  it('🔒 o motivo do país é campo PRÓPRIO — o de células não destrava Conceder', async () => {
-    // regressão que eu mesmo criei ao pôr Países como primeira seção: um estado
-    // `reason` só, com o campo visível duas seções abaixo, deixava os botões de
-    // país mortos sem dizer por quê. Achado pelo CTO (05/09).
+  it('🔒 NENHUM campo de motivo sobrou na tela', async () => {
+    // "Motivo del cambio ainda existe? PRA QUE?" e "não faz sentido o Motivo do
+    // país. Ninguém faz um grupo e coloca motivo por ser apenas de um país ou
+    // dos dois" (Gabriel, 05/09). O das células o servidor já aceitava nulo; o
+    // do país saiu com a mig 412, que tirou a exigência das três camadas.
     postura('write');
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
-    await screen.findByLabelText('admin.access.groups.name');
-    const conceder = screen.getByRole('button', { name: 'admin.access.group.grant' });
-    expect(conceder).toBeDisabled();
-    // digitar no motivo das CÉLULAS não pode destravar o país
-    await userEvent.type(screen.getByLabelText('admin.access.group.reasonCells'), 'nada a ver');
-    expect(screen.getByRole('button', { name: 'admin.access.group.grant' })).toBeDisabled();
-    // o campo do país destrava
-    await userEvent.type(screen.getByLabelText('admin.access.group.reasonCountry'), 'expansão');
-    expect(screen.getByRole('button', { name: 'admin.access.group.grant' })).toBeEnabled();
+    await screen.findByTestId('g-name-readonly');
+    expect(document.querySelector('#cells-reason')).toBeNull();
+    expect(document.querySelector('#country-reason')).toBeNull();
+    // e nas duas seções que tinham motivo não sobrou campo de texto nenhum
+    // (o filtro de membros continua, e é legítimo — não é motivo)
+    for (const sec of ['sec-countries', 'sec-cells']) {
+      const secao = document.querySelector(`section[aria-labelledby="${sec}"]`);
+      expect(secao?.querySelector('input[type="text"], input:not([type]), textarea')).toBeNull();
+    }
   });
 
-  it('🔒 Países vem PRIMEIRO na página e o nome sai por extenso', async () => {
-    // pedido do Gabriel (05/09). O país decide de QUE população o grupo vê
-    // alguém; as células decidem O QUE vê. Ler célula antes de país é ler na
-    // ordem errada. E sigla só é legível para quem já sabe o que ela diz.
+  it('🔒 Países vem DEPOIS das informações do grupo, e o nome sai por extenso', async () => {
+    // correção do Gabriel (05/09): eu tinha posto Países em primeiro, e ele
+    // aparecia ACIMA do nome do grupo — não dava para saber de que grupo era.
     postura('read');
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
     await screen.findByTestId('g-name-readonly');
     const secoes = screen.getAllByRole('region').map((r) => r.getAttribute('aria-labelledby'));
-    expect(secoes[0]).toBe('sec-countries');
+    // Países vem DEPOIS das informações do grupo (correção do Gabriel, 05/09):
+    // antes ele aparecia acima do nome, e não dava para saber de que grupo era.
+    expect(secoes[0]).toBe('sec-id');
+    expect(secoes[1]).toBe('sec-countries');
     // GRUPO tem countries: ['AR'] — o mock de i18n devolve a chave, então o
     // extenso se prova pela CHAVE consultada, não pela sigla crua
+    // em `read` o país é TEXTO — botão desabilitado sumiria (ActionButton esconde)
     expect(screen.getByText(/^countries\.AR ✓$/)).toBeInTheDocument();
   });
 
@@ -261,9 +299,138 @@ describe('GroupDetailPage — a regra por componente', () => {
     // quem muda é esta tela, para o tamanho já estabelecido na casa.
     postura('write');
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
-    const nome = await screen.findByLabelText('admin.access.groups.name');
+    await screen.findByTestId('g-name-readonly');
+    const nome = await abrirLapis('g-name');
     expect(nome).toHaveClass('h-12');
     expect(nome).not.toHaveClass('h-[60px]');
+  });
+
+  it('🔒 o lápis abre, o Cancelar descarta o rascunho e o Esc fecha', async () => {
+    // pedido do Gabriel (05/09): texto com lápis ao lado; só quem clica vê input.
+    postura('write');
+    api.updateGroup.mockResolvedValue(undefined);
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByTestId('g-name-readonly');
+
+    const nome = await abrirLapis('g-name');
+    await userEvent.clear(nome);
+    await userEvent.type(nome, 'rascunho jogado fora');
+    await userEvent.click(screen.getByTestId('g-name-cancelar'));
+    // fechou, NÃO salvou, e o texto voltou ao valor do servidor
+    expect(document.querySelector('#g-name')).toBeNull();
+    expect(api.updateGroup).not.toHaveBeenCalled();
+    expect(screen.getByTestId('g-name-readonly')).toHaveTextContent('Recrutadores AR');
+
+    // e o Esc faz o mesmo — quem abriu pelo teclado precisa sair por ele
+    await abrirLapis('g-name');
+    await userEvent.keyboard('{Escape}');
+    expect(document.querySelector('#g-name')).toBeNull();
+
+    // a descrição descarta igual: cada campo tem o seu rascunho
+    const desc = await abrirLapis('g-desc');
+    await userEvent.type(desc, 'também jogado fora');
+    await userEvent.click(screen.getByTestId('g-desc-cancelar'));
+    expect(document.querySelector('#g-desc')).toBeNull();
+    expect(api.updateGroup).not.toHaveBeenCalled();
+    expect(screen.getByTestId('g-desc-readonly')).toHaveTextContent('Quem recruta na Argentina');
+  });
+
+  it('🔒 Enter confirma no nome, mas NÃO na descrição — lá ele é quebra de linha', async () => {
+    postura('write');
+    api.updateGroup.mockResolvedValue(undefined);
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByTestId('g-name-readonly');
+
+    const nome = await abrirLapis('g-name');
+    await userEvent.clear(nome);
+    await userEvent.type(nome, 'Nome pelo teclado{Enter}');
+    await waitFor(() => expect(api.updateGroup).toHaveBeenCalledWith(GRUPO.id, expect.objectContaining({ name: 'Nome pelo teclado' })));
+
+    api.updateGroup.mockClear();
+    const desc = await abrirLapis('g-desc');
+    await userEvent.type(desc, 'linha 1{Enter}linha 2');
+    // Enter no textarea escreve, não salva — senão descrição de várias linhas
+    // seria impossível
+    expect(api.updateGroup).not.toHaveBeenCalled();
+    expect((desc as HTMLTextAreaElement).value).toContain('linha 1\nlinha 2');
+  });
+
+  it('grupo com descrição NULA: o campo abre vazio e o texto digitado é salvo', async () => {
+    postura('write');
+    api.getGroup.mockResolvedValue({ ...GRUPO, description: null });
+    api.updateGroup.mockResolvedValue(undefined);
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    expect(await screen.findByTestId('g-desc-readonly')).toHaveTextContent('—');
+    // cancelar com descrição NULA volta para vazio, não para "null"
+    let desc = await abrirLapis('g-desc');
+    expect(desc).toHaveValue('');
+    await userEvent.type(desc, 'rascunho');
+    await userEvent.click(screen.getByTestId('g-desc-cancelar'));
+    desc = await abrirLapis('g-desc');
+    expect(desc).toHaveValue('');
+    await userEvent.type(desc, 'agora tem');
+    await userEvent.click(screen.getByTestId('g-desc-confirmar'));
+    await waitFor(() => expect(api.updateGroup).toHaveBeenCalledWith(GRUPO.id, { name: 'Recrutadores AR', description: 'agora tem' }));
+
+    // e confirmar o NOME num grupo SEM descrição manda `null`, não string vazia
+    api.updateGroup.mockClear();
+    const nome = await abrirLapis('g-name');
+    await userEvent.type(nome, ' X');
+    await userEvent.click(screen.getByTestId('g-name-confirmar'));
+    await waitFor(() => expect(api.updateGroup).toHaveBeenCalledWith(GRUPO.id, { name: 'Recrutadores AR X', description: null }));
+  });
+
+  it('🔒 Enter no Cancelar DESCARTA — não salva o rascunho que se quer jogar fora', async () => {
+    // o handler testava `tagName !== 'TEXTAREA'`, e um BUTTON passa nesse teste:
+    // quem tabulava até Cancelar e apertava Enter SALVAVA (achado do gate, 05/09).
+    postura('write');
+    api.updateGroup.mockResolvedValue(undefined);
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByTestId('g-name-readonly');
+    const nome = await abrirLapis('g-name');
+    await userEvent.clear(nome); await userEvent.type(nome, 'jogado fora');
+    screen.getByTestId('g-name-cancelar').focus();
+    await userEvent.keyboard('{Enter}');
+    expect(api.updateGroup).not.toHaveBeenCalled();
+    expect(screen.getByTestId('g-name-readonly')).toHaveTextContent('Recrutadores AR');
+  });
+
+  it('🔒 save recusado pelo servidor MANTÉM o campo aberto, com o texto digitado', async () => {
+    // `run` engolia o erro em `setError` e o campo fechava assim mesmo: a tela
+    // mostrava o valor antigo e o rascunho recusado seguia no formulário,
+    // pronto para ir de carona na próxima confirmação (achado do gate).
+    postura('write');
+    api.updateGroup.mockRejectedValue(new ApiError({ success: false, error: 'x', code: 'conflict' }, 409));
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByTestId('g-name-readonly');
+    const nome = await abrirLapis('g-name');
+    await userEvent.clear(nome); await userEvent.type(nome, 'tentativa');
+    await userEvent.click(screen.getByTestId('g-name-confirmar'));
+    await waitFor(() => expect(api.updateGroup).toHaveBeenCalled());
+    // continua aberto e com o que a pessoa escreveu — nada se perdeu
+    expect(screen.getByLabelText('admin.access.groups.name')).toHaveValue('tentativa');
+  });
+
+  it('🔒 confirmar um campo FECHA o outro e descarta o rascunho dele', async () => {
+    // A pergunta que o gate levantou: com os dois lápis abertos, confirmar um
+    // podia ressuscitar depois o rascunho não confirmado do outro. Medido: não.
+    // `run` → `load()` liga `isLoading`, a página volta ao placeholder e os dois
+    // campos DESMONTAM — voltam fechados, com o valor do servidor. Nenhum
+    // rascunho sobrevive para ser salvo por engano.
+    postura('write');
+    api.updateGroup.mockResolvedValue(undefined);
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByTestId('g-name-readonly');
+    const nome = await abrirLapis('g-name');
+    await userEvent.clear(nome); await userEvent.type(nome, 'digitado e nao confirmado');
+    const desc = await abrirLapis('g-desc');
+    await userEvent.type(desc, ' editada');
+    await userEvent.click(screen.getByTestId('g-desc-confirmar'));
+    await waitFor(() => expect(api.updateGroup).toHaveBeenCalled());
+    expect(document.querySelector('#g-name')).toBeNull();
+    expect(await screen.findByTestId('g-name-readonly')).toHaveTextContent('Recrutadores AR');
+    // e reabrindo, o campo parte do servidor — não do rascunho abandonado
+    expect(await abrirLapis('g-name')).toHaveValue('Recrutadores AR');
   });
 
   it('🔒 SEM catálogo o contador não sai — "0" ali seria mentira sobre acesso', async () => {
@@ -334,8 +501,8 @@ describe('GroupDetailPage — a regra por componente', () => {
     api.getGroup.mockResolvedValue({ ...GRUPO, description: null });
     api.setGroupPermissions.mockResolvedValue({ cells: 1 });
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
-    await screen.findByLabelText('admin.access.groups.name');
-    expect(screen.getByLabelText('admin.access.groups.description')).toHaveValue('');
+    await screen.findByTestId('g-name-readonly');
+    expect(await abrirLapis('g-desc')).toHaveValue('');
     await userEvent.click(screen.getByRole('checkbox', { name: /^worker:read/ }));
     await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.cellsSave' }));
     await waitFor(() => expect(api.setGroupPermissions).toHaveBeenCalledWith(GRUPO.id, ['funnel:read'], null));

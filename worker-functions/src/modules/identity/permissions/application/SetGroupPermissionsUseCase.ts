@@ -55,7 +55,7 @@ export class SetGroupPermissionsUseCase {
     }
 
     await mutateGroup({ groups: this.groups, events: this.events }, input.tenantId, input.groupId, () =>
-      this.groups.setPermissions(input.groupId, [...ids.values()], reason ?? ''),
+      this.groups.setPermissions(input.groupId, [...ids.values()], reason),
     );
     return { cells: requested.length };
   }

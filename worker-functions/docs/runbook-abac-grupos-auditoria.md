@@ -68,15 +68,40 @@ DELETE FROM user_groups WHERE user_id = '<uid>' AND group_id = '<group_id>';
 ```
 Efeito na request seguinte (provado no e2e `country-context-app.test.ts`).
 
-### Conferir o que está vivo
+### Conferir o que está vivo — e a REVISÃO PERIÓDICA do eixo país
+
+> ⚠️ `gcs.reason` saiu desta consulta na mig 412 (05/09/2026): o motivo virou
+> opcional e passa a ser NULL nas concessões novas, então uma coluna de motivo
+> aqui devolveria branco e **pareceria trilha sem ser**. Quem responde "quem
+> abriu este país para este grupo, e quando" é `granted_by` + `created_at`; até
+> quando, `revoked_at`. A FINALIDADE da classe está declarada no
+> `registro-operacoes.md` (OP-13), não linha a linha.
+
+Esta consulta é a superfície de leitura exigida pelo parecer do `lex` (05/09,
+CONDICIONADO, condição C4). **Rodar mensalmente**, e sempre antes de conceder um
+país novo a um grupo existente. O que se procura: escopo vivo cujo grupo não tem
+mais membros, escopo concedido por alguém que saiu do time, e país que ninguém
+soube explicar.
+
 ```sql
-SELECT pg.name AS grupo, gcs.country, gcs.granted_by, gcs.reason,
+SELECT pg.name AS grupo, gcs.country, gcs.granted_by,
        gcs.created_at, count(ug.user_id) AS membros
 FROM group_country_scopes gcs
 JOIN permission_groups pg ON pg.id = gcs.group_id
 LEFT JOIN user_groups ug ON ug.group_id = gcs.group_id
 WHERE gcs.revoked_at IS NULL
-GROUP BY 1,2,3,4,5 ORDER BY gcs.created_at DESC;
+GROUP BY 1,2,3,4 ORDER BY gcs.created_at DESC;
+```
+
+O histórico completo, incluindo o que já foi revogado e os motivos que as linhas
+antigas ainda carregam (a mig 412 é aditiva — nada foi apagado):
+
+```sql
+SELECT pg.name AS grupo, gcs.country, gcs.granted_by, gcs.created_at,
+       gcs.revoked_at, coalesce(gcs.reason, '(sem motivo — mig 412)') AS motivo
+FROM group_country_scopes gcs
+JOIN permission_groups pg ON pg.id = gcs.group_id
+ORDER BY gcs.created_at DESC;
 ```
 
 ### Registro obrigatório fora do banco
