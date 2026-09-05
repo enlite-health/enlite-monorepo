@@ -3323,7 +3323,18 @@
         "systemGroup": "Grupos de sistema não são renomeados nem arquivados.",
         "duplicateName": "Já existe um grupo com esse nome.",
         "error": "Não foi possível concluir a ação.",
-        "reasonRequired": "Escreva o motivo: ele fica na trilha de auditoria."
+        "reasonRequired": "Escreva o motivo: ele fica na trilha de auditoria.",
+        "transfer": {
+          "grants_one": "Este grupo dá {{count}} célula em {{countries}}. Quem entra, recebe isso.",
+          "grants_other": "Este grupo dá {{count}} células em {{countries}}. Quem entra, recebe isso.",
+          "rest": "Resto do time",
+          "filter": "Filtrar o time…",
+          "toMembers": "Adicionar aos membros",
+          "toRest": "Tirar dos membros",
+          "unsaved": "Alterações não salvas",
+          "locked": "Último gestor do time: não dá para tirar.",
+          "allInside": "O time inteiro já é membro."
+        }
       },
       "features": {
         "title": "Funções por país",

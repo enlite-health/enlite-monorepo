@@ -9,8 +9,14 @@ import {
 } from '@infrastructure/http/AdminPermissionsApiService';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { AdminUser } from '@domain/entities/AdminUser';
-import { Heading, Text, Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Input, Textarea, Checkbox, Select, Label } from '@presentation/components/atoms';
-import { ActionButton, ReadOnlyField, PanelErrorAlert } from '@presentation/components/features/access';
+import { Heading, Text, Input, Textarea, Checkbox, Label } from '@presentation/components/atoms';
+import {
+  ActionButton,
+  ReadOnlyField,
+  PanelErrorAlert,
+  MemberTransfer,
+  type TransferPerson,
+} from '@presentation/components/features/access';
 import { useCellAccess } from '@presentation/hooks/useCellAccess';
 import { AccessGate, PANEL_RESOURCE } from './AccessGate';
 import { panelErrorKey } from './panelErrors';
@@ -54,7 +60,6 @@ function GroupDetail(): JSX.Element {
   const [reason, setReason] = useState('');
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [candidates, setCandidates] = useState<AdminUser[]>([]);
-  const [pickedUser, setPickedUser] = useState('');
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -80,8 +85,9 @@ function GroupDetail(): JSX.Element {
 
   useEffect(() => { void load(); }, [load]);
 
-  // A lista de pessoas para "adicionar membro" só é buscada em `write` — em
-  // `read` o select não existe, e buscar seria uma leitura sem propósito.
+  // A coluna "Resto del equipo" só é buscada em `write` — em `read` ela não
+  // existe (quem não pode editar não tem o que fazer com quem está fora), e
+  // buscar seria uma leitura sem propósito.
   useEffect(() => {
     if (!canWrite) return;
     AdminApiService.listAdmins(200, 0)
@@ -89,7 +95,22 @@ function GroupDetail(): JSX.Element {
       .catch(() => setCandidates([]));
   }, [canWrite]);
 
-  const memberUids = useMemo(() => new Set(members.map((m) => m.userId)), [members]);
+  /**
+   * O universo da transferência. O membro entra pelo que a API de membros sabe
+   * dele; `candidates` sobrescreve porque só ela traz `displayName` — e o card
+   * mostra o NOME, não o e-mail cru. Em `read`, `candidates` está vazio e
+   * sobram só os membros, que é exatamente o que aquela vista mostra.
+   */
+  const people = useMemo<TransferPerson[]>(() => {
+    const porUid = new Map<string, TransferPerson>();
+    for (const m of members) {
+      porUid.set(m.userId, { userId: m.userId, name: null, email: m.email ?? m.userId });
+    }
+    for (const u of candidates) {
+      porUid.set(u.firebaseUid, { userId: u.firebaseUid, name: u.displayName, email: u.email });
+    }
+    return [...porUid.values()];
+  }, [members, candidates]);
 
   async function run(acao: () => Promise<unknown>, okKey = 'admin.access.group.saved'): Promise<void> {
     setError(null);
@@ -266,68 +287,27 @@ function GroupDetail(): JSX.Element {
 
       {/* ── Membros ────────────────────────────────────────────────────── */}
       <section className="bg-white rounded-xl border border-gray-300 p-4 space-y-3" aria-labelledby="sec-members">
-        <div className="flex items-center justify-between">
-          <Heading level={3} weight="semibold" color="primary"><span id="sec-members">{t('admin.access.group.membersTitle')}</span></Heading>
-          {editable && (
-            <div className="flex gap-2 items-center">
-              <Select
-                aria-label={t('admin.access.group.pickUser')}
-                placeholder={t('admin.access.group.pickUser')}
-                value={pickedUser}
-                onValueChange={setPickedUser}
-                options={candidates
-                  .filter((u) => !memberUids.has(u.firebaseUid))
-                  .map((u) => ({ value: u.firebaseUid, label: u.email }))}
-              />
-              <ActionButton
-                resource={PANEL_RESOURCE}
-                size="sm"
-                variant="primary"
-                disabled={!pickedUser}
-                onClick={() => run(async () => {
-                  await AdminPermissionsApiService.addMember(group.id, pickedUser);
-                  setPickedUser('');
-                })}
-              >
-                {t('admin.access.group.addMember')}
-              </ActionButton>
-            </div>
-          )}
-        </div>
-        {/* lex C1: e-mail/papel/status de staff não podem ir à gravação de sessão do Clarity. */}
-        <Table data-clarity-mask="True">
-          <TableHeader>
-            <TableHead>{t('admin.access.group.email')}</TableHead>
-            <TableHead>{t('admin.access.group.role')}</TableHead>
-            <TableHead>{t('admin.access.group.status')}</TableHead>
-            <TableHead>{t('admin.access.group.since')}</TableHead>
-            <TableHead align="right" />
-          </TableHeader>
-          <TableBody>
-            {members.map((m) => (
-              <TableRow key={m.userId}>
-                <TableCell weight="medium">{m.email ?? m.userId}</TableCell>
-                <TableCell>{m.role ?? '—'}</TableCell>
-                <TableCell>{m.status ?? '—'}</TableCell>
-                <TableCell>{new Date(m.assignedAt).toLocaleDateString('es-AR')}</TableCell>
-                <TableCell unwrapped align="right">
-                  {editable && (
-                    <ActionButton resource={PANEL_RESOURCE} size="sm" variant="ghost" onClick={() => run(() => AdminPermissionsApiService.removeMember(group.id, m.userId))}>
-                      {t('admin.access.group.remove')}
-                    </ActionButton>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-            {members.length === 0 && (
-              <TableRow>
-                <TableCell unwrapped colSpan={5} className="px-6 py-6 text-center">
-                  <Text as="span" size="sm" color="secondary">{t('admin.access.group.noMembers')}</Text>
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+        <Heading level={3} weight="semibold" color="primary"><span id="sec-members">{t('admin.access.group.membersTitle')}</span></Heading>
+        <Text size="xs" color="secondary">
+          {t('admin.access.group.transfer.grants', {
+            count: group.cells.length,
+            countries: group.countries.join(', ') || '—',
+          })}
+        </Text>
+        {/* lex C1: e-mail de staff não pode ir à gravação de sessão do Clarity —
+            a máscara vive dentro do componente, nas duas colunas e na lista. */}
+        <MemberTransfer
+          resource={PANEL_RESOURCE}
+          memberIds={members.map((m) => m.userId)}
+          people={people}
+          editable={editable}
+          onSave={(add, remove) => run(async () => {
+            // Adiciona ANTES de remover: trocar o último gestor por outro só
+            // passa pelo anti-lockout do banco nessa ordem.
+            for (const uid of add) await AdminPermissionsApiService.addMember(group.id, uid);
+            for (const uid of remove) await AdminPermissionsApiService.removeMember(group.id, uid);
+          })}
+        />
       </section>
     </div>
   );

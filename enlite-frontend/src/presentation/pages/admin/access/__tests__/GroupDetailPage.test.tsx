@@ -19,6 +19,9 @@ vi.mock('@infrastructure/http/AdminPermissionsApiService', () => ({
 const listAdmins = vi.fn();
 vi.mock('@infrastructure/http/AdminApiService', () => ({ AdminApiService: { listAdmins: (...a: unknown[]) => listAdmins(...a) } }));
 
+/** `.at(-1)` não existe no `lib` deste tsconfig. */
+const ultimo = <T,>(xs: T[]): T => xs[xs.length - 1];
+
 const ROTA = `/admin/access/groups/${GRUPO.id}`;
 const PATTERN = '/admin/access/groups/:id';
 
@@ -64,10 +67,16 @@ describe('GroupDetailPage — a regra por componente', () => {
     expect(await screen.findByLabelText('admin.access.groups.name')).toHaveValue('Recrutadores AR');
     expect(screen.getByRole('checkbox', { name: 'worker:read' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'worker:write' })).not.toBeChecked();
-    for (const nome of ['admin.access.group.save', 'admin.access.group.archive', 'admin.access.group.cellsSave', 'admin.access.group.addMember']) {
+    for (const nome of ['admin.access.group.save', 'admin.access.group.archive', 'admin.access.group.cellsSave']) {
       expect(screen.getByRole('button', { name: nome })).toBeInTheDocument();
     }
-    expect(screen.getByRole('button', { name: 'admin.access.group.remove' })).toBeInTheDocument();
+    // Membros: as duas setas existem e nascem MORTAS — sem ninguém marcado,
+    // nenhuma das duas tem o que mover.
+    for (const seta of ['admin.access.group.transfer.toMembers', 'admin.access.group.transfer.toRest']) {
+      expect(screen.getByRole('button', { name: seta })).toBeDisabled();
+    }
+    // e `Guardar` da transferência só nasce quando há mudança pendente
+    expect(screen.getAllByRole('button', { name: 'admin.access.group.save' })).toHaveLength(1);
   });
 
   it('write: salvar células manda o conjunto INTEIRO, ordenado, com o motivo', async () => {
@@ -98,7 +107,10 @@ describe('GroupDetailPage — a regra por componente', () => {
     api.removeMember.mockRejectedValue(new ApiError({ success: false, error: 'x', code: 'last_manager' }, 409));
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
     await screen.findByLabelText('admin.access.groups.name');
-    await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.remove' }));
+    const membros = screen.getByRole('listbox', { name: 'admin.access.group.membersTitle' });
+    await userEvent.click(within(membros).getByRole('option', { name: /maria@enlite\.health/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.transfer.toRest' }));
+    await userEvent.click(ultimo(screen.getAllByRole('button', { name: 'admin.access.group.save' })));
     expect(await screen.findByRole('alert')).toHaveTextContent('admin.access.group.lastManager');
   });
 
@@ -107,12 +119,17 @@ describe('GroupDetailPage — a regra por componente', () => {
     api.addMember.mockResolvedValue({ membershipId: 'm2' });
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
     await screen.findByLabelText('admin.access.groups.name');
-    const select = await screen.findByLabelText('admin.access.group.pickUser');
-    const opcoes = within(select).getAllByRole('option').map((o) => o.textContent);
-    expect(opcoes).toContain('joao@enlite.health');
-    expect(opcoes).not.toContain('maria@enlite.health');
-    await userEvent.selectOptions(select, 'uid-joao');
-    await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.addMember' }));
+    const resto = await screen.findByRole('listbox', { name: 'admin.access.group.transfer.rest' });
+    const fora = within(resto).getAllByRole('option').map((o) => o.textContent);
+    expect(fora.join(' ')).toContain('joao@enlite.health');
+    expect(fora.join(' ')).not.toContain('maria@enlite.health');
+    // maria está do outro lado, e só do outro lado
+    const membros = screen.getByRole('listbox', { name: 'admin.access.group.membersTitle' });
+    expect(within(membros).getAllByRole('option').map((o) => o.textContent).join(' ')).toContain('maria@enlite.health');
+
+    await userEvent.click(within(resto).getByRole('option', { name: /joao@enlite\.health/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.transfer.toMembers' }));
+    await userEvent.click(ultimo(screen.getAllByRole('button', { name: 'admin.access.group.save' })));
     await waitFor(() => expect(api.addMember).toHaveBeenCalledWith(GRUPO.id, 'uid-joao'));
   });
 
@@ -132,11 +149,16 @@ describe('GroupDetailPage — a regra por componente', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('admin.access.group.notFound');
   });
 
-  it('lex C1: a tabela de membros carrega `data-clarity-mask` — e-mail de staff não vai ao Clarity', async () => {
-    postura('read');
-    renderRota(<GroupDetailPage />, ROTA, PATTERN);
-    await screen.findByText('maria@enlite.health');
-    expect(document.querySelector('table[data-clarity-mask="True"]')).not.toBeNull();
+  it('lex C1: o e-mail de staff vive DENTRO de `data-clarity-mask` — nas duas posturas', async () => {
+    // A régua não é "existe um elemento mascarado", é "o e-mail está dentro de
+    // um". A tabela virou colunas; o que não pode mudar é a máscara em volta.
+    for (const nivel of ['read', 'write'] as const) {
+      postura(nivel);
+      const { unmount } = renderRota(<GroupDetailPage />, ROTA, PATTERN);
+      const email = await screen.findByText('maria@enlite.health');
+      expect(email.closest('[data-clarity-mask="True"]')).not.toBeNull();
+      unmount();
+    }
   });
 
   it('write: salvar identidade manda nome/descrição aparados; descrição vazia vira null', async () => {

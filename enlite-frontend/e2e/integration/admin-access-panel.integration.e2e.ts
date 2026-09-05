@@ -387,14 +387,21 @@ test.describe('Painel de acessos ABAC — integração real @integration', () =>
     await page.goto(`/admin/access/groups/${novoGroupId}`);
     await expect(page.getByRole('heading', { name: NOVO_GROUP_NAME })).toBeVisible({ timeout: 15_000 });
 
-    const membersTable = page.locator('table[data-clarity-mask="True"]');
-    await page.locator('select[aria-label="Elegí una persona"]').selectOption({ label: COMUM_EMAIL });
-    await page.getByRole('button', { name: 'Agregar miembro' }).click();
+    const miembros = page.getByRole('listbox', { name: 'Miembros' });
+    const resto = page.getByRole('listbox', { name: 'Resto del equipo' });
+
+    // Marca na coluna de fora e empurra para dentro; nada vale até Guardar.
+    await resto.getByRole('option', { name: COMUM_EMAIL }).click();
+    await page.getByRole('button', { name: 'Agregar a los miembros' }).click();
+    // já atravessou na tela, mas ainda é pendente — o banco não sabe
+    await expect(miembros.getByRole('option', { name: COMUM_EMAIL })).toBeVisible();
+    await expect(page.getByText('Cambios sin guardar')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Guardar' }).last().click();
     await expect(page.getByRole('status')).toContainText('Guardado.', { timeout: 10_000 });
-    // Escopado à TABELA de membros — sem isto, `getByText(COMUM_EMAIL)` também
-    // acha a mesma string na `<option>` do combo "Elegí una persona" (ela some
-    // do combo só quando JÁ é membro; antes de adicionar, está lá).
-    await expect(membersTable.getByText(COMUM_EMAIL)).toBeVisible({ timeout: 10_000 });
+    // Escopado à COLUNA de membros: o mesmo e-mail existe do outro lado
+    // enquanto a pessoa não é membro, e `getByText` sem escopo acharia os dois.
+    await expect(miembros.getByRole('option', { name: COMUM_EMAIL })).toBeVisible({ timeout: 10_000 });
 
     const row = scalar(`SELECT removed_at FROM iam.user_groups
         WHERE user_id='${COMUM_UID}' AND group_id='${novoGroupId}' ORDER BY assigned_at DESC LIMIT 1`);
@@ -409,17 +416,17 @@ test.describe('Painel de acessos ABAC — integração real @integration', () =>
   test('5. gestora remove a comum do grupo — ela volta a 403', async ({ page, request }) => {
     await loginAs(page, GESTORA);
     await page.goto(`/admin/access/groups/${novoGroupId}`);
-    const membersTable = page.locator('table[data-clarity-mask="True"]');
-    await expect(membersTable.getByText(COMUM_EMAIL)).toBeVisible({ timeout: 15_000 });
+    const miembros = page.getByRole('listbox', { name: 'Miembros' });
+    await expect(miembros.getByRole('option', { name: COMUM_EMAIL })).toBeVisible({ timeout: 15_000 });
 
-    const memberRow = membersTable.locator('tr', { hasText: COMUM_EMAIL });
-    await memberRow.getByRole('button', { name: 'Quitar' }).click();
+    await miembros.getByRole('option', { name: COMUM_EMAIL }).click();
+    await page.getByRole('button', { name: 'Quitar de los miembros' }).click();
+    await page.getByRole('button', { name: 'Guardar' }).last().click();
     await expect(page.getByRole('status')).toContainText('Guardado.', { timeout: 10_000 });
-    // Escopado à tabela — o mesmo e-mail reaparece no <option> do combo
-    // "Elegí una persona" assim que ela deixa de ser membro (candidatos =
-    // quem NÃO está no grupo), então `page.getByText` sem escopo acharia 1
+    // Escopado à COLUNA — o mesmo e-mail reaparece em "Resto del equipo" assim
+    // que ela deixa de ser membro, então `page.getByText` sem escopo acharia 1
     // elemento mesmo depois da remoção bem-sucedida.
-    await expect(membersTable.getByText(COMUM_EMAIL)).toHaveCount(0, { timeout: 10_000 });
+    await expect(miembros.getByRole('option', { name: COMUM_EMAIL })).toHaveCount(0, { timeout: 10_000 });
 
     const removedAt = scalar(`SELECT removed_at FROM iam.user_groups
         WHERE user_id='${COMUM_UID}' AND group_id='${novoGroupId}' ORDER BY assigned_at DESC LIMIT 1`);
