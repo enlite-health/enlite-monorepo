@@ -3509,7 +3509,9 @@
       "steps": {
         "center": "Desde dónde",
         "filters": "Filtros",
-        "results": "Resultados"
+        "results": "Resultados",
+        "anchorPatient": "Elegí el paciente",
+        "anchorWorker": "Elegí el prestador"
       },
       "centerHint": "O hacé clic en el mapa para mover el centro del radio.",
       "legend": "Referencias:",
@@ -3518,7 +3520,8 @@
         "initial": "punto inicial",
         "marked": "punto marcado en el mapa",
         "backToPatient": "Volver a {{name}}",
-        "backToInitial": "Volver al punto inicial"
+        "backToInitial": "Volver al punto inicial",
+        "backToAnchor": "Volver a {{name}}"
       },
       "searching": "Buscando…",
       "centerHere": "Centrar aquí",
@@ -3576,6 +3579,29 @@
       "unavailable": "El mapa no está disponible (sin clave de Google Maps). La lista sigue funcionando.",
       "status": {
         "unknown": "Sin estado"
+      },
+      "centerOnWorker": {
+        "label": "Centrar en prestador",
+        "placeholder": "Centrar en un prestador…",
+        "search": "Buscar prestador…"
+      },
+      "anchorEmpty": {
+        "workersTitle": "Elegí un paciente para empezar",
+        "workersHint": "El mapa muestra los prestadores alrededor del paciente que elijas. Los filtros y la lista aparecen después.",
+        "patientsTitle": "Elegí un prestador para empezar",
+        "patientsHint": "El mapa muestra los pacientes alrededor del prestador que elijas. Los filtros y la lista aparecen después."
+      },
+      "anchorError": "No se pudo cargar la lista. Reintentá en unos segundos.",
+      "anchorLoading": "Buscando…",
+      "anchorTruncated": "Hay más de los que entran en esta lista: escribí el nombre para filtrar.",
+      "corridor": {
+        "title": "{{count}} línea(s) sirven ambos puntos",
+        "loading": "Buscando líneas…",
+        "error": "No se pudo calcular el recorrido.",
+        "noDirect": "Ninguna línea sirve los dos puntos: habría que combinar (y se paga de nuevo).",
+        "noCoverage": "Sin datos de paradas en esta zona — no podemos afirmar el recorrido.",
+        "walk": "a pie: ~{{count}} cuadras",
+        "legs": "{{origin}} cuadras → {{destination}} cuadras"
       }
     },
     "templateCatalog": {

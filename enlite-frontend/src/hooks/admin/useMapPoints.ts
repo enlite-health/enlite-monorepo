@@ -43,6 +43,26 @@ export function usePatientsMapPoints(filters: PatientsMapFilters, enabled = true
 function useMapPoints<P>(kind: MapKind, filters: WorkersMapFilters | PatientsMapFilters, enabled: boolean): MapPointsResult<P> {
   const [state, setState] = useState<State<P>>({ ...EMPTY, isLoading: enabled, error: null });
   const [refreshKey, setRefreshKey] = useState(0);
+
+  /**
+   * A virada DESLIGADO → LIGADO entra em `isLoading` na hora, no render, e não
+   * só quando o effect roda. Sem isto existe um render em que `enabled` já é
+   * true, o effect ainda não disparou, e o estado é `{ points: [], isLoading:
+   * false }` — que a tela lê como "0 en 5 km · Nadie en este radio". É a
+   * afirmação mais forte que a tela pode fazer, feita antes de existir uma
+   * pergunta. Com o portão da âncora isso deixou de ser teórico: TODO hook
+   * nasce desligado e liga quando alguém escolhe a âncora.
+   *
+   * Só na VIRADA — mudança de filtro com o hook já ligado continua guardando os
+   * pontos antigos de propósito, que é o que sustenta o "Buscando…" por cima da
+   * lista em vez de uma tela que pisca vazia.
+   */
+  const [wasEnabled, setWasEnabled] = useState(enabled);
+  if (enabled !== wasEnabled) {
+    setWasEnabled(enabled);
+    if (enabled) setState({ ...EMPTY, isLoading: true, error: null });
+  }
+
   const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
   const key = JSON.stringify(filters);
 
