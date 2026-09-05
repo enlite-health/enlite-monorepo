@@ -228,16 +228,24 @@ test.describe('Células e membros — prova VISUAL @integration', () => {
     // o que faz", nas palavras do Gabriel ao abrir a tela. Revertido.
     await expect(trabajadores.getByRole('row', { name: /worker_pii/ })).toHaveCount(1);
     await expect(trabajadores.getByRole('rowheader', { name: /worker_pii/ })).toBeVisible();
-    // e a definição continua acessível, no rótulo da própria caixa
-    await expect(trabajadores.getByRole('checkbox', { name: /^worker_pii:read — .*DNI/ })).toHaveCount(1);
+    // A definição continua no rótulo acessível da caixa — mas agora vem do
+    // texto CURADO em es-AR, não da `description` do catálogo (condição do
+    // parecer do `lex`, 05/09: ajuda certa não pode conviver com tooltip errado
+    // no mesmo controle). Medido no banco deste stack: a do seed para
+    // `worker_pii` é correta PORÉM está em português numa tela em espanhol; a de
+    // `worker:export` diz "Exportar listagem" e entrega o dossiê descriptografado.
+    await expect(trabajadores.getByRole('checkbox', { name: /^worker_pii:read — Ver el dossier completo.*DNI\/CUIL.*orientación sexual/ })).toHaveCount(1);
+    // e o "?" abre o painel daquela permissão
+    await expect(trabajadores.getByRole('button', { name: /Dossier.*Qué hace este permiso/ })).toHaveCount(1);
 
     // A ORDEM é alfabética pelo RÓTULO visível, não pela chave crua (decisão do
     // Gabriel, 05/09). É por isto que a asserção não pode ser sobre a chave: em
     // Operaciones as chaves já vinham ordenadas (dashboard · dedup ·
     // integration · test_fixtures) e o que a pessoa lia, não.
-    // o `th` tem dois spans: o rótulo e a chave crua embaixo — só o 1º importa
+    // o `th` tem o par [rótulo + "?"] e a chave crua embaixo; o rótulo é o
+    // primeiro span DENTRO do primeiro span — pegar o de fora arrasta o "?"
     const rotulos = async (r: typeof trabajadores): Promise<string[]> =>
-      r.locator('th[scope="row"] > span:first-child').allTextContents();
+      r.locator('th[scope="row"] > span:first-child > span:first-child').allTextContents();
     expect(await rotulos(secao.getByRole('region', { name: 'Operaciones' })))
       .toEqual(['Datos de prueba', 'Duplicados', 'Integraciones', 'Tablero']);
     // e em Trabajadores o dossiê sobe para 3º — o custo aceito da mudança
