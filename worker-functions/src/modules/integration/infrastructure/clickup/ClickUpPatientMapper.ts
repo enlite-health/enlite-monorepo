@@ -30,6 +30,7 @@ import {
   type CatalogFieldExpectation,
 } from './helpers/dropdownCatalogGuard';
 import { resolveCatalogValue, CATALOG_TYPES_SUPPORTED } from './helpers/resolveCatalogValue';
+import type { CatalogRead } from './helpers/resolveCatalogValue';
 
 type CustomFieldMap = Record<string, unknown>;
 
@@ -270,7 +271,7 @@ export class ClickUpPatientMapper {
   }
 
   /**
-   * spec 016 F4 (US-3) — o rótulo cru de "Tipo de Patología", para `ClickUpDiagnosisMapper`
+   * spec 016 F4 (US-3) — a LEITURA de "Tipo de Patología", para `ClickUpDiagnosisMapper`
    * casar contra `clickup_diagnosis_labels` e sincronizar o diagnóstico CID-11.
    *
    * Roda o MESMO preflight de `map()`/`readSourceLabels()` (task 1.11): campo renomeado ou
@@ -278,19 +279,29 @@ export class ClickUpPatientMapper {
    * de "ninguém preencheu" — é a régua de deriva que exige todo `resolveDropdown('<literal>')`
    * do fonte estar em `PATIENT_CATALOG_FIELDS` (`clickup-1.11-campo-renomeado.test.ts`).
    *
-   * ⚠️ `SyncPatientFromClickUpTaskUseCase.persistDiagnosis` chama isto DEPOIS de `map()` já ter
-   * passado pelo MESMO preflight — em uso normal esta chamada nunca lança (o catálogo não muda
-   * no meio de uma requisição). Repetir o check aqui, redundante, é o padrão desta classe
-   * (`readSourceLabels` faz o mesmo) — barato (sem rede, sem banco) e protege contra a chamada
-   * direta desta função fora do fluxo do use case.
+   * ── I3: por que devolve a LEITURA e não mais `string | null` ────────────────
+   * O preflight cobre o CAMPO; ele não cobre a OPÇÃO. Renomear/recriar uma opção no ClickUp
+   * muda o orderindex e o campo continua `drop_down` — `resolveDropdown` devolvia `null`, e
+   * `ClickUpDiagnosisMapper.syncFromLabel` mapeia `null` para `{kind:'no_label'}`, documentado
+   * como "ausência legítima". Ou seja: a classe inteira dos orderindex não resolvidos era
+   * registrada como "o campo está vazio", a cada re-sync, sem uma linha de alarme.
+   *
+   * `resolveCatalogValue` é o helper de TRÊS estados que esta change criou justamente para
+   * isso, e é o que `Segmentos Clínicos` e `Cobertura Verificada` já usam duas telas abaixo.
+   * Quem decide o que fazer com `readable:false` é `SyncPatientFromClickUpTaskUseCase
+   * .persistDiagnosis` — que NÃO chama `syncFromLabel` e grita com o motivo estrutural.
+   *
+   * ⚠️ `persistDiagnosis` chama isto DEPOIS de `map()` já ter passado pelo MESMO preflight —
+   * em uso normal esta chamada nunca lança (o catálogo não muda no meio de uma requisição).
+   * Repetir o check aqui, redundante, é o padrão desta classe (`readSourceLabels` faz o mesmo)
+   * — barato (sem rede, sem banco) e protege a chamada direta fora do fluxo do use case.
    */
-  resolvePatologiaLabel(task: ClickUpTask): string | null {
+  readPatologia(task: ClickUpTask): CatalogRead {
     assertReadableDropdownFields(this.resolver, PATIENT_CATALOG_FIELDS, 'ClickUpPatientMapper');
     const cf = this.buildCustomFieldMap(task.custom_fields);
-    return this.resolver.resolveDropdown(
-      'Tipo de Patología',
-      asIndexable(PATOLOGIA_FIELD_NAME, cf[PATOLOGIA_FIELD_NAME]),
-    );
+    // Nome LITERAL de propósito: a trava de deriva da 1.11 varre o fonte atrás do literal, e
+    // uma constante aqui deixaria esta leitura de catálogo fora da colheita.
+    return resolveCatalogValue(this.resolver, 'Tipo de Patología', cf[PATOLOGIA_FIELD_NAME]);
   }
 
   /**
@@ -323,9 +334,21 @@ export class ClickUpPatientMapper {
 
     if (!firstName && !lastName) return null;
 
-    const dependencyLabel    = this.resolver.resolveDropdown('Dependencia', asIndexable('Dependencia', cf['Dependencia']));
-    const sexLabel           = this.resolver.resolveDropdown('Sexo Asignado al Nacer (Uso Clínico)', asIndexable('Sexo Asignado al Nacer (Uso Clínico)', cf['Sexo Asignado al Nacer (Uso Clínico)']));
-    const docTypeLabel       = this.resolver.resolveDropdown('Tipo de Documento Paciente', asIndexable('Tipo de Documento Paciente', cf['Tipo de Documento Paciente']));
+    // ── I2: os TRÊS irmãos de `Segmentos Clínicos` passam a ler pelo mesmo helper ──────────
+    // `resolveDropdown` CRU devolve o MESMO `null` para "ninguém preencheu" e para "a origem
+    // mandou um orderindex que o catálogo não traduz mais" — e o 2º era gravado como
+    // APAGAMENTO (`push('dependency_level', null)`, `sex = EXCLUDED.sex`). Exposição medida no
+    // cabeçalho de `dropdownCatalogGuard.ts`: 348 linhas de `dependency_level`, 185 de `sex`.
+    // `resolveCatalogValue` separa os dois estados, e a bandeira `*Readable` leva a distinção
+    // até o `UPDATE` — o MESMO desenho já aplicado a `clinical_specialty` e `insurance_verified`.
+    // ⚠️ O refresher de catálogo não salva: quando o reload FUNCIONA, `reloadIsSuspect === false`
+    // e o mapeamento segue contra um catálogo que continua sem saber traduzir aquele valor.
+    const dependenciaRead    = resolveCatalogValue(this.resolver, 'Dependencia', cf['Dependencia']);
+    const dependencyLabel    = dependenciaRead.readable ? (dependenciaRead.labels[0] ?? null) : null;
+    const sexoRead           = resolveCatalogValue(this.resolver, 'Sexo Asignado al Nacer (Uso Clínico)', cf['Sexo Asignado al Nacer (Uso Clínico)']);
+    const sexLabel           = sexoRead.readable ? (sexoRead.labels[0] ?? null) : null;
+    const docTypeRead        = resolveCatalogValue(this.resolver, 'Tipo de Documento Paciente', cf['Tipo de Documento Paciente']);
+    const docTypeLabel       = docTypeRead.readable ? (docTypeRead.labels[0] ?? null) : null;
     // `Segmentos Clínicos` é lido PELO TIPO VIVO do catálogo (defeito 1 do QA-caça da 2.2):
     // `drop_down` hoje, `labels` a partir da virada da Fase 2 (D-C). O derivado da D-B segue
     // sendo UM valor — no mundo `drop_down` a lista tem no máximo 1 item, então o
@@ -351,7 +374,12 @@ export class ClickUpPatientMapper {
     // consegui ler" (D167). O escalar `patients.device_type` NÃO é escrito por aqui: ele é
     // derivado da tabela do conjunto por trigger (migration 310 / F64).
     const dispositivoRead    = resolveCatalogValue(this.resolver, 'Tipo de Dispositivo', cf['Tipo de Dispositivo']);
-    const serviceLabel       = this.resolver.resolveDropdown('Servicio', asIndexable('Servicio', cf['Servicio']));
+    // I4: `Equipo Tratante Multidisciplinario` é `drop_down` no catálogo vivo — lido pelo mesmo
+    // helper dos irmãos, e não mais como checkbox. Ver `buildProfessionals`.
+    const equipoRead         = resolveCatalogValue(this.resolver, 'Equipo Tratante Multidisciplinario', cf['Equipo Tratante Multidisciplinario']);
+    // I2, 4º irmão: `service_type` é a MAIOR exposição medida (349 linhas). Mesmo helper.
+    const servicioRead       = resolveCatalogValue(this.resolver, 'Servicio', cf['Servicio']);
+    const serviceLabel       = servicioRead.readable ? (servicioRead.labels[0] ?? null) : null;
 
     const serviceTypes = mapClickUpService(serviceLabel);
 
@@ -372,8 +400,12 @@ export class ClickUpPatientMapper {
       lastName:           lastName  ?? '',
       birthDate:          this.parseClickUpDate(cf['Fecha de Nacimiento']),
       documentType:       mapClickUpDocumentType(docTypeLabel),
+      // I2: `false` ⇒ `document_type` não entra no `ON CONFLICT DO UPDATE` (não apaga).
+      documentTypeReadable: docTypeRead.readable,
       documentNumber:     this.asString(cf['Número de Documento Paciente']),
       sex:                mapClickUpSex(sexLabel),
+      // I2: idem para `sex` — 185 linhas expostas ao apagamento antes desta bandeira.
+      sexReadable:        sexoRead.readable,
       phoneWhatsapp:      this.cleanPhone(this.asString(cf['Número de WhatsApp Paciente'])),
       hasCud:             this.parseClickUpBoolean(cf['Posee CUD']),
       hasConsent:         this.parseClickUpBoolean(cf['Consentimiento']),
@@ -383,6 +415,8 @@ export class ClickUpPatientMapper {
       // Clinical
       diagnosis:          this.asString(cf['Diagnóstico (si lo conoce)']),
       dependencyLevel:    mapClickUpDependencyLevel(dependencyLabel),
+      // I2: `false` ⇒ `dependency_level` não entra no SET (348 linhas expostas antes disto).
+      dependencyLevelReadable: dependenciaRead.readable,
       clinicalSpecialty:  mapClickUpClinicalSpecialty(specialtyLabel),
       clinicalSpecialtyReadable: specialtyReadable,
       // Task 3.2/3.3 — o escalar CONTINUA sendo escrito (o 1º rótulo), exatamente como o
@@ -401,6 +435,8 @@ export class ClickUpPatientMapper {
         ? sourceLabelsRead(dispositivoRead.labels)
         : sourceLabelsUnreadable(dispositivoRead.reason),
       serviceType:        serviceTypes.length > 0 ? serviceTypes : null,
+      // I2: `false` ⇒ `service_type` não entra no SET (349 linhas — a maior exposição medida).
+      serviceTypeReadable: servicioRead.readable,
       additionalComments: this.asString(cf['Comentarios Adicionales Paciente']),
 
       // Health insurance (fill-only via COALESCE in PatientIdentityRepository)
@@ -418,7 +454,10 @@ export class ClickUpPatientMapper {
       // Related records
       responsibles:  this.buildResponsibles(cf),
       addresses:     this.buildAddresses(cf),
-      professionals: this.buildProfessionals(cf, cf['Equipo Tratante Multidisciplinario']),
+      // I4: o campo é `drop_down` no catálogo VIVO (a foto da fase 0 confirma), e o valor de um
+      // drop_down é um ORDERINDEX. Antes ele era lido como checkbox, então `is_team` saía do
+      // acidente de serialização, nunca da opção escolhida — ver `buildProfessionals`.
+      professionals: this.buildProfessionals(cf, equipoRead),
     };
 
     return input;
@@ -482,9 +521,11 @@ export class ClickUpPatientMapper {
 
     const parts = cleaned.split(',').map((p) => p.trim()).filter(Boolean);
     if (parts.length < 2) return null;
+    // `parts` saiu de um `.filter(Boolean)` e tem >= 2 elementos, então os dois são não-vazios
+    // por construção — uma guarda `if (!lastName || !firstName)` aqui seria inalcançável, e um
+    // piso de 100% sobre ramo morto é régua que não mede nada.
     const lastName  = parts[0];
     const firstName = parts.slice(1).join(' ');
-    if (!lastName || !firstName) return null;
     return { firstName, lastName };
   }
 
@@ -599,8 +640,28 @@ export class ClickUpPatientMapper {
     return addresses;
   }
 
-  private buildProfessionals(cf: CustomFieldMap, isTeamFlag: unknown): PatientProfessional[] {
-    const isTeam = this.parseClickUpBoolean(isTeamFlag) || this.asString(isTeamFlag as unknown as string) === 'Sí';
+  /**
+   * I4 — `Equipo Tratante Multidisciplinario` é `drop_down`, não checkbox.
+   *
+   * ── O DEFEITO ─────────────────────────────────────────────────────────────
+   * Antes: `parseClickUpBoolean(v) || asString(v) === 'Sí'`. O valor de um `drop_down` na API
+   * do ClickUp é um ORDERINDEX (number) — `parseClickUpBoolean` devolve `false` para `number`
+   * e `asString` devolve `null` para não-string. Ou seja: `is_team` NUNCA era decidido pela
+   * opção escolhida; era decidido pelo acidente de serialização do payload. O campo é
+   * `drop_down` na declaração desta classe (`PATIENT_CATALOG_FIELDS`) E na foto do catálogo
+   * vivo (`tests/fixtures/clickup/catalogo-pacientes-fase0.ts`) — as duas fontes concordam, e
+   * o leitor discordava das duas.
+   *
+   * Agora a decisão vem do RÓTULO resolvido pelo catálogo (opções vivas: `Sí` / `No`).
+   *
+   * ⚠️ LIMITE DECLARADO: leitura ILEGÍVEL (opção que deixou de resolver) cai em `false`, como
+   * antes. Diferente dos 4 campos do I2, aqui não há coluna a preservar: `patient_professionals`
+   * é DELETE + INSERT do conjunto inteiro, então "não tocar" não é uma opção que este ponto
+   * possa exercer sozinho. O aviso estrutural sai por `resolveCatalogValue` (nome do campo,
+   * tipo, motivo, contagem — nunca o orderindex).
+   */
+  private buildProfessionals(cf: CustomFieldMap, equipoRead: CatalogRead): PatientProfessional[] {
+    const isTeam = equipoRead.readable && equipoRead.labels[0] === 'Sí';
     const slots  = [
       { nameCf: 'Profesional Tratante Principal', phoneCf: 'Tel Profesional Tratante Principal', emailCf: 'Email Profesional Tratante Principal', order: 1 },
       { nameCf: 'Profesional Tratante 2',         phoneCf: 'Tel Profesional Tratante 2',         emailCf: 'Email Profesional Tratante 2',         order: 2 },

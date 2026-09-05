@@ -12,6 +12,8 @@ import * as functions from 'firebase-functions';
 import { reportError } from '@shared/logging';
 import type { ClickUpTask } from '../infrastructure/clickup/ClickUpTask';
 import type { ClickUpPatientMapper } from '../infrastructure/clickup/ClickUpPatientMapper';
+import { PATOLOGIA_FIELD_NAME } from '../infrastructure/clickup/ClickUpPatientMapper';
+import type { CatalogRead } from '../infrastructure/clickup/helpers/resolveCatalogValue';
 import { extractPatientChatIds } from '../infrastructure/clickup/extractPatientChatIds';
 import type { PatientService } from '../../case/application/PatientService';
 import { PatientChatIdsService } from '../../case/application/PatientChatIdsService';
@@ -179,6 +181,21 @@ export class SyncPatientFromClickUpTaskUseCase {
       // divergiriam do ClickUp para sempre.
       await this.syncChatIds(task, result.id, cid);
 
+      // ── I1: as 4 gravações da ficha espelham ANTES do early-return, pelo MESMO argumento ──
+      // O conflito de `case_number` não impede a ficha de existir, e o retry do conflito já
+      // gravou os ESCALARES (`PatientService.retryWithoutCaseNumber` → `upsertRelated`). Deixar
+      // estas 4 abaixo do `return` fazia com que, para toda tarefa conflitada, o escalar fosse
+      // escrito e o conjunto/cru/diagnóstico NÃO — a cada re-sync, em silêncio: exatamente a
+      // divergência que o cabeçalho do `ClickUpPatientMapper` adverte, produzida por construção.
+      //
+      // Todas as quatro são best-effort e NUNCA lançam (cada uma trata o próprio erro e loga
+      // evento próprio), então subi-las não muda o `kind` de nenhum caminho: o `CASE_NUMBER_
+      // CONFLICT` continua sendo devolvido logo abaixo, e o CREATED/UPDATED segue igual.
+      await this.persistSourceLabels(task, result.id, cid);
+      await this.persistInsuranceVerified(input, result.id, cid);
+      await this.persistDeviceTypes(input, result.id, cid);
+      await this.persistDiagnosis(task, result.id, cid);
+
       if (result.conflict === 'CASE_NUMBER_CONFLICT') {
         functions.logger.warn('clickup_patient_sync.case_number_conflict', {
           taskId,
@@ -200,16 +217,12 @@ export class SyncPatientFromClickUpTaskUseCase {
       const kind: 'CREATED' | 'UPDATED' = result.created ? 'CREATED' : 'UPDATED';
 
       // ── Task 2.3: o rótulo CRU, ao lado do derivado ────────────────────────
-      // Roda DEPOIS do upsert porque só aqui existe `patientId`. O derivado já está gravado:
-      // uma falha daqui não invalida o paciente, então ela NÃO derruba o sync — mas também
-      // não pode passar muda. O F43 desta casa é exatamente isto: o webhook devolvendo
-      // `success:true` com erro dentro, e ninguém sabendo. Evento PRÓPRIO, contagem, e o
-      // `outcome` de cada campo — que é o que distingue "gravei" de "não li e não toquei".
-      await this.persistSourceLabels(task, result.id, cid);
-      await this.persistInsuranceVerified(input, result.id, cid);
-      await this.persistDeviceTypes(input, result.id, cid);
-      await this.persistDiagnosis(task, result.id, cid);
-
+      // Roda DEPOIS do upsert porque só aqui existe `patientId` — ver o bloco acima, de onde
+      // estas quatro chamadas subiram (I1). O derivado já está gravado: uma falha delas não
+      // invalida o paciente, então ela NÃO derruba o sync — mas também não pode passar muda.
+      // O F43 desta casa é exatamente isto: o webhook devolvendo `success:true` com erro
+      // dentro, e ninguém sabendo. Evento PRÓPRIO, contagem, e o `outcome` de cada campo —
+      // que é o que distingue "gravei" de "não li e não toquei".
 
       // PII: não logar patientName aqui — vai pro Cloud Logging.
       // patientName fica apenas no SyncPatientResult retornado pro CLI script.
@@ -404,9 +417,9 @@ export class SyncPatientFromClickUpTaskUseCase {
   private async persistDiagnosis(task: ClickUpTask, patientId: string, cid: string): Promise<void> {
     if (!this.deps.diagnosisMapper) return;
 
-    let label: string | null;
+    let read: CatalogRead;
     try {
-      label = this.deps.mapper.resolvePatologiaLabel(task);
+      read = this.deps.mapper.readPatologia(task);
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       functions.logger.error('clickup_patient_sync.diagnosis_error', {
@@ -414,6 +427,49 @@ export class SyncPatientFromClickUpTaskUseCase {
       });
       return;
     }
+
+    // ── I3: "não consegui ler a opção" NÃO é "não há diagnóstico" ─────────────────────────
+    // `ClickUpDiagnosisMapper.syncFromLabel(patientId, null)` devolve `{kind:'no_label'}`,
+    // documentado como AUSÊNCIA LEGÍTIMA. Mandar para lá a leitura ilegível (opção renomeada
+    // no ClickUp, valor que nem forma de índice tem) registrava "sem rótulo" a cada re-sync,
+    // indistinguível de um campo que a operação simplesmente não preencheu — e sem alarme.
+    // Aqui o passo PARA: nada é gravado, nada é apagado, e o motivo ESTRUTURAL vai para o log.
+    // C1/lex: sai nome do campo, tipo do catálogo, motivo e CONTAGEM — nunca o orderindex,
+    // nunca o rótulo (o orderindex É o valor clínico em forma codificada).
+    //
+    // ── I3b: PARAR e GRITAR não é FICAR EM LISTA ──────────────────────────────────────────
+    // O grito abaixo é log, e log tem retenção. A regra da casa é que o que não mapeia fica em
+    // LISTA (`patient_source_label_rejections`) — e essa lista ficava vazia para a classe
+    // INTEIRA dos orderindex ilegíveis, que é justamente a classe que ninguém consegue
+    // descobrir de outro jeito (o rótulo não existe para procurar). O registro durável vai
+    // depois do log e SEM o valor: `reason='unreadable'`, `raw_label` NULO (migration 329).
+    if (!read.readable) {
+      functions.logger.error('clickup_patient_sync.diagnosis_unreadable', {
+        patientId,
+        field:       PATOLOGIA_FIELD_NAME,
+        catalogType: read.catalogType,
+        reason:      read.reason,
+        requested:   read.requested,
+        resolved:    read.resolved,
+        stage:       'read',
+        correlationId: cid,
+      });
+      try {
+        await this.deps.diagnosisMapper.recordUnreadableLabel(patientId);
+      } catch (err) {
+        // Best-effort como os irmãos deste método: o paciente já foi gravado e a falha do
+        // registro não pode derrubar o sync — mas também não passa muda (F43).
+        const error = err instanceof Error ? err : new Error(String(err));
+        functions.logger.error('clickup_patient_sync.diagnosis_error', {
+          patientId, error: error.message, stage: 'reject', correlationId: cid,
+        });
+      }
+      return;
+    }
+
+    // `[]` aqui é vazio DE VERDADE (`requested === 0`): ninguém preencheu o campo no ClickUp.
+    // Esse `null` sim é a ausência legítima que `syncFromLabel` sabe tratar.
+    const label = read.labels[0] ?? null;
 
     try {
       const outcome = await this.deps.diagnosisMapper.syncFromLabel(patientId, label);
