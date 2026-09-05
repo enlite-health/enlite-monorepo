@@ -67,6 +67,18 @@ describe('MemberTransfer — a fronteira do grupo', () => {
     expect(listas).toEqual([RESTO, MIEMBROS]);
   });
 
+  it('🔒 as setas centram contra a LISTA, via espaçador do cabeçalho', () => {
+    // medido no navegador: sem o espaçador, `self-center` centrava contra a
+    // coluna INTEIRA e as setas ficavam 13,5px acima do centro da caixa cinza.
+    // O espaçador repete a caixa do ColumnHead — sem número mágico.
+    montar();
+    const meio = screen.getByTestId('member-transfer').querySelector('.grid > div:nth-child(2)');
+    const espacador = meio?.firstElementChild;
+    expect(espacador).toHaveAttribute('aria-hidden', 'true');
+    expect(espacador).toHaveClass('pb-1', 'border-b', 'border-transparent');
+    expect(meio?.lastElementChild).toHaveClass('justify-center');
+  });
+
   it('🔒 a seta → leva para Miembros e a ← devolve ao resto — a direção segue o lado', () => {
     // com as colunas trocadas, uma seta apontando para o lado contrário do
     // movimento seria pior que antes

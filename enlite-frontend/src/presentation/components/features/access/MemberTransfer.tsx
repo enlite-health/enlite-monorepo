@@ -166,11 +166,21 @@ export function MemberTransfer({
           onToggle={(uid) => alternar(uid, 'out')}
         />
 
-        {/* As setas no MEIO da altura das colunas, não no topo: elas agem sobre
-            as duas listas inteiras, e ancoradas no cabeçalho pareciam pertencer
-            a ele. `self-center` centra só este bloco — as colunas seguem
-            alinhadas pelo topo uma com a outra. */}
-        <div className="flex flex-col gap-2 self-center">
+        {/* As setas no MEIO das LISTAS, não no topo: elas agem sobre as duas
+            listas inteiras, e ancoradas no cabeçalho pareciam pertencer a ele.
+
+            `self-center` sozinho não bastava: ele centra contra a coluna
+            INTEIRA, cabeçalho incluído, e o cabeçalho só existe de um lado da
+            conta — medido, as setas ficavam 13,5px acima do centro da caixa
+            cinza. O espaçador abaixo repete a caixa do `ColumnHead` (mesmo
+            `pb-1 border-b`, mesma linha de texto) para que o que sobra seja
+            exatamente a altura da lista; se o cabeçalho mudar, isto acompanha
+            sem número mágico. */}
+        <div className="flex flex-col space-y-1">
+          <div className="flex items-baseline pb-1 border-b border-transparent" aria-hidden="true">
+            <Text as="span" size="xs" weight="medium">&nbsp;</Text>
+          </div>
+          <div className="flex-1 flex flex-col justify-center gap-2">
           <ActionButton
             resource={resource}
             size="sm"
@@ -191,6 +201,7 @@ export function MemberTransfer({
           >
             ←
           </ActionButton>
+          </div>
         </div>
 
         <Column
