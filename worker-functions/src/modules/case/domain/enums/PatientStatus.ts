@@ -1,38 +1,66 @@
 /**
- * PatientStatus — canonical vocabulary for clinical lifecycle of a patient.
+ * PatientStatus — vocabulário canônico do ciclo de vida do paciente. **v2** (spec 012, US-B7).
  *
- * Derived from ClickUp "Estado de Pacientes" task status via vacancyStatusMap
- * (legacy path), OR set directly by the native write path (createNativePatient /
- * moveStatus) for patients born inside Enlite.
+ * Duas famílias, de propósito separadas:
+ *
+ *   FUNIL DE ADMISSÃO — SOLICITANTE | ADMISSION | PENDING_ADMISSION
+ *     Continuam aceitos em `patients.status` ("legados até o backfill") porque SLA, funil, stats
+ *     e o botão Activar os leem. A coluna que o Kanban lê é `patients.admission_status`
+ *     (migration 313), DERIVADA de `status` por trigger: enquanto o paciente está no funil,
+ *     `admission_status = status`; assim que entra num estado clínico, `admission_status = 'DONE'`.
+ *
+ *   ESTADO CLÍNICO (decisão 2 do Gabriel, 03/09/2026 — `#DEC-06/07`, `#PEND-10`):
+ *     ACTIVE · ON_HOLD (en espera — exige `on_hold_reason`) · SEARCHING (búsqueda) ·
+ *     REPLACEMENT (reemplazo) · SUSPENDED · DISCHARGED (baja)
+ *     As transições permitidas vivem em `patient_status_transitions` (migration 315) e são
+ *     validadas em `PatientService.moveStatus`. ⚠️ SUP-B7: nenhuma derivação automática por horas.
+ *
+ * DISCONTINUED saiu do vocabulário: a migration 314 converteu as linhas em DISCHARGED e o CHECK
+ * ainda o tolera só até o código antigo sumir do ar. `isPatientStatus('DISCONTINUED')` é false.
+ *
  * Rule: feedback_enum_values_english_uppercase.md
- *
- * Values must match the CHECK constraint in patients table:
- *   SOLICITANTE | ADMISSION | PENDING_ADMISSION | ACTIVE | SUSPENDED | DISCONTINUED | DISCHARGED
- *
- * Migration 143: first 5 values (PENDING_ADMISSION, ACTIVE, SUSPENDED, DISCONTINUED, DISCHARGED).
- * Migration 147: adds ADMISSION (ClickUp: "admisión" — pre-onboarding, no vacancy yet).
- * Migration 251: adds SOLICITANTE (funnel head — web-form lead / manual pre-interview creation).
  */
 
-export type PatientStatus =
-  | 'SOLICITANTE'        // lead do funil (form web / criação manual pré-entrevista) — migration 251
-  | 'PENDING_ADMISSION'  // em processo de admissão (docs, autorizações)
-  | 'ACTIVE'             // paciente admitido, recebendo serviços
-  | 'SUSPENDED'          // pausado temporariamente (internação/viagem)
-  | 'DISCONTINUED'       // paciente desistiu ('Baja' no ClickUp)
-  | 'DISCHARGED'         // paciente melhorou e recebeu alta ('Alta' no ClickUp)
-  | 'ADMISSION';         // em onboarding inicial (ClickUp: 'admisión') — sem vaga ainda
+export type AdmissionFunnelStatus = 'SOLICITANTE' | 'ADMISSION' | 'PENDING_ADMISSION';
+
+export type ClinicalPatientStatus =
+  | 'ACTIVE'       // em atendimento
+  | 'ON_HOLD'      // en espera — motivo obrigatório (SCHOOL | INSURER | OTHER)
+  | 'SEARCHING'    // búsqueda de prestador
+  | 'REPLACEMENT'  // reemplazo de prestador
+  | 'SUSPENDED'    // suspensão (internação/viagem)
+  | 'DISCHARGED';  // baja
+
+export type PatientStatus = AdmissionFunnelStatus | ClinicalPatientStatus;
+
+export const ADMISSION_FUNNEL_STATUSES: readonly AdmissionFunnelStatus[] = [
+  'SOLICITANTE',
+  'ADMISSION',
+  'PENDING_ADMISSION',
+] as const;
+
+export const CLINICAL_PATIENT_STATUSES: readonly ClinicalPatientStatus[] = [
+  'ACTIVE',
+  'ON_HOLD',
+  'SEARCHING',
+  'REPLACEMENT',
+  'SUSPENDED',
+  'DISCHARGED',
+] as const;
 
 export const PATIENT_STATUSES: readonly PatientStatus[] = [
-  'SOLICITANTE',
-  'PENDING_ADMISSION',
-  'ACTIVE',
-  'SUSPENDED',
-  'DISCONTINUED',
-  'DISCHARGED',
-  'ADMISSION',
+  ...ADMISSION_FUNNEL_STATUSES,
+  ...CLINICAL_PATIENT_STATUSES,
 ] as const;
 
 export function isPatientStatus(value: unknown): value is PatientStatus {
   return typeof value === 'string' && (PATIENT_STATUSES as readonly string[]).includes(value);
+}
+
+export function isClinicalPatientStatus(value: unknown): value is ClinicalPatientStatus {
+  return typeof value === 'string' && (CLINICAL_PATIENT_STATUSES as readonly string[]).includes(value);
+}
+
+export function isAdmissionFunnelStatus(value: unknown): value is AdmissionFunnelStatus {
+  return typeof value === 'string' && (ADMISSION_FUNNEL_STATUSES as readonly string[]).includes(value);
 }

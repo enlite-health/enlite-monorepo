@@ -125,7 +125,8 @@ describe('fetchPatientDetail — happy path completo', () => {
         rows: [
           { id: 'vac-1', patient_address_id: 'addr-1', status: 'SEARCHING', schedule: null },
         ],
-      }); // active vacancies
+      }) // active vacancies
+      .mockResolvedValueOnce({ rows: [] }); // contracted services (spec 013, bloco C)
 
     const pool = makePool(queryImpl);
     const enc = makeEncryptionService();
@@ -133,7 +134,8 @@ describe('fetchPatientDetail — happy path completo', () => {
     const result = await fetchPatientDetail(pool, enc, PATIENT_ID);
 
     expect(result).not.toBeNull();
-    expect(queryImpl).toHaveBeenCalledTimes(5);
+    expect(queryImpl).toHaveBeenCalledTimes(6);
+    expect(result!.contractedServices).toEqual([]);
 
     // Identity/clinical passthrough
     expect(result!.id).toBe(PATIENT_ID);
@@ -179,6 +181,105 @@ describe('fetchPatientDetail — happy path completo', () => {
   });
 });
 
+// Spec 013, bloco C: mapContractedServices/fetchContractedServiceChildren só rodam de verdade
+// quando há ao menos 1 serviço — o teste 2 (contractedServices: []) não passa por aqui.
+describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () => {
+  it('mapeia serviço + dispositivos + prestadores (nome decriptado via KMS), numéricos convertidos', async () => {
+    const queryImpl = jest.fn();
+    queryImpl
+      .mockResolvedValueOnce({ rows: [basePatientRow()] }) // main patient query
+      .mockResolvedValueOnce({ rows: [] }) // responsibles
+      .mockResolvedValueOnce({ rows: [] }) // addresses
+      .mockResolvedValueOnce({ rows: [] }) // professionals
+      .mockResolvedValueOnce({ rows: [] }) // active vacancies
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: 'svc-1', patient_id: PATIENT_ID, service_code: 'AT',
+            professional_profile: 'perfil sintético', providers_needed: 2,
+            authorized_hours: '20', weekly_hours: '20', care_location: 'HOME',
+            hourly_value: '1500', version: 'v1', start_date: '2026-09-01',
+            contract_type: 'OBRA_SOCIAL', tax_condition: 'IVA_EXEMPT',
+            supervision_frequency: 'DAYS_30', guard_shift: 'MORNING',
+            active: true, ended_at: null, country: 'AR',
+            created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z',
+          },
+        ],
+      }) // contracted services (main list)
+      .mockResolvedValueOnce({ rows: [{ service_id: 'svc-1', device_type: 'HOME' }] }) // devices
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: 'prov-1', service_id: 'svc-1', worker_id: 'w-1', weekly_hours: '20',
+            active: true, ended_at: null, country: 'AR',
+            created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z',
+            first_name_encrypted: 'enc-first', last_name_encrypted: 'enc-last',
+          },
+        ],
+      }); // providers
+
+    const pool = makePool(queryImpl);
+    const enc = makeEncryptionService();
+    const result = await fetchPatientDetail(pool, enc, PATIENT_ID);
+
+    expect(queryImpl).toHaveBeenCalledTimes(8);
+    expect(result!.contractedServices).toHaveLength(1);
+    const svc = result!.contractedServices[0];
+    expect(svc).toMatchObject({
+      id: 'svc-1', patientId: PATIENT_ID, serviceCode: 'AT',
+      authorizedHours: 20, weeklyHours: 20, hourlyValue: 1500, // string → Number
+      deviceTypes: ['HOME'],
+    });
+    expect(svc.providers).toHaveLength(1);
+    expect(svc.providers[0]).toMatchObject({
+      id: 'prov-1', workerId: 'w-1', workerName: 'dec(enc-first) dec(enc-last)', weeklyHours: 20,
+    });
+  });
+
+  it('provider sem nome (first/last vazios) → workerName null; service_id não bate → devices/providers ficam fora', async () => {
+    const queryImpl = jest.fn();
+    queryImpl
+      .mockResolvedValueOnce({ rows: [basePatientRow()] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: 'svc-1', patient_id: PATIENT_ID, service_code: 'AT', professional_profile: null,
+            providers_needed: null, authorized_hours: null, weekly_hours: null, care_location: null,
+            hourly_value: null, version: null, start_date: null, contract_type: null, tax_condition: null,
+            supervision_frequency: null, guard_shift: null, active: true, ended_at: null, country: 'AR',
+            created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z',
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [{ service_id: 'svc-OUTRO', device_type: 'HOME' }] }) // service_id diferente
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: 'prov-1', service_id: 'svc-1', worker_id: 'w-1', weekly_hours: null,
+            active: true, ended_at: null, country: 'AR',
+            created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z',
+            first_name_encrypted: null, last_name_encrypted: null,
+          },
+        ],
+      });
+
+    const pool = makePool(queryImpl);
+    const enc = makeEncryptionService();
+    const result = await fetchPatientDetail(pool, enc, PATIENT_ID);
+
+    const svc = result!.contractedServices[0];
+    expect(svc.deviceTypes).toEqual([]); // device de OUTRO serviço não vaza
+    expect(svc.providers[0].workerName).toBeNull();
+    expect(svc.providers[0].weeklyHours).toBeNull();
+    expect(svc.hourlyValue).toBeNull();
+    expect(svc.authorizedHours).toBeNull();
+  });
+});
+
 describe('fetchPatientDetail — defensive fallback branches', () => {
   const emptyRelated = () => ({ rows: [] });
 
@@ -188,6 +289,7 @@ describe('fetchPatientDetail — defensive fallback branches', () => {
       .mockResolvedValueOnce({
         rows: [basePatientRow({ chatIds: null, attentionReasons: null, lastCaseNumber: null })],
       })
+      .mockResolvedValueOnce(emptyRelated())
       .mockResolvedValueOnce(emptyRelated())
       .mockResolvedValueOnce(emptyRelated())
       .mockResolvedValueOnce(emptyRelated())
@@ -226,6 +328,7 @@ describe('fetchPatientDetail — defensive fallback branches', () => {
           { id: 'prof-2', name: 'Equipo sin marca', phone_encrypted: null, email_encrypted: null, display_order: 1, is_team: undefined },
         ],
       })
+      .mockResolvedValueOnce(emptyRelated())
       .mockResolvedValueOnce(emptyRelated());
 
     const pool = makePool(queryImpl);
@@ -238,5 +341,48 @@ describe('fetchPatientDetail — defensive fallback branches', () => {
     expect(result!.addresses[0].lat).toBeNull();
     expect(result!.addresses[0].lng).toBeNull();
     expect(result!.addresses[0].isPrimary).toBe(false); // address_type !== 'primary'
+  });
+});
+
+// ── Spec 011 bloco A (A3 / A4) ────────────────────────────────────────────────
+
+describe('fetchPatientDetail — cobertura e e-mail do paciente (spec 011, A3/A4)', () => {
+  const emptyRelated = () => ({ rows: [] });
+
+  function runWithRow(row: Record<string, unknown>) {
+    const queryImpl = jest.fn();
+    queryImpl
+      .mockResolvedValueOnce({ rows: [row] })
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated());
+    const enc = makeEncryptionService();
+    return { queryImpl, enc, run: () => fetchPatientDetail(makePool(queryImpl), enc, PATIENT_ID) };
+  }
+
+  it('A3 (lex caminho a) — a ficha lê COALESCE(insurance_informed, health_insurance_name): o painel grava na coluna protegida, o sync do ClickUp sobrescreve a outra', async () => {
+    const { queryImpl, run } = runWithRow(basePatientRow());
+    await run();
+    const mainSql = String(queryImpl.mock.calls[0][0]);
+    expect(mainSql).toMatch(/COALESCE\(\s*p?\.?insurance_informed\s*,\s*p?\.?health_insurance_name\s*\)\s+AS\s+"insuranceInformed"/);
+  });
+
+  it('A4 (lex C4.1) — seleciona contact_email_encrypted e descriptografa via KMS: exatamente 1 decrypt a mais, com o ciphertext certo', async () => {
+    const { queryImpl, enc, run } = runWithRow(basePatientRow({ contactEmailEncrypted: 'enc-contact-email' }));
+    const result = await run();
+    expect(String(queryImpl.mock.calls[0][0])).toContain('contact_email_encrypted');
+    expect(result!.contactEmail).toBe('dec(enc-contact-email)');
+    // Espião: sem responsáveis nem profissionais, o ÚNICO decrypt desta carga é o do e-mail.
+    const decrypt = enc.decrypt as jest.Mock;
+    expect(decrypt).toHaveBeenCalledTimes(1);
+    expect(decrypt).toHaveBeenCalledWith('enc-contact-email');
+  });
+
+  it('A4 — paciente sem e-mail: contactEmail null (nunca "" — o `decrypt("")` do passthrough devolve string vazia)', async () => {
+    const { run } = runWithRow(basePatientRow({ contactEmailEncrypted: null }));
+    const result = await run();
+    expect(result!.contactEmail).toBeNull();
   });
 });

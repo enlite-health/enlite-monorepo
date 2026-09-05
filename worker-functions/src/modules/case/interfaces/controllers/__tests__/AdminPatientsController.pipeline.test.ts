@@ -109,7 +109,7 @@ describe('AdminPatientsController — pipeline (Fase 2 Task 3)', () => {
       expect(res.status).toHaveBeenCalledWith(403);
       expect(updatePatientSection).not.toHaveBeenCalled();
       // outro campo clínico com as mesmas células passa (a trava é do campo restrito)
-      const [req2, res2] = mockReqRes({ id: VALID_ID, section: 'clinical' }, { deviceType: 'silla' });
+      const [req2, res2] = mockReqRes({ id: VALID_ID, section: 'clinical' }, { deviceTypes: ['HOME'] });
       (req2 as unknown as { permissionCells: string[] }).permissionCells = ['patient:write'];
       await controller.updatePatientSection(req2, res2);
       expect(res2.status).not.toHaveBeenCalledWith(403);
@@ -233,7 +233,9 @@ describe('AdminPatientsController — pipeline (Fase 2 Task 3)', () => {
         success: true,
         data: { id: VALID_ID, status: 'PENDING_ADMISSION' },
       });
-      expect(moveStatus).toHaveBeenCalledWith(VALID_ID, 'PENDING_ADMISSION');
+      // v2 (spec 012): motivo/nota/origem viajam num 3º argumento. `onHoldNote: undefined`
+      // (chave AUSENTE no corpo) = "não toque na coluna" — `null` ali APAGARIA a nota clínica.
+      expect(moveStatus).toHaveBeenCalledWith(VALID_ID, 'PENDING_ADMISSION', { onHoldReason: null, onHoldNote: undefined, changeSource: 'admin_panel' });
     });
 
     it('deve retornar 400 para status fora do vocabulário (não chama moveStatus)', async () => {

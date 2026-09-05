@@ -1,8 +1,8 @@
 /**
  * TDD red-first: `VacancyDetailsCard` (public vacancy page) must render
- * Patología and Tipo de dispositivo (missing before this fix), and always
- * show the "Rango Etario" row — falling back to "Indistinta" when both
- * bounds are null instead of hiding the row.
+ * Tipo de dispositivo (missing before this fix), and always show the
+ * "Rango Etario" row — falling back to "Indistinta" when both bounds are
+ * null instead of hiding the row.
  *
  * Regression class this guards against: `service_type` is a backend enum
  * with the FULL profession vocabulary — `AT | CAREGIVER | NURSE |
@@ -11,6 +11,13 @@
  * can produce any of the 5) — and must never leak raw in the DOM. See
  * enlite-frontend/CLAUDE.md (i18n) and `sex-both-i18n.test.tsx` for the
  * established pattern (real i18n resources + rawEnumLeakGuard).
+ *
+ * 🔧 F1.5-CORREÇÃO C5 (D261, spec 016): os testes de "Patología"
+ * (`pathologies`) SAÍRAM daqui — o campo já não existe no payload público
+ * desde 25/08/2026 (`PublicVacancyController.ts`) e o render morto saiu de
+ * `PublicVacancyPage.tsx` nesta mesma correção (REQ-21: o código do CID-11
+ * nunca aparece na ficha pública). `pathologies` também saiu do tipo
+ * `PublicVacancyDetail`.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -58,19 +65,10 @@ const baseVacancy: PublicVacancyDetail = {
   patient_zone: 'Villa Ballester, Buenos Aires',
   country: 'Argentina',
   created_at: '2026-01-01T00:00:00Z',
-  pathologies: 'Trastorno Bipolar,\ncomórbido con TDAH y TEA',
   service_type: ['AT'],
 };
 
 describe('VacancyDetailsCard — campos faltantes (es)', () => {
-  it('renderiza Patología (diagnosticHypothesis) com o texto livre, preservando quebras de linha', () => {
-    i18n.changeLanguage('es');
-    const { container } = render(<VacancyDetailsCard vacancy={baseVacancy} />);
-    expect(screen.getByText('Hipótesis Diagnóstica - CIE:')).toBeInTheDocument();
-    expect(screen.getByText(/Trastorno Bipolar/)).toBeInTheDocument();
-    expectNoRawEnumLeaks(container);
-  });
-
   it('traduz service_type AT para "Acompañante Terapéutico" (nunca "AT" cru)', () => {
     i18n.changeLanguage('es');
     render(<VacancyDetailsCard vacancy={baseVacancy} />);
@@ -158,9 +156,9 @@ describe('VacancyDetailsCard — campos faltantes (es)', () => {
     expectNoRawEnumLeaks(container);
   });
 
-  it('não renderiza a seção de patología quando pathologies é ausente', () => {
+  it('nunca renderiza a seção de patología (C5/D261: campo e render saíram — REQ-21)', () => {
     i18n.changeLanguage('es');
-    render(<VacancyDetailsCard vacancy={{ ...baseVacancy, pathologies: null }} />);
+    render(<VacancyDetailsCard vacancy={baseVacancy} />);
     expect(screen.queryByText('Hipótesis Diagnóstica - CIE:')).not.toBeInTheDocument();
   });
 });

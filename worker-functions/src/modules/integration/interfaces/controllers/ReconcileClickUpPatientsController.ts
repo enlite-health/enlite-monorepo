@@ -26,6 +26,11 @@ import {
 import { ClickUpFieldResolver } from '../../infrastructure/clickup/ClickUpFieldResolver';
 import { ClickUpPatientMapper } from '../../infrastructure/clickup/ClickUpPatientMapper';
 import { PatientService } from '../../../case/application/PatientService';
+import {
+  PatientSourceLabelRepository,
+  PatientInsuranceVerifiedRepository,
+  PatientDeviceTypeRepository,
+} from '@modules/case';
 
 const QuerySchema = z.object({
   mode: z.enum(['cycle', 'incremental', 'orphans', 'full']).optional().default('cycle'),
@@ -93,6 +98,14 @@ async function buildUseCase(): Promise<ReconcileClickUpPatientsUseCase> {
     syncUseCase: new SyncPatientFromClickUpTaskUseCase({
       mapper,
       patientService: new PatientService(),
+      // Tasks 2.3/3.3/4.2 (`campos-admissao`): o cru, a cobertura múltipla e o conjunto de
+      // dispositivos vão junto do derivado também na reconciliação do scheduler — as deps são
+      // obrigatórias no tipo justamente para que este ponto de construção não fique de fora.
+      // Construídos aqui (e não no boot) porque `buildUseCase` já é preguiçoso: os três abrem
+      // o pool compartilhado ao serem construídos.
+      sourceLabelRepository: new PatientSourceLabelRepository(),
+      insuranceRepository:   new PatientInsuranceVerifiedRepository(),
+      deviceTypeRepository:  new PatientDeviceTypeRepository(),
     }),
   });
 }

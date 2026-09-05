@@ -33,6 +33,11 @@ import { ClickUpPatientMapper } from '../src/modules/integration/infrastructure/
 import type { ClickUpTask } from '../src/modules/integration/infrastructure/clickup/ClickUpTask';
 import { SyncPatientFromClickUpTaskUseCase } from '../src/modules/integration/application/SyncPatientFromClickUpTaskUseCase';
 import {
+  PatientSourceLabelRepository,
+  PatientInsuranceVerifiedRepository,
+  PatientDeviceTypeRepository,
+} from '../src/modules/case';
+import {
   checkExistingTaskIds,
   processDryRun,
   type DryRunCounters,
@@ -146,7 +151,15 @@ async function main(): Promise<void> {
     const patientService = new PatientService();
     const resolver = await ClickUpFieldResolver.fromList(LIST_ID, { token: CLICKUP_TOKEN as string });
     const mapper = new ClickUpPatientMapper(resolver);
-    useCase = new SyncPatientFromClickUpTaskUseCase({ mapper, patientService });
+    useCase = new SyncPatientFromClickUpTaskUseCase({
+      mapper, patientService,
+      // Task 2.3 — o cru vai junto do derivado, também no caminho de recuperação manual.
+      sourceLabelRepository: new PatientSourceLabelRepository(),
+      // Spec 012 T001c: as deps são OBRIGATÓRIAS no use case (fiação que ninguém liga não
+      // existe) — `scripts/` está fora do tsconfig e por isso o compilador não acusou aqui.
+      insuranceRepository:   new PatientInsuranceVerifiedRepository(),
+      deviceTypeRepository:  new PatientDeviceTypeRepository(),
+    });
     pool = new Pool({ connectionString: DATABASE_URL });
   }
 

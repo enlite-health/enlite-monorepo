@@ -76,6 +76,13 @@ export default defineConfig({
       name: 'integration',
       use: { ...devices['Desktop Chrome'] },
       testMatch: '**/integration/**/*.integration.e2e.ts',
+      // F5 (gate `revisao-pr`, BLOCKER de CI): `admissao-cid11-ux-audit` é um SCRIPT DE AUDITORIA
+      // pontual — o próprio cabeçalho dele diz "não fica no conjunto de regressão". Ele grava
+      // evidência em disco e depende de emulador+catálogo semeado à mão; no runner ele nunca
+      // passaria, e um erro de CARGA dele zera a listagem INTEIRA deste projeto
+      // (`Total: 0 tests in 0 files` e exit 1, mesmo com `--grep` de outro spec — medido).
+      // Fica no repo como evidência da auditoria de usabilidade; roda à mão, nunca no conjunto.
+      testIgnore: ['**/admissao-cid11-ux-audit.integration.e2e.ts'],
     },
   ],
 });

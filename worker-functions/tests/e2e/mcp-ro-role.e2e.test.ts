@@ -128,6 +128,165 @@ describe('Role enlite_mcp_ro — SELECT por coluna em patients (D216) @integrati
     expect(priv.rows[0]).toEqual({ t: false, c: false });
   });
 
+  it('spec 012 lex C2.1: patient_addresses.access_notes é negado à role (colunas irmãs passam); C3.1: provider_code não reabre patient_insurance_verified', async () => {
+    const { rows: [a] } = await admin.query<{ id: string }>(
+      `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, access_notes) VALUES ($1, 'primary', 'Calle Falsa 123', $2) RETURNING id`,
+      [patientId, CLINICAL_TEXT],
+    );
+    try {
+      await expect(ro.query('SELECT access_notes FROM patient_addresses WHERE id = $1', [a.id])).rejects.toThrow(/permission denied for table patient_addresses/);
+      await expect(ro.query('SELECT * FROM patient_addresses WHERE id = $1', [a.id])).rejects.toThrow(/permission denied for table patient_addresses/);
+      // colunas não sensíveis seguem legíveis (item 1: contagem/rótulo sempre)
+      const ok = await ro.query('SELECT id, address_type, country, neighborhood, logistics_corridor FROM patient_addresses WHERE id = $1', [a.id]);
+      expect(ok.rows).toEqual([{ id: a.id, address_type: 'primary', country: 'AR', neighborhood: null, logistics_corridor: null }]);
+      const priv = await admin.query<{ t: boolean; c: boolean; n: boolean }>(
+        `SELECT has_table_privilege('enlite_mcp_ro', 'public.patient_addresses', 'SELECT') AS t,
+                has_column_privilege('enlite_mcp_ro', 'public.patient_addresses', 'access_notes', 'SELECT') AS c,
+                has_column_privilege('enlite_mcp_ro', 'public.patient_addresses', 'neighborhood', 'SELECT') AS n`,
+      );
+      expect(priv.rows[0]).toEqual({ t: false, c: false, n: true });
+      // CONTROLE POSITIVO (D157): GRANT reabre; REVOKE fecha
+      await admin.query('GRANT SELECT (access_notes) ON public.patient_addresses TO enlite_mcp_ro');
+      try {
+        expect((await ro.query<{ access_notes: string }>('SELECT access_notes FROM patient_addresses WHERE id = $1', [a.id])).rows[0].access_notes).toBe(CLINICAL_TEXT);
+      } finally {
+        await admin.query('REVOKE SELECT (access_notes) ON public.patient_addresses FROM enlite_mcp_ro');
+      }
+      await expect(ro.query('SELECT access_notes FROM patient_addresses WHERE id = $1', [a.id])).rejects.toThrow(/permission denied/);
+    } finally {
+      await admin.query('DELETE FROM patient_addresses WHERE id = $1', [a.id]);
+    }
+    // C3.1: a coluna nova (312) herda a revogação da tabela inteira
+    await expect(ro.query('SELECT provider_code FROM patient_insurance_verified LIMIT 1')).rejects.toThrow(/permission denied for table patient_insurance_verified/);
+    // patients: as colunas novas do bloco B NÃO entraram na lista positiva (lex C7.1-d / B9)
+    for (const col of ['on_hold_note', 'on_hold_reason', 'service_start_date', 'admission_status']) {
+      await expect(ro.query(`SELECT ${col} FROM patients WHERE id = $1`, [patientId])).rejects.toThrow(/permission denied for table patients/);
+    }
+  });
+
+  it('spec 013 bloco C (achado QA-caça #1): patient_contracted_services.professional_profile/hourly_value negados; colunas irmãs, contracted_service_providers, contracted_service_devices e service_types passam', async () => {
+    const { rows: [svc] } = await admin.query<{ id: string }>(
+      `INSERT INTO patient_contracted_services (patient_id, service_code, professional_profile, hourly_value, providers_needed, created_by, updated_by)
+       VALUES ($1, 'AT', $2, 15000, 2, 'e2e-test', 'e2e-test') RETURNING id`,
+      [patientId, CLINICAL_TEXT],
+    );
+    const { rows: [worker] } = await admin.query<{ id: string }>(
+      `INSERT INTO workers (auth_uid, email) VALUES ('mcp-ro-e2e-worker', 'mcp-ro-e2e-worker@example.com') RETURNING id`,
+    );
+    const { rows: [provider] } = await admin.query<{ id: string }>(
+      `INSERT INTO contracted_service_providers (service_id, worker_id, created_by, updated_by) VALUES ($1, $2, 'e2e-test', 'e2e-test') RETURNING id`,
+      [svc.id, worker.id],
+    );
+    await admin.query(`INSERT INTO contracted_service_devices (service_id, device_type) SELECT $1, code FROM device_types LIMIT 1`, [svc.id]);
+    try {
+      // negadas: texto livre e valor do contrato (D216/D218, mesma classe)
+      await expect(ro.query('SELECT professional_profile FROM patient_contracted_services WHERE id = $1', [svc.id])).rejects.toThrow(/permission denied for table patient_contracted_services/);
+      await expect(ro.query('SELECT hourly_value FROM patient_contracted_services WHERE id = $1', [svc.id])).rejects.toThrow(/permission denied for table patient_contracted_services/);
+      await expect(ro.query('SELECT * FROM patient_contracted_services WHERE id = $1', [svc.id])).rejects.toThrow(/permission denied for table patient_contracted_services/);
+      // colunas irmãs (sem texto livre/valor) e count(*) passam — item 1 da Regra
+      const ok = await ro.query(
+        'SELECT id, service_code, providers_needed, care_location, active FROM patient_contracted_services WHERE id = $1',
+        [svc.id],
+      );
+      expect(ok.rows).toEqual([{ id: svc.id, service_code: 'AT', providers_needed: 2, care_location: null, active: true }]);
+      const n = await ro.query('SELECT count(*) AS n FROM patient_contracted_services WHERE id = $1', [svc.id]);
+      expect((n.rows[0] as { n: string }).n).toBe('1');
+      // contracted_service_providers: sem texto livre/valor no schema (319) — liberada por coluna
+      const provOk = await ro.query('SELECT id, service_id, worker_id, weekly_hours, active FROM contracted_service_providers WHERE id = $1', [provider.id]);
+      expect(provOk.rows).toEqual([{ id: provider.id, service_id: svc.id, worker_id: worker.id, weekly_hours: null, active: true }]);
+      // contracted_service_devices e service_types: catálogo/junção sem PII — liberadas
+      const devOk = await ro.query('SELECT service_id, device_type FROM contracted_service_devices WHERE service_id = $1', [svc.id]);
+      expect(devOk.rows).toHaveLength(1);
+      const typesOk = await ro.query(`SELECT code FROM service_types WHERE code = 'AT'`);
+      expect(typesOk.rows).toEqual([{ code: 'AT' }]);
+      const priv = await admin.query<{ t: boolean; profile: boolean; value: boolean }>(
+        `SELECT has_table_privilege('enlite_mcp_ro', 'public.patient_contracted_services', 'SELECT') AS t,
+                has_column_privilege('enlite_mcp_ro', 'public.patient_contracted_services', 'professional_profile', 'SELECT') AS profile,
+                has_column_privilege('enlite_mcp_ro', 'public.patient_contracted_services', 'hourly_value', 'SELECT') AS value`,
+      );
+      expect(priv.rows[0]).toEqual({ t: false, profile: false, value: false });
+      // CONTROLE POSITIVO (D157): GRANT reabre; REVOKE fecha
+      await admin.query('GRANT SELECT (professional_profile) ON public.patient_contracted_services TO enlite_mcp_ro');
+      try {
+        expect((await ro.query<{ professional_profile: string }>('SELECT professional_profile FROM patient_contracted_services WHERE id = $1', [svc.id])).rows[0].professional_profile).toBe(CLINICAL_TEXT);
+      } finally {
+        await admin.query('REVOKE SELECT (professional_profile) ON public.patient_contracted_services FROM enlite_mcp_ro');
+      }
+      await expect(ro.query('SELECT professional_profile FROM patient_contracted_services WHERE id = $1', [svc.id])).rejects.toThrow(/permission denied/);
+    } finally {
+      await admin.query('DELETE FROM patient_contracted_services WHERE id = $1', [svc.id]);
+      await admin.query('DELETE FROM workers WHERE id = $1', [worker.id]);
+    }
+  });
+
+  it('spec 016 F2 (D263, "o mais urgente"): patient_diagnoses NEGADO por inteiro (sem coluna segura); patient_source_labels e patient_source_label_rejections (achado do gate) idem', async () => {
+    const { rows: [diag] } = await admin.query<{ id: string }>(
+      `INSERT INTO patient_diagnoses
+         (patient_id, terminology_system, concept_uri, concept_code, concept_title, concept_language, concept_group, catalog_release, source, created_by, updated_by)
+       VALUES ($1, 'ICD-11', 'uri-mcp-ro-e2e', '6A02.Z', $2, 'es', '06', '2026-01', 'PANEL', 'e2e-test', 'e2e-test') RETURNING id`,
+      [patientId, CLINICAL_TEXT],
+    );
+    try {
+      // Prova POSITIVA (D157/D216): SELECT real → permission denied, nunca ausência de GRANT presumida.
+      await expect(ro.query('SELECT * FROM patient_diagnoses WHERE id = $1', [diag.id])).rejects.toThrow(/permission denied for table patient_diagnoses/);
+      await expect(ro.query('SELECT concept_group FROM patient_diagnoses WHERE id = $1', [diag.id])).rejects.toThrow(/permission denied for table patient_diagnoses/);
+      await expect(ro.query('SELECT count(*) FROM patient_diagnoses')).rejects.toThrow(/permission denied for table patient_diagnoses/);
+      const priv = await admin.query<{ t: boolean }>(
+        `SELECT has_table_privilege('enlite_mcp_ro', 'public.patient_diagnoses', 'SELECT') AS t`,
+      );
+      expect(priv.rows[0]).toEqual({ t: false });
+    } finally {
+      await admin.query('DELETE FROM patient_diagnoses WHERE id = $1', [diag.id]);
+    }
+
+    // patient_source_labels / patient_source_label_rejections: mesma classe (raw_label é rótulo
+    // cru do ClickUp — pode carregar "Tipo de Patología"). Achadas FORA da lista pelo gate.
+    await admin.query(`DELETE FROM patient_source_labels WHERE patient_id = $1 AND field_name = 'mcp-ro-e2e'`, [patientId]);
+    await admin.query(
+      `INSERT INTO patient_source_labels (patient_id, field_name, ordinal, raw_label) VALUES ($1, 'mcp-ro-e2e', 1, $2)`,
+      [patientId, CLINICAL_TEXT],
+    );
+    try {
+      await expect(ro.query(`SELECT * FROM patient_source_labels WHERE patient_id = $1`, [patientId])).rejects.toThrow(/permission denied for table patient_source_labels/);
+      const priv = await admin.query<{ t: boolean }>(
+        `SELECT has_table_privilege('enlite_mcp_ro', 'public.patient_source_labels', 'SELECT') AS t`,
+      );
+      expect(priv.rows[0]).toEqual({ t: false });
+    } finally {
+      await admin.query(`DELETE FROM patient_source_labels WHERE patient_id = $1 AND field_name = 'mcp-ro-e2e'`, [patientId]);
+    }
+
+    const { rows: [rejection] } = await admin.query<{ id: string }>(
+      `INSERT INTO patient_source_label_rejections (patient_id, field_name, raw_label, reason) VALUES ($1, 'mcp-ro-e2e', $2, 'blank') RETURNING id`,
+      [patientId, CLINICAL_TEXT],
+    );
+    try {
+      await expect(ro.query(`SELECT * FROM patient_source_label_rejections WHERE id = $1`, [rejection.id])).rejects.toThrow(/permission denied for table patient_source_label_rejections/);
+      const priv = await admin.query<{ t: boolean }>(
+        `SELECT has_table_privilege('enlite_mcp_ro', 'public.patient_source_label_rejections', 'SELECT') AS t`,
+      );
+      expect(priv.rows[0]).toEqual({ t: false });
+    } finally {
+      await admin.query('DELETE FROM patient_source_label_rejections WHERE id = $1', [rejection.id]);
+    }
+  });
+
+  it('teste da CLASSE (D263): as tabelas patient_* GOVERNADAS pelo script (patients + as declaradas nas duas listas fail-closed) não têm SELECT de tabela inteira para enlite_mcp_ro', async () => {
+    // "Governadas" = as que create-mcp-ro-role.sql efetivamente trata (por coluna OU por
+    // revogação inteira) — não é uma alegação sobre TODA tabela `patient_*` do schema (há
+    // tabelas fora desta fase, ex. patient_chat_ids/patient_responsibles, que ficam de fora
+    // desta prova de propósito e vão para a LISTA do relatório, não para este teste).
+    const columnScoped = ['patients', 'patient_addresses', 'patient_contracted_services'];
+    const fullyRevoked = ['patient_insurance_verified', 'patient_device_types', 'patient_diagnoses', 'patient_source_labels', 'patient_source_label_rejections'];
+    for (const tabela of [...columnScoped, ...fullyRevoked]) {
+      const priv = await admin.query<{ t: boolean }>(
+        `SELECT has_table_privilege('enlite_mcp_ro', $1, 'SELECT') AS t`,
+        [`public.${tabela}`],
+      );
+      expect(priv.rows[0]).toEqual({ t: false });
+    }
+  });
+
   it('CONTROLE POSITIVO (D157): GRANT da coluna reabre a leitura; REVOKE fecha de novo', async () => {
     await admin.query('GRANT SELECT (diagnosis) ON public.patients TO enlite_mcp_ro');
     try {

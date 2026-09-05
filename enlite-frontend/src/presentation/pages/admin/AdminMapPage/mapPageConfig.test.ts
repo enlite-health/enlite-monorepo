@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import type { TFunction } from 'i18next';
 import { WORKER_PROFESSIONS } from '@domain/entities/Worker';
+import { PATIENT_STATUSES as PATIENT_STATUSES_V2 } from '@domain/entities/patientEnums';
 import {
-  DEFAULT_CENTER, DEFAULT_CENTER_BY_COUNTRY, DEFAULT_COUNTRY, DEFAULT_RADIUS_KM, PATIENT_STATUS_COLOR, PROFESSIONS, WORKER_STATUS_COLOR,
+  DEFAULT_CENTER, DEFAULT_CENTER_BY_COUNTRY, DEFAULT_COUNTRY, DEFAULT_RADIUS_KM, PATIENT_STATUS_COLOR, PATIENT_STATUSES, PROFESSIONS, WORKER_STATUS_COLOR,
   distanceLabel, legendEntries, patientDetails, patientPointTitle, patientStatusLabel, placeLabel, professionLabel,
   sameCenter, workerDetails, workerPointTitle, workerStatusLabel,
 } from './mapPageConfig';
@@ -27,10 +28,25 @@ describe('mapPageConfig', () => {
     expect(PATIENT_STATUS_COLOR.ACTIVE).toBeDefined();
   });
 
+  it('QA 🟡4: status v2 — a lista É a fonte viva (patientEnums.ts), cor para ON_HOLD/SEARCHING/REPLACEMENT, DISCONTINUED fora', () => {
+    expect(PATIENT_STATUSES).toBe(PATIENT_STATUSES_V2);
+    for (const status of PATIENT_STATUSES_V2) {
+      expect(PATIENT_STATUS_COLOR[status], `sem cor: ${status}`).toBeDefined();
+    }
+    expect(PATIENT_STATUS_COLOR.ON_HOLD).toBeDefined();
+    expect(PATIENT_STATUS_COLOR.SEARCHING).toBeDefined();
+    expect(PATIENT_STATUS_COLOR.REPLACEMENT).toBeDefined();
+    expect(PATIENT_STATUS_COLOR.DISCONTINUED).toBeUndefined();
+    expect(PATIENT_STATUSES).not.toContain('DISCONTINUED');
+  });
+
   it('rótulos com fallback para valor desconhecido', () => {
     expect(workerStatusLabel(t, 'REGISTERED')).toBe('Documentación completa');
     expect(workerStatusLabel(t, 'XYZ')).toBe('XYZ');
     expect(patientStatusLabel(t, 'PENDING_ADMISSION')).toBe('Esperando financiero');
+    expect(patientStatusLabel(t, 'ON_HOLD')).toBe('En espera');
+    expect(patientStatusLabel(t, 'SEARCHING')).toBe('Búsqueda');
+    expect(patientStatusLabel(t, 'REPLACEMENT')).toBe('Reemplazo');
     expect(patientStatusLabel(t, 'XYZ')).toBe('XYZ');
     // status NULL no banco (visto no e2e): nunca a chave crua
     expect(patientStatusLabel(t, null)).toBe('Sin estado');
@@ -72,7 +88,9 @@ describe('mapPageConfig', () => {
     const w = legendEntries(t, 'workers');
     expect(w.map((e) => e.label)).toEqual(['Documentación completa', 'Registro incompleto', 'Dado de baja']);
     const p = legendEntries(t, 'patients');
-    expect(p).toHaveLength(5);
+    // QA 🟡4: status v2 — 9 status, 8 cores (ADMISSION/PENDING_ADMISSION dividem 1; os demais,
+    // inclusive ON_HOLD/SEARCHING/REPLACEMENT novos, têm cor própria).
+    expect(p).toHaveLength(8);
     expect(p.map((e) => e.color)).toEqual([...new Set(p.map((e) => e.color))]);
     expect(p.find((e) => e.label.includes('/'))?.label).toBe('En admisión / Esperando financiero');
   });

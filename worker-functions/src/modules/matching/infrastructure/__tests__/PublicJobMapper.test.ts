@@ -329,4 +329,21 @@ describe('mapPublicJobRow', () => {
     expect(JSON.stringify(dto)).not.toContain('Alzheimer');
     expect(JSON.stringify(dto)).not.toContain('diabetes');
   });
+
+  // Spec 013, bloco C (lex C-b2/C-c.3): professional_profile (perfil buscado do SERVIÇO
+  // contratado, texto clínico livre) e hourly_value (preço do contrato) nunca podem sair no
+  // feed público — mesmo cenário "a linha do banco trouxe a coluna e ninguém tocou no mapper".
+  it('não emite professional_profile nem hourly_value do serviço contratado, mesmo quando a linha do banco os traz', () => {
+    const row = makeRow({
+      professional_profile: 'Alzheimer moderado + diabetes tipo II, requiere asistencia total',
+      hourly_value: 999999,
+    } as never);
+
+    const dto = mapPublicJobRow(row);
+
+    expect(dto).not.toHaveProperty('professional_profile');
+    expect(dto).not.toHaveProperty('hourly_value');
+    expect(JSON.stringify(dto)).not.toContain('999999');
+    expect(JSON.stringify(dto)).not.toContain('Alzheimer');
+  });
 });

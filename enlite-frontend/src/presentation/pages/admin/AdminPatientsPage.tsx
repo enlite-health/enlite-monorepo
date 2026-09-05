@@ -97,7 +97,7 @@ export function AdminPatientsPage(): JSX.Element {
     currentPage,
   ]);
 
-  const { patients: rawPatients, total, isLoading, error, refetch } = usePatientsData(filters);
+  const { patients: rawPatients, total, isLoading, error } = usePatientsData(filters);
 
   const patients = useMemo(
     () =>
@@ -262,10 +262,9 @@ export function AdminPatientsPage(): JSX.Element {
       {isCreateOpen && (
         <PatientCreateModal
           onClose={() => setIsCreateOpen(false)}
-          onCreated={() => {
-            setCurrentPage(1);
-            refetch();
-          }}
+          // Spec 014 US-D5: criar paciente ABRE A FICHA — antes só fechava o modal e refazia o
+          // fetch da lista, e a operadora tinha que achar o paciente recém-criado na tabela.
+          onCreated={(id) => navigate(`/admin/patients/${id}`)}
         />
       )}
     </PageContainer>

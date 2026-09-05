@@ -28,6 +28,29 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
   AdminApiService: { updatePatientSection: (...a: unknown[]) => updatePatientSection(...a) },
 }));
 
+// Spec 016 F3: a seção de diagnóstico vive dentro deste drawer — mockada aqui porque nenhum
+// teste deste arquivo precisa do fetch real (o próprio arquivo de testes da seção já cobre isso).
+const searchTerminology = vi.fn();
+vi.mock('@infrastructure/http/AdminTerminologyApiService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@infrastructure/http/AdminTerminologyApiService')>();
+  return {
+    TerminologyUnavailableError: actual.TerminologyUnavailableError,
+    AdminTerminologyApiService: { search: (...a: unknown[]) => searchTerminology(...a) },
+  };
+});
+const createDiagnosis = vi.fn();
+vi.mock('@infrastructure/http/AdminDiagnosisApiService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@infrastructure/http/AdminDiagnosisApiService')>();
+  return {
+    DiagnosisApiError: actual.DiagnosisApiError,
+    AdminDiagnosisApiService: {
+      create: (...a: unknown[]) => createDiagnosis(...a),
+      promote: vi.fn(),
+      deactivate: vi.fn(),
+    },
+  };
+});
+
 import { PatientClinicalEditDrawer, GENERAL_NOTES_MAX } from '../PatientClinicalEditDrawer';
 
 describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
@@ -113,13 +136,17 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('altera diagnóstico, dispositivo, dependência, especialidade, tipo de serviço e os 3 selects tri-state — manda tudo no payload', async () => {
-    render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
+  it('altera diagnóstico, dispositivo (multi-select do catálogo), dependência, tipo de serviço e os 3 selects tri-state — manda tudo no payload; especialidade NÃO existe mais (US-B8)', async () => {
+    const { container } = render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.queryByTestId('pce-specialty')).not.toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/Especialidade|ICHOM/);
 
     fireEvent.change(screen.getByTestId('pce-diagnosis'), { target: { value: 'CID novo' } });
-    fireEvent.change(screen.getByTestId('pce-device'), { target: { value: 'Cadeira de rodas' } });
+    // US-B4: dispositivo é multi-select de códigos do catálogo (HOME + SCHOOL), nunca texto livre
+    fireEvent.click(container.querySelector('#pce-device button') as HTMLElement);
+    fireEvent.click(screen.getByText('Domiciliar'));
+    fireEvent.click(screen.getByText('Escolar'));
     fireEvent.change(screen.getByTestId('pce-dependency'), { target: { value: 'MODERATE' } });
-    fireEvent.change(screen.getByTestId('pce-specialty'), { target: { value: 'GERIATRIC' } });
     // hasJudicialProtection: false → true (strToBool 'true')
     fireEvent.change(screen.getByTestId('pce-hasJudicialProtection'), { target: { value: 'true' } });
     // hasCud: true → false (strToBool 'false')
@@ -135,9 +162,8 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
     await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
     expect(updatePatientSection).toHaveBeenCalledWith(patientDetailFixture.id, 'clinical', {
       diagnosis: 'CID novo',
-      deviceType: 'Cadeira de rodas',
+      deviceTypes: ['HOME', 'SCHOOL'],
       dependencyLevel: 'MODERATE',
-      clinicalSpecialty: 'GERIATRIC',
       serviceType: ['AT', 'CAREGIVER'],
       hasJudicialProtection: true,
       hasCud: false,
@@ -177,5 +203,78 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
     fireEvent.change(screen.getByTestId('pce-comments'), { target: { value: 'novo' } });
     fireEvent.click(screen.getByTestId('pce-save'));
     await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patientDetailFixture.id, 'clinical', { additionalComments: 'novo' }));
+  });
+
+  it('spec 012: deviceTypes ausente na ficha → conjunto vazio; escolher HOME manda deviceTypes; erro não-Error → mensagem genérica', async () => {
+    updatePatientSection.mockRejectedValueOnce('x');
+    const { container } = render(<PatientClinicalEditDrawer patient={{ ...patientDetailMinimal, deviceTypes: undefined as never }} onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.click(container.querySelector('#pce-device button') as HTMLElement);
+    fireEvent.click(screen.getByText('Domiciliar'));
+    fireEvent.click(screen.getByTestId('pce-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patientDetailMinimal.id, 'clinical', { deviceTypes: ['HOME'] }));
+    expect(await screen.findByTestId('pce-error')).toHaveTextContent('Erro ao salvar');
+  });
+
+  // ── Spec 014 US-D4 (lex D4 AUTORIZADO): drawer não perde trabalho ──────────────────────
+  describe('confirmação ao fechar com mudanças (US-D4)', () => {
+    it('SEM mudança → Escape fecha direto', () => {
+      render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
+    });
+
+    it('COM mudança (diagnóstico) → Escape abre confirmação; "Seguir editando" preserva o valor', () => {
+      render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
+      fireEvent.change(screen.getByTestId('pce-diagnosis'), { target: { value: 'F32' } });
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.getByTestId('discard-changes-confirm')).toBeVisible();
+      fireEvent.click(screen.getByTestId('discard-changes-keep-editing'));
+      expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
+      expect(screen.getByTestId('pce-diagnosis')).toHaveValue('F32');
+    });
+
+    it('"Descartar cambios" fecha de verdade', async () => {
+      const onClose = vi.fn();
+      render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={onClose} onSaved={vi.fn()} />);
+      fireEvent.change(screen.getByTestId('pce-diagnosis'), { target: { value: 'F32' } });
+      fireEvent.keyDown(document, { key: 'Escape' });
+      fireEvent.click(screen.getByTestId('discard-changes-discard'));
+      await waitFor(() => expect(onClose).toHaveBeenCalled(), { timeout: 1000 });
+    });
+  });
+
+  // ── Spec 016 F3: a seção de diagnóstico é fora do react-hook-form — o refetch do pai (onSaved)
+  // só dispara ao FECHAR o drawer (nunca a cada diagnóstico), porque `PatientDetailPage` desmonta
+  // a ficha inteira (skeleton) enquanto `isLoading` — chamar onSaved por ação fechava o drawer
+  // sozinho no meio da edição (achado medido nesta sessão, e2e F3).
+  describe('diagnóstico estruturado (spec 016 F3) — refetch adiado até o drawer fechar', () => {
+    it('escolhe um diagnóstico (POST) e fecha sem tocar em mais nada → onSaved dispara (diagnosesChangedRef)', async () => {
+      searchTerminology.mockResolvedValue([{ uri: 'u1', title: 'Esquizofrenia' }]);
+      createDiagnosis.mockResolvedValue({ id: 'd1', uri: 'u1', title: 'Esquizofrenia', isPrimary: false, source: 'PANEL', active: true });
+      const onSaved = vi.fn();
+      const onClose = vi.fn();
+      render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={onClose} onSaved={onSaved} />);
+
+      fireEvent.change(screen.getByTestId('icd-search-input'), { target: { value: 'esquiso' } });
+      const option = await screen.findByTestId('icd-search-option-0', {}, { timeout: 3000 });
+      fireEvent.click(option);
+      await waitFor(() => expect(createDiagnosis).toHaveBeenCalledTimes(1));
+      await screen.findByTestId('diagnosis-chip-d1');
+
+      // Fecha sem tocar em nenhum outro campo — não passa pelo onSubmit do form.
+      fireEvent.click(screen.getByTestId('patient-clinical-edit-backdrop'));
+      await waitFor(() => expect(onClose).toHaveBeenCalled(), { timeout: 1500 });
+      expect(onSaved).toHaveBeenCalledTimes(1);
+      expect(updatePatientSection).not.toHaveBeenCalled();
+    });
+
+    it('sem escolher nenhum diagnóstico, fechar NÃO chama onSaved (diagnosesChangedRef continua false)', async () => {
+      const onSaved = vi.fn();
+      const onClose = vi.fn();
+      render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={onClose} onSaved={onSaved} />);
+      fireEvent.click(screen.getByTestId('patient-clinical-edit-backdrop'));
+      await waitFor(() => expect(onClose).toHaveBeenCalled(), { timeout: 1500 });
+      expect(onSaved).not.toHaveBeenCalled();
+    });
   });
 });

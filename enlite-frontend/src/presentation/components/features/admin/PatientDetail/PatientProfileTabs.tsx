@@ -1,13 +1,14 @@
 import { useTranslation } from 'react-i18next';
 
+// Spec 014 US-D2 (decisão Gabriel 03/09, item 9): "Datos Financieros" e "Agendamientos"
+// SAEM do tab bar — eram abas que só caíam no placeholder genérico "Próximamente" (nenhum card
+// ligado). Uma aba só entra aqui quando tiver conteúdo real por trás (todas as 6 abaixo têm).
 export type PatientTab =
   | 'clinicalData'
   | 'supportNetwork'
   | 'contractedService'
   | 'vacancies'
-  | 'financialData'
   | 'matching'
-  | 'appointments'
   | 'history';
 
 interface PatientProfileTabsProps {
@@ -20,9 +21,7 @@ const TABS: PatientTab[] = [
   'supportNetwork',
   'contractedService',
   'vacancies',
-  'financialData',
   'matching',
-  'appointments',
   'history',
 ];
 
@@ -31,9 +30,7 @@ const TAB_I18N_KEYS: Record<PatientTab, string> = {
   supportNetwork: 'admin.patients.detail.tabs.supportNetwork',
   contractedService: 'admin.patients.detail.tabs.contractedService',
   vacancies: 'admin.patients.detail.tabs.vacancies',
-  financialData: 'admin.patients.detail.tabs.financialData',
   matching: 'admin.patients.detail.tabs.matching',
-  appointments: 'admin.patients.detail.tabs.appointments',
   history: 'admin.patients.detail.tabs.history',
 };
 
@@ -41,7 +38,7 @@ export function PatientProfileTabs({ activeTab, onTabChange }: PatientProfileTab
   const { t } = useTranslation();
 
   return (
-    <div className="flex items-center gap-4 flex-wrap overflow-x-auto">
+    <div className="flex items-center gap-4 flex-wrap overflow-x-auto" data-testid="patient-profile-tabs">
       {TABS.map((tab) => (
         <button
           key={tab}

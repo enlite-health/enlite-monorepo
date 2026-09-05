@@ -10,6 +10,7 @@ import { getCountryOptions } from '../patientsData';
 import type { CorridorLabels } from './CorridorPanel';
 import type { ResultRow } from './mapResults';
 import { WORKER_PROFESSIONS } from '@domain/entities/Worker';
+import { PATIENT_STATUSES as PATIENT_STATUSES_V2 } from '@domain/entities/patientEnums';
 
 /**
  * Onde o mapa nasce em cada país — trocar o país move o centro para cá.
@@ -59,19 +60,28 @@ export const WORKER_STATUS_COLOR: Record<string, string> = {
   DISABLED: '#6b7280',
 };
 
+/**
+ * QA 🟡4: cores por status v2 (`@domain/entities/patientEnums`, decisão 2 do Gabriel,
+ * 03/09/2026). `DISCONTINUED` saiu do vocabulário (migration 314 converteu as linhas em
+ * DISCHARGED); ON_HOLD/SEARCHING/REPLACEMENT são clínicos novos e faltavam aqui — o mapa tinha
+ * um vocabulário PRÓPRIO, desincronizado do resto da ficha (spec 012).
+ */
 export const PATIENT_STATUS_COLOR: Record<string, string> = {
   ACTIVE: '#16a34a',
   ADMISSION: '#2563eb',
   PENDING_ADMISSION: '#2563eb',
   SOLICITANTE: '#7c3aed',
-  SUSPENDED: '#d97706',
-  DISCONTINUED: '#6b7280',
+  ON_HOLD: '#f59e0b',
+  SEARCHING: '#0891b2',
+  REPLACEMENT: '#db2777',
+  SUSPENDED: '#ea580c',
   DISCHARGED: '#6b7280',
 };
 
 /** A fonte é a entidade de domínio — o mapa não mantém lista própria de profissões. */
 export const PROFESSIONS = WORKER_PROFESSIONS;
-export const PATIENT_STATUSES = ['ACTIVE', 'ADMISSION', 'PENDING_ADMISSION', 'SOLICITANTE', 'SUSPENDED', 'DISCONTINUED', 'DISCHARGED'] as const;
+/** Fonte viva: `patientEnums.ts` (v2) — não uma lista própria do mapa (QA 🟡4). */
+export const PATIENT_STATUSES = PATIENT_STATUSES_V2;
 
 export function workerStatusLabel(t: TFunction, status: string | null): string {
   if (!status) return t('admin.map.status.unknown', 'Sin estado');
@@ -83,7 +93,8 @@ export function patientStatusLabel(t: TFunction, status: string | null): string 
   if (!status) return t('admin.map.status.unknown', 'Sin estado');
   const fallback: Record<string, string> = {
     ACTIVE: 'Activo', ADMISSION: 'En admisión', PENDING_ADMISSION: 'Esperando financiero', SOLICITANTE: 'Solicitante',
-    SUSPENDED: 'Suspendido', DISCONTINUED: 'Baja', DISCHARGED: 'Alta',
+    ON_HOLD: 'En espera', SEARCHING: 'Búsqueda', REPLACEMENT: 'Reemplazo',
+    SUSPENDED: 'Suspendido', DISCHARGED: 'Alta',
   };
   return t(`admin.map.patientStatus.${status}`, fallback[status] ?? status);
 }
@@ -130,8 +141,8 @@ export function patientPointTitle(t: TFunction, p: PatientMapPoint): string {
 
 /**
  * Legenda das bolinhas — UMA entrada por COR, não por status: `ADMISSION` e
- * `PENDING_ADMISSION` são o mesmo azul, `DISCONTINUED` e `DISCHARGED` o mesmo
- * cinza. Duas entradas com a mesma cor não seriam legenda, seriam enigma.
+ * `PENDING_ADMISSION` são o mesmo azul (funil de admissão). Duas entradas com
+ * a mesma cor não seriam legenda, seriam enigma.
  */
 export function legendEntries(t: TFunction, kind: 'workers' | 'patients'): Array<{ color: string; label: string }> {
   // Percorre o PRÓPRIO mapa de cores (e não a lista de status): assim não

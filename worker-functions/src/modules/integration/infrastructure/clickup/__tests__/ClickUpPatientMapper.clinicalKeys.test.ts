@@ -20,6 +20,11 @@ function makeResolver(): ClickUpFieldResolver {
     resolveDropdown: jest.fn(() => null),
     resolveLabel: jest.fn(() => null),
     resolveLabels: jest.fn(() => []),
+    // Task 1.11 (`campos-admissao`): o mapper faz preflight do catálogo antes de mapear. O stub
+    // responde "o campo EXISTE e é dropdown" para todos — `null` significaria campo renomeado/
+    // apagado e o mapper recusaria a task inteira, de propósito (esse cenário tem teste próprio:
+    // `tests/unit/__tests__/clickup-1.11-campo-renomeado.test.ts`).
+    getFieldType: jest.fn(() => 'drop_down'),
   } as unknown as ClickUpFieldResolver;
 }
 

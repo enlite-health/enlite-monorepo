@@ -122,7 +122,9 @@ describe('AdminPatientsController.createPatientAddress', () => {
 
     const [sql, params] = mockPoolQuery.mock.calls[0];
     expect(sql).toContain('INSERT INTO patient_addresses');
-    expect(params).toEqual([PATIENT_ID, 'Av. X 123', null, 'secondary', 2, -34.6, -58.4]);
+    // Spec 012 US-B2: + zona/corredor/acesso (null quando ausentes); `country` vem do paciente no próprio SQL.
+    expect(params).toEqual([PATIENT_ID, 'Av. X 123', null, 'secondary', 2, -34.6, -58.4, null, null, null]);
+    expect(sql).toMatch(/\(SELECT country FROM patients WHERE id = \$1\)/);
   });
 
   it('201: geocode retorna null (sem match) → lat/lng ficam null, request não falha', async () => {
@@ -188,14 +190,14 @@ describe('AdminPatientsController.createPatientAddress', () => {
     await controller.createPatientAddress(req, res);
 
     expect(res.status).toHaveBeenCalledWith(500);
-    expect((res as any).json.mock.calls[0][0]).toMatchObject({
+    // lex C2.3 (spec 012): a resposta NÃO ecoa o erro do banco (pode carregar a linha inteira).
+    expect((res as any).json.mock.calls[0][0]).toEqual({
       success: false,
       error: 'Failed to create patient address',
-      details: 'constraint violation',
     });
     expect(reportError).toHaveBeenCalledWith(
       expect.any(Error),
-      { source: 'AdminPatientsController:createPatientAddress' },
+      { source: 'AdminPatientsController:createPatientAddress', patientId: PATIENT_ID },
     );
   });
 

@@ -140,6 +140,81 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
+        // Spec 011 bloco A (03/09): contrato da ficha, os 3 cards que passaram a
+        // ler o contrato real e os 2 drawers que reenviam o que a tabela tem.
+        // Nasceram/ficaram em 100% medidos na suíte inteira — entram no mesmo PR.
+        '**/src/domain/entities/patientDetailContract.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/components/features/admin/PatientDetail/{EquipeTratanteCard,LocalizacoesCard,PatientIdentityCard}.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/components/features/admin/PatientDetail/edit/{PatientGeneralEditDrawer,PatientSupportNetworkEditDrawer}.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        // Spec 012 bloco B (03/09): estado v2 (controle + Historial), cobertura por catálogo,
+        // domicílio na ficha, dispositivo/parentesco por enum, Kanban por admission_status.
+        // Nascem/ficam em 100% medidos na suíte inteira — entram no mesmo PR.
+        '**/src/domain/entities/patientEnums.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/hooks/admin/usePatientKanban.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/components/features/admin/PatientDetail/{PatientStatusControl,PatientStatusHistoryCard,CoberturaMedicaCard,FamiliaresCard,PatientGeneralInfoCard}.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/components/features/admin/PatientDetail/edit/{PatientCoverageEditDrawer,PatientAddressDrawer,PatientClinicalEditDrawer}.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/components/features/admin/PatientCreateModal/PatientCreateModal.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        // Mediram 100 nos quatro eixos na suíte inteira (03/09, modo CI) ao serem tocados pelo bloco B.
+        '**/src/infrastructure/http/AdminPatientsApiService.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        // Spec 013 bloco C (03/09): serviço contratado como entidade — o novo card (fim das 5
+        // colunas fantasma, #PEND-08), o drawer lista+form, a seção de prestadores, o contrato
+        // extendido (contractedServices[]) e o cliente HTTP. `AdminContractedServicesApiService.ts`
+        // fica em 96% de branches (o `||` do fallback de `VITE_API_WORKER_FUNCTIONS_URL` no
+        // constructor, mesmo padrão não coberto nos irmãos desta pasta) — não entra no piso de
+        // branches por isso; os outros 3 eixos são 100.
+        '**/src/domain/entities/PatientContractedService.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/components/features/admin/PatientDetail/ServicosContratadosCard.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        // QA-caça #4 (03/09): os 2 branches que faltavam (`if (!service) return` no deactivate de
+        // ContractedServiceFormRow, `if (!selected) return` no associate de
+        // ContractedServiceProvidersSection) eram INALCANÇÁVEIS via clique simulado — extraídos
+        // em `deactivateService`/`runAssociateProvider` exportados e testados diretamente. Os 3
+        // arquivos medem 100 nos 4 eixos agora.
+        '**/src/presentation/components/features/admin/PatientDetail/edit/{ContractedServiceFormRow,ContractedServiceProvidersSection,PatientContractedServicesEditDrawer}.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/infrastructure/http/AdminContractedServicesApiService.ts': {
+          statements: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/pages/admin/PatientDetailPage.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        // Spec 014 bloco D (03/09): checklist de completude (US-D1), placeholder real dos cards
+        // vazios (US-D2), aviso de telefone coincidente (US-D3), navegação Kanban↔ficha (US-D5).
+        // Medidos 100 nos 4 eixos na suíte inteira ao serem criados/tocados neste bloco.
+        '**/src/domain/entities/PatientCompleteness.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/hooks/admin/useAutoOpenDrawer.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/components/features/admin/PatientDetail/{CompletenessChecklist,PlaceholderCard,SupervisaoCard,RelatoriosAtendimentosCard,EnquadreTerapeuticoCard,ProjetoTerapeuticoCard,ActivatePatientButton,PatientProfileTabs}.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/pages/admin/PatientKanbanPage.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
         '**/src/presentation/components/features/admin/PatientDetail/edit/ClinicalTextareaField.tsx': {
           statements: 100,
           branches: 100,
@@ -199,6 +274,19 @@ export default defineConfig({
           branches: 100,
           functions: 100,
           lines: 100,
+        },
+        // Spec 016 F3 (04/09): front do diagnóstico CID-11 — busca+chips NOSSOS (REQ-21: código
+        // nunca no DOM), a seção que os compõe dentro do drawer clínico, e o util que ordena a
+        // patología na ficha. Nascem em 100% nos 4 eixos (medido ao criar) — entram no piso no
+        // MESMO PR, senão a régua da casa (D200) vira letra morta no primeiro toque seguinte.
+        '**/src/domain/entities/diagnosisDisplay.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/infrastructure/http/{AdminTerminologyApiService,AdminDiagnosisApiService}.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/components/features/admin/PatientDetail/edit/{IcdSearchCombobox,DiagnosisChipList,DiagnosisAssignmentSection}.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
         },
       },
     },

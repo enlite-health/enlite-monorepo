@@ -11,6 +11,7 @@ export const patientDetailFixture: PatientDetail = {
   affiliateId: null,
   sex: 'MALE',
   phoneWhatsapp: '+55 (11) 91571-1717',
+  contactEmail: 'santiago.claiman@example.com',
   chatIds: {
     FAMILY: '120363090000000001@g.us',
     PROVIDERS: '120363090000000002@g.us',
@@ -39,8 +40,21 @@ export const patientDetailFixture: PatientDetail = {
   zoneNeighborhood: 'Bela Vista',
   country: 'BR',
   status: 'PENDING_ADMISSION',
+  admissionStatus: 'PENDING_ADMISSION',
+  onHoldReason: null,
+  onHoldNote: null,
+  serviceStartDate: '2026-09-01T00:00:00Z',
+  insuranceVerifiedCodes: [],
+  deviceTypes: [],
   needsAttention: false,
   attentionReasons: [],
+  // Spec 014 (US-D1): coerente com os campos acima — sem cobertura informada, sem serviço
+  // contratado ativo (contractedServices: []) → COVERAGE + CONTRACTED_SERVICE faltando.
+  // D255 (QA-caça rodada 1): nenhum dos dois é ADDRESS → blocking:[] (não bloqueia o activate),
+  // mesmo com missing não vazio.
+  completeness: { missing: ['COVERAGE', 'CONTRACTED_SERVICE'], blocking: [], ready: false, canActivate: true },
+  // Spec 014 (US-D3): últimos 8 dígitos de '+55 (11) 91571-1717' × '(11) 99852-0481' — diferentes.
+  phoneMatchesResponsible: false,
   responsibles: [
     {
       id: 'r1',
@@ -52,31 +66,42 @@ export const patientDetailFixture: PatientDetail = {
       documentType: 'CPF',
       documentNumber: '987.654.321-00',
       isPrimary: true,
+      displayOrder: 1,
+      source: 'web_form',
     },
   ],
   addresses: [
     {
       id: 'addr1',
-      street: 'Rua Augusta',
-      number: '975',
+      addressType: 'primary',
+      addressFormatted: 'Rua Augusta, 975 - São Paulo/SP',
+      addressRaw: 'Rua Augusta 975, Consolação',
       complement: 'Torre A, Ap. 701',
-      neighborhood: 'Consolação',
-      city: 'São Paulo',
-      state: 'SP',
+      displayOrder: 1,
+      lat: -23.5558,
+      lng: -46.6622,
+      isPrimary: true,
+      neighborhood: 'Bela Vista',
+      logisticsCorridor: 'Centro',
+      accessNotes: 'Portaria 24h, interfone 701',
       country: 'BR',
-      zipCode: '01310-100',
-      fullAddress: 'Rua Augusta, 975 - São Paulo/SP. Torre A, Ap. 701',
     },
   ],
   professionals: [
     {
       id: 'prof1',
-      fullName: 'Dr. João Alves Pereira',
+      name: 'Dr. João Alves Pereira',
       phone: '+55 (11) 97580-1332',
       email: 'joao.pereira@clinic.com',
-      specialty: 'Psicólogo',
+      displayOrder: 1,
+      isTeam: false,
     },
   ],
+  contractedServices: [],
+  // Spec 016 F2 (D263), C5 — tipo estendido com diagnoses[]/diagnosesUnavailable; a TELA que os
+  // consome é F3 (fora de escopo aqui), então o fixture só precisa satisfazer o tipo.
+  diagnoses: [],
+  diagnosesUnavailable: false,
   createdAt: '2025-01-10T12:00:00Z',
   updatedAt: '2026-04-20T09:30:00Z',
 };
@@ -92,6 +117,7 @@ export const patientDetailMinimal: PatientDetail = {
   affiliateId: null,
   sex: null,
   phoneWhatsapp: null,
+  contactEmail: null,
   chatIds: {},
   familyChatId: null,
   providersChatId: null,
@@ -117,11 +143,25 @@ export const patientDetailMinimal: PatientDetail = {
   zoneNeighborhood: null,
   country: 'AR',
   status: null,
+  admissionStatus: 'DONE',
+  onHoldReason: null,
+  onHoldNote: null,
+  serviceStartDate: null,
+  insuranceVerifiedCodes: [],
+  deviceTypes: [],
   needsAttention: false,
   attentionReasons: [],
+  // Spec 014 (US-D1): paciente vazio — tudo falta (ADULTO por birthDate null → RESPONSIBLE
+  // não é exigido; ver `isMinor` no domínio compartilhado).
+  // D255: ADDRESS está em missing → entra em blocking, canActivate:false.
+  completeness: { missing: ['ADDRESS', 'COVERAGE', 'CONTRACTED_SERVICE', 'CONSENT'], blocking: ['ADDRESS'], ready: false, canActivate: false },
+  phoneMatchesResponsible: false,
   responsibles: [],
   addresses: [],
   professionals: [],
+  contractedServices: [],
+  diagnoses: [],
+  diagnosesUnavailable: false,
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
 };

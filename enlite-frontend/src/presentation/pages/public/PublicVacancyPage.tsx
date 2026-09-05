@@ -151,21 +151,11 @@ export function VacancyDetailsCard({
           </div>
         )}
 
-        {/* Patología (Hipótese Diagnóstica) — texto livre com possíveis quebras de linha */}
-        {vacancy.pathologies && (
-          <div className="flex flex-col gap-2">
-            <Heading level={4} weight="medium" color="primary" className="leading-[1.35]">
-              {t('publicVacancy.diagnosticHypothesis')}
-            </Heading>
-            <Text
-              size="sm"
-              weight="medium"
-              className="max-w-[68ch] whitespace-pre-line break-words leading-[1.6]"
-            >
-              {vacancy.pathologies}
-            </Text>
-          </div>
-        )}
+        {/* F1.5-CORREÇÃO C5 (D261, spec 016): o render da seção "Patología" (o campo clínico
+            livre que este card mostrava) saiu daqui. Já estava morto — o backend removeu o
+            campo do payload em 25/08/2026 (PublicVacancyController.ts) — e virava arma
+            carregada quando a F2 acrescentasse `diagnoses[]` na resposta pública (REQ-21 exige
+            que o código do CID-11 NUNCA apareça na ficha). */}
 
         {/* Características */}
         <div className="flex flex-col gap-2">

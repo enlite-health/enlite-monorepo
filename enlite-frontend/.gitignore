@@ -20,6 +20,9 @@ firebase-debug.*.log
 playwright-report/
 e2e/.auth/
 e2e/**-snapshots/
+# F5: destino default da evidência da auditoria de UX (o caminho absoluto da máquina de
+# UMA pessoa saiu do código). Só nasce quando alguém roda a auditoria à mão.
+e2e/__evidence__/
 # Visual diff artifacts (regenerated on test failure)
 e2e/fixtures/figma/*.actual.png
 e2e/fixtures/figma/*.diff.png

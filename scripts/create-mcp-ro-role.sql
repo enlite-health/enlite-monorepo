@@ -105,6 +105,8 @@ $$;
 --    Fora (item 2, texto clínico livre): diagnosis, additional_comments, emergency_instructions.
 --    Fora (OP-04.a, D218 bônus): insurance_verified (afiliação sindical) e device_type (regime de
 --    internação) — a nossa OP-04.a já os classifica como sensíveis.
+--    Fora (spec 012, lex C7.1-d / B9 / C3): on_hold_note (texto clínico), on_hold_reason,
+--    service_start_date, admission_status — coluna nova em `patients` nasce invisível: NÃO listar.
 --    Rótulos de catálogo ficam (dependency_level, clinical_specialty, service_type, attention_reasons:
 --    ≤9 valores distintos, ≤35 chars, medido em prod 29/08 — item 1).
 REVOKE SELECT ON public.patients FROM enlite_mcp_ro;
@@ -136,7 +138,20 @@ BEGIN
       ('publications',              ARRAY['observations']),
       ('worker_placement_audits',   ARRAY['observations','patient_raw_name']),
       ('worker_job_applications',   ARRAY['internal_notes']),
-      ('interview_slots',           ARRAY['notes'])   -- lex M2: entrevista de matching fala de patologia
+      ('interview_slots',           ARRAY['notes']),  -- lex M2: entrevista de matching fala de patologia
+      -- spec 012 (lex C2.1): `access_notes` é texto livre sobre o DOMICÍLIO de um paciente. A tabela
+      -- tinha GRANT de tabela inteira — a coluna nova (mig 316) nasceria legível pelo LLM no dia 1.
+      ('patient_addresses',         ARRAY['access_notes']),
+      -- spec 013 bloco C (QA-caça #1, mesma classe D216/D218): `professional_profile` (texto livre
+      -- sobre o profissional buscado) e `hourly_value` (preço do contrato, lex C-c) da 319 tinham
+      -- GRANT de tabela inteira via "ALL TABLES" — legíveis pelo MCP no dia 1. As 3 tabelas irmãs
+      -- (318/319) entram nominalmente mesmo as sem texto/valor a excluir: GRANT por coluna (em vez
+      -- do "ALL TABLES" implícito) garante que coluna nova nasça invisível também aqui (mesma razão
+      -- do C6 para tabela nova).
+      ('patient_contracted_services', ARRAY['professional_profile','hourly_value']),
+      ('contracted_service_providers', ARRAY[]::text[]),
+      ('contracted_service_devices',   ARRAY[]::text[]),
+      ('service_types',                ARRAY[]::text[])
     ) AS t(tabela, excluir)
   LOOP
     IF NOT EXISTS (SELECT 1 FROM information_schema.tables
@@ -151,7 +166,20 @@ BEGIN
     EXECUTE format('REVOKE SELECT ON public.%I FROM enlite_mcp_ro', alvo.tabela);
     EXECUTE format('GRANT SELECT (%s) ON public.%I TO enlite_mcp_ro', cols, alvo.tabela);
   END LOOP;
-  FOR alvo IN SELECT unnest(ARRAY['patient_insurance_verified','patient_device_types']) AS tabela LOOP
+  -- spec 016 F2 (D263, "o mais urgente"): patient_diagnoses NÃO TEM coluna segura —
+  -- concept_group='06' sozinho já revela saúde mental (capítulo do CID-11). Tabela inteira
+  -- revogada, no MESMO commit da migration 325 que a cria (nunca "na próxima PR").
+  -- ⚠️ spec 016 F2 (D263): o gate achou patient_source_labels E patient_source_label_rejections
+  -- FORA desta lista — raw_label das duas é rótulo cru do ClickUp (ex.: "Tipo de Patología"),
+  -- mesma classe de patient_insurance_verified/patient_device_types. Consertar só uma seria
+  -- deixar metade consertada, que é o próprio defeito (mesmo espírito do "achado #1" do QA-caça).
+  FOR alvo IN SELECT unnest(ARRAY[
+    'patient_insurance_verified',
+    'patient_device_types',
+    'patient_diagnoses',
+    'patient_source_labels',
+    'patient_source_label_rejections'
+  ]) AS tabela LOOP
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=alvo.tabela) THEN
       EXECUTE format('REVOKE SELECT ON public.%I FROM enlite_mcp_ro', alvo.tabela);
     END IF;
@@ -163,7 +191,9 @@ BEGIN
   -- lex B2, DENTRO da transação: se alguma tabela irmã ficou com SELECT de tabela inteira (nome errado,
   -- tabela pulada), o script inteiro reverte. Fail-closed no único ponto que era fail-open.
   FOR alvo IN SELECT unnest(ARRAY['patients','job_postings','job_postings_clickup_sync','job_posting_comments',
-                                  'publications','worker_placement_audits','worker_job_applications','interview_slots']) AS tabela LOOP
+                                  'publications','worker_placement_audits','worker_job_applications','interview_slots',
+                                  'patient_addresses','patient_contracted_services','contracted_service_providers',
+                                  'contracted_service_devices','service_types']) AS tabela LOOP
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=alvo.tabela)
        AND has_table_privilege('enlite_mcp_ro', format('public.%I', alvo.tabela), 'SELECT') THEN
       RAISE EXCEPTION 'B2: enlite_mcp_ro ainda tem SELECT de TABELA em % — abortando a transação', alvo.tabela;

@@ -360,5 +360,31 @@ describe('PublicVacancyController.getById', () => {
       expect(params).toHaveLength(3);          // case_number, vacancy_number, status[]
       expect(sql).toMatch(/\$3::text\[\]/);
     });
+
+    // Spec 013, bloco C (lex C-b2/C-c.3): professional_profile (perfil buscado, texto clínico
+    // livre do SERVIÇO) e hourly_value (preço do contrato) NUNCA podem sair aqui — nem o SQL
+    // pede as colunas, nem a projeção de permissão as repassaria se o banco devolvesse a linha
+    // contaminada (cenário "alguém fez JOIN em patient_contracted_services e esqueceu").
+    it('professional_profile e hourly_value do serviço contratado não atravessam, mesmo se o banco devolver as colunas', async () => {
+      const row = makeVacancyRow({
+        professional_profile: TEXTO_CLINICO,
+        hourly_value: 999999,
+      });
+      mockQuery.mockResolvedValueOnce({ rows: [row] });
+
+      const [req, res] = mockReqRes({ id: VACANCY_ID });
+      await controller.getById(req, res);
+
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      esperaSemVazamentoClinico(body);
+      expect(body.data).not.toHaveProperty('professional_profile');
+      expect(body.data).not.toHaveProperty('hourly_value');
+      expect(JSON.stringify(body)).not.toContain('999999');
+
+      const [sql] = mockQuery.mock.calls[0];
+      expect(sql).not.toMatch(/professional_profile/);
+      expect(sql).not.toMatch(/hourly_value/);
+      expect(sql).not.toMatch(/patient_contracted_services/);
+    });
   });
 });

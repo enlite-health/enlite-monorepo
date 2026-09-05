@@ -16,11 +16,12 @@ interface Props {
   onMove: (patientId: string, targetStatus: PatientKanbanStatus) => Promise<string | null>;
 }
 
+// Spec 012: as colunas são o FUNIL DE ADMISSÃO (`admission_status`); DONE = "Activo".
 const COLUMN_COLOR: Record<PatientKanbanStatus, string> = {
   SOLICITANTE: 'bg-slate-400',
   ADMISSION: 'bg-blue-400',
   PENDING_ADMISSION: 'bg-yellow-400',
-  ACTIVE: 'bg-green-500',
+  DONE: 'bg-green-500',
 };
 
 /**

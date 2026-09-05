@@ -107,7 +107,9 @@
     "logout": "Salir",
     "multiSelect": {
       "selectedCount": "{{count}} seleccionados"
-    }
+    },
+    "yes": "Sí",
+    "no": "No"
   },
   "sidebar": {
     "expandMenu": "Expandir menú",
@@ -2206,7 +2208,8 @@
           "cityMin": "La localidad debe tener al menos 2 caracteres",
           "serviceDeviceTypesMin": "Seleccioná al menos un dispositivo de servicio",
           "ageRangeMinInvalid": "La edad mínima debe ser al menos 18 años",
-          "ageRangeInvalid": "La edad máxima debe ser mayor o igual a la mínima"
+          "ageRangeInvalid": "La edad máxima debe ser mayor o igual a la mínima",
+          "addressRequired": "Seleccioná el domicilio donde se presta el servicio"
         }
       },
       "prescreening": {
@@ -2406,6 +2409,10 @@
       "validationBanner": {
         "title": "Faltan datos para crear la vacante:"
       },
+      "sectionCaseAndProfile": "Caso y perfil profesional",
+      "sectionScheduleAndDates": "Meet y fechas",
+      "sectionStatusAndLocation": "Estado y ubicación",
+      "sectionConditions": "Condiciones de la vacante",
       "publishDate": "Fecha de publicación",
       "closingDate": "Fecha de encerramento",
       "status": "Estado",
@@ -2823,7 +2830,8 @@
         "cancel": "Cancelar",
         "successToast": "Paciente activado — {{count}} vacantes borrador creadas",
         "noAddress": "Agregá al menos una localización antes de activar.",
-        "error": "No se pudo activar el paciente"
+        "error": "No se pudo activar el paciente",
+        "notReady": "No se puede activar: falta {{items}}."
       },
       "editDrawer": {
         "generalTitle": "Editar información general",
@@ -2835,6 +2843,33 @@
         "unset": "—",
         "saveError": "Error al guardar",
         "deviceType": "Dispositivo",
+        "diagnosisAssignment": {
+          "sectionTitle": "Diagnóstico (CIE-11)",
+          "searchPlaceholder": "Buscar diagnóstico en español...",
+          "typing": "Escribiendo…",
+          "searching": "Buscando…",
+          "noResults": "No se encontraron resultados para \"{{query}}\".",
+          "tooShortHint": "Escribí al menos {{min}} caracteres.",
+          "codeOrAcronymHint": "La búsqueda es por el NOMBRE del diagnóstico, no por código ni por sigla.",
+          "searchFailed": "No se pudo hacer la búsqueda. Probá de nuevo.",
+          "unavailable": "No pudimos conectar con el catálogo de diagnósticos. Probá de nuevo en unos minutos.",
+          "searchScopeLabel": "Buscando en:",
+          "searchScopeUsual": "Salud mental y neurología",
+          "searchScopeAll": "Todas las categorías",
+          "widenScopeHint": "¿No encontrás el diagnóstico? Probá en \"Todas las categorías\".",
+          "whoAttribution": "Clasificación Internacional de Enfermedades, 11.ª revisión (CIE-11), Organización Mundial de la Salud. Licencia CC BY-ND 3.0 IGO.",
+          "chipsEmpty": "Todavía no se agregó ningún diagnóstico.",
+          "makePrimary": "Marcar como principal",
+          "primaryBadge": "Principal",
+          "remove": "Quitar",
+          "removeConfirmQuestion": "¿Quitar este diagnóstico?",
+          "removeCancel": "Cancelar",
+          "addError": "No se pudo agregar el diagnóstico.",
+          "notDiagnosableError": "Ese resultado no es un diagnóstico específico — elegí una categoría más concreta.",
+          "alreadyActiveError": "Ese diagnóstico ya está agregado.",
+          "updateError": "No se pudo actualizar el diagnóstico.",
+          "genericError": "No se pudo completar la acción. Probá de nuevo."
+        },
         "hasConsent": "Consentimiento",
         "responsible": "Familiar",
         "addResponsible": "Agregar familiar",
@@ -2844,7 +2879,57 @@
         "lastName": "Apellido",
         "relationship": "Parentesco",
         "phone": "Teléfono",
-        "email": "E-mail"
+        "email": "E-mail",
+        "documentType": "Tipo de documento",
+        "documentNumber": "Número de documento",
+        "coverageTitle": "Editar cobertura médica",
+        "coverageFromClickup": "(del ClickUp)",
+        "contractedServicesTitle": "Editar servicios contratados",
+        "addContractedService": "+ Nuevo servicio",
+        "noContractedServices": "Este paciente todavía no tiene servicios contratados.",
+        "contractedServiceHeading": "Servicio {{n}}",
+        "inactiveBadge": "Dado de baja",
+        "deactivateService": "Dar de baja",
+        "deactivateServiceConfirm": "¿Dar de baja este servicio? Los prestadores asociados también quedan inactivos para nuevas vacantes.",
+        "professionalProfile": "Perfil del profesional buscado",
+        "professionalProfileHint": "Texto libre para uso interno del equipo — no aparece en la vacante pública.",
+        "providersNeeded": "Prestadores necesarios",
+        "authorizedHours": "Horas autorizadas",
+        "weeklyHours": "Horas semanales",
+        "careLocation": "Lugar de atención",
+        "hourlyValue": "Valor por hora",
+        "hourlyValueRedacted": "🔒 Solo admin",
+        "version": "Versión",
+        "startDate": "Fecha de inicio",
+        "contractType": "Tipo de contratación",
+        "taxCondition": "Condición de IVA",
+        "supervisionFrequency": "Frecuencia de supervisión",
+        "guardShift": "Turno de guardia",
+        "providerAgeBand": "Franja etaria solicitada del prestador",
+        "deviceTypes": "Dispositivo(s)",
+        "providersTitle": "Prestadores asociados",
+        "noProviders": "Ningún prestador asociado todavía.",
+        "searchWorkerPlaceholder": "Buscar prestador por nombre…",
+        "associateProvider": "Asociar",
+        "deactivateProvider": "Dar de baja",
+        "providerActive": "Activo",
+        "providerInactive": "Dado de baja",
+        "createServiceError": "No se pudo crear el servicio",
+        "updateServiceError": "No se pudo actualizar el servicio",
+        "searchWorkerError": "No se pudo buscar prestadores. Probá de nuevo.",
+        "deactivateServiceError": "No se pudo dar de baja el servicio",
+        "deactivateProviderError": "No se pudo dar de baja el prestador",
+        "associateProviderError": "No se pudo asociar el prestador",
+        "selectServiceCode": "Servicio",
+        "selectWorker": "Seleccioná un prestador",
+        "discardChangesTitle": "¿Descartar los cambios?",
+        "discardChangesBody": "Tenés cambios sin guardar en este formulario. Si cerrás ahora, se van a perder.",
+        "discardChangesKeepEditing": "Seguir editando",
+        "discardChangesDiscard": "Descartar cambios",
+        "selectPlaceholder": "Seleccioná…",
+        "affiliateHint": "Número de afiliado tal como figura en la credencial de la cobertura.",
+        "versionHint": "Versión del servicio contratado (si la cobertura la identifica por versión, no por fecha).",
+        "requiredField": "Este campo es obligatorio"
       },
       "kanban": {
         "title": "Pacientes — Kanban",
@@ -2857,10 +2942,16 @@
           "SOLICITANTE": "Solicitante",
           "ADMISSION": "Admisión",
           "PENDING_ADMISSION": "Esperando financiero",
-          "ACTIVE": "Activo"
+          "ACTIVE": "Activo",
+          "DONE": "Activo"
         },
         "contactOfResponsible": "Contacto del responsable",
-        "responsible": "Responsable"
+        "responsible": "Responsable",
+        "dragHint": "Arrastrá una tarjeta para cambiar el estado del paciente.",
+        "moveErrorCodes": {
+          "PATIENT_STATUS_TRANSITION_NOT_ALLOWED": "Ese cambio de estado no está permitido.",
+          "ON_HOLD_REASON_REQUIRED": "Para poner en espera hace falta indicar el motivo."
+        }
       },
       "countryLabel": "País",
       "countryOptions": {
@@ -2909,13 +3000,14 @@
         "healthInsuranceMemberId": "Número de afiliado",
         "serviceSection": "Servicio requerido",
         "serviceType": "Tipo de servicio",
-        "saveError": "Error al crear el paciente"
+        "saveError": "Error al crear el paciente",
+        "birthDate": "Fecha de nacimiento"
       },
       "errorLoading": "Error al cargar pacientes",
       "noPatients": "No se encontraron pacientes",
       "searchLabel": "Buscar",
       "searchPlaceholder": "Nombre o documento",
-      "attentionLabel": "Estado",
+      "attentionLabel": "Atención",
       "attentionOptions": {
         "all": "Todos",
         "complete": "Completos",
@@ -2924,7 +3016,8 @@
       "reasonLabel": "Motivo",
       "reasonOptions": {
         "all": "Todos",
-        "MISSING_INFO": "Falta información"
+        "MISSING_INFO": "Falta información",
+        "INCOMPLETE_ADMISSION": "Admisión incompleta"
       },
       "specialtyLabel": "Especialidad",
       "specialtyOptions": {
@@ -3026,7 +3119,17 @@
           "responsiblePhone": "Teléfono del Responsable",
           "documentType": "Tipo de documento",
           "documentNumber": "Número del documento",
-          "email": "Email"
+          "email": "Email",
+          "patientEmail": "Email del paciente",
+          "address": "Dirección:",
+          "patientWhatsapp": "WhatsApp del paciente",
+          "phoneMatchWarning": "Este número coincide con el del responsable {{name}}.",
+          "movePhoneToResponsible": "Mover al responsable",
+          "keepPhone": "Mantener",
+          "movePhoneConfirmTitle": "Mover el número al responsable",
+          "movePhoneConfirmBody": "Se va a borrar el WhatsApp del paciente (el del responsable no se toca). ¿Confirmás?",
+          "movePhoneError": "No se pudo mover el número. Probá de nuevo.",
+          "movePhoneSuccess": "Número movido — el WhatsApp del paciente quedó vacío."
         },
         "documentTypes": {
           "CPF": "CPF",
@@ -3052,7 +3155,8 @@
           "racialOrigin": "Origen racial",
           "religion": "Religión",
           "languages": "Idiomas",
-          "ageYears": "{{count}} años"
+          "ageYears": "{{count}} años",
+          "serviceStartDate": "Inicio del servicio"
         },
         "diagnosisCard": {
           "title": "Diagnóstico",
@@ -3075,7 +3179,11 @@
           "priorityHigh": "Alta",
           "priorityUrgent": "Urgente",
           "emergencyInstructions": "Instrucciones de emergencia",
-          "emergencyRedacted": "No tenés permiso para ver las instrucciones de emergencia."
+          "emergencyRedacted": "No tenés permiso para ver las instrucciones de emergencia.",
+          "devices": "Dispositivo",
+          "patologiesUnavailable": "No se pudo cargar el diagnóstico.",
+          "patologiesEmpty": "Sin diagnósticos registrados.",
+          "patologiesPrimaryBadge": "Principal"
         },
         "therapeuticProjectCard": {
           "title": "Proyecto Terapéutico",
@@ -3098,7 +3206,9 @@
           "title": "Equipo Tratante",
           "tableFullName": "Nombre Completo",
           "tablePhoneNumber": "Número de Teléfono",
-          "tableProfile": "Perfil"
+          "tableProfile": "Perfil",
+          "isTeam": "Equipo tratante",
+          "professional": "Profesional"
         },
         "supervisionCard": {
           "title": "Supervisión",
@@ -3128,30 +3238,80 @@
           "providerName": "Nombre de la Cobertura",
           "plan": "Plan del Paciente",
           "emergencyNumbers": "Números de Emergencia",
-          "credential": "Credencial"
+          "credential": "Credencial",
+          "verified": "Cobertura verificada"
         },
         "locationsCard": {
           "title": "Localizaciones",
           "tableName": "Nombre",
           "tableAddress": "Dirección",
           "tableNote": "Observación",
-          "addressGeneric": "Dirección {{index}}"
+          "addressGeneric": "Dirección {{index}}",
+          "tableZone": "Zona / Barrio",
+          "tableCorridor": "Corredor logístico",
+          "tableAccess": "Logística y acceso",
+          "editAddress": "Editar"
         },
         "contractedServicesCard": {
           "title": "Servicios Contratados",
-          "tableDevice": "Dispositivo",
-          "tableProfessional": "Profesional",
-          "tableQuantity": "Cant.",
+          "editButton": "Editar servicios",
+          "tableDevice": "Dispositivo(s)",
+          "tableProfessional": "Servicio",
+          "tableProvidersNeeded": "Prest. necesarios",
+          "tableProvidersActive": "Prest. activos",
+          "tableWeeklyHours": "Hs. semanales",
+          "tableAuthorizedHours": "Hs. autorizadas",
           "tableLocation": "Lugar de Atención",
-          "tableSex": "Sexo",
           "tableValue": "Valor",
+          "tableValueRedacted": "🔒",
           "tableVersion": "Versión",
+          "tableStart": "Inicio",
+          "tableContract": "Contratación",
+          "tableIVA": "IVA",
+          "tableProviderAgeBand": "Franja etaria prestador",
+          "inactiveBadge": "Baja",
           "serviceTypes": {
             "AT": "Acompañante Terapéutico",
             "CAREGIVER": "Cuidador",
             "NURSE": "Enfermería",
             "KINESIOLOGIST": "Kinesiólogo",
             "PSYCHOLOGIST": "Psicólogo"
+          },
+          "careLocationOptions": {
+            "HOME": "Domicilio",
+            "SCHOOL": "Escuela",
+            "INSTITUTION": "Institución",
+            "OTHER": "Otro"
+          },
+          "contractTypeOptions": {
+            "OBRA_SOCIAL": "Obra Social",
+            "PREPAGA": "Prepaga",
+            "PRIVATE": "Privado"
+          },
+          "taxConditionOptions": {
+            "IVA_EXEMPT": "IVA Exento",
+            "IVA_10_5": "IVA 10,5%",
+            "IVA_21": "IVA 21%"
+          },
+          "supervisionFrequencyOptions": {
+            "DAYS_15": "15 Días",
+            "DAYS_30": "30 Días",
+            "DAYS_45": "45 Días",
+            "BIMONTHLY": "Bimestral"
+          },
+          "guardShiftOptions": {
+            "EARLY_MORNING": "Mañana Primera Hora",
+            "MORNING": "Mañana",
+            "EARLY_AFTERNOON": "Tarde Primera Hora",
+            "AFTERNOON": "Tarde",
+            "NIGHT": "Noche",
+            "FULL_DAY": "24 Hs"
+          },
+          "providerAgeBandOptions": {
+            "ANY": "Edad Indistinta",
+            "AGE_20_30": "20 a 30 Años",
+            "AGE_30_45": "30 a 45 Años",
+            "AGE_45_PLUS": "+ 45 Años"
           }
         },
         "matchingCard": {
@@ -3193,7 +3353,134 @@
           "groupsFound": "{{shown}} de {{total}} grupo(s)",
           "usedByPatients": "{{count}} paciente(s) usan este grupo",
           "clear": "Quitar"
+        },
+        "relationshipOptions": {
+          "CHILD": "Hijo / Hija",
+          "PARENT": "Madre / Padre",
+          "SIBLING": "Hermano/a",
+          "NEPHEW": "Sobrino/a",
+          "GRANDCHILD": "Nieto/a",
+          "GUARDIAN": "Tutor/a",
+          "FRIEND": "Amigo/a",
+          "PARTNER": "Pareja",
+          "OTHER": "Otro"
+        },
+        "addressDrawer": {
+          "createTitle": "Nueva localización",
+          "editTitle": "Editar logística",
+          "address": "Dirección",
+          "addressRequired": "Ingresá la dirección",
+          "addressRaw": "Dirección informada (texto libre)",
+          "type": "Tipo",
+          "type_primary": "Principal",
+          "type_secondary": "Secundaria",
+          "type_service": "Servicio",
+          "neighborhood": "Zona / Barrio",
+          "corridor": "Corredor logístico",
+          "accessNotes": "Logística y acceso"
+        },
+        "completeness": {
+          "title": "Para activar falta:",
+          "pendingTitle": "Pendiente para la admisión completa:",
+          "readyTitle": "Listo para activar",
+          "readyBody": "El domicilio y los demás requisitos que bloquean la activación están completos.",
+          "completeTitle": "Admisión completa",
+          "completeBody": "El paciente cumple todos los requisitos de la admisión.",
+          "itemLinkAria": "Ir a completar {{item}}",
+          "items": {
+            "ADDRESS": "Domicilio",
+            "RESPONSIBLE": "Responsable",
+            "COVERAGE": "Cobertura",
+            "CONTRACTED_SERVICE": "Servicio contratado",
+            "CONSENT": "Consentimiento"
+          }
+        },
+        "viewInKanban": "Ver en Kanban"
+      },
+      "statusOptions": {
+        "SOLICITANTE": "Solicitante",
+        "ADMISSION": "En admisión",
+        "PENDING_ADMISSION": "Esperando financiero",
+        "ACTIVE": "Activo",
+        "ON_HOLD": "En espera",
+        "SEARCHING": "Búsqueda",
+        "REPLACEMENT": "Reemplazo",
+        "SUSPENDED": "Suspendido",
+        "DISCHARGED": "Baja"
+      },
+      "onHoldReasonOptions": {
+        "SCHOOL": "Escuela",
+        "INSURER": "Obra social",
+        "OTHER": "Otro"
+      },
+      "deviceTypeOptions": {
+        "HOME": "Domiciliario",
+        "SCHOOL": "Escolar",
+        "INSTITUTIONAL": "Institucional",
+        "INPATIENT": "Internación",
+        "TRANSPORT": "Traslado"
+      },
+      "status": {
+        "title": "Estado",
+        "save": "Cambiar",
+        "reason": "Motivo de la espera",
+        "note": "Nota",
+        "notePlaceholder": "¿Por qué el servicio está en espera?",
+        "noteRedacted": "No tenés permiso para ver la nota.",
+        "transitionNotAllowed": "Transición no permitida: {{from}} → {{to}}",
+        "reasonRequired": "Indicá el motivo de la espera",
+        "error": "No se pudo cambiar el estado",
+        "sources": {
+          "admin_panel": "Panel",
+          "kanban": "Kanban",
+          "insert": "Creación",
+          "backfill": "Carga inicial",
+          "activate": "Activación",
+          "system": "Sistema"
+        },
+        "historyCard": {
+          "title": "Historial de estados",
+          "when": "Cuándo",
+          "from": "De",
+          "to": "A",
+          "source": "Origen",
+          "error": "No se pudo cargar el historial"
         }
+      },
+      "insuranceProviderOptions": {
+        "API": "API",
+        "ACCORD_SALUD": "Accord Salud",
+        "ASISOC": "ASISOC",
+        "AVALIAN": "Avalian",
+        "BANCARIOS": "Bancarios",
+        "CASA": "CASA",
+        "DAS": "DAS",
+        "GALENO": "Galeno",
+        "MHM": "MHM",
+        "MEDICUS": "Medicus",
+        "HTAL_BRITANICO": "Htal Británico",
+        "OSPJN": "OSPJN",
+        "OSPECOM": "OSPECOM",
+        "OSMECON": "OSMECON",
+        "OSDE": "OSDE",
+        "OMINT": "Omint",
+        "OSPOCE": "OSPOCE",
+        "OGORMAN": "O'Gorman",
+        "OSPATCA": "OSPATCA",
+        "OBSBA": "ObSBA",
+        "OSPELSYM": "Ospelsym",
+        "OSTEE_LUZ_MEDICA": "Ostee Luz Médica",
+        "OSDEPYM": "Osdepym",
+        "OTHER": "Otra",
+        "PFA_SUPERINTENDENCIA": "PFA Superintendencia de Bienestar",
+        "PRIVATE": "Privado",
+        "SANIDAD": "SANIDAD",
+        "SWISS_MEDICAL": "Swiss Medical",
+        "UP": "UP",
+        "OSPICHA": "OSPICHA",
+        "USUOMRA": "USUOMRA",
+        "PREVENCION_SALUD": "Prevención Salud",
+        "IOSCOR": "IOSCOR"
       }
     },
     "pendingAddressReview": {
@@ -3564,8 +3851,10 @@
         "ADMISSION": "En admisión",
         "PENDING_ADMISSION": "Esperando financiero",
         "SOLICITANTE": "Solicitante",
+        "ON_HOLD": "En espera",
+        "SEARCHING": "Búsqueda",
+        "REPLACEMENT": "Reemplazo",
         "SUSPENDED": "Suspendido",
-        "DISCONTINUED": "Baja",
         "DISCHARGED": "Alta"
       },
       "onlyOpenVacancies": "Solo con vacantes abiertas",
@@ -3952,7 +4241,6 @@
       "F": "Mujer",
       "BOTH": "Indistinto"
     },
-    "diagnosticHypothesis": "Hipótesis Diagnóstica - CIE:",
     "jobDescription": "Descripción del trabajo:",
     "characteristics": "Características:",
     "ageRange": "Rango Etario:",

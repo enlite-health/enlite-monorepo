@@ -48,8 +48,13 @@ export class ReadonlyDbQueryService {
   }
 }
 
-/** Colunas de texto clínico restrito (patients): proibidas em SQL ad-hoc. */
-export const RESTRICTED_CLINICAL_COLUMNS = /emergency_instructions/i;
+/**
+ * Colunas de texto clínico restrito, proibidas em SQL ad-hoc:
+ *   patients.emergency_instructions (D211.2) · patients.on_hold_note (spec 012, lex C7.1-d) ·
+ *   patient_addresses.access_notes (spec 012, lex C2.1 — texto livre sobre o domicílio).
+ * O controle que vale é a role (create-mcp-ro-role.sql); isto é defesa em profundidade.
+ */
+export const RESTRICTED_CLINICAL_COLUMNS = /emergency_instructions|on_hold_note|access_notes/i;
 
 /**
  * Tabelas com texto clínico livre (`patients`, `patient_*`). A view `patients_ro` (D216) fica
@@ -80,7 +85,7 @@ function validateAndNormalize(sql: string): string {
   // Texto clínico restrito NUNCA sai por SQL ad-hoc para um LLM (D211.2, lex 29/08 C2): a coluna
   // é redigida por permissão na API; esta capability não passa por aquele ponto, então nega aqui.
   if (RESTRICTED_CLINICAL_COLUMNS.test(trimmed)) {
-    throw new Error('Query touches a restricted clinical column (emergency_instructions)');
+    throw new Error('Query touches a restricted clinical column (emergency_instructions, on_hold_note, access_notes)');
   }
   // Defesa em profundidade (D216): o controle que vale é a role `enlite_mcp_ro` com SELECT por
   // coluna (scripts/create-mcp-ro-role.sql). Esta camada só garante que `SELECT *`, `p.*`,

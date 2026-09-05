@@ -6,7 +6,21 @@
  */
 
 import type { PatientChatIdMap, PatientChatRoleSpec } from '@domain/value-objects/patientChatRole';
-
+import type { PatientCoverageSectionPayload } from './PatientCoverage';
+import type { PatientCompleteness } from './PatientCompleteness';
+export type { PatientCompleteness, PatientCompletenessCode } from './PatientCompleteness';
+// Spec 012 (bloco B): estado v2 / Historial em `PatientLifecycle.ts`, cobertura em
+// `PatientCoverage.ts`, logística do endereço em `PatientAddress.ts` — este arquivo já
+// batia no teto de 400 linhas do validador.
+export type { PatientCoverageSectionPayload } from './PatientCoverage';
+export type { UpdatePatientStatusPayload, PatientStatusHistoryEntry } from './PatientLifecycle';
+export type { InsuranceProvider } from './PatientCoverage';
+export type { PatientAddressLogisticsPayload } from './PatientAddress';
+export type { PatientKanbanItem, PatientFunnelData } from './PatientLifecycle';
+// Só os 2 tipos que algum consumidor importa DAQUI (o resto — payloads de escrita, enums —
+// vem direto de `PatientContractedService.ts`; reexportar tudo aqui estourava o teto de 400).
+export type { PatientContractedServiceDetail, PatientContractedServiceProvider } from './PatientContractedService';
+import type { PatientContractedServiceDetail } from './PatientContractedService';
 export interface PatientResponsibleDetail {
   id: string;
   firstName: string | null;
@@ -17,6 +31,14 @@ export interface PatientResponsibleDetail {
   documentType: string | null;
   documentNumber: string | null;
   isPrimary: boolean;
+  displayOrder: number;
+  /**
+   * Procedência da linha ('clickup' | 'web_form' | 'admin_manual' | …). O
+   * drawer da rede de apoio REENVIA este valor: a seção é replace-all e o
+   * backend cai em 'clickup' quando ele falta — o que apagaria a amarra entre o
+   * dado e o consentimento colhido no formulário público (spec 011 A1, lex C1.2).
+   */
+  source: string;
 }
 
 export interface AddressAvailabilityPerDay {
@@ -34,36 +56,67 @@ export interface AddressAvailability {
   hasUnknownSchedule: boolean;
 }
 
+/**
+ * Endereço como a API o devolve (`PatientDetailQueryHelper.mapAddresses`).
+ * Não existe `fullAddress`/`street`/`city` no contrato: o que há é o texto
+ * formatado pelo geocoder e o texto cru do operador (spec 011 A2).
+ */
 export interface PatientAddressDetail {
   id: string;
-  street: string | null;
-  number: string | null;
+  addressType: string;
+  addressFormatted: string | null;
+  addressRaw: string | null;
   /** Address complement (Depto, Piso, andar). Migration 157. */
   complement: string | null;
+  displayOrder: number;
+  lat: number | null;
+  lng: number | null;
+  isPrimary: boolean;
+  /** Zona/bairro — coluna `neighborhood` (mig 147; spec 012 lex C2.7: não duplicar). */
   neighborhood: string | null;
-  city: string | null;
-  state: string | null;
+  /** Corredor logístico por endereço (mig 316). */
+  logisticsCorridor: string | null;
+  /** Logística e acesso — texto livre sobre o domicílio (mig 316; `data-clarity-mask` na tela). */
+  accessNotes: string | null;
+  /** Jurisdição do endereço (mig 316). */
   country: string | null;
-  zipCode: string | null;
-  fullAddress: string | null;
-  // Extended fields for vacancy creation form
-  lat?: number | null;
-  lng?: number | null;
-  isPrimary?: boolean;
   availability?: AddressAvailability;
 }
 
+/**
+ * Profissional tratante como a API o devolve. `patient_professionals` NÃO tem
+ * coluna de especialidade — o que existe é `is_team` (mig 038: a linha
+ * representa o equipo multidisciplinar, e `name` é o nome do equipo). Nada
+ * aqui é derivado (spec 011 A2, lex C2.2).
+ */
 export interface PatientProfessionalDetail {
   id: string;
-  fullName: string | null;
+  name: string | null;
   phone: string | null;
   email: string | null;
-  specialty: string | null;
+  displayOrder: number;
+  isTeam: boolean;
+}
+
+/**
+ * Diagnóstico estruturado (spec 016 F2, D263) — a projeção pública `DiagnosisPublicView` do
+ * backend (REQ-21): NUNCA carrega `code`/`chapter`/`release`, só o suficiente para a tela
+ * mostrar a patología e deixar remover/promover por clique. `uri` é opaco para o cliente — ele
+ * só a devolve no POST, nunca a interpreta.
+ */
+export interface PatientDiagnosisDetail {
+  id: string;
+  uri: string;
+  title: string;
+  isPrimary: boolean;
+  source: string;
+  active: boolean;
 }
 
 export interface PatientDetail {
   id: string;
-  clickupTaskId: string;
+  /** null para paciente NATIVO (criado no painel ou pelo formulário público, mig 251). */
+  clickupTaskId: string | null;
   firstName: string | null;
   lastName: string | null;
   birthDate: string | null; // ISO string
@@ -72,6 +125,8 @@ export interface PatientDetail {
   affiliateId: string | null;
   sex: string | null; // 'MALE'|'FEMALE'|'INTERSEX'|'UNDISCLOSED'
   phoneWhatsapp: string | null;
+  /** E-mail do paciente (mig 251), descriptografado SÓ no detalhe. null = não informado (spec 011 A4). */
+  contactEmail: string | null;
   /** chat_id do grupo de WhatsApp da FAMÍLIA no Periskope (@g.us). Migration 260. */
   /**
    * Grupos de WhatsApp do Periskope por PAPEL (migration 261): papel -> chat_id
@@ -107,12 +162,46 @@ export interface PatientDetail {
   province: string | null;
   zoneNeighborhood: string | null;
   country: string;
-  status: string | null; // 'PENDING_ADMISSION'|'ACTIVE'|'SUSPENDED'|'DISCONTINUED'|'DISCHARGED'
+  /** PatientStatus v2 (spec 012): funil (SOLICITANTE|ADMISSION|PENDING_ADMISSION) ou clínico (ACTIVE|ON_HOLD|SEARCHING|REPLACEMENT|SUSPENDED|DISCHARGED). */
+  status: string | null;
+  /** Funil de admissão (mig 313): SOLICITANTE | ADMISSION | PENDING_ADMISSION | DONE — o Kanban lê isto. */
+  admissionStatus: string;
+  /** Motivo da espera quando status = ON_HOLD (SCHOOL | INSURER | OTHER). */
+  onHoldReason: string | null;
+  /** Texto clínico RESTRITO (D211.2): null + onHoldNoteRedacted=true quando o ator não pode ler. */
+  onHoldNote: string | null;
+  onHoldNoteRedacted?: boolean;
+  /** Data de início do serviço (mig 317) — ISO; nativa do painel, não deriva da vaga. */
+  serviceStartDate: string | null;
+  /** Coberturas verificadas por CÓDIGO do catálogo (mig 312), ordem do catálogo. */
+  insuranceVerifiedCodes: string[];
+  /**
+   * As mesmas coberturas, COM origem (QA 🟡3/SUP-B5) — o drawer usa `source` para travar o chip
+   * do ClickUp (não removível) e restringir o multi-select ao que o painel gravou
+   * (`source: 'admin_manual'`). Opcional: API anterior a esta rodada não manda o campo.
+   */
+  insuranceVerifiedEntries?: Array<{ code: string; source: string }>;
+  /** Dispositivos — códigos de `device_types` (mig 307), ordem do catálogo. */
+  deviceTypes: string[];
   needsAttention: boolean;
   attentionReasons: string[];
+  /** Checklist de completude (spec 014 US-D1) — SÓ aqui, nunca na lista/kanban. */
+  completeness: PatientCompleteness;
+  /** Spec 014 (US-D3): `phoneWhatsapp` coincide com o de um responsável. */
+  phoneMatchesResponsible: boolean;
   responsibles: PatientResponsibleDetail[];
   addresses: PatientAddressDetail[];
   professionals: PatientProfessionalDetail[];
+  /** Serviços contratados (spec 013, bloco C) — contrato do detalhe. */
+  contractedServices: PatientContractedServiceDetail[];
+  /**
+   * Diagnóstico estruturado (spec 016 F2, D263 · correção C5). Bulkhead do backend (C4): uma
+   * falha ao ler o catálogo de terminologia NUNCA derruba a ficha inteira — `diagnoses` vem
+   * `[]` e `diagnosesUnavailable: true` diz que é "não consegui ler", não "paciente sem
+   * diagnóstico" (que é `[]` + `false`). NÃO construir tela sobre isto ainda — é a F3.
+   */
+  diagnoses: PatientDiagnosisDetail[];
+  diagnosesUnavailable: boolean;
   lastCaseNumber?: number | null;
   createdAt: string; // ISO string
   updatedAt: string; // ISO string
@@ -127,6 +216,8 @@ export interface PatientDetail {
 export interface CreatePatientPayload {
   firstName: string;
   lastName?: string;
+  /** US-B6 (spec 012): yyyy-MM-dd. */
+  birthDate?: string;
   phoneWhatsapp?: string;
   contactEmail?: string;
   documentType?: string; // 'DNI'|'PASSPORT'|'CEDULA'|'LE_LC'|'CPF'
@@ -157,7 +248,7 @@ export interface PatientVacancySummary {
 // ============================================================================
 
 /** Section names accepted by PATCH /api/admin/patients/:id/:section. */
-export type PatientSectionName = 'general' | 'clinical' | 'support-network' | 'service';
+export type PatientSectionName = 'general' | 'clinical' | 'coverage' | 'support-network' | 'service';
 
 /**
  * section = 'general' — identity fields. Mirrors generalSectionSchema (backend).
@@ -172,15 +263,19 @@ export interface PatientGeneralSectionPayload {
   sex?: string | null;
   phoneWhatsapp?: string | null;
   contactEmail?: string | null;
+  /** US-B9 (spec 012): yyyy-MM-dd; null limpa. */
+  serviceStartDate?: string | null;
 }
 
 /** section = 'clinical' — mirrors clinicalSectionSchema (backend). */
 export interface PatientClinicalSectionPayload {
   diagnosis?: string | null;
   dependencyLevel?: string | null;
-  clinicalSpecialty?: string | null;
+  // F6: `clinicalSpecialty` REMOVIDA — o `clinicalSectionSchema` `.strict()` do backend já não a
+  // aceita, e nenhum chamador a usava. Chave morta num payload é 400 latente, não enfeite.
   serviceType?: string[] | null;
-  deviceType?: string | null;
+  /** US-B4 (spec 012): códigos de `device_types` — substitui o texto livre `deviceType`. */
+  deviceTypes?: string[];
   additionalComments?: string | null;
   emergencyInstructions?: string | null;
   hasJudicialProtection?: boolean | null;
@@ -199,6 +294,8 @@ export interface PatientResponsibleInput {
   documentNumber?: string | null;
   isPrimary: boolean;
   displayOrder: number;
+  /** Procedência da linha — reenviada do detalhe; linha nova do painel = 'admin_manual'. */
+  source?: string;
 }
 
 /** section = 'support-network' — replaces the whole responsibles set. */
@@ -214,6 +311,7 @@ export interface PatientServiceSectionPayload {
 export type PatientSectionPayload =
   | PatientGeneralSectionPayload
   | PatientClinicalSectionPayload
+  | PatientCoverageSectionPayload
   | PatientSupportNetworkSectionPayload
   | PatientServiceSectionPayload;
 
@@ -316,53 +414,10 @@ export interface UpdatePatientStatusResult {
   status: string;
 }
 
+
 /** Result of POST /api/admin/patients/:id/activate. */
 export interface ActivatePatientResult {
   patientId: string;
   status: string; // always 'ACTIVE'
   createdVacancyIds: string[];
-}
-
-/** Row shape used by the patient kanban board (grouped by status). */
-export interface PatientKanbanItem {
-  id: string;
-  firstName: string | null;
-  lastName: string | null;
-  caseNumber: number | null;
-  dependencyLevel: string | null;
-  status: string | null;
-  // Fase 4 — rastreabilidade / SLA (aditivo; opcional para não quebrar fixtures).
-  /** ISO string of when the patient entered the current status column. */
-  stageEnteredAt?: string | null;
-  /** How long the patient has sat in the current status, in hours. */
-  hoursInStage?: number | null;
-  /** True when hoursInStage crossed the configured SLA threshold. */
-  slaBreached?: boolean;
-  /** The SLA threshold (hours) that applies to the current status. */
-  slaThresholdHours?: number | null;
-  // ── Desempate do lead sem nome (lex 30/08) ───────────────────────────────
-  /**
-   * E-mail de contato JÁ MASCARADO pelo servidor (`jo***@gmail.com`). Presente
-   * só nas fichas cujo nome é o placeholder 'Solicitante' — nas demais é null,
-   * e o endereço cru NUNCA chega ao browser (a máscara é do servidor, C1).
-   */
-  /** Nome do responsável primário — a identidade do card quando o paciente
-   *  ainda não tem nome (D249). Texto claro; a coluna não é cifrada. */
-  responsibleName: string | null;
-  leadContactEmailMasked?: string | null;
-  /** true quando o contato acima é do responsável, não do paciente (C6). */
-  leadContactIsResponsible?: boolean;
-}
-
-/**
- * Fase 4 — funnel/traceability aggregate returned by
- * GET /api/admin/patients/funnel?country=&from=&to=.
- * The four headline stages plus the raw per-status counts.
- */
-export interface PatientFunnelData {
-  solicitantes: number;
-  admision: number;
-  agendadas: number;
-  vacantes: number;
-  byStatus: Record<string, number>;
 }

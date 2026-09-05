@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { HTMLAttributes, ReactNode } from 'react';
 
 type TextSize = '2xs' | 'xs' | 'sm' | 'base' | 'lg' | 'xl';
 type TextWeight = 'normal' | 'medium' | 'semibold' | 'bold';
@@ -10,7 +10,12 @@ type TextColor =
   | 'white'
   | 'inherit';
 
-interface TextProps {
+/**
+ * Além dos props do sistema, aceita os atributos HTML do elemento (`data-*`,
+ * `aria-*`, handlers…) e os REPASSA. Antes descartava: todo
+ * `<Text data-testid="…">` do painel era um testid inerte (QA caça ℹ️4, spec 011).
+ */
+interface TextProps extends Omit<HTMLAttributes<HTMLElement>, 'color' | 'title' | 'className' | 'children'> {
   size?: TextSize;
   weight?: TextWeight;
   color?: TextColor;
@@ -69,6 +74,7 @@ export function Text({
   className = '',
   as = 'p',
   title,
+  ...rest
 }: TextProps): JSX.Element {
   const Component = as;
   const classes = [
@@ -82,7 +88,7 @@ export function Text({
     .join(' ');
 
   return (
-    <Component className={classes} title={title}>
+    <Component className={classes} title={title} {...rest}>
       {children}
     </Component>
   );

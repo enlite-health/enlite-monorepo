@@ -26,16 +26,20 @@ const CLOSE_MS = 300;
 
 // Mirrors the backend zod validator (createPatientSchema). Only firstName is
 // required; empty optional strings are coerced to undefined so we never send "".
+// Todo campo nasce preenchido em `defaultValues` ('' / []) — o tipo diz isso e o submit não carrega
+// fallbacks para um `undefined` que nunca chega (mesmo padrão dos drawers, spec 011/012).
 const createSchema = z.object({
   firstName: z.string().trim().min(1),
-  lastName: z.string().trim().optional(),
-  phoneWhatsapp: z.string().trim().optional(),
-  contactEmail: z.union([z.literal(''), z.string().trim().email()]).optional(),
-  documentType: z.string().optional(),
-  documentNumber: z.string().trim().optional(),
-  healthInsuranceName: z.string().trim().optional(),
-  healthInsuranceMemberId: z.string().trim().optional(),
-  serviceType: z.array(z.string()).optional(),
+  lastName: z.string().trim(),
+  /** US-B6 (spec 012): yyyy-MM-dd. */
+  birthDate: z.string(),
+  phoneWhatsapp: z.string().trim(),
+  contactEmail: z.union([z.literal(''), z.string().trim().email()]),
+  documentType: z.string(),
+  documentNumber: z.string().trim(),
+  healthInsuranceName: z.string().trim(),
+  healthInsuranceMemberId: z.string().trim(),
+  serviceType: z.array(z.string()),
 });
 
 type CreateFormValues = z.infer<typeof createSchema>;
@@ -65,6 +69,7 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
     defaultValues: {
       firstName: '',
       lastName: '',
+      birthDate: '',
       phoneWhatsapp: '',
       contactEmail: '',
       documentType: '',
@@ -105,20 +110,21 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
     setSubmitError(null);
 
     // Trim + drop empty optionals so the backend receives clean, minimal data.
-    const clean = (v?: string): string | undefined => {
-      const s = v?.trim();
+    const clean = (v: string): string | undefined => {
+      const s = v.trim();
       return s ? s : undefined;
     };
     const payload: CreatePatientPayload = {
       firstName: values.firstName.trim(),
       lastName: clean(values.lastName),
+      birthDate: clean(values.birthDate),
       phoneWhatsapp: clean(values.phoneWhatsapp),
       contactEmail: clean(values.contactEmail),
       documentType: clean(values.documentType),
       documentNumber: clean(values.documentNumber),
       healthInsuranceName: clean(values.healthInsuranceName),
       healthInsuranceMemberId: clean(values.healthInsuranceMemberId),
-      serviceType: values.serviceType && values.serviceType.length > 0 ? values.serviceType : undefined,
+      serviceType: values.serviceType.length > 0 ? values.serviceType : undefined,
     };
 
     setBusy(true);
@@ -188,6 +194,9 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
             <FormField label={tc('lastName')} htmlFor="pc-lastName" optional>
               <InputWithIcon id="pc-lastName" inputSize="compact" data-testid="pc-lastName" {...register('lastName')} />
             </FormField>
+            <FormField label={tc('birthDate')} htmlFor="pc-birthDate" optional>
+              <InputWithIcon id="pc-birthDate" type="date" inputSize="compact" data-testid="pc-birthDate" {...register('birthDate')} />
+            </FormField>
             <FormField label={tc('phoneWhatsapp')} htmlFor="pc-phone" optional>
               <InputWithIcon id="pc-phone" inputSize="compact" data-testid="pc-phone" {...register('phoneWhatsapp')} />
             </FormField>
@@ -203,7 +212,7 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
                     inputSize="compact"
                     options={documentTypeOptions}
                     placeholder={tc('unset')}
-                    value={field.value ?? ''}
+                    value={field.value}
                     onChange={field.onChange}
                     data-testid="pc-documentType"
                   />
@@ -240,7 +249,7 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
                 render={({ field }) => (
                   <MultiSelect
                     options={serviceTypeOptions}
-                    value={field.value ?? []}
+                    value={field.value}
                     onChange={field.onChange}
                     placeholder={tc('unset')}
                     id="pc-serviceType"

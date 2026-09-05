@@ -15,23 +15,25 @@
  */
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
+import { staffAuth } from './helpers/staffAuth';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
-const RECRUITER_UID = 'ei-recruiter-uid';
+// uid PEDIDO; o efetivo vem do staffAuth (localId do emulador quando ele está de pé).
+let RECRUITER_UID = 'ei-recruiter-uid';
 const TEXT = 'Crisis: llamar al 107.\nAvisar a la madre (Ana) antes de mover.';
-
-function mockToken(uid: string, role: string): string {
-  return 'mock_' + Buffer.from(JSON.stringify({ uid, email: `${uid}@e2e.local`, role })).toString('base64');
-}
 
 describe('Instruções de emergência do paciente (D211.2) @integration', () => {
   const api = createApiClient();
   let pool: Pool;
-  const asRecruiter = { headers: { Authorization: `Bearer ${mockToken(RECRUITER_UID, 'recruiter')}` } };
+  // Spec 012: token adaptativo (emulador ou mock) — o stack local roda USE_MOCK_AUTH=false.
+  let asRecruiter: { headers: { Authorization: string } };
   let patientId = '';
 
   beforeAll(async () => {
     await waitForBackend(api);
+    const auth = await staffAuth(RECRUITER_UID, 'recruiter');
+    asRecruiter = { headers: auth.headers };
+    RECRUITER_UID = auth.uid;
     pool = new Pool({ connectionString: DATABASE_URL });
     await pool.query(`DELETE FROM users WHERE firebase_uid = $1`, [RECRUITER_UID]);
     await pool.query(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, email_verified) VALUES ($1, $2, 'EI Recruiter', 'recruiter', true, true)`, [RECRUITER_UID, `${RECRUITER_UID}@e2e.local`]);
@@ -66,9 +68,11 @@ describe('Instruções de emergência do paciente (D211.2) @integration', () => 
 
   it('editar SÓ outro campo clínico preserva o texto e a autoria (Merge Patch, D211.1)', async () => {
     const before = (await pool.query(`SELECT emergency_instructions_updated_at::text AS at FROM patients WHERE id = $1`, [patientId])).rows[0].at;
-    expect((await api.patch(`/api/admin/patients/${patientId}/clinical`, { deviceType: 'Silla de ruedas' }, asRecruiter)).status).toBe(200);
+    // Spec 012 US-B4: dispositivo é CÓDIGO do catálogo (patients.device_type é FK desde a 308 —
+    // texto livre dava 23503); o escalar é derivado do conjunto pelo trigger da 310.
+    expect((await api.patch(`/api/admin/patients/${patientId}/clinical`, { deviceTypes: ['INPATIENT'] }, asRecruiter)).status).toBe(200);
     const { rows: [row] } = await pool.query(`SELECT emergency_instructions = $2 AS same, emergency_instructions_updated_at::text AS at, device_type FROM patients WHERE id = $1`, [patientId, TEXT]);
-    expect(row).toEqual({ same: true, at: before, device_type: 'Silla de ruedas' });
+    expect(row).toEqual({ same: true, at: before, device_type: 'INPATIENT' });
   });
 
   it('null limpa e registra autoria; 4.001 caracteres → 400', async () => {

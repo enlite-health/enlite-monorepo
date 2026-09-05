@@ -1,0 +1,128 @@
+/**
+ * Teste de CONTRATO back → front da ficha do paciente (spec 011, FR-A2).
+ *
+ * A fixture `fixtures/patient-detail.api.json` NÃO foi escrita à mão: é o `data`
+ * de `GET /api/admin/patients/:id` da API real (docker `enlite-api`, Postgres
+ * `enlite_e2e`), para um paciente SINTÉTICO semeado com 1 responsável,
+ * 1 endereço, 1 profissional, 1 serviço contratado ATIVO, cobertura e e-mail.
+ * Dados inventados — nenhum paciente real. Recaptura original: ver
+ * `specs/011-admissao-a-bugs-dado/relatorio.md`.
+ *
+ * RECAPTURADA em 03/09 (QA-caça rodada 1, item conserto D255): `completeness`
+ * ganhou `blocking`/`canActivate` (`PatientCompleteness.ts`, D255) — o `.strict()`
+ * do schema reprovaria a chave nova sem recapturar. Paciente semeado
+ * PENDING_ADMISSION com endereço + serviço ativo + cobertura + consentimento →
+ * checklist COMPLETO (`missing:[]`), então `blocking:[]`/`ready:true`/
+ * `canActivate:true` nesta fixture — os estados PARCIAIS (`missing` não vazio,
+ * `blocking` com ADDRESS) já têm cobertura própria em
+ * `AdminPatientsController.test.ts` (Cenário 1b) e `PatientCompleteness.test.ts`.
+ *
+ * RECAPTURADA de novo em 03/09 (spec 015, US-A6.1): `contractedServices[].providerAgeBand`
+ * (migration 322) — mesmo mecanismo, imagem `enlite-api` rebuildada desta worktree (`docker exec
+ * enlite-api grep -c providerAgeBand /app/dist/modules/case/infrastructure/
+ * PatientDetailQueryHelper.js` → 1). Paciente/serviço semeados de novo (ids mudam a cada
+ * recaptura); serviço nasce com `provider_age_band='AGE_30_45'` — é o valor que o teste abaixo
+ * verifica chegar cru no contrato (a TELA é quem traduz, não o contrato).
+ *
+ * O que este teste trava:
+ *  - a entidade `PatientDetail` lê as chaves que a API manda (`name`, não
+ *    `fullName`; `addressFormatted`, não `fullAddress`) — o `.strict()` do
+ *    schema reprova chave a mais OU a menos;
+ *  - o e-mail (`contactEmail`) e a cobertura (`insuranceInformed`) chegam na
+ *    ficha para o paciente semeado com eles (A3/A4);
+ *  - `completeness.blocking`/`canActivate` chegam no shape do D255.
+ */
+import { describe, it, expect } from 'vitest';
+import type { PatientDetail, PatientClinicalSectionPayload } from '../PatientDetail';
+import { patientDetailContractSchema, type PatientDetailContract } from '../patientDetailContract';
+import fixture from './fixtures/patient-detail.api.json';
+
+// Atribuível nas DUAS direções: campo a mais, a menos ou com outro tipo em
+// qualquer um dos lados vira erro de compilação (o `tsc --noEmit` é gate).
+type MutuallyAssignable<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+const contractIsEntity: MutuallyAssignable<PatientDetailContract, PatientDetail> = true;
+
+describe('contrato PatientDetail — fixture capturada da API real', () => {
+  it('o tipo do schema É a entidade (as duas direções)', () => {
+    expect(contractIsEntity).toBe(true);
+  });
+
+  it('a resposta real da API passa no schema da entidade, sem chave a mais nem a menos', () => {
+    const parsed = patientDetailContractSchema.safeParse(fixture);
+    if (!parsed.success) {
+      // Mostra o caminho de cada divergência — é a evidência do drift.
+      throw new Error(JSON.stringify(parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })), null, 2));
+    }
+    expect(parsed.success).toBe(true);
+  });
+
+  it('profissional e endereço vêm nas chaves que os cards leem', () => {
+    const p = patientDetailContractSchema.parse(fixture);
+    expect(p.professionals[0].name).toBe('Dra. Fixture Tratante');
+    expect(p.addresses[0].addressFormatted).toBe('Av. Fixture 123, CABA, AR');
+    expect(p.responsibles[0].source).toBe('web_form');
+  });
+
+  it('cobertura gravada em health_insurance_name aparece em insuranceInformed (A3) e o e-mail chega (A4)', () => {
+    const p = patientDetailContractSchema.parse(fixture);
+    expect(p.insuranceInformed).toBe('OSDE 210 (fixture)');
+    expect(p.contactEmail).toBe('contrato.fixture.c5@example.test');
+  });
+
+  it('D255 (QA-caça rodada 1): completeness carrega blocking/canActivate — paciente semeado completo (missing:[]) → blocking:[] e canActivate:true', () => {
+    const p = patientDetailContractSchema.parse(fixture);
+    expect(p.completeness).toEqual({ missing: [], blocking: [], ready: true, canActivate: true });
+  });
+
+  it('serviço contratado ativo chega no card (bloco C) — 1 serviço, sem prestador alocado nesta fixture', () => {
+    const p = patientDetailContractSchema.parse(fixture);
+    expect(p.contractedServices).toHaveLength(1);
+    expect(p.contractedServices[0].active).toBe(true);
+    expect(p.contractedServices[0].serviceCode).toBe('AT');
+  });
+
+  it('spec 015 (US-A6.1): providerAgeBand chega CRU no contrato — a tradução é responsabilidade da TELA, não do contrato', () => {
+    const p = patientDetailContractSchema.parse(fixture);
+    expect(p.contractedServices[0].providerAgeBand).toBe('AGE_30_45');
+  });
+
+  it('C5 (QA-caça, spec 016 F2): diagnoses[] chega na projeção REQ-21 (sem code/chapter/release) e diagnosesUnavailable:false quando o backend leu normalmente', () => {
+    const p = patientDetailContractSchema.parse(fixture);
+    expect(p.diagnosesUnavailable).toBe(false);
+    expect(p.diagnoses).toHaveLength(1);
+    expect(p.diagnoses[0]).toEqual({
+      id: expect.any(String),
+      uri: 'http://id.who.int/icd/release/11/2026-01/mms/437815624/unspecified',
+      title: 'Trastorno del espectro autista, sin especificación',
+      isPrimary: true,
+      source: 'PANEL',
+      active: true,
+    });
+    // Régua POSITIVA (REQ-21): nenhuma chave de vocabulário em NENHUM diagnóstico da fixture.
+    for (const key of Object.keys(p.diagnoses[0])) {
+      expect(['code', 'chapter', 'release', 'conceptCode', 'conceptGroup', 'catalogRelease']).not.toContain(key);
+    }
+  });
+});
+
+/**
+ * F6 (gate `revisao-pr`, BAIXO) — `PatientClinicalSectionPayload` ainda declarava
+ * `clinicalSpecialty`, chave que o `clinicalSectionSchema` `.strict()` do backend JÁ NÃO ACEITA:
+ * quem confiasse no tipo escreveria um PATCH que volta 400. Nenhum chamador usa hoje — é chave
+ * MORTA, e chave morta num payload é 400 latente, não enfeite.
+ *
+ * O portão desta remoção é o `tsc`, não o runtime: com a chave ainda declarada, o
+ * `@ts-expect-error` abaixo fica SEM ERRO PARA SUPRIMIR e o `tsc --noEmit` reprova com
+ * "Unused '@ts-expect-error' directive" (TS2578). Depois da remoção, o objeto é que passa a ser
+ * inválido e a diretiva volta a ter função. Nos dois sentidos, o compilador morde.
+ */
+describe('F6 — PatientClinicalSectionPayload não declara chave que o backend recusa', () => {
+  it('`clinicalSpecialty` não é aceita no payload da seção clínica (o `.strict()` do backend a rejeita)', () => {
+    const payload: PatientClinicalSectionPayload = {
+      diagnosis: 'x',
+      // @ts-expect-error — chave MORTA: removida do payload porque o backend a recusa (F6).
+      clinicalSpecialty: 'ASD',
+    };
+    expect(payload.diagnosis).toBe('x');
+  });
+});

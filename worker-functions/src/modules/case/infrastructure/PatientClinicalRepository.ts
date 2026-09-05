@@ -9,12 +9,37 @@ export interface PatientClinicalUpsertInput {
   patientId: string;
   diagnosis?: string | null;
   dependencyLevel?: DependencyLevel | null;
+  /**
+   * A leitura da origem foi POSSÍVEL? `false` ⇒ `dependency_level` não é tocada.
+   *
+   * Mesmíssima distinção de `clinicalSpecialtyReadable`, estendida ao irmão que ficou de fora
+   * (I2): `Dependencia` é `drop_down` e uma opção que deixa de resolver devolvia `null`, que
+   * o `push` incondicional gravava como APAGAMENTO. Exposição medida: 348 linhas.
+   * Ausente = `true`, para que nenhum chamador antigo pare de escrever em silêncio.
+   */
+  dependencyLevelReadable?: boolean;
   clinicalSpecialty?: ClinicalSpecialty | null;
+  /**
+   * A leitura da origem foi POSSÍVEL? `false` ⇒ `clinical_specialty` não é tocada.
+   *
+   * Não confundir com `clinicalSpecialty === null`: `null` com `readable:true` é vazio
+   * legítimo e É gravado (D-E). `readable:false` é "não consegui ler" e não escreve nada.
+   * Ausente = `true`, para que nenhum chamador antigo pare de escrever em silêncio.
+   */
+  clinicalSpecialtyReadable?: boolean;
   /** @deprecated Use clinicalSpecialty instead. Preserved for backward compat. */
   clinicalSegments?: string | null;
   /** TEXT[] in DB after migration 139. */
   serviceType?: Profession[] | null;
-  deviceType?: string | null;
+  /**
+   * A leitura da origem foi POSSÍVEL? `false` ⇒ `service_type` não é tocada (I2).
+   * `Servicio` é a MAIOR exposição medida do apagamento por opção não resolvida: 349 linhas.
+   * Ausente = `true` (o drawer clínico não manda a bandeira e continua escrevendo).
+   */
+  serviceTypeReadable?: boolean;
+  // `deviceType` SAIU deste tipo (spec 012, US-B4): `patients.device_type` é FK (308) e DERIVADO
+  // de `patient_device_types` por trigger (310). O drawer clínico grava CÓDIGOS do catálogo pelo
+  // `PatientDeviceTypeRepository.replaceCodesForPatient`; ninguém escreve o escalar.
   additionalComments?: string | null;
   emergencyInstructions?: string | null;
   hasJudicialProtection?: boolean | null;
@@ -71,13 +96,28 @@ export class PatientClinicalRepository {
     };
 
     if (input.diagnosis !== undefined) push('diagnosis', input.diagnosis);
-    if (input.dependencyLevel !== undefined) push('dependency_level', input.dependencyLevel);
-    if (input.clinicalSegments !== undefined) push('clinical_segments', input.clinicalSegments);
-    if (input.serviceType !== undefined) {
-      // serviceType is TEXT[] in DB after migration 139. Empty array → NULL (never store []).
-      push('service_type', input.serviceType !== null && input.serviceType.length > 0 ? input.serviceType : null);
+    if (input.dependencyLevel !== undefined) {
+      // I2 — mesma régua de `clinicalSpecialtyReadable`, abaixo: `false` é "não consegui ler"
+      // e simplesmente não entra no SET (Merge Patch D211.1), então a coluna fica como estava.
+      if (input.dependencyLevelReadable ?? true) push('dependency_level', input.dependencyLevel);
     }
-    if (input.deviceType !== undefined) push('device_type', input.deviceType);
+    if (input.clinicalSegments !== undefined) push('clinical_segments', input.clinicalSegments);
+    if (input.serviceType !== undefined && (input.serviceTypeReadable ?? true)) {
+      // serviceType is TEXT[] in DB after migration 139. Empty array → NULL (never store []).
+      const value = input.serviceType !== null && input.serviceType.length > 0 ? input.serviceType : null;
+      params.push(value);
+      // FR-C1 (spec 013, migration 321): quando o paciente TEM ≥1 patient_contracted_services
+      // ATIVO, service_type[] é DERIVADO (trigger fn_sync_patient_service_type_escalar) — o
+      // espelho ClickUp para de escrever para não brigar com o derivado (mesma classe de bug
+      // corrigida na migration 310/F64: trigger recalcula, escritor incondicional escreve por
+      // cima e o escritor ganha por ser o último). Sem serviço ativo, escreve normalmente.
+      sets.push(
+        `service_type = CASE WHEN EXISTS (
+           SELECT 1 FROM patient_contracted_services pcs
+            WHERE pcs.patient_id = patients.id AND pcs.active
+         ) THEN patients.service_type ELSE $${params.length} END`,
+      );
+    }
     if (input.additionalComments !== undefined) {
       push('additional_comments', input.additionalComments);
       // Autoria de additional_comments: só muda quando o campo veio no PATCH.
@@ -101,7 +141,27 @@ export class PatientClinicalRepository {
       params.push(input.hasConsent);
       sets.push(`has_consent = COALESCE($${params.length}, has_consent)`);
     }
-    if (input.clinicalSpecialty !== undefined) push('clinical_specialty', input.clinicalSpecialty);
+    if (input.clinicalSpecialty !== undefined) {
+      // ⚠️ `clinicalSpecialtyReadable` é o conserto do ALTA da rodada 4 do QA-caça da 2.2, e ele é
+      // a MESMA distinção da D167 — um nível acima, no DERIVADO.
+      //
+      // Antes: `clinical_specialty = $N` com `?? null`. Um `null` chegando aqui significava DUAS
+      // coisas — "a origem não preencheu" (vazio legítimo, e a D-E manda gravar: dado congelado
+      // *parece* dado) e "a origem mandou um valor que o catálogo não traduziu" (leitura
+      // impossível, e gravar apaga). O 2º caso apagava `'ASD'` de um paciente e não punha nada no
+      // lugar: o cru estava protegido por `skipped-unreadable` e o derivado era apagado no MESMO
+      // webhook. Medido pelo QA-caça com uuid desconhecido.
+      //
+      // Agora o chamador declara qual dos dois é. `false` NÃO grava — sob o Merge Patch (D211.1)
+      // isso é simplesmente não entrar no SET: a coluna fica com o valor anterior, sem COALESCE e
+      // sem leitura prévia. (Na versão pré-Merge-Patch isto era um `CASE WHEN $12 THEN $11 ELSE
+      // clinical_specialty END`; o efeito é o mesmo.)
+      //
+      // Default `true` de propósito: todo chamador anterior a esta mudança escrevia sempre, e um
+      // default `false` os faria parar de escrever em silêncio — trocaria um apagamento por um
+      // congelamento, que é pior porque não aparece.
+      if (input.clinicalSpecialtyReadable ?? true) push('clinical_specialty', input.clinicalSpecialty);
+    }
 
     // Nada veio além do id: não há o que gravar (nem bater updated_at à toa).
     if (sets.length === 0) return;

@@ -34,7 +34,7 @@
  *       → slot uses fresh location values (NOT stale legacy)
  */
 
-import { ClickUpPatientMapper, extractCaseNumber } from '../../../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
+import { ClickUpPatientMapper, extractCaseNumber, PATIENT_DROPDOWN_FIELDS } from '../../../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
 import { extractPatientChatIds } from '../../../src/modules/integration/infrastructure/clickup/extractPatientChatIds';
 import type { ClickUpTask, ClickUpTaskCustomField } from '../../../src/modules/integration/infrastructure/clickup/ClickUpTask';
 
@@ -53,7 +53,12 @@ function makeResolver(dropdowns: DropdownStub = {}) {
     },
     resolveLabel: () => null,
     resolveLabels: () => [],
-    getFieldType: () => null,
+    // Task 1.11: o stub responde pelo CATÁLOGO do ClickUp, não pelo mapa de opções acima.
+    // Estas fixtures exercitam campos que EXISTEM na lista (com ou sem opção mapeada aqui);
+    // devolver `null` diria "campo renomeado ou apagado", que é OUTRO cenário — o dele é
+    // `tests/unit/__tests__/clickup-1.11-campo-renomeado.test.ts`.
+    getFieldType: (fieldName: string): string | null =>
+      (PATIENT_DROPDOWN_FIELDS as readonly string[]).includes(fieldName) ? 'drop_down' : null,
   } as unknown as import('../../../src/modules/integration/infrastructure/clickup/ClickUpFieldResolver').ClickUpFieldResolver;
 }
 
@@ -362,8 +367,9 @@ describe('ClickUpPatientMapper', () => {
       { name: 'Domicilio 1 Principal Paciente', value: locationField('Balcarce 100, San Telmo') },
       { name: 'Domicilio Informado Paciente 1', value: 'Balcarce 100' },
       // Slot 2: HAS components → extracts from its OWN location, NOT from patient legacy
+      // (task 1.12: o nome real no ClickUp é `Domicilio 2 Paciente`, sem "Principal")
       {
-        name: 'Domicilio 2 Principal Paciente',
+        name: 'Domicilio 2 Paciente',
         value: locationField('Av. Cabildo 100, Belgrano, CABA', [
           { long_name: 'Ciudad Autónoma de Buenos Aires', short_name: 'CABA', types: ['administrative_area_level_1', 'political'] },
           { long_name: 'Buenos Aires', short_name: 'CABA', types: ['locality', 'political'] },
@@ -458,9 +464,9 @@ describe('ClickUpPatientMapper', () => {
       { name: 'Nombre de Paciente', value: 'Ignacio' },
       { name: 'Apellido del Paciente', value: 'Soto' },
       { name: 'Nombre de Responsable', value: 'María' },
-      { name: 'Apellido de Responsable', value: 'Soto' },
+      { name: 'Apellido del Responsable', value: 'Soto' },
       { name: 'Número de WhatsApp Responsable', value: '+54 9 11 1234-5678' },
-      { name: 'Email del Responsable', value: 'maria@example.com' },
+      { name: 'Email Responsable', value: 'maria@example.com' },
     ]);
 
     const result = mapper.map(task);
@@ -507,9 +513,9 @@ describe('ClickUpPatientMapper', () => {
       { name: 'Zona o Barrio Paciente', value: 'Godoy Cruz' },
       { name: 'Domicilio 1 Principal Paciente', value: locationField('San Martín 100, Mendoza') },
       { name: 'Domicilio Informado Paciente 1', value: 'San Martín 100' },
-      { name: 'Domicilio 2 Principal Paciente', value: locationField('España 200, Mendoza') },
+      { name: 'Domicilio 2 Paciente', value: locationField('España 200, Mendoza') },
       { name: 'Domicilio Informado Paciente 2', value: 'España 200' },
-      { name: 'Domicilio 3 Principal Paciente', value: locationField('Las Heras 300, Mendoza') },
+      { name: 'Domicilio 3 Paciente', value: locationField('Las Heras 300, Mendoza') },
       { name: 'Domicilio Informado Paciente 3', value: 'Las Heras 300' },
     ]);
 
@@ -648,7 +654,7 @@ describe('ClickUpPatientMapper', () => {
     expect(result!.status).toBe('ADMISSION');
   });
 
-  it('(v3) ClickUp status "baja" → patient status DISCONTINUED', () => {
+  it('(v3) ClickUp status "baja" → patient status DISCHARGED (PatientStatus v2, spec 012)', () => {
     const task = makeTask('task-v3', 'Torres, María', 'baja', [
       { name: 'Nombre de Paciente', value: 'María' },
       { name: 'Apellido del Paciente', value: 'Torres' },
@@ -656,7 +662,7 @@ describe('ClickUpPatientMapper', () => {
 
     const result = mapper.map(task);
     expect(result).not.toBeNull();
-    expect(result!.status).toBe('DISCONTINUED');
+    expect(result!.status).toBe('DISCHARGED');
   });
 
   it('(v4) unknown ClickUp status → patient status null (no crash)', () => {
@@ -744,6 +750,9 @@ describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () 
     specialty: { 3: 'AT para Pacientes con Trastornos Psiquiátricos' },
     service: { 4: 'Acompañante Terapéutico' },
     relationship: { 5: 'Pareja' },
+    // I4: o campo da equipe é `drop_down` no catálogo vivo — o valor é ORDERINDEX, e a
+    // fixture antiga mandava `false` (payload de checkbox, que não existe para ele).
+    equipo: { 0: 'No', 1: 'Sí' },
   } as const;
 
   const comprehensiveResolver = makeResolver({
@@ -754,6 +763,7 @@ describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () 
     'Segmentos Clínicos':                       DROPDOWN_INDEXES.specialty as Record<number, string>,
     'Servicio':                                 DROPDOWN_INDEXES.service as Record<number, string>,
     'Relación con el Paciente':                 DROPDOWN_INDEXES.relationship as Record<number, string>,
+    'Equipo Tratante Multidisciplinario':       DROPDOWN_INDEXES.equipo as Record<number, string>,
   });
 
   const comprehensiveMapper = new ClickUpPatientMapper(comprehensiveResolver);
@@ -788,16 +798,17 @@ describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () 
         { name: 'Número ID Afiliado Paciente',                value: '12345678' },
         // Operational identifier
         { name: 'Caso Número',                                value: '766' },
-        // Multidisciplinary team flag
-        { name: 'Equipo Tratante Multidisciplinario',         value: false },
+        // Multidisciplinary team flag — I4: orderindex da opção "No" (drop_down real),
+        // não o `false` de checkbox que a fixture usava e que o ClickUp nunca manda aqui.
+        { name: 'Equipo Tratante Multidisciplinario',         value: 0 },
         // Responsible
         { name: 'Nombre de Responsable',                      value: 'Andres' },
-        { name: 'Apellido de Responsable',                    value: 'Rodriguez' },
+        { name: 'Apellido del Responsable',                   value: 'Rodriguez' },
         { name: 'Relación con el Paciente',                   value: 5 },
         { name: 'Número de WhatsApp Responsable',             value: '+54 9 11 3207 5033' },
-        { name: 'Email del Responsable',                      value: 'andres@example.com' },
+        { name: 'Email Responsable',                          value: 'andres@example.com' },
         { name: 'Tipo de Documento Responsable',              value: 1 },
-        { name: 'Número de Documento Responsable',            value: '29064022' },
+        { name: 'Número do Documento Responsable',            value: '29064022' },
         // Primary address
         {
           name:  'Domicilio 1 Principal Paciente',
@@ -923,12 +934,37 @@ describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () 
     const MAPPER_OUTPUT_KEYS = [
       'clickupTaskId',
       'firstName', 'lastName', 'birthDate',
-      'documentType', 'documentNumber',
-      'sex', 'phoneWhatsapp',
+      'documentType',
+      // I2 — as 4 bandeiras irmãs de `clinicalSpecialtyReadable`, agora nos campos que
+      // ficaram de fora: `Dependencia`, `Sexo`, `Tipo de Documento Paciente` e `Servicio`
+      // liam `resolveDropdown` CRU, e a opção que deixava de resolver virava `null` gravado
+      // como APAGAMENTO (348 linhas de dependency_level, 185 de sex, 349 de service_type).
+      'documentTypeReadable',
+      'documentNumber',
+      'sex',
+      'sexReadable',
+      'phoneWhatsapp',
       'country',
       'status', 'caseNumber',
-      'diagnosis', 'dependencyLevel', 'clinicalSpecialty',
-      'serviceType', 'additionalComments',
+      'diagnosis', 'dependencyLevel', 'dependencyLevelReadable', 'clinicalSpecialty',
+      // Task 2.2/rodada 4 — a bandeira que separa "a origem não preencheu" (vazio legítimo,
+      // e a D-E manda GRAVAR) de "a origem mandou e o catálogo não traduziu" (leitura
+      // impossível, e gravar APAGA). Sem ela, `clinicalSpecialty: null` significava as duas
+      // coisas e apagava `'ASD'` de paciente real. Ver `PatientClinicalRepository`.
+      'clinicalSpecialtyReadable',
+      // Task 3.2/3.3 — `Cobertura Verificada`, que o mapper nunca leu (F7): 345 de 349
+      // pacientes têm cobertura no ClickUp e o banco tinha ZERO. O escalar continua sendo
+      // escrito (o 1º rótulo, para quem já lê a coluna antiga); a LISTA vai para a tabela
+      // `patient_insurance_verified`; e `Readable` carrega a mesma distinção da D167 — vazio
+      // legítimo grava, "não consegui ler" não toca em nada.
+      'insuranceVerified',
+      'insuranceVerifiedReadable',
+      'insuranceVerifiedLabels',
+      // Task 4.2 — o Tipo de Dispositivo múltiplo. NÃO há `deviceType` escalar irmão aqui,
+      // diferente da cobertura: `patients.device_type` é derivado por trigger (migration 310),
+      // e `PatientClinicalUpsertInput` nem aceita mais o campo (F64).
+      'deviceTypeLabels',
+      'serviceType', 'serviceTypeReadable', 'additionalComments',
       'hasCud', 'hasConsent', 'hasJudicialProtection',
       'healthInsuranceName', 'healthInsuranceMemberId',
       'responsibles', 'addresses', 'professionals',

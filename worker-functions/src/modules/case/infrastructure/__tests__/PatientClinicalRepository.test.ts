@@ -100,14 +100,77 @@ describe('PatientClinicalRepository.upsert', () => {
     const repo = new PatientClinicalRepository();
     await repo.upsert({
       patientId: PATIENT, diagnosis: 'D', dependencyLevel: 'HIGH' as never, clinicalSegments: null, serviceType: ['AT'] as never,
-      deviceType: 'silla', additionalComments: 'obs', hasJudicialProtection: true, hasCud: false, hasConsent: null,
+      additionalComments: 'obs', hasJudicialProtection: true, hasCud: false, hasConsent: null,
       clinicalSpecialty: 'ASD' as never, actorUid: null,
     });
     const { sql, params } = lastCall();
-    expect(sql).toMatch(/has_consent = COALESCE\(\$11, has_consent\)/);
-    expect(params).toEqual([PATIENT, 'D', 'HIGH', null, ['AT'], 'silla', 'obs', null, true, false, null, 'ASD']);
-    expect(sql).toMatch(/clinical_specialty\s+= \$12/);
-    expect(sql).toMatch(/additional_comments_updated_by = \$8/);
+    expect(sql).toMatch(/has_consent = COALESCE\(\$10, has_consent\)/);
+    expect(params).toEqual([PATIENT, 'D', 'HIGH', null, ['AT'], 'obs', null, true, false, null, 'ASD']);
+    expect(sql).toMatch(/clinical_specialty\s+= \$11/);
+    expect(sql).toMatch(/additional_comments_updated_by = \$7/);
+    // Spec 012 US-B4: o escalar device_type NÃO é escrito por aqui (FK 308, derivado 310).
+    expect(sql).not.toMatch(/device_type/);
+  });
+
+  it('clinicalSpecialtyReadable=false (2.2/rodada 4, D167 no DERIVADO): clinical_specialty NÃO entra no SET; null com readable ausente/true GRAVA null (D-E)', async () => {
+    const repo = new PatientClinicalRepository();
+    // "não consegui ler": a origem mandou algo que o catálogo não traduziu → a coluna fica como está.
+    await repo.upsert({ patientId: PATIENT, clinicalSpecialty: null, clinicalSpecialtyReadable: false, diagnosis: 'D' });
+    let { sql, params } = lastCall();
+    expect(sql).not.toMatch(/clinical_specialty/);
+    expect(params).toEqual([PATIENT, 'D']);
+    // "vazio legítimo": a origem não preencheu → grava NULL (congelado *parece* dado).
+    await repo.upsert({ patientId: PATIENT, clinicalSpecialty: null, clinicalSpecialtyReadable: true });
+    ({ sql, params } = lastCall());
+    expect(sql).toMatch(/clinical_specialty\s+= \$2/);
+    expect(params).toEqual([PATIENT, null]);
+    // só a bandeira, sem a chave → nada a gravar (Merge Patch)
+    await repo.upsert({ patientId: PATIENT, clinicalSpecialtyReadable: false });
+    expect(mockPoolQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it('I2 — `dependencyLevelReadable=false`: dependency_level NÃO entra no SET (a opção deixou de resolver)', async () => {
+    const repo = new PatientClinicalRepository();
+    await repo.upsert({ patientId: PATIENT, dependencyLevel: null, dependencyLevelReadable: false, diagnosis: 'D' });
+    expect(lastCall().sql).not.toMatch(/dependency_level/);
+    expect(lastCall().params).toEqual([PATIENT, 'D']);
+  });
+
+  it('I2 — `dependencyLevelReadable` ausente ou true GRAVA (inclusive o null de vazio legítimo, D-E)', async () => {
+    const repo = new PatientClinicalRepository();
+    await repo.upsert({ patientId: PATIENT, dependencyLevel: null });
+    expect(lastCall().sql).toMatch(/dependency_level = \$2/);
+    expect(lastCall().params).toEqual([PATIENT, null]);
+
+    await repo.upsert({ patientId: PATIENT, dependencyLevel: 'MILD', dependencyLevelReadable: true });
+    expect(lastCall().params).toEqual([PATIENT, 'MILD']);
+
+    // chave AUSENTE com a bandeira `false` continua sendo "não veio" — nenhuma query.
+    mockPoolQuery.mockClear();
+    await repo.upsert({ patientId: PATIENT, dependencyLevelReadable: false });
+    expect(mockPoolQuery).not.toHaveBeenCalled();
+  });
+
+  it('I2 — `serviceTypeReadable=false`: service_type NÃO entra no SET (349 linhas expostas antes)', async () => {
+    const repo = new PatientClinicalRepository();
+    await repo.upsert({ patientId: PATIENT, serviceType: null, serviceTypeReadable: false, diagnosis: 'D' });
+    expect(lastCall().sql).not.toMatch(/service_type/);
+    expect(lastCall().params).toEqual([PATIENT, 'D']);
+  });
+
+  it('I2 — `serviceTypeReadable` ausente ou true mantém o SET condicional do trigger (FR-C1)', async () => {
+    const repo = new PatientClinicalRepository();
+    await repo.upsert({ patientId: PATIENT, serviceType: ['AT'] });
+    expect(lastCall().sql).toMatch(/service_type = CASE WHEN EXISTS/);
+    expect(lastCall().params).toEqual([PATIENT, ['AT']]);
+
+    await repo.upsert({ patientId: PATIENT, serviceType: null, serviceTypeReadable: true });
+    expect(lastCall().sql).toMatch(/service_type = CASE WHEN EXISTS/);
+    expect(lastCall().params).toEqual([PATIENT, null]);
+
+    mockPoolQuery.mockClear();
+    await repo.upsert({ patientId: PATIENT, serviceTypeReadable: false });
+    expect(mockPoolQuery).not.toHaveBeenCalled();
   });
 
   it('hasConsent=false explícito grava false (COALESCE preserva só o null)', async () => {

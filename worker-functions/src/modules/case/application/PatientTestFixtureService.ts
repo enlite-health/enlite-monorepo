@@ -60,6 +60,12 @@ const CASCADE_CHILDREN = [
   'patient_chat_ids',
   'patient_professionals',
   'patient_field_overrides_audit',
+  // Spec 013, bloco C (migration 319): patient_contracted_services é filha DIRETA de patients
+  // (ON DELETE CASCADE), contada aqui como as demais. contracted_service_devices e
+  // contracted_service_providers são netas — CASCADE a partir do serviço, não de patients — e
+  // por isso não têm patient_id próprio para esta contagem; saem juntas mesmo assim (2 níveis
+  // de FK ON DELETE CASCADE), só não aparecem no resultado por tabela.
+  'patient_contracted_services',
 ] as const;
 
 interface AppointmentRow {
@@ -87,9 +93,11 @@ interface AppointmentRow {
  * teste não sobrevive ao teste que o criou; a auditabilidade mora no log
  * `patient.test_purge.done`, que registra o que a limpeza fez sem reter PII.
  *
- * As 6 tabelas-filhas em ON DELETE CASCADE (patient_addresses, patient_chat_ids,
+ * As 7 tabelas-filhas em ON DELETE CASCADE (patient_addresses, patient_chat_ids,
  * patient_field_overrides_audit, patient_professionals, patient_responsibles,
- * patient_status_history) saem junto. As que são NO ACTION precisam sair ANTES,
+ * patient_status_history, patient_contracted_services — spec 013 bloco C) saem junto;
+ * contracted_service_devices/contracted_service_providers são NETAS (cascata a partir do
+ * serviço) e saem no mesmo DELETE, 2 níveis de FK abaixo. As que são NO ACTION precisam sair ANTES,
  * ou a FK aborta o DELETE: `admission_appointments` e `job_postings` são
  * apagadas aqui. Falta `vacancy_relink_audit.new_patient_id` — hoje sem nenhuma
  * linha de teste, mas capaz de travar o purge no dia em que houver.

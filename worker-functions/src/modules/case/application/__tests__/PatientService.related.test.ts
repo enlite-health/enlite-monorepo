@@ -51,11 +51,13 @@ jest.mock(
 );
 
 const mockReplaceAll = jest.fn().mockResolvedValue(undefined);
+const mockReplaceBySource = jest.fn().mockResolvedValue(undefined);
 jest.mock(
   '../../infrastructure/PatientResponsibleRepository',
   () => ({
     PatientResponsibleRepository: jest.fn().mockImplementation(() => ({
       replaceAll: (...args: unknown[]) => mockReplaceAll(...args),
+      replaceBySource: (...args: unknown[]) => mockReplaceBySource(...args),
     })),
   }),
 );
@@ -114,7 +116,7 @@ describe('PatientService.upsertFromClickUp — responsibles / addresses / profes
     mockGetClient.mockResolvedValue(mockClient);
   });
 
-  it('1. responsibles present with a valid contact channel (primary has phone) — no throw, replaceAll called', async () => {
+  it('1. responsibles present with a valid contact channel (primary has phone) — no throw, o SYNC substitui só as linhas clickup (replaceBySource), nunca replaceAll', async () => {
     mockIdentityUpsert.mockResolvedValueOnce({ id: 'patient-r1', created: true });
 
     const result = await service.upsertFromClickUp(
@@ -127,8 +129,11 @@ describe('PatientService.upsertFromClickUp — responsibles / addresses / profes
     );
 
     expect(result.id).toBe('patient-r1');
-    expect(mockReplaceAll).toHaveBeenCalledTimes(1);
-    expect(mockReplaceAll.mock.calls[0][0]).toBe('patient-r1');
+    // QA caça 🔴1: o caminho do sync NÃO pode apagar familiar do painel/formulário.
+    expect(mockReplaceAll).not.toHaveBeenCalled();
+    expect(mockReplaceBySource).toHaveBeenCalledTimes(1);
+    expect(mockReplaceBySource.mock.calls[0][0]).toBe('patient-r1');
+    expect(mockReplaceBySource.mock.calls[0][2]).toBe('clickup');
   });
 
   it('2. responsibles present, no contact channel at all, strategy "error" (default) → rethrows', async () => {

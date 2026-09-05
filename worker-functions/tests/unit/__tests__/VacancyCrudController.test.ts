@@ -250,7 +250,7 @@ describe('VacancyCrudController', () => {
       expect(sql).toMatch(/VALUES\s*\(\s*\$1,\s*\$2,\s*\$3,\s*\$4,/);
     });
 
-    it('sends 22 parameters ($1 through $22, including patient_address_id, status, published_at, closes_at, is_test)', async () => {
+    it('sends 23 parameters ($1 through $23, including patient_address_id, status, published_at, closes_at, is_test, contracted_service_id)', async () => {
       mockCreateSuccess();
       const req = mockReq(FULL_BODY);
       const res = mockRes();
@@ -258,7 +258,10 @@ describe('VacancyCrudController', () => {
       await controller.createVacancy(req as never, res as never);
 
       const params = mockQuery.mock.calls[2][1] as unknown[];
-      expect(params).toHaveLength(22);
+      // +1 vs. the pre-spec-013 count (22): contracted_service_id (migration 320) — always null
+      // from this path, POST /vacancies does not go through a contracted service.
+      expect(params).toHaveLength(23);
+      expect(params[22]).toBeNull();
     });
 
     it('maps all fields to correct parameter positions', async () => {
@@ -419,9 +422,10 @@ describe('VacancyCrudController', () => {
       const colMatch = sql.match(/INSERT INTO job_postings\s*\(([\s\S]*?)\)\s*VALUES/);
       expect(colMatch).toBeTruthy();
       const columns = colMatch![1].split(',').map(c => c.trim()).filter(Boolean);
-      // 21 param columns + country (literal 'AR') + is_test (param) = 23 total
+      // 21 param columns + country (literal 'AR') + is_test (param) + contracted_service_id
+      // (migration 320, spec 013 bloco C) = 24 total.
       // (description column dropped in migration 214 — no longer inserted)
-      expect(columns).toHaveLength(23);
+      expect(columns).toHaveLength(24);
     });
 
     it('does NOT include state, city, pathology_types, dependency_level, service_device_types in INSERT SQL', async () => {

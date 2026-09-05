@@ -16,6 +16,8 @@ import { PROFESSIONS } from '@modules/worker';
 export const createPatientSchema = z.object({
   firstName: z.string().trim().min(1, { message: 'firstName is required' }),
   lastName: z.string().trim().min(1).optional(),
+  /** US-B6 (spec 012): fecha de nacimiento no modal de criação. */
+  birthDate: z.coerce.date().optional(),
   phoneWhatsapp: z.string().trim().min(1).optional(),
   contactEmail: z.string().trim().email({ message: 'contactEmail must be a valid email' }).optional(),
   documentType: z.enum(DOCUMENT_TYPES as unknown as [string, ...string[]]).optional(),

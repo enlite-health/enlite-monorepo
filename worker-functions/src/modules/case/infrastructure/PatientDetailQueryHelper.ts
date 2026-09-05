@@ -5,12 +5,14 @@ import type {
   PatientResponsibleDetail,
   PatientAddressDetail,
   PatientProfessionalDetail,
-} from './PatientQueryRepository';
+} from './PatientQueryRows';
 import { legacyChatIdAliases } from '../domain/PatientChatId';
 import {
   computeAddressAvailability,
   type ActiveVacancy,
 } from '../application/AddressAvailabilityCalculator';
+import { mapContractedServices } from './ContractedServiceDetailMapper';
+import { phoneMatchesResponsible } from '../domain/PhoneMatch';
 
 const PATIENT_DETAIL_SQL = `
   SELECT
@@ -24,6 +26,10 @@ const PATIENT_DETAIL_SQL = `
     affiliate_id             AS "affiliateId",
     sex,
     phone_whatsapp           AS "phoneWhatsapp",
+    -- E-mail do paciente (mig 251; spec 011 A4, lex C4.1): cifrado com KMS, sai
+    -- SÓ no detalhe — a listagem não seleciona esta coluna. Descriptografado
+    -- abaixo, uma chamada por carga de ficha.
+    p.contact_email_encrypted AS "contactEmailEncrypted",
     diagnosis,
     dependency_level         AS "dependencyLevel",
     clinical_specialty       AS "clinicalSpecialty",
@@ -45,7 +51,13 @@ const PATIENT_DETAIL_SQL = `
     has_judicial_protection  AS "hasJudicialProtection",
     has_cud                  AS "hasCud",
     has_consent              AS "hasConsent",
-    insurance_informed       AS "insuranceInformed",
+    -- Cobertura (spec 011 A3, lex "caminho a"): o painel grava em
+    -- health_insurance_name (fill-only no upsert do ClickUp, mig 147) e o
+    -- sync do ClickUp SOBRESCREVE insurance_informed com o que o mapper manda —
+    -- e ele não manda. Ler só insurance_informed escondia a cobertura gravada;
+    -- mover a escrita para lá faria o próximo webhook apagá-la. A ficha lê as
+    -- duas; a coluna de origem (ClickUp) tem precedência quando existe.
+    COALESCE(p.insurance_informed, p.health_insurance_name) AS "insuranceInformed",
     insurance_verified       AS "insuranceVerified",
     city_locality            AS "cityLocality",
     province,
@@ -57,6 +69,37 @@ const PATIENT_DETAIL_SQL = `
                 FROM patient_chat_ids c
                WHERE c.patient_id = p.id), '{}'::jsonb) AS "chatIds",
     status,
+    -- Spec 012 (bloco B): funil em coluna própria (313), estado v2 + motivo de espera (314),
+    -- data de início do serviço (317). on_hold_note é texto clínico restrito: a redação por
+    -- permissão acontece DEPOIS, no ponto único (projectPatientClinicalForActor).
+    admission_status         AS "admissionStatus",
+    on_hold_reason           AS "onHoldReason",
+    p.on_hold_note           AS "onHoldNote",
+    service_start_date       AS "serviceStartDate",
+    -- Cobertura VERIFICADA por código (312) e dispositivo múltiplo (307): arrays na ordem do catálogo.
+    COALESCE((SELECT array_agg(x.provider_code ORDER BY x.sort_order, x.provider_code)
+                FROM (SELECT DISTINCT piv.provider_code, ip.sort_order
+                        FROM patient_insurance_verified piv
+                        JOIN insurance_providers ip ON ip.code = piv.provider_code
+                       WHERE piv.patient_id = p.id AND piv.provider_code IS NOT NULL) x), '{}'::text[])
+                             AS "insuranceVerifiedCodes",
+    -- QA 3 (SUP-B5): a MESMA união, com source -- o drawer usa para travar o chip do ClickUp
+    -- (não removível ali) e restringir o multi-select ao que o painel gravou. DISTINCT
+    -- (provider_code, source) colapsa 2 raw_labels da MESMA origem que mapeiam pro mesmo
+    -- código; a mesma cobertura em origens diferentes vira 2 entradas (é o par que a tela precisa
+    -- distinguir).
+    COALESCE((SELECT jsonb_agg(jsonb_build_object('code', x.provider_code, 'source', x.source)
+                                ORDER BY x.sort_order, x.provider_code, x.source)
+                FROM (SELECT DISTINCT piv.provider_code, piv.source, ip.sort_order
+                        FROM patient_insurance_verified piv
+                        JOIN insurance_providers ip ON ip.code = piv.provider_code
+                       WHERE piv.patient_id = p.id AND piv.provider_code IS NOT NULL) x), '[]'::jsonb)
+                             AS "insuranceVerifiedEntries",
+    COALESCE((SELECT array_agg(pdt.device_type ORDER BY d.sort_order, d.code)
+                FROM patient_device_types pdt
+                JOIN device_types d ON d.code = pdt.device_type
+               WHERE pdt.patient_id = p.id), '{}'::text[])
+                             AS "deviceTypes",
     needs_attention          AS "needsAttention",
     attention_reasons        AS "attentionReasons",
     -- Mesma fonte da lista (PatientQueryRepository): usa patients.case_number
@@ -91,7 +134,8 @@ async function fetchRelated(pool: Pool, patientId: string) {
       // operator. Archived rows still exist in the table to preserve historic
       // vacancies that point to them — see migration 198 and
       // docs/features/vacancy-creation/06-endereco-servico.md.
-      `SELECT id, address_type, address_formatted, address_raw, complement, display_order, lat, lng
+      `SELECT id, address_type, address_formatted, address_raw, complement, display_order, lat, lng,
+              neighborhood, logistics_corridor, access_notes, country
          FROM patient_addresses
         WHERE patient_id = $1
           AND archived_at IS NULL
@@ -115,6 +159,9 @@ async function fetchRelated(pool: Pool, patientId: string) {
           AND jp.deleted_at IS NULL`,
       [patientId],
     ),
+    // Serviços contratados (spec 013, bloco C) — contrato do detalhe. hourlyValue vem CRU aqui;
+    // a redação por papel (lex C-c.4) acontece no controller (ponto único).
+    pool.query(`SELECT * FROM patient_contracted_services WHERE patient_id = $1 ORDER BY active DESC, created_at ASC`, [patientId]),
   ]);
 }
 
@@ -179,6 +226,11 @@ function mapAddresses(rows: any[], vacancyRows: ActiveVacancy[]): PatientAddress
     lat: a.lat != null ? parseFloat(a.lat) : null,
     lng: a.lng != null ? parseFloat(a.lng) : null,
     isPrimary: a.address_type === 'primary',
+    // Spec 012, US-B2: logística POR endereço (316); zona = `neighborhood` (147, lex C2.7).
+    neighborhood: a.neighborhood ?? null,
+    logisticsCorridor: a.logistics_corridor ?? null,
+    accessNotes: a.access_notes ?? null,
+    country: a.country ?? null,
     availability: computeAddressAvailability(a.id, vacancyRows),
   }));
 }
@@ -197,7 +249,7 @@ export async function fetchPatientDetail(
   if (patientResult.rows.length === 0) return null;
 
   const p = patientResult.rows[0];
-  const [responsibleRows, addressRows, professionalRows, vacancyRows] = await fetchRelated(pool, id);
+  const [responsibleRows, addressRows, professionalRows, vacancyRows, contractedServiceRows] = await fetchRelated(pool, id);
 
   const vacancies: ActiveVacancy[] = vacancyRows.rows.map((v: any) => ({
     id: v.id,
@@ -206,9 +258,13 @@ export async function fetchPatientDetail(
     schedule: v.schedule,
   }));
 
-  const [responsibles, professionals] = await Promise.all([
+  const [responsibles, professionals, contactEmail, contractedServices] = await Promise.all([
     decryptResponsibles(responsibleRows.rows, encryptionService),
     decryptProfessionals(professionalRows.rows, encryptionService),
+    // Sem ciphertext não há decrypt: o passthrough de teste devolve '' para
+    // entrada vazia, e '' na ficha seria "tem e-mail e está em branco".
+    p.contactEmailEncrypted ? encryptionService.decrypt(p.contactEmailEncrypted) : Promise.resolve(null),
+    mapContractedServices(contractedServiceRows.rows, pool, encryptionService),
   ]);
 
   const addresses = mapAddresses(addressRows.rows, vacancies);
@@ -224,6 +280,7 @@ export async function fetchPatientDetail(
     affiliateId: p.affiliateId,
     sex: p.sex,
     phoneWhatsapp: p.phoneWhatsapp,
+    contactEmail,
     diagnosis: p.diagnosis,
     dependencyLevel: p.dependencyLevel,
     clinicalSpecialty: p.clinicalSpecialty,
@@ -248,12 +305,24 @@ export async function fetchPatientDetail(
     chatIds: p.chatIds ?? {},
     ...legacyChatIdAliases(p.chatIds ?? {}),
     status: p.status,
+    admissionStatus: p.admissionStatus ?? 'DONE',
+    onHoldReason: p.onHoldReason ?? null,
+    onHoldNote: p.onHoldNote ?? null,
+    serviceStartDate: p.serviceStartDate ?? null,
+    insuranceVerifiedCodes: p.insuranceVerifiedCodes ?? [],
+    insuranceVerifiedEntries: p.insuranceVerifiedEntries ?? [],
+    deviceTypes: p.deviceTypes ?? [],
     needsAttention: p.needsAttention,
     attentionReasons: p.attentionReasons ?? [],
+    // Spec 014 (US-D3, lex D3.1): `phone_whatsapp` do paciente coincide (últimos 8 dígitos) com
+    // o telefone de ALGUM responsável — o front mostra o aviso de re-atribuição antes do rename
+    // "Teléfono del Responsable"→"WhatsApp del paciente" virar definitivo para este registro.
+    phoneMatchesResponsible: phoneMatchesResponsible(p.phoneWhatsapp, responsibles.map((r) => r.phone)),
     lastCaseNumber: p.lastCaseNumber != null ? Number(p.lastCaseNumber) : null,
     responsibles,
     addresses,
     professionals,
+    contractedServices,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
   };

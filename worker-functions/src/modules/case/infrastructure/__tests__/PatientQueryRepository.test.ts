@@ -64,6 +64,15 @@ function baseListRow(overrides: Record<string, unknown> = {}) {
     updatedAt: new Date('2025-06-01T00:00:00Z'),
     stageEnteredAt: new Date('2025-01-02T00:00:00Z').toISOString(),
     total_count: '1',
+    // QA-caça rodada 1, item conserto 1 (D1.1/D255): insumos do checklist, EXISTS/booleanos —
+    // default "tudo completo" para não quebrar as asserções pré-existentes de needsAttention
+    // (que não conheciam esta derivação). Cada teste novo sobrescreve o que quer testar.
+    birthDate: null,
+    hasConsent: true,
+    insuranceInformed: 'OSDE',
+    // ADDRESS não tem coluna própria: reusa addressesCount (default '2' acima = presente).
+    hasActiveResponsible: true,
+    hasActiveContractedService: true,
     ...overrides,
   };
 }
@@ -212,6 +221,139 @@ describe('PatientQueryRepository.list', () => {
     const { rows } = await repo.list(baseFilters());
     expect(rows[0].stageEnteredAt).toBeNull();
     expect(rows[0].hoursInStage).toBeNull();
+  });
+
+  // ── QA-caça rodada 1, item conserto 1 (D1.1/D255): needsAttention DERIVA do checklist ──────
+  // Reprodução do defeito: paciente com `completeness.missing` não vazio no GET /:id continuava
+  // `needsAttention:false` na lista, porque a coluna legada `patients.needs_attention` nunca era
+  // recalculada. Agora: needsAttention = legado OR (status ∈ ACTIVATABLE_STATUSES AND
+  // missing.length > 0). NUNCA expõe `missing`/`completeness` — só o booleano derivado.
+
+  it('a11. status ADMISSION + falta endereço (checklist incompleto) + legado=false → needsAttention TRUE, attentionReasons ganha INCOMPLETE_ADMISSION', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [
+        baseListRow({
+          status: 'ADMISSION',
+          needsAttention: false,
+          attentionReasons: [],
+          // ADDRESS reusa addressesCount (não há coluna hasActiveAddress separada — ver a17).
+          addressesCount: '0',
+        }),
+      ],
+    });
+    const repo = new PatientQueryRepository();
+
+    const { rows } = await repo.list(baseFilters());
+    expect(rows[0].needsAttention).toBe(true);
+    expect(rows[0].attentionReasons).toContain('INCOMPLETE_ADMISSION');
+  });
+
+  it('a12. status ACTIVE (fora de ACTIVATABLE_STATUSES) + checklist incompleto → needsAttention continua FALSE (não deriva fora da admissão)', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [
+        baseListRow({
+          status: 'ACTIVE',
+          needsAttention: false,
+          addressesCount: '0',
+          hasConsent: false,
+        }),
+      ],
+    });
+    const repo = new PatientQueryRepository();
+
+    const { rows } = await repo.list(baseFilters());
+    expect(rows[0].needsAttention).toBe(false);
+    expect(rows[0].attentionReasons).not.toContain('INCOMPLETE_ADMISSION');
+  });
+
+  it('a13. legado needsAttention=true SEMPRE prevalece (OR), mesmo com checklist completo', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [baseListRow({ status: 'PENDING_ADMISSION', needsAttention: true, attentionReasons: ['MISSING_INFO'] })],
+    });
+    const repo = new PatientQueryRepository();
+
+    const { rows } = await repo.list(baseFilters());
+    expect(rows[0].needsAttention).toBe(true);
+    expect(rows[0].attentionReasons).toEqual(['MISSING_INFO']);
+    expect(rows[0].attentionReasons).not.toContain('INCOMPLETE_ADMISSION');
+  });
+
+  it('a14. status PENDING_ADMISSION + checklist COMPLETO → needsAttention false, sem INCOMPLETE_ADMISSION', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [baseListRow({ status: 'PENDING_ADMISSION', needsAttention: false })],
+    });
+    const repo = new PatientQueryRepository();
+
+    const { rows } = await repo.list(baseFilters());
+    expect(rows[0].needsAttention).toBe(false);
+    expect(rows[0].attentionReasons).toEqual([]);
+  });
+
+  it('a14b. attentionReasons já tem INCOMPLETE_ADMISSION gravado (legado) → não duplica ao derivar de novo', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [
+        baseListRow({
+          status: 'ADMISSION',
+          needsAttention: false,
+          attentionReasons: ['INCOMPLETE_ADMISSION'],
+          addressesCount: '0',
+        }),
+      ],
+    });
+    const repo = new PatientQueryRepository();
+
+    const { rows } = await repo.list(baseFilters());
+    expect(rows[0].needsAttention).toBe(true);
+    // Exatamente UMA ocorrência — o branch `legacyReasons.includes(...)` evita duplicar.
+    expect(rows[0].attentionReasons.filter((r) => r === 'INCOMPLETE_ADMISSION')).toHaveLength(1);
+  });
+
+  it('a15. paciente MENOR sem responsável em ADMISSION → RESPONSIBLE falta, needsAttention true', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [
+        baseListRow({
+          status: 'ADMISSION',
+          birthDate: '2015-01-01',
+          hasActiveResponsible: false,
+        }),
+      ],
+    });
+    const repo = new PatientQueryRepository();
+
+    const { rows } = await repo.list(baseFilters());
+    expect(rows[0].needsAttention).toBe(true);
+    expect(rows[0].attentionReasons).toContain('INCOMPLETE_ADMISSION');
+  });
+
+  it('a16. a linha mapeada NUNCA carrega `missing`/`completeness` (lex D1.1: só no detalhe)', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [baseListRow({ status: 'ADMISSION', hasActiveAddress: false })],
+    });
+    const repo = new PatientQueryRepository();
+
+    const { rows } = await repo.list(baseFilters());
+    expect(rows[0]).not.toHaveProperty('missing');
+    expect(rows[0]).not.toHaveProperty('completeness');
+  });
+
+  it('a17. SQL da list() usa EXISTS/booleano (correlated subquery) para os insumos do checklist — reusa addressesCount, não decripta, não faz N+1 por linha', async () => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] });
+    const repo = new PatientQueryRepository();
+    await repo.list(baseFilters());
+
+    const [sql] = mockPoolQuery.mock.calls[0];
+    // ADDRESS reusa a subquery de addressesCount já existente (sem duplicar o EXISTS).
+    expect(sql).toMatch(/addressesCount/);
+    // RESPONSIBLE/CONTRACTED_SERVICE viram booleano via EXISTS — novos, correlated na MESMA query.
+    expect(sql).toMatch(/hasActiveResponsible/);
+    expect(sql).toMatch(/hasActiveContractedService/);
+    expect(sql).toMatch(/EXISTS/);
+    // COVERAGE/CONSENT/birthDate são colunas diretas de `patients`, sem subquery.
+    expect(sql).toMatch(/hasConsent/);
+    expect(sql).toMatch(/"birthDate"/);
+    // list() continua UMA query — nenhum await extra por paciente (a KMSEncryptionService não é
+    // chamada por este caminho: nenhum dos insumos do checklist é PII cifrada).
+    expect(mockPoolQuery).toHaveBeenCalledTimes(1);
   });
 });
 

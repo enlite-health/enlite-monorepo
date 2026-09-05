@@ -14,6 +14,8 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
+import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
+import { DiscardChangesConfirm } from './DiscardChangesConfirm';
 
 interface Props {
   patient: PatientDetail;
@@ -84,12 +86,21 @@ export function PatientChatIdsEditDrawer({ patient, catalog, onClose, onSaved }:
     setTimeout(onClose, CLOSE_MS);
   };
 
+  // Spec 014 (US-D4, lex D4 AUTORIZADO): `edited` já é SÓ o que a pessoa mexeu nesta sessão
+  // (ver o comentário do estado acima) — dirty = algum papel editado difere do que está
+  // gravado no paciente.
+  const isDirty = Object.entries(edited).some(([role, value]) => value !== (patient.chatIds?.[role] ?? ''));
+
+  const { confirmingClose, requestClose, keepEditing, confirmDiscard } = useConfirmDiscardClose({
+    isDirty,
+    onConfirmedClose: handleClose,
+  });
+
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') requestClose(); };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [requestClose]);
 
   const handleSearch = async (): Promise<void> => {
     setError(null);
@@ -173,9 +184,10 @@ export function PatientChatIdsEditDrawer({ patient, catalog, onClose, onSaved }:
 
   return (
     <>
+      {confirmingClose && <DiscardChangesConfirm onKeepEditing={keepEditing} onDiscard={confirmDiscard} />}
       <div
         className={`fixed inset-0 bg-black/50 z-40 transition-opacity duration-300 ${show ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-        onClick={handleClose}
+        onClick={requestClose}
         data-testid="chat-ids-backdrop"
       />
       <div
@@ -201,7 +213,7 @@ export function PatientChatIdsEditDrawer({ patient, catalog, onClose, onSaved }:
             </Button>
             <button
               type="button"
-              onClick={handleClose}
+              onClick={requestClose}
               aria-label={tc('close')}
               className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded"
             >

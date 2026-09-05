@@ -35,12 +35,12 @@ vi.mock('@presentation/components/features/admin/Kanban/KanbanBoardShell', () =>
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
 
-const vazio: PatientKanbanGroups = { SOLICITANTE: [], ADMISSION: [], PENDING_ADMISSION: [], ACTIVE: [] };
+const vazio: PatientKanbanGroups = { SOLICITANTE: [], ADMISSION: [], PENDING_ADMISSION: [], DONE: [] };
 
 const comItem: PatientKanbanGroups = {
   ...vazio,
   SOLICITANTE: [{ id: 'p1', firstName: 'Solicitante', lastName: null, caseNumber: null,
-                  dependencyLevel: null, status: 'SOLICITANTE', responsibleName: null,
+                  dependencyLevel: null, status: 'SOLICITANTE', admissionStatus: 'SOLICITANTE', responsibleName: null,
                   leadContactEmailMasked: null, leadContactIsResponsible: false }],
 };
 
@@ -59,14 +59,14 @@ describe('soltar um card', () => {
     const onMove = vi.fn().mockResolvedValue(null);
     render(<PatientKanbanBoard groups={vazio} onMove={onMove} />);
 
-    capturado!({ itemId: 'p1', fromColumnId: 'ACTIVE', toColumnId: 'ACTIVE' });
+    capturado!({ itemId: 'p1', fromColumnId: 'DONE', toColumnId: 'DONE' });
     expect(onMove).not.toHaveBeenCalled();
   });
 
   it('as 4 colunas e o card são montados pelas render-props do board', () => {
     const { getByTestId } = render(<MemoryRouter><PatientKanbanBoard groups={comItem} onMove={async () => null} /></MemoryRouter>);
     expect(getByTestId('colunas').textContent)
-      .toBe('SOLICITANTE,ADMISSION,PENDING_ADMISSION,ACTIVE');
+      .toBe('SOLICITANTE,ADMISSION,PENDING_ADMISSION,DONE');
     expect(getByTestId('item-p1')).toBeInTheDocument();
   });
 

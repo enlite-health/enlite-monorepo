@@ -248,8 +248,36 @@ describe('ClickUpPatientWebhookController', () => {
     expect(mockUseCaseExecute).toHaveBeenCalledWith(task, { onMissingContact: 'flag' }, expect.any(String));
     expect(statusCode()).toBe(200);
     const b = body() as Record<string, unknown>;
+    expect(b.success).toBe(true);
     expect(b.action).toBe('synced');
     expect((b.result as Record<string, unknown>).kind).toBe('CREATED');
+  });
+
+  // Sync que ERROU não pode sair com `success: true`. O caso real: um campo renomeado no ClickUp
+  // faz a guarda fail-closed da 1.11 recusar a task inteira — nada é gravado, e o webhook
+  // respondia `{"success":true,"action":"synced"}`. Para o ClickUp e para qualquer monitor que
+  // olhe o corpo, a task tinha sido sincronizada; só uma linha de log denunciava.
+  // O 200 é preservado de propósito (o padrão da casa em `fetch_failed` e `catalog_stale`):
+  // devolver 5xx faria o ClickUp reentregar em tempestade um erro que o retry não conserta.
+  it('sync com kind=ERROR responde success:false e action=sync_failed, mantendo HTTP 200', async () => {
+    const task = makeClickUpTask();
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => task });
+    mockUseCaseExecute.mockResolvedValueOnce({
+      kind: 'ERROR', taskId: 'task-err', error: new Error('catálogo ilegível'),
+    });
+
+    const req = makeMockReq(makeValidBody({ list_id: PATIENT_LIST_ID }));
+    const { res, statusCode, body } = makeMockRes();
+
+    await controller.handle(req as Request, res as Response);
+
+    expect(statusCode()).toBe(200);
+    const b = body() as Record<string, unknown>;
+    expect(b.success).toBe(false);
+    expect(b.action).toBe('sync_failed');
+    expect((b.result as Record<string, unknown>).kind).toBe('ERROR');
+    // A mensagem do erro NÃO sai no corpo: ela pode carregar rótulo clínico.
+    expect(JSON.stringify(b)).not.toContain('catálogo ilegível');
   });
 
   // ─────────────────────────────────────────────────────────────────
@@ -417,6 +445,29 @@ describe('ClickUpPatientWebhookController', () => {
 
       expect(ctrl).toBeInstanceOf(ClickUpPatientWebhookController);
       expect(mockFieldResolverFromList).toHaveBeenCalledWith(PATIENT_LIST_ID, { token: 'tok-ok' });
+
+      delete process.env.CLICKUP_API_TOKEN;
+    });
+
+    // ── a FIAÇÃO da 1.13, e por que ela precisa de asserção própria ───────────
+    // Medido em 24/08: arrancar UM hunk — o argumento `catalog` desta chamada —
+    // mata a recarga de catálogo em produção, e TUDO continua verde. O parâmetro é
+    // opcional no construtor, então compila; `create()` já era chamado por este
+    // teste, mas ninguém verificava o que ele MONTA; e o guardian da fase mede por
+    // PEÇA, não por hunk, então o sobrevivente não vira exit != 0.
+    //
+    // `create()` é o ÚNICO caminho que produção roda. Sem esta asserção, a task
+    // 1.13 inteira pode ser desfeita por uma linha, em silêncio.
+    it('create() FIA o refresher de catálogo no controller (task 1.13, hunk que sobrevivia)', async () => {
+      process.env.CLICKUP_API_TOKEN = 'tok-ok';
+      mockFieldResolverFromList.mockResolvedValueOnce({} as unknown as ClickUpFieldResolver);
+
+      const ctrl = await ClickUpPatientWebhookController.create();
+      const fiado = (ctrl as unknown as { catalog?: unknown }).catalog;
+
+      // não basta existir: tem de ser o refresher, e tem de saber recarregar
+      expect(fiado).toBeDefined();
+      expect(typeof (fiado as { ensureFreshFor?: unknown })?.ensureFreshFor).toBe('function');
 
       delete process.env.CLICKUP_API_TOKEN;
     });

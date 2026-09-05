@@ -80,10 +80,17 @@ async function main(): Promise<void> {
   }
 
   // 3. Executa o UseCase de produção
-  const { PatientService } = await import('@modules/case');
+  const {
+    PatientService, PatientSourceLabelRepository, PatientInsuranceVerifiedRepository, PatientDeviceTypeRepository,
+  } = await import('@modules/case');
+  // Spec 012 T001c: mesmas deps do webhook (ClickUpPatientWebhookController) — o caminho de
+  // produção precisa gravar cru, cobertura múltipla e dispositivo também na ressincronização manual.
   const useCase = new SyncPatientFromClickUpTaskUseCase({
     mapper,
-    patientService: new PatientService(),
+    patientService:        new PatientService(),
+    sourceLabelRepository: new PatientSourceLabelRepository(),
+    insuranceRepository:   new PatientInsuranceVerifiedRepository(),
+    deviceTypeRepository:  new PatientDeviceTypeRepository(),
   });
   const result = await useCase.execute(task);
   console.log(`${TAG} RESULTADO: ${JSON.stringify(result, null, 2)}`);
