@@ -39,25 +39,37 @@ function taskWith(fields: ClickUpTaskCustomField[]): ClickUpTask {
   } as unknown as ClickUpTask;
 }
 
-describe('ClickUpPatientMapper.resolvePatologiaLabel (spec 016 F4)', () => {
-  it('devolve o rótulo quando "Tipo de Patología" está preenchido', () => {
+describe('ClickUpPatientMapper.readPatologia (spec 016 F4 + I3)', () => {
+  it('devolve a LEITURA com o rótulo quando "Tipo de Patología" está preenchido', () => {
     const mapper = new ClickUpPatientMapper(resolverFalso());
     const task = taskWith([{ id: 'cf1', name: PATOLOGIA, value: 0 } as ClickUpTaskCustomField]);
 
-    expect(mapper.resolvePatologiaLabel(task)).toBe('Trastorno del Espectro Autista');
+    expect(mapper.readPatologia(task)).toMatchObject({
+      readable: true, labels: ['Trastorno del Espectro Autista'], requested: 1, resolved: 1,
+    });
   });
 
-  it('devolve null quando o campo está VAZIO (ninguém preencheu) — ausência legítima', () => {
+  it('leitura VAZIA quando o campo está vazio (ninguém preencheu) — ausência legítima', () => {
     const mapper = new ClickUpPatientMapper(resolverFalso());
     const task = taskWith([{ id: 'cf1', name: PATOLOGIA, value: null } as ClickUpTaskCustomField]);
 
-    expect(mapper.resolvePatologiaLabel(task)).toBeNull();
+    expect(mapper.readPatologia(task)).toMatchObject({ readable: true, labels: [], requested: 0 });
   });
 
-  it('devolve null quando a tarefa não tem o custom field — nunca lança', () => {
+  it('leitura VAZIA quando a tarefa não tem o custom field — nunca lança', () => {
     const mapper = new ClickUpPatientMapper(resolverFalso());
     const task = taskWith([]);
 
-    expect(mapper.resolvePatologiaLabel(task)).toBeNull();
+    expect(mapper.readPatologia(task)).toMatchObject({ readable: true, labels: [], requested: 0 });
+  });
+
+  it('I3: opção que NÃO resolve é ILEGÍVEL, não vazio (o `null` de duas caras, D167)', () => {
+    const mapper = new ClickUpPatientMapper(resolverFalso());
+    // orderindex 99 não existe em OPCOES: a origem MANDOU valor e o catálogo não traduziu.
+    const task = taskWith([{ id: 'cf1', name: PATOLOGIA, value: 99 } as ClickUpTaskCustomField]);
+
+    expect(mapper.readPatologia(task)).toMatchObject({
+      readable: false, reason: 'options_unresolved', requested: 1, resolved: 0,
+    });
   });
 });

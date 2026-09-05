@@ -117,10 +117,10 @@ describe('spec 016 F4 — SyncPatientFromClickUpTaskUseCase sincroniza o diagnó
     expect(b.erros.length).toBeGreaterThan(0);
   });
 
-  it('quando resolvePatologiaLabel FALHA (preflight do mapper): loga stage=read e NÃO chama syncFromLabel', async () => {
+  it('quando readPatologia FALHA (preflight do mapper): loga stage=read e NÃO chama syncFromLabel', async () => {
     const syncFromLabel = jest.fn().mockResolvedValue({ kind: 'synced', outcome: 'created' });
     const b = bancada({ syncFromLabel });
-    jest.spyOn(b.deps.mapper, 'resolvePatologiaLabel').mockImplementation(() => {
+    jest.spyOn(b.deps.mapper, 'readPatologia').mockImplementation(() => {
       throw new Error('catálogo mudou no meio da requisição');
     });
 

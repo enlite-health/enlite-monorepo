@@ -85,9 +85,14 @@ function respostaDoCatalogo(campos: readonly ClickUpCatalogField[]) {
       name: f.name,
       type: f.type,
       type_config:
-        f.type === 'drop_down' || f.type === 'labels'
-          ? { options: [{ id: `op-${i}`, name: `OPCAO-SINTETICA-${i}`, orderindex: 1 }] }
-          : {},
+        // I4: o campo da equipe precisa das opções REAIS ('No'/'Sí'), porque `isTeam` passou a
+        // ser decidido pelo RÓTULO resolvido — e não mais pela serialização do valor. Para os
+        // demais, uma opção sintética no orderindex 1 basta (nada aqui lê o rótulo deles).
+        f.name === 'Equipo Tratante Multidisciplinario'
+          ? { options: [{ id: 'op-eq-0', name: 'No', orderindex: 0 }, { id: 'op-eq-1', name: 'Sí', orderindex: 1 }] }
+          : f.type === 'drop_down' || f.type === 'labels'
+            ? { options: [{ id: `op-${i}`, name: `OPCAO-SINTETICA-${i}`, orderindex: 1 }] }
+            : {},
     })),
   };
 }
@@ -196,6 +201,13 @@ function nomesPedidosNoFonte(comPadroesDeSlot = true): string[] {
     /cf\['([^']+)'\]/g,          // cf['Nombre de Paciente']
     /f\.name === '([^']+)'/g,    // extractCaseNumber
     /resolveDropdown\(\s*'([^']+)'/g,
+    // I3 — LEITOR NOVO. `readPatologia` passou a ler o catálogo por `resolveCatalogValue`
+    // (o helper de três estados) em vez de `resolveDropdown` cru, e o nome do custom field
+    // ali vem da CONSTANTE `PATOLOGIA_FIELD_NAME` — logo `cf['<literal>']` também não o vê.
+    // Sem este padrão, `Tipo de Patología` sumia do conjunto colhido e a régua acusava um
+    // campo "declarado que ninguém pede". É exatamente o cenário que o cabeçalho da trava de
+    // deriva da 1.11 antecipa: um 3º nome de função de leitura exige uma regra própria.
+    /resolveCatalogValue\(\s*[^,]+,\s*'([^']+)'/g,
     ...(comPadroesDeSlot ? PADROES_DE_SLOT : []),
   ];
   const out = new Set<string>();
@@ -401,7 +413,12 @@ describe('1.12 (a) — o 8º campo dispara o preflight como os outros 7', () => 
       { name: 'Nombre de Paciente', value: 'NOME-SINTETICO' },
       { name: 'Apellido del Paciente', value: 'SOBRENOME-SINTETICO' },
       { name: 'Profesional Tratante Principal', value: 'PROF-SINTETICO' },
-      { name: CAMPO_DA_EQUIPE, value: 'true', type: 'drop_down' },
+      // I4: o payload REAL de um `drop_down` é o ORDERINDEX da opção. `'true'` (que estava
+      // aqui) não é payload válido — o `expect(isTeam).toBe(true)` abaixo passava pelo ramo
+      // `asString(v) === 'true'` do leitor de checkbox, uma forma que não existe no ClickUp.
+      // `respostaDoCatalogo` dá a este campo uma opção sintética no orderindex 1; para o
+      // mapper decidir `isTeam`, o rótulo dessa opção tem de ser 'Sí' (ver `catalogoComEquipoSi`).
+      { name: CAMPO_DA_EQUIPE, value: 1, type: 'drop_down' },
     ]);
 
     const out = mapper.map(t)!;

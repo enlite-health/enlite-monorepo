@@ -337,90 +337,69 @@ describe('D8 — teto de limit (Postgres real)', () => {
 });
 
 /**
- * C1 (D261, F1.5) — leitura RELEASE-AWARE: `getByUri`/`ancestorsOf` aceitam `asOfRelease?`.
+ * 🔧 F5-CORREÇÃO T2 (QA-caça, 05/09/2026) — IDENTIDADE DE CONCEITO ESTÁVEL ENTRE RELEASES.
  *
- * PROVADO EM TRANSAÇÃO (o pedido do CTO, literal): ingere/semeia dois releases, promove o NOVO
- * SEM um código do release antigo (`ENTITY_ORPHAN` — simula um código aposentado pela OMS), e
- * mostra que `getByUri(uri)` (sem argumento — release corrente) devolve `null` MAS
- * `getByUri(uri, RELEASE_OLD)` devolve a entidade. Roda nos DOIS adaptadores — se só passasse no
- * real, a abstração vazaria (mesmo espírito do "Contrato de arquitetura").
+ * Este describe substitui o do C1 (`asOfRelease`), removido junto com o parâmetro — ver o
+ * COMMENT do `TerminologyPort` para o porquê (T3).
  *
- * `InMemoryTerminology` ganha um 2º parâmetro opcional (`{ currentRelease }`) SÓ para este teste
- * ter um equivalente honesto: o fake nunca teve noção de release corrente (documentado no D2
- * acima) porque nenhum teste antes deste precisava. Backward-compat: sem esse parâmetro, o fake
- * se comporta EXATAMENTE como antes (nenhum teste existente passa `currentRelease`).
+ * O que se prova aqui é o cenário REAL que quebrava, com as URIs REAIS da OMS (release encravado
+ * no path, como a migration 327 gravou no mapa do ClickUp): ingere `2026-01` e `2027-01` do MESMO
+ * conceito, promove o `2027-01`, e mostra que a URI guardada em `2026-01` — a que o mapa do
+ * ClickUp tem — CONTINUA resolvendo, agora para a linha do release vigente.
+ *
+ * Roda nos DOIS adaptadores: se só passasse no real, a abstração teria vazado.
  */
-describe('C1 — leitura release-aware: getByUri/ancestorsOf aceitam asOfRelease (D261)', () => {
-  const RELEASE_OLD = 'TEST-C1-OLD';
-  const RELEASE_NEW = 'TEST-C1-NEW';
+describe('T2 — a URI de um release ANTIGO continua resolvendo depois de promover (Postgres real + fake)', () => {
+  const RELEASE_OLD = 'TEST-T2-OLD';
+  const RELEASE_NEW = 'TEST-T2-NEW';
+  const uriEm = (release: string, id: string) => `http://id.who.int/icd/release/11/${release}/mms/${id}`;
 
-  const CHAPTER_OLD: DiagnosisEntity = {
-    uri: 'test://c1/chapter-old',
-    code: IcdCode.parse('77'),
-    titleEs: 'Capítulo de prueba (release antigo)',
-    titleEn: 'Test chapter (old release)',
-    chapter: '77',
-    release: RELEASE_OLD,
-    kind: 'chapter',
-    isLeaf: false,
-    parentUri: null,
-  };
-  const CHAPTER_NEW: DiagnosisEntity = {
-    uri: 'test://c1/chapter-new',
-    code: IcdCode.parse('77'),
-    titleEs: 'Capítulo de prueba (release nuevo)',
-    titleEn: 'Test chapter (new release)',
-    chapter: '77',
-    release: RELEASE_NEW,
-    kind: 'chapter',
-    isLeaf: false,
-    parentUri: null,
-  };
-  /** Existe SÓ no release antigo — simula um código que a OMS aposentou no release novo. */
-  const ENTITY_ORPHAN: DiagnosisEntity = {
-    uri: 'test://c1/orphan',
-    code: IcdCode.parse('ZO01'),
-    titleEs: 'Diagnóstico aposentado no release nuevo',
-    titleEn: 'Diagnosis retired in the new release',
-    chapter: '77',
-    release: RELEASE_OLD,
-    kind: 'stem',
-    isLeaf: true,
-    parentUri: CHAPTER_OLD.uri,
-  };
-  /** Sobrevive nos dois releases (mesmo uri) — controle: leitura sem asOfRelease continua igual. */
-  const ENTITY_SURVIVOR: DiagnosisEntity = {
-    uri: 'test://c1/survivor',
-    code: IcdCode.parse('ZS01'),
-    titleEs: 'Diagnóstico que sobrevive nos dois releases',
-    titleEn: 'Diagnosis that survives both releases',
-    chapter: '77',
-    release: RELEASE_NEW,
-    kind: 'stem',
-    isLeaf: true,
-    parentUri: CHAPTER_NEW.uri,
-  };
+  /** O conceito que o mapa do ClickUp aponta — publicado nos DOIS releases, com URI diferente. */
+  const CONCEITO_ID = '405565289/unspecified';
+  const CAP_ID = '900000001';
+  /** Aposentado de verdade no release novo — o único órfão HONESTO do cenário. */
+  const APOSENTADO_ID = '900000002';
 
-  async function seedC1Postgres(pool: Pool): Promise<void> {
+  function ent(id: string, release: string, code: string, kind: 'chapter' | 'stem'): DiagnosisEntity {
+    return {
+      uri: uriEm(release, id),
+      code: IcdCode.parse(code),
+      titleEs: `T2D ${code} (${release})`,
+      titleEn: null,
+      chapter: '88',
+      release,
+      kind,
+      isLeaf: kind === 'stem',
+      parentUri: null,
+    };
+  }
+
+  const LINHAS: DiagnosisEntity[] = [
+    ent(CAP_ID, RELEASE_OLD, '88', 'chapter'),
+    ent(CONCEITO_ID, RELEASE_OLD, 'ZT01', 'stem'),
+    ent(APOSENTADO_ID, RELEASE_OLD, 'ZT02', 'stem'),
+    ent(CAP_ID, RELEASE_NEW, '88', 'chapter'),
+    ent(CONCEITO_ID, RELEASE_NEW, 'ZT01', 'stem'),
+    // APOSENTADO_ID NÃO existe em RELEASE_NEW — é o órfão de verdade.
+  ];
+
+  async function seedT2(pool: Pool): Promise<void> {
     await pool.query(
-      `INSERT INTO terminology.icd_releases (release, entity_count) VALUES ($1, 2), ($2, 2)
+      `INSERT INTO terminology.icd_releases (release, entity_count) VALUES ($1, 3), ($2, 2)
        ON CONFLICT (release) DO NOTHING`,
       [RELEASE_OLD, RELEASE_NEW],
     );
-    const rows = [CHAPTER_OLD, CHAPTER_NEW, ENTITY_ORPHAN, ENTITY_SURVIVOR];
-    for (const e of rows) {
+    for (const e of LINHAS) {
       await pool.query(
         `INSERT INTO terminology.icd_entities (icd_uri, release, code, title_es, title_en, chapter, parent_uri, kind, is_leaf)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         ON CONFLICT (icd_uri, release) DO UPDATE SET
-           title_es = EXCLUDED.title_es, title_en = EXCLUDED.title_en, chapter = EXCLUDED.chapter,
-           parent_uri = EXCLUDED.parent_uri, kind = EXCLUDED.kind, is_leaf = EXCLUDED.is_leaf`,
+         ON CONFLICT (icd_uri, release) DO UPDATE SET title_es = EXCLUDED.title_es`,
         [e.uri, e.release, e.code.value, e.titleEs, e.titleEn, e.chapter, e.parentUri, e.kind, e.isLeaf],
       );
     }
   }
 
-  async function cleanupC1Postgres(pool: Pool): Promise<void> {
+  async function cleanupT2(pool: Pool): Promise<void> {
     await pool.query(`DELETE FROM terminology.icd_entities WHERE release IN ($1, $2)`, [RELEASE_OLD, RELEASE_NEW]);
     await pool.query(`DELETE FROM terminology.icd_releases WHERE release IN ($1, $2)`, [RELEASE_OLD, RELEASE_NEW]);
   }
@@ -430,67 +409,57 @@ describe('C1 — leitura release-aware: getByUri/ancestorsOf aceitam asOfRelease
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: DATABASE_URL });
-    await cleanupC1Postgres(pool);
-    await seedC1Postgres(pool);
+    await cleanupT2(pool);
+    await seedT2(pool);
     releaseCorrenteAntes = await currentRelease(pool);
-    // A ORDEM importa: promove OLD primeiro, depois NEW — reproduzindo exatamente o cenário do
-    // pedido ("promovido um release novo que não contém 6A02.Z"), não um estado já promovido.
+    // A ORDEM importa: o cenário é "estava em OLD e alguém promoveu NEW", não "já nasceu em NEW".
     await promoteAsCurrent(pool, RELEASE_OLD);
-    await promoteAsCurrent(pool, RELEASE_NEW); // RELEASE_NEW passa a ser o corrente
+    await promoteAsCurrent(pool, RELEASE_NEW);
   });
 
   afterAll(async () => {
-    await cleanupC1Postgres(pool);
+    await cleanupT2(pool);
     if (releaseCorrenteAntes) await promoteAsCurrent(pool, releaseCorrenteAntes);
     else await clearCurrent(pool);
     await pool.end();
   });
 
-  const c1Adapters: Array<[string, () => TerminologyPort]> = [
-    [
-      'fake em memória (InMemoryTerminology)',
-      () =>
-        new InMemoryTerminology([CHAPTER_OLD, CHAPTER_NEW, ENTITY_ORPHAN, ENTITY_SURVIVOR], {
-          currentRelease: RELEASE_NEW,
-        }),
-    ],
+  const t2Adapters: Array<[string, () => TerminologyPort]> = [
+    ['fake em memória (InMemoryTerminology)', () => new InMemoryTerminology(LINHAS.filter((e) => e.release === RELEASE_NEW))],
     ['adaptador real (IcdCatalogTerminology, Postgres)', () => new IcdCatalogTerminology()],
   ];
 
-  describe.each(c1Adapters)('%s', (_label, factory) => {
+  describe.each(t2Adapters)('%s', (_label, factory) => {
     let port: TerminologyPort;
-
     beforeEach(() => {
       port = factory();
     });
 
-    it('getByUri(uri) sob o release CORRENTE (novo) devolve null para código que saiu — a promessa quebrada da spec, reproduzida', async () => {
-      const current = await port.getByUri(ENTITY_ORPHAN.uri);
-      expect(current).toBeNull();
+    it('a URI guardada no release ANTIGO (a do mapa do ClickUp) resolve — antes devolvia null', async () => {
+      const entity = await port.getByUri(uriEm(RELEASE_OLD, CONCEITO_ID));
+      expect(entity).not.toBeNull();
+      expect(entity?.code.value).toBe('ZT01');
     });
 
-    it('getByUri(uri, releaseAntigo) AINDA encontra o código, mesmo com outro release corrente — a prova do conserto', async () => {
-      const historical = await port.getByUri(ENTITY_ORPHAN.uri, RELEASE_OLD);
-      expect(historical).not.toBeNull();
-      expect(historical?.release).toBe(RELEASE_OLD);
-      expect(historical?.code.value).toBe(ENTITY_ORPHAN.code.value);
-      expect(historical?.code).toBeInstanceOf(IcdCode);
+    it('o que volta é a linha do release VIGENTE, não a antiga — o diagnóstico nasce atual', async () => {
+      const entity = await port.getByUri(uriEm(RELEASE_OLD, CONCEITO_ID));
+      expect(entity?.release).toBe(RELEASE_NEW);
+      expect(entity?.uri).toBe(uriEm(RELEASE_NEW, CONCEITO_ID));
     });
 
-    it('getByUri(uri) sem asOfRelease continua igual ao comportamento de hoje (retrocompatível) para código que sobrevive', async () => {
-      const current = await port.getByUri(ENTITY_SURVIVOR.uri);
-      expect(current).not.toBeNull();
-      expect(current?.release).toBe(RELEASE_NEW);
+    it('ancestorsOf com a URI antiga resolve o capítulo do release vigente', async () => {
+      const { chapter } = await port.ancestorsOf(uriEm(RELEASE_OLD, CONCEITO_ID));
+      expect(chapter.code).toBe('88');
+      expect(chapter.title).toBe(`T2D 88 (${RELEASE_NEW})`);
     });
 
-    it('ancestorsOf(uri, releaseAntigo) resolve o capítulo do release HISTÓRICO, mesmo não sendo o corrente', async () => {
-      const { chapter } = await port.ancestorsOf(ENTITY_ORPHAN.uri, RELEASE_OLD);
-      expect(chapter.code).toBe('77');
-      expect(chapter.title).toBe(CHAPTER_OLD.titleEs);
+    it('conceito APOSENTADO de verdade continua não resolvendo — a normalização não inventa entidade', async () => {
+      expect(await port.getByUri(uriEm(RELEASE_OLD, APOSENTADO_ID))).toBeNull();
+      expect(await port.getByUri(uriEm(RELEASE_NEW, APOSENTADO_ID))).toBeNull();
     });
 
-    it('ancestorsOf(uri) SEM asOfRelease lança para código inalcançável no release corrente (nunca inventa capítulo)', async () => {
-      await expect(port.ancestorsOf(ENTITY_ORPHAN.uri)).rejects.toThrow();
+    it('URI de um conceito que nunca existiu continua null (controle negativo)', async () => {
+      expect(await port.getByUri(uriEm(RELEASE_NEW, '000000000'))).toBeNull();
     });
   });
 });

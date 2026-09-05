@@ -48,7 +48,7 @@ const POSTCOORD: DiagnosisEntity = {
 };
 
 function terminology(): InMemoryTerminology {
-  return new InMemoryTerminology([CHAPTER, AUTISM_A, AUTISM_B, POSTCOORD], { currentRelease: 'TEST-PD-E2E' });
+  return new InMemoryTerminology([CHAPTER, AUTISM_A, AUTISM_B, POSTCOORD]);
 }
 
 describe('patient_diagnoses — Postgres real, porta fake (spec 016 F2) @integration', () => {
@@ -145,7 +145,6 @@ describe('patient_diagnoses — Postgres real, porta fake (spec 016 F2) @integra
           { ...AUTISM_A, uri: `${AUTISM_A.uri}-r${i}`, code: IcdCode.parse(`6A0${i % 10}.A`) },
           { ...AUTISM_B, uri: `${AUTISM_B.uri}-r${i}`, code: IcdCode.parse(`6A0${i % 10}.B`) },
         ],
-        { currentRelease: 'TEST-PD-E2E' },
       );
       const roundRecord = new RecordPatientDiagnosis(roundTerm, repo);
       const a = await roundRecord.execute({ patientId, conceptUri: `${AUTISM_A.uri}-r${i}`, actorUid: 'e2e-test' });

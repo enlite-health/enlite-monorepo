@@ -750,6 +750,9 @@ describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () 
     specialty: { 3: 'AT para Pacientes con Trastornos Psiquiátricos' },
     service: { 4: 'Acompañante Terapéutico' },
     relationship: { 5: 'Pareja' },
+    // I4: o campo da equipe é `drop_down` no catálogo vivo — o valor é ORDERINDEX, e a
+    // fixture antiga mandava `false` (payload de checkbox, que não existe para ele).
+    equipo: { 0: 'No', 1: 'Sí' },
   } as const;
 
   const comprehensiveResolver = makeResolver({
@@ -760,6 +763,7 @@ describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () 
     'Segmentos Clínicos':                       DROPDOWN_INDEXES.specialty as Record<number, string>,
     'Servicio':                                 DROPDOWN_INDEXES.service as Record<number, string>,
     'Relación con el Paciente':                 DROPDOWN_INDEXES.relationship as Record<number, string>,
+    'Equipo Tratante Multidisciplinario':       DROPDOWN_INDEXES.equipo as Record<number, string>,
   });
 
   const comprehensiveMapper = new ClickUpPatientMapper(comprehensiveResolver);
@@ -794,8 +798,9 @@ describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () 
         { name: 'Número ID Afiliado Paciente',                value: '12345678' },
         // Operational identifier
         { name: 'Caso Número',                                value: '766' },
-        // Multidisciplinary team flag
-        { name: 'Equipo Tratante Multidisciplinario',         value: false },
+        // Multidisciplinary team flag — I4: orderindex da opção "No" (drop_down real),
+        // não o `false` de checkbox que a fixture usava e que o ClickUp nunca manda aqui.
+        { name: 'Equipo Tratante Multidisciplinario',         value: 0 },
         // Responsible
         { name: 'Nombre de Responsable',                      value: 'Andres' },
         { name: 'Apellido del Responsable',                   value: 'Rodriguez' },
@@ -929,11 +934,19 @@ describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () 
     const MAPPER_OUTPUT_KEYS = [
       'clickupTaskId',
       'firstName', 'lastName', 'birthDate',
-      'documentType', 'documentNumber',
-      'sex', 'phoneWhatsapp',
+      'documentType',
+      // I2 — as 4 bandeiras irmãs de `clinicalSpecialtyReadable`, agora nos campos que
+      // ficaram de fora: `Dependencia`, `Sexo`, `Tipo de Documento Paciente` e `Servicio`
+      // liam `resolveDropdown` CRU, e a opção que deixava de resolver virava `null` gravado
+      // como APAGAMENTO (348 linhas de dependency_level, 185 de sex, 349 de service_type).
+      'documentTypeReadable',
+      'documentNumber',
+      'sex',
+      'sexReadable',
+      'phoneWhatsapp',
       'country',
       'status', 'caseNumber',
-      'diagnosis', 'dependencyLevel', 'clinicalSpecialty',
+      'diagnosis', 'dependencyLevel', 'dependencyLevelReadable', 'clinicalSpecialty',
       // Task 2.2/rodada 4 — a bandeira que separa "a origem não preencheu" (vazio legítimo,
       // e a D-E manda GRAVAR) de "a origem mandou e o catálogo não traduziu" (leitura
       // impossível, e gravar APAGA). Sem ela, `clinicalSpecialty: null` significava as duas
@@ -951,7 +964,7 @@ describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () 
       // diferente da cobertura: `patients.device_type` é derivado por trigger (migration 310),
       // e `PatientClinicalUpsertInput` nem aceita mais o campo (F64).
       'deviceTypeLabels',
-      'serviceType', 'additionalComments',
+      'serviceType', 'serviceTypeReadable', 'additionalComments',
       'hasCud', 'hasConsent', 'hasJudicialProtection',
       'healthInsuranceName', 'healthInsuranceMemberId',
       'responsibles', 'addresses', 'professionals',

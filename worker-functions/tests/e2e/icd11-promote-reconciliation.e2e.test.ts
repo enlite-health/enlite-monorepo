@@ -67,6 +67,9 @@ describe('C2 — --promote emite reconciliação por CONTAGEM (D261)', () => {
 
   afterAll(async () => {
     await cleanup();
+    await pool.query(`DELETE FROM clickup_diagnosis_labels WHERE label LIKE 'T2D-%'`);
+    await pool.query(`DELETE FROM patient_diagnoses WHERE created_by = 'T2D'`);
+    await pool.query(`DELETE FROM patients WHERE clickup_task_id LIKE 'T2D-%'`);
     if (releaseCorrenteAntes) {
       await pool.query(
         `UPDATE terminology.icd_releases SET is_current = false, promoted_at = NULL, promoted_by = NULL WHERE is_current = true`,
@@ -82,6 +85,24 @@ describe('C2 — --promote emite reconciliação por CONTAGEM (D261)', () => {
   async function cleanup(): Promise<void> {
     await pool.query(`DELETE FROM terminology.icd_entities WHERE release IN ($1, $2)`, [RELEASE_OLD, RELEASE_NEW]);
     await pool.query(`DELETE FROM terminology.icd_releases WHERE release IN ($1, $2)`, [RELEASE_OLD, RELEASE_NEW]);
+  }
+
+
+  /** Paciente + diagnóstico ATIVO apontando para um conceito que o release novo não tem. */
+  async function seedPacienteComDiagnosticoOrfao(): Promise<string> {
+    const { rows } = await pool.query<{ id: string }>(
+      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status)
+       VALUES ('T2D-promote-recon', 'T2D', 'Reconciliacion QA', 'AR', 'ACTIVE') RETURNING id`,
+    );
+    const patientId = rows[0].id;
+    await pool.query(
+      `INSERT INTO patient_diagnoses
+         (patient_id, terminology_system, concept_uri, concept_code, concept_title, concept_language,
+          concept_group, catalog_release, source, is_primary, created_by, updated_by)
+       VALUES ($1, 'ICD-11', $2, 'ZO01', 'T2D titulo sintetico', 'es', '88', $3, 'PANEL', true, 'T2D', 'T2D')`,
+      [patientId, ENTITY_ORPHAN_A_URI, RELEASE_OLD],
+    );
+    return patientId;
   }
 
   beforeEach(() => {
@@ -103,15 +124,129 @@ describe('C2 — --promote emite reconciliação por CONTAGEM (D261)', () => {
     expect(reconciliation.orphanedEntityCount).toBe(2);
   });
 
-  it('tabela patient_diagnoses AINDA NÃO EXISTE (é F2) — a consulta é CONDICIONAL e não quebra', async () => {
+  /**
+   * 🔧 F5-CORREÇÃO T1/T4 (QA-caça, 05/09/2026).
+   *
+   * A versão anterior deste teste afirmava `to_regclass('public.patient_diagnoses') === null`
+   * ("é F2, ainda não existe nesta fase"). A F2 chegou e a tabela EXISTE — o teste estava
+   * VERMELHO por premissa vencida, e era justamente a guarda `to_regclass` que mantinha o T1
+   * (`42703 column pd.release does not exist`) DORMENTE. Agora o cenário é o real: a tabela
+   * existe, tem uma linha órfã, e `--promote` tem de atravessar.
+   */
+  it('T1 — com patient_diagnoses EXISTINDO e com órfão, --promote atravessa (era 42703 → ROLLBACK → is_current parado)', async () => {
     const regclass = await pool.query<{ reg: string | null }>(
       `SELECT to_regclass('public.patient_diagnoses')::text AS reg`,
     );
-    expect(regclass.rows[0]?.reg).toBeNull(); // pré-condição do teste: tabela realmente ausente
+    expect(regclass.rows[0]?.reg).not.toBeNull(); // pré-condição REAL desta fase
 
-    const reconciliation = await promote(pool, RELEASE_OLD, 'test-c2-back'); // promove de volta, gera reconciliação de novo
-    expect(reconciliation.patientDiagnosesTableExists).toBe(false);
-    expect(reconciliation.affectedPatientCount).toBeNull(); // "não verificado", nunca 0 (0 mentiria "verificado e limpo")
+    const patientId = await seedPacienteComDiagnosticoOrfao();
+    try {
+      const reconciliation = await promote(pool, RELEASE_NEW, 'test-t1');
+
+      expect(reconciliation.patientDiagnosesTableExists).toBe(true);
+      expect(reconciliation.affectedPatientCount).toBeGreaterThanOrEqual(1);
+
+      // A prova de que a promoção ATRAVESSOU: is_current de fato se moveu (antes o 42703 dentro
+      // da transação levava tudo no ROLLBACK e `is_current` não saía do lugar).
+      const { rows } = await pool.query<{ release: string }>(
+        `SELECT release FROM terminology.icd_releases WHERE is_current = true`,
+      );
+      expect(rows[0]?.release).toBe(RELEASE_NEW);
+    } finally {
+      await pool.query('DELETE FROM patient_diagnoses WHERE patient_id = $1', [patientId]);
+      await pool.query('DELETE FROM patients WHERE id = $1', [patientId]);
+      await promote(pool, RELEASE_OLD, 'test-t1-back');
+    }
+  });
+
+  /**
+   * 🔧 F5-CORREÇÃO T4 — a reconciliação NÃO olhava `clickup_diagnosis_labels`. Na prova do
+   * QA-caça ela imprimiu "55 entidades ausentes" sem uma palavra sobre o mapa quebrado, que é
+   * justamente o que fica MUDO em produção (log `info`, webhook 200, zero linha de rejeição).
+   *
+   * A contagem é auto-calibrada: mede a linha de base ANTES de semear, para não depender de
+   * quantos mapeamentos reais a 327 deixou no banco.
+   */
+  it('T4 — a reconciliação CONTA os mapeamentos do ClickUp que deixariam de resolver', async () => {
+    const base = await promote(pool, RELEASE_NEW, 'test-t4-base');
+    expect(base.clickupLabelTableExists).toBe(true);
+    const linhaDeBase = base.brokenClickupMappingCount!;
+    await promote(pool, RELEASE_OLD, 'test-t4-back');
+
+    await pool.query(
+      `INSERT INTO clickup_diagnosis_labels (source, label, concept_uri, active) VALUES
+         ('clickup', 'T2D-mapa-vivo', $1, true),
+         ('clickup', 'T2D-mapa-morto', $2, true)
+       ON CONFLICT (source, label) DO UPDATE SET concept_uri = EXCLUDED.concept_uri, active = true`,
+      [ENTITY_SURVIVOR_URI, ENTITY_ORPHAN_A_URI],
+    );
+    try {
+      const r = await promote(pool, RELEASE_NEW, 'test-t4');
+      // Exatamente +1: o "morto" entra na conta, o "vivo" não.
+      expect(r.brokenClickupMappingCount).toBe(linhaDeBase + 1);
+    } finally {
+      await pool.query(`DELETE FROM clickup_diagnosis_labels WHERE label LIKE 'T2D-%'`);
+      await promote(pool, RELEASE_OLD, 'test-t4-back-2');
+    }
+  });
+
+  it('T4 — mapeamento INATIVO não conta (aposentar um mapeamento é uma decisão, não uma avaria)', async () => {
+    await pool.query(
+      `INSERT INTO clickup_diagnosis_labels (source, label, concept_uri, active) VALUES ('clickup', 'T2D-mapa-morto', $1, false)
+       ON CONFLICT (source, label) DO UPDATE SET concept_uri = EXCLUDED.concept_uri, active = false`,
+      [ENTITY_ORPHAN_A_URI],
+    );
+    try {
+      const comInativo = await promote(pool, RELEASE_NEW, 'test-t4-inativo');
+      await promote(pool, RELEASE_OLD, 'test-t4-inativo-back');
+      await pool.query(`DELETE FROM clickup_diagnosis_labels WHERE label LIKE 'T2D-%'`);
+      const semNada = await promote(pool, RELEASE_NEW, 'test-t4-sem');
+
+      expect(comInativo.brokenClickupMappingCount).toBe(semNada.brokenClickupMappingCount);
+    } finally {
+      await pool.query(`DELETE FROM clickup_diagnosis_labels WHERE label LIKE 'T2D-%'`);
+      await promote(pool, RELEASE_OLD, 'test-t4-inativo-back-2');
+    }
+  });
+
+  /**
+   * 🔧 T2 — a comparação de órfão passou a ser por `concept_key`. Este teste é o CONTROLE
+   * POSITIVO da correção: com URIs que carregam o release no path (as reais da OMS), comparar
+   * por `icd_uri` daria "todos órfãos"; por `concept_key` dá zero.
+   */
+  it('T2 — URIs com o release ENCRAVADO no path não viram órfão falso (por icd_uri daria 100%)', async () => {
+    const RELEASE_A = 'TEST-C2-URI-A';
+    const RELEASE_B = 'TEST-C2-URI-B';
+    const uriEm = (rel: string, id: string) => `http://id.who.int/icd/release/11/${rel}/mms/${id}`;
+    try {
+      await upsertEntities(pool, RELEASE_A, [
+        entity({ icdUri: uriEm(RELEASE_A, '1'), code: 'ZU01' }),
+        entity({ icdUri: uriEm(RELEASE_A, '2'), code: 'ZU02' }),
+      ]);
+      await upsertEntities(pool, RELEASE_B, [
+        entity({ icdUri: uriEm(RELEASE_B, '1'), code: 'ZU01' }),
+        entity({ icdUri: uriEm(RELEASE_B, '2'), code: 'ZU02' }),
+      ]);
+      await promote(pool, RELEASE_A, 'test-uri-a');
+      const r = await promote(pool, RELEASE_B, 'test-uri-b');
+
+      // Os 2 conceitos existem nos DOIS releases — só a URI mudou. Zero órfãos.
+      expect(r.orphanedEntityCount).toBe(0);
+
+      // Controle: a comparação ANTIGA (por icd_uri) teria dito 2 de 2.
+      const { rows } = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM terminology.icd_entities old_e
+          WHERE old_e.release = $1
+            AND NOT EXISTS (SELECT 1 FROM terminology.icd_entities new_e
+                             WHERE new_e.release = $2 AND new_e.icd_uri = old_e.icd_uri)`,
+        [RELEASE_A, RELEASE_B],
+      );
+      expect(Number(rows[0].count)).toBe(2);
+    } finally {
+      await pool.query(`DELETE FROM terminology.icd_entities WHERE release IN ($1, $2)`, [RELEASE_A, RELEASE_B]);
+      await pool.query(`DELETE FROM terminology.icd_releases WHERE release IN ($1, $2)`, [RELEASE_A, RELEASE_B]);
+      await promote(pool, RELEASE_OLD, 'test-uri-back');
+    }
   });
 
   it('🔴 CONTAGEM APENAS: o stdout de --promote NUNCA imprime título/código clínico — só números', async () => {
