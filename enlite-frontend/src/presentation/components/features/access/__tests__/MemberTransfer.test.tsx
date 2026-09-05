@@ -59,6 +59,24 @@ describe('MemberTransfer — a fronteira do grupo', () => {
     podeEscrever();
   });
 
+  it('🔒 `Resto del equipo` fica à ESQUERDA e `Miembros` à DIREITA', () => {
+    // pedido do Gabriel (05/09). Sem esta asserção a troca passa despercebida:
+    // os testes de comportamento acham as colunas por nome, não por posição.
+    montar();
+    const listas = screen.getAllByRole('listbox').map((l) => l.getAttribute('aria-label'));
+    expect(listas).toEqual([RESTO, MIEMBROS]);
+  });
+
+  it('🔒 a seta → leva para Miembros e a ← devolve ao resto — a direção segue o lado', () => {
+    // com as colunas trocadas, uma seta apontando para o lado contrário do
+    // movimento seria pior que antes
+    montar();
+    const grade = screen.getByTestId('member-transfer');
+    const ordem = [...grade.querySelectorAll('[role="listbox"], button[aria-label^="admin.access.group.transfer.to"]')]
+      .map((e) => e.getAttribute('aria-label'));
+    expect(ordem).toEqual([RESTO, PARA_DENTRO, PARA_FORA, MIEMBROS]);
+  });
+
   it('parte quem está dentro de quem está fora, ordenado por nome', () => {
     montar();
     expect(nomesEm(MIEMBROS).join(' ')).toContain('Ana Joulie');

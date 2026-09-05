@@ -147,15 +147,19 @@ export function MemberTransfer({
         onChange={(e) => setFilter(e.target.value)}
       />
 
+      {/* `Resto del equipo` à ESQUERDA e `Miembros` à DIREITA (pedido do Gabriel,
+          05/09). A direção das setas continua literal: → empurra da esquerda
+          para a direita, que agora é ENTRAR no grupo; ← devolve ao resto. Antes,
+          com as colunas trocadas, a seta apontava para o lado contrário do
+          movimento que ela fazia. */}
       <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-start" data-clarity-mask="True">
         <Column
-          label={t('admin.access.group.membersTitle')}
-          people={membros}
+          label={t('admin.access.group.transfer.rest')}
+          people={resto}
           picked={picked}
-          active={side === 'in'}
-          lockedIds={lockedIds}
-          emptyKey="admin.access.group.noMembers"
-          onToggle={(uid) => alternar(uid, 'in')}
+          active={side === 'out'}
+          emptyKey="admin.access.group.transfer.allInside"
+          onToggle={(uid) => alternar(uid, 'out')}
         />
 
         <div className="flex flex-col gap-2 pt-7">
@@ -182,12 +186,13 @@ export function MemberTransfer({
         </div>
 
         <Column
-          label={t('admin.access.group.transfer.rest')}
-          people={resto}
+          label={t('admin.access.group.membersTitle')}
+          people={membros}
           picked={picked}
-          active={side === 'out'}
-          emptyKey="admin.access.group.transfer.allInside"
-          onToggle={(uid) => alternar(uid, 'out')}
+          active={side === 'in'}
+          lockedIds={lockedIds}
+          emptyKey="admin.access.group.noMembers"
+          onToggle={(uid) => alternar(uid, 'in')}
         />
       </div>
 
