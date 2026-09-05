@@ -353,9 +353,19 @@ export class ClickUpPatientWebhookController {
     });
     const syncResult = await useCase.execute(task, { onMissingContact: 'flag' }, correlationId);
 
+    // `kind: 'ERROR'` significa que NADA foi gravado — o caso vivo é a guarda fail-closed da 1.11
+    // recusando a task inteira quando um campo do catálogo do ClickUp foi renomeado. Responder
+    // `success: true` aqui fazia o webhook afirmar que a task tinha sido sincronizada: para o
+    // ClickUp e para qualquer monitor que leia o corpo, verde — e só uma linha de log denunciava.
+    // O HTTP continua 200 DE PROPÓSITO, como em `fetch_failed` e `catalog_stale`: um 5xx faria o
+    // ClickUp reentregar em tempestade um erro que retry nenhum conserta (campo renomeado só sai
+    // com intervenção humana). A verdade vai no corpo, que é onde alguém pode agir sobre ela.
+    // ⚠️ `syncResult.error.message` NÃO entra na resposta: ele pode carregar rótulo clínico.
+    const falhou = syncResult.kind === 'ERROR';
+
     res.status(200).json({
-      success: true,
-      action:  'synced',
+      success: !falhou,
+      action:  falhou ? 'sync_failed' : 'synced',
       result:  { kind: syncResult.kind, taskId: syncResult.taskId },
     });
   }

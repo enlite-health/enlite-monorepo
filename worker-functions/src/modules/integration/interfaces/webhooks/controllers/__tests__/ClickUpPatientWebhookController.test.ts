@@ -248,8 +248,36 @@ describe('ClickUpPatientWebhookController', () => {
     expect(mockUseCaseExecute).toHaveBeenCalledWith(task, { onMissingContact: 'flag' }, expect.any(String));
     expect(statusCode()).toBe(200);
     const b = body() as Record<string, unknown>;
+    expect(b.success).toBe(true);
     expect(b.action).toBe('synced');
     expect((b.result as Record<string, unknown>).kind).toBe('CREATED');
+  });
+
+  // Sync que ERROU não pode sair com `success: true`. O caso real: um campo renomeado no ClickUp
+  // faz a guarda fail-closed da 1.11 recusar a task inteira — nada é gravado, e o webhook
+  // respondia `{"success":true,"action":"synced"}`. Para o ClickUp e para qualquer monitor que
+  // olhe o corpo, a task tinha sido sincronizada; só uma linha de log denunciava.
+  // O 200 é preservado de propósito (o padrão da casa em `fetch_failed` e `catalog_stale`):
+  // devolver 5xx faria o ClickUp reentregar em tempestade um erro que o retry não conserta.
+  it('sync com kind=ERROR responde success:false e action=sync_failed, mantendo HTTP 200', async () => {
+    const task = makeClickUpTask();
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => task });
+    mockUseCaseExecute.mockResolvedValueOnce({
+      kind: 'ERROR', taskId: 'task-err', error: new Error('catálogo ilegível'),
+    });
+
+    const req = makeMockReq(makeValidBody({ list_id: PATIENT_LIST_ID }));
+    const { res, statusCode, body } = makeMockRes();
+
+    await controller.handle(req as Request, res as Response);
+
+    expect(statusCode()).toBe(200);
+    const b = body() as Record<string, unknown>;
+    expect(b.success).toBe(false);
+    expect(b.action).toBe('sync_failed');
+    expect((b.result as Record<string, unknown>).kind).toBe('ERROR');
+    // A mensagem do erro NÃO sai no corpo: ela pode carregar rótulo clínico.
+    expect(JSON.stringify(b)).not.toContain('catálogo ilegível');
   });
 
   // ─────────────────────────────────────────────────────────────────
