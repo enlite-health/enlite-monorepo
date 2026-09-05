@@ -1,5 +1,6 @@
 export { Gated } from './Gated';
 export { ReadOnlyField } from './ReadOnlyField';
+export { CampoEditavel } from './CampoEditavel';
 export { ActionButton } from './ActionButton';
 export { PanelErrorAlert } from './PanelErrorAlert';
 export { FeatureGate } from './FeatureGate';
