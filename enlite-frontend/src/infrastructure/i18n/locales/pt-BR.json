@@ -3300,7 +3300,7 @@
         "archiveYes": "Sim, arquivar",
         "archiveNo": "Não",
         "archived": "Grupo arquivado.",
-        "cellsTitle": "Células (recurso:ação)",
+        "cellsTitle": "O que este grupo pode fazer?",
         "cellsSave": "Salvar células",
         "reason": "Motivo",
         "reasonPlaceholder": "Por que muda (fica na trilha)",
@@ -3334,6 +3334,57 @@
           "unsaved": "Alterações não salvas",
           "locked": "Último gestor do time: não dá para tirar.",
           "allInside": "O time inteiro já é membro."
+        },
+        "cells": {
+          "about": "Sobre o quê",
+          "na": "não existe",
+          "changed": "alterado, não salvo",
+          "empty": "O catálogo ainda não foi sincronizado.",
+          "clean": "Sem alterações",
+          "pending": "+{{added}} · −{{removed}} · afeta {{people}} pessoa(s)",
+          "action": {
+            "read": "Ver",
+            "write": "Criar e editar",
+            "delete": "Excluir",
+            "export": "Exportar",
+            "other": "Outras"
+          },
+          "category": {
+            "Trabalhadores": "Trabalhadores",
+            "Vagas e Funil": "Vagas e funil",
+            "Pacientes": "Pacientes",
+            "Recrutamento": "Recrutamento",
+            "Analytics": "Analytics",
+            "Operações": "Operações",
+            "Comunicação": "Comunicação",
+            "Importação": "Importação",
+            "Administração": "Administração",
+            "Não categorizado": "Sem categoria"
+          },
+          "resource": {
+            "worker": "Prestador em operação",
+            "worker_contact": "Contato: nome e telefone",
+            "worker_pii": "Dossiê: documento, endereço, dados sensíveis",
+            "worker_document": "Documentos do prestador",
+            "vacancy": "Vagas",
+            "funnel": "Funil",
+            "interview": "Entrevistas",
+            "match": "Matching",
+            "patient": "Pacientes",
+            "recruitment": "Recrutamento",
+            "talentum": "Talentum",
+            "prescreening": "Pré-seleção",
+            "analytics": "Analytics",
+            "dedup": "Duplicados",
+            "dashboard": "Painel",
+            "integration": "Integrações",
+            "test_fixtures": "Dados de teste",
+            "api_docs": "Documentação da API",
+            "messaging": "Mensageria",
+            "upload": "Importação de arquivos",
+            "user_management": "Usuários do painel",
+            "permission_management": "Acessos e permissões"
+          }
         }
       },
       "features": {
