@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CellMatrix, cellDiff, cellKey } from '..';
-import { contaSelecionadas, montaBloco, montaBlocos } from '../cellMatrixModel';
+import { alternaCelula, contaSelecionadas, leituraTravada, montaBloco, montaBlocos } from '../cellMatrixModel';
 import type { CatalogCategory } from '@infrastructure/http/AdminPermissionsApiService';
 
 /** Rótulos "traduzidos" do teste da vez — vazio = todo rótulo é `[chave crua]`. */
@@ -329,5 +329,54 @@ describe('contaSelecionadas — o número do cabeçalho', () => {
     // o sync descontinua chave (foi o que tirou `permission_management:read`
     // da stage): contá-la faria o cabeçalho dizer 2 numa tela com 1 ✓
     expect(contaSelecionadas(CATALOGO, new Set(['worker:read', 'fantasma:read']))).toBe(1);
+  });
+});
+
+describe('alternaCelula — a implicação `mexer ⇒ ver`', () => {
+  it('marcar uma ação forte marca a leitura do MESMO recurso junto', () => {
+    expect([...alternaCelula(CATALOGO, new Set(), 'worker:write')].sort())
+      .toEqual(['worker:read', 'worker:write']);
+  });
+
+  it('marcar a própria leitura não arrasta nada', () => {
+    expect([...alternaCelula(CATALOGO, new Set(), 'worker:read')]).toEqual(['worker:read']);
+  });
+
+  it('desmarcar tira só a chave pedida — a implicação não desfaz sozinha', () => {
+    const antes = new Set(['worker:read', 'worker:write']);
+    expect([...alternaCelula(CATALOGO, antes, 'worker:write')]).toEqual(['worker:read']);
+  });
+
+  it('🔒 a implicação NÃO cruza recurso: worker:write não marca vacancy:read', () => {
+    const r = alternaCelula(CATALOGO, new Set(), 'worker:write');
+    expect(r.has('vacancy:read')).toBe(false);
+  });
+
+  it('🔒 recurso SEM `read` declarado não ganha nada — o buraco é do catálogo', () => {
+    // é o caso real de `integration` e `test_fixtures`, que só têm `execute`:
+    // dá para conceder operação sem nenhuma leitura, e nenhuma regra de tela
+    // conserta isso — não existe `integration:read` para marcar.
+    const soExecute = [{ category: 'Operações', cells: [celula('integration', 'execute')] }];
+    expect([...alternaCelula(soExecute, new Set(), 'integration:execute')])
+      .toEqual(['integration:execute']);
+  });
+});
+
+describe('leituraTravada — quem trava o Ver', () => {
+  const linha = montaBloco('Trabalhadores', [
+    celula('worker', 'read'), celula('worker', 'write'), celula('worker', 'export'),
+  ]).grade[0];
+
+  it('sem ação forte marcada, Ver responde ao clique', () => {
+    expect(leituraTravada(linha, new Set(['worker:read']))).toBe(false);
+  });
+
+  it('com QUALQUER ação forte marcada, Ver trava', () => {
+    expect(leituraTravada(linha, new Set(['worker:read', 'worker:export']))).toBe(true);
+  });
+
+  it('recurso sem `read` nunca trava — não há o que travar', () => {
+    const sem = montaBloco('X', [celula('integration', 'execute')]).grade[0];
+    expect(leituraTravada(sem, new Set(['integration:execute']))).toBe(false);
   });
 });

@@ -264,8 +264,27 @@ describe('GroupDetailPage — a regra por componente', () => {
     expect(await screen.findByText('admin.access.group.cells.selected 2')).toBeInTheDocument();
     await userEvent.click(screen.getByLabelText(/^worker:write/));
     expect(screen.getByText('admin.access.group.cells.selected 3')).toBeInTheDocument();
+    // `Ver` agora está TRAVADA por `Crear y editar` — o clique não passa
     await userEvent.click(screen.getByLabelText(/^worker:read/));
-    expect(screen.getByText('admin.access.group.cells.selected 2')).toBeInTheDocument();
+    expect(screen.getByText('admin.access.group.cells.selected 3')).toBeInTheDocument();
+    // tirando quem exigia, ela solta e volta a responder
+    await userEvent.click(screen.getByLabelText(/^worker:write/));
+    await userEvent.click(screen.getByLabelText(/^worker:read/));
+    expect(screen.getByText('admin.access.group.cells.selected 1')).toBeInTheDocument();
+  });
+
+  it('🔒 marcar Crear y editar marca Ver junto, e trava com o motivo à mostra', async () => {
+    // item 2 do Gabriel (05/09): "se eu tenho Crear y editar também preciso ter
+    // ver". A trava não pode ser muda — caixa que não responde ao clique lê como
+    // "marcada e proibida" (NN/g), então ela DIZ quem a exige.
+    postura('write');
+    api.getGroup.mockResolvedValue({ ...GRUPO, cells: [] });
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    const ver = await screen.findByLabelText(/^worker:read/);
+    expect(ver).not.toBeChecked();
+    await userEvent.click(screen.getByLabelText(/^worker:write/));
+    expect(screen.getByLabelText(/^worker:read/)).toBeChecked();
+    expect(screen.getByLabelText(/lockedBy/)).toBeDisabled();
   });
 
   it('grupo ARQUIVADO: mesmo em write vira só leitura, e a lista de candidatos ainda é buscada só por write', async () => {

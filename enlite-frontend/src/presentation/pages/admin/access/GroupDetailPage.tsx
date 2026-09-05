@@ -18,6 +18,7 @@ import {
   CellMatrix,
   cellDiff,
   contaSelecionadas,
+  alternaCelula,
   type TransferPerson,
 } from '@presentation/components/features/access';
 import { useCellAccess } from '@presentation/hooks/useCellAccess';
@@ -284,11 +285,9 @@ function GroupDetail(): JSX.Element {
           selected={cells}
           saved={group.cells}
           editable={editable}
-          onToggle={(key) => setCells((prev) => {
-            const next = new Set(prev);
-            if (next.has(key)) next.delete(key); else next.add(key);
-            return next;
-          })}
+          /* Quem aplica a implicação `mexer ⇒ ver` é o modelo, não a tela:
+             marcar Crear y editar marca Ver junto (item 2 do Gabriel, 05/09). */
+          onToggle={(key) => setCells((prev) => alternaCelula(catalog, prev, key))}
         />
 
         {editable && (

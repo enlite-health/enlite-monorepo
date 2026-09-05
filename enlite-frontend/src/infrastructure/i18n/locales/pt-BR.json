@@ -3030,6 +3030,7 @@
           "columns": {
             "interview": "Entrevista",
             "selected": "Selecionados(as)",
+          "lockedBy": "Exigida por {{acoes}} — não dá para tirar sem tirar aquilo antes",
             "inService": "Em Atendimento",
             "rejected": "Rejeitado"
           }

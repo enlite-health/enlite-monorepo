@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Text, Checkbox } from '@presentation/components/atoms';
 import type { CatalogCategory } from '@infrastructure/http/AdminPermissionsApiService';
-import { type Bloco, type Linha, cellKey, montaBlocos } from './cellMatrixModel';
+import { type Bloco, type Linha, ACAO_BASE, cellKey, exigemLeitura, leituraTravada, montaBlocos } from './cellMatrixModel';
 
 interface CellMatrixProps {
   catalog: CatalogCategory[];
@@ -150,6 +150,10 @@ function LinhaRecurso({
 }): JSX.Element {
   const { t } = useTranslation();
   const salvas = useMemo(() => new Set(saved), [saved]);
+  // Quem exige `Ver` nesta linha — a lista some assim que a última ação forte
+  // é desmarcada, e é ela que dá NOME à trava.
+  const exigentes = exigemLeitura(linha, selected);
+  const travada = leituraTravada(linha, selected);
 
   return (
     <tr className="border-b border-gray-200 last:border-b-0">
@@ -173,11 +177,29 @@ function LinhaRecurso({
         const key = cellKey(celula);
         const marcada = selected.has(key);
         const titulo = celula.description ?? key;
+        // A trava só existe na coluna `Ver`, e só enquanto houver ação forte
+        // marcada. Caixa que não responde ao clique é ambígua por natureza
+        // (NN/g): esta diz QUEM a trava, no `title` e no rótulo acessível.
+        const estaTravada = col === ACAO_BASE && travada;
+        const porQue = estaTravada
+          ? t('admin.access.group.cells.lockedBy', {
+            acoes: exigentes.map((a) => t(`admin.access.group.cells.action.${a}`, a)).join(', '),
+          })
+          : null;
         return (
           <td key={col} className="text-center py-1.5 px-2">
             {editable ? (
-              <span className="inline-flex justify-center" title={titulo}>
-                <Checkbox id={`cell-${key}`} aria-label={`${key} — ${titulo}`} checked={marcada} onChange={() => onToggle(key)} />
+              <span
+                className={`inline-flex justify-center ${estaTravada ? 'opacity-60 cursor-not-allowed' : ''}`}
+                title={porQue ?? titulo}
+              >
+                <Checkbox
+                  id={`cell-${key}`}
+                  aria-label={porQue ? `${key} — ${titulo} — ${porQue}` : `${key} — ${titulo}`}
+                  checked={marcada}
+                  disabled={estaTravada}
+                  onChange={() => onToggle(key)}
+                />
               </span>
             ) : (
               <span title={titulo} aria-label={`${key} — ${titulo}`}>

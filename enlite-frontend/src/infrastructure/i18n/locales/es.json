@@ -3109,6 +3109,7 @@
           "columns": {
             "interview": "Entrevista",
             "selected": "Seleccionados(as)",
+          "lockedBy": "Requerida por {{acoes}} — no se puede quitar sin quitar eso primero",
             "inService": "En Atendimiento",
             "rejected": "Rechazado"
           }
