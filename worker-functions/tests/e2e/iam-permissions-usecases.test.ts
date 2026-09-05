@@ -231,12 +231,26 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
       expect(scope.rows[0]).toEqual({ granted_by: U.gestor, reason: 'expansão comercial' });
     });
 
-    it('motivo obrigatório: sem ele o país não é concedido', async () => {
+    it('🔒 motivo OPCIONAL: sem ele o país é concedido — mas o texto, quando vem, segue validado', async () => {
+      // mig 412. A trilha do ato é `granted_by` + `created_at` + `revoked_at`;
+      // o texto livre colhia "ok" e ".".
+      const { scopeId } = await asStaff(U.gestor, () =>
+        permissions.groups.grantCountry.execute({ tenantId: ENLITE_TENANT_ID, groupId, country: 'AR', reason: '   ' }),
+      );
+      expect(scopeId).toBeTruthy();
+      const linha = await admin.query<{ reason: string | null; granted_by: string }>(
+        `SELECT reason, granted_by FROM iam.group_country_scopes WHERE id = $1`, [scopeId]);
+      expect(linha.rows[0].reason).toBeNull();
+      expect(linha.rows[0].granted_by).toBe(U.gestor);
+
+      // o guarda que NÃO caiu: dado de pessoa no motivo continua recusado
       await expect(
         asStaff(U.gestor, () =>
-          permissions.groups.grantCountry.execute({ tenantId: ENLITE_TENANT_ID, groupId, country: 'AR', reason: '   ' }),
+          permissions.groups.grantCountry.execute({
+            tenantId: ENLITE_TENANT_ID, groupId, country: 'BR', reason: 'pedido de ana@enlite.health',
+          }),
         ),
-      ).rejects.toMatchObject({ code: 'reason_required' });
+      ).rejects.toMatchObject({ code: 'invalid_input' });
     });
 
     it('revogar o país tira o acesso na consulta seguinte', async () => {
