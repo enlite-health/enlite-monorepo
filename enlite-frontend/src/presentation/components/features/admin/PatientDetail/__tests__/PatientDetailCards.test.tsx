@@ -278,9 +278,13 @@ describe('DiagnosticoCard', () => {
     expect(screen.getByText('Diagnóstico')).toBeInTheDocument();
   });
 
-  it('renders diagnosis value', () => {
+  // 05/09 (Gabriel): o texto livre `diagnosis` ("Hipótesis Diagnóstica - CID") SAIU da ficha — ao lado
+  // da patología estruturada confundia e convidava a digitar errado. A coluna segue no banco.
+  it('NÃO renderiza o texto livre `diagnosis` nem o rótulo "Hipótese Diagnóstica - CID"', () => {
     render(<DiagnosticoCard patient={patientDetailFixture} />);
-    expect(screen.getByText('CID 6A02.5 Transtorno do espectro autista')).toBeInTheDocument();
+    expect(patientDetailFixture.diagnosis).toBeTruthy(); // a fixture TEM valor — a ausência é decisão, não vazio
+    expect(screen.queryByText('CID 6A02.5 Transtorno do espectro autista')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Hipótese Diagnóstica - CID/)).not.toBeInTheDocument();
   });
 
   it('renders additionalComments (observações gerais) value', () => {
@@ -340,12 +344,6 @@ describe('DiagnosticoCard', () => {
     expect(screen.getByTestId('general-notes')).toHaveAttribute('data-clarity-mask', 'True');
   });
 
-  it('renders CID label', () => {
-    render(<DiagnosticoCard patient={patientDetailFixture} />);
-    // Label text is in a <span>, use regex partial match
-    expect(screen.getByText(/Hipótese Diagnóstica - CID/)).toBeInTheDocument();
-  });
-
   it('renders disabilityCertificate label present', () => {
     render(<DiagnosticoCard patient={patientDetailFixture} />);
     // hasCud = true → label Certificado de deficiência is rendered
@@ -369,7 +367,7 @@ describe('DiagnosticoCard', () => {
     const onSaved = vi.fn();
     render(<DiagnosticoCard patient={patientDetailFixture} onSaved={onSaved} />);
     fireEvent.click(screen.getByTestId('edit-clinical-btn'));
-    fireEvent.change(screen.getByTestId('pce-diagnosis'), { target: { value: 'CID novo' } });
+    fireEvent.change(screen.getByTestId('pce-comments'), { target: { value: 'observação nova' } });
     fireEvent.click(screen.getByTestId('pce-save'));
     await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
@@ -379,7 +377,7 @@ describe('DiagnosticoCard', () => {
   it('sem a prop onSaved (opcional), salvar não quebra e ainda assim fecha o drawer', async () => {
     render(<DiagnosticoCard patient={patientDetailFixture} />);
     fireEvent.click(screen.getByTestId('edit-clinical-btn'));
-    fireEvent.change(screen.getByTestId('pce-diagnosis'), { target: { value: 'CID novo' } });
+    fireEvent.change(screen.getByTestId('pce-comments'), { target: { value: 'observação nova' } });
     expect(() => fireEvent.click(screen.getByTestId('pce-save'))).not.toThrow();
     await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.queryByTestId('patient-clinical-edit-drawer')).not.toBeInTheDocument(), { timeout: 1500 });

@@ -2764,9 +2764,14 @@
         "unset": "—",
         "saveError": "Erro ao salvar",
         "deviceType": "Dispositivo",
+        "clinicalSections": {
+          "pathology": "Patologia",
+          "profile": "Perfil clínico",
+          "documents": "Documentação",
+          "notes": "Observações"
+        },
         "diagnosisAssignment": {
-          "sectionTitle": "Diagnóstico (CID-11)",
-          "searchPlaceholder": "Buscar diagnóstico em espanhol...",
+          "searchPlaceholder": "Digite o nome da patologia…",
           "typing": "Digitando…",
           "searching": "Buscando…",
           "noResults": "Nenhum resultado encontrado para \"{{query}}\".",

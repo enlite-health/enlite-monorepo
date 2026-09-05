@@ -91,7 +91,9 @@ export function DiagnosticoCard({ patient, onSaved, focusRequest }: DiagnosticoC
             )}
           </div>
         )}
-        <Field label={`${t('admin.patients.detail.diagnosisCard.cid')}:`} value={patient.diagnosis} />
+        {/* 05/09 (Gabriel): o texto livre "Hipótesis Diagnóstica - CID" SAIU da ficha e do drawer —
+            ao lado da patología estruturada ele confundia e convidava a digitar errado. A coluna
+            `diagnosis` segue viva (espelho do ClickUp + backfill da F4), só não é mais mostrada aqui. */}
         {/* REQ-01: observações gerais — texto longo com autoria (lex C1.1: máscara do Clarity dentro do componente). */}
         <ClinicalLongText
           testId="general-notes"

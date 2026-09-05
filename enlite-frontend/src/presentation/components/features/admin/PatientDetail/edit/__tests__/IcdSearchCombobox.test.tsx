@@ -54,7 +54,7 @@ describe('IcdSearchCombobox', () => {
     const input = screen.getByTestId('icd-search-input');
     expect(input).toHaveAttribute('role', 'combobox');
     expect(input).toHaveAttribute('aria-expanded', 'false');
-    expect(input).toHaveAttribute('placeholder', 'Buscar diagnóstico em espanhol...');
+    expect(input).toHaveAttribute('placeholder', 'Digite o nome da patologia…');
     expect(screen.queryByTestId('icd-search-listbox')).not.toBeInTheDocument();
     expect(screen.queryByTestId('icd-search-status')).not.toBeInTheDocument();
   });
