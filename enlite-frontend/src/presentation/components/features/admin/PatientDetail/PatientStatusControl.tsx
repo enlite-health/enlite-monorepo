@@ -56,7 +56,11 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
     const payload: UpdatePatientStatusPayload = { status };
     if (goingOnHold) {
       payload.onHoldReason = reason;
-      payload.onHoldNote = note.trim() ? note : null;
+      // Redigido para este ator: a CHAVE nem entra no corpo — `onHoldNote: null` é ESCRITA
+      // (apaga a nota clínica, sem segunda cópia em lugar nenhum). Mesmo molde dos dois irmãos
+      // desta ficha: PatientClinicalEditDrawer (emergencyInstructions) e ContractedServiceFormRow
+      // (hourlyValue). O textarea nasce vazio e desabilitado — não há valor real para preservar.
+      if (!patient.onHoldNoteRedacted) payload.onHoldNote = note.trim() ? note : null;
     }
     try {
       await AdminApiService.updatePatientStatus(patient.id, payload);

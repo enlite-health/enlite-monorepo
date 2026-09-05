@@ -2849,8 +2849,9 @@
           "typing": "Escribiendo…",
           "searching": "Buscando…",
           "noResults": "No se encontraron resultados para \"{{query}}\".",
-          "tooShortHint": "Escribí al menos 2 caracteres.",
+          "tooShortHint": "Escribí al menos {{min}} caracteres.",
           "codeOrAcronymHint": "La búsqueda es por el NOMBRE del diagnóstico, no por código ni por sigla.",
+          "searchFailed": "No se pudo hacer la búsqueda. Probá de nuevo.",
           "unavailable": "No pudimos conectar con el catálogo de diagnósticos. Probá de nuevo en unos minutos.",
           "searchScopeLabel": "Buscando en:",
           "searchScopeUsual": "Salud mental y neurología",
@@ -2915,6 +2916,9 @@
         "providerInactive": "Dado de baja",
         "createServiceError": "No se pudo crear el servicio",
         "updateServiceError": "No se pudo actualizar el servicio",
+        "searchWorkerError": "No se pudo buscar prestadores. Probá de nuevo.",
+        "deactivateServiceError": "No se pudo dar de baja el servicio",
+        "deactivateProviderError": "No se pudo dar de baja el prestador",
         "associateProviderError": "No se pudo asociar el prestador",
         "selectServiceCode": "Servicio",
         "selectWorker": "Seleccioná un prestador",
@@ -3124,6 +3128,7 @@
           "keepPhone": "Mantener",
           "movePhoneConfirmTitle": "Mover el número al responsable",
           "movePhoneConfirmBody": "Se va a borrar el WhatsApp del paciente (el del responsable no se toca). ¿Confirmás?",
+          "movePhoneError": "No se pudo mover el número. Probá de nuevo.",
           "movePhoneSuccess": "Número movido — el WhatsApp del paciente quedó vacío."
         },
         "documentTypes": {

@@ -103,17 +103,29 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
   const [phoneWarningDismissed, setPhoneWarningDismissed] = useState(false);
   const [confirmingMove, setConfirmingMove] = useState(false);
   const [movingPhone, setMovingPhone] = useState(false);
+  /**
+   * F4 — o `try/finally` desta ação NÃO tinha `catch`, e a ação APAGA o WhatsApp do paciente
+   * (`{phoneWhatsapp: null}`). Se o PATCH rejeitasse, nada era renderizado, `onSaved()` não
+   * rodava, e o único sinal era o spinner parando com o modal aberto: a operadora não distinguia
+   * "não salvou" de "salvou e a tela não atualizou" — e clicava de novo. Ação destrutiva não
+   * pode falhar em silêncio.
+   */
+  const [moveError, setMoveError] = useState<string | null>(null);
 
   const showPhoneWarning = patient.phoneMatchesResponsible && !phoneWarningDismissed;
   const matchingResponsibleName = showPhoneWarning ? findMatchingResponsibleName(patient) : null;
 
   const handleMovePhone = async () => {
+    setMoveError(null);
     setMovingPhone(true);
     try {
       // Só o campo do PACIENTE — o do responsável nunca é tocado (lex D3.1: "sem apagar").
       await AdminApiService.updatePatientSection(patient.id, 'general', { phoneWhatsapp: null });
       setConfirmingMove(false);
       onSaved?.();
+    } catch {
+      // Falhou: o modal FICA aberto com a mensagem. Nada foi apagado, e ela sabe disso.
+      setMoveError(t('admin.patients.detail.identityCard.movePhoneError'));
     } finally {
       setMovingPhone(false);
     }
@@ -242,6 +254,11 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
             <Text size="sm" color="secondary">
               {t('admin.patients.detail.identityCard.movePhoneConfirmBody')}
             </Text>
+            {moveError && (
+              <Text size="sm" role="alert" className="text-red-600" data-testid="move-phone-error">
+                {moveError}
+              </Text>
+            )}
             <div className="flex items-center justify-end gap-3 mt-2">
               <Button
                 variant="outline"

@@ -148,6 +148,41 @@ describe('PatientIdentityCard — aviso de telefone coincidente (lex D3.1)', () 
     expect(updatePatientSection).not.toHaveBeenCalledWith(expect.anything(), 'support-network', expect.anything());
   });
 
+  /**
+   * F4 (gate `revisao-pr`, MÉDIO ×3) — `handleMovePhone` tinha `try/finally` SEM `catch`. Esta
+   * ação APAGA o WhatsApp do paciente (`{phoneWhatsapp: null}`). Se o PATCH rejeitasse, nada era
+   * renderizado, `onSaved()` não rodava, e o único sinal era o spinner parando com o modal
+   * aberto: ela não distinguia "não salvou" de "salvou e a tela não atualizou" — e clicava de
+   * novo. Ação destrutiva que falha em silêncio.
+   */
+  it('F4: PATCH que FALHA mostra erro, mantém o modal aberto e NÃO chama onSaved', async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    updatePatientSection.mockRejectedValueOnce(new Error('HTTP 500'));
+    const patient = { ...patientDetailFixture, phoneMatchesResponsible: true, phoneWhatsapp: '+55 (11) 99852-0481' };
+    render(<PatientIdentityCard patient={patient} onSaved={onSaved} />);
+    await user.click(screen.getByTestId('move-phone-to-responsible-btn'));
+    await user.click(screen.getByTestId('move-phone-confirm-btn'));
+    await waitFor(() => expect(screen.getByTestId('move-phone-error')).toBeInTheDocument());
+    // O modal continua aberto: a ação NÃO aconteceu, e a tela diz isso.
+    expect(screen.getByTestId('move-phone-confirm-modal')).toBeInTheDocument();
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it('F4: erro de uma tentativa não fica pendurado na seguinte (nova tentativa limpa a mensagem)', async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    updatePatientSection.mockRejectedValueOnce(new Error('HTTP 500')).mockResolvedValueOnce({ id: 'x' });
+    const patient = { ...patientDetailFixture, phoneMatchesResponsible: true, phoneWhatsapp: '+55 (11) 99852-0481' };
+    render(<PatientIdentityCard patient={patient} onSaved={onSaved} />);
+    await user.click(screen.getByTestId('move-phone-to-responsible-btn'));
+    await user.click(screen.getByTestId('move-phone-confirm-btn'));
+    await waitFor(() => expect(screen.getByTestId('move-phone-error')).toBeInTheDocument());
+    await user.click(screen.getByTestId('move-phone-confirm-btn'));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('move-phone-error')).not.toBeInTheDocument();
+  });
+
   it('clicar no backdrop do modal fecha sem gravar (mesmo efeito do cancelar)', async () => {
     const user = userEvent.setup();
     const patient = { ...patientDetailFixture, phoneMatchesResponsible: true, phoneWhatsapp: '+55 (11) 99852-0481' };

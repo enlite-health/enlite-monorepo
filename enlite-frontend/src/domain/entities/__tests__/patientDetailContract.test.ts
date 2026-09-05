@@ -33,7 +33,7 @@
  *  - `completeness.blocking`/`canActivate` chegam no shape do D255.
  */
 import { describe, it, expect } from 'vitest';
-import type { PatientDetail } from '../PatientDetail';
+import type { PatientDetail, PatientClinicalSectionPayload } from '../PatientDetail';
 import { patientDetailContractSchema, type PatientDetailContract } from '../patientDetailContract';
 import fixture from './fixtures/patient-detail.api.json';
 
@@ -102,5 +102,27 @@ describe('contrato PatientDetail — fixture capturada da API real', () => {
     for (const key of Object.keys(p.diagnoses[0])) {
       expect(['code', 'chapter', 'release', 'conceptCode', 'conceptGroup', 'catalogRelease']).not.toContain(key);
     }
+  });
+});
+
+/**
+ * F6 (gate `revisao-pr`, BAIXO) — `PatientClinicalSectionPayload` ainda declarava
+ * `clinicalSpecialty`, chave que o `clinicalSectionSchema` `.strict()` do backend JÁ NÃO ACEITA:
+ * quem confiasse no tipo escreveria um PATCH que volta 400. Nenhum chamador usa hoje — é chave
+ * MORTA, e chave morta num payload é 400 latente, não enfeite.
+ *
+ * O portão desta remoção é o `tsc`, não o runtime: com a chave ainda declarada, o
+ * `@ts-expect-error` abaixo fica SEM ERRO PARA SUPRIMIR e o `tsc --noEmit` reprova com
+ * "Unused '@ts-expect-error' directive" (TS2578). Depois da remoção, o objeto é que passa a ser
+ * inválido e a diretiva volta a ter função. Nos dois sentidos, o compilador morde.
+ */
+describe('F6 — PatientClinicalSectionPayload não declara chave que o backend recusa', () => {
+  it('`clinicalSpecialty` não é aceita no payload da seção clínica (o `.strict()` do backend a rejeita)', () => {
+    const payload: PatientClinicalSectionPayload = {
+      diagnosis: 'x',
+      // @ts-expect-error — chave MORTA: removida do payload porque o backend a recusa (F6).
+      clinicalSpecialty: 'ASD',
+    };
+    expect(payload.diagnosis).toBe('x');
   });
 });

@@ -23,11 +23,26 @@ export class TerminologyUnavailableError extends Error {
   }
 }
 
+/**
+ * F7 (spec 016): o piso de tamanho da busca vivia em DUAS fontes — `MIN_CHARS` guardado no
+ * componente e `MIN_SEARCH_QUERY_LENGTH` no backend. Hoje concordam; voltam a divergir no dia em
+ * que alguém mudar um dos dois, e o sintoma é mudo ("não perguntei" indistinguível de "não há").
+ * O backend passou a DIZER o número no corpo do 400 (`details: { fields:['q'], minQueryLength }`);
+ * este client transporta o valor para quem chama, que passa a CONSUMIR em vez de guardar.
+ */
+export class TerminologyMinQueryLengthError extends Error {
+  constructor(readonly minQueryLength: number, message = 'TERMINOLOGY_MIN_QUERY_LENGTH') {
+    super(message);
+    this.name = 'TerminologyMinQueryLengthError';
+  }
+}
+
 interface SearchResponseBody {
   success: boolean;
   data?: { candidates: TerminologyCandidate[] };
   error?: string;
   code?: string;
+  details?: { fields?: string[]; minQueryLength?: unknown };
 }
 
 class AdminTerminologyApiServiceClass {
@@ -75,6 +90,13 @@ class AdminTerminologyApiServiceClass {
     if (!json.success) {
       if (json.code === 'TERMINOLOGY_UNAVAILABLE') {
         throw new TerminologyUnavailableError(json.error);
+      }
+      // F7: o 400 de validação carrega o piso quando é o `q` que está curto demais. Só um NÚMERO
+      // conta como piso — `details.minQueryLength` de outro tipo é contrato quebrado, e contrato
+      // quebrado vira erro comum, nunca um piso inventado.
+      const min = json.details?.minQueryLength;
+      if (typeof min === 'number') {
+        throw new TerminologyMinQueryLengthError(min, json.error);
       }
       throw new Error(json.error || `HTTP ${response.status}`);
     }

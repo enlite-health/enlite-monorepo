@@ -3,7 +3,7 @@
  * `refetch`/`patientId` aos cards que agora editam (spec 012). Carregando / erro / não encontrado.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import { patientDetailFixture } from '@presentation/components/features/admin/PatientDetail/__tests__/patientDetailFixture';
 
@@ -122,6 +122,42 @@ describe('PatientDetailPage', () => {
     expect(screen.queryByTestId('completeness-checklist')).not.toBeInTheDocument();
     expect(screen.queryByTestId('completeness-checklist-ready')).not.toBeInTheDocument();
     expect(screen.queryByText('Cobertura')).not.toBeInTheDocument();
+  });
+
+  /**
+   * F3 (gate `revisao-pr`, MÉDIO) — `setFocusRequest` só era chamado em `focusChecklistItem`;
+   * NADA o devolvia a `null`. Os cards são montados POR ABA e o de-dupe do `useAutoOpenDrawer`
+   * vive num `useRef` que morre junto com o componente. Resultado: ela clicava em "Cobertura" no
+   * checklist, o drawer abria, ela fechava, ia para outra aba e voltava — e o drawer abria
+   * SOZINHO, por cima do que ela estava fazendo. Vale igual para CONSENT → DiagnosticoCard.
+   */
+  it('F3: voltar para a aba depois de fechar o drawer NÃO o reabre sozinho (o pedido de foco é consumido)', () => {
+    vi.useFakeTimers();
+    try {
+    detail.patient = { ...(detail.patient as object), status: 'PENDING_ADMISSION' };
+    render(<PatientDetailPage />);
+    // 1. Clica em "Cobertura" no checklist: troca de aba e o drawer de cobertura abre.
+    fireEvent.click(screen.getByText('Cobertura'));
+    expect(screen.getByTestId('patient-coverage-edit-drawer')).toBeInTheDocument();
+    // 2. Fecha o drawer (o fechamento tem animação: `setShow(false)` + `setTimeout(onClose)`).
+    fireEvent.click(screen.getByTestId('patient-coverage-edit-backdrop'));
+    act(() => { vi.advanceTimersByTime(500); });
+    expect(screen.queryByTestId('patient-coverage-edit-drawer')).not.toBeInTheDocument();
+    // 3. Vai para outra aba e volta — o card remonta.
+    fireEvent.click(screen.getByText('Rede de Apoio'));
+    fireEvent.click(screen.getByText('Serviço Contratado'));
+    // 4. O drawer NÃO pode ter reaberto sozinho: ela não pediu nada.
+    expect(screen.queryByTestId('patient-coverage-edit-drawer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('edit-coverage-btn')).toBeInTheDocument();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('F3: clicar no checklist DEPOIS de trocar de aba continua abrindo o drawer (o conserto não mata a US-D1)', () => {
+    detail.patient = { ...(detail.patient as object), status: 'PENDING_ADMISSION' };
+    render(<PatientDetailPage />);
+    fireEvent.click(screen.getByText('Rede de Apoio'));
+    fireEvent.click(screen.getByText('Cobertura'));
+    expect(screen.getByTestId('patient-coverage-edit-drawer')).toBeInTheDocument();
   });
 
   it('status:ADMISSION (ACTIVATABLE) → checklist de completude PRESENTE', () => {

@@ -1,8 +1,8 @@
 /**
  * ContractedServiceProvidersSection — busca+associa prestador existente, baixa (spec 013 lex C-e).
  */
-import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
@@ -107,6 +107,21 @@ describe('ContractedServiceProvidersSection', () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
+  /**
+   * F4 (gate `revisao-pr`, MÉDIO ×3) — `deactivate` tinha `try/finally` SEM `catch`. Desassociar
+   * prestador é ação destrutiva que a operadora confirma e acredita ter concluído; o `error` já
+   * existe neste componente e é usado pelo caminho de sucesso ao lado (o associate), mas este
+   * caminho nunca o usava. Falha em silêncio: o spinner para e nada mais.
+   */
+  it('F4: desassociar prestador que FALHA usa o canal de erro que já existe — e não avisa o pai', async () => {
+    mockUpdateProvider.mockRejectedValue(new Error('HTTP 500'));
+    const onChanged = vi.fn();
+    render(<ContractedServiceProvidersSection patientId="pat1" serviceId="s1" providers={[PROVIDER]} onChanged={onChanged} />);
+    fireEvent.click(screen.getByTestId('provider-deactivate-p1'));
+    await waitFor(() => expect(screen.getByText(/No se pudo dar de baja/i)).toBeTruthy());
+    expect(onChanged).not.toHaveBeenCalled();
+  });
+
   it('prestador INATIVO não mostra botão de baixa', () => {
     render(<ContractedServiceProvidersSection patientId="pat1" serviceId="s1" providers={[{ ...PROVIDER, active: false }]} onChanged={vi.fn()} />);
     expect(screen.queryByTestId('provider-deactivate-p1')).toBeNull();
@@ -127,6 +142,111 @@ describe('ContractedServiceProvidersSection', () => {
   it('worker sem weeklyHours mostra "—"', () => {
     render(<ContractedServiceProvidersSection patientId="pat1" serviceId="s1" providers={[{ ...PROVIDER, weeklyHours: null }]} onChanged={vi.fn()} />);
     expect(screen.getByTestId('provider-row-p1').textContent).toContain('—');
+  });
+
+  // ── F2: corrida na busca de prestador. `runSearch` disparava um `listWorkers` POR TECLA, sem
+  // debounce, sem id de requisição e sem `catch`. Duas formas de a operadora associar o cuidador
+  // ERRADO — e `associateProvider` manda o `workerId` sem passo de confirmação. O padrão certo já
+  // existe no MESMO PR (`IcdSearchCombobox`: id de requisição + descarte no `then` E no `catch`).
+  // ──────────────────────────────────────────────────────────────────────────────────────────
+  describe('F2 — busca de prestador não pode entregar o resultado da consulta ERRADA', () => {
+    beforeEach(() => { vi.useFakeTimers(); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    function deferred<T>() {
+      let resolve!: (v: T) => void;
+      let reject!: (e: unknown) => void;
+      const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+      return { promise, resolve, reject };
+    }
+
+    it('resposta ATRASADA de "Mar" não pode sobrescrever a lista já respondida de "Marta"', async () => {
+      const first = deferred<{ data: unknown[] }>();
+      const second = deferred<{ data: unknown[] }>();
+      mockListWorkers.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+      render(<ContractedServiceProvidersSection patientId="pat1" serviceId="s1" providers={[]} onChanged={vi.fn()} />);
+      const input = screen.getByTestId('provider-search-s1');
+
+      fireEvent.change(input, { target: { value: 'Mar' } });
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      fireEvent.change(input, { target: { value: 'Marta' } });
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      expect(mockListWorkers).toHaveBeenCalledTimes(2);
+
+      // A consulta NOVA responde primeiro...
+      await act(async () => { second.resolve({ data: [{ id: 'w-marta', name: 'Marta Nueva' }] }); });
+      expect(screen.getByTestId('provider-hit-w-marta')).toBeTruthy();
+
+      // ...e a VELHA chega depois. A tela lê "Marta"; a lista não pode virar a de "Mar".
+      await act(async () => { first.resolve({ data: [{ id: 'w-mar', name: 'Mar Viejo' }] }); });
+      expect(screen.queryByTestId('provider-hit-w-mar')).toBeNull();
+      expect(screen.getByTestId('provider-hit-w-marta')).toBeTruthy();
+    });
+
+    it('busca que FALHA não deixa o resultado da consulta ANTERIOR na tela — e diz que falhou', async () => {
+      mockListWorkers
+        .mockResolvedValueOnce({ data: [{ id: 'w-ana', name: 'Ana Anterior' }] })
+        .mockRejectedValueOnce(new Error('HTTP 500'));
+      render(<ContractedServiceProvidersSection patientId="pat1" serviceId="s1" providers={[]} onChanged={vi.fn()} />);
+      const input = screen.getByTestId('provider-search-s1');
+
+      fireEvent.change(input, { target: { value: 'ana' } });
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      expect(screen.getByTestId('provider-hit-w-ana')).toBeTruthy();
+
+      fireEvent.change(input, { target: { value: 'zzz' } });
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      // A lista de "ana" NÃO pode continuar embaixo da consulta "zzz".
+      expect(screen.queryByTestId('provider-hit-w-ana')).toBeNull();
+      expect(screen.getByText(/No se pudo buscar/i)).toBeTruthy();
+    });
+
+    it('REJEIÇÃO obsoleta também é descartada: a busca velha falhar não pode apagar a lista da nova nem gritar erro', async () => {
+      const first = deferred<{ data: unknown[] }>();
+      const second = deferred<{ data: unknown[] }>();
+      first.promise.catch(() => {}); // evita unhandledRejection no Node ao rejeitar mais tarde
+      mockListWorkers.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+      render(<ContractedServiceProvidersSection patientId="pat1" serviceId="s1" providers={[]} onChanged={vi.fn()} />);
+      const input = screen.getByTestId('provider-search-s1');
+
+      fireEvent.change(input, { target: { value: 'Mar' } });
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      fireEvent.change(input, { target: { value: 'Marta' } });
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+
+      await act(async () => { second.resolve({ data: [{ id: 'w-marta', name: 'Marta Nueva' }] }); });
+      expect(screen.getByTestId('provider-hit-w-marta')).toBeTruthy();
+
+      // A busca VELHA rejeita DEPOIS — obsoleta: não pode limpar a lista nova nem virar erro.
+      await act(async () => { first.reject(new Error('rede caiu na busca velha')); });
+      expect(screen.getByTestId('provider-hit-w-marta')).toBeTruthy();
+      expect(screen.queryByText(/No se pudo buscar/i)).toBeNull();
+    });
+
+    it('debounce: digitar "Marta" letra a letra dispara UMA busca, não cinco', async () => {
+      mockListWorkers.mockResolvedValue({ data: [] });
+      render(<ContractedServiceProvidersSection patientId="pat1" serviceId="s1" providers={[]} onChanged={vi.fn()} />);
+      const input = screen.getByTestId('provider-search-s1');
+      for (const term of ['Ma', 'Mar', 'Mart', 'Marta']) {
+        fireEvent.change(input, { target: { value: term } });
+        await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+      }
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      expect(mockListWorkers).toHaveBeenCalledTimes(1);
+      expect(mockListWorkers).toHaveBeenCalledWith({ search: 'Marta', limit: '5' });
+    });
+
+    it('cair abaixo de 2 caracteres descarta a resposta em voo (não repovoa a lista depois de limpar)', async () => {
+      const inflight = deferred<{ data: unknown[] }>();
+      mockListWorkers.mockReturnValueOnce(inflight.promise);
+      render(<ContractedServiceProvidersSection patientId="pat1" serviceId="s1" providers={[]} onChanged={vi.fn()} />);
+      const input = screen.getByTestId('provider-search-s1');
+      fireEvent.change(input, { target: { value: 'bru' } });
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      fireEvent.change(input, { target: { value: 'b' } });
+      await act(async () => { inflight.resolve({ data: [{ id: 'w-bru', name: 'Bruno' }] }); });
+      expect(screen.queryByTestId('provider-hit-w-bru')).toBeNull();
+    });
   });
 
   // ── `runAssociateProvider` (QA-caça #4): o guarda `if (!selected) return` é INALCANÇÁVEL via

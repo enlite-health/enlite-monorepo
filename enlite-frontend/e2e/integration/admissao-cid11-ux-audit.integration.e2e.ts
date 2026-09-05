@@ -10,9 +10,10 @@
  * seedPatientForDiagnosis, setCatalogPromoted). Ambiente devolvido ao estado em que foi achado.
  *
  * RODADA 2 (depois dos 6 consertos U1-U6) — estendido, não reescrito do zero. Screenshots vão
- * para `evidencias/ux/rodada2/`, pasta NOVA, escrita direto no repo `ebrain` (caminho absoluto,
- * não relativo ao worktree) — a 1ª rodada escreveu relativo ao worktree, que é gitignorado, e
- * alguém teve que copiar os PNGs manualmente pro `ebrain/specs/...` depois. Não repetir o erro.
+ * para `<UX_AUDIT_EVIDENCE_DIR>/rodada2/`, com default RELATIVO ao repo (`e2e/__evidence__/ux`).
+ * Quem for rodar a auditoria de novo e quiser os PNGs versionados no `ebrain` exporta
+ * `UX_AUDIT_EVIDENCE_DIR=<ebrain>/specs/016-admissao-cid11/evidencias/ux` — o caminho da máquina
+ * de UMA pessoa não pode voltar para dentro do código (ver bloco F5 abaixo).
  */
 import { test, expect, type Page } from '@playwright/test';
 import * as fs from 'fs';
@@ -29,17 +30,41 @@ const EMULATOR_PROJECT = 'demo-no-project';
 const STAFF_EMAIL = `e2e.cid11ux.${Date.now()}@enlite.health`;
 const STAFF_PASSWORD = 'TestAdmin123!';
 
-// RODADA 2: caminho ABSOLUTO no repo ebrain (não `path.join(__dirname, ...)` — isso cairia dentro
-// do worktree, que é gitignorado, como aconteceu na rodada 1).
-const SHOT_DIR = '/Users/gabrielstein-dev/projects/enlite/ebrain/specs/016-admissao-cid11/evidencias/ux/rodada2';
-fs.mkdirSync(SHOT_DIR, { recursive: true });
+/**
+ * F5 (gate `revisao-pr`, BLOCKER de CI): este bloco fazia 3× `fs.mkdirSync` de um caminho ABSOLUTO
+ * da máquina do autor, NO NÍVEL DO MÓDULO. Num runner esse caminho não existe, o `mkdir` estoura
+ * ao CARREGAR o arquivo, e o erro de carga zera a listagem INTEIRA do projeto `integration`
+ * (`Total: 0 tests in 0 files`, `playwright test` sai 1) — mesmo com `--grep` de outro spec.
+ *
+ * Conserto: (a) o arquivo saiu do `testMatch` do projeto `integration` (`testIgnore` em
+ * `playwright.config.ts`) — ele mesmo se declara "auditoria pontual, não fica no conjunto de
+ * regressão"; (b) o caminho passa a ser RELATIVO ao repo, com `UX_AUDIT_EVIDENCE_DIR` para
+ * apontar a pasta de evidência do `ebrain` quando a auditoria for rodada de novo à mão; e
+ * (c) o `mkdir` é PREGUIÇOSO — só acontece na primeira captura, nunca ao carregar o módulo.
+ * Nada de carregar um módulo pode tocar o disco fora do repo.
+ */
+const EVIDENCE_ROOT =
+  process.env.UX_AUDIT_EVIDENCE_DIR ?? path.resolve(__dirname, '..', '__evidence__', 'ux');
+
+/** Cria a pasta na PRIMEIRA captura (nunca no carregamento do módulo) e só uma vez por pasta. */
+const ensuredDirs = new Set<string>();
+function evidenceDir(round: string): string {
+  const dir = path.join(EVIDENCE_ROOT, round);
+  if (!ensuredDirs.has(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    ensuredDirs.add(dir);
+  }
+  return dir;
+}
+
+// RODADA 2.
+const SHOT_DIR = 'rodada2';
 
 // RODADA 3 (V1 + V2) — pasta NOVA, sem sobrescrever a rodada 2.
-const SHOT_DIR3 = '/Users/gabrielstein-dev/projects/enlite/ebrain/specs/016-admissao-cid11/evidencias/ux/rodada3';
-fs.mkdirSync(SHOT_DIR3, { recursive: true });
+const SHOT_DIR3 = 'rodada3';
 
 async function shot3(target: Page | ReturnType<Page['locator']>, name: string): Promise<string> {
-  const file = path.join(SHOT_DIR3, name);
+  const file = path.join(evidenceDir(SHOT_DIR3), name);
   await target.screenshot({ path: file });
   log('SHOT3', `${name} -> ${file}`);
   return file;
@@ -47,11 +72,10 @@ async function shot3(target: Page | ReturnType<Page['locator']>, name: string): 
 
 // RODADA 4 — pasta NOVA, sem sobrescrever rodada1/2/3. Foco: (a) o controle de escopo permanente
 // (novo desde a rodada 2) e (b) o corpo do chip agora inerte (removido desde a rodada 2).
-const SHOT_DIR4 = '/Users/gabrielstein-dev/projects/enlite/ebrain/specs/016-admissao-cid11/evidencias/ux/rodada4';
-fs.mkdirSync(SHOT_DIR4, { recursive: true });
+const SHOT_DIR4 = 'rodada4';
 
 async function shot4(target: Page | ReturnType<Page['locator']>, name: string): Promise<string> {
-  const file = path.join(SHOT_DIR4, name);
+  const file = path.join(evidenceDir(SHOT_DIR4), name);
   await target.screenshot({ path: file });
   log('SHOT4', `${name} -> ${file}`);
   return file;
@@ -84,7 +108,7 @@ async function attrOrNothing(locator: ReturnType<Page['getByTestId']>, attr: str
 }
 
 async function shot(target: Page | ReturnType<Page['locator']>, name: string): Promise<string> {
-  const file = path.join(SHOT_DIR, name);
+  const file = path.join(evidenceDir(SHOT_DIR), name);
   await target.screenshot({ path: file });
   log('SHOT', `${name} -> ${file}`);
   return file;

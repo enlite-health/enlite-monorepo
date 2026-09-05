@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import { IcdSearchCombobox } from '../IcdSearchCombobox';
-import { TerminologyUnavailableError } from '@infrastructure/http/AdminTerminologyApiService';
+import { TerminologyUnavailableError, TerminologyMinQueryLengthError } from '@infrastructure/http/AdminTerminologyApiService';
 
 const translations = ptBR as Record<string, any>;
 function t(key: string, optsOrDefault?: any): string {
@@ -28,6 +28,7 @@ vi.mock('@infrastructure/http/AdminTerminologyApiService', async (importOriginal
   const actual = await importOriginal<typeof import('@infrastructure/http/AdminTerminologyApiService')>();
   return {
     TerminologyUnavailableError: actual.TerminologyUnavailableError,
+    TerminologyMinQueryLengthError: actual.TerminologyMinQueryLengthError,
     AdminTerminologyApiService: { search: (...a: unknown[]) => search(...a) },
   };
 });
@@ -253,12 +254,74 @@ describe('IcdSearchCombobox', () => {
     expect(screen.queryByTestId('icd-search-listbox')).not.toBeInTheDocument();
   });
 
-  it('erro genérico (não TerminologyUnavailableError) cai no estado "sem resultado", nunca crasha', async () => {
+  /**
+   * ⚠️ ESTE TESTE FIXAVA O DEFEITO (F1). O nome antigo era "erro genérico (não
+   * TerminologyUnavailableError) cai no estado 'sem resultado', nunca crasha" e ele AFIRMAVA o
+   * comportamento errado como desejado: qualquer falha que não fosse `TerminologyUnavailableError`
+   * (HTTP 500, 401 de token vencido, API fora do ar, resposta não-JSON) virava a MESMA caixa
+   * cinza de "Nenhum resultado para X". A operadora concluía que o diagnóstico não existe no
+   * catálogo, não escolhia nada, e o paciente ficava sem diagnóstico estruturado — o "cair em
+   * texto livre silencioso" que a US-4 proíbe. Medido: `q` com caractere NUL devolve 500.
+   * A régua já estava escrita no `AdminTerminologyApiService`: "erro de rede não é lista vazia".
+   */
+  it('F1: erro genérico (500 / token vencido / resposta não-JSON) NUNCA é "sem resultado" — diz que a busca FALHOU, com role=alert', async () => {
     search.mockRejectedValue(new Error('boom'));
     render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
     fireEvent.change(screen.getByTestId('icd-search-input'), { target: { value: 'esquisofrenia' } });
     await vi.advanceTimersByTimeAsync(300);
-    expect(screen.getByTestId('icd-search-status')).toHaveTextContent('Nenhum resultado');
+    const status = screen.getByTestId('icd-search-status');
+    // O que importa: "falhou" NÃO pode ser lido como "esse diagnóstico não existe".
+    expect(status).not.toHaveTextContent('Nenhum resultado');
+    expect(status).toHaveTextContent('Não foi possível fazer a busca. Tente novamente.');
+    // Mesma FORMA do estado de indisponibilidade (503): alerta, não status silencioso.
+    expect(status).toHaveAttribute('role', 'alert');
+    // ...e texto DIFERENTE do 503 — "o catálogo está fora" e "a busca falhou" não são a mesma coisa.
+    expect(status).not.toHaveTextContent('Não foi possível conectar ao catálogo');
+    expect(screen.queryByTestId('icd-search-listbox')).not.toBeInTheDocument();
+  });
+
+  it('F1: falha de busca com termo que PARECE código não ganha a dica "busque pelo nome" — a dica é de "não achei", não de "não perguntei"', async () => {
+    search.mockRejectedValue(new Error('HTTP 500'));
+    render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
+    fireEvent.change(screen.getByTestId('icd-search-input'), { target: { value: 'F84' } });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(screen.queryByTestId('icd-search-code-hint')).not.toBeInTheDocument();
+    expect(screen.getByTestId('icd-search-status')).toHaveTextContent('Não foi possível fazer a busca');
+  });
+
+  /**
+   * F7 — o piso de tamanho da busca estava guardado no front (`MIN_CHARS = 2`) E no backend.
+   * O 400 agora DIZ o número (`details.minQueryLength`): o front consome o valor da API em vez de
+   * manter uma 2ª cópia da constante. Só a unidade cobre isto — o container do `enlite-api` roda
+   * imagem ANTERIOR ao conserto do backend, então nenhum e2e contra ele veria o `minQueryLength`.
+   */
+  it('F7: o 400 da API DITA o piso — depois de um minQueryLength:3, a tela passa a exigir 3 e não pergunta mais com 2', async () => {
+    search.mockRejectedValueOnce(new TerminologyMinQueryLengthError(3));
+    render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
+    const input = screen.getByTestId('icd-search-input');
+    // 2 caracteres passam pelo piso otimista inicial e a API recusa dizendo o número dela.
+    fireEvent.change(input, { target: { value: 'es' } });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(search).toHaveBeenCalledTimes(1);
+    // A tela adota o piso da API — e diz o número DELA, não um literal do front.
+    expect(screen.getByTestId('icd-search-status')).toHaveTextContent('Digite pelo menos 3 caracteres.');
+    // ...e a partir daí 2 caracteres não geram mais requisição nenhuma.
+    fireEvent.change(input, { target: { value: 'ab' } });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('icd-search-status')).toHaveTextContent('Digite pelo menos 3 caracteres.');
+  });
+
+  it('F7: o piso da API NÃO é lido como "sem resultado" nem como "a busca falhou" — é o estado de "faltam caracteres"', async () => {
+    search.mockRejectedValueOnce(new TerminologyMinQueryLengthError(4));
+    render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
+    fireEvent.change(screen.getByTestId('icd-search-input'), { target: { value: 'es' } });
+    await vi.advanceTimersByTimeAsync(300);
+    const status = screen.getByTestId('icd-search-status');
+    expect(status).not.toHaveTextContent('Nenhum resultado');
+    expect(status).not.toHaveTextContent('Não foi possível fazer a busca');
+    expect(status).toHaveAttribute('role', 'status');
+    expect(screen.queryByTestId('icd-search-listbox')).not.toBeInTheDocument();
   });
 
   it('resposta obsoleta NUNCA sobrescreve a mais nova (requestId descarta a antiga)', async () => {

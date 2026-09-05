@@ -30,7 +30,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Search } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
-import { AdminTerminologyApiService, TerminologyUnavailableError } from '@infrastructure/http/AdminTerminologyApiService';
+import { AdminTerminologyApiService, TerminologyUnavailableError, TerminologyMinQueryLengthError } from '@infrastructure/http/AdminTerminologyApiService';
 import type { TerminologyCandidate } from '@domain/entities/Terminology';
 
 export interface IcdSearchComboboxProps {
@@ -39,10 +39,25 @@ export interface IcdSearchComboboxProps {
   disabled?: boolean;
 }
 
-type Phase = 'idle' | 'tooShort' | 'typing' | 'searching' | 'results' | 'empty' | 'unavailable';
+/**
+ * F1 — `failed` NÃO é `empty`. "Não achei no catálogo" (200 com lista vazia) e "não consegui
+ * perguntar" (500, 401 de token vencido, API fora do ar, resposta não-JSON) eram a MESMA caixa
+ * cinza: a operadora lia "Nenhum resultado para X", concluía que o diagnóstico não existe no
+ * sistema, não escolhia nada, e o paciente ficava sem diagnóstico estruturado — exatamente o
+ * "cair em texto livre silencioso" que a US-4 proíbe. A régua já estava escrita no client
+ * (`AdminTerminologyApiService`): "erro de rede não é lista vazia".
+ */
+type Phase = 'idle' | 'tooShort' | 'typing' | 'searching' | 'results' | 'empty' | 'unavailable' | 'failed';
 
 const DEBOUNCE_MS = 300;
-const MIN_CHARS = 2;
+/**
+ * F7 — piso OTIMISTA, não a verdade. A verdade é do backend, que a DIZ no corpo do 400
+ * (`details.minQueryLength`); este número só evita a requisição óbvia antes da primeira resposta.
+ * Quando a API discorda, ela ganha: o componente adota o piso dela e não volta a perguntar abaixo
+ * dele. Guardar o número dos dois lados era o defeito — hoje concordam e voltam a divergir no dia
+ * em que alguém mudar um só.
+ */
+const OPTIMISTIC_MIN_CHARS = 2;
 /** SUP-1 (spec 016): filtro padrão de TELA — capítulos 06 (mental) e 08 (neurológico). */
 const DEFAULT_CHAPTERS = '06,08';
 
@@ -70,6 +85,8 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false }: IcdSearchC
   const [isOpen, setIsOpen] = useState(false);
   /** V1: estado do escopo de busca — persiste enquanto o drawer estiver aberto (não reseta a cada tecla). */
   const [allChapters, setAllChapters] = useState(false);
+  /** F7: piso VIVO — nasce otimista e passa a valer o que a API respondeu (nunca um literal daqui). */
+  const [minChars, setMinChars] = useState(OPTIMISTIC_MIN_CHARS);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -98,7 +115,18 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false }: IcdSearchC
         // já cai como obsoleto aqui — não existe "abortado E ainda o mais recente" para tratar.
         if (requestIdRef.current !== requestId) return; // obsoleta (rejeitada OU abortada) — descartada
         setOptions([]);
-        setPhase(err instanceof TerminologyUnavailableError ? 'unavailable' : 'empty');
+        // F7: a API recusou por tamanho e DISSE o piso dela — adotamos o número e voltamos ao
+        // estado "faltam caracteres" (nem falha, nem "não há"): a operadora sabe o que fazer.
+        if (err instanceof TerminologyMinQueryLengthError) {
+          setMinChars(err.minQueryLength);
+          setPhase('tooShort');
+          setIsOpen(false);
+          return;
+        }
+        // F1: `empty` está RESERVADO para a resposta 200 com `candidates: []`. Toda falha vira
+        // um estado de FALHA visível — `unavailable` quando o catálogo se declarou fora (503),
+        // `failed` para o resto (500, 401, rede, corpo não-JSON). Nunca "sem resultado".
+        setPhase(err instanceof TerminologyUnavailableError ? 'unavailable' : 'failed');
         setIsOpen(true);
       });
   }, []);
@@ -116,7 +144,7 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false }: IcdSearchC
     }
     // U5: abaixo do mínimo, mas com pelo menos 1 caractere — não é mais silêncio (era idêntico
     // ao estado vazio); diz o piso em vez de deixar a operadora achar que nada está acontecendo.
-    if (q.length < MIN_CHARS) {
+    if (q.length < minChars) {
       abortRef.current?.abort();
       requestIdRef.current++;
       setOptions([]);
@@ -131,7 +159,7 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false }: IcdSearchC
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [query, allChapters, runSearch]);
+  }, [query, allChapters, minChars, runSearch]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -173,13 +201,16 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false }: IcdSearchC
   }
 
   const codeOrAcronymHint = phase === 'empty' && looksLikeCodeOrAcronym(query.trim());
+  /** F1: os dois estados de FALHA reusam a MESMA forma do 503 — `role="alert"` e texto vermelho. */
+  const isFailurePhase = phase === 'unavailable' || phase === 'failed';
 
   const statusText =
-    phase === 'tooShort' ? ta('tooShortHint')
+    phase === 'tooShort' ? ta('tooShortHint', { min: minChars })
     : phase === 'typing' ? ta('typing')
     : phase === 'searching' ? ta('searching')
     : phase === 'empty' ? ta('noResults', { query: query.trim() })
     : phase === 'unavailable' ? ta('unavailable')
+    : phase === 'failed' ? ta('searchFailed')
     : null;
 
   return (
@@ -261,7 +292,7 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false }: IcdSearchC
           disparava em praticamente toda busca — vira ruído e ela aprende a ignorar em um dia.
           Texto fixo não tem heurística para calibrar nem falso positivo, e aponta para o controle
           que está logo acima. Só aparece depois de uma busca sem escolha, para não poluir o vazio. */}
-      {!allChapters && query.trim().length >= MIN_CHARS && (
+      {!allChapters && query.trim().length >= minChars && (
         <Text size="xs" color="muted" data-testid={`${id}-widen-hint`}>
           {ta('widenScopeHint')}
         </Text>
@@ -272,8 +303,8 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false }: IcdSearchC
           as="span"
           size="xs"
           color="muted"
-          role={phase === 'unavailable' ? 'alert' : 'status'}
-          className={phase === 'unavailable' ? '!text-red-600' : undefined}
+          role={isFailurePhase ? 'alert' : 'status'}
+          className={isFailurePhase ? '!text-red-600' : undefined}
           data-testid={`${id}-status`}
         >
           {statusText}

@@ -114,6 +114,16 @@ describe('PatientStatusControl', () => {
     expect(screen.getByTestId('patient-status-note')).toHaveValue('');
   });
 
+  it('nota REDIGIDA: mudar só o motivo NÃO manda a chave onHoldNote (o servidor a trataria como apagamento)', async () => {
+    render(<PatientStatusControl patient={{ ...active, status: 'ON_HOLD', onHoldReason: 'SCHOOL', onHoldNote: null, onHoldNoteRedacted: true }} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByTestId('patient-status-reason'), { target: { value: 'OTHER' } });
+    fireEvent.click(screen.getByTestId('patient-status-save'));
+    await waitFor(() => expect(updatePatientStatus).toHaveBeenCalledTimes(1));
+    const payload = updatePatientStatus.mock.calls[0][1] as Record<string, unknown>;
+    expect(payload).toEqual({ status: 'ON_HOLD', onHoldReason: 'OTHER' });
+    expect(Object.prototype.hasOwnProperty.call(payload, 'onHoldNote')).toBe(false);
+  });
+
   it('ramos: status null cai em ACTIVE; 422 sem details usa o atual/alvo; em espera, mudar só a nota já habilita', async () => {
     updatePatientStatus.mockRejectedValueOnce(new PatientApiError('nope', 422, { code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED' }));
     render(<PatientStatusControl patient={{ ...active, status: null }} onSaved={vi.fn()} />);

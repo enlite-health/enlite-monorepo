@@ -79,6 +79,9 @@ export interface DeactivateServiceDeps {
   patientId: string;
   confirmMessage: string;
   setBusy: (busy: boolean) => void;
+  /** F4: o canal de erro que o componente JÁ tem — este caminho não o usava. */
+  setError: (error: string | null) => void;
+  errorMessage: string;
   onSaved: () => void;
 }
 
@@ -97,10 +100,16 @@ export async function deactivateService(
 ): Promise<void> {
   if (!service) return;
   if (!window.confirm(deps.confirmMessage)) return;
+  deps.setError(null);
   deps.setBusy(true);
   try {
     await AdminContractedServicesApiService.updateContractedService(deps.patientId, service.id, { active: false });
     deps.onSaved();
+  } catch {
+    // F4: `try/finally` SEM `catch` — a operadora confirmava a baixa, o PATCH falhava, e o único
+    // sinal era o spinner parando. O `setError` já existia e era renderizado na linha do Salvar;
+    // este caminho é que nunca o usava.
+    deps.setError(deps.errorMessage);
   } finally {
     deps.setBusy(false);
   }
@@ -234,7 +243,14 @@ export function ContractedServiceFormRow({ patientId, service, index, onSaved, o
   };
 
   const deactivate = (): Promise<void> =>
-    deactivateService(service, { patientId, confirmMessage: te('deactivateServiceConfirm'), setBusy, onSaved });
+    deactivateService(service, {
+      patientId,
+      confirmMessage: te('deactivateServiceConfirm'),
+      setBusy,
+      setError,
+      errorMessage: te('deactivateServiceError'),
+      onSaved,
+    });
 
   return (
     <div

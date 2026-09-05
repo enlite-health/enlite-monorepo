@@ -2,7 +2,7 @@
  * AdminTerminologyApiService — GET /api/admin/terminology/search (spec 016 F3).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AdminTerminologyApiService, TerminologyUnavailableError } from '../AdminTerminologyApiService';
+import { AdminTerminologyApiService, TerminologyUnavailableError, TerminologyMinQueryLengthError } from '../AdminTerminologyApiService';
 
 const mockGetIdToken = vi.fn().mockResolvedValue('mock-token');
 vi.mock('@infrastructure/services/FirebaseAuthService', () => ({
@@ -82,6 +82,33 @@ describe('AdminTerminologyApiService', () => {
       status: 500, json: () => Promise.resolve({}), headers: { get: () => null },
     }) as unknown as typeof fetch;
     await expect(AdminTerminologyApiService.search('x')).rejects.toThrow(/HTTP 500/);
+  });
+
+  /**
+   * F7 — o piso de tamanho da busca vivia em DUAS fontes: `MIN_CHARS = 2` guardado no front e o
+   * `MIN_SEARCH_QUERY_LENGTH` do backend. Hoje concordam; voltam a divergir no dia em que alguém
+   * mudar um dos dois. O backend passou a DIZER o número no corpo do 400
+   * (`details: { fields:['q'], minQueryLength: 2 }`) — o cliente consome, não guarda.
+   */
+  it('F7: 400 com details.minQueryLength vira TerminologyMinQueryLengthError carregando o NÚMERO da API', async () => {
+    mockFetch({ success: false, error: 'Invalid query', details: { fields: ['q'], minQueryLength: 3 } }, 400);
+    await expect(AdminTerminologyApiService.search('ab')).rejects.toBeInstanceOf(TerminologyMinQueryLengthError);
+    mockFetch({ success: false, error: 'Invalid query', details: { fields: ['q'], minQueryLength: 3 } }, 400);
+    const err = await AdminTerminologyApiService.search('ab').catch((e: unknown) => e);
+    expect((err as TerminologyMinQueryLengthError).minQueryLength).toBe(3);
+  });
+
+  it('F7: 400 de validação SEM minQueryLength (outro campo inválido) continua sendo Error comum', async () => {
+    mockFetch({ success: false, error: 'Invalid query', details: { fields: ['lang'] } }, 400);
+    const err = await AdminTerminologyApiService.search('abc').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(TerminologyMinQueryLengthError);
+  });
+
+  it('F7: `minQueryLength` que não é número (contrato quebrado) NÃO vira piso — cai no erro comum', async () => {
+    mockFetch({ success: false, error: 'Invalid query', details: { fields: ['q'], minQueryLength: 'dois' } }, 400);
+    const err = await AdminTerminologyApiService.search('ab').catch((e: unknown) => e);
+    expect(err).not.toBeInstanceOf(TerminologyMinQueryLengthError);
   });
 
   it('candidates ausente no corpo de sucesso não quebra (devolve [])', async () => {

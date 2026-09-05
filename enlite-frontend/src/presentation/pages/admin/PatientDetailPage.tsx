@@ -60,6 +60,19 @@ export default function PatientDetailPage() {
     setActiveTab(COMPLETENESS_TAB[code]);
     setFocusRequest({ code, token: Date.now() });
   };
+  /**
+   * F3 — o pedido de foco tem de MORRER na troca de aba. `focusRequest` era escrito só em
+   * `focusChecklistItem` e nada o devolvia a `null`; como os cards são montados POR ABA, o
+   * de-dupe do `useAutoOpenDrawer` (um `useRef`) morria junto com o componente e o pedido antigo
+   * era obedecido DE NOVO na remontagem: ela clicava em "Cobertura" no checklist, fechava o
+   * drawer, ia para "Rede de apoio", voltava — e o drawer abria sozinho por cima do trabalho
+   * dela. Trocar de aba À MÃO é um ato dela, não do checklist: consome o pedido.
+   * (`focusChecklistItem` NÃO passa por aqui — ele troca a aba e escreve o pedido novo.)
+   */
+  const changeTab = (tab: PatientTab) => {
+    setFocusRequest(null);
+    setActiveTab(tab);
+  };
 
   if (isLoading) return <DetailSkeleton />;
 
@@ -142,7 +155,7 @@ export default function PatientDetailPage() {
 
       {/* Tab Navigation */}
       <div className="mb-6">
-        <PatientProfileTabs activeTab={activeTab} onTabChange={setActiveTab} />
+        <PatientProfileTabs activeTab={activeTab} onTabChange={changeTab} />
       </div>
 
       {/* Tab Content */}

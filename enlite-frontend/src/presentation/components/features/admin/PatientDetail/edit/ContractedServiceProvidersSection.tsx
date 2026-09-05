@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Trash2 } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
@@ -50,6 +50,13 @@ export async function runAssociateProvider(selected: WorkerHit | null, deps: Ass
   }
 }
 
+/**
+ * F2 — mesmo debounce do `IcdSearchCombobox` (300ms). Sem ele saía um `listWorkers` POR TECLA.
+ */
+const SEARCH_DEBOUNCE_MS = 300;
+/** F2: piso de caracteres para consultar — abaixo disto a lista é limpa, sem ir à rede. */
+const SEARCH_MIN_CHARS = 2;
+
 interface Props {
   patientId: string;
   serviceId: string;
@@ -73,20 +80,58 @@ export function ContractedServiceProvidersSection({ patientId, serviceId, provid
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const runSearch = async (term: string): Promise<void> => {
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * F2 — id de requisição, o MESMO padrão do `IcdSearchCombobox` no mesmo PR. Sem ele a busca
+   * tinha duas formas de entregar o resultado da consulta ERRADA, e `associateProvider` manda o
+   * `workerId` escolhido SEM passo de confirmação:
+   *   1. `Mar` e depois `Marta`: se a resposta de `Mar` chegasse por último, a lista mostrava os
+   *      resultados de `Mar` com o campo lendo `Marta` — e a operadora associava outro cuidador;
+   *   2. `listWorkers` lançava (`AdminWorkerListApiService`), a promessa rejeitava sem tratamento
+   *      e `setHits` nunca rodava — os resultados da busca ANTERIOR ficavam na tela sob a
+   *      consulta nova (só o ramo `< 2 chars` limpava).
+   * O contador é incrementado tanto ao agendar uma busca nova quanto ao cair abaixo do piso, e a
+   * resposta obsoleta é descartada no `then` E no `catch`.
+   *
+   * ⚠️ Sem `AbortController`: `AdminApiService.listWorkers` não aceita `AbortSignal` hoje, e
+   * repassá-lo exigiria mexer em `AdminWorkerListApiService.ts`/`AdminApiService.ts`, que estão
+   * fora do piso de 100% (o segundo mede 20,6% de funções). O abort só pouparia rede — o
+   * descarte por id já garante que resposta velha nunca sobrescreve a nova.
+   */
+  const requestIdRef = useRef(0);
+
+  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current); }, []);
+
+  const runSearch = (term: string): void => {
     setSearch(term);
     setSelected(null);
-    if (term.trim().length < 2) {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (term.trim().length < SEARCH_MIN_CHARS) {
+      requestIdRef.current++; // invalida qualquer resposta ainda em voo
       setHits([]);
       return;
     }
-    const { data } = await AdminApiService.listWorkers({ search: term, limit: '5' });
-    setHits(
-      (data as Array<{ id: string; worker?: { name?: string }; name?: string }>).map((w) => ({
-        id: w.id,
-        name: w.worker?.name ?? w.name ?? w.id,
-      })),
-    );
+    const requestId = ++requestIdRef.current;
+    debounceRef.current = setTimeout(() => {
+      setError(null);
+      AdminApiService.listWorkers({ search: term, limit: '5' })
+        .then(({ data }) => {
+          if (requestIdRef.current !== requestId) return; // resposta obsoleta — descartada
+          setHits(
+            (data as Array<{ id: string; worker?: { name?: string }; name?: string }>).map((w) => ({
+              id: w.id,
+              name: w.worker?.name ?? w.name ?? w.id,
+            })),
+          );
+        })
+        .catch(() => {
+          if (requestIdRef.current !== requestId) return; // obsoleta (rejeitada) — descartada
+          // Falhou: a lista da consulta ANTERIOR não pode ficar na tela passando por resultado
+          // desta. Lista vazia + erro visível — nunca resultado velho em silêncio.
+          setHits([]);
+          setError(te('searchWorkerError'));
+        });
+    }, SEARCH_DEBOUNCE_MS);
   };
 
   const associate = (): Promise<void> =>
@@ -107,10 +152,16 @@ export function ContractedServiceProvidersSection({ patientId, serviceId, provid
     });
 
   const deactivate = async (providerId: string): Promise<void> => {
+    setError(null);
     setBusy(true);
     try {
       await AdminContractedServicesApiService.updateProvider(patientId, serviceId, providerId, { active: false });
       onChanged();
+    } catch {
+      // F4: `try/finally` SEM `catch`. Desassociar prestador é ação destrutiva que ela confirma e
+      // acredita ter concluído; o `error` já existe aqui e é usado pelo caminho de sucesso ao
+      // lado (o associate) — este caminho é que falhava em silêncio.
+      setError(te('deactivateProviderError'));
     } finally {
       setBusy(false);
     }

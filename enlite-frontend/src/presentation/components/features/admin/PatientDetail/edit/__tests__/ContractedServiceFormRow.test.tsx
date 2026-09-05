@@ -188,6 +188,22 @@ describe('ContractedServiceFormRow', () => {
     await waitFor(() => expect(screen.getByTestId('contracted-service-error-s1')).toBeTruthy());
   });
 
+  /**
+   * F4 (gate `revisao-pr`, MÉDIO ×3) — `deactivateService` tinha `try/finally` SEM `catch`. O
+   * componente TEM canal de erro (`setError`, renderizado ao lado do botão Salvar) que este
+   * caminho nunca usava: a operadora confirmava a baixa do serviço, o PATCH falhava, e o único
+   * sinal era o spinner parando. Ela acreditava ter dado baixa.
+   */
+  it('F4: "Dar de baja" que FALHA usa o canal de erro que já existe no componente', async () => {
+    confirmSpy.mockReturnValue(true);
+    mockUpdate.mockRejectedValue(new Error('HTTP 500'));
+    const onSaved = vi.fn();
+    render(<ContractedServiceFormRow patientId="pat1" service={SERVICE} index={1} onSaved={onSaved} />);
+    fireEvent.click(screen.getByTestId('contracted-service-deactivate-s1'));
+    await waitFor(() => expect(screen.getByTestId('contracted-service-error-s1')).toBeTruthy());
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
   it('sem data-testid de cancelar quando onCancelNew não é passado (não-novo)', () => {
     render(<ContractedServiceFormRow patientId="pat1" service={SERVICE} index={1} onSaved={vi.fn()} />);
     expect(screen.queryByTestId('contracted-service-new-cancel')).toBeNull();
@@ -200,11 +216,26 @@ describe('ContractedServiceFormRow', () => {
   it('deactivateService(null, ...): retorna sem confirmar, sem chamar a API (branch antes inalcançável)', async () => {
     const onSaved = vi.fn();
     const setBusy = vi.fn();
-    await deactivateService(null, { patientId: 'pat1', confirmMessage: 'confirma?', setBusy, onSaved });
+    await deactivateService(null, { patientId: 'pat1', confirmMessage: 'confirma?', setBusy, setError: vi.fn(), errorMessage: 'erro', onSaved });
     expect(confirmSpy).not.toHaveBeenCalled();
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(setBusy).not.toHaveBeenCalled();
     expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it('F4: deactivateService com a API falhando reporta pelo `setError` e NÃO chama onSaved', async () => {
+    confirmSpy.mockReturnValue(true);
+    mockUpdate.mockRejectedValue(new Error('boom'));
+    const onSaved = vi.fn();
+    const setBusy = vi.fn();
+    const setError = vi.fn();
+    await deactivateService(SERVICE, {
+      patientId: 'pat1', confirmMessage: 'confirma?', setBusy, setError,
+      errorMessage: 'no se pudo dar de baja', onSaved,
+    });
+    expect(setError).toHaveBeenLastCalledWith('no se pudo dar de baja');
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(setBusy).toHaveBeenNthCalledWith(2, false);
   });
 
   it('deactivateService(SERVICE, ...): confirmando, chama updateContractedService({active:false}) e onSaved', async () => {
@@ -212,7 +243,7 @@ describe('ContractedServiceFormRow', () => {
     mockUpdate.mockResolvedValue({});
     const onSaved = vi.fn();
     const setBusy = vi.fn();
-    await deactivateService(SERVICE, { patientId: 'pat1', confirmMessage: 'confirma?', setBusy, onSaved });
+    await deactivateService(SERVICE, { patientId: 'pat1', confirmMessage: 'confirma?', setBusy, setError: vi.fn(), errorMessage: 'erro', onSaved });
     expect(confirmSpy).toHaveBeenCalledWith('confirma?');
     expect(mockUpdate).toHaveBeenCalledWith('pat1', 's1', { active: false });
     expect(onSaved).toHaveBeenCalledTimes(1);

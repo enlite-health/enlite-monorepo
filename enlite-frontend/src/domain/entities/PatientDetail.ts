@@ -271,7 +271,8 @@ export interface PatientGeneralSectionPayload {
 export interface PatientClinicalSectionPayload {
   diagnosis?: string | null;
   dependencyLevel?: string | null;
-  clinicalSpecialty?: string | null;
+  // F6: `clinicalSpecialty` REMOVIDA — o `clinicalSectionSchema` `.strict()` do backend já não a
+  // aceita, e nenhum chamador a usava. Chave morta num payload é 400 latente, não enfeite.
   serviceType?: string[] | null;
   /** US-B4 (spec 012): códigos de `device_types` — substitui o texto livre `deviceType`. */
   deviceTypes?: string[];
