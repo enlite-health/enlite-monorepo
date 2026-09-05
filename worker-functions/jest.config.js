@@ -114,6 +114,50 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // Correções C1-C9 do relatório F5 (gate `revisao-pr`). Os 6 arquivos abaixo foram TOCADOS por
+    // aquelas correções e entram no piso medindo 100 nos quatro eixos — não por otimismo: o
+    // per-file de `npx jest --coverage` inteiro foi lido antes de cada entrada.
+    //
+    //  - `PatientService`: `moveStatus` deixou de gravar `on_hold_note` incondicionalmente (C1) e
+    //    passou a validar a SAÍDA de estado clínico (C5). Regressão aqui apaga texto clínico sem
+    //    segunda cópia em lugar nenhum.
+    //  - `PatientRelatedWriter`: o Path 2 copia `logistics_corridor`/`access_notes` da linha
+    //    arquivada (C2). Estava a 5,66 % — o único INSERT do arquivo não tinha teste unitário
+    //    NENHUM, e é ele que apagava os dois campos a cada sync.
+    //  - `contractedServiceHourlyValueAccess`: ponto único de quem lê E de quem escreve
+    //    `hourly_value` (C4) — mesmo papel de `patientClinicalAccess`, que já está no piso.
+    //  - `InsuranceProviderRepository`: o 23505 passou a ser lido pela CONSTRAINT (C6); regredir
+    //    para "todo 23505 é código duplicado" volta a mentir sobre um código que não existe.
+    //  - Os dois controllers: as guardas de 403/404/409 que estas correções instalaram.
+    // ── Quebra pelo teto de 400 linhas do CLAUDE.md (05/09/2026) ─────────────────────────
+    // `PatientService` (841 linhas) foi cortado por RESPONSABILIDADE, e os pedaços entram no
+    // piso NO MESMO commit que os cria — senão nasceriam fora da régua, que é exatamente o
+    // defeito que o gate da F5 apontou ("passaram porque nasceram fora"). Os cinco medem 100
+    // nos quatro eixos na suíte inteira (lido no per-file, não estimado): são o MESMO código
+    // que já estava coberto dentro do `PatientService`, só que agora endereçável.
+    //  - `PatientStatusWriter`: a transição de estado (+ os dois erros que o controller mapeia);
+    //  - `PatientSectionWriter`: a edição por seção (os drawers do painel);
+    //  - `PatientNativeCreator`: o caminho do paciente nascido na Enlite;
+    //  - `PatientRelatedUpsert`: as coleções auxiliares, compartilhadas pelos dois caminhos;
+    //  - `patientCaseNumberConflict`: a leitura do 23505 PELA CONSTRAINT, agora com dois donos.
+    'src/modules/case/application/{PatientService,PatientRelatedWriter,contractedServiceHourlyValueAccess,PatientStatusWriter,PatientSectionWriter,PatientNativeCreator,PatientRelatedUpsert,patientCaseNumberConflict}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/infrastructure/InsuranceProviderRepository.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/interfaces/controllers/{AdminPatientsController,AdminPatientContractedServicesController,AdminInsuranceProvidersController}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     // Spec 015 (US-A6.2, D254 item 6): fonte ÚNICA do mapa franja→vaga — regressão aqui muda o
     // que TODA vaga nascida de serviço recebe de age_range_min/max, calado.
     'src/modules/case/domain/ProviderAgeBandMapping.ts': {
@@ -147,7 +191,37 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
-    'src/modules/case/infrastructure/{PatientClinicalRepository,PatientDetailQueryHelper,PatientQueryRepository}.ts': {
+    // Mesma quebra pelo teto de 400: `PatientQueryRepository` (612), `PatientDetailQueryHelper`
+    // (408) e o SQL de endereço que estava DENTRO do `AdminPatientsController` (874) viraram
+    // arquivos próprios — todos medindo 100 nos quatro eixos, todos entrando no piso aqui.
+    //  - `ContractedServiceDetailMapper`: a subárvore de serviços contratados da ficha;
+    //  - `PatientLeadContactAttacher`: a 2ª passada da listagem — é o ÚNICO ponto da listagem
+    //    que toca o KMS, e a máscara do lex C1 mora lá;
+    //  - `PatientAddressQueryHelper`: o INSERT/SELECT de endereço do painel (molde dos
+    //    `*QueryHelper` que este módulo já usa).
+    'src/modules/case/infrastructure/{PatientClinicalRepository,PatientDetailQueryHelper,PatientQueryRepository,ContractedServiceDetailMapper,PatientLeadContactAttacher,PatientAddressQueryHelper}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // A projeção pública da lista e da ficha saiu do `AdminPatientsController` para cá (mesmo
+    // papel de `DiagnosisPublicView`): um lugar só decide o formato que a API publica, e é onde
+    // as duas redações (texto clínico D211.2, `hourlyValue` lex C-c.4) são aplicadas. 100 nos
+    // quatro eixos — o controller já estava no piso e o código é o mesmo.
+    'src/modules/case/interfaces/AdminPatientView.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // `PatientSourceLabelRepository` (963 linhas, 2,4× o teto) foi quebrado em quatro. Ele
+    // NUNCA esteve no piso (mediu 91,66/73,49/84,37/91,46 antes da quebra), então os pedaços só
+    // entram aqui se medirem 100 sozinhos — e estes DOIS medem. Os outros dois ficam de fora
+    // POR MEDIÇÃO, não por esquecimento: `PatientSourceLabelClassifier` 92,1/85/100/94,28 e
+    // `PatientSourceLabelRejectionRecorder` 96,87/73,52/83,33/96,49 — a dívida é a mesma que já
+    // existia no arquivo grande, agora visível por responsabilidade.
+    'src/modules/case/infrastructure/{PatientSourceLabelCeiling,PatientSourceLabelRead,PatientSourceLabelLock}.ts': {
       statements: 100,
       branches: 100,
       functions: 100,
@@ -318,6 +392,17 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // F5-CORREÇÃO T2 (QA-caça, 05/09/2026): `conceptKey` é o espelho TS da função SQL
+    // `terminology.concept_key` (migration 328) — a identidade de conceito ESTÁVEL entre
+    // releases. É a peça que faz o mapa do ClickUp continuar resolvendo depois de promover um
+    // release novo; regressão aqui é sempre calada (o espelho fica mudo, webhook 200, nenhuma
+    // linha de rejeição). Arquivo NOVO, nasce em 100% nos quatro eixos — medido antes de entrar.
+    'src/modules/terminology/infrastructure/conceptKey.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     // O adaptador real (Postgres) e o fake que prova a LSP da porta (mesma bateria de teste nos
     // dois — tests/e2e/terminology-port-contract.e2e.test.ts) + o Strategy que escolhe entre
     // eles por configuração.
@@ -418,6 +503,48 @@ module.exports = {
       lines: 100,
     },
     'src/modules/terminology/interfaces/validators/terminologySearchSchema.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // ── Correções I1-I4 do relatório F5 (espelho do ClickUp) ─────────────────────────────
+    // Os quatro defeitos moravam exatamente nos dois arquivos abaixo + nos dois repositórios,
+    // e os quatro tinham em comum a MESMA causa: a régua não media ali.
+    //
+    //  - `SyncPatientFromClickUpTaskUseCase`: o `return` de CASE_NUMBER_CONFLICT estava ACIMA
+    //    das 4 gravações (cru, cobertura, dispositivo, diagnóstico) — para toda tarefa com
+    //    número de caso duplicado, essas 4 tabelas NUNCA eram escritas, em silêncio, enquanto
+    //    os escalares eram. Estava a 93,91 %/78,68 %: nenhum `catch` best-effort tinha teste.
+    //  - `ClickUpPatientMapper`: 4 campos (`Dependencia`, `Sexo`, `Tipo de Documento Paciente`,
+    //    `Servicio`) liam `resolveDropdown` CRU, e a opção que deixava de resolver virava um
+    //    `null` gravado como APAGAMENTO (348/185/349 linhas de exposição medida); e
+    //    `Equipo Tratante Multidisciplinario`, que é `drop_down`, era lido como checkbox.
+    //  - `PatientIdentityRepository`: estava a **25 %/0 % de branches** — o `ON CONFLICT DO
+    //    UPDATE` inteiro sem um teste unitário, e é ele quem decide se `sex`/`document_type`
+    //    do paciente são sobrescritos pelo espelho. Agora 100 nos quatro eixos.
+    //  - `PatientClinicalRepository` e `PatientService` já estavam no piso, acima; as
+    //    bandeiras `dependencyLevelReadable`/`serviceTypeReadable` entraram medindo 100.
+    'src/modules/case/infrastructure/PatientIdentityRepository.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/integration/application/SyncPatientFromClickUpTaskUseCase.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Este arquivo parava em 99,36/99,24 por uma guarda PROVADAMENTE MORTA em
+    // `parseNameFromTitle`: depois de `.filter(Boolean)` e do `if (parts.length < 2) return null`,
+    // `parts[0]` e o `join(' ')` de pelo menos um elemento não-vazio são SEMPRE truthy, então o
+    // `if (!lastName || !firstName) return null` era inalcançável. Autorizado pelo Gabriel na F5,
+    // a guarda foi apagada e o piso subiu para 100 nos quatro eixos — medido com as 19 suítes que
+    // cobrem o arquivo (300 testes). 🔒 Piso de 100 % sobre ramo morto é régua que não mede nada:
+    // o número só vale depois de o ramo inalcançável sair.
+    'src/modules/integration/infrastructure/clickup/ClickUpPatientMapper.ts': {
       statements: 100,
       branches: 100,
       functions: 100,

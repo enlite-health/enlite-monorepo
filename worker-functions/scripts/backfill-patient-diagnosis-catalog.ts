@@ -35,7 +35,7 @@ import { IcdCatalogTerminology } from '../src/modules/terminology/infrastructure
 import { PatientDiagnosisService } from '../src/modules/diagnosis/application/PatientDiagnosisService';
 import { PostgresPatientDiagnosisRepository } from '../src/modules/diagnosis/infrastructure/PostgresPatientDiagnosisRepository';
 import { DiagnosisSource } from '../src/modules/diagnosis/domain/DiagnosisSource';
-import { parseBackfillFlags } from './backfill-diagnosis-catalog/cli-guards';
+import { parseBackfillFlags, shouldWrite } from './backfill-diagnosis-catalog/cli-guards';
 import { matchByExactTitle } from './backfill-diagnosis-catalog/matching';
 
 const BACKFILL_ACTOR = 'backfill-script';
@@ -84,13 +84,17 @@ async function fetchPatientIdsForDiagnosis(sourcePool: Pool, diagnosisText: stri
 
 export async function run(env: NodeJS.ProcessEnv, args: readonly string[]): Promise<RunReport> {
   const flags = parseBackfillFlags(args);
+  // 🔴 A pergunta é `shouldWrite(flags)`, NUNCA `flags.write`: `--dry-run --write` traz
+  // `write:true` de propósito (o parser registra o que foi DIGITADO) e `dryRun:true` vence.
+  // Perguntar `flags.write` aqui gravava com `modo=DRY-RUN` impresso na tela — gate F5, D3.
+  const gravar = shouldWrite(flags);
   const catalogUrl = catalogDatabaseUrl(env);
   const sourceUrl  = sourceDatabaseUrl(env);
 
   // A trava roda SEMPRE que a intenção é escrever — antes de abrir qualquer pool de escrita.
   // Ler o catálogo (mesmo pool) não precisa da trava: leitura não tem o risco que ela existe
   // para evitar. `--write` sem trava aprovada aborta ANTES de tocar em qualquer patient.
-  if (flags.write) {
+  if (gravar) {
     assertLocalDatabaseTarget(catalogUrl);
   }
 
@@ -100,7 +104,7 @@ export async function run(env: NodeJS.ProcessEnv, args: readonly string[]): Prom
   const sourcePool = sourceUrl === catalogUrl ? catalogPool : new Pool({ connectionString: sourceUrl });
 
   const terminology = new IcdCatalogTerminology();
-  const diagnosisService = flags.write
+  const diagnosisService = gravar
     ? new PatientDiagnosisService(terminology, new PostgresPatientDiagnosisRepository(DiagnosisSource.BACKFILL))
     : null;
 
@@ -129,7 +133,7 @@ export async function run(env: NodeJS.ProcessEnv, args: readonly string[]): Prom
       report.matched += 1;
       report.patientsAffected += row.patient_count;
 
-      if (flags.write && diagnosisService) {
+      if (gravar && diagnosisService) {
         const patientIds = await fetchPatientIdsForDiagnosis(sourcePool, row.diagnosis);
         for (const patientId of patientIds) {
           const outcome = await diagnosisService.recordDiagnosis({

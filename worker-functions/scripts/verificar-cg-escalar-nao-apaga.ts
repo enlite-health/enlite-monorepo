@@ -15,10 +15,22 @@
  * Só Postgres local em docker; paciente sintético; ROLLBACK no fim.
  */
 import { Pool } from 'pg';
+import { assertLocalDatabaseTarget } from '../src/shared/database/assertLocalDatabaseTarget';
 const U = `UPDATE patients SET insurance_verified = CASE WHEN $3::boolean THEN $2 ELSE patients.insurance_verified END WHERE id=$1`;
 const ANTIGO = `UPDATE patients SET insurance_verified = $2 WHERE id=$1`;
-(async () => {
-  const p = new Pool({ connectionString: process.env.DATABASE_URL }); const c = await p.connect();
+/**
+ * A MESMA trava dos outros 9 `verificar-*` desta frente — reusada de `src/shared/database`,
+ * nunca reimplementada. Este script INSERT em `patients` e faz 4 `UPDATE patients`, e o cabeçalho acima
+ * dizia "só Postgres local em docker" sem que nada impedisse o contrário: com o
+ * `cloud-sql-proxy` vivo, `localhost:5436` é PRODUÇÃO. Cabeçalho não é trava (gate F5, D4).
+ */
+export function criarPool(env: NodeJS.ProcessEnv = process.env): Pool {
+  assertLocalDatabaseTarget(env.DATABASE_URL);
+  return new Pool({ connectionString: env.DATABASE_URL });
+}
+
+async function main(): Promise<void> {
+  const p = criarPool(); const c = await p.connect();
   await c.query('BEGIN');
   const novo = async () => (await c.query<{id:string}>(
     `INSERT INTO patients (first_name,last_name,country,is_test,insurance_verified) VALUES ('S','FIXTURE-CG','AR',true,'OSDE') RETURNING id`)).rows[0].id;
@@ -35,4 +47,9 @@ const ANTIGO = `UPDATE patients SET insurance_verified = $2 WHERE id=$1`;
   await c.query('ROLLBACK'); c.release(); await p.end();
   console.log(ok ? '\n=== VERIFICAÇÕES: TODAS OK ===' : '\n=== FALHOU ===');
   process.exit(ok?0:1);
-})().catch(e=>{console.error('ERRO:',e.message);process.exit(1)});
+}
+
+/* istanbul ignore next -- entrypoint do CLI: só roda fora de teste (require.main === module) */
+if (require.main === module) {
+  main().catch(e=>{console.error('ERRO:',e.message);process.exit(1)});
+}

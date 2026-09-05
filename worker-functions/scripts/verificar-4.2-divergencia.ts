@@ -23,6 +23,7 @@
  *    associação paciente↔código, apenas a contagem por código.)
  */
 import { Pool, PoolClient } from 'pg';
+import { assertLocalDatabaseTarget } from '../src/shared/database/assertLocalDatabaseTarget';
 
 /** A definição do trigger, em uma query: o que o escalar DEVERIA ser, para cada paciente. */
 const DIVERGENTES = `
@@ -116,8 +117,19 @@ async function autoteste(c: PoolClient): Promise<void> {
   if (!ok) process.exitCode = 1;
 }
 
-(async () => {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+/**
+ * A MESMA trava dos outros 9 `verificar-*` desta frente — reusada de `src/shared/database`,
+ * nunca reimplementada. Este script INSERT em `patients` no modo `--autoteste`, e o cabeçalho acima
+ * dizia "só Postgres local em docker" sem que nada impedisse o contrário: com o
+ * `cloud-sql-proxy` vivo, `localhost:5436` é PRODUÇÃO. Cabeçalho não é trava (gate F5, D4).
+ */
+export function criarPool(env: NodeJS.ProcessEnv = process.env): Pool {
+  assertLocalDatabaseTarget(env.DATABASE_URL);
+  return new Pool({ connectionString: env.DATABASE_URL });
+}
+
+async function main(): Promise<void> {
+  const pool = criarPool();
   const c = await pool.connect();
   const auto = process.argv.includes('--autoteste');
   try {
@@ -132,4 +144,9 @@ async function autoteste(c: PoolClient): Promise<void> {
     c.release();
     await pool.end();
   }
-})();
+}
+
+/* istanbul ignore next -- entrypoint do CLI: só roda fora de teste (require.main === module) */
+if (require.main === module) {
+  void main();
+}

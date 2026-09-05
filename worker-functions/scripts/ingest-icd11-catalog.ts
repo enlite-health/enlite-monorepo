@@ -297,28 +297,69 @@ export async function upsertEntities(pool: Pool, forRelease: string, entities: C
 /**
  * F1.5-CORREÇÃO C2 (D261) — resultado da reconciliação que `promote()` emite. Só CONTAGEM
  * (`governanca/classificacao-de-dados` item 1: nunca texto clínico em stdout/log) — nunca
- * `icd_code`/`icd_title` de entidade nem qualquer coluna de `patient_diagnoses`.
+ * `concept_code`/`concept_title` de entidade nem qualquer coluna de `patient_diagnoses`.
+ *
+ * 🔧 F5-CORREÇÃO T1/T4 (QA-caça, 05/09/2026) — três defeitos nesta estrutura, um deles CRÍTICO:
+ *
+ *  T1 (CRÍTICO, `--promote` quebrado desde a F2): a consulta de pacientes usava `pd.release` e
+ *  `pd.icd_uri`; a migration 325 chama essas colunas `catalog_release` e `concept_uri`. Assim
+ *  que existisse um release anterior COM órfão, `--promote` levantava
+ *  `42703 column pd.release does not exist` DENTRO da transação aberta → o `ROLLBACK` de
+ *  `promote()` → **`is_current` nunca se movia**. Dormente só por causa da guarda `to_regclass`
+ *  (a tabela não existia na F1). Reproduzido em banco de rascunho antes do conserto.
+ *
+ *  T4 (a reconciliação não olhava o mapa do ClickUp): `clickup_diagnosis_labels` (migration 326/
+ *  327) guarda a URI que o espelho resolve. Promover um release sem olhar para lá deixa os
+ *  mapeamentos morrerem em silêncio — nada na tela indica avaria. Agora é uma contagem própria.
+ *
+ *  T2 (a comparação nunca casava): órfão era medido por `icd_uri`, e a OMS ENCRAVA O RELEASE NO
+ *  PATH da URI — `old_e.icd_uri = new_e.icd_uri` é FALSO para todo conceito, sempre. A contagem
+ *  reportaria 100% de órfãos em qualquer promoção real. Agora tudo compara por `concept_key`
+ *  (migration 328), a identidade estável entre releases.
  */
 export interface PromotionReconciliation {
   /** Release que ERA corrente antes desta promoção. `null` na primeira promoção do catálogo. */
   readonly previousRelease: string | null;
   readonly newRelease: string;
-  /** Quantas entidades de `previousRelease` não existem em `newRelease` (por `icd_uri`). 0
-   *  quando não há release anterior (primeira promoção) ou quando o novo é igual ao anterior. */
+  /** Quantos conceitos de `previousRelease` não existem em `newRelease` (por `concept_key`,
+   *  NUNCA por `icd_uri` — ver T2 acima). 0 quando não há release anterior (primeira promoção)
+   *  ou quando o novo é igual ao anterior. */
   readonly orphanedEntityCount: number;
-  /** `patient_diagnoses` é F2 — ainda não existe nesta fase. `to_regclass` decide, sem quebrar. */
+  /** `patient_diagnoses` é F2 — pode não existir. `to_regclass` decide, sem quebrar. */
   readonly patientDiagnosesTableExists: boolean;
-  /** `null` = "não verificado" (tabela não existe ainda) — NUNCA `0`, que mentiria "verificado e
-   *  limpo" (CLAUDE.md: "contagem zero é falha, nunca sucesso"). Número real só quando a tabela
-   *  existe. */
+  /** Quantos diagnósticos ATIVOS de paciente apontam para um conceito que o release novo não
+   *  tem. `null` = "não verificado" (tabela não existe) — NUNCA `0`, que mentiria "verificado e
+   *  limpo" (CLAUDE.md: "contagem zero é falha, nunca sucesso").
+   *
+   *  ⚠️ NÃO filtra por `catalog_release = previousRelease` (a versão anterior filtrava, e por
+   *  isso não enxergava linha gravada em um release mais antigo ainda) nem exige
+   *  `orphanedEntityCount > 0` para se dar ao trabalho de contar: as duas eram formas de
+   *  devolver 0 sem ter olhado. */
   readonly affectedPatientCount: number | null;
+  /** `clickup_diagnosis_labels` é F4 — mesma guarda `to_regclass`. */
+  readonly clickupLabelTableExists: boolean;
+  /** T4 — quantos mapeamentos ATIVOS do ClickUp deixariam de resolver no release novo. `null` =
+   *  não verificado (tabela ausente), nunca 0 por omissão. Contagem, jamais o rótulo. */
+  readonly brokenClickupMappingCount: number | null;
 }
 
 /**
- * C2 — conta (nunca lê texto) quantas entidades do release ANTERIOR sumiram no NOVO, e — se
- * `patient_diagnoses` já existir (F2) — quantos pacientes apontam para elas. Roda no MESMO
+ * C2/T4 — conta (nunca lê texto) o que a troca de release quebraria. Roda no MESMO
  * client/transação de `promote()` para ver o estado consistente da troca de `is_current`.
+ *
+ * Toda comparação é por `terminology.concept_key` (migration 328): a identidade do conceito que
+ * NÃO muda entre releases. Comparar `icd_uri` é o defeito T2 — a URI carrega o release dentro.
  */
+async function tableExists(client: PoolClient, qualifiedName: string): Promise<boolean> {
+  const { rows } = await client.query<{ reg: string | null }>(`SELECT to_regclass($1)::text AS reg`, [qualifiedName]);
+  return rows[0]?.reg != null;
+}
+
+async function countOne(client: PoolClient, sql: string, params: unknown[]): Promise<number> {
+  const { rows } = await client.query<{ count: string }>(sql, params);
+  return Number(rows[0].count);
+}
+
 async function reconcilePromotion(
   client: PoolClient,
   previousRelease: string | null,
@@ -326,58 +367,81 @@ async function reconcilePromotion(
 ): Promise<PromotionReconciliation> {
   let orphanedEntityCount = 0;
   if (previousRelease && previousRelease !== newRelease) {
-    const { rows } = await client.query<{ count: string }>(
+    orphanedEntityCount = await countOne(
+      client,
       `SELECT count(*)::text AS count
          FROM terminology.icd_entities old_e
         WHERE old_e.release = $1
           AND NOT EXISTS (
             SELECT 1 FROM terminology.icd_entities new_e
-             WHERE new_e.release = $2 AND new_e.icd_uri = old_e.icd_uri
+             WHERE new_e.release = $2 AND new_e.concept_key = old_e.concept_key
           )`,
       [previousRelease, newRelease],
     );
-    orphanedEntityCount = Number(rows[0].count);
   }
 
-  const { rows: regRows } = await client.query<{ reg: string | null }>(
-    `SELECT to_regclass('public.patient_diagnoses')::text AS reg`,
-  );
-  const patientDiagnosesTableExists = regRows[0]?.reg != null;
+  const patientDiagnosesTableExists = await tableExists(client, 'public.patient_diagnoses');
+  const affectedPatientCount = patientDiagnosesTableExists
+    ? await countOne(
+        client,
+        `SELECT count(*)::text AS count
+           FROM patient_diagnoses pd
+          WHERE pd.active
+            AND NOT EXISTS (
+              SELECT 1 FROM terminology.icd_entities new_e
+               WHERE new_e.release = $1
+                 AND new_e.concept_key = terminology.concept_key(pd.concept_uri)
+            )`,
+        [newRelease],
+      )
+    : null;
 
-  let affectedPatientCount: number | null = null;
-  if (patientDiagnosesTableExists) {
-    affectedPatientCount =
-      previousRelease && orphanedEntityCount > 0
-        ? Number(
-            (
-              await client.query<{ count: string }>(
-                `SELECT count(*)::text AS count
-                   FROM patient_diagnoses pd
-                  WHERE pd.release = $1
-                    AND NOT EXISTS (
-                      SELECT 1 FROM terminology.icd_entities new_e
-                       WHERE new_e.release = $2 AND new_e.icd_uri = pd.icd_uri
-                    )`,
-                [previousRelease, newRelease],
-              )
-            ).rows[0].count,
-          )
-        : 0;
-  }
+  const clickupLabelTableExists = await tableExists(client, 'public.clickup_diagnosis_labels');
+  const brokenClickupMappingCount = clickupLabelTableExists
+    ? await countOne(
+        client,
+        `SELECT count(*)::text AS count
+           FROM clickup_diagnosis_labels m
+          WHERE m.active
+            AND NOT EXISTS (
+              SELECT 1 FROM terminology.icd_entities new_e
+               WHERE new_e.release = $1
+                 AND new_e.concept_key = terminology.concept_key(m.concept_uri)
+            )`,
+        [newRelease],
+      )
+    : null;
 
-  return { previousRelease, newRelease, orphanedEntityCount, patientDiagnosesTableExists, affectedPatientCount };
+  return {
+    previousRelease,
+    newRelease,
+    orphanedEntityCount,
+    patientDiagnosesTableExists,
+    affectedPatientCount,
+    clickupLabelTableExists,
+    brokenClickupMappingCount,
+  };
 }
 
-/** C2 — só imprime NÚMEROS. Nunca `icd_code`/`icd_title`/qualquer coluna de `patient_diagnoses`. */
+/** C2/T4 — só imprime NÚMEROS. Nunca código, título, rótulo ou coluna de `patient_diagnoses`. */
 function printReconciliationReport(r: PromotionReconciliation): void {
   console.log('\n── RECONCILIAÇÃO DE RELEASE (contagem apenas — nunca texto clínico) ──');
   console.log(`release anterior: ${r.previousRelease ?? '(nenhum — primeira promoção)'}`);
   console.log(`release novo: ${r.newRelease}`);
-  console.log(`entidades do release anterior AUSENTES no novo (por icd_uri): ${r.orphanedEntityCount}`);
+  console.log(`conceitos do release anterior AUSENTES no novo (por concept_key): ${r.orphanedEntityCount}`);
   if (r.patientDiagnosesTableExists) {
-    console.log(`pacientes apontando para entidades ausentes: ${r.affectedPatientCount}`);
+    console.log(`diagnósticos ATIVOS de paciente que deixam de resolver: ${r.affectedPatientCount}`);
   } else {
-    console.log('tabela patient_diagnoses ainda não existe (F2) — reconciliação de pacientes PULADA, não verificada.');
+    console.log('tabela patient_diagnoses não existe — reconciliação de pacientes PULADA, NÃO verificada.');
+  }
+  if (r.clickupLabelTableExists) {
+    console.log(`mapeamentos ATIVOS do ClickUp que deixam de resolver: ${r.brokenClickupMappingCount}`);
+    if ((r.brokenClickupMappingCount ?? 0) > 0) {
+      console.log('   ⚠️  mapeamento que não resolve NÃO grava diagnóstico e NÃO gera linha de rejeição:');
+      console.log('       o espelho fica mudo. Reaponte clickup_diagnosis_labels antes de usar o release novo.');
+    }
+  } else {
+    console.log('tabela clickup_diagnosis_labels não existe — mapa do ClickUp NÃO verificado.');
   }
 }
 

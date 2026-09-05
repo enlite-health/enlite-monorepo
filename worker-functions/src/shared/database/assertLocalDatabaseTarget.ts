@@ -48,20 +48,26 @@ export const LOCAL_DB_HOSTS = ['localhost', '127.0.0.1', '::1'] as const;
 export const LOCAL_DB_PORTS = ['5432', '5433'] as const;
 export const LOCAL_DB_NAME = 'enlite_e2e';
 
+/** `null`/`undefined` viram string vazia — o parser tipa os três campos como opcionais. */
+const texto = (v: string | null | undefined): string => (v == null ? '' : v);
+
+/** O alvo EFETIVO, lido com o parser de quem conecta. */
+interface AlvoLido {
+  readonly host: string;
+  readonly porta: string;
+  readonly base: string;
+}
+
 /**
- * Devolve `host:porta/base` quando o alvo é comprovadamente o Postgres local em docker.
- * Lança `Error` com mensagem começando em `TRAVA:` em qualquer outro caso.
- *
- * ⚠️ Isto confere o alvo DECLARADO. Quem escreve deve reconferir o alvo MEDIDO depois de
- * conectar (`SELECT current_database(), inet_server_port()`): um alvo se declara, o outro
- * se mede, e só os dois juntos fecham.
+ * As guardas que NENHUM flag desarma — nem `--eu-sei-que-e-producao`. As duas recusam uma
+ * FORMA de redirecionar a conexão para longe do que a URL aparenta, e por isso valem antes de
+ * qualquer lista (de permissão ou de autorização).
  */
-export function assertLocalDatabaseTarget(url: string | undefined): string {
+function assertSemRedirecionamento(url: string | undefined): asserts url is string {
   if (!url) throw new Error('TRAVA: DATABASE_URL não definido. Nada aqui adivinha alvo.');
   if (process.env.DB_HOST?.startsWith('/cloudsql/')) {
     throw new Error('TRAVA: DB_HOST aponta para socket /cloudsql/ — isso é Cloud SQL. Recusado.');
   }
-
   // Camada (2): nenhum parâmetro de query. `?port=`/`?host=` redirecionam a conexão REAL, e
   // um alvo local não precisa de nenhum parâmetro. Fora da lista de permissão ⇒ recusado.
   if (url.includes('?')) {
@@ -71,28 +77,79 @@ export function assertLocalDatabaseTarget(url: string | undefined): string {
       'local precisa deles.',
     );
   }
+}
 
-  // Camada (1): ler com o parser de quem conecta, não com um parser parecido.
-  let cfg: { host: string | null; port?: string | null; database: string | null | undefined };
+/** Camada (1): ler com o parser de quem conecta, não com um parser parecido. */
+function lerAlvo(url: string): AlvoLido {
+  let cfg: { host?: string | null; port?: string | null; database?: string | null };
   try {
     cfg = parseConnectionString(url);
   } catch {
     throw new Error('TRAVA: DATABASE_URL não é uma URL válida — recusado sem tentar conectar.');
   }
+  const porta = texto(cfg.port);
+  return { host: texto(cfg.host), porta: porta === '' ? '5432' : porta, base: texto(cfg.database) };
+}
 
-  const host  = cfg.host ?? '';
-  const porta = (cfg.port ?? '') === '' ? '5432' : String(cfg.port);
-  const base  = cfg.database ?? '';
+/**
+ * `null` quando o alvo está na lista de permissão; a mensagem `TRAVA:` do PRIMEIRO motivo
+ * quando não está. Devolver o motivo em vez de lançar é o que permite às duas travas públicas
+ * abaixo compartilharem a MESMA régua e divergirem só na consequência.
+ */
+function motivoNaoLocal(a: AlvoLido): string | null {
+  if (!(LOCAL_DB_HOSTS as readonly string[]).includes(a.host)) {
+    return `TRAVA: host "${a.host}" não é local. Permitidos: ${LOCAL_DB_HOSTS.join(', ')}.`;
+  }
+  if (!(LOCAL_DB_PORTS as readonly string[]).includes(a.porta)) {
+    return `TRAVA: porta ${a.porta} não é a do docker local. 5434 (stg) e 5436 (PRD) estão BARRADAS.`;
+  }
+  if (a.base !== LOCAL_DB_NAME) {
+    return `TRAVA: base "${a.base}" não é "${LOCAL_DB_NAME}".`;
+  }
+  return null;
+}
 
-  if (!(LOCAL_DB_HOSTS as readonly string[]).includes(host)) {
-    throw new Error(`TRAVA: host "${host}" não é local. Permitidos: ${LOCAL_DB_HOSTS.join(', ')}.`);
-  }
-  if (!(LOCAL_DB_PORTS as readonly string[]).includes(porta)) {
-    throw new Error(`TRAVA: porta ${porta} não é a do docker local. 5434 (stg) e 5436 (PRD) estão BARRADAS.`);
-  }
-  if (base !== LOCAL_DB_NAME) {
-    throw new Error(`TRAVA: base "${base}" não é "${LOCAL_DB_NAME}".`);
-  }
+/**
+ * Devolve `host:porta/base` quando o alvo é comprovadamente o Postgres local em docker.
+ * Lança `Error` com mensagem começando em `TRAVA:` em qualquer outro caso.
+ *
+ * ⚠️ Isto confere o alvo DECLARADO. Quem escreve deve reconferir o alvo MEDIDO depois de
+ * conectar (`SELECT current_database(), inet_server_port()`): um alvo se declara, o outro
+ * se mede, e só os dois juntos fecham.
+ */
+export function assertLocalDatabaseTarget(url: string | undefined): string {
+  assertSemRedirecionamento(url);
+  const alvo = lerAlvo(url);
+  const motivo = motivoNaoLocal(alvo);
+  if (motivo) throw new Error(motivo);
+  return `${alvo.host}:${alvo.porta}/${alvo.base}`;
+}
 
-  return `${host}:${porta}/${base}`;
+/**
+ * ── A trava dos BACKFILLS que escrevem em linha de paciente ──────────────────────────────────
+ *
+ * Diferença em relação à `assertLocalDatabaseTarget`: estes scripts têm um caminho legítimo de
+ * escrita fora do docker local, atrás de `--eu-sei-que-e-producao` (deliberadamente
+ * desconfortável de digitar, e que ainda exige `--executar` e `--esperado`). O flag amplia a
+ * lista de ALVOS aceitos — e só isso.
+ *
+ * 🔴 O flag NÃO desarma `assertSemRedirecionamento`: query string e socket `/cloudsql/` são
+ * recusados COM ou SEM autorização. Motivo medido (gate F5, D1): a cópia local que os três
+ * backfills carregavam terminava o regex em `(\?|$)` e classificava
+ * `…@localhost:5432/enlite_e2e?port=5436` como "LOCAL (docker)" — o `pg` conectava na 5436
+ * (PRD) sem que ninguém tivesse digitado o flag. Um alvo autorizado é um alvo que quem
+ * autoriza CONSEGUE LER na linha de comando; `?port=`/`?host=` são exatamente o contrário.
+ *
+ * Devolve a MESMA classificação que as cópias devolviam ("LOCAL (docker)" /
+ * "NÃO-LOCAL, autorizado explicitamente"), que é o que os três scripts imprimem em `ALVO:`.
+ */
+export function assertBackfillWriteTarget(url: string | undefined, producaoAutorizada: boolean): string {
+  assertSemRedirecionamento(url);
+  const motivo = motivoNaoLocal(lerAlvo(url));
+  if (!motivo) return 'LOCAL (docker)';
+  if (producaoAutorizada) return 'NÃO-LOCAL, autorizado explicitamente';
+  throw new Error(
+    'ALVO RECUSADO: este script escreve em linha de paciente. Alvo não-local exige ' +
+    `--eu-sei-que-e-producao (e --executar e --esperado). Motivo: ${motivo}`,
+  );
 }

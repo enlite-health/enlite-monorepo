@@ -38,6 +38,7 @@
 import { Pool } from 'pg';
 import { ClickUpFieldResolver } from '../src/modules/integration/infrastructure/clickup/ClickUpFieldResolver';
 import { resolveCatalogValue } from '../src/modules/integration/infrastructure/clickup/helpers/resolveCatalogValue';
+import { assertBackfillWriteTarget } from '../src/shared/database/assertLocalDatabaseTarget';
 
 const LIST_ID = '901304883903';
 const CAMPO   = 'Tipo de Dispositivo';
@@ -47,12 +48,19 @@ const API     = 'https://api.clickup.com/api/v2';
 const arg = (n: string) => process.argv.includes(n);
 const val = (n: string) => { const i = process.argv.indexOf(n); return i >= 0 ? process.argv[i + 1] : undefined; };
 
-function travaDeAlvo(url: string | undefined, prodOk: boolean): string {
-  if (!url) throw new Error('DATABASE_URL ausente — sem alvo não há backfill (e ausência não é local)');
-  if (/@(localhost|127\.0\.0\.1):(5432|5433)\/enlite_e2e(\?|$)/.test(url)) return 'LOCAL (docker)';
-  if (prodOk) return 'NÃO-LOCAL, autorizado explicitamente';
-  throw new Error('ALVO RECUSADO: este script escreve em linha de paciente. Alvo não-local exige --eu-sei-que-e-producao');
-}
+/**
+ * A trava de alvo deste backfill é a MESMA de `src/shared/database` — REUSADA, nunca copiada.
+ *
+ * 🔴 Havia aqui uma cópia local com o regex terminando em `(\?|$)`. Medido no gate F5 (D1):
+ * ela classificava `…@localhost:5432/enlite_e2e?port=5436` como "LOCAL (docker)" enquanto o
+ * `pg` conectava na 5436 (PRD), e `…?host=/cloudsql/…` como local enquanto o `pg` conectava no
+ * Cloud SQL de PRODUÇÃO. Este script ESCREVE em linha de paciente. Três cópias divergiram da
+ * trava testada — o conserto é não ter cópia.
+ *
+ * `--eu-sei-que-e-producao` segue valendo (amplia os ALVOS aceitos) e NÃO desarma a recusa de
+ * query string nem a de socket `/cloudsql/`. Ver `assertBackfillWriteTarget`.
+ */
+export const travaDeAlvo = assertBackfillWriteTarget;
 
 async function main(): Promise<void> {
   const executar = arg('--executar');
@@ -165,4 +173,7 @@ async function main(): Promise<void> {
     console.log(`-- o trigger recalcula \`patients.device_type\` para NULL sozinho; não tocar em patients.`);
   } finally { cli.release(); await pool.end(); }
 }
-main().catch(e => { console.error('ERRO:', e.message); process.exit(1); });
+/* istanbul ignore next -- entrypoint do CLI: só roda fora de teste (require.main === module) */
+if (require.main === module) {
+  main().catch(e => { console.error('ERRO:', e.message); process.exit(1); });
+}
