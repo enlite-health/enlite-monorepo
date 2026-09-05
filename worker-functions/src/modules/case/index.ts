@@ -58,17 +58,19 @@ export type {
 export { validateContactChannel } from './domain/PatientResponsible';
 
 // Application
-export {
-  PatientService,
-  PatientStatusTransitionError,
-  OnHoldReasonRequiredError,
-} from './application/PatientService';
+export { PatientService } from './application/PatientService';
 export type {
   PatientServiceUpsertInput,
   UpsertFromClickUpOptions,
   MissingContactStrategy,
-  MoveStatusOptions,
 } from './application/PatientService';
+// A transição de estado mora em `PatientStatusWriter` desde a quebra do PatientService pelo
+// teto de 400 linhas. O barril continua sendo a porta única do módulo.
+export {
+  PatientStatusTransitionError,
+  OnHoldReasonRequiredError,
+} from './application/PatientStatusWriter';
+export type { MoveStatusOptions } from './application/PatientStatusWriter';
 export {
   PatientChatIdsService,
   PatientChatIdsNotFoundError,
@@ -162,7 +164,8 @@ export {
   classifyInsuranceLabels,
 } from './infrastructure/PatientInsuranceVerifiedRepository';
 // Spec 012, US-B3: o catálogo de coberturas (migration 311).
-export { InsuranceProviderRepository, InsuranceProviderExistsError } from './infrastructure/InsuranceProviderRepository';
+export { InsuranceProviderRepository, InsuranceProviderExistsError,
+  InsuranceProviderSortOrderTakenError } from './infrastructure/InsuranceProviderRepository';
 export type { InsuranceProviderRow, CreateInsuranceProviderInput } from './infrastructure/InsuranceProviderRepository';
 export type {
   PatientInsuranceVerifiedWriteInput,

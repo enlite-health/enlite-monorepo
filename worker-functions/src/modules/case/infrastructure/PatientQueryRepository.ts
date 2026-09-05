@@ -4,223 +4,28 @@ import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { fetchPatientDetail } from './PatientDetailQueryHelper';
 import type { AdminPatientsListParams } from '../interfaces/validators/adminPatientsListSchema';
 import { derivePatientSla } from '../domain/PatientSla';
-import { isLeadPlaceholderName, maskEmail } from '../domain/LeadContact';
-import { DECRYPT_BATCH } from '@shared/security/decryptBatch';
-import { logger } from '@shared/logging';
-import { computePatientCompleteness, ACTIVATABLE_STATUSES } from '../domain/PatientCompleteness';
+import { isLeadPlaceholderName } from '../domain/LeadContact';
+import { attachLeadContact } from './PatientLeadContactAttacher';
+import {
+  computePatientCompleteness,
+  ACTIVATABLE_STATUSES,
+  INCOMPLETE_ADMISSION_REASON,
+  patientNeedsAttentionSql,
+  patientHasAttentionReasonSql,
+} from '../domain/PatientCompleteness';
 
-// ── Detail types ──────────────────────────────────────────────────────────────
-
-export interface PatientResponsibleDetail {
-  id: string;
-  firstName: string;
-  lastName: string;
-  relationship: string | null;
-  /** Decrypted phone or null if absent/encrypted. */
-  phone: string | null;
-  /** Decrypted email or null if absent/encrypted. */
-  email: string | null;
-  /** Decrypted document number or null. */
-  documentNumber: string | null;
-  documentType: string | null;
-  isPrimary: boolean;
-  displayOrder: number;
-  source: string;
-}
-
-export interface PatientAddressDetail {
-  id: string;
-  addressType: string;
-  addressFormatted: string | null;
-  addressRaw: string | null;
-  /** Address complement (Depto, Piso, andar). Manual UI entry. Migration 157. */
-  complement: string | null;
-  displayOrder: number;
-  /** Latitude geocodificada. Migrated from job_postings.service_lat (migration 153/154). */
-  lat: number | null;
-  /** Longitude geocodificada. Migrated from job_postings.service_lng (migration 153/154). */
-  lng: number | null;
-  /** True when address_type === 'primary'. */
-  isPrimary: boolean;
-  /** Zona/bairro (coluna `neighborhood`, mig 147 — spec 012 lex C2.7: não duplicar). */
-  neighborhood: string | null;
-  /** Corredor logístico por endereço (mig 316). */
-  logisticsCorridor: string | null;
-  /** Logística e acesso — texto livre sobre o domicílio (mig 316; lex C2: fora do mcp_ro, nunca em log). */
-  accessNotes: string | null;
-  /** Jurisdição do endereço (mig 316). */
-  country: string | null;
-  /** Computed availability for this address based on active vacancies. */
-  availability: import('../application/AddressAvailabilityCalculator').AddressAvailability;
-}
-
-export interface PatientProfessionalDetail {
-  id: string;
-  name: string;
-  /** Decrypted phone or null. */
-  phone: string | null;
-  /** Decrypted email or null. */
-  email: string | null;
-  displayOrder: number;
-  isTeam: boolean;
-}
-
-export interface PatientDetailRow {
-  // Identity
-  id: string;
-  clickupTaskId: string;
-  firstName: string | null;
-  lastName: string | null;
-  birthDate: Date | null;
-  documentType: string | null;
-  documentNumber: string | null;
-  affiliateId: string | null;
-  sex: string | null;
-  phoneWhatsapp: string | null;
-  /** E-mail do paciente, descriptografado (KMS) SÓ no detalhe — spec 011 A4. null = não informado. */
-  contactEmail: string | null;
-  // Clinical
-  diagnosis: string | null;
-  dependencyLevel: string | null;
-  clinicalSpecialty: string | null;
-  clinicalSegments: string | null;
-  serviceType: string[] | null;
-  deviceType: string | null;
-  additionalComments: string | null;
-  /** Autoria da última edição das observações (mig 286): ISO/Date e NOME resolvido de users. */
-  additionalCommentsUpdatedAt: Date | null;
-  additionalCommentsUpdatedBy: string | null;
-  /** Instruções de emergência (mig 294): valor + autoria; redigido no ponto único quando o ator não pode ler. */
-  emergencyInstructions: string | null;
-  emergencyInstructionsUpdatedAt: Date | null;
-  emergencyInstructionsUpdatedBy: string | null;
-  hasJudicialProtection: boolean | null;
-  hasCud: boolean | null;
-  hasConsent: boolean | null;
-  // Coverage
-  insuranceInformed: string | null;
-  insuranceVerified: string | null;
-  // Location
-  cityLocality: string | null;
-  province: string | null;
-  zoneNeighborhood: string | null;
-  country: string;
-  // Grupos de WhatsApp do Periskope por PAPEL (migration 261) — chave de join
-  // com a auditoria de informes (Candela). Sempre @g.us. Papel ausente do mapa
-  // = não vinculado.
-  chatIds: Record<string, string>;
-  /** @deprecated alias de `chatIds.FAMILY`; sai com a migration de contract. */
-  familyChatId: string | null;
-  /** @deprecated alias de `chatIds.PROVIDERS`; sai com a migration de contract. */
-  providersChatId: string | null;
-  // Status / flags
-  status: string | null;
-  /** Funil de admissão (mig 313): SOLICITANTE | ADMISSION | PENDING_ADMISSION | DONE. */
-  admissionStatus: string;
-  /** Motivo da espera quando status = ON_HOLD (mig 314). */
-  onHoldReason: string | null;
-  /** Texto clínico RESTRITO (mig 314, pacote D211.2) — redigido no ponto único quando o ator não pode ler. */
-  onHoldNote: string | null;
-  /** Data de início do serviço (mig 317). */
-  serviceStartDate: Date | null;
-  /** Coberturas verificadas por CÓDIGO (mig 312), ordem do catálogo. */
-  insuranceVerifiedCodes: string[];
-  /**
-   * As mesmas coberturas, COM origem (spec 012, QA 🟡3/SUP-B5) — o drawer usa `source` para
-   * distinguir o que veio do ClickUp (chip travado) do que o painel gravou (editável no
-   * multi-select). `insuranceVerifiedCodes` continua existindo, sem origem, para compat.
-   */
-  insuranceVerifiedEntries: Array<{ code: string; source: string }>;
-  /** Dispositivos (códigos de device_types, mig 307), ordem do catálogo. */
-  deviceTypes: string[];
-  needsAttention: boolean;
-  attentionReasons: string[];
-  /** Spec 014 (US-D3, lex D3.1): `phoneWhatsapp` coincide (últimos 8 dígitos) com o telefone de
-   * algum responsável — SÓ no detalhe, nunca na lista/kanban. */
-  phoneMatchesResponsible: boolean;
-  // Related
-  responsibles: PatientResponsibleDetail[];
-  addresses: PatientAddressDetail[];
-  professionals: PatientProfessionalDetail[];
-  /**
-   * Serviços contratados (spec 013, bloco C — migration 319), com prestadores alocados. Contrato
-   * do detalhe. `hourlyValue` é redigido no ponto único (AdminPatientsController.getPatientById,
-   * lex C-c.4) para quem não é admin — aqui vem sempre o valor cru.
-   */
-  contractedServices: import('./PatientContractedServiceRepository').ContractedServiceDetail[];
-  /** Last case_number across all job_postings for this patient (null if none). */
-  lastCaseNumber: number | null;
-  // Audit
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface PatientListRow {
-  id: string;
-  clickupTaskId: string;
-  firstName: string | null;
-  lastName: string | null;
-  diagnosis: string | null;
-  dependencyLevel: string | null;
-  clinicalSpecialty: string | null;
-  serviceType: string[] | null;
-  documentType: string | null;
-  documentNumber: string | null;
-  sex: string | null;
-  /** Patient lifecycle status (kanban column). Null for rows whose ClickUp status is unrecognised. */
-  status: string | null;
-  /** Funil de admissão (mig 313) — é ESTA a coluna do Kanban de pacientes (spec 012). */
-  admissionStatus: string;
-  needsAttention: boolean;
-  attentionReasons: string[];
-  /** Registro sintético do synthetic monitoring — alvo do sweeper (migration 257). */
-  isTest: boolean;
-  /** Number of addresses linked to this patient. */
-  addressesCount: number;
-  /**
-   * Effective case number: patients.case_number when set (newer records), or
-   * MAX(job_postings.case_number) for legacy patients that only have vagas.
-   * Null when neither is present.
-   */
-  caseNumber: number | null;
-  createdAt: Date;
-  updatedAt: Date;
-  // ── SLA de inatividade (Fase 4, aditivo) ─────────────────────────────────
-  /** Instante em que o paciente entrou no status atual (ISO), ou null. */
-  stageEnteredAt: string | null;
-  /** Horas inteiras no estágio atual, ou null se sem âncora. */
-  hoursInStage: number | null;
-  /** Teto de horas do estágio, ou null quando o estágio não tem SLA. */
-  slaThresholdHours: number | null;
-  /** true quando há teto e hoursInStage o ultrapassa. */
-  slaBreached: boolean;
-  // ── Desempate do lead sem nome (lex 30/08, C1/C2/C6) ─────────────────────
-  /**
-   * E-mail de contato JÁ MASCARADO (`jo***@gmail.com`), presente APENAS nas
-   * fichas cujo nome é o placeholder 'Solicitante'. Ficha com nome real devolve
-   * null e nem chega a ser descriptografada — o corte é aqui, no servidor, para
-   * que o payload não carregue contato do board inteiro (C2).
-   */
-  /** Nome do responsável primário, texto claro (a coluna não é cifrada).
-   *  `null` quando não há responsável — o lead "para mí" não tem. */
-  responsibleName: string | null;
-    leadContactEmailMasked: string | null;
-  /**
-   * true quando o e-mail acima é do RESPONSÁVEL, não do paciente — acontece nos
-   * leads em que quem preencheu o formulário foi o familiar. Sem esta marca o
-   * card mostraria contato de um terceiro sob o nome de um paciente (C6).
-   */
-  leadContactIsResponsible: boolean;
-}
-
-export interface PatientStatsRow {
-  total: number;
-  complete: number;
-  needsAttention: number;
-  createdToday: number;
-  createdYesterday: number;
-  createdLast7Days: number;
-}
+// ── Read model ────────────────────────────────────────────────────────────────
+// Os shapes moram em `PatientQueryRows.ts` (teto de 400 linhas). Re-exportados aqui para
+// que este arquivo continue sendo a porta pública deles — `export type` some na compilação.
+import type { PatientDetailRow, PatientListRow, PatientStatsRow } from './PatientQueryRows';
+export type {
+  PatientResponsibleDetail,
+  PatientAddressDetail,
+  PatientProfessionalDetail,
+  PatientDetailRow,
+  PatientListRow,
+  PatientStatsRow,
+} from './PatientQueryRows';
 
 /**
  * PatientQueryRepository — read-only queries for admin patient listing and detail.
@@ -384,8 +189,11 @@ export class PatientQueryRepository {
                 WHERE r.patient_id = p.id
                   AND (r.first_name ILIKE '%' || $${searchIdx} || '%'
                     OR r.last_name  ILIKE '%' || $${searchIdx} || '%')))
-        AND ($${needsAttentionIdx}::boolean IS NULL OR p.needs_attention = $${needsAttentionIdx})
-        AND ($${attentionReasonIdx}::text IS NULL OR $${attentionReasonIdx} = ANY(p.attention_reasons))
+        -- O filtro e o total leem a MESMA regra que o payload publica (PatientCompleteness.ts):
+        -- ler a coluna guardada aqui fazia o paciente com badge SUMIR quando a operadora
+        -- filtrava por ele, e INCOMPLETE_ADMISSION nunca casar com ninguém.
+        AND ($${needsAttentionIdx}::boolean IS NULL OR ${patientNeedsAttentionSql('p')} = $${needsAttentionIdx})
+        AND ($${attentionReasonIdx}::text IS NULL OR ${patientHasAttentionReasonSql(`$${attentionReasonIdx}`, 'p')})
         AND ($${clinicalSpecialtyIdx}::text IS NULL OR p.clinical_specialty = $${clinicalSpecialtyIdx})
         AND ($${dependencyLevelIdx}::text IS NULL OR p.dependency_level = $${dependencyLevelIdx})
         AND ($${caseNumberIdx}::text IS NULL
@@ -430,9 +238,9 @@ export class PatientQueryRepository {
       const needsAttentionDerived = row.needsAttention === true || incompleteAdmission;
       const legacyReasons: string[] = row.attentionReasons ?? [];
       const attentionReasonsDerived = incompleteAdmission
-        ? legacyReasons.includes('INCOMPLETE_ADMISSION')
+        ? legacyReasons.includes(INCOMPLETE_ADMISSION_REASON)
           ? legacyReasons
-          : [...legacyReasons, 'INCOMPLETE_ADMISSION']
+          : [...legacyReasons, INCOMPLETE_ADMISSION_REASON]
         : legacyReasons;
 
       return {
@@ -474,89 +282,9 @@ export class PatientQueryRepository {
       };
     });
 
-    await this.attachLeadContact(rows, result.rows);
+    await attachLeadContact(this.encryptionService, rows, result.rows);
 
     return { rows, total };
-  }
-
-  /**
-   * Segunda passada da listagem: desempata os cards que só dizem "Solicitante".
-   *
-   * O formulário público não colhe nome (`2026-07-27a#DEC-02`), então todo lead
-   * chega com o mesmo placeholder e o Kanban vira N caixas idênticas. Aqui o
-   * contato entra MASCARADO para desempatá-las — sob as condições do parecer
-   * do lex de 30/08:
-   *
-   *  C2 — o corte é no servidor: só linha com placeholder é tocada. Ficha com
-   *       nome real sai com `null`, e o ciphertext dela nunca vira texto.
-   *  C4 — por consequência, o nº de chamadas ao KMS é EXATAMENTE o nº de linhas
-   *       com placeholder — e ZERO numa página sem nenhuma. Este caminho de
-   *       listagem não chamava o KMS antes; a conta é o controle positivo.
-   *  C1 — a máscara é aplicada aqui, não no React: o valor cru não entra no
-   *       payload, no devtools nem na gravação de sessão.
-   *  C6 — nos leads preenchidos pelo familiar o paciente não tem e-mail
-   *       (CreateLeadUseCase grava o contato no responsável); marcamos de quem
-   *       é, para o card não atribuir contato de terceiro ao paciente.
-   *
-   * Falha de descriptografia não derruba a listagem: o card volta ao estado
-   * anterior (só "Solicitante"), que é degradação, não perda de dado.
-   */
-  private async attachLeadContact(
-    rows: PatientListRow[],
-    raw: Array<Record<string, unknown>>,
-  ): Promise<void> {
-    const pending = rows
-      .map((row, idx) => ({ row, raw: raw[idx] }))
-      .filter(({ row }) => isLeadPlaceholderName(row.firstName, row.lastName));
-
-    if (pending.length === 0) return;
-
-    // Contadores para o sinal do fim: sem eles, dado que deriva de forma faz TODOS
-    // os cards perderem o contato em silêncio absoluto (blocker do gate, 31/08).
-    let recusados = 0;
-    let falhas = 0;
-    // Sem esta 3ª coluna, um rename do alias do SQL zera TODOS os cards com
-    // recusados=0 e falhas=0 — silêncio absoluto (aviso 1 do gate, 31/08).
-    let semCifra = 0;
-
-    // Lotes de DECRYPT_BATCH: `Promise.all` sobre a página inteira dispararia até
-    // 500 chamadas simultâneas ao KMS (teto do adminPatientsListSchema). O padrão
-    // e o número vêm de AdminWorkersMapController.ts:51, que já resolve isso.
-    for (let inicio = 0; inicio < pending.length; inicio += DECRYPT_BATCH) {
-    await Promise.all(
-      pending.slice(inicio, inicio + DECRYPT_BATCH).map(async ({ row, raw: r }) => {
-        // O e-mail do paciente manda; o do responsável é o fallback dos leads
-        // preenchidos pelo familiar. Só UM dos dois é descriptografado.
-        const own = (r.contactEmailEnc as string | null) ?? null;
-        const responsible = (r.responsibleEmailEnc as string | null) ?? null;
-        const cipher = own ?? responsible;
-        if (cipher == null) { semCifra += 1; return; }
-
-        try {
-          const plain = await this.encryptionService.decrypt(cipher);
-          const masked = maskEmail(plain);
-          if (masked == null) { recusados += 1; return; }
-          row.leadContactEmailMasked = masked;
-          row.leadContactIsResponsible = own == null;
-        } catch {
-          // Degrada o card, não a listagem — mas CONTA (ver o warn abaixo).
-          falhas += 1;
-        }
-      }),
-    );
-    }
-
-    // O que era silêncio absoluto vira sinal. Só CONTAGEM: a regra dura proíbe
-    // PII em log e permite contar (o V5 do gate afirma exatamente isso).
-    if (recusados > 0 || falhas > 0 || semCifra > 0) {
-      logger.warn({
-        msg: 'patient_lead_contact.degraded',
-        pendentes: pending.length,
-        recusadosPelaMascara: recusados,
-        falhasDeKms: falhas,
-        semCifra,
-      });
-    }
   }
 
   async stats(country?: 'AR' | 'BR'): Promise<PatientStatsRow> {
@@ -570,17 +298,19 @@ export class PatientQueryRepository {
     }>(`
       SELECT
         COUNT(*)::int                                                                 AS total,
-        COUNT(*) FILTER (WHERE needs_attention = false)::int                         AS complete,
-        COUNT(*) FILTER (WHERE needs_attention = true)::int                          AS needs_attention,
-        COUNT(*) FILTER (WHERE created_at >= date_trunc('day', NOW()))::int          AS created_today,
+        -- Os contadores leem a MESMA regra do badge (PatientCompleteness.ts): contar a coluna
+        -- guardada dava "Completo" para quem a lista mostra com "Necesita atención".
+        COUNT(*) FILTER (WHERE NOT ${patientNeedsAttentionSql('p')})::int             AS complete,
+        COUNT(*) FILTER (WHERE ${patientNeedsAttentionSql('p')})::int                 AS needs_attention,
+        COUNT(*) FILTER (WHERE p.created_at >= date_trunc('day', NOW()))::int        AS created_today,
         COUNT(*) FILTER (
-          WHERE created_at >= date_trunc('day', NOW() - INTERVAL '1 day')
-            AND created_at <  date_trunc('day', NOW())
+          WHERE p.created_at >= date_trunc('day', NOW() - INTERVAL '1 day')
+            AND p.created_at <  date_trunc('day', NOW())
         )::int                                                                       AS created_yesterday,
-        COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::int        AS created_last_7_days
-      FROM patients
-      WHERE deleted_at IS NULL
-        AND ($1::text IS NULL OR country = $1)
+        COUNT(*) FILTER (WHERE p.created_at >= NOW() - INTERVAL '7 days')::int      AS created_last_7_days
+      FROM patients p
+      WHERE p.deleted_at IS NULL
+        AND ($1::text IS NULL OR p.country = $1)
     `, [country ?? null]);
 
     const row = result.rows[0];

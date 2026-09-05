@@ -27,7 +27,8 @@ jest.mock('../../../infrastructure/PatientStatusHistoryQueryHelper', () => ({ fe
 import { Request, Response } from 'express';
 import { logger, reportError } from '@shared/logging';
 import { AdminPatientsController } from '../AdminPatientsController';
-import { PatientStatusTransitionError, OnHoldReasonRequiredError, type PatientService } from '../../../application/PatientService';
+import type { PatientService } from '../../../application/PatientService';
+import { PatientStatusTransitionError, OnHoldReasonRequiredError } from '../../../application/PatientStatusWriter';
 import { DeviceTypeUnknownError } from '../../../infrastructure/PatientDeviceTypeRepository';
 import { InsuranceProviderUnknownError } from '../../../infrastructure/PatientInsuranceVerifiedRepository';
 import { fetchPatientStatusHistory } from '../../../infrastructure/PatientStatusHistoryQueryHelper';
@@ -64,6 +65,38 @@ describe('AdminPatientsController — bloco B', () => {
       const [req2, res2] = reqRes({ id: ID }, { status: 'ON_HOLD', onHoldReason: 'SCHOOL' }, { permissionCells: ['patient:write'] });
       await ctrl.updatePatientStatus(req2, res2);
       expect(res2.status).toHaveBeenCalledWith(200);
+    });
+
+    it('C1: a guarda dispara pela CHAVE presente — `onHoldNote: null` de ator sem célula é 403 (apagar é escrever)', async () => {
+      const moveStatus = jest.fn().mockResolvedValue({ id: ID, status: 'ON_HOLD' });
+      const ctrl = makeController({ moveStatus });
+      const [req, res] = reqRes({ id: ID }, { status: 'ON_HOLD', onHoldReason: 'SCHOOL', onHoldNote: null }, { permissionCells: ['patient:write'] });
+      await ctrl.updatePatientStatus(req, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(moveStatus).not.toHaveBeenCalled();
+    });
+
+    it('C1: `onHoldNote: null` de quem PODE ler viaja como `null` (apagamento deliberado); chave ausente viaja como `undefined`', async () => {
+      const moveStatus = jest.fn().mockResolvedValue({ id: ID, status: 'ON_HOLD' });
+      const ctrl = makeController({ moveStatus });
+      const [req, res] = reqRes({ id: ID }, { status: 'ON_HOLD', onHoldReason: 'SCHOOL', onHoldNote: null });
+      await ctrl.updatePatientStatus(req, res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(moveStatus.mock.calls[0][2]).toMatchObject({ onHoldNote: null });
+
+      const [req2, res2] = reqRes({ id: ID }, { status: 'ON_HOLD', onHoldReason: 'SCHOOL' });
+      await ctrl.updatePatientStatus(req2, res2);
+      expect(res2.status).toHaveBeenCalledWith(200);
+      expect(moveStatus.mock.calls[1][2].onHoldNote).toBeUndefined();
+    });
+
+    it('C1: corpo que não é objeto não quebra a guarda (o zod já recusou antes — 400)', async () => {
+      const moveStatus = jest.fn();
+      const ctrl = makeController({ moveStatus });
+      const [req, res] = reqRes({ id: ID }, null as unknown as Record<string, unknown>, { permissionCells: [] });
+      await ctrl.updatePatientStatus(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(moveStatus).not.toHaveBeenCalled();
     });
 
     it('motivo, nota e origem viajam ao serviço (defaults: admin_panel, null); a nota nunca vai ao log', async () => {

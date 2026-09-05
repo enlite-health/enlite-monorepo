@@ -32,8 +32,29 @@ export class InsuranceProviderExistsError extends Error {
   }
 }
 
-function isUniqueViolation(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && (err as { code?: string }).code === '23505';
+/**
+ * A OUTRA restrição única da 311: `insurance_providers_sort_order_unico UNIQUE (sort_order)`.
+ *
+ * Existe porque mapear todo 23505 para "esse código já existe" respondia sobre um código que NÃO
+ * existe — o admin lia que o catálogo já tinha a cobertura e desistia de cadastrá-la. A mensagem
+ * agora diz a verdade: a POSIÇÃO está ocupada, o código continua livre.
+ */
+export class InsuranceProviderSortOrderTakenError extends Error {
+  readonly code = 'INSURANCE_PROVIDER_SORT_ORDER_TAKEN';
+  constructor(readonly sortOrder: number) {
+    super(`Insurance provider sort_order already taken: ${sortOrder}`);
+    this.name = 'InsuranceProviderSortOrderTakenError';
+  }
+}
+
+/** Nome da constraint da 311 — é ele que diz QUAL unicidade o banco recusou. */
+const SORT_ORDER_CONSTRAINT = 'insurance_providers_sort_order_unico';
+
+function uniqueViolationConstraint(err: unknown): string | null {
+  if (typeof err !== 'object' || err === null) return null;
+  const e = err as { code?: string; constraint?: string };
+  if (e.code !== '23505') return null;
+  return e.constraint ?? '';
 }
 
 export class InsuranceProviderRepository {
@@ -74,7 +95,11 @@ export class InsuranceProviderRepository {
         );
         created = ins.rows[0];
       } catch (err) {
-        if (isUniqueViolation(err)) throw new InsuranceProviderExistsError(input.code);
+        // A tabela tem DUAS uniques; quem decide a mensagem é a constraint que o banco nomeou,
+        // não o palpite de que "23505 aqui só pode ser o código".
+        const constraint = uniqueViolationConstraint(err);
+        if (constraint === SORT_ORDER_CONSTRAINT) throw new InsuranceProviderSortOrderTakenError(sortOrder);
+        if (constraint !== null) throw new InsuranceProviderExistsError(input.code);
         throw err;
       }
       for (const label of input.aliases ?? []) {

@@ -369,5 +369,81 @@ describe('AdminPatientContractedServicesController', () => {
       await controller.updateProvider(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID, pid: PROVIDER_ID }, body: { active: false } }), res);
       expect(res.status).toHaveBeenCalledWith(500);
     });
+
+    // C8: `update()` devolve null quando a linha sumiu entre o findById e o UPDATE — 200 com
+    // `data: null` mente para um cliente que tipa o campo como não-nulo
+    // (AdminContractedServicesApiService.ts:126). O irmão `update` do serviço já devolve 404.
+    it('C8: 404 (nunca 200 com data:null) quando a alocação some entre a leitura e a escrita', async () => {
+      const repo = { findById: jest.fn().mockResolvedValue({ ...SERVICE, providers: [{ id: PROVIDER_ID }] }) };
+      const providerRepo = { update: jest.fn().mockResolvedValue(null) };
+      const controller = new AdminPatientContractedServicesController(repo as never, providerRepo as never);
+      const res = mockRes();
+      await controller.updateProvider(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID, pid: PROVIDER_ID }, body: { active: false } }), res);
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json.mock.calls[0][0]).toEqual({ success: false, error: 'Provider allocation not found' });
+    });
+  });
+
+  // ── C4: quem não pode LER `hourlyValue` também não o ESCREVE ──────────────────────────────
+  //
+  // A rota é `staffOnly` e o schema aceita `hourlyValue` de qualquer um. Um `recruiter` recebe
+  // `hourlyValue: null, hourlyValueRedacted: true` em TODA leitura (projectContractedServiceForActor)
+  // e podia gravar 0 por cima do valor que não vê. É a mesma regra que o módulo já enforça para
+  // `emergencyInstructions` e `onHoldNote` (AdminPatientsController).
+  describe('C4 — hourlyValue: leitura restrita, escrita idem', () => {
+    const naoAdmin = { roles: ['recruiter'] };
+
+    it('create: recruiter mandando hourlyValue → 403 e o repositório NÃO é chamado', async () => {
+      const repo = { create: jest.fn() };
+      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
+      const res = mockRes();
+      await controller.create(mockReq({ params: { id: PATIENT_ID }, body: { serviceCode: 'AT', hourlyValue: 0 }, user: naoAdmin }), res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json.mock.calls[0][0]).toMatchObject({ success: false, details: { field: 'hourlyValue' } });
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it('update: recruiter mandando hourlyValue → 403 e o repositório NÃO é chamado', async () => {
+      const repo = { findById: jest.fn(), update: jest.fn() };
+      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
+      const res = mockRes();
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { hourlyValue: 0 }, user: naoAdmin }), res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(repo.update).not.toHaveBeenCalled();
+      expect(repo.findById).not.toHaveBeenCalled();
+    });
+
+    it('update: recruiter mandando `hourlyValue: null` (APAGAR) também é 403 — a chave é que manda', async () => {
+      const repo = { findById: jest.fn(), update: jest.fn() };
+      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
+      const res = mockRes();
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { hourlyValue: null }, user: naoAdmin }), res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(repo.update).not.toHaveBeenCalled();
+    });
+
+    it('recruiter SEM a chave passa normalmente (a trava é do campo, não da rota)', async () => {
+      const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockResolvedValue(SERVICE) };
+      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
+      const res = mockRes();
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 10 }, user: naoAdmin }), res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(repo.update).toHaveBeenCalled();
+    });
+
+    it('construtor sem repositórios injetados constrói os reais (pool preguiçoso — não abre conexão)', () => {
+      expect(new AdminPatientContractedServicesController()).toBeInstanceOf(AdminPatientContractedServicesController);
+    });
+
+    it('admin mandando hourlyValue passa (create e update)', async () => {
+      const repo = { create: jest.fn().mockResolvedValue(SERVICE), findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockResolvedValue(SERVICE) };
+      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
+      const res1 = mockRes();
+      await controller.create(mockReq({ params: { id: PATIENT_ID }, body: { serviceCode: 'AT', hourlyValue: 1500 } }), res1);
+      expect(res1.status).toHaveBeenCalledWith(201);
+      const res2 = mockRes();
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { hourlyValue: 1500 } }), res2);
+      expect(res2.status).toHaveBeenCalledWith(200);
+    });
   });
 });

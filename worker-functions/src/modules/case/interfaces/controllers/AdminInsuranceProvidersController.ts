@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { reportError } from '@shared/logging';
-import { InsuranceProviderRepository, InsuranceProviderExistsError } from '../../infrastructure/InsuranceProviderRepository';
+import { InsuranceProviderRepository, InsuranceProviderExistsError, InsuranceProviderSortOrderTakenError } from '../../infrastructure/InsuranceProviderRepository';
 
 /**
  * AdminInsuranceProvidersController — o catálogo de coberturas (spec 012, US-B3), SEM tela.
@@ -48,6 +48,11 @@ export class AdminInsuranceProvidersController {
     } catch (err: unknown) {
       if (err instanceof InsuranceProviderExistsError) {
         res.status(409).json({ success: false, error: 'Insurance provider already exists', code: err.code, details: { code: err.providerCode } });
+        return;
+      }
+      // Conflito na OUTRA unique da 311: a posição está ocupada, o código continua livre.
+      if (err instanceof InsuranceProviderSortOrderTakenError) {
+        res.status(409).json({ success: false, error: 'Insurance provider sort_order already taken', code: err.code, details: { sortOrder: err.sortOrder } });
         return;
       }
       const e = err instanceof Error ? err : new Error(String(err));

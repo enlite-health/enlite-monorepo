@@ -9,7 +9,7 @@ jest.mock('@shared/database/DatabaseConnection', () => ({ DatabaseConnection: { 
 import { Request, Response } from 'express';
 import { reportError } from '@shared/logging';
 import { AdminInsuranceProvidersController, createInsuranceProviderSchema } from '../AdminInsuranceProvidersController';
-import { InsuranceProviderExistsError, type InsuranceProviderRepository } from '../../../infrastructure/InsuranceProviderRepository';
+import { InsuranceProviderExistsError, InsuranceProviderSortOrderTakenError, type InsuranceProviderRepository } from '../../../infrastructure/InsuranceProviderRepository';
 
 function reqRes(body: Record<string, unknown> = {}): [Request, Response] {
   const json = jest.fn().mockReturnThis();
@@ -65,6 +65,18 @@ describe('AdminInsuranceProvidersController', () => {
     const [req3, res3] = reqRes({ code: 'OSDE' });
     await ctrl.create(req3, res3);
     expect(res3.status).toHaveBeenCalledWith(500);
+  });
+
+  // C6: conflito na OUTRA unique da 311. Dizer "esse código já existe" para um código que não
+  // existe fazia o admin desistir de cadastrar uma cobertura que o catálogo não tem.
+  it('create: `sort_order` ocupado → 409 falando da POSIÇÃO, e sem citar o código como existente', async () => {
+    repo.create.mockRejectedValueOnce(new InsuranceProviderSortOrderTakenError(15));
+    const [req, res] = reqRes({ code: 'NOVA_OS', sortOrder: 15 });
+    await ctrl.create(req, res);
+    expect(res.status).toHaveBeenCalledWith(409);
+    const body = (res as unknown as { json: jest.Mock }).json.mock.calls[0][0];
+    expect(body).toEqual({ success: false, error: 'Insurance provider sort_order already taken', code: 'INSURANCE_PROVIDER_SORT_ORDER_TAKEN', details: { sortOrder: 15 } });
+    expect(JSON.stringify(body)).not.toContain('already exists');
   });
 
   it('schema: aliases ≤ 20, sortOrder positivo, chave estranha recusada', () => {

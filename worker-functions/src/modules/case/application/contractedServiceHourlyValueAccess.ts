@@ -44,3 +44,15 @@ export function projectContractedServiceForActor<T extends { hourlyValue: number
   if (isAdminActor(roles)) return { ...service, hourlyValueRedacted: false };
   return { ...service, hourlyValue: null, hourlyValueRedacted: true };
 }
+
+/**
+ * A chave `hourlyValue` está PRESENTE no corpo da requisição?
+ *
+ * Pela CHAVE, não pelo valor: `hourlyValue: null` é ESCRITA (apaga o preço do contrato). Quem não
+ * pode LER o campo não pode escrevê-lo — é a mesma régua que `AdminPatientsController` aplica a
+ * `emergencyInstructions` e `onHoldNote` (patientClinicalAccess), e o que
+ * `ContractedServiceFormRow` já faz na tela ao mandar `undefined` quando o campo vem redigido.
+ */
+export function bodyWritesHourlyValue(body: unknown): boolean {
+  return typeof body === 'object' && body !== null && Object.prototype.hasOwnProperty.call(body, 'hourlyValue');
+}

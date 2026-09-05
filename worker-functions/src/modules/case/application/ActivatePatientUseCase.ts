@@ -222,7 +222,13 @@ export class ActivatePatientUseCase {
       // bloqueio — reversível: é só ACTIVATION_BLOCKING_CODES ganhar mais códigos (PatientCompleteness.ts).
       if (blocking.length > 0) {
         // Throw — the single catch below rolls back once (avoids double ROLLBACK).
-        throw new NoActiveAddressError(patientId);
+        // O erro nomeia o que REALMENTE barrou: `NoActiveAddressError` hardcoda `['ADDRESS']` e
+        // uma mensagem sobre endereço, então só serve quando ADDRESS é o único bloqueio. Com
+        // ACTIVATION_BLOCKING_CODES em 1 item isso é sempre; no dia em que ganhar o segundo, o
+        // 422 diria "falta o endereço" para quem tem endereço.
+        throw blocking.length === 1 && blocking[0] === 'ADDRESS'
+          ? new NoActiveAddressError(patientId)
+          : new PatientNotReadyError(patientId, blocking);
       }
 
       const pairs: Array<{

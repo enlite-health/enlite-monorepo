@@ -4,6 +4,10 @@ import {
   PATIENT_COMPLETENESS_CODES,
   ACTIVATION_BLOCKING_CODES,
   ACTIVATABLE_STATUSES,
+  INCOMPLETE_ADMISSION_REASON,
+  patientIncompleteAdmissionSql,
+  patientNeedsAttentionSql,
+  patientHasAttentionReasonSql,
   type PatientCompletenessCode,
 } from '../PatientCompleteness';
 
@@ -213,5 +217,63 @@ describe('computePatientCompleteness (SUP-D1 / D255)', () => {
     });
     const indices = r.missing.map((code) => PATIENT_COMPLETENESS_CODES.indexOf(code));
     expect(indices).toEqual([...indices].sort((a, b) => a - b));
+  });
+});
+
+/**
+ * As três funções que dão a MESMA regra ao filtro/contador da listagem (que rodam no banco).
+ * A equivalência com `computePatientCompleteness` linha a linha é medida contra Postgres real em
+ * `tests/e2e/c1b-patient-list-attention-agreement.e2e.test.ts`; aqui garantimos a FORMA: que toda
+ * cláusula existe, que o alias é respeitado e que os três-valores do SQL estão fechados.
+ */
+describe('a regra em SQL (filtro/contadores da listagem)', () => {
+  it('tem UMA cláusula por código do checklist — código novo sem SQL não passa daqui', () => {
+    const sql = patientIncompleteAdmissionSql();
+    const clausulaDe: Record<PatientCompletenessCode, RegExp> = {
+      ADDRESS: /NOT EXISTS \(SELECT 1 FROM patient_addresses/,
+      RESPONSIBLE: /NOT EXISTS \(SELECT 1 FROM patient_responsibles/,
+      COVERAGE: /BTRIM\(COALESCE\(p\.insurance_informed, p\.health_insurance_name, ''\)\) = ''/,
+      CONTRACTED_SERVICE: /NOT EXISTS \(SELECT 1 FROM patient_contracted_services/,
+      CONSENT: /p\.has_consent IS NOT TRUE/,
+    };
+    for (const code of PATIENT_COMPLETENESS_CODES) expect(sql).toMatch(clausulaDe[code]);
+    expect(Object.keys(clausulaDe).sort()).toEqual([...PATIENT_COMPLETENESS_CODES].sort());
+  });
+
+  it('só considera os status em que o checklist faz sentido, e fecha o NULL de `status`', () => {
+    const sql = patientIncompleteAdmissionSql();
+    for (const s of ACTIVATABLE_STATUSES) expect(sql).toContain(`'${s}'`);
+    expect(sql).not.toContain("'ACTIVE'");
+    // `NULL IN (…)` é NULL, não FALSE — sem o COALESCE o filtro devolveria "nem sim nem não".
+    expect(sql).toMatch(/COALESCE\(p\.status, ''\) IN \(/);
+  });
+
+  it('a idade usa o MESMO corte de `isMinor` (18 anos, UTC, estritamente maior)', () => {
+    const sql = patientIncompleteAdmissionSql();
+    expect(sql).toMatch(/p\.birth_date > \(\(\(NOW\(\) AT TIME ZONE 'UTC'\)::date - INTERVAL '18 years'\)::date\)/);
+    expect(isMinor('2008-09-03', new Date('2026-09-03T12:00:00Z'))).toBe(false); // fez 18 hoje
+    expect(isMinor('2008-09-04', new Date('2026-09-03T12:00:00Z'))).toBe(true);
+  });
+
+  it('`needsAttention` é o legado OU o derivado — e o legado usa IS TRUE (a coluna aceita NULL)', () => {
+    const sql = patientNeedsAttentionSql();
+    expect(sql).toMatch(/p\.needs_attention IS TRUE OR/);
+    expect(sql).not.toMatch(/needs_attention = true/);
+    expect(sql).toContain(patientIncompleteAdmissionSql());
+  });
+
+  it('o filtro por motivo casa o legado GUARDADO e o derivado, e nomeia o código publicado', () => {
+    const sql = patientHasAttentionReasonSql('$3');
+    expect(sql).toMatch(/\$3 = ANY\(p\.attention_reasons\)/);
+    expect(sql).toContain(`$3 = '${INCOMPLETE_ADMISSION_REASON}'`);
+    expect(INCOMPLETE_ADMISSION_REASON).toBe('INCOMPLETE_ADMISSION');
+  });
+
+  it('o alias da tabela é injetável (default `p`) — as três funções o respeitam em TODA cláusula', () => {
+    for (const sql of [patientIncompleteAdmissionSql('pac'), patientNeedsAttentionSql('pac'), patientHasAttentionReasonSql('$1', 'pac')]) {
+      expect(sql).toContain('pac.');
+      expect(sql).not.toMatch(/(?<![a-z_])p\.(status|needs_attention|has_consent|birth_date|attention_reasons|insurance_informed|id)/);
+    }
+    expect(patientNeedsAttentionSql()).toContain('p.needs_attention');
   });
 });

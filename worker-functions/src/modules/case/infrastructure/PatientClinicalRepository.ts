@@ -9,6 +9,15 @@ export interface PatientClinicalUpsertInput {
   patientId: string;
   diagnosis?: string | null;
   dependencyLevel?: DependencyLevel | null;
+  /**
+   * A leitura da origem foi POSSÍVEL? `false` ⇒ `dependency_level` não é tocada.
+   *
+   * Mesmíssima distinção de `clinicalSpecialtyReadable`, estendida ao irmão que ficou de fora
+   * (I2): `Dependencia` é `drop_down` e uma opção que deixa de resolver devolvia `null`, que
+   * o `push` incondicional gravava como APAGAMENTO. Exposição medida: 348 linhas.
+   * Ausente = `true`, para que nenhum chamador antigo pare de escrever em silêncio.
+   */
+  dependencyLevelReadable?: boolean;
   clinicalSpecialty?: ClinicalSpecialty | null;
   /**
    * A leitura da origem foi POSSÍVEL? `false` ⇒ `clinical_specialty` não é tocada.
@@ -22,6 +31,12 @@ export interface PatientClinicalUpsertInput {
   clinicalSegments?: string | null;
   /** TEXT[] in DB after migration 139. */
   serviceType?: Profession[] | null;
+  /**
+   * A leitura da origem foi POSSÍVEL? `false` ⇒ `service_type` não é tocada (I2).
+   * `Servicio` é a MAIOR exposição medida do apagamento por opção não resolvida: 349 linhas.
+   * Ausente = `true` (o drawer clínico não manda a bandeira e continua escrevendo).
+   */
+  serviceTypeReadable?: boolean;
   // `deviceType` SAIU deste tipo (spec 012, US-B4): `patients.device_type` é FK (308) e DERIVADO
   // de `patient_device_types` por trigger (310). O drawer clínico grava CÓDIGOS do catálogo pelo
   // `PatientDeviceTypeRepository.replaceCodesForPatient`; ninguém escreve o escalar.
@@ -81,9 +96,13 @@ export class PatientClinicalRepository {
     };
 
     if (input.diagnosis !== undefined) push('diagnosis', input.diagnosis);
-    if (input.dependencyLevel !== undefined) push('dependency_level', input.dependencyLevel);
+    if (input.dependencyLevel !== undefined) {
+      // I2 — mesma régua de `clinicalSpecialtyReadable`, abaixo: `false` é "não consegui ler"
+      // e simplesmente não entra no SET (Merge Patch D211.1), então a coluna fica como estava.
+      if (input.dependencyLevelReadable ?? true) push('dependency_level', input.dependencyLevel);
+    }
     if (input.clinicalSegments !== undefined) push('clinical_segments', input.clinicalSegments);
-    if (input.serviceType !== undefined) {
+    if (input.serviceType !== undefined && (input.serviceTypeReadable ?? true)) {
       // serviceType is TEXT[] in DB after migration 139. Empty array → NULL (never store []).
       const value = input.serviceType !== null && input.serviceType.length > 0 ? input.serviceType : null;
       params.push(value);

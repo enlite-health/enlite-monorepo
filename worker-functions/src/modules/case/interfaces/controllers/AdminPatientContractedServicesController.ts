@@ -11,7 +11,7 @@ import {
   associateProviderSchema,
   updateProviderSchema,
 } from '../validators/contractedServiceSchemas';
-import { actorRolesOf, projectContractedServiceForActor } from '../../application/contractedServiceHourlyValueAccess';
+import { actorRolesOf, projectContractedServiceForActor, isAdminActor, bodyWritesHourlyValue } from '../../application/contractedServiceHourlyValueAccess';
 
 const patientParamsSchema = z.object({ id: z.string().uuid() });
 const serviceParamsSchema = z.object({ id: z.string().uuid(), sid: z.string().uuid() });
@@ -40,6 +40,18 @@ export class AdminPatientContractedServicesController {
 
   private actorUid(req: Request): string {
     return AuthMiddleware.getAuthContext(req)?.principal.id ?? 'unknown';
+  }
+
+  /**
+   * Recusa (403) quem manda `hourlyValue` sem poder LÊ-LO. Devolve `true` quando já respondeu.
+   * A rota é `staffOnly`, mas o campo é restrito a `admin` na leitura — sem esta guarda um
+   * `recruiter`, que recebe `hourlyValue: null` em toda leitura, gravava 0 por cima do valor.
+   */
+  private refuseHourlyValueWrite(req: Request, res: Response): boolean {
+    if (!bodyWritesHourlyValue(req.body) || isAdminActor(actorRolesOf(req))) return false;
+    // lex C-b1: só o NOME do campo, nunca o valor.
+    res.status(403).json({ success: false, error: 'Forbidden', details: { field: 'hourlyValue' } });
+    return true;
   }
 
   /** GET /api/admin/patients/:id/contracted-services */
@@ -72,6 +84,7 @@ export class AdminPatientContractedServicesController {
       res.status(400).json({ success: false, error: 'Invalid body', details: { fields: Object.keys(body.error.flatten().fieldErrors) } });
       return;
     }
+    if (this.refuseHourlyValueWrite(req, res)) return;
     try {
       const created = await this.repo.create({ ...body.data, patientId: params.data.id, actorUid: this.actorUid(req) });
       res.status(201).json({ success: true, data: this.project(req, created) });
@@ -98,6 +111,7 @@ export class AdminPatientContractedServicesController {
       res.status(400).json({ success: false, error: 'Invalid body', details: { fields: Object.keys(body.error.flatten().fieldErrors) } });
       return;
     }
+    if (this.refuseHourlyValueWrite(req, res)) return;
     try {
       const existing = await this.repo.findById(params.data.sid);
       // Guarda de posse: um :sid válido de OUTRO paciente não pode ser editado por este :id.
@@ -183,6 +197,12 @@ export class AdminPatientContractedServicesController {
         return;
       }
       const updated = await this.providerRepo.update(params.data.pid, { ...body.data, actorUid: this.actorUid(req) });
+      // `null` = a linha sumiu entre a leitura e a escrita. 200 com `data: null` mente para um
+      // cliente que tipa o campo como não-nulo — o irmão `update` do serviço já devolve 404.
+      if (!updated) {
+        res.status(404).json({ success: false, error: 'Provider allocation not found' });
+        return;
+      }
       res.status(200).json({ success: true, data: updated });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));

@@ -16,9 +16,23 @@ export interface PatientIdentityUpsertInput {
   lastName?: string | null;
   birthDate?: Date | null;
   documentType?: DocumentType | null;
+  /**
+   * A leitura da origem foi POSSÍVEL? `false` ⇒ `document_type` não é tocada (I2).
+   *
+   * Mesma bandeira de `insuranceVerifiedReadable`, estendida aos irmãos que ficaram de fora:
+   * `Tipo de Documento Paciente` é `drop_down`, e uma opção que deixa de resolver devolvia
+   * `null`, que o `document_type = EXCLUDED.document_type` gravava como APAGAMENTO.
+   * Ausente = `true`, para que nenhum chamador antigo pare de escrever em silêncio.
+   */
+  documentTypeReadable?: boolean;
   documentNumber?: string | null;
   affiliateId?: string | null;
   sex?: Sex | null;
+  /**
+   * A leitura da origem foi POSSÍVEL? `false` ⇒ `sex` não é tocada (I2).
+   * Exposição medida do apagamento antes desta bandeira: 185 linhas de `sex`.
+   */
+  sexReadable?: boolean;
   phoneWhatsapp?: string | null;
   insuranceInformed?: string | null;
   insuranceVerified?: string | null;
@@ -127,10 +141,14 @@ export class PatientIdentityRepository {
         first_name          = EXCLUDED.first_name,
         last_name           = EXCLUDED.last_name,
         birth_date          = EXCLUDED.birth_date,
-        document_type       = EXCLUDED.document_type,
+        -- I2: os dois CASE WHEN abaixo são a MESMA bandeira do insurance_verified logo
+        -- adiante. false = "não consegui ler a opção" ⇒ a coluna fica como está; true com
+        -- valor nulo continua APAGANDO (vazio legítimo, D-E). Só no DO UPDATE: o INSERT é linha
+        -- nova e não tem o que apagar.
+        document_type       = CASE WHEN $23::boolean THEN EXCLUDED.document_type ELSE patients.document_type END,
         document_number     = EXCLUDED.document_number,
         affiliate_id        = EXCLUDED.affiliate_id,
-        sex                 = EXCLUDED.sex,
+        sex                 = CASE WHEN $24::boolean THEN EXCLUDED.sex ELSE patients.sex END,
         phone_whatsapp      = EXCLUDED.phone_whatsapp,
         insurance_informed  = EXCLUDED.insurance_informed,
         insurance_verified  = CASE WHEN $22::boolean THEN EXCLUDED.insurance_verified ELSE patients.insurance_verified END,
@@ -172,6 +190,8 @@ export class PatientIdentityRepository {
         input.caseNumber       ?? null,
         input.status           ?? null,
         input.insuranceVerifiedReadable ?? true,   // $22 — a bandeira da C-G
+        input.documentTypeReadable      ?? true,   // $23 — a bandeira do I2
+        input.sexReadable               ?? true,   // $24 — a bandeira do I2
       ],
     );
 

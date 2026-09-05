@@ -5,13 +5,13 @@ import type {
   PatientResponsibleDetail,
   PatientAddressDetail,
   PatientProfessionalDetail,
-} from './PatientQueryRepository';
+} from './PatientQueryRows';
 import { legacyChatIdAliases } from '../domain/PatientChatId';
 import {
   computeAddressAvailability,
   type ActiveVacancy,
 } from '../application/AddressAvailabilityCalculator';
-import type { ContractedServiceDetail } from './PatientContractedServiceRepository';
+import { mapContractedServices } from './ContractedServiceDetailMapper';
 import { phoneMatchesResponsible } from '../domain/PhoneMatch';
 
 const PATIENT_DETAIL_SQL = `
@@ -163,85 +163,6 @@ async function fetchRelated(pool: Pool, patientId: string) {
     // a redação por papel (lex C-c.4) acontece no controller (ponto único).
     pool.query(`SELECT * FROM patient_contracted_services WHERE patient_id = $1 ORDER BY active DESC, created_at ASC`, [patientId]),
   ]);
-}
-
-async function fetchContractedServiceChildren(pool: Pool, serviceIds: string[]) {
-  if (serviceIds.length === 0) return { devices: [] as any[], providers: [] as any[] };
-  const [devices, providers] = await Promise.all([
-    pool.query(
-      `SELECT csd.service_id, csd.device_type
-         FROM contracted_service_devices csd
-         JOIN device_types d ON d.code = csd.device_type
-        WHERE csd.service_id = ANY($1::uuid[])
-        ORDER BY d.sort_order, d.code`,
-      [serviceIds],
-    ),
-    pool.query(
-      `SELECT csp.id, csp.service_id, csp.worker_id, csp.weekly_hours, csp.active, csp.ended_at,
-              csp.country, csp.created_at, csp.updated_at,
-              w.first_name_encrypted, w.last_name_encrypted
-         FROM contracted_service_providers csp
-         JOIN workers w ON w.id = csp.worker_id
-        WHERE csp.service_id = ANY($1::uuid[])
-        ORDER BY csp.active DESC, csp.created_at ASC`,
-      [serviceIds],
-    ),
-  ]);
-  return { devices: devices.rows, providers: providers.rows };
-}
-
-async function mapContractedServices(
-  serviceRows: any[],
-  pool: Pool,
-  enc: KMSEncryptionService,
-): Promise<ContractedServiceDetail[]> {
-  const ids = serviceRows.map((r) => r.id);
-  const { devices, providers } = await fetchContractedServiceChildren(pool, ids);
-  const decryptedProviders = await Promise.all(
-    providers.map(async (p) => {
-      const [first, last] = await Promise.all([enc.decrypt(p.first_name_encrypted ?? ''), enc.decrypt(p.last_name_encrypted ?? '')]);
-      const workerName = [first, last].filter((s) => s && s.length > 0).join(' ') || null;
-      return {
-        id: p.id,
-        serviceId: p.service_id,
-        workerId: p.worker_id,
-        workerName,
-        weeklyHours: p.weekly_hours != null ? Number(p.weekly_hours) : null,
-        active: p.active,
-        endedAt: p.ended_at,
-        country: p.country,
-        createdAt: p.created_at,
-        updatedAt: p.updated_at,
-      };
-    }),
-  );
-  return serviceRows.map((r) => ({
-    id: r.id,
-    patientId: r.patient_id,
-    serviceCode: r.service_code,
-    professionalProfile: r.professional_profile,
-    providersNeeded: r.providers_needed,
-    authorizedHours: r.authorized_hours != null ? Number(r.authorized_hours) : null,
-    weeklyHours: r.weekly_hours != null ? Number(r.weekly_hours) : null,
-    careLocation: r.care_location,
-    hourlyValue: r.hourly_value != null ? Number(r.hourly_value) : null,
-    version: r.version,
-    startDate: r.start_date,
-    contractType: r.contract_type,
-    taxCondition: r.tax_condition,
-    supervisionFrequency: r.supervision_frequency,
-    guardShift: r.guard_shift,
-    // Spec 015 (US-A6.1, migration 322): franja etária solicitada do prestador. `SELECT *`
-    // (fetchRelated) já traz a coluna nova — só falta espelhar no shape decorado.
-    providerAgeBand: r.provider_age_band,
-    active: r.active,
-    endedAt: r.ended_at,
-    country: r.country,
-    deviceTypes: devices.filter((d) => d.service_id === r.id).map((d) => d.device_type),
-    providers: decryptedProviders.filter((p) => p.serviceId === r.id),
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-  }));
 }
 
 async function decryptResponsibles(

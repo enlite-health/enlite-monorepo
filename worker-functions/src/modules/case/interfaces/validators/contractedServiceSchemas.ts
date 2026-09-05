@@ -29,7 +29,10 @@ export const createContractedServiceSchema = z
     // "Invalid body" (convenção viva do controller para TODO erro zod; 422 é só DeviceTypeUnknownError).
     providerAgeBand: optionalEnum(PROVIDER_AGE_BANDS as unknown as [string, ...string[]]),
     deviceTypeCodes: z.array(z.string()).max(10).optional(),
-    country: z.enum(['AR', 'BR']).nullable().optional(),
+    // `country` NÃO entra aqui de propósito (C7): a jurisdição é do PACIENTE e nasce do trigger da
+    // migration 319, que só preenche quando a coluna vem NULL — valor explícito do cliente vencia
+    // o trigger e carimbava `POST {country:'BR'}` num paciente AR. É a fronteira para a qual a
+    // coluna existe (RLS/célula por país): `.strict()` recusa a chave com 400.
   })
   .strict();
 export type CreateContractedServiceBody = z.infer<typeof createContractedServiceSchema>;

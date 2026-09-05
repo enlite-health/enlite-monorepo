@@ -10,15 +10,21 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: { getInstance: jest.fn().mockReturnValue({ getPool: jest.fn().mockReturnValue({ connect: mockConnect, query: mockPoolQuery }) }) },
 }));
 
-import { InsuranceProviderRepository, InsuranceProviderExistsError } from '../InsuranceProviderRepository';
+import { InsuranceProviderRepository, InsuranceProviderExistsError, InsuranceProviderSortOrderTakenError } from '../InsuranceProviderRepository';
 
-function cliente(opts: { dup?: boolean } = {}) {
+function cliente(opts: { dup?: boolean; constraint?: string; erroCru?: unknown } = {}) {
   const chamadas: Array<{ sql: string; params: unknown[] }> = [];
   const query = jest.fn(async (sql: string, params: unknown[] = []) => {
     chamadas.push({ sql, params });
     if (/SELECT COALESCE\(MAX\(sort_order\)/.test(sql)) return { rows: [{ next: 34 }], rowCount: 1 };
     if (/^INSERT INTO insurance_providers/.test(sql)) {
-      if (opts.dup) { const e = new Error('dup') as Error & { code: string }; e.code = '23505'; throw e; }
+      if (opts.erroCru !== undefined) throw opts.erroCru;
+      if (opts.dup) {
+        const e = new Error('dup') as Error & { code: string; constraint?: string };
+        e.code = '23505';
+        if (opts.constraint !== undefined) e.constraint = opts.constraint;
+        throw e;
+      }
       return { rows: [{ code: params[0], active: true, sort_order: params[1] }], rowCount: 1 };
     }
     return { rows: [], rowCount: 0 };
@@ -62,6 +68,46 @@ describe('InsuranceProviderRepository', () => {
     (cli.query as jest.Mock).mockImplementationOnce(async () => ({ rows: [], rowCount: 0 })).mockImplementationOnce(async () => { throw new Error('boom'); });
     mockConnect.mockResolvedValue(cli);
     await expect(new InsuranceProviderRepository().create({ code: 'X', sortOrder: 99 })).rejects.toThrow('boom');
+  });
+
+  // C6: a tabela tem DUAS uniques (a PK `code` e `insurance_providers_sort_order_unico`, mig 311).
+  // Mapear todo 23505 para "esse código já existe" respondia sobre um código que NÃO existe.
+  it('create: 23505 da unique de `sort_order` → InsuranceProviderSortOrderTakenError (nunca "código já existe")', async () => {
+    const { cli, chamadas } = cliente({ dup: true, constraint: 'insurance_providers_sort_order_unico' });
+    mockConnect.mockResolvedValue(cli);
+    const err = await new InsuranceProviderRepository().create({ code: 'NOVA_OS', sortOrder: 15 }).catch((e) => e);
+    expect(err).toBeInstanceOf(InsuranceProviderSortOrderTakenError);
+    expect(err).not.toBeInstanceOf(InsuranceProviderExistsError);
+    expect(err.sortOrder).toBe(15);
+    expect(err.code).toBe('INSURANCE_PROVIDER_SORT_ORDER_TAKEN');
+    expect(err.message).not.toContain('NOVA_OS');
+    expect(chamadas[chamadas.length - 1].sql).toBe('ROLLBACK');
+  });
+
+  it('create: `sort_order` calculado (max+1) que colide também sai como conflito de POSIÇÃO, com o número calculado', async () => {
+    const { cli } = cliente({ dup: true, constraint: 'insurance_providers_sort_order_unico' });
+    mockConnect.mockResolvedValue(cli);
+    const err = await new InsuranceProviderRepository().create({ code: 'NOVA_OS' }).catch((e) => e);
+    expect(err).toBeInstanceOf(InsuranceProviderSortOrderTakenError);
+    expect(err.sortOrder).toBe(34);
+  });
+
+  it('create: 23505 da PK do código → InsuranceProviderExistsError (controle positivo da outra unique)', async () => {
+    const { cli } = cliente({ dup: true, constraint: 'insurance_providers_pkey' });
+    mockConnect.mockResolvedValue(cli);
+    await expect(new InsuranceProviderRepository().create({ code: 'OSDE', sortOrder: 15 })).rejects.toBeInstanceOf(InsuranceProviderExistsError);
+  });
+
+  it('create: erro que NÃO é objeto (driver exótico) propaga cru — nunca vira 409', async () => {
+    const { cli } = cliente({ erroCru: 'rejeição crua' });
+    mockConnect.mockResolvedValue(cli);
+    await expect(new InsuranceProviderRepository().create({ code: 'X', sortOrder: 99 })).rejects.toBe('rejeição crua');
+  });
+
+  it('create: null lançado pelo driver também propaga (o guard de `err === null`)', async () => {
+    const { cli } = cliente({ erroCru: null });
+    mockConnect.mockResolvedValue(cli);
+    await expect(new InsuranceProviderRepository().create({ code: 'X', sortOrder: 99 })).rejects.toBeNull();
   });
 
   it('create sem aliases: só o INSERT do código', async () => {

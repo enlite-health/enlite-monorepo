@@ -233,8 +233,9 @@ describe('AdminPatientsController — pipeline (Fase 2 Task 3)', () => {
         success: true,
         data: { id: VALID_ID, status: 'PENDING_ADMISSION' },
       });
-      // v2 (spec 012): motivo/nota/origem viajam num 3º argumento.
-      expect(moveStatus).toHaveBeenCalledWith(VALID_ID, 'PENDING_ADMISSION', { onHoldReason: null, onHoldNote: null, changeSource: 'admin_panel' });
+      // v2 (spec 012): motivo/nota/origem viajam num 3º argumento. `onHoldNote: undefined`
+      // (chave AUSENTE no corpo) = "não toque na coluna" — `null` ali APAGARIA a nota clínica.
+      expect(moveStatus).toHaveBeenCalledWith(VALID_ID, 'PENDING_ADMISSION', { onHoldReason: null, onHoldNote: undefined, changeSource: 'admin_panel' });
     });
 
     it('deve retornar 400 para status fora do vocabulário (não chama moveStatus)', async () => {

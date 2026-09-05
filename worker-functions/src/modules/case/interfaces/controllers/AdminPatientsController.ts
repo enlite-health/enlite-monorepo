@@ -8,10 +8,14 @@ import { adminPatientParamsSchema } from '../validators/adminPatientParamsSchema
 import { createPatientSchema } from '../validators/createPatientSchema';
 import { PatientQueryRepository } from '../../infrastructure/PatientQueryRepository';
 import { GetPatientByIdUseCase } from '../../application/GetPatientByIdUseCase';
-import { projectPatientClinicalForActor, clinicalCellsOf, canReadPatientClinical, PATIENT_CLINICAL_READ_CELL } from '../../application/patientClinicalAccess';
-import { projectContractedServiceForActor, actorRolesOf } from '../../application/contractedServiceHourlyValueAccess';
+import { clinicalCellsOf, canReadPatientClinical, PATIENT_CLINICAL_READ_CELL } from '../../application/patientClinicalAccess';
+import { actorRolesOf } from '../../application/contractedServiceHourlyValueAccess';
+import {
+  toAdminPatientListItem,
+  projectAdminPatientDetail,
+  patientDetailCompleteness,
+} from '../AdminPatientView';
 import { GetPatientFunnelUseCase } from '../../application/GetPatientFunnelUseCase';
-import { computePatientCompleteness } from '../../domain/PatientCompleteness';
 import { patientFunnelQuerySchema } from '../../application/patientFunnelSchema';
 import {
   CreatePatientUseCase,
@@ -25,11 +29,13 @@ import {
 } from '../../application/ActivatePatientUseCase';
 import {
   PatientService,
-  PatientStatusTransitionError,
-  OnHoldReasonRequiredError,
   type PatientGeneralSectionData,
   type PatientRelatedInput,
 } from '../../application/PatientService';
+import {
+  PatientStatusTransitionError,
+  OnHoldReasonRequiredError,
+} from '../../application/PatientStatusWriter';
 import { DeviceTypeUnknownError } from '../../infrastructure/PatientDeviceTypeRepository';
 import { InsuranceProviderUnknownError } from '../../infrastructure/PatientInsuranceVerifiedRepository';
 import { PatientDiagnosisService } from '@modules/diagnosis/application/PatientDiagnosisService';
@@ -52,6 +58,7 @@ import {
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { GeocodingService } from '../../../../infrastructure/services/GeocodingService';
 import { fetchPatientVacancies } from '../../infrastructure/PatientVacanciesQueryHelper';
+import { insertPatientAddress, fetchPatientAddresses } from '../../infrastructure/PatientAddressQueryHelper';
 
 const createPatientAddressSchema = z.object({
   address_formatted: z.string().min(1),
@@ -323,15 +330,22 @@ export class AdminPatientsController {
     const { id } = paramsResult.data;
     const { status, onHoldReason, onHoldNote, changeSource } = bodyResult.data;
 
-    if (onHoldNote != null && !canReadPatientClinical(clinicalCellsOf(req))) {
+    // A guarda dispara pela CHAVE PRESENTE, não pelo valor não-nulo: `onHoldNote: null` é
+    // ESCRITA (apaga a nota) e a `patient_status_history` não guarda segunda cópia — barrar só
+    // o valor não-nulo barrava quem escreve e liberava quem APAGA (F5/B7, perda irrecuperável).
+    const onHoldNoteInBody =
+      typeof req.body === 'object' && req.body !== null &&
+      Object.prototype.hasOwnProperty.call(req.body, 'onHoldNote');
+    if (onHoldNoteInBody && !canReadPatientClinical(clinicalCellsOf(req))) {
       res.status(403).json({ success: false, error: 'Forbidden', details: { field: 'onHoldNote', cell: PATIENT_CLINICAL_READ_CELL } });
       return;
     }
 
     try {
       const result = await this.patientService.moveStatus(id, status as PatientStatus, {
+        // Chave ausente → `undefined` → o serviço NÃO toca a coluna (ver MoveStatusOptions).
+        onHoldNote: onHoldNoteInBody ? (onHoldNote ?? null) : undefined,
         onHoldReason: (onHoldReason ?? null) as import('../../domain/enums/OnHoldReason').OnHoldReason | null,
-        onHoldNote: onHoldNote ?? null,
         changeSource: changeSource ?? 'admin_panel',
       });
       res.status(200).json({ success: true, data: { id: result.id, status: result.status } });
@@ -491,41 +505,7 @@ export class AdminPatientsController {
     try {
       const { rows, total } = await this.repo.list(parsed.data);
 
-      const data = rows.map((row) => ({
-        id: row.id,
-        clickupTaskId: row.clickupTaskId,
-        firstName: row.firstName,
-        lastName: row.lastName,
-        diagnosis: row.diagnosis,
-        dependencyLevel: row.dependencyLevel,
-        clinicalSpecialty: row.clinicalSpecialty,
-        serviceType: row.serviceType ?? [],
-        documentType: row.documentType,
-        documentNumber: row.documentNumber,
-        sex: row.sex,
-        status: row.status,
-        // Spec 012: o Kanban lê o funil de admissão (mig 313), não o estado clínico v2.
-        admissionStatus: row.admissionStatus,
-        needsAttention: row.needsAttention,
-        isTest: row.isTest,
-        attentionReasons: row.attentionReasons,
-        addressesCount: row.addressesCount,
-        caseNumber: row.caseNumber,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-        // SLA de inatividade (Fase 4) — o kanban lê isto. Aditivo.
-        stageEnteredAt: row.stageEnteredAt ?? null,
-        hoursInStage: row.hoursInStage ?? null,
-        slaThresholdHours: row.slaThresholdHours ?? null,
-        slaBreached: row.slaBreached ?? false,
-        // Quem responde pelo paciente. A lista mostra "Responsável: X" onde
-        // mostraria o nome, enquanto o paciente não tiver o dele (D249).
-        responsibleName: row.responsibleName ?? null,
-        // Desempate do lead sem nome — JÁ mascarado pelo repositório (lex C1).
-        // Ausente (null) em toda ficha com nome real (lex C2).
-        leadContactEmailMasked: row.leadContactEmailMasked ?? null,
-        leadContactIsResponsible: row.leadContactIsResponsible ?? false,
-      }));
+      const data = rows.map((row) => toAdminPatientListItem(row));
 
       // Trilha de LEITURA de contato (lex 30/08 C5, molde OP-08/OP-11-D225):
       // quem leu, de que país, quantos e QUAIS pacientes. Nunca o e-mail — nem
@@ -573,47 +553,18 @@ export class AdminPatientsController {
         return;
       }
 
-      // Ponto ÚNICO de leitura do texto clínico restrito (D211.2): redige para quem não pode.
+      // Ponto ÚNICO de leitura do texto clínico restrito (D211.2) e do `hourlyValue` (lex
+      // C-c.4): as duas redações vivem em `AdminPatientView.projectAdminPatientDetail`.
       const cells = clinicalCellsOf(req);
-      const clinicalProjected = projectPatientClinicalForActor(result.patient as unknown as Record<string, unknown>, cells);
-      // lex C-c.4: hourlyValue de cada serviço contratado redigido para quem não é admin —
-      // mesmo ponto único de leitura do texto clínico acima, campo por campo do array.
       const roles = actorRolesOf(req);
-      const rawServices = (clinicalProjected as { contractedServices?: unknown[] }).contractedServices;
-      const projected = Array.isArray(rawServices)
-        ? {
-            ...clinicalProjected,
-            contractedServices: rawServices.map((s) => projectContractedServiceForActor(s as { hourlyValue: number | null }, roles)),
-          }
-        : clinicalProjected;
+      const projected = projectAdminPatientDetail(result.patient as unknown as Record<string, unknown>, cells, roles);
       // Trilha de LEITURA sem valor (lex 29/08 C3, molde OP-08): uid, paciente, país, decisão, quando.
       // Nunca o texto, nunca o nome. Request redigida não gera linha (minimização).
       if (canReadPatientClinical(cells)) {
         logger.info({ msg: 'patient_clinical.read', uid: AuthMiddleware.getAuthContext(req)?.principal.id ?? null, patientId: parsed.data.id, country: (result.patient as { country?: string | null }).country ?? null, decision: 'allowed' });
       }
 
-      // Spec 014 (US-D1, lex D1.1): `completeness` SÓ aqui — a lista e o kanban (listPatients,
-      // listPatientsForKanban) continuam com `needsAttention` booleano + `attentionReasons` (enum
-      // fechado), nunca `missing`. Mesma função (`computePatientCompleteness`) que decide o gate
-      // de `POST /activate` — nunca uma cópia da regra (`ActivatePatientUseCase`).
-      const detail = result.patient as unknown as {
-        birthDate: string | Date | null;
-        hasConsent: boolean | null;
-        insuranceInformed: string | null;
-        addresses?: unknown[];
-        responsibles?: unknown[];
-        contractedServices?: Array<{ active: boolean }>;
-      };
-      const completeness = computePatientCompleteness({
-        birthDate: detail.birthDate,
-        hasConsent: detail.hasConsent,
-        insuranceInformed: detail.insuranceInformed,
-        activeAddressCount: Array.isArray(detail.addresses) ? detail.addresses.length : 0,
-        activeResponsibleCount: Array.isArray(detail.responsibles) ? detail.responsibles.length : 0,
-        activeContractedServiceCount: Array.isArray(detail.contractedServices)
-          ? detail.contractedServices.filter((s) => s.active).length
-          : 0,
-      });
+      const completeness = patientDetailCompleteness(result.patient);
 
       // Spec 016 F2 (D263): diagnóstico estruturado embutido na MESMA projeção — REQ-21, sem
       // concept_code/concept_group/catalog_release (toDiagnosisPublicView é o único ponto que
@@ -677,50 +628,27 @@ export class AdminPatientsController {
     const { address_formatted, address_raw, address_type, display_order, neighborhood, logistics_corridor, access_notes } = bodyResult.data;
 
     try {
-      const displayOrderValue = display_order ?? null;
-
-      // Best-effort geocode — failures persist with lat/lng=NULL and the
-      // backfill job recovers later.
-      let lat: number | null = null;
-      let lng: number | null = null;
-      try {
-        const res = await this.geocoder.geocode(address_formatted);
-        if (res) {
-          lat = res.latitude;
-          lng = res.longitude;
-        }
-      } catch {
-        // best-effort
-      }
-
-      const result = await this.db.query<{
-        id: string; patient_id: string; address_formatted: string;
-        address_raw: string | null; address_type: string;
-      }>(
-        // `country` explícito, do paciente (mig 316, lex C2.8) — o trigger cobre quem não manda;
-        // aqui mandamos mesmo assim, para o INSERT dizer o que faz.
-        `INSERT INTO patient_addresses
-           (patient_id, address_formatted, address_raw, address_type, display_order, source, lat, lng,
-            neighborhood, logistics_corridor, access_notes, country)
-         VALUES ($1, $2, $3, $4,
-           COALESCE($5, (SELECT COALESCE(MAX(display_order), 0) + 1 FROM patient_addresses WHERE patient_id = $1 AND archived_at IS NULL)),
-           'admin_manual', $6, $7, $8, $9, $10,
-           (SELECT country FROM patients WHERE id = $1))
-         RETURNING id, patient_id, address_formatted, address_raw, address_type`,
-        [patientId, address_formatted, address_raw ?? null, address_type, displayOrderValue, lat, lng,
-          neighborhood ?? null, logistics_corridor ?? null, access_notes ?? null],
-      );
+      const created = await insertPatientAddress(this.db, this.geocoder, {
+        patientId,
+        addressFormatted:   address_formatted,
+        addressRaw:         address_raw ?? null,
+        addressType:        address_type,
+        displayOrder:       display_order ?? null,
+        neighborhood:       neighborhood ?? null,
+        logisticsCorridor:  logistics_corridor ?? null,
+        accessNotes:        access_notes ?? null,
+      });
 
       // Trilha SEM valor (lex C2.3): quem, paciente, e o TAMANHO do que foi gravado.
       logger.info({
         msg: 'patient_address.created',
         uid: AuthMiddleware.getAuthContext(req)?.principal.id ?? null,
         patientId,
-        addressId: result.rows[0].id,
+        addressId: created.id,
         accessNotesLen: (access_notes ?? '').length,
         logisticsCorridorLen: (logistics_corridor ?? '').length,
       });
-      res.status(201).json({ success: true, data: result.rows[0] });
+      res.status(201).json({ success: true, data: created });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
       // lex C2.3: nada do corpo na resposta — um erro do Postgres pode ecoar a linha inteira.
@@ -747,31 +675,8 @@ export class AdminPatientsController {
     const { patientId } = paramsResult.data;
 
     try {
-      const result = await this.db.query<{
-        id: string;
-        address_formatted: string;
-        address_raw: string | null;
-        address_type: string;
-        display_order: number | null;
-        source: string | null;
-        complement: string | null;
-        lat: string | null;
-        lng: string | null;
-      }>(
-        // archived_at IS NULL: o form de criação de vaga e o detalhe do
-        // paciente só veem endereços ativos. Endereços arquivados continuam
-        // existindo na tabela pra preservar o histórico das vagas antigas
-        // que apontam pra eles (ver migration 198 e docs/features/
-        // vacancy-creation/06-endereco-servico.md).
-        `SELECT id, address_formatted, address_raw, address_type, display_order, source, complement, lat, lng
-         FROM patient_addresses
-         WHERE patient_id = $1
-           AND archived_at IS NULL
-         ORDER BY display_order ASC, created_at ASC`,
-        [patientId],
-      );
-
-      res.status(200).json({ success: true, data: result.rows });
+      const rows = await fetchPatientAddresses(this.db, patientId);
+      res.status(200).json({ success: true, data: rows });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientsController:listPatientAddresses' });

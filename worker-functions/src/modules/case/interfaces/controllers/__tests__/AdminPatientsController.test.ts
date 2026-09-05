@@ -252,6 +252,42 @@ describe('AdminPatientsController.getPatientById', () => {
       expect(fakeDiagnosisService.listForPatient).toHaveBeenCalledWith(PATIENT_ID);
     });
 
+    it('paciente sem diagnóstico registrado (`found:false`) → lista vazia e `diagnosesUnavailable:false` (é ausência, não avaria)', async () => {
+      mockFindDetailById.mockResolvedValue(makePatientDetail());
+      const fakeDiagnosisService = { listForPatient: jest.fn().mockResolvedValue({ found: false }) };
+      const withDiagnosis = new AdminPatientsController(
+        undefined, undefined, undefined, undefined,
+        fakeDiagnosisService as unknown as ConstructorParameters<typeof AdminPatientsController>[4],
+      );
+      const [req, res] = mockReqRes({ id: PATIENT_ID });
+      await withDiagnosis.getPatientById(req, res);
+      const data = (res as any).json.mock.calls[0][0].data;
+      expect(data).toMatchObject({ diagnoses: [], diagnosesUnavailable: false });
+    });
+
+    it('serviço de diagnóstico rejeitando com algo que NÃO é Error também vira diagnosesUnavailable (bulkhead, sem crash)', async () => {
+      mockFindDetailById.mockResolvedValue(makePatientDetail());
+      const fakeDiagnosisService = { listForPatient: jest.fn().mockRejectedValue('rejeição crua') };
+      const withDiagnosis = new AdminPatientsController(
+        undefined, undefined, undefined, undefined,
+        fakeDiagnosisService as unknown as ConstructorParameters<typeof AdminPatientsController>[4],
+      );
+      const [req, res] = mockReqRes({ id: PATIENT_ID });
+      await withDiagnosis.getPatientById(req, res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect((res as any).json.mock.calls[0][0].data).toMatchObject({ diagnoses: [], diagnosesUnavailable: true });
+    });
+
+    it('ficha sem as coleções (payload legado): o checklist conta 0 em vez de estourar', async () => {
+      const patient = makePatientDetail();
+      delete (patient as Record<string, unknown>).responsibles;
+      delete (patient as Record<string, unknown>).addresses;
+      mockFindDetailById.mockResolvedValue({ ...patient, contractedServices: undefined });
+      const [req, res] = mockReqRes({ id: PATIENT_ID });
+      await controller.getPatientById(req, res);
+      expect((res as any).json.mock.calls[0][0].data.completeness.missing).toEqual(['ADDRESS', 'CONTRACTED_SERVICE']);
+    });
+
     it('C7 — TERMINOLOGY_ADAPTER com typo NÃO derruba o construtor nem a rota inteira; vira diagnosesUnavailable:true, nunca crash de processo', async () => {
       process.env.TERMINOLOGY_ADAPTER = 'postgress'; // typo real medido pelo QA-caça
       expect(() => new AdminPatientsController()).not.toThrow();

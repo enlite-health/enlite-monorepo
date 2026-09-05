@@ -25,7 +25,8 @@ jest.mock('../../../../infrastructure/services/GeocodingService', () => ({ Geoco
 jest.mock('firebase-functions', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 
 import * as functions from 'firebase-functions';
-import { PatientService, PatientStatusTransitionError, OnHoldReasonRequiredError } from '../PatientService';
+import { PatientService } from '../PatientService';
+import { PatientStatusTransitionError, OnHoldReasonRequiredError } from '../PatientStatusWriter';
 
 const PID = '11111111-1111-4111-8111-111111111111';
 const calls = (): Array<{ sql: string; params?: unknown[] }> =>
@@ -116,10 +117,33 @@ describe('PatientService.moveStatus v2', () => {
     expect(logged).not.toContain(NOTE);
   });
 
-  it('ramos: ON_HOLD sem nota grava NULL na nota; o erro de transição a partir de status NULL diz "null"', async () => {
-    db('ACTIVE', [['ACTIVE', 'ON_HOLD']]);
+  it('ramos: ON_HOLD SEM a chave da nota não toca a coluna; `null` explícito APAGA; o erro a partir de status NULL diz "null"', async () => {
+    // Chave ausente → `on_hold_note` fica FORA do SET (a nota clínica sobrevive a uma troca de motivo).
+    db('ON_HOLD', [['ON_HOLD', 'ON_HOLD']]);
     await service.moveStatus(PID, 'ON_HOLD', { onHoldReason: 'SCHOOL', changeSource: 'admin_panel' });
-    expect(calls().find((x) => /^UPDATE patients/.test(x.sql))?.params).toEqual([PID, 'ON_HOLD', 'SCHOOL', null]);
+    const semChave = calls().find((x) => /^UPDATE patients/.test(x.sql));
+    expect(semChave?.sql).not.toMatch(/on_hold_note/);
+    expect(semChave?.params).toEqual([PID, 'ON_HOLD', 'SCHOOL']);
+
+    // `null` explícito continua sendo apagamento deliberado de quem PODE ler.
+    jest.clearAllMocks();
+    db('ON_HOLD', [['ON_HOLD', 'ON_HOLD']]);
+    await service.moveStatus(PID, 'ON_HOLD', { onHoldReason: 'SCHOOL', onHoldNote: null, changeSource: 'admin_panel' });
+    const comNull = calls().find((x) => /^UPDATE patients/.test(x.sql));
+    expect(comNull?.sql).toMatch(/on_hold_note = \$4/);
+    expect(comNull?.params).toEqual([PID, 'ON_HOLD', 'SCHOOL', null]);
+
     expect(new PatientStatusTransitionError(null, 'ACTIVE').message).toBe('Patient status transition not allowed: null → ACTIVE');
+  });
+
+  it('C5: DEMOÇÃO de estado clínico para o funil consulta a tabela e é RECUSADA (nada é gravado, nota intacta)', async () => {
+    db('ACTIVE', [['ACTIVE', 'ON_HOLD']]); // o seed da 315 não tem ACTIVE → ADMISSION
+    await expect(service.moveStatus(PID, 'ADMISSION', { changeSource: 'kanban' })).rejects.toMatchObject({
+      name: 'PatientStatusTransitionError', code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED', from: 'ACTIVE', to: 'ADMISSION',
+    });
+    const c = calls();
+    expect(c.some((x) => /patient_status_transitions/.test(x.sql))).toBe(true);
+    expect(c.some((x) => /^UPDATE patients/.test(x.sql))).toBe(false);
+    expect(c[c.length - 1].sql).toBe('ROLLBACK');
   });
 });

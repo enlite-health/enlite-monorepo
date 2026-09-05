@@ -50,6 +50,7 @@ import {
   NoActiveAddressError,
 } from '../ActivatePatientUseCase';
 import { computePatientCompleteness } from '../../domain/PatientCompleteness';
+import * as PatientCompletenessModule from '../../domain/PatientCompleteness';
 
 // ── Query dispatcher ──────────────────────────────────────────────────────────
 
@@ -518,6 +519,61 @@ describe('ActivatePatientUseCase', () => {
     expect((err as PatientNotReadyError).missing).toEqual(['ADDRESS']);
     expect(countSql(seen, 'INSERT INTO job_postings')).toBe(0);
     expect(countSql(seen, 'ROLLBACK')).toBe(1);
+  });
+
+  // ── C9: o erro tem de dizer o que REALMENTE falta ────────────────────────────────────────
+  //
+  // O gate lê `blocking` corretamente, mas sempre lançava `NoActiveAddressError`, que hardcoda
+  // `missing: ['ADDRESS']` e a mensagem "agregá al menos una dirección". Latente enquanto
+  // ACTIVATION_BLOCKING_CODES tem 1 item — e mentira no dia em que ganhar o segundo (a constante
+  // existe justamente para crescer: "reversível, é só ACTIVATION_BLOCKING_CODES ganhar mais códigos").
+  describe('C9 — o 422 nomeia os códigos que o gate realmente barrou', () => {
+    const bloqueando = (codes: Array<'ADDRESS' | 'RESPONSIBLE' | 'COVERAGE' | 'CONTRACTED_SERVICE' | 'CONSENT'>) =>
+      jest.spyOn(PatientCompletenessModule, 'computePatientCompleteness').mockReturnValue({
+        missing: codes, blocking: codes, ready: false, canActivate: false,
+      });
+
+    afterEach(() => { jest.restoreAllMocks(); });
+
+    it('dois códigos bloqueando → PatientNotReadyError com os DOIS, e a mensagem não fala só de endereço', async () => {
+      bloqueando(['ADDRESS', 'CONSENT']);
+      const { seen } = programClient({
+        patientRow: { id: 'pat-c9-dois', status: 'PENDING_ADMISSION', case_number: 91 },
+        addressIds: [],
+        responsibleCount: 0,
+      });
+      const err = await new ActivatePatientUseCase().execute('pat-c9-dois').catch((e) => e);
+      expect(err).toBeInstanceOf(PatientNotReadyError);
+      expect((err as PatientNotReadyError).missing).toEqual(['ADDRESS', 'CONSENT']);
+      expect((err as Error).message).toContain('CONSENT');
+      expect(countSql(seen, 'INSERT INTO job_postings')).toBe(0);
+      expect(countSql(seen, 'ROLLBACK')).toBe(1);
+    });
+
+    it('um código que NÃO é ADDRESS → o erro não pode ser NoActiveAddressError (o endereço existe)', async () => {
+      bloqueando(['CONSENT']);
+      programClient({
+        patientRow: { id: 'pat-c9-consent', status: 'PENDING_ADMISSION', case_number: 92 },
+        addressIds: ['addr-1'],
+        responsibleCount: 1,
+      });
+      const err = await new ActivatePatientUseCase().execute('pat-c9-consent').catch((e) => e);
+      expect(err).toBeInstanceOf(PatientNotReadyError);
+      expect(err).not.toBeInstanceOf(NoActiveAddressError);
+      expect((err as PatientNotReadyError).missing).toEqual(['CONSENT']);
+    });
+
+    it('só ADDRESS (o caso de hoje) segue sendo NoActiveAddressError — nada mudou para quem já dependia disso', async () => {
+      bloqueando(['ADDRESS']);
+      programClient({
+        patientRow: { id: 'pat-c9-addr', status: 'PENDING_ADMISSION', case_number: 93 },
+        addressIds: [],
+        responsibleCount: 1,
+      });
+      const err = await new ActivatePatientUseCase().execute('pat-c9-addr').catch((e) => e);
+      expect(err).toBeInstanceOf(NoActiveAddressError);
+      expect((err as PatientNotReadyError).missing).toEqual(['ADDRESS']);
+    });
   });
 
   it('q. paciente MENOR com ≥1 responsável → RESPONSIBLE não bloqueia (ativa normalmente)', async () => {
