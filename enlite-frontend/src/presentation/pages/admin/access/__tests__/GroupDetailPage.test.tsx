@@ -411,6 +411,28 @@ describe('GroupDetailPage — a regra por componente', () => {
     expect(screen.getByLabelText('admin.access.groups.name')).toHaveValue('tentativa');
   });
 
+  it('🔒 confirmar um campo FECHA o outro e descarta o rascunho dele', async () => {
+    // A pergunta que o gate levantou: com os dois lápis abertos, confirmar um
+    // podia ressuscitar depois o rascunho não confirmado do outro. Medido: não.
+    // `run` → `load()` liga `isLoading`, a página volta ao placeholder e os dois
+    // campos DESMONTAM — voltam fechados, com o valor do servidor. Nenhum
+    // rascunho sobrevive para ser salvo por engano.
+    postura('write');
+    api.updateGroup.mockResolvedValue(undefined);
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByTestId('g-name-readonly');
+    const nome = await abrirLapis('g-name');
+    await userEvent.clear(nome); await userEvent.type(nome, 'digitado e nao confirmado');
+    const desc = await abrirLapis('g-desc');
+    await userEvent.type(desc, ' editada');
+    await userEvent.click(screen.getByTestId('g-desc-confirmar'));
+    await waitFor(() => expect(api.updateGroup).toHaveBeenCalled());
+    expect(document.querySelector('#g-name')).toBeNull();
+    expect(await screen.findByTestId('g-name-readonly')).toHaveTextContent('Recrutadores AR');
+    // e reabrindo, o campo parte do servidor — não do rascunho abandonado
+    expect(await abrirLapis('g-name')).toHaveValue('Recrutadores AR');
+  });
+
   it('🔒 SEM catálogo o contador não sai — "0" ali seria mentira sobre acesso', async () => {
     // o grupo TEM células no banco; o que falta é o catálogo. Dizer
     // "Seleccionadas: 0" logo acima de "o sync não rodou" afirmaria que este
