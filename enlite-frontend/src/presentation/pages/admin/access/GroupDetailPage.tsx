@@ -332,7 +332,6 @@ function GroupDetail(): JSX.Element {
                 : t('admin.access.group.cells.clean')}
             </Text>
             <div className="w-full max-w-xs">
-              {/* `#cells-reason` é locator do e2e `admin-access-panel` — não renomear. */}
               <Label htmlFor="cells-reason">{t('admin.access.group.reasonCells')}</Label>
               <Input id="cells-reason" inputSize="compact" value={reason} placeholder={t('admin.access.group.reasonPlaceholder')} onChange={(e) => setReason(e.target.value)} />
             </div>

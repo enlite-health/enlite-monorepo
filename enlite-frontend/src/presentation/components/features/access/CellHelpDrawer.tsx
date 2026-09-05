@@ -25,11 +25,16 @@ interface CellHelpDrawerProps {
  * entrega o dossiê descriptografado). Recurso sem texto curado diz que não tem
  * texto, em vez de inventar um — o catálogo cresce sem passar por aqui.
  *
- * O parecer do `lex` (05/09) condicionou este texto a três coisas, e elas estão
- * no conteúdo, não neste componente: não prometer registro que não acontece;
- * não descrever efeito de célula que nenhuma rota exige (`worker:delete` diz
- * que não faz nada hoje); e nomear as categorias sensíveis em vez de escondê-las
- * atrás de "datos personales" — descrever de MENOS é o risco real.
+ * O parecer do `lex` (05/09) condicionou este texto a duas coisas, e elas estão
+ * no conteúdo, não neste componente: não prometer registro que não acontece; e
+ * não descrever efeito de célula que nenhuma rota exige (`worker:delete` diz que
+ * não faz nada hoje).
+ *
+ * ⚠️ O parecer RECOMENDAVA uma terceira — nomear as categorias sensíveis — e o
+ * Gabriel decidiu o contrário em 05/09: "não tem por que colocar essas coisas de
+ * religião no popup". O texto avisa do peso ("datos que la ley protege de forma
+ * especial") sem listar, e há teste que fica VERMELHO se a enumeração voltar.
+ * Não reescreva o texto seguindo o parecer sem falar com ele.
  */
 export function CellHelpDrawer({ resource, rotulo, acoes, onClose }: CellHelpDrawerProps): JSX.Element | null {
   const { t } = useTranslation();
