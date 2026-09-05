@@ -164,7 +164,16 @@ function Avulso({
   const definicao = celula.description ?? key;
 
   return (
+    // Nome à ESQUERDA com a mesma largura da 1ª coluna da grade (`min-w-13rem`)
+    // e a marca logo depois: sem isto o avulso põe a caixa na margem e a grade
+    // põe na coluna — duas posições no mesmo bloco, que o teste visual pegou.
     <div className="flex items-start gap-3 py-1.5 border-b border-gray-200 last:border-b-0">
+      <div className="min-w-0 min-w-[13rem] pr-3">
+        <Text as="span" size="xs" color="primary" className="block">{nome}</Text>
+        {/* A definição sai do tooltip e fica À VISTA: o avulso não tem vizinho
+            com que se comparar, e entre eles está o dossiê do prestador. */}
+        <Text as="span" size="xs" color="secondary" className="block">{definicao}</Text>
+      </div>
       <div className="pt-0.5">
         {editable ? (
           <Checkbox id={`cell-${key}`} aria-label={`${key} — ${definicao}`} checked={marcada} onChange={() => onToggle(key)} />
@@ -173,12 +182,6 @@ function Avulso({
             <Text as="span" size="xs" color={marcada ? 'primary' : 'secondary'}>{marcada ? '✓' : '·'}</Text>
           </span>
         )}
-      </div>
-      <div className="min-w-0">
-        <Text as="span" size="xs" color="primary" className="block">{nome}</Text>
-        {/* A definição sai do tooltip e fica À VISTA: o avulso não tem vizinho
-            com que se comparar, e entre eles está o dossiê do prestador. */}
-        <Text as="span" size="xs" color="secondary" className="block">{definicao}</Text>
       </div>
       {mudou && <span className="sr-only">{t('admin.access.group.cells.changed')}</span>}
     </div>
