@@ -31,11 +31,12 @@ const COUNTRIES = ['AR', 'BR'] as const;
  * `/admin/access/groups/:id` — o grupo por inteiro: nome/descrição, células,
  * países, membros e o arquivamento.
  *
- * A postura vem de `useCellAccess(PANEL_RESOURCE)`: em `read` todo campo é
- * `ReadOnlyField` (texto, input nem montado), toda ação de conclusão é
- * `ActionButton` (D269 — correção do Gabriel: "esconder, não desabilitar" —
- * sem `:write` o botão SOME, `mode="hide"` default), e as checkboxes de
- * célula viram lista.
+ * A postura vem de `useCellAccess(PANEL_RESOURCE)`: sem `:write` o lápis de
+ * nome/descrição não sai, os botões de país viram texto, e as checkboxes de
+ * célula viram lista (D269 — "esconder, não desabilitar").
+ *
+ * Nome e descrição usam `CampoEditavel` (texto + lápis) desde 05/09; o
+ * `ReadOnlyField` continua para quem decide texto×input pela POSTURA.
  */
 export function GroupDetailPage(): JSX.Element {
   return (
@@ -120,23 +121,37 @@ function GroupDetail(): JSX.Element {
     [group?.cells, cells],
   );
 
-  /** Nome e descrição vão na MESMA chamada — o PUT manda os dois, então salvar
-   *  um sem o outro apagaria o que não foi tocado. Por isso um só salvador, e
-   *  não uma cópia do corpo em cada campo. */
-  const salvarIdentidade = (): Promise<void> => run(() => AdminPermissionsApiService.updateGroup(group!.id, {
-    name: form.name.trim(),
-    description: form.description.trim() || null,
-  }));
+  /**
+   * O PUT manda nome E descrição juntos, então confirmar um campo precisa
+   * mandar o outro — mas o outro vem do SERVIDOR, não do formulário.
+   *
+   * Antes vinha do `form`, e por isso confirmar a descrição levava junto um
+   * nome que a pessoa tinha digitado no lápis e NÃO confirmado. É a mesma
+   * classe do drawer clínico que apaga campo não editado — e o meu teste
+   * travava esse comportamento como se fosse o correto (achado do gate, 05/09).
+   */
+  const salvarCampo = (campo: 'name' | 'description'): Promise<boolean> => run(
+    () => AdminPermissionsApiService.updateGroup(group!.id, {
+      name: campo === 'name' ? form.name.trim() : group!.name,
+      description: campo === 'description'
+        ? (form.description.trim() || null)
+        : (group!.description ?? null),
+    }),
+  );
 
-  async function run(acao: () => Promise<unknown>, okKey = 'admin.access.group.saved'): Promise<void> {
+  /** Devolve se a ação DEU CERTO — quem chama precisa saber para não fechar
+   *  um campo cujo save o servidor recusou. */
+  async function run(acao: () => Promise<unknown>, okKey = 'admin.access.group.saved'): Promise<boolean> {
     setError(null);
     setNotice(null);
     try {
       await acao();
       setNotice(okKey);
       await load();
+      return true;
     } catch (err) {
       setError(panelErrorKey(err));
+      return false;
     }
   }
 
@@ -215,7 +230,7 @@ function GroupDetail(): JSX.Element {
           label={t('admin.access.groups.name')}
           value={group.name}
           editable={editable}
-          onConfirm={salvarIdentidade}
+          onConfirm={() => salvarCampo('name')}
           onCancel={() => setForm((f) => ({ ...f, name: group.name }))}
         >
           <Input id="g-name" inputSize="compact" value={form.name}
@@ -226,7 +241,7 @@ function GroupDetail(): JSX.Element {
           label={t('admin.access.groups.description')}
           value={group.description}
           editable={editable}
-          onConfirm={salvarIdentidade}
+          onConfirm={() => salvarCampo('description')}
           onCancel={() => setForm((f) => ({ ...f, description: group.description ?? '' }))}
         >
           <Textarea id="g-desc" inputSize="compact" rows={2} value={form.description}
@@ -369,12 +384,12 @@ function GroupDetail(): JSX.Element {
           memberIds={members.map((m) => m.userId)}
           people={people}
           editable={editable}
-          onSave={(add, remove) => run(async () => {
+          onSave={async (add, remove) => { await run(async () => {
             // Adiciona ANTES de remover: trocar o último gestor por outro só
             // passa pelo anti-lockout do banco nessa ordem.
             for (const uid of add) await AdminPermissionsApiService.addMember(group.id, uid);
             for (const uid of remove) await AdminPermissionsApiService.removeMember(group.id, uid);
-          })}
+          }); }}
         />
       </section>
     </div>

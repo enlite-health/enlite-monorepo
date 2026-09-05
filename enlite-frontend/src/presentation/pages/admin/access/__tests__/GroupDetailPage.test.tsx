@@ -189,13 +189,27 @@ describe('GroupDetailPage — a regra por componente', () => {
     api.updateGroup.mockResolvedValue(undefined);
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
     await screen.findByTestId('g-name-readonly');
+    // 🔒 o rascunho do NOME fica aberto e NÃO confirmado; confirmar a DESCRIÇÃO
+    // não pode levá-lo junto. Este teste afirmava o contrário e travava o
+    // defeito como esperado — a mesma classe do drawer clínico que apaga campo
+    // não editado (achado do gate, 05/09).
     const nome = await abrirLapis('g-name');
-    await userEvent.clear(nome); await userEvent.type(nome, '  Novo nome ');
+    await userEvent.clear(nome); await userEvent.type(nome, 'NUNCA deve ser salvo');
     const desc = await abrirLapis('g-desc');
     await userEvent.clear(desc);
-    // cada campo confirma o SEU — não há mais um Guardar global da identidade
     await userEvent.click(screen.getByTestId('g-desc-confirmar'));
-    await waitFor(() => expect(api.updateGroup).toHaveBeenCalledWith(GRUPO.id, { name: 'Novo nome', description: null }));
+    await waitFor(() => expect(api.updateGroup).toHaveBeenCalledWith(GRUPO.id, {
+      name: 'Recrutadores AR', description: null,
+    }));
+
+    // e confirmando o NOME, é ele que vai — com a descrição do servidor
+    api.updateGroup.mockClear();
+    const nome2 = await abrirLapis('g-name');
+    await userEvent.clear(nome2); await userEvent.type(nome2, '  Novo nome ');
+    await userEvent.click(screen.getByTestId('g-name-confirmar'));
+    await waitFor(() => expect(api.updateGroup).toHaveBeenCalledWith(GRUPO.id, {
+      name: 'Novo nome', description: 'Quem recruta na Argentina',
+    }));
     expect(await screen.findByRole('status')).toHaveTextContent('admin.access.group.saved');
   });
 
@@ -357,6 +371,44 @@ describe('GroupDetailPage — a regra por componente', () => {
     await userEvent.type(desc, 'agora tem');
     await userEvent.click(screen.getByTestId('g-desc-confirmar'));
     await waitFor(() => expect(api.updateGroup).toHaveBeenCalledWith(GRUPO.id, { name: 'Recrutadores AR', description: 'agora tem' }));
+
+    // e confirmar o NOME num grupo SEM descrição manda `null`, não string vazia
+    api.updateGroup.mockClear();
+    const nome = await abrirLapis('g-name');
+    await userEvent.type(nome, ' X');
+    await userEvent.click(screen.getByTestId('g-name-confirmar'));
+    await waitFor(() => expect(api.updateGroup).toHaveBeenCalledWith(GRUPO.id, { name: 'Recrutadores AR X', description: null }));
+  });
+
+  it('🔒 Enter no Cancelar DESCARTA — não salva o rascunho que se quer jogar fora', async () => {
+    // o handler testava `tagName !== 'TEXTAREA'`, e um BUTTON passa nesse teste:
+    // quem tabulava até Cancelar e apertava Enter SALVAVA (achado do gate, 05/09).
+    postura('write');
+    api.updateGroup.mockResolvedValue(undefined);
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByTestId('g-name-readonly');
+    const nome = await abrirLapis('g-name');
+    await userEvent.clear(nome); await userEvent.type(nome, 'jogado fora');
+    screen.getByTestId('g-name-cancelar').focus();
+    await userEvent.keyboard('{Enter}');
+    expect(api.updateGroup).not.toHaveBeenCalled();
+    expect(screen.getByTestId('g-name-readonly')).toHaveTextContent('Recrutadores AR');
+  });
+
+  it('🔒 save recusado pelo servidor MANTÉM o campo aberto, com o texto digitado', async () => {
+    // `run` engolia o erro em `setError` e o campo fechava assim mesmo: a tela
+    // mostrava o valor antigo e o rascunho recusado seguia no formulário,
+    // pronto para ir de carona na próxima confirmação (achado do gate).
+    postura('write');
+    api.updateGroup.mockRejectedValue(new ApiError({ success: false, error: 'x', code: 'conflict' }, 409));
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByTestId('g-name-readonly');
+    const nome = await abrirLapis('g-name');
+    await userEvent.clear(nome); await userEvent.type(nome, 'tentativa');
+    await userEvent.click(screen.getByTestId('g-name-confirmar'));
+    await waitFor(() => expect(api.updateGroup).toHaveBeenCalled());
+    // continua aberto e com o que a pessoa escreveu — nada se perdeu
+    expect(screen.getByLabelText('admin.access.groups.name')).toHaveValue('tentativa');
   });
 
   it('🔒 SEM catálogo o contador não sai — "0" ali seria mentira sobre acesso', async () => {

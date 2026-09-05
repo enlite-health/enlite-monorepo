@@ -12,8 +12,13 @@ interface CampoEditavelProps {
   editable: boolean;
   /** O input/textarea que aparece ao abrir. Recebe o `id` de fora. */
   children: ReactNode;
-  /** Confirma; devolver `false` mantém aberto (ex.: validação falhou). */
-  onConfirm: () => void | Promise<void>;
+  /**
+   * Confirma. Devolver `false` MANTÉM o campo aberto — é como o chamador diz
+   * "o servidor recusou". O contrato antes prometia isso e o tipo não sabia
+   * expressar (`void | Promise<void>`), então nunca era lido: um save que
+   * falhava fechava o campo e deixava o rascunho recusado no formulário.
+   */
+  onConfirm: () => boolean | Promise<boolean>;
   /** Descarta o rascunho e fecha. */
   onCancel: () => void;
 }
@@ -49,7 +54,9 @@ export function CampoEditavel({
   }, [aberto]);
 
   const fechar = (): void => { setAberto(false); onCancel(); };
-  const confirmar = async (): Promise<void> => { await onConfirm(); setAberto(false); };
+  const confirmar = async (): Promise<void> => {
+    if (await onConfirm()) setAberto(false);
+  };
 
   if (!editable || !aberto) {
     return (
@@ -82,8 +89,12 @@ export function CampoEditavel({
       ref={caixa}
       onKeyDown={(e) => {
         if (e.key === 'Escape') fechar();
-        // Enter confirma só fora do textarea — lá ele é quebra de linha.
-        if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
+        // Enter confirma só quando o foco está no CAMPO de uma linha.
+        // Era `!== 'TEXTAREA'`, e um BUTTON passa nesse teste: quem tabulava até
+        // Cancelar e apertava Enter SALVAVA o rascunho que queria descartar —
+        // o `preventDefault` ainda suprimia a ativação nativa do botão.
+        // (achado do gate, 05/09). No textarea o Enter é quebra de linha.
+        if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') {
           e.preventDefault();
           void confirmar();
         }

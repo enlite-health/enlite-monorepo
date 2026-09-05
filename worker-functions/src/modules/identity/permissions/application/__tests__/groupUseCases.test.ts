@@ -199,7 +199,7 @@ describe('SetGroupPermissionsUseCase', () => {
       groupId: 'g1',
       cellKeys: [],
     });
-    expect(repo.setPermissions).toHaveBeenCalledWith('g1', [], '');
+    expect(repo.setPermissions).toHaveBeenCalledWith('g1', [], null);
   });
 
   it('motivo com dado de pessoa é recusado (lex C10)', async () => {
