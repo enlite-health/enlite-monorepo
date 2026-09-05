@@ -60,4 +60,55 @@ describe('AdminMapApiService', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({ status: 204, headers: { get: () => null }, json: async () => ({}) } as unknown as Response);
     await expect(AdminMapApiService.getPatientsMap({ country: 'AR', city: 'x' })).rejects.toThrow('HTTP 204');
   });
+
+  describe('getCorridor', () => {
+    const PAR = { country: 'AR' as const, workerId: 'w-1', patientAddressId: 'a-1' };
+
+    it('POST com o par no CORPO — id de pessoa nunca vai na URL', async () => {
+      const data = { outcome: 'ok', straightLineMeters: 1167, straightLineBlocks: 12, lines: [{ line: '6', mode: 'bus', originBlocks: 1, originStopName: 'a', destinationBlocks: 2, destinationStopName: 'b' }] };
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ success: true, data }));
+      const res = await AdminMapApiService.getCorridor(PAR);
+      expect(res).toEqual(data);
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe('http://localhost:8080/api/admin/map/corridor');
+      expect(url).not.toContain('w-1');
+      expect(url).not.toContain('a-1');
+      expect(init.method).toBe('POST');
+      expect(init.headers).toEqual({ 'Content-Type': 'application/json', Authorization: 'Bearer tok-1' });
+      expect(JSON.parse(init.body as string)).toEqual(PAR);
+    });
+
+    it('sem token não manda Authorization', async () => {
+      mockGetIdToken.mockResolvedValue(null);
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ success: true, data: { outcome: 'sem_cobertura', straightLineMeters: null, straightLineBlocks: null, lines: [] } }));
+      await AdminMapApiService.getCorridor(PAR);
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(init.headers).toEqual({ 'Content-Type': 'application/json' });
+    });
+
+    it('resposta SEM content-type nenhum também cai no erro legível (o `?? \'\'`)', async () => {
+      // Proxy/erro de borda pode devolver corpo sem cabeçalho; sem o fallback
+      // isto seria `TypeError: cannot read includes of null`.
+      const semHeader = {
+        status: 504,
+        headers: { get: () => null },
+        json: async () => ({}),
+      } as unknown as Response;
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(semHeader);
+      await expect(AdminMapApiService.getCorridor(PAR)).rejects.toThrow('Erro ao conectar ao servidor (HTTP 504)');
+    });
+
+    it('resposta que não é JSON vira erro legível, não um parse estourado', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse('<html>502</html>', 502, 'text/html'));
+      await expect(AdminMapApiService.getCorridor(PAR)).rejects.toThrow('Erro ao conectar ao servidor (HTTP 502)');
+    });
+
+    it('`success: false` propaga a mensagem do servidor, e sem mensagem cai no status', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ success: false, error: 'Invalid corridor request' }, 400));
+      await expect(AdminMapApiService.getCorridor(PAR)).rejects.toThrow('Invalid corridor request');
+
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ success: false }, 403));
+      await expect(AdminMapApiService.getCorridor(PAR)).rejects.toThrow('HTTP 403');
+    });
+  });
 });

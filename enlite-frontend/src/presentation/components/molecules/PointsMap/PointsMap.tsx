@@ -15,7 +15,7 @@
  * Estado exposto ao DOM (`data-map-status`, `data-markers`) para o E2E
  * afirmar sem depender de tiles — o canvas do Google não é determinístico.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Crosshair, MapPin, X } from 'lucide-react';
@@ -58,6 +58,8 @@ export interface PointsMapProps {
   closeLabel?: string;
   /** Rótulo do "centrar aqui" do balão. Sem ele e sem `onCenterHere`, não aparece. */
   centerHereLabel?: string;
+  /** Conteúdo extra no rodapé do balão, montado pelo chamador para o ponto aberto. */
+  renderExtra?: (point: MapPoint) => ReactNode;
   /** Mover o centro do raio para o ponto do balão — com o mapa cheio de pinos,
    *  o clique que queria ser "aqui" acerta uma pessoa; isto devolve a intenção. */
   onCenterHere?: (point: MapPoint) => void;
@@ -109,7 +111,7 @@ function pinIcon(color: string, emphasized = false): google.maps.Symbol {
  * `<a href>` cru, clicar no balão recarregava o SPA inteiro e o mapa voltava
  * ao ponto de partida — o oposto do que o balão existe para fazer.
  */
-function InfoCard({ point, linkLabel, closeLabel, onClose, centerHereLabel, onCenterHere }: { point: MapPoint; linkLabel?: string; closeLabel: string; onClose: () => void; centerHereLabel?: string; onCenterHere?: () => void }): JSX.Element {
+function InfoCard({ point, linkLabel, closeLabel, onClose, centerHereLabel, onCenterHere, extra }: { point: MapPoint; linkLabel?: string; closeLabel: string; onClose: () => void; centerHereLabel?: string; onCenterHere?: () => void; extra?: ReactNode }): JSX.Element {
   return (
     <div className="points-map-info relative font-lexend min-w-[210px] max-w-[280px] p-3" data-testid="points-map-info-card">
       <button
@@ -142,6 +144,10 @@ function InfoCard({ point, linkLabel, closeLabel, onClose, centerHereLabel, onCe
           </button>
         )}
       </div>
+      {/* Slot do chamador. O `PointsMap` desenha pontos; ele não sabe o que é um
+          corredor de transporte, e não deve saber — quem monta o conteúdo é a
+          página, que tem o contexto do par (âncora × pino). */}
+      {extra}
     </div>
   );
 }
@@ -159,6 +165,7 @@ export function PointsMap({
   closeLabel = 'Cerrar',
   centerHereLabel,
   onCenterHere,
+  renderExtra,
   placeholderText,
   className = '',
   height = 560,
@@ -362,6 +369,7 @@ export function PointsMap({
           onClose={() => onSelectRef.current?.(null)}
           centerHereLabel={centerHereLabel}
           onCenterHere={onCenterHere ? () => onCenterHereRef.current?.(selectedPoint) : undefined}
+          extra={renderExtra?.(selectedPoint)}
         />,
         infoNodeRef.current,
       )}

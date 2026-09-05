@@ -351,4 +351,22 @@ describe('PointsMap', () => {
     rerender(<PointsMap points={[P('a')]} center={{ lat: -34.7, lng: -58.5 }} radiusKm={5} onCenterChange={vi.fn()} placeholderText="x" />);
     unmount();
   });
+
+  it('`renderExtra` injeta conteúdo do CHAMADOR no rodapé do balão — o mapa não sabe o que é', async () => {
+    // O `PointsMap` desenha pontos; quem sabe o que é um corredor de transporte
+    // é a página, que tem o par (âncora × pino). Este slot é a fronteira disso.
+    const renderExtra = vi.fn((p: { id: string }) => <div data-testid="extra-do-chamador">extra de {p.id}</div>);
+    render(
+      <MemoryRouter>
+        <PointsMap points={[P('a')]} center={CABA} radiusKm={5} onCenterChange={vi.fn()} selectedId="a" renderExtra={renderExtra} placeholderText="x" />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(infos[0].open).toHaveBeenCalled());
+    // o balão é PORTALADO para um nó solto que vai ao InfoWindow do Google —
+    // ele não está no document.body, então `screen` não o enxerga.
+    const node = infos[0].setContent.mock.calls[0][0] as HTMLElement;
+    await waitFor(() => expect(node.querySelector('[data-testid="extra-do-chamador"]')).not.toBeNull());
+    expect(node.textContent).toContain('extra de a');
+    expect(renderExtra).toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }));
+  });
 });

@@ -189,6 +189,34 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // Corredor logístico do /admin/mapa. Entram no piso no MESMO PR que os cria:
+    // é o cálculo que substitui uma chamada externa proibida, então uma regressão
+    // silenciosa aqui não degrada só a tela — reabre a pressão de "então manda pro
+    // Google". Os quatro nasceram em 100% nos quatro eixos (medido).
+    'src/modules/matching/domain/transitCorridor.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/matching/infrastructure/gcbaStopsParser.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/matching/application/GetTransitCorridorUseCase.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/matching/interfaces/controllers/TransitCorridorController.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     'src/modules/worker/interfaces/controllers/AdminWorkersMapController.ts': {
       statements: 100,
       branches: 100,
