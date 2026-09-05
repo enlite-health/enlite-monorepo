@@ -3549,7 +3549,10 @@
               }
             }
           }
-        }
+        },
+        "reasonCountryPlaceholder": "Por que este grupo passa a alcançar este país",
+        "reasonCountry": "Motivo da concessão",
+        "reasonCells": "Motivo da mudança"
       },
       "features": {
         "title": "Funções por país",

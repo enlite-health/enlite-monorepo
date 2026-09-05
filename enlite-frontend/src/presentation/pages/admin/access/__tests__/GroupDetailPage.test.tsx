@@ -96,7 +96,7 @@ describe('GroupDetailPage — a regra por componente', () => {
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
     await screen.findByLabelText('admin.access.groups.name');
     await userEvent.click(screen.getByRole('checkbox', { name: /^worker:write/ }));
-    await userEvent.type(screen.getByLabelText('admin.access.group.reason'), 'onboarding');
+    await userEvent.type(screen.getByLabelText('admin.access.group.reasonCells'), 'onboarding');
     await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.cellsSave' }));
     await waitFor(() => expect(api.setGroupPermissions).toHaveBeenCalledWith(GRUPO.id, ['funnel:read', 'worker:read', 'worker:write'], 'onboarding'));
   });
@@ -193,7 +193,8 @@ describe('GroupDetailPage — a regra por componente', () => {
     await screen.findByLabelText('admin.access.groups.name');
     const conceder = screen.getByRole('button', { name: 'admin.access.group.grant' });
     expect(conceder).toBeDisabled();
-    await userEvent.type(screen.getByLabelText('admin.access.group.reason'), 'expansão');
+    // o motivo do PAÍS é campo próprio, na seção de Países — não o de células
+    await userEvent.type(screen.getByLabelText('admin.access.group.reasonCountry'), 'expansão');
     await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.grant' }));
     await waitFor(() => expect(api.grantCountry).toHaveBeenCalledWith(GRUPO.id, 'BR', 'expansão'));
     await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.revoke' }));
@@ -219,6 +220,23 @@ describe('GroupDetailPage — a regra por componente', () => {
     // o vazio de células virou o contador em zero, na linha do título
     expect(screen.getByText('admin.access.group.cells.selected 0')).toBeInTheDocument();
     expect(screen.getByText('admin.access.group.noCountries')).toBeInTheDocument();
+  });
+
+  it('🔒 o motivo do país é campo PRÓPRIO — o de células não destrava Conceder', async () => {
+    // regressão que eu mesmo criei ao pôr Países como primeira seção: um estado
+    // `reason` só, com o campo visível duas seções abaixo, deixava os botões de
+    // país mortos sem dizer por quê. Achado pelo CTO (05/09).
+    postura('write');
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByLabelText('admin.access.groups.name');
+    const conceder = screen.getByRole('button', { name: 'admin.access.group.grant' });
+    expect(conceder).toBeDisabled();
+    // digitar no motivo das CÉLULAS não pode destravar o país
+    await userEvent.type(screen.getByLabelText('admin.access.group.reasonCells'), 'nada a ver');
+    expect(screen.getByRole('button', { name: 'admin.access.group.grant' })).toBeDisabled();
+    // o campo do país destrava
+    await userEvent.type(screen.getByLabelText('admin.access.group.reasonCountry'), 'expansão');
+    expect(screen.getByRole('button', { name: 'admin.access.group.grant' })).toBeEnabled();
   });
 
   it('🔒 Países vem PRIMEIRO na página e o nome sai por extenso', async () => {

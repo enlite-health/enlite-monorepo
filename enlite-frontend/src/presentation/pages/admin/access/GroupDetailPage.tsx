@@ -61,7 +61,12 @@ function GroupDetail(): JSX.Element {
   // Edição local — só existe em `write`; em `read` os campos são texto.
   const [form, setForm] = useState({ name: '', description: '' });
   const [cells, setCells] = useState<Set<string>>(new Set());
+  // DOIS motivos, não um. Eram o mesmo estado, e o campo visível morava na
+  // seção de Células — até `ebef8613` pôr Países como a PRIMEIRA seção. A partir
+  // dali os botões de país ficavam mortos por causa de um campo duas seções
+  // abaixo, rotulado para outra coisa. Regressão minha, achada pelo CTO (05/09).
   const [reason, setReason] = useState('');
+  const [motivoPais, setMotivoPais] = useState('');
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [candidates, setCandidates] = useState<AdminUser[]>([]);
 
@@ -180,7 +185,10 @@ function GroupDetail(): JSX.Element {
                       {t('admin.access.group.revoke')}
                     </ActionButton>
                   ) : (
-                    <ActionButton resource={PANEL_RESOURCE} size="sm" variant="ghost" disabled={!reason.trim()} onClick={() => run(() => AdminPermissionsApiService.grantCountry(group.id, c, reason.trim()))}>
+                    <ActionButton resource={PANEL_RESOURCE} size="sm" variant="ghost" disabled={!motivoPais.trim()} onClick={() => run(async () => {
+                      await AdminPermissionsApiService.grantCountry(group.id, c, motivoPais.trim());
+                      setMotivoPais('');
+                    })}>
                       {t('admin.access.group.grant')}
                     </ActionButton>
                   )
@@ -190,6 +198,26 @@ function GroupDetail(): JSX.Element {
           })}
           {group.countries.length === 0 && !editable && <Text size="sm" color="secondary">{t('admin.access.group.noCountries')}</Text>}
         </div>
+        {/* O motivo do país mora AQUI, ao lado dos botões que ele destrava — não
+            numa seção abaixo. Ele é obrigatório em três camadas do servidor
+            (zod, `assertValidReason` e a função `iam.grant_country`, que levanta
+            23502 sozinha), então esconder o campo não remove a exigência: só
+            deixa o botão morto sem dizer por quê. Revogar não pede motivo, e a
+            assimetria está certa — revogar reduz alcance. */}
+        {editable && (
+          <div className="max-w-sm">
+            {/* rótulo PRÓPRIO: dois campos chamados "Motivo" na mesma tela é a
+                mesma ambiguidade de duas caixas com o mesmo nome acessível */}
+            <Label htmlFor="country-reason">{t('admin.access.group.reasonCountry')}</Label>
+            <Input
+              id="country-reason"
+              inputSize="compact"
+              value={motivoPais}
+              placeholder={t('admin.access.group.reasonCountryPlaceholder')}
+              onChange={(e) => setMotivoPais(e.target.value)}
+            />
+          </div>
+        )}
       </section>
 
       {/* ── Identidade ─────────────────────────────────────────────────── */}
@@ -305,7 +333,7 @@ function GroupDetail(): JSX.Element {
             </Text>
             <div className="w-full max-w-xs">
               {/* `#cells-reason` é locator do e2e `admin-access-panel` — não renomear. */}
-              <Label htmlFor="cells-reason">{t('admin.access.group.reason')}</Label>
+              <Label htmlFor="cells-reason">{t('admin.access.group.reasonCells')}</Label>
               <Input id="cells-reason" inputSize="compact" value={reason} placeholder={t('admin.access.group.reasonPlaceholder')} onChange={(e) => setReason(e.target.value)} />
             </div>
             <ActionButton

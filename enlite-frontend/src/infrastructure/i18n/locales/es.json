@@ -3628,7 +3628,10 @@
               }
             }
           }
-        }
+        },
+        "reasonCountryPlaceholder": "Por qué este grupo pasa a alcanzar este país",
+        "reasonCountry": "Motivo de la concesión",
+        "reasonCells": "Motivo del cambio"
       },
       "features": {
         "title": "Funciones por país",
