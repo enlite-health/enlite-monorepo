@@ -9,12 +9,14 @@ import {
 } from '@infrastructure/http/AdminPermissionsApiService';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { AdminUser } from '@domain/entities/AdminUser';
-import { Heading, Text, Input, Textarea, Checkbox, Label } from '@presentation/components/atoms';
+import { Heading, Text, Input, Textarea, Label } from '@presentation/components/atoms';
 import {
   ActionButton,
   ReadOnlyField,
   PanelErrorAlert,
   MemberTransfer,
+  CellMatrix,
+  cellDiff,
   type TransferPerson,
 } from '@presentation/components/features/access';
 import { useCellAccess } from '@presentation/hooks/useCellAccess';
@@ -112,6 +114,11 @@ function GroupDetail(): JSX.Element {
     return [...porUid.values()];
   }, [members, candidates]);
 
+  const diffCelulas = useMemo(
+    () => cellDiff(group?.cells ?? [], cells),
+    [group?.cells, cells],
+  );
+
   async function run(acao: () => Promise<unknown>, okKey = 'admin.access.group.saved'): Promise<void> {
     setError(null);
     setNotice(null);
@@ -208,53 +215,47 @@ function GroupDetail(): JSX.Element {
       {/* ── Células ────────────────────────────────────────────────────── */}
       <section className="bg-white rounded-xl border border-gray-300 p-4 space-y-3" aria-labelledby="sec-cells">
         <Heading level={3} weight="semibold" color="primary"><span id="sec-cells">{t('admin.access.group.cellsTitle')}</span></Heading>
-        {editable ? (
-          <>
-            {catalog.map((cat) => (
-              <fieldset key={cat.category} className="space-y-1">
-                <legend className="text-xs font-semibold uppercase text-gray-500">{cat.category}</legend>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
-                  {cat.cells.map((c) => {
-                    const key = `${c.resource}:${c.action}`;
-                    return (
-                      <Checkbox
-                        key={key}
-                        id={`cell-${key}`}
-                        label={key}
-                        checked={cells.has(key)}
-                        onChange={(e) => setCells((prev) => {
-                          const next = new Set(prev);
-                          if (e.target.checked) next.add(key); else next.delete(key);
-                          return next;
-                        })}
-                      />
-                    );
-                  })}
-                </div>
-              </fieldset>
-            ))}
-            <div className="flex gap-2 items-end justify-end">
-              <div className="grow max-w-md">
-                <Label htmlFor="cells-reason">{t('admin.access.group.reason')}</Label>
-                <Input id="cells-reason" value={reason} placeholder={t('admin.access.group.reasonPlaceholder')} onChange={(e) => setReason(e.target.value)} />
-              </div>
-              <ActionButton
-                resource={PANEL_RESOURCE}
-                variant="primary"
-                size="sm"
-                onClick={() => run(() => AdminPermissionsApiService.setGroupPermissions(group.id, [...cells].sort(), reason.trim() || null))}
-              >
-                {t('admin.access.group.cellsSave')}
-              </ActionButton>
+
+        <CellMatrix
+          catalog={catalog}
+          selected={cells}
+          saved={group.cells}
+          editable={editable}
+          onToggle={(key) => setCells((prev) => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key); else next.add(key);
+            return next;
+          })}
+        />
+
+        {editable && (
+          <div className="flex gap-2 items-end justify-end pt-3 border-t border-gray-200">
+            {/* O diff ANTES de salvar: `setGroupPermissions` manda o conjunto
+                inteiro, então desmarcar sem querer era silencioso. */}
+            <Text as="span" size="xs" color="secondary" className="mr-auto self-center">
+              {diffCelulas.dirty
+                ? t('admin.access.group.cells.pending', {
+                  added: diffCelulas.added.length,
+                  removed: diffCelulas.removed.length,
+                  people: members.length,
+                })
+                : t('admin.access.group.cells.clean')}
+            </Text>
+            <div className="w-full max-w-xs">
+              {/* `#cells-reason` é locator do e2e `admin-access-panel` — não renomear. */}
+              <Label htmlFor="cells-reason">{t('admin.access.group.reason')}</Label>
+              <Input id="cells-reason" value={reason} placeholder={t('admin.access.group.reasonPlaceholder')} onChange={(e) => setReason(e.target.value)} />
             </div>
-          </>
-        ) : (
-          <ul className="flex flex-wrap gap-2" data-testid="cells-readonly">
-            {group.cells.length === 0 && <Text size="sm" color="secondary">{t('admin.access.group.noCells')}</Text>}
-            {group.cells.map((c) => (
-              <li key={c} className="px-2 py-0.5 rounded bg-gray-100 text-xs font-mono">{c}</li>
-            ))}
-          </ul>
+            <ActionButton
+              resource={PANEL_RESOURCE}
+              variant="primary"
+              size="sm"
+              disabled={!diffCelulas.dirty}
+              onClick={() => run(() => AdminPermissionsApiService.setGroupPermissions(group.id, [...cells].sort(), reason.trim() || null))}
+            >
+              {t('admin.access.group.cellsSave')}
+            </ActionButton>
+          </div>
         )}
       </section>
 

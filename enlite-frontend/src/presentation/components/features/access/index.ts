@@ -6,3 +6,5 @@ export { FeatureGate } from './FeatureGate';
 export { FeatureRouteGate } from './FeatureRouteGate';
 export { MemberTransfer } from './MemberTransfer';
 export type { TransferPerson } from './MemberTransfer';
+export { CellMatrix } from './CellMatrix';
+export { cellDiff, cellKey } from './cellMatrixModel';

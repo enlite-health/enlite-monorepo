@@ -49,7 +49,10 @@ describe('GroupDetailPage — a regra por componente', () => {
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
     await screen.findByTestId('g-name-readonly');
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
-    expect(screen.getByTestId('cells-readonly')).toHaveTextContent('worker:read');
+    // a lista de chips virou MATRIZ recurso × ação: a célula existe como coluna
+    // marcada na linha do recurso, com a descrição no rótulo acessível.
+    expect(screen.getByTestId('cell-matrix')).toBeInTheDocument();
+    expect(screen.getByLabelText(/^worker:read/)).toHaveTextContent('✓');
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     for (const nome of ['admin.access.group.save', 'admin.access.group.archive', 'admin.access.group.cellsSave',
       'admin.access.group.addMember', 'admin.access.group.remove', 'admin.access.group.grant', 'admin.access.group.revoke']) {
@@ -65,8 +68,8 @@ describe('GroupDetailPage — a regra por componente', () => {
     postura('write');
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
     expect(await screen.findByLabelText('admin.access.groups.name')).toHaveValue('Recrutadores AR');
-    expect(screen.getByRole('checkbox', { name: 'worker:read' })).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: 'worker:write' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /^worker:read/ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /^worker:write/ })).not.toBeChecked();
     for (const nome of ['admin.access.group.save', 'admin.access.group.archive', 'admin.access.group.cellsSave']) {
       expect(screen.getByRole('button', { name: nome })).toBeInTheDocument();
     }
@@ -84,7 +87,7 @@ describe('GroupDetailPage — a regra por componente', () => {
     api.setGroupPermissions.mockResolvedValue({ cells: 3 });
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
     await screen.findByLabelText('admin.access.groups.name');
-    await userEvent.click(screen.getByRole('checkbox', { name: 'worker:write' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: /^worker:write/ }));
     await userEvent.type(screen.getByLabelText('admin.access.group.reason'), 'onboarding');
     await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.cellsSave' }));
     await waitFor(() => expect(api.setGroupPermissions).toHaveBeenCalledWith(GRUPO.id, ['funnel:read', 'worker:read', 'worker:write'], 'onboarding'));
@@ -232,7 +235,7 @@ describe('GroupDetailPage — a regra por componente', () => {
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
     await screen.findByLabelText('admin.access.groups.name');
     expect(screen.getByLabelText('admin.access.groups.description')).toHaveValue('');
-    await userEvent.click(screen.getByRole('checkbox', { name: 'worker:read' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: /^worker:read/ }));
     await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.cellsSave' }));
     await waitFor(() => expect(api.setGroupPermissions).toHaveBeenCalledWith(GRUPO.id, ['funnel:read'], null));
   });
