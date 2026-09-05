@@ -250,12 +250,19 @@ test.describe('Células e membros — prova VISUAL @integration', () => {
     // células e todas as 6 existem no catálogo deste banco.
     await expect(secao.getByText(/^Seleccionadas: 6$/)).toBeVisible();
 
-    // ⚠️ Esta captura NÃO é o portão da mudança acima. Medido em 05/09: a
-    // seção tem 1700px de DOM e o element screenshot pinta só 719 — 57,7% da
-    // imagem é branco puro, e Trabajadores/Vacantes ficam de fora. Somado ao
-    // `maxDiffPixelRatio: 0.02`, a reordenação inteira + o contador novo deram
-    // 0,058% de diferença e teriam PASSADO contra o PNG antigo. Quem prova a
-    // mudança são as asserções de DOM acima.
+    // ⚠️ Esta captura NÃO é o portão da mudança acima — e o baseline importa,
+    // então ele vai NOMEADO. Medido em 05/09 contra o PNG como estava no commit
+    // anterior desta branch (5202c9fe), que é o baseline desta mudança: mesma
+    // dimensão (1032x1700), e a reordenação inteira mais o contador novo deram
+    // 0,058% de diferença contra o teto de 2% — verde.
+    // A causa é o ENQUADRAMENTO: a seção tem 1700px de DOM e o element
+    // screenshot pinta 720 (57,6% da imagem é branco puro). Trabajadores e
+    // Vacantes, as duas categorias que a mudança mexe, ficam FORA da foto.
+    // Ressalva, também medida: contra `origin/stage` a asserção ficaria
+    // vermelha — mas por DIMENSÃO (1696 → 1700; `toHaveScreenshot` compara
+    // tamanho ANTES do ratio), e esses 4px vieram dos commits anteriores da
+    // branch, não desta mudança. Tripar por tamanho não é enxergar o conteúdo.
+    // Quem prova a mudança são as asserções de DOM acima.
     await expect(secao).toHaveScreenshot('celulas-edicao.png', { maxDiffPixelRatio: 0.02 });
   });
 
