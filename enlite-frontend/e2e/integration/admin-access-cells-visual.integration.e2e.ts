@@ -234,7 +234,7 @@ test.describe('Células e membros — prova VISUAL @integration', () => {
     // no mesmo controle). Medido no banco deste stack: a do seed para
     // `worker_pii` é correta PORÉM está em português numa tela em espanhol; a de
     // `worker:export` diz "Exportar listagem" e entrega o dossiê descriptografado.
-    await expect(trabajadores.getByRole('checkbox', { name: /^worker_pii:read — Ver el dossier completo.*DNI\/CUIL.*orientación sexual/ })).toHaveCount(1);
+    await expect(trabajadores.getByRole('checkbox', { name: /^worker_pii:read — Ver el dossier completo.*DNI\/CUIL.*protege de forma especial/ })).toHaveCount(1);
     // e o "?" abre o painel daquela permissão
     await expect(trabajadores.getByRole('button', { name: /Dossier.*Qué hace este permiso/ })).toHaveCount(1);
 

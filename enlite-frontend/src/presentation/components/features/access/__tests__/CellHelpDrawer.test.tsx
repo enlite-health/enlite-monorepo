@@ -13,7 +13,7 @@ const TEXTOS: Record<string, string> = {
   'admin.access.group.cells.help.close': 'Cerrar',
   'admin.access.group.cells.help.actions': 'Qué hace cada casilla de esta fila',
   'admin.access.group.cells.help.missing': 'Todavía no escribimos la explicación de este permiso.',
-  'admin.access.group.cells.help.resource.worker_pii.body': 'Es el dossier de identidad: DNI, domicilio, origen racial, religión y orientación sexual.',
+  'admin.access.group.cells.help.resource.worker_pii.body': 'Es el dossier de identidad: documento (DNI/CUIL), fecha de nacimiento, domicilio y fotos — y datos que la ley protege de forma especial.',
   'admin.access.group.cells.help.resource.worker_pii.action.read': 'Ver el dossier completo.',
   'admin.access.group.cells.action.read': 'Ver',
 };
@@ -47,13 +47,21 @@ describe('CellHelpDrawer — a ajuda de uma permissão', () => {
     expect(screen.getByText('Ver')).toBeInTheDocument();
   });
 
-  it('🔒 nomeia as categorias sensíveis — descrever de MENOS é o risco real', () => {
-    // o parecer do `lex` (05/09) autorizou e recomendou: "Exportar listagem" é
-    // o defeito perigoso, não "expõe raça, religião e orientação sexual".
+  it('🔒 avisa que há dado sensível SEM enumerar as categorias', () => {
+    // O `lex` autorizou nomear e recomendou nomear ("descrever de MENOS é o
+    // risco real"). O Gabriel decidiu o contrário em 05/09: "não tem por que
+    // colocar essas coisas de religião no popup". O texto avisa do peso sem
+    // listar raça, religião nem orientação sexual — e ESTE teste é o que
+    // impede a enumeração de voltar por descuido.
     montar();
     const corpo = screen.getByText(/dossier de identidad/).textContent ?? '';
-    for (const termo of ['DNI', 'origen racial', 'religión', 'orientación sexual']) {
-      expect(corpo).toContain(termo);
+    // O par POSITIVO não é enfeite: asserção negativa sozinha passa com o texto
+    // apagado, e aí o teste aprovaria justamente a ausência de aviso.
+    expect(corpo).toContain('documento');
+    expect(corpo).toContain('domicilio');
+    expect(corpo).toContain('protege de forma especial');
+    for (const termo of ['racial', 'religi', 'orientaci']) {
+      expect(corpo).not.toContain(termo);
     }
   });
 

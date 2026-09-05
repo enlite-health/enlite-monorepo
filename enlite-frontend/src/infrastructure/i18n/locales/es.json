@@ -3600,7 +3600,7 @@
                 "action": {
                   "delete": "Hoy no hace nada. Ninguna ruta del sistema exige este permiso, así que darlo o no darlo no cambia lo que la persona puede hacer. Está acá porque el catálogo lo declara.",
                   "disable": "Dar de baja al prestador: deja de aparecer para matching y para las vacantes.",
-                  "export": "Genera un archivo que SALE del sistema y deja de estar bajo el control de este panel. Es masivo: baja el filtro entero, no un registro. Por sí solo no entrega el dossier — documento, nacimiento, domicilio, origen racial, religión y orientación sexual sólo salen si la persona también tiene «Dossier: Ver»; sin eso, esas columnas se caen del archivo y el pedido vuelve avisando cuáles faltaron. Lo que sí sale, sale en claro: en la base está cifrado, y el archivo lo descifra.",
+                  "export": "Genera un archivo que SALE del sistema y deja de estar bajo el control de este panel. Es masivo: baja el filtro entero, no un registro. Por sí solo no entrega el dossier — documento, fecha de nacimiento y domicilio sólo salen si la persona también tiene «Dossier: Ver»; sin eso, esas columnas se caen del archivo y el pedido vuelve avisando cuáles faltaron. Lo que sí sale, sale en claro: en la base está cifrado, y el archivo lo descifra.",
                   "read": "Ver la lista y abrir la ficha profesional de cualquier prestador del país que el grupo alcanza.",
                   "write": "Editar esa ficha: datos profesionales, disponibilidad, zona, notas de operación."
                 }
@@ -3621,9 +3621,9 @@
                 }
               },
               "worker_pii": {
-                "body": "Es el dossier de identidad, y es el permiso más pesado de esta pantalla. Abre documento de identidad (DNI/CUIL), fecha de nacimiento, domicilio, fotos — y datos sensibles: origen racial o étnico, religión y orientación sexual. Sin él la persona sigue viendo el listado profesional; con él ve quién es esa persona. Cuidado con una puerta lateral: la búsqueda por teléfono devuelve el MISMO dossier, no un resumen. Abrir una ficha queda registrado.",
+                "body": "Es el dossier de identidad, y es el permiso más pesado de esta pantalla. Abre documento de identidad (DNI/CUIL), fecha de nacimiento, domicilio y fotos — y datos que la ley protege de forma especial. Sin él la persona sigue viendo el listado profesional; con él ve quién es esa persona. Cuidado con una puerta lateral: la búsqueda por teléfono devuelve el MISMO dossier, no un resumen. Abrir una ficha queda registrado.",
                 "action": {
-                  "read": "Ver el dossier completo de identidad: documento (DNI/CUIL), fecha de nacimiento, domicilio y fotos — y los datos sensibles: origen racial o étnico, religión y orientación sexual."
+                  "read": "Ver el dossier completo de identidad: documento (DNI/CUIL), fecha de nacimiento, domicilio y fotos, además de los datos sensibles que la ley protege de forma especial."
                 }
               }
             }
