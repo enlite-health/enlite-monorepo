@@ -140,7 +140,11 @@ export function MemberTransfer({
 
   return (
     <div className="space-y-3" data-testid="member-transfer">
+      {/* o filtro é acessório da lista, não um campo de formulário: `compact`
+          e contido, para não pesar mais que as duas colunas que ele filtra */}
       <Input
+        inputSize="compact"
+        className="max-w-sm"
         aria-label={t('admin.access.group.transfer.filter')}
         placeholder={t('admin.access.group.transfer.filter')}
         value={filter}

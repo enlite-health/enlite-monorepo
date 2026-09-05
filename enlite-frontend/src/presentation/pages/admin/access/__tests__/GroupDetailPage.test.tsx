@@ -221,6 +221,17 @@ describe('GroupDetailPage — a regra por componente', () => {
     expect(screen.getByText('admin.access.group.noCountries')).toBeInTheDocument();
   });
 
+  it('🔒 os campos desta tela são `compact`, não o default de 60px', async () => {
+    // pedido do Gabriel (05/09): os inputs dominavam a página. O `default`
+    // (h-[60px]/text-[20px]) é compartilhado com o app inteiro e NÃO muda —
+    // quem muda é esta tela, para o tamanho já estabelecido na casa.
+    postura('write');
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    const nome = await screen.findByLabelText('admin.access.groups.name');
+    expect(nome).toHaveClass('h-12');
+    expect(nome).not.toHaveClass('h-[60px]');
+  });
+
   it('🔒 SEM catálogo o contador não sai — "0" ali seria mentira sobre acesso', async () => {
     // o grupo TEM células no banco; o que falta é o catálogo. Dizer
     // "Seleccionadas: 0" logo acima de "o sync não rodou" afirmaria que este

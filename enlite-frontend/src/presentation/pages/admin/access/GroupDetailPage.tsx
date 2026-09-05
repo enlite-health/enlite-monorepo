@@ -190,11 +190,19 @@ function GroupDetail(): JSX.Element {
           )}
         </div>
 
-        <ReadOnlyField id="g-name" label={t('admin.access.groups.name')} value={group.name} editable={editable}>
-          <Input id="g-name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+        {/* `inputSize="compact"` (h-12, text-sm) em vez do `default` (h-[60px],
+            text-[20px]): o campo de 60px com fonte de 20 dominava a seção e não
+            fechava com o resto da página, que é toda `size="sm"`/`xs`. O
+            `compact` é o tamanho já estabelecido na casa — 97 usos no `src`.
+            O `default` NÃO muda: ele é compartilhado com o app inteiro.
+
+            A largura também é contida: o cartão é largo porque a matriz de
+            células precisa, não porque um nome de grupo precise de 1100px. */}
+        <ReadOnlyField id="g-name" label={t('admin.access.groups.name')} value={group.name} editable={editable} className="max-w-xl">
+          <Input id="g-name" inputSize="compact" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
         </ReadOnlyField>
-        <ReadOnlyField id="g-desc" label={t('admin.access.groups.description')} value={group.description} editable={editable}>
-          <Textarea id="g-desc" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
+        <ReadOnlyField id="g-desc" label={t('admin.access.groups.description')} value={group.description} editable={editable} className="max-w-xl">
+          <Textarea id="g-desc" inputSize="compact" rows={2} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
         </ReadOnlyField>
         {editable && (
           <div className="flex justify-end">
@@ -263,7 +271,7 @@ function GroupDetail(): JSX.Element {
             <div className="w-full max-w-xs">
               {/* `#cells-reason` é locator do e2e `admin-access-panel` — não renomear. */}
               <Label htmlFor="cells-reason">{t('admin.access.group.reason')}</Label>
-              <Input id="cells-reason" value={reason} placeholder={t('admin.access.group.reasonPlaceholder')} onChange={(e) => setReason(e.target.value)} />
+              <Input id="cells-reason" inputSize="compact" value={reason} placeholder={t('admin.access.group.reasonPlaceholder')} onChange={(e) => setReason(e.target.value)} />
             </div>
             <ActionButton
               resource={PANEL_RESOURCE}
