@@ -9,7 +9,7 @@ import {
 } from '@infrastructure/http/AdminPermissionsApiService';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { AdminUser } from '@domain/entities/AdminUser';
-import { Heading, Text, Input, Textarea, Label } from '@presentation/components/atoms';
+import { Heading, Text, Input, Textarea } from '@presentation/components/atoms';
 import {
   ActionButton,
   CampoEditavel,
@@ -61,9 +61,6 @@ function GroupDetail(): JSX.Element {
   // Edição local — só existe em `write`; em `read` os campos são texto.
   const [form, setForm] = useState({ name: '', description: '' });
   const [cells, setCells] = useState<Set<string>>(new Set());
-  // Um motivo só, e ele é do PAÍS. O das células saiu: o servidor o aceita
-  // nulo, e campo obrigatório que ninguém preenche colhe "ok" e ".".
-  const [motivoPais, setMotivoPais] = useState('');
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [candidates, setCandidates] = useState<AdminUser[]>([]);
 
@@ -257,12 +254,11 @@ function GroupDetail(): JSX.Element {
             // lado: clicar em `Argentina` concede, clicar de novo revoga. O
             // estado é o próprio botão — marcado (✓, fundo cheio) ou não.
             //
-            // O motivo continua exigido para CONCEDER porque o servidor o exige
-            // em três camadas (zod, `assertValidReason`, e `iam.grant_country`
-            // levantando 23502); revogar não pede, e a assimetria está certa —
-            // revogar reduz alcance. Por isso só o conceder fica desabilitado
-            // sem motivo, e o `title` diz o porquê em vez de o botão morrer mudo.
-            const faltaMotivo = !on && !motivoPais.trim();
+            // Sem motivo: a mig 412 tirou a exigência das três camadas
+            // (coluna, zod e a própria `iam.grant_country`). Decisão do Gabriel:
+            // "ninguém faz um grupo e coloca motivo por ser de um país ou dos
+            // dois" — e campo obrigatório sem conteúdo real vira "ok" e ".".
+            // Quem guarda o ato é `granted_by` + `created_at` + `revoked_at`.
             // Em `read` o país é TEXTO, não botão desabilitado. `ActionButton`
             // ESCONDE quando falta a célula de escrita (D269) — e o país virando
             // botão fazia a seção inteira sumir para quem só lê, que é
@@ -282,14 +278,10 @@ function GroupDetail(): JSX.Element {
                 resource={PANEL_RESOURCE}
                 size="sm"
                 variant={on ? 'primary' : 'outline'}
-                disabled={faltaMotivo}
-                title={faltaMotivo ? t('admin.access.group.countryNeedsReason') : undefined}
                 aria-pressed={on}
-                onClick={() => run(async () => {
-                  if (on) { await AdminPermissionsApiService.revokeCountry(group.id, c); return; }
-                  await AdminPermissionsApiService.grantCountry(group.id, c, motivoPais.trim());
-                  setMotivoPais('');
-                })}
+                onClick={() => run(() => (on
+                  ? AdminPermissionsApiService.revokeCountry(group.id, c)
+                  : AdminPermissionsApiService.grantCountry(group.id, c)))}
               >
                 {nome}{on ? ' ✓' : ''}
               </ActionButton>
@@ -298,26 +290,6 @@ function GroupDetail(): JSX.Element {
           {group.countries.length === 0 && !editable && <Text size="sm" color="secondary">{t('admin.access.group.noCountries')}</Text>}
         </div>
 
-        {/* O motivo do país mora AQUI, ao lado dos botões que ele destrava — não
-            numa seção abaixo. Ele é obrigatório em três camadas do servidor
-            (zod, `assertValidReason` e a função `iam.grant_country`, que levanta
-            23502 sozinha), então esconder o campo não remove a exigência: só
-            deixa o botão morto sem dizer por quê. Revogar não pede motivo, e a
-            assimetria está certa — revogar reduz alcance. */}
-        {editable && (
-          <div className="max-w-sm">
-            {/* rótulo PRÓPRIO: dois campos chamados "Motivo" na mesma tela é a
-                mesma ambiguidade de duas caixas com o mesmo nome acessível */}
-            <Label htmlFor="country-reason">{t('admin.access.group.reasonCountry')}</Label>
-            <Input
-              id="country-reason"
-              inputSize="compact"
-              value={motivoPais}
-              placeholder={t('admin.access.group.reasonCountryPlaceholder')}
-              onChange={(e) => setMotivoPais(e.target.value)}
-            />
-          </div>
-        )}
       </section>
 
       {/* ── Células ────────────────────────────────────────────────────── */}

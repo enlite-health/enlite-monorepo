@@ -212,7 +212,7 @@ export class PgPermissionGroupRepository implements PermissionGroupRepository {
     );
   }
 
-  async grantCountry(groupId: string, country: CountryCode, reason: string): Promise<string> {
+  async grantCountry(groupId: string, country: CountryCode, reason: string | null): Promise<string> {
     return withStaffWrite(this.pool, async (client) => {
       const result = await client.query<{ id: string }>(`SELECT iam.grant_country($1, $2, $3) AS id`, [
         groupId,

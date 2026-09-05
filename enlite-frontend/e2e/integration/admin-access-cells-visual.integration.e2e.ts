@@ -51,6 +51,16 @@
  *   cd enlite-frontend && npx vite --port 5174 --strictPort
  *   PW_BASE_URL=http://localhost:5174 npx playwright test <spec> --project=integration
  *
+ * ⚠️ MUDANÇA DE BACKEND NÃO CHEGA AQUI SEM `--build`. O `abac-api` é uma IMAGEM
+ * construída: alterar `src/` do worker-functions e rodar o e2e testa o código
+ * ANTIGO, compilado no `dist` de dentro do container. Custou uma rodada em
+ * 05/09 — o botão de país chamava uma API que ainda exigia o motivo que eu
+ * tinha acabado de tornar opcional. Reconstruir com:
+ *   docker compose -p abac -f docker-compose.yml -f docker-compose.test.yml \
+ *     -f /tmp/abac.yml up -d --build api
+ * E conferir de dentro, não pelo `docker ps`:
+ *   docker exec abac-api sh -c "grep -n 'ConcederPais = ' dist/.../permissionPanelWriteRoutes.js"
+ *
  * Padrão de auth: idêntico a `admin-access-panel` — Identity Toolkit
  * interceptado, `/api/**` e `/v1/me/authz` com Authorization trocado por
  * `mock_*`. `/api/admin/auth/profile` e `/v1/me/authz` NÃO são mockados: são

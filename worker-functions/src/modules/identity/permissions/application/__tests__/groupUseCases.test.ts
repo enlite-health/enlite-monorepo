@@ -233,17 +233,31 @@ describe('ArchiveGroupUseCase', () => {
 });
 
 describe('concessão de país', () => {
-  it('exige motivo e país suportado', async () => {
+  it('🔒 motivo é OPCIONAL, mas o país continua tendo de ser suportado', async () => {
+    // Decisão do Gabriel (05/09): "ninguém faz um grupo e coloca motivo por ser
+    // apenas de um país ou dos dois". A trilha do eixo país vive em
+    // `granted_by` + `created_at` + `revoked_at`; o texto livre colhia "ok".
+    // O país segue validado — ele é o que amplia o alcance de verdade.
     const repo = makeRepo();
     const useCase = new GrantGroupCountryUseCase(repo, makeEvents());
-    expect(await codeOf(() => useCase.execute({ tenantId: TENANT, groupId: 'g1', country: 'BR', reason: ' ' })))
-      .toBe('reason_required');
+
+    await useCase.execute({ tenantId: TENANT, groupId: 'g1', country: 'BR', reason: null });
+    await useCase.execute({ tenantId: TENANT, groupId: 'g1', country: 'BR', reason: '   ' });
+    // vazio e só-espaço viram NULL — não string vazia, que seria um terceiro
+    // estado sem significado
+    expect(repo.grantCountry).toHaveBeenNthCalledWith(1, 'g1', 'BR', null);
+    expect(repo.grantCountry).toHaveBeenNthCalledWith(2, 'g1', 'BR', null);
+
+    // e quando VEM, continua validado: dado de pessoa no texto ainda é recusado
+    expect(await codeOf(() => useCase.execute({
+      tenantId: TENANT, groupId: 'g1', country: 'BR', reason: 'pedido de ana@enlite.health',
+    }))).toBe('invalid_input');
+
     expect(
       await codeOf(() =>
         useCase.execute({ tenantId: TENANT, groupId: 'g1', country: 'US' as never, reason: 'expansão' }),
       ),
     ).toBe('invalid_country');
-    expect(repo.grantCountry).not.toHaveBeenCalled();
   });
 
   it('concede e revoga publicando a mudança', async () => {

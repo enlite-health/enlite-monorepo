@@ -3547,10 +3547,7 @@
             }
           }
         },
-        "reasonCountryPlaceholder": "Por que este grupo passa a alcançar este país",
-        "reasonCountry": "Motivo da concessão",
-        "editField": "Editar {{campo}}",
-        "countryNeedsReason": "Escreva o motivo para poder conceder"
+        "editField": "Editar {{campo}}"
       },
       "features": {
         "title": "Funções por país",

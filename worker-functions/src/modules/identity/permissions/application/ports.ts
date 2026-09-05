@@ -92,7 +92,7 @@ export interface PermissionGroupRepository {
   archive(groupId: string): Promise<void>;
   /** Substitui o conjunto de células (ids do catálogo) — diff vira trilha. */
   setPermissions(groupId: string, permissionIds: string[], reason: string): Promise<void>;
-  grantCountry(groupId: string, country: CountryCode, reason: string): Promise<string>;
+  grantCountry(groupId: string, country: CountryCode, reason: string | null): Promise<string>;
   /** Linhas revogadas: 0 = nada vivo (idempotente). */
   revokeCountry(groupId: string, country: CountryCode): Promise<number>;
   addMember(groupId: string, userId: string): Promise<string>;

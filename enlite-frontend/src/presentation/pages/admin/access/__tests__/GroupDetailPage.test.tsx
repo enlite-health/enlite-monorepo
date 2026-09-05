@@ -213,14 +213,12 @@ describe('GroupDetailPage — a regra por componente', () => {
     const ar = screen.getByRole('button', { name: /^countries\.AR/ });
     expect(br).toHaveAttribute('aria-pressed', 'false');
     expect(ar).toHaveAttribute('aria-pressed', 'true');
-    // sem motivo não concede — o servidor exige em três camadas
-    expect(br).toBeDisabled();
-    // mas REVOGAR não pede motivo: quem já está concedido responde ao clique
+    // os dois respondem ao clique: não há mais motivo a preencher antes
+    expect(br).toBeEnabled();
     expect(ar).toBeEnabled();
 
-    await userEvent.type(screen.getByLabelText('admin.access.group.reasonCountry'), 'expansão');
     await userEvent.click(screen.getByRole('button', { name: /^countries\.BR/ }));
-    await waitFor(() => expect(api.grantCountry).toHaveBeenCalledWith(GRUPO.id, 'BR', 'expansão'));
+    await waitFor(() => expect(api.grantCountry).toHaveBeenCalledWith(GRUPO.id, 'BR'));
     await userEvent.click(screen.getByRole('button', { name: /^countries\.AR/ }));
     await waitFor(() => expect(api.revokeCountry).toHaveBeenCalledWith(GRUPO.id, 'AR'));
   });
@@ -246,17 +244,22 @@ describe('GroupDetailPage — a regra por componente', () => {
     expect(screen.getByText('admin.access.group.noCountries')).toBeInTheDocument();
   });
 
-  it('🔒 o motivo das CÉLULAS não existe mais — sobrou só o do país', async () => {
-    // pedido do Gabriel (05/09): "Motivo del cambio ainda existe? PRA QUE?".
-    // O servidor aceita nulo para células (`set_group_permissions` não exige);
-    // campo obrigatório que ninguém preenche colhe "ok" e ".". O do PAÍS fica,
-    // porque três camadas do servidor o exigem.
+  it('🔒 NENHUM campo de motivo sobrou na tela', async () => {
+    // "Motivo del cambio ainda existe? PRA QUE?" e "não faz sentido o Motivo do
+    // país. Ninguém faz um grupo e coloca motivo por ser apenas de um país ou
+    // dos dois" (Gabriel, 05/09). O das células o servidor já aceitava nulo; o
+    // do país saiu com a mig 412, que tirou a exigência das três camadas.
     postura('write');
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
     await screen.findByTestId('g-name-readonly');
-    expect(screen.queryByLabelText('admin.access.group.reasonCells')).not.toBeInTheDocument();
     expect(document.querySelector('#cells-reason')).toBeNull();
-    expect(screen.getByLabelText('admin.access.group.reasonCountry')).toBeInTheDocument();
+    expect(document.querySelector('#country-reason')).toBeNull();
+    // e nas duas seções que tinham motivo não sobrou campo de texto nenhum
+    // (o filtro de membros continua, e é legítimo — não é motivo)
+    for (const sec of ['sec-countries', 'sec-cells']) {
+      const secao = document.querySelector(`section[aria-labelledby="${sec}"]`);
+      expect(secao?.querySelector('input[type="text"], input:not([type]), textarea')).toBeNull();
+    }
   });
 
   it('🔒 Países vem DEPOIS das informações do grupo, e o nome sai por extenso', async () => {
