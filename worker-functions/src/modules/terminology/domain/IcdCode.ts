@@ -33,9 +33,22 @@ const ICD_CODE_PATTERN = new RegExp(`^${ICD_UNIT_PATTERN}(?:[/&]${ICD_UNIT_PATTE
 /** Separador de cluster pós-coordenado — usado só para derivar `.stem`, nunca na validação. */
 const CLUSTER_SEPARATOR_PATTERN = /[/&]/;
 
+/**
+ * 🔧 F5-CORREÇÃO T7 (QA-caça, 05/09/2026) — a `message` NÃO carrega mais o valor rejeitado.
+ * O código CID-11 é a identidade de um conceito clínico; `reportError`
+ * (`src/shared/logging/ErrorReporter.ts`) loga `err.message` e `err.stack` JUNTO do `patientId`
+ * (`AdminPatientDiagnosesController`), e a mesma forma se repete no log do sync do ClickUp. A
+ * dupla "quem é o paciente" + "qual o código clínico" é exatamente o que a regra dura do projeto
+ * proíbe em log: status e contagem, sempre. O que o diagnóstico de um erro de formato precisa —
+ * "veio nulo" x "veio com forma errada", e o TAMANHO — não identifica ninguém e continua aqui.
+ */
 export class InvalidIcdCodeError extends Error {
   constructor(rejected: unknown) {
-    super(`Código CID-11 inválido: "${String(rejected)}"`);
+    super(
+      rejected === null || rejected === undefined
+        ? 'Código CID-11 inválido: ausente'
+        : `Código CID-11 inválido: forma não reconhecida (${String(rejected).length} caracteres)`,
+    );
     this.name = 'InvalidIcdCodeError';
   }
 }

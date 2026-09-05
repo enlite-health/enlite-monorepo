@@ -28,6 +28,7 @@ import { PatientDiagnosis } from '../domain/PatientDiagnosis';
 import type { Country, ConceptLanguage, TerminologySystem } from '../domain/PatientDiagnosis';
 import { DiagnosisSource } from '../domain/DiagnosisSource';
 import {
+  DuplicateActiveDiagnosisError,
   PrimaryDiagnosisConflictError,
   type NewPatientDiagnosisInput,
   type PatientDiagnosisRepositoryPort,
@@ -41,12 +42,31 @@ export class PatientDiagnosisNotFoundInScopeError extends Error {
 }
 
 const PRIMARY_UNIQUE_INDEX = 'uq_patient_diagnoses_primary_por_origem';
+/**
+ * 🔧 F5-CORREÇÃO T5 — o SEGUNDO índice único da migration 325 (linhas 158-160). Ele existe
+ * desde o primeiro dia e NÃO era reconhecido: `isPrimaryUniqueViolation` só olhava o de
+ * principal, então o 23505 do dedupe subia cru e virava HTTP 500 no lugar do 409
+ * `DIAGNOSIS_ALREADY_ACTIVE`. Nomear o índice por CONSTANTE (não por string solta no `if`) é o
+ * mesmo remédio da correção C6 em `InsuranceProviderRepository`: ler a CONSTRAINT, nunca
+ * assumir que "todo 23505 é o mesmo 23505".
+ */
+const DUPLICATE_ACTIVE_UNIQUE_INDEX = 'uq_patient_diagnoses_codigo_ativo_por_origem';
+
+function violatedIndex(err: unknown): string | undefined {
+  if (typeof err !== 'object' || err === null) return undefined;
+  const pgErr = err as { code?: unknown; constraint?: unknown };
+  if (pgErr.code !== '23505') return undefined;
+  return typeof pgErr.constraint === 'string' ? pgErr.constraint : undefined;
+}
 
 /** `error.code` 23505 (unique_violation) do Postgres, restrito ao índice de principal único. */
 function isPrimaryUniqueViolation(err: unknown): boolean {
-  if (typeof err !== 'object' || err === null) return false;
-  const pgErr = err as { code?: unknown; constraint?: unknown };
-  return pgErr.code === '23505' && pgErr.constraint === PRIMARY_UNIQUE_INDEX;
+  return violatedIndex(err) === PRIMARY_UNIQUE_INDEX;
+}
+
+/** T5 — 23505 do índice de DEDUPE por código ativo (o segundo, que escapava como 500). */
+function isDuplicateActiveViolation(err: unknown): boolean {
+  return violatedIndex(err) === DUPLICATE_ACTIVE_UNIQUE_INDEX;
 }
 
 interface PatientDiagnosisRow {
@@ -144,6 +164,9 @@ export class PostgresPatientDiagnosisRepository implements PatientDiagnosisRepos
     } catch (err) {
       // C1 — ver PrimaryDiagnosisConflictError: nunca deixa o 23505 cru subir como 500.
       if (isPrimaryUniqueViolation(err)) throw new PrimaryDiagnosisConflictError(input.patientId);
+      // T5 — o SEGUNDO índice único (dedupe por código ativo) também é traduzido; era ele que
+      // escapava cru e virava 500 num webhook repetido / duplo clique.
+      if (isDuplicateActiveViolation(err)) throw new DuplicateActiveDiagnosisError(input.patientId);
       throw err;
     }
   }
@@ -185,23 +208,36 @@ export class PostgresPatientDiagnosisRepository implements PatientDiagnosisRepos
       await client.query('COMMIT');
       return result;
     } catch (err) {
-      await client.query('ROLLBACK');
+      // 🔧 F5-CORREÇÃO T8 — um ROLLBACK que FALHA (conexão derrubada, transação já abortada)
+      // substituía o erro ORIGINAL. Quem chama decide o HTTP por `instanceof`
+      // (`PrimaryDiagnosisConflictError` em SetPrimaryDiagnosis/RecordPatientDiagnosis): com o
+      // erro trocado, o `instanceof` erra e o cliente recebe 500 no lugar de 409. O irmão do
+      // mesmo PR já fazia certo (`ReadonlyDbQueryService`: `.catch(() => undefined)`).
+      await client.query('ROLLBACK').catch(() => undefined);
       throw err;
     } finally {
       client.release();
     }
   }
 
-  async demotePrimary(patientId: string): Promise<void> {
-    // C1 (QA-caça): lock consultivo POR PACIENTE, antes de tocar a linha — mesmo padrão de
-    // `PatientInsuranceVerifiedRepository`/`PatientDeviceTypeRepository` (`pg_advisory_xact_lock`,
-    // 6 arquivos de src/ já usam). `demotePrimary` é SEMPRE a primeira chamada dentro da transação
-    // de `SetPrimaryDiagnosis`/`RecordPatientDiagnosis(isPrimary:true)` — travar aqui serializa a
-    // troca de principal por paciente inteira: a 2ª transação concorrente bloqueia até a 1ª dar
-    // COMMIT/ROLLBACK, e só então enxerga o estado final (nunca mais duas em paralelo achando
-    // "não há principal" ao mesmo tempo). `_xact_` (não `pg_advisory_lock`) — solta sozinho no
-    // fim da transação, mesmo em erro; nada fica preso além da vida do client.
+  /**
+   * C1 (QA-caça): lock consultivo POR PACIENTE — mesmo padrão de
+   * `PatientInsuranceVerifiedRepository`/`PatientDeviceTypeRepository` (`pg_advisory_xact_lock`,
+   * 6 arquivos de `src/` já usam). A 2ª transação concorrente bloqueia até a 1ª dar
+   * COMMIT/ROLLBACK, e só então enxerga o estado final — nunca mais duas em paralelo achando
+   * "não há" ao mesmo tempo. `_xact_` (não `pg_advisory_lock`): solta sozinho no fim da
+   * transação, mesmo em erro; nada fica preso além da vida do client.
+   *
+   * 🔧 T5 — virou método da PORTA porque o lock deixou de servir só à troca de principal: o
+   * dedupe de `RecordPatientDiagnosis` (`findActiveByConceptCode` → `create`) é o MESMO TOCTOU e
+   * precisa da MESMA chave. Uma chave só por paciente, um lugar só que a constrói.
+   */
+  async lockForPatient(patientId: string): Promise<void> {
     await this.runner.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`diagnosis_primary:${patientId}`]);
+  }
+
+  async demotePrimary(patientId: string): Promise<void> {
+    await this.lockForPatient(patientId);
     await this.runner.query(
       `UPDATE patient_diagnoses SET is_primary = false, updated_at = NOW()
         WHERE patient_id = $1 AND source = $2 AND is_primary AND active`,

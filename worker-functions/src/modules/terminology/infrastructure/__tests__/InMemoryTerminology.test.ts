@@ -222,7 +222,19 @@ describe('InMemoryTerminology', () => {
     });
 
     it('lança quando o capítulo da entidade não está carregado no fake (integridade do fixture)', async () => {
-      await expect(makeFake().ancestorsOf(ORFAO_SEM_CAPITULO.uri)).rejects.toThrow(/YY/);
+      await expect(makeFake().ancestorsOf(ORFAO_SEM_CAPITULO.uri)).rejects.toThrow(
+        /Capítulo da entidade não está carregado/,
+      );
+    });
+
+    // T7 — o fake segue a MESMA regra do adaptador real: a mensagem não nomeia o conceito.
+    it('T7 — a mensagem de erro NÃO carrega a uri nem o código do conceito procurado', async () => {
+      await expect(makeFake().ancestorsOf('uri://segredo-clinico/12345')).rejects.toThrow(
+        expect.objectContaining({ message: expect.not.stringContaining('segredo-clinico') }),
+      );
+      await expect(makeFake().ancestorsOf(ORFAO_SEM_CAPITULO.uri)).rejects.toThrow(
+        expect.objectContaining({ message: expect.not.stringContaining('YY') }),
+      );
     });
 
     it('D3 — catálogo vazio lança TerminologyUnavailableError antes de checar a uri', async () => {
@@ -230,76 +242,64 @@ describe('InMemoryTerminology', () => {
     });
   });
 
-  describe('F1.5-CORREÇÃO C1 (D261) — asOfRelease e opção `currentRelease` do construtor', () => {
-    const RELEASE_OLD = 'C1-OLD';
-    const RELEASE_NEW = 'C1-NEW';
+  /**
+   * 🔧 F5-CORREÇÃO T2 — o fake indexa e resolve por `conceptKey`, igual ao adaptador real. Sem
+   * isto a resolução estável entre releases estaria provada só no Postgres, e o contrato da
+   * porta (LSP) teria um buraco: "se só passa no real, a abstração vazou".
+   *
+   * O describe do C1 (`asOfRelease` / opção `currentRelease` do construtor) SAIU junto com o
+   * parâmetro — ver o COMMENT do `TerminologyPort` para o porquê (T3).
+   */
+  describe('T2 — identidade de conceito estável entre releases (concept_key)', () => {
+    const uriEm = (release: string) => `http://id.who.int/icd/release/11/${release}/mms/405565289/unspecified`;
 
-    const CAPITULO_OLD: DiagnosisEntity = {
-      uri: 'uri://c1/chapter',
-      code: IcdCode.parse('77'),
-      titleEs: 'Capítulo (old)',
+    const CAP_2027: DiagnosisEntity = {
+      uri: 'http://id.who.int/icd/release/11/2027-01/mms/1000',
+      code: IcdCode.parse('06'),
+      titleEs: 'Capítulo 06 (2027-01)',
       titleEn: null,
-      chapter: '77',
-      release: RELEASE_OLD,
+      chapter: '06',
+      release: '2027-01',
       kind: 'chapter',
       isLeaf: false,
       parentUri: null,
     };
-    const CAPITULO_NEW: DiagnosisEntity = {
-      uri: 'uri://c1/chapter', // MESMO uri, release diferente — 2 linhas em byUriRelease
-      code: IcdCode.parse('77'),
-      titleEs: 'Capítulo (new)',
+    /** O MESMO conceito do mapa do ClickUp, agora publicado no release 2027-01. */
+    const CONCEITO_2027: DiagnosisEntity = {
+      uri: uriEm('2027-01'),
+      code: IcdCode.parse('6A2Z'),
+      titleEs: 'Esquizofrenia u otros trastornos psicóticos primarios, sin especificación',
       titleEn: null,
-      chapter: '77',
-      release: RELEASE_NEW,
-      kind: 'chapter',
-      isLeaf: false,
-      parentUri: null,
-    };
-    const ORFAO: DiagnosisEntity = {
-      uri: 'uri://c1/orphan',
-      code: IcdCode.parse('ZO01'),
-      titleEs: 'Só existe no release antigo',
-      titleEn: null,
-      chapter: '77',
-      release: RELEASE_OLD,
+      chapter: '06',
+      release: '2027-01',
       kind: 'stem',
       isLeaf: true,
-      parentUri: CAPITULO_OLD.uri,
+      parentUri: null,
     };
 
-    function makeC1Fake(): InMemoryTerminology {
-      return new InMemoryTerminology([CAPITULO_OLD, CAPITULO_NEW, ORFAO], { currentRelease: RELEASE_NEW });
-    }
+    const catalogo2027 = () => new InMemoryTerminology([CAP_2027, CONCEITO_2027]);
 
-    it('getByUri(uri) SEM asOfRelease, com `currentRelease` configurado, filtra pelo release corrente do construtor', async () => {
-      // ORFAO só existe em RELEASE_OLD; currentRelease do fake é RELEASE_NEW.
-      expect(await makeC1Fake().getByUri(ORFAO.uri)).toBeNull();
+    it('getByUri com a URI de OUTRO release (a que o mapa do ClickUp guardou) RESOLVE o mesmo conceito', async () => {
+      const entity = await catalogo2027().getByUri(uriEm('2026-01'));
+      expect(entity).not.toBeNull();
+      expect(entity?.release).toBe('2027-01');
+      expect(entity?.code.value).toBe('6A2Z');
+      // A URI devolvida é a do release VIGENTE, nunca a que entrou.
+      expect(entity?.uri).toBe(uriEm('2027-01'));
     });
 
-    it('getByUri(uri, asOfRelease) IGNORA `currentRelease` e busca o release pedido', async () => {
-      const entity = await makeC1Fake().getByUri(ORFAO.uri, RELEASE_OLD);
-      expect(entity).toEqual(ORFAO);
+    it('ancestorsOf com a URI de outro release resolve o capítulo do release vigente', async () => {
+      const { chapter } = await catalogo2027().ancestorsOf(uriEm('2026-01'));
+      expect(chapter).toEqual({ code: '06', title: CAP_2027.titleEs });
     });
 
-    it('getByUri(uri, asOfRelease) devolve null quando o par uri+release não existe', async () => {
-      expect(await makeC1Fake().getByUri(ORFAO.uri, 'RELEASE-INEXISTENTE')).toBeNull();
+    it('URI de OUTRO conceito continua não resolvendo — a normalização não afrouxa a identidade', async () => {
+      expect(await catalogo2027().getByUri(uriEm('2026-01').replace('405565289', '999999999'))).toBeNull();
     });
 
-    it('ancestorsOf(uri, asOfRelease) resolve o capítulo NO release pedido, mesmo não sendo o corrente', async () => {
-      const { chapter } = await makeC1Fake().ancestorsOf(ORFAO.uri, RELEASE_OLD);
-      expect(chapter).toEqual({ code: '77', title: CAPITULO_OLD.titleEs });
-    });
-
-    it('ancestorsOf(uri) SEM asOfRelease lança quando o código não existe no release corrente do construtor', async () => {
-      await expect(makeC1Fake().ancestorsOf(ORFAO.uri)).rejects.toThrow();
-    });
-
-    it('sem `currentRelease` no construtor (default), getByUri(uri) mantém o comportamento de SEMPRE — última entidade daquele uri, sem filtrar release', async () => {
-      // Sem currentRelease: cai no branch de retrocompatibilidade (this.byUri, não byUriRelease).
-      const semCurrentRelease = new InMemoryTerminology([CAPITULO_OLD, CAPITULO_NEW]);
-      const found = await semCurrentRelease.getByUri(CAPITULO_NEW.uri);
-      expect(found?.release).toBe(RELEASE_NEW); // CAPITULO_NEW foi o último inserido para esse uri
+    it('URI SEM segmento de release (fixture `test://`) passa intacta — comportamento de sempre', async () => {
+      const entity = await makeFake().getByUri(ESQUIZOFRENIA.uri);
+      expect(entity).toEqual(ESQUIZOFRENIA);
     });
   });
 });

@@ -10,7 +10,11 @@
  */
 import type { TerminologyPort, DiagnosisEntity } from '../../terminology/domain/TerminologyPort';
 import type { PatientDiagnosis } from '../domain/PatientDiagnosis';
-import { PrimaryDiagnosisConflictError, type PatientDiagnosisRepositoryPort } from '../domain/PatientDiagnosisRepositoryPort';
+import {
+  DuplicateActiveDiagnosisError,
+  PrimaryDiagnosisConflictError,
+  type PatientDiagnosisRepositoryPort,
+} from '../domain/PatientDiagnosisRepositoryPort';
 
 export interface RecordPatientDiagnosisInput {
   readonly patientId: string;
@@ -31,6 +35,12 @@ export type RecordPatientDiagnosisResult =
   // C1 (QA-caça): 23505 do índice de principal mapeado — nunca escapa como 500 nem no POST com
   // isPrimary:true (RecordPatientDiagnosis também demote+create na mesma transação).
   | { readonly outcome: 'primary_race' }
+  // T5 (QA-caça F5): o MESMO conceito chegou duas vezes ao mesmo tempo e o índice de dedupe
+  // (`uq_patient_diagnoses_codigo_ativo_por_origem`) barrou o perdedor. É a MESMA condição do
+  // `already_active` — só que descoberta pelo banco, com a transação já abortada, então não há
+  // linha em mãos para devolver. O controller traduz os dois para o MESMO 409/código: quem
+  // chama não precisa distinguir "achei antes" de "o banco me barrou".
+  | { readonly outcome: 'duplicate_race' }
   | { readonly outcome: 'already_active'; readonly diagnosis: PatientDiagnosis };
 
 /**
@@ -62,14 +72,69 @@ export class RecordPatientDiagnosis {
     // resolvem no catálogo mas não são um fato clínico isolado.
     if (entity.kind !== 'stem') return { outcome: 'not_diagnosable' };
 
-    const conceptCode = entity.code.value;
-    const existingActive = await this.repo.findActiveByConceptCode(input.patientId, conceptCode);
-    if (existingActive) return { outcome: 'already_active', diagnosis: existingActive };
+    try {
+      return await this.repo.withTransaction((tx) => this.writeUnderLock(tx, input, entity));
+    } catch (err) {
+      if (err instanceof PrimaryDiagnosisConflictError) return { outcome: 'primary_race' };
+      // T5 — o 23505 do dedupe deixa de escapar como 500: é a mesma condição de `already_active`.
+      if (err instanceof DuplicateActiveDiagnosisError) return { outcome: 'duplicate_race' };
+      throw err;
+    }
+  }
 
-    const { chapter } = await this.terminology.ancestorsOf(entity.uri, entity.release);
+  /**
+   * 🔧 F5-CORREÇÕES T5 e T6 (QA-caça, 05/09/2026) — TUDO o que decide "existe ou não existe,
+   * então escrevo" passou para DENTRO de uma transação, atrás do lock consultivo por paciente.
+   *
+   * T5 (TOCTOU): o dedupe (`findActiveByConceptCode`) rodava FORA de transação e o `create`
+   * vinha depois. Webhook que repete, ou duplo clique: os dois lados liam "não há linha ativa",
+   * os dois inseriam, e o perdedor tomava o `23505` do segundo índice único da 325 —
+   * que ninguém mapeava — como **HTTP 500** em vez de 409. `lockForPatient` serializa a gravação
+   * por paciente; o perdedor ENXERGA a linha do vencedor e devolve `already_active`.
+   *
+   * T6 (ClickUp e banco divergentes PARA SEMPRE): o `return` de `already_active` estava ANTES da
+   * reconciliação do principal. `ClickUpDiagnosisMapper` pede SEMPRE `isPrimary: true` (o campo
+   * "Tipo de Patología" é seleção única), então a sequência A→B→A ficava assim: (1) A vira
+   * principal; (2) B rebaixa A e vira principal — mas A CONTINUA `active`; (3) volta para A →
+   * `findActiveByConceptCode` acha A ativa e devolve `already_active` **sem escrever nada**.
+   * Fim: o ClickUp diz A, o banco diz que o principal é B, e o log é `info`.
+   * Agora `already_active` com `isPrimary: true` RECONCILIA (rebaixa o principal atual, promove
+   * a linha que já existe) antes de devolver. O resultado continua sendo `already_active` — do
+   * ponto de vista de quem chamou, o conceito de fato já estava ativo, e o 409 do painel não
+   * muda; o que muda é o banco parar de divergir do que a origem afirma.
+   */
+  private async writeUnderLock(
+    tx: PatientDiagnosisRepositoryPort,
+    input: RecordPatientDiagnosisInput,
+    entity: DiagnosisEntity,
+  ): Promise<RecordPatientDiagnosisResult> {
+    await tx.lockForPatient(input.patientId);
+
+    const wantsPrimary = input.isPrimary ?? false;
+    const conceptCode = entity.code.value;
+
+    const existingActive = await tx.findActiveByConceptCode(input.patientId, conceptCode);
+    if (existingActive) {
+      if (!wantsPrimary || existingActive.isPrimary) {
+        return { outcome: 'already_active', diagnosis: existingActive };
+      }
+      // T6 — mesma reconciliação de `SetPrimaryDiagnosis`, na MESMA transação e no MESMO lock.
+      await tx.demotePrimary(input.patientId);
+      const promoted = await tx.promotePrimary(existingActive.id, input.actorUid);
+      return { outcome: 'already_active', diagnosis: promoted };
+    }
+
+    const { chapter } = await this.terminology.ancestorsOf(entity.uri);
     const { title, language } = resolveTitle(entity);
 
-    const newDiagnosis = {
+    // O índice parcial único (patient_id, source) WHERE is_primary AND active NÃO é DEFERRABLE
+    // (D263) — se já existe um principal ativo nesta origem, o INSERT com is_primary=true
+    // estouraria 23505. Rebaixa o atual antes de criar o novo já principal.
+    if (wantsPrimary) {
+      await tx.demotePrimary(input.patientId);
+    }
+
+    const diagnosis = await tx.create({
       patientId: input.patientId,
       conceptUri: entity.uri,
       conceptCode,
@@ -77,26 +142,9 @@ export class RecordPatientDiagnosis {
       conceptLanguage: language,
       conceptGroup: chapter.code,
       catalogRelease: entity.release,
-      isPrimary: input.isPrimary ?? false,
+      isPrimary: wantsPrimary,
       actorUid: input.actorUid,
-    };
-
-    // O índice parcial único (patient_id, source) WHERE is_primary AND active NÃO é DEFERRABLE
-    // (D263) — se já existe um principal ativo nesta origem, o INSERT com is_primary=true
-    // estouraria 23505. Mesma reconciliação de SetPrimaryDiagnosis: rebaixa o atual, cria o novo
-    // já principal, na MESMA transação (e no MESMO lock consultivo por paciente — C1).
-    try {
-      const diagnosis = input.isPrimary
-        ? await this.repo.withTransaction(async (tx) => {
-            await tx.demotePrimary(input.patientId);
-            return tx.create(newDiagnosis);
-          })
-        : await this.repo.create(newDiagnosis);
-
-      return { outcome: 'created', diagnosis };
-    } catch (err) {
-      if (err instanceof PrimaryDiagnosisConflictError) return { outcome: 'primary_race' };
-      throw err;
-    }
+    });
+    return { outcome: 'created', diagnosis };
   }
 }

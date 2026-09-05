@@ -102,6 +102,12 @@ export class AdminPatientDiagnosesController {
         case 'primary_race':
           res.status(409).json({ success: false, error: 'Primary diagnosis change collided with a concurrent write', code: 'PRIMARY_DIAGNOSIS_RACE' });
           return;
+        // T5 (QA-caça F5) — `duplicate_race` é o 23505 do SEGUNDO índice único da 325
+        // (dedupe por código ativo), que antes escapava cru e virava HTTP 500. É a MESMA
+        // condição de `already_active` vista do outro lado (descoberta pelo banco, não pela
+        // leitura), então devolve o MESMO 409 e o MESMO código: o cliente não tem por que
+        // distinguir quem chegou primeiro.
+        case 'duplicate_race':
         case 'already_active':
           res.status(409).json({ success: false, error: 'Concept already active for this patient in this source', code: 'DIAGNOSIS_ALREADY_ACTIVE' });
           return;

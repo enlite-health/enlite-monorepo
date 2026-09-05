@@ -94,6 +94,17 @@ export class InMemoryPatientDiagnosisRepository implements PatientDiagnosisRepos
     return fn(this);
   }
 
+  /**
+   * 🔧 T5 — no-op DELIBERADO, e é honesto: o fake roda em UM processo, uma tarefa por vez; não
+   * existem duas transações concorrentes para serializar. O que ele precisa cumprir do contrato
+   * é EXISTIR e poder ser chamado na mesma posição do adaptador real — a garantia de
+   * concorrência de verdade é medida contra o Postgres
+   * (`tests/e2e/t5-diagnosis-concurrency.e2e.test.ts`), nunca contra este arquivo.
+   */
+  async lockForPatient(_patientId: string): Promise<void> {
+    return undefined;
+  }
+
   async demotePrimary(patientId: string): Promise<void> {
     for (const [id, row] of this.rows) {
       if (row.patientId === patientId && row.source.equals(this.scope) && row.isPrimary && row.active) {

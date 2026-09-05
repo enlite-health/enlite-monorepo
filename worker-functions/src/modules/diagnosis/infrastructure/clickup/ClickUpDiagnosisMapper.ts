@@ -30,6 +30,11 @@ export type ClickUpDiagnosisSyncOutcome =
   | { readonly kind: 'no_label' }
   /** O rótulo não tem linha em `clickup_diagnosis_labels` — registrado, nunca inventado. */
   | { readonly kind: 'unmapped' }
+  /**
+   * A origem mandou valor e o catálogo do ClickUp não o traduz mais (opção renomeada,
+   * reordenada ou apagada): NÃO HÁ rótulo. Registrado como OCORRÊNCIA, sem o valor.
+   */
+  | { readonly kind: 'unreadable' }
   /** Mapeado e encaminhado ao Facade — `outcome` é o do `RecordPatientDiagnosisResult`, sem
    *  reinterpretação (inclusive `already_active`, `primary_race`, `not_diagnosable` etc.). */
   | { readonly kind: 'synced'; readonly outcome: string };
@@ -57,5 +62,29 @@ export class ClickUpDiagnosisMapper {
       actorUid: CLICKUP_DIAGNOSIS_SYNC_ACTOR,
     });
     return { kind: 'synced', outcome: result.outcome };
+  }
+
+  /**
+   * O caminho da leitura ILEGÍVEL — a origem mandou valor e o catálogo não o traduziu, então
+   * não existe rótulo para passar a `syncFromLabel`.
+   *
+   * ── POR QUE ESTE MÉTODO MORA AQUI, E NÃO NO CHAMADOR ─────────────────────────────────────
+   * Quem detecta o ilegível é `SyncPatientFromClickUpTaskUseCase.persistDiagnosis`, no módulo
+   * `integration`; quem sabe registrar a recusa é o repositório do módulo `diagnosis`. Foi
+   * exatamente nessa fronteira que o conserto ficou pela metade. Fechá-la injetando o
+   * repositório de recusa no use case abriria uma SEGUNDA porta de `integration` para dentro
+   * de `diagnosis` (hoje ele só conhece este Adapter) — e o `integration` passaria a decidir
+   * COMO a recusa é gravada. Aqui, `integration` continua dizendo apenas O QUE ACONTECEU e
+   * `diagnosis` segue dono da própria persistência (o mesmo desenho de `syncFromLabel`).
+   *
+   * ⚠️ NÃO recebe o valor ilegível, e a assinatura é a trava: o orderindex é dado clínico em
+   * forma codificada e não atravessa esta fronteira nem por engano.
+   *
+   * Nunca chama o Facade: ilegível não é diagnóstico, e nada pode ser gravado nem apagado
+   * (D167/F41 — "não consegui ler" não é "está vazio").
+   */
+  async recordUnreadableLabel(patientId: string): Promise<ClickUpDiagnosisSyncOutcome> {
+    await this.rejections.recordUnreadable(patientId);
+    return { kind: 'unreadable' };
   }
 }

@@ -3,7 +3,10 @@ import { TerminologyUnavailableError } from '../../../terminology/domain/Unavail
 import { IcdCode } from '../../../terminology/domain/IcdCode';
 import type { DiagnosisEntity } from '../../../terminology/domain/TerminologyPort';
 import { DiagnosisSource } from '../../domain/DiagnosisSource';
-import { PrimaryDiagnosisConflictError } from '../../domain/PatientDiagnosisRepositoryPort';
+import {
+  DuplicateActiveDiagnosisError,
+  PrimaryDiagnosisConflictError,
+} from '../../domain/PatientDiagnosisRepositoryPort';
 import { InMemoryPatientDiagnosisRepository } from '../../infrastructure/InMemoryPatientDiagnosisRepository';
 import { RecordPatientDiagnosis } from '../RecordPatientDiagnosis';
 
@@ -70,7 +73,7 @@ const ONLY_ENGLISH_CHAPTER: DiagnosisEntity = {
 };
 
 function buildUseCase(entities: DiagnosisEntity[] = [AUTISM, CHAPTER, ONLY_ENGLISH, ONLY_ENGLISH_CHAPTER, LEAD_EXTENSION]) {
-  const terminology = new InMemoryTerminology(entities, { currentRelease: '2026-01' });
+  const terminology = new InMemoryTerminology(entities);
   const repo = new InMemoryPatientDiagnosisRepository(DiagnosisSource.PANEL);
   const useCase = new RecordPatientDiagnosis(terminology, repo);
   return { terminology, repo, useCase };
@@ -175,5 +178,121 @@ describe('RecordPatientDiagnosis — caso de uso (spec 016 F2)', () => {
     await expect(
       useCase.execute({ patientId: PATIENT_ID, conceptUri: AUTISM.uri, actorUid: 'uid-1' }),
     ).rejects.toThrow(TerminologyUnavailableError);
+  });
+
+  /**
+   * 🔧 F5-CORREÇÃO T6 (QA-caça, 05/09/2026) — o atalho `already_active` deixava ClickUp e banco
+   * divergentes PARA SEMPRE.
+   *
+   * `ClickUpDiagnosisMapper` pede SEMPRE `isPrimary: true` — "Tipo de Patología" é seleção ÚNICA
+   * no ClickUp. O `return` de `already_active` estava ANTES do bloco de reconciliação do
+   * principal, então a sequência A→B→A terminava com o ClickUp dizendo A e o banco dizendo que o
+   * principal é B. Logado em nível `info`, webhook 200, nenhuma linha de rejeição. Nenhum teste
+   * cobria a VOLTA — só a ida.
+   */
+  describe('T6 — a VOLTA (A→B→A) não pode deixar o banco divergente da origem', () => {
+    async function sequenciaAeBeA() {
+      const { repo, useCase } = buildUseCase();
+      repo.seedPatient(PATIENT_ID);
+      const comoPrincipal = (conceptUri: string) =>
+        useCase.execute({ patientId: PATIENT_ID, conceptUri, actorUid: 'clickup-sync', isPrimary: true });
+
+      await comoPrincipal(AUTISM.uri); // (1) A vira principal
+      await comoPrincipal(ONLY_ENGLISH.uri); // (2) B rebaixa A e vira principal — A segue ATIVA
+      const volta = await comoPrincipal(AUTISM.uri); // (3) volta para A
+      const linhas = await repo.listForPatient(PATIENT_ID);
+      return { volta, linhas };
+    }
+
+    it('volta para A: o principal no banco volta a ser A (antes ficava B, calado)', async () => {
+      const { volta, linhas } = await sequenciaAeBeA();
+
+      expect(volta.outcome).toBe('already_active');
+      const principais = linhas.filter((d) => d.isPrimary && d.active);
+      expect(principais).toHaveLength(1);
+      expect(principais[0].conceptUri).toBe(AUTISM.uri);
+    });
+
+    it('a reconciliação REBAIXA B — nunca ficam dois principais ativos na mesma origem', async () => {
+      const { linhas } = await sequenciaAeBeA();
+      const b = linhas.find((d) => d.conceptUri === ONLY_ENGLISH.uri)!;
+      expect(b.isPrimary).toBe(false);
+      expect(b.active).toBe(true); // rebaixar não é desativar
+    });
+
+    it('o outcome continua `already_active` — o 409 do painel não muda de forma', async () => {
+      const { volta } = await sequenciaAeBeA();
+      expect(volta.outcome).toBe('already_active');
+      if (volta.outcome !== 'already_active') throw new Error('unreachable');
+      expect(volta.diagnosis.isPrimary).toBe(true);
+      expect(volta.diagnosis.updatedBy).toBe('clickup-sync');
+    });
+
+    it('já ativo e JÁ principal: idempotente, não reescreve nada', async () => {
+      const { repo, useCase } = buildUseCase();
+      repo.seedPatient(PATIENT_ID);
+      const criado = await useCase.execute({ patientId: PATIENT_ID, conceptUri: AUTISM.uri, actorUid: 'uid-1', isPrimary: true });
+      if (criado.outcome !== 'created') throw new Error('unreachable');
+      const spy = jest.spyOn(repo, 'promotePrimary');
+
+      const denovo = await useCase.execute({ patientId: PATIENT_ID, conceptUri: AUTISM.uri, actorUid: 'uid-2', isPrimary: true });
+
+      expect(denovo.outcome).toBe('already_active');
+      if (denovo.outcome !== 'already_active') throw new Error('unreachable');
+      expect(denovo.diagnosis.id).toBe(criado.diagnosis.id);
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('já ativo e SEM isPrimary: continua sendo o atalho de leitura, sem escrever', async () => {
+      const { repo, useCase } = buildUseCase();
+      repo.seedPatient(PATIENT_ID);
+      await useCase.execute({ patientId: PATIENT_ID, conceptUri: AUTISM.uri, actorUid: 'uid-1' });
+      const demote = jest.spyOn(repo, 'demotePrimary');
+
+      const segundo = await useCase.execute({ patientId: PATIENT_ID, conceptUri: AUTISM.uri, actorUid: 'uid-1' });
+
+      expect(segundo.outcome).toBe('already_active');
+      expect(demote).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * 🔧 F5-CORREÇÃO T5 — o dedupe rodava FORA de transação (TOCTOU) e o 23505 do SEGUNDO índice
+   * único da 325 não era mapeado: o perdedor de um webhook repetido / duplo clique recebia
+   * HTTP 500 em vez de 409. A prova de CONCORRÊNCIA real está em
+   * tests/e2e/t5-diagnosis-concurrency.e2e.test.ts (N rodadas contra o Postgres); aqui fica a
+   * garantia estrutural — tudo dentro de UMA transação, atrás do lock, e o erro traduzido.
+   */
+  describe('T5 — dedupe dentro de transação, atrás do lock, com o 23505 do dedupe mapeado', () => {
+    it('lockForPatient é a PRIMEIRA statement, antes de qualquer leitura de "existe?"', async () => {
+      const { repo, useCase } = buildUseCase();
+      repo.seedPatient(PATIENT_ID);
+      const ordem: string[] = [];
+      jest.spyOn(repo, 'lockForPatient').mockImplementation(async () => { ordem.push('lock'); });
+      jest.spyOn(repo, 'findActiveByConceptCode').mockImplementation(async () => { ordem.push('find'); return null; });
+      jest.spyOn(repo, 'create').mockImplementation(async () => { ordem.push('create'); return null as never; });
+
+      await useCase.execute({ patientId: PATIENT_ID, conceptUri: AUTISM.uri, actorUid: 'uid-1' });
+
+      expect(ordem).toEqual(['lock', 'find', 'create']);
+    });
+
+    it('a criação SEM isPrimary também roda em transação (antes ia direto no pool, fora dela)', async () => {
+      const { repo, useCase } = buildUseCase();
+      repo.seedPatient(PATIENT_ID);
+      const tx = jest.spyOn(repo, 'withTransaction');
+      await useCase.execute({ patientId: PATIENT_ID, conceptUri: AUTISM.uri, actorUid: 'uid-1' });
+      expect(tx).toHaveBeenCalledTimes(1);
+    });
+
+    it('DuplicateActiveDiagnosisError vira outcome `duplicate_race` — NUNCA sobe cru (era o 500)', async () => {
+      const { repo, useCase } = buildUseCase();
+      repo.seedPatient(PATIENT_ID);
+      jest.spyOn(repo, 'create').mockRejectedValueOnce(new DuplicateActiveDiagnosisError(PATIENT_ID));
+
+      const result = await useCase.execute({ patientId: PATIENT_ID, conceptUri: AUTISM.uri, actorUid: 'uid-1' });
+
+      expect(result.outcome).toBe('duplicate_race');
+    });
   });
 });

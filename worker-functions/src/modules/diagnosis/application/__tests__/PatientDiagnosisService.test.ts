@@ -17,7 +17,7 @@ const AUTISM: DiagnosisEntity = {
 const PATIENT_ID = 'patient-1';
 
 function buildFacade() {
-  const terminology = new InMemoryTerminology([AUTISM, CHAPTER], { currentRelease: '2026-01' });
+  const terminology = new InMemoryTerminology([AUTISM, CHAPTER]);
   const repo = new InMemoryPatientDiagnosisRepository(DiagnosisSource.PANEL);
   repo.seedPatient(PATIENT_ID);
   const facade = new PatientDiagnosisService(terminology, repo);

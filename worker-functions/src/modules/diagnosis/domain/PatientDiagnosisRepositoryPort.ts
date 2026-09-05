@@ -35,6 +35,30 @@ export class PrimaryDiagnosisConflictError extends Error {
 }
 
 /**
+ * 🔧 F5-CORREÇÃO T5 (QA-caça, 05/09/2026) — o SEGUNDO índice único da migration 325
+ * (`uq_patient_diagnoses_codigo_ativo_por_origem`, o dedupe por `(patient_id, source,
+ * concept_code) WHERE active`) NÃO era mapeado: só o de PRINCIPAL era. Webhook que repete ou
+ * duplo clique faziam os dois lados lerem "não há linha ativa" (o dedupe rodava FORA de
+ * transação — TOCTOU) e os dois inserirem; o perdedor recebia o `23505` cru e virava
+ * **HTTP 500** em vez do 409 `DIAGNOSIS_ALREADY_ACTIVE` que a mesma condição já tinha.
+ *
+ * Mora no DOMÍNIO pelo mesmo motivo de `PrimaryDiagnosisConflictError`: `application/` precisa
+ * capturá-lo sem importar `PostgresPatientDiagnosisRepository` (DIP — o adaptador concreto joga
+ * o erro do vocabulário do domínio, nunca o contrário).
+ *
+ * A trava de verdade é o `pg_advisory_xact_lock` de `lockForPatient` (ver a porta abaixo), que
+ * serializa a gravação por paciente e faz o perdedor ENXERGAR a linha do vencedor e devolver
+ * `already_active` normalmente. Este erro é defesa em profundidade — o caminho que sobra quando
+ * alguém escreve por fora do lock.
+ */
+export class DuplicateActiveDiagnosisError extends Error {
+  constructor(patientId: string) {
+    super(`Conceito já ativo para o paciente ${patientId} nesta origem (escrita concorrente)`);
+    this.name = 'DuplicateActiveDiagnosisError';
+  }
+}
+
+/**
  * Sem `terminologySystem` de propósito: quem grava (`RecordPatientDiagnosis`) não sabe qual
  * vocabulário está por trás da porta — só o repositório concreto (infraestrutura, fora da régua
  * do grep desta fase) sabe qual é o único vocabulário aceito hoje pela migration.
@@ -66,6 +90,18 @@ export interface PatientDiagnosisRepositoryPort {
 
   /** Roda `fn` numa única transação; `tx` é uma instância do MESMO escopo de origem. */
   withTransaction<T>(fn: (tx: PatientDiagnosisRepositoryPort) => Promise<T>): Promise<T>;
+
+  /**
+   * 🔧 T5 — trava consultiva POR PACIENTE, para a transação corrente. Chamar como PRIMEIRA
+   * statement de qualquer transação que decida "existe ou não existe, então escrevo": sem ela o
+   * `findActiveByConceptCode` → `create` é um TOCTOU clássico (dois webhooks, ou um duplo
+   * clique, leem "não há" ao mesmo tempo e os dois inserem).
+   *
+   * O padrão (`pg_advisory_xact_lock`) já é o de 6 arquivos de `src/` — inclusive o
+   * `demotePrimary` deste mesmo repositório, que passa a delegar aqui em vez de repetir a
+   * statement. `_xact_`: solta sozinho no fim da transação, mesmo em erro.
+   */
+  lockForPatient(patientId: string): Promise<void>;
 
   /**
    * Rebaixa o principal ATUAL de `patientId` NESTE escopo de origem, se houver. No-op se não

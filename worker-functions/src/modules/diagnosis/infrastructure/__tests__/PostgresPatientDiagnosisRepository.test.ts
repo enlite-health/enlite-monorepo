@@ -12,7 +12,10 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
 }));
 
 import { DiagnosisSource } from '../../domain/DiagnosisSource';
-import { PrimaryDiagnosisConflictError } from '../../domain/PatientDiagnosisRepositoryPort';
+import {
+  DuplicateActiveDiagnosisError,
+  PrimaryDiagnosisConflictError,
+} from '../../domain/PatientDiagnosisRepositoryPort';
 import {
   PostgresPatientDiagnosisRepository,
   PatientDiagnosisNotFoundInScopeError,
@@ -59,6 +62,19 @@ function txClient(rowForReturning: Record<string, unknown> = ROW) {
   });
   return { client: { query, release: jest.fn() }, calls };
 }
+
+/** Entrada de `create` reusada pelos testes de mapeamento de 23505 (T5). */
+const NOVO_DIAGNOSTICO = {
+  patientId: 'pat-1',
+  conceptUri: ROW.concept_uri,
+  conceptCode: ROW.concept_code,
+  conceptTitle: ROW.concept_title,
+  conceptLanguage: 'es' as const,
+  conceptGroup: '06',
+  catalogRelease: '2026-01',
+  isPrimary: false,
+  actorUid: 'uid-1',
+};
 
 describe('PostgresPatientDiagnosisRepository (spec 016 F2, escopo por construtor)', () => {
   beforeEach(() => {
@@ -218,24 +234,43 @@ describe('PostgresPatientDiagnosisRepository (spec 016 F2, escopo por construtor
     await expect(repo.promotePrimary('diag-1', 'uid-1')).rejects.toThrow(PrimaryDiagnosisConflictError);
   });
 
-  it('create: 23505 de OUTRO índice/constraint NÃO vira PrimaryDiagnosisConflictError — sobe intacto', async () => {
+  /**
+   * 🔧 F5-CORREÇÃO T5 (QA-caça, 05/09/2026) — INVERSÃO DE UMA RÉGUA DE CONTROLE.
+   *
+   * A versão anterior deste teste mandava um 23505 do índice
+   * `uq_patient_diagnoses_codigo_ativo_por_origem` (o SEGUNDO índice único da migration 325) e
+   * afirmava `.rejects.not.toThrow(PrimaryDiagnosisConflictError)` — uma asserção NEGATIVA.
+   * Ela passava ANTES da correção (o erro subia cru e virava HTTP 500) e passa DEPOIS (vira
+   * DuplicateActiveDiagnosisError): régua de CONTROLE não detecta instrumento morto, só a
+   * POSITIVA detecta. O nome dizia "sobe intacto" — o defeito descrito como comportamento
+   * desejado, com o índice certo escrito na fixture.
+   */
+  it('T5 — 23505 do SEGUNDO índice único (dedupe por código ativo) vira DuplicateActiveDiagnosisError', async () => {
     const repo = new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL);
     mockPoolQuery.mockRejectedValueOnce(
       Object.assign(new Error('duplicate key'), { code: '23505', constraint: 'uq_patient_diagnoses_codigo_ativo_por_origem' }),
     );
-    await expect(
-      repo.create({
-        patientId: 'pat-1',
-        conceptUri: ROW.concept_uri,
-        conceptCode: ROW.concept_code,
-        conceptTitle: ROW.concept_title,
-        conceptLanguage: 'es',
-        conceptGroup: '06',
-        catalogRelease: '2026-01',
-        isPrimary: false,
-        actorUid: 'uid-1',
-      }),
-    ).rejects.not.toThrow(PrimaryDiagnosisConflictError);
+    await expect(repo.create(NOVO_DIAGNOSTICO)).rejects.toBeInstanceOf(DuplicateActiveDiagnosisError);
+  });
+
+  it('T5 — cada índice tem SEU erro: o de principal continua PrimaryDiagnosisConflictError', async () => {
+    const repo = new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL);
+    mockPoolQuery.mockRejectedValueOnce(primaryUniqueViolation());
+    await expect(repo.create(NOVO_DIAGNOSTICO)).rejects.toBeInstanceOf(PrimaryDiagnosisConflictError);
+  });
+
+  it('T5 — 23505 de um TERCEIRO índice (desconhecido) continua subindo intacto, sem virar nenhum dos dois', async () => {
+    const repo = new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL);
+    const desconhecido = Object.assign(new Error('duplicate key'), { code: '23505', constraint: 'uq_algum_indice_futuro' });
+    mockPoolQuery.mockRejectedValueOnce(desconhecido);
+    await expect(repo.create(NOVO_DIAGNOSTICO)).rejects.toBe(desconhecido);
+  });
+
+  it('T5 — 23505 SEM `constraint` no erro (driver antigo/erro sintético) não é adivinhado: sobe intacto', async () => {
+    const repo = new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL);
+    const semConstraint = Object.assign(new Error('duplicate key'), { code: '23505' });
+    mockPoolQuery.mockRejectedValueOnce(semConstraint);
+    await expect(repo.create(NOVO_DIAGNOSTICO)).rejects.toBe(semConstraint);
   });
 
   it('create: erro de rejeição que NÃO é objeto (ex.: string crua) não quebra o mapeamento — sobe intacto', async () => {
@@ -321,5 +356,65 @@ describe('PostgresPatientDiagnosisRepository (spec 016 F2, escopo por construtor
       return tx.withTransaction(async (inner) => inner.demotePrimary('pat-1'));
     });
     expect(calls.filter((c) => c.sql === 'BEGIN')).toHaveLength(1);
+  });
+
+  /**
+   * 🔧 F5-CORREÇÃO T5 — `lockForPatient` virou método da porta: o dedupe de
+   * `RecordPatientDiagnosis` precisa da MESMA chave por paciente que a troca de principal.
+   */
+  describe('T5 — lockForPatient (pg_advisory_xact_lock por paciente)', () => {
+    it('emite pg_advisory_xact_lock com a chave derivada do paciente', async () => {
+      const repo = new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL);
+      mockPoolQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+      await repo.lockForPatient('pat-1');
+      expect(mockPoolQuery).toHaveBeenCalledWith(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        ['diagnosis_primary:pat-1'],
+      );
+    });
+
+    it('demotePrimary DELEGA a lockForPatient — uma chave só, um lugar só que a constrói', async () => {
+      const repo = new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL);
+      const spy = jest.spyOn(repo, 'lockForPatient');
+      mockPoolQuery.mockResolvedValue({ rows: [], rowCount: 0 });
+      await repo.demotePrimary('pat-9');
+      expect(spy).toHaveBeenCalledWith('pat-9');
+    });
+  });
+
+  /**
+   * 🔧 F5-CORREÇÃO T8 — um ROLLBACK que FALHA substituía o erro ORIGINAL. Quem chama decide o
+   * HTTP por `instanceof` (`PrimaryDiagnosisConflictError` em SetPrimaryDiagnosis /
+   * RecordPatientDiagnosis): com o erro trocado, o `instanceof` erra e o cliente recebe 500 em
+   * vez de 409. O irmão do mesmo PR já fazia certo (`ReadonlyDbQueryService`).
+   */
+  describe('T8 — ROLLBACK que falha não engole o erro original', () => {
+    it('o erro que sobe é o de `fn`, e continua sendo instanceof PrimaryDiagnosisConflictError', async () => {
+      const repo = new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL);
+      const client = {
+        query: jest.fn(async (sql: string) => {
+          if (/^\s*ROLLBACK/i.test(sql)) throw new Error('ROLLBACK falhou: conexão já derrubada');
+          return { rows: [], rowCount: 0 };
+        }),
+        release: jest.fn(),
+      };
+      mockConnect.mockResolvedValueOnce(client);
+
+      const erroReal = new PrimaryDiagnosisConflictError('pat-1');
+      const capturado = await repo
+        .withTransaction(async () => {
+          throw erroReal;
+        })
+        .then(() => null, (e: unknown) => e);
+
+      expect(capturado).toBe(erroReal);
+      // A trava DE VERDADE: o `instanceof` de quem decide o HTTP continua funcionando — era
+      // exatamente ele que quebrava quando o erro do ROLLBACK tomava o lugar do original.
+      expect(capturado instanceof PrimaryDiagnosisConflictError).toBe(true);
+      expect((capturado as Error).message).not.toContain('ROLLBACK falhou');
+      // ROLLBACK foi TENTADO (a falha dele é que não pode vazar), e a conexão foi liberada.
+      expect(client.query.mock.calls.map(([sql]) => sql)).toEqual(['BEGIN', 'ROLLBACK']);
+      expect(client.release).toHaveBeenCalledTimes(1);
+    });
   });
 });

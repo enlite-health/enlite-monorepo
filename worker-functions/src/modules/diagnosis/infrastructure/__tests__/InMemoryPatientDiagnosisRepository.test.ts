@@ -68,4 +68,17 @@ describe('InMemoryPatientDiagnosisRepository — fake source-scoped (mesma físi
     const clickupRepo = new InMemoryPatientDiagnosisRepository(DiagnosisSource.CLICKUP, sharedRows as never, new Set(['p1']));
     expect(await clickupRepo.findActiveByConceptCode('p1', 'AA00')).toBeNull();
   });
+
+  /**
+   * 🔧 F5-CORREÇÃO T5 — o fake cumpre o contrato novo (`lockForPatient`) como NO-OP declarado:
+   * ele roda em um processo, uma tarefa por vez; não há duas transações para serializar. A
+   * garantia de concorrência de verdade é medida contra o Postgres
+   * (tests/e2e/t5-diagnosis-concurrency.e2e.test.ts), nunca aqui.
+   */
+  it('T5 — lockForPatient existe, resolve e não muda estado (no-op declarado do fake)', async () => {
+    const repo = new InMemoryPatientDiagnosisRepository(DiagnosisSource.PANEL);
+    repo.seedPatient('pat-1');
+    await expect(repo.lockForPatient('pat-1')).resolves.toBeUndefined();
+    expect(await repo.listForPatient('pat-1')).toEqual([]);
+  });
 });

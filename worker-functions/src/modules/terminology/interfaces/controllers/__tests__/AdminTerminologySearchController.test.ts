@@ -3,7 +3,7 @@ jest.mock('@shared/logging', () => ({ reportError: jest.fn() }));
 import { AdminTerminologySearchController } from '../AdminTerminologySearchController';
 import { TerminologyUnavailableError } from '../../../domain/UnavailableTerminology';
 import { IcdCode } from '../../../domain/IcdCode';
-import type { TerminologyPort } from '../../../domain/TerminologyPort';
+import { MIN_SEARCH_QUERY_LENGTH, type TerminologyPort } from '../../../domain/TerminologyPort';
 import type { Response } from 'express';
 
 function mockReq(query: Record<string, unknown> = {}) {
@@ -50,7 +50,7 @@ describe('AdminTerminologySearchController (spec 016 F2)', () => {
     const port = { search: jest.fn().mockRejectedValue(new TerminologyUnavailableError('teste')) };
     const controller = new AdminTerminologySearchController(port as unknown as TerminologyPort);
     const res = mockRes();
-    await controller.search(mockReq({ q: 'x' }), res);
+    await controller.search(mockReq({ q: 'xy' }), res);
     expect(res.status).toHaveBeenCalledWith(503);
   });
 
@@ -58,7 +58,7 @@ describe('AdminTerminologySearchController (spec 016 F2)', () => {
     const port = { search: jest.fn().mockRejectedValue(new Error('boom')) };
     const controller = new AdminTerminologySearchController(port as unknown as TerminologyPort);
     const res = mockRes();
-    await controller.search(mockReq({ q: 'x' }), res);
+    await controller.search(mockReq({ q: 'xy' }), res);
     expect(res.status).toHaveBeenCalledWith(500);
   });
 
@@ -66,7 +66,27 @@ describe('AdminTerminologySearchController (spec 016 F2)', () => {
     const port = { search: jest.fn().mockRejectedValue('rejeição crua') };
     const controller = new AdminTerminologySearchController(port as unknown as TerminologyPort);
     const res = mockRes();
-    await controller.search(mockReq({ q: 'x' }), res);
+    await controller.search(mockReq({ q: 'xy' }), res);
     expect(res.status).toHaveBeenCalledWith(500);
+  });
+
+  /**
+   * 🔧 F5-CORREÇÃO T10 — a rota RECUSA a consulta abaixo do piso, e a recusa DIZ o piso. Antes,
+   * `?q=a` passava (zod `min(1)`), o adaptador devolvia [] pelo piso próprio dele (2), e a
+   * resposta era 200 com lista vazia — "não perguntei" indistinguível de "não há".
+   */
+  it('T10 — q com 1 caractere: 400 dizendo o piso, e a porta NUNCA é chamada', async () => {
+    const port = { search: jest.fn() };
+    const controller = new AdminTerminologySearchController(port as unknown as TerminologyPort);
+    const res = mockRes();
+    await controller.search(mockReq({ q: 'a' }), res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    const [payload] = res.json.mock.calls[0];
+    expect(payload).toMatchObject({
+      success: false,
+      details: { fields: ['q'], minQueryLength: MIN_SEARCH_QUERY_LENGTH },
+    });
+    expect(port.search).not.toHaveBeenCalled();
   });
 });

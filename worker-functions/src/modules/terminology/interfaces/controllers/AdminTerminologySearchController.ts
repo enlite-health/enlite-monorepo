@@ -8,7 +8,7 @@
  */
 import { Request, Response } from 'express';
 import { reportError } from '@shared/logging';
-import type { TerminologyPort } from '../../domain/TerminologyPort';
+import { MIN_SEARCH_QUERY_LENGTH, type TerminologyPort } from '../../domain/TerminologyPort';
 import { createTerminologyPort } from '../../infrastructure/TerminologyPortFactory';
 import { TerminologyUnavailableError } from '../../domain/UnavailableTerminology';
 import { terminologySearchQuerySchema } from '../validators/terminologySearchSchema';
@@ -20,7 +20,15 @@ export class AdminTerminologySearchController {
   async search(req: Request, res: Response): Promise<void> {
     const query = terminologySearchQuerySchema.safeParse(req.query);
     if (!query.success) {
-      res.status(400).json({ success: false, error: 'Invalid query', details: { fields: Object.keys(query.error.flatten().fieldErrors) } });
+      // T10 — o 400 DIZ o piso. Antes, `?q=a` passava (zod `min(1)`), o adaptador devolvia []
+      // pelo piso próprio dele (2) e a API respondia 200 com lista vazia: "não perguntei" ficava
+      // indistinguível de "não há". Agora recusa, e a recusa carrega o número — o cliente não
+      // precisa adivinhar nem manter uma 3ª cópia da constante.
+      res.status(400).json({
+        success: false,
+        error: 'Invalid query',
+        details: { fields: Object.keys(query.error.flatten().fieldErrors), minQueryLength: MIN_SEARCH_QUERY_LENGTH },
+      });
       return;
     }
     try {

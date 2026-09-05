@@ -65,6 +65,18 @@ export interface Block {
   readonly title: string;
 }
 
+/**
+ * 🔧 F5-CORREÇÃO T10 (QA-caça, 05/09/2026) — FONTE ÚNICA do piso de tamanho da consulta.
+ *
+ * O número vivia em TRÊS lugares com DOIS valores: `zod .min(1)` no schema da rota, e
+ * `MIN_QUERY_LENGTH = 2` em cada adaptador. Efeito medido: `GET /search?q=a` respondia
+ * `200 {"candidates":[]}` sem tocar o banco — "não perguntei" indistinguível de "não há", que é
+ * exatamente a confusão que a US-4 proíbe. O piso é regra de CONTRATO da porta (todo adaptador
+ * tem de honrá-lo, senão o fake e o real divergem), então mora aqui — e a rota o REJEITA com
+ * 400 dizendo o piso, em vez de devolver lista vazia.
+ */
+export const MIN_SEARCH_QUERY_LENGTH = 2;
+
 export interface SearchOptions {
   /** Filtro de capítulos (ex.: `['06', '08']`). Ausente/vazio = todos. Filtro de TELA (D259). */
   readonly chapters?: readonly string[];
@@ -80,18 +92,28 @@ export interface SearchOptions {
  * A porta. `application/` depende SÓ desta interface (DIP) — nunca de `IcdCatalogTerminology`
  * nem de `IcdApiTerminology` concretos. A instância entra por construtor.
  *
- * 🔧 F1.5-CORREÇÃO C1 (D261, parecer do CTO) — `getByUri`/`ancestorsOf` ganham `asOfRelease?`.
- * PROVADO em transação: promover um release novo que não contém um `icd_uri` antigo faz
- * `getByUri(uri)` (sem argumento — resolve o release CORRENTE) devolver `null`
- * — a linha antiga continua na tabela, só inalcançável pela leitura sem release explícito.
- * A `spec.md` promete "diagnóstico gravado em 2026-01 continua legível quando o release virar
- * 2027-01" — falso sem este parâmetro. Sem `asOfRelease` (undefined): comportamento de HOJE,
- * retrocompatível (resolve o release corrente). Com `asOfRelease`: busca EXATAMENTE aquele
- * release, corrente ou não — é o que torna o diagnóstico do paciente (que grava `release` NA
- * LINHA, ver "Contrato de arquitetura") legível para sempre, mesmo depois de o release mudar.
+ * 🔧 F5-CORREÇÃO T3 (QA-caça, 05/09/2026) — `asOfRelease?` FOI REMOVIDO de `getByUri`/
+ * `ancestorsOf`. Ele nasceu na F1.5 (C1/D261) para que "o diagnóstico do paciente não ficasse
+ * INALCANÇÁVEL depois de promover release", e NENHUM chamador de produção jamais o passou:
+ * `RecordPatientDiagnosis` chamava `getByUri(uri)` sem ele, e o `ancestorsOf(uri, entity.release)`
+ * passava um release que já era o corrente por construção. Parâmetro com teste e zero consumidor
+ * é declaração, não garantia.
+ *
+ * O que o tornou desnecessário foi consertar a CAUSA que ele contornava (T2): a URI da OMS
+ * carrega o release no path, então "o release novo não tem esta URI" era quase sempre um
+ * artefato da URI ter mudado, não do conceito ter sumido. Com `concept_key` (migration 328) a
+ * identidade é estável entre releases, e `getByUri(uri)` volta a achar o MESMO conceito depois
+ * de promover.
+ *
+ * E o diagnóstico já gravado continua legível pelo mecanismo que a migration 325 criou
+ * exatamente para isso: a linha de `patient_diagnoses` carrega `concept_code`, `concept_title`,
+ * `concept_group` e `catalog_release` DESNORMALIZADOS — a ficha nunca reconsulta o catálogo.
+ * Conceito genuinamente aposentado pela OMS continua existindo: quem avisa é a reconciliação de
+ * `--promote` (T4), que CONTA quantos diagnósticos ativos e quantos mapeamentos do ClickUp
+ * deixariam de resolver — um relatório vivo no lugar de um parâmetro morto.
  */
 export interface TerminologyPort {
   search(query: string, opts?: SearchOptions): Promise<DiagnosisCandidate[]>;
-  getByUri(uri: string, asOfRelease?: string): Promise<DiagnosisEntity | null>;
-  ancestorsOf(uri: string, asOfRelease?: string): Promise<{ chapter: Chapter; block?: Block }>;
+  getByUri(uri: string): Promise<DiagnosisEntity | null>;
+  ancestorsOf(uri: string): Promise<{ chapter: Chapter; block?: Block }>;
 }

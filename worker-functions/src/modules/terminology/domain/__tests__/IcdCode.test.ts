@@ -87,13 +87,43 @@ describe('IcdCode', () => {
     expect(a.equals(c)).toBe(false);
   });
 
-  it('InvalidIcdCodeError carrega o valor rejeitado na mensagem, para depuração', () => {
+  /**
+   * 🔧 F5-CORREÇÃO T7 (QA-caça, 05/09/2026) — INVERSÃO DELIBERADA DE UM TESTE VERDE.
+   *
+   * A versão anterior deste teste se chamava "InvalidIcdCodeError carrega o valor rejeitado na
+   * mensagem, para depuração" e asseverava `expect(message).toContain('???')`. Ou seja: o
+   * vazamento estava FIXADO por um teste verde cujo nome declarava o comportamento errado como
+   * desejado — e o arquivo está no piso de 100% de cobertura. Cobertura cheia sobre a asserção
+   * errada é o modo de falha que o CLAUDE.md chama de "contrato é TETO, não chão".
+   *
+   * O código CID-11 identifica um conceito clínico. `reportError` loga `err.message` (e o
+   * `stack`, que embute a message) JUNTO do `patientId`. "Para depuração" não é justificativa
+   * para pôr identidade clínica no log: o que a depuração precisa — ausente x forma inválida, e
+   * o tamanho — continua na mensagem e não identifica ninguém.
+   */
+  it('T7 — InvalidIcdCodeError NÃO carrega o valor rejeitado na mensagem (nem no stack)', () => {
     try {
-      IcdCode.parse('???');
+      IcdCode.parse('6A02.Z-SEGREDO');
       throw new Error('deveria ter lançado');
     } catch (err) {
       expect(err).toBeInstanceOf(InvalidIcdCodeError);
-      expect((err as Error).message).toContain('???');
+      const e = err as Error;
+      expect(e.message).not.toContain('6A02');
+      expect(e.message).not.toContain('SEGREDO');
+      expect(e.stack ?? '').not.toContain('SEGREDO');
+      // O que SOBRA é diagnóstico sem identidade: forma inválida + tamanho.
+      expect(e.message).toBe('Código CID-11 inválido: forma não reconhecida (14 caracteres)');
+    }
+  });
+
+  it('T7 — parse(null)/parse(undefined) diz "ausente" (a causa), sem tentar medir comprimento', () => {
+    for (const raw of [null, undefined]) {
+      try {
+        IcdCode.parse(raw);
+        throw new Error('deveria ter lançado');
+      } catch (err) {
+        expect((err as Error).message).toBe('Código CID-11 inválido: ausente');
+      }
     }
   });
 

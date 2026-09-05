@@ -22,7 +22,10 @@ function makeLabels(resolved: string | null): ClickUpDiagnosisLabelPort {
 }
 
 function makeRejections(): ClickUpDiagnosisRejectionPort {
-  return { recordUnmapped: jest.fn().mockResolvedValue(undefined) };
+  return {
+    recordUnmapped:   jest.fn().mockResolvedValue(undefined),
+    recordUnreadable: jest.fn().mockResolvedValue(undefined),
+  };
 }
 
 describe('ClickUpDiagnosisMapper', () => {
@@ -82,5 +85,22 @@ describe('ClickUpDiagnosisMapper', () => {
     const result = await mapper.syncFromLabel('pat-1', 'Parálisis Cerebral');
 
     expect(result).toEqual({ kind: 'synced', outcome: 'already_active' });
+  });
+
+  // ── I3b (migration 329): a leitura ILEGÍVEL fica em LISTA, sem o valor ───────────────────
+  it('ILEGÍVEL: registra a OCORRÊNCIA sem valor, não resolve o mapa e não chama o Facade', async () => {
+    const labels = makeLabels('uri://x');
+    const rejections = makeRejections();
+    const service = makeService({ outcome: 'created' });
+    const mapper = new ClickUpDiagnosisMapper(labels, rejections, service);
+
+    const result = await mapper.recordUnreadableLabel('pat-1');
+
+    expect(result).toEqual({ kind: 'unreadable' });
+    // A trava é a ASSINATURA: o orderindex não atravessa esta fronteira nem por engano.
+    expect(rejections.recordUnreadable).toHaveBeenCalledWith('pat-1');
+    expect(rejections.recordUnmapped).not.toHaveBeenCalled();
+    expect(labels.resolve).not.toHaveBeenCalled();
+    expect(service.recordDiagnosis).not.toHaveBeenCalled();
   });
 });

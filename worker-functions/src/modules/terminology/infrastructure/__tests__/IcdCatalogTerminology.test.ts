@@ -16,7 +16,7 @@ const mockQuery = jest.fn();
 const mockClientQuery = jest.fn(async (sql: string, _params?: unknown[]) => {
   // BEGIN/SET LOCAL/COMMIT/ROLLBACK não carregam linhas — só a query principal (SELECT) importa
   // para o teste; o default abaixo cobre os comandos de controle de transação.
-  if (/^\s*SELECT/i.test(sql)) return mockClientSelectResult();
+  if (/^\s*(SELECT|WITH)/i.test(sql)) return mockClientSelectResult();
   return { rows: [] };
 });
 let mockClientSelectResult = (): { rows: unknown[] } => ({ rows: [] });
@@ -100,7 +100,7 @@ describe('IcdCatalogTerminology', () => {
       expect(out[0]).toMatchObject({ uri: 'uri-1', title: 'Esquizofrenia', chapter: '06' });
       expect(out[0].code.value).toBe('6A20');
 
-      const mainCall = mockClientQuery.mock.calls.find((c) => /^\s*SELECT/i.test(c[0] as string))!;
+      const mainCall = mockClientQuery.mock.calls.find((c) => /^\s*(SELECT|WITH)/i.test(c[0] as string))!;
       const sql = mainCall[0] as string;
       const params = mainCall[1] as unknown[];
       expect(sql).toMatch(/%>/);
@@ -152,7 +152,7 @@ describe('IcdCatalogTerminology', () => {
       mockQuery.mockResolvedValueOnce(CURRENT_RELEASE_ROW);
       await new IcdCatalogTerminology().search('50%_off');
 
-      const mainCall = mockClientQuery.mock.calls.find((c) => /^\s*SELECT/i.test(c[0] as string))!;
+      const mainCall = mockClientQuery.mock.calls.find((c) => /^\s*(SELECT|WITH)/i.test(c[0] as string))!;
       const params = mainCall[1] as unknown[];
       // params: [trimmed (p/ %>), release, escapado (p/ ILIKE), ...]
       expect(params[0]).toBe('50%_off'); // trigram usa o valor cru
@@ -163,7 +163,7 @@ describe('IcdCatalogTerminology', () => {
       mockQuery.mockResolvedValueOnce(CURRENT_RELEASE_ROW);
       await new IcdCatalogTerminology().search('autismo', { chapters: ['06', '08'] });
 
-      const mainCall = mockClientQuery.mock.calls.find((c) => /^\s*SELECT/i.test(c[0] as string))!;
+      const mainCall = mockClientQuery.mock.calls.find((c) => /^\s*(SELECT|WITH)/i.test(c[0] as string))!;
       const sql = mainCall[0] as string;
       const params = mainCall[1] as unknown[];
       expect(sql).toMatch(/chapter\s*=\s*ANY/);
@@ -174,7 +174,7 @@ describe('IcdCatalogTerminology', () => {
       mockQuery.mockResolvedValueOnce(CURRENT_RELEASE_ROW);
       await new IcdCatalogTerminology().search('x-teste', { includeExtensions: true });
 
-      const mainCall = mockClientQuery.mock.calls.find((c) => /^\s*SELECT/i.test(c[0] as string))!;
+      const mainCall = mockClientQuery.mock.calls.find((c) => /^\s*(SELECT|WITH)/i.test(c[0] as string))!;
       const sql = mainCall[0] as string;
       expect(sql).not.toMatch(/kind\s*(<>|!=)\s*'extension'/);
     });
@@ -190,7 +190,7 @@ describe('IcdCatalogTerminology', () => {
     it('D8 — respeita `limit` explícito dentro do teto', async () => {
       mockQuery.mockResolvedValueOnce(CURRENT_RELEASE_ROW);
       await new IcdCatalogTerminology().search('teste', { limit: 5 });
-      const mainCall = mockClientQuery.mock.calls.find((c) => /^\s*SELECT/i.test(c[0] as string))!;
+      const mainCall = mockClientQuery.mock.calls.find((c) => /^\s*(SELECT|WITH)/i.test(c[0] as string))!;
       const params = mainCall[1] as unknown[];
       expect(params).toContain(5);
     });
@@ -198,7 +198,7 @@ describe('IcdCatalogTerminology', () => {
     it('D8 — `limit` acima do teto é CLAMPADO a 200, nunca passa cru para o SQL', async () => {
       mockQuery.mockResolvedValueOnce(CURRENT_RELEASE_ROW);
       await new IcdCatalogTerminology().search('teste', { limit: 100000 });
-      const mainCall = mockClientQuery.mock.calls.find((c) => /^\s*SELECT/i.test(c[0] as string))!;
+      const mainCall = mockClientQuery.mock.calls.find((c) => /^\s*(SELECT|WITH)/i.test(c[0] as string))!;
       const params = mainCall[1] as unknown[];
       expect(params).toContain(200);
       expect(params).not.toContain(100000);
@@ -262,38 +262,6 @@ describe('IcdCatalogTerminology', () => {
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
-    describe('F1.5-CORREÇÃO C1 (D261) — asOfRelease', () => {
-      it('com `asOfRelease`, NUNCA resolve o release corrente — usa direto o release pedido', async () => {
-        mockQuery.mockResolvedValueOnce({
-          rows: [{
-            icd_uri: 'uri-hist', code: '77', title_es: 'Histórico', title_en: null, chapter: '77',
-            release: '2026-01', kind: 'stem', is_leaf: true, parent_uri: null,
-          }],
-        });
-        const entity = await new IcdCatalogTerminology().getByUri('uri-hist', '2026-01');
-
-        expect(mockQuery).toHaveBeenCalledTimes(1); // 1 chamada só: nunca consultou icd_releases
-        const [sql, params] = mockQuery.mock.calls[0];
-        expect(sql).not.toMatch(/icd_releases/);
-        expect(params).toEqual(['uri-hist', '2026-01']);
-        expect(entity?.release).toBe('2026-01');
-      });
-
-      it('com `asOfRelease` que não existe (release nunca ingerido), devolve null — nunca lança', async () => {
-        mockQuery.mockResolvedValueOnce({ rows: [] });
-        const entity = await new IcdCatalogTerminology().getByUri('uri-x', '1999-01');
-        expect(entity).toBeNull();
-        expect(mockQuery).toHaveBeenCalledTimes(1);
-      });
-
-      it('com `asOfRelease`, schema/tabela ausente (42P01) ainda vira TerminologyUnavailableError — nunca erro cru', async () => {
-        const pgError = Object.assign(new Error('relation does not exist'), { code: '42P01' });
-        mockQuery.mockRejectedValueOnce(pgError);
-        await expect(new IcdCatalogTerminology().getByUri('uri-x', '2026-01')).rejects.toBeInstanceOf(
-          TerminologyUnavailableError,
-        );
-      });
-    });
   });
 
   describe('ancestorsOf', () => {
@@ -333,28 +301,149 @@ describe('IcdCatalogTerminology', () => {
       await expect(new IcdCatalogTerminology().ancestorsOf('uri-z')).rejects.toThrow();
     });
 
-    describe('F1.5-CORREÇÃO C1 (D261) — asOfRelease', () => {
-      it('com `asOfRelease`, NUNCA resolve o release corrente — as DUAS queries usam o release pedido', async () => {
-        mockQuery
-          .mockResolvedValueOnce({ rows: [{ chapter: '77' }] })
-          .mockResolvedValueOnce({ rows: [{ code: '77', title_es: 'Capítulo histórico', title_en: null }] });
+  });
 
-        const { chapter } = await new IcdCatalogTerminology().ancestorsOf('uri-hist', '2026-01');
+  /**
+   * 🔧 F5-CORREÇÃO T2 — a resolução casa por `concept_key` (a identidade estável entre releases,
+   * migration 328), não por `icd_uri` cru. A URI canônica da OMS carrega o release no path, então
+   * casar por `icd_uri` fazia o mesmo conceito virar "inexistente" no dia da primeira promoção —
+   * e com ele os 8 mapeamentos do ClickUp da migration 327, todos de uma vez e em silêncio.
+   */
+  describe('T2 — resolução por concept_key (identidade estável entre releases)', () => {
+    const URI_2026 = 'http://id.who.int/icd/release/11/2026-01/mms/405565289/unspecified';
 
-        expect(mockQuery).toHaveBeenCalledTimes(2); // nunca consultou icd_releases (seriam 3 chamadas)
-        expect(mockQuery.mock.calls[0][0]).not.toMatch(/icd_releases/);
-        expect(mockQuery.mock.calls[0][1]).toEqual(['uri-hist', '2026-01']);
-        expect(mockQuery.mock.calls[1][1]).toEqual(['77', '2026-01']);
-        expect(chapter).toEqual({ code: '77', title: 'Capítulo histórico' });
-      });
+    it('getByUri normaliza a URI que CHEGA pela mesma função SQL que gerou a coluna', async () => {
+      mockQuery.mockResolvedValueOnce(CURRENT_RELEASE_ROW).mockResolvedValueOnce({ rows: [] });
+      await new IcdCatalogTerminology().getByUri(URI_2026);
 
-      it('com `asOfRelease`, schema/tabela ausente (42P01) ainda vira TerminologyUnavailableError — nunca erro cru', async () => {
-        const pgError = Object.assign(new Error('relation does not exist'), { code: '42P01' });
-        mockQuery.mockRejectedValueOnce(pgError);
-        await expect(new IcdCatalogTerminology().ancestorsOf('uri-x', '2026-01')).rejects.toBeInstanceOf(
-          TerminologyUnavailableError,
-        );
-      });
+      const [sql, params] = mockQuery.mock.calls[1];
+      expect(sql).toMatch(/concept_key\s*=\s*terminology\.concept_key\(\$1\)/);
+      expect(sql).not.toMatch(/icd_uri\s*=\s*\$1/);
+      expect(sql).toMatch(/release\s*=\s*\$2/);
+      expect(params).toEqual([URI_2026, '2026-01']);
+    });
+
+    it('ancestorsOf usa a MESMA normalização (senão o capítulo some junto com o conceito)', async () => {
+      mockQuery
+        .mockResolvedValueOnce(CURRENT_RELEASE_ROW)
+        .mockResolvedValueOnce({ rows: [{ chapter: '06' }] })
+        .mockResolvedValueOnce({ rows: [{ code: '06', title_es: 'Cap 06', title_en: null }] });
+      await new IcdCatalogTerminology().ancestorsOf(URI_2026);
+
+      const [sql, params] = mockQuery.mock.calls[1];
+      expect(sql).toMatch(/concept_key\s*=\s*terminology\.concept_key\(\$1\)/);
+      expect(params).toEqual([URI_2026, '2026-01']);
+    });
+  });
+
+  /**
+   * 🔧 F5-CORREÇÃO T9 — `terminology.icd_synonyms` deixa de ser knob morto. A migration 323 cria
+   * a tabela com índice trigrama próprio e um COMMENT que INSTRUI a operação a cadastrar ali o
+   * termo que o trigrama dos títulos não cobre — e ZERO linha de produção a lia.
+   */
+  describe('T9 — a busca LÊ terminology.icd_synonyms', () => {
+    it('o SQL da busca consulta a tabela de sinônimos, escopada pelo MESMO release', async () => {
+      mockQuery.mockResolvedValueOnce(CURRENT_RELEASE_ROW);
+      await new IcdCatalogTerminology().search('TEA');
+
+      const mainCall = mockClientQuery.mock.calls.find((c) => /^\s*(SELECT|WITH)/i.test(c[0] as string))!;
+      const sql = mainCall[0] as string;
+      expect(sql).toMatch(/terminology\.icd_synonyms/);
+      expect(sql).toMatch(/s\.term\s*%>\s*\$1/);
+      expect(sql).toMatch(/s\.release\s*=\s*\$2/);
+    });
+
+    it('os dois ramos entram por CTE + UNION ALL — nunca por EXISTS correlacionado num OR (D6)', async () => {
+      // A forma correlacionada (`OR EXISTS (SELECT 1 FROM icd_synonyms s WHERE s.icd_uri =
+      // e.icd_uri ...)`) obriga avaliação linha a linha e joga fora o Bitmap Index Scan que o D6
+      // mediu. Esta asserção é sobre a FORMA porque é a forma que preserva o plano; o EXPLAIN
+      // real está em tests/e2e/t9-synonym-search.e2e.test.ts.
+      mockQuery.mockResolvedValueOnce(CURRENT_RELEASE_ROW);
+      await new IcdCatalogTerminology().search('TEA');
+
+      const mainCall = mockClientQuery.mock.calls.find((c) => /^\s*(SELECT|WITH)/i.test(c[0] as string))!;
+      const sql = mainCall[0] as string;
+      expect(sql).toMatch(/UNION ALL/);
+      expect(sql).not.toMatch(/EXISTS\s*\(/);
+    });
+  });
+
+  /**
+   * 🔧 F5-CORREÇÃO T7 — a mensagem do erro não nomeia o conceito. `reportError` loga
+   * `err.message` (e o `stack`, que a embute) JUNTO do `patientId`.
+   */
+  describe('T7 — o erro não carrega identidade de conceito para o log', () => {
+    it('TerminologyEntityNotFoundError não menciona a uri procurada, nem na message nem no stack', async () => {
+      mockQuery
+        .mockResolvedValueOnce(CURRENT_RELEASE_ROW)
+        .mockResolvedValueOnce({ rows: [] });
+      const uriSecreta = 'http://id.who.int/icd/release/11/2026-01/mms/SEGREDOCLINICO';
+
+      await expect(new IcdCatalogTerminology().ancestorsOf(uriSecreta)).rejects.toThrow(
+        expect.objectContaining({
+          name: 'TerminologyEntityNotFoundError',
+          message: 'Entidade não encontrada no catálogo de terminologia',
+        }),
+      );
+      await expect(new IcdCatalogTerminology().ancestorsOf(uriSecreta)).rejects.toThrow(
+        expect.objectContaining({ stack: expect.not.stringContaining('SEGREDOCLINICO') }),
+      );
+    });
+
+    it('o mesmo vale quando a entidade existe mas o capítulo dela não está no catálogo', async () => {
+      mockQuery
+        .mockResolvedValueOnce(CURRENT_RELEASE_ROW)
+        .mockResolvedValueOnce({ rows: [{ chapter: 'ZZ' }] })
+        .mockResolvedValueOnce({ rows: [] });
+      await expect(new IcdCatalogTerminology().ancestorsOf('uri://x/SEGREDOCLINICO')).rejects.toThrow(
+        expect.objectContaining({ message: expect.not.stringContaining('SEGREDOCLINICO') }),
+      );
+    });
+  });
+
+  /**
+   * 🔧 F5-CORREÇÃO T8 — um ROLLBACK que FALHA não pode substituir o erro original: quem chama
+   * decide o HTTP por `instanceof`, e o erro trocado vira 500 no lugar do código certo.
+   */
+  describe('T8 — ROLLBACK que falha não engole o erro original', () => {
+    it('o erro que sobe é o da QUERY, não o do ROLLBACK', async () => {
+      mockQuery.mockResolvedValueOnce(CURRENT_RELEASE_ROW);
+      const erroReal = new Error('erro REAL da consulta');
+      mockClientQuery.mockImplementationOnce(async () => ({ rows: [] })); // BEGIN
+      mockClientQuery.mockImplementationOnce(async () => ({ rows: [] })); // SET LOCAL
+      mockClientQuery.mockImplementationOnce(async () => {
+        throw erroReal;
+      }); // SELECT
+      mockClientQuery.mockImplementationOnce(async () => {
+        throw new Error('ROLLBACK também falhou (conexão derrubada)');
+      }); // ROLLBACK
+
+      await expect(new IcdCatalogTerminology().search('autismo')).rejects.toThrow(erroReal);
+      expect(mockRelease).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  /**
+   * D3 — a tradução de falha de infraestrutura tem de valer na consulta da ENTIDADE também, não
+   * só na do release corrente. (Estes dois casos eram cobertos pelos testes de `asOfRelease`,
+   * que saíram com o parâmetro no T3 — a garantia continua, o caminho para chegar nela mudou.)
+   */
+  describe('D3 — 42P01 na consulta da ENTIDADE (não só na do release) vira TerminologyUnavailableError', () => {
+    const pgError = () => Object.assign(new Error('relation "terminology.icd_entities" does not exist'), { code: '42P01' });
+
+    it('getByUri: release resolve, mas a consulta da entidade falha → erro tipado, nunca erro cru do driver', async () => {
+      mockQuery.mockResolvedValueOnce(CURRENT_RELEASE_ROW).mockRejectedValueOnce(pgError());
+      await expect(new IcdCatalogTerminology().getByUri('uri-x')).rejects.toBeInstanceOf(TerminologyUnavailableError);
+    });
+
+    it('ancestorsOf: idem — a 1ª consulta da entidade falha → erro tipado', async () => {
+      mockQuery.mockResolvedValueOnce(CURRENT_RELEASE_ROW).mockRejectedValueOnce(pgError());
+      await expect(new IcdCatalogTerminology().ancestorsOf('uri-x')).rejects.toBeInstanceOf(TerminologyUnavailableError);
+    });
+
+    it('erro genérico (não 42P01) na entidade também vira TerminologyUnavailableError — nunca vaza o driver', async () => {
+      mockQuery.mockResolvedValueOnce(CURRENT_RELEASE_ROW).mockRejectedValueOnce(new Error('ECONNRESET'));
+      await expect(new IcdCatalogTerminology().getByUri('uri-x')).rejects.toBeInstanceOf(TerminologyUnavailableError);
     });
   });
 });

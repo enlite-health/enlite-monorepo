@@ -307,4 +307,20 @@ describe('AdminPatientDiagnosesController (spec 016 F2)', () => {
       expect(res.status).toHaveBeenCalledWith(500);
     });
   });
+
+  /**
+   * 🔧 F5-CORREÇÃO T5 — `duplicate_race` é o 23505 do SEGUNDO índice único da migration 325,
+   * que antes escapava cru e virava HTTP 500. Mesma condição de `already_active` vista do lado
+   * do banco: mesmo 409, mesmo código — o cliente não tem por que distinguir quem chegou antes.
+   */
+  it('T5 — 409 com code DIAGNOSIS_ALREADY_ACTIVE quando o outcome é duplicate_race, NUNCA 500', async () => {
+    const service = { recordDiagnosis: jest.fn().mockResolvedValue({ outcome: 'duplicate_race' }) };
+    const controller = new AdminPatientDiagnosesController(service as unknown as PatientDiagnosisService);
+    const res = mockRes();
+    await controller.create(mockReq({ params: { id: PATIENT_ID }, body: { conceptUri: 'http://x' } }), res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.status).not.toHaveBeenCalledWith(500);
+    expect(res.json.mock.calls[0][0]).toMatchObject({ success: false, code: 'DIAGNOSIS_ALREADY_ACTIVE' });
+  });
 });
