@@ -23,7 +23,13 @@ export function AdminLayout() {
         onMenuClick={handleLogout}
       />
 
-      <main className="flex-1 ml-[200px] overflow-y-auto">
+      {/* `relative` (05/09): o <main> é o ÚNICO rolável da tela. Sem ele, um filho `position:absolute`
+          sem ancestral posicionado (ex.: <span class="sr-only"> dentro de um <th>, Tailwind `sr-only`
+          é absoluto) tem o <body> como containing block, escapa do clip do main e estica o DOCUMENTO
+          — medido na ficha do paciente, aba "Servicio Contratado": html.scrollHeight 958 num viewport
+          de 700. Resultado: a operadora rola o main até o fim e depois a página inteira rola de novo
+          ("scroll duplo"). Com `relative`, o main vira o containing block e clipa o que escapava. */}
+      <main className="relative flex-1 ml-[200px] overflow-y-auto">
         <div key={location.pathname} className="container mx-auto p-6 page-enter">
           <Outlet />
         </div>
