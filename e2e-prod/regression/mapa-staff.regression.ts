@@ -9,8 +9,9 @@
  *     diz "mostrando los primeros N de M"; quando NÃO vem, a frase some. As duas
  *     metades são exercitadas no mesmo run — se a base crescer a ponto de todo raio
  *     truncar, o teste FALHA dizendo isso, em vez de silenciosamente provar metade.
- *  3. "Centrar en paciente" recentra de fato: o corpo da requisição seguinte carrega a
- *     coordenada DO PACIENTE ESCOLHIDO, e a lista de prestadores muda.
+ *  3. O PORTÃO da âncora: abrir /admin/mapa não lê NINGUÉM (zero POST); escolher o
+ *     paciente-âncora é o que abre a tela, e o corpo da primeira requisição já carrega
+ *     a coordenada DO PACIENTE ESCOLHIDO, com o raio nascendo em 5 km.
  *  4. A trilha D225 registra o ESCOPO da leitura em massa sem identificar ninguém:
  *     `geohash5` e `totalMatching` presentes; coordenada crua, UUID e nome AUSENTES.
  *
@@ -19,8 +20,9 @@
  * quem: as asserções são sobre CONTAGENS, sobre o corpo da requisição e sobre o
  * `data-point-id` das linhas — nunca sobre nome, endereço ou status de alguém.
  * O paciente usado no picker é criado por este teste, marcado `is_test`, endereçado
- * num logradouro PÚBLICO e purgado no fim; ele é escolhido pelo `value` do `<option>`
- * (o id do endereço), então nem o nome de um vizinho de lista é comparado.
+ * num logradouro PÚBLICO e purgado no fim; ele é escolhido digitando o PRÓPRIO nome
+ * sintético na busca do seletor, o que reduz a lista a uma linha — nem o nome de um
+ * vizinho de lista chega a ser comparado.
  *
  * ⚠️ LIMITE DECLARADO, herdado da suíte: `screenshot`/`video` são `on-failure`. Num
  * run VERMELHO desta tela, o artefato pode capturar nomes reais da lista lateral.
@@ -59,6 +61,8 @@ const ENDERECO_PUBLICO = 'Avenida de Mayo 1370, Ciudad Autonoma de Buenos Aires,
 const CENTRO_PADRAO = { lat: -34.6037, lng: -58.3816 };
 /** Raios oferecidos pela tela (`RADIUS_OPTIONS_KM`) que este spec percorre. */
 const RAIOS = [5, 25, 50] as const;
+/** O raio com que a tela NASCE. Reselecioná-lo não gera request (React bail-out). */
+const DEFAULT_RADIUS_KM = 5;
 
 const mapa: {
   patientId?: string;
@@ -75,15 +79,65 @@ interface MapResponse {
 }
 
 /** Abre `/admin/mapa` com a sessão admin e espera a PRIMEIRA resposta do mapa de prestadores. */
+/**
+ * Escolhe a ÂNCORA no seletor com busca. NÃO é um `<select>` nativo: é o
+ * `SearchableSelect` (combobox), então `selectOption` não serve — abrir, filtrar
+ * pelo nome e clicar no `role="option"` é o único caminho.
+ *
+ * O filtro é digitado com o nome SINTÉTICO criado por este spec: além de achar
+ * o alvo, ele encurta a lista para uma linha, então o teste não passa os olhos
+ * pelos nomes de pacientes reais — é mais estrito que a escolha por `value` que
+ * havia aqui antes, não menos.
+ */
+async function ancorarNoPacienteSintetico(page: Page): Promise<void> {
+  const picker = page.getByTestId('map-center-patient');
+  await picker.getByRole('button').click();
+  await picker.getByRole('textbox').fill(NOME_SINTETICO);
+  const opcao = picker.getByRole('option').filter({ hasText: NOME_SINTETICO });
+  await expect(
+    opcao,
+    'o paciente sintético aparece no seletor (só entra quem tem coordenada completa)',
+  ).toHaveCount(1);
+  await opcao.click();
+}
+
+/**
+ * A aba de Pacientes tem portão próprio, e a âncora dela é um PRESTADOR — não
+ * existe prestador sintético em produção, então a escolha é pelo ÍNDICE: a
+ * primeira opção da lista, sem ler, comparar nem afirmar o nome de ninguém.
+ * O que este spec mede depois disso são contagens e o corte dos 500, que não
+ * dependem de QUEM é a âncora.
+ */
+async function ancorarNoPrimeiroPrestador(page: Page): Promise<void> {
+  const picker = page.getByTestId('map-center-worker');
+  await picker.getByRole('button').click();
+  // [0] é o placeholder "Centrar en un prestador…"; [1] é a primeira pessoa.
+  const primeiro = picker.getByRole('option').nth(1);
+  await expect(primeiro, 'há ao menos um prestador com coordenada para ancorar').toBeVisible({ timeout: 20_000 });
+  await primeiro.click();
+}
+
+/**
+ * Abre o mapa e passa pelo PORTÃO. Sem âncora a tela não busca nada — o
+ * `waitForResponse` de antes ficaria pendurado até o timeout, porque o `goto`
+ * sozinho não gera mais nenhum POST.
+ */
 async function abrirMapa(
   browser: Browser,
 ): Promise<{ page: Page; primeira: MapResponse; fechar: () => Promise<void> }> {
   const ctx = await browser.newContext({ storageState: ADMIN_AUTH_FILE });
   const page = await ctx.newPage();
+  await page.goto('/admin/mapa');
+  // PORTÃO FECHADO: nem lista, nem contagem, nem mapa — e nenhuma request.
+  await expect(page.getByTestId('map-anchor-empty')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('map-total')).toHaveCount(0);
+
+  // O seletor só vai ao servidor quando tocado; escolher a âncora é o que
+  // dispara a PRIMEIRA leitura de prestadores.
   const espera = page.waitForResponse(
     (r) => r.request().method() === 'POST' && r.url().includes('/api/admin/workers/map'),
   );
-  await page.goto('/admin/mapa');
+  await ancorarNoPacienteSintetico(page);
   const primeira = (await (await espera).json()) as MapResponse;
   await expect(page.getByTestId('map-total')).toBeVisible({ timeout: 30_000 });
   return { page, primeira, fechar: async () => { await ctx.close(); } };
@@ -217,15 +271,15 @@ test.describe.serial('Spec 009 · Fase 4 — mapa do staff', () => {
       ).toBe(primeira.total);
 
       // ── o raio filtra de verdade (aba prestadores) ────────────────────────────
-      const em5 = await respostaDoMapa(page, 'workers', () =>
-        page.getByTestId('map-radius').selectOption('5'),
-      );
-      expect(await totalNaTela(page), 'a tela acompanha a mudança de raio').toBe(em5.total);
-
+      // A tela NASCE em 5 km, então `primeira` já É a medida de 5 km. Reselecionar
+      // '5' aqui não mudaria estado nenhum: o React sairia sem re-renderizar, o
+      // effect não rodaria, nenhum POST sairia e o `waitForResponse` penduraria
+      // até o timeout. O primeiro raio exercitado tem de ser um DIFERENTE.
+      const em5 = primeira;
       const em25 = await respostaDoMapa(page, 'workers', () =>
         page.getByTestId('map-radius').selectOption('25'),
       );
-      expect(await totalNaTela(page), 'a tela acompanha a volta para 25 km').toBe(em25.total);
+      expect(await totalNaTela(page), 'a tela acompanha a mudança para 25 km').toBe(em25.total);
 
       expect(
         em25.total,
@@ -238,14 +292,15 @@ test.describe.serial('Spec 009 · Fase 4 — mapa do staff', () => {
       // frágil: o que trunca hoje pode não truncar amanhã, e o teste passaria
       // provando só metade sem avisar.
       const observados: Array<{ km: number; truncated: boolean }> = [];
-      await respostaDoMapa(page, 'patients', () => page.getByTestId('map-tab-patients').click());
 
-      for (const km of RAIOS) {
-        const resp = await respostaDoMapa(page, 'patients', () =>
-          page.getByTestId('map-radius').selectOption(String(km)),
-        );
+      // Trocar de aba mostra o portão da aba de pacientes, não uma lista: é
+      // ancorar num prestador que dispara a primeira leitura — já em 5 km.
+      await page.getByTestId('map-tab-patients').click();
+      await expect(page.getByTestId('map-anchor-empty')).toBeVisible({ timeout: 20_000 });
+      const emPacientes5 = await respostaDoMapa(page, 'patients', () => ancorarNoPrimeiroPrestador(page));
+
+      const conferirFrase = async (km: number, resp: MapResponse): Promise<void> => {
         observados.push({ km, truncated: resp.truncated });
-
         const frase = page.getByTestId('map-truncated');
         if (resp.truncated) {
           await expect(
@@ -266,6 +321,13 @@ test.describe.serial('Spec 009 · Fase 4 — mapa do staff', () => {
           ).toBeHidden();
           expect(resp.data.length, 'sem truncamento, a lista é o filtro inteiro').toBe(resp.total);
         }
+      };
+
+      await conferirFrase(DEFAULT_RADIUS_KM, emPacientes5);
+      for (const km of RAIOS.filter((k) => k !== DEFAULT_RADIUS_KM)) {
+        await conferirFrase(km, await respostaDoMapa(page, 'patients', () =>
+          page.getByTestId('map-radius').selectOption(String(km)),
+        ));
       }
 
       // O controle que impede este teste de provar metade em silêncio.
@@ -285,49 +347,60 @@ test.describe.serial('Spec 009 · Fase 4 — mapa do staff', () => {
     }
   });
 
-  test('[@route:POST /api/admin/patients/map @depth:happy] 4.2 — "Centrar en paciente" recentra no domicílio escolhido e a lista muda', async ({ browser }) => {
-    const { page, fechar } = await abrirMapa(browser);
+  test('[@route:POST /api/admin/patients/map @depth:happy] 4.2 — o PORTÃO: nada é lido antes da âncora, e a 1ª leitura já pede pelo domicílio dela', async ({ browser }) => {
+    const ctx = await browser.newContext({ storageState: ADMIN_AUTH_FILE });
+    const page = await ctx.newPage();
     try {
-      // Raio curto: com 5 km, mover o centro ~700 m muda o conjunto de verdade.
-      await respostaDoMapa(page, 'workers', () => page.getByTestId('map-radius').selectOption('5'));
-      const antes = await idsDaLista(page);
-      expect(antes.length, 'a lista lateral tem linhas antes de recentrar').toBeGreaterThan(0);
+      const posts: Array<{ url: string; corpo: Consulta['pedido'] }> = [];
+      page.on('request', (req) => {
+        if (req.method() === 'POST' && /\/api\/admin\/(workers|patients)\/map$/.test(req.url())) {
+          posts.push({ url: req.url(), corpo: (req.postDataJSON() ?? {}) as Consulta['pedido'] });
+        }
+      });
 
-      // O picker só busca depois de tocado (`onFocus` → `pickerTouched`) — é por isso
-      // que abrir a página custa UMA request, e não três.
-      await respostaDoMapa(page, 'patients', () => page.getByTestId('map-center-patient').focus());
+      await page.goto('/admin/mapa');
+      await expect(page.getByTestId('map-anchor-empty')).toBeVisible({ timeout: 30_000 });
+      // A PROVA do portão: abrir a tela não lê NINGUÉM. Antes ela nascia varrendo
+      // 25 km em volta do Obelisco sem que ninguém tivesse pedido nada.
+      expect(posts, 'PORTÃO: abrir /admin/mapa não dispara nenhuma leitura de mapa').toEqual([]);
+      await expect(page.getByTestId('map-list')).toHaveCount(0);
+      await expect(page.getByTestId('map-filters-block')).toHaveCount(0);
 
-      const opcao = page.locator(`[data-testid="map-center-patient"] option[value="${mapa.addressId}"]`);
-      await expect(
-        opcao,
-        'o paciente sintético aparece no picker (só entra quem tem coordenada completa)',
-      ).toHaveCount(1);
-
-      // Escolhe pelo VALUE (id do endereço) — nunca pelo nome de quem quer que seja.
-      const depois4_2 = await consultarMapa(page, 'workers', () =>
-        page.getByTestId('map-center-patient').selectOption(mapa.addressId!),
-      );
-
-      // A PROVA do recentramento está no CORPO da requisição seguinte: a tela passou a
-      // pedir prestadores em volta do domicílio escolhido.
+      // Tocar o seletor lê os candidatos a âncora — e SÓ isso.
+      await respostaDoMapa(page, 'patients', () => page.getByTestId('map-center-patient').click());
       expect(
-        depois4_2.pedido.center,
-        'RECENTROU — a consulta seguinte pede pelo domicílio do paciente escolhido',
+        posts.filter((p) => p.url.endsWith('/api/admin/workers/map')),
+        'tocar o seletor não lê prestadores: a lista ainda não existe',
+      ).toEqual([]);
+
+      // Escolher a âncora é o que abre a tela, e a 1ª leitura já vai pelo domicílio dela.
+      const primeira = await consultarMapa(page, 'workers', () => ancorarNoPacienteSintetico(page));
+      expect(
+        primeira.pedido.center,
+        'a PRIMEIRA leitura de prestadores já pede pelo domicílio do paciente-âncora',
       ).toEqual({ lat: mapa.lat, lng: mapa.lng });
       expect(
-        depois4_2.pedido.center,
-        'e portanto NÃO é mais o centro padrão do país com que a página nasceu',
+        primeira.pedido.center,
+        'e portanto nunca foi o centro padrão do país',
       ).not.toEqual(CENTRO_PADRAO);
-      expect(depois4_2.pedido.radius_km, 'o raio escolhido pelo staff é preservado').toBe(5);
+      expect(primeira.pedido.radius_km, 'o raio nasce em 5 km').toBe(5);
 
-      const depois = await idsDaLista(page);
+      const antes = await idsDaLista(page);
+      // Mover o centro no mapa muda o conjunto — e a âncora FICA como referência.
+      const depois4_2 = await consultarMapa(page, 'workers', () =>
+        page.getByTestId('map-radius').selectOption('25'),
+      );
+      expect(depois4_2.pedido.center, 'abrir o raio não move o centro').toEqual({ lat: mapa.lat, lng: mapa.lng });
       expect(
-        depois,
-        'A LISTA MUDA: recentrar em outro domicílio traz outro conjunto de prestadores ' +
-          '(ordenado por distância a partir do novo centro)',
+        await idsDaLista(page),
+        'A LISTA MUDA: 25 km alcança prestadores que 5 km não alcançava',
       ).not.toEqual(antes);
+      await expect(
+        page.getByTestId('map-center-label'),
+        'a âncora continua nomeada na tela depois de mexer no raio',
+      ).toContainText(NOME_SINTETICO);
     } finally {
-      await fechar();
+      await ctx.close();
     }
   });
 
@@ -383,11 +456,16 @@ test.describe.serial('Spec 009 · Fase 4 — mapa do staff', () => {
           'porque NÃO HÁ IDENTIFICADOR na mesma linha',
       ).not.toContain(proibido);
     }
+    // ⚠️ A régua é a coordenada QUE ESTA LEITURA ENVIOU — o domicílio do paciente
+    // sintético, que com o portão da âncora é sempre o centro. Procurar
+    // `CENTRO_PADRAO` aqui seria um controle MORTO: a tela não manda mais esse
+    // ponto, então a asserção passaria mesmo que o backend voltasse a logar a
+    // coordenada crua. Controle que não pode falhar não é controle.
     expect(
       serializado,
       'a coordenada CRUA do centro não aparece — o geohash-5 existe justamente para substituí-la',
-    ).not.toContain(String(CENTRO_PADRAO.lat));
-    expect(serializado, 'nem a longitude crua').not.toContain(String(CENTRO_PADRAO.lng));
+    ).not.toContain(String(mapa.lat));
+    expect(serializado, 'nem a longitude crua').not.toContain(String(mapa.lng));
     expect(
       serializado,
       'e nenhum UUID — nem de paciente, nem de prestador, nem de endereço',

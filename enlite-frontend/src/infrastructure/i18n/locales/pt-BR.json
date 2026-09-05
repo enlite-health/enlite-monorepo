@@ -3430,7 +3430,9 @@
       "steps": {
         "center": "De onde",
         "filters": "Filtros",
-        "results": "Resultados"
+        "results": "Resultados",
+        "anchorPatient": "Escolha o paciente",
+        "anchorWorker": "Escolha o prestador"
       },
       "centerHint": "Ou clique no mapa para mover o centro do raio.",
       "legend": "Legenda:",
@@ -3439,7 +3441,8 @@
         "initial": "ponto inicial",
         "marked": "ponto marcado no mapa",
         "backToPatient": "Voltar para {{name}}",
-        "backToInitial": "Voltar ao ponto inicial"
+        "backToInitial": "Voltar ao ponto inicial",
+        "backToAnchor": "Voltar para {{name}}"
       },
       "searching": "Buscando…",
       "centerHere": "Centrar aqui",
@@ -3497,6 +3500,29 @@
       "unavailable": "O mapa não está disponível (sem chave do Google Maps). A lista continua funcionando.",
       "status": {
         "unknown": "Sem estado"
+      },
+      "centerOnWorker": {
+        "label": "Centrar em prestador",
+        "placeholder": "Centrar em um prestador…",
+        "search": "Buscar prestador…"
+      },
+      "anchorEmpty": {
+        "workersTitle": "Escolha um paciente para começar",
+        "workersHint": "O mapa mostra os prestadores em volta do paciente que você escolher. Os filtros e a lista aparecem depois.",
+        "patientsTitle": "Escolha um prestador para começar",
+        "patientsHint": "O mapa mostra os pacientes em volta do prestador que você escolher. Os filtros e a lista aparecem depois."
+      },
+      "anchorError": "Não foi possível carregar a lista. Tente de novo em alguns segundos.",
+      "anchorLoading": "Buscando…",
+      "anchorTruncated": "Há mais do que cabe nesta lista: digite o nome para filtrar.",
+      "corridor": {
+        "title": "{{count}} linha(s) servem os dois pontos",
+        "loading": "Buscando linhas…",
+        "error": "Não foi possível calcular o trajeto.",
+        "noDirect": "Nenhuma linha serve os dois pontos: exigiria baldeação (e paga-se de novo).",
+        "noCoverage": "Sem dados de paradas nesta zona — não dá para afirmar o trajeto.",
+        "walk": "em linha reta: ~{{count}} quadras",
+        "legs": "{{origin}} quadras → {{destination}} quadras"
       }
     },
     "templateCatalog": {

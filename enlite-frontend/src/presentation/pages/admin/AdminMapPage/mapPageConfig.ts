@@ -5,6 +5,10 @@
  */
 import type { TFunction } from 'i18next';
 import type { MapCountry, PatientMapPoint, WorkerMapPoint } from '@infrastructure/http/AdminMapApiService';
+import type { SelectOption } from '@presentation/components/atoms/Select';
+import { getCountryOptions } from '../patientsData';
+import type { CorridorLabels } from './CorridorPanel';
+import type { ResultRow } from './mapResults';
 import { WORKER_PROFESSIONS } from '@domain/entities/Worker';
 
 /**
@@ -23,9 +27,31 @@ export function sameCenter(a: { lat: number; lng: number }, b: { lat: number; ln
   return a.lat === b.lat && a.lng === b.lng;
 }
 export const DEFAULT_CENTER = DEFAULT_CENTER_BY_COUNTRY[DEFAULT_COUNTRY];
-/** O raio nasce em 25 km (FATO-17 da ata de 22/07). */
-export const DEFAULT_RADIUS_KM = 25;
+/**
+ * O raio nasce em 5 km. Era 25 km (FATO-17 da ata de 22/07) — a proposta do
+ * Gabriel na tela; mas quem OPERA a tela é o Marcel, e na demonstração de
+ * 02/09 ele reduziu para 5 km na hora ("Ponele 5 km para que menos personas",
+ * ~1894). Vale o valor que o operador escolheu, não o que foi proposto: 25 km
+ * em CABA devolve a operação inteira, e uma lista que não separa ninguém não
+ * é um filtro. 25 km continua a um clique no seletor.
+ */
+export const DEFAULT_RADIUS_KM = 5;
 export const RADIUS_OPTIONS_KM = [5, 10, 20, 25, 50] as const;
+
+/**
+ * Raio do seletor da ÂNCORA (passo 1), FIXO e independente do raio da tela.
+ *
+ * O escopo é obrigatório (lex C3), então o seletor precisa de um: usa o centro
+ * padrão do país e o maior raio da lista. Amarrá-lo ao raio ESCOLHIDO seria
+ * circular — com 5 km o operador teria de achar o paciente dentro de 5 km do
+ * Obelisco para só então poder centrar nele. 50 km a partir do Obelisco cobre
+ * a AMBA inteira, que é onde a operação está (FATO-17).
+ *
+ * ⚠️ TETO CONHECIDO: quem mora além de 50 km do centro do país, ou depois do
+ * 500º ponto, não aparece no seletor. Enquanto a operação for AMBA isso não
+ * morde; o conserto de verdade é busca por nome no servidor, e está na lista.
+ */
+export const ANCHOR_PICKER_RADIUS_KM = 50;
 
 export const WORKER_STATUS_COLOR: Record<string, string> = {
   REGISTERED: '#16a34a',
@@ -118,4 +144,115 @@ export function legendEntries(t: TFunction, kind: 'workers' | 'patients'): Array
     byColor.set(color, [...(byColor.get(color) ?? []), label(t, status)]);
   }
   return [...byColor].map(([color, labels]) => ({ color, label: labels.join(' / ') }));
+}
+
+/**
+ * Todo o texto do passo 1, por aba. Fica aqui, e não na página, porque é DADO:
+ * a aba de prestadores ancora num paciente, a de pacientes num prestador, e a
+ * única diferença entre os dois casos é a string (mais o `data-testid`, que é
+ * o que o e2e usa para saber em qual dos dois está).
+ */
+export function anchorTextsFor(t: TFunction, kind: 'workers' | 'patients'): {
+  labels: { loading: string; error: string; truncated: string };
+  ui: { id: string; step: string; label: string; placeholder: string; searchPlaceholder: string; emptyTitle: string; emptyHint: string };
+} {
+  const labels = {
+    loading: t('admin.map.anchorLoading', 'Buscando…'),
+    error: t('admin.map.anchorError', 'No se pudo cargar la lista. Reintentá en unos segundos.'),
+    truncated: t('admin.map.anchorTruncated', 'Hay más de los que entran en esta lista: escribí el nombre para filtrar.'),
+  };
+  const ui = kind === 'workers'
+    ? {
+      id: 'map-center-patient',
+      step: t('admin.map.steps.anchorPatient', 'Elegí el paciente'),
+      label: t('admin.map.centerOnPatient.label', 'Centrar en paciente'),
+      placeholder: t('admin.map.centerOnPatient.placeholder', 'Centrar en un paciente…'),
+      searchPlaceholder: t('admin.map.centerOnPatient.search', 'Buscar paciente…'),
+      emptyTitle: t('admin.map.anchorEmpty.workersTitle', 'Elegí un paciente para empezar'),
+      emptyHint: t('admin.map.anchorEmpty.workersHint', 'El mapa muestra los prestadores alrededor del paciente que elijas. Los filtros y la lista aparecen después.'),
+    }
+    : {
+      id: 'map-center-worker',
+      step: t('admin.map.steps.anchorWorker', 'Elegí el prestador'),
+      label: t('admin.map.centerOnWorker.label', 'Centrar en prestador'),
+      placeholder: t('admin.map.centerOnWorker.placeholder', 'Centrar en un prestador…'),
+      searchPlaceholder: t('admin.map.centerOnWorker.search', 'Buscar prestador…'),
+      emptyTitle: t('admin.map.anchorEmpty.patientsTitle', 'Elegí un prestador para empezar'),
+      emptyHint: t('admin.map.anchorEmpty.patientsHint', 'El mapa muestra los pacientes alrededor del prestador que elijas. Los filtros y la lista aparecen después.'),
+    };
+  return { labels, ui };
+}
+
+/**
+ * As opções dos seletores do passo 2. Ficam aqui, e não na página, porque são
+ * DADO — e porque a página não cabia nas 400 linhas com elas dentro.
+ */
+export function filterOptionsFor(t: TFunction): {
+  radiusOptions: SelectOption[];
+  countryOptions: SelectOption[];
+  docsOptions: SelectOption[];
+  professionOptions: SelectOption[];
+  patientStatusOptions: SelectOption[];
+} {
+  return {
+    radiusOptions: RADIUS_OPTIONS_KM.map((km) => ({ value: String(km), label: `${km} km` })),
+    countryOptions: getCountryOptions(t),
+    docsOptions: [
+      { value: 'all', label: t('admin.map.docs.all', 'Todos') },
+      { value: 'complete', label: t('admin.map.docs.complete', 'Documentación completa') },
+      { value: 'incomplete', label: t('admin.map.docs.incomplete', 'Registro incompleto') },
+    ],
+    professionOptions: [
+      { value: '', label: t('admin.map.profession.all', 'Todas las profesiones') },
+      ...PROFESSIONS.map((p) => ({ value: p, label: professionLabel(t, p) })),
+    ],
+    patientStatusOptions: [
+      { value: '', label: t('admin.map.patientStatus.all', 'Todos los estados') },
+      ...PATIENT_STATUSES.map((s) => ({ value: s, label: patientStatusLabel(t, s) })),
+    ],
+  };
+}
+
+/** Os textos do painel. Fora da página porque são DADO, não orquestração. */
+export function corridorLabelsFor(t: TFunction): CorridorLabels {
+  return {
+    title: (n) => t('admin.map.corridor.title', { defaultValue: '{{count}} línea(s) sirven ambos puntos', count: n }),
+    loading: t('admin.map.corridor.loading', 'Buscando líneas…'),
+    error: t('admin.map.corridor.error', 'No se pudo calcular el recorrido.'),
+    noDirect: t('admin.map.corridor.noDirect', 'Ninguna línea sirve los dos puntos: habría que combinar (y se paga de nuevo).'),
+    noCoverage: t('admin.map.corridor.noCoverage', 'Sin datos de paradas en esta zona — no podemos afirmar el recorrido.'),
+    // "en línea recta", NUNCA "a pie": o número vem de um ST_Distance entre os
+    // dois pontos, e caminhada real numa grade em diagonal chega a ~40% a mais.
+    // Chamar isso de "a pé" com um ícone de pegadas seria prometer precisão que
+    // o cálculo não tem — e a tela inteira existe para não fazer isso.
+    walk: (b) => t('admin.map.corridor.walk', { defaultValue: 'en línea recta: ~{{count}} cuadras', count: b }),
+    legs: (o, d) => t('admin.map.corridor.legs', { defaultValue: '{{origin}} cuadras → {{destination}} cuadras', origin: o, destination: d }),
+  };
+}
+
+/**
+ * Monta as linhas que a lista E o mapa consomem — o MESMO array, para os dois
+ * não terem como discordar. É derivação de dado, não orquestração, por isso
+ * mora aqui e não na página.
+ */
+export function buildResultRows(
+  t: TFunction,
+  kind: 'workers' | 'patients',
+  workers: readonly WorkerMapPoint[],
+  patients: readonly PatientMapPoint[],
+): ResultRow[] {
+  if (kind === 'workers') {
+    return workers.map((p) => ({
+      id: p.id, lat: p.lat, lng: p.lng, title: p.name, details: workerDetails(t, p),
+      distance: distanceLabel(p.distanceKm) || null, tooltip: workerPointTitle(t, p),
+      color: WORKER_STATUS_COLOR[p.status] ?? '#6b7280', href: `/admin/workers/${p.id}`,
+    }));
+  }
+  // Um ponto por ENDEREÇO: o id da linha, do pino e da seleção é o mesmo.
+  return patients.map((p) => ({
+    id: p.addressId ?? p.id, patientId: p.id, lat: p.lat, lng: p.lng, title: p.name,
+    details: patientDetails(t, p), distance: distanceLabel(p.distanceKm) || null,
+    tooltip: patientPointTitle(t, p),
+    color: PATIENT_STATUS_COLOR[p.status] ?? '#6b7280', href: `/admin/patients/${p.id}`,
+  }));
 }

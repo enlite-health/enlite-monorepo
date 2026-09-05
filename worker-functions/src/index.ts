@@ -51,6 +51,7 @@ import { startServer } from './bootstrap/startServer';
 import { createAnalyticsRoutes, createRecruitmentRoutes, createWorkerApplicationsRoutes, createAdminVacanciesRoutes, createWorkerEncuadreRoutes, InterviewSlotsController, VacancySocialLinksController } from '@modules/matching';
 import { WorkerContextController } from '@modules/matching/interfaces/controllers/WorkerContextController';
 import { createWorkerContextRoutes } from '@modules/matching/interfaces/routes/workerContextRoutes';
+import { createTransitCorridorRoutes } from '@modules/matching/interfaces/routes/transitCorridorRoutes';
 import { ReminderScheduler } from '@modules/notification/infrastructure/ReminderScheduler';
 import { VacancyMeetLinksController } from '@modules/matching';
 import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
@@ -437,6 +438,10 @@ app.use('/api/admin', createAdminVacanciesRoutes(
 ));
 
 // ========== Mensagem por etapa (DEC-12) ==========
+// Corredor logístico do /admin/mapa: que linha de transporte serve o prestador
+// E o paciente. Cálculo INTEIRO no nosso perímetro — nenhuma coordenada de
+// domicílio sai para terceiro (parecer lex 05/09/2026).
+app.use('/api/admin', createTransitCorridorRoutes(staffOnly));
 app.use('/api/admin', createFunnelStageMessagesRoutes(new FunnelStageMessagesController(), authMiddleware));
 app.use('/api/admin', createTemplateCatalogRoutes(new TemplateCatalogController(), authMiddleware));
 app.use('/api/admin', createTemplateDraftsRoutes(new TemplateDraftsController(), authMiddleware));

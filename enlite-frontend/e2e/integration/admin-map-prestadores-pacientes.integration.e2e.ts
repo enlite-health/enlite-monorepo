@@ -7,16 +7,18 @@
  * sem ele o placeholder assume e a LISTA continua sendo a prova.
  *
  * O que prova (REQ-04 · DEC-14 · lex 29/08 C1/C2/C3/C4/C7):
- *   - /admin/mapa nasce em CABA com 25 km; a lista mostra os prestadores semeados
- *     dentro do raio e NÃO o que está fora; quem não tem coordenada aparece como
- *     "sin ubicación" e entra na contagem própria;
+ *   - /admin/mapa abre com o PORTÃO FECHADO: sem âncora escolhida não há lista,
+ *     não há filtros e NENHUM POST sai — a tela não é mais uma varredura;
+ *   - escolher o paciente-âncora abre a tela em 5 km e centra nele; a lista
+ *     mostra os prestadores dentro do raio e NÃO o que está fora; quem não tem
+ *     coordenada aparece como "sin ubicación" e entra na contagem própria;
  *   - "Documentación: Registro incompleto" filtra pelo status INCOMPLETE_REGISTER;
- *   - "Centrar en paciente" + 5 km recorta pela distância REAL (o banco confirma
- *     com ST_DWithin), e o total da tela bate com o SQL;
+ *   - o raio recorta pela distância REAL (o banco confirma com ST_DWithin), e o
+ *     total da tela bate com o SQL;
  *   - a aba Pacientes lista o paciente pelo endereço, sem diagnóstico no DOM, e
  *     o paciente BR não aparece com país AR (C4); trocar para BR leva o mapa a
  *     São Paulo e o paciente BR (em coordenada REAL de SP) aparece — na lista
- *     e no seletor "centrar en paciente";
+ *     e no seletor da âncora;
  *   - a coordenada do centro vai no CORPO do POST, nunca na URL (C2);
  *   - nenhuma request ao Google leva geocode/place/nome (C7);
  *   - a API, com token real: sem escopo → 400, filtro clínico → 400 (strict),
@@ -47,6 +49,9 @@ const AREA_LA_PLATA = { lat: -34.9214, lng: -57.9544 };
 const AREA_CORDOBA = { lat: -31.4201, lng: -64.1888 };
 // Paciente BR num ponto REAL de São Paulo (MASP, Av. Paulista) — a ~1.500 km do Obelisco.
 const PATIENT_BR_AT = { lat: -23.5614, lng: -46.6559 };
+// Prestador BR a ~700 m do paciente de SP: é a ÂNCORA da aba Pacientes com país BR.
+// Sem ele o portão da aba não abre em BR e o teste do C4 não teria como rodar.
+const WORKER_BR_AT = { lat: -23.5558, lng: -46.6596 };
 const API = 'http://localhost:8080';
 
 function runSQL(sql: string): string {
@@ -96,11 +101,12 @@ test.describe('Mapa de prestadores e pacientes (REQ-04 · DEC-14) @integration',
   test.describe.configure({ mode: 'serial' });
   test.setTimeout(240_000);
 
-  let workerA = ''; let workerB = ''; let workerC = ''; let workerD = ''; let workerE = '';
+  let workerA = ''; let workerB = ''; let workerC = ''; let workerD = ''; let workerE = ''; let workerBr = '';
   let patientId = ''; let patientAddressId = ''; let patientBrId = ''; let patientBrAddressId = '';
   const nameA = `Req04A${TS}`; const nameB = `Req04B${TS}`; const nameC = `Req04C${TS}`; const nameD = `Req04D${TS}`; const nameE = `Req04E${TS}`;
   const patientName = `Req04Pac${TS}`;
   const patientBrName = `Req04Bra${TS}`;
+  const nameBr = `Req04Wbr${TS}`;
 
   test.beforeAll(() => {
     workerA = insertTestWorker({ firstName: nameA, lastName: 'Mapa', occupation: 'AT', status: 'REGISTERED', ...WORKER_A });
@@ -121,17 +127,19 @@ test.describe('Mapa de prestadores e pacientes (REQ-04 · DEC-14) @integration',
     patientBrId = br.patientId;
     patientBrAddressId = br.addressId as string;
     runSQL(`UPDATE patients SET country = 'BR' WHERE id = '${patientBrId}'`);
+    workerBr = insertTestWorker({ firstName: nameBr, lastName: 'Mapa', occupation: 'AT', status: 'REGISTERED', ...WORKER_BR_AT });
+    runSQL(`UPDATE workers SET country = 'BR', profession = 'AT' WHERE id = '${workerBr}'`);
     runSQL(`UPDATE patient_addresses SET city = 'São Paulo', state = 'SP', address_formatted = 'Av. Paulista 1578, São Paulo, BR', address_raw = 'Av. Paulista 1578' WHERE id = '${patientBrAddressId}'`);
   });
 
   test.afterAll(() => {
-    for (const id of [workerA, workerB, workerC, workerD, workerE]) cleanupTestWorker(id);
+    for (const id of [workerA, workerB, workerC, workerD, workerE, workerBr]) cleanupTestWorker(id);
     cleanupTestPatient(patientId);
     cleanupTestPatient(patientBrId);
     runSQL(`DELETE FROM users WHERE email = '${STAFF_EMAIL}'`);
   });
 
-  test('prestadores: raio padrão, "registro incompleto", centrar no paciente + 5 km, contagem bate com o PostGIS', async ({ page }, testInfo) => {
+  test('prestadores: portão fechado sem âncora, depois 5 km em volta do paciente, "registro incompleto" e a contagem que bate com o PostGIS', async ({ page }, testInfo) => {
     const googleRequests: string[] = [];
     const mapPosts: Array<{ url: string; body: string }> = [];
     page.on('request', (req) => {
@@ -143,16 +151,41 @@ test.describe('Mapa de prestadores e pacientes (REQ-04 · DEC-14) @integration',
     await loginAsRealStaff(page);
     await page.goto('/admin/mapa');
 
+    // ── PORTÃO FECHADO: nada de lista, nada de filtro, e ZERO request ────────
+    await expect(page.getByTestId('map-anchor-empty')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('map-list')).toHaveCount(0);
+    await expect(page.getByTestId('map-counts')).toHaveCount(0);
+    await expect(page.getByTestId('map-filters-block')).toHaveCount(0);
+    await expect(page.getByTestId('points-map')).toHaveCount(0);
+    // a prova mais dura do portão: a tela não chamou o backend nenhuma vez
+    expect(mapPosts).toHaveLength(0);
+    await page.screenshot({ path: testInfo.outputPath('00-mapa-portao-fechado.png'), fullPage: false });
+
+    // ── Escolher a âncora abre a tela. O seletor só busca depois de tocado ────
+    const picker = page.getByTestId('map-center-patient');
+    await picker.getByRole('button').click();
+    const pickerOption = picker.getByRole('option').filter({ hasText: patientName });
+    await expect(pickerOption).toHaveCount(1, { timeout: 15_000 });
+    // até aqui só o SELETOR foi ao servidor — a lista de prestadores, nunca
+    expect(mapPosts.filter((m) => m.url.endsWith('/api/admin/workers/map'))).toHaveLength(0);
+    await pickerOption.click();
+    await expect(page.getByTestId('map-center-label')).toContainText(patientName, { timeout: 15_000 });
+
     const list = page.getByTestId('map-list');
     await expect(page.getByTestId('map-total')).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByTestId('map-counts')).toContainText('en 25 km');
+    // o raio NASCE em 5 km (Marcel na tela, 02/09): A e B ficam, C (~16 km) não
+    await expect(page.getByTestId('map-radius')).toHaveValue('5');
+    await expect(page.getByTestId('map-counts')).toContainText('en 5 km');
+    await expect(list.locator(`[data-point-id="${workerC}"]`)).toHaveCount(0, { timeout: 15_000 });
 
-    // A (Obelisco), B (Palermo) e C (Quilmes ~16 km) dentro de 25 km; D sem coordenada aparece como "sin ubicación"
+    // Abrindo para 25 km, Quilmes entra — o raio é filtro de verdade
+    await page.getByTestId('map-radius').selectOption('25');
+    await expect(page.getByTestId('map-counts')).toContainText('en 25 km');
+    await expect(list.locator(`[data-point-id="${workerC}"]`)).toBeVisible({ timeout: 15_000 });
     await expect(list.locator(`[data-point-id="${workerA}"]`)).toContainText(nameA);
     await expect(list.locator(`[data-point-id="${workerA}"]`)).toContainText('AT · Documentación completa');
     await expect(list.locator(`[data-point-id="${workerB}"]`)).toContainText('Cuidador');
     await expect(list.locator(`[data-point-id="${workerB}"]`)).toContainText('Registro incompleto');
-    await expect(list.locator(`[data-point-id="${workerC}"]`)).toBeVisible();
     const rowD = list.locator(`[data-point-id="${workerD}"]`);
     await expect(rowD).toHaveAttribute('data-has-coords', 'false');
     await expect(rowD).toContainText('sin ubicación');
@@ -183,16 +216,8 @@ test.describe('Mapa de prestadores e pacientes (REQ-04 · DEC-14) @integration',
     await page.getByTestId('map-docs').selectOption('all');
     await expect(list.locator(`[data-point-id="${workerA}"]`)).toBeVisible({ timeout: 15_000 });
 
-    // Centrar no paciente + 5 km: A e B ficam (< 5 km), C some (~16 km), D (sem coordenada) continua.
-    // O seletor só busca depois de tocado: até aqui, nenhum POST a /patients/map.
-    expect(mapPosts.filter((m) => m.url.endsWith('/api/admin/patients/map'))).toHaveLength(0);
-    // combobox com busca, não <select>: abrir dispara a busca preguiçosa e lista as opções
-    const picker = page.getByTestId('map-center-patient');
-    await picker.getByRole('button').click();
-    const pickerOption = picker.getByRole('option').filter({ hasText: patientName });
-    await expect(pickerOption).toHaveCount(1, { timeout: 15_000 });
-    await pickerOption.click();
-    await expect(page.getByTestId('map-center-label')).toContainText(patientName, { timeout: 15_000 });
+    // De volta aos 5 km em volta do paciente: A e B ficam (< 5 km), C some (~16 km),
+    // D (sem coordenada) continua — quem não tem ponto não é recortado pelo raio.
     await page.getByTestId('map-radius').selectOption('5');
     await expect(page.getByTestId('map-counts')).toContainText('en 5 km');
     await expect(list.locator(`[data-point-id="${workerC}"]`)).toHaveCount(0, { timeout: 15_000 });
@@ -230,8 +255,22 @@ test.describe('Mapa de prestadores e pacientes (REQ-04 · DEC-14) @integration',
   test('pacientes: um pino por endereço, sem diagnóstico no DOM, e o paciente BR não entra com país AR (C4)', async ({ page }, testInfo) => {
     await loginAsRealStaff(page);
     await page.goto('/admin/mapa');
-    await expect(page.getByTestId('map-total')).toBeVisible({ timeout: 30_000 });
     await page.getByTestId('map-tab-patients').click();
+
+    // A aba de pacientes tem portão PRÓPRIO, e a âncora dela é um PRESTADOR.
+    await expect(page.getByTestId('map-anchor-empty')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('map-list')).toHaveCount(0);
+    const ancorarEm = async (nome: string): Promise<void> => {
+      const sel = page.getByTestId('map-center-worker');
+      await sel.getByRole('button').click();
+      const opt = sel.getByRole('option').filter({ hasText: nome });
+      await expect(opt).toHaveCount(1, { timeout: 15_000 });
+      await opt.click();
+      await expect(page.getByTestId('map-center-label')).toContainText(nome, { timeout: 15_000 });
+    };
+    // workerA está no Obelisco, a < 5 km do paciente semeado
+    await ancorarEm(nameA);
+    await expect(page.getByTestId('map-total')).toBeVisible({ timeout: 30_000 });
     const list = page.getByTestId('map-list');
     // Um ponto por ENDEREÇO: a linha se identifica pelo id do endereço (o do paciente vai em data-patient-id)
     const row = list.locator(`[data-point-id="${patientAddressId}"]`);
@@ -241,29 +280,42 @@ test.describe('Mapa de prestadores e pacientes (REQ-04 · DEC-14) @integration',
     await expect(row).toContainText('Activo');
     await expect(row).toHaveAttribute('data-has-coords', 'true');
     await expect(list.locator(`[data-patient-id="${patientBrId}"]`)).toHaveCount(0);
-    expect(await page.locator('body').textContent()).not.toMatch(/F84|TEA|diagn/i);
+    // O diagnóstico semeado é 'F84.0 TEA'. A régua tem de ser o CÓDIGO e a sigla
+    // como PALAVRA: `/TEA/i` solto casa dentro de sobrenome ("Zortea"), e o teste
+    // reprovava por um nome de outra spec no banco compartilhado — falso positivo
+    // que esconderia um vazamento real no meio do ruído.
+    const corpo = (await page.locator('body').textContent()) ?? '';
+    expect(corpo, 'o código CID do diagnóstico não aparece na tela').not.toContain('F84');
+    expect(corpo, 'nem a sigla do diagnóstico como palavra').not.toMatch(/\bTEA\b/);
+    expect(corpo, 'nem a palavra "diagnóstico"').not.toMatch(/diagn[oó]stic/i);
     await expect(page.getByRole('link', { name: `${patientName} Mapa` })).toHaveAttribute('href', `/admin/patients/${patientId}`);
 
-    // Trocar para BR: o centro vai para São Paulo, o paciente BR (a ~1.500 km do Obelisco) aparece e o AR some
+    // Trocar de país SOLTA a âncora (ela era do país anterior) e o portão fecha:
+    // a régua do C4 é justamente que nada de AR sobrevive à troca para BR.
     const brRow = list.locator(`[data-point-id="${patientBrAddressId}"]`);
     await page.getByTestId('map-country').selectOption('BR');
+    await expect(page.getByTestId('map-anchor-empty')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('map-list')).toHaveCount(0);
+    // ancorando no prestador BR, o paciente de São Paulo aparece e o AR some
+    await ancorarEm(nameBr);
     await expect(brRow).toBeVisible({ timeout: 15_000 });
     await expect(brRow).toContainText('São Paulo');
     await expect(row).toHaveCount(0);
-    await page.getByTestId('map-country').selectOption('AR');
-    await expect(row).toBeVisible({ timeout: 15_000 });
 
-    // Na aba de prestadores com país BR, o seletor "centrar en paciente" encontra o paciente de São Paulo
+    // Na aba de prestadores com país BR, o seletor da âncora encontra o paciente de SP e NÃO o de CABA
     await page.getByTestId('map-tab-workers').click();
-    await page.getByTestId('map-country').selectOption('BR');
     const picker = page.getByTestId('map-center-patient');
     await picker.getByRole('button').click();
     await expect(picker.getByRole('option').filter({ hasText: patientBrName })).toHaveCount(1, { timeout: 15_000 });
     await expect(picker.getByRole('option').filter({ hasText: patientName })).toHaveCount(0);
     await picker.getByRole('option').filter({ hasText: patientBrName }).click();
     await expect(page.getByTestId('map-counts')).toBeVisible();
+
+    // De volta a AR: portão fechado de novo nas DUAS abas, e a âncora AR é re-escolhida
     await page.getByTestId('map-country').selectOption('AR');
+    await expect(page.getByTestId('map-anchor-empty')).toBeVisible({ timeout: 15_000 });
     await page.getByTestId('map-tab-patients').click();
+    await ancorarEm(nameA);
     await expect(row).toBeVisible({ timeout: 15_000 });
 
     // Filtro de status: SUSPENDED esconde o ativo

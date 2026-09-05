@@ -87,6 +87,56 @@ describe('useMapPoints', () => {
     expect(result.current.points).toEqual([{ id: 'w2' }]);
   });
 
+  it('ligar um hook DESLIGADO entra em "carregando" no mesmo render — nunca em "0 resultados"', async () => {
+    vi.mocked(AdminMapApiService.getWorkersMap).mockReturnValue(new Promise(() => {}) as never);
+    const { result, rerender } = renderHook(
+      ({ on }) => useWorkersMapPoints({ country: 'AR', center: CABA, radius_km: 5 }, on),
+      { initialProps: { on: false } },
+    );
+    // desligado: não busca e não afirma nada
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.points).toEqual([]);
+    expect(AdminMapApiService.getWorkersMap).not.toHaveBeenCalled();
+
+    // ligou (é o que o portão da âncora faz): o PRIMEIRO render já diz "carregando".
+    // Se ficasse `false` aqui, a tela pintaria "0 en 5 km · Nadie en este radio"
+    // antes de existir pergunta — a afirmação mais forte possível, feita no vazio.
+    rerender({ on: true });
+    expect(result.current.isLoading).toBe(true);
+    expect(result.current.error).toBeNull();
+  });
+
+  it('ao RELIGAR com a MESMA pergunta, os pontos ficam — é a volta de aba, não uma busca nova', async () => {
+    vi.mocked(AdminMapApiService.getWorkersMap).mockResolvedValue(OK as never);
+    const { result, rerender } = renderHook(
+      ({ on }) => useWorkersMapPoints({ country: 'AR', center: CABA, radius_km: 5 }, on),
+      { initialProps: { on: true } },
+    );
+    await waitFor(() => expect(result.current.points).toEqual([{ id: 'w1' }]));
+    rerender({ on: false });
+    vi.mocked(AdminMapApiService.getWorkersMap).mockReturnValue(new Promise(() => {}) as never);
+    rerender({ on: true });
+    // Apagar aqui esvaziava a lista de opções do seletor da âncora, e o combobox
+    // — sem achar o valor escolhido — voltava ao placeholder: a âncora seguia
+    // ativa e a tela dizia que não havia nenhuma.
+    expect(result.current.points).toEqual([{ id: 'w1' }]);
+    expect(result.current.isLoading).toBe(true);
+  });
+
+  it('ao RELIGAR com pergunta DIFERENTE, os pontos antigos somem (podiam ser de outro país)', async () => {
+    vi.mocked(AdminMapApiService.getWorkersMap).mockResolvedValue(OK as never);
+    const { result, rerender } = renderHook(
+      ({ on, km }) => useWorkersMapPoints({ country: 'AR', center: CABA, radius_km: km }, on),
+      { initialProps: { on: true, km: 5 } },
+    );
+    await waitFor(() => expect(result.current.points).toEqual([{ id: 'w1' }]));
+    rerender({ on: false, km: 5 });
+    vi.mocked(AdminMapApiService.getWorkersMap).mockReturnValue(new Promise(() => {}) as never);
+    rerender({ on: true, km: 25 });
+    expect(result.current.points).toEqual([]);
+    expect(result.current.isLoading).toBe(true);
+  });
+
   it('rejeição atrasada de um filtro antigo também é ignorada', async () => {
     let rejectFirst: (e: unknown) => void = () => {};
     vi.mocked(AdminMapApiService.getWorkersMap)

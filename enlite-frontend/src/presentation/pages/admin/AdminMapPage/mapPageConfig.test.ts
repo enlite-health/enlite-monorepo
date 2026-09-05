@@ -15,12 +15,12 @@ const t = ((key: string, fallback?: string | Record<string, unknown>) => {
 }) as unknown as TFunction;
 
 describe('mapPageConfig', () => {
-  it('centro padrão por país: AR nasce em CABA, BR em São Paulo; o raio nasce em 25 km (FATO-17)', () => {
+  it('centro padrão por país: AR nasce em CABA, BR em São Paulo; o raio nasce em 5 km (Marcel na tela, 02/09)', () => {
     expect(DEFAULT_COUNTRY).toBe('AR');
     expect(DEFAULT_CENTER_BY_COUNTRY.AR).toEqual({ lat: -34.6037, lng: -58.3816 });
     expect(DEFAULT_CENTER_BY_COUNTRY.BR).toEqual({ lat: -23.5505, lng: -46.6333 });
     expect(DEFAULT_CENTER).toBe(DEFAULT_CENTER_BY_COUNTRY.AR);
-    expect(DEFAULT_RADIUS_KM).toBe(25);
+    expect(DEFAULT_RADIUS_KM).toBe(5);
     // profissões vêm da entidade de domínio, não de lista própria
     expect(PROFESSIONS).toBe(WORKER_PROFESSIONS);
     expect(WORKER_STATUS_COLOR.REGISTERED).not.toBe(WORKER_STATUS_COLOR.INCOMPLETE_REGISTER);
