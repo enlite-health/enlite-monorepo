@@ -70,15 +70,46 @@ describe('CellMatrix — a matriz que o domínio já descrevia', () => {
 
   it('só nascem as colunas que ALGUÉM usa', () => {
     montar({ catalog: [{ category: 'X', cells: [celula('a', 'read')] }] });
-    expect(screen.getByText('admin.access.group.cells.action.read')).toBeInTheDocument();
-    expect(screen.queryByText('admin.access.group.cells.action.delete')).not.toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: '[read]' })).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: '[delete]' })).not.toBeInTheDocument();
   });
 
-  it('ação rara cai na coluna "outras" em vez de abrir coluna própria', () => {
+  it('ação rara ganha COLUNA PRÓPRIA — balde escondia validate atrás de execute', () => {
     montar();
-    // `disable` não tem coluna own — entra em `other`
-    expect(screen.getByText('admin.access.group.cells.action.other')).toBeInTheDocument();
-    expect(within(linhaDe('worker\\b')).getByRole('checkbox', { name: /^worker:disable/ })).toBeInTheDocument();
+    // `disable` é raro e mesmo assim tem cabeçalho com nome
+    expect(screen.getByRole('columnheader', { name: '[disable]' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /^worker:disable/ })).toBeInTheDocument();
+  });
+
+  it('🔒 o desenho acordado: Trabajadores + Vacantes rende exatamente 5 colunas', () => {
+    // Trava de regressão do combinado com o Gabriel (04/09): com os dados do
+    // desenho, a matriz tem que dar Ver · Crear editar · Elim. · Expor. · Valid.
+    montar({ catalog: [
+      { category: 'Trabalhadores', cells: [
+        celula('worker', 'read'), celula('worker', 'write'), celula('worker', 'delete'), celula('worker', 'export'),
+        celula('worker_contact', 'read'), celula('worker_pii', 'read'),
+        celula('worker_document', 'read'), celula('worker_document', 'write'),
+        celula('worker_document', 'delete'), celula('worker_document', 'validate'),
+      ] },
+      { category: 'Vagas e Funil', cells: [
+        celula('vacancy', 'read'), celula('vacancy', 'write'), celula('vacancy', 'delete'),
+        celula('funnel', 'read'), celula('funnel', 'write'),
+      ] },
+    ] });
+    // escopado ao <thead>: a linha de categoria também é um <th> que atravessa
+    // as colunas, e entraria na contagem sem isto.
+    const thead = screen.getByTestId('cell-matrix').querySelector('thead')!;
+    const cabecalhos = within(thead).getAllByRole('columnheader').map((h) => h.textContent);
+    expect(cabecalhos).toEqual([
+      'admin.access.group.cells.about', '[read]', '[write]', '[delete]', '[export]', '[validate]',
+    ]);
+    // e a ordem das LINHAS é a do catálogo, não alfabética: o dossiê vem antes
+    // dos documentos, como desenhado — alfabético o enterraria.
+    const linhas = screen.getAllByRole('rowheader').map((h) => h.textContent);
+    expect(linhas).toEqual([
+      '[worker]worker', '[worker_contact]worker_contact', '[worker_pii]worker_pii',
+      '[worker_document]worker_document', '[vacancy]vacancy', '[funnel]funnel',
+    ]);
   });
 
   it('🔑 a descrição do backend vira o rótulo — a chave crua deixa de ser tudo', () => {

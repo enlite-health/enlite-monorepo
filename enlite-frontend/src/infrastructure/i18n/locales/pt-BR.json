@@ -3341,13 +3341,16 @@
           "changed": "alterado, não salvo",
           "empty": "O catálogo ainda não foi sincronizado.",
           "clean": "Sem alterações",
-          "pending": "+{{added}} · −{{removed}} · afeta {{people}} pessoa(s)",
+          "pending": "+{{added}} célula(s) · −{{removed}} célula(s) · afeta {{people}} pessoa(s)",
           "action": {
             "read": "Ver",
             "write": "Criar e editar",
             "delete": "Excluir",
             "export": "Exportar",
-            "other": "Outras"
+            "validate": "Validar",
+            "execute": "Executar",
+            "send": "Enviar",
+            "disable": "Dar baixa"
           },
           "category": {
             "Trabalhadores": "Trabalhadores",

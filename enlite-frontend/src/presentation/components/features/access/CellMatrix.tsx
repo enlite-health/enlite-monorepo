@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Text, Checkbox } from '@presentation/components/atoms';
 import type { CatalogCategory } from '@infrastructure/http/AdminPermissionsApiService';
-import { COLUNAS, type Coluna, type Linha, colunaDe, cellKey, agrupaPorRecurso } from './cellMatrixModel';
+import { type Linha, cellKey, colunasDe, agrupaPorRecurso } from './cellMatrixModel';
 
 interface CellMatrixProps {
   catalog: CatalogCategory[];
@@ -41,11 +41,7 @@ export function CellMatrix({ catalog, selected, saved, editable, onToggle }: Cel
     linhas: agrupaPorRecurso(cat.cells),
   })), [catalog]);
 
-  const usadas = useMemo(() => {
-    const cols = new Set<Coluna>();
-    for (const cat of catalog) for (const c of cat.cells) cols.add(colunaDe(c.action));
-    return COLUNAS.filter((c) => cols.has(c));
-  }, [catalog]);
+  const usadas = useMemo(() => colunasDe(catalog.flatMap((cat) => cat.cells)), [catalog]);
 
   if (catalog.length === 0) {
     return <Text size="sm" color="secondary">{t('admin.access.group.cells.empty')}</Text>;
@@ -69,7 +65,7 @@ export function CellMatrix({ catalog, selected, saved, editable, onToggle }: Cel
             {usadas.map((col) => (
               <th key={col} className="pb-2 px-2 border-b border-gray-300 align-bottom">
                 <Text as="span" size="xs" weight="medium" color="secondary">
-                  {t(`admin.access.group.cells.action.${col}`)}
+                  {t(`admin.access.group.cells.action.${col}`, col)}
                 </Text>
               </th>
             ))}
@@ -99,7 +95,7 @@ function FragmentoCategoria({
 }: {
   category: string;
   linhas: Linha[];
-  colunas: readonly Coluna[];
+  colunas: readonly string[];
   selected: ReadonlySet<string>;
   saved: readonly string[];
   editable: boolean;
@@ -111,7 +107,7 @@ function FragmentoCategoria({
   return (
     <>
       <tr>
-        <th colSpan={colunas.length + 1} className="text-left pt-4 pb-1">
+        <th scope="colgroup" colSpan={colunas.length + 1} className="text-left pt-4 pb-1">
           {/* Categoria vem do BANCO e chega em português; sem tradução, mostra
               o valor cru — some seria pior que ficar feio. */}
           <Text as="span" size="xs" weight="medium" color="secondary">
@@ -130,7 +126,7 @@ function FragmentoCategoria({
             </Text>
           </th>
           {colunas.map((col) => {
-            const celula = linha.porColuna[col];
+            const celula = linha.porAcao[col];
             if (!celula) {
               return (
                 // `Text` só repassa `title` — `aria-label` nele é silenciosamente

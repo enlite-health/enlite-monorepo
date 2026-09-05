@@ -1,19 +1,15 @@
 import type { PermissionCell } from '@infrastructure/http/AdminPermissionsApiService';
 
 /**
- * As colunas da matriz, na ordem em que uma pessoa lê o poder crescendo: ver,
- * mexer, apagar, levar embora, e o resto. `other` junta as ações raras
- * (`execute`, `send`, `validate`, `disable`) numa coluna só — separar cada uma
- * daria 8 colunas quase vazias.
+ * A ordem canônica das colunas — o poder crescendo da esquerda para a direita:
+ * ver, mexer, apagar, levar embora, e depois as ações de operação.
+ *
+ * NÃO é a lista fechada de ações: é só a ordem. Ação que não estiver aqui ganha
+ * coluna própria no fim, em ordem alfabética. O catálogo é derivado do código e
+ * cresce sem passar por este arquivo — uma lista fechada faria a célula nova
+ * SUMIR da tela, e célula que não aparece é célula que ninguém concede.
  */
-export const COLUNAS = ['read', 'write', 'delete', 'export', 'other'] as const;
-export type Coluna = (typeof COLUNAS)[number];
-
-const ACAO_COLUNA: Readonly<Record<string, Coluna>> = {
-  read: 'read', write: 'write', delete: 'delete', export: 'export',
-};
-
-export const colunaDe = (acao: string): Coluna => ACAO_COLUNA[acao] ?? 'other';
+export const ORDEM_ACOES = ['read', 'write', 'delete', 'export', 'validate', 'execute', 'send', 'disable'] as const;
 
 /** Chave canônica da célula — o formato que `iam.effective_permissions` devolve. */
 export const cellKey = (c: Pick<PermissionCell, 'resource' | 'action'>): string =>
@@ -21,19 +17,35 @@ export const cellKey = (c: Pick<PermissionCell, 'resource' | 'action'>): string 
 
 export interface Linha {
   resource: string;
-  /** A ação que ocupa cada coluna — `undefined` quando a célula não existe. */
-  porColuna: Partial<Record<Coluna, PermissionCell>>;
+  /** A célula de cada ação — ausente quando o recurso não tem aquela ação. */
+  porAcao: Record<string, PermissionCell>;
 }
 
-/** Uma linha por RECURSO; cada ação cai na sua coluna. */
+/**
+ * As colunas que este catálogo REALMENTE usa, na ordem canônica. Só por isto a
+ * tela do desenho (Trabajadores + Vacantes) rende exatamente 5 colunas — Ver,
+ * Crear y editar, Eliminar, Exportar, Validar — sem que a lista seja fechada.
+ */
+export function colunasDe(cells: readonly PermissionCell[]): string[] {
+  const usadas = new Set(cells.map((c) => c.action));
+  const conhecidas = ORDEM_ACOES.filter((a) => usadas.has(a));
+  const novas = [...usadas].filter((a) => !ORDEM_ACOES.includes(a as never)).sort();
+  return [...conhecidas, ...novas];
+}
+
+/**
+ * Uma linha por RECURSO, na ordem em que o catálogo veio — não alfabética.
+ * Ordenar por chave crua jogaria `worker_pii` (o dossiê, a linha perigosa) para
+ * depois de `worker_document`, enterrando justamente o que precisa de atenção.
+ */
 export function agrupaPorRecurso(cells: PermissionCell[]): Linha[] {
   const porRecurso = new Map<string, Linha>();
   for (const c of cells) {
-    const linha = porRecurso.get(c.resource) ?? { resource: c.resource, porColuna: {} };
-    linha.porColuna[colunaDe(c.action)] = c;
+    const linha = porRecurso.get(c.resource) ?? { resource: c.resource, porAcao: {} };
+    linha.porAcao[c.action] = c;
     porRecurso.set(c.resource, linha);
   }
-  return [...porRecurso.values()].sort((a, b) => a.resource.localeCompare(b.resource, 'es-AR'));
+  return [...porRecurso.values()];
 }
 
 /**

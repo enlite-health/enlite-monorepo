@@ -3420,13 +3420,16 @@
           "changed": "cambiado, sin guardar",
           "empty": "El catálogo todavía no fue sincronizado.",
           "clean": "Sin cambios",
-          "pending": "+{{added}} · −{{removed}} · afecta a {{people}} persona(s)",
+          "pending": "+{{added}} célula(s) · −{{removed}} célula(s) · afecta a {{people}} persona(s)",
           "action": {
             "read": "Ver",
             "write": "Crear y editar",
-            "delete": "Eliminar",
-            "export": "Exportar",
-            "other": "Otras"
+            "delete": "Elim.",
+            "export": "Expor.",
+            "validate": "Valid.",
+            "execute": "Ejecutar",
+            "send": "Enviar",
+            "disable": "Dar de baja"
           },
           "category": {
             "Trabalhadores": "Trabajadores",
@@ -3442,9 +3445,9 @@
           },
           "resource": {
             "worker": "Prestador en operación",
-            "worker_contact": "Contacto: nombre y teléfono",
+            "worker_contact": "Contacto: nombre, teléfono",
             "worker_pii": "Dossier: DNI, domicilio, datos sensibles",
-            "worker_document": "Documentos del prestador",
+            "worker_document": "Documentos",
             "vacancy": "Vacantes",
             "funnel": "Embudo",
             "interview": "Entrevistas",
