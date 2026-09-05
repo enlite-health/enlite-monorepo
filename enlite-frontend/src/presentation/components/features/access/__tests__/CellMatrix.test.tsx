@@ -406,6 +406,16 @@ describe('leituraTravada — quem trava o Ver', () => {
     expect(leituraTravada(linha, new Set(['worker:read', 'worker:export']))).toBe(true);
   });
 
+  it('🔒 grupo com ação forte e SEM Ver não pode ficar em beco sem saída', () => {
+    // combinação que o servidor aceita (o zod da rota é só array de string) e
+    // que a D131 descreve como legítima. Sem a cláusula, `Ver` abria DESMARCADA
+    // e TRAVADA: o gestor não conseguia conceder leitura sem antes remover o
+    // export. Achado do gate (05/09), executado.
+    expect(leituraTravada(linha, new Set(['worker:export']))).toBe(false);
+    // e assim que Ver é marcada, a trava volta a valer
+    expect(leituraTravada(linha, new Set(['worker:export', 'worker:read']))).toBe(true);
+  });
+
   it('recurso sem `read` nunca trava — não há o que travar', () => {
     const sem = montaBloco('X', [celula('integration', 'execute')]).grade[0];
     expect(leituraTravada(sem, new Set(['integration:execute']))).toBe(false);

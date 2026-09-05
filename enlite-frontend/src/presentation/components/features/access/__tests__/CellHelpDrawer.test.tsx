@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CellHelpDrawer } from '..';
+import es from '@infrastructure/i18n/locales/es.json';
+import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 
 /**
  * O mock modela o i18next de verdade: chave conhecida devolve texto, chave
@@ -47,7 +49,23 @@ describe('CellHelpDrawer — a ajuda de uma permissão', () => {
     expect(screen.getByText('Ver')).toBeInTheDocument();
   });
 
-  it('🔒 avisa que há dado sensível SEM enumerar as categorias', () => {
+  it('🔒 os LOCALES não enumeram categoria sensível em nenhum dos 21 recursos', () => {
+    // Este é o guardião de verdade. O de baixo lê o dicionário do próprio teste
+    // e ficaria verde com "religión" escrito no es.json — instrumento morto,
+    // achado do gate (05/09). Aqui a asserção é sobre o ARTEFATO.
+    const proibidos = /racial|religi|orientaci|orientaç|etnia/i;
+    for (const [nome, loc] of [['es', es], ['pt-BR', ptBR]] as const) {
+      const rec = loc.admin.access.group.cells.help.resource as Record<string, { body: string; action: Record<string, string> }>;
+      expect(Object.keys(rec).length).toBeGreaterThanOrEqual(21);
+      for (const [r, v] of Object.entries(rec)) {
+        for (const [onde, txt] of [['body', v.body], ...Object.entries(v.action)]) {
+          expect(`${nome}.${r}.${onde}: ${txt}`).not.toMatch(proibidos);
+        }
+      }
+    }
+  });
+
+  it('avisa que há dado sensível SEM enumerar as categorias', () => {
     // O `lex` autorizou nomear e recomendou nomear ("descrever de MENOS é o
     // risco real"). O Gabriel decidiu o contrário em 05/09: "não tem por que
     // colocar essas coisas de religião no popup". O texto avisa do peso sem

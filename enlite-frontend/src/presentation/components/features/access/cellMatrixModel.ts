@@ -164,7 +164,10 @@ export function montaBlocos(catalog: readonly CatalogCategory[], rotulos: Rotulo
  * A ação que todas as outras pressupõem: quem pode MEXER tem de poder VER.
  *
  * A regra é a *implied permission* clássica (o `matrix-auth` do Jenkins é a
- * referência: `Job/Configure` implica `Job/Read`). Aqui ela é deliberadamente
+ * referência de FORMA: `Job/Configure` implica `Job/Read`). ⚠️ Lá a implicação é
+ * avaliada na AUTORIZAÇÃO e vale para todo chamador; AQUI é conveniência de
+ * TELA. O servidor aceita conjunto sem `read` (`permissionPanelWriteRoutes.ts`
+ * valida só `z.array(z.string())`) — não escreva rota supondo `write ⇒ read`. Aqui ela é deliberadamente
  * estreita — só `read`, e só dentro do MESMO recurso. Nada de `delete` implicar
  * `write`, nada de nível: a D128 separou `send` de `write` e a D131 separou
  * `export` de `read` por motivo medido, e uma cadeia mais longa reconstruiria
@@ -188,7 +191,15 @@ export function exigemLeitura(linha: Linha, selected: ReadonlySet<string>): stri
  * NÃO pode ser muda: quem trava aparece no `title` e no rótulo acessível.
  */
 export function leituraTravada(linha: Linha, selected: ReadonlySet<string>): boolean {
-  return Boolean(linha.porAcao[ACAO_BASE]) && exigemLeitura(linha, selected).length > 0;
+  const leitura = linha.porAcao[ACAO_BASE];
+  if (!leitura) return false;
+  // Só trava o que JÁ está marcado. Sem esta cláusula, um grupo que chegue com
+  // `worker:export` e sem `worker:read` — combinação que o servidor aceita, e
+  // que a D131 descreve como legítima — abria com `Ver` DESMARCADA e travada:
+  // beco sem saída no painel que existe justamente para arrumar permissão.
+  // Achado do gate, executado (05/09), não deduzido.
+  if (!selected.has(cellKey(leitura))) return false;
+  return exigemLeitura(linha, selected).length > 0;
 }
 
 /**

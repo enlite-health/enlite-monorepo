@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { GroupDetailPage } from '../GroupDetailPage';
 import { ApiError } from '@infrastructure/http/ApiError';
 import { postura, renderRota, GRUPO, MEMBRO, CATALOGO } from './helpers';
+import es from '@infrastructure/i18n/locales/es.json';
 
 // o mock devolve a CHAVE; quando há interpolação, cola os valores no fim — é o
 // que torna o contador de células verificável pelo NÚMERO, não pela chave.
@@ -302,7 +303,11 @@ describe('GroupDetailPage — a regra por componente', () => {
     expect(ver).not.toBeChecked();
     await userEvent.click(screen.getByLabelText(/^worker:write/));
     expect(screen.getByLabelText(/^worker:read/)).toBeChecked();
-    expect(screen.getByLabelText(/lockedBy/)).toBeDisabled();
+    // lê o LOCALE REAL: procurar pela chave casaria com a chave crua, que é
+    // exatamente o defeito (a string estava gravada noutro caminho e o teste
+    // aprovava o tooltip quebrado). Achado do gate, 05/09.
+    expect(es.admin.access.group.cells.lockedBy).toBeTruthy();
+    expect(screen.getByLabelText(/admin\.access\.group\.cells\.lockedBy/)).toBeDisabled();
   });
 
   it('grupo ARQUIVADO: mesmo em write vira só leitura, e a lista de candidatos ainda é buscada só por write', async () => {

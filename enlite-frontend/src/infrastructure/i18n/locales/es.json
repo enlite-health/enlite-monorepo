@@ -3109,7 +3109,6 @@
           "columns": {
             "interview": "Entrevista",
             "selected": "Seleccionados(as)",
-            "lockedBy": "Requerida por {{acoes}} — no se puede quitar sin quitar eso primero",
             "inService": "En Atendimiento",
             "rejected": "Rechazado"
           }
@@ -3421,6 +3420,7 @@
           "empty": "El catálogo todavía no fue sincronizado.",
           "clean": "Sin cambios",
           "selected": "Seleccionadas: {{total}}",
+          "lockedBy": "Requerida por {{acoes}} — no se puede quitar sin quitar eso primero",
           "pending": "+{{added}} célula(s) · −{{removed}} célula(s) · afecta a {{people}} persona(s)",
           "action": {
             "read": "Ver",
