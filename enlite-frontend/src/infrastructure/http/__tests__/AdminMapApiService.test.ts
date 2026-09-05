@@ -65,7 +65,7 @@ describe('AdminMapApiService', () => {
     const PAR = { country: 'AR' as const, workerId: 'w-1', patientAddressId: 'a-1' };
 
     it('POST com o par no CORPO — id de pessoa nunca vai na URL', async () => {
-      const data = { outcome: 'ok', straightLineMeters: 1167, straightLineBlocks: 12, lines: [{ line: '6', mode: 'bus', originBlocks: 1, originStopName: 'a', destinationBlocks: 2, destinationStopName: 'b' }] };
+      const data = { outcome: 'ok', straightLineMeters: 1167, routes: [{ totalMinutes: 34, transfers: 0, lines: ['8'], legs: [] }] };
       const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ success: true, data }));
       const res = await AdminMapApiService.getCorridor(PAR);
       expect(res).toEqual(data);
@@ -80,7 +80,7 @@ describe('AdminMapApiService', () => {
 
     it('sem token não manda Authorization', async () => {
       mockGetIdToken.mockResolvedValue(null);
-      const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ success: true, data: { outcome: 'sem_cobertura', straightLineMeters: null, straightLineBlocks: null, lines: [] } }));
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ success: true, data: { outcome: 'sem_cobertura', straightLineMeters: null, routes: [] } }));
       await AdminMapApiService.getCorridor(PAR);
       const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(init.headers).toEqual({ 'Content-Type': 'application/json' });

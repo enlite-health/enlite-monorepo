@@ -51,35 +51,27 @@ const req = (body: unknown, uid = 'staff-1'): Request =>
 const OK_RESULT = {
   outcome: 'ok' as const,
   straightLineMeters: 1167,
-  lines: [{
-    line: '6', mode: 'bus',
-    originWalkMeters: 120, originStopName: '40 ENTRE RIOS AV.',
-    destinationWalkMeters: 210, destinationStopName: '930 CORRIENTES AVE',
+  routes: [{
+    totalMinutes: 34,
+    transfers: 0,
+    lines: ['8'],
+    legs: [
+      { kind: 'walk' as const, minutes: 4, meters: 320 },
+      { kind: 'transit' as const, minutes: 26, line: '8', mode: 'bus', from: '459 Libertad', to: 'H. Yrigoyen 340' },
+    ],
   }],
 };
 
 describe('TransitCorridorController', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('devolve o corredor em QUADRAS — a unidade em que a operação fala', async () => {
+  it('devolve a rota porta a porta: tempo total, baldeações e o passo a passo', async () => {
     mockExecute.mockResolvedValue(OK_RESULT);
     const res = fakeRes();
     await new TransitCorridorController().getCorridor(req(BODY), res);
 
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({
-      success: true,
-      data: {
-        outcome: 'ok',
-        straightLineMeters: 1167,
-        straightLineBlocks: 12,
-        lines: [{
-          line: '6', mode: 'bus',
-          originBlocks: 1, originStopName: '40 ENTRE RIOS AV.',
-          destinationBlocks: 2, destinationStopName: '930 CORRIENTES AVE',
-        }],
-      },
-    });
+    expect(res.body).toEqual({ success: true, data: OK_RESULT });
   });
 
   it('🔒 A TRILHA leva ids e o desfecho — e NADA de geografia, duração ou distância', async () => {
@@ -102,21 +94,22 @@ describe('TransitCorridorController', () => {
     // As proibições, uma a uma — este bloco é o que fica vermelho se alguém
     // "melhorar" a observabilidade acrescentando o tempo do trajeto.
     for (const proibido of ['lat', 'lng', 'geohash', 'geohash5', 'center', 'stopId', 'stops',
-      'durationMinutes', 'distanceKm', 'straightLineMeters', 'lines', 'transfers']) {
+      'totalMinutes', 'durationMinutes', 'distanceKm', 'straightLineMeters', 'routes', 'legs',
+      'lines', 'transfers']) {
       expect(Object.keys(linha)).not.toContain(proibido);
     }
     const serializado = JSON.stringify(linha);
-    expect(serializado).not.toContain('ENTRE RIOS');
-    expect(serializado).not.toContain('1167');
-    expect(serializado).not.toContain('120');
+    expect(serializado).not.toContain('Libertad');   // nome de parada
+    expect(serializado).not.toContain('34');         // minutos do trajeto
+    expect(serializado).not.toContain('1167');       // distância
   });
 
   it('a trilha registra o desfecho de recusa também — auditoria não é só do caminho feliz', async () => {
-    mockExecute.mockResolvedValue({ outcome: 'sem_cobertura', lines: [], straightLineMeters: null });
+    mockExecute.mockResolvedValue({ outcome: 'sem_cobertura', routes: [], straightLineMeters: null });
     const res = fakeRes();
     await new TransitCorridorController().getCorridor(req(BODY), res);
     expect((mockInfo.mock.calls[0][0] as Record<string, unknown>).outcome).toBe('sem_cobertura');
-    expect((res.body as { data: { straightLineBlocks: number | null } }).data.straightLineBlocks).toBeNull();
+    expect((res.body as { data: { routes: unknown[] } }).data.routes).toEqual([]);
   });
 
   it('UM par por chamada: corpo com lista, id inválido ou chave a mais é 400', async () => {
@@ -150,7 +143,7 @@ describe('TransitCorridorController', () => {
   });
 
   it('falha interna vira 500 genérico — e só a ORIGEM vai para o log de erro', async () => {
-    mockExecute.mockRejectedValue(new Error('relation "transit_stops" does not exist'));
+    mockExecute.mockRejectedValue(new Error('Directions request failed'));
     const res = fakeRes();
     await new TransitCorridorController().getCorridor(req(BODY), res);
 

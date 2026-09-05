@@ -326,17 +326,18 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
-    // Corredor logístico do /admin/mapa. Entram no piso no MESMO PR que os cria:
-    // é o cálculo que substitui uma chamada externa proibida, então uma regressão
-    // silenciosa aqui não degrada só a tela — reabre a pressão de "então manda pro
-    // Google". Os quatro nasceram em 100% nos quatro eixos (medido).
-    'src/modules/matching/domain/transitCorridor.ts': {
+    // Rota de transporte público do /admin/mapa. Entram no piso no MESMO PR:
+    // `GoogleTransitDirections` é a FRONTEIRA EXTERNA — é dali que saem duas
+    // coordenadas de domicílio. Regressão silenciosa nesse arquivo não é bug de
+    // tela, é vazamento; e o interruptor (`enabled`, sem chave não chama nada)
+    // precisa continuar coberto.
+    'src/modules/matching/domain/transitRoute.ts': {
       statements: 100,
       branches: 100,
       functions: 100,
       lines: 100,
     },
-    'src/modules/matching/infrastructure/gcbaStopsParser.ts': {
+    'src/modules/matching/infrastructure/GoogleTransitDirections.ts': {
       statements: 100,
       branches: 100,
       functions: 100,

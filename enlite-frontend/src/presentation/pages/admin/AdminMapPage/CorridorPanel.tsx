@@ -1,38 +1,39 @@
 /**
- * CorridorPanel — o corredor logístico dentro do balão do pino.
+ * CorridorPanel — a rota de transporte público dentro do balão do pino.
  *
- * Responde a pergunta que a recrutadora faz ao clicar: *dá para chegar?* — e
- * responde na unidade em que a operação já fala, que é QUADRA e LINHA, não
- * minuto (`acceso: "a três quadras, acessa por colectivo tal"`).
+ * Responde a pergunta que a recrutadora faz ao clicar: *dá para chegar, e em
+ * quanto tempo?* — porta a porta, com a caminhada das duas pontas.
  *
- * ⚠️ O QUE ESTE PAINEL NÃO PROMETE: horário de partida, baldeação minuto a
- * minuto e tempo total. Não é modéstia de desenho — é o dado. O GTFS aberto de
- * Buenos Aires está suspenso e o que resta é de 2019/2020; prometer horário
- * sobre isso seria inventar. O que existe fresco (paradas de 28/10/2024, com as
- * linhas que passam em cada uma) responde o corredor, e só.
+ * A BALDEAÇÃO é destaque, não detalhe: em Buenos Aires não existe terminal, e
+ * trocar de veículo obriga a andar até outra parada e **pagar de novo** (Marcel,
+ * 02/09). Por isso as rotas vêm ordenadas por menos baldeação antes de menos
+ * tempo, e "directo" é dito com todas as letras — é o que decide se o prestador
+ * aceita o caso.
  *
- * As três saídas são MENSAGENS DIFERENTES de propósito: "não há linha direta"
- * (baldear, que em Buenos Aires se paga de novo) é uma resposta operacional, e
- * "não tenho dado aqui" é uma confissão. Colapsar as duas em "nada encontrado"
- * faria o operador tratar falta de dado como ausência de transporte.
+ * As três saídas são MENSAGENS DIFERENTES de propósito: "não há trajeto" e "não
+ * tenho as duas pontas" são coisas distintas, e colapsá-las faria o operador
+ * tratar falta de dado como ausência de transporte.
  */
-import { Bus, TrainFront, MoveHorizontal, AlertTriangle } from 'lucide-react';
+import { useState } from 'react';
+import { Bus, TrainFront, Footprints, ChevronDown, AlertTriangle, MoveHorizontal } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import { useCorridor } from '@hooks/admin/useCorridor';
-import type { CorridorLine, CorridorRequest } from '@infrastructure/http/AdminMapApiService';
+import type { CorridorRequest, RouteLeg, TransitRoute } from '@infrastructure/http/AdminMapApiService';
 
 export interface CorridorLabels {
-  title: (n: number) => string;
   loading: string;
   error: string;
-  noDirect: string;
+  noRoute: string;
   noCoverage: string;
-  walk: (blocks: number) => string;
-  legs: (origin: number, destination: number) => string;
+  direct: string;
+  transfers: (n: number) => string;
+  total: (min: number) => string;
+  walkLeg: (min: number, meters: number) => string;
+  straight: (blocks: number) => string;
 }
 
-const ModeIcon = ({ mode }: { mode: string }): JSX.Element =>
-  mode === 'train' || mode === 'subway'
+const ModeIcon = ({ mode }: { mode?: string }): JSX.Element =>
+  mode === 'train' || mode === 'subway' || mode === 'tram'
     ? <TrainFront size={13} className="text-gray-600 shrink-0" />
     : <Bus size={13} className="text-gray-600 shrink-0" />;
 
@@ -45,16 +46,50 @@ function Aviso({ text, testId }: { text: string; testId: string }): JSX.Element 
   );
 }
 
-/** Quantas linhas o balão mostra antes de resumir. */
-const VISIBLE_LINES = 4;
+function Leg({ leg, labels }: { leg: RouteLeg; labels: CorridorLabels }): JSX.Element {
+  if (leg.kind === 'walk') {
+    return (
+      <li className="flex items-center gap-1.5" data-testid="route-leg" data-kind="walk">
+        <Footprints size={13} className="text-gray-500 shrink-0" />
+        <Text as="span" size="xs" color="muted">{labels.walkLeg(leg.minutes, leg.meters)}</Text>
+      </li>
+    );
+  }
+  return (
+    <li className="flex items-center gap-1.5" data-testid="route-leg" data-kind="transit" data-line={leg.line}>
+      <ModeIcon mode={leg.mode} />
+      <Text as="span" size="xs" weight="medium" color="secondary">{leg.line}</Text>
+      <Text as="span" size="xs" color="muted" className="truncate">{leg.from} → {leg.to} · {leg.minutes} min</Text>
+    </li>
+  );
+}
 
-/**
- * Busca o corredor no MONTE do painel — e o painel só monta quando o balão do
- * pino abre. Isso é o que garante que a cota de 60 chamadas/min só é gasta com
- * algo que alguém está de fato olhando.
- */
+function Rota({ route, labels, aberta, onToggle }: {
+  route: TransitRoute; labels: CorridorLabels; aberta: boolean; onToggle: () => void;
+}): JSX.Element {
+  return (
+    <li data-testid="route" data-transfers={route.transfers} data-minutes={route.totalMinutes}>
+      <button type="button" onClick={onToggle} className="flex items-center gap-1.5 w-full text-left hover:underline" data-testid="route-summary">
+        <ChevronDown size={12} className={`text-gray-500 shrink-0 transition-transform ${aberta ? 'rotate-180' : ''}`} />
+        <Text as="span" size="xs" weight="semibold" color="secondary">{labels.total(route.totalMinutes)}</Text>
+        <Text as="span" size="xs" color="muted">
+          {route.transfers === 0 ? labels.direct : labels.transfers(route.transfers)} · {route.lines.join(' → ')}
+        </Text>
+      </button>
+      {aberta && (
+        <ul className="mt-1 ml-4 flex flex-col gap-0.5" data-testid="route-legs">
+          {route.legs.map((l, i) => <Leg key={`${l.kind}-${i}`} leg={l} labels={labels} />)}
+        </ul>
+      )}
+    </li>
+  );
+}
+
 export function CorridorPanel({ pair, labels }: { pair: CorridorRequest; labels: CorridorLabels }): JSX.Element {
   const state = useCorridor(pair);
+  // A primeira rota nasce ABERTA: é a resposta, não uma opção entre outras.
+  const [aberta, setAberta] = useState(0);
+
   if (state.isLoading) {
     return (
       <div className="mt-2 pt-2 border-t border-gray-100" data-testid="corridor-loading">
@@ -70,38 +105,30 @@ export function CorridorPanel({ pair, labels }: { pair: CorridorRequest; labels:
     );
   }
 
-  const { outcome, lines, straightLineBlocks } = state.data;
-  const shown: CorridorLine[] = lines.slice(0, VISIBLE_LINES);
+  const { outcome, routes, straightLineMeters } = state.data;
 
   return (
-    /* `data-clarity-mask` EXPLÍCITO, e não herdado do wrapper do mapa: o balão
-       é portalado para dentro do DOM do Google, e a lista de superfícies a
-       mascarar já falhou duas vezes por confiar em herança. Aqui há nome de
-       parada + quadras a pé — e "X quadras até uma parada conhecida" é um
-       círculo em torno de um ponto conhecido, ou seja, geocódigo disfarçado. */
+    /* `data-clarity-mask` EXPLÍCITO, e não herdado do wrapper do mapa: o balão é
+       portalado para dentro do DOM do Google, e a lista de superfícies a mascarar
+       já falhou duas vezes por confiar em herança. Aqui há nome de parada e
+       horário — "sai desta parada às 14:05" é um ponto conhecido com hora. */
     <div className="mt-2 pt-2 border-t border-gray-100" data-testid="corridor-panel" data-outcome={outcome} data-clarity-mask="True">
       {outcome === 'ok' && (
-        <>
-          <Text as="div" size="xs" weight="semibold" color="secondary">{labels.title(lines.length)}</Text>
-          <ul className="mt-1 flex flex-col gap-0.5" data-testid="corridor-lines">
-            {shown.map((l) => (
-              <li key={`${l.mode}-${l.line}`} className="flex items-center gap-1.5" data-testid="corridor-line" data-line={l.line}>
-                <ModeIcon mode={l.mode} />
-                <Text as="span" size="xs" weight="medium" color="secondary">{l.line}</Text>
-                <Text as="span" size="xs" color="muted">{labels.legs(l.originBlocks, l.destinationBlocks)}</Text>
-              </li>
-            ))}
-          </ul>
-        </>
+        <ul className="flex flex-col gap-1.5" data-testid="routes">
+          {routes.map((r, i) => (
+            <Rota key={`${r.totalMinutes}-${r.lines.join('-')}`} route={r} labels={labels}
+              aberta={aberta === i} onToggle={() => setAberta(aberta === i ? -1 : i)} />
+          ))}
+        </ul>
       )}
 
-      {outcome === 'sem_conexion_directa' && <Aviso text={labels.noDirect} testId="corridor-no-direct" />}
+      {outcome === 'sem_ruta' && <Aviso text={labels.noRoute} testId="corridor-no-route" />}
       {outcome === 'sem_cobertura' && <Aviso text={labels.noCoverage} testId="corridor-no-coverage" />}
 
-      {straightLineBlocks !== null && (
-        <div className="flex items-center gap-1.5 mt-2" data-testid="corridor-walk">
+      {straightLineMeters !== null && (
+        <div className="flex items-center gap-1.5 mt-2" data-testid="corridor-straight">
           <MoveHorizontal size={13} className="text-gray-500 shrink-0" />
-          <Text as="span" size="xs" color="muted">{labels.walk(straightLineBlocks)}</Text>
+          <Text as="span" size="xs" color="muted">{labels.straight(Math.max(1, Math.round(straightLineMeters / 100)))}</Text>
         </div>
       )}
     </div>

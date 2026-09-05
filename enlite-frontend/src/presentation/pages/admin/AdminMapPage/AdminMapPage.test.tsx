@@ -463,7 +463,7 @@ describe('AdminMapPage', () => {
 
   it('o corredor só é consultado para o pino ABERTO, e some quando nada está selecionado', () => {
     mockCorridor.mockReturnValue({
-      data: { outcome: 'ok', straightLineMeters: 1167, straightLineBlocks: 12, lines: [{ line: '6', mode: 'bus', originBlocks: 1, originStopName: 'a', destinationBlocks: 2, destinationStopName: 'b' }] },
+      data: { outcome: 'ok', straightLineMeters: 1167, routes: [{ totalMinutes: 34, transfers: 0, lines: ['8'], legs: [{ kind: 'transit', minutes: 34, line: '8', mode: 'bus', from: 'a', to: 'b' }] }] },
       isLoading: false, error: null,
     });
     setup();
@@ -477,7 +477,7 @@ describe('AdminMapPage', () => {
     // abrindo um pino: o par é (prestador do pino, endereço do paciente-âncora)
     fireEvent.click(screen.getAllByTestId('map-list-item')[0]);
     expect(last(mockCorridor.mock.calls)?.[0]).toEqual({ country: 'AR', workerId: '1', patientAddressId: 'a-9' });
-    expect(screen.getByTestId('corridor-panel')).toHaveTextContent('línea(s) sirven ambos puntos');
+    expect(screen.getByTestId('corridor-panel')).toHaveTextContent('min puerta a puerta');
 
     // quem não tem coordenada não gera par: o painel desmonta e some da tela
     fireEvent.click(screen.getAllByTestId('map-list-item')[1]);
