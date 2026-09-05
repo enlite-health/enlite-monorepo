@@ -83,10 +83,14 @@ describe('A4 — famílias de mensageria, integração e fixtures (HTTP real, ba
    * sobreviveria e `permissions-iam-schema` — que afirma a matriz exata de 41
    * células — passaria a falhar em toda rodada seguinte, sem se curar sozinha.
    */
+  // Categoria IGUAL à que `RESOURCE_CATEGORY` declara (`PermissionCell.ts`) —
+  // era 'Mensageria'/'Integrações'/'Manutenção', que o sync jamais produziria.
+  // O painel agrupa a matriz POR CATEGORIA: fixture divergente põe a célula
+  // numa gaveta que não existe na tela.
   const NOVAS: Array<[string, string, string]> = [
-    ['messaging', 'write', 'Mensageria'],
-    ['integration', 'execute', 'Integrações'],
-    ['test_fixtures', 'execute', 'Manutenção'],
+    ['messaging', 'write', 'Comunicação'],
+    ['integration', 'execute', 'Operações'],
+    ['test_fixtures', 'execute', 'Operações'],
   ];
 
   async function removerCelulasNovas(): Promise<void> {

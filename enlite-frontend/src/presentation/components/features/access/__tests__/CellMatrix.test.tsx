@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CellMatrix, cellDiff, cellKey } from '..';
+import { montaBloco } from '../cellMatrixModel';
 import type { CatalogCategory } from '@infrastructure/http/AdminPermissionsApiService';
 
 vi.mock('react-i18next', () => ({
@@ -17,6 +18,7 @@ const celula = (resource: string, action: string, description?: string | null) =
   ...(description === undefined ? {} : { description }),
 });
 
+/** O recorte que o Gabriel desenhou: Trabajadores + Vacantes y embudo. */
 const CATALOGO: CatalogCategory[] = [
   {
     category: 'Trabalhadores',
@@ -25,13 +27,20 @@ const CATALOGO: CatalogCategory[] = [
       celula('worker', 'write'),
       celula('worker', 'delete'),
       celula('worker', 'export'),
-      celula('worker', 'disable'),
+      celula('worker_contact', 'read', 'Ver el contacto: nombre y teléfono.'),
       celula('worker_pii', 'read', 'Ver el dossier: DNI, domicilio, datos sensibles.'),
+      celula('worker_document', 'read'),
+      celula('worker_document', 'write'),
+      celula('worker_document', 'delete'),
+      celula('worker_document', 'validate'),
     ],
   },
   {
     category: 'Vagas e Funil',
-    cells: [celula('vacancy', 'read'), celula('vacancy', 'write')],
+    cells: [
+      celula('vacancy', 'read'), celula('vacancy', 'write'), celula('vacancy', 'delete'),
+      celula('funnel', 'read'), celula('funnel', 'write'),
+    ],
   },
 ];
 
@@ -50,66 +59,43 @@ const montar = (over: Partial<Parameters<typeof CellMatrix>[0]> = {}) => {
   return { onToggle, ...utils };
 };
 
-const linhaDe = (recurso: string): HTMLElement =>
-  screen.getByRole('row', { name: new RegExp(recurso) });
+const bloco = (nome: string): HTMLElement => screen.getByRole('region', { name: nome });
+const colunasDo = (nome: string): (string | null)[] =>
+  within(bloco(nome)).getAllByRole('columnheader').slice(1).map((h) => h.textContent);
 
-describe('CellMatrix — a matriz que o domínio já descrevia', () => {
-  it('uma LINHA por recurso, não uma caixa por célula', () => {
+describe('CellMatrix — colunas por categoria, avulso fora da grade', () => {
+  it('🔒 o recorte desenhado: Trabajadores rende Ver · Crear · Elim. · Expor. · Valid.', () => {
     montar();
-    // 6 células de worker/worker_pii viram 2 linhas; 2 de vacancy viram 1
-    expect(screen.getAllByRole('row').filter((r) => within(r).queryAllByRole('checkbox').length > 0)).toHaveLength(3);
+    expect(colunasDo('[Trabalhadores]')).toEqual(['[read]', '[write]', '[delete]', '[export]', '[validate]']);
+    // e a grade tem só quem TEM 2+ ações: worker e worker_document
+    const linhas = within(bloco('[Trabalhadores]')).getAllByRole('rowheader').map((h) => h.textContent);
+    expect(linhas).toEqual(['[worker]worker', '[worker_document]worker_document']);
   });
 
-  it('a coluna que o recurso NÃO tem vira um travessão — não uma caixa desmarcada', () => {
+  it('🔒 cada categoria tem AS SUAS colunas — Vacantes não herda Expor. nem Valid.', () => {
     montar();
-    const vacancy = linhaDe('vacancy');
-    // vacancy tem read e write; delete/export/other não existem
-    expect(within(vacancy).getAllByRole('checkbox')).toHaveLength(2);
-    expect(within(vacancy).getAllByRole('cell', { name: 'admin.access.group.cells.na' })).toHaveLength(3);
+    expect(colunasDo('[Vagas e Funil]')).toEqual(['[read]', '[write]', '[delete]']);
+    // é o ponto da poda: com colunas globais, `funnel` teria 2 travessões a mais
+    expect(within(bloco('[Vagas e Funil]')).getAllByRole('cell', { name: 'admin.access.group.cells.na' }))
+      .toHaveLength(1); // só funnel:delete
   });
 
-  it('só nascem as colunas que ALGUÉM usa', () => {
-    montar({ catalog: [{ category: 'X', cells: [celula('a', 'read')] }] });
-    expect(screen.getByRole('columnheader', { name: '[read]' })).toBeInTheDocument();
-    expect(screen.queryByRole('columnheader', { name: '[delete]' })).not.toBeInTheDocument();
-  });
-
-  it('ação rara ganha COLUNA PRÓPRIA — balde escondia validate atrás de execute', () => {
+  it('🔒 recurso de UMA célula sai da grade e mostra a definição À VISTA', () => {
     montar();
-    // `disable` é raro e mesmo assim tem cabeçalho com nome
-    expect(screen.getByRole('columnheader', { name: '[disable]' })).toBeInTheDocument();
-    expect(screen.getByRole('checkbox', { name: /^worker:disable/ })).toBeInTheDocument();
+    const avulsos = within(bloco('[Trabalhadores]')).getByTestId('avulsos-Trabalhadores');
+    // o dossiê é o caso que motivou a poda: era 1 caixa + 5 travessões de OUTRO recurso
+    expect(within(avulsos).getByText('Ver el dossier: DNI, domicilio, datos sensibles.')).toBeInTheDocument();
+    expect(within(avulsos).getByText('[worker_pii]')).toBeInTheDocument();
+    expect(within(avulsos).getAllByRole('checkbox')).toHaveLength(2); // worker_contact e worker_pii
+    // e não sobrou linha deles na grade
+    expect(within(bloco('[Trabalhadores]')).queryByText('[worker_pii]worker_pii')).not.toBeInTheDocument();
   });
 
-  it('🔒 o desenho acordado: Trabajadores + Vacantes rende exatamente 5 colunas', () => {
-    // Trava de regressão do combinado com o Gabriel (04/09): com os dados do
-    // desenho, a matriz tem que dar Ver · Crear editar · Elim. · Expor. · Valid.
-    montar({ catalog: [
-      { category: 'Trabalhadores', cells: [
-        celula('worker', 'read'), celula('worker', 'write'), celula('worker', 'delete'), celula('worker', 'export'),
-        celula('worker_contact', 'read'), celula('worker_pii', 'read'),
-        celula('worker_document', 'read'), celula('worker_document', 'write'),
-        celula('worker_document', 'delete'), celula('worker_document', 'validate'),
-      ] },
-      { category: 'Vagas e Funil', cells: [
-        celula('vacancy', 'read'), celula('vacancy', 'write'), celula('vacancy', 'delete'),
-        celula('funnel', 'read'), celula('funnel', 'write'),
-      ] },
-    ] });
-    // escopado ao <thead>: a linha de categoria também é um <th> que atravessa
-    // as colunas, e entraria na contagem sem isto.
-    const thead = screen.getByTestId('cell-matrix').querySelector('thead')!;
-    const cabecalhos = within(thead).getAllByRole('columnheader').map((h) => h.textContent);
-    expect(cabecalhos).toEqual([
-      'admin.access.group.cells.about', '[read]', '[write]', '[delete]', '[export]', '[validate]',
-    ]);
-    // e a ordem das LINHAS é a do catálogo, não alfabética: o dossiê vem antes
-    // dos documentos, como desenhado — alfabético o enterraria.
-    const linhas = screen.getAllByRole('rowheader').map((h) => h.textContent);
-    expect(linhas).toEqual([
-      '[worker]worker', '[worker_contact]worker_contact', '[worker_pii]worker_pii',
-      '[worker_document]worker_document', '[vacancy]vacancy', '[funnel]funnel',
-    ]);
+  it('a coluna que o recurso NÃO tem vira travessão, com nome no leitor de tela', () => {
+    montar();
+    // worker não tem `validate`; worker_document não tem `export`
+    expect(within(bloco('[Trabalhadores]')).getAllByRole('cell', { name: 'admin.access.group.cells.na' }))
+      .toHaveLength(2);
   });
 
   it('🔑 a descrição do backend vira o rótulo — a chave crua deixa de ser tudo', () => {
@@ -124,22 +110,31 @@ describe('CellMatrix — a matriz que o domínio já descrevia', () => {
   });
 
   it('categoria e recurso sem tradução mostram o valor CRU em vez de sumir', () => {
-    montar({ catalog: [{ category: 'Inventada', cells: [celula('coisa_nova', 'read')] }] });
-    expect(screen.getByText('[Inventada]')).toBeInTheDocument();
-    expect(screen.getByText('[coisa_nova]')).toBeInTheDocument();
+    montar({ catalog: [{ category: 'Inventada', cells: [celula('coisa', 'read'), celula('coisa', 'write')] }] });
+    expect(screen.getByRole('region', { name: '[Inventada]' })).toBeInTheDocument();
+    // `getByText` não casa texto quebrado em dois <span> (nome + chave crua)
+    expect(screen.getByRole('rowheader')).toHaveTextContent('[coisa]coisa');
   });
 
-  it('marcar e desmarcar devolve a chave ao chamador', async () => {
+  it('ação fora da ordem canônica ganha coluna própria, no fim', () => {
+    montar({ catalog: [{ category: 'X', cells: [celula('r', 'read'), celula('r', 'teleportar')] }] });
+    expect(colunasDo('[X]')).toEqual(['[read]', '[teleportar]']);
+  });
+
+  it('marcar devolve a chave ao chamador — na grade e no avulso', async () => {
     const { onToggle } = montar();
     await userEvent.click(screen.getByRole('checkbox', { name: /^worker:write/ }));
     expect(onToggle).toHaveBeenCalledWith('worker:write');
+    await userEvent.click(screen.getByRole('checkbox', { name: /^worker_pii:read/ }));
+    expect(onToggle).toHaveBeenCalledWith('worker_pii:read');
   });
 
   it('read: sem checkbox — ✓ para o que o grupo dá, · para o que não dá', () => {
-    montar({ editable: false });
+    montar({ editable: false, selected: new Set(['worker:read', 'worker_pii:read']) });
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     expect(screen.getByLabelText(/^worker:read/)).toHaveTextContent('✓');
     expect(screen.getByLabelText(/^worker:write/)).toHaveTextContent('·');
+    expect(screen.getByLabelText(/^worker_pii:read/)).toHaveTextContent('✓');
   });
 
   it('grupo sem nenhuma célula DIZ isso — numa matriz de ·, mudo seria ambíguo', () => {
@@ -153,10 +148,32 @@ describe('CellMatrix — a matriz que o domínio já descrevia', () => {
     expect(screen.getByText('admin.access.group.cells.empty')).toBeInTheDocument();
   });
 
-  it('o que mudou e ainda não foi salvo é anunciado a quem não vê a cor', () => {
-    montar({ selected: new Set(['worker:write']), saved: ['worker:read'] });
-    // worker:read saiu e worker:write entrou = 2 anúncios
-    expect(screen.getAllByText('admin.access.group.cells.changed')).toHaveLength(2);
+  it('o que mudou e não foi salvo é anunciado a quem não vê a cor — grade e avulso', () => {
+    montar({ selected: new Set(['worker:write', 'worker_pii:read']), saved: ['worker:read'] });
+    // worker:read saiu, worker:write entrou, worker_pii:read entrou
+    expect(screen.getAllByText('admin.access.group.cells.changed')).toHaveLength(3);
+  });
+});
+
+describe('montaBloco — a regra da poda', () => {
+  it('2+ ações vai para a grade; 1 ação vira avulso', () => {
+    const b = montaBloco('C', [celula('a', 'read'), celula('a', 'write'), celula('b', 'read')]);
+    expect(b.grade.map((l) => l.resource)).toEqual(['a']);
+    expect(b.avulsos.map((c) => c.resource)).toEqual(['b']);
+  });
+
+  it('as colunas saem só da GRADE — avulso não abre coluna para ninguém', () => {
+    // `b:send` é a única `send` da categoria e é avulso: não pode criar uma
+    // coluna "Enviar" que renderia um travessão em `a`.
+    const b = montaBloco('C', [celula('a', 'read'), celula('a', 'write'), celula('b', 'send')]);
+    expect(b.colunas).toEqual(['read', 'write']);
+  });
+
+  it('categoria só de avulsos não tem grade nem coluna', () => {
+    const b = montaBloco('C', [celula('a', 'read'), celula('b', 'read')]);
+    expect(b.grade).toEqual([]);
+    expect(b.colunas).toEqual([]);
+    expect(b.avulsos).toHaveLength(2);
   });
 });
 
@@ -169,8 +186,8 @@ describe('cellDiff — o que o rodapé promete antes de salvar', () => {
   });
 
   it('conjunto igual não é mudança — o botão de salvar não deve acender', () => {
-    const d = cellDiff(['a:read', 'b:read'], new Set(['b:read', 'a:read']));
-    expect(d).toEqual({ added: [], removed: [], dirty: false });
+    expect(cellDiff(['a:read', 'b:read'], new Set(['b:read', 'a:read'])))
+      .toEqual({ added: [], removed: [], dirty: false });
   });
 
   it('esvaziar o grupo conta como remoção, não como "sem mudança"', () => {
