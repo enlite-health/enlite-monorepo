@@ -17,6 +17,7 @@ import {
   parseTimeHHMM,
 } from './vacancyScheduleFilter';
 import { workerNotDisabledSql } from '@shared/database/activeWorkerFilter';
+import { INICIAIS_REDIGIDAS, patientNameIsRedacted } from '../../application/patientInVacancyProjection';
 
 // ── Display mappers ────────────────────────────────────────────────────────────
 
@@ -250,9 +251,12 @@ export interface VacancyListRow {
 }
 
 export function mapVacancyListRow(row: VacancyListRow) {
+  // D286 fase 2: a linha já chegou projetada (`projectPatientInVacancy`); com o nome redigido
+  // as iniciais não podem ser as do rótulo.
+  const redigido = patientNameIsRedacted(row);
   return {
     id: row.id,
-    initials: getInitials(row.patient_first_name, row.patient_last_name),
+    initials: redigido ? INICIAIS_REDIGIDAS : getInitials(row.patient_first_name, row.patient_last_name),
     name: `${row.patient_first_name || ''} ${row.patient_last_name || ''}`.trim(),
     email: '',
     caso: `Caso ${row.case_number}-${row.vacancy_number}`,

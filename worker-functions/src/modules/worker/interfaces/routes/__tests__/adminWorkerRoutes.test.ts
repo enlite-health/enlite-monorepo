@@ -52,7 +52,7 @@ const ESPERADO_WORKERS: Record<string, string> = {
   'POST /workers/sync-talentum': 'talentum:write',
   'GET /workers/export': 'worker:export',
   'GET /workers/:id/timeline': 'worker:read',
-  'GET /workers/:id': 'worker_pii:read',
+  'GET /workers/:id': 'worker:read',
   'PATCH /workers/:id/test-flag': 'worker:write',
   'PATCH /workers/:id/profile': 'worker:write',
   'PUT /workers/:id/service-area': 'worker:write',
@@ -231,10 +231,13 @@ describe('família admin.workers — as 4 peças declaram célula', () => {
     expect(total).toBe(32);
   });
 
-  it('abrir a FICHA é worker_pii:read; LISTAR é worker:read — a distinção que uma uniformização apagaria', () => {
+  it('abrir a FICHA é worker:read (D286 fase 2) — o dossiê NÃO vem junto: sai projetado por container', () => {
+    // Até 06/09 a rota exigia `worker_pii:read` para a tela inteira. Agora a célula da rota é a
+    // operacional e quem segura DNI/nascimento/endereço é a projeção (`AdminWorkersDetailBuilder`,
+    // espião de decrypt = 0). A distinção ficha × lista continua — mudou de lugar, não sumiu.
     const rotas = scanExpressRouter(routerPrincipal());
     expect(rotas.find((r) => r.method === 'GET' && r.path === '/workers/:id')?.cell).toMatchObject({
-      resource: 'worker_pii',
+      resource: 'worker',
       action: 'read',
     });
     expect(rotas.find((r) => r.method === 'GET' && r.path === '/workers')?.cell).toMatchObject({

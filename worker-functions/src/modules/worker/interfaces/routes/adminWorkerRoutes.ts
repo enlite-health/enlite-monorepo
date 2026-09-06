@@ -98,7 +98,10 @@ export function createAdminWorkerRoutes(
   router.get('/workers/export', adminOnly, perm.require('worker', 'export'), (req: Request, res: Response) => c.workers.exportWorkers(req, res));
   // timeline MUST be registered before /:id to avoid param capture
   router.get('/workers/:id/timeline', staffOnly, perm.require('worker', 'read'), (req: Request, res: Response) => c.timeline.getTimeline(req, res));
-  router.get('/workers/:id', staffOnly, perm.require('worker_pii', 'read'), logResourceAccess('worker'), (req: Request, res: Response) => c.workers.getWorkerById(req, res));
+  // D286 fase 2: abrir a ficha é o OPERACIONAL; contato, dossiê, documentos e encuadres saem
+  // projetados pela célula de cada container (`buildWorkerDetailResponse`). Quem só tem
+  // `worker:read` recebe a ficha sem nome, sem DNI, sem documento — não uma negação da tela.
+  router.get('/workers/:id', staffOnly, perm.require('worker', 'read'), logResourceAccess('worker'), (req: Request, res: Response) => c.workers.getWorkerById(req, res));
   // test-flag e profile são admin-only (mais estrito que staff)
   router.patch('/workers/:id/test-flag', adminOnly, perm.require('worker', 'write'), (req: Request, res: Response) => c.testFlag.updateTestFlag(req, res));
   // edição de perfil do worker — apenas role ADMIN

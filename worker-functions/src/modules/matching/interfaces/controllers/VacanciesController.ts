@@ -11,6 +11,7 @@ import { AdminVacancyDetailSchema } from '../schemas/AdminVacancyDetailSchema';
 import { reportError } from '@shared/logging';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
 import { cellsOfRequest, projectWorkerFields, ProjecaoSemDecryptorError } from '@modules/identity/permissions';
+import { projectPatientInVacancy } from '../../application/patientInVacancyProjection';
 
 /**
  * Decryptor da rota `GET /vacancies/:id`: os campos de prestador aqui já vêm em
@@ -81,7 +82,9 @@ export class VacanciesController {
       params.push(parseInt(limit as string), parseInt(offset as string));
 
       const result = await this.db.query(finalQuery, params);
-      const vacancies = (result.rows as VacancyListRow[]).map(mapVacancyListRow);
+      // D286 fase 2: nome do paciente na lista segue `patient_identity:read`, não `vacancy:read`.
+      const cellsDaLista = cellsOfRequest(req);
+      const vacancies = (result.rows as VacancyListRow[]).map((r) => mapVacancyListRow(projectPatientInVacancy(r, cellsDaLista)));
 
       res.status(200).json({
         success: true,
@@ -263,11 +266,13 @@ export class VacanciesController {
           )
         : row.encuadres;
 
-      const normalized = {
+      // D286 fase 2: nome e endereço do PACIENTE seguem a célula do paciente (identidade,
+      // endereço), não a da vaga — a mesma chave que vale na ficha dele e no mapa.
+      const normalized = projectPatientInVacancy({
         ...row,
         encuadres,
         schedule: normalizeSchedule(row.schedule),
-      };
+      }, cells);
 
       // Observe-only contract check: log shape drift without breaking requests.
       // After a stable window with no drift logged, promote to .parse() (strict).

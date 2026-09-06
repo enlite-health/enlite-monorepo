@@ -142,7 +142,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'DELETE /api/admin/workers/:id/tags/:tagId → worker:write',
         'GET /api/admin/worker-tags → worker:read',
         'GET /api/admin/workers → worker:read',
-        'GET /api/admin/workers/:id → worker_pii:read',
+        'GET /api/admin/workers/:id → worker:read',
         'GET /api/admin/workers/:id/additional-documents → worker_document:read',
         'GET /api/admin/workers/:id/available-vacancies → vacancy:read',
         'GET /api/admin/workers/:id/current-interview → interview:read',

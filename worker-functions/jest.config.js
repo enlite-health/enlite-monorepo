@@ -86,6 +86,18 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    'src/modules/worker/application/workerContainerAccess.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/matching/application/patientInVacancyProjection.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     // Paciente como fonte da verdade: leitura clínica, repositórios e o guarda
     // de acesso ao texto clínico. `patientClinicalAccess` é o que decide quem
     // vê texto clínico — regra dura do CLAUDE.md, não pode regredir calado.
