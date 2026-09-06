@@ -64,6 +64,13 @@ async function loginAsAdmin(page: Page): Promise<void> {
   });
   await page.route('**/securetoken.googleapis.com/**', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ access_token: 'mock', expires_in: '3600', token_type: 'Bearer', refresh_token: 'mock', id_token: 'mock', user_id: uid, project_id: 'enlite-prd' }) }));
+  // Stage (ABAC): o painel busca `/v1/me/authz`; sem contrato mockado a rota protegida fica no
+  // spinner (o token do emulador leva 401 na API de teste). Mesmo molde de `admin-access.e2e.ts`;
+  // sem `enforcement` nada gateia — o que se prova aqui é a tela.
+  await page.route('**/v1/me/authz', (route) => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({ uid: uid, tenantId: 't', status: 'ACTIVE', permissions: [], countries: ['AR'], groups: [], features: {} }),
+  }));
   await page.route('**/api/admin/auth/profile', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { id: uid, email, role: 'admin', displayName: 'Gabriel', isActive: true } }) }));
   await page.addInitScript(() => localStorage.setItem('i18nextLng', 'es'));
