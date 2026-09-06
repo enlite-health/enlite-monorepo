@@ -3763,9 +3763,9 @@
                 }
               },
               "dashboard": {
-                "body": "É a tela de início da operação, com o resumo do dia. Sem isto, a pessoa entra no painel e não vê o panorama.",
+                "body": "É abrir a tela Gestão à Vista. Cada bloco da tela (Números-chave, Equipe armada, Prioridades, Registros, Totalização, Zonas, Pacientes) tem permissão própria: só com esta, a pessoa entra e vê a tela vazia.",
                 "action": {
-                  "read": "Ver o painel de início."
+                  "read": "Abrir a tela Gestão à Vista."
                 }
               },
               "dedup": {
@@ -3812,11 +3812,11 @@
                 }
               },
               "patient": {
-                "body": "É o paciente e o caso dele: endereço, horários, obra social, estado de admissão. É o tronco de onde sai todo o resto — sem paciente não há vaga nem grupo. Esta permissão NÃO abre texto clínico: isso não vive no painel.",
+                "body": "É o paciente em OPERAÇÃO: status de admissão, número de caso, ativação e histórico de estados. É o tronco de onde sai todo o resto — sem paciente não há vaga nem grupo. NÃO abre nome, diagnóstico, familiares, cobertura nem endereço: cada um desses é uma permissão própria da ficha.",
                 "action": {
-                  "delete": "Eliminar um paciente do sistema.",
-                  "read": "Ver a lista de pacientes e abrir o detalhe do caso.",
-                  "write": "Criar um paciente e editar os dados do caso."
+                  "read": "Ver a lista e o kanban de pacientes, abrir a ficha com o bloco de status e histórico.",
+                  "write": "Criar um paciente, mudar o status e ativar.",
+                  "delete": "Purgar um paciente de TESTE (só is_test) — ferramenta do monitoramento sintético, sem botão no painel."
                 }
               },
               "permission_management": {
@@ -3902,9 +3902,9 @@
                 }
               },
               "worker_pii": {
-                "body": "É o dossiê de identidade, e é a permissão mais pesada desta tela. Abre documento de identidade (DNI/CUIL), data de nascimento, domicílio e fotos — e dados que a lei protege de forma especial. Sem ela a pessoa continua vendo a listagem profissional; com ela vê quem a pessoa é. Cuidado com uma porta lateral: a busca por telefone devolve o MESMO dossiê, não um resumo. Abrir uma ficha fica registrado.",
+                "body": "É o dossiê de identidade, e é a permissão mais pesada desta tela. Abre documento de identidade (DNI/CUIL), data de nascimento, sexo e gênero, fotos, peso e altura — e os dados que a lei protege de forma especial. O endereço NÃO vem aqui: é permissão própria, compartilhada com o mapa. Sem esta permissão a pessoa continua vendo a ficha profissional. Abrir uma ficha fica registrado.",
                 "action": {
-                  "read": "Ver o dossiê completo de identidade: documento (DNI/CUIL), data de nascimento, domicílio e fotos, além dos dados sensíveis que a lei protege de forma especial."
+                  "read": "Ver o dossiê completo de identidade: documento, nascimento, sexo, gênero, fotos, peso, altura e os dados que a lei protege de forma especial."
                 }
               },
               "worker_address": {
@@ -3912,8 +3912,107 @@
                 "action": {
                   "read": "Ver o endereço do prestador na ficha e no mapa (linha, coordenada, raio)."
                 }
+              },
+              "patient_identity": {
+                "body": "É quem o paciente é: nome, documento, data de nascimento, sexo, telefone e e-mail de contato. Também é o nome que aparece na lista, no kanban, na vaga e no mapa. Sem esta permissão o nome sai como «Contato restrito» em todas essas telas.",
+                "action": {
+                  "read": "Ver o bloco de identidade e dados gerais da ficha, e o nome do paciente onde ele apareça.",
+                  "write": "Editar identidade e dados gerais."
+                }
+              },
+              "patient_clinical": {
+                "body": "É o quadro clínico: diagnóstico (livre e CID-11), nível de dependência, especialidade, dispositivos, observações, CUD, proteção judicial, consentimento e instruções de emergência. É dado de SAÚDE: a lei protege de forma especial e cada abertura fica registrada.",
+                "action": {
+                  "read": "Ver o bloco de diagnóstico e quadro clínico da ficha (e o nível de dependência na vaga).",
+                  "write": "Editar o diagnóstico e o quadro clínico."
+                }
+              },
+              "patient_care_team": {
+                "body": "É a equipe tratante: os profissionais externos que atendem o paciente (nome, telefone, e-mail). São dados de terceiros, por isso ficam separados do resto da ficha.",
+                "action": {
+                  "read": "Ver o bloco de equipe tratante na aba de dados clínicos."
+                }
+              },
+              "patient_family": {
+                "body": "São os familiares e responsáveis do paciente: nome, vínculo, telefone. São dados de OUTRA pessoa, com base legal própria — por isso não vêm com o resto da ficha e nunca estão em grupo por padrão.",
+                "action": {
+                  "read": "Ver o bloco de familiares na aba de rede de apoio.",
+                  "write": "Adicionar, editar e remover familiares e responsáveis."
+                }
+              },
+              "patient_chat": {
+                "body": "São os IDs dos grupos de WhatsApp do caso (família e prestadores). Um ID é a chave para entrar numa conversa com contexto clínico: por isso é permissão à parte, e fica registrado quem o recebeu.",
+                "action": {
+                  "read": "Ver os IDs de chat do caso.",
+                  "write": "Vincular ou trocar os grupos de chat do caso."
+                }
+              },
+              "patient_coverage": {
+                "body": "É a cobertura médica: obra social ou plano, número de afiliado e a verificação de cobertura.",
+                "action": {
+                  "read": "Ver o bloco de cobertura médica na aba de serviço contratado.",
+                  "write": "Editar a cobertura e o número de afiliado."
+                }
+              },
+              "patient_address": {
+                "body": "São os endereços do paciente: domicílio, localidade, bairro e coordenada. É a MESMA permissão que abre a aba Pacientes do mapa e a zona do paciente na vaga — o endereço é um só, esteja onde estiver.",
+                "action": {
+                  "read": "Ver as localizações da ficha, a zona do paciente na vaga e a aba Pacientes do mapa.",
+                  "write": "Adicionar e editar endereços do paciente."
+                }
+              },
+              "patient_services": {
+                "body": "São os serviços contratados: tipo de serviço, profissão requerida, horários, data de início e os prestadores designados. Aparece na aba de serviço contratado e também na de matching. O valor por hora NÃO vem com esta permissão: tem guarda própria.",
+                "action": {
+                  "read": "Ver os serviços contratados nas abas de serviço e de matching.",
+                  "write": "Criar e editar serviços contratados e seus prestadores."
+                }
+              },
+              "dashboard_numbers": {
+                "body": "É o bloco NÚMEROS-CHAVE da Gestão à Vista: pacientes ativos, horas, percentual de resposta rápida e de capacidade, o que está RODANDO e o que está CHEGANDO. São contadores, sem dado pessoal.",
+                "action": {
+                  "read": "Ver o bloco Números-chave."
+                }
+              },
+              "dashboard_team": {
+                "body": "É o bloco EQUIPE ARMADA E HORAS: como os casos estão classificados por equipe armada e as horas cobertas por semana.",
+                "action": {
+                  "read": "Ver o bloco Equipe armada e horas."
+                }
+              },
+              "dashboard_priorities": {
+                "body": "É o bloco PRIORIDADES DE CONTATO: quem a operação precisa contatar primeiro, por urgência.",
+                "action": {
+                  "read": "Ver o bloco Prioridades de contato."
+                }
+              },
+              "dashboard_registrations": {
+                "body": "É o bloco REGISTROS: quantos prestadores e pacientes se cadastraram no período.",
+                "action": {
+                  "read": "Ver o bloco Registros."
+                }
+              },
+              "dashboard_funnel": {
+                "body": "É o bloco TOTALIZAÇÃO DO FUNIL: candidaturas por etapa e por prestador, com o filtro de período, e os encuadres da semana.",
+                "action": {
+                  "read": "Ver o bloco Totalização do funil."
+                }
+              },
+              "dashboard_zones": {
+                "body": "É o bloco ZONAS: pacientes e prestadores por zona e sexo, demanda contra disponibilidade, com filtro por profissão. São contadores por zona, sem dado pessoal.",
+                "action": {
+                  "read": "Ver o bloco Zonas."
+                }
+              },
+              "api_docs": {
+                "body": "É a documentação interativa da API (Swagger). De lá dá para TESTAR qualquer rota: cada chamada de teste segue a permissão daquela rota, não esta.",
+                "action": {
+                  "read": "Abrir a tela API Docs."
+                }
               }
-            }
+            },
+            "imageAlt": "Assim «{{rotulo}}» aparece na tela",
+            "imageCaption": "Assim aparece na tela (dados de exemplo)"
           },
           "alsoIn": "também em: {{telas}}",
           "otherCells": "Outras células (sem tela)"

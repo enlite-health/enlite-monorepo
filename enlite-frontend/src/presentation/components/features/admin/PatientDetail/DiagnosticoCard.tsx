@@ -46,7 +46,7 @@ export function DiagnosticoCard({ patient, onSaved, focusRequest }: DiagnosticoC
   const patologias = sortDiagnosesForCard(patient.diagnoses);
 
   return (
-    <div className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
+    <div data-testid="diagnostico-card" className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <Heading level={1} as="h3" weight="semibold" color="primary">
           {t('admin.patients.detail.diagnosisCard.title')}

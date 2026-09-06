@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Heading, Text } from '@presentation/components/atoms';
+import { cellHelpImageUrl } from '@presentation/config/cellHelpImages';
 
 interface CellHelpDrawerProps {
   /** O recurso aberto — `null` fecha o painel. */
@@ -55,6 +56,7 @@ export function CellHelpDrawer({ resource, rotulo, acoes, onClose }: CellHelpDra
   const base = `admin.access.group.cells.help.resource.${resource}`;
   const corpo = t(`${base}.body`, '');
   const temTexto = corpo !== '' && corpo !== `${base}.body`;
+  const imagem = cellHelpImageUrl(resource);
 
   return (
     <>
@@ -88,6 +90,16 @@ export function CellHelpDrawer({ resource, rotulo, acoes, onClose }: CellHelpDra
             <Text as="span" size="xs" color="secondary">{t('admin.access.group.cells.help.close')}</Text>
           </button>
         </div>
+
+        {/* A captura do componente a que a célula se refere — o operador vê o que está concedendo. */}
+        {imagem && (
+          <figure className="rounded-lg border border-gray-200 overflow-hidden" data-testid="cell-help-image">
+            <img src={imagem} alt={t('admin.access.group.cells.help.imageAlt', { rotulo })} className="block w-full h-auto" loading="lazy" />
+            <figcaption className="px-3 py-1.5 bg-gray-50 border-t border-gray-200">
+              <Text as="span" size="xs" color="secondary">{t('admin.access.group.cells.help.imageCaption')}</Text>
+            </figcaption>
+          </figure>
+        )}
 
         {temTexto ? (
           <>

@@ -98,7 +98,7 @@ export function VacancySocialLinksCard({
   const noCaseNumber = caseNumber == null;
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-4">
+    <div data-testid="vacancy-social-links-card" className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-4">
       <div>
         <Heading level={3} weight="semibold" color="secondary">
           {t('admin.vacancyDetail.socialLinksCard.title')}

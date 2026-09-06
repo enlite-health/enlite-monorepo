@@ -123,4 +123,16 @@ describe('CellHelpDrawer — a ajuda de uma permissão', () => {
     await userEvent.keyboard('{Escape}');
     expect(onClose).not.toHaveBeenCalled();
   });
+
+  it('recurso com captura mostra a imagem do componente (public/ayuda-celulas) com legenda; sem captura, nada — nem 404', () => {
+    montar({ resource: 'patient_family', rotulo: 'Familiares' });
+    const fig = screen.getByTestId('cell-help-image');
+    expect(fig.querySelector('img')?.getAttribute('src')).toBe('/ayuda-celulas/patient_family.png');
+    expect(fig.textContent).toContain('admin.access.group.cells.help.imageCaption');
+  });
+
+  it('recurso sem captura não desenha a figura', () => {
+    montar({ resource: 'api_docs', rotulo: 'API Docs' });
+    expect(screen.queryByTestId('cell-help-image')).not.toBeInTheDocument();
+  });
 });

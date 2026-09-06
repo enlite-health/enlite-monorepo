@@ -22,7 +22,7 @@ export function VacancyPatientCard({
   const patientName = [firstName, lastName].filter(Boolean).join(' ') || '—';
 
   return (
-    <div className="border-[2.5px] border-gray-400 rounded-card bg-white p-8 flex flex-col gap-3.5">
+    <div data-testid="vacancy-patient-card" className="border-[2.5px] border-gray-400 rounded-card bg-white p-8 flex flex-col gap-3.5">
       <Heading level={1} color="primary" weight="semibold">
         {t('admin.vacancyDetail.patientCard.title')}
       </Heading>

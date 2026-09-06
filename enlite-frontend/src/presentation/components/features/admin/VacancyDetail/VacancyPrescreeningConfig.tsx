@@ -236,7 +236,7 @@ export function VacancyPrescreeningConfig({ vacancyId, isPublished }: VacancyPre
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-5">
+    <div data-testid="vacancy-prescreening-config" className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-5">
       <Heading level={3} weight="semibold" color="secondary">
         {t(`${ps}.title`)}
       </Heading>

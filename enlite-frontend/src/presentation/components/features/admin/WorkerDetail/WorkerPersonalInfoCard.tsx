@@ -60,7 +60,7 @@ export function WorkerPersonalInfoCard({
     : null;
 
   return (
-    <div className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
+    <div data-testid="worker-personal-card" className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <Heading level={1} as="h3">
           {t('admin.workerDetail.personalInfo')}
