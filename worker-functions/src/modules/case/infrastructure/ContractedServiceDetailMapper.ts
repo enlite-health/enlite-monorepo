@@ -84,6 +84,10 @@ export async function mapContractedServices(
     // Spec 015 (US-A6.1, migration 322): franja etária solicitada do prestador. `SELECT *`
     // (fetchRelated) já traz a coluna nova — só falta espelhar no shape decorado.
     providerAgeBand: r.provider_age_band,
+    // Migration 330: ponteiro para o endereço do paciente + horário do encuadre (array, mesmo
+    // formato de job_postings.schedule). `SELECT *` já traz as duas colunas.
+    addressId: r.address_id,
+    schedule: r.schedule,
     active: r.active,
     endedAt: r.ended_at,
     country: r.country,

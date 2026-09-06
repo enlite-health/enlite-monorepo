@@ -143,6 +143,12 @@ export class PatientQueryRepository {
         EXISTS (SELECT 1 FROM patient_contracted_services pcs
                  WHERE pcs.patient_id = p.id AND pcs.active)
                                AS "hasActiveContractedService",
+        -- Migration 330: serviço ativo sem endereço vivo (NULL ou arquivado) → SERVICE_ADDRESS.
+        EXISTS (SELECT 1 FROM patient_contracted_services pcs
+                 LEFT JOIN patient_addresses pa
+                        ON pa.id = pcs.address_id AND pa.archived_at IS NULL
+                 WHERE pcs.patient_id = p.id AND pcs.active AND pa.id IS NULL)
+                               AS "hasActiveServiceWithoutAddress",
         created_at             AS "createdAt",
         updated_at             AS "updatedAt",
         -- SLA (Fase 4): quando o paciente entrou no status ATUAL. MAX(created_at)
@@ -229,6 +235,7 @@ export class PatientQueryRepository {
         activeAddressCount: addressesCountNum,
         activeResponsibleCount: row.hasActiveResponsible === true ? 1 : 0,
         activeContractedServiceCount: row.hasActiveContractedService === true ? 1 : 0,
+        activeContractedServicesWithoutAddressCount: row.hasActiveServiceWithoutAddress === true ? 1 : 0,
         now,
       });
       const isActivatableStatus = (ACTIVATABLE_STATUSES as readonly (string | null)[]).includes(

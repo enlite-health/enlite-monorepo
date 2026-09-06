@@ -15,6 +15,35 @@ import {
   type ContractedServiceProviderDetail,
 } from './ContractedServiceProviderRepository';
 
+/**
+ * Slot de horário do encuadre — o MESMO formato que `scheduleToJsonb` persiste em
+ * `job_postings.schedule` (array; `normalizeSchedule` já lê). `dayOfWeek`: 0 = domingo.
+ */
+export interface ContractedServiceScheduleSlot {
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+}
+
+/**
+ * `address_id` apontou para um endereço que NÃO é do paciente (FK composta
+ * `pcs_address_same_patient_fk`, migration 330) — o banco recusa; o controller responde 422.
+ */
+export class AddressNotOfPatientError extends Error {
+  readonly code = 'ADDRESS_NOT_OF_PATIENT';
+  constructor(readonly addressId: string | null | undefined) {
+    super('address_id does not belong to this patient');
+    this.name = 'AddressNotOfPatientError';
+  }
+}
+
+const ADDRESS_FK = 'pcs_address_same_patient_fk';
+
+function isAddressFkViolation(err: unknown): boolean {
+  const e = err as { code?: string; constraint?: string } | null;
+  return e?.code === '23503' && e?.constraint === ADDRESS_FK;
+}
+
 export interface ContractedServiceDetail {
   id: string;
   patientId: string;
@@ -34,6 +63,10 @@ export interface ContractedServiceDetail {
   guardShift: string | null;
   /** Franja etária solicitada do prestador (spec 015, migration 322) — null = não informado. */
   providerAgeBand: string | null;
+  /** Endereço do paciente onde o serviço é prestado (migration 330) — null = ainda não vinculado. */
+  addressId: string | null;
+  /** Horário do encuadre, formato do editor (migration 330) — null = ainda sem horário. */
+  schedule: ContractedServiceScheduleSlot[] | null;
   active: boolean;
   endedAt: string | null;
   country: string;
@@ -58,6 +91,8 @@ export interface ContractedServiceWriteInput {
   supervisionFrequency?: string | null;
   guardShift?: string | null;
   providerAgeBand?: string | null;
+  addressId?: string | null;
+  schedule?: ContractedServiceScheduleSlot[] | null;
   deviceTypeCodes?: string[];
   /** Só `false` é caminho válido de escrita (baixa) — reabrir não existe (mesma régua do C-e.2). */
   active?: boolean;
@@ -85,7 +120,18 @@ const WRITABLE_COLUMNS: Array<[keyof ContractedServiceWriteInput, string]> = [
   ['supervisionFrequency', 'supervision_frequency'],
   ['guardShift', 'guard_shift'],
   ['providerAgeBand', 'provider_age_band'],
+  ['addressId', 'address_id'],
+  ['schedule', 'schedule'],
 ];
+
+/**
+ * `schedule` é JSONB e chega como ARRAY JS: o driver `pg` serializa objeto como JSON, mas array
+ * JS vira ARRAY Postgres (`{...}`), que o JSONB recusa. Só esta coluna precisa do stringify.
+ */
+function toColumnValue(key: keyof ContractedServiceWriteInput, value: unknown): unknown {
+  if (key === 'schedule' && value != null) return JSON.stringify(value);
+  return value;
+}
 
 interface ServiceRow {
   id: string;
@@ -104,6 +150,8 @@ interface ServiceRow {
   supervision_frequency: string | null;
   guard_shift: string | null;
   provider_age_band: string | null;
+  address_id: string | null;
+  schedule: ContractedServiceScheduleSlot[] | null;
   active: boolean;
   ended_at: string | null;
   country: string;
@@ -150,6 +198,8 @@ export class PatientContractedServiceRepository {
       supervisionFrequency: row.supervision_frequency,
       guardShift: row.guard_shift,
       providerAgeBand: row.provider_age_band,
+      addressId: row.address_id,
+      schedule: row.schedule,
       active: row.active,
       endedAt: row.ended_at,
       country: row.country,
@@ -214,7 +264,7 @@ export class PatientContractedServiceRepository {
         const value = input[key];
         if (value !== undefined) {
           cols.push(col);
-          values.push(value);
+          values.push(toColumnValue(key, value));
         }
       }
       const placeholders = cols.map((_, i) => `$${i + 1}`);
@@ -231,6 +281,7 @@ export class PatientContractedServiceRepository {
       return this.decorate(row.rows[0], this.pool);
     } catch (err) {
       await cli.query('ROLLBACK');
+      if (isAddressFkViolation(err)) throw new AddressNotOfPatientError(input.addressId);
       throw err;
     } finally {
       cli.release();
@@ -256,7 +307,7 @@ export class PatientContractedServiceRepository {
       };
       for (const [key, col] of WRITABLE_COLUMNS) {
         const value = patch[key];
-        if (value !== undefined) push(col, value);
+        if (value !== undefined) push(col, toColumnValue(key, value));
       }
       if (patch.active !== undefined) {
         push('active', patch.active);
@@ -281,6 +332,7 @@ export class PatientContractedServiceRepository {
       return this.decorate(row.rows[0], this.pool);
     } catch (err) {
       await cli.query('ROLLBACK');
+      if (isAddressFkViolation(err)) throw new AddressNotOfPatientError(patch.addressId);
       throw err;
     } finally {
       cli.release();

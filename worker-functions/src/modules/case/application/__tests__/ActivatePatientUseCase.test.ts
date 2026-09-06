@@ -72,7 +72,16 @@ interface DispatchOpts {
    * serviços declarados"). Omitido = comportamento pré-existente (fallback, sem serviço).
    * `provider_age_band` (spec 015, US-A6.2) omitido = undefined, mesmo tratamento de null
    * (vacancyRangeForProviderAgeBand). */
-  activeServices?: Array<{ id: string; providers_needed: number | null; provider_age_band?: string | null }>;
+  activeServices?: Array<{
+    id: string;
+    providers_needed: number | null;
+    provider_age_band?: string | null;
+    /** Migration 330: endereço VIVO do serviço (LEFT JOIN em patient_addresses não arquivado).
+     * Omitido = null = "sem endereço" → SERVICE_ADDRESS bloqueia. */
+    live_address_id?: string | null;
+    /** Migration 330: horário do encuadre, copiado tal qual para a vaga. Omitido = null. */
+    schedule?: unknown;
+  }>;
   /** Spec 014: `patient_responsibles` deste paciente (só importa quando `birth_date` é menor). */
   responsibleCount?: number;
 }
@@ -104,7 +113,11 @@ function programClient(opts: DispatchOpts): { seen: string[] } {
       return { rowCount: rows.length, rows };
     }
     if (sql.includes('FROM patient_contracted_services')) {
-      const rows = opts.activeServices ?? [];
+      const rows = (opts.activeServices ?? []).map((svc) => ({
+        ...svc,
+        live_address_id: svc.live_address_id ?? null,
+        schedule: svc.schedule ?? null,
+      }));
       return { rowCount: rows.length, rows };
     }
     if (sql.includes('FROM patient_responsibles')) {
@@ -276,58 +289,85 @@ describe('ActivatePatientUseCase', () => {
   // ── Spec 013 bloco C: cross-product serviço×endereço (linhas 142-151), sem cobertura
   // antes desta rodada (QA-caça #2) ───────────────────────────────────────────────────
 
-  it('l. 2 serviços ativos × 2 endereços ativos → 4 vagas (cross-product), cada uma com o contracted_service_id do serviço certo, providers_needed E a franja (age_range_min/max) propagados', async () => {
+  it('l. 2 serviços ativos, cada um no SEU endereço → 2 vagas (uma POR SERVIÇO, nunca serviços × endereços), cada uma no endereço do serviço, com contracted_service_id, providers_needed, franja E horário do serviço', async () => {
+    const schedule1 = [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }];
     const { seen } = programClient({
       patientRow: { id: 'pat-cross', status: 'PENDING_ADMISSION', case_number: 77 },
       addressIds: ['addr-1', 'addr-2'],
       activeServices: [
-        // Spec 015 (US-A6.2): svc-1 pediu franja 30-45 → toda vaga NASCIDA DESTE SERVIÇO carrega
-        // age_range_min=30/max=44 (ProviderAgeBandMapping.ts), em QUALQUER endereço.
-        { id: 'svc-1', providers_needed: 2, provider_age_band: 'AGE_30_45' },
-        // svc-2 nunca teve a franja preenchida (coluna nova em serviço pré-existente) →
-        // não toca a vaga (null/null), MESMO shape do fallback.
-        { id: 'svc-2', providers_needed: null },
+        // Migration 330 (decisão do Gabriel 05/09): "Cuidador" é na casa (addr-1) — a vaga nasce
+        // SÓ ali. Antes desta migration o produto cartesiano criava svc-1 também em addr-2.
+        { id: 'svc-1', providers_needed: 2, provider_age_band: 'AGE_30_45', live_address_id: 'addr-1', schedule: schedule1 },
+        // "AT" é na escola (addr-2), ainda sem horário — a vaga nasce sem schedule e o operador
+        // preenche nela (OPERATIONAL_EDITABLE_FIELDS), como hoje.
+        { id: 'svc-2', providers_needed: null, live_address_id: 'addr-2' },
       ],
     });
 
     const result = await new ActivatePatientUseCase().execute('pat-cross');
 
-    // 2 endereços × 2 serviços = 4 vagas — linha 145 (o `.map` interno) é o que gera o produto
-    // cartesiano por endereço; sem ela haveria só 2 vagas (uma por endereço, sem serviço).
-    expect(result.createdVacancyIds).toEqual(['vac-1', 'vac-2', 'vac-3', 'vac-4']);
-    expect(countSql(seen, 'INSERT INTO job_postings')).toBe(4);
+    // 2 serviços → 2 vagas. Com o produto cartesiano antigo seriam 4 (2 no lugar errado).
+    expect(result.createdVacancyIds).toEqual(['vac-1', 'vac-2']);
+    expect(countSql(seen, 'INSERT INTO job_postings')).toBe(2);
 
-    // Ordem: flatMap por endereço, map interno por serviço — addr-1×svc-1, addr-1×svc-2,
-    // addr-2×svc-1, addr-2×svc-2. Cada chamada carrega o par CERTO (não o último serviço para
-    // todas as vagas — o bug óbvio de closure/reuso de variável nesta forma de loop).
     expect(mockBuildInsertParams).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
         patient_address_id: 'addr-1', contracted_service_id: 'svc-1', providers_needed: 2,
-        age_range_min: 30, age_range_max: 44,
+        age_range_min: 30, age_range_max: 44, schedule: schedule1,
       }),
     );
     expect(mockBuildInsertParams).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
-        patient_address_id: 'addr-1', contracted_service_id: 'svc-2', providers_needed: null,
-        age_range_min: null, age_range_max: null,
-      }),
-    );
-    expect(mockBuildInsertParams).toHaveBeenNthCalledWith(
-      3,
-      expect.objectContaining({
-        patient_address_id: 'addr-2', contracted_service_id: 'svc-1', providers_needed: 2,
-        age_range_min: 30, age_range_max: 44,
-      }),
-    );
-    expect(mockBuildInsertParams).toHaveBeenNthCalledWith(
-      4,
-      expect.objectContaining({
         patient_address_id: 'addr-2', contracted_service_id: 'svc-2', providers_needed: null,
-        age_range_min: null, age_range_max: null,
+        age_range_min: null, age_range_max: null, schedule: null,
       }),
     );
+    // Nenhuma vaga de svc-1 em addr-2 nem de svc-2 em addr-1 — o par errado NÃO existe.
+    expect(mockBuildInsertParams).not.toHaveBeenCalledWith(
+      expect.objectContaining({ patient_address_id: 'addr-2', contracted_service_id: 'svc-1' }),
+    );
+    expect(mockBuildInsertParams).not.toHaveBeenCalledWith(
+      expect.objectContaining({ patient_address_id: 'addr-1', contracted_service_id: 'svc-2' }),
+    );
+  });
+
+  it('l2. serviço ativo SEM endereço vivo (address_id NULL ou arquivado) → PatientNotReadyError com SERVICE_ADDRESS, NADA criado, rollback — nunca mais o fallback cartesiano', async () => {
+    const { seen } = programClient({
+      patientRow: { id: 'pat-svc-noaddr', status: 'PENDING_ADMISSION', case_number: 78 },
+      addressIds: ['addr-1', 'addr-2'],
+      activeServices: [
+        { id: 'svc-ok', providers_needed: 1, live_address_id: 'addr-1' },
+        // O LEFT JOIN devolve null tanto para "nunca vinculado" quanto para "endereço arquivado".
+        { id: 'svc-orfao', providers_needed: 1, live_address_id: null },
+      ],
+    });
+
+    await expect(new ActivatePatientUseCase().execute('pat-svc-noaddr')).rejects.toMatchObject({
+      name: 'PatientNotReadyError',
+      missing: ['SERVICE_ADDRESS'],
+    });
+    // Nem a vaga do serviço "bom" nasce: ou todas, ou nenhuma (mesma transação).
+    expect(countSql(seen, 'INSERT INTO job_postings')).toBe(0);
+    expect(countSql(seen, 'ROLLBACK')).toBe(1);
+    expect(countSql(seen, 'COMMIT')).toBe(0);
+  });
+
+  it('l3. a query de serviços faz LEFT JOIN em patient_addresses NÃO arquivado — endereço arquivado conta como "sem endereço"', async () => {
+    const { seen } = programClient({
+      patientRow: { id: 'pat-q', status: 'PENDING_ADMISSION', case_number: 79 },
+      addressIds: ['addr-1'],
+      activeServices: [{ id: 'svc-1', providers_needed: 1, live_address_id: 'addr-1' }],
+    });
+    await new ActivatePatientUseCase().execute('pat-q');
+    const svcSql = seen.find((q) => q.includes('FROM patient_contracted_services'))!;
+    expect(svcSql).toMatch(/LEFT JOIN patient_addresses pa/);
+    expect(svcSql).toMatch(/pa\.archived_at IS NULL/);
+    expect(svcSql).toMatch(/pcs\.schedule/);
+    // O produto cartesiano morreu: a query de endereços continua existindo (gate ADDRESS e
+    // fallback sem serviço), mas com serviço a vaga nasce do serviço.
+    expect(countSql(seen, 'INSERT INTO job_postings')).toBe(1);
   });
 
   // ── Spec 015 (US-A6.2, T003 "teste unitário direto"): os 4 valores do enum, isolados ────────
@@ -340,7 +380,7 @@ describe('ActivatePatientUseCase', () => {
     programClient({
       patientRow: { id: 'pat-band', status: 'PENDING_ADMISSION', case_number: 99 },
       addressIds: ['addr-1'],
-      activeServices: [{ id: 'svc-band', providers_needed: 1, provider_age_band: band as string }],
+      activeServices: [{ id: 'svc-band', providers_needed: 1, provider_age_band: band as string, live_address_id: 'addr-1' }],
     });
 
     await new ActivatePatientUseCase().execute('pat-band');
@@ -453,6 +493,7 @@ describe('ActivatePatientUseCase', () => {
       activeAddressCount: 1,
       activeResponsibleCount: 0,
       activeContractedServiceCount: 0,
+      activeContractedServicesWithoutAddressCount: 0,
     });
     expect(missing).toContain('CONSENT');
   });
@@ -474,6 +515,7 @@ describe('ActivatePatientUseCase', () => {
       activeAddressCount: 1,
       activeResponsibleCount: 0,
       activeContractedServiceCount: 0,
+      activeContractedServicesWithoutAddressCount: 0,
     });
     expect(missing).toContain('COVERAGE');
   });
@@ -496,6 +538,7 @@ describe('ActivatePatientUseCase', () => {
       activeAddressCount: 1,
       activeResponsibleCount: 0,
       activeContractedServiceCount: 0,
+      activeContractedServicesWithoutAddressCount: 0,
     });
     expect(missing).toContain('RESPONSIBLE');
   });
@@ -627,6 +670,7 @@ describe('ActivatePatientUseCase', () => {
         activeAddressCount: 1,
         activeResponsibleCount: 0,
         activeContractedServiceCount: 0,
+        activeContractedServicesWithoutAddressCount: 0,
       });
       expect(missing).toEqual(['CONTRACTED_SERVICE']);
     },
