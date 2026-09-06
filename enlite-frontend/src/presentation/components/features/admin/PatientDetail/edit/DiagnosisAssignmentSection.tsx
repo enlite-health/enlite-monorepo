@@ -22,7 +22,7 @@ import type { PatientDiagnosisDetail } from '@domain/entities/PatientDetail';
 import type { TerminologyCandidate } from '@domain/entities/Terminology';
 import { AdminDiagnosisApiService, DiagnosisApiError, type DiagnosisApiErrorCode } from '@infrastructure/http/AdminDiagnosisApiService';
 import { IcdSearchCombobox } from './IcdSearchCombobox';
-import { DiagnosisChipList } from './DiagnosisChipList';
+import { DiagnosisChipList, type ChipBusy } from './DiagnosisChipList';
 
 export interface DiagnosisAssignmentSectionProps {
   patientId: string;
@@ -52,8 +52,16 @@ export function DiagnosisAssignmentSection({
   const [diagnoses, setDiagnoses] = useState<PatientDiagnosisDetail[]>(
     initialDiagnoses.filter((d) => d.active && d.source === 'PANEL'),
   );
-  const [busyId, setBusyId] = useState<string | null>(null);
+  /** Ação em voo num chip existente (PATCH promover / PATCH desativar) — o chip mostra "Guardando…"/"Quitando…". */
+  const [busy, setBusy] = useState<ChipBusy | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * 06/09 (Gabriel): "quando eu clico qual CID-11 eu quero, demora uns milissegundos para aparecer —
+   * precisamos de um aviso de carregando para o usuário entender que NÃO TRAVOU". Entre o clique e o
+   * POST responder, o título escolhido aparece como chip PROVISÓRIO ("Agregando…", com spinner) no
+   * lugar onde o chip real vai entrar; some quando a API responde (sucesso → chip real; erro → mensagem).
+   */
+  const [pendingTitle, setPendingTitle] = useState<string | null>(null);
 
   function mapError(err: unknown): string {
     if (err instanceof DiagnosisApiError && err.code && ERROR_KEY[err.code]) {
@@ -64,18 +72,21 @@ export function DiagnosisAssignmentSection({
 
   async function handleSelect(candidate: TerminologyCandidate): Promise<void> {
     setError(null);
+    setPendingTitle(candidate.title);
     try {
       const created = await AdminDiagnosisApiService.create(patientId, candidate.uri);
       setDiagnoses((prev) => [...prev, created]);
       onChanged();
     } catch (err) {
       setError(mapError(err));
+    } finally {
+      setPendingTitle(null);
     }
   }
 
   async function handlePromote(id: string): Promise<void> {
     setError(null);
-    setBusyId(id);
+    setBusy({ id, action: 'promote' });
     try {
       const promoted = await AdminDiagnosisApiService.promote(patientId, id);
       setDiagnoses((prev) => prev.map((d) => (d.id === promoted.id ? promoted : { ...d, isPrimary: false })));
@@ -83,13 +94,13 @@ export function DiagnosisAssignmentSection({
     } catch (err) {
       setError(mapError(err));
     } finally {
-      setBusyId(null);
+      setBusy(null);
     }
   }
 
   async function handleRemove(id: string): Promise<void> {
     setError(null);
-    setBusyId(id);
+    setBusy({ id, action: 'remove' });
     try {
       await AdminDiagnosisApiService.deactivate(patientId, id);
       setDiagnoses((prev) => prev.filter((d) => d.id !== id));
@@ -97,14 +108,14 @@ export function DiagnosisAssignmentSection({
     } catch (err) {
       setError(mapError(err));
     } finally {
-      setBusyId(null);
+      setBusy(null);
     }
   }
 
   return (
     <div className="flex flex-col gap-3" data-testid="diagnosis-assignment-section">
-      <IcdSearchCombobox id="icd-search" onSelect={handleSelect} ariaLabelledBy={ariaLabelledBy} />
-      <DiagnosisChipList diagnoses={diagnoses} busyId={busyId} onPromote={handlePromote} onRemove={handleRemove} />
+      <IcdSearchCombobox id="icd-search" onSelect={handleSelect} ariaLabelledBy={ariaLabelledBy} disabled={pendingTitle !== null} />
+      <DiagnosisChipList diagnoses={diagnoses} busy={busy} pendingTitle={pendingTitle} onPromote={handlePromote} onRemove={handleRemove} />
       {error && (
         <Text as="span" size="xs" className="!text-red-600" data-testid="diagnosis-assignment-error">
           {error}

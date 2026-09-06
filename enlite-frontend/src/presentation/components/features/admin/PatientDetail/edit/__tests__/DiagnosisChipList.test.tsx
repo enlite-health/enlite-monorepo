@@ -129,7 +129,7 @@ describe('DiagnosisChipList', () => {
 
   it('U4: busy — clicar no corpo do chip não promove enquanto uma ação está em andamento', () => {
     const onPromote = vi.fn();
-    render(<DiagnosisChipList diagnoses={[chip({ isPrimary: false })]} busyId="d1" onPromote={onPromote} onRemove={vi.fn()} />);
+    render(<DiagnosisChipList diagnoses={[chip({ isPrimary: false })]} busy={{ id: 'd1', action: 'promote' }} onPromote={onPromote} onRemove={vi.fn()} />);
     fireEvent.click(screen.getByTestId('diagnosis-chip-d1'));
     expect(onPromote).not.toHaveBeenCalled();
   });
@@ -169,16 +169,58 @@ describe('DiagnosisChipList', () => {
     expect(onRemove).toHaveBeenCalledWith('d1');
   });
 
-  it('busyId desabilita os botões daquele chip', () => {
-    render(<DiagnosisChipList diagnoses={[chip()]} busyId="d1" onPromote={vi.fn()} onRemove={vi.fn()} />);
-    expect(screen.getByTestId('diagnosis-chip-promote-d1')).toBeDisabled();
-    expect(screen.getByTestId('diagnosis-chip-remove-d1')).toBeDisabled();
+  // 06/09 (Gabriel): "quando deleto uma também precisa" de aviso de carregando — o chip em ação troca
+  // os botões por spinner + texto, em vez de só esmaecer.
+  it('busy (remove): o chip mostra "Removendo…" com spinner e ESCONDE os botões — nada para clicar de novo', () => {
+    render(<DiagnosisChipList diagnoses={[chip()]} busy={{ id: 'd1', action: 'remove' }} onPromote={vi.fn()} onRemove={vi.fn()} />);
+    const status = screen.getByTestId('diagnosis-chip-busy-d1');
+    expect(status).toHaveAttribute('role', 'status');
+    expect(status).toHaveAttribute('aria-busy', 'true');
+    expect(status).toHaveTextContent('Removendo…');
+    expect(screen.queryByTestId('diagnosis-chip-promote-d1')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('diagnosis-chip-remove-d1')).not.toBeInTheDocument();
+    expect(screen.getByText('Esquizofrenia')).toBeInTheDocument(); // o título continua visível
   });
 
-  it('busyId de OUTRO diagnóstico não desabilita este', () => {
-    render(<DiagnosisChipList diagnoses={[chip()]} busyId="outro-id" onPromote={vi.fn()} onRemove={vi.fn()} />);
+  it('busy (promote): o chip mostra "Salvando…"', () => {
+    render(<DiagnosisChipList diagnoses={[chip({ isPrimary: false })]} busy={{ id: 'd1', action: 'promote' }} onPromote={vi.fn()} onRemove={vi.fn()} />);
+    expect(screen.getByTestId('diagnosis-chip-busy-d1')).toHaveTextContent('Salvando…');
+  });
+
+  it('busy de OUTRO diagnóstico não mexe neste: botões normais, sem status', () => {
+    render(<DiagnosisChipList diagnoses={[chip()]} busy={{ id: 'outro-id', action: 'remove' }} onPromote={vi.fn()} onRemove={vi.fn()} />);
     expect(screen.getByTestId('diagnosis-chip-promote-d1')).not.toBeDisabled();
     expect(screen.getByTestId('diagnosis-chip-remove-d1')).not.toBeDisabled();
+    expect(screen.queryByTestId('diagnosis-chip-busy-d1')).not.toBeInTheDocument();
+  });
+
+  it('busy vence a confirmação de remoção: depois de "Quitar", o chip mostra o status e não a pergunta', () => {
+    const onRemove = vi.fn();
+    const { rerender } = render(<DiagnosisChipList diagnoses={[chip()]} onPromote={vi.fn()} onRemove={onRemove} />);
+    fireEvent.click(screen.getByTestId('diagnosis-chip-remove-d1'));
+    fireEvent.click(screen.getByTestId('diagnosis-chip-remove-confirm-btn-d1'));
+    expect(onRemove).toHaveBeenCalledWith('d1');
+    rerender(<DiagnosisChipList diagnoses={[chip()]} busy={{ id: 'd1', action: 'remove' }} onPromote={vi.fn()} onRemove={onRemove} />);
+    expect(screen.getByTestId('diagnosis-chip-busy-d1')).toBeInTheDocument();
+    expect(screen.queryByTestId('diagnosis-chip-remove-confirm-d1')).not.toBeInTheDocument();
+  });
+
+  // 06/09 (Gabriel): entre o clique no resultado e o POST responder, o chip PROVISÓRIO "Adicionando…"
+  it('pendingTitle: chip provisório com o título, spinner e "Adicionando…" — também quando a lista está vazia', () => {
+    render(<DiagnosisChipList diagnoses={[]} pendingTitle="Esquizofrenia" onPromote={vi.fn()} onRemove={vi.fn()} />);
+    const pending = screen.getByTestId('diagnosis-chip-pending');
+    expect(pending).toHaveAttribute('aria-busy', 'true');
+    expect(pending).toHaveTextContent('Esquizofrenia');
+    expect(pending).toHaveTextContent('Adicionando…');
+    expect(screen.queryByTestId('diagnosis-chips-empty')).not.toBeInTheDocument();
+    expect(pending.querySelector('button')).toBeNull(); // sem ações: não há o que clicar ainda
+  });
+
+  it('pendingTitle: entra DEPOIS dos chips reais', () => {
+    render(<DiagnosisChipList diagnoses={[chip()]} pendingTitle="Trastorno esquizoafectivo" onPromote={vi.fn()} onRemove={vi.fn()} />);
+    const items = Array.from(screen.getByTestId('diagnosis-chips').children);
+    expect(items[0]).toHaveAttribute('data-testid', 'diagnosis-chip-d1');
+    expect(items[1]).toHaveAttribute('data-testid', 'diagnosis-chip-pending');
   });
 
   it('renderiza múltiplos chips', () => {

@@ -31,16 +31,22 @@ import { Text } from '@presentation/components/atoms/Text';
 import type { PatientDiagnosisDetail } from '@domain/entities/PatientDetail';
 import { INPUT_SIZE_CONFIG } from '@presentation/components/atoms/Input/inputClasses';
 
+/** Ação em voo num chip: o chip troca os botões por spinner + "Guardando…"/"Quitando…" (06/09, Gabriel). */
+export interface ChipBusy { id: string; action: 'promote' | 'remove' }
+
 export interface DiagnosisChipListProps {
   diagnoses: PatientDiagnosisDetail[];
-  busyId?: string | null;
+  busy?: ChipBusy | null;
+  /** Título do diagnóstico que está sendo GRAVADO agora (POST em voo) — vira chip provisório "Agregando…". */
+  pendingTitle?: string | null;
   onPromote: (id: string) => void;
   onRemove: (id: string) => void;
 }
 
 export function DiagnosisChipList({
   diagnoses,
-  busyId = null,
+  busy = null,
+  pendingTitle = null,
   onPromote,
   onRemove,
 }: DiagnosisChipListProps): JSX.Element {
@@ -48,7 +54,26 @@ export function DiagnosisChipList({
   const ta = (k: string) => t(`admin.patients.editDrawer.diagnosisAssignment.${k}`);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
 
-  if (diagnoses.length === 0) {
+  // Chip provisório: mesma caixa dos chips reais, título já visível, spinner + "Agregando…" no lugar
+  // das ações. `aria-busy` + `role="status"` para o leitor de tela anunciar que algo está acontecendo.
+  const pendingChip = pendingTitle !== null && (
+    <li
+      role="status"
+      aria-busy="true"
+      className={`flex items-center justify-between gap-3 min-h-12 border-solid border-dashed ${INPUT_SIZE_CONFIG.compact.padding} ${INPUT_SIZE_CONFIG.compact.borderRadius} ${INPUT_SIZE_CONFIG.compact.borderWidth} border-gray-600 bg-gray-200`}
+      data-testid="diagnosis-chip-pending"
+    >
+      <Text as="span" size="sm" weight="medium" color="secondary" className="truncate">
+        {pendingTitle}
+      </Text>
+      <span className="flex items-center gap-2 shrink-0">
+        <span className="block w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" aria-hidden="true" />
+        <Text as="span" size="xs" color="secondary">{ta('adding')}</Text>
+      </span>
+    </li>
+  );
+
+  if (diagnoses.length === 0 && pendingTitle === null) {
     return (
       <Text as="span" size="xs" color="secondary" data-testid="diagnosis-chips-empty">
         {ta('chipsEmpty')}
@@ -59,8 +84,8 @@ export function DiagnosisChipList({
   return (
     <ul className="flex flex-col gap-2" data-testid="diagnosis-chips">
       {diagnoses.map((d) => {
-        const isBusy = busyId === d.id;
-        const isConfirmingRemove = confirmRemoveId === d.id;
+        const isBusy = busy?.id === d.id;
+        const isConfirmingRemove = confirmRemoveId === d.id && !isBusy;
         return (
           <li
             key={d.id}
@@ -84,7 +109,17 @@ export function DiagnosisChipList({
                 {d.title}
               </Text>
             </div>
-            {isConfirmingRemove ? (
+            {isBusy ? (
+              <span
+                className="flex items-center gap-2 shrink-0"
+                role="status"
+                aria-busy="true"
+                data-testid={`diagnosis-chip-busy-${d.id}`}
+              >
+                <span className="block w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" aria-hidden="true" />
+                <Text as="span" size="xs" color="secondary">{ta(busy?.action === 'remove' ? 'removing' : 'saving')}</Text>
+              </span>
+            ) : isConfirmingRemove ? (
               <div
                 className="flex items-center gap-2 shrink-0"
                 data-testid={`diagnosis-chip-remove-confirm-${d.id}`}
@@ -115,9 +150,8 @@ export function DiagnosisChipList({
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); onPromote(d.id); }}
-                    disabled={isBusy}
                     aria-label={ta('makePrimary')}
-                    className="flex items-center gap-1 text-gray-800 hover:text-primary transition-colors disabled:opacity-50"
+                    className="flex items-center gap-1 text-gray-800 hover:text-primary transition-colors"
                     data-testid={`diagnosis-chip-promote-${d.id}`}
                   >
                     <Star className="w-4 h-4" />
@@ -129,9 +163,8 @@ export function DiagnosisChipList({
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); setConfirmRemoveId(d.id); }}
-                  disabled={isBusy}
                   aria-label={ta('remove')}
-                  className="text-gray-800 hover:text-red-600 transition-colors disabled:opacity-50"
+                  className="text-gray-800 hover:text-red-600 transition-colors"
                   data-testid={`diagnosis-chip-remove-${d.id}`}
                 >
                   <X className="w-4 h-4" />
@@ -141,6 +174,7 @@ export function DiagnosisChipList({
           </li>
         );
       })}
+      {pendingChip}
     </ul>
   );
 }
