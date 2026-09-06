@@ -51,7 +51,7 @@ describe('CellHelpDrawer — a ajuda de uma permissão', () => {
     expect(screen.getByText('Ver')).toBeInTheDocument();
   });
 
-  it('🔒 os LOCALES não enumeram categoria sensível em nenhum dos 21 recursos', () => {
+  it('🔒 os LOCALES não enumeram categoria sensível em nenhum dos 37 recursos', () => {
     // Este é o guardião de verdade. O de baixo lê o dicionário do próprio teste
     // e ficaria verde com "religión" escrito no es.json — instrumento morto,
     // achado do gate (05/09). Aqui a asserção é sobre o ARTEFATO.
