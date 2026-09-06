@@ -2843,9 +2843,14 @@
         "unset": "—",
         "saveError": "Error al guardar",
         "deviceType": "Dispositivo",
+        "clinicalSections": {
+          "pathology": "Patología",
+          "profile": "Perfil clínico",
+          "documents": "Documentación",
+          "notes": "Observaciones"
+        },
         "diagnosisAssignment": {
-          "sectionTitle": "Diagnóstico (CIE-11)",
-          "searchPlaceholder": "Buscar diagnóstico en español...",
+          "searchPlaceholder": "Escribí el nombre de la patología…",
           "typing": "Escribiendo…",
           "searching": "Buscando…",
           "noResults": "No se encontraron resultados para \"{{query}}\".",
@@ -3160,7 +3165,6 @@
         },
         "diagnosisCard": {
           "title": "Diagnóstico",
-          "cid": "Hipótesis Diagnóstica - CID",
           "details": "Detalles",
           "generalNotes": "Observaciones generales",
           "generalNotesCounter": "{{count}}/{{max}} caracteres",

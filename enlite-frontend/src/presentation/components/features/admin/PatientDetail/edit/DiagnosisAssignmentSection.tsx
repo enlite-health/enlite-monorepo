@@ -12,7 +12,8 @@
  * incapaz de tocar uma linha CLICKUP/BACKFILL). Mostrar aqui um chip de outra origem cujos
  * botões dessem 404 em silêncio seria pior do que não mostrar.
  *
- * Cláusula 1.3 da licença da OMS: atribuição sempre visível junto da busca.
+ * Cláusula 1.3 da licença da OMS: atribuição sempre visível junto da busca — e LEGÍVEL: em `muted`
+ * (cinza a 50%) ela estava na tela sem que ninguém conseguisse ler (05/09).
  */
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -27,6 +28,8 @@ export interface DiagnosisAssignmentSectionProps {
   patientId: string;
   initialDiagnoses: PatientDiagnosisDetail[];
   onChanged: () => void;
+  /** id do título que nomeia a busca (repassado ao combobox como `aria-labelledby`). */
+  ariaLabelledBy?: string;
 }
 
 const ERROR_KEY: Partial<Record<DiagnosisApiErrorCode, string>> = {
@@ -41,6 +44,7 @@ export function DiagnosisAssignmentSection({
   patientId,
   initialDiagnoses,
   onChanged,
+  ariaLabelledBy,
 }: DiagnosisAssignmentSectionProps): JSX.Element {
   const { t } = useTranslation();
   const ta = (k: string) => t(`admin.patients.editDrawer.diagnosisAssignment.${k}`);
@@ -99,7 +103,7 @@ export function DiagnosisAssignmentSection({
 
   return (
     <div className="flex flex-col gap-3" data-testid="diagnosis-assignment-section">
-      <IcdSearchCombobox id="icd-search" onSelect={handleSelect} />
+      <IcdSearchCombobox id="icd-search" onSelect={handleSelect} ariaLabelledBy={ariaLabelledBy} />
       <DiagnosisChipList diagnoses={diagnoses} busyId={busyId} onPromote={handlePromote} onRemove={handleRemove} />
       {error && (
         <Text as="span" size="xs" className="!text-red-600" data-testid="diagnosis-assignment-error">
@@ -107,7 +111,7 @@ export function DiagnosisAssignmentSection({
         </Text>
       )}
       {/* Cláusula 1.3 da licença OMS — atribuição obrigatória, discreta, sempre presente. */}
-      <Text as="span" size="2xs" color="muted" data-testid="who-attribution">
+      <Text as="span" size="2xs" color="secondary" data-testid="who-attribution">
         {ta('whoAttribution')}
       </Text>
     </div>

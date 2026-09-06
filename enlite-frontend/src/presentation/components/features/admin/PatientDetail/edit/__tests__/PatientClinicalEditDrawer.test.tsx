@@ -56,11 +56,13 @@ import { PatientClinicalEditDrawer, GENERAL_NOTES_MAX } from '../PatientClinical
 describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
   beforeEach(() => { updatePatientSection.mockReset().mockResolvedValue({ id: 'x' }); });
 
-  it('renderiza um TEXTAREA (não input de uma linha) com 8 linhas, teto e valor atual', () => {
+  // 05/09 (Gabriel): 4 linhas, não 8 — o texto é quase sempre curto ou vazio, e a caixa grande
+  // empurrava os selects para fora da tela; `resize-y` deixa crescer quando precisar.
+  it('renderiza um TEXTAREA (não input de uma linha) com 4 linhas, teto e valor atual', () => {
     render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
     const ta = screen.getByTestId('pce-comments');
     expect(ta.tagName).toBe('TEXTAREA');
-    expect(ta).toHaveAttribute('rows', '8');
+    expect(ta).toHaveAttribute('rows', '4');
     expect(ta).toHaveAttribute('maxlength', String(GENERAL_NOTES_MAX));
     expect(ta).toHaveValue('TDAH severo');
     expect(screen.getByText(/Observações gerais/)).toBeInTheDocument();
@@ -136,14 +138,14 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('altera diagnóstico, dispositivo (multi-select do catálogo), dependência, tipo de serviço e os 3 selects tri-state — manda tudo no payload; especialidade NÃO existe mais (US-B8)', async () => {
-    const { container } = render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
+  it('altera dispositivo (multi-select do catálogo), dependência, tipo de serviço e os 3 selects tri-state — manda tudo no payload; especialidade NÃO existe mais (US-B8)', async () => {
+    render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
+    const drawer = screen.getByTestId('patient-clinical-edit-drawer');
     expect(screen.queryByTestId('pce-specialty')).not.toBeInTheDocument();
-    expect(container.textContent).not.toMatch(/Especialidade|ICHOM/);
+    expect(drawer.textContent).not.toMatch(/Especialidade|ICHOM/);
 
-    fireEvent.change(screen.getByTestId('pce-diagnosis'), { target: { value: 'CID novo' } });
     // US-B4: dispositivo é multi-select de códigos do catálogo (HOME + SCHOOL), nunca texto livre
-    fireEvent.click(container.querySelector('#pce-device button') as HTMLElement);
+    fireEvent.click(drawer.querySelector('#pce-device button') as HTMLElement);
     fireEvent.click(screen.getByText('Domiciliar'));
     fireEvent.click(screen.getByText('Escolar'));
     fireEvent.change(screen.getByTestId('pce-dependency'), { target: { value: 'MODERATE' } });
@@ -161,7 +163,6 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
 
     await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
     expect(updatePatientSection).toHaveBeenCalledWith(patientDetailFixture.id, 'clinical', {
-      diagnosis: 'CID novo',
       deviceTypes: ['HOME', 'SCHOOL'],
       dependencyLevel: 'MODERATE',
       serviceType: ['AT', 'CAREGIVER'],
@@ -207,12 +208,66 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
 
   it('spec 012: deviceTypes ausente na ficha → conjunto vazio; escolher HOME manda deviceTypes; erro não-Error → mensagem genérica', async () => {
     updatePatientSection.mockRejectedValueOnce('x');
-    const { container } = render(<PatientClinicalEditDrawer patient={{ ...patientDetailMinimal, deviceTypes: undefined as never }} onClose={vi.fn()} onSaved={vi.fn()} />);
-    fireEvent.click(container.querySelector('#pce-device button') as HTMLElement);
+    render(<PatientClinicalEditDrawer patient={{ ...patientDetailMinimal, deviceTypes: undefined as never }} onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('patient-clinical-edit-drawer').querySelector('#pce-device button') as HTMLElement);
     fireEvent.click(screen.getByText('Domiciliar'));
     fireEvent.click(screen.getByTestId('pce-save'));
     await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patientDetailMinimal.id, 'clinical', { deviceTypes: ['HOME'] }));
     expect(await screen.findByTestId('pce-error')).toHaveTextContent('Erro ao salvar');
+  });
+
+  // ── 05/09 (Gabriel): o drawer reorganizado ─────────────────────────────────────────────
+  describe('disposição (05/09): sem texto livre, quatro seções, mais largo', () => {
+    it('o campo livre "Hipótese Diagnóstica - CID" NÃO existe mais, e a fixture COM valor não o envia no PATCH', async () => {
+      expect(patientDetailFixture.diagnosis).toBeTruthy();
+      render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
+      expect(screen.queryByTestId('pce-diagnosis')).not.toBeInTheDocument();
+      const drawer = screen.getByTestId('patient-clinical-edit-drawer');
+      expect(drawer.textContent).not.toMatch(/Hipótese Diagnóstica/);
+      // A sigla só sobrevive na atribuição da OMS (cláusula 1.3 da licença) — em NENHUM rótulo ou título.
+      const labelsAndHeadings = Array.from(drawer.querySelectorAll('label, h1, h2, h3, h4, h5, h6')).map((e) => e.textContent).join(' | ');
+      expect(labelsAndHeadings).toMatch(/Patologia/); // a varredura enxerga os títulos (régua viva)
+      expect(labelsAndHeadings).not.toMatch(/CID|CIE/);
+      expect(screen.getByTestId('who-attribution').textContent).toMatch(/CID-11/);
+      fireEvent.change(screen.getByTestId('pce-comments'), { target: { value: 'só isto' } });
+      fireEvent.click(screen.getByTestId('pce-save'));
+      await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
+      expect(updatePatientSection.mock.calls[0][2]).not.toHaveProperty('diagnosis');
+    });
+
+    it('quatro seções nomeadas, na ordem: Patologia → Perfil clínico → Documentação → Observações', () => {
+      render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
+      const headings = screen.getAllByRole('heading', { level: 4 }).map((h) => h.textContent);
+      expect(headings).toEqual(['Patologia', 'Perfil clínico', 'Documentação', 'Observações']);
+      // a busca estruturada mora na seção Patologia; os textos longos, na última
+      expect(screen.getByTestId('pce-section-pathology')).toContainElement(screen.getByTestId('icd-search-input'));
+      expect(screen.getByTestId('pce-section-notes')).toContainElement(screen.getByTestId('pce-comments'));
+      expect(screen.getByTestId('pce-section-notes')).toContainElement(screen.getByTestId('pce-emergency'));
+      // o input de busca perdeu o <label for> e ganhou o título da seção como nome acessível
+      const input = screen.getByTestId('icd-search-input');
+      expect(input).toHaveAttribute('aria-labelledby', 'pce-section-pathology');
+      expect(document.getElementById('pce-section-pathology')).toHaveTextContent('Patologia');
+    });
+
+    it('largura 3xl e corpo rolável', () => {
+      render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
+      const drawer = screen.getByTestId('patient-clinical-edit-drawer');
+      expect(drawer.className).toMatch(/\bmax-w-3xl\b/);
+      expect((drawer.querySelector('form') as HTMLElement).className).toMatch(/\boverflow-y-auto\b/);
+    });
+
+    it('rótulos compactos (12px, cor primária) e NENHUM "(opcional)" — todos os campos são opcionais', () => {
+      render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
+      const drawer = screen.getByTestId('patient-clinical-edit-drawer');
+      expect(drawer.textContent).not.toMatch(/\(opcional\)/);
+      // só rótulos com texto — a lupa da busca também é um <label for> (clicar nela foca o input), sem texto
+      const labels = Array.from(drawer.querySelectorAll('label')).filter((l) => l.textContent?.trim());
+      expect(labels.length).toBeGreaterThanOrEqual(8);
+      for (const l of labels) {
+        expect(l.className).toMatch(/text-\[12px\]/);
+        expect(l.className).toMatch(/\btext-primary\b/);
+      }
+    });
   });
 
   // ── Spec 014 US-D4 (lex D4 AUTORIZADO): drawer não perde trabalho ──────────────────────
@@ -223,20 +278,20 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
       expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
     });
 
-    it('COM mudança (diagnóstico) → Escape abre confirmação; "Seguir editando" preserva o valor', () => {
+    it('COM mudança (observações) → Escape abre confirmação; "Seguir editando" preserva o valor', () => {
       render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
-      fireEvent.change(screen.getByTestId('pce-diagnosis'), { target: { value: 'F32' } });
+      fireEvent.change(screen.getByTestId('pce-comments'), { target: { value: 'F32' } });
       fireEvent.keyDown(document, { key: 'Escape' });
       expect(screen.getByTestId('discard-changes-confirm')).toBeVisible();
       fireEvent.click(screen.getByTestId('discard-changes-keep-editing'));
       expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
-      expect(screen.getByTestId('pce-diagnosis')).toHaveValue('F32');
+      expect(screen.getByTestId('pce-comments')).toHaveValue('F32');
     });
 
     it('"Descartar cambios" fecha de verdade', async () => {
       const onClose = vi.fn();
       render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={onClose} onSaved={vi.fn()} />);
-      fireEvent.change(screen.getByTestId('pce-diagnosis'), { target: { value: 'F32' } });
+      fireEvent.change(screen.getByTestId('pce-comments'), { target: { value: 'F32' } });
       fireEvent.keyDown(document, { key: 'Escape' });
       fireEvent.click(screen.getByTestId('discard-changes-discard'));
       await waitFor(() => expect(onClose).toHaveBeenCalled(), { timeout: 1000 });

@@ -16,12 +16,20 @@
  * chip e disparou `PATCH {isPrimary:true}` em vez de `{active:false}` — o badge "Principal" migra
  * de chip sem nenhum aviso. O corpo voltou a não fazer nada; promover só pelo botão com texto
  * visível (já resolvia a descoberta, medido na 2ª auditoria, item 8: ENTENDE).
+ *
+ * Visual (05/09): o chip usa a MESMA geometria do input de busca logo acima — raio, borda e padding
+ * vêm de `INPUT_SIZE_CONFIG.compact` (fonte única em `atoms/Input/inputClasses.ts`) — era o terceiro
+ * estilo de caixa na mesma coluna. NÃO usa `inputWrapperClasses`: ele traz `focus-within` na cor
+ * primária, que é exatamente a borda do chip Principal (tabular até o X de um chip comum o pintava
+ * como principal), e `h-12` fixo, que espremia o título quando a confirmação de remoção aparece —
+ * aqui é altura MÍNIMA. Ações em `xs` (12px), não `2xs`: são botões que apagam/promovem diagnóstico.
  */
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Star, X } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import type { PatientDiagnosisDetail } from '@domain/entities/PatientDetail';
+import { INPUT_SIZE_CONFIG } from '@presentation/components/atoms/Input/inputClasses';
 
 export interface DiagnosisChipListProps {
   diagnoses: PatientDiagnosisDetail[];
@@ -42,7 +50,7 @@ export function DiagnosisChipList({
 
   if (diagnoses.length === 0) {
     return (
-      <Text as="span" size="xs" color="muted" data-testid="diagnosis-chips-empty">
+      <Text as="span" size="xs" color="secondary" data-testid="diagnosis-chips-empty">
         {ta('chipsEmpty')}
       </Text>
     );
@@ -56,8 +64,8 @@ export function DiagnosisChipList({
         return (
           <li
             key={d.id}
-            className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg border ${
-              d.isPrimary ? 'border-primary bg-primary/5' : 'border-slate-200'
+            className={`flex items-center justify-between gap-3 min-h-12 border-solid ${INPUT_SIZE_CONFIG.compact.padding} ${INPUT_SIZE_CONFIG.compact.borderRadius} ${INPUT_SIZE_CONFIG.compact.borderWidth} ${
+              d.isPrimary ? 'border-primary bg-primary/5' : 'border-gray-600 bg-white'
             }`}
             data-testid={`diagnosis-chip-${d.id}`}
           >
@@ -72,7 +80,7 @@ export function DiagnosisChipList({
                   </Text>
                 </span>
               )}
-              <Text as="span" size="sm" weight="medium" className="truncate">
+              <Text as="span" size="sm" weight="medium" color="tertiary" className="truncate">
                 {d.title}
               </Text>
             </div>
@@ -81,16 +89,16 @@ export function DiagnosisChipList({
                 className="flex items-center gap-2 shrink-0"
                 data-testid={`diagnosis-chip-remove-confirm-${d.id}`}
               >
-                <Text as="span" size="2xs" className="!text-red-600">
+                <Text as="span" size="xs" className="!text-red-600">
                   {ta('removeConfirmQuestion')}
                 </Text>
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); setConfirmRemoveId(null); }}
-                  className="text-slate-500 hover:text-slate-700 transition-colors"
+                  className="text-gray-800 hover:text-primary transition-colors"
                   data-testid={`diagnosis-chip-remove-cancel-${d.id}`}
                 >
-                  <Text as="span" size="2xs" color="inherit">{ta('removeCancel')}</Text>
+                  <Text as="span" size="xs" color="inherit">{ta('removeCancel')}</Text>
                 </button>
                 <button
                   type="button"
@@ -98,7 +106,7 @@ export function DiagnosisChipList({
                   className="text-red-600 hover:text-red-700 transition-colors"
                   data-testid={`diagnosis-chip-remove-confirm-btn-${d.id}`}
                 >
-                  <Text as="span" size="2xs" color="inherit">{ta('remove')}</Text>
+                  <Text as="span" size="xs" color="inherit">{ta('remove')}</Text>
                 </button>
               </div>
             ) : (
@@ -109,21 +117,21 @@ export function DiagnosisChipList({
                     onClick={(e) => { e.stopPropagation(); onPromote(d.id); }}
                     disabled={isBusy}
                     aria-label={ta('makePrimary')}
-                    className="flex items-center gap-1 text-slate-400 hover:text-primary transition-colors disabled:opacity-50"
+                    className="flex items-center gap-1 text-gray-800 hover:text-primary transition-colors disabled:opacity-50"
                     data-testid={`diagnosis-chip-promote-${d.id}`}
                   >
                     <Star className="w-4 h-4" />
-                    <Text as="span" size="2xs" color="inherit">{ta('makePrimary')}</Text>
+                    <Text as="span" size="xs" color="inherit">{ta('makePrimary')}</Text>
                   </button>
                 )}
                 {/* U3: separador visual entre estrela e X — mis-clique era o próprio achado da auditoria */}
-                <span className="w-px h-4 bg-slate-200" aria-hidden="true" />
+                <span className="w-px h-4 bg-gray-600" aria-hidden="true" />
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); setConfirmRemoveId(d.id); }}
                   disabled={isBusy}
                   aria-label={ta('remove')}
-                  className="text-slate-400 hover:text-red-600 transition-colors disabled:opacity-50"
+                  className="text-gray-800 hover:text-red-600 transition-colors disabled:opacity-50"
                   data-testid={`diagnosis-chip-remove-${d.id}`}
                 >
                   <X className="w-4 h-4" />

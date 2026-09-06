@@ -94,7 +94,7 @@ test.describe('Ficha do paciente: "Observaciones generales" texto longo + autori
     const ta = page.getByTestId('pce-comments');
     await expect(ta).toBeVisible();
     expect(await ta.evaluate((el) => el.tagName)).toBe('TEXTAREA');
-    await expect(ta).toHaveAttribute('rows', '8');
+    await expect(ta).toHaveAttribute('rows', '4');
     await expect(page.getByTestId('pce-comments-counter')).toHaveText('0/4000 caracteres');
     expect(await ta.evaluate((el) => el.parentElement?.getAttribute('data-clarity-mask'))).toBe('True');
     await ta.fill(NOTES);

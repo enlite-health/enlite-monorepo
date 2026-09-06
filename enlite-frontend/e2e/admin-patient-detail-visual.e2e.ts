@@ -184,7 +184,10 @@ test.describe('PatientDetailPage — visual regression', () => {
     // Wait for key content to render
     await expect(page.getByText('Santiago Miguel Claiman Soto')).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('Dados Clínicos')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText('CID 6A02.5 Transtorno do espectro autista')).toBeVisible({ timeout: 10000 });
+    // 05/09 (D284): o texto livre `diagnosis` saiu da ficha — o card mostra a patología estruturada
+    // (aqui vazia, o mock não traz `diagnoses`) e as observações; a string do fixture NÃO aparece mais.
+    await expect(page.getByText(/Observações gerais/)).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('CID 6A02.5 Transtorno do espectro autista')).toHaveCount(0);
 
     // Playwright-native screenshot baseline
     await expect(page).toHaveScreenshot('patient-detail-dados-clinicos.png', {
