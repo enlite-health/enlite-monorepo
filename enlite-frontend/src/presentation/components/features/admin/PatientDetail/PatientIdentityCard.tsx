@@ -147,7 +147,6 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
     }
   };
 
-  const fullName = [patient.firstName, patient.lastName].filter(Boolean).join(' ') || '—';
   const statusKey = patient.status ?? '';
   const statusColor = STATUS_COLORS[statusKey] ?? 'bg-gray-100 text-gray-600';
   const statusLabel = statusKey ? t(`admin.patients.statusOptions.${statusKey}`, statusKey) : '—';
@@ -169,10 +168,11 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
           <User className="w-8 h-8" />
         </div>
         <div className="min-w-0">
-          <Heading level={1} as="h3" weight="semibold" color="primary" className="truncate">
-            {fullName}
-          </Heading>
-          <div className="flex flex-wrap items-center gap-2 mt-1">
+          {/* 06/09: o NOME saiu daqui — subiu para o `h1` da página, a 100px acima. Repetir os dois
+              não era só redundância visual: `getByText(nome)` passou a resolver DOIS elementos e
+              três e2e quebraram em strict mode. O cartão mantém o que é dele — avatar, estado,
+              motivo da espera, número do caso e os campos de contato. */}
+          <div className="flex flex-wrap items-center gap-2">
             <span className={`inline-flex px-2.5 py-0.5 rounded-full ${statusColor}`} data-testid="patient-status-badge">
               <Text as="span" size="xs" weight="medium" color="inherit">
                 {statusLabel}

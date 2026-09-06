@@ -74,9 +74,13 @@ import { LocalizacoesCard } from '../LocalizacoesCard';
 // ── PatientIdentityCard ──────────────────────────────────────────────────────
 
 describe('PatientIdentityCard', () => {
+  // 06/09: o nome subiu para o `h1` da PÁGINA — o cartão não o repete mais. A âncora aqui passa a
+  // ser o telefone, que é dado dele.
   it('renders without crash with full data', () => {
     render(<PatientIdentityCard patient={patientDetailFixture} />);
-    expect(screen.getByText('Santiago Claiman')).toBeInTheDocument();
+    expect(screen.getByTestId('patient-identity-card')).toBeInTheDocument();
+    expect(screen.getByText('+55 (11) 91571-1717')).toBeInTheDocument();
+    expect(screen.queryByText('Santiago Claiman')).not.toBeInTheDocument();
   });
 
   it('renders status badge "Aguardando financeiro" for PENDING_ADMISSION (D195 — nome pelo motivo real)', () => {
@@ -101,7 +105,7 @@ describe('PatientIdentityCard', () => {
     });
     try {
       render(<PatientIdentityCard patient={patientDetailFixture} />);
-      expect(screen.getByText('Santiago Claiman')).toBeInTheDocument();
+      expect(screen.getByTestId('patient-identity-card')).toBeInTheDocument();
     } finally {
       spy.mockRestore();
     }

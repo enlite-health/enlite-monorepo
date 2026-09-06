@@ -91,29 +91,58 @@ export default function PatientDetailPage() {
     );
   }
 
+  // Mesma composição do cartão de identidade; sem nome, o título não pode ficar vazio.
+  const patientName = [patient.firstName, patient.lastName].filter(Boolean).join(' ')
+    || t('admin.patients.detail.pageTitle');
   const countryFlag = COUNTRY_FLAG[patient.country] ?? COUNTRY_FLAG.AR;
   const countryLabel = t(`admin.patients.detail.country.${patient.country}`, patient.country);
 
   return (
     <div className="w-full min-h-screen bg-background px-4 sm:px-8 lg:px-12 xl:px-[120px] py-8">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center gap-3 min-w-0">
-          <button
-            onClick={() => navigate('/admin/patients')}
-            className="flex items-center gap-1 text-gray-800 hover:text-primary transition-colors shrink-0"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <Text as="span" size="sm" weight="medium" color="inherit">
-              {t('admin.patients.detail.backToList')}
+      {/* ── Header ────────────────────────────────────────────────────────────────────────────
+          06/09: o `h1` dizia "Ficha del Paciente" — genérico — e o nome de quem está sendo olhado
+          só aparecia dentro do primeiro cartão. Agora o NOME é o título, e "Ficha del Paciente"
+          desce para o rastro de navegação, onde rótulo de página pertence.
+
+          🔒 O que NÃO mudou, de propósito: o `PatientStatusControl` e o `ActivatePatientButton`
+          continuam intactos (regra de negócio, spec 012 US-B7), e o badge de estado continua
+          DENTRO do `PatientIdentityCard` — trazê-lo para cá tiraria dado de dentro de um container
+          de permissão, que é justamente o que a D286 não admite. O país vira chip ao lado do
+          título para liberar a direita, que estava com quatro elementos soltos disputando espaço. */}
+      <div className="flex flex-wrap items-center justify-between gap-y-3 mb-8">
+        <div className="flex flex-col gap-1 min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <button
+              onClick={() => navigate('/admin/patients')}
+              className="flex items-center gap-1 text-gray-800 hover:text-primary transition-colors shrink-0"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <Text as="span" size="xs" weight="medium" color="inherit">
+                {t('admin.patients.detail.backToList')}
+              </Text>
+            </button>
+            <ChevronRight className="w-3.5 h-3.5 text-gray-600 shrink-0" />
+            <Text as="span" size="xs" color="secondary" className="truncate">
+              {t('admin.patients.detail.pageTitle')}
             </Text>
-          </button>
-          <ChevronRight className="w-4 h-4 text-gray-600 shrink-0" />
-          <Heading level={1} weight="semibold" color="primary" className="truncate">
-            {t('admin.patients.detail.pageTitle')}
-          </Heading>
+          </div>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Heading level={1} weight="semibold" color="primary" className="truncate">
+              {patientName}
+            </Heading>
+            <span
+              className="inline-flex items-center gap-1 rounded-pill bg-gray-200 px-2.5 py-0.5 shrink-0"
+              data-testid="patient-country-chip"
+            >
+              <span className="text-sm" role="img" aria-label={countryLabel}>{countryFlag}</span>
+              <Text as="span" size="2xs" weight="medium" color="secondary">{countryLabel}</Text>
+            </span>
+          </div>
         </div>
-        <div className="flex items-center gap-3 shrink-0 ml-4">
+        {/* `items-end`: o `PatientStatusControl` traz o rótulo "Estado" ACIMA do select, então é
+            mais alto que os botões. Centralizado, os três flutuavam em alturas diferentes; pela
+            base, select e botões assentam na mesma linha. */}
+        <div className="flex items-end gap-3 shrink-0 ml-auto">
           {/* Spec 014 US-D5: a ficha ganha o caminho de volta ao Kanban (antes só existia da
               lista para a ficha, nunca o inverso). */}
           <Button
@@ -133,10 +162,6 @@ export default function PatientDetailPage() {
             status={patient.status}
             onActivated={() => { refetch(); refetchVacancies(); }}
           />
-          <span className="text-2xl" role="img" aria-label={countryLabel}>{countryFlag}</span>
-          <Text as="span" size="sm" weight="medium" color="secondary" className="hidden sm:block">
-            {countryLabel}
-          </Text>
         </div>
       </div>
 
