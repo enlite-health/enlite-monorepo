@@ -2,7 +2,7 @@
  * wja-outbox-delivery-1.e2e.test.ts  (Fase C do gate de regressão WJA — Part 1 de 2)
  *
  * Valida o payload completo gravado em messaging_outbox:
- *   T6 — qualified_worker_request: slot_1/slot_2/slot_3 via formatSlotOption (UTC)
+ *   T6 — qualified_worker_request: slot_1/slot_2/slot_3 via formatSlotLabel (fuso da vaga)
  *   T7 — qualified_worker_response: date/time via formatDateUTC/formatTimeUTC (UTC)
  *   Dedup T7: window 5min impede duplicatas.
  *
@@ -33,10 +33,10 @@ export const OD_PHONE_2 = '+5491199960002';
 export const OD_EMAIL_1 = 'wja-outbox-1@e2e.local';
 export const OD_EMAIL_2 = 'wja-outbox-2@e2e.local';
 
-/** Datetimes UTC → formatSlotOption usa getUTC*; dias calculados com node */
-export const OD_DT_1 = '2099-08-10T10:00:00Z'; // Lun 10/08 10:00
-export const OD_DT_2 = '2099-08-10T14:00:00Z'; // Lun 10/08 14:00
-export const OD_DT_3 = '2099-08-11T09:30:00Z'; // Mar 11/08 09:30
+/** Datetimes UTC → formatSlotLabel formata no fuso da vaga; dias calculados com node */
+export const OD_DT_1 = '2099-08-10T10:00:00Z'; // Lun 10/08 07:00 em Buenos Aires (UTC-3)
+export const OD_DT_2 = '2099-08-10T14:00:00Z'; // Lun 10/08 11:00 AR
+export const OD_DT_3 = '2099-08-11T09:30:00Z'; // Mar 11/08 06:30 AR
 
 export const OD_ML_1 = 'https://meet.google.com/outbox-e2e-slot1';
 export const OD_ML_2 = 'https://meet.google.com/outbox-e2e-slot2';
@@ -153,7 +153,7 @@ describe('WJA Outbox Delivery Part 1 — T6 + T7 + Dedup @integration', () => {
 
   // ── Step 1: T6 payload completo com 3 slots formatados ───────────────────
 
-  describe('Step 1 — T6: 3 slots formatados via formatSlotOption (UTC)', () => {
+  describe('Step 1 — T6: 3 slots formatados via formatSlotLabel (fuso da vaga)', () => {
     const ENDPOINT = '/api/webhooks/talentum/prescreening';
 
     it('drive INITIATED + IN_PROGRESS + COMPLETED via Talentum', async () => {
@@ -246,11 +246,12 @@ describe('WJA Outbox Delivery Part 1 — T6 + T7 + Dedup @integration', () => {
       expect(outbox.attempts).toBe(0);
       expect(outbox.twilio_sid).toBeNull();
 
-      // 2099-08-10 = segunda-feira → Lun; 2099-08-11 = terça → Mar (verificado: node UTC calc)
+      // 2099-08-10 = segunda-feira → Lun; 2099-08-11 = terça → Mar. Rótulo no FUSO DA VAGA
+      // (America/Argentina/Buenos_Aires, UTC-3 — mig 291/D211.4): 10:00Z = 07:00 AR.
       expect(outbox.variables).toEqual({
-        slot_1: 'Lun 10/08 10:00',
-        slot_2: 'Lun 10/08 14:00',
-        slot_3: 'Mar 11/08 09:30',
+        slot_1: 'Lun 10/08 07:00',
+        slot_2: 'Lun 10/08 11:00',
+        slot_3: 'Mar 11/08 06:30',
         case_number: String(OD_CASE_1),
         job_posting_id: job1Id,
       });
@@ -293,7 +294,7 @@ describe('WJA Outbox Delivery Part 1 — T6 + T7 + Dedup @integration', () => {
       expect(res.status).toBe(200);
     });
 
-    it('qualified_worker_response: date=10/08 + time=10:00 + job_posting_id', async () => {
+    it('qualified_worker_response: date=10/08 + time=07:00 (fuso da vaga) + job_posting_id', async () => {
       const { rows } = await pool.query(
         `SELECT template_slug, status, attempts, variables
          FROM messaging_outbox
@@ -314,7 +315,7 @@ describe('WJA Outbox Delivery Part 1 — T6 + T7 + Dedup @integration', () => {
       expect(outbox.status).toBe('pending');
       expect(outbox.variables).toEqual({
         date: '10/08',
-        time: '10:00',
+        time: '07:00', // 10:00Z no fuso da vaga (AR, UTC-3) — mig 291/D211.4
         job_posting_id: job1Id,
       });
     });

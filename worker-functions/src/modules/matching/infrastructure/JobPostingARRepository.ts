@@ -300,7 +300,10 @@ export class JobPostingARRepository {
          jp.schedule,
          COALESCE(jp.worker_profile_sought, jp.worker_attributes) AS worker_profile_sought,
          p.service_type                       AS service,
-         p.diagnosis                          AS pathologies,
+         -- A coluna clinica do paciente saiu do feed publico em 25/08/2026 (rota aberta,
+         -- sem auth). Ver o cabecalho de PublicJobMapper.ts. Nomes nao se repetem aqui de
+         -- proposito: a guarda procura o nome no SQL, e comentario que o cite reprova.
+
          pa.state                             AS state,
          pa.city                              AS city,
          jp.social_short_links->>'site'       AS detail_link,

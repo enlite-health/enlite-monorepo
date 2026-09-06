@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft, ChevronRight, LayoutGrid } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { DetailSkeleton } from '@presentation/components/ui/skeletons';
 import { Heading } from '@presentation/components/atoms/Heading';
@@ -24,6 +24,26 @@ import { EnquadreTerapeuticoCard } from '@presentation/components/features/admin
 import { PatientVacanciesCard } from '@presentation/components/features/admin/PatientDetail/PatientVacanciesCard';
 import { ActivatePatientButton } from '@presentation/components/features/admin/PatientDetail/ActivatePatientButton';
 import { PatientChatIdsCard } from '@presentation/components/features/admin/PatientDetail/PatientChatIdsCard';
+import { PatientStatusControl } from '@presentation/components/features/admin/PatientDetail/PatientStatusControl';
+import { PatientStatusHistoryCard } from '@presentation/components/features/admin/PatientDetail/PatientStatusHistoryCard';
+import { CompletenessChecklist } from '@presentation/components/features/admin/PatientDetail/CompletenessChecklist';
+import type { DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
+import { ContainerGate } from '@presentation/components/features/access';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import { tabsVisibleFor } from '@presentation/hooks/useCellAccess';
+import { screenById } from '@presentation/config/screenRegistry';
+import { PATIENT_TABS } from '@presentation/components/features/admin/PatientDetail/patientTabs';
+import type { PatientCompletenessCode } from '@domain/entities/PatientDetail';
+import { ACTIVATABLE_STATUSES } from '@domain/entities/PatientCompleteness';
+
+/** Spec 014 US-D1: cada código do checklist sabe em qual aba o card vive. */
+const COMPLETENESS_TAB: Record<PatientCompletenessCode, PatientTab> = {
+  ADDRESS: 'contractedService',
+  RESPONSIBLE: 'supportNetwork',
+  COVERAGE: 'contractedService',
+  CONTRACTED_SERVICE: 'contractedService',
+  CONSENT: 'clinicalData',
+};
 
 const COUNTRY_FLAG: Record<string, string> = {
   AR: '🇦🇷',
@@ -38,6 +58,33 @@ export default function PatientDetailPage() {
   const { patient, isLoading, error, refetch } = usePatientDetail(id);
   const { vacancies, isLoading: vacanciesLoading, error: vacanciesError, refetch: refetchVacancies } = usePatientVacancies(id);
   const [activeTab, setActiveTab] = useState<PatientTab>('clinicalData');
+  // D286: uma aba só existe se ALGUM container dela for legível (registro de telas + contrato de
+  // authz). A ativa é a primeira visível quando a atual sumiu; sem enforcement, todas existem.
+  const permissions = useAdminAuthStore((s) => s.authz?.permissions);
+  const enforcement = useAdminAuthStore((s) => s.authz?.enforcement);
+  const screen = screenById('patients.detail');
+  const visibleTabs = tabsVisibleFor(screen, PATIENT_TABS, permissions, enforcement);
+  const shownTab: PatientTab | null = visibleTabs.includes(activeTab) ? activeTab : (visibleTabs[0] ?? null);
+  // Spec 014 US-D1: pedido de foco do checklist — muda de aba E pede ao card certo (via
+  // `useAutoOpenDrawer`) que abra seu próprio drawer, sem o pai conhecer o estado interno dele.
+  const [focusRequest, setFocusRequest] = useState<DrawerFocusRequest | null>(null);
+  const focusChecklistItem = (code: PatientCompletenessCode) => {
+    setActiveTab(COMPLETENESS_TAB[code]);
+    setFocusRequest({ code, token: Date.now() });
+  };
+  /**
+   * F3 — o pedido de foco tem de MORRER na troca de aba. `focusRequest` era escrito só em
+   * `focusChecklistItem` e nada o devolvia a `null`; como os cards são montados POR ABA, o
+   * de-dupe do `useAutoOpenDrawer` (um `useRef`) morria junto com o componente e o pedido antigo
+   * era obedecido DE NOVO na remontagem: ela clicava em "Cobertura" no checklist, fechava o
+   * drawer, ia para "Rede de apoio", voltava — e o drawer abria sozinho por cima do trabalho
+   * dela. Trocar de aba À MÃO é um ato dela, não do checklist: consome o pedido.
+   * (`focusChecklistItem` NÃO passa por aqui — ele troca a aba e escreve o pedido novo.)
+   */
+  const changeTab = (tab: PatientTab) => {
+    setFocusRequest(null);
+    setActiveTab(tab);
+  };
 
   if (isLoading) return <DetailSkeleton />;
 
@@ -78,6 +125,20 @@ export default function PatientDetailPage() {
           </Heading>
         </div>
         <div className="flex items-center gap-3 shrink-0 ml-4">
+          {/* Spec 014 US-D5: a ficha ganha o caminho de volta ao Kanban (antes só existia da
+              lista para a ficha, nunca o inverso). */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate('/admin/patients/kanban')}
+            className="flex items-center gap-1"
+            data-testid="view-in-kanban-btn"
+          >
+            <LayoutGrid className="w-4 h-4" />
+            {t('admin.patients.detail.viewInKanban')}
+          </Button>
+          {/* Spec 012 US-B7: estado clínico v2 (só depois da admissão); antes, o botão Activar. */}
+          <PatientStatusControl patient={patient} onSaved={refetch} />
           <ActivatePatientButton
             patientId={patient.id}
             status={patient.status}
@@ -90,77 +151,93 @@ export default function PatientDetailPage() {
         </div>
       </div>
 
+      {/* Checklist de completude (spec 014 US-D1) — bloco fixo no topo, SÓ em status
+          ACTIVATABLE (QA-caça rodada 1, item 3): fora dali (ex.: ACTIVE, já aprovado) é ruído
+          permanente sem ação possível — a mesma constante que ActivatePatientButton usa. */}
+      {patient.status != null &&
+        (ACTIVATABLE_STATUSES as readonly string[]).includes(patient.status) && (
+          <CompletenessChecklist completeness={patient.completeness} onFocusItem={focusChecklistItem} />
+        )}
+
       {/* Row 1: Identity + General Info (2 columns) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <PatientIdentityCard patient={patient} />
-        <PatientGeneralInfoCard patient={patient} onSaved={refetch} />
-      </div>
+      <ContainerGate resource="patient_identity">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <PatientIdentityCard patient={patient} onSaved={refetch} />
+          <PatientGeneralInfoCard patient={patient} onSaved={refetch} />
+        </div>
+      </ContainerGate>
 
       {/* Tab Navigation */}
-      <div className="mb-6">
-        <PatientProfileTabs activeTab={activeTab} onTabChange={setActiveTab} />
-      </div>
+      {shownTab !== null && (
+        <div className="mb-6">
+          <PatientProfileTabs activeTab={shownTab} onTabChange={changeTab} visibleTabs={visibleTabs} />
+        </div>
+      )}
 
-      {/* Tab Content */}
+      {/* Tab Content — cada card atrás do gate do SEU container (D286). A resposta já veio
+          projetada pelo back; o gate só evita mostrar um card vazio onde a pessoa não pode agir. */}
       <div className="mb-6 flex flex-col gap-6">
-        {activeTab === 'clinicalData' && (
+        {shownTab === 'clinicalData' && (
           <>
-            <DiagnosticoCard patient={patient} onSaved={refetch} />
+            <ContainerGate resource="patient_clinical">
+              <DiagnosticoCard patient={patient} onSaved={refetch} focusRequest={focusRequest} />
+            </ContainerGate>
             <ProjetoTerapeuticoCard />
-            <EquipeTratanteCard professionals={patient.professionals ?? []} />
+            <ContainerGate resource="patient_care_team">
+              <EquipeTratanteCard professionals={patient.professionals} />
+            </ContainerGate>
             <SupervisaoCard />
             <RelatoriosAtendimentosCard />
           </>
         )}
-        {activeTab === 'supportNetwork' && (
+        {shownTab === 'supportNetwork' && (
           <>
-            <FamiliaresCard responsibles={patient.responsibles ?? []} patientId={patient.id} onSaved={refetch} />
+            <ContainerGate resource="patient_family">
+              <FamiliaresCard responsibles={patient.responsibles} patientId={patient.id} onSaved={refetch} focusRequest={focusRequest} />
+            </ContainerGate>
             {/* Chat IDs dos grupos do Periskope — a chave de join da auditoria
                 de informes (Candela). Fica na rede de apoio porque é onde a
                 família e a equipe de prestadores já são tratadas. */}
-            <PatientChatIdsCard patient={patient} onSaved={refetch} />
+            <ContainerGate resource="patient_chat">
+              <PatientChatIdsCard patient={patient} onSaved={refetch} />
+            </ContainerGate>
           </>
         )}
-        {activeTab === 'contractedService' && (
+        {shownTab === 'contractedService' && (
           <>
-            <CoberturaMedicaCard patient={patient} />
-            <LocalizacoesCard addresses={patient.addresses ?? []} />
-            <ServicosContratadosCard patient={patient} onSaved={refetch} />
+            <ContainerGate resource="patient_coverage">
+              <CoberturaMedicaCard patient={patient} onSaved={refetch} focusRequest={focusRequest} />
+            </ContainerGate>
+            <ContainerGate resource="patient_address">
+              <LocalizacoesCard addresses={patient.addresses} patientId={patient.id} onSaved={refetch} focusRequest={focusRequest} />
+            </ContainerGate>
+            <ContainerGate resource="patient_services">
+              <ServicosContratadosCard patient={patient} onSaved={refetch} focusRequest={focusRequest} />
+            </ContainerGate>
           </>
         )}
-        {activeTab === 'vacancies' && (
-          <PatientVacanciesCard
-            patientId={id ?? ''}
-            vacancies={vacancies}
-            isLoading={vacanciesLoading}
-            error={vacanciesError}
-          />
+        {shownTab === 'vacancies' && (
+          <ContainerGate resource="vacancy">
+            <PatientVacanciesCard
+              patientId={patient.id}
+              vacancies={vacancies}
+              isLoading={vacanciesLoading}
+              error={vacanciesError}
+            />
+          </ContainerGate>
         )}
-        {activeTab === 'matching' && (
+        {shownTab === 'matching' && (
           <>
-            <ServicosContratadosCard patient={patient} />
+            <ContainerGate resource="patient_services">
+              <ServicosContratadosCard patient={patient} />
+            </ContainerGate>
             <EnquadreTerapeuticoCard />
           </>
         )}
-        {activeTab !== 'clinicalData'
-          && activeTab !== 'supportNetwork'
-          && activeTab !== 'contractedService'
-          && activeTab !== 'vacancies'
-          && activeTab !== 'matching' && (
-          <PlaceholderTab label={t(`admin.patients.detail.tabs.${activeTab}`)} />
+        {shownTab === 'history' && (
+          <PatientStatusHistoryCard patientId={patient.id} />
         )}
       </div>
-    </div>
-  );
-}
-
-function PlaceholderTab({ label }: { label: string }) {
-  const { t } = useTranslation();
-  return (
-    <div className="bg-white rounded-card border-2 border-gray-600 p-6 sm:px-8 sm:py-10 flex items-center justify-center min-h-[200px]">
-      <Text size="sm" color="muted">
-        {label} — {t('admin.patients.detail.comingSoon')}
-      </Text>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Search } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import {
@@ -14,6 +14,7 @@ import {
 import { ActionButton } from '@presentation/components/features/access';
 import type { PatientResponsibleDetail } from '@domain/entities/PatientDetail';
 import { PatientSupportNetworkEditDrawer } from './edit/PatientSupportNetworkEditDrawer';
+import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 
 interface FamiliaresCardProps {
   responsibles: PatientResponsibleDetail[];
@@ -21,16 +22,15 @@ interface FamiliaresCardProps {
   patientId?: string;
   /** Called after a successful edit so the page can refetch the detail. */
   onSaved?: () => void;
+  /** Spec 014 US-D1: pedido de foco do checklist ("falta responsable") — abre este drawer. */
+  focusRequest?: DrawerFocusRequest | null;
 }
 
-function formatRelationship(value: string | null, fallback: string): string {
-  if (!value) return fallback;
-  return value;
-}
 
-export function FamiliaresCard({ responsibles, patientId, onSaved }: FamiliaresCardProps) {
+export function FamiliaresCard({ responsibles, patientId, onSaved, focusRequest }: FamiliaresCardProps) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
+  useAutoOpenDrawer(focusRequest, 'RESPONSIBLE', () => setEditing(true));
   const rows = responsibles ?? [];
   const empty = '—';
 
@@ -44,17 +44,8 @@ export function FamiliaresCard({ responsibles, patientId, onSaved }: FamiliaresC
           {t('admin.patients.detail.familyCard.title')}
         </Heading>
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
-            <input
-              type="text"
-              readOnly
-              placeholder={t('admin.patients.detail.searchPlaceholder')}
-              className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg font-lexend text-sm text-gray-700 bg-gray-50 cursor-default outline-none"
-            />
-          </div>
           {/* D269 — abre o drawer que faz PATCH /patients/:id/support-network → patient:write. */}
-          <ActionButton resource="patient" action="write" variant="outline" size="sm" onClick={() => setEditing(true)} disabled={!patientId} className="flex items-center gap-1" data-testid="edit-support-btn">
+          <ActionButton resource="patient_family" action="write" variant="outline" size="sm" onClick={() => setEditing(true)} disabled={!patientId} className="flex items-center gap-1" data-testid="edit-support-btn">
             <Plus className="w-4 h-4" />
             {t('admin.patients.detail.new')}
           </ActionButton>
@@ -94,7 +85,8 @@ export function FamiliaresCard({ responsibles, patientId, onSaved }: FamiliaresC
                 : null;
               return (
                 <TableRow key={r.id} className="align-top">
-                  <TableCell>{formatRelationship(r.relationship, empty)}</TableCell>
+                  {/* Spec 012 US-B5: o parentesco é ENUM (139) — traduzido, com fallback no cru. */}
+                  <TableCell>{r.relationship ? t(`admin.patients.detail.relationshipOptions.${r.relationship}`, r.relationship) : empty}</TableCell>
                   <TableCell unwrapped>
                     <div className="flex flex-col">
                       <Text as="span" size="sm">{docTypeLabel ?? empty}</Text>

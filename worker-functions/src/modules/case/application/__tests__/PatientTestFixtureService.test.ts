@@ -1,6 +1,15 @@
+// O default do construtor (`db = DatabaseConnection.getInstance().getPool()`) só
+// é alcançável se a conexão não for real — o controller sempre passa o pool dele.
+const mockGetPool = jest.fn();
+jest.mock('@shared/database/DatabaseConnection', () => ({
+  DatabaseConnection: { getInstance: () => ({ getPool: mockGetPool }) },
+}));
+
+import * as functions from 'firebase-functions';
 import {
   PatientTestFixtureService,
   NotATestPatientError,
+  TestVacancyHasApplicationsError,
 } from '../PatientTestFixtureService';
 
 /**
@@ -22,6 +31,10 @@ function makeDb(handlers: Array<(sql: string, params?: unknown[]) => unknown | u
         const r = h(sql, params);
         if (r !== undefined) return r;
       }
+      // Default: a contagem de candidaturas responde ZERO explícito. Sem isto,
+      // "nenhuma linha" cairia no fail-closed do purge (que é o correto em
+      // produção) e todo teste da transação viraria recusa.
+      if (sql.includes('FROM worker_job_applications')) return { rows: [{ n: 0 }], rowCount: 1 };
       return { rows: [], rowCount: 0 };
     }),
     release: jest.fn(),
@@ -110,7 +123,7 @@ describe('PatientTestFixtureService.purge — limpeza de paciente sintético', (
             }
           : undefined,
       (sql) => (sql.includes('DELETE FROM admission_appointments') ? { rows: [], rowCount: 1 } : undefined),
-      (sql) => (sql.includes('UPDATE job_postings') ? { rows: [], rowCount: 2 } : undefined),
+      (sql) => (sql.includes('DELETE FROM job_postings') ? { rows: [], rowCount: 2 } : undefined),
     ]);
     const svc = new PatientTestFixtureService(db as never, calendar as never);
 
@@ -122,16 +135,19 @@ describe('PatientTestFixtureService.purge — limpeza de paciente sintético', (
       calendarEventsDeleted: 1,
       calendarEventsFailed: 0,
       vacanciesDeleted: 2,
+      cascaded: {},
     });
     expect(calendar.deleteEvent).toHaveBeenCalledWith(
       'admission-ar@enlite.health',
       'evt-1',
       expect.any(String),
     );
-    // soft-delete (deleted_at), nunca DELETE físico do paciente
-    const patientWrite = clientCalls.find((c) => c.sql.includes('UPDATE patients'));
-    expect(patientWrite?.sql).toContain('deleted_at = NOW()');
-    expect(clientCalls.some((c) => /DELETE FROM patients/i.test(c.sql))).toBe(false);
+    // Dado sintético SAI da tabela: não pode sobreviver ao teste que o criou.
+    // A versão anterior marcava deleted_at "para continuar auditável" e deixou
+    // 149 linhas em produção. A auditabilidade agora mora no log do PurgeResult.
+    expect(clientCalls.some((c) => /DELETE FROM patients/i.test(c.sql))).toBe(true);
+    expect(clientCalls.some((c) => /UPDATE patients/i.test(c.sql))).toBe(false);
+    expect(clientCalls.some((c) => /DELETE FROM job_postings/i.test(c.sql))).toBe(true);
   });
 
   it('falha no Calendar é CONTADA, não aborta a limpeza do banco', async () => {
@@ -149,7 +165,7 @@ describe('PatientTestFixtureService.purge — limpeza de paciente sintético', (
 
     expect(result?.calendarEventsDeleted).toBe(0);
     expect(result?.calendarEventsFailed).toBe(1);
-    expect(clientCalls.some((c) => c.sql.includes('UPDATE patients'))).toBe(true);
+    expect(clientCalls.some((c) => /DELETE FROM patients/i.test(c.sql))).toBe(true);
   });
 
   it('appointment sem evento no Calendar não chama a API do Google', async () => {
@@ -170,12 +186,26 @@ describe('PatientTestFixtureService.purge — limpeza de paciente sintético', (
     expect(result?.calendarEventsFailed).toBe(0);
   });
 
+  it('alcança paciente de teste JÁ soft-deletado — o passivo não fica inalcançável', async () => {
+    const { db, calls, clientCalls } = makeDb([selectIsTest(true), noAppointments]);
+    const svc = new PatientTestFixtureService(db as never, calendarSpy() as never);
+
+    await expect(svc.purge(PATIENT_ID)).resolves.toMatchObject({ patientId: PATIENT_ID });
+
+    // A trava é `is_test`, não `deleted_at`. Filtrar por `deleted_at IS NULL`
+    // no SELECT faria a rota devolver 404 para toda linha que a versão soft
+    // já havia marcado — exatamente o passivo que precisa ser removido.
+    const select = calls.find((c) => c.sql.includes('SELECT is_test FROM patients'));
+    expect(select?.sql).not.toMatch(/deleted_at/i);
+    expect(clientCalls.some((c) => /DELETE FROM patients/i.test(c.sql))).toBe(true);
+  });
+
   it('faz rollback se a transação falhar no meio', async () => {
     const { db, client } = makeDb([
       selectIsTest(true),
       noAppointments,
       (sql) => {
-        if (sql.includes('UPDATE job_postings')) throw new Error('boom');
+        if (sql.includes('DELETE FROM job_postings')) throw new Error('boom');
         return undefined;
       },
     ]);
@@ -184,6 +214,190 @@ describe('PatientTestFixtureService.purge — limpeza de paciente sintético', (
     await expect(svc.purge(PATIENT_ID)).rejects.toThrow('boom');
     expect(client.query).toHaveBeenCalledWith('ROLLBACK');
     expect(client.release).toHaveBeenCalled();
+  });
+});
+
+describe('PatientTestFixtureService.purge — C3: candidatura de prestador real', () => {
+  /** Handler: a vaga do paciente tem N candidaturas. */
+  const comCandidaturas = (n: number) => (sql: string) =>
+    sql.includes('FROM worker_job_applications') ? { rows: [{ n }], rowCount: 1 } : undefined;
+
+  it('ABORTA quando a vaga sintética tem candidatura real — e nada é apagado', async () => {
+    const { db, client, clientCalls } = makeDb([
+      selectIsTest(true),
+      noAppointments,
+      comCandidaturas(2),
+    ]);
+    const svc = new PatientTestFixtureService(db as never, calendarSpy() as never);
+
+    await expect(svc.purge(PATIENT_ID)).rejects.toBeInstanceOf(TestVacancyHasApplicationsError);
+
+    // `worker_job_applications` sai por CASCADE junto com a vaga: apagar aqui
+    // custaria o dado de quem se candidatou de verdade.
+    expect(clientCalls.some((c) => /DELETE FROM job_postings/i.test(c.sql))).toBe(false);
+    expect(clientCalls.some((c) => /DELETE FROM patients/i.test(c.sql))).toBe(false);
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('o erro carrega código e contagem (o controller devolve 409)', async () => {
+    const { db } = makeDb([selectIsTest(true), noAppointments, comCandidaturas(3)]);
+    const svc = new PatientTestFixtureService(db as never, calendarSpy() as never);
+
+    await expect(svc.purge(PATIENT_ID)).rejects.toMatchObject({
+      code: 'TEST_VACANCY_HAS_APPLICATIONS',
+      applications: 3,
+    });
+  });
+
+  it('sem conseguir CONTAR as candidaturas, recusa em vez de arriscar (fail-closed)', async () => {
+    const { db, client, clientCalls } = makeDb([
+      selectIsTest(true),
+      noAppointments,
+      (sql) =>
+        sql.includes('FROM worker_job_applications') ? { rows: [], rowCount: 0 } : undefined,
+    ]);
+    const svc = new PatientTestFixtureService(db as never, calendarSpy() as never);
+
+    await expect(svc.purge(PATIENT_ID)).rejects.toThrow(/Could not count applications/);
+
+    expect(clientCalls.some((c) => /DELETE FROM patients/i.test(c.sql))).toBe(false);
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
+  it('zero candidaturas: a vaga e o paciente são apagados normalmente', async () => {
+    const { db, clientCalls } = makeDb([selectIsTest(true), noAppointments, comCandidaturas(0)]);
+    const svc = new PatientTestFixtureService(db as never, calendarSpy() as never);
+
+    await expect(svc.purge(PATIENT_ID)).resolves.toMatchObject({ patientId: PATIENT_ID });
+    expect(clientCalls.some((c) => /DELETE FROM job_postings/i.test(c.sql))).toBe(true);
+    expect(clientCalls.some((c) => /DELETE FROM patients/i.test(c.sql))).toBe(true);
+  });
+});
+
+describe('PatientTestFixtureService.purge — C2: a trilha da eliminação', () => {
+  it('registra o ATOR: sem a linha no banco, o log é a única evidência de quem apagou', async () => {
+    const spy = jest.spyOn(functions.logger, 'info').mockImplementation(() => undefined);
+    const { db } = makeDb([selectIsTest(true), noAppointments]);
+    const svc = new PatientTestFixtureService(db as never, calendarSpy() as never);
+
+    await svc.purge(PATIENT_ID, 'uid-do-admin');
+
+    expect(spy).toHaveBeenCalledWith(
+      'patient.test_purge.done',
+      expect.objectContaining({ patientId: PATIENT_ID, actorUid: 'uid-do-admin' }),
+    );
+    // Contagem e UUID, nunca PII (D165 / lex C2).
+    const payload = JSON.stringify(spy.mock.calls.at(-1)?.[1]);
+    expect(payload).not.toMatch(/@|\+54|diagnos/i);
+    spy.mockRestore();
+  });
+
+  it('conta por tabela o que sai por CASCADE — some junto e não daria para contar depois', async () => {
+    const { db } = makeDb([
+      selectIsTest(true),
+      noAppointments,
+      (sql) =>
+        sql.includes('FROM patient_status_history')
+          ? {
+              rows: [
+                { tabela: 'patient_status_history', n: 4 },
+                { tabela: 'patient_addresses', n: 1 },
+              ],
+              rowCount: 2,
+            }
+          : undefined,
+    ]);
+    const svc = new PatientTestFixtureService(db as never, calendarSpy() as never);
+
+    const result = await svc.purge(PATIENT_ID);
+
+    expect(result?.cascaded).toEqual({ patient_status_history: 4, patient_addresses: 1 });
+  });
+});
+
+describe('PatientTestFixtureService.resolveCalendarId — env faltante', () => {
+  it('sem a env do calendário do país, o evento vira falha CONTADA e a limpeza segue', async () => {
+    delete process.env.ADMISSION_CALENDAR_ID_AR;
+    const calendar = calendarSpy();
+    const { db, clientCalls } = makeDb([
+      selectIsTest(true),
+      (sql) =>
+        sql.includes('FROM admission_appointments')
+          ? { rows: [{ id: 'appt-1', country: 'AR', calendar_event_id: 'evt-1' }], rowCount: 1 }
+          : undefined,
+    ]);
+    const svc = new PatientTestFixtureService(db as never, calendar as never);
+
+    const result = await svc.purge(PATIENT_ID);
+
+    // Env faltante em produção deixaria o evento órfão no Google Calendar. É
+    // falha contada, não silêncio — e não impede o registro de sair da tabela.
+    expect(calendar.deleteEvent).not.toHaveBeenCalled();
+    expect(result?.calendarEventsFailed).toBe(1);
+    expect(clientCalls.some((c) => /DELETE FROM patients/i.test(c.sql))).toBe(true);
+  });
+});
+
+describe('PatientTestFixtureService.purge — bordas que só o ramo do else vê', () => {
+  it('Calendar rejeitando com valor NÃO-Error também conta como falha', async () => {
+    const calendar = { deleteEvent: jest.fn(async () => { throw 'string crua'; }) };
+    const { db } = makeDb([
+      selectIsTest(true),
+      (sql) =>
+        sql.includes('FROM admission_appointments')
+          ? { rows: [{ id: 'appt-1', country: 'AR', calendar_event_id: 'evt-1' }], rowCount: 1 }
+          : undefined,
+    ]);
+    const svc = new PatientTestFixtureService(db as never, calendar as never);
+
+    const result = await svc.purge(PATIENT_ID);
+
+    expect(result?.calendarEventsFailed).toBe(1);
+  });
+
+  it('driver devolvendo rowCount null vira 0, não NaN nem undefined', async () => {
+    // ⚠️ Ordem importa: `noAppointments` casa por `includes('FROM
+    // admission_appointments')`, o que também é verdade para o DELETE — se ele
+    // vier antes, devolve rowCount 0 e o ramo do `??` nunca é exercido.
+    const { db } = makeDb([
+      selectIsTest(true),
+      (sql) =>
+        /DELETE FROM (admission_appointments|job_postings)/i.test(sql)
+          ? { rows: [], rowCount: null }
+          : undefined,
+      noAppointments,
+    ]);
+    const svc = new PatientTestFixtureService(db as never, calendarSpy() as never);
+
+    const result = await svc.purge(PATIENT_ID);
+
+    expect(result?.appointmentsCancelled).toBe(0);
+    expect(result?.vacanciesDeleted).toBe(0);
+  });
+});
+
+describe('PatientTestFixtureService — construção como a produção faz', () => {
+  it('sem argumento nenhum: o pool vem do DatabaseConnection', async () => {
+    const { db } = makeDb([selectIsTest(null)]);
+    mockGetPool.mockReturnValue(db);
+
+    const svc = new PatientTestFixtureService();
+
+    // Paciente inexistente → null (o controller traduz para 404). O que importa
+    // aqui é que o serviço se construiu sozinho e consultou o pool do singleton.
+    await expect(svc.purge(PATIENT_ID)).resolves.toBeNull();
+    expect(mockGetPool).toHaveBeenCalled();
+  });
+
+  it('com só o pool: calendário e e-mail de impersonação vêm dos defaults', async () => {
+    // O controller constrói assim (`new PatientTestFixtureService(this.db)`), então
+    // estes dois defaults SÃO caminho de produção. Sem appointment com evento,
+    // nada de rede é tocado.
+    const { db, clientCalls } = makeDb([selectIsTest(true), noAppointments]);
+    const svc = new PatientTestFixtureService(db as never);
+
+    await expect(svc.purge(PATIENT_ID)).resolves.toMatchObject({ patientId: PATIENT_ID });
+    expect(clientCalls.some((c) => /DELETE FROM patients/i.test(c.sql))).toBe(true);
   });
 });
 

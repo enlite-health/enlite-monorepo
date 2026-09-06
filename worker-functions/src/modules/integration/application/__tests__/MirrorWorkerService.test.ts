@@ -86,6 +86,7 @@ interface RowOverrides {
   ana_care_id?: string | null;
   ana_care_status?: string | null;
   is_test?: boolean;
+  merged_into_id?: string | null;
   first_name_encrypted?: string | null;
   last_name_encrypted?: string | null;
   sex_encrypted?: string | null;
@@ -109,6 +110,7 @@ function makeRow(overrides: RowOverrides = {}) {
     ana_care_id: null,
     ana_care_status: null,
     is_test: false,
+    merged_into_id: null,
     first_name_encrypted: 'enc-fn',
     last_name_encrypted: 'enc-ln',
     sex_encrypted: 'enc-MALE',
@@ -490,5 +492,57 @@ describe('isAnaCareIdClaimed', () => {
     mockQuery.mockRejectedValue(new Error('connection terminated unexpectedly'));
 
     await expect(isAnaCareIdClaimed('999')).rejects.toThrow('connection terminated unexpectedly');
+  });
+});
+
+// ─────────────────────────────────────────────
+// Cadastro fundido e marca de alias
+// ─────────────────────────────────────────────
+
+describe('MirrorWorkerService.mirrorOne — fundidos e alias de e-mail', () => {
+  const WORKER_ID = 'worker-uuid-1';
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('pula cadastro FUNDIDO sem chamar o provider (senão o alias criaria duplicata)', async () => {
+    setupFetchWorker(makeRow({ merged_into_id: 'sobrevivente-uuid' }));
+    setupDecrypt();
+
+    const provider = makeFakeProvider();
+    const service = new MirrorWorkerService(provider);
+
+    await expect(service.mirrorOne(WORKER_ID)).resolves.toBe('skipped');
+    expect(provider.upsert).not.toHaveBeenCalled();
+  });
+
+  it('grava o alias usado quando o provider criou com endereço alternativo', async () => {
+    setupFetchWorker(makeRow({ ana_care_id: null }));
+    setupDecrypt();
+
+    const provider = makeFakeProvider({
+      upsert: jest.fn().mockResolvedValue({
+        externalId: '777',
+        emailAliasUsed: 'fulano+1@gmail.com',
+      } as WorkerMirrorUpsertResult),
+    });
+    const service = new MirrorWorkerService(provider);
+    await service.mirrorOne(WORKER_ID);
+
+    const update = mockQuery.mock.calls.find(c => String(c[0]).includes('ana_care_email_alias'));
+    expect(update).toBeDefined();
+    expect(update![1]).toEqual([WORKER_ID, '777', 'fulano+1@gmail.com']);
+  });
+
+  it('grava NULL quando não houve alias — a marca precisa DESLIGAR, não só ligar', async () => {
+    setupFetchWorker(makeRow({ ana_care_id: null }));
+    setupDecrypt();
+
+    const service = new MirrorWorkerService(makeFakeProvider());
+    await service.mirrorOne(WORKER_ID);
+
+    const update = mockQuery.mock.calls.find(c => String(c[0]).includes('ana_care_email_alias'));
+    expect(update![1]).toEqual([WORKER_ID, '42', null]);
   });
 });

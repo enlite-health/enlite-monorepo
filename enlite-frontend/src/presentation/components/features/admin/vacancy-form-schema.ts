@@ -51,6 +51,12 @@ export const vacancyFormSchema = z
     required_experience: z.string().optional(),
     worker_attributes: z.string().optional(),
     providers_needed: z.number({ invalid_type_error: 'required' }).min(1),
+    // Spec 014 (US-D6, lex D6.1): "Dirección" (a `patientAddressId` selecionada em
+    // `VacancyFormRightColumn`) passa a ser exigida pelo ZOD — inclusive em modo EDIÇÃO. Antes
+    // disso o campo era só visualmente `required` (asterisco), sem validação nenhuma: submeter
+    // sem endereço criava/atualizava a vaga sem `patient_address_id`. Sincronizado a partir de
+    // `selectedAddressId` (estado fora do RHF) por `VacancyFormSection` via `setValue`.
+    patientAddressId: z.string().min(1, 'addressRequired'),
     work_schedule: z.string().optional(),
     schedule: z
       .array(z.object({ days: z.array(z.string()).min(1), timeFrom: z.string().min(1), timeTo: z.string().min(1) }))
@@ -258,6 +264,7 @@ export const DEFAULT_FORM_VALUES: VacancyFormData = {
   required_experience: '',
   worker_attributes: '',
   providers_needed: 1,
+  patientAddressId: '',
   work_schedule: '',
   schedule: [{ days: [], timeFrom: '', timeTo: '' }],
   salary_text: '',

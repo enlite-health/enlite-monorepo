@@ -1,9 +1,11 @@
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
 import { SearchInput } from '@presentation/components/molecules/SearchBar/SearchInput';
+import { SearchableSelect } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
 import { Select, SelectOption } from '@presentation/components/atoms/Select';
 import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
 import { TimeRangeFilter } from './TimeRangeFilter';
+import { useContainerAccess } from '@presentation/hooks/useCellAccess';
 
 export interface VacancyAdvancedFilters {
   workerType: string;
@@ -46,6 +48,7 @@ export function VacancyFilters({
   cityOptions,
 }: VacancyFiltersProps): JSX.Element {
   const { t } = useTranslation();
+  const podeBuscarPorNome = useContainerAccess('patient_identity').visible;
 
   const typeOptions: SelectOption[] = [
     { value: 'AT', label: t('admin.vacancies.filters.type.at') },
@@ -103,7 +106,9 @@ export function VacancyFilters({
         <SearchInput
           value={searchQuery}
           onChange={onSearchChange}
-          placeholder={t('admin.vacancies.searchPlaceholder')}
+          // D286 fase 2 / lex P5: sem patient_identity:read a busca não casa nome de paciente — o
+          // placeholder diz o que ela faz de verdade.
+          placeholder={t(podeBuscarPorNome ? 'admin.vacancies.searchPlaceholder' : 'admin.vacancies.searchPlaceholderSemNome')}
           className="w-full sm:w-[400px]"
         />
         <div className="flex items-end gap-4 flex-wrap ml-auto">
@@ -153,12 +158,15 @@ export function VacancyFilters({
           <Text size="sm" weight="semibold" color="secondary" className="mb-1">
             {t('admin.vacancies.filters.province.label')}
           </Text>
-          <Select
+          {/* Lista longa (catálogo do banco): combobox com busca — REQ-06, planning 26/08 */}
+          <SearchableSelect
             inputSize="compact"
             options={stateOptions}
             value={advancedFilters.state}
-            onValueChange={(v) => onAdvancedChange({ state: v })}
+            onChange={(v) => onAdvancedChange({ state: v })}
             placeholder={t('admin.vacancies.filters.allOption')}
+            searchPlaceholder={t('common.search', 'Buscar...')}
+            data-testid="vacancy-filter-province"
           />
         </div>
 
@@ -166,12 +174,14 @@ export function VacancyFilters({
           <Text size="sm" weight="semibold" color="secondary" className="mb-1">
             {t('admin.vacancies.filters.locality.label')}
           </Text>
-          <Select
+          <SearchableSelect
             inputSize="compact"
             options={cityOptions}
             value={advancedFilters.city}
-            onValueChange={(v) => onAdvancedChange({ city: v })}
+            onChange={(v) => onAdvancedChange({ city: v })}
             placeholder={t('admin.vacancies.filters.allOption')}
+            searchPlaceholder={t('common.search', 'Buscar...')}
+            data-testid="vacancy-filter-locality"
           />
         </div>
 

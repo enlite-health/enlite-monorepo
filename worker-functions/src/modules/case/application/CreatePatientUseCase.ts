@@ -13,6 +13,8 @@ export interface CreatePatientInput {
   /** Required, no default — see createPatientSchema.country (abac-pais-fase1 5.1). */
   country: AdmissionCountry;
   lastName?: string;
+  /** US-B6 (spec 012). */
+  birthDate?: Date;
   phoneWhatsapp?: string;
   contactEmail?: string;
   documentType?: DocumentType;
@@ -62,6 +64,7 @@ export class CreatePatientUseCase {
     const nativeInput: CreateNativePatientInput = {
       firstName: input.firstName,
       lastName: input.lastName,
+      birthDate: input.birthDate ?? null,
       // No edge default: the country comes from the create modal's selector
       // (task 86ajy085e, shipped) and is validated by createPatientSchema. The
       // old hardcoded 'AR' made BR patients vanish from BR-filtered views and

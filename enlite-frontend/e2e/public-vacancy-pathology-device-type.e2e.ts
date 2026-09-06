@@ -1,15 +1,23 @@
 /**
  * public-vacancy-pathology-device-type.e2e.ts
  *
- * Visual proof: PublicVacancyPage renders ALL detail fields the public
- * vacancy card should show — including the two that were missing
- * (Patología / Tipo de dispositivo) and the "Franja etaria" row that used
- * to disappear entirely when both age bounds were null.
+ * Visual proof: PublicVacancyPage renders the public vacancy detail fields
+ * — Tipo de dispositivo — and the "Franja etaria" row that used to
+ * disappear entirely when both age bounds were null.
+ *
+ * 🔧 F1.5-CORREÇÃO C5 (D261, spec 016): the "Patología" (free-text clinical
+ * field) assertions and mock field were REMOVED here. The backend already
+ * dropped that field from the public payload on 2026-08-25
+ * (`PublicVacancyController.ts`), and `PublicVacancyPage.tsx` still
+ * rendered it — dead code that would have become a live leak of clinical
+ * data the moment F2/F3 of spec 016 added `diagnoses[]` to the response
+ * (REQ-21 requires the CID-11 code/diagnosis NEVER appear on the public
+ * ficha). The render was removed from the page in this same correction.
  *
  * Mocks `**\/api/vacancies/**` with a realistic payload (case 797-2208):
- * required_sex BOTH, age_range_min/max null, pathologies (free text with
- * line breaks), service_type ['AT'], patient_zone, worker_attributes and
- * schedule present, talentum_description.
+ * required_sex BOTH, age_range_min/max null, service_type ['AT'],
+ * patient_zone, worker_attributes and schedule present,
+ * talentum_description.
  *
  * Pattern follows `sex-both-i18n-visual.e2e.ts` (public route, no auth
  * needed) and uses `toHaveScreenshot()` per enlite-frontend/CLAUDE.md.
@@ -35,7 +43,6 @@ const MOCK_VACANCY = {
     martes: [{ start: '09:00h', end: '13:00h' }],
   },
   schedule_days_hours: 'Lun-Mar 09-13h',
-  pathologies: 'Trastorno Bipolar,\ncomórbido con TDAH y TEA',
   service_type: ['AT'],
   salary_text: 'A convenir',
   talentum_description:
@@ -56,8 +63,8 @@ async function mockPublicVacancy(page: import('@playwright/test').Page) {
   );
 }
 
-test.describe('PublicVacancyPage — Patología, Tipo de dispositivo e Franja etaria sempre visível', () => {
-  test('es-AR: exibe os 8 campos de detalhe da vaga (incluindo os 2 que faltavam)', async ({
+test.describe('PublicVacancyPage — Tipo de dispositivo e Franja etaria sempre visível', () => {
+  test('es-AR: exibe os campos de detalhe da vaga, e NUNCA a seção de patología (C5/D261)', async ({
     page,
   }) => {
     await mockPublicVacancy(page);
@@ -86,9 +93,9 @@ test.describe('PublicVacancyPage — Patología, Tipo de dispositivo e Franja et
     // 6. Días y horarios
     await expect(page.locator('text=/Días y Horarios/i').first()).toBeVisible();
 
-    // 7. Patología (Hipótesis Diagnóstica) — texto livre, preserva quebra de linha
-    await expect(page.locator('text=Hipótesis Diagnóstica - CIE:').first()).toBeVisible();
-    await expect(page.locator('text=/Trastorno Bipolar/').first()).toBeVisible();
+    // 7. C5/D261 (REQ-21): a seção de patología NUNCA aparece — o campo saiu do payload e o
+    //    render morto saiu da página nesta correção.
+    await expect(page.locator('text=Hipótesis Diagnóstica - CIE:')).toHaveCount(0);
 
     // 8. Tipo de dispositivo (service_type) — traduzido, nunca "AT" cru como enum solto
     await expect(page.locator('text=Tipo de servicio:').first()).toBeVisible();
@@ -99,13 +106,12 @@ test.describe('PublicVacancyPage — Patología, Tipo de dispositivo e Franja et
     });
   });
 
-  test('pt-BR: exibe Patología e Tipo de dispositivo traduzidos', async ({ page }) => {
+  test('pt-BR: exibe Tipo de dispositivo traduzido, e NUNCA a seção de patología (C5/D261)', async ({ page }) => {
     await mockPublicVacancy(page);
     await page.goto(`/vacantes/${VACANCY_ID}?lng=pt-BR`);
 
     await expect(page.locator('text=Disponível para:').first()).toBeVisible({ timeout: 15000 });
-    await expect(page.locator('text=Hipótese Diagnóstica - CID:').first()).toBeVisible();
-    await expect(page.locator('text=/Trastorno Bipolar/').first()).toBeVisible();
+    await expect(page.locator('text=Hipótese Diagnóstica - CID:')).toHaveCount(0);
     await expect(page.locator('text=Tipo de serviço:').first()).toBeVisible();
     await expect(page.locator('text=Acompanhante Terapêutico').first()).toBeVisible();
     await expect(page.locator('text=Faixa Etária:').first()).toBeVisible();

@@ -35,7 +35,7 @@ describe('ListInterviewSlotsForVacancyUseCase', () => {
     expect(result).toEqual({
       ok: true,
       caseNumber: 795,
-      slots: [{ index: 2, label: 'Mié 07/04 10:00', iso: '2027-04-07T10:00:00.000Z' }],
+      slots: [{ index: 1, label: 'Mié 07/04 07:00', iso: '2027-04-07T10:00:00.000Z' }] // reindexado na oferta; rótulo no fuso da vaga (AR),
     });
     expect(JSON.stringify(result)).not.toContain('meet.google.com');
   });
@@ -54,5 +54,10 @@ describe('ListInterviewSlotsForVacancyUseCase', () => {
     const result = await useCase.execute('jp-1');
 
     expect(result).toEqual({ ok: true, caseNumber: 100, slots: [] });
+  });
+
+  it('vaga sem case_number → caseNumber null (a Luz não inventa número de caso)', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ case_number: null, meet_link_1: null, meet_datetime_1: null }] });
+    expect(await useCase.execute('jp-1')).toEqual({ ok: true, caseNumber: null, slots: [] });
   });
 });

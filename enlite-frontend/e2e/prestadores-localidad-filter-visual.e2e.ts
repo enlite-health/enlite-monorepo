@@ -108,32 +108,35 @@ test.describe('Prestadores — filtro de Localidad (86ajeu9fw)', () => {
     const profileFilters = page.locator('[data-testid="worker-profile-filters"]');
     await expect(profileFilters).toBeVisible({ timeout: 15000 });
 
-    // Localidad é o 8º <select> nativo da linha de filtros de perfil
-    // (Profesión, Rango, Experiencia, Preferido, Idioma, Sexo, Provincia, Localidad).
-    const localidadSelect = profileFilters.locator('select').nth(7);
+    // Provincia e Localidad viraram combobox com busca (REQ-06, planning 26/08):
+    // a lista só existe no DOM depois de abrir o botão.
+    const localidadSelect = profileFilters.getByTestId('filter-locality');
     await expect(localidadSelect).toBeVisible({ timeout: 10000 });
-
-    // Dropdown limpo: CABA presente, códigos CPA lixo ausentes.
-    const optionValues = await localidadSelect.locator('option').allInnerTexts();
+    await localidadSelect.click();
+    const optionValues = await page.getByRole('option').allInnerTexts();
     expect(optionValues).toContain(CABA_LABEL);
     expect(optionValues.join('|')).not.toMatch(/\b(AEJ|AOO|ARP|BSI|GTJ)\b/);
     // Localidades recuperadas pelo geocoding aparecem limpas.
     expect(optionValues).toContain('La Matanza');
     expect(optionValues).toContain('Bosques');
+    await page.keyboard.press('Escape');
+    await page.mouse.click(5, 5); // fecha a lista (clique fora)
 
-    // Provincia (7º select): canônica em ES — sem rótulo inglês "X Province".
-    const provinciaSelect = profileFilters.locator('select').nth(6);
-    const provinciaOpts = await provinciaSelect.locator('option').allInnerTexts();
+    // Provincia: canônica em ES — sem rótulo inglês "X Province".
+    await profileFilters.getByTestId('filter-province').click();
+    const provinciaOpts = await page.getByRole('option').allInnerTexts();
     expect(provinciaOpts).toContain('Provincia de Buenos Aires');
     expect(provinciaOpts).toContain(CABA_LABEL);
     expect(provinciaOpts.join('|')).not.toMatch(/Province\b/); // sem inglês
-    // Screenshot da linha de filtros com o dropdown limpo.
+    await page.mouse.click(5, 5);
+    // Screenshot da linha de filtros com os comboboxes.
     await expect(profileFilters).toHaveScreenshot('prestadores-filtros-dropdown-limpo.png', {
       maxDiffPixelRatio: 0.02,
     });
 
     // Seleciona CABA → dispara a listagem filtrada.
-    await localidadSelect.selectOption({ label: CABA_LABEL });
+    await localidadSelect.click();
+    await page.getByRole('option', { name: CABA_LABEL }).click();
 
     await page.waitForResponse(
       (resp) =>

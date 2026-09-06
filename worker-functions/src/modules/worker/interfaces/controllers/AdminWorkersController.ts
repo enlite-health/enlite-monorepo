@@ -285,7 +285,12 @@ export class AdminWorkersController {
       // lê isto no `finish`.
       req.recursoAcessadoId = workerResult.rows[0].id as string;
 
-      const data = await buildWorkerDetailResponse(this.db, this.encryptionService, this.gcs, workerResult.rows[0]);
+      // D286 fase 2: a ficha sai PROJETADA pelas células do ator (contato, dossiê, documentos,
+      // encuadres); a rota só exige o operacional. `null` = engine não decidiu → ficha inteira (D113).
+      // A trilha da abertura (uid, prestador, containers servidos, quando) é a linha em
+      // `resource_access_log` que o `logResourceAccess` da rota grava — tabela auditada, NÃO o
+      // Cloud Logging: uid×prestador em log é o vínculo que a trilha existe para guardar (`lex` P7).
+      const data = await buildWorkerDetailResponse(this.db, this.encryptionService, this.gcs, workerResult.rows[0], cellsOfRequest(req));
       res.status(200).json({ success: true, data });
     } catch (error: unknown) {
       const e = error instanceof Error ? error : new Error(String(error));
@@ -323,7 +328,9 @@ export class AdminWorkersController {
       // lê isto no `finish`.
       req.recursoAcessadoId = workerResult.rows[0].id as string;
 
-      const data = await buildWorkerDetailResponse(this.db, this.encryptionService, this.gcs, workerResult.rows[0]);
+      // A MESMA projeção da ficha. A rota continua exigindo `worker_pii:read` (é o dossiê da Luz,
+      // principal de serviço → `cells = null` → ficha inteira, como o contrato do rollout pede).
+      const data = await buildWorkerDetailResponse(this.db, this.encryptionService, this.gcs, workerResult.rows[0], cellsOfRequest(req));
       res.status(200).json({ success: true, data });
     } catch (error: unknown) {
       const e = error instanceof Error ? error : new Error(String(error));

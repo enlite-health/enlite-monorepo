@@ -136,16 +136,30 @@ describe('VacancyFilters — opções', () => {
     expect(screen.getByText('Baja')).toBeInTheDocument();
   });
 
-  it('Provincia popula com stateOptions recebidas', () => {
-    const stateOptions = [{ value: 'BA', label: 'Buenos Aires' }];
+  it('Provincia é um combobox com busca e popula com stateOptions recebidas (REQ-06)', async () => {
+    const stateOptions = [{ value: 'BA', label: 'Buenos Aires' }, { value: 'CB', label: 'Córdoba' }];
     render(<VacancyFilters {...defaultProps({ stateOptions })} />);
-    expect(screen.getByText('Buenos Aires')).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId('vacancy-filter-province'));
+    expect(screen.getByRole('option', { name: 'Buenos Aires' })).toBeInTheDocument();
+    await userEvent.type(screen.getByPlaceholderText('common.search'), 'cor'); // i18n mock devolve a chave
+    expect(screen.queryByRole('option', { name: 'Buenos Aires' })).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Córdoba' })).toBeInTheDocument();
   });
 
-  it('Localidad popula com cityOptions recebidas', () => {
+  it('Localidad é um combobox com busca e popula com cityOptions recebidas (REQ-06)', async () => {
     const cityOptions = [{ value: 'Palermo', label: 'Palermo' }];
     render(<VacancyFilters {...defaultProps({ cityOptions })} />);
-    expect(screen.getByText('Palermo')).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId('vacancy-filter-locality'));
+    expect(screen.getByRole('option', { name: 'Palermo' })).toBeInTheDocument();
+  });
+
+  it('escolher uma Provincia no combobox chama onAdvancedChange({ state })', async () => {
+    const onAdvancedChange = vi.fn();
+    const stateOptions = [{ value: 'BA', label: 'Buenos Aires' }];
+    render(<VacancyFilters {...defaultProps({ stateOptions, onAdvancedChange })} />);
+    await userEvent.click(screen.getByTestId('vacancy-filter-province'));
+    await userEvent.click(screen.getByRole('option', { name: 'Buenos Aires' }));
+    expect(onAdvancedChange).toHaveBeenCalledWith({ state: 'BA' });
   });
 });
 
@@ -196,9 +210,10 @@ describe('VacancyFilters — callbacks', () => {
     const onAdvancedChange = vi.fn();
     render(<VacancyFilters {...defaultProps({ onAdvancedChange })} />);
 
-    // Sexo select: status(0), priority(1), type(2), province(3), locality(4), sex(5), timeFrom(6), timeTo(7)
+    // Selects NATIVOS restantes: status(0), priority(1), type(2), sex(3).
+    // Provincia, Localidad e horários viraram combobox com busca (REQ-06).
     const selects = screen.getAllByRole('combobox');
-    await userEvent.selectOptions(selects[5], 'F');
+    await userEvent.selectOptions(selects[3], 'F');
 
     expect(onAdvancedChange).toHaveBeenCalledWith({ requiredSex: 'F' });
   });

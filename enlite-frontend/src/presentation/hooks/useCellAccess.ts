@@ -15,6 +15,7 @@
  */
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { accessLevelFor, hasCell, type AccessLevel, type AuthzStatus } from '@domain/entities/Authz';
+import { containersOfTab, type ScreenDef } from '@presentation/config/screenRegistry';
 
 export interface CellAccess {
   level: AccessLevel;
@@ -54,4 +55,61 @@ export function useActionGate(resource: string, action: string): ActionGate {
   const hasCellForAction = useHasCell(resource, action);
   if (enforcement !== 'on') return { allowed: true, denied: false };
   return { allowed: hasCellForAction, denied: !hasCellForAction };
+}
+
+export interface ContainerAccess {
+  /** O container aparece (card, aba, coluna). Sem enforcement ligado: sempre. */
+  visible: boolean;
+  /** As ações de escrita do container aparecem. Sem enforcement ligado: sempre. */
+  canWrite: boolean;
+}
+
+/**
+ * D286 — o gate de CONTAINER: um card/aba/coluna da tela existe para quem tem `resource:read`
+ * (ou mais), e oferece edição para quem tem `resource:write`.
+ *
+ * Mesmo freio do `useActionGate`/`ActionButton` (D268/D269): só gateia com `enforcement === 'on'`.
+ * Com `'off'`/contrato ausente o container aparece como sempre apareceu — as células novas
+ * nascem SEM grupo (`lex` P5), e um gate sem esse freio apagaria a ficha do paciente inteira
+ * no dia em que o código chegasse ao `main` com o engine desligado.
+ */
+export function useContainerAccess(resource: string): ContainerAccess {
+  const enforcement = useAdminAuthStore((s) => s.authz?.enforcement);
+  const access = useCellAccess(resource);
+  if (enforcement !== 'on') return { visible: true, canWrite: true };
+  return { visible: access.canRead, canWrite: access.canWrite };
+}
+
+/**
+ * Pura, sem React — para decidir VÁRIOS containers de uma vez (as abas de uma tela): a aba
+ * existe se qualquer container dela for legível. Mesmo freio de enforcement.
+ */
+export function containersVisibleFor(
+  permissions: readonly string[] | null | undefined,
+  enforcement: string | undefined,
+  resources: readonly string[],
+): boolean {
+  if (enforcement !== 'on') return true;
+  return resources.some((r) => accessLevelFor(permissions ?? null, r) !== 'hidden');
+}
+
+/**
+ * As abas de uma tela que existem para este ator (D286): uma aba existe se QUALQUER container
+ * dela for legível. Aba que não tem container no registro (placeholder "Próximamente") não
+ * guarda dado — existe sempre. A ativa é decidida pelo chamador (a primeira visível quando a
+ * atual sumiu).
+ */
+export function tabsVisibleFor<T extends string>(
+  screen: ScreenDef,
+  tabs: readonly T[],
+  permissions: readonly string[] | null | undefined,
+  enforcement: string | undefined,
+): T[] {
+  if (enforcement !== 'on') return [...tabs];
+  return tabs.filter((tab) => {
+    const containers = containersOfTab(screen, tab);
+    // "NENHUMA permissão daquela aba" é literal: qualquer célula declarada por qualquer container
+    // da aba (read, write, execute, send…) — não só o par read/write do `accessLevelFor`.
+    return containers.length === 0 || containers.some((ct) => ct.cells.some((cell) => permissions?.includes(cell)));
+  });
 }

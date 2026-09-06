@@ -5,6 +5,8 @@ import { mapPlatformLabel } from './AdminWorkersControllerHelpers';
 import { WorkerApplicationRepository } from '../../../matching/infrastructure/WorkerApplicationRepository';
 import { BlockedApplicationQueryRepository } from '../../../matching/infrastructure/BlockedApplicationQueryRepository';
 import { WorkerEngagement } from '../../../matching/domain/WorkerEngagement';
+import { NOME_REDIGIDO } from '@modules/identity/permissions';
+import { projectPatientNameInEngagement, workerContainerReadsOf, workerRedactionMarker } from '../../application/workerContainerAccess';
 
 /**
  * Funções auxiliares para montar a resposta completa de detalhe de um worker.
@@ -66,17 +68,25 @@ export async function buildDocumentsWithSignedUrls(gcs: GCSStorageService, doc: 
 }
 
 /**
- * Descriptografa PII e busca dados relacionados do worker, montando o objeto de resposta completo.
+ * Monta a ficha completa de um prestador, PROJETADA pelas células do ator (D286 fase 2).
  * Compartilhado por getWorkerById e getWorkerByPhone.
+ *
+ * ⚠️ A célula decide ANTES de o KMS rodar (C3 da F2): cada `decrypt` só é chamado no ramo que a
+ * célula autoriza. `cells = null` (engine não decidiu — família fora do rollout, principal de
+ * serviço, engine desligado) devolve a ficha inteira, byte a byte como antes (D113).
  */
 export async function buildWorkerDetailResponse(
   db: Pool,
   encryptionService: KMSEncryptionService,
   gcs: GCSStorageService,
   w: Record<string, any>,
+  cells: readonly string[] | null = null,
 ): Promise<Record<string, any>> {
   const appRepo = new WorkerApplicationRepository();
   const blockedRepo = new BlockedApplicationQueryRepository();
+  const reads = workerContainerReadsOf(cells);
+  const abrir = (autorizado: boolean, valor: string | null | undefined): Promise<string | null> =>
+    autorizado ? encryptionService.decrypt(valor) : Promise.resolve(null);
 
   const [
     firstName, lastName, birthDate, sex, gender, documentNumber,
@@ -84,30 +94,37 @@ export async function buildWorkerDetailResponse(
     sexualOrientation, race, religion, weightKg, heightCm,
     docsResult, serviceAreasResult, locationResult, engagements, availabilityResult, tagsResult,
   ] = await Promise.all([
-    encryptionService.decrypt(w.first_name_encrypted),
-    encryptionService.decrypt(w.last_name_encrypted),
-    encryptionService.decrypt(w.birth_date_encrypted),
-    encryptionService.decrypt(w.sex_encrypted),
-    encryptionService.decrypt(w.gender_encrypted),
-    encryptionService.decrypt(w.document_number_encrypted),
-    encryptionService.decrypt(w.profile_photo_url_encrypted),
+    abrir(reads.contact, w.first_name_encrypted),
+    abrir(reads.contact, w.last_name_encrypted),
+    abrir(reads.dossier, w.birth_date_encrypted),
+    abrir(reads.dossier, w.sex_encrypted),
+    abrir(reads.dossier, w.gender_encrypted),
+    abrir(reads.dossier, w.document_number_encrypted),
+    abrir(reads.dossier, w.profile_photo_url_encrypted),
+    // Idiomas: coluna cifrada em repouso que SAI no nível base (`worker:read`), por decisão
+    // registrada (`lex` fase 2, condição 3): é critério de matching (paciente que fala X) e o card
+    // de perfil profissional os mostra; o proxy de origem étnica que o `lex` aponta fica anotado
+    // aqui como risco aceito, não como esquecimento.
     encryptionService.decrypt(w.languages_encrypted),
-    encryptionService.decrypt(w.whatsapp_phone_encrypted),
-    encryptionService.decrypt(w.linkedin_url_encrypted),
-    encryptionService.decrypt(w.sexual_orientation_encrypted),
-    encryptionService.decrypt(w.race_encrypted),
-    encryptionService.decrypt(w.religion_encrypted),
-    encryptionService.decrypt(w.weight_kg_encrypted),
-    encryptionService.decrypt(w.height_cm_encrypted),
-    db.query(
-      `SELECT id, resume_cv_url, identity_document_url, identity_document_back_url,
-        criminal_record_url, professional_registration_url, liability_insurance_url,
-        monotributo_certificate_url, at_certificate_url,
-        additional_certificates_urls, documents_status, document_validations,
-        review_notes, reviewed_by, reviewed_at, submitted_at
-      FROM worker_documents WHERE worker_id = $1`,
-      [w.id],
-    ),
+    abrir(reads.contact, w.whatsapp_phone_encrypted),
+    abrir(reads.contact, w.linkedin_url_encrypted),
+    abrir(reads.dossier, w.sexual_orientation_encrypted),
+    abrir(reads.dossier, w.race_encrypted),
+    abrir(reads.dossier, w.religion_encrypted),
+    abrir(reads.dossier, w.weight_kg_encrypted),
+    abrir(reads.dossier, w.height_cm_encrypted),
+    // Documentos: sem a célula a query nem roda — a URL assinada é o dado, e ela só nasce aqui.
+    reads.documents
+      ? db.query(
+          `SELECT id, resume_cv_url, identity_document_url, identity_document_back_url,
+            criminal_record_url, professional_registration_url, liability_insurance_url,
+            monotributo_certificate_url, at_certificate_url,
+            additional_certificates_urls, documents_status, document_validations,
+            review_notes, reviewed_by, reviewed_at, submitted_at
+          FROM worker_documents WHERE worker_id = $1`,
+          [w.id],
+        )
+      : Promise.resolve({ rows: [] as any[] }),
     db.query(
       `SELECT id, address_line, latitude, longitude, radius_km, city, work_zone, interest_zone
          FROM worker_service_areas
@@ -127,7 +144,9 @@ export async function buildWorkerDetailResponse(
     // bloqueadas não-promovidas. Espelha o Kanban da vaga: a aba de encuadre passa a
     // mostrar TODAS as vagas (bloqueado/iniciado/rejeitado inclusive), com o status =
     // coluna do board. SSOT do mapa (stage,source)→coluna: domain/kanbanColumn.ts.
-    (async (): Promise<WorkerEngagement[]> => {
+    // Sem `match:read` o bloco não é nem consultado.
+    (async (): Promise<WorkerEngagement[] | null> => {
+      if (!reads.encuadres) return null;
       const [wjaEngagements, blockedEngagements] = await Promise.all([
         appRepo.listEngagementsByWorker(w.id),
         blockedRepo.listByWorker(w.id),
@@ -162,15 +181,26 @@ export async function buildWorkerDetailResponse(
   const isActive = w.status !== 'DISABLED' && w.deleted_at === null;
   const doc = docsResult.rows[0] ?? null;
   const loc = locationResult.rows[0] ?? null;
+  // Endereço é célula própria (`worker_address:read`, a mesma do mapa): linha, lat/lng e raio
+  // (coordenada É o endereço — `lex` fase 2, P2). Cidade, zona de trabalho e zona de interesse
+  // são o critério operacional de matching e ficam no nível base.
+  const endereco = (valor: string | null | undefined): string | null => (reads.address ? valor ?? null : null);
+  const redacted = workerRedactionMarker(reads);
 
   return {
-    id: w.id, email: w.email, phone: w.phone ?? null, whatsappPhone: whatsappPhone ?? null,
+    id: w.id,
+    // Contato: nome, e-mail, telefone, whatsapp, linkedin. Sem a célula o nome vem como
+    // `NOME_REDIGIDO` — trava, não rótulo (D181): vazio some da tela e parece cadastro furado.
+    email: reads.contact ? w.email : null,
+    phone: reads.contact ? w.phone ?? null : null,
+    whatsappPhone: whatsappPhone ?? null,
     country: w.country, timezone: w.timezone, status: w.status,
     dataSources: w.data_sources ?? [], platform: mapPlatformLabel(w.data_sources ?? []),
     createdAt: w.created_at, updatedAt: w.updated_at,
-    firstName: firstName ?? null, lastName: lastName ?? null, sex: sex ?? null,
+    firstName: reads.contact ? firstName ?? null : NOME_REDIGIDO,
+    lastName: lastName ?? null, sex: sex ?? null,
     gender: gender ?? null, birthDate: birthDate ?? null,
-    documentType: w.document_type ?? null, documentNumber: documentNumber ?? null,
+    documentType: reads.dossier ? w.document_type ?? null : null, documentNumber: documentNumber ?? null,
     profilePhotoUrl: profilePhotoUrl ?? null, profession: w.profession ?? null,
     occupation: w.occupation ?? null, knowledgeLevel: w.knowledge_level ?? null,
     titleCertificate: w.title_certificate ?? null,
@@ -188,22 +218,25 @@ export async function buildWorkerDetailResponse(
     anaCareId: w.ana_care_id ?? null,
     anaCareSyncedAt: w.ana_care_synced_at ?? null,
     documents: doc ? await buildDocumentsWithSignedUrls(gcs, doc) : null,
-    serviceAreas: serviceAreasResult.rows.map((sa: any) => ({
+    serviceAreas: reads.address ? serviceAreasResult.rows.map((sa: any) => ({
       id: sa.id, address: sa.address_line ?? null, serviceRadiusKm: sa.radius_km ?? null,
       lat: sa.latitude ? parseFloat(sa.latitude) : null,
       lng: sa.longitude ? parseFloat(sa.longitude) : null,
-    })),
+    })) : null,
     location: loc ? {
-      address: loc.address ?? null, city: loc.city ?? null,
+      address: endereco(loc.address), city: loc.city ?? null,
       workZone: loc.work_zone ?? null, interestZone: loc.interest_zone ?? null,
     } : null,
     // Uma linha por vaga em que o worker está engajado. `kanbanStage` é a coluna do
     // Kanban (SSOT deriveKanbanColumn) — o frontend renderiza o label de
     // admin.kanban.columns.<kanbanStage>. Mantém o nome `encuadres` no payload por
-    // retrocompat do WorkerDetail (frontend WorkerEncuadresCard).
-    encuadres: engagements.map((e: WorkerEngagement) => ({
+    // retrocompat do WorkerDetail (frontend WorkerEncuadresCard). `null` (não `[]`) sem a
+    // célula: `[]` diria "não está em nenhuma vaga", e o ator não pode saber nem isso.
+    encuadres: engagements === null ? null : engagements.map((e: WorkerEngagement) => ({
       id: e.id, jobPostingId: e.jobPostingId, caseNumber: e.caseNumber, vacancyNumber: e.vacancyNumber,
-      patientName: e.patientName, kanbanStage: e.kanbanStage, vacancyStatus: e.vacancyStatus,
+      // Nome do PACIENTE — outro titular, célula de identidade do paciente (D286 fase 1).
+      patientName: projectPatientNameInEngagement(e.patientName, reads),
+      kanbanStage: e.kanbanStage, vacancyStatus: e.vacancyStatus,
       resultado: e.resultado, interviewDate: e.interviewDate, interviewTime: e.interviewTime,
       recruiterName: e.recruiterName, coordinatorName: e.coordinatorName,
       rejectionReason: e.rejectionReason, rejectionReasonCategory: e.rejectionReasonCategory,
@@ -224,5 +257,8 @@ export async function buildWorkerDetailResponse(
       color: t.color,
       description: t.description ?? undefined,
     })),
+    // Marcador CONSTANTE de redação — só aparece quando algo foi redigido (resposta de quem lê
+    // tudo é a de antes).
+    ...(redacted ? { redacted } : {}),
   };
 }

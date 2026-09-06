@@ -32,5 +32,12 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      - name: Run tests
-        run: pnpm test:run
+      # `--coverage` NÃO é enfeite: sem coletar cobertura o vitest ignora o
+      # `thresholds` do vitest.config.ts por completo — e foi exatamente isso
+      # que aconteceu aqui até 30/08/2026, com um piso global de 80 no config
+      # que NUNCA foi lido. Quem executa a trava é esta linha.
+      # É `test:ci` e não `test:run -- --coverage` porque o pnpm não repassa a
+      # flag para o vitest através do script (medido): a flag some, a suíte
+      # passa, e o piso volta a ser documentação.
+      - name: Run tests (com o piso de cobertura)
+        run: pnpm test:ci

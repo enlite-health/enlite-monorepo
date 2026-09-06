@@ -4,3 +4,6 @@ export const MANIFEST_PATH: string;
 export const FEATURE_FIXTURE_PATH: string;
 export function cellsFromSeed(sql: string): string[];
 export function featureKeysFromManifest(ts: string): string[];
+export const CELL_DESCRIPTION_PATH: string;
+export function cellsFromDescriptions(ts: string): string[];
+export function catalogCells(sql: string, ts: string): string[];

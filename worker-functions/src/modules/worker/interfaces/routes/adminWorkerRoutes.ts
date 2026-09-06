@@ -8,6 +8,7 @@ import { AdminWorkerServiceAreaController } from '../controllers/AdminWorkerServ
 import { AdminTagCatalogController } from '../controllers/AdminTagCatalogController';
 import { WorkerTimelineController } from '../controllers/WorkerTimelineController';
 import { logResourceAccess } from '@shared/audit/resourceAccessLog';
+import { AdminWorkersMapController } from '../controllers/AdminWorkersMapController';
 
 export interface AdminWorkerRouteControllers {
   workers: AdminWorkersController;
@@ -17,6 +18,8 @@ export interface AdminWorkerRouteControllers {
   serviceArea: AdminWorkerServiceAreaController;
   tags: AdminTagCatalogController;
   timeline: WorkerTimelineController;
+  /** Opcional só para não quebrar quem monta o router sem mapa (testes antigos). */
+  map?: AdminWorkersMapController;
 }
 
 /**
@@ -50,6 +53,7 @@ export interface AdminWorkerRouteControllers {
  * `PERMISSION_CATALOG_SYNC_ENABLED` ter ligado para poder ser enforçada.
  */
 import { ADMIN_WORKERS_FAMILY } from '@modules/identity/permissions';
+import { workerDetailTrailOf } from '../../application/workerContainerAccess';
 export { ADMIN_WORKERS_FAMILY };
 
 export function createAdminWorkerRoutes(
@@ -85,12 +89,25 @@ export function createAdminWorkerRoutes(
   router.get('/workers/case-options', staffOnly, perm.require('worker', 'read'), (req: Request, res: Response) => c.aux.listCaseOptions(req, res));
   // filter-options MUST be before /:id to avoid param capture
   router.get('/workers/filter-options', staffOnly, perm.require('worker', 'read'), (req: Request, res: Response) => c.aux.getFilterOptions(req, res));
+  // map MUST be before /:id — pontos do mapa de prestadores (REQ-04, DEC-14). POST com corpo: o centro do raio nunca vai na URL (lex C2).
+  // D286 fase 2: coordenada É endereço → a MESMA célula do card de endereço da ficha (`worker_address:read`);
+  // o nome de cada pino segue `worker_contact:read` (projetado no controller, antes do KMS). Era `worker:read`
+  // e entregava nome + lat/lng de todo mundo (`lex` P1).
+  if (c.map) {
+    const map = c.map;
+    router.post('/workers/map', staffOnly, perm.require('worker_address', 'read'), (req: Request, res: Response) => map.getMapPoints(req, res));
+  }
   router.post('/workers/sync-talentum', staffOnly, perm.require('talentum', 'write'), (req: Request, res: Response) => c.aux.syncTalentumWorkers(req, res));
   // export MUST be registered before /:id to avoid param capture
   router.get('/workers/export', adminOnly, perm.require('worker', 'export'), (req: Request, res: Response) => c.workers.exportWorkers(req, res));
   // timeline MUST be registered before /:id to avoid param capture
   router.get('/workers/:id/timeline', staffOnly, perm.require('worker', 'read'), (req: Request, res: Response) => c.timeline.getTimeline(req, res));
-  router.get('/workers/:id', staffOnly, perm.require('worker_pii', 'read'), logResourceAccess('worker'), (req: Request, res: Response) => c.workers.getWorkerById(req, res));
+  // D286 fase 2: abrir a ficha é o OPERACIONAL; contato, dossiê, documentos e encuadres saem
+  // projetados pela célula de cada container (`buildWorkerDetailResponse`). Quem só tem
+  // `worker:read` recebe a ficha sem nome, sem DNI, sem documento — não uma negação da tela.
+  // A trilha (`resource_access_log`) carrega os containers servidos no `action` — é o que substitui
+  // a linha ALLOW de `worker_pii` que esta rota deixou de gerar.
+  router.get('/workers/:id', staffOnly, perm.require('worker', 'read'), logResourceAccess('worker', workerDetailTrailOf), (req: Request, res: Response) => c.workers.getWorkerById(req, res));
   // test-flag e profile são admin-only (mais estrito que staff)
   router.patch('/workers/:id/test-flag', adminOnly, perm.require('worker', 'write'), (req: Request, res: Response) => c.testFlag.updateTestFlag(req, res));
   // edição de perfil do worker — apenas role ADMIN

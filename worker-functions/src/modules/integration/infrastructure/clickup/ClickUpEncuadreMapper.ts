@@ -5,6 +5,7 @@ import type { ClickUpTask, ClickUpTaskCustomField } from './ClickUpTask';
 import { mapClickUpGender } from './mappings/genderMap';
 import { mapClickUpProfession } from './mappings/professionMap';
 import { ENCUADRES_STATUS_TO_RESULTADO } from './mappings/encuadreStatusMap';
+import { asIndexable } from './helpers/asIndexable';
 import type { EncuadreResultado } from '@modules/matching/domain/Encuadre';
 import type { Profession } from '@modules/worker/domain/enums/Profession';
 import type { Gender } from '@modules/worker/domain/enums/Gender';
@@ -73,7 +74,15 @@ type CustomFieldMap = Record<string, unknown>;
 
 function mapStatusToResultado(status: string): EncuadreResultado {
   const lower = status.toLowerCase().trim();
-  return ENCUADRES_STATUS_TO_RESULTADO[lower] ?? 'PENDIENTE';
+  const mapped = ENCUADRES_STATUS_TO_RESULTADO[lower];
+  if (mapped === undefined) {
+    // Unknown ClickUp status — ops may have added a new value. Log it so it can be mapped.
+    // Falling back to 'PENDIENTE' produces a PLAUSIBLE value, indistinguishable from a real
+    // classification — so the warning is the only signal that the mapping is missing.
+    console.warn('[ClickUpEncuadreMapper] Unknown ClickUp status:', { field: 'Encuadres task status', label: status, fallback: 'PENDIENTE' });
+    return 'PENDIENTE';
+  }
+  return mapped;
 }
 
 // ── Case-number extraction ────────────────────────────────────────────────────
@@ -174,8 +183,8 @@ export class ClickUpEncuadreMapper {
     if (!email && !rawWhatsapp) return null;
 
     // Resolve dropdown fields
-    const sexLabel        = this.resolver.resolveDropdown('Sexo Prestador',     this.asIndexable(cf['Sexo Prestador']));
-    const professionLabel = this.resolver.resolveDropdown('Tipo de Profesional', this.asIndexable(cf['Tipo de Profesional']));
+    const sexLabel        = this.resolver.resolveDropdown('Sexo Prestador',     asIndexable('Sexo Prestador', cf['Sexo Prestador']));
+    const professionLabel = this.resolver.resolveDropdown('Tipo de Profesional', asIndexable('Tipo de Profesional', cf['Tipo de Profesional']));
 
     // Parse name from "Apellido y Nombre Prestador" field
     const rawName = this.asString(cf['Apellido y Nombre Prestador']);
@@ -263,9 +272,8 @@ export class ClickUpEncuadreMapper {
     return null;
   }
 
-  private asIndexable(value: unknown): number | null {
-    if (value === null || value === undefined) return null;
-    const n = Number(value);
-    return Number.isNaN(n) ? null : n;
-  }
+  // asIndexable() moved to helpers/asIndexable.ts (C5 do parecer do `lex`, 23/08).
+  // This file carried a SECOND copy of the same `Number(value)` pre-coercion — same
+  // fabrication door, on 'Sexo Prestador' and 'Tipo de Profesional'. Fixing one copy
+  // and leaving the other would leave the class open. See the helper's header.
 }

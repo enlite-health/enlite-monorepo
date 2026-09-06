@@ -40,7 +40,12 @@ export const COLUNAS_DE_PRESTADOR = [
 const RE_COLUNA = new RegExp(COLUNAS_DE_PRESTADOR.join('|'));
 /** `res.json(...)` e `res.status(...).json(...)` — a emissão de resposta HTTP. */
 const RE_EMISSAO = /res\.(status\([^)]*\)\.)?json\(/;
-const RE_PROJECAO = /projectWorkerFields/;
+/**
+ * As DUAS projeções reconhecidas: `projectWorkerFields` (F2/C3, campo a campo) e a ficha por
+ * container (`workerContainerReadsOf`, D286 fase 2 — `AdminWorkersDetailBuilder`). Qualquer
+ * outra forma de "decidir antes do KMS" é desconhecida da catraca e é acusada.
+ */
+const RE_PROJECAO = /projectWorkerFields|workerContainerReadsOf/;
 
 export interface Veredito {
   citaColuna: boolean;

@@ -18,8 +18,8 @@ export class PatientResponsibleRepository {
   }
 
   /**
-   * Replaces all responsibles for a patient (DELETE + INSERT).
-   * Idempotent: safe to call on re-import.
+   * Replaces ALL responsibles for a patient (DELETE + INSERT) — the DRAWER path:
+   * the screen edits the whole list, so the whole list is what it sends.
    * Enforces at most 1 is_primary=true via partial unique index in DB.
    */
   async replaceAll(
@@ -28,12 +28,54 @@ export class PatientResponsibleRepository {
     client?: PoolClient,
   ): Promise<void> {
     const executor = client ?? this.pool;
-
     await executor.query(
       'DELETE FROM patient_responsibles WHERE patient_id = $1',
       [patientId],
     );
+    await this.insertRows(executor, patientId, responsibles, false);
+  }
 
+  /**
+   * Replaces ONLY the rows of one `source` — the SYNC path (QA caça 🔴1, spec 011).
+   *
+   * O sync do ClickUp chamava `replaceAll` e o mapper devolve `[]` quando a task
+   * não tem responsável: um familiar criado no painel ('admin_manual') ou pelo
+   * formulário público ('web_form') sumia no `taskUpdated` seguinte. Aqui só as
+   * linhas daquela procedência são substituídas; as demais ficam intactas.
+   *
+   * Como o banco exige no máximo 1 titular por paciente
+   * (idx_patient_responsibles_one_primary), quando já existe titular de OUTRA
+   * procedência as linhas novas entram como não-titular — a escolha feita no
+   * painel vale mais que o espelho, e o sync não pode quebrar por isso.
+   */
+  async replaceBySource(
+    patientId: string,
+    responsibles: PatientResponsibleInput[],
+    source: string,
+    client?: PoolClient,
+  ): Promise<void> {
+    const executor = client ?? this.pool;
+    const other = await executor.query<{ exists: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM patient_responsibles
+         WHERE patient_id = $1 AND is_primary = true AND source <> $2
+       ) AS exists`,
+      [patientId, source],
+    );
+    await executor.query(
+      'DELETE FROM patient_responsibles WHERE patient_id = $1 AND source = $2',
+      [patientId, source],
+    );
+    await this.insertRows(executor, patientId, responsibles, other.rows[0].exists);
+  }
+
+  /** Shared INSERT of replaceAll/replaceBySource: encrypts PII, trims names, skips nameless rows. */
+  private async insertRows(
+    executor: Pool | PoolClient,
+    patientId: string,
+    responsibles: PatientResponsibleInput[],
+    demotePrimary: boolean,
+  ): Promise<void> {
     const valid = responsibles.filter(r => r.firstName?.trim() || r.lastName?.trim());
     if (valid.length === 0) return;
 
@@ -58,7 +100,7 @@ export class PatientResponsibleRepository {
         encrypted[i].emailEnc,
         encrypted[i].documentNumberEnc,
         r.documentType    ?? null,
-        r.isPrimary,
+        demotePrimary ? false : r.isPrimary,
         r.displayOrder,
         r.source          ?? 'clickup',
       );

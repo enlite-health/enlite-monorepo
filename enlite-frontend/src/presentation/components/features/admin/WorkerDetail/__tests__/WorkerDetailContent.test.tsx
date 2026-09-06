@@ -165,17 +165,69 @@ describe('WorkerDetailContent', () => {
     await waitFor(() => expect(AdminApiService.getWorkerAdditionalDocs).toHaveBeenCalledWith('w1'));
   });
 
-  it('D269 — enforcement=on sem worker_document:write/:delete: "Agregar" e excluir SOMEM na seção de docs adicionais', async () => {
-    comEnforcement([], 'on');
+  it('D269 — enforcement=on com worker_document:read mas sem :write/:delete: a seção existe e "Agregar" SOME', async () => {
+    comEnforcement(['worker:read', 'worker_contact:read', 'worker_document:read'], 'on');
     render(<WorkerDetailContent workerId="w1" />);
     await screen.findByText('Juana Pérez');
+    expect(screen.getByTestId('worker-documents-card')).toBeInTheDocument();
     expect(screen.queryByTestId('additional-doc-add')).not.toBeInTheDocument();
   });
 
-  it('D269 — enforcement=on com worker_document:write: "Agregar" existe na seção de docs adicionais', async () => {
-    comEnforcement(['worker_document:write'], 'on');
+  it('D269 — enforcement=on com worker_document:read+write: "Agregar" existe na seção de docs adicionais', async () => {
+    comEnforcement(['worker:read', 'worker_contact:read', 'worker_document:read', 'worker_document:write'], 'on');
     render(<WorkerDetailContent workerId="w1" />);
     await screen.findByText('Juana Pérez');
     expect(screen.getByTestId('additional-doc-add')).toBeInTheDocument();
+  });
+
+  // ── D286 fase 2: containers e abas ──────────────────────────────────────────────────────────
+  describe('D286 — cada container tem célula própria; aba sem container legível some', () => {
+    it('só worker:read: sem card de contato, sem dossiê (só idiomas e etiquetas), sem endereço; abas documents/encuadres somem, placeholders ficam', async () => {
+      comEnforcement(['worker:read'], 'on');
+      render(<WorkerDetailContent workerId="w1" />);
+      await screen.findByText('admin.workerDetail.personalInfo');
+      // contato (nome na card de contato) e dossiê
+      expect(screen.queryByText('Juana Pérez')).not.toBeInTheDocument();
+      expect(screen.queryByText(/admin.workerDetail.birthDate/)).not.toBeInTheDocument();
+      expect(screen.getAllByText(/admin.workerDetail.languages/).length).toBeGreaterThan(0);
+      expect(screen.queryByTestId('worker-edit-button')).not.toBeInTheDocument();
+      // abas: documents e encuadres somem; availability (operacional) e placeholders ficam
+      expect(screen.queryByRole('button', { name: /admin.workerDetail.tabs.documents/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /admin.workerDetail.tabs.encuadres/i })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /admin.workerDetail.tabs.availability/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /admin.workerDetail.tabs.financial/i })).toBeInTheDocument();
+      // a aba ativa (documents, default) sumiu → cai na primeira visível
+      expect(screen.queryByTestId('worker-documents-card')).not.toBeInTheDocument();
+    });
+
+    it('worker_pii:read sem contato nem endereço: dossiê aparece, nome não, card de endereço não', async () => {
+      comEnforcement(['worker:read', 'worker_pii:read'], 'on');
+      render(<WorkerDetailContent workerId="w1" />);
+      await screen.findByText(/admin.workerDetail.birthDate/);
+      expect(screen.queryByText('Juana Pérez')).not.toBeInTheDocument();
+      expect(screen.queryByText(/admin.workerDetail.addressData/)).not.toBeInTheDocument();
+    });
+
+    it('worker_address:read (a mesma célula do mapa) devolve o card de endereço', async () => {
+      comEnforcement(['worker:read', 'worker_address:read'], 'on');
+      render(<WorkerDetailContent workerId="w1" />);
+      await screen.findByText('admin.workerDetail.personalInfo');
+      expect(screen.getByText(/admin.workerDetail.addressData/)).toBeInTheDocument();
+    });
+
+    it('match:read: a aba de encuadres existe', async () => {
+      comEnforcement(['worker:read', 'match:read'], 'on');
+      render(<WorkerDetailContent workerId="w1" />);
+      await screen.findByText('admin.workerDetail.personalInfo');
+      expect(screen.getByRole('button', { name: /admin.workerDetail.tabs.encuadres/i })).toBeInTheDocument();
+    });
+
+    it('enforcement=off (ou engine indeciso): tudo aparece, como antes', async () => {
+      comEnforcement([], 'off');
+      render(<WorkerDetailContent workerId="w1" />);
+      await screen.findByText('Juana Pérez');
+      expect(screen.getByTestId('worker-documents-card')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /admin.workerDetail.tabs.encuadres/i })).toBeInTheDocument();
+    });
   });
 });

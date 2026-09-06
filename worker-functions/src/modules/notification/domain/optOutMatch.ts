@@ -34,7 +34,12 @@ export function normalizeForOptOut(text: string): string {
 }
 
 // Body inteiro === um destes (já normalizado, sem acento).
-const OPT_OUT_EXACT = new Set<string>([
+//
+// ⚠️ EXPORTADO desde 01/09/2026 para o validador de rascunho (AR-01/MKT-02):
+// uma cláusula de baja que manda responder uma palavra FORA deste conjunto
+// promete uma saída que o inbound não honra. A regra lá só tem sentido se ler
+// daqui — duas listas divergiriam no primeiro termo novo.
+export const OPT_OUT_EXACT = new Set<string>([
   // originais
   'parar', 'stop', 'cancelar', 'desuscribir', 'desuscribirme',
   'no quiero', 'basta', 'unsubscribe', 'optout', 'opt-out', 'opt out',
@@ -44,7 +49,7 @@ const OPT_OUT_EXACT = new Set<string>([
 ]);
 
 // Substring inequívoca (já normalizada). NÃO incluir termos ambíguos (ex: "no").
-const OPT_OUT_CONTAINS: string[] = [
+export const OPT_OUT_CONTAINS: string[] = [
   'darme de baja', 'dar de baja', 'darse de baja', 'me doy de baja',
   'no me escriban', 'no me escribas', 'no me manden', 'no me envien',
   'no me contacten', 'dejen de escribir', 'dejen de enviar', 'deja de escribir',

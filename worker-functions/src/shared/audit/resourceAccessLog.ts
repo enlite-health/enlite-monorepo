@@ -170,12 +170,13 @@ async function resolveAccessOriginUnderSystemContext(
  * operador precisa já estar resolvido) e antes do handler.
  *
  * @param resourceType tipo do recurso lido
- * @param action rótulo da ação, ex.: `read_detail`
+ * @param action rótulo da ação, ex.: `read_detail` — ou função da request, avaliada no `finish`,
+ *   para a linha carregar o conjunto ENUMERADO de containers servidos (`read_detail:contact+dossier`)
  * @param idFrom de onde tirar o id (default: `req.params.id`)
  */
 export function logResourceAccess(
   resourceType: ResourceType,
-  action = 'read_detail',
+  action: string | ((req: Request) => string) = 'read_detail',
   idFrom: (req: Request) => string | undefined = (req) => req.params.id,
 ): RequestHandler {
   return (req, res, next) => {
@@ -199,7 +200,9 @@ export function logResourceAccess(
       // UM ciclo de contexto de sistema para a leitura do país E o INSERT: são
       // duas queries da mesma trilha, e abrir duas sessões (dois clients, dois
       // pares de set_config) dobraria o custo de cada abertura de dossiê.
-      const entryBase = { operatorUid: user.uid, operatorRole, resourceType, resourceId, action };
+      // D286: `action` pode ser derivada da request no `finish` — é assim que a linha diz QUE
+      // containers da ficha saíram (`read_detail:contact+dossier`), valor ENUMERADO, sem dado.
+      const entryBase = { operatorUid: user.uid, operatorRole, resourceType, resourceId, action: typeof action === 'function' ? action(req) : action };
       void withSystemDbContext(SYSTEM_LABEL, async () => {
         const origin =
           !context || context.kind !== 'staff'

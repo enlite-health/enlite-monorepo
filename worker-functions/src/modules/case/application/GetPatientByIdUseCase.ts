@@ -1,5 +1,6 @@
 import { PatientQueryRepository } from '../infrastructure/PatientQueryRepository';
 import type { PatientDetailRow } from '../infrastructure/PatientQueryRepository';
+import { ALL_PATIENT_CONTAINERS_READABLE, type PatientContainerReads } from './patientContainerAccess';
 
 export interface GetPatientByIdResult {
   found: true;
@@ -27,8 +28,8 @@ export class GetPatientByIdUseCase {
     this.repo = repo ?? new PatientQueryRepository();
   }
 
-  async execute(id: string): Promise<GetPatientByIdOutput> {
-    const patient = await this.repo.findDetailById(id);
+  async execute(id: string, reads: PatientContainerReads = ALL_PATIENT_CONTAINERS_READABLE): Promise<GetPatientByIdOutput> {
+    const patient = await this.repo.findDetailById(id, reads);
 
     if (patient === null) {
       return { found: false };

@@ -19,11 +19,20 @@ export type AttentionReason =
    * for ops to investigate (typically: duplicate ClickUp task with the same
    * case_number, or a typo in the ClickUp custom field).
    */
-  | 'CASE_NUMBER_CONFLICT';
+  | 'CASE_NUMBER_CONFLICT'
+  /**
+   * Spec 014, QA-caça rodada 1 (item conserto 1, lex D1.1/D255): paciente em
+   * ACTIVATABLE_STATUSES (ADMISSION/PENDING_ADMISSION) com `computePatientCompleteness().missing`
+   * não vazio — DERIVADO a cada leitura de `list()`, nunca gravado na coluna
+   * `patients.attention_reasons` (que continua só para os motivos legados acima). Nunca aparece
+   * fora da admissão (paciente ACTIVE incompleto não é "atenção" — já foi aprovado).
+   */
+  | 'INCOMPLETE_ADMISSION';
 
 export const ATTENTION_REASONS: readonly AttentionReason[] = [
   'MISSING_INFO',
   'CASE_NUMBER_CONFLICT',
+  'INCOMPLETE_ADMISSION',
 ] as const;
 
 export function isAttentionReason(value: unknown): value is AttentionReason {

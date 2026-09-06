@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
 import type { FunnelStages, MoveEncuadreError } from '@hooks/admin/useWJAFunnel';
 import { KanbanBoardShell, type KanbanColumnSpec, type KanbanDropEvent } from './KanbanBoardShell';
 import { KanbanCard } from './KanbanCard';
@@ -10,6 +9,9 @@ import { InterviewScheduleSelect, type InterviewSchedule } from './InterviewSche
 import { ContactNotesModal } from '@presentation/components/features/admin/VacancyDetail/Funnel/ContactNotesModal';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import type { EncuadreRole } from '@domain/entities/EncuadreRole';
+import type { PresentationInviteResult } from '@infrastructure/http/AdminPresentationInviteApiService';
+import { usePresentationInviteLast } from '@hooks/admin/usePresentationInviteLast';
+import type { PresentationInviteState } from './KanbanCardPresentationInvite';
 
 interface KanbanBoardProps {
   stages: FunnelStages;
@@ -26,6 +28,17 @@ interface KanbanBoardProps {
   onRejectBlocked: (blockedId: string, rejectionReasonCategory: string) => Promise<MoveEncuadreError | null>;
   /** "Voltar a bloqueados": desfaz o rechazo de um card bloqueado (RECHAZADOS → BLOQUEADO). */
   onUnrejectBlocked: (blockedId: string) => Promise<MoveEncuadreError | null>;
+  /**
+   * "Reenviar" da tarjeta (REQ-08): redispara a mensagem para o worker. Devolve
+   * null quando enviou, ou a mensagem localizada do motivo da recusa/falha.
+   * Ausente = o board não mostra o botão.
+   */
+  onResendInvite?: (workerId: string) => Promise<string | null>;
+  /**
+   * REQ-09: "Invitar a reunión de presentación" da tarjeta. Devolve o resultado do backend
+   * (enfileirado ou pulado com motivo); lança em falha. Ausente = o board não mostra o botão.
+   */
+  onPresentationInvite?: (workerId: string) => Promise<PresentationInviteResult>;
 }
 
 /** Colunas do funil de vaga. Fonte ÚNICA de quais aceitam drop (`droppable`) —
@@ -72,10 +85,13 @@ function cardProps(enc: FunnelCard, stage: string) {
     blockedReason: enc.blockedReason,
     missingFields: enc.missingFields,
     attemptCount: enc.attemptCount,
+    lastMessagedAt: enc.lastMessagedAt ?? null,
+    lastStageMessage: enc.lastStageMessage ?? null,
+    resendBlockedReason: enc.resendBlockedReason ?? null,
   };
 }
 
-export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnrejectBlocked }: KanbanBoardProps) {
+export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnrejectBlocked, onResendInvite, onPresentationInvite }: KanbanBoardProps) {
   const { t } = useTranslation();
   // PUT /encuadres/:id/move, /result, POST .../blocked-applications/:id/reject|restore
   // → todos funnel:write. Arrasto e menu de clique chamam a MESMA rota — D269
@@ -85,7 +101,6 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
   // callbacks de mover/rechazar/voltar viram `undefined`, então `KanbanCard`
   // nem monta o `MoveToMenu`/botão (mesmo `{onX && <.../>}` de sempre).
   const funnelWriteGate = useActionGate('funnel', 'write');
-  const navigate = useNavigate();
   /**
    * Modal de motivo de rejeição. Serve dois alvos com o MESMO dropdown:
    *  - { encuadreId } → mover encuadre para REJECTED (onMove).
@@ -103,9 +118,40 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
    * inclusive BLOQUEADO — e não zera quando o card é promovido.
    */
   const [activeNotes, setActiveNotes] = useState<{ workerId: string; workerName: string | null } | null>(null);
+  /** Estado do "Reenviar" por card (id do card): enviando / enviado / motivo da recusa. */
+  const [resendByCard, setResendByCard] = useState<
+    Record<string, { status: 'sending' | 'sent' | 'error'; message: string | null }>
+  >({});
 
-  function handleWorkerClick(workerId: string) {
-    navigate(`/admin/workers/${workerId}`);
+  /** REQ-09: estado do convite à reunión de presentación por card + último convite por worker. */
+  const [presentationByCard, setPresentationByCard] = useState<Record<string, PresentationInviteState>>({});
+  const [lastPresentationByWorker, setLastPresentationByWorker] = usePresentationInviteLast(
+    Object.values(stages).flat().map((e) => e.workerId), !!onPresentationInvite,
+  );
+
+  async function handlePresentationInvite(cardId: string, workerId: string, invite: NonNullable<typeof onPresentationInvite>) {
+    setPresentationByCard((prev) => ({ ...prev, [cardId]: { status: 'sending' } }));
+    try {
+      const r = await invite(workerId);
+      if (r.status === 'queued') {
+        setLastPresentationByWorker((prev) => ({ ...prev, [workerId]: { at: new Date().toISOString(), by: null } }));
+        setPresentationByCard((prev) => ({ ...prev, [cardId]: { status: 'queued' } }));
+      } else {
+        setPresentationByCard((prev) => ({ ...prev, [cardId]: { status: 'skipped', detail: r.skipReason } }));
+      }
+    } catch (err) {
+      setPresentationByCard((prev) => ({ ...prev, [cardId]: { status: 'error', detail: err instanceof Error ? err.message : null } }));
+    }
+  }
+
+  async function handleResend(cardId: string, workerId: string) {
+    if (!onResendInvite) return;
+    setResendByCard((prev) => ({ ...prev, [cardId]: { status: 'sending', message: null } }));
+    const failure = await onResendInvite(workerId);
+    setResendByCard((prev) => ({
+      ...prev,
+      [cardId]: failure ? { status: 'error', message: failure } : { status: 'sent', message: null },
+    }));
   }
 
   const columns = COLUMN_CONFIG.map((col) => ({
@@ -197,7 +243,6 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
           <KanbanCard
             {...cardProps(enc, columnId)}
             isDismissed={enc.isDismissed}
-            onWorkerClick={handleWorkerClick}
             onReject={
               funnelWriteGate.denied
                 ? undefined
@@ -224,6 +269,18 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
             }
             contactNotesCount={enc.contactNotesCount}
             selfAppliedAt={enc.selfAppliedAt}
+            onResend={
+              onResendInvite && enc.workerId && enc.encuadreId
+                ? () => handleResend(enc.id, enc.workerId!)
+                : undefined
+            }
+            resendStatus={resendByCard[enc.id]?.status ?? 'idle'}
+            resendMessage={resendByCard[enc.id]?.message ?? null}
+            presentationInvite={
+              onPresentationInvite && enc.workerId
+                ? { onInvite: () => handlePresentationInvite(enc.id, enc.workerId!, onPresentationInvite), state: presentationByCard[enc.id], lastInvitedAt: lastPresentationByWorker[enc.workerId]?.at ?? null }
+                : undefined
+            }
           />
         )}
         /* O card sob o cursor é só leitura: sem handlers, sem menu de mover. */

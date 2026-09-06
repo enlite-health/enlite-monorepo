@@ -20,6 +20,7 @@ import {
   PacientesSection,
   ZoneAnalyticsSection,
 } from '@presentation/components/features/admin/ManagementDashboard';
+import { ContainerGate } from '@presentation/components/features/access';
 
 export function ManagementDashboardPage(): JSX.Element {
   const { t } = useTranslation();
@@ -91,9 +92,13 @@ export function ManagementDashboardPage(): JSX.Element {
         fica FORA do bloco acima: se a agregação de recrutamento falhar, estes
         números continuam aparecendo.
       */}
-      <div className="mt-10">
-        <PacientesSection />
-      </div>
+      {/* D286: a seção de pacientes lê /patients/stats + /patients/funnel (patient:read) — sem a
+          célula o container some; os números de recrutamento acima ficam. */}
+      <ContainerGate resource="patient">
+        <div className="mt-10">
+          <PacientesSection />
+        </div>
+      </ContainerGate>
     </PageContainer>
   );
 }

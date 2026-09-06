@@ -34,10 +34,12 @@ export class MessagingController {
    *   INCOMPLETE_REGISTER → ar_vacancy_match_incomplete
    *   DISABLED (ou outro) → 422 WORKER_STATUS_INVALID
    *
-   * Body: { workerId: string, jobPostingId: string }
+   * Body: { workerId: string, jobPostingId: string, resend?: boolean }
+   *   resend=true → reenvio explícito pela recrutadora (botão "Reenviar" da
+   *   tarjeta, REQ-08): o guard roda em modo `resend` (ver VacancyInviteGuard).
    */
   async sendVacancyMatch(req: Request, res: Response): Promise<void> {
-    const { workerId, jobPostingId } = req.body as Record<string, unknown>;
+    const { workerId, jobPostingId, resend } = req.body as Record<string, unknown>;
 
     if (!workerId || !jobPostingId) {
       res.status(400).json({ error: 'workerId e jobPostingId são obrigatórios' });
@@ -82,10 +84,11 @@ export class MessagingController {
     // Travas anti-spam (espelham o VacancyAutoInviteHandler + throttle de
     // não-resposta). Rodam ANTES de resolver telefone/variáveis pra não gerar
     // token PII num envio que será bloqueado.
-    const guard = await assertVacancyInviteAllowed(this.db, String(workerId), String(jobPostingId));
+    const mode = resend === true ? 'resend' : 'invite';
+    const guard = await assertVacancyInviteAllowed(this.db, String(workerId), String(jobPostingId), { mode });
     if (!guard.allowed) {
-      logger.info({ workerId, jobPostingId, code: guard.code }, 'Convite de vaga bloqueado pelo guard');
-      res.status(422).json({ error: guard.code, detail: guard.detail });
+      logger.info({ workerId, jobPostingId, code: guard.code, mode }, 'Convite de vaga bloqueado pelo guard');
+      res.status(422).json({ error: guard.code, detail: guard.detail, ...(guard.until ? { until: guard.until } : {}) });
       return;
     }
 

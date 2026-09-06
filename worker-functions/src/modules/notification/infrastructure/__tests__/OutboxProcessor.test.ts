@@ -46,7 +46,7 @@ jest.mock('@shared/logging', () => ({
   reportError: jest.fn(),
 }));
 
-import { loggingAls } from '@shared/logging';
+import { loggingAls, logger, reportError } from '@shared/logging';
 
 describe('OutboxProcessor', () => {
   let mockMessaging: { sendWhatsApp: jest.Mock };
@@ -113,6 +113,48 @@ describe('OutboxProcessor', () => {
       expect(logCall[0]).toContain('whatsapp_bulk_dispatch_logs');
       expect(logCall[0]).toContain("'outbox'");
       expect(logCall[1][2]).toBe('system:outbox:ob-1');
+      // Sem job_posting_id (mensagem não é de vaga) NÃO carimba messaged_at.
+      expect(mockQuery.mock.calls).toHaveLength(4);
+    });
+
+    // D200.9: convite automático de vaga carimba messaged_at, como o manual.
+    it('mensagem de VAGA enviada → grava messaged_at na candidatura (worker × vaga)', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 'ob-2', worker_id: 'w-1', job_posting_id: 'jp-9', template_slug: 'ar_vacancy_match_complete', variables: {}, attempts: 0, trace_id: 't' }] })
+        .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: 'enc-phone', phone: null, messaging_channel: 'twilio' }] })
+        .mockResolvedValueOnce({ rows: [] }) // UPDATE outbox sent
+        .mockResolvedValueOnce({ rows: [] }) // INSERT log
+        .mockResolvedValueOnce({ rows: [] }); // UPDATE messaged_at
+
+      await processor.processById('ob-2');
+
+      const [sql, params] = mockQuery.mock.calls[4];
+      expect(sql).toMatch(/UPDATE worker_job_applications/);
+      expect(sql).toMatch(/SET messaged_at = NOW\(\)/);
+      expect(params).toEqual(['w-1', 'jp-9']);
+      // Evento que o monitor diário (e2e-prod) lê como evidência de que o serviço rodou.
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ outboxId: 'ob-2', workerId: 'w-1', jobPostingId: 'jp-9' }),
+        'outbox.messaged_at.updated',
+      );
+    });
+
+    it('falha ao gravar messaged_at é best-effort: a mensagem continua marcada como enviada', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 'ob-3', worker_id: 'w-1', job_posting_id: 'jp-9', template_slug: 'ar_vacancy_match_complete', variables: {}, attempts: 0, trace_id: 't' }] })
+        .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: 'enc-phone', phone: null, messaging_channel: 'twilio' }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockRejectedValueOnce(new Error('lock timeout'));
+
+      await expect(processor.processById('ob-3')).resolves.toBeUndefined();
+      expect(mockQuery.mock.calls[2][0]).toContain("status = 'sent'");
+      // Evento que acende o alerta do monitor diário.
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ outboxId: 'ob-3', error: 'lock timeout' }),
+        'outbox.messaged_at.failed',
+      );
+      expect(logger.info).not.toHaveBeenCalledWith(expect.anything(), 'outbox.messaged_at.updated');
     });
 
     it('retorna silenciosamente se mensagem não existe', async () => {
@@ -221,6 +263,32 @@ describe('OutboxProcessor', () => {
       expect(logCall[0]).toContain("'error'");
       expect(logCall[0]).toContain("'outbox'");
       expect(logCall[1][2]).toBe('system:outbox:ob-2');
+    });
+
+    // Os logs em whatsapp_bulk_dispatch_logs são best-effort: falhar neles NÃO desfaz o estado da mensagem.
+    it('INSERT do log de sucesso falha → mensagem continua sent, erro reportado', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 'ob-ls', worker_id: 'w-1', job_posting_id: null, template_slug: 'welcome', variables: {}, attempts: 0, trace_id: 't' }] })
+        .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: null, phone: '+54911', messaging_channel: 'twilio' }] })
+        .mockResolvedValueOnce({ rows: [] }) // UPDATE sent
+        .mockRejectedValueOnce(new Error('log table locked')); // INSERT log
+
+      await expect(processor.processById('ob-ls')).resolves.toBeUndefined();
+      expect(mockQuery.mock.calls[2][0]).toContain("status = 'sent'");
+      expect(reportError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ source: 'OutboxProcessor:logSent', outboxId: 'ob-ls' }));
+    });
+
+    it('INSERT do log de falha definitiva falha → mensagem continua failed, erro reportado', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 'ob-lf', worker_id: 'w-2', job_posting_id: null, template_slug: 'reminder', variables: {}, attempts: 2, trace_id: null }] })
+        .mockResolvedValueOnce({ rows: [{ whatsapp_phone_encrypted: null, phone: '+54911', messaging_channel: 'twilio' }] })
+        .mockResolvedValueOnce({ rows: [] }) // UPDATE failed
+        .mockRejectedValueOnce(new Error('log table locked')); // INSERT log error
+      mockMessaging.sendWhatsApp.mockResolvedValueOnce({ isFailure: true, error: 'Twilio error' });
+
+      await expect(processor.processById('ob-lf')).resolves.toBeUndefined();
+      expect(mockQuery.mock.calls[2][1][1]).toBe('failed');
+      expect(reportError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ source: 'OutboxProcessor:logFailed', outboxId: 'ob-lf' }));
     });
   });
 
@@ -365,6 +433,80 @@ describe('OutboxProcessor', () => {
       const call = mockQuery.mock.calls[2];
       expect(call[0]).toContain("status = 'suppressed'");
       expect(call[1]).toContain('ob-optout');
+    });
+
+    it('worker is_test → NÃO envia e marca suppressed (fixture de prod nunca vira mensagem real)', async () => {
+      const outboxRow = {
+        id: 'ob-istest',
+        worker_id: 'w-istest',
+        template_slug: 'qualified_worker_request',
+        variables: {},
+        attempts: 0,
+        trace_id: null,
+      };
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [outboxRow] })
+        // Worker COM telefone válido e SEM opt-out — só a marca de teste bloqueia.
+        .mockResolvedValueOnce({
+          rows: [{ whatsapp_phone_encrypted: 'enc', phone: '+5491100003333', messaging_channel: 'twilio', opted_out: false, is_test: true }],
+        })
+        .mockResolvedValueOnce({ rows: [] });
+
+      await processor.processById('ob-istest');
+
+      expect(mockMessaging.sendWhatsApp).not.toHaveBeenCalled();
+      const call = mockQuery.mock.calls[2];
+      expect(call[0]).toContain("status = 'suppressed'");
+      expect(call[0]).toContain('is_test fixture');
+      expect(call[1]).toContain('ob-istest');
+    });
+
+    it('CONTROLE POSITIVO: worker NÃO-is_test com telefone válido CONTINUA enviando', async () => {
+      const outboxRow = {
+        id: 'ob-real',
+        worker_id: 'w-real',
+        template_slug: 'qualified_worker_request',
+        variables: {},
+        attempts: 0,
+        trace_id: null,
+      };
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [outboxRow] })
+        .mockResolvedValueOnce({
+          rows: [{ whatsapp_phone_encrypted: 'enc', phone: '+5491100004444', messaging_channel: 'twilio', opted_out: false, is_test: false }],
+        })
+        .mockResolvedValue({ rows: [] });
+
+      await processor.processById('ob-real');
+
+      // Sem este teste, o guard acima "passaria" mesmo se eu tivesse bloqueado TODO envio.
+      expect(mockMessaging.sendWhatsApp).toHaveBeenCalledTimes(1);
+    });
+
+    it('is_test tem precedência sobre opt-out: fixture não consome nem a checagem de supressão', async () => {
+      const outboxRow = {
+        id: 'ob-ambos',
+        worker_id: 'w-ambos',
+        template_slug: 'qualified_worker_request',
+        variables: {},
+        attempts: 0,
+        trace_id: null,
+      };
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [outboxRow] })
+        .mockResolvedValueOnce({
+          rows: [{ whatsapp_phone_encrypted: 'enc', phone: '+5491100005555', messaging_channel: 'twilio', opted_out: true, is_test: true }],
+        })
+        .mockResolvedValueOnce({ rows: [] });
+
+      await processor.processById('ob-ambos');
+
+      expect(mockMessaging.sendWhatsApp).not.toHaveBeenCalled();
+      // A razão registrada é a de TESTE, não a de opt-out — o guard de is_test vem antes.
+      expect(mockQuery.mock.calls[2][0]).toContain('is_test fixture');
     });
   });
 

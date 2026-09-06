@@ -43,6 +43,7 @@ import { WorkerApplicationsListCapability } from '../application/capabilities/Wo
 import { ListWorkerApplicationsUseCase } from '../../matching/application/ListWorkerApplicationsUseCase';
 import { NotifyHandoverUseCase } from '../../notification/application/NotifyHandoverUseCase';
 import { PeriskopeGroupNotifyService } from '../../notification/infrastructure/PeriskopeGroupNotifyService';
+import { PeriskopeNoteService } from '../../notification/infrastructure/PeriskopeNoteService';
 import { PeriskopeTicketService } from '../../notification/infrastructure/PeriskopeTicketService';
 import { WorkerAccountDeactivateCapability } from '../application/capabilities/WorkerAccountDeactivateCapability';
 import { WorkerAvailabilitySetCapability } from '../application/capabilities/WorkerAvailabilitySetCapability';
@@ -213,7 +214,11 @@ export function mountMcpRoutes(app: Application, dbPool: PgPool): void {
     ),
     interviewBook: new WorkerInterviewBookCapability(bookInterviewSlotUseCase, getWorkerById),
     handoverNotify: new HandoverNotifyCapability(
-      new NotifyHandoverUseCase(new PeriskopeGroupNotifyService(), new PeriskopeTicketService()),
+      new NotifyHandoverUseCase(
+        new PeriskopeGroupNotifyService(),
+        new PeriskopeTicketService(),
+        new PeriskopeNoteService(),
+      ),
     ),
     patientChatMap: new PatientChatMapCapability(new GetPatientChatMapUseCase()),
     applicationsList: new WorkerApplicationsListCapability(

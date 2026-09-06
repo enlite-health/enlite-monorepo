@@ -92,7 +92,9 @@ src/
   - `<Text size="xs|sm|base|lg|xl">` para corpo, valores, células, badges. Default `size="sm"`, `as="p"` (use `as="span"` quando inline).
   - `<Label>` para `<label htmlFor>` em formulários.
 - **Proibido**: `text-xs/sm/base/lg/xl/2xl`, `font-medium/semibold/bold`, `font-poppins/lexend` raw em components/pages — sempre via Heading/Text/Label.
-  - Exceção: ajuste fino de `leading-*` ou tamanho out-of-system via `className` no próprio atom é aceitável.
+  - Exceção: ajuste fino de `leading-*` ou tamanho out-of-system via `className` no próprio atom é aceitável — **mas prefixe com `!`**: `className="text-[10.5px] !leading-[1.35]"`.
+  - 🔒 **Sem o `!`, a sobrescrita perde em silêncio.** Duas classes da mesma propriedade no mesmo elemento se resolvem pela ordem em que o Tailwind as **EMITE**, não pela ordem em que você as escreve. `<Text size="xs">` emite `text-xs leading-[1.5]`; um `leading-[1.35]` no `className` perde, e um `text-[12px]` perde para o `text-[13px]` do `inputSize="dense"`. Medido em 01/09 (D240) — o compositor tinha a linha de apoio a 12px/18px onde o desenho pede 10,5px/14,2px, e nada acusava. **Não instale `tailwind-merge` para isso:** ele mudaria o comportamento de `className` em 99 componentes, e o `!` resolve caso a caso, local e verificável.
+  - Depois de sobrescrever, **meça** (`getComputedStyle`), não presuma. O portão `e2e/plantillas-pixel-loop.e2e.ts` é o que trava essa classe de regressão nas telas de plantillas.
 - **`Typography` está deprecated**. Migração incremental — quando tocar um arquivo, troque para Heading/Text/Label no mesmo PR.
 - Pesos canônicos: `medium` (500) para ênfase leve, `semibold` (600) para títulos e tabs, `bold` (700) só para destaque forte.
 

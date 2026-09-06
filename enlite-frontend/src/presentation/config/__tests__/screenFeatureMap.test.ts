@@ -39,7 +39,12 @@ const ROTAS_ADMIN: RotaAdmin[] = BLOCO_ADMIN.split('\n')
   .filter((r): r is RotaAdmin => r !== null);
 
 /** Rotas `/admin/*` que de propósito NÃO têm chave `screen:*` (comentário em App.tsx confirma). */
-const ROTAS_SEM_CHAVE_SCREEN = new Set(['', 'tags', 'patient-chat-roles', 'dedup', 'api-docs']);
+// Sync main→stage (06/09): mapa, mensagens por etapa, plantillas e invitación também não têm
+// chave `screen:*` no manifest — gateadas por célula (`messaging:read` no menu), não por país.
+const ROTAS_SEM_CHAVE_SCREEN = new Set([
+  '', 'tags', 'patient-chat-roles', 'dedup', 'api-docs',
+  'mapa', 'mensajes-por-etapa', 'plantillas', 'plantillas/registrar', 'plantillas/:slug', 'invitacion-presentacion',
+]);
 
 /** Todo `href: '...'` literal declarado em `adminNavigation.tsx` (baseItems + adminItems + accessItems). */
 const HREFS_NO_MENU = new Set([...ADMIN_NAV_TSX.matchAll(/href:\s*'([^']+)'/g)].map((m) => m[1]));

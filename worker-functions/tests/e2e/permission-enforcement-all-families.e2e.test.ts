@@ -364,6 +364,12 @@ describe('C1 — engine ligado com as 12 famílias de uma vez (HTTP real, banco 
         permissions,
         controllerStub('chatIds') as never,
         controllerStub('chatRoles') as never,
+        controllerStub('patientsMap') as never,
+        controllerStub('patientAddresses') as never,
+        controllerStub('insuranceProviders') as never,
+        controllerStub('contractedServices') as never,
+        controllerStub('diagnoses') as never,
+        controllerStub('terminologySearch') as never,
       ),
     );
 

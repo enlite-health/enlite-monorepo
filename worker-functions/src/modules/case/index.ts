@@ -20,8 +20,16 @@ export type { AcquisitionChannel } from './domain/enums/AcquisitionChannel';
 export { ACQUISITION_CHANNELS, isAcquisitionChannel } from './domain/enums/AcquisitionChannel';
 export type { AttentionReason } from './domain/enums/AttentionReason';
 export { ATTENTION_REASONS, isAttentionReason } from './domain/enums/AttentionReason';
-export type { PatientStatus } from './domain/enums/PatientStatus';
-export { PATIENT_STATUSES, isPatientStatus } from './domain/enums/PatientStatus';
+export type { PatientStatus, ClinicalPatientStatus, AdmissionFunnelStatus } from './domain/enums/PatientStatus';
+export {
+  PATIENT_STATUSES, CLINICAL_PATIENT_STATUSES, ADMISSION_FUNNEL_STATUSES,
+  isPatientStatus, isClinicalPatientStatus, isAdmissionFunnelStatus,
+} from './domain/enums/PatientStatus';
+// Spec 012 (bloco B): motivo de espera e funil de admissão em coluna própria.
+export type { OnHoldReason } from './domain/enums/OnHoldReason';
+export { ON_HOLD_REASONS, isOnHoldReason } from './domain/enums/OnHoldReason';
+export type { AdmissionStatus } from './domain/enums/AdmissionStatus';
+export { ADMISSION_STATUSES, isAdmissionStatus } from './domain/enums/AdmissionStatus';
 
 // Domain types
 export type { PatientIdentity } from './domain/PatientIdentity';
@@ -56,6 +64,13 @@ export type {
   UpsertFromClickUpOptions,
   MissingContactStrategy,
 } from './application/PatientService';
+// A transição de estado mora em `PatientStatusWriter` desde a quebra do PatientService pelo
+// teto de 400 linhas. O barril continua sendo a porta única do módulo.
+export {
+  PatientStatusTransitionError,
+  OnHoldReasonRequiredError,
+} from './application/PatientStatusWriter';
+export type { MoveStatusOptions } from './application/PatientStatusWriter';
 export {
   PatientChatIdsService,
   PatientChatIdsNotFoundError,
@@ -109,9 +124,20 @@ export type { CreatePatientInput } from './application/CreatePatientUseCase';
 export {
   ActivatePatientUseCase,
   PatientNotFoundError,
+  PatientNotReadyError,
   NoActiveAddressError,
 } from './application/ActivatePatientUseCase';
 export type { ActivatePatientResult } from './application/ActivatePatientUseCase';
+export {
+  computePatientCompleteness,
+  isMinor,
+  PATIENT_COMPLETENESS_CODES,
+} from './domain/PatientCompleteness';
+export type {
+  PatientCompletenessCode,
+  PatientCompletenessInput,
+  PatientCompletenessResult,
+} from './domain/PatientCompleteness';
 
 // Infrastructure (exposed for explicit consumers like backfill scripts)
 export { PatientIdentityRepository } from './infrastructure/PatientIdentityRepository';
@@ -131,6 +157,48 @@ export type {
   UpdateChatRoleInput,
   SharedGroupConflict,
 } from './infrastructure/PatientChatRolesRepository';
+// Task 3.3 (`campos-admissao`): a Cobertura Verificada MÚLTIPLA. Migration 305.
+export {
+  PatientInsuranceVerifiedRepository,
+  InsuranceProviderUnknownError,
+  classifyInsuranceLabels,
+} from './infrastructure/PatientInsuranceVerifiedRepository';
+// Spec 012, US-B3: o catálogo de coberturas (migration 311).
+export { InsuranceProviderRepository, InsuranceProviderExistsError,
+  InsuranceProviderSortOrderTakenError } from './infrastructure/InsuranceProviderRepository';
+export type { InsuranceProviderRow, CreateInsuranceProviderInput } from './infrastructure/InsuranceProviderRepository';
+export type {
+  PatientInsuranceVerifiedWriteInput,
+  PatientInsuranceVerifiedResult,
+  PatientInsuranceVerifiedRow,
+  PatientInsuranceVerifiedOutcome,
+} from './infrastructure/PatientInsuranceVerifiedRepository';
+// Task 4.2 (`campos-admissao`): o Tipo de Dispositivo MÚLTIPLO. Migrations 307 e 290.
+export { PatientDeviceTypeRepository, DeviceTypeUnknownError } from './infrastructure/PatientDeviceTypeRepository';
+export type {
+  PatientDeviceTypeWriteInput,
+  PatientDeviceTypeResult,
+  PatientDeviceTypeOutcome,
+} from './infrastructure/PatientDeviceTypeRepository';
+
+// Task 2.2 (`campos-admissao`): o rótulo CRU da origem, ao lado do derivado. Migration 304.
+export {
+  PatientSourceLabelRepository,
+  PatientSourceLabelCeilingError,
+  PATIENT_SOURCE_LABEL_CEILING,
+  sourceLabelsRead,
+  sourceLabelsUnreadable,
+} from './infrastructure/PatientSourceLabelRepository';
+export type {
+  PatientSourceLabelWriteInput,
+  PatientSourceLabelWriteResult,
+  PatientSourceLabelRejection,
+  PatientSourceLabelRejectionReason,
+  PatientSourceLabelRow,
+  PatientSourceLabelRejectionRow,
+  PatientSourceLabelsRead,
+  PatientSourceLabelWriteOutcome,
+} from './infrastructure/PatientSourceLabelRepository';
 export type { PatientIdentityUpsertInput } from './infrastructure/PatientIdentityRepository';
 export type { PatientClinicalUpsertInput } from './infrastructure/PatientClinicalRepository';
 export type {
@@ -144,6 +212,10 @@ export type {
 
 // Interfaces
 export { AdminPatientsController } from './interfaces/controllers/AdminPatientsController';
+export { AdminPatientAddressesController } from './interfaces/controllers/AdminPatientAddressesController';
+export { AdminInsuranceProvidersController } from './interfaces/controllers/AdminInsuranceProvidersController';
+export { AdminPatientsMapController } from './interfaces/controllers/AdminPatientsMapController';
+export { AdminPatientContractedServicesController } from './interfaces/controllers/AdminPatientContractedServicesController';
 export { AdminPatientChatIdsController } from './interfaces/controllers/AdminPatientChatIdsController';
 export { AdminPatientChatRolesController } from './interfaces/controllers/AdminPatientChatRolesController';
 export { patientChatIdsSchema, patientChatMapQuerySchema, chatGroupsQuerySchema } from './interfaces/validators/patientChatIdsSchema';

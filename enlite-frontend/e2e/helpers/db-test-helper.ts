@@ -45,6 +45,11 @@ export interface InsertTestPatientOpts {
   withAddress?: boolean;
   addressLat?: number;
   addressLng?: number;
+  /** Spec 014 (US-D1/SUP-D1): `POST /activate` agora também exige consentimento + cobertura
+   * informada (o checklist de completude usa o MESMO critério do gate). Omitido = como antes
+   * (null nos dois) — passe true/uma string quando o teste for ATIVAR o paciente. */
+  hasConsent?: boolean;
+  insuranceInformed?: string;
 }
 
 export interface InsertTestPatientResult {
@@ -68,6 +73,8 @@ export function insertTestPatient(
     withAddress = false,
     addressLat = -34.6037,
     addressLng = -58.3816,
+    hasConsent,
+    insuranceInformed,
   } = opts;
 
   const clickupTaskId = `E2E-INT-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -94,6 +101,14 @@ export function insertTestPatient(
   const patientId = extractUUID(idRow);
   if (!patientId) {
     throw new Error(`Could not find patient after insert (clickup_task_id=${clickupTaskId})`);
+  }
+
+  // Spec 014: só grava quando o CALLER pediu — omitido mantém o comportamento de antes (null).
+  if (hasConsent !== undefined || insuranceInformed !== undefined) {
+    const sets: string[] = [];
+    if (hasConsent !== undefined) sets.push(`has_consent = ${hasConsent}`);
+    if (insuranceInformed !== undefined) sets.push(`insurance_informed = '${insuranceInformed}'`);
+    runSQL(`UPDATE patients SET ${sets.join(', ')} WHERE id = '${patientId}'`);
   }
 
   let addressId: string | null = null;

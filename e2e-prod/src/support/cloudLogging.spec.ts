@@ -492,3 +492,62 @@ test('payloadString lê campo string e recusa o resto', () => {
   expect(payloadString({ timestamp: 'agora' }, 'externalId'), 'sem jsonPayload').toBeNull();
   expect(payloadString(null, 'externalId'), 'sem entry').toBeNull();
 });
+
+// ------------------------------------------------- seletores do filtro (30/08)
+//
+// Estes três casos existem porque a Spec 009 precisou perguntar ao log duas coisas
+// que o helper não sabia perguntar: "o evento cujo nome está em `msg`, não em
+// `message`" e "este texto aparece em ALGUM lugar da entrada?". Abrir a porta para
+// isso cria a possibilidade de uma consulta SEM seletor nenhum — que devolveria
+// entradas quaisquer e faria uma asserção passar por acidente. Daí a trava.
+
+test('`textQuery` vira termo nu (busca em toda a entrada) e dispensa `message`', async () => {
+  const stub = stubFetch([{ status: 200, body: { entries: [] } }]);
+
+  await queryLogs({ withinMinutes: 30, textQuery: 'E2E-OBS-123' });
+
+  const filtro = String(stub.bodies()[0]?.filter);
+  expect(filtro, 'o termo entra nu, sem prefixo de campo — é o que varre a entrada inteira').toContain(
+    '"E2E-OBS-123"',
+  );
+  expect(filtro, 'sem `message`, o filtro não inventa `jsonPayload.message`').not.toContain(
+    'jsonPayload.message',
+  );
+  expect(filtro, 'e o recorte de serviço/janela continua lá').toContain(
+    'resource.type="cloud_run_revision"',
+  );
+});
+
+test('`match` sozinho basta — é como se pergunta pelo evento que loga o nome em `msg`', async () => {
+  const stub = stubFetch([{ status: 200, body: { entries: [] } }]);
+
+  await queryLogs({ withinMinutes: 30, match: { msg: 'workers.map.read' } });
+
+  const filtro = String(stub.bodies()[0]?.filter);
+  expect(filtro).toContain('jsonPayload.msg="workers.map.read"');
+  expect(filtro).not.toContain('jsonPayload.message');
+});
+
+test('valor com aspa/contrabarra é escapado — senão a aspa fecharia a string e o filtro viraria outra pergunta', async () => {
+  const stub = stubFetch([{ status: 200, body: { entries: [] } }]);
+
+  await queryLogs({ withinMinutes: 30, textQuery: 'a"b\\c' });
+
+  expect(String(stub.bodies()[0]?.filter)).toContain('"a\\"b\\\\c"');
+});
+
+test('consulta SEM seletor nenhum LANÇA — devolver "as entradas do serviço na janela" seria responder outra pergunta', async () => {
+  const stub = stubFetch([{ status: 200, body: { entries: [] } }]);
+
+  await expect(queryLogs({ withinMinutes: 30 })).rejects.toThrow(/ao menos um seletor/);
+  expect(stub.calls(), 'nem chega a bater no Google').toBe(0);
+});
+
+test('`textQuery` com quebra de linha LANÇA em vez de normalizar', async () => {
+  const stub = stubFetch([{ status: 200, body: { entries: [] } }]);
+
+  await expect(queryLogs({ withinMinutes: 30, textQuery: 'linha1\nlinha2' })).rejects.toThrow(
+    /UMA linha/,
+  );
+  expect(stub.calls()).toBe(0);
+});

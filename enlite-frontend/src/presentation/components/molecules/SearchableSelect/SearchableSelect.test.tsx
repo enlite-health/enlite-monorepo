@@ -121,3 +121,38 @@ describe('SearchableSelect', () => {
     expect(screen.getByText('Sin resultados')).toBeInTheDocument();
   });
 });
+
+describe('SearchableSelect — inputSize e data-testid (linhas de filtro, REQ-06)', () => {
+  it('compact usa a altura do Select compact (h-10) e default mantém h-12', () => {
+    const { rerender } = render(
+      <SearchableSelect options={OPTIONS} value="" onChange={vi.fn()} inputSize="compact" data-testid="sel" />
+    );
+    expect(screen.getByTestId('sel').className).toContain('h-10');
+    rerender(<SearchableSelect options={OPTIONS} value="" onChange={vi.fn()} data-testid="sel" />);
+    expect(screen.getByTestId('sel').className).toContain('h-12');
+  });
+
+  it('data-testid vai para o botão que abre a lista', () => {
+    render(<SearchableSelect options={OPTIONS} value="" onChange={vi.fn()} data-testid="meu-combo" />);
+    fireEvent.click(screen.getByTestId('meu-combo'));
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+  });
+});
+
+describe('SearchableSelect — clique fora', () => {
+  it('fecha a lista ao clicar fora do componente', () => {
+    render(<SearchableSelect options={OPTIONS} value="" onChange={vi.fn()} data-testid="sel" />);
+    fireEvent.click(screen.getByTestId('sel'));
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
+  it('não fecha ao clicar dentro (na busca)', () => {
+    render(<SearchableSelect options={OPTIONS} value="" onChange={vi.fn()} data-testid="sel" />);
+    fireEvent.click(screen.getByTestId('sel'));
+    fireEvent.mouseDown(screen.getByRole('listbox'));
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+  });
+});
+

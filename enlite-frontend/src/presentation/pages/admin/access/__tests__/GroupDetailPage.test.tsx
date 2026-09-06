@@ -67,8 +67,8 @@ describe('GroupDetailPage — a regra por componente', () => {
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     // a lista de chips virou MATRIZ recurso × ação: a célula existe como coluna
     // marcada na linha do recurso, com a descrição no rótulo acessível.
-    expect(screen.getByTestId('cell-matrix')).toBeInTheDocument();
-    expect(screen.getByLabelText(/^worker:read/)).toHaveTextContent('✓');
+    expect(screen.getByTestId('screen-tree')).toBeInTheDocument();
+    expect(screen.getAllByLabelText(/^worker:read/)[0]).toHaveTextContent('✓');
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     for (const nome of ['admin.access.group.archive', 'admin.access.group.cellsSave',
       'admin.access.group.addMember', 'admin.access.group.remove', 'admin.access.group.grant', 'admin.access.group.revoke']) {
@@ -88,8 +88,8 @@ describe('GroupDetailPage — a regra por componente', () => {
     expect(screen.getByTestId('g-name-editar')).toBeInTheDocument();
     // o único textbox da tela é o motivo do país; o nome só vira input no lápis
     expect(document.querySelector('#g-name')).toBeNull();
-    expect(screen.getByRole('checkbox', { name: /^worker:read/ })).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: /^worker:write/ })).not.toBeChecked();
+    expect(screen.getAllByRole('checkbox', { name: /^worker:read/ })[0]).toBeChecked();
+    expect(screen.getAllByRole('checkbox', { name: /^worker:write/ })[0]).not.toBeChecked();
     for (const nome of ['admin.access.group.archive', 'admin.access.group.cellsSave']) {
       expect(screen.getByRole('button', { name: nome })).toBeInTheDocument();
     }
@@ -108,7 +108,7 @@ describe('GroupDetailPage — a regra por componente', () => {
     api.setGroupPermissions.mockResolvedValue({ cells: 3 });
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
     await screen.findByTestId('g-name-readonly');
-    await userEvent.click(screen.getByRole('checkbox', { name: /^worker:write/ }));
+    await userEvent.click(screen.getAllByRole('checkbox', { name: /^worker:write/ })[0]);
     await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.cellsSave' }));
     await waitFor(() => expect(api.setGroupPermissions).toHaveBeenCalledWith(GRUPO.id, ['funnel:read', 'worker:read', 'worker:write'], null));
   });
@@ -449,14 +449,16 @@ describe('GroupDetailPage — a regra por componente', () => {
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
     // GRUPO tem worker:read e funnel:read, ambos no catálogo
     expect(await screen.findByText('admin.access.group.cells.selected 2')).toBeInTheDocument();
-    await userEvent.click(screen.getByLabelText(/^worker:write/));
+    // D286: a MESMA célula aparece em mais de uma tela — clicar na primeira instância vale para todas.
+    await userEvent.click(screen.getAllByLabelText(/^worker:write/)[0]);
     expect(screen.getByText('admin.access.group.cells.selected 3')).toBeInTheDocument();
+    for (const caixa of screen.getAllByLabelText(/^worker:write/)) expect(caixa).toBeChecked();
     // `Ver` agora está TRAVADA por `Crear y editar` — o clique não passa
-    await userEvent.click(screen.getByLabelText(/^worker:read/));
+    await userEvent.click(screen.getAllByLabelText(/^worker:read/)[0]);
     expect(screen.getByText('admin.access.group.cells.selected 3')).toBeInTheDocument();
     // tirando quem exigia, ela solta e volta a responder
-    await userEvent.click(screen.getByLabelText(/^worker:write/));
-    await userEvent.click(screen.getByLabelText(/^worker:read/));
+    await userEvent.click(screen.getAllByLabelText(/^worker:write/)[0]);
+    await userEvent.click(screen.getAllByLabelText(/^worker:read/)[0]);
     expect(screen.getByText('admin.access.group.cells.selected 1')).toBeInTheDocument();
   });
 
@@ -467,17 +469,17 @@ describe('GroupDetailPage — a regra por componente', () => {
     postura('write');
     api.getGroup.mockResolvedValue({ ...GRUPO, cells: [] });
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
-    const ver = await screen.findByLabelText(/^worker:read/);
+    const ver = (await screen.findAllByLabelText(/^worker:read/))[0];
     expect(ver).not.toBeChecked();
-    await userEvent.click(screen.getByLabelText(/^worker:write/));
-    expect(screen.getByLabelText(/^worker:read/)).toBeChecked();
+    await userEvent.click(screen.getAllByLabelText(/^worker:write/)[0]);
+    expect(screen.getAllByLabelText(/^worker:read/)[0]).toBeChecked();
     // lê o LOCALE REAL: procurar pela chave casaria com a chave crua, que é
     // exatamente o defeito (a string estava gravada noutro caminho e o teste
     // aprovava o tooltip quebrado). Achado do gate, 05/09.
     // OS DOIS locales: o gate provou que guardar só o es.json deixava o mesmo
     // defeito passar verde no pt-BR — meia régua não é régua.
     for (const loc of [es, ptBR]) expect(loc.admin.access.group.cells.lockedBy).toBeTruthy();
-    expect(screen.getByLabelText(/admin\.access\.group\.cells\.lockedBy/)).toBeDisabled();
+    for (const travada of screen.getAllByLabelText(/admin\.access\.group\.cells\.lockedBy/)) expect(travada).toBeDisabled();
   });
 
   it('grupo ARQUIVADO: mesmo em write vira só leitura, e a lista de candidatos ainda é buscada só por write', async () => {
@@ -503,7 +505,7 @@ describe('GroupDetailPage — a regra por componente', () => {
     renderRota(<GroupDetailPage />, ROTA, PATTERN);
     await screen.findByTestId('g-name-readonly');
     expect(await abrirLapis('g-desc')).toHaveValue('');
-    await userEvent.click(screen.getByRole('checkbox', { name: /^worker:read/ }));
+    await userEvent.click(screen.getAllByRole('checkbox', { name: /^worker:read/ })[0]);
     await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.cellsSave' }));
     await waitFor(() => expect(api.setGroupPermissions).toHaveBeenCalledWith(GRUPO.id, ['funnel:read'], null));
   });

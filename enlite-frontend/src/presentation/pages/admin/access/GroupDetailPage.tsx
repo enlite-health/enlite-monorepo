@@ -15,7 +15,7 @@ import {
   CampoEditavel,
   PanelErrorAlert,
   MemberTransfer,
-  CellMatrix,
+  ScreenTree,
   cellDiff,
   contaSelecionadas,
   alternaCelula,
@@ -329,7 +329,8 @@ function GroupDetail(): JSX.Element {
           )}
         </div>
 
-        <CellMatrix
+        {/* D286: por TELA → container → ações (a matriz recurso × ação saiu; ver ScreenTree). */}
+        <ScreenTree
           catalog={catalog}
           selected={cells}
           saved={group.cells}

@@ -17,6 +17,7 @@ import {
   parseTimeHHMM,
 } from './vacancyScheduleFilter';
 import { workerNotDisabledSql } from '@shared/database/activeWorkerFilter';
+import { INICIAIS_REDIGIDAS, patientNameIsRedacted } from '../../application/patientInVacancyProjection';
 
 // ── Display mappers ────────────────────────────────────────────────────────────
 
@@ -162,16 +163,26 @@ export interface ListVacanciesQuery {
   paramIndex: number;
 }
 
-export function buildListVacanciesQuery(filters: ListVacanciesFilters): ListVacanciesQuery {
+export function buildListVacanciesQuery(filters: ListVacanciesFilters, opts: { searchByPatientName?: boolean } = {}): ListVacanciesQuery {
   let baseQuery = LIST_VACANCIES_BASE;
   const params: unknown[] = [];
   let paramIndex = 1;
 
   if (filters.search) {
-    baseQuery += ` AND (
+    // D286 fase 2 / lex P5: quem não pode LER o nome do paciente não pode FILTRAR por ele — senão
+    // a lista redigida vira oráculo de confirmação ("existe vaga do fulano?"). Default `true`
+    // preserva o comportamento quando o engine não decidiu (cells = null).
+    const porNome = opts.searchByPatientName ?? true;
+    baseQuery += porNome
+      ? ` AND (
       p.first_name ILIKE $${paramIndex}
       OR p.last_name ILIKE $${paramIndex}
       OR jp.case_number::TEXT ILIKE $${paramIndex}
+      OR jp.vacancy_number::TEXT ILIKE $${paramIndex}
+      OR jp.title ILIKE $${paramIndex}
+    )`
+      : ` AND (
+      jp.case_number::TEXT ILIKE $${paramIndex}
       OR jp.vacancy_number::TEXT ILIKE $${paramIndex}
       OR jp.title ILIKE $${paramIndex}
     )`;
@@ -250,9 +261,12 @@ export interface VacancyListRow {
 }
 
 export function mapVacancyListRow(row: VacancyListRow) {
+  // D286 fase 2: a linha já chegou projetada (`projectPatientInVacancy`); com o nome redigido
+  // as iniciais não podem ser as do rótulo.
+  const redigido = patientNameIsRedacted(row);
   return {
     id: row.id,
-    initials: getInitials(row.patient_first_name, row.patient_last_name),
+    initials: redigido ? INICIAIS_REDIGIDAS : getInitials(row.patient_first_name, row.patient_last_name),
     name: `${row.patient_first_name || ''} ${row.patient_last_name || ''}`.trim(),
     email: '',
     caso: `Caso ${row.case_number}-${row.vacancy_number}`,

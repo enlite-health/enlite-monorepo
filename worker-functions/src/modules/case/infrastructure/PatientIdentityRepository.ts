@@ -16,12 +16,39 @@ export interface PatientIdentityUpsertInput {
   lastName?: string | null;
   birthDate?: Date | null;
   documentType?: DocumentType | null;
+  /**
+   * A leitura da origem foi POSSÍVEL? `false` ⇒ `document_type` não é tocada (I2).
+   *
+   * Mesma bandeira de `insuranceVerifiedReadable`, estendida aos irmãos que ficaram de fora:
+   * `Tipo de Documento Paciente` é `drop_down`, e uma opção que deixa de resolver devolvia
+   * `null`, que o `document_type = EXCLUDED.document_type` gravava como APAGAMENTO.
+   * Ausente = `true`, para que nenhum chamador antigo pare de escrever em silêncio.
+   */
+  documentTypeReadable?: boolean;
   documentNumber?: string | null;
   affiliateId?: string | null;
   sex?: Sex | null;
+  /**
+   * A leitura da origem foi POSSÍVEL? `false` ⇒ `sex` não é tocada (I2).
+   * Exposição medida do apagamento antes desta bandeira: 185 linhas de `sex`.
+   */
+  sexReadable?: boolean;
   phoneWhatsapp?: string | null;
   insuranceInformed?: string | null;
   insuranceVerified?: string | null;
+  /**
+   * A leitura da origem foi POSSÍVEL? `false` ⇒ `insurance_verified` não é tocada.
+   *
+   * ⚠️ Este campo existia no mapper e no `PatientService` desde a task 3.2 e **nunca era
+   * consumido aqui** — o `lex` achou (C-G). O mapper emitia o sinal, o tipo o declarava, um
+   * comentário dizia que era "a mesma distinção da D167", e o `UPDATE` gravava `?? null` de
+   * qualquer jeito. Uma leitura `options_partially_resolved` (pediu 2 rótulos, o catálogo
+   * traduziu 1) zerava a coluna que o painel lê, enquanto a tabela múltipla — corretamente —
+   * não era tocada: banco cheio, tela vazia.
+   *
+   * Ausente = `true`, para que nenhum chamador antigo pare de escrever em silêncio.
+   */
+  insuranceVerifiedReadable?: boolean;
   cityLocality?: string | null;
   province?: string | null;
   zoneNeighborhood?: string | null;
@@ -114,13 +141,17 @@ export class PatientIdentityRepository {
         first_name          = EXCLUDED.first_name,
         last_name           = EXCLUDED.last_name,
         birth_date          = EXCLUDED.birth_date,
-        document_type       = EXCLUDED.document_type,
+        -- I2: os dois CASE WHEN abaixo são a MESMA bandeira do insurance_verified logo
+        -- adiante. false = "não consegui ler a opção" ⇒ a coluna fica como está; true com
+        -- valor nulo continua APAGANDO (vazio legítimo, D-E). Só no DO UPDATE: o INSERT é linha
+        -- nova e não tem o que apagar.
+        document_type       = CASE WHEN $23::boolean THEN EXCLUDED.document_type ELSE patients.document_type END,
         document_number     = EXCLUDED.document_number,
         affiliate_id        = EXCLUDED.affiliate_id,
-        sex                 = EXCLUDED.sex,
+        sex                 = CASE WHEN $24::boolean THEN EXCLUDED.sex ELSE patients.sex END,
         phone_whatsapp      = EXCLUDED.phone_whatsapp,
         insurance_informed  = EXCLUDED.insurance_informed,
-        insurance_verified  = EXCLUDED.insurance_verified,
+        insurance_verified  = CASE WHEN $22::boolean THEN EXCLUDED.insurance_verified ELSE patients.insurance_verified END,
         city_locality       = EXCLUDED.city_locality,
         province            = EXCLUDED.province,
         zone_neighborhood   = EXCLUDED.zone_neighborhood,
@@ -152,10 +183,15 @@ export class PatientIdentityRepository {
         country,
         input.needsAttention   ?? false,
         input.attentionReasons ? [...input.attentionReasons] : [],
+        // $22 — a bandeira da C-G. NÃO entra no INSERT (que é linha nova, sempre escreve);
+        // só no ON CONFLICT DO UPDATE, que é onde apagar é possível.
         input.healthInsuranceName      ?? null,
         input.healthInsuranceMemberId  ?? null,
         input.caseNumber       ?? null,
         input.status           ?? null,
+        input.insuranceVerifiedReadable ?? true,   // $22 — a bandeira da C-G
+        input.documentTypeReadable      ?? true,   // $23 — a bandeira do I2
+        input.sexReadable               ?? true,   // $24 — a bandeira do I2
       ],
     );
 

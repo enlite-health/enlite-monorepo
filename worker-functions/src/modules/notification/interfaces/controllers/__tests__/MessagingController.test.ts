@@ -393,3 +393,63 @@ describe('MessagingController.sendDirect — source=individual + admin: prefix',
     expect(insertCall[1][0]).toBe('admin:user-abc-123'); // triggered_by with prefix
   });
 });
+
+// ── resend: botão "Reenviar" da tarjeta (REQ-08) ──────────────────────────────
+
+describe('MessagingController.sendVacancyMatch — resend: true', () => {
+  let mockQuery: jest.Mock;
+  let mockMessaging: { sendWhatsApp: jest.Mock };
+  let controller: MessagingController;
+  let res: { status: jest.Mock; json: jest.Mock };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockQuery = jest.fn();
+    const { DatabaseConnection } = jest.requireMock('@shared/database/DatabaseConnection');
+    DatabaseConnection.getInstance.mockReturnValue({ getPool: () => ({ query: mockQuery }) });
+    mockMessaging = {
+      sendWhatsApp: jest.fn().mockResolvedValue({
+        isFailure: false,
+        isSuccess: true,
+        getValue: () => ({ externalId: 'SM-resend', to: '+5511987654321', status: 'queued' }),
+      }),
+    };
+    controller = new MessagingController(mockMessaging as any, { findAll: jest.fn(), upsert: jest.fn(), deactivate: jest.fn() } as any);
+    (controller as any).db = { query: mockQuery };
+    res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  });
+
+  const req = (body: Record<string, unknown>) => ({ body } as unknown as Request);
+
+  it('resend=true roda o guard em modo resend (opt-out → janela de reenvio → throttle) e envia', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ status: 'REGISTERED', whatsapp_phone_encrypted: null, phone: '+5511987654321', messaging_channel: 'twilio' }] })
+      .mockResolvedValueOnce({ rows: [{ exists: false }] }) // opt-out
+      .mockResolvedValueOnce({ rows: [{ exists: false }] }) // janela de reenvio (worker×vaga)
+      .mockResolvedValueOnce({ rows: [{ n: 0 }] })          // unanswered
+      .mockResolvedValueOnce({ rows: [{ exists: false }] }) // engaged
+      .mockResolvedValueOnce({ rows: [] })                  // UPDATE messaged_at
+      .mockResolvedValueOnce({ rows: [] });                 // INSERT log
+
+    await controller.sendVacancyMatch(req({ workerId: 'w-1', jobPostingId: 'job-1', resend: true }), res as unknown as Response);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockMessaging.sendWhatsApp).toHaveBeenCalledTimes(1);
+    // 2ª query do guard é a janela de reenvio por worker×vaga, não o cooldown global de 3 dias
+    expect(String(mockQuery.mock.calls[2][0])).toMatch(/INTERVAL '1 hour'/);
+  });
+
+  it('resend=true dentro da janela → 422 RESEND_COOLDOWN e não envia', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ status: 'REGISTERED', whatsapp_phone_encrypted: null, phone: '+5511987654321', messaging_channel: 'twilio' }] })
+      .mockResolvedValueOnce({ rows: [{ exists: false }] }) // opt-out
+      .mockResolvedValueOnce({ rows: [{ until: new Date('2026-08-29T15:00:00Z') }] }); // reenvio recente: janela abre em `until`
+
+    await controller.sendVacancyMatch(req({ workerId: 'w-1', jobPostingId: 'job-1', resend: true }), res as unknown as Response);
+
+    expect(res.status).toHaveBeenCalledWith(422);
+    // D200.1: o 422 diz QUANDO a janela abre — o mesmo instante que o funil manda ao card.
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'RESEND_COOLDOWN', until: '2026-08-29T15:00:00.000Z' }));
+    expect(mockMessaging.sendWhatsApp).not.toHaveBeenCalled();
+  });
+});

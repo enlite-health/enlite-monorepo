@@ -1,0 +1,299 @@
+{
+  "routes": [
+    {
+      "legs": [
+        {
+          "duration": "561s",
+          "steps": [
+            {
+              "distanceMeters": 35,
+              "staticDuration": "28s",
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 48,
+              "staticDuration": "47s",
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 1762,
+              "staticDuration": "289s",
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "Avenida Corrientes Y Suipacha (180)",
+                    "location": {
+                      "latLng": {
+                        "latitude": -34.60365,
+                        "longitude": -58.379619999999996
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-09-05T21:03:44Z",
+                  "departureStop": {
+                    "name": "Congreso (6 - 50)",
+                    "location": {
+                      "latLng": {
+                        "latitude": -34.60958,
+                        "longitude": -58.391769999999994
+                      }
+                    }
+                  },
+                  "departureTime": "2026-09-05T20:58:55Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "18:03"
+                    },
+                    "timeZone": "America/Buenos_Aires"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "17:58"
+                    },
+                    "timeZone": "America/Buenos_Aires"
+                  }
+                },
+                "headsign": "C: Correo Central x Soldati (Ex Línea 6)",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Nudo S.A.",
+                      "phoneNumber": "+54 11 4687-2600",
+                      "uri": "https://www.argentina.gob.ar/cnrt"
+                    }
+                  ],
+                  "name": "Plaza Del Correo (79 - 105 - 146) - Terminal Líneas 8 Y 50",
+                  "color": "#1b6633",
+                  "nameShort": "50",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Autobús"
+                    },
+                    "type": "BUS",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/bus2.png"
+                  }
+                },
+                "stopCount": 4
+              },
+              "travelMode": "TRANSIT"
+            },
+            {
+              "distanceMeters": 126,
+              "staticDuration": "97s",
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 60,
+              "staticDuration": "100s",
+              "travelMode": "WALK"
+            }
+          ]
+        }
+      ],
+      "duration": "602s"
+    },
+    {
+      "legs": [
+        {
+          "duration": "561s",
+          "steps": [
+            {
+              "distanceMeters": 35,
+              "staticDuration": "28s",
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 48,
+              "staticDuration": "47s",
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 1762,
+              "staticDuration": "289s",
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "Avenida Corrientes Y Suipacha (180)",
+                    "location": {
+                      "latLng": {
+                        "latitude": -34.60365,
+                        "longitude": -58.379619999999996
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-09-05T21:06:44Z",
+                  "departureStop": {
+                    "name": "Congreso (6 - 50)",
+                    "location": {
+                      "latLng": {
+                        "latitude": -34.60958,
+                        "longitude": -58.391769999999994
+                      }
+                    }
+                  },
+                  "departureTime": "2026-09-05T21:01:55Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "18:06"
+                    },
+                    "timeZone": "America/Buenos_Aires"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "18:01"
+                    },
+                    "timeZone": "America/Buenos_Aires"
+                  }
+                },
+                "headsign": "C: Correo Central x Soldati (Ex Línea 6)",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Nudo S.A.",
+                      "phoneNumber": "+54 11 4687-2600",
+                      "uri": "https://www.argentina.gob.ar/cnrt"
+                    }
+                  ],
+                  "name": "Plaza Del Correo (79 - 105 - 146) - Terminal Líneas 8 Y 50",
+                  "color": "#1b6633",
+                  "nameShort": "50",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Autobús"
+                    },
+                    "type": "BUS",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/bus2.png"
+                  }
+                },
+                "stopCount": 4
+              },
+              "travelMode": "TRANSIT"
+            },
+            {
+              "distanceMeters": 126,
+              "staticDuration": "97s",
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 60,
+              "staticDuration": "100s",
+              "travelMode": "WALK"
+            }
+          ]
+        }
+      ],
+      "duration": "602s"
+    },
+    {
+      "legs": [
+        {
+          "duration": "737s",
+          "steps": [
+            {
+              "distanceMeters": 35,
+              "staticDuration": "28s",
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 134,
+              "staticDuration": "119s",
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 22,
+              "staticDuration": "18s",
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 1290,
+              "staticDuration": "270s",
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "Libertad, 445",
+                    "location": {
+                      "latLng": {
+                        "latitude": -34.6031532,
+                        "longitude": -58.383712700000004
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-09-05T21:02:51Z",
+                  "departureStop": {
+                    "name": "Bartolomé Mitre y Riobamba",
+                    "location": {
+                      "latLng": {
+                        "latitude": -34.6080257,
+                        "longitude": -58.39228399999999
+                      }
+                    }
+                  },
+                  "departureTime": "2026-09-05T20:58:21Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "18:02"
+                    },
+                    "timeZone": "America/Buenos_Aires"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "17:58"
+                    },
+                    "timeZone": "America/Buenos_Aires"
+                  }
+                },
+                "headsign": "Piedrabuena - Retiro",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Transportes Rio Grande S.A.C.I.F.",
+                      "phoneNumber": "+54 11 4687-2600",
+                      "uri": "https://www.argentina.gob.ar/cnrt"
+                    }
+                  ],
+                  "name": "Avenida Costanera Rafael Obligado, 237 - Aeropuerto Ezeiza Acc. A",
+                  "color": "#3061f2",
+                  "nameShort": "8",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Autobús"
+                    },
+                    "type": "BUS",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/bus2.png"
+                  }
+                },
+                "stopCount": 5
+              },
+              "travelMode": "TRANSIT"
+            },
+            {
+              "distanceMeters": 67,
+              "staticDuration": "53s",
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 224,
+              "staticDuration": "217s",
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 29,
+              "staticDuration": "32s",
+              "travelMode": "WALK"
+            }
+          ]
+        }
+      ],
+      "duration": "761s"
+    }
+  ]
+}

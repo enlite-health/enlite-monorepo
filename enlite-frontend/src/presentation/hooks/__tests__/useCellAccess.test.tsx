@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
-import { useCellAccess, useHasCell, useActionGate } from '../useCellAccess';
+import { useCellAccess, useHasCell, useActionGate, useContainerAccess, containersVisibleFor, tabsVisibleFor } from '../useCellAccess';
+import { screenById } from '@presentation/config/screenRegistry';
 import type { AuthzContract } from '@domain/entities/Authz';
 
 const contrato = (permissions: string[]): AuthzContract => ({
@@ -94,5 +95,64 @@ describe('useActionGate', () => {
     expect(renderHook(() => useActionGate('x', 'write')).result.current).toEqual({ allowed: true, denied: false });
     useAdminAuthStore.setState({ authz: contrato([]), authzStatus: 'ready' }); // enforcement ausente
     expect(renderHook(() => useActionGate('x', 'write')).result.current).toEqual({ allowed: true, denied: false });
+  });
+});
+
+describe('useContainerAccess — o gate de CONTAINER (D286)', () => {
+  beforeEach(() => useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }));
+
+  it('enforcement=on, sem a célula de leitura: invisível (e sem escrita)', () => {
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient:read']), enforcement: 'on' }, authzStatus: 'ready' });
+    expect(renderHook(() => useContainerAccess('patient_family')).result.current).toEqual({ visible: false, canWrite: false });
+  });
+
+  it('enforcement=on, só leitura: visível sem escrita; com escrita: os dois', () => {
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_family:read']), enforcement: 'on' }, authzStatus: 'ready' });
+    expect(renderHook(() => useContainerAccess('patient_family')).result.current).toEqual({ visible: true, canWrite: false });
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_family:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    expect(renderHook(() => useContainerAccess('patient_family')).result.current).toEqual({ visible: true, canWrite: true });
+  });
+
+  it('🔴 enforcement OFF (ou contrato ausente): tudo visível e editável — as células novas nascem sem grupo', () => {
+    useAdminAuthStore.setState({ authz: { ...contrato([]), enforcement: 'off' }, authzStatus: 'ready' });
+    expect(renderHook(() => useContainerAccess('patient_family')).result.current).toEqual({ visible: true, canWrite: true });
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+    expect(renderHook(() => useContainerAccess('patient_family')).result.current).toEqual({ visible: true, canWrite: true });
+  });
+});
+
+describe('containersVisibleFor — a aba existe se QUALQUER container dela for legível', () => {
+  it('on: some sem nenhuma célula, fica com uma; off: sempre', () => {
+    expect(containersVisibleFor(['patient:read'], 'on', ['patient_family', 'patient_chat'])).toBe(false);
+    expect(containersVisibleFor(['patient_chat:read'], 'on', ['patient_family', 'patient_chat'])).toBe(true);
+    expect(containersVisibleFor(['patient_chat:write'], 'on', ['patient_chat'])).toBe(true);
+    expect(containersVisibleFor([], 'off', ['patient_family'])).toBe(true);
+    expect(containersVisibleFor(null, undefined, ['patient_family'])).toBe(true);
+    // aba sem container nenhum, com enforcement on: não existe
+    expect(containersVisibleFor(['patient:read'], 'on', [])).toBe(false);
+  });
+});
+
+describe('tabsVisibleFor — as abas de uma tela para o ator (D286 fase 2)', () => {
+  const prestador = screenById('workers.detail');
+  const vaga = screenById('vacancies.detail');
+  const TABS_P = ['encuadres', 'documents', 'availability', 'financial', 'history'] as const;
+
+  it('aba com container: existe se algum for legível; aba SEM container (placeholder) existe sempre', () => {
+    expect(tabsVisibleFor(prestador, TABS_P, ['worker:read'], 'on')).toEqual(['availability', 'financial', 'history']);
+    expect(tabsVisibleFor(prestador, TABS_P, ['worker:read', 'match:read'], 'on')).toEqual(['encuadres', 'availability', 'financial', 'history']);
+    expect(tabsVisibleFor(prestador, TABS_P, ['worker:read', 'worker_document:read'], 'on')).toEqual(['documents', 'availability', 'financial', 'history']);
+  });
+
+  it('na vaga: Links segue a própria vaga; Talentum com prescreening OU talentum; Encuadres com funil/match/convites', () => {
+    const T = ['encuadres', 'talentum', 'links'] as const;
+    expect(tabsVisibleFor(vaga, T, ['vacancy:read'], 'on')).toEqual(['links']);
+    expect(tabsVisibleFor(vaga, T, ['vacancy:read', 'talentum:read'], 'on')).toEqual(['talentum', 'links']);
+    expect(tabsVisibleFor(vaga, T, ['vacancy:read', 'messaging:send'], 'on')).toEqual(['encuadres', 'links']);
+  });
+
+  it('enforcement off ou indeciso: todas', () => {
+    expect(tabsVisibleFor(prestador, TABS_P, [], 'off')).toEqual([...TABS_P]);
+    expect(tabsVisibleFor(prestador, TABS_P, null, undefined)).toEqual([...TABS_P]);
   });
 });

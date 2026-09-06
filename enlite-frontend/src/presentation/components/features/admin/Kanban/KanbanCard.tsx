@@ -4,6 +4,9 @@ import { CalendarClock, Hand, MapPin, MessageSquare, Phone, Star } from 'lucide-
 import { formatPhoneDisplay } from '@presentation/utils/recruitmentHelpers';
 import { NotesCountBadge } from '@presentation/components/features/admin/VacancyDetail/Funnel/NotesCountBadge';
 import { MoveToMenu } from './MoveToMenu';
+import { KanbanCardStageMessage } from './KanbanCardStageMessage';
+import { KanbanCardResend, type ResendStatus } from './KanbanCardResend';
+import { KanbanCardPresentationInvite, type PresentationInviteState } from './KanbanCardPresentationInvite';
 
 interface KanbanCardProps {
   id: string;
@@ -34,7 +37,6 @@ interface KanbanCardProps {
   attemptCount?: number;
   /** Blocked card "rechazado" (soft-dismiss) — aparece em RECHAZADOS com botão de voltar. */
   isDismissed?: boolean;
-  onWorkerClick?: (workerId: string) => void;
   onReject?: () => void;
   /** "Voltar a bloqueados": desfaz o rechazo de um card bloqueado (só para isDismissed). */
   onUndismiss?: () => void;
@@ -43,6 +45,23 @@ interface KanbanCardProps {
   onMoveTo?: (targetStage: string) => void;
   /** Opens the contact-notes modal for the VACANCY — same thread on every card, including BLOQUEADO. */
   onOpenNotes?: () => void;
+  /** ISO do último envio de WhatsApp a esta candidatura (manual ou em lote); null = nunca. */
+  lastMessagedAt?: string | null;
+  /** PEND-14/DEC-12: último template enfileirado por ETAPA (mover a tarjeta) — o painel mostra o último envio por pessoa. */
+  lastStageMessage?: { stage: string; templateSlug: string | null; at: string } | null;
+  /**
+   * "Reenviar" (REQ-08, planning 26/08): redispara a mensagem da etapa para
+   * ESTA pessoa com um clique — antes as recrutadoras arrastavam a tarjeta ida e
+   * volta. Só é passado para cards com worker e encuadre.
+   */
+  onResend?: () => void;
+  resendStatus?: ResendStatus;
+  /** Motivo localizado quando o backend recusa (422) ou falha. */
+  resendMessage?: string | null;
+  /** D200.1: o backend já sabe que o reenvio seria recusado (janela) — botão nasce desabilitado com o porquê, sem 422. */
+  resendBlockedReason?: { code: string; until: string } | null;
+  /** REQ-09: "Invitar a reunión de presentación" — um clique, a Luz conduz a resposta. Ausente = sem botão. */
+  presentationInvite?: { onInvite: () => void; state?: PresentationInviteState; lastInvitedAt?: string | null };
   /** Number of contact notes registered for the vacancy — same count on every card, shown on the notes button. */
   contactNotesCount?: number;
   /**
@@ -82,6 +101,7 @@ function completadoBadgeStyle(internalStage: string): string {
   return COMPLETADO_BADGE_STYLE[internalStage] ?? '';
 }
 
+
 export function KanbanCard({
   id,
   workerId,
@@ -104,13 +124,19 @@ export function KanbanCard({
   missingFields,
   attemptCount,
   isDismissed,
-  onWorkerClick,
   onReject,
   onUndismiss,
   onMoveTo,
   onOpenNotes,
   contactNotesCount = 0,
   selfAppliedAt,
+  lastMessagedAt,
+  lastStageMessage,
+  onResend,
+  resendStatus = 'idle',
+  resendMessage,
+  resendBlockedReason,
+  presentationInvite,
 }: KanbanCardProps) {
   const { t } = useTranslation();
   const talentumStyle = talentumStatus ? TALENTUM_STATUS_STYLE[talentumStatus] : null;
@@ -121,12 +147,10 @@ export function KanbanCard({
     workerName ??
     (isBlocked ? t('admin.kanban.blockedNoName') : t('admin.kanban.noName'));
 
-  const handleNameClick = (e: React.MouseEvent) => {
-    if (workerId && onWorkerClick) {
-      e.stopPropagation();
-      onWorkerClick(workerId);
-    }
-  };
+  // O nome abre o perfil em NOVA ABA (pedido do Javier, planning 26/08): link real
+  // (funciona com clique do meio / ctrl+clique) e o Kanban fica intacto atrás.
+  // stopPropagation evita que o clique dispare o drag do card.
+  const stopPropagation = (e: React.MouseEvent) => e.stopPropagation();
 
   const interviewLabel = interviewDate
     ? `${new Date(interviewDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}${interviewTime ? ` ${interviewTime}` : ''}`
@@ -139,16 +163,18 @@ export function KanbanCard({
       className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing"
     >
       <div className="flex items-start justify-between gap-2">
-        {workerId && onWorkerClick ? (
-          <button
-            type="button"
+        {workerId ? (
+          <a
+            href={`/admin/workers/${workerId}`}
+            target="_blank"
+            rel="noopener noreferrer"
             className="text-left truncate"
-            onClick={handleNameClick}
+            onClick={stopPropagation}
           >
             <Text as="span" size="sm" weight="semibold" className="text-[#180149] truncate hover:underline">
               {nameLabel}
             </Text>
-          </button>
+          </a>
         ) : (
           <Text as="span" size="sm" weight="semibold" className="text-[#180149] truncate">
             {nameLabel}
@@ -299,6 +325,12 @@ export function KanbanCard({
           {t('admin.kanban.notesButton')}
           <NotesCountBadge count={contactNotesCount} />
         </button>
+      )}
+
+      <KanbanCardStageMessage lastStageMessage={lastStageMessage} />
+      {presentationInvite && <KanbanCardPresentationInvite onInvite={presentationInvite.onInvite} state={presentationInvite.state} lastInvitedAt={presentationInvite.lastInvitedAt} />}
+      {onResend && (
+        <KanbanCardResend onResend={onResend} status={resendStatus} message={resendMessage} blockedReason={resendBlockedReason} lastMessagedAt={lastMessagedAt} />
       )}
 
       {onMoveTo && <MoveToMenu currentStage={stage} onMove={onMoveTo} />}

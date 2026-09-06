@@ -20,6 +20,13 @@ interface WorkerPersonalInfoCardProps {
   tags?: WorkerTagSummary[];
   /** When provided, renders the admin-only Edit button wired to this handler. */
   onEdit?: () => void;
+  /**
+   * D286: o dossiê (nascimento, sexo, gênero, orientação, raça, religião, peso, altura) é
+   * `worker_pii:read`; idiomas e etiquetas são operacionais (`worker:read`). Sem a célula o card
+   * fica só com o que é operacional — e sem o botão de editar, porque o modal pré-carrega o
+   * dossiê e salvaria campos em branco por cima (quem não LÊ não EDITA).
+   */
+  showDossier?: boolean;
 }
 
 function Field({ label, value }: { label: string; value: string | null }) {
@@ -44,6 +51,7 @@ export function WorkerPersonalInfoCard({
   heightCm,
   tags = [],
   onEdit,
+  showDossier = true,
 }: WorkerPersonalInfoCardProps) {
   const { t } = useTranslation();
 
@@ -59,7 +67,7 @@ export function WorkerPersonalInfoCard({
         </Heading>
         {/* PATCH /admin/workers/:id/profile + PUT /admin/workers/:id/service-area
             (via WorkerEditModal) → worker:write. D269 — sem a célula, SOME. */}
-        {onEdit && (
+        {onEdit && showDossier && (
           <ActionButton resource="worker" action="write" variant="primary" size="sm" className="w-40 shrink-0" onClick={onEdit} data-testid="worker-edit-button">
             {t('admin.workerDetail.edit')}
           </ActionButton>
@@ -67,15 +75,23 @@ export function WorkerPersonalInfoCard({
       </div>
 
       <div className="flex flex-col gap-2.5">
-        <Field label={`${t('admin.workerDetail.birthDate')}:`} value={formattedBirth} />
-        <Field label={`${t('admin.workerDetail.sex')}:`} value={getSexLabel(t, sex)} />
-        <Field label={`${t('admin.workerDetail.gender')}:`} value={getGenderLabel(t, gender)} />
-        <Field label={`${t('admin.workerDetail.sexualOrientation')}:`} value={sexualOrientation} />
-        <Field label={`${t('admin.workerDetail.race')}:`} value={race} />
-        <Field label={`${t('admin.workerDetail.religion')}:`} value={religion} />
+        {showDossier && (
+          <>
+            <Field label={`${t('admin.workerDetail.birthDate')}:`} value={formattedBirth} />
+            <Field label={`${t('admin.workerDetail.sex')}:`} value={getSexLabel(t, sex)} />
+            <Field label={`${t('admin.workerDetail.gender')}:`} value={getGenderLabel(t, gender)} />
+            <Field label={`${t('admin.workerDetail.sexualOrientation')}:`} value={sexualOrientation} />
+            <Field label={`${t('admin.workerDetail.race')}:`} value={race} />
+            <Field label={`${t('admin.workerDetail.religion')}:`} value={religion} />
+          </>
+        )}
         <Field label={`${t('admin.workerDetail.languages')}:`} value={languages.length > 0 ? languages.map(l => getLanguageLabel(t, l)).join(', ') : null} />
-        <Field label={`${t('admin.workerDetail.weight')}:`} value={weightKg ? `${weightKg}kg` : null} />
-        <Field label={`${t('admin.workerDetail.height')}:`} value={heightCm ? `${heightCm}m` : null} />
+        {showDossier && (
+          <>
+            <Field label={`${t('admin.workerDetail.weight')}:`} value={weightKg ? `${weightKg}kg` : null} />
+            <Field label={`${t('admin.workerDetail.height')}:`} value={heightCm ? `${heightCm}m` : null} />
+          </>
+        )}
         <WorkerTagsArea workerId={workerId} initialTags={tags} />
       </div>
     </div>

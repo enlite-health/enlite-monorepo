@@ -53,15 +53,17 @@ jest.mock('../../infrastructure/PatientIdentityRepository', () => ({
   })),
 }));
 
+const mockClinicalUpsert = jest.fn().mockResolvedValue(undefined);
 jest.mock('../../infrastructure/PatientClinicalRepository', () => ({
   PatientClinicalRepository: jest.fn().mockImplementation(() => ({
-    upsert: jest.fn().mockResolvedValue(undefined),
+    upsert: mockClinicalUpsert,
   })),
 }));
 
 jest.mock('../../infrastructure/PatientResponsibleRepository', () => ({
   PatientResponsibleRepository: jest.fn().mockImplementation(() => ({
     replaceAll: jest.fn().mockResolvedValue(undefined),
+    replaceBySource: jest.fn().mockResolvedValue(undefined),
   })),
 }));
 
@@ -208,24 +210,25 @@ describe('PatientService — native write path (migration 251)', () => {
     const seen: Array<{ sql: string; params?: unknown[] }> = [];
     _queryImpl = async (sql: string, params?: unknown[]) => {
       seen.push({ sql, params });
-      if (sql.startsWith('UPDATE patients SET status')) {
-        return { rowCount: 1, rows: [{ id: 'nat-004' }] };
-      }
-      return undefined;
+      // v2 (spec 012): o serviço lê o status atual (FOR UPDATE) antes de escrever.
+      if (sql.startsWith('SELECT status FROM patients')) return { rowCount: 1, rows: [{ status: 'ADMISSION' }] };
+      if (/^UPDATE patients/.test(sql)) return { rowCount: 1, rows: [{ id: 'nat-004' }] };
+      return { rows: [], rowCount: 0 };
     };
 
     const result = await service.moveStatus('nat-004', 'PENDING_ADMISSION');
 
     expect(result).toEqual({ id: 'nat-004', status: 'PENDING_ADMISSION' });
-    const update = seen.find(s => s.sql.startsWith('UPDATE patients SET status'));
+    const update = seen.find(s => /^UPDATE patients/.test(s.sql));
     expect(update).toBeDefined();
     expect(update!.sql).not.toContain('origin');
-    expect(update!.params).toEqual(['nat-004', 'PENDING_ADMISSION']);
+    // v2: motivo/nota vão NULL fora de ON_HOLD
+    expect(update!.params).toEqual(['nat-004', 'PENDING_ADMISSION', null, null]);
   });
 
   it('b2. moveStatus throws Patient not found when no row matches', async () => {
     _queryImpl = async (sql: string) =>
-      sql.startsWith('UPDATE patients SET status') ? { rowCount: 0, rows: [] } : undefined;
+      sql.startsWith('SELECT status FROM patients') ? { rowCount: 0, rows: [] } : { rows: [], rowCount: 0 };
 
     await expect(service.moveStatus('missing', 'ACTIVE')).rejects.toThrow(/not found/i);
   });
@@ -251,6 +254,22 @@ describe('PatientService — native write path (migration 251)', () => {
     const update = seen.find(s => s.includes('UPDATE patients SET service_type'));
     expect(update).toBeDefined();
     expect(update).not.toContain('diagnosis');
+  });
+
+  // ── e3. autoria (REQ-01): o uid do ator chega ao repositório clínico ──────
+  it('e3. updatePatientSection(clinical) repassa actorUid ao clinicalRepo.upsert', async () => {
+    mockClinicalUpsert.mockClear();
+    await service.updatePatientSection('nat-008', 'clinical', { additionalComments: 'texto' } as never, { uid: 'uid-staff-9' });
+
+    expect(mockClinicalUpsert).toHaveBeenCalledTimes(1);
+    expect(mockClinicalUpsert.mock.calls[0][0]).toMatchObject({ patientId: 'nat-008', additionalComments: 'texto', actorUid: 'uid-staff-9' });
+  });
+
+  it('e4. updatePatientSection(clinical) sem actor → actorUid null', async () => {
+    mockClinicalUpsert.mockClear();
+    await service.updatePatientSection('nat-009', 'clinical', { diagnosis: 'F84' } as never);
+
+    expect(mockClinicalUpsert.mock.calls[0][0]).toMatchObject({ patientId: 'nat-009', diagnosis: 'F84', actorUid: null });
   });
 
   it('e2. updatePatientSection(support-network) delegates to responsibleRepo.replaceAll', async () => {

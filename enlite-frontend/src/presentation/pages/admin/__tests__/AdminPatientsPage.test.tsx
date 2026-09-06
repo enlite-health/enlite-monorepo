@@ -1,319 +1,304 @@
 /**
- * Unit de `AdminPatientsPage` — a página de lista de pacientes.
+ * AdminPatientsPage.test.tsx
  *
- * `PatientFilters`, `PatientsTable`, `PatientCreateModal` e `TableSkeleton`
- * são mockados (shallow): o que este arquivo decide sozinho é o cálculo dos
- * filtros/paginação/debounce e o mapeamento de `rawPatients`, não o que essas
- * telas fazem por dentro — isso é escopo de outros arquivos, já testado onde
- * vivem. `Select` (atom) é um `<select>` nativo, real — sem Radix, sem risco.
+ * O arquivo estava em 0% de cobertura: o único teste com o nome "AdminPatients"
+ * (`AdminPatients.i18n.test.ts`) lê os JSON de tradução e NUNCA renderiza a
+ * página. Cobertura zero num arquivo com 273 linhas não é "nada errado" — é
+ * "não olhei".
+ *
+ * Os filhos pesados são dublês: o que se mede aqui é a PÁGINA (estado, filtros,
+ * paginação, mapeamento do payload), não a tabela nem o modal, que têm teste
+ * próprio.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
-import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
-import type { AuthzContract } from '@domain/entities/Authz';
+import { render, screen, act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { AdminPatientsPage } from '../AdminPatientsPage';
 
-function t(key: string, opts?: unknown): string {
-  return opts ? `${key}:${JSON.stringify(opts)}` : key;
-}
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t }) }));
+// ── Dublês ────────────────────────────────────────────────────────────────────
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) =>
+      opts && ('start' in opts || 'total' in opts) ? `${key}:${opts.start}-${opts.end}/${opts.total}` : key,
+    i18n: { language: 'es' },
+  }),
+}));
 
 const navigate = vi.fn();
 vi.mock('react-router-dom', () => ({ useNavigate: () => navigate }));
 
-const usePatientsDataMock = vi.fn();
+const usePatientsData = vi.fn();
 vi.mock('@hooks/admin/usePatientsData', () => ({
-  usePatientsData: (filters: unknown) => usePatientsDataMock(filters),
+  usePatientsData: (...a: unknown[]) => usePatientsData(...a),
 }));
 
-vi.mock('@presentation/components/ui/skeletons', () => ({
-  TableSkeleton: () => <div data-testid="table-skeleton" />,
+/** A tabela real tem teste próprio; aqui ela só reporta o que RECEBEU. */
+vi.mock('@presentation/components/features/admin/PatientsTable', () => ({
+  PatientsTable: ({ patients, onRowClick }: any) => (
+    <div data-testid="tabela" data-json={JSON.stringify(patients)}>
+      <button data-testid="linha" onClick={() => onRowClick(patients[0]?.id)}>linha</button>
+    </div>
+  ),
 }));
 
 vi.mock('@presentation/components/features/admin/PatientCreateModal', () => ({
-  PatientCreateModal: (props: { onClose: () => void; onCreated: () => void }) => (
-    <div data-testid="patient-create-modal-stub">
-      <button data-testid="modal-close" onClick={props.onClose}>close</button>
-      <button data-testid="modal-created" onClick={props.onCreated}>created</button>
+  PatientCreateModal: ({ onClose, onCreated }: any) => (
+    <div data-testid="modal">
+      <button data-testid="modal-fechar" onClick={onClose}>fechar</button>
+      {/* o modal real chama `onCreated(id)` com o id do paciente criado — o mock precisa passar
+          um id, senão o handler receberia o evento de clique e o teste validaria uma URL falsa */}
+      <button data-testid="modal-criado" onClick={() => onCreated('novo-123')}>criado</button>
     </div>
   ),
 }));
 
+/** Filtros: só os callbacks importam para a página. */
 vi.mock('@presentation/components/features/admin/PatientFilters', () => ({
-  PatientFilters: (props: {
-    searchValue: string; onSearchChange: (v: string) => void;
-    codeValue: string; onCodeChange: (v: string) => void;
-    onAttentionChange: (v: string) => void;
-    onReasonChange: (v: string) => void;
-    onSpecialtyChange: (v: string) => void;
-    onDependencyChange: (v: string) => void;
-    onCountryChange: (v: string) => void;
-  }) => (
-    <div data-testid="patient-filters-stub">
-      <input data-testid="search-input" value={props.searchValue} onChange={(e) => props.onSearchChange(e.target.value)} />
-      <input data-testid="code-input" value={props.codeValue} onChange={(e) => props.onCodeChange(e.target.value)} />
-      <button data-testid="attention-change" onClick={() => props.onAttentionChange('needs_attention')}>attn</button>
-      <button data-testid="reason-change" onClick={() => props.onReasonChange('MISSING_INFO')}>reason</button>
-      <button data-testid="specialty-change" onClick={() => props.onSpecialtyChange('ASD')}>spec</button>
-      <button data-testid="dependency-change" onClick={() => props.onDependencyChange('SEVERE')}>dep</button>
-      <button data-testid="country-change" onClick={() => props.onCountryChange('AR')}>country</button>
+  PatientFilters: (p: any) => (
+    <div>
+      <input data-testid="f-busca" value={p.searchValue} onChange={(e) => p.onSearchChange(e.target.value)} />
+      <input data-testid="f-codigo" value={p.codeValue} onChange={(e) => p.onCodeChange(e.target.value)} />
+      <button data-testid="f-atencion" onClick={() => p.onAttentionChange('needs_attention')}>a</button>
+      <button data-testid="f-completo" onClick={() => p.onAttentionChange('complete')}>c</button>
+      <button data-testid="f-motivo" onClick={() => p.onReasonChange('MISSING_INFO')}>m</button>
+      <button data-testid="f-especialidad" onClick={() => p.onSpecialtyChange('ASD')}>e</button>
+      <button data-testid="f-dependencia" onClick={() => p.onDependencyChange('SEVERE')}>d</button>
+      <button data-testid="f-pais" onClick={() => p.onCountryChange('AR')}>p</button>
+      <span data-testid="f-motivo-atual">{p.selectedReason}</span>
     </div>
   ),
 }));
 
-vi.mock('@presentation/components/features/admin/PatientsTable', () => ({
-  PatientsTable: (props: { patients: Array<{ id: string }>; onRowClick?: (id: string) => void }) => (
-    <div data-testid="patients-table-stub">
-      <div data-testid="patients-json">{JSON.stringify(props.patients)}</div>
-      {props.patients.map((p) => (
-        <button key={p.id} data-testid={`row-${p.id}`} onClick={() => props.onRowClick?.(p.id)} />
-      ))}
-    </div>
+vi.mock('@presentation/components/atoms/Select', () => ({
+  Select: ({ value, onValueChange }: any) => (
+    <button data-testid="por-pagina" data-value={value} onClick={() => onValueChange('10')}>{value}</button>
   ),
 }));
 
-const { AdminPatientsPage } = await import('../AdminPatientsPage');
+vi.mock('@presentation/components/ui/skeletons', () => ({
+  TableSkeleton: () => <div data-testid="skeleton" />,
+}));
 
-function setPatientsData(over: Partial<{
-  patients: unknown[] | undefined; total: number; isLoading: boolean; error: string | null; refetch: () => void;
-}> = {}) {
-  usePatientsDataMock.mockReturnValue({
-    patients: [],
-    total: 0,
-    isLoading: false,
-    error: null,
-    refetch: vi.fn(),
-    ...over,
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const refetch = vi.fn();
+
+function comDados(over: Record<string, unknown> = {}) {
+  usePatientsData.mockReturnValue({
+    patients: [], total: 0, stats: null, isLoading: false, error: null, refetch, ...over,
   });
 }
 
-describe('AdminPatientsPage', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.useFakeTimers();
-    setPatientsData();
-    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
-  });
-  afterEach(() => {
-    vi.runOnlyPendingTimers();
-    vi.useRealTimers();
-  });
+/** Os filtros da última chamada do hook — é assim que a página fala com a API. */
+function ultimosFiltros() {
+  return usePatientsData.mock.calls[usePatientsData.mock.calls.length - 1][0];
+}
 
-  it('carregando: mostra o skeleton, não a tabela', () => {
-    setPatientsData({ isLoading: true });
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  comDados();
+});
+afterEach(() => { vi.useRealTimers(); });
+
+const user = () => userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+
+// ── Estados da tela ───────────────────────────────────────────────────────────
+
+describe('AdminPatientsPage — os três estados', () => {
+  it('carregando: skeleton, sem tabela', () => {
+    comDados({ isLoading: true });
     render(<AdminPatientsPage />);
-    expect(screen.getByTestId('table-skeleton')).toBeInTheDocument();
-    expect(screen.queryByTestId('patients-table-stub')).not.toBeInTheDocument();
+    expect(screen.getByTestId('skeleton')).toBeInTheDocument();
+    expect(screen.queryByTestId('tabela')).toBeNull();
   });
 
-  it('erro: mostra a mensagem, não a tabela nem o skeleton', () => {
-    setPatientsData({ error: 'falha de rede' });
+  it('erro: mensagem + o texto do erro, e a tabela NÃO aparece', () => {
+    comDados({ error: 'API caiu', isLoading: true });
     render(<AdminPatientsPage />);
-    expect(screen.getByText('falha de rede')).toBeInTheDocument();
-    expect(screen.queryByTestId('patients-table-stub')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('table-skeleton')).not.toBeInTheDocument();
+    expect(screen.getByText('admin.patients.errorLoading')).toBeInTheDocument();
+    expect(screen.getByText('API caiu')).toBeInTheDocument();
+    expect(screen.queryByTestId('skeleton')).toBeNull();
   });
 
-  it('sucesso: mostra a tabela com os pacientes mapeados', () => {
-    setPatientsData({
-      patients: [{
-        id: 'p1', firstName: 'Ana', lastName: 'Gomez', documentType: 'DNI', documentNumber: '123',
-        caseNumber: 5, dependencyLevel: 'SEVERE', clinicalSpecialty: 'ASD', serviceType: ['AT'],
-        needsAttention: true, attentionReasons: ['MISSING_INFO'],
-      }],
-      total: 1,
+  it('carregado: tabela', () => {
+    render(<AdminPatientsPage />);
+    expect(screen.getByTestId('tabela')).toBeInTheDocument();
+  });
+});
+
+// ── Mapeamento do payload ─────────────────────────────────────────────────────
+
+describe('AdminPatientsPage — o que chega da API vira linha', () => {
+  it('payload completo passa inteiro', () => {
+    comDados({ patients: [{ id: 'x', firstName: 'A', lastName: 'B', responsibleName: 'R', documentType: 'DNI', documentNumber: '1', caseNumber: 9, dependencyLevel: 'MILD', clinicalSpecialty: 'ASD', serviceType: ['AT'], needsAttention: true, attentionReasons: ['MISSING_INFO'], createdAt: '2026-01-01T00:00:00Z' }] });
+    render(<AdminPatientsPage />);
+    const linha = JSON.parse(screen.getByTestId('tabela').dataset.json!)[0];
+    expect(linha).toMatchObject({ id: 'x', firstName: 'A', responsibleName: 'R', caseNumber: 9, createdAt: '2026-01-01T00:00:00Z', serviceType: ['AT'] });
+  });
+
+  it('payload VAZIO cai nos defaults — nenhum undefined vaza para a tabela', () => {
+    comDados({ patients: [{ id: 'y' }] });
+    render(<AdminPatientsPage />);
+    const linha = JSON.parse(screen.getByTestId('tabela').dataset.json!)[0];
+    expect(linha).toEqual({
+      id: 'y', firstName: '', lastName: '', responsibleName: null, documentType: null,
+      documentNumber: null, caseNumber: null, dependencyLevel: null, clinicalSpecialty: null,
+      serviceType: [], needsAttention: false, attentionReasons: [], createdAt: null,
     });
-    render(<AdminPatientsPage />);
-    const json = JSON.parse(screen.getByTestId('patients-json').textContent ?? '[]');
-    expect(json).toEqual([{
-      id: 'p1', firstName: 'Ana', lastName: 'Gomez', documentType: 'DNI', documentNumber: '123',
-      caseNumber: 5, dependencyLevel: 'SEVERE', clinicalSpecialty: 'ASD', serviceType: ['AT'],
-      needsAttention: true, attentionReasons: ['MISSING_INFO'],
-    }]);
   });
 
-  it('rawPatients ausente (undefined): não quebra, mapeia para lista vazia', () => {
-    setPatientsData({ patients: undefined });
+  it('`patients` nulo não quebra a página', () => {
+    comDados({ patients: null });
     render(<AdminPatientsPage />);
-    expect(JSON.parse(screen.getByTestId('patients-json').textContent ?? 'null')).toEqual([]);
+    expect(JSON.parse(screen.getByTestId('tabela').dataset.json!)).toEqual([]);
   });
 
-  it('paciente com campos ausentes: aplica os fallbacks (—, [], false)', () => {
-    setPatientsData({ patients: [{ id: 'p2' }] });
+  it('clique na linha navega para o detalhe', async () => {
+    comDados({ patients: [{ id: 'abc' }] });
     render(<AdminPatientsPage />);
-    const json = JSON.parse(screen.getByTestId('patients-json').textContent ?? '[]');
-    expect(json).toEqual([{
-      id: 'p2', firstName: '', lastName: '', documentType: null, documentNumber: null,
-      caseNumber: null, dependencyLevel: null, clinicalSpecialty: null, serviceType: [],
-      needsAttention: false, attentionReasons: [],
-    }]);
+    await user().click(screen.getByTestId('linha'));
+    expect(navigate).toHaveBeenCalledWith('/admin/patients/abc');
+  });
+});
+
+// ── Filtros → parâmetros da API ───────────────────────────────────────────────
+
+describe('AdminPatientsPage — filtro vira parâmetro', () => {
+  it('sem filtro nenhum: só limit e offset', () => {
+    render(<AdminPatientsPage />);
+    expect(ultimosFiltros()).toEqual({
+      search: undefined, needs_attention: undefined, attention_reason: undefined,
+      clinical_specialty: undefined, dependency_level: undefined, case_number: undefined,
+      country: undefined, limit: '20', offset: '0',
+    });
   });
 
-  it('clicar numa linha navega para a ficha do paciente', () => {
-    setPatientsData({ patients: [{ id: 'p1' }] });
+  it('busca só chega à API DEPOIS do debounce de 400ms', async () => {
     render(<AdminPatientsPage />);
-    fireEvent.click(screen.getByTestId('row-p1'));
-    expect(navigate).toHaveBeenCalledWith('/admin/patients/p1');
+    await user().type(screen.getByTestId('f-busca'), 'ana');
+    expect(ultimosFiltros().search).toBeUndefined();
+    act(() => { vi.advanceTimersByTime(400); });
+    expect(ultimosFiltros().search).toBe('ana');
   });
 
-  it('clicar em "Kanban" navega para /admin/patients/kanban', () => {
+  it('código também é debounced', async () => {
     render(<AdminPatientsPage />);
-    fireEvent.click(screen.getByTestId('patients-kanban-link'));
+    await user().type(screen.getByTestId('f-codigo'), '42');
+    expect(ultimosFiltros().case_number).toBeUndefined();
+    act(() => { vi.advanceTimersByTime(400); });
+    expect(ultimosFiltros().case_number).toBe('42');
+  });
+
+  it('trocar "atención" LIMPA o motivo — senão a API recebe motivo de um estado que não existe mais', async () => {
+    render(<AdminPatientsPage />);
+    const u = user();
+    await u.click(screen.getByTestId('f-atencion'));
+    await u.click(screen.getByTestId('f-motivo'));
+    expect(ultimosFiltros().attention_reason).toBe('MISSING_INFO');
+    await u.click(screen.getByTestId('f-completo'));
+    expect(screen.getByTestId('f-motivo-atual').textContent).toBe('');
+    expect(ultimosFiltros().attention_reason).toBeUndefined();
+    expect(ultimosFiltros().needs_attention).toBe('false');
+  });
+
+  it('motivo só vai junto quando o estado é "needs_attention"', async () => {
+    render(<AdminPatientsPage />);
+    await user().click(screen.getByTestId('f-motivo'));
+    expect(ultimosFiltros().attention_reason).toBeUndefined();
+  });
+
+  it('especialidade, dependência e país viram parâmetro', async () => {
+    render(<AdminPatientsPage />);
+    const u = user();
+    await u.click(screen.getByTestId('f-especialidad'));
+    await u.click(screen.getByTestId('f-dependencia'));
+    await u.click(screen.getByTestId('f-pais'));
+    expect(ultimosFiltros()).toMatchObject({ clinical_specialty: 'ASD', dependency_level: 'SEVERE', country: 'AR' });
+  });
+});
+
+// ── Paginação ─────────────────────────────────────────────────────────────────
+
+describe('AdminPatientsPage — paginação', () => {
+  it('lista vazia: contador zerado e as duas setas desabilitadas', () => {
+    comDados({ total: 0 });
+    render(<AdminPatientsPage />);
+    expect(screen.getByText('admin.patients.pagination:0-0/0')).toBeInTheDocument();
+    expect(screen.getByLabelText('admin.patients.previousPage')).toBeDisabled();
+    expect(screen.getByLabelText('admin.patients.nextPage')).toBeDisabled();
+  });
+
+  it('avançar soma o offset; voltar desfaz', async () => {
+    comDados({ total: 55 });
+    render(<AdminPatientsPage />);
+    const u = user();
+    expect(screen.getByText('admin.patients.pagination:1-20/55')).toBeInTheDocument();
+
+    await u.click(screen.getByLabelText('admin.patients.nextPage'));
+    expect(ultimosFiltros().offset).toBe('20');
+    expect(screen.getByText('admin.patients.pagination:21-40/55')).toBeInTheDocument();
+
+    await u.click(screen.getByLabelText('admin.patients.previousPage'));
+    expect(ultimosFiltros().offset).toBe('0');
+  });
+
+  it('a última página trunca o fim no total e desabilita "próxima"', async () => {
+    comDados({ total: 25 });
+    render(<AdminPatientsPage />);
+    await user().click(screen.getByLabelText('admin.patients.nextPage'));
+    expect(screen.getByText('admin.patients.pagination:21-25/25')).toBeInTheDocument();
+    expect(screen.getByLabelText('admin.patients.nextPage')).toBeDisabled();
+  });
+
+  it('trocar itens por página VOLTA para a primeira', async () => {
+    comDados({ total: 55 });
+    render(<AdminPatientsPage />);
+    const u = user();
+    await u.click(screen.getByLabelText('admin.patients.nextPage'));
+    expect(ultimosFiltros().offset).toBe('20');
+    await u.click(screen.getByTestId('por-pagina'));
+    expect(ultimosFiltros()).toMatchObject({ limit: '10', offset: '0' });
+  });
+});
+
+// ── Ações do cabeçalho ────────────────────────────────────────────────────────
+
+describe('AdminPatientsPage — ações', () => {
+  it('kanban navega', async () => {
+    render(<AdminPatientsPage />);
+    await user().click(screen.getByTestId('patients-kanban-link'));
     expect(navigate).toHaveBeenCalledWith('/admin/patients/kanban');
   });
 
-  it('clicar em "Crear paciente" abre o modal; fechar some com ele', () => {
+  // Atualizado no rebase da branch de admissão: o `main` (#290) escreveu este teste quando criar
+  // paciente RECARREGAVA a lista. O bloco D (spec 014, item D5) mudou o comportamento de propósito
+  // — criar paciente CAI NA FICHA, e o e2e `admission-d-ux` item 4 prova isso ponta a ponta.
+  // Recarregar a lista deixou de ser o efeito; navegar é.
+  it('modal abre, fecha, e ao criar navega para a ficha do paciente criado', async () => {
+    comDados({ total: 55 });
     render(<AdminPatientsPage />);
-    expect(screen.queryByTestId('patient-create-modal-stub')).not.toBeInTheDocument();
+    const u = user();
+    expect(screen.queryByTestId('modal')).toBeNull();
 
-    fireEvent.click(screen.getByTestId('new-patient-btn'));
-    expect(screen.getByTestId('patient-create-modal-stub')).toBeInTheDocument();
+    await u.click(screen.getByTestId('new-patient-btn'));
+    expect(screen.getByTestId('modal')).toBeInTheDocument();
+    await u.click(screen.getByTestId('modal-fechar'));
+    expect(screen.queryByTestId('modal')).toBeNull();
 
-    fireEvent.click(screen.getByTestId('modal-close'));
-    expect(screen.queryByTestId('patient-create-modal-stub')).not.toBeInTheDocument();
+    await u.click(screen.getByLabelText('admin.patients.nextPage'));
+    await u.click(screen.getByTestId('new-patient-btn'));
+    await u.click(screen.getByTestId('modal-criado'));
+    expect(navigate).toHaveBeenCalledWith('/admin/patients/novo-123');
   });
 
-  it('criar com sucesso: volta pra página 1 e chama refetch', () => {
-    const refetch = vi.fn();
-    setPatientsData({ refetch });
-    render(<AdminPatientsPage />);
-    fireEvent.click(screen.getByTestId('new-patient-btn'));
-    fireEvent.click(screen.getByTestId('modal-created'));
-    expect(refetch).toHaveBeenCalled();
-  });
-
-  it('busca por nome: debounce de 400ms antes de virar filtro (e volta pra página 1)', () => {
-    render(<AdminPatientsPage />);
-    usePatientsDataMock.mockClear();
-    fireEvent.change(screen.getByTestId('search-input'), { target: { value: 'Ana' } });
-    // ainda não filtrou — o input local mudou, o debounced não
-    expect(usePatientsDataMock).not.toHaveBeenCalledWith(expect.objectContaining({ search: 'Ana' }));
-
-    act(() => { vi.advanceTimersByTime(400); });
-    expect(usePatientsDataMock).toHaveBeenCalledWith(expect.objectContaining({ search: 'Ana', offset: '0' }));
-  });
-
-  it('busca por código: mesmo debounce de 400ms', () => {
-    render(<AdminPatientsPage />);
-    fireEvent.change(screen.getByTestId('code-input'), { target: { value: '748' } });
-    act(() => { vi.advanceTimersByTime(400); });
-    expect(usePatientsDataMock).toHaveBeenCalledWith(expect.objectContaining({ case_number: '748' }));
-  });
-
-  it('trocar de busca antes do debounce disparar reinicia o timer (só o último valor filtra)', () => {
-    render(<AdminPatientsPage />);
-    fireEvent.change(screen.getByTestId('search-input'), { target: { value: 'An' } });
-    act(() => { vi.advanceTimersByTime(200); });
-    fireEvent.change(screen.getByTestId('search-input'), { target: { value: 'Ana' } });
-    act(() => { vi.advanceTimersByTime(200); });
-    expect(usePatientsDataMock).not.toHaveBeenCalledWith(expect.objectContaining({ search: 'An' }));
-    act(() => { vi.advanceTimersByTime(200); });
-    expect(usePatientsDataMock).toHaveBeenCalledWith(expect.objectContaining({ search: 'Ana' }));
-  });
-
-  it('filtro "necessita atenção": manda needs_attention=true; escolher motivo manda attention_reason', () => {
-    render(<AdminPatientsPage />);
-    fireEvent.click(screen.getByTestId('attention-change'));
-    expect(usePatientsDataMock).toHaveBeenCalledWith(expect.objectContaining({ needs_attention: 'true', attention_reason: undefined }));
-
-    fireEvent.click(screen.getByTestId('reason-change'));
-    expect(usePatientsDataMock).toHaveBeenCalledWith(expect.objectContaining({ needs_attention: 'true', attention_reason: 'MISSING_INFO' }));
-  });
-
-  it('trocar o motivo de atenção sem "needs_attention" selecionado não manda attention_reason', () => {
-    render(<AdminPatientsPage />);
-    fireEvent.click(screen.getByTestId('reason-change'));
-    expect(usePatientsDataMock).toHaveBeenCalledWith(expect.objectContaining({ attention_reason: undefined }));
-  });
-
-  it('filtro de especialidade, dependência e país entram nos filtros', () => {
-    render(<AdminPatientsPage />);
-    fireEvent.click(screen.getByTestId('specialty-change'));
-    expect(usePatientsDataMock).toHaveBeenCalledWith(expect.objectContaining({ clinical_specialty: 'ASD' }));
-
-    fireEvent.click(screen.getByTestId('dependency-change'));
-    expect(usePatientsDataMock).toHaveBeenCalledWith(expect.objectContaining({ dependency_level: 'SEVERE' }));
-
-    fireEvent.click(screen.getByTestId('country-change'));
-    expect(usePatientsDataMock).toHaveBeenCalledWith(expect.objectContaining({ country: 'AR' }));
-  });
-
-  it('paginação: 0 resultados mostra start/end/total = 0', () => {
-    setPatientsData({ total: 0 });
-    render(<AdminPatientsPage />);
-    expect(screen.getByText(/"start":0,"end":0,"total":0/)).toBeInTheDocument();
-  });
-
-  it('paginação: com resultados, calcula start/end pela página e pelo itemsPerPage', () => {
-    setPatientsData({ total: 45 });
-    render(<AdminPatientsPage />);
-    expect(screen.getByText(/"start":1,"end":20,"total":45/)).toBeInTheDocument();
-  });
-
-  it('paginação: botão anterior desabilitado na página 1; próxima habilita e avança', () => {
-    setPatientsData({ total: 45 });
-    render(<AdminPatientsPage />);
-    const prev = screen.getByLabelText('admin.patients.previousPage');
-    const next = screen.getByLabelText('admin.patients.nextPage');
-    expect(prev).toBeDisabled();
-    expect(next).not.toBeDisabled();
-
-    fireEvent.click(next);
-    expect(usePatientsDataMock).toHaveBeenCalledWith(expect.objectContaining({ offset: '20' }));
-  });
-
-  it('paginação: botão próxima desabilitado na última página', () => {
-    setPatientsData({ total: 45 });
-    render(<AdminPatientsPage />);
-    const next = screen.getByLabelText('admin.patients.nextPage');
-    fireEvent.click(next); // page 2
-    fireEvent.click(next); // page 3 (última: ceil(45/20)=3)
-    expect(next).toBeDisabled();
-
-    const prev = screen.getByLabelText('admin.patients.previousPage');
-    expect(prev).not.toBeDisabled();
-    fireEvent.click(prev);
-    expect(usePatientsDataMock).toHaveBeenCalledWith(expect.objectContaining({ offset: '20' }));
-  });
-
-  it('trocar itens por página volta pra página 1 e muda o limit', () => {
-    setPatientsData({ total: 45 });
-    render(<AdminPatientsPage />);
-    const select = screen.getByRole('combobox') as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: '50' } });
-    expect(usePatientsDataMock).toHaveBeenCalledWith(expect.objectContaining({ limit: '50', offset: '0' }));
-  });
-
-  it('desmontar limpa os timers de debounce pendentes sem lançar', () => {
+  it('desmontar limpa os debounces pendentes — sem setState em componente morto', async () => {
     const { unmount } = render(<AdminPatientsPage />);
-    fireEvent.change(screen.getByTestId('search-input'), { target: { value: 'x' } });
-    expect(() => unmount()).not.toThrow();
-  });
-
-  // ── D269 — POST /patients → patient:write ────────────────────────────────
-
-  function comEnforcement(permissions: string[], enforcement: AuthzContract['enforcement']) {
-    useAdminAuthStore.setState({
-      authzStatus: 'ready',
-      authz: {
-        uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {}, enforcement,
-      } as AuthzContract,
-    });
-  }
-
-  it('🔴 enforcement=on, sem patient:write: new-patient-btn SOME', () => {
-    comEnforcement([], 'on');
-    render(<AdminPatientsPage />);
-    expect(screen.queryByTestId('new-patient-btn')).not.toBeInTheDocument();
-  });
-
-  it('enforcement=on, com patient:write: new-patient-btn existe', () => {
-    comEnforcement(['patient:write'], 'on');
-    render(<AdminPatientsPage />);
-    expect(screen.getByTestId('new-patient-btn')).toBeInTheDocument();
-  });
-
-  it('enforcement OFF (ou ausente): new-patient-btn existe mesmo sem célula', () => {
-    render(<AdminPatientsPage />);
-    expect(screen.getByTestId('new-patient-btn')).toBeInTheDocument();
+    await user().type(screen.getByTestId('f-busca'), 'x');
+    const chamadas = usePatientsData.mock.calls.length;
+    unmount();
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(usePatientsData.mock.calls.length).toBe(chamadas);
   });
 });

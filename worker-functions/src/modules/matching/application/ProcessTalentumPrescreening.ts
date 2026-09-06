@@ -324,7 +324,8 @@ export class ProcessTalentumPrescreening {
 
     const result = await client.query(
       `INSERT INTO domain_events (event, payload) VALUES ('funnel_stage.qualified', $1::jsonb) RETURNING id`,
-      [JSON.stringify({ workerId, jobPostingId })],
+      // `source` só MEDE quem disparou (webhook × arrasto humano no Kanban) — ver QualifiedInterviewHandler.
+      [JSON.stringify({ workerId, jobPostingId, source: 'talentum' })],
     );
     const eventId = result.rows[0].id;
     console.log(`${TAG} QUALIFIED transition → domain_event id=${eventId}`);

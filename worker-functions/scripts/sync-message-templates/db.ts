@@ -9,6 +9,7 @@ export interface DbTemplateRow {
   slug: string;
   name: string;
   body: string;
+  body_twilio: string | null;
   category: string | null;
   is_active: boolean;
   content_sid: string | null;
@@ -16,7 +17,7 @@ export interface DbTemplateRow {
 
 export async function fetchDbTemplates(pool: Pool): Promise<DbTemplateRow[]> {
   const res = await pool.query<DbTemplateRow>(
-    `SELECT id, slug, name, body, category, is_active, content_sid FROM message_templates`,
+    `SELECT id, slug, name, body, body_twilio, category, is_active, content_sid FROM message_templates`,
   );
   return res.rows;
 }
@@ -44,16 +45,17 @@ async function applyInsert(
   ins: InsertPlan,
 ): Promise<void> {
   await client.query(
-    `INSERT INTO message_templates (slug, name, body, category, is_active, content_sid)
-     VALUES ($1, $2, $3, $4, true, $5)
+    `INSERT INTO message_templates (slug, name, body, body_twilio, category, is_active, content_sid)
+     VALUES ($1, $2, $3, $4, $5, true, $6)
      ON CONFLICT (slug) DO UPDATE SET
        name = EXCLUDED.name,
        body = EXCLUDED.body,
+       body_twilio = EXCLUDED.body_twilio,
        category = EXCLUDED.category,
        is_active = true,
        content_sid = EXCLUDED.content_sid,
        updated_at = NOW()`,
-    [ins.slug, ins.name, ins.body, ins.category, ins.contentSid],
+    [ins.slug, ins.name, ins.body, ins.bodyTwilio, ins.category, ins.contentSid],
   );
 }
 

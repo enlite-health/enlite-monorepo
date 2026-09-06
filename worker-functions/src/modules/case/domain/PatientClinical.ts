@@ -11,6 +11,8 @@ export interface PatientClinical {
   serviceType: string | null;
   deviceType: string | null;
   additionalComments: string | null;
+  /** Instruções de emergência (REQ-01 · D211.2): texto clínico livre, sem cifra por decisão humana. */
+  emergencyInstructions: string | null;
   hasJudicialProtection: boolean | null;
   hasCud: boolean | null;
   hasConsent: boolean | null;

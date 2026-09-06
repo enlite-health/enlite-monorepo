@@ -1,4 +1,7 @@
 node_modules/
+# sem barra: com barra o padrao casa so DIRETORIO, e o symlink escapa
+# (foi assim que worker-functions/node_modules entrou em git 2x: #173 e #231)
+node_modules
 dist/
 .env
 *.log

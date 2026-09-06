@@ -4,12 +4,14 @@ import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight, Download, RefreshCw } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { Typography } from '@presentation/components/atoms/Typography';
-import { Button } from '@presentation/components/atoms/Button';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Select } from '@presentation/components/atoms/Select';
 import { WorkerFilters } from '@presentation/components/features/admin/WorkerFilters';
 import { WorkerStatsCards } from '@presentation/components/features/admin/WorkerStatsCards';
 import { WorkersTable } from '@presentation/components/features/admin/WorkersTable';
+import { KanbanCardPresentationInvite, type PresentationInviteState } from '@presentation/components/features/admin/Kanban/KanbanCardPresentationInvite';
+import { AdminPresentationInviteApiService } from '@infrastructure/http/AdminPresentationInviteApiService';
+import { usePresentationInviteLast } from '@hooks/admin/usePresentationInviteLast';
 import { WorkerExportModal } from '@presentation/components/features/admin/WorkerExport/WorkerExportModal';
 import { useWorkersData } from '@hooks/admin/useWorkersData';
 import { useCaseOptions } from '@hooks/admin/useCaseOptions';
@@ -23,12 +25,17 @@ import {
   type WorkerProfileFilters,
 } from '@presentation/components/features/admin/workerProfileFiltersConfig';
 import { getDocsStatusOptions, getValidationStatusOptions } from './workersData';
+import { ActionButton } from '@presentation/components/features/access';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 
 export function AdminWorkersPage(): JSX.Element {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { adminProfile } = useAdminAuth();
   const isAdmin = adminProfile?.role === EnliteRole.ADMIN;
+
+  /** REQ-09: convite à reunión de presentación por linha — inclusive quem NÃO terminou o registro (REQ-04). */
+  const [inviteByWorker, setInviteByWorker] = useState<Record<string, PresentationInviteState>>({});
 
   const docsStatusOptions = getDocsStatusOptions(t);
   const validationStatusOptions = getValidationStatusOptions(t);
@@ -171,6 +178,26 @@ export function AdminWorkersPage(): JSX.Element {
       }),
     [rawWorkers],
   );
+  // REQ-09: o mesmo /last do Kanban — a página mostra quem já foi convidada, não só quem clicou agora.
+  // D286 fase 2: o "último convite" é GET /presentation-invite/last (messaging:read) e o convite é
+  // POST …/presentation-invite (messaging:send). Sem a célula, nem consulta nem botão.
+  const inviteSendGate = useActionGate('messaging', 'send');
+  const inviteLastGate = useActionGate('messaging', 'read');
+  const [lastInviteByWorker, setLastInviteByWorker] = usePresentationInviteLast(workers.map((w) => w.id), inviteLastGate.allowed);
+  const handlePresentationInvite = useCallback(async (workerId: string) => {
+    setInviteByWorker((prev) => ({ ...prev, [workerId]: { status: 'sending' } }));
+    try {
+      const r = await AdminPresentationInviteApiService.invite(workerId, 'workers_list');
+      if (r.status === 'queued') {
+        setLastInviteByWorker((prev) => ({ ...prev, [workerId]: { at: new Date().toISOString(), by: null } }));
+        setInviteByWorker((prev) => ({ ...prev, [workerId]: { status: 'queued' } }));
+      } else {
+        setInviteByWorker((prev) => ({ ...prev, [workerId]: { status: 'skipped', detail: r.skipReason } }));
+      }
+    } catch (err) {
+      setInviteByWorker((prev) => ({ ...prev, [workerId]: { status: 'error', detail: err instanceof Error ? err.message : null } }));
+    }
+  }, [setLastInviteByWorker]);
 
   return (
     <PageContainer>
@@ -209,8 +236,13 @@ export function AdminWorkersPage(): JSX.Element {
                 {syncMessage.text}
               </Typography>
             )}
+            {/* GET /workers/export → worker:export (o export já redige coluna por célula no back);
+                POST /workers/sync-talentum → talentum:write. D286 fase 2: célula, não papel —
+                o `isAdmin` continua como freio de papel enquanto o engine estiver desligado. */}
             {isAdmin && (
-              <Button
+              <ActionButton
+                resource="worker"
+                action="export"
                 variant="outline"
                 size="md"
                 data-testid="worker-export-btn"
@@ -219,9 +251,11 @@ export function AdminWorkersPage(): JSX.Element {
               >
                 <Download className="w-4 h-4" />
                 {t('admin.workers.export.button')}
-              </Button>
+              </ActionButton>
             )}
-            <Button
+            <ActionButton
+              resource="talentum"
+              action="write"
               variant="outline"
               size="md"
               className="h-10 border-primary text-primary flex items-center justify-center gap-2"
@@ -232,7 +266,7 @@ export function AdminWorkersPage(): JSX.Element {
               {isSyncing
                 ? t('admin.workers.syncing', 'Sincronizando...')
                 : t('admin.workers.syncTalentum', 'Sincronizar Talentum')}
-            </Button>
+            </ActionButton>
           </div>
         </div>
 
@@ -272,7 +306,15 @@ export function AdminWorkersPage(): JSX.Element {
           <div className="mt-6"><TableSkeleton /></div>
         ) : (
           <div className="mt-6">
-            <WorkersTable workers={workers} onRowClick={(id) => navigate(`/admin/workers/${id}`)} />
+            <WorkersTable
+              workers={workers}
+              onRowClick={(id) => navigate(`/admin/workers/${id}`)}
+              renderAction={(row) => (
+                inviteSendGate.allowed
+                  ? <KanbanCardPresentationInvite compact onInvite={() => handlePresentationInvite(row.id)} state={inviteByWorker[row.id]} lastInvitedAt={lastInviteByWorker[row.id]?.at ?? null} />
+                  : null
+              )}
+            />
           </div>
         )}
 

@@ -57,6 +57,14 @@ jobs:
           # worker-functions; 4 + 1 no MCP). Com overwrite, o 1º deploy os APAGARIA. Antes
           # de ligar overwrite em prd: reconciliar YAML × `gcloud run services describe`
           # (e migrar os plaintext p/ secrets) em PR próprio. Listas de env: usar ';'.
+          # ⚠️ NADA DE COMENTÁRIO DENTRO DO BLOCO `env_vars` ABAIXO: a action lê CADA linha
+          #   como KEY=VALUE, então uma linha `#` vira env var de nome absurdo no serviço.
+          #   Medido em 30/08: 10 linhas de comentário viraram 15 env vars em produção (PR #265).
+          # A vírgula dos valores é ESCAPADA (`\,`) porque a action separa por vírgula e
+          #   documenta: "values that contain separators must be escaped with a backslash".
+          #   Separador alternativo (`;`) NÃO serve: os consumidores fazem `.split(',')`
+          #   (ServicePrincipalSecretManagerRepo.ts:58, ExternalMediaDownloader.ts:35).
+          # Ver docs/FOLLOWUPS.md → "MCP: env var com vírgula é partida no deploy".
           env_vars: |
             NODE_ENV=production
             MCP_ENABLED=true
@@ -64,14 +72,17 @@ jobs:
             DB_HOST=/cloudsql/${{ secrets.GCP_PROJECT_ID }}:southamerica-west1:enlite-ar-db
             DB_NAME=enlite_ar
             DB_USER=enlite_app
-            MCP_PRINCIPAL_NAMES=triage-service;claude-code
+            MCP_PRINCIPAL_NAMES=triage-service\,claude-code\,e2e-prod
             MCP_DB_RO_USER=enlite_mcp_ro
             MCP_OAUTH_ENABLED=true
             MCP_OAUTH_ISSUER_URL=https://worker-functions-mcp-byh3gvl5yq-tl.a.run.app
             CORS_ALLOWED_ORIGINS=https://worker-functions-mcp-byh3gvl5yq-tl.a.run.app
             FIREBASE_WEB_API_KEY=AIzaSyByRp-NCY0m12iEoKyuIrV6vR49MZateXI
             FIREBASE_WEB_AUTH_DOMAIN=enlite-prd.firebaseapp.com
-            ALLOWED_MEDIA_HOSTS=api.twilio.com;*.twilio.com;chatwoot.enlite.health
+            ALLOWED_MEDIA_HOSTS=api.twilio.com\,*.twilio.com\,chatwoot.enlite.health
+            HANDOVER_NOTIFY_ENABLED=true
+            PERISKOPE_GROUP_RECRUITMENT_ID=120363334377379340@g.us
+            PERISKOPE_NOTE_AUTHOR=enlite@enlite.health
           secrets: |
             DB_PASSWORD=enlite-ar-db-password:latest
             INTERNAL_TOKEN_SECRET=internal-token-secret:latest

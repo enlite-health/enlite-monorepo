@@ -1,13 +1,16 @@
 import { useTranslation } from 'react-i18next';
 
-export type WorkerTab = 'encuadres' | 'documents' | 'availability' | 'financial' | 'history';
+import { WORKER_TABS, type WorkerTab } from './workerTabs';
+
+export type { WorkerTab } from './workerTabs';
 
 interface WorkerProfileTabsProps {
   activeTab: WorkerTab;
   onTabChange: (tab: WorkerTab) => void;
+  /** D286: só as abas com algum container legível (ou sem container). Sem a prop, todas. */
+  visibleTabs?: readonly WorkerTab[];
 }
 
-const TABS: WorkerTab[] = ['encuadres', 'documents', 'availability', 'financial', 'history'];
 
 const TAB_I18N_KEYS: Record<WorkerTab, string> = {
   encuadres: 'admin.workerDetail.tabs.encuadres',
@@ -17,12 +20,13 @@ const TAB_I18N_KEYS: Record<WorkerTab, string> = {
   history: 'admin.workerDetail.tabs.history',
 };
 
-export function WorkerProfileTabs({ activeTab, onTabChange }: WorkerProfileTabsProps) {
+export function WorkerProfileTabs({ activeTab, onTabChange, visibleTabs }: WorkerProfileTabsProps) {
   const { t } = useTranslation();
+  const tabs = visibleTabs ? WORKER_TABS.filter((tab) => visibleTabs.includes(tab)) : WORKER_TABS;
 
   return (
     <div className="flex items-center gap-8 flex-wrap">
-      {TABS.map((tab) => (
+      {tabs.map((tab) => (
         <button
           key={tab}
           onClick={() => onTabChange(tab)}

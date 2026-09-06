@@ -1,48 +1,34 @@
 import { useTranslation } from 'react-i18next';
 
-export type PatientTab =
-  | 'clinicalData'
-  | 'supportNetwork'
-  | 'contractedService'
-  | 'vacancies'
-  | 'financialData'
-  | 'matching'
-  | 'appointments'
-  | 'history';
+import { PATIENT_TABS, type PatientTab } from './patientTabs';
+export type { PatientTab };
 
 interface PatientProfileTabsProps {
   activeTab: PatientTab;
   onTabChange: (tab: PatientTab) => void;
+  /**
+   * D286: as abas que a pessoa PODE ver — uma aba existe se algum container dela for legível
+   * (`containersVisibleFor`). Sem a prop, todas (o comportamento de antes, e o do engine OFF).
+   */
+  visibleTabs?: readonly PatientTab[];
 }
-
-const TABS: PatientTab[] = [
-  'clinicalData',
-  'supportNetwork',
-  'contractedService',
-  'vacancies',
-  'financialData',
-  'matching',
-  'appointments',
-  'history',
-];
 
 const TAB_I18N_KEYS: Record<PatientTab, string> = {
   clinicalData: 'admin.patients.detail.tabs.clinicalData',
   supportNetwork: 'admin.patients.detail.tabs.supportNetwork',
   contractedService: 'admin.patients.detail.tabs.contractedService',
   vacancies: 'admin.patients.detail.tabs.vacancies',
-  financialData: 'admin.patients.detail.tabs.financialData',
   matching: 'admin.patients.detail.tabs.matching',
-  appointments: 'admin.patients.detail.tabs.appointments',
   history: 'admin.patients.detail.tabs.history',
 };
 
-export function PatientProfileTabs({ activeTab, onTabChange }: PatientProfileTabsProps) {
+export function PatientProfileTabs({ activeTab, onTabChange, visibleTabs }: PatientProfileTabsProps) {
   const { t } = useTranslation();
+  const tabs = visibleTabs ? PATIENT_TABS.filter((tab) => visibleTabs.includes(tab)) : PATIENT_TABS;
 
   return (
-    <div className="flex items-center gap-4 flex-wrap overflow-x-auto">
-      {TABS.map((tab) => (
+    <div className="flex items-center gap-4 flex-wrap overflow-x-auto" data-testid="patient-profile-tabs">
+      {tabs.map((tab) => (
         <button
           key={tab}
           onClick={() => onTabChange(tab)}

@@ -39,6 +39,18 @@ export interface PatientAddressCreateInput {
   address_formatted: string;
   address_raw?: string;
   address_type: string;
+  /** Spec 012, US-B2 — logística por endereço (mig 316). Zona = `neighborhood` (lex C2.7). */
+  neighborhood?: string;
+  logistics_corridor?: string;
+  /** Texto livre sobre o domicílio — mascarado no Clarity, teto 2000 no servidor. */
+  access_notes?: string;
+}
+
+/** Body de PATCH /api/admin/patients/:id/addresses/:addressId — só a logística por endereço (spec 012, US-B2). */
+export interface PatientAddressLogisticsPayload {
+  neighborhood?: string | null;
+  logistics_corridor?: string | null;
+  access_notes?: string | null;
 }
 
 export interface PatientAddressRow {

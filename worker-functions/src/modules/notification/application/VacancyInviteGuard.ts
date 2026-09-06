@@ -7,9 +7,44 @@ const SLUG_INCOMPLETE = 'ar_vacancy_match_incomplete';
 // Configurável por env; pausa reversível (NÃO é opt-out permanente).
 const MAX_UNANSWERED = Number(process.env.MANUAL_INVITE_MAX_UNANSWERED ?? 3);
 
+// Janela mínima entre dois REENVIOS manuais para a mesma pessoa na mesma vaga
+// (botão "Reenviar" da tarjeta — planning 26/08, REQ-08). Horas, configurável.
+export const RESEND_COOLDOWN_HOURS = Number(process.env.MANUAL_RESEND_COOLDOWN_HOURS ?? 24);
+
+/**
+ * FONTE ÚNICA da janela de reenvio (D200.1): a mesma expressão decide o 422 do
+ * guard E o `resendBlockedReason` que o funil manda ao card — assim o botão
+ * nunca fica habilitado onde o clique seria recusado. Devolve o instante em que
+ * a janela ABRE (último envio + janela) ou NULL quando não há envio na janela.
+ *
+ * `hoursParam` é o placeholder da janela em horas (ex.: '$3'); os outros dois
+ * são expressões SQL do worker e da vaga (placeholder ou coluna).
+ */
+export function resendCooldownUntilSql(workerExpr: string, jobExpr: string, hoursParam: string): string {
+  return `(SELECT MAX(dispatched_at) + (${hoursParam} * INTERVAL '1 hour')
+    FROM whatsapp_bulk_dispatch_logs
+    WHERE worker_id = ${workerExpr}
+      AND job_posting_id = ${jobExpr}
+      AND status = 'sent'
+      AND dispatched_at > NOW() - (${hoursParam} * INTERVAL '1 hour'))`;
+}
+
+export type VacancyInviteMode = 'invite' | 'resend';
+
+export interface VacancyInviteGuardOptions {
+  /**
+   * `invite` (default): as 4 travas do disparo manual.
+   * `resend`: reenvio EXPLÍCITO pela recrutadora (botão na tarjeta). Mantém
+   * opt-out e o throttle de não-resposta; troca o cooldown global de 3 dias e a
+   * idempotência de 7 dias — que por definição negariam todo reenvio — por um
+   * cooldown de RESEND_COOLDOWN_HOURS entre reenvios ao mesmo worker×vaga.
+   */
+  mode?: VacancyInviteMode;
+}
+
 export type VacancyInviteGuardResult =
   | { allowed: true }
-  | { allowed: false; code: string; detail: string };
+  | { allowed: false; code: string; detail: string; until?: string };
 
 /**
  * Guard reutilizável para o disparo INDIVIDUAL MANUAL de convite de vaga.
@@ -25,7 +60,9 @@ export async function assertVacancyInviteAllowed(
   db: Pool,
   workerId: string,
   jobPostingId: string,
+  options: VacancyInviteGuardOptions = {},
 ): Promise<VacancyInviteGuardResult> {
+  const mode: VacancyInviteMode = options.mode ?? 'invite';
   // Check 1 — opt-out: worker pediu pra não receber mensagens
   const optOutRes = await db.query<{ exists: boolean }>(
     `SELECT EXISTS(
@@ -40,6 +77,24 @@ export async function assertVacancyInviteAllowed(
       code: 'OPTED_OUT',
       detail: 'Worker pediu para não receber mensagens (opt-out).',
     };
+  }
+
+  if (mode === 'resend') {
+    // Reenvio explícito: só a janela entre reenvios ao MESMO worker×vaga.
+    const resendRes = await db.query<{ until: Date | string | null }>(
+      `SELECT ${resendCooldownUntilSql('$1', '$2', '$3')} AS until`,
+      [workerId, jobPostingId, RESEND_COOLDOWN_HOURS],
+    );
+    const until = resendRes.rows[0]?.until ?? null;
+    if (until) {
+      return {
+        allowed: false,
+        code: 'RESEND_COOLDOWN',
+        detail: `Já houve um envio para esta pessoa nesta vaga nas últimas ${RESEND_COOLDOWN_HOURS} horas.`,
+        until: new Date(until).toISOString(),
+      };
+    }
+    return assertNotThrottled(db, workerId);
   }
 
   // Check 2 — cooldown global: worker recebeu qualquer msg nos últimos 3 dias
@@ -87,10 +142,16 @@ export async function assertVacancyInviteAllowed(
     };
   }
 
-  // Check 4 — throttle suave de não-resposta (o que protege o score):
-  // pausa reversível se o worker já acumulou convites de vaga sem NUNCA
-  // responder (nenhuma candidatura saiu de INVITED). NÃO escreve opt-out,
-  // NÃO é bloqueio permanente — só barra o envio agora.
+  return assertNotThrottled(db, workerId);
+}
+
+/**
+ * Check 4 — throttle suave de não-resposta (o que protege o score):
+ * pausa reversível se o worker já acumulou convites de vaga sem NUNCA
+ * responder (nenhuma candidatura saiu de INVITED). NÃO escreve opt-out,
+ * NÃO é bloqueio permanente — só barra o envio agora. Vale para convite E reenvio.
+ */
+async function assertNotThrottled(db: Pool, workerId: string): Promise<VacancyInviteGuardResult> {
   const unansweredRes = await db.query<{ n: number }>(
     `SELECT count(*)::int AS n
      FROM whatsapp_bulk_dispatch_logs

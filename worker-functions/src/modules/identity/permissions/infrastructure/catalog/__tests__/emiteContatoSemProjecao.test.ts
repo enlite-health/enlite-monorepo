@@ -127,6 +127,26 @@ describe('C4 — contato de prestador não sai sem passar pela projeção', () =
     expect(analisar(rotaCerta).emiteContatoSemProjecao).toBe(false);
   });
 
+  it('CONTROLE NEGATIVO — a ficha por container (D286 fase 2) também é projeção reconhecida', () => {
+    const ficha = `
+      const reads = workerContainerReadsOf(cells);
+      const nome = reads.contact ? await kms.decrypt(w.first_name_encrypted) : null;
+      res.status(200).json({ success: true, data: { nome } });
+    `;
+    expect(analisar(ficha).emiteContatoSemProjecao).toBe(false);
+  });
+
+  it('CONTROLE POSITIVO — helper novo que emite o cifrado por um "reads" caseiro é ACUSADO', () => {
+    // O que fecha o falso negativo que deixou o mapa passar: decidir "antes do KMS" com um objeto
+    // próprio, sem passar por nenhuma das duas projeções, não é projeção.
+    const caseiro = `
+      const reads = { contact: cells?.includes('worker_contact:read') ?? true };
+      const nome = reads.contact ? await kms.decrypt(w.first_name_encrypted) : null;
+      res.status(200).json({ success: true, data: { nome } });
+    `;
+    expect(analisar(caseiro).emiteContatoSemProjecao).toBe(true);
+  });
+
   it('quem cita a coluna mas NÃO responde HTTP não é alvo — repositório não emite', () => {
     const repositorio = `
       export class WorkerRepository {

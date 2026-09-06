@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within, fireEvent } from '@testing-library/react';
+import { render, screen, within, fireEvent, act, waitFor } from '@testing-library/react';
 import { KanbanBoard } from '../KanbanBoard';
 import type { FunnelStages } from '@hooks/admin/useWJAFunnel';
 
@@ -26,9 +26,21 @@ vi.mock('react-i18next', () => ({
 // ── dnd-kit mocks ────────────────────────────────────────────────────────────
 let droppableIds: { id: string; disabled: boolean }[] = [];
 let draggableIds: { id: string; disabled: boolean }[] = [];
+// Capturado do DndContext real (KanbanBoardShell) — permite simular o INÍCIO
+// do arrasto sem depender de pointer events reais do dnd-kit em jsdom.
+let capturedOnDragStart: ((e: { active: { id: string } }) => void) | null = null;
 
 vi.mock('@dnd-kit/core', () => ({
-  DndContext: ({ children }: { children: React.ReactNode }) => <div data-testid="dnd-context">{children}</div>,
+  DndContext: ({
+    children,
+    onDragStart,
+  }: {
+    children: React.ReactNode;
+    onDragStart?: (e: { active: { id: string } }) => void;
+  }) => {
+    capturedOnDragStart = onDragStart ?? null;
+    return <div data-testid="dnd-context">{children}</div>;
+  },
   DragOverlay: ({ children }: { children: React.ReactNode }) => <div data-testid="drag-overlay">{children}</div>,
   useSensor: vi.fn(),
   useSensors: vi.fn(() => []),
@@ -62,6 +74,7 @@ vi.mock('lucide-react', () => ({
   CalendarClock: (props: Record<string, unknown>) => <svg data-testid="icon-calendar-clock" {...props} />,
   MapPin: (props: Record<string, unknown>) => <svg data-testid="icon-map-pin" {...props} />,
   MessageSquare: (props: Record<string, unknown>) => <svg data-testid="icon-message-square" {...props} />,
+  Send: (props: Record<string, unknown>) => <svg data-testid="icon-send" {...props} />,
   Phone: (props: Record<string, unknown>) => <svg data-testid="icon-phone" {...props} />,
   Star: (props: Record<string, unknown>) => <svg data-testid="icon-star" {...props} />,
   ArrowRightLeft: (props: Record<string, unknown>) => <svg data-testid="icon-move" {...props} />,
@@ -72,8 +85,20 @@ vi.mock('lucide-react', () => ({
 
 // ── ContactNotesModal mock — evita montar o hook/data-fetching real ──────────
 vi.mock('@presentation/components/features/admin/VacancyDetail/Funnel/ContactNotesModal', () => ({
-  ContactNotesModal: ({ vacancyId, workerId, workerName }: { vacancyId: string; workerId: string; workerName: string | null }) => (
-    <div data-testid="contact-notes-modal" data-vacancy-id={vacancyId} data-worker-id={workerId} data-worker-name={workerName ?? ''} />
+  ContactNotesModal: ({
+    vacancyId,
+    workerId,
+    workerName,
+    onClose,
+  }: {
+    vacancyId: string;
+    workerId: string;
+    workerName: string | null;
+    onClose: () => void;
+  }) => (
+    <div data-testid="contact-notes-modal" data-vacancy-id={vacancyId} data-worker-id={workerId} data-worker-name={workerName ?? ''}>
+      <button data-testid="contact-notes-close" onClick={onClose}>fechar</button>
+    </div>
   ),
 }));
 
@@ -123,6 +148,7 @@ const noop = vi.fn(async () => null);
 beforeEach(() => {
   droppableIds = [];
   draggableIds = [];
+  capturedOnDragStart = null;
   vi.clearAllMocks();
 });
 
@@ -294,32 +320,33 @@ describe('KanbanBoard — edge cases', () => {
 
 // ── Worker Name Navigation ──────────────────────────────────────────────────
 
-describe('KanbanBoard — worker name navigation', () => {
-  it('navigates to worker detail page when clicking worker name', () => {
+describe('KanbanBoard — worker name opens the profile in a new tab', () => {
+  it('renders the worker name as a link to /admin/workers/:id with target=_blank', () => {
     const stages = emptyStages();
     stages.COMPLETED = [makeEncuadre({ id: 'enc-nav', workerId: 'worker-99', workerName: 'Carlos Test' })];
 
     render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
-    const button = screen.getByRole('button', { name: 'Carlos Test' });
-    fireEvent.click(button);
-
-    expect(mockNavigate).toHaveBeenCalledTimes(1);
-    expect(mockNavigate).toHaveBeenCalledWith('/admin/workers/worker-99');
+    const link = screen.getByRole('link', { name: 'Carlos Test' });
+    expect(link).toHaveAttribute('href', '/admin/workers/worker-99');
+    expect(link).toHaveAttribute('target', '_blank');
+    // Não navega na mesma aba: nenhum navigate() é chamado
+    fireEvent.click(link);
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it('does NOT render clickable name when workerId is null', () => {
+  it('does NOT render a link when workerId is null', () => {
     const stages = emptyStages();
     stages.COMPLETED = [makeEncuadre({ id: 'enc-nolink', workerId: null, workerName: 'No Link' })];
 
     render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
-    expect(screen.queryByRole('button', { name: 'No Link' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'No Link' })).not.toBeInTheDocument();
     // Name should still render as plain text
     expect(screen.getByText('No Link')).toBeInTheDocument();
   });
 
-  it('passes workerId and onWorkerClick to cards in all columns', () => {
+  it('links the name in cards of all columns', () => {
     const stages = emptyStages();
     stages.INVITED = [makeEncuadre({ id: 'w1', workerId: 'wk-1', workerName: 'Worker A' })];
     stages.CONFIRMED = [makeEncuadre({ id: 'w2', workerId: 'wk-2', workerName: 'Worker B' })];
@@ -327,14 +354,9 @@ describe('KanbanBoard — worker name navigation', () => {
 
     render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
 
-    // All should have clickable names
-    expect(screen.getByRole('button', { name: 'Worker A' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Worker B' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Worker C' })).toBeInTheDocument();
-
-    // Click each and verify navigation
-    fireEvent.click(screen.getByRole('button', { name: 'Worker C' }));
-    expect(mockNavigate).toHaveBeenCalledWith('/admin/workers/wk-3');
+    expect(screen.getByRole('link', { name: 'Worker A' })).toHaveAttribute('href', '/admin/workers/wk-1');
+    expect(screen.getByRole('link', { name: 'Worker B' })).toHaveAttribute('href', '/admin/workers/wk-2');
+    expect(screen.getByRole('link', { name: 'Worker C' })).toHaveAttribute('href', '/admin/workers/wk-3');
   });
 });
 
@@ -697,5 +719,220 @@ describe('KanbanBoard — menu "Mover a…"', () => {
     expect(screen.queryByTestId('reject-button')).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('undismiss-button'));
     expect(onUnrejectBlocked).toHaveBeenCalledWith('ba-99');
+  });
+});
+
+// ── "Reenviar" por card (REQ-08) ───────────────────────────────────────────
+
+describe('KanbanBoard — Reenviar', () => {
+  const noopAsync = vi.fn().mockResolvedValue(null);
+
+  it('sem onResendInvite não há botão', () => {
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'c1', workerId: 'w-1', encuadreId: 'enc-1' })];
+    render(<KanbanBoard stages={stages} vacancyId="v" onMove={noopAsync} onRejectBlocked={noopAsync} onUnrejectBlocked={noopAsync} />);
+    expect(screen.queryByTestId('resend-button')).not.toBeInTheDocument();
+  });
+
+  it('card sem workerId ou sem encuadre não ganha o botão', () => {
+    const stages = emptyStages();
+    stages.COMPLETED = [
+      makeEncuadre({ id: 'no-worker', workerId: null, encuadreId: 'enc-1' }),
+      makeEncuadre({ id: 'no-enc', workerId: 'w-2', encuadreId: null }),
+    ];
+    render(<KanbanBoard stages={stages} vacancyId="v" onMove={noopAsync} onRejectBlocked={noopAsync} onUnrejectBlocked={noopAsync} onResendInvite={vi.fn()} />);
+    expect(screen.queryByTestId('resend-button')).not.toBeInTheDocument();
+  });
+
+  it('clique → chama onResendInvite(workerId) e mostra "enviado"; recusa mostra o motivo', async () => {
+    const stages = emptyStages();
+    stages.COMPLETED = [
+      makeEncuadre({ id: 'ok', workerId: 'w-ok', encuadreId: 'enc-ok', lastMessagedAt: null }),
+      makeEncuadre({ id: 'blocked', workerId: 'w-bl', encuadreId: 'enc-bl' }),
+    ];
+    const onResendInvite = vi.fn(async (workerId: string) => (workerId === 'w-bl' ? 'Ya se le reenvió' : null));
+    render(<KanbanBoard stages={stages} vacancyId="v" onMove={noopAsync} onRejectBlocked={noopAsync} onUnrejectBlocked={noopAsync} onResendInvite={onResendInvite} />);
+
+    const buttons = screen.getAllByTestId('resend-button');
+    fireEvent.click(buttons[0]);
+    expect(onResendInvite).toHaveBeenCalledWith('w-ok');
+    expect(await screen.findByText('admin.kanban.resendDone')).toBeInTheDocument();
+
+    fireEvent.click(buttons[1]);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Ya se le reenvió');
+  });
+
+  // D200.1: o motivo vem do funil (mesma janela do 422) e chega ao card — botão desabilitado ANTES do clique.
+  it('resendBlockedReason do funil desabilita o botão do card com o motivo', () => {
+    const stages = emptyStages();
+    stages.COMPLETED = [
+      makeEncuadre({
+        id: 'in-window', workerId: 'w-1', encuadreId: 'enc-1',
+        lastMessagedAt: '2026-08-28T10:00:00.000Z',
+        resendBlockedReason: { code: 'RESEND_COOLDOWN', until: '2026-08-29T10:00:00.000Z' },
+      }),
+    ];
+    const onResendInvite = vi.fn();
+    render(<KanbanBoard stages={stages} vacancyId="v" onMove={noopAsync} onRejectBlocked={noopAsync} onUnrejectBlocked={noopAsync} onResendInvite={onResendInvite} />);
+    const btn = screen.getByTestId('resend-button');
+    expect(btn).toBeDisabled();
+    expect(screen.getByTestId('resend-blocked-reason')).toHaveTextContent('admin.messaging.blocked.RESEND_COOLDOWN');
+    fireEvent.click(btn);
+    expect(onResendInvite).not.toHaveBeenCalled();
+  });
+});
+
+// ── "Rechazar" num card NÃO bloqueado (tem encuadreId) ───────────────────────
+
+describe('KanbanBoard — "Rechazar" num card com encuadreId (não bloqueado)', () => {
+  it('abre o modal de motivo e chama onMove(encuadreId, REJECTED, categoria) — não onRejectBlocked', () => {
+    const onMove = vi.fn(async () => null);
+    const onRejectBlocked = vi.fn(async () => null);
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'wja-rej', encuadreId: 'enc-rej', workerName: 'Pedro Luna' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={onMove} onRejectBlocked={onRejectBlocked} onUnrejectBlocked={noop} />);
+
+    fireEvent.click(screen.getByTestId('reject-button'));
+    expect(onMove).not.toHaveBeenCalled();
+    expect(screen.getByTestId('rejection-modal')).toBeInTheDocument();
+
+    fireEvent.click(within(screen.getByTestId('rejection-option-worker-declined')).getByRole('radio'));
+    fireEvent.click(screen.getByTestId('rejection-confirm'));
+
+    expect(onMove).toHaveBeenCalledWith('enc-rej', 'REJECTED', 'WORKER_DECLINED');
+    expect(onRejectBlocked).not.toHaveBeenCalled();
+  });
+});
+
+// ── Overlay de arrasto (card sob o cursor) ───────────────────────────────────
+
+describe('KanbanBoard — overlay de arrasto', () => {
+  it('mostra uma cópia SÓ LEITURA do card no overlay ao iniciar o arrasto (sem menu de mover)', () => {
+    const stages = emptyStages();
+    stages.INICIADO = [makeEncuadre({ id: 'enc-overlay', encuadreId: 'enc-overlay-real', workerName: 'Overlay Worker' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
+
+    expect(capturedOnDragStart).toBeTruthy();
+    act(() => {
+      capturedOnDragStart!({ active: { id: 'enc-overlay' } });
+    });
+
+    const overlay = screen.getByTestId('drag-overlay');
+    expect(within(overlay).getByText('Overlay Worker')).toBeInTheDocument();
+    // Read-only: o overlay não recebe onMoveTo/onReject/onOpenNotes.
+    expect(within(overlay).queryByTestId('move-to-button')).not.toBeInTheDocument();
+  });
+});
+
+// ── Cancelar os modais de papel e de agenda ──────────────────────────────────
+
+describe('KanbanBoard — cancelar os modais de papel e de agenda', () => {
+  it('cancelar o modal de papel (SELECTED) não chama onMove e fecha o modal', () => {
+    const onMove = vi.fn(async () => null);
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'wja-role-cancel', encuadreId: 'enc-role-cancel', workerId: 'wk-1' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={onMove} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
+
+    fireEvent.click(screen.getByTestId('move-to-button'));
+    fireEvent.click(screen.getByTestId('move-to-option-SELECTED'));
+    expect(screen.getByTestId('role-modal')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('role-cancel'));
+
+    expect(screen.queryByTestId('role-modal')).not.toBeInTheDocument();
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it('cancelar o modal de agenda (CONFIRMED) não chama onMove e fecha o modal', () => {
+    const onMove = vi.fn(async () => null);
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'wja-sched-cancel', encuadreId: 'enc-sched-cancel', workerId: 'wk-1' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={onMove} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
+
+    fireEvent.click(screen.getByTestId('move-to-button'));
+    fireEvent.click(screen.getByTestId('move-to-option-CONFIRMED'));
+    expect(screen.getByTestId('interview-schedule-modal')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('interview-schedule-cancel'));
+
+    expect(screen.queryByTestId('interview-schedule-modal')).not.toBeInTheDocument();
+    expect(onMove).not.toHaveBeenCalled();
+  });
+});
+
+// ── Fechar o modal de comentários ─────────────────────────────────────────────
+
+describe('KanbanBoard — fechar o modal de comentários', () => {
+  it('fechar o ContactNotesModal remove o modal da tela', () => {
+    const stages = emptyStages();
+    stages.COMPLETED = [makeEncuadre({ id: 'wja-notes-close', workerId: 'wk-1', workerName: 'Marcia Costa' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="vac-77" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
+
+    fireEvent.click(screen.getByTestId('notes-button'));
+    expect(screen.getByTestId('contact-notes-modal')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('contact-notes-close'));
+
+    expect(screen.queryByTestId('contact-notes-modal')).not.toBeInTheDocument();
+  });
+});
+
+
+// ── REQ-09: "Invitar a reunión de presentación" na tarjeta ──────────────────────────
+const { piInvite, piLast } = vi.hoisted(() => ({ piInvite: vi.fn(), piLast: vi.fn() }));
+vi.mock('@infrastructure/http/AdminPresentationInviteApiService', () => ({
+  AdminPresentationInviteApiService: { last: (...a: unknown[]) => piLast(...a), invite: (...a: unknown[]) => piInvite(...a) },
+}));
+
+describe('KanbanBoard — convite à reunión de presentación (REQ-09)', () => {
+  const noopAsync = vi.fn().mockResolvedValue(null);
+  beforeEach(() => { piLast.mockReset(); piInvite.mockReset(); piLast.mockResolvedValue({}); });
+
+  it('sem onPresentationInvite não há botão nem consulta ao /last', () => {
+    const stages = emptyStages();
+    stages.INVITED = [makeEncuadre({ id: 'c1', workerId: 'w-1', encuadreId: 'enc-1' })];
+    render(<KanbanBoard stages={stages} vacancyId="v" onMove={noopAsync} onRejectBlocked={noopAsync} onUnrejectBlocked={noopAsync} />);
+    expect(screen.queryByTestId('presentation-invite-button')).not.toBeInTheDocument();
+    expect(piLast).not.toHaveBeenCalled();
+  });
+
+  it('com o handler: busca o último convite dos workers do board (ordenado, sem nulos) e mostra na tarjeta; card sem worker não ganha botão', async () => {
+    piLast.mockResolvedValue({ 'w-1': { at: '2026-08-29T15:00:00Z', by: 'Gabi' } });
+    const stages = emptyStages();
+    stages.INVITED = [makeEncuadre({ id: 'c1', workerId: 'w-1', encuadreId: 'enc-1' }), makeEncuadre({ id: 'c0', workerId: null, encuadreId: 'enc-0' })];
+    stages.COMPLETED = [makeEncuadre({ id: 'c2', workerId: 'w-2', encuadreId: null })];
+    render(<KanbanBoard stages={stages} vacancyId="v" onMove={noopAsync} onRejectBlocked={noopAsync} onUnrejectBlocked={noopAsync} onPresentationInvite={vi.fn()} />);
+    await waitFor(() => expect(piLast).toHaveBeenCalledWith(['w-1', 'w-2']));
+    expect(screen.getAllByTestId('presentation-invite-button')).toHaveLength(2); // w-1 e w-2 (encuadre não é exigido)
+    await waitFor(() => expect(within(screen.getByTestId('kanban-card-c1')).getByTestId('presentation-invite-last').textContent).toContain('admin.presentationInvite.lastAt'));
+    expect(within(screen.getByTestId('kanban-card-c2')).getByTestId('presentation-invite-last')).toHaveTextContent('admin.presentationInvite.never');
+  });
+
+  it('clique → queued mostra feedback e atualiza "último"; skipped mostra o motivo; erro mostra a mensagem; falha do /last não derruba a tela', async () => {
+    piLast.mockRejectedValue(new Error('down'));
+    const onPresentationInvite = vi.fn(async (workerId: string) =>
+      workerId === 'w-ok' ? { status: 'queued' as const, outboxId: 'o1' } : workerId === 'w-skip' ? { status: 'skipped' as const, skipReason: 'OPT_OUT' } : Promise.reject(new Error('boom')));
+    const stages = emptyStages();
+    stages.INVITED = [makeEncuadre({ id: 'ok', workerId: 'w-ok', encuadreId: 'e1' }), makeEncuadre({ id: 'skip', workerId: 'w-skip', encuadreId: 'e2' }), makeEncuadre({ id: 'err', workerId: 'w-err', encuadreId: 'e3' })];
+    render(<KanbanBoard stages={stages} vacancyId="v" onMove={noopAsync} onRejectBlocked={noopAsync} onUnrejectBlocked={noopAsync} onPresentationInvite={onPresentationInvite} />);
+    for (const id of ['ok', 'skip', 'err']) fireEvent.click(within(screen.getByTestId(`kanban-card-${id}`)).getByTestId('presentation-invite-button'));
+    await waitFor(() => expect(within(screen.getByTestId('kanban-card-ok')).getByTestId('presentation-invite-feedback')).toHaveTextContent('admin.presentationInvite.queued'));
+    expect(within(screen.getByTestId('kanban-card-ok')).getByTestId('presentation-invite-last').textContent).not.toContain('never');
+    await waitFor(() => expect(within(screen.getByTestId('kanban-card-skip')).getByTestId('presentation-invite-feedback')).toHaveTextContent('OPT_OUT'));
+    await waitFor(() => expect(within(screen.getByTestId('kanban-card-err')).getByTestId('presentation-invite-feedback')).toHaveTextContent('boom'));
+    expect(onPresentationInvite).toHaveBeenCalledWith('w-ok');
+  });
+
+  it('rejeição que não é Error cai no texto padrão de erro', async () => {
+    const stages = emptyStages();
+    stages.INVITED = [makeEncuadre({ id: 'err', workerId: 'w-err', encuadreId: 'e3' })];
+    render(<KanbanBoard stages={stages} vacancyId="v" onMove={noopAsync} onRejectBlocked={noopAsync} onUnrejectBlocked={noopAsync} onPresentationInvite={vi.fn().mockRejectedValue('x')} />);
+    fireEvent.click(screen.getByTestId('presentation-invite-button'));
+    await waitFor(() => expect(screen.getByTestId('presentation-invite-feedback')).toHaveTextContent('admin.presentationInvite.error'));
   });
 });

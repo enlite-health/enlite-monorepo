@@ -17,6 +17,10 @@ import type {
   ActivatePatientResult,
   PatientKanbanItem,
   PatientFunnelData,
+  UpdatePatientStatusPayload,
+  PatientStatusHistoryEntry,
+  InsuranceProvider,
+  PatientAddressLogisticsPayload,
   PatientChatIdsPayload,
   PatientChatCandidatesResult,
   PatientChatRolesResult,
@@ -309,9 +313,31 @@ export class AdminPatientsApiServiceClass {
     throw new PatientApiError(json.error || `HTTP ${response.status}`, response.status, json);
   }
 
-  /** PUT /api/admin/patients/:id/status — kanban lifecycle move. */
-  async updatePatientStatus(id: string, status: string): Promise<UpdatePatientStatusResult> {
-    return this.writeJson<UpdatePatientStatusResult>('PUT', `/api/admin/patients/${id}/status`, { status });
+  /**
+   * PUT /api/admin/patients/:id/status — Kanban (funil) e select da ficha (estado v2, spec 012).
+   * Aceita a string legada ou o payload com motivo/nota/origem. 422 com `code`
+   * (PATIENT_STATUS_TRANSITION_NOT_ALLOWED / ON_HOLD_REASON_REQUIRED) sai como PatientApiError.
+   */
+  async updatePatientStatus(id: string, status: string | UpdatePatientStatusPayload): Promise<UpdatePatientStatusResult> {
+    const body: UpdatePatientStatusPayload = typeof status === 'string' ? { status } : status;
+    return this.writeJson<UpdatePatientStatusResult>('PUT', `/api/admin/patients/${id}/status`, body);
+  }
+
+  /** GET /api/admin/patients/:id/status-history — a aba Historial (spec 012). */
+  async getPatientStatusHistory(id: string): Promise<PatientStatusHistoryEntry[]> {
+    const { history } = await this.request<{ history: PatientStatusHistoryEntry[] }>('GET', `/api/admin/patients/${id}/status-history`);
+    return history;
+  }
+
+  /** GET /api/admin/catalogs/insurance-providers — o catálogo vivo (editável sem deploy). */
+  async listInsuranceProviders(): Promise<InsuranceProvider[]> {
+    const { providers } = await this.request<{ providers: InsuranceProvider[] }>('GET', '/api/admin/catalogs/insurance-providers');
+    return providers;
+  }
+
+  /** PATCH /api/admin/patients/:id/addresses/:addressId — logística por endereço (spec 012, US-B2). */
+  async updatePatientAddressLogistics(patientId: string, addressId: string, payload: PatientAddressLogisticsPayload): Promise<{ id: string }> {
+    return this.writeJson<{ id: string }>('PATCH', `/api/admin/patients/${patientId}/addresses/${addressId}`, payload);
   }
 
   /**
@@ -331,17 +357,23 @@ export class AdminPatientsApiServiceClass {
    */
   async listPatientsForKanban(country?: string): Promise<PatientKanbanItem[]> {
     const { data } = await this.listPatients({ limit: '500', offset: '0', country });
-    return (data ?? []).map((p: any): PatientKanbanItem => ({
+    // `listPatients` já garante `data` como array (`json.data ?? []`).
+    return data.map((p: any): PatientKanbanItem => ({
       id: p.id,
       firstName: p.firstName ?? null,
       lastName: p.lastName ?? null,
       caseNumber: p.caseNumber ?? null,
       dependencyLevel: p.dependencyLevel ?? null,
       status: p.status ?? null,
+      // Spec 012: o board agrupa por funil de admissão; API anterior à 313 → DONE.
+      admissionStatus: p.admissionStatus ?? 'DONE',
       stageEnteredAt: p.stageEnteredAt ?? null,
       hoursInStage: p.hoursInStage ?? null,
       slaBreached: p.slaBreached ?? false,
       slaThresholdHours: p.slaThresholdHours ?? null,
+      responsibleName: p.responsibleName ?? null,
+      leadContactEmailMasked: p.leadContactEmailMasked ?? null,
+      leadContactIsResponsible: p.leadContactIsResponsible ?? false,
     }));
   }
 

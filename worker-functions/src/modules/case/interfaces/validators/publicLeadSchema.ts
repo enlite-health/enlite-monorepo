@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { Profession } from '../../../worker/domain/enums/Profession';
 import { ADMISSION_COUNTRY_CODES } from '../../../matching/domain/admissionCountries';
+import { countNameParts } from '../../domain/fullName';
 
 /**
  * publicLeadSchema — validates the body of POST /api/public/v1/leads.
@@ -49,7 +50,21 @@ export const publicLeadSchema = z
     requesterType: z.enum(['patient', 'responsible']),
     email: z.string().trim().toLowerCase().email(),
     phone: z.string().trim().min(1, { message: 'phone is required' }),
-    name: z.string().trim().min(1).optional(),
+    /** Nome completo de quem preenche, em UM campo (D249). Obrigatório desde
+     * 02/09: sem ele o lead vira um card indistinguível e ninguém consegue
+     * chamar a pessoa pelo nome dentro do SLA de 24h. Reverte a `2026-07-27a#DEC-02`
+     * (Diego, 27/07), revalidada em call de produto de 02/09. A quebra em
+     * nome/sobrenome é do `CreateLeadUseCase` — o schema só garante que veio algo. */
+    name: z
+      .string()
+      .trim()
+      .min(1, { message: 'name is required' })
+      // Nome E sobrenome (Gabriel, 02/09): um termo só não identifica ninguém
+      // num board com dezenas de cards. A regra é do SERVIDOR, não só da tela —
+      // este endpoint é público e um POST direto passa por fora do formulário.
+      .refine((v) => countNameParts(v) >= 2, {
+        message: 'name must contain first and last name',
+      }),
     /** Country the lead belongs to (drives admission scheduling AND the legal
      * regime — LGPD vs Ley 25.326). REQUIRED with no default: a lead silently
      * classified under the wrong jurisdiction is a compliance bug (D108/F0).

@@ -174,7 +174,11 @@ describe('useAutoSave', () => {
     expect(saveFn2).toHaveBeenCalledTimes(1);
   });
 
-  it('should clean up timeout on unmount', async () => {
+  // Este teste travava o comportamento ANTIGO ("não salva depois do unmount") — e o
+  // comportamento antigo era o defeito. Estas telas não têm botão Guardar: o autosave
+  // é a única chance de persistir, então quem mexe num campo e troca de aba dentro da
+  // janela de debounce perdia o que acabou de digitar, sem erro e sem aviso.
+  it('envia o save pendente ao desmontar, em vez de descartá-lo', async () => {
     const saveFn = vi.fn().mockResolvedValue(undefined);
     const { result, unmount } = renderHook(() => useAutoSave(saveFn, 500));
 
@@ -182,14 +186,39 @@ describe('useAutoSave', () => {
       result.current();
     });
 
-    unmount();
-
+    // Desmonta ANTES de o debounce vencer — o caso que perdia dado.
     await act(async () => {
-      vi.advanceTimersByTime(500);
+      unmount();
     });
 
-    // Save should not fire after unmount
+    expect(saveFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('não dispara save nenhum ao desmontar quando nada estava pendente', async () => {
+    const saveFn = vi.fn().mockResolvedValue(undefined);
+    const { unmount } = renderHook(() => useAutoSave(saveFn, 500));
+
+    await act(async () => {
+      unmount();
+    });
+
     expect(saveFn).not.toHaveBeenCalled();
+  });
+
+  it('engole erro do save no unmount (não há mais tela para mostrar toast)', async () => {
+    const saveFn = vi.fn().mockRejectedValue(new Error('boom'));
+    const onError = vi.fn();
+    const { result, unmount } = renderHook(() => useAutoSave(saveFn, 500, onError));
+
+    act(() => {
+      result.current();
+    });
+
+    await act(async () => {
+      unmount();
+    });
+
+    expect(saveFn).toHaveBeenCalledTimes(1);
   });
 
   it('should respect custom delay parameter', async () => {

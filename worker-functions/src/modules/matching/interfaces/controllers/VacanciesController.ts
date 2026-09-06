@@ -11,6 +11,7 @@ import { AdminVacancyDetailSchema } from '../schemas/AdminVacancyDetailSchema';
 import { reportError } from '@shared/logging';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
 import { cellsOfRequest, projectWorkerFields, ProjecaoSemDecryptorError } from '@modules/identity/permissions';
+import { canSearchVacanciesByPatientName, projectPatientInVacancy } from '../../application/patientInVacancyProjection';
 
 /**
  * Decryptor da rota `GET /vacancies/:id`: os campos de prestador aqui já vêm em
@@ -57,6 +58,8 @@ export class VacanciesController {
         limit = '20', offset = '0',
       } = req.query;
 
+      // D286 fase 2: nome do paciente na lista segue `patient_identity:read` — inclusive na BUSCA.
+      const cellsDaLista = cellsOfRequest(req);
       const { baseQuery, params, paramIndex } = buildListVacanciesQuery({
         search, status, priority,
         workerType: worker_type,
@@ -68,7 +71,7 @@ export class VacanciesController {
         timeTo: time_to,
         limit: limit as string,
         offset: offset as string,
-      });
+      }, { searchByPatientName: canSearchVacanciesByPatientName(cellsDaLista) });
 
       const countQuery = `SELECT COUNT(*) as total FROM (${baseQuery}) as count_query`;
       const countResult = await this.db.query(countQuery, params);
@@ -81,7 +84,7 @@ export class VacanciesController {
       params.push(parseInt(limit as string), parseInt(offset as string));
 
       const result = await this.db.query(finalQuery, params);
-      const vacancies = (result.rows as VacancyListRow[]).map(mapVacancyListRow);
+      const vacancies = (result.rows as VacancyListRow[]).map((r) => mapVacancyListRow(projectPatientInVacancy(r, cellsDaLista)));
 
       res.status(200).json({
         success: true,
@@ -263,11 +266,14 @@ export class VacanciesController {
           )
         : row.encuadres;
 
-      const normalized = {
+      // D286 fase 2: nome, endereço (com zona/cidade/bairro) e nível de dependência do PACIENTE
+      // seguem a célula do paciente (identidade, endereço, clínica), não a da vaga — a mesma chave
+      // que vale na ficha dele e no mapa (`lex` fase 2, P3 e condição 7).
+      const normalized = projectPatientInVacancy({
         ...row,
         encuadres,
         schedule: normalizeSchedule(row.schedule),
-      };
+      }, cells);
 
       // Observe-only contract check: log shape drift without breaking requests.
       // After a stable window with no drift logged, promote to .parse() (strict).
@@ -333,7 +339,13 @@ export class VacanciesController {
           )
         ORDER BY p.case_number DESC
       `);
-      res.status(200).json({ success: true, data: result.rows });
+      // Nível de dependência é dado de SAÚDE (`lex` fase 2, P3): sai só com `patient_clinical:read`.
+      const cellsDoSelect = cellsOfRequest(req);
+      const data = result.rows.map((r: { caseNumber: number; patientId: string; dependencyLevel: string }) => {
+        const projetado = projectPatientInVacancy({ dependency_level: r.dependencyLevel }, cellsDoSelect);
+        return { ...r, dependencyLevel: projetado.dependency_level ?? '' };
+      });
+      res.status(200).json({ success: true, data });
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
       reportError(

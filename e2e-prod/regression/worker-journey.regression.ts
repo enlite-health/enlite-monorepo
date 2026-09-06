@@ -34,15 +34,24 @@
  */
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { newAdminApiContext } from '../src/support/adminApi';
-import { signUpWorker, newWorkerApiContext, deleteWorkerAuthAccount } from '../src/support/workerApi';
 import {
-  readTinyDocumentPng,
-  uniqueArMobile,
-  buildCaregiverGeneralInfo,
-  buildServiceArea,
-  buildAvailability,
-  uploadWorkerDocument,
-} from '../src/support/workerRegistration';
+  signUpWorker,
+  signInWorker,
+  newWorkerApiContext,
+  deleteWorkerAuthAccount,
+} from '../src/support/workerApi';
+// A FATIA 2 não monta mais payload nem sobe documento por API — quem faz isso
+// agora é a TELA (workerRegistrationUi). Sobra só o gerador de telefone único.
+import { uniqueArMobile } from '../src/support/workerRegistration';
+import {
+  registerWorkerViaUi,
+  openWorkerProfile,
+  fillGeneralInfoViaUi,
+  fillServiceAreaViaUi,
+  fillAvailabilityViaUi,
+  uploadDocumentsViaUi,
+  findWorkerIdByEmail,
+} from '../src/support/workerRegistrationUi';
 
 /**
  * Senha throwaway só-de-teste. NÃO é segredo de valor (a conta é um alias descartável
@@ -202,6 +211,8 @@ interface WorkerDetailF2 {
     id: string;
     status: string;
     isTest: boolean;
+    /** Lido de volta para provar que o valor escolhido NA TELA chegou ao banco. */
+    yearsExperience?: string | null;
     // Ainda NÃO retornados por buildWorkerDetailResponse — presença é o gatilho do
     // assert direto de ana_care. Tipados como opcionais para o capability-gate.
     anaCareId?: string | null;
@@ -218,6 +229,16 @@ test.describe('Jornada worker — FATIA 2 (cadastro → REGISTERED como is_test,
   test.afterAll(async () => {
     // Teardown best-effort — afterAll NUNCA falha por causa de limpeza.
     if (workerIdToken) await deleteWorkerAuthAccount(workerIdToken);
+    try {
+      // A conta nasce na TELA, então ela pode existir mesmo se o teste morreu antes
+      // do passo que marca is_test — e o cleanup só apaga o que está marcado. Sem
+      // esta rede, uma falha no meio deixa worker REAL em prod (aconteceu 2×).
+      adminCtx ??= await newAdminApiContext();
+      const orphanId = workerId ?? (await findWorkerIdByEmail(adminCtx, WORKER_EMAIL_F2));
+      await adminCtx.patch(`/api/admin/workers/${orphanId}/test-flag`, { data: { isTest: true } });
+    } catch {
+      // Sem worker para marcar (o cadastro nem chegou a criar) — nada a limpar.
+    }
     if (adminCtx) {
       try {
         await adminCtx.post('/api/admin/test-fixtures/cleanup', { data: { onlyTestWorkers: true } });
@@ -229,33 +250,24 @@ test.describe('Jornada worker — FATIA 2 (cadastro → REGISTERED como is_test,
     await adminCtx?.dispose();
   });
 
-  test('completa o cadastro de um worker is_test até REGISTERED e confirma que o espelho AnaCare foi barrado', async () => {
+  test('completa o cadastro NA TELA até REGISTERED e confirma que o espelho AnaCare foi barrado', async ({ page }) => {
     // Guard: sem credenciais de admin/Firebase esta fatia não roda (writes reais em prod).
     test.skip(
       !process.env.E2E_ADMIN_EMAIL || !process.env.FIREBASE_API_KEY,
       'requer E2E_ADMIN_EMAIL + FIREBASE_API_KEY (writes autenticados em prod)',
     );
 
-    // ── PASSO 1: signup Firebase do worker fresco ──
-    const { idToken, localId } = await signUpWorker(WORKER_EMAIL_F2, WORKER_PASSWORD);
-    workerIdToken = idToken;
-    workerCtx = await newWorkerApiContext(idToken);
+    // ── PASSO 1: a conta nasce NA TELA de cadastro (/register) ──
+    // A RegisterPage cria a conta Firebase e chama `initWorker` sozinha; parar em
+    // /login é a prova de que a linha em `workers` existe. Sem WhatsApp de propósito:
+    // com telefone o init pode cair no ramo claim_pending (OTP), que é outro fluxo.
+    await registerWorkerViaUi(page, WORKER_EMAIL_F2, WORKER_PASSWORD);
 
-    // ── PASSO 2: POST /api/workers/init (sem phone → sem caminho de claim/OTP) ──
-    const initRes = await workerCtx.post('/api/workers/init', {
-      data: { authUid: localId, email: WORKER_EMAIL_F2, lgpdOptIn: true, country: 'AR' },
-    });
-    expect(initRes.status(), 'POST /api/workers/init deve criar o worker (201)').toBe(201);
-    const initBody = (await initRes.json()) as { success: boolean; data: { status: string; worker: { id: string } } };
-    expect(initBody.success).toBe(true);
-    expect(initBody.data.status, 'init retorna status "ok"').toBe('ok');
-    workerId = initBody.data.worker.id;
-    expect(workerId, 'init retorna o id do worker criado').toBeTruthy();
-
-    // ── PASSO 3: ADMIN marca is_test=true IMEDIATAMENTE (antes de qualquer save) ──
-    // Este é o passo de segurança: garante que quando o worker virar REGISTERED, o
-    // gate is_test já esteja no banco e o espelho AnaCare seja pulado.
+    // ── PASSO 2: ADMIN marca is_test IMEDIATAMENTE ──
+    // Antes de qualquer save que possa levar a REGISTERED — é o que garante que o
+    // gate do MirrorWorkerService já esteja no banco e o espelho AnaCare seja pulado.
     adminCtx = await newAdminApiContext();
+    workerId = await findWorkerIdByEmail(adminCtx, WORKER_EMAIL_F2);
     const flagRes = await adminCtx.patch(`/api/admin/workers/${workerId}/test-flag`, {
       data: { isTest: true },
     });
@@ -263,31 +275,32 @@ test.describe('Jornada worker — FATIA 2 (cadastro → REGISTERED como is_test,
     const flagBody = (await flagRes.json()) as { success: boolean; data: { isTest: boolean } };
     expect(flagBody.data.isTest, 'test-flag ecoa isTest=true').toBe(true);
 
-    // ── PASSO 4: general-info (todos os campos pessoais do gate + phone único) ──
-    const phone = uniqueArMobile();
-    const giRes = await workerCtx.put('/api/workers/me/general-info', {
-      data: buildCaregiverGeneralInfo(phone),
+    // Token do worker só para o TEARDOWN (apagar a conta Firebase no afterAll).
+    // Não é usado para gravar nada: quem grava, daqui em diante, é a tela.
+    const { idToken } = await signInWorker(WORKER_EMAIL_F2, WORKER_PASSWORD);
+    workerIdToken = idToken;
+
+    // ── PASSO 3: o prestador abre o próprio perfil (o cadastro já autenticou) ──
+    await openWorkerProfile(page);
+
+    // ── PASSO 4: aba "Información General" — campo a campo, cada um com seu save ──
+    // Nenhum blur de resgate. Se um campo não disparar o autosave sozinho, o
+    // waitForResponse daquele campo estoura e o teste aponta QUAL campo quebrou.
+    const { yearsExperience } = await fillGeneralInfoViaUi(page, {
+      phone: uniqueArMobile(),
+      cuil: `20-${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}-9`,
+      profession: 'CAREGIVER',
     });
-    // 409 = PHONE_NOT_AVAILABLE (o número sorteado colidiu com um worker real). É uma
-    // falha limpa e sem efeito colateral; a mensagem abaixo explica o retry.
-    expect(
-      giRes.status(),
-      'PUT general-info deve responder 200 (409 = telefone colidiu com worker real; rode de novo)',
-    ).toBe(200);
 
-    // ── PASSO 5: service-area (address_line + radius_km) ──
-    const saRes = await workerCtx.put('/api/workers/me/service-area', { data: buildServiceArea() });
-    expect(saRes.status(), 'PUT service-area deve responder 200').toBe(200);
+    // ── PASSO 5: endereço, pelo autocomplete real do Google ──
+    await fillServiceAreaViaUi(page);
 
-    // ── PASSO 6: availability (≥1 slot) ──
-    const avRes = await workerCtx.put('/api/workers/me/availability', { data: buildAvailability() });
-    expect(avRes.status(), 'PUT availability deve responder 200').toBe(200);
+    // ── PASSO 6: disponibilidade ──
+    await fillAvailabilityViaUi(page);
 
-    // ── PASSO 7: documentos — 2 arquivos (não-AT). O 2º save cumpre o gate e o
-    //            recalculateStatus transiciona o worker para REGISTERED. ──
-    const png = readTinyDocumentPng();
-    await uploadWorkerDocument(workerCtx, 'identity_document', 'image/png', png);
-    await uploadWorkerDocument(workerCtx, 'criminal_record', 'image/png', png);
+    // ── PASSO 7: documentos pelo input de arquivo (2 para não-AT). O último save
+    //            cumpre o gate e o recalculateStatus leva o worker a REGISTERED. ──
+    await uploadDocumentsViaUi(page, ['identity_document', 'criminal_record']);
 
     // ── PASSO 8: ADMIN verifica — worker chegou a REGISTERED, ainda is_test ──
     const getRes = await adminCtx.get(`/api/admin/workers/${workerId}`);
@@ -298,6 +311,14 @@ test.describe('Jornada worker — FATIA 2 (cadastro → REGISTERED como is_test,
     expect(getBody.data.status, 'worker completou o cadastro e chegou a REGISTERED').toBe('REGISTERED');
     // …E chegou lá marcado is_test — a precondição do gate AnaCare (mirror pulado).
     expect(getBody.data.isTest, 'worker continua is_test=true (gate AnaCare barra o espelho)').toBe(true);
+
+    // Prova de ida-e-volta do campo que quebrou em 31/08: o valor que a TELA
+    // escolheu tem de estar no banco. `status < 400` no PUT não prova isso — foi
+    // justamente o que o helper antigo assertava enquanto o campo se perdia.
+    expect(
+      getBody.data.yearsExperience,
+      'o "años de experiencia" escolhido na tela chegou ao banco',
+    ).toBe(yearsExperience);
 
     // ── PASSO 9: assert DIRETO de não-espelho AnaCare (PR #134 expôs o campo no admin) ──
     // O gate is_test (MirrorWorkerService) barrou o espelho ANTES de qualquer chamada ao

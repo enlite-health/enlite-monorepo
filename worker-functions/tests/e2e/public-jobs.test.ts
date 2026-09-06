@@ -22,7 +22,7 @@
  *  14. ?country=ar (lowercase) → normalised to AR, returns AR fixtures
  *  15. ?country=AR&state=CABA → AND intersection
  *  16. ?country=BR&state=CABA → AND — BR has no CABA → empty for filter fixtures
- *  17. ?country=AR&pathology=Alzheimer → ILIKE match
+ *  17. ?pathology → 400 (filtro clinico removido em 25/08/2026); `q` nao acha por diagnostico
  *  18. ?country=AR&worker_sex=FEMALE → exact match
  *  19. ?country=AR&worker_type=AT → array match
  *  20. ?country=AR&q=temperley → free-text ILIKE
@@ -417,7 +417,8 @@ describe('GET /api/public/v1/jobs', () => {
       // Original 13
       'id', 'case_number', 'vacancy_number', 'title', 'status',
       'description', 'schedule_days_hours', 'worker_profile_sought',
-      'service', 'pathologies', 'state', 'city', 'detail_link',
+      // `pathologies` saiu desta lista em 25/08/2026 — era `patients.diagnosis` cru.
+      'service', 'state', 'city', 'detail_link',
       // Expansion 5
       'worker_type', 'worker_sex', 'job_zone', 'neighborhood', 'state_city',
       // New country field
@@ -632,25 +633,70 @@ describe('GET /api/public/v1/jobs', () => {
     });
   });
 
-  describe('?pathology filter', () => {
-    it('?country=AR&pathology=Alzheimer returns filterAR (patient has "Alzheimer" in description)', async () => {
-      // filterAR patient (IDS.patient) has diagnosis 'TEA'
-      // patientBR has 'Alzheimer' but is country BR
-      // We need to check that the ILIKE search on p.diagnosis works
-      // filterAR description mentions Alzheimer but the DB field is patients.diagnosis
-      // IDS.patient diagnosis = 'TEA' so this should return empty for AR
-      const res = await api.get('/api/public/v1/jobs?country=AR&pathology=TEA');
-      expect(res.status).toBe(200);
-      const ids = (res.data.data as Array<{ id: string }>).map(j => j.id);
-      // All AR vacancies linked to IDS.patient (diagnosis=TEA) should appear
-      expect(ids).toContain(IDS.filterAR);
+  // ══════════════════════════════════════════════════════════════════════════
+  // O filtro clinico foi REMOVIDO em 25/08/2026 — e este bloco virou o contrario.
+  //
+  // Antes havia aqui `?pathology filter`, com dois testes que EXIGIAM que a rota aberta
+  // filtrasse por `patients.diagnosis`. Isso fazia do endpoint um oraculo: sondando termos
+  // sem autenticacao, a 60 req/min, quem quisesse mapeava o diagnostico das vagas — cada
+  // resultado vindo com `case_number`, bairro e cidade.
+  // ══════════════════════════════════════════════════════════════════════════
+  describe('filtro clinico removido — contrato da rota', () => {
+    it('?pathology= devolve 400 explicito, nao lista filtrada nem lista inteira', async () => {
+      const res = await api.get('/api/public/v1/jobs?country=AR&pathology=TEA', {
+        validateStatus: () => true,
+      });
+      expect(res.status).toBe(400);
+      expect(res.data.success).toBe(false);
     });
 
-    it('?country=BR&pathology=Alzheimer returns BR fixtures linked to Alzheimer patient', async () => {
-      const res = await api.get('/api/public/v1/jobs?country=BR&pathology=Alzheimer');
-      expect(res.status).toBe(200);
-      const ids = (res.data.data as Array<{ id: string }>).map(j => j.id);
-      expect(ids).toContain(IDS.searchingBR);
+    it('a COLUNA clinica do paciente nao atravessa — provado com sentinela', async () => {
+      // ⚠️ A 1a versao deste teste fazia `expect(corpo).not.toContain('TEA')` e reprovava —
+      // mas por outro motivo: `jp.description` das fixtures diz "AT con experiencia en TEA".
+      // Isso e texto de ANUNCIO escrito pela equipe, nao a coluna clinica do paciente. A
+      // regua grossa confundia as duas coisas e teria me feito "consertar" o campo errado.
+      //
+      // Sentinela resolve: um valor que existe SO em `patients.diagnosis` e em lugar nenhum
+      // mais. Se ele aparecer no corpo, a coluna vazou — por qualquer campo, com qualquer
+      // nome, inclusive um que ninguem previu.
+      const SENTINELA = 'ZZDIAGNOSTICOSENTINELA9137';
+      const antes = await pool.query<{ diagnosis: string | null }>(
+        'SELECT diagnosis FROM patients WHERE id = $1', [IDS.patient],
+      );
+      await pool.query('UPDATE patients SET diagnosis = $1 WHERE id = $2', [SENTINELA, IDS.patient]);
+      try {
+        const res = await api.get('/api/public/v1/jobs?country=AR');
+        expect(res.status).toBe(200);
+        const itens = res.data.data as Array<Record<string, unknown>>;
+        expect(itens.length).toBeGreaterThan(0); // contagem zero aprovaria no vacuo
+
+        for (const item of itens) {
+          expect(item).not.toHaveProperty('pathologies');
+          expect(item).not.toHaveProperty('pathology');
+          expect(item).not.toHaveProperty('diagnosis');
+        }
+        expect(JSON.stringify(res.data)).not.toContain(SENTINELA);
+      } finally {
+        await pool.query('UPDATE patients SET diagnosis = $1 WHERE id = $2',
+          [antes.rows[0]?.diagnosis ?? null, IDS.patient]);
+      }
+    });
+
+    it('e a busca livre tambem nao alcanca a sentinela', async () => {
+      const SENTINELA = 'ZZDIAGNOSTICOSENTINELA9137';
+      const antes = await pool.query<{ diagnosis: string | null }>(
+        'SELECT diagnosis FROM patients WHERE id = $1', [IDS.patient],
+      );
+      await pool.query('UPDATE patients SET diagnosis = $1 WHERE id = $2', [SENTINELA, IDS.patient]);
+      try {
+        const res = await api.get(`/api/public/v1/jobs?country=AR&q=${SENTINELA}`);
+        expect(res.status).toBe(200);
+        const ids = (res.data.data as Array<{ id: string }>).map(j => j.id);
+        expect(ids).not.toContain(IDS.filterAR);
+      } finally {
+        await pool.query('UPDATE patients SET diagnosis = $1 WHERE id = $2',
+          [antes.rows[0]?.diagnosis ?? null, IDS.patient]);
+      }
     });
   });
 

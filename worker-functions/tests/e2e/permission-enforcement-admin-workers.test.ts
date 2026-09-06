@@ -23,9 +23,11 @@ import {
  *     chave é REAL (`ENLITE_API_KEYS` + `MultiAuthService` de produção, com
  *     `USE_MOCK_AUTH` desligado no bloco) — um dublê provaria o dublê.
  *  2. **`worker_pii:read` × `worker:read`** — a distinção mais cara da família:
- *     listar prestadores não é abrir a ficha com telefone e documento. Quem
- *     "uniformizasse" as duas em `worker:read` apagaria a única célula que hoje
- *     separa quem vê PII de quem não vê.
+ *     listar prestadores não é ver telefone e documento. Desde a D286 fase 2
+ *     (06/09) a FICHA abre com `worker:read` e sai PROJETADA por container
+ *     (contato, dossiê, documentos, encuadres) — a célula continua separando
+ *     quem vê PII de quem não vê, só que no builder, não na porta. `by-phone`
+ *     (a Luz, principal de serviço) continua na porta.
  *  3. **`worker:export`** — exportar a base inteira não é um caso de `read`.
  *  4. **`worker_document:validate`** — validar documento não é `read` nem `write`.
  *  5. **D-P4**: `worker_pii` e `worker_document` são sensíveis, então o acesso
@@ -269,24 +271,27 @@ describe('família admin.workers sob a decisão real por célula (HTTP real, ban
       });
     });
 
-    it('… e NÃO abre a ficha: a ficha exige worker_pii:read', async () => {
-      const res = await chamar('GET', '/api/admin/workers/abc-123', U.lista);
-      expect(res.status).toBe(403);
-      expect(res.body).toMatchObject({ code: 'missing_cell' });
-      expect(res.body.chegou).toBeUndefined();
+    it('… e ABRE a ficha (D286 fase 2): a rota exige worker:read; o dossiê sai projetado', async () => {
+      // Até 06/09 a ficha inteira exigia `worker_pii:read`. Agora a célula da rota é a operacional
+      // e quem segura DNI/nascimento/endereço é a projeção por container no builder — a prova
+      // disso é o espião de decrypt = 0 em `AdminWorkersDetailBuilder.test.ts`, não este stub.
+      expect(await chamar('GET', '/api/admin/workers/abc-123', U.lista)).toMatchObject({
+        status: 200,
+        body: { chegou: 'getWorkerById' },
+      });
     });
 
-    it('a recrutadora, que tem worker_pii:read, abre a ficha', async () => {
+    it('a recrutadora, que tem worker_pii:read, também abre a ficha', async () => {
       expect(await chamar('GET', '/api/admin/workers/abc-123', U.recrutadora)).toMatchObject({
         status: 200,
         body: { chegou: 'getWorkerById' },
       });
     });
 
-    it('by-phone TAMBÉM exige worker_pii:read — devolve o mesmo dossiê da ficha', async () => {
-      // O mapa da 0.6 dizia `worker:read`. Se voltar a dizer, este caso fica
-      // vermelho: com a célula fraca, `U.lista` seria negado na ficha logo
-      // acima e pegaria o dossiê idêntico por aqui, sem trilha nenhuma.
+    it('by-phone continua exigindo worker_pii:read — é o dossiê da Luz (principal de serviço, sem projeção)', async () => {
+      // O mapa da 0.6 dizia `worker:read`. Se voltar a dizer, este caso fica vermelho: por aqui o
+      // principal de serviço recebe a ficha INTEIRA (`cells = null`, D113), então a célula da rota
+      // é a única barreira para um humano com célula fraca.
       const negado = await chamar('GET', '/api/admin/workers/by-phone', U.lista);
       expect(negado.status).toBe(403);
       expect(negado.body).toMatchObject({ code: 'missing_cell' });
@@ -397,14 +402,14 @@ describe('família admin.workers sob a decisão real por célula (HTTP real, ban
   });
 
   describe('trilha (D-P4: worker_pii e worker_document são sensíveis)', () => {
-    it('a negativa em worker_pii vira linha DENY com o id do alvo', async () => {
+    it('a negativa em worker_pii vira linha DENY (na rota que ainda a exige: by-phone)', async () => {
       await pool.query(`DELETE FROM iam.permission_audit_log WHERE user_id = $1`, [U.lista]);
 
-      await chamar('GET', '/api/admin/workers/abc-123', U.lista);
+      await chamar('GET', '/api/admin/workers/by-phone?phone=%2B5491100000000', U.lista);
       await new Promise((r) => setTimeout(r, 300));
 
       const trilha = await pool.query(
-        `SELECT resource, action, decision, resource_id FROM iam.permission_audit_log WHERE user_id = $1`,
+        `SELECT resource, action, decision FROM iam.permission_audit_log WHERE user_id = $1`,
         [U.lista],
       );
       expect(trilha.rows).toEqual([
@@ -412,15 +417,14 @@ describe('família admin.workers sob a decisão real por célula (HTTP real, ban
           resource: 'worker_pii',
           action: 'read',
           decision: 'DENY',
-          resource_id: 'abc-123',
         }),
       ]);
     });
 
-    it('o acesso PERMITIDO à ficha também é registrado', async () => {
+    it('o acesso PERMITIDO ao dossiê também é registrado', async () => {
       await pool.query(`DELETE FROM iam.permission_audit_log WHERE user_id = $1`, [U.recrutadora]);
 
-      await chamar('GET', '/api/admin/workers/abc-123', U.recrutadora);
+      await chamar('GET', '/api/admin/workers/by-phone?phone=%2B5491100000000', U.recrutadora);
       await new Promise((r) => setTimeout(r, 300));
 
       const trilha = await pool.query(

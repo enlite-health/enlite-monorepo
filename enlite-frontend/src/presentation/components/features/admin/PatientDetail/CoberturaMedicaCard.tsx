@@ -1,11 +1,18 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
+import { PatientCoverageEditDrawer } from './edit/PatientCoverageEditDrawer';
+import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 
 interface CoberturaMedicaCardProps {
   patient: PatientDetail;
+  /** Called after a successful edit so the page can refetch the detail. */
+  onSaved?: () => void;
+  /** Spec 014 US-D1: pedido de foco do checklist ("falta cobertura") — abre este drawer. */
+  focusRequest?: DrawerFocusRequest | null;
 }
 
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
@@ -21,8 +28,16 @@ function Field({ label, value }: { label: string; value: string | null | undefin
   );
 }
 
-export function CoberturaMedicaCard({ patient }: CoberturaMedicaCardProps) {
+export function CoberturaMedicaCard({ patient, onSaved, focusRequest }: CoberturaMedicaCardProps) {
   const { t } = useTranslation();
+  const [editing, setEditing] = useState(false);
+  useAutoOpenDrawer(focusRequest, 'COVERAGE', () => setEditing(true));
+  // Spec 012, US-B3: as verificadas por CÓDIGO do catálogo (traduzidas); o escalar antigo
+  // (`insuranceVerified`, rótulo cru do ClickUp) só aparece quando não há código nenhum.
+  const codes = patient.insuranceVerifiedCodes ?? [];
+  const verifiedLabel = codes.length > 0
+    ? codes.map((c) => t(`admin.patients.insuranceProviderOptions.${c}`, c)).join(', ')
+    : patient.insuranceVerified;
 
   return (
     <div
@@ -33,24 +48,33 @@ export function CoberturaMedicaCard({ patient }: CoberturaMedicaCardProps) {
         <Heading level={1} as="h3" weight="semibold" color="primary">
           {t('admin.patients.detail.coverageCard.title')}
         </Heading>
-        <Button variant="primary" size="sm" disabled onClick={() => {}}>
+        {/* D286 — abre o drawer que faz PATCH /patients/:id/coverage → patient_coverage:write. */}
+        <ActionButton resource="patient_coverage" action="write" variant="outline" size="sm" onClick={() => setEditing(true)} className="w-28" data-testid="edit-coverage-btn">
           {t('admin.patients.detail.edit')}
-        </Button>
+        </ActionButton>
       </div>
+
+      {editing && (
+        <PatientCoverageEditDrawer
+          patient={patient}
+          onClose={() => setEditing(false)}
+          onSaved={() => onSaved?.()}
+        />
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
         <Field
           label={t('admin.patients.detail.coverageCard.providerName')}
           value={patient.insuranceInformed}
         />
-        <Field
-          label={t('admin.patients.detail.coverageCard.plan')}
-          value={patient.insuranceVerified}
-        />
-        <Field
-          label={t('admin.patients.detail.coverageCard.emergencyNumbers')}
-          value={null}
-        />
+        <div data-testid="coverage-verified">
+          <Field
+            label={t('admin.patients.detail.coverageCard.verified')}
+            value={verifiedLabel}
+          />
+        </div>
+        {/* Spec 014 US-D2: "Números de Emergencia" REMOVIDO — era `value={null}` fixo, sem
+            coluna no schema (decisão Gabriel 03/09, item 9). */}
         <Field
           label={t('admin.patients.detail.coverageCard.credential')}
           value={patient.affiliateId}

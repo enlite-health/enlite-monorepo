@@ -41,7 +41,7 @@ function printUpdates(plan: SyncPlan): void {
     console.log(`  ~ ${upd.slug}  [${fieldStr || 'sem field updates'}]`);
     if (upd.bodyDiverges) {
       console.log(`    ⚠ body diverge — NÃO será sobrescrito (manter banco pra preservar`);
-      console.log(`      placeholders nomeados). Revise se necessário.`);
+      console.log(`      placeholders nomeados). body_twilio recebe o texto da Twilio.`);
     }
   }
   if (plan.updates.length === 0) console.log('  (nenhum)');

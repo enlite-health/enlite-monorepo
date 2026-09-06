@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+import { resolveDateLocale, SHORT_DATE_OPTIONS } from '@presentation/utils/dateLocale';
 import { useTranslation } from 'react-i18next';
 import { Eye } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
@@ -24,6 +26,8 @@ export interface WorkerRow {
 }
 
 interface WorkersTableProps {
+  /** REQ-09: célula de ação por linha (ex.: convite à reunión de presentación). Ausente = sem coluna. */
+  renderAction?: (row: WorkerRow) => ReactNode;
   workers: WorkerRow[];
   onRowClick?: (id: string) => void;
 }
@@ -38,15 +42,10 @@ const COLUMNS = [
 
 function formatDate(iso: string, locale: string): string {
   if (!iso) return '—';
-  const dateLocale = locale === 'es' ? 'es-AR' : 'pt-BR';
-  return new Date(iso).toLocaleDateString(dateLocale, {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
+  return new Date(iso).toLocaleDateString(resolveDateLocale(locale), SHORT_DATE_OPTIONS);
 }
 
-export function WorkersTable({ workers, onRowClick }: WorkersTableProps): JSX.Element {
+export function WorkersTable({ workers, onRowClick, renderAction }: WorkersTableProps): JSX.Element {
   const { t, i18n } = useTranslation();
   const safeWorkers = workers ?? [];
 
@@ -60,11 +59,12 @@ export function WorkersTable({ workers, onRowClick }: WorkersTableProps): JSX.El
               {t(`admin.workers.table.${key}`)}
             </TableHead>
           ))}
+          {renderAction && <TableHead className="whitespace-nowrap">{t('admin.workers.table.actions')}</TableHead>}
         </TableHeader>
         <TableBody>
           {safeWorkers.length === 0 ? (
             <TableRow>
-              <TableCell unwrapped colSpan={COLUMNS.length + 1} className="h-[200px] bg-white text-center">
+              <TableCell unwrapped colSpan={COLUMNS.length + (renderAction ? 2 : 1)} className="h-[200px] bg-white text-center">
                 <Text as="span" size="sm" color="secondary">
                   {t('admin.workers.noWorkers')}
                 </Text>
@@ -102,6 +102,11 @@ export function WorkersTable({ workers, onRowClick }: WorkersTableProps): JSX.El
                 <TableCell weight="medium" className="whitespace-nowrap hidden md:table-cell">
                   {getPlatformLabel(t, row.platform)}
                 </TableCell>
+                {renderAction && (
+                  <TableCell unwrapped className="whitespace-nowrap min-w-[190px]" onClick={(e) => e.stopPropagation()}>
+                    {renderAction(row)}
+                  </TableCell>
+                )}
               </TableRow>
             ))
           )}

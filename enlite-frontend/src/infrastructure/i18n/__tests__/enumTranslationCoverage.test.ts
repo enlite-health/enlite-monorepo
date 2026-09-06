@@ -12,6 +12,18 @@ import { describe, it, expect } from 'vitest';
 import esJson from '@infrastructure/i18n/locales/es.json';
 import ptBRJson from '@infrastructure/i18n/locales/pt-BR.json';
 import { WORKER_PROFESSIONS } from '@domain/entities/Worker';
+import {
+  PATIENT_STATUSES, ON_HOLD_REASONS, ADMISSION_STATUSES, DEVICE_TYPE_CODES, RELATIONSHIP_CODES, INSURANCE_PROVIDER_CODES,
+} from '@domain/entities/patientEnums';
+import {
+  SERVICE_CODES,
+  CARE_LOCATIONS,
+  CONTRACT_TYPES,
+  TAX_CONDITIONS,
+  SUPERVISION_FREQUENCIES,
+  GUARD_SHIFTS,
+  PROVIDER_AGE_BANDS,
+} from '@domain/entities/PatientContractedService';
 
 type Locale = Record<string, unknown>;
 
@@ -71,6 +83,76 @@ describe.each([
       expect(label, `professionOptions.${value} echoes the raw enum`).not.toBe(
         value,
       );
+    }
+  });
+});
+
+// ── Spec 012 (bloco B da admissão): os vocabulários do paciente que a tela traduz ─────────────
+const PATIENT_ENUM_GROUPS: Array<[string, readonly string[]]> = [
+  ['admin.patients.statusOptions', PATIENT_STATUSES],
+  ['admin.patients.onHoldReasonOptions', ON_HOLD_REASONS],
+  ['admin.patients.kanban.columns', ADMISSION_STATUSES],
+  ['admin.patients.deviceTypeOptions', DEVICE_TYPE_CODES],
+  ['admin.patients.detail.relationshipOptions', RELATIONSHIP_CODES],
+  ['admin.patients.insuranceProviderOptions', INSURANCE_PROVIDER_CODES],
+  // QA 🟡4: o mapa tinha vocabulário PRÓPRIO (mapPageConfig.ts), desincronizado do estado v2 —
+  // faltavam ON_HOLD/SEARCHING/REPLACEMENT e sobrava DISCONTINUED (saiu do vocabulário, migration
+  // 314). A fonte viva é a mesma PATIENT_STATUSES do resto da ficha, não uma lista própria do mapa.
+  ['admin.map.patientStatus', PATIENT_STATUSES],
+];
+
+describe.each([
+  ['es', esJson as Locale],
+  ['pt-BR', ptBRJson as Locale],
+])('patient enum translation coverage — spec 012 (%s)', (_lng, locale) => {
+  it.each(PATIENT_ENUM_GROUPS)('%s cobre todos os valores do enum', (group, values) => {
+    expect(values.length).toBeGreaterThan(0);
+    for (const value of values) {
+      const label = get(locale, `${group}.${value}`);
+      expect(label, `missing ${group}.${value}`).toBeTypeOf('string');
+      expect(label).not.toBe('');
+    }
+  });
+
+  it('estado, motivo, dispositivo e parentesco são traduções, não o enum ecoado', () => {
+    for (const [group, values] of PATIENT_ENUM_GROUPS.slice(0, 5)) {
+      for (const value of values) {
+        expect(get(locale, `${group}.${value}`), `${group}.${value} echoes the raw enum`).not.toBe(value);
+      }
+    }
+  });
+});
+
+// ── Spec 013 (bloco C da admissão): vocabulários do serviço contratado ─────────────────────────
+const CONTRACTED_SERVICE_ENUM_GROUPS: Array<[string, readonly string[]]> = [
+  ['admin.patients.detail.contractedServicesCard.serviceTypes', SERVICE_CODES],
+  ['admin.patients.detail.contractedServicesCard.careLocationOptions', CARE_LOCATIONS],
+  ['admin.patients.detail.contractedServicesCard.contractTypeOptions', CONTRACT_TYPES],
+  ['admin.patients.detail.contractedServicesCard.taxConditionOptions', TAX_CONDITIONS],
+  ['admin.patients.detail.contractedServicesCard.supervisionFrequencyOptions', SUPERVISION_FREQUENCIES],
+  ['admin.patients.detail.contractedServicesCard.guardShiftOptions', GUARD_SHIFTS],
+  // Spec 015 (US-A6.1): franja etária solicitada do prestador.
+  ['admin.patients.detail.contractedServicesCard.providerAgeBandOptions', PROVIDER_AGE_BANDS],
+];
+
+describe.each([
+  ['es', esJson as Locale],
+  ['pt-BR', ptBRJson as Locale],
+])('contracted-service enum translation coverage — spec 013 (%s)', (_lng, locale) => {
+  it.each(CONTRACTED_SERVICE_ENUM_GROUPS)('%s cobre todos os valores do enum', (group, values) => {
+    expect(values.length).toBeGreaterThan(0);
+    for (const value of values) {
+      const label = get(locale, `${group}.${value}`);
+      expect(label, `missing ${group}.${value}`).toBeTypeOf('string');
+      expect(label).not.toBe('');
+    }
+  });
+
+  it('care_location, contract_type, tax_condition, supervision_frequency e guard_shift são traduções, não o enum ecoado', () => {
+    for (const [group, values] of CONTRACTED_SERVICE_ENUM_GROUPS.slice(1)) {
+      for (const value of values) {
+        expect(get(locale, `${group}.${value}`), `${group}.${value} echoes the raw enum`).not.toBe(value);
+      }
     }
   });
 });

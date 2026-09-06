@@ -43,19 +43,26 @@ export async function replacePatientAddresses(
   //      ON DELETE RESTRICT trap.
   const valid = addresses.filter(a => a.addressFormatted || a.addressRaw);
 
+  //  4. `logistics_corridor` e `access_notes` (migration 316) NÃO vêm do ClickUp: são digitados
+  //     no painel, por endereço. O Path 2 arquiva a linha e insere outra — sem copiá-los, todo
+  //     `taskUpdated` de paciente com vaga publicada os apagava em silêncio (não é preciso nem
+  //     mudar a rua: `publishedReference` sozinho força o Path 2). `country` sobrevive pelo
+  //     trigger da 316; estes dois não têm trigger nenhum, então a cópia é aqui.
   const { rows: existing } = await client.query<{
     id: string;
     display_order: number;
     address_formatted: string | null;
+    logistics_corridor: string | null;
+    access_notes: string | null;
   }>(
-    `SELECT id, display_order, address_formatted
+    `SELECT id, display_order, address_formatted, logistics_corridor, access_notes
        FROM patient_addresses
       WHERE patient_id = $1
         AND archived_at IS NULL`,
     [patientId],
   );
-  const existingByOrder = new Map<number, { id: string; address_formatted: string | null }>(
-    existing.map(r => [r.display_order, { id: r.id, address_formatted: r.address_formatted }]),
+  const existingByOrder = new Map<number, { id: string; address_formatted: string | null; logistics_corridor: string | null; access_notes: string | null }>(
+    existing.map(r => [r.display_order, { id: r.id, address_formatted: r.address_formatted, logistics_corridor: r.logistics_corridor, access_notes: r.access_notes }]),
   );
 
   if (valid.length === 0) return;
@@ -130,12 +137,15 @@ export async function replacePatientAddresses(
       );
     }
 
-    // Path 2 (continued) or Path 3 (no existing row in this slot): INSERT new
+    // Path 2 (continued) or Path 3 (no existing row in this slot): INSERT new.
+    // Logística e acesso viajam da linha ARQUIVADA para a nova (ver nota 4 acima). Slot novo
+    // (Path 3) não tem de onde copiar e nasce NULL, que é o correto — não havia dado.
     const insertRes = await client.query<{ id: string }>(
       `INSERT INTO patient_addresses
          (patient_id, address_type, address_formatted, address_raw,
-          display_order, state, city, neighborhood, lat, lng)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          display_order, state, city, neighborhood, lat, lng,
+          logistics_corridor, access_notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING id`,
       [
         patientId,
@@ -148,6 +158,8 @@ export async function replacePatientAddresses(
         a.neighborhood ?? null,
         g.lat,
         g.lng,
+        existingForSlot?.logistics_corridor ?? null,
+        existingForSlot?.access_notes ?? null,
       ],
     );
     const newAddressId = insertRes.rows[0].id;
