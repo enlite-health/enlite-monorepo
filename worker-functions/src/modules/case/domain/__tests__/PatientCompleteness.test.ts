@@ -20,16 +20,18 @@ const baseInput = {
   activeAddressCount: 1,
   activeResponsibleCount: 0,
   activeContractedServiceCount: 1,
+  activeContractedServicesWithoutAddressCount: 0,
   now: NOW,
 };
 
 describe('PATIENT_COMPLETENESS_CODES (lex D1.2)', () => {
-  it('é exatamente os 5 códigos administrativos — sem item clínico', () => {
+  it('é exatamente os 6 códigos administrativos — sem item clínico', () => {
     expect(PATIENT_COMPLETENESS_CODES).toEqual([
       'ADDRESS',
       'RESPONSIBLE',
       'COVERAGE',
       'CONTRACTED_SERVICE',
+      'SERVICE_ADDRESS',
       'CONSENT',
     ]);
   });
@@ -76,9 +78,9 @@ describe('isMinor', () => {
   });
 });
 
-describe('ACTIVATION_BLOCKING_CODES (D255, decisão 03/09)', () => {
-  it('é SÓ ADDRESS — os demais 4 códigos são checklist informativo, não bloqueio do activate', () => {
-    expect(ACTIVATION_BLOCKING_CODES).toEqual(['ADDRESS']);
+describe('ACTIVATION_BLOCKING_CODES (D255, decisão 03/09 + migration 330, decisão 05/09)', () => {
+  it('é ADDRESS e SERVICE_ADDRESS (os dois pela mesma razão: a vaga precisa de endereço) — os demais códigos são checklist informativo, não bloqueio do activate', () => {
+    expect(ACTIVATION_BLOCKING_CODES).toEqual(['ADDRESS', 'SERVICE_ADDRESS']);
   });
 
   it('todo código de ACTIVATION_BLOCKING_CODES pertence a PATIENT_COMPLETENESS_CODES (sem código órfão)', () => {
@@ -128,6 +130,7 @@ describe('computePatientCompleteness (SUP-D1 / D255)', () => {
       activeAddressCount: 1,
       activeResponsibleCount: 0,
       activeContractedServiceCount: 0,
+      activeContractedServicesWithoutAddressCount: 0,
       now: NOW,
     });
     expect(r.missing).toEqual(['RESPONSIBLE', 'COVERAGE', 'CONTRACTED_SERVICE', 'CONSENT']);
@@ -174,6 +177,35 @@ describe('computePatientCompleteness (SUP-D1 / D255)', () => {
     expect(r.missing).toContain('CONTRACTED_SERVICE');
   });
 
+  // Migration 330 (decisão do Gabriel 05/09: "um serviço é um endereço")
+  it('serviço ativo sem endereço → SERVICE_ADDRESS em missing E em blocking; canActivate false', () => {
+    const r = computePatientCompleteness({ ...baseInput, activeContractedServicesWithoutAddressCount: 1 });
+    expect(r.missing).toContain('SERVICE_ADDRESS');
+    expect(r.blocking).toEqual(['SERVICE_ADDRESS']);
+    expect(r.canActivate).toBe(false);
+    expect(r.ready).toBe(false);
+  });
+
+  it('sem serviço nenhum → SERVICE_ADDRESS NÃO acusa (é CONTRACTED_SERVICE que acusa); paciente continua ativável (fallback por endereço)', () => {
+    const r = computePatientCompleteness({
+      ...baseInput,
+      activeContractedServiceCount: 0,
+      activeContractedServicesWithoutAddressCount: 0,
+    });
+    expect(r.missing).toEqual(['CONTRACTED_SERVICE']);
+    expect(r.blocking).toEqual([]);
+    expect(r.canActivate).toBe(true);
+  });
+
+  it('sem endereço E serviço sem endereço → os dois códigos bloqueiam, nesta ordem', () => {
+    const r = computePatientCompleteness({
+      ...baseInput,
+      activeAddressCount: 0,
+      activeContractedServicesWithoutAddressCount: 1,
+    });
+    expect(r.blocking).toEqual(['ADDRESS', 'SERVICE_ADDRESS']);
+  });
+
   it('hasConsent false → CONSENT em missing', () => {
     const r = computePatientCompleteness({ ...baseInput, hasConsent: false });
     expect(r.missing).toContain('CONSENT');
@@ -192,6 +224,7 @@ describe('computePatientCompleteness (SUP-D1 / D255)', () => {
       activeAddressCount: 0,
       activeResponsibleCount: 0,
       activeContractedServiceCount: 0,
+      activeContractedServicesWithoutAddressCount: 0,
       now: NOW,
     });
     const expected: PatientCompletenessCode[] = [
@@ -213,6 +246,7 @@ describe('computePatientCompleteness (SUP-D1 / D255)', () => {
       activeAddressCount: 0,
       activeResponsibleCount: 0,
       activeContractedServiceCount: 0,
+      activeContractedServicesWithoutAddressCount: 0,
       now: NOW,
     });
     const indices = r.missing.map((code) => PATIENT_COMPLETENESS_CODES.indexOf(code));
@@ -234,6 +268,7 @@ describe('a regra em SQL (filtro/contadores da listagem)', () => {
       RESPONSIBLE: /NOT EXISTS \(SELECT 1 FROM patient_responsibles/,
       COVERAGE: /BTRIM\(COALESCE\(p\.insurance_informed, p\.health_insurance_name, ''\)\) = ''/,
       CONTRACTED_SERVICE: /NOT EXISTS \(SELECT 1 FROM patient_contracted_services/,
+      SERVICE_ADDRESS: /EXISTS \(SELECT 1 FROM patient_contracted_services pcs\s+LEFT JOIN patient_addresses pa ON pa\.id = pcs\.address_id AND pa\.archived_at IS NULL/,
       CONSENT: /p\.has_consent IS NOT TRUE/,
     };
     for (const code of PATIENT_COMPLETENESS_CODES) expect(sql).toMatch(clausulaDe[code]);

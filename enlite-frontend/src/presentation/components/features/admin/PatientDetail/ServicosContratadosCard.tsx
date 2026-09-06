@@ -12,8 +12,11 @@ import {
   TableCell,
 } from '@presentation/components/atoms/Table';
 import { Button } from '@presentation/components/atoms/Button';
-import type { PatientDetail, PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
+import type { PatientAddressDetail, PatientDetail, PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
+import { patientAddressLabel } from '@domain/entities/PatientContractedService';
 import { PatientContractedServicesEditDrawer } from './edit/PatientContractedServicesEditDrawer';
+import { ContractedServiceDetailDrawer } from './ContractedServiceDetailDrawer';
+import { contractedServiceScheduleText } from './contractedServiceScheduleText';
 import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 
 interface ServicosContratadosCardProps {
@@ -27,30 +30,32 @@ interface ServicosContratadosCardProps {
 const EMPTY = '—';
 
 /**
- * "20 / 20" quando os dois vêm, "20" quando só `a` falta e `b` também falta em espírito
- * (`b` do lado do requisito, ex.: authorizedHours), "—" quando nenhum (spec 013, bloco C).
- *
- * QA-caça #3: quando só `a` falta mas `b` tem valor, NUNCA devolve `String(b)` sozinho — um `b`
- * legítimo de 0 (ex.: providersNeeded null + 0 prestadores ativos) ficaria indistinguível de
- * "precisa 0 e tem 0". Devolve "— / b" para manter os dois lados sempre discrimináveis.
+ * UMA linha da tabela — as 5 colunas do Figma (decisão do Gabriel 05/09; "Sexo" ficou de fora a
+ * pedido dele). Dispositivo ≠ Local ≠ Endereço: três coisas distintas. O endereço é resolvido
+ * pelo PONTEIRO `service.addressId` contra `patient.addresses` — nada de endereço é copiado no
+ * serviço (migration 330). Clique na linha abre o detalhe completo (`ContractedServiceDetailDrawer`).
  */
-function pair(a: number | null, b: number | null): string {
-  if (a == null && b == null) return EMPTY;
-  if (a == null) return `${EMPTY} / ${b}`;
-  if (b == null) return String(a);
-  return `${a} / ${b}`;
-}
-
-function ServiceRow({ service, t }: { service: PatientContractedServiceDetail; t: (k: string, o?: any) => string }) {
-  const activeProviders = service.providers.filter((p) => p.active).length;
-  const valueDisplay = service.hourlyValueRedacted
-    ? t('admin.patients.detail.contractedServicesCard.tableValueRedacted')
-    : service.hourlyValue != null
-      ? String(service.hourlyValue)
-      : EMPTY;
+function ServiceRow({
+  service,
+  addresses,
+  onOpen,
+  t,
+}: {
+  service: PatientContractedServiceDetail;
+  addresses: PatientAddressDetail[];
+  onOpen: (service: PatientContractedServiceDetail) => void;
+  t: (k: string, o?: any) => string;
+}) {
+  const tc = (k: string) => t(`admin.patients.detail.contractedServicesCard.${k}`);
+  const address = addresses.find((a) => a.id === service.addressId) ?? null;
+  const scheduleText = contractedServiceScheduleText(service.schedule);
 
   return (
-    <TableRow data-testid={`contracted-service-row-${service.id}`} className={service.active ? '' : 'opacity-60'}>
+    <TableRow
+      data-testid={`contracted-service-row-${service.id}`}
+      className={service.active ? '' : 'opacity-60'}
+      onClick={() => onOpen(service)}
+    >
       <TableCell unwrapped>
         {service.deviceTypes.length > 0
           ? service.deviceTypes
@@ -60,44 +65,47 @@ function ServiceRow({ service, t }: { service: PatientContractedServiceDetail; t
       </TableCell>
       <TableCell unwrapped>
         <div className="flex items-center gap-2">
-          <Text as="span" size="sm">
+          <Text as="span" size="sm" weight="medium">
             {t(`admin.patients.detail.contractedServicesCard.serviceTypes.${service.serviceCode}`, service.serviceCode)}
           </Text>
           {!service.active && (
             <span className="bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full">
               <Text as="span" size="xs" weight="medium" color="inherit">
-                {t('admin.patients.detail.contractedServicesCard.inactiveBadge')}
+                {tc('inactiveBadge')}
               </Text>
             </span>
           )}
         </div>
       </TableCell>
-      <TableCell data-testid={`contracted-service-providers-${service.id}`}>
-        {pair(service.providersNeeded, activeProviders)}
+      <TableCell align="center" data-testid={`contracted-service-providers-${service.id}`}>
+        {service.providersNeeded == null ? EMPTY : String(service.providersNeeded)}
       </TableCell>
-      <TableCell data-testid={`contracted-service-hours-${service.id}`}>{pair(service.weeklyHours, service.authorizedHours)}</TableCell>
-      <TableCell>
-        {service.careLocation
-          ? t(`admin.patients.detail.contractedServicesCard.careLocationOptions.${service.careLocation}`, service.careLocation)
-          : EMPTY}
+      <TableCell unwrapped data-testid={`contracted-service-location-${service.id}`}>
+        <div className="flex flex-col">
+          <Text as="span" size="sm">
+            {service.careLocation
+              ? t(`admin.patients.detail.contractedServicesCard.careLocationOptions.${service.careLocation}`, service.careLocation)
+              : EMPTY}
+          </Text>
+          {/* Sem endereço vinculado é um AVISO, não um traço: é o que trava a ativação
+              (checklist SERVICE_ADDRESS) e a operadora precisa ver isso aqui, na linha. */}
+          {address ? (
+            <Text as="span" size="xs" color="secondary" data-testid={`contracted-service-address-${service.id}`}>
+              {patientAddressLabel(address)}
+            </Text>
+          ) : (
+            <Text as="span" size="xs" className="text-amber-700" data-testid={`contracted-service-address-missing-${service.id}`}>
+              {tc('noAddressLinked')}
+            </Text>
+          )}
+        </div>
       </TableCell>
-      <TableCell data-testid={`contracted-service-value-${service.id}`}>{valueDisplay}</TableCell>
-      <TableCell>{service.version ?? EMPTY}</TableCell>
-      <TableCell>{service.startDate ? new Date(service.startDate).toLocaleDateString() : EMPTY}</TableCell>
-      <TableCell>
-        {service.contractType
-          ? t(`admin.patients.detail.contractedServicesCard.contractTypeOptions.${service.contractType}`, service.contractType)
-          : EMPTY}
-      </TableCell>
-      <TableCell>
-        {service.taxCondition
-          ? t(`admin.patients.detail.contractedServicesCard.taxConditionOptions.${service.taxCondition}`, service.taxCondition)
-          : EMPTY}
-      </TableCell>
-      <TableCell data-testid={`contracted-service-age-band-${service.id}`}>
-        {service.providerAgeBand
-          ? t(`admin.patients.detail.contractedServicesCard.providerAgeBandOptions.${service.providerAgeBand}`, service.providerAgeBand)
-          : EMPTY}
+      <TableCell unwrapped data-testid={`contracted-service-schedule-${service.id}`}>
+        {scheduleText ? (
+          <Text as="span" size="sm">{scheduleText}</Text>
+        ) : (
+          <Text as="span" size="sm" color="muted">{tc('noSchedule')}</Text>
+        )}
       </TableCell>
     </TableRow>
   );
@@ -106,7 +114,11 @@ function ServiceRow({ service, t }: { service: PatientContractedServiceDetail; t
 export function ServicosContratadosCard({ patient, onSaved, focusRequest }: ServicosContratadosCardProps) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
+  const [selected, setSelected] = useState<PatientContractedServiceDetail | null>(null);
   useAutoOpenDrawer(focusRequest, 'CONTRACTED_SERVICE', () => setEditing(true));
+  // Migration 330: "falta endereço no serviço" também abre o drawer de edição — é lá que o
+  // select "Domicilio" vive.
+  useAutoOpenDrawer(focusRequest, 'SERVICE_ADDRESS', () => setEditing(true));
   const services = patient.contractedServices;
 
   return (
@@ -132,31 +144,38 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
         />
       )}
 
+      {selected && (
+        // `key`: trocar de serviço nos 300 ms da animação de fechar REMONTA o drawer — sem isto
+        // o `show` interno ficava `false` e o clique na outra linha "não abria" (gate, 06/09).
+        <ContractedServiceDetailDrawer
+          key={selected.id}
+          service={selected}
+          addresses={patient.addresses}
+          onClose={() => setSelected(null)}
+        />
+      )}
+
       <Table>
         <TableHeader>
           <TableHead>{t('admin.patients.detail.contractedServicesCard.tableDevice')}</TableHead>
           <TableHead>{t('admin.patients.detail.contractedServicesCard.tableProfessional')}</TableHead>
-          <TableHead>{t('admin.patients.detail.contractedServicesCard.tableProvidersNeeded')} / {t('admin.patients.detail.contractedServicesCard.tableProvidersActive')}</TableHead>
-          <TableHead>{t('admin.patients.detail.contractedServicesCard.tableWeeklyHours')} / {t('admin.patients.detail.contractedServicesCard.tableAuthorizedHours')}</TableHead>
+          <TableHead align="center">{t('admin.patients.detail.contractedServicesCard.tableQuantity')}</TableHead>
           <TableHead>{t('admin.patients.detail.contractedServicesCard.tableLocation')}</TableHead>
-          <TableHead>{t('admin.patients.detail.contractedServicesCard.tableValue')}</TableHead>
-          <TableHead>{t('admin.patients.detail.contractedServicesCard.tableVersion')}</TableHead>
-          <TableHead>{t('admin.patients.detail.contractedServicesCard.tableStart')}</TableHead>
-          <TableHead>{t('admin.patients.detail.contractedServicesCard.tableContract')}</TableHead>
-          <TableHead>{t('admin.patients.detail.contractedServicesCard.tableIVA')}</TableHead>
-          <TableHead>{t('admin.patients.detail.contractedServicesCard.tableProviderAgeBand')}</TableHead>
+          <TableHead>{t('admin.patients.detail.contractedServicesCard.tableSchedule')}</TableHead>
         </TableHeader>
         <TableBody>
           {services.length === 0 ? (
             <TableRow>
-              <TableCell unwrapped colSpan={11} className="py-6 text-center">
+              <TableCell unwrapped colSpan={5} className="py-6 text-center">
                 <Text as="span" size="sm" color="secondary">
                   {t('admin.patients.detail.noData')}
                 </Text>
               </TableCell>
             </TableRow>
           ) : (
-            services.map((svc) => <ServiceRow key={svc.id} service={svc} t={t} />)
+            services.map((svc) => (
+              <ServiceRow key={svc.id} service={svc} addresses={patient.addresses} onOpen={setSelected} t={t} />
+            ))
           )}
         </TableBody>
       </Table>

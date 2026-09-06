@@ -11,6 +11,7 @@ jest.mock('@shared/logging', () => ({ reportError: jest.fn() }));
 
 import { AdminPatientContractedServicesController } from '../AdminPatientContractedServicesController';
 import { DeviceTypeUnknownError } from '../../../infrastructure/PatientDeviceTypeRepository';
+import { AddressNotOfPatientError } from '../../../infrastructure/PatientContractedServiceRepository';
 import { ProviderAlreadyActiveError } from '../../../infrastructure/ContractedServiceProviderRepository';
 import { AuthMiddleware } from '@modules/identity';
 import type { Response } from 'express';
@@ -135,6 +136,16 @@ describe('AdminPatientContractedServicesController', () => {
       expect(res.status).toHaveBeenCalledWith(422);
     });
 
+    // Migration 330: o banco recusou addressId de outro paciente (FK composta) → 422 com código.
+    it('422 ADDRESS_NOT_OF_PATIENT quando o repo lança AddressNotOfPatientError (create)', async () => {
+      const repo = { create: jest.fn().mockRejectedValue(new AddressNotOfPatientError('addr-alheio')) };
+      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
+      const res = mockRes();
+      await controller.create(mockReq({ params: { id: PATIENT_ID }, body: { serviceCode: 'AT', addressId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' } }), res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'ADDRESS_NOT_OF_PATIENT', details: { addressId: 'addr-alheio' } }));
+    });
+
     it('500 em erro genérico', async () => {
       const repo = { create: jest.fn().mockRejectedValue(new Error('boom')) };
       const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
@@ -193,6 +204,15 @@ describe('AdminPatientContractedServicesController', () => {
       const res = mockRes();
       await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { weeklyHours: 1 } }), res);
       expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    it('422 ADDRESS_NOT_OF_PATIENT quando o repo lança AddressNotOfPatientError (update)', async () => {
+      const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockRejectedValue(new AddressNotOfPatientError('addr-alheio')) };
+      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
+      const res = mockRes();
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { addressId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' } }), res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'ADDRESS_NOT_OF_PATIENT' }));
     });
 
     it('200 quando atualiza com sucesso', async () => {

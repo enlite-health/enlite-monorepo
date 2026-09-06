@@ -89,16 +89,21 @@ export interface ActivatePatientResult {
  * Idempotency: a patient already ACTIVE returns { alreadyActive: true,
  * createdVacancyIds: [] } without creating anything (no duplicate vacancies).
  *
- * Spec 013 (bloco C): with ≥1 ACTIVE `patient_contracted_services` row, activation creates one
- * draft vacancy per (active service × active address) — not per address alone — and stamps
- * `contracted_service_id`. Only CODIFIED defaults propagate to the vaga (`providers_needed`;
- * lex C-b2 caminho 1): `worker_profile_sought`/`salary_text` never come from the service.
- * `weekly_hours`/`care_location`/dispositivos have NO matching column on `job_postings` today
- * (`schedule` is day/time slots, not an hours total; devices were moved OFF job_postings by
- * migration 149) — they are NOT propagated; a schema decision is needed before they can be
- * (LISTA do relatório 013). With ZERO active services (every patient before this feature is
- * adopted), activation falls back to the PREVIOUS behaviour — one draft per address, no
- * `contracted_service_id` — so existing patients are not blocked from activating.
+ * Spec 013 (bloco C) + migration 330 (decisão do Gabriel 05/09: "UM serviço é 1 endereço; cada
+ * serviço vira UMA vacante"): with ≥1 ACTIVE `patient_contracted_services` row, activation creates
+ * ONE draft vacancy PER SERVICE, at the address the service points to (`address_id`), and stamps
+ * `contracted_service_id`. It NO LONGER multiplies services × addresses — that cartesian product
+ * put "Cuidador" at the school and "AT" at home (2 services × 2 addresses = 4 drafts, 2 wrong;
+ * RISCO-11 of the 02/09 meeting). A service without a live address is a blocking checklist code
+ * (SERVICE_ADDRESS, `PatientCompleteness.ts`) — activation refuses (422) rather than guessing.
+ * Only CODIFIED defaults propagate to the vaga (`providers_needed`, `schedule`; lex C-b2
+ * caminho 1): `worker_profile_sought`/`salary_text` never come from the service. `schedule` is
+ * copied verbatim (same array format `scheduleToJsonb` persists) and may be NULL — "the operator
+ * can create a vacante without a schedule yet" (Gabriel 05/09); they fill it on the vaga, as
+ * today (`OPERATIONAL_EDITABLE_FIELDS`). `weekly_hours`/`care_location`/dispositivos have NO
+ * matching column on `job_postings` and are NOT propagated. With ZERO active services (every
+ * patient before this feature is adopted), activation falls back to the PREVIOUS behaviour — one
+ * draft per address, no `contracted_service_id` — so existing patients are not blocked.
  *
  * Spec 015 (US-A6.2, D254 item 6): each service-born vaga also inherits `age_range_min/max` from
  * the service's `provider_age_band`, through the SAME single mapping used everywhere else
@@ -112,8 +117,9 @@ export interface ActivatePatientResult {
  * ('A convenir', no requirements) that must be completed by hand before they
  * recruit anyone, so firing matchmaking here would be wrong.
  *
- * GATE de POST /activate (spec 014, decisão do Gabriel 03/09): bloqueia SÓ por ADDRESS — os
- * demais códigos de `computePatientCompleteness` (RESPONSIBLE/COVERAGE/CONTRACTED_SERVICE/
+ * GATE de POST /activate (spec 014, decisão do Gabriel 03/09): bloqueia SÓ por ADDRESS — e, desde
+ * a migration 330, por SERVICE_ADDRESS (mesma razão: a vaga precisa de endereço). Os demais
+ * códigos de `computePatientCompleteness` (RESPONSIBLE/COVERAGE/CONTRACTED_SERVICE/
  * CONSENT) são checklist informativo (`GET /:id` → `completeness.missing[]`), não bloqueio.
  * Medido na réplica de produção (só contagens): 370 pacientes vivos, apenas 23 com
  * `has_consent=true` — o campo só é gravado pelo espelho do ClickUp e pelo formulário público,
@@ -183,13 +189,21 @@ export class ActivatePatientUseCase {
         // Spec 015 (US-A6.2): coluna nova (migration 322) — a query já filtrava `WHERE active`,
         // então um serviço inativo simplesmente não aparece aqui (mesmo shape de antes).
         provider_age_band: string | null;
+        // Migration 330: `live_address_id` é o endereço do serviço SÓ se ele existe e não está
+        // arquivado — NULL cobre "sem vínculo" e "vínculo com endereço arquivado" de uma vez.
+        live_address_id: string | null;
+        schedule: unknown;
       }>(
-        `SELECT id, providers_needed, provider_age_band
-           FROM patient_contracted_services
-          WHERE patient_id = $1 AND active
-          ORDER BY created_at ASC`,
+        `SELECT pcs.id, pcs.providers_needed, pcs.provider_age_band, pcs.schedule,
+                pa.id AS live_address_id
+           FROM patient_contracted_services pcs
+           LEFT JOIN patient_addresses pa
+                  ON pa.id = pcs.address_id AND pa.archived_at IS NULL
+          WHERE pcs.patient_id = $1 AND pcs.active
+          ORDER BY pcs.created_at ASC`,
         [patientId],
       );
+      const servicesWithoutAddress = serviceRes.rows.filter((r) => r.live_address_id == null);
 
       const respRes = await client.query<{ count: number }>(
         `SELECT COUNT(*)::int AS count FROM patient_responsibles WHERE patient_id = $1`,
@@ -197,8 +211,8 @@ export class ActivatePatientUseCase {
       );
 
       // Spec 014 (US-D1/SUP-D1, lex D1.1/D1.2): `computePatientCompleteness` continua a fonte
-      // ÚNICA do checklist — `missing[]`/`ready` no `GET /:id` cobre os 5 códigos
-      // (ADDRESS/RESPONSIBLE/COVERAGE/CONTRACTED_SERVICE/CONSENT), informativo. `blocking` já
+      // ÚNICA do checklist — `missing[]`/`ready` no `GET /:id` cobre os 6 códigos
+      // (ADDRESS/RESPONSIBLE/COVERAGE/CONTRACTED_SERVICE/SERVICE_ADDRESS/CONSENT), informativo. `blocking` já
       // vem filtrado por ACTIVATION_BLOCKING_CODES (D255) — o gate abaixo LÊ blocking, nunca
       // reimplementa "quais códigos bloqueiam" comparando `missing` a um código fixo (QA-caça
       // rodada 1, defeito 2: a cópia local só bloqueava ADDRESS por coincidência).
@@ -209,22 +223,23 @@ export class ActivatePatientUseCase {
         activeAddressCount: addrRes.rowCount ?? 0,
         activeResponsibleCount: respRes.rows[0]?.count ?? 0,
         activeContractedServiceCount: serviceRes.rowCount ?? 0,
+        activeContractedServicesWithoutAddressCount: servicesWithoutAddress.length,
       });
 
-      // GATE do POST /activate = SÓ ADDRESS (decisão do Gabriel, 03/09, revertendo o que o
+      // GATE do POST /activate = ADDRESS e, desde a migration 330 (D283), SERVICE_ADDRESS — os
+      // dois pela mesma razão: a vaga precisa de endereço. Origem da régua (Gabriel, 03/09, revertendo o que o
       // agente anterior do bloco D tinha feito — bloquear também por RESPONSIBLE/COVERAGE/
       // CONSENT). Medido na réplica de produção (só contagens, D165): 370 pacientes vivos, 23
       // com has_consent=true — `has_consent` hoje só é gravado pelo espelho do ClickUp e pelo
       // formulário público, NUNCA pelo painel. Dos 6 candidatos a ativar no dia da medição, 4
       // estavam sem consentimento: bloquear por CONSENT/RESPONSIBLE/COVERAGE travaria a
-      // operação quase inteira. O gate volta ao comportamento de antes do bloco D (só
-      // ADDRESS); os demais códigos ficam no checklist como pendência informativa, não como
-      // bloqueio — reversível: é só ACTIVATION_BLOCKING_CODES ganhar mais códigos (PatientCompleteness.ts).
+      // operação quase inteira. Os demais códigos ficam no checklist como pendência informativa,
+      // não como bloqueio — reversível: é só ACTIVATION_BLOCKING_CODES mudar (PatientCompleteness.ts).
       if (blocking.length > 0) {
         // Throw — the single catch below rolls back once (avoids double ROLLBACK).
         // O erro nomeia o que REALMENTE barrou: `NoActiveAddressError` hardcoda `['ADDRESS']` e
-        // uma mensagem sobre endereço, então só serve quando ADDRESS é o único bloqueio. Com
-        // ACTIVATION_BLOCKING_CODES em 1 item isso é sempre; no dia em que ganhar o segundo, o
+        // uma mensagem sobre endereço, então só serve quando ADDRESS é o único bloqueio. Desde a
+        // 330 há um segundo código (SERVICE_ADDRESS): sozinho ou junto, cai no genérico — senão o
         // 422 diria "falta o endereço" para quem tem endereço.
         throw blocking.length === 1 && blocking[0] === 'ADDRESS'
           ? new NoActiveAddressError(patientId)
@@ -238,21 +253,26 @@ export class ActivatePatientUseCase {
         // Spec 015 (US-A6.2): sempre um objeto (nunca null) — vacancyRangeForProviderAgeBand
         // já resolve "não informado"/fallback para {min:null,max:null} (ProviderAgeBandMapping.ts).
         ageRange: { min: number | null; max: number | null };
+        /** Migration 330: horário do encuadre, copiado tal qual; null = a vaga nasce sem horário. */
+        schedule: unknown;
       }> =
         serviceRes.rowCount && serviceRes.rowCount > 0
-          ? addrRes.rows.flatMap((addr) =>
-              serviceRes.rows.map((svc) => ({
-                addressId: addr.id,
-                serviceId: svc.id,
-                providersNeeded: svc.providers_needed,
-                ageRange: vacancyRangeForProviderAgeBand(svc.provider_age_band as ProviderAgeBand | null),
-              })),
-            )
+          ? // Migration 330: UMA vaga POR SERVIÇO, no endereço do serviço. O gate acima já
+            // garantiu que todo serviço ativo tem endereço vivo (SERVICE_ADDRESS bloqueia), então
+            // `live_address_id` nunca é null aqui — o `!` é coberto pelo gate, não por fé.
+            serviceRes.rows.map((svc) => ({
+              addressId: svc.live_address_id!,
+              serviceId: svc.id,
+              providersNeeded: svc.providers_needed,
+              ageRange: vacancyRangeForProviderAgeBand(svc.provider_age_band as ProviderAgeBand | null),
+              schedule: svc.schedule ?? null,
+            }))
           : addrRes.rows.map((addr) => ({
               addressId: addr.id,
               serviceId: null,
               providersNeeded: null,
               ageRange: { min: null, max: null },
+              schedule: null,
             }));
 
       const createdVacancyIds: string[] = [];
@@ -286,7 +306,7 @@ export class ActivatePatientUseCase {
           worker_profile_sought: null,
           required_experience: null,
           worker_attributes: null,
-          schedule: null,
+          schedule: pair.schedule,
           work_schedule: null,
           providers_needed: pair.providersNeeded,
           salary_text: null,

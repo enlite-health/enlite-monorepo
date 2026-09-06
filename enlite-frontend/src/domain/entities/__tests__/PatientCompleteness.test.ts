@@ -14,12 +14,13 @@ import {
 } from '../PatientCompleteness';
 
 describe('PATIENT_COMPLETENESS_CODES (front espelha o backend)', () => {
-  it('é exatamente os 5 códigos administrativos, nesta ordem', () => {
+  it('é exatamente os 6 códigos administrativos, nesta ordem (SERVICE_ADDRESS desde a migration 330)', () => {
     expect(PATIENT_COMPLETENESS_CODES).toEqual([
       'ADDRESS',
       'RESPONSIBLE',
       'COVERAGE',
       'CONTRACTED_SERVICE',
+      'SERVICE_ADDRESS',
       'CONSENT',
     ]);
   });
@@ -37,9 +38,9 @@ describe('PATIENT_COMPLETENESS_CODES (front espelha o backend)', () => {
   });
 });
 
-describe('ACTIVATION_BLOCKING_CODES (D255, espelha o backend)', () => {
-  it('é SÓ ADDRESS', () => {
-    expect(ACTIVATION_BLOCKING_CODES).toEqual(['ADDRESS']);
+describe('ACTIVATION_BLOCKING_CODES (D255 + migration 330, espelha o backend)', () => {
+  it('é ADDRESS e SERVICE_ADDRESS — a vaga precisa de endereço, e o serviço precisa apontar para um', () => {
+    expect(ACTIVATION_BLOCKING_CODES).toEqual(['ADDRESS', 'SERVICE_ADDRESS']);
   });
 });
 

@@ -194,7 +194,9 @@
       "providers": [],
       "createdAt": "2026-09-04T15:34:14.210Z",
       "updatedAt": "2026-09-04T15:34:14.210Z",
-      "hourlyValueRedacted": false
+      "hourlyValueRedacted": false,
+      "addressId": null,
+      "schedule": null
     }
   ],
   "createdAt": "2026-09-04T15:33:07.806Z",

@@ -9,6 +9,8 @@ export const PATIENT_COMPLETENESS_CODES = [
   'RESPONSIBLE',
   'COVERAGE',
   'CONTRACTED_SERVICE',
+  /** Migration 330: há serviço ativo sem endereço vinculado — a vaga não tem de onde nascer. */
+  'SERVICE_ADDRESS',
   'CONSENT',
 ] as const;
 
@@ -16,10 +18,11 @@ export type PatientCompletenessCode = (typeof PATIENT_COMPLETENESS_CODES)[number
 
 /**
  * D255 (decisão 03/09) — espelha `ACTIVATION_BLOCKING_CODES` do backend
- * (`worker-functions/src/modules/case/domain/PatientCompleteness.ts`). SÓ ADDRESS bloqueia o
- * `POST /activate`; os demais 4 códigos são checklist informativo, não bloqueio.
+ * (`worker-functions/src/modules/case/domain/PatientCompleteness.ts`). ADDRESS e, desde a
+ * migration 330, SERVICE_ADDRESS bloqueiam o `POST /activate` (os dois pela mesma razão: a vaga
+ * precisa de endereço); os demais códigos são checklist informativo, não bloqueio.
  */
-export const ACTIVATION_BLOCKING_CODES = ['ADDRESS'] as const;
+export const ACTIVATION_BLOCKING_CODES = ['ADDRESS', 'SERVICE_ADDRESS'] as const;
 
 /**
  * Status em que o checklist/botão "Activar paciente" fazem sentido — espelha

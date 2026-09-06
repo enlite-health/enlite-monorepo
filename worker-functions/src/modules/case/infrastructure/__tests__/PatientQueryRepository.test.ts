@@ -73,6 +73,8 @@ function baseListRow(overrides: Record<string, unknown> = {}) {
     // ADDRESS não tem coluna própria: reusa addressesCount (default '2' acima = presente).
     hasActiveResponsible: true,
     hasActiveContractedService: true,
+    // Migration 330: serviço ativo sem endereço vivo — default false (= vinculado).
+    hasActiveServiceWithoutAddress: false,
     ...overrides,
   };
 }
@@ -276,6 +278,21 @@ describe('PatientQueryRepository.list', () => {
     expect(rows[0].needsAttention).toBe(true);
     expect(rows[0].attentionReasons).toEqual(['MISSING_INFO']);
     expect(rows[0].attentionReasons).not.toContain('INCOMPLETE_ADMISSION');
+  });
+
+  // Migration 330: a listagem projeta `hasActiveServiceWithoutAddress` (LEFT JOIN em endereço
+  // vivo) e o traduz para o insumo do checklist — SERVICE_ADDRESS sozinho já marca a linha.
+  it('a11b. status ADMISSION + tudo completo MENOS o vínculo serviço→endereço → needsAttention TRUE, INCOMPLETE_ADMISSION', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [baseListRow({ status: 'ADMISSION', needsAttention: false, attentionReasons: [], hasActiveServiceWithoutAddress: true })],
+    });
+    const repo = new PatientQueryRepository();
+    const { rows } = await repo.list(baseFilters());
+    expect(rows[0].needsAttention).toBe(true);
+    expect(rows[0].attentionReasons).toContain('INCOMPLETE_ADMISSION');
+    const sql = mockPoolQuery.mock.calls[0][0] as string;
+    expect(sql).toMatch(/hasActiveServiceWithoutAddress/);
+    expect(sql).toMatch(/LEFT JOIN patient_addresses pa\s+ON pa\.id = pcs\.address_id AND pa\.archived_at IS NULL/);
   });
 
   it('a14. status PENDING_ADMISSION + checklist COMPLETO → needsAttention false, sem INCOMPLETE_ADMISSION', async () => {

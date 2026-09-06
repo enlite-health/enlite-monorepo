@@ -2934,7 +2934,12 @@
         "selectPlaceholder": "Seleccioná…",
         "affiliateHint": "Número de afiliado tal como figura en la credencial de la cobertura.",
         "versionHint": "Versión del servicio contratado (si la cobertura la identifica por versión, no por fecha).",
-        "requiredField": "Este campo es obligatorio"
+        "requiredField": "Este campo es obligatorio",
+        "serviceAddress": "Domicilio",
+        "serviceAddressHint": "Dónde se presta ESTE servicio. Cada servicio se vincula a un domicilio del paciente; la vacante nace ahí.",
+        "serviceAddressNoneHint": "Cargá primero un domicilio en \"Localizaciones\" para poder vincularlo.",
+        "serviceSchedule": "Horarios",
+        "serviceScheduleHint": "Opcional: la vacante puede crearse sin horario y completarse después."
       },
       "kanban": {
         "title": "Pacientes — Kanban",
@@ -3262,7 +3267,6 @@
           "tableDevice": "Dispositivo(s)",
           "tableProfessional": "Servicio",
           "tableProvidersNeeded": "Prest. necesarios",
-          "tableProvidersActive": "Prest. activos",
           "tableWeeklyHours": "Hs. semanales",
           "tableAuthorizedHours": "Hs. autorizadas",
           "tableLocation": "Lugar de Atención",
@@ -3274,6 +3278,18 @@
           "tableIVA": "IVA",
           "tableProviderAgeBand": "Franja etaria prestador",
           "inactiveBadge": "Baja",
+          "tableQuantity": "Cant.",
+          "tableAddress": "Domicilio",
+          "tableSchedule": "Horarios",
+          "noAddressLinked": "Sin domicilio vinculado",
+          "noSchedule": "Sin horario",
+          "detailTitle": "Detalle del servicio contratado",
+          "detailClose": "Cerrar",
+          "detailSupervision": "Supervisión",
+          "detailGuardShift": "Turno de guardia",
+          "detailProfessionalProfile": "Perfil profesional buscado",
+          "detailProviders": "Prestadores activos",
+          "detailNoProviders": "Sin prestadores asignados",
           "serviceTypes": {
             "AT": "Acompañante Terapéutico",
             "CAREGIVER": "Cuidador",
@@ -3396,6 +3412,7 @@
             "RESPONSIBLE": "Responsable",
             "COVERAGE": "Cobertura",
             "CONTRACTED_SERVICE": "Servicio contratado",
+            "SERVICE_ADDRESS": "Domicilio del servicio",
             "CONSENT": "Consentimiento"
           }
         },

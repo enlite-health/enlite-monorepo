@@ -176,11 +176,24 @@ export async function replacePatientAddresses(
             AND deleted_at IS NULL`,
         [newAddressId, existingForSlot.id],
       );
+      // Migration 330: o serviço contratado aponta para o endereço como a vaga aponta — a linha
+      // versionada leva o ponteiro junto, senão o serviço ficaria preso ao endereço ARQUIVADO e o
+      // checklist acusaria SERVICE_ADDRESS num paciente que só teve o endereço regeocodificado.
+      // Só o serviço ATIVO acompanha o endereço novo: o encerrado guarda onde FOI prestado
+      // (a linha arquivada continua existindo) — mesma regra de snapshot da vaga publicada.
+      await client.query(
+        `UPDATE patient_contracted_services
+            SET address_id = $1
+          WHERE address_id = $2
+            AND active`,
+        [newAddressId, existingForSlot.id],
+      );
     }
   }
 
   // Slots that disappeared from the ClickUp payload:
-  //   - archive if referenced by any job_posting (preserve history)
+  //   - archive if referenced by any job_posting OR contracted service (preserve history;
+  //     migration 330 — the service FK has no ON DELETE, so a DELETE here would fail)
   //   - delete if orphan
   const newOrders = new Set(geocoded.map(g => g.address.displayOrder));
   const goneIds = existing
@@ -193,9 +206,15 @@ export async function replacePatientAddresses(
           SET archived_at = NOW()
         WHERE id = ANY($1::uuid[])
           AND archived_at IS NULL
-          AND EXISTS (
-            SELECT 1 FROM job_postings jp
-            WHERE jp.patient_address_id = patient_addresses.id
+          AND (
+            EXISTS (
+              SELECT 1 FROM job_postings jp
+              WHERE jp.patient_address_id = patient_addresses.id
+            )
+            OR EXISTS (
+              SELECT 1 FROM patient_contracted_services pcs
+              WHERE pcs.address_id = patient_addresses.id
+            )
           )`,
       [goneIds],
     );
@@ -205,6 +224,10 @@ export async function replacePatientAddresses(
           AND NOT EXISTS (
             SELECT 1 FROM job_postings jp
             WHERE jp.patient_address_id = patient_addresses.id
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM patient_contracted_services pcs
+            WHERE pcs.address_id = patient_addresses.id
           )`,
       [goneIds],
     );

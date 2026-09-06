@@ -12,16 +12,18 @@ export { runSQL, cleanupPatientDeep };
 const b64 = (s: string) => Buffer.from(s, 'utf8').toString('base64');
 
 /** Paciente PENDING_ADMISSION (ativável), com 1 endereço — o mínimo pro fluxo do bloco C. */
-export function seedActivatablePatient(): { patientId: string; stamp: string } {
+export function seedActivatablePatient(): { patientId: string; addressId: string; stamp: string } {
   const stamp = Date.now().toString().slice(-6);
   // Spec 014 (SUP-D1): `POST /activate` agora também exige consentimento + cobertura informada
   // — sem isto o passo "ativar" deste teste (regressão do bloco C) voltaria 422.
-  const { patientId } = insertTestPatient({
+  const { patientId, addressId } = insertTestPatient({
     status: 'PENDING_ADMISSION', firstName: 'BlocoC', lastName: `Servicio${stamp}`,
     withAddress: true, hasConsent: true, insuranceInformed: 'OSDE',
   });
   runSQL(`UPDATE patients SET case_number = ${900000 + Number(stamp) % 90000} WHERE id = '${patientId}'`);
-  return { patientId, stamp };
+  // Migration 330: o teste precisa do id do endereço para vincular o serviço no drawer.
+  if (!addressId) throw new Error('seedActivatablePatient: insertTestPatient não devolveu addressId');
+  return { patientId, addressId, stamp };
 }
 
 /**

@@ -70,7 +70,6 @@ import { PatientProfileTabs } from '../PatientProfileTabs';
 import { FamiliaresCard } from '../FamiliaresCard';
 import { CoberturaMedicaCard } from '../CoberturaMedicaCard';
 import { LocalizacoesCard } from '../LocalizacoesCard';
-import { EnquadreTerapeuticoCard } from '../EnquadreTerapeuticoCard';
 
 // ── PatientIdentityCard ──────────────────────────────────────────────────────
 
@@ -521,17 +520,20 @@ describe('RelatoriosAtendimentosCard', () => {
 describe('PatientProfileTabs', () => {
   // Spec 014 US-D2: "Dados Financeiros" e "Agendamentos" SAÍRAM do tab bar — só tinham o
   // placeholder genérico "Em breve" atrás, nenhum card real (decisão Gabriel 03/09, item 9).
-  it('renders the 6 tabs with real content — "Dados Financeiros"/"Agendamentos" não existem mais', () => {
+  // 05/09 (decisão do Gabriel): "Enquadre" também saiu — era a tabela de serviços duplicada +
+  // placeholder; o encuadre do paciente É o serviço contratado (endereço + horário).
+  it('renders the 5 tabs with real content — "Dados Financeiros"/"Agendamentos"/"Enquadre" não existem mais', () => {
     const onTabChange = vi.fn();
     render(<PatientProfileTabs activeTab="clinicalData" onTabChange={onTabChange} />);
     expect(screen.getByText('Dados Clínicos')).toBeInTheDocument();
     expect(screen.getByText('Rede de Apoio')).toBeInTheDocument();
     expect(screen.getByText('Serviço Contratado')).toBeInTheDocument();
     expect(screen.getByText('Vagas')).toBeInTheDocument();
-    expect(screen.getByText('Enquadre')).toBeInTheDocument();
     expect(screen.getByText('Histórico')).toBeInTheDocument();
     expect(screen.queryByText('Dados Financeiros')).not.toBeInTheDocument();
     expect(screen.queryByText('Agendamentos')).not.toBeInTheDocument();
+    expect(screen.queryByText('Enquadre')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button')).toHaveLength(5);
   });
 
   it('active tab has primary background class', () => {
@@ -789,23 +791,9 @@ describe('LocalizacoesCard', () => {
 // `ServicosContratadosCard.test.tsx` (i18n real, molde `sex-both-i18n.test.tsx` — pega vazamento
 // de enum cru, que os `getByText` literais em pt-BR abaixo não pegavam).
 
-// ── EnquadreTerapeuticoCard ──────────────────────────────────────────────────
-
-// Spec 014 US-D2: card sem dado nenhum (kanban de 4 colunas sempre vazias) vira "título +
-// Próximamente REAL".
-describe('EnquadreTerapeuticoCard', () => {
-  it('renders card title', () => {
-    render(<EnquadreTerapeuticoCard />);
-    expect(screen.getByText('Enquadre Terapêutico')).toBeInTheDocument();
-  });
-
-  it('mostra "Em breve" — sem colunas, sem botões', () => {
-    render(<EnquadreTerapeuticoCard />);
-    expect(screen.getByText('Em breve')).toBeInTheDocument();
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('enquadre-column-interview')).not.toBeInTheDocument();
-  });
-});
+// ── EnquadreTerapeuticoCard ─ REMOVIDO (05/09, decisão do Gabriel): a aba "Encuadre" saiu da
+// ficha — era a tabela de serviços contratados duplicada + este placeholder. O encuadre do
+// paciente É o serviço contratado (endereço + horário, migration 330).
 
 // ── Spec 011 bloco A — contrato real da API e máscara do Clarity (A2/A4) ────
 

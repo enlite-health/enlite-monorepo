@@ -8,7 +8,7 @@ import { runSQL, cleanupPatientDeep } from './patient-detail-a-helper';
 export { runSQL, cleanupPatientDeep };
 
 /** Paciente PENDING_ADMISSION (ativável), com 1 endereço — o mínimo para o fluxo da A6. */
-export function seedActivatablePatientA6(): { patientId: string; stamp: string } {
+export function seedActivatablePatientA6(): { patientId: string; addressId: string; stamp: string } {
   const stamp = Date.now().toString().slice(-6);
   const clickupTaskId = `E2E-A6-${stamp}`;
   runSQL(`
@@ -26,7 +26,9 @@ export function seedActivatablePatientA6(): { patientId: string; stamp: string }
     VALUES ('${patientId}', 'primary', 'Av. A6 999, CABA, AR', 'Av. A6 999, CABA', -34.60, -58.38, 1, 'manual', NOW(), NOW())
   `);
   runSQL(`UPDATE patients SET case_number = ${910000 + Number(stamp) % 90000} WHERE id = '${patientId}'`);
-  return { patientId, stamp };
+  // Migration 330: o serviço aponta para o endereço — o teste vincula no drawer antes de ativar.
+  const addressId = runSQL(`SELECT id FROM patient_addresses WHERE patient_id = '${patientId}' ORDER BY created_at LIMIT 1`);
+  return { patientId, addressId, stamp };
 }
 
 /**

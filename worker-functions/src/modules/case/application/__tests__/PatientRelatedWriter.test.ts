@@ -120,6 +120,11 @@ describe('replacePatientAddresses', () => {
     expect(ins?.sql).toMatch(/logistics_corridor, access_notes/);
     expect(ins?.params).toEqual([PID, 'primary', 'Av. Maipú 1234', null, 1, 'Buenos Aires', 'Vicente López', 'Florida', -34.5, -58.5, 'Corredor Norte', 'Portero 24h']);
     expect(sqlDe(chamadas, /UPDATE job_postings/)?.params).toEqual(['novo-1', 'antiga-1']);
+    // Migration 330: o serviço contratado ATIVO acompanha o endereço novo (o encerrado guarda
+    // onde foi prestado — a linha arquivada continua existindo).
+    const svc = sqlDe(chamadas, /UPDATE patient_contracted_services/);
+    expect(svc?.params).toEqual(['novo-1', 'antiga-1']);
+    expect(svc?.sql).toMatch(/AND active/);
   });
 
   it('Path 2 por MUDANÇA de rua: mesmo desfecho — a logística é do domicílio, não do texto da rua', async () => {
@@ -162,6 +167,10 @@ describe('replacePatientAddresses', () => {
     const apaga = sqlDe(chamadas, /^\s*DELETE FROM patient_addresses/);
     expect(arquiva?.params).toEqual([['antiga-2']]);
     expect(apaga?.params).toEqual([['antiga-2']]);
+    // Migration 330: endereço apontado por serviço contratado é arquivado, nunca apagado (a FK
+    // sem ON DELETE recusaria o DELETE) — os dois comandos consultam a tabela do serviço.
+    expect(arquiva?.sql).toMatch(/patient_contracted_services pcs\s+WHERE pcs\.address_id = patient_addresses\.id/);
+    expect(apaga?.sql).toMatch(/NOT EXISTS \(\s*SELECT 1 FROM patient_contracted_services/);
   });
 
   it('nenhum slot sumiu → não roda nem o arquivamento nem o DELETE em lote', async () => {

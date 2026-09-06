@@ -9,7 +9,7 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: { getInstance: jest.fn().mockReturnValue({ getPool: jest.fn().mockReturnValue({ connect: mockConnect, query: mockPoolQuery }) }) },
 }));
 
-import { PatientContractedServiceRepository } from '../PatientContractedServiceRepository';
+import { PatientContractedServiceRepository, AddressNotOfPatientError } from '../PatientContractedServiceRepository';
 import { DeviceTypeUnknownError } from '../PatientDeviceTypeRepository';
 import type { ContractedServiceProviderRepository } from '../ContractedServiceProviderRepository';
 
@@ -30,6 +30,8 @@ const SERVICE_ROW = {
   supervision_frequency: null,
   guard_shift: null,
   provider_age_band: null,
+  address_id: null,
+  schedule: null,
   active: true,
   ended_at: null,
   country: 'AR',
@@ -111,6 +113,68 @@ describe('PatientContractedServiceRepository', () => {
       repo.create({ patientId: 'pat-1', serviceCode: 'AT', deviceTypeCodes: ['NAO_EXISTE'], actorUid: 'uid-1' }),
     ).rejects.toBeInstanceOf(DeviceTypeUnknownError);
     expect(chamadas[chamadas.length - 1].sql).toBe('ROLLBACK');
+  });
+
+  // ── Migration 330: endereço (ponteiro) e horário ─────────────────────────────────────────
+  it('create: schedule vai como JSON string (array JS viraria ARRAY Postgres, que o JSONB recusa); addressId vai cru', async () => {
+    const { cli, chamadas } = cliente();
+    mockConnect.mockResolvedValue(cli);
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo());
+    const schedule = [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }];
+    await repo.create({ patientId: 'pat-1', serviceCode: 'AT', addressId: 'addr-1', schedule, actorUid: 'uid-1' });
+    const ins = chamadas.find((c) => /^INSERT INTO patient_contracted_services/.test(c.sql))!;
+    expect(ins.sql).toMatch(/address_id/);
+    expect(ins.sql).toMatch(/schedule/);
+    expect(ins.params).toContain('addr-1');
+    expect(ins.params).toContain(JSON.stringify(schedule));
+    expect(ins.params).not.toContainEqual(schedule);
+  });
+
+  it('update: schedule:null e addressId:null vão como null (limpar é caminho válido), sem stringify', async () => {
+    const { cli, chamadas } = cliente();
+    mockConnect.mockResolvedValue(cli);
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo());
+    await repo.update('svc-1', { schedule: null, addressId: null, actorUid: 'uid-1' });
+    const upd = chamadas.find((c) => /^UPDATE patient_contracted_services SET/.test(c.sql))!;
+    expect(upd.sql).toMatch(/address_id = \$2/);
+    expect(upd.sql).toMatch(/schedule = \$3/);
+    expect(upd.params.slice(1, 3)).toEqual([null, null]);
+  });
+
+  it('create/update: FK composta violada (address_id de OUTRO paciente, 23503 em pcs_address_same_patient_fk) → AddressNotOfPatientError, ROLLBACK', async () => {
+    const fk = Object.assign(new Error('violates foreign key'), { code: '23503', constraint: 'pcs_address_same_patient_fk' });
+    for (const op of ['create', 'update'] as const) {
+      const { cli, chamadas } = cliente();
+      (cli.query as jest.Mock).mockImplementation(async (sql: string, params: unknown[] = []) => {
+        chamadas.push({ sql, params });
+        if (/^BEGIN$|^COMMIT$|^ROLLBACK$/.test(sql.trim())) return { rows: [], rowCount: 0 };
+        if (/^(INSERT INTO|UPDATE) patient_contracted_services/.test(sql)) throw fk;
+        return { rows: [], rowCount: 0 };
+      });
+      mockConnect.mockResolvedValue(cli);
+      const repo = new PatientContractedServiceRepository(fakeProviderRepo());
+      const run = op === 'create'
+        ? repo.create({ patientId: 'pat-1', serviceCode: 'AT', addressId: 'addr-alheio', actorUid: 'uid-1' })
+        : repo.update('svc-1', { addressId: 'addr-alheio', actorUid: 'uid-1' });
+      const err = await run.catch((e) => e);
+      expect(err).toBeInstanceOf(AddressNotOfPatientError);
+      expect((err as AddressNotOfPatientError).code).toBe('ADDRESS_NOT_OF_PATIENT');
+      expect((err as AddressNotOfPatientError).addressId).toBe('addr-alheio');
+      expect(chamadas[chamadas.length - 1].sql).toBe('ROLLBACK');
+    }
+  });
+
+  it('update: 23503 de OUTRA constraint (não é a FK do endereço) → propaga o erro original', async () => {
+    const other = Object.assign(new Error('other fk'), { code: '23503', constraint: 'outra_fk' });
+    const { cli } = cliente();
+    (cli.query as jest.Mock).mockImplementation(async (sql: string) => {
+      if (/^BEGIN$|^COMMIT$|^ROLLBACK$/.test(sql.trim())) return { rows: [], rowCount: 0 };
+      if (/^UPDATE patient_contracted_services/.test(sql)) throw other;
+      return { rows: [], rowCount: 0 };
+    });
+    mockConnect.mockResolvedValue(cli);
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo());
+    await expect(repo.update('svc-1', { addressId: 'x', actorUid: 'uid-1' })).rejects.toBe(other);
   });
 
   it('create: erro genérico → propaga, ROLLBACK', async () => {

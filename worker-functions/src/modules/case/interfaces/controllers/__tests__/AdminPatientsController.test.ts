@@ -318,10 +318,41 @@ describe('AdminPatientsController.getPatientById', () => {
   });
 
   describe('Cenário 1b — completeness (spec 014 US-D1, lex D1.1/D1.2)', () => {
+    // Migration 330: serviço ativo SEM endereço (ou com endereço que não está na ficha = arquivado)
+    // → SERVICE_ADDRESS em missing E em blocking — a ficha mostra o mesmo que o activate recusa.
+    it('serviço ativo sem endereço vinculado → SERVICE_ADDRESS em missing e blocking, canActivate false', async () => {
+      const patient = makePatientDetail({
+        addresses: [{ id: 'a1', addressType: 'primary' }],
+        contractedServices: [{ active: true, addressId: null }],
+      });
+      mockFindDetailById.mockResolvedValue(patient);
+
+      const [req, res] = mockReqRes({ id: PATIENT_ID });
+      await controller.getPatientById(req, res);
+
+      const completeness = (res as any).json.mock.calls[0][0].data.completeness;
+      expect(completeness.missing).toEqual(['SERVICE_ADDRESS']);
+      expect(completeness.blocking).toEqual(['SERVICE_ADDRESS']);
+      expect(completeness.canActivate).toBe(false);
+    });
+
+    it('serviço ativo apontando para endereço que NÃO está na ficha (arquivado) → SERVICE_ADDRESS', async () => {
+      const patient = makePatientDetail({
+        addresses: [{ id: 'a1', addressType: 'primary' }],
+        contractedServices: [{ active: true, addressId: 'a-arquivado' }],
+      });
+      mockFindDetailById.mockResolvedValue(patient);
+
+      const [req, res] = mockReqRes({ id: PATIENT_ID });
+      await controller.getPatientById(req, res);
+
+      expect((res as any).json.mock.calls[0][0].data.completeness.blocking).toEqual(['SERVICE_ADDRESS']);
+    });
+
     it('todos os critérios satisfeitos → ready:true, missing:[]', async () => {
       const patient = makePatientDetail({
         addresses: [{ id: 'a1', addressType: 'primary' }],
-        contractedServices: [{ active: true }],
+        contractedServices: [{ active: true, addressId: 'a1' }],
       });
       mockFindDetailById.mockResolvedValue(patient);
 
@@ -353,7 +384,7 @@ describe('AdminPatientsController.getPatientById', () => {
       const patient = makePatientDetail({
         birthDate: new Date(new Date().getFullYear() - 5, 0, 1), // 5 anos
         addresses: [{ id: 'a1', addressType: 'primary' }],
-        contractedServices: [{ active: true }],
+        contractedServices: [{ active: true, addressId: 'a1' }],
         responsibles: [],
       });
       mockFindDetailById.mockResolvedValue(patient);
@@ -367,7 +398,7 @@ describe('AdminPatientsController.getPatientById', () => {
     it('sem consentimento (hasConsent false) → CONSENT em missing', async () => {
       const patient = makePatientDetail({
         addresses: [{ id: 'a1', addressType: 'primary' }],
-        contractedServices: [{ active: true }],
+        contractedServices: [{ active: true, addressId: 'a1' }],
         hasConsent: false,
       } as never);
       mockFindDetailById.mockResolvedValue(patient);
