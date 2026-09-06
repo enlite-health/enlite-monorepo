@@ -48,7 +48,7 @@ const ESPERADO_WORKERS: Record<string, string> = {
   'GET /workers/case-options': 'worker:read',
   'GET /workers/filter-options': 'worker:read',
   // Mapa de prestadores (REQ-04, DEC-14) — POST com corpo; leitura de pontos, célula de leitura.
-  'POST /workers/map': 'worker:read',
+  'POST /workers/map': 'worker_address:read',
   'POST /workers/sync-talentum': 'talentum:write',
   'GET /workers/export': 'worker:export',
   'GET /workers/:id/timeline': 'worker:read',

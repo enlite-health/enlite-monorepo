@@ -181,11 +181,10 @@ export async function buildWorkerDetailResponse(
   const isActive = w.status !== 'DISABLED' && w.deleted_at === null;
   const doc = docsResult.rows[0] ?? null;
   const loc = locationResult.rows[0] ?? null;
-  // Endereço é dossiê INTEIRO: linha, lat/lng e raio (coordenada É o endereço — `lex` fase 2,
-  // P2). Cidade, zona de trabalho e zona de interesse são o critério operacional de matching e
-  // ficam no nível base. Que o mapa entregue coordenada (e nome) sob `worker:read` é defeito DELE
-  // (P1, em LISTA), não régua para a ficha.
-  const endereco = (valor: string | null | undefined): string | null => (reads.dossier ? valor ?? null : null);
+  // Endereço é célula própria (`worker_address:read`, a mesma do mapa): linha, lat/lng e raio
+  // (coordenada É o endereço — `lex` fase 2, P2). Cidade, zona de trabalho e zona de interesse
+  // são o critério operacional de matching e ficam no nível base.
+  const endereco = (valor: string | null | undefined): string | null => (reads.address ? valor ?? null : null);
   const redacted = workerRedactionMarker(reads);
 
   return {
@@ -219,7 +218,7 @@ export async function buildWorkerDetailResponse(
     anaCareId: w.ana_care_id ?? null,
     anaCareSyncedAt: w.ana_care_synced_at ?? null,
     documents: doc ? await buildDocumentsWithSignedUrls(gcs, doc) : null,
-    serviceAreas: reads.dossier ? serviceAreasResult.rows.map((sa: any) => ({
+    serviceAreas: reads.address ? serviceAreasResult.rows.map((sa: any) => ({
       id: sa.id, address: sa.address_line ?? null, serviceRadiusKm: sa.radius_km ?? null,
       lat: sa.latitude ? parseFloat(sa.latitude) : null,
       lng: sa.longitude ? parseFloat(sa.longitude) : null,

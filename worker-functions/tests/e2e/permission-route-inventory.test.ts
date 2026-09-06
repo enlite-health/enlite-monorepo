@@ -299,7 +299,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/template-drafts/:id/submit → messaging:write',
         'POST /api/admin/template-drafts/validar → messaging:write',
         'POST /api/admin/workers/:workerId/presentation-invite → messaging:send',
-        'POST /api/admin/workers/map → worker:read',
+        'POST /api/admin/workers/map → worker_address:read',
         'PUT /api/admin/funnel-stage-messages/:stage → messaging:write',
         'PUT /api/admin/presentation-invite/settings → messaging:write',
         'PUT /api/admin/template-drafts/:id → messaging:write',

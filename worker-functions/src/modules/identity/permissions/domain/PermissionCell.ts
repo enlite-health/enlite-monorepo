@@ -44,6 +44,7 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   worker: 'Trabalhadores',
   worker_pii: 'Trabalhadores',
   worker_contact: 'Trabalhadores',
+  worker_address: 'Trabalhadores',
   worker_document: 'Trabalhadores',
   vacancy: 'Vagas e Funil',
   funnel: 'Vagas e Funil',
@@ -105,8 +106,14 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Ver e usar o CONTATO do prestador: nome, telefone, WhatsApp e e-mail. É o instrumento diário '
     + 'de quem recruta — a operação liga para a pessoa.',
   'worker_pii:read':
-    'Ver o DOSSIÊ do prestador: documento (DNI), data de nascimento, endereço, fotos e os dados '
-    + 'sensíveis de raça, religião e orientação sexual. Acesso de auditoria e RH, não de operação.',
+    'Ver o DOSSIÊ do prestador: documento (DNI), data de nascimento, fotos e os dados sensíveis de '
+    + 'raça, religião e orientação sexual. Acesso de auditoria e RH, não de operação.',
+  // D286 fase 2 (06/09): o endereço sai do dossiê e vira célula própria, espelho de `patient_address` —
+  // a MESMA célula vale no card de endereço da ficha e na aba Prestadores do mapa (coordenada é
+  // endereço, `lex` P2; abrir o mapa não pode exigir raça e religião).
+  'worker_address:read':
+    'Ver o ENDEREÇO do prestador: linha de endereço, coordenada e raio de atendimento — na ficha e '
+    + 'no mapa. Cidade e zona de trabalho não precisam desta célula.',
   'worker:disable':
     'Dar e reverter a baixa do prestador — as transições DE e PARA o estado DISABLED. Exige motivo '
     + 'e não vem em nenhum grupo por padrão.',

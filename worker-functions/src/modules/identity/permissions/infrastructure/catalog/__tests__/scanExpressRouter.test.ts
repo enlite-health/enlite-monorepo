@@ -258,6 +258,8 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
 
     expect(cellsForaDeRota(deRota).map((c) => `${c.resource}:${c.action}`)).toEqual([
       'worker_contact:read',
+      // D286 fase 2 — endereço do prestador (ficha e mapa); o fixture de rota deste teste não declara o mapa
+      'worker_address:read',
       'worker:disable',
       // D116 — ferramentas sem botão no painel (purga de teste, monitor sintético, docs); declaradas
       // em CELL_DESCRIPTION no sync main→stage de 06/09 para o painel não as mostrar sem texto.

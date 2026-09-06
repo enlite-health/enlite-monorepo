@@ -37,6 +37,8 @@ import {
 } from '@shared/http/mapQueryCommon';
 import { LIVE_JOB_POSTING_SQL } from '@modules/matching/domain/openJobStatuses';
 import { PATIENT_STATUSES } from '../../domain/enums/PatientStatus';
+import { NOME_REDIGIDO, cellsOfRequest } from '@modules/identity/permissions';
+import { canReadPatientContainer } from '../../application/patientContainerAccess';
 
 export const MAX_PATIENT_MAP_POINTS = MAX_MAP_POINTS;
 
@@ -165,6 +167,7 @@ export class AdminPatientsMapController {
       const { sql, params } = buildPatientsMapQuery(body);
       const result = await this.db.query<PatientMapRow>(sql, params);
 
+      const identidade = canReadPatientContainer(cellsOfRequest(req), 'identity');
       const data: PatientMapPoint[] = result.rows.map((row) => {
         const lat = num(row.lat);
         const lng = num(row.lng);
@@ -172,7 +175,9 @@ export class AdminPatientsMapController {
         return {
           id: row.id,
           addressId: row.address_id ?? null,
-          name: [row.first_name, row.last_name].filter(Boolean).join(' ') || '—',
+          // D286 fase 2: o nome do pino é IDENTIDADE do paciente (`patient_identity:read`); a rota é
+          // endereço. Sem a célula, `NOME_REDIGIDO` (texto claro no banco — a prova é a fronteira).
+          name: identidade ? [row.first_name, row.last_name].filter(Boolean).join(' ') || '—' : NOME_REDIGIDO,
           lat: hasCoords ? lat : null,
           lng: hasCoords ? lng : null,
           status: row.status,

@@ -91,9 +91,12 @@ export function createAdminWorkerRoutes(
   // filter-options MUST be before /:id to avoid param capture
   router.get('/workers/filter-options', staffOnly, perm.require('worker', 'read'), (req: Request, res: Response) => c.aux.getFilterOptions(req, res));
   // map MUST be before /:id — pontos do mapa de prestadores (REQ-04, DEC-14). POST com corpo: o centro do raio nunca vai na URL (lex C2).
+  // D286 fase 2: coordenada É endereço → a MESMA célula do card de endereço da ficha (`worker_address:read`);
+  // o nome de cada pino segue `worker_contact:read` (projetado no controller, antes do KMS). Era `worker:read`
+  // e entregava nome + lat/lng de todo mundo (`lex` P1).
   if (c.map) {
     const map = c.map;
-    router.post('/workers/map', staffOnly, perm.require('worker', 'read'), (req: Request, res: Response) => map.getMapPoints(req, res));
+    router.post('/workers/map', staffOnly, perm.require('worker_address', 'read'), (req: Request, res: Response) => map.getMapPoints(req, res));
   }
   router.post('/workers/sync-talentum', staffOnly, perm.require('talentum', 'write'), (req: Request, res: Response) => c.aux.syncTalentumWorkers(req, res));
   // export MUST be registered before /:id to avoid param capture

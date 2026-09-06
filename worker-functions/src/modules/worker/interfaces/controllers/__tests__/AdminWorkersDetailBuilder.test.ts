@@ -119,8 +119,8 @@ describe('só worker:read — o operacional sai, o resto NÃO chega ao KMS', () 
     for (const f of ['documentType', 'documentNumber', 'birthDate', 'sex', 'gender', 'profilePhotoUrl', 'race', 'religion', 'sexualOrientation', 'weightKg', 'heightCm']) {
       expect(data[f]).toBeNull();
     }
-    // coordenada É endereço (lex P2): o bloco de áreas sai null; cidade/zona (critério de
-    // matching) ficam
+    // coordenada É endereço (lex P2), célula própria worker_address: o bloco de áreas sai null;
+    // cidade/zona (critério de matching) ficam
     expect(data.location).toMatchObject({ address: null, city: 'Buenos Aires', workZone: 'Palermo' });
     expect(data.serviceAreas).toBeNull();
   });
@@ -144,11 +144,11 @@ describe('só worker:read — o operacional sai, o resto NÃO chega ao KMS', () 
     expect(data.tags).toEqual([{ id: 'tag-1', name: 'VIP', color: '#000', description: undefined }]);
   });
 
-  it('marcador CONSTANTE: os 4 containers redigidos, com ou sem conteúdo', async () => {
+  it('marcador CONSTANTE: os 5 containers redigidos, com ou sem conteúdo', async () => {
     const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, CELLS);
-    expect(data.redacted).toEqual({ contact: true, dossier: true, documents: true, encuadres: true });
+    expect(data.redacted).toEqual({ contact: true, dossier: true, address: true, documents: true, encuadres: true });
     const semNada = await buildWorkerDetailResponse(db, enc, gcs, { ...ROW, first_name_encrypted: null, document_number_encrypted: null }, CELLS);
-    expect(semNada.redacted).toEqual({ contact: true, dossier: true, documents: true, encuadres: true });
+    expect(semNada.redacted).toEqual({ contact: true, dossier: true, address: true, documents: true, encuadres: true });
   });
 });
 
@@ -158,39 +158,48 @@ describe('um container de cada vez', () => {
     expect(data).toMatchObject({ firstName: 'Maria', lastName: 'Garcia', email: 'maria@example.com', phone: '+5491100000000', whatsappPhone: '+549', linkedinUrl: 'li' });
     expect(data.documentNumber).toBeNull();
     for (const c of CIFRADOS_DE_DOSSIE) expect(abertos()).not.toContain(c);
-    expect(data.redacted).toEqual({ dossier: true, documents: true, encuadres: true });
+    expect(data.redacted).toEqual({ dossier: true, address: true, documents: true, encuadres: true });
   });
 
-  it('worker_pii:read abre o dossiê e a linha de endereço, mas NÃO o nome (contato é outra chave)', async () => {
+  it('worker_pii:read abre o dossiê mas NÃO o endereço (célula própria) nem o nome (contato é outra chave)', async () => {
     const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, ['worker:read', 'worker_pii:read']);
     expect(data).toMatchObject({ documentType: 'DNI', documentNumber: '12345678', birthDate: '1990-01-01', race: 'r', heightCm: '170' });
-    expect(data.location.address).toBe('Calle Falsa 123');
-    expect(data.serviceAreas[0]).toMatchObject({ address: 'Calle Falsa 123', lat: -34.6, lng: -58.4, serviceRadiusKm: 10 });
+    expect(data.location.address).toBeNull();
+    expect(data.serviceAreas).toBeNull();
     expect(data.firstName).toBe(NOME_REDIGIDO);
     for (const c of CIFRADOS_DE_CONTATO) expect(abertos()).not.toContain(c);
-    expect(data.redacted).toEqual({ contact: true, documents: true, encuadres: true });
+    expect(data.redacted).toEqual({ contact: true, address: true, documents: true, encuadres: true });
+  });
+
+  it('worker_address:read abre linha, coordenada e raio — e nada do dossiê (a mesma célula do mapa)', async () => {
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, ['worker:read', 'worker_address:read']);
+    expect(data.location.address).toBe('Calle Falsa 123');
+    expect(data.serviceAreas[0]).toMatchObject({ address: 'Calle Falsa 123', lat: -34.6, lng: -58.4, serviceRadiusKm: 10 });
+    expect(data.documentNumber).toBeNull();
+    for (const c of CIFRADOS_DE_DOSSIE) expect(abertos()).not.toContain(c);
+    expect(data.redacted).toEqual({ contact: true, dossier: true, documents: true, encuadres: true });
   });
 
   it('worker_document:read roda a query e assina as URLs', async () => {
     const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, ['worker:read', 'worker_document:read']);
     expect(data.documents).toMatchObject({ resumeCvUrl: 'signed:cv.pdf', identityDocumentUrl: 'signed:dni.jpg', documentsStatus: 'approved' });
-    expect(data.redacted).toEqual({ contact: true, dossier: true, encuadres: true });
+    expect(data.redacted).toEqual({ contact: true, dossier: true, address: true, encuadres: true });
   });
 
   it('match:read devolve os encuadres — e o nome do PACIENTE segue patient_identity:read, não a célula do prestador', async () => {
     const semIdentidade = await buildWorkerDetailResponse(db, enc, gcs, ROW, ['worker:read', 'match:read']);
     expect(semIdentidade.encuadres).toHaveLength(1);
     expect(semIdentidade.encuadres[0]).toMatchObject({ caseNumber: 42, patientName: NOME_REDIGIDO });
-    expect(semIdentidade.redacted).toEqual({ contact: true, dossier: true, documents: true });
+    expect(semIdentidade.redacted).toEqual({ contact: true, dossier: true, address: true, documents: true });
 
     const comIdentidade = await buildWorkerDetailResponse(db, enc, gcs, ROW, ['worker:read', 'match:read', 'patient_identity:read']);
     expect(comIdentidade.encuadres[0].patientName).toBe('Juan Perez');
   });
 
-  it('com as 4 células de container (sem null) a resposta é a mesma da ficha inteira', async () => {
+  it('com as 5 células de container (sem null) a resposta é a mesma da ficha inteira', async () => {
     const tudo = await buildWorkerDetailResponse(db, enc, gcs, ROW, null);
     const porCelula = await buildWorkerDetailResponse(db, enc, gcs, ROW, [
-      'worker:read', 'worker_contact:read', 'worker_pii:read', 'worker_document:read', 'match:read', 'patient_identity:read',
+      'worker:read', 'worker_contact:read', 'worker_pii:read', 'worker_address:read', 'worker_document:read', 'match:read', 'patient_identity:read',
     ]);
     expect(porCelula).toEqual(tudo);
   });

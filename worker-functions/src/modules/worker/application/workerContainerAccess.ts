@@ -13,8 +13,9 @@
  *                            de trabalho/interesse, disponibilidade, etiquetas, conta de teste
  *  · `worker_contact:read`   nome, e-mail, telefone, whatsapp, linkedin      → container `contact`
  *  · `worker_pii:read`       DNI, nascimento, sexo, gênero, foto, raça, religião, orientação
- *                            sexual, peso, altura, ENDEREÇO inteiro (linha, lat/lng, raio —
- *                            coordenada é endereço, `lex` P2)                 → `dossier`
+ *                            sexual, peso, altura                             → `dossier`
+ *  · `worker_address:read`   ENDEREÇO inteiro: linha, lat/lng, raio (coordenada é endereço,
+ *                            `lex` P2) — a MESMA célula vale no mapa           → `address`
  *  · `worker_document:read`  o bloco `documents` (URLs assinadas só nascem com a célula) → `documents`
  *  · `match:read`            o bloco `encuadres` (vagas em que o prestador está) → `encuadres`
  *
@@ -39,13 +40,14 @@ import { cellKey } from '@modules/identity/permissions';
 import { NOME_REDIGIDO } from '@modules/identity/permissions';
 import { canReadPatientContainer } from '@modules/case/application/patientContainerAccess';
 
-export const WORKER_CONTAINERS = ['contact', 'dossier', 'documents', 'encuadres'] as const;
+export const WORKER_CONTAINERS = ['contact', 'dossier', 'address', 'documents', 'encuadres'] as const;
 export type WorkerContainer = (typeof WORKER_CONTAINERS)[number];
 
 /** Recurso (o `resource` da célula `recurso:ação`) de cada container. */
 export const WORKER_CONTAINER_RESOURCE: Readonly<Record<WorkerContainer, string>> = {
   contact: 'worker_contact',
   dossier: 'worker_pii',
+  address: 'worker_address',
   documents: 'worker_document',
   encuadres: 'match',
 };

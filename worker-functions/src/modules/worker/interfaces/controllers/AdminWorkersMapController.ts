@@ -46,6 +46,8 @@ import {
 } from '@shared/http/mapQueryCommon';
 import { buildAllValidatedClause, buildPendingValidationClause } from '../../application/workerDocumentFilters';
 import { buildWorkerListWhereClause, locationMatchSql } from './AdminWorkersListHelpers';
+import { NOME_REDIGIDO, cellsOfRequest } from '@modules/identity/permissions';
+import { workerContainerReadsOf } from '../../application/workerContainerAccess';
 
 export { MAX_MAP_POINTS };
 /** Cifras por rodada de decrypt em paralelo (em prod cada uma é uma chamada ao KMS). */
@@ -216,8 +218,14 @@ export class AdminWorkersMapController {
       const result = await this.db.query<WorkerMapRow>(sql, params);
       const rows = result.rows;
 
+      // D286 fase 2 / lex P1: o nome do pino é CONTATO (`worker_contact:read`) — a célula decide
+      // ANTES do KMS. Sem ela, nenhum cifrado é aberto e o pino diz `NOME_REDIGIDO` (trava, não
+      // rótulo — D181). `cells = null` = engine não decidiu → como antes (D113).
+      const reads = workerContainerReadsOf(cellsOfRequest(req));
       // Uma passada só: nome e sobrenome de todas as linhas (já cortadas pelo LIMIT).
-      const names = await this.decryptAll(rows.flatMap((r) => [r.first_name_encrypted, r.last_name_encrypted]));
+      const names = reads.contact
+        ? await this.decryptAll(rows.flatMap((r) => [r.first_name_encrypted, r.last_name_encrypted]))
+        : null;
 
       const data: WorkerMapPoint[] = rows.map((row, k) => {
         const lat = num(row.latitude);
@@ -225,7 +233,7 @@ export class AdminWorkersMapController {
         const hasCoords = lat !== null && lng !== null;
         return {
           id: row.id,
-          name: [names[2 * k], names[2 * k + 1]].filter(Boolean).join(' ') || '—',
+          name: names === null ? NOME_REDIGIDO : [names[2 * k], names[2 * k + 1]].filter(Boolean).join(' ') || '—',
           lat: hasCoords ? lat : null,
           lng: hasCoords ? lng : null,
           status: row.status,
