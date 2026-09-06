@@ -175,7 +175,7 @@ export function VacancyProfessionCard({
       : null;
 
   return (
-    <div className="border-[2.5px] border-gray-400 rounded-card bg-white p-8 flex flex-col gap-6">
+    <div data-testid="vacancy-profession-card" className="border-[2.5px] border-gray-400 rounded-card bg-white p-8 flex flex-col gap-6">
       <div className="flex justify-between items-start">
         <Heading level={1} color="primary" weight="semibold">
           {cardTitle}

@@ -35,7 +35,9 @@ const ESPERADO: Record<string, string> = {
   'GET /dashboard/zones': 'dashboard:read',
   'GET /dashboard/reemplazos': 'dashboard:read',
   'GET /dashboard/management': 'dashboard:read',
-  'GET /dashboard/zone-analytics': 'dashboard:read',
+  // D286 (06/09): o bloco Zonas da Gestión a la Vista é célula própria — os outros blocos são
+  // projetados dentro de /dashboard/management (dashboardContainerAccess).
+  'GET /dashboard/zone-analytics': 'dashboard_zones:read',
   'GET /dashboard/cases/:caseNumber': 'dashboard:read',
 };
 
@@ -87,9 +89,9 @@ describe('família admin.analytics — 15 rotas declaram célula', () => {
     expect(declaradas()['GET /dedup/candidates']).toBe('dedup:read');
   });
 
-  it('o dashboard é dashboard:read — não analytics:read', () => {
+  it('o dashboard é dashboard:read — não analytics:read (e Zonas é dashboard_zones:read, bloco próprio)', () => {
     for (const rota of Object.keys(ESPERADO).filter((r) => r.includes('/dashboard/'))) {
-      expect(declaradas()[rota]).toBe('dashboard:read');
+      expect(declaradas()[rota]).toBe(rota.endsWith('/zone-analytics') ? 'dashboard_zones:read' : 'dashboard:read');
     }
   });
 

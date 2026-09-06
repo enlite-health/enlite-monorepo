@@ -114,7 +114,7 @@ export function VacancyFunnelView({
   }, [isListView]);
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-4">
+    <div data-testid="vacancy-funnel-view" className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-4">
       {/* Linha 1: toggle (esquerda) + ações (direita, só em modo lista) */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <VacancyFunnelToggle view={view} onChange={handleViewChange} />

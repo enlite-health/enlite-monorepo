@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CellHelpDrawer } from '..';
@@ -49,14 +51,14 @@ describe('CellHelpDrawer — a ajuda de uma permissão', () => {
     expect(screen.getByText('Ver')).toBeInTheDocument();
   });
 
-  it('🔒 os LOCALES não enumeram categoria sensível em nenhum dos 21 recursos', () => {
+  it('🔒 os LOCALES não enumeram categoria sensível em nenhum dos 37 recursos', () => {
     // Este é o guardião de verdade. O de baixo lê o dicionário do próprio teste
     // e ficaria verde com "religión" escrito no es.json — instrumento morto,
     // achado do gate (05/09). Aqui a asserção é sobre o ARTEFATO.
     const proibidos = /racial|religi|orientaci|orientaç|etnia/i;
     for (const [nome, loc] of [['es', es], ['pt-BR', ptBR]] as const) {
       const rec = loc.admin.access.group.cells.help.resource as Record<string, { body: string; action: Record<string, string> }>;
-      expect(Object.keys(rec).length).toBeGreaterThanOrEqual(21);
+      expect(Object.keys(rec).length).toBeGreaterThanOrEqual(37);
       for (const [r, v] of Object.entries(rec)) {
         for (const [onde, txt] of [['body', v.body], ...Object.entries(v.action)]) {
           expect(`${nome}.${r}.${onde}: ${txt}`).not.toMatch(proibidos);
@@ -122,5 +124,27 @@ describe('CellHelpDrawer — a ajuda de uma permissão', () => {
     const { onClose } = montar({ resource: null });
     await userEvent.keyboard('{Escape}');
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('recurso com captura mostra a imagem do componente (public/ayuda-celulas) com legenda; sem captura, nada — nem 404', () => {
+    montar({ resource: 'patient_family', rotulo: 'Familiares' });
+    const fig = screen.getByTestId('cell-help-image');
+    expect(fig.querySelector('img')?.getAttribute('src')).toBe('/ayuda-celulas/patient_family.png');
+    expect(fig.textContent).toContain('admin.access.group.cells.help.imageCaption');
+  });
+
+  it('recurso sem captura não desenha a figura', () => {
+    montar({ resource: 'api_docs', rotulo: 'API Docs' });
+    expect(screen.queryByTestId('cell-help-image')).not.toBeInTheDocument();
+  });
+
+  it('🔒 a CAPTURA do dossiê não pode mostrar as categorias sensíveis — o script de captura corta acima delas', () => {
+    // O guardião acima lê o locale; a imagem é outro canal para o mesmo popup (achado do gate,
+    // 06/09). Nenhum teste lê pixel, então a trava é estrutural: a linha do `worker_pii` no script
+    // tem de carregar o `clipAbove` na primeira legenda proibida.
+    const script = readFileSync(resolve(__dirname, '../../../../../../scripts/capturar-ajuda-celulas.mjs'), 'utf8');
+    const linha = script.split('\n').find((l) => l.includes("['worker_pii'"));
+    expect(linha).toBeDefined();
+    expect(linha).toContain("clipAbove: 'admin.workerDetail.sexualOrientation'");
   });
 });

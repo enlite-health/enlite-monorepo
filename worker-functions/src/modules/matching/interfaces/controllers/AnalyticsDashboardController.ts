@@ -23,6 +23,8 @@ import { JobPostingARRepository } from '../../infrastructure/JobPostingARReposit
 import { GetManagementDashboardUseCase } from '../../application/GetManagementDashboardUseCase';
 import { GetZoneAnalyticsUseCase } from '../../application/GetZoneAnalyticsUseCase';
 import { zoneAnalyticsQuerySchema } from '../../application/zoneAnalyticsSchema';
+import { cellsOfRequest } from '@modules/identity/permissions';
+import { projectManagementDashboard } from '../../application/dashboardContainerAccess';
 
 export class AnalyticsDashboardController {
   protected db: Pool;
@@ -114,7 +116,8 @@ export class AnalyticsDashboardController {
 
       const useCase = new GetManagementDashboardUseCase(this.db);
       const data = await useCase.execute({ funnelPeriodDays });
-      res.json({ success: true, data });
+      // D286: cada bloco da tela tem célula própria — a resposta sai projetada por seção.
+      res.json({ success: true, data: projectManagementDashboard(data as unknown as Record<string, unknown>, cellsOfRequest(req)) });
     } catch (err) {
       res.status(500).json({ success: false, error: (err as Error).message });
     }

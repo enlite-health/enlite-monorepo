@@ -56,7 +56,18 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   {
     id: 'dashboard',
     route: '/admin/dashboard',
-    containers: [c('analytics', 'dashboard', ['read']), c('patients', 'patient', ['read'])],
+    // Abrir a tela é `dashboard:read` (célula da rota de `management`); cada BLOCO da tela tem a sua,
+    // e a rota projeta o payload por bloco (`dashboardContainerAccess` no back). Zonas é rota própria.
+    cells: ['dashboard:read'],
+    containers: [
+      c('numbers', 'dashboard_numbers', ['read']),
+      c('team', 'dashboard_team', ['read']),
+      c('priorities', 'dashboard_priorities', ['read']),
+      c('registrations', 'dashboard_registrations', ['read']),
+      c('funnel', 'dashboard_funnel', ['read']),
+      c('zones', 'dashboard_zones', ['read']),
+      c('patients', 'patient', ['read']),
+    ],
   },
   {
     id: 'users',

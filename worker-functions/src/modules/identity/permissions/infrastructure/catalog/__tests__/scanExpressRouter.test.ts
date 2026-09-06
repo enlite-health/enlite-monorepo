@@ -258,6 +258,14 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
 
     expect(cellsForaDeRota(deRota).map((c) => `${c.resource}:${c.action}`)).toEqual([
       'worker_contact:read',
+      // D286 (06/09) — os blocos da Gestión a la Vista: projetados dentro de /dashboard/management
+      // (sem rota própria); `dashboard_zones` TEM rota, mas o fixture deste teste não a declara.
+      'dashboard_numbers:read',
+      'dashboard_team:read',
+      'dashboard_priorities:read',
+      'dashboard_registrations:read',
+      'dashboard_funnel:read',
+      'dashboard_zones:read',
       // D286 fase 2 — endereço do prestador (ficha e mapa); o fixture de rota deste teste não declara o mapa
       'worker_address:read',
       'worker:disable',

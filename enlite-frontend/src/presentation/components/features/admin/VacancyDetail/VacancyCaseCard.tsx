@@ -130,7 +130,7 @@ export function VacancyCaseCard({
     : '—';
 
   return (
-    <div className="border-[2.5px] border-gray-400 rounded-card bg-white p-8">
+    <div data-testid="vacancy-case-card" className="border-[2.5px] border-gray-400 rounded-card bg-white p-8">
       {/* Header: case label + badge */}
       <div className="flex justify-between items-center mb-5">
         <Heading level={2} color="primary" weight="medium">

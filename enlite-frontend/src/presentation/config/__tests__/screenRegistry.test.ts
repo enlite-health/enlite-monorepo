@@ -128,8 +128,13 @@ describe('screensByCell / containersOfTab / screenById', () => {
     expect(containersOfTab(s, 'patients').map((c) => c.resource)).toEqual(['patient_address']);
   });
 
-  it('D286 fase 2 — Gestión a la Vista: dois containers (indicadores, pacientes)', () => {
-    expect(screenById('dashboard').containers?.map((c) => [c.id, c.resource])).toEqual([['analytics', 'dashboard'], ['patients', 'patient']]);
+  it('D286 — Gestión a la Vista: abrir a tela é dashboard:read; cada BLOCO tem a sua célula', () => {
+    const s = screenById('dashboard');
+    expect(s.cells).toEqual(['dashboard:read']);
+    expect(s.containers?.map((c) => [c.id, c.resource])).toEqual([
+      ['numbers', 'dashboard_numbers'], ['team', 'dashboard_team'], ['priorities', 'dashboard_priorities'],
+      ['registrations', 'dashboard_registrations'], ['funnel', 'dashboard_funnel'], ['zones', 'dashboard_zones'], ['patients', 'patient'],
+    ]);
   });
 
   it('tela desconhecida é erro, não undefined silencioso', () => {

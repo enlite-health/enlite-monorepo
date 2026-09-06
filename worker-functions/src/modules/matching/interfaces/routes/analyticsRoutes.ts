@@ -97,7 +97,8 @@ export function createAnalyticsRoutes(
     analyticsController.getManagementMetrics(req, res),
   );
 
-  router.get('/dashboard/zone-analytics', authMiddleware.requireStaff(), perm.require('dashboard', 'read'), (req: Request, res: Response) =>
+  // D286: o bloco Zonas da Gestión a la Vista é rota própria → célula própria (dashboard_zones:read).
+  router.get('/dashboard/zone-analytics', authMiddleware.requireStaff(), perm.require('dashboard_zones', 'read'), (req: Request, res: Response) =>
     analyticsController.getZoneAnalytics(req, res),
   );
 

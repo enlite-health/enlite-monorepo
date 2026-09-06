@@ -24,7 +24,7 @@ export function WorkerAddressCard({ serviceAreas, location }: WorkerAddressCardP
   const hasData = location || serviceAreas.length > 0;
 
   return (
-    <div className="bg-white rounded-card border-2 border-gray-600 p-6 sm:px-8 sm:py-10 flex flex-col gap-6">
+    <div data-testid="worker-address-card" className="bg-white rounded-card border-2 border-gray-600 p-6 sm:px-8 sm:py-10 flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <Heading level={1} as="h3">
           {t('admin.workerDetail.addressData')}

@@ -3805,7 +3805,13 @@
             "prescreening": "Preselección",
             "analytics": "Analítica",
             "dedup": "Duplicados",
-            "dashboard": "Tablero",
+            "dashboard": "Gestión a la Vista (abrir la pantalla)",
+            "dashboard_numbers": "Números clave",
+            "dashboard_team": "Equipo armado y horas",
+            "dashboard_priorities": "Prioridades de contacto",
+            "dashboard_registrations": "Registros",
+            "dashboard_funnel": "Totalización del embudo",
+            "dashboard_zones": "Zonas",
             "integration": "Integraciones",
             "test_fixtures": "Datos de prueba",
             "api_docs": "Documentación de la API",
@@ -3836,9 +3842,9 @@
                 }
               },
               "dashboard": {
-                "body": "Es la pantalla de inicio de la operación, con el resumen del día. Sin esto, la persona entra al panel y no ve el panorama.",
+                "body": "Es abrir la pantalla Gestión a la Vista. Cada bloque de la pantalla (Números clave, Equipo armado, Prioridades, Registros, Totalización, Zonas, Pacientes) tiene su propio permiso: con este solo, la persona entra y ve la pantalla vacía.",
                 "action": {
-                  "read": "Ver el tablero de inicio."
+                  "read": "Abrir la pantalla Gestión a la Vista."
                 }
               },
               "dedup": {
@@ -3885,11 +3891,11 @@
                 }
               },
               "patient": {
-                "body": "Es el paciente y su caso: dirección, horarios, obra social, estado de admisión. Es el tronco del que sale todo lo demás — sin paciente no hay vacante ni grupo. Este permiso NO abre texto clínico: eso no vive en el panel.",
+                "body": "Es el paciente en OPERACIÓN: estado de admisión, número de caso, activación e historial de estados. Es el tronco del que sale todo lo demás — sin paciente no hay vacante ni grupo. NO abre nombre, diagnóstico, familiares, cobertura ni dirección: cada uno de esos es un permiso propio de la ficha.",
                 "action": {
-                  "delete": "Eliminar un paciente del sistema.",
-                  "read": "Ver la lista de pacientes y abrir el detalle del caso.",
-                  "write": "Crear un paciente y editar los datos del caso."
+                  "read": "Ver la lista y el kanban de pacientes, abrir la ficha con el bloque de estado e historial.",
+                  "write": "Crear un paciente, cambiar su estado y activarlo.",
+                  "delete": "Purgar un paciente de PRUEBA (solo is_test) — herramienta del monitoreo sintético, sin botón en el panel."
                 }
               },
               "permission_management": {
@@ -3975,9 +3981,9 @@
                 }
               },
               "worker_pii": {
-                "body": "Es el dossier de identidad, y es el permiso más pesado de esta pantalla. Abre documento de identidad (DNI/CUIL), fecha de nacimiento, domicilio y fotos — y datos que la ley protege de forma especial. Sin él la persona sigue viendo el listado profesional; con él ve quién es esa persona. Cuidado con una puerta lateral: la búsqueda por teléfono devuelve el MISMO dossier, no un resumen. Abrir una ficha queda registrado.",
+                "body": "Es el dossier de identidad, y es el permiso más pesado de esta pantalla. Abre documento de identidad (DNI/CUIL), fecha de nacimiento, sexo y género, fotos, peso y altura — y los datos que la ley protege de forma especial. La dirección NO viene acá: es su propio permiso, compartido con el mapa. Sin este permiso la persona sigue viendo la ficha profesional. Abrir una ficha queda registrado.",
                 "action": {
-                  "read": "Ver el dossier completo de identidad: documento (DNI/CUIL), fecha de nacimiento, domicilio y fotos, además de los datos sensibles que la ley protege de forma especial."
+                  "read": "Ver el dossier completo de identidad: documento, nacimiento, sexo, género, fotos, peso, altura y los datos que la ley protege de forma especial."
                 }
               },
               "worker_address": {
@@ -3985,8 +3991,107 @@
                 "action": {
                   "read": "Ver la dirección del prestador en la ficha y en el mapa (línea, coordenada, radio)."
                 }
+              },
+              "patient_identity": {
+                "body": "Es quién es el paciente: nombre, documento, fecha de nacimiento, sexo, teléfono y e-mail de contacto. También es el nombre que aparece en la lista, en el kanban, en la vacante y en el mapa. Sin este permiso el nombre sale como «Contato restrito» en todas esas pantallas.",
+                "action": {
+                  "read": "Ver el bloque de identidad y datos generales de la ficha, y el nombre del paciente donde aparezca.",
+                  "write": "Editar identidad y datos generales."
+                }
+              },
+              "patient_clinical": {
+                "body": "Es el cuadro clínico: diagnóstico (libre y CID-11), nivel de dependencia, especialidad, dispositivos, observaciones, CUD, protección judicial, consentimiento e instrucciones de emergencia. Es dato de SALUD: la ley lo protege de forma especial y cada apertura queda registrada.",
+                "action": {
+                  "read": "Ver el bloque de diagnóstico y cuadro clínico de la ficha (y el nivel de dependencia en la vacante).",
+                  "write": "Editar el diagnóstico y el cuadro clínico."
+                }
+              },
+              "patient_care_team": {
+                "body": "Es el equipo tratante: los profesionales externos que atienden al paciente (nombre, teléfono, e-mail). Son datos de terceros, por eso van aparte del resto de la ficha.",
+                "action": {
+                  "read": "Ver el bloque de equipo tratante en la pestaña de datos clínicos."
+                }
+              },
+              "patient_family": {
+                "body": "Son los familiares y responsables del paciente: nombre, vínculo, teléfono. Son datos de OTRA persona, con base legal propia — por eso no vienen con el resto de la ficha y nunca están en un grupo por defecto.",
+                "action": {
+                  "read": "Ver el bloque de familiares en la pestaña de red de apoyo.",
+                  "write": "Agregar, editar y quitar familiares y responsables."
+                }
+              },
+              "patient_chat": {
+                "body": "Son los IDs de los grupos de WhatsApp del caso (familia y prestadores). Un ID es la llave para entrar a una conversación con contexto clínico: por eso es permiso aparte, y quedará registrado quién lo recibió.",
+                "action": {
+                  "read": "Ver los IDs de chat del caso.",
+                  "write": "Vincular o cambiar los grupos de chat del caso."
+                }
+              },
+              "patient_coverage": {
+                "body": "Es la cobertura médica: obra social o prepaga, número de afiliado y la verificación de cobertura.",
+                "action": {
+                  "read": "Ver el bloque de cobertura médica en la pestaña de servicio contratado.",
+                  "write": "Editar la cobertura y el número de afiliado."
+                }
+              },
+              "patient_address": {
+                "body": "Son las direcciones del paciente: domicilio, localidad, barrio y coordenada. Es el MISMO permiso que abre la pestaña Pacientes del mapa y la zona del paciente en la vacante — la dirección es una sola, esté donde esté.",
+                "action": {
+                  "read": "Ver las localizaciones de la ficha, la zona del paciente en la vacante y la pestaña Pacientes del mapa.",
+                  "write": "Agregar y editar direcciones del paciente."
+                }
+              },
+              "patient_services": {
+                "body": "Son los servicios contratados: tipo de servicio, profesión requerida, horarios, fecha de inicio y los prestadores asignados. Aparece en la pestaña de servicio contratado y también en la de matching. El valor por hora NO viene con este permiso: tiene su propia guarda.",
+                "action": {
+                  "read": "Ver los servicios contratados en las pestañas de servicio y de matching.",
+                  "write": "Crear y editar servicios contratados y sus prestadores."
+                }
+              },
+              "dashboard_numbers": {
+                "body": "Es el bloque NÚMEROS CLAVE de Gestión a la Vista: pacientes activos, horas, porcentaje de respuesta rápida y de capacidad, qué está RODANDO y qué está CHEGANDO. Son contadores, sin datos personales.",
+                "action": {
+                  "read": "Ver el bloque Números clave."
+                }
+              },
+              "dashboard_team": {
+                "body": "Es el bloque EQUIPO ARMADO Y HORAS: cómo están clasificados los casos por equipo armado y las horas cubiertas por semana.",
+                "action": {
+                  "read": "Ver el bloque Equipo armado y horas."
+                }
+              },
+              "dashboard_priorities": {
+                "body": "Es el bloque PRIORIDADES DE CONTACTO: a quién la operación tiene que contactar primero, por urgencia.",
+                "action": {
+                  "read": "Ver el bloque Prioridades de contacto."
+                }
+              },
+              "dashboard_registrations": {
+                "body": "Es el bloque REGISTROS: cuántos prestadores y pacientes se registraron en el período.",
+                "action": {
+                  "read": "Ver el bloque Registros."
+                }
+              },
+              "dashboard_funnel": {
+                "body": "Es el bloque TOTALIZACIÓN DEL EMBUDO: postulaciones por etapa y por prestador, con el filtro de período, y los encuadres de la semana.",
+                "action": {
+                  "read": "Ver el bloque Totalización del embudo."
+                }
+              },
+              "dashboard_zones": {
+                "body": "Es el bloque ZONAS: pacientes y prestadores por zona y sexo, demanda contra disponibilidad, con filtro por profesión. Son contadores por zona, sin datos personales.",
+                "action": {
+                  "read": "Ver el bloque Zonas."
+                }
+              },
+              "api_docs": {
+                "body": "Es la documentación interactiva de la API (Swagger). Desde ahí se puede PROBAR cualquier ruta: cada llamada de prueba se rige por el permiso de esa ruta, no por este.",
+                "action": {
+                  "read": "Abrir la pantalla API Docs."
+                }
               }
-            }
+            },
+            "imageAlt": "Así se ve «{{rotulo}}» en la pantalla",
+            "imageCaption": "Así se ve en la pantalla (datos de ejemplo)"
           },
           "alsoIn": "también en: {{telas}}",
           "otherCells": "Otras células (sin pantalla)"
@@ -4027,7 +4132,12 @@
         "dashboard": {
           "label": "Gestión a la Vista",
           "containers": {
-            "analytics": "Indicadores de reclutamiento",
+            "numbers": "Números clave",
+            "team": "Equipo armado y horas",
+            "priorities": "Prioridades de contacto",
+            "registrations": "Registros",
+            "funnel": "Totalización del embudo",
+            "zones": "Zonas",
             "patients": "Pacientes (estado y embudo)"
           }
         },
