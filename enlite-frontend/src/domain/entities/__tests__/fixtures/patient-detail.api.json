@@ -1,0 +1,219 @@
+{
+  "id": "64b68848-bb6a-4705-8e32-8d16c813db04",
+  "clickupTaskId": null,
+  "firstName": "Contrato",
+  "lastName": "FixtureC5",
+  "birthDate": null,
+  "documentType": null,
+  "documentNumber": null,
+  "affiliateId": null,
+  "sex": null,
+  "phoneWhatsapp": null,
+  "contactEmail": "contrato.fixture.c5@example.test",
+  "diagnosis": null,
+  "dependencyLevel": null,
+  "clinicalSpecialty": null,
+  "clinicalSegments": null,
+  "serviceType": [
+    "AT"
+  ],
+  "deviceType": null,
+  "additionalComments": null,
+  "additionalCommentsUpdatedAt": null,
+  "additionalCommentsUpdatedBy": null,
+  "emergencyInstructions": null,
+  "emergencyInstructionsUpdatedAt": null,
+  "emergencyInstructionsUpdatedBy": null,
+  "hasJudicialProtection": null,
+  "hasCud": null,
+  "hasConsent": true,
+  "insuranceInformed": "OSDE 210 (fixture)",
+  "insuranceVerified": null,
+  "cityLocality": null,
+  "province": null,
+  "zoneNeighborhood": null,
+  "country": "AR",
+  "chatIds": {},
+  "familyChatId": null,
+  "providersChatId": null,
+  "status": "ADMISSION",
+  "admissionStatus": "ADMISSION",
+  "onHoldReason": null,
+  "onHoldNote": null,
+  "serviceStartDate": null,
+  "insuranceVerifiedCodes": [],
+  "insuranceVerifiedEntries": [],
+  "deviceTypes": [],
+  "needsAttention": false,
+  "attentionReasons": [],
+  "phoneMatchesResponsible": false,
+  "lastCaseNumber": null,
+  "responsibles": [
+    {
+      "id": "40266a80-bac8-4477-b25c-4cd2b87b9439",
+      "firstName": "Marta",
+      "lastName": "FixtureC5",
+      "relationship": "PARENT",
+      "phone": "+5491100000021",
+      "email": "",
+      "documentNumber": "22999999",
+      "documentType": "DNI",
+      "isPrimary": true,
+      "displayOrder": 1,
+      "source": "web_form"
+    }
+  ],
+  "addresses": [
+    {
+      "id": "92818646-019c-4678-8593-017427407315",
+      "addressType": "primary",
+      "addressFormatted": "Av. Fixture 123, CABA, AR",
+      "addressRaw": "Av. Fixture 123, CABA",
+      "complement": null,
+      "displayOrder": 1,
+      "lat": -34.6,
+      "lng": -58.38,
+      "isPrimary": true,
+      "neighborhood": null,
+      "logisticsCorridor": null,
+      "accessNotes": null,
+      "country": "AR",
+      "availability": {
+        "totalCoveredHours": 0,
+        "maxHours": 168,
+        "isFull": false,
+        "perDay": [
+          {
+            "dayOfWeek": 0,
+            "coveredHours": 0,
+            "availableRanges": [
+              {
+                "start": "00:00",
+                "end": "24:00"
+              }
+            ]
+          },
+          {
+            "dayOfWeek": 1,
+            "coveredHours": 0,
+            "availableRanges": [
+              {
+                "start": "00:00",
+                "end": "24:00"
+              }
+            ]
+          },
+          {
+            "dayOfWeek": 2,
+            "coveredHours": 0,
+            "availableRanges": [
+              {
+                "start": "00:00",
+                "end": "24:00"
+              }
+            ]
+          },
+          {
+            "dayOfWeek": 3,
+            "coveredHours": 0,
+            "availableRanges": [
+              {
+                "start": "00:00",
+                "end": "24:00"
+              }
+            ]
+          },
+          {
+            "dayOfWeek": 4,
+            "coveredHours": 0,
+            "availableRanges": [
+              {
+                "start": "00:00",
+                "end": "24:00"
+              }
+            ]
+          },
+          {
+            "dayOfWeek": 5,
+            "coveredHours": 0,
+            "availableRanges": [
+              {
+                "start": "00:00",
+                "end": "24:00"
+              }
+            ]
+          },
+          {
+            "dayOfWeek": 6,
+            "coveredHours": 0,
+            "availableRanges": [
+              {
+                "start": "00:00",
+                "end": "24:00"
+              }
+            ]
+          }
+        ],
+        "activeVacanciesCount": 0,
+        "hasUnknownSchedule": false
+      }
+    }
+  ],
+  "professionals": [
+    {
+      "id": "f4aecb46-ab41-44bf-895e-2b246d8abf35",
+      "name": "Dra. Fixture Tratante",
+      "phone": "",
+      "email": "",
+      "displayOrder": 1,
+      "isTeam": false
+    }
+  ],
+  "contractedServices": [
+    {
+      "id": "664cf455-53cd-4663-bb7e-ee0c3021cf20",
+      "patientId": "64b68848-bb6a-4705-8e32-8d16c813db04",
+      "serviceCode": "AT",
+      "professionalProfile": "Perfil sintético de fixture — busca AT con experiencia en movilidad reducida.",
+      "providersNeeded": 2,
+      "authorizedHours": 20,
+      "weeklyHours": 20,
+      "careLocation": "HOME",
+      "hourlyValue": 1500,
+      "version": "v1",
+      "startDate": "2026-09-01T00:00:00.000Z",
+      "contractType": "OBRA_SOCIAL",
+      "taxCondition": "IVA_EXEMPT",
+      "supervisionFrequency": "DAYS_30",
+      "guardShift": "MORNING",
+      "providerAgeBand": "AGE_30_45",
+      "active": true,
+      "endedAt": null,
+      "country": "AR",
+      "deviceTypes": [],
+      "providers": [],
+      "createdAt": "2026-09-04T15:34:14.210Z",
+      "updatedAt": "2026-09-04T15:34:14.210Z",
+      "hourlyValueRedacted": false
+    }
+  ],
+  "createdAt": "2026-09-04T15:33:07.806Z",
+  "updatedAt": "2026-09-04T15:34:14.163Z",
+  "diagnoses": [
+    {
+      "id": "483bc09a-8ef7-4e7c-a8e7-317ed35d46a7",
+      "uri": "http://id.who.int/icd/release/11/2026-01/mms/437815624/unspecified",
+      "title": "Trastorno del espectro autista, sin especificación",
+      "isPrimary": true,
+      "source": "PANEL",
+      "active": true
+    }
+  ],
+  "diagnosesUnavailable": false,
+  "completeness": {
+    "missing": [],
+    "blocking": [],
+    "ready": true,
+    "canActivate": true
+  }
+}

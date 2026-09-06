@@ -24,6 +24,8 @@ function makeResolver(): ClickUpFieldResolver {
     resolveDropdown: jest.fn(() => null),
     resolveLabel: jest.fn(() => null),
     resolveLabels: jest.fn(() => []),
+    // O mapper do main (specs 011-016) consulta o TIPO do campo antes de resolver.
+    getFieldType: jest.fn(() => 'drop_down'),
   } as unknown as ClickUpFieldResolver;
 }
 

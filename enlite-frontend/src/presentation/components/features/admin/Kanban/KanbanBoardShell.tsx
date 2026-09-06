@@ -47,6 +47,14 @@ interface KanbanBoardShellProps<T> {
    * colapsar** — é o que liga a funcionalidade para um board.
    */
   collapseStorageKey?: string;
+  /**
+   * Largura da coluna expandida. Default `w-[280px]` — dimensionado para o
+   * funil de vagas, que tem 9 colunas e rola de qualquer jeito. Board com
+   * poucas colunas deve passar um valor que caiba: medido em 30/08, o de
+   * pacientes tinha 1096px úteis para 1156px de conteúdo (4x280 + 3x12) e a
+   * 4ª coluna ficava 60px fora da tela, com o badge do caso pela metade.
+   */
+  columnWidthClass?: string;
   testId?: string;
 }
 
@@ -102,6 +110,7 @@ export function KanbanBoardShell<T>({
   renderDragOverlay,
   onDrop,
   collapseStorageKey,
+  columnWidthClass,
   testId = 'kanban-board',
 }: KanbanBoardShellProps<T>): JSX.Element {
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -166,6 +175,7 @@ export function KanbanBoardShell<T>({
               dragActive={activeId !== null}
               collapsed={collapsed.has(col.id)}
               onToggleCollapse={collapseStorageKey ? () => toggle(col.id) : undefined}
+              widthClass={columnWidthClass}
             >
               {items.map((item) => (
                 <DraggableCard

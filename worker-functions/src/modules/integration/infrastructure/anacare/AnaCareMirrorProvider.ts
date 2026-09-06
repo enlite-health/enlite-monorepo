@@ -36,6 +36,7 @@ import { AnaCareTypeResolver } from './anaCareTypeResolver';
 import { mapWorkerToAnaCarePayload } from './anaCareMapper';
 import { toNationalAR } from '../../../../shared/utils/phoneNormalization';
 import { AnaCareApiError } from './AnaCareClient';
+import { buildEmailAlias, MAX_EMAIL_ALIAS_ATTEMPTS } from './anaCareEmailAlias';
 import { logger } from '@shared/logging';
 
 const TAG = '[AnaCareMirrorProvider]';
@@ -92,6 +93,18 @@ function conflictingUniqueFields(body: string): UniqueField[] {
 /** true se o corpo HTTP 400 indica conflito de unicidade em telefone e/ou email */
 function isUniqueFieldConflict(body: string): boolean {
   return conflictingUniqueFields(body).length > 0;
+}
+
+/**
+ * true quando o E-MAIL é o ÚNICO campo em conflito.
+ *
+ * É a condição exata do fallback de alias: trocar o e-mail não muda o telefone,
+ * então com `telefono` na lista o alias jamais resolveria — insistir só geraria
+ * chamadas inúteis e mascararia a causa real no erro final.
+ */
+function isEmailOnlyConflict(body: string): boolean {
+  const fields = conflictingUniqueFields(body);
+  return fields.length === 1 && fields[0] === 'email';
 }
 
 export interface AnaCareMirrorProviderDeps {
@@ -285,9 +298,65 @@ export class AnaCareMirrorProvider implements WorkerMirrorProvider {
           });
           return { externalId: String(updated.id) };
         }
+
+        // Sem match por telefone+nome: a pessoa NÃO está na nossa agência. Se o
+        // que trava é o e-mail, ele pertence a um profissional de OUTRA empresa
+        // da plataforma — invisível para a nossa chave de API, e sem caminho de
+        // vínculo nem na API nem no painel deles (verificado por login no admin
+        // em 18/08/2026: a busca por correo responde "Usuario registrado en otra
+        // empresa" e não oferece ação nenhuma).
+        //
+        // Sem isto, o prestador termina o cadastro e simplesmente nunca chega ao
+        // Ana Care: não entra em caso, não é alocado, e o Kanban não denuncia.
+        if (isEmailOnlyConflict(err.body)) {
+          const aliased = await this.createWithEmailAlias(payload, record.workerId);
+          if (aliased) return aliased;
+        }
       }
       throw err;
     }
+  }
+
+  /**
+   * Cria a enfermera com um ALIAS do e-mail real (`+1`, `+2`, ...).
+   *
+   * Só é chamado quando o conflito é de E-MAIL. Se o alias também colidir,
+   * tenta o próximo; qualquer outro erro (telefone duplicado, payload inválido)
+   * é propagado na hora — insistir não resolveria e só geraria chamadas inúteis.
+   *
+   * Retorna null quando todas as tentativas colidiram, para o caller propagar o
+   * erro ORIGINAL, que é o que descreve a causa de verdade.
+   */
+  private async createWithEmailAlias(
+    payload: AnaCareNursePayload,
+    workerId: string,
+  ): Promise<WorkerMirrorUpsertResult | null> {
+    for (let attempt = 1; attempt <= MAX_EMAIL_ALIAS_ATTEMPTS; attempt++) {
+      const alias = buildEmailAlias(payload.email, attempt);
+      try {
+        const created = await this.client.createNurse({ ...payload, email: alias });
+        // PII-SAFETY: nunca logar o alias — ele CONTÉM o e-mail da pessoa.
+        logger.warn({
+          msg: `${TAG} criado com ALIAS de e-mail — o endereço real já pertence a outra empresa no Ana Care; cadastro precisa de resolução`,
+          workerId,
+          anaCareId: created.id,
+          attempt,
+        });
+        return { externalId: String(created.id), emailAliasUsed: alias };
+      } catch (aliasErr) {
+        const aliasTambemTomado =
+          aliasErr instanceof AnaCareApiError &&
+          aliasErr.status === 400 &&
+          isEmailOnlyConflict(aliasErr.body);
+        if (!aliasTambemTomado) throw aliasErr;
+      }
+    }
+    logger.warn({
+      msg: `${TAG} todos os aliases de e-mail testados também estão em uso`,
+      workerId,
+      attempts: MAX_EMAIL_ALIAS_ATTEMPTS,
+    });
+    return null;
   }
 
   /**

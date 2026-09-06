@@ -114,11 +114,35 @@ describe('BookInterviewSlotUseCase', () => {
     expect(result).toEqual({
       ok: true,
       confirmedDate: '10/04',
-      confirmedTime: '14:00',
+      confirmedTime: '11:00', // 14:00Z no fuso da vaga (AR)
       meetDatetime: VACANCY.meet_datetime_1,
       usedSlotIndex: 1,
       calendarInvite: 'sent',
     });
+  });
+
+  it('oferta antiga toda no passado (offeredAt velho) → recomputa a oferta de AGORA e cai na primeira opção', async () => {
+    const recurring = { ...VACANCY, meet_link_1: null, meet_datetime_1: null, meet_link_2: null, meet_datetime_2: null,
+      meet_recurring_weekday: 1, meet_recurring_time: '08:30', meet_recurring_link: 'https://meet.google.com/rrr-rrrr-rrr' };
+    mockQuery
+      .mockResolvedValueOnce({ rows: [QUALIFIED_PENDING] })
+      .mockResolvedValueOnce({ rows: [recurring] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ id: 'outbox-1' }] });
+    const result = await useCase.execute({ ...PARAMS, slotIndex: 1, offeredAt: new Date('2020-01-01T00:00:00Z') });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(new Date(result.meetDatetime).getTime()).toBeGreaterThan(Date.now());
+      expect(result.confirmedTime).toBe('08:30');
+    }
+  });
+
+  it('vaga sem nenhuma opção (fixos passados, sem recorrente) → invalid_slot', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [QUALIFIED_PENDING] })
+      .mockResolvedValueOnce({ rows: [{ ...VACANCY, meet_datetime_1: '2020-01-01T10:00:00Z', meet_datetime_2: '2020-01-02T10:00:00Z' }] });
+    const result = await useCase.execute({ ...PARAMS, slotIndex: 1 });
+    expect(result).toEqual({ ok: false, reason: 'invalid_slot' });
   });
 
   it('slot pedido sem link cai no primeiro futuro e reporta usedSlotIndex real', async () => {
@@ -197,6 +221,6 @@ describe('BookInterviewSlotUseCase', () => {
     const insertCall = mockQuery.mock.calls[3];
     expect(insertCall[0]).toContain('qualified_worker_response');
     const vars = JSON.parse(insertCall[1][1]);
-    expect(vars).toEqual({ date: '10/04', time: '14:00', job_posting_id: 'jp-1' });
+    expect(vars).toEqual({ date: '10/04', time: '11:00', job_posting_id: 'jp-1' });
   });
 });

@@ -24,6 +24,7 @@ import { UseFormRegister, Control, Controller, FieldErrors, useWatch } from 'rea
 import { useTranslation } from 'react-i18next';
 import { MapPin } from 'lucide-react';
 import type { PatientAddressRow } from '@domain/entities/PatientAddress';
+import { Heading } from '@presentation/components/atoms/Heading';
 import { FormField } from '@presentation/components/molecules/FormField/FormField';
 import { SelectField } from '@presentation/components/molecules/SelectField/SelectField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon/InputWithIcon';
@@ -85,6 +86,10 @@ export function VacancyFormRightColumn({
 
   return (
     <div className="space-y-6">
+      {/* Spec 014 (US-D6): título de seção — os 22 campos do formulário (11+11 nas duas
+          colunas) agrupados visualmente, em vez de uma lista plana sem hierarquia. */}
+      <Heading level={4} weight="semibold" color="secondary">{tp('sectionStatusAndLocation')}</Heading>
+
       {/* 1. Status */}
       <div className={patientDis}>
         <FormField label={tp('status')}>
@@ -140,9 +145,15 @@ export function VacancyFormRightColumn({
         </FormField>
       </div>
 
-      {/* 4. Service address — address selector */}
+      {/* 4. Service address — address selector. Spec 014 (US-D6, lex D6.1): agora VALIDADO pelo
+          zod (`patientAddressId`, sincronizado a partir de `selectedAddressId` em
+          `VacancyFormSection`) — não só um asterisco visual. */}
       <div className={patientDis}>
-        <FormField label={tp('serviceAddress')} required>
+        <FormField
+          label={tp('serviceAddress')}
+          required
+          error={errors.patientAddressId ? tf('validation.addressRequired') : undefined}
+        >
           {isLoadingPatient ? (
             <div className={`${READONLY_CLS} text-slate-400 text-sm`}>
               {t('common.loading')}
@@ -206,6 +217,11 @@ export function VacancyFormRightColumn({
           );
         })()}
       </FormField>
+
+      {/* Spec 014 (US-D6): segunda seção da coluna direita. */}
+      <Heading level={4} weight="semibold" color="secondary" className="pt-2 border-t border-slate-100">
+        {tp('sectionConditions')}
+      </Heading>
 
       {/* 7. Payment day */}
       <FormField label={tp('paymentDeadline')}>

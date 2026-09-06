@@ -17,11 +17,12 @@ interface Props {
   onMove: (patientId: string, targetStatus: PatientKanbanStatus) => Promise<string | null>;
 }
 
+// Spec 012: as colunas são o FUNIL DE ADMISSÃO (`admission_status`); DONE = "Activo".
 const COLUMN_COLOR: Record<PatientKanbanStatus, string> = {
   SOLICITANTE: 'bg-slate-400',
   ADMISSION: 'bg-blue-400',
   PENDING_ADMISSION: 'bg-yellow-400',
-  ACTIVE: 'bg-green-500',
+  DONE: 'bg-green-500',
 };
 
 /**
@@ -60,6 +61,10 @@ export function PatientKanbanBoard({ groups, onMove }: Props): JSX.Element {
       isDragDisabled={() => patientWriteGate.denied}
       onDrop={handleDrop}
       collapseStorageKey="kanban-collapsed-patients"
+      // 4 colunas: a 280px somavam 1156px em 1096px úteis e a 4ª ("Activo")
+      // ficava 60px fora da tela. A 260px cabem as quatro (1076px) e ninguém
+      // precisa descobrir que o board rola para ver a coluna que importa.
+      columnWidthClass="w-[260px]"
       renderCard={(p) => <PatientKanbanCard patient={p} />}
     />
   );

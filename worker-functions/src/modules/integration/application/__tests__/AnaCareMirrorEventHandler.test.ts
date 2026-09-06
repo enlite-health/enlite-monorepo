@@ -62,6 +62,9 @@ function makeFakeProvider(): AnaCareMirrorProvider {
 
 // ── Suite ─────────────────────────────────────────────────────────
 
+/** Meta que o DomainEventProcessor entrega junto do payload (A1 do gate 30/08); este handler a ignora. */
+const META = { eventId: 'evt-test' };
+
 describe('createAnaCareMirrorHandler', () => {
   const WORKER_ID = 'worker-uuid-handler-test';
   let fakeProvider: AnaCareMirrorProvider;
@@ -81,7 +84,7 @@ describe('createAnaCareMirrorHandler', () => {
     mockMirrorOne.mockResolvedValue('created');
     const handler = createAnaCareMirrorHandler({ providerFactory });
 
-    await handler({ workerId: WORKER_ID });
+    await handler({ workerId: WORKER_ID }, META);
 
     expect(providerFactory).toHaveBeenCalledTimes(1);
     expect(mockMirrorOne).toHaveBeenCalledWith(WORKER_ID);
@@ -91,7 +94,7 @@ describe('createAnaCareMirrorHandler', () => {
     mockMirrorOne.mockResolvedValue('updated');
     const handler = createAnaCareMirrorHandler({ providerFactory });
 
-    await expect(handler({ workerId: WORKER_ID })).resolves.toBeUndefined();
+    await expect(handler({ workerId: WORKER_ID }, META)).resolves.toBeUndefined();
     expect(mockMirrorOne).toHaveBeenCalledWith(WORKER_ID);
   });
 
@@ -99,14 +102,14 @@ describe('createAnaCareMirrorHandler', () => {
     mockMirrorOne.mockResolvedValue('skipped');
     const handler = createAnaCareMirrorHandler({ providerFactory });
 
-    await expect(handler({ workerId: WORKER_ID })).resolves.toBeUndefined();
+    await expect(handler({ workerId: WORKER_ID }, META)).resolves.toBeUndefined();
   });
 
   it('chama mirrorOne e não lança erro quando result=deactivated', async () => {
     mockMirrorOne.mockResolvedValue('deactivated');
     const handler = createAnaCareMirrorHandler({ providerFactory });
 
-    await expect(handler({ workerId: WORKER_ID })).resolves.toBeUndefined();
+    await expect(handler({ workerId: WORKER_ID }, META)).resolves.toBeUndefined();
   });
 
   // ─────────────────────────────────────────────
@@ -116,20 +119,20 @@ describe('createAnaCareMirrorHandler', () => {
   it('lança erro quando workerId está ausente no payload', async () => {
     const handler = createAnaCareMirrorHandler({ providerFactory });
 
-    await expect(handler({})).rejects.toThrow(/workerId must be a non-empty string/);
+    await expect(handler({}, META)).rejects.toThrow(/workerId must be a non-empty string/);
     expect(mockMirrorOne).not.toHaveBeenCalled();
   });
 
   it('lança erro quando workerId é número (tipo incorreto)', async () => {
     const handler = createAnaCareMirrorHandler({ providerFactory });
 
-    await expect(handler({ workerId: 123 })).rejects.toThrow(/workerId must be a non-empty string/);
+    await expect(handler({ workerId: 123 }, META)).rejects.toThrow(/workerId must be a non-empty string/);
   });
 
   it('lança erro quando workerId é string vazia', async () => {
     const handler = createAnaCareMirrorHandler({ providerFactory });
 
-    await expect(handler({ workerId: '' })).rejects.toThrow(/workerId must be a non-empty string/);
+    await expect(handler({ workerId: '' }, META)).rejects.toThrow(/workerId must be a non-empty string/);
   });
 
   // ─────────────────────────────────────────────
@@ -141,7 +144,7 @@ describe('createAnaCareMirrorHandler', () => {
     mockMirrorOne.mockRejectedValue(apiError);
     const handler = createAnaCareMirrorHandler({ providerFactory });
 
-    await expect(handler({ workerId: WORKER_ID })).rejects.toThrow('HTTP 503: AnaCare unavailable');
+    await expect(handler({ workerId: WORKER_ID }, META)).rejects.toThrow('HTTP 503: AnaCare unavailable');
   });
 
   // ─────────────────────────────────────────────
@@ -155,7 +158,7 @@ describe('createAnaCareMirrorHandler', () => {
 
     // SEM providerFactory → cai no defaultProviderFactory, o caminho de produção
     const handler = createAnaCareMirrorHandler();
-    await handler({ workerId: WORKER_ID });
+    await handler({ workerId: WORKER_ID }, META);
 
     expect(providerCtorArgs).toHaveLength(1);
     const [, deps] = providerCtorArgs[0] as [unknown, { isExternalIdClaimed?: (id: string) => Promise<boolean> }];

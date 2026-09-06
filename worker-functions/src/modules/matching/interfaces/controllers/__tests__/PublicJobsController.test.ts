@@ -170,4 +170,50 @@ describe('PublicJobsController.listActiveJobs', () => {
       worker_sex: 'FEMALE',
     });
   });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // O filtro clinico removido, e o log que o carregava (25/08/2026)
+  // ══════════════════════════════════════════════════════════════════════════
+  describe('filtro clinico removido', () => {
+    it('recusa `?pathology=` com 400 em vez de ignorar em silencio', async () => {
+      const [req, res] = mockReqRes({ pathology: 'Alzheimer' });
+      await controller.listActiveJobs(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      expect(body.success).toBe(false);
+      // O caso de uso nao pode nem ser chamado: recusa antes de consultar o banco.
+      expect(mockExecute).not.toHaveBeenCalled();
+    });
+
+    it('recusa mesmo com o valor VAZIO — `?pathology=` sozinho na URL', async () => {
+      // Este e o caso que um schema nao-strict engoliria: string vazia cai fora do
+      // `.min(1)` e o parametro sumiria sem erro. Quem manda `?pathology=` sem valor
+      // acha que filtrou por nada; precisa saber que o filtro nao existe mais.
+      const [req, res] = mockReqRes({ pathology: '' });
+      await controller.listActiveJobs(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(mockExecute).not.toHaveBeenCalled();
+    });
+
+    it('o log NAO carrega o termo buscado — so a forma da consulta (C6 do lex)', async () => {
+      mockExecute.mockResolvedValueOnce([]);
+      const spy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      try {
+        const [req, res] = mockReqRes({ q: 'Alzheimer moderado' });
+        await controller.listActiveJobs(req, res);
+
+        const linha = spy.mock.calls.map(c => String(c[0])).join('\n');
+        // O log existe e diz que houve busca...
+        expect(linha).toContain('public_jobs_list');
+        expect(linha).toContain('qLength');
+        // ...mas o termo digitado NAO esta nele. Este log leva `req.ip` junto e cai em
+        // bucket global: termo clinico + IP no mesmo registro e o que a C6 proibe.
+        expect(linha).not.toContain('Alzheimer');
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  });
 });

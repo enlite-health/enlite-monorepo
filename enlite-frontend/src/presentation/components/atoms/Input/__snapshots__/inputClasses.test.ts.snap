@@ -1,19 +1,19 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`inputBaseClasses > snapshot — compact disabled 1`] = `"w-full bg-white font-['Lexend'] font-medium text-[#737373] placeholder:text-[#737373]/60 focus:outline-none transition-colors border-solid h-12 px-4 py-2 text-sm leading-[1.3] rounded-[10px] border-[1.5px] border-[#d9d9d9] focus:border-[#180149] bg-[#f3f4f6] cursor-not-allowed"`;
+exports[`inputBaseClasses > snapshot — compact disabled 1`] = `"w-full bg-white font-['Lexend'] focus:outline-none transition-colors border-solid h-12 px-4 py-2 text-sm leading-[1.3] rounded-[10px] text-[#737373] placeholder:text-[#737373]/60 border-[1.5px] font-medium border-[#d9d9d9] focus:border-[#180149] bg-[#f3f4f6] cursor-not-allowed"`;
 
-exports[`inputBaseClasses > snapshot — compact error 1`] = `"w-full bg-white font-['Lexend'] font-medium text-[#737373] placeholder:text-[#737373]/60 focus:outline-none transition-colors border-solid h-12 px-4 py-2 text-sm leading-[1.3] rounded-[10px] border-[1.5px] border-red-500"`;
+exports[`inputBaseClasses > snapshot — compact error 1`] = `"w-full bg-white font-['Lexend'] focus:outline-none transition-colors border-solid h-12 px-4 py-2 text-sm leading-[1.3] rounded-[10px] text-[#737373] placeholder:text-[#737373]/60 border-[1.5px] font-medium border-red-500"`;
 
-exports[`inputBaseClasses > snapshot — compact idle 1`] = `"w-full bg-white font-['Lexend'] font-medium text-[#737373] placeholder:text-[#737373]/60 focus:outline-none transition-colors border-solid h-12 px-4 py-2 text-sm leading-[1.3] rounded-[10px] border-[1.5px] border-[#d9d9d9] focus:border-[#180149]"`;
+exports[`inputBaseClasses > snapshot — compact idle 1`] = `"w-full bg-white font-['Lexend'] focus:outline-none transition-colors border-solid h-12 px-4 py-2 text-sm leading-[1.3] rounded-[10px] text-[#737373] placeholder:text-[#737373]/60 border-[1.5px] font-medium border-[#d9d9d9] focus:border-[#180149]"`;
 
-exports[`inputBaseClasses > snapshot — default disabled 1`] = `"w-full bg-white font-['Lexend'] font-medium text-[#737373] placeholder:text-[#737373]/60 focus:outline-none transition-colors border-solid h-[60px] px-5 py-3 text-[20px] leading-[1.3] rounded-[10px] border-2 border-[#d9d9d9] focus:border-[#180149] bg-[#f3f4f6] cursor-not-allowed"`;
+exports[`inputBaseClasses > snapshot — default disabled 1`] = `"w-full bg-white font-['Lexend'] focus:outline-none transition-colors border-solid h-[60px] px-5 py-3 text-[20px] leading-[1.3] rounded-[10px] text-[#737373] placeholder:text-[#737373]/60 border-2 font-medium border-[#d9d9d9] focus:border-[#180149] bg-[#f3f4f6] cursor-not-allowed"`;
 
-exports[`inputBaseClasses > snapshot — default error + disabled 1`] = `"w-full bg-white font-['Lexend'] font-medium text-[#737373] placeholder:text-[#737373]/60 focus:outline-none transition-colors border-solid h-[60px] px-5 py-3 text-[20px] leading-[1.3] rounded-[10px] border-2 border-red-500 bg-[#f3f4f6] cursor-not-allowed"`;
+exports[`inputBaseClasses > snapshot — default error + disabled 1`] = `"w-full bg-white font-['Lexend'] focus:outline-none transition-colors border-solid h-[60px] px-5 py-3 text-[20px] leading-[1.3] rounded-[10px] text-[#737373] placeholder:text-[#737373]/60 border-2 font-medium border-red-500 bg-[#f3f4f6] cursor-not-allowed"`;
 
-exports[`inputBaseClasses > snapshot — default error 1`] = `"w-full bg-white font-['Lexend'] font-medium text-[#737373] placeholder:text-[#737373]/60 focus:outline-none transition-colors border-solid h-[60px] px-5 py-3 text-[20px] leading-[1.3] rounded-[10px] border-2 border-red-500"`;
+exports[`inputBaseClasses > snapshot — default error 1`] = `"w-full bg-white font-['Lexend'] focus:outline-none transition-colors border-solid h-[60px] px-5 py-3 text-[20px] leading-[1.3] rounded-[10px] text-[#737373] placeholder:text-[#737373]/60 border-2 font-medium border-red-500"`;
 
-exports[`inputBaseClasses > snapshot — default idle 1`] = `"w-full bg-white font-['Lexend'] font-medium text-[#737373] placeholder:text-[#737373]/60 focus:outline-none transition-colors border-solid h-[60px] px-5 py-3 text-[20px] leading-[1.3] rounded-[10px] border-2 border-[#d9d9d9] focus:border-[#180149]"`;
+exports[`inputBaseClasses > snapshot — default idle 1`] = `"w-full bg-white font-['Lexend'] focus:outline-none transition-colors border-solid h-[60px] px-5 py-3 text-[20px] leading-[1.3] rounded-[10px] text-[#737373] placeholder:text-[#737373]/60 border-2 font-medium border-[#d9d9d9] focus:border-[#180149]"`;
 
 exports[`inputWrapperClasses > snapshot — wrapper default idle 1`] = `"flex items-center w-full bg-white border-solid transition-colors h-[60px] px-5 py-3 rounded-[10px] border-2 border-[#d9d9d9] focus-within:border-[#180149]"`;
 
-exports[`textareaBaseClasses > snapshot — textarea idle 1`] = `"w-full bg-white font-['Lexend'] font-medium text-[#737373] placeholder:text-[#737373]/60 focus:outline-none transition-colors border-solid px-5 py-3 text-[20px] leading-[1.3] rounded-[10px] border-2 border-[#d9d9d9] focus:border-[#180149]"`;
+exports[`textareaBaseClasses > snapshot — textarea idle 1`] = `"w-full bg-white font-['Lexend'] focus:outline-none transition-colors border-solid px-5 py-3 text-[20px] leading-[1.3] rounded-[10px] text-[#737373] placeholder:text-[#737373]/60 border-2 font-medium border-[#d9d9d9] focus:border-[#180149]"`;

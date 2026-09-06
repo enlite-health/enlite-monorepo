@@ -23,18 +23,15 @@ function Field({ label, value }: { label: string; value: string | null }) {
 
 function calculateAge(birthDateIso: string | null): number | null {
   if (!birthDateIso) return null;
-  try {
-    const birth = new Date(birthDateIso);
-    const today = new Date();
-    let age = today.getFullYear() - birth.getFullYear();
-    const m = today.getMonth() - birth.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
-      age -= 1;
-    }
-    return age;
-  } catch {
-    return null;
+  // `new Date(...)` e os getters nunca lançam: um try/catch aqui era ramo morto (spec 012, DoD 100%).
+  const birth = new Date(birthDateIso);
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const m = today.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+    age -= 1;
   }
+  return age;
 }
 
 function getAgeBracket(age: number | null): string | null {
@@ -91,11 +88,12 @@ export function PatientGeneralInfoCard({ patient, onSaved }: PatientGeneralInfoC
         <Field label={`${t('admin.patients.detail.generalInfoCard.age')}:`} value={ageDisplay} />
         <Field label={`${t('admin.patients.detail.generalInfoCard.ageBracket')}:`} value={ageBracket} />
         <Field label={`${t('admin.patients.detail.generalInfoCard.sex')}:`} value={sexLabel} />
-        <Field label={`${t('admin.patients.detail.generalInfoCard.gender')}:`} value={null} />
-        <Field label={`${t('admin.patients.detail.generalInfoCard.sexualOrientation')}:`} value={null} />
-        <Field label={`${t('admin.patients.detail.generalInfoCard.racialOrigin')}:`} value={null} />
-        <Field label={`${t('admin.patients.detail.generalInfoCard.religion')}:`} value={null} />
-        <Field label={`${t('admin.patients.detail.generalInfoCard.languages')}:`} value={null} />
+        {/* US-B9 (spec 012): data de início do serviço — nativa do painel, não deriva da vaga. */}
+        <Field label={`${t('admin.patients.detail.generalInfoCard.serviceStartDate')}:`} value={formatBirthDate(patient.serviceStartDate)} />
+        {/* Spec 014 US-D2 (decisão Gabriel 03/09, item 9): Género/Orientación Sexual/Origen
+            racial/Religión/Idiomas REMOVIDOS — eram `value={null}` fixo, sem coluna em `patients`
+            (só existem em `workers`; ver lex D2 e migrations/008,023,002). Manter o rótulo sem o
+            dado não é só promessa vazia: é convite a coletar dado sensível sem base legal. */}
       </div>
     </div>
   );

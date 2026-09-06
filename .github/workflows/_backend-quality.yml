@@ -31,5 +31,11 @@ jobs:
       # `coverageThreshold` por completo, e o piso per-file do jest.config.js
       # vira documentação. Medido: `jest <suite>` sai 0 com o piso violado,
       # `jest <suite> --coverage` sai 1. Quem executa a trava é esta linha.
+      #
+      # ⚠️ Até 30/08/2026 este comentário descrevia um mecanismo INEXISTENTE
+      # nesta branch: a flag estava aqui, mas o `jest.config.js` não tinha
+      # `coverageThreshold` nenhum para morder (o piso nasceu no ABAC e só
+      # existia na `stage`). O piso per-file agora existe aqui — 21 grupos,
+      # 34 arquivos, 100 nos quatro eixos — e esta linha volta a ser verdade.
       - name: Run unit tests (com o piso de cobertura)
         run: npm test -- --coverage

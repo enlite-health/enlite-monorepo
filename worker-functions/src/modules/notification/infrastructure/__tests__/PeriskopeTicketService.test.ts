@@ -6,6 +6,7 @@
  * 2. configurado, POST bem-sucedido → true, payload correto (chat_id @c.us, subject)
  * 3. opts.assignee/labels repassados no body quando presentes
  * 4. POST falha (HTTP erro) → best-effort: retorna false, não lança
+ * 5. opts.priority repassado no body; ausente → campo NÃO vai no payload
  */
 import axios from 'axios';
 
@@ -95,5 +96,39 @@ describe('PeriskopeTicketService', () => {
     const result = await service.createTicket('+5491122334455', 'Handover worker z');
 
     expect(result).toBe(false);
+  });
+  it('priority repassada no body quando presente', async () => {
+    process.env.PERISKOPE_API_KEY = 'test-key';
+    process.env.PERISKOPE_PHONE = '5491100000000';
+    const mockPost = jest.fn().mockResolvedValue({ data: {} });
+    mockedAxios.create.mockReturnValue({ post: mockPost } as any);
+
+    const service = new PeriskopeTicketService();
+    await service.createTicket('+5491122334455', 'asunto', { priority: '4' });
+
+    expect(mockPost.mock.calls[0][1]).toMatchObject({ priority: '4' });
+  });
+
+  it('sem priority → o campo NÃO vai no payload (não sobrescreve default da API)', async () => {
+    process.env.PERISKOPE_API_KEY = 'test-key';
+    process.env.PERISKOPE_PHONE = '5491100000000';
+    const mockPost = jest.fn().mockResolvedValue({ data: {} });
+    mockedAxios.create.mockReturnValue({ post: mockPost } as any);
+
+    const service = new PeriskopeTicketService();
+    await service.createTicket('+5491122334455', 'asunto');
+
+    expect(mockPost.mock.calls[0][1]).not.toHaveProperty('priority');
+  });
+  it('rejeição que NÃO é Error também é best-effort (branch do catch)', async () => {
+    process.env.PERISKOPE_API_KEY = 'test-key';
+    process.env.PERISKOPE_PHONE = '5491100000000';
+    const mockPost = jest.fn().mockRejectedValue('boom sem stack');
+    mockedAxios.create.mockReturnValue({ post: mockPost } as any);
+
+    const service = new PeriskopeTicketService();
+    await expect(
+      service.createTicket('+5491122334455', 'asunto'),
+    ).resolves.toBe(false);
   });
 });

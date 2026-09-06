@@ -27,6 +27,8 @@ export const createPatientSchema = z.object({
     errorMap: () => ({ message: 'country is required and must be one of AR, BR' }),
   }),
   lastName: z.string().trim().min(1).optional(),
+  /** US-B6 (spec 012): fecha de nacimiento no modal de criação. */
+  birthDate: z.coerce.date().optional(),
   phoneWhatsapp: z.string().trim().min(1).optional(),
   contactEmail: z.string().trim().email({ message: 'contactEmail must be a valid email' }).optional(),
   documentType: z.enum(DOCUMENT_TYPES as unknown as [string, ...string[]]).optional(),

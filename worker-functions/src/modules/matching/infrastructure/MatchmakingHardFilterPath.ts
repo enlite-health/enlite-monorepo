@@ -1,7 +1,7 @@
 /**
  * MatchmakingHardFilterPath — pipeline sem score (Fase 2+3 desabilitadas).
  *
- * Path tomado quando `MatchOptions.useScoring=false` (default atual). Ordena
+ * Único path do matching desde 23/08/2026 (o ramo de scoring/LLM foi removido). Ordena
  * candidatos por distância ASC, decifra apenas o nome (não o sex) e marca
  * `match_score = NULL` na persistência.
  *

@@ -26,6 +26,7 @@ const mockPatient: PatientDetailRow = {
   affiliateId: 'AF-001',
   sex: 'MALE',
   phoneWhatsapp: '+5491100000000',
+  contactEmail: null,
   diagnosis: 'ASD',
   dependencyLevel: 'MODERATE',
   clinicalSpecialty: 'ASD',
@@ -33,6 +34,14 @@ const mockPatient: PatientDetailRow = {
   serviceType: ['AT'],
   deviceType: 'DOMICILIARIO',
   additionalComments: 'Needs structured environment',
+  additionalCommentsUpdatedAt: null,
+  additionalCommentsUpdatedBy: null,
+
+  emergencyInstructions: null,
+
+  emergencyInstructionsUpdatedAt: null,
+
+  emergencyInstructionsUpdatedBy: null,
   hasJudicialProtection: false,
   hasCud: true,
   hasConsent: true,
@@ -46,8 +55,16 @@ const mockPatient: PatientDetailRow = {
   familyChatId: null,
   providersChatId: null,
   status: 'ACTIVE',
+  admissionStatus: 'DONE',
+  onHoldReason: null,
+  onHoldNote: null,
+  serviceStartDate: null,
+  insuranceVerifiedCodes: [],
+  insuranceVerifiedEntries: [],
+  deviceTypes: [],
   needsAttention: false,
   attentionReasons: [],
+  phoneMatchesResponsible: false,
   lastCaseNumber: null,
   responsibles: [
     {
@@ -75,6 +92,10 @@ const mockPatient: PatientDetailRow = {
       lat: null,
       lng: null,
       isPrimary: true,
+      neighborhood: null,
+      logisticsCorridor: null,
+      accessNotes: null,
+      country: 'AR',
       availability: {
         totalCoveredHours: 0,
         maxHours: 168 as const,
@@ -95,6 +116,7 @@ const mockPatient: PatientDetailRow = {
       isTeam: false,
     },
   ],
+  contractedServices: [],
   createdAt: new Date('2025-01-01T00:00:00Z'),
   updatedAt: new Date('2025-06-01T00:00:00Z'),
 };

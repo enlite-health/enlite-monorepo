@@ -25,24 +25,26 @@ const DOCUMENT_TYPES = ['DNI', 'PASSPORT', 'CEDULA', 'LE_LC', 'CPF'] as const;
 const SERVICE_TYPES = ['AT', 'CAREGIVER', 'NURSE', 'KINESIOLOGIST', 'PSYCHOLOGIST'] as const;
 const CLOSE_MS = 300;
 
-// Mirrors the backend zod validator (createPatientSchema). firstName and
-// country are required; empty optional strings are coerced to undefined so we
-// never send "". `country` has no default on purpose — it drives the legal
-// regime (Ley 25.326 vs LGPD) and the panel's country filter, so the operator
-// must choose it rather than have a BR patient silently filed as AR
-// (abac-pais-fase1 5.1). The empty placeholder fails the enum, showing the
-// inline error instead of posting a body the backend would 400 anyway.
+// Mirrors the backend zod validator (createPatientSchema). Only firstName is
+// required; empty optional strings are coerced to undefined so we never send "".
+// Todo campo nasce preenchido em `defaultValues` ('' / []) — o tipo diz isso e o submit não carrega
+// fallbacks para um `undefined` que nunca chega (mesmo padrão dos drawers, spec 011/012).
 const createSchema = z.object({
   firstName: z.string().trim().min(1),
+  // `country` sem default de propósito — decide o regime legal (Ley 25.326 vs LGPD) e o
+  // filtro de país do painel; o operador escolhe (abac-pais-fase1 5.1). Placeholder vazio
+  // falha o enum e mostra o erro inline em vez de mandar um corpo que o backend recusaria.
   country: z.enum(['AR', 'BR']),
-  lastName: z.string().trim().optional(),
-  phoneWhatsapp: z.string().trim().optional(),
-  contactEmail: z.union([z.literal(''), z.string().trim().email()]).optional(),
-  documentType: z.string().optional(),
-  documentNumber: z.string().trim().optional(),
-  healthInsuranceName: z.string().trim().optional(),
-  healthInsuranceMemberId: z.string().trim().optional(),
-  serviceType: z.array(z.string()).optional(),
+  lastName: z.string().trim(),
+  /** US-B6 (spec 012): yyyy-MM-dd. */
+  birthDate: z.string(),
+  phoneWhatsapp: z.string().trim(),
+  contactEmail: z.union([z.literal(''), z.string().trim().email()]),
+  documentType: z.string(),
+  documentNumber: z.string().trim(),
+  healthInsuranceName: z.string().trim(),
+  healthInsuranceMemberId: z.string().trim(),
+  serviceType: z.array(z.string()),
 });
 
 type CreateFormValues = z.infer<typeof createSchema>;
@@ -75,6 +77,7 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
       // patient is never filed as AR by inertia (abac-pais-fase1 5.1).
       country: undefined,
       lastName: '',
+      birthDate: '',
       phoneWhatsapp: '',
       contactEmail: '',
       documentType: '',
@@ -118,21 +121,22 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
     setSubmitError(null);
 
     // Trim + drop empty optionals so the backend receives clean, minimal data.
-    const clean = (v?: string): string | undefined => {
-      const s = v?.trim();
+    const clean = (v: string): string | undefined => {
+      const s = v.trim();
       return s ? s : undefined;
     };
     const payload: CreatePatientPayload = {
       firstName: values.firstName.trim(),
       country: values.country,
       lastName: clean(values.lastName),
+      birthDate: clean(values.birthDate),
       phoneWhatsapp: clean(values.phoneWhatsapp),
       contactEmail: clean(values.contactEmail),
       documentType: clean(values.documentType),
       documentNumber: clean(values.documentNumber),
       healthInsuranceName: clean(values.healthInsuranceName),
       healthInsuranceMemberId: clean(values.healthInsuranceMemberId),
-      serviceType: values.serviceType && values.serviceType.length > 0 ? values.serviceType : undefined,
+      serviceType: values.serviceType.length > 0 ? values.serviceType : undefined,
     };
 
     setBusy(true);
@@ -224,6 +228,9 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
                 )}
               />
             </FormField>
+            <FormField label={tc('birthDate')} htmlFor="pc-birthDate" optional>
+              <InputWithIcon id="pc-birthDate" type="date" inputSize="compact" data-testid="pc-birthDate" {...register('birthDate')} />
+            </FormField>
             <FormField label={tc('phoneWhatsapp')} htmlFor="pc-phone" optional>
               <InputWithIcon id="pc-phone" inputSize="compact" data-testid="pc-phone" {...register('phoneWhatsapp')} />
             </FormField>
@@ -239,7 +246,7 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
                     inputSize="compact"
                     options={documentTypeOptions}
                     placeholder={tc('unset')}
-                    value={field.value ?? ''}
+                    value={field.value}
                     onChange={field.onChange}
                     data-testid="pc-documentType"
                   />
@@ -276,7 +283,7 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
                 render={({ field }) => (
                   <MultiSelect
                     options={serviceTypeOptions}
-                    value={field.value ?? []}
+                    value={field.value}
                     onChange={field.onChange}
                     placeholder={tc('unset')}
                     id="pc-serviceType"

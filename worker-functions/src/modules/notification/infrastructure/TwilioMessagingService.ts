@@ -1,4 +1,5 @@
 import twilio from 'twilio';
+import { extractPlaceholders } from '../application/StageTemplateEligibility';
 import { IMessagingService, MessageSentResult, SendWhatsAppOptions } from '../domain/IMessagingService';
 import { Result } from '@shared/utils/Result';
 import { MessageTemplate, TemplateButton } from '../domain/MessageTemplate';
@@ -253,18 +254,11 @@ export class TwilioMessagingService implements IMessagingService {
     body: string,
     variables: Record<string, string>,
   ): Record<string, string> {
+    // O parser é o mesmo da elegibilidade por etapa (ordem de aparição, sem duplicatas).
     const result: Record<string, string> = {};
-    const seen = new Set<string>();
-    let index = 1;
-
-    for (const match of body.matchAll(/\{\{(\w+)\}\}/g)) {
-      const key = match[1];
-      if (seen.has(key)) continue;
-      seen.add(key);
-      result[String(index)] = variables[key] ?? '';
-      index++;
-    }
-
+    extractPlaceholders(body).forEach((key, i) => {
+      result[String(i + 1)] = variables[key] ?? '';
+    });
     return result;
   }
 

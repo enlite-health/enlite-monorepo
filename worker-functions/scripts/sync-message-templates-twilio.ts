@@ -25,6 +25,8 @@
  */
 import { Pool } from 'pg';
 import { HARDCODED_SLUGS } from './sync-message-templates/constants';
+import { runMetaStatusStep, describeMetaStatusStep } from './sync-message-templates/meta-status-step';
+import { MetaTemplateStatusProvider } from '../src/modules/notification/infrastructure/MetaTemplateStatusProvider';
 import { TwilioContentClient, TwilioContent, WhatsAppApproval } from './sync-message-templates/twilio-client';
 import { computePlan, ApprovedTwilioEntry } from './sync-message-templates/diff-engine';
 import { applyPlan, fetchDbTemplates } from './sync-message-templates/db';
@@ -117,6 +119,19 @@ async function main(): Promise<void> {
 
     await applyPlan(pool, plan);
     console.log(`[sync] DONE. inserts=${plan.inserts.length} updates=${plan.updates.length} deletes=${plan.deletes.length}`);
+
+    // Estado de autorização da Meta — passo SEPARADO, de propósito.
+    //
+    // Ele não participa do plano acima e não muda nada do que foi inserido,
+    // atualizado ou apagado: escreve só as colunas `meta_approval_*`. A razão
+    // está no cabeçalho de `meta-status-step.ts` — o filtro de `approved` que
+    // alimenta o plano decide o DELETE, e mexer nele é mudança de semântica que
+    // ficou para task própria.
+    //
+    // Roda DEPOIS do applyPlan para que as linhas recém-inseridas já existam
+    // quando o estado delas for gravado.
+    const metaStep = await runMetaStatusStep(new MetaTemplateStatusProvider(pool), { apply });
+    for (const linha of describeMetaStatusStep(metaStep)) console.log(linha);
   } finally {
     await pool.end();
   }

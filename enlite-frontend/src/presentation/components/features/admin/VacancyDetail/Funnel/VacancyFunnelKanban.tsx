@@ -5,7 +5,10 @@ import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { KanbanBoard } from '@presentation/components/features/admin/Kanban/KanbanBoard';
 import { useWJAFunnel, MoveEncuadreError } from '@hooks/admin/useWJAFunnel';
+import { AdminApiService } from '@infrastructure/http/AdminApiService';
+import { InviteBlockedError, blockedReasonMessage } from '@infrastructure/http/AdminMessagingApiService';
 import type { EncuadreRole } from '@domain/entities/EncuadreRole';
+import { AdminPresentationInviteApiService } from '@infrastructure/http/AdminPresentationInviteApiService';
 
 interface VacancyFunnelKanbanProps {
   vacancyId: string;
@@ -47,6 +50,31 @@ export function VacancyFunnelKanban({
       return err;
     },
     [rejectBlocked],
+  );
+
+  /**
+   * "Reenviar" da tarjeta (REQ-08): mesmo endpoint do convite, com `resend: true`
+   * (o backend troca as travas de convite pelo cooldown de reenvio). Recusa 422
+   * vira mensagem localizada no card; sucesso recarrega o funil (último envio).
+   */
+  const handleResendInvite = useCallback(
+    async (workerId: string): Promise<string | null> => {
+      try {
+        await AdminApiService.sendVacancyMatchInvite(workerId, vacancyId, { resend: true });
+        await refetch();
+        return null;
+      } catch (err) {
+        if (err instanceof InviteBlockedError) return blockedReasonMessage(err.code, err.detail, t);
+        return err instanceof Error && err.message ? err.message : t('admin.messaging.statusErrorFallback');
+      }
+    },
+    [vacancyId, refetch, t],
+  );
+
+  /** REQ-09: convite à reunión de presentación a partir da tarjeta (origem 'kanban', vaga anexada ao log). */
+  const handlePresentationInvite = useCallback(
+    (workerId: string) => AdminPresentationInviteApiService.invite(workerId, 'kanban', vacancyId),
+    [vacancyId],
   );
 
   const handleUnrejectBlocked = useCallback(
@@ -138,7 +166,15 @@ export function VacancyFunnelKanban({
 
       {/* Board */}
       {data?.stages && (
-        <KanbanBoard stages={data.stages} vacancyId={vacancyId} onMove={handleMove} onRejectBlocked={handleRejectBlocked} onUnrejectBlocked={handleUnrejectBlocked} />
+        <KanbanBoard
+          stages={data.stages}
+          vacancyId={vacancyId}
+          onMove={handleMove}
+          onRejectBlocked={handleRejectBlocked}
+          onUnrejectBlocked={handleUnrejectBlocked}
+          onResendInvite={handleResendInvite}
+          onPresentationInvite={handlePresentationInvite}
+        />
       )}
     </div>
   );

@@ -11,6 +11,7 @@
  */
 import { useTranslation } from 'react-i18next';
 import { Select, type SelectOption } from '@presentation/components/atoms/Select';
+import { SearchableSelect } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
 import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
 import { Text } from '@presentation/components/atoms/Text';
 import type { WorkerProfileFilters } from './workerProfileFiltersConfig';
@@ -102,6 +103,7 @@ export function AdminWorkerProfileFilters({
   ];
 
   const allOption = t('admin.workers.filters.profile.allOption', { defaultValue: 'Todos' });
+  const searchPh = t('common.search', { defaultValue: 'Buscar...' });
 
   return (
     <div
@@ -197,12 +199,15 @@ export function AdminWorkerProfileFilters({
         <Text size="sm" weight="semibold" color="secondary" className="mb-1">
           {t('admin.workers.filters.profile.province.label', { defaultValue: 'Provincia' })}
         </Text>
-        <Select
+        {/* Lista longa (catálogo do banco): combobox com busca — REQ-06, planning 26/08 */}
+        <SearchableSelect
           inputSize="compact"
           options={stateOptions}
           value={filters.state}
-          onValueChange={(v) => onChange({ state: v })}
+          onChange={(v) => onChange({ state: v })}
           placeholder={allOption}
+          searchPlaceholder={searchPh}
+          data-testid="filter-province"
         />
       </div>
 
@@ -211,12 +216,14 @@ export function AdminWorkerProfileFilters({
         <Text size="sm" weight="semibold" color="secondary" className="mb-1">
           {t('admin.workers.filters.profile.locality.label', { defaultValue: 'Localidad' })}
         </Text>
-        <Select
+        <SearchableSelect
           inputSize="compact"
           options={cityOptions}
           value={filters.city}
-          onValueChange={(v) => onChange({ city: v })}
+          onChange={(v) => onChange({ city: v })}
           placeholder={allOption}
+          searchPlaceholder={searchPh}
+          data-testid="filter-locality"
         />
       </div>
 

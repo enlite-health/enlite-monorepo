@@ -4,7 +4,7 @@ import { PubSubClient } from '@shared/events/PubSubClient';
 import { TokenService } from './TokenService';
 import { LegacyEncuadreReminderService } from './LegacyEncuadreReminderService';
 import { MarkNoShowUseCase } from '../application/MarkNoShowUseCase';
-import { formatDateUTC, formatTimeUTC } from '@shared/utils/dateFormatters';
+import { formatDateInTimezone, formatTimeInTimezone } from '@shared/utils/dateFormatters';
 import { logger } from '@shared/logging';
 
 const REMINDER_QUEUE = 'interview-reminders';
@@ -110,10 +110,11 @@ export class ReminderScheduler {
     jobPostingId: string,
   ): Promise<boolean> {
     const appResult = await this.db.query(
-      `SELECT interview_response, interview_reminder_sent_at,
-              interview_datetime, interview_meet_link
-       FROM worker_job_applications
-       WHERE worker_id = $1 AND job_posting_id = $2
+      `SELECT wja.interview_response, wja.interview_reminder_sent_at,
+              wja.interview_datetime, wja.interview_meet_link, jp.timezone
+       FROM worker_job_applications wja
+       LEFT JOIN job_postings jp ON jp.id = wja.job_posting_id
+       WHERE wja.worker_id = $1 AND wja.job_posting_id = $2
        LIMIT 1`,
       [workerId, jobPostingId],
     );
@@ -125,6 +126,7 @@ export class ReminderScheduler {
       interview_reminder_sent_at: string | null;
       interview_datetime: string | null;
       interview_meet_link: string | null;
+      timezone: string | null;
     };
 
     // Idempotência: já enviou reminder ou worker já declinou/cancelou/não respondeu
@@ -140,8 +142,10 @@ export class ReminderScheduler {
       nameValue = await this.tokenService.generate(workerId, 'worker_first_name');
     }
 
-    const date = formatDateUTC(app.interview_datetime);
-    const time = formatTimeUTC(app.interview_datetime);
+    // No FUSO da vaga (mig 180): o convite e a confirmação já saem assim — o
+    // lembrete em UTC dizia "10:00" para o mesmo horário que o convite chamou de "07:00".
+    const date = formatDateInTimezone(app.interview_datetime, app.timezone);
+    const time = formatTimeInTimezone(app.interview_datetime, app.timezone);
 
     const outboxResult = await this.db.query(
       `INSERT INTO messaging_outbox (worker_id, template_slug, variables, status, attempts)
@@ -257,13 +261,14 @@ export class ReminderScheduler {
 
   private async sendDayBeforeRemindersWJA(): Promise<number> {
     const result = await this.db.query(
-      `SELECT worker_id, job_posting_id, interview_datetime, interview_meet_link
-       FROM worker_job_applications
-       WHERE interview_response = 'confirmed'
-         AND interview_reminder_sent_at IS NULL
-         AND interview_datetime IS NOT NULL
-         AND interview_datetime - INTERVAL '24 hours' <= NOW()
-         AND interview_datetime > NOW()`,
+      `SELECT wja.worker_id, wja.job_posting_id, wja.interview_datetime, wja.interview_meet_link, jp.timezone
+       FROM worker_job_applications wja
+       LEFT JOIN job_postings jp ON jp.id = wja.job_posting_id
+       WHERE wja.interview_response = 'confirmed'
+         AND wja.interview_reminder_sent_at IS NULL
+         AND wja.interview_datetime IS NOT NULL
+         AND wja.interview_datetime - INTERVAL '24 hours' <= NOW()
+         AND wja.interview_datetime > NOW()`,
     );
 
     for (const row of result.rows as Array<{
@@ -271,6 +276,7 @@ export class ReminderScheduler {
       job_posting_id: string;
       interview_datetime: string;
       interview_meet_link: string | null;
+      timezone: string | null;
     }>) {
       let nameValue = row.worker_id;
       if (this.tokenService) {
@@ -285,8 +291,8 @@ export class ReminderScheduler {
           row.worker_id,
           JSON.stringify({
             name: nameValue,
-            date: formatDateUTC(row.interview_datetime),
-            time: formatTimeUTC(row.interview_datetime),
+            date: formatDateInTimezone(row.interview_datetime, row.timezone),
+            time: formatTimeInTimezone(row.interview_datetime, row.timezone),
             job_posting_id: row.job_posting_id,
           }),
         ],

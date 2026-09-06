@@ -20,7 +20,7 @@ describe('derivePatientSla', () => {
     it('PENDING_ADMISSION tem teto 72h', () => {
       expect(PATIENT_SLA_THRESHOLDS_HOURS.PENDING_ADMISSION).toBe(72);
     });
-    it.each(['ACTIVE', 'SUSPENDED', 'DISCONTINUED', 'DISCHARGED'])(
+    it.each(['ACTIVE', 'ON_HOLD', 'SEARCHING', 'REPLACEMENT', 'SUSPENDED', 'DISCHARGED'])(
       '%s não tem SLA (null)',
       (status) => {
         expect(PATIENT_SLA_THRESHOLDS_HOURS[status]).toBeNull();
@@ -95,5 +95,10 @@ describe('derivePatientSla', () => {
       expect(sla.slaThresholdHours).toBeNull();
       expect(sla.slaBreached).toBe(false);
     });
+  });
+
+  it('sem `now` explícito usa o relógio real (default do parâmetro)', () => {
+    const sla = derivePatientSla('SOLICITANTE', new Date(Date.now() - 2 * 3_600_000), undefined as never);
+    expect(sla.hoursInStage).toBeGreaterThanOrEqual(1);
   });
 });

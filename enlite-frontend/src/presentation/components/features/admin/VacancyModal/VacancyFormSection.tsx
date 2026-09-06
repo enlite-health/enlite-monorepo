@@ -16,7 +16,7 @@ import { useNavigate } from 'react-router-dom';
 import { useForm, useWatch, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslation } from 'react-i18next';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Text } from '@presentation/components/atoms/Text';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { handlePublishedVacancyForbidden } from './vacancyFormDefense';
 import type { PatientAddressRow } from '@domain/entities/PatientAddress';
@@ -29,27 +29,11 @@ import {
   buildScheduleFromVacancy,
   MEET_LINK_REGEX,
 } from '../vacancy-form-schema';
+import { listInvalidFields } from '../vacancyFormValidation';
 import { summarizeAddress } from '@presentation/utils/summarizeAddress';
 import { VacancyFormLeftColumn } from './VacancyFormLeftColumn';
 import { VacancyFormRightColumn } from './VacancyFormRightColumn';
-
-/**
- * Map RHF/Zod field errors to user-friendly labels so the validation banner
- * can list exactly what's missing instead of silently blocking submit.
- */
-function listInvalidFields(
-  errors: FieldErrors<VacancyFormData>,
-  tp: (k: string) => string,
-): string[] {
-  const labels: string[] = [];
-  if (errors.required_professions) labels.push(tp('professionalType'));
-  if (errors.providers_needed) labels.push(tp('providersNeeded'));
-  if (errors.schedule) labels.push(tp('schedule'));
-  if (errors.meet_links) labels.push(tp('meetLinksLabel'));
-  if (errors.title) labels.push(tp('caseNumber'));
-  if (errors.age_range_max) labels.push(tp('ageRange'));
-  return labels;
-}
+import { VacancyValidationBanner } from './VacancyValidationBanner';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -111,6 +95,11 @@ export function VacancyFormSection({
   const [submitting, setSubmitting] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [patientDetail, setPatientDetail] = useState<PatientDetail | null>(null);
+  // Spec 014 (US-D6, lex D6.1): SÓ nomes de campo, nunca valor. `CreateVacancyPage` já lê
+  // `onValidationFailedFieldsChange` e renderiza o SEU PRÓPRIO banner
+  // (`vacancy-form-validation-error`) — `invalidFields` aqui é só para o `VacancyModal` (overlay
+  // rápido da lista de vagas), que não passa essa prop e não tinha banner nenhum antes.
+  const [invalidFields, setInvalidFields] = useState<string[]>([]);
 
   const {
     register,
@@ -175,6 +164,14 @@ export function VacancyFormSection({
       .catch(() => setPatientDetail(null));
   }, [selectedPatientId]);
 
+  // Spec 014 (US-D6, lex D6.1): `patientAddressId` é validado pelo ZOD (obrigatório, inclusive
+  // em edição), mas o estado "endereço selecionado" vive FORA do RHF (`selectedAddressId`, do
+  // `useVacancyModalFlow`). Sincroniza aqui — sem isto o campo do form nunca refletiria a
+  // escolha feita em `VacancyFormRightColumn` e a validação nunca passaria.
+  useEffect(() => {
+    setValue('patientAddressId', selectedAddressId ?? '');
+  }, [selectedAddressId, setValue]);
+
   // Initialize form when opening or vacancy data arrives
   useEffect(() => {
     setApiError(null);
@@ -189,6 +186,7 @@ export function VacancyFormSection({
         required_experience: existingVacancy.required_experience ?? '',
         worker_attributes: existingVacancy.worker_attributes ?? '',
         providers_needed: existingVacancy.providers_needed ?? 1,
+        patientAddressId: existingVacancy.patient_address_id ?? '',
         work_schedule: existingVacancy.work_schedule ?? '',
         schedule: buildScheduleFromVacancy(existingVacancy),
         salary_text: existingVacancy.salary_text ?? '',
@@ -230,16 +228,18 @@ export function VacancyFormSection({
   }, [selectedCaseNumber, mode]);
 
   const onValidationError = (errs: FieldErrors<VacancyFormData>) => {
+    // Spec 014 (US-D6, lex D6.1): a lista carrega só NOMES de campo (`listInvalidFields` só lê
+    // as CHAVES de `errs`, nunca `.message`/valor) — nunca console.* (lex D6.1, mesmo artigo).
     const fields = listInvalidFields(errs, (k) => t(`admin.vacancyModal.${k}`));
+    setInvalidFields(fields);
     onValidationFailedFieldsChange?.(fields);
     setApiError(null);
-    // Surface in console so the dev sees the exact error keys/paths
-    console.warn('[VacancyForm] validation failed', errs);
   };
 
   const onSubmit = async (data: VacancyFormData) => {
     setSubmitting(true);
     setApiError(null);
+    setInvalidFields([]);
     onValidationFailedFieldsChange?.([]);
     try {
       // Prefer the user's current selection over the existing vacancy values
@@ -314,6 +314,14 @@ export function VacancyFormSection({
         </div>
       )}
 
+      {/* Spec 014 (US-D6, lex D6.1): banner de validação — lista NOMES de campo, nunca valor.
+          Só se renderiza aqui quando NINGUÉM externo pediu `onValidationFailedFieldsChange`
+          (é o caso do `VacancyModal`, o overlay rápido da lista — sem banner próprio hoje).
+          `CreateVacancyPage` (rota /admin/vacancies/new, "Nueva Vacante" de verdade) JÁ tinha o
+          seu (`vacancy-form-validation-error`, alimentado pelo MESMO `listInvalidFields`) — sem
+          esta guarda o operador veria o aviso DUAS vezes ali. */}
+      {!onValidationFailedFieldsChange && <VacancyValidationBanner fields={invalidFields} />}
+
       {/* Two-column grid */}
       <div className="grid grid-cols-2 gap-12">
         <VacancyFormLeftColumn
@@ -357,9 +365,7 @@ export function VacancyFormSection({
       {/* API error */}
       {apiError && (
         <div className="mt-6 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-          <Typography variant="body" className="text-red-600 text-sm">
-            {apiError}
-          </Typography>
+          <Text size="sm" className="text-red-600">{apiError}</Text>
         </div>
       )}
 

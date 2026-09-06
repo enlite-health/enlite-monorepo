@@ -1,4 +1,5 @@
 import type { Profession } from '@modules/worker/domain/enums/Profession';
+import { recordUnmappedLabel } from '../helpers/unmappedLabelCounter';
 
 /**
  * Translates ClickUp "Tipo de Profesional" drop-down labels
@@ -18,6 +19,14 @@ export const CLICKUP_TO_PROFESSION: Record<string, Profession | null> = {
 
 export function mapClickUpProfession(label: string | null): Profession | null {
   if (!label) return null;
-  if (!(label in CLICKUP_TO_PROFESSION)) return null;
+  if (!(label in CLICKUP_TO_PROFESSION)) {
+    // Unknown ClickUp label — ops may have added or renamed an option. Log it so it can be mapped.
+    // NOTE: 'Estudiante de Psicología' and 'Otra' are KNOWN keys that map to null on purpose —
+    // they take the branch below and must NOT warn.
+    // Task 1.5 — conta POR CAMPO (nunca por rótulo: seria a C1 do `lex` violada por acumulação).
+    recordUnmappedLabel('Tipo de Profesional');
+    console.warn('[professionMap] Unknown ClickUp label:', { field: 'Tipo de Profesional', label });
+    return null;
+  }
   return CLICKUP_TO_PROFESSION[label];
 }

@@ -32,26 +32,74 @@ export interface LogEntry {
 }
 
 export interface QueryLogsParams {
-  /** Valor exato de `jsonPayload.message` (é assim que o backend loga). */
-  message: string;
+  /**
+   * Valor exato de `jsonPayload.message`.
+   *
+   * OPCIONAL desde 30/08, e a razão importa: o backend loga o nome do evento em DOIS
+   * lugares diferentes. `functions.logger.info('admission.notifier...', {...})` deixa o
+   * nome em `jsonPayload.message`; já `logger.info({ msg, ... })` (pino, usado pela
+   * trilha dos mapas) o deixa em `jsonPayload.msg` — medido contra prod em 30/08, onde
+   * `jsonPayload.message="workers.map.read"` devolve 0 e `jsonPayload.msg=` devolve 2.
+   * Para o segundo caso use `match: { msg: 'workers.map.read' }`.
+   */
+  message?: string;
   /** Janela para trás, em minutos. */
   withinMinutes: number;
   /** Filtros extras de igualdade em campos do jsonPayload. */
   match?: Record<string, string>;
+  /**
+   * Busca de TEXTO LIVRE na entrada inteira (o termo "nu" da linguagem de filtro).
+   *
+   * Existe para as asserções de NÃO-VAZAMENTO: "este texto clínico não aparece em
+   * lugar nenhum do log". Não dá para fazer isso por campo — o ponto é justamente não
+   * saber em qual campo um vazamento apareceria.
+   *
+   * ⚠️ Uma linha só. Um termo com quebra de linha não tem representação nesta
+   * gramática de filtro, e aceitá-lo produziria uma consulta que casa outra coisa —
+   * "zero ocorrências" por pergunta errada, que é o verde falso que esta suíte
+   * existe para não ter. Por isso LANÇA em vez de normalizar.
+   */
+  textQuery?: string;
   limit?: number;
 }
 
-function buildFilter({ message, withinMinutes, match }: QueryLogsParams): string {
+/**
+ * Valor dentro de `"..."` na linguagem de filtro do Logging. Sem isto, uma aspa no
+ * termo fecharia a string e o resto viraria sintaxe — a consulta ou dá 400 ou, pior,
+ * casa outra coisa.
+ */
+function quoted(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+function buildFilter({ message, withinMinutes, match, textQuery }: QueryLogsParams): string {
+  // Sem NENHUM seletor, o filtro seria "tudo o que este serviço logou na janela" —
+  // uma varredura cara que devolveria entradas sem relação com a pergunta. Falhar
+  // alto aqui é melhor do que uma asserção que passa por acidente.
+  if (message === undefined && textQuery === undefined && Object.keys(match ?? {}).length === 0) {
+    throw new Error(
+      '[cloudLogging] queryLogs precisa de ao menos um seletor: `message`, `match` ou `textQuery`.',
+    );
+  }
+  if (textQuery !== undefined && /[\r\n]/.test(textQuery)) {
+    throw new Error(
+      '[cloudLogging] `textQuery` precisa ser de UMA linha — um termo com quebra de linha ' +
+        'não tem representação no filtro e faria a consulta perguntar outra coisa.',
+    );
+  }
+
   const since = new Date(Date.now() - withinMinutes * 60_000).toISOString();
   const parts = [
     `resource.type="cloud_run_revision"`,
     `resource.labels.service_name="${serviceName()}"`,
-    `jsonPayload.message="${message}"`,
     `timestamp>="${since}"`,
   ];
+  if (message !== undefined) parts.push(`jsonPayload.message=${quoted(message)}`);
   for (const [k, v] of Object.entries(match ?? {})) {
-    parts.push(`jsonPayload.${k}="${v}"`);
+    parts.push(`jsonPayload.${k}=${quoted(v)}`);
   }
+  // Termo nu = busca de texto livre em toda a entrada (inclusive textPayload e labels).
+  if (textQuery !== undefined) parts.push(quoted(textQuery));
   return parts.join(' AND ');
 }
 

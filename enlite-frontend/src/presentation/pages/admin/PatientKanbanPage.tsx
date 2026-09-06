@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { List, LayoutGrid } from 'lucide-react';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
-import { Typography } from '@presentation/components/atoms/Typography';
+import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { Select } from '@presentation/components/atoms/Select';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
@@ -24,9 +25,13 @@ export function PatientKanbanPage(): JSX.Element {
   return (
     <PageContainer>
       <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
-        <Typography variant="h1" weight="semibold" color="primary" className="font-poppins text-2xl">
+        <Heading level={1} weight="semibold" color="primary">
           {t('admin.patients.kanban.title')}
-        </Typography>
+        </Heading>
+        {/* Spec 014 US-D5: nada indicava que arrastar é a única forma de mudar o estado. */}
+        <Text size="sm" color="muted" className="basis-full sm:basis-auto" data-testid="kanban-drag-hint">
+          {t('admin.patients.kanban.dragHint')}
+        </Text>
         <div className="flex items-center gap-2" data-testid="patients-view-toggle">
           {/* 210px: cabe "Todos los países" sem cortar (ver PatientFilters) */}
           <div className="w-[210px]" data-testid="patient-country-filter">
@@ -62,10 +67,10 @@ export function PatientKanbanPage(): JSX.Element {
 
       {error ? (
         <div className="py-8 text-center">
-          <Typography variant="h3" className="text-red-600 mb-2">
+          <Heading level={3} className="!text-red-600 mb-2">
             {t('admin.patients.errorLoading')}
-          </Typography>
-          <Typography variant="body" className="text-slate-600">{error}</Typography>
+          </Heading>
+          <Text size="sm" color="secondary">{error}</Text>
         </div>
       ) : isLoading ? (
         <TableSkeleton />
@@ -74,7 +79,13 @@ export function PatientKanbanPage(): JSX.Element {
           groups={groups}
           onMove={async (patientId, target) => {
             const err = await moveStatus(patientId, target);
-            if (err) showToast(t('admin.patients.kanban.moveError'), 'error');
+            if (err) {
+              // Spec 014 (US-D5, lex D5.1): `err` é um CÓDIGO de enum quando o backend manda um
+              // (PatientApiError.code) — traduz com i18n; nunca eco de campo do paciente, nunca
+              // console.* com o corpo da resposta. Código desconhecido/ausente cai no genérico.
+              const codeMessage = t(`admin.patients.kanban.moveErrorCodes.${err}`, { defaultValue: '' });
+              showToast(codeMessage || t('admin.patients.kanban.moveError'), 'error');
+            }
             return err;
           }}
         />

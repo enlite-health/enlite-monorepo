@@ -18,7 +18,10 @@ export function Checkbox({
 }: CheckboxProps): JSX.Element {
   return (
     <div className={`flex flex-col gap-1 ${className}`}>
-      <label htmlFor={id} className="flex items-start gap-3 cursor-pointer group">
+      {/* `min-h-6` = 24px, o mínimo de alvo da WCAG 2.5.8. Sem rótulo o label
+          media 22px (2px do mt-0.5 + 20px da caixa) e ficava 2px abaixo da
+          régua; com rótulo já passava de 24px, então isto não muda nada lá. */}
+      <label htmlFor={id} className="flex min-h-6 items-start gap-3 cursor-pointer group">
         <div className="relative mt-0.5 shrink-0">
           <input
             id={id}

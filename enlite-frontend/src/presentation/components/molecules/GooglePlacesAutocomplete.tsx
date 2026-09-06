@@ -86,16 +86,59 @@ export const GooglePlacesAutocomplete = forwardRef<HTMLInputElement, GooglePlace
             fields: ['formatted_address', 'geometry', 'address_components', 'name'],
           });
 
+          const applyPlace = (place: google.maps.places.PlaceResult): void => {
+            if (!place.formatted_address) return;
+            setInputValue(place.formatted_address);
+            setPlaceSelected(true);
+            setShowValidationError(false);
+            onChange?.(place.formatted_address);
+            onPlaceSelected?.(place);
+            onValidationChange?.(true);
+          };
+
+          // Confirmação por TECLADO (ArrowDown + Enter): o widget do Google dispara
+          // `place_changed` com um place SEM `formatted_address` — só o texto digitado.
+          // A versão anterior guardava em `if (place.formatted_address)` e DESCARTAVA
+          // a seleção: o endereço se perdia em silêncio. Medido em prod e reproduzido
+          // localmente (A/B: mouse gravava, teclado não gravava em 60s).
+          //
+          // Aqui resolvemos a 1ª predição na mão — é o caminho que o widget não
+          // completa sozinho. Só roda no caminho do teclado, então não adiciona
+          // chamada nenhuma ao fluxo de quem usa o mouse.
+          const resolveFirstPrediction = (typed: string): void => {
+            if (!typed.trim()) return;
+            const svc = new google.maps.places.AutocompleteService();
+            svc.getPlacePredictions(
+              {
+                input: typed,
+                types: ['address'],
+                componentRestrictions: { country: ['ar', 'br', 'cl', 'co', 'mx', 'pe', 'uy'] },
+              },
+              (predictions, status) => {
+                const first = predictions?.[0];
+                if (status !== google.maps.places.PlacesServiceStatus.OK || !first) return;
+                const details = new google.maps.places.PlacesService(document.createElement('div'));
+                details.getDetails(
+                  {
+                    placeId: first.place_id,
+                    fields: ['formatted_address', 'geometry', 'address_components', 'name'],
+                  },
+                  (detail, detailStatus) => {
+                    if (detailStatus !== google.maps.places.PlacesServiceStatus.OK || !detail) return;
+                    applyPlace(detail);
+                  },
+                );
+              },
+            );
+          };
+
           autocompleteRef.current.addListener('place_changed', () => {
             const place = autocompleteRef.current?.getPlace();
-            if (place && place.formatted_address) {
-              setInputValue(place.formatted_address);
-              setPlaceSelected(true);
-              setShowValidationError(false);
-              onChange?.(place.formatted_address);
-              onPlaceSelected?.(place);
-              onValidationChange?.(true);
+            if (place?.formatted_address) {
+              applyPlace(place);
+              return;
             }
+            resolveFirstPrediction(place?.name ?? inputRef.current?.value ?? '');
           });
 
           setApiError(null);

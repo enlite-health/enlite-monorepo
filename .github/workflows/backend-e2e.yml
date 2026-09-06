@@ -29,7 +29,10 @@ concurrency:
 jobs:
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 15 min não bastava: no PR #299 o job foi cancelado no teto com 181 de 182 suítes
+    # concluídas, e agora entram o boot do container da OMS (~16 s) e a ingestão (~13 s
+    # medidos localmente). O teto é rede de segurança contra travamento, não orçamento.
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: worker-functions
@@ -50,6 +53,16 @@ jobs:
       - name: Generate test fixtures
         run: npm run test:e2e:fixtures
 
+      # Sobe ANTES do stack para o boot de ~15 s correr em paralelo com o do Postgres/API.
+      # ⚠️ Baixa 111 MB da nuvem da OMS a cada cold start (medido na F0) — se a OMS estiver
+      # fora, este passo falha ALTO e a suíte não roda. É deliberado: catálogo ausente fazia
+      # 11 suítes reprovarem com uma mensagem que parecia defeito de código.
+      - name: Start ICD-11 API (catálogo da OMS)
+        run: |
+          docker run -d --name icd-api -p 8085:80 \
+            -e acceptLicense=true -e saveAnalytics=false -e include=2026-01_en-es \
+            whoicd/icd-api
+
       - name: Start Docker stack
         run: docker compose -f docker-compose.yml -f docker-compose.test.yml up -d postgres api
 
@@ -58,6 +71,38 @@ jobs:
         env:
           API_URL: http://localhost:8080
           HEALTH_TIMEOUT_MS: 90000
+
+      # As migrations rodam no boot do container da API (`run-migrations-docker.js && npm start`),
+      # então o schema `terminology` já existe quando este passo começa.
+      - name: Ingest + promote ICD-11 catalog
+        run: |
+          set -euo pipefail
+          echo "Aguardando o container da OMS responder..."
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -m 5 -w '%{http_code}' \
+              -H 'API-Version: v2' -H 'Accept-Language: es' -H 'Accept: application/json' \
+              "$ICD11_API_BASE" || echo 000)
+            [ "$code" = "200" ] && { echo "ICD-11 API pronta em ~$((i*5))s"; break; }
+            [ "$i" = "60" ] && { echo "::error::ICD-11 API não respondeu 200 em 300s"; docker logs icd-api | tail -30; exit 1; }
+            sleep 5
+          done
+          ./node_modules/.bin/ts-node --transpile-only scripts/ingest-icd11-catalog.ts --release 2026-01 --concurrency 32
+          ./node_modules/.bin/ts-node --transpile-only scripts/ingest-icd11-catalog.ts --promote 2026-01 --by ci
+          # Contagem zero é falha, nunca sucesso: as suítes do CID-11 exigem >= 30000 linhas e
+          # o release CORRENTE. Sem esta asserção, um catálogo vazio viraria 11 reprovações
+          # com mensagem de defeito de código, que foi exatamente o que aconteceu no PR #299.
+          docker compose -f docker-compose.yml -f docker-compose.test.yml exec -T postgres \
+            psql -U enlite_admin -d enlite_e2e -v ON_ERROR_STOP=1 -c \
+            "DO \$\$ DECLARE n int; c int; BEGIN
+               SELECT count(*) INTO n FROM terminology.icd_entities;
+               SELECT count(*) INTO c FROM terminology.icd_releases WHERE is_current;
+               IF n < 30000 THEN RAISE EXCEPTION 'catalogo CID-11 com % linhas (< 30000)', n; END IF;
+               IF c <> 1 THEN RAISE EXCEPTION 'releases correntes = % (esperado 1)', c; END IF;
+               RAISE NOTICE 'catalogo CID-11 pronto: % entidades, 1 release corrente', n;
+             END \$\$;"
+        env:
+          ICD11_API_BASE: http://localhost:8085/icd/release/11/2026-01/mms
+          DATABASE_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
 
       - name: Run E2E tests
         run: npm run test:e2e
@@ -68,8 +113,12 @@ jobs:
 
       - name: Collect logs on failure
         if: failure()
-        run: docker compose -f docker-compose.yml -f docker-compose.test.yml logs api
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.test.yml logs api
+          echo "--- icd-api ---"; docker logs icd-api 2>&1 | tail -40 || true
 
       - name: Teardown
         if: always()
-        run: docker compose -f docker-compose.yml -f docker-compose.test.yml down -v
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.test.yml down -v
+          docker rm -f icd-api || true

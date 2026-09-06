@@ -47,6 +47,8 @@ const ESPERADO_WORKERS: Record<string, string> = {
   'GET /workers/by-phone': 'worker_pii:read',
   'GET /workers/case-options': 'worker:read',
   'GET /workers/filter-options': 'worker:read',
+  // Mapa de prestadores (REQ-04, DEC-14) — POST com corpo; leitura de pontos, célula de leitura.
+  'POST /workers/map': 'worker:read',
   'POST /workers/sync-talentum': 'talentum:write',
   'GET /workers/export': 'worker:export',
   'GET /workers/:id/timeline': 'worker:read',
@@ -102,7 +104,7 @@ const ROTAS_DO_PRESTADOR = [
 const responde = (nome: string) => (req: express.Request, res: express.Response) =>
   res.json({ m: nome, id: req.params.id });
 
-function routerPrincipal() {
+function routerPrincipal(comMapa = true) {
   const c = {
     workers: {
       getWorkerByPhone: responde('getWorkerByPhone'),
@@ -128,6 +130,7 @@ function routerPrincipal() {
       remove: responde('tags.remove'),
     },
     timeline: { getTimeline: responde('getTimeline') },
+    ...(comMapa ? { map: { getMapPoints: responde('getMapPoints') } } : {}),
   };
   return createAdminWorkerRoutes(c as never, authDouble(), permissionsDouble());
 }
@@ -219,13 +222,13 @@ describe('família admin.workers — as 4 peças declaram célula', () => {
     expect(undeclaredRoutes(scanExpressRouter(monta()), () => true)).toEqual([]);
   });
 
-  it('a família soma exatamente 31 rotas — a conta que saiu do PENDING_DECLARATIONS', () => {
+  it('a família soma exatamente 32 rotas — as 31 do PENDING_DECLARATIONS + o mapa (main, 05/09)', () => {
     const total =
       Object.keys(ESPERADO_WORKERS).length +
       Object.keys(ESPERADO_DOCS).length +
       Object.keys(ESPERADO_ADICIONAIS).length +
       Object.keys(ESPERADO_CONTEXTO).length;
-    expect(total).toBe(31);
+    expect(total).toBe(32);
   });
 
   it('abrir a FICHA é worker_pii:read; LISTAR é worker:read — a distinção que uma uniformização apagaria', () => {
@@ -259,6 +262,7 @@ describe('família admin.workers — as 4 peças declaram célula', () => {
       ['get', '/api/admin/workers/filter-options', 'getFilterOptions'],
       ['get', '/api/admin/workers/case-options', 'listCaseOptions'],
       ['get', '/api/admin/workers/by-phone', 'getWorkerByPhone'],
+      ['post', '/api/admin/workers/map', 'getMapPoints'],
     ])('%s %s NÃO é capturado por /workers/:id', async (metodo, caminho, esperado) => {
       const app = express();
       app.use('/api/admin', routerPrincipal());
@@ -285,6 +289,24 @@ describe('família admin.workers — as 4 peças declaram célula', () => {
       // SEM o handler ter resolvido → `undefined`, e a trilha não grava. O que
       // NÃO pode acontecer é cair no telefone da query como identificador.
       expect(idFrom({ query: { phone: '+5491133445566' } })).toBeUndefined();
+    });
+
+    it('GET /workers/map não existe (é POST): "map" cai em /workers/:id, no handler de detalhe', async () => {
+      const app = express();
+      app.use('/api/admin', routerPrincipal());
+
+      const res = await request(app).get('/api/admin/workers/map').expect(200);
+
+      expect(res.body).toMatchObject({ m: 'getWorkerById', id: 'map' });
+    });
+
+    it('sem controller de mapa, POST /workers/map é 404 e o resto continua', async () => {
+      const app = express();
+      app.use('/api/admin', routerPrincipal(false));
+
+      await request(app).post('/api/admin/workers/map').expect(404);
+      const res = await request(app).get('/api/admin/workers').expect(200);
+      expect(res.body.m).toBe('listWorkers');
     });
 
     it('/workers/:id/timeline não é engolido por /workers/:id', async () => {
@@ -333,6 +355,7 @@ describe('família admin.workers — as 4 peças declaram célula', () => {
       ['get', '/api/admin/workers/by-phone', 'getWorkerByPhone'],
       ['get', '/api/admin/workers/case-options', 'listCaseOptions'],
       ['get', '/api/admin/workers/filter-options', 'getFilterOptions'],
+      ['post', '/api/admin/workers/map', 'getMapPoints'],
       ['post', '/api/admin/workers/sync-talentum', 'syncTalentumWorkers'],
       ['get', '/api/admin/workers/export', 'exportWorkers'],
       ['get', '/api/admin/workers/w1/timeline', 'getTimeline'],

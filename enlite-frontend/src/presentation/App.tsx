@@ -29,11 +29,17 @@ import TalentumConfigPage from './pages/admin/TalentumConfigPage';
 import WorkerDetailPage from './pages/admin/WorkerDetailPage';
 import PatientDetailPage from './pages/admin/PatientDetailPage';
 import { PatientKanbanPage } from './pages/admin/PatientKanbanPage';
+import { AdminMapPage } from './pages/admin/AdminMapPage/AdminMapPage';
 import { PendingAddressReviewPage } from './pages/admin/PendingAddressReviewPage';
 import { RecruitmentHealthPage } from './pages/admin/RecruitmentHealthPage';
 import { BlockedAttemptsPage } from './pages/admin/BlockedAttemptsPage';
 import TagCatalogPage from './pages/admin/TagCatalogPage';
+import { FunnelStageMessagesPage } from './pages/admin/FunnelStageMessagesPage';
+import { TemplateCatalogPage } from './pages/admin/TemplateCatalogPage';
+import { TemplateCatalogDetailPage } from './pages/admin/TemplateCatalogDetailPage';
+import { TemplateDraftsPage } from './pages/admin/TemplateDraftsPage';
 import PatientChatRolesPage from './pages/admin/PatientChatRolesPage';
+import PresentationInvitePage from './pages/admin/PresentationInvitePage';
 import { DedupCenterPage } from './pages/admin/DedupCenterPage/DedupCenterPage';
 import { NewVersionBanner } from './components/molecules/NewVersionBanner/NewVersionBanner';
 import { Toaster } from './components/molecules/Toaster';
@@ -208,8 +214,16 @@ export function App() {
           <Route path="patients" element={<FeatureRouteGate feature="screen:patients"><AdminPatientsPage /></FeatureRouteGate>} />
           <Route path="patients/kanban" element={<FeatureRouteGate feature="screen:patients"><PatientKanbanPage /></FeatureRouteGate>} />
           <Route path="patients/:id" element={<FeatureRouteGate feature="screen:patients"><PatientDetailPage /></FeatureRouteGate>} />
+          {/* `/admin/mapa` (main, 05/09) não tem chave `screen:*` no manifest — fica sem FeatureRouteGate, como tags/dedup. */}
+          <Route path="mapa" element={<AdminMapPage />} />
           <Route path="tags" element={<TagCatalogPage />} />
+          <Route path="mensajes-por-etapa" element={<FunnelStageMessagesPage />} />
+          <Route path="plantillas" element={<TemplateCatalogPage />} />
+          <Route path="plantillas/registrar" element={<TemplateDraftsPage />} />
+          {/* Depois de "registrar", senão o literal seria capturado pelo :slug. */}
+          <Route path="plantillas/:slug" element={<TemplateCatalogDetailPage />} />
           <Route path="patient-chat-roles" element={<PatientChatRolesPage />} />
+          <Route path="invitacion-presentacion" element={<PresentationInvitePage />} />
           <Route path="dedup" element={<DedupCenterPage />} />
           {/* Painel de acessos — cada página se fecha sozinha em `permission_management:read` (AccessGate). */}
           <Route path="access" element={<FeatureRouteGate feature="screen:access-permissions"><AccessPage /></FeatureRouteGate>} />

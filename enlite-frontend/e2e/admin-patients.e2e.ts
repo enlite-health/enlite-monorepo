@@ -13,7 +13,17 @@
  *   - Paginação envia offset correto
  *   - Erro de API exibe mensagem de erro
  *   - Big numbers NAO aparecem aqui (moveram para Gestión a la vista)
+ *   - Coluna "Servicio" mostra o alias (Acompañante Terapéutico), nunca o ENUM
+ *   - Data do registro aparece sob o nome, sem coluna nova
  *   - Screenshot visual obrigatório
+ *
+ * ⚠️ ESTE ARQUIVO NÃO RODA NO CI — medido em 03/09/2026. O workflow só executa
+ * `--project=integration` (que casa apenas `e2e/integration/**`) e três specs
+ * de plantillas nomeadas; os projetos `chromium`/`firefox`/`webkit`, onde este
+ * arquivo vive, não são invocados, e o runner nem instala firefox/webkit. Ele
+ * continua valendo como verificação LOCAL, mas a guarda que precisa reprovar um
+ * PR mora em `e2e/integration/admin-patients-tabela.integration.e2e.ts`.
+ * Ao acrescentar aqui uma garantia que não pode regredir, acrescente lá também.
  */
 
 import { test, expect, Page } from '@playwright/test';
@@ -46,7 +56,7 @@ const MOCK_PATIENTS = [
     documentNumber: null,
     dependencyLevel: null,
     clinicalSpecialty: 'ASD',
-    serviceType: [],
+    serviceType: ['AT', 'CAREGIVER'],
     needsAttention: true,
     attentionReasons: ['MISSING_INFO'],
     createdAt: '2026-04-22T08:00:00Z',
@@ -366,6 +376,30 @@ test.describe('AdminPatientsPage', () => {
     await expect(page).toHaveURL(/\/admin\/login/, { timeout: 10000 });
 
     await context.close();
+  });
+
+  test('coluna Servicio mostra o ALIAS (não o ENUM) e a linha mostra a data do registro', async ({ page }) => {
+    await seedAdminAndLogin(page);
+
+    await page.route('**/api/admin/patients*', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: mockPatientsList() }),
+    );
+    await mockStatsAfterListMock(page);
+
+    await page.goto('/admin/patients');
+    await expect(page.locator('text=Alomon, Francisco').first()).toBeVisible({ timeout: 15000 });
+
+    // Alias, não ENUM. `AT` sozinho é o sintoma do bug — o texto exato não pode
+    // existir em célula nenhuma da tabela.
+    await expect(page.getByText('Acompañante Terapéutico', { exact: true }).first()).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('Acompañante Terapéutico + Cuidador', { exact: true }).first()).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('AT', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('CAREGIVER', { exact: true })).toHaveCount(0);
+
+    // Data do registro: na MESMA célula do nome (sem coluna nova).
+    const nameCell = page.locator('td', { hasText: 'Alomon, Francisco' }).first();
+    await expect(nameCell).toContainText('23/04/2026');
+    await expect(page.locator('th')).toHaveCount(8);
   });
 
   test('screenshot visual — estado carregado com dados', async ({ page }) => {

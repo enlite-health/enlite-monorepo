@@ -12,6 +12,8 @@ import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
+import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
+import { DiscardChangesConfirm } from './DiscardChangesConfirm';
 
 interface Props {
   patient: PatientDetail;
@@ -23,15 +25,22 @@ const DOCUMENT_TYPES = ['DNI', 'PASSPORT', 'CEDULA', 'LE_LC', 'CPF'] as const;
 const SEXES = ['FEMALE', 'MALE', 'INTERSEX', 'UNDISCLOSED'] as const;
 const CLOSE_MS = 300;
 
+// Todo campo opcional nasce como '' (defaultValues) — `` diz isso ao tipo,
+// e o `onSubmit` deixa de carregar fallbacks para um `undefined` que nunca chega.
+// Spec 014 (US-D4): a mensagem é a CHAVE i18n (mesmo padrão de PatientSupportNetworkEditDrawer/
+// workerRegistrationSchemas.ts) — sem ela o zodResolver caía no default em inglês do zod
+// ("String must contain at least 1 character(s)"), visível na UI em espanhol.
 const schema = z.object({
-  firstName: z.string().trim().min(1),
-  lastName: z.string().trim().optional(),
-  phoneWhatsapp: z.string().trim().optional(),
-  contactEmail: z.union([z.literal(''), z.string().trim().email()]).optional(),
-  documentType: z.string().optional(),
-  documentNumber: z.string().trim().optional(),
-  birthDate: z.string().optional(),
-  sex: z.string().optional(),
+  firstName: z.string().trim().min(1, 'admin.patients.editDrawer.requiredField'),
+  lastName: z.string().trim(),
+  phoneWhatsapp: z.string().trim(),
+  contactEmail: z.union([z.literal(''), z.string().trim().email()]),
+  documentType: z.string(),
+  documentNumber: z.string().trim(),
+  birthDate: z.string(),
+  sex: z.string(),
+  /** US-B9 (spec 012): yyyy-MM-dd ou '' — não deriva da vaga. */
+  serviceStartDate: z.string(),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -52,22 +61,25 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
   const tc = (k: string) => t(`admin.patients.create.${k}`);
   const td = (k: string) => t(`admin.patients.detail.${k}`);
   const te = (k: string) => t(`admin.patients.editDrawer.${k}`);
+  /** Traduz o `message` do zod, que carrega a CHAVE i18n (não o texto) — ver o comentário do schema. */
+  const terr = (msg?: string): string | undefined => (msg ? t(msg) : undefined);
 
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const { register, handleSubmit, control, formState: { errors } } = useForm<FormValues>({
+  const { register, handleSubmit, control, formState: { errors, isDirty } } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       firstName: patient.firstName ?? '',
       lastName: patient.lastName ?? '',
       phoneWhatsapp: patient.phoneWhatsapp ?? '',
-      contactEmail: '',
+      contactEmail: patient.contactEmail ?? '',
       documentType: patient.documentType ?? '',
       documentNumber: patient.documentNumber ?? '',
       birthDate: toDateInput(patient.birthDate),
       sex: patient.sex ?? '',
+      serviceStartDate: toDateInput(patient.serviceStartDate),
     },
   });
 
@@ -81,12 +93,18 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
     setTimeout(onClose, CLOSE_MS);
   };
 
+  // Spec 014 (US-D4, lex D4 AUTORIZADO): react-hook-form já rastreia dirty campo a campo
+  // contra `defaultValues` — reusar em vez de duplicar a comparação manual.
+  const { confirmingClose, requestClose, keepEditing, confirmDiscard } = useConfirmDiscardClose({
+    isDirty,
+    onConfirmedClose: handleClose,
+  });
+
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') requestClose(); };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [requestClose]);
 
   const documentTypeOptions: SelectOption[] = DOCUMENT_TYPES.map((d) => ({
     value: d,
@@ -101,19 +119,24 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
     setSubmitError(null);
     const payload: PatientGeneralSectionPayload = {};
     // nullable text: '' clears to null; only send when changed.
-    const nz = (v: string | undefined): string | null => {
-      const s = (v ?? '').trim();
+    const nz = (v: string): string | null => {
+      const s = v.trim();
       return s ? s : null;
     };
     if (values.firstName.trim() !== (patient.firstName ?? '')) payload.firstName = values.firstName.trim();
     if (nz(values.lastName) !== (patient.lastName ?? null)) payload.lastName = nz(values.lastName);
     if (nz(values.phoneWhatsapp) !== (patient.phoneWhatsapp ?? null)) payload.phoneWhatsapp = nz(values.phoneWhatsapp);
-    if (nz(values.contactEmail)) payload.contactEmail = nz(values.contactEmail);
+    // Mesma regra dos outros campos (lex C4.3): não mexer → não envia; limpar → null.
+    if (nz(values.contactEmail) !== (patient.contactEmail ?? null)) payload.contactEmail = nz(values.contactEmail);
     if (nz(values.documentType) !== (patient.documentType ?? null)) payload.documentType = nz(values.documentType);
     if (nz(values.documentNumber) !== (patient.documentNumber ?? null)) payload.documentNumber = nz(values.documentNumber);
     if (nz(values.sex) !== (patient.sex ?? null)) payload.sex = nz(values.sex);
-    const birth = (values.birthDate ?? '').trim() || null;
-    if (birth !== toDateInput(patient.birthDate) ) payload.birthDate = birth;
+    // Os dois lados na MESMA forma ('' = sem data): paciente sem data + Guardar sem
+    // mexer não pode virar PATCH {birthDate:null} nem bumpar updated_at (QA 🟡3).
+    const birth = values.birthDate.trim();
+    if (birth !== toDateInput(patient.birthDate)) payload.birthDate = birth || null;
+    const start = values.serviceStartDate.trim();
+    if (start !== toDateInput(patient.serviceStartDate)) payload.serviceStartDate = start || null;
 
     if (Object.keys(payload).length === 0) { handleClose(); return; }
 
@@ -131,9 +154,10 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
 
   return (
     <>
+      {confirmingClose && <DiscardChangesConfirm onKeepEditing={keepEditing} onDiscard={confirmDiscard} />}
       <div
         className={`fixed inset-0 bg-black/50 z-40 transition-opacity duration-300 ${show ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-        onClick={handleClose}
+        onClick={requestClose}
         data-testid="patient-general-edit-backdrop"
       />
       <div
@@ -149,7 +173,7 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
             <Button type="button" variant="primary" size="sm" onClick={handleSubmit(onSubmit)} isLoading={busy} className="w-32" data-testid="pge-save">
               {te('save')}
             </Button>
-            <button type="button" onClick={handleClose} aria-label={te('close')} className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded">
+            <button type="button" onClick={requestClose} aria-label={te('close')} className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -157,7 +181,7 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
 
         <form onSubmit={handleSubmit(onSubmit)} className="flex-1 overflow-y-auto px-8 py-6 flex flex-col gap-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormField label={tc('firstName')} htmlFor="pge-firstName" required error={errors.firstName?.message}>
+            <FormField label={tc('firstName')} htmlFor="pge-firstName" required error={terr(errors.firstName?.message)}>
               <InputWithIcon id="pge-firstName" inputSize="compact" data-testid="pge-firstName" {...register('firstName')} />
             </FormField>
             <FormField label={tc('lastName')} htmlFor="pge-lastName" optional>
@@ -171,7 +195,7 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
             </FormField>
             <FormField label={tc('documentType')} htmlFor="pge-documentType" optional>
               <Controller control={control} name="documentType" render={({ field }) => (
-                <SelectField inputSize="compact" options={documentTypeOptions} placeholder={te('unset')} value={field.value ?? ''} onChange={field.onChange} data-testid="pge-documentType" />
+                <SelectField inputSize="compact" options={documentTypeOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid="pge-documentType" />
               )} />
             </FormField>
             <FormField label={tc('documentNumber')} htmlFor="pge-documentNumber" optional>
@@ -180,9 +204,12 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
             <FormField label={td('generalInfoCard.birthDate')} htmlFor="pge-birthDate" optional>
               <InputWithIcon id="pge-birthDate" type="date" inputSize="compact" data-testid="pge-birthDate" {...register('birthDate')} />
             </FormField>
+            <FormField label={td('generalInfoCard.serviceStartDate')} htmlFor="pge-serviceStartDate" optional>
+              <InputWithIcon id="pge-serviceStartDate" type="date" inputSize="compact" data-testid="pge-serviceStartDate" {...register('serviceStartDate')} />
+            </FormField>
             <FormField label={td('generalInfoCard.sex')} htmlFor="pge-sex" optional>
               <Controller control={control} name="sex" render={({ field }) => (
-                <SelectField inputSize="compact" options={sexOptions} placeholder={te('unset')} value={field.value ?? ''} onChange={field.onChange} data-testid="pge-sex" />
+                <SelectField inputSize="compact" options={sexOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid="pge-sex" />
               )} />
             </FormField>
           </div>

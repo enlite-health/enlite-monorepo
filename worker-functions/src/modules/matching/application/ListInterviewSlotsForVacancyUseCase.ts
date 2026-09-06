@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { formatSlotOption } from '@shared/index';
+import { resolveOfferedSlots, type VacancySlotSource } from '../domain/interviewSlotResolver';
 
 export interface InterviewSlotOption {
   /** 1..3 — posição meet_link_N/meet_datetime_N na vaga (o índice que o book usa). */
@@ -26,10 +26,11 @@ export class ListInterviewSlotsForVacancyUseCase {
 
   async execute(jobPostingId: string): Promise<ListInterviewSlotsResult> {
     const result = await this.db.query(
-      `SELECT case_number,
+      `SELECT case_number, timezone,
               meet_link_1, meet_datetime_1,
               meet_link_2, meet_datetime_2,
-              meet_link_3, meet_datetime_3
+              meet_link_3, meet_datetime_3,
+              meet_recurring_weekday, meet_recurring_time, meet_recurring_link
        FROM job_postings
        WHERE id = $1 AND deleted_at IS NULL`,
       [jobPostingId],
@@ -40,16 +41,12 @@ export class ListInterviewSlotsForVacancyUseCase {
     }
 
     const row = result.rows[0] as Record<string, string | number | null>;
-    const slots: InterviewSlotOption[] = [];
-
-    for (const n of [1, 2, 3]) {
-      const link = row[`meet_link_${n}`];
-      const datetime = row[`meet_datetime_${n}`];
-      if (!link || !datetime) continue;
-      const iso = new Date(datetime as string).toISOString();
-      if (new Date(iso).getTime() <= Date.now()) continue;
-      slots.push({ index: n, label: formatSlotOption(iso), iso });
-    }
+    // A MESMA oferta do convite por WhatsApp (fixos futuros ∪ recorrente, no fuso da vaga, mig 291).
+    const slots: InterviewSlotOption[] = resolveOfferedSlots(row as VacancySlotSource).map((s) => ({
+      index: s.index,
+      label: s.label,
+      iso: s.datetime.toISOString(),
+    }));
 
     return {
       ok: true,

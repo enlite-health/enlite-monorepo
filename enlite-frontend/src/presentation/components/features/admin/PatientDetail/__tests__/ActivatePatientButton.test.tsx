@@ -1,186 +1,192 @@
 /**
- * Unit de `ActivatePatientButton` — "Activar paciente" (POST /patients/:id/activate).
- *
- * Mesmo padrão dos outros testes de PatientDetail: i18n resolvido contra o
- * pt-BR.json real, `AdminApiService` mockado, `PatientApiError` REAL (é dela
- * que vem o `status` que decide a mensagem de 422 sem endereço).
+ * ActivatePatientButton — cobertura completa (D200: arquivo tocado). O comportamento
+ * pré-existente (visibilidade por status, confirmar/cancelar, sucesso, 422 genérico) não tinha
+ * teste dedicado nesta árvore; a mudança NOVA desta sessão (spec 014 US-D1) é o tratamento de
+ * `err.details.missing` — os MESMOS códigos/i18n do checklist, nunca o texto cru do servidor.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
+import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import i18n from 'i18next';
+import { initReactI18next } from 'react-i18next';
+import esJson from '@infrastructure/i18n/locales/es.json';
+import ptBRJson from '@infrastructure/i18n/locales/pt-BR.json';
 import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
-import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
-import type { AuthzContract } from '@domain/entities/Authz';
-
-const translations = ptBR as Record<string, any>;
-
-function t(key: string, optsOrDefault?: any): string {
-  const parts = key.split('.');
-  let current: any = translations;
-  for (const part of parts) current = current?.[part];
-  if (typeof current === 'string') return current;
-  if (typeof optsOrDefault === 'string') return optsOrDefault;
-  return key;
-}
-
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t }) }));
+import { ActivatePatientButton } from '../ActivatePatientButton';
 
 const activatePatient = vi.fn();
+const showToast = vi.fn();
 vi.mock('@infrastructure/http/AdminApiService', () => ({
-  AdminApiService: {
-    activatePatient: (...a: unknown[]) => activatePatient(...a),
-  },
+  AdminApiService: { activatePatient: (...a: unknown[]) => activatePatient(...a) },
 }));
+vi.mock('@presentation/hooks/useToast', () => ({ useToast: () => showToast }));
 
-const { ActivatePatientButton } = await import('../ActivatePatientButton');
-
-describe('ActivatePatientButton', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+beforeAll(async () => {
+  await i18n.use(initReactI18next).init({
+    lng: 'es',
+    fallbackLng: 'es',
+    resources: { es: { translation: esJson }, 'pt-BR': { translation: ptBRJson } },
+    interpolation: { escapeValue: false },
+    initImmediate: false,
   });
+});
 
-  it('status null: não renderiza nada', () => {
-    const { container } = render(
-      <ActivatePatientButton patientId="p1" status={null} onActivated={vi.fn()} />,
-    );
+beforeEach(() => {
+  activatePatient.mockReset();
+  showToast.mockReset();
+});
+
+describe('ActivatePatientButton — visibilidade por status', () => {
+  it('status null → não renderiza nada', () => {
+    const { container } = render(<ActivatePatientButton patientId="p1" status={null} onActivated={vi.fn()} />);
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('status ACTIVE (fora do conjunto ativável): não renderiza nada', () => {
-    const { container } = render(
-      <ActivatePatientButton patientId="p1" status="ACTIVE" onActivated={vi.fn()} />,
-    );
+  it('status ACTIVE (fora de ACTIVATABLE) → não renderiza', () => {
+    const { container } = render(<ActivatePatientButton patientId="p1" status="ACTIVE" onActivated={vi.fn()} />);
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('status ADMISSION: o botão existe', () => {
+  it('status ADMISSION → botão visível', () => {
     render(<ActivatePatientButton patientId="p1" status="ADMISSION" onActivated={vi.fn()} />);
     expect(screen.getByTestId('activate-patient-btn')).toBeInTheDocument();
   });
 
-  it('status PENDING_ADMISSION: o botão existe', () => {
+  it('status PENDING_ADMISSION → botão visível', () => {
     render(<ActivatePatientButton patientId="p1" status="PENDING_ADMISSION" onActivated={vi.fn()} />);
     expect(screen.getByTestId('activate-patient-btn')).toBeInTheDocument();
   });
+});
 
-  it('clicar no botão abre o modal de confirmação', () => {
+describe('ActivatePatientButton — abrir/cancelar/backdrop', () => {
+  it('clicar no botão abre o modal de confirmação', async () => {
+    const user = userEvent.setup();
     render(<ActivatePatientButton patientId="p1" status="ADMISSION" onActivated={vi.fn()} />);
-    fireEvent.click(screen.getByTestId('activate-patient-btn'));
+    await user.click(screen.getByTestId('activate-patient-btn'));
     expect(screen.getByTestId('activate-confirm-modal')).toBeInTheDocument();
   });
 
-  it('cancelar fecha o modal sem chamar a API', () => {
+  it('"Cancelar" fecha o modal sem chamar a API', async () => {
+    const user = userEvent.setup();
     render(<ActivatePatientButton patientId="p1" status="ADMISSION" onActivated={vi.fn()} />);
-    fireEvent.click(screen.getByTestId('activate-patient-btn'));
-    fireEvent.click(screen.getByTestId('activate-cancel'));
+    await user.click(screen.getByTestId('activate-patient-btn'));
+    await user.click(screen.getByTestId('activate-cancel'));
     expect(screen.queryByTestId('activate-confirm-modal')).not.toBeInTheDocument();
     expect(activatePatient).not.toHaveBeenCalled();
   });
 
-  it('clicar no backdrop fecha o modal (não ocupado)', () => {
+  it('clicar no backdrop fecha o modal (quando não está ocupado)', async () => {
+    const user = userEvent.setup();
     render(<ActivatePatientButton patientId="p1" status="ADMISSION" onActivated={vi.fn()} />);
-    fireEvent.click(screen.getByTestId('activate-patient-btn'));
-    fireEvent.click(screen.getByTestId('activate-confirm-backdrop'));
+    await user.click(screen.getByTestId('activate-patient-btn'));
+    await user.click(screen.getByTestId('activate-confirm-backdrop'));
     expect(screen.queryByTestId('activate-confirm-modal')).not.toBeInTheDocument();
   });
 
-  it('clicar no backdrop enquanto ocupado NÃO fecha o modal', async () => {
-    let resolveActivate: (v: unknown) => void;
-    activatePatient.mockReturnValue(new Promise((resolve) => { resolveActivate = resolve; }));
+  it('reabrir o modal limpa o erro anterior', async () => {
+    const user = userEvent.setup();
+    activatePatient.mockRejectedValueOnce(new Error('boom'));
     render(<ActivatePatientButton patientId="p1" status="ADMISSION" onActivated={vi.fn()} />);
-    fireEvent.click(screen.getByTestId('activate-patient-btn'));
-    fireEvent.click(screen.getByTestId('activate-confirm'));
-
-    fireEvent.click(screen.getByTestId('activate-confirm-backdrop'));
-    expect(screen.getByTestId('activate-confirm-modal')).toBeInTheDocument();
-
-    resolveActivate!({ createdVacancyIds: ['v1'] });
-    await waitFor(() => expect(screen.queryByTestId('activate-confirm-modal')).not.toBeInTheDocument());
+    await user.click(screen.getByTestId('activate-patient-btn'));
+    await user.click(screen.getByTestId('activate-confirm'));
+    await waitFor(() => expect(screen.getByTestId('activate-error')).toBeInTheDocument());
+    await user.click(screen.getByTestId('activate-cancel'));
+    await user.click(screen.getByTestId('activate-patient-btn'));
+    expect(screen.queryByTestId('activate-error')).not.toBeInTheDocument();
   });
+});
 
-  it('confirmar com sucesso: chama a API, fecha o modal e avisa o pai', async () => {
-    activatePatient.mockResolvedValue({ createdVacancyIds: ['v1', 'v2'] });
+describe('ActivatePatientButton — sucesso', () => {
+  it('confirma → toast de sucesso com a contagem, fecha o modal, chama onActivated', async () => {
+    const user = userEvent.setup();
     const onActivated = vi.fn();
+    activatePatient.mockResolvedValueOnce({ patientId: 'p1', status: 'ACTIVE', createdVacancyIds: ['v1', 'v2'] });
     render(<ActivatePatientButton patientId="p1" status="ADMISSION" onActivated={onActivated} />);
-    fireEvent.click(screen.getByTestId('activate-patient-btn'));
-    fireEvent.click(screen.getByTestId('activate-confirm'));
+    await user.click(screen.getByTestId('activate-patient-btn'));
+    await user.click(screen.getByTestId('activate-confirm'));
+    await waitFor(() => expect(onActivated).toHaveBeenCalled());
+    expect(showToast).toHaveBeenCalledWith(expect.stringContaining('2'), 'success');
+    expect(screen.queryByTestId('activate-confirm-modal')).not.toBeInTheDocument();
+  });
+});
 
-    await waitFor(() => expect(activatePatient).toHaveBeenCalledWith('p1'));
-    await waitFor(() => expect(screen.queryByTestId('activate-confirm-modal')).not.toBeInTheDocument());
-    expect(onActivated).toHaveBeenCalled();
+describe('ActivatePatientButton — spec 014 US-D1: erro 422 com missing (checklist)', () => {
+  it('missing com 1 código → mensagem traduzida do código, não o texto cru do backend', async () => {
+    const user = userEvent.setup();
+    activatePatient.mockRejectedValueOnce(
+      new PatientApiError('cru do servidor', 422, { code: 'PATIENT_NOT_READY', details: { missing: ['CONSENT'] } }),
+    );
+    render(<ActivatePatientButton patientId="p1" status="ADMISSION" onActivated={vi.fn()} />);
+    await user.click(screen.getByTestId('activate-patient-btn'));
+    await user.click(screen.getByTestId('activate-confirm'));
+    await waitFor(() => expect(screen.getByTestId('activate-error')).toBeInTheDocument());
+    expect(screen.getByTestId('activate-error')).toHaveTextContent('Consentimiento');
+    expect(screen.getByTestId('activate-error').textContent).not.toContain('cru do servidor');
   });
 
-  // ⚠️ ACHADO (fora do escopo D269, não corrigido aqui): `<Text>` (atom) não
-  // repassa `data-testid` — a prop declarada em `ActivatePatientButton.tsx`
-  // (`data-testid="activate-error"`) nunca chega ao DOM. Os testes abaixo
-  // localizam a mensagem pelo TEXTO em vez do testid quebrado.
-
-  it('confirmar com 422 (sem endereço): mostra a mensagem específica e mantém o modal aberto', async () => {
-    activatePatient.mockRejectedValue(new PatientApiError('no address', 422));
+  it('missing com vários códigos → todos aparecem na mensagem', async () => {
+    const user = userEvent.setup();
+    activatePatient.mockRejectedValueOnce(
+      new PatientApiError('x', 422, { code: 'PATIENT_NOT_READY', details: { missing: ['ADDRESS', 'CONSENT'] } }),
+    );
     render(<ActivatePatientButton patientId="p1" status="ADMISSION" onActivated={vi.fn()} />);
-    fireEvent.click(screen.getByTestId('activate-patient-btn'));
-    fireEvent.click(screen.getByTestId('activate-confirm'));
-
-    await screen.findByText(ptBR.admin.patients.activate.noAddress);
-    expect(screen.getByTestId('activate-confirm-modal')).toBeInTheDocument();
+    await user.click(screen.getByTestId('activate-patient-btn'));
+    await user.click(screen.getByTestId('activate-confirm'));
+    await waitFor(() => expect(screen.getByTestId('activate-error')).toBeInTheDocument());
+    const text = screen.getByTestId('activate-error').textContent ?? '';
+    expect(text).toContain('Domicilio');
+    expect(text).toContain('Consentimiento');
   });
 
-  it('confirmar com erro genérico: mostra a mensagem do Error', async () => {
-    activatePatient.mockRejectedValue(new Error('falha de rede'));
+  it('422 SEM `details.missing` (formato antigo) → cai na mensagem "sem dirección"', async () => {
+    const user = userEvent.setup();
+    activatePatient.mockRejectedValueOnce(new PatientApiError('x', 422));
     render(<ActivatePatientButton patientId="p1" status="ADMISSION" onActivated={vi.fn()} />);
-    fireEvent.click(screen.getByTestId('activate-patient-btn'));
-    fireEvent.click(screen.getByTestId('activate-confirm'));
-
-    await screen.findByText('falha de rede');
+    await user.click(screen.getByTestId('activate-patient-btn'));
+    await user.click(screen.getByTestId('activate-confirm'));
+    await waitFor(() => expect(screen.getByTestId('activate-error')).toBeInTheDocument());
+    expect(screen.getByTestId('activate-error')).toHaveTextContent(/localización/i);
   });
 
-  it('confirmar com rejeição sem Error: cai na mensagem traduzida padrão', async () => {
-    activatePatient.mockRejectedValue('sem message');
+  it('422 com `details.missing` vazio ([]) → mesmo comportamento do formato antigo', async () => {
+    const user = userEvent.setup();
+    activatePatient.mockRejectedValueOnce(new PatientApiError('x', 422, { details: { missing: [] } }));
     render(<ActivatePatientButton patientId="p1" status="ADMISSION" onActivated={vi.fn()} />);
-    fireEvent.click(screen.getByTestId('activate-patient-btn'));
-    fireEvent.click(screen.getByTestId('activate-confirm'));
+    await user.click(screen.getByTestId('activate-patient-btn'));
+    await user.click(screen.getByTestId('activate-confirm'));
+    await waitFor(() => expect(screen.getByTestId('activate-error')).toBeInTheDocument());
+    expect(screen.getByTestId('activate-error')).toHaveTextContent(/localización/i);
+  });
+});
 
-    await screen.findByText(ptBR.admin.patients.activate.error);
+describe('ActivatePatientButton — outros erros', () => {
+  it('erro genérico (não PatientApiError, é Error) → mostra err.message', async () => {
+    const user = userEvent.setup();
+    activatePatient.mockRejectedValueOnce(new Error('falha de rede'));
+    render(<ActivatePatientButton patientId="p1" status="ADMISSION" onActivated={vi.fn()} />);
+    await user.click(screen.getByTestId('activate-patient-btn'));
+    await user.click(screen.getByTestId('activate-confirm'));
+    await waitFor(() => expect(screen.getByTestId('activate-error')).toBeInTheDocument());
+    expect(screen.getByTestId('activate-error')).toHaveTextContent('falha de rede');
   });
 
-  it('reabrir o modal depois de um erro limpa a mensagem anterior', async () => {
-    activatePatient.mockRejectedValue(new Error('falha de rede'));
+  it('rejeição não-Error (string) → cai no texto genérico traduzido', async () => {
+    const user = userEvent.setup();
+    activatePatient.mockRejectedValueOnce('string crua');
     render(<ActivatePatientButton patientId="p1" status="ADMISSION" onActivated={vi.fn()} />);
-    fireEvent.click(screen.getByTestId('activate-patient-btn'));
-    fireEvent.click(screen.getByTestId('activate-confirm'));
-    await screen.findByText('falha de rede');
-
-    fireEvent.click(screen.getByTestId('activate-cancel'));
-    fireEvent.click(screen.getByTestId('activate-patient-btn'));
-    expect(screen.queryByText('falha de rede')).not.toBeInTheDocument();
+    await user.click(screen.getByTestId('activate-patient-btn'));
+    await user.click(screen.getByTestId('activate-confirm'));
+    await waitFor(() => expect(screen.getByTestId('activate-error')).toBeInTheDocument());
+    expect(screen.getByTestId('activate-error')).toHaveTextContent(/no se pudo activar/i);
   });
 
-  // ── D269 — POST /patients/:id/activate → patient:write ──────────────────────
-
-  function comEnforcement(permissions: string[], enforcement: AuthzContract['enforcement']) {
-    useAdminAuthStore.setState({
-      authzStatus: 'ready',
-      authz: {
-        uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {}, enforcement,
-      } as AuthzContract,
-    });
-  }
-
-  it('🔴 enforcement=on, sem patient:write: activate-patient-btn SOME', () => {
-    comEnforcement([], 'on');
+  it('PatientApiError com status != 422 → cai no ramo genérico (err.message)', async () => {
+    const user = userEvent.setup();
+    activatePatient.mockRejectedValueOnce(new PatientApiError('500 interno', 500));
     render(<ActivatePatientButton patientId="p1" status="ADMISSION" onActivated={vi.fn()} />);
-    expect(screen.queryByTestId('activate-patient-btn')).not.toBeInTheDocument();
-  });
-
-  it('enforcement=on, com patient:write: activate-patient-btn existe', () => {
-    comEnforcement(['patient:write'], 'on');
-    render(<ActivatePatientButton patientId="p1" status="ADMISSION" onActivated={vi.fn()} />);
-    expect(screen.getByTestId('activate-patient-btn')).toBeInTheDocument();
-  });
-
-  it('enforcement OFF (ou ausente): activate-patient-btn existe mesmo sem célula', () => {
-    render(<ActivatePatientButton patientId="p1" status="ADMISSION" onActivated={vi.fn()} />);
-    expect(screen.getByTestId('activate-patient-btn')).toBeInTheDocument();
+    await user.click(screen.getByTestId('activate-patient-btn'));
+    await user.click(screen.getByTestId('activate-confirm'));
+    await waitFor(() => expect(screen.getByTestId('activate-error')).toBeInTheDocument());
+    expect(screen.getByTestId('activate-error')).toHaveTextContent('500 interno');
   });
 });

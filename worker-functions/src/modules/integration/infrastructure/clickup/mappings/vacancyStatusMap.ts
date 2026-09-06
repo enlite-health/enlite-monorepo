@@ -13,6 +13,7 @@
  */
 
 import type { PatientStatus } from '../../../../case/domain/enums/PatientStatus';
+import { recordUnmappedLabel } from '../helpers/unmappedLabelCounter';
 
 export interface VacancyStatusMapping {
   patientStatus: PatientStatus;
@@ -54,8 +55,10 @@ export const CLICKUP_TO_VACANCY_STATUS: Record<string, VacancyStatusMapping> = {
   'suspendido temporariamente': { patientStatus: 'SUSPENDED', jobPostingStatus: 'SUSPENDED' },
   // ClickUp: "Suspendido Temporalmente" (ES variant)
   'suspendido temporalmente':   { patientStatus: 'SUSPENDED', jobPostingStatus: 'SUSPENDED' },
-  // ClickUp: "Baja"
-  'baja':                   { patientStatus: 'DISCONTINUED', jobPostingStatus: 'CLOSED' },
+  // ClickUp: "Baja" — PatientStatus v2 (spec 012, migration 314): DISCONTINUED saiu do
+  // vocabulário; "baja" É o DISCHARGED da decisão 2. Sem isto, o backfill da 314 seria desfeito
+  // pelo primeiro webhook de cada paciente em Baja.
+  'baja':                   { patientStatus: 'DISCHARGED', jobPostingStatus: 'CLOSED' },
   // ClickUp: "Alta"
   'alta':                   { patientStatus: 'DISCHARGED', jobPostingStatus: 'CLOSED' },
   // ClickUp: "En espera" — paciente ativo, vaga pausada por razão operacional
@@ -74,7 +77,18 @@ export const CLICKUP_TO_VACANCY_STATUS: Record<string, VacancyStatusMapping> = {
 export function mapClickUpVacancyStatus(
   clickupStatus: string | null | undefined,
 ): VacancyStatusMapping | null {
+  // Empty is legitimate: the task carries no status. Everything below is NOT.
   if (!clickupStatus) return null;
   const key = clickupStatus.trim().toLowerCase();
-  return CLICKUP_TO_VACANCY_STATUS[key] ?? null;
+  const mapped = CLICKUP_TO_VACANCY_STATUS[key];
+  if (mapped === undefined) {
+    // Unknown ClickUp label — ops may have added or renamed an option. Log it so it can be mapped.
+    // The warning lives HERE (not in the caller) so that BOTH call sites are covered:
+    // ClickUpPatientMapper already warned; ClickUpVacancyMapper never did.
+    // Task 1.5 — conta POR CAMPO (nunca por rótulo: seria a C1 do `lex` violada por acumulação).
+    recordUnmappedLabel('Estado de Pacientes (task status)');
+    console.warn('[vacancyStatusMap] Unknown ClickUp label:', { field: 'Estado de Pacientes (task status)', label: key });
+    return null;
+  }
+  return mapped;
 }

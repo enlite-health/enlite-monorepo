@@ -201,8 +201,12 @@ describe('ReminderScheduler', () => {
       expect(insertCall[0]).toContain('qualified_reminder_confirm');
       const variables = JSON.parse(insertCall[1][1]);
       expect(variables.name).toBe('tk_abc');
+      // sem timezone na linha → fuso default (Buenos Aires, UTC-3): 14:00Z é 11:00 — o MESMO
+      // rótulo que o convite e a confirmação usam (A2 do gate 30/08)
       expect(variables.date).toBe('10/04');
-      expect(variables.time).toBe('14:00');
+      expect(variables.time).toBe('11:00');
+      // o SELECT traz o fuso da vaga
+      expect(mockQuery.mock.calls[0][0]).toContain('jp.timezone');
 
       // Pub/Sub publicado
       expect(mockPubsub.publish).toHaveBeenCalledWith('outbox-enqueued', { outboxId: 'outbox-1' });
@@ -264,6 +268,19 @@ describe('ReminderScheduler', () => {
       const handled = await schedulerWithPubsub.processQualifiedInterviewReminder('w-1', 'jp-1');
 
       expect(handled).toBe(false);
+    });
+
+    it.each([
+      ['AR', 'America/Argentina/Buenos_Aires', '2026-04-10T01:30:00.000Z', '09/04', '22:30'],
+      ['BR', 'America/Sao_Paulo', '2026-04-10T14:00:00.000Z', '10/04', '11:00'],
+    ])('formata data/hora no FUSO da vaga (%s) — vira o dia quando o UTC já é o dia seguinte', async (_c, timezone, iso, date, time) => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ interview_response: 'confirmed', interview_reminder_sent_at: null, interview_datetime: iso, interview_meet_link: null, timezone }] })
+        .mockResolvedValueOnce({ rows: [{ id: 'outbox-1' }] })
+        .mockResolvedValueOnce({ rows: [] });
+      await schedulerWithPubsub.processQualifiedInterviewReminder('w-1', 'jp-1');
+      const variables = JSON.parse(mockQuery.mock.calls[1][1][1]);
+      expect(variables).toMatchObject({ date, time });
     });
 
     it('funciona sem pubsub/tokenService (backward compatibility)', async () => {
@@ -421,9 +438,23 @@ describe('ReminderScheduler', () => {
 
       const insertCall = mockQuery.mock.calls[1];
       expect(insertCall[0]).toContain('qualified_reminder_confirm');
+      // varredura de segurança: mesmo fuso da vaga (linha sem timezone → default AR)
+      expect(mockQuery.mock.calls[0][0]).toContain('jp.timezone');
+      expect(JSON.parse(insertCall[1][1])).toMatchObject({ date: '10/04', time: '11:00' });
 
       const updateCall = mockQuery.mock.calls[2];
       expect(updateCall[0]).toContain('interview_reminder_sent_at');
+    });
+
+    it('lembrete 24h da varredura formata no fuso da vaga (São Paulo, linha com timezone)', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1', interview_datetime: '2026-04-10T01:30:00.000Z', interview_meet_link: null, timezone: 'America/Sao_Paulo' }] })
+        .mockResolvedValueOnce({ rows: [{ id: 'outbox-d' }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] });
+      await scheduler.processBatch();
+      expect(JSON.parse(mockQuery.mock.calls[1][1][1])).toMatchObject({ date: '09/04', time: '22:30' });
     });
 
     it('envia lembrete 5min via WJA e marca interview_reminder_5min_sent_at', async () => {

@@ -7,7 +7,7 @@
  *   (c) Task com Dom2="null" literal → 1 vaga
  *   (d) Task sem Caso Número → []
  *   (e) Task com parent → []
- *   (f) Status "Baja" → patientStatus=DISCONTINUED, jobPostingStatus=CLOSED
+ *   (f) Status "Baja" → patientStatus=DISCHARGED, jobPostingStatus=CLOSED (v2)
  *   (g) Status "Activación pendiente" → patientStatus=ACTIVE, jobPostingStatus=PENDING_ACTIVATION
  *   (h) Status "Activo" → patientStatus=ACTIVE, jobPostingStatus=ACTIVE
  *   (i) Task sem endereço algum → 1 vaga com patientAddressId=null
@@ -150,8 +150,8 @@ describe('ClickUpVacancyMapper', () => {
     expect(mapper.map(task)).toEqual([]);
   });
 
-  // (f) Status "Baja" → DISCONTINUED / CLOSED
-  it('(f) status "Baja" → patientStatus=DISCONTINUED, jobPostingStatus=CLOSED', () => {
+  // (f) Status "Baja" → DISCHARGED / CLOSED (PatientStatus v2, spec 012)
+  it('(f) status "Baja" → patientStatus=DISCHARGED, jobPostingStatus=CLOSED', () => {
     const task = makeTask('task-f', 'Baja', [
       { name: 'Caso Número', value: 600 },
     ]);
@@ -159,7 +159,7 @@ describe('ClickUpVacancyMapper', () => {
     const result = mapper.map(task);
 
     expect(result).toHaveLength(1);
-    expect(result[0].patientStatus).toBe('DISCONTINUED');
+    expect(result[0].patientStatus).toBe('DISCHARGED');
     expect(result[0].jobPostingStatus).toBe('CLOSED');
   });
 

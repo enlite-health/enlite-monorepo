@@ -217,10 +217,9 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
     await page.goto('/admin/vacancies');
     await expect(page.getByText('Caso 300-01')).toBeVisible({ timeout: 15_000 });
 
-    // Find the Provincia select: it's the 4th select (0=status,1=priority,2=type,3=province)
-    const selects = page.locator('select');
-    const provinciaSelect = selects.nth(3);
-    const opts = await provinciaSelect.locator('option').allTextContents();
+    // Provincia é combobox com busca (REQ-06): a lista só existe depois de abrir.
+    await page.getByTestId('vacancy-filter-province').click();
+    const opts = await page.getByRole('option').allTextContents();
     expect(opts).toContain('Buenos Aires');
     expect(opts).toContain('Córdoba');
   });
@@ -258,7 +257,8 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
       !req.url().includes('stats') &&
       req.url().includes('required_sex=F'),
     );
-    await selects.nth(5).selectOption('F');
+    // Selects nativos restantes: status(0), priority(1), type(2), sex(3) — Provincia/Localidad/horários viraram combobox.
+    await selects.nth(3).selectOption('F');
     const req = await reqWait;
     expect(req.url()).toContain('required_sex=F');
   });
@@ -293,8 +293,6 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
     await page.goto('/admin/vacancies');
     await expect(page.getByText('Caso 300-01')).toBeVisible({ timeout: 15_000 });
 
-    // time_from is 7th select (index 6), time_to is 8th (index 7)
-    const selects = page.locator('select');
 
     // First set only time_from — should NOT trigger a request with time_to absent
     // Then set time_to — request should fire with both
@@ -306,8 +304,11 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
       req.url().includes('time_to='),
     );
 
-    await selects.nth(6).selectOption('09:00');
-    await selects.nth(7).selectOption('17:00');
+    // Horários viraram combobox com busca (REQ-06): abre, escolhe a opção.
+    await page.getByTestId('time-from').click();
+    await page.getByRole('option', { name: '09:00' }).click();
+    await page.getByTestId('time-to').click();
+    await page.getByRole('option', { name: '17:00' }).click();
 
     const req = await reqWait;
     expect(req.url()).toContain('time_from=09%3A00');

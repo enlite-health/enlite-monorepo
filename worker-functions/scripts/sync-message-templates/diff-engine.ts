@@ -2,17 +2,24 @@
  * Diff engine: dado o estado atual do banco + Twilio aprovados, calcula
  * o plano de INSERT/UPDATE/DELETE.
  *
- * Body NUNCA é sobrescrito automaticamente — TwilioMessagingService usa
+ * `body` NUNCA é sobrescrito automaticamente — TwilioMessagingService usa
  * placeholders nomeados ({{worker_name}}) que precisam casar com o que o
  * frontend envia. Body Twilio (numérico) seria conflito funcional.
+ *
+ * `body_twilio` é o oposto: existe justamente para guardar o texto cru da
+ * Twilio, só para exibição (a prévia da tela de mensagens por etapa). Ele é
+ * sobrescrito sempre que diverge — é a Twilio que manda nele.
  */
-import { extractBody, TwilioContent, WhatsAppApproval } from './twilio-client';
+import { TwilioContent, WhatsAppApproval } from './twilio-client';
+import { contentBodyOrSentinel, extractContentBody } from '../../src/modules/notification/infrastructure/twilioContentBody';
 import { DbTemplateRow } from './db';
 
 export interface InsertPlan {
   slug: string;
   name: string;
   body: string;
+  /** Texto aprovado, só exibição. `null` quando o Content não tem texto — NUNCA sentinela. */
+  bodyTwilio: string | null;
   category: string | null;
   contentSid: string;
 }
@@ -20,9 +27,10 @@ export interface InsertPlan {
 export interface UpdatePlan {
   id: string;
   slug: string;
-  fields: Partial<Pick<DbTemplateRow, 'name' | 'category' | 'content_sid' | 'is_active'>>;
+  fields: Partial<Pick<DbTemplateRow, 'name' | 'category' | 'content_sid' | 'is_active' | 'body_twilio'>>;
   bodyDiverges: boolean;
-  bodyTwilio: string;
+  /** Texto aprovado (ou null): é o que o plano imprime, não o corpo legado. */
+  bodyTwilio: string | null;
 }
 
 export interface DeletePlan {
@@ -58,12 +66,13 @@ export function computePlan(
   const updates: UpdatePlan[] = [];
 
   for (const { content, approval } of approvedTwilio) {
-    const body = extractBody(content.types);
+    const body = contentBodyOrSentinel(content.types);
+    const bodyTwilio = extractContentBody(content.types);
     const category = approval?.category ?? null;
 
     const matched = dbBySid.get(content.sid) ?? dbBySlug.get(content.friendly_name) ?? null;
     if (matched) {
-      const upd = buildUpdatePlan(matched, content, body, category);
+      const upd = buildUpdatePlan(matched, content, body, bodyTwilio, category);
       if (upd) updates.push(upd);
       continue;
     }
@@ -72,6 +81,7 @@ export function computePlan(
       slug: content.friendly_name,
       name: content.friendly_name,
       body,
+      bodyTwilio,
       category,
       contentSid: content.sid,
     });
@@ -100,6 +110,7 @@ function buildUpdatePlan(
   row: DbTemplateRow,
   content: TwilioContent,
   body: string,
+  bodyTwilio: string | null,
   category: string | null,
 ): UpdatePlan | null {
   const fields: UpdatePlan['fields'] = {};
@@ -107,7 +118,10 @@ function buildUpdatePlan(
   if (row.name !== content.friendly_name) fields.name = content.friendly_name;
   if (category !== null && row.category !== category) fields.category = category;
   if (!row.is_active) fields.is_active = true;
+  // Exibição: a Twilio é a fonte. Diferente de `body`, aqui sobrescrever é o certo.
+  // E `null` é resposta legítima: Content sem texto NÃO vira sentinela aqui.
+  if (row.body_twilio !== bodyTwilio) fields.body_twilio = bodyTwilio;
   const bodyDiverges = row.body !== body;
   if (Object.keys(fields).length === 0 && !bodyDiverges) return null;
-  return { id: row.id, slug: row.slug, fields, bodyDiverges, bodyTwilio: body };
+  return { id: row.id, slug: row.slug, fields, bodyDiverges, bodyTwilio };
 }

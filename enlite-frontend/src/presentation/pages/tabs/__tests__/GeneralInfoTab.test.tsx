@@ -120,6 +120,38 @@ describe('GeneralInfoTab - Auto Save & Toast', () => {
     expect(mockTriggerSave).toHaveBeenCalled();
   });
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // Regressão 31/08 — cada <select> tem de disparar o autosave SOZINHO.
+  //
+  // A tela não tem botão Guardar. Quem entra para corrigir UM dropdown e sai
+  // nunca gera blur dentro do form: sem `triggerSave` no `onChange`, o PUT
+  // simplesmente não acontece e o valor some no reload. Foi o que travou 50
+  // prestadoras. Este teste é a rede de unidade; a de integração
+  // (worker-profile-fields-persist) confere o mesmo no banco, com stack real.
+  // ───────────────────────────────────────────────────────────────────────────
+  it.each([
+    ['sex', 'female'],
+    ['gender', 'female'],
+    ['profession', 'CAREGIVER'],
+    ['knowledgeLevel', 'TERTIARY'],
+    ['yearsExperience', '3_5'],
+  ])('mudar o select #%s dispara o autosave sem precisar de blur', (id, value) => {
+    const { container } = render(<GeneralInfoTab />);
+    const select = container.querySelector(`select#${id}`) as HTMLSelectElement;
+    expect(select, `select#${id} existe na tela`).toBeTruthy();
+
+    // Zera DEPOIS do render. Sem isto a asserção é vácua: a montagem da tela já
+    // chama `triggerSave` por conta própria, e o teste passaria idêntico com o
+    // bug de volta — medido, foi o que aconteceu na primeira versão deste caso.
+    mockTriggerSave.mockClear();
+
+    // SÓ o change. Nenhum blur, nenhum clique em campo vizinho — é assim que a
+    // prestadora usa a tela quando volta para corrigir um campo só.
+    fireEvent.change(select, { target: { value } });
+
+    expect(mockTriggerSave).toHaveBeenCalledTimes(1);
+  });
+
   it('should trigger auto-save when an input field blurs', () => {
     const { container } = render(<GeneralInfoTab />);
     const input = container.querySelector('input#fullName')!;

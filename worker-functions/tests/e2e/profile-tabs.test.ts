@@ -175,6 +175,51 @@ describe('Profile Tabs — Endpoints por aba', () => {
   // ──────────────────────────────────────────────
   // PUT /api/workers/me/service-area
   // ──────────────────────────────────────────────
+  // ──────────────────────────────────────────────
+  // Regressão 31/08: save VAZIO não pode apagar dado bom
+  // ──────────────────────────────────────────────
+  describe('PUT /api/workers/me/general-info — vazio NÃO sobrescreve', () => {
+    it('mantém os campos do gate quando o payload chega com "" e []', async () => {
+      // 1) Estado bom, gravado normalmente.
+      const cheio = {
+        firstName: 'Gabriel', lastName: 'Stein', sex: 'male', gender: 'male',
+        birthDate: '1990-04-18', documentType: 'DNI', documentNumber: '12345678',
+        phone: '+5491199999999', languages: ['pt', 'es'],
+        profession: 'CAREGIVER', knowledgeLevel: 'SECONDARY', titleCertificate: 'Cert XYZ',
+        experienceTypes: ['adicciones'], yearsExperience: '3_5',
+        preferredTypes: ['adicciones'], preferredAgeRange: ['adolescents'],
+        termsAccepted: true, privacyAccepted: true,
+      };
+      await api.put('/api/workers/me/general-info', cheio, authHeaders());
+
+      // 2) O save que a tela dispara ANTES de hidratar: `campo || ''` e `campo || []`.
+      //    Antes deste fix o COALESCE do UPDATE não protegia — '' e [] não são NULL,
+      //    então entravam por cima e a pessoa perdia o cadastro em silêncio.
+      const vazio = {
+        ...cheio,
+        profession: '', knowledgeLevel: '', titleCertificate: '', yearsExperience: '',
+        experienceTypes: [], preferredTypes: [], preferredAgeRange: [],
+      };
+      const res = await api.put('/api/workers/me/general-info', vazio, authHeaders());
+      expect(res.status).toBe(200);
+
+      // 3) O banco tem de estar intacto.
+      const { rows } = await db.query(
+        `SELECT profession, knowledge_level, title_certificate, years_experience,
+                experience_types, preferred_types, preferred_age_range
+           FROM workers WHERE id = $1`,
+        [workerId],
+      );
+      expect(rows[0].profession).toBe('CAREGIVER');
+      expect(rows[0].knowledge_level).toBe('SECONDARY');
+      expect(rows[0].title_certificate).toBe('Cert XYZ');
+      expect(rows[0].years_experience).toBe('3_5');
+      expect(rows[0].experience_types).toEqual(['adicciones']);
+      expect(rows[0].preferred_types).toEqual(['adicciones']);
+      expect(rows[0].preferred_age_range).toEqual(['adolescents']);
+    });
+  });
+
   describe('PUT /api/workers/me/service-area', () => {
     const payload = {
       address: 'Av. Corrientes 1234, Buenos Aires',

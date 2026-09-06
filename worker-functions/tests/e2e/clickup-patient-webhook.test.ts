@@ -120,7 +120,10 @@ function makeStubResolver(): ClickUpFieldResolver {
     resolveDropdown: () => null,
     resolveLabel:    () => null,
     resolveLabels:   () => [],
-    getFieldType:    () => null,
+    // Task 1.11: o catálogo diz que os campos EXISTEM (é o que este stub quer dizer com
+    // "resolves nothing"); `null` aqui significaria campo renomeado/apagado e o mapper
+    // recusaria a task inteira, de propósito.
+    getFieldType:    () => 'drop_down',
     dropdownFieldNames: [],
     labelsFieldNames:   [],
     getDropdownOptions: () => ({}),

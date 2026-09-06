@@ -20,6 +20,9 @@ firebase-debug.*.log
 playwright-report/
 e2e/.auth/
 e2e/**-snapshots/
+# F5: destino default da evidência da auditoria de UX (o caminho absoluto da máquina de
+# UMA pessoa saiu do código). Só nasce quando alguém roda a auditoria à mão.
+e2e/__evidence__/
 # Visual diff artifacts (regenerated on test failure)
 e2e/fixtures/figma/*.actual.png
 e2e/fixtures/figma/*.diff.png
@@ -27,3 +30,7 @@ e2e/fixtures/figma/*.expected.png
 
 # Provas visuais geradas pelos testes @integration (screenshots/vídeo)
 e2e/artifacts
+
+# Saída do comparador desenho x app (e2e/plantillas-vs-desenho): são fotos
+# regeneradas a cada execução, como as baselines do Playwright logo acima.
+e2e/__comparador__/

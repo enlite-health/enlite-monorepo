@@ -63,6 +63,7 @@ jest.mock(
   () => ({
     PatientResponsibleRepository: jest.fn().mockImplementation(() => ({
       replaceAll: jest.fn().mockResolvedValue(undefined),
+      replaceBySource: jest.fn().mockResolvedValue(undefined),
     })),
   }),
 );

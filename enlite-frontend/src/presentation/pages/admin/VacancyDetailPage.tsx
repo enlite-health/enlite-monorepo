@@ -216,6 +216,9 @@ export default function VacancyDetailPage() {
         meetDatetime2={vacancy.meet_datetime_2 ?? null}
         meetLink3={vacancy.meet_link_3 ?? null}
         meetDatetime3={vacancy.meet_datetime_3 ?? null}
+        recurringWeekday={vacancy.meet_recurring_weekday ?? null}
+        recurringTime={vacancy.meet_recurring_time ?? null}
+        recurringLink={vacancy.meet_recurring_link ?? null}
       />
 
       {/* TODO TD-XXX: Estado de Busca (candidatos summary) — próximo PR */}
@@ -305,6 +308,9 @@ export default function VacancyDetailPage() {
               meetDatetime2={vacancy.meet_datetime_2 ?? null}
               meetLink3={vacancy.meet_link_3 ?? null}
               meetDatetime3={vacancy.meet_datetime_3 ?? null}
+              recurringWeekday={vacancy.meet_recurring_weekday ?? null}
+              recurringTime={vacancy.meet_recurring_time ?? null}
+              recurringLink={vacancy.meet_recurring_link ?? null}
               onSaved={refetch}
             />
           </div>

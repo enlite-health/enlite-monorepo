@@ -40,6 +40,12 @@ export interface VacancyInsertParams {
    * processar o domain event `vacancy.created`. Default: false.
    */
   is_test?: boolean;
+  /**
+   * De qual serviço contratado esta vaga nasceu (migration 320, spec 013 bloco C). NULL para
+   * `POST /vacancies` normal (o operador cria a vaga direto, sem passar por um serviço) e para
+   * `activate` de paciente sem nenhum serviço declarado (fallback por endereço).
+   */
+  contracted_service_id?: string | null;
 }
 
 export const CANONICAL_STATUSES = new Set([
@@ -184,7 +190,8 @@ export function buildInsertQuery(): string {
       status,
       published_at, closes_at,
       country,
-      is_test
+      is_test,
+      contracted_service_id
     ) VALUES (
       $1, $2, $3, $4,
       $5, $6,
@@ -197,7 +204,8 @@ export function buildInsertQuery(): string {
       $19,
       COALESCE($20::timestamptz, NOW()), $21::timestamptz,
       'AR',
-      $22
+      $22,
+      $23
     )
     RETURNING *
   `;
@@ -260,5 +268,6 @@ export function buildInsertParams(p: VacancyInsertParams): unknown[] {
     p.published_at ?? null,
     p.closes_at ?? null,
     p.is_test === true,
+    p.contracted_service_id ?? null,
   ];
 }

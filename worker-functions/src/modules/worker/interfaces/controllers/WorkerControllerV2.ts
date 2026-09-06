@@ -7,6 +7,7 @@ import { SaveAvailabilityUseCase } from '../../application/SaveAvailabilityUseCa
 import { GetWorkerAvailabilityUseCase } from '../../application/GetWorkerAvailabilityUseCase';
 import { GetWorkerProgressUseCase } from '../../application/GetWorkerProgressUseCase';
 import { LookupWorkerByEmailUseCase } from '../../application/LookupWorkerByEmailUseCase';
+import { reactivateOnActivity } from '../../application/ReactivateArchivedWorkerUseCase';
 import { WorkerRepository } from '../../infrastructure/WorkerRepository';
 import { QuizResponseRepository } from '../../infrastructure/QuizResponseRepository';
 import { ServiceAreaRepository } from '../../infrastructure/ServiceAreaRepository';
@@ -219,6 +220,8 @@ export class WorkerControllerV2 {
       }
 
       const worker = result.getValue();
+      const restored = await reactivateOnActivity(worker.id, worker.status);
+      if (restored) worker.status = restored;
       res.status(200).json({
         success: true,
         data: worker,

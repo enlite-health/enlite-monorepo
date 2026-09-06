@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { TimeRangeFilter } from './TimeRangeFilter';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string, fallback?: unknown) => (typeof fallback === 'string' ? fallback : key),
   }),
 }));
 
@@ -22,7 +22,13 @@ function renderFilter(props: Partial<Parameters<typeof TimeRangeFilter>[0]> = {}
   return { ...result, onFromChange: mergedProps.onFromChange, onToChange: mergedProps.onToChange };
 }
 
-describe('TimeRangeFilter', () => {
+/** Abre o combobox (botão) e devolve a lista. */
+function openList(testId: string) {
+  fireEvent.click(screen.getByTestId(testId));
+  return screen.getByRole('listbox');
+}
+
+describe('TimeRangeFilter — combobox com busca (REQ-06)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -32,55 +38,47 @@ describe('TimeRangeFilter', () => {
     expect(screen.getByText('admin.vacancies.filters.time.label')).toBeInTheDocument();
   });
 
-  it('renders two select elements (from and to)', () => {
+  it('renders two comboboxes (from and to) with their placeholders', () => {
     renderFilter();
-    const selects = screen.getAllByRole('combobox');
-    expect(selects).toHaveLength(2);
+    expect(screen.getByTestId('time-from')).toHaveTextContent('admin.vacancies.filters.time.from');
+    expect(screen.getByTestId('time-to')).toHaveTextContent('admin.vacancies.filters.time.to');
   });
 
-  it('generates options from 00:00 to 23:30 in 30-minute steps', () => {
+  it('lists 48 times from 00:00 to 23:30 in 30-minute steps (+ the "all" entry)', () => {
     renderFilter();
-    const selects = screen.getAllByRole('combobox');
-    // 24 hours * 2 steps = 48 options (+1 placeholder = 49 if placeholder shown as option)
-    const fromOptions = selects[0].querySelectorAll('option');
-    // expect at least 48 time options
-    expect(fromOptions.length).toBeGreaterThanOrEqual(48);
-    // first real option is 00:00
-    const realOptions = Array.from(fromOptions).filter((o) => (o as HTMLOptionElement).value !== '');
-    expect((realOptions[0] as HTMLOptionElement).value).toBe('00:00');
-    expect((realOptions[realOptions.length - 1] as HTMLOptionElement).value).toBe('23:30');
+    const list = openList('time-from');
+    const options = within(list).getAllByRole('option');
+    // 1ª entrada é o "todos"/placeholder; depois 48 horários
+    expect(options).toHaveLength(49);
+    expect(options[1]).toHaveTextContent('00:00');
+    expect(options[options.length - 1]).toHaveTextContent('23:30');
   });
 
-  it('shows the correct selected value for from', () => {
-    renderFilter({ from: '09:00' });
-    const selects = screen.getAllByRole('combobox');
-    expect((selects[0] as HTMLSelectElement).value).toBe('09:00');
+  it('typing filters the times ("14" → 14:00 and 14:30)', () => {
+    renderFilter();
+    const list = openList('time-from');
+    fireEvent.change(screen.getByPlaceholderText('Buscar...'), { target: { value: '14' } });
+    const labels = within(list).getAllByRole('option').map((o) => o.textContent);
+    expect(labels).toEqual(['admin.vacancies.filters.time.from', '14:00', '14:30']);
   });
 
-  it('shows the correct selected value for to', () => {
-    renderFilter({ to: '17:30' });
-    const selects = screen.getAllByRole('combobox');
-    expect((selects[1] as HTMLSelectElement).value).toBe('17:30');
+  it('calls onFromChange when a time is picked in "from"', () => {
+    const { onFromChange } = renderFilter();
+    const list = openList('time-from');
+    fireEvent.click(within(list).getByText('09:00'));
+    expect(onFromChange).toHaveBeenCalledWith('09:00');
   });
 
-  it('calls onFromChange when from select changes', () => {
-    const onFromChange = vi.fn();
-    renderFilter({ onFromChange });
-    const selects = screen.getAllByRole('combobox');
-    const fromSelect = selects[0] as HTMLSelectElement;
-    // Simulate change event
-    fromSelect.value = '08:00';
-    fromSelect.dispatchEvent(new Event('change', { bubbles: true }));
-    expect(onFromChange).toHaveBeenCalled();
+  it('calls onToChange when a time is picked in "to"', () => {
+    const { onToChange } = renderFilter();
+    const list = openList('time-to');
+    fireEvent.click(within(list).getByText('17:30'));
+    expect(onToChange).toHaveBeenCalledWith('17:30');
   });
 
-  it('calls onToChange when to select changes', () => {
-    const onToChange = vi.fn();
-    renderFilter({ onToChange });
-    const selects = screen.getAllByRole('combobox');
-    const toSelect = selects[1] as HTMLSelectElement;
-    toSelect.value = '18:00';
-    toSelect.dispatchEvent(new Event('change', { bubbles: true }));
-    expect(onToChange).toHaveBeenCalled();
+  it('shows the selected values on the buttons', () => {
+    renderFilter({ from: '09:00', to: '17:00' });
+    expect(screen.getByTestId('time-from')).toHaveTextContent('09:00');
+    expect(screen.getByTestId('time-to')).toHaveTextContent('17:00');
   });
 });

@@ -5,6 +5,12 @@ import { AdminPatientChatRolesController } from '../controllers/AdminPatientChat
 import { AuthMiddleware, type PermissionMiddleware } from '@modules/identity';
 import { logResourceAccess } from '@shared/audit/resourceAccessLog';
 import { requireCountryScope } from '@modules/identity/interfaces/middleware/countryScopeGuard';
+import { AdminPatientsMapController } from '../controllers/AdminPatientsMapController';
+import { AdminPatientAddressesController } from '../controllers/AdminPatientAddressesController';
+import { AdminInsuranceProvidersController } from '../controllers/AdminInsuranceProvidersController';
+import { AdminPatientContractedServicesController } from '../controllers/AdminPatientContractedServicesController';
+import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
+import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
 
 /**
  * Admin patients routes — mounted at /api/admin.
@@ -27,15 +33,15 @@ import { requireCountryScope } from '@modules/identity/interfaces/middleware/cou
  *     não está em `PERMISSION_ENFORCED_ROUTES`, o papel é a única proteção. Tirar
  *     agora abriria a rota no intervalo entre o merge e a virada.
  *
- * ⚠️ `DELETE /patients/:id` exige `patient:delete` — célula NOVA (D116) que ainda
- * não existe em `iam.permissions` (o seed da 206 só tem read/write). Ela nasce
- * quando `PERMISSION_CATALOG_SYNC_ENABLED` ligar, no fim da task 3.5. Se o flip
- * do engine acontecesse ANTES desse sync, esta rota ficaria negada para todo
- * mundo, porque nenhum grupo poderia receber uma célula inexistente.
+ * ⚠️ Rotas que o `main` trouxe DEPOIS da declaração da família (endereços por
+ * logística, coberturas, serviço contratado, diagnósticos CID-11, terminologia,
+ * mapa) entram aqui sob a célula GROSSA (`patient:read`/`patient:write`) para o
+ * inventário do deny-when-undeclared fechar no sync main→stage. O fatiamento por
+ * CONTAINER (D286: `patient_diagnosis:*`, `patient_services:*`, …) é a change
+ * seguinte, não este merge.
  */
 import { ADMIN_PATIENTS_FAMILY } from '@modules/identity/permissions';
 export { ADMIN_PATIENTS_FAMILY };
-
 export function createAdminPatientsRoutes(
   controller: AdminPatientsController,
   authMiddleware: AuthMiddleware,
@@ -47,6 +53,12 @@ export function createAdminPatientsRoutes(
   // wiring de produção é o mesmo e passa a ser visível.
   chatIdsController: AdminPatientChatIdsController,
   chatRolesController: AdminPatientChatRolesController,
+  mapController: AdminPatientsMapController,
+  addressesController: AdminPatientAddressesController,
+  insuranceProvidersController: AdminInsuranceProvidersController,
+  contractedServicesController: AdminPatientContractedServicesController,
+  diagnosesController: AdminPatientDiagnosesController,
+  terminologySearchController: AdminTerminologySearchController,
 ): Router {
   const router = Router();
   const staffOnly = authMiddleware.requireStaff();
@@ -67,26 +79,27 @@ export function createAdminPatientsRoutes(
   //
   // Registradas ANTES de /patients/* só por clareza de leitura; o caminho
   // '/patient-chat-roles' não colide com '/patients/:id' (segmentos distintos).
-  //
-  // Célula: o catálogo é PROPRIEDADE do paciente (rótulo da rede de apoio), não
-  // um recurso próprio — por isso `patient:*` e não uma célula de configuração.
   router.get('/patient-chat-roles', staffOnly, perm.require('patient', 'read'), (req: Request, res: Response) =>
     chatRolesController.list(req, res),
   );
   router.post('/patient-chat-roles', adminOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
     chatRolesController.create(req, res),
   );
-  router.patch(
-    '/patient-chat-roles/:code',
-    adminOnly,
-    perm.require('patient', 'write'),
-    (req: Request, res: Response) => chatRolesController.update(req, res),
+  router.patch('/patient-chat-roles/:code', adminOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+    chatRolesController.update(req, res),
   );
-  router.delete(
-    '/patient-chat-roles/:code',
-    adminOnly,
-    perm.require('patient', 'write'),
-    (req: Request, res: Response) => chatRolesController.delete(req, res),
+  router.delete('/patient-chat-roles/:code', adminOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+    chatRolesController.delete(req, res),
+  );
+
+  // ── CATÁLOGO de coberturas (migration 311; spec 012, US-B3) ────────────────
+  // Mesma régua dos papéis de chat: LEITURA é staff (o drawer precisa dos códigos), ESCRITA é
+  // admin (muda o vocabulário de todos os pacientes). Sem tela. Caminho fora de /patients/*.
+  router.get('/catalogs/insurance-providers', staffOnly, perm.require('patient', 'read'), (req: Request, res: Response) =>
+    insuranceProvidersController.list(req, res),
+  );
+  router.post('/catalogs/insurance-providers', adminOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+    insuranceProvidersController.create(req, res),
   );
 
   // ── Lista de TODOS os grupos que a org enxerga no Periskope ────────────────
@@ -94,29 +107,18 @@ export function createAdminPatientsRoutes(
   // "qual é o grupo da obra social?", que o /patients/:id/chat-candidates NÃO
   // pode responder — lá o ranqueamento é por semelhança com o nome do paciente,
   // e o grupo do pagador não se parece com paciente nenhum.
-  //
-  // Célula `messaging:read` (não `patient:read`) pelo mesmo motivo: o que sai
-  // daqui é a lista de conversas da org, não dado de paciente.
   router.get('/chat-groups', staffOnly, perm.require('messaging', 'read'), (req: Request, res: Response) =>
     chatIdsController.getChatGroups(req, res),
   );
 
   // Static routes first (guard against future /:id capture)
-  router.get(
-    '/patients/stats',
-    staffOnly,
-    perm.require('patient', 'read'),
-    countryScope,
-    (req: Request, res: Response) => controller.getPatientStats(req, res),
+  router.get('/patients/stats', staffOnly, perm.require('patient', 'read'), countryScope, (req: Request, res: Response) =>
+    controller.getPatientStats(req, res),
   );
 
   // Funnel de conversão (Fase 4) — static, ANTES de /patients/:id.
-  router.get(
-    '/patients/funnel',
-    staffOnly,
-    perm.require('patient', 'read'),
-    countryScope,
-    (req: Request, res: Response) => controller.getPatientFunnel(req, res),
+  router.get('/patients/funnel', staffOnly, perm.require('patient', 'read'), countryScope, (req: Request, res: Response) =>
+    controller.getPatientFunnel(req, res),
   );
 
   // Mapa Postgres <-> ClickUp <-> Periskope, em massa. ESTÁTICA, e por isso
@@ -126,61 +128,41 @@ export function createAdminPatientsRoutes(
     chatIdsController.getChatMap(req, res),
   );
 
-  router.get(
-    '/patients',
-    staffOnly,
-    perm.require('patient', 'read'),
-    countryScope,
-    (req: Request, res: Response) => controller.listPatients(req, res),
+  // Pontos do mapa de pacientes (REQ-04, DEC-14). POST com corpo (lex C2: coordenada fora da URL). ESTÁTICA: antes de /patients/:id.
+  router.post('/patients/map', staffOnly, perm.require('patient', 'read'), countryScope, (req: Request, res: Response) =>
+    mapController.getMapPoints(req, res),
+  );
+
+  router.get('/patients', staffOnly, perm.require('patient', 'read'), countryScope, (req: Request, res: Response) =>
+    controller.listPatients(req, res),
   );
 
   // Manual creation of a native patient (admission team). No :id in the path,
   // so it is safe here; POST does not collide with the GET /:id capture.
-  //
-  // O país vem do BODY aqui (não da query): criar paciente para outro país é o
-  // mesmo pedido cross-país do `?country=`, e sem o guard viraria um INSERT que
-  // a policy recusa com erro cru de RLS em vez de explicar.
-  router.post(
-    '/patients',
-    staffOnly,
-    perm.require('patient', 'write'),
-    requireCountryScope((req) => req.body?.country),
-    (req: Request, res: Response) => controller.createPatient(req, res),
+  router.post('/patients', staffOnly, perm.require('patient', 'write'), requireCountryScope((req) => req.body?.country), (req: Request, res: Response) =>
+    controller.createPatient(req, res),
   );
 
   // Dynamic route last — Express would capture /stats as /:id otherwise.
-  router.get(
-    '/patients/:id',
-    staffOnly,
-    perm.require('patient', 'read'),
-    logResourceAccess('patient'),
-    (req: Request, res: Response) => controller.getPatientById(req, res),
+  router.get('/patients/:id', staffOnly, perm.require('patient', 'read'), logResourceAccess('patient'), (req: Request, res: Response) =>
+    controller.getPatientById(req, res),
   );
 
   // Patient addresses
-  router.get(
-    '/patients/:patientId/addresses',
-    staffOnly,
-    perm.require('patient', 'read'),
-    (req: Request, res: Response) => controller.listPatientAddresses(req, res),
+  router.get('/patients/:patientId/addresses', staffOnly, perm.require('patient', 'read'), (req: Request, res: Response) =>
+    controller.listPatientAddresses(req, res),
   );
-  router.post(
-    '/patients/:patientId/addresses',
-    staffOnly,
-    perm.require('patient', 'write'),
-    (req: Request, res: Response) => controller.createPatientAddress(req, res),
+  router.post('/patients/:patientId/addresses', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+    controller.createPatientAddress(req, res),
+  );
+  // Logística por endereço (spec 012, US-B2). 4 segmentos: não colide com o PATCH /:id/:section.
+  router.patch('/patients/:patientId/addresses/:addressId', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+    addressesController.updatePatientAddress(req, res),
   );
 
   // Patient vacancies — all job_postings for a patient, newest first
-  //
-  // Célula `vacancy:read`: o que a rota DEVOLVE é vaga. Quem enxerga a ficha do
-  // paciente mas não o funil de vagas não deve receber a lista por esta porta —
-  // seria um caminho lateral para a mesma informação (o :id aqui é só o filtro).
-  router.get(
-    '/patients/:id/vacancies',
-    staffOnly,
-    perm.require('vacancy', 'read'),
-    (req: Request, res: Response) => controller.listPatientVacancies(req, res),
+  router.get('/patients/:id/vacancies', staffOnly, perm.require('vacancy', 'read'), (req: Request, res: Response) =>
+    controller.listPatientVacancies(req, res),
   );
 
   // ── Write / lifecycle (Fase 2 Task 3) ──────────────────────────────────────
@@ -188,22 +170,20 @@ export function createAdminPatientsRoutes(
   // they never collide with the addresses/vacancies routes (distinct methods or
   // distinct literal segments). The fully-dynamic PATCH /:id/:section goes LAST —
   // it is PATCH-only (no other PATCH route exists) and its :section is validated
-  // against a hard whitelist (general|clinical|support-network|service).
+  // against a hard whitelist (general|clinical|coverage|support-network|service).
 
   // PUT /patients/:id/status — kanban move (change lifecycle status)
-  router.put(
-    '/patients/:id/status',
-    staffOnly,
-    perm.require('patient', 'write'),
-    (req: Request, res: Response) => controller.updatePatientStatus(req, res),
+  router.put('/patients/:id/status', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+    controller.updatePatientStatus(req, res),
+  );
+  // Historial (spec 012, US-B7): quando / de → para / origem — sem ator, sem on_hold_note.
+  router.get('/patients/:id/status-history', staffOnly, perm.require('patient', 'read'), (req: Request, res: Response) =>
+    controller.getPatientStatusHistory(req, res),
   );
 
   // POST /patients/:id/activate — approve → generate one draft vacancy per location
-  router.post(
-    '/patients/:id/activate',
-    staffOnly,
-    perm.require('patient', 'write'),
-    (req: Request, res: Response) => controller.activatePatient(req, res),
+  router.post('/patients/:id/activate', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+    controller.activatePatient(req, res),
   );
 
   // ── Chat IDs do Periskope (tasks 86ajy0859 / 86ajy085a) ────────────────────
@@ -211,49 +191,66 @@ export function createAdminPatientsRoutes(
   // PUT  chat-ids:   grava o par escolhido pelo humano.
   // PUT (não PATCH) de propósito: o PATCH /:id/:section é fully-dynamic e
   // capturaria 'chat-ids' como :section, devolvendo 400 pelo whitelist.
-  //
-  // Células assimétricas de propósito: LER candidatos é varrer conversas do
-  // Periskope (`messaging:read`); GRAVAR o par escolhido muda o CADASTRO do
-  // paciente (`patient:write`).
-  router.get(
-    '/patients/:id/chat-candidates',
-    staffOnly,
-    perm.require('messaging', 'read'),
-    (req: Request, res: Response) => chatIdsController.getChatCandidates(req, res),
+  router.get('/patients/:id/chat-candidates', staffOnly, perm.require('messaging', 'read'), (req: Request, res: Response) =>
+    chatIdsController.getChatCandidates(req, res),
   );
-  router.put(
-    '/patients/:id/chat-ids',
-    staffOnly,
-    perm.require('patient', 'write'),
-    (req: Request, res: Response) => chatIdsController.updateChatIds(req, res),
+  router.put('/patients/:id/chat-ids', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+    chatIdsController.updateChatIds(req, res),
   );
 
   // ── Synthetic monitoring (e2e-prod) ────────────────────────────────────────
   // Literais ANTES do PATCH dinâmico /:id/:section — senão 'test-flag' seria
   // capturado como :section e barrado pelo whitelist.
-  router.patch(
-    '/patients/:id/test-flag',
-    adminOnly,
-    perm.require('patient', 'write'),
-    (req: Request, res: Response) => controller.updatePatientTestFlag(req, res),
+  router.patch('/patients/:id/test-flag', adminOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+    controller.updatePatientTestFlag(req, res),
   );
   // Purga só de paciente is_test (real → 409). Ver PatientTestFixtureService.
-  //
-  // ⚠️ `patient:delete` é a célula NOVA da D116 (ver cabeçalho): não existe em
-  // `iam.permissions` até o sync do catálogo ligar.
-  router.delete(
-    '/patients/:id',
-    adminOnly,
-    perm.require('patient', 'delete'),
-    (req: Request, res: Response) => controller.purgeTestPatient(req, res),
+  router.delete('/patients/:id', adminOnly, perm.require('patient', 'delete'), (req: Request, res: Response) =>
+    controller.purgeTestPatient(req, res),
+  );
+
+  // ── Serviço contratado, entidade própria (spec 013, bloco C) ───────────────
+  // Literais ANTES do PATCH dinâmico /:id/:section — 'contracted-services' seria capturado
+  // como :section e barrado pelo whitelist. Sem DELETE (lex C-a.4/C-e.2): baixa é PATCH
+  // {active:false}.
+  router.get('/patients/:id/contracted-services', staffOnly, perm.require('patient', 'read'), (req: Request, res: Response) =>
+    contractedServicesController.list(req, res),
+  );
+  router.post('/patients/:id/contracted-services', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+    contractedServicesController.create(req, res),
+  );
+  router.patch('/patients/:id/contracted-services/:sid', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+    contractedServicesController.update(req, res),
+  );
+  router.post('/patients/:id/contracted-services/:sid/providers', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+    contractedServicesController.associateProvider(req, res),
+  );
+  router.patch('/patients/:id/contracted-services/:sid/providers/:pid', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+    contractedServicesController.updateProvider(req, res),
+  );
+
+  // ── Diagnóstico estruturado, CID-11 (spec 016 F2, D263) ────────────────────
+  // Literais ANTES do PATCH dinâmico /:id/:section — 'diagnoses' seria capturado como :section
+  // e barrado pelo whitelist. Sem DELETE físico: baixa é PATCH { active: false }.
+  router.get('/patients/:id/diagnoses', staffOnly, perm.require('patient', 'read'), (req: Request, res: Response) =>
+    diagnosesController.list(req, res),
+  );
+  router.post('/patients/:id/diagnoses', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+    diagnosesController.create(req, res),
+  );
+  router.patch('/patients/:id/diagnoses/:did', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+    diagnosesController.update(req, res),
+  );
+
+  // Busca de terminologia (CID-11) — não é recurso de paciente, fica fora de /patients/* de
+  // propósito (mesmo raciocínio de /chat-groups e /catalogs/insurance-providers acima).
+  router.get('/terminology/search', staffOnly, perm.require('patient', 'read'), (req: Request, res: Response) =>
+    terminologySearchController.search(req, res),
   );
 
   // PATCH /patients/:id/:section — section-scoped partial edit (last: fully dynamic)
-  router.patch(
-    '/patients/:id/:section',
-    staffOnly,
-    perm.require('patient', 'write'),
-    (req: Request, res: Response) => controller.updatePatientSection(req, res),
+  router.patch('/patients/:id/:section', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+    controller.updatePatientSection(req, res),
   );
 
   return router;

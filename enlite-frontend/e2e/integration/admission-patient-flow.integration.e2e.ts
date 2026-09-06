@@ -281,9 +281,11 @@ test.describe('ADMISSION patient + inline address creation @integration', () => 
 
     // After creation the form re-fetches the patient — the amber "no addresses" warning
     // must disappear, confirming the new address is now in the selector.
-    // Note: the address text label may be empty in the UI due to a known backend→domain
-    // field mapping gap (backend: addressFormatted; domain: fullAddress), but the
-    // empty-state banner disappears which confirms the address row was loaded.
+    // Spec 011 A2 fechou a lacuna de contrato back→front (a entidade lia `fullAddress`,
+    // a API manda `addressFormatted`); o seletor de endereços deste formulário lê
+    // `PatientAddressRow.address_formatted` de outro endpoint e nunca dependeu dela.
+    // A ficha do paciente com endereço/profissional visíveis é coberta por
+    // admission-a-bugs-dado.integration.e2e.ts.
     await expect(page.getByText(/El paciente no tiene domicilios registrados/i)).not.toBeVisible({
       timeout: 10_000,
     });

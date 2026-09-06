@@ -36,6 +36,7 @@ interface WorkerRow {
   ana_care_id: string | null;
   ana_care_status: string | null;
   is_test: boolean;
+  merged_into_id: string | null;
   // Encrypted PII
   first_name_encrypted: string | null;
   last_name_encrypted: string | null;
@@ -102,6 +103,26 @@ export class MirrorWorkerService {
         return 'skipped';
       }
 
+      // Gate: cadastro FUNDIDO nunca é espelhado.
+      //
+      // O merge move `ana_care_id` para o sobrevivente e deixa o casco com o id
+      // NULO, mas com status REGISTERED — ou seja, o casco parece elegível. Antes
+      // do fallback de alias isso era inofensivo: o POST batia no conflito de
+      // e-mail e morria ali. Com o alias, o casco passaria a CRIAR uma segunda
+      // enfermera para uma pessoa que o sobrevivente já espelha — duplicata
+      // dentro da nossa própria agência, que é pior que a duplicata entre
+      // empresas que estamos aceitando de propósito.
+      //
+      // Caso real: worker `5ad78938` (casco) x `c744f723` (sobrevivente, já com
+      // nurse 90575).
+      // Truthiness de propósito: `null` (não fundido) e `undefined` (campo ausente
+      // na linha) significam a MESMA coisa aqui — seguir em frente. Um `!== null`
+      // trataria ausência como "fundido" e pararia de espelhar TODO mundo.
+      if (row.merged_into_id) {
+        log.info({ msg: `${TAG} skipped (cadastro fundido)`, reason: 'merged' });
+        return 'skipped';
+      }
+
       // Deactivate path: Baja + known external ID (independente do status REGISTERED)
       if (row.ana_care_status === 'Baja' && row.ana_care_id !== null) {
         if (this.provider.deactivate) {
@@ -132,7 +153,7 @@ export class MirrorWorkerService {
       const isNew = row.ana_care_id === null;
       const result = await this.provider.upsert(record, row.ana_care_id);
 
-      await this.persistSuccess(workerId, result.externalId);
+      await this.persistSuccess(workerId, result.externalId, result.emailAliasUsed ?? null);
       log.info({ msg: `${TAG} upserted`, action: isNew ? 'created' : 'updated' });
 
       return isNew ? 'created' : 'updated';
@@ -219,15 +240,26 @@ export class MirrorWorkerService {
 
   // ── Persistência de estado ──────────────────────────────────────
 
-  async persistSuccess(workerId: string, externalId: string): Promise<void> {
+  /**
+   * @param emailAlias endereço alternativo usado na criação (null = e-mail real).
+   *   É gravado SEMPRE, inclusive como NULL: um worker que antes nasceu com alias
+   *   e depois passou a sincronizar com o endereço real tem que sair da fila de
+   *   resolução sozinho — marca que só liga e nunca desliga vira ruído.
+   */
+  async persistSuccess(
+    workerId: string,
+    externalId: string,
+    emailAlias: string | null,
+  ): Promise<void> {
     await this.db.query(
       `UPDATE workers
-       SET ana_care_id        = $2,
-           ana_care_synced_at = NOW(),
-           ana_care_sync_error = NULL,
-           updated_at          = NOW()
+       SET ana_care_id          = $2,
+           ana_care_synced_at   = NOW(),
+           ana_care_sync_error  = NULL,
+           ana_care_email_alias = $3,
+           updated_at           = NOW()
        WHERE id = $1`,
-      [workerId, externalId],
+      [workerId, externalId, emailAlias],
     );
   }
 
@@ -255,6 +287,7 @@ export class MirrorWorkerService {
          w.ana_care_id,
          w.ana_care_status,
          w.is_test,
+         w.merged_into_id,
          w.first_name_encrypted,
          w.last_name_encrypted,
          w.sex_encrypted,

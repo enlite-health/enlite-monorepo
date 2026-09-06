@@ -12,6 +12,8 @@ import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { SelectOption } from '@presentation/components/molecules/SelectField';
 import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
+import { DiscardChangesConfirm } from './DiscardChangesConfirm';
 
 interface Props {
   patient: PatientDetail;
@@ -38,7 +40,7 @@ export function PatientServiceEditDrawer({ patient, onClose, onSaved }: Props): 
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const { handleSubmit, control } = useForm<FormValues>({
+  const { handleSubmit, control, formState: { isDirty } } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { serviceType: patient.serviceType ?? [] },
   });
@@ -50,12 +52,17 @@ export function PatientServiceEditDrawer({ patient, onClose, onSaved }: Props): 
 
   const handleClose = (): void => { setShow(false); setTimeout(onClose, CLOSE_MS); };
 
+  // Spec 014 (US-D4, lex D4 AUTORIZADO).
+  const { confirmingClose, requestClose, keepEditing, confirmDiscard } = useConfirmDiscardClose({
+    isDirty,
+    onConfirmedClose: handleClose,
+  });
+
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') requestClose(); };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [requestClose]);
 
   const serviceOptions: SelectOption[] = SERVICE_TYPES.map((s) => ({
     value: s,
@@ -79,9 +86,10 @@ export function PatientServiceEditDrawer({ patient, onClose, onSaved }: Props): 
 
   return (
     <>
+      {confirmingClose && <DiscardChangesConfirm onKeepEditing={keepEditing} onDiscard={confirmDiscard} />}
       <div
         className={`fixed inset-0 bg-black/50 z-40 transition-opacity duration-300 ${show ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-        onClick={handleClose}
+        onClick={requestClose}
         data-testid="patient-service-edit-backdrop"
       />
       <div
@@ -97,7 +105,7 @@ export function PatientServiceEditDrawer({ patient, onClose, onSaved }: Props): 
             <Button type="button" variant="primary" size="sm" onClick={handleSubmit(onSubmit)} isLoading={busy} className="w-32" data-testid="psv-save">
               {te('save')}
             </Button>
-            <button type="button" onClick={handleClose} aria-label={te('close')} className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded">
+            <button type="button" onClick={requestClose} aria-label={te('close')} className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -105,8 +113,10 @@ export function PatientServiceEditDrawer({ patient, onClose, onSaved }: Props): 
 
         <form onSubmit={handleSubmit(onSubmit)} className="flex-1 overflow-y-auto px-8 py-6 flex flex-col gap-5">
           <FormField label={tc('serviceType')} htmlFor="psv-serviceType" optional>
+            {/* `field.value` nunca é undefined: `defaultValues.serviceType` (linha acima) já
+                garante array — um `?? []` aqui seria morto (0% de branch, D200). */}
             <Controller control={control} name="serviceType" render={({ field }) => (
-              <MultiSelect options={serviceOptions} value={field.value ?? []} onChange={field.onChange} placeholder={te('unset')} id="psv-serviceType" />
+              <MultiSelect options={serviceOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id="psv-serviceType" />
             )} />
           </FormField>
 

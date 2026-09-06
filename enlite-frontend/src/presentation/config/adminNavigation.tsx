@@ -6,6 +6,7 @@ import { useCellAccess } from '@presentation/hooks/useCellAccess';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { useFeature } from '@presentation/hooks/useFeature';
 import { SCREEN_FEATURE_MAP } from './screenFeatureMap';
+import { MapPin } from 'lucide-react';
 
 export const useAdminNavItems = (): AppSidebarNavItem[] => {
   const { t } = useTranslation();
@@ -32,10 +33,15 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
   const { canRead: canReadDedup } = useCellAccess('dedup');
   const { canRead: canReadPatientChatRoles } = useCellAccess('patient');
   const { canRead: canReadBlockedAttempts } = useCellAccess('recruitment');
+  // Sync main→stage (06/09): Mensajes por etapa, Plantillas e Invitación a presentación
+  // chamam rotas declaradas sob `messaging:read` (funnel-stage-messages, template-catalog,
+  // presentation-invite/*). Mesma régua: célula com engine ON, `role` com engine OFF.
+  const { canRead: canReadMessaging } = useCellAccess('messaging');
   const showTags = enforcement === 'on' ? canReadWorkerTags : isAdmin;
   const showDedup = enforcement === 'on' ? canReadDedup : isAdmin;
   const showPatientChatRoles = enforcement === 'on' ? canReadPatientChatRoles : isAdmin;
   const showBlockedAttempts = enforcement === 'on' ? canReadBlockedAttempts : isAdmin;
+  const showMessagingScreens = enforcement === 'on' ? canReadMessaging : isAdmin;
 
   // B1 (D268) — disponibilidade por país, uma verdade só: `SCREEN_FEATURE_MAP`.
   // Nº fixo de chamadas (Rules of Hooks) — as 6 chaves screen:* que hoje têm
@@ -109,6 +115,11 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
       href: '/admin/patients',
     },
     {
+      icon: <MapPin className="w-6 h-6" strokeWidth={2} />,
+      label: t('admin.nav.map', 'Mapa'),
+      href: '/admin/mapa',
+    },
+    {
       icon: (
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -156,6 +167,30 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
       },
     },
     {
+      show: showMessagingScreens,
+      item: {
+        icon: (
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h8m-8 4h5m-9 6l3-3h9a2 2 0 002-2V7a2 2 0 00-2-2H6a2 2 0 00-2 2v13z" />
+              </svg>
+            ),
+        label: t('admin.nav.funnelStageMessages', 'Mensajes por etapa'),
+        href: '/admin/mensajes-por-etapa',
+      },
+    },
+    {
+      show: showMessagingScreens,
+      item: {
+        icon: (
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            ),
+        label: t('admin.nav.templateCatalog', 'Plantillas'),
+        href: '/admin/plantillas',
+      },
+    },
+    {
       show: showPatientChatRoles,
       item: {
         icon: (
@@ -165,6 +200,18 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
         ),
         label: t('admin.nav.patientChatRoles', 'Roles de grupos'),
         href: '/admin/patient-chat-roles',
+      },
+    },
+    {
+      show: showMessagingScreens,
+      item: {
+        icon: (
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3M5 11h14M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2zm7 9v-4m-2 2h4" />
+              </svg>
+            ),
+        label: t('admin.nav.presentationInvite', 'Invitación a presentación'),
+        href: '/admin/invitacion-presentacion',
       },
     },
     {

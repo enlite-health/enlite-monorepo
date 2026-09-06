@@ -60,11 +60,24 @@ export class AdminErrorBoundary extends Component<Props, State> {
               <p className="text-gray-600 mb-4">
                 {t('admin.errorBoundary.description')}
               </p>
-              <pre className="bg-gray-100 p-3 rounded text-sm overflow-auto max-h-48 text-red-700">
-                {this.state.error?.message}
-                {'\n'}
-                {this.state.errorInfo?.componentStack}
-              </pre>
+              {/* O stack trace deixa de ser a primeira coisa que a operadora vê.
+                  Medido em 30/08: a tela cuspia "Cannot read properties of
+                  undefined (reading 'map')" com sete linhas de `at RenderedRoute`
+                  — para quem opera, indistinguível de "o sistema morreu". O
+                  detalhe continua acessível (o suporte pede para expandir) e
+                  continua indo para o console, que é onde o dev olha. */}
+              {(this.state.error?.message || this.state.errorInfo?.componentStack) && (
+                <details className="mt-2" data-testid="admin-error-details">
+                  <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700 select-none">
+                    {t('admin.errorBoundary.details')}
+                  </summary>
+                  <pre className="mt-2 bg-gray-100 p-3 rounded text-xs overflow-auto max-h-48 text-red-700">
+                    {this.state.error?.message}
+                    {'\n'}
+                    {this.state.errorInfo?.componentStack}
+                  </pre>
+                </details>
+              )}
               <button
                 onClick={() => window.location.reload()}
                 className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"

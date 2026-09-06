@@ -17,6 +17,7 @@ import { useTranslation } from 'react-i18next';
 import { Search, Loader2 } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { CaseOption } from '@hooks/admin/useVacancyModalFlow';
+import { Heading } from '@presentation/components/atoms/Heading';
 import { FormField } from '@presentation/components/molecules/FormField/FormField';
 import { SelectField } from '@presentation/components/molecules/SelectField/SelectField';
 import { SearchableSelect } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
@@ -108,6 +109,10 @@ export function VacancyFormLeftColumn({
 
   return (
     <div className="space-y-6">
+      {/* Spec 014 (US-D6): título de seção — os 22 campos do formulário agrupados
+          visualmente. */}
+      <Heading level={4} weight="semibold" color="secondary">{tp('sectionCaseAndProfile')}</Heading>
+
       {/* 1. Case number — select (create) or read-only (edit) */}
       <div className="flex flex-col gap-1 mb-0">
         <FormField label={tp('caseNumber')} required={mode === 'create'}>
@@ -265,6 +270,11 @@ export function VacancyFormLeftColumn({
           data-testid="age-range-select"
         />
       </FormField>
+
+      {/* Spec 014 (US-D6): segunda seção da coluna esquerda. */}
+      <Heading level={4} weight="semibold" color="secondary" className="pt-2 border-t border-slate-100">
+        {tp('sectionScheduleAndDates')}
+      </Heading>
 
       {/* 9. Meet links — extracted to MeetLinksField for size/SRP. */}
       <div className={patientDis}>

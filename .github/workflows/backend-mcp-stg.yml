@@ -64,14 +64,23 @@ jobs:
           # foi exatamente assim que o ensaio de rollback 1.R falhou em 14/08 (revert
           # tirou a flag do YAML, a revisão nasceu com enlite_app + flag herdada e o
           # assert de boot recusou). Rollback só funciona com overwrite.
-          # ⚠️ Valor de env com VÍRGULA não sobrevive ao parseKVString do action:
-          # "MCP_PRINCIPAL_NAMES=triage-service,claude-code" virou
-          # MCP_PRINCIPAL_NAMES=triage-service + env fantasma "claude-code=" (visto
-          # no gcloud do run 31821260708, 14/08). Listas usam ';' (parseEnvList aceita
-          # ',' ';' e espaço). Aqui MCP_PRINCIPAL_NAMES é single porque triage-service
-          # nem tem secret mcp-principal-* no stg (só gerava NOT_FOUND no log).
+          # ⚠️ Valor de env com VÍRGULA não sobrevive ao parseKVString do action sem
+          # escape: "MCP_PRINCIPAL_NAMES=triage-service,claude-code" virou
+          # MCP_PRINCIPAL_NAMES=triage-service + env fantasma "claude-code=" (run
+          # 31821260708, 14/08). A tentativa seguinte, ';', deixava ZERO host em
+          # ALLOWED_MEDIA_HOSTS (os consumidores fazem `.split(',')`). O certo é `\,`
+          # — ver a nota abaixo. `;` só serve onde o consumidor é `parseEnvList`
+          # (backend-stg.yml: PERMISSION_ENFORCED_ROUTES).
           env_vars_update_strategy: overwrite
           secrets_update_strategy: overwrite
+          # ⚠️ NADA DE COMENTÁRIO DENTRO DO BLOCO `env_vars` ABAIXO: a action lê CADA linha
+          #   como KEY=VALUE, então uma linha `#` vira env var de nome absurdo no serviço.
+          #   Medido em 30/08: 10 linhas de comentário viraram 15 env vars em produção (PR #265).
+          # A vírgula dos valores é ESCAPADA (`\,`) porque a action separa por vírgula e
+          #   documenta: "values that contain separators must be escaped with a backslash".
+          #   Separador alternativo (`;`) NÃO serve: os consumidores fazem `.split(',')`
+          #   (ServicePrincipalSecretManagerRepo.ts:58, ExternalMediaDownloader.ts:35).
+          # Ver docs/FOLLOWUPS.md → "MCP: env var com vírgula é partida no deploy".
           env_vars: |
             NODE_ENV=production
             MCP_ENABLED=true
@@ -84,14 +93,14 @@ jobs:
             ABAC_MAIN_POOL_ROLE=app_system
             DB_POOL_MAX=2
             MCP_DB_RO_POOL_MAX=1
-            MCP_PRINCIPAL_NAMES=claude-code
+            MCP_PRINCIPAL_NAMES=triage-service\,claude-code
             MCP_DB_RO_USER=enlite_mcp_ro
             MCP_OAUTH_ENABLED=true
             MCP_OAUTH_ISSUER_URL=https://worker-functions-mcp-vtf37eainq-tl.a.run.app
             CORS_ALLOWED_ORIGINS=https://worker-functions-mcp-vtf37eainq-tl.a.run.app
             FIREBASE_WEB_API_KEY=AIzaSyCdOWe7NsS9vbQHx3PhWcVKUdr72k5UWVA
             FIREBASE_WEB_AUTH_DOMAIN=enlite-stg.firebaseapp.com
-            ALLOWED_MEDIA_HOSTS=api.twilio.com;*.twilio.com;chatwoot.enlite.health
+            ALLOWED_MEDIA_HOSTS=api.twilio.com\,*.twilio.com\,chatwoot.enlite.health
           secrets: |
             DB_PASSWORD=enlite-system-db-password:latest
             DB_MIGRATION_PASSWORD=enlite-ar-db-password:latest

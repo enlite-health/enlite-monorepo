@@ -1,101 +1,134 @@
+/**
+ * VacancyMeetLinksCard.test.tsx — os 3 links fixos + o slot RECORRENTE (mig 291).
+ * O que se afirma: validação, e o CORPO que vai para o PUT — `recurring` ausente
+ * quando nada mudou, `null` quando limpou, objeto quando preencheu.
+ */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { VacancyMeetLinksCard } from '../VacancyMeetLinksCard';
-import { AdminApiService } from '@infrastructure/http/AdminApiService';
-import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
-import type { AuthzContract } from '@domain/entities/Authz';
+import { toInputTime } from '../meetRecurringUtils';
 
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
-
-vi.mock('@infrastructure/http/AdminApiService', () => ({
-  AdminApiService: { updateVacancyMeetLinks: vi.fn() },
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) => {
+      if (opts && typeof opts === 'object') {
+        let s = key;
+        for (const [k, v] of Object.entries(opts)) s += ` ${k}=${String(v)}`;
+        return s;
+      }
+      return key;
+    },
+  }),
 }));
 
-const baseProps = {
+const mockUpdate = vi.fn();
+vi.mock('@infrastructure/http/AdminApiService', () => ({
+  AdminApiService: { updateVacancyMeetLinks: (...a: unknown[]) => mockUpdate(...a) },
+}));
+
+const LINK = 'https://meet.google.com/abc-defg-hij';
+const base = {
   vacancyId: 'v1',
-  meetLink1: null as string | null,
-  meetDatetime1: null as string | null,
-  meetLink2: null as string | null,
-  meetDatetime2: null as string | null,
-  meetLink3: null as string | null,
-  meetDatetime3: null as string | null,
+  meetLink1: LINK, meetDatetime1: '2027-04-05T11:30:00Z',
+  meetLink2: null, meetDatetime2: null,
+  meetLink3: null, meetDatetime3: null,
   onSaved: vi.fn(),
 };
 
-const VALID = 'https://meet.google.com/abc-defg-hij';
-
-function comEnforcement(permissions: string[], enforcement: AuthzContract['enforcement']) {
-  useAdminAuthStore.setState({
-    authzStatus: 'ready',
-    authz: {
-      uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {}, enforcement,
-    } as AuthzContract,
+describe('toInputTime', () => {
+  it('normaliza TIME do Postgres para o input', () => {
+    expect(toInputTime('08:30:00')).toBe('08:30');
+    expect(toInputTime('8:30')).toBe('08:30');
+    expect(toInputTime(null)).toBe('');
+    expect(toInputTime('x')).toBe('');
   });
-}
+});
 
-describe('VacancyMeetLinksCard', () => {
-  beforeEach(() => {
-    vi.mocked(AdminApiService.updateVacancyMeetLinks).mockReset();
-    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
-  });
+describe('VacancyMeetLinksCard — recorrente', () => {
+  beforeEach(() => { vi.clearAllMocks(); mockUpdate.mockResolvedValue({}); });
 
-  it('renderiza os 3 links vazios, sem badge de data e sem link externo', () => {
-    render(<VacancyMeetLinksCard {...baseProps} />);
-    expect(screen.getAllByPlaceholderText('https://meet.google.com/xxx-xxxx-xxx')).toHaveLength(3);
-    expect(screen.queryByTitle('admin.vacancyDetail.meetLinksCard.openLink')).not.toBeInTheDocument();
-  });
-
-  it('link + data preenchidos: mostra o badge formatado e o link externo', () => {
-    render(<VacancyMeetLinksCard {...baseProps} meetLink1={VALID} meetDatetime1="2026-03-01T14:00:00Z" />);
-    expect(screen.getByTitle('admin.vacancyDetail.meetLinksCard.openLink')).toBeInTheDocument();
+  it('nasce com o recorrente da vaga preenchido e, sem mudança, o PUT NÃO manda `recurring`', async () => {
+    render(<VacancyMeetLinksCard {...base} recurringWeekday={1} recurringTime="08:30:00" recurringLink={LINK} />);
+    expect((screen.getByTestId('meet-recurring-weekday') as HTMLSelectElement).value).toBe('1');
+    expect((screen.getByTestId('meet-recurring-time') as HTMLInputElement).value).toBe('08:30');
+    expect((screen.getByTestId('meet-recurring-link') as HTMLInputElement).value).toBe(LINK);
+    fireEvent.click(screen.getByTestId('meet-links-save'));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    expect(mockUpdate).toHaveBeenCalledWith('v1', [LINK, null, null], undefined);
+    await waitFor(() => expect(screen.getByTestId('meet-links-feedback')).toHaveTextContent('saveSuccess'));
+    expect(base.onSaved).toHaveBeenCalled();
   });
 
-  it('digitar link inválido e salvar: mostra erro de validação, NÃO chama a API', async () => {
-    render(<VacancyMeetLinksCard {...baseProps} />);
-    const [input] = screen.getAllByPlaceholderText('https://meet.google.com/xxx-xxxx-xxx');
-    fireEvent.change(input, { target: { value: 'https://zoom.us/x' } });
-    fireEvent.click(screen.getByRole('button', { name: /saveLinks/ }));
-    expect(await screen.findByText('admin.vacancyDetail.meetLinksCard.invalidLink')).toBeInTheDocument();
-    expect(AdminApiService.updateVacancyMeetLinks).not.toHaveBeenCalled();
+  it('preencher dia + hora + sala manda `recurring` como objeto (weekday numérico)', async () => {
+    render(<VacancyMeetLinksCard {...base} />);
+    fireEvent.change(screen.getByTestId('meet-recurring-weekday'), { target: { value: '2' } });
+    fireEvent.change(screen.getByTestId('meet-recurring-time'), { target: { value: '09:00' } });
+    fireEvent.change(screen.getByTestId('meet-recurring-link'), { target: { value: ` ${LINK} ` } });
+    fireEvent.click(screen.getByTestId('meet-links-save'));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('v1', [LINK, null, null], { weekday: 2, time: '09:00', link: LINK }));
   });
 
-  it('corrigir o link limpa o erro anterior', async () => {
-    render(<VacancyMeetLinksCard {...baseProps} />);
-    const [input] = screen.getAllByPlaceholderText('https://meet.google.com/xxx-xxxx-xxx');
-    fireEvent.change(input, { target: { value: 'inválido' } });
-    fireEvent.click(screen.getByRole('button', { name: /saveLinks/ }));
-    await screen.findByText('admin.vacancyDetail.meetLinksCard.invalidLink');
-    fireEvent.change(input, { target: { value: VALID } });
-    expect(screen.queryByText('admin.vacancyDetail.meetLinksCard.invalidLink')).not.toBeInTheDocument();
+  it('limpar os três campos de um recorrente existente manda `recurring: null`', async () => {
+    render(<VacancyMeetLinksCard {...base} recurringWeekday={1} recurringTime="08:30" recurringLink={LINK} />);
+    fireEvent.change(screen.getByTestId('meet-recurring-weekday'), { target: { value: '' } });
+    fireEvent.change(screen.getByTestId('meet-recurring-time'), { target: { value: '' } });
+    fireEvent.change(screen.getByTestId('meet-recurring-link'), { target: { value: '' } });
+    fireEvent.click(screen.getByTestId('meet-links-save'));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('v1', [LINK, null, null], null));
   });
 
-  it('salvar com link válido (ou vazio): chama updateVacancyMeetLinks e onSaved', async () => {
-    vi.mocked(AdminApiService.updateVacancyMeetLinks).mockResolvedValue({} as never);
-    render(<VacancyMeetLinksCard {...baseProps} />);
-    const [input] = screen.getAllByPlaceholderText('https://meet.google.com/xxx-xxxx-xxx');
-    fireEvent.change(input, { target: { value: VALID } });
-    fireEvent.click(screen.getByRole('button', { name: /saveLinks/ }));
-    await waitFor(() => expect(AdminApiService.updateVacancyMeetLinks).toHaveBeenCalledWith('v1', [VALID, null, null]));
-    expect(baseProps.onSaved).toHaveBeenCalled();
-    expect(await screen.findByText('admin.vacancyDetail.meetLinksCard.saveSuccess')).toBeInTheDocument();
+  it('recorrente incompleto (só dia) → erro "incomplete", nada é enviado', async () => {
+    render(<VacancyMeetLinksCard {...base} />);
+    fireEvent.change(screen.getByTestId('meet-recurring-weekday'), { target: { value: '3' } });
+    fireEvent.click(screen.getByTestId('meet-links-save'));
+    expect(screen.getByTestId('meet-recurring-error')).toHaveTextContent('meetRecurring.incomplete');
+    expect(mockUpdate).not.toHaveBeenCalled();
+    // corrigir limpa o erro
+    fireEvent.change(screen.getByTestId('meet-recurring-weekday'), { target: { value: '' } });
+    expect(screen.queryByTestId('meet-recurring-error')).toBeNull();
   });
 
-  it('salvar: erro da API mostra a mensagem de feedback', async () => {
-    vi.mocked(AdminApiService.updateVacancyMeetLinks).mockRejectedValue(new Error('falhou ao salvar'));
-    render(<VacancyMeetLinksCard {...baseProps} />);
-    fireEvent.click(screen.getByRole('button', { name: /saveLinks/ }));
-    expect(await screen.findByText('falhou ao salvar')).toBeInTheDocument();
+  it('sala fora do padrão → "invalidLink" (a hora é <input type="time">: o DOM só entrega HH:MM)', async () => {
+    render(<VacancyMeetLinksCard {...base} />);
+    fireEvent.change(screen.getByTestId('meet-recurring-weekday'), { target: { value: '1' } });
+    fireEvent.change(screen.getByTestId('meet-recurring-time'), { target: { value: '08:30' } });
+    fireEvent.change(screen.getByTestId('meet-recurring-link'), { target: { value: 'https://zoom.us/j/1' } });
+    fireEvent.click(screen.getByTestId('meet-links-save'));
+    expect(screen.getByTestId('meet-recurring-error')).toHaveTextContent('meetLinksCard.invalidLink');
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 
-  it('D269 — enforcement=on sem vacancy:write: botão "salvar" NÃO existe', () => {
-    comEnforcement([], 'on');
-    render(<VacancyMeetLinksCard {...baseProps} />);
-    expect(screen.queryByRole('button', { name: /saveLinks/ })).not.toBeInTheDocument();
+  it('link fixo inválido bloqueia e mostra erro; corrigir limpa o erro', async () => {
+    render(<VacancyMeetLinksCard {...base} />);
+    const inputs = screen.getAllByPlaceholderText('https://meet.google.com/xxx-xxxx-xxx');
+    fireEvent.change(inputs[1], { target: { value: 'nope' } });
+    fireEvent.click(screen.getByTestId('meet-links-save'));
+    expect(screen.getAllByText('admin.vacancyDetail.meetLinksCard.invalidLink')).toHaveLength(1);
+    expect(mockUpdate).not.toHaveBeenCalled();
+    fireEvent.change(inputs[1], { target: { value: '' } });
+    expect(screen.queryByText('admin.vacancyDetail.meetLinksCard.invalidLink')).toBeNull();
   });
 
-  it('D269 — enforcement=on com vacancy:write: botão "salvar" existe', () => {
-    comEnforcement(['vacancy:write'], 'on');
-    render(<VacancyMeetLinksCard {...baseProps} />);
-    expect(screen.getByRole('button', { name: /saveLinks/ })).toBeInTheDocument();
+  it('erro do backend vira feedback de erro (Error com mensagem e sem mensagem)', async () => {
+    mockUpdate.mockRejectedValueOnce(new Error('Invalid recurring meet link format'));
+    render(<VacancyMeetLinksCard {...base} />);
+    fireEvent.click(screen.getByTestId('meet-links-save'));
+    await waitFor(() => expect(screen.getByTestId('meet-links-feedback')).toHaveTextContent('Invalid recurring meet link format'));
+    mockUpdate.mockRejectedValueOnce('x');
+    fireEvent.click(screen.getByTestId('meet-links-save'));
+    await waitFor(() => expect(screen.getByTestId('meet-links-feedback')).toHaveTextContent('meetLinksCard.saveError'));
+  });
+
+  it('mostra a data resolvida do link fixo e o ícone de status; link preenchido ganha atalho externo', () => {
+    render(<VacancyMeetLinksCard {...base} meetLink2="https://meet.google.com/zzz-zzzz-zzz" meetDatetime2={null} />);
+    expect(screen.getByText(/2027/)).toBeInTheDocument();
+    expect(screen.getAllByTitle('admin.vacancyDetail.meetLinksCard.openLink')).toHaveLength(2);
+  });
+
+  it('formatação de data que lança não derruba o card (catch do formatador)', () => {
+    const spy = vi.spyOn(Date.prototype, 'toLocaleString').mockImplementation(() => { throw new Error('boom'); });
+    render(<VacancyMeetLinksCard {...base} />);
+    expect(screen.queryByText(/2027/)).toBeNull();
+    spy.mockRestore();
   });
 });

@@ -56,6 +56,18 @@ export interface AdmissionCountryConfig {
   teamDisplayName: string;
   /** Name of the env var that overrides `teamDisplayName` (optional at runtime). */
   teamDisplayNameEnv: string;
+  /**
+   * Linha de negócio do país, que vai no TÍTULO do evento para a operação
+   * distinguir de relance de qual frente é a entrevista: Argentina = Care,
+   * Brasil = Clinic (pedido do Gabriel, 20/08).
+   *
+   * Só o título. O nome que o PACIENTE vê na confirmação por WhatsApp continua
+   * sendo `teamDisplayName` — e a identidade da atendente não aparece em
+   * nenhum dos dois.
+   */
+  lineName: string;
+  /** Name of the env var that overrides `lineName` (optional at runtime). */
+  lineNameEnv: string;
 }
 
 /**
@@ -88,6 +100,8 @@ export const ADMISSION_COUNTRIES: Record<AdmissionCountry, AdmissionCountryConfi
     admissionCalendarIdEnv: 'ADMISSION_CALENDAR_ID_AR',
     teamDisplayName: 'Equipo de Admisión EnLite',
     teamDisplayNameEnv: 'ADMISSION_TEAM_NAME_AR',
+    lineName: 'EnLite Care',
+    lineNameEnv: 'ADMISSION_LINE_NAME_AR',
   },
   BR: {
     timezone: countryToTimezone('BR'), // America/Sao_Paulo
@@ -96,6 +110,8 @@ export const ADMISSION_COUNTRIES: Record<AdmissionCountry, AdmissionCountryConfi
     admissionCalendarIdEnv: 'ADMISSION_CALENDAR_ID_BR',
     teamDisplayName: 'Equipe de Admissão EnLite',
     teamDisplayNameEnv: 'ADMISSION_TEAM_NAME_BR',
+    lineName: 'EnLite Clinic',
+    lineNameEnv: 'ADMISSION_LINE_NAME_BR',
   },
 };
 
@@ -107,6 +123,17 @@ export function resolveTeamDisplayName(country: AdmissionCountry): string {
   const cfg = ADMISSION_COUNTRIES[country];
   const override = process.env[cfg.teamDisplayNameEnv];
   return override && override.trim() ? override.trim() : cfg.teamDisplayName;
+}
+
+/**
+ * Linha de negócio do país para o TÍTULO do evento (`EnLite Care` / `EnLite
+ * Clinic`), com override por env — mesma mecânica do nome da equipe, para a
+ * operação renomear sem redeploy.
+ */
+export function resolveLineName(country: AdmissionCountry): string {
+  const cfg = ADMISSION_COUNTRIES[country];
+  const override = process.env[cfg.lineNameEnv];
+  return override && override.trim() ? override.trim() : cfg.lineName;
 }
 
 /** Type guard for the public `country` query/body param (single source, D108). */

@@ -19,6 +19,12 @@
         "responsible": "Para otra persona",
         "required": "Indicá para quién es"
       },
+      "name": {
+        "label": "Nombre y apellido",
+        "placeholder": "Ej.: Flavia Villagra",
+        "required": "Ingresá tu nombre y apellido",
+        "needsLastName": "Ingresá también tu apellido"
+      },
       "email": {
         "label": "Email",
         "placeholder": "tucorreo@ejemplo.com",
@@ -101,7 +107,9 @@
     "logout": "Salir",
     "multiSelect": {
       "selectedCount": "{{count}} seleccionados"
-    }
+    },
+    "yes": "Sí",
+    "no": "No"
   },
   "sidebar": {
     "expandMenu": "Expandir menú",
@@ -1074,9 +1082,10 @@
       }
     },
     "errorBoundary": {
-      "title": "Error al cargar la página de admin",
-      "description": "Ocurrió un error inesperado. Detalles técnicos:",
-      "reload": "Recargar página"
+      "title": "No pudimos cargar esta página",
+      "description": "Algo falló de nuestro lado. Recargá la página; si vuelve a pasar, avisá al equipo técnico con los detalles de abajo.",
+      "reload": "Recargar página",
+      "details": "Detalles técnicos"
     },
     "nav": {
       "dashboard": "Gestión a la Vista",
@@ -1091,7 +1100,12 @@
       "dedup": "Duplicados",
       "adminSection": "Administración",
       "patientChatRoles": "Roles de grupos",
-      "access": "Accesos y permisos"
+      "access": "Accesos y permisos",
+      "funnelStageMessages": "Mensajes por etapa",
+      "presentationInvite": "Invitación a presentación",
+      "map": "Mapa",
+      "templateCatalog": "Plantillas",
+      "templateDrafts": "Registrar mensaje"
     },
     "dedup": {
       "title": "Centro de Duplicados",
@@ -1578,6 +1592,12 @@
       },
       "reprogramBadge": "🔄 Reprogramado",
       "notesButton": "Comentarios",
+      "resendButton": "Reenviar",
+      "resendSending": "Enviando…",
+      "lastSentAt": "Último envío: {{date}}",
+      "neverSent": "Sin envíos",
+      "resendDone": "Enviado ✓",
+      "resendBlockedUntil": "Reenvío disponible desde {{date}}",
       "moveToButton": "Mover a…",
       "collapseColumn": "Colapsar columna",
       "expandColumn": "Expandir columna",
@@ -1625,7 +1645,8 @@
         "confirm": "Agendar",
         "cancel": "Cancelar",
         "unknown": "Todavía no sé la fecha — mover igual"
-      }
+      },
+      "stageLastMessage": "Mensaje de etapa ({{stage}}): {{date}}"
     },
     "workerDetail": {
       "status": "Estado del Prestador",
@@ -2188,7 +2209,8 @@
           "cityMin": "La localidad debe tener al menos 2 caracteres",
           "serviceDeviceTypesMin": "Seleccioná al menos un dispositivo de servicio",
           "ageRangeMinInvalid": "La edad mínima debe ser al menos 18 años",
-          "ageRangeInvalid": "La edad máxima debe ser mayor o igual a la mínima"
+          "ageRangeInvalid": "La edad máxima debe ser mayor o igual a la mínima",
+          "addressRequired": "Seleccioná el domicilio donde se presta el servicio"
         }
       },
       "prescreening": {
@@ -2326,6 +2348,36 @@
         "cancel": "Cancelar",
         "close": "Cerrar",
         "errorEmpty": "La descripción no puede quedar vacía."
+      },
+      "meetRecurring": {
+        "title": "Horario recurrente (reunión de presentación)",
+        "hint": "Todas las semanas, el mismo día y hora, en la misma sala. El convite ofrece las próximas fechas automáticamente.",
+        "weekday": "Día",
+        "time": "Hora (Argentina)",
+        "link": "Sala de Meet",
+        "none": "Sin horario recurrente",
+        "clear": "Quitar",
+        "every": "Todos los {{day}} a las {{time}}",
+        "invalidTime": "Hora inválida (HH:MM)",
+        "incomplete": "Completá día, hora y sala",
+        "days": {
+          "0": "domingos",
+          "1": "lunes",
+          "2": "martes",
+          "3": "miércoles",
+          "4": "jueves",
+          "5": "viernes",
+          "6": "sábados"
+        },
+        "daysShort": {
+          "0": "Domingo",
+          "1": "Lunes",
+          "2": "Martes",
+          "3": "Miércoles",
+          "4": "Jueves",
+          "5": "Viernes",
+          "6": "Sábado"
+        }
       }
     },
     "vacancyModal": {
@@ -2358,6 +2410,10 @@
       "validationBanner": {
         "title": "Faltan datos para crear la vacante:"
       },
+      "sectionCaseAndProfile": "Caso y perfil profesional",
+      "sectionScheduleAndDates": "Meet y fechas",
+      "sectionStatusAndLocation": "Estado y ubicación",
+      "sectionConditions": "Condiciones de la vacante",
       "publishDate": "Fecha de publicación",
       "closingDate": "Fecha de encerramento",
       "status": "Estado",
@@ -2626,7 +2682,8 @@
         "documents": "Documentación",
         "registeredAt": "Registro",
         "platform": "Plataforma",
-        "view": "Ver"
+        "view": "Ver",
+        "actions": "Acciones"
       },
       "platformOptions": {
         "all": "Todas",
@@ -2774,7 +2831,8 @@
         "cancel": "Cancelar",
         "successToast": "Paciente activado — {{count}} vacantes borrador creadas",
         "noAddress": "Agregá al menos una localización antes de activar.",
-        "error": "No se pudo activar el paciente"
+        "error": "No se pudo activar el paciente",
+        "notReady": "No se puede activar: falta {{items}}."
       },
       "editDrawer": {
         "generalTitle": "Editar información general",
@@ -2786,6 +2844,33 @@
         "unset": "—",
         "saveError": "Error al guardar",
         "deviceType": "Dispositivo",
+        "diagnosisAssignment": {
+          "sectionTitle": "Diagnóstico (CIE-11)",
+          "searchPlaceholder": "Buscar diagnóstico en español...",
+          "typing": "Escribiendo…",
+          "searching": "Buscando…",
+          "noResults": "No se encontraron resultados para \"{{query}}\".",
+          "tooShortHint": "Escribí al menos {{min}} caracteres.",
+          "codeOrAcronymHint": "La búsqueda es por el NOMBRE del diagnóstico, no por código ni por sigla.",
+          "searchFailed": "No se pudo hacer la búsqueda. Probá de nuevo.",
+          "unavailable": "No pudimos conectar con el catálogo de diagnósticos. Probá de nuevo en unos minutos.",
+          "searchScopeLabel": "Buscando en:",
+          "searchScopeUsual": "Salud mental y neurología",
+          "searchScopeAll": "Todas las categorías",
+          "widenScopeHint": "¿No encontrás el diagnóstico? Probá en \"Todas las categorías\".",
+          "whoAttribution": "Clasificación Internacional de Enfermedades, 11.ª revisión (CIE-11), Organización Mundial de la Salud. Licencia CC BY-ND 3.0 IGO.",
+          "chipsEmpty": "Todavía no se agregó ningún diagnóstico.",
+          "makePrimary": "Marcar como principal",
+          "primaryBadge": "Principal",
+          "remove": "Quitar",
+          "removeConfirmQuestion": "¿Quitar este diagnóstico?",
+          "removeCancel": "Cancelar",
+          "addError": "No se pudo agregar el diagnóstico.",
+          "notDiagnosableError": "Ese resultado no es un diagnóstico específico — elegí una categoría más concreta.",
+          "alreadyActiveError": "Ese diagnóstico ya está agregado.",
+          "updateError": "No se pudo actualizar el diagnóstico.",
+          "genericError": "No se pudo completar la acción. Probá de nuevo."
+        },
         "hasConsent": "Consentimiento",
         "responsible": "Familiar",
         "addResponsible": "Agregar familiar",
@@ -2795,20 +2880,78 @@
         "lastName": "Apellido",
         "relationship": "Parentesco",
         "phone": "Teléfono",
-        "email": "E-mail"
+        "email": "E-mail",
+        "documentType": "Tipo de documento",
+        "documentNumber": "Número de documento",
+        "coverageTitle": "Editar cobertura médica",
+        "coverageFromClickup": "(del ClickUp)",
+        "contractedServicesTitle": "Editar servicios contratados",
+        "addContractedService": "+ Nuevo servicio",
+        "noContractedServices": "Este paciente todavía no tiene servicios contratados.",
+        "contractedServiceHeading": "Servicio {{n}}",
+        "inactiveBadge": "Dado de baja",
+        "deactivateService": "Dar de baja",
+        "deactivateServiceConfirm": "¿Dar de baja este servicio? Los prestadores asociados también quedan inactivos para nuevas vacantes.",
+        "professionalProfile": "Perfil del profesional buscado",
+        "professionalProfileHint": "Texto libre para uso interno del equipo — no aparece en la vacante pública.",
+        "providersNeeded": "Prestadores necesarios",
+        "authorizedHours": "Horas autorizadas",
+        "weeklyHours": "Horas semanales",
+        "careLocation": "Lugar de atención",
+        "hourlyValue": "Valor por hora",
+        "hourlyValueRedacted": "🔒 Solo admin",
+        "version": "Versión",
+        "startDate": "Fecha de inicio",
+        "contractType": "Tipo de contratación",
+        "taxCondition": "Condición de IVA",
+        "supervisionFrequency": "Frecuencia de supervisión",
+        "guardShift": "Turno de guardia",
+        "providerAgeBand": "Franja etaria solicitada del prestador",
+        "deviceTypes": "Dispositivo(s)",
+        "providersTitle": "Prestadores asociados",
+        "noProviders": "Ningún prestador asociado todavía.",
+        "searchWorkerPlaceholder": "Buscar prestador por nombre…",
+        "associateProvider": "Asociar",
+        "deactivateProvider": "Dar de baja",
+        "providerActive": "Activo",
+        "providerInactive": "Dado de baja",
+        "createServiceError": "No se pudo crear el servicio",
+        "updateServiceError": "No se pudo actualizar el servicio",
+        "searchWorkerError": "No se pudo buscar prestadores. Probá de nuevo.",
+        "deactivateServiceError": "No se pudo dar de baja el servicio",
+        "deactivateProviderError": "No se pudo dar de baja el prestador",
+        "associateProviderError": "No se pudo asociar el prestador",
+        "selectServiceCode": "Servicio",
+        "selectWorker": "Seleccioná un prestador",
+        "discardChangesTitle": "¿Descartar los cambios?",
+        "discardChangesBody": "Tenés cambios sin guardar en este formulario. Si cerrás ahora, se van a perder.",
+        "discardChangesKeepEditing": "Seguir editando",
+        "discardChangesDiscard": "Descartar cambios",
+        "selectPlaceholder": "Seleccioná…",
+        "affiliateHint": "Número de afiliado tal como figura en la credencial de la cobertura.",
+        "versionHint": "Versión del servicio contratado (si la cobertura la identifica por versión, no por fecha).",
+        "requiredField": "Este campo es obligatorio"
       },
       "kanban": {
         "title": "Pacientes — Kanban",
         "toggleList": "Lista",
         "toggleKanban": "Kanban",
         "caseNumber": "Caso",
-        "noName": "Sin nombre",
+        "noName": "—",
         "moveError": "No se pudo mover el paciente",
         "columns": {
           "SOLICITANTE": "Solicitante",
           "ADMISSION": "Admisión",
-          "PENDING_ADMISSION": "Esperando Activación",
-          "ACTIVE": "Activo"
+          "PENDING_ADMISSION": "Esperando financiero",
+          "ACTIVE": "Activo",
+          "DONE": "Activo"
+        },
+        "contactOfResponsible": "Contacto del responsable",
+        "responsible": "Responsable",
+        "dragHint": "Arrastrá una tarjeta para cambiar el estado del paciente.",
+        "moveErrorCodes": {
+          "PATIENT_STATUS_TRANSITION_NOT_ALLOWED": "Ese cambio de estado no está permitido.",
+          "ON_HOLD_REASON_REQUIRED": "Para poner en espera hace falta indicar el motivo."
         }
       },
       "countryLabel": "País",
@@ -2861,13 +3004,14 @@
         "healthInsuranceMemberId": "Número de afiliado",
         "serviceSection": "Servicio requerido",
         "serviceType": "Tipo de servicio",
-        "saveError": "Error al crear el paciente"
+        "saveError": "Error al crear el paciente",
+        "birthDate": "Fecha de nacimiento"
       },
       "errorLoading": "Error al cargar pacientes",
       "noPatients": "No se encontraron pacientes",
       "searchLabel": "Buscar",
       "searchPlaceholder": "Nombre o documento",
-      "attentionLabel": "Estado",
+      "attentionLabel": "Atención",
       "attentionOptions": {
         "all": "Todos",
         "complete": "Completos",
@@ -2876,7 +3020,8 @@
       "reasonLabel": "Motivo",
       "reasonOptions": {
         "all": "Todos",
-        "MISSING_INFO": "Falta información"
+        "MISSING_INFO": "Falta información",
+        "INCOMPLETE_ADMISSION": "Admisión incompleta"
       },
       "specialtyLabel": "Especialidad",
       "specialtyOptions": {
@@ -2914,6 +3059,7 @@
         "specialty": "Especialidad",
         "service": "Servicio",
         "status": "Estado",
+        "registeredAt": "Fecha de registro",
         "view": "Ver"
       },
       "statusBadge": {
@@ -2957,6 +3103,7 @@
         "patientStatusLabel": "Estado del paciente",
         "patientStatus": {
           "EM_ADMISSAO": "En Admisión",
+          "PENDING_ADMISSION": "Esperando financiero",
           "EM_ATENDIMENTO": "En Atendimiento",
           "PACIENTE_COM_ALTA": "Dado de alta",
           "CANCELADO": "Cancelado"
@@ -2976,7 +3123,17 @@
           "responsiblePhone": "Teléfono del Responsable",
           "documentType": "Tipo de documento",
           "documentNumber": "Número del documento",
-          "email": "Email"
+          "email": "Email",
+          "patientEmail": "Email del paciente",
+          "address": "Dirección:",
+          "patientWhatsapp": "WhatsApp del paciente",
+          "phoneMatchWarning": "Este número coincide con el del responsable {{name}}.",
+          "movePhoneToResponsible": "Mover al responsable",
+          "keepPhone": "Mantener",
+          "movePhoneConfirmTitle": "Mover el número al responsable",
+          "movePhoneConfirmBody": "Se va a borrar el WhatsApp del paciente (el del responsable no se toca). ¿Confirmás?",
+          "movePhoneError": "No se pudo mover el número. Probá de nuevo.",
+          "movePhoneSuccess": "Número movido — el WhatsApp del paciente quedó vacío."
         },
         "documentTypes": {
           "CPF": "CPF",
@@ -3002,12 +3159,16 @@
           "racialOrigin": "Origen racial",
           "religion": "Religión",
           "languages": "Idiomas",
-          "ageYears": "{{count}} años"
+          "ageYears": "{{count}} años",
+          "serviceStartDate": "Inicio del servicio"
         },
         "diagnosisCard": {
           "title": "Diagnóstico",
           "cid": "Hipótesis Diagnóstica - CID",
           "details": "Detalles",
+          "generalNotes": "Observaciones generales",
+          "generalNotesCounter": "{{count}}/{{max}} caracteres",
+          "lastEditedBy": "Última edición: {{date}} · {{name}}",
           "priority": "Prioridad",
           "hasFollowUp": "¿Ya tiene acompañamiento?",
           "receivesMoney": "¿Recibe dinero?",
@@ -3020,7 +3181,13 @@
           "comments": "Comentarios",
           "priorityNormal": "Normal",
           "priorityHigh": "Alta",
-          "priorityUrgent": "Urgente"
+          "priorityUrgent": "Urgente",
+          "emergencyInstructions": "Instrucciones de emergencia",
+          "emergencyRedacted": "No tenés permiso para ver las instrucciones de emergencia.",
+          "devices": "Dispositivo",
+          "patologiesUnavailable": "No se pudo cargar el diagnóstico.",
+          "patologiesEmpty": "Sin diagnósticos registrados.",
+          "patologiesPrimaryBadge": "Principal"
         },
         "therapeuticProjectCard": {
           "title": "Proyecto Terapéutico",
@@ -3043,7 +3210,9 @@
           "title": "Equipo Tratante",
           "tableFullName": "Nombre Completo",
           "tablePhoneNumber": "Número de Teléfono",
-          "tableProfile": "Perfil"
+          "tableProfile": "Perfil",
+          "isTeam": "Equipo tratante",
+          "professional": "Profesional"
         },
         "supervisionCard": {
           "title": "Supervisión",
@@ -3073,30 +3242,80 @@
           "providerName": "Nombre de la Cobertura",
           "plan": "Plan del Paciente",
           "emergencyNumbers": "Números de Emergencia",
-          "credential": "Credencial"
+          "credential": "Credencial",
+          "verified": "Cobertura verificada"
         },
         "locationsCard": {
           "title": "Localizaciones",
           "tableName": "Nombre",
           "tableAddress": "Dirección",
           "tableNote": "Observación",
-          "addressGeneric": "Dirección {{index}}"
+          "addressGeneric": "Dirección {{index}}",
+          "tableZone": "Zona / Barrio",
+          "tableCorridor": "Corredor logístico",
+          "tableAccess": "Logística y acceso",
+          "editAddress": "Editar"
         },
         "contractedServicesCard": {
           "title": "Servicios Contratados",
-          "tableDevice": "Dispositivo",
-          "tableProfessional": "Profesional",
-          "tableQuantity": "Cant.",
+          "editButton": "Editar servicios",
+          "tableDevice": "Dispositivo(s)",
+          "tableProfessional": "Servicio",
+          "tableProvidersNeeded": "Prest. necesarios",
+          "tableProvidersActive": "Prest. activos",
+          "tableWeeklyHours": "Hs. semanales",
+          "tableAuthorizedHours": "Hs. autorizadas",
           "tableLocation": "Lugar de Atención",
-          "tableSex": "Sexo",
           "tableValue": "Valor",
+          "tableValueRedacted": "🔒",
           "tableVersion": "Versión",
+          "tableStart": "Inicio",
+          "tableContract": "Contratación",
+          "tableIVA": "IVA",
+          "tableProviderAgeBand": "Franja etaria prestador",
+          "inactiveBadge": "Baja",
           "serviceTypes": {
             "AT": "Acompañante Terapéutico",
             "CAREGIVER": "Cuidador",
             "NURSE": "Enfermería",
             "KINESIOLOGIST": "Kinesiólogo",
             "PSYCHOLOGIST": "Psicólogo"
+          },
+          "careLocationOptions": {
+            "HOME": "Domicilio",
+            "SCHOOL": "Escuela",
+            "INSTITUTION": "Institución",
+            "OTHER": "Otro"
+          },
+          "contractTypeOptions": {
+            "OBRA_SOCIAL": "Obra Social",
+            "PREPAGA": "Prepaga",
+            "PRIVATE": "Privado"
+          },
+          "taxConditionOptions": {
+            "IVA_EXEMPT": "IVA Exento",
+            "IVA_10_5": "IVA 10,5%",
+            "IVA_21": "IVA 21%"
+          },
+          "supervisionFrequencyOptions": {
+            "DAYS_15": "15 Días",
+            "DAYS_30": "30 Días",
+            "DAYS_45": "45 Días",
+            "BIMONTHLY": "Bimestral"
+          },
+          "guardShiftOptions": {
+            "EARLY_MORNING": "Mañana Primera Hora",
+            "MORNING": "Mañana",
+            "EARLY_AFTERNOON": "Tarde Primera Hora",
+            "AFTERNOON": "Tarde",
+            "NIGHT": "Noche",
+            "FULL_DAY": "24 Hs"
+          },
+          "providerAgeBandOptions": {
+            "ANY": "Edad Indistinta",
+            "AGE_20_30": "20 a 30 Años",
+            "AGE_30_45": "30 a 45 Años",
+            "AGE_45_PLUS": "+ 45 Años"
           }
         },
         "matchingCard": {
@@ -3138,7 +3357,134 @@
           "groupsFound": "{{shown}} de {{total}} grupo(s)",
           "usedByPatients": "{{count}} paciente(s) usan este grupo",
           "clear": "Quitar"
+        },
+        "relationshipOptions": {
+          "CHILD": "Hijo / Hija",
+          "PARENT": "Madre / Padre",
+          "SIBLING": "Hermano/a",
+          "NEPHEW": "Sobrino/a",
+          "GRANDCHILD": "Nieto/a",
+          "GUARDIAN": "Tutor/a",
+          "FRIEND": "Amigo/a",
+          "PARTNER": "Pareja",
+          "OTHER": "Otro"
+        },
+        "addressDrawer": {
+          "createTitle": "Nueva localización",
+          "editTitle": "Editar logística",
+          "address": "Dirección",
+          "addressRequired": "Ingresá la dirección",
+          "addressRaw": "Dirección informada (texto libre)",
+          "type": "Tipo",
+          "type_primary": "Principal",
+          "type_secondary": "Secundaria",
+          "type_service": "Servicio",
+          "neighborhood": "Zona / Barrio",
+          "corridor": "Corredor logístico",
+          "accessNotes": "Logística y acceso"
+        },
+        "completeness": {
+          "title": "Para activar falta:",
+          "pendingTitle": "Pendiente para la admisión completa:",
+          "readyTitle": "Listo para activar",
+          "readyBody": "El domicilio y los demás requisitos que bloquean la activación están completos.",
+          "completeTitle": "Admisión completa",
+          "completeBody": "El paciente cumple todos los requisitos de la admisión.",
+          "itemLinkAria": "Ir a completar {{item}}",
+          "items": {
+            "ADDRESS": "Domicilio",
+            "RESPONSIBLE": "Responsable",
+            "COVERAGE": "Cobertura",
+            "CONTRACTED_SERVICE": "Servicio contratado",
+            "CONSENT": "Consentimiento"
+          }
+        },
+        "viewInKanban": "Ver en Kanban"
+      },
+      "statusOptions": {
+        "SOLICITANTE": "Solicitante",
+        "ADMISSION": "En admisión",
+        "PENDING_ADMISSION": "Esperando financiero",
+        "ACTIVE": "Activo",
+        "ON_HOLD": "En espera",
+        "SEARCHING": "Búsqueda",
+        "REPLACEMENT": "Reemplazo",
+        "SUSPENDED": "Suspendido",
+        "DISCHARGED": "Baja"
+      },
+      "onHoldReasonOptions": {
+        "SCHOOL": "Escuela",
+        "INSURER": "Obra social",
+        "OTHER": "Otro"
+      },
+      "deviceTypeOptions": {
+        "HOME": "Domiciliario",
+        "SCHOOL": "Escolar",
+        "INSTITUTIONAL": "Institucional",
+        "INPATIENT": "Internación",
+        "TRANSPORT": "Traslado"
+      },
+      "status": {
+        "title": "Estado",
+        "save": "Cambiar",
+        "reason": "Motivo de la espera",
+        "note": "Nota",
+        "notePlaceholder": "¿Por qué el servicio está en espera?",
+        "noteRedacted": "No tenés permiso para ver la nota.",
+        "transitionNotAllowed": "Transición no permitida: {{from}} → {{to}}",
+        "reasonRequired": "Indicá el motivo de la espera",
+        "error": "No se pudo cambiar el estado",
+        "sources": {
+          "admin_panel": "Panel",
+          "kanban": "Kanban",
+          "insert": "Creación",
+          "backfill": "Carga inicial",
+          "activate": "Activación",
+          "system": "Sistema"
+        },
+        "historyCard": {
+          "title": "Historial de estados",
+          "when": "Cuándo",
+          "from": "De",
+          "to": "A",
+          "source": "Origen",
+          "error": "No se pudo cargar el historial"
         }
+      },
+      "insuranceProviderOptions": {
+        "API": "API",
+        "ACCORD_SALUD": "Accord Salud",
+        "ASISOC": "ASISOC",
+        "AVALIAN": "Avalian",
+        "BANCARIOS": "Bancarios",
+        "CASA": "CASA",
+        "DAS": "DAS",
+        "GALENO": "Galeno",
+        "MHM": "MHM",
+        "MEDICUS": "Medicus",
+        "HTAL_BRITANICO": "Htal Británico",
+        "OSPJN": "OSPJN",
+        "OSPECOM": "OSPECOM",
+        "OSMECON": "OSMECON",
+        "OSDE": "OSDE",
+        "OMINT": "Omint",
+        "OSPOCE": "OSPOCE",
+        "OGORMAN": "O'Gorman",
+        "OSPATCA": "OSPATCA",
+        "OBSBA": "ObSBA",
+        "OSPELSYM": "Ospelsym",
+        "OSTEE_LUZ_MEDICA": "Ostee Luz Médica",
+        "OSDEPYM": "Osdepym",
+        "OTHER": "Otra",
+        "PFA_SUPERINTENDENCIA": "PFA Superintendencia de Bienestar",
+        "PRIVATE": "Privado",
+        "SANIDAD": "SANIDAD",
+        "SWISS_MEDICAL": "Swiss Medical",
+        "UP": "UP",
+        "OSPICHA": "OSPICHA",
+        "USUOMRA": "USUOMRA",
+        "PREVENCION_SALUD": "Prevención Salud",
+        "IOSCOR": "IOSCOR"
       }
     },
     "pendingAddressReview": {
@@ -3259,6 +3605,7 @@
         "collapse": "Contraer"
       },
       "blocked": {
+        "RESEND_COOLDOWN": "Ya se le reenvió a esta persona en esta vacante en las últimas 24 h.",
         "OPTED_OUT": "El trabajador pidió no recibir más mensajes (baja).",
         "COOLDOWN": "El trabajador ya recibió un mensaje en los últimos 3 días.",
         "ALREADY_INVITED": "El trabajador ya fue invitado a esta vacante en los últimos 7 días.",
@@ -3658,6 +4005,558 @@
         "loadError": "No se pudo leer la auditoría.",
         "note": "La auditoría muestra identificadores y metadatos; nunca contenido."
       }
+    },
+    "funnelStageMessages": {
+      "title": "Mensajes por etapa",
+      "subtitle": "Cuando una tarjeta entra en una etapa del Kanban, sale el template elegido (WhatsApp, Twilio). Todo nace apagado: prendé una etapa, medí, después extendé.",
+      "stage": "Etapa",
+      "template": "Mensaje",
+      "enabled": "Activa",
+      "updatedBy": "Última edición",
+      "builtin": "Incorporada: invitación a entrevista (no configurable)",
+      "none": "— sin template —",
+      "save": "Guardar",
+      "saving": "Guardando…",
+      "saved": "Guardado",
+      "error": "No se pudo guardar",
+      "never": "Nunca",
+      "adminOnly": "Solo un administrador puede cambiar esta configuración.",
+      "ineligible": {
+        "CATEGORY": "no es UTILITY (Meta)",
+        "DENY_LIST": "recordatorio/cobranza: bloqueado por etapa",
+        "PLACEHOLDERS": "variables que el sistema no completa",
+        "INACTIVE": "inactivo",
+        "SLOT_MISMATCH": "el texto aprobado pide más datos de los que el sistema completa"
+      },
+      "eligibleHint": "Solo templates aprobados por Meta como UTILITY, sin recordatorios, con variables que el sistema completa (nombre como token, número de caso).",
+      "stages": {
+        "QUALIFIED": "Calificados (Talentum)",
+        "IN_DOUBT": "En duda",
+        "INTERVIEWED": "Entrevistados",
+        "PRESENTED": "Presentados",
+        "HIRED": "Contratados"
+      },
+      "peek": "Ver",
+      "choose": "Elegir mensaje",
+      "change": "Cambiar",
+      "stateOn": "Activa",
+      "stateOff": "Apagada",
+      "picker": {
+        "title": "Mensaje para la etapa «{{stage}}»",
+        "close": "Cerrar",
+        "cancel": "Cancelar",
+        "search": "Buscar por texto o por slug",
+        "noMatch": "Ningún mensaje coincide con la búsqueda.",
+        "eligibleGroup": "Se pueden usar acá ({{count}})",
+        "previewLabel": "Así lo recibe la cuidadora",
+        "pickToPreview": "Elegí un mensaje de la izquierda para verlo acá.",
+        "noText": "Sin texto acá — vive en Twilio",
+        "unsynced": "Este mensaje está aprobado por Meta, pero su texto todavía no se sincronizó acá. Podés elegirlo, pero no podemos mostrarte cómo se lee.",
+        "sampleNote": "Los valores como el nombre y el número de caso los completa el sistema al mover la tarjeta; acá van de ejemplo.",
+        "activate": "Activar esta etapa al guardar",
+        "blockedGroup": "No se pueden usar acá ({{count}})",
+        "currentBlocked": "Esta etapa quedó con un mensaje que ya no se puede usar:",
+        "pickAnother": "Elegí otro mensaje para poder guardar",
+        "notAvailable": "ya no está disponible en la lista de mensajes"
+      }
+    },
+    "presentationInvite": {
+      "title": "Invitación a reunión de presentación",
+      "subtitle": "Un clic en la tarjeta o en la lista de prestadores envía la invitación por WhatsApp; Luz sigue la conversación. Todo nace apagado: configurá, prendé, medí.",
+      "meetLink": "Link de la reunión (Google Meet)",
+      "scheduleLabel": "Horario (texto que va en el mensaje)",
+      "scheduleLabelHint": "Ej.: \"Todos los martes a las 18:00 (hora de Buenos Aires)\"",
+      "template": "Template de WhatsApp",
+      "enabled": "Activa",
+      "save": "Guardar",
+      "saved": "Guardado",
+      "error": "No se pudo guardar",
+      "adminOnly": "Solo un administrador puede modificar esta configuración.",
+      "templateHint": "Solo templates aprobados por Meta como UTILITY, con las variables que el sistema completa (nombre como token, link, horario). El template de esta invitación todavía no fue aprobado: mientras esté inactivo nada sale.",
+      "ineligible": {
+        "INACTIVE": "inactivo (todavía no aprobado)",
+        "CATEGORY": "no es UTILITY",
+        "PLACEHOLDERS": "variables no soportadas",
+        "OPT_OUT_CLAUSE": "sin frase de baja (BAJA / no recibir)"
+      },
+      "stats": {
+        "title": "Últimos 30 días",
+        "queued": "Invitaciones enviadas",
+        "skipped": "Omitidas",
+        "attended": "Asistieron",
+        "noPresenceSource": "Sin fuente de presencia todavía (REQ-17): la asistencia se registra manualmente.",
+        "bySource": "Por origen",
+        "kanban": "Tarjeta",
+        "workers_list": "Lista de prestadores"
+      },
+      "button": "Invitar a reunión de presentación",
+      "sending": "Enviando…",
+      "never": "Sin invitación",
+      "lastAt": "Última invitación: {{date}}",
+      "queued": "Invitación enviada — Luz sigue la conversación",
+      "skip": {
+        "DISABLED_CONFIG": "La invitación está apagada (configurala en Invitación a presentación)",
+        "NO_TEMPLATE": "Sin template configurado",
+        "TEMPLATE_INACTIVE": "Template todavía no aprobado por Meta",
+        "TEMPLATE_NOT_ALLOWED": "Template no permitido",
+        "NO_MEET_LINK": "Falta el link de la reunión",
+        "NO_SCHEDULE_LABEL": "El template usa el horario y no hay horario configurado",
+        "WORKER_NOT_FOUND": "Prestador no encontrado",
+        "COUNTRY_BLOCKED": "Solo Argentina por ahora",
+        "WORKER_DISABLED": "Cuenta desactivada",
+        "OPT_OUT": "La persona pidió no recibir mensajes",
+        "ALREADY_INVITED": "Ya fue invitada en los últimos 7 días",
+        "UNKNOWN": "Omitida",
+        "SIN_VINCULO": "Sin vínculo verificable (ficha importada o sin aceptación de términos) — no se invita",
+        "COUNTRY_MISMATCH": "El teléfono no es de Argentina"
+      },
+      "lastEdit": "Última edición",
+      "by": "por"
+    },
+    "map": {
+      "title": "Mapa",
+      "subtitle": "Quién está cerca de quién: buscá prestadores alrededor de un paciente para invitarlos, o mirá dónde están los pacientes.",
+      "refresh": "Actualizar",
+      "tabs": {
+        "workers": "Prestadores",
+        "patients": "Pacientes"
+      },
+      "steps": {
+        "center": "Desde dónde",
+        "filters": "Filtros",
+        "results": "Resultados",
+        "anchorPatient": "Elegí el paciente",
+        "anchorWorker": "Elegí el prestador"
+      },
+      "centerHint": "O hacé clic en el mapa para mover el centro del radio.",
+      "legend": "Referencias:",
+      "center": {
+        "current": "Centro: {{label}}",
+        "initial": "punto inicial",
+        "marked": "punto marcado en el mapa",
+        "backToPatient": "Volver a {{name}}",
+        "backToInitial": "Volver al punto inicial",
+        "backToAnchor": "Volver a {{name}}"
+      },
+      "searching": "Buscando…",
+      "centerHere": "Centrar aquí",
+      "viewWorker": "Ver perfil",
+      "viewPatient": "Ver ficha",
+      "closePopup": "Cerrar",
+      "selectedNoLocation": "{{name}} no tiene ubicación registrada — no aparece en el mapa.",
+      "country": "País",
+      "radius": "Radio",
+      "centerOnPatient": {
+        "label": "Centrar en paciente",
+        "placeholder": "Centrar en un paciente…",
+        "search": "Buscar paciente…"
+      },
+      "docs": {
+        "label": "Documentación",
+        "all": "Todos",
+        "complete": "Documentación completa",
+        "incomplete": "Registro incompleto"
+      },
+      "profession": {
+        "label": "Profesión",
+        "all": "Todas las profesiones",
+        "unknown": "Sin profesión",
+        "AT": "AT",
+        "CAREGIVER": "Cuidador",
+        "NURSE": "Enfermería",
+        "KINESIOLOGIST": "Kinesiología",
+        "PSYCHOLOGIST": "Psicología"
+      },
+      "workerStatus": {
+        "REGISTERED": "Documentación completa",
+        "INCOMPLETE_REGISTER": "Registro incompleto",
+        "DISABLED": "Dado de baja"
+      },
+      "patientStatus": {
+        "label": "Estado",
+        "all": "Todos los estados",
+        "ACTIVE": "Activo",
+        "ADMISSION": "En admisión",
+        "PENDING_ADMISSION": "Esperando financiero",
+        "SOLICITANTE": "Solicitante",
+        "ON_HOLD": "En espera",
+        "SEARCHING": "Búsqueda",
+        "REPLACEMENT": "Reemplazo",
+        "SUSPENDED": "Suspendido",
+        "DISCHARGED": "Alta"
+      },
+      "onlyOpenVacancies": "Solo con vacantes abiertas",
+      "openVacancies": "{{count}} vacante(s) abierta(s)",
+      "loading": "Cargando…",
+      "inRadius": "en {{km}} km",
+      "withoutCoordinates": "{{count}} sin ubicación",
+      "showingFirst": "mostrando los primeros {{shown}} de {{total}} — achicá el radio",
+      "noLocation": "sin ubicación",
+      "empty": "Nadie en este radio. Probá un radio mayor o mové el centro.",
+      "unavailable": "El mapa no está disponible (sin clave de Google Maps). La lista sigue funcionando.",
+      "status": {
+        "unknown": "Sin estado"
+      },
+      "centerOnWorker": {
+        "label": "Centrar en prestador",
+        "placeholder": "Centrar en un prestador…",
+        "search": "Buscar prestador…"
+      },
+      "anchorEmpty": {
+        "workersTitle": "Elegí un paciente para empezar",
+        "workersHint": "El mapa muestra los prestadores alrededor del paciente que elijas. Los filtros y la lista aparecen después.",
+        "patientsTitle": "Elegí un prestador para empezar",
+        "patientsHint": "El mapa muestra los pacientes alrededor del prestador que elijas. Los filtros y la lista aparecen después."
+      },
+      "anchorError": "No se pudo cargar la lista. Reintentá en unos segundos.",
+      "anchorLoading": "Buscando…",
+      "anchorTruncated": "Hay más de los que entran en esta lista: escribí el nombre para filtrar.",
+      "corridor": {
+        "loading": "Buscando recorrido…",
+        "error": "No se pudo calcular el recorrido.",
+        "noRoute": "No hay recorrido en transporte público entre estos dos puntos.",
+        "noCoverage": "Falta la ubicación de uno de los dos — no podemos calcular el recorrido.",
+        "direct": "directo",
+        "transfers": "{{count}} combinación(es)",
+        "total": "{{count}} min puerta a puerta",
+        "walkLeg": "caminar {{min}} min ({{meters}} m)",
+        "straight": "en línea recta: ~{{count}} cuadras"
+      }
+    },
+    "templateCatalog": {
+      "title": "Plantillas de mensajes",
+      "subtitle": "Los mensajes que la plataforma puede enviar por WhatsApp y en qué estado los tiene Meta.",
+      "readOnlyHint": "Solo lectura. Dónde se usa cada mensaje se decide en Mensajes por etapa.",
+      "message": "Mensaje",
+      "metaStatus": "Estado en Meta",
+      "usedIn": "Se usa en",
+      "checkedAt": "Última verificación",
+      "never": "Nunca",
+      "neverChecked": "Sin verificar",
+      "noText": "Sin texto sincronizado",
+      "unused": "Sin uso",
+      "empty": "Todavía no hay plantillas en el catálogo.",
+      "error": "No pudimos cargar el catálogo.",
+      "status": {
+        "APPROVED": "Aprobada",
+        "PENDING": "En revisión",
+        "REJECTED": "Rechazada",
+        "PAUSED": "Pausada por Meta",
+        "DISABLED": "Deshabilitada por Meta",
+        "IN_APPEAL": "En apelación",
+        "LIMIT_EXCEEDED": "Límite excedido",
+        "ARCHIVED": "Archivada",
+        "PENDING_DELETION": "Pendiente de borrado",
+        "DELETED": "Borrada"
+      },
+      "reason": {
+        "ABUSIVE_CONTENT": "Contenido abusivo",
+        "CATEGORY_NOT_AVAILABLE": "Categoría no disponible",
+        "INCORRECT_CATEGORY": "Categoría incorrecta",
+        "INVALID_FORMAT": "Formato inválido",
+        "NONE": "Sin motivo informado",
+        "PROMOTIONAL": "Contenido promocional",
+        "SCAM": "Detectada como estafa",
+        "TAG_CONTENT_MISMATCH": "El idioma o la categoría no coinciden con el texto"
+      },
+      "ineligible": {
+        "generic": "sin motivo específico",
+        "CATEGORY": "no es UTILITY",
+        "DENY_LIST": "es un recordatorio",
+        "PLACEHOLDERS": "usa datos que el sistema no completa",
+        "SLOT_MISMATCH": "las variables no coinciden con el texto aprobado",
+        "INACTIVE": "está inactiva",
+        "OPT_OUT_CLAUSE": "le falta la cláusula de baja"
+      },
+      "filter": {
+        "all": "Todas",
+        "approved": "Aprobadas",
+        "pending": "En revisión",
+        "off": "Desactivadas por Meta",
+        "rejected": "Rechazadas",
+        "unchecked": "Sin verificar",
+        "other": "Otros estados",
+        "missing": "Falta una versión",
+        "draft": "Borradores"
+      },
+      "filterEmpty": "Ninguna plantilla en este estado.",
+      "syncAge": {
+        "now": "Verificado recién",
+        "min": "Verificado hace {{count}} min",
+        "hour": "Verificado hace {{count}} h",
+        "day": "Verificado hace {{count}} d"
+      },
+      "metaDetail": "Qué dijo Meta",
+      "variaveis": "Variables que usa",
+      "semVariaveis": "Ninguna — texto fijo",
+      "variaveisPosicionais": "Son posicionales ({{1}}, {{2}}…): el sistema no sabe qué poner en cada una. Por eso no sirve para mensajes por etapa.",
+      "variaveisNomeadas": "Con nombre: el sistema las completa solo.",
+      "reasonLabel": "Motivo del rechazo",
+      "porQueNaoServe": "Por qué no sirve para etapas",
+      "novaMensagem": "Registrar mensaje nuevo",
+      "espanol": "Español",
+      "portugues": "Português",
+      "criarVersao": "Crear versión",
+      "idiomaNaoRegistrado": "Idioma no registrado: {{slugs}}",
+      "criarVersaoEn": {
+        "es-AR": "Crear versión en español",
+        "pt-BR": "Crear versión en português"
+      },
+      "etapasCurto": "Etapas",
+      "metaSinDetalle": "Meta no dio más detalle",
+      "timeline": {
+        "criado": "Borrador creado",
+        "enviado": "Enviada a Meta",
+        "aprovado": "Meta la aprobó",
+        "recusado": "Meta la rechazó",
+        "pausado": "Meta la pausó",
+        "desligado": "Meta la deshabilitó",
+        "aguardando": "Esperando a Meta",
+        "depois": {
+          "min": "{{count}} min después",
+          "h": "{{count}} h después",
+          "d": "{{count}} días después"
+        },
+        "veioDaMeta": "vino de Meta, sin editar",
+        "semHistorico": "No tenemos historial de esta plantilla: llegó por la sincronización con Twilio y Meta todavía no nos respondió."
+      },
+      "queFazer": {
+        "titulo": "Qué podés hacer",
+        "duplicar": {
+          "titulo": "Duplicar y corregir",
+          "detalhe": "Copiamos el texto a un borrador nuevo para que lo edites."
+        },
+        "archivar": {
+          "titulo": "Archivar",
+          "detalhe": "Sale del listado. Nada la envía."
+        },
+        "metaExplicou": "Meta explicó el motivo, así que no hace falta que adivinemos.",
+        "metaNaoExplicou": "Meta no mandó explicación. El código de arriba es todo lo que llegó."
+      },
+      "duplicarCorrigir": "Duplicar y corregir",
+      "verEnTwilio": "Ver el detalle en Twilio",
+      "voltarCatalogo": "Volver al catálogo",
+      "carregando": "Cargando…",
+      "naoEncontrada": "No encontramos ninguna plantilla con el identificador «{{slug}}». Puede haber salido del catálogo.",
+      "idiomaNaoRegistradoCurto": "Idioma no registrado",
+      "acoes": "Acciones",
+      "rascunhoSemTexto": "Sin texto todavía — borrador",
+      "rascunho": {
+        "titulo": "Esto es un borrador"
+      }
+    },
+    "templateDrafts": {
+      "title": "Nueva plantilla",
+      "subtitle": "Guardá el borrador cuantas veces quieras. Recién cuando la envíes a Meta el texto queda fijo.",
+      "avisoNaoEnvia": "Guardar NO envía nada. El envío a Meta es un paso aparte, con confirmación — y una vez enviado, el nombre queda ocupado para siempre.",
+      "salvoNaoEnviado": "Guardado. Todavía NO enviado para autorización.",
+      "listaTitulo": "Borradores guardados",
+      "carregando": "Cargando…",
+      "vazio": "Todavía no hay borradores. Escribí el primero arriba.",
+      "salvar": "Guardar borrador",
+      "salvarEdicao": "Guardar cambios",
+      "cancelar": "Cancelar",
+      "editar": "Editar",
+      "arquivar": "Archivar",
+      "preview": "Así lo recibe la cuidadora",
+      "previewVazio": "Escribí el mensaje para ver la vista previa.",
+      "restante": "Quedan {{n}} caracteres",
+      "slugFicaraComo": "Se va a guardar como: {{slug}}",
+      "erroCarregar": "No pudimos cargar los borradores.",
+      "erroSalvar": "No pudimos guardar. Intentá de nuevo.",
+      "erroArquivar": "No pudimos archivar el borrador.",
+      "campo": {
+        "name": "Nombre",
+        "slug": "Identificador",
+        "body": "Mensaje",
+        "category": "Categoría",
+        "language": "Idioma",
+        "nombre": "Nombre",
+        "nombreAjuda": "El prefijo de país lo ponemos nosotros, uno por idioma. Solo minúsculas, números y guiones bajos.",
+        "idiomas": "Idiomas",
+        "idiomasAjuda": "Meta autoriza cada idioma por separado, y el idioma de cada uno queda fijo al enviarlo.",
+        "idiomaTravado": "El idioma de un borrador ya guardado no se cambia: creá la otra versión desde el catálogo.",
+        "bodyPlaceholder": "Escribí acá el mensaje que va a recibir la cuidadora."
+      },
+      "idioma": {
+        "es-AR": "Español (Argentina)",
+        "pt-BR": "Portugués (Brasil)"
+      },
+      "idiomaCorto": {
+        "es-AR": "español",
+        "pt-BR": "portugués"
+      },
+      "categoria": {
+        "MARKETING": "Marketing",
+        "UTILITY": "Utilidad",
+        "AUTHENTICATION": "Autenticación"
+      },
+      "conflito": {
+        "slug_em_uso_por_template_vivo": "Ya existe un mensaje activo con ese identificador.",
+        "slug_em_uso_por_rascunho": "Ya existe otro borrador con ese identificador.",
+        "versao_desatualizada": "Otra persona guardó este borrador mientras lo editabas. Recargá para ver la versión actual.",
+        "generico": "No se pudo guardar por un conflicto."
+      },
+      "regra": {
+        "generica": "Ese valor no es válido.",
+        "name": {
+          "obrigatorio": "El nombre es obligatorio."
+        },
+        "slug": {
+          "obrigatorio": "El identificador es obligatorio.",
+          "formato": "Solo minúsculas, números y guion bajo."
+        },
+        "category": {
+          "invalida": "Categoría no válida."
+        },
+        "language": {
+          "invalido": "Idioma no válido."
+        },
+        "body": {
+          "obrigatorio": "El mensaje es obligatorio.",
+          "muito_longo": "El mensaje pasa de 1024 caracteres.",
+          "placeholder_no_inicio": "El mensaje no puede empezar con una variable.",
+          "placeholder_no_fim": "El mensaje no puede terminar con una variable.",
+          "placeholders_adjacentes": "Dos variables no pueden ir pegadas: tiene que haber texto entre ellas.",
+          "placeholder_posicional": "Usá variables con nombre ({{worker_name}}), no {{1}}: con números el sistema no sabe qué poner.",
+          "variavel_desconhecida": "Esa variable no existe. Usá una de las disponibles.",
+          "sem_clausula_de_baja": "Falta la cláusula de baja. Es obligatoria en Argentina (Decreto 1558/2001, art. 27). Podés seguir sin ella, pero quedará registrado que faltaba.",
+          "sem_caminho_de_saida": "Un mensaje de difusión tiene que decir cómo dejar de recibirlo. Meta rechaza los que no lo dicen.",
+          "clausula_de_baja_nao_reconhecida": "El mensaje ofrece una salida, pero la palabra que pide responder no es una que el sistema reconozca. Quien conteste eso NO va a ser dado de baja. Usá una de estas: BAJA, PARAR, CANCELAR, SALIR, STOP.",
+          "variaveis_demais": "Más de 10 variables. Meta no acepta tantas.",
+          "variavel_com_simbolo": "La variable no puede llevar #, $ ni %."
+        }
+      },
+      "enviar": "Enviar a autorización",
+      "enviado": "Enviado a Meta. Ahora esperá la autorización — vas a verla en Plantillas.",
+      "duplicar": "Duplicar y corregir",
+      "erroEnviar": "No pudimos enviar. Intentá de nuevo.",
+      "erroDuplicar": "No pudimos duplicar el borrador.",
+      "variaveisDisponiveis": "Variables disponibles: {{lista}}",
+      "ultimaFalha": "Último intento falló: {{erro}}",
+      "estado": {
+        "draft": "Borrador — todavía no enviado",
+        "submitted": "Enviado a Meta — esperando autorización"
+      },
+      "confirmar": {
+        "titulo": "Enviar a Meta para autorización",
+        "subtitulo": "Después de este paso el texto queda fijo.",
+        "nome": {
+          "forte": "El nombre queda ocupado para siempre.",
+          "resto": "En la cuenta de WhatsApp, aunque Meta rechace el mensaje."
+        },
+        "edicao": {
+          "forte": "No vas a poder editar el texto.",
+          "resto": "Para cambiar una palabra hay que crear otra plantilla y volver a esperar."
+        },
+        "idiomaFixo": {
+          "forte": "El idioma queda fijo para siempre,",
+          "resto": "incluso antes de la respuesta."
+        },
+        "prazo": {
+          "forte": "Meta suele responder en un día hábil.",
+          "resto": "Hasta entonces la plantilla no puede enviarse a nadie."
+        },
+        "soUmIdioma": {
+          "forte": "Enviás solo el {{idioma}}.",
+          "resto": "La otra versión queda en borrador y se envía aparte, cuando la termines."
+        },
+        "confirmoLeitura": "Leí el texto y confirmo que es el que quiero enviar.",
+        "autoria": "Va a quedar registrado que la enviaste vos.",
+        "sim": "Enviar a Meta",
+        "nao": "Volver a editar"
+      },
+      "indisponivel": {
+        "flag_desligada": "El envío a Meta está desactivado en el servidor. Hay que activarlo antes de usar este botón.",
+        "sem_credencial": "Faltan las credenciales de Twilio en el servidor. Sin ellas no se puede enviar."
+      },
+      "envioErro": {
+        "ja_submetido": "Este mensaje ya fue enviado antes.",
+        "draft_nao_encontrado": "El borrador ya no existe.",
+        "twilio_falhou": "Twilio rechazó el envío. Mirá el detalle en el borrador.",
+        "ja_submetido_use_duplicar": "Ya fue enviado: duplicá y corregí en lugar de editar."
+      },
+      "veredito": {
+        "APPROVED": "Aprobada por Meta ✓",
+        "REJECTED": "Rechazada por Meta",
+        "PAUSED": "Pausada por Meta",
+        "DISABLED": "Deshabilitada por Meta",
+        "PENDING": "En revisión de Meta",
+        "IN_APPEAL": "En apelación"
+      },
+      "voltarCatalogo": "← Volver al catálogo",
+      "avisos": {
+        "titulo": "Se guardó, pero falta algo:"
+      },
+      "tipo": {
+        "pergunta": "¿Qué tipo de mensaje es?",
+        "ajuda": "Define la categoría ante Meta y qué datos podés insertar. No configurás nada técnico a mano.",
+        "aviso": {
+          "titulo": "Aviso del proceso",
+          "detalhe": "Le cuenta algo que ya pasó"
+        },
+        "invitacion": {
+          "titulo": "Invitación",
+          "detalhe": "Le pide que haga algo"
+        },
+        "difusion": {
+          "titulo": "Difusión",
+          "detalhe": "Novedades y campañas"
+        }
+      },
+      "inserir": "Insertar:",
+      "variavel": {
+        "worker_name": "Nombre de la cuidadora",
+        "name": "Nombre",
+        "case_number": "Nº de caso"
+      },
+      "faltaOutroIdioma": "Falta el texto en el otro idioma",
+      "asiLoRecibe": "Así lo recibe la cuidadora",
+      "datosDeEjemplo": "Los datos son de ejemplo. Nunca usamos una cuidadora real para la vista previa.",
+      "revisarEnviar": "Revisar y enviar →",
+      "salveAntesDeEnviar": "Guardá el borrador antes de poder enviarlo a Meta.",
+      "checklist": {
+        "titulo": "Antes de enviar a Meta",
+        "fonte": "Reglas de Meta y de la plataforma. Las verificamos acá para que no esperes un día a que te rechacen.",
+        "categoria": {
+          "titulo": "Categoría {{categoria}}",
+          "ok": "La elegimos por vos, a partir del tipo de mensaje.",
+          "falta": "La elegimos por vos, a partir del tipo de mensaje."
+        },
+        "variaveis": {
+          "titulo": "El sistema sabe completar las variables",
+          "ok": "Todas las que usaste se llenan solas al enviar.",
+          "falta": "Hay una variable que no sabemos completar: el envío fallaría."
+        },
+        "bordas": {
+          "titulo": "No empieza ni termina con una variable",
+          "ok": "Meta rechaza los textos que sí.",
+          "falta": "Meta rechaza los textos que empiezan o terminan con una variable."
+        },
+        "nome": {
+          "titulo": "Nombre libre en los dos idiomas",
+          "ok": "Ningún otro mensaje usa ese nombre.",
+          "falta": "Revisá el nombre: falta o tiene caracteres que no aceptamos."
+        },
+        "tamanho": {
+          "titulo": "{{n}} de {{limite}} caracteres",
+          "ok": "Cabe con holgura.",
+          "falta": "Pasaste el límite: Meta no acepta el texto así."
+        },
+        "clausulaBaja": {
+          "titulo": "Cláusula de baja",
+          "ok": "El texto ofrece una salida que el sistema honra.",
+          "falta": "Obligatoria en Argentina. Sin ella podés guardar y enviar igual, pero conviene agregarla."
+        },
+        "outroIdioma": {
+          "titulo": "Falta el texto en el otro idioma",
+          "ok": "Las dos versiones están escritas.",
+          "falta": "Podés enviar solo este idioma ahora y el otro después."
+        }
+      },
+      "inserirClausula": "Cláusula de baja",
+      "clausulaDeBaja": "\n\nRespondé BAJA si no querés recibir más mensajes.",
+      "copiarParaTraduzir": "copiar el español para traducir"
     }
   },
   "publicVacancy": {
@@ -3672,7 +4571,6 @@
       "F": "Mujer",
       "BOTH": "Indistinto"
     },
-    "diagnosticHypothesis": "Hipótesis Diagnóstica - CIE:",
     "jobDescription": "Descripción del trabajo:",
     "characteristics": "Características:",
     "ageRange": "Rango Etario:",

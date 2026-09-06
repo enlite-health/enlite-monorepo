@@ -17,6 +17,12 @@ import { authDouble, permissionsDouble } from '@modules/identity/interfaces/midd
 import type { AdminPatientsController } from '../../controllers/AdminPatientsController';
 import type { AdminPatientChatIdsController } from '../../controllers/AdminPatientChatIdsController';
 import type { AdminPatientChatRolesController } from '../../controllers/AdminPatientChatRolesController';
+import type { AdminPatientsMapController } from '../../controllers/AdminPatientsMapController';
+import type { AdminPatientAddressesController } from '../../controllers/AdminPatientAddressesController';
+import type { AdminInsuranceProvidersController } from '../../controllers/AdminInsuranceProvidersController';
+import type { AdminPatientContractedServicesController } from '../../controllers/AdminPatientContractedServicesController';
+import type { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
+import type { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
 
 jest.mock('@shared/logging', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -51,22 +57,40 @@ const ESPERADO: Record<string, string> = {
   'POST /patient-chat-roles': 'patient:write',
   'PATCH /patient-chat-roles/:code': 'patient:write',
   'DELETE /patient-chat-roles/:code': 'patient:write',
+  // Catálogo de coberturas (mig 311, spec 012): mesma régua dos papéis de chat.
+  'GET /catalogs/insurance-providers': 'patient:read',
+  'POST /catalogs/insurance-providers': 'patient:write',
   'GET /chat-groups': 'messaging:read',
   'GET /patients/stats': 'patient:read',
   'GET /patients/funnel': 'patient:read',
   'GET /patients/chat-map': 'patient:read',
+  // Mapa de pacientes (REQ-04): POST com corpo, leitura.
+  'POST /patients/map': 'patient:read',
   'GET /patients': 'patient:read',
   'POST /patients': 'patient:write',
   'GET /patients/:id': 'patient:read',
   'GET /patients/:patientId/addresses': 'patient:read',
   'POST /patients/:patientId/addresses': 'patient:write',
+  'PATCH /patients/:patientId/addresses/:addressId': 'patient:write',
   'GET /patients/:id/vacancies': 'vacancy:read',
   'PUT /patients/:id/status': 'patient:write',
+  'GET /patients/:id/status-history': 'patient:read',
   'POST /patients/:id/activate': 'patient:write',
   'GET /patients/:id/chat-candidates': 'messaging:read',
   'PUT /patients/:id/chat-ids': 'patient:write',
   'PATCH /patients/:id/test-flag': 'patient:write',
   'DELETE /patients/:id': 'patient:delete',
+  // Serviço contratado (spec 013), diagnósticos CID-11 (spec 016) e terminologia —
+  // sob a célula GROSSA no sync main→stage; o fatiamento por container é a D286.
+  'GET /patients/:id/contracted-services': 'patient:read',
+  'POST /patients/:id/contracted-services': 'patient:write',
+  'PATCH /patients/:id/contracted-services/:sid': 'patient:write',
+  'POST /patients/:id/contracted-services/:sid/providers': 'patient:write',
+  'PATCH /patients/:id/contracted-services/:sid/providers/:pid': 'patient:write',
+  'GET /patients/:id/diagnoses': 'patient:read',
+  'POST /patients/:id/diagnoses': 'patient:write',
+  'PATCH /patients/:id/diagnoses/:did': 'patient:write',
+  'GET /terminology/search': 'patient:read',
   'PATCH /patients/:id/:section': 'patient:write',
 };
 
@@ -89,6 +113,7 @@ function pecas() {
     updatePatientTestFlag: responde('updatePatientTestFlag'),
     purgeTestPatient: responde('purgeTestPatient'),
     updatePatientSection: responde('updatePatientSection'),
+    getPatientStatusHistory: responde('getPatientStatusHistory'),
   } as unknown as AdminPatientsController;
 
   const chatIds = {
@@ -105,13 +130,39 @@ function pecas() {
     delete: responde('chatRoles.delete'),
   } as unknown as AdminPatientChatRolesController;
 
-  return { controller, chatIds, chatRoles, auth: authDouble(), permissions: permissionsDouble() };
+  const map = { getMapPoints: responde('getMapPoints') } as unknown as AdminPatientsMapController;
+  const addresses = { updatePatientAddress: responde('updatePatientAddress') } as unknown as AdminPatientAddressesController;
+  const insurance = {
+    list: responde('providers.list'),
+    create: responde('providers.create'),
+  } as unknown as AdminInsuranceProvidersController;
+  const contracted = {
+    list: responde('cs.list'),
+    create: responde('cs.create'),
+    update: responde('cs.update'),
+    associateProvider: responde('cs.associateProvider'),
+    updateProvider: responde('cs.updateProvider'),
+  } as unknown as AdminPatientContractedServicesController;
+  const diagnoses = {
+    list: responde('diag.list'),
+    create: responde('diag.create'),
+    update: responde('diag.update'),
+  } as unknown as AdminPatientDiagnosesController;
+  const terminology = { search: responde('terminology.search') } as unknown as AdminTerminologySearchController;
+
+  return {
+    controller, chatIds, chatRoles, map, addresses, insurance, contracted, diagnoses, terminology,
+    auth: authDouble(), permissions: permissionsDouble(),
+  };
 }
 
 /** O router com TODOS os dublês — o default dos testes. */
 function build() {
-  const { controller, chatIds, chatRoles, auth, permissions } = pecas();
-  return createAdminPatientsRoutes(controller, auth, permissions, chatIds, chatRoles);
+  const p = pecas();
+  return createAdminPatientsRoutes(
+    p.controller, p.auth, p.permissions, p.chatIds, p.chatRoles,
+    p.map, p.addresses, p.insurance, p.contracted, p.diagnoses, p.terminology,
+  );
 }
 
 describe('createAdminPatientsRoutes', () => {
@@ -129,8 +180,8 @@ describe('createAdminPatientsRoutes', () => {
     expect(declarado).toEqual(ESPERADO);
   });
 
-  it('a família declara exatamente 21 rotas — a conta que saiu do PENDING_DECLARATIONS', () => {
-    expect(scanExpressRouter(build())).toHaveLength(21);
+  it('a família declara exatamente 35 rotas — as 21 do PENDING_DECLARATIONS + as 14 que o main trouxe (specs 011-016, mapa)', () => {
+    expect(scanExpressRouter(build())).toHaveLength(35);
   });
 
   it('a família é `admin.patients` — o nome que PERMISSION_ENFORCED_ROUTES liga', () => {
@@ -180,6 +231,20 @@ describe('createAdminPatientsRoutes', () => {
     ['patch', '/api/admin/patient-chat-roles/FAMILIAR', 'chatRoles.update'],
     ['delete', '/api/admin/patient-chat-roles/FAMILIAR', 'chatRoles.delete'],
     ['get', '/api/admin/chat-groups', 'getChatGroups'],
+    ['get', '/api/admin/catalogs/insurance-providers', 'providers.list'],
+    ['post', '/api/admin/catalogs/insurance-providers', 'providers.create'],
+    ['post', '/api/admin/patients/map', 'getMapPoints'],
+    ['get', '/api/admin/patients/abc-123/status-history', 'getPatientStatusHistory'],
+    ['patch', '/api/admin/patients/abc-123/addresses/addr-1', 'updatePatientAddress'],
+    ['get', '/api/admin/patients/abc-123/contracted-services', 'cs.list'],
+    ['post', '/api/admin/patients/abc-123/contracted-services', 'cs.create'],
+    ['patch', '/api/admin/patients/abc-123/contracted-services/s1', 'cs.update'],
+    ['post', '/api/admin/patients/abc-123/contracted-services/s1/providers', 'cs.associateProvider'],
+    ['patch', '/api/admin/patients/abc-123/contracted-services/s1/providers/p1', 'cs.updateProvider'],
+    ['get', '/api/admin/patients/abc-123/diagnoses', 'diag.list'],
+    ['post', '/api/admin/patients/abc-123/diagnoses', 'diag.create'],
+    ['patch', '/api/admin/patients/abc-123/diagnoses/d1', 'diag.update'],
+    ['get', '/api/admin/terminology/search', 'terminology.search'],
   ] as const)('%s %s → %s', async (metodo, caminho, esperado) => {
     const app = express();
     app.use(express.json());
@@ -192,6 +257,15 @@ describe('createAdminPatientsRoutes', () => {
 
   // Os dois casos de captura que o cabeçalho do router chama de contrato:
   // 'stats' e 'test-flag' seriam engolidos se a ordem mudasse.
+  it("GET /patients/map não é o mapa (é POST): 'map' cai em /patients/:id", async () => {
+    const app = express();
+    app.use('/api/admin', build());
+
+    const res = await request(app).get('/api/admin/patients/map').expect(200);
+
+    expect(res.body).toMatchObject({ m: 'getPatientById', id: 'map' });
+  });
+
   it("'stats' não é capturado como :id", async () => {
     const app = express();
     app.use('/api/admin', build());

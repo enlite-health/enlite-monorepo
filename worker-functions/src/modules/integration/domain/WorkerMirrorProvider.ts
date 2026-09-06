@@ -14,6 +14,16 @@ import type { WorkerMirrorRecord } from './WorkerMirrorRecord';
 export interface WorkerMirrorUpsertResult {
   /** ID externo atribuído pelo provider (ex: ID numérico do AnaCare) */
   externalId: string;
+  /**
+   * Endereço ALTERNATIVO usado para criar o registro, quando o e-mail real do
+   * worker foi recusado por já pertencer a outro profissional no sistema
+   * externo. `undefined`/`null` = criado com o e-mail real.
+   *
+   * Sobe até o caller porque a marca não pode viver só do lado do parceiro: é
+   * ela que torna a fila CONTÁVEL do nosso lado e avisa a coordenação de que
+   * aquele cadastro precisa de resolução (ver `workers.ana_care_email_alias`).
+   */
+  emailAliasUsed?: string | null;
 }
 
 export interface WorkerMirrorProvider {

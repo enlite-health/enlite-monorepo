@@ -46,8 +46,6 @@ export interface PublicVacancyDetail {
   patient_zone: string | null;
   country: string | null;
   created_at: string;
-  /** Free-text pathology/diagnosis description (may contain literal `\n`). */
-  pathologies?: string | null;
   /** Device/service type enum values. Full profession vocabulary:
    *  `AT | CAREGIVER | NURSE | KINESIOLOGIST | PSYCHOLOGIST` (mirrors
    *  worker-functions src/modules/worker/domain/enums/Profession.ts —
@@ -119,6 +117,10 @@ export interface AdminVacancyDetail {
   meet_datetime_2: string | null;
   meet_link_3: string | null;
   meet_datetime_3: string | null;
+  /** Slot RECORRENTE semanal da reunión de presentación (mig 291): 0=domingo … 6=sábado; hora LOCAL da vaga. */
+  meet_recurring_weekday?: number | null;
+  meet_recurring_time?: string | null;
+  meet_recurring_link?: string | null;
   social_short_links: Record<string, string> | null;
   encuadres: Array<Encuadre>;
   publications: Array<{

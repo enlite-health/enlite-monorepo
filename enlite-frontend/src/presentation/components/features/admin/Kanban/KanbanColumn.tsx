@@ -18,6 +18,13 @@ interface KanbanColumnProps {
   collapsed?: boolean;
   /** Alterna colapsar/expandir. Sem esta prop o botão de colapsar não aparece. */
   onToggleCollapse?: () => void;
+  /**
+   * Classe de largura da coluna expandida. Default `w-[280px]`, dimensionado
+   * para o funil de vagas (9 colunas — rola de qualquer jeito). Board com
+   * poucas colunas passa um valor menor para caber sem rolagem. Continua sendo
+   * largura FIXA: o motivo de não ser flex está no comentário do widthClass.
+   */
+  widthClass?: string;
   children: React.ReactNode;
 }
 
@@ -31,6 +38,7 @@ export function KanbanColumn({
   dragActive = false,
   collapsed = false,
   onToggleCollapse,
+  widthClass: expandedWidth = 'w-[280px]',
   children,
 }: KanbanColumnProps) {
   const { t } = useTranslation();
@@ -56,7 +64,7 @@ export function KanbanColumn({
   // e o mouse cair num lugar não-intuitivo. A transição de width dá o efeito fluido.
   const widthClass = collapsed
     ? 'w-[52px] flex-none'
-    : 'w-[280px] flex-none';
+    : `${expandedWidth} flex-none`;
 
   const countBadge = (
     <span

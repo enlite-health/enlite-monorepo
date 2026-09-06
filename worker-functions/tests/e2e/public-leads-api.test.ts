@@ -33,6 +33,9 @@ describe('Public Leads API (D108/F0)', () => {
     requesterType: 'patient',
     email: 'lead-e2e@example.com',
     phone: '+5491100009999',
+    // D249: nome completo é obrigatório e precisa de dois termos. Sem isto o
+    // corpo "válido" desta suíte deixou de ser válido.
+    name: 'Lead E2e',
     country: 'AR',
     consent: true,
   };

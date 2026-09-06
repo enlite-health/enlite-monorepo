@@ -447,6 +447,74 @@ describe('PatientChatIdsCard', () => {
 
     await waitFor(() => expect(screen.queryByTestId('chat-ids-drawer')).toBeNull(), { timeout: 2000 });
   });
+
+  it('candidatesByRole reordena as options DAQUELE papel (desempate por palavra do catálogo)', async () => {
+    getPatientChatCandidates.mockResolvedValue({
+      candidates: CANDIDATES,
+      candidatesByRole: { FAMILY: [PROVIDERS, FAMILY] },
+      totalGroups: 774,
+    });
+    render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+    await screen.findByTestId('chat-id-FAMILY-value');
+    fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
+    fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
+    await waitFor(() => expect(screen.getByTestId('chat-ids-candidates')).toBeInTheDocument());
+
+    const select = screen.getByTestId('chat-ids-FAMILY-select') as HTMLSelectElement;
+    const values = Array.from(select.options).map((o) => o.value).filter(Boolean);
+    expect(values.slice(0, 2)).toEqual([PROVIDERS, FAMILY]);
+  });
+
+  // ── Spec 014 US-D4 (lex D4 AUTORIZADO): drawer não perde trabalho ──────────────────────
+  describe('confirmação ao fechar com mudanças (US-D4)', () => {
+    it('SEM mudança → backdrop fecha direto, sem confirmação', async () => {
+      render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+      await screen.findByTestId('chat-id-FAMILY-value');
+      fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
+      fireEvent.click(screen.getByTestId('chat-ids-backdrop'));
+      expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
+    });
+
+    it('COM mudança (escolher um chat) → backdrop abre confirmação; "Seguir editando" mantém a escolha', async () => {
+      render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+      await screen.findByTestId('chat-id-FAMILY-value');
+      fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
+      fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
+      await waitFor(() => expect(screen.getByTestId('chat-ids-candidates')).toBeInTheDocument());
+      fireEvent.change(screen.getByTestId('chat-ids-FAMILY-select'), { target: { value: FAMILY } });
+
+      fireEvent.click(screen.getByTestId('chat-ids-backdrop'));
+      expect(screen.getByTestId('discard-changes-confirm')).toBeVisible();
+      fireEvent.click(screen.getByTestId('discard-changes-keep-editing'));
+      expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
+      expect((screen.getByTestId('chat-ids-FAMILY-select') as HTMLSelectElement).value).toBe(FAMILY);
+    });
+
+    it('"Descartar cambios" fecha de verdade', async () => {
+      render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+      await screen.findByTestId('chat-id-FAMILY-value');
+      fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
+      fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
+      await waitFor(() => expect(screen.getByTestId('chat-ids-candidates')).toBeInTheDocument());
+      fireEvent.change(screen.getByTestId('chat-ids-FAMILY-select'), { target: { value: FAMILY } });
+
+      fireEvent.click(screen.getByTestId('chat-ids-backdrop'));
+      fireEvent.click(screen.getByTestId('discard-changes-discard'));
+      await waitFor(() => expect(screen.queryByTestId('chat-ids-drawer')).toBeNull(), { timeout: 2000 });
+    });
+
+    it('SALVAR nunca pergunta, mesmo com mudança pendente', async () => {
+      render(<PatientChatIdsCard patient={patientDetailMinimal} />);
+      await screen.findByTestId('chat-id-FAMILY-value');
+      fireEvent.click(screen.getByTestId('chat-ids-edit-btn'));
+      fireEvent.click(screen.getByTestId('chat-ids-search-btn'));
+      await waitFor(() => expect(screen.getByTestId('chat-ids-candidates')).toBeInTheDocument());
+      fireEvent.change(screen.getByTestId('chat-ids-FAMILY-select'), { target: { value: FAMILY } });
+      fireEvent.click(screen.getByTestId('chat-ids-save'));
+      await waitFor(() => expect(updatePatientChatIds).toHaveBeenCalled());
+      expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
+    });
+  });
 });
 
 // ── D269 — write-gate no botão "Vincular" (PUT /patients/:id/chat-ids → patient:write) ──

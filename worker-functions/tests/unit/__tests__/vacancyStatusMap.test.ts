@@ -49,13 +49,13 @@ describe('mapClickUpVacancyStatus', () => {
     });
   });
 
-  it('"Baja" → DISCONTINUED / CLOSED', () => {
+  it('"Baja" → DISCHARGED / CLOSED (PatientStatus v2, spec 012: DISCONTINUED saiu)', () => {
     expect(mapClickUpVacancyStatus('Baja')).toEqual({
-      patientStatus: 'DISCONTINUED',
+      patientStatus: 'DISCHARGED',
       jobPostingStatus: 'CLOSED',
     });
     expect(mapClickUpVacancyStatus('baja')).toEqual({
-      patientStatus: 'DISCONTINUED',
+      patientStatus: 'DISCHARGED',
       jobPostingStatus: 'CLOSED',
     });
   });
@@ -185,7 +185,7 @@ describe('mapClickUpVacancyStatus', () => {
 
   it('normaliza espaços em branco ao redor do status', () => {
     expect(mapClickUpVacancyStatus('  Baja  ')).toEqual({
-      patientStatus: 'DISCONTINUED',
+      patientStatus: 'DISCHARGED',
       jobPostingStatus: 'CLOSED',
     });
   });
@@ -243,7 +243,7 @@ describe('mapClickUpVacancyStatus', () => {
     });
 
     it('patientStatus só usa valores canônicos do enum PatientStatus', () => {
-      const VALID = ['PENDING_ADMISSION', 'ACTIVE', 'SUSPENDED', 'DISCONTINUED', 'DISCHARGED', 'ADMISSION'];
+      const VALID = ['PENDING_ADMISSION', 'ACTIVE', 'SUSPENDED', 'DISCHARGED', 'ADMISSION'];
       for (const [, val] of Object.entries(CLICKUP_TO_VACANCY_STATUS)) {
         expect(VALID).toContain(val.patientStatus);
       }

@@ -34,14 +34,15 @@ const { PatientKanbanBoard } = await import('../PatientKanbanBoard');
 
 const PATIENT_1 = {
   id: 'p1', firstName: 'Ana', lastName: 'Gomez', caseNumber: 10,
-  dependencyLevel: null, status: 'SOLICITANTE', hoursInStage: null, slaBreached: false,
+  dependencyLevel: null, status: 'SOLICITANTE', admissionStatus: 'SOLICITANTE', responsibleName: null,
+  hoursInStage: null, slaBreached: false,
 };
 
 const GROUPS: PatientKanbanGroups = {
   SOLICITANTE: [PATIENT_1],
   ADMISSION: [],
   PENDING_ADMISSION: [],
-  ACTIVE: [],
+  DONE: [],
 };
 
 function comEnforcement(permissions: string[], enforcement: AuthzContract['enforcement']) {
@@ -62,7 +63,7 @@ describe('PatientKanbanBoard', () => {
   it('monta as 4 colunas de status, todas droppable, na ordem de PATIENT_KANBAN_STATUSES', () => {
     render(<PatientKanbanBoard groups={GROUPS} onMove={vi.fn()} />);
     expect(captured.columns.map((c: { id: string }) => c.id)).toEqual([
-      'SOLICITANTE', 'ADMISSION', 'PENDING_ADMISSION', 'ACTIVE',
+      'SOLICITANTE', 'ADMISSION', 'PENDING_ADMISSION', 'DONE',
     ]);
     expect(captured.columns.every((c: { droppable: boolean }) => c.droppable)).toBe(true);
   });
@@ -75,7 +76,7 @@ describe('PatientKanbanBoard', () => {
 
   it('itemsOf devolve [] para uma coluna sem grupo (defensivo)', () => {
     render(<PatientKanbanBoard groups={{} as PatientKanbanGroups} onMove={vi.fn()} />);
-    expect(captured.itemsOf('ACTIVE')).toEqual([]);
+    expect(captured.itemsOf('DONE')).toEqual([]);
   });
 
   it('getItemId devolve o id do paciente', () => {

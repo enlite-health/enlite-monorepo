@@ -74,6 +74,14 @@ export const USER_FACING_ROUTES: readonly UserFacingRoute[] = [
   // rota fora dele é cobertura fantasma.
   { route: '/admin/patients/kanban', surface: 'admin', tier: 'regression' },
   { route: '/admin/tags', surface: 'admin', tier: 'regression' },
+  // Mapa do painel (REQ-04 · DEC-14, subiu em 30/08). Mesma história da linha acima:
+  // a tela estava em produção e fora do denominador — invisível ao gate, portanto
+  // nunca cobrada. Entra junto com a Spec 009, que a cobre.
+  { route: '/admin/mapa', surface: 'admin', tier: 'regression' },
+  // Mensagem por etapa (DEC-12 / PEND-14). Terceira vez que a mesma história se
+  // repete: a tela estava em produção desde 30/08 e FORA do denominador — logo,
+  // invisível ao gate e nunca cobrada. Entra junto com o spec que a cobre.
+  { route: '/admin/mensajes-por-etapa', surface: 'admin', tier: 'regression' },
   // Páginas PÚBLICAS de admissão (form B2C multi-país, sem login).
   { route: '/admission-ar', surface: 'public', tier: 'smoke' },
   { route: '/admission-br', surface: 'public', tier: 'smoke' },
@@ -99,6 +107,11 @@ export const USER_FACING_ROUTES: readonly UserFacingRoute[] = [
   { route: 'GET /api/vacancies/:id', surface: 'api', tier: 'smoke' },
   { route: 'GET /api/jobs', surface: 'api', tier: 'smoke' },
   { route: 'GET /health', surface: 'api', tier: 'smoke' },
+  // Config da mensagem por etapa (DEC-12). A de leitura é a que alimenta a tela;
+  // a de escrita entra porque o monitor exercita as REJEIÇÕES dela (409/400) —
+  // caminho de erro real, que não grava por mecanismo.
+  { route: 'GET /api/admin/funnel-stage-messages', surface: 'api', tier: 'regression' },
+  { route: 'PUT /api/admin/funnel-stage-messages/:stage', surface: 'api', tier: 'regression' },
   // Check NEGATIVO: deve 401/403 sem secret (gate interno não vaza pra fora).
   { route: 'GET /api/internal/vertex-health', surface: 'api', tier: 'smoke' },
   { route: 'POST /api/workers/init', surface: 'api', tier: 'regression' },
@@ -116,6 +129,18 @@ export const USER_FACING_ROUTES: readonly UserFacingRoute[] = [
   { route: 'GET /api/admin/patients', surface: 'api', tier: 'regression' },
   { route: 'GET /api/admin/patients/funnel', surface: 'api', tier: 'regression' },
   { route: 'POST /api/admin/patients', surface: 'api', tier: 'regression' },
+  // Os dois mapas. POST (e não GET) de propósito: o centro do raio é a casa de alguém
+  // e a URL crua vai para o log do Cloud Run (lex 29/08, C2).
+  { route: 'POST /api/admin/patients/map', surface: 'api', tier: 'regression' },
+  // Kanban do staff (Spec 009, Fase 1). A `delivery-status` já era tag ÓRFÃ antes desta
+  // spec — rota viva em `adminVacanciesRoutes.ts:225` que nunca entrou no denominador;
+  // entra agora porque o `kanban-staff` também a cobre.
+  { route: 'GET /api/admin/vacancies/:vacancyId/workers/:workerId/delivery-status', surface: 'api', tier: 'regression' },
+  { route: 'POST /api/admin/workers/:workerId/presentation-invite', surface: 'api', tier: 'regression' },
+  // Slot recorrente da vaga (mig 291). Rota própria porque `PUT /vacancies/:id` NÃO aceita
+  // campos `meet_*` — não estão na whitelist (medido 30/08).
+  { route: 'PUT /api/admin/vacancies/:id/meet-links', surface: 'api', tier: 'regression' },
+  { route: 'POST /api/admin/workers/map', surface: 'api', tier: 'regression' },
   { route: 'PUT /api/admin/patients/:id/status', surface: 'api', tier: 'regression' },
   { route: 'POST /api/admin/patients/:id/activate', surface: 'api', tier: 'regression' },
   { route: 'PATCH /api/admin/patients/:id/:section', surface: 'api', tier: 'regression' },

@@ -10,7 +10,10 @@ export interface Job {
   localidad: string;
   barrio: string;
   workerSex: string;
-  pathologies: string;
+  /**
+   * ⚠️ REMOVIDO em 25/08/2026 — não é omissão. Era `patients.diagnosis`, texto livre clínico,
+   * servido cru pela rota pública `/api/public/v1/jobs`. O campo saiu do feed; nada a exibir.
+   */
   description: string;
   service: string;
   daysAndHours: string;
@@ -92,18 +95,24 @@ export const getLocalityOptions = (): SelectOption[] => [
   { value: 'villa urquiza', label: 'Villa Urquiza' },
 ];
 
-export const getPathologyOptions = (): SelectOption[] => [
-  { value: 'alzheimer / demencia', label: 'Alzheimer / Demencia' },
-  { value: 'ansiedad por separación', label: 'Ansiedad por separación' },
-  { value: 'autismo, retraso madurativo leve.', label: 'Autismo, Retraso Madurativo Leve' },
-  { value: 'depresión', label: 'Depresión' },
-  { value: 'discapacidad intelectual leve, trastorno del lenguaje expresivo.', label: 'Discapacidad Intelectual Leve, Trastorno del Lenguaje' },
-  { value: 'esquizofrenia', label: 'Esquizofrenia' },
-  { value: 'parkinson', label: 'Parkinson' },
-  { value: 'tea (trastorno del espectro autista)', label: 'TEA (Trastorno del Espectro Autista)' },
-  { value: 'trastorno disociativo, tlp, tca, estrés postraumático.', label: 'Trastorno Disociativo, TLP, TCA, Estrés Postraumático' },
-  { value: 'trastorno del lenguaje', label: 'Trastorno del Lenguaje' },
-];
+/**
+ * ⚠️ `getPathologyOptions()` foi REMOVIDA em 25/08/2026, e o que ela era importa mais que o
+ * fato de ter saído.
+ *
+ * Eram **10 opções chumbadas** que não vinham de catálogo nenhum: eram valores de
+ * `patients.diagnosis` **copiados literalmente** da base — com vírgula, minúscula e ponto
+ * final ("autismo, retraso madurativo leve.", "trastorno disociativo, tlp, tca, estrés
+ * postraumático."). Tinham de ser literais porque o filtro casava por `includes()` sobre o
+ * texto armazenado.
+ *
+ * ⇒ Era uma TERCEIRA cópia de texto clínico, esta versionada no repositório git. Não
+ * identificava ninguém sozinha, mas expunha o vocabulário clínico real da base.
+ *
+ * O filtro não foi substituído, e a decisão é deliberada: a tela **já** tem
+ * `getWorkerTypeOptions()` (tipo de prestador). Trocar patologia por serviço/profissão criaria
+ * um filtro quase idêntico ao que já existe, não devolveria capacidade nenhuma ao candidato.
+ * Sobram busca livre, tipo, província, localidade e sexo.
+ */
 
 export const getSexOptions = (t: TFunction): SelectOption[] => [
   { value: 'femenino', label: t('jobs.sex.female') },
@@ -121,7 +130,6 @@ export const MOCK_JOBS: Job[] = [
     localidad: 'lanús este',
     barrio: '',
     workerSex: 'indistinto',
-    pathologies: 'trastorno disociativo, tlp, tca, estrés postraumático.',
     description: 'prestación de servicios para acompañamiento terapéutico domiciliario en lanús. paciente joven con trastorno disociativo de la personalidad y tlp. se requiere experiencia previa y manejo de herramientas clínicas para el abordaje de trauma y tca.',
     service: 'domiciliario',
     daysAndHours: 'Lunes a viernes de 09:00 a 15:00 hs.',
@@ -138,7 +146,6 @@ export const MOCK_JOBS: Job[] = [
     localidad: 'nordelta (tigre) y puerto madero (caba)',
     barrio: '',
     workerSex: 'mujer',
-    pathologies: 'discapacidad intelectual leve, trastorno del lenguaje expresivo.',
     description: 'prestación de servicio de at para acompañar a una joven de 19 años durante sus traslados educativos. el objetivo es brindar soporte frente a su discapacidad intelectual leve y trastorno del lenguaje, promoviendo su seguridad y autonomía en la vía pública.',
     service: 'traslado',
     daysAndHours: 'Lunes y jueves de 11:00 a 14:00. (A partir de mayo se suma el viernes).',
@@ -155,7 +162,6 @@ export const MOCK_JOBS: Job[] = [
     localidad: 'lomas de zamora',
     barrio: '',
     workerSex: 'indistinto',
-    pathologies: 'trastorno del lenguaje',
     description: 'prestación de servicios de at para acompañamiento escolar de un niño con trastorno del lenguaje. el objetivo es brindar soporte pedagógico-vincular en lomas de zamora, integrándose a un equipo con supervisión clínica.',
     service: 'escolar',
     daysAndHours: 'Lunes, miércoles y viernes 8-12h; martes y jueves 10-14h.',
@@ -172,7 +178,6 @@ export const MOCK_JOBS: Job[] = [
     localidad: 'balvanera',
     barrio: '',
     workerSex: 'hombre',
-    pathologies: 'tea (trastorno del espectro autista)',
     description: 'prestación de servicios para at masculino en domicilio. paciente adolescente con diagnóstico de tea. el foco está en el soporte post-internación y cumplimiento de objetivos terapéuticos.',
     service: 'domiciliario',
     daysAndHours: 'Lunes a sábados de 08:30 a 11:30.',
@@ -189,7 +194,6 @@ export const MOCK_JOBS: Job[] = [
     localidad: 'quilmes',
     barrio: '',
     workerSex: 'mujer',
-    pathologies: 'ansiedad por separación',
     description: 'prestación de servicios para acompañamiento escolar de niña de 5 años con ansiedad por separación. se busca perfil con experiencia en integración escolar y manejo de vínculos en infancia.',
     service: 'escolar',
     daysAndHours: 'Lunes a viernes de 13:00 a 17:00.',
