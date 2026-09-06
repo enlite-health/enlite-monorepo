@@ -48,6 +48,9 @@ function fakeRes(): Response & { statusCode: number; body: unknown } {
 const req = (body: unknown, uid = 'staff-1'): Request =>
   ({ body, user: { uid } } as unknown as Request);
 
+/** Polilinha codificada de verdade (captura de 06/09). A trilha nunca pode vê-la. */
+const TRACADO = 'r|rnEnjmxJ?kBnAA';
+
 const OK_RESULT = {
   outcome: 'ok' as const,
   straightLineMeters: 1167,
@@ -56,8 +59,8 @@ const OK_RESULT = {
     transfers: 0,
     lines: ['8'],
     legs: [
-      { kind: 'walk' as const, minutes: 4, meters: 320 },
-      { kind: 'transit' as const, minutes: 26, line: '8', mode: 'bus', from: '459 Libertad', to: 'H. Yrigoyen 340' },
+      { kind: 'walk' as const, minutes: 4, meters: 320, paths: [TRACADO] },
+      { kind: 'transit' as const, minutes: 26, line: '8', mode: 'bus', from: '459 Libertad', to: 'H. Yrigoyen 340', paths: [] },
     ],
   }],
 };
@@ -102,6 +105,12 @@ describe('TransitCorridorController', () => {
     expect(serializado).not.toContain('Libertad');   // nome de parada
     expect(serializado).not.toContain('34');         // minutos do trajeto
     expect(serializado).not.toContain('1167');       // distância
+    // 🔒 C2 do parecer do `lex` (06/09): com o traçado, `id + geometria` na
+    // mesma linha não agrava a trilateração — DISPENSA. Uma linha bastaria para
+    // entregar o domicílio, sem precisar cruzar N observações.
+    expect(Object.keys(linha)).not.toContain('paths');
+    expect(serializado).not.toContain(TRACADO);
+    expect(serializado).not.toContain('encodedPolyline');
   });
 
   it('a trilha registra o desfecho de recusa também — auditoria não é só do caminho feliz', async () => {

@@ -86,13 +86,25 @@ export interface PatientMapPoint {
 export type RouteOutcome = 'ok' | 'sem_ruta' | 'sem_cobertura';
 
 /**
- * União DISCRIMINADA: perna a pé SEMPRE tem metros, perna de transporte SEMPRE
- * tem linha. Com campos opcionais a tela precisaria de `?? 0` em cada uso — e
- * esses `??` seriam ramos mortos, porque o backend já garante os dois.
+ * Uma perna do trajeto.
+ *
+ * União DISCRIMINADA, e não um objeto com tudo opcional: perna a pé SEMPRE tem
+ * metros e perna de transporte SEMPRE tem linha. Com campos opcionais cada uso
+ * precisaria de um `?? 0` — ramos mortos que fingem cobrir caso que a
+ * construção já impede.
+ *
+ * `paths` é o traçado, em polilinhas CODIFICADAS do Google — uma LISTA e não uma
+ * string porque caminhadas consecutivas são fundidas numa perna só, e polilinha
+ * codificada é delta-encoded: concatenar os textos produziria uma linha errada,
+ * não uma linha maior. Quem desenha decodifica cada trecho e junta as
+ * coordenadas. Lista vazia = perna sem traçado, que não se desenha.
  */
 export type RouteLeg =
-  | { kind: 'walk'; minutes: number; meters: number }
-  | { kind: 'transit'; minutes: number; line: string; mode: string; from: string; to: string };
+  | { kind: 'walk'; minutes: number; meters: number; paths: string[] }
+  | { kind: 'transit'; minutes: number; line: string; mode: string; from: string; to: string; paths: string[];
+      /** Cor oficial da linha (`#1b6633` para o 50 em CABA), validada no backend.
+       *  `''` quando o Google não informa — o desenho cai na cor do tema. */
+      color: string };
 
 export interface TransitRoute {
   totalMinutes: number;

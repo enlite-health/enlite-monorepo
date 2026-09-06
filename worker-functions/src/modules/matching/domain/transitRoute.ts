@@ -33,8 +33,11 @@
  * ramos mortos, que fingem cobrir um caso que a construção já impede.
  */
 export type RouteLeg =
-  | { kind: 'walk'; minutes: number; meters: number }
-  | { kind: 'transit'; minutes: number; line: string; mode: string; from: string; to: string };
+  | { kind: 'walk'; minutes: number; meters: number; paths: string[] }
+  | { kind: 'transit'; minutes: number; line: string; mode: string; from: string; to: string; paths: string[];
+      /** Cor OFICIAL da linha, como o Google a devolve (`#1b6633` para o 50 em
+       *  CABA). `''` quando ausente — quem desenha usa a cor do tema. */
+      color: string };
 
 export interface TransitRoute {
   /** Duração total porta a porta, em minutos. */
@@ -64,6 +67,16 @@ export function parseDuration(raw: string | undefined): number {
 
 const toMinutes = (raw: string | undefined): number => Math.max(1, Math.round(parseDuration(raw) / 60));
 
+/**
+ * Só aceita `#rrggbb`. A cor vem de FORA e vai parar num `strokeColor` do
+ * Google Maps: deixar passar string arbitrária de terceiro para dentro de uma
+ * propriedade de desenho é ampliar a superfície sem necessidade. Qualquer coisa
+ * fora do formato vira `''`, e quem desenha cai na cor do tema.
+ */
+export function normalizeLineColor(raw: string | undefined): string {
+  return raw && /^#[0-9a-f]{6}$/i.test(raw) ? raw.toLowerCase() : '';
+}
+
 /** `BUS` → `bus`; `HEAVY_RAIL`/`COMMUTER_TRAIN` → `train`; `SUBWAY` → `subway`. */
 export function normalizeVehicle(raw: string | undefined): string {
   const v = (raw ?? '').toUpperCase();
@@ -78,8 +91,10 @@ export interface RawStep {
   travelMode?: string;
   staticDuration?: string;
   distanceMeters?: number;
+  /** O traçado do passo, codificado. Medido em 06/09: `steps[].polyline.encodedPolyline`. */
+  polyline?: { encodedPolyline?: string };
   transitDetails?: {
-    transitLine?: { nameShort?: string; name?: string; vehicle?: { type?: string } };
+    transitLine?: { nameShort?: string; name?: string; color?: string; vehicle?: { type?: string } };
     stopDetails?: { departureStop?: { name?: string }; arrivalStop?: { name?: string } };
   };
 }
@@ -100,8 +115,20 @@ function mergeWalks(legs: RouteLeg[]): RouteLeg[] {
     if (leg.kind === 'walk' && prev?.kind === 'walk') {
       prev.minutes += leg.minutes;
       prev.meters += leg.meters;
+      // O traçado ACUMULA. Descartá-lo aqui abriria um buraco no desenho
+      // exatamente onde a caminhada foi fundida — e é o caso comum, não a
+      // exceção: na captura de 06/09 os passos 0 e 1 são os dois `WALK`, com
+      // polilinhas próprias de 13 e 18 caracteres.
+      prev.paths.push(...leg.paths);
       continue;
     }
+    // `{ ...leg }` COMPARTILHA o array `paths` com a perna de origem, e o `push`
+    // acima o mutaria. Isso é inofensivo aqui e a cópia foi REMOVIDA de
+    // propósito: `legs` é local a `buildTransitRoutes` e descartado na linha
+    // seguinte, então nenhum caller consegue observar a mutação. A cópia era
+    // defesa que ninguém podia violar, com um teste que passava igual sem ela —
+    // o gate provou (06/09), e é o mesmo perfil do `refitOnGrow` que já saiu.
+    // ⚠️ Se `legs` um dia sobreviver a esta função, a cópia volta.
     out.push({ ...leg });
   }
   return out;
@@ -128,19 +155,24 @@ export function buildTransitRoutes(raw: readonly RawRoute[]): TransitRouteResult
     const legs: RouteLeg[] = [];
 
     for (const s of steps) {
+      // `[]` e não `undefined` quando o Google omite: perna sem traçado é
+      // perna que não se desenha, e o resto da rota continua válido.
+      const paths = s.polyline?.encodedPolyline ? [s.polyline.encodedPolyline] : [];
       if ((s.travelMode ?? '').toUpperCase() === 'TRANSIT') {
         const line = s.transitDetails?.transitLine;
         const stops = s.transitDetails?.stopDetails;
         legs.push({
           kind: 'transit',
+          paths,
           minutes: toMinutes(s.staticDuration),
           line: line?.nameShort ?? line?.name ?? '—',
           mode: normalizeVehicle(line?.vehicle?.type),
+          color: normalizeLineColor(line?.color),
           from: stops?.departureStop?.name ?? '',
           to: stops?.arrivalStop?.name ?? '',
         });
       } else {
-        legs.push({ kind: 'walk', minutes: toMinutes(s.staticDuration), meters: Math.round(s.distanceMeters ?? 0) });
+        legs.push({ kind: 'walk', minutes: toMinutes(s.staticDuration), meters: Math.round(s.distanceMeters ?? 0), paths });
       }
     }
 

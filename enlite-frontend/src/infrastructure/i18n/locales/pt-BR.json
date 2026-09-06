@@ -3836,12 +3836,15 @@
       "anchorLoading": "Buscando…",
       "anchorTruncated": "Há mais do que cabe nesta lista: digite o nome para filtrar.",
       "corridor": {
+        "transfers_one": "1 baldeação",
+        "transfers_other": "{{count}} baldeações",
+        "options_one": "1 opção",
+        "options_other": "{{count}} opções",
         "loading": "Buscando trajeto…",
         "error": "Não foi possível calcular o trajeto.",
         "noRoute": "Não há trajeto de transporte público entre estes dois pontos.",
         "noCoverage": "Falta a localização de um dos dois — não dá para calcular o trajeto.",
         "direct": "direto",
-        "transfers": "{{count}} baldeação(ões)",
         "total": "{{count}} min porta a porta",
         "walkLeg": "caminhar {{min}} min ({{meters}} m)",
         "straight": "em linha reta: ~{{count}} quadras"

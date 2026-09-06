@@ -18,7 +18,7 @@ vi.mock('@infrastructure/http/AdminMapApiService', () => ({
 const OK: CorridorResponse = {
   outcome: 'ok',
   straightLineMeters: 1167,
-  routes: [{ totalMinutes: 34, transfers: 0, lines: ['8'], legs: [{ kind: 'transit', minutes: 34, line: '8', mode: 'bus', from: 'a', to: 'b' }] }],
+  routes: [{ totalMinutes: 34, transfers: 0, lines: ['8'], legs: [{ kind: 'transit', minutes: 34, line: '8', mode: 'bus', from: 'a', to: 'b', paths: [], color: '#1b6633' }] }],
 };
 const PAR: CorridorRequest = { country: 'AR', workerId: 'w1', patientAddressId: 'a1' };
 

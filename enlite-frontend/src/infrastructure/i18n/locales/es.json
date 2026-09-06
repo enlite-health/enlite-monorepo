@@ -3915,12 +3915,15 @@
       "anchorLoading": "Buscando…",
       "anchorTruncated": "Hay más de los que entran en esta lista: escribí el nombre para filtrar.",
       "corridor": {
+        "transfers_one": "1 combinación",
+        "transfers_other": "{{count}} combinaciones",
+        "options_one": "1 opción",
+        "options_other": "{{count}} opciones",
         "loading": "Buscando recorrido…",
         "error": "No se pudo calcular el recorrido.",
         "noRoute": "No hay recorrido en transporte público entre estos dos puntos.",
         "noCoverage": "Falta la ubicación de uno de los dos — no podemos calcular el recorrido.",
         "direct": "directo",
-        "transfers": "{{count}} combinación(es)",
         "total": "{{count}} min puerta a puerta",
         "walkLeg": "caminar {{min}} min ({{meters}} m)",
         "straight": "en línea recta: ~{{count}} cuadras"
