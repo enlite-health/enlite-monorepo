@@ -63,7 +63,7 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
   const { t } = useTranslation();
   const tm = (k: string, def: string) => t(`admin.workerDetail.editModal.${k}`, { defaultValue: def });
 
-  const primaryArea = worker.serviceAreas[0];
+  const primaryArea = worker.serviceAreas?.[0];
   const initialAddress = primaryArea?.address ?? '';
   const initialRadius = primaryArea?.serviceRadiusKm ?? 10;
 

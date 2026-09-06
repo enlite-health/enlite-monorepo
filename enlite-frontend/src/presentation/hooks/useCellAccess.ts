@@ -15,6 +15,7 @@
  */
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { accessLevelFor, hasCell, type AccessLevel, type AuthzStatus } from '@domain/entities/Authz';
+import { containersOfTab, type ScreenDef } from '@presentation/config/screenRegistry';
 
 export interface CellAccess {
   level: AccessLevel;
@@ -90,4 +91,25 @@ export function containersVisibleFor(
 ): boolean {
   if (enforcement !== 'on') return true;
   return resources.some((r) => accessLevelFor(permissions ?? null, r) !== 'hidden');
+}
+
+/**
+ * As abas de uma tela que existem para este ator (D286): uma aba existe se QUALQUER container
+ * dela for legível. Aba que não tem container no registro (placeholder "Próximamente") não
+ * guarda dado — existe sempre. A ativa é decidida pelo chamador (a primeira visível quando a
+ * atual sumiu).
+ */
+export function tabsVisibleFor<T extends string>(
+  screen: ScreenDef,
+  tabs: readonly T[],
+  permissions: readonly string[] | null | undefined,
+  enforcement: string | undefined,
+): T[] {
+  if (enforcement !== 'on') return [...tabs];
+  return tabs.filter((tab) => {
+    const containers = containersOfTab(screen, tab);
+    // "NENHUMA permissão daquela aba" é literal: qualquer célula declarada por qualquer container
+    // da aba (read, write, execute, send…) — não só o par read/write do `accessLevelFor`.
+    return containers.length === 0 || containers.some((ct) => ct.cells.some((cell) => permissions?.includes(cell)));
+  });
 }

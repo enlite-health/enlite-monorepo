@@ -30,8 +30,8 @@ import { CompletenessChecklist } from '@presentation/components/features/admin/P
 import type { DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 import { ContainerGate } from '@presentation/components/features/access';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
-import { containersVisibleFor } from '@presentation/hooks/useCellAccess';
-import { containersOfTab, screenById } from '@presentation/config/screenRegistry';
+import { tabsVisibleFor } from '@presentation/hooks/useCellAccess';
+import { screenById } from '@presentation/config/screenRegistry';
 import { PATIENT_TABS } from '@presentation/components/features/admin/PatientDetail/patientTabs';
 import type { PatientCompletenessCode } from '@domain/entities/PatientDetail';
 import { ACTIVATABLE_STATUSES } from '@domain/entities/PatientCompleteness';
@@ -63,9 +63,7 @@ export default function PatientDetailPage() {
   const permissions = useAdminAuthStore((s) => s.authz?.permissions);
   const enforcement = useAdminAuthStore((s) => s.authz?.enforcement);
   const screen = screenById('patients.detail');
-  const visibleTabs = PATIENT_TABS.filter((tab) =>
-    containersVisibleFor(permissions, enforcement, containersOfTab(screen, tab).map((ct) => ct.resource)),
-  );
+  const visibleTabs = tabsVisibleFor(screen, PATIENT_TABS, permissions, enforcement);
   const shownTab: PatientTab | null = visibleTabs.includes(activeTab) ? activeTab : (visibleTabs[0] ?? null);
   // Spec 014 US-D1: pedido de foco do checklist — muda de aba E pede ao card certo (via
   // `useAutoOpenDrawer`) que abra seu próprio drawer, sem o pai conhecer o estado interno dele.

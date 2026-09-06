@@ -100,6 +100,30 @@ describe('screensByCell / containersOfTab / screenById', () => {
     expect(s.cells).toBeUndefined();
   });
 
+  it('D286 fase 2 — prestador: dossiê e contato sem aba (cabeçalho); documentos/encuadres por aba; placeholders sem container', () => {
+    const s = screenById('workers.detail');
+    expect(s.tabs).toEqual(['encuadres', 'documents', 'availability', 'financial', 'history']);
+    expect(containersOfTab(s, 'documents').map((c) => c.resource)).toEqual(['worker_document']);
+    expect(containersOfTab(s, 'encuadres').map((c) => c.resource)).toEqual(['match']);
+    expect(containersOfTab(s, 'availability').map((c) => c.resource)).toEqual(['worker']);
+    expect(containersOfTab(s, 'financial')).toEqual([]);
+    expect(s.containers?.map((c) => c.resource)).toEqual(['worker', 'worker_contact', 'worker_pii', 'worker_document', 'match']);
+  });
+
+  it('D286 fase 2 — vaga: o card Paciente é célula do PACIENTE (patient_identity); Links é a vaga', () => {
+    const s = screenById('vacancies.detail');
+    expect(s.containers?.find((c) => c.id === 'patient')?.resource).toBe('patient_identity');
+    expect(containersOfTab(s, 'links').map((c) => c.resource)).toEqual(['vacancy']);
+    expect(containersOfTab(s, 'encuadres').map((c) => c.resource)).toEqual(['funnel', 'match', 'messaging']);
+    expect(containersOfTab(s, 'talentum').map((c) => c.resource)).toEqual(['prescreening', 'talentum']);
+    // patient_identity:read é UMA célula: ficha do paciente, lista, kanban, vaga
+    expect(todasAsCelulas().get('patient_identity:read')).toEqual(expect.arrayContaining(['patients.detail', 'vacancies.detail']));
+  });
+
+  it('D286 fase 2 — Gestión a la Vista: dois containers (indicadores, pacientes)', () => {
+    expect(screenById('dashboard').containers?.map((c) => [c.id, c.resource])).toEqual([['analytics', 'dashboard'], ['patients', 'patient']]);
+  });
+
   it('tela desconhecida é erro, não undefined silencioso', () => {
     expect(() => screenById('nao.existe')).toThrow(/desconhecida/);
   });

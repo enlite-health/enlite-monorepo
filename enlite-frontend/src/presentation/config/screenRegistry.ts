@@ -53,7 +53,11 @@ const c = (id: string, resource: string, actions: readonly string[], ...tabs: re
 });
 
 export const SCREEN_REGISTRY: readonly ScreenDef[] = [
-  { id: 'dashboard', route: '/admin/dashboard', cells: ['dashboard:read', 'patient:read'] },
+  {
+    id: 'dashboard',
+    route: '/admin/dashboard',
+    containers: [c('analytics', 'dashboard', ['read']), c('patients', 'patient', ['read'])],
+  },
   {
     id: 'users',
     route: '/admin',
@@ -102,13 +106,17 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   {
     id: 'workers.detail',
     route: '/admin/workers/:id',
-    tabs: ['profile', 'documents', 'encuadres', 'availability'],
+    // `financial` e `history` são placeholders ("Próximamente"): sem container, existem sempre.
+    tabs: ['encuadres', 'documents', 'availability', 'financial', 'history'],
     containers: [
-      // `worker:disable` fica fora: a baixa é decidida no back pela transição de status e não tem
-      // botão próprio no front hoje (cai em "Outras células" no painel, nunca some).
-      c('profile', 'worker', ['read', 'write'], 'profile'),
-      c('contact', 'worker_contact', ['read'], 'profile'),
-      c('dossier', 'worker_pii', ['read'], 'profile'),
+      // O operacional numa linha só: perfil profissional, etiquetas, conta de teste, edição e a
+      // aba de disponibilidade. `worker:disable` fica fora: a baixa é decidida no back pela
+      // transição de status e não tem botão próprio no front (cai em "Outras células").
+      c('profile', 'worker', ['read', 'write'], 'availability'),
+      c('contact', 'worker_contact', ['read']),
+      // Dossiê = dados pessoais (nascimento, sexo, DNI, raça, religião…) E a linha de endereço —
+      // a mesma célula da C3/F2; a rota projeta os dois juntos.
+      c('dossier', 'worker_pii', ['read']),
       c('documents', 'worker_document', ['read', 'write', 'delete', 'validate'], 'documents'),
       c('encuadres', 'match', ['read'], 'encuadres'),
     ],
@@ -129,8 +137,12 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
     route: '/admin/vacancies/:id',
     tabs: ['encuadres', 'talentum', 'links'],
     containers: [
-      // `vacancy:delete` sem botão (ui-gate-debt.json): arquivar é status CLOSED via write.
-      c('case', 'vacancy', ['read', 'write']),
+      // `vacancy:delete` sem botão (ui-gate-debt.json): arquivar é status CLOSED via write. O caso
+      // cobre cabeçalho, perfil requerido, links de reunião e a aba Links (tudo dado da vaga).
+      c('case', 'vacancy', ['read', 'write'], 'links'),
+      // O card Paciente mostra o NOME do paciente — dado de outro titular, célula de identidade
+      // dele (a rota projeta; sem ela vem "Contato restrito").
+      c('patient', 'patient_identity', ['read']),
       c('funnel', 'funnel', ['read', 'write'], 'encuadres'),
       c('match', 'match', ['read', 'execute'], 'encuadres'),
       c('invites', 'messaging', ['send'], 'encuadres'),

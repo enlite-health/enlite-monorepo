@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight, Download, RefreshCw } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { Typography } from '@presentation/components/atoms/Typography';
-import { Button } from '@presentation/components/atoms/Button';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Select } from '@presentation/components/atoms/Select';
 import { WorkerFilters } from '@presentation/components/features/admin/WorkerFilters';
@@ -26,6 +25,7 @@ import {
   type WorkerProfileFilters,
 } from '@presentation/components/features/admin/workerProfileFiltersConfig';
 import { getDocsStatusOptions, getValidationStatusOptions } from './workersData';
+import { ActionButton } from '@presentation/components/features/access';
 
 export function AdminWorkersPage(): JSX.Element {
   const navigate = useNavigate();
@@ -231,8 +231,13 @@ export function AdminWorkersPage(): JSX.Element {
                 {syncMessage.text}
               </Typography>
             )}
+            {/* GET /workers/export → worker:export (o export já redige coluna por célula no back);
+                POST /workers/sync-talentum → talentum:write. D286 fase 2: célula, não papel —
+                o `isAdmin` continua como freio de papel enquanto o engine estiver desligado. */}
             {isAdmin && (
-              <Button
+              <ActionButton
+                resource="worker"
+                action="export"
                 variant="outline"
                 size="md"
                 data-testid="worker-export-btn"
@@ -241,9 +246,11 @@ export function AdminWorkersPage(): JSX.Element {
               >
                 <Download className="w-4 h-4" />
                 {t('admin.workers.export.button')}
-              </Button>
+              </ActionButton>
             )}
-            <Button
+            <ActionButton
+              resource="talentum"
+              action="write"
               variant="outline"
               size="md"
               className="h-10 border-primary text-primary flex items-center justify-center gap-2"
@@ -254,7 +261,7 @@ export function AdminWorkersPage(): JSX.Element {
               {isSyncing
                 ? t('admin.workers.syncing', 'Sincronizando...')
                 : t('admin.workers.syncTalentum', 'Sincronizar Talentum')}
-            </Button>
+            </ActionButton>
           </div>
         </div>
 

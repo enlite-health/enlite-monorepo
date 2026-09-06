@@ -3,7 +3,7 @@ import { Button, type ButtonProps } from '@presentation/components/atoms/Button'
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 
 /** Ações de célula que um `ActionButton` pode gatear. `write` é o default (a maioria dos botões de concluir edição). */
-export type ActionButtonAction = 'write' | 'delete' | 'execute' | 'send' | 'disable';
+export type ActionButtonAction = 'write' | 'delete' | 'execute' | 'send' | 'disable' | 'export' | 'validate';
 
 /**
  * `hide` (default, D269 — correção do Gabriel: "desabilitar não, ESCONDER.

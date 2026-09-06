@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
-import { useCellAccess, useHasCell, useActionGate, useContainerAccess, containersVisibleFor } from '../useCellAccess';
+import { useCellAccess, useHasCell, useActionGate, useContainerAccess, containersVisibleFor, tabsVisibleFor } from '../useCellAccess';
+import { screenById } from '@presentation/config/screenRegistry';
 import type { AuthzContract } from '@domain/entities/Authz';
 
 const contrato = (permissions: string[]): AuthzContract => ({
@@ -129,5 +130,29 @@ describe('containersVisibleFor — a aba existe se QUALQUER container dela for l
     expect(containersVisibleFor(null, undefined, ['patient_family'])).toBe(true);
     // aba sem container nenhum, com enforcement on: não existe
     expect(containersVisibleFor(['patient:read'], 'on', [])).toBe(false);
+  });
+});
+
+describe('tabsVisibleFor — as abas de uma tela para o ator (D286 fase 2)', () => {
+  const prestador = screenById('workers.detail');
+  const vaga = screenById('vacancies.detail');
+  const TABS_P = ['encuadres', 'documents', 'availability', 'financial', 'history'] as const;
+
+  it('aba com container: existe se algum for legível; aba SEM container (placeholder) existe sempre', () => {
+    expect(tabsVisibleFor(prestador, TABS_P, ['worker:read'], 'on')).toEqual(['availability', 'financial', 'history']);
+    expect(tabsVisibleFor(prestador, TABS_P, ['worker:read', 'match:read'], 'on')).toEqual(['encuadres', 'availability', 'financial', 'history']);
+    expect(tabsVisibleFor(prestador, TABS_P, ['worker:read', 'worker_document:read'], 'on')).toEqual(['documents', 'availability', 'financial', 'history']);
+  });
+
+  it('na vaga: Links segue a própria vaga; Talentum com prescreening OU talentum; Encuadres com funil/match/convites', () => {
+    const T = ['encuadres', 'talentum', 'links'] as const;
+    expect(tabsVisibleFor(vaga, T, ['vacancy:read'], 'on')).toEqual(['links']);
+    expect(tabsVisibleFor(vaga, T, ['vacancy:read', 'talentum:read'], 'on')).toEqual(['talentum', 'links']);
+    expect(tabsVisibleFor(vaga, T, ['vacancy:read', 'messaging:send'], 'on')).toEqual(['encuadres', 'links']);
+  });
+
+  it('enforcement off ou indeciso: todas', () => {
+    expect(tabsVisibleFor(prestador, TABS_P, [], 'off')).toEqual([...TABS_P]);
+    expect(tabsVisibleFor(prestador, TABS_P, null, undefined)).toEqual([...TABS_P]);
   });
 });

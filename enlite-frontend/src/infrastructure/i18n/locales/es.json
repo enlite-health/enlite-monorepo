@@ -4017,7 +4017,11 @@
       },
       "screens": {
         "dashboard": {
-          "label": "Gestión a la Vista"
+          "label": "Gestión a la Vista",
+          "containers": {
+            "analytics": "Indicadores de reclutamiento",
+            "patients": "Pacientes (estado y embudo)"
+          }
         },
         "users": {
           "label": "Usuarios"
@@ -4055,9 +4059,9 @@
         "workers.detail": {
           "label": "Prestadores: Detalles",
           "containers": {
-            "profile": "Perfil",
-            "contact": "Contacto",
-            "dossier": "Dossier (DNI, domicilio, datos sensibles)",
+            "profile": "Perfil profesional, etiquetas y disponibilidad",
+            "contact": "Contacto (nombre, teléfono, e-mail)",
+            "dossier": "Dossier (DNI, nacimiento, domicilio, datos sensibles)",
             "documents": "Documentos",
             "encuadres": "Encuadres"
           }
@@ -4080,12 +4084,13 @@
         "vacancies.detail": {
           "label": "Vacantes: Detalles",
           "containers": {
-            "case": "Caso",
+            "case": "Caso (perfil requerido, links)",
             "funnel": "Embudo (encuadres)",
             "match": "Matching",
             "invites": "Invitaciones por WhatsApp",
             "prescreening": "Preselección",
-            "talentum": "Publicación en Talentum"
+            "talentum": "Publicación en Talentum",
+            "patient": "Paciente (nombre)"
           }
         },
         "recruitment": {
