@@ -2940,9 +2940,11 @@
         "requiredField": "Este campo es obligatorio",
         "serviceAddress": "Domicilio",
         "serviceAddressHint": "Dónde se presta ESTE servicio. Cada servicio se vincula a un domicilio del paciente; la vacante nace ahí.",
-        "serviceAddressNoneHint": "Cargá primero un domicilio en \"Localizaciones\" para poder vincularlo.",
         "serviceSchedule": "Horarios",
-        "serviceScheduleHint": "Opcional: la vacante puede crearse sin horario y completarse después."
+        "serviceScheduleHint": "Opcional: la vacante puede crearse sin horario y completarse después.",
+        "onlyNumbersHint": "Solo números",
+        "onlyNumbersWarning": "Este campo acepta solo números.",
+        "serviceAddressNone": "Este paciente no tiene domicilio cargado. Cargalo en \"Localizaciones\" para poder vincular el servicio — sin domicilio, la vacante no puede crearse."
       },
       "kanban": {
         "title": "Pacientes — Kanban",

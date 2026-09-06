@@ -82,6 +82,14 @@ test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salva
     await domicilio.selectOption(seed.addressId);
     await expect(domicilio).toHaveValue(seed.addressId);
 
+    // ── Letra num campo numérico: o navegador recusa em silêncio; a tela AVISA (Gabriel, 06/09) ──
+    const prest = page.getByTestId('svc-providersNeeded-1');
+    await prest.click();
+    await page.keyboard.type('abc');
+    await expect(prest).toHaveValue('');
+    await expect(page.getByText('Este campo acepta solo números.').first()).toBeVisible();
+    await expect(page.getByText('Solo números').first()).toBeVisible();
+
     // ── Texto/número: clique + teclado, e o valor que FICOU ──
     expect(await digitar(page, 'svc-providersNeeded-1', '2')).toBe('2');
     expect(await digitar(page, 'svc-weeklyHours-1', '20')).toBe('20');
@@ -124,5 +132,26 @@ test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salva
     await expect(page.getByTestId('svc-detail-schedule')).toContainText('Lunes 09:00-17:00');
     await page.getByTestId('contracted-service-detail-close').click();
     await expect(page.getByTestId('contracted-service-detail-drawer')).not.toBeVisible();
+  });
+
+  test('paciente SEM domicílio: o drawer diz isso em aviso âmbar na linha inteira, e o select fica desabilitado', async ({ page }) => {
+    // `runSQL` devolve "id\nINSERT 0 1" num INSERT … RETURNING — só a 1ª linha é o id.
+    const semEndereco = runSQL(`INSERT INTO patients (clickup_task_id, first_name, last_name, country, status) VALUES ('E2E-HUMANO-SEMDOM-${seed.stamp}', 'Humano', 'SinDomicilio', 'AR', 'PENDING_ADMISSION') RETURNING id`).split('\n')[0].trim();
+    try {
+      await loginComoHumano(page);
+      await page.goto(`/admin/patients/${semEndereco}`);
+      await page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Servicio Contratado' }).click();
+      await page.getByTestId('edit-service-btn').click();
+      await page.getByTestId('contracted-service-add').click();
+      const aviso = page.getByTestId('svc-address-none-1');
+      await expect(aviso).toBeVisible();
+      await expect(aviso).toContainText('no tiene domicilio cargado');
+      await expect(page.getByTestId('svc-addressId-1')).toBeDisabled();
+      await expect(page.getByTestId('patient-contracted-services-edit-drawer')).toHaveScreenshot('humano-sem-domicilio.png', {
+        mask: [page.locator('.firebase-emulator-warning')],
+      });
+    } finally {
+      cleanupPatientDeep(semEndereco);
+    }
   });
 });

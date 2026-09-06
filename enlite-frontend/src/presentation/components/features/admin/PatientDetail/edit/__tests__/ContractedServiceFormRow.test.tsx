@@ -299,10 +299,28 @@ describe('ContractedServiceFormRow', () => {
       expect(select.disabled).toBe(false);
     });
 
-    it('sem endereço na ficha: o select fica desabilitado com a dica de cadastrar o domicílio primeiro', () => {
+    it('sem endereço na ficha: o select fica desabilitado E um aviso âmbar diz que o paciente NÃO tem domicílio (Gabriel, 06/09)', () => {
       render(<ContractedServiceFormRow patientId="pat1" addresses={[]} service={null} index={1} onSaved={vi.fn()} />);
       expect((screen.getByTestId('svc-addressId-1') as HTMLSelectElement).disabled).toBe(true);
-      expect(screen.getByText(/Cargá primero un domicilio/)).toBeTruthy();
+      const aviso = screen.getByTestId('svc-address-none-1');
+      expect(aviso).toHaveAttribute('role', 'alert');
+      expect(aviso.textContent).toContain('no tiene domicilio cargado');
+    });
+
+    it('com endereço na ficha: sem o aviso âmbar; o campo ocupa a linha inteira (col-span-2)', () => {
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
+      expect(screen.queryByTestId('svc-address-none-1')).toBeNull();
+      const campo = screen.getByTestId('svc-addressId-1').closest('.sm\\:col-span-2');
+      expect(campo).not.toBeNull();
+    });
+
+    it('campos numéricos avisam ao receber letra (NumericField nos 4: prestadores, hs semanais, hs autorizadas, valor)', () => {
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
+      for (const id of ['svc-providersNeeded-1', 'svc-weeklyHours-1', 'svc-authorizedHours-1', 'svc-hourlyValue-1']) {
+        fireEvent.keyDown(screen.getByTestId(id), { key: 'a' });
+      }
+      expect(screen.getAllByText('Este campo acepta solo números.')).toHaveLength(4);
+      expect(screen.getAllByText('Solo números')).toHaveLength(4);
     });
 
     it('modo NOVO: escolher o endereço envia addressId; sem escolher envia null (nunca string vazia)', async () => {

@@ -3,7 +3,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslation } from 'react-i18next';
-import { Trash2 } from 'lucide-react';
+import { AlertTriangle, Trash2 } from 'lucide-react';
 import { AdminContractedServicesApiService } from '@infrastructure/http/AdminContractedServicesApiService';
 import type { PatientAddressDetail, PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
 import type { ContractedServiceScheduleSlot } from '@domain/entities/PatientContractedService';
@@ -16,6 +16,7 @@ import { SelectField } from '@presentation/components/molecules/SelectField';
 import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
 import { DayScheduleEditor } from '@presentation/components/molecules/DayScheduleEditor';
 import { ContractedServiceProvidersSection } from './ContractedServiceProvidersSection';
+import { NumericField } from './NumericField';
 import { useContractedServiceOptions } from './useContractedServiceOptions';
 
 interface Props {
@@ -272,27 +273,34 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
             <SelectField id={`svc-code-${index}`} inputSize="compact" options={serviceOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} disabled={!isNew} data-testid={`svc-code-${index}`} />
           )} />
         </FormField>
-        <FormField label={te('providersNeeded')} htmlFor={`svc-providersNeeded-${index}`} optional>
-          <InputWithIcon id={`svc-providersNeeded-${index}`} type="number" inputSize="compact" data-testid={`svc-providersNeeded-${index}`} {...register('providersNeeded')} />
-        </FormField>
-        <FormField label={te('weeklyHours')} htmlFor={`svc-weeklyHours-${index}`} optional>
-          <InputWithIcon id={`svc-weeklyHours-${index}`} type="number" inputSize="compact" data-testid={`svc-weeklyHours-${index}`} {...register('weeklyHours')} />
-        </FormField>
-        <FormField label={te('authorizedHours')} htmlFor={`svc-authorizedHours-${index}`} optional>
-          <InputWithIcon id={`svc-authorizedHours-${index}`} type="number" inputSize="compact" data-testid={`svc-authorizedHours-${index}`} {...register('authorizedHours')} />
-        </FormField>
+        <NumericField id={`svc-providersNeeded-${index}`} label={te('providersNeeded')} testId={`svc-providersNeeded-${index}`} {...register('providersNeeded')} />
+        <NumericField id={`svc-weeklyHours-${index}`} label={te('weeklyHours')} testId={`svc-weeklyHours-${index}`} {...register('weeklyHours')} />
+        <NumericField id={`svc-authorizedHours-${index}`} label={te('authorizedHours')} testId={`svc-authorizedHours-${index}`} {...register('authorizedHours')} />
         <FormField label={te('careLocation')} htmlFor={`svc-careLocation-${index}`} optional>
           <Controller control={control} name="careLocation" render={({ field }) => (
             <SelectField id={`svc-careLocation-${index}`} inputSize="compact" options={careLocationOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`svc-careLocation-${index}`} />
           )} />
         </FormField>
         {/* Migration 330: o ENDEREÇO (ponteiro para a ficha) é distinto do "lugar" (Casa/Escola)
-            e do dispositivo — três coisas, como no Figma. Sem ele a vaga não sabe onde nascer. */}
+            e do dispositivo — três coisas, como no Figma. Sem ele a vaga não sabe onde nascer.
+            Ocupa a linha inteira (Gabriel, 06/09): é o campo que decide onde a vaga nasce, e sem
+            endereço na ficha o operador precisa VER o aviso, não um select cinza. */}
         <FormField
           label={te('serviceAddress')}
           htmlFor={`svc-addressId-${index}`}
-          hint={addresses.length === 0 ? te('serviceAddressNoneHint') : te('serviceAddressHint')}
+          hint={addresses.length === 0 ? undefined : te('serviceAddressHint')}
+          className="sm:col-span-2"
         >
+          {addresses.length === 0 && (
+            <div
+              role="alert"
+              data-testid={`svc-address-none-${index}`}
+              className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-800"
+            >
+              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
+              <Text as="span" size="sm" color="inherit">{te('serviceAddressNone')}</Text>
+            </div>
+          )}
           <Controller control={control} name="addressId" render={({ field }) => (
             <SelectField
               id={`svc-addressId-${index}`}
@@ -306,13 +314,13 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
             />
           )} />
         </FormField>
-        <FormField label={te('hourlyValue')} htmlFor={`svc-hourlyValue-${index}`} optional>
-          {service?.hourlyValueRedacted ? (
+        {service?.hourlyValueRedacted ? (
+          <FormField label={te('hourlyValue')} htmlFor={`svc-hourlyValue-${index}`} optional>
             <InputWithIcon id={`svc-hourlyValue-${index}`} inputSize="compact" value={te('hourlyValueRedacted')} disabled data-testid={`svc-hourlyValue-${index}`} />
-          ) : (
-            <InputWithIcon id={`svc-hourlyValue-${index}`} type="number" inputSize="compact" data-testid={`svc-hourlyValue-${index}`} {...register('hourlyValue')} />
-          )}
-        </FormField>
+          </FormField>
+        ) : (
+          <NumericField id={`svc-hourlyValue-${index}`} label={te('hourlyValue')} testId={`svc-hourlyValue-${index}`} {...register('hourlyValue')} />
+        )}
         <FormField label={te('version')} htmlFor={`svc-version-${index}`} hint={te('versionHint')} optional>
           <InputWithIcon id={`svc-version-${index}`} inputSize="compact" data-testid={`svc-version-${index}`} {...register('version')} />
         </FormField>

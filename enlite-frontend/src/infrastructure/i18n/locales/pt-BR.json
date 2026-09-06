@@ -2861,9 +2861,11 @@
         "requiredField": "Este campo é obrigatório",
         "serviceAddress": "Endereço",
         "serviceAddressHint": "Onde ESTE serviço é prestado. Cada serviço se vincula a um endereço do paciente; a vaga nasce ali.",
-        "serviceAddressNoneHint": "Cadastre primeiro um endereço em \"Localizações\" para poder vincular.",
         "serviceSchedule": "Horários",
-        "serviceScheduleHint": "Opcional: a vaga pode ser criada sem horário e completada depois."
+        "serviceScheduleHint": "Opcional: a vaga pode ser criada sem horário e completada depois.",
+        "onlyNumbersHint": "Só números",
+        "onlyNumbersWarning": "Este campo aceita só números.",
+        "serviceAddressNone": "Este paciente não tem endereço cadastrado. Cadastre em \"Localizações\" para poder vincular o serviço — sem endereço, a vaga não pode ser criada."
       },
       "kanban": {
         "title": "Pacientes — Kanban",
