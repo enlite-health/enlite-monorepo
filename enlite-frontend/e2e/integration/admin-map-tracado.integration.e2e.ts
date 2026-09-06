@@ -107,7 +107,10 @@ async function espionarPolilinhas(page: Page): Promise<void> {
     const w = window as unknown as { google: typeof google; __linhas: unknown[] };
     w.__linhas = [];
     const Original = w.google.maps.Polyline;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // `any` no `opts`: é o objeto de opções do Google, e o espião só lê 4
+    // campos dele. A pasta `e2e/` não tem a regra `no-explicit-any` ligada —
+    // pôr `eslint-disable` aqui virava DIRETIVA INÚTIL, que o `pnpm lint` da
+    // casa reprova (`--report-unused-disable-directives`). Medido no CI.
     w.google.maps.Polyline = function (opts: any) {
       const linha = new Original(opts);
       const registro = {
@@ -124,7 +127,6 @@ async function espionarPolilinhas(page: Page): Promise<void> {
         setMapOriginal(m);
       };
       return linha;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any;
   });
 }
