@@ -188,6 +188,72 @@ test.describe('Spec 016 F3 — front do diagnóstico CID-11 @integration', () =>
     testInfo.annotations.push({ type: 'evidência', description: 'T2 controle — page.content() ACUSOU o código injetado (régua viva), e voltou limpo após remover o poison' });
   });
 
+  /**
+   * T4 (06/09, Gabriel): "quando clico qual CID-11 eu quero, demora uns milissegundos para aparecer —
+   * precisamos de um aviso de carregando para o usuário entender que NÃO TRAVOU" · "quando deleto uma
+   * também precisa". Sem mock: a latência é emulada no NAVEGADOR (DevTools `Network.emulateNetworkConditions`),
+   * o POST/PATCH vão para a API real e gravam no Postgres real. Com a rede lenta, o estado intermediário
+   * fica visível o bastante para ser fotografado.
+   */
+  test('T4 — enquanto a API responde: chip "Agregando…" ao escolher e "Quitando…" ao remover (rede lenta emulada, sem mock)', async ({ page }, testInfo) => {
+    await loginAsAdmin(page);
+    await openDetail(page, patient.patientId);
+    await page.getByTestId('edit-clinical-btn').click();
+    const drawer = page.getByTestId('patient-clinical-edit-drawer');
+    await expect(drawer).toBeVisible();
+
+    const searchInput = page.getByTestId('icd-search-input');
+    await searchInput.pressSequentially('trastorno esquizoafectivo', { delay: 20 });
+    const option0 = page.getByTestId('icd-search-option-0');
+    await expect(option0).toBeVisible({ timeout: 10_000 });
+    const titulo = (await option0.textContent())?.trim() ?? '';
+    expect(titulo.length).toBeGreaterThan(0);
+
+    // Latência de 1,5 s por requisição — só no navegador; nada é interceptado nem respondido por nós.
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Network.enable');
+    await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 1500, downloadThroughput: -1, uploadThroughput: -1 });
+
+    const createResponse = page.waitForResponse((r) => r.request().method() === 'POST' && /\/diagnoses$/.test(r.url()));
+    await option0.click();
+    const pending = page.getByTestId('diagnosis-chip-pending');
+    await expect(pending).toBeVisible({ timeout: 5_000 });
+    await expect(pending).toContainText(titulo);
+    await expect(pending).toContainText('Agregando…');
+    await expect(searchInput).toBeDisabled();
+    await expect(page.getByTestId('diagnosis-chips')).toHaveScreenshot('cid11-f3-chip-agregando.png', { maxDiffPixelRatio: 0.06 });
+    const createRes = await createResponse;
+    expect(createRes.status()).toBe(201);
+    await expect(pending).toHaveCount(0, { timeout: 10_000 });
+    await expect(searchInput).not.toBeDisabled();
+    const chipNovo = page.getByTestId('diagnosis-chips').locator('li', { hasText: titulo }).first();
+    await expect(chipNovo).toBeVisible();
+    const chipId = (await chipNovo.getAttribute('data-testid'))!.replace('diagnosis-chip-', '');
+
+    // Remover com a mesma rede lenta: "Quitando…" no lugar dos botões, depois o chip some.
+    await page.getByTestId(`diagnosis-chip-remove-${chipId}`).click();
+    const patchResponse = page.waitForResponse((r) => r.request().method() === 'PATCH' && new RegExp(`/diagnoses/${chipId}$`).test(r.url()));
+    await page.getByTestId(`diagnosis-chip-remove-confirm-btn-${chipId}`).click();
+    const busy = page.getByTestId(`diagnosis-chip-busy-${chipId}`);
+    await expect(busy).toBeVisible({ timeout: 5_000 });
+    await expect(busy).toContainText('Quitando…');
+    await expect(page.getByTestId(`diagnosis-chip-remove-${chipId}`)).toHaveCount(0);
+    await expect(page.getByTestId('diagnosis-chips')).toHaveScreenshot('cid11-f3-chip-quitando.png', { maxDiffPixelRatio: 0.06 });
+    expect((await patchResponse).status()).toBe(200);
+    await expect(page.getByTestId(`diagnosis-chip-${chipId}`)).toHaveCount(0, { timeout: 10_000 });
+
+    await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+    await cdp.detach();
+
+    const rows = readPatientDiagnoses(patient.patientId);
+    testInfo.annotations.push({ type: 'evidência', description: `T4 — patient_diagnoses: ${JSON.stringify(rows)}` });
+    const novo = rows.find((r) => r.conceptTitle === titulo);
+    expect(novo).toBeDefined();
+    expect(novo!.active).toBe(false); // gravado pelo POST real, desativado pelo PATCH real
+    await drawer.getByRole('button', { name: 'Cerrar' }).click();
+    await expect(drawer).toHaveCount(0, { timeout: 15_000 });
+  });
+
   test('T3 — US-4: catálogo indisponível (503) mostra falha visível, DISTINTA de "sem resultado"', async ({ page }) => {
     setCatalogPromoted(false); // reproduz a pré-condição real: sem release corrente, TODA busca é 503
     await loginAsAdmin(page);
