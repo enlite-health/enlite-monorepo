@@ -17,17 +17,19 @@
  * de chip sem nenhum aviso. O corpo voltou a não fazer nada; promover só pelo botão com texto
  * visível (já resolvia a descoberta, medido na 2ª auditoria, item 8: ENTENDE).
  *
- * Visual (05/09): o chip usa a MESMA caixa do input de busca logo acima — `inputWrapperClasses`
- * (`compact`: 48px, raio 10px, borda 1,5px), fonte única em `atoms/Input/inputClasses.ts` — era o
- * terceiro estilo de caixa na mesma coluna. Ações em `xs` (12px), não `2xs` (11px): são botões que
- * apagam/promovem diagnóstico, precisam ser lidos.
+ * Visual (05/09): o chip usa a MESMA geometria do input de busca logo acima — raio, borda e padding
+ * vêm de `INPUT_SIZE_CONFIG.compact` (fonte única em `atoms/Input/inputClasses.ts`) — era o terceiro
+ * estilo de caixa na mesma coluna. NÃO usa `inputWrapperClasses`: ele traz `focus-within` na cor
+ * primária, que é exatamente a borda do chip Principal (tabular até o X de um chip comum o pintava
+ * como principal), e `h-12` fixo, que espremia o título quando a confirmação de remoção aparece —
+ * aqui é altura MÍNIMA. Ações em `xs` (12px), não `2xs`: são botões que apagam/promovem diagnóstico.
  */
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Star, X } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import type { PatientDiagnosisDetail } from '@domain/entities/PatientDetail';
-import { inputWrapperClasses } from '@presentation/components/atoms/Input/inputClasses';
+import { INPUT_SIZE_CONFIG } from '@presentation/components/atoms/Input/inputClasses';
 
 export interface DiagnosisChipListProps {
   diagnoses: PatientDiagnosisDetail[];
@@ -62,8 +64,8 @@ export function DiagnosisChipList({
         return (
           <li
             key={d.id}
-            className={`${inputWrapperClasses({ size: 'compact' })} justify-between gap-3 ${
-              d.isPrimary ? '!border-primary !bg-primary/5' : ''
+            className={`flex items-center justify-between gap-3 min-h-12 border-solid ${INPUT_SIZE_CONFIG.compact.padding} ${INPUT_SIZE_CONFIG.compact.borderRadius} ${INPUT_SIZE_CONFIG.compact.borderWidth} ${
+              d.isPrimary ? 'border-primary bg-primary/5' : 'border-gray-600 bg-white'
             }`}
             data-testid={`diagnosis-chip-${d.id}`}
           >

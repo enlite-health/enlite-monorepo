@@ -49,6 +49,26 @@ describe('IcdSearchCombobox', () => {
     vi.useRealTimers();
   });
 
+  // Rodada pré-merge (D284): a lupa virou irmão flex do input — sem isto ela engolia o clique.
+  it('clicar na lupa foca o input (a lupa é um <label for> do combobox)', () => {
+    render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
+    const input = screen.getByTestId('icd-search-input') as HTMLInputElement;
+    const lupa = input.parentElement!.querySelector('label[for="icd-search"]') as HTMLLabelElement;
+    expect(lupa).not.toBeNull();
+    // jsdom não move o foco ao ativar um <label>; o que se prova aqui é a ASSOCIAÇÃO nativa
+    // (label.control === input) — é ela que, no navegador, leva o clique da lupa ao campo.
+    expect(lupa.control).toBe(input);
+    expect(lupa.className).toMatch(/\bcursor-text\b/);
+  });
+
+  it('o espaço do spinner fica SEMPRE reservado: o slot existe sem busca e o spinner só aparece buscando', () => {
+    render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
+    const input = screen.getByTestId('icd-search-input');
+    const slot = input.nextElementSibling as HTMLElement;
+    expect(slot.className).toMatch(/\bw-4\b/);
+    expect(screen.queryByTestId('icd-search-spinner')).not.toBeInTheDocument();
+  });
+
   it('renders o input como combobox, com placeholder i18n e fechado', () => {
     render(<IcdSearchCombobox id="icd-search" onSelect={vi.fn()} />);
     const input = screen.getByTestId('icd-search-input');

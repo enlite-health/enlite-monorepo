@@ -46,6 +46,19 @@ describe('DiagnosisChipList', () => {
     expect(chipEl.innerHTML).not.toContain('1683919430');
   });
 
+  // Rodada pré-merge (D284): o chip NÃO é input — sem borda de foco na cor primária (que é a marca do
+  // chip Principal) e com altura MÍNIMA, para a confirmação de remoção não espremer o título.
+  it('chip comum não herda focus-within na cor primária, e a caixa tem altura mínima (não fixa)', () => {
+    render(<DiagnosisChipList diagnoses={[chip({ id: 'c1', isPrimary: false }), chip({ id: 'c2', isPrimary: true })]} onPromote={vi.fn()} onRemove={vi.fn()} />);
+    const comum = screen.getByTestId('diagnosis-chip-c1');
+    const principal = screen.getByTestId('diagnosis-chip-c2');
+    expect(comum.className).not.toMatch(/focus-within/);
+    expect(comum.className).not.toMatch(/border-primary/);
+    expect(comum.className).toMatch(/\bmin-h-12\b/);
+    expect(comum.className).not.toMatch(/(^|\s)h-12(\s|$)/);
+    expect(principal.className).toMatch(/\bborder-primary\b/);
+  });
+
   it('não-principal: mostra botão de promover, sem o badge "Principal"', () => {
     render(<DiagnosisChipList diagnoses={[chip({ isPrimary: false })]} onPromote={vi.fn()} onRemove={vi.fn()} />);
     expect(screen.getByTestId('diagnosis-chip-promote-d1')).toBeInTheDocument();

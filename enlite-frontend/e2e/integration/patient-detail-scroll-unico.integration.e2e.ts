@@ -18,11 +18,14 @@ import { seedPatientForDiagnosis, cleanupPatientDeep, runSQL } from '../helpers/
 
 const EMULATOR = 'http://127.0.0.1:9099';
 const EMULATOR_PROJECT = 'demo-no-project';
-const STAFF_EMAIL = `e2e.scroll-unico.${Date.now()}@enlite.health`;
 const STAFF_PASSWORD = 'TestAdmin123!';
 
-async function loginAsAdmin(page: Page): Promise<void> {
-  // e-mail único por carga do arquivo e um teste só: o signUp não tem como colidir (sem fallback morto)
+/** E-mail novo a CADA chamada — um retry do Playwright (CI: retries 2) não pode reusar o da tentativa anterior. */
+function novoStaffEmail(): string {
+  return `e2e.scroll-unico.${Date.now()}.${Math.random().toString(36).slice(2, 8)}@enlite.health`;
+}
+
+async function loginAsAdmin(page: Page, STAFF_EMAIL: string): Promise<void> {
   const auth = await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=any`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: STAFF_EMAIL, password: STAFF_PASSWORD, returnSecureToken: true }),
@@ -67,8 +70,9 @@ test.describe('Ficha do paciente — um rolável só @integration', () => {
 
   test('aba "Servicio Contratado": o documento não rola, só o <main>; rolar até o fim não move o <html>', async ({ page }, testInfo) => {
     const patient = seedPatientForDiagnosis();
+    const STAFF_EMAIL = novoStaffEmail();
     try {
-      await loginAsAdmin(page);
+      await loginAsAdmin(page, STAFF_EMAIL);
       await page.goto(`/admin/patients/${patient.patientId}`);
       await page.getByTestId('patient-profile-tabs').waitFor();
       await page.getByRole('button', { name: 'Servicio Contratado' }).click();

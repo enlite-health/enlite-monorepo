@@ -212,9 +212,8 @@ test.describe('AUDITORIA UX — spec 016, tela de diagnóstico CID-11 (não é g
     await shot(drawer, 'ux-01-estado-inicial.png');
     const sectionLabel = await page.locator('#pce-section-pathology').textContent().catch(() => null);
     const placeholder = await page.getByTestId('icd-search-input').getAttribute('placeholder');
-    // 05/09 (D284): o campo livre "Hipótesis Diagnóstica - CID" não existe mais — a sonda tem de dar null.
-    const legacyLabel = await page.locator('label[for="pce-diagnosis"]').textContent({ timeout: 1_000 }).catch(() => null);
-    log('01', `label da seção estruturada = "${sectionLabel}" | placeholder do input = "${placeholder}" | label do campo LIVRE acima = "${legacyLabel}"`);
+    // 05/09 (D284): o campo livre "Hipótesis Diagnóstica - CID" foi REMOVIDO do drawer — não há mais sonda dele.
+    log('01', `label da seção estruturada = "${sectionLabel}" | placeholder do input = "${placeholder}"`);
     const attribution = await textOrNothing(page.getByTestId('who-attribution'));
     log('01', `texto de atribuição visível = "${attribution}"`);
 
@@ -681,7 +680,7 @@ test.describe('AUDITORIA UX — spec 016, tela de diagnóstico CID-11 (não é g
 
     // ── 13. Procura o código que a obra social pede ──────────────────────────────────────
     const domContent = await page.content();
-    const legacyFieldValue = await page.getByTestId('pce-diagnosis').inputValue({ timeout: 1_000 }).catch(() => null); // D284: campo removido → null
+    const legacyFieldValue = 'campo removido em D284'; // não existe mais nada a sondar
     const anyElementWithTitleAttr = await page.evaluate(() => {
       const els = Array.from(document.querySelectorAll('[data-testid^="diagnosis-chip-"]'));
       return els.map((el) => el.getAttribute('title')).filter(Boolean);

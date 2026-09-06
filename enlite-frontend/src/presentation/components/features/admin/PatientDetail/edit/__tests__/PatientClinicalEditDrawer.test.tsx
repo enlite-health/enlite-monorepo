@@ -225,7 +225,8 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
       const drawer = screen.getByTestId('patient-clinical-edit-drawer');
       expect(drawer.textContent).not.toMatch(/Hipótese Diagnóstica/);
       // A sigla só sobrevive na atribuição da OMS (cláusula 1.3 da licença) — em NENHUM rótulo ou título.
-      const labelsAndHeadings = Array.from(drawer.querySelectorAll('label, [role="heading"]')).map((e) => e.textContent).join(' | ');
+      const labelsAndHeadings = Array.from(drawer.querySelectorAll('label, h1, h2, h3, h4, h5, h6')).map((e) => e.textContent).join(' | ');
+      expect(labelsAndHeadings).toMatch(/Patologia/); // a varredura enxerga os títulos (régua viva)
       expect(labelsAndHeadings).not.toMatch(/CID|CIE/);
       expect(screen.getByTestId('who-attribution').textContent).toMatch(/CID-11/);
       fireEvent.change(screen.getByTestId('pce-comments'), { target: { value: 'só isto' } });
@@ -259,9 +260,13 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
       render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
       const drawer = screen.getByTestId('patient-clinical-edit-drawer');
       expect(drawer.textContent).not.toMatch(/\(opcional\)/);
-      const labels = Array.from(drawer.querySelectorAll('label'));
+      // só rótulos com texto — a lupa da busca também é um <label for> (clicar nela foca o input), sem texto
+      const labels = Array.from(drawer.querySelectorAll('label')).filter((l) => l.textContent?.trim());
       expect(labels.length).toBeGreaterThanOrEqual(8);
-      for (const l of labels) expect(l.className).toMatch(/text-\[12px\]/);
+      for (const l of labels) {
+        expect(l.className).toMatch(/text-\[12px\]/);
+        expect(l.className).toMatch(/\btext-primary\b/);
+      }
     });
   });
 

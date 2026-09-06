@@ -228,7 +228,11 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false, ariaLabelled
   return (
     <div ref={containerRef} className="flex flex-col gap-1.5">
       <div className={`${inputWrapperClasses({ size: 'compact', disabled })} gap-2`}>
-        <Search className="w-4 h-4 shrink-0 text-gray-800" aria-hidden="true" />
+        {/* A lupa é um <label for> do input: clicar nela foca o campo (era o comportamento do ícone
+            sobreposto com pointer-events-none; como irmão flex, sem isto ela engolia o clique). */}
+        <label htmlFor={id} className="flex items-center shrink-0 cursor-text" aria-hidden="true">
+          <Search className="w-4 h-4 text-gray-800" />
+        </label>
         <input
           id={id}
           type="text"
@@ -244,15 +248,19 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false, ariaLabelled
           aria-controls={listboxId}
           aria-haspopup="listbox"
           aria-activedescendant={activeIndex >= 0 ? `${id}-option-${activeIndex}` : undefined}
-          className={`${INPUT_INNER_CLASSES} ${INPUT_SIZE_CONFIG.compact.fontSize} ${INPUT_SIZE_CONFIG.compact.lineHeight} disabled:cursor-not-allowed`}
+          className={`${INPUT_INNER_CLASSES} ${INPUT_SIZE_CONFIG.compact.fontSize} ${INPUT_SIZE_CONFIG.compact.lineHeight}`}
           data-testid={`${id}-input`}
         />
-        {phase === 'searching' && (
-          <div
-            className="w-4 h-4 shrink-0 border-2 border-primary/30 border-t-primary rounded-full animate-spin"
-            data-testid={`${id}-spinner`}
-          />
-        )}
+        {/* Slot do spinner SEMPRE reservado (16px): montar/desmontar o irmão flex fazia o input
+            encolher 24px a cada busca e o cursor pular no meio da digitação. */}
+        <span className="w-4 h-4 shrink-0 flex items-center justify-center" aria-hidden="true">
+          {phase === 'searching' && (
+            <span
+              className="block w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin"
+              data-testid={`${id}-spinner`}
+            />
+          )}
+        </span>
       </div>
 
       {/* V1 (rodada 2): ESTADO permanente, sempre visível — não é um aviso condicional. Diz onde
