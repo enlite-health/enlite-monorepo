@@ -30,7 +30,7 @@ type Chamada = { sql: string; params: unknown[] };
  * `patient_addresses`; `published` é o conjunto de ids com vaga publicada apontando para eles.
  */
 function cliente(opts: {
-  existing?: Array<{ id: string; display_order: number; address_formatted: string | null; logistics_corridor: string | null; access_notes: string | null }>;
+  existing?: Array<{ id: string; display_order: number; address_formatted: string | null; logistics_corridor: string | null; access_notes: string | null; lat?: string | number | null; lng?: string | number | null }>;
   published?: string[];
 } = {}) {
   const chamadas: Chamada[] = [];
@@ -61,12 +61,14 @@ const endereco = (over: Partial<PatientAddress> = {}): PatientAddress => ({
   ...over,
 });
 
-const linha = (over: Partial<{ id: string; display_order: number; address_formatted: string | null; logistics_corridor: string | null; access_notes: string | null }> = {}) => ({
+const linha = (over: Partial<{ id: string; display_order: number; address_formatted: string | null; logistics_corridor: string | null; access_notes: string | null; lat: string | number | null; lng: string | number | null }> = {}) => ({
   id: 'antiga-1',
   display_order: 1,
   address_formatted: 'Av. Maipú 1234',
   logistics_corridor: 'Corredor Norte',
   access_notes: 'Portero 24h',
+  lat: null as string | number | null,
+  lng: null as string | number | null,
   ...over,
 });
 
@@ -208,5 +210,71 @@ describe('replacePatientProfessionals', () => {
     await replacePatientProfessionals(PID, [pro({ name: '   ' }), pro({ name: undefined as unknown as string })], client);
     expect(chamadas).toHaveLength(1);
     expect(chamadas[0].sql).toMatch(/DELETE FROM patient_professionals/);
+  });
+
+  /**
+   * 🔒 O CACHE DE COORDENADA (D289, 06/09/2026).
+   *
+   * A rede de segurança do ClickUp roda a cada 10 min e regravava o endereço de
+   * todo paciente que tocasse. Sem cache, cada passagem pagava ao Google para
+   * reresponder o que já estava no banco: 132 chamadas/hora, 24h/dia.
+   *
+   * Estes testes cobrem as DUAS metades. A que economiza, e a que impede o
+   * conserto de virar "nunca mais geocodifica" — que é o modo de falha óbvio de
+   * um cache que não invalida.
+   */
+  describe('cache de coordenada já conhecida', () => {
+    it('reusa a coordenada do banco quando o texto do endereço NÃO mudou', async () => {
+      const { client } = cliente({ existing: [linha({ lat: -34.61, lng: -58.38 })] });
+
+      await replacePatientAddresses(PID, [endereco({ addressFormatted: 'Av. Maipú 1234' })], client, geocoder);
+
+      expect(mockGeocode).toHaveBeenCalledTimes(1);
+      const conhecidas = mockGeocode.mock.calls[0][2]?.known as Map<string, { lat: number; lng: number }>;
+      expect(conhecidas.get('Av. Maipú 1234')).toEqual({ lat: -34.61, lng: -58.38 });
+    });
+
+    it('endereço com texto NOVO não entra no cache — volta a ser geocodificado', async () => {
+      // A metade que impede "nunca mais geocodifica": mudou o texto, a chave não
+      // bate, o Google responde de novo.
+      const { client } = cliente({ existing: [linha({ address_formatted: 'Av. Maipú 1234', lat: -34.61, lng: -58.38 })] });
+
+      await replacePatientAddresses(PID, [endereco({ addressFormatted: 'Calle Nueva 999' })], client, geocoder);
+
+      const conhecidas = mockGeocode.mock.calls[0][2]?.known as Map<string, { lat: number; lng: number }>;
+      expect(conhecidas.has('Calle Nueva 999')).toBe(false);
+    });
+
+    it('linha do banco SEM coordenada fica fora do cache', async () => {
+      // `lat`/`lng` nulos são o estado que o backfill existe para recuperar —
+      // colocá-los no cache congelaria o endereço sem pino para sempre.
+      const { client } = cliente({ existing: [linha({ lat: null, lng: null })] });
+
+      await replacePatientAddresses(PID, [endereco()], client, geocoder);
+
+      const conhecidas = mockGeocode.mock.calls[0][2]?.known as Map<string, { lat: number; lng: number }>;
+      expect(conhecidas.size).toBe(0);
+    });
+
+    it('🔒 coordenada ILEGÍVEL fica fora do cache — não vira pino errado', async () => {
+      // O banco devolve NUMERIC como string; se vier lixo, `Number()` dá NaN.
+      // Um NaN no cache viraria coordenada inválida gravada na ficha do
+      // paciente. Fora do cache, ele é geocodificado como sempre.
+      const { client } = cliente({ existing: [linha({ lat: 'não-é-número', lng: -58.38 })] });
+
+      await replacePatientAddresses(PID, [endereco()], client, geocoder);
+
+      const conhecidas = mockGeocode.mock.calls[0][2]?.known as Map<string, { lat: number; lng: number }>;
+      expect(conhecidas.size).toBe(0);
+    });
+
+    it('linha SEM texto de endereço fica fora do cache', async () => {
+      const { client } = cliente({ existing: [linha({ address_formatted: '   ', lat: -34.61, lng: -58.38 })] });
+
+      await replacePatientAddresses(PID, [endereco()], client, geocoder);
+
+      const conhecidas = mockGeocode.mock.calls[0][2]?.known as Map<string, { lat: number; lng: number }>;
+      expect(conhecidas.size).toBe(0);
+    });
   });
 });
