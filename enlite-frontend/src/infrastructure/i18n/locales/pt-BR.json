@@ -3726,7 +3726,13 @@
             "prescreening": "Pré-seleção",
             "analytics": "Analytics",
             "dedup": "Duplicados",
-            "dashboard": "Painel",
+            "dashboard": "Gestão à Vista (abrir a tela)",
+            "dashboard_numbers": "Números-chave",
+            "dashboard_team": "Equipe armada e horas",
+            "dashboard_priorities": "Prioridades de contato",
+            "dashboard_registrations": "Registros",
+            "dashboard_funnel": "Totalização do funil",
+            "dashboard_zones": "Zonas",
             "integration": "Integrações",
             "test_fixtures": "Dados de teste",
             "api_docs": "Documentação da API",
@@ -3948,7 +3954,12 @@
         "dashboard": {
           "label": "Gestão à Vista",
           "containers": {
-            "analytics": "Indicadores de recrutamento",
+            "numbers": "Números-chave",
+            "team": "Equipe armada e horas",
+            "priorities": "Prioridades de contato",
+            "registrations": "Registros",
+            "funnel": "Totalização do funil",
+            "zones": "Zonas",
             "patients": "Pacientes (status e funil)"
           }
         },

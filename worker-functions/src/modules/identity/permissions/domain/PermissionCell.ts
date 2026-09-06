@@ -67,6 +67,13 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   analytics: 'Analytics',
   dedup: 'Operações',
   dashboard: 'Operações',
+  // D286 (06/09): os blocos da Gestión a la Vista, um a um.
+  dashboard_numbers: 'Operações',
+  dashboard_team: 'Operações',
+  dashboard_priorities: 'Operações',
+  dashboard_registrations: 'Operações',
+  dashboard_funnel: 'Operações',
+  dashboard_zones: 'Operações',
   integration: 'Operações',
   test_fixtures: 'Operações',
   api_docs: 'Operações',
@@ -111,6 +118,24 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   // D286 fase 2 (06/09): o endereço sai do dossiê e vira célula própria, espelho de `patient_address` —
   // a MESMA célula vale no card de endereço da ficha e na aba Prestadores do mapa (coordenada é
   // endereço, `lex` P2; abrir o mapa não pode exigir raça e religião).
+  // D286 (06/09) — Gestión a la Vista por bloco. Só contagens e percentuais; a célula existe para
+  // o painel dizer o que cada grupo vê da gestão. `dashboard:read` continua sendo abrir a tela.
+  'dashboard_numbers:read':
+    'Ver o bloco NÚMEROS CLAVE da Gestión a la Vista: pacientes ativos, horas, percentuais de '
+    + 'resposta rápida e de capacidade, o que está rodando e o que está chegando.',
+  'dashboard_team:read':
+    'Ver o bloco EQUIPO ARMADO Y HORAS: classificação dos casos por equipe armada e as horas '
+    + 'cobertas por semana.',
+  'dashboard_priorities:read':
+    'Ver o bloco PRIORIDADES DE CONTACTO: quem a operação precisa contatar primeiro, por urgência.',
+  'dashboard_registrations:read':
+    'Ver o bloco REGISTROS: cadastros de prestadores e pacientes entrados no período.',
+  'dashboard_funnel:read':
+    'Ver o bloco TOTALIZACIÓN DEL EMBUDO: candidaturas por etapa e por prestador, com o filtro de '
+    + 'período, e os encuadres da semana.',
+  'dashboard_zones:read':
+    'Ver o bloco ZONAS: pacientes e prestadores por zona e sexo, demanda contra disponibilidade, '
+    + 'com filtro por profissão.',
   'worker_address:read':
     'Ver o ENDEREÇO do prestador: linha de endereço, coordenada e raio de atendimento — na ficha e '
     + 'no mapa. Cidade e zona de trabalho não precisam desta célula.',

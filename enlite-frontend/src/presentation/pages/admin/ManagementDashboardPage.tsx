@@ -21,11 +21,21 @@ import {
   ZoneAnalyticsSection,
 } from '@presentation/components/features/admin/ManagementDashboard';
 import { ContainerGate } from '@presentation/components/features/access';
+import { useContainerAccess } from '@presentation/hooks/useCellAccess';
 
 export function ManagementDashboardPage(): JSX.Element {
   const { t } = useTranslation();
   const { data, isLoading, error, refetch, funnelPeriod, setFunnelPeriod } =
     useManagementDashboard();
+  // D286: um `useContainerAccess` por bloco da tela (Pacientes fica no `ContainerGate` abaixo).
+  const bloco = {
+    numbers: useContainerAccess('dashboard_numbers').visible,
+    team: useContainerAccess('dashboard_team').visible,
+    priorities: useContainerAccess('dashboard_priorities').visible,
+    registrations: useContainerAccess('dashboard_registrations').visible,
+    funnel: useContainerAccess('dashboard_funnel').visible,
+    zones: useContainerAccess('dashboard_zones').visible,
+  };
 
   return (
     <PageContainer>
@@ -64,26 +74,33 @@ export function ManagementDashboardPage(): JSX.Element {
         </div>
       )}
 
+      {/* D286: cada bloco tem célula própria e a API já veio projetada — o bloco sem célula vem
+          `null` no payload, por isso a leitura das props fica DENTRO do ramo visível (o JSX de um
+          filho é avaliado antes de qualquer gate decidir). */}
       {!isLoading && !error && data && (
         <div data-testid="mgmt-content" className="space-y-10">
-          <BigNumbersSection
-            data={data.bigNumbers}
-            pacientes={data.pacientes}
-            horas={data.horas}
-            pctRespostaRapida={data.equipoArmada.pctRespostaRapidaArmado}
-            pctCapacidade={data.encuadres.pctCapacidadeSemana}
-          />
-          <EquipoArmadaSection equipoArmada={data.equipoArmada} horas={data.horas} />
-          <PrioridadesSection data={data.prioridades} />
+          {bloco.numbers && (
+            <BigNumbersSection
+              data={data.bigNumbers}
+              pacientes={data.pacientes}
+              horas={data.horas}
+              pctRespostaRapida={data.equipoArmada.pctRespostaRapidaArmado}
+              pctCapacidade={data.encuadres.pctCapacidadeSemana}
+            />
+          )}
+          {bloco.team && <EquipoArmadaSection equipoArmada={data.equipoArmada} horas={data.horas} />}
+          {bloco.priorities && <PrioridadesSection data={data.prioridades} />}
           {/* Registros ANTES da Totalización — acordo da call 22/07 (02:21, D7). */}
-          <CadastrosSection data={data.cadastros} />
-          <FunnelTotalsSection
-            funnelPorPrestador={data.funnelPorPrestador}
-            encuadres={data.encuadres}
-            period={funnelPeriod}
-            onPeriodChange={setFunnelPeriod}
-          />
-          <ZoneAnalyticsSection />
+          {bloco.registrations && <CadastrosSection data={data.cadastros} />}
+          {bloco.funnel && (
+            <FunnelTotalsSection
+              funnelPorPrestador={data.funnelPorPrestador}
+              encuadres={data.encuadres}
+              period={funnelPeriod}
+              onPeriodChange={setFunnelPeriod}
+            />
+          )}
+          {bloco.zones && <ZoneAnalyticsSection />}
         </div>
       )}
 

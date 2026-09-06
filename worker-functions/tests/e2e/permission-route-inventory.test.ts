@@ -217,7 +217,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /analytics/dashboard/global → dashboard:read',
         'GET /analytics/dashboard/management → dashboard:read',
         'GET /analytics/dashboard/reemplazos → dashboard:read',
-        'GET /analytics/dashboard/zone-analytics → dashboard:read',
+        'GET /analytics/dashboard/zone-analytics → dashboard_zones:read',
         'GET /analytics/dashboard/zones → dashboard:read',
         'GET /analytics/dedup/candidates → dedup:read',
         'GET /analytics/vacancies → analytics:read',
