@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Text, Checkbox } from '@presentation/components/atoms';
+import { Text, Checkbox, Heading } from '@presentation/components/atoms';
 import type { CatalogCategory } from '@infrastructure/http/AdminPermissionsApiService';
 import { CellHelpDrawer } from './CellHelpDrawer';
 import { type Bloco, type Linha, ACAO_BASE, cellKey, exigemLeitura, leituraTravada, montaBlocos } from './cellMatrixModel';
@@ -90,6 +90,12 @@ export function CellMatrix({ catalog, selected, saved, editable, onToggle }: Cel
 
 export interface BlocoProps {
   bloco: Bloco;
+  /**
+   * D286 — modo ÁRVORE (painel por tela): o rótulo do bloco é o TÍTULO (a tela) e as linhas
+   * (containers) ficam recuadas embaixo dele, como um parágrafo. Na matriz por categoria o
+   * rótulo continua sendo a legenda miúda de sempre.
+   */
+  arvore?: boolean;
   selected: ReadonlySet<string>;
   saved: readonly string[];
   editable: boolean;
@@ -97,23 +103,30 @@ export interface BlocoProps {
   onAjuda: (ajuda: { linha: Linha; acoes: string[] }) => void;
 }
 
-export function BlocoCategoria({ bloco, selected, saved, editable, onToggle, onAjuda }: BlocoProps): JSX.Element {
+export function BlocoCategoria({ bloco, selected, saved, editable, onToggle, onAjuda, arvore = false }: BlocoProps): JSX.Element {
   const { t } = useTranslation();
   const { rotulo, grade, colunas } = bloco;
 
   return (
-    <section aria-label={rotulo}>
+    <section aria-label={rotulo} className={arvore ? 'pt-2' : undefined}>
       {/* Categoria vem do BANCO e chega em português; sem tradução, mostra o
           valor cru — some seria pior que ficar feio. */}
-      <Text as="span" size="xs" weight="medium" color="secondary" className="block pb-1">
-        {rotulo}
-      </Text>
+      {/* Modo árvore: 20px (nível 2 da escala) — pedido do Gabriel (06/09), "4px maior" que o nível 4. */}
+      {arvore ? (
+        <Heading level={2} as="h4" weight="semibold" color="primary" className="pb-1">
+          {rotulo}
+        </Heading>
+      ) : (
+        <Text as="span" size="xs" weight="medium" color="secondary" className="block pb-1">
+          {rotulo}
+        </Text>
+      )}
 
       <div className="overflow-x-auto">
           <table className="w-full border-collapse table-fixed">
             <thead>
               <tr>
-                <th className="text-left pb-1 pr-3 border-b border-gray-300 w-[22rem]">
+                <th className={`text-left pb-1 pr-3 border-b border-gray-300 w-[22rem] ${arvore ? 'pl-6' : ''}`}>
                   <Text as="span" size="xs" weight="medium" color="secondary">
                     {t('admin.access.group.cells.about')}
                   </Text>
@@ -139,6 +152,7 @@ export function BlocoCategoria({ bloco, selected, saved, editable, onToggle, onA
                   key={linha.resource}
                   linha={linha}
                   idPrefix={bloco.category}
+                  recuada={arvore}
                   colunas={colunas}
                   selected={selected}
                   saved={saved}
@@ -156,11 +170,13 @@ export function BlocoCategoria({ bloco, selected, saved, editable, onToggle, onA
 }
 
 function LinhaRecurso({
-  linha, idPrefix, colunas, selected, saved, editable, onToggle, onAjuda,
+  linha, idPrefix, recuada = false, colunas, selected, saved, editable, onToggle, onAjuda,
 }: {
   linha: Linha;
   /** D286: a MESMA célula aparece em mais de um bloco (tela); o `id` do DOM precisa do bloco. */
   idPrefix: string;
+  /** Modo árvore: a linha (container) fica recuada sob o título da tela. */
+  recuada?: boolean;
   colunas: readonly string[];
   selected: ReadonlySet<string>;
   saved: readonly string[];
@@ -177,7 +193,7 @@ function LinhaRecurso({
 
   return (
     <tr className="border-b border-gray-200 last:border-b-0">
-      <th scope="row" className="text-left py-1.5 pr-3 font-normal align-top">
+      <th scope="row" className={`text-left py-1.5 pr-3 font-normal align-top ${recuada ? 'pl-6' : ''}`}>
         <span className="flex items-center gap-1.5">
           <Text as="span" size="xs" color="primary">{linha.rotulo}</Text>
           {/* O "?" fica colado no rótulo do RECURSO, não em cada caixa: a

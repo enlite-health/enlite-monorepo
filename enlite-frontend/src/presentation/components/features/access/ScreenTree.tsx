@@ -48,6 +48,7 @@ export function ScreenTree({ catalog, selected, saved, editable, onToggle }: Scr
           editable={editable}
           onToggle={onToggle}
           onAjuda={setAjuda}
+          arvore
         />
       ))}
       <CellHelpDrawer
