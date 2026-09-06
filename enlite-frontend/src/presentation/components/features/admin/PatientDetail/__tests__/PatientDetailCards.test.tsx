@@ -320,15 +320,17 @@ describe('DiagnosticoCard', () => {
     expect(screen.queryByTestId('emergency-instructions-edited')).not.toBeInTheDocument();
   });
 
-  it('sem instruções (nunca preenchido) mostra —', () => {
+  // 06/09 (variante B): o vazio deixou de ser `—`, que não distingue "não tem" de "não carregou".
+  // A frase diz qual dos dois é — e `emergencyInstructionsRedacted` segue cobrindo "não podés ver".
+  it('sem instruções (nunca preenchido) diz que não há instruções registradas', () => {
     render(<DiagnosticoCard patient={patientDetailMinimal} />);
-    expect(screen.getByTestId('emergency-instructions-text').textContent).toBe('—');
+    expect(screen.getByTestId('emergency-instructions-text').textContent).toBe('Sem instruções registradas.');
   });
 
   it('sem autoria (nunca editado pelo painel) não mostra a linha "Última edição"', () => {
     render(<DiagnosticoCard patient={patientDetailMinimal} />);
     expect(screen.queryByTestId('general-notes-edited')).not.toBeInTheDocument();
-    expect(screen.getByTestId('general-notes-text').textContent).toBe('—');
+    expect(screen.getByTestId('general-notes-text').textContent).toBe('Sem observações registradas.');
   });
 
   it('com data mas sem nome resolvido, mostra "—" no lugar do nome; data inválida cai no ISO cru', () => {
@@ -412,10 +414,12 @@ describe('DiagnosticoCard', () => {
 
     it('o principal leva o rótulo "Principal"; o secundário não', () => {
       render(<DiagnosticoCard patient={{ ...patientDetailFixture, diagnoses: [ATIVO_PRINCIPAL, ATIVO_SECUNDARIO], diagnosesUnavailable: false }} />);
+      // 06/09: o marcador virou CHIP (variante B do rearranjo) — perdeu os dois pontos do formato
+      // "Rótulo: valor" antigo, mas segue sendo o único jeito de distinguir principal de secundário.
       const principalRow = screen.getByTestId(`diagnostico-card-patologia-${ATIVO_PRINCIPAL.id}`);
-      expect(principalRow).toHaveTextContent('Principal:');
+      expect(principalRow).toHaveTextContent('Principal');
       const secundarioRow = screen.getByTestId(`diagnostico-card-patologia-${ATIVO_SECUNDARIO.id}`);
-      expect(secundarioRow).not.toHaveTextContent('Principal:');
+      expect(secundarioRow).not.toHaveTextContent('Principal');
     });
 
     it('label "Tipos de patologias - ICHOM" NUNCA aparece no card', () => {

@@ -3121,7 +3121,10 @@
           "devices": "Dispositivo",
           "patologiesUnavailable": "Não foi possível carregar o diagnóstico.",
           "patologiesEmpty": "Nenhum diagnóstico registrado.",
-          "patologiesPrimaryBadge": "Principal"
+          "patologiesPrimaryBadge": "Principal",
+          "patologies": "Patologias",
+          "generalNotesEmpty": "Sem observações registradas.",
+          "emergencyInstructionsEmpty": "Sem instruções registradas."
         },
         "therapeuticProjectCard": {
           "title": "Projeto Terapêutico",

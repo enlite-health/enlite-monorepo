@@ -11,6 +11,13 @@ interface ClinicalLongTextProps {
   updatedBy: string | null;
   /** Quando presente, o backend (ponto único `patient_clinical:read`) redigiu: mostra a mensagem, sem texto nem autoria. */
   redactedMessage?: string | null;
+  /**
+   * Texto para quando `text` é vazio — "Sin observaciones registradas." no lugar de `—`
+   * (Gabriel, 06/09). O traço não distingue "não tem" de "não carregou", e aqui a diferença é
+   * real: `redactedMessage` já cobre "não podés ver". Opcional: sem ela o campo segue em `—`,
+   * que é o que os outros cartões ainda usam.
+   */
+  emptyMessage?: string | null;
 }
 
 /** "28/08/2026, 14:35" no fuso e na língua de quem olha (molde: WorkersTable.formatDate). */
@@ -25,7 +32,7 @@ function formatDateTime(iso: string, locale: string): string {
  * quebras preservadas + "Última edição: data · nome" + estado REDIGIDO opcional.
  * `data-clarity-mask` — narrativa clínica não pode ir para a gravação de sessão (lex 29/08, C1.1).
  */
-export function ClinicalLongText({ testId, label, text, updatedAt, updatedBy, redactedMessage }: ClinicalLongTextProps) {
+export function ClinicalLongText({ testId, label, text, updatedAt, updatedBy, redactedMessage, emptyMessage }: ClinicalLongTextProps) {
   const { t, i18n } = useTranslation();
   const edited = updatedAt
     ? t('admin.patients.detail.diagnosisCard.lastEditedBy', { date: formatDateTime(updatedAt, i18n.language), name: updatedBy ?? '—' })
@@ -38,8 +45,10 @@ export function ClinicalLongText({ testId, label, text, updatedAt, updatedBy, re
           <span data-testid={`${testId}-redacted`}>
             <Text as="span" size="sm" color="muted">{redactedMessage}</Text>
           </span>
+        ) : text ? (
+          <Text size="sm" color="primary" className="whitespace-pre-wrap leading-snug">{text}</Text>
         ) : (
-          <Text size="sm" color="muted" className="whitespace-pre-wrap leading-snug">{text ?? '—'}</Text>
+          <Text size="sm" color="secondary" className="whitespace-pre-wrap leading-snug">{emptyMessage ?? '—'}</Text>
         )}
       </div>
       {edited && !redactedMessage && (
