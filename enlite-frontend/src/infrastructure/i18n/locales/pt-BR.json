@@ -1836,6 +1836,7 @@
       "loading": "Carregando vagas...",
       "errorLoading": "Erro ao carregar vagas",
       "searchPlaceholder": "Pesquisar pelo nome do paciente",
+      "searchPlaceholderSemNome": "Buscar por caso, vaga ou título",
       "statusLabel": "Status",
       "priorityLabel": "Prioridade",
       "noVacancies": "Nenhuma vaga encontrada",

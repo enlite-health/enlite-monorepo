@@ -60,6 +60,7 @@ export function WorkerDetailContent({ workerId, header, renderError, allowEdit =
   // D286: cada container da ficha tem célula própria (a API já projetou a resposta — o card só
   // some). Uma aba existe se algum container dela for legível; placeholders existem sempre.
   const dossier = useContainerAccess('worker_pii');
+  const documentos = useContainerAccess('worker_document');
   const permissions = useAdminAuthStore((s) => s.authz?.permissions);
   const enforcement = useAdminAuthStore((s) => s.authz?.enforcement);
   const visibleTabs = tabsVisibleFor(screenById('workers.detail'), WORKER_TABS, permissions, enforcement);
@@ -73,7 +74,8 @@ export function WorkerDetailContent({ workerId, header, renderError, allowEdit =
   const additionalDocs = useAdminAdditionalDocuments(workerId ?? '');
   const { fetchDocuments: fetchAdditionalDocs } = additionalDocs;
 
-  useEffect(() => { fetchAdditionalDocs(); }, [fetchAdditionalDocs]);
+  // GET …/additional-documents é worker_document:read: sem o container, a consulta nem sai.
+  useEffect(() => { if (documentos.visible) fetchAdditionalDocs(); }, [documentos.visible, fetchAdditionalDocs]);
 
   if (isLoading) return <DetailSkeleton />;
 

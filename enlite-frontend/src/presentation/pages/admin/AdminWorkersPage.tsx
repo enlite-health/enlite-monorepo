@@ -26,6 +26,7 @@ import {
 } from '@presentation/components/features/admin/workerProfileFiltersConfig';
 import { getDocsStatusOptions, getValidationStatusOptions } from './workersData';
 import { ActionButton } from '@presentation/components/features/access';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 
 export function AdminWorkersPage(): JSX.Element {
   const navigate = useNavigate();
@@ -178,7 +179,11 @@ export function AdminWorkersPage(): JSX.Element {
     [rawWorkers],
   );
   // REQ-09: o mesmo /last do Kanban — a página mostra quem já foi convidada, não só quem clicou agora.
-  const [lastInviteByWorker, setLastInviteByWorker] = usePresentationInviteLast(workers.map((w) => w.id));
+  // D286 fase 2: o "último convite" é GET /presentation-invite/last (messaging:read) e o convite é
+  // POST …/presentation-invite (messaging:send). Sem a célula, nem consulta nem botão.
+  const inviteSendGate = useActionGate('messaging', 'send');
+  const inviteLastGate = useActionGate('messaging', 'read');
+  const [lastInviteByWorker, setLastInviteByWorker] = usePresentationInviteLast(workers.map((w) => w.id), inviteLastGate.allowed);
   const handlePresentationInvite = useCallback(async (workerId: string) => {
     setInviteByWorker((prev) => ({ ...prev, [workerId]: { status: 'sending' } }));
     try {
@@ -305,7 +310,9 @@ export function AdminWorkersPage(): JSX.Element {
               workers={workers}
               onRowClick={(id) => navigate(`/admin/workers/${id}`)}
               renderAction={(row) => (
-                <KanbanCardPresentationInvite compact onInvite={() => handlePresentationInvite(row.id)} state={inviteByWorker[row.id]} lastInvitedAt={lastInviteByWorker[row.id]?.at ?? null} />
+                inviteSendGate.allowed
+                  ? <KanbanCardPresentationInvite compact onInvite={() => handlePresentationInvite(row.id)} state={inviteByWorker[row.id]} lastInvitedAt={lastInviteByWorker[row.id]?.at ?? null} />
+                  : null
               )}
             />
           </div>
