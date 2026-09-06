@@ -135,6 +135,9 @@ describe('Mensagem por etapa do Kanban (PEND-14 / DEC-12) @integration', () => {
     await DatabaseConnection.getInstance().getPool().end().catch(() => undefined);
     await pool.query(`UPDATE funnel_stage_messages SET template_slug = NULL, enabled = false WHERE country = 'AR'`);
     await pool.query(`UPDATE messaging_channel_pause SET paused = false WHERE channel = 'whatsapp' AND paused_by = 'e2e-fsm'`);
+    // As contas de staff saem no fim: na stage, `iam-config-export-import` mede "0 staff ATIVO sem grupo"
+    // no MESMO banco, e uma conta órfã aqui vira vermelho lá (sync main→stage, 06/09).
+    await pool.query(`DELETE FROM users WHERE firebase_uid = ANY($1::text[])`, [[ADMIN_UID, RECRUITER_UID]]);
     await pool.end();
   });
 

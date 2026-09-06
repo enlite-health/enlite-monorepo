@@ -95,12 +95,24 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
    * — que afirma a matriz exata de 41 células — passaria a falhar em toda rodada
    * seguinte, sem se curar sozinha. Apagar na entrada torna a suíte idempotente.
    */
+  // As células que este arquivo semeia e que o seed da 206 não tem: patient:delete (D116) e as de
+  // container (D286). Saem no limpar(): `permissions-iam-schema` mede o catálogo EXATO do seed.
+  const CELULAS_SEMEADAS: ReadonlyArray<readonly [string, string]> = [
+    ['patient', 'delete'],
+    ['patient_family', 'read'],
+    ['patient_family', 'write'],
+    ['patient_clinical', 'read'],
+    ['patient_chat', 'write'],
+  ];
   async function removerCelulaDelete(): Promise<void> {
-    await pool.query(
-      `DELETE FROM iam.group_permissions
-         WHERE permission_id IN (SELECT id FROM iam.permissions WHERE resource = 'patient' AND action = 'delete')`,
-    );
-    await pool.query(`DELETE FROM iam.permissions WHERE resource = 'patient' AND action = 'delete'`);
+    for (const [resource, action] of CELULAS_SEMEADAS) {
+      await pool.query(
+        `DELETE FROM iam.group_permissions
+           WHERE permission_id IN (SELECT id FROM iam.permissions WHERE resource = $1 AND action = $2)`,
+        [resource, action],
+      );
+      await pool.query(`DELETE FROM iam.permissions WHERE resource = $1 AND action = $2`, [resource, action]);
+    }
   }
 
   async function limpar(): Promise<void> {

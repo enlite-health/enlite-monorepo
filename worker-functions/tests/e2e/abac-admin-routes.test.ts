@@ -1,4 +1,6 @@
 import { Pool } from 'pg';
+import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
+import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
 import { montarAppDeFamilia, type AppDeFamilia } from './helpers/permissionFamilyHarness';
 
 /**
@@ -214,6 +216,13 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
             permissions,
             new caseModule.AdminPatientChatIdsController(),
             new caseModule.AdminPatientChatRolesController(),
+            // Os 6 controllers que o main trouxe (specs 011-016, mapa) — a fábrica não tem default de propósito.
+            new caseModule.AdminPatientsMapController(),
+            new caseModule.AdminPatientAddressesController(),
+            new caseModule.AdminInsuranceProvidersController(),
+            new caseModule.AdminPatientContractedServicesController(),
+            new AdminPatientDiagnosesController(),
+            new AdminTerminologySearchController(),
           ),
         ),
     });
