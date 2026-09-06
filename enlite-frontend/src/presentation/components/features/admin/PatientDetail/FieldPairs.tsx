@@ -33,15 +33,19 @@ export function FieldPair({
     <div className={`flex flex-col min-w-0${full ? ' sm:col-span-2' : ''}`}>
       {/*
        * Rótulo e valor usam a MESMA cor — `primary`, o #180149 do tema (Gabriel, 06/09). Nenhum
-       * token novo entra no design system: a hierarquia vem de TAMANHO e CAIXA, não de cor. O
-       * rótulo é 11px em caixa-alta com `tracking`; o dado é 14px em caixa normal, e é ele que o
-       * olho pousa primeiro. Foi por isso que a cor de rótulo em azul separado saiu de cena — ela
-       * exigia estender o atom `Text`, e não é preciso.
+       * token novo entra no design system: a hierarquia vem de TAMANHO e PESO, não de cor.
+       *
+       * 🔒 O peso é do VALOR, nunca do rótulo. Com `medium` no rótulo (a primeira versão), a
+       * caixa-alta somada ao peso compensava exatamente os 3px a menos e os dois empatavam —
+       * "os valores estão parecidos com o título" (Gabriel, 06/09). Invertido: rótulo 11px
+       * `normal` em caixa-alta recua para segundo plano, dado 14px `medium` domina. Medido em
+       * três variantes antes de escolher; a caixa-alta fica porque é o que faz o rótulo ser
+       * escaneável sem precisar de peso, e é o mesmo tratamento do grupo no Diagnóstico.
        */}
-      <Text as="span" size="2xs" weight="medium" color="primary" className="uppercase tracking-wide">
+      <Text as="span" size="2xs" color="primary" className="uppercase tracking-wide">
         {label}
       </Text>
-      <Text as="span" size="sm" color="primary" className="break-words" data-testid={testId}>
+      <Text as="span" size="sm" weight="medium" color="primary" className="break-words" data-testid={testId}>
         {value ?? '—'}
       </Text>
     </div>
