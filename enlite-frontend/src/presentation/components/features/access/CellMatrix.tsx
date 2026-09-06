@@ -111,9 +111,9 @@ export function BlocoCategoria({ bloco, selected, saved, editable, onToggle, onA
     <section aria-label={rotulo} className={arvore ? 'pt-2' : undefined}>
       {/* Categoria vem do BANCO e chega em português; sem tradução, mostra o
           valor cru — some seria pior que ficar feio. */}
-      {/* Modo árvore: 20px (nível 2 da escala) — pedido do Gabriel (06/09), "4px maior" que o nível 4. */}
+      {/* Modo árvore: 18px (nível 3 da escala) — Gabriel pediu 20 e corrigiu para 18 (06/09). */}
       {arvore ? (
-        <Heading level={2} as="h4" weight="semibold" color="primary" className="pb-1">
+        <Heading level={3} as="h4" weight="semibold" color="primary" className="pb-1">
           {rotulo}
         </Heading>
       ) : (
