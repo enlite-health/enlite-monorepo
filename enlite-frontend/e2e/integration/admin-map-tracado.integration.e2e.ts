@@ -265,9 +265,16 @@ test.describe('Traçado da rota sobre o mapa (@integration)', () => {
       await page.waitForTimeout(300);
       await conferirEncaixe(`opção ${i + 1} aberta`);
     }
-    // deixa a 1ª aberta de novo para o resto do teste
-    await page.getByTestId('route-summary').nth(0).click();
-    await page.waitForTimeout(300);
+    // Reabre a 1ª SÓ se o laço acima a fechou. Com uma única opção o laço não
+    // roda, e clicar aqui FECHARIA o acordeão — o passo 5 ("fechar o balão
+    // apaga o traçado") viraria vacuamente verdadeiro, porque não haveria linha
+    // desenhada para apagar.
+    if (opcoes > 1) {
+      await page.getByTestId('route-summary').nth(0).click();
+      await page.waitForTimeout(300);
+    }
+    // seja qual for o caminho, tem de haver traçado ANTES de testar o apagamento
+    await expect.poll(async () => (await vivas(page)).length, { timeout: 10_000 }).toBeGreaterThan(0);
 
     // 4 · trocar de opção SUBSTITUI o traçado — não empilha
     if (opcoes > 1) {

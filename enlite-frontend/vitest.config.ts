@@ -260,6 +260,26 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
+        // Nascidos com o traçado da rota (06/09). `googleMapsScriptUrl` é a
+        // fonte ÚNICA da URL do script do Maps: se ela perder `geometry`, o
+        // traçado morre em silêncio em produção — por isso entra no piso.
+        // ⚠️ `loadGoogleMaps.ts` fica FORA de propósito: mede 96,92/94,73, e as
+        // 2 linhas descobertas são a guarda `typeof window === 'undefined'`,
+        // inalcançável em jsdom. Entra quando alguém decidir se aquele guard
+        // ainda faz sentido (não há SSR nesta aplicação) — não antes, para o
+        // piso não nascer reprovando.
+        '**/src/infrastructure/services/googleMapsScriptUrl.ts': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        '**/src/presentation/components/molecules/PointsMap/useRouteOverlay.ts': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
         '**/src/presentation/pages/admin/{FunnelStageMessagesPage,PresentationInvitePage}.tsx': {
           statements: 100,
           branches: 100,

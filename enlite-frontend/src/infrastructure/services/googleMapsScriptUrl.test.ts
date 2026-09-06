@@ -44,13 +44,26 @@ describe('googleMapsScriptUrl', () => {
     // montando a URL faria a biblioteca faltante sumir de forma INTERMITENTE,
     // conforme a tela aberta antes. Se este teste ficar vermelho, o conserto NÃO
     // é relaxar a busca — é fazer o arquivo novo importar `googleMapsScriptUrl`.
-    // Arquivo de TESTE fica de fora: ele usa a URL como fixture (para simular um
-    // script já no DOM) e não carrega nada em produção. Sem esta exceção a
-    // guarda reprova o teste do próprio carregador — falso positivo, e guarda
-    // que reprova código certo se aprende a ignorar.
+    //
+    // ⚠️ A busca é pelo `//` do esquema + host + caminho, e cada pedaço tem
+    // razão. Por `?key=` não serve: a primeira versão procurava
+    // `maps/api/js?key=` e passava verde se alguém trocasse a ordem dos
+    // parâmetros (`js?libraries=…&key=…`) — régua de FORMA que não media a
+    // substância, medido no gate de 06/09. Por host puro também não: casaria o
+    // SELETOR CSS de `loadGoogleMaps` (`script[src*="maps.googleapis.com/…"]`),
+    // que procura o script no DOM em vez de montar URL. O `//` só aparece em
+    // URL literal, e cobre também a forma sem esquema (`//maps.googleapis…`).
+    //
+    // A isenção é NOMINAL, e não um padrão `.test.`: com o padrão, um carregador
+    // de produção escondido num arquivo com `.test.` no nome passava por aqui,
+    // pelo `tsc` e pelo validador de arquitetura — também medido. Isenção por
+    // nome obriga quem acrescentar a pensar; padrão largo isenta o que ninguém
+    // previu.
+    const ISENTOS = ['googleMapsScriptUrl.ts', 'googleMapsScriptUrl.test.ts', 'loadGoogleMaps.test.ts'];
+
     const infratores = arquivos(SRC)
-      .filter((f) => !/\.test\.tsx?$/.test(f) && !f.endsWith('googleMapsScriptUrl.ts'))
-      .filter((f) => readFileSync(f, 'utf-8').includes('maps/api/js?key='));
+      .filter((f) => !ISENTOS.some((nome) => f.endsWith(`/${nome}`)))
+      .filter((f) => readFileSync(f, 'utf-8').includes('//maps.googleapis.com/maps/api/js'));
 
     expect(infratores.map((f) => f.replace(SRC, 'src'))).toEqual([]);
   });
