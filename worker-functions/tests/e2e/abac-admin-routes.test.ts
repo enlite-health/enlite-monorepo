@@ -357,7 +357,9 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
         operator_uid: STAFF_AR.uid,
         resource_type: 'patient',
         resource_id: IDS.patientAR,
-        action: 'read_detail',
+        // D286: o `action` carrega os containers servidos. Aqui o engine está DESLIGADO
+        // (`cells = null`, D113) → a ficha inteira → todos os 8 containers, na ordem canônica.
+        action: 'read_detail:identity+clinical+careTeam+family+chat+coverage+address+services',
         origin: 'same_country',
       });
     });

@@ -1,7 +1,7 @@
 import { NOME_REDIGIDO } from '@modules/identity/permissions';
 import {
   ALL_WORKER_CONTAINERS_READABLE, WORKER_CONTAINERS, canReadWorkerContainer, projectPatientNameInEngagement,
-  servedWorkerContainers, workerContainerCell, workerContainerReadsOf, workerDetailTrailAction, workerRedactionMarker,
+  servedWorkerContainers, workerContainerCell, workerContainerReadsOf, workerDetailTrailAction, workerDetailTrailOf, workerRedactionMarker,
 } from '../workerContainerAccess';
 
 describe('workerContainerAccess — a célula de cada container da ficha do prestador (D286 fase 2)', () => {
@@ -33,6 +33,9 @@ describe('workerContainerAccess — a célula de cada container da ficha do pres
     expect(workerDetailTrailAction(null)).toBe('read_detail:contact+dossier+address+documents+encuadres');
     expect(workerDetailTrailAction(['worker:read', 'worker_pii:read'])).toBe('read_detail:dossier');
     expect(workerDetailTrailAction(['worker:read'])).toBe('read_detail');
+    // lido da request (o que a rota passa ao logResourceAccess); sem `permissionCells` = engine indeciso
+    expect(workerDetailTrailOf({ permissionCells: ['worker:read', 'match:read'] })).toBe('read_detail:encuadres');
+    expect(workerDetailTrailOf({})).toBe('read_detail:contact+dossier+address+documents+encuadres');
   });
 
   it('marcador: undefined quando nada foi redigido (resposta byte a byte a de antes); senão só os ocultos, sempre true', () => {

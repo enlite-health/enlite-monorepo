@@ -17,6 +17,7 @@ import {
   projectPatientListItemByContainers,
   servedPatientContainers,
   patientDetailTrailAction,
+  patientDetailTrailOf,
 } from '../patientContainerAccess';
 
 const TODAS = PATIENT_CONTAINERS.map((c) => patientContainerCell(c, 'read'));
@@ -163,5 +164,7 @@ describe('servedPatientContainers — o que a trilha registra', () => {
     expect(patientDetailTrailAction(['patient:read', 'patient_identity:read', 'patient_chat:read'])).toBe('read_detail:identity+chat');
     expect(patientDetailTrailAction([])).toBe('read_detail');
     expect(patientDetailTrailAction(null)).toBe(`read_detail:${PATIENT_CONTAINERS.join('+')}`);
+    expect(patientDetailTrailOf({ permissionCells: ['patient:read', 'patient_family:read'] })).toBe('read_detail:family');
+    expect(patientDetailTrailOf({})).toBe(`read_detail:${PATIENT_CONTAINERS.join('+')}`);
   });
 });

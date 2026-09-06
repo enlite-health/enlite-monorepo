@@ -247,7 +247,6 @@ export interface VacancyListRow {
   id: string;
   patient_first_name: string | null;
   patient_last_name: string | null;
-  patient_zone?: string | null;
   case_number: number;
   vacancy_number: number;
   status: string | null;

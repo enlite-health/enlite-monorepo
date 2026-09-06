@@ -194,3 +194,8 @@ export function patientDetailTrailAction(cells: readonly string[] | null | undef
   const served = servedPatientContainers(cells);
   return served.length === 0 ? 'read_detail' : `read_detail:${served.join('+')}`;
 }
+
+/** A mesma coisa lida da REQUEST — o que a rota passa ao `logResourceAccess` (avaliado no `finish`). */
+export function patientDetailTrailOf(req: { permissionCells?: readonly string[] | null }): string {
+  return patientDetailTrailAction(req.permissionCells ?? null);
+}

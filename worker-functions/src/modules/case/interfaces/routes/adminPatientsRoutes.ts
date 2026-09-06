@@ -41,8 +41,7 @@ import { AdminTerminologySearchController } from '@modules/terminology/interface
  * seguinte, não este merge.
  */
 import { ADMIN_PATIENTS_FAMILY } from '@modules/identity/permissions';
-import { cellsOfRequest } from '@modules/identity/permissions';
-import { patientDetailTrailAction } from '../../application/patientContainerAccess';
+import { patientDetailTrailOf } from '../../application/patientContainerAccess';
 export { ADMIN_PATIENTS_FAMILY };
 export function createAdminPatientsRoutes(
   controller: AdminPatientsController,
@@ -146,7 +145,7 @@ export function createAdminPatientsRoutes(
   );
 
   // Dynamic route last — Express would capture /stats as /:id otherwise.
-  router.get('/patients/:id', staffOnly, perm.require('patient', 'read'), logResourceAccess('patient', (req) => patientDetailTrailAction(cellsOfRequest(req))), (req: Request, res: Response) =>
+  router.get('/patients/:id', staffOnly, perm.require('patient', 'read'), logResourceAccess('patient', patientDetailTrailOf), (req: Request, res: Response) =>
     controller.getPatientById(req, res),
   );
 

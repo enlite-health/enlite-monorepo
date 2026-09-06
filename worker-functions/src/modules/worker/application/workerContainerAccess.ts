@@ -93,6 +93,11 @@ export function workerDetailTrailAction(cells: readonly string[] | null | undefi
   return served.length === 0 ? 'read_detail' : `read_detail:${served.join('+')}`;
 }
 
+/** A mesma coisa lida da REQUEST — o que a rota passa ao `logResourceAccess` (avaliado no `finish`). */
+export function workerDetailTrailOf(req: { permissionCells?: readonly string[] | null }): string {
+  return workerDetailTrailAction(req.permissionCells ?? null);
+}
+
 /**
  * O marcador de redação para a resposta — `undefined` quando nada foi redigido, para a resposta
  * de quem lê tudo ser byte a byte a de antes (D113).
