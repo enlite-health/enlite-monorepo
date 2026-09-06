@@ -224,27 +224,24 @@ export function filterOptionsFor(t: TFunction): {
   };
 }
 
-/** Os textos do painel. Fora da página porque são DADO, não orquestração. */
+/** Os textos do painel da rota. Fora do componente por causa do fast-refresh. */
 export function corridorLabelsFor(t: TFunction): CorridorLabels {
   return {
-    title: (n) => t('admin.map.corridor.title', { defaultValue: '{{count}} línea(s) sirven ambos puntos', count: n }),
-    loading: t('admin.map.corridor.loading', 'Buscando líneas…'),
+    loading: t('admin.map.corridor.loading', 'Buscando recorrido…'),
     error: t('admin.map.corridor.error', 'No se pudo calcular el recorrido.'),
-    noDirect: t('admin.map.corridor.noDirect', 'Ninguna línea sirve los dos puntos: habría que combinar (y se paga de nuevo).'),
-    noCoverage: t('admin.map.corridor.noCoverage', 'Sin datos de paradas en esta zona — no podemos afirmar el recorrido.'),
-    // "en línea recta", NUNCA "a pie": o número vem de um ST_Distance entre os
-    // dois pontos, e caminhada real numa grade em diagonal chega a ~40% a mais.
-    // Chamar isso de "a pé" com um ícone de pegadas seria prometer precisão que
-    // o cálculo não tem — e a tela inteira existe para não fazer isso.
-    walk: (b) => t('admin.map.corridor.walk', { defaultValue: 'en línea recta: ~{{count}} cuadras', count: b }),
-    legs: (o, d) => t('admin.map.corridor.legs', { defaultValue: '{{origin}} cuadras → {{destination}} cuadras', origin: o, destination: d }),
+    noRoute: t('admin.map.corridor.noRoute', 'No hay recorrido en transporte público entre estos dos puntos.'),
+    noCoverage: t('admin.map.corridor.noCoverage', 'Falta la ubicación de uno de los dos — no podemos calcular el recorrido.'),
+    direct: t('admin.map.corridor.direct', 'directo'),
+    transfers: (n) => t('admin.map.corridor.transfers', { defaultValue: '{{count}} combinación(es)', count: n }),
+    total: (min) => t('admin.map.corridor.total', { defaultValue: '{{count}} min puerta a puerta', count: min }),
+    walkLeg: (min, meters) => t('admin.map.corridor.walkLeg', { defaultValue: 'caminar {{min}} min ({{meters}} m)', min, meters }),
+    straight: (b) => t('admin.map.corridor.straight', { defaultValue: 'en línea recta: ~{{count}} cuadras', count: b }),
   };
 }
 
 /**
  * Monta as linhas que a lista E o mapa consomem — o MESMO array, para os dois
- * não terem como discordar. É derivação de dado, não orquestração, por isso
- * mora aqui e não na página.
+ * não terem como discordar. É derivação de dado, não orquestração.
  */
 export function buildResultRows(
   t: TFunction,
@@ -267,3 +264,4 @@ export function buildResultRows(
     color: PATIENT_STATUS_COLOR[p.status] ?? '#6b7280', href: `/admin/patients/${p.id}`,
   }));
 }
+

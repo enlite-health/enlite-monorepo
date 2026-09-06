@@ -128,6 +128,7 @@ jobs:
             SENDGRID_API_KEY=sendgrid-api-key:latest
             ACCOUNT_LINK_TOKEN_SECRET=account-link-token-secret:latest
             WABA_TOKEN=waba-token:latest
+            GOOGLE_DIRECTIONS_API_KEY=google-directions-api-key:latest
           flags: >-
             --allow-unauthenticated
             --service-account=enlite-functions-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com

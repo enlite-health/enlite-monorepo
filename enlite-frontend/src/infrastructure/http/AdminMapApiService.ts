@@ -72,33 +72,40 @@ export interface PatientMapPoint {
 }
 
 /**
- * O corredor logístico entre um prestador e um endereço de paciente.
+ * A rota de transporte público PORTA A PORTA entre um prestador e o domicílio
+ * de atendimento de um paciente.
  *
- * `outcome` é o que a tela lê ANTES das linhas — as três saídas são diferentes e
+ * `outcome` é o que a tela lê ANTES das rotas — as três saídas são diferentes e
  * não podem virar "lista vazia":
- *   `ok`                   → há linha direta;
- *   `sem_conexion_directa` → há paradas dos dois lados, nenhuma linha em comum
- *                            (em Buenos Aires baldear se paga de novo, então
- *                            isto é uma resposta, não um erro);
- *   `sem_cobertura`        → falta dado de parada em alguma ponta (fora da CABA)
- *                            ou o par não existe no escopo de quem perguntou.
+ *   `ok`            → há trajeto;
+ *   `sem_ruta`      → o Google não achou trajeto de transporte público entre os
+ *                     dois pontos (pode ser longe demais, ou zona sem serviço);
+ *   `sem_cobertura` → falta coordenada numa das pontas, ou o par não existe no
+ *                     escopo de quem perguntou. É diferente de "não há ônibus".
  */
-export type CorridorOutcome = 'ok' | 'sem_conexion_directa' | 'sem_cobertura';
+export type RouteOutcome = 'ok' | 'sem_ruta' | 'sem_cobertura';
 
-export interface CorridorLine {
-  line: string;
-  mode: string;
-  originBlocks: number;
-  originStopName: string;
-  destinationBlocks: number;
-  destinationStopName: string;
+/**
+ * União DISCRIMINADA: perna a pé SEMPRE tem metros, perna de transporte SEMPRE
+ * tem linha. Com campos opcionais a tela precisaria de `?? 0` em cada uso — e
+ * esses `??` seriam ramos mortos, porque o backend já garante os dois.
+ */
+export type RouteLeg =
+  | { kind: 'walk'; minutes: number; meters: number }
+  | { kind: 'transit'; minutes: number; line: string; mode: string; from: string; to: string };
+
+export interface TransitRoute {
+  totalMinutes: number;
+  /** Quantas trocas de veículo. ZERO é o caso bom — em Buenos Aires baldear se paga de novo. */
+  transfers: number;
+  lines: string[];
+  legs: RouteLeg[];
 }
 
 export interface CorridorResponse {
-  outcome: CorridorOutcome;
+  outcome: RouteOutcome;
   straightLineMeters: number | null;
-  straightLineBlocks: number | null;
-  lines: CorridorLine[];
+  routes: TransitRoute[];
 }
 
 export interface CorridorRequest {

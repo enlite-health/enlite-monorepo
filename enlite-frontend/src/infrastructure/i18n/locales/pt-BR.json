@@ -3805,13 +3805,15 @@
       "anchorLoading": "Buscando…",
       "anchorTruncated": "Há mais do que cabe nesta lista: digite o nome para filtrar.",
       "corridor": {
-        "title": "{{count}} linha(s) servem os dois pontos",
-        "loading": "Buscando linhas…",
+        "loading": "Buscando trajeto…",
         "error": "Não foi possível calcular o trajeto.",
-        "noDirect": "Nenhuma linha serve os dois pontos: exigiria baldeação (e paga-se de novo).",
-        "noCoverage": "Sem dados de paradas nesta zona — não dá para afirmar o trajeto.",
-        "walk": "em linha reta: ~{{count}} quadras",
-        "legs": "{{origin}} quadras → {{destination}} quadras"
+        "noRoute": "Não há trajeto de transporte público entre estes dois pontos.",
+        "noCoverage": "Falta a localização de um dos dois — não dá para calcular o trajeto.",
+        "direct": "direto",
+        "transfers": "{{count}} baldeação(ões)",
+        "total": "{{count}} min porta a porta",
+        "walkLeg": "caminhar {{min}} min ({{meters}} m)",
+        "straight": "em linha reta: ~{{count}} quadras"
       }
     },
     "templateCatalog": {

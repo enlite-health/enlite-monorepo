@@ -2,12 +2,28 @@
  * GetTransitCorridorUseCase.test.ts
  *
  * O que se afirma: (a) o par é re-autorizado pelo PAÍS nas duas leituras — é a
- * guarda de IDOR de um endpoint que recebe dois ids —, e (b) falta de ponta
- * vira `sem_cobertura` sem NENHUMA consulta a mais, que é o comportamento
- * fail-closed do parecer.
+ * guarda de IDOR de um endpoint que recebe dois ids —, e (b) ponta faltando
+ * vira `sem_cobertura` SEM chamar o Google. O (b) é o mais importante: é o que
+ * impede a rota de virar sonda de existência e o que garante que nenhuma
+ * coordenada sai quando não há o que responder.
  */
 import type { Pool } from 'pg';
 import { GetTransitCorridorUseCase } from '../GetTransitCorridorUseCase';
+import type { GoogleTransitDirections } from '../../infrastructure/GoogleTransitDirections';
+
+// Formato da Routes API (o mesmo medido na fixture do domínio, em miniatura).
+const rotaCrua = [{ duration: '2040s', legs: [{ duration: '2040s', steps: [
+  { travelMode: 'WALK', staticDuration: '240s', distanceMeters: 320 },
+  { travelMode: 'TRANSIT', staticDuration: '1560s', transitDetails: {
+    transitLine: { nameShort: '8', vehicle: { type: 'BUS' } },
+    stopDetails: { departureStop: { name: 'a' }, arrivalStop: { name: 'b' } },
+  } },
+] }] }];
+
+const fakeDirections = (rotas: unknown[] = rotaCrua) => {
+  const transit = jest.fn().mockResolvedValue(rotas);
+  return { svc: { transit } as unknown as GoogleTransitDirections, transit };
+};
 
 const INPUT = { country: 'AR' as const, workerId: 'w-1', patientAddressId: 'a-1' };
 
@@ -19,35 +35,27 @@ function poolWith(...results: Array<{ rows: unknown[] }>): { pool: Pool; query: 
   return { pool: { query } as unknown as Pool, query };
 }
 
-const stopRow = (over: Record<string, unknown> = {}) => ({
-  external_id: 's1', name: 'Parada 1', mode: 'bus', lines: ['6'], distance_meters: '120.4', ...over,
-});
-
 describe('GetTransitCorridorUseCase', () => {
-  it('devolve as linhas diretas e a distância em linha reta', async () => {
-    const { pool, query } = poolWith(
-      { rows: [{ lat: '-34.6094', lng: '-58.3923' }] },              // prestador
-      { rows: [{ lat: '-34.6037', lng: '-58.3816' }] },              // paciente
-      { rows: [stopRow({ lines: ['6', '24'] })] },                   // paradas da origem
-      { rows: [stopRow({ external_id: 's2', name: 'Parada 2', lines: ['6', '50'], distance_meters: 210 })] },
-      { rows: [{ m: '1167.4' }] },                                   // linha reta
+  it('devolve a rota do Google e a distância em linha reta', async () => {
+    const { pool } = poolWith(
+      { rows: [{ lat: '-34.6094', lng: '-58.3923' }] },   // prestador
+      { rows: [{ lat: '-34.6037', lng: '-58.3816' }] },   // paciente
+      { rows: [{ m: '1167.4' }] },                        // linha reta
     );
+    const { svc, transit } = fakeDirections();
 
-    const r = await new GetTransitCorridorUseCase(pool).execute(INPUT);
+    const r = await new GetTransitCorridorUseCase(pool, svc).execute(INPUT);
 
     expect(r.outcome).toBe('ok');
-    expect(r.lines).toEqual([{
-      line: '6', mode: 'bus',
-      originWalkMeters: 120, originStopName: 'Parada 1',
-      destinationWalkMeters: 210, destinationStopName: 'Parada 2',
-    }]);
+    expect(r.routes[0]).toMatchObject({ totalMinutes: 34, transfers: 0, lines: ['8'] });
     expect(r.straightLineMeters).toBe(1167);
-    expect(query).toHaveBeenCalledTimes(5);
+    // as coordenadas chegam ao Google como NÚMERO, não string do pg
+    expect(transit).toHaveBeenCalledWith({ lat: -34.6094, lng: -58.3923 }, { lat: -34.6037, lng: -58.3816 });
   });
 
   it('IDOR: o PAÍS do pedido entra no WHERE das DUAS leituras de pessoa', async () => {
     const { pool, query } = poolWith({ rows: [] }, { rows: [] });
-    await new GetTransitCorridorUseCase(pool).execute({ ...INPUT, country: 'BR' });
+    await new GetTransitCorridorUseCase(pool, fakeDirections().svc).execute({ ...INPUT, country: 'BR' });
 
     const [sqlWorker, paramsWorker] = query.mock.calls[0];
     const [sqlPatient, paramsPatient] = query.mock.calls[1];
@@ -57,56 +65,56 @@ describe('GetTransitCorridorUseCase', () => {
     expect(paramsPatient).toEqual(['a-1', 'BR']);
   });
 
-  it('ponta faltando é `sem_cobertura` e NÃO consulta parada nenhuma (fail-closed)', async () => {
+  it('🔒 ponta faltando é `sem_cobertura` e NÃO chama o Google — nada sai do perímetro', async () => {
     const semPrestador = poolWith({ rows: [] }, { rows: [{ lat: '-34.6', lng: '-58.4' }] });
-    const r1 = await new GetTransitCorridorUseCase(semPrestador.pool).execute(INPUT);
-    expect(r1).toEqual({ outcome: 'sem_cobertura', lines: [], straightLineMeters: null });
-    // só as duas leituras de pessoa: nada de paradas, nada de distância
+    const d1 = fakeDirections();
+    const r1 = await new GetTransitCorridorUseCase(semPrestador.pool, d1.svc).execute(INPUT);
+    expect(r1).toEqual({ outcome: 'sem_cobertura', routes: [], straightLineMeters: null });
+    expect(d1.transit).not.toHaveBeenCalled();
+    // só as duas leituras de pessoa: nem a distância foi calculada
     expect(semPrestador.query).toHaveBeenCalledTimes(2);
 
     const semPaciente = poolWith({ rows: [{ lat: '-34.6', lng: '-58.4' }] }, { rows: [] });
-    const r2 = await new GetTransitCorridorUseCase(semPaciente.pool).execute(INPUT);
-    expect(r2.outcome).toBe('sem_cobertura');
-    expect(semPaciente.query).toHaveBeenCalledTimes(2);
+    const d2 = fakeDirections();
+    expect((await new GetTransitCorridorUseCase(semPaciente.pool, d2.svc).execute(INPUT)).outcome).toBe('sem_cobertura');
+    expect(d2.transit).not.toHaveBeenCalled();
   });
 
-  it('sem linha em comum é `sem_conexion_directa`, e a distância continua sendo dita', async () => {
+  it('Google sem trajeto vira `sem_ruta`, e a distância continua sendo dita', async () => {
     const { pool } = poolWith(
       { rows: [{ lat: '-34.61', lng: '-58.39' }] },
       { rows: [{ lat: '-34.60', lng: '-58.38' }] },
-      { rows: [stopRow({ lines: ['6'] })] },
-      { rows: [stopRow({ external_id: 's2', lines: ['152'] })] },
       { rows: [{ m: 900 }] },
     );
-    const r = await new GetTransitCorridorUseCase(pool).execute(INPUT);
-    expect(r.outcome).toBe('sem_conexion_directa');
+    const r = await new GetTransitCorridorUseCase(pool, fakeDirections([]).svc).execute(INPUT);
+    expect(r.outcome).toBe('sem_ruta');
     expect(r.straightLineMeters).toBe(900);
   });
 
-  it('a busca de paradas é escopada por país e pelo raio de caminhada, com teto', async () => {
-    const { pool, query } = poolWith(
+  it('sem injetar o serviço, o padrão é o real — e num ambiente sem chave ele não chama nada', async () => {
+    // Cobre o construtor default. Também é a garantia de que um chamador que
+    // esqueça de injetar não vira um vazamento: sem `GOOGLE_*_API_KEY` o
+    // serviço real é inerte (ver GoogleTransitDirections: o interruptor).
+    delete process.env.GOOGLE_DIRECTIONS_API_KEY;
+    delete process.env.GOOGLE_MAPS_API_KEY;
+    const { pool } = poolWith(
       { rows: [{ lat: '-34.61', lng: '-58.39' }] },
       { rows: [{ lat: '-34.60', lng: '-58.38' }] },
-      { rows: [] }, { rows: [] }, { rows: [{ m: 1 }] },
-    );
-    await new GetTransitCorridorUseCase(pool).execute(INPUT);
-    const [sql, params] = query.mock.calls[2];
-    expect(sql).toContain('ST_DWithin');
-    expect(sql).toContain('LIMIT 200');
-    expect(params).toEqual(['-34.61', '-58.39', 400, 'AR']);
-  });
-
-  it('coluna numérica do pg chega como string e vira número — nunca NaN na tela', async () => {
-    const { pool } = poolWith(
-      { rows: [{ lat: -34.61, lng: -58.39 }] },   // já numérico
-      { rows: [{ lat: '-34.60', lng: '-58.38' }] }, // string
-      { rows: [stopRow({ distance_meters: '99.6' })] },
-      { rows: [stopRow({ external_id: 's2', distance_meters: 40 })] },
-      { rows: [{ m: '1234.7' }] },
+      { rows: [{ m: 500 }] },
     );
     const r = await new GetTransitCorridorUseCase(pool).execute(INPUT);
-    expect(r.lines[0].originWalkMeters).toBe(100);
-    expect(r.lines[0].destinationWalkMeters).toBe(40);
+    expect(r.outcome).toBe('sem_ruta');
+  });
+
+  it('coluna numérica do pg chega como string e vira número — nunca NaN indo para o Google', async () => {
+    const { pool } = poolWith(
+      { rows: [{ lat: -34.61, lng: -58.39 }] },      // já numérico
+      { rows: [{ lat: '-34.60', lng: '-58.38' }] },  // string
+      { rows: [{ m: '1234.7' }] },
+    );
+    const { svc, transit } = fakeDirections();
+    const r = await new GetTransitCorridorUseCase(pool, svc).execute(INPUT);
     expect(r.straightLineMeters).toBe(1235);
+    expect(transit).toHaveBeenCalledWith({ lat: -34.61, lng: -58.39 }, { lat: -34.6, lng: -58.38 });
   });
 });

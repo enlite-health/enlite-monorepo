@@ -1,9 +1,14 @@
 /**
  * TransitCorridorController — POST /api/admin/map/corridor
  *
- * Responde "que linha serve os dois pontos, e a quantas quadras", para UM par
- * prestador×paciente. Nenhum cálculo aqui: o controller valida, delega e
- * registra (regra da casa — controller não tem lógica de negócio).
+ * Responde a rota de transporte público PORTA A PORTA para UM par
+ * prestador×paciente: tempo total, baldeações e o passo a passo. Nenhum
+ * cálculo aqui: o controller valida, delega e registra (regra da casa —
+ * controller não tem lógica de negócio).
+ *
+ * ⚖️ A chamada externa que isto dispara está contra o parecer do `lex` de
+ * 05/09, por decisão do Gabriel — ver `GoogleTransitDirections` e
+ * `.claude/docs/autorizacao-google-directions.md`.
  *
  * É POST com corpo, e não GET, pelo mesmo motivo dos dois mapas: id de pessoa
  * numa URL vai para o log de acesso do Cloud Run por 30 dias.
@@ -25,7 +30,6 @@ import { z } from 'zod';
 import { logger, reportError } from '@shared/logging';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { GetTransitCorridorUseCase } from '../../application/GetTransitCorridorUseCase';
-import { blocks } from '../../domain/transitCorridor';
 
 const uuid = z.string().uuid();
 
@@ -66,15 +70,7 @@ export class TransitCorridorController {
         data: {
           outcome: result.outcome,
           straightLineMeters: result.straightLineMeters,
-          straightLineBlocks: result.straightLineMeters === null ? null : blocks(result.straightLineMeters),
-          lines: result.lines.map((l) => ({
-            line: l.line,
-            mode: l.mode,
-            originBlocks: blocks(l.originWalkMeters),
-            originStopName: l.originStopName,
-            destinationBlocks: blocks(l.destinationWalkMeters),
-            destinationStopName: l.destinationStopName,
-          })),
+          routes: result.routes,
         },
       });
     } catch (error: unknown) {

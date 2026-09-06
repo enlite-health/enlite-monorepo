@@ -18,8 +18,7 @@ vi.mock('@infrastructure/http/AdminMapApiService', () => ({
 const OK: CorridorResponse = {
   outcome: 'ok',
   straightLineMeters: 1167,
-  straightLineBlocks: 12,
-  lines: [{ line: '6', mode: 'bus', originBlocks: 1, originStopName: 'a', destinationBlocks: 2, destinationStopName: 'b' }],
+  routes: [{ totalMinutes: 34, transfers: 0, lines: ['8'], legs: [{ kind: 'transit', minutes: 34, line: '8', mode: 'bus', from: 'a', to: 'b' }] }],
 };
 const PAR: CorridorRequest = { country: 'AR', workerId: 'w1', patientAddressId: 'a1' };
 
@@ -106,13 +105,13 @@ describe('useCorridor', () => {
     let resolvePrimeira: (v: CorridorResponse) => void = () => {};
     vi.mocked(AdminMapApiService.getCorridor)
       .mockImplementationOnce(() => new Promise((r) => { resolvePrimeira = r; }))
-      .mockResolvedValueOnce({ ...OK, straightLineBlocks: 99 });
+      .mockResolvedValueOnce({ ...OK, straightLineMeters: 99 });
     const { result, rerender } = renderHook(({ p }) => useCorridor(p), { initialProps: { p: PAR } });
     rerender({ p: { ...PAR, workerId: 'w2' } });
-    await waitFor(() => expect(result.current.data?.straightLineBlocks).toBe(99));
+    await waitFor(() => expect(result.current.data?.straightLineMeters).toBe(99));
     resolvePrimeira(OK);
     await new Promise((r) => setTimeout(r, 0));
-    expect(result.current.data?.straightLineBlocks).toBe(99);
+    expect(result.current.data?.straightLineMeters).toBe(99);
   });
 });
 
