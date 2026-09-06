@@ -1,3 +1,4 @@
+import { CircleHelp } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Text, Checkbox, Heading } from '@presentation/components/atoms';
@@ -199,13 +200,17 @@ function LinhaRecurso({
           {/* O "?" fica colado no rótulo do RECURSO, não em cada caixa: a
               pergunta de quem concede é sobre a permissão inteira, não sobre
               uma coluna. */}
+          {/* Ícone, não um "?" de texto: o glifo dentro de um círculo de 16px ficava
+              fora do centro (linha de base) e cinza-400 quase invisível (Gabriel,
+              05/09). Mesma família e mesma cor do lápis de editar. */}
           <button
             type="button"
             onClick={() => onAjuda({ linha, acoes: colunas.filter((c) => linha.porAcao[c]) })}
             aria-label={`${linha.rotulo} — ${t('admin.access.group.cells.help.open')}`}
-            className="shrink-0 w-4 h-4 rounded-full border border-gray-400 text-gray-500 leading-none hover:border-primary hover:text-primary focus:outline-none focus:ring-2 focus:ring-primary"
+            data-testid={`cell-help-${linha.resource}`}
+            className="shrink-0 text-primary hover:text-primary/70 transition-colors rounded-full focus:outline-none focus:ring-2 focus:ring-primary"
           >
-            <Text as="span" size="xs" color="inherit">?</Text>
+            <CircleHelp className="w-4 h-4" strokeWidth={2} aria-hidden="true" />
           </button>
         </span>
         <Text as="span" size="xs" color="secondary" className="block font-mono">{linha.resource}</Text>
