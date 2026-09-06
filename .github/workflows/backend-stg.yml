@@ -98,6 +98,13 @@ jobs:
           # declaradas em iam.permissions, descontinuando as que nenhuma rota declara.
           # Só pôde ligar com PENDING_DECLARATIONS em ZERO (PR #243): com a lista
           # cheia, o sync descontinuaria tudo que ainda não tinha sido declarado.
+          # ── F13 (D285): PERMISSION_ENGINE_ENABLED liga a decisão por célula; o boot
+          # exige iam.rollout_state.permission_groups_migrated=done (gravado pelo
+          # iam-config-import em 05/09). PERMISSION_ENFORCED_ROUTES lista as famílias
+          # viradas, separadas por ';' (parseEnvList) — as 12 de ALL_PERMISSION_FAMILIES,
+          # provadas juntas pelo e2e permission-enforcement-all-families (D267).
+          # Rollback = remover as duas linhas e reimplantar; sem elas a rota volta a
+          # passar por papel, como antes.
           #
           # 🚨 A FLAG VAI EM UM SERVIÇO SÓ, E ESTE É O SERVIÇO. NÃO copiar para
           # backend-mcp-stg.yml: os dois deploys usam a MESMA imagem, mas o MCP roda
@@ -126,6 +133,8 @@ jobs:
             DB_MIGRATION_USER=enlite_app
             COUNTRY_RLS_ENABLED=true
             PERMISSION_CATALOG_SYNC_ENABLED=true
+            PERMISSION_ENGINE_ENABLED=true
+            PERMISSION_ENFORCED_ROUTES=admin.analytics;admin.dedup;admin.encuadre;admin.integrations;admin.messaging;admin.patients;admin.permissions;admin.recruitment;admin.test_fixtures;admin.users;admin.vacancies;admin.workers
             DB_POOL_MAX=3
             DB_SYSTEM_POOL_MAX=1
             USE_KMS_ENCRYPTION=false
