@@ -1,5 +1,6 @@
 import { useEffect, useRef, forwardRef, useImperativeHandle, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
+import { googleMapsScriptUrl } from '@infrastructure/services/googleMapsScriptUrl';
 
 interface GooglePlacesAutocompleteProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange'> {
   label: string;
@@ -57,7 +58,7 @@ export const GooglePlacesAutocomplete = forwardRef<HTMLInputElement, GooglePlace
           }
 
           const script = document.createElement('script');
-          script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,geometry&language=es`;
+          script.src = googleMapsScriptUrl(apiKey);
           script.async = true;
           script.defer = true;
           script.onload = () => {

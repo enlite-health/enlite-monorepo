@@ -122,9 +122,14 @@ function mergeWalks(legs: RouteLeg[]): RouteLeg[] {
       prev.paths.push(...leg.paths);
       continue;
     }
-    // Cópia do ARRAY, não só do objeto: `{ ...leg }` compartilharia a mesma
-    // referência de `paths`, e o `push` acima mutaria a perna de origem.
-    out.push({ ...leg, paths: [...leg.paths] });
+    // `{ ...leg }` COMPARTILHA o array `paths` com a perna de origem, e o `push`
+    // acima o mutaria. Isso é inofensivo aqui e a cópia foi REMOVIDA de
+    // propósito: `legs` é local a `buildTransitRoutes` e descartado na linha
+    // seguinte, então nenhum caller consegue observar a mutação. A cópia era
+    // defesa que ninguém podia violar, com um teste que passava igual sem ela —
+    // o gate provou (06/09), e é o mesmo perfil do `refitOnGrow` que já saiu.
+    // ⚠️ Se `legs` um dia sobreviver a esta função, a cópia volta.
+    out.push({ ...leg });
   }
   return out;
 }

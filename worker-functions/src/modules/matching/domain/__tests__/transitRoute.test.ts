@@ -226,15 +226,16 @@ describe('transitRoute', () => {
       expect(r.routes[0].totalMinutes).toBe(34);
     });
 
-    it('a fusão NÃO muta a perna de origem (aliasing do array)', () => {
-      // `{ ...leg }` copia o objeto mas COMPARTILHA o array; sem a cópia
-      // explícita, o `push` do merge escreveria de volta na entrada.
-      const a = { travelMode: 'WALK', staticDuration: '60s', distanceMeters: 50, polyline: { encodedPolyline: 'aaa' } };
-      const b = { travelMode: 'WALK', staticDuration: '60s', distanceMeters: 50, polyline: { encodedPolyline: 'bbb' } };
+    it('a fusão preserva a ORDEM dos trechos — a linha começa onde a caminhada começa', () => {
+      // O teste anterior aqui afirmava que a entrada crua do Google não era
+      // mutada — e passava igual com a cópia defensiva removida, porque o código
+      // nunca toca aquele objeto. Era asserção vácua; o gate pegou (06/09).
+      // Esta afirma o que de fato importa para o desenho: a ordem.
+      const a = { travelMode: 'WALK', staticDuration: '60s', distanceMeters: 50, polyline: { encodedPolyline: 'primeiro' } };
+      const b = { travelMode: 'WALK', staticDuration: '60s', distanceMeters: 50, polyline: { encodedPolyline: 'segundo' } };
       const r = buildTransitRoutes([route(2040, [a, b, bus(1560, '8', 'x', 'y')])]);
 
-      expect(r.routes[0].legs[0].paths).toEqual(['aaa', 'bbb']);
-      expect(a.polyline.encodedPolyline).toBe('aaa');
+      expect(r.routes[0].legs[0].paths).toEqual(['primeiro', 'segundo']);
     });
   });
 

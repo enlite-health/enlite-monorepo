@@ -235,23 +235,35 @@ test.describe('Traçado da rota sobre o mapa (@integration)', () => {
     // de opções — sai pela borda. Medido em 06/09 antes do conserto: 120px
     // cortados, com o `×` de fechar fora da área clicável. Nenhum teste de
     // unidade vê isso: no DOM o elemento existe, com o tamanho certo.
-    // Verifica TODAS as opções, e não só a que nasce aberta: a altura do balão
-    // muda com a rota, e o Google devolve alternativas diferentes a cada
-    // chamada. Conferir só uma torna o teste um sorteio — foi assim que a
-    // primeira versão desta asserção passou até com o conserto sabotado.
+    // Verifica TODAS as opções, e não só uma: a altura do balão muda com a rota,
+    // e o Google devolve alternativas diferentes a cada chamada — conferir só
+    // uma torna o teste um sorteio.
+    //
+    // ⚠️ A ORDEM IMPORTA, e a versão anterior errava nela. A opção 1 NASCE
+    // ABERTA; o laço começava clicando nela, o que a FECHAVA (`aberta === i` →
+    // `setAberta(-1)`), deixando o painel no tamanho mínimo. Resultado: o único
+    // estado nunca medido era exatamente o do defeito — balão recém-aberto com a
+    // 1ª opção expandida, que é como ele chega na tela do operador. Achado pelo
+    // gate em 06/09. Por isso o estado inicial é medido ANTES de qualquer
+    // clique, e o laço começa em 1.
     const cabeNoMapa = async (): Promise<number> => {
       const mapa = await page.getByTestId('points-map').boundingBox();
       const balao = await page.getByTestId('points-map-info-card').boundingBox();
       return mapa && balao ? Math.round(mapa.y - balao.y) : 999;
     };
-    for (let i = 0; i < opcoes; i++) {
-      await page.getByTestId('route-summary').nth(i).click();
-      await page.waitForTimeout(300);
+    const conferirEncaixe = async (rotulo: string): Promise<void> => {
       const alturaPainel = (await page.getByTestId('corridor-panel').boundingBox())?.height ?? 0;
       await expect.poll(cabeNoMapa, {
         timeout: 15_000,
-        message: `opção ${i + 1}: topo do balão cortado (painel com ${alturaPainel}px)`,
+        message: `${rotulo}: topo do balão cortado (painel com ${alturaPainel}px)`,
       }).toBeLessThanOrEqual(0);
+    };
+
+    await conferirEncaixe('estado inicial (opção 1 aberta, como o balão nasce)');
+    for (let i = 1; i < opcoes; i++) {
+      await page.getByTestId('route-summary').nth(i).click();
+      await page.waitForTimeout(300);
+      await conferirEncaixe(`opção ${i + 1} aberta`);
     }
     // deixa a 1ª aberta de novo para o resto do teste
     await page.getByTestId('route-summary').nth(0).click();

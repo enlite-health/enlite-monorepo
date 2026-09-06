@@ -85,19 +85,21 @@ export interface PatientMapPoint {
  */
 export type RouteOutcome = 'ok' | 'sem_ruta' | 'sem_cobertura';
 
-/**
- * `paths` é o traçado da perna, em polilinhas CODIFICADAS do Google — uma lista
- * e não uma string porque caminhadas consecutivas são fundidas numa perna só, e
- * polilinha codificada é delta-encoded: concatenar os textos produziria uma
- * linha errada, não uma linha maior. Quem desenha decodifica cada trecho e junta
- * as coordenadas. Lista vazia = perna sem traçado, que simplesmente não se
- * desenha.
- */
+
 
 /**
  * União DISCRIMINADA: perna a pé SEMPRE tem metros, perna de transporte SEMPRE
  * tem linha. Com campos opcionais a tela precisaria de `?? 0` em cada uso — e
  * esses `??` seriam ramos mortos, porque o backend já garante os dois.
+ */
+/**
+ * Uma perna do trajeto.
+ *
+ * `paths` é o traçado, em polilinhas CODIFICADAS do Google — uma LISTA e não uma
+ * string porque caminhadas consecutivas são fundidas numa perna só, e polilinha
+ * codificada é delta-encoded: concatenar os textos produziria uma linha errada,
+ * não uma linha maior. Quem desenha decodifica cada trecho e junta as
+ * coordenadas. Lista vazia = perna sem traçado, que não se desenha.
  */
 export type RouteLeg =
   | { kind: 'walk'; minutes: number; meters: number; paths: string[] }

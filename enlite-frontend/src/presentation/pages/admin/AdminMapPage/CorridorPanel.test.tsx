@@ -11,6 +11,7 @@
  *    localização de um dos dois" são coisas diferentes; colapsá-las faria o
  *    operador ler falta de dado como ausência de transporte.
  */
+import { useState } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { CorridorPanel, type CorridorLabels } from './CorridorPanel';
@@ -138,6 +139,22 @@ describe('CorridorPanel', () => {
       aviso.mockClear();
       show({ data: { outcome: 'sem_cobertura', straightLineMeters: null, routes: [] }, isLoading: false, error: null }, aviso);
       expect(aviso).toHaveBeenLastCalledWith(null);
+    });
+
+    it('🔒 arrow INLINE não causa laço: o aviso vai por ref, não pela dependência', () => {
+      // Sem a ref, uma arrow nova a cada render reentraria no efeito, chamaria o
+      // `setState` do pai e voltaria — laço infinito. O contrato estava só em
+      // comentário até o gate de 06/09.
+      let chamadas = 0;
+      const Pai = (): JSX.Element => {
+        const [, setLegs] = useState<RouteLeg[] | null>(null);
+        return <CorridorPanel pair={PAR} labels={labels} onRouteOpen={(l) => { chamadas++; setLegs(l); }} />;
+      };
+      mockCorridor.mockReturnValue({ data: ok([rota()]), isLoading: false, error: null });
+
+      expect(() => render(<Pai />)).not.toThrow();
+      // uma vez na montagem; não uma por render
+      expect(chamadas).toBe(1);
     });
 
     it('sem quem ouvir, o painel funciona igual — o desenho é opcional', () => {
@@ -321,7 +338,7 @@ describe('CorridorPanel', () => {
       expect(l.transfers(1)).toBe('1 combinación');
       expect(l.transfers(2)).toBe('2 combinaciones');
       expect(l.total(34)).toBe('34 min puerta a puerta');
-      
+
       expect(l.walkLeg(4, 320)).toBe('caminar 4 min (320 m)');
       expect(l.straight(12)).toBe('en línea recta: ~12 cuadras');
       expect(l.direct).toBe('directo');

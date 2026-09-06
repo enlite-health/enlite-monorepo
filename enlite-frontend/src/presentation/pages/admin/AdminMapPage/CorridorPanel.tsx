@@ -22,7 +22,7 @@
  * aberta, e as pernas indentadas atrás de uma barra vertical — a barra é o que
  * diz "isto pertence à linha de cima".
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Bus, TrainFront, Footprints, ChevronDown, AlertTriangle, MoveHorizontal } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import { useCorridor } from '@hooks/admin/useCorridor';
@@ -132,7 +132,6 @@ export function CorridorPanel({ pair, labels, onRouteOpen }: {
    * Avisa QUAL rota está aberta, para a página desenhá-la no mapa. O painel não
    * desenha nada: ele vive dentro do balão, que é portalado para o DOM do
    * Google, e o mapa é irmão dele — só a página enxerga os dois.
-   * ⚠️ Precisa de identidade estável (um `setState`, não uma arrow inline).
    */
   onRouteOpen?: (legs: RouteLeg[] | null) => void;
 }): JSX.Element {
@@ -140,14 +139,23 @@ export function CorridorPanel({ pair, labels, onRouteOpen }: {
   // A primeira rota nasce ABERTA: é a resposta, não uma opção entre outras.
   const [aberta, setAberta] = useState(0);
 
+  // 🔒 O aviso vai por REF, não direto na dependência do efeito. Se a página
+  // passar uma arrow inline (o caso natural — `onRouteOpen={(l) => setX(l)}`),
+  // a identidade muda a cada render: o efeito abaixo reentraria, chamaria o
+  // `setState` do pai, que renderiza de novo… laço infinito. O contrato estava
+  // só num comentário pedindo "identidade estável", e comentário não é trava —
+  // apontado pelo gate em 06/09. É o mesmo padrão do `onSelectRef` do PointsMap.
+  const avisarRef = useRef(onRouteOpen);
+  avisarRef.current = onRouteOpen;
+
   const rotaAberta = state.data?.outcome === 'ok' ? state.data.routes[aberta] : undefined;
   // Sincroniza o desenho com o acordeão. Em efeito, e não no clique, porque a
   // rota aberta também muda quando a RESPOSTA chega (a 1ª nasce aberta) — e
   // avisar só no clique deixaria o mapa vazio até alguém tocar no painel.
-  useEffect(() => { onRouteOpen?.(rotaAberta?.legs ?? null); }, [rotaAberta, onRouteOpen]);
+  useEffect(() => { avisarRef.current?.(rotaAberta?.legs ?? null); }, [rotaAberta]);
   // Apaga ao fechar o balão. Separado do de cima de propósito: junto, cada troca
   // de opção apagaria e redesenharia, e a linha piscaria a cada clique.
-  useEffect(() => () => onRouteOpen?.(null), [onRouteOpen]);
+  useEffect(() => () => avisarRef.current?.(null), []);
 
   if (state.isLoading) {
     return (
