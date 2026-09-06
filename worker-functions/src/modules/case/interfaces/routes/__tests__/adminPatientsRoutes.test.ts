@@ -58,40 +58,46 @@ const ESPERADO: Record<string, string> = {
   'PATCH /patient-chat-roles/:code': 'patient:write',
   'DELETE /patient-chat-roles/:code': 'patient:write',
   // Catálogo de coberturas (mig 311, spec 012): mesma régua dos papéis de chat.
-  'GET /catalogs/insurance-providers': 'patient:read',
+  'GET /catalogs/insurance-providers': 'patient_coverage:read',
   'POST /catalogs/insurance-providers': 'patient:write',
   'GET /chat-groups': 'messaging:read',
   'GET /patients/stats': 'patient:read',
   'GET /patients/funnel': 'patient:read',
   'GET /patients/chat-map': 'patient:read',
   // Mapa de pacientes (REQ-04): POST com corpo, leitura.
-  'POST /patients/map': 'patient:read',
+  'POST /patients/map': 'patient_address:read',
   'GET /patients': 'patient:read',
   'POST /patients': 'patient:write',
   'GET /patients/:id': 'patient:read',
-  'GET /patients/:patientId/addresses': 'patient:read',
-  'POST /patients/:patientId/addresses': 'patient:write',
-  'PATCH /patients/:patientId/addresses/:addressId': 'patient:write',
+  // D286: endereços são o container `patient_address` — a mesma célula vale no mapa (lex C7).
+  'GET /patients/:patientId/addresses': 'patient_address:read',
+  'POST /patients/:patientId/addresses': 'patient_address:write',
+  'PATCH /patients/:patientId/addresses/:addressId': 'patient_address:write',
   'GET /patients/:id/vacancies': 'vacancy:read',
   'PUT /patients/:id/status': 'patient:write',
   'GET /patients/:id/status-history': 'patient:read',
   'POST /patients/:id/activate': 'patient:write',
   'GET /patients/:id/chat-candidates': 'messaging:read',
-  'PUT /patients/:id/chat-ids': 'patient:write',
+  'PUT /patients/:id/chat-ids': 'patient_chat:write',
   'PATCH /patients/:id/test-flag': 'patient:write',
   'DELETE /patients/:id': 'patient:delete',
   // Serviço contratado (spec 013), diagnósticos CID-11 (spec 016) e terminologia —
   // sob a célula GROSSA no sync main→stage; o fatiamento por container é a D286.
-  'GET /patients/:id/contracted-services': 'patient:read',
-  'POST /patients/:id/contracted-services': 'patient:write',
-  'PATCH /patients/:id/contracted-services/:sid': 'patient:write',
-  'POST /patients/:id/contracted-services/:sid/providers': 'patient:write',
-  'PATCH /patients/:id/contracted-services/:sid/providers/:pid': 'patient:write',
-  'GET /patients/:id/diagnoses': 'patient:read',
-  'POST /patients/:id/diagnoses': 'patient:write',
-  'PATCH /patients/:id/diagnoses/:did': 'patient:write',
-  'GET /terminology/search': 'patient:read',
-  'PATCH /patients/:id/:section': 'patient:write',
+  'GET /patients/:id/contracted-services': 'patient_services:read',
+  'POST /patients/:id/contracted-services': 'patient_services:write',
+  'PATCH /patients/:id/contracted-services/:sid': 'patient_services:write',
+  'POST /patients/:id/contracted-services/:sid/providers': 'patient_services:write',
+  'PATCH /patients/:id/contracted-services/:sid/providers/:pid': 'patient_services:write',
+  'GET /patients/:id/diagnoses': 'patient_clinical:read',
+  'POST /patients/:id/diagnoses': 'patient_clinical:write',
+  'PATCH /patients/:id/diagnoses/:did': 'patient_clinical:write',
+  'GET /terminology/search': 'patient_clinical:read',
+  // D286 (lex C5): o PATCH dinâmico por seção virou 5 rotas explícitas, uma por container.
+  'PATCH /patients/:id/general': 'patient_identity:write',
+  'PATCH /patients/:id/clinical': 'patient_clinical:write',
+  'PATCH /patients/:id/coverage': 'patient_coverage:write',
+  'PATCH /patients/:id/support-network': 'patient_family:write',
+  'PATCH /patients/:id/service': 'patient_services:write',
 };
 
 /** Cada handler devolve o próprio nome — é o que identifica quem foi chamado. */
@@ -180,8 +186,8 @@ describe('createAdminPatientsRoutes', () => {
     expect(declarado).toEqual(ESPERADO);
   });
 
-  it('a família declara exatamente 35 rotas — as 21 do PENDING_DECLARATIONS + as 14 que o main trouxe (specs 011-016, mapa)', () => {
-    expect(scanExpressRouter(build())).toHaveLength(35);
+  it('a família declara exatamente 39 rotas — 21 do PENDING_DECLARATIONS + 14 do main (specs 011-016, mapa) + as 5 seções explícitas no lugar do PATCH dinâmico (D286)', () => {
+    expect(scanExpressRouter(build())).toHaveLength(39);
   });
 
   it('a família é `admin.patients` — o nome que PERMISSION_ENFORCED_ROUTES liga', () => {
@@ -273,7 +279,7 @@ describe('createAdminPatientsRoutes', () => {
     expect(res.body.m).toBe('getPatientStats');
   });
 
-  it("'test-flag' não é capturado como :section pelo PATCH dinâmico", async () => {
+  it("'test-flag' continua chegando no seu handler (não existe mais PATCH dinâmico para capturá-lo)", async () => {
     const app = express();
     app.use(express.json());
     app.use('/api/admin', build());
@@ -281,12 +287,22 @@ describe('createAdminPatientsRoutes', () => {
     expect(res.body.m).toBe('updatePatientTestFlag');
   });
 
-  it('o PATCH dinâmico segue recebendo as seções de verdade', async () => {
+  it.each(['general', 'clinical', 'coverage', 'support-network', 'service'])(
+    'PATCH /patients/:id/%s chega em updatePatientSection com a seção fixada pela rota (D286)',
+    async (section) => {
+      const app = express();
+      app.use(express.json());
+      app.use('/api/admin', build());
+      const res = await request(app).patch(`/api/admin/patients/abc-123/${section}`).expect(200);
+      expect(res.body).toMatchObject({ m: 'updatePatientSection', id: 'abc-123', section });
+    },
+  );
+
+  it('seção fora do whitelist é 404 — não existe mais rota dinâmica que a aceite', async () => {
     const app = express();
     app.use(express.json());
     app.use('/api/admin', build());
-    const res = await request(app).patch('/api/admin/patients/abc-123/clinical').expect(200);
-    expect(res.body).toMatchObject({ m: 'updatePatientSection', id: 'abc-123', section: 'clinical' });
+    await request(app).patch('/api/admin/patients/abc-123/nao-existe').expect(404);
   });
 
   // Criar paciente para outro país é o mesmo pedido cross-país do `?country=`,

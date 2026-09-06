@@ -42,9 +42,9 @@ export function createTransitCorridorRoutes(
   const router = Router();
   const controller = new TransitCorridorController();
   // Célula declarada no sync main→stage (06/09/2026): sem ela o deny-when-undeclared do trem ABAC reprova o inventário.
-  // O corredor parte do DOMICÍLIO do paciente (lat/lng): célula de paciente; a D286 refina para `patient_address:read`.
+  // O corredor parte do DOMICÍLIO do paciente (lat/lng): a MESMA célula do container de endereço (D286; lex C7).
   const perm = permissions.family(ADMIN_PATIENTS_FAMILY);
-  router.post('/map/corridor', staffOnly, perm.require('patient', 'read'), corridorRateLimit, (req: Request, res: Response) =>
+  router.post('/map/corridor', staffOnly, perm.require('patient_address', 'read'), corridorRateLimit, (req: Request, res: Response) =>
     controller.getCorridor(req, res));
   return router;
 }

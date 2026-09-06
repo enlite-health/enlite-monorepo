@@ -95,7 +95,7 @@ export function createAdminPatientsRoutes(
   // ── CATÁLOGO de coberturas (migration 311; spec 012, US-B3) ────────────────
   // Mesma régua dos papéis de chat: LEITURA é staff (o drawer precisa dos códigos), ESCRITA é
   // admin (muda o vocabulário de todos os pacientes). Sem tela. Caminho fora de /patients/*.
-  router.get('/catalogs/insurance-providers', staffOnly, perm.require('patient', 'read'), (req: Request, res: Response) =>
+  router.get('/catalogs/insurance-providers', staffOnly, perm.require('patient_coverage', 'read'), (req: Request, res: Response) =>
     insuranceProvidersController.list(req, res),
   );
   router.post('/catalogs/insurance-providers', adminOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
@@ -129,7 +129,7 @@ export function createAdminPatientsRoutes(
   );
 
   // Pontos do mapa de pacientes (REQ-04, DEC-14). POST com corpo (lex C2: coordenada fora da URL). ESTÁTICA: antes de /patients/:id.
-  router.post('/patients/map', staffOnly, perm.require('patient', 'read'), countryScope, (req: Request, res: Response) =>
+  router.post('/patients/map', staffOnly, perm.require('patient_address', 'read'), countryScope, (req: Request, res: Response) =>
     mapController.getMapPoints(req, res),
   );
 
@@ -149,14 +149,14 @@ export function createAdminPatientsRoutes(
   );
 
   // Patient addresses
-  router.get('/patients/:patientId/addresses', staffOnly, perm.require('patient', 'read'), (req: Request, res: Response) =>
+  router.get('/patients/:patientId/addresses', staffOnly, perm.require('patient_address', 'read'), (req: Request, res: Response) =>
     controller.listPatientAddresses(req, res),
   );
-  router.post('/patients/:patientId/addresses', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+  router.post('/patients/:patientId/addresses', staffOnly, perm.require('patient_address', 'write'), (req: Request, res: Response) =>
     controller.createPatientAddress(req, res),
   );
   // Logística por endereço (spec 012, US-B2). 4 segmentos: não colide com o PATCH /:id/:section.
-  router.patch('/patients/:patientId/addresses/:addressId', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+  router.patch('/patients/:patientId/addresses/:addressId', staffOnly, perm.require('patient_address', 'write'), (req: Request, res: Response) =>
     addressesController.updatePatientAddress(req, res),
   );
 
@@ -194,7 +194,7 @@ export function createAdminPatientsRoutes(
   router.get('/patients/:id/chat-candidates', staffOnly, perm.require('messaging', 'read'), (req: Request, res: Response) =>
     chatIdsController.getChatCandidates(req, res),
   );
-  router.put('/patients/:id/chat-ids', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+  router.put('/patients/:id/chat-ids', staffOnly, perm.require('patient_chat', 'write'), (req: Request, res: Response) =>
     chatIdsController.updateChatIds(req, res),
   );
 
@@ -213,45 +213,66 @@ export function createAdminPatientsRoutes(
   // Literais ANTES do PATCH dinâmico /:id/:section — 'contracted-services' seria capturado
   // como :section e barrado pelo whitelist. Sem DELETE (lex C-a.4/C-e.2): baixa é PATCH
   // {active:false}.
-  router.get('/patients/:id/contracted-services', staffOnly, perm.require('patient', 'read'), (req: Request, res: Response) =>
+  router.get('/patients/:id/contracted-services', staffOnly, perm.require('patient_services', 'read'), (req: Request, res: Response) =>
     contractedServicesController.list(req, res),
   );
-  router.post('/patients/:id/contracted-services', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+  router.post('/patients/:id/contracted-services', staffOnly, perm.require('patient_services', 'write'), (req: Request, res: Response) =>
     contractedServicesController.create(req, res),
   );
-  router.patch('/patients/:id/contracted-services/:sid', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+  router.patch('/patients/:id/contracted-services/:sid', staffOnly, perm.require('patient_services', 'write'), (req: Request, res: Response) =>
     contractedServicesController.update(req, res),
   );
-  router.post('/patients/:id/contracted-services/:sid/providers', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+  router.post('/patients/:id/contracted-services/:sid/providers', staffOnly, perm.require('patient_services', 'write'), (req: Request, res: Response) =>
     contractedServicesController.associateProvider(req, res),
   );
-  router.patch('/patients/:id/contracted-services/:sid/providers/:pid', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+  router.patch('/patients/:id/contracted-services/:sid/providers/:pid', staffOnly, perm.require('patient_services', 'write'), (req: Request, res: Response) =>
     contractedServicesController.updateProvider(req, res),
   );
 
   // ── Diagnóstico estruturado, CID-11 (spec 016 F2, D263) ────────────────────
   // Literais ANTES do PATCH dinâmico /:id/:section — 'diagnoses' seria capturado como :section
   // e barrado pelo whitelist. Sem DELETE físico: baixa é PATCH { active: false }.
-  router.get('/patients/:id/diagnoses', staffOnly, perm.require('patient', 'read'), (req: Request, res: Response) =>
+  router.get('/patients/:id/diagnoses', staffOnly, perm.require('patient_clinical', 'read'), (req: Request, res: Response) =>
     diagnosesController.list(req, res),
   );
-  router.post('/patients/:id/diagnoses', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+  router.post('/patients/:id/diagnoses', staffOnly, perm.require('patient_clinical', 'write'), (req: Request, res: Response) =>
     diagnosesController.create(req, res),
   );
-  router.patch('/patients/:id/diagnoses/:did', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+  router.patch('/patients/:id/diagnoses/:did', staffOnly, perm.require('patient_clinical', 'write'), (req: Request, res: Response) =>
     diagnosesController.update(req, res),
   );
 
   // Busca de terminologia (CID-11) — não é recurso de paciente, fica fora de /patients/* de
   // propósito (mesmo raciocínio de /chat-groups e /catalogs/insurance-providers acima).
-  router.get('/terminology/search', staffOnly, perm.require('patient', 'read'), (req: Request, res: Response) =>
+  router.get('/terminology/search', staffOnly, perm.require('patient_clinical', 'read'), (req: Request, res: Response) =>
     terminologySearchController.search(req, res),
   );
 
-  // PATCH /patients/:id/:section — section-scoped partial edit (last: fully dynamic)
-  router.patch('/patients/:id/:section', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
-    controller.updatePatientSection(req, res),
-  );
+  // ── Edição por seção = por CONTAINER (D286; `lex` C5) ───────────────────────
+  // Era `PATCH /patients/:id/:section` dinâmico, sob `patient:write` para tudo. Cada seção é um
+  // container com célula de escrita PRÓPRIA, então cada uma vira rota explícita e declara a sua —
+  // o engine decide por rota, e a rota é a unidade da declaração (nunca "decide no handler").
+  // O controller é o mesmo (`updatePatientSection` lê `req.params.section`), e o whitelist de
+  // seções continua sendo o de `patientSectionParamSchema`: rota inexistente = 404 como antes.
+  // Mapa seção → célula:
+  //   general         → patient_identity:write   (nome, documento, nascimento, telefone, e-mail)
+  //   clinical        → patient_clinical:write   (quadro clínico e textos restritos)
+  //   coverage        → patient_coverage:write   (obra social, afiliado, verificação)
+  //   support-network → patient_family:write     (familiares/responsáveis — terceiros)
+  //   service         → patient_services:write   (profissão requerida)
+  const PATIENT_SECTION_CELL: ReadonlyArray<readonly [string, string]> = [
+    ['general', 'patient_identity'],
+    ['clinical', 'patient_clinical'],
+    ['coverage', 'patient_coverage'],
+    ['support-network', 'patient_family'],
+    ['service', 'patient_services'],
+  ];
+  for (const [section, resource] of PATIENT_SECTION_CELL) {
+    router.patch(`/patients/:id/${section}`, staffOnly, perm.require(resource, 'write'), (req: Request, res: Response) => {
+      req.params.section = section;
+      return controller.updatePatientSection(req, res);
+    });
+  }
 
   return router;
 }

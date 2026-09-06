@@ -50,6 +50,16 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   interview: 'Vagas e Funil',
   match: 'Vagas e Funil',
   patient: 'Pacientes',
+  // D286 (05/09/2026): um recurso por CONTAINER da ficha do paciente — célula por DADO, tela é
+  // só agrupamento no painel. Ver `case/application/patientContainerAccess.ts`.
+  patient_identity: 'Pacientes',
+  patient_clinical: 'Pacientes',
+  patient_care_team: 'Pacientes',
+  patient_family: 'Pacientes',
+  patient_chat: 'Pacientes',
+  patient_coverage: 'Pacientes',
+  patient_address: 'Pacientes',
+  patient_services: 'Pacientes',
   recruitment: 'Recrutamento',
   talentum: 'Recrutamento',
   prescreening: 'Recrutamento',
@@ -100,6 +110,49 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'worker:disable':
     'Dar e reverter a baixa do prestador — as transições DE e PARA o estado DISABLED. Exige motivo '
     + 'e não vem em nenhum grupo por padrão.',
+
+  // ── Paciente por CONTAINER (D286; `lex` 06/09 CONDICIONADO, C11: definição escrita no mesmo
+  //    commit que cria a célula). `patient:read` fica sendo o OPERACIONAL: id, status, funil de
+  //    admissão, caso, SLA, país — nada que identifique a pessoa. Nenhuma destas entra em grupo
+  //    por padrão (`lex` P5/E).
+  'patient_identity:read':
+    'Ver QUEM é o paciente: nome, documento, data de nascimento, sexo, telefone e e-mail de contato. '
+    + 'Sem ela a lista e a ficha mostram só o operacional (status, caso, funil).',
+  'patient_identity:write':
+    'Editar a identidade do paciente (nome, documento, nascimento, sexo, telefone, e-mail de contato).',
+  'patient_clinical:read':
+    'Ver o quadro CLÍNICO do paciente: patologías (CID-11) e diagnóstico legado, nível de dependência, '
+    + 'especialidade, dispositivos, observações, CUD, proteção judicial, consentimento e os textos '
+    + 'restritos (instruções de emergência, nota de espera). Dado sensível de saúde — Ley 25.326 art. 2.',
+  'patient_clinical:write':
+    'Editar o quadro clínico do paciente, inclusive registrar e dar baixa em patologías CID-11.',
+  'patient_care_team:read':
+    'Ver a EQUIPE TRATANTE do paciente: nome, papel, telefone e e-mail dos profissionais — dado de terceiro.',
+  'patient_family:read':
+    'Ver FAMILIARES e responsáveis do paciente: nome, vínculo, telefone, e-mail e documento — dado de '
+    + 'terceiro, com base legal própria; revela por inferência que há paciente de home care na família.',
+  'patient_family:write':
+    'Editar familiares e responsáveis do paciente (rede de apoio).',
+  'patient_chat:read':
+    'Ver os IDs dos grupos de WhatsApp do caso (família, prestadores). O id é a CHAVE de acesso a uma '
+    + 'conversa com contexto clínico — não é dado técnico.',
+  'patient_chat:write':
+    'Vincular e desvincular os grupos de WhatsApp do caso ao paciente.',
+  'patient_coverage:read':
+    'Ver a COBERTURA médica do paciente: obra social ou plano informado, número de afiliado e a '
+    + 'verificação de cobertura.',
+  'patient_coverage:write':
+    'Editar a cobertura médica do paciente.',
+  'patient_address:read':
+    'Ver os ENDEREÇOS e a localidade do paciente — inclusive no mapa (a mesma célula vale nos dois '
+    + 'lugares: coordenada de domicílio + home care é dado de saúde).',
+  'patient_address:write':
+    'Cadastrar e editar endereços e a logística de acesso do paciente.',
+  'patient_services:read':
+    'Ver os SERVIÇOS CONTRATADOS do paciente: serviço, profissão requerida, prestadores associados, '
+    + 'início. O valor-hora tem portão próprio e NÃO vem com esta célula.',
+  'patient_services:write':
+    'Criar, editar e dar baixa em serviços contratados e associar prestadores a eles.',
 };
 
 /** Célula do catálogo — o que `iam.permissions` guarda de uma linha. */

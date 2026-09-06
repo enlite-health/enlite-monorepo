@@ -386,3 +386,60 @@ describe('fetchPatientDetail — cobertura e e-mail do paciente (spec 011, A3/A4
     expect(result!.contactEmail).toBeNull();
   });
 });
+
+// ── D286 / lex P3: a célula decide ANTES do KMS ───────────────────────────────
+// A prova é o espião com ZERO chamadas — não uma leitura do código. É o mesmo
+// desenho da C3 de prestador (`projectWorkerFields`): redigir DEPOIS de
+// descriptografar não é redigir, o texto claro já existiu em memória.
+describe('fetchPatientDetail — containers sem célula NÃO passam pelo KMS (D286, lex P3)', () => {
+  function stackComTudo() {
+    const queryImpl = jest.fn();
+    queryImpl
+      .mockResolvedValueOnce({ rows: [basePatientRow({ contactEmailEncrypted: 'enc-mail-p' })] })
+      .mockResolvedValueOnce({ rows: [{ id: 'resp-1', first_name: 'María', last_name: 'López', relationship: 'Madre', phone_encrypted: 'enc-phone-r1', email_encrypted: 'enc-email-r1', document_number_encrypted: 'enc-doc-r1', document_type: 'DNI', is_primary: true, display_order: 1, source: 'admin_manual' }] })
+      .mockResolvedValueOnce({ rows: [] }) // addresses
+      .mockResolvedValueOnce({ rows: [{ id: 'prof-1', name: 'Dr. García', phone_encrypted: 'enc-phone-p1', email_encrypted: 'enc-email-p1', display_order: 1, is_team: true }] })
+      .mockResolvedValueOnce({ rows: [] }) // vacancies
+      .mockResolvedValueOnce({ rows: [] }); // contracted services
+    return makePool(queryImpl);
+  }
+  const reads = (on: string[]) => ({
+    identity: on.includes('identity'), clinical: on.includes('clinical'), careTeam: on.includes('careTeam'),
+    family: on.includes('family'), chat: on.includes('chat'), coverage: on.includes('coverage'),
+    address: on.includes('address'), services: on.includes('services'),
+  });
+
+  it('🔴 sem familiares, equipe nem identidade: kms.decrypt tem 0 chamadas e os campos saem vazios', async () => {
+    const enc = makeEncryptionService();
+    const result = await fetchPatientDetail(stackComTudo(), enc, PATIENT_ID, reads([]));
+    expect((enc.decrypt as jest.Mock)).toHaveBeenCalledTimes(0);
+    expect(result?.responsibles).toEqual([]);
+    expect(result?.professionals).toEqual([]);
+    expect(result?.contactEmail).toBeNull();
+  });
+
+  it('só familiares: descriptografa os 3 campos do responsável e NADA da equipe nem do e-mail', async () => {
+    const enc = makeEncryptionService();
+    const result = await fetchPatientDetail(stackComTudo(), enc, PATIENT_ID, reads(['family']));
+    const chamados = (enc.decrypt as jest.Mock).mock.calls.map((c) => c[0]);
+    expect(chamados.sort()).toEqual(['enc-doc-r1', 'enc-email-r1', 'enc-phone-r1']);
+    expect(result?.responsibles).toHaveLength(1);
+    expect(result?.professionals).toEqual([]);
+    expect(result?.contactEmail).toBeNull();
+  });
+
+  it('só identidade: descriptografa o e-mail de contato e mais nada', async () => {
+    const enc = makeEncryptionService();
+    const result = await fetchPatientDetail(stackComTudo(), enc, PATIENT_ID, reads(['identity']));
+    expect((enc.decrypt as jest.Mock).mock.calls.map((c) => c[0])).toEqual(['enc-mail-p']);
+    expect(result?.contactEmail).toBe('dec(enc-mail-p)');
+  });
+
+  it('sem o argumento (engine não decidiu) o comportamento é o de antes: tudo descriptografado', async () => {
+    const enc = makeEncryptionService();
+    const result = await fetchPatientDetail(stackComTudo(), enc, PATIENT_ID);
+    expect((enc.decrypt as jest.Mock).mock.calls.length).toBe(6);
+    expect(result?.responsibles).toHaveLength(1);
+    expect(result?.professionals).toHaveLength(1);
+  });
+});

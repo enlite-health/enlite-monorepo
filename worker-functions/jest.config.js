@@ -78,6 +78,14 @@ module.exports = {
    * `worker/index.ts`, que MEDIU 100 nos quatro eixos e por isso entra.
    */
   coverageThreshold: {
+    // D286: o ponto único de decisão por CONTAINER da ficha (identidade, clínica, familiares,
+    // chat, cobertura, endereço, serviços, equipe) — mesma classe do `patientClinicalAccess`.
+    'src/modules/case/application/patientContainerAccess.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     // Paciente como fonte da verdade: leitura clínica, repositórios e o guarda
     // de acesso ao texto clínico. `patientClinicalAccess` é o que decide quem
     // vê texto clínico — regra dura do CLAUDE.md, não pode regredir calado.

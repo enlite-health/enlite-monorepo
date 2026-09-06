@@ -12,6 +12,7 @@ import {
   type ActiveVacancy,
 } from '../application/AddressAvailabilityCalculator';
 import { mapContractedServices } from './ContractedServiceDetailMapper';
+import { ALL_PATIENT_CONTAINERS_READABLE, type PatientContainerReads } from '../application/patientContainerAccess';
 import { phoneMatchesResponsible } from '../domain/PhoneMatch';
 
 const PATIENT_DETAIL_SQL = `
@@ -244,6 +245,12 @@ export async function fetchPatientDetail(
   pool: Pool,
   encryptionService: KMSEncryptionService,
   id: string,
+  /**
+   * D286 / `lex` P3: a célula decide ANTES de o KMS rodar. Container que o ator não lê não é
+   * descriptografado — o texto claro de familiar/equipe/e-mail nunca existe em memória para
+   * ele (mesma regra da C3 de prestador). Default = tudo (engine não decidiu → como antes).
+   */
+  reads: PatientContainerReads = ALL_PATIENT_CONTAINERS_READABLE,
 ): Promise<PatientDetailRow | null> {
   const patientResult = await pool.query(PATIENT_DETAIL_SQL, [id]);
   if (patientResult.rows.length === 0) return null;
@@ -259,12 +266,12 @@ export async function fetchPatientDetail(
   }));
 
   const [responsibles, professionals, contactEmail, contractedServices] = await Promise.all([
-    decryptResponsibles(responsibleRows.rows, encryptionService),
-    decryptProfessionals(professionalRows.rows, encryptionService),
+    reads.family ? decryptResponsibles(responsibleRows.rows, encryptionService) : Promise.resolve([]),
+    reads.careTeam ? decryptProfessionals(professionalRows.rows, encryptionService) : Promise.resolve([]),
     // Sem ciphertext não há decrypt: o passthrough de teste devolve '' para
     // entrada vazia, e '' na ficha seria "tem e-mail e está em branco".
-    p.contactEmailEncrypted ? encryptionService.decrypt(p.contactEmailEncrypted) : Promise.resolve(null),
-    mapContractedServices(contractedServiceRows.rows, pool, encryptionService),
+    reads.identity && p.contactEmailEncrypted ? encryptionService.decrypt(p.contactEmailEncrypted) : Promise.resolve(null),
+    reads.services ? mapContractedServices(contractedServiceRows.rows, pool, encryptionService) : Promise.resolve([]),
   ]);
 
   const addresses = mapAddresses(addressRows.rows, vacancies);

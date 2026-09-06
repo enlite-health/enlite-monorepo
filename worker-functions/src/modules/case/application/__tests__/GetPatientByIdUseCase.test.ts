@@ -194,7 +194,8 @@ describe('GetPatientByIdUseCase', () => {
       await useCase.execute(PATIENT_ID);
 
       expect(findDetailById).toHaveBeenCalledTimes(1);
-      expect(findDetailById).toHaveBeenCalledWith(PATIENT_ID);
+      // D286: o 2º argumento é o mapa de containers legíveis (sem células → todos).
+      expect(findDetailById).toHaveBeenCalledWith(PATIENT_ID, expect.objectContaining({ family: true, clinical: true }));
     });
   });
 });

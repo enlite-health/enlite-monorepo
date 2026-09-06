@@ -6,6 +6,7 @@ import type { AdminPatientsListParams } from '../interfaces/validators/adminPati
 import { derivePatientSla } from '../domain/PatientSla';
 import { isLeadPlaceholderName } from '../domain/LeadContact';
 import { attachLeadContact } from './PatientLeadContactAttacher';
+import { ALL_PATIENT_CONTAINERS_READABLE, type PatientContainerReads } from '../application/patientContainerAccess';
 import {
   computePatientCompleteness,
   ACTIVATABLE_STATUSES,
@@ -48,6 +49,8 @@ export class PatientQueryRepository {
 
   async list(
     filters: AdminPatientsListParams,
+    // D286 / lex P3: o desempate do lead (e-mail mascarado) só é descriptografado para quem lê identidade.
+    reads: PatientContainerReads = ALL_PATIENT_CONTAINERS_READABLE,
   ): Promise<{ rows: PatientListRow[]; total: number }> {
     const params: unknown[] = [];
     let i = 1;
@@ -282,7 +285,7 @@ export class PatientQueryRepository {
       };
     });
 
-    await attachLeadContact(this.encryptionService, rows, result.rows);
+    if (reads.identity) await attachLeadContact(this.encryptionService, rows, result.rows);
 
     return { rows, total };
   }
@@ -325,7 +328,7 @@ export class PatientQueryRepository {
   }
 
   /** Full patient detail with decrypted PII. Delegates to PatientDetailQueryHelper. */
-  async findDetailById(id: string): Promise<PatientDetailRow | null> {
-    return fetchPatientDetail(this.pool, this.encryptionService, id);
+  async findDetailById(id: string, reads: PatientContainerReads = ALL_PATIENT_CONTAINERS_READABLE): Promise<PatientDetailRow | null> {
+    return fetchPatientDetail(this.pool, this.encryptionService, id, reads);
   }
 }

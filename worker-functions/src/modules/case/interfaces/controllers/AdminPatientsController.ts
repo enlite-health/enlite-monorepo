@@ -9,6 +9,7 @@ import { createPatientSchema } from '../validators/createPatientSchema';
 import { PatientQueryRepository } from '../../infrastructure/PatientQueryRepository';
 import { GetPatientByIdUseCase } from '../../application/GetPatientByIdUseCase';
 import { clinicalCellsOf, canReadPatientClinical, PATIENT_CLINICAL_READ_CELL } from '../../application/patientClinicalAccess';
+import { patientContainerReadsOf, servedPatientContainers } from '../../application/patientContainerAccess';
 import { actorRolesOf } from '../../application/contractedServiceHourlyValueAccess';
 import {
   toAdminPatientListItem,
@@ -503,9 +504,11 @@ export class AdminPatientsController {
     }
 
     try {
-      const { rows, total } = await this.repo.list(parsed.data);
+      // D286: as células do ator decidem o que a lista carrega — e o que o KMS descriptografa.
+      const cells = clinicalCellsOf(req);
+      const { rows, total } = await this.repo.list(parsed.data, patientContainerReadsOf(cells));
 
-      const data = rows.map((row) => toAdminPatientListItem(row));
+      const data = rows.map((row) => toAdminPatientListItem(row, cells));
 
       // Trilha de LEITURA de contato (lex 30/08 C5, molde OP-08/OP-11-D225):
       // quem leu, de que país, quantos e QUAIS pacientes. Nunca o e-mail — nem
@@ -546,7 +549,9 @@ export class AdminPatientsController {
     }
 
     try {
-      const result = await this.getPatientByIdUseCase.execute(parsed.data.id);
+      // D286 / lex P3: a célula decide ANTES do KMS — o use case só descriptografa o que o ator lê.
+      const cells = clinicalCellsOf(req);
+      const result = await this.getPatientByIdUseCase.execute(parsed.data.id, patientContainerReadsOf(cells));
 
       if (!result.found) {
         res.status(404).json({ success: false, error: 'Patient not found' });
@@ -555,7 +560,6 @@ export class AdminPatientsController {
 
       // Ponto ÚNICO de leitura do texto clínico restrito (D211.2) e do `hourlyValue` (lex
       // C-c.4): as duas redações vivem em `AdminPatientView.projectAdminPatientDetail`.
-      const cells = clinicalCellsOf(req);
       const roles = actorRolesOf(req);
       const projected = projectAdminPatientDetail(result.patient as unknown as Record<string, unknown>, cells, roles);
       // Trilha de LEITURA sem valor (lex 29/08 C3, molde OP-08): uid, paciente, país, decisão, quando.
@@ -563,8 +567,17 @@ export class AdminPatientsController {
       if (canReadPatientClinical(cells)) {
         logger.info({ msg: 'patient_clinical.read', uid: AuthMiddleware.getAuthContext(req)?.principal.id ?? null, patientId: parsed.data.id, country: (result.patient as { country?: string | null }).country ?? null, decision: 'allowed' });
       }
+      // D286 / lex D-C8: UMA linha por abertura de ficha com o CONJUNTO de containers servidos —
+      // uid, paciente, país, containers, quando. Nunca o texto, o telefone ou o chat_id.
+      logger.info({
+        msg: 'patient_detail.read',
+        uid: AuthMiddleware.getAuthContext(req)?.principal.id ?? null,
+        patientId: parsed.data.id,
+        country: (result.patient as { country?: string | null }).country ?? null,
+        containers: servedPatientContainers(cells),
+      });
 
-      const completeness = patientDetailCompleteness(result.patient);
+      const completeness = patientDetailCompleteness(result.patient, cells);
 
       // Spec 016 F2 (D263): diagnóstico estruturado embutido na MESMA projeção — REQ-21, sem
       // concept_code/concept_group/catalog_release (toDiagnosisPublicView é o único ponto que
@@ -579,11 +592,17 @@ export class AdminPatientsController {
       // `diagnosesUnavailable` diz qual dos dois `[]` é. A falha continua reportada
       // (reportError), nunca silenciosa de verdade — `diagnosesUnavailable` é o que a TORNA
       // visível também para quem lê a tela, não só para quem lê o Cloud Logging.
-      let diagnoses: ReturnType<typeof toDiagnosisPublicView>[] = [];
+      let diagnoses: ReturnType<typeof toDiagnosisPublicView>[] | null = [];
       let diagnosesUnavailable = false;
       try {
-        const diagnosesResult = await this.getDiagnosisService().listForPatient(parsed.data.id);
-        diagnoses = diagnosesResult.found ? diagnosesResult.diagnoses.map(toDiagnosisPublicView) : [];
+        // D286: diagnóstico CID-11 é container clínico — sem `patient_clinical:read` não se busca
+        // (nem se devolve `[]`, que diria "sem diagnóstico"): sai `null`, com `redacted.clinical`.
+        if (!patientContainerReadsOf(cells).clinical) {
+          diagnoses = null;
+        } else {
+          const diagnosesResult = await this.getDiagnosisService().listForPatient(parsed.data.id);
+          diagnoses = diagnosesResult.found ? diagnosesResult.diagnoses.map(toDiagnosisPublicView) : [];
+        }
       } catch (diagErr: unknown) {
         const de = diagErr instanceof Error ? diagErr : new Error(String(diagErr));
         reportError(de, { source: 'AdminPatientsController:getPatientById:diagnoses', patientId: parsed.data.id });

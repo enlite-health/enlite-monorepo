@@ -250,7 +250,7 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
    * Se alguém escrever uma definição nova em `CELL_DESCRIPTION` sem rota, este
    * caso fica vermelho e obriga a decisão a ser consciente.
    */
-  it('as células sem rota são EXATAMENTE `worker_contact:read` e `worker:disable`', () => {
+  it('as células sem rota são EXATAMENTE `worker_contact:read`, `worker:disable` e os containers de paciente (D286)', () => {
     const deRota = declaredCells([
       { method: 'GET', path: '/w', cell: { resource: 'worker', action: 'read' } },
       { method: 'GET', path: '/d', cell: { resource: 'worker_pii', action: 'read' } },
@@ -259,6 +259,24 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
     expect(cellsForaDeRota(deRota).map((c) => `${c.resource}:${c.action}`)).toEqual([
       'worker_contact:read',
       'worker:disable',
+      // D286 — os containers da ficha do paciente. A maioria É declarada por rota no app real
+      // (endereços, serviços, diagnósticos, seções); aqui o fixture de rota não declara nenhuma,
+      // então TODAS saem como complemento — e é isso que garante que nenhuma some do catálogo.
+      'patient_identity:read',
+      'patient_identity:write',
+      'patient_clinical:read',
+      'patient_clinical:write',
+      'patient_care_team:read',
+      'patient_family:read',
+      'patient_family:write',
+      'patient_chat:read',
+      'patient_chat:write',
+      'patient_coverage:read',
+      'patient_coverage:write',
+      'patient_address:read',
+      'patient_address:write',
+      'patient_services:read',
+      'patient_services:write',
     ]);
   });
 

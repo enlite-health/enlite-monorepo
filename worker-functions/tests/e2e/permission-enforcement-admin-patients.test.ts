@@ -52,11 +52,14 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
     admissao: 'perm-pac-e2e-admissao',
     /** `vacancy:read` + `messaging:read`, e NADA de paciente. */
     vizinha: 'perm-pac-e2e-vizinha',
+    /** D286: `patient:read` + o CONTAINER de familiares (read/write) e nada mais — nem `patient:write`. */
+    familia: 'perm-pac-e2e-familia',
   };
   const GRUPOS = {
     leitura: 'Perm Pac E2E Leitura',
     admissao: 'Perm Pac E2E Admissão',
     vizinha: 'Perm Pac E2E Vizinha',
+    familia: 'Perm Pac E2E Família',
   };
 
   const envAnterior: Record<string, string | undefined> = {};
@@ -110,8 +113,9 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
       `INSERT INTO users (firebase_uid, email, role, status, is_active, tenant_id) VALUES
          ($1, 'perm-pac-leitora@e2e.local',  'admin', 'ACTIVE', true, $4),
          ($2, 'perm-pac-admissao@e2e.local', 'admin', 'ACTIVE', true, $4),
-         ($3, 'perm-pac-vizinha@e2e.local',  'admin', 'ACTIVE', true, $4)`,
-      [U.leitora, U.admissao, U.vizinha, TENANT_E2E],
+         ($3, 'perm-pac-vizinha@e2e.local',  'admin', 'ACTIVE', true, $4),
+         ($5, 'perm-pac-familia@e2e.local',  'admin', 'ACTIVE', true, $4)`,
+      [U.leitora, U.admissao, U.vizinha, TENANT_E2E, U.familia],
     );
 
     await pool.query(
@@ -127,6 +131,25 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
         ['patient', 'read'],
         ['patient', 'write'],
         ['patient', 'delete'],
+      ],
+    });
+    // D286: as células de container nascem do sync do catálogo no boot real; neste app de
+    // família o catálogo é o do banco, então semeia-se o que o grupo vai usar.
+    await pool.query(
+      `INSERT INTO iam.permissions (resource, action, description, category) VALUES
+         ('patient_family', 'read', 'Ver familiares', 'Pacientes'),
+         ('patient_family', 'write', 'Editar familiares', 'Pacientes'),
+         ('patient_clinical', 'read', 'Ver clínica', 'Pacientes'),
+         ('patient_chat', 'write', 'Vincular chats', 'Pacientes')
+       ON CONFLICT DO NOTHING`,
+    );
+    await grupoComCelulas(pool, {
+      nome: GRUPOS.familia,
+      uid: U.familia,
+      celulas: [
+        ['patient', 'read'],
+        ['patient_family', 'read'],
+        ['patient_family', 'write'],
       ],
     });
     await grupoComCelulas(pool, {
@@ -170,6 +193,9 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
         update: marca('chatRoles.update'),
         delete: marca('chatRoles.delete'),
       },
+      // Os 6 controllers que o main trouxe (mapa, endereços, coberturas, serviços, diagnósticos,
+      // terminologia): aqui só interessa a CÉLULA da rota, então um marcador serve para todos.
+      outros: new Proxy({}, { get: (_t, nome: string) => marca(`outros.${nome}`) }),
     };
   }
 
@@ -187,6 +213,12 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
             permissions,
             c.chatIds as never,
             c.chatRoles as never,
+            c.outros as never,
+            c.outros as never,
+            c.outros as never,
+            c.outros as never,
+            c.outros as never,
+            c.outros as never,
           ),
         ),
     });
@@ -268,12 +300,36 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
       expect(await chamar('GET', caminho, U.vizinha)).toMatchObject({ status: 200, body: { chegou: handler } });
     });
 
-    it('GRAVAR o chat-id é patient:write, não messaging — muda o cadastro do paciente', async () => {
+    it('GRAVAR o chat-id é patient_chat:write (D286) — nem messaging nem patient:write servem', async () => {
       expect((await chamar('PUT', '/api/admin/patients/abc-123/chat-ids', U.vizinha)).status).toBe(403);
-      expect(await chamar('PUT', '/api/admin/patients/abc-123/chat-ids', U.admissao)).toMatchObject({
-        status: 200,
-        body: { chegou: 'updateChatIds' },
-      });
+      expect((await chamar('PUT', '/api/admin/patients/abc-123/chat-ids', U.admissao)).status).toBe(403);
+    });
+  });
+
+  describe('D286 — permissão por CONTAINER: a célula do container manda, patient:write não', () => {
+    it('quem tem patient:write mas NÃO patient_family:write NÃO edita a rede de apoio', async () => {
+      const res = await chamar('PATCH', '/api/admin/patients/abc-123/support-network', U.admissao);
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: 'missing_cell' });
+    });
+
+    it('quem tem só o container de familiares edita a rede de apoio — e o handler recebe a seção fixada pela rota', async () => {
+      const res = await chamar('PATCH', '/api/admin/patients/abc-123/support-network', U.familia);
+      expect(res).toMatchObject({ status: 200, body: { chegou: 'updatePatientSection' } });
+    });
+
+    it('… mas NÃO edita a clínica nem a identidade', async () => {
+      expect((await chamar('PATCH', '/api/admin/patients/abc-123/clinical', U.familia)).status).toBe(403);
+      expect((await chamar('PATCH', '/api/admin/patients/abc-123/general', U.familia)).status).toBe(403);
+    });
+
+    it('diagnósticos CID-11 exigem patient_clinical:read — patient:read inteiro não abre', async () => {
+      expect((await chamar('GET', '/api/admin/patients/abc-123/diagnoses', U.leitora)).status).toBe(403);
+      expect((await chamar('GET', '/api/admin/patients/abc-123/diagnoses', U.familia)).status).toBe(403);
+    });
+
+    it('a seção dinâmica morreu: seção fora do whitelist é 404, não 403', async () => {
+      expect((await chamar('PATCH', '/api/admin/patients/abc-123/nao-existe', U.admissao)).status).toBe(404);
     });
   });
 

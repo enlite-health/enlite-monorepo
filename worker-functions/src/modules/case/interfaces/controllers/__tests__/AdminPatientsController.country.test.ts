@@ -72,7 +72,7 @@ describe('AdminPatientsController — filtro país', () => {
     const [req, res] = mockReqRes({ country: 'AR' });
     await controller.listPatients(req, res);
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ country: 'AR' }));
+    expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ country: 'AR' }), expect.anything());
   });
 
   it('listPatients 400 em country inválido', async () => {
