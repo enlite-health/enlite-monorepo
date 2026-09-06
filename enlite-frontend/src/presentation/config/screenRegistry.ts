@@ -95,7 +95,15 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
     ],
   },
   { id: 'patients.chatRoles', route: '/admin/patient-chat-roles', cells: ['patient:read', 'patient:write'] },
-  { id: 'map', route: '/admin/mapa', cells: ['patient_address:read', 'worker:read'] },
+  {
+    id: 'map',
+    route: '/admin/mapa',
+    // Cada aba é um container com a célula de ENDEREÇO do titular — a mesma da ficha dele. O nome
+    // do pino segue contato (prestador) / identidade (paciente), projetado pela rota.
+    // A âncora da aba Prestadores é um paciente (e vice-versa): usar uma aba pede as duas células.
+    tabs: ['workers', 'patients'],
+    containers: [c('workers', 'worker_address', ['read'], 'workers'), c('patients', 'patient_address', ['read'], 'patients')],
+  },
 
   // ── Prestadores ────────────────────────────────────────────────────────────────────────────
   {
@@ -114,9 +122,10 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       // transição de status e não tem botão próprio no front (cai em "Outras células").
       c('profile', 'worker', ['read', 'write'], 'availability'),
       c('contact', 'worker_contact', ['read']),
-      // Dossiê = dados pessoais (nascimento, sexo, DNI, raça, religião…) E a linha de endereço —
-      // a mesma célula da C3/F2; a rota projeta os dois juntos.
+      // Dossiê = nascimento, sexo, DNI, raça, religião… (célula da C3/F2). Endereço é célula própria
+      // (linha, coordenada, raio) — a MESMA que vale na aba Prestadores do mapa.
       c('dossier', 'worker_pii', ['read']),
+      c('address', 'worker_address', ['read']),
       c('documents', 'worker_document', ['read', 'write', 'delete', 'validate'], 'documents'),
       c('encuadres', 'match', ['read'], 'encuadres'),
     ],

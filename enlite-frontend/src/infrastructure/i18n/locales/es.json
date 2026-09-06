@@ -3792,7 +3792,8 @@
           "resource": {
             "worker": "Prestador en operación",
             "worker_contact": "Contacto: nombre, teléfono",
-            "worker_pii": "Dossier: DNI, domicilio, datos sensibles",
+            "worker_pii": "Dossier: DNI, nacimiento, datos sensibles",
+            "worker_address": "Dirección del prestador: línea, coordenada, radio",
             "worker_document": "Documentos",
             "vacancy": "Vacantes",
             "funnel": "Embudo",
@@ -3978,6 +3979,12 @@
                 "action": {
                   "read": "Ver el dossier completo de identidad: documento (DNI/CUIL), fecha de nacimiento, domicilio y fotos, además de los datos sensibles que la ley protege de forma especial."
                 }
+              },
+              "worker_address": {
+                "body": "Es la dirección del prestador: línea de domicilio, coordenada y radio de atención. Vale en la ficha (card de dirección) y en la pestaña Prestadores del mapa — es la misma célula. Ciudad y zona de trabajo no la necesitan.",
+                "action": {
+                  "read": "Ver la dirección del prestador en la ficha y en el mapa (línea, coordenada, radio)."
+                }
               }
             }
           },
@@ -4052,7 +4059,11 @@
           "label": "Pacientes: Roles de grupos"
         },
         "map": {
-          "label": "Mapa"
+          "label": "Mapa",
+          "containers": {
+            "workers": "Prestadores (dirección y coordenada)",
+            "patients": "Pacientes (dirección y coordenada)"
+          }
         },
         "workers.list": {
           "label": "Prestadores: Lista"
@@ -4062,9 +4073,10 @@
           "containers": {
             "profile": "Perfil profesional, etiquetas y disponibilidad",
             "contact": "Contacto (nombre, teléfono, e-mail)",
-            "dossier": "Dossier (DNI, nacimiento, domicilio, datos sensibles)",
+            "dossier": "Dossier (DNI, nacimiento, datos sensibles)",
             "documents": "Documentos",
-            "encuadres": "Encuadres"
+            "encuadres": "Encuadres",
+            "address": "Dirección (línea, coordenada, radio)"
           }
         },
         "tags": {

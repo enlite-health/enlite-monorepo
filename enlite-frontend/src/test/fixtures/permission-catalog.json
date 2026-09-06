@@ -58,6 +58,7 @@
     "worker:export",
     "worker:read",
     "worker:write",
+    "worker_address:read",
     "worker_contact:read",
     "worker_document:delete",
     "worker_document:read",

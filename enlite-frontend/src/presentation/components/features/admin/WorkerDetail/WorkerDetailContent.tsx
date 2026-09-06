@@ -140,8 +140,8 @@ export function WorkerDetailContent({ workerId, header, renderError, allowEdit =
       {/* Admin-only: test-account toggle */}
       <WorkerTestAccountToggle workerId={worker.id} initialIsTest={worker.isTest} />
 
-      {/* Row 2: Address (full-width) — dossiê: coordenada é endereço (lex P2) */}
-      <ContainerGate resource="worker_pii">
+      {/* Row 2: Address (full-width) — célula própria de endereço, a mesma do mapa (lex P2) */}
+      <ContainerGate resource="worker_address">
         <div className="mb-6">
           <WorkerAddressCard
             serviceAreas={worker.serviceAreas ?? []}

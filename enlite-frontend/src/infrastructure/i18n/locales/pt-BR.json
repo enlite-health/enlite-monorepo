@@ -3713,7 +3713,8 @@
           "resource": {
             "worker": "Prestador em operação",
             "worker_contact": "Contato: nome e telefone",
-            "worker_pii": "Dossiê: documento, endereço, dados sensíveis",
+            "worker_pii": "Dossiê: DNI, nascimento, dados sensíveis",
+            "worker_address": "Endereço do prestador: linha, coordenada, raio",
             "worker_document": "Documentos do prestador",
             "vacancy": "Vagas",
             "funnel": "Funil",
@@ -3899,6 +3900,12 @@
                 "action": {
                   "read": "Ver o dossiê completo de identidade: documento (DNI/CUIL), data de nascimento, domicílio e fotos, além dos dados sensíveis que a lei protege de forma especial."
                 }
+              },
+              "worker_address": {
+                "body": "É o endereço do prestador: linha, coordenada e raio de atendimento. Vale na ficha (card de endereço) e na aba Prestadores do mapa — é a mesma célula. Cidade e zona de trabalho não precisam dela.",
+                "action": {
+                  "read": "Ver o endereço do prestador na ficha e no mapa (linha, coordenada, raio)."
+                }
               }
             }
           },
@@ -3973,7 +3980,11 @@
           "label": "Pacientes: Papéis de grupos"
         },
         "map": {
-          "label": "Mapa"
+          "label": "Mapa",
+          "containers": {
+            "workers": "Prestadores (endereço e coordenada)",
+            "patients": "Pacientes (endereço e coordenada)"
+          }
         },
         "workers.list": {
           "label": "Prestadores: Lista"
@@ -3983,9 +3994,10 @@
           "containers": {
             "profile": "Perfil profissional, etiquetas e disponibilidade",
             "contact": "Contato (nome, telefone, e-mail)",
-            "dossier": "Dossiê (DNI, nascimento, endereço, dados sensíveis)",
+            "dossier": "Dossiê (DNI, nascimento, dados sensíveis)",
             "documents": "Documentos",
-            "encuadres": "Encuadres"
+            "encuadres": "Encuadres",
+            "address": "Endereço (linha, coordenada, raio)"
           }
         },
         "tags": {

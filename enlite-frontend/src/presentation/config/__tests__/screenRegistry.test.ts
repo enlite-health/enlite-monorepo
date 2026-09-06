@@ -86,6 +86,8 @@ describe('screensByCell / containersOfTab / screenById', () => {
     const telas = todasAsCelulas().get('patient:read') ?? [];
     expect(telas).toEqual(expect.arrayContaining(['dashboard', 'patients.list', 'patients.kanban', 'patients.detail', 'patients.chatRoles']));
     expect(todasAsCelulas().get('patient_address:read')).toEqual(['patients.detail', 'map']);
+    // D286 fase 2: o endereço do prestador é UMA célula — card da ficha e aba Prestadores do mapa
+    expect(todasAsCelulas().get('worker_address:read')).toEqual(['map', 'workers.detail']);
   });
 
   it('as abas do detalhe do paciente: cada uma sabe os seus containers; Matching partilha Serviços', () => {
@@ -107,7 +109,7 @@ describe('screensByCell / containersOfTab / screenById', () => {
     expect(containersOfTab(s, 'encuadres').map((c) => c.resource)).toEqual(['match']);
     expect(containersOfTab(s, 'availability').map((c) => c.resource)).toEqual(['worker']);
     expect(containersOfTab(s, 'financial')).toEqual([]);
-    expect(s.containers?.map((c) => c.resource)).toEqual(['worker', 'worker_contact', 'worker_pii', 'worker_document', 'match']);
+    expect(s.containers?.map((c) => c.resource)).toEqual(['worker', 'worker_contact', 'worker_pii', 'worker_address', 'worker_document', 'match']);
   });
 
   it('D286 fase 2 — vaga: o card Paciente é célula do PACIENTE (patient_identity); Links é a vaga', () => {
@@ -118,6 +120,12 @@ describe('screensByCell / containersOfTab / screenById', () => {
     expect(containersOfTab(s, 'talentum').map((c) => c.resource)).toEqual(['prescreening', 'talentum']);
     // patient_identity:read é UMA célula: ficha do paciente, lista, kanban, vaga
     expect(todasAsCelulas().get('patient_identity:read')).toEqual(expect.arrayContaining(['patients.detail', 'vacancies.detail']));
+  });
+
+  it('D286 fase 2 — mapa: uma aba por titular, cada uma com a célula de endereço dele', () => {
+    const s = screenById('map');
+    expect(containersOfTab(s, 'workers').map((c) => c.resource)).toEqual(['worker_address']);
+    expect(containersOfTab(s, 'patients').map((c) => c.resource)).toEqual(['patient_address']);
   });
 
   it('D286 fase 2 — Gestión a la Vista: dois containers (indicadores, pacientes)', () => {

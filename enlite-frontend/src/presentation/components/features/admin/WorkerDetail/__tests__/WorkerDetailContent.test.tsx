@@ -200,11 +200,19 @@ describe('WorkerDetailContent', () => {
       expect(screen.queryByTestId('worker-documents-card')).not.toBeInTheDocument();
     });
 
-    it('worker_pii:read sem contato: dossiê e endereço aparecem, nome não', async () => {
+    it('worker_pii:read sem contato nem endereço: dossiê aparece, nome não, card de endereço não', async () => {
       comEnforcement(['worker:read', 'worker_pii:read'], 'on');
       render(<WorkerDetailContent workerId="w1" />);
       await screen.findByText(/admin.workerDetail.birthDate/);
       expect(screen.queryByText('Juana Pérez')).not.toBeInTheDocument();
+      expect(screen.queryByText(/admin.workerDetail.addressData/)).not.toBeInTheDocument();
+    });
+
+    it('worker_address:read (a mesma célula do mapa) devolve o card de endereço', async () => {
+      comEnforcement(['worker:read', 'worker_address:read'], 'on');
+      render(<WorkerDetailContent workerId="w1" />);
+      await screen.findByText('admin.workerDetail.personalInfo');
+      expect(screen.getByText(/admin.workerDetail.addressData/)).toBeInTheDocument();
     });
 
     it('match:read: a aba de encuadres existe', async () => {
