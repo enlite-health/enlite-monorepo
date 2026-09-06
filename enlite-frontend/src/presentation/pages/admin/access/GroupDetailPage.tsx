@@ -22,6 +22,7 @@ import {
   type TransferPerson,
 } from '@presentation/components/features/access';
 import { useCellAccess } from '@presentation/hooks/useCellAccess';
+import { useToast } from '@presentation/hooks/useToast';
 import { AccessGate, PANEL_RESOURCE } from './AccessGate';
 import { panelErrorKey } from './panelErrors';
 
@@ -56,7 +57,15 @@ function GroupDetail(): JSX.Element {
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [catalog, setCatalog] = useState<CatalogCategory[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  // Sucesso vai pelo toast da casa (`<Toaster/>` no App), não por um aviso
+  // inline que empurrava a página para baixo (Gabriel, 05/09, 2ª rodada).
+  const showToast = useToast();
+  /**
+   * Sobe a cada `load()` e é a `key` dos dois `CampoEditavel`: recarregar
+   * REMONTA só eles (fecha o que estava aberto e descarta o rascunho — a trava
+   * do gate de 05/09), sem desmontar a página inteira, que era a piscada.
+   */
+  const [epoca, setEpoca] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
   // Edição local — só existe em `write`; em `read` os campos são texto.
@@ -79,6 +88,7 @@ function GroupDetail(): JSX.Element {
       setCatalog(c);
       setForm({ name: g.name, description: g.description ?? '' });
       setCells(new Set(g.cells));
+      setEpoca((e) => e + 1);
     } catch (err) {
       setError(panelErrorKey(err));
     } finally {
@@ -143,10 +153,9 @@ function GroupDetail(): JSX.Element {
    *  um campo cujo save o servidor recusou. */
   async function run(acao: () => Promise<unknown>, okKey = 'admin.access.group.saved'): Promise<boolean> {
     setError(null);
-    setNotice(null);
     try {
       await acao();
-      setNotice(okKey);
+      showToast(t(okKey), 'success', okKey);
       await load();
       return true;
     } catch (err) {
@@ -155,7 +164,10 @@ function GroupDetail(): JSX.Element {
     }
   }
 
-  if (isLoading) return <Text size="sm" color="secondary">…</Text>;
+  // O "…" só na PRIMEIRA carga. O `load()` depois de cada salvamento ligava
+  // `isLoading` de novo e a página inteira sumia por um instante — a "piscada"
+  // que o Gabriel viu (05/09). Com o grupo já em mãos, recarrega por baixo.
+  if (isLoading && !group) return <Text size="sm" color="secondary">…</Text>;
   if (!group) {
     return (
       <div className="space-y-3">
@@ -172,20 +184,32 @@ function GroupDetail(): JSX.Element {
       <Link to="/admin/access" className="text-blue-600 hover:underline text-sm">← {t('admin.access.group.back')}</Link>
 
       <PanelErrorAlert keyName={error} />
-      {notice && (
-        <div className="bg-green-50 border border-green-200 px-4 py-2 rounded-lg" role="status">
-          <Text size="sm" color="primary">{t(notice)}</Text>
-        </div>
-      )}
 
       {/* ── Identidade ─────────────────────────────────────────────────── */}
       <section className="bg-white rounded-xl border border-gray-300 p-4 space-y-3" aria-labelledby="sec-id">
         <div className="flex items-center justify-between">
-          <Heading level={2} weight="semibold" color="primary">
-            <span id="sec-id">{group.name}</span>
-            {group.isSystem && <Text as="span" size="xs" color="secondary"> · {t('admin.access.groups.system')}</Text>}
-            {group.archivedAt && <Text as="span" size="xs" color="secondary"> · {t('admin.access.groups.archived')}</Text>}
-          </Heading>
+          {/* O nome É o título, com o lápis ao lado — sem a legenda "Nombre" em cima
+              repetindo o que o título já diz (Gabriel, 05/09, 2ª rodada). */}
+          <CampoEditavel
+            key={`g-name-${epoca}`}
+            id="g-name"
+            variant="titulo"
+            valueId="sec-id"
+            label={t('admin.access.groups.name')}
+            value={group.name}
+            editable={editable}
+            onConfirm={() => salvarCampo('name')}
+            onCancel={() => setForm((f) => ({ ...f, name: group.name }))}
+            sufixo={
+              <>
+                {group.isSystem && <Text as="span" size="xs" color="secondary"> · {t('admin.access.groups.system')}</Text>}
+                {group.archivedAt && <Text as="span" size="xs" color="secondary"> · {t('admin.access.groups.archived')}</Text>}
+              </>
+            }
+          >
+            <Input id="g-name" inputSize="compact" value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+          </CampoEditavel>
           {!group.isSystem && !group.archivedAt && (
             confirmArchive ? (
               <div className="flex gap-2 items-center" data-testid="archive-confirm">
@@ -226,17 +250,7 @@ function GroupDetail(): JSX.Element {
             convite a digitar onde ninguém queria mudar nada, e o dobro da altura
             para mostrar a mesma coisa. Cancelar devolve o valor salvo. */}
         <CampoEditavel
-          id="g-name"
-          label={t('admin.access.groups.name')}
-          value={group.name}
-          editable={editable}
-          onConfirm={() => salvarCampo('name')}
-          onCancel={() => setForm((f) => ({ ...f, name: group.name }))}
-        >
-          <Input id="g-name" inputSize="compact" value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-        </CampoEditavel>
-        <CampoEditavel
+          key={`g-desc-${epoca}`}
           id="g-desc"
           label={t('admin.access.groups.description')}
           value={group.description}

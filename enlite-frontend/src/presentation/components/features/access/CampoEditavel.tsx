@@ -1,11 +1,22 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pencil } from 'lucide-react';
-import { Label, Text } from '@presentation/components/atoms';
+import { Heading, Label, Text } from '@presentation/components/atoms';
 
 interface CampoEditavelProps {
   id: string;
   label: string;
+  /**
+   * `titulo` (pedido do Gabriel, 05/09, 2ª rodada): o valor É o título da seção
+   * e o lápis fica AO LADO dele — sem a legenda "Nombre" em cima, que repetia o
+   * que o título já dizia. A legenda continua existindo para o leitor de tela
+   * (`sr-only`) e para o `getByLabelText` do input quando aberto.
+   */
+  variant?: 'campo' | 'titulo';
+  /** `titulo`: id do `<span>` do valor, para o `aria-labelledby` da seção. */
+  valueId?: string;
+  /** `titulo`: o que vai depois do nome (" · Sistema", " · Archivado"). */
+  sufixo?: ReactNode;
   /** O valor salvo. `null`/`''` vira travessão. */
   value: string | null;
   /** `false` → nunca vira input; nem o lápis aparece. */
@@ -39,8 +50,9 @@ interface CampoEditavelProps {
  * roubá-lo tornaria a descrição de várias linhas impossível de escrever.
  */
 export function CampoEditavel({
-  id, label, value, editable, children, onConfirm, onCancel,
+  id, label, value, editable, children, onConfirm, onCancel, variant = 'campo', valueId, sufixo,
 }: CampoEditavelProps): JSX.Element {
+  const titulo = variant === 'titulo';
   const { t } = useTranslation();
   const [aberto, setAberto] = useState(false);
   const caixa = useRef<HTMLDivElement>(null);
@@ -58,22 +70,36 @@ export function CampoEditavel({
     if (await onConfirm()) setAberto(false);
   };
 
+  const lapis = editable && (
+    <button
+      type="button"
+      onClick={() => setAberto(true)}
+      aria-label={t('admin.access.group.editField', { campo: label })}
+      data-testid={`${id}-editar`}
+      className="text-primary hover:text-primary/70 transition-colors p-1 rounded focus:outline-none focus:ring-2 focus:ring-primary"
+    >
+      <Pencil className={titulo ? 'w-5 h-5' : 'w-4 h-4'} strokeWidth={2} />
+    </button>
+  );
+
+  if (titulo && (!editable || !aberto)) {
+    return (
+      <div className="flex items-center gap-2" data-testid={`${id}-readonly`}>
+        <Heading level={2} weight="semibold" color="primary">
+          <span id={valueId}>{value === null || value === '' ? '—' : value}</span>
+          {sufixo}
+        </Heading>
+        {lapis}
+      </div>
+    );
+  }
+
   if (!editable || !aberto) {
     return (
       <div>
         <div className="flex items-center gap-2">
           <Label htmlFor={undefined}>{label}</Label>
-          {editable && (
-            <button
-              type="button"
-              onClick={() => setAberto(true)}
-              aria-label={t('admin.access.group.editField', { campo: label })}
-              data-testid={`${id}-editar`}
-              className="text-primary hover:text-primary/70 transition-colors p-1 rounded focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <Pencil className="w-4 h-4" strokeWidth={2} />
-            </button>
-          )}
+          {lapis}
         </div>
         <div className="px-3 py-2 min-h-[40px] flex items-center" data-testid={`${id}-readonly`}>
           <Text as="span" size="sm" color="primary" className="whitespace-pre-line">
@@ -100,7 +126,7 @@ export function CampoEditavel({
         }
       }}
     >
-      <Label htmlFor={id}>{label}</Label>
+      <Label htmlFor={id} className={titulo ? 'sr-only' : ''}>{label}</Label>
       <div className="max-w-xl">{children}</div>
       <div className="flex gap-2 pt-2">
         <button

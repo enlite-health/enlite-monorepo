@@ -1,3 +1,4 @@
+import { useToastStore } from '@presentation/stores/toastStore';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -44,6 +45,7 @@ const PATTERN = '/admin/access/groups/:id';
 describe('GroupDetailPage — a regra por componente', () => {
   beforeEach(() => {
     for (const f of Object.values(api)) f.mockReset();
+    useToastStore.setState({ toasts: [] });
     api.getGroup.mockResolvedValue(GRUPO);
     api.listMembers.mockResolvedValue([MEMBRO]);
     api.getCatalog.mockResolvedValue(CATALOGO);
@@ -210,7 +212,36 @@ describe('GroupDetailPage — a regra por componente', () => {
     await waitFor(() => expect(api.updateGroup).toHaveBeenCalledWith(GRUPO.id, {
       name: 'Novo nome', description: 'Quem recruta na Argentina',
     }));
-    expect(await screen.findByRole('status')).toHaveTextContent('admin.access.group.saved');
+    // Sucesso vai pelo toast da casa (store), não por um aviso inline (05/09, 2ª rodada).
+    await waitFor(() => expect(useToastStore.getState().toasts.map((x) => x.message)).toContain('admin.access.group.saved'));
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('🔒 salvar NÃO pisca a página: o título e o cartão continuam montados durante o `load()`; o lápis fica AO LADO do título, sem legenda "Nombre" visível', async () => {
+    postura('write');
+    api.updateGroup.mockResolvedValue(undefined);
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    const titulo = await screen.findByTestId('g-name-readonly');
+    // O nome é o título (h2) e o lápis está dentro do mesmo bloco — não há um
+    // rótulo "admin.access.groups.name" visível acima dele.
+    expect(titulo.querySelector('h2')).toHaveTextContent('Recrutadores AR');
+    expect(titulo).toContainElement(screen.getByTestId('g-name-editar'));
+    expect(screen.queryByText('admin.access.groups.name')).toBeNull();
+
+    // Segura o reload para observar a página DURANTE ele.
+    let libera!: () => void;
+    api.getGroup.mockImplementationOnce(() => new Promise((r) => { libera = () => r(GRUPO); }));
+    const nome = await abrirLapis('g-name');
+    await userEvent.clear(nome); await userEvent.type(nome, 'Outro');
+    await userEvent.click(screen.getByTestId('g-name-confirmar'));
+    await waitFor(() => expect(api.updateGroup).toHaveBeenCalled());
+    // Antes: a página inteira virava "…" aqui. Agora o cabeçalho fica.
+    expect(screen.getByText('admin.access.group.back', { exact: false })).toBeInTheDocument();
+    expect(screen.queryByText('…')).toBeNull();
+    libera();
+    await waitFor(() => expect(useToastStore.getState().toasts.map((x) => x.message)).toContain('admin.access.group.saved'));
+    // E o campo fechou (a trava do gate continua valendo, agora por remontagem só do campo).
+    await waitFor(() => expect(document.querySelector('#g-name')).toBeNull());
   });
 
   it('🔒 o PAÍS é o botão — sem "Conceder" ao lado; clicar concede, clicar de novo revoga', async () => {
