@@ -16,6 +16,7 @@
  * afirmar sem depender de tiles — o canvas do Google não é determinístico.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useRouteOverlay, type RouteOverlayLeg } from './useRouteOverlay';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Crosshair, MapPin, X } from 'lucide-react';
@@ -60,6 +61,8 @@ export interface PointsMapProps {
   centerHereLabel?: string;
   /** Conteúdo extra no rodapé do balão, montado pelo chamador para o ponto aberto. */
   renderExtra?: (point: MapPoint) => ReactNode;
+  /** Rota a desenhar (opção aberta no balão). Identidade ESTÁVEL: em estado na página. */
+  routeLegs?: RouteOverlayLeg[] | null;
   /** Mover o centro do raio para o ponto do balão — com o mapa cheio de pinos,
    *  o clique que queria ser "aqui" acerta uma pessoa; isto devolve a intenção. */
   onCenterHere?: (point: MapPoint) => void;
@@ -113,7 +116,7 @@ function pinIcon(color: string, emphasized = false): google.maps.Symbol {
  */
 function InfoCard({ point, linkLabel, closeLabel, onClose, centerHereLabel, onCenterHere, extra }: { point: MapPoint; linkLabel?: string; closeLabel: string; onClose: () => void; centerHereLabel?: string; onCenterHere?: () => void; extra?: ReactNode }): JSX.Element {
   return (
-    <div className="points-map-info relative font-lexend min-w-[210px] max-w-[280px] p-3" data-testid="points-map-info-card">
+    <div className="points-map-info relative font-lexend min-w-[210px] max-w-[330px] p-3" data-testid="points-map-info-card">
       <button
         type="button"
         onClick={onClose}
@@ -166,6 +169,7 @@ export function PointsMap({
   centerHereLabel,
   onCenterHere,
   renderExtra,
+  routeLegs = null,
   placeholderText,
   className = '',
   height = 560,
@@ -346,6 +350,9 @@ export function PointsMap({
   }, [status, selectedId, points]);
 
   const markersCount = points.filter((p) => p.lat !== null && p.lng !== null).length;
+  // Gate por `status`: ref não dispara render (idem os outros efeitos daqui).
+  useRouteOverlay(status === 'ready' ? mapRef.current : null, routeLegs);
+
   const selectedPoint = useMemo(
     () => points.find((p) => p.id === selectedId && p.lat !== null) ?? null,
     [points, selectedId],

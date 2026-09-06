@@ -38,7 +38,7 @@ import { MapCounts, MapResultsList, type ResultRow } from './mapResults';
 import { CorridorPanel } from './CorridorPanel';
 import { corridorPairFor } from '@hooks/admin/useCorridor';
 import { usePatientsMapPoints, useWorkersMapPoints } from '@hooks/admin/useMapPoints';
-import type { MapCountry, PatientsMapFilters, WorkersMapFilters } from '@infrastructure/http/AdminMapApiService';
+import type { MapCountry, PatientsMapFilters, RouteLeg, WorkersMapFilters } from '@infrastructure/http/AdminMapApiService';
 import {
   ANCHOR_PICKER_RADIUS_KM, DEFAULT_CENTER, DEFAULT_CENTER_BY_COUNTRY, DEFAULT_COUNTRY, DEFAULT_RADIUS_KM,
   anchorTextsFor, buildResultRows, corridorLabelsFor, filterOptionsFor, legendEntries, placeLabel, sameCenter,
@@ -82,6 +82,8 @@ export function AdminMapPage(): JSX.Element {
   const [touchedPatients, setTouchedPatients] = useState(false);
   const [touchedWorkers, setTouchedWorkers] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Menor pai comum do balão (que sabe a opção aberta) e do mapa que desenha.
+  const [drawnLegs, setDrawnLegs] = useState<RouteLeg[] | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const anchor = kind === 'workers' ? patientAnchor : workerAnchor;
@@ -372,13 +374,12 @@ export function AdminMapPage(): JSX.Element {
                 closeLabel={t('admin.map.closePopup', 'Cerrar')}
                 centerHereLabel={t('admin.map.centerHere', 'Centrar aquí')}
                 onCenterHere={onCenterHere}
-                /* A busca do corredor vive DENTRO do painel, e o painel só é
-                   montado quando o balão abre. Buscar na página gastava a cota
-                   de 60/min mesmo quando o mapa estava indisponível (sem chave
-                   do Google o balão nunca aparece) — chamada paga, resultado
-                   que ninguém via. */
+                /* O corredor é buscado DENTRO do painel, que só monta com o balão
+                   aberto: na página, gastava a cota de 60/min mesmo sem mapa
+                   (sem chave do Google o balão nunca aparece). */
+                routeLegs={drawnLegs}
                 renderExtra={(p) => (p.id === selectedId && corridorPair
-                  ? <CorridorPanel pair={corridorPair} labels={corridorLabels} />
+                  ? <CorridorPanel pair={corridorPair} labels={corridorLabels} onRouteOpen={setDrawnLegs} />
                   : null)}
                 placeholderText={t('admin.map.unavailable', 'El mapa no está disponible (sin clave de Google Maps). La lista sigue funcionando.')}
               />
