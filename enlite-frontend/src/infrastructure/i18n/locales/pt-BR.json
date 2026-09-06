@@ -3961,7 +3961,7 @@
             "address": "Localizações",
             "services": "Serviço contratado",
             "vacancies": "Vagas do paciente",
-            "history": "Histórico de status"
+            "operational": "Status, ativação e histórico"
           }
         },
         "patients.chatRoles": {

@@ -73,8 +73,6 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
     id: 'patients.detail',
     route: '/admin/patients/:id',
     tabs: ['clinicalData', 'supportNetwork', 'contractedService', 'vacancies', 'matching', 'history'],
-    // O cabeçalho (status, ativar, completude) é o operacional da tela.
-    cells: ['patient:read', 'patient:write'],
     containers: [
       c('identity', 'patient_identity', ['read', 'write']),
       c('clinical', 'patient_clinical', ['read', 'write'], 'clinicalData'),
@@ -87,7 +85,9 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       // exigida nas duas — a aba Matching some sem ela (o Enquadre é placeholder).
       c('services', 'patient_services', ['read', 'write'], 'contractedService', 'matching'),
       c('vacancies', 'vacancy', ['read'], 'vacancies'),
-      c('history', 'patient', ['read'], 'history'),
+      // O operacional da tela numa linha só: cabeçalho (status, ativar, completude) e a aba de
+      // histórico — mesmo recurso `patient`, uma célula de leitura e uma de escrita.
+      c('operational', 'patient', ['read', 'write'], 'history'),
     ],
   },
   { id: 'patients.chatRoles', route: '/admin/patient-chat-roles', cells: ['patient:read', 'patient:write'] },

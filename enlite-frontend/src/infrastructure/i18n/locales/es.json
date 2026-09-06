@@ -4040,7 +4040,7 @@
             "address": "Localizaciones",
             "services": "Servicio contratado",
             "vacancies": "Vacantes del paciente",
-            "history": "Historial de estados"
+            "operational": "Estado, activación e historial"
           }
         },
         "patients.chatRoles": {

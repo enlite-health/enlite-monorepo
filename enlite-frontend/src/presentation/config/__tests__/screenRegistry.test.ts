@@ -96,6 +96,8 @@ describe('screensByCell / containersOfTab / screenById', () => {
     expect(containersOfTab(s, 'matching').map((c) => c.resource)).toEqual(['patient_services']);
     expect(containersOfTab(s, 'vacancies').map((c) => c.resource)).toEqual(['vacancy']);
     expect(containersOfTab(s, 'history').map((c) => c.resource)).toEqual(['patient']);
+    // o operacional (cabeçalho + histórico) é UMA linha: nada de célula solta no nível da tela
+    expect(s.cells).toBeUndefined();
   });
 
   it('tela desconhecida é erro, não undefined silencioso', () => {
