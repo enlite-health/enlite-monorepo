@@ -116,15 +116,55 @@ describe('PatientContractedServicesEditDrawer — UM serviço por vez (Gabriel, 
     expect(onSaved).not.toHaveBeenCalled();
   });
 
-  it('modo NOVO: refetch vazio depois de salvar (corrida) não troca o alvo nem quebra', async () => {
-    mockList.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
-    (await api()).createContractedService = vi.fn().mockResolvedValue(SERVICE) as never;
+  it('modo NOVO: o alvo vem do objeto que a API DEVOLVEU — se o list() seguinte falhar, o recém-criado continua na tela (edição), com aviso de recarga, NUNCA um form vazio de novo (gate 06/09)', async () => {
+    const criado = { ...SERVICE, id: 'novo', createdAt: '2026-09-06T10:00:00Z' };
+    mockList.mockResolvedValueOnce([]).mockRejectedValueOnce(new Error('list caiu'));
+    (await api()).createContractedService = vi.fn().mockResolvedValue(criado) as never;
     montar({ kind: 'new' });
     await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
     fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
     fireEvent.click(screen.getByTestId('contracted-service-new-save'));
+    await screen.findByTestId('contracted-service-form-novo');
+    expect(screen.queryByTestId('contracted-service-new')).toBeNull();
+    expect(screen.getByTestId('contracted-services-load-error').textContent).toContain('El cambio se guardó');
+    expect(screen.queryByTestId('contracted-service-missing')).toBeNull();
+  });
+
+  it('modo EDIÇÃO: salvar mescla o objeto devolvido na lista local (o form mostra o valor novo antes mesmo do refetch)', async () => {
+    // Dois serviços na lista: o mesclado troca SÓ o seu (o outro fica como estava).
+    mockList.mockResolvedValueOnce([{ ...SERVICE, id: 's0' }, SERVICE]).mockRejectedValueOnce(new Error('list caiu'));
+    (await api()).updateContractedService = vi.fn().mockResolvedValue({ ...SERVICE, providersNeeded: 9 }) as never;
+    montar({ kind: 'edit', serviceId: 's1' });
+    await screen.findByTestId('contracted-service-form-s1');
+    // s1 é o 2º da lista → o form é "Servicio 2" (índice = posição), testids terminam em -2.
+    fireEvent.change(screen.getByTestId('svc-providersNeeded-2'), { target: { value: '9' } });
+    fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
     await waitFor(() => expect(mockList).toHaveBeenCalledTimes(2));
-    expect(screen.getByTestId('contracted-service-new')).toBeTruthy();
+    expect(screen.getByTestId('contracted-service-form-s1')).toBeTruthy();
+    expect(screen.getByTestId('svc-providersNeeded-2')).toHaveValue(9);
+  });
+
+  it('caminho sem objeto devolvido (baixa) em modo NOVO: cai no mais novo do refetch; refetch vazio não troca o alvo', async () => {
+    // Simula um onSaved() sem argumento chamando o handler pelo form: a baixa não existe no form
+    // novo, então o guard é exercido via refetch devolvendo lista — e via lista vazia.
+    const criado = { ...SERVICE, id: 'novo', createdAt: '2026-09-06T10:00:00Z' };
+    mockList.mockResolvedValueOnce([]).mockResolvedValueOnce([SERVICE, criado]);
+    (await api()).createContractedService = vi.fn().mockResolvedValue(undefined) as never; // API antiga sem corpo
+    montar({ kind: 'new' });
+    await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
+    fireEvent.click(screen.getByTestId('contracted-service-new-save'));
+    await screen.findByTestId('contracted-service-form-novo');
+
+    mockList.mockReset();
+    mockList.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    const { unmount } = montar({ kind: 'new' });
+    await waitFor(() => expect(mockList).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getAllByTestId('svc-code-1')[0], { target: { value: 'AT' } });
+    fireEvent.click(screen.getAllByTestId('contracted-service-new-save')[0]);
+    await waitFor(() => expect(mockList).toHaveBeenCalledTimes(2));
+    expect(screen.getAllByTestId('contracted-service-new').length).toBeGreaterThan(0);
+    unmount();
   });
 
   it('fechar DEPOIS de ter salvo algo (dirty) chama onSaved do pai — refetch da página só acontece ao sair', async () => {

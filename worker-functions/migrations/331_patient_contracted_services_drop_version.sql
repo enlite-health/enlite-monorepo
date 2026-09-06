@@ -11,7 +11,9 @@
 -- A regra ("nunca dropar coluna sem deprecação") protege DADO. Medido em produção em
 -- 06/09/2026 (só contagem, via cloud-sql-proxy): `patient_contracted_services` tem 0 linhas —
 -- logo 0 com `version`. Não há dado a preservar nem código lendo a coluna depois deste commit
--- (repositório, mapper, validador, entidade do front e formulário saem juntos).
+-- (repositório, mapper, validador, entidade do front e formulário saem juntos). A STAGE não foi
+-- medida (gate 06/09): pode ter linhas de QA do D283 com `version` — coluna fantasma sem semântica,
+-- perda irrelevante por decisão do Gabriel.
 --
 -- Rollback: ALTER TABLE patient_contracted_services ADD COLUMN version TEXT NULL;
 -- Idempotente: DROP COLUMN IF EXISTS.

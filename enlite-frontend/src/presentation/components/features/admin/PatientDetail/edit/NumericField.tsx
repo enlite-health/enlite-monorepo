@@ -12,8 +12,17 @@ interface NumericFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
 /** Quanto tempo o aviso "só números" fica na tela depois da última letra recusada. */
 export const AVISO_MS = 2500;
 
-/** Tecla de um caractere só que NÃO faz parte de um número (dígitos, sinal, separador decimal). */
-const ehLetraRecusada = (key: string): boolean => key.length === 1 && !/[0-9.,+-]/.test(key);
+/**
+ * Que aviso uma tecla merece. Medido no Chromium (es-AR, en-US, pt-BR) em 06/09: num
+ * `type="number"`, digitar `1500,50` vira **`150050`** — a vírgula é DESCARTADA em silêncio e o
+ * valor fica 100× maior. Num "valor por hora" isso é dinheiro. Por isso a vírgula é BLOQUEADA
+ * (`preventDefault`) com aviso próprio; letra também avisa (o navegador já a recusa).
+ */
+const avisoPara = (key: string): 'letra' | 'virgula' | null => {
+  if (key === ',') return 'virgula';
+  if (key.length === 1 && !/[0-9.+-]/.test(key)) return 'letra';
+  return null;
+};
 
 /**
  * Campo numérico que AVISA quando a pessoa digita letra. `type="number"` engole a letra em
@@ -28,17 +37,19 @@ export const NumericField = forwardRef<HTMLInputElement, NumericFieldProps>(func
   ref,
 ): JSX.Element {
   const { t } = useTranslation();
-  const [avisando, setAvisando] = useState(false);
+  const [avisando, setAvisando] = useState<'letra' | 'virgula' | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
     input.onKeyDown?.(e);
-    if (!ehLetraRecusada(e.key)) return;
-    setAvisando(true);
+    const aviso = avisoPara(e.key);
+    if (!aviso) return;
+    if (aviso === 'virgula') e.preventDefault(); // senão o navegador engole e o número fica 100× maior
+    setAvisando(aviso);
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setAvisando(false), AVISO_MS);
+    timer.current = setTimeout(() => setAvisando(null), AVISO_MS);
   };
 
   return (
@@ -48,7 +59,9 @@ export const NumericField = forwardRef<HTMLInputElement, NumericFieldProps>(func
       optional
       hint={t('admin.patients.editDrawer.onlyNumbersHint')}
       hintBelow
-      error={avisando ? t('admin.patients.editDrawer.onlyNumbersWarning') : undefined}
+      error={avisando === 'letra'
+        ? t('admin.patients.editDrawer.onlyNumbersWarning')
+        : avisando === 'virgula' ? t('admin.patients.editDrawer.decimalCommaWarning') : undefined}
     >
       <InputWithIcon
         {...input}
@@ -59,7 +72,7 @@ export const NumericField = forwardRef<HTMLInputElement, NumericFieldProps>(func
         inputSize="compact"
         data-testid={testId}
         onKeyDown={onKeyDown}
-        aria-invalid={avisando || undefined}
+        aria-invalid={avisando ? true : undefined}
       />
     </FormField>
   );

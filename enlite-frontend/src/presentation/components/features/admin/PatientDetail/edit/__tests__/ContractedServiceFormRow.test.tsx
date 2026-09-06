@@ -314,6 +314,48 @@ describe('ContractedServiceFormRow', () => {
       expect(campo).not.toBeNull();
     });
 
+    it('a dica "Solo números" fica ABAIXO do campo (hintBelow) — rótulo → campo → dica, para as colunas alinharem (gate 06/09)', () => {
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
+      const precede = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+      for (const id of ['svc-providersNeeded-1', 'svc-weeklyHours-1', 'svc-authorizedHours-1', 'svc-hourlyValue-1']) {
+        const campo = screen.getByTestId(id);
+        const label = document.querySelector(`label[for="${id}"]`) as HTMLElement;
+        const raiz = label.parentElement as HTMLElement; // o FormField
+        const dica = Array.from(raiz.querySelectorAll('span')).find((el) => el.textContent === 'Solo números') as HTMLElement;
+        expect(dica).toBeTruthy();
+        expect(precede(label, campo)).toBe(true);
+        expect(precede(campo, dica)).toBe(true); // dica DEPOIS do campo
+      }
+      // O domicílio também: a dica vem depois do select.
+      const dom = screen.getByTestId('svc-addressId-1');
+      const dica = Array.from((document.querySelector('label[for="svc-addressId-1"]')!.parentElement as HTMLElement).querySelectorAll('span'))
+        .find((el) => el.textContent?.startsWith('Dónde se presta')) as HTMLElement;
+      expect(precede(dom, dica)).toBe(true);
+    });
+
+    it('vírgula num campo numérico é BLOQUEADA com aviso próprio (Chromium descartava e o valor ficava 100× maior)', () => {
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
+      const ev = fireEvent.keyDown(screen.getByTestId('svc-hourlyValue-1'), { key: ',' });
+      expect(ev).toBe(false); // preventDefault
+      expect(screen.getByText('Para decimales usá punto (.), no coma.')).toBeTruthy();
+    });
+
+    it('onSaved recebe o serviço que a API devolveu (create e update)', async () => {
+      const criado = { ...SERVICE, id: 'novo' };
+      mockCreate.mockResolvedValue(criado);
+      const onSaved = vi.fn();
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={onSaved} />);
+      fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
+      fireEvent.click(screen.getByTestId('contracted-service-new-save'));
+      await waitFor(() => expect(onSaved).toHaveBeenCalledWith(criado));
+      const atualizado = { ...SERVICE, providersNeeded: 9 };
+      mockUpdate.mockResolvedValue(atualizado);
+      const onSaved2 = vi.fn();
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={2} onSaved={onSaved2} />);
+      fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
+      await waitFor(() => expect(onSaved2).toHaveBeenCalledWith(atualizado));
+    });
+
     it('campos numéricos avisam ao receber letra (NumericField nos 4: prestadores, hs semanais, hs autorizadas, valor)', () => {
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
       for (const id of ['svc-providersNeeded-1', 'svc-weeklyHours-1', 'svc-authorizedHours-1', 'svc-hourlyValue-1']) {

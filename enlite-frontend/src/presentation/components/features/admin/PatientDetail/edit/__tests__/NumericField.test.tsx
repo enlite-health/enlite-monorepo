@@ -45,7 +45,24 @@ describe('NumericField', () => {
     vi.useRealTimers();
   });
 
-  it.each([['1'], ['.'], [','], ['-'], ['+'], ['Backspace'], ['Tab'], ['ArrowLeft'], ['Enter']])('tecla %s NÃO acende o aviso', (key) => {
+  it('vírgula: preventDefault + aviso "usá punto" (medido 06/09: o Chromium descartava a vírgula e 1500,50 virava 150050)', () => {
+    vi.useFakeTimers();
+    render(<NumericField id="n" label="Valor" testId="n" />);
+    const naoCancelado = fireEvent.keyDown(screen.getByTestId('n'), { key: ',' });
+    expect(naoCancelado).toBe(false);
+    expect(screen.getByText('Para decimales usá punto (.), no coma.')).toBeTruthy();
+    expect(screen.queryByText('Este campo acepta solo números.')).toBeNull();
+    act(() => { vi.advanceTimersByTime(AVISO_MS); });
+    expect(screen.queryByText('Para decimales usá punto (.), no coma.')).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('letra NÃO é cancelada (o navegador já recusa); só avisa', () => {
+    render(<NumericField id="n" label="Valor" testId="n" />);
+    expect(fireEvent.keyDown(screen.getByTestId('n'), { key: 'a' })).toBe(true);
+  });
+
+  it.each([['1'], ['.'], ['-'], ['+'], ['Backspace'], ['Tab'], ['ArrowLeft'], ['Enter']])('tecla %s NÃO acende o aviso', (key) => {
     render(<NumericField id="n" label="Valor" testId="n" />);
     fireEvent.keyDown(screen.getByTestId('n'), { key });
     expect(screen.queryByText('Este campo acepta solo números.')).toBeNull();

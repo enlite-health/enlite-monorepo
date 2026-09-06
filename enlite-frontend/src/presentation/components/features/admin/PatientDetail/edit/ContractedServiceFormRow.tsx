@@ -30,7 +30,9 @@ interface Props {
   service: PatientContractedServiceDetail | null;
   /** Index visual ("Serviço 1", "Serviço 2"…) — só para o rótulo, nunca enviado. */
   index: number;
-  onSaved: () => void;
+  /** Recebe o serviço que a API devolveu (create/update) — o pai não depende de um `list()` para
+   *  saber o id do recém-criado. A baixa chama sem argumento. */
+  onSaved: (saved?: PatientContractedServiceDetail) => void;
   onCancelNew?: () => void;
   /** Spec 014 (US-D4): avisa o pai (`PatientContractedServicesEditDrawer`) sempre que ESTA
    * linha tem mudança não salva — o drawer não tem "Guardar" próprio (cada linha salva sozinha,
@@ -176,8 +178,9 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
     setBusy(true);
     const nz = (v: string): string | null => (v.trim() ? v.trim() : null);
     try {
+      let saved: PatientContractedServiceDetail;
       if (isNew) {
-        await AdminContractedServicesApiService.createContractedService(patientId, {
+        saved = await AdminContractedServicesApiService.createContractedService(patientId, {
           serviceCode: values.serviceCode as never,
           professionalProfile: nz(values.professionalProfile),
           providersNeeded: numOrNull(values.providersNeeded),
@@ -196,7 +199,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
           deviceTypeCodes: values.deviceTypeCodes,
         });
       } else {
-        await AdminContractedServicesApiService.updateContractedService(patientId, service.id, {
+        saved = await AdminContractedServicesApiService.updateContractedService(patientId, service.id, {
           professionalProfile: nz(values.professionalProfile),
           providersNeeded: numOrNull(values.providersNeeded),
           authorizedHours: numOrNull(values.authorizedHours),
@@ -221,7 +224,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
       // ficaria `true` para sempre após a 1ª edição salva, e a confirmação de "descartar
       // cambios" apareceria ao fechar mesmo sem NADA pendente).
       reset(values);
-      onSaved();
+      onSaved(saved);
     } catch {
       setError(isNew ? te('createServiceError') : te('updateServiceError'));
     } finally {

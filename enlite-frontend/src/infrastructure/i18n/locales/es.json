@@ -2945,7 +2945,9 @@
         "serviceAddressNone": "Este paciente no tiene domicilio cargado. Cargalo en \"Localizaciones\" para poder vincular el servicio — sin domicilio, la vacante no puede crearse.",
         "newServiceTitle": "Nuevo servicio contratado",
         "editServiceTitle": "Editar servicio contratado",
-        "serviceNotFound": "Este servicio ya no existe en la ficha."
+        "serviceNotFound": "Este servicio ya no existe en la ficha.",
+        "decimalCommaWarning": "Para decimales usá punto (.), no coma.",
+        "listReloadError": "El cambio se guardó, pero no pudimos recargar la lista. Cerrá y volvé a abrir."
       },
       "kanban": {
         "title": "Pacientes — Kanban",
@@ -3269,7 +3271,6 @@
         },
         "contractedServicesCard": {
           "title": "Servicios Contratados",
-          "editButton": "Editar servicios",
           "tableDevice": "Dispositivo(s)",
           "tableProfessional": "Servicio",
           "tableProvidersNeeded": "Prest. necesarios",

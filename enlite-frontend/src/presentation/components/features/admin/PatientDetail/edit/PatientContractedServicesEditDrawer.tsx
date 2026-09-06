@@ -86,14 +86,21 @@ export function PatientContractedServicesEditDrawer({ patient, target: initialTa
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [requestClose]);
 
-  const handleChildSaved = async (): Promise<void> => {
+  const handleChildSaved = async (saved?: PatientContractedServiceDetail): Promise<void> => {
     setDirty(true);
     setFormDirty(false);
+    if (saved) {
+      // O que a API devolveu entra na lista local JÁ — se o `list()` abaixo falhar, o recém-criado
+      // continua na tela como alvo de edição (gate 06/09: antes voltava um form vazio e o operador
+      // criaria o serviço duas vezes).
+      setServices((prev) => (prev.some((s) => s.id === saved.id) ? prev.map((s) => (s.id === saved.id ? saved : s)) : [...prev, saved]));
+      if (target.kind === 'new') setTarget({ kind: 'edit', serviceId: saved.id });
+    }
     const fresh = await refetch();
-    if (target.kind === 'new') {
-      // O recém-criado é o mais novo — vira o alvo, e a seção de prestadores passa a existir.
+    if (!saved && target.kind === 'new' && fresh.length > 0) {
+      // Caminho sem objeto devolvido (não acontece no create; guarda defensiva): o mais novo.
       const novo = [...fresh].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-      if (novo) setTarget({ kind: 'edit', serviceId: novo.id });
+      setTarget({ kind: 'edit', serviceId: novo.id });
     }
   };
 
@@ -128,7 +135,8 @@ export function PatientContractedServicesEditDrawer({ patient, target: initialTa
 
         <div className="flex-1 overflow-y-auto px-8 py-6 flex flex-col gap-4">
           {loadError && (
-            <Text size="sm" className="text-red-600" data-testid="contracted-services-load-error">{te('saveError')}</Text>
+            // Erro de LEITURA, não de gravação: o texto diz que o que foi salvo ficou salvo.
+            <Text size="sm" className="text-red-600" data-testid="contracted-services-load-error">{te('listReloadError')}</Text>
           )}
 
           {missing && !loadError && (

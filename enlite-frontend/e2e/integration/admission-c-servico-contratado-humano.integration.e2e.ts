@@ -113,6 +113,18 @@ test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salva
     await expect(page.getByText('Este campo acepta solo números.').first()).toBeVisible();
     await expect(page.getByText('Solo números').first()).toBeVisible();
 
+    // ── Vírgula: medido 06/09 no Chromium, "1500,50" virava 150050 — a vírgula sumia em
+    //    silêncio e o valor ficava 100× maior. Agora ela é bloqueada com aviso próprio: o campo
+    //    fica em "1500" e a pessoa VÊ por quê. ──
+    const valor = page.getByTestId('svc-hourlyValue-1');
+    await valor.click();
+    await page.keyboard.type('1500,');
+    await expect(valor).toHaveValue('1500');
+    await expect(page.getByText('Para decimales usá punto (.), no coma.')).toBeVisible();
+    await valor.press('Meta+A');
+    await valor.press('Backspace');
+    await expect(valor).toHaveValue('');
+
     // ── Texto/número: clique + teclado, e o valor que FICOU ──
     expect(await digitar(page, 'svc-providersNeeded-1', '2')).toBe('2');
     expect(await digitar(page, 'svc-weeklyHours-1', '20')).toBe('20');
