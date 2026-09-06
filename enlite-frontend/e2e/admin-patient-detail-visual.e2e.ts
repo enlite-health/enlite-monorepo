@@ -61,7 +61,11 @@ const MOCK_PATIENT = {
       id: 'r1',
       firstName: 'Luciana',
       lastName: 'C. Soto',
-      relationship: 'MOM',
+      // 06/09: era 'MOM', que NÃO existe no catálogo (CHILD, PARENT, SIBLING, NEPHEW,
+      // GRANDCHILD, GUARDIAN, FRIEND, PARTNER, OTHER) — a baseline visual travava um enum cru
+      // na tela como se fosse o estado normal. O fallback para valor fora do catálogo tem teste
+      // unitário próprio; a referência VISUAL tem de mostrar a tela do dia a dia.
+      relationship: 'PARENT',
       phone: '(11) 99852-0481',
       email: 'luciana.soto@example.com',
       documentType: 'CPF',
@@ -104,6 +108,15 @@ const MOCK_PATIENT = {
   ],
   createdAt: '2025-01-10T12:00:00Z',
   updatedAt: '2026-04-20T09:30:00Z',
+  // 06/09: sem estes dois o spec INTEIRO ficava vermelho, e não por regressão visual — o card
+  // faz `sortDiagnosesForCard(patient.diagnoses)`, `undefined.filter` estoura e o error boundary
+  // engole a ficha toda ("Não conseguimos carregar esta página"). O contrato Zod da rota
+  // (`patientDetailContract`) EXIGE `diagnoses` e `diagnosesUnavailable`; o mock é que estava
+  // mentindo sobre ele desde 348fe0f4 (05/09), quando o texto livre saiu da ficha.
+  diagnoses: [],
+  diagnosesUnavailable: false,
+  contractedServices: [],
+  completeness: { missing: [], blocking: [], ready: true, canActivate: true },
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

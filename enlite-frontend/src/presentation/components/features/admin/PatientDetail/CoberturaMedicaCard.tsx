@@ -6,6 +6,7 @@ import { Button } from '@presentation/components/atoms/Button';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
 import { PatientCoverageEditDrawer } from './edit/PatientCoverageEditDrawer';
 import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
+import { DetailRow, DetailRows } from './DetailRows';
 
 interface CoberturaMedicaCardProps {
   patient: PatientDetail;
@@ -13,19 +14,6 @@ interface CoberturaMedicaCardProps {
   onSaved?: () => void;
   /** Spec 014 US-D1: pedido de foco do checklist ("falta cobertura") — abre este drawer. */
   focusRequest?: DrawerFocusRequest | null;
-}
-
-function Field({ label, value }: { label: string; value: string | null | undefined }) {
-  return (
-    <div className="flex flex-col">
-      <Text size="sm" weight="medium" color="muted">
-        {label}
-      </Text>
-      <Text size="sm" color="muted">
-        {value ?? '—'}
-      </Text>
-    </div>
-  );
 }
 
 export function CoberturaMedicaCard({ patient, onSaved, focusRequest }: CoberturaMedicaCardProps) {
@@ -61,24 +49,23 @@ export function CoberturaMedicaCard({ patient, onSaved, focusRequest }: Cobertur
         />
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
-        <Field
-          label={t('admin.patients.detail.coverageCard.providerName')}
-          value={patient.insuranceInformed}
-        />
-        <div data-testid="coverage-verified">
-          <Field
-            label={t('admin.patients.detail.coverageCard.verified')}
-            value={verifiedLabel}
-          />
-        </div>
+      {/* 06/09: cartão de LARGURA CHEIA com três campos — mesma peça do Diagnóstico (linha com
+          filete, valor ancorado à direita), não a grade de pares dos cartões estreitos do topo.
+          Antes eram duas colunas num container de ~1376px: metade da largura sem uso e a terceira
+          célula sozinha na linha. */}
+      <DetailRows>
+        <DetailRow label={t('admin.patients.detail.coverageCard.providerName')}>
+          <Text as="span" size="sm" color="muted">{patient.insuranceInformed ?? '—'}</Text>
+        </DetailRow>
+        <DetailRow label={t('admin.patients.detail.coverageCard.verified')} testId="coverage-verified">
+          <Text as="span" size="sm" color="muted">{verifiedLabel ?? '—'}</Text>
+        </DetailRow>
         {/* Spec 014 US-D2: "Números de Emergencia" REMOVIDO — era `value={null}` fixo, sem
             coluna no schema (decisão Gabriel 03/09, item 9). */}
-        <Field
-          label={t('admin.patients.detail.coverageCard.credential')}
-          value={patient.affiliateId}
-        />
-      </div>
+        <DetailRow label={t('admin.patients.detail.coverageCard.credential')}>
+          <Text as="span" size="sm" color="muted">{patient.affiliateId ?? '—'}</Text>
+        </DetailRow>
+      </DetailRows>
     </div>
   );
 }

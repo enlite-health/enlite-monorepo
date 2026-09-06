@@ -8,6 +8,7 @@ import { sortDiagnosesForCard } from '@domain/entities/diagnosisDisplay';
 import { PatientClinicalEditDrawer } from './edit/PatientClinicalEditDrawer';
 import { ClinicalLongText } from './ClinicalLongText';
 import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
+import { DetailRow, DetailRows } from './DetailRows';
 
 interface DiagnosticoCardProps {
   patient: PatientDetail;
@@ -26,38 +27,6 @@ function GroupLabel({ children }: { children: ReactNode }) {
     <Text as="span" size="xs" weight="medium" color="secondary" className="uppercase tracking-wider">
       {children}
     </Text>
-  );
-}
-
-/**
- * Uma linha rótulo/valor com filete embaixo (decisão do Gabriel, 06/09).
- *
- * O formato antigo era `"Rótulo: valor"` numa linha só: o par terminava onde o valor terminava e o
- * resto da linha virava ar — em monitor largo, ~70% dela. Aqui o valor é ancorado à DIREITA e o
- * filete atravessa a largura toda, então o espaço entre os dois vira alinhamento, não sobra. É o
- * que faz o cartão aguentar qualquer largura, inclusive antes de a página ganhar um teto.
- *
- * O valor usa `color="primary"` de propósito: `muted` do atom `Text` é `text-gray-700`, que no tema
- * é `rgba(115,115,115,.5)` — mais CLARO que o rótulo (`secondary` = `#737373` sólido). Com os dois
- * padrões o dado ficava mais apagado que o nome do campo.
- */
-function DetailRow({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex items-baseline justify-between gap-5 py-2.5 border-b border-gray-600">
-      <Text as="span" size="sm" color="secondary" className="shrink-0">
-        {label}
-      </Text>
-      <div className="flex flex-wrap items-center justify-end gap-1.5 text-right">{children}</div>
-    </div>
-  );
-}
-
-/** Contêiner das linhas — só o filete de cima; cada linha traz o seu de baixo. */
-function DetailRows({ children, testId }: { children: ReactNode; testId?: string }) {
-  return (
-    <div className="flex flex-col border-t border-gray-600" data-testid={testId}>
-      {children}
-    </div>
   );
 }
 
