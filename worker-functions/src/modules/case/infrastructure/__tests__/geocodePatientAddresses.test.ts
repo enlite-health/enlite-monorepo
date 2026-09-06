@@ -164,4 +164,56 @@ describe('geocodePatientAddressesBestEffort', () => {
     expect(out[0].lat).toBeNull();
     expect(out[0].lng).toBeNull();
   });
+
+  /**
+   * 🔒 O VAZAMENTO DE 06/09/2026.
+   *
+   * A rede de segurança do ClickUp roda a cada 10 min com janela de 30 — cada
+   * card alterado é reprocessado ~3 vezes. A cada passagem, TODO endereço do
+   * paciente era geocodificado de novo, mesmo quando o texto não mudou e a
+   * coordenada já estava no banco. Medido em produção: 132 chamadas por hora,
+   * 24h por dia, inclusive de madrugada, ~95 mil por mês — pagando ao Google
+   * para reresponder o que já sabíamos. Franquia: 10 mil/mês.
+   */
+  describe('coordenada já conhecida (o vazamento de 06/09)', () => {
+    it('NÃO chama o Google quando a coordenada já é conhecida', async () => {
+      const geocoder = { geocodeBatch: jest.fn() } as unknown as GeocodingService;
+      const a = makeAddress({ addressFormatted: 'Av. Corrientes 1234, CABA' });
+
+      const out = await geocodePatientAddressesBestEffort([a], geocoder, {
+        known: new Map([['Av. Corrientes 1234, CABA', { lat: -34.6, lng: -58.38 }]]),
+      });
+
+      expect(geocoder.geocodeBatch).not.toHaveBeenCalled();
+      expect(out).toEqual([{ address: a, lat: -34.6, lng: -58.38 }]);
+    });
+
+    it('chama o Google SÓ para o endereço novo, preservando a ordem', async () => {
+      // É a metade que impede o conserto de virar "nunca geocodifica": endereço
+      // novo ou com texto alterado TEM de continuar sendo resolvido.
+      const geocodeBatch = jest.fn(async (_q: string[]) => [{ latitude: -31.4, longitude: -64.18 } as GeocodedAddress]);
+      const geocoder = { geocodeBatch } as unknown as GeocodingService;
+      const conhecido = makeAddress({ addressFormatted: 'Av. Corrientes 1234, CABA', displayOrder: 1 });
+      const novo = makeAddress({ addressFormatted: 'Av. Colón 500, Córdoba', displayOrder: 2 });
+
+      const out = await geocodePatientAddressesBestEffort([conhecido, novo], geocoder, {
+        known: new Map([['Av. Corrientes 1234, CABA', { lat: -34.6, lng: -58.38 }]]),
+      });
+
+      expect(geocodeBatch).toHaveBeenCalledTimes(1);
+      expect(geocodeBatch.mock.calls[0][0]).toEqual(['Av. Colón 500, Córdoba']);
+      expect(out[0]).toEqual({ address: conhecido, lat: -34.6, lng: -58.38 });
+      expect(out[1]).toEqual({ address: novo, lat: -31.4, lng: -64.18 });
+    });
+
+    it('sem o mapa de conhecidos, o comportamento é o de sempre', async () => {
+      const geocodeBatch = jest.fn(async () => [{ latitude: -34.6, longitude: -58.38 } as GeocodedAddress]);
+      const geocoder = { geocodeBatch } as unknown as GeocodingService;
+      const a = makeAddress({ addressFormatted: 'Av. Corrientes 1234, CABA' });
+
+      await geocodePatientAddressesBestEffort([a], geocoder);
+
+      expect(geocodeBatch).toHaveBeenCalledTimes(1);
+    });
+  });
 });

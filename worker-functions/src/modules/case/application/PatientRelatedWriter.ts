@@ -54,8 +54,10 @@ export async function replacePatientAddresses(
     address_formatted: string | null;
     logistics_corridor: string | null;
     access_notes: string | null;
+    lat: string | number | null;
+    lng: string | number | null;
   }>(
-    `SELECT id, display_order, address_formatted, logistics_corridor, access_notes
+    `SELECT id, display_order, address_formatted, logistics_corridor, access_notes, lat, lng
        FROM patient_addresses
       WHERE patient_id = $1
         AND archived_at IS NULL`,
@@ -67,11 +69,34 @@ export async function replacePatientAddresses(
 
   if (valid.length === 0) return;
 
+  /**
+   * 🔒 Coordenadas que JÁ temos, indexadas pelo MESMO texto que vai ao Google.
+   *
+   * Sem isto, a rede de segurança do ClickUp (a cada 10 min, janela de 30 —
+   * logo ~3 passagens por card alterado) regeocodificava todo endereço de todo
+   * paciente que ela tocasse, com o texto inalterado e a coordenada já gravada.
+   * Medido em produção em 06/09: 132 chamadas por hora, 24h por dia, ~95 mil no
+   * mês contra uma franquia de 10 mil.
+   *
+   * A chave é `address_formatted` porque é o que o `buildGeocodingQuery` usa
+   * quando existe — mudar o texto do endereço muda a chave, o cache não bate, e
+   * o endereço volta a ser resolvido. É essa a metade que impede o conserto de
+   * virar "nunca mais geocodifica".
+   */
+  const conhecidas = new Map<string, { lat: number; lng: number }>();
+  for (const r of existing) {
+    const texto = (r.address_formatted ?? '').trim();
+    if (!texto || r.lat === null || r.lng === null) continue;
+    const lat = Number(r.lat); const lng = Number(r.lng);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) conhecidas.set(texto, { lat, lng });
+  }
+
   // Best-effort geocoding — never blocks the upsert. Failures persist
   // lat/lng=NULL so the backfill job can recover them later.
   const geocoded = await geocodePatientAddressesBestEffort(valid, geocoder, {
     delayMs: 0,
     timeoutMs: 8000,
+    known: conhecidas,
   });
 
   for (const g of geocoded) {
