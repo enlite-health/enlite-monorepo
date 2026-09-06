@@ -8,12 +8,13 @@
  * `projectWorkerFields` (telefone e raça não compartilham chave: Ley 25.326 arts. 2 e 7.3; LGPD
  * art. 6 III), mais dois blocos que a ficha anexa:
  *
- *  · `worker:read`           id, status, profissão, ocupação, experiência, preferências, idiomas,
- *                            zonas (cidade, zona de trabalho, raio, lat/lng — o mapa `/admin/mapa`
- *                            já os expõe sob esta célula), disponibilidade, etiquetas, conta de teste
+ *  · `worker:read`           id, status, profissão, ocupação, experiência, preferências, idiomas
+ *                            (cifrado em repouso, decisão registrada no builder), cidade e zonas
+ *                            de trabalho/interesse, disponibilidade, etiquetas, conta de teste
  *  · `worker_contact:read`   nome, e-mail, telefone, whatsapp, linkedin      → container `contact`
  *  · `worker_pii:read`       DNI, nascimento, sexo, gênero, foto, raça, religião, orientação
- *                            sexual, peso, altura, ENDEREÇO (linha de endereço) → `dossier`
+ *                            sexual, peso, altura, ENDEREÇO inteiro (linha, lat/lng, raio —
+ *                            coordenada é endereço, `lex` P2)                 → `dossier`
  *  · `worker_document:read`  o bloco `documents` (URLs assinadas só nascem com a célula) → `documents`
  *  · `match:read`            o bloco `encuadres` (vagas em que o prestador está) → `encuadres`
  *
@@ -34,8 +35,8 @@
  * "tem documento" / "está em alguma vaga" vazaria por inferência (LGPD art. 11 §5).
  */
 
-import { cellKey } from '@modules/identity/permissions/domain/PermissionCell';
-import { NOME_REDIGIDO } from '@modules/identity/permissions/application/projectWorkerFields';
+import { cellKey } from '@modules/identity/permissions';
+import { NOME_REDIGIDO } from '@modules/identity/permissions';
 import { canReadPatientContainer } from '@modules/case/application/patientContainerAccess';
 
 export const WORKER_CONTAINERS = ['contact', 'dossier', 'documents', 'encuadres'] as const;
@@ -76,6 +77,18 @@ export const ALL_WORKER_CONTAINERS_READABLE: WorkerContainerReads = workerContai
 export function servedWorkerContainers(cells: readonly string[] | null | undefined): WorkerContainer[] {
   const reads = workerContainerReadsOf(cells);
   return WORKER_CONTAINERS.filter((c) => reads[c]);
+}
+
+/**
+ * O `action` da linha em `resource_access_log` para a abertura da ficha: `read_detail` mais o
+ * conjunto ENUMERADO de containers servidos (`read_detail:contact+dossier`). Nunca texto livre,
+ * nunca valor — é o que substitui a linha ALLOW de `permission_audit_log` que a rota deixou de
+ * gerar ao sair de `worker_pii:read` (`lex` fase 2, P6), sem publicar uid×prestador no Cloud
+ * Logging (P7).
+ */
+export function workerDetailTrailAction(cells: readonly string[] | null | undefined): string {
+  const served = servedWorkerContainers(cells);
+  return served.length === 0 ? 'read_detail' : `read_detail:${served.join('+')}`;
 }
 
 /**

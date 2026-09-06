@@ -5,7 +5,7 @@ import { mapPlatformLabel } from './AdminWorkersControllerHelpers';
 import { WorkerApplicationRepository } from '../../../matching/infrastructure/WorkerApplicationRepository';
 import { BlockedApplicationQueryRepository } from '../../../matching/infrastructure/BlockedApplicationQueryRepository';
 import { WorkerEngagement } from '../../../matching/domain/WorkerEngagement';
-import { NOME_REDIGIDO } from '@modules/identity/permissions/application/projectWorkerFields';
+import { NOME_REDIGIDO } from '@modules/identity/permissions';
 import { projectPatientNameInEngagement, workerContainerReadsOf, workerRedactionMarker } from '../../application/workerContainerAccess';
 
 /**
@@ -101,7 +101,10 @@ export async function buildWorkerDetailResponse(
     abrir(reads.dossier, w.gender_encrypted),
     abrir(reads.dossier, w.document_number_encrypted),
     abrir(reads.dossier, w.profile_photo_url_encrypted),
-    // Idiomas são dado profissional (o card de perfil profissional os mostra) — nível base.
+    // Idiomas: coluna cifrada em repouso que SAI no nível base (`worker:read`), por decisão
+    // registrada (`lex` fase 2, condição 3): é critério de matching (paciente que fala X) e o card
+    // de perfil profissional os mostra; o proxy de origem étnica que o `lex` aponta fica anotado
+    // aqui como risco aceito, não como esquecimento.
     encryptionService.decrypt(w.languages_encrypted),
     abrir(reads.contact, w.whatsapp_phone_encrypted),
     abrir(reads.contact, w.linkedin_url_encrypted),
@@ -178,8 +181,10 @@ export async function buildWorkerDetailResponse(
   const isActive = w.status !== 'DISABLED' && w.deleted_at === null;
   const doc = docsResult.rows[0] ?? null;
   const loc = locationResult.rows[0] ?? null;
-  // A linha de endereço é dossiê; cidade, zona, raio e lat/lng são operacionais (o mapa já os
-  // expõe sob `worker:read`).
+  // Endereço é dossiê INTEIRO: linha, lat/lng e raio (coordenada É o endereço — `lex` fase 2,
+  // P2). Cidade, zona de trabalho e zona de interesse são o critério operacional de matching e
+  // ficam no nível base. Que o mapa entregue coordenada (e nome) sob `worker:read` é defeito DELE
+  // (P1, em LISTA), não régua para a ficha.
   const endereco = (valor: string | null | undefined): string | null => (reads.dossier ? valor ?? null : null);
   const redacted = workerRedactionMarker(reads);
 
@@ -214,11 +219,11 @@ export async function buildWorkerDetailResponse(
     anaCareId: w.ana_care_id ?? null,
     anaCareSyncedAt: w.ana_care_synced_at ?? null,
     documents: doc ? await buildDocumentsWithSignedUrls(gcs, doc) : null,
-    serviceAreas: serviceAreasResult.rows.map((sa: any) => ({
-      id: sa.id, address: endereco(sa.address_line), serviceRadiusKm: sa.radius_km ?? null,
+    serviceAreas: reads.dossier ? serviceAreasResult.rows.map((sa: any) => ({
+      id: sa.id, address: sa.address_line ?? null, serviceRadiusKm: sa.radius_km ?? null,
       lat: sa.latitude ? parseFloat(sa.latitude) : null,
       lng: sa.longitude ? parseFloat(sa.longitude) : null,
-    })),
+    })) : null,
     location: loc ? {
       address: endereco(loc.address), city: loc.city ?? null,
       workZone: loc.work_zone ?? null, interestZone: loc.interest_zone ?? null,

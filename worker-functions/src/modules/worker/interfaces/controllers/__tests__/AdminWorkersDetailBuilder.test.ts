@@ -5,7 +5,7 @@
  * daquele container nunca chega ao KMS — não é "chegou e foi apagado". Para documentos e
  * encuadres a prova é a QUERY que não roda.
  */
-import { NOME_REDIGIDO } from '@modules/identity/permissions/application/projectWorkerFields';
+import { NOME_REDIGIDO } from '@modules/identity/permissions';
 import { buildWorkerDetailResponse } from '../AdminWorkersDetailBuilder';
 
 const queries: string[] = [];
@@ -119,8 +119,10 @@ describe('só worker:read — o operacional sai, o resto NÃO chega ao KMS', () 
     for (const f of ['documentType', 'documentNumber', 'birthDate', 'sex', 'gender', 'profilePhotoUrl', 'race', 'religion', 'sexualOrientation', 'weightKg', 'heightCm']) {
       expect(data[f]).toBeNull();
     }
+    // coordenada É endereço (lex P2): o bloco de áreas sai null; cidade/zona (critério de
+    // matching) ficam
     expect(data.location).toMatchObject({ address: null, city: 'Buenos Aires', workZone: 'Palermo' });
-    expect(data.serviceAreas[0]).toMatchObject({ address: null, lat: -34.6, lng: -58.4, serviceRadiusKm: 10 });
+    expect(data.serviceAreas).toBeNull();
   });
 
   it('documentos: a query NEM RODA e nenhuma URL é assinada; encuadres: idem, e vem null (não [])', async () => {
@@ -163,7 +165,7 @@ describe('um container de cada vez', () => {
     const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, ['worker:read', 'worker_pii:read']);
     expect(data).toMatchObject({ documentType: 'DNI', documentNumber: '12345678', birthDate: '1990-01-01', race: 'r', heightCm: '170' });
     expect(data.location.address).toBe('Calle Falsa 123');
-    expect(data.serviceAreas[0].address).toBe('Calle Falsa 123');
+    expect(data.serviceAreas[0]).toMatchObject({ address: 'Calle Falsa 123', lat: -34.6, lng: -58.4, serviceRadiusKm: 10 });
     expect(data.firstName).toBe(NOME_REDIGIDO);
     for (const c of CIFRADOS_DE_CONTATO) expect(abertos()).not.toContain(c);
     expect(data.redacted).toEqual({ contact: true, documents: true, encuadres: true });

@@ -53,6 +53,8 @@ export interface AdminWorkerRouteControllers {
  * `PERMISSION_CATALOG_SYNC_ENABLED` ter ligado para poder ser enforçada.
  */
 import { ADMIN_WORKERS_FAMILY } from '@modules/identity/permissions';
+import { cellsOfRequest } from '@modules/identity/permissions';
+import { workerDetailTrailAction } from '../../application/workerContainerAccess';
 export { ADMIN_WORKERS_FAMILY };
 
 export function createAdminWorkerRoutes(
@@ -101,7 +103,9 @@ export function createAdminWorkerRoutes(
   // D286 fase 2: abrir a ficha é o OPERACIONAL; contato, dossiê, documentos e encuadres saem
   // projetados pela célula de cada container (`buildWorkerDetailResponse`). Quem só tem
   // `worker:read` recebe a ficha sem nome, sem DNI, sem documento — não uma negação da tela.
-  router.get('/workers/:id', staffOnly, perm.require('worker', 'read'), logResourceAccess('worker'), (req: Request, res: Response) => c.workers.getWorkerById(req, res));
+  // A trilha (`resource_access_log`) carrega os containers servidos no `action` — é o que substitui
+  // a linha ALLOW de `worker_pii` que esta rota deixou de gerar.
+  router.get('/workers/:id', staffOnly, perm.require('worker', 'read'), logResourceAccess('worker', (req) => workerDetailTrailAction(cellsOfRequest(req))), (req: Request, res: Response) => c.workers.getWorkerById(req, res));
   // test-flag e profile são admin-only (mais estrito que staff)
   router.patch('/workers/:id/test-flag', adminOnly, perm.require('worker', 'write'), (req: Request, res: Response) => c.testFlag.updateTestFlag(req, res));
   // edição de perfil do worker — apenas role ADMIN

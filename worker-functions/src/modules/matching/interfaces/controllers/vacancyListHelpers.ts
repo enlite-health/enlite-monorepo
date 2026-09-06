@@ -163,16 +163,26 @@ export interface ListVacanciesQuery {
   paramIndex: number;
 }
 
-export function buildListVacanciesQuery(filters: ListVacanciesFilters): ListVacanciesQuery {
+export function buildListVacanciesQuery(filters: ListVacanciesFilters, opts: { searchByPatientName?: boolean } = {}): ListVacanciesQuery {
   let baseQuery = LIST_VACANCIES_BASE;
   const params: unknown[] = [];
   let paramIndex = 1;
 
   if (filters.search) {
-    baseQuery += ` AND (
+    // D286 fase 2 / lex P5: quem não pode LER o nome do paciente não pode FILTRAR por ele — senão
+    // a lista redigida vira oráculo de confirmação ("existe vaga do fulano?"). Default `true`
+    // preserva o comportamento quando o engine não decidiu (cells = null).
+    const porNome = opts.searchByPatientName ?? true;
+    baseQuery += porNome
+      ? ` AND (
       p.first_name ILIKE $${paramIndex}
       OR p.last_name ILIKE $${paramIndex}
       OR jp.case_number::TEXT ILIKE $${paramIndex}
+      OR jp.vacancy_number::TEXT ILIKE $${paramIndex}
+      OR jp.title ILIKE $${paramIndex}
+    )`
+      : ` AND (
+      jp.case_number::TEXT ILIKE $${paramIndex}
       OR jp.vacancy_number::TEXT ILIKE $${paramIndex}
       OR jp.title ILIKE $${paramIndex}
     )`;
@@ -237,6 +247,7 @@ export interface VacancyListRow {
   id: string;
   patient_first_name: string | null;
   patient_last_name: string | null;
+  patient_zone?: string | null;
   case_number: number;
   vacancy_number: number;
   status: string | null;

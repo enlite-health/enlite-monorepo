@@ -10,7 +10,6 @@ import { mapPlatformLabel, matchesSearch, WorkerListItem, WORKER_DETAIL_COLS } f
 import { buildWorkerDetailResponse } from './AdminWorkersDetailBuilder';
 import { ExportWorkersUseCase, ExportSemColunaPermitidaError } from '../../application/ExportWorkersUseCase';
 import { cellsOfRequest } from '@modules/identity/permissions';
-import { servedWorkerContainers } from '../../application/workerContainerAccess';
 import { WORKER_EXPORT_COLUMN_KEYS, WorkerExportColumnKey } from '../../application/export/workerExportColumns';
 import { buildAllValidatedClause, buildPendingValidationClause } from '../../application/workerDocumentFilters';
 import {
@@ -288,18 +287,10 @@ export class AdminWorkersController {
 
       // D286 fase 2: a ficha sai PROJETADA pelas células do ator (contato, dossiê, documentos,
       // encuadres); a rota só exige o operacional. `null` = engine não decidiu → ficha inteira (D113).
-      const cells = cellsOfRequest(req);
-      const data = await buildWorkerDetailResponse(this.db, this.encryptionService, this.gcs, workerResult.rows[0], cells);
-      // Trilha de leitura sem valor: uid, prestador, país, containers servidos, quando. Nunca o
-      // nome, o telefone ou a URL de documento. (A linha em `resource_access_log` vem do
-      // `logResourceAccess('worker')` da rota.)
-      logger.info({
-        msg: 'worker_detail.read',
-        uid: req.user?.uid ?? null,
-        workerId: workerResult.rows[0].id,
-        country: workerResult.rows[0].country ?? null,
-        containers: servedWorkerContainers(cells),
-      });
+      // A trilha da abertura (uid, prestador, containers servidos, quando) é a linha em
+      // `resource_access_log` que o `logResourceAccess` da rota grava — tabela auditada, NÃO o
+      // Cloud Logging: uid×prestador em log é o vínculo que a trilha existe para guardar (`lex` P7).
+      const data = await buildWorkerDetailResponse(this.db, this.encryptionService, this.gcs, workerResult.rows[0], cellsOfRequest(req));
       res.status(200).json({ success: true, data });
     } catch (error: unknown) {
       const e = error instanceof Error ? error : new Error(String(error));

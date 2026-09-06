@@ -184,3 +184,13 @@ export function servedPatientContainers(cells: readonly string[] | null | undefi
   const reads = patientContainerReadsOf(cells);
   return PATIENT_CONTAINERS.filter((c) => reads[c]);
 }
+
+/**
+ * O `action` da linha em `resource_access_log` para a abertura da ficha: `read_detail` mais o
+ * conjunto ENUMERADO de containers servidos. É a trilha da D do `lex` (uma linha por abertura,
+ * na infra existente) — em tabela auditada, não no Cloud Logging (`lex` fase 2, P7).
+ */
+export function patientDetailTrailAction(cells: readonly string[] | null | undefined): string {
+  const served = servedPatientContainers(cells);
+  return served.length === 0 ? 'read_detail' : `read_detail:${served.join('+')}`;
+}

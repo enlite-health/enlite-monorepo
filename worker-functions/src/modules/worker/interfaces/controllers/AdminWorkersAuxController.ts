@@ -17,6 +17,8 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { SyncTalentumWorkersUseCase } from '@modules/integration';
 import { reportError } from '@shared/logging';
 import { canonicalLocation, recognizedZoneLabel } from '@shared/utils/normalizeLocationValue';
+import { cellsOfRequest } from '@modules/identity/permissions';
+import { patientNameIsRedacted, projectPatientInVacancy } from '@modules/matching/application/patientInVacancyProjection';
 
 interface WorkerDateStats {
   today: number;
@@ -75,8 +77,11 @@ export class AdminWorkersAuxController {
    * GET /api/admin/workers/case-options
    * Retorna id + label de todos os job_postings ativos para popular selects de filtro.
    */
-  async listCaseOptions(_req: Request, res: Response): Promise<void> {
+  async listCaseOptions(req: Request, res: Response): Promise<void> {
     try {
+      // D286 fase 2 / lex P4: o rótulo do select carrega o NOME do paciente — segue
+      // `patient_identity:read`, não `worker:read`. Sem a célula, o rótulo é só o título da vaga.
+      const cells = cellsOfRequest(req);
       const result = await this.db.query(`
         SELECT jp.id, jp.case_number, jp.vacancy_number, jp.title,
                p.first_name AS patient_first_name, p.last_name AS patient_last_name
@@ -87,7 +92,10 @@ export class AdminWorkersAuxController {
       `);
 
       const data = result.rows.map((row: any) => {
-        const patientName = [row.patient_first_name, row.patient_last_name].filter(Boolean).join(' ');
+        const visivel = projectPatientInVacancy(row as { patient_first_name: string | null; patient_last_name: string | null }, cells);
+        const patientName = patientNameIsRedacted(visivel)
+          ? ''
+          : [visivel.patient_first_name, visivel.patient_last_name].filter(Boolean).join(' ');
         const label = patientName
           ? `${row.title} — ${patientName}`
           : row.title;

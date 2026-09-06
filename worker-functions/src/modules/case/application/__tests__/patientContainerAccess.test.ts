@@ -16,6 +16,7 @@ import {
   projectPatientDetailByContainers,
   projectPatientListItemByContainers,
   servedPatientContainers,
+  patientDetailTrailAction,
 } from '../patientContainerAccess';
 
 const TODAS = PATIENT_CONTAINERS.map((c) => patientContainerCell(c, 'read'));
@@ -156,5 +157,11 @@ describe('servedPatientContainers — o que a trilha registra', () => {
     expect(servedPatientContainers(null)).toEqual([...PATIENT_CONTAINERS]);
     expect(servedPatientContainers(['patient_chat:read', 'patient_identity:read'])).toEqual(['identity', 'chat']);
     expect(servedPatientContainers([])).toEqual([]);
+  });
+
+  it('o `action` da linha em resource_access_log é ENUMERADO: read_detail + containers (lex P7: tabela, não log)', () => {
+    expect(patientDetailTrailAction(['patient:read', 'patient_identity:read', 'patient_chat:read'])).toBe('read_detail:identity+chat');
+    expect(patientDetailTrailAction([])).toBe('read_detail');
+    expect(patientDetailTrailAction(null)).toBe(`read_detail:${PATIENT_CONTAINERS.join('+')}`);
   });
 });

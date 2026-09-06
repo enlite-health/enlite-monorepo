@@ -1,7 +1,7 @@
-import { NOME_REDIGIDO } from '@modules/identity/permissions/application/projectWorkerFields';
+import { NOME_REDIGIDO } from '@modules/identity/permissions';
 import {
   ALL_WORKER_CONTAINERS_READABLE, WORKER_CONTAINERS, canReadWorkerContainer, projectPatientNameInEngagement,
-  servedWorkerContainers, workerContainerCell, workerContainerReadsOf, workerRedactionMarker,
+  servedWorkerContainers, workerContainerCell, workerContainerReadsOf, workerDetailTrailAction, workerRedactionMarker,
 } from '../workerContainerAccess';
 
 describe('workerContainerAccess — a célula de cada container da ficha do prestador (D286 fase 2)', () => {
@@ -26,6 +26,12 @@ describe('workerContainerAccess — a célula de cada container da ficha do pres
     expect(servedWorkerContainers(null)).toEqual(['contact', 'dossier', 'documents', 'encuadres']);
     expect(servedWorkerContainers(['match:read', 'worker_contact:read'])).toEqual(['contact', 'encuadres']);
     expect(servedWorkerContainers([])).toEqual([]);
+  });
+
+  it('o `action` da trilha é ENUMERADO: read_detail + containers servidos; sem nenhum, só read_detail', () => {
+    expect(workerDetailTrailAction(null)).toBe('read_detail:contact+dossier+documents+encuadres');
+    expect(workerDetailTrailAction(['worker:read', 'worker_pii:read'])).toBe('read_detail:dossier');
+    expect(workerDetailTrailAction(['worker:read'])).toBe('read_detail');
   });
 
   it('marcador: undefined quando nada foi redigido (resposta byte a byte a de antes); senão só os ocultos, sempre true', () => {

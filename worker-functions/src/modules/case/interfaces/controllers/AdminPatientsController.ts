@@ -9,7 +9,7 @@ import { createPatientSchema } from '../validators/createPatientSchema';
 import { PatientQueryRepository } from '../../infrastructure/PatientQueryRepository';
 import { GetPatientByIdUseCase } from '../../application/GetPatientByIdUseCase';
 import { clinicalCellsOf, canReadPatientClinical, PATIENT_CLINICAL_READ_CELL } from '../../application/patientClinicalAccess';
-import { patientContainerReadsOf, servedPatientContainers } from '../../application/patientContainerAccess';
+import { patientContainerReadsOf } from '../../application/patientContainerAccess';
 import { actorRolesOf } from '../../application/contractedServiceHourlyValueAccess';
 import {
   toAdminPatientListItem,
@@ -568,14 +568,9 @@ export class AdminPatientsController {
         logger.info({ msg: 'patient_clinical.read', uid: AuthMiddleware.getAuthContext(req)?.principal.id ?? null, patientId: parsed.data.id, country: (result.patient as { country?: string | null }).country ?? null, decision: 'allowed' });
       }
       // D286 / lex D-C8: UMA linha por abertura de ficha com o CONJUNTO de containers servidos —
-      // uid, paciente, país, containers, quando. Nunca o texto, o telefone ou o chat_id.
-      logger.info({
-        msg: 'patient_detail.read',
-        uid: AuthMiddleware.getAuthContext(req)?.principal.id ?? null,
-        patientId: parsed.data.id,
-        country: (result.patient as { country?: string | null }).country ?? null,
-        containers: servedPatientContainers(cells),
-      });
+      // é a linha em `resource_access_log` que o `logResourceAccess('patient', …)` da rota grava
+      // (`action = read_detail:identity+clinical+…`), em tabela auditada. Não vai para o Cloud
+      // Logging: uid×paciente em log publica o vínculo que a trilha existe para guardar (`lex` P7).
 
       const completeness = patientDetailCompleteness(result.patient, cells);
 

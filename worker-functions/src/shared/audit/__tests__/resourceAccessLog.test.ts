@@ -59,6 +59,20 @@ describe('logResourceAccess', () => {
     expect(inserts[0][1]).toEqual(['u-flor', 'recruiter', 'patient', 'pat-1', 'read_detail', expect.any(String)]);
   });
 
+  it('D286: `action` como função da request é avaliada no `finish` — a linha carrega os containers servidos', async () => {
+    const res = makeRes(200);
+    query.mockResolvedValueOnce({ rows: [{ country: 'AR' }] });
+    const req = { ...staffReq, permissionCells: ['patient:read', 'patient_identity:read'] } as unknown as Request;
+
+    logResourceAccess('patient', (r) => `read_detail:${((r as unknown as { permissionCells: string[] }).permissionCells).join('+')}`)(req, res, jest.fn());
+    res.emit('finish');
+    await flush();
+
+    const inserts = query.mock.calls.filter((c) => String(c[0]).includes('resource_access_log'));
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0][1]).toEqual(['u-flor', 'recruiter', 'patient', 'pat-1', 'read_detail:patient:read+patient_identity:read', expect.any(String)]);
+  });
+
   it('404 (paciente de outro país, sob RLS) NÃO vira linha — nada foi revelado', async () => {
     const res = makeRes(404);
     logResourceAccess('patient')(staffReq, res, jest.fn());
