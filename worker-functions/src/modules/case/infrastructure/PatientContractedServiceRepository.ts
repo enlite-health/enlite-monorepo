@@ -55,7 +55,6 @@ export interface ContractedServiceDetail {
   careLocation: string | null;
   /** Preço do contrato (lex C-c) — a REDAÇÃO por papel acontece no controller, nunca aqui. */
   hourlyValue: number | null;
-  version: string | null;
   startDate: string | null;
   contractType: string | null;
   taxCondition: string | null;
@@ -84,7 +83,6 @@ export interface ContractedServiceWriteInput {
   weeklyHours?: number | null;
   careLocation?: string | null;
   hourlyValue?: number | null;
-  version?: string | null;
   startDate?: string | null;
   contractType?: string | null;
   taxCondition?: string | null;
@@ -113,7 +111,6 @@ const WRITABLE_COLUMNS: Array<[keyof ContractedServiceWriteInput, string]> = [
   ['weeklyHours', 'weekly_hours'],
   ['careLocation', 'care_location'],
   ['hourlyValue', 'hourly_value'],
-  ['version', 'version'],
   ['startDate', 'start_date'],
   ['contractType', 'contract_type'],
   ['taxCondition', 'tax_condition'],
@@ -143,7 +140,6 @@ interface ServiceRow {
   weekly_hours: string | null;
   care_location: string | null;
   hourly_value: string | null;
-  version: string | null;
   start_date: string | null;
   contract_type: string | null;
   tax_condition: string | null;
@@ -191,7 +187,6 @@ export class PatientContractedServiceRepository {
       weeklyHours: row.weekly_hours != null ? Number(row.weekly_hours) : null,
       careLocation: row.care_location,
       hourlyValue: row.hourly_value != null ? Number(row.hourly_value) : null,
-      version: row.version,
       startDate: row.start_date,
       contractType: row.contract_type,
       taxCondition: row.tax_condition,

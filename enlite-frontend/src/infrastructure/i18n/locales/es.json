@@ -2907,7 +2907,6 @@
         "careLocation": "Lugar de atención",
         "hourlyValue": "Valor por hora",
         "hourlyValueRedacted": "🔒 Solo admin",
-        "version": "Versión",
         "startDate": "Fecha de inicio",
         "contractType": "Tipo de contratación",
         "taxCondition": "Condición de IVA",
@@ -2936,13 +2935,19 @@
         "discardChangesDiscard": "Descartar cambios",
         "selectPlaceholder": "Seleccioná…",
         "affiliateHint": "Número de afiliado tal como figura en la credencial de la cobertura.",
-        "versionHint": "Versión del servicio contratado (si la cobertura la identifica por versión, no por fecha).",
         "requiredField": "Este campo es obligatorio",
         "serviceAddress": "Domicilio",
         "serviceAddressHint": "Dónde se presta ESTE servicio. Cada servicio se vincula a un domicilio del paciente; la vacante nace ahí.",
-        "serviceAddressNoneHint": "Cargá primero un domicilio en \"Localizaciones\" para poder vincularlo.",
         "serviceSchedule": "Horarios",
-        "serviceScheduleHint": "Opcional: la vacante puede crearse sin horario y completarse después."
+        "serviceScheduleHint": "Opcional: la vacante puede crearse sin horario y completarse después.",
+        "onlyNumbersHint": "Solo números",
+        "onlyNumbersWarning": "Este campo acepta solo números.",
+        "serviceAddressNone": "Este paciente no tiene domicilio cargado. Cargalo en \"Localizaciones\" para poder vincular el servicio — sin domicilio, la vacante no puede crearse.",
+        "newServiceTitle": "Nuevo servicio contratado",
+        "editServiceTitle": "Editar servicio contratado",
+        "serviceNotFound": "Este servicio ya no existe en la ficha.",
+        "decimalCommaWarning": "Para decimales usá punto (.), no coma.",
+        "listReloadError": "El cambio se guardó, pero no pudimos recargar la lista. Cerrá y volvé a abrir."
       },
       "kanban": {
         "title": "Pacientes — Kanban",
@@ -3266,7 +3271,6 @@
         },
         "contractedServicesCard": {
           "title": "Servicios Contratados",
-          "editButton": "Editar servicios",
           "tableDevice": "Dispositivo(s)",
           "tableProfessional": "Servicio",
           "tableProvidersNeeded": "Prest. necesarios",
@@ -3275,7 +3279,6 @@
           "tableLocation": "Lugar de Atención",
           "tableValue": "Valor",
           "tableValueRedacted": "🔒",
-          "tableVersion": "Versión",
           "tableStart": "Inicio",
           "tableContract": "Contratación",
           "tableIVA": "IVA",
@@ -3335,7 +3338,11 @@
             "AGE_20_30": "20 a 30 Años",
             "AGE_30_45": "30 a 45 Años",
             "AGE_45_PLUS": "+ 45 Años"
-          }
+          },
+          "newButton": "Nuevo servicio",
+          "editRowAria": "Editar el servicio {{service}}",
+          "tableActions": "Acciones",
+          "detailEdit": "Editar"
         },
         "matchingCard": {
           "title": "Encuadre Terapéutico",

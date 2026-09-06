@@ -102,9 +102,8 @@ test.describe('Spec 015 (US-A6) — franja etária solicitada do prestador @inte
     await expect(page.getByTestId('servicos-contratados-card')).toBeVisible();
 
     // ── Abre o drawer, cria o serviço com a franja "30 a 45 años" ──
-    await forceClick(page.getByTestId('edit-service-btn'));
+    await forceClick(page.getByTestId('new-service-btn'));
     await expect(page.getByTestId('patient-contracted-services-edit-drawer')).toBeVisible();
-    await forceClick(page.getByTestId('contracted-service-add'));
     await forceSelect(page.getByTestId('svc-code-1'), 'AT');
     await forceSelect(page.getByTestId('svc-providerAgeBand-1'), 'AGE_30_45');
     // Migration 330: sem endereço vinculado o activate recusa (SERVICE_ADDRESS).

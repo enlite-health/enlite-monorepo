@@ -1,0 +1,21 @@
+-- 331 — `patient_contracted_services.version` SAI (decisão do Gabriel, 06/09/2026)
+--
+-- O campo nunca teve fonte: na auditoria dos 88 campos do ClickUp ele é "coluna FANTASMA"
+-- (`specs/001-campos-admissao/auditoria-fluxo-admissao.md:40` — existia no card desde o Figma
+-- de abril renderizando '—'), o Javier leu a coluna da TELA ao listar o que faltava (02/09) e
+-- na mesma fala perguntou para que servia (#PERG-02), e entrou na 319 como "opcional sem
+-- semântica" (spec 013, decisão 8). Gabriel, 06/09: "Pode tirar, porém vamos ter que tirar da
+-- base de dados também. A Versão é de outro lugar e depois colocamos isso."
+--
+-- ── Por que um DROP numa casa de migrations aditivas ─────────────────────────
+-- A regra ("nunca dropar coluna sem deprecação") protege DADO. Medido em produção em
+-- 06/09/2026 (só contagem, via cloud-sql-proxy): `patient_contracted_services` tem 0 linhas —
+-- logo 0 com `version`. Não há dado a preservar nem código lendo a coluna depois deste commit
+-- (repositório, mapper, validador, entidade do front e formulário saem juntos). A STAGE não foi
+-- medida (gate 06/09): pode ter linhas de QA do D283 com `version` — coluna fantasma sem semântica,
+-- perda irrelevante por decisão do Gabriel.
+--
+-- Rollback: ALTER TABLE patient_contracted_services ADD COLUMN version TEXT NULL;
+-- Idempotente: DROP COLUMN IF EXISTS.
+
+ALTER TABLE patient_contracted_services DROP COLUMN IF EXISTS version;

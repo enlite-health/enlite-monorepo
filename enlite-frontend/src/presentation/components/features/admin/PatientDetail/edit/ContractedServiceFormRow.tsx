@@ -3,7 +3,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslation } from 'react-i18next';
-import { Trash2 } from 'lucide-react';
+import { AlertTriangle, Trash2 } from 'lucide-react';
 import { AdminContractedServicesApiService } from '@infrastructure/http/AdminContractedServicesApiService';
 import type { PatientAddressDetail, PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
 import type { ContractedServiceScheduleSlot } from '@domain/entities/PatientContractedService';
@@ -16,6 +16,7 @@ import { SelectField } from '@presentation/components/molecules/SelectField';
 import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
 import { DayScheduleEditor } from '@presentation/components/molecules/DayScheduleEditor';
 import { ContractedServiceProvidersSection } from './ContractedServiceProvidersSection';
+import { NumericField } from './NumericField';
 import { useContractedServiceOptions } from './useContractedServiceOptions';
 
 interface Props {
@@ -29,7 +30,9 @@ interface Props {
   service: PatientContractedServiceDetail | null;
   /** Index visual ("Serviço 1", "Serviço 2"…) — só para o rótulo, nunca enviado. */
   index: number;
-  onSaved: () => void;
+  /** Recebe o serviço que a API devolveu (create/update) — o pai não depende de um `list()` para
+   *  saber o id do recém-criado. A baixa chama sem argumento. */
+  onSaved: (saved?: PatientContractedServiceDetail) => void;
   onCancelNew?: () => void;
   /** Spec 014 (US-D4): avisa o pai (`PatientContractedServicesEditDrawer`) sempre que ESTA
    * linha tem mudança não salva — o drawer não tem "Guardar" próprio (cada linha salva sozinha,
@@ -54,7 +57,6 @@ const schema = z.object({
   weeklyHours: numericString,
   careLocation: z.string(),
   hourlyValue: numericString,
-  version: z.string(),
   startDate: z.string(),
   contractType: z.string(),
   taxCondition: z.string(),
@@ -146,7 +148,6 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
       weeklyHours: empty(service?.weeklyHours),
       careLocation: service?.careLocation ?? '',
       hourlyValue: empty(service?.hourlyValue),
-      version: service?.version ?? '',
       startDate: service?.startDate ? service.startDate.slice(0, 10) : '',
       contractType: service?.contractType ?? '',
       taxCondition: service?.taxCondition ?? '',
@@ -177,8 +178,9 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
     setBusy(true);
     const nz = (v: string): string | null => (v.trim() ? v.trim() : null);
     try {
+      let saved: PatientContractedServiceDetail;
       if (isNew) {
-        await AdminContractedServicesApiService.createContractedService(patientId, {
+        saved = await AdminContractedServicesApiService.createContractedService(patientId, {
           serviceCode: values.serviceCode as never,
           professionalProfile: nz(values.professionalProfile),
           providersNeeded: numOrNull(values.providersNeeded),
@@ -186,7 +188,6 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
           weeklyHours: numOrNull(values.weeklyHours),
           careLocation: nz(values.careLocation) as never,
           hourlyValue: numOrNull(values.hourlyValue),
-          version: nz(values.version),
           startDate: nz(values.startDate),
           contractType: nz(values.contractType) as never,
           taxCondition: nz(values.taxCondition) as never,
@@ -198,7 +199,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
           deviceTypeCodes: values.deviceTypeCodes,
         });
       } else {
-        await AdminContractedServicesApiService.updateContractedService(patientId, service.id, {
+        saved = await AdminContractedServicesApiService.updateContractedService(patientId, service.id, {
           professionalProfile: nz(values.professionalProfile),
           providersNeeded: numOrNull(values.providersNeeded),
           authorizedHours: numOrNull(values.authorizedHours),
@@ -207,7 +208,6 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
           // Campo desabilitado (redigido) nunca entra no submit — ver `disabled` abaixo; quando
           // habilitado, envia o que o operador digitou (inclusive limpar → null).
           hourlyValue: service.hourlyValueRedacted ? undefined : numOrNull(values.hourlyValue),
-          version: nz(values.version),
           startDate: nz(values.startDate),
           contractType: nz(values.contractType) as never,
           taxCondition: nz(values.taxCondition) as never,
@@ -224,7 +224,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
       // ficaria `true` para sempre após a 1ª edição salva, e a confirmação de "descartar
       // cambios" apareceria ao fechar mesmo sem NADA pendente).
       reset(values);
-      onSaved();
+      onSaved(saved);
     } catch {
       setError(isNew ? te('createServiceError') : te('updateServiceError'));
     } finally {
@@ -272,27 +272,35 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
             <SelectField id={`svc-code-${index}`} inputSize="compact" options={serviceOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} disabled={!isNew} data-testid={`svc-code-${index}`} />
           )} />
         </FormField>
-        <FormField label={te('providersNeeded')} htmlFor={`svc-providersNeeded-${index}`} optional>
-          <InputWithIcon id={`svc-providersNeeded-${index}`} type="number" inputSize="compact" data-testid={`svc-providersNeeded-${index}`} {...register('providersNeeded')} />
-        </FormField>
-        <FormField label={te('weeklyHours')} htmlFor={`svc-weeklyHours-${index}`} optional>
-          <InputWithIcon id={`svc-weeklyHours-${index}`} type="number" inputSize="compact" data-testid={`svc-weeklyHours-${index}`} {...register('weeklyHours')} />
-        </FormField>
-        <FormField label={te('authorizedHours')} htmlFor={`svc-authorizedHours-${index}`} optional>
-          <InputWithIcon id={`svc-authorizedHours-${index}`} type="number" inputSize="compact" data-testid={`svc-authorizedHours-${index}`} {...register('authorizedHours')} />
-        </FormField>
+        <NumericField id={`svc-providersNeeded-${index}`} label={te('providersNeeded')} testId={`svc-providersNeeded-${index}`} {...register('providersNeeded')} />
+        <NumericField id={`svc-weeklyHours-${index}`} label={te('weeklyHours')} testId={`svc-weeklyHours-${index}`} {...register('weeklyHours')} />
+        <NumericField id={`svc-authorizedHours-${index}`} label={te('authorizedHours')} testId={`svc-authorizedHours-${index}`} {...register('authorizedHours')} />
         <FormField label={te('careLocation')} htmlFor={`svc-careLocation-${index}`} optional>
           <Controller control={control} name="careLocation" render={({ field }) => (
             <SelectField id={`svc-careLocation-${index}`} inputSize="compact" options={careLocationOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`svc-careLocation-${index}`} />
           )} />
         </FormField>
         {/* Migration 330: o ENDEREÇO (ponteiro para a ficha) é distinto do "lugar" (Casa/Escola)
-            e do dispositivo — três coisas, como no Figma. Sem ele a vaga não sabe onde nascer. */}
+            e do dispositivo — três coisas, como no Figma. Sem ele a vaga não sabe onde nascer.
+            Ocupa a linha inteira (Gabriel, 06/09): é o campo que decide onde a vaga nasce, e sem
+            endereço na ficha o operador precisa VER o aviso, não um select cinza. */}
         <FormField
           label={te('serviceAddress')}
           htmlFor={`svc-addressId-${index}`}
-          hint={addresses.length === 0 ? te('serviceAddressNoneHint') : te('serviceAddressHint')}
+          hint={addresses.length === 0 ? undefined : te('serviceAddressHint')}
+          hintBelow
+          className="sm:col-span-2"
         >
+          {addresses.length === 0 && (
+            <div
+              role="alert"
+              data-testid={`svc-address-none-${index}`}
+              className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-800"
+            >
+              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
+              <Text as="span" size="sm" color="inherit">{te('serviceAddressNone')}</Text>
+            </div>
+          )}
           <Controller control={control} name="addressId" render={({ field }) => (
             <SelectField
               id={`svc-addressId-${index}`}
@@ -306,16 +314,13 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
             />
           )} />
         </FormField>
-        <FormField label={te('hourlyValue')} htmlFor={`svc-hourlyValue-${index}`} optional>
-          {service?.hourlyValueRedacted ? (
+        {service?.hourlyValueRedacted ? (
+          <FormField label={te('hourlyValue')} htmlFor={`svc-hourlyValue-${index}`} optional>
             <InputWithIcon id={`svc-hourlyValue-${index}`} inputSize="compact" value={te('hourlyValueRedacted')} disabled data-testid={`svc-hourlyValue-${index}`} />
-          ) : (
-            <InputWithIcon id={`svc-hourlyValue-${index}`} type="number" inputSize="compact" data-testid={`svc-hourlyValue-${index}`} {...register('hourlyValue')} />
-          )}
-        </FormField>
-        <FormField label={te('version')} htmlFor={`svc-version-${index}`} hint={te('versionHint')} optional>
-          <InputWithIcon id={`svc-version-${index}`} inputSize="compact" data-testid={`svc-version-${index}`} {...register('version')} />
-        </FormField>
+          </FormField>
+        ) : (
+          <NumericField id={`svc-hourlyValue-${index}`} label={te('hourlyValue')} testId={`svc-hourlyValue-${index}`} {...register('hourlyValue')} />
+        )}
         <FormField label={te('startDate')} htmlFor={`svc-startDate-${index}`} optional>
           <InputWithIcon id={`svc-startDate-${index}`} type="date" inputSize="compact" data-testid={`svc-startDate-${index}`} {...register('startDate')} />
         </FormField>
@@ -348,7 +353,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
 
       {/* Migration 330: horário do encuadre — o MESMO editor da vaga (DayScheduleEditor). Vazio é
           legítimo: "o operador pode criar uma vacante sem ter horário ainda" (Gabriel 05/09). */}
-      <FormField label={te('serviceSchedule')} htmlFor={`svc-schedule-${index}`} optional hint={te('serviceScheduleHint')}>
+      <FormField label={te('serviceSchedule')} htmlFor={`svc-schedule-${index}`} optional hint={te('serviceScheduleHint')} hintBelow>
         <div id={`svc-schedule-${index}`} data-testid={`svc-schedule-${index}`}>
           <Controller control={control} name="schedule" render={({ field }) => (
             <DayScheduleEditor value={field.value} onChange={field.onChange} disabled={busy} />
@@ -362,7 +367,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
         )} />
       </FormField>
 
-      <FormField label={te('professionalProfile')} htmlFor={`svc-profile-${index}`} optional hint={te('professionalProfileHint')}>
+      <FormField label={te('professionalProfile')} htmlFor={`svc-profile-${index}`} optional hint={te('professionalProfileHint')} hintBelow>
         <div data-clarity-mask="True">
           <Textarea id={`svc-profile-${index}`} inputSize="compact" resize="vertical" rows={3} data-testid={`svc-profile-${index}`} {...register('professionalProfile')} />
         </div>

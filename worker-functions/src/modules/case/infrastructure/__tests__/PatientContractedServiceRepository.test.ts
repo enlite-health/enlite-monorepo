@@ -23,7 +23,6 @@ const SERVICE_ROW = {
   weekly_hours: '20',
   care_location: 'HOME',
   hourly_value: '1500',
-  version: null,
   start_date: null,
   contract_type: null,
   tax_condition: null,

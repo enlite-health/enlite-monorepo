@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pencil } from 'lucide-react';
+import { Pencil, Plus } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import {
@@ -14,7 +14,7 @@ import {
 import { Button } from '@presentation/components/atoms/Button';
 import type { PatientAddressDetail, PatientDetail, PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
 import { patientAddressLabel } from '@domain/entities/PatientContractedService';
-import { PatientContractedServicesEditDrawer } from './edit/PatientContractedServicesEditDrawer';
+import { PatientContractedServicesEditDrawer, type ContractedServiceTarget } from './edit/PatientContractedServicesEditDrawer';
 import { ContractedServiceDetailDrawer } from './ContractedServiceDetailDrawer';
 import { contractedServiceScheduleText } from './contractedServiceScheduleText';
 import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
@@ -39,14 +39,16 @@ function ServiceRow({
   service,
   addresses,
   onOpen,
+  onEdit,
   t,
 }: {
   service: PatientContractedServiceDetail;
   addresses: PatientAddressDetail[];
   onOpen: (service: PatientContractedServiceDetail) => void;
+  onEdit: (service: PatientContractedServiceDetail) => void;
   t: (k: string, o?: any) => string;
 }) {
-  const tc = (k: string) => t(`admin.patients.detail.contractedServicesCard.${k}`);
+  const tc = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.contractedServicesCard.${k}`, o);
   const address = addresses.find((a) => a.id === service.addressId) ?? null;
   const scheduleText = contractedServiceScheduleText(service.schedule);
 
@@ -107,19 +109,37 @@ function ServiceRow({
           <Text as="span" size="sm" color="muted">{tc('noSchedule')}</Text>
         )}
       </TableCell>
+      {/* Lápis na linha (Gabriel, 06/09): a tabela É a lista — editar abre SÓ este serviço, sem
+          passar por um drawer-lista. `stopPropagation` para o clique não abrir o detalhe junto. */}
+      <TableCell unwrapped align="right">
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onEdit(service); }}
+          aria-label={tc('editRowAria', { service: t(`admin.patients.detail.contractedServicesCard.serviceTypes.${service.serviceCode}`, service.serviceCode) })}
+          data-testid={`contracted-service-edit-${service.id}`}
+          className="text-primary hover:text-primary/70 transition-colors p-1 rounded focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          <Pencil className="w-4 h-4" strokeWidth={2} />
+        </button>
+      </TableCell>
     </TableRow>
   );
 }
 
 export function ServicosContratadosCard({ patient, onSaved, focusRequest }: ServicosContratadosCardProps) {
   const { t } = useTranslation();
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState<ContractedServiceTarget | null>(null);
   const [selected, setSelected] = useState<PatientContractedServiceDetail | null>(null);
-  useAutoOpenDrawer(focusRequest, 'CONTRACTED_SERVICE', () => setEditing(true));
-  // Migration 330: "falta endereço no serviço" também abre o drawer de edição — é lá que o
-  // select "Domicilio" vive.
-  useAutoOpenDrawer(focusRequest, 'SERVICE_ADDRESS', () => setEditing(true));
   const services = patient.contractedServices;
+  // Checklist "falta serviço" → formulário de um serviço NOVO.
+  useAutoOpenDrawer(focusRequest, 'CONTRACTED_SERVICE', () => setEditing({ kind: 'new' }));
+  // Migration 330: "falta endereço no serviço" → abre o PRIMEIRO serviço ativo sem endereço vivo
+  // (é dele que o checklist reclama); sem candidato, abre um novo.
+  useAutoOpenDrawer(focusRequest, 'SERVICE_ADDRESS', () => {
+    const vivos = new Set(patient.addresses.map((a) => a.id));
+    const orfao = services.find((s) => s.active && (s.addressId == null || !vivos.has(s.addressId)));
+    setEditing(orfao ? { kind: 'edit', serviceId: orfao.id } : { kind: 'new' });
+  });
 
   return (
     <div
@@ -130,16 +150,19 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
         <Heading level={1} as="h3" weight="semibold" color="primary">
           {t('admin.patients.detail.contractedServicesCard.title')}
         </Heading>
-        <Button variant="outline" size="sm" onClick={() => setEditing(true)} className="flex items-center gap-1" data-testid="edit-service-btn">
-          <Pencil className="w-4 h-4" />
-          {t('admin.patients.detail.contractedServicesCard.editButton')}
+        {/* "+ Nuevo servicio" no lugar de "Editar servicios" (Gabriel, 06/09): a tabela já é a
+            lista; editar um existente é pelo lápis da linha ou pelo botão do detalhe. */}
+        <Button variant="outline" size="sm" onClick={() => setEditing({ kind: 'new' })} className="flex items-center gap-1" data-testid="new-service-btn">
+          <Plus className="w-4 h-4" />
+          {t('admin.patients.detail.contractedServicesCard.newButton')}
         </Button>
       </div>
 
       {editing && (
         <PatientContractedServicesEditDrawer
           patient={patient}
-          onClose={() => setEditing(false)}
+          target={editing}
+          onClose={() => setEditing(null)}
           onSaved={() => onSaved?.()}
         />
       )}
@@ -152,6 +175,7 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
           service={selected}
           addresses={patient.addresses}
           onClose={() => setSelected(null)}
+          onEdit={() => { const id = selected.id; setSelected(null); setEditing({ kind: 'edit', serviceId: id }); }}
         />
       )}
 
@@ -162,11 +186,12 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
           <TableHead align="center">{t('admin.patients.detail.contractedServicesCard.tableQuantity')}</TableHead>
           <TableHead>{t('admin.patients.detail.contractedServicesCard.tableLocation')}</TableHead>
           <TableHead>{t('admin.patients.detail.contractedServicesCard.tableSchedule')}</TableHead>
+          <TableHead unwrapped><span className="sr-only">{t('admin.patients.detail.contractedServicesCard.tableActions')}</span></TableHead>
         </TableHeader>
         <TableBody>
           {services.length === 0 ? (
             <TableRow>
-              <TableCell unwrapped colSpan={5} className="py-6 text-center">
+              <TableCell unwrapped colSpan={6} className="py-6 text-center">
                 <Text as="span" size="sm" color="secondary">
                   {t('admin.patients.detail.noData')}
                 </Text>
@@ -174,7 +199,7 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
             </TableRow>
           ) : (
             services.map((svc) => (
-              <ServiceRow key={svc.id} service={svc} addresses={patient.addresses} onOpen={setSelected} t={t} />
+              <ServiceRow key={svc.id} service={svc} addresses={patient.addresses} onOpen={setSelected} onEdit={(s) => setEditing({ kind: 'edit', serviceId: s.id })} t={t} />
             ))
           )}
         </TableBody>

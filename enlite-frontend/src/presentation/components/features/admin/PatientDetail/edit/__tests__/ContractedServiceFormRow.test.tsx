@@ -36,7 +36,7 @@ beforeAll(async () => {
 const SERVICE: PatientContractedServiceDetail = {
   id: 's1', patientId: 'pat1', serviceCode: 'AT', professionalProfile: 'perfil sintético',
   providersNeeded: 2, authorizedHours: 20, weeklyHours: 20, careLocation: 'HOME',
-  hourlyValue: 1500, hourlyValueRedacted: false, version: 'v1', startDate: '2026-09-01T00:00:00.000Z',
+  hourlyValue: 1500, hourlyValueRedacted: false, startDate: '2026-09-01T00:00:00.000Z',
   contractType: 'OBRA_SOCIAL', taxCondition: 'IVA_EXEMPT', supervisionFrequency: 'DAYS_30', guardShift: 'MORNING',
   providerAgeBand: 'AGE_30_45',
   addressId: null,
@@ -268,15 +268,15 @@ describe('ContractedServiceFormRow', () => {
       const onDirtyChange = vi.fn();
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} onDirtyChange={onDirtyChange} />);
       onDirtyChange.mockClear();
-      fireEvent.change(screen.getByTestId('svc-version-1'), { target: { value: 'v2' } });
+      fireEvent.change(screen.getByTestId('svc-providersNeeded-1'), { target: { value: '7' } });
       expect(onDirtyChange).toHaveBeenCalledWith(true);
     });
 
     it('salvar com sucesso volta a chamar onDirtyChange(false) — o form fica limpo de novo', async () => {
-      mockUpdate.mockResolvedValue({ ...SERVICE, version: 'v2' });
+      mockUpdate.mockResolvedValue({ ...SERVICE });
       const onDirtyChange = vi.fn();
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} onDirtyChange={onDirtyChange} />);
-      fireEvent.change(screen.getByTestId('svc-version-1'), { target: { value: 'v2' } });
+      fireEvent.change(screen.getByTestId('svc-providersNeeded-1'), { target: { value: '7' } });
       expect(onDirtyChange).toHaveBeenCalledWith(true);
       fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
       await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
@@ -284,7 +284,7 @@ describe('ContractedServiceFormRow', () => {
 
     it('sem onDirtyChange (prop opcional ausente) não quebra ao editar', () => {
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
-      expect(() => fireEvent.change(screen.getByTestId('svc-version-1'), { target: { value: 'v2' } })).not.toThrow();
+      fireEvent.change(screen.getByTestId('svc-providersNeeded-1'), { target: { value: '7' } });
     });
   });
 
@@ -299,10 +299,70 @@ describe('ContractedServiceFormRow', () => {
       expect(select.disabled).toBe(false);
     });
 
-    it('sem endereço na ficha: o select fica desabilitado com a dica de cadastrar o domicílio primeiro', () => {
+    it('sem endereço na ficha: o select fica desabilitado E um aviso âmbar diz que o paciente NÃO tem domicílio (Gabriel, 06/09)', () => {
       render(<ContractedServiceFormRow patientId="pat1" addresses={[]} service={null} index={1} onSaved={vi.fn()} />);
       expect((screen.getByTestId('svc-addressId-1') as HTMLSelectElement).disabled).toBe(true);
-      expect(screen.getByText(/Cargá primero un domicilio/)).toBeTruthy();
+      const aviso = screen.getByTestId('svc-address-none-1');
+      expect(aviso).toHaveAttribute('role', 'alert');
+      expect(aviso.textContent).toContain('no tiene domicilio cargado');
+    });
+
+    it('com endereço na ficha: sem o aviso âmbar; o campo ocupa a linha inteira (col-span-2)', () => {
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
+      expect(screen.queryByTestId('svc-address-none-1')).toBeNull();
+      const campo = screen.getByTestId('svc-addressId-1').closest('.sm\\:col-span-2');
+      expect(campo).not.toBeNull();
+    });
+
+    it('a dica "Solo números" fica ABAIXO do campo (hintBelow) — rótulo → campo → dica, para as colunas alinharem (gate 06/09)', () => {
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
+      const precede = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+      for (const id of ['svc-providersNeeded-1', 'svc-weeklyHours-1', 'svc-authorizedHours-1', 'svc-hourlyValue-1']) {
+        const campo = screen.getByTestId(id);
+        const label = document.querySelector(`label[for="${id}"]`) as HTMLElement;
+        const raiz = label.parentElement as HTMLElement; // o FormField
+        const dica = Array.from(raiz.querySelectorAll('span')).find((el) => el.textContent === 'Solo números') as HTMLElement;
+        expect(dica).toBeTruthy();
+        expect(precede(label, campo)).toBe(true);
+        expect(precede(campo, dica)).toBe(true); // dica DEPOIS do campo
+      }
+      // O domicílio também: a dica vem depois do select.
+      const dom = screen.getByTestId('svc-addressId-1');
+      const dica = Array.from((document.querySelector('label[for="svc-addressId-1"]')!.parentElement as HTMLElement).querySelectorAll('span'))
+        .find((el) => el.textContent?.startsWith('Dónde se presta')) as HTMLElement;
+      expect(precede(dom, dica)).toBe(true);
+    });
+
+    it('vírgula num campo numérico é BLOQUEADA com aviso próprio (Chromium descartava e o valor ficava 100× maior)', () => {
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
+      const ev = fireEvent.keyDown(screen.getByTestId('svc-hourlyValue-1'), { key: ',' });
+      expect(ev).toBe(false); // preventDefault
+      expect(screen.getByText('Para decimales usá punto (.), no coma.')).toBeTruthy();
+    });
+
+    it('onSaved recebe o serviço que a API devolveu (create e update)', async () => {
+      const criado = { ...SERVICE, id: 'novo' };
+      mockCreate.mockResolvedValue(criado);
+      const onSaved = vi.fn();
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={onSaved} />);
+      fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
+      fireEvent.click(screen.getByTestId('contracted-service-new-save'));
+      await waitFor(() => expect(onSaved).toHaveBeenCalledWith(criado));
+      const atualizado = { ...SERVICE, providersNeeded: 9 };
+      mockUpdate.mockResolvedValue(atualizado);
+      const onSaved2 = vi.fn();
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={2} onSaved={onSaved2} />);
+      fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
+      await waitFor(() => expect(onSaved2).toHaveBeenCalledWith(atualizado));
+    });
+
+    it('campos numéricos avisam ao receber letra (NumericField nos 4: prestadores, hs semanais, hs autorizadas, valor)', () => {
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
+      for (const id of ['svc-providersNeeded-1', 'svc-weeklyHours-1', 'svc-authorizedHours-1', 'svc-hourlyValue-1']) {
+        fireEvent.keyDown(screen.getByTestId(id), { key: 'a' });
+      }
+      expect(screen.getAllByText('Este campo acepta solo números.')).toHaveLength(4);
+      expect(screen.getAllByText('Solo números')).toHaveLength(4);
     });
 
     it('modo NOVO: escolher o endereço envia addressId; sem escolher envia null (nunca string vazia)', async () => {

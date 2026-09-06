@@ -16,7 +16,8 @@
 import { test, expect, type Page } from '@playwright/test';
 import { seedPatientForDiagnosis, cleanupPatientDeep, runSQL } from '../helpers/terminology-diagnosis-helper';
 
-const EMULATOR = 'http://127.0.0.1:9099';
+// `E2E_FIREBASE_EMULATOR` aponta para o emulador de um stack isolado (`docker compose -p`); default inalterado.
+const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
 const EMULATOR_PROJECT = 'demo-no-project';
 const STAFF_PASSWORD = 'TestAdmin123!';
 
@@ -76,7 +77,7 @@ test.describe('Ficha do paciente — um rolável só @integration', () => {
       await page.goto(`/admin/patients/${patient.patientId}`);
       await page.getByTestId('patient-profile-tabs').waitFor();
       await page.getByRole('button', { name: 'Servicio Contratado' }).click();
-      await page.getByTestId('edit-service-btn').waitFor();
+      await page.getByTestId('new-service-btn').waitFor();
       // regra visual do CLAUDE.md do front: o estado final da aba, como a operadora vê
       await expect(page.getByTestId('patient-profile-tabs')).toHaveScreenshot('scroll-unico-tabs.png', { maxDiffPixelRatio: 0.02 });
 

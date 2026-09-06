@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X } from 'lucide-react';
+import { Pencil, X } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import type { PatientAddressDetail, PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
@@ -12,6 +12,8 @@ interface Props {
   /** Endereços vivos da ficha — resolve `service.addressId` em texto (ponteiro, nada copiado). */
   addresses: PatientAddressDetail[];
   onClose: () => void;
+  /** Abre a edição DESTE serviço (o pai fecha o detalhe e abre o drawer de edição). */
+  onEdit?: () => void;
 }
 
 const CLOSE_MS = 300;
@@ -33,7 +35,7 @@ function Field({ label, value, testId }: { label: string; value: string; testId:
  * ele clique no serviço"). Editar continua no drawer de edição (botão "Editar servicios").
  * Enum nunca chega cru: cada valor passa por i18n com fallback no próprio valor.
  */
-export function ContractedServiceDetailDrawer({ service, addresses, onClose }: Props): JSX.Element {
+export function ContractedServiceDetailDrawer({ service, addresses, onClose, onEdit }: Props): JSX.Element {
   const { t } = useTranslation();
   const tc = (k: string) => t(`${CARD}.${k}`);
   const opt = (group: string, v: string | null) => (v ? t(`${CARD}.${group}.${v}`, { defaultValue: v }) : EMPTY);
@@ -93,9 +95,22 @@ export function ContractedServiceDetailDrawer({ service, addresses, onClose }: P
               </span>
             )}
           </div>
-          <button type="button" onClick={close} aria-label={tc('detailClose')} className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded" data-testid="contracted-service-detail-close">
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {onEdit && (
+              <button
+                type="button"
+                onClick={onEdit}
+                data-testid="contracted-service-detail-edit"
+                className="flex items-center gap-1 rounded-full border-2 border-primary px-3 py-1 text-primary hover:bg-primary/5 focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <Pencil className="w-4 h-4" strokeWidth={2} />
+                <Text as="span" size="xs" weight="medium" color="inherit">{tc('detailEdit')}</Text>
+              </button>
+            )}
+            <button type="button" onClick={close} aria-label={tc('detailClose')} className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded" data-testid="contracted-service-detail-close">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-8 py-6 flex flex-col gap-6">
@@ -120,7 +135,6 @@ export function ContractedServiceDetailDrawer({ service, addresses, onClose }: P
             <Field label={tc('tableWeeklyHours')} testId="svc-detail-weekly-hours" value={num(service.weeklyHours)} />
             <Field label={tc('tableAuthorizedHours')} testId="svc-detail-authorized-hours" value={num(service.authorizedHours)} />
             <Field label={tc('tableValue')} testId="svc-detail-value" value={valueText} />
-            <Field label={tc('tableVersion')} testId="svc-detail-version" value={service.version ?? EMPTY} />
             <Field label={tc('tableStart')} testId="svc-detail-start" value={service.startDate ? new Date(service.startDate).toLocaleDateString() : EMPTY} />
             <Field label={tc('tableContract')} testId="svc-detail-contract" value={opt('contractTypeOptions', service.contractType)} />
             <Field label={tc('tableIVA')} testId="svc-detail-iva" value={opt('taxConditionOptions', service.taxCondition)} />

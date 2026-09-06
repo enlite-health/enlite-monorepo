@@ -130,7 +130,6 @@ const contractedServiceSchema = z
     // lex C-c.4: redigido (null) para quem não é admin — hourlyValueRedacted diz qual dos dois.
     hourlyValue: z.number().nullable(),
     hourlyValueRedacted: z.boolean(),
-    version: z.string().nullable(),
     startDate: isoDate.nullable(),
     contractType: z.string().nullable(),
     taxCondition: z.string().nullable(),
