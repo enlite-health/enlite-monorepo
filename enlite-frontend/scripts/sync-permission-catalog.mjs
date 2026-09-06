@@ -21,6 +21,16 @@ import { dirname, resolve } from 'node:path';
 const here = dirname(fileURLToPath(import.meta.url));
 export const SEED_PATH = resolve(here, '../../worker-functions/migrations/206_permissions_iam_foundation.sql');
 export const FIXTURE_PATH = resolve(here, '../src/test/fixtures/permission-catalog.json');
+/**
+ * A SEGUNDA fonte do catálogo do back (`cellsForaDeRota`): as células que o código enforça
+ * ABAIXO da rota (campo, operação, container) e que por isso não estão no seed da 206 —
+ * `worker_contact:read`, `worker:disable`, e os containers de paciente da D286. A definição
+ * escrita em `CELL_DESCRIPTION` É a declaração de existência delas.
+ */
+export const CELL_DESCRIPTION_PATH = resolve(
+  here,
+  '../../worker-functions/src/modules/identity/permissions/domain/PermissionCell.ts',
+);
 export const MANIFEST_PATH = resolve(
   here,
   '../../worker-functions/src/modules/identity/permissions/infrastructure/country-features.manifest.ts',
@@ -38,6 +48,26 @@ export function cellsFromSeed(sql) {
     cells.add(`${m[1]}:${m[2]}`);
   }
   return [...cells].sort();
+}
+
+/** Lê as chaves `'resource:action':` do objeto `CELL_DESCRIPTION` (a 2ª fonte do catálogo). */
+export function cellsFromDescriptions(ts) {
+  const marcador = 'CELL_DESCRIPTION: Readonly<Record<string, string>> = {';
+  const inicio = ts.indexOf(marcador);
+  if (inicio < 0) throw new Error('CELL_DESCRIPTION não encontrado em PermissionCell.ts');
+  const fim = ts.indexOf('\n};', inicio);
+  if (fim < 0) throw new Error('fechamento do CELL_DESCRIPTION não encontrado');
+  const bloco = ts.slice(inicio, fim);
+  const cells = new Set();
+  for (const m of bloco.matchAll(/^\s*'([a-z][a-z0-9_]*):([a-z][a-z0-9_]*)':/gm)) {
+    cells.add(`${m[1]}:${m[2]}`);
+  }
+  return [...cells].sort();
+}
+
+/** O catálogo completo que o back deriva: seed da 206 ∪ células fora de rota. */
+export function catalogCells(sql, ts) {
+  return [...new Set([...cellsFromSeed(sql), ...cellsFromDescriptions(ts)])].sort();
 }
 
 /**
@@ -60,8 +90,11 @@ export function featureKeysFromManifest(ts) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const cells = cellsFromSeed(readFileSync(SEED_PATH, 'utf8'));
-  writeFileSync(FIXTURE_PATH, JSON.stringify({ source: '206_permissions_iam_foundation.sql', cells }, null, 2) + '\n');
+  const cells = catalogCells(readFileSync(SEED_PATH, 'utf8'), readFileSync(CELL_DESCRIPTION_PATH, 'utf8'));
+  writeFileSync(
+    FIXTURE_PATH,
+    JSON.stringify({ source: '206_permissions_iam_foundation.sql + PermissionCell.ts (CELL_DESCRIPTION)', cells }, null, 2) + '\n',
+  );
   console.log(`${cells.length} células → ${FIXTURE_PATH}`);
 
   const keys = featureKeysFromManifest(readFileSync(MANIFEST_PATH, 'utf8'));

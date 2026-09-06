@@ -4,6 +4,7 @@ import { User, TriangleAlert } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { PatientDetail, PatientResponsibleDetail } from '@domain/entities/PatientDetail';
 
@@ -197,14 +198,17 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
               </Text>
             </div>
             <div className="flex items-center gap-2">
-              <Button
+              {/* D286 — grava PATCH /patients/:id/general (telefone) → patient_identity:write. */}
+              <ActionButton
+                resource="patient_identity"
+                action="write"
                 variant="outline"
                 size="sm"
                 onClick={() => setConfirmingMove(true)}
                 data-testid="move-phone-to-responsible-btn"
               >
                 {t('admin.patients.detail.identityCard.movePhoneToResponsible')}
-              </Button>
+              </ActionButton>
               <Button
                 variant="outline"
                 size="sm"

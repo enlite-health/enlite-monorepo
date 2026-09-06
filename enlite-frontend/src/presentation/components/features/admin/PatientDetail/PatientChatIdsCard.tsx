@@ -56,7 +56,7 @@ export function PatientChatIdsCard({ patient, onSaved }: Props) {
         <Heading level={1} as="h3" weight="semibold" color="primary">{tc('title')}</Heading>
         {/* D269 — abre o drawer que faz PUT /patients/:id/chat-ids → patient:write. */}
         <ActionButton
-          resource="patient"
+          resource="patient_chat"
           action="write"
           variant="primary"
           size="sm"

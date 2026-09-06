@@ -540,8 +540,8 @@ describe('PatientChatIdsCard — write-gate (D269)', () => {
     expect(screen.queryByTestId('chat-ids-edit-btn')).not.toBeInTheDocument();
   });
 
-  it('enforcement=on, com patient:write: chat-ids-edit-btn existe', async () => {
-    comEnforcement(['patient:write'], 'on');
+  it('enforcement=on, com patient_chat:write (D286): chat-ids-edit-btn existe', async () => {
+    comEnforcement(['patient_chat:write'], 'on');
     render(<PatientChatIdsCard patient={patientDetailFixture} />);
     await screen.findByTestId('chat-id-FAMILY-value');
     expect(screen.getByTestId('chat-ids-edit-btn')).toBeInTheDocument();

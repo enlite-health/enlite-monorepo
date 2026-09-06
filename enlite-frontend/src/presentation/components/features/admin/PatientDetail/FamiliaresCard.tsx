@@ -45,7 +45,7 @@ export function FamiliaresCard({ responsibles, patientId, onSaved, focusRequest 
         </Heading>
         <div className="flex items-center gap-3 flex-wrap">
           {/* D269 — abre o drawer que faz PATCH /patients/:id/support-network → patient:write. */}
-          <ActionButton resource="patient" action="write" variant="outline" size="sm" onClick={() => setEditing(true)} disabled={!patientId} className="flex items-center gap-1" data-testid="edit-support-btn">
+          <ActionButton resource="patient_family" action="write" variant="outline" size="sm" onClick={() => setEditing(true)} disabled={!patientId} className="flex items-center gap-1" data-testid="edit-support-btn">
             <Plus className="w-4 h-4" />
             {t('admin.patients.detail.new')}
           </ActionButton>

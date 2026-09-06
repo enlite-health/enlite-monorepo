@@ -52,7 +52,7 @@ export function DiagnosticoCard({ patient, onSaved, focusRequest }: DiagnosticoC
           {t('admin.patients.detail.diagnosisCard.title')}
         </Heading>
         {/* D269 — abre o drawer que faz PATCH /patients/:id/clinical → patient:write. */}
-        <ActionButton resource="patient" action="write" variant="outline" size="sm" onClick={() => setEditing(true)} className="w-28" data-testid="edit-clinical-btn">
+        <ActionButton resource="patient_clinical" action="write" variant="outline" size="sm" onClick={() => setEditing(true)} className="w-28" data-testid="edit-clinical-btn">
           {t('admin.patients.detail.edit')}
         </ActionButton>
       </div>

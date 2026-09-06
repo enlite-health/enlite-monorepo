@@ -23,6 +23,8 @@ export interface Linha {
   rotulo: string;
   /** A célula de cada ação — ausente quando o recurso não tem aquela ação. */
   porAcao: Record<string, PermissionCell>;
+  /** Nota sob o rótulo (D286: "também em: Pacientes: Lista") — a árvore por tela usa; a matriz não. */
+  nota?: string;
 }
 
 /** Uma categoria: as linhas e as colunas QUE ELA usa. */
@@ -177,9 +179,15 @@ export const ACAO_BASE = 'read';
 
 /** As ações mais fortes do recurso que estão marcadas AGORA. */
 export function exigemLeitura(linha: Linha, selected: ReadonlySet<string>): string[] {
-  return Object.entries(linha.porAcao)
-    .filter(([acao, c]) => acao !== ACAO_BASE && selected.has(cellKey(c)))
-    .map(([acao]) => acao);
+  // Olha o CONJUNTO marcado, não só as colunas desta linha: na árvore por tela (D286) o mesmo
+  // recurso aparece em várias linhas, e uma delas pode não ter a coluna forte (Pacientes: Lista
+  // mostra `patient:read` sem `patient:write`) — mesmo assim `Ver` está travada por quem marcou
+  // `Crear y editar` noutra tela. A matriz por categoria continua igual: a linha lá tem todas.
+  const prefixo = `${linha.resource}:`;
+  return [...selected]
+    .filter((k) => k.startsWith(prefixo) && k !== `${prefixo}${ACAO_BASE}`)
+    .map((k) => k.slice(prefixo.length))
+    .sort();
 }
 
 /**

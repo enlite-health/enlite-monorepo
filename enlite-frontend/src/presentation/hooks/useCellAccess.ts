@@ -55,3 +55,39 @@ export function useActionGate(resource: string, action: string): ActionGate {
   if (enforcement !== 'on') return { allowed: true, denied: false };
   return { allowed: hasCellForAction, denied: !hasCellForAction };
 }
+
+export interface ContainerAccess {
+  /** O container aparece (card, aba, coluna). Sem enforcement ligado: sempre. */
+  visible: boolean;
+  /** As ações de escrita do container aparecem. Sem enforcement ligado: sempre. */
+  canWrite: boolean;
+}
+
+/**
+ * D286 — o gate de CONTAINER: um card/aba/coluna da tela existe para quem tem `resource:read`
+ * (ou mais), e oferece edição para quem tem `resource:write`.
+ *
+ * Mesmo freio do `useActionGate`/`ActionButton` (D268/D269): só gateia com `enforcement === 'on'`.
+ * Com `'off'`/contrato ausente o container aparece como sempre apareceu — as células novas
+ * nascem SEM grupo (`lex` P5), e um gate sem esse freio apagaria a ficha do paciente inteira
+ * no dia em que o código chegasse ao `main` com o engine desligado.
+ */
+export function useContainerAccess(resource: string): ContainerAccess {
+  const enforcement = useAdminAuthStore((s) => s.authz?.enforcement);
+  const access = useCellAccess(resource);
+  if (enforcement !== 'on') return { visible: true, canWrite: true };
+  return { visible: access.canRead, canWrite: access.canWrite };
+}
+
+/**
+ * Pura, sem React — para decidir VÁRIOS containers de uma vez (as abas de uma tela): a aba
+ * existe se qualquer container dela for legível. Mesmo freio de enforcement.
+ */
+export function containersVisibleFor(
+  permissions: readonly string[] | null | undefined,
+  enforcement: string | undefined,
+  resources: readonly string[],
+): boolean {
+  if (enforcement !== 'on') return true;
+  return resources.some((r) => accessLevelFor(permissions ?? null, r) !== 'hidden');
+}

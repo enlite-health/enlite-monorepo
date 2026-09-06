@@ -88,7 +88,7 @@ export function CellMatrix({ catalog, selected, saved, editable, onToggle }: Cel
   );
 }
 
-interface BlocoProps {
+export interface BlocoProps {
   bloco: Bloco;
   selected: ReadonlySet<string>;
   saved: readonly string[];
@@ -97,7 +97,7 @@ interface BlocoProps {
   onAjuda: (ajuda: { linha: Linha; acoes: string[] }) => void;
 }
 
-function BlocoCategoria({ bloco, selected, saved, editable, onToggle, onAjuda }: BlocoProps): JSX.Element {
+export function BlocoCategoria({ bloco, selected, saved, editable, onToggle, onAjuda }: BlocoProps): JSX.Element {
   const { t } = useTranslation();
   const { rotulo, grade, colunas } = bloco;
 
@@ -138,6 +138,7 @@ function BlocoCategoria({ bloco, selected, saved, editable, onToggle, onAjuda }:
                 <LinhaRecurso
                   key={linha.resource}
                   linha={linha}
+                  idPrefix={bloco.category}
                   colunas={colunas}
                   selected={selected}
                   saved={saved}
@@ -155,9 +156,11 @@ function BlocoCategoria({ bloco, selected, saved, editable, onToggle, onAjuda }:
 }
 
 function LinhaRecurso({
-  linha, colunas, selected, saved, editable, onToggle, onAjuda,
+  linha, idPrefix, colunas, selected, saved, editable, onToggle, onAjuda,
 }: {
   linha: Linha;
+  /** D286: a MESMA célula aparece em mais de um bloco (tela); o `id` do DOM precisa do bloco. */
+  idPrefix: string;
   colunas: readonly string[];
   selected: ReadonlySet<string>;
   saved: readonly string[];
@@ -190,6 +193,8 @@ function LinhaRecurso({
           </button>
         </span>
         <Text as="span" size="xs" color="secondary" className="block font-mono">{linha.resource}</Text>
+        {/* D286: a MESMA célula em outra tela — marcar aqui marca lá. */}
+        {linha.nota && <Text as="span" size="xs" color="secondary" className="block italic">{linha.nota}</Text>}
       </th>
       {colunas.map((col) => {
         const celula = linha.porAcao[col];
@@ -230,7 +235,7 @@ function LinhaRecurso({
                 title={porQue ?? titulo}
               >
                 <Checkbox
-                  id={`cell-${key}`}
+                  id={`cell-${idPrefix}-${key}`}
                   aria-label={porQue ? `${key} — ${titulo} — ${porQue}` : `${key} — ${titulo}`}
                   checked={marcada}
                   disabled={estaTravada}

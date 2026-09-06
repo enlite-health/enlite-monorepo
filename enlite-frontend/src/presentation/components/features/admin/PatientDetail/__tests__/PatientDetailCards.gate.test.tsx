@@ -52,7 +52,7 @@ function comEnforcement(permissions: string[], enforcement: AuthzContract['enfor
   });
 }
 
-describe('D269 — write-gate nos botões Editar/Novo (patient:write)', () => {
+describe('D269/D286 — write-gate nos botões Editar/Novo (célula do CONTAINER)', () => {
   beforeEach(() => {
     useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
   });
@@ -63,8 +63,8 @@ describe('D269 — write-gate nos botões Editar/Novo (patient:write)', () => {
     expect(screen.queryByTestId('edit-general-btn')).not.toBeInTheDocument();
   });
 
-  it('PatientGeneralInfoCard: enforcement=on, com patient:write → edit-general-btn existe', () => {
-    comEnforcement(['patient:write'], 'on');
+  it('PatientGeneralInfoCard: enforcement=on, com a célula de escrita do container → edit-general-btn existe', () => {
+    comEnforcement(['patient_identity:write'], 'on');
     render(<PatientGeneralInfoCard patient={patientDetailFixture} />);
     expect(screen.getByTestId('edit-general-btn')).toBeInTheDocument();
   });
@@ -74,14 +74,22 @@ describe('D269 — write-gate nos botões Editar/Novo (patient:write)', () => {
     expect(screen.getByTestId('edit-general-btn')).toBeInTheDocument();
   });
 
+  it('🔴 D286: patient:write sozinho NÃO mostra o editar de nenhum container', () => {
+    comEnforcement(['patient:read', 'patient:write'], 'on');
+    render(<DiagnosticoCard patient={patientDetailFixture} onSaved={() => {}} />);
+    render(<FamiliaresCard responsibles={[]} patientId="p1" onSaved={() => {}} />);
+    expect(screen.queryByTestId('edit-clinical-btn')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('edit-support-btn')).not.toBeInTheDocument();
+  });
+
   it('🔴 DiagnosticoCard: enforcement=on, sem patient:write → edit-clinical-btn SOME', () => {
     comEnforcement([], 'on');
     render(<DiagnosticoCard patient={patientDetailFixture} />);
     expect(screen.queryByTestId('edit-clinical-btn')).not.toBeInTheDocument();
   });
 
-  it('DiagnosticoCard: enforcement=on, com patient:write → edit-clinical-btn existe', () => {
-    comEnforcement(['patient:write'], 'on');
+  it('DiagnosticoCard: enforcement=on, com a célula de escrita do container → edit-clinical-btn existe', () => {
+    comEnforcement(['patient_clinical:write'], 'on');
     render(<DiagnosticoCard patient={patientDetailFixture} />);
     expect(screen.getByTestId('edit-clinical-btn')).toBeInTheDocument();
   });
@@ -92,8 +100,8 @@ describe('D269 — write-gate nos botões Editar/Novo (patient:write)', () => {
     expect(screen.queryByTestId('edit-support-btn')).not.toBeInTheDocument();
   });
 
-  it('FamiliaresCard: enforcement=on, com patient:write → edit-support-btn existe (e não desabilitado, com patientId)', () => {
-    comEnforcement(['patient:write'], 'on');
+  it('FamiliaresCard: enforcement=on, com a célula de escrita do container → edit-support-btn existe (e não desabilitado, com patientId)', () => {
+    comEnforcement(['patient_family:write'], 'on');
     render(<FamiliaresCard responsibles={[]} patientId="test-id" />);
     const btn = screen.getByTestId('edit-support-btn');
     expect(btn).toBeInTheDocument();
@@ -106,8 +114,8 @@ describe('D269 — write-gate nos botões Editar/Novo (patient:write)', () => {
     expect(screen.queryByTestId('edit-service-btn')).not.toBeInTheDocument();
   });
 
-  it('ServicosContratadosCard: enforcement=on, com patient:write → edit-service-btn existe', () => {
-    comEnforcement(['patient:write'], 'on');
+  it('ServicosContratadosCard: enforcement=on, com a célula de escrita do container → edit-service-btn existe', () => {
+    comEnforcement(['patient_services:write'], 'on');
     render(<ServicosContratadosCard patient={patientDetailFixture} />);
     expect(screen.getByTestId('edit-service-btn')).toBeInTheDocument();
   });

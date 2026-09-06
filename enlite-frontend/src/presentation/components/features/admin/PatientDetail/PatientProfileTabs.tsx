@@ -1,29 +1,17 @@
 import { useTranslation } from 'react-i18next';
 
-// Spec 014 US-D2 (decisão Gabriel 03/09, item 9): "Datos Financieros" e "Agendamientos"
-// SAEM do tab bar — eram abas que só caíam no placeholder genérico "Próximamente" (nenhum card
-// ligado). Uma aba só entra aqui quando tiver conteúdo real por trás (todas as 6 abaixo têm).
-export type PatientTab =
-  | 'clinicalData'
-  | 'supportNetwork'
-  | 'contractedService'
-  | 'vacancies'
-  | 'matching'
-  | 'history';
+import { PATIENT_TABS, type PatientTab } from './patientTabs';
+export type { PatientTab };
 
 interface PatientProfileTabsProps {
   activeTab: PatientTab;
   onTabChange: (tab: PatientTab) => void;
+  /**
+   * D286: as abas que a pessoa PODE ver — uma aba existe se algum container dela for legível
+   * (`containersVisibleFor`). Sem a prop, todas (o comportamento de antes, e o do engine OFF).
+   */
+  visibleTabs?: readonly PatientTab[];
 }
-
-const TABS: PatientTab[] = [
-  'clinicalData',
-  'supportNetwork',
-  'contractedService',
-  'vacancies',
-  'matching',
-  'history',
-];
 
 const TAB_I18N_KEYS: Record<PatientTab, string> = {
   clinicalData: 'admin.patients.detail.tabs.clinicalData',
@@ -34,12 +22,13 @@ const TAB_I18N_KEYS: Record<PatientTab, string> = {
   history: 'admin.patients.detail.tabs.history',
 };
 
-export function PatientProfileTabs({ activeTab, onTabChange }: PatientProfileTabsProps) {
+export function PatientProfileTabs({ activeTab, onTabChange, visibleTabs }: PatientProfileTabsProps) {
   const { t } = useTranslation();
+  const tabs = visibleTabs ? PATIENT_TABS.filter((tab) => visibleTabs.includes(tab)) : PATIENT_TABS;
 
   return (
     <div className="flex items-center gap-4 flex-wrap overflow-x-auto" data-testid="patient-profile-tabs">
-      {TABS.map((tab) => (
+      {tabs.map((tab) => (
         <button
           key={tab}
           onClick={() => onTabChange(tab)}

@@ -11,7 +11,8 @@ import {
   TableHead,
   TableCell,
 } from '@presentation/components/atoms/Table';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import type { PatientAddressDetail } from '@domain/entities/PatientDetail';
 import { PatientAddressDrawer } from './edit/PatientAddressDrawer';
 import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
@@ -28,6 +29,8 @@ interface LocalizacoesCardProps {
 
 export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }: LocalizacoesCardProps) {
   const { t } = useTranslation();
+  // D286: o lápis de cada endereço some para quem não tem a escrita do container (PATCH .../addresses/:id).
+  const addressWriteGate = useActionGate('patient_address', 'write');
   const rows = addresses ?? [];
   const empty = '—';
   // null = fechado · undefined = criar · objeto = editar a logística daquele endereço
@@ -43,10 +46,11 @@ export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }
         <Heading level={1} as="h3" weight="semibold" color="primary">
           {t('admin.patients.detail.locationsCard.title')}
         </Heading>
-        <Button variant="outline" size="sm" disabled={!patientId} onClick={() => setDrawer(undefined)} className="flex items-center gap-1" data-testid="new-address-btn">
+        {/* D286 — POST /patients/:id/addresses → patient_address:write. */}
+        <ActionButton resource="patient_address" action="write" variant="outline" size="sm" disabled={!patientId} onClick={() => setDrawer(undefined)} className="flex items-center gap-1" data-testid="new-address-btn">
           <Plus className="w-4 h-4" />
           {t('admin.patients.detail.new')}
-        </Button>
+        </ActionButton>
       </div>
 
       {drawer !== null && patientId && (
@@ -97,9 +101,11 @@ export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }
                 <TableCell className="text-gray-600">{addr.complement ?? empty}</TableCell>
                 {patientId && (
                   <TableCell unwrapped>
-                    <button type="button" onClick={() => setDrawer(addr)} aria-label={t('admin.patients.detail.locationsCard.editAddress')} className="text-slate-400 hover:text-primary transition-colors p-1 rounded" data-testid={`edit-address-${addr.id}`}>
-                      <Pencil className="w-4 h-4" />
-                    </button>
+                    {addressWriteGate.allowed && (
+                      <button type="button" onClick={() => setDrawer(addr)} aria-label={t('admin.patients.detail.locationsCard.editAddress')} className="text-slate-400 hover:text-primary transition-colors p-1 rounded" data-testid={`edit-address-${addr.id}`}>
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                    )}
                   </TableCell>
                 )}
               </TableRow>

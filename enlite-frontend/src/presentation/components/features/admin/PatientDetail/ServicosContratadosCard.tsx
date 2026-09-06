@@ -119,7 +119,7 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
           {t('admin.patients.detail.contractedServicesCard.title')}
         </Heading>
         {/* D269 — abre o drawer que faz PATCH /patients/:id/service → patient:write. */}
-        <ActionButton resource="patient" action="write" variant="outline" size="sm" onClick={() => setEditing(true)} className="flex items-center gap-1" data-testid="edit-service-btn">
+        <ActionButton resource="patient_services" action="write" variant="outline" size="sm" onClick={() => setEditing(true)} className="flex items-center gap-1" data-testid="edit-service-btn">
           <Pencil className="w-4 h-4" />
           {t('admin.patients.detail.contractedServicesCard.editButton')}
         </ActionButton>

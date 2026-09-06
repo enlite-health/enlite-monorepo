@@ -6,6 +6,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import { patientDetailFixture } from '@presentation/components/features/admin/PatientDetail/__tests__/patientDetailFixture';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 
 const translations = ptBR as Record<string, any>;
 function t(key: string, opts?: any): string {
@@ -166,5 +168,60 @@ describe('PatientDetailPage', () => {
     expect(
       screen.queryByTestId('completeness-checklist') ?? screen.queryByTestId('completeness-checklist-ready'),
     ).toBeInTheDocument();
+  });
+});
+
+
+// ── D286 — permissão por CONTAINER: card e ABA somem sem a célula ────────────────────────────
+describe('PatientDetailPage — D286: abas e cards por container', () => {
+  const comCelulas = (permissions: string[], enforcement: AuthzContract['enforcement']) =>
+    useAdminAuthStore.setState({
+      authzStatus: 'ready',
+      authz: { uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: ['AR'], groups: [], features: {}, enforcement } as AuthzContract,
+    });
+  const abasNaTela = () =>
+    Array.from(screen.getByTestId('patient-profile-tabs').querySelectorAll('button')).map((b) => b.textContent);
+
+  beforeEach(() => useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }));
+
+  it('🔴 só familiares: as abas são Rede de Apoio (o container) e Histórico (operacional, patient:read); o card de familiares está lá, o de chat e a identidade NÃO', () => {
+    comCelulas(['patient:read', 'patient_family:read'], 'on');
+    render(<PatientDetailPage />);
+    expect(abasNaTela()).toEqual(['Rede de Apoio', 'Histórico']);
+    expect(screen.getByTestId('familiares-card')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-ids-stub')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('edit-general-btn')).not.toBeInTheDocument();
+  });
+
+  it('serviços contratados vale nas DUAS abas: com ela, Serviço Contratado e Enquadre existem; Dados Clínicos não', () => {
+    comCelulas(['patient:read', 'patient_services:read'], 'on');
+    render(<PatientDetailPage />);
+    expect(abasNaTela()).toEqual(['Serviço Contratado', 'Enquadre', 'Histórico']);
+    expect(screen.queryByTestId('edit-coverage-btn')).not.toBeInTheDocument();
+  });
+
+  it('🔴 só o operacional (patient:read): a única aba é Histórico; nenhum card de container, nem a identidade', () => {
+    comCelulas(['patient:read'], 'on');
+    render(<PatientDetailPage />);
+    expect(abasNaTela()).toEqual(['Histórico']);
+    expect(screen.getByTestId('history-stub')).toBeInTheDocument();
+    expect(screen.queryByTestId('familiares-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('edit-general-btn')).not.toBeInTheDocument();
+    expect(screen.getByTestId('status-stub')).toBeInTheDocument();
+  });
+
+  it('🔴 sem nem patient:read (ator sem célula nenhuma com enforcement on): nenhuma aba e nenhum card', () => {
+    comCelulas([], 'on');
+    render(<PatientDetailPage />);
+    expect(screen.queryByTestId('patient-profile-tabs')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('familiares-card')).not.toBeInTheDocument();
+  });
+
+  it('enforcement OFF: tudo como antes, mesmo sem célula nenhuma (as células novas nascem sem grupo)', () => {
+    comCelulas([], 'off');
+    render(<PatientDetailPage />);
+    expect(abasNaTela()).toHaveLength(6);
+    fireEvent.click(screen.getByText('Rede de Apoio'));
+    expect(screen.getByTestId('familiares-card')).toBeInTheDocument();
   });
 });

@@ -70,7 +70,7 @@ export function PatientGeneralInfoCard({ patient, onSaved }: PatientGeneralInfoC
           {t('admin.patients.detail.generalInfoCard.title')}
         </Heading>
         {/* D269 — abre o drawer que faz PATCH /patients/:id/general → patient:write. */}
-        <ActionButton resource="patient" action="write" variant="outline" size="sm" onClick={() => setEditing(true)} className="w-28" data-testid="edit-general-btn">
+        <ActionButton resource="patient_identity" action="write" variant="outline" size="sm" onClick={() => setEditing(true)} className="w-28" data-testid="edit-general-btn">
           {t('admin.patients.detail.edit')}
         </ActionButton>
       </div>

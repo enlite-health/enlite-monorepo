@@ -111,6 +111,20 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Dar e reverter a baixa do prestador — as transições DE e PARA o estado DISABLED. Exige motivo '
     + 'e não vem em nenhum grupo por padrão.',
 
+  // ── As 5 células da D116, declaradas por rota e nascidas no sync (nunca estiveram no seed 206).
+  //    Definição escrita aqui pelo mesmo motivo das outras: o painel mostra o texto ao conceder,
+  //    e a fixture de paridade do front (seed ∪ descrições) precisa conhecê-las.
+  'patient:delete':
+    'Purgar paciente de TESTE (só `is_test`; paciente real responde 409). Ferramenta do monitoramento sintético.',
+  'messaging:write':
+    'Editar a configuração de mensageria: templates, mensagens por etapa, plantillas, convite à apresentação.',
+  'integration:execute':
+    'Disparar integrações à mão (espelho Ana Care, sync do ClickUp). Operação, não leitura.',
+  'test_fixtures:execute':
+    'Criar e apagar dados de teste. Ferramenta do monitoramento sintético (e2e-prod).',
+  'api_docs:read':
+    'Ver a documentação OpenAPI do backend no painel.',
+
   // ── Paciente por CONTAINER (D286; `lex` 06/09 CONDICIONADO, C11: definição escrita no mesmo
   //    commit que cria a célula). `patient:read` fica sendo o OPERACIONAL: id, status, funil de
   //    admissão, caso, SLA, país — nada que identifique a pessoa. Nenhuma destas entra em grupo

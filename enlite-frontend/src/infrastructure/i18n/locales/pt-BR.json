@@ -3718,7 +3718,7 @@
             "funnel": "Funil",
             "interview": "Entrevistas",
             "match": "Matching",
-            "patient": "Pacientes",
+            "patient": "Paciente em operação (status, funil, caso)",
             "recruitment": "Recrutamento",
             "talentum": "Talentum",
             "prescreening": "Pré-seleção",
@@ -3731,7 +3731,15 @@
             "messaging": "Mensageria",
             "upload": "Importação de arquivos",
             "user_management": "Usuários do painel",
-            "permission_management": "Acessos e permissões"
+            "permission_management": "Acessos e permissões",
+            "patient_identity": "Identidade: nome, documento, telefone",
+            "patient_clinical": "Quadro clínico: patologias, dependência, textos restritos",
+            "patient_care_team": "Equipe tratante",
+            "patient_family": "Familiares e responsáveis",
+            "patient_chat": "Grupos de WhatsApp do caso",
+            "patient_coverage": "Cobertura médica",
+            "patient_address": "Endereços e localidade",
+            "patient_services": "Serviços contratados"
           },
           "help": {
             "open": "O que esta permissão faz",
@@ -3892,7 +3900,9 @@
                 }
               }
             }
-          }
+          },
+          "alsoIn": "também em: {{telas}}",
+          "otherCells": "Outras células (sem tela)"
         },
         "editField": "Editar {{campo}}"
       },
@@ -3925,6 +3935,104 @@
         "empty": "Sem registros para esse filtro.",
         "loadError": "Não foi possível ler a auditoria.",
         "note": "A auditoria mostra identificadores e metadados; nunca conteúdo."
+      },
+      "screens": {
+        "dashboard": {
+          "label": "Gestão à Vista"
+        },
+        "users": {
+          "label": "Usuários"
+        },
+        "patients.list": {
+          "label": "Pacientes: Lista"
+        },
+        "patients.kanban": {
+          "label": "Pacientes: Kanban"
+        },
+        "patients.detail": {
+          "label": "Pacientes: Detalhes",
+          "containers": {
+            "identity": "Identidade e dados gerais",
+            "clinical": "Diagnóstico e quadro clínico",
+            "careTeam": "Equipe tratante",
+            "family": "Familiares",
+            "chat": "Grupos de chat (IDs)",
+            "coverage": "Cobertura médica",
+            "address": "Localizações",
+            "services": "Serviço contratado",
+            "vacancies": "Vagas do paciente",
+            "history": "Histórico de status"
+          }
+        },
+        "patients.chatRoles": {
+          "label": "Pacientes: Papéis de grupos"
+        },
+        "map": {
+          "label": "Mapa"
+        },
+        "workers.list": {
+          "label": "Prestadores: Lista"
+        },
+        "workers.detail": {
+          "label": "Prestadores: Detalhes",
+          "containers": {
+            "profile": "Perfil",
+            "contact": "Contato",
+            "dossier": "Dossiê (DNI, endereço, dados sensíveis)",
+            "documents": "Documentos",
+            "encuadres": "Encuadres"
+          }
+        },
+        "tags": {
+          "label": "Etiquetas"
+        },
+        "vacancies.list": {
+          "label": "Vagas: Lista"
+        },
+        "vacancies.create": {
+          "label": "Vagas: Criar e editar"
+        },
+        "vacancies.addressReview": {
+          "label": "Vagas: Revisão de endereço"
+        },
+        "vacancies.talentum": {
+          "label": "Vagas: Talentum (passo 2)"
+        },
+        "vacancies.detail": {
+          "label": "Vagas: Detalhes",
+          "containers": {
+            "case": "Caso",
+            "funnel": "Funil (encuadres)",
+            "match": "Matching",
+            "invites": "Convites por WhatsApp",
+            "prescreening": "Pré-seleção",
+            "talentum": "Publicação no Talentum"
+          }
+        },
+        "recruitment": {
+          "label": "Recrutamento"
+        },
+        "recruitment.health": {
+          "label": "Recrutamento: Saúde"
+        },
+        "recruitment.blocked": {
+          "label": "Candidaturas bloqueadas"
+        },
+        "messaging.stageMessages": {
+          "label": "Mensagens por etapa"
+        },
+        "messaging.templates": {
+          "label": "Modelos"
+        },
+        "messaging.presentationInvite": {
+          "label": "Convite à apresentação"
+        },
+        "dedup": {
+          "label": "Duplicados"
+        },
+        "access": {
+          "label": "Acessos e permissões"
+        }
       }
     },
     "funnelStageMessages": {

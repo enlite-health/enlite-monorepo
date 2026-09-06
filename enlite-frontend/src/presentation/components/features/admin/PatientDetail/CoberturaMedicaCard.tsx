@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
 import { PatientCoverageEditDrawer } from './edit/PatientCoverageEditDrawer';
 import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
@@ -48,9 +48,10 @@ export function CoberturaMedicaCard({ patient, onSaved, focusRequest }: Cobertur
         <Heading level={1} as="h3" weight="semibold" color="primary">
           {t('admin.patients.detail.coverageCard.title')}
         </Heading>
-        <Button variant="outline" size="sm" onClick={() => setEditing(true)} className="w-28" data-testid="edit-coverage-btn">
+        {/* D286 — abre o drawer que faz PATCH /patients/:id/coverage → patient_coverage:write. */}
+        <ActionButton resource="patient_coverage" action="write" variant="outline" size="sm" onClick={() => setEditing(true)} className="w-28" data-testid="edit-coverage-btn">
           {t('admin.patients.detail.edit')}
-        </Button>
+        </ActionButton>
       </div>
 
       {editing && (

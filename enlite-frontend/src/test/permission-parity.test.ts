@@ -13,7 +13,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import fixture from './fixtures/permission-catalog.json';
-import { cellsFromSeed, SEED_PATH } from '../../scripts/sync-permission-catalog.mjs';
+import { catalogCells, CELL_DESCRIPTION_PATH, SEED_PATH } from '../../scripts/sync-permission-catalog.mjs';
 
 const SRC = resolve(__dirname, '..');
 const CATALOGO = new Set<string>(fixture.cells);
@@ -75,11 +75,13 @@ describe('paridade front × back das células', () => {
   });
 
   it('o fixture é o seed do backend, não uma cópia envelhecida (monorepo)', () => {
-    if (!existsSync(SEED_PATH)) {
+    if (!existsSync(SEED_PATH) || !existsSync(CELL_DESCRIPTION_PATH)) {
       // Fora do monorepo não há como conferir — e dizer "passou" seria mentira.
-      console.warn(`[paridade] seed não encontrado em ${SEED_PATH}; a régua 2 não rodou`);
+      console.warn(`[paridade] seed/descrições não encontrados (${SEED_PATH}); a régua 2 não rodou`);
       return;
     }
-    expect(cellsFromSeed(readFileSync(SEED_PATH, 'utf8'))).toEqual(fixture.cells);
+    // Seed da 206 ∪ CELL_DESCRIPTION (as células fora de rota: contato/baixa de prestador,
+    // containers de paciente) — é o que `cellsForaDeRota` junta no boot do back.
+    expect(catalogCells(readFileSync(SEED_PATH, 'utf8'), readFileSync(CELL_DESCRIPTION_PATH, 'utf8'))).toEqual(fixture.cells);
   });
 });
