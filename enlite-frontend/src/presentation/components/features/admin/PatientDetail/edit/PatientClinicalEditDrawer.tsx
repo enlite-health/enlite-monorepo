@@ -65,12 +65,17 @@ function strToBool(v: string): boolean | null {
   return null;
 }
 
-/** Título de bloco do drawer — estrutura da tela, não legenda de campo. */
-function SectionTitle({ children, id }: { children: string; id?: string }): JSX.Element {
+/**
+ * Título de bloco do drawer — estrutura da tela, não legenda de campo. `Heading` de verdade (h4),
+ * com o tamanho sobrescrito para 12px via `!` (o menor tamanho do atom é 16px; a regra do `!` está
+ * no CLAUDE.md do front — sem ele a sobrescrita perde em silêncio). O `id` é obrigatório porque a
+ * seção aponta para ele por `aria-labelledby`.
+ */
+function SectionTitle({ children, id }: { children: string; id: string }): JSX.Element {
   return (
-    <Text as="p" id={id} role="heading" aria-level={4} size="xs" weight="semibold" color="primary" className="uppercase tracking-wider">
+    <Heading level={4} id={id} weight="semibold" color="primary" className="!text-xs !leading-[1.5] uppercase tracking-wider">
       {children}
-    </Text>
+    </Heading>
   );
 }
 

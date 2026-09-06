@@ -210,9 +210,10 @@ test.describe('AUDITORIA UX — spec 016, tela de diagnóstico CID-11 (não é g
     const drawer = await openDrawer(page);
     await page.waitForTimeout(400); // anima abrindo
     await shot(drawer, 'ux-01-estado-inicial.png');
-    const sectionLabel = await page.locator('label[for="icd-search-input"]').textContent().catch(() => null);
+    const sectionLabel = await page.locator('#pce-section-pathology').textContent().catch(() => null);
     const placeholder = await page.getByTestId('icd-search-input').getAttribute('placeholder');
-    const legacyLabel = await page.locator('label[for="pce-diagnosis"]').textContent().catch(() => null);
+    // 05/09 (D284): o campo livre "Hipótesis Diagnóstica - CID" não existe mais — a sonda tem de dar null.
+    const legacyLabel = await page.locator('label[for="pce-diagnosis"]').textContent({ timeout: 1_000 }).catch(() => null);
     log('01', `label da seção estruturada = "${sectionLabel}" | placeholder do input = "${placeholder}" | label do campo LIVRE acima = "${legacyLabel}"`);
     const attribution = await textOrNothing(page.getByTestId('who-attribution'));
     log('01', `texto de atribuição visível = "${attribution}"`);
@@ -565,7 +566,7 @@ test.describe('AUDITORIA UX — spec 016, tela de diagnóstico CID-11 (não é g
     // acontece? O componente não tem listener de "clique fora" (só os botões Cancelar/Quitar
     // fecham) — confirma isso clicando num ponto neutro do drawer (o rótulo da seção) e
     // vendo se a pergunta continua na tela indefinidamente.
-    await page.locator('label[for="icd-search-input"]').click({ timeout: 2_000 }).catch(() => {});
+    await page.locator('#pce-section-pathology').click({ timeout: 2_000 }).catch(() => {});
     await page.waitForTimeout(300);
     const confirmStillThereAfterOutsideClick = await textOrNothing(
       nonPrimaryChipLi.locator('[data-testid^="diagnosis-chip-remove-confirm-"]').first(),
@@ -680,7 +681,7 @@ test.describe('AUDITORIA UX — spec 016, tela de diagnóstico CID-11 (não é g
 
     // ── 13. Procura o código que a obra social pede ──────────────────────────────────────
     const domContent = await page.content();
-    const legacyFieldValue = await page.getByTestId('pce-diagnosis').inputValue().catch(() => null);
+    const legacyFieldValue = await page.getByTestId('pce-diagnosis').inputValue({ timeout: 1_000 }).catch(() => null); // D284: campo removido → null
     const anyElementWithTitleAttr = await page.evaluate(() => {
       const els = Array.from(document.querySelectorAll('[data-testid^="diagnosis-chip-"]'));
       return els.map((el) => el.getAttribute('title')).filter(Boolean);

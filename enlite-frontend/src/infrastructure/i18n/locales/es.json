@@ -3165,7 +3165,6 @@
         },
         "diagnosisCard": {
           "title": "Diagnóstico",
-          "cid": "Hipótesis Diagnóstica - CID",
           "details": "Detalles",
           "generalNotes": "Observaciones generales",
           "generalNotesCounter": "{{count}}/{{max}} caracteres",

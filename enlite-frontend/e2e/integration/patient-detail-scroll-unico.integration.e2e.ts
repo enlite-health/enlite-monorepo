@@ -22,11 +22,8 @@ const STAFF_EMAIL = `e2e.scroll-unico.${Date.now()}@enlite.health`;
 const STAFF_PASSWORD = 'TestAdmin123!';
 
 async function loginAsAdmin(page: Page): Promise<void> {
-  const signUp = await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=any`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: STAFF_EMAIL, password: STAFF_PASSWORD, returnSecureToken: true }),
-  });
-  const auth = signUp.ok ? signUp : await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=any`, {
+  // e-mail único por carga do arquivo e um teste só: o signUp não tem como colidir (sem fallback morto)
+  const auth = await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=any`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: STAFF_EMAIL, password: STAFF_PASSWORD, returnSecureToken: true }),
   });
@@ -76,7 +73,8 @@ test.describe('Ficha do paciente — um rolável só @integration', () => {
       await page.getByTestId('patient-profile-tabs').waitFor();
       await page.getByRole('button', { name: 'Servicio Contratado' }).click();
       await page.getByTestId('edit-service-btn').waitFor();
-      await page.waitForTimeout(500);
+      // regra visual do CLAUDE.md do front: o estado final da aba, como a operadora vê
+      await expect(page.getByTestId('patient-profile-tabs')).toHaveScreenshot('scroll-unico-tabs.png', { maxDiffPixelRatio: 0.02 });
 
       const before = await scrollers(page);
       testInfo.annotations.push({ type: 'evidência', description: `antes de rolar: ${JSON.stringify(before)}` });
@@ -87,10 +85,10 @@ test.describe('Ficha do paciente — um rolável só @integration', () => {
       expect(main, 'o <main> precisa ser rolável nesta viewport para a régua valer').toBeDefined();
       expect(before.list.filter((s) => s.tag !== 'MAIN' && s.tag !== 'NAV')).toEqual([]);
 
-      // (3) roda do mouse no meio da página, muito além do fim do <main>
+      // (3) roda do mouse no meio da página, muito além do fim do <main>; espera o main chegar ao fim
       await page.mouse.move(700, 350);
-      for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, 500); await page.waitForTimeout(40); }
-      await page.waitForTimeout(300);
+      await page.mouse.wheel(0, 10_000);
+      await expect.poll(() => page.evaluate(() => { const m = document.querySelector('main')!; return m.scrollHeight - m.clientHeight - m.scrollTop; })).toBe(0);
       const after = await scrollers(page);
       testInfo.annotations.push({ type: 'evidência', description: `depois de rolar 10 000 px: ${JSON.stringify(after)}` });
       const mainAfter = after.list.find((s) => s.tag === 'MAIN')!;
@@ -98,6 +96,7 @@ test.describe('Ficha do paciente — um rolável só @integration', () => {
       expect(after.html.scrollTop).toBe(0); // …e o documento continuou parado
     } finally {
       cleanupPatientDeep(patient.patientId);
+      runSQL(`DELETE FROM users WHERE email = '${STAFF_EMAIL}'`);
     }
   });
 });

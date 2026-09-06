@@ -8,12 +8,13 @@
  * jsdom não faz layout, então aqui se afirma a CLASSE; a medição real (html.scrollHeight ===
  * clientHeight) vive no e2e `patient-detail-scroll-unico.integration.e2e.ts`.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 const logout = vi.fn().mockResolvedValue(undefined);
-let adminProfile: { displayName?: string; email?: string } | null = { displayName: 'Ana', email: 'ana@enlite.test' };
+const PERFIL_PADRAO = { displayName: 'Ana', email: 'ana@enlite.test' };
+let adminProfile: { displayName?: string; email?: string } | null = PERFIL_PADRAO;
 vi.mock('@presentation/hooks/useAdminAuth', () => ({ useAdminAuth: () => ({ logout, adminProfile }) }));
 vi.mock('@presentation/config/adminNavigation', () => ({ useAdminNavItems: () => [] }));
 
@@ -47,6 +48,9 @@ function renderLayout() {
 }
 
 describe('AdminLayout', () => {
+  // o perfil é variável de módulo mutada pelo último teste — volta ao padrão antes de cada um
+  beforeEach(() => { adminProfile = PERFIL_PADRAO; navigate.mockClear(); logout.mockClear(); });
+
   it('o <main> é o único rolável e é o containing block dos filhos absolutos (relative + overflow-y-auto)', () => {
     renderLayout();
     const main = screen.getByRole('main');

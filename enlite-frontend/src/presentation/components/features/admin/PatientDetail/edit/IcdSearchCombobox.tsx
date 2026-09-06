@@ -26,10 +26,12 @@
  * antes de digitar) dizendo onde a busca está acontecendo, com duas opções fixas — não há mais
  * heurística de similaridade para calibrar, nem 2ª chamada de rede.
  *
- * Visual (05/09, pedido do Gabriel — "inputs enormes, assimétricos, textos claros demais"): o input
- * usa `inputBaseClasses({ size: 'compact' })`, o MESMO molde dos selects do drawer (48px, Lexend,
- * borda 1,5px #d9d9d9, raio 10px) — antes era um `<input>` à mão de 38px em outra fonte e outra
- * borda, o único diferente da tela. Texto de apoio em `secondary` (#737373, 4,7:1), não `muted`:
+ * Visual (05/09, pedido do Gabriel — "inputs enormes, assimétricos, textos claros demais"): a caixa
+ * é `inputWrapperClasses({ size: 'compact' })` com ícone e spinner como irmãos flex do `<input>`
+ * interno (`INPUT_INNER_CLASSES`) — o MESMO molde dos selects do drawer (48px, Lexend, borda 1,5px,
+ * raio 10px) e do `InputWithIcon`, sem `!important` de padding. Antes era um `<input>` à mão de
+ * 38px em outra fonte e outra borda, o único diferente da tela. Texto de apoio em `secondary`
+ * (#737373, 4,7:1), não `muted`:
  * `muted` é cinza a 50% de opacidade (~2:1) e reprova a AA — e aqui é onde a operadora lê se a
  * busca falhou ou se não há resultado.
  */
@@ -37,7 +39,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Search } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
-import { inputBaseClasses } from '@presentation/components/atoms/Input/inputClasses';
+import { inputWrapperClasses, INPUT_INNER_CLASSES, INPUT_SIZE_CONFIG } from '@presentation/components/atoms/Input/inputClasses';
 import { AdminTerminologyApiService, TerminologyUnavailableError, TerminologyMinQueryLengthError } from '@infrastructure/http/AdminTerminologyApiService';
 import type { TerminologyCandidate } from '@domain/entities/Terminology';
 
@@ -225,10 +227,8 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false, ariaLabelled
 
   return (
     <div ref={containerRef} className="flex flex-col gap-1.5">
-      <div className="relative">
-        <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-          <Search className="w-4 h-4 text-[#737373]" />
-        </div>
+      <div className={`${inputWrapperClasses({ size: 'compact', disabled })} gap-2`}>
+        <Search className="w-4 h-4 shrink-0 text-gray-800" aria-hidden="true" />
         <input
           id={id}
           type="text"
@@ -244,16 +244,14 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false, ariaLabelled
           aria-controls={listboxId}
           aria-haspopup="listbox"
           aria-activedescendant={activeIndex >= 0 ? `${id}-option-${activeIndex}` : undefined}
-          className={`${inputBaseClasses({ size: 'compact', disabled })} !pl-11 ${phase === 'searching' ? '!pr-10' : ''}`}
+          className={`${INPUT_INNER_CLASSES} ${INPUT_SIZE_CONFIG.compact.fontSize} ${INPUT_SIZE_CONFIG.compact.lineHeight} disabled:cursor-not-allowed`}
           data-testid={`${id}-input`}
         />
         {phase === 'searching' && (
-          <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none">
-            <div
-              className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin"
-              data-testid={`${id}-spinner`}
-            />
-          </div>
+          <div
+            className="w-4 h-4 shrink-0 border-2 border-primary/30 border-t-primary rounded-full animate-spin"
+            data-testid={`${id}-spinner`}
+          />
         )}
       </div>
 
@@ -274,7 +272,7 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false, ariaLabelled
           role="radio"
           aria-checked={!allChapters}
           onClick={() => setAllChapters(false)}
-          className={`px-2.5 py-0.5 rounded-full border transition-colors ${!allChapters ? 'border-primary bg-primary/10' : 'border-[#d9d9d9] hover:border-[#737373]'}`}
+          className={`px-2.5 py-0.5 rounded-full border transition-colors ${!allChapters ? 'border-primary bg-primary/10' : 'border-gray-600 hover:border-gray-800'}`}
           data-testid={`${id}-scope-usual`}
         >
           <Text as="span" size="xs" weight={!allChapters ? 'medium' : 'normal'} color={!allChapters ? 'primary' : 'secondary'}>
@@ -286,7 +284,7 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false, ariaLabelled
           role="radio"
           aria-checked={allChapters}
           onClick={() => setAllChapters(true)}
-          className={`px-2.5 py-0.5 rounded-full border transition-colors ${allChapters ? 'border-primary bg-primary/10' : 'border-[#d9d9d9] hover:border-[#737373]'}`}
+          className={`px-2.5 py-0.5 rounded-full border transition-colors ${allChapters ? 'border-primary bg-primary/10' : 'border-gray-600 hover:border-gray-800'}`}
           data-testid={`${id}-scope-all`}
         >
           <Text as="span" size="xs" weight={allChapters ? 'medium' : 'normal'} color={allChapters ? 'primary' : 'secondary'}>
@@ -332,7 +330,7 @@ export function IcdSearchCombobox({ id, onSelect, disabled = false, ariaLabelled
         <ul
           id={listboxId}
           role="listbox"
-          className="border-[1.5px] border-[#d9d9d9] rounded-[10px] shadow-sm max-h-64 overflow-y-auto overscroll-contain bg-white"
+          className="border-[1.5px] border-gray-600 rounded-[10px] shadow-sm max-h-64 overflow-y-auto overscroll-contain bg-white"
           data-testid={`${id}-listbox`}
         >
           {options.map((candidate, idx) => (

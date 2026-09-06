@@ -242,9 +242,13 @@ describe('PatientClinicalEditDrawer — observações gerais (REQ-01)', () => {
       expect(screen.getByTestId('pce-section-pathology')).toContainElement(screen.getByTestId('icd-search-input'));
       expect(screen.getByTestId('pce-section-notes')).toContainElement(screen.getByTestId('pce-comments'));
       expect(screen.getByTestId('pce-section-notes')).toContainElement(screen.getByTestId('pce-emergency'));
+      // o input de busca perdeu o <label for> e ganhou o título da seção como nome acessível
+      const input = screen.getByTestId('icd-search-input');
+      expect(input).toHaveAttribute('aria-labelledby', 'pce-section-pathology');
+      expect(document.getElementById('pce-section-pathology')).toHaveTextContent('Patologia');
     });
 
-    it('largura 3xl (mais largo que os irmãos de xl) e corpo rolável', () => {
+    it('largura 3xl e corpo rolável', () => {
       render(<PatientClinicalEditDrawer patient={patientDetailFixture} onClose={vi.fn()} onSaved={vi.fn()} />);
       const drawer = screen.getByTestId('patient-clinical-edit-drawer');
       expect(drawer.className).toMatch(/\bmax-w-3xl\b/);
