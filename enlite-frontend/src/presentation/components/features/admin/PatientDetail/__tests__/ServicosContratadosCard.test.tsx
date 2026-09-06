@@ -20,8 +20,8 @@ import type { PatientContractedServiceDetail } from '@domain/entities/PatientDet
 // Dublê do drawer: isola os dois closures que o CARD passa pra ele (`onClose`/`onSaved`) sem
 // precisar montar o drawer real (que busca a lista via API na hora que abre).
 vi.mock('../edit/PatientContractedServicesEditDrawer', () => ({
-  PatientContractedServicesEditDrawer: ({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) => (
-    <div data-testid="patient-contracted-services-edit-drawer">
+  PatientContractedServicesEditDrawer: ({ onClose, onSaved, target }: { onClose: () => void; onSaved: () => void; target: { kind: string; serviceId?: string } }) => (
+    <div data-testid="patient-contracted-services-edit-drawer" data-target={`${target.kind}:${target.serviceId ?? ''}`}>
       <button type="button" onClick={onClose} data-testid="drawer-stub-close">close</button>
       <button type="button" onClick={onSaved} data-testid="drawer-stub-saved">saved</button>
     </div>
@@ -49,7 +49,6 @@ const SERVICE: PatientContractedServiceDetail = {
   careLocation: 'HOME',
   hourlyValue: 1500,
   hourlyValueRedacted: false,
-  version: 'v1',
   startDate: '2026-09-01T00:00:00.000Z',
   contractType: 'OBRA_SOCIAL',
   taxCondition: 'IVA_EXEMPT',
@@ -144,7 +143,7 @@ describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-0
     const minimal: PatientContractedServiceDetail = {
       id: 'svc-min', patientId: patientDetailFixture.id, serviceCode: 'CAREGIVER', professionalProfile: null,
       providersNeeded: null, authorizedHours: null, weeklyHours: null, careLocation: null,
-      hourlyValue: null, hourlyValueRedacted: false, version: null, startDate: null,
+      hourlyValue: null, hourlyValueRedacted: false, startDate: null,
       contractType: null, taxCondition: null, supervisionFrequency: null, guardShift: null,
       providerAgeBand: null,
       addressId: null,
@@ -243,18 +242,54 @@ describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-0
     expect(screen.queryByTestId('svc-detail-profile')).toBeNull();
   });
 
-  it('botão "Editar servicios" abre o novo drawer de lista, não o antigo de campo único', () => {
+  // 06/09 (Gabriel): a tabela É a lista — "+ Nuevo servicio" abre o form vazio; o lápis da linha
+  // e o "Editar" do detalhe abrem SÓ aquele serviço. Sem drawer-lista intermediário.
+  it('"+ Nuevo servicio" abre o drawer em modo NOVO; não existe mais "Editar servicios"', () => {
     const patient = { ...patientDetailFixture, contractedServices: [SERVICE] };
     render(<ServicosContratadosCard patient={patient} />);
-    fireEvent.click(screen.getByTestId('edit-service-btn'));
-    expect(screen.getByTestId('patient-contracted-services-edit-drawer')).toBeTruthy();
+    expect(screen.queryByTestId('edit-service-btn')).toBeNull();
+    fireEvent.click(screen.getByTestId('new-service-btn'));
+    expect(screen.getByTestId('patient-contracted-services-edit-drawer').getAttribute('data-target')).toBe('new:');
+  });
+
+  it('o lápis da linha abre o drawer SÓ daquele serviço, sem abrir o detalhe junto', () => {
+    const patient = { ...patientDetailFixture, contractedServices: [SERVICE, { ...SERVICE, id: 'svc-2' }] };
+    render(<ServicosContratadosCard patient={patient} />);
+    fireEvent.click(screen.getByTestId('contracted-service-edit-svc-2'));
+    expect(screen.getByTestId('patient-contracted-services-edit-drawer').getAttribute('data-target')).toBe('edit:svc-2');
+    expect(screen.queryByTestId('contracted-service-detail-drawer')).toBeNull();
+  });
+
+  it('"Editar" no detalhe fecha o detalhe e abre o drawer daquele serviço', () => {
+    const patient = { ...patientDetailFixture, contractedServices: [SERVICE] };
+    render(<ServicosContratadosCard patient={patient} />);
+    fireEvent.click(screen.getByTestId('contracted-service-row-svc-1'));
+    fireEvent.click(screen.getByTestId('contracted-service-detail-edit'));
+    expect(screen.queryByTestId('contracted-service-detail-drawer')).toBeNull();
+    expect(screen.getByTestId('patient-contracted-services-edit-drawer').getAttribute('data-target')).toBe('edit:svc-1');
+  });
+
+  it('foco do checklist SERVICE_ADDRESS abre o PRIMEIRO serviço ativo sem endereço vivo; sem candidato, abre um novo', () => {
+    const vivo = { ...patientDetailFixture.addresses[0], id: 'addr-home' };
+    const ok = { ...SERVICE, id: 'svc-ok', addressId: 'addr-home' };
+    const orfao = { ...SERVICE, id: 'svc-orfao', addressId: 'addr-arquivado' };
+    const { unmount } = render(<ServicosContratadosCard patient={{ ...patientDetailFixture, addresses: [vivo], contractedServices: [ok, orfao] }} focusRequest={{ code: 'SERVICE_ADDRESS', token: 1 }} />);
+    expect(screen.getByTestId('patient-contracted-services-edit-drawer').getAttribute('data-target')).toBe('edit:svc-orfao');
+    unmount();
+    render(<ServicosContratadosCard patient={{ ...patientDetailFixture, addresses: [vivo], contractedServices: [ok] }} focusRequest={{ code: 'SERVICE_ADDRESS', token: 2 }} />);
+    expect(screen.getByTestId('patient-contracted-services-edit-drawer').getAttribute('data-target')).toBe('new:');
+  });
+
+  it('foco do checklist CONTRACTED_SERVICE abre um serviço NOVO', () => {
+    render(<ServicosContratadosCard patient={{ ...patientDetailFixture, contractedServices: [] }} focusRequest={{ code: 'CONTRACTED_SERVICE', token: 3 }} />);
+    expect(screen.getByTestId('patient-contracted-services-edit-drawer').getAttribute('data-target')).toBe('new:');
   });
 
   it('onClose do drawer fecha (desmonta) o drawer; onSaved repassa pro onSaved do card (refetch do pai)', () => {
     const onSaved = vi.fn();
     const patient = { ...patientDetailFixture, contractedServices: [SERVICE] };
     render(<ServicosContratadosCard patient={patient} onSaved={onSaved} />);
-    fireEvent.click(screen.getByTestId('edit-service-btn'));
+    fireEvent.click(screen.getByTestId('new-service-btn'));
 
     fireEvent.click(screen.getByTestId('drawer-stub-saved'));
     expect(onSaved).toHaveBeenCalledTimes(1);
@@ -266,7 +301,7 @@ describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-0
   it('onSaved é opcional: sem onSaved passado, o clique no stub não quebra a tela', () => {
     const patient = { ...patientDetailFixture, contractedServices: [SERVICE] };
     render(<ServicosContratadosCard patient={patient} />);
-    fireEvent.click(screen.getByTestId('edit-service-btn'));
+    fireEvent.click(screen.getByTestId('new-service-btn'));
     fireEvent.click(screen.getByTestId('drawer-stub-saved'));
     expect(screen.getByTestId('patient-contracted-services-edit-drawer')).toBeTruthy();
   });

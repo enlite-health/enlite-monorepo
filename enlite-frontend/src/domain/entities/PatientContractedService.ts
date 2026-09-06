@@ -96,7 +96,6 @@ export interface PatientContractedServiceDetail {
   hourlyValue: number | null;
   /** `true` quando o backend redigiu `hourlyValue` para este ator (lex C-c.4). */
   hourlyValueRedacted: boolean;
-  version: string | null;
   startDate: string | null;
   contractType: string | null;
   taxCondition: string | null;
@@ -130,7 +129,6 @@ export interface CreateContractedServiceBody {
   weeklyHours?: number | null;
   careLocation?: CareLocation | null;
   hourlyValue?: number | null;
-  version?: string | null;
   startDate?: string | null;
   contractType?: ContractType | null;
   taxCondition?: TaxCondition | null;

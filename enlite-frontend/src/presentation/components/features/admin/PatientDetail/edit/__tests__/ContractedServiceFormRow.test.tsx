@@ -36,7 +36,7 @@ beforeAll(async () => {
 const SERVICE: PatientContractedServiceDetail = {
   id: 's1', patientId: 'pat1', serviceCode: 'AT', professionalProfile: 'perfil sintético',
   providersNeeded: 2, authorizedHours: 20, weeklyHours: 20, careLocation: 'HOME',
-  hourlyValue: 1500, hourlyValueRedacted: false, version: 'v1', startDate: '2026-09-01T00:00:00.000Z',
+  hourlyValue: 1500, hourlyValueRedacted: false, startDate: '2026-09-01T00:00:00.000Z',
   contractType: 'OBRA_SOCIAL', taxCondition: 'IVA_EXEMPT', supervisionFrequency: 'DAYS_30', guardShift: 'MORNING',
   providerAgeBand: 'AGE_30_45',
   addressId: null,
@@ -268,15 +268,15 @@ describe('ContractedServiceFormRow', () => {
       const onDirtyChange = vi.fn();
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} onDirtyChange={onDirtyChange} />);
       onDirtyChange.mockClear();
-      fireEvent.change(screen.getByTestId('svc-version-1'), { target: { value: 'v2' } });
+      fireEvent.change(screen.getByTestId('svc-providersNeeded-1'), { target: { value: '7' } });
       expect(onDirtyChange).toHaveBeenCalledWith(true);
     });
 
     it('salvar com sucesso volta a chamar onDirtyChange(false) — o form fica limpo de novo', async () => {
-      mockUpdate.mockResolvedValue({ ...SERVICE, version: 'v2' });
+      mockUpdate.mockResolvedValue({ ...SERVICE });
       const onDirtyChange = vi.fn();
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} onDirtyChange={onDirtyChange} />);
-      fireEvent.change(screen.getByTestId('svc-version-1'), { target: { value: 'v2' } });
+      fireEvent.change(screen.getByTestId('svc-providersNeeded-1'), { target: { value: '7' } });
       expect(onDirtyChange).toHaveBeenCalledWith(true);
       fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
       await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
@@ -284,7 +284,7 @@ describe('ContractedServiceFormRow', () => {
 
     it('sem onDirtyChange (prop opcional ausente) não quebra ao editar', () => {
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={SERVICE} index={1} onSaved={vi.fn()} />);
-      expect(() => fireEvent.change(screen.getByTestId('svc-version-1'), { target: { value: 'v2' } })).not.toThrow();
+      fireEvent.change(screen.getByTestId('svc-providersNeeded-1'), { target: { value: '7' } });
     });
   });
 

@@ -75,7 +75,6 @@ export async function mapContractedServices(
     weeklyHours: r.weekly_hours != null ? Number(r.weekly_hours) : null,
     careLocation: r.care_location,
     hourlyValue: r.hourly_value != null ? Number(r.hourly_value) : null,
-    version: r.version,
     startDate: r.start_date,
     contractType: r.contract_type,
     taxCondition: r.tax_condition,

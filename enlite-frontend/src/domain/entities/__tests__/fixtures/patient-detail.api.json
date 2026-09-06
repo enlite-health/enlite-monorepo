@@ -180,7 +180,6 @@
       "weeklyHours": 20,
       "careLocation": "HOME",
       "hourlyValue": 1500,
-      "version": "v1",
       "startDate": "2026-09-01T00:00:00.000Z",
       "contractType": "OBRA_SOCIAL",
       "taxCondition": "IVA_EXEMPT",

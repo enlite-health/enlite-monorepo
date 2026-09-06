@@ -47,6 +47,7 @@ export const NumericField = forwardRef<HTMLInputElement, NumericFieldProps>(func
       htmlFor={id}
       optional
       hint={t('admin.patients.editDrawer.onlyNumbersHint')}
+      hintBelow
       error={avisando ? t('admin.patients.editDrawer.onlyNumbersWarning') : undefined}
     >
       <InputWithIcon

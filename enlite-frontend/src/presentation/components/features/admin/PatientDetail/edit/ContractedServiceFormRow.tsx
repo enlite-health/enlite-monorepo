@@ -55,7 +55,6 @@ const schema = z.object({
   weeklyHours: numericString,
   careLocation: z.string(),
   hourlyValue: numericString,
-  version: z.string(),
   startDate: z.string(),
   contractType: z.string(),
   taxCondition: z.string(),
@@ -147,7 +146,6 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
       weeklyHours: empty(service?.weeklyHours),
       careLocation: service?.careLocation ?? '',
       hourlyValue: empty(service?.hourlyValue),
-      version: service?.version ?? '',
       startDate: service?.startDate ? service.startDate.slice(0, 10) : '',
       contractType: service?.contractType ?? '',
       taxCondition: service?.taxCondition ?? '',
@@ -187,7 +185,6 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
           weeklyHours: numOrNull(values.weeklyHours),
           careLocation: nz(values.careLocation) as never,
           hourlyValue: numOrNull(values.hourlyValue),
-          version: nz(values.version),
           startDate: nz(values.startDate),
           contractType: nz(values.contractType) as never,
           taxCondition: nz(values.taxCondition) as never,
@@ -208,7 +205,6 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
           // Campo desabilitado (redigido) nunca entra no submit — ver `disabled` abaixo; quando
           // habilitado, envia o que o operador digitou (inclusive limpar → null).
           hourlyValue: service.hourlyValueRedacted ? undefined : numOrNull(values.hourlyValue),
-          version: nz(values.version),
           startDate: nz(values.startDate),
           contractType: nz(values.contractType) as never,
           taxCondition: nz(values.taxCondition) as never,
@@ -289,6 +285,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
           label={te('serviceAddress')}
           htmlFor={`svc-addressId-${index}`}
           hint={addresses.length === 0 ? undefined : te('serviceAddressHint')}
+          hintBelow
           className="sm:col-span-2"
         >
           {addresses.length === 0 && (
@@ -321,9 +318,6 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
         ) : (
           <NumericField id={`svc-hourlyValue-${index}`} label={te('hourlyValue')} testId={`svc-hourlyValue-${index}`} {...register('hourlyValue')} />
         )}
-        <FormField label={te('version')} htmlFor={`svc-version-${index}`} hint={te('versionHint')} optional>
-          <InputWithIcon id={`svc-version-${index}`} inputSize="compact" data-testid={`svc-version-${index}`} {...register('version')} />
-        </FormField>
         <FormField label={te('startDate')} htmlFor={`svc-startDate-${index}`} optional>
           <InputWithIcon id={`svc-startDate-${index}`} type="date" inputSize="compact" data-testid={`svc-startDate-${index}`} {...register('startDate')} />
         </FormField>
@@ -356,7 +350,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
 
       {/* Migration 330: horário do encuadre — o MESMO editor da vaga (DayScheduleEditor). Vazio é
           legítimo: "o operador pode criar uma vacante sem ter horário ainda" (Gabriel 05/09). */}
-      <FormField label={te('serviceSchedule')} htmlFor={`svc-schedule-${index}`} optional hint={te('serviceScheduleHint')}>
+      <FormField label={te('serviceSchedule')} htmlFor={`svc-schedule-${index}`} optional hint={te('serviceScheduleHint')} hintBelow>
         <div id={`svc-schedule-${index}`} data-testid={`svc-schedule-${index}`}>
           <Controller control={control} name="schedule" render={({ field }) => (
             <DayScheduleEditor value={field.value} onChange={field.onChange} disabled={busy} />
@@ -370,7 +364,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
         )} />
       </FormField>
 
-      <FormField label={te('professionalProfile')} htmlFor={`svc-profile-${index}`} optional hint={te('professionalProfileHint')}>
+      <FormField label={te('professionalProfile')} htmlFor={`svc-profile-${index}`} optional hint={te('professionalProfileHint')} hintBelow>
         <div data-clarity-mask="True">
           <Textarea id={`svc-profile-${index}`} inputSize="compact" resize="vertical" rows={3} data-testid={`svc-profile-${index}`} {...register('professionalProfile')} />
         </div>

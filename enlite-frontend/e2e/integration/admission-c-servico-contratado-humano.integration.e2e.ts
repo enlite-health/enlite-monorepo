@@ -27,8 +27,13 @@ async function loginComoHumano(page: Page): Promise<void> {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: STAFF_EMAIL, password: STAFF_PASSWORD, returnSecureToken: true }),
   });
-  expect(signUp.ok).toBe(true);
-  const { localId } = (await signUp.json()) as { localId: string };
+  // 2º teste do mesmo arquivo reusa a conta (o e-mail é constante do módulo): cai no signIn.
+  const auth = signUp.ok ? signUp : await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=any`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: STAFF_EMAIL, password: STAFF_PASSWORD, returnSecureToken: true }),
+  });
+  expect(auth.ok).toBe(true);
+  const { localId } = (await auth.json()) as { localId: string };
   const claims = await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/projects/${EMULATOR_PROJECT}/accounts:update`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer owner' },
     body: JSON.stringify({ localId, customAttributes: JSON.stringify({ role: 'admin' }) }),
@@ -57,11 +62,13 @@ async function digitar(page: Page, testId: string, texto: string): Promise<strin
 test.use({ viewport: { width: 1600, height: 1000 }, video: 'on' });
 
 test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salvar e ler @integration', () => {
+  // serial: com 2 workers o `beforeAll` roda duas vezes no mesmo segundo → mesmo `case_number`.
+  test.describe.configure({ mode: 'serial' });
   test.setTimeout(240_000);
 
   let seed: { patientId: string; addressId: string; stamp: string };
 
-  test.beforeAll(() => { seed = seedActivatablePatient(); });
+  test.beforeAll(() => { seed = seedActivatablePatient(800000); }); // faixa própria (800000–889999): o C (900000–989999) roda em paralelo
   test.afterAll(() => { cleanupPatientDeep(seed.patientId); });
 
   test('mouse e teclado reais: todos os campos do drawer aceitam entrada; o domicílio é escolhível; salvar grava; a tabela e o detalhe mostram', async ({ page }) => {
@@ -69,9 +76,25 @@ test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salva
     await page.goto(`/admin/patients/${seed.patientId}`);
 
     await page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Servicio Contratado' }).click();
-    await page.getByTestId('edit-service-btn').click();
+    // 06/09: "+ Nuevo servicio" no card abre direto o formulário de UM serviço — a tabela é a lista.
+    await page.getByTestId('new-service-btn').click();
     await expect(page.getByTestId('patient-contracted-services-edit-drawer')).toBeVisible();
-    await page.getByTestId('contracted-service-add').click();
+    await expect(page.getByRole('dialog', { name: 'Nuevo servicio contratado' })).toBeVisible();
+    const drawer = page.getByTestId('patient-contracted-services-edit-drawer');
+    // Geometria só depois da animação de entrada (300 ms de translate): medir antes dá o
+    // drawer ainda fora da tela — foi o que uma 1ª versão deste teste fez.
+    await expect.poll(async () => { const b = await drawer.boundingBox(); return b ? Math.round(b.x + b.width) : 0; }, { timeout: 5_000 }).toBe(1600);
+    // Colunas alinhadas (06/09): os campos numéricos de uma mesma linha da grade ficam na mesma altura,
+    // mesmo com a dica "Solo números" (que agora fica embaixo do campo).
+    const [hsSem, hsAut] = await Promise.all([
+      page.getByTestId('svc-weeklyHours-1').boundingBox(),
+      page.getByTestId('svc-authorizedHours-1').boundingBox(),
+    ]);
+    expect(Math.abs((hsSem?.y ?? 0) - (hsAut?.y ?? 1e9))).toBeLessThan(2);
+    // Largura (06/09): a legenda "Franja etaria solicitada del prestador" cabe numa linha só.
+    const franja = page.locator('label[for="svc-providerAgeBand-1"]');
+    const box = await franja.boundingBox();
+    expect(box?.height ?? 999).toBeLessThan(30);
 
     // ── Selects: escolha real ──
     await page.getByTestId('svc-code-1').selectOption('AT');
@@ -95,7 +118,6 @@ test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salva
     expect(await digitar(page, 'svc-weeklyHours-1', '20')).toBe('20');
     expect(await digitar(page, 'svc-authorizedHours-1', '24')).toBe('24');
     expect(await digitar(page, 'svc-hourlyValue-1', '1500')).toBe('1500');
-    expect(await digitar(page, 'svc-version-1', 'v1')).toBe('v1');
     expect(await digitar(page, 'svc-profile-1', 'perfil digitado por humano')).toBe('perfil digitado por humano');
 
     // ── Horário: o "+" de segunda-feira cria um slot 09:00–17:00 ──
@@ -115,6 +137,11 @@ test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salva
     expect(body.data.providersNeeded).toBe(2);
     expect(body.data.hourlyValue).toBe(1500);
 
+    // Depois de salvar, o drawer troca para a EDIÇÃO do recém-criado (06/09) — é aí que a
+    // seção de prestadores existe. Esperar a troca também tira de cena a lixeira do form novo.
+    await expect(page.getByRole('dialog', { name: 'Editar servicio contratado' })).toBeVisible();
+    await expect(page.getByTestId(`contracted-service-form-${body.data.id}`)).toBeVisible();
+
     // ── Fechar pelo X e ler a tabela como um humano lê ──
     await page.getByLabel('Cerrar').click();
     await expect(page.getByTestId('patient-contracted-services-edit-drawer')).not.toBeVisible();
@@ -125,13 +152,24 @@ test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salva
     await expect(page.getByTestId(`contracted-service-schedule-${body.data.id}`)).toHaveText('Lunes 09:00-17:00');
     await expect(page.getByTestId(`contracted-service-address-missing-${body.data.id}`)).toHaveCount(0);
 
-    // ── Clique real na linha → detalhe ──
+    // ── Clique real na linha → detalhe; "Editar" no detalhe → drawer SÓ deste serviço ──
     await row.click();
     await expect(page.getByTestId('contracted-service-detail-drawer')).toBeVisible();
     await expect(page.getByTestId('svc-detail-value')).toContainText('1500');
     await expect(page.getByTestId('svc-detail-schedule')).toContainText('Lunes 09:00-17:00');
-    await page.getByTestId('contracted-service-detail-close').click();
+    await page.getByTestId('contracted-service-detail-edit').click();
     await expect(page.getByTestId('contracted-service-detail-drawer')).not.toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Editar servicio contratado' })).toBeVisible();
+    await expect(page.getByTestId(`contracted-service-form-${body.data.id}`)).toBeVisible();
+    await expect(page.getByTestId('svc-providersNeeded-1')).toHaveValue('2');
+    await page.getByLabel('Cerrar').click();
+    await expect(page.getByTestId('patient-contracted-services-edit-drawer')).not.toBeVisible();
+
+    // ── Lápis da linha → o mesmo drawer, direto ──
+    await page.getByTestId(`contracted-service-edit-${body.data.id}`).click();
+    await expect(page.getByRole('dialog', { name: 'Editar servicio contratado' })).toBeVisible();
+    await expect(page.getByTestId('contracted-service-detail-drawer')).toHaveCount(0);
+    await page.getByLabel('Cerrar').click();
   });
 
   test('paciente SEM domicílio: o drawer diz isso em aviso âmbar na linha inteira, e o select fica desabilitado', async ({ page }) => {
@@ -141,8 +179,7 @@ test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salva
       await loginComoHumano(page);
       await page.goto(`/admin/patients/${semEndereco}`);
       await page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Servicio Contratado' }).click();
-      await page.getByTestId('edit-service-btn').click();
-      await page.getByTestId('contracted-service-add').click();
+      await page.getByTestId('new-service-btn').click();
       const aviso = page.getByTestId('svc-address-none-1');
       await expect(aviso).toBeVisible();
       await expect(aviso).toContainText('no tiene domicilio cargado');

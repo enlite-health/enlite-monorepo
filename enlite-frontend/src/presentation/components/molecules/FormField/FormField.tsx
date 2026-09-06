@@ -12,6 +12,12 @@ interface FormFieldProps {
   labelSize?: LabelSize;
   /** Texto auxiliar curto exibido abaixo do label (ex.: diferenciar Sexo de Género). */
   hint?: string;
+  /**
+   * Dica ABAIXO do campo em vez de entre rótulo e campo. Numa grade de 2 colunas, dica em cima
+   * empurra o campo para baixo e desalinha a linha (Gabriel, 06/09); em baixo, os campos ficam
+   * na mesma altura e a dica continua visível. Default `false`: nada muda no resto do app.
+   */
+  hintBelow?: boolean;
   error?: string;
   required?: boolean;
   optional?: boolean;
@@ -23,6 +29,7 @@ interface FormFieldProps {
 export function FormField({
   label,
   hint,
+  hintBelow = false,
   error,
   required = false,
   optional = false,
@@ -36,12 +43,17 @@ export function FormField({
       <Label htmlFor={htmlFor} required={required} optional={optional} size={labelSize}>
         {label}
       </Label>
-      {hint && (
+      {hint && !hintBelow && (
         <Text as="span" size="xs" color="muted" className="-mt-0.5">
           {hint}
         </Text>
       )}
       {children}
+      {hint && hintBelow && (
+        <Text as="span" size="xs" color="muted">
+          {hint}
+        </Text>
+      )}
       {error && <span className="text-red-500 text-xs">{error}</span>}
     </div>
   );
