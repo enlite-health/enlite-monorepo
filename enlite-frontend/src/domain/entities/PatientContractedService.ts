@@ -42,6 +42,23 @@ export type GuardShift = (typeof GUARD_SHIFTS)[number];
 export const PROVIDER_AGE_BANDS = ['ANY', 'AGE_20_30', 'AGE_30_45', 'AGE_45_PLUS'] as const;
 export type ProviderAgeBand = (typeof PROVIDER_AGE_BANDS)[number];
 
+/**
+ * Slot de horário do encuadre (migration 330) — o MESMO `DayScheduleSlot` do
+ * `DayScheduleEditor`/`scheduleToJsonb` que a vaga persiste em `job_postings.schedule`.
+ * `dayOfWeek`: 0 = domingo. Na ativação, o array é copiado tal qual para a vaga nascida deste
+ * serviço; `null` = "ainda sem horário" (a vaga nasce sem e o operador preenche nela).
+ */
+export interface ContractedServiceScheduleSlot {
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+}
+
+/** Rótulo de um endereço da ficha para selects/tabelas — o mesmo fallback de `LocalizacoesCard`. */
+export function patientAddressLabel(addr: { addressFormatted: string | null; addressRaw: string | null }): string {
+  return addr.addressFormatted ?? addr.addressRaw ?? '—';
+}
+
 export interface PatientContractedServiceProvider {
   id: string;
   serviceId: string;
@@ -87,6 +104,14 @@ export interface PatientContractedServiceDetail {
   guardShift: string | null;
   /** Franja etária solicitada do prestador (spec 015) — string frouxa, molde do resto do contrato. */
   providerAgeBand: string | null;
+  /**
+   * Endereço do paciente onde ESTE serviço é prestado (migration 330; decisão do Gabriel 05/09:
+   * "um serviço é um endereço"). Ponteiro para `patient.addresses[].id` — nada de endereço é
+   * copiado. `null` = ainda não vinculado → checklist `SERVICE_ADDRESS`, ativação bloqueada.
+   */
+  addressId: string | null;
+  /** Horário do encuadre (migration 330) — `null` = ainda sem horário. */
+  schedule: ContractedServiceScheduleSlot[] | null;
   active: boolean;
   endedAt: string | null;
   country: string;
@@ -112,6 +137,8 @@ export interface CreateContractedServiceBody {
   supervisionFrequency?: SupervisionFrequency | null;
   guardShift?: GuardShift | null;
   providerAgeBand?: ProviderAgeBand | null;
+  addressId?: string | null;
+  schedule?: ContractedServiceScheduleSlot[] | null;
   deviceTypeCodes?: string[];
 }
 

@@ -69,7 +69,7 @@ describe('PatientDetailPage', () => {
     expect(navigate).toHaveBeenCalledWith('/admin/patients');
   });
 
-  it('abas: rede de apoio, serviço contratado (cobertura + localizações editáveis), vagas, encuadre, histórico (Historial)', () => {
+  it('abas: rede de apoio, serviço contratado (cobertura + localizações editáveis), vagas, histórico (Historial) — sem "Enquadre" (05/09)', () => {
     render(<PatientDetailPage />);
     fireEvent.click(screen.getByText("Rede de Apoio"));
     expect(screen.getByTestId('familiares-card')).toBeInTheDocument();
@@ -79,8 +79,9 @@ describe('PatientDetailPage', () => {
     expect(screen.getByTestId('new-address-btn')).not.toBeDisabled();
     fireEvent.click(screen.getByText("Vagas"));
     expect(screen.getByTestId('vacancies-stub')).toBeInTheDocument();
-    fireEvent.click(screen.getByText("Enquadre"));
-    expect(screen.getAllByText(/Enquadre|Encuadre/i).length).toBeGreaterThan(0);
+    // A aba "Enquadre" saiu: era a MESMA tabela de serviços contratados montada uma 2ª vez, sem
+    // `onSaved` — editar por ali salvava e a tela não atualizava.
+    expect(screen.queryByText("Enquadre")).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("Histórico"));
     expect(screen.getByTestId('history-stub')).toHaveTextContent(patientDetailFixture.id);
   });

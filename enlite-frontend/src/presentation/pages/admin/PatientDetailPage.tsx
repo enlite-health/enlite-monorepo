@@ -20,7 +20,6 @@ import { FamiliaresCard } from '@presentation/components/features/admin/PatientD
 import { CoberturaMedicaCard } from '@presentation/components/features/admin/PatientDetail/CoberturaMedicaCard';
 import { LocalizacoesCard } from '@presentation/components/features/admin/PatientDetail/LocalizacoesCard';
 import { ServicosContratadosCard } from '@presentation/components/features/admin/PatientDetail/ServicosContratadosCard';
-import { EnquadreTerapeuticoCard } from '@presentation/components/features/admin/PatientDetail/EnquadreTerapeuticoCard';
 import { PatientVacanciesCard } from '@presentation/components/features/admin/PatientDetail/PatientVacanciesCard';
 import { ActivatePatientButton } from '@presentation/components/features/admin/PatientDetail/ActivatePatientButton';
 import { PatientChatIdsCard } from '@presentation/components/features/admin/PatientDetail/PatientChatIdsCard';
@@ -37,6 +36,8 @@ const COMPLETENESS_TAB: Record<PatientCompletenessCode, PatientTab> = {
   RESPONSIBLE: 'supportNetwork',
   COVERAGE: 'contractedService',
   CONTRACTED_SERVICE: 'contractedService',
+  // Migration 330: serviço sem endereço vinculado — o select "Domicilio" vive no drawer do serviço.
+  SERVICE_ADDRESS: 'contractedService',
   CONSENT: 'clinicalData',
 };
 
@@ -192,12 +193,6 @@ export default function PatientDetailPage() {
             isLoading={vacanciesLoading}
             error={vacanciesError}
           />
-        )}
-        {activeTab === 'matching' && (
-          <>
-            <ServicosContratadosCard patient={patient} />
-            <EnquadreTerapeuticoCard />
-          </>
         )}
         {activeTab === 'history' && (
           <PatientStatusHistoryCard patientId={patient.id} />

@@ -7,7 +7,7 @@
  * existe. Usa i18n REAL (molde `sex-both-i18n.test.tsx`) — sem isso o enum cru escaparia.
  */
 import { describe, it, expect, beforeAll, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
@@ -56,6 +56,8 @@ const SERVICE: PatientContractedServiceDetail = {
   supervisionFrequency: 'DAYS_30',
   guardShift: 'MORNING',
   providerAgeBand: 'AGE_30_45',
+  addressId: null,
+  schedule: null,
   active: true,
   endedAt: null,
   country: 'AR',
@@ -67,38 +69,68 @@ const SERVICE: PatientContractedServiceDetail = {
   updatedAt: '2026-09-01T00:00:00Z',
 };
 
-describe('ServicosContratadosCard — #PEND-08 (spec 013, bloco C)', () => {
-  it('mostra dispositivo, prestadores, horas, local e valor REAIS — nenhuma coluna com dado existente vira "—"', () => {
-    const patient = { ...patientDetailFixture, contractedServices: [SERVICE] };
+const ADDRESS_HOME = { ...patientDetailFixture.addresses[0], id: 'addr-home', addressFormatted: 'Rua Augusta, 975 - Centro', addressRaw: null };
+const ADDRESS_SCHOOL = { ...patientDetailFixture.addresses[0], id: 'addr-school', addressFormatted: null, addressRaw: 'Av. Cruzeiro do Sul, 1212' };
+const SCHEDULE = [
+  { dayOfWeek: 1, startTime: '08:00', endTime: '12:00' },
+  { dayOfWeek: 3, startTime: '08:00', endTime: '12:00' },
+];
+
+/**
+ * 05/09 (decisão do Gabriel): a tabela passa a ter as 5 colunas do Figma — Dispositivo ·
+ * Servicio · Cant. · Lugar (+ domicilio embaixo) · Horarios. Valor/IVA/versão/contratação/franja
+ * saem da tabela e vivem no DETALHE (clique na linha). O endereço é resolvido pelo ponteiro
+ * `addressId` contra `patient.addresses` (migration 330) — nada é copiado no serviço.
+ */
+describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-08', () => {
+  it('mostra dispositivo, serviço, quantidade, lugar + ENDEREÇO vinculado e horário — nenhuma coluna com dado existente vira "—"', () => {
+    const svc: PatientContractedServiceDetail = { ...SERVICE, addressId: 'addr-home', schedule: SCHEDULE };
+    const patient = { ...patientDetailFixture, addresses: [ADDRESS_HOME, ADDRESS_SCHOOL], contractedServices: [svc] };
     render(<ServicosContratadosCard patient={patient} />);
 
     const row = screen.getByTestId('contracted-service-row-svc-1');
-    expect(row.textContent).toContain('Domicilio'); // careLocation traduzido — nunca "—"
     expect(row.textContent).not.toContain('—');
-
-    // Dispositivo: traduzido, não o código cru nem vazio.
     expect(row.textContent).toContain('Domiciliario'); // deviceTypeOptions.HOME (es.json)
-
-    // Prestadores necessários/ativos — "2 / 1" (1 dos 2 já alocado e ativo).
-    expect(screen.getByTestId('contracted-service-providers-svc-1').textContent).toContain('2 / 1');
-
-    // Valor real, não redigido para este ator (hourlyValueRedacted: false).
-    expect(screen.getByTestId('contracted-service-value-svc-1').textContent).toContain('1500');
-
-    // Spec 015 (US-A6.1): franja etária solicitada do prestador, traduzida — nunca o enum cru.
-    expect(screen.getByTestId('contracted-service-age-band-svc-1').textContent).toBe('30 a 45 Años');
+    expect(row.textContent).toContain('Domicilio'); // careLocationOptions.HOME
+    expect(screen.getByTestId('contracted-service-providers-svc-1').textContent).toBe('2');
+    // Endereço: o do PONTEIRO (addr-home), não o primeiro da lista nem o da escola.
+    expect(screen.getByTestId('contracted-service-address-svc-1').textContent).toBe('Rua Augusta, 975 - Centro');
+    expect(row.textContent).not.toContain('Cruzeiro do Sul');
+    expect(screen.queryByTestId('contracted-service-address-missing-svc-1')).toBeNull();
+    // Horário serializado como na vaga: dias + faixa.
+    expect(screen.getByTestId('contracted-service-schedule-svc-1').textContent).toBe('Lunes, Miércoles 08:00-12:00');
+    // As colunas de contrato NÃO estão mais na tabela.
+    expect(row.textContent).not.toContain('1500');
+    expect(row.textContent).not.toContain('30 a 45');
 
     expectNoRawEnumLeaks(row);
   });
 
-  it('valor redigido (lex C-c.4): mostra o cadeado, nunca o número', () => {
-    const redacted: PatientContractedServiceDetail = { ...SERVICE, id: 'svc-2', hourlyValue: null, hourlyValueRedacted: true };
-    const patient = { ...patientDetailFixture, contractedServices: [redacted] };
+  it('serviço SEM endereço vinculado mostra o aviso na linha (é o que trava a ativação), nunca um "—" mudo', () => {
+    const patient = { ...patientDetailFixture, addresses: [ADDRESS_HOME], contractedServices: [SERVICE] };
     render(<ServicosContratadosCard patient={patient} />);
+    expect(screen.getByTestId('contracted-service-address-missing-svc-1').textContent).toBe('Sin domicilio vinculado');
+    expect(screen.queryByTestId('contracted-service-address-svc-1')).toBeNull();
+  });
 
-    const cell = screen.getByTestId('contracted-service-value-svc-2');
-    expect(cell.textContent).not.toContain('1500');
-    expect(cell.textContent).toContain('🔒');
+  it('serviço apontando para endereço que NÃO está na ficha (arquivado) conta como sem endereço', () => {
+    const svc = { ...SERVICE, addressId: 'addr-arquivado' };
+    const patient = { ...patientDetailFixture, addresses: [ADDRESS_HOME], contractedServices: [svc] };
+    render(<ServicosContratadosCard patient={patient} />);
+    expect(screen.getByTestId('contracted-service-address-missing-svc-1')).toBeTruthy();
+  });
+
+  it('endereço sem texto do geocoder cai no texto cru do operador (mesmo fallback de LocalizacoesCard)', () => {
+    const svc = { ...SERVICE, addressId: 'addr-school' };
+    const patient = { ...patientDetailFixture, addresses: [ADDRESS_SCHOOL], contractedServices: [svc] };
+    render(<ServicosContratadosCard patient={patient} />);
+    expect(screen.getByTestId('contracted-service-address-svc-1').textContent).toBe('Av. Cruzeiro do Sul, 1212');
+  });
+
+  it('sem horário: "Sin horario" (estado legítimo — a vaga pode nascer sem horário)', () => {
+    const patient = { ...patientDetailFixture, contractedServices: [SERVICE] };
+    render(<ServicosContratadosCard patient={patient} />);
+    expect(screen.getByTestId('contracted-service-schedule-svc-1').textContent).toBe('Sin horario');
   });
 
   it('sem serviços: empty state, não a tabela fantasma antiga', () => {
@@ -108,13 +140,15 @@ describe('ServicosContratadosCard — #PEND-08 (spec 013, bloco C)', () => {
     expect(screen.getByText(/No hay datos|Sin datos|—/i)).toBeTruthy();
   });
 
-  it('serviço mínimo (todos os campos opcionais null/vazios): cada coluna mostra "—", nunca quebra', () => {
+  it('serviço mínimo (tudo null): dispositivo e lugar viram "—", quantidade "—", badge de baixa aparece, nunca quebra', () => {
     const minimal: PatientContractedServiceDetail = {
       id: 'svc-min', patientId: patientDetailFixture.id, serviceCode: 'CAREGIVER', professionalProfile: null,
       providersNeeded: null, authorizedHours: null, weeklyHours: null, careLocation: null,
       hourlyValue: null, hourlyValueRedacted: false, version: null, startDate: null,
       contractType: null, taxCondition: null, supervisionFrequency: null, guardShift: null,
       providerAgeBand: null,
+      addressId: null,
+      schedule: null,
       active: false, endedAt: '2026-09-02T00:00:00Z', country: 'AR', deviceTypes: [], providers: [],
       createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
     };
@@ -122,38 +156,74 @@ describe('ServicosContratadosCard — #PEND-08 (spec 013, bloco C)', () => {
     render(<ServicosContratadosCard patient={patient} />);
 
     const row = screen.getByTestId('contracted-service-row-svc-min');
-    // Badge de inativo aparece; dispositivo/local/versão/início/contratação/IVA viram "—".
     expect(row.textContent).toContain('Baja'); // inactiveBadge (es.json)
-    // pair(null, 0 prestadores ativos) — QA-caça #3: providersNeeded null com 0 ativos é
-    // "não sei quantos precisa, e há 0 alocados", NUNCA "0" bare (indistinguível de "precisa 0").
-    expect(screen.getByTestId('contracted-service-providers-svc-min').textContent).toBe('— / 0');
-    // pair(null, null) das horas: os dois lados null aqui → "—".
-    expect(screen.getByTestId('contracted-service-hours-svc-min').textContent).toBe('—');
-    expect(screen.getByTestId('contracted-service-value-svc-min').textContent).toContain('—');
-    expect(screen.getByTestId('contracted-service-age-band-svc-min').textContent).toBe('—');
+    expect(screen.getByTestId('contracted-service-providers-svc-min').textContent).toBe('—');
+    expect(screen.getByTestId('contracted-service-location-svc-min').textContent).toContain('—');
   });
 
-  it('pair(): providersNeeded null com prestadores ativos > 0 mostra "— / N", nunca o número bare (QA-caça #3)', () => {
-    const noNeedSet: PatientContractedServiceDetail = {
-      ...SERVICE,
-      id: 'svc-no-need',
-      providersNeeded: null,
-      providers: [
-        { id: 'p1', serviceId: 'svc-no-need', workerId: 'w1', workerName: 'Ana Fixture', weeklyHours: 20, active: true, endedAt: null, country: 'AR', createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z' },
-        { id: 'p2', serviceId: 'svc-no-need', workerId: 'w2', workerName: 'Beto Fixture', weeklyHours: 20, active: true, endedAt: null, country: 'AR', createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z' },
-      ],
+  it('clique na linha abre o DETALHE completo (só leitura) com valor, franja, IVA, prestadores e endereço; fechar desmonta', () => {
+    const svc: PatientContractedServiceDetail = { ...SERVICE, addressId: 'addr-home', schedule: SCHEDULE };
+    const patient = { ...patientDetailFixture, addresses: [ADDRESS_HOME], contractedServices: [svc] };
+    render(<ServicosContratadosCard patient={patient} />);
+
+    expect(screen.queryByTestId('contracted-service-detail-drawer')).toBeNull();
+    fireEvent.click(screen.getByTestId('contracted-service-row-svc-1'));
+    const drawer = screen.getByTestId('contracted-service-detail-drawer');
+    expect(screen.getByTestId('svc-detail-value').textContent).toContain('1500');
+    expect(screen.getByTestId('svc-detail-age-band').textContent).toContain('30 a 45 Años');
+    expect(screen.getByTestId('svc-detail-address').textContent).toContain('Rua Augusta, 975 - Centro');
+    expect(screen.getByTestId('svc-detail-schedule').textContent).toContain('Lunes, Miércoles 08:00-12:00');
+    expect(screen.getByTestId('svc-detail-providers').textContent).toContain('Ana Fixture');
+    expect(screen.getByTestId('svc-detail-profile').textContent).toContain('Perfil sintético');
+    expectNoRawEnumLeaks(drawer);
+
+    // Fechar: anima (translate) e desmonta depois de CLOSE_MS — o pai só limpa `selected` no
+    // callback, então sem avançar o relógio o drawer ainda está no DOM.
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByTestId('contracted-service-detail-close'));
+    expect(screen.getByTestId('contracted-service-detail-drawer')).toBeTruthy();
+    act(() => { vi.advanceTimersByTime(300); });
+    expect(screen.queryByTestId('contracted-service-detail-drawer')).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('detalhe fecha também pelo backdrop e pela tecla Escape', () => {
+    const patient = { ...patientDetailFixture, contractedServices: [SERVICE] };
+    render(<ServicosContratadosCard patient={patient} />);
+
+    fireEvent.click(screen.getByTestId('contracted-service-row-svc-1'));
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByTestId('contracted-service-detail-backdrop'));
+    act(() => { vi.advanceTimersByTime(300); });
+    expect(screen.queryByTestId('contracted-service-detail-drawer')).toBeNull();
+    vi.useRealTimers();
+
+    fireEvent.click(screen.getByTestId('contracted-service-row-svc-1'));
+    vi.useFakeTimers();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    act(() => { vi.advanceTimersByTime(300); });
+    expect(screen.queryByTestId('contracted-service-detail-drawer')).toBeNull();
+    // Tecla que não é Escape não fecha.
+    fireEvent.click(screen.getByTestId('contracted-service-row-svc-1'));
+    fireEvent.keyDown(window, { key: 'Enter' });
+    act(() => { vi.advanceTimersByTime(300); });
+    expect(screen.getByTestId('contracted-service-detail-drawer')).toBeTruthy();
+    vi.useRealTimers();
+  });
+
+  it('detalhe: valor redigido (lex C-c.4) mostra o cadeado, nunca o número; sem endereço/horário/prestadores mostra os rótulos', () => {
+    const redacted: PatientContractedServiceDetail = {
+      ...SERVICE, id: 'svc-2', hourlyValue: null, hourlyValueRedacted: true, professionalProfile: null, providers: [],
     };
-    const patient = { ...patientDetailFixture, contractedServices: [noNeedSet] };
+    const patient = { ...patientDetailFixture, contractedServices: [redacted] };
     render(<ServicosContratadosCard patient={patient} />);
-    expect(screen.getByTestId('contracted-service-providers-svc-no-need').textContent).toBe('— / 2');
-  });
-
-  it('pair(): só um dos dois números presente mostra só ele (sem "/")', () => {
-    const oneSide: PatientContractedServiceDetail = { ...SERVICE, id: 'svc-one', weeklyHours: 15, authorizedHours: null };
-    const patient = { ...patientDetailFixture, contractedServices: [oneSide] };
-    render(<ServicosContratadosCard patient={patient} />);
-    const cell = screen.getByTestId('contracted-service-hours-svc-one');
-    expect(cell.textContent).toBe('15');
+    fireEvent.click(screen.getByTestId('contracted-service-row-svc-2'));
+    expect(screen.getByTestId('svc-detail-value').textContent).toContain('🔒');
+    expect(screen.getByTestId('svc-detail-value').textContent).not.toContain('1500');
+    expect(screen.getByTestId('svc-detail-address').textContent).toContain('Sin domicilio vinculado');
+    expect(screen.getByTestId('svc-detail-schedule').textContent).toContain('Sin horario');
+    expect(screen.getByTestId('svc-detail-providers').textContent).toContain('Sin prestadores asignados');
+    expect(screen.queryByTestId('svc-detail-profile')).toBeNull();
   });
 
   it('botão "Editar servicios" abre o novo drawer de lista, não o antigo de campo único', () => {

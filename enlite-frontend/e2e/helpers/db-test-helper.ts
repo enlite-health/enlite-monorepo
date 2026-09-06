@@ -15,7 +15,9 @@ import { execSync } from 'child_process';
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
-const CONTAINER = 'enlite-postgres';
+// `E2E_PG_CONTAINER` permite apontar para um stack isolado por projeto docker (`docker compose -p`)
+// quando outra worktree ocupa o `enlite-postgres` — default inalterado (CI e uso local comum).
+const CONTAINER = process.env.E2E_PG_CONTAINER || 'enlite-postgres';
 const DB_USER = 'enlite_admin';
 const DB_NAME = 'enlite_e2e';
 
@@ -147,6 +149,8 @@ export function insertTestPatient(
 export function cleanupTestPatient(patientId: string): void {
   if (!patientId || patientId === 'undefined') return;
   runSQL(`DELETE FROM job_postings WHERE patient_id = '${patientId}'`);
+  // Migration 330: serviço contratado aponta para o endereço (FK) — sai antes do endereço.
+  runSQL(`DELETE FROM patient_contracted_services WHERE patient_id = '${patientId}'`);
   runSQL(`DELETE FROM patient_addresses WHERE patient_id = '${patientId}'`);
   runSQL(`DELETE FROM patients WHERE id = '${patientId}'`);
 }

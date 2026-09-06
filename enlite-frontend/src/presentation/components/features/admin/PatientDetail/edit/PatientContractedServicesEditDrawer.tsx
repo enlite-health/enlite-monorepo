@@ -142,6 +142,7 @@ export function PatientContractedServicesEditDrawer({ patient, onClose, onSaved 
             <ContractedServiceFormRow
               key={svc.id}
               patientId={patient.id}
+              addresses={patient.addresses}
               service={svc}
               index={i + 1}
               onSaved={handleChildSaved}
@@ -152,6 +153,7 @@ export function PatientContractedServicesEditDrawer({ patient, onClose, onSaved 
           {addingNew && (
             <ContractedServiceFormRow
               patientId={patient.id}
+              addresses={patient.addresses}
               service={null}
               index={services.length + 1}
               onSaved={handleChildSaved}

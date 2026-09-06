@@ -2855,7 +2855,12 @@
         "selectPlaceholder": "Selecione…",
         "affiliateHint": "Número de associado conforme consta na carteirinha da cobertura.",
         "versionHint": "Versão do serviço contratado (quando a cobertura identifica por versão, não por data).",
-        "requiredField": "Este campo é obrigatório"
+        "requiredField": "Este campo é obrigatório",
+        "serviceAddress": "Endereço",
+        "serviceAddressHint": "Onde ESTE serviço é prestado. Cada serviço se vincula a um endereço do paciente; a vaga nasce ali.",
+        "serviceAddressNoneHint": "Cadastre primeiro um endereço em \"Localizações\" para poder vincular.",
+        "serviceSchedule": "Horários",
+        "serviceScheduleHint": "Opcional: a vaga pode ser criada sem horário e completada depois."
       },
       "kanban": {
         "title": "Pacientes — Kanban",
@@ -3195,6 +3200,18 @@
           "tableIVA": "IVA",
           "tableProviderAgeBand": "Faixa etária prestador",
           "inactiveBadge": "Baixa",
+          "tableQuantity": "Quant.",
+          "tableAddress": "Endereço",
+          "tableSchedule": "Horários",
+          "noAddressLinked": "Sem endereço vinculado",
+          "noSchedule": "Sem horário",
+          "detailTitle": "Detalhe do serviço contratado",
+          "detailClose": "Fechar",
+          "detailSupervision": "Supervisão",
+          "detailGuardShift": "Turno de plantão",
+          "detailProfessionalProfile": "Perfil profissional buscado",
+          "detailProviders": "Prestadores ativos",
+          "detailNoProviders": "Sem prestadores atribuídos",
           "serviceTypes": {
             "AT": "Acompanhante Terapêutico",
             "CAREGIVER": "Cuidador",
@@ -3317,6 +3334,7 @@
             "RESPONSIBLE": "Responsável",
             "COVERAGE": "Cobertura",
             "CONTRACTED_SERVICE": "Serviço contratado",
+            "SERVICE_ADDRESS": "Endereço do serviço",
             "CONSENT": "Consentimento"
           }
         },
