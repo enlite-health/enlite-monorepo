@@ -4,7 +4,7 @@
  * drawer fica aberto durante várias mutações seguidas.
  */
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
@@ -217,6 +217,12 @@ describe('PatientContractedServicesEditDrawer', () => {
       fireEvent.click(screen.getByTestId('contracted-service-save-s1'));
       await waitFor(() => expect(AdminContractedServicesApiService.updateContractedService).toHaveBeenCalled());
       await waitFor(() => expect(mockList).toHaveBeenCalledTimes(2));
+      // O "voltou a ficar limpo" é `reset()` → `useEffect([isDirty])` → `setRowDirty` no pai:
+      // alguns ciclos DEPOIS do 2º `list()`. Apertar Escape logo após o reload perdeu a corrida
+      // no CI de produção (06/09: 1 falha em 5583, verde local 6/6). Espera o dado rehidratado
+      // (o 2º `list` devolve providersNeeded 5) e um flush de efeitos antes de sondar.
+      await waitFor(() => expect(screen.getByTestId('svc-providersNeeded-1')).toHaveValue(5));
+      await act(async () => { await Promise.resolve(); });
       fireEvent.keyDown(document, { key: 'Escape' });
       expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
     });
