@@ -2,6 +2,7 @@ import {
   DASHBOARD_SECTIONS, DASHBOARD_SECTION_KEYS, canReadDashboardSection, dashboardReadsOf, dashboardSectionCell,
   projectManagementDashboard,
 } from '../dashboardContainerAccess';
+import { managementDashboardSchema } from '../managementDashboardSchema';
 
 const DATA = {
   bigNumbers: { a: 1 }, pacientes: { b: 2 }, horas: { c: 3 }, equipoArmada: { pct: 4 }, encuadres: { pct: 5 },
@@ -14,8 +15,9 @@ describe('dashboardContainerAccess — Gestión a la Vista por bloco (D286)', ()
     expect(DASHBOARD_SECTIONS.map(dashboardSectionCell)).toEqual([
       'dashboard_numbers:read', 'dashboard_team:read', 'dashboard_priorities:read', 'dashboard_registrations:read', 'dashboard_funnel:read',
     ]);
-    // toda chave do payload que a tela lê está mapeada em alguma seção
-    expect(new Set(Object.values(DASHBOARD_SECTION_KEYS).flat())).toEqual(new Set(Object.keys(DATA)));
+    // toda chave do PAYLOAD REAL (o schema zod de management) está mapeada em alguma seção — chave
+    // nova que ninguém mapear ficaria visível para todo mundo em silêncio (achado do gate, 06/09)
+    expect(new Set(Object.values(DASHBOARD_SECTION_KEYS).flat())).toEqual(new Set(Object.keys(managementDashboardSchema.shape)));
   });
 
   it('cells = null → o MESMO objeto (D113); [] → tudo null e as 5 seções no marcador', () => {

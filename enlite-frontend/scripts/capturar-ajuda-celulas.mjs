@@ -38,7 +38,10 @@ const MAPA = [
   ['patient_services',     `/admin/patients/${ID.patient}`, 'Servicio Contratado', '[data-testid=servicos-contratados-card]'],
   ['worker',               `/admin/workers/${ID.worker}`, null, '[data-testid=worker-professional-card]'],
   ['worker_contact',       `/admin/workers/${ID.worker}`, null, '[data-testid=worker-contact-card]'],
-  ['worker_pii',           `/admin/workers/${ID.worker}`, null, '[data-testid=worker-personal-card]'],
+  // ⚠️ Decisão do Gabriel (05/09): o popup do "?" NÃO enumera as categorias que a lei protege de
+  // forma especial. O guardião do locale não enxerga imagem — por isso a captura do dossiê PARA
+  // antes da primeira dessas linhas (`clipAbove`), e o teste do drawer trava esta linha do script.
+  ['worker_pii',           `/admin/workers/${ID.worker}`, null, '[data-testid=worker-personal-card]', { clipAbove: 'admin.workerDetail.sexualOrientation' }],
   ['worker_address',       `/admin/workers/${ID.worker}`, null, '[data-testid=worker-address-card]'],
   ['worker_document',      `/admin/workers/${ID.worker}`, 'Documentos', '[data-testid=worker-documents-card]'],
   ['match',                `/admin/workers/${ID.worker}`, 'Encuadre', '[data-testid=worker-encuadres-card]'],
@@ -78,13 +81,23 @@ await page.goto(FRONT + '/admin/login'); await page.locator('input[type=email]')
 await page.waitForURL((url) => !url.pathname.includes('login'), { timeout: 20000 });
 
 let atual = null; const feitos = [], faltou = [];
-for (const [recurso, rota, aba, seletor] of MAPA) {
+/** Texto (es) da legenda da primeira linha que NÃO pode entrar na captura, por chave i18n. */
+const LEGENDA = { 'admin.workerDetail.sexualOrientation': 'Orientación sexual' };
+
+for (const [recurso, rota, aba, seletor, opts] of MAPA) {
   if (atual !== rota) { await page.goto(FRONT + rota, { waitUntil: 'networkidle' }); await page.waitForTimeout(1200); atual = rota; }
   if (aba) { await page.locator('button').filter({ hasText: new RegExp('^' + aba + '$') }).first().click(); await page.waitForTimeout(700); }
   const el = page.locator(seletor).first();
   if (await el.count() === 0) { faltou.push(recurso + ' (' + seletor + ')'); continue; }
   await el.scrollIntoViewIfNeeded();
   if (seletor === 'main') { await page.screenshot({ path: OUT + recurso + '.png', clip: { x: 200, y: 0, width: 1160, height: 700 } }); }
+  else if (opts?.clipAbove) {
+    const caixa = await el.boundingBox();
+    const linha = el.locator('p', { hasText: LEGENDA[opts.clipAbove] }).first();
+    const corte = await linha.boundingBox();
+    if (!caixa || !corte) { faltou.push(recurso + ' (clipAbove ' + opts.clipAbove + ')'); continue; }
+    await page.screenshot({ path: OUT + recurso + '.png', clip: { x: caixa.x, y: caixa.y, width: caixa.width, height: corte.y - caixa.y - 4 } });
+  }
   else { await el.screenshot({ path: OUT + recurso + '.png' }); }
   feitos.push(recurso);
 }
