@@ -15,6 +15,17 @@ describe('contractedServiceSchemas — addressId e schedule (migration 330)', ()
     expect(cleared.success && cleared.data).toEqual({ addressId: null, schedule: null });
   });
 
+  it('schedule [] vira null na borda — "sem horário" tem UMA representação (NULL), nunca "[]" (gate 06/09)', () => {
+    const r = updateContractedServiceSchema.safeParse({ schedule: [] });
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.schedule).toBeNull();
+    const c = createContractedServiceSchema.safeParse({ serviceCode: 'AT', schedule: [] });
+    expect(c.success && c.data.schedule).toBeNull();
+    // null e ausente seguem como estão.
+    expect(updateContractedServiceSchema.safeParse({ schedule: null }).success && updateContractedServiceSchema.parse({ schedule: null }).schedule).toBeNull();
+    expect('schedule' in updateContractedServiceSchema.parse({})).toBe(false);
+  });
+
   it('addressId que não é uuid → recusado', () => {
     expect(createContractedServiceSchema.safeParse({ serviceCode: 'AT', addressId: 'nao-uuid' }).success).toBe(false);
   });

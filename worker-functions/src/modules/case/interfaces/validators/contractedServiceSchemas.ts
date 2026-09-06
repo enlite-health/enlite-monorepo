@@ -25,7 +25,14 @@ const scheduleSlotSchema = z
   .strict()
   .refine((s) => s.startTime < s.endTime, { message: 'startTime must be before endTime' });
 
-const optionalSchedule = z.array(scheduleSlotSchema).max(50).nullable().optional();
+// `[]` vira `null` AQUI, na borda: "sem horário" tem UMA representação no banco (NULL), não
+// duas (NULL e '[]') — o `null` que significa duas coisas já apagou dado nesta casa (D167).
+const optionalSchedule = z
+  .array(scheduleSlotSchema)
+  .max(50)
+  .nullable()
+  .optional()
+  .transform((a) => (Array.isArray(a) && a.length === 0 ? null : a));
 
 /** Endereço do paciente onde o serviço é prestado (migration 330). `null` desvincula. */
 const optionalAddressId = z.string().uuid().nullable().optional();

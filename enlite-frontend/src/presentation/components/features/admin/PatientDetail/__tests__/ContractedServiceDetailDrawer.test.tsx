@@ -77,6 +77,22 @@ describe('ContractedServiceDetailDrawer', () => {
     expectNoRawEnumLeaks(container);
   });
 
+  it('desmontar durante a animação de fechar cancela o timer — onClose NÃO dispara órfão (gate 06/09)', () => {
+    const onClose = vi.fn();
+    const { unmount } = render(<ContractedServiceDetailDrawer service={BASE} addresses={[]} onClose={onClose} />);
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByTestId('contracted-service-detail-close'));
+    unmount();
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(onClose).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('desmontar SEM ter fechado não tem timer para cancelar (nada quebra)', () => {
+    const { unmount } = render(<ContractedServiceDetailDrawer service={BASE} addresses={[]} onClose={vi.fn()} />);
+    expect(() => unmount()).not.toThrow();
+  });
+
   it('fechar pelo X chama onClose depois da animação (CLOSE_MS)', () => {
     const onClose = vi.fn();
     render(<ContractedServiceDetailDrawer service={BASE} addresses={[]} onClose={onClose} />);

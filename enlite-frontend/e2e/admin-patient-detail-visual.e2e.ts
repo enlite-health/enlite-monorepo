@@ -325,54 +325,6 @@ test.describe('PatientDetailPage — visual regression', () => {
     await expectMatchesFigma(page, '5764:49894', { fullPage: true, maxDiffRatio: 0.15 });
   });
 
-  test('renders Enquadre tab and matches Playwright baseline', async ({ page }) => {
-    await seedAdminAndLogin(page);
-
-    await page.route(`**/api/admin/patients/${PATIENT_ID}`, (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ success: true, data: MOCK_PATIENT }),
-      }),
-    );
-
-    await page.addInitScript(() => {
-      localStorage.setItem('i18nextLng', 'pt-BR');
-    });
-
-    await page.goto(`/admin/patients/${PATIENT_ID}`);
-    await expect(page.getByText('Santiago Miguel Claiman Soto')).toBeVisible({ timeout: 15000 });
-
-    await page.getByRole('button', { name: /^Enquadre$/i }).first().click();
-    await expect(page.getByTestId('enquadre-terapeutico-card')).toBeVisible({ timeout: 5000 });
-
-    await expect(page).toHaveScreenshot('patient-detail-enquadre.png', {
-      fullPage: true,
-      maxDiffPixelRatio: 0.05,
-    });
-  });
-
-  test('Figma visual diff — Enquadre vs 6429:12461', async ({ page }) => {
-    await seedAdminAndLogin(page);
-
-    await page.route(`**/api/admin/patients/${PATIENT_ID}`, (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ success: true, data: MOCK_PATIENT }),
-      }),
-    );
-
-    await page.addInitScript(() => {
-      localStorage.setItem('i18nextLng', 'pt-BR');
-    });
-
-    await page.goto(`/admin/patients/${PATIENT_ID}`);
-    await expect(page.getByText('Santiago Miguel Claiman Soto')).toBeVisible({ timeout: 15000 });
-
-    await page.getByRole('button', { name: /^Enquadre$/i }).first().click();
-    await expect(page.getByTestId('enquadre-terapeutico-card')).toBeVisible({ timeout: 5000 });
-
-    await expectMatchesFigma(page, '6429:12461', { fullPage: true, maxDiffRatio: 0.15 });
-  });
+  // Os dois testes da aba "Enquadre" saíram com a aba (D283, 05/09): ela montava a tabela de
+  // serviços contratados duplicada + um placeholder — não havia o que comparar com o Figma.
 });

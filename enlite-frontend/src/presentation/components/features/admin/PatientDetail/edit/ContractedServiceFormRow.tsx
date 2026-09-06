@@ -153,7 +153,10 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
       supervisionFrequency: service?.supervisionFrequency ?? '',
       guardShift: service?.guardShift ?? '',
       providerAgeBand: service?.providerAgeBand ?? '',
-      addressId: service?.addressId ?? '',
+      // Só um endereço VIVO da ficha entra como valor inicial: um `addressId` arquivado não
+      // aparece no select e, se ficasse no form, o PATCH reenviaria o UUID morto que a tela
+      // mostra como "vazio" (gate, 06/09). Fora da lista → '' → salvar sem escolher manda null.
+      addressId: addresses.some((a) => a.id === service?.addressId) ? String(service?.addressId) : '',
       schedule: service?.schedule ?? [],
       deviceTypeCodes: service?.deviceTypes ?? [],
     },

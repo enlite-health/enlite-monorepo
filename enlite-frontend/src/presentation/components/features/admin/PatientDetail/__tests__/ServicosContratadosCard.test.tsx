@@ -187,6 +187,23 @@ describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-0
     vi.useRealTimers();
   });
 
+  it('clicar OUTRA linha durante os 300 ms de fechar abre o detalhe do outro serviço (key por id remonta o drawer — gate 06/09)', () => {
+    const svc2: PatientContractedServiceDetail = { ...SERVICE, id: 'svc-2', serviceCode: 'CAREGIVER' };
+    const patient = { ...patientDetailFixture, contractedServices: [SERVICE, svc2] };
+    render(<ServicosContratadosCard patient={patient} />);
+    fireEvent.click(screen.getByTestId('contracted-service-row-svc-1'));
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByTestId('contracted-service-detail-close'));
+    // Ainda dentro da animação: clica no segundo serviço.
+    fireEvent.click(screen.getByTestId('contracted-service-row-svc-2'));
+    act(() => { vi.advanceTimersByTime(300); });
+    const drawer = screen.getByTestId('contracted-service-detail-drawer');
+    expect(drawer).toBeTruthy();
+    expect(drawer.querySelector('h3')?.textContent).toContain('Cuidador');
+    expect(drawer.className).toContain('translate-x-0');
+    vi.useRealTimers();
+  });
+
   it('detalhe fecha também pelo backdrop e pela tecla Escape', () => {
     const patient = { ...patientDetailFixture, contractedServices: [SERVICE] };
     render(<ServicosContratadosCard patient={patient} />);

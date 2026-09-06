@@ -145,7 +145,10 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
       )}
 
       {selected && (
+        // `key`: trocar de serviço nos 300 ms da animação de fechar REMONTA o drawer — sem isto
+        // o `show` interno ficava `false` e o clique na outra linha "não abria" (gate, 06/09).
         <ContractedServiceDetailDrawer
+          key={selected.id}
           service={selected}
           addresses={patient.addresses}
           onClose={() => setSelected(null)}

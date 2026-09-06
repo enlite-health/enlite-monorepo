@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
@@ -44,9 +44,12 @@ export function ContractedServiceDetailDrawer({ service, addresses, onClose }: P
     return () => cancelAnimationFrame(id);
   }, []);
 
+  // O timer de fechar morre com o componente (o pai pode desmontar o card antes dos 300 ms).
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
   const close = (): void => {
     setShow(false);
-    setTimeout(onClose, CLOSE_MS);
+    closeTimer.current = setTimeout(onClose, CLOSE_MS);
   };
 
   useEffect(() => {

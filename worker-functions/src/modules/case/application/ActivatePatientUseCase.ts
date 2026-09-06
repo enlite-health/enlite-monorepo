@@ -211,8 +211,8 @@ export class ActivatePatientUseCase {
       );
 
       // Spec 014 (US-D1/SUP-D1, lex D1.1/D1.2): `computePatientCompleteness` continua a fonte
-      // ÚNICA do checklist — `missing[]`/`ready` no `GET /:id` cobre os 5 códigos
-      // (ADDRESS/RESPONSIBLE/COVERAGE/CONTRACTED_SERVICE/CONSENT), informativo. `blocking` já
+      // ÚNICA do checklist — `missing[]`/`ready` no `GET /:id` cobre os 6 códigos
+      // (ADDRESS/RESPONSIBLE/COVERAGE/CONTRACTED_SERVICE/SERVICE_ADDRESS/CONSENT), informativo. `blocking` já
       // vem filtrado por ACTIVATION_BLOCKING_CODES (D255) — o gate abaixo LÊ blocking, nunca
       // reimplementa "quais códigos bloqueiam" comparando `missing` a um código fixo (QA-caça
       // rodada 1, defeito 2: a cópia local só bloqueava ADDRESS por coincidência).
@@ -226,20 +226,20 @@ export class ActivatePatientUseCase {
         activeContractedServicesWithoutAddressCount: servicesWithoutAddress.length,
       });
 
-      // GATE do POST /activate = SÓ ADDRESS (decisão do Gabriel, 03/09, revertendo o que o
+      // GATE do POST /activate = ADDRESS e, desde a migration 330 (D283), SERVICE_ADDRESS — os
+      // dois pela mesma razão: a vaga precisa de endereço. Origem da régua (Gabriel, 03/09, revertendo o que o
       // agente anterior do bloco D tinha feito — bloquear também por RESPONSIBLE/COVERAGE/
       // CONSENT). Medido na réplica de produção (só contagens, D165): 370 pacientes vivos, 23
       // com has_consent=true — `has_consent` hoje só é gravado pelo espelho do ClickUp e pelo
       // formulário público, NUNCA pelo painel. Dos 6 candidatos a ativar no dia da medição, 4
       // estavam sem consentimento: bloquear por CONSENT/RESPONSIBLE/COVERAGE travaria a
-      // operação quase inteira. O gate volta ao comportamento de antes do bloco D (só
-      // ADDRESS); os demais códigos ficam no checklist como pendência informativa, não como
-      // bloqueio — reversível: é só ACTIVATION_BLOCKING_CODES ganhar mais códigos (PatientCompleteness.ts).
+      // operação quase inteira. Os demais códigos ficam no checklist como pendência informativa,
+      // não como bloqueio — reversível: é só ACTIVATION_BLOCKING_CODES mudar (PatientCompleteness.ts).
       if (blocking.length > 0) {
         // Throw — the single catch below rolls back once (avoids double ROLLBACK).
         // O erro nomeia o que REALMENTE barrou: `NoActiveAddressError` hardcoda `['ADDRESS']` e
-        // uma mensagem sobre endereço, então só serve quando ADDRESS é o único bloqueio. Com
-        // ACTIVATION_BLOCKING_CODES em 1 item isso é sempre; no dia em que ganhar o segundo, o
+        // uma mensagem sobre endereço, então só serve quando ADDRESS é o único bloqueio. Desde a
+        // 330 há um segundo código (SERVICE_ADDRESS): sozinho ou junto, cai no genérico — senão o
         // 422 diria "falta o endereço" para quem tem endereço.
         throw blocking.length === 1 && blocking[0] === 'ADDRESS'
           ? new NoActiveAddressError(patientId)

@@ -188,7 +188,11 @@ test.describe('Spec 013 bloco C — serviço contratado como entidade @integrati
     await expect(page.getByTestId('contracted-service-detail-drawer')).toBeVisible();
     await expect(page.getByTestId('svc-detail-providers')).toContainText('(1 / 2)'); // 1 ativo de 2 necessários
     await expect(page.getByTestId('svc-detail-providers')).toContainText(worker.name);
-    await expect(page.getByTestId('contracted-service-detail-drawer')).toHaveScreenshot('bloco-c-servico-detalhe.png');
+    // O nome do prestador da fixture carrega um carimbo por rodada — mascarado, senão a
+    // baseline reprova por 92 px de texto que muda sozinho (gate, 06/09).
+    await expect(page.getByTestId('contracted-service-detail-drawer')).toHaveScreenshot('bloco-c-servico-detalhe.png', {
+      mask: [page.getByTestId('svc-detail-providers')],
+    });
     await forceClick(page.getByTestId('contracted-service-detail-close'));
     await page.waitForTimeout(400);
     await expect(page.getByTestId('contracted-service-detail-drawer')).not.toBeVisible();
