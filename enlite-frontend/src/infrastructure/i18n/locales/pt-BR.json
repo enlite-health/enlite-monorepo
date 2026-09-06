@@ -3060,7 +3060,7 @@
           "documentNumber": "Número do documento",
           "email": "Email",
           "patientEmail": "Email do paciente",
-          "address": "Endereço:",
+          "address": "Endereço",
           "patientWhatsapp": "WhatsApp do paciente",
           "phoneMatchWarning": "Este número coincide com o do responsável {{name}}.",
           "movePhoneToResponsible": "Mover para o responsável",
@@ -3068,7 +3068,10 @@
           "movePhoneConfirmTitle": "Mover o número para o responsável",
           "movePhoneConfirmBody": "O WhatsApp do paciente vai ser apagado (o do responsável não é alterado). Confirmar?",
           "movePhoneError": "Não foi possível mover o número. Tente novamente.",
-          "movePhoneSuccess": "Número movido — o WhatsApp do paciente ficou vazio."
+          "movePhoneSuccess": "Número movido — o WhatsApp do paciente ficou vazio.",
+          "primaryResponsibleContact": "Contato do responsável principal",
+          "responsibleContact": "Contato do responsável",
+          "relationship": "Parentesco"
         },
         "documentTypes": {
           "CPF": "CPF",
