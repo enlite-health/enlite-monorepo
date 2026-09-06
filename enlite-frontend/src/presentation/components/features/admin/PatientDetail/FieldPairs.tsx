@@ -35,6 +35,14 @@ export function FieldPair({
        * Rótulo e valor usam a MESMA cor — `primary`, o #180149 do tema (Gabriel, 06/09). Nenhum
        * token novo entra no design system: a hierarquia vem de TAMANHO e PESO, não de cor.
        *
+       * O valor é `muted` — `text-gray-700`, que no tema é `rgba(115,115,115,.5)`: exatamente o
+       * `#73737380` pedido pelo Gabriel (06/09), e já nomeado no design system, sem cor nova.
+       *
+       * ⚠️ Isso INVERTE a hierarquia de contraste, e está medido: composto sobre o branco do
+       * cartão o valor vira #B9B9B9, 1,96:1 — abaixo do mínimo de 4,5:1 para texto de 14px —,
+       * enquanto o rótulo em #180149 tem 18,43:1. O NOME do campo fica 9,4× mais legível que o
+       * DADO. Decisão do Gabriel, registrada aqui para quem vier depois não "consertar" sem saber.
+       *
        * 🔒 O peso é do VALOR, nunca do rótulo. Com `medium` no rótulo (a primeira versão), a
        * caixa-alta somada ao peso compensava exatamente os 3px a menos e os dois empatavam —
        * "os valores estão parecidos com o título" (Gabriel, 06/09). Invertido: rótulo 11px
@@ -45,7 +53,7 @@ export function FieldPair({
       <Text as="span" size="2xs" color="primary" className="uppercase tracking-wide">
         {label}
       </Text>
-      <Text as="span" size="sm" weight="medium" color="primary" className="break-words" data-testid={testId}>
+      <Text as="span" size="sm" weight="medium" color="muted" className="break-words" data-testid={testId}>
         {value ?? '—'}
       </Text>
     </div>
