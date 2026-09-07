@@ -11,7 +11,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import fixture from '../../../test/fixtures/permission-catalog.json';
-import { SCREEN_REGISTRY, containersOfTab, screenById, screensByCell } from '../screenRegistry';
+import { SCREEN_REGISTRY, cellsOfScreen, containersOfTab, screenById, screenByRoute, screensByCell } from '../screenRegistry';
 import { celulasForaDasTelas } from '@presentation/components/features/access/screenTreeModel';
 
 const CATALOGO = new Set<string>(fixture.cells);
@@ -136,6 +136,24 @@ describe('screensByCell / containersOfTab / screenById', () => {
       ['numbers', 'dashboard_numbers'], ['team', 'dashboard_team'], ['priorities', 'dashboard_priorities'],
       ['registrations', 'dashboard_registrations'], ['funnel', 'dashboard_funnel'], ['zones', 'dashboard_zones'], ['patients', 'patient'],
     ]);
+  });
+
+  it('cellsOfScreen — as próprias mais as de todos os containers, na ordem do registro', () => {
+    expect(cellsOfScreen(screenById('patients.list'))).toEqual(['patient:read', 'patient:write', 'patient:delete', 'patient_identity:read', 'patient_clinical:read']);
+    expect(cellsOfScreen(screenById('map'))).toEqual(['worker_address:read', 'patient_address:read']);
+    expect(cellsOfScreen(screenById('dashboard'))).toEqual([
+      'dashboard:read', 'dashboard_numbers:read', 'dashboard_team:read', 'dashboard_priorities:read',
+      'dashboard_registrations:read', 'dashboard_funnel:read', 'dashboard_zones:read', 'patient:read',
+    ]);
+  });
+
+  it('screenByRoute — rota exata (o href do item de menu); rota que nenhuma tela declara é undefined', () => {
+    expect(screenByRoute('/admin/patients')?.id).toBe('patients.list');
+    expect(screenByRoute('/admin')?.id).toBe('users');
+    expect(screenByRoute('/admin/mapa')?.id).toBe('map');
+    expect(screenByRoute('/admin/api-docs')).toBeUndefined();
+    expect(screenByRoute('/admin/patients/', [])).toBeUndefined();
+    expect(screenByRoute(undefined)).toBeUndefined();
   });
 
   it('tela desconhecida é erro, não undefined silencioso', () => {

@@ -21,6 +21,8 @@ services:
       - "5440:5432"
   firebase-emulator:
     container_name: enlite-realauth-emulator
+  redis:
+    container_name: enlite-realauth-redis
   api:
     container_name: enlite-realauth-api
     ports: !override

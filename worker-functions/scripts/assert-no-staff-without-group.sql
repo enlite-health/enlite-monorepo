@@ -16,6 +16,8 @@
 --
 -- Re-executável à vontade. Não escreve nada. Saída para colar no diário no fim.
 
+
+\set ON_ERROR_STOP on
 -- ⚠️ D294 (07/09/2026): este script lê `users.account_type` (migration 414). Contra um
 -- banco sem a 414 o predicado devolveria ZERO — e zero aqui pareceria "ninguém sem
 -- grupo". Falha alto em vez disso.
@@ -27,8 +29,6 @@ BEGIN
   END IF;
 END
 $$;
-
-\set ON_ERROR_STOP on
 
 DO $$
 DECLARE
