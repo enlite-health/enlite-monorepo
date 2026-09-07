@@ -43,14 +43,25 @@ async function menuVisivel(page: Page): Promise<string[]> {
 }
 
 /**
- * Foto do estado — `toHaveScreenshot` compara com a referência local (gitignorada) e o PNG em
- * `e2e/__screenshots__/` fica no repo para quem revisa VER. O rodapé do menu mostra o nome da
- * conta, que carrega o RUN_ID: mascarado, senão a referência muda a cada corrida.
+ * Foto do estado — `toHaveScreenshot` compara com a baseline darwin versionada em
+ * `*-snapshots/` (como os demais specs @integration) e o PNG em `e2e/__screenshots__/` fica no
+ * repo para quem revisa VER. O rodapé do menu mostra o nome da conta, que carrega o RUN_ID:
+ * mascarado, senão a referência muda a cada corrida.
  */
 async function foto(page: Page, nome: string): Promise<void> {
   const mascara = [page.getByText(`E2E ${STAFF.uid}`)];
   await expect(page).toHaveScreenshot(`${nome}.png`, { fullPage: true, animations: 'disabled', maxDiffPixelRatio: 0.002, mask: mascara });
   await page.screenshot({ path: `e2e/__screenshots__/menu-por-celula-${nome}.png`, fullPage: true, animations: 'disabled', mask: mascara });
+}
+
+/** O item que existe FUNCIONA: clique humano, a URL muda, a rota que alimenta a tela responde 200, o título aparece. */
+async function abreDoMenu(page: Page, nome: string, rota: string, api: string, fotoNome: string): Promise<void> {
+  const resposta = page.waitForResponse((r) => r.url().includes(api) && r.request().method() === 'GET');
+  await link(page, nome).click();
+  await expect(page).toHaveURL(new RegExp(`${rota}$`));
+  expect((await resposta).status()).toBe(200);
+  await expect(page.getByRole('heading', { name: nome, exact: true })).toBeVisible({ timeout: 15_000 });
+  await foto(page, fotoNome);
 }
 
 test.describe('Menu lateral por célula (D286) — o item só existe para quem tem célula da tela @integration', () => {
@@ -93,13 +104,7 @@ test.describe('Menu lateral por célula (D286) — o item só existe para quem t
     await expect(link(page, 'API Docs')).toBeVisible();
     await foto(page, '1-so-patient-read');
 
-    // O item que existe FUNCIONA: clique humano, a tela abre e a rota que a alimenta responde 200.
-    const lista = page.waitForResponse((r) => r.url().includes('/api/admin/patients') && r.request().method() === 'GET');
-    await link(page, 'Pacientes').click();
-    await expect(page).toHaveURL(/\/admin\/patients$/);
-    expect((await lista).status()).toBe(200);
-    await expect(page.getByRole('heading', { name: 'Pacientes', exact: true })).toBeVisible({ timeout: 15_000 });
-    await foto(page, '1b-pacientes-abre');
+    await abreDoMenu(page, 'Pacientes', '/admin/patients', '/api/admin/patients', '1b-pacientes-abre');
   });
 
   test('2. o que o Gabriel chamou de correto continua: digitar a URL de Prestadores sem célula → a rota nega (403) e o menu segue sem o item', async ({ page }) => {
@@ -129,12 +134,7 @@ test.describe('Menu lateral por célula (D286) — o item só existe para quem t
     console.log(`[prova] menu com patient:read + worker:read: ${JSON.stringify(visiveis)}`);
     await foto(page, '3-ganhou-worker-read');
 
-    const lista = page.waitForResponse((r) => r.url().includes('/api/admin/workers') && r.request().method() === 'GET');
-    await link(page, 'Prestadores').click();
-    await expect(page).toHaveURL(/\/admin\/workers$/);
-    expect((await lista).status()).toBe(200);
-    await expect(page.getByRole('heading', { name: 'Prestadores', exact: true })).toBeVisible({ timeout: 15_000 });
-    await foto(page, '3b-prestadores-abre');
+    await abreDoMenu(page, 'Prestadores', '/admin/workers', '/api/admin/workers', '3b-prestadores-abre');
   });
 
   test('4. a célula é revogada → o item some de novo (o menu segue o contrato, nos dois sentidos)', async ({ page, request }) => {

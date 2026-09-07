@@ -162,12 +162,15 @@ export async function meAuthz(request: APIRequestContext, u: MockUser): Promise<
   return { status: res.status(), body: await res.json().catch(() => null) };
 }
 
-/** O contrato tem cache (~30 s) no backend: espera até a condição valer, e diz quanto demorou. */
+/**
+ * O contrato tem cache (~30 s) no backend: espera até a condição valer, e diz quanto demorou.
+ * Medido 24-30 s por mudança; 60 s deixa margem para um intervalo a mais e a latência da API.
+ */
 export async function pollAuthz(
   request: APIRequestContext,
   u: MockUser,
   predicate: (body: any) => boolean,
-  timeoutMs = 40_000,
+  timeoutMs = 60_000,
   intervalMs = 2_000,
 ): Promise<{ body: any; elapsedMs: number }> {
   const start = Date.now();
