@@ -30,7 +30,6 @@ import { argValue } from './lib/cliArgs';
 const COUNTRIES = ['AR', 'BR'] as const;
 type Country = (typeof COUNTRIES)[number];
 
-
 const isDryRun = !process.argv.includes('--execute');
 const showAll = process.argv.includes('--show-all');
 

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'fs';
 import jwt from 'jsonwebtoken';
 import { Pool } from 'pg';
+import { reportError } from '@shared/logging';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -175,7 +176,12 @@ export async function getAccessToken(subjectEmail: string, fallbackEmail: string
 
 // ─── Event search ─────────────────────────────────────────────────────────────
 
-/** Lista emails dos staff do domínio a partir da tabela users (sem Admin SDK). */
+/**
+ * Lista emails dos staff do domínio a partir da tabela users (sem Admin SDK).
+ * Staff é `account_type = 'staff'` (D294). Falha de consulta vai para `reportError`
+ * (Error Reporting) e devolve lista vazia — "0 staff" por erro NÃO pode parecer
+ * "0 staff" de verdade (gate de 07/09): quem lê o log distingue pelo erro.
+ */
 export async function listStaffEmails(db: Pool, impersonateEmail: string): Promise<string[]> {
   const domain = impersonateEmail.split('@')[1];
   if (!domain) return [];
@@ -191,7 +197,7 @@ export async function listStaffEmails(db: Pool, impersonateEmail: string): Promi
     console.log(`[GoogleCalendarService] Staff emails from DB: ${emails.length}`);
     return emails;
   } catch (err: unknown) {
-    console.warn('[GoogleCalendarService] DB staff query error:', err instanceof Error ? err.message : err);
+    reportError(err instanceof Error ? err : new Error(String(err)), { source: 'GoogleCalendarEventFinder:listStaffEmails' });
     return [];
   }
 }

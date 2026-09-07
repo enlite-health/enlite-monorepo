@@ -21,9 +21,11 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
   //   Mensajería  → funnel-stage-messages, template-catalog,
   //                 presentation-invite/*                       → messaging:read
   // Mesmo freio do ActionButton/useFeature (D268): só gateia com
-  // `enforcement === 'on'`. Com `'off'`/contrato ausente o item aparece como
-  // sempre apareceu — é a MESMA régua de rollout do resto da B1, e apagar o
-  // menu no `main` (engine off) seria a regressão.
+  // `enforcement === 'on'`. Com `'off'`/contrato ausente o item aparece para
+  // TODO staff — antes só o admin via (D293: o papel não é mais lido no front).
+  // No `main` com o engine desligado, a recrutadora vê estes itens e a API
+  // responde 403 (`untilEnforced` no back); é o custo aceito de não ter duas
+  // verdades no front. Apagar o menu para todos seria a regressão.
   const enforcement = useAdminAuthStore((s) => s.authz?.enforcement);
   const { canRead: canReadWorkerTags } = useCellAccess('worker');
   const { canRead: canReadDedup } = useCellAccess('dedup');

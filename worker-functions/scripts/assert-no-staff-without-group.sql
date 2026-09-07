@@ -16,6 +16,18 @@
 --
 -- Re-executável à vontade. Não escreve nada. Saída para colar no diário no fim.
 
+-- ⚠️ D294 (07/09/2026): este script lê `users.account_type` (migration 414). Contra um
+-- banco sem a 414 o predicado devolveria ZERO — e zero aqui pareceria "ninguém sem
+-- grupo". Falha alto em vez disso.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_name = 'users' AND column_name = 'account_type') THEN
+    RAISE EXCEPTION 'users.account_type ausente: aplique a migration 414 antes deste script';
+  END IF;
+END
+$$;
+
 \set ON_ERROR_STOP on
 
 DO $$
