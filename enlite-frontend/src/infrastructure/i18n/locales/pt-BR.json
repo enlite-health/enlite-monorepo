@@ -3053,14 +3053,13 @@
           "admission": "Admissão",
           "lastUpdate": "Atualização",
           "discharge": "Desligamento",
-          "emergencyContact": "Contato de Emergência",
           "responsibleName": "Nome do Responsável",
           "responsiblePhone": "Telefone do Responsável",
           "documentType": "Tipo de documento",
           "documentNumber": "Número do documento",
           "email": "Email",
           "patientEmail": "Email do paciente",
-          "address": "Endereço:",
+          "address": "Endereço",
           "patientWhatsapp": "WhatsApp do paciente",
           "phoneMatchWarning": "Este número coincide com o do responsável {{name}}.",
           "movePhoneToResponsible": "Mover para o responsável",
@@ -3068,7 +3067,10 @@
           "movePhoneConfirmTitle": "Mover o número para o responsável",
           "movePhoneConfirmBody": "O WhatsApp do paciente vai ser apagado (o do responsável não é alterado). Confirmar?",
           "movePhoneError": "Não foi possível mover o número. Tente novamente.",
-          "movePhoneSuccess": "Número movido — o WhatsApp do paciente ficou vazio."
+          "movePhoneSuccess": "Número movido — o WhatsApp do paciente ficou vazio.",
+          "primaryResponsibleContact": "Contato do responsável principal",
+          "responsibleContact": "Contato do responsável",
+          "relationship": "Parentesco"
         },
         "documentTypes": {
           "CPF": "CPF",
@@ -3121,7 +3123,10 @@
           "devices": "Dispositivo",
           "patologiesUnavailable": "Não foi possível carregar o diagnóstico.",
           "patologiesEmpty": "Nenhum diagnóstico registrado.",
-          "patologiesPrimaryBadge": "Principal"
+          "patologiesPrimaryBadge": "Principal",
+          "patologies": "Patologias",
+          "generalNotesEmpty": "Sem observações registradas.",
+          "emergencyInstructionsEmpty": "Sem instruções registradas."
         },
         "therapeuticProjectCard": {
           "title": "Projeto Terapêutico",
