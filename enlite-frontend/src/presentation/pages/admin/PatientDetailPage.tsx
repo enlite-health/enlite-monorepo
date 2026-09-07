@@ -139,10 +139,10 @@ export default function PatientDetailPage() {
             </span>
           </div>
         </div>
-        {/* `items-end`: o `PatientStatusControl` traz o rótulo "Estado" ACIMA do select, então é
-            mais alto que os botões. Centralizado, os três flutuavam em alturas diferentes; pela
-            base, select e botões assentam na mesma linha. */}
-        <div className="flex items-end gap-3 shrink-0 ml-auto">
+        {/* `items-center`: agora que o `PatientStatusControl` é UMA linha (o rótulo "Estado"
+            deixou de empilhar acima do select), o centro é o que alinha os três — o select é mais
+            alto que os botões, e pela base eles subiriam desencontrados. */}
+        <div className="flex items-center gap-3 shrink-0 ml-auto">
           {/* Spec 014 US-D5: a ficha ganha o caminho de volta ao Kanban (antes só existia da
               lista para a ficha, nunca o inverso). */}
           <Button

@@ -8,6 +8,7 @@ import { Button } from '@presentation/components/atoms/Button';
 import { Text } from '@presentation/components/atoms/Text';
 import { Textarea } from '@presentation/components/atoms/Textarea';
 import { FormField } from '@presentation/components/molecules/FormField';
+import { Label } from '@presentation/components/atoms/Label';
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 
 interface Props {
@@ -80,18 +81,24 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
   };
 
   return (
-    <div className="flex flex-col gap-2 min-w-[260px]" data-testid="patient-status-control">
-      <div className="flex items-end gap-2">
-        <FormField label={ts('title')} htmlFor="patient-status-select" className="flex-1">
-          <SelectField
-            id="patient-status-select"
-            inputSize="compact"
-            options={statusOptions}
-            value={status}
-            onChange={(v) => { setStatus(v); setError(null); }}
-            data-testid="patient-status-select"
-          />
-        </FormField>
+    <div className="flex flex-col gap-2 min-w-[240px]" data-testid="patient-status-control">
+      {/* 06/09 (Gabriel): o rótulo "Estado" ficava ACIMA do select, empilhado, e o bloco inteiro
+          era mais alto que os botões vizinhos do cabeçalho — o controle flutuava numa altura
+          própria. Agora é UMA linha: rótulo, select e ação lado a lado. O `Label` continua ligado
+          ao select por `htmlFor`, então o nome acessível não se perde; só deixou de empilhar.
+          Os campos de ON_HOLD (motivo e nota) seguem empilhando abaixo, como antes. */}
+      <div className="flex items-center gap-2">
+        <Label htmlFor="patient-status-select" size="compact" className="shrink-0 whitespace-nowrap">
+          {ts('title')}
+        </Label>
+        <SelectField
+          id="patient-status-select"
+          inputSize="compact"
+          options={statusOptions}
+          value={status}
+          onChange={(v) => { setStatus(v); setError(null); }}
+          data-testid="patient-status-select"
+        />
         <Button type="button" variant="primary" size="sm" onClick={handleSave} disabled={!canSave} isLoading={busy} data-testid="patient-status-save">
           {ts('save')}
         </Button>
