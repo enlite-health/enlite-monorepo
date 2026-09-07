@@ -13,8 +13,8 @@
 // botão" e "é um botão" terem o MESMO tamanho — o mesmo padrão que
 // `inputClasses.ts` já usa para input, textarea e select.
 
-export type ButtonVariant = 'primary' | 'outline' | 'ghost' | 'danger';
-export type ButtonSize = 'compact' | 'sm' | 'md' | 'lg';
+export type ButtonVariant = 'primary' | 'outline' | 'ghost' | 'danger' | 'quiet';
+export type ButtonSize = 'xs' | 'compact' | 'sm' | 'md' | 'lg';
 
 /**
  * Tokens de tamanho.
@@ -30,6 +30,19 @@ export type ButtonSize = 'compact' | 'sm' | 'md' | 'lg';
  * absorver esta escala, este comentário sai.
  */
 const SIZE: Record<ButtonSize, string> = {
+  /**
+   * 🔒 `xs` (Gabriel, 06/09) — o degrau que faltava EMBAIXO, para barra de ações de cabeçalho.
+   *
+   * O menor até aqui era `sm`: 32px de altura, texto de 14px em peso 600. Numa barra onde três
+   * ações convivem com um select e o título da página, ele ainda lê como CTA — foi o que o
+   * Gabriel apontou olhando o desenho ("eram botões muito mais compactos"). `xs` é 28px com
+   * texto de 13px em peso 500: continua clicável com folga (o alvo real inclui o `gap` da barra),
+   * mas para de disputar atenção com o conteúdo.
+   *
+   * NÃO é para formulário nem para ação principal de tela — para isso `sm`/`md` seguem sendo o
+   * certo. É para ação secundária que acompanha um título.
+   */
+  xs: 'h-7 px-3.5 text-[13px] font-medium leading-[1.35]',
   compact: 'h-[38px] px-[18px] py-2 text-[13px] font-medium leading-[1.5]',
   sm: 'h-8 px-4 text-sm font-semibold leading-[1.35]',
   md: 'h-10 px-6 text-base font-semibold leading-[1.35]',
@@ -59,6 +72,20 @@ const VARIANT: Record<ButtonVariant, string> = {
    * é algo que vai dar certo e não tem volta.
    */
   danger: 'bg-[#C8117F] text-white border border-[#C8117F] hover:bg-[#C8117F]/90',
+  /**
+   * 🔒 `quiet` (Gabriel, 06/09) — outline de baixa voz, para barra de ações.
+   *
+   * `outline` tem `border-2 border-primary`: dois pixels de índigo #180149, o que o faz gritar
+   * tanto quanto o `primary` sólido. Isso é certo quando ele é A ação da tela; numa barra de
+   * cabeçalho com três controles, três molduras grossas competem entre si e com o título.
+   * `quiet` troca por 1px de `gray-600` (#D9D9D9) e mantém o texto em `primary` — a ação
+   * continua legível, a moldura para de gritar.
+   *
+   * ⚠️ Entra como variante NOVA em vez de afinar a `outline`: a `outline` está em 99 arquivos, e
+   * o comentário dela registra uma tentativa anterior de mexer que quebrou outra tela. Uma barra
+   * não vale reescrever o sistema.
+   */
+  quiet: 'bg-white text-primary border border-gray-600 hover:bg-gray-200',
 };
 
 /**

@@ -91,15 +91,18 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
         <Label htmlFor="patient-status-select" size="compact" className="shrink-0 whitespace-nowrap">
           {ts('title')}
         </Label>
+        {/* `dense` (35px, 13px) e não `compact` (48px): na barra do cabeçalho o select convive com
+            botões `xs` de 28px — 48px fazia o bloco inteiro destoar. Os selects de ON_HOLD, que
+            abrem EMPILHADOS abaixo e são formulário, seguem em `compact`. */}
         <SelectField
           id="patient-status-select"
-          inputSize="compact"
+          inputSize="dense"
           options={statusOptions}
           value={status}
           onChange={(v) => { setStatus(v); setError(null); }}
           data-testid="patient-status-select"
         />
-        <Button type="button" variant="primary" size="sm" onClick={handleSave} disabled={!canSave} isLoading={busy} data-testid="patient-status-save">
+        <Button type="button" variant="primary" size="xs" onClick={handleSave} disabled={!canSave} isLoading={busy} data-testid="patient-status-save">
           {ts('save')}
         </Button>
       </div>

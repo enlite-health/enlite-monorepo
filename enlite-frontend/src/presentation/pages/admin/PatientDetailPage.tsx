@@ -145,14 +145,17 @@ export default function PatientDetailPage() {
         <div className="flex items-center gap-3 shrink-0 ml-auto">
           {/* Spec 014 US-D5: a ficha ganha o caminho de volta ao Kanban (antes só existia da
               lista para a ficha, nunca o inverso). */}
+          {/* `quiet`+`xs` (06/09): ação secundária de cabeçalho. Com `outline`/`sm` — 2px de
+              índigo e texto 14px semibold — as três molduras da barra competiam entre si e com o
+              título. */}
           <Button
-            variant="outline"
-            size="sm"
+            variant="quiet"
+            size="xs"
             onClick={() => navigate('/admin/patients/kanban')}
             className="flex items-center gap-1"
             data-testid="view-in-kanban-btn"
           >
-            <LayoutGrid className="w-4 h-4" />
+            <LayoutGrid className="w-3.5 h-3.5" />
             {t('admin.patients.detail.viewInKanban')}
           </Button>
           {/* Spec 012 US-B7: estado clínico v2 (só depois da admissão); antes, o botão Activar. */}
