@@ -95,7 +95,15 @@ function ResponsibleSection({ responsible, isPrimary }: { responsible: PatientRe
     : null;
 
   return (
-    <div className="mt-1">
+    /**
+     * 🔒 `data-clarity-mask` no bloco INTEIRO (parecer do `lex`, 06/09, condição C2). Telefone,
+     * documento e e-mail aqui são contato de TERCEIRO, e o e-mail do paciente logo acima, na mesma
+     * grade, já era mascarado — a mesma razão escrita naquele wrapper vale aqui: o modo do
+     * dashboard do Clarity é configuração remota que ninguém neste repositório controla, e no modo
+     * Balanced texto corrido sobe em claro. A ausência era anterior a esta branch; entra agora
+     * porque a grade nova pôs os dois lado a lado e a inconsistência ficou explícita.
+     */
+    <div className="mt-1" data-clarity-mask="True" data-testid="patient-responsible-section">
       <FieldGroupTitle>
         {t(isPrimary
           ? 'admin.patients.detail.identityCard.primaryResponsibleContact'

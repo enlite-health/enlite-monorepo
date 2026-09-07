@@ -95,7 +95,12 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
           operacional e o teclado continua funcionando. `aria-label` carrega o nome acessível que o
           `<Label>` visível carregava antes. */}
       <div className="flex items-center gap-2">
-        <div className={`relative ${buttonClasses({ variant: 'quiet', size: 'xs' })}`}>
+        {/* 🔒 `focus-within` (lex 06/09, WCAG 2.4.7 AA). O `buttonClasses` traz `focus:ring-2`,
+            mas quem recebe o foco aqui é o `<select>` TRANSPARENTE, e o anel está na `div` que o
+            envolve — que não é focável. Sem isto, quem navega por teclado não vê onde está.
+            O `lex` classificou como item de LISTA, mas conserto agora porque a regressão é DESTA
+            branch: antes o select era visível e tinha o foco próprio dele. */}
+        <div className={`relative ${buttonClasses({ variant: 'quiet', size: 'xs' })} focus-within:ring-2 focus-within:ring-primary/50`}>
           <span className="whitespace-nowrap">
             {ts('title')}: {label(status)}
           </span>

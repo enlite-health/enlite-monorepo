@@ -168,4 +168,22 @@ describe('PatientDetailPage', () => {
       screen.queryByTestId('completeness-checklist') ?? screen.queryByTestId('completeness-checklist-ready'),
     ).toBeInTheDocument();
   });
+
+  // lex 06/09 (C3): o `h1` passou a ser o NOME do paciente, que é dado projetado pela rota. Se a
+  // resposta vier sem nome — porque o ator não tem a célula, ou porque o dado não existe — o
+  // título tem de cair no rótulo genérico e NENHUM nome pode aparecer na página. Isto é o que
+  // torna verdadeira a frase "a rota projeta, a tela não esconde" (D286) quando a família
+  // `admin.patients` ganhar célula de identidade.
+  it('sem nome na resposta, o h1 cai no rótulo genérico e NENHUM nome vaza na página', () => {
+    detail.patient = { ...(detail.patient as object), firstName: null, lastName: null };
+    render(<PatientDetailPage />);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Cadastro do Paciente');
+    expect(screen.queryByText(/Santiago/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Claiman/)).not.toBeInTheDocument();
+  });
+
+  it('com nome na resposta, o h1 É o nome do paciente', () => {
+    render(<PatientDetailPage />);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Santiago Claiman');
+  });
 });

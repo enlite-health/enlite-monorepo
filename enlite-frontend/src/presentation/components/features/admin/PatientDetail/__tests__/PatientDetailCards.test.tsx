@@ -189,6 +189,18 @@ describe('PatientIdentityCard', () => {
     expect(screen.queryByText(/admin\.patients\.detail\.relationshipOptions/)).not.toBeInTheDocument();
   });
 
+  // lex 06/09 (C2): telefone, documento e e-mail do responsável são contato de TERCEIRO e vivem na
+  // mesma grade que o e-mail do paciente, que já era mascarado. Trava: se alguém tirar o wrapper,
+  // fica vermelho.
+  it('o bloco do responsável inteiro leva data-clarity-mask="True"', () => {
+    render(<PatientIdentityCard patient={patientDetailFixture} />);
+    const bloco = screen.getByTestId('patient-responsible-section');
+    expect(bloco).toHaveAttribute('data-clarity-mask', 'True');
+    // e os campos de contato estão DENTRO dele
+    expect(screen.getByText('Luciana Soto').closest('[data-clarity-mask="True"]')).not.toBeNull();
+    expect(screen.getByText(/99852-0481/).closest('[data-clarity-mask="True"]')).not.toBeNull();
+  });
+
   it('does not render the responsible section when no responsibles', () => {
     render(<PatientIdentityCard patient={patientDetailMinimal} />);
     expect(screen.queryByText('Contato do responsável principal')).not.toBeInTheDocument();
