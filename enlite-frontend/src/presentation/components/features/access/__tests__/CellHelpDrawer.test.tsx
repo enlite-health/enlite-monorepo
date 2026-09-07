@@ -51,14 +51,16 @@ describe('CellHelpDrawer — a ajuda de uma permissão', () => {
     expect(screen.getByText('Ver')).toBeInTheDocument();
   });
 
-  it('🔒 os LOCALES não enumeram categoria sensível em nenhum dos 37 recursos', () => {
+  it('🔒 os LOCALES não enumeram categoria sensível em nenhum dos 36 recursos', () => {
     // Este é o guardião de verdade. O de baixo lê o dicionário do próprio teste
     // e ficaria verde com "religión" escrito no es.json — instrumento morto,
     // achado do gate (05/09). Aqui a asserção é sobre o ARTEFATO.
     const proibidos = /racial|religi|orientaci|orientaç|etnia/i;
     for (const [nome, loc] of [['es', es], ['pt-BR', ptBR]] as const) {
       const rec = loc.admin.access.group.cells.help.resource as Record<string, { body: string; action: Record<string, string> }>;
-      expect(Object.keys(rec).length).toBeGreaterThanOrEqual(37);
+      // 36 desde 07/09: `api_docs` saiu com a tela. O piso existe para o teste não
+      // ficar verde com o dicionário esvaziado — contagem zero não é sucesso.
+      expect(Object.keys(rec).length).toBeGreaterThanOrEqual(36);
       for (const [r, v] of Object.entries(rec)) {
         for (const [onde, txt] of [['body', v.body], ...Object.entries(v.action)]) {
           expect(`${nome}.${r}.${onde}: ${txt}`).not.toMatch(proibidos);
@@ -134,7 +136,7 @@ describe('CellHelpDrawer — a ajuda de uma permissão', () => {
   });
 
   it('recurso sem captura não desenha a figura', () => {
-    montar({ resource: 'api_docs', rotulo: 'API Docs' });
+    montar({ resource: 'test_fixtures', rotulo: 'Dados de teste' });
     expect(screen.queryByTestId('cell-help-image')).not.toBeInTheDocument();
   });
 

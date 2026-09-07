@@ -34,8 +34,10 @@ export const UNCATEGORIZED = 'Não categorizado';
 
 /**
  * Recurso → categoria. Espelha o seed da migration 206 (41 células / 9
- * categorias) mais as 4 células novas da D116 (`patient:delete`,
- * `integration:execute`, `test_fixtures:execute`, `api_docs:read`).
+ * categorias) mais as 3 células novas da D116 (`patient:delete`,
+ * `integration:execute`, `test_fixtures:execute`). A 4ª, `api_docs:read`, saiu
+ * em 07/09 junto com a tela `/admin/api-docs` (a rota `/api/docs` sempre foi
+ * guardada por `requireStaff`, nunca por esta célula).
  *
  * É um mapa por RECURSO (não por célula) porque a categoria é propriedade do
  * recurso: `worker:read` e `worker:delete` moram na mesma linha da matriz.
@@ -76,7 +78,6 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   dashboard_zones: 'Operações',
   integration: 'Operações',
   test_fixtures: 'Operações',
-  api_docs: 'Operações',
   messaging: 'Comunicação',
   upload: 'Importação',
   user_management: 'Administração',
@@ -154,8 +155,6 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Disparar integrações à mão (espelho Ana Care, sync do ClickUp). Operação, não leitura.',
   'test_fixtures:execute':
     'Criar e apagar dados de teste. Ferramenta do monitoramento sintético (e2e-prod).',
-  'api_docs:read':
-    'Ver a documentação OpenAPI do backend no painel.',
 
   // ── Paciente por CONTAINER (D286; `lex` 06/09 CONDICIONADO, C11: definição escrita no mesmo
   //    commit que cria a célula). `patient:read` fica sendo o OPERACIONAL: id, status, funil de

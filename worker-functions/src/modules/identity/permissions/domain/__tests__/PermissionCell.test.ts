@@ -1,4 +1,5 @@
 import {
+  CELL_DESCRIPTION,
   PERMISSION_CATEGORIES,
   RESOURCE_CATEGORY,
   UNCATEGORIZED,
@@ -48,10 +49,16 @@ describe('PermissionCell', () => {
     }
   });
 
-  it('cobre as 4 células novas da D116', () => {
+  it('cobre as 3 células da D116 que restaram (`api_docs` saiu com a tela em 07/09)', () => {
     expect(categoryFor('patient')).toBe('Pacientes');
     expect(categoryFor('integration')).toBe('Operações');
     expect(categoryFor('test_fixtures')).toBe('Operações');
-    expect(categoryFor('api_docs')).toBe('Operações');
+  });
+
+  it('`api_docs` saiu das DUAS fontes do catálogo — recurso e descrição', () => {
+    expect(RESOURCE_CATEGORY).not.toHaveProperty('api_docs');
+    expect(CELL_DESCRIPTION).not.toHaveProperty('api_docs:read');
+    // Recurso desconhecido cai no fallback, não explode.
+    expect(categoryFor('api_docs')).toBe(UNCATEGORIZED);
   });
 });
