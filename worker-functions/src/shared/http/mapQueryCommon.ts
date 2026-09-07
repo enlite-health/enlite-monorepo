@@ -68,6 +68,13 @@ export type MapLogScope = Pick<MapScope, 'country' | 'state' | 'city' | 'center'
   status?: readonly string[];
   /** Só o mapa de prestadores filtra por profissão; no de pacientes fica null. */
   profession?: readonly string[];
+  /**
+   * ⚠️ NOME DE PESSOA. Está aqui só para o log poder dizer QUE houve busca —
+   * o valor NUNCA é registrado, pela mesma razão que `state`/`city` viram
+   * booleano: o log é allowlist campo a campo, e um nome digitado ficaria 30
+   * dias no Cloud Logging. Ver `hasSearchFilter` em `respondMapPoints`.
+   */
+  search?: string;
 };
 
 /** Escopo obrigatório (lex C3): centro+raio, OU província, OU localidade. */
@@ -75,13 +82,26 @@ export function hasScope(q: Pick<MapScope, 'center' | 'radius_km' | 'state' | 'c
   return (q.center !== undefined && q.radius_km !== undefined) || q.state !== undefined || q.city !== undefined;
 }
 
-/** Aplica os dois refinamentos de escopo a um schema que contém `mapScopeShape`. */
-export function withMapScopeRules<S extends z.ZodTypeAny>(schema: S): z.ZodEffects<z.ZodEffects<S>> {
+/**
+ * Aplica os dois refinamentos de escopo a um schema que contém `mapScopeShape`.
+ *
+ * `hasExtraScope` é a porta para um escopo que só UM dos mapas tem — hoje, a
+ * busca por nome do mapa de PACIENTES. Ela fica de fora do `mapScopeShape` de
+ * propósito: se `search` morasse no escopo comum, o mapa de PRESTADORES
+ * passaria a aceitar `search` sem centro, e como o controller dele não filtra
+ * por nome, `hasScope` daria por satisfeito um corpo que na prática varre a
+ * base inteira. O default `() => false` mantém o comportamento de quem não
+ * passa nada.
+ */
+export function withMapScopeRules<S extends z.ZodTypeAny>(
+  schema: S,
+  hasExtraScope: (q: z.infer<S>) => boolean = () => false,
+): z.ZodEffects<z.ZodEffects<S>> {
   return schema
     .refine((q: MapScope) => q.radius_km === undefined || q.center !== undefined, {
       message: 'radius_km requires center',
     })
-    .refine((q: MapScope) => hasScope(q), {
+    .refine((q) => hasScope(q as MapScope) || hasExtraScope(q), {
       message: 'scope required: center+radius_km, or state/city',
     });
 }
@@ -171,7 +191,14 @@ export function hasFilter(raw: string | null | undefined): boolean {
   return typeof raw === 'string' && raw.trim() !== '';
 }
 
-export function respondMapPoints<P extends { lat: number | null }>(
+/**
+ * Teto da leitura DIRIGIDA: até aqui, a busca por nome é "olhei uma pessoa" e
+ * a trilha registra QUAIS. Acima, é varredura e volta a ser só contagem —
+ * gravar 50 UUIDs por request encheria o log sem responder nada.
+ */
+export const NAMED_READ_AUDIT_MAX = 5;
+
+export function respondMapPoints<P extends { lat: number | null; id: string }>(
   req: Request,
   res: Response,
   msg: string,
@@ -185,7 +212,11 @@ export function respondMapPoints<P extends { lat: number | null }>(
     msg,
     uid: req.user?.uid ?? null,
     country: scope.country,
-    scope: scope.center ? 'radius' : 'location',
+    // ⚠️ 'location' significa recorte por província/localidade. Uma varredura
+    // por NOME não tem centro nem localidade: logá-la como 'location' fazia a
+    // trilha afirmar um recorte geográfico que não existiu — e é a trilha que
+    // responde "qual foi o alcance desta leitura?" numa auditoria.
+    scope: scope.center ? 'radius' : scope.search ? 'name' : 'location',
     n: data.length,
     withoutCoordinates,
     truncated,
@@ -204,8 +235,27 @@ export function respondMapPoints<P extends { lat: number | null }>(
     stateCanonical: logSafeState(scope.state),
     hasStateFilter: hasFilter(scope.state),
     hasCityFilter: hasFilter(scope.city),
+    // Só o BOOLEANO: `search` é nome de paciente digitado pelo staff. Mesma
+    // regra de `state`/`city` — a auditoria sabe QUE se buscou, nunca por quem.
+    hasSearchFilter: hasFilter(scope.search),
     radiusKm: scope.radius_km ?? null,
     geohash5: scope.center ? geohash5(scope.center.lat, scope.center.lng) : null,
+    /**
+     * 🔒 QUEM foi lido, quando a leitura foi DIRIGIDA (lex C-E, opção (a),
+     * decidida pelo Gabriel em 07/09/2026).
+     *
+     * Sem isto, `scope:'name' n:1` e `scope:'name' n:400` eram a mesma linha em
+     * natureza, e nenhuma respondia "esta consulta mirou uma pessoa
+     * identificada?" — que é a pergunta de uma auditoria de acesso.
+     *
+     * ⚠️ Só UUID, nunca nome. E só é admissível aqui porque em escopo por NOME
+     * não existe centro: `geohash5` é `null` na mesma linha, então o par
+     * proibido pela C6 (geocódigo + identificador = endereço aproximado de
+     * pessoa identificada) NÃO se forma. Se algum dia esta rota passar a
+     * aceitar `search` junto de `center`, este campo tem de sair — há teste
+     * afirmando que os dois nunca coexistem.
+     */
+    resultIds: scope.search && data.length <= NAMED_READ_AUDIT_MAX ? data.map((p) => p.id) : null,
   });
   res.status(200).json({ success: true, data, total, withoutCoordinates, truncated });
 }

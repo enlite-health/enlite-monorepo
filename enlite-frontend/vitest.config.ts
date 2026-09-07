@@ -265,7 +265,7 @@ export default defineConfig({
           lines: 100,
         },
         // Páginas de admin nascidas nesta release.
-        '**/src/presentation/pages/admin/AdminMapPage/{AdminMapPage.tsx,mapPageConfig.ts,mapAnchor.tsx,mapResults.tsx,mapSidebar.tsx,CorridorPanel.tsx}': {
+        '**/src/presentation/pages/admin/AdminMapPage/{AdminMapPage.tsx,mapPageConfig.ts,mapAnchor.tsx,mapResults.tsx,mapSidebar.tsx,CorridorPanel.tsx,useAnchorCandidates.ts}': {
           statements: 100,
           branches: 100,
           functions: 100,

@@ -254,7 +254,8 @@ describe('AdminWorkersMapController.getMapPoints', () => {
       msg: 'workers.map.read', uid: 'uid-abc', country: 'AR', scope: 'radius',
       n: 1, withoutCoordinates: 0, truncated: false,
       totalMatching: 1, status: null, profession: null,
-      stateCanonical: null, hasStateFilter: false, hasCityFilter: false,
+      stateCanonical: null, hasStateFilter: false, hasCityFilter: false, hasSearchFilter: false,
+      resultIds: null,
       radiusKm: 5, geohash5: '69y7p',
     });
     // a casa vira CÉLULA: o geohash tem 5 caracteres e a coordenada crua some
@@ -285,7 +286,8 @@ describe('AdminWorkersMapController.getMapPoints', () => {
       n: 1, withoutCoordinates: 0, truncated: true,
       totalMatching: 4231,
       status: ['REGISTERED', 'DISABLED'], profession: ['AT', 'NURSE'],
-      stateCanonical: null, hasStateFilter: true, hasCityFilter: true,
+      stateCanonical: null, hasStateFilter: true, hasCityFilter: true, hasSearchFilter: false,
+      resultIds: null,
       // sem centro não há geocódigo NENHUM — nem grosso.
       radiusKm: null, geohash5: null,
     });
@@ -347,7 +349,8 @@ describe('AdminWorkersMapController.getMapPoints', () => {
       msg: 'workers.map.read', uid: 'staff-1', country: 'AR', scope: 'radius',
       n: 500, withoutCoordinates: 0, truncated: true,
       totalMatching: 4231, status: null, profession: null,
-      stateCanonical: null, hasStateFilter: false, hasCityFilter: false,
+      stateCanonical: null, hasStateFilter: false, hasCityFilter: false, hasSearchFilter: false,
+      resultIds: null,
       radiusKm: 5, geohash5: '69y7p',
     });
   });
@@ -361,5 +364,25 @@ describe('AdminWorkersMapController.getMapPoints', () => {
     expect(mockReportError).toHaveBeenCalledWith(expect.any(Error), { source: 'AdminWorkersMapController:getMapPoints' });
     expect(JSON.stringify(mockReportError.mock.calls[0][1])).not.toMatch(/34\.6|Palermo/);
     expect(mockLogInfo).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 🔒 O mapa de PRESTADORES não ganhou busca por nome (07/09/2026).
+ *
+ * A busca entrou só no mapa de pacientes, e de propósito FORA do
+ * `mapScopeShape` compartilhado. Se ela morasse no escopo comum, este schema
+ * passaria a aceitar `search` — e como este controller não filtra por nome,
+ * `hasScope` daria por satisfeito um corpo SEM centro e SEM província, que na
+ * prática varre a base inteira de prestadores. Este teste é o que trava isso.
+ */
+describe('assimetria deliberada: prestador não busca por nome', () => {
+  it('`search` é rejeitado pelo strict — não virou escopo aqui', () => {
+    expect(WorkersMapBodySchema.safeParse({ country: 'AR', search: 'Reyna' }).success).toBe(false);
+  });
+
+  it('`search` não substitui escopo: sem centro/província continua 400', () => {
+    const r = WorkersMapBodySchema.safeParse({ country: 'AR', search: 'qualquer coisa' });
+    expect(r.success).toBe(false);
   });
 });
