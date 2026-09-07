@@ -53,7 +53,7 @@ export const useAdminAuthStore = create<AdminAuthState>((set, get) => ({
     try {
       trace?.step('backend-profile:start');
       const profile = await AdminApiService.getProfile();
-      trace?.step('backend-profile:ok', { role: profile.role });
+      trace?.step('backend-profile:ok');
       set({ adminProfile: profile });
       await get().fetchAuthz();
     } catch (err) {
@@ -80,7 +80,7 @@ export const useAdminAuthStore = create<AdminAuthState>((set, get) => ({
     try {
       trace?.step('backend-profile:start');
       const profile = await AdminApiService.getProfile();
-      trace?.step('backend-profile:ok', { role: profile.role });
+      trace?.step('backend-profile:ok');
       set({ adminProfile: profile });
 
       // Force refresh token to pick up custom claims set by backend auto-provisioning

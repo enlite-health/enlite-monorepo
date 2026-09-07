@@ -184,6 +184,55 @@ describe('requireStaff', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  // D294 — a fronteira é o TIPO da conta; o papel é só a ponte.
+  function authServiceWith(principal: Partial<AuthContext['principal']>) {
+    return {
+      parseCredentials: jest.fn().mockReturnValue(authContext.credentials),
+      authenticate: jest.fn().mockResolvedValue({
+        ...authContext,
+        principal: { id: 'uid-1', type: PrincipalType.USER, ...principal },
+      }),
+    } as never;
+  }
+
+  it('account_type=staff passa MESMO sem papel nenhum (o claim novo basta)', async () => {
+    const middleware = new AuthMiddleware(authServiceWith({ accountType: 'staff', roles: [] }), {} as never).requireStaff();
+    const [req, res, next] = makeReqRes();
+    await middleware(req, res, next);
+    expect(next).toHaveBeenCalled();
+    expect((req as Request & { user: { accountType?: string } }).user.accountType).toBe('staff');
+  });
+
+  it('account_type=worker é barrado MESMO com papel admin — o tipo declarado vence a ponte', async () => {
+    const middleware = new AuthMiddleware(authServiceWith({ accountType: 'worker', roles: ['admin'] }), {} as never).requireStaff();
+    const [req, res, next] = makeReqRes();
+    await middleware(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('sem tipo e sem papel → 403 (lex C5: a ponte nunca concede por ausência)', async () => {
+    const middleware = new AuthMiddleware(authServiceWith({ roles: [] }), {} as never).requireStaff();
+    const [req, res, next] = makeReqRes();
+    await middleware(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('autenticação que EXPLODE → 500 sem vazar o erro (o catch do requireAuth)', async () => {
+    const authService = {
+      parseCredentials: jest.fn().mockReturnValue(authContext.credentials),
+      authenticate: jest.fn().mockRejectedValue(new Error('idp fora')),
+    };
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const middleware = new AuthMiddleware(authService as never, {} as never).requireStaff();
+    const [req, res, next] = makeReqRes();
+    await middleware(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect((res.json as jest.Mock).mock.calls[0][0]).toEqual({ success: false, error: 'Authentication error' });
+    expect(next).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
   it('sem credencial nenhuma → 401 do requireAuth, sem chegar ao check de papel', async () => {
     const authService = { parseCredentials: jest.fn().mockReturnValue(null), authenticate: jest.fn() };
     const middleware = new AuthMiddleware(authService as never, {} as never).requireStaff();

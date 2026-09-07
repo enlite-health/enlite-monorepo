@@ -12,7 +12,7 @@ vi.mock('@presentation/hooks/useAdminAuth', () => ({
   useAdminAuth: vi.fn(() => ({
     isAuthenticated: true,
     isLoading: false,
-    adminProfile: { role: 'admin', email: 'a@enlite.health' },
+    adminProfile: { email: 'a@enlite.health' },
     logout,
   })),
 }));
@@ -38,7 +38,7 @@ describe('AdminProtectedRoute — tabela-verdade da A1 (D268), ponto único que 
     vi.mocked(useAdminAuth).mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
-      adminProfile: { role: 'admin', email: 'a@enlite.health' } as ReturnType<typeof useAdminAuth>['adminProfile'],
+      adminProfile: { email: 'a@enlite.health' } as ReturnType<typeof useAdminAuth>['adminProfile'],
       logout,
     } as unknown as ReturnType<typeof useAdminAuth>);
     useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
@@ -128,7 +128,7 @@ describe('AdminProtectedRoute usa shouldShowWelcomeNoGroup (não reimplementa a 
     vi.mocked(useAdminAuth).mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
-      adminProfile: { role: 'admin', email: 'a@enlite.health' } as ReturnType<typeof useAdminAuth>['adminProfile'],
+      adminProfile: { email: 'a@enlite.health' } as ReturnType<typeof useAdminAuth>['adminProfile'],
       logout,
     } as unknown as ReturnType<typeof useAdminAuth>);
   });

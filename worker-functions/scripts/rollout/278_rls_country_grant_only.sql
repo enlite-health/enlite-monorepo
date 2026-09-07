@@ -34,6 +34,7 @@
 -- claim) — testada no e2e (1.9). Executar reversão em prod = evento de segurança
 -- (lex C5 do ABAC): registrar quem/quando/por quê.
 
+
 -- PRÉ-CONDIÇÃO fail-closed (a causa exata que tirou esta policy da cadeia): quem
 -- aplica PRECISA ter visto quantos staff ACTIVE ficam sem país efetivo e confirmar o
 -- número. O modelo D114 ACEITA staff sem grupo (cai na tela de boas-vindas) — então
@@ -50,6 +51,17 @@
 -- ON_ERROR_STOP não consegue "pular o erro e aplicar a policy mesmo assim".
 -- (Harness/e2e: pode setar o GUC app.rollout_278_ack em vez da variável psql.)
 \set ON_ERROR_STOP on
+-- ⚠️ D294 (07/09/2026): este script lê `users.account_type` (migration 414). Contra um
+-- banco sem a 414 o predicado devolveria ZERO — e zero aqui pareceria "ninguém sem
+-- grupo". Falha alto em vez disso.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_name = 'users' AND column_name = 'account_type') THEN
+    RAISE EXCEPTION 'users.account_type ausente: aplique a migration 414 antes deste script';
+  END IF;
+END
+$$;
 SELECT set_config('app.rollout_278_ack', :'ack', false);
 
 DO $$
@@ -60,7 +72,7 @@ BEGIN
   SELECT count(*) INTO v_sem
   FROM users u
   WHERE u.status = 'ACTIVE'
-    AND u.role IN ('admin', 'recruiter', 'community_manager')
+    AND u.account_type = 'staff'
     AND cardinality(iam.effective_countries(u.firebase_uid, iam.current_tenant_id())) = 0;
   IF v_ack IS NULL OR v_ack <> v_sem::text THEN
     RAISE EXCEPTION USING ERRCODE = '23514',

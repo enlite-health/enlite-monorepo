@@ -9,7 +9,7 @@
  *   Onda 3 — Tab "Historial": executed merges with undo action
  *   Onda 4b — Tab "Importados": name-based groups (real↔imported + imported↔imported)
  *
- * Access guard: redirects to /admin if role !== ADMIN.
+ * Access guard: redirects to /admin sem a célula `dedup:read` (engine ON).
  * Pattern mirrors BlockedAttemptsPage (orquestrador; lógica en hooks).
  */
 
@@ -21,8 +21,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
-import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
-import { EnliteRole } from '@domain/entities/EnliteRole';
+import { useContainerAccess } from '@presentation/hooks/useCellAccess';
 import { useDedupQueue } from '@hooks/admin/useDedupQueue';
 import { useDedupHistory } from '@hooks/admin/useDedupHistory';
 import { useImportedGroups } from '@hooks/admin/useImportedGroups';
@@ -50,25 +49,23 @@ function LoadingSkeleton() {
 
 export function DedupCenterPage() {
   const navigate = useNavigate();
-  const { adminProfile } = useAdminAuth();
 
-  // ── Role guard ────────────────────────────────────────────────────────────────
-  const isAdmin = adminProfile?.role === EnliteRole.ADMIN;
+  // ── Gate de container ─────────────────────────────────────────────────────────
+  // A célula da leitura que a tela faz: GET /dedup/groups → dedup:read.
+  // Só nega com o engine ligado (D268/D286).
+  const { visible } = useContainerAccess('dedup');
 
   useEffect(() => {
-    if (adminProfile && !isAdmin) {
-      navigate('/admin', { replace: true });
-    }
-  }, [adminProfile, isAdmin, navigate]);
+    if (!visible) navigate('/admin', { replace: true });
+  }, [visible, navigate]);
 
-  if (adminProfile && !isAdmin) return null;
+  if (!visible) return null;
 
   return <DedupCenterPageInner />;
 }
 
 /**
- * Inner component extracted to keep the role guard clean.
- * Only rendered when adminProfile is known.
+ * Inner component extracted to keep the access guard clean.
  */
 function DedupCenterPageInner() {
   const { t } = useTranslation();

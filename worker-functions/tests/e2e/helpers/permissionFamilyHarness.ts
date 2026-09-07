@@ -5,7 +5,7 @@
  * 21 linhas do `beforeAll` da 1ª, e o mesmo bloco de construção do módulo de
  * permissões apareceu 3 vezes no repo. Com 7 famílias e 120 rotas ainda por
  * virar, isso vira 9 cópias — e o que está duplicado não é enfeite: é o CONTRATO
- * do wiring real (`pool` × `systemPool` × `staffRoles` × ordem dos middlewares) e
+ * do wiring real (`pool` × `systemPool` × ordem dos middlewares) e
  * a lista de tabelas `iam.*` a limpar. Uma tabela nova no schema (o design prevê
  * países por grupo) teria que ser lembrada em 9 lugares, e vazamento entre
  * suítes é justamente a classe de bug que já mordeu esta change uma vez.
@@ -92,10 +92,7 @@ export async function montarAppDeFamilia(opts: MontarAppOpts): Promise<AppDeFami
   const permissions = createPermissionsModule({
     pool: db.getPool(),
     systemPool: db.getSystemPool(),
-    // A constante do domínio, não um literal: o harness se anuncia como a cadeia
-    // de verdade do `src/index.ts`, e é ela que o `src/index.ts` usa. Papel novo
-    // no `STAFF_ROLES` tem que valer aqui sem ninguém lembrar de editar o teste.
-    staffRoles: [...identity.STAFF_ROLES],
+    // D294: staff é `users.account_type = 'staff'` — o módulo não recebe mais lista de papéis.
     ttlMs: opts.ttlMs ?? 0,
     // D268 — a MESMA leitura que `createPermissionsBoundary` faz em produção,
     // pra `enforcement` do contrato `/v1/me/authz` bater com a suíte que liga

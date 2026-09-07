@@ -44,7 +44,8 @@ export const onUserCreate = functions.auth.user().onCreate(async (user) => {
         user.emailVerified
       ]);
 
-      await mergeCustomClaims(user.uid, { role: defaultRole });
+      // D294: o tipo da conta viaja junto (`worker`); a coluna `users.account_type` é derivada pelo trigger da 414.
+      await mergeCustomClaims(user.uid, { role: defaultRole, account_type: 'worker' });
 
       await client.query('COMMIT');
 

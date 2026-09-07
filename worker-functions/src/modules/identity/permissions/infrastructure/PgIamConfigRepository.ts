@@ -11,6 +11,7 @@
 
 import type { Pool, PoolClient } from 'pg';
 import { cellKey } from '../domain/PermissionCell';
+import { STAFF_ACCOUNT_TYPE } from './PgEffectiveAuthzRepository';
 import type { IamConfigSnapshot, IamImportOp, IamImportPlan } from '../application/iamConfig/types';
 import { normalizeSnapshot } from '../application/iamConfig/snapshot';
 
@@ -32,13 +33,10 @@ interface GroupRow { id: string; name: string; description: string | null; is_sy
  * `iam-config.json`, o artefato revisável "quem tem o quê". A remoção usa
  * `uidsByEmailAny` (sem filtro de role), uma lookup PRÓPRIA, distinta desta.
  *
- * ⚠️ Não importa de `identity/domain/EnliteRole` de propósito: a fronteira do
- * módulo (`permissions/__tests__/moduleBoundary.test.ts`, D115 §7) proíbe
- * `permissions/**` de importar de fora de si mesmo — é o que mantém o módulo
- * extraível para o permission-service num `git mv`. Os valores têm de
- * continuar iguais aos de `EnliteRole.STAFF_ROLES` à mão (mesmos 3 papéis).
+ * (D294) Staff é `users.account_type = 'staff'` — vocabulário do banco, o mesmo
+ * de `PgEffectiveAuthzRepository`. A fronteira do módulo (`moduleBoundary.test`,
+ * D115 §7) proíbe importar de `identity/domain`; a string é estável por CHECK.
  */
-const STAFF_ROLES = ['admin', 'recruiter', 'community_manager'] as const;
 
 export class PgIamConfigRepository {
   constructor(private readonly pool: Pool) {}
@@ -143,15 +141,15 @@ export class PgIamConfigRepository {
   }
 
   /**
-   * e-mail (minúsculo) → uid dos STAFF (3 roles) com conta no alvo. Usada só
+   * e-mail (minúsculo) → uid dos STAFF (`account_type = 'staff'`) com conta no alvo. Usada só
    * para a checagem de ADD (`add_member` continua exigindo staff) — NÃO para
    * `exportSnapshot` nem para REMOVE (M1: ver `uidsByEmailAny`).
    */
   async staffUidsByEmail(): Promise<Map<string, string>> {
     const r = await this.pool.query<{ email: string; firebase_uid: string }>(
       `SELECT lower(email) AS email, firebase_uid FROM users
-        WHERE role = ANY($1) AND email IS NOT NULL`,
-      [STAFF_ROLES as unknown as string[]],
+        WHERE account_type = $1 AND email IS NOT NULL`,
+      [STAFF_ACCOUNT_TYPE],
     );
     return new Map(r.rows.map((x) => [x.email, x.firebase_uid]));
   }

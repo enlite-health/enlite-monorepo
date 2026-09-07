@@ -50,7 +50,7 @@ import { TwilioContentWriter } from '../../../notification/infrastructure/Twilio
  * esconde. Este controller escreve em tabela separada justamente para não
  * repetir aquilo: rascunho é rascunho até alguém decidir promovê-lo.
  *
- * Escrita exige `requireAdmin`, seguindo o precedente das mensagens por etapa
+ * Escrita exige `messaging:write` (papel `admin` só até a família virar), seguindo o precedente das mensagens por etapa
  * (parecer `lex` de 29/08, condição C7 — quem configura ≠ quem dispara).
  */
 

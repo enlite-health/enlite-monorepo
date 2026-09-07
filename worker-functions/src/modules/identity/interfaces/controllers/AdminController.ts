@@ -5,11 +5,9 @@ import { ListAdminUsersUseCase } from '../../application/ListAdminUsersUseCase';
 import { DeleteAdminUserUseCase } from '../../application/DeleteAdminUserUseCase';
 import { ResetAdminPasswordUseCase } from '../../application/ResetAdminPasswordUseCase';
 import { GetAdminProfileUseCase } from '../../application/GetAdminProfileUseCase';
-import { UpdateAdminRoleUseCase } from '../../application/UpdateAdminRoleUseCase';
 import { AdminRepository } from '../../infrastructure/AdminRepository';
 import { UserRepository } from '../../infrastructure/UserRepository';
 import { GoogleIdentityService } from '../../infrastructure/GoogleIdentityService';
-import { isStaffRole } from '../../domain/EnliteRole';
 import { LAST_MANAGER } from '../../application/DeleteAdminUserUseCase';
 import { MENSAGEM_POR_CODIGO, STATUS_POR_CODIGO } from '../http/permissionErrorHttp';
 
@@ -20,7 +18,6 @@ export class AdminController {
   private deleteAdminUseCase = new DeleteAdminUserUseCase();
   private resetPasswordUseCase = new ResetAdminPasswordUseCase();
   private getProfileUseCase = new GetAdminProfileUseCase();
-  private updateRoleUseCase = new UpdateAdminRoleUseCase();
   private adminRepo = new AdminRepository();
 
   constructor() {
@@ -115,18 +112,15 @@ export class AdminController {
   /** POST /api/admin/users */
   async createAdminUser(req: Request, res: Response): Promise<void> {
     try {
-      const { email, displayName, department, role } = req.body;
+      // `role` não é mais aceito no corpo (07/09): papel deixou de ser nível de
+      // acesso; a conta nasce sem grupo e o gestor concede em `/admin/access`.
+      const { email, displayName, department } = req.body;
       if (!email || !displayName) {
         res.status(400).json({ success: false, error: 'email and displayName are required' });
         return;
       }
 
-      if (role !== undefined && !isStaffRole(role)) {
-        res.status(400).json({ success: false, error: `Invalid role: ${role}` });
-        return;
-      }
-
-      const result = await this.createAdminUseCase.execute({ email, displayName, department, role });
+      const result = await this.createAdminUseCase.execute({ email, displayName, department });
       if (result.isFailure) {
         res.status(400).json({ success: false, error: result.error });
         return;
@@ -135,35 +129,6 @@ export class AdminController {
       res.status(201).json({ success: true, data: result.getValue() });
     } catch (error) {
       console.error('Error creating admin user');
-      res.status(500).json({ success: false, error: 'Internal server error' });
-    }
-  }
-
-  /** PATCH /api/admin/users/:id/role */
-  async updateAdminRole(req: Request, res: Response): Promise<void> {
-    try {
-      const { id } = req.params;
-      const { role, department } = req.body;
-
-      if (!role || !isStaffRole(role)) {
-        res.status(400).json({ success: false, error: `Invalid or missing role: ${role}` });
-        return;
-      }
-
-      const result = await this.updateRoleUseCase.execute({
-        firebaseUid: id,
-        newRole: role,
-        department,
-      });
-
-      if (result.isFailure) {
-        res.status(400).json({ success: false, error: result.error });
-        return;
-      }
-
-      res.status(200).json({ success: true, data: result.getValue() });
-    } catch (error) {
-      console.error('Error updating admin role');
       res.status(500).json({ success: false, error: 'Internal server error' });
     }
   }

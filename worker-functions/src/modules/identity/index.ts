@@ -55,8 +55,6 @@ export { ListAdminUsersUseCase } from './application/ListAdminUsersUseCase';
 export { DeleteAdminUserUseCase } from './application/DeleteAdminUserUseCase';
 export { ResetAdminPasswordUseCase } from './application/ResetAdminPasswordUseCase';
 export { GetAdminProfileUseCase } from './application/GetAdminProfileUseCase';
-export { UpdateAdminRoleUseCase } from './application/UpdateAdminRoleUseCase';
-export type { UpdateAdminRoleInput } from './application/UpdateAdminRoleUseCase';
 export { DeleteUserUseCase } from './application/DeleteUserUseCase';
 export type { DeleteUserDTO } from './application/DeleteUserUseCase';
 export { DeleteUserByEmailUseCase } from './application/DeleteUserByEmailUseCase';

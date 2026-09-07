@@ -29,7 +29,6 @@ const ESPERADO: Record<string, string> = {
   'DELETE /users/by-email': 'user_management:delete',
   'DELETE /users/:id': 'user_management:delete',
   'POST /users/:id/reset-password': 'user_management:write',
-  'PATCH /users/:id/role': 'permission_management:write',
 };
 
 /** Cada handler devolve o próprio nome — é o que identifica quem foi chamado. */
@@ -42,7 +41,6 @@ function build(over: { permissions?: PermissionMiddleware } = {}) {
     deleteAdminUser: responde('deleteAdminUser'),
     deleteUserByEmail: responde('deleteUserByEmail'),
     resetAdminPassword: responde('resetAdminPassword'),
-    updateAdminRole: responde('updateAdminRole'),
   } as unknown as AdminController;
 
   return createAdminUsersRoutes(controller, authDouble(), over.permissions ?? permissionsDouble());
@@ -64,13 +62,22 @@ describe('createAdminUsersRoutes', () => {
     expect(declarado).toEqual(ESPERADO);
   });
 
-  it('mexer em papel exige permission_management:write, não user_management:write', () => {
-    const rota = scanExpressRouter(build()).find((r) => r.path === '/users/:id/role');
-    expect(rota?.cell).toEqual({
-      resource: 'permission_management',
-      action: 'write',
-      description: null,
+  it('não existe mais rota de papel (07/09): acesso se concede por grupo, não por `role`', () => {
+    expect(scanExpressRouter(build()).find((r) => r.path.endsWith('/role'))).toBeUndefined();
+  });
+
+  it('o que era admin-only continua admin-only enquanto a família não está enforced (untilEnforced)', async () => {
+    const app = express();
+    app.use((req, _res, next) => {
+      req.authContext = { principal: { id: 'rec', roles: ['recruiter'] } } as never;
+      next();
     });
+    app.use('/api/admin', build());
+
+    await request(app).get('/api/admin/users').expect(200);
+    await request(app).post('/api/admin/users').expect(403);
+    await request(app).delete('/api/admin/users/abc').expect(403);
+    await request(app).post('/api/admin/users/abc/reset-password').expect(403);
   });
 
   it('`by-email` é registrada ANTES de `:id` — senão o DELETE por e-mail é engolido', async () => {
@@ -102,7 +109,6 @@ describe('createAdminUsersRoutes', () => {
     ['post', '/api/admin/users', 'createAdminUser'],
     ['get', '/api/admin/users', 'listAdminUsers'],
     ['post', '/api/admin/users/1/reset-password', 'resetAdminPassword'],
-    ['patch', '/api/admin/users/1/role', 'updateAdminRole'],
   ] as const)('%s %s → %s', async (metodo, caminho, esperado) => {
     const app = express();
     app.use('/api/admin', build());

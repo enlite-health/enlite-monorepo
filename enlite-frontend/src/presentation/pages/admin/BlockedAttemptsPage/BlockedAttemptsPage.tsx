@@ -13,8 +13,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
-import { EnliteRole } from '@domain/entities/EnliteRole';
+import { useContainerAccess } from '@presentation/hooks/useCellAccess';
 import { RefreshCw, AlertCircle, ShieldX } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
@@ -219,24 +218,23 @@ function PaginationBar({
 
 export function BlockedAttemptsPage(): JSX.Element | null {
   const navigate = useNavigate();
-  const { adminProfile } = useAdminAuth();
 
-  // ── Role guard (mesmo padrão do DedupCenterPage) ────────────────────────────
-  const isAdmin = adminProfile?.role === EnliteRole.ADMIN;
+  // ── Gate de container (mesmo padrão do DedupCenterPage) ─────────────────────
+  // A célula da leitura que a tela faz: GET /recruitment/blocked-attempts →
+  // recruitment:read. Só nega com o engine ligado (D268/D286).
+  const { visible } = useContainerAccess('recruitment');
 
   useEffect(() => {
-    if (adminProfile && !isAdmin) {
-      navigate('/admin', { replace: true });
-    }
-  }, [adminProfile, isAdmin, navigate]);
+    if (!visible) navigate('/admin', { replace: true });
+  }, [visible, navigate]);
 
-  if (adminProfile && !isAdmin) return null;
+  if (!visible) return null;
 
   return <BlockedAttemptsPageInner />;
 }
 
 /**
- * Inner component extracted to keep the role guard clean.
+ * Inner component extracted to keep the access guard clean.
  */
 function BlockedAttemptsPageInner(): JSX.Element {
   const { t } = useTranslation();

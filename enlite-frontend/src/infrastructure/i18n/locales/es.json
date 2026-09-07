@@ -1355,10 +1355,6 @@
       "cancel": "Cancelar",
       "name": "Nombre",
       "email": "Email",
-      "role": "Rol",
-      "roleAdmin": "Administrador",
-      "roleRecruiter": "Reclutador",
-      "roleCommunityManager": "Community Manager",
       "department": "Departamento",
       "lastLogin": "Último login",
       "actions": "Acciones",
@@ -1377,8 +1373,7 @@
       "linkCopied": "Link copiado al portapapeles",
       "invitationFallbackTitle": "Usuario creado",
       "invitationFallbackDesc": "Ya enviamos un email con el link para definir la contraseña. Si no llega, podés copiarlo abajo y enviarlo manualmente.",
-      "done": "Listo",
-      "errorUpdateRole": "Error al actualizar el rol"
+      "done": "Listo"
     },
     "recruitment": {
       "title": "Dashboard de Reclutamiento",
@@ -4149,6 +4144,7 @@
             "coverage": "Cobertura médica",
             "address": "Localizaciones",
             "services": "Servicio contratado",
+            "contractValue": "Valor hora del servicio contratado",
             "vacancies": "Vacantes del paciente",
             "operational": "Estado, activación e historial"
           }
@@ -4244,7 +4240,7 @@
       "saved": "Guardado",
       "error": "No se pudo guardar",
       "never": "Nunca",
-      "adminOnly": "Solo un administrador puede cambiar esta configuración.",
+      "noWriteAccess": "No tenés permiso para modificar esta configuración.",
       "ineligible": {
         "CATEGORY": "no es UTILITY (Meta)",
         "DENY_LIST": "recordatorio/cobranza: bloqueado por etapa",
@@ -4295,7 +4291,7 @@
       "save": "Guardar",
       "saved": "Guardado",
       "error": "No se pudo guardar",
-      "adminOnly": "Solo un administrador puede modificar esta configuración.",
+      "noWriteAccess": "No tenés permiso para modificar esta configuración.",
       "templateHint": "Solo templates aprobados por Meta como UTILITY, con las variables que el sistema completa (nombre como token, link, horario). El template de esta invitación todavía no fue aprobado: mientras esté inactivo nada sale.",
       "ineligible": {
         "INACTIVE": "inactivo (todavía no aprobado)",

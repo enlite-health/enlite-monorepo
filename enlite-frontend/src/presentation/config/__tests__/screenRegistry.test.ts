@@ -93,8 +93,9 @@ describe('screensByCell / containersOfTab / screenById', () => {
     const s = screenById('patients.detail');
     expect(containersOfTab(s, 'clinicalData').map((c) => c.resource)).toEqual(['patient_clinical', 'patient_care_team']);
     expect(containersOfTab(s, 'supportNetwork').map((c) => c.resource)).toEqual(['patient_family', 'patient_chat']);
-    expect(containersOfTab(s, 'contractedService').map((c) => c.resource)).toEqual(['patient_coverage', 'patient_address', 'patient_services']);
-    expect(containersOfTab(s, 'matching').map((c) => c.resource)).toEqual(['patient_services']);
+    // D293: o valor-hora é container próprio (célula de DADO), nas mesmas duas abas do serviço.
+    expect(containersOfTab(s, 'contractedService').map((c) => c.resource)).toEqual(['patient_coverage', 'patient_address', 'patient_services', 'patient_contract_value']);
+    expect(containersOfTab(s, 'matching').map((c) => c.resource)).toEqual(['patient_services', 'patient_contract_value']);
     expect(containersOfTab(s, 'vacancies').map((c) => c.resource)).toEqual(['vacancy']);
     expect(containersOfTab(s, 'history').map((c) => c.resource)).toEqual(['patient']);
     // o operacional (cabeçalho + histórico) é UMA linha: nada de célula solta no nível da tela

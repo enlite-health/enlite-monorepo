@@ -66,6 +66,8 @@ export function mockAuthMiddleware(req: Request, res: Response, next: NextFuncti
       uid: userData.uid,
       email: userData.email,
       role: userData.role || 'worker',
+      // Tipo de conta (D294) — o token mock pode trazê-lo explícito; sem ele, a ponte por `role`.
+      account_type: userData.account_type ?? null,
       // Jurisdição do staff no e2e — espelha o custom claim `country` do
       // Identity Platform. Ausente segue ausente (fail-closed, sem default).
       country: userData.country,

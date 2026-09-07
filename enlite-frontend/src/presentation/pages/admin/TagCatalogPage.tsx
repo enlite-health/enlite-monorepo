@@ -3,10 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Tag, Edit2, Trash2, Plus } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
-import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
 import { ActionButton } from '@presentation/components/features/access';
-import { useActionGate } from '@presentation/hooks/useCellAccess';
-import { EnliteRole } from '@domain/entities/EnliteRole';
+import { useActionGate, useContainerAccess } from '@presentation/hooks/useCellAccess';
 import type { WorkerTag } from '@domain/entities/WorkerTag';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
@@ -33,14 +31,13 @@ export default function TagCatalogPage() {
   const tagWriteGate = useActionGate('worker', 'write');
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { adminProfile } = useAdminAuth();
-
-  // Route guard: redirect non-admins
+  // Trava de rota pela CÉLULA da leitura que a tela faz (GET /worker-tags →
+  // worker:read), não por papel. `useContainerAccess` só nega com o engine
+  // ligado — com ele desligado a tela abre como sempre abriu (D268/D286).
+  const { visible } = useContainerAccess('worker');
   useEffect(() => {
-    if (adminProfile && adminProfile.role !== EnliteRole.ADMIN) {
-      navigate('/admin', { replace: true });
-    }
-  }, [adminProfile, navigate]);
+    if (!visible) navigate('/admin', { replace: true });
+  }, [visible, navigate]);
 
   const [tags, setTags] = useState<WorkerTag[]>([]);
   const [isLoading, setIsLoading] = useState(true);

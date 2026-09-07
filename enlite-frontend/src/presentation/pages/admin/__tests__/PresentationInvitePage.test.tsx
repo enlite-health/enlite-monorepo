@@ -1,10 +1,12 @@
 /**
  * PresentationInvitePage.test.tsx — config da reunión de presentación (REQ-09):
- * carga, admin salva (corpo), recruiter só lê, erros, contadores.
+ * carga, quem tem `messaging:write` salva (corpo), quem não tem só lê, erros, contadores.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { PresentationInvitePage } from '../PresentationInvitePage';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, fallback?: string | Record<string, unknown>) => (typeof fallback === 'string' ? fallback : key) }),
@@ -13,8 +15,12 @@ const mockGet = vi.fn(); const mockPut = vi.fn(); const mockStats = vi.fn();
 vi.mock('@infrastructure/http/AdminPresentationInviteApiService', () => ({
   AdminPresentationInviteApiService: { getSettings: (...a: unknown[]) => mockGet(...a), updateSettings: (...a: unknown[]) => mockPut(...a), stats: (...a: unknown[]) => mockStats(...a) },
 }));
-let role = 'admin';
-vi.mock('@presentation/hooks/useAdminAuth', () => ({ useAdminAuth: () => ({ adminProfile: { role }, isAuthenticated: true, isLoading: false }) }));
+
+const contrato = (permissions: string[], enforcement: AuthzContract['enforcement']): AuthzContract => ({
+  uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {}, enforcement,
+});
+/** Engine ligado e SEM `messaging:write` — o único jeito de negar a escrita agora. */
+const semEscrita = () => useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['messaging:read'], 'on') });
 
 const MEET = 'https://meet.google.com/abc-defg-hij';
 const settings = () => ({
@@ -28,7 +34,15 @@ const settings = () => ({
 const stats = () => ({ windowDays: 30, rows: [{ status: 'queued', skipReason: null, source: 'kanban', count: 2 }, { status: 'queued', skipReason: null, source: 'workers_list', count: 1 }, { status: 'skipped', skipReason: 'OPT_OUT', source: 'kanban', count: 4 }], attended: 0 });
 
 describe('PresentationInvitePage', () => {
-  beforeEach(() => { vi.clearAllMocks(); role = 'admin'; mockGet.mockResolvedValue(settings()); mockStats.mockResolvedValue(stats()); mockPut.mockResolvedValue({}); });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Sem contrato = engine desligado: escreve, como sempre escreveu.
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+    mockGet.mockResolvedValue(settings());
+    mockStats.mockResolvedValue(stats());
+    mockPut.mockResolvedValue({});
+  });
+  afterEach(() => useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }));
 
   it('carrega config + contadores; template inativo é escolhível, MARKETING não; "ativa" só com template+link', async () => {
     render(<PresentationInvitePage />);
@@ -43,10 +57,10 @@ describe('PresentationInvitePage', () => {
     expect(screen.getByTestId('pi-stat-skipped')).toHaveTextContent('4');
     expect(screen.getByTestId('pi-stat-attended')).toHaveTextContent('0');
     expect(screen.getByTestId('pi-last-edit')).toHaveTextContent('—');
-    expect(screen.queryByTestId('pi-admin-only')).toBeNull();
+    expect(screen.queryByTestId('pi-no-write-access')).toBeNull();
   });
 
-  it('admin: preenche link, horário, template, liga e salva → PUT com o corpo certo → "salvo" e recarrega', async () => {
+  it('com messaging:write: preenche link, horário, template, liga e salva → PUT com o corpo certo → "salvo" e recarrega', async () => {
     render(<PresentationInvitePage />);
     await waitFor(() => expect(screen.getByTestId('pi-form')).toBeInTheDocument());
     fireEvent.change(screen.getByTestId('pi-meet-link'), { target: { value: MEET } });
@@ -78,11 +92,11 @@ describe('PresentationInvitePage', () => {
     await waitFor(() => expect(screen.getByTestId('pi-error')).toHaveTextContent('admin.presentationInvite.error'));
   });
 
-  it('recruiter: só lê — inputs desabilitados, sem salvar, aviso visível', async () => {
-    role = 'recruiter';
+  it('sem messaging:write (engine ON): só lê — inputs desabilitados, sem salvar, aviso visível', async () => {
+    semEscrita();
     render(<PresentationInvitePage />);
     await waitFor(() => expect(screen.getByTestId('pi-form')).toBeInTheDocument());
-    expect(screen.getByTestId('pi-admin-only')).toBeInTheDocument();
+    expect(screen.getByTestId('pi-no-write-access')).toBeInTheDocument();
     expect((screen.getByTestId('pi-meet-link') as HTMLInputElement).disabled).toBe(true);
     expect(screen.queryByTestId('pi-save')).toBeNull();
   });

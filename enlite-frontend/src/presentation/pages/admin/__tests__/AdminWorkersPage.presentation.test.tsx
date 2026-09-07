@@ -8,7 +8,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string, f?: string) => (typeof f === 'string' ? f : k), i18n: { language: 'es' } }) }));
 const navigate = vi.fn();
 vi.mock('react-router-dom', () => ({ useNavigate: () => navigate }));
-vi.mock('@presentation/hooks/useAdminAuth', () => ({ useAdminAuth: () => ({ adminProfile: { role: 'admin' }, isAuthenticated: true, isLoading: false }) }));
+vi.mock('@presentation/hooks/useAdminAuth', () => ({ useAdminAuth: () => ({ adminProfile: {}, isAuthenticated: true, isLoading: false }) }));
 vi.mock('@hooks/admin/useCaseOptions', () => ({ useCaseOptions: () => ({ options: [], isLoading: false }) }));
 vi.mock('@hooks/admin/useWorkersData', () => ({
   useWorkersData: () => ({

@@ -33,6 +33,7 @@
     "patient_chat:write",
     "patient_clinical:read",
     "patient_clinical:write",
+    "patient_contract_value:read",
     "patient_coverage:read",
     "patient_coverage:write",
     "patient_family:read",

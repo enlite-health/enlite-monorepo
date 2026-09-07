@@ -11,7 +11,7 @@ import {
   associateProviderSchema,
   updateProviderSchema,
 } from '../validators/contractedServiceSchemas';
-import { actorRolesOf, projectContractedServiceForActor, isAdminActor, bodyWritesHourlyValue } from '../../application/contractedServiceHourlyValueAccess';
+import { hourlyValueActorOf, projectContractedServiceForActor, canReadHourlyValue, bodyWritesHourlyValue } from '../../application/contractedServiceHourlyValueAccess';
 
 const patientParamsSchema = z.object({ id: z.string().uuid() });
 const serviceParamsSchema = z.object({ id: z.string().uuid(), sid: z.string().uuid() });
@@ -35,7 +35,7 @@ export class AdminPatientContractedServicesController {
   ) {}
 
   private project(req: Request, service: ContractedServiceDetail) {
-    return projectContractedServiceForActor(service, actorRolesOf(req));
+    return projectContractedServiceForActor(service, hourlyValueActorOf(req));
   }
 
   private actorUid(req: Request): string {
@@ -44,11 +44,11 @@ export class AdminPatientContractedServicesController {
 
   /**
    * Recusa (403) quem manda `hourlyValue` sem poder LÊ-LO. Devolve `true` quando já respondeu.
-   * A rota é `staffOnly`, mas o campo é restrito a `admin` na leitura — sem esta guarda um
-   * `recruiter`, que recebe `hourlyValue: null` em toda leitura, gravava 0 por cima do valor.
+   * A rota abre com `patient_services:write`, mas o campo é `patient_contract_value:read` — sem
+   * esta guarda quem recebe `hourlyValue: null` em toda leitura gravava 0 por cima do valor.
    */
   private refuseHourlyValueWrite(req: Request, res: Response): boolean {
-    if (!bodyWritesHourlyValue(req.body) || isAdminActor(actorRolesOf(req))) return false;
+    if (!bodyWritesHourlyValue(req.body) || canReadHourlyValue(hourlyValueActorOf(req))) return false;
     // lex C-b1: só o NOME do campo, nunca o valor.
     res.status(403).json({ success: false, error: 'Forbidden', details: { field: 'hourlyValue' } });
     return true;

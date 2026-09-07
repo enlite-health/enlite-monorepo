@@ -2,10 +2,11 @@
  * dedupRoutes
  *
  * Monta o router do Centro de Duplicados.
- * Todos os endpoints gated por requireAdmin().
+ * Todos os endpoints exigem a célula `dedup:*`; até a família virar em produção,
+ * `untilEnforced: 'admin'` mantém o que era `requireAdmin()` (ver PermissionMiddleware).
  *
  * Montado em src/index.ts como:
- *   app.use('/api/admin/dedup', adminOnly, dedupRouter);
+ *   app.use('/api/admin/dedup', dedupRouter);
  *
  * ── Família `admin.dedup` (task 3.5-A5, a ÚLTIMA de propósito) ───────────────
  * 9 rotas, 2 células, ambas já no seed da 206. Mapa rota→célula:
@@ -42,51 +43,51 @@ export function createDedupRoutes(
   permissions: PermissionMiddleware,
 ): Router {
   const router = Router();
-  const adminOnly = authMiddleware.requireAdmin();
+  const staffOnly = authMiddleware.requireStaff();
   const perm = permissions.family(ADMIN_DEDUP_FAMILY);
 
   // GET /api/admin/dedup/groups
-  router.get('/groups', adminOnly, perm.require('dedup', 'read'), (req: Request, res: Response) =>
+  router.get('/groups', staffOnly, perm.require('dedup', 'read', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
     controller.listGroups(req, res),
   );
 
   // GET /api/admin/dedup/groups/:phoneNormalized
-  router.get('/groups/:phoneNormalized', adminOnly, perm.require('dedup', 'read'), (req: Request, res: Response) =>
+  router.get('/groups/:phoneNormalized', staffOnly, perm.require('dedup', 'read', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
     controller.getGroupDetail(req, res),
   );
 
   // POST /api/admin/dedup/merge
-  router.post('/merge', adminOnly, perm.require('dedup', 'execute'), (req: Request, res: Response) =>
+  router.post('/merge', staffOnly, perm.require('dedup', 'execute', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
     controller.executeMerge(req, res),
   );
 
   // POST /api/admin/dedup/dismiss
-  router.post('/dismiss', adminOnly, perm.require('dedup', 'execute'), (req: Request, res: Response) =>
+  router.post('/dismiss', staffOnly, perm.require('dedup', 'execute', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
     controller.dismissGroup(req, res),
   );
 
   // POST /api/admin/dedup/merges/:auditId/undo
-  router.post('/merges/:auditId/undo', adminOnly, perm.require('dedup', 'execute'), (req: Request, res: Response) =>
+  router.post('/merges/:auditId/undo', staffOnly, perm.require('dedup', 'execute', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
     controller.undoMerge(req, res),
   );
 
   // GET /api/admin/dedup/history
-  router.get('/history', adminOnly, perm.require('dedup', 'read'), (req: Request, res: Response) =>
+  router.get('/history', staffOnly, perm.require('dedup', 'read', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
     controller.listHistory(req, res),
   );
 
   // GET /api/admin/dedup/imported-groups
-  router.get('/imported-groups', adminOnly, perm.require('dedup', 'read'), (req: Request, res: Response) =>
+  router.get('/imported-groups', staffOnly, perm.require('dedup', 'read', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
     controller.listImportedGroups(req, res),
   );
 
   // GET /api/admin/dedup/candidates?q=<text>&limit=<n>
-  router.get('/candidates', adminOnly, perm.require('dedup', 'read'), (req: Request, res: Response) =>
+  router.get('/candidates', staffOnly, perm.require('dedup', 'read', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
     controller.searchCandidates(req, res),
   );
 
   // POST /api/admin/dedup/manual-group
-  router.post('/manual-group', adminOnly, perm.require('dedup', 'execute'), (req: Request, res: Response) =>
+  router.post('/manual-group', staffOnly, perm.require('dedup', 'execute', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
     controller.buildManualGroup(req, res),
   );
 

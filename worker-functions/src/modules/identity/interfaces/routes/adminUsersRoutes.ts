@@ -14,14 +14,14 @@
  * teste unitário (`adminUsersRoutes.test.ts`).
  *
  * Mapa rota→célula: `openspec/changes/painel-grupos-permissao/route-permission-map.md`.
- * ⚠️ `PATCH /:id/role` exige `permission_management:write`, NÃO `user_management:write`:
- * mexer no papel de alguém é mexer em ACESSO, e é a fronteira que o lex C1
- * (acesso urgente, ≥2 gestores nomeados) protege.
  *
- * As rotas guardam o `requireAdmin`/`requireStaff` de hoje ALÉM da célula, de
- * propósito: enquanto a família não está em `PERMISSION_ENFORCED_ROUTES`, o
- * guard de papel é a única proteção; depois da virada, os dois valem e o mais
- * restritivo ganha. Tirar o papel agora seria abrir a rota no intervalo.
+ * 07/09/2026 — o papel (`users.role`) deixou de ser nível de acesso: a célula
+ * decide, e o painel não mostra nem edita papel (o `PATCH /:id/role` foi
+ * removido — acesso se concede por grupo em `/admin/access`). `requireStaff()`
+ * fica porque é a fronteira staff × prestador, não um nível. O que a rota
+ * exigia antes (`admin`) vai em `untilEnforced` e só vale enquanto a família
+ * não está em `PERMISSION_ENFORCED_ROUTES` — tirar sem isso abriria a rota no
+ * `main` com o engine desligado.
  */
 
 import { Router } from 'express';
@@ -40,7 +40,7 @@ export function createAdminUsersRoutes(
   const router = Router();
   const perm = permissions.family(ADMIN_USERS_FAMILY);
 
-  router.post('/users', auth.requireAdmin(), perm.require('user_management', 'write'), (req, res) => {
+  router.post('/users', auth.requireStaff(), perm.require('user_management', 'write', { untilEnforced: 'admin' }), (req, res) => {
     controller.createAdminUser(req, res);
   });
 
@@ -50,29 +50,20 @@ export function createAdminUsersRoutes(
 
   // ⚠️ ANTES de `/users/:id` — `by-email` casaria com `:id` e o DELETE por
   // e-mail viraria "apagar o usuário de id 'by-email'". A ordem é contrato.
-  router.delete('/users/by-email', auth.requireAdmin(), perm.require('user_management', 'delete'), (req, res) => {
+  router.delete('/users/by-email', auth.requireStaff(), perm.require('user_management', 'delete', { untilEnforced: 'admin' }), (req, res) => {
     controller.deleteUserByEmail(req, res);
   });
 
-  router.delete('/users/:id', auth.requireAdmin(), perm.require('user_management', 'delete'), (req, res) => {
+  router.delete('/users/:id', auth.requireStaff(), perm.require('user_management', 'delete', { untilEnforced: 'admin' }), (req, res) => {
     controller.deleteAdminUser(req, res);
   });
 
   router.post(
     '/users/:id/reset-password',
-    auth.requireAdmin(),
-    perm.require('user_management', 'write'),
+    auth.requireStaff(),
+    perm.require('user_management', 'write', { untilEnforced: 'admin' }),
     (req, res) => {
       controller.resetAdminPassword(req, res);
-    },
-  );
-
-  router.patch(
-    '/users/:id/role',
-    auth.requireAdmin(),
-    perm.require('permission_management', 'write'),
-    (req, res) => {
-      controller.updateAdminRole(req, res);
     },
   );
 

@@ -1,7 +1,5 @@
 import { AppSidebarNavItem } from '@presentation/components/templates/DashboardLayout';
 import { useTranslation } from 'react-i18next';
-import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
-import { EnliteRole } from '@domain/entities/EnliteRole';
 import { screenVisibleFor, useCellAccess } from '@presentation/hooks/useCellAccess';
 import { screenByRoute } from '@presentation/config/screenRegistry';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
@@ -11,39 +9,19 @@ import { MapPin } from 'lucide-react';
 
 export const useAdminNavItems = (): AppSidebarNavItem[] => {
   const { t } = useTranslation();
-  const { adminProfile } = useAdminAuth();
-  const isAdmin = adminProfile?.role === EnliteRole.ADMIN;
-  // O item do painel de acessos NÃO deriva de `role`: deriva da célula que
-  // toda rota da família exige. Sem ela, o item não existe no menu.
+  // O item do painel de acessos deriva da célula que toda rota da família exige.
+  // Sem ela, o item não existe no menu.
   const { canRead: canSeeAccess } = useCellAccess('permission_management');
 
-  // D268 achou dívida: os 4 itens admin-only abaixo (Tags/Dedup/Roles de
-  // grupos/Postulaciones bloqueadas) eram derivados de `role === ADMIN`,
-  // não de célula. Conserto: célula de LEITURA da rota que CADA TELA chama
-  // (grep `perm.require` no backend) —
-  //   Tags        → GET /api/admin/worker-tags               → worker:read
-  //   Dedup       → GET /api/admin/dedup/groups               → dedup:read
-  //   Roles grupo → GET /api/admin/patient-chat-roles          → patient:read
-  //   Bloqueados  → GET /api/admin/recruitment/blocked-attempts → recruitment:read
-  // Mesmo freio do ActionButton/useFeature (D268): só gateia com
-  // `enforcement === 'on'`. Com `'off'`/contrato ausente, o comportamento
-  // atual por `role` continua — não é regressão de segurança na `stage`
-  // (engine off), é a MESMA régua de rollout do resto da B1.
+  // Os itens da seção Administración NÃO têm gate próprio: passam pelo MESMO filtro dos itens
+  // de topo (`comAlgumaCelulaDaTela`, abaixo — PR #313), que lê as células da tela no
+  // `SCREEN_REGISTRY`. Antes de 07/09 cada um tinha um `useCellAccess(recurso)` com fallback por
+  // papel (`isAdmin`) para o engine OFF; a D293 tirou o papel do front e o #313 trouxe o filtro
+  // único — dois mecanismos para a mesma decisão seria a regressão (gate de 07/09, 2ª rodada).
+  // Com o engine OFF o filtro devolve `true`: todo staff vê os itens e a API responde 403
+  // (`untilEnforced` no back) — custo aceito de não ter duas verdades no front.
   const enforcement = useAdminAuthStore((s) => s.authz?.enforcement);
   const permissions = useAdminAuthStore((s) => s.authz?.permissions);
-  const { canRead: canReadWorkerTags } = useCellAccess('worker');
-  const { canRead: canReadDedup } = useCellAccess('dedup');
-  const { canRead: canReadPatientChatRoles } = useCellAccess('patient');
-  const { canRead: canReadBlockedAttempts } = useCellAccess('recruitment');
-  // Sync main→stage (06/09): Mensajes por etapa, Plantillas e Invitación a presentación
-  // chamam rotas declaradas sob `messaging:read` (funnel-stage-messages, template-catalog,
-  // presentation-invite/*). Mesma régua: célula com engine ON, `role` com engine OFF.
-  const { canRead: canReadMessaging } = useCellAccess('messaging');
-  const showTags = enforcement === 'on' ? canReadWorkerTags : isAdmin;
-  const showDedup = enforcement === 'on' ? canReadDedup : isAdmin;
-  const showPatientChatRoles = enforcement === 'on' ? canReadPatientChatRoles : isAdmin;
-  const showBlockedAttempts = enforcement === 'on' ? canReadBlockedAttempts : isAdmin;
-  const showMessagingScreens = enforcement === 'on' ? canReadMessaging : isAdmin;
 
   // B1 (D268) — disponibilidade por país, uma verdade só: `SCREEN_FEATURE_MAP`.
   // Nº fixo de chamadas (Rules of Hooks) — as 6 chaves screen:* que hoje têm
@@ -133,91 +111,70 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
   ];
 
   // Admin-only items: Tags + Dedup Center + Roles de grupos + Blocked Attempts.
-  // Cada um por sua CÉLULA de leitura (ver comentário acima), não mais em bloco por `isAdmin`.
-  const adminItemCandidates: Array<{ show: boolean; item: AppSidebarNavItem }> = [
+  // Sem gate próprio — o filtro por célula da tela é o `comAlgumaCelulaDaTela`, abaixo.
+  const adminItemsDaSecao: AppSidebarNavItem[] = [
     {
-      show: showTags,
-      item: {
-        icon: (
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-          </svg>
-        ),
-        label: t('admin.nav.tags', 'Etiquetas'),
-        href: '/admin/tags',
-      },
+      icon: (
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+        </svg>
+      ),
+      label: t('admin.nav.tags', 'Etiquetas'),
+      href: '/admin/tags',
     },
     {
-      show: showDedup,
-      item: {
-        icon: (
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-          </svg>
-        ),
-        label: t('admin.nav.dedup', 'Duplicados'),
-        href: '/admin/dedup',
-      },
+      icon: (
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+        </svg>
+      ),
+      label: t('admin.nav.dedup', 'Duplicados'),
+      href: '/admin/dedup',
     },
     {
-      show: showMessagingScreens,
-      item: {
-        icon: (
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h8m-8 4h5m-9 6l3-3h9a2 2 0 002-2V7a2 2 0 00-2-2H6a2 2 0 00-2 2v13z" />
-              </svg>
-            ),
-        label: t('admin.nav.funnelStageMessages', 'Mensajes por etapa'),
-        href: '/admin/mensajes-por-etapa',
-      },
+      icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h8m-8 4h5m-9 6l3-3h9a2 2 0 002-2V7a2 2 0 00-2-2H6a2 2 0 00-2 2v13z" />
+            </svg>
+          ),
+      label: t('admin.nav.funnelStageMessages', 'Mensajes por etapa'),
+      href: '/admin/mensajes-por-etapa',
     },
     {
-      show: showMessagingScreens,
-      item: {
-        icon: (
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            ),
-        label: t('admin.nav.templateCatalog', 'Plantillas'),
-        href: '/admin/plantillas',
-      },
+      icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          ),
+      label: t('admin.nav.templateCatalog', 'Plantillas'),
+      href: '/admin/plantillas',
     },
     {
-      show: showPatientChatRoles,
-      item: {
-        icon: (
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.8L3 20l1.2-3.6A7.9 7.9 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-          </svg>
-        ),
-        label: t('admin.nav.patientChatRoles', 'Roles de grupos'),
-        href: '/admin/patient-chat-roles',
-      },
+      icon: (
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.8L3 20l1.2-3.6A7.9 7.9 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+        </svg>
+      ),
+      label: t('admin.nav.patientChatRoles', 'Roles de grupos'),
+      href: '/admin/patient-chat-roles',
     },
     {
-      show: showMessagingScreens,
-      item: {
-        icon: (
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3M5 11h14M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2zm7 9v-4m-2 2h4" />
-              </svg>
-            ),
-        label: t('admin.nav.presentationInvite', 'Invitación a presentación'),
-        href: '/admin/invitacion-presentacion',
-      },
+      icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3M5 11h14M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2zm7 9v-4m-2 2h4" />
+            </svg>
+          ),
+      label: t('admin.nav.presentationInvite', 'Invitación a presentación'),
+      href: '/admin/invitacion-presentacion',
     },
     {
-      show: showBlockedAttempts,
-      item: {
-        icon: (
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-          </svg>
-        ),
-        label: t('admin.nav.blockedAttempts', 'Postulaciones bloqueadas'),
-        href: '/admin/recruitment/blocked-attempts',
-      },
+      icon: (
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+        </svg>
+      ),
+      label: t('admin.nav.blockedAttempts', 'Postulaciones bloqueadas'),
+      href: '/admin/recruitment/blocked-attempts',
     },
   ];
   // D286 (bug visto na stage em 07/09): os itens de topo (Pacientes, Prestadores, Vacantes, Mapa…)
@@ -234,11 +191,8 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
   };
 
   const itensDeTopo = baseItems.filter(comAlgumaCelulaDaTela);
-  const adminItems: AppSidebarNavItem[] = adminItemCandidates
-    .filter((c) => c.show)
-    .map((c) => c.item)
-    // Antes do `sectionStart`: o título da seção tem de cair num item que sobrevive.
-    .filter(comAlgumaCelulaDaTela);
+  // Antes do `sectionStart`: o título da seção tem de cair num item que sobrevive.
+  const adminItems: AppSidebarNavItem[] = adminItemsDaSecao.filter(comAlgumaCelulaDaTela);
   // `sectionStart` marca o início visual da seção "Administración" — precisa
   // estar no primeiro item que sobreviveu ao filtro, não fixo no de Tags
   // (que agora pode estar ausente sem os outros 3 sumirem junto).

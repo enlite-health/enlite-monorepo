@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AdminLayout } from '../AdminLayout';
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
-vi.mock('@presentation/hooks/useAdminAuth', () => ({ useAdminAuth: () => ({ logout: vi.fn(), adminProfile: { role: 'admin' } }) }));
+vi.mock('@presentation/hooks/useAdminAuth', () => ({ useAdminAuth: () => ({ logout: vi.fn(), adminProfile: { displayName: 'Admin Enlite' } }) }));
 vi.mock('@presentation/components/templates/DashboardLayout', () => ({
   AppSidebar: ({ userName }: { userName: string }) => <nav data-testid="sidebar">{userName}</nav>,
 }));

@@ -1,7 +1,9 @@
 import { Result } from '@shared/utils/Result';
 import { AdminRepository, AdminRecord } from '../infrastructure/AdminRepository';
+import { toAdminUserDto, type AdminUserDto } from './adminUserDto';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { EnliteRole } from '../domain/EnliteRole';
+import { STAFF_ACCOUNT } from '../domain/AccountType';
 import * as admin from 'firebase-admin';
 import { mergeCustomClaims } from '../infrastructure/mergeCustomClaims';
 import { reportError } from '@shared/logging';
@@ -12,7 +14,7 @@ export class GetAdminProfileUseCase {
   private adminRepo = new AdminRepository();
   private db = DatabaseConnection.getInstance();
 
-  async execute(firebaseUid: string): Promise<Result<any>> {
+  async execute(firebaseUid: string): Promise<Result<AdminUserDto>> {
     console.log(`${LOG} getProfile start | uid=${firebaseUid}`);
 
     try {
@@ -31,7 +33,7 @@ export class GetAdminProfileUseCase {
       }
 
       await this.adminRepo.updateLastLogin(firebaseUid);
-      return Result.ok(adminRecord);
+      return Result.ok(toAdminUserDto(adminRecord));
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Failed to get admin profile';
       console.error(`${LOG} getProfile error | uid=${firebaseUid} | ${msg}`);
@@ -72,7 +74,7 @@ export class GetAdminProfileUseCase {
     const provisionedRole = EnliteRole.RECRUITER;
     console.log(`${LOG} provisioning new staff | uid=${firebaseUid} email=${email} role=${provisionedRole}`);
 
-    await mergeCustomClaims(firebaseUid, { role: provisionedRole });
+    await mergeCustomClaims(firebaseUid, { role: provisionedRole, account_type: STAFF_ACCOUNT });
 
     const client = await this.db.getPool().connect();
     try {

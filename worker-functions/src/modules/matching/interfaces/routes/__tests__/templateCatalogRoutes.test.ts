@@ -19,11 +19,15 @@ const respond = (name: string): jest.Mock =>
   jest.fn((_req: express.Request, res: express.Response) => { res.status(200).json({ handler: name }); });
 
 const seen: string[] = [];
-const guard = (label: string) => (req: express.Request, _res: express.Response, next: express.NextFunction) => { seen.push(`${label} ${req.method} ${req.path}`); next(); };
-const authMiddleware = {
-  requireStaff: () => guard('staff'),
-  requireAdmin: () => guard('admin'),
-} as unknown as AuthMiddleware;
+// O dublê pendura o papel que o `requireStaff` real penduraria: é o que o
+// `untilEnforced: 'admin'` do PermissionMiddleware lê com o engine desligado.
+let papelDoAtor = 'admin';
+const guard = (label: string) => (req: express.Request, _res: express.Response, next: express.NextFunction) => {
+  seen.push(`${label} ${req.method} ${req.path}`);
+  req.authContext = { principal: { id: 'ator', roles: [papelDoAtor] } } as never;
+  next();
+};
+const authMiddleware = { requireStaff: () => guard('staff') } as unknown as AuthMiddleware;
 
 function makeApp(): { app: express.Express; calls: Record<string, jest.Mock> } {
   const calls = { list: respond('list') };
@@ -34,7 +38,7 @@ function makeApp(): { app: express.Express; calls: Record<string, jest.Mock> } {
 }
 
 describe('createTemplateCatalogRoutes', () => {
-  beforeEach(() => { seen.length = 0; });
+  beforeEach(() => { seen.length = 0; papelDoAtor = 'admin'; });
 
   it('GET /template-catalog chama o list', async () => {
     const { app, calls } = makeApp();

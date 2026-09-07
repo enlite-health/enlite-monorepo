@@ -294,6 +294,9 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'patient_address:write',
       'patient_services:read',
       'patient_services:write',
+      // 07/09 — o preço do serviço contratado deixou de ser "papel admin" e virou célula de DADO;
+      // não é portão de rota (a rota abre com `patient_services:*`), então SÓ existe por aqui.
+      'patient_contract_value:read',
     ]);
   });
 

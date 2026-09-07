@@ -14,7 +14,6 @@ jest.mock('../../../application/CreateAdminUserUseCase', () => ({ CreateAdminUse
 jest.mock('../../../application/ListAdminUsersUseCase', () => ({ ListAdminUsersUseCase: jest.fn() }));
 jest.mock('../../../application/ResetAdminPasswordUseCase', () => ({ ResetAdminPasswordUseCase: jest.fn() }));
 jest.mock('../../../application/GetAdminProfileUseCase', () => ({ GetAdminProfileUseCase: jest.fn() }));
-jest.mock('../../../application/UpdateAdminRoleUseCase', () => ({ UpdateAdminRoleUseCase: jest.fn() }));
 jest.mock('../../../infrastructure/AdminRepository', () => ({ AdminRepository: jest.fn() }));
 jest.mock('../../../infrastructure/UserRepository', () => ({ UserRepository: jest.fn() }));
 jest.mock('../../../infrastructure/GoogleIdentityService', () => ({ GoogleIdentityService: jest.fn() }));

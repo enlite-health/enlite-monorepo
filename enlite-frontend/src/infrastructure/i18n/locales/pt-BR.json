@@ -1355,10 +1355,6 @@
       "cancel": "Cancelar",
       "name": "Nome",
       "email": "Email",
-      "role": "Papel",
-      "roleAdmin": "Administrador",
-      "roleRecruiter": "Recrutador",
-      "roleCommunityManager": "Community Manager",
       "department": "Departamento",
       "lastLogin": "Último login",
       "actions": "Ações",
@@ -1377,8 +1373,7 @@
       "linkCopied": "Link copiado para a área de transferência",
       "invitationFallbackTitle": "Usuário criado",
       "invitationFallbackDesc": "Já enviamos um email com o link para definir a senha. Se não chegar, você pode copiá-lo abaixo e enviá-lo manualmente.",
-      "done": "Pronto",
-      "errorUpdateRole": "Erro ao atualizar o papel"
+      "done": "Pronto"
     },
     "recruitment": {
       "title": "Dashboard de Recrutamento",
@@ -4070,6 +4065,7 @@
             "coverage": "Cobertura médica",
             "address": "Localizações",
             "services": "Serviço contratado",
+            "contractValue": "Valor-hora do serviço contratado",
             "vacancies": "Vagas do paciente",
             "operational": "Status, ativação e histórico"
           }
@@ -4165,7 +4161,7 @@
       "saved": "Salvo",
       "error": "Não foi possível salvar",
       "never": "Nunca",
-      "adminOnly": "Só um administrador pode alterar esta configuração.",
+      "noWriteAccess": "Você não tem permissão para alterar esta configuração.",
       "ineligible": {
         "CATEGORY": "não é UTILITY (Meta)",
         "DENY_LIST": "lembrete/cobrança: bloqueado por etapa",
@@ -4216,7 +4212,7 @@
       "save": "Salvar",
       "saved": "Salvo",
       "error": "Não foi possível salvar",
-      "adminOnly": "Só um administrador pode alterar esta configuração.",
+      "noWriteAccess": "Você não tem permissão para alterar esta configuração.",
       "templateHint": "Só templates aprovados pela Meta como UTILITY, com as variáveis que o sistema preenche (nome como token, link, horário). O template deste convite ainda não foi aprovado: enquanto estiver inativo nada sai.",
       "ineligible": {
         "INACTIVE": "inativo (ainda não aprovado)",

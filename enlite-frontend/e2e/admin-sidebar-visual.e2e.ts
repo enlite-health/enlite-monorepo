@@ -4,7 +4,9 @@
  * Visual regression test — separação visual do bloco Admin no sidebar.
  *
  * Verifica que o rótulo "Administración" e o divisor aparecem ACIMA dos itens
- * Etiquetas e Duplicados quando o usuário tem role=admin.
+ * Etiquetas e Duplicados para quem tem as células de leitura da seção — e que
+ * somem para quem não tem (com `enforcement: 'on'` no contrato `/v1/me/authz`).
+ * Papel não decide nada aqui: quem decide é a célula.
  *
  * Auth: Firebase Identity Toolkit interceptado localmente (sem emulador).
  * Padrão idêntico ao usado em blocked-attempts-visual.e2e.ts.
@@ -28,8 +30,12 @@ const BASE = process.env.SIDEBAR_TEST_BASE_URL ?? 'http://localhost:5173';
 const MOCK_ADMIN = {
   uid: 'sidebar-vis-admin-uid',
   email: 'sidebar.visual@e2e.test',
-  role: 'admin',
 };
+
+/** As células de leitura de TODOS os itens da seção Administración. */
+const CELULAS_SECAO_ADMIN = [
+  'worker:read', 'dedup:read', 'patient:read', 'recruitment:read', 'messaging:read',
+];
 
 const FAKE_ID_TOKEN =
   'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.' +
@@ -47,7 +53,11 @@ const FAKE_ID_TOKEN =
 
 // ── Auth helper (sem emulador) ────────────────────────────────────────────────
 
-async function installFakeFirebaseAuth(page: Page, role: string = MOCK_ADMIN.role): Promise<void> {
+/**
+ * `permissions === null` = sem contrato: engine desligado, o menu aparece como
+ * sempre apareceu (régua de rollout D268). Um array liga `enforcement: 'on'`.
+ */
+async function installFakeFirebaseAuth(page: Page, permissions: string[] | null = null): Promise<void> {
   await page.route('**/identitytoolkit.googleapis.com/**', async (route: Route) => {
     const url = route.request().url();
     if (url.includes('signInWithPassword') || url.includes('signUp')) {
@@ -101,7 +111,6 @@ async function installFakeFirebaseAuth(page: Page, role: string = MOCK_ADMIN.rol
     });
   });
 
-  // Profile retorna o role pedido → controla se adminItems aparecem no sidebar
   await page.route('**/api/admin/auth/profile', (route) =>
     route.fulfill({
       status: 200,
@@ -111,7 +120,6 @@ async function installFakeFirebaseAuth(page: Page, role: string = MOCK_ADMIN.rol
         data: {
           id: MOCK_ADMIN.uid,
           email: MOCK_ADMIN.email,
-          role,
           firstName: 'Visual',
           lastName: 'Admin',
           isActive: true,
@@ -120,10 +128,24 @@ async function installFakeFirebaseAuth(page: Page, role: string = MOCK_ADMIN.rol
       }),
     }),
   );
+
+  // O contrato ABAC é o que controla se os itens da seção aparecem no sidebar.
+  if (permissions !== null) {
+    await page.route('**/v1/me/authz', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          uid: MOCK_ADMIN.uid, tenantId: 't', status: 'ACTIVE', permissions,
+          countries: ['AR'], groups: [], features: {}, enforcement: 'on',
+        }),
+      }),
+    );
+  }
 }
 
-async function loginAsAdmin(page: Page, role: string = MOCK_ADMIN.role): Promise<void> {
-  await installFakeFirebaseAuth(page, role);
+async function loginAsAdmin(page: Page, permissions: string[] | null = null): Promise<void> {
+  await installFakeFirebaseAuth(page, permissions);
   await page.goto(`${BASE}/admin/login`);
   await page.locator('input[type="email"]').fill(MOCK_ADMIN.email);
   await page.locator('input[type="password"]').fill('TestAdmin123!');
@@ -149,7 +171,7 @@ test.describe('AppSidebar — separação visual admin', () => {
   test.setTimeout(90000);
 
   test('EXPANDIDO: mostra rótulo "Administración" acima de Etiquetas e Duplicados', async ({ page }) => {
-    await loginAsAdmin(page);
+    await loginAsAdmin(page, CELULAS_SECAO_ADMIN);
     mockAdminListEndpoints(page);
 
     // Navega para a home do admin (garante que o sidebar está visível)
@@ -171,7 +193,7 @@ test.describe('AppSidebar — separação visual admin', () => {
   });
 
   test('rótulo de seção aparece entre os itens de navegação base e os itens admin', async ({ page }) => {
-    await loginAsAdmin(page);
+    await loginAsAdmin(page, CELULAS_SECAO_ADMIN);
     mockAdminListEndpoints(page);
 
     await page.goto(`${BASE}/admin`);
@@ -186,11 +208,11 @@ test.describe('AppSidebar — separação visual admin', () => {
   });
 });
 
-test.describe('AppSidebar — visão não-admin (recruiter)', () => {
+test.describe('AppSidebar — visão sem as células da seção Administración', () => {
   test.setTimeout(90000);
 
-  test('RECRUITER: sidebar NÃO mostra Postulaciones bloqueadas nem seção Administración', async ({ page }) => {
-    await loginAsAdmin(page, 'recruiter');
+  test('SEM as células: sidebar NÃO mostra Postulaciones bloqueadas nem seção Administración', async ({ page }) => {
+    await loginAsAdmin(page, []);
     mockAdminListEndpoints(page);
 
     await page.goto(`${BASE}/admin`);
@@ -205,13 +227,13 @@ test.describe('AppSidebar — visão não-admin (recruiter)', () => {
     await expect(sidebar.getByText('Administración')).toHaveCount(0);
     await expect(sidebar.getByText('Etiquetas')).toHaveCount(0);
 
-    await expect(sidebar).toHaveScreenshot('admin-sidebar-recruiter-no-section.png', {
+    await expect(sidebar).toHaveScreenshot('admin-sidebar-sem-celula-no-section.png', {
       maxDiffPixelRatio: 0.03,
     });
   });
 
-  test('RECRUITER: URL direta de blocked-attempts redireciona pra /admin', async ({ page }) => {
-    await loginAsAdmin(page, 'recruiter');
+  test('SEM recruitment:read: URL direta de blocked-attempts redireciona pra /admin', async ({ page }) => {
+    await loginAsAdmin(page, []);
     mockAdminListEndpoints(page);
 
     await page.goto(`${BASE}/admin/recruitment/blocked-attempts`);
@@ -222,13 +244,13 @@ test.describe('AppSidebar — visão não-admin (recruiter)', () => {
     await expect(page.locator('[data-testid="blocked-skeleton"]')).toHaveCount(0);
 
     const sidebar = page.locator('aside').first();
-    await expect(sidebar).toHaveScreenshot('admin-sidebar-recruiter-after-redirect.png', {
+    await expect(sidebar).toHaveScreenshot('admin-sidebar-sem-celula-after-redirect.png', {
       maxDiffPixelRatio: 0.03,
     });
   });
 
-  test('RECRUITER: header do Reclutamiento NÃO mostra o link de postulaciones bloqueadas', async ({ page }) => {
-    await loginAsAdmin(page, 'recruiter');
+  test('SEM recruitment:read: header do Reclutamiento NÃO mostra o link de postulaciones bloqueadas', async ({ page }) => {
+    await loginAsAdmin(page, []);
     mockAdminListEndpoints(page);
     // Dados do dashboard vazios → página renderiza estável
     await page.route('**/api/admin/recruitment/**', (route) =>
@@ -245,7 +267,7 @@ test.describe('AppSidebar — visão não-admin (recruiter)', () => {
     await expect(page.locator('aside').first().getByText('Reclutamiento')).toBeVisible({ timeout: 15000 });
     await expect(page.locator('[data-testid="blocked-attempts-link"]')).toHaveCount(0);
 
-    await expect(page).toHaveScreenshot('recruitment-header-recruiter-no-link.png', {
+    await expect(page).toHaveScreenshot('recruitment-header-sem-celula-no-link.png', {
       fullPage: false,
       maxDiffPixelRatio: 0.03,
     });

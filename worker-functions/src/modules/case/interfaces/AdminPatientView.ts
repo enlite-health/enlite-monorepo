@@ -1,5 +1,5 @@
 import { projectPatientClinicalForActor } from '../application/patientClinicalAccess';
-import { projectContractedServiceForActor } from '../application/contractedServiceHourlyValueAccess';
+import { projectContractedServiceForActor, type HourlyValueActor } from '../application/contractedServiceHourlyValueAccess';
 import {
   projectCompletenessByContainers,
   projectPatientDetailByContainers,
@@ -74,22 +74,23 @@ function toAdminPatientListItemRaw(row: PatientListRow) {
 /**
  * A ficha, com as TRÊS redações aplicadas na MESMA passada (`lex` C1: projeção única):
  *   - texto clínico restrito → ponto único (D211.2), por célula;
- *   - `hourlyValue` de cada serviço contratado → por papel (lex C-c.4), campo por campo —
- *     mantém portão PRÓPRIO, nunca embutido em `patient_services:read` (`lex` C6);
+ *   - `hourlyValue` de cada serviço contratado → célula `patient_contract_value:read` (lex C-c.4;
+ *     papel `admin` só enquanto o engine não decide), campo por campo — mantém portão PRÓPRIO,
+ *     nunca embutido em `patient_services:read` (`lex` C6);
  *   - cada CONTAINER (identidade, clínica, familiares, chat, cobertura, endereço, serviços,
  *     equipe) → por célula própria (D286), com marcador constante `redacted.<container>`.
  */
 export function projectAdminPatientDetail(
   patient: Record<string, unknown>,
   cells: readonly string[] | null | undefined,
-  roles: readonly string[] | null | undefined,
+  actor: HourlyValueActor,
 ): Record<string, unknown> {
   const clinicalProjected = projectPatientClinicalForActor(patient, cells);
   const rawServices = (clinicalProjected as { contractedServices?: unknown[] }).contractedServices;
   const withServices = Array.isArray(rawServices)
     ? {
         ...clinicalProjected,
-        contractedServices: rawServices.map((s) => projectContractedServiceForActor(s as { hourlyValue: number | null }, roles)),
+        contractedServices: rawServices.map((s) => projectContractedServiceForActor(s as { hourlyValue: number | null }, actor)),
       }
     : clinicalProjected;
   return projectPatientDetailByContainers(withServices, cells);

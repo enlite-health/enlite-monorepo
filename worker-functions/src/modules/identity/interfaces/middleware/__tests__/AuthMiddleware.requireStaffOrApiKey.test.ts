@@ -105,6 +105,52 @@ describe('AuthMiddleware.requireStaffOrApiKey', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it('D294: Firebase com account_type=staff e SEM papel passa; account_type=worker com papel admin não', async () => {
+    mockMultiAuth.tryAuthenticateAsApiKey = jest.fn().mockReturnValue(null);
+    mockMultiAuth.authenticateGoogleIdToken = jest.fn().mockResolvedValue({
+      ...staffFirebaseContext,
+      principal: { id: 'uid', type: PrincipalType.USER, roles: [], accountType: 'staff' },
+    });
+    const [req, res, next] = makeReqRes('firebase-token');
+    await authMiddleware.requireStaffOrApiKey()(req, res, next);
+    expect(next).toHaveBeenCalled();
+    expect((req as unknown as { user: { accountType?: string } }).user.accountType).toBe('staff');
+
+    mockMultiAuth.authenticateGoogleIdToken = jest.fn().mockResolvedValue({
+      ...staffFirebaseContext,
+      principal: { id: 'uid', type: PrincipalType.USER, roles: ['admin'], accountType: 'worker' },
+    });
+    const [req2, res2, next2] = makeReqRes('firebase-token');
+    await authMiddleware.requireStaffOrApiKey()(req2, res2, next2);
+    expect((res2.status as jest.Mock).mock.calls[0][0]).toBe(401);
+    expect(next2).not.toHaveBeenCalled();
+  });
+
+  it('D294 (mock auth): account_type no token mock decide; sem ele, a ponte por role', async () => {
+    process.env.USE_MOCK_AUTH = 'true';
+    try {
+      const [req, res, next] = makeReqRes('x');
+      (req as unknown as { user: unknown }).user = { uid: 'u', role: 'admin', account_type: 'worker' };
+      await authMiddleware.requireStaffOrApiKey()(req, res, next);
+      expect((res.status as jest.Mock).mock.calls[0][0]).toBe(401);
+
+      const [req2, res2, next2] = makeReqRes('x');
+      (req2 as unknown as { user: unknown }).user = { uid: 'u', role: 'recruiter' };
+      await authMiddleware.requireStaffOrApiKey()(req2, res2, next2);
+      expect(next2).toHaveBeenCalled();
+      expect(res2.status).not.toHaveBeenCalled();
+
+      // sem tipo e sem papel → 401 (lex C5)
+      const [req3, res3, next3] = makeReqRes('x');
+      (req3 as unknown as { user: unknown }).user = { uid: 'u' };
+      await authMiddleware.requireStaffOrApiKey()(req3, res3, next3);
+      expect((res3.status as jest.Mock).mock.calls[0][0]).toBe(401);
+      expect(next3).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.USE_MOCK_AUTH;
+    }
+  });
+
   it('retorna 401 quando ambos falham', async () => {
     mockMultiAuth.tryAuthenticateAsApiKey = jest.fn().mockReturnValue(null);
     mockMultiAuth.authenticateGoogleIdToken = jest.fn().mockResolvedValue(null);

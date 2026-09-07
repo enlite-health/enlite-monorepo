@@ -2,10 +2,10 @@
  * AdminUsersPage.test.tsx
  *
  * Unit tests covering:
- * - Renders user list with Rol, Último login columns
- * - Shows role <select> for admin viewer, badge-only for non-admin
- * - "Nuevo Usuario" button visible only for admin
- * - handleRoleChange calls updateAdminRole then reloads
+ * - Renders user list with Nombre/Email/Último login columns (a coluna "Rol"
+ *   deixou de existir: papel não é mais um atributo do admin)
+ * - "Nuevo Usuario"/Reset/Eliminar aparecem pela CÉLULA, com o freio de
+ *   enforcement (D268/D269)
  * - InvitationFallbackModal appears after successful create (mode=create)
  * - InvitationFallbackModal appears after reset password (mode=reset)
  * - DeleteAdminUserModal appears and calls deleteAdmin on confirm
@@ -14,7 +14,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AdminUsersPage } from '../AdminUsersPage';
-import { EnliteRole } from '@domain/entities/EnliteRole';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
 
@@ -37,7 +36,6 @@ vi.mock('@infrastructure/services/FirebaseAuthService', () => ({
 
 const mockListAdmins     = vi.fn();
 const mockCreateAdmin    = vi.fn();
-const mockUpdateAdminRole = vi.fn();
 const mockDeleteAdmin    = vi.fn();
 const mockResetPassword  = vi.fn();
 
@@ -45,17 +43,9 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
   AdminApiService: {
     listAdmins:      (...args: any[]) => mockListAdmins(...args),
     createAdmin:     (...args: any[]) => mockCreateAdmin(...args),
-    updateAdminRole: (...args: any[]) => mockUpdateAdminRole(...args),
     deleteAdmin:     (...args: any[]) => mockDeleteAdmin(...args),
     resetPassword:   (...args: any[]) => mockResetPassword(...args),
   },
-}));
-
-// Mutable so individual tests can override
-let mockRole: EnliteRole = EnliteRole.ADMIN;
-
-vi.mock('@presentation/hooks/useAdminAuth', () => ({
-  useAdminAuth: () => ({ adminProfile: { role: mockRole } }),
 }));
 
 vi.mock('@presentation/components/ui/skeletons', () => ({
@@ -69,7 +59,6 @@ const MOCK_USERS = [
     firebaseUid:   'uid-admin-1',
     email:         'admin@enlite.health',
     displayName:   'Admin User',
-    role:          EnliteRole.ADMIN,
     department:    null,
     lastLoginAt:   '2026-04-01T10:00:00Z',
     loginCount:    5,
@@ -79,7 +68,6 @@ const MOCK_USERS = [
     firebaseUid:   'uid-recruiter-1',
     email:         'recruiter@enlite.health',
     displayName:   'Recruiter User',
-    role:          EnliteRole.RECRUITER,
     department:    null,
     lastLoginAt:   null,
     loginCount:    0,
@@ -91,20 +79,20 @@ const MOCK_USERS = [
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockRole = EnliteRole.ADMIN;
   mockListAdmins.mockResolvedValue({ admins: MOCK_USERS, total: 2 });
   mockCreateAdmin.mockResolvedValue({
     ...MOCK_USERS[0],
     email:     'new@enlite.health',
     resetLink: 'https://reset.link/test',
   });
-  mockUpdateAdminRole.mockResolvedValue({ ...MOCK_USERS[0], role: EnliteRole.RECRUITER });
   mockDeleteAdmin.mockResolvedValue(undefined);
   mockResetPassword.mockResolvedValue({
     resetLink: 'https://reset.link/reset-test',
     message: 'Email enviado',
   });
 });
+
+afterEach(() => useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }));
 
 async function renderAndWait() {
   await act(async () => {
@@ -119,11 +107,11 @@ async function renderAndWait() {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('AdminUsersPage — column headers', () => {
-  it('renders Rol and Último login column headers', async () => {
+  it('renders Último login column header, e NÃO a coluna de papel (que saiu com o ABAC)', async () => {
     await renderAndWait();
     // Headers come through Typography which renders text directly in DOM
-    expect(document.body.textContent).toContain('admin.users.role');
     expect(document.body.textContent).toContain('admin.users.lastLogin');
+    expect(document.body.textContent).not.toContain('admin.users.role');
   });
 
   it('renders display names in rows', async () => {
@@ -131,50 +119,19 @@ describe('AdminUsersPage — column headers', () => {
     expect(document.body.textContent).toContain('Admin User');
     expect(document.body.textContent).toContain('Recruiter User');
   });
-});
 
-describe('AdminUsersPage — gating', () => {
-  it('shows "Nuevo Usuario" button for admin', async () => {
+  it('admin sem displayName cai no travessão, e sem lastLogin também', async () => {
+    mockListAdmins.mockResolvedValueOnce({
+      admins: [{ ...MOCK_USERS[0], displayName: null }],
+      total: 1,
+    });
     await renderAndWait();
-    const btn = screen.getByRole('button', { name: 'admin.users.create' });
-    expect(btn).toBeInTheDocument();
+    expect(document.body.textContent).toContain('—');
   });
 
-  it('hides "Nuevo Usuario" button for non-admin', async () => {
-    mockRole = EnliteRole.RECRUITER;
-    await renderAndWait();
-    expect(screen.queryByRole('button', { name: 'admin.users.create' })).not.toBeInTheDocument();
-  });
-
-  it('renders role selects for admin viewer', async () => {
-    await renderAndWait();
-    const selects = screen.getAllByRole('combobox');
-    expect(selects.length).toBeGreaterThan(0);
-  });
-
-  it('renders no selects for non-admin viewer', async () => {
-    mockRole = EnliteRole.RECRUITER;
+  it('não renderiza nenhum <select> — o papel deixou de ser editável na tela', async () => {
     await renderAndWait();
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
-  });
-});
-
-describe('AdminUsersPage — role change', () => {
-  it('calls updateAdminRole and reloads on select change', async () => {
-    const user = userEvent.setup();
-    await renderAndWait();
-
-    const selects = screen.getAllByRole('combobox');
-
-    await act(async () => {
-      await user.selectOptions(selects[0], EnliteRole.RECRUITER);
-    });
-
-    await waitFor(() =>
-      expect(mockUpdateAdminRole).toHaveBeenCalledWith('uid-admin-1', EnliteRole.RECRUITER),
-    );
-    // loadAdmins called once on mount, once after role change
-    expect(mockListAdmins.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 });
 
@@ -195,11 +152,43 @@ describe('AdminUsersPage — create flow', () => {
 
     await user.click(screen.getByRole('button', { name: 'admin.users.createButton' }));
 
+    // O convite não carrega papel — o body é só e-mail + nome.
+    await waitFor(() =>
+      expect(mockCreateAdmin).toHaveBeenCalledWith({ email: 'new@enlite.health', displayName: 'New User' }),
+    );
     await waitFor(() =>
       expect(document.body.textContent).toContain('admin.users.invitationFallbackTitle'),
     );
     // Reset link is shown
     expect(document.body.textContent).toContain('https://reset.link/test');
+
+    // Fechar a modal de fallback devolve a tela ao estado normal.
+    await user.click(screen.getByRole('button', { name: 'admin.users.done' }));
+    await waitFor(() =>
+      expect(document.body.textContent).not.toContain('admin.users.invitationFallbackTitle'),
+    );
+  });
+
+  it('createAdmin não é chamado com o formulário incompleto (só e-mail)', async () => {
+    const user = userEvent.setup();
+    await renderAndWait();
+
+    await user.click(screen.getByRole('button', { name: 'admin.users.create' }));
+    await user.type(document.getElementById('cu-email') as HTMLInputElement, 'new@enlite.health');
+    await user.click(screen.getByRole('button', { name: 'admin.users.createButton' }));
+
+    expect(mockCreateAdmin).not.toHaveBeenCalled();
+  });
+
+  it('fecha a modal de criação pelo Cancelar, sem chamar createAdmin', async () => {
+    const user = userEvent.setup();
+    await renderAndWait();
+
+    await user.click(screen.getByRole('button', { name: 'admin.users.create' }));
+    await user.click(screen.getByRole('button', { name: 'admin.users.cancel' }));
+
+    expect(document.body.textContent).not.toContain('admin.users.createUserTitle');
+    expect(mockCreateAdmin).not.toHaveBeenCalled();
   });
 });
 
@@ -239,10 +228,21 @@ describe('AdminUsersPage — delete flow', () => {
       expect(mockDeleteAdmin).toHaveBeenCalledWith('uid-admin-1'),
     );
   });
+
+  it('fecha a modal de exclusão pelo Cancelar, sem chamar deleteAdmin', async () => {
+    const user = userEvent.setup();
+    await renderAndWait();
+
+    await user.click(screen.getAllByText('admin.users.delete')[0]);
+    await user.click(screen.getByText('admin.users.cancel'));
+
+    expect(document.body.textContent).not.toContain('admin.users.confirmDelete');
+    expect(mockDeleteAdmin).not.toHaveBeenCalled();
+  });
 });
 
-// ── D269 — célula de escrita, além do role (POST /users, PATCH /:id/role,
-// POST /:id/reset-password, DELETE /:id) ───────────────────────────────────
+// ── D269/D286 — a célula é o ÚNICO freio (POST /users, POST /:id/reset-password,
+// DELETE /:id): papel não decide mais nada nesta tela ───────────────────────
 
 const contrato = (permissions: string[], enforcement: AuthzContract['enforcement']): AuthzContract => ({
   uid: 'u',
@@ -255,56 +255,50 @@ const contrato = (permissions: string[], enforcement: AuthzContract['enforcement
   enforcement,
 });
 
-describe('AdminUsersPage — D269 célula (enforcement "on")', () => {
-  afterEach(() => useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }));
-
-  it('ADMIN sem NENHUMA célula → Crear/Reset/Eliminar somem e o papel vira badge (fora do DOM, não desabilitado)', async () => {
+describe('AdminUsersPage — célula (enforcement "on")', () => {
+  it('SEM nenhuma célula → Crear/Reset/Eliminar somem (fora do DOM, não desabilitados)', async () => {
     useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato([], 'on') });
     await renderAndWait();
 
     expect(screen.queryByRole('button', { name: 'admin.users.create' })).not.toBeInTheDocument();
     expect(screen.queryByText('admin.users.reset')).not.toBeInTheDocument();
     expect(screen.queryByText('admin.users.delete')).not.toBeInTheDocument();
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
   });
 
-  it('ADMIN com as 3 células (user_management:write/delete + permission_management:write) → tudo aparece', async () => {
+  it('COM user_management:write/delete → Crear, Reset e Eliminar aparecem', async () => {
     useAdminAuthStore.setState({
       authzStatus: 'ready',
-      authz: contrato(['user_management:write', 'user_management:delete', 'permission_management:write'], 'on'),
+      authz: contrato(['user_management:write', 'user_management:delete'], 'on'),
     });
     await renderAndWait();
 
     expect(screen.getByRole('button', { name: 'admin.users.create' })).toBeInTheDocument();
     expect(screen.getAllByText('admin.users.reset').length).toBeGreaterThan(0);
     expect(screen.getAllByText('admin.users.delete').length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('combobox').length).toBeGreaterThan(0);
   });
 
-  it('RECRUITER (não-admin) com user_management:write → "Reset" aparece (célula, não role) mas Crear/Eliminar/papel continuam fora (isAdmin preservado)', async () => {
-    mockRole = EnliteRole.RECRUITER;
+  it('SEM user_management:write especificamente → Crear e Reset somem, Eliminar fica', async () => {
     useAdminAuthStore.setState({
       authzStatus: 'ready',
-      authz: contrato(['user_management:write', 'user_management:delete', 'permission_management:write'], 'on'),
+      authz: contrato(['user_management:delete'], 'on'),
     });
     await renderAndWait();
 
-    expect(screen.getAllByText('admin.users.reset').length).toBeGreaterThan(0);
     expect(screen.queryByRole('button', { name: 'admin.users.create' })).not.toBeInTheDocument();
-    expect(screen.queryByText('admin.users.delete')).not.toBeInTheDocument();
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
-  });
-
-  it('ADMIN sem user_management:write especificamente → só o "Reset" some (as outras células ainda concedidas)', async () => {
-    useAdminAuthStore.setState({
-      authzStatus: 'ready',
-      authz: contrato(['user_management:delete', 'permission_management:write'], 'on'),
-    });
-    await renderAndWait();
-
     expect(screen.queryByText('admin.users.reset')).not.toBeInTheDocument();
     expect(screen.getAllByText('admin.users.delete').length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('combobox').length).toBeGreaterThan(0);
+  });
+
+  it('SEM user_management:delete especificamente → só o Eliminar some', async () => {
+    useAdminAuthStore.setState({
+      authzStatus: 'ready',
+      authz: contrato(['user_management:write'], 'on'),
+    });
+    await renderAndWait();
+
+    expect(screen.getByRole('button', { name: 'admin.users.create' })).toBeInTheDocument();
+    expect(screen.getAllByText('admin.users.reset').length).toBeGreaterThan(0);
+    expect(screen.queryByText('admin.users.delete')).not.toBeInTheDocument();
   });
 });
 
@@ -319,6 +313,13 @@ describe('AdminUsersPage — erro e lista vazia', () => {
     await user.click(screen.getByText('×'));
 
     expect(document.body.textContent).not.toContain('boom');
+  });
+
+  it('erro sem `message` (rejeição não-Error) cai no texto genérico', async () => {
+    mockListAdmins.mockRejectedValueOnce('boom cru');
+    await renderAndWait();
+
+    expect(document.body.textContent).toContain('Error');
   });
 
   it('mostra o empty state quando não há admins', async () => {
@@ -339,6 +340,17 @@ describe('AdminUsersPage — erro e lista vazia', () => {
     await waitFor(() => expect(document.body.textContent).toContain('delete boom'));
   });
 
+  it('deleteAdmin rejeitando sem Error cai no texto genérico', async () => {
+    const user = userEvent.setup();
+    mockDeleteAdmin.mockRejectedValueOnce('delete cru');
+    await renderAndWait();
+
+    await user.click(screen.getAllByText('admin.users.delete')[0]);
+    await user.click(screen.getByText('admin.users.deleteConfirm'));
+
+    await waitFor(() => expect(document.body.textContent).toContain('common.error'));
+  });
+
   it('mostra o erro quando resetPassword falha', async () => {
     const user = userEvent.setup();
     mockResetPassword.mockRejectedValueOnce(new Error('reset boom'));
@@ -347,6 +359,16 @@ describe('AdminUsersPage — erro e lista vazia', () => {
     await user.click(screen.getAllByText('admin.users.reset')[0]);
 
     await waitFor(() => expect(document.body.textContent).toContain('reset boom'));
+  });
+
+  it('resetPassword rejeitando sem Error cai na chave de erro da tela', async () => {
+    const user = userEvent.setup();
+    mockResetPassword.mockRejectedValueOnce('reset cru');
+    await renderAndWait();
+
+    await user.click(screen.getAllByText('admin.users.reset')[0]);
+
+    await waitFor(() => expect(document.body.textContent).toContain('admin.users.errorResetPassword'));
   });
 
   it('mostra o erro quando createAdmin falha', async () => {
@@ -364,29 +386,50 @@ describe('AdminUsersPage — erro e lista vazia', () => {
     await waitFor(() => expect(document.body.textContent).toContain('create boom'));
   });
 
-  it('mostra o erro quando updateAdminRole falha', async () => {
+  it('createAdmin rejeitando sem Error cai no texto genérico', async () => {
     const user = userEvent.setup();
-    mockUpdateAdminRole.mockRejectedValueOnce(new Error('role boom'));
+    mockCreateAdmin.mockRejectedValueOnce('create cru');
     await renderAndWait();
 
-    const selects = screen.getAllByRole('combobox');
-    await act(async () => {
-      await user.selectOptions(selects[0], EnliteRole.RECRUITER);
-    });
+    await user.click(screen.getByRole('button', { name: 'admin.users.create' }));
+    await user.type(document.getElementById('cu-email') as HTMLInputElement, 'new@enlite.health');
+    await user.type(document.getElementById('cu-displayName') as HTMLInputElement, 'New User');
+    await user.click(screen.getByRole('button', { name: 'admin.users.createButton' }));
 
-    await waitFor(() => expect(document.body.textContent).toContain('role boom'));
+    await waitFor(() => expect(document.body.textContent).toContain('common.error'));
+  });
+
+  it('resposta de criação SEM resetLink → a modal de fallback abre com link vazio', async () => {
+    const user = userEvent.setup();
+    mockCreateAdmin.mockResolvedValueOnce({ ...MOCK_USERS[0], email: 'new@enlite.health' });
+    await renderAndWait();
+
+    await user.click(screen.getByRole('button', { name: 'admin.users.create' }));
+    await user.type(document.getElementById('cu-email') as HTMLInputElement, 'new@enlite.health');
+    await user.type(document.getElementById('cu-displayName') as HTMLInputElement, 'New User');
+    await user.click(screen.getByRole('button', { name: 'admin.users.createButton' }));
+
+    await waitFor(() =>
+      expect(document.body.textContent).toContain('admin.users.invitationFallbackTitle'),
+    );
   });
 });
 
-describe('AdminUsersPage — D269 sem contrato/enforcement "off": comportamento atual (por role) continua', () => {
-  afterEach(() => useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }));
-
-  it('ADMIN sem contrato nenhum (authz null) → Crear/Reset/Eliminar/papel continuam visíveis, como antes da D269', async () => {
+describe('AdminUsersPage — sem contrato/enforcement "off": tudo aparece, como sempre apareceu', () => {
+  it('sem contrato nenhum (authz null) → Crear/Reset/Eliminar visíveis', async () => {
     await renderAndWait();
 
     expect(screen.getByRole('button', { name: 'admin.users.create' })).toBeInTheDocument();
     expect(screen.getAllByText('admin.users.reset').length).toBeGreaterThan(0);
     expect(screen.getAllByText('admin.users.delete').length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('combobox').length).toBeGreaterThan(0);
+  });
+
+  it('enforcement "off" SEM célula nenhuma → Crear/Reset/Eliminar continuam visíveis', async () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato([], 'off') });
+    await renderAndWait();
+
+    expect(screen.getByRole('button', { name: 'admin.users.create' })).toBeInTheDocument();
+    expect(screen.getAllByText('admin.users.reset').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('admin.users.delete').length).toBeGreaterThan(0);
   });
 });

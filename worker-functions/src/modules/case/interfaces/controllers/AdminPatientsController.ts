@@ -10,7 +10,7 @@ import { PatientQueryRepository } from '../../infrastructure/PatientQueryReposit
 import { GetPatientByIdUseCase } from '../../application/GetPatientByIdUseCase';
 import { clinicalCellsOf, canReadPatientClinical, PATIENT_CLINICAL_READ_CELL } from '../../application/patientClinicalAccess';
 import { patientContainerReadsOf } from '../../application/patientContainerAccess';
-import { actorRolesOf } from '../../application/contractedServiceHourlyValueAccess';
+import { hourlyValueActorOf } from '../../application/contractedServiceHourlyValueAccess';
 import {
   toAdminPatientListItem,
   projectAdminPatientDetail,
@@ -560,8 +560,7 @@ export class AdminPatientsController {
 
       // Ponto ÚNICO de leitura do texto clínico restrito (D211.2) e do `hourlyValue` (lex
       // C-c.4): as duas redações vivem em `AdminPatientView.projectAdminPatientDetail`.
-      const roles = actorRolesOf(req);
-      const projected = projectAdminPatientDetail(result.patient as unknown as Record<string, unknown>, cells, roles);
+      const projected = projectAdminPatientDetail(result.patient as unknown as Record<string, unknown>, cells, hourlyValueActorOf(req));
       // Trilha de LEITURA sem valor (lex 29/08 C3, molde OP-08): uid, paciente, país, decisão, quando.
       // Nunca o texto, nunca o nome. Request redigida não gera linha (minimização).
       if (canReadPatientClinical(cells)) {

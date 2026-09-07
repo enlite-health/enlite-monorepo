@@ -4,7 +4,7 @@
  * Retorna detalhe de um grupo de duplicados: comparação campo-a-campo,
  * preview do que será reparentado, tiers.
  *
- * PII encriptada: como o endpoint é admin-only (requireAdmin em dedupRoutes) e
+ * PII encriptada: como o endpoint exige `dedup:read` (papel `admin` até a família virar) e
  * o admin já vê esse mesmo PII na ficha do prestador (/admin/workers/:id), aqui
  * o valor é DECRIPTADO via KMS — sem isso o admin não consegue comparar contas
  * pra escolher a sobrevivente. `is_encrypted` continua true (a UI usa só como

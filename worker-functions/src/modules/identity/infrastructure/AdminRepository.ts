@@ -20,7 +20,7 @@ export class AdminRepository {
   }
 
   /**
-   * Finds any staff member (admin | recruiter | community_manager) by Firebase UID.
+   * Finds any staff member (`account_type = 'staff'`, D294) by Firebase UID.
    * All fields come from users (department, last_login_at, login_count since migration 134;
    * admins_extension removed in migration 135).
    */
@@ -37,19 +37,19 @@ export class AdminRepository {
         u.created_at        AS "createdAt"
       FROM users u
       WHERE u.firebase_uid = $1
-        AND u.role IN ('admin', 'recruiter', 'community_manager')`,
+        AND u.account_type = 'staff'`,
       [uid]
     );
     return result.rows[0] ?? null;
   }
 
   /**
-   * Lists all staff members (admin | recruiter | community_manager) with pagination.
+   * Lists all staff members (`account_type = 'staff'`) with pagination.
    */
   async listAdmins(limit = 50, offset = 0): Promise<{ admins: AdminRecord[]; total: number }> {
     const countResult = await this.pool.query(
       `SELECT COUNT(*) AS total FROM users
-       WHERE role IN ('admin', 'recruiter', 'community_manager') AND is_active = true`
+       WHERE account_type = 'staff' AND is_active = true`
     );
 
     const result = await this.pool.query(
@@ -63,7 +63,7 @@ export class AdminRepository {
         COALESCE(u.login_count, 0) AS "loginCount",
         u.created_at        AS "createdAt"
       FROM users u
-      WHERE u.role IN ('admin', 'recruiter', 'community_manager') AND u.is_active = true
+      WHERE u.account_type = 'staff' AND u.is_active = true
       ORDER BY u.created_at DESC
       LIMIT $1 OFFSET $2`,
       [limit, offset]
@@ -86,17 +86,6 @@ export class AdminRepository {
        SET last_login_at = NOW(), login_count = login_count + 1
        WHERE firebase_uid = $1`,
       [firebaseUid]
-    );
-  }
-
-  /**
-   * Calls the change_user_role DB function to update role + department
-   * and propagate to the correct extension table.
-   */
-  async updateRole(firebaseUid: string, newRole: string, roleData?: object): Promise<void> {
-    await this.pool.query(
-      `SELECT change_user_role($1, $2, $3::jsonb)`,
-      [firebaseUid, newRole, JSON.stringify(roleData ?? {})]
     );
   }
 
@@ -135,7 +124,7 @@ export class AdminRepository {
         u.created_at        AS "createdAt"
       FROM users u
       WHERE u.email = $1
-        AND u.role IN ('admin', 'recruiter', 'community_manager')
+        AND u.account_type = 'staff'
         AND u.is_active = true`,
       [email]
     );

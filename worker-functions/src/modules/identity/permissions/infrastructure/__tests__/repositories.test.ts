@@ -41,7 +41,7 @@ describe('PgEffectiveAuthzRepository', () => {
       { rows: [{ permissions: ['vacancy:read'] }] },
       { rows: [{ countries: ['AR', 'XX'] }] },
     );
-    const repo = new PgEffectiveAuthzRepository(pool, ['admin']);
+    const repo = new PgEffectiveAuthzRepository(pool);
 
     expect(await repo.effectivePermissions('ana', TENANT)).toEqual(['vacancy:read']);
     expect(await repo.effectiveCountries('ana', TENANT)).toEqual(['AR']); // 'XX' descartado
@@ -60,7 +60,7 @@ describe('PgEffectiveAuthzRepository', () => {
         },
       ],
     });
-    const repo = new PgEffectiveAuthzRepository(pool, ['admin']);
+    const repo = new PgEffectiveAuthzRepository(pool);
     expect(await repo.snapshot('ana', TENANT)).toEqual({
       uid: 'ana',
       tenantId: TENANT,
@@ -71,21 +71,22 @@ describe('PgEffectiveAuthzRepository', () => {
     });
 
     const vazio = makePool({ rows: [] });
-    const semUsuario = await new PgEffectiveAuthzRepository(vazio.pool, ['admin']).snapshot('fantasma', TENANT);
+    const semUsuario = await new PgEffectiveAuthzRepository(vazio.pool).snapshot('fantasma', TENANT);
     expect(semUsuario).toMatchObject({ status: null, permissions: [], countries: [], groups: [] });
   });
 
   it('status desconhecido não é repassado como se fosse válido', async () => {
     const { pool } = makePool({ rows: [{ status: 'INVENTADO', permissions: [], countries: [], groups: [] }] });
-    const repo = new PgEffectiveAuthzRepository(pool, ['admin']);
+    const repo = new PgEffectiveAuthzRepository(pool);
     expect((await repo.snapshot('ana', TENANT)).status).toBeNull();
   });
 
-  it('contagem de staff sem grupo recebe os papéis INJETADOS', async () => {
+  it('contagem de staff sem grupo filtra por account_type = staff (D294)', async () => {
     const { pool, query } = makePool({ rows: [{ n: 4 }] });
-    const repo = new PgEffectiveAuthzRepository(pool, ['admin', 'recruiter']);
+    const repo = new PgEffectiveAuthzRepository(pool);
     expect(await repo.countActiveStaffWithoutGroup(TENANT)).toBe(4);
-    expect(query.mock.calls[0][1]).toEqual([TENANT, ['admin', 'recruiter']]);
+    // D294: staff é `account_type = 'staff'` — vocabulário do banco, sem lista de papéis injetada.
+    expect(query.mock.calls[0][1]).toEqual([TENANT, 'staff']);
   });
 });
 
@@ -292,14 +293,14 @@ describe('bordas do mapeamento (linha ausente, coluna nula, lista cheia)', () =>
 
   it('effective_* com resposta inesperada não inventa permissão', async () => {
     const { pool } = makePool({ rows: [] }, { rows: [{ countries: null }] });
-    const repo = new PgEffectiveAuthzRepository(pool, ['admin']);
+    const repo = new PgEffectiveAuthzRepository(pool);
     expect(await repo.effectivePermissions('ana', TENANT)).toEqual([]);
     expect(await repo.effectiveCountries('ana', TENANT)).toEqual([]);
   });
 
   it('contagem sem linha vira 0 (não NaN nem undefined)', async () => {
     const { pool } = makePool({ rows: [] });
-    expect(await new PgEffectiveAuthzRepository(pool, ['admin']).countActiveStaffWithoutGroup(TENANT)).toBe(0);
+    expect(await new PgEffectiveAuthzRepository(pool).countActiveStaffWithoutGroup(TENANT)).toBe(0);
   });
 
   it('grupo com colunas nulas do banco vira detalhe com listas vazias', async () => {

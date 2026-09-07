@@ -333,9 +333,99 @@ describe('PermissionMiddleware.family().require()', () => {
 
   it('declara a célula no handler — é o que o scanner do catálogo lê', () => {
     const middleware = new PermissionMiddleware({ client: clientStub(), audit: { record: jest.fn() }, env: {} });
-    const guard = middleware.family('admin.users').require('user_management', 'read', 'Ver usuários');
+    const guard = middleware.family('admin.users').require('user_management', 'read', { description: 'Ver usuários' });
     const metadata = (guard as unknown as Record<symbol, unknown>)[Symbol.for('enlite.permissions.cell')];
     expect(metadata).toEqual({ resource: 'user_management', action: 'read', description: 'Ver usuários' });
+  });
+
+  it('`untilEnforced` NÃO vaza para a declaração — o catálogo só conhece a célula', () => {
+    const middleware = new PermissionMiddleware({ client: clientStub(), audit: { record: jest.fn() }, env: {} });
+    const guard = middleware.family('admin.users').require('user_management', 'write', { untilEnforced: 'admin' });
+    const metadata = (guard as unknown as Record<symbol, unknown>)[Symbol.for('enlite.permissions.cell')];
+    expect(metadata).toEqual({ resource: 'user_management', action: 'write', description: null });
+  });
+});
+
+/**
+ * `untilEnforced: 'admin'` — o que sobrou do papel de usuário (07/09/2026).
+ *
+ * O painel deixou de decidir por `users.role`, mas o `main` chega com o engine
+ * desligado (D285): sem isto, toda rota que era `requireAdmin()` ficaria aberta a
+ * qualquer staff no intervalo. Com a família enforced a opção é ignorada por
+ * construção — é a prova de que o papel não é mais nível quando a célula decide.
+ */
+describe('untilEnforced: \'admin\' (o papel só vale enquanto a família não está enforced)', () => {
+  afterEach(() => jest.clearAllMocks());
+
+  function harnessComPapel(env: NodeJS.ProcessEnv, client: PermissionClient, roles: string[] | undefined) {
+    const middleware = new PermissionMiddleware({ client, audit: { record: jest.fn() }, env });
+    const app = express();
+    app.use((req, _res, next) => {
+      (req as express.Request).authContext = { principal: { id: UID, ...(roles ? { roles } : {}) } } as never;
+      next();
+    });
+    app.post(
+      '/api/admin/users',
+      middleware.family('admin.users').require('user_management', 'write', { untilEnforced: 'admin' }),
+      (_req, res) => res.json({ ok: true }),
+    );
+    return app;
+  }
+
+  it('engine DESLIGADO: papel admin passa, sem resolver', async () => {
+    const client = clientStub();
+    await request(harnessComPapel({}, client, ['admin'])).post('/api/admin/users').expect(200);
+    expect(client.resolve).not.toHaveBeenCalled();
+  });
+
+  it('engine DESLIGADO: outro papel → 403 com a MESMA resposta do requireAdmin() de antes', async () => {
+    const res = await request(harnessComPapel({}, clientStub(), ['recruiter'])).post('/api/admin/users').expect(403);
+    expect(res.body).toEqual({ success: false, error: 'Admin access required' });
+  });
+
+  it('engine DESLIGADO: principal sem papel nenhum → 403 (fail-closed, nunca "sem papel = admin")', async () => {
+    await request(harnessComPapel({}, clientStub(), undefined)).post('/api/admin/users').expect(403);
+  });
+
+  it('família FORA do enforcement: mesma régua do engine desligado', async () => {
+    const env = { PERMISSION_ENGINE_ENABLED: 'true', PERMISSION_ENFORCED_ROUTES: 'admin.patients' };
+    await request(harnessComPapel(env, clientStub(), ['admin'])).post('/api/admin/users').expect(200);
+    await request(harnessComPapel(env, clientStub(), ['recruiter'])).post('/api/admin/users').expect(403);
+  });
+
+  it('família ENFORCED: a célula decide e o papel é IGNORADO — recrutadora com a célula passa', async () => {
+    const client = clientStub({ resolve: jest.fn().mockResolvedValue(authz({ permissions: ['user_management:write'] })) });
+    await request(harnessComPapel(LIGADO, client, ['recruiter'])).post('/api/admin/users').expect(200);
+    expect(client.resolve).toHaveBeenCalled();
+  });
+
+  it('família ENFORCED: admin SEM a célula é negado — o papel não abre mais nada', async () => {
+    const client = clientStub({ resolve: jest.fn().mockResolvedValue(authz({ permissions: ['user_management:read'] })) });
+    const res = await request(harnessComPapel(LIGADO, client, ['admin'])).post('/api/admin/users').expect(403);
+    expect(res.body.code).toBe('missing_cell');
+  });
+
+  it('sem `env` injetado, lê o processo (o wiring de produção não injeta)', async () => {
+    const anterior = process.env.PERMISSION_ENGINE_ENABLED;
+    delete process.env.PERMISSION_ENGINE_ENABLED;
+    try {
+      const middleware = new PermissionMiddleware({ client: clientStub(), audit: { record: jest.fn() } });
+      const app = express();
+      app.use((req, _res, next) => {
+        (req as express.Request).authContext = { principal: { id: UID, roles: ['recruiter'] } } as never;
+        next();
+      });
+      app.post('/x', middleware.family('admin.users').require('user_management', 'write', { untilEnforced: 'admin' }), (_req, res) => res.json({ ok: true }));
+      await request(app).post('/x').expect(403);
+    } finally {
+      if (anterior !== undefined) process.env.PERMISSION_ENGINE_ENABLED = anterior;
+    }
+  });
+
+  it('sem a opção, o caminho não enforced continua passando como sempre (rota de staff)', async () => {
+    const client = clientStub();
+    const { app } = harness({}, client);
+    await request(app).get('/api/admin/users/1').expect(200);
   });
 });
 
