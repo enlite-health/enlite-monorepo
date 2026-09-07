@@ -37,9 +37,9 @@ function resolveIdpProject(): string {
   return projectId;
 }
 
+/** Sem e-mail de propósito: a saída vai para terminal e log de operação — uid basta para agir, e-mail é PII. */
 interface AccountRow {
   firebase_uid: string;
-  email: string | null;
   account_type: string;
 }
 
@@ -51,7 +51,7 @@ async function listAccounts(pool: Pool): Promise<AccountRow[]> {
     where += ` AND firebase_uid = $${params.length}`;
   }
   const res = await pool.query<AccountRow>(
-    `SELECT firebase_uid, email, account_type FROM users WHERE ${where} ORDER BY account_type, email`,
+    `SELECT firebase_uid, account_type FROM users WHERE ${where} ORDER BY account_type, firebase_uid`,
     params,
   );
   return res.rows;
@@ -80,7 +80,7 @@ async function main(): Promise<void> {
       if (!isAccountType(row.account_type)) {
         // A coluna tem CHECK; se isto acontecer, o vocabulário do código ficou atrás do banco.
         invalidos += 1;
-        console.log(`  [tipo desconhecido no código: ${row.account_type}] ${row.email ?? row.firebase_uid}`);
+        console.log(`  [tipo desconhecido no código: ${row.account_type}] ${row.firebase_uid}`);
         continue;
       }
       let user;
@@ -88,18 +88,18 @@ async function main(): Promise<void> {
         user = await admin.auth().getUser(row.firebase_uid);
       } catch {
         semConta += 1;
-        console.log(`  [sem conta no IdP] ${row.email ?? row.firebase_uid}`);
+        console.log(`  [sem conta no IdP] ${row.firebase_uid}`);
         continue;
       }
 
       const atual = (user.customClaims ?? {}).account_type as string | undefined;
       if (atual === row.account_type) {
         jaTinham += 1;
-        if (showAll) console.log(`  [já tem ${atual}] ${row.email ?? row.firebase_uid}`);
+        if (showAll) console.log(`  [já tem ${atual}] ${row.firebase_uid}`);
         continue;
       }
 
-      console.log(`  [${isDryRun ? 'DRY' : 'SET'}] ${row.email ?? row.firebase_uid}: ${atual ?? '—'} → ${row.account_type}`);
+      console.log(`  [${isDryRun ? 'DRY' : 'SET'}] ${row.firebase_uid}: ${atual ?? '—'} → ${row.account_type}`);
       if (!isDryRun) {
         // Mesmo helper do backend — preserva `role` e `country` (setCustomUserClaims substitui o objeto).
         await mergeCustomClaims(row.firebase_uid, { account_type: row.account_type });
