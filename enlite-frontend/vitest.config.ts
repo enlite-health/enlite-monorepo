@@ -105,7 +105,7 @@ export default defineConfig({
         '**/src/presentation/components/features/admin/PatientDetail/kanban/{PatientKanbanCard.tsx,PatientKanbanBoard.tsx}': {
           lines: 100, statements: 100, functions: 100, branches: 100,
         },
-        '**/src/presentation/components/features/admin/PatientDetail/{ClinicalLongText,DiagnosticoCard}.tsx': {
+        '**/src/presentation/components/features/admin/PatientDetail/{ClinicalLongText,DiagnosticoCard,DetailRows,FieldPairs}.tsx': {
           statements: 100,
           branches: 100,
           functions: 100,

@@ -61,7 +61,11 @@ const MOCK_PATIENT = {
       id: 'r1',
       firstName: 'Luciana',
       lastName: 'C. Soto',
-      relationship: 'MOM',
+      // 06/09: era 'MOM', que NÃO existe no catálogo (CHILD, PARENT, SIBLING, NEPHEW,
+      // GRANDCHILD, GUARDIAN, FRIEND, PARTNER, OTHER) — a baseline visual travava um enum cru
+      // na tela como se fosse o estado normal. O fallback para valor fora do catálogo tem teste
+      // unitário próprio; a referência VISUAL tem de mostrar a tela do dia a dia.
+      relationship: 'PARENT',
       phone: '(11) 99852-0481',
       email: 'luciana.soto@example.com',
       documentType: 'CPF',
@@ -104,6 +108,15 @@ const MOCK_PATIENT = {
   ],
   createdAt: '2025-01-10T12:00:00Z',
   updatedAt: '2026-04-20T09:30:00Z',
+  // 06/09: sem estes dois o spec INTEIRO ficava vermelho, e não por regressão visual — o card
+  // faz `sortDiagnosesForCard(patient.diagnoses)`, `undefined.filter` estoura e o error boundary
+  // engole a ficha toda ("Não conseguimos carregar esta página"). O contrato Zod da rota
+  // (`patientDetailContract`) EXIGE `diagnoses` e `diagnosesUnavailable`; o mock é que estava
+  // mentindo sobre ele desde 348fe0f4 (05/09), quando o texto livre saiu da ficha.
+  diagnoses: [],
+  diagnosesUnavailable: false,
+  contractedServices: [],
+  completeness: { missing: [], blocking: [], ready: true, canActivate: true },
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -190,8 +203,13 @@ test.describe('PatientDetailPage — visual regression', () => {
     await expect(page.getByText('CID 6A02.5 Transtorno do espectro autista')).toHaveCount(0);
 
     // Playwright-native screenshot baseline
-    await expect(page).toHaveScreenshot('patient-detail-dados-clinicos.png', {
-      fullPage: true,
+    // 🔒 `fullPage` NÃO funciona nesta tela, e não é bug do layout: o `AdminLayout` é
+    // `h-screen overflow-hidden` com a rolagem DENTRO do `<main>` — decisão de 05/09 que
+    // consertou o "scroll duplo" medido nesta mesma ficha. Com o documento sem crescer,
+    // `fullPage: true` captura só os 720px da dobra, e tudo abaixo dela ficava fora da régua
+    // (inclusive os três placeholders). Capturar o CONTAINER do conteúdo pega a tela inteira
+    // sem tocar no layout.
+    await expect(page.locator('main > div').first()).toHaveScreenshot('patient-detail-dados-clinicos.png', {
       maxDiffPixelRatio: 0.05,
     });
   });
@@ -243,8 +261,8 @@ test.describe('PatientDetailPage — visual regression', () => {
     await page.getByRole('button', { name: /Rede de Apoio/i }).first().click();
     await expect(page.getByTestId('familiares-card')).toBeVisible({ timeout: 5000 });
 
-    await expect(page).toHaveScreenshot('patient-detail-rede-apoio.png', {
-      fullPage: true,
+    // Mesma razão do "Dados Clínicos": o container, não a página. Ver o comentário lá.
+    await expect(page.locator('main > div').first()).toHaveScreenshot('patient-detail-rede-apoio.png', {
       maxDiffPixelRatio: 0.05,
     });
   });
@@ -295,8 +313,8 @@ test.describe('PatientDetailPage — visual regression', () => {
     await page.getByRole('button', { name: /Serviço Contratado/i }).first().click();
     await expect(page.getByTestId('cobertura-medica-card')).toBeVisible({ timeout: 5000 });
 
-    await expect(page).toHaveScreenshot('patient-detail-servico-contratado.png', {
-      fullPage: true,
+    // Mesma razão do "Dados Clínicos": o container, não a página. Ver o comentário lá.
+    await expect(page.locator('main > div').first()).toHaveScreenshot('patient-detail-servico-contratado.png', {
       maxDiffPixelRatio: 0.05,
     });
   });

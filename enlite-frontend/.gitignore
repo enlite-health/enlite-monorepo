@@ -19,7 +19,11 @@ firebase-debug.*.log
 # Playwright
 playwright-report/
 e2e/.auth/
-e2e/**-snapshots/
+# 06/09: `e2e/**-snapshots/` SAIU daqui. A regra ignorava as baselines de screenshot, mas 193
+# delas já estavam versionadas (entraram antes da linha existir, e .gitignore não afeta arquivo
+# já rastreado). O efeito era só sobre spec NOVO: sem baseline no repo, no CI o `toHaveScreenshot`
+# falha na 1ª tentativa, ESCREVE o arquivo e passa no retry (`retries: 2`) — a régua vira teatro,
+# sempre verde, sem nunca comparar com nada. Baseline de teste visual é código: versiona.
 # F5: destino default da evidência da auditoria de UX (o caminho absoluto da máquina de
 # UMA pessoa saiu do código). Só nasce quando alguém roda a auditoria à mão.
 e2e/__evidence__/

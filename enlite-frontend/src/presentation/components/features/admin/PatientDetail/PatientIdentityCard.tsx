@@ -6,6 +6,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { PatientDetail, PatientResponsibleDetail } from '@domain/entities/PatientDetail';
+import { FieldPair, FieldPairGrid, FieldGroupTitle } from './FieldPairs';
 
 interface PatientIdentityCardProps {
   patient: PatientDetail;
@@ -42,17 +43,6 @@ const STATUS_COLORS: Record<string, string> = {
   DISCHARGED: 'bg-gray-100 text-gray-600',
 };
 
-function Field({ label, value, testId }: { label: string; value: string | null; testId?: string }) {
-  return (
-    <Text size="sm" className="leading-snug">
-      <Text as="span" size="sm" weight="medium" color="secondary">{label} </Text>
-      <span data-testid={testId}>
-        <Text as="span" size="sm" color="muted">{value ?? '—'}</Text>
-      </span>
-    </Text>
-  );
-}
-
 function formatDate(iso: string | null, locale = 'es-AR'): string | null {
   if (!iso) return null;
   try {
@@ -75,25 +65,59 @@ function buildAddress(patient: PatientDetail): string | null {
   return parts.length > 0 ? parts.join(', ') : null;
 }
 
-function ResponsibleSection({ responsible, t }: { responsible: PatientResponsibleDetail; t: (k: string) => string }) {
+/**
+ * O bloco do responsável (Gabriel, 06/09: "pode ser Contacto del responsable principal, pois o
+ * paciente pode ter vários responsáveis porém sempre vai ter um principal").
+ *
+ * 🔒 `isPrimary` decide o TÍTULO, não só a ordem. O card escolhe o responsável com
+ * `find(isPrimary) ?? responsibles[0]` — e nesse fallback ninguém elegeu ninguém. Chamar de
+ * "principal" quem só é o primeiro da lista é a tela AFIRMAR o que o dado não diz; então o
+ * fallback fica com o título neutro. O dado mostrado é o mesmo nos dois casos: nada some.
+ */
+// `t` vem do hook aqui dentro, não por prop: o `TFunction` do i18next tem sobrecargas (o 2º
+// argumento é opções OU defaultValue) que nenhuma assinatura manual reproduz — tipá-la à mão
+// fazia o tsc reprovar o fallback do parentesco. Mesmo padrão do FamiliaresCard.
+function ResponsibleSection({ responsible, isPrimary }: { responsible: PatientResponsibleDetail; isPrimary: boolean }) {
+  const { t } = useTranslation();
   const name = [responsible.firstName, responsible.lastName].filter(Boolean).join(' ') || '—';
   const docParts = [
     responsible.documentType ? t(`admin.patients.detail.documentTypes.${responsible.documentType}`) : null,
     responsible.documentNumber,
   ].filter(Boolean);
   const doc = docParts.length > 0 ? docParts.join(' ') : null;
+  // 🔒 O 2º argumento é o FALLBACK para o valor cru, como em FamiliaresCard:88. Sem ele, um
+  // parentesco fora do catálogo (o enum do banco tem 9 valores; a base pode ter outros) imprime a
+  // CHAVE i18n inteira na tela — `admin.patients.detail.relationshipOptions.XPTO`. Pego no print,
+  // não nos testes: `expectNoRawEnumLeaks` procura ALL_CAPS solto, e a chave inteira não casa com
+  // esse padrão — ou seja, a versão SEM fallback escapa justamente do guard que existe para isso.
+  const relationship = responsible.relationship
+    ? t(`admin.patients.detail.relationshipOptions.${responsible.relationship}`, responsible.relationship)
+    : null;
 
   return (
-    <div className="mt-3 flex flex-col gap-2">
-      <Text size="sm" weight="semibold" color="secondary">
-        {t('admin.patients.detail.identityCard.emergencyContact')}
-      </Text>
-      <Field label={`${t('admin.patients.detail.identityCard.responsibleName')}:`} value={name} />
-      <Field label={`${t('admin.patients.detail.identityCard.responsiblePhone')}:`} value={responsible.phone} />
-      <Field label={`${t('admin.patients.detail.identityCard.documentType')}:`} value={doc} />
-      {responsible.email && (
-        <Field label={`${t('admin.patients.detail.identityCard.email')}:`} value={responsible.email} />
-      )}
+    /**
+     * 🔒 `data-clarity-mask` no bloco INTEIRO (parecer do `lex`, 06/09, condição C2). Telefone,
+     * documento e e-mail aqui são contato de TERCEIRO, e o e-mail do paciente logo acima, na mesma
+     * grade, já era mascarado — a mesma razão escrita naquele wrapper vale aqui: o modo do
+     * dashboard do Clarity é configuração remota que ninguém neste repositório controla, e no modo
+     * Balanced texto corrido sobe em claro. A ausência era anterior a esta branch; entra agora
+     * porque a grade nova pôs os dois lado a lado e a inconsistência ficou explícita.
+     */
+    <div className="mt-1" data-clarity-mask="True" data-testid="patient-responsible-section">
+      <FieldGroupTitle>
+        {t(isPrimary
+          ? 'admin.patients.detail.identityCard.primaryResponsibleContact'
+          : 'admin.patients.detail.identityCard.responsibleContact')}
+      </FieldGroupTitle>
+      <FieldPairGrid>
+        <FieldPair label={t('admin.patients.detail.identityCard.responsibleName')} value={name} />
+        <FieldPair label={t('admin.patients.detail.identityCard.relationship')} value={relationship} />
+        <FieldPair label={t('admin.patients.detail.identityCard.responsiblePhone')} value={responsible.phone} />
+        <FieldPair label={t('admin.patients.detail.identityCard.documentType')} value={doc} />
+        {responsible.email && (
+          <FieldPair label={t('admin.patients.detail.identityCard.email')} value={responsible.email} full />
+        )}
+      </FieldPairGrid>
     </div>
   );
 }
@@ -131,7 +155,6 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
     }
   };
 
-  const fullName = [patient.firstName, patient.lastName].filter(Boolean).join(' ') || '—';
   const statusKey = patient.status ?? '';
   const statusColor = STATUS_COLORS[statusKey] ?? 'bg-gray-100 text-gray-600';
   const statusLabel = statusKey ? t(`admin.patients.statusOptions.${statusKey}`, statusKey) : '—';
@@ -140,7 +163,8 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
     ? t(`admin.patients.onHoldReasonOptions.${patient.onHoldReason}`, patient.onHoldReason)
     : null;
   const address = buildAddress(patient);
-  const primaryResponsible = patient.responsibles?.find((r) => r.isPrimary) ?? patient.responsibles?.[0] ?? null;
+  const markedPrimary = patient.responsibles?.find((r) => r.isPrimary) ?? null;
+  const primaryResponsible = markedPrimary ?? patient.responsibles?.[0] ?? null;
 
   return (
     <div
@@ -152,10 +176,11 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
           <User className="w-8 h-8" />
         </div>
         <div className="min-w-0">
-          <Heading level={1} as="h3" weight="semibold" color="primary" className="truncate">
-            {fullName}
-          </Heading>
-          <div className="flex flex-wrap items-center gap-2 mt-1">
+          {/* 06/09: o NOME saiu daqui — subiu para o `h1` da página, a 100px acima. Repetir os dois
+              não era só redundância visual: `getByText(nome)` passou a resolver DOIS elementos e
+              três e2e quebraram em strict mode. O cartão mantém o que é dele — avatar, estado,
+              motivo da espera, número do caso e os campos de contato. */}
+          <div className="flex flex-wrap items-center gap-2">
             <span className={`inline-flex px-2.5 py-0.5 rounded-full ${statusColor}`} data-testid="patient-status-badge">
               <Text as="span" size="xs" weight="medium" color="inherit">
                 {statusLabel}
@@ -180,9 +205,27 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
       </div>
 
       <div className="flex flex-col gap-3">
-        {/* D3.1: rótulo CORRIGIDO — mostrava "Teléfono del Responsable" para o telefone do
-            PACIENTE. O valor não muda, só o nome do campo (dado já certo, rótulo estava errado). */}
-        <Field label={`${t('admin.patients.detail.identityCard.patientWhatsapp')}:`} value={patient.phoneWhatsapp} />
+        <FieldPairGrid>
+          {/* D3.1: rótulo CORRIGIDO — mostrava "Teléfono del Responsable" para o telefone do
+              PACIENTE. O valor não muda, só o nome do campo (dado já certo, rótulo estava errado). */}
+          <FieldPair label={t('admin.patients.detail.identityCard.patientWhatsapp')} value={patient.phoneWhatsapp} />
+          {/* E-mail do paciente EM CLARO (lex A4: é o contato do titular na ficha dele); a
+              máscara do Clarity vai no DOM porque o modo do dashboard é configuração remota
+              que ninguém aqui controla (lex C4.2). */}
+          <div data-clarity-mask="True" className="flex flex-col min-w-0">
+            <FieldPair label={t('admin.patients.detail.identityCard.patientEmail')} value={patient.contactEmail} testId="patient-contact-email" />
+          </div>
+          <FieldPair label={t('admin.patients.detail.identityCard.admission')} value={formatDate(patient.createdAt)} />
+          <FieldPair label={t('admin.patients.detail.identityCard.lastUpdate')} value={formatDate(patient.updatedAt)} />
+          {/* Spec 014 US-D2: "Desligamiento" REMOVIDO — era `value={null}` fixo, sem coluna no
+              banco (a fonte real é `patient_status_history`, aba Historial). */}
+          {/* Rua + número é texto: o Clarity (Balanced) não mascara sozinho (lex C2.1; QA 🔴2). */}
+          {address && (
+            <div data-clarity-mask="True" className="flex flex-col min-w-0 sm:col-span-2">
+              <FieldPair label={t('admin.patients.detail.identityCard.address')} value={address} testId="patient-address" />
+            </div>
+          )}
+        </FieldPairGrid>
         {showPhoneWarning && (
           <div
             className="flex flex-col gap-2 rounded-lg border border-amber-400 bg-amber-50 px-4 py-3"
@@ -214,22 +257,6 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
                 {t('admin.patients.detail.identityCard.keepPhone')}
               </Button>
             </div>
-          </div>
-        )}
-        {/* E-mail do paciente EM CLARO (lex A4: é o contato do titular na ficha dele); a
-            máscara do Clarity vai no DOM porque o modo do dashboard é configuração remota
-            que ninguém aqui controla (lex C4.2). */}
-        <div data-clarity-mask="True">
-          <Field label={`${t('admin.patients.detail.identityCard.patientEmail')}:`} value={patient.contactEmail} testId="patient-contact-email" />
-        </div>
-        <Field label={`${t('admin.patients.detail.identityCard.admission')}:`} value={formatDate(patient.createdAt)} />
-        <Field label={`${t('admin.patients.detail.identityCard.lastUpdate')}:`} value={formatDate(patient.updatedAt)} />
-        {/* Spec 014 US-D2: "Desligamiento" REMOVIDO — era `value={null}` fixo, sem coluna no
-            banco (a fonte real é `patient_status_history`, aba Historial). */}
-        {/* Rua + número é texto: o Clarity (Balanced) não mascara sozinho (lex C2.1; QA 🔴2). */}
-        {address && (
-          <div data-clarity-mask="True">
-            <Field label={t('admin.patients.detail.identityCard.address')} value={address} testId="patient-address" />
           </div>
         )}
       </div>
@@ -285,7 +312,7 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
 
       {primaryResponsible && (
         <div className="border-t border-gray-200 pt-4">
-          <ResponsibleSection responsible={primaryResponsible} t={t} />
+          <ResponsibleSection responsible={primaryResponsible} isPrimary={markedPrimary !== null} />
         </div>
       )}
     </div>

@@ -150,8 +150,11 @@ describe('PatientGeneralInfoCard — idade, faixas, início do serviço, drawer'
 
 describe('DiagnosticoCard — dispositivos', () => {
   it('lista traduzida; código fora do catálogo cai no cru; ausente → —', () => {
+    // 06/09 (variante B): cada dispositivo virou um CHIP — a lista deixou de ser uma string
+    // juntada por vírgula, mas a regra continua a mesma (traduz o do catálogo, cru o de fora).
     render(<DiagnosticoCard patient={{ ...patientDetailFixture, deviceTypes: ['HOME', 'CODIGO_NOVO'] }} />);
-    expect(screen.getByText('Domiciliar, CODIGO_NOVO')).toBeInTheDocument();
+    expect(screen.getByText('Domiciliar')).toBeInTheDocument();
+    expect(screen.getByText('CODIGO_NOVO')).toBeInTheDocument();
     render(<DiagnosticoCard patient={{ ...patientDetailMinimal, deviceTypes: undefined as never }} />);
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
     expect(screen.queryByText(/ICHOM|Especialidade/)).not.toBeInTheDocument();

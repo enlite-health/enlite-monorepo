@@ -37,7 +37,8 @@ import {
  * para a assertion NEGATIVA (T2) — nunca é o que a UI recebe ou exibe (REQ-21). */
 const CODIGO_ESQUIZOFRENIA = '6A20';
 
-const EMULATOR = 'http://127.0.0.1:9099';
+// `E2E_FIREBASE_EMULATOR` aponta para o emulador de um stack isolado (`docker compose -p`); default inalterado.
+const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
 const EMULATOR_PROJECT = 'demo-no-project';
 const STAFF_EMAIL = `e2e.cid11f3.${Date.now()}@enlite.health`;
 const STAFF_PASSWORD = 'TestAdmin123!';
