@@ -203,8 +203,13 @@ test.describe('PatientDetailPage — visual regression', () => {
     await expect(page.getByText('CID 6A02.5 Transtorno do espectro autista')).toHaveCount(0);
 
     // Playwright-native screenshot baseline
-    await expect(page).toHaveScreenshot('patient-detail-dados-clinicos.png', {
-      fullPage: true,
+    // 🔒 `fullPage` NÃO funciona nesta tela, e não é bug do layout: o `AdminLayout` é
+    // `h-screen overflow-hidden` com a rolagem DENTRO do `<main>` — decisão de 05/09 que
+    // consertou o "scroll duplo" medido nesta mesma ficha. Com o documento sem crescer,
+    // `fullPage: true` captura só os 720px da dobra, e tudo abaixo dela ficava fora da régua
+    // (inclusive os três placeholders). Capturar o CONTAINER do conteúdo pega a tela inteira
+    // sem tocar no layout.
+    await expect(page.locator('main > div').first()).toHaveScreenshot('patient-detail-dados-clinicos.png', {
       maxDiffPixelRatio: 0.05,
     });
   });
@@ -256,8 +261,8 @@ test.describe('PatientDetailPage — visual regression', () => {
     await page.getByRole('button', { name: /Rede de Apoio/i }).first().click();
     await expect(page.getByTestId('familiares-card')).toBeVisible({ timeout: 5000 });
 
-    await expect(page).toHaveScreenshot('patient-detail-rede-apoio.png', {
-      fullPage: true,
+    // Mesma razão do "Dados Clínicos": o container, não a página. Ver o comentário lá.
+    await expect(page.locator('main > div').first()).toHaveScreenshot('patient-detail-rede-apoio.png', {
       maxDiffPixelRatio: 0.05,
     });
   });
@@ -308,8 +313,8 @@ test.describe('PatientDetailPage — visual regression', () => {
     await page.getByRole('button', { name: /Serviço Contratado/i }).first().click();
     await expect(page.getByTestId('cobertura-medica-card')).toBeVisible({ timeout: 5000 });
 
-    await expect(page).toHaveScreenshot('patient-detail-servico-contratado.png', {
-      fullPage: true,
+    // Mesma razão do "Dados Clínicos": o container, não a página. Ver o comentário lá.
+    await expect(page.locator('main > div').first()).toHaveScreenshot('patient-detail-servico-contratado.png', {
       maxDiffPixelRatio: 0.05,
     });
   });
