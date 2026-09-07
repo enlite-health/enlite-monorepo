@@ -53,7 +53,6 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       // decididas no back abaixo da rota (worker:disable)
       'analytics:export',
       'analytics:read',
-      'api_docs:read',
       'integration:execute',
       'interview:delete',
       'interview:read',

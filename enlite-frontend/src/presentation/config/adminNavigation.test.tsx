@@ -16,6 +16,7 @@ import { renderHook } from '@testing-library/react';
 import { useAdminNavItems } from './adminNavigation';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
+import { screenByRoute } from './screenRegistry';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -233,14 +234,32 @@ describe('useAdminNavItems — D286: item de topo só existe para quem tem algum
   it('com o engine OFF a régua é a de antes: todos os itens de topo aparecem (freio D268)', () => {
     useAdminAuthStore.setState({ authzStatus: 'ready', authz: { ...authzCom([]), enforcement: 'off' } });
     const visiveis = hrefs();
-    for (const h of ['/admin/dashboard', '/admin', '/admin/vacancies', '/admin/workers', '/admin/patients', '/admin/mapa', '/admin/recruitment', '/admin/api-docs']) {
+    for (const h of ['/admin/dashboard', '/admin', '/admin/vacancies', '/admin/workers', '/admin/patients', '/admin/mapa', '/admin/recruitment']) {
       expect(visiveis).toContain(h);
     }
   });
 
-  it('item cujo href não está no registro de telas (API Docs) NÃO é gateado por célula — nomeado, não esquecido', () => {
+  // O API Docs era o item NOMEADO fora do registro de telas — a prova de que "sem tela no
+  // registro" era decisão, não esquecimento. Removida a tela (07/09), não sobrou nenhum: o
+  // menu inteiro passou a ser gateado por célula. A régua vira a INVARIANTE, que segue viva e
+  // é quem protege o gate — item novo sem tela no registro escaparia do D286 em silêncio.
+  it('todo href do menu tem tela no registro — item novo sem célula não passa despercebido', () => {
+    // Engine OFF traz o menu INTEIRO (base + seção Administración): desde a D293 o papel não
+    // entra na conta, e `comAlgumaCelulaDaTela` é o mecanismo único dos dois blocos.
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: { ...authzCom([]), enforcement: 'off' } });
+
+    const todos = hrefs().filter((h): h is string => Boolean(h));
+
+    // Controle positivo primeiro: sem isto, um menu vazio aprovaria a asserção seguinte.
+    expect(todos.length).toBeGreaterThan(10);
+    expect(todos).toContain('/admin/patients');
+
+    const semTela = todos.filter((h) => screenByRoute(h) === undefined);
+    expect(semTela).toEqual([]);
+  });
+
+  it('engine ON e nenhuma célula: nenhum item de topo sobra — o gate é total', () => {
     useAdminAuthStore.setState({ authzStatus: 'ready', authz: authzCom([]) });
-    // A rota `/api/docs` do back exige só staff (index.ts), sem célula: o menu espelha o back.
-    expect(hrefs()).toEqual(['/admin/api-docs']);
+    expect(hrefs()).toEqual([]);
   });
 });

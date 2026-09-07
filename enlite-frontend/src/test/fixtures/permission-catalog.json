@@ -3,7 +3,6 @@
   "cells": [
     "analytics:export",
     "analytics:read",
-    "api_docs:read",
     "dashboard:read",
     "dashboard_funnel:read",
     "dashboard_numbers:read",

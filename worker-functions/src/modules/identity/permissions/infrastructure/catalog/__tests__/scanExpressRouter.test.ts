@@ -269,13 +269,13 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // D286 fase 2 — endereço do prestador (ficha e mapa); o fixture de rota deste teste não declara o mapa
       'worker_address:read',
       'worker:disable',
-      // D116 — ferramentas sem botão no painel (purga de teste, monitor sintético, docs); declaradas
+      // D116 — ferramentas sem botão no painel (purga de teste, monitor sintético); declaradas
       // em CELL_DESCRIPTION no sync main→stage de 06/09 para o painel não as mostrar sem texto.
+      // `api_docs:read` saiu em 07/09 com a tela `/admin/api-docs`.
       'patient:delete',
       'messaging:write',
       'integration:execute',
       'test_fixtures:execute',
-      'api_docs:read',
       // D286 — os containers da ficha do paciente. A maioria É declarada por rota no app real
       // (endereços, serviços, diagnósticos, seções); aqui o fixture de rota não declara nenhuma,
       // então TODAS saem como complemento — e é isso que garante que nenhuma some do catálogo.

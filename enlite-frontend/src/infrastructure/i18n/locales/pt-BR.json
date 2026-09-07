@@ -1095,7 +1095,6 @@
       "recruitment": "Recrutamento",
       "blockedAttempts": "Candidaturas bloqueadas",
       "patients": "Pacientes",
-      "apiDocs": "API Docs",
       "tags": "Etiquetas",
       "dedup": "Duplicatas",
       "adminSection": "Administração",
@@ -1338,10 +1337,6 @@
           "imported": "Importado"
         }
       }
-    },
-    "apiDocs": {
-      "title": "Documentação da API",
-      "subtitle": "Referência completa do worker-functions. Todas as chamadas usam seu token de staff atual automaticamente."
     },
     "login": {
       "title": "Painel Administrativo",
@@ -3730,7 +3725,6 @@
             "dashboard_zones": "Zonas",
             "integration": "Integrações",
             "test_fixtures": "Dados de teste",
-            "api_docs": "Documentação da API",
             "messaging": "Mensageria",
             "upload": "Importação de arquivos",
             "user_management": "Usuários do painel",
@@ -3997,12 +3991,6 @@
                 "body": "É o bloco ZONAS: pacientes e prestadores por zona e sexo, demanda contra disponibilidade, com filtro por profissão. São contadores por zona, sem dado pessoal.",
                 "action": {
                   "read": "Ver o bloco Zonas."
-                }
-              },
-              "api_docs": {
-                "body": "É a documentação interativa da API (Swagger). De lá dá para TESTAR qualquer rota: cada chamada de teste segue a permissão daquela rota, não esta.",
-                "action": {
-                  "read": "Abrir a tela API Docs."
                 }
               }
             },

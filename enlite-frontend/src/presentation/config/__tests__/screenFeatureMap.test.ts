@@ -42,7 +42,7 @@ const ROTAS_ADMIN: RotaAdmin[] = BLOCO_ADMIN.split('\n')
 // Sync main→stage (06/09): mapa, mensagens por etapa, plantillas e invitación também não têm
 // chave `screen:*` no manifest — gateadas por célula (`messaging:read` no menu), não por país.
 const ROTAS_SEM_CHAVE_SCREEN = new Set([
-  '', 'tags', 'patient-chat-roles', 'dedup', 'api-docs',
+  '', 'tags', 'patient-chat-roles', 'dedup',
   'mapa', 'mensajes-por-etapa', 'plantillas', 'plantillas/registrar', 'plantillas/:slug', 'invitacion-presentacion',
 ]);
 
