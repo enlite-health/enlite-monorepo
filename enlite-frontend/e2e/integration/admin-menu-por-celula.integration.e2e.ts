@@ -15,7 +15,7 @@
  * o banco de `ABAC_API_URL` / `ABAC_TEST_DB_URL` (default 8089/5439) — sobe o seu com
  * `docker compose -p <sessão>` e aponte as variáveis.
  */
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import {
   cleanupStaffAndGroup,
   grantCell,
@@ -54,13 +54,19 @@ async function foto(page: Page, nome: string): Promise<void> {
   await page.screenshot({ path: `e2e/__screenshots__/menu-por-celula-${nome}.png`, fullPage: true, animations: 'disabled', mask: mascara });
 }
 
-/** O item que existe FUNCIONA: clique humano, a URL muda, a rota que alimenta a tela responde 200, o título aparece. */
-async function abreDoMenu(page: Page, nome: string, rota: string, api: string, fotoNome: string): Promise<void> {
-  const resposta = page.waitForResponse((r) => r.url().includes(api) && r.request().method() === 'GET');
+/**
+ * O item que existe FUNCIONA: clique humano, a URL muda, a rota que alimenta a tela responde 200, o
+ * título aparece. `api` casa o PATHNAME exato — `includes('/api/admin/workers')` também casava
+ * `/api/admin/workers/stats`, e a foto saía com os cards ainda em skeleton (gate, 2ª rodada).
+ * `prontoQuando` é o último bloco que a foto congela (os cards de Prestadores); Pacientes não tem.
+ */
+async function abreDoMenu(page: Page, nome: string, rota: string, api: string, fotoNome: string, prontoQuando?: Locator): Promise<void> {
+  const resposta = page.waitForResponse((r) => new URL(r.url()).pathname === api && r.request().method() === 'GET');
   await link(page, nome).click();
   await expect(page).toHaveURL(new RegExp(`${rota}$`));
   expect((await resposta).status()).toBe(200);
   await expect(page.getByRole('heading', { name: nome, exact: true })).toBeVisible({ timeout: 15_000 });
+  if (prontoQuando) await expect(prontoQuando).toBeVisible({ timeout: 15_000 });
   await foto(page, fotoNome);
 }
 
@@ -134,7 +140,7 @@ test.describe('Menu lateral por célula (D286) — o item só existe para quem t
     console.log(`[prova] menu com patient:read + worker:read: ${JSON.stringify(visiveis)}`);
     await foto(page, '3-ganhou-worker-read');
 
-    await abreDoMenu(page, 'Prestadores', '/admin/workers', '/api/admin/workers', '3b-prestadores-abre');
+    await abreDoMenu(page, 'Prestadores', '/admin/workers', '/api/admin/workers', '3b-prestadores-abre', page.getByText('Registros Hoy'));
   });
 
   test('4. a célula é revogada → o item some de novo (o menu segue o contrato, nos dois sentidos)', async ({ page, request }) => {
