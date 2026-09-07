@@ -42,6 +42,21 @@ import { foldAccents, sqlFoldAccents } from '@shared/utils/accentFold';
 
 export const MAX_PATIENT_MAP_POINTS = MAX_MAP_POINTS;
 
+/**
+ * Teto do escopo por NOME — menor que o geográfico, de propósito.
+ *
+ * O consumidor desta resposta é um seletor em que o operador escolhe UMA
+ * pessoa. Devolver 500 domicílios com nome e coordenada para escolher um é
+ * excesso no sentido literal do art. 4 inc. 1 da Ley 25.326 ("no excesivos en
+ * relación al ámbito y finalidad") — parecer do `lex` de 07/09/2026, C-A. O
+ * teto de 500 foi calibrado em 30/08 contra o CSV de export, para escopo
+ * GEOGRÁFICO; nunca foi recalibrado para este.
+ *
+ * A tela não perde a informação: `total` continua vindo do `COUNT(*) OVER()`,
+ * então ela diz "há mais — refiná o nome" em vez de mentir que são 50.
+ */
+export const MAX_NAME_SCOPE_POINTS = 50;
+
 export const PatientsMapBodySchema = withMapScopeRules(
   z
     .object({
@@ -63,7 +78,17 @@ export const PatientsMapBodySchema = withMapScopeRules(
       search: z
         .string()
         .trim()
-        .min(2)
+        /**
+         * TRÊS caracteres, não dois — e o número é medido, não escolhido.
+         *
+         * Com 2, o curinga sintático estava fechado mas o SEMÂNTICO não:
+         * termos legítimos varriam a base. Medido contra o Postgres de
+         * produção em 07/09/2026 (só contagem):
+         *   'an' → 266 linhas (38% da base) · 'ar' → 241 (35%) · 'el' → 209 (30%)
+         * Com 3, o pior caso cai para 'mar' → 110 (16%), e o teto de
+         * `MAX_NAME_SCOPE_POINTS` corta o resto. Condição C-B do `lex`.
+         */
+        .min(3)
         .max(80)
         /**
          * 🔒 Primeira das DUAS camadas contra o curinga (achado do gate no PR
@@ -181,7 +206,10 @@ export function buildPatientsMapQuery(q: PatientsMapBody): { sql: string; params
   }
 
   const pLimit = i++;
-  params.push(q.limit);
+  // Escopo por nome tem teto próprio (lex C-A): é um seletor de UMA pessoa,
+  // não uma varredura. `Math.min` para que um `limit` menor no corpo continue
+  // valendo — o teto é máximo, nunca piso.
+  params.push(q.search ? Math.min(q.limit, MAX_NAME_SCOPE_POINTS) : q.limit);
 
   const sql = `
     SELECT p.id, p.first_name, p.last_name, p.status,

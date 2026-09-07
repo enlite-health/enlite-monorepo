@@ -568,7 +568,20 @@ describe('AdminMapPage — busca de âncora por nome', () => {
     act(() => { vi.advanceTimersByTime(400); });
   }
 
-  it('🔒 digitar ≥2 letras troca o escopo: sai centro+raio, entra `search`', () => {
+  it('🔒 DOIS caracteres não buscam mais — `an` devolvia 38% da base (lex C-B)', () => {
+    vi.useFakeTimers();
+    try {
+      setup();
+      fireEvent.focusIn(screen.getByTestId('map-center-patient'));
+      digitar('an');
+      expect(pickerCall(mockPatients)[0]).toEqual(ancoraAR);
+      expect(pickerCall(mockPatients)[0]).not.toHaveProperty('search');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('🔒 digitar ≥3 letras troca o escopo: sai centro+raio, entra `search`', () => {
     vi.useFakeTimers();
     try {
       setup();
@@ -644,7 +657,7 @@ describe('AdminMapPage — busca de âncora por nome', () => {
       fireEvent.focusIn(screen.getByTestId('map-center-patient'));
       digitar('R');
       expect(last(screen.getAllByTestId('searchable-select-empty'))?.textContent)
-        .toBe('Escribí al menos 2 letras');
+        .toBe('Escribí al menos 3 letras');
     } finally {
       vi.useRealTimers();
     }

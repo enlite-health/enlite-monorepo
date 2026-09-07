@@ -29,11 +29,15 @@ import { ANCHOR_PICKER_RADIUS_KM, DEFAULT_CENTER_BY_COUNTRY, placeLabel } from '
 import type { AnchorOption, AnchorStatus } from './mapAnchor';
 
 /**
- * Mínimo para a busca sair do cliente. Uma letra devolveria quase a base
- * inteira — e aí o "escopo" que o servidor exige não seria escopo nenhum. O
- * backend recusa com 400 abaixo disto; aqui a gente simplesmente não pergunta.
+ * Mínimo para a busca sair do cliente. TEM DE BATER com o `min()` do schema no
+ * servidor (`AdminPatientsMapController`), que é quem recusa com 400.
+ *
+ * São 3, e o número é medido: com 2, termos legítimos varriam a base — 'an'
+ * devolvia 38% dos domicílios do país, 'ar' 35%. Com 3 o pior caso cai para
+ * 16%, e o teto do escopo por nome corta o resto. Parecer do `lex` de
+ * 07/09/2026, condição C-B.
  */
-export const ANCHOR_SEARCH_MIN_CHARS = 2;
+export const ANCHOR_SEARCH_MIN_CHARS = 3;
 
 export type AnchorKind = 'workers' | 'patients';
 

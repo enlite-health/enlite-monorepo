@@ -25,6 +25,7 @@ import {
   buildPatientsMapQuery,
   PatientsMapBodySchema,
   MAX_PATIENT_MAP_POINTS,
+  MAX_NAME_SCOPE_POINTS,
 } from '../AdminPatientsMapController';
 import { LIVE_JOB_POSTING_SQL, OPEN_JOB_STATUSES } from '@modules/matching/domain/openJobStatuses';
 import { geohash5 } from '@shared/utils/geohash';
@@ -463,5 +464,92 @@ describe('busca por nome — acento dobrado dos dois lados', () => {
   it('dobra e escape convivem: curinga escapado E acento dobrado no mesmo termo', () => {
     const { params } = buildPatientsMapQuery(parse({ country: 'AR', search: 'Pe%ña' }));
     expect(params).toContain('Pe\\%na');
+  });
+});
+
+/**
+ * 🔒 As condições do parecer do `lex` de 07/09/2026 sobre a busca por nome.
+ *
+ * O conserto do curinga fechou o `%%` SINTÁTICO e deixou o SEMÂNTICO aberto:
+ * com mínimo de 2, termos legítimos varriam a base. Medido em produção, só
+ * contagem: 'an' → 266 linhas (38%), 'ar' → 241 (35%), 'el' → 209 (30%).
+ * Com 3 o pior caso é 'mar' → 110 (16%), e o teto próprio corta o resto.
+ */
+describe('escopo por nome — proporcionalidade (lex C-A e C-B)', () => {
+  it('🔒 dois caracteres agora é 400 — `an` devolvia 38% da base', () => {
+    expect(PatientsMapBodySchema.safeParse({ country: 'AR', search: 'an' }).success).toBe(false);
+    expect(PatientsMapBodySchema.safeParse({ country: 'AR', search: 'ar' }).success).toBe(false);
+  });
+
+  it('três caracteres passa — é o piso medido, não um número escolhido', () => {
+    expect(PatientsMapBodySchema.safeParse({ country: 'AR', search: 'ana' }).success).toBe(true);
+  });
+
+  it('🔒 o escopo por NOME tem teto próprio, menor que o geográfico', () => {
+    const porNome = buildPatientsMapQuery(parse({ country: 'AR', search: 'mar' }));
+    expect(porNome.params.at(-1)).toBe(MAX_NAME_SCOPE_POINTS);
+    expect(MAX_NAME_SCOPE_POINTS).toBeLessThan(MAX_PATIENT_MAP_POINTS);
+  });
+
+  it('🔒 o escopo GEOGRÁFICO continua com 500 — o teto novo não vazou para ele', () => {
+    const porRaio = buildPatientsMapQuery(parse(SCOPE));
+    expect(porRaio.params.at(-1)).toBe(MAX_PATIENT_MAP_POINTS);
+  });
+
+  it('o teto é máximo, não piso: `limit` menor no corpo continua valendo', () => {
+    const { params } = buildPatientsMapQuery(parse({ country: 'AR', search: 'mar', limit: 10 }));
+    expect(params.at(-1)).toBe(10);
+  });
+
+  it('a CONTAGEM não é cortada pelo teto — a tela ainda diz "há mais, refiná"', () => {
+    const { sql } = buildPatientsMapQuery(parse({ country: 'AR', search: 'mar' }));
+    expect(sql).toContain('COUNT(*) OVER()::int AS total_count');
+  });
+});
+
+/**
+ * 🔒 ALLOWLIST FECHADA para `scope: 'name'` (lex C-E).
+ *
+ * Ela existia só para `scope:'radius'`. Sem esta, uma chave nova na linha de
+ * uma leitura NOMINAL entraria sem reprovar nada — e é justamente a linha em
+ * que um identificador não pode aparecer sem decisão escrita.
+ */
+describe('trilha da leitura NOMINAL — allowlist fechada', () => {
+  it('🔒 a linha tem EXATAMENTE estes campos, e nenhum identifica quem foi lido', async () => {
+    mockLogInfo.mockClear();
+    mockQuery.mockResolvedValueOnce({ rows: withTotal(3, [row(), row({ id: 'p2' }), row({ id: 'p3' })]) });
+    await new AdminPatientsMapController().getMapPoints(
+      req(parse({ country: 'AR', search: 'Reyna Alaburda' })), mockRes(),
+    );
+    expect(mockLogInfo.mock.calls[0][0]).toEqual({
+      msg: 'patients.map.read',
+      uid: 'staff-1',
+      country: 'AR',
+      scope: 'name',
+      n: 3,
+      withoutCoordinates: 0,
+      truncated: false,
+      totalMatching: 3,
+      status: null,
+      profession: null,
+      stateCanonical: null,
+      hasStateFilter: false,
+      hasCityFilter: false,
+      hasSearchFilter: true,
+      radiusKm: null,
+      geohash5: null,
+    });
+  });
+
+  it('🔒 nem o termo, nem nome, nem id, nem coordenada de quem foi lido', async () => {
+    mockLogInfo.mockClear();
+    mockQuery.mockResolvedValueOnce({ rows: withTotal(1, [row()]) });
+    await new AdminPatientsMapController().getMapPoints(
+      req(parse({ country: 'AR', search: 'Reyna Alaburda' })), mockRes(),
+    );
+    const linha = JSON.stringify(mockLogInfo.mock.calls[0][0]);
+    for (const proibido of ['Reyna', 'Alaburda', 'Ana', 'Paz', 'p1', 'a1', '-34.60', '-58.38']) {
+      expect(linha).not.toContain(proibido);
+    }
   });
 });
