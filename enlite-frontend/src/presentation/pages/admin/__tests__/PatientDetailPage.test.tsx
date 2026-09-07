@@ -186,4 +186,12 @@ describe('PatientDetailPage', () => {
     render(<PatientDetailPage />);
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Santiago Claiman');
   });
+
+  // lex 06/09 (C1): o nome virou nó de PÁGINA, fora do cartão. A máscara não pode depender de
+  // regra do dashboard do Clarity — que é remota e muda sem PR. Trava no DOM.
+  it('o h1 com o nome do paciente está dentro de data-clarity-mask="True"', () => {
+    render(<PatientDetailPage />);
+    const h1 = screen.getByRole('heading', { level: 1 });
+    expect(h1.closest('[data-clarity-mask="True"]')).not.toBeNull();
+  });
 });

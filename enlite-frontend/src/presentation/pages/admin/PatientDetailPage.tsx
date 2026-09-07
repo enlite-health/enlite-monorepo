@@ -127,9 +127,24 @@ export default function PatientDetailPage() {
             </Text>
           </div>
           <div className="flex items-center gap-2.5 min-w-0">
-            <Heading level={1} weight="semibold" color="primary" className="truncate">
-              {patientName}
-            </Heading>
+            {/*
+             * 🔒 `data-clarity-mask` no título (parecer do `lex`, 06/09, condição C1).
+             *
+             * O nome saiu de dentro do `PatientIdentityCard` e virou nó de PÁGINA. O `lex` pediu
+             * prova de que nenhuma regra "Mask by element" ancorada no cartão deixou de cobri-lo —
+             * mas essa regra vive no DASHBOARD do Clarity, que é configuração remota que ninguém
+             * neste repositório controla e pode mudar sem PR. Em vez de depender dela, a máscara
+             * entra no DOM: é a mesma escolha já feita para o e-mail e o endereço do paciente
+             * (lex C4.2), e vale mesmo que o dashboard esteja em Balanced — modo em que texto
+             * corrido sobe em claro.
+             *
+             * Efeito: o nome aparece borrado no session replay. É o desejado.
+             */}
+            <div data-clarity-mask="True" className="min-w-0">
+              <Heading level={1} weight="semibold" color="primary" className="truncate">
+                {patientName}
+              </Heading>
+            </div>
             <span
               className="inline-flex items-center gap-1 rounded-pill bg-gray-200 px-2.5 py-0.5 shrink-0"
               data-testid="patient-country-chip"
