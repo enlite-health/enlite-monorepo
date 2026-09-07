@@ -95,7 +95,8 @@ test.describe('Menu lateral por célula (D286) — o item só existe para quem t
     // `/admin` (Usuarios) é onde o login cai — sem célula, a rota nega e a tela mostra erro; o
     // que importa aqui é o MENU. `patient:read` também abre "Roles de grupos" (D269); é bloco de
     // Gestión a la Vista, mas abrir essa tela é `dashboard:read` — sem ela, o item não aparece.
-    // API Docs é staff-only no back (sem célula na rota) e por isso fica.
+    // Desde 07/09 não há item de topo fora do registro de telas: o API Docs saiu, e com
+    // ele o último href que escapava do gate de célula.
     await expect(link(page, 'Pacientes')).toBeVisible({ timeout: 15_000 });
 
     const visiveis = await menuVisivel(page);
@@ -107,7 +108,6 @@ test.describe('Menu lateral por célula (D286) — o item só existe para quem t
       await expect(link(page, nome), `"${nome}" apareceu sem célula`).toHaveCount(0);
     }
     await expect(link(page, 'Roles de grupos')).toBeVisible();
-    await expect(link(page, 'API Docs')).toBeVisible();
     await foto(page, '1-so-patient-read');
 
     await abreDoMenu(page, 'Pacientes', '/admin/patients', '/api/admin/patients', '1b-pacientes-abre');

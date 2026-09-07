@@ -224,8 +224,10 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
   // só passavam pelo filtro de PAÍS (`semFeatureDesligada`, abaixo) — nunca por célula — e
   // apareciam para quem não tinha nenhuma. Regra: o item existe para quem tem QUALQUER célula da
   // tela que ele abre (própria ou de container), a mesma régua das abas (`tabsVisibleFor`); a tela
-  // vem do registro pela rota, sem lista à mão. Href sem tela no registro (API Docs) fica: a rota
-  // do back exige só staff, e o menu não inventa célula que a rota não cobra. Engine OFF → `true`.
+  // vem do registro pela rota, sem lista à mão. O `screen === undefined` abaixo é escape hatch
+  // para href sem tela no registro — hoje esse conjunto é VAZIO (o API Docs, último caso, saiu em
+  // 07/09), e o teste `todo href do menu tem tela no registro` é o que impede que volte a encher
+  // sem ninguém notar. Engine OFF → `true`.
   const comAlgumaCelulaDaTela = (item: AppSidebarNavItem): boolean => {
     const screen = screenByRoute(item.href);
     return screen === undefined || screenVisibleFor(screen, permissions, enforcement);
