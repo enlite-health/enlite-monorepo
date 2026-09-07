@@ -15,8 +15,6 @@ import { usePresentationInviteLast } from '@hooks/admin/usePresentationInviteLas
 import { WorkerExportModal } from '@presentation/components/features/admin/WorkerExport/WorkerExportModal';
 import { useWorkersData } from '@hooks/admin/useWorkersData';
 import { useCaseOptions } from '@hooks/admin/useCaseOptions';
-import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
-import { EnliteRole } from '@domain/entities/EnliteRole';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import type { WorkerTag } from '@domain/entities/WorkerTag';
 import type { SelectOption } from '@presentation/components/atoms/Select';
@@ -31,8 +29,6 @@ import { useActionGate } from '@presentation/hooks/useCellAccess';
 export function AdminWorkersPage(): JSX.Element {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { adminProfile } = useAdminAuth();
-  const isAdmin = adminProfile?.role === EnliteRole.ADMIN;
 
   /** REQ-09: convite à reunión de presentación por linha — inclusive quem NÃO terminou o registro (REQ-04). */
   const [inviteByWorker, setInviteByWorker] = useState<Record<string, PresentationInviteState>>({});
@@ -236,23 +232,21 @@ export function AdminWorkersPage(): JSX.Element {
                 {syncMessage.text}
               </Typography>
             )}
-            {/* GET /workers/export → worker:export (o export já redige coluna por célula no back);
-                POST /workers/sync-talentum → talentum:write. D286 fase 2: célula, não papel —
-                o `isAdmin` continua como freio de papel enquanto o engine estiver desligado. */}
-            {isAdmin && (
-              <ActionButton
-                resource="worker"
-                action="export"
-                variant="outline"
-                size="md"
-                data-testid="worker-export-btn"
-                className="h-10 border-primary text-primary flex items-center justify-center gap-2"
-                onClick={() => setIsExportModalOpen(true)}
-              >
-                <Download className="w-4 h-4" />
-                {t('admin.workers.export.button')}
-              </ActionButton>
-            )}
+            {/* GET /workers/export → worker:export (o export já redige coluna por célula no
+                back). D286 fase 2: a célula é o único freio — com o engine desligado o
+                `ActionButton` deixa passar, como sempre passou. */}
+            <ActionButton
+              resource="worker"
+              action="export"
+              variant="outline"
+              size="md"
+              data-testid="worker-export-btn"
+              className="h-10 border-primary text-primary flex items-center justify-center gap-2"
+              onClick={() => setIsExportModalOpen(true)}
+            >
+              <Download className="w-4 h-4" />
+              {t('admin.workers.export.button')}
+            </ActionButton>
             <ActionButton
               resource="talentum"
               action="write"

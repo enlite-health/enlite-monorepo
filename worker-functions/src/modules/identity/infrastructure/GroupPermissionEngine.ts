@@ -43,7 +43,7 @@ import { logger } from '@shared/logging';
 import { cellKey, ENLITE_TENANT_ID, type PermissionClient } from '@modules/identity/permissions';
 import { IAuthorizationEngine } from '../ports/IAuthorizationEngine';
 import { AccessDecision, AuthContext } from '../domain/Auth';
-import { isStaffRole } from '../domain/EnliteRole';
+import { isStaffAccount } from '../domain/AccountType';
 
 type Resource = { type: string; id?: string; attrs?: Record<string, unknown> };
 
@@ -141,7 +141,7 @@ export class GroupPermissionEngine implements IAuthorizationEngine {
   }
 }
 
-/** Staff é quem tem papel de staff — não "quem está autenticado". */
+/** Staff é quem tem CONTA de staff (`account_type`, D294) — não "quem está autenticado". */
 export function isStaffPrincipal(context: AuthContext): boolean {
-  return (context.principal.roles ?? []).some((role) => isStaffRole(role));
+  return isStaffAccount(context.principal);
 }

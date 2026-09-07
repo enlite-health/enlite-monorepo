@@ -52,7 +52,7 @@ import { execFileSync } from 'child_process';
 import { mergeCustomClaims } from '@modules/identity/infrastructure/mergeCustomClaims';
 import { maskEmail as mask } from './lib/maskEmail';
 
-const STAFF_ROLES = ['admin', 'recruiter', 'community_manager'];
+const STAFF_ACCOUNT = 'staff';
 const TENANT = '00000000-0000-0000-0000-000000000001';
 const EXECUTE = process.argv.includes('--execute');
 const CONTAS_TESTE = process.argv.includes('--contas-teste');
@@ -82,14 +82,15 @@ async function main(): Promise<void> {
   const stg = new Pool({ connectionString: stgUrl });
   const c = { idpCriada: 0, idpJaTinha: 0, linhaNova: 0, linhaAtualizada: 0, claim: 0, claimJaTinha: 0, uidDivergente: 0 };
   /** O mesmo predicado nas duas pontas — senão "4 → 28" compara réguas diferentes. */
-  const STAFF_ATIVO = `role = ANY($1) AND is_active = true AND status = 'ACTIVE'`;
+  // D294: staff é `account_type = 'staff'` nas duas pontas.
+  const STAFF_ATIVO = `account_type = $1 AND is_active = true AND status = 'ACTIVE'`;
   let gestorQaUid: string | null = null;
   try {
     try { gestorQaUid = (await auth.getUserByEmail(TESTE[0].email)).uid; } catch { /* ainda não existe: nasce nesta rodada */ }
     const { rows: staff } = await prod.query<Staff>(
       `SELECT email, display_name, role, department FROM users
         WHERE ${STAFF_ATIVO} AND email IS NOT NULL ORDER BY email`,
-      [STAFF_ROLES],
+      [STAFF_ACCOUNT],
     );
     console.log(`[espelho] staff ativo em PROD: ${staff.length} (${EXECUTE ? 'EXECUTE' : 'DRY-RUN'})`);
 
@@ -197,7 +198,7 @@ async function main(): Promise<void> {
       }
       console.log(`[espelho] senhas das ${Object.keys(senhas).length} contas de teste gravadas no secret enlite-stg/abac-qa-accounts (não impressas)`);
     }
-    const stgCount = await stg.query(`SELECT count(*) FROM users WHERE ${STAFF_ATIVO}`, [STAFF_ROLES]);
+    const stgCount = await stg.query(`SELECT count(*) FROM users WHERE ${STAFF_ATIVO}`, [STAFF_ACCOUNT]);
     console.log(`[espelho] staff ativo em STAGE agora: ${stgCount.rows[0].count}`);
   } finally { await prod.end(); await stg.end(); }
 }

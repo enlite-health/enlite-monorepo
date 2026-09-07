@@ -46,8 +46,15 @@ describe('mockAuthMiddleware', () => {
       uid: 'u1',
       email: 'a@b.c',
       role: 'admin',
+      account_type: null,
       country: 'BR',
     });
+  });
+
+  it('token mock com account_type o propaga; sem ele fica null (a ponte por role decide depois — D294)', () => {
+    const [req, , next] = makeReqRes('/api/admin/patients', mockToken({ uid: 'u3', email: 'a@b.c', role: 'admin', account_type: 'worker' }));
+    mockAuthMiddleware(req, {} as Response, next);
+    expect((req as Request & { user: Record<string, unknown> }).user).toMatchObject({ account_type: 'worker' });
   });
 
   it('token sem country deixa o campo AUSENTE (nunca um default)', () => {

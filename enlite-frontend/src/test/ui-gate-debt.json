@@ -9,10 +9,6 @@
       "motivo": "D269 F3 (vagas) — POST /vacancies/:id/interview-slots e POST /interview-slots/:id/book (createInterviewSlots/bookInterviewSlot) idem: useInterviewSlots.ts sem consumidor no front. O agendamento que existe hoje (KanbanBoard, coluna CONFIRMED) é moveEncuadre → funnel:write, rota diferente."
     },
     {
-      "cell": "messaging:write",
-      "motivo": "Sync main→stage (06/09): as telas Mensajes por etapa, Plantillas e Invitación a presentación vieram do main SEM gate por célula (botões crus). O item de menu já é gateado por messaging:read; os botões de escrita entram na F14 (uma família por vez)."
-    },
-    {
       "cell": "patient:delete",
       "motivo": "D116: purga de paciente de TESTE (DELETE /patients/:id, só is_test) — ferramenta do monitoramento sintético (e2e-prod), sem botão no painel por desenho."
     },

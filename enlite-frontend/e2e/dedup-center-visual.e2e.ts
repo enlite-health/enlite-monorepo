@@ -30,7 +30,6 @@ import { test, expect, Page, Route } from '@playwright/test';
 const MOCK_ADMIN = {
   uid: 'dedup-vis-admin-uid',
   email: 'dedup.visual@e2e.test',
-  role: 'admin',
 };
 
 const FAKE_ID_TOKEN =
@@ -336,7 +335,6 @@ async function installFakeFirebaseAuth(page: Page): Promise<void> {
         data: {
           id: MOCK_ADMIN.uid,
           email: MOCK_ADMIN.email,
-          role: MOCK_ADMIN.role,
           firstName: 'Visual',
           lastName: 'E2E',
           isActive: true,

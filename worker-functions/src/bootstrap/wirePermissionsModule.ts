@@ -51,7 +51,6 @@ import {
   type PermissionsModule,
   type ScannedRoute,
 } from '@modules/identity/permissions';
-import { STAFF_ROLES } from '@modules/identity';
 import {
   PermissionMiddleware,
   denyUndeclaredRoutes,
@@ -81,7 +80,6 @@ export function createPermissionsBoundary(deps: CreateBoundaryDeps): Permissions
   const permissions = createPermissionsModule({
     pool: deps.pool,
     systemPool: deps.systemPool,
-    staffRoles: STAFF_ROLES,
     engineEnabled,
   });
 

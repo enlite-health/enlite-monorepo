@@ -2,12 +2,14 @@
  * admin-worker-edit-visual.e2e.ts
  *
  * Playwright E2E — edição administrativa de worker no WorkerDetailPage.
- * Gate de role: apenas EnliteRole.ADMIN vê o botão "Editar" e o modal.
+ * Gate de célula: `PATCH /workers/:id/profile` → `worker:write`. Quem não tem
+ * a célula (com `enforcement: 'on'`) não vê o botão "Editar" nem o modal.
+ * Papel não decide nada: o contrato ABAC não carrega mais `role`.
  *
  * Cobre:
- *   - admin vê o botão e abre o modal (screenshot do modal)
- *   - recruiter NÃO vê o botão (screenshot do card)
- *   - admin edita o nome e salva → modal fecha e o nome atualizado aparece
+ *   - com worker:write: vê o botão e abre o modal (screenshot do modal)
+ *   - sem worker:write (engine ON): NÃO vê o botão (screenshot do card)
+ *   - com worker:write: edita o nome e salva → modal fecha e o nome atualiza
  */
 
 import { test, expect, Page } from '@playwright/test';
@@ -39,9 +41,13 @@ function makeWorker(overrides: Record<string, unknown> = {}): Record<string, unk
   };
 }
 
-async function seedAndLogin(page: Page, role: string): Promise<void> {
+/**
+ * `permissions === null` = sem contrato: engine desligado, a tela aparece como
+ * sempre apareceu (régua de rollout D268). Um array liga `enforcement: 'on'`.
+ */
+async function seedAndLogin(page: Page, permissions: string[] | null = null): Promise<void> {
   const rnd = Math.random().toString(36).slice(2, 8);
-  const email = `e2e.edit.${role}.${Date.now()}.${rnd}@test.com`;
+  const email = `e2e.edit.${Date.now()}.${rnd}@test.com`;
   const password = 'TestAdmin123!';
   const res = await fetch(
     `${FIREBASE_EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FIREBASE_API_KEY}`,
@@ -54,8 +60,14 @@ async function seedAndLogin(page: Page, role: string): Promise<void> {
 
   await page.route('**/api/admin/auth/profile', (r) =>
     r.fulfill({ status: 200, contentType: 'application/json',
-      body: JSON.stringify({ success: true, data: { id: uid, email, role,
+      body: JSON.stringify({ success: true, data: { id: uid, email,
         firstName: 'Edit', lastName: 'Visual', isActive: true, mustChangePassword: false } }) }));
+  if (permissions !== null) {
+    await page.route('**/v1/me/authz', (r) =>
+      r.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ uid, tenantId: 't', status: 'ACTIVE', permissions,
+          countries: ['AR'], groups: [], features: {}, enforcement: 'on' }) }));
+  }
   await page.route('**/api/admin/workers/stats', (r) =>
     r.fulfill({ status: 200, contentType: 'application/json',
       body: JSON.stringify({ success: true, data: { today: 0, yesterday: 0, sevenDaysAgo: 0 } }) }));
@@ -93,8 +105,8 @@ test.describe('Admin Worker Edit — Visual + Gate', () => {
   test.setTimeout(90_000);
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test('admin vê o botão Editar e abre o modal', async ({ page }) => {
-    await seedAndLogin(page, 'admin');
+  test('com worker:write: vê o botão Editar e abre o modal', async ({ page }) => {
+    await seedAndLogin(page, ['worker:read', 'worker_pii:read', 'worker_document:read', 'worker:write']);
     await mockWorkerDetail(page);
     await navigate(page);
 
@@ -107,22 +119,22 @@ test.describe('Admin Worker Edit — Visual + Gate', () => {
     await expect(modal.locator('[data-testid="we-firstName"]')).toHaveValue('Lucía');
     await expect(modal.locator('[data-testid="we-profession"]')).toBeVisible();
 
-    await expect(modal).toHaveScreenshot('worker-edit-modal-admin.png');
+    await expect(modal).toHaveScreenshot('worker-edit-modal-com-celula.png');
   });
 
-  test('recruiter NÃO vê o botão Editar', async ({ page }) => {
-    await seedAndLogin(page, 'recruiter');
+  test('sem worker:write (engine ON): NÃO vê o botão Editar', async ({ page }) => {
+    await seedAndLogin(page, ['worker:read', 'worker_pii:read', 'worker_document:read']);
     await mockWorkerDetail(page);
     await navigate(page);
 
     await expect(page.locator('[data-testid="worker-edit-button"]')).toHaveCount(0);
 
     await expect(page.getByText('Datos Personales', { exact: false }).first())
-      .toHaveScreenshot('worker-detail-no-edit-recruiter.png');
+      .toHaveScreenshot('worker-detail-no-edit-sem-celula.png');
   });
 
-  test('admin edita o nome e salva → modal fecha e nome atualiza', async ({ page }) => {
-    await seedAndLogin(page, 'admin');
+  test('com worker:write: edita o nome e salva → modal fecha e nome atualiza', async ({ page }) => {
+    await seedAndLogin(page, ['worker:read', 'worker_pii:read', 'worker_document:read', 'worker:write']);
     await mockWorkerDetail(page);
     await navigate(page);
 

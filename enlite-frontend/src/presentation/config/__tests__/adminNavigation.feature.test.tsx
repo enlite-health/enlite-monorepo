@@ -2,13 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { useAdminNavItems } from '../adminNavigation';
-import { EnliteRole } from '@domain/entities/EnliteRole';
 import type { AuthzContract } from '@domain/entities/Authz';
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
-vi.mock('@presentation/hooks/useAdminAuth', () => ({
-  useAdminAuth: () => ({ adminProfile: { role: EnliteRole.RECRUITER } }),
-}));
 
 // M1 (D268) — `enforcement: 'on'` default: estes testes exercitam a régua de
 // screen:* por MAPA; o freio de rollout (`useFeature.test.tsx`) tem sua própria suíte.

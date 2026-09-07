@@ -749,6 +749,46 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // D293/D294 (07/09/2026): a fronteira staff × prestador e o que sobrou do papel.
+    // `AccountType` é o ponto único da fronteira; `FirebaseAuthStrategy` é de onde o
+    // tipo sai (claim → coluna → ponte); os use cases de usuário admin deixaram de
+    // expor `role`. Todos medidos 100 no PR — o piso existe para não voltar atrás.
+    'src/modules/identity/domain/AccountType.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/identity/infrastructure/FirebaseAuthStrategy.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/identity/application/{CreateAdminUserUseCase,GetAdminProfileUseCase,ListAdminUsersUseCase,adminUserDto}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/identity/interfaces/controllers/AdminController.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/interfaces/AdminPatientView.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/infrastructure/triggers/onUserCreate.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
   },
   verbose: true,
   testTimeout: 10000,

@@ -21,6 +21,16 @@
  *   · `PERMISSION_REPORT_ONLY=true`     — ensaio: loga o que NEGARIA e deixa
  *     passar. Serve para medir o estrago antes de virar, nunca como estado final.
  *
+ * `untilEnforced: 'admin'` (07/09/2026) — o que sobrou do papel de usuário.
+ * O painel deixou de decidir por `users.role`; a célula decide. Mas o `main`
+ * chega com o engine DESLIGADO (D285), e uma rota que antes exigia papel
+ * `admin` ficaria aberta a todo staff no intervalo. Por isso a rota DECLARA,
+ * no mesmo guard que declara a célula, o que ela exigia antes do ABAC — e
+ * este é o ÚNICO lugar do backend que ainda lê o papel para decidir. Com a
+ * família enforced a opção é ignorada por construção (o caminho nem a lê).
+ * Quando toda família estiver virada em produção, apagar a opção e
+ * `refuseUntilEnforced` é uma remoção só, por grep.
+ *
  * ⚠️ A ordem de checagem é parte do contrato, não estilo: status da conta ANTES
  * de célula (spec: "negada antes de qualquer checagem"), e falha ao resolver
  * NEGA (spec: "nunca libera por padrão").
@@ -32,6 +42,7 @@ import { parseEnvList } from '@shared/utils/envList';
 import { isEnvFlagOn } from '@shared/utils/envFlag';
 import { currentDbContext } from '@shared/database/requestDbSession';
 import { PrincipalType } from '@modules/identity/domain/Auth';
+import { EnliteRole } from '@modules/identity/domain/EnliteRole';
 import { sanitizeRoute } from '@shared/database/dbSessionMiddleware';
 import {
   cellKey,
@@ -110,8 +121,8 @@ export class PermissionMiddleware {
    */
   family(family: string): PermissionFamily {
     return {
-      require: (resource: string, action: string, description?: string) =>
-        this.buildGuard(family, resource, action, description),
+      require: (resource: string, action: string, options?: RequireOptions) =>
+        this.buildGuard(family, resource, action, options ?? {}),
     };
   }
 
@@ -144,12 +155,15 @@ export class PermissionMiddleware {
 
   // ── interno ────────────────────────────────────────────────────────────────
 
-  private buildGuard(family: string, resource: string, action: string, description?: string): RequestHandler {
+  private buildGuard(family: string, resource: string, action: string, options: RequireOptions): RequestHandler {
+    const { description, untilEnforced } = options;
     const guard: RequestHandler = async (req, res, next) => {
-      if (!isEnvFlagOn('PERMISSION_ENGINE_ENABLED', this.env)) return next();
+      if (!isEnvFlagOn('PERMISSION_ENGINE_ENABLED', this.env)) {
+        return this.passUntilEnforced(req, res, next, untilEnforced);
+      }
       if (!this.isFamilyEnforced(family)) {
         this.logPendingFamily(family, resource, action);
-        return next();
+        return this.passUntilEnforced(req, res, next, untilEnforced);
       }
 
       // ── Principal de SERVIÇO não é decisão de grupo (família admin.workers) ──
@@ -216,6 +230,24 @@ export class PermissionMiddleware {
 
   private isFamilyEnforced(family: string): boolean {
     return parseEnvList(this.env.PERMISSION_ENFORCED_ROUTES).includes(family);
+  }
+
+  /**
+   * O caminho NÃO enforced: sem `untilEnforced`, a rota passa como sempre passou
+   * (`requireStaff` já rodou antes). Com `'admin'`, exige o papel que a rota
+   * exigia antes do ABAC — mesma resposta que o `requireAdmin()` de antes dava,
+   * para o cliente não distinguir a troca de mecanismo.
+   */
+  private passUntilEnforced(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+    untilEnforced: RequireOptions['untilEnforced'],
+  ): void {
+    if (untilEnforced !== 'admin') return next();
+    const roles = req.authContext?.principal?.roles ?? [];
+    if (roles.includes(EnliteRole.ADMIN)) return next();
+    res.status(403).json({ success: false, error: 'Admin access required' });
   }
 
   /** 1 linha por célula, não por request — o volume da Luz encheria o log. */
@@ -323,9 +355,20 @@ export class PermissionMiddleware {
   }
 }
 
+export interface RequireOptions {
+  /** Texto da célula no catálogo (opcional; a descrição viva mora em `CELL_DESCRIPTION`). */
+  description?: string;
+  /**
+   * O que a rota exigia ANTES do ABAC, válido só enquanto a família não está
+   * enforced: `'admin'` = papel `admin` (era `auth.requireAdmin()`). Ausente =
+   * qualquer staff autenticado (era só `auth.requireStaff()`). Ver cabeçalho.
+   */
+  untilEnforced?: 'admin';
+}
+
 export interface PermissionFamily {
   /** Guard que exige `recurso:ação` e declara a célula para o catálogo. */
-  require(resource: string, action: string, description?: string): RequestHandler;
+  require(resource: string, action: string, options?: RequireOptions): RequestHandler;
 }
 
 /**

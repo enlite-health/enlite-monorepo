@@ -30,7 +30,9 @@ export function AdminLayout() {
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-gray-50">
+    // `data-testid` estável: é o marcador "o PAINEL renderizou" dos e2e de fronteira (a
+    // sidebar é compartilhada com o app do prestador e não serve de prova).
+    <div className="flex h-screen w-screen overflow-hidden bg-gray-50" data-testid="admin-layout">
       <AppSidebar
         navItems={navItems}
         userName={adminProfile?.displayName || adminProfile?.email || 'Admin'}

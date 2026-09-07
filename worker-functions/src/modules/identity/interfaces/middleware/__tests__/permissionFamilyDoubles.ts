@@ -38,17 +38,27 @@ import { PermissionMiddleware } from '@modules/identity/interfaces/middleware/Pe
 import type { AuthMiddleware } from '@modules/identity';
 
 /**
- * `AuthMiddleware` que deixa passar. O teste de família mede DECLARAÇÃO de
- * célula e ORDEM de rota; autenticação é assunto do e2e, com banco e HTTP
- * reais. Um dublê que negasse esconderia justamente o que se quer medir.
+ * `AuthMiddleware` que deixa passar COMO ADMIN. O teste de família mede
+ * DECLARAÇÃO de célula e ORDEM de rota; autenticação é assunto do e2e, com
+ * banco e HTTP reais. Um dublê que negasse esconderia justamente o que se quer
+ * medir.
+ *
+ * Por que pendura um principal com papel `admin` (07/09): o `PermissionMiddleware`
+ * real, com o engine desligado, honra `untilEnforced: 'admin'` lendo
+ * `req.authContext.principal.roles` — sem principal, as rotas que eram
+ * `requireAdmin()` responderiam 403 e o teste de família mediria o fallback
+ * em vez da declaração. O papel do dublê é o que o `requireStaff` real
+ * pendura depois de autenticar.
  *
  * `requireStaffOrApiKey` está aqui porque a família `admin.workers` é a
  * primeira a usá-lo (4 rotas do triage-service).
  */
 export function authDouble(): AuthMiddleware {
-  const passa = () => (_req: unknown, _res: unknown, next: express.NextFunction) => next();
+  const passa = () => (req: express.Request, _res: unknown, next: express.NextFunction) => {
+    req.authContext ??= { principal: { id: 'dublê-admin', roles: ['admin'] } } as never;
+    next();
+  };
   return {
-    requireAdmin: passa,
     requireStaff: passa,
     requireStaffOrApiKey: passa,
     requireAuth: passa,

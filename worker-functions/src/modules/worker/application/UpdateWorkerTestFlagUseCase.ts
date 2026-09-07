@@ -4,7 +4,7 @@ import { IWorkerRepository } from '../ports/IWorkerRepository';
  * Marks/unmarks a worker as a test account.
  *
  * Returns the resulting flag value, or null when no worker with that id exists.
- * Authorization (admin-only) is enforced at the route layer (requireAdmin).
+ * Authorization (`worker:write`) is enforced at the route layer (PermissionMiddleware).
  */
 export class UpdateWorkerTestFlagUseCase {
   constructor(private readonly workerRepository: IWorkerRepository) {}

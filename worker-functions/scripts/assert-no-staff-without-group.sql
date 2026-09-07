@@ -16,7 +16,19 @@
 --
 -- Re-executável à vontade. Não escreve nada. Saída para colar no diário no fim.
 
+
 \set ON_ERROR_STOP on
+-- ⚠️ D294 (07/09/2026): este script lê `users.account_type` (migration 414). Contra um
+-- banco sem a 414 o predicado devolveria ZERO — e zero aqui pareceria "ninguém sem
+-- grupo". Falha alto em vez disso.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_name = 'users' AND column_name = 'account_type') THEN
+    RAISE EXCEPTION 'users.account_type ausente: aplique a migration 414 antes deste script';
+  END IF;
+END
+$$;
 
 DO $$
 DECLARE
@@ -29,7 +41,7 @@ BEGIN
   SELECT count(*) INTO v_sem_grupo
     FROM users u
    WHERE u.status = 'ACTIVE'
-     AND u.role IN ('admin', 'recruiter', 'community_manager')
+     AND u.account_type = 'staff'
      AND NOT EXISTS (
        SELECT 1 FROM iam.user_groups ug
          JOIN iam.permission_groups g ON g.id = ug.group_id
@@ -39,7 +51,7 @@ BEGIN
   SELECT count(*) INTO v_sem_pais
     FROM users u
    WHERE u.status = 'ACTIVE'
-     AND u.role IN ('admin', 'recruiter', 'community_manager')
+     AND u.account_type = 'staff'
      AND cardinality(iam.effective_countries(u.firebase_uid, v_tenant)) = 0;
 
   SELECT count(DISTINCT u.firebase_uid) INTO v_gestores
@@ -84,5 +96,5 @@ SELECT u.firebase_uid,
        cardinality(iam.effective_permissions(u.firebase_uid, iam.current_tenant_id())) AS celulas
   FROM users u
  WHERE u.status = 'ACTIVE'
-   AND u.role IN ('admin', 'recruiter', 'community_manager')
+   AND u.account_type = 'staff'
  ORDER BY u.role, u.firebase_uid;

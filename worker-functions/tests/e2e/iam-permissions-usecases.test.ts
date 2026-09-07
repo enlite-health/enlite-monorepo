@@ -137,7 +137,6 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
     permissions = createPermissionsModule({
       pool: appPool,
       systemPool,
-      staffRoles: ['admin', 'recruiter', 'community_manager'],
       ttlMs: 0, // sem cache: cada asserção lê o estado real
     });
   });

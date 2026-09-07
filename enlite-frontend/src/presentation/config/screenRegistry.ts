@@ -99,6 +99,9 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       // Serviços contratados aparece em DUAS abas (Serviço contratado e Matching): uma célula,
       // exigida nas duas — a aba Matching some sem ela (o Enquadre é placeholder).
       c('services', 'patient_services', ['read', 'write'], 'contractedService', 'matching'),
+      // O VALOR-HORA do serviço contratado é dado próprio (era "só admin" por papel; D293): quem
+      // tem `patient_services:read` vê o serviço, mas o preço só sai com esta célula.
+      c('contractValue', 'patient_contract_value', ['read'], 'contractedService', 'matching'),
       c('vacancies', 'vacancy', ['read'], 'vacancies'),
       // O operacional da tela numa linha só: cabeçalho (status, ativar, completude) e a aba de
       // histórico — mesmo recurso `patient`, uma célula de leitura e uma de escrita.

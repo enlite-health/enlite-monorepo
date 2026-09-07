@@ -41,8 +41,8 @@ export function createAdminIntegrationsRoutes(
    */
   router.post(
     '/integrations/anacare/backfill',
-    authMiddleware.requireAdmin(),
-    perm.require('integration', 'execute'),
+    authMiddleware.requireStaff(),
+    perm.require('integration', 'execute', { untilEnforced: 'admin' }),
     (req: Request, res: Response) => backfillController.handle(req, res),
   );
 

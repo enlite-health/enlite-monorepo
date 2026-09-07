@@ -38,8 +38,6 @@ export interface PermissionsModuleDeps {
   pool: Pool;
   /** Pool de sistema (`DatabaseConnection.getSystemPool()`) — sync do boot. */
   systemPool: Pool;
-  /** Papéis que contam como staff do painel (injetado: o módulo é extraível). */
-  staffRoles: readonly string[];
   ttlMs?: number;
   /**
    * `enforcement` do contrato `/v1/me/authz` (D268) — o MESMO
@@ -82,7 +80,7 @@ export function createPermissionsModule(deps: PermissionsModuleDeps): Permission
   const groupsRepo = new PgPermissionGroupRepository(deps.pool);
   const catalogRepo = new PgPermissionCatalogRepository(deps.pool, deps.systemPool);
   const featuresRepo = new PgCountryFeatureRepository(deps.pool, deps.systemPool);
-  const authzRepo = new PgEffectiveAuthzRepository(deps.pool, deps.staffRoles);
+  const authzRepo = new PgEffectiveAuthzRepository(deps.pool);
   const auditRepo = new PgPermissionAuditRepository(deps.pool);
   const rolloutRepo = new PgRolloutStateRepository(deps.pool);
   const events = new DomainEventPermissionPublisher(deps.pool);

@@ -11,7 +11,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
-import { EnliteRole } from '@domain/entities/EnliteRole';
 import type { AuthzContract } from '@domain/entities/Authz';
 import type { WorkerTag } from '@domain/entities/WorkerTag';
 
@@ -23,9 +22,11 @@ vi.mock('react-i18next', () => {
   return { useTranslation: () => ({ t }) };
 });
 
-vi.mock('@presentation/hooks/useAdminAuth', () => ({
-  useAdminAuth: () => ({ adminProfile: { role: EnliteRole.ADMIN } }),
-}));
+const mockNavigate = vi.fn();
+vi.mock('react-router-dom', async () => {
+  const real = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+  return { ...real, useNavigate: () => mockNavigate };
+});
 
 const TAGS: WorkerTag[] = [
   {
@@ -72,13 +73,14 @@ const contrato = (permissions: string[], enforcement: AuthzContract['enforcement
 
 describe('TagCatalogPage — D269 gate de escrita (worker:write)', () => {
   beforeEach(() => {
+    mockNavigate.mockReset();
     mockListWorkerTags.mockReset();
     mockListWorkerTags.mockResolvedValue(TAGS);
   });
   afterEach(() => useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }));
 
   it('enforcement "on" SEM worker:write → "Nueva etiqueta" some, e a linha não tem editar/excluir', async () => {
-    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato([], 'on') });
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['worker:read'], 'on') });
     montar();
 
     expect(await screen.findByText('Bilingüe')).toBeInTheDocument();
@@ -88,7 +90,7 @@ describe('TagCatalogPage — D269 gate de escrita (worker:write)', () => {
   });
 
   it('enforcement "on" COM worker:write → "Nueva etiqueta" aparece, e a linha tem editar/excluir', async () => {
-    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['worker:write'], 'on') });
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['worker:read', 'worker:write'], 'on') });
     montar();
 
     expect(await screen.findByText('Bilingüe')).toBeInTheDocument();
@@ -104,5 +106,33 @@ describe('TagCatalogPage — D269 gate de escrita (worker:write)', () => {
     expect(screen.getByText('admin.tags.newTag')).toBeInTheDocument();
     expect(screen.getByLabelText('admin.tags.editTag')).toBeInTheDocument();
     expect(screen.getByLabelText('admin.tags.deleteTag')).toBeInTheDocument();
+  });
+});
+
+// ── Guarda de rota: a célula de LEITURA (`worker:read`), não mais o papel ──────
+describe('TagCatalogPage — guarda de rota por célula (worker:read)', () => {
+  beforeEach(() => {
+    mockNavigate.mockReset();
+    mockListWorkerTags.mockReset();
+    mockListWorkerTags.mockResolvedValue(TAGS);
+  });
+  afterEach(() => useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }));
+
+  it('enforcement "on" SEM worker:read → redireciona para /admin', () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato([], 'on') });
+    montar();
+    expect(mockNavigate).toHaveBeenCalledWith('/admin', { replace: true });
+  });
+
+  it('enforcement "on" COM worker:read → não redireciona', () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['worker:read'], 'on') });
+    montar();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('enforcement "off" sem célula nenhuma → não redireciona (a tela abre como sempre abriu)', () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato([], 'off') });
+    montar();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });

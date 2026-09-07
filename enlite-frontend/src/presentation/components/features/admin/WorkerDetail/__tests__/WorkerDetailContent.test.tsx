@@ -3,18 +3,11 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { WorkerDetailContent } from '../WorkerDetailContent';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
-import { EnliteRole } from '@domain/entities/EnliteRole';
 import type { WorkerDetail } from '@domain/entities/Worker';
-import type { AdminUser } from '@domain/entities/AdminUser';
 import type { AuthzContract } from '@domain/entities/Authz';
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string, opts?: any) => opts?.defaultValue ?? k }) }));
 vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
-
-let mockAdminProfile: AdminUser | null = null;
-vi.mock('@presentation/hooks/useAdminAuth', () => ({
-  useAdminAuth: () => ({ adminProfile: mockAdminProfile }),
-}));
 
 vi.mock('@infrastructure/http/AdminApiService', () => ({
   AdminApiService: {
@@ -82,15 +75,12 @@ const worker: WorkerDetail = {
   encuadres: [],
 };
 
-const adminProfile: AdminUser = { id: 'a1', role: EnliteRole.ADMIN } as unknown as AdminUser;
-
 describe('WorkerDetailContent', () => {
   beforeEach(() => {
     vi.mocked(AdminApiService.getWorkerById).mockReset().mockResolvedValue(worker);
     vi.mocked(AdminApiService.getWorkerAdditionalDocs).mockReset().mockResolvedValue([]);
     vi.mocked(AdminApiService.listWorkerTags).mockReset().mockResolvedValue([]);
     useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
-    mockAdminProfile = null;
   });
 
   it('estado de carregamento: mostra o skeleton', () => {
@@ -118,16 +108,14 @@ describe('WorkerDetailContent', () => {
     expect(await screen.findByText('falhou ao buscar')).toBeInTheDocument();
   });
 
-  it('sucesso, allowEdit=false (default): botão de editar perfil não aparece (mesmo sendo ADMIN) — o toggle de teste é independente de allowEdit', async () => {
-    mockAdminProfile = adminProfile;
+  it('sucesso, allowEdit=false (default): botão de editar perfil não aparece — o toggle de teste é independente de allowEdit', async () => {
     render(<WorkerDetailContent workerId="w1" />);
     await screen.findByText('Juana Pérez');
     expect(screen.queryByTestId('worker-edit-button')).not.toBeInTheDocument();
     expect(screen.getByTestId('worker-test-account-checkbox')).toBeInTheDocument();
   });
 
-  it('sucesso, allowEdit=true + role ADMIN: edita e reabre o modal', async () => {
-    mockAdminProfile = adminProfile;
+  it('sucesso, allowEdit=true (engine desligado): edita e reabre o modal', async () => {
     render(<WorkerDetailContent workerId="w1" allowEdit header={<div data-testid="hdr">header</div>} />);
     await screen.findByText('Juana Pérez');
     expect(screen.getByTestId('hdr')).toBeInTheDocument();
@@ -140,11 +128,30 @@ describe('WorkerDetailContent', () => {
     await waitFor(() => expect(screen.queryByTestId('worker-edit-modal')).not.toBeInTheDocument());
   });
 
-  it('allowEdit=true mas role NÃO admin: não pode editar', async () => {
-    mockAdminProfile = { ...adminProfile, role: EnliteRole.RECRUITER };
+  it('allowEdit=true mas SEM worker:write (engine ON): não pode editar', async () => {
+    comEnforcement(['worker:read', 'worker_pii:read'], 'on');
     render(<WorkerDetailContent workerId="w1" allowEdit />);
-    await screen.findByText('Juana Pérez');
+    await screen.findByText(/admin.workerDetail.birthDate/);
     expect(screen.queryByTestId('worker-edit-button')).not.toBeInTheDocument();
+  });
+
+  it('allowEdit=true COM worker:write (engine ON): o botão de editar aparece', async () => {
+    comEnforcement(['worker:read', 'worker_pii:read', 'worker:write'], 'on');
+    render(<WorkerDetailContent workerId="w1" allowEdit />);
+    await screen.findByText(/admin.workerDetail.birthDate/);
+    expect(screen.getByTestId('worker-edit-button')).toBeInTheDocument();
+  });
+
+  it('worker sem serviceAreas/encuadres (campos ausentes): os cards caem na lista vazia, sem quebrar', async () => {
+    const semListas = { ...worker } as Record<string, unknown>;
+    delete semListas.serviceAreas;
+    delete semListas.encuadres;
+    vi.mocked(AdminApiService.getWorkerById).mockResolvedValue(semListas as never);
+    render(<WorkerDetailContent workerId="w1" />);
+    await screen.findByText('Juana Pérez');
+
+    fireEvent.click(screen.getByRole('button', { name: /admin.workerDetail.tabs.encuadres/i }));
+    expect(screen.getByText(/admin.workerDetail.addressData/)).toBeInTheDocument();
   });
 
   it('troca de abas: encuadres/documents/availability/financial/history', async () => {

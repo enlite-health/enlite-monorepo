@@ -71,7 +71,6 @@ vi.mock('@hooks/admin/useCaseOptions', () => ({
 
 vi.mock('@presentation/hooks/useAdminAuth', () => ({
   useAdminAuth: () => ({
-    adminProfile: { role: 'admin' },
     isAuthenticated: true,
     isLoading: false,
   }),

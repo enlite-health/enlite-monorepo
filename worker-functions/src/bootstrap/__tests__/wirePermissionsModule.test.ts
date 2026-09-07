@@ -212,7 +212,7 @@ describe('wirePermissionsModule', () => {
     // de família, testes isolados) que podem omitir `engineEnabled` de todo —
     // o default do próprio `permissionsModule.ts` também tem de ser 'off'.
     it('createPermissionsModule sem `engineEnabled` (nem passado) → contrato "off"', async () => {
-      const permissions = createPermissionsModule({ pool: poolStub, systemPool: poolStub, staffRoles: ['admin'] });
+      const permissions = createPermissionsModule({ pool: poolStub, systemPool: poolStub });
       jest
         .spyOn(permissions.repositories.authz, 'snapshot')
         .mockResolvedValue({ uid: 'u', tenantId: 't', status: 'ACTIVE', permissions: [], countries: [], groups: [] });

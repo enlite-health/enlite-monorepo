@@ -1,6 +1,6 @@
 /**
  * PatientChatRolesPage — administração do CATÁLOGO de papéis de grupo de
- * WhatsApp do paciente (`patient_chat_roles`, migration 262). SÓ ADMIN.
+ * WhatsApp do paciente (`patient_chat_roles`, migration 262).
  *
  * POR QUE ESTA TELA EXISTE. Os papéis eram uma lista em código. Em um único dia
  * o Marcel foi de 2 ("sempre um família e um prestador", call de 05/08) para 3
@@ -18,13 +18,11 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { MessagesSquare, Edit2, Trash2, Plus, Lock, Unlock } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
-import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
-import { EnliteRole } from '@domain/entities/EnliteRole';
 import type { PatientChatRoleSpec } from '@domain/value-objects/patientChatRole';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { ActionButton } from '@presentation/components/features/access';
-import { useActionGate } from '@presentation/hooks/useCellAccess';
+import { useActionGate, useContainerAccess } from '@presentation/hooks/useCellAccess';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
@@ -39,17 +37,16 @@ import { refusalMessage } from './PatientChatRolesPage/refusalMessage';
 export default function PatientChatRolesPage(): JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { adminProfile } = useAdminAuth();
   const tr = (k: string, o?: Record<string, unknown>) => t(`admin.patientChatRoles.${k}`, o ?? {});
 
-  // Mesma trava de rota do TagCatalogPage. É defesa em profundidade, não a
-  // trava real: quem manda é o `requireAdmin()` do backend (403), que uma
-  // chamada direta à API não contorna.
+  // Mesma trava de rota do TagCatalogPage, pela CÉLULA da leitura que a tela
+  // faz (GET /patient-chat-roles → patient:read). É defesa em profundidade,
+  // não a trava real: quem manda é o engine no backend (403), que uma chamada
+  // direta à API não contorna. Só nega com o engine ligado (D268/D286).
+  const { visible } = useContainerAccess('patient');
   useEffect(() => {
-    if (adminProfile && adminProfile.role !== EnliteRole.ADMIN) {
-      navigate('/admin', { replace: true });
-    }
-  }, [adminProfile, navigate]);
+    if (!visible) navigate('/admin', { replace: true });
+  }, [visible, navigate]);
 
   const [roles, setRoles] = useState<PatientChatRoleSpec[]>([]);
   const [usage, setUsage] = useState<Record<string, number>>({});

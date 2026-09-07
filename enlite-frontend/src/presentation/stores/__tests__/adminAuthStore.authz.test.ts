@@ -11,7 +11,7 @@ vi.mock('@infrastructure/services/FirebaseAuthService', () => ({
   })),
 }));
 vi.mock('@infrastructure/http/AdminApiService', () => ({
-  AdminApiService: { getProfile: vi.fn().mockResolvedValue({ firebaseUid: 'u1', role: 'admin' }) },
+  AdminApiService: { getProfile: vi.fn().mockResolvedValue({ firebaseUid: 'u1' }) },
 }));
 const ordem: string[] = [];
 let emailGoogle = 'a@enlite.health';
@@ -133,7 +133,7 @@ describe('adminAuthStore — o contrato de authz', () => {
     getMyAuthz.mockResolvedValue(CONTRATO);
     const trace = { step: vi.fn(), fail: vi.fn() };
     await useAdminAuthStore.getState().login('a@enlite.health', 'x', trace as never);
-    expect(trace.step).toHaveBeenCalledWith('backend-profile:ok', { role: 'admin' });
+    expect(trace.step).toHaveBeenCalledWith('backend-profile:ok');
     expect(useAdminAuthStore.getState().authzStatus).toBe('ready');
   });
 });

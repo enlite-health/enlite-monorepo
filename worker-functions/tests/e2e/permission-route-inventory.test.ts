@@ -79,7 +79,6 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'DELETE /api/admin/users/:id → user_management:delete',
         'DELETE /api/admin/users/by-email → user_management:delete',
         'GET /api/admin/users → user_management:read',
-        'PATCH /api/admin/users/:id/role → permission_management:write',
         'POST /api/admin/users → user_management:write',
         'POST /api/admin/users/:id/reset-password → user_management:write',
         // ── admin.permissions (7) — a leitura do painel (F3) + o POST de

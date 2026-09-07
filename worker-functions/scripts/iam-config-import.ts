@@ -49,21 +49,20 @@ import {
 // `src/index.ts`; via `ts-node` com este script como entrypoint isso quebrava o
 // build (achado ao rodar o e2e). `domain/EnliteRole` é auto-contido — zero
 // imports — então não carrega esse grafo.
-import { STAFF_ROLES } from '@modules/identity/domain/EnliteRole';
 import { planIamConfigImport, snapshotHash, type IamConfigSnapshot } from '@modules/identity/permissions/application/iamConfig';
 import { argValue } from './lib/cliArgs';
 import { maskEmail as mask } from './lib/maskEmail';
 
 const EXECUTE = process.argv.includes('--execute');
 
-/** Staff ACTIVE total (as 3 roles do painel) — só o contexto do log (F12): o
+/** Staff ACTIVE total (`account_type = 'staff'`, D294) — só o contexto do log (F12): o
  *  gate em si é `countActiveStaffWithoutGroup`, via `AssertNoActiveStaffWithoutGroupUseCase`
  *  (não duplicado aqui). Sem isto, "0 sem grupo" fica indistinguível de
  *  "0 porque não havia ninguém para checar" no log. */
 async function countActiveStaff(pool: Pool, tenantId: string): Promise<number> {
   const r = await pool.query<{ n: number }>(
-    `SELECT count(*)::int AS n FROM users WHERE status = 'ACTIVE' AND role = ANY($1) AND tenant_id = $2`,
-    [STAFF_ROLES as unknown as string[], tenantId],
+    `SELECT count(*)::int AS n FROM users WHERE status = 'ACTIVE' AND account_type = $1 AND tenant_id = $2`,
+    ['staff', tenantId],
   );
   return r.rows[0]?.n ?? 0;
 }
@@ -84,7 +83,7 @@ async function reportRollout(
   opts: { write: boolean; file?: string; desired?: IamConfigSnapshot },
 ): Promise<void> {
   const gate = new AssertNoActiveStaffWithoutGroupUseCase(
-    new PgEffectiveAuthzRepository(pool, STAFF_ROLES),
+    new PgEffectiveAuthzRepository(pool),
     new PgRolloutStateRepository(pool),
   );
   const report = await gate.execute(tenantId);

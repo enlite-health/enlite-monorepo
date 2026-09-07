@@ -1,18 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { EnliteRole } from '@domain/entities/EnliteRole';
 import { WorkerTestAccountToggle } from '../WorkerTestAccountToggle';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
-}));
-
-let mockRole: EnliteRole = EnliteRole.ADMIN;
-vi.mock('@presentation/hooks/useAdminAuth', () => ({
-  useAdminAuth: () => ({ adminProfile: { role: mockRole } }),
 }));
 
 const mockUpdate = vi.fn();
@@ -22,18 +16,11 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
 
 describe('WorkerTestAccountToggle', () => {
   beforeEach(() => {
-    mockRole = EnliteRole.ADMIN;
     mockUpdate.mockReset();
     useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
   });
 
-  it('renders nothing for non-admin roles', () => {
-    mockRole = EnliteRole.RECRUITER;
-    const { container } = render(<WorkerTestAccountToggle workerId="w-1" initialIsTest={false} />);
-    expect(container).toBeEmptyDOMElement();
-  });
-
-  it('D269 — enforcement=on sem worker:write: renderiza nada, mesmo admin', () => {
+  it('D269 — enforcement=on sem worker:write: renderiza nada', () => {
     useAdminAuthStore.setState({
       authzStatus: 'ready',
       authz: {
@@ -55,7 +42,7 @@ describe('WorkerTestAccountToggle', () => {
     expect(screen.getByTestId('worker-test-account-checkbox')).toBeInTheDocument();
   });
 
-  it('renders the checkbox for admin role', () => {
+  it('sem contrato (engine desligado): renderiza o checkbox, como sempre renderizou', () => {
     render(<WorkerTestAccountToggle workerId="w-1" initialIsTest={false} />);
     const checkbox = screen.getByTestId('worker-test-account-checkbox') as HTMLInputElement;
     expect(checkbox).toBeInTheDocument();

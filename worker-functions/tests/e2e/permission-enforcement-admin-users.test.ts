@@ -212,12 +212,24 @@ describe('família admin.users sob a decisão real por célula (HTTP real, banco
     ]);
   });
 
-  it('mexer em PAPEL exige permission_management:write — user_management não basta', async () => {
-    // A gestora tem user_management:* inteiro e mesmo assim é barrada aqui: é a
-    // fronteira do lex C1 (quem muda acesso é um conjunto menor de gente).
-    const res = await chamar('PATCH', '/api/admin/users/abc/role', U.gestora);
+  it('com a família enforced, o PAPEL não decide: recrutadora com a célula passa por rota que era admin-only', async () => {
+    // Antes de 07/09 `POST /users/:id/reset-password` era `requireAdmin()` ANTES da célula:
+    // token `recruiter` levava 403 "Admin access required" mesmo com user_management:write.
+    // Agora a célula decide sozinha — o guard passa e quem responde é o handler (400: uid não existe).
+    const res = await chamar('POST', '/api/admin/users/nao-existe/reset-password', U.gestora, 'recruiter');
+    expect(res.status).not.toBe(403);
+    expect(res.body.error).not.toBe('Admin access required');
+  });
+
+  it('com a família enforced, papel `admin` SEM a célula é negado — o papel não abre mais nada', async () => {
+    const res = await chamar('POST', '/api/admin/users/nao-existe/reset-password', U.semCelula, 'admin');
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: 'missing_cell' });
+  });
+
+  it('não existe rota de papel (07/09): PATCH /users/:id/role é 404 — acesso se concede por grupo', async () => {
+    const res = await chamar('PATCH', '/api/admin/users/abc/role', U.gestora);
+    expect(res.status).toBe(404);
   });
 
   it('célula removida do grupo vale na PRÓXIMA request (sem novo login)', async () => {

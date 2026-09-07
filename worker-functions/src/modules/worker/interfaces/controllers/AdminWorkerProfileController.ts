@@ -15,7 +15,7 @@ import { PubSubClient } from '@shared/events/PubSubClient';
  * Edição administrativa do perfil de um worker. Apenas role ADMIN
  * (gate aplicado pelo middleware na rota, não aqui).
  *
- * Rota (registrada em src/index.ts, adminOnly — role === ADMIN):
+ * Rota (registrada em src/index.ts, `worker:write`; papel `admin` só até a família virar):
  *   PATCH /api/admin/workers/:id/profile
  *
  * Body: subconjunto da whitelist abaixo (partial update). Pelo menos um

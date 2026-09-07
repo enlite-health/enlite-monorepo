@@ -31,7 +31,7 @@ const FORMAT_OPTIONS = [
 ];
 
 // TODO: future — per-column PII permissions (sexual_orientation, race, religion,
-// document_number, birth_date, etc.). Today: admin-only guard is the sole access control.
+// document_number, birth_date, etc.). Hoje: a célula `worker:export` é o único controle de acesso.
 export function WorkerExportModal({
   isOpen,
   onClose,

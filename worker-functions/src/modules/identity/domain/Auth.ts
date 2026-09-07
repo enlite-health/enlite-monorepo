@@ -17,6 +17,13 @@ export interface Principal {
   id: string;
   type: PrincipalType;
   roles?: string[];
+  /**
+   * O que a conta É (`staff` | `worker`; obra social e paciente virão) — custom
+   * claim `account_type` / coluna `users.account_type` (D294). É a fronteira
+   * staff × prestador; o que a conta PODE é a célula do grupo. Ausente = a
+   * ponte deriva de `roles` (`isStaffAccount`), até o backfill do claim.
+   */
+  accountType?: string | null;
   tenantId?: string;
   /**
    * Jurisdição do operador (`AR`|`BR`), vinda do custom claim `country` do
