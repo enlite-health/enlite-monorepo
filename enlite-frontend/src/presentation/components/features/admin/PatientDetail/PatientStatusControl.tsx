@@ -8,7 +8,8 @@ import { Button } from '@presentation/components/atoms/Button';
 import { Text } from '@presentation/components/atoms/Text';
 import { Textarea } from '@presentation/components/atoms/Textarea';
 import { FormField } from '@presentation/components/molecules/FormField';
-import { Label } from '@presentation/components/atoms/Label';
+import { buttonClasses } from '@presentation/components/atoms/Button/buttonClasses';
+import { ChevronDown } from 'lucide-react';
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 
 interface Props {
@@ -82,26 +83,36 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
 
   return (
     <div className="flex flex-col gap-2 min-w-[240px]" data-testid="patient-status-control">
-      {/* 06/09 (Gabriel): o rótulo "Estado" ficava ACIMA do select, empilhado, e o bloco inteiro
-          era mais alto que os botões vizinhos do cabeçalho — o controle flutuava numa altura
-          própria. Agora é UMA linha: rótulo, select e ação lado a lado. O `Label` continua ligado
-          ao select por `htmlFor`, então o nome acessível não se perde; só deixou de empilhar.
-          Os campos de ON_HOLD (motivo e nota) seguem empilhando abaixo, como antes. */}
+      {/* 06/09 (Gabriel): "pega o que você fez pra me dar como exemplo e coloca no lugar".
+          No exemplo os TRÊS controles da barra eram botões iguais — inclusive o do estado, que
+          mostrava "Estado: Activo ▾" dentro de um botão só. Na tela ele era outra coisa: um rótulo
+          solto MAIS um select com caixa e seta próprias, e por isso o conjunto nunca batia com o
+          desenho, por mais que eu acertasse os dois botões das pontas.
+
+          Agora ele É o botão: as classes vêm de `buttonClasses({ variant:'quiet', size:'xs' })` —
+          a MESMA função que o atom `Button` usa, não uma cópia que diverge depois. O `<select>`
+          fica por cima, transparente, cobrindo a área toda: o clique abre o menu nativo do sistema
+          operacional e o teclado continua funcionando. `aria-label` carrega o nome acessível que o
+          `<Label>` visível carregava antes. */}
       <div className="flex items-center gap-2">
-        <Label htmlFor="patient-status-select" size="compact" className="shrink-0 whitespace-nowrap">
-          {ts('title')}
-        </Label>
-        {/* `dense` (35px, 13px) e não `compact` (48px): na barra do cabeçalho o select convive com
-            botões `xs` de 28px — 48px fazia o bloco inteiro destoar. Os selects de ON_HOLD, que
-            abrem EMPILHADOS abaixo e são formulário, seguem em `compact`. */}
-        <SelectField
-          id="patient-status-select"
-          inputSize="dense"
-          options={statusOptions}
-          value={status}
-          onChange={(v) => { setStatus(v); setError(null); }}
-          data-testid="patient-status-select"
-        />
+        <div className={`relative ${buttonClasses({ variant: 'quiet', size: 'xs' })}`}>
+          <span className="whitespace-nowrap">
+            {ts('title')}: {label(status)}
+          </span>
+          <ChevronDown className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+          <select
+            id="patient-status-select"
+            aria-label={ts('title')}
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            value={status}
+            onChange={(e) => { setStatus(e.target.value); setError(null); }}
+            data-testid="patient-status-select"
+          >
+            {statusOptions.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
         <Button type="button" variant="primary" size="xs" onClick={handleSave} disabled={!canSave} isLoading={busy} data-testid="patient-status-save">
           {ts('save')}
         </Button>
