@@ -19,7 +19,8 @@ import {
 } from '../helpers/patient-detail-d-helper';
 import { insertTestPatient, insertBaseVacancy, cleanupTestPatient } from '../helpers/db-test-helper';
 
-const EMULATOR = 'http://127.0.0.1:9099';
+// `E2E_FIREBASE_EMULATOR` aponta para o emulador de um stack isolado (`docker compose -p`); default inalterado.
+const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
 const EMULATOR_PROJECT = 'demo-no-project';
 const STAFF_EMAIL = `e2e.blocod.${Date.now()}@enlite.health`;
 const STAFF_PASSWORD = 'TestAdmin123!';
