@@ -173,10 +173,11 @@ describe('screenVisibleFor — a TELA existe para quem tem qualquer célula dela
     expect(screenVisibleFor(mapa, ['worker:read', 'patient:read'], 'on')).toBe(false);
   });
 
-  it('tela com célula própria E containers (dashboard): uma de bloco basta, mesmo sem a de abrir', () => {
+  it('tela com célula própria E containers (dashboard): só a própria abre — bloco sem `dashboard:read` leva a 403', () => {
     const dash = screenById('dashboard');
-    expect(screenVisibleFor(dash, ['dashboard_zones:read'], 'on')).toBe(true);
     expect(screenVisibleFor(dash, ['dashboard:read'], 'on')).toBe(true);
+    expect(screenVisibleFor(dash, ['dashboard_zones:read'], 'on')).toBe(false);
+    expect(screenVisibleFor(dash, ['patient:read'], 'on')).toBe(false);
   });
 
   it('enforcement off ou indeciso, ou permissões ausentes: freio D268', () => {

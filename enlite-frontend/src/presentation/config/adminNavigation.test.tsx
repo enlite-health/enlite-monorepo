@@ -256,10 +256,9 @@ describe('useAdminNavItems — D286: item de topo só existe para quem tem algum
     useAdminAuthStore.setState({ authzStatus: 'ready', authz: authzCom(['patient:read']) });
     const visiveis = hrefs();
     expect(visiveis).toContain('/admin/patients');
-    // `patient:read` também é célula de um bloco do dashboard — mas ABRIR a tela é `dashboard:read`;
-    // pela regra "qualquer célula da tela", o item aparece. Registrado de propósito: é a D286 literal.
-    expect(visiveis).toContain('/admin/dashboard');
-    for (const h of ['/admin', '/admin/vacancies', '/admin/workers', '/admin/mapa', '/admin/recruitment']) {
+    // `patient:read` também é célula de um BLOCO do dashboard — mas abrir a tela é `dashboard:read`,
+    // e sem ela a rota nega: o item não aparece (medido no e2e `admin-menu-por-celula`).
+    for (const h of ['/admin/dashboard', '/admin', '/admin/vacancies', '/admin/workers', '/admin/mapa', '/admin/recruitment']) {
       expect(visiveis, `${h} apareceu sem célula`).not.toContain(h);
     }
   });
