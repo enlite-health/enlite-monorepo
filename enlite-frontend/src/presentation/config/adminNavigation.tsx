@@ -1,7 +1,5 @@
 import { AppSidebarNavItem } from '@presentation/components/templates/DashboardLayout';
 import { useTranslation } from 'react-i18next';
-import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
-import { EnliteRole } from '@domain/entities/EnliteRole';
 import { useCellAccess } from '@presentation/hooks/useCellAccess';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { useFeature } from '@presentation/hooks/useFeature';
@@ -10,38 +8,33 @@ import { MapPin } from 'lucide-react';
 
 export const useAdminNavItems = (): AppSidebarNavItem[] => {
   const { t } = useTranslation();
-  const { adminProfile } = useAdminAuth();
-  const isAdmin = adminProfile?.role === EnliteRole.ADMIN;
-  // O item do painel de acessos NÃO deriva de `role`: deriva da célula que
+  // O item do painel de acessos deriva da célula que
   // toda rota da família exige. Sem ela, o item não existe no menu.
   const { canRead: canSeeAccess } = useCellAccess('permission_management');
 
-  // D268 achou dívida: os 4 itens admin-only abaixo (Tags/Dedup/Roles de
-  // grupos/Postulaciones bloqueadas) eram derivados de `role === ADMIN`,
-  // não de célula. Conserto: célula de LEITURA da rota que CADA TELA chama
-  // (grep `perm.require` no backend) —
-  //   Tags        → GET /api/admin/worker-tags               → worker:read
-  //   Dedup       → GET /api/admin/dedup/groups               → dedup:read
-  //   Roles grupo → GET /api/admin/patient-chat-roles          → patient:read
+  // Cada item da seção Administración existe pela célula de LEITURA da rota
+  // que a SUA tela chama (grep `perm.require` no backend) —
+  //   Tags        → GET /api/admin/worker-tags                  → worker:read
+  //   Dedup       → GET /api/admin/dedup/groups                 → dedup:read
+  //   Roles grupo → GET /api/admin/patient-chat-roles           → patient:read
   //   Bloqueados  → GET /api/admin/recruitment/blocked-attempts → recruitment:read
+  //   Mensajería  → funnel-stage-messages, template-catalog,
+  //                 presentation-invite/*                       → messaging:read
   // Mesmo freio do ActionButton/useFeature (D268): só gateia com
-  // `enforcement === 'on'`. Com `'off'`/contrato ausente, o comportamento
-  // atual por `role` continua — não é regressão de segurança na `stage`
-  // (engine off), é a MESMA régua de rollout do resto da B1.
+  // `enforcement === 'on'`. Com `'off'`/contrato ausente o item aparece como
+  // sempre apareceu — é a MESMA régua de rollout do resto da B1, e apagar o
+  // menu no `main` (engine off) seria a regressão.
   const enforcement = useAdminAuthStore((s) => s.authz?.enforcement);
   const { canRead: canReadWorkerTags } = useCellAccess('worker');
   const { canRead: canReadDedup } = useCellAccess('dedup');
   const { canRead: canReadPatientChatRoles } = useCellAccess('patient');
   const { canRead: canReadBlockedAttempts } = useCellAccess('recruitment');
-  // Sync main→stage (06/09): Mensajes por etapa, Plantillas e Invitación a presentación
-  // chamam rotas declaradas sob `messaging:read` (funnel-stage-messages, template-catalog,
-  // presentation-invite/*). Mesma régua: célula com engine ON, `role` com engine OFF.
   const { canRead: canReadMessaging } = useCellAccess('messaging');
-  const showTags = enforcement === 'on' ? canReadWorkerTags : isAdmin;
-  const showDedup = enforcement === 'on' ? canReadDedup : isAdmin;
-  const showPatientChatRoles = enforcement === 'on' ? canReadPatientChatRoles : isAdmin;
-  const showBlockedAttempts = enforcement === 'on' ? canReadBlockedAttempts : isAdmin;
-  const showMessagingScreens = enforcement === 'on' ? canReadMessaging : isAdmin;
+  const showTags = enforcement === 'on' ? canReadWorkerTags : true;
+  const showDedup = enforcement === 'on' ? canReadDedup : true;
+  const showPatientChatRoles = enforcement === 'on' ? canReadPatientChatRoles : true;
+  const showBlockedAttempts = enforcement === 'on' ? canReadBlockedAttempts : true;
+  const showMessagingScreens = enforcement === 'on' ? canReadMessaging : true;
 
   // B1 (D268) — disponibilidade por país, uma verdade só: `SCREEN_FEATURE_MAP`.
   // Nº fixo de chamadas (Rules of Hooks) — as 6 chaves screen:* que hoje têm
@@ -61,8 +54,8 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
   for (const [chave, entrada] of Object.entries(SCREEN_FEATURE_MAP)) {
     if (entrada.navHref && chave in valorPorChave) featureByHref[entrada.navHref] = valorPorChave[chave];
   }
-  // `/admin/recruitment/blocked-attempts` (item admin-only, ver `adminItems`
-  // abaixo) não é o `navHref` de nenhuma chave — é sub-rota de `screen:funnel`
+  // `/admin/recruitment/blocked-attempts` (item da seção Administración, ver
+  // `adminItems` abaixo) não é o `navHref` de nenhuma chave — é sub-rota de `screen:funnel`
   // (ver `routes` de `screen:funnel` em screenFeatureMap.ts). Sem esta linha
   // o item ficava morto no menu quando `screen:funnel` está off: a ROTA nega
   // (App.tsx já gateia), mas o link continuava visível.
@@ -139,8 +132,8 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
     },
   ];
 
-  // Admin-only items: Tags + Dedup Center + Roles de grupos + Blocked Attempts.
-  // Cada um por sua CÉLULA de leitura (ver comentário acima), não mais em bloco por `isAdmin`.
+  // Seção Administración: Tags + Dedup + Mensajería + Roles de grupos + Blocked Attempts.
+  // Cada um por sua CÉLULA de leitura (ver comentário acima).
   const adminItemCandidates: Array<{ show: boolean; item: AppSidebarNavItem }> = [
     {
       show: showTags,

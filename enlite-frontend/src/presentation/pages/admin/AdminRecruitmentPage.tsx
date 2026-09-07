@@ -17,8 +17,7 @@ import { CaseSearchBar } from '@presentation/components/molecules/CaseSearchBar'
 import { ActiveCasesTable } from '@presentation/components/organisms/ActiveCasesTable';
 import { PublicationsBarChart } from '@presentation/components/organisms/PublicationsBarChart';
 import { useDashboardData } from '@hooks/recruitment/useDashboardData';
-import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
-import { EnliteRole } from '@domain/entities/EnliteRole';
+import { useContainerAccess } from '@presentation/hooks/useCellAccess';
 import { useGlobalMetrics } from '@hooks/recruitment/useGlobalMetrics';
 import { useActiveCases } from '@hooks/recruitment/useActiveCases';
 import type { DateFilterType } from '@domain/entities/RecruitmentData';
@@ -30,8 +29,9 @@ type TabType = 'global' | 'caso' | 'zona';
 
 export function AdminRecruitmentPage(): JSX.Element {
   const { t } = useTranslation();
-  const { adminProfile } = useAdminAuth();
-  const isAdmin = adminProfile?.role === EnliteRole.ADMIN;
+  // O link leva à tela de postulações bloqueadas, que lê
+  // GET /recruitment/blocked-attempts → recruitment:read (D268/D286).
+  const { visible: canSeeBlockedAttempts } = useContainerAccess('recruitment');
   const [activeTab, setActiveTab] = useState<TabType>('global');
   const [dateFilter, setDateFilter] = useState<DateFilterType>('1m');
   const [customStartDate, setCustomStartDate] = useState('');
@@ -73,7 +73,7 @@ export function AdminRecruitmentPage(): JSX.Element {
           </Typography>
         </div>
         <div className="flex items-center gap-3">
-          {isAdmin && (
+          {canSeeBlockedAttempts && (
             <Link
               to="/admin/recruitment/blocked-attempts"
               data-testid="blocked-attempts-link"

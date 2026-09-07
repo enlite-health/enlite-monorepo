@@ -20,7 +20,6 @@ import {
 } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { DedupCenterPage } from './DedupCenterPage';
-import { EnliteRole } from '@domain/entities/EnliteRole';
 import type { AdminUser } from '@domain/entities/AdminUser';
 import type { DedupGroupSummary } from '@domain/entities/DedupGroup';
 
@@ -94,7 +93,6 @@ const ADMIN_PROFILE: AdminUser = {
   firebaseUid: 'uid-admin',
   email: 'admin@enlite.health',
   displayName: 'Admin',
-  role: EnliteRole.ADMIN,
   department: null,
   lastLoginAt: null,
   loginCount: 1,

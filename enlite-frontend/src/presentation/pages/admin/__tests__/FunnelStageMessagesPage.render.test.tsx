@@ -35,7 +35,7 @@ vi.mock('@infrastructure/http/AdminFunnelStageMessagesApiService', () => ({
   },
 }));
 vi.mock('@presentation/hooks/useAdminAuth', () => ({
-  useAdminAuth: () => ({ adminProfile: { role: 'admin' }, isAuthenticated: true, isLoading: false }),
+  useAdminAuth: () => ({ adminProfile: {}, isAuthenticated: true, isLoading: false }),
 }));
 
 /** As 6 etapas da tela real, incluindo as 3 que vazavam. */

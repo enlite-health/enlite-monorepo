@@ -29,11 +29,6 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t, i18n: { language: 
 const navigate = vi.fn();
 vi.mock('react-router-dom', () => ({ useNavigate: () => navigate }));
 
-const adminProfile = { role: 'admin' as string };
-vi.mock('@presentation/hooks/useAdminAuth', () => ({
-  useAdminAuth: () => ({ adminProfile }),
-}));
-
 const listPatientChatRoles = vi.fn();
 const createPatientChatRole = vi.fn();
 const updatePatientChatRole = vi.fn();
@@ -75,7 +70,8 @@ const USAGE = { FAMILY: 15, PROVIDERS: 232, HEALTH_PLAN: 0 };
 describe('PatientChatRolesPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    adminProfile.role = 'admin';
+    // Sem contrato = engine desligado: a tela abre como sempre abriu.
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
     listPatientChatRoles.mockResolvedValue({ roles: ROLES, usage: USAGE });
     updatePatientChatRole.mockResolvedValue(ROLES[0]);
     createPatientChatRole.mockResolvedValue(ROLES[0]);
@@ -129,10 +125,32 @@ describe('PatientChatRolesPage', () => {
     );
   });
 
-  it('quem não é admin é mandado embora da rota', async () => {
-    adminProfile.role = 'recruiter';
+  it('quem não tem `patient:read` (engine ON) é mandado embora da rota', async () => {
+    comEnforcement([], 'on');
     render(<PatientChatRolesPage />);
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('/admin', { replace: true }));
+  });
+
+  it('com `patient:read` (engine ON) a rota não redireciona', async () => {
+    comEnforcement(['patient:read'], 'on');
+    await renderPage();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('engine OFF sem célula nenhuma: a rota não redireciona', async () => {
+    comEnforcement([], 'off');
+    await renderPage();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('fechar a modal pelo backdrop não grava nada', async () => {
+    await renderPage();
+    fireEvent.click(screen.getByTestId('chat-role-new-btn'));
+    expect(screen.getByTestId('chat-role-form-modal')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('chat-role-form-backdrop'));
+    await waitFor(() => expect(screen.queryByTestId('chat-role-form-modal')).not.toBeInTheDocument());
+    expect(createPatientChatRole).not.toHaveBeenCalled();
   });
 
   it('criar: manda o corpo inteiro e recarrega a lista', async () => {
@@ -379,13 +397,14 @@ function comEnforcement(permissions: string[], enforcement: AuthzContract['enfor
 describe('PatientChatRolesPage — write-gate (D269)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    adminProfile.role = 'admin';
+    // Sem contrato = engine desligado: a tela abre como sempre abriu.
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
     listPatientChatRoles.mockResolvedValue({ roles: ROLES, usage: USAGE });
     useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
   });
 
   it('🔴 enforcement=on, sem patient:write: chat-role-new-btn e as ações de linha SOMEM', async () => {
-    comEnforcement([], 'on');
+    comEnforcement(['patient:read'], 'on');
     render(<PatientChatRolesPage />);
     await screen.findByTestId('chat-roles-table');
 
@@ -396,7 +415,7 @@ describe('PatientChatRolesPage — write-gate (D269)', () => {
   });
 
   it('enforcement=on, com patient:write: chat-role-new-btn e as ações de linha existem', async () => {
-    comEnforcement(['patient:write'], 'on');
+    comEnforcement(['patient:read', 'patient:write'], 'on');
     render(<PatientChatRolesPage />);
     await screen.findByTestId('chat-roles-table');
 

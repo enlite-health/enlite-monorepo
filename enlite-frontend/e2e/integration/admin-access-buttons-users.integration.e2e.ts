@@ -7,17 +7,15 @@
  * D269: "esconder, não desabilitar" — ao contrário da família vagas, que
  * usa `disable`). Mapa rota → célula (`adminUsersRoutes.ts`):
  *   POST   /users            → user_management:write   (Crear usuario)
- *   PATCH  /users/:id/role   → permission_management:write (papel — NÃO
- *                              user_management:write: mexer em papel é
- *                              mexer em ACESSO)
  *   POST   /users/:id/reset-password → user_management:write (Reset)
  *   DELETE /users/:id        → user_management:delete  (Eliminar)
+ * (`PATCH /users/:id/role` não existe mais: papel deixou de ser atributo do
+ * admin — quem pode o quê é a célula.)
  *
- * Também prova o segundo achado da D268 nomeado na task: os 4 itens
- * admin-only do menu (`adminNavigation.tsx`) agora derivam de CÉLULA DE
- * LEITURA, não de `role === ADMIN` — aqui só o caso de Duplicados
- * (`dedup:read`), que é o mais barato de montar sem depender de vaga/
- * paciente.
+ * Também prova o segundo achado da D268 nomeado na task: os itens da seção
+ * Administración (`adminNavigation.tsx`) derivam de CÉLULA DE LEITURA — aqui
+ * só o caso de Duplicados (`dedup:read`), que é o mais barato de montar sem
+ * depender de vaga/paciente.
  *
  * Mesmo padrão de auth/seed de `admin-access-panel.integration.e2e.ts` e
  * `admin-access-buttons-vacancies.integration.e2e.ts` (JWT fake no Identity
@@ -206,20 +204,18 @@ test.describe('Botões da família USUÁRIOS ADMIN + item de menu Duplicados (D2
   test.setTimeout(120_000);
 
   test.beforeAll(() => {
-    // role='admin' — as ações de Crear/papel/Eliminar em AdminUsersPage
-    // continuam atrás de `isAdmin` (preservado; não é parte do escopo D269,
-    // que é só a CAMADA de célula por cima). Sem role admin nenhum dos 3
-    // apareceria mesmo com a célula concedida.
+    // A coluna `users.role` ainda existe no banco, mas não decide nada na UI:
+    // Crear/Reset/Eliminar dependem só da célula. Os valores abaixo são
+    // preenchimento de coluna NOT NULL, não regra de acesso.
     psql(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, status, tenant_id)
           VALUES ('${ADMIN_UID}', '${ADMIN_EMAIL}', 'E2E US Admin', 'admin', true, 'ACTIVE', '${TENANT}')`);
     psql(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, status, tenant_id)
           VALUES ('${RECRUITER_UID}', '${RECRUITER_EMAIL}', 'E2E US Recruiter', 'recruiter', true, 'ACTIVE', '${TENANT}')`);
 
     // Grupo do admin: começa só com user_management:read (leitura nunca é
-    // gateada — é o piso pra sequer abrir /admin) + worker:read (gate rodada
-    // 6 — teste 5: TagCatalogPage é admin-only por ROLE (guard preexistente,
-    // não tocado pela D269), então precisa de conta role=admin; worker:read
-    // sem worker:write prova que a LEITURA da lista não é o que falta.
+    // gateada — é o piso pra sequer abrir /admin) + worker:read (teste 5:
+    // a guarda de rota de TagCatalogPage é `worker:read`, e worker:read sem
+    // worker:write prova que a LEITURA da lista não é o que falta.
     adminGroupId = scalar(`INSERT INTO iam.permission_groups (tenant_id, name, description)
           VALUES ('${TENANT}', '${ADMIN_GROUP_NAME}', 'e2e usuarios admin — nao mexer manual')
           RETURNING id`);
@@ -260,7 +256,7 @@ test.describe('Botões da família USUÁRIOS ADMIN + item de menu Duplicados (D2
   const ADMIN: MockUser = { uid: ADMIN_UID, email: ADMIN_EMAIL, role: 'admin', country: 'AR' };
   const RECRUITER: MockUser = { uid: RECRUITER_UID, email: RECRUITER_EMAIL, role: 'recruiter', country: 'AR' };
 
-  test('1. só user_management:read: "Crear", "Reset", "Eliminar" e o <select> de papel NÃO EXISTEM no DOM', async ({ page }) => {
+  test('1. só user_management:read: "Crear", "Reset" e "Eliminar" NÃO EXISTEM no DOM (e nenhum <select> — a coluna de papel saiu)', async ({ page }) => {
     await loginAs(page, ADMIN);
     await page.goto('/admin');
     await expect(page.getByRole('heading', { name: 'Usuarios Administradores' })).toBeVisible({ timeout: 15_000 });
@@ -284,19 +280,17 @@ test.describe('Botões da família USUÁRIOS ADMIN + item de menu Duplicados (D2
     });
   });
 
-  test('2. a conta ganha user_management:write/delete + permission_management:write: os mesmos elementos passam a EXISTIR', async ({
+  test('2. a conta ganha user_management:write/delete: os mesmos elementos passam a EXISTIR', async ({
     page,
     request,
   }) => {
     grantCell(adminGroupId, 'user_management', 'write');
     grantCell(adminGroupId, 'user_management', 'delete');
-    grantCell(adminGroupId, 'permission_management', 'write');
     const settled = await pollHasCells(request, ADMIN, [
       'user_management:write',
       'user_management:delete',
-      'permission_management:write',
     ]);
-    console.log(`[prova] as 3 células chegaram em ${settled.elapsedMs}ms`);
+    console.log(`[prova] as 2 células chegaram em ${settled.elapsedMs}ms`);
     expect(settled.has).toBe(true);
 
     await loginAs(page, ADMIN);
@@ -306,10 +300,11 @@ test.describe('Botões da família USUÁRIOS ADMIN + item de menu Duplicados (D2
     await expect(page.getByRole('button', { name: 'Nuevo Usuario' })).toBeVisible({ timeout: 10_000 });
     await expect(page.getByRole('button', { name: 'Reset', exact: true }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Eliminar', exact: true }).first()).toBeVisible();
-    await expect(page.getByRole('combobox').first()).toBeVisible();
+    // Nenhum <select>: a escrita voltou, mas a coluna de papel não existe mais.
+    await expect(page.getByRole('combobox')).toHaveCount(0);
   });
 
-  test('3. RECRUITER sem dedup:read não vê "Duplicados" no menu — os outros 3 itens (worker/patient/recruitment:read) continuam', async ({
+  test('3. conta sem dedup:read não vê "Duplicados" no menu — os outros 3 itens (worker/patient/recruitment:read) continuam', async ({
     page,
   }) => {
     await loginAs(page, RECRUITER);

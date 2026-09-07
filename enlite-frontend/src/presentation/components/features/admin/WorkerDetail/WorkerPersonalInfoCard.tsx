@@ -18,7 +18,7 @@ interface WorkerPersonalInfoCardProps {
   weightKg: string | null;
   heightCm: string | null;
   tags?: WorkerTagSummary[];
-  /** When provided, renders the admin-only Edit button wired to this handler. */
+  /** When provided, renders the Edit button (gateado por `worker:write` no call site) wired to this handler. */
   onEdit?: () => void;
   /**
    * D286: o dossiê (nascimento, sexo, gênero, orientação, raça, religião, peso, altura) é

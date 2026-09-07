@@ -18,11 +18,10 @@
  * (JWT fake no Identity Toolkit, `/api/**` trocado por `mock_*`, contas
  * pré-inseridas em `users` pra não cair no auto-provision do Firebase Admin).
  *
- * ⚠️ Role 'admin' (não 'recruiter' como as famílias vagas/pacientes): o botão
- * "Editar" da ficha e o toggle de conta de teste são gateados TAMBÉM por
- * `EnliteRole.ADMIN` no frontend (`WorkerDetailContent.canEdit`,
- * `WorkerTestAccountToggle.isAdmin`) — sem isso o botão nunca apareceria,
- * célula ou não, e o teste não provaria o gate de CÉLULA que é o alvo aqui.
+ * ⚠️ O valor de `users.role` é irrelevante aqui: o botão "Editar" da ficha e o
+ * toggle de conta de teste dependem SÓ de `worker:write`
+ * (`WorkerDetailContent.canEdit`, `WorkerTestAccountToggle`). A coluna segue no
+ * banco porque é NOT NULL, não porque decide algo.
  */
 
 import { execFileSync } from 'child_process';
@@ -209,7 +208,7 @@ test.describe('Botões da família prestadores — esconder, não desabilitar (D
   test.setTimeout(120_000);
 
   test.beforeAll(() => {
-    // role 'admin' nos dois — ver nota do cabeçalho.
+    // `users.role` é preenchimento de coluna, não regra de acesso — ver nota do cabeçalho.
     psql(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, status, tenant_id)
           VALUES ('${GESTORA_UID}', '${GESTORA_EMAIL}', 'E2E WK Gestora', 'admin', true, 'ACTIVE', '${TENANT}')`);
     psql(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, status, tenant_id)

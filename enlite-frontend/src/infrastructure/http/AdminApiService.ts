@@ -1,6 +1,5 @@
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
 import { AdminUser } from '@domain/entities/AdminUser';
-import { EnliteRole } from '@domain/entities/EnliteRole';
 import { WorkerDateStats, WorkerDetail, WorkerDocument, DocumentValidations, WorkerProfileUpdatePayload, WorkerProfileUpdateResult, WorkerServiceAreaUpdatePayload } from '@domain/entities/Worker';
 import type { MatchResultsResponse } from '../../types/match';
 import type { InterviewSlot, CreateSlotsInput, BookSlotResult, InterviewSlotsSummary } from '@domain/entities/InterviewSlot';
@@ -95,20 +94,14 @@ class AdminApiServiceClass {
 
   // ========== Admin Users ==========
 
+  // ABAC — o convite não carrega papel: quem pode o quê é decidido pelas
+  // células do grupo, atribuídas depois no painel de Acessos.
   async createAdmin(data: {
     email: string;
     displayName: string;
     department?: string;
-    role?: EnliteRole;
   }): Promise<AdminUser & { resetLink?: string }> {
     return this.request<AdminUser & { resetLink?: string }>('POST', '/api/admin/users', data);
-  }
-
-  async updateAdminRole(firebaseUid: string, role: EnliteRole, department?: string): Promise<AdminUser> {
-    return this.request<AdminUser>('PATCH', `/api/admin/users/${firebaseUid}/role`, {
-      role,
-      ...(department !== undefined ? { department } : {}),
-    });
   }
 
   async listAdmins(limit = 50, offset = 0): Promise<{ admins: AdminUser[]; total: number }> {
@@ -257,17 +250,17 @@ class AdminApiServiceClass {
     return this.request<WorkerDateStats>('GET', '/api/admin/workers/stats');
   }
 
-  /** Marca/desmarca um worker como conta de teste (admin-only no backend). */
+  /** Marca/desmarca um worker como conta de teste (`worker:write` no backend). */
   async updateWorkerTestFlag(id: string, isTest: boolean): Promise<{ isTest: boolean }> {
     return this.request<{ isTest: boolean }>('PATCH', `/api/admin/workers/${id}/test-flag`, { isTest });
   }
 
-  /** Edita campos do perfil de um worker (admin-only no backend). */
+  /** Edita campos do perfil de um worker (`worker:write` no backend). */
   async updateWorkerProfile(id: string, payload: WorkerProfileUpdatePayload): Promise<WorkerProfileUpdateResult> {
     return this.request<WorkerProfileUpdateResult>('PATCH', `/api/admin/workers/${id}/profile`, payload);
   }
 
-  /** Edita o endereço/área de serviço de um worker (admin-only no backend). */
+  /** Edita o endereço/área de serviço de um worker (`worker:write` no backend). */
   async updateWorkerServiceArea(id: string, payload: WorkerServiceAreaUpdatePayload): Promise<void> {
     await this.request<unknown>('PUT', `/api/admin/workers/${id}/service-area`, payload);
   }

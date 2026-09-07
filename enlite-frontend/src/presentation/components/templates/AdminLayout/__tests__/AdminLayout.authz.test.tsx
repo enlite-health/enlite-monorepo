@@ -8,7 +8,7 @@ import { AdminLayout } from '../AdminLayout';
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
 const logout = vi.fn().mockResolvedValue(undefined);
 vi.mock('@presentation/hooks/useAdminAuth', () => ({
-  useAdminAuth: () => ({ logout, adminProfile: { role: 'admin', email: 'a@enlite.health' } }),
+  useAdminAuth: () => ({ logout, adminProfile: { email: 'a@enlite.health' } }),
 }));
 vi.mock('@presentation/components/templates/DashboardLayout', () => ({
   AppSidebar: ({ onMenuClick }: { onMenuClick: () => void }) => <nav data-testid="sidebar"><button onClick={onMenuClick}>sair</button></nav>,

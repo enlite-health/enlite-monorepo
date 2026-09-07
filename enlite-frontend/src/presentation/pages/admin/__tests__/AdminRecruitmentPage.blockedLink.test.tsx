@@ -2,16 +2,17 @@
  * AdminRecruitmentPage.blockedLink.test.tsx
  *
  * O link "Postulaciones bloqueadas" no header do dashboard de reclutamiento
- * é admin-only (a página destino tem guard de role; o link não deve aparecer
- * pra quem seria redirecionado).
+ * depende da célula `recruitment:read` (a página destino tem a MESMA guarda;
+ * o link não deve aparecer pra quem seria redirecionado). Com o engine
+ * desligado ele aparece, como sempre apareceu (D268).
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AdminRecruitmentPage } from '../AdminRecruitmentPage';
-import { EnliteRole } from '@domain/entities/EnliteRole';
-import type { AdminUser } from '@domain/entities/AdminUser';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 
 // ── Module mocks ──────────────────────────────────────────────────────────────
 
@@ -22,12 +23,6 @@ vi.mock('react-i18next', () => ({
       return key;
     },
   }),
-}));
-
-const mockUseAdminAuth = vi.fn();
-
-vi.mock('@presentation/hooks/useAdminAuth', () => ({
-  useAdminAuth: () => mockUseAdminAuth(),
 }));
 
 vi.mock('@hooks/recruitment/useDashboardData', () => ({
@@ -72,22 +67,9 @@ vi.mock('@presentation/components/organisms/PublicationsBarChart', () => ({
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-const ADMIN_PROFILE: AdminUser = {
-  firebaseUid: 'uid-admin',
-  email: 'admin@enlite.health',
-  displayName: 'Admin User',
-  role: EnliteRole.ADMIN,
-  department: null,
-  lastLoginAt: null,
-  loginCount: 1,
-  createdAt: '2026-01-01T00:00:00Z',
-};
-
-const RECRUITER_PROFILE: AdminUser = {
-  ...ADMIN_PROFILE,
-  role: EnliteRole.RECRUITER,
-  email: 'recruiter@enlite.health',
-};
+const contrato = (permissions: string[], enforcement: AuthzContract['enforcement']): AuthzContract => ({
+  uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {}, enforcement,
+});
 
 function renderPage() {
   return render(
@@ -99,17 +81,16 @@ function renderPage() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
 });
+
+afterEach(() => useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }));
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-describe('AdminRecruitmentPage — link Postulaciones bloqueadas admin-only', () => {
-  it('admin vê o link pra postulaciones bloqueadas', () => {
-    mockUseAdminAuth.mockReturnValue({
-      adminProfile: ADMIN_PROFILE,
-      isAuthenticated: true,
-      isLoading: false,
-    });
+describe('AdminRecruitmentPage — link Postulaciones bloqueadas por recruitment:read', () => {
+  it('COM recruitment:read (engine ON) o link aparece', () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['recruitment:read'], 'on') });
 
     renderPage();
     const link = screen.getByTestId('blocked-attempts-link');
@@ -117,25 +98,22 @@ describe('AdminRecruitmentPage — link Postulaciones bloqueadas admin-only', ()
     expect(link).toHaveAttribute('href', '/admin/recruitment/blocked-attempts');
   });
 
-  it('não-admin (RECRUITER) NÃO vê o link', () => {
-    mockUseAdminAuth.mockReturnValue({
-      adminProfile: RECRUITER_PROFILE,
-      isAuthenticated: true,
-      isLoading: false,
-    });
+  it('SEM recruitment:read (engine ON) o link some', () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato([], 'on') });
 
     renderPage();
     expect(screen.queryByTestId('blocked-attempts-link')).not.toBeInTheDocument();
   });
 
-  it('sem perfil carregado (null) NÃO vê o link', () => {
-    mockUseAdminAuth.mockReturnValue({
-      adminProfile: null,
-      isAuthenticated: false,
-      isLoading: true,
-    });
+  it('enforcement "off" SEM célula nenhuma: o link aparece (régua de rollout D268)', () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato([], 'off') });
 
     renderPage();
-    expect(screen.queryByTestId('blocked-attempts-link')).not.toBeInTheDocument();
+    expect(screen.getByTestId('blocked-attempts-link')).toBeInTheDocument();
+  });
+
+  it('sem contrato carregado: o link aparece', () => {
+    renderPage();
+    expect(screen.getByTestId('blocked-attempts-link')).toBeInTheDocument();
   });
 });

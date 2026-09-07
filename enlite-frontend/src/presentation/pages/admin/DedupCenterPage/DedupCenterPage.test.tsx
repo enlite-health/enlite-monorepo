@@ -2,17 +2,18 @@
  * DedupCenterPage.test.tsx
  *
  * Covers:
- * - Role guard: non-admin profile → navigate('/admin') called, content NOT rendered
- * - Role guard: admin profile → content IS rendered
- * - Role guard: adminProfile=null (loading) → no navigation, no inner content
+ * - Guarda por célula (`dedup:read`, engine ON): sem a célula → navigate('/admin')
+ *   chamado, conteúdo NÃO renderizado; com a célula → conteúdo renderizado
+ * - Engine OFF / contrato ausente → sem navegação, conteúdo renderizado (D268)
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { DedupCenterPage } from './DedupCenterPage';
-import { EnliteRole } from '@domain/entities/EnliteRole';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AdminUser } from '@domain/entities/AdminUser';
+import type { AuthzContract } from '@domain/entities/Authz';
 
 // ── Module mocks ──────────────────────────────────────────────────────────────
 
@@ -63,18 +64,15 @@ const ADMIN_PROFILE: AdminUser = {
   firebaseUid: 'uid-admin',
   email: 'admin@enlite.health',
   displayName: 'Admin User',
-  role: EnliteRole.ADMIN,
   department: null,
   lastLoginAt: null,
   loginCount: 1,
   createdAt: '2026-01-01T00:00:00Z',
 };
 
-const RECRUITER_PROFILE: AdminUser = {
-  ...ADMIN_PROFILE,
-  role: EnliteRole.RECRUITER,
-  email: 'recruiter@enlite.health',
-};
+const contrato = (permissions: string[], enforcement: AuthzContract['enforcement']): AuthzContract => ({
+  uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {}, enforcement,
+});
 
 const QUEUE_LOADED = {
   groups: [],
@@ -105,52 +103,48 @@ function renderPage() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+  mockUseAdminAuth.mockReturnValue({ adminProfile: ADMIN_PROFILE, isAuthenticated: true, isLoading: false });
   mockUseDedupQueue.mockReturnValue(QUEUE_LOADED);
   mockUseDedupHistory.mockReturnValue(HISTORY_LOADED);
 });
 
+afterEach(() => useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }));
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-describe('DedupCenterPage — role guard: non-admin', () => {
+describe('DedupCenterPage — guarda por célula: engine ON sem dedup:read', () => {
   beforeEach(() => {
-    mockUseAdminAuth.mockReturnValue({
-      adminProfile: RECRUITER_PROFILE,
-      isAuthenticated: true,
-      isLoading: false,
-    });
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato([], 'on') });
   });
 
-  it('calls navigate("/admin") for a non-admin role', async () => {
+  it('calls navigate("/admin")', async () => {
     renderPage();
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith('/admin', { replace: true });
     });
   });
 
-  it('does NOT render the page content for a non-admin role', () => {
+  it('does NOT render the page content', () => {
     renderPage();
     expect(screen.queryByTestId('dedup-content')).not.toBeInTheDocument();
     expect(screen.queryByTestId('dedup-skeleton')).not.toBeInTheDocument();
   });
 });
 
-describe('DedupCenterPage — role guard: admin', () => {
+describe('DedupCenterPage — guarda por célula: engine ON com dedup:read', () => {
   beforeEach(() => {
-    mockUseAdminAuth.mockReturnValue({
-      adminProfile: ADMIN_PROFILE,
-      isAuthenticated: true,
-      isLoading: false,
-    });
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['dedup:read'], 'on') });
   });
 
-  it('does NOT redirect for admin role', async () => {
+  it('does NOT redirect', async () => {
     renderPage();
     await waitFor(() => {
       expect(mockNavigate).not.toHaveBeenCalled();
     });
   });
 
-  it('renders the content area for admin role', async () => {
+  it('renders the content area', async () => {
     renderPage();
     await waitFor(() => {
       expect(screen.getByTestId('dedup-content')).toBeInTheDocument();
@@ -167,22 +161,19 @@ describe('DedupCenterPage — role guard: admin', () => {
   });
 });
 
-describe('DedupCenterPage — role guard: loading (adminProfile=null)', () => {
-  beforeEach(() => {
-    mockUseAdminAuth.mockReturnValue({
-      adminProfile: null,
-      isAuthenticated: false,
-      isLoading: true,
-    });
-  });
-
-  it('does NOT call navigate when adminProfile is null (still loading)', () => {
+describe('DedupCenterPage — engine OFF ou contrato ausente (régua de rollout D268)', () => {
+  it('does NOT call navigate quando o contrato ainda não chegou', () => {
     renderPage();
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it('renders the inner page (DedupCenterPageInner) when profile not yet loaded', () => {
-    // When adminProfile is null we show the inner page (no redirect guard triggered)
+  it('enforcement "off" SEM célula nenhuma: does NOT call navigate', () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato([], 'off') });
+    renderPage();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('renders the inner page (DedupCenterPageInner) quando o contrato ainda não chegou', () => {
     renderPage();
     // Content area should be visible (no loading state since useDedupQueue is not loading)
     expect(screen.getByTestId('dedup-content')).toBeInTheDocument();
@@ -191,11 +182,6 @@ describe('DedupCenterPage — role guard: loading (adminProfile=null)', () => {
 
 describe('DedupCenterPage — inner page loading state', () => {
   beforeEach(() => {
-    mockUseAdminAuth.mockReturnValue({
-      adminProfile: ADMIN_PROFILE,
-      isAuthenticated: true,
-      isLoading: false,
-    });
     mockUseDedupQueue.mockReturnValue({
       ...QUEUE_LOADED,
       isLoading: true,
@@ -219,11 +205,6 @@ describe('DedupCenterPage — inner page loading state', () => {
 
 describe('DedupCenterPage — inner page error state', () => {
   beforeEach(() => {
-    mockUseAdminAuth.mockReturnValue({
-      adminProfile: ADMIN_PROFILE,
-      isAuthenticated: true,
-      isLoading: false,
-    });
     mockUseDedupQueue.mockReturnValue({
       ...QUEUE_LOADED,
       error: 'Network error',

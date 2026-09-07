@@ -3,8 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { DetailSkeleton } from '@presentation/components/ui/skeletons';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { EnliteRole } from '@domain/entities/EnliteRole';
-import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
 import { tabsVisibleFor, useActionGate, useContainerAccess } from '@presentation/hooks/useCellAccess';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { screenById } from '@presentation/config/screenRegistry';
@@ -32,8 +30,8 @@ interface WorkerDetailContentProps {
   /** Rendered when the worker fails to load (page renders a full-screen fallback). */
   renderError?: (message: string) => React.ReactNode;
   /**
-   * Enables the admin-only edit affordances (page only — the read-only profile
-   * modal omits this). Still double-gated by EnliteRole.ADMIN at runtime.
+   * Enables the edit affordances (page only — the read-only profile modal
+   * omits this). Still double-gated pela célula `worker:write` em runtime.
    */
   allowEdit?: boolean;
 }
@@ -42,12 +40,14 @@ interface WorkerDetailContentProps {
  * Reusable body of the worker detail view. Consumed by both WorkerDetailPage
  * (full page) and WorkerProfileModal (read-only overlay). Owns the data
  * fetching, tab state and card layout — read-only except for document review
- * (page) and the admin-only test-account toggle.
+ * (page) and the test-account toggle.
  */
 export function WorkerDetailContent({ workerId, header, renderError, allowEdit = false }: WorkerDetailContentProps): JSX.Element {
   const { t } = useTranslation();
-  const { adminProfile } = useAdminAuth();
-  const canEdit = allowEdit && adminProfile?.role === EnliteRole.ADMIN;
+  // Editar o perfil chama PATCH /workers/:id/profile → worker:write. Sem papel:
+  // a célula é o freio, e com o engine desligado o gate deixa passar (D268).
+  const workerWriteGate = useActionGate('worker', 'write');
+  const canEdit = allowEdit && workerWriteGate.allowed;
   // Doc adicional: POST .../additional-documents(/upload-url) → worker_document:write;
   // DELETE .../additional-documents/:docId → worker_document:delete. D269 — o
   // `AdditionalDocumentsSection` é COMPARTILHADO com o autoatendimento do

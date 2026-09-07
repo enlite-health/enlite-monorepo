@@ -1,6 +1,6 @@
 /**
- * D286 fase 2 — exportar (worker:export) e sincronizar Talentum (talentum:write) por CÉLULA, não
- * só por papel. O freio de papel (`isAdmin` no export) continua enquanto o engine estiver desligado.
+ * D286 fase 2 — exportar (worker:export) e sincronizar Talentum (talentum:write) por CÉLULA:
+ * papel não entra na conta. Com o engine desligado os dois botões aparecem, como sempre apareceram.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -25,7 +25,7 @@ vi.mock('@hooks/admin/useWorkersData', () => ({
 }));
 vi.mock('@hooks/admin/useCaseOptions', () => ({ useCaseOptions: () => ({ options: [], isLoading: false }) }));
 vi.mock('@presentation/hooks/useAdminAuth', () => ({
-  useAdminAuth: () => ({ adminProfile: { role: 'admin' }, isAuthenticated: true, isLoading: false }),
+  useAdminAuth: () => ({ adminProfile: {}, isAuthenticated: true, isLoading: false }),
 }));
 
 function comEnforcement(permissions: string[], enforcement: AuthzContract['enforcement']) {
