@@ -245,6 +245,7 @@ export function AdminMapPage(): JSX.Element {
               status={anchorPicker.status}
               labels={anchorLabels}
               onSearchChange={kind === 'workers' ? anchorPicker.onSearchChange : undefined}
+              searchMinChars={ANCHOR_SEARCH_MIN_CHARS}
               emptyMessage={kind === 'workers' ? anchorEmptyMessage : undefined}
             />
             {anchor && (

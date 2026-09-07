@@ -318,8 +318,10 @@ describe('busca por nome (escopo alternativo)', () => {
 
   it('casa NOME COMPLETO nas duas ordens, com UM só parâmetro', () => {
     const { sql, params } = buildPatientsMapQuery(parse({ country: 'AR', search: 'Reyna Alaburda' }));
-    expect(sql).toContain("concat_ws(' ', p.first_name, p.last_name) ILIKE");
-    expect(sql).toContain("concat_ws(' ', p.last_name, p.first_name) ILIKE");
+    // as duas ordens continuam lá — agora dentro da dobra de acento
+    expect(sql).toContain("concat_ws(' ', p.first_name, p.last_name)");
+    expect(sql).toContain("concat_ws(' ', p.last_name, p.first_name)");
+    expect(sql.match(/ILIKE '%' \|\| \$\d+ \|\| '%'/g) ?? []).toHaveLength(2);
     // o termo entra uma vez só na lista de params, referenciado duas vezes no SQL
     expect(params.filter((p) => p === 'Reyna Alaburda')).toHaveLength(1);
   });
@@ -412,5 +414,31 @@ describe('busca por nome — curinga não vira export da base', () => {
   it('a busca comum não é afetada pelo escape', () => {
     const { params } = buildPatientsMapQuery(parse({ country: 'AR', search: 'Reyna Alaburda' }));
     expect(params).toContain('Reyna Alaburda');
+  });
+});
+
+/**
+ * 🔒 ACENTO — quem procura "Peña" digita "Pena".
+ *
+ * O filtro em memória que a busca no servidor substituiu normalizava acento
+ * (NFD no cliente); o `ILIKE` cru não. Era regressão, num mercado de Peña,
+ * García e Muñoz. Termo e coluna passam pela MESMA tabela de dobra.
+ */
+describe('busca por nome — acento dobrado dos dois lados', () => {
+  it('🔒 a COLUNA é dobrada nas duas ordens do nome', () => {
+    const { sql } = buildPatientsMapQuery(parse({ country: 'AR', search: 'Pena' }));
+    const dobras = sql.match(/translate\(concat_ws/g) ?? [];
+    expect(dobras).toHaveLength(2);
+  });
+
+  it('🔒 o TERMO também é dobrado — dobrar só um lado falha só nos nomes acentuados', () => {
+    const { params } = buildPatientsMapQuery(parse({ country: 'AR', search: 'Peña' }));
+    expect(params).toContain('Pena');
+    expect(params).not.toContain('Peña');
+  });
+
+  it('dobra e escape convivem: curinga escapado E acento dobrado no mesmo termo', () => {
+    const { params } = buildPatientsMapQuery(parse({ country: 'AR', search: 'Pe%ña' }));
+    expect(params).toContain('Pe\\%na');
   });
 });

@@ -32,6 +32,13 @@ interface SearchableSelectProps {
   onSearchChange?: (text: string) => void;
   /** Espera entre a última tecla e a busca. Só vale com `onSearchChange`. */
   searchDebounceMs?: number;
+  /**
+   * A partir de quantos caracteres o PAI realmente busca no servidor. Abaixo
+   * disso o componente volta a filtrar em memória — senão a lista aparece
+   * inteira e SEM filtro nenhum enquanto se digita a primeira letra, que lê
+   * como "o filtro não funciona". Só vale com `onSearchChange`.
+   */
+  searchMinChars?: number;
   /** O que dizer quando a lista está vazia (ex.: "Escribí al menos 2 letras"). */
   emptyMessage?: string;
 }
@@ -55,6 +62,7 @@ export function SearchableSelect({
   'data-testid': testId,
   onSearchChange,
   searchDebounceMs = 300,
+  searchMinChars = 0,
   emptyMessage,
 }: SearchableSelectProps): JSX.Element {
   const { t } = useTranslation();
@@ -67,13 +75,35 @@ export function SearchableSelect({
   const searchPh = searchPlaceholder ?? t('common.search', 'Buscar...');
 
   const selectedOption = options.find((o) => o.value === value);
-  const displayLabel = selectedOption?.label ?? allPlaceholder;
+  /**
+   * 🔒 O RÓTULO SOBREVIVE À LISTA (achado do gate no PR #320).
+   *
+   * Com busca no servidor, escolher um item TROCA a lista: `handleSelect` limpa
+   * o texto, o pai volta ao escopo anterior e o item escolhido some de
+   * `options` — então `selectedOption` vira `undefined` e o botão voltava ao
+   * placeholder cinza 300 ms depois de escolher, como se nada tivesse sido
+   * selecionado. Guardar o rótulo já visto resolve sem obrigar o pai a manter
+   * na lista um item que não pertence mais ao escopo dela.
+   *
+   * É cache idempotente, por isso alimentado no render e não num efeito: no
+   * primeiro paint depois da troca de lista o rótulo já tem de estar certo.
+   */
+  const rotulosVistos = useRef(new Map<string, string>());
+  for (const o of options) rotulosVistos.current.set(o.value, o.label);
+  const displayLabel = selectedOption?.label ?? rotulosVistos.current.get(value) ?? allPlaceholder;
 
   // Com busca no servidor, `options` JÁ é o resultado do termo: filtrar de novo
   // aqui esconderia linha que o servidor achou e o cliente não sabe casar
   // (acento, "Reyna Alaburda, Ana Paula" contra nome e sobrenome separados).
   const serverSearch = onSearchChange !== undefined;
-  const filteredOptions = !serverSearch && searchText
+  /**
+   * ⚠️ ABAIXO DO MÍNIMO O SERVIDOR NÃO BUSCOU. `options` ainda é a lista
+   * anterior — a do escopo geográfico —, então deixar de filtrar mostraria
+   * tudo, sem filtro, exatamente enquanto o usuário digita a 1ª letra. Nesse
+   * intervalo o filtro local é o único que existe.
+   */
+  const servidorRespondePorEsteTermo = serverSearch && searchText.trim().length >= searchMinChars;
+  const filteredOptions = searchText && !servidorRespondePorEsteTermo
     ? options.filter((o) =>
         normalizeText(o.label).includes(normalizeText(searchText))
       )

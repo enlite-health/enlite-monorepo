@@ -38,6 +38,7 @@ import {
 import { LIVE_JOB_POSTING_SQL } from '@modules/matching/domain/openJobStatuses';
 import { PATIENT_STATUSES } from '../../domain/enums/PatientStatus';
 import { escapeIlikeWildcards, hasSearchableContent } from '@shared/utils/ilikeEscape';
+import { foldAccents, sqlFoldAccents } from '@shared/utils/accentFold';
 
 export const MAX_PATIENT_MAP_POINTS = MAX_MAP_POINTS;
 
@@ -145,19 +146,21 @@ export function buildPatientsMapQuery(q: PatientsMapBody): { sql: string; params
   if (q.search) {
     // Nome COMPLETO nas duas ordens: o operador digita "Reyna Alaburda, Ana
     // Paula" como lê no WhatsApp, e a base guarda nome e sobrenome separados —
-    // casar campo a campo erraria quem digita os dois. `ILIKE` sem `unaccent`
-    // é o mesmo que a busca da lista de pacientes já usa
-    // (`PatientQueryRepository`); mudar isso aqui só criaria duas buscas com
-    // comportamentos diferentes na mesma tela.
+    // casar campo a campo erraria quem digita os dois.
     const pSearch = i++;
-    // 🔒 Segunda camada: o valor vai ESCAPADO e as duas cláusulas fecham com
-    // `ESCAPE '\\'`. Sem a cláusula, a barra que o escape insere seria lida
-    // como caractere comum e o curinga voltaria a valer — as duas metades só
-    // funcionam juntas. Mesmo par usado em `IcdCatalogTerminology.buscar`.
-    params.push(escapeIlikeWildcards(q.search));
+    // 🔒 Duas travas que só funcionam juntas:
+    //  1. ESCAPE — o valor vai escapado e as cláusulas fecham com `ESCAPE '\\'`;
+    //     sem a cláusula, a barra do escape é caractere comum e o curinga volta.
+    //  2. ACENTO — termo e coluna passam pela MESMA tabela de dobra
+    //     (`accentFold`), senão "Pena" nunca acha "Peña". Dobrar só um lado é
+    //     pior que não dobrar: falha apenas nos nomes acentuados, que é o modo
+    //     de falha que ninguém percebe.
+    params.push(escapeIlikeWildcards(foldAccents(q.search)));
+    const nomeDireto = sqlFoldAccents("concat_ws(' ', p.first_name, p.last_name)");
+    const nomeInvertido = sqlFoldAccents("concat_ws(' ', p.last_name, p.first_name)");
     conds.push(
-      `(concat_ws(' ', p.first_name, p.last_name) ILIKE '%' || $${pSearch} || '%' ESCAPE '\\'
-        OR concat_ws(' ', p.last_name, p.first_name) ILIKE '%' || $${pSearch} || '%' ESCAPE '\\')`,
+      `(${nomeDireto} ILIKE '%' || $${pSearch} || '%' ESCAPE '\\'
+        OR ${nomeInvertido} ILIKE '%' || $${pSearch} || '%' ESCAPE '\\')`,
     );
   }
 

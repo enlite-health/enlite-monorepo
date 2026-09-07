@@ -50,7 +50,7 @@ export interface AnchorStatus {
  */
 export function AnchorPicker({
   id, label, placeholder, searchPlaceholder, options, value, onChange, onTouch, status, labels,
-  onSearchChange, emptyMessage,
+  onSearchChange, searchMinChars, emptyMessage,
 }: {
   id: string;
   label: string;
@@ -68,6 +68,8 @@ export function AnchorPicker({
    * isto hoje (o nome do prestador é cifrado — ver `useAnchorCandidates`).
    */
   onSearchChange?: (text: string) => void;
+  /** A partir de quantos caracteres o pai busca de verdade — ver `SearchableSelect`. */
+  searchMinChars?: number;
   emptyMessage?: string;
 }): JSX.Element {
   const nota = status.error
@@ -88,6 +90,7 @@ export function AnchorPicker({
           placeholder={placeholder}
           searchPlaceholder={searchPlaceholder}
           onSearchChange={onSearchChange}
+          searchMinChars={searchMinChars}
           emptyMessage={emptyMessage}
         />
       </div>

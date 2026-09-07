@@ -259,3 +259,52 @@ it('disabled não abre a lista', () => {
   fireEvent.click(screen.getByRole('button'));
   expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
 });
+
+/**
+ * Os dois achados do gate no PR #320, nesta ordem de gravidade.
+ */
+describe('SearchableSelect — rótulo e mínimo de caracteres', () => {
+  const abrir2 = (): void => { fireEvent.click(screen.getByRole('button')); };
+
+  it('🔒 o rótulo do escolhido SOBREVIVE à troca da lista', () => {
+    const escolhido = { value: 'mdp', label: 'Reyna Alaburda · Mar del Plata' };
+    const { rerender } = render(
+      <SearchableSelect options={[escolhido]} value="" onChange={vi.fn()} onSearchChange={vi.fn()} />,
+    );
+    // com o item na lista, o rótulo aparece
+    rerender(<SearchableSelect options={[escolhido]} value="mdp" onChange={vi.fn()} onSearchChange={vi.fn()} />);
+    expect(screen.getByRole('button').textContent).toContain('Reyna Alaburda');
+
+    // a busca acaba e o pai volta ao escopo anterior: o escolhido SAI da lista.
+    // Antes, aqui o botão voltava ao placeholder cinza.
+    rerender(<SearchableSelect options={OPTIONS} value="mdp" onChange={vi.fn()} onSearchChange={vi.fn()} placeholder="Centrar en un paciente…" />);
+    expect(screen.getByRole('button').textContent).toContain('Reyna Alaburda');
+    expect(screen.getByRole('button').textContent).not.toContain('Centrar en un paciente…');
+  });
+
+  it('valor que nunca esteve em lista nenhuma cai no placeholder, como antes', () => {
+    render(<SearchableSelect options={OPTIONS} value="jamais-visto" onChange={vi.fn()} placeholder="Todos" />);
+    expect(screen.getByRole('button').textContent).toContain('Todos');
+  });
+
+  it('🔒 abaixo do mínimo o filtro LOCAL continua valendo — a lista não aparece inteira', () => {
+    render(
+      <SearchableSelect options={OPTIONS} value="" onChange={vi.fn()} onSearchChange={vi.fn()} searchMinChars={2} />,
+    );
+    abrir2();
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Z' } });
+    // 'Z' não casa nenhuma das 3 opções: sobra só o item vazio do topo
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['Todos']);
+  });
+
+  it('atingido o mínimo, quem manda é o servidor (sem filtro local)', () => {
+    render(
+      <SearchableSelect options={OPTIONS} value="" onChange={vi.fn()} onSearchChange={vi.fn()} searchMinChars={2} />,
+    );
+    abrir2();
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'ZZ' } });
+    const opcoes = screen.getAllByRole('option').map((o) => o.textContent);
+    expect(opcoes).toContain('Caso 1-A');
+    expect(opcoes).toContain('Caso Ñoño');
+  });
+})
