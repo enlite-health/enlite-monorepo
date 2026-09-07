@@ -31,7 +31,13 @@ import { test, expect, type Page } from '@playwright/test';
 import { execSync } from 'child_process';
 import { insertTestPatient, cleanupTestPatient, insertTestWorker, cleanupTestWorker } from '../helpers/db-test-helper';
 
-const EMULATOR = 'http://127.0.0.1:9099';
+/**
+ * Endereços do stack sob teste. Os defaults são os de sempre (CI e uso local
+ * comum); as env vars existem para apontar a um stack ISOLADO por projeto
+ * docker quando outra worktree ocupa `enlite-postgres`/9099/8080 — mesmo
+ * padrão que `e2e/helpers/db-test-helper.ts` já adota. Sem elas, nada muda.
+ */
+const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
 const EMULATOR_PROJECT = 'demo-no-project';
 const STAFF_EMAIL = `e2e.req04.${Date.now()}@enlite.health`;
 const STAFF_PASSWORD = 'TestAdmin123!';
@@ -56,11 +62,11 @@ const PATIENT_BR_AT = { lat: -23.5614, lng: -46.6559 };
 // Prestador BR a ~700 m do paciente de SP: é a ÂNCORA da aba Pacientes com país BR.
 // Sem ele o portão da aba não abre em BR e o teste do C4 não teria como rodar.
 const WORKER_BR_AT = { lat: -23.5558, lng: -46.6596 };
-const API = 'http://localhost:8080';
+const API = process.env.E2E_API_URL || 'http://localhost:8080';
 
 function runSQL(sql: string): string {
   return execSync(
-    `docker exec enlite-postgres psql -U enlite_admin -d enlite_e2e -tAc "${sql.replace(/"/g, '\\"')}"`,
+    `docker exec ${process.env.E2E_PG_CONTAINER || 'enlite-postgres'} psql -U enlite_admin -d enlite_e2e -tAc "${sql.replace(/"/g, '\\"')}"`,
     { encoding: 'utf-8' },
   ).trim();
 }
