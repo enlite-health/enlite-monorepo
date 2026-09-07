@@ -11,6 +11,7 @@
     "test:e2e": "jest --config jest.config.e2e.js",
     "test:e2e:watch": "jest --config jest.config.e2e.js --watch",
     "test:e2e:coverage": "jest --config jest.config.e2e.js --coverage",
+    "test:e2e:real-auth": "jest --config jest.config.e2e-real.js",
     "migrate": "bash run_migrations.sh",
     "migrate:docker": "node scripts/run-migrations-docker.js",
     "dedup:dry-run": "ts-node -r dotenv/config -r tsconfig-paths/register src/infrastructure/services/WorkerPhoneMergeOrchestrator.ts --dry-run",
