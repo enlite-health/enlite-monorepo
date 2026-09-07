@@ -20,7 +20,7 @@
  * banco (`first_name_encrypted`) e a busca dele passa por índice cego de
  * trigramas — outro caminho, outro trabalho. Está reportado, não esquecido.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePatientsMapPoints, useWorkersMapPoints } from '@hooks/admin/useMapPoints';
 import type {
   MapCountry, PatientsMapFilters, WorkersMapFilters,
@@ -70,6 +70,19 @@ export interface AnchorCandidatesResult {
   isSearching: boolean;
   /** O termo digitado, cru — para a tela decidir a mensagem de lista vazia. */
   searchText: string;
+  /**
+   * O termo a que `options` JÁ corresponde — vazio enquanto a lista é a de
+   * repouso. Difere de `searchText` durante o debounce e o voo da request; é
+   * essa diferença que diz ao seletor quando a lista na mão é de outra
+   * pergunta e o filtro local ainda precisa valer.
+   */
+  appliedTerm: string;
+  /**
+   * Quantos a API achou e a tela NÃO pode plotar (sem coordenada). Achar
+   * alguém por nome e mostrar "Sin resultados" porque falta geocódigo é a
+   * mesma conclusão errada que esta busca existe para matar.
+   */
+  withoutCoordinates: number;
 }
 
 export function useAnchorCandidates({
@@ -83,6 +96,14 @@ export function useAnchorCandidates({
   const [searchText, setSearchText] = useState('');
   const term = searchText.trim();
   const isSearching = term.length >= ANCHOR_SEARCH_MIN_CHARS;
+
+  /**
+   * Trocar de aba abandona o termo. O `key` no seletor remonta o FILHO e limpa
+   * a caixa, mas o texto mora AQUI, na página, que não remonta — então voltar
+   * para a aba anterior religava o escopo por nome e disparava uma busca que
+   * ninguém pediu, com a caixa visivelmente vazia.
+   */
+  useEffect(() => { setSearchText(''); }, [kind]);
 
   /**
    * Buscar por nome e recortar por raio ao mesmo tempo traria de volta o bug:
@@ -114,6 +135,16 @@ export function useAnchorCandidates({
     [candidates],
   );
 
+  /**
+   * O termo cuja RESPOSTA está em `options`. Só avança quando a carga termina;
+   * durante o voo continua valendo o anterior — que é exatamente a informação
+   * que o seletor precisa para não desligar o filtro local cedo demais.
+   * Ref mutado no render: é cache idempotente, e o valor tem de estar certo já
+   * no primeiro paint depois da resposta.
+   */
+  const aplicado = useRef('');
+  if (!source.isLoading) aplicado.current = isSearching ? term : '';
+
   return {
     candidates,
     options,
@@ -121,5 +152,7 @@ export function useAnchorCandidates({
     onSearchChange: setSearchText,
     isSearching,
     searchText,
+    appliedTerm: aplicado.current,
+    withoutCoordinates: source.withoutCoordinates,
   };
 }

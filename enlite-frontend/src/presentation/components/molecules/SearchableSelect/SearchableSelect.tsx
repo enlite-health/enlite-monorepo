@@ -33,12 +33,17 @@ interface SearchableSelectProps {
   /** Espera entre a última tecla e a busca. Só vale com `onSearchChange`. */
   searchDebounceMs?: number;
   /**
-   * A partir de quantos caracteres o PAI realmente busca no servidor. Abaixo
-   * disso o componente volta a filtrar em memória — senão a lista aparece
-   * inteira e SEM filtro nenhum enquanto se digita a primeira letra, que lê
-   * como "o filtro não funciona". Só vale com `onSearchChange`.
+   * O termo a que `options` JÁ corresponde — o que o servidor respondeu, não o
+   * que está sendo digitado. String vazia = as opções são da lista de repouso
+   * (o escopo sem busca).
+   *
+   * É o que fecha a janela cega entre a tecla e a resposta: enquanto o texto
+   * digitado não for este termo, `options` é de OUTRA pergunta, e o único
+   * filtro honesto é o local. Sem isto, no instante em que o texto atinge o
+   * mínimo o filtro local desligava e a lista inteira reaparecia sem filtro
+   * por um debounce + RTT — clicável. Só vale com `onSearchChange`.
    */
-  searchMinChars?: number;
+  serverSearchTerm?: string;
   /** O que dizer quando a lista está vazia (ex.: "Escribí al menos 2 letras"). */
   emptyMessage?: string;
 }
@@ -62,7 +67,7 @@ export function SearchableSelect({
   'data-testid': testId,
   onSearchChange,
   searchDebounceMs = 300,
-  searchMinChars = 0,
+  serverSearchTerm = '',
   emptyMessage,
 }: SearchableSelectProps): JSX.Element {
   const { t } = useTranslation();
@@ -90,19 +95,29 @@ export function SearchableSelect({
    */
   const rotulosVistos = useRef(new Map<string, string>());
   for (const o of options) rotulosVistos.current.set(o.value, o.label);
-  const displayLabel = selectedOption?.label ?? rotulosVistos.current.get(value) ?? allPlaceholder;
+  const rotuloLembrado = rotulosVistos.current.get(value);
+  /**
+   * 🔒 A COR ANDA COM O TEXTO (2ª passada do gate). O cache fazia o nome
+   * aparecer, mas a classe continuava derivando de `selectedOption` — que é
+   * `undefined` exatamente no caso para o qual o cache existe. Resultado: o
+   * paciente escolhido em cinza-de-placeholder, que se lê como "nada
+   * selecionado, com um nome escrito por cima". Régua de FORMA (só
+   * `textContent`) não mede substância.
+   */
+  const temSelecao = selectedOption !== undefined || rotuloLembrado !== undefined;
+  const displayLabel = selectedOption?.label ?? rotuloLembrado ?? allPlaceholder;
 
   // Com busca no servidor, `options` JÁ é o resultado do termo: filtrar de novo
   // aqui esconderia linha que o servidor achou e o cliente não sabe casar
   // (acento, "Reyna Alaburda, Ana Paula" contra nome e sobrenome separados).
   const serverSearch = onSearchChange !== undefined;
   /**
-   * ⚠️ ABAIXO DO MÍNIMO O SERVIDOR NÃO BUSCOU. `options` ainda é a lista
-   * anterior — a do escopo geográfico —, então deixar de filtrar mostraria
-   * tudo, sem filtro, exatamente enquanto o usuário digita a 1ª letra. Nesse
-   * intervalo o filtro local é o único que existe.
+   * ⚠️ `options` corresponde a ESTE termo? Só quando a resposta do servidor
+   * para ele já chegou. Em qualquer outro instante — texto curto demais para
+   * buscar, debounce correndo, request em voo — a lista na mão é de outra
+   * pergunta, e filtrar em memória é o único comportamento honesto.
    */
-  const servidorRespondePorEsteTermo = serverSearch && searchText.trim().length >= searchMinChars;
+  const servidorRespondePorEsteTermo = serverSearch && searchText.trim() === serverSearchTerm;
   const filteredOptions = searchText && !servidorRespondePorEsteTermo
     ? options.filter((o) =>
         normalizeText(o.label).includes(normalizeText(searchText))
@@ -136,7 +151,13 @@ export function SearchableSelect({
   function handleSelect(optionValue: string): void {
     onChange(optionValue);
     setIsOpen(false);
-    setSearchText('');
+    /**
+     * No modo servidor o texto FICA. Limpá-lo aqui disparava, 300 ms depois de
+     * escolher, uma busca nova de até 500 domicílios — com trilha de leitura
+     * em massa — só para repovoar um dropdown que já estava fechado. Quem
+     * limpa é `handleOpen`, quando a lista volta a ser olhada.
+     */
+    if (!serverSearch) setSearchText('');
   }
 
   useEffect(() => {
@@ -169,13 +190,7 @@ export function SearchableSelect({
           aria-expanded={isOpen}
           data-testid={testId}
         >
-          <span
-            className={
-              selectedOption
-                ? 'text-[#374151]'
-                : 'text-[#B3B3B3]'
-            }
-          >
+          <span className={temSelecao ? 'text-[#374151]' : 'text-[#B3B3B3]'}>
             {displayLabel}
           </span>
           <ChevronDown

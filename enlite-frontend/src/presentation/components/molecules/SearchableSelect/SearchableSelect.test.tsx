@@ -181,7 +181,9 @@ describe('SearchableSelect — busca no servidor', () => {
   });
 
   it('com `onSearchChange` NÃO filtra em memória: mostra o que o servidor devolveu', () => {
-    render(<SearchableSelect options={OPTIONS} value="" onChange={vi.fn()} onSearchChange={vi.fn()} />);
+    // `serverSearchTerm` igual ao digitado = a resposta DESTE termo já chegou;
+    // é só nesse estado que o cliente cede o filtro ao servidor.
+    render(<SearchableSelect options={OPTIONS} value="" onChange={vi.fn()} onSearchChange={vi.fn()} serverSearchTerm="nada disso casa" />);
     abrir();
     digitar('nada disso casa');
     const opcoes = screen.getAllByRole('option').map((o) => o.textContent);
@@ -280,6 +282,31 @@ describe('SearchableSelect — rótulo e mínimo de caracteres', () => {
     rerender(<SearchableSelect options={OPTIONS} value="mdp" onChange={vi.fn()} onSearchChange={vi.fn()} placeholder="Centrar en un paciente…" />);
     expect(screen.getByRole('button').textContent).toContain('Reyna Alaburda');
     expect(screen.getByRole('button').textContent).not.toContain('Centrar en un paciente…');
+    // 🔒 e a COR anda junto: nome em cinza-de-placeholder lê como "nada escolhido"
+    expect(screen.getByRole('button').querySelector('span')?.className).toContain('#374151');
+    expect(screen.getByRole('button').querySelector('span')?.className).not.toContain('#B3B3B3');
+  });
+
+  it('🔒 sem seleção alguma, a cor CONTINUA sendo a de placeholder', () => {
+    render(<SearchableSelect options={OPTIONS} value="" onChange={vi.fn()} placeholder="Todos" />);
+    expect(screen.getByRole('button').querySelector('span')?.className).toContain('#B3B3B3');
+  });
+
+  it('🔒 escolher NÃO dispara busca nova (o dropdown já fechou)', () => {
+    vi.useFakeTimers();
+    try {
+      const onSearchChange = vi.fn();
+      render(<SearchableSelect options={OPTIONS} value="" onChange={vi.fn()} onSearchChange={onSearchChange} />);
+      abrir2();
+      fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Cas' } });
+      vi.advanceTimersByTime(400);
+      onSearchChange.mockClear();
+      fireEvent.click(screen.getAllByRole('option')[1]);
+      vi.advanceTimersByTime(400);
+      expect(onSearchChange).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('valor que nunca esteve em lista nenhuma cai no placeholder, como antes', () => {
@@ -287,19 +314,30 @@ describe('SearchableSelect — rótulo e mínimo de caracteres', () => {
     expect(screen.getByRole('button').textContent).toContain('Todos');
   });
 
-  it('🔒 abaixo do mínimo o filtro LOCAL continua valendo — a lista não aparece inteira', () => {
+  it('🔒 enquanto a resposta NÃO chegou, o filtro local vale — a lista não aparece inteira', () => {
+    // `serverSearchTerm=''` = as opções ainda são as da lista de repouso
     render(
-      <SearchableSelect options={OPTIONS} value="" onChange={vi.fn()} onSearchChange={vi.fn()} searchMinChars={2} />,
+      <SearchableSelect options={OPTIONS} value="" onChange={vi.fn()} onSearchChange={vi.fn()} serverSearchTerm="" />,
     );
     abrir2();
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Z' } });
-    // 'Z' não casa nenhuma das 3 opções: sobra só o item vazio do topo
     expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['Todos']);
   });
 
-  it('atingido o mínimo, quem manda é o servidor (sem filtro local)', () => {
+  it('🔒 a janela do debounce também é coberta: texto longo, resposta ainda antiga', () => {
+    // é o caso que a régua anterior (mínimo de caracteres) deixava passar:
+    // 'ZZ' atingia o mínimo e o filtro local desligava ANTES da resposta.
     render(
-      <SearchableSelect options={OPTIONS} value="" onChange={vi.fn()} onSearchChange={vi.fn()} searchMinChars={2} />,
+      <SearchableSelect options={OPTIONS} value="" onChange={vi.fn()} onSearchChange={vi.fn()} serverSearchTerm="" />,
+    );
+    abrir2();
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'ZZ' } });
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['Todos']);
+  });
+
+  it('chegada a resposta DESTE termo, quem manda é o servidor', () => {
+    render(
+      <SearchableSelect options={OPTIONS} value="" onChange={vi.fn()} onSearchChange={vi.fn()} serverSearchTerm="ZZ" />,
     );
     abrir2();
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'ZZ' } });

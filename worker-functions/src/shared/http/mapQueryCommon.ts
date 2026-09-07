@@ -205,7 +205,11 @@ export function respondMapPoints<P extends { lat: number | null }>(
     msg,
     uid: req.user?.uid ?? null,
     country: scope.country,
-    scope: scope.center ? 'radius' : 'location',
+    // ⚠️ 'location' significa recorte por província/localidade. Uma varredura
+    // por NOME não tem centro nem localidade: logá-la como 'location' fazia a
+    // trilha afirmar um recorte geográfico que não existiu — e é a trilha que
+    // responde "qual foi o alcance desta leitura?" numa auditoria.
+    scope: scope.center ? 'radius' : scope.search ? 'name' : 'location',
     n: data.length,
     withoutCoordinates,
     truncated,

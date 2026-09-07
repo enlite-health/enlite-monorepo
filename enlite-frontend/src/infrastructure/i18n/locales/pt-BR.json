@@ -3841,6 +3841,7 @@
       "anchorLoading": "Buscando…",
       "anchorNoMatch": "Sem resultados para esse nome",
       "anchorTypeMore": "Digite ao menos {{n}} letras",
+      "anchorFoundNoLocation": "{{count}} encontrado(s), mas sem localização registrada",
       "anchorTruncated": "Há mais do que cabe nesta lista: digite o nome para filtrar.",
       "corridor": {
         "transfers_one": "1 baldeação",

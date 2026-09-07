@@ -129,9 +129,16 @@ export function AdminMapPage(): JSX.Element {
    */
   const anchorEmptyMessage = anchorPicker.searchText.trim().length === 0
     ? undefined
-    : anchorPicker.isSearching
-      ? t('admin.map.anchorNoMatch', 'Sin resultados para ese nombre')
-      : t('admin.map.anchorTypeMore', { defaultValue: 'Escribí al menos {{n}} letras', n: ANCHOR_SEARCH_MIN_CHARS });
+    : !anchorPicker.isSearching
+      ? t('admin.map.anchorTypeMore', { defaultValue: 'Escribí al menos {{n}} letras', n: ANCHOR_SEARCH_MIN_CHARS })
+      // Achou, mas nenhum tem coordenada: dizer "no existe" aqui seria a MESMA
+      // conclusão errada que esta busca veio matar — só que por outra causa.
+      : anchorPicker.withoutCoordinates > 0
+        ? t('admin.map.anchorFoundNoLocation', {
+          defaultValue: '{{count}} encontrado(s), pero sin ubicación registrada',
+          count: anchorPicker.withoutCoordinates,
+        })
+        : t('admin.map.anchorNoMatch', 'Sin resultados para ese nombre');
 
   /**
    * Um caminho só: sem correspondência — que é o caso da opção vazia
@@ -245,7 +252,7 @@ export function AdminMapPage(): JSX.Element {
               status={anchorPicker.status}
               labels={anchorLabels}
               onSearchChange={kind === 'workers' ? anchorPicker.onSearchChange : undefined}
-              searchMinChars={ANCHOR_SEARCH_MIN_CHARS}
+              serverSearchTerm={kind === 'workers' ? anchorPicker.appliedTerm : undefined}
               emptyMessage={kind === 'workers' ? anchorEmptyMessage : undefined}
             />
             {anchor && (

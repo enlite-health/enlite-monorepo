@@ -359,6 +359,29 @@ describe('busca por nome (escopo alternativo)', () => {
     expect(JSON.stringify(logged).toLowerCase()).not.toContain('alaburda');
   });
 
+  it('🔒 a trilha diz `scope: name` — não "location", que significa recorte por localidade', async () => {
+    mockLogInfo.mockClear();
+    mockQuery.mockResolvedValueOnce({ rows: withTotal(1, [row()]) });
+    await new AdminPatientsMapController().getMapPoints(
+      req(parse({ country: 'AR', search: 'Reyna' })), mockRes(),
+    );
+    expect((mockLogInfo.mock.calls[0][0] as Record<string, unknown>).scope).toBe('name');
+  });
+
+  it('centro+raio continua `radius`, e província continua `location`', async () => {
+    mockLogInfo.mockClear();
+    mockQuery.mockResolvedValueOnce({ rows: withTotal(1, [row()]) });
+    await new AdminPatientsMapController().getMapPoints(req(parse(SCOPE)), mockRes());
+    expect((mockLogInfo.mock.calls[0][0] as Record<string, unknown>).scope).toBe('radius');
+
+    mockLogInfo.mockClear();
+    mockQuery.mockResolvedValueOnce({ rows: withTotal(1, [row()]) });
+    await new AdminPatientsMapController().getMapPoints(
+      req(parse({ country: 'AR', state: 'Buenos Aires' })), mockRes(),
+    );
+    expect((mockLogInfo.mock.calls[0][0] as Record<string, unknown>).scope).toBe('location');
+  });
+
   it('sem busca, o booleano é false (a allowlist não muda de forma)', async () => {
     mockLogInfo.mockClear();
     mockQuery.mockResolvedValueOnce({ rows: withTotal(1, [row()]) });
