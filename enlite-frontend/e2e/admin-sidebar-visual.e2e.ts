@@ -199,7 +199,6 @@ test.describe('AppSidebar — visão não-admin (recruiter)', () => {
 
     // Itens base seguem visíveis
     await expect(sidebar.getByText('Usuarios')).toBeVisible({ timeout: 15000 });
-    await expect(sidebar.getByText('API Docs')).toBeVisible({ timeout: 10000 });
 
     // Itens admin-only ausentes
     await expect(sidebar.getByText('Postulaciones bloqueadas')).toHaveCount(0);

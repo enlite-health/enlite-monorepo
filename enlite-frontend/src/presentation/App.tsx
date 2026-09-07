@@ -58,9 +58,6 @@ const AdmisionBrPage = lazyWithRetry(() =>
     default: () => <m.default country="BR" />,
   })),
 );
-// Swagger UI é pesado (~500kb gzipped) — lazy load isola o chunk e só baixa
-// quando staff abre /admin/api-docs.
-const AdminApiDocsPage = lazyWithRetry(() => import('./pages/admin/AdminApiDocsPage'));
 // Mantém lazy — são a fronteira worker/admin; carregados uma única vez
 const AdminProtectedRoute = lazy(() => import('./components/features/admin/AdminProtectedRoute').then(m => ({ default: m.AdminProtectedRoute })));
 const AdminLoginGuard = lazy(() => import('./components/features/admin/AdminLoginGuard').then(m => ({ default: m.AdminLoginGuard })));
@@ -218,14 +215,6 @@ export function App() {
           <Route path="patient-chat-roles" element={<PatientChatRolesPage />} />
           <Route path="invitacion-presentacion" element={<PresentationInvitePage />} />
           <Route path="dedup" element={<DedupCenterPage />} />
-          <Route
-            path="api-docs"
-            element={
-              <Suspense fallback={<AdminFallback />}>
-                <AdminApiDocsPage />
-              </Suspense>
-            }
-          />
         </Route>
         {/* Catch-all: rota desconhecida redireciona para home */}
         <Route path="*" element={<Navigate to="/" replace />} />
