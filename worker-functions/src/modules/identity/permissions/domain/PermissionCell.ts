@@ -61,6 +61,7 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   patient_coverage: 'Pacientes',
   patient_address: 'Pacientes',
   patient_services: 'Pacientes',
+  patient_contract_value: 'Pacientes',
   recruitment: 'Recrutamento',
   talentum: 'Recrutamento',
   prescreening: 'Recrutamento',
@@ -199,6 +200,11 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     + 'início. O valor-hora tem portão próprio e NÃO vem com esta célula.',
   'patient_services:write':
     'Criar, editar e dar baixa em serviços contratados e associar prestadores a eles.',
+  // 07/09/2026 — era "papel admin"; virou célula de DADO (D286). Não é portão de rota: a
+  // rota abre com `patient_services:*`, só o preço depende dela (`contractedServiceHourlyValueAccess`).
+  'patient_contract_value:read':
+    'Ver e editar o VALOR-HORA dos serviços contratados: o preço do contrato cobrado à família ou '
+    + 'obra social. Quem não tem a célula vê o campo redigido e não consegue gravá-lo.',
 };
 
 /** Célula do catálogo — o que `iam.permissions` guarda de uma linha. */

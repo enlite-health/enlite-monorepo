@@ -17,8 +17,9 @@ import {
  *   (b') `UPDATE users SET status` que tira o último gestor de ACTIVE — idem;
  *   (c)  `deprecate_missing_permission_cells` com a família de gestão fora da
  *        lista viva — a família fica; outra célula (controle positivo) cai;
- *   (a)  `PATCH /users/:id/role` — NÃO é lockout: gestor troca de papel e
- *        continua gestor no IAM. Prova, não trava.
+ *   (a)  papel (`users.role`) — NÃO é lockout: o gestor muda de papel no banco
+ *        e continua gestor no IAM (a 276 ignora `role`). Desde 07/09 não há
+ *        rota para trocar papel; a prova é direto no banco.
  *   (b-HTTP) `DELETE /api/admin/users/:id` do último gestor → 409 `last_manager`,
  *        e a linha continua (pré-checagem ANTES do Firebase).
  *
@@ -250,12 +251,14 @@ describe('410 — anti-lockout pelos caminhos indiretos', () => {
     });
   });
 
-  describe('(a) PATCH /users/:id/role — não é lockout; provado, não travado', () => {
-    it('o único gestor troca de papel e continua gestor no IAM', async () => {
+  describe('(a) papel — não é lockout; provado, não travado', () => {
+    it('a rota de papel não existe mais (07/09): PATCH /users/:id/role → 404', async () => {
       const res = await chamar('PATCH', `/api/admin/users/${U.unico}/role`, U.unico, { role: 'recruiter' });
-      expect(res.status).toBe(200);
-      const r = await admin.query(`SELECT role FROM users WHERE firebase_uid = $1`, [U.unico]);
-      expect(r.rows[0].role).toBe('recruiter');
+      expect(res.status).toBe(404);
+    });
+
+    it('o único gestor muda de papel no banco e continua gestor no IAM (a 276 ignora `role`)', async () => {
+      await admin.query(`UPDATE users SET role = 'recruiter' WHERE firebase_uid = $1`, [U.unico]);
       expect(await gestoresVivos()).toEqual([U.unico]);
       await admin.query(`UPDATE users SET role = 'admin' WHERE firebase_uid = $1`, [U.unico]);
     });

@@ -10,7 +10,7 @@ import { logger, reportError } from '@shared/logging';
  *
  * Marca/desmarca um worker como conta de teste.
  *
- * Rota (registrada em src/index.ts, adminOnly — role === ADMIN):
+ * Rota (registrada em src/index.ts, `worker:write`; papel `admin` só até a família virar):
  *   PATCH /api/admin/workers/:id/test-flag   body: { isTest: boolean }
  */
 

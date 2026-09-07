@@ -20,13 +20,15 @@ const TAG = 'C1B-cs-guards-%';
 const PRECO = 4321;
 
 type Captured = { status: number; body: unknown };
-function reqRes(params: Record<string, string>, body: Record<string, unknown>, roles: string[]): [Request, Response, Captured] {
+// `cells` ausente = o engine não decidiu (família fora do enforcement) → papel decide (D113).
+// `cells` presente = o engine decidiu → só a célula `patient_contract_value:read` decide.
+function reqRes(params: Record<string, string>, body: Record<string, unknown>, roles: string[], cells?: string[]): [Request, Response, Captured] {
   const captured: Captured = { status: 0, body: undefined };
   const res = {
     status(code: number) { captured.status = code; return this; },
     json(payload: unknown) { captured.body = payload; return this; },
   } as unknown as Response;
-  return [{ params, body, query: {}, user: { roles } } as unknown as Request, res, captured];
+  return [{ params, body, query: {}, user: { roles }, ...(cells ? { permissionCells: cells } : {}) } as unknown as Request, res, captured];
 }
 
 describe('C4/C7 — escrita do serviço contratado: valor restrito e país da fronteira (Postgres real) @integration', () => {
@@ -66,7 +68,7 @@ describe('C4/C7 — escrita do serviço contratado: valor restrito e país da fr
     expect(Number((await svc()).hourly_value)).toBe(PRECO);
   });
 
-  it('C4-b. `admin` mandando `hourlyValue` grava (controle positivo: a trava é de PAPEL, não da rota)', async () => {
+  it('C4-b. `admin` mandando `hourlyValue` grava (controle positivo: sem decisão do engine, a trava é de PAPEL)', async () => {
     const [req, res, out] = reqRes({ id: patientId, sid: serviceId }, { hourlyValue: 5000 }, ['admin']);
     await controller.update(req, res);
     expect(out.status).toBe(200);
@@ -79,6 +81,27 @@ describe('C4/C7 — escrita do serviço contratado: valor restrito e país da fr
     expect(out.status).toBe(200);
     expect((out.body as { data: { hourlyValue: number | null; hourlyValueRedacted: boolean } }).data).toMatchObject({ hourlyValue: null, hourlyValueRedacted: true });
     expect(Number((await svc()).hourly_value)).toBe(PRECO);
+  });
+
+  // 07/09 — o papel deixou de ser nível: com o engine decidindo, só a célula conta.
+  it('C4-d. engine decidiu: `recruiter` COM `patient_contract_value:read` grava e lê o preço', async () => {
+    const [req, res, out] = reqRes({ id: patientId, sid: serviceId }, { hourlyValue: 6000 }, ['recruiter'], ['patient_services:write', 'patient_contract_value:read']);
+    await controller.update(req, res);
+    expect(out.status).toBe(200);
+    expect((out.body as { data: { hourlyValue: number | null; hourlyValueRedacted: boolean } }).data).toMatchObject({ hourlyValue: 6000, hourlyValueRedacted: false });
+    expect(Number((await svc()).hourly_value)).toBe(6000);
+  });
+
+  it('C4-e. engine decidiu: `admin` SEM a célula → 403 na escrita e redigido na leitura — o papel não abre mais nada', async () => {
+    const [req, res, out] = reqRes({ id: patientId, sid: serviceId }, { hourlyValue: 0 }, ['admin'], ['patient_services:write']);
+    await controller.update(req, res);
+    expect(out.status).toBe(403);
+    expect(Number((await svc()).hourly_value)).toBe(PRECO);
+
+    const [req2, res2, out2] = reqRes({ id: patientId, sid: serviceId }, { weeklyHours: 10 }, ['admin'], ['patient_services:write']);
+    await controller.update(req2, res2);
+    expect(out2.status).toBe(200);
+    expect((out2.body as { data: { hourlyValue: number | null; hourlyValueRedacted: boolean } }).data).toMatchObject({ hourlyValue: null, hourlyValueRedacted: true });
   });
 
   it('C7. `POST {country:"BR"}` num paciente AR é RECUSADO (400) — e nada é criado', async () => {

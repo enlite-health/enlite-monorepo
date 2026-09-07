@@ -26,7 +26,7 @@ import { geohash5 } from '@shared/utils/geohash';
 
 /**
  * Teto de pontos por request (30/08). Era 5000 — o mesmo volume que o CSV de
- * `GET /workers/export`, que é `adminOnly` justamente porque recrutadora
+ * `GET /workers/export`, que exige `worker:export` justamente porque recrutadora
  * exportava a base e usava errado. O mapa é `staffOnly` (é a ferramenta dela)
  * e não pode ser a mesma porta por outro caminho: 500 pontos é o que cabe numa
  * tela e não é um export. A tela NÃO perde a contagem — `COUNT(*) OVER()` nas

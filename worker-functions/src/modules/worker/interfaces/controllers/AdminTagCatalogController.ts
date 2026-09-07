@@ -5,9 +5,9 @@
  *
  * Rotas (registradas em src/index.ts):
  *   GET    /api/admin/worker-tags              staffOnly  → list
- *   POST   /api/admin/worker-tags              adminOnly  → create
- *   PATCH  /api/admin/worker-tags/:id          adminOnly  → update
- *   DELETE /api/admin/worker-tags/:id          adminOnly  → delete (soft)
+ *   POST   /api/admin/worker-tags              worker:write → create
+ *   PATCH  /api/admin/worker-tags/:id          worker:write → update
+ *   DELETE /api/admin/worker-tags/:id          worker:write → delete (soft)
  *   POST   /api/admin/workers/:id/tags/:tagId  staffOnly  → assign
  *   DELETE /api/admin/workers/:id/tags/:tagId  staffOnly  → remove
  */

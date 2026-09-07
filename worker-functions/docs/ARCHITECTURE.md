@@ -10,7 +10,7 @@
 1. [Visão Geral](#1-visão-geral)
 2. [Camadas (Clean Architecture)](#2-camadas-clean-architecture)
 3. [Banco de Dados — Schema e Regras](#3-banco-de-dados--schema-e-regras)
-4. [Sistema de Roles (EnliteRole)](#4-sistema-de-roles-enliterole)
+4. [Papel (`users.role`) — o que sobrou dele depois do ABAC](#4-papel-usersrole--o-que-sobrou-dele-depois-do-abac)
 5. [Autenticação e Autorização](#5-autenticação-e-autorização)
 6. [Pipeline de Importação](#6-pipeline-de-importação)
 7. [Repositórios](#7-repositórios)
@@ -102,26 +102,42 @@ Definidas em `migrations/006_create_user_helper_functions.sql` (atualizadas em 1
 
 ---
 
-## 4. Sistema de Roles (EnliteRole)
+## 4. Papel (`users.role`) — o que sobrou dele depois do ABAC
 
-Roles que concedem acesso ao painel admin — definidos em `src/domain/entities/EnliteRole.ts`:
+**Desde 07/09/2026 o papel NÃO é nível de acesso.** Quem decide o que o staff pode fazer é a
+célula `recurso:ação` do grupo (módulo `identity/permissions`, `PermissionMiddleware`, painel
+`/admin/access`). O painel de usuários não mostra nem edita papel, `PATCH /api/admin/users/:id/role`
+não existe mais e `POST /api/admin/users` não aceita `role`.
 
-```typescript
-enum EnliteRole {
-  ADMIN             = 'admin',           // acesso total, gerencia usuários e configuração
-  RECRUITER         = 'recruiter',       // recrutamento, vagas, onboarding de ATs
-  COMMUNITY_MANAGER = 'community_manager', // comunidade AT, grupos, suporte operacional
-}
-```
+A coluna `users.role` e o custom claim `role` do Firebase **continuam existindo** por dois motivos,
+os dois temporários ou de outra natureza:
 
-**Provisionamento automático:** qualquer `@enlite.health` que logar via Google recebe `RECRUITER` por padrão. Promoção para `ADMIN` é manual via painel.
+1. **Fronteira staff × prestador.** `isStaffRole()` (`src/modules/identity/domain/EnliteRole.ts`:
+   `admin | recruiter | community_manager`) é o que separa quem entra no painel de quem usa o app
+   do prestador (`worker`): `requireStaff()`, o desvio de não-staff do `GroupPermissionEngine`, a
+   classificação do contexto de banco (RLS de país) e a elegibilidade para grupo no IAM.
+2. **Fallback enquanto a família não está enforced.** O `main` chega com o engine desligado; uma rota
+   que era `requireAdmin()` declara `untilEnforced: 'admin'` no próprio guard de célula
+   (`perm.require('x', 'write', { untilEnforced: 'admin' })`) e só nesse estado o papel é lido —
+   com a família em `PERMISSION_ENFORCED_ROUTES` a opção é ignorada por construção. O preço do
+   serviço contratado segue a mesma régua no nível do campo (`contractedServiceHourlyValueAccess`:
+   célula `patient_contract_value:read`; papel `admin` só quando `req.permissionCells === null`).
+
+**Provisionamento:** qualquer `@enlite.health` que logar via Google recebe `recruiter`, e o mesmo
+vale para conta criada pelo painel (`PAPEL_DE_CONTA_NOVA`) — o de menor privilégio, porque a conta
+nasce sem grupo e o gestor concede acesso em `/admin/access`.
 
 **Middleware disponíveis:**
 - `requireAuth()` — só verifica que o token Firebase é válido
-- `requireStaff()` — exige `admin | recruiter | community_manager`
-- `requireAdmin()` — exige `admin` exclusivamente
+- `requireStaff()` — exige conta de staff (`admin | recruiter | community_manager`)
+- `permissions.family(F).require(recurso, ação, { untilEnforced?: 'admin' })` — a célula
 
-**Regra de uso no `/api/admin/auth/profile`:** usa `requireAuth()` (não `requireAdmin()`) para permitir o auto-provisionamento na primeira entrada. O use case faz a checagem de domínio.
+**Regra de uso no `/api/admin/auth/profile`:** usa `requireAuth()` para permitir o
+auto-provisionamento na primeira entrada. O use case faz a checagem de domínio.
+
+**Para apagar a coluna de vez** (depois do flip de todas as famílias em produção): substituir o
+item 1 por um marcador de tipo de conta (ou derivar staff da presença em `iam.user_groups` +
+domínio), remover `untilEnforced` por grep, e só então uma migration de deprecação.
 
 ---
 

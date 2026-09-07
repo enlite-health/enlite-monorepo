@@ -20,8 +20,15 @@ function makeController(): PresentationInviteController & { calls: Record<string
 }
 
 const seen: string[] = [];
-const guard = (label: string) => (req: express.Request, _res: express.Response, next: express.NextFunction) => { seen.push(`${label} ${req.method} ${req.path}`); next(); };
-const authMiddleware = { requireStaff: () => guard('staff'), requireAdmin: () => guard('admin') } as unknown as AuthMiddleware;
+// O dublê pendura o papel que o `requireStaff` real penduraria: é o que o
+// `untilEnforced: 'admin'` do PermissionMiddleware lê com o engine desligado.
+let papelDoAtor = 'admin';
+const guard = (label: string) => (req: express.Request, _res: express.Response, next: express.NextFunction) => {
+  seen.push(`${label} ${req.method} ${req.path}`);
+  req.authContext = { principal: { id: 'ator', roles: [papelDoAtor] } } as never;
+  next();
+};
+const authMiddleware = { requireStaff: () => guard('staff') } as unknown as AuthMiddleware;
 
 function app(controller: PresentationInviteController): express.Express {
   const a = express();
@@ -33,12 +40,12 @@ function app(controller: PresentationInviteController): express.Express {
 const ID = '11111111-1111-1111-1111-111111111111';
 
 describe('createPresentationInviteRoutes', () => {
-  beforeEach(() => { seen.length = 0; });
+  beforeEach(() => { seen.length = 0; papelDoAtor = 'admin'; });
 
   const cases: Array<[string, string, string, string]> = [
     // método, path, handler, guarda
     ['get', '/presentation-invite/settings', 'getSettings', 'staff'],
-    ['put', '/presentation-invite/settings', 'updateSettings', 'admin'],
+    ['put', '/presentation-invite/settings', 'updateSettings', 'staff'],
     ['get', '/presentation-invite/last', 'last', 'staff'],
     ['get', '/presentation-invite/stats', 'stats', 'staff'],
     ['post', `/workers/${ID}/presentation-invite`, 'invite', 'staff'],
@@ -51,6 +58,15 @@ describe('createPresentationInviteRoutes', () => {
     expect(res.body).toEqual({ handler });
     expect(controller.calls[handler]).toHaveBeenCalledTimes(1);
     expect(seen).toEqual([`${guardLabel} ${method.toUpperCase()} ${path}`]);
+  });
+
+  it('PUT da configuração com papel que não é admin → 403 enquanto a família não está enforced (untilEnforced)', async () => {
+    papelDoAtor = 'recruiter';
+    const controller = makeController();
+    const a = app(controller);
+    expect((await request(a).put('/api/admin/presentation-invite/settings')).status).toBe(403);
+    expect(controller.calls.updateSettings).not.toHaveBeenCalled();
+    expect((await request(a).get('/api/admin/presentation-invite/settings')).status).toBe(200);
   });
 
   it('a configuração NÃO aceita POST/PATCH (só PUT admin) e a rota do clique NÃO aceita GET', async () => {

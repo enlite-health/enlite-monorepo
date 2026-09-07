@@ -2,7 +2,7 @@ import { Result } from '@shared/utils/Result';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { AdminRepository } from '../infrastructure/AdminRepository';
 import { EmailService } from '../infrastructure/EmailService';
-import { EnliteRole, StaffRole, isStaffRole } from '../domain/EnliteRole';
+import { EnliteRole, StaffRole } from '../domain/EnliteRole';
 import * as admin from 'firebase-admin';
 import { mergeCustomClaims } from '../infrastructure/mergeCustomClaims';
 import { reportError } from '@shared/logging';
@@ -11,8 +11,18 @@ export interface CreateAdminInput {
   email: string;
   displayName: string;
   department?: string;
-  role?: StaffRole;
 }
+
+/**
+ * 07/09/2026 — o painel não escolhe mais papel: acesso se concede por grupo
+ * (`/admin/access`), e uma conta nova nasce sem grupo (tela de boas-vindas
+ * com o engine ligado). O papel gravado aqui é só o marcador de STAFF
+ * (fronteira staff × prestador) e o fallback `untilEnforced` do intervalo
+ * em que o `main` roda com o engine desligado — por isso o de MENOR
+ * privilégio: `recruiter` é o mesmo que o auto-provisionamento do login
+ * Google já dava (`GetAdminProfileUseCase`). Antes o default era `admin`.
+ */
+export const PAPEL_DE_CONTA_NOVA: StaffRole = EnliteRole.RECRUITER;
 
 export class CreateAdminUserUseCase {
   private db = DatabaseConnection.getInstance();
@@ -20,11 +30,7 @@ export class CreateAdminUserUseCase {
   private emailService = new EmailService();
 
   async execute(input: CreateAdminInput): Promise<Result<any>> {
-    const role: StaffRole = input.role ?? EnliteRole.ADMIN;
-
-    if (!isStaffRole(role)) {
-      return Result.fail(`Invalid staff role: ${role}`);
-    }
+    const role: StaffRole = PAPEL_DE_CONTA_NOVA;
 
     const client = await this.db.getPool().connect();
     let firebaseUser: admin.auth.UserRecord | null = null;
@@ -74,7 +80,6 @@ export class CreateAdminUserUseCase {
         firebaseUid: firebaseUser.uid,
         email: input.email,
         displayName: input.displayName,
-        role,
         department: input.department ?? null,
         resetLink,
       });

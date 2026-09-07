@@ -67,9 +67,8 @@ export function createAdminPatientsRoutes(
   // Cortesia de UX sobre a RLS: `?country=` de outro país sem grant explica em
   // vez de devolver contadores zerados (task 3.5). Inerte com a flag off.
   const countryScope = requireCountryScope();
-  // test-flag e purge são admin-only (mais estrito que staff) — mesmo critério
+  // test-flag e purge: célula decide; até a família virar, papel `admin` (mais estrito que staff) — mesmo critério
   // do equivalente em workers. São ferramentas do synthetic monitoring.
-  const adminOnly = authMiddleware.requireAdmin();
 
   // ── CATÁLOGO de papéis de chat (migration 262) ─────────────────────────────
   // LEITURA é staff: a ficha de qualquer paciente precisa dos RÓTULOS dos
@@ -83,13 +82,13 @@ export function createAdminPatientsRoutes(
   router.get('/patient-chat-roles', staffOnly, perm.require('patient', 'read'), (req: Request, res: Response) =>
     chatRolesController.list(req, res),
   );
-  router.post('/patient-chat-roles', adminOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+  router.post('/patient-chat-roles', staffOnly, perm.require('patient', 'write', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
     chatRolesController.create(req, res),
   );
-  router.patch('/patient-chat-roles/:code', adminOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+  router.patch('/patient-chat-roles/:code', staffOnly, perm.require('patient', 'write', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
     chatRolesController.update(req, res),
   );
-  router.delete('/patient-chat-roles/:code', adminOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+  router.delete('/patient-chat-roles/:code', staffOnly, perm.require('patient', 'write', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
     chatRolesController.delete(req, res),
   );
 
@@ -99,7 +98,7 @@ export function createAdminPatientsRoutes(
   router.get('/catalogs/insurance-providers', staffOnly, perm.require('patient_coverage', 'read'), (req: Request, res: Response) =>
     insuranceProvidersController.list(req, res),
   );
-  router.post('/catalogs/insurance-providers', adminOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+  router.post('/catalogs/insurance-providers', staffOnly, perm.require('patient', 'write', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
     insuranceProvidersController.create(req, res),
   );
 
@@ -202,11 +201,11 @@ export function createAdminPatientsRoutes(
   // ── Synthetic monitoring (e2e-prod) ────────────────────────────────────────
   // Literais ANTES do PATCH dinâmico /:id/:section — senão 'test-flag' seria
   // capturado como :section e barrado pelo whitelist.
-  router.patch('/patients/:id/test-flag', adminOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+  router.patch('/patients/:id/test-flag', staffOnly, perm.require('patient', 'write', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
     controller.updatePatientTestFlag(req, res),
   );
   // Purga só de paciente is_test (real → 409). Ver PatientTestFixtureService.
-  router.delete('/patients/:id', adminOnly, perm.require('patient', 'delete'), (req: Request, res: Response) =>
+  router.delete('/patients/:id', staffOnly, perm.require('patient', 'delete', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
     controller.purgeTestPatient(req, res),
   );
 

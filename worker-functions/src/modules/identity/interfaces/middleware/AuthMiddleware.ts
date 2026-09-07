@@ -341,23 +341,6 @@ export class AuthMiddleware {
   }
 
   /**
-   * Require admin role — chains requireAuth() then checks roles
-   */
-  requireAdmin() {
-    return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-      // First authenticate
-      await this.requireAuth()(req, res, () => {
-        const user = (req as any).user;
-        if (!user || !user.roles || !user.roles.includes('admin')) {
-          res.status(403).json({ success: false, error: 'Admin access required' });
-          return;
-        }
-        next();
-      });
-    };
-  }
-
-  /**
    * Híbrido: aceita API key de serviço (triage-service) OU staff Firebase.
    * API key é verificada PRIMEIRO (lookup O(1) sem I/O).
    * Firebase só é chamado se a API key falhar.

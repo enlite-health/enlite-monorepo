@@ -4,12 +4,8 @@ import { ErrorResponseSchema, OkMessage, UuidParam } from '../schemas/common';
 const CreateUserBody = z.object({
   email: z.string().email().openapi({ description: 'E-mail do novo usuário.', example: 'staff@enlite.health' }),
   displayName: z.string().optional().openapi({ description: 'Nome de exibição.', example: 'Maria Staff' }),
-  role: z.enum(['admin', 'staff', 'coordinator']).openapi({ description: 'Papel do usuário na plataforma.', example: 'staff' }),
+  department: z.string().optional().openapi({ description: 'Departamento (opcional).', example: 'Recrutamento' }),
   password: z.string().min(8).optional().openapi({ description: 'Senha inicial (gerada se omitida).', example: 'TempP@ss123' }),
-});
-
-const PatchRoleBody = z.object({
-  role: z.enum(['admin', 'staff', 'coordinator']).openapi({ description: 'Novo papel do usuário.', example: 'coordinator' }),
 });
 
 const DeleteByEmailQuery = z.object({
@@ -20,10 +16,10 @@ registry.registerPath({
   method: 'post',
   path: '/api/admin/users',
   tags: ['Admin · Users'],
-  summary: 'Cria usuário admin/staff/coordinator',
+  summary: 'Cria usuário interno',
   description:
-    'Cria um novo usuário interno (admin, staff ou coordinator) no Firebase e no banco. ' +
-    'Requer autenticação com perfil admin.',
+    'Cria um novo usuário interno no Firebase e no banco. A conta nasce SEM grupo de permissão: ' +
+    'o acesso se concede pelo painel de acessos (`/admin/access`). Exige `user_management:write`.',
   security: [{ firebaseAuth: [] }],
   request: { body: { content: { 'application/json': { schema: CreateUserBody } } } },
   responses: {
@@ -84,29 +80,6 @@ registry.registerPath({
   responses: {
     200: { description: 'E-mail de reset enviado.', content: { 'application/json': { schema: OkMessage } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
-    404: { description: 'Usuário não encontrado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
-    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
-  },
-});
-
-registry.registerPath({
-  method: 'patch',
-  path: '/api/admin/users/{id}/role',
-  tags: ['Admin · Users'],
-  summary: 'Altera papel do usuário',
-  description:
-    'Atualiza o papel (role) de um usuário interno. ' +
-    'Requer permissão de admin. A alteração tem efeito imediato nas chamadas subsequentes.',
-  security: [{ firebaseAuth: [] }],
-  request: {
-    params: z.object({ id: UuidParam }),
-    body: { content: { 'application/json': { schema: PatchRoleBody } } },
-  },
-  responses: {
-    200: { description: 'Papel atualizado.', content: { 'application/json': { schema: OkMessage } } },
-    400: { description: 'Role inválido.', content: { 'application/json': { schema: ErrorResponseSchema } } },
-    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
-    403: { description: 'Sem permissão.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     404: { description: 'Usuário não encontrado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },

@@ -11,15 +11,15 @@ import { AuthMiddleware, type PermissionMiddleware } from '@modules/identity';
  * 15 rotas, 4 células, todas já no seed da migration 206 (medido) — a família
  * NÃO depende de `PERMISSION_CATALOG_SYNC_ENABLED`. Mapa rota→célula:
  * `openspec/changes/painel-grupos-permissao/route-permission-map.md`.
- * Ordem dos guards igual às famílias anteriores: papel → célula, e o guard de
- * papel FICA (enquanto a família está fora de `PERMISSION_ENFORCED_ROUTES`, ele
- * é a única proteção).
+ * Ordem dos guards igual às famílias anteriores: staff → célula. O papel deixou
+ * de ser nível (07/09): o que era `requireAdmin()` virou `untilEnforced: 'admin'`
+ * na célula, e só vale enquanto a família está fora de `PERMISSION_ENFORCED_ROUTES`.
  *
  * ⚠️ `POST /dedup/run` é `dedup:execute` — a célula destrutiva da família
  * `admin.dedup` (A5) aparece AQUI. Ela fica nesta família de propósito: família
  * é o que `PERMISSION_ENFORCED_ROUTES` liga, e mover uma rota de família por
- * causa da célula quebraria essa correspondência. A rota já é `requireAdmin`
- * (mais estrito que o resto do arquivo), e isso não muda.
+ * causa da célula quebraria essa correspondência. Até a família virar, a rota
+ * segue exigindo papel `admin` (`untilEnforced`), mais estrito que o resto do arquivo.
  *
  * ⚠️ QUESTÃO DE POLÍTICA ABERTA (a mesma do #238, aqui mais afiada) — endereçada
  * ao Gabriel, NÃO resolvida neste PR: **três rotas devolvem e-mail, telefone e
@@ -76,7 +76,7 @@ export function createAnalyticsRoutes(
     analyticsController.getDedupCandidates(req, res),
   );
 
-  router.post('/dedup/run', authMiddleware.requireAdmin(), perm.require('dedup', 'execute'), (req: Request, res: Response) =>
+  router.post('/dedup/run', authMiddleware.requireStaff(), perm.require('dedup', 'execute', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
     analyticsController.runDeduplication(req, res),
   );
 
