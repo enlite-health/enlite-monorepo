@@ -246,6 +246,17 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
+        // O campo de endereço. Entra aqui porque o que ele guarda não é só
+        // comportamento: é CONTA. O efeito de inicialização não pode voltar a
+        // depender da identidade dos callbacks — cada widget a mais é uma sessão
+        // de Places a mais, e o defeito rendia 309 chamadas por endereço digitado
+        // (medido em prod, 07/09). Sem esta linha o 100% conquistado cairia calado.
+        '**/src/presentation/components/molecules/GooglePlacesAutocomplete.tsx': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
         // Navegação de admin: quem some daqui some da tela de alguém.
         '**/src/presentation/config/adminNavigation.tsx': {
           statements: 100,
