@@ -40,6 +40,13 @@ export interface PatientsMapFilters {
   center?: MapCenter;
   radius_km?: number;
   limit?: number;
+  /**
+   * Busca por nome — é ESCOPO, não filtro: vale sozinha, sem centro e sem raio,
+   * e é o que permite achar quem mora longe do centro do país. Vai no CORPO do
+   * POST, nunca na URL: nome de paciente em query string entraria no log de
+   * acesso do Cloud Run. Mínimo de 2 caracteres (o servidor devolve 400 com 1).
+   */
+  search?: string;
 }
 
 export interface WorkerMapPoint {

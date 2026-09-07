@@ -68,6 +68,13 @@ export type MapLogScope = Pick<MapScope, 'country' | 'state' | 'city' | 'center'
   status?: readonly string[];
   /** Só o mapa de prestadores filtra por profissão; no de pacientes fica null. */
   profession?: readonly string[];
+  /**
+   * ⚠️ NOME DE PESSOA. Está aqui só para o log poder dizer QUE houve busca —
+   * o valor NUNCA é registrado, pela mesma razão que `state`/`city` viram
+   * booleano: o log é allowlist campo a campo, e um nome digitado ficaria 30
+   * dias no Cloud Logging. Ver `hasSearchFilter` em `respondMapPoints`.
+   */
+  search?: string;
 };
 
 /** Escopo obrigatório (lex C3): centro+raio, OU província, OU localidade. */
@@ -75,13 +82,26 @@ export function hasScope(q: Pick<MapScope, 'center' | 'radius_km' | 'state' | 'c
   return (q.center !== undefined && q.radius_km !== undefined) || q.state !== undefined || q.city !== undefined;
 }
 
-/** Aplica os dois refinamentos de escopo a um schema que contém `mapScopeShape`. */
-export function withMapScopeRules<S extends z.ZodTypeAny>(schema: S): z.ZodEffects<z.ZodEffects<S>> {
+/**
+ * Aplica os dois refinamentos de escopo a um schema que contém `mapScopeShape`.
+ *
+ * `hasExtraScope` é a porta para um escopo que só UM dos mapas tem — hoje, a
+ * busca por nome do mapa de PACIENTES. Ela fica de fora do `mapScopeShape` de
+ * propósito: se `search` morasse no escopo comum, o mapa de PRESTADORES
+ * passaria a aceitar `search` sem centro, e como o controller dele não filtra
+ * por nome, `hasScope` daria por satisfeito um corpo que na prática varre a
+ * base inteira. O default `() => false` mantém o comportamento de quem não
+ * passa nada.
+ */
+export function withMapScopeRules<S extends z.ZodTypeAny>(
+  schema: S,
+  hasExtraScope: (q: z.infer<S>) => boolean = () => false,
+): z.ZodEffects<z.ZodEffects<S>> {
   return schema
     .refine((q: MapScope) => q.radius_km === undefined || q.center !== undefined, {
       message: 'radius_km requires center',
     })
-    .refine((q: MapScope) => hasScope(q), {
+    .refine((q) => hasScope(q as MapScope) || hasExtraScope(q), {
       message: 'scope required: center+radius_km, or state/city',
     });
 }
@@ -204,6 +224,9 @@ export function respondMapPoints<P extends { lat: number | null }>(
     stateCanonical: logSafeState(scope.state),
     hasStateFilter: hasFilter(scope.state),
     hasCityFilter: hasFilter(scope.city),
+    // Só o BOOLEANO: `search` é nome de paciente digitado pelo staff. Mesma
+    // regra de `state`/`city` — a auditoria sabe QUE se buscou, nunca por quem.
+    hasSearchFilter: hasFilter(scope.search),
     radiusKm: scope.radius_km ?? null,
     geohash5: scope.center ? geohash5(scope.center.lat, scope.center.lng) : null,
   });

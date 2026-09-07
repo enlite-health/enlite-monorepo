@@ -47,6 +47,10 @@ const WORKER_C = { lat: -34.7203, lng: -58.2543 }; // Quilmes, REGISTERED (~16 k
 // Prestador E com duas áreas: La Plata (a mais recente) e Córdoba (a que casa o filtro "Córdoba").
 const AREA_LA_PLATA = { lat: -34.9214, lng: -57.9544 };
 const AREA_CORDOBA = { lat: -31.4201, lng: -64.1888 };
+// Paciente em Mar del Plata: ponto REAL a ~381 km do Obelisco — FORA do raio de 50 km do
+// seletor da âncora. É o caso que motivou a busca por nome (07/09/2026): antes ele não estava
+// na lista do seletor e digitar o nome respondia "Sin resultados".
+const PATIENT_MDP_AT = { lat: -38.0055, lng: -57.5426 };
 // Paciente BR num ponto REAL de São Paulo (MASP, Av. Paulista) — a ~1.500 km do Obelisco.
 const PATIENT_BR_AT = { lat: -23.5614, lng: -46.6559 };
 // Prestador BR a ~700 m do paciente de SP: é a ÂNCORA da aba Pacientes com país BR.
@@ -105,6 +109,7 @@ test.describe('Mapa de prestadores e pacientes (REQ-04 · DEC-14) @integration',
   let patientId = ''; let patientAddressId = ''; let patientBrId = ''; let patientBrAddressId = '';
   const nameA = `Req04A${TS}`; const nameB = `Req04B${TS}`; const nameC = `Req04C${TS}`; const nameD = `Req04D${TS}`; const nameE = `Req04E${TS}`;
   const patientName = `Req04Pac${TS}`;
+  let patientMdpId = ''; const patientMdpName = `Req04Mdp${TS}`;
   const patientBrName = `Req04Bra${TS}`;
   const nameBr = `Req04Wbr${TS}`;
 
@@ -127,6 +132,9 @@ test.describe('Mapa de prestadores e pacientes (REQ-04 · DEC-14) @integration',
     patientBrId = br.patientId;
     patientBrAddressId = br.addressId as string;
     runSQL(`UPDATE patients SET country = 'BR' WHERE id = '${patientBrId}'`);
+    const mdp = insertTestPatient({ firstName: patientMdpName, lastName: 'Mapa', status: 'ACTIVE', withAddress: true, addressLat: PATIENT_MDP_AT.lat, addressLng: PATIENT_MDP_AT.lng });
+    patientMdpId = mdp.patientId;
+    runSQL(`UPDATE patient_addresses SET city = 'Mar del Plata', state = 'Buenos Aires' WHERE id = '${mdp.addressId as string}'`);
     workerBr = insertTestWorker({ firstName: nameBr, lastName: 'Mapa', occupation: 'AT', status: 'REGISTERED', ...WORKER_BR_AT });
     runSQL(`UPDATE workers SET country = 'BR', profession = 'AT' WHERE id = '${workerBr}'`);
     runSQL(`UPDATE patient_addresses SET city = 'São Paulo', state = 'SP', address_formatted = 'Av. Paulista 1578, São Paulo, BR', address_raw = 'Av. Paulista 1578' WHERE id = '${patientBrAddressId}'`);
@@ -136,6 +144,7 @@ test.describe('Mapa de prestadores e pacientes (REQ-04 · DEC-14) @integration',
     for (const id of [workerA, workerB, workerC, workerD, workerE, workerBr]) cleanupTestWorker(id);
     cleanupTestPatient(patientId);
     cleanupTestPatient(patientBrId);
+    cleanupTestPatient(patientMdpId);
     runSQL(`DELETE FROM users WHERE email = '${STAFF_EMAIL}'`);
   });
 
@@ -382,5 +391,55 @@ test.describe('Mapa de prestadores e pacientes (REQ-04 · DEC-14) @integration',
     // O banco confirma: a área de Córdoba é a mais antiga das duas
     const older = runSQL(`SELECT city FROM worker_service_areas WHERE worker_id = '${workerE}' ORDER BY updated_at ASC LIMIT 1`);
     expect(older).toBe('Córdoba');
+  });
+
+  test('busca por nome acha quem mora FORA do raio do seletor — o caso Mar del Plata', async ({ page }, testInfo) => {
+    // O corpo de cada POST ao mapa de pacientes: é nele que se vê o escopo trocar.
+    const mapPosts: Array<Record<string, unknown>> = [];
+    page.on('request', (r) => {
+      if (r.method() === 'POST' && r.url().endsWith('/api/admin/patients/map')) {
+        mapPosts.push(JSON.parse(r.postData() ?? '{}'));
+      }
+    });
+
+    await loginAsRealStaff(page);
+    await page.goto('/admin/mapa');
+
+    const picker = page.getByTestId('map-center-patient');
+    await picker.getByRole('button').click();
+
+    // ── O defeito, reproduzido: sem digitar, o seletor só traz os 50 km ──────
+    await expect.poll(() => mapPosts.length, { timeout: 15_000 }).toBeGreaterThan(0);
+    expect(mapPosts[0]).toMatchObject({ country: 'AR', radius_km: 50 });
+    // o paciente do Obelisco está na lista; o de Mar del Plata (381 km) NÃO
+    await expect(picker.getByRole('option').filter({ hasText: patientName })).toHaveCount(1, { timeout: 15_000 });
+    await expect(picker.getByRole('option').filter({ hasText: patientMdpName })).toHaveCount(0);
+
+    // ── O conserto: digitar o nome troca o ESCOPO da busca ──────────────────
+    await picker.getByRole('textbox').fill(patientMdpName);
+    await expect.poll(() => mapPosts.some((b) => b.search === patientMdpName), { timeout: 15_000 }).toBe(true);
+
+    const buscaPost = mapPosts.find((b) => b.search === patientMdpName)!;
+    // o escopo é o NOME: sem centro, sem raio — senão o nome só valeria dentro dos 50 km
+    expect(buscaPost).not.toHaveProperty('center');
+    expect(buscaPost).not.toHaveProperty('radius_km');
+    expect(buscaPost).toMatchObject({ country: 'AR' });
+
+    // e agora ele está na lista
+    const achado = picker.getByRole('option').filter({ hasText: patientMdpName });
+    await expect(achado).toHaveCount(1, { timeout: 15_000 });
+    await expect(page.getByTestId('searchable-select-empty')).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath('10-busca-por-nome-achou.png'), fullPage: false });
+
+    // escolher leva o mapa até lá: o centro passa a ser Mar del Plata
+    await achado.click();
+    await expect(page.getByTestId('map-center-label')).toContainText(patientMdpName, { timeout: 15_000 });
+    await expect(page.getByTestId('map-total')).toBeVisible({ timeout: 30_000 });
+
+    const map = page.getByTestId('points-map');
+    await expect(page).toHaveScreenshot('req04-mapa-busca-por-nome.png', { mask: [map], maxDiffPixelRatio: 0.05 });
+
+    // 🔒 o nome NUNCA vai na URL — é corpo de POST (lex C2)
+    expect(page.url()).not.toContain(patientMdpName);
   });
 });

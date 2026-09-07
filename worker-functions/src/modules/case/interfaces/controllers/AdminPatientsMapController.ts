@@ -48,8 +48,20 @@ export const PatientsMapBodySchema = withMapScopeRules(
       status: z.array(z.enum(PATIENT_STATUSES as unknown as [string, ...string[]])).optional(),
       /** true → só pacientes com ao menos uma vaga aberta. */
       with_open_vacancies: z.boolean().optional(),
+      /**
+       * Busca por nome — a TERCEIRA forma de escopo, ao lado de centro+raio e
+       * província/localidade. Existe porque o seletor de âncora da tela era o
+       * único caminho para o mapa e só enxergava 50 km do centro do país:
+       * paciente de Mar del Plata (381 km) não aparecia, e a tela respondia
+       * "Sin resultados" — que se lê como "não existe".
+       *
+       * Mínimo de 2 caracteres: 1 letra devolveria quase a base inteira, e aí
+       * "escopo" não seria escopo nenhum.
+       */
+      search: z.string().trim().min(2).max(80).optional(),
     })
     .strict(),
+  (q) => q.search !== undefined,
 );
 
 export type PatientsMapBody = z.infer<typeof PatientsMapBodySchema>;
@@ -113,6 +125,20 @@ export function buildPatientsMapQuery(q: PatientsMapBody): { sql: string; params
     i++;
   }
   if (q.with_open_vacancies === true) conds.push('ov.open_vacancies > 0');
+  if (q.search) {
+    // Nome COMPLETO nas duas ordens: o operador digita "Reyna Alaburda, Ana
+    // Paula" como lê no WhatsApp, e a base guarda nome e sobrenome separados —
+    // casar campo a campo erraria quem digita os dois. `ILIKE` sem `unaccent`
+    // é o mesmo que a busca da lista de pacientes já usa
+    // (`PatientQueryRepository`); mudar isso aqui só criaria duas buscas com
+    // comportamentos diferentes na mesma tela.
+    const pSearch = i++;
+    params.push(q.search);
+    conds.push(
+      `(concat_ws(' ', p.first_name, p.last_name) ILIKE '%' || $${pSearch} || '%'
+        OR concat_ws(' ', p.last_name, p.first_name) ILIKE '%' || $${pSearch} || '%')`,
+    );
+  }
 
   const point = 'ST_SetSRID(ST_MakePoint(pa.lng, pa.lat), 4326)::geography';
   let distanceSelect = 'NULL::numeric AS distance_km';

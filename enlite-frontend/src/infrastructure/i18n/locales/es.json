@@ -3913,6 +3913,8 @@
       },
       "anchorError": "No se pudo cargar la lista. Reintentá en unos segundos.",
       "anchorLoading": "Buscando…",
+      "anchorNoMatch": "Sin resultados para ese nombre",
+      "anchorTypeMore": "Escribí al menos {{n}} letras",
       "anchorTruncated": "Hay más de los que entran en esta lista: escribí el nombre para filtrar.",
       "corridor": {
         "transfers_one": "1 combinación",

@@ -139,7 +139,7 @@ describe('respondMapPoints (lex C5) — ALLOWLIST FECHADA da trilha', () => {
       totalMatching: 4231,
       status: ['REGISTERED'], profession: ['AT', 'NURSE'],
       // 'Buenos Aires' NÃO é apelido do conjunto fechado → só o booleano sai
-      stateCanonical: null, hasStateFilter: true, hasCityFilter: true,
+      stateCanonical: null, hasStateFilter: true, hasCityFilter: true, hasSearchFilter: false,
       radiusKm: 25, geohash5: '69y7p',
     });
     // o que a trilha permite reconstruir é o ESCOPO, nunca a pessoa nem a casa
@@ -195,7 +195,7 @@ describe('respondMapPoints (lex C5) — ALLOWLIST FECHADA da trilha', () => {
       n: 0, withoutCoordinates: 0, truncated: false,
       totalMatching: 0,
       status: null, profession: null,
-      stateCanonical: null, hasStateFilter: false, hasCityFilter: false,
+      stateCanonical: null, hasStateFilter: false, hasCityFilter: false, hasSearchFilter: false,
       radiusKm: null, geohash5: null,
     });
     expect(res.body).toEqual({ success: true, data: [], total: 0, withoutCoordinates: 0, truncated: false });

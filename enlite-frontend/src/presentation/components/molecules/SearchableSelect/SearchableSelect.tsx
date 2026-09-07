@@ -19,6 +19,21 @@ interface SearchableSelectProps {
   inputSize?: 'default' | 'compact';
   /** Vai para o botão que abre a lista — é o que o e2e clica. */
   'data-testid'?: string;
+  /**
+   * BUSCA NO SERVIDOR. Quando presente, o componente PARA de filtrar em
+   * memória: `options` passa a ser "o que o servidor respondeu para o último
+   * termo", e o texto digitado é devolvido aqui (com debounce) para o pai
+   * buscar. Sem esta prop nada muda — o filtro local continua o padrão.
+   *
+   * Existe porque filtrar em memória só acha quem já foi carregado: no mapa,
+   * a lista vinha de um raio fixo de 50 km e quem morava fora dele lia
+   * "Sin resultados", que é a conclusão errada.
+   */
+  onSearchChange?: (text: string) => void;
+  /** Espera entre a última tecla e a busca. Só vale com `onSearchChange`. */
+  searchDebounceMs?: number;
+  /** O que dizer quando a lista está vazia (ex.: "Escribí al menos 2 letras"). */
+  emptyMessage?: string;
 }
 
 function normalizeText(text: string): string {
@@ -38,6 +53,9 @@ export function SearchableSelect({
   disabled = false,
   inputSize = 'default',
   'data-testid': testId,
+  onSearchChange,
+  searchDebounceMs = 300,
+  emptyMessage,
 }: SearchableSelectProps): JSX.Element {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
@@ -51,11 +69,32 @@ export function SearchableSelect({
   const selectedOption = options.find((o) => o.value === value);
   const displayLabel = selectedOption?.label ?? allPlaceholder;
 
-  const filteredOptions = searchText
+  // Com busca no servidor, `options` JÁ é o resultado do termo: filtrar de novo
+  // aqui esconderia linha que o servidor achou e o cliente não sabe casar
+  // (acento, "Reyna Alaburda, Ana Paula" contra nome e sobrenome separados).
+  const serverSearch = onSearchChange !== undefined;
+  const filteredOptions = !serverSearch && searchText
     ? options.filter((o) =>
         normalizeText(o.label).includes(normalizeText(searchText))
       )
     : options;
+
+  /**
+   * O callback vive num ref, e NÃO nas dependências do efeito: um pai que
+   * recria a função a cada render dispararia uma busca por render em vez de
+   * uma por termo — foi assim que o autocomplete do Places chegou a uma
+   * chamada por tecla. Aqui o efeito depende só do texto e do debounce.
+   */
+  const onSearchRef = useRef(onSearchChange);
+  useEffect(() => {
+    onSearchRef.current = onSearchChange;
+  });
+
+  useEffect(() => {
+    if (!serverSearch) return undefined;
+    const id = setTimeout(() => onSearchRef.current?.(searchText), searchDebounceMs);
+    return () => clearTimeout(id);
+  }, [searchText, serverSearch, searchDebounceMs]);
 
   function handleOpen(): void {
     if (disabled) return;
@@ -155,8 +194,8 @@ export function SearchableSelect({
                 </li>
               ))}
               {filteredOptions.length === 0 && (
-                <li className="px-3 py-2 text-sm font-lexend text-[#B3B3B3]">
-                  {t('common.noResults', 'Sin resultados')}
+                <li className="px-3 py-2 text-sm font-lexend text-[#B3B3B3]" data-testid="searchable-select-empty">
+                  {emptyMessage ?? t('common.noResults', 'Sin resultados')}
                 </li>
               )}
             </ul>

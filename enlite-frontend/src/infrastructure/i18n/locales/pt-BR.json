@@ -3834,6 +3834,8 @@
       },
       "anchorError": "Não foi possível carregar a lista. Tente de novo em alguns segundos.",
       "anchorLoading": "Buscando…",
+      "anchorNoMatch": "Sem resultados para esse nome",
+      "anchorTypeMore": "Digite ao menos {{n}} letras",
       "anchorTruncated": "Há mais do que cabe nesta lista: digite o nome para filtrar.",
       "corridor": {
         "transfers_one": "1 baldeação",

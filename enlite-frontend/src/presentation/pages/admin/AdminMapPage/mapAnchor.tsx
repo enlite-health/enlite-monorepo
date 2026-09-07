@@ -50,6 +50,7 @@ export interface AnchorStatus {
  */
 export function AnchorPicker({
   id, label, placeholder, searchPlaceholder, options, value, onChange, onTouch, status, labels,
+  onSearchChange, emptyMessage,
 }: {
   id: string;
   label: string;
@@ -61,6 +62,13 @@ export function AnchorPicker({
   onTouch: () => void;
   status: AnchorStatus;
   labels: { loading: string; error: string; truncated: string };
+  /**
+   * Presente = a busca vai ao SERVIDOR e `options` é a resposta dela. Ausente =
+   * o seletor filtra em memória, como antes. Só a âncora de PACIENTE passa
+   * isto hoje (o nome do prestador é cifrado — ver `useAnchorCandidates`).
+   */
+  onSearchChange?: (text: string) => void;
+  emptyMessage?: string;
 }): JSX.Element {
   const nota = status.error
     ? { testId: 'map-anchor-error', className: 'text-red-600', text: labels.error }
@@ -79,6 +87,8 @@ export function AnchorPicker({
           onChange={onChange}
           placeholder={placeholder}
           searchPlaceholder={searchPlaceholder}
+          onSearchChange={onSearchChange}
+          emptyMessage={emptyMessage}
         />
       </div>
       {/* o `data-testid` vai no DIV, nunca no `Text`: o atom não repassa prop

@@ -192,7 +192,7 @@ describe('AdminPatientsMapController.getMapPoints', () => {
       msg: 'patients.map.read', uid: 'uid-xyz', country: 'AR', scope: 'radius',
       n: 4, withoutCoordinates: 1, truncated: false,
       totalMatching: 4, status: null, profession: null,
-      stateCanonical: null, hasStateFilter: false, hasCityFilter: false,
+      stateCanonical: null, hasStateFilter: false, hasCityFilter: false, hasSearchFilter: false,
       radiusKm: 5, geohash5: '69y7p',
     });
     // o centro é a casa de um paciente (picker "Centrar en paciente"): vai a
@@ -216,7 +216,7 @@ describe('AdminPatientsMapController.getMapPoints', () => {
       msg: 'patients.map.read', uid: 'uid-cat', country: 'AR', scope: 'location',
       n: 1, withoutCoordinates: 0, truncated: true,
       totalMatching: 4231, status: ['ACTIVE', 'SUSPENDED'], profession: null,
-      stateCanonical: null, hasStateFilter: true, hasCityFilter: true,
+      stateCanonical: null, hasStateFilter: true, hasCityFilter: true, hasSearchFilter: false,
       radiusKm: null, geohash5: null,
     });
   });
@@ -244,7 +244,7 @@ describe('AdminPatientsMapController.getMapPoints', () => {
       // 'PR' não é apelido do conjunto fechado (só CABA/PBA são): a trilha diz
       // QUE houve recorte por província, não QUAL — texto livre não entra no log.
       totalMatching: 0, status: null, profession: null,
-      stateCanonical: null, hasStateFilter: true, hasCityFilter: false,
+      stateCanonical: null, hasStateFilter: true, hasCityFilter: false, hasSearchFilter: false,
       radiusKm: null, geohash5: null,
     });
   });
@@ -268,7 +268,7 @@ describe('AdminPatientsMapController.getMapPoints', () => {
       n: 500, withoutCoordinates: 0, truncated: true,
       // `totalMatching` é o tamanho REAL da varredura (4231), não o da tela (500).
       totalMatching: 4231, status: null, profession: null,
-      stateCanonical: null, hasStateFilter: false, hasCityFilter: false,
+      stateCanonical: null, hasStateFilter: false, hasCityFilter: false, hasSearchFilter: false,
       radiusKm: 5, geohash5: '69y7p',
     });
   });
@@ -289,5 +289,78 @@ describe('AdminPatientsMapController.getMapPoints', () => {
     await controller.getMapPoints(req(SCOPE), res);
     expect(res.statusCode).toBe(500);
     expect((mockReportError.mock.calls[0][0] as Error).message).toBe('42');
+  });
+});
+
+/**
+ * Busca por NOME — a terceira forma de escopo (07/09/2026).
+ *
+ * O seletor da âncora do mapa só enxergava 50 km do centro do país e filtrava
+ * em memória: paciente de Mar del Plata (381 km) não estava na lista e a tela
+ * respondia "Sin resultados". Estes testes travam as três coisas que fazem a
+ * busca ser segura além de funcionar: ela VALE como escopo sozinha, ela EXIGE
+ * 2 caracteres, e o termo — que é nome de pessoa — NUNCA entra na trilha.
+ */
+describe('busca por nome (escopo alternativo)', () => {
+  it('`search` sozinho é escopo válido: sem centro, sem raio, sem província', () => {
+    const r = PatientsMapBodySchema.safeParse({ country: 'AR', search: 'Reyna' });
+    expect(r.success).toBe(true);
+  });
+
+  it('1 caractere é 400: escopo que devolve a base inteira não é escopo', () => {
+    expect(PatientsMapBodySchema.safeParse({ country: 'AR', search: 'R' }).success).toBe(false);
+    expect(PatientsMapBodySchema.safeParse({ country: 'AR', search: '  ' }).success).toBe(false);
+  });
+
+  it('país continua obrigatório mesmo buscando por nome', () => {
+    expect(PatientsMapBodySchema.safeParse({ search: 'Reyna' }).success).toBe(false);
+  });
+
+  it('casa NOME COMPLETO nas duas ordens, com UM só parâmetro', () => {
+    const { sql, params } = buildPatientsMapQuery(parse({ country: 'AR', search: 'Reyna Alaburda' }));
+    expect(sql).toContain("concat_ws(' ', p.first_name, p.last_name) ILIKE");
+    expect(sql).toContain("concat_ws(' ', p.last_name, p.first_name) ILIKE");
+    // o termo entra uma vez só na lista de params, referenciado duas vezes no SQL
+    expect(params.filter((p) => p === 'Reyna Alaburda')).toHaveLength(1);
+  });
+
+  it('sem centro não há distância: o ORDER BY cai para o nome, e distance_km é nulo', () => {
+    const { sql } = buildPatientsMapQuery(parse({ country: 'AR', search: 'Reyna' }));
+    expect(sql).toContain('NULL::numeric AS distance_km');
+    expect(sql).not.toContain('ST_DWithin');
+  });
+
+  it('continua sem coluna clínica — a busca não abriu porta nova (lex C1)', () => {
+    const { sql } = buildPatientsMapQuery(parse({ country: 'AR', search: 'Reyna' }));
+    for (const proibida of ['diagnosis', 'additional_comments', 'dependency_level', 'clinical_specialty']) {
+      expect(sql).not.toContain(proibida);
+    }
+  });
+
+  it('filtro clínico junto da busca continua 400 (strict)', () => {
+    expect(PatientsMapBodySchema.safeParse({ country: 'AR', search: 'Reyna', dependency_level: 'HIGH' }).success).toBe(false);
+  });
+
+  it('🔒 a trilha diz QUE se buscou, NUNCA por quem', async () => {
+    mockLogInfo.mockClear();
+    mockQuery.mockResolvedValueOnce({ rows: withTotal(1, [row()]) });
+    const res = mockRes();
+    await new AdminPatientsMapController().getMapPoints(
+      req(parse({ country: 'AR', search: 'Reyna Alaburda' })), res,
+    );
+    expect(res.statusCode).toBe(200);
+    const logged = mockLogInfo.mock.calls[0][0] as Record<string, unknown>;
+    expect(logged.hasSearchFilter).toBe(true);
+    expect(logged).not.toHaveProperty('search');
+    // nenhum VALOR do termo em lugar nenhum da linha logada
+    expect(JSON.stringify(logged).toLowerCase()).not.toContain('reyna');
+    expect(JSON.stringify(logged).toLowerCase()).not.toContain('alaburda');
+  });
+
+  it('sem busca, o booleano é false (a allowlist não muda de forma)', async () => {
+    mockLogInfo.mockClear();
+    mockQuery.mockResolvedValueOnce({ rows: withTotal(1, [row()]) });
+    await new AdminPatientsMapController().getMapPoints(req(parse(SCOPE)), mockRes());
+    expect((mockLogInfo.mock.calls[0][0] as Record<string, unknown>).hasSearchFilter).toBe(false);
   });
 });

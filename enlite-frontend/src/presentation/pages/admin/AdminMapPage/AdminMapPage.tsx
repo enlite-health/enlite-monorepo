@@ -33,38 +33,20 @@ import { Select } from '@presentation/components/atoms/Select';
 import { Button } from '@presentation/components/atoms/Button';
 import { PointsMap } from '@presentation/components/molecules/PointsMap/PointsMap';
 import { CenterLabel, Field, Legend, NoLocationNotice, Step } from './mapSidebar';
-import { AnchorEmptyState, AnchorPicker, type AnchorOption, type AnchorStatus, type MapAnchor } from './mapAnchor';
+import { AnchorEmptyState, AnchorPicker, type MapAnchor } from './mapAnchor';
+import { ANCHOR_SEARCH_MIN_CHARS, pointIdOf, useAnchorCandidates } from './useAnchorCandidates';
 import { MapCounts, MapResultsList, type ResultRow } from './mapResults';
 import { CorridorPanel } from './CorridorPanel';
 import { corridorPairFor } from '@hooks/admin/useCorridor';
 import { usePatientsMapPoints, useWorkersMapPoints } from '@hooks/admin/useMapPoints';
 import type { MapCountry, PatientsMapFilters, RouteLeg, WorkersMapFilters } from '@infrastructure/http/AdminMapApiService';
 import {
-  ANCHOR_PICKER_RADIUS_KM, DEFAULT_CENTER, DEFAULT_CENTER_BY_COUNTRY, DEFAULT_COUNTRY, DEFAULT_RADIUS_KM,
-  anchorTextsFor, buildResultRows, corridorLabelsFor, filterOptionsFor, legendEntries, placeLabel, sameCenter,
+  DEFAULT_CENTER, DEFAULT_CENTER_BY_COUNTRY, DEFAULT_COUNTRY, DEFAULT_RADIUS_KM,
+  anchorTextsFor, buildResultRows, corridorLabelsFor, filterOptionsFor, legendEntries, sameCenter,
 } from './mapPageConfig';
 
 type Kind = 'workers' | 'patients';
 type Docs = 'all' | 'complete' | 'incomplete';
-
-/**
- * Só quem tem coordenada COMPLETA pode virar âncora. É um type guard, não um
- * predicado qualquer: depois do `.filter(located)` o TypeScript sabe que
- * `lat`/`lng` são `number`, e some a guarda de nulo que viria depois — guarda
- * que seria INALCANÇÁVEL, porque a lista já foi filtrada. Guarda inalcançável
- * é pior que ausente: ela finge cobrir um caso que não pode acontecer.
- */
-type Located<P> = P & { lat: number; lng: number };
-const located = <P extends { lat: number | null; lng: number | null }>(p: P): p is Located<P> =>
-  p.lat !== null && p.lng !== null;
-
-/** O id do PONTO: um paciente é um por endereço; um prestador é ele mesmo. */
-const pointIdOf = (p: { id: string; addressId?: string | null }): string => p.addressId ?? p.id;
-
-const anchorLabel = (p: { name: string; city: string | null; neighborhood: string | null }): string => {
-  const place = placeLabel(p);
-  return place ? `${p.name} · ${place}` : p.name;
-};
 
 export function AdminMapPage(): JSX.Element {
   const { t } = useTranslation();
@@ -104,23 +86,13 @@ export function AdminMapPage(): JSX.Element {
     ...(onlyOpenVacancies ? { with_open_vacancies: true } : {}),
   }), [country, center, radiusKm, patientStatus, onlyOpenVacancies]);
 
-  /**
-   * Escopo do seletor da ÂNCORA: centro do país + raio FIXO, independente do
-   * raio da tela. Amarrá-lo ao raio escolhido seria circular — com 5 km o
-   * operador teria de achar o paciente dentro de 5 km do Obelisco para só
-   * então poder centrar nele.
-   */
-  const anchorScope = useMemo(
-    () => ({ country, center: DEFAULT_CENTER_BY_COUNTRY[country], radius_km: ANCHOR_PICKER_RADIUS_KM }),
-    [country],
-  );
-
   // O portão: sem âncora, NADA busca. Abrir a página custa zero request, e o
   // seletor só vai ao servidor quando alguém o toca.
   const workers = useWorkersMapPoints(workersFilters, kind === 'workers' && patientAnchor !== null);
   const patients = usePatientsMapPoints(patientsFilters, kind === 'patients' && workerAnchor !== null);
-  const patientPicker = usePatientsMapPoints(anchorScope, kind === 'workers' && touchedPatients);
-  const workerPicker = useWorkersMapPoints(anchorScope, kind === 'patients' && touchedWorkers);
+
+  /** Quem pode virar âncora — por raio de 50 km, ou por NOME quando se digita. */
+  const anchorPicker = useAnchorCandidates({ kind, country, touchedPatients, touchedWorkers });
 
   const active = kind === 'workers' ? workers : patients;
 
@@ -147,25 +119,19 @@ export function AdminMapPage(): JSX.Element {
     setHoveredId(null);
   };
 
-  /** Os candidatos a âncora da aba ativa, já sem quem não tem coordenada. */
-  const anchorCandidates = useMemo(() => (kind === 'workers'
-    ? patientPicker.points.filter(located)
-    : workerPicker.points.filter(located)
-  ), [kind, patientPicker.points, workerPicker.points]);
-
-  const anchorOptions = useMemo<AnchorOption[]>(
-    () => anchorCandidates.map((p) => ({ value: pointIdOf(p), label: anchorLabel(p) })),
-    [anchorCandidates],
-  );
-
-  /** O seletor da aba ativa — é dele que sai o "carregando/erro/cortado". */
-  const anchorSource = kind === 'workers' ? patientPicker : workerPicker;
-  const anchorStatus: AnchorStatus = {
-    isLoading: anchorSource.isLoading,
-    error: anchorSource.error,
-    truncated: anchorSource.truncated,
-  };
   const { labels: anchorLabels, ui: anchorUi } = anchorTextsFor(t, kind);
+
+  /**
+   * A lista vazia tem TRÊS causas e uma mensagem só seria mentira em duas
+   * delas: quem digitou 1 letra precisa saber que falta digitar, e quem
+   * digitou um nome que não existe precisa saber que a busca foi ao servidor
+   * — antes, "Sin resultados" queria dizer só "não está nos 50 km".
+   */
+  const anchorEmptyMessage = anchorPicker.searchText.trim().length === 0
+    ? undefined
+    : anchorPicker.isSearching
+      ? t('admin.map.anchorNoMatch', 'Sin resultados para ese nombre')
+      : t('admin.map.anchorTypeMore', { defaultValue: 'Escribí al menos {{n}} letras', n: ANCHOR_SEARCH_MIN_CHARS });
 
   /**
    * Um caminho só: sem correspondência — que é o caso da opção vazia
@@ -174,7 +140,7 @@ export function AdminMapPage(): JSX.Element {
    * clicava e a tela ignorava.
    */
   const onPickAnchor = (id: string): void => {
-    const found = anchorCandidates.find((x) => pointIdOf(x) === id);
+    const found = anchorPicker.candidates.find((x) => pointIdOf(x) === id);
     const next: MapAnchor | null = found
       ? { id, personId: found.id, name: found.name, lat: found.lat, lng: found.lng }
       : null;
@@ -272,12 +238,14 @@ export function AdminMapPage(): JSX.Element {
               label={anchorUi.label}
               placeholder={anchorUi.placeholder}
               searchPlaceholder={anchorUi.searchPlaceholder}
-              options={anchorOptions}
+              options={anchorPicker.options}
               value={anchor?.id ?? ''}
               onChange={onPickAnchor}
               onTouch={() => (kind === 'workers' ? setTouchedPatients(true) : setTouchedWorkers(true))}
-              status={anchorStatus}
+              status={anchorPicker.status}
               labels={anchorLabels}
+              onSearchChange={kind === 'workers' ? anchorPicker.onSearchChange : undefined}
+              emptyMessage={kind === 'workers' ? anchorEmptyMessage : undefined}
             />
             {anchor && (
               <>

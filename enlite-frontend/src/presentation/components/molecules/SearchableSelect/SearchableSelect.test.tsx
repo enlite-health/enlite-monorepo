@@ -156,3 +156,106 @@ describe('SearchableSelect — clique fora', () => {
   });
 });
 
+
+/**
+ * Modo BUSCA NO SERVIDOR (07/09/2026).
+ *
+ * O componente tem 9 usos em 6 telas, e 8 deles continuam no modo local — por
+ * isso o primeiro teste daqui é o que MAIS importa: sem `onSearchChange`, nada
+ * muda. O modo novo existe porque filtrar em memória só acha quem já foi
+ * carregado; no mapa isso escondia todo paciente fora de um raio de 50 km.
+ */
+describe('SearchableSelect — busca no servidor', () => {
+  const abrir = (): void => { fireEvent.click(screen.getByRole('button')); };
+  const digitar = (v: string): void => {
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: v } });
+  };
+
+  it('🔒 sem `onSearchChange` o filtro LOCAL continua igual (os outros 8 usos)', () => {
+    render(<SearchableSelect options={OPTIONS} value="" onChange={vi.fn()} />);
+    abrir();
+    digitar('2-B');
+    const opcoes = screen.getAllByRole('option').map((o) => o.textContent);
+    expect(opcoes).toContain('Caso 2-B');
+    expect(opcoes).not.toContain('Caso 1-A');
+  });
+
+  it('com `onSearchChange` NÃO filtra em memória: mostra o que o servidor devolveu', () => {
+    render(<SearchableSelect options={OPTIONS} value="" onChange={vi.fn()} onSearchChange={vi.fn()} />);
+    abrir();
+    digitar('nada disso casa');
+    const opcoes = screen.getAllByRole('option').map((o) => o.textContent);
+    expect(opcoes).toContain('Caso 1-A');
+    expect(opcoes).toContain('Caso Ñoño');
+  });
+
+  it('devolve o termo UMA vez por pausa, não por tecla', () => {
+    vi.useFakeTimers();
+    try {
+      const onSearchChange = vi.fn();
+      render(<SearchableSelect options={OPTIONS} value="" onChange={vi.fn()} onSearchChange={onSearchChange} searchDebounceMs={300} />);
+      abrir();
+      onSearchChange.mockClear();
+      digitar('R');
+      digitar('Re');
+      digitar('Rey');
+      vi.advanceTimersByTime(299);
+      expect(onSearchChange).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(onSearchChange).toHaveBeenCalledTimes(1);
+      expect(onSearchChange).toHaveBeenCalledWith('Rey');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('🔒 pai que recria o callback a cada render NÃO dispara busca extra', () => {
+    vi.useFakeTimers();
+    try {
+      const espia = vi.fn();
+      // cada render passa uma função NOVA — é o caso que fez o autocomplete do
+      // Places chamar o Google uma vez por tecla. O ref segura isso.
+      const { rerender } = render(
+        <SearchableSelect options={OPTIONS} value="" onChange={vi.fn()} onSearchChange={(t) => espia(t)} />,
+      );
+      abrir();
+      digitar('Rey');
+      espia.mockClear();
+      rerender(<SearchableSelect options={OPTIONS} value="" onChange={vi.fn()} onSearchChange={(t) => espia(t)} />);
+      rerender(<SearchableSelect options={OPTIONS} value="" onChange={vi.fn()} onSearchChange={(t) => espia(t)} />);
+      vi.advanceTimersByTime(400);
+      expect(espia).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('`emptyMessage` substitui o "Sin resultados" genérico', () => {
+    render(
+      <SearchableSelect options={[]} value="" onChange={vi.fn()} onSearchChange={vi.fn()} emptyMessage="Escribí al menos 2 letras" />,
+    );
+    abrir();
+    expect(screen.getByTestId('searchable-select-empty').textContent).toBe('Escribí al menos 2 letras');
+  });
+
+  it('sem `emptyMessage` mantém o texto padrão', () => {
+    render(<SearchableSelect options={[]} value="" onChange={vi.fn()} />);
+    abrir();
+    expect(screen.getByTestId('searchable-select-empty').textContent).toBe('Sin resultados');
+  });
+});
+
+/**
+ * ⚠️ Este teste NÃO fecha a linha 100 (`if (disabled) return` em `handleOpen`).
+ * O `<button disabled>` já barra o clique no DOM, então aquele early-return é
+ * inalcançável pela UI — código defensivo morto, anterior a esta mudança. Fica
+ * como achado reportado, não removido aqui: apagá-lo é mudança de
+ * comportamento fora do que foi pedido. O que o teste prova é o COMPORTAMENTO:
+ * desabilitado não abre a lista.
+ */
+it('disabled não abre a lista', () => {
+  const onSearchChange = vi.fn();
+  render(<SearchableSelect options={OPTIONS} value="" onChange={vi.fn()} disabled onSearchChange={onSearchChange} />);
+  fireEvent.click(screen.getByRole('button'));
+  expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+});
