@@ -3,6 +3,7 @@ import { AdminRepository, AdminRecord } from '../infrastructure/AdminRepository'
 import { toAdminUserDto, type AdminUserDto } from './adminUserDto';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { EnliteRole } from '../domain/EnliteRole';
+import { STAFF_ACCOUNT } from '../domain/AccountType';
 import * as admin from 'firebase-admin';
 import { mergeCustomClaims } from '../infrastructure/mergeCustomClaims';
 import { reportError } from '@shared/logging';
@@ -73,7 +74,7 @@ export class GetAdminProfileUseCase {
     const provisionedRole = EnliteRole.RECRUITER;
     console.log(`${LOG} provisioning new staff | uid=${firebaseUid} email=${email} role=${provisionedRole}`);
 
-    await mergeCustomClaims(firebaseUid, { role: provisionedRole });
+    await mergeCustomClaims(firebaseUid, { role: provisionedRole, account_type: STAFF_ACCOUNT });
 
     const client = await this.db.getPool().connect();
     try {

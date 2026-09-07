@@ -23,6 +23,8 @@
     "archive:stale-workers:dry": "ts-node -r dotenv/config -r tsconfig-paths/register scripts/bulk-archive-stale-workers-2026-01-30.ts",
     "claims:country": "ts-node -r dotenv/config -r tsconfig-paths/register scripts/set-staff-country-claim.ts --execute",
     "claims:country:dry": "ts-node -r dotenv/config -r tsconfig-paths/register scripts/set-staff-country-claim.ts",
+    "claims:account-type": "ts-node -r dotenv/config -r tsconfig-paths/register scripts/set-account-type-claim.ts --execute",
+    "claims:account-type:dry": "ts-node -r dotenv/config -r tsconfig-paths/register scripts/set-account-type-claim.ts",
     "espelho:stage": "ts-node -r dotenv/config -r tsconfig-paths/register scripts/espelhar-staff-stage.ts --execute",
     "iam:config:export": "ts-node -r dotenv/config -r tsconfig-paths/register scripts/iam-config-export.ts",
     "iam:config:import": "ts-node -r dotenv/config -r tsconfig-paths/register scripts/iam-config-import.ts --execute",

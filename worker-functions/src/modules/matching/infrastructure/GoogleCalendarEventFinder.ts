@@ -184,7 +184,7 @@ export async function listStaffEmails(db: Pool, impersonateEmail: string): Promi
     const result = await db.query<{ email: string }>(
       `SELECT DISTINCT email FROM users
        WHERE email LIKE $1 AND is_active = true
-         AND role IN ('admin', 'recruiter', 'community_manager')`,
+         AND account_type = 'staff'`,
       [`%@${domain}`],
     );
     const emails = result.rows.map((r) => r.email);

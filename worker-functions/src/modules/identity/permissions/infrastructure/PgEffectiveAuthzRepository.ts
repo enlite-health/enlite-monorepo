@@ -54,14 +54,16 @@ const SNAPSHOT_SQL = `
 
 /**
  * Staff ACTIVE sem NENHUM grupo vigente — a medida do gate da virada (task 2.7).
- * A lista de papéis de staff vem de fora (o módulo não conhece o enum de
- * `identity`, para seguir extraível — D115 §7).
+ * Staff é `users.account_type = 'staff'` (D294): vocabulário do banco, não enum
+ * de `identity` — o módulo segue extraível (D115 §7) sem receber lista de papéis.
  */
+export const STAFF_ACCOUNT_TYPE = 'staff';
+
 const WITHOUT_GROUP_SQL = `
   SELECT count(*)::int AS n
     FROM users u
    WHERE u.status = 'ACTIVE'
-     AND u.role = ANY($2)
+     AND u.account_type = $2
      AND NOT EXISTS (
        SELECT 1
          FROM iam.user_groups ug
@@ -74,11 +76,7 @@ const WITHOUT_GROUP_SQL = `
      )`;
 
 export class PgEffectiveAuthzRepository implements EffectiveAuthzRepository {
-  constructor(
-    private readonly pool: Pool,
-    /** Papéis que contam como staff do painel (injetado — ver comentário acima). */
-    private readonly staffRoles: readonly string[],
-  ) {}
+  constructor(private readonly pool: Pool) {}
 
   async effectivePermissions(uid: string, tenantId: string): Promise<string[]> {
     const result = await readRows(() =>
@@ -122,7 +120,7 @@ export class PgEffectiveAuthzRepository implements EffectiveAuthzRepository {
 
   async countActiveStaffWithoutGroup(tenantId: string): Promise<number> {
     const result = await readRows(() =>
-      this.pool.query<{ n: number }>(WITHOUT_GROUP_SQL, [tenantId, [...this.staffRoles]]),
+      this.pool.query<{ n: number }>(WITHOUT_GROUP_SQL, [tenantId, STAFF_ACCOUNT_TYPE]),
     );
     return result.rows[0]?.n ?? 0;
   }

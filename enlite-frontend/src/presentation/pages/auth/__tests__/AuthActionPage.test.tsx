@@ -150,6 +150,17 @@ describe('AuthActionPage', () => {
     expect(screen.queryByTestId('password-new-password')).toBeNull();
   });
 
+  it('exibe card "link invalido" quando o oobCode falta na URL (sem chamar o Firebase)', async () => {
+    setParams({ mode: 'resetPassword' });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText('auth.action.linkInvalid')).toBeTruthy();
+    });
+    expect(mockVerifyPasswordResetCode).not.toHaveBeenCalled();
+  });
+
   // ─── 4. Submit com senhas diferentes ─────────────────────────────────────
 
   it('exibe erro de validacao quando senhas nao coincidem, sem chamar confirmPasswordReset', async () => {
@@ -308,6 +319,38 @@ describe('AuthActionPage', () => {
     const form = screen.getByTestId('password-new-password').closest('form')!;
     fireEvent.submit(form);
 
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true });
+    });
+  });
+
+  // ─── 8b. D294: `account_type` vence o papel ───────────────────────────────
+
+  async function submitComClaims(claims: Record<string, string>): Promise<void> {
+    setParams({ mode: 'resetPassword', oobCode: 'valid-code' });
+    mockVerifyPasswordResetCode.mockResolvedValueOnce('alguem@example.com');
+    mockConfirmPasswordReset.mockResolvedValueOnce(undefined);
+    mockSignInWithEmailAndPassword.mockResolvedValueOnce({
+      user: { getIdTokenResult: vi.fn().mockResolvedValueOnce({ claims }) },
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByTestId('password-new-password')).toBeTruthy();
+    });
+    fireEvent.change(screen.getByTestId('password-new-password'), { target: { value: 'newpassword123' } });
+    fireEvent.change(screen.getByTestId('password-confirm-password'), { target: { value: 'newpassword123' } });
+    fireEvent.submit(screen.getByTestId('password-new-password').closest('form')!);
+  }
+
+  it('account_type=staff → /admin, mesmo sem role', async () => {
+    await submitComClaims({ account_type: 'staff' });
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/admin', { replace: true });
+    });
+  });
+
+  it('account_type=worker → /, mesmo com role=admin (o tipo declarado vence a ponte)', async () => {
+    await submitComClaims({ account_type: 'worker', role: 'admin' });
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true });
     });

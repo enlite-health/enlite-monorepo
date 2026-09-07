@@ -3,6 +3,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { AdminRepository } from '../infrastructure/AdminRepository';
 import { EmailService } from '../infrastructure/EmailService';
 import { EnliteRole, StaffRole } from '../domain/EnliteRole';
+import { STAFF_ACCOUNT } from '../domain/AccountType';
 import * as admin from 'firebase-admin';
 import { mergeCustomClaims } from '../infrastructure/mergeCustomClaims';
 import { reportError } from '@shared/logging';
@@ -43,8 +44,8 @@ export class CreateAdminUserUseCase {
         displayName: input.displayName,
       });
 
-      // 2. Set custom claims
-      await mergeCustomClaims(firebaseUser.uid, { role });
+      // 2. Set custom claims — o tipo da conta é a fronteira (D294); o papel é a ponte/fallback.
+      await mergeCustomClaims(firebaseUser.uid, { role, account_type: STAFF_ACCOUNT });
 
       // 3. Persist in DB inside a transaction
       await client.query('BEGIN');

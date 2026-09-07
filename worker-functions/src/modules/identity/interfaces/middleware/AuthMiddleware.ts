@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { IAuthenticationService } from '../../ports/IAuthenticationService';
 import { IAuthorizationEngine } from '../../ports/IAuthorizationEngine';
 import { AuthContext, Credentials, CredentialType, PrincipalType, RequestMetadata } from '../../domain/Auth';
-import { isStaffRole } from '../../domain/EnliteRole';
+import { accountTypeForRole, isStaffAccount, type AccountTyped } from '../../domain/AccountType';
 import { MultiAuthService } from '../../infrastructure/MultiAuthService';
 import { loggingAls, logger } from '@shared/logging';
 import { staffActor, workerSelfActor } from '@shared/audit/actorSource';
@@ -18,14 +18,14 @@ import { ENLITE_TENANT_ID, type PermissionClient } from '@modules/identity/permi
  * aqui só somamos o ator. Sem store (job fora de request) é no-op.
  *
  * ⚠️ `requireAuth` protege TANTO o painel QUANTO as rotas do próprio prestador
- * (`/api/workers/me/*`). Sem o recorte por papel, uma edição que o candidato faz
- * no app entraria na medição como trabalho do time — por isso o ator sai de
- * `isStaffRole`, não do simples fato de estar autenticado.
+ * (`/api/workers/me/*`). Sem o recorte por tipo de conta, uma edição que o
+ * candidato faz no app entraria na medição como trabalho do time — por isso o
+ * ator sai de `isStaffAccount` (D294), não do simples fato de estar autenticado.
  */
 function rememberActorInAls(
-  uid?: string | null,
-  email?: string | null,
-  roles?: readonly string[] | null,
+  uid: string | null | undefined,
+  email: string | null | undefined,
+  principal: AccountTyped,
   country?: unknown,
 ): void {
   // `?.` de propósito (mesmo padrão de withActorContext): em teste com
@@ -33,7 +33,7 @@ function rememberActorInAls(
   // pode derrubar a autenticação.
   const store = loggingAls?.getStore?.();
   if (!store) return;
-  const isStaff = (roles ?? []).some((role) => isStaffRole(role as never));
+  const isStaff = isStaffAccount(principal);
   const actor = isStaff ? staffActor(uid, email) : workerSelfActor(uid);
   if (actor) store.actor = actor;
   declareDbContext(isStaff, uid, country);
@@ -127,9 +127,9 @@ export class AuthMiddleware {
    * listas, e o guard da rota resolve de novo e NEGA (fail-closed lá, onde a
    * decisão é tomada).
    */
-  private async attachEffectiveAuthz(principal: { id: string; roles?: string[] }): Promise<void> {
+  private async attachEffectiveAuthz(principal: { id: string } & AccountTyped): Promise<void> {
     if (!this.permissions || process.env.PERMISSION_ENGINE_ENABLED !== 'true') return;
-    if (!(principal.roles ?? []).some((role) => isStaffRole(role))) return;
+    if (!isStaffAccount(principal)) return;
     try {
       const resolved = await this.permissions.resolve(principal.id, ENLITE_TENANT_ID);
       (principal as { permissions?: string[]; countries?: string[] }).permissions = resolved.permissions;
@@ -150,11 +150,14 @@ export class AuthMiddleware {
         const mockUser = (req as any).user;
         if (process.env.USE_MOCK_AUTH === 'true' && mockUser?.uid) {
           const roles: string[] = mockUser.role ? [mockUser.role] : [];
+          // O mock só conhece `role`; o tipo vem pela ponte (D294), como o token real sem claim.
+          const accountType = mockUser.account_type ?? accountTypeForRole(mockUser.role);
           const authContext: AuthContext = {
             principal: {
               id: mockUser.uid,
               type: PrincipalType.USER,
               roles,
+              ...(accountType ? { accountType } : {}),
             },
             credentials: {
               type: CredentialType.GOOGLE_ID_TOKEN,
@@ -171,8 +174,8 @@ export class AuthMiddleware {
             },
           };
           (req as any).authContext = authContext;
-          (req as any).user = { uid: mockUser.uid, email: mockUser.email, role: mockUser.role, roles };
-          rememberActorInAls(mockUser.uid, mockUser.email, roles, mockUser.country);
+          (req as any).user = { uid: mockUser.uid, email: mockUser.email, role: mockUser.role, roles, accountType };
+          rememberActorInAls(mockUser.uid, mockUser.email, authContext.principal, mockUser.country);
           await this.attachEffectiveAuthz(authContext.principal);
           return next();
         }
@@ -214,12 +217,13 @@ export class AuthMiddleware {
           uid: authContext.principal.id,
           type: authContext.principal.type,
           roles: authContext.principal.roles,
+          accountType: authContext.principal.accountType,
         };
 
         rememberActorInAls(
           authContext.principal.id,
           null,
-          authContext.principal.roles,
+          authContext.principal,
           authContext.principal.country,
         );
 
@@ -323,15 +327,14 @@ export class AuthMiddleware {
   }
 
   /**
-   * Require staff access (admin | recruiter | community_manager).
-   * Use this for endpoints that any Enlite internal user can access.
+   * Fronteira staff × prestador (D294): conta de tipo `staff`. É a única coisa
+   * que este guard decide — o que o staff PODE é a célula (`PermissionMiddleware`).
    */
   requireStaff() {
     return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
       await this.requireAuth()(req, res, () => {
         const user = (req as any).user;
-        const staffRoles = ['admin', 'recruiter', 'community_manager'];
-        if (!user?.roles?.some((r: string) => staffRoles.includes(r))) {
+        if (!user || !isStaffAccount(user)) {
           res.status(403).json({ success: false, error: 'Staff access required' });
           return;
         }
@@ -346,7 +349,7 @@ export class AuthMiddleware {
    * Firebase só é chamado se a API key falhar.
    *
    * Em USE_MOCK_AUTH=true (E2E): usa req.user do MockAuthMiddleware
-   * e verifica role staff.
+   * e verifica o tipo de conta (staff).
    */
   requireStaffOrApiKey() {
     return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -357,12 +360,15 @@ export class AuthMiddleware {
           res.status(401).end();
           return;
         }
-        const staffRoles = ['admin', 'recruiter', 'community_manager'];
-        if (!staffRoles.includes(mockUser.role ?? '')) {
+        const mockPrincipal: AccountTyped = {
+          accountType: mockUser.account_type ?? null,
+          roles: mockUser.role ? [mockUser.role] : [],
+        };
+        if (!isStaffAccount(mockPrincipal)) {
           res.status(401).end();
           return;
         }
-        rememberActorInAls(mockUser.uid, mockUser.email, [mockUser.role ?? ''], mockUser.country);
+        rememberActorInAls(mockUser.uid, mockUser.email, mockPrincipal, mockUser.country);
         return next();
       }
 
@@ -398,16 +404,17 @@ export class AuthMiddleware {
           });
           if (firebaseContext) {
             const roles = firebaseContext.principal.roles ?? [];
-            if (roles.some(r => isStaffRole(r))) {
+            if (isStaffAccount(firebaseContext.principal)) {
               req.authContext = firebaseContext;
               req.user = {
                 uid: firebaseContext.principal.id,
                 roles,
+                accountType: firebaseContext.principal.accountType,
               };
               rememberActorInAls(
                 firebaseContext.principal.id,
                 null,
-                roles,
+                firebaseContext.principal,
                 firebaseContext.principal.country,
               );
               return next();

@@ -116,7 +116,8 @@ describe('CreateAdminUserUseCase', () => {
     expect(mockCreateUser.mock.calls[0][0]).not.toHaveProperty('password');
     // O claim `role` continua sendo gravado: é a fronteira staff × prestador e o
     // fallback `untilEnforced` — com o MENOR privilégio (era `admin` por default).
-    expect(mockSetCustomUserClaims).toHaveBeenCalledWith('uid-123', { role: PAPEL_DE_CONTA_NOVA });
+    // D294 (lex C8): SÓ `account_type` entra junto do papel — nenhum outro campo.
+    expect(mockSetCustomUserClaims).toHaveBeenCalledWith('uid-123', { role: PAPEL_DE_CONTA_NOVA, account_type: 'staff' });
     expect(PAPEL_DE_CONTA_NOVA).toBe(EnliteRole.RECRUITER);
     expect(mockGeneratePasswordResetLink).toHaveBeenCalledWith('newadmin@enlite.health');
     expect(mockSendInvitationEmail).toHaveBeenCalledWith(
@@ -144,7 +145,7 @@ describe('CreateAdminUserUseCase', () => {
     });
 
     expect(result.isSuccess).toBe(true);
-    expect(mockSetCustomUserClaims).toHaveBeenCalledWith('uid-rec', { role: PAPEL_DE_CONTA_NOVA });
+    expect(mockSetCustomUserClaims).toHaveBeenCalledWith('uid-rec', { role: PAPEL_DE_CONTA_NOVA, account_type: 'staff' });
     const createCall = mockQuery.mock.calls.find((c) => String(c[0]).includes('create_user_with_role'));
     expect(createCall?.[1]?.[4]).toBe(PAPEL_DE_CONTA_NOVA);
   });

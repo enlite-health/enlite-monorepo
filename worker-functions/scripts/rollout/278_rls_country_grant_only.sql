@@ -60,7 +60,7 @@ BEGIN
   SELECT count(*) INTO v_sem
   FROM users u
   WHERE u.status = 'ACTIVE'
-    AND u.role IN ('admin', 'recruiter', 'community_manager')
+    AND u.account_type = 'staff'
     AND cardinality(iam.effective_countries(u.firebase_uid, iam.current_tenant_id())) = 0;
   IF v_ack IS NULL OR v_ack <> v_sem::text THEN
     RAISE EXCEPTION USING ERRCODE = '23514',

@@ -194,7 +194,8 @@ describe('GetAdminProfileUseCase', () => {
       const useCase = new GetAdminProfileUseCase();
       await useCase.execute(FIREBASE_UID);
 
-      expect(mockSetCustomUserClaims).toHaveBeenCalledWith(FIREBASE_UID, { role: 'recruiter' });
+      // D294 (lex C8): SÓ `account_type` entra junto do papel — nenhum outro campo.
+      expect(mockSetCustomUserClaims).toHaveBeenCalledWith(FIREBASE_UID, { role: 'recruiter', account_type: 'staff' });
     });
 
     it('auto-provision PRESERVA o claim country da ABAC (bug de QA 16/08: setCustomUserClaims apagava)', async () => {
@@ -208,7 +209,7 @@ describe('GetAdminProfileUseCase', () => {
       const useCase = new GetAdminProfileUseCase();
       await useCase.execute(FIREBASE_UID);
 
-      expect(mockSetCustomUserClaims).toHaveBeenCalledWith(FIREBASE_UID, { role: 'recruiter', country: 'AR' });
+      expect(mockSetCustomUserClaims).toHaveBeenCalledWith(FIREBASE_UID, { role: 'recruiter', account_type: 'staff', country: 'AR' });
     });
 
     it('deve executar create_user_with_role com os dados corretos do Firebase user', async () => {

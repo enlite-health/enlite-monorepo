@@ -30,7 +30,6 @@ import { argValue } from './lib/cliArgs';
 const COUNTRIES = ['AR', 'BR'] as const;
 type Country = (typeof COUNTRIES)[number];
 
-const STAFF_ROLES = ['admin', 'recruiter', 'community_manager'];
 
 const isDryRun = !process.argv.includes('--execute');
 const showAll = process.argv.includes('--show-all');
@@ -57,8 +56,9 @@ interface StaffRow {
 }
 
 async function listStaff(pool: Pool): Promise<StaffRow[]> {
-  const params: unknown[] = [STAFF_ROLES];
-  let where = 'role = ANY($1) AND is_active = true AND firebase_uid IS NOT NULL';
+  // D294: staff é `account_type = 'staff'`, não a lista de papéis.
+  const params: unknown[] = ['staff'];
+  let where = 'account_type = $1 AND is_active = true AND firebase_uid IS NOT NULL';
   if (targetUid) {
     params.push(targetUid);
     where += ` AND firebase_uid = $${params.length}`;

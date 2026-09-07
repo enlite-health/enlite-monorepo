@@ -10,7 +10,7 @@
 1. [Visão Geral](#1-visão-geral)
 2. [Camadas (Clean Architecture)](#2-camadas-clean-architecture)
 3. [Banco de Dados — Schema e Regras](#3-banco-de-dados--schema-e-regras)
-4. [Papel (`users.role`) — o que sobrou dele depois do ABAC](#4-papel-usersrole--o-que-sobrou-dele-depois-do-abac)
+4. [Tipo de conta (`users.account_type`) e o que sobrou do papel](#4-tipo-de-conta-usersaccount_type-e-o-que-sobrou-do-papel-usersrole)
 5. [Autenticação e Autorização](#5-autenticação-e-autorização)
 6. [Pipeline de Importação](#6-pipeline-de-importação)
 7. [Repositórios](#7-repositórios)
@@ -102,42 +102,43 @@ Definidas em `migrations/006_create_user_helper_functions.sql` (atualizadas em 1
 
 ---
 
-## 4. Papel (`users.role`) — o que sobrou dele depois do ABAC
+## 4. Tipo de conta (`users.account_type`) e o que sobrou do papel (`users.role`)
 
-**Desde 07/09/2026 o papel NÃO é nível de acesso.** Quem decide o que o staff pode fazer é a
-célula `recurso:ação` do grupo (módulo `identity/permissions`, `PermissionMiddleware`, painel
-`/admin/access`). O painel de usuários não mostra nem edita papel, `PATCH /api/admin/users/:id/role`
-não existe mais e `POST /api/admin/users` não aceita `role`.
+**Duas perguntas, duas colunas (D293 + D294, 07/09/2026):**
 
-A coluna `users.role` e o custom claim `role` do Firebase **continuam existindo** por dois motivos,
-os dois temporários ou de outra natureza:
+| pergunta | onde mora | quem lê |
+|---|---|---|
+| o que a conta **PODE** | célula do grupo (`iam.*`, `PermissionMiddleware`, painel `/admin/access`) | `perm.require(recurso, ação)` em toda rota |
+| o que a conta **É** (`staff` \| `worker`; obra social e paciente virão) | `users.account_type` (mig 414) + custom claim `account_type` | `isStaffAccount()` (`domain/AccountType.ts`) — `requireStaff`, desvio de não-staff do engine, contexto de banco da RLS, elegibilidade IAM, listagens de staff, redirecionamento pós-login no front |
 
-1. **Fronteira staff × prestador.** `isStaffRole()` (`src/modules/identity/domain/EnliteRole.ts`:
-   `admin | recruiter | community_manager`) é o que separa quem entra no painel de quem usa o app
-   do prestador (`worker`): `requireStaff()`, o desvio de não-staff do `GroupPermissionEngine`, a
-   classificação do contexto de banco (RLS de país) e a elegibilidade para grupo no IAM.
-2. **Fallback enquanto a família não está enforced.** O `main` chega com o engine desligado; uma rota
-   que era `requireAdmin()` declara `untilEnforced: 'admin'` no próprio guard de célula
-   (`perm.require('x', 'write', { untilEnforced: 'admin' })`) e só nesse estado o papel é lido —
-   com a família em `PERMISSION_ENFORCED_ROUTES` a opção é ignorada por construção. O preço do
-   serviço contratado segue a mesma régua no nível do campo (`contractedServiceHourlyValueAccess`:
-   célula `patient_contract_value:read`; papel `admin` só quando `req.permissionCells === null`).
+`users` hoje só tem staff (prod 18, stage 30 — medido em 07/09); o prestador vive em `workers.auth_uid`.
+Os tipos novos entram alargando o CHECK da 414 **e** o vocabulário de `AccountType.ts`, com parecer do `lex`
+antes de `patient`/`obra_social` (a coluna passaria a revelar dado de saúde por via indireta — C6).
 
-**Provisionamento:** qualquer `@enlite.health` que logar via Google recebe `recruiter`, e o mesmo
-vale para conta criada pelo painel (`PAPEL_DE_CONTA_NOVA`) — o de menor privilégio, porque a conta
-nasce sem grupo e o gestor concede acesso em `/admin/access`.
+**O que ainda usa `role` (ponte, apagável por grep no fim):**
+1. `untilEnforced: 'admin'` nos guards de célula e o preço do serviço contratado quando o engine não decide
+   a request — só enquanto o `main` roda com o engine desligado (D285).
+2. `accountTypeForRole()` / `account_type_for_role()` (TS e SQL, o mesmo mapa por ALLOWLIST): conta cujo claim
+   `account_type` ainda não foi gravado é classificada pelo papel; papel fora dos 3 de staff NUNCA vira staff.
+   O trigger `trg_users_account_type_from_role` (INSERT e UPDATE de `role`) cobre seeds e scripts antigos.
+3. `PAPEL_DE_CONTA_NOVA = recruiter` gravado junto com `account_type = 'staff'` em conta criada pelo painel ou
+   auto-provisionada — o de menor privilégio; acesso se concede por grupo.
+4. `countAdmins()` (`role = 'admin'`) fecha o bootstrap `/api/admin/setup`.
+
+**Backfill do claim:** `npm run claims:account-type:dry` → `npm run claims:account-type` (por ambiente,
+`FIREBASE_PROJECT_ID` + `DATABASE_URL`; grava SÓ `account_type`, por merge). Até rodar, a ponte decide.
 
 **Middleware disponíveis:**
 - `requireAuth()` — só verifica que o token Firebase é válido
-- `requireStaff()` — exige conta de staff (`admin | recruiter | community_manager`)
+- `requireStaff()` — exige conta de tipo `staff`
 - `permissions.family(F).require(recurso, ação, { untilEnforced?: 'admin' })` — a célula
 
-**Regra de uso no `/api/admin/auth/profile`:** usa `requireAuth()` para permitir o
-auto-provisionamento na primeira entrada. O use case faz a checagem de domínio.
+**Regra de uso no `/api/admin/auth/profile`:** usa `requireAuth()` para permitir o auto-provisionamento na
+primeira entrada. O use case faz a checagem de domínio.
 
-**Para apagar a coluna de vez** (depois do flip de todas as famílias em produção): substituir o
-item 1 por um marcador de tipo de conta (ou derivar staff da presença em `iam.user_groups` +
-domínio), remover `untilEnforced` por grep, e só então uma migration de deprecação.
+**Para apagar `role` de vez** (depois do flip de todas as famílias em produção): backfill do claim concluído →
+remover `untilEnforced` e a ponte por grep → migration de deprecação da coluna, do trigger e das funções
+`create_user_with_role`/`change_user_role`.
 
 ---
 

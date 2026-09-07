@@ -11,6 +11,9 @@ declare global {
         email?: string;
         role?: string;
         roles?: string[];
+        /** Tipo da conta (D294): `staff` | `worker` — claim `account_type`; ausente = ponte por `role`. */
+        account_type?: string | null;
+        accountType?: string | null;
         type?: string;
         /** Jurisdição do operador (claim `country`) — ABAC país Fase 1. */
         country?: string;

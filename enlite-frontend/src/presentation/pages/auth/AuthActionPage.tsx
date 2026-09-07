@@ -61,9 +61,15 @@ export function AuthActionPage(): JSX.Element {
       await confirmPasswordReset(auth, oobCode, newPassword);
       const credential = await signInWithEmailAndPassword(auth, verifiedEmail, newPassword);
       const idTokenResult = await credential.user.getIdTokenResult(true);
+      // D294: o tipo da conta (`account_type`) é a fronteira staff × prestador; o papel
+      // é só a ponte para conta que ainda não recebeu o claim novo.
+      const accountType = idTokenResult.claims['account_type'] as string | undefined;
       const role = idTokenResult.claims['role'] as string | undefined;
+      const isStaff = accountType !== undefined
+        ? accountType === 'staff'
+        : role === 'admin' || role === 'recruiter' || role === 'community_manager';
 
-      if (role === 'admin' || role === 'recruiter' || role === 'community_manager') {
+      if (isStaff) {
         navigate('/admin', { replace: true });
       } else {
         navigate('/', { replace: true });
