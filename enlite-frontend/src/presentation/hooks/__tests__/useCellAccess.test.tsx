@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
-import { useCellAccess, useHasCell, useActionGate, useContainerAccess, containersVisibleFor, tabsVisibleFor } from '../useCellAccess';
+import { useCellAccess, useHasCell, useActionGate, useContainerAccess, containersVisibleFor, tabsVisibleFor, screenVisibleFor } from '../useCellAccess';
 import { screenById } from '@presentation/config/screenRegistry';
 import type { AuthzContract } from '@domain/entities/Authz';
 
@@ -154,5 +154,36 @@ describe('tabsVisibleFor — as abas de uma tela para o ator (D286 fase 2)', () 
   it('enforcement off ou indeciso: todas', () => {
     expect(tabsVisibleFor(prestador, TABS_P, [], 'off')).toEqual([...TABS_P]);
     expect(tabsVisibleFor(prestador, TABS_P, null, undefined)).toEqual([...TABS_P]);
+  });
+});
+
+describe('screenVisibleFor — a TELA existe para quem tem qualquer célula dela (D286, item de menu)', () => {
+  it('tela só com células próprias (lista): qualquer uma delas basta, em qualquer ação', () => {
+    const lista = screenById('patients.list');
+    expect(screenVisibleFor(lista, ['patient:read'], 'on')).toBe(true);
+    expect(screenVisibleFor(lista, ['patient:delete'], 'on')).toBe(true);
+    expect(screenVisibleFor(lista, ['patient_family:read'], 'on')).toBe(false);
+    expect(screenVisibleFor(lista, [], 'on')).toBe(false);
+  });
+
+  it('tela só com containers (mapa): a célula de qualquer container basta', () => {
+    const mapa = screenById('map');
+    expect(screenVisibleFor(mapa, ['worker_address:read'], 'on')).toBe(true);
+    expect(screenVisibleFor(mapa, ['patient_address:read'], 'on')).toBe(true);
+    expect(screenVisibleFor(mapa, ['worker:read', 'patient:read'], 'on')).toBe(false);
+  });
+
+  it('tela com célula própria E containers (dashboard): só a própria abre — bloco sem `dashboard:read` leva a 403', () => {
+    const dash = screenById('dashboard');
+    expect(screenVisibleFor(dash, ['dashboard:read'], 'on')).toBe(true);
+    expect(screenVisibleFor(dash, ['dashboard_zones:read'], 'on')).toBe(false);
+    expect(screenVisibleFor(dash, ['patient:read'], 'on')).toBe(false);
+  });
+
+  it('enforcement off ou indeciso, ou permissões ausentes: freio D268', () => {
+    const lista = screenById('patients.list');
+    expect(screenVisibleFor(lista, [], 'off')).toBe(true);
+    expect(screenVisibleFor(lista, null, undefined)).toBe(true);
+    expect(screenVisibleFor(lista, null, 'on')).toBe(false);
   });
 });

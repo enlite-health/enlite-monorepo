@@ -15,7 +15,7 @@
  */
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { accessLevelFor, hasCell, type AccessLevel, type AuthzStatus } from '@domain/entities/Authz';
-import { containersOfTab, type ScreenDef } from '@presentation/config/screenRegistry';
+import { cellsOfScreen, containersOfTab, type ScreenDef } from '@presentation/config/screenRegistry';
 
 export interface CellAccess {
   level: AccessLevel;
@@ -112,4 +112,26 @@ export function tabsVisibleFor<T extends string>(
     // da aba (read, write, execute, send…) — não só o par read/write do `accessLevelFor`.
     return containers.length === 0 || containers.some((ct) => ct.cells.some((cell) => permissions?.includes(cell)));
   });
+}
+
+/**
+ * A TELA existe para este ator (D286, um nível acima de `tabsVisibleFor`) — é o que decide se o
+ * item de menu que a abre aparece. Mesmo freio de enforcement: com o engine OFF, existe sempre.
+ *
+ * Qual célula abre a tela vem do registro:
+ *  - tela que DECLARA células próprias (a lista; `dashboard:read` = "abrir a tela"): qualquer uma
+ *    delas. As dos containers NÃO abrem: `patient:read` é bloco de Gestión a la Vista, mas quem só
+ *    tem ela leva 403 na rota que monta a tela — o item apareceria para levar a um erro (medido no
+ *    e2e `admin-menu-por-celula`, 07/09);
+ *  - tela SÓ de containers (mapa, detalhes): qualquer célula de qualquer container, em qualquer ação
+ *    — a mesma régua das abas.
+ */
+export function screenVisibleFor(
+  screen: ScreenDef,
+  permissions: readonly string[] | null | undefined,
+  enforcement: string | undefined,
+): boolean {
+  if (enforcement !== 'on') return true;
+  const abrem = screen.cells && screen.cells.length > 0 ? screen.cells : cellsOfScreen(screen);
+  return abrem.some((cell) => permissions?.includes(cell));
 }

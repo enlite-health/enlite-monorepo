@@ -2,7 +2,8 @@ import { AppSidebarNavItem } from '@presentation/components/templates/DashboardL
 import { useTranslation } from 'react-i18next';
 import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
 import { EnliteRole } from '@domain/entities/EnliteRole';
-import { useCellAccess } from '@presentation/hooks/useCellAccess';
+import { screenVisibleFor, useCellAccess } from '@presentation/hooks/useCellAccess';
+import { screenByRoute } from '@presentation/config/screenRegistry';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { useFeature } from '@presentation/hooks/useFeature';
 import { SCREEN_FEATURE_MAP } from './screenFeatureMap';
@@ -29,6 +30,7 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
   // atual por `role` continua — não é regressão de segurança na `stage`
   // (engine off), é a MESMA régua de rollout do resto da B1.
   const enforcement = useAdminAuthStore((s) => s.authz?.enforcement);
+  const permissions = useAdminAuthStore((s) => s.authz?.permissions);
   const { canRead: canReadWorkerTags } = useCellAccess('worker');
   const { canRead: canReadDedup } = useCellAccess('dedup');
   const { canRead: canReadPatientChatRoles } = useCellAccess('patient');
@@ -227,9 +229,23 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
       },
     },
   ];
+  // D286 (bug visto na stage em 07/09): os itens de topo (Pacientes, Prestadores, Vacantes, Mapa…)
+  // só passavam pelo filtro de PAÍS (`semFeatureDesligada`, abaixo) — nunca por célula — e
+  // apareciam para quem não tinha nenhuma. Regra: o item existe para quem tem QUALQUER célula da
+  // tela que ele abre (própria ou de container), a mesma régua das abas (`tabsVisibleFor`); a tela
+  // vem do registro pela rota, sem lista à mão. Href sem tela no registro (API Docs) fica: a rota
+  // do back exige só staff, e o menu não inventa célula que a rota não cobra. Engine OFF → `true`.
+  const comAlgumaCelulaDaTela = (item: AppSidebarNavItem): boolean => {
+    const screen = screenByRoute(item.href);
+    return screen === undefined || screenVisibleFor(screen, permissions, enforcement);
+  };
+
+  const itensDeTopo = baseItems.filter(comAlgumaCelulaDaTela);
   const adminItems: AppSidebarNavItem[] = adminItemCandidates
     .filter((c) => c.show)
-    .map((c) => c.item);
+    .map((c) => c.item)
+    // Antes do `sectionStart`: o título da seção tem de cair num item que sobrevive.
+    .filter(comAlgumaCelulaDaTela);
   // `sectionStart` marca o início visual da seção "Administración" — precisa
   // estar no primeiro item que sobreviveu ao filtro, não fixo no de Tags
   // (que agora pode estar ausente sem os outros 3 sumirem junto).
@@ -257,5 +273,6 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
   const semFeatureDesligada = (item: AppSidebarNavItem): boolean =>
     item.href === undefined || featureByHref[item.href] !== false;
 
-  return [...baseItems, ...adminItems, ...accessItems].filter(semFeatureDesligada);
+  // `accessItems` já nasce pela célula (`canSeeAccess`) — a mesma que o registro lista para `/admin/access`.
+  return [...itensDeTopo, ...adminItems, ...accessItems].filter(semFeatureDesligada);
 };

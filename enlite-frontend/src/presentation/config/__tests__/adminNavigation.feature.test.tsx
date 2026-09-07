@@ -12,8 +12,11 @@ vi.mock('@presentation/hooks/useAdminAuth', () => ({
 
 // M1 (D268) — `enforcement: 'on'` default: estes testes exercitam a régua de
 // screen:* por MAPA; o freio de rollout (`useFeature.test.tsx`) tem sua própria suíte.
+// D286 (07/09) — com enforcement 'on', TODO item de topo passou a exigir alguma célula da tela que
+// abre (`screenVisibleFor`). As células de vaga e dashboard entram aqui para que esta suíte continue
+// isolando SÓ o efeito de screen:* — sem elas, o item sumiria por célula, não por país.
 const contrato = (features: AuthzContract['features'], enforcement: AuthzContract['enforcement'] = 'on'): AuthzContract => ({
-  uid: 'u', tenantId: 't', status: 'ACTIVE', permissions: ['permission_management:read'], countries: ['BR'], groups: [], features, enforcement,
+  uid: 'u', tenantId: 't', status: 'ACTIVE', permissions: ['permission_management:read', 'vacancy:read', 'dashboard:read'], countries: ['BR'], groups: [], features, enforcement,
 });
 
 describe('useAdminNavItems — B2 (D268): item de menu some quando screen:* está desligada no país', () => {
