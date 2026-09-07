@@ -37,6 +37,7 @@ import {
 } from '@shared/http/mapQueryCommon';
 import { LIVE_JOB_POSTING_SQL } from '@modules/matching/domain/openJobStatuses';
 import { PATIENT_STATUSES } from '../../domain/enums/PatientStatus';
+import { escapeIlikeWildcards, hasSearchableContent } from '@shared/utils/ilikeEscape';
 
 export const MAX_PATIENT_MAP_POINTS = MAX_MAP_POINTS;
 
@@ -58,7 +59,23 @@ export const PatientsMapBodySchema = withMapScopeRules(
        * Mínimo de 2 caracteres: 1 letra devolveria quase a base inteira, e aí
        * "escopo" não seria escopo nenhum.
        */
-      search: z.string().trim().min(2).max(80).optional(),
+      search: z
+        .string()
+        .trim()
+        .min(2)
+        .max(80)
+        /**
+         * 🔒 Primeira das DUAS camadas contra o curinga (achado do gate no PR
+         * #320). `%` casa qualquer coisa e `_` casa um caractere: como `search`
+         * sozinho JÁ satisfaz a exigência de escopo, um corpo
+         * `{country:'AR', search:'%%'}` passaria os 2 caracteres do mínimo e
+         * devolveria a base inteira — nome, bairro e COORDENADA DE DOMICÍLIO —
+         * com o log registrando um inocente "houve busca". Um termo feito só de
+         * curinga não é uma busca; é 400. A segunda camada é o escape do valor
+         * em `buildPatientsMapQuery`.
+         */
+        .refine(hasSearchableContent, { message: 'search must contain more than wildcards' })
+        .optional(),
     })
     .strict(),
   (q) => q.search !== undefined,
@@ -133,10 +150,14 @@ export function buildPatientsMapQuery(q: PatientsMapBody): { sql: string; params
     // (`PatientQueryRepository`); mudar isso aqui só criaria duas buscas com
     // comportamentos diferentes na mesma tela.
     const pSearch = i++;
-    params.push(q.search);
+    // 🔒 Segunda camada: o valor vai ESCAPADO e as duas cláusulas fecham com
+    // `ESCAPE '\\'`. Sem a cláusula, a barra que o escape insere seria lida
+    // como caractere comum e o curinga voltaria a valer — as duas metades só
+    // funcionam juntas. Mesmo par usado em `IcdCatalogTerminology.buscar`.
+    params.push(escapeIlikeWildcards(q.search));
     conds.push(
-      `(concat_ws(' ', p.first_name, p.last_name) ILIKE '%' || $${pSearch} || '%'
-        OR concat_ws(' ', p.last_name, p.first_name) ILIKE '%' || $${pSearch} || '%')`,
+      `(concat_ws(' ', p.first_name, p.last_name) ILIKE '%' || $${pSearch} || '%' ESCAPE '\\'
+        OR concat_ws(' ', p.last_name, p.first_name) ILIKE '%' || $${pSearch} || '%' ESCAPE '\\')`,
     );
   }
 

@@ -364,3 +364,53 @@ describe('busca por nome (escopo alternativo)', () => {
     expect((mockLogInfo.mock.calls[0][0] as Record<string, unknown>).hasSearchFilter).toBe(false);
   });
 });
+
+/**
+ * 🔒 O CURINGA — o achado que bloqueou este PR no gate (07/09/2026).
+ *
+ * `search` sozinho satisfaz a exigência de escopo. Sem escape, `%` e `_` fazem
+ * o TERMO decidir quantas linhas voltam: `{country:'AR', search:'%%'}` passava
+ * o mínimo de 2 caracteres e devolvia a base inteira — nome, bairro e
+ * COORDENADA DE DOMICÍLIO de 500 pacientes — com o log dizendo apenas
+ * "hasSearchFilter: true". É o "sem escopo é export da base" entrando pela
+ * porta que a própria busca abriu.
+ *
+ * Duas camadas, e cada uma tem teste próprio: a borda recusa o termo que é só
+ * curinga; o SQL escapa o valor e fecha com `ESCAPE`.
+ */
+describe('busca por nome — curinga não vira export da base', () => {
+  it('🔒 `%%` é 400, não a base inteira', () => {
+    expect(PatientsMapBodySchema.safeParse({ country: 'AR', search: '%%' }).success).toBe(false);
+  });
+
+  it('🔒 `__` também — casa um caractere cada, varre igual', () => {
+    expect(PatientsMapBodySchema.safeParse({ country: 'AR', search: '__' }).success).toBe(false);
+  });
+
+  it('🔒 barra dupla e curinga com espaço não passam', () => {
+    expect(PatientsMapBodySchema.safeParse({ country: 'AR', search: '\\\\' }).success).toBe(false);
+    expect(PatientsMapBodySchema.safeParse({ country: 'AR', search: '% %' }).success).toBe(false);
+  });
+
+  it('nome de verdade continua passando', () => {
+    expect(PatientsMapBodySchema.safeParse({ country: 'AR', search: 'Reyna' }).success).toBe(true);
+    expect(PatientsMapBodySchema.safeParse({ country: 'AR', search: 'Peña' }).success).toBe(true);
+  });
+
+  it('🔒 o valor vai ESCAPADO ao banco — curinga no meio do nome vira literal', () => {
+    const { params } = buildPatientsMapQuery(parse({ country: 'AR', search: 'Ana%Paz' }));
+    expect(params).toContain('Ana\\%Paz');
+    expect(params).not.toContain('Ana%Paz');
+  });
+
+  it('🔒 as DUAS cláusulas fecham com ESCAPE — sem ela o escape do valor é inerte', () => {
+    const { sql } = buildPatientsMapQuery(parse({ country: 'AR', search: 'Reyna' }));
+    const comEscape = sql.match(/ILIKE '%' \|\| \$\d+ \|\| '%' ESCAPE '\\'/g) ?? [];
+    expect(comEscape).toHaveLength(2);
+  });
+
+  it('a busca comum não é afetada pelo escape', () => {
+    const { params } = buildPatientsMapQuery(parse({ country: 'AR', search: 'Reyna Alaburda' }));
+    expect(params).toContain('Reyna Alaburda');
+  });
+});

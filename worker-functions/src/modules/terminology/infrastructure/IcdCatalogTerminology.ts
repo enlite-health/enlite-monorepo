@@ -73,6 +73,9 @@ import {
 } from '../domain/TerminologyPort';
 import { IcdCode } from '../domain/IcdCode';
 import { TerminologyUnavailableError } from '../domain/UnavailableTerminology';
+// D4 — o escape de curinga do ILIKE agora é da casa (`@shared/utils/ilikeEscape`):
+// o mapa de pacientes precisou do mesmo, e duas cópias divergiriam.
+import { escapeIlikeWildcards } from '@shared/utils/ilikeEscape';
 
 const DEFAULT_SEARCH_LIMIT = 50;
 /** D8 — medido: `search('a', { limit: 100000 })` sem teto devolveu 18.185 linhas. */
@@ -116,11 +119,6 @@ function titleFor(row: { title_es: string | null; title_en: string | null }, lan
   const primary = lang === 'en' ? row.title_en : row.title_es;
   const fallback = lang === 'en' ? row.title_es : row.title_en;
   return primary ?? fallback ?? '';
-}
-
-/** D4 — escapa `%`/`_` (curingas do LIKE/ILIKE) e a própria barra de escape. */
-function escapeIlikeWildcards(value: string): string {
-  return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
 /** D3 — traduz falha de infraestrutura (schema/tabela ausente) num erro tipado da porta. */
