@@ -216,3 +216,73 @@ describe('useAdminNavItems — Mapa (REQ-04) é item base, para todo staff', () 
     expect(mapIdx).toBe(items.findIndex((item) => item.href === '/admin/patients') + 1);
   });
 });
+
+// ── Bug relatado pelo Gabriel na stage (07/09): usuário de um grupo com UMA célula via TODOS os
+// itens de topo (Pacientes, Prestadores, Vacantes, Mapa…). Regra (D286): item de menu existe para
+// quem tem QUALQUER célula da tela que ele abre — a mesma régua das abas (`tabsVisibleFor`).
+describe('useAdminNavItems — D286: item de topo só existe para quem tem alguma célula da tela', () => {
+  const authzCom = (permissions: string[]): AuthzContract => ({
+    uid: 'u',
+    tenantId: 't',
+    status: 'ACTIVE',
+    permissions,
+    countries: ['AR'],
+    groups: [],
+    features: { AR: {} },
+    enforcement: 'on',
+  });
+  const comoStaff = () =>
+    vi.mocked(useAdminAuth).mockReturnValue({
+      adminProfile: { role: EnliteRole.RECRUITER } as ReturnType<typeof useAdminAuth>['adminProfile'],
+    } as ReturnType<typeof useAdminAuth>);
+  const hrefs = () => renderHook(() => useAdminNavItems()).result.current.map((i) => i.href);
+
+  afterEach(() => useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }));
+
+  it('só `patient_family:read` (uma célula de container do detalhe): vê só o que essa célula abre', () => {
+    comoStaff();
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: authzCom(['patient_family:read']) });
+    const visiveis = hrefs();
+    // O item "Pacientes" abre a LISTA (`/admin/patients`), cujas células são as do operacional,
+    // identidade e clínica — família não abre a lista: item some.
+    expect(visiveis).not.toContain('/admin/patients');
+    for (const h of ['/admin/dashboard', '/admin', '/admin/vacancies', '/admin/workers', '/admin/mapa', '/admin/recruitment']) {
+      expect(visiveis, `${h} apareceu sem célula`).not.toContain(h);
+    }
+  });
+
+  it('`patient:read` abre Pacientes (lista) e NADA mais dos itens de topo por célula', () => {
+    comoStaff();
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: authzCom(['patient:read']) });
+    const visiveis = hrefs();
+    expect(visiveis).toContain('/admin/patients');
+    // `patient:read` também é célula de um bloco do dashboard — mas ABRIR a tela é `dashboard:read`;
+    // pela regra "qualquer célula da tela", o item aparece. Registrado de propósito: é a D286 literal.
+    expect(visiveis).toContain('/admin/dashboard');
+    for (const h of ['/admin', '/admin/vacancies', '/admin/workers', '/admin/mapa', '/admin/recruitment']) {
+      expect(visiveis, `${h} apareceu sem célula`).not.toContain(h);
+    }
+  });
+
+  it('o Mapa só tem containers (sem célula própria): aparece com QUALQUER célula de endereço', () => {
+    comoStaff();
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: authzCom(['worker_address:read']) });
+    expect(hrefs()).toContain('/admin/mapa');
+  });
+
+  it('com o engine OFF a régua é a de antes: todos os itens de topo aparecem (freio D268)', () => {
+    comoStaff();
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: { ...authzCom([]), enforcement: 'off' } });
+    const visiveis = hrefs();
+    for (const h of ['/admin/dashboard', '/admin', '/admin/vacancies', '/admin/workers', '/admin/patients', '/admin/mapa', '/admin/recruitment', '/admin/api-docs']) {
+      expect(visiveis).toContain(h);
+    }
+  });
+
+  it('item cujo href não está no registro de telas (API Docs) NÃO é gateado por célula — nomeado, não esquecido', () => {
+    comoStaff();
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: authzCom([]) });
+    // A rota `/api/docs` do back exige só staff (index.ts), sem célula: o menu espelha o back.
+    expect(hrefs()).toEqual(['/admin/api-docs']);
+  });
+});

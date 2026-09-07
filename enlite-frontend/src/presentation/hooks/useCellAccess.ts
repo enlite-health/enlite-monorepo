@@ -15,7 +15,7 @@
  */
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { accessLevelFor, hasCell, type AccessLevel, type AuthzStatus } from '@domain/entities/Authz';
-import { containersOfTab, type ScreenDef } from '@presentation/config/screenRegistry';
+import { cellsOfScreen, containersOfTab, type ScreenDef } from '@presentation/config/screenRegistry';
 
 export interface CellAccess {
   level: AccessLevel;
@@ -112,4 +112,18 @@ export function tabsVisibleFor<T extends string>(
     // da aba (read, write, execute, send…) — não só o par read/write do `accessLevelFor`.
     return containers.length === 0 || containers.some((ct) => ct.cells.some((cell) => permissions?.includes(cell)));
   });
+}
+
+/**
+ * A TELA existe para este ator (D286, um nível acima de `tabsVisibleFor`): se ele tem QUALQUER
+ * célula dela — própria ou de qualquer container, em qualquer ação. É o que decide se o item de
+ * menu que abre a tela aparece. Mesmo freio de enforcement: com o engine OFF, existe sempre.
+ */
+export function screenVisibleFor(
+  screen: ScreenDef,
+  permissions: readonly string[] | null | undefined,
+  enforcement: string | undefined,
+): boolean {
+  if (enforcement !== 'on') return true;
+  return cellsOfScreen(screen).some((cell) => permissions?.includes(cell));
 }

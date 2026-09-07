@@ -200,6 +200,19 @@ export function containersOfTab(screen: ScreenDef, tab: string): readonly Screen
   return (screen.containers ?? []).filter((ct) => ct.tabs?.includes(tab));
 }
 
+/** Todas as células de uma tela — as próprias (lista, exportar…) e as de todos os containers. */
+export function cellsOfScreen(screen: ScreenDef): string[] {
+  return [...(screen.cells ?? []), ...(screen.containers ?? []).flatMap((ct) => [...ct.cells])];
+}
+
+/**
+ * A tela cuja rota é EXATAMENTE `route` (o `href` de um item de menu) — `undefined` se nenhuma tela
+ * a declara. Aceita `undefined` (item sem href, ex. cabeçalho de seção): não tem tela.
+ */
+export function screenByRoute(route: string | undefined, registry: readonly ScreenDef[] = SCREEN_REGISTRY): ScreenDef | undefined {
+  return registry.find((x) => x.route === route);
+}
+
 export function screenById(id: string, registry: readonly ScreenDef[] = SCREEN_REGISTRY): ScreenDef {
   const s = registry.find((x) => x.id === id);
   if (!s) throw new Error(`tela desconhecida no registro: ${id}`);
