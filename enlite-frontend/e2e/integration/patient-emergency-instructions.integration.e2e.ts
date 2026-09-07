@@ -74,7 +74,8 @@ test.describe('Ficha do paciente: "Instrucciones de emergencia" + autoria (D211.
     const box = page.getByTestId('emergency-instructions');
     await expect(box).toBeVisible({ timeout: 30_000 });
     await expect(box).toHaveAttribute('data-clarity-mask', 'True');
-    await expect(page.getByTestId('emergency-instructions-text')).toHaveText('—');
+    // 06/09: idem observações — o vazio virou frase. Suíte em `es` (l. 47).
+    await expect(page.getByTestId('emergency-instructions-text')).toHaveText('Sin instrucciones registradas.');
     await expect(page.getByTestId('emergency-instructions-edited')).toHaveCount(0);
 
     await page.getByTestId('edit-clinical-btn').click();

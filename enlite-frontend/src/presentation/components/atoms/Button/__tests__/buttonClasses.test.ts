@@ -89,6 +89,37 @@ describe('compact — a variação do desenho de plantillas', () => {
   });
 });
 
+describe('xs e quiet — a barra de ações do cabeçalho (06/09)', () => {
+  /**
+   * 🔒 Entraram no design system sem asserção nenhuma e o gate pegou. A métrica de 100% deste
+   * arquivo NÃO prova nada: `SIZE` e `VARIANT` são literais de módulo, sempre "executados" —
+   * cobertura alta com zero verificação é o caso de "contrato é TETO, não chão".
+   */
+  it('xs é o degrau ABAIXO do sm: 28px, 13px, peso 500', () => {
+    const xs = buttonClasses({ size: 'xs' });
+    expect(xs).toContain('h-7');
+    expect(xs).toContain('text-[13px]');
+    expect(xs).toContain('font-medium');
+    // e continua menor que o sm, que é 32px/14px/600 — se alguém inverter, quebra
+    expect(buttonClasses({ size: 'sm' })).toContain('h-8');
+  });
+
+  it('quiet tem moldura de 1px em cinza — NÃO os 2px de índigo do outline', () => {
+    const quiet = buttonClasses({ variant: 'quiet' });
+    expect(quiet).toContain('border-gray-600');
+    expect(quiet).toContain('text-primary');
+    expect(quiet).not.toContain('border-2');
+  });
+
+  /**
+   * 🔒 A razão de `quiet` existir em vez de afinar a `outline`: ela está em 99 arquivos, e o
+   * comentário do próprio atom registra uma tentativa anterior de mexer que quebrou outra tela.
+   */
+  it('🔒 outline NÃO foi afinada para acomodar a barra', () => {
+    expect(buttonClasses({ variant: 'outline' })).toContain('border-2');
+  });
+});
+
 describe('variante e largura', () => {
   it('fullWidth ocupa a linha', () => {
     expect(buttonClasses({ fullWidth: true })).toContain('w-full');

@@ -14,13 +14,8 @@ interface SelectFieldProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>,
   borderColor?: string;
   onChange?: (value: string) => void;
   label?: string;
-  /**
-   * 'default' = h-60 (forms); 'compact' = h-48 (alinha com o Select do design system);
-   * 'dense' = h-35 (06/09) — o degrau que o `INPUT_SIZE_CONFIG` já tinha e este molecule não
-   * expunha. É para SELECT DE BARRA, ao lado de botões `xs`: com `compact` o controle media 48px
-   * numa linha de botões de 28px e o bloco inteiro destoava. Formulário segue em compact/default.
-   */
-  inputSize?: 'default' | 'compact' | 'dense';
+  /** 'default' = h-60 (forms); 'compact' = h-48 (alinha com o Select do design system) */
+  inputSize?: 'default' | 'compact';
 }
 
 export const SelectField = forwardRef<HTMLSelectElement, SelectFieldProps>(
@@ -39,19 +34,9 @@ export const SelectField = forwardRef<HTMLSelectElement, SelectFieldProps>(
     ref
   ): JSX.Element {
     const borderClass = error ? 'border-red-500' : `border-[${borderColor}]`;
-    // Os números de `dense` são os mesmos do `INPUT_SIZE_CONFIG.dense` — 35px, 13px, borda 1px —
-    // para o select de barra casar com o input denso das telas de plantillas, e não virar um
-    // terceiro tamanho paralelo.
-    const boxClass = inputSize === 'dense'
-      ? 'h-[35px] px-[13px] border'
-      : inputSize === 'compact'
-        ? 'h-12 px-4 border-[1.5px]'
-        : 'h-[60px] px-5 border-2';
-    const textClass = inputSize === 'dense'
-      ? 'text-[13px]'
-      : inputSize === 'compact'
-        ? 'text-sm'
-        : 'text-[20px]';
+    const isCompact = inputSize === 'compact';
+    const boxClass = isCompact ? 'h-12 px-4 border-[1.5px]' : 'h-[60px] px-5 border-2';
+    const textClass = isCompact ? 'text-sm' : 'text-[20px]';
 
     const handleChange = (event: ChangeEvent<HTMLSelectElement>): void => {
       onChange?.(event.target.value);

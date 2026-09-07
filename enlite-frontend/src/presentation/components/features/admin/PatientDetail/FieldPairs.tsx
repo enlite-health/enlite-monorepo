@@ -15,6 +15,22 @@ import { Text } from '@presentation/components/atoms/Text';
  *
  * A correção é PROXIMIDADE, não alinhamento: rótulo em cima do valor (4px de distância), duas
  * colunas, uma âncora só à esquerda. Oito pares cabem em quatro linhas.
+ *
+ * ⚠️ POR QUE NÃO REUSA os `Field` que já existem nesta pasta (gate `revisao-pr`, critério 2).
+ * O grep por FORMA acha três vizinhos com o mesmo esqueleto (`flex flex-col`, rótulo sobre valor):
+ *   · `PatientChatIdsCard.tsx:16`        — rótulo `sm/medium/muted`, valor MONOESPAÇADO + `break-all`
+ *                                          e fallback i18n próprio ("não vinculado"). É id de chat.
+ *   · `ContractedServiceDetailDrawer.tsx:23` — rótulo `xs/secondary`, valor `sm/medium`.
+ *   · este                               — rótulo `2xs/primary/CAIXA-ALTA`, valor `sm/medium/muted`.
+ * O esqueleto é o mesmo; a TIPOGRAFIA não, e ela não é acidente: os três valores deste (`#180149`
+ * no rótulo em caixa-alta, `#73737380` no dado) foram decididos pelo Gabriel em três rodadas de
+ * medição, em 06/09. Consolidar num componente só obrigaria a mudar a aparência dos outros dois
+ * cartões — que ele não revisou e não pediu. Ficam separados DE PROPÓSITO, e a consolidação é item
+ * de lista: quando um deles for redesenhado, ele passa a consumir esta peça.
+ *
+ * Mesma razão para `DetailRow` (em `DetailRows.tsx`) não reusar o `DetailRow` de
+ * `VacancyDetail/VacancyCaseCard.tsx:43` — mesmo nome e mesma forma, mas é OUTRA TELA, fora do
+ * pedido; tocá-la aqui seria o escopo elástico que a regra da casa proíbe.
  */
 
 /** Um par. `full` ocupa as duas colunas — para valor longo (e-mail, domicílio). */

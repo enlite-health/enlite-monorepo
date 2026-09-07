@@ -84,7 +84,9 @@ test.describe('Ficha do paciente: "Observaciones generales" texto longo + autori
     const notes = page.getByTestId('general-notes');
     await expect(notes).toBeVisible({ timeout: 30_000 });
     await expect(notes).toHaveAttribute('data-clarity-mask', 'True');
-    await expect(page.getByTestId('general-notes-text')).toHaveText('—');
+    // 06/09: o vazio deixou de ser `—`. O traço não distinguia "não tem" de "não carregou", e
+    // `ClinicalLongText` passou a receber `emptyMessage`. A suíte roda em `es` (l. 52).
+    await expect(page.getByTestId('general-notes-text')).toHaveText('Sin observaciones registradas.');
     await expect(page.getByTestId('general-notes-edited')).toHaveCount(0);
     expect(runSQL(`SELECT additional_comments_updated_by IS NULL AND additional_comments_updated_at IS NULL FROM patients WHERE id = '${patientId}'`)).toBe('t');
     const diagnosisBefore = runSQL(`SELECT diagnosis FROM patients WHERE id = '${patientId}'`);
