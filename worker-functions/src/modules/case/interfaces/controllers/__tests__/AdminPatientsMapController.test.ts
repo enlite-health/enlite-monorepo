@@ -29,6 +29,7 @@ import {
 } from '../AdminPatientsMapController';
 import { LIVE_JOB_POSTING_SQL, OPEN_JOB_STATUSES } from '@modules/matching/domain/openJobStatuses';
 import { geohash5 } from '@shared/utils/geohash';
+import { NAMED_READ_AUDIT_MAX } from '@shared/http/mapQueryCommon';
 
 function mockRes(): Response & { body: unknown; statusCode: number } {
   const res = { statusCode: 0, body: undefined as unknown } as Response & { body: unknown; statusCode: number };
@@ -194,6 +195,7 @@ describe('AdminPatientsMapController.getMapPoints', () => {
       n: 4, withoutCoordinates: 1, truncated: false,
       totalMatching: 4, status: null, profession: null,
       stateCanonical: null, hasStateFilter: false, hasCityFilter: false, hasSearchFilter: false,
+      resultIds: null,
       radiusKm: 5, geohash5: '69y7p',
     });
     // o centro é a casa de um paciente (picker "Centrar en paciente"): vai a
@@ -218,6 +220,7 @@ describe('AdminPatientsMapController.getMapPoints', () => {
       n: 1, withoutCoordinates: 0, truncated: true,
       totalMatching: 4231, status: ['ACTIVE', 'SUSPENDED'], profession: null,
       stateCanonical: null, hasStateFilter: true, hasCityFilter: true, hasSearchFilter: false,
+      resultIds: null,
       radiusKm: null, geohash5: null,
     });
   });
@@ -246,6 +249,7 @@ describe('AdminPatientsMapController.getMapPoints', () => {
       // QUE houve recorte por província, não QUAL — texto livre não entra no log.
       totalMatching: 0, status: null, profession: null,
       stateCanonical: null, hasStateFilter: true, hasCityFilter: false, hasSearchFilter: false,
+      resultIds: null,
       radiusKm: null, geohash5: null,
     });
   });
@@ -270,6 +274,7 @@ describe('AdminPatientsMapController.getMapPoints', () => {
       // `totalMatching` é o tamanho REAL da varredura (4231), não o da tela (500).
       totalMatching: 4231, status: null, profession: null,
       stateCanonical: null, hasStateFilter: false, hasCityFilter: false, hasSearchFilter: false,
+      resultIds: null,
       radiusKm: 5, geohash5: '69y7p',
     });
   });
@@ -538,18 +543,65 @@ describe('trilha da leitura NOMINAL — allowlist fechada', () => {
       hasSearchFilter: true,
       radiusKm: null,
       geohash5: null,
+      resultIds: ['p1', 'p2', 'p3'],
     });
   });
 
-  it('🔒 nem o termo, nem nome, nem id, nem coordenada de quem foi lido', async () => {
+  it('🔒 nem o termo, nem nome, nem coordenada — o UUID é o ÚNICO identificador, e é deliberado', async () => {
     mockLogInfo.mockClear();
     mockQuery.mockResolvedValueOnce({ rows: withTotal(1, [row()]) });
     await new AdminPatientsMapController().getMapPoints(
       req(parse({ country: 'AR', search: 'Reyna Alaburda' })), mockRes(),
     );
     const linha = JSON.stringify(mockLogInfo.mock.calls[0][0]);
-    for (const proibido of ['Reyna', 'Alaburda', 'Ana', 'Paz', 'p1', 'a1', '-34.60', '-58.38']) {
+    // o termo buscado, o nome de quem foi lido e a coordenada continuam FORA
+    for (const proibido of ['Reyna', 'Alaburda', 'Ana', 'Paz', 'a1', '-34.60', '-58.38']) {
       expect(linha).not.toContain(proibido);
     }
+    // o UUID entra, e só ele — é a decisão do Gabriel de 07/09 (lex C-E, opção a)
+    expect((mockLogInfo.mock.calls[0][0] as Record<string, unknown>).resultIds).toEqual(['p1']);
+  });
+});
+
+/**
+ * 🔒 Trilha da leitura DIRIGIDA (lex C-E, opção (a) — decidida em 07/09/2026).
+ */
+describe('trilha da leitura dirigida — QUEM, quando foram poucos', () => {
+  const chamar = async (body: Record<string, unknown>, rows: unknown[], total: number) => {
+    mockLogInfo.mockClear();
+    mockQuery.mockResolvedValueOnce({ rows: withTotal(total, rows as never[]) });
+    await new AdminPatientsMapController().getMapPoints(req(parse(body)), mockRes());
+    return mockLogInfo.mock.calls[0][0] as Record<string, unknown>;
+  };
+
+  it('🔒 busca por nome com POUCOS resultados registra os UUID', async () => {
+    const l = await chamar({ country: 'AR', search: 'Reyna' }, [row(), row({ id: 'p2' })], 2);
+    expect(l.resultIds).toEqual(['p1', 'p2']);
+  });
+
+  it('🔒 e NUNCA o nome — só o identificador', async () => {
+    const l = await chamar({ country: 'AR', search: 'Reyna' }, [row()], 1);
+    expect(JSON.stringify(l)).not.toContain('Ana');
+    expect(JSON.stringify(l)).not.toContain('Paz');
+    expect(JSON.stringify(l)).not.toContain('Reyna');
+  });
+
+  it('acima do teto volta a ser só contagem — 50 UUID não respondem nada', async () => {
+    const muitos = Array.from({ length: NAMED_READ_AUDIT_MAX + 1 }, (_, i) => row({ id: `p${i}` }));
+    const l = await chamar({ country: 'AR', search: 'mar' }, muitos, 6);
+    expect(l.resultIds).toBeNull();
+  });
+
+  it('🔒 escopo GEOGRÁFICO nunca registra ids — ali há geohash5 na linha', async () => {
+    const l = await chamar(SCOPE, [row()], 1);
+    expect(l.resultIds).toBeNull();
+    expect(l.geohash5).not.toBeNull();
+  });
+
+  it('🔒 o par proibido não se forma: onde há resultIds, geohash5 é null', async () => {
+    const l = await chamar({ country: 'AR', search: 'Reyna' }, [row()], 1);
+    expect(l.resultIds).not.toBeNull();
+    expect(l.geohash5).toBeNull();
+    expect(l.radiusKm).toBeNull();
   });
 });

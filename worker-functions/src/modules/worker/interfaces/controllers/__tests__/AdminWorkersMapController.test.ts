@@ -255,6 +255,7 @@ describe('AdminWorkersMapController.getMapPoints', () => {
       n: 1, withoutCoordinates: 0, truncated: false,
       totalMatching: 1, status: null, profession: null,
       stateCanonical: null, hasStateFilter: false, hasCityFilter: false, hasSearchFilter: false,
+      resultIds: null,
       radiusKm: 5, geohash5: '69y7p',
     });
     // a casa vira CÉLULA: o geohash tem 5 caracteres e a coordenada crua some
@@ -286,6 +287,7 @@ describe('AdminWorkersMapController.getMapPoints', () => {
       totalMatching: 4231,
       status: ['REGISTERED', 'DISABLED'], profession: ['AT', 'NURSE'],
       stateCanonical: null, hasStateFilter: true, hasCityFilter: true, hasSearchFilter: false,
+      resultIds: null,
       // sem centro não há geocódigo NENHUM — nem grosso.
       radiusKm: null, geohash5: null,
     });
@@ -348,6 +350,7 @@ describe('AdminWorkersMapController.getMapPoints', () => {
       n: 500, withoutCoordinates: 0, truncated: true,
       totalMatching: 4231, status: null, profession: null,
       stateCanonical: null, hasStateFilter: false, hasCityFilter: false, hasSearchFilter: false,
+      resultIds: null,
       radiusKm: 5, geohash5: '69y7p',
     });
   });

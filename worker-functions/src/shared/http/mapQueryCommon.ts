@@ -191,7 +191,14 @@ export function hasFilter(raw: string | null | undefined): boolean {
   return typeof raw === 'string' && raw.trim() !== '';
 }
 
-export function respondMapPoints<P extends { lat: number | null }>(
+/**
+ * Teto da leitura DIRIGIDA: até aqui, a busca por nome é "olhei uma pessoa" e
+ * a trilha registra QUAIS. Acima, é varredura e volta a ser só contagem —
+ * gravar 50 UUIDs por request encheria o log sem responder nada.
+ */
+export const NAMED_READ_AUDIT_MAX = 5;
+
+export function respondMapPoints<P extends { lat: number | null; id: string }>(
   req: Request,
   res: Response,
   msg: string,
@@ -233,6 +240,22 @@ export function respondMapPoints<P extends { lat: number | null }>(
     hasSearchFilter: hasFilter(scope.search),
     radiusKm: scope.radius_km ?? null,
     geohash5: scope.center ? geohash5(scope.center.lat, scope.center.lng) : null,
+    /**
+     * 🔒 QUEM foi lido, quando a leitura foi DIRIGIDA (lex C-E, opção (a),
+     * decidida pelo Gabriel em 07/09/2026).
+     *
+     * Sem isto, `scope:'name' n:1` e `scope:'name' n:400` eram a mesma linha em
+     * natureza, e nenhuma respondia "esta consulta mirou uma pessoa
+     * identificada?" — que é a pergunta de uma auditoria de acesso.
+     *
+     * ⚠️ Só UUID, nunca nome. E só é admissível aqui porque em escopo por NOME
+     * não existe centro: `geohash5` é `null` na mesma linha, então o par
+     * proibido pela C6 (geocódigo + identificador = endereço aproximado de
+     * pessoa identificada) NÃO se forma. Se algum dia esta rota passar a
+     * aceitar `search` junto de `center`, este campo tem de sair — há teste
+     * afirmando que os dois nunca coexistem.
+     */
+    resultIds: scope.search && data.length <= NAMED_READ_AUDIT_MAX ? data.map((p) => p.id) : null,
   });
   res.status(200).json({ success: true, data, total, withoutCoordinates, truncated });
 }
