@@ -5,6 +5,7 @@ import { AuthMiddleware } from '@modules/identity';
 import { PatientContractedServiceRepository, type ContractedServiceDetail } from '../../infrastructure/PatientContractedServiceRepository';
 import { ContractedServiceProviderRepository, ProviderAlreadyActiveError } from '../../infrastructure/ContractedServiceProviderRepository';
 import { DeviceTypeUnknownError } from '../../infrastructure/PatientDeviceTypeRepository';
+import { AddressNotOfPatientError } from '../../infrastructure/PatientContractedServiceRepository';
 import {
   createContractedServiceSchema,
   updateContractedServiceSchema,
@@ -93,6 +94,12 @@ export class AdminPatientContractedServicesController {
         res.status(422).json({ success: false, error: 'Unknown device type code(s)', code: err.code, details: { codes: err.codes } });
         return;
       }
+      // Migration 330: o banco recusou `addressId` de outro paciente (FK composta) — 422, como o
+      // catálogo de dispositivos; nunca 500.
+      if (err instanceof AddressNotOfPatientError) {
+        res.status(422).json({ success: false, error: 'addressId does not belong to this patient', code: err.code, details: { addressId: err.addressId } });
+        return;
+      }
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientContractedServicesController:create', patientId: params.data.id });
       res.status(500).json({ success: false, error: 'Failed to create contracted service' });
@@ -128,6 +135,12 @@ export class AdminPatientContractedServicesController {
     } catch (err: unknown) {
       if (err instanceof DeviceTypeUnknownError) {
         res.status(422).json({ success: false, error: 'Unknown device type code(s)', code: err.code, details: { codes: err.codes } });
+        return;
+      }
+      // Migration 330: o banco recusou `addressId` de outro paciente (FK composta) — 422, como o
+      // catálogo de dispositivos; nunca 500.
+      if (err instanceof AddressNotOfPatientError) {
+        res.status(422).json({ success: false, error: 'addressId does not belong to this patient', code: err.code, details: { addressId: err.addressId } });
         return;
       }
       const e = err instanceof Error ? err : new Error(String(err));

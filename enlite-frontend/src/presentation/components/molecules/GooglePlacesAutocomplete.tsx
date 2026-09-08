@@ -1,5 +1,6 @@
 import { useEffect, useRef, forwardRef, useImperativeHandle, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
+import { googleMapsScriptUrl } from '@infrastructure/services/googleMapsScriptUrl';
 
 interface GooglePlacesAutocompleteProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange'> {
   label: string;
@@ -23,6 +24,35 @@ export const GooglePlacesAutocomplete = forwardRef<HTMLInputElement, GooglePlace
 
     useImperativeHandle(ref, () => inputRef.current as HTMLInputElement);
 
+    /**
+     * ⚠️ Os callbacks vivem em REF, e não nas dependências do efeito de inicialização.
+     *
+     * O widget do Google é caro de criar: cada `new google.maps.places.Autocomplete()`
+     * abre uma SESSÃO nova de Places. Quando esses três callbacks estavam no array de
+     * dependências, qualquer pai que passasse arrow inline (`onChange={(v) => ...}`,
+     * que é o caso do `WorkerEditModal`) trocava a identidade deles a cada render — e o
+     * campo re-renderiza a cada tecla, porque `handleInputChange` chama `setInputValue`.
+     * Resultado: um widget novo POR TECLA, cada um pedindo suas próprias predições e
+     * nenhum vivendo o bastante para fechar a sessão num Place Details.
+     *
+     * Medido em produção (07/09/2026), uma corrida do `worker-journey` do e2e-prod
+     * digitando UM endereço de 19 caracteres: **309 chamadas de Autocomplete para 1
+     * Place Details**. Sessão que não termina em Details é a linha CARA do Places
+     * (US$ 17/1.000, franquia de 5.000/mês, contra grátis quando fecha em Details).
+     *
+     * O padrão aqui é o "latest ref": o efeito roda UMA vez e sempre enxerga o callback
+     * mais recente. Não trocar por `useCallback` no pai — isso empurraria a correção para
+     * cada consumidor e o defeito voltaria no primeiro que esquecesse.
+     */
+    const onChangeRef = useRef(onChange);
+    const onPlaceSelectedRef = useRef(onPlaceSelected);
+    const onValidationChangeRef = useRef(onValidationChange);
+    useEffect(() => {
+      onChangeRef.current = onChange;
+      onPlaceSelectedRef.current = onPlaceSelected;
+      onValidationChangeRef.current = onValidationChange;
+    });
+
     useEffect(() => {
       if (value !== undefined) {
         setInputValue(value);
@@ -30,6 +60,11 @@ export const GooglePlacesAutocomplete = forwardRef<HTMLInputElement, GooglePlace
     }, [value]);
 
     useEffect(() => {
+      // O <input> é capturado AGORA: no unmount o React já zerou `inputRef.current`
+      // antes de rodar este cleanup, e a limpeza dos listeners do campo era pulada em
+      // silêncio. (Pego pelo teste "limpa os listeners do widget E do input".)
+      const inputEl = inputRef.current;
+
       const loadGoogleMapsScript = (): Promise<void> => {
         return new Promise((resolve, reject) => {
           if (typeof google !== 'undefined' && google.maps && google.maps.places && google.maps.places.Autocomplete) {
@@ -57,7 +92,7 @@ export const GooglePlacesAutocomplete = forwardRef<HTMLInputElement, GooglePlace
           }
 
           const script = document.createElement('script');
-          script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&language=es`;
+          script.src = googleMapsScriptUrl(apiKey);
           script.async = true;
           script.defer = true;
           script.onload = () => {
@@ -73,6 +108,10 @@ export const GooglePlacesAutocomplete = forwardRef<HTMLInputElement, GooglePlace
         try {
           await loadGoogleMapsScript();
 
+          // ⚠️ Guarda no REF VIVO, não no `inputEl` capturado: é assim que se detecta que
+          // o componente foi DESMONTADO enquanto o script do Maps carregava. Trocar por
+          // `if (!inputEl)` faz o widget ser criado sobre um input que já saiu da tela —
+          // tentei, e o teste "desmontar antes do Maps carregar" ficou vermelho na hora.
           if (!inputRef.current) return;
 
           // Verify that Google Maps Places API is fully available
@@ -91,9 +130,9 @@ export const GooglePlacesAutocomplete = forwardRef<HTMLInputElement, GooglePlace
             setInputValue(place.formatted_address);
             setPlaceSelected(true);
             setShowValidationError(false);
-            onChange?.(place.formatted_address);
-            onPlaceSelected?.(place);
-            onValidationChange?.(true);
+            onChangeRef.current?.(place.formatted_address);
+            onPlaceSelectedRef.current?.(place);
+            onValidationChangeRef.current?.(true);
           };
 
           // Confirmação por TECLADO (ArrowDown + Enter): o widget do Google dispara
@@ -161,11 +200,31 @@ export const GooglePlacesAutocomplete = forwardRef<HTMLInputElement, GooglePlace
       initAutocomplete();
 
       return () => {
+        // Guarda de existência ANTES de tocar em `google`: quando o script do Maps não
+        // carregou (sem chave, rede fora, bloqueador), o global não existe e o cleanup
+        // lançava ao desmontar — derrubando a tela num caminho em que o campo deveria
+        // apenas degradar para texto livre. (Pego pelos testes de carregamento.)
+        if (typeof google === 'undefined' || !google.maps?.event) {
+          autocompleteRef.current = null;
+          return;
+        }
+        // O widget instala listeners nos DOIS lados: no objeto Autocomplete e no próprio
+        // <input>. Limpar só o primeiro deixava o input com listeners de instâncias
+        // antigas — que continuavam pedindo predições depois de descartadas.
         if (autocompleteRef.current) {
           google.maps.event.clearInstanceListeners(autocompleteRef.current);
+          autocompleteRef.current = null;
+        }
+        if (inputEl) {
+          google.maps.event.clearInstanceListeners(inputEl);
         }
       };
-    }, [onPlaceSelected, onChange, onValidationChange]);
+      // Dependências VAZIAS de propósito: inicializa uma vez. Os callbacks são lidos por
+      // ref (ver o bloco no topo do componente) — pôr qualquer um deles aqui reintroduz
+      // um widget novo por tecla, e com ele a conta do Places. O teste
+      // `GooglePlacesAutocomplete.test.tsx` trava isso: com os 3 callbacks de volta aqui,
+      // ele conta 20 instâncias para 19 teclas e fica vermelho.
+    }, []);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
       const newValue = e.target.value;

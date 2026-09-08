@@ -227,12 +227,16 @@ export function filterOptionsFor(t: TFunction): {
 /** Os textos do painel da rota. Fora do componente por causa do fast-refresh. */
 export function corridorLabelsFor(t: TFunction): CorridorLabels {
   return {
+    // Plural pelo i18next (`_one`/`_other`), não por "(es)" grudado: além de
+    // ficar errado nas duas línguas, "1 combinación(es)" estourava a largura do
+    // balão e truncava. Com `count`, o i18next escolhe a chave sozinho.
+    options: (n) => t('admin.map.corridor.options', { count: n, defaultValue_one: '1 opción', defaultValue_other: '{{count}} opciones' }),
     loading: t('admin.map.corridor.loading', 'Buscando recorrido…'),
     error: t('admin.map.corridor.error', 'No se pudo calcular el recorrido.'),
     noRoute: t('admin.map.corridor.noRoute', 'No hay recorrido en transporte público entre estos dos puntos.'),
     noCoverage: t('admin.map.corridor.noCoverage', 'Falta la ubicación de uno de los dos — no podemos calcular el recorrido.'),
     direct: t('admin.map.corridor.direct', 'directo'),
-    transfers: (n) => t('admin.map.corridor.transfers', { defaultValue: '{{count}} combinación(es)', count: n }),
+    transfers: (n) => t('admin.map.corridor.transfers', { count: n, defaultValue_one: '1 combinación', defaultValue_other: '{{count}} combinaciones' }),
     total: (min) => t('admin.map.corridor.total', { defaultValue: '{{count}} min puerta a puerta', count: min }),
     walkLeg: (min, meters) => t('admin.map.corridor.walkLeg', { defaultValue: 'caminar {{min}} min ({{meters}} m)', min, meters }),
     straight: (b) => t('admin.map.corridor.straight', { defaultValue: 'en línea recta: ~{{count}} cuadras', count: b }),

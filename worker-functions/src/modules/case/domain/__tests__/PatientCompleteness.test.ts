@@ -4,6 +4,8 @@ import {
   PATIENT_COMPLETENESS_CODES,
   ACTIVATION_BLOCKING_CODES,
   ACTIVATABLE_STATUSES,
+  SCHEDULE_REQUIRED_STATUSES,
+  blockingCodesForStatusChange,
   INCOMPLETE_ADMISSION_REASON,
   patientIncompleteAdmissionSql,
   patientNeedsAttentionSql,
@@ -20,16 +22,20 @@ const baseInput = {
   activeAddressCount: 1,
   activeResponsibleCount: 0,
   activeContractedServiceCount: 1,
+  activeContractedServicesWithoutAddressCount: 0,
+  activeContractedServicesWithoutScheduleCount: 0,
   now: NOW,
 };
 
 describe('PATIENT_COMPLETENESS_CODES (lex D1.2)', () => {
-  it('é exatamente os 5 códigos administrativos — sem item clínico', () => {
+  it('é exatamente os 7 códigos administrativos — sem item clínico', () => {
     expect(PATIENT_COMPLETENESS_CODES).toEqual([
       'ADDRESS',
       'RESPONSIBLE',
       'COVERAGE',
       'CONTRACTED_SERVICE',
+      'SERVICE_ADDRESS',
+      'SERVICE_SCHEDULE',
       'CONSENT',
     ]);
   });
@@ -76,14 +82,57 @@ describe('isMinor', () => {
   });
 });
 
-describe('ACTIVATION_BLOCKING_CODES (D255, decisão 03/09)', () => {
-  it('é SÓ ADDRESS — os demais 4 códigos são checklist informativo, não bloqueio do activate', () => {
-    expect(ACTIVATION_BLOCKING_CODES).toEqual(['ADDRESS']);
+describe('ACTIVATION_BLOCKING_CODES (D255, decisão 03/09 + migration 330, decisão 05/09)', () => {
+  it('é ADDRESS, SERVICE_ADDRESS e SERVICE_SCHEDULE — os demais códigos são checklist informativo, não bloqueio do activate', () => {
+    expect(ACTIVATION_BLOCKING_CODES).toEqual(['ADDRESS', 'SERVICE_ADDRESS', 'SERVICE_SCHEDULE']);
   });
 
   it('todo código de ACTIVATION_BLOCKING_CODES pertence a PATIENT_COMPLETENESS_CODES (sem código órfão)', () => {
     for (const code of ACTIVATION_BLOCKING_CODES) {
       expect(PATIENT_COMPLETENESS_CODES as readonly string[]).toContain(code);
+    }
+  });
+});
+
+describe('blockingCodesForStatusChange (decisão do Gabriel 07/09)', () => {
+  it('ACTIVE exige o checklist bloqueante INTEIRO — fecha o atalho do drop no Kanban', () => {
+    expect(blockingCodesForStatusChange('ACTIVE')).toEqual(ACTIVATION_BLOCKING_CODES);
+  });
+
+  it('SEARCHING e REPLACEMENT exigem SÓ o horário — não reabrem a admissão numa troca urgente', () => {
+    expect(blockingCodesForStatusChange('SEARCHING')).toEqual(['SERVICE_SCHEDULE']);
+    expect(blockingCodesForStatusChange('REPLACEMENT')).toEqual(['SERVICE_SCHEDULE']);
+  });
+
+  it('pausa e saída não exigem nada — travá-las prenderia paciente que já saiu', () => {
+    for (const s of ['ON_HOLD', 'SUSPENDED', 'DISCHARGED']) {
+      expect(blockingCodesForStatusChange(s)).toEqual([]);
+    }
+  });
+
+  it('estados do funil de admissão não exigem nada (o gate é a SAÍDA do funil, não o trânsito nele)', () => {
+    for (const s of ['SOLICITANTE', 'ADMISSION', 'PENDING_ADMISSION']) {
+      expect(blockingCodesForStatusChange(s)).toEqual([]);
+    }
+  });
+
+  it('status desconhecido não inventa exigência', () => {
+    expect(blockingCodesForStatusChange('DISCONTINUED')).toEqual([]);
+    expect(blockingCodesForStatusChange('')).toEqual([]);
+  });
+
+  it('SCHEDULE_REQUIRED_STATUSES é exatamente ACTIVE/SEARCHING/REPLACEMENT, e todos exigem horário', () => {
+    expect(SCHEDULE_REQUIRED_STATUSES).toEqual(['ACTIVE', 'SEARCHING', 'REPLACEMENT']);
+    for (const s of SCHEDULE_REQUIRED_STATUSES) {
+      expect(blockingCodesForStatusChange(s)).toContain('SERVICE_SCHEDULE');
+    }
+  });
+
+  it('todo código devolvido pertence ao catálogo do checklist (sem código órfão)', () => {
+    for (const s of ['ACTIVE', 'SEARCHING', 'REPLACEMENT']) {
+      for (const code of blockingCodesForStatusChange(s)) {
+        expect(PATIENT_COMPLETENESS_CODES as readonly string[]).toContain(code);
+      }
     }
   });
 });
@@ -128,6 +177,8 @@ describe('computePatientCompleteness (SUP-D1 / D255)', () => {
       activeAddressCount: 1,
       activeResponsibleCount: 0,
       activeContractedServiceCount: 0,
+      activeContractedServicesWithoutAddressCount: 0,
+      activeContractedServicesWithoutScheduleCount: 0,
       now: NOW,
     });
     expect(r.missing).toEqual(['RESPONSIBLE', 'COVERAGE', 'CONTRACTED_SERVICE', 'CONSENT']);
@@ -174,6 +225,78 @@ describe('computePatientCompleteness (SUP-D1 / D255)', () => {
     expect(r.missing).toContain('CONTRACTED_SERVICE');
   });
 
+  // Migration 330 (decisão do Gabriel 05/09: "um serviço é um endereço")
+  it('serviço ativo sem endereço → SERVICE_ADDRESS em missing E em blocking; canActivate false', () => {
+    const r = computePatientCompleteness({ ...baseInput, activeContractedServicesWithoutAddressCount: 1 });
+    expect(r.missing).toContain('SERVICE_ADDRESS');
+    expect(r.blocking).toEqual(['SERVICE_ADDRESS']);
+    expect(r.canActivate).toBe(false);
+    expect(r.ready).toBe(false);
+  });
+
+  // Decisão do Gabriel 07/09: horário do serviço trava a MUDANÇA DE STATUS
+  it('serviço ativo sem horário → SERVICE_SCHEDULE em missing E em blocking; canActivate false', () => {
+    const r = computePatientCompleteness({
+      ...baseInput,
+      activeContractedServicesWithoutScheduleCount: 1,
+    });
+    expect(r.missing).toContain('SERVICE_SCHEDULE');
+    expect(r.blocking).toEqual(['SERVICE_SCHEDULE']);
+    expect(r.canActivate).toBe(false);
+    expect(r.ready).toBe(false);
+  });
+
+  it('sem serviço nenhum → SERVICE_SCHEDULE NÃO acusa; paciente segue ativável (mesmo fallback do SERVICE_ADDRESS)', () => {
+    const r = computePatientCompleteness({
+      ...baseInput,
+      activeContractedServiceCount: 0,
+      activeContractedServicesWithoutAddressCount: 0,
+      activeContractedServicesWithoutScheduleCount: 0,
+    });
+    expect(r.missing).not.toContain('SERVICE_SCHEDULE');
+    expect(r.canActivate).toBe(true);
+  });
+
+  it('um serviço COM horário e outro SEM → bloqueia (a régua é "todo serviço ativo", não "algum")', () => {
+    // 2 serviços ativos, 1 sem horário — a contagem é dos que FALTAM, então 1 já basta.
+    const r = computePatientCompleteness({
+      ...baseInput,
+      activeContractedServiceCount: 2,
+      activeContractedServicesWithoutScheduleCount: 1,
+    });
+    expect(r.blocking).toContain('SERVICE_SCHEDULE');
+    expect(r.canActivate).toBe(false);
+  });
+
+  it('serviço sem endereço E sem horário → os dois códigos bloqueiam, na ordem do catálogo', () => {
+    const r = computePatientCompleteness({
+      ...baseInput,
+      activeContractedServicesWithoutAddressCount: 1,
+      activeContractedServicesWithoutScheduleCount: 1,
+    });
+    expect(r.blocking).toEqual(['SERVICE_ADDRESS', 'SERVICE_SCHEDULE']);
+  });
+
+  it('sem serviço nenhum → SERVICE_ADDRESS NÃO acusa (é CONTRACTED_SERVICE que acusa); paciente continua ativável (fallback por endereço)', () => {
+    const r = computePatientCompleteness({
+      ...baseInput,
+      activeContractedServiceCount: 0,
+      activeContractedServicesWithoutAddressCount: 0,
+    });
+    expect(r.missing).toEqual(['CONTRACTED_SERVICE']);
+    expect(r.blocking).toEqual([]);
+    expect(r.canActivate).toBe(true);
+  });
+
+  it('sem endereço E serviço sem endereço → os dois códigos bloqueiam, nesta ordem', () => {
+    const r = computePatientCompleteness({
+      ...baseInput,
+      activeAddressCount: 0,
+      activeContractedServicesWithoutAddressCount: 1,
+    });
+    expect(r.blocking).toEqual(['ADDRESS', 'SERVICE_ADDRESS']);
+  });
+
   it('hasConsent false → CONSENT em missing', () => {
     const r = computePatientCompleteness({ ...baseInput, hasConsent: false });
     expect(r.missing).toContain('CONSENT');
@@ -192,6 +315,8 @@ describe('computePatientCompleteness (SUP-D1 / D255)', () => {
       activeAddressCount: 0,
       activeResponsibleCount: 0,
       activeContractedServiceCount: 0,
+      activeContractedServicesWithoutAddressCount: 0,
+      activeContractedServicesWithoutScheduleCount: 0,
       now: NOW,
     });
     const expected: PatientCompletenessCode[] = [
@@ -213,6 +338,8 @@ describe('computePatientCompleteness (SUP-D1 / D255)', () => {
       activeAddressCount: 0,
       activeResponsibleCount: 0,
       activeContractedServiceCount: 0,
+      activeContractedServicesWithoutAddressCount: 0,
+      activeContractedServicesWithoutScheduleCount: 0,
       now: NOW,
     });
     const indices = r.missing.map((code) => PATIENT_COMPLETENESS_CODES.indexOf(code));
@@ -234,6 +361,9 @@ describe('a regra em SQL (filtro/contadores da listagem)', () => {
       RESPONSIBLE: /NOT EXISTS \(SELECT 1 FROM patient_responsibles/,
       COVERAGE: /BTRIM\(COALESCE\(p\.insurance_informed, p\.health_insurance_name, ''\)\) = ''/,
       CONTRACTED_SERVICE: /NOT EXISTS \(SELECT 1 FROM patient_contracted_services/,
+      SERVICE_ADDRESS: /EXISTS \(SELECT 1 FROM patient_contracted_services pcs\s+LEFT JOIN patient_addresses pa ON pa\.id = pcs\.address_id AND pa\.archived_at IS NULL/,
+      SERVICE_SCHEDULE:
+        /EXISTS \(SELECT 1 FROM patient_contracted_services pcs\s+WHERE pcs\.patient_id = p\.id AND pcs\.active\s+AND \(pcs\.schedule IS NULL OR jsonb_array_length\(pcs\.schedule\) = 0\)\)/,
       CONSENT: /p\.has_consent IS NOT TRUE/,
     };
     for (const code of PATIENT_COMPLETENESS_CODES) expect(sql).toMatch(clausulaDe[code]);

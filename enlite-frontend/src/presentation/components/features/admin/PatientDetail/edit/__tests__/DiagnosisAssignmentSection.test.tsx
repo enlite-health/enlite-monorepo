@@ -3,7 +3,7 @@
  * promover, remover) já é o "salvar": chama a API e, no sucesso, dispara `onChanged`.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import { DiagnosisAssignmentSection } from '../DiagnosisAssignmentSection';
 import type { PatientDiagnosisDetail } from '@domain/entities/PatientDetail';
@@ -85,6 +85,61 @@ describe('DiagnosisAssignmentSection', () => {
     expect(create).toHaveBeenCalledWith(PATIENT_ID, 'u-new');
     await waitFor(() => expect(screen.getByTestId('diagnosis-chip-novo')).toBeInTheDocument());
     expect(onChanged).toHaveBeenCalledTimes(1);
+  });
+
+  // 06/09 (Gabriel): "demora uns milissegundos para aparecer — precisamos de um aviso de carregando
+  // para o usuário entender que NÃO TRAVOU". O POST fica pendurado numa Promise controlada: enquanto
+  // não responde, o chip provisório "Adicionando…" está na tela e a busca fica desabilitada.
+  it('enquanto o POST está em voo: chip provisório "Adicionando…" com o título; some quando a API responde', async () => {
+    let resolveCreate!: (v: PatientDiagnosisDetail) => void;
+    create.mockReturnValue(new Promise<PatientDiagnosisDetail>((res) => { resolveCreate = res; }));
+    render(<DiagnosisAssignmentSection patientId={PATIENT_ID} initialDiagnoses={[]} onChanged={vi.fn()} />);
+    await pickCandidate('Esquizofrenia', 'u-new');
+    const pending = await screen.findByTestId('diagnosis-chip-pending');
+    expect(pending).toHaveTextContent('Esquizofrenia');
+    expect(pending).toHaveTextContent('Adicionando…');
+    expect(screen.getByTestId('icd-search-input')).toBeDisabled();
+    expect(screen.queryByTestId('diagnosis-chip-novo')).not.toBeInTheDocument();
+    await act(async () => { resolveCreate(diag({ id: 'novo', title: 'Esquizofrenia', uri: 'u-new' })); });
+    await waitFor(() => expect(screen.getByTestId('diagnosis-chip-novo')).toBeInTheDocument());
+    expect(screen.queryByTestId('diagnosis-chip-pending')).not.toBeInTheDocument();
+    expect(screen.getByTestId('icd-search-input')).not.toBeDisabled();
+  });
+
+  it('POST falha: o chip provisório some junto com a chegada do erro (não fica "Adicionando…" para sempre)', async () => {
+    let rejectCreate!: (e: unknown) => void;
+    create.mockReturnValue(new Promise<PatientDiagnosisDetail>((_r, rej) => { rejectCreate = rej; }));
+    render(<DiagnosisAssignmentSection patientId={PATIENT_ID} initialDiagnoses={[]} onChanged={vi.fn()} />);
+    await pickCandidate('Esquizofrenia', 'u-new');
+    await screen.findByTestId('diagnosis-chip-pending');
+    await act(async () => { rejectCreate(new DiagnosisApiError('nope', 422, 'CONCEPT_NOT_DIAGNOSABLE')); });
+    await waitFor(() => expect(screen.getByTestId('diagnosis-assignment-error')).toBeInTheDocument());
+    expect(screen.queryByTestId('diagnosis-chip-pending')).not.toBeInTheDocument();
+  });
+
+  // 06/09 (Gabriel): "quando deleto uma também precisa".
+  it('enquanto o DELETE está em voo: o chip mostra "Removendo…" e esconde os botões; some quando responde', async () => {
+    let resolveDeactivate!: (v: PatientDiagnosisDetail) => void;
+    deactivate.mockReturnValue(new Promise<PatientDiagnosisDetail>((res) => { resolveDeactivate = res; }));
+    render(<DiagnosisAssignmentSection patientId={PATIENT_ID} initialDiagnoses={[diag({ id: 'd1' })]} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('diagnosis-chip-remove-d1'));
+    fireEvent.click(screen.getByTestId('diagnosis-chip-remove-confirm-btn-d1'));
+    const busy = await screen.findByTestId('diagnosis-chip-busy-d1');
+    expect(busy).toHaveTextContent('Removendo…');
+    expect(screen.queryByTestId('diagnosis-chip-remove-d1')).not.toBeInTheDocument();
+    await act(async () => { resolveDeactivate(diag({ id: 'd1', active: false })); });
+    await waitFor(() => expect(screen.queryByTestId('diagnosis-chip-d1')).not.toBeInTheDocument());
+  });
+
+  it('enquanto o PATCH de promover está em voo: o chip mostra "Salvando…"', async () => {
+    let resolvePromote!: (v: PatientDiagnosisDetail) => void;
+    promote.mockReturnValue(new Promise<PatientDiagnosisDetail>((res) => { resolvePromote = res; }));
+    render(<DiagnosisAssignmentSection patientId={PATIENT_ID} initialDiagnoses={[diag({ id: 'd1' })]} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('diagnosis-chip-promote-d1'));
+    expect(await screen.findByTestId('diagnosis-chip-busy-d1')).toHaveTextContent('Salvando…');
+    await act(async () => { resolvePromote(diag({ id: 'd1', isPrimary: true })); });
+    await waitFor(() => expect(screen.getByTestId('diagnosis-chip-primary-badge-d1')).toBeInTheDocument());
+    expect(screen.queryByTestId('diagnosis-chip-busy-d1')).not.toBeInTheDocument();
   });
 
   it('promover: PATCH via promote, o chip vira principal e os outros são rebaixados na tela', async () => {

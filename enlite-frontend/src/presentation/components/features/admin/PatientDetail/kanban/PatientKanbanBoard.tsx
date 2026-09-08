@@ -9,12 +9,16 @@ import {
   PATIENT_KANBAN_STATUSES,
   type PatientKanbanGroups,
   type PatientKanbanStatus,
+  type PatientKanbanMoveError,
 } from '@hooks/admin/usePatientKanban';
 import type { PatientKanbanItem } from '@domain/entities/PatientDetail';
 
 interface Props {
   groups: PatientKanbanGroups;
-  onMove: (patientId: string, targetStatus: PatientKanbanStatus) => Promise<string | null>;
+  onMove: (
+    patientId: string,
+    targetStatus: PatientKanbanStatus,
+  ) => Promise<PatientKanbanMoveError | null>;
 }
 
 // Spec 012: as colunas são o FUNIL DE ADMISSÃO (`admission_status`); DONE = "Activo".

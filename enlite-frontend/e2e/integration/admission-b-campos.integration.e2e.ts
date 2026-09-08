@@ -20,7 +20,8 @@ import {
   cleanupPatientDeep, runSQL,
 } from '../helpers/patient-detail-b-helper';
 
-const EMULATOR = 'http://127.0.0.1:9099';
+// `E2E_FIREBASE_EMULATOR` aponta para o emulador de um stack isolado (`docker compose -p`); default inalterado.
+const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
 const EMULATOR_PROJECT = 'demo-no-project';
 const STAFF_EMAIL = `e2e.blocob.${Date.now()}@enlite.health`;
 const STAFF_PASSWORD = 'TestAdmin123!';
@@ -220,7 +221,12 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     await page.getByTestId('pce-save').click();
     expect((await patch).status()).toBe(200);
     await expect(drawer).toHaveCount(0, { timeout: 15_000 });
-    await expect(card).toContainText('Domiciliario, Escolar', { timeout: 20_000 });
+    // 07/09: o Dispositivo virou CHIP, um por valor (`DeviceChips`) — em chip a lista se lê sem
+    // vírgula, então o `', '` do `devices.join(', ')` anterior não existe mais no DOM. A prova é a
+    // mesma (os dois dispositivos aparecem no cartão depois de salvar), agora por ELEMENTO em vez
+    // de por string concatenada — que é o que sobrevive a mudança de peça.
+    await expect(card.getByText('Domiciliario', { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(card.getByText('Escolar', { exact: true })).toBeVisible();
     const dev = readDeviceTypes(active.patientId);
     testInfo.annotations.push({ type: 'evidência', description: `B4 — patient_device_types: ${JSON.stringify(dev)}` });
     expect(dev).toEqual({ set: ['HOME', 'SCHOOL'], scalar: 'HOME' });

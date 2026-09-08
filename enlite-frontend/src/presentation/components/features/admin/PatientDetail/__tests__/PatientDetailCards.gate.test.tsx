@@ -1,9 +1,39 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import { patientDetailFixture } from './patientDetailFixture';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
+import type { PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
+
+// Uma linha na tabela, para o lápis existir (o fixture nasce sem serviço contratado).
+const SERVICO: PatientContractedServiceDetail = {
+  id: 'svc-gate',
+  patientId: patientDetailFixture.id,
+  serviceCode: 'AT',
+  professionalProfile: null,
+  providersNeeded: 1,
+  authorizedHours: 10,
+  weeklyHours: 10,
+  careLocation: 'HOME',
+  hourlyValue: null,
+  hourlyValueRedacted: false,
+  startDate: '2026-09-01T00:00:00.000Z',
+  contractType: 'OBRA_SOCIAL',
+  taxCondition: 'IVA_EXEMPT',
+  supervisionFrequency: 'DAYS_30',
+  guardShift: 'MORNING',
+  providerAgeBand: 'AGE_30_45',
+  addressId: null,
+  schedule: null,
+  active: true,
+  endedAt: null,
+  country: 'AR',
+  deviceTypes: ['HOME'],
+  providers: [],
+  createdAt: '2026-09-01T00:00:00Z',
+  updatedAt: '2026-09-01T00:00:00Z',
+};
 
 // ── i18n mock ────────────────────────────────────────────────────────────────
 
@@ -108,15 +138,25 @@ describe('D269/D286 — write-gate nos botões Editar/Novo (célula do CONTAINER
     expect(btn).not.toBeDisabled();
   });
 
-  it('🔴 ServicosContratadosCard: enforcement=on, sem patient:write → edit-service-btn SOME', () => {
+  // 06/09 (main): "Editar servicios" virou "+ Nuevo servicio" e o lápis por linha — as duas ações
+  // fazem escrita, as duas ficam atrás da MESMA célula do container.
+  it('🔴 ServicosContratadosCard: enforcement=on, sem patient_services:write → new-service-btn e o lápis da linha SOMEM', () => {
     comEnforcement([], 'on');
-    render(<ServicosContratadosCard patient={patientDetailFixture} />);
-    expect(screen.queryByTestId('edit-service-btn')).not.toBeInTheDocument();
+    render(<ServicosContratadosCard patient={{ ...patientDetailFixture, contractedServices: [SERVICO] }} />);
+    expect(screen.queryByTestId('new-service-btn')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('contracted-service-edit-svc-gate')).not.toBeInTheDocument();
+    // A 3ª porta: clicar na linha abre o detalhe, e o "Editar" de lá também não existe.
+    fireEvent.click(screen.getByTestId('contracted-service-row-svc-gate'));
+    expect(screen.getByTestId('contracted-service-detail-drawer')).toBeInTheDocument();
+    expect(screen.queryByTestId('contracted-service-detail-edit')).not.toBeInTheDocument();
   });
 
-  it('ServicosContratadosCard: enforcement=on, com a célula de escrita do container → edit-service-btn existe', () => {
+  it('ServicosContratadosCard: enforcement=on, com a célula de escrita do container → new-service-btn e o lápis existem', () => {
     comEnforcement(['patient_services:write'], 'on');
-    render(<ServicosContratadosCard patient={patientDetailFixture} />);
-    expect(screen.getByTestId('edit-service-btn')).toBeInTheDocument();
+    render(<ServicosContratadosCard patient={{ ...patientDetailFixture, contractedServices: [SERVICO] }} />);
+    expect(screen.getByTestId('new-service-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('contracted-service-edit-svc-gate')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('contracted-service-row-svc-gate'));
+    expect(screen.getByTestId('contracted-service-detail-edit')).toBeInTheDocument();
   });
 });

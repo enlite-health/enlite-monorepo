@@ -51,6 +51,14 @@ const COUNTRY = 'AR' as const;
 const RUN_ID = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
 const LEAD_EMAIL = `gabriel+e2e-patient-${RUN_ID}@gmail.com`;
 const LEAD_PHONE = `+54 9 11 5555 ${String(RUN_ID).slice(-4)}`;
+/**
+ * Nome E sobrenome: o campo virou obrigatório no form em 02/09 e a tela exige duas
+ * palavras (`AdmisionPage`, refine `needsLastName`), espelhando o `publicLeadSchema`
+ * do servidor. Com uma palavra só o zod barra ANTES do submit e nenhum POST sai — foi
+ * o que deixou este passo vermelho de 03/09 a 07/09. Sintético e identificável, como
+ * o email e o telefone acima.
+ */
+const LEAD_NAME = `E2E Paciente ${RUN_ID}`;
 
 /** Estado que atravessa os passos (describe.serial). */
 const journey: {
@@ -140,6 +148,7 @@ test.describe.serial('Jornada do paciente — do form no site ao big number na t
 
     await page.getByTestId('lead-serviceType').selectOption('cuidadores');
     await page.getByTestId('lead-requesterType-patient').check();
+    await page.getByTestId('lead-name').fill(LEAD_NAME);
     await page.getByTestId('lead-email').fill(LEAD_EMAIL);
     await page.getByTestId('lead-phone').fill(LEAD_PHONE);
     // O checkbox é exigido pelo form. Marcamos como um usuário marcaria — quem

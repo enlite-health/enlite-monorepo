@@ -39,8 +39,25 @@ import { LIVE_JOB_POSTING_SQL } from '@modules/matching/domain/openJobStatuses';
 import { PATIENT_STATUSES } from '../../domain/enums/PatientStatus';
 import { NOME_REDIGIDO, cellsOfRequest } from '@modules/identity/permissions';
 import { canReadPatientContainer } from '../../application/patientContainerAccess';
+import { escapeIlikeWildcards, hasSearchableContent } from '@shared/utils/ilikeEscape';
+import { foldAccents, sqlFoldAccents } from '@shared/utils/accentFold';
 
 export const MAX_PATIENT_MAP_POINTS = MAX_MAP_POINTS;
+
+/**
+ * Teto do escopo por NOME — menor que o geográfico, de propósito.
+ *
+ * O consumidor desta resposta é um seletor em que o operador escolhe UMA
+ * pessoa. Devolver 500 domicílios com nome e coordenada para escolher um é
+ * excesso no sentido literal do art. 4 inc. 1 da Ley 25.326 ("no excesivos en
+ * relación al ámbito y finalidad") — parecer do `lex` de 07/09/2026, C-A. O
+ * teto de 500 foi calibrado em 30/08 contra o CSV de export, para escopo
+ * GEOGRÁFICO; nunca foi recalibrado para este.
+ *
+ * A tela não perde a informação: `total` continua vindo do `COUNT(*) OVER()`,
+ * então ela diz "há mais — refiná o nome" em vez de mentir que são 50.
+ */
+export const MAX_NAME_SCOPE_POINTS = 50;
 
 export const PatientsMapBodySchema = withMapScopeRules(
   z
@@ -50,8 +67,46 @@ export const PatientsMapBodySchema = withMapScopeRules(
       status: z.array(z.enum(PATIENT_STATUSES as unknown as [string, ...string[]])).optional(),
       /** true → só pacientes com ao menos uma vaga aberta. */
       with_open_vacancies: z.boolean().optional(),
+      /**
+       * Busca por nome — a TERCEIRA forma de escopo, ao lado de centro+raio e
+       * província/localidade. Existe porque o seletor de âncora da tela era o
+       * único caminho para o mapa e só enxergava 50 km do centro do país:
+       * paciente de Mar del Plata (381 km) não aparecia, e a tela respondia
+       * "Sin resultados" — que se lê como "não existe".
+       *
+       * Mínimo de 2 caracteres: 1 letra devolveria quase a base inteira, e aí
+       * "escopo" não seria escopo nenhum.
+       */
+      search: z
+        .string()
+        .trim()
+        /**
+         * TRÊS caracteres, não dois — e o número é medido, não escolhido.
+         *
+         * Com 2, o curinga sintático estava fechado mas o SEMÂNTICO não:
+         * termos legítimos varriam a base. Medido contra o Postgres de
+         * produção em 07/09/2026 (só contagem):
+         *   'an' → 266 linhas (38% da base) · 'ar' → 241 (35%) · 'el' → 209 (30%)
+         * Com 3, o pior caso cai para 'mar' → 110 (16%), e o teto de
+         * `MAX_NAME_SCOPE_POINTS` corta o resto. Condição C-B do `lex`.
+         */
+        .min(3)
+        .max(80)
+        /**
+         * 🔒 Primeira das DUAS camadas contra o curinga (achado do gate no PR
+         * #320). `%` casa qualquer coisa e `_` casa um caractere: como `search`
+         * sozinho JÁ satisfaz a exigência de escopo, um corpo
+         * `{country:'AR', search:'%%'}` passaria os 2 caracteres do mínimo e
+         * devolveria a base inteira — nome, bairro e COORDENADA DE DOMICÍLIO —
+         * com o log registrando um inocente "houve busca". Um termo feito só de
+         * curinga não é uma busca; é 400. A segunda camada é o escape do valor
+         * em `buildPatientsMapQuery`.
+         */
+        .refine(hasSearchableContent, { message: 'search must contain more than wildcards' })
+        .optional(),
     })
     .strict(),
+  (q) => q.search !== undefined,
 );
 
 export type PatientsMapBody = z.infer<typeof PatientsMapBodySchema>;
@@ -115,6 +170,26 @@ export function buildPatientsMapQuery(q: PatientsMapBody): { sql: string; params
     i++;
   }
   if (q.with_open_vacancies === true) conds.push('ov.open_vacancies > 0');
+  if (q.search) {
+    // Nome COMPLETO nas duas ordens: o operador digita "Reyna Alaburda, Ana
+    // Paula" como lê no WhatsApp, e a base guarda nome e sobrenome separados —
+    // casar campo a campo erraria quem digita os dois.
+    const pSearch = i++;
+    // 🔒 Duas travas que só funcionam juntas:
+    //  1. ESCAPE — o valor vai escapado e as cláusulas fecham com `ESCAPE '\\'`;
+    //     sem a cláusula, a barra do escape é caractere comum e o curinga volta.
+    //  2. ACENTO — termo e coluna passam pela MESMA tabela de dobra
+    //     (`accentFold`), senão "Pena" nunca acha "Peña". Dobrar só um lado é
+    //     pior que não dobrar: falha apenas nos nomes acentuados, que é o modo
+    //     de falha que ninguém percebe.
+    params.push(escapeIlikeWildcards(foldAccents(q.search)));
+    const nomeDireto = sqlFoldAccents("concat_ws(' ', p.first_name, p.last_name)");
+    const nomeInvertido = sqlFoldAccents("concat_ws(' ', p.last_name, p.first_name)");
+    conds.push(
+      `(${nomeDireto} ILIKE '%' || $${pSearch} || '%' ESCAPE '\\'
+        OR ${nomeInvertido} ILIKE '%' || $${pSearch} || '%' ESCAPE '\\')`,
+    );
+  }
 
   const point = 'ST_SetSRID(ST_MakePoint(pa.lng, pa.lat), 4326)::geography';
   let distanceSelect = 'NULL::numeric AS distance_km';
@@ -133,7 +208,10 @@ export function buildPatientsMapQuery(q: PatientsMapBody): { sql: string; params
   }
 
   const pLimit = i++;
-  params.push(q.limit);
+  // Escopo por nome tem teto próprio (lex C-A): é um seletor de UMA pessoa,
+  // não uma varredura. `Math.min` para que um `limit` menor no corpo continue
+  // valendo — o teto é máximo, nunca piso.
+  params.push(q.search ? Math.min(q.limit, MAX_NAME_SCOPE_POINTS) : q.limit);
 
   const sql = `
     SELECT p.id, p.first_name, p.last_name, p.status,
@@ -163,11 +241,21 @@ export class AdminPatientsMapController {
     const body = parseMapBody(PatientsMapBodySchema, req, res);
     if (!body) return;
 
+    // A busca por NOME é leitura de identidade: filtrar pelo nome em claro e devolver o pino
+    // (coordenada do domicílio) com `NOME_REDIGIDO` seria um oráculo — "existe alguém chamado X, e
+    // mora aqui". Achado do gate do sync main→stage (08/09/2026): a redação (stage, D286 fase 2) e a
+    // busca (main, 07/09) nunca tinham se encontrado. Sem `patient_identity:read`, `search` é 403
+    // nomeando o campo (molde do `hourlyValue` no serviço contratado), nunca ignorado em silêncio.
+    const identidade = canReadPatientContainer(cellsOfRequest(req), 'identity');
+    if (body.search && !identidade) {
+      res.status(403).json({ success: false, error: 'Forbidden', details: { field: 'search' } });
+      return;
+    }
+
     try {
       const { sql, params } = buildPatientsMapQuery(body);
       const result = await this.db.query<PatientMapRow>(sql, params);
 
-      const identidade = canReadPatientContainer(cellsOfRequest(req), 'identity');
       const data: PatientMapPoint[] = result.rows.map((row) => {
         const lat = num(row.lat);
         const lng = num(row.lng);

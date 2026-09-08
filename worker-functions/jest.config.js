@@ -209,6 +209,16 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // Decisão do Gabriel 07/09 (D298): carrega os contadores do checklist DENTRO da transação que
+    // já segurou a linha do paciente — é o insumo da guarda que recusa a mudança de status. Nasceu
+    // fora deste piso e o gate `revisao-pr` reprovou (85,71% stmts, 0% branches: o ramo
+    // "paciente não existe" vinha só de carona dos testes do `PatientStatusWriter`).
+    'src/modules/case/infrastructure/PatientCompletenessLoader.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     // Spec 014 (US-D3, lex D3.1, MEDIDO 03/09 em PRODUÇÃO: 5/37 pacientes com telefone tinham o
     // do responsável no campo próprio) — decide se a ficha mostra o aviso de re-atribuição.
     'src/modules/case/domain/PhoneMatch.ts': {

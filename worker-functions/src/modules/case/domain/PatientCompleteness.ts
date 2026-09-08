@@ -17,20 +17,81 @@ export const PATIENT_COMPLETENESS_CODES = [
   'RESPONSIBLE',
   'COVERAGE',
   'CONTRACTED_SERVICE',
+  /**
+   * Migration 330 (decisão do Gabriel 05/09: "um serviço é um endereço"): há serviço ATIVO sem
+   * endereço vinculado (ou apontando para endereço arquivado). A vaga nasce DO serviço, NO seu
+   * endereço — sem o vínculo não há como criar a vaga certa, e o produto cartesiano
+   * serviços × endereços (que criava vagas no lugar errado) foi eliminado.
+   */
+  'SERVICE_ADDRESS',
+  /**
+   * Decisão do Gabriel 07/09: há serviço ATIVO sem horário (`schedule` NULL ou array vazio).
+   * O horário CONTINUA opcional na carga do serviço (D283 item 4: "o operador pode criar uma
+   * vacante para um caso e não ter horário ainda") — o que muda é que ele passa a ser exigido
+   * para o paciente MUDAR DE STATUS para ACTIVE, SEARCHING ou REPLACEMENT. Mesma forma do
+   * SERVICE_ADDRESS vizinho ("existe serviço ativo SEM o dado"), escolhida pelo Gabriel sobre a
+   * alternativa mais frouxa ("basta um serviço COM horário"): cada serviço vira UMA vaga, então
+   * serviço sem horário é vaga sem horário. Zero quando não há serviço — como o SERVICE_ADDRESS,
+   * nunca acusa paciente sem serviço nenhum.
+   */
+  'SERVICE_SCHEDULE',
   'CONSENT',
 ] as const;
 
 export type PatientCompletenessCode = (typeof PATIENT_COMPLETENESS_CODES)[number];
 
 /**
- * QA-caça rodada 1 / decisão do Gabriel 03/09 (D255): dos 5 códigos de
- * `PATIENT_COMPLETENESS_CODES`, só ADDRESS BLOQUEIA `POST /activate`. Medido na réplica de
+ * QA-caça rodada 1 / decisão do Gabriel 03/09 (D255): dos códigos de
+ * `PATIENT_COMPLETENESS_CODES`, só ADDRESS BLOQUEIA `POST /activate` — e, desde a migration 330,
+ * SERVICE_ADDRESS pela MESMA razão (a vaga precisa de um endereço; um serviço sem endereço não
+ * tem de onde nascer a vaga). Paciente sem serviço nenhum continua ativável (fallback: uma vaga
+ * por endereço, como antes da entidade existir). Medido na réplica de
  * produção (D165, só contagens): 370 pacientes vivos, apenas 23 com `has_consent=true` —
  * bloquear por CONSENT/RESPONSIBLE/COVERAGE travaria quase toda a operação hoje. Fonte ÚNICA:
  * `ActivatePatientUseCase` e `computePatientCompleteness` leem esta constante — nenhum dos dois
  * reimplementa "quais códigos bloqueiam".
  */
-export const ACTIVATION_BLOCKING_CODES = ['ADDRESS'] as const;
+export const ACTIVATION_BLOCKING_CODES = [
+  'ADDRESS',
+  'SERVICE_ADDRESS',
+  'SERVICE_SCHEDULE',
+] as const;
+
+/**
+ * Estados em que o paciente só entra se TODO serviço ativo tiver horário (decisão do Gabriel
+ * 07/09). São os três estados que pressupõem prestador em campo: `ACTIVE` (em atendimento),
+ * `SEARCHING` (búsqueda de prestador) e `REPLACEMENT` (reemplazo). Buscar prestador sem saber o
+ * horário é buscar para quê — e a regra do Marcel de 02/09 (`2026-09-02a#REGRA-11`) diz que
+ * `activo` exige cobertura TOTAL das horas, que sem horário é incalculável.
+ *
+ * Deliberadamente FORA: `ON_HOLD`, `SUSPENDED` e `DISCHARGED` — são pausa e saída. Travá-las
+ * prenderia na operação um paciente que já saiu, esperando o preenchimento do horário de um
+ * serviço que acabou.
+ */
+export const SCHEDULE_REQUIRED_STATUSES = ['ACTIVE', 'SEARCHING', 'REPLACEMENT'] as const;
+
+/**
+ * Quais códigos do checklist barram a ENTRADA em cada status, no `PUT /patients/:id/status`
+ * (select da ficha e drop no Kanban — as duas telas chamam a mesma rota).
+ *
+ * - `ACTIVE`: o checklist bloqueante INTEIRO. Até 07/09 o drop na coluna "Activo" do Kanban
+ *   ativava o paciente sem passar por checklist nenhum — nem por ADDRESS, que bloqueia o botão
+ *   "Activar" desde a D255. Fechar esse atalho foi decisão do Gabriel na mesma rodada; sem isso
+ *   a regra do horário nasceria furada pelo mesmo buraco.
+ * - `SEARCHING` / `REPLACEMENT`: só o horário. São transições do ciclo clínico de quem JÁ foi
+ *   ativado (portanto já passou pelo gate completo uma vez); exigir de novo endereço e
+ *   consentimento aqui seria reabrir a admissão no meio de uma troca urgente de prestadora.
+ * - Demais estados: nada. Pausa e saída não pedem dado nenhum.
+ */
+export function blockingCodesForStatusChange(
+  toStatus: string,
+): readonly PatientCompletenessCode[] {
+  if (toStatus === 'ACTIVE') return ACTIVATION_BLOCKING_CODES;
+  if ((SCHEDULE_REQUIRED_STATUSES as readonly string[]).includes(toStatus)) {
+    return ['SERVICE_SCHEDULE'];
+  }
+  return [];
+}
 
 /**
  * Status do paciente em que o checklist/botão "Activar paciente" fazem sentido. Fora daqui
@@ -48,6 +109,18 @@ export interface PatientCompletenessInput {
   activeAddressCount: number;
   activeResponsibleCount: number;
   activeContractedServiceCount: number;
+  /**
+   * Serviços ATIVOS cujo `address_id` é NULL ou aponta para endereço arquivado (migration 330).
+   * Zero quando não há serviço — SERVICE_ADDRESS nunca acusa paciente sem serviço.
+   */
+  activeContractedServicesWithoutAddressCount: number;
+  /**
+   * Serviços ATIVOS sem horário: `schedule` NULL **ou** array vazio (migration 330).
+   * Os dois contam — `[]` só vira `null` na borda zod (`contractedServiceSchemas.ts`), então uma
+   * escrita por SQL, seed ou sync do ClickUp grava `'[]'::jsonb` e passaria por "tem horário"
+   * num teste só de nulidade. Zero quando não há serviço.
+   */
+  activeContractedServicesWithoutScheduleCount: number;
   /** Data de referência para o cálculo de idade — injetável nos testes; default `new Date()`. */
   now?: Date;
 }
@@ -107,6 +180,12 @@ export function computePatientCompleteness(
   if (input.activeContractedServiceCount < 1) {
     missing.push('CONTRACTED_SERVICE');
   }
+  if (input.activeContractedServicesWithoutAddressCount > 0) {
+    missing.push('SERVICE_ADDRESS');
+  }
+  if (input.activeContractedServicesWithoutScheduleCount > 0) {
+    missing.push('SERVICE_SCHEDULE');
+  }
   if (!input.hasConsent) {
     missing.push('CONSENT');
   }
@@ -149,6 +228,17 @@ const MISSING_SQL: Record<PatientCompletenessCode, (p: string) => string> = {
   COVERAGE: (p) => `BTRIM(COALESCE(${p}.insurance_informed, ${p}.health_insurance_name, '')) = ''`,
   // activeContractedServiceCount < 1
   CONTRACTED_SERVICE: (p) => `NOT EXISTS (SELECT 1 FROM patient_contracted_services pcs WHERE pcs.patient_id = ${p}.id AND pcs.active)`,
+  // activeContractedServicesWithoutAddressCount > 0 — serviço ativo cujo address_id é NULL ou
+  // aponta para endereço arquivado (migration 330). Mesmo LEFT JOIN da listagem e do activate.
+  SERVICE_ADDRESS: (p) => `EXISTS (SELECT 1 FROM patient_contracted_services pcs
+        LEFT JOIN patient_addresses pa ON pa.id = pcs.address_id AND pa.archived_at IS NULL
+        WHERE pcs.patient_id = ${p}.id AND pcs.active AND pa.id IS NULL)`,
+  // activeContractedServicesWithoutScheduleCount > 0 — serviço ativo com `schedule` NULL ou array
+  // vazio (migration 330). `jsonb_array_length(...) = 0` NÃO é redundante: o CHECK
+  // `pcs_schedule_is_array` aceita `'[]'::jsonb`, e o `[] → null` só existe na borda zod.
+  SERVICE_SCHEDULE: (p) => `EXISTS (SELECT 1 FROM patient_contracted_services pcs
+        WHERE pcs.patient_id = ${p}.id AND pcs.active
+          AND (pcs.schedule IS NULL OR jsonb_array_length(pcs.schedule) = 0))`,
   // !hasConsent — `null` e `false` contam como ausente, igual ao JS.
   CONSENT: (p) => `${p}.has_consent IS NOT TRUE`,
 };

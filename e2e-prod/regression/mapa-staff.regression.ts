@@ -275,6 +275,12 @@ test.describe.serial('Spec 009 · Fase 4 — mapa do staff', () => {
       // '5' aqui não mudaria estado nenhum: o React sairia sem re-renderizar, o
       // effect não rodaria, nenhum POST sairia e o `waitForResponse` penduraria
       // até o timeout. O primeiro raio exercitado tem de ser um DIFERENTE.
+      // Medido, não presumido: se a tela deixar de nascer em 5 km, `em5` estaria mentindo
+      // sobre qual raio produziu `primeira`, e a comparação com 25 km abaixo viraria enfeite.
+      expect(
+        Number(await page.getByTestId('map-radius').inputValue()),
+        'a tela nasce no raio padrão — é o que faz de `primeira` a medida desse raio',
+      ).toBe(DEFAULT_RADIUS_KM);
       const em5 = primeira;
       const em25 = await respostaDoMapa(page, 'workers', () =>
         page.getByTestId('map-radius').selectOption('25'),
@@ -294,10 +300,10 @@ test.describe.serial('Spec 009 · Fase 4 — mapa do staff', () => {
       const observados: Array<{ km: number; truncated: boolean }> = [];
 
       // Trocar de aba mostra o portão da aba de pacientes, não uma lista: é
-      // ancorar num prestador que dispara a primeira leitura — já em 5 km.
+      // ancorar num prestador que dispara a primeira leitura.
       await page.getByTestId('map-tab-patients').click();
       await expect(page.getByTestId('map-anchor-empty')).toBeVisible({ timeout: 20_000 });
-      const emPacientes5 = await respostaDoMapa(page, 'patients', () => ancorarNoPrimeiroPrestador(page));
+      const emPacientesInicial = await respostaDoMapa(page, 'patients', () => ancorarNoPrimeiroPrestador(page));
 
       const conferirFrase = async (km: number, resp: MapResponse): Promise<void> => {
         observados.push({ km, truncated: resp.truncated });
@@ -323,11 +329,30 @@ test.describe.serial('Spec 009 · Fase 4 — mapa do staff', () => {
         }
       };
 
-      await conferirFrase(DEFAULT_RADIUS_KM, emPacientes5);
-      for (const km of RAIOS.filter((k) => k !== DEFAULT_RADIUS_KM)) {
-        await conferirFrase(km, await respostaDoMapa(page, 'patients', () =>
+      // ⚠️ O raio é estado ÚNICO da página, compartilhado pelas DUAS abas: trocar de aba não
+      // o reseta (`AdminMapPage.onSwitchTab` mexe em centro e seleção, nunca em `radiusKm`).
+      // A etapa dos prestadores acima deixou o seletor em 25 km, então a primeira leitura de
+      // pacientes NÃO acontece em `DEFAULT_RADIUS_KM` — e reselecionar um raio que já está
+      // selecionado não muda estado, não re-renderiza, não dispara POST nenhum e pendura o
+      // `waitForResponse` até o timeout. Foi isso que deixou este teste vermelho desde 06/09.
+      // Por isso o raio corrente é LIDO da tela, nunca presumido a partir da ordem das etapas.
+      const kmInicial = Number(await page.getByTestId('map-radius').inputValue());
+      expect(
+        [...RAIOS],
+        `o raio na tela (${kmInicial} km) precisa ser um dos de RAIOS, senão o laço abaixo ` +
+          'não cobre o conjunto que este teste diz cobrir',
+      ).toContain(kmInicial);
+
+      await conferirFrase(kmInicial, emPacientesInicial);
+      for (const km of RAIOS.filter((k) => k !== kmInicial)) {
+        const { pedido, resposta } = await consultarMapa(page, 'patients', () =>
           page.getByTestId('map-radius').selectOption(String(km)),
-        ));
+        );
+        // O rótulo do laço tem de ser o raio que a tela REALMENTE pediu. A divergência entre
+        // os dois é exatamente o defeito que esta correção fecha — sem esta linha ela volta
+        // em silêncio, porque a asserção da frase passa igual com o raio errado.
+        expect(pedido.radius_km, `a tela pediu o raio que o laço selecionou (${km} km)`).toBe(km);
+        await conferirFrase(km, resposta);
       }
 
       // O controle que impede este teste de provar metade em silêncio.

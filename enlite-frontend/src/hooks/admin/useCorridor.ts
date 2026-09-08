@@ -8,8 +8,16 @@
  * só o pino ABERTO consulta.
  *
  * O cache é por par e vive na sessão: reabrir o mesmo balão não gasta chamada.
- * Ele guarda paradas e linhas, que são infraestrutura pública — nenhum dado de
- * pessoa mora aqui além dos ids que a própria tela já tem.
+ *
+ * ⚖️ ATENÇÃO — o que mora neste `Map` MUDOU em 06/09. Até então eram só paradas
+ * e linhas (infraestrutura pública). Com o traçado, ele passa a guardar a
+ * POLILINHA porta a porta, cujos vértices das pontas são os dois domicílios.
+ * Por isso, condição do parecer do `lex`:
+ *   - o cache é `Map` em MEMÓRIA e morre com a aba. Nunca `localStorage`,
+ *     `sessionStorage` nem IndexedDB — persistir aqui seria criar, no disco da
+ *     recrutadora, um índice de onde as pessoas moram;
+ *   - a polilinha não pode entrar em log nem em atributo do DOM (ver
+ *     `CorridorPanel` e `useRouteOverlay`).
  */
 import { useEffect, useState } from 'react';
 import {

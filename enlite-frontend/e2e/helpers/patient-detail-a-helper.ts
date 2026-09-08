@@ -8,7 +8,7 @@ import { insertTestPatient } from './db-test-helper';
 
 export function runSQL(sql: string): string {
   return execSync(
-    `docker exec enlite-postgres psql -U enlite_admin -d enlite_e2e -tAc "${sql.replace(/"/g, '\\"')}"`,
+    `docker exec ${process.env.E2E_PG_CONTAINER || 'enlite-postgres'} psql -U enlite_admin -d enlite_e2e -tAc "${sql.replace(/"/g, '\\"')}"`,
     { encoding: 'utf-8' },
   ).trim();
 }
@@ -68,6 +68,9 @@ export function cleanupPatientDeep(patientId: string): void {
   runSQL(`DELETE FROM patient_professionals WHERE patient_id = '${patientId}'`);
   runSQL(`DELETE FROM patient_responsibles WHERE patient_id = '${patientId}'`);
   runSQL(`DELETE FROM job_postings WHERE patient_id = '${patientId}'`);
+  // Migration 330: o serviço contratado aponta para o endereço (FK sem ON DELETE) — sai ANTES
+  // do endereço, ou o DELETE de patient_addresses é recusado. Mesma ordem do purge real.
+  runSQL(`DELETE FROM patient_contracted_services WHERE patient_id = '${patientId}'`);
   runSQL(`DELETE FROM patient_addresses WHERE patient_id = '${patientId}'`);
   runSQL(`DELETE FROM patients WHERE id = '${patientId}'`);
 }

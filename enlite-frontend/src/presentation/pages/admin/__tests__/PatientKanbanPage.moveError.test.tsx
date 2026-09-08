@@ -16,8 +16,17 @@ vi.mock('react-i18next', () => ({
         'admin.patients.kanban.dragHint': 'Arrastrá una tarjeta para cambiar el estado del paciente.',
         'admin.patients.kanban.moveError': 'No se pudo mover el paciente',
         'admin.patients.kanban.moveErrorCodes.PATIENT_STATUS_TRANSITION_NOT_ALLOWED': 'Ese cambio de estado no está permitido.',
+        // Decisão do Gabriel 07/09 — textos reais de `es.json` (bloqueio por completude).
+        'admin.patients.kanban.moveErrorCodes.PATIENT_STATUS_NOT_READY':
+          'No se puede mover: faltan datos obligatorios en la ficha.',
+        'admin.patients.kanban.moveNotReady': 'No se puede mover: falta {{items}}.',
+        'admin.patients.detail.completeness.items.ADDRESS': 'Domicilio',
+        'admin.patients.detail.completeness.items.SERVICE_SCHEDULE': 'Horario del servicio',
       };
-      if (key in dict) return dict[key];
+      if (key in dict) {
+        // interpolação mínima do i18next ({{x}}), para o teste medir a mensagem MONTADA
+        return dict[key].replace(/\{\{(\w+)\}\}/g, (_m, name) => String(opts?.[name] ?? ''));
+      }
       if (typeof opts === 'object' && typeof opts?.defaultValue === 'string') return opts.defaultValue;
       return key;
     },
@@ -28,7 +37,7 @@ vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
 const showToast = vi.fn();
 vi.mock('@presentation/hooks/useToast', () => ({ useToast: () => showToast }));
 
-let moveResult: string | null = null;
+let moveResult: { code: string; missing?: string[] } | null = null;
 const kanban = {
   groups: { SOLICITANTE: [], ADMISSION: [], PENDING_ADMISSION: [], DONE: [] },
   isLoading: false,
@@ -38,7 +47,9 @@ const kanban = {
 vi.mock('@hooks/admin/usePatientKanban', () => ({ usePatientKanban: () => kanban }));
 
 vi.mock('@presentation/components/features/admin/PatientDetail/kanban/PatientKanbanBoard', () => ({
-  PatientKanbanBoard: (p: { onMove: (id: string, target: string) => Promise<string | null> }) => (
+  PatientKanbanBoard: (p: {
+    onMove: (id: string, target: string) => Promise<{ code: string; missing?: string[] } | null>;
+  }) => (
     <button data-testid="move-stub" onClick={() => p.onMove('pat-1', 'DONE')}>mover</button>
   ),
 }));
@@ -74,7 +85,7 @@ describe('PatientKanbanPage — toast do erro de movimentação (lex D5.1)', () 
 
   it('código conhecido → toast com a mensagem traduzida do CÓDIGO, não o texto genérico', async () => {
     const user = userEvent.setup();
-    moveResult = 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED';
+    moveResult = { code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED' };
     render(<PatientKanbanPage />);
     await user.click(screen.getByTestId('move-stub'));
     expect(showToast).toHaveBeenCalledWith('Ese cambio de estado no está permitido.', 'error');
@@ -82,10 +93,42 @@ describe('PatientKanbanPage — toast do erro de movimentação (lex D5.1)', () 
 
   it('código desconhecido/ausente → cai no toast genérico', async () => {
     const user = userEvent.setup();
-    moveResult = 'ALGUM_CODIGO_NOVO_SEM_TRADUCAO';
+    moveResult = { code: 'ALGUM_CODIGO_NOVO_SEM_TRADUCAO' };
     render(<PatientKanbanPage />);
     await user.click(screen.getByTestId('move-stub'));
     expect(showToast).toHaveBeenCalledWith('No se pudo mover el paciente', 'error');
+  });
+
+  // Decisão do Gabriel 07/09: o bloqueio por completude NOMEIA o que falta, com as mesmas
+  // palavras do checklist da ficha — o operador não pode ficar só com "não foi possível".
+  it('422 de completude com `missing` → toast NOMEIA o que falta, com os rótulos do checklist', async () => {
+    const user = userEvent.setup();
+    moveResult = { code: 'PATIENT_STATUS_NOT_READY', missing: ['SERVICE_SCHEDULE'] };
+    render(<PatientKanbanPage />);
+    await user.click(screen.getByTestId('move-stub'));
+    expect(showToast).toHaveBeenCalledWith('No se puede mover: falta Horario del servicio.', 'error');
+  });
+
+  it('vários códigos faltando → o toast lista todos, separados por vírgula', async () => {
+    const user = userEvent.setup();
+    moveResult = { code: 'PATIENT_STATUS_NOT_READY', missing: ['ADDRESS', 'SERVICE_SCHEDULE'] };
+    render(<PatientKanbanPage />);
+    await user.click(screen.getByTestId('move-stub'));
+    expect(showToast).toHaveBeenCalledWith(
+      'No se puede mover: falta Domicilio, Horario del servicio.',
+      'error',
+    );
+  });
+
+  it('código de completude SEM `missing` → cai na mensagem do código, não numa lista vazia', async () => {
+    const user = userEvent.setup();
+    moveResult = { code: 'PATIENT_STATUS_NOT_READY' };
+    render(<PatientKanbanPage />);
+    await user.click(screen.getByTestId('move-stub'));
+    expect(showToast).toHaveBeenCalledWith(
+      'No se puede mover: faltan datos obligatorios en la ficha.',
+      'error',
+    );
   });
 
   it('sucesso (err null) → nenhum toast', async () => {

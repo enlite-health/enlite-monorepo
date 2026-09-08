@@ -262,7 +262,7 @@ test.describe('Botões da família pacientes — esconder, não desabilitar (D26
 
     // Servicio contratado
     await page.getByRole('button', { name: 'Servicio Contratado', exact: true }).click();
-    await expect(page.getByTestId('edit-service-btn')).toHaveCount(0);
+    await expect(page.getByTestId('new-service-btn')).toHaveCount(0);
 
     // Kanban — o card existe (leitura), mas o arrasto está bloqueado.
     await page.goto('/admin/patients/kanban');
@@ -292,7 +292,7 @@ test.describe('Botões da família pacientes — esconder, não desabilitar (D26
     await expect(page.getByTestId('chat-ids-edit-btn')).toBeVisible();
 
     await page.getByRole('button', { name: 'Servicio Contratado', exact: true }).click();
-    await expect(page.getByTestId('edit-service-btn')).toBeVisible();
+    await expect(page.getByTestId('new-service-btn')).toBeVisible();
 
     await page.goto('/admin/patients/kanban');
     await expect(page.getByTestId(`patient-kanban-card-${patientId}`)).toBeVisible({ timeout: 15_000 });

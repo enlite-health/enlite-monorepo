@@ -16,7 +16,11 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
   },
 }));
 
-import { usePatientKanban, PATIENT_KANBAN_STATUSES } from '../usePatientKanban';
+import {
+  usePatientKanban,
+  PATIENT_KANBAN_STATUSES,
+  type PatientKanbanMoveError,
+} from '../usePatientKanban';
 
 const item = (id: string, admissionStatus: string, status: string) => ({
   id, firstName: 'P', lastName: id, caseNumber: null, dependencyLevel: null, status, admissionStatus, responsibleName: null,
@@ -59,15 +63,15 @@ describe('usePatientKanban — admission_status', () => {
     updatePatientStatus.mockRejectedValueOnce(new Error('422 transição'));
     const { result } = renderHook(() => usePatientKanban());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    let err: string | null = null;
+    let err: PatientKanbanMoveError | null = null;
     await act(async () => { err = await result.current.moveStatus('a', 'DONE'); });
-    expect(err).toBe('422 transição');
+    expect(err).toEqual({ code: '422 transição', missing: undefined });
     expect(result.current.groups.SOLICITANTE.map((p) => p.id)).toEqual(['a']);
     await act(async () => { err = await result.current.moveStatus('nao-existe', 'DONE'); });
     expect(result.current.groups.SOLICITANTE.map((p) => p.id)).toEqual(['a']);
     updatePatientStatus.mockRejectedValueOnce('string-error');
     await act(async () => { err = await result.current.moveStatus('a', 'DONE'); });
-    expect(err).toBe('Failed to move patient');
+    expect(err).toEqual({ code: 'Failed to move patient' });
   });
 
   // Spec 014 (US-D5, lex D5.1): quando o backend manda `code` (enum), o hook devolve o CÓDIGO,
@@ -86,11 +90,59 @@ describe('usePatientKanban — admission_status', () => {
     );
     const { result } = renderHook(() => usePatientKanban());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    let err: string | null = null;
+    let err: PatientKanbanMoveError | null = null;
     await act(async () => { err = await result.current.moveStatus('a', 'DONE'); });
-    expect(err).toBe('PATIENT_STATUS_TRANSITION_NOT_ALLOWED');
-    // nunca o texto com o nome do paciente
-    expect(err).not.toContain('Juan Pérez');
+    expect(err).toMatchObject({ code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED' });
+    // nunca o texto com o nome do paciente — nem em `code`, nem em `missing`
+    expect(JSON.stringify(err)).not.toContain('Juan Pérez');
+  });
+
+  // Decisão do Gabriel 07/09: o 422 de completude carrega `details.missing`, e o hook o leva
+  // adiante para o toast poder NOMEAR o que falta em vez de dizer só "não foi possível mover".
+  it('422 de completude → devolve o código E os códigos que faltam, sem eco de dado do paciente', async () => {
+    class FakePatientApiError extends Error {
+      readonly code?: string;
+      readonly details?: unknown;
+      constructor(message: string, code: string, details: unknown) {
+        super(message);
+        this.code = code;
+        this.details = details;
+      }
+    }
+    updatePatientStatus.mockRejectedValueOnce(
+      new FakePatientApiError(
+        'Patient not ready for status ACTIVE: falta SERVICE_SCHEDULE (paciente Juan Pérez)',
+        'PATIENT_STATUS_NOT_READY',
+        { to: 'ACTIVE', missing: ['ADDRESS', 'SERVICE_SCHEDULE'] },
+      ),
+    );
+    const { result } = renderHook(() => usePatientKanban());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    let err: PatientKanbanMoveError | null = null;
+    await act(async () => { err = await result.current.moveStatus('a', 'DONE'); });
+
+    expect(err).toEqual({
+      code: 'PATIENT_STATUS_NOT_READY',
+      missing: ['ADDRESS', 'SERVICE_SCHEDULE'],
+    });
+    expect(JSON.stringify(err)).not.toContain('Juan Pérez');
+    // o card volta para a coluna de origem (rollback otimista)
+    expect(result.current.groups.SOLICITANTE.map((p) => p.id)).toEqual(['a']);
+  });
+
+  it('`details.missing` que não é array é ignorado — nunca vaza um objeto arbitrário do servidor', async () => {
+    class FakeErr extends Error {
+      readonly code = 'PATIENT_STATUS_NOT_READY';
+      readonly details = { missing: { nome: 'Juan Pérez' } };
+    }
+    updatePatientStatus.mockRejectedValueOnce(new FakeErr('x'));
+    const { result } = renderHook(() => usePatientKanban());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    let err: PatientKanbanMoveError | null = null;
+    await act(async () => { err = await result.current.moveStatus('a', 'DONE'); });
+
+    expect(err).toEqual({ code: 'PATIENT_STATUS_NOT_READY', missing: undefined });
+    expect(JSON.stringify(err)).not.toContain('Juan Pérez');
   });
 
   it('erro ao carregar vira `error`; refetch recarrega; fetch concorrente é ignorado', async () => {

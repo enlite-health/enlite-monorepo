@@ -70,14 +70,17 @@ import { PatientProfileTabs } from '../PatientProfileTabs';
 import { FamiliaresCard } from '../FamiliaresCard';
 import { CoberturaMedicaCard } from '../CoberturaMedicaCard';
 import { LocalizacoesCard } from '../LocalizacoesCard';
-import { EnquadreTerapeuticoCard } from '../EnquadreTerapeuticoCard';
 
 // ── PatientIdentityCard ──────────────────────────────────────────────────────
 
 describe('PatientIdentityCard', () => {
+  // 06/09: o nome subiu para o `h1` da PÁGINA — o cartão não o repete mais. A âncora aqui passa a
+  // ser o telefone, que é dado dele.
   it('renders without crash with full data', () => {
     render(<PatientIdentityCard patient={patientDetailFixture} />);
-    expect(screen.getByText('Santiago Claiman')).toBeInTheDocument();
+    expect(screen.getByTestId('patient-identity-card')).toBeInTheDocument();
+    expect(screen.getByText('+55 (11) 91571-1717')).toBeInTheDocument();
+    expect(screen.queryByText('Santiago Claiman')).not.toBeInTheDocument();
   });
 
   it('renders status badge "Aguardando financeiro" for PENDING_ADMISSION (D195 — nome pelo motivo real)', () => {
@@ -102,7 +105,7 @@ describe('PatientIdentityCard', () => {
     });
     try {
       render(<PatientIdentityCard patient={patientDetailFixture} />);
-      expect(screen.getByText('Santiago Claiman')).toBeInTheDocument();
+      expect(screen.getByTestId('patient-identity-card')).toBeInTheDocument();
     } finally {
       spy.mockRestore();
     }
@@ -128,15 +131,80 @@ describe('PatientIdentityCard', () => {
     expect(screen.getByText('+55 (11) 91571-1717')).toBeInTheDocument();
   });
 
-  it('renders emergency contact section when responsible present', () => {
+  // 06/09 (Gabriel): o grupo deixou de se chamar "contato de emergência" — o cartão mostra o
+  // responsável marcado como `isPrimary`, então o título passa a dizer o que o dado é.
+  it('renders primary responsible section when responsible present', () => {
     render(<PatientIdentityCard patient={patientDetailFixture} />);
-    expect(screen.getByText('Contato de Emergência')).toBeInTheDocument();
+    expect(screen.getByText('Contato do responsável principal')).toBeInTheDocument();
     expect(screen.getByText('Luciana Soto')).toBeInTheDocument();
   });
 
-  it('does not render emergency contact section when no responsibles', () => {
+  // 🔒 `isPrimary` decide o TÍTULO: sem ninguém marcado, o cartão cai no primeiro da lista — e aí
+  // chamá-lo de "principal" seria a tela afirmar o que o dado não diz.
+  it('sem nenhum responsável marcado como principal, o título NÃO afirma "principal"', () => {
+    render(
+      <PatientIdentityCard
+        patient={{
+          ...patientDetailFixture,
+          responsibles: patientDetailFixture.responsibles.map((r) => ({ ...r, isPrimary: false })),
+        }}
+      />,
+    );
+    expect(screen.getByText('Contato do responsável')).toBeInTheDocument();
+    expect(screen.queryByText('Contato do responsável principal')).not.toBeInTheDocument();
+    // o dado continua na tela: só o título muda
+    expect(screen.getByText('Luciana Soto')).toBeInTheDocument();
+  });
+
+  // Sem responsável nenhum, o grupo inteiro some. Asserção nos DOIS títulos possíveis: buscar só
+  // o rótulo antigo passaria por vácuo, já que ele não existe mais em lugar nenhum.
+  // O parentesco é opcional na base: sem ele o par mostra "—", não some nem quebra.
+  it('responsável sem parentesco cadastrado mostra "—" no par, sem sumir com o campo', () => {
+    render(
+      <PatientIdentityCard
+        patient={{
+          ...patientDetailFixture,
+          responsibles: [{ ...patientDetailFixture.responsibles[0], relationship: null }],
+        }}
+      />,
+    );
+    const par = screen.getByText(/Parentesco/).parentElement;
+    expect(par?.lastElementChild).toHaveTextContent('—');
+  });
+
+  // 🔒 Trava da classe que o print pegou e os testes não: parentesco FORA do catálogo (o enum tem
+  // 9 valores) caía na chave i18n inteira na tela. `expectNoRawEnumLeaks` procura ALL_CAPS solto e
+  // não casa com `admin.patients.detail.relationshipOptions.XPTO`, então esta asserção é explícita.
+  it('parentesco fora do catálogo cai no valor CRU, nunca na chave i18n', () => {
+    render(
+      <PatientIdentityCard
+        patient={{
+          ...patientDetailFixture,
+          responsibles: [{ ...patientDetailFixture.responsibles[0], relationship: 'XPTO' as never }],
+        }}
+      />,
+    );
+    const par = screen.getByText(/Parentesco/).parentElement;
+    expect(par?.lastElementChild).toHaveTextContent('XPTO');
+    expect(screen.queryByText(/admin\.patients\.detail\.relationshipOptions/)).not.toBeInTheDocument();
+  });
+
+  // lex 06/09 (C2): telefone, documento e e-mail do responsável são contato de TERCEIRO e vivem na
+  // mesma grade que o e-mail do paciente, que já era mascarado. Trava: se alguém tirar o wrapper,
+  // fica vermelho.
+  it('o bloco do responsável inteiro leva data-clarity-mask="True"', () => {
+    render(<PatientIdentityCard patient={patientDetailFixture} />);
+    const bloco = screen.getByTestId('patient-responsible-section');
+    expect(bloco).toHaveAttribute('data-clarity-mask', 'True');
+    // e os campos de contato estão DENTRO dele
+    expect(screen.getByText('Luciana Soto').closest('[data-clarity-mask="True"]')).not.toBeNull();
+    expect(screen.getByText(/99852-0481/).closest('[data-clarity-mask="True"]')).not.toBeNull();
+  });
+
+  it('does not render the responsible section when no responsibles', () => {
     render(<PatientIdentityCard patient={patientDetailMinimal} />);
-    expect(screen.queryByText('Contato de Emergência')).not.toBeInTheDocument();
+    expect(screen.queryByText('Contato do responsável principal')).not.toBeInTheDocument();
+    expect(screen.queryByText('Contato do responsável')).not.toBeInTheDocument();
   });
 
   it('renders —  for null name in minimal fixture', () => {
@@ -166,8 +234,9 @@ describe('PatientIdentityCard', () => {
 
   it('renders "—" for admission date when createdAt is an empty string (formatDate cannot parse it)', () => {
     render(<PatientIdentityCard patient={{ ...patientDetailFixture, createdAt: '' }} />);
-    const admissionLabel = screen.getByText(/Admissão/);
-    expect(admissionLabel.parentElement).toHaveTextContent('Admissão: —');
+    // rótulo e valor são irmãos na grade — o valor é o último filho do par
+    const par = screen.getByText(/Admissão/).parentElement;
+    expect(par?.lastElementChild).toHaveTextContent('—');
   });
 
   it('builds the address from neighborhood/city/province when no address has fullAddress', () => {
@@ -182,7 +251,7 @@ describe('PatientIdentityCard', () => {
         }}
       />,
     );
-    expect(screen.getByText('Endereço:')).toBeInTheDocument();
+    expect(screen.getByText('Endereço')).toBeInTheDocument();
     expect(screen.getByText('Palermo, CABA, Buenos Aires')).toBeInTheDocument();
   });
 
@@ -192,7 +261,7 @@ describe('PatientIdentityCard', () => {
         patient={{ ...patientDetailFixture, addresses: [], zoneNeighborhood: null, cityLocality: null, province: null }}
       />,
     );
-    expect(screen.queryByText('Endereço:')).not.toBeInTheDocument();
+    expect(screen.queryByText('Endereço')).not.toBeInTheDocument();
   });
 
   it('falls back to "—" for the responsible name when both firstName and lastName are null', () => {
@@ -204,8 +273,8 @@ describe('PatientIdentityCard', () => {
         }}
       />,
     );
-    const nameLabel = screen.getByText(/Nome do Responsável/);
-    expect(nameLabel.parentElement).toHaveTextContent('Nome do Responsável: —');
+    const par = screen.getByText(/Nome do Responsável/).parentElement;
+    expect(par?.lastElementChild).toHaveTextContent('—');
   });
 
   it('renders "—" for the responsible document when documentType and documentNumber are both null', () => {
@@ -217,8 +286,8 @@ describe('PatientIdentityCard', () => {
         }}
       />,
     );
-    const docLabel = screen.getByText(/Tipo de documento/);
-    expect(docLabel.parentElement).toHaveTextContent('Tipo de documento: —');
+    const par = screen.getByText(/Tipo de documento/).parentElement;
+    expect(par?.lastElementChild).toHaveTextContent('—');
   });
 });
 
@@ -321,15 +390,17 @@ describe('DiagnosticoCard', () => {
     expect(screen.queryByTestId('emergency-instructions-edited')).not.toBeInTheDocument();
   });
 
-  it('sem instruções (nunca preenchido) mostra —', () => {
+  // 06/09 (variante B): o vazio deixou de ser `—`, que não distingue "não tem" de "não carregou".
+  // A frase diz qual dos dois é — e `emergencyInstructionsRedacted` segue cobrindo "não podés ver".
+  it('sem instruções (nunca preenchido) diz que não há instruções registradas', () => {
     render(<DiagnosticoCard patient={patientDetailMinimal} />);
-    expect(screen.getByTestId('emergency-instructions-text').textContent).toBe('—');
+    expect(screen.getByTestId('emergency-instructions-text').textContent).toBe('Sem instruções registradas.');
   });
 
   it('sem autoria (nunca editado pelo painel) não mostra a linha "Última edição"', () => {
     render(<DiagnosticoCard patient={patientDetailMinimal} />);
     expect(screen.queryByTestId('general-notes-edited')).not.toBeInTheDocument();
-    expect(screen.getByTestId('general-notes-text').textContent).toBe('—');
+    expect(screen.getByTestId('general-notes-text').textContent).toBe('Sem observações registradas.');
   });
 
   it('com data mas sem nome resolvido, mostra "—" no lugar do nome; data inválida cai no ISO cru', () => {
@@ -413,10 +484,12 @@ describe('DiagnosticoCard', () => {
 
     it('o principal leva o rótulo "Principal"; o secundário não', () => {
       render(<DiagnosticoCard patient={{ ...patientDetailFixture, diagnoses: [ATIVO_PRINCIPAL, ATIVO_SECUNDARIO], diagnosesUnavailable: false }} />);
+      // 06/09: o marcador virou CHIP (variante B do rearranjo) — perdeu os dois pontos do formato
+      // "Rótulo: valor" antigo, mas segue sendo o único jeito de distinguir principal de secundário.
       const principalRow = screen.getByTestId(`diagnostico-card-patologia-${ATIVO_PRINCIPAL.id}`);
-      expect(principalRow).toHaveTextContent('Principal:');
+      expect(principalRow).toHaveTextContent('Principal');
       const secundarioRow = screen.getByTestId(`diagnostico-card-patologia-${ATIVO_SECUNDARIO.id}`);
-      expect(secundarioRow).not.toHaveTextContent('Principal:');
+      expect(secundarioRow).not.toHaveTextContent('Principal');
     });
 
     it('label "Tipos de patologias - ICHOM" NUNCA aparece no card', () => {
@@ -521,17 +594,20 @@ describe('RelatoriosAtendimentosCard', () => {
 describe('PatientProfileTabs', () => {
   // Spec 014 US-D2: "Dados Financeiros" e "Agendamentos" SAÍRAM do tab bar — só tinham o
   // placeholder genérico "Em breve" atrás, nenhum card real (decisão Gabriel 03/09, item 9).
-  it('renders the 6 tabs with real content — "Dados Financeiros"/"Agendamentos" não existem mais', () => {
+  // 05/09 (decisão do Gabriel): "Enquadre" também saiu — era a tabela de serviços duplicada +
+  // placeholder; o encuadre do paciente É o serviço contratado (endereço + horário).
+  it('renders the 5 tabs with real content — "Dados Financeiros"/"Agendamentos"/"Enquadre" não existem mais', () => {
     const onTabChange = vi.fn();
     render(<PatientProfileTabs activeTab="clinicalData" onTabChange={onTabChange} />);
     expect(screen.getByText('Dados Clínicos')).toBeInTheDocument();
     expect(screen.getByText('Rede de Apoio')).toBeInTheDocument();
     expect(screen.getByText('Serviço Contratado')).toBeInTheDocument();
     expect(screen.getByText('Vagas')).toBeInTheDocument();
-    expect(screen.getByText('Enquadre')).toBeInTheDocument();
     expect(screen.getByText('Histórico')).toBeInTheDocument();
     expect(screen.queryByText('Dados Financeiros')).not.toBeInTheDocument();
     expect(screen.queryByText('Agendamentos')).not.toBeInTheDocument();
+    expect(screen.queryByText('Enquadre')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button')).toHaveLength(5);
   });
 
   it('active tab has primary background class', () => {
@@ -789,23 +865,9 @@ describe('LocalizacoesCard', () => {
 // `ServicosContratadosCard.test.tsx` (i18n real, molde `sex-both-i18n.test.tsx` — pega vazamento
 // de enum cru, que os `getByText` literais em pt-BR abaixo não pegavam).
 
-// ── EnquadreTerapeuticoCard ──────────────────────────────────────────────────
-
-// Spec 014 US-D2: card sem dado nenhum (kanban de 4 colunas sempre vazias) vira "título +
-// Próximamente REAL".
-describe('EnquadreTerapeuticoCard', () => {
-  it('renders card title', () => {
-    render(<EnquadreTerapeuticoCard />);
-    expect(screen.getByText('Enquadre Terapêutico')).toBeInTheDocument();
-  });
-
-  it('mostra "Em breve" — sem colunas, sem botões', () => {
-    render(<EnquadreTerapeuticoCard />);
-    expect(screen.getByText('Em breve')).toBeInTheDocument();
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('enquadre-column-interview')).not.toBeInTheDocument();
-  });
-});
+// ── EnquadreTerapeuticoCard ─ REMOVIDO (05/09, decisão do Gabriel): a aba "Encuadre" saiu da
+// ficha — era a tabela de serviços contratados duplicada + este placeholder. O encuadre do
+// paciente É o serviço contratado (endereço + horário, migration 330).
 
 // ── Spec 011 bloco A — contrato real da API e máscara do Clarity (A2/A4) ────
 
@@ -907,7 +969,7 @@ describe('PatientIdentityCard — endereço com data-clarity-mask (lex C2.1)', (
     const field = screen.getByTestId('patient-address');
     expect(field).toHaveTextContent('Rua Mascarada, 9 - SP');
     expect(field.closest('[data-clarity-mask="True"]')).not.toBeNull();
-    expect(screen.getByText('Endereço:')).toBeInTheDocument();
+    expect(screen.getByText('Endereço')).toBeInTheDocument();
   });
 
   it('sem endereço nenhum o campo não aparece', () => {

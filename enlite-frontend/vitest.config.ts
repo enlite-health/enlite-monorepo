@@ -105,7 +105,7 @@ export default defineConfig({
         '**/src/presentation/components/features/admin/PatientDetail/kanban/{PatientKanbanCard.tsx,PatientKanbanBoard.tsx}': {
           lines: 100, statements: 100, functions: 100, branches: 100,
         },
-        '**/src/presentation/components/features/admin/PatientDetail/{ClinicalLongText,DiagnosticoCard}.tsx': {
+        '**/src/presentation/components/features/admin/PatientDetail/{ClinicalLongText,DiagnosticoCard,DetailRows,FieldPairs}.tsx': {
           statements: 100,
           branches: 100,
           functions: 100,
@@ -191,7 +191,7 @@ export default defineConfig({
         // ContractedServiceProvidersSection) eram INALCANÇÁVEIS via clique simulado — extraídos
         // em `deactivateService`/`runAssociateProvider` exportados e testados diretamente. Os 3
         // arquivos medem 100 nos 4 eixos agora.
-        '**/src/presentation/components/features/admin/PatientDetail/edit/{ContractedServiceFormRow,ContractedServiceProvidersSection,PatientContractedServicesEditDrawer}.tsx': {
+        '**/src/presentation/components/features/admin/PatientDetail/edit/{ContractedServiceFormRow,ContractedServiceProvidersSection,PatientContractedServicesEditDrawer,AvisoAmbar}.tsx': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
         '**/src/infrastructure/http/AdminContractedServicesApiService.ts': {
@@ -246,6 +246,17 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
+        // O campo de endereço. Entra aqui porque o que ele guarda não é só
+        // comportamento: é CONTA. O efeito de inicialização não pode voltar a
+        // depender da identidade dos callbacks — cada widget a mais é uma sessão
+        // de Places a mais, e o defeito rendia 309 chamadas por endereço digitado
+        // (medido em prod, 07/09). Sem esta linha o 100% conquistado cairia calado.
+        '**/src/presentation/components/molecules/GooglePlacesAutocomplete.tsx': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
         // Navegação de admin: quem some daqui some da tela de alguém.
         '**/src/presentation/config/adminNavigation.tsx': {
           statements: 100,
@@ -254,7 +265,27 @@ export default defineConfig({
           lines: 100,
         },
         // Páginas de admin nascidas nesta release.
-        '**/src/presentation/pages/admin/AdminMapPage/{AdminMapPage.tsx,useMapTabs.ts,mapPageConfig.ts,mapAnchor.tsx,mapResults.tsx,mapSidebar.tsx,CorridorPanel.tsx}': {
+        '**/src/presentation/pages/admin/AdminMapPage/{AdminMapPage.tsx,useMapTabs.ts,mapPageConfig.ts,mapAnchor.tsx,mapResults.tsx,mapSidebar.tsx,CorridorPanel.tsx,useAnchorCandidates.ts}': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        // Nascidos com o traçado da rota (06/09). `googleMapsScriptUrl` é a
+        // fonte ÚNICA da URL do script do Maps: se ela perder `geometry`, o
+        // traçado morre em silêncio em produção — por isso entra no piso.
+        // ⚠️ `loadGoogleMaps.ts` fica FORA de propósito: mede 96,92/94,73, e as
+        // 2 linhas descobertas são a guarda `typeof window === 'undefined'`,
+        // inalcançável em jsdom. Entra quando alguém decidir se aquele guard
+        // ainda faz sentido (não há SSR nesta aplicação) — não antes, para o
+        // piso não nascer reprovando.
+        '**/src/infrastructure/services/googleMapsScriptUrl.ts': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        '**/src/presentation/components/molecules/PointsMap/useRouteOverlay.ts': {
           statements: 100,
           branches: 100,
           functions: 100,

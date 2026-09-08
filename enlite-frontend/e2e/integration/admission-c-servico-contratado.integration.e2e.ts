@@ -15,7 +15,8 @@ import {
   cleanupPatientDeep, runSQL,
 } from '../helpers/patient-detail-c-helper';
 
-const EMULATOR = 'http://127.0.0.1:9099';
+// `E2E_FIREBASE_EMULATOR` aponta para o emulador de um stack isolado (`docker compose -p`); default inalterado.
+const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
 const EMULATOR_PROJECT = 'demo-no-project';
 const STAFF_EMAIL = `e2e.blococ.${Date.now()}@enlite.health`;
 const STAFF_PASSWORD = 'TestAdmin123!';
@@ -91,7 +92,7 @@ test.describe('Spec 013 bloco C — serviço contratado como entidade @integrati
   test.describe.configure({ mode: 'serial' });
   test.setTimeout(240_000);
 
-  let seed: { patientId: string; stamp: string };
+  let seed: { patientId: string; addressId: string; stamp: string };
   let worker: { workerId: string; name: string };
 
   test.beforeAll(() => {
@@ -131,34 +132,29 @@ test.describe('Spec 013 bloco C — serviço contratado como entidade @integrati
     // ── #PEND-08 vivo: sem serviço, o card mostra o empty state real, não 5 colunas fantasma ──
     await expect(page.getByTestId('servicos-contratados-card')).toBeVisible();
 
-    // ── Abre o drawer, cria o 1º serviço (AT domiciliar, 20h/sem, 2 prestadores necessários) ──
-    await forceClick(page.getByTestId('edit-service-btn'));
+    // ── "+ Nuevo servicio" abre o drawer de UM serviço (06/09: sem drawer-lista intermediário);
+    //    cria o 1º serviço (AT domiciliar, 20h/sem, 2 prestadores necessários) ──
+    await forceClick(page.getByTestId('new-service-btn'));
     await expect(page.getByTestId('patient-contracted-services-edit-drawer')).toBeVisible();
-    await forceClick(page.getByTestId('contracted-service-add'));
     await forceSelect(page.getByTestId('svc-code-1'), 'AT');
     await forceFill(page.getByTestId('svc-providersNeeded-1'), '2');
     await forceFill(page.getByTestId('svc-weeklyHours-1'), '20');
     await forceSelect(page.getByTestId('svc-careLocation-1'), 'HOME');
+    // Migration 330: o serviço aponta para UM endereço da ficha (o seed cria 1) — sem isso o
+    // checklist acusa SERVICE_ADDRESS e o activate recusa (422), em vez de multiplicar vagas.
+    await forceSelect(page.getByTestId('svc-addressId-1'), seed.addressId);
+    // Decisão do Gabriel 07/09: serviço ativo SEM horário bloqueia o activate (SERVICE_SCHEDULE).
+    // Este spec ativa o paciente mais abaixo e espera 200 — então os serviços nascem com horário.
+    await forceClick(page.getByTestId('day-schedule-add-monday'));
     const createService1 = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
     await forceClick(page.getByTestId('contracted-service-new-save'));
     const svc1Body = (await (await createService1).json()) as { data: { id: string } };
     const service1Id = svc1Body.data.id;
-    // O form "novo" (index 1) só vira o form do serviço 1 DEPOIS do refetch da lista (GET) que
-    // `handleChildSaved` dispara — sem esperar isso, "+ Nuevo" de novo criaria o 2º form com
-    // `index=1` também (colisão de testid), porque `services` ainda estaria vazio.
+    // Depois do refetch, o recém-criado vira o alvo de edição do drawer (é aí que a seção de
+    // prestadores existe) — o form "novo" some e entra o form do serviço 1.
     await expect(page.getByTestId(`contracted-service-form-${service1Id}`)).toBeVisible({ timeout: 15_000 });
 
-    // ── 2º serviço (cuidador escolar, 10h/sem) ──
-    await forceClick(page.getByTestId('contracted-service-add'));
-    await forceSelect(page.getByTestId('svc-code-2'), 'CAREGIVER');
-    await forceFill(page.getByTestId('svc-weeklyHours-2'), '10');
-    await forceSelect(page.getByTestId('svc-careLocation-2'), 'SCHOOL');
-    const createService2 = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
-    await forceClick(page.getByTestId('contracted-service-new-save'));
-    const svc2Body = (await (await createService2).json()) as { data: { id: string } };
-    await expect(page.getByTestId(`contracted-service-form-${svc2Body.data.id}`)).toBeVisible({ timeout: 15_000 });
-
-    // ── Associa 1 prestador ao 1º serviço ──
+    // ── Associa 1 prestador ao 1º serviço, ainda neste drawer ──
     await forceFill(page.getByTestId(`provider-search-${service1Id}`), worker.name.slice(0, 12));
     await expect(page.locator(`[data-testid^="provider-hit-"]`).first()).toBeVisible({ timeout: 10_000 });
     await forceClick(page.locator(`[data-testid^="provider-hit-"]`).first());
@@ -167,15 +163,48 @@ test.describe('Spec 013 bloco C — serviço contratado como entidade @integrati
     await forceClick(page.getByTestId(`provider-associate-${service1Id}`));
     await associate;
     await expect(page.getByText(worker.name)).toBeVisible();
+    await forceClick(page.getByLabel('Cerrar'));
+    await page.waitForTimeout(400);
+    await expect(page.getByTestId('patient-contracted-services-edit-drawer')).not.toBeVisible();
+
+    // ── 2º serviço (cuidador escolar, 10h/sem): de novo pelo "+ Nuevo servicio" do card ──
+    await forceClick(page.getByTestId('new-service-btn'));
+    // O índice visual conta os existentes: com 1 serviço na ficha o form novo é "Servicio 2".
+    await forceSelect(page.getByTestId('svc-code-2'), 'CAREGIVER');
+    await forceFill(page.getByTestId('svc-weeklyHours-2'), '10');
+    await forceSelect(page.getByTestId('svc-careLocation-2'), 'SCHOOL');
+    await forceSelect(page.getByTestId('svc-addressId-2'), seed.addressId);
+    await forceClick(page.getByTestId('day-schedule-add-wednesday'));
+    const createService2 = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
+    await forceClick(page.getByTestId('contracted-service-new-save'));
+    const svc2Body = (await (await createService2).json()) as { data: { id: string } };
+    await expect(page.getByTestId(`contracted-service-form-${svc2Body.data.id}`)).toBeVisible({ timeout: 15_000 });
 
     // ── Fecha o drawer e confere o card com dado REAL (não "—") ──
     await forceClick(page.getByLabel('Cerrar'));
     await page.waitForTimeout(400);
     await expect(page.getByTestId('patient-contracted-services-edit-drawer')).not.toBeVisible();
-    await expect(page.getByTestId(`contracted-service-row-${service1Id}`)).toContainText('2 / 1'); // 2 necessários, 1 ativo
+    // 05/09: a tabela virou as 5 colunas do Figma — quantidade, lugar + endereço vinculado, horário.
+    const row1 = page.getByTestId(`contracted-service-row-${service1Id}`);
+    await expect(page.getByTestId(`contracted-service-providers-${service1Id}`)).toHaveText('2');
+    await expect(page.getByTestId(`contracted-service-address-${service1Id}`)).toBeVisible(); // endereço do ponteiro, não o aviso
+    await expect(page.getByTestId(`contracted-service-address-missing-${service1Id}`)).toHaveCount(0);
     await expect(page.locator('[data-testid="servicos-contratados-card"]')).toHaveScreenshot('bloco-c-servicos-reais.png');
+    // Clique na linha → detalhe completo (prestadores necessários/ativos, valor, franja).
+    await forceClick(row1);
+    await expect(page.getByTestId('contracted-service-detail-drawer')).toBeVisible();
+    await expect(page.getByTestId('svc-detail-providers')).toContainText('(1 / 2)'); // 1 ativo de 2 necessários
+    await expect(page.getByTestId('svc-detail-providers')).toContainText(worker.name);
+    // O nome do prestador da fixture carrega um carimbo por rodada — mascarado, senão a
+    // baseline reprova por 92 px de texto que muda sozinho (gate, 06/09).
+    await expect(page.getByTestId('contracted-service-detail-drawer')).toHaveScreenshot('bloco-c-servico-detalhe.png', {
+      mask: [page.getByTestId('svc-detail-providers')],
+    });
+    await forceClick(page.getByTestId('contracted-service-detail-close'));
+    await page.waitForTimeout(400);
+    await expect(page.getByTestId('contracted-service-detail-drawer')).not.toBeVisible();
 
-    // ── Ativar: 1 vaga por (serviço ativo × endereço ativo) = 2 vagas ──
+    // ── Ativar: 1 vaga POR SERVIÇO, no endereço do serviço (migration 330) = 2 vagas ──
     await forceClick(page.getByTestId('activate-patient-btn'));
     // Sincroniza pela RESPOSTA do POST, não pelo sumiço do botão: a ficha desmonta o botão no
     // skeleton do refetch antes de a API terminar, e sob carga a leitura do banco abaixo chegava

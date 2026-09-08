@@ -10,7 +10,6 @@ import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
-import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
 import { ClinicalTextareaField } from './ClinicalTextareaField';
@@ -18,7 +17,6 @@ import { DEVICE_TYPE_CODES } from '@domain/entities/patientEnums';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
 import { DiagnosisAssignmentSection } from './DiagnosisAssignmentSection';
-import { Label } from '@presentation/components/atoms/Label';
 
 interface Props {
   patient: PatientDetail;
@@ -39,8 +37,13 @@ const BOOL_VALUES = ['', 'true', 'false'] as const;
 
 // Todo campo nasce preenchido em `defaultValues` ('' / []) — o tipo diz isso e o submit deixa de
 // carregar fallbacks para um `undefined` que nunca chega (mesmo padrão do bloco A, spec 011).
+//
+// 05/09 (Gabriel): o texto livre `diagnosis` ("Hipótesis Diagnóstica - CID") SAIU deste formulário.
+// Era a porta para a operadora digitar qualquer coisa ao lado da busca estruturada — e errar. A
+// coluna continua existindo: quem a alimenta é o espelho do ClickUp ("Diagnóstico (si lo conoce)",
+// o que a família escreveu no formulário) e quem a consome é o backfill da F4 (spec 016). Este
+// drawer simplesmente não a envia mais no PATCH — o backend trata `undefined` como "não tocar".
 const schema = z.object({
-  diagnosis: z.string(),
   additionalComments: z.string().max(GENERAL_NOTES_MAX),
   emergencyInstructions: z.string().max(GENERAL_NOTES_MAX),
   // US-B4: códigos de `device_types` (multi) — texto livre dava 23503 (FK desde a 308).
@@ -63,9 +66,31 @@ function strToBool(v: string): boolean | null {
 }
 
 /**
+ * Título de bloco do drawer — estrutura da tela, não legenda de campo. `Heading` de verdade (h4),
+ * com o tamanho sobrescrito para 12px via `!` (o menor tamanho do atom é 16px; a regra do `!` está
+ * no CLAUDE.md do front — sem ele a sobrescrita perde em silêncio). O `id` é obrigatório porque a
+ * seção aponta para ele por `aria-labelledby`.
+ */
+function SectionTitle({ children, id }: { children: string; id: string }): JSX.Element {
+  return (
+    <Heading level={4} id={id} weight="semibold" color="primary" className="!text-xs !leading-[1.5] uppercase tracking-wider">
+      {children}
+    </Heading>
+  );
+}
+
+/**
  * Edit drawer for the `clinical` section. Saves via
  * PATCH /api/admin/patients/:id/clinical. Booleans are edited as a tri-state
  * select (—/Sí/No) so the operator can leave a flag unset (null) or clear it.
+ *
+ * Disposição (05/09, pedido do Gabriel: "mais largo, mais disposta, menos apertado"):
+ * `max-w-3xl` e quatro blocos na ordem em que a operadora preenche — Patología (a busca
+ * estruturada, o que mais importa), Perfil clínico (3 selects numa linha), Documentación (3
+ * tri-states numa linha) e Observaciones (os dois textos longos, por último e menores: 4 e 3
+ * linhas, crescem se ela precisar). Rótulos `compact` (12px, cor primária): o de 18px cinza
+ * quebra linha numa grade de três colunas. Nenhum "(opcional)": TODOS os campos deste drawer são
+ * opcionais — marcar cada um é ruído; marca-se a exceção, não a regra.
  */
 export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props): JSX.Element {
   const { t } = useTranslation();
@@ -80,7 +105,6 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
   const { register, handleSubmit, control, watch, formState: { isDirty } } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      diagnosis: patient.diagnosis ?? '',
       additionalComments: patient.additionalComments ?? '',
       emergencyInstructions: patient.emergencyInstructions ?? '',
       deviceTypes: patient.deviceTypes ?? [],
@@ -139,7 +163,6 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
     setSubmitError(null);
     const payload: PatientClinicalSectionPayload = {};
     const nz = (v: string): string | null => { const s = v.trim(); return s ? s : null; };
-    if (nz(values.diagnosis) !== (patient.diagnosis ?? null)) payload.diagnosis = nz(values.diagnosis);
     if (nz(values.additionalComments) !== (patient.additionalComments ?? null)) payload.additionalComments = nz(values.additionalComments);
     // Redigido para este ator: o campo nem entra no formulário como valor real — nunca sobrescrever.
     if (!patient.emergencyInstructionsRedacted && nz(values.emergencyInstructions) !== (patient.emergencyInstructions ?? null)) payload.emergencyInstructions = nz(values.emergencyInstructions);
@@ -168,7 +191,7 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
   };
 
   const boolField = (name: 'hasJudicialProtection' | 'hasCud' | 'hasConsent', label: string, testid: string) => (
-    <FormField label={label} htmlFor={testid} optional>
+    <FormField label={label} htmlFor={testid} labelSize="compact">
       <Controller control={control} name={name} render={({ field }) => (
         <SelectField inputSize="compact" options={boolOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={testid} />
       )} />
@@ -187,7 +210,7 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
         role="dialog"
         aria-modal="true"
         aria-label={te('clinicalTitle')}
-        className={`fixed top-0 right-0 h-screen z-50 w-full max-w-xl bg-white shadow-2xl rounded-tl-[32px] rounded-bl-[32px] flex flex-col transition-transform duration-300 ease-in-out ${show ? 'translate-x-0' : 'translate-x-full'}`}
+        className={`fixed top-0 right-0 h-screen z-50 w-full max-w-3xl bg-white shadow-2xl rounded-tl-[32px] rounded-bl-[32px] flex flex-col transition-transform duration-300 ease-in-out ${show ? 'translate-x-0' : 'translate-x-full'}`}
         data-testid="patient-clinical-edit-drawer"
       >
         <div className="flex items-center justify-between px-8 py-5 border-b border-slate-100 shrink-0">
@@ -202,64 +225,75 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
           </div>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="flex-1 overflow-y-auto px-8 py-6 flex flex-col gap-5">
-          <FormField label={td('diagnosisCard.cid')} htmlFor="pce-diagnosis" optional>
-            <InputWithIcon id="pce-diagnosis" inputSize="compact" data-testid="pce-diagnosis" {...register('diagnosis')} />
-          </FormField>
-          {/* Spec 016 F3 (REQ-21): diagnóstico ESTRUTURADO por CID-11 — busca+chips, código
-              nunca visível. Ação própria (POST/PATCH imediato), fora do submit deste formulário. */}
-          <div className="flex flex-col gap-2 pt-2 border-t border-slate-100">
-            <Label htmlFor="icd-search-input">{te('diagnosisAssignment.sectionTitle')}</Label>
+        <form onSubmit={handleSubmit(onSubmit)} className="flex-1 overflow-y-auto px-8 py-6 flex flex-col gap-8">
+          {/* Spec 016 F3 (REQ-21): diagnóstico ESTRUTURADO por CID-11 — busca+chips, código nunca
+              visível. Rótulo "Patología", sem sigla (Marcel, 26/08: "vai estar escrito patologia").
+              Ação própria (POST/PATCH imediato), fora do submit deste formulário. */}
+          <section aria-labelledby="pce-section-pathology" className="flex flex-col gap-3" data-testid="pce-section-pathology">
+            <SectionTitle id="pce-section-pathology">{te('clinicalSections.pathology')}</SectionTitle>
             <DiagnosisAssignmentSection
               patientId={patient.id}
               initialDiagnoses={patient.diagnoses}
               onChanged={() => { diagnosesChangedRef.current = true; }}
+              ariaLabelledBy="pce-section-pathology"
             />
-          </div>
-          {/* REQ-01 (D195): "observações gerais" é narrativa clínica — textarea grande com contador e
-              máscara do Clarity (lex 29/08, C1.1), dentro de ClinicalTextareaField. */}
-          <ClinicalTextareaField
-            id="pce-comments"
-            label={td('diagnosisCard.generalNotes')}
-            rows={8}
-            maxChars={GENERAL_NOTES_MAX}
-            value={watch('additionalComments')}
-            {...register('additionalComments')}
-          />
-          {/* REQ-01 (D211.2): instruções de emergência — mesmo molde; se o backend redigiu para este
-              ator, o campo não é editável (não há valor real para preservar). */}
-          <ClinicalTextareaField
-            id="pce-emergency"
-            label={td('diagnosisCard.emergencyInstructions')}
-            rows={6}
-            maxChars={GENERAL_NOTES_MAX}
-            value={watch('emergencyInstructions')}
-            disabled={!!patient.emergencyInstructionsRedacted}
-            placeholder={patient.emergencyInstructionsRedacted ? td('diagnosisCard.emergencyRedacted') : undefined}
-            {...register('emergencyInstructions')}
-          />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormField label={t('admin.patients.dependencyLabel', { defaultValue: 'Dependencia' })} htmlFor="pce-dependency" optional>
-              <Controller control={control} name="dependencyLevel" render={({ field }) => (
-                <SelectField inputSize="compact" options={dependencyOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid="pce-dependency" />
-              )} />
-            </FormField>
-            <FormField label={te('deviceType')} htmlFor="pce-device" optional>
-              <Controller control={control} name="deviceTypes" render={({ field }) => (
-                <MultiSelect options={deviceOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id="pce-device" />
-              )} />
-            </FormField>
-            <FormField label={tc('serviceType')} htmlFor="pce-serviceType" optional>
-              <Controller control={control} name="serviceType" render={({ field }) => (
-                <MultiSelect options={serviceOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id="pce-serviceType" />
-              )} />
-            </FormField>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-slate-100">
-            {boolField('hasJudicialProtection', td('diagnosisCard.protectionCertificate'), 'pce-hasJudicialProtection')}
-            {boolField('hasCud', td('diagnosisCard.disabilityCertificate'), 'pce-hasCud')}
-            {boolField('hasConsent', te('hasConsent'), 'pce-hasConsent')}
-          </div>
+          </section>
+
+          <section aria-labelledby="pce-section-profile" className="flex flex-col gap-3 pt-6 border-t border-slate-100" data-testid="pce-section-profile">
+            <SectionTitle id="pce-section-profile">{te('clinicalSections.profile')}</SectionTitle>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <FormField label={t('admin.patients.dependencyLabel', { defaultValue: 'Dependencia' })} htmlFor="pce-dependency" labelSize="compact">
+                <Controller control={control} name="dependencyLevel" render={({ field }) => (
+                  <SelectField inputSize="compact" options={dependencyOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid="pce-dependency" />
+                )} />
+              </FormField>
+              <FormField label={te('deviceType')} htmlFor="pce-device" labelSize="compact">
+                <Controller control={control} name="deviceTypes" render={({ field }) => (
+                  <MultiSelect options={deviceOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id="pce-device" />
+                )} />
+              </FormField>
+              <FormField label={tc('serviceType')} htmlFor="pce-serviceType" labelSize="compact">
+                <Controller control={control} name="serviceType" render={({ field }) => (
+                  <MultiSelect options={serviceOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id="pce-serviceType" />
+                )} />
+              </FormField>
+            </div>
+          </section>
+
+          <section aria-labelledby="pce-section-documents" className="flex flex-col gap-3 pt-6 border-t border-slate-100" data-testid="pce-section-documents">
+            <SectionTitle id="pce-section-documents">{te('clinicalSections.documents')}</SectionTitle>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {boolField('hasJudicialProtection', td('diagnosisCard.protectionCertificate'), 'pce-hasJudicialProtection')}
+              {boolField('hasCud', td('diagnosisCard.disabilityCertificate'), 'pce-hasCud')}
+              {boolField('hasConsent', te('hasConsent'), 'pce-hasConsent')}
+            </div>
+          </section>
+
+          <section aria-labelledby="pce-section-notes" className="flex flex-col gap-4 pt-6 border-t border-slate-100" data-testid="pce-section-notes">
+            <SectionTitle id="pce-section-notes">{te('clinicalSections.notes')}</SectionTitle>
+            {/* REQ-01 (D195): "observações gerais" é narrativa clínica — textarea com contador e
+                máscara do Clarity (lex 29/08, C1.1), dentro de ClinicalTextareaField. */}
+            <ClinicalTextareaField
+              id="pce-comments"
+              label={td('diagnosisCard.generalNotes')}
+              rows={4}
+              maxChars={GENERAL_NOTES_MAX}
+              value={watch('additionalComments')}
+              {...register('additionalComments')}
+            />
+            {/* REQ-01 (D211.2): instruções de emergência — mesmo molde; se o backend redigiu para este
+                ator, o campo não é editável (não há valor real para preservar). */}
+            <ClinicalTextareaField
+              id="pce-emergency"
+              label={td('diagnosisCard.emergencyInstructions')}
+              rows={3}
+              maxChars={GENERAL_NOTES_MAX}
+              value={watch('emergencyInstructions')}
+              disabled={!!patient.emergencyInstructionsRedacted}
+              placeholder={patient.emergencyInstructionsRedacted ? td('diagnosisCard.emergencyRedacted') : undefined}
+              {...register('emergencyInstructions')}
+            />
+          </section>
 
           {submitError && <Text size="sm" className="text-red-600" data-testid="pce-error">{submitError}</Text>}
         </form>
