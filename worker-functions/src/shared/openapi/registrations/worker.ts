@@ -49,7 +49,11 @@ export const WorkerProfileSchema = registry.register(
      * `null` = NÃO consegui apurar. É "não sei", nunca "está completo": o cliente
      *          tem de tratar como desconhecido (fail-closed).
      */
-    missingFields: z.array(z.string()).nullable().optional().openapi({
+    // NÃO é `.optional()`: `withMissingFields` sempre emite a chave, e um
+    // terceiro estado (`undefined`) na spec daria a um cliente gerado o
+    // `if (!missingFields?.length) → "completo"` — a D302 renascendo por uma
+    // porta nova. Dois estados, e só: `[]` = nada falta · `null` = não apurei.
+    missingFields: z.array(z.string()).nullable().openapi({
       example: ['phone', 'title_certificate'],
       description: '[] = nada falta · null = não foi possível apurar (NÃO significa completo)',
     }),

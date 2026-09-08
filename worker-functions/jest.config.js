@@ -81,6 +81,15 @@ module.exports = {
     // Paciente como fonte da verdade: leitura clínica, repositórios e o guarda
     // de acesso ao texto clínico. `patientClinicalAccess` é o que decide quem
     // vê texto clínico — regra dura do CLAUDE.md, não pode regredir calado.
+    // Contrato publicado do perfil do prestador: é ele que declara os DOIS ramos
+    // do 200 e que `missingFields` não tem terceiro estado. O teste que o
+    // exercita já nasceu porque a 1ª versão dele era cega ao próprio defeito.
+    'src/shared/openapi/registrations/worker.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     // Completude do cadastro do prestador (D302). É a fonte ÚNICA da resposta
     // "o que falta para se postular", e o defeito que ela conserta foi
     // exatamente uma segunda definição divergir da do banco. A distinção

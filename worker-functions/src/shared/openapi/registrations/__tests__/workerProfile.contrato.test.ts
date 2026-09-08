@@ -90,6 +90,18 @@ describe('contrato: o 200 declarado cobre os DOIS ramos que a rota devolve', () 
     );
   });
 
+  it('a chave missingFields é OBRIGATÓRIA — sem terceiro estado', () => {
+    // Se ela virar `.optional()`, um cliente gerado ganha `undefined` além de
+    // `[]` e `null`, e `if (!missingFields?.length)` volta a chamar de completo
+    // quem não foi apurado. É a D302 renascendo pela spec.
+    const semAChave = {
+      id: '11111111-1111-4111-8111-111111111111',
+      email: 'ana@example.com',
+      status: 'REGISTERED',
+    };
+    expect(OK_200.safeParse(semAChave).success).toBe(false);
+  });
+
   it('o instrumento enxerga: um objeto que não é nenhum dos dois ramos REPROVA', () => {
     // Contagem/aprovação no vácuo: sem este caso, um schema frouxo passaria em
     // tudo acima e o teste viraria decoração.

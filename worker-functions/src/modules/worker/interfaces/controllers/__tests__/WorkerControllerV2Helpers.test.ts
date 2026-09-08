@@ -59,9 +59,14 @@ describe('readWorkerMissingFields', () => {
     await expect(readWorkerMissingFields(poolWith(q), 'w1')).resolves.toBeNull();
   });
 
-  it('erro de banco → null, sem estourar a rota', async () => {
+  it('erro de banco → null, E ALGUÉM É AVISADO (reportError, não só warn)', async () => {
+    // A sabotagem B do gate (rodada 5) removeu este `reportError` e a suíte
+    // ficou VERDE: a justificativa estava escrita no código e não tinha trava.
+    // Se a função sumir do banco, TODA resposta passa a dizer "não sei" — com
+    // `warn` ninguém acorda, porque só `severity=ERROR` chega ao Error Reporting.
     const q = jest.fn().mockRejectedValue(new Error('db down'));
     await expect(readWorkerMissingFields(poolWith(q), 'w1')).resolves.toBeNull();
+    expect(mockReportError).toHaveBeenCalledTimes(1);
   });
 
   it('throw que NÃO é Error também vira null (ramo String(err))', async () => {
