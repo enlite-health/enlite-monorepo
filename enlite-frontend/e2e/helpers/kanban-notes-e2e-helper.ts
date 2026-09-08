@@ -163,4 +163,11 @@ export async function dragKanbanCard(
     await page.waitForTimeout(30);
   }
   await page.mouse.up();
+
+  // O DragOverlay do dnd-kit sobrevive alguns frames ao `mouse.up` e fica POR CIMA
+  // da tela — um clique logo em seguida (ex.: "Cerrar" do banner de erro) é
+  // engolido por ele, e o teste falha de forma intermitente. Esperar o overlay
+  // sumir é o que torna o arrasto determinístico.
+  await page.locator('div.opacity-80.rotate-2').waitFor({ state: 'detached', timeout: 5_000 })
+    .catch(() => { /* overlay já saiu (ou nunca montou) — seguir */ });
 }
