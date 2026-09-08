@@ -7,11 +7,15 @@ import {
   sortByCreatedDesc,
   versionLabel,
   type CatalogSnapshotItem,
+  type PathologySegment,
   type TherapeuticDiagnosis,
   type TherapeuticModality,
   type TherapeuticProjectVersion,
 } from '../domain/TherapeuticProject';
 import { TherapeuticCatalogRepository } from './TherapeuticCatalogRepository';
+import { createTerminologyPort } from '@modules/terminology/infrastructure/TerminologyPortFactory';
+import type { TerminologyPort } from '@modules/terminology/domain/TerminologyPort';
+import { derivePathologySegments } from '../application/pathologySegments';
 
 interface VersionRow {
   id: string;
@@ -27,7 +31,7 @@ interface VersionRow {
   general_objective: string;
   specific_objectives: CatalogSnapshotItem[];
   activities: CatalogSnapshotItem[];
-  pathology_types: CatalogSnapshotItem[];
+  pathology_types: PathologySegment[];
   start_date: string;
   end_date: string;
   annulled_at: string | null;
@@ -48,7 +52,6 @@ export interface TherapeuticProjectVersionInput {
   generalObjective: string;
   specificObjectiveIds: string[];
   activityIds: string[];
-  pathologyTypeIds: string[];
   startDate: string;
   endDate: string;
 }
@@ -135,7 +138,11 @@ function toVersion(r: VersionRow): TherapeuticProjectVersion {
 export class TherapeuticProjectRepository {
   private poolMemo?: Pool;
 
-  constructor(private readonly catalogs: TherapeuticCatalogRepository = new TherapeuticCatalogRepository()) {}
+  constructor(
+    private readonly catalogs: TherapeuticCatalogRepository = new TherapeuticCatalogRepository(),
+    /** Resolve o capítulo CID-11 de cada diagnóstico — o "tipo de patologia" é derivado, não escolhido. */
+    private readonly terminology: TerminologyPort = createTerminologyPort(process.env),
+  ) {}
 
   private get pool(): Pool {
     this.poolMemo ??= DatabaseConnection.getInstance().getPool();
@@ -174,10 +181,11 @@ export class TherapeuticProjectRepository {
         }
 
         // Snapshot montado AQUI, do catálogo (lex C19): o cliente manda ids, a versão congela texto.
+        // O tipo de patologia é DERIVADO dos CID-11 (capítulo, via porta de terminologia) — D163/D164.
         const [specificObjectives, activities, pathologyTypes] = await Promise.all([
           this.catalogs.snapshotOf('specific-objectives', cmd.version.specificObjectiveIds, cli),
           this.catalogs.snapshotOf('activities', cmd.version.activityIds, cli),
-          this.catalogs.snapshotOf('pathology-types', cmd.version.pathologyTypeIds, cli),
+          derivePathologySegments(this.terminology, cmd.version.diagnoses),
         ]);
 
         const ins = await cli.query<{ id: string }>(

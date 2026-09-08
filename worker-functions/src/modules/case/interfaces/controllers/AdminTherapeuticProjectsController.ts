@@ -26,6 +26,8 @@ import {
   updateCatalogItemSchema,
 } from '../validators/therapeuticProjectSchemas';
 import type { TherapeuticCatalogKind } from '../../domain/TherapeuticProject';
+import { DiagnosisUnknownError } from '../../application/pathologySegments';
+import { TerminologyUnavailableError } from '@modules/terminology/domain/UnavailableTerminology';
 
 const patientParamsSchema = z.object({ id: z.string().uuid() });
 const versionParamsSchema = z.object({ id: z.string().uuid(), vid: z.string().uuid() });
@@ -38,7 +40,7 @@ const invalidBody = (res: Response, error: z.ZodError): void => {
 
 /**
  * AdminTherapeuticProjectsController — o Projeto Terapêutico versionado (spec 017, D299) e os
- * seus 3 catálogos.
+ * seus 2 catálogos (o "tipo de patologia" deriva dos CID-11 — não é catálogo).
  *
  *   GET  /api/admin/patients/:id/therapeutic-projects              (patient_therapeutic_project:read)
  *   POST /api/admin/patients/:id/therapeutic-projects              (…:write + patient_clinical:write)
@@ -48,8 +50,8 @@ const invalidBody = (res: Response, error: z.ZodError): void => {
  *   PATCH     /api/admin/therapeutic-catalogs/:kind/:itemId        (catalog_<kind>:write)
  *
  * Sem DELETE em lugar nenhum: versão é imutável (lex C5) e catálogo é soft delete.
- * `clinicalContext`/`generalObjective`/`diagnoses` saem só com `patient_clinical:read` — a
- * projeção é o ponto único `projectTherapeuticVersionForActor`. Nenhum `reportError` abaixo
+ * `clinicalContext`/`generalObjective`/`diagnoses`/`pathologyTypes` (capítulo CID-11 derivado) saem só
+ * com `patient_clinical:read` — a projeção é o ponto único `projectTherapeuticVersionForActor`. Nenhum `reportError` abaixo
  * carrega `req.body`.
  */
 export class AdminTherapeuticProjectsController {
@@ -140,6 +142,15 @@ export class AdminTherapeuticProjectsController {
       }
       if (err instanceof CatalogItemsUnknownError) {
         res.status(422).json({ success: false, error: 'Unknown or inactive catalog item(s)', code: err.code, details: { kind: err.kind, ids: err.ids } });
+        return;
+      }
+      // Sem `details`: a URI é dado clínico — só o tipo do erro sai (T7 da terminologia).
+      if (err instanceof DiagnosisUnknownError) {
+        res.status(422).json({ success: false, error: 'Unknown diagnosis', code: err.code });
+        return;
+      }
+      if (err instanceof TerminologyUnavailableError) {
+        res.status(503).json({ success: false, error: err.message, code: 'TERMINOLOGY_UNAVAILABLE' });
         return;
       }
       const e = err instanceof Error ? err : new Error(String(err));

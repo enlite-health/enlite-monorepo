@@ -111,10 +111,9 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
     ],
   },
   { id: 'patients.chatRoles', route: '/admin/patient-chat-roles', cells: ['patient:read', 'patient:write'] },
-  // Spec 017 (D299.3): os 3 catálogos do projeto terapêutico — uma tela e uma célula por lista.
+  // Spec 017 (D299.3): os 2 catálogos do projeto terapêutico — uma tela e uma célula por lista (tipo de patologia deriva do CID-11, sem tela).
   { id: 'patients.catalogObjectives', route: '/admin/catalogos/objetivos-especificos', cells: ['catalog_therapeutic_objectives:read', 'catalog_therapeutic_objectives:write'] },
   { id: 'patients.catalogActivities', route: '/admin/catalogos/actividades', cells: ['catalog_therapeutic_activities:read', 'catalog_therapeutic_activities:write'] },
-  { id: 'patients.catalogPathologyTypes', route: '/admin/catalogos/tipos-de-patologia', cells: ['catalog_pathology_types:read', 'catalog_pathology_types:write'] },
   {
     id: 'map',
     route: '/admin/mapa',

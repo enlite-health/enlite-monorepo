@@ -1107,8 +1107,7 @@
       "templateCatalog": "Modelos",
       "templateDrafts": "Registrar mensagem",
       "catalogObjectives": "Objetivos específicos",
-      "catalogActivities": "Rotina e atividades",
-      "catalogPathologyTypes": "Tipos de patologia"
+      "catalogActivities": "Rotina e atividades"
     },
     "dedup": {
       "title": "Central de Duplicatas",
@@ -3152,7 +3151,6 @@
           "symptoms": "Sintomas",
           "observations": "Observações",
           "deadlines": "Prazos",
-          "pathologyTypes": "Tipo de patologia (segmento)",
           "tableVersion": "Versão",
           "tableAuthor": "Autor",
           "tableStartDate": "Data de Início",
@@ -3413,7 +3411,9 @@
             "forbidden": "Você não tem permissão para escrever o projeto terapêutico (precisa também da célula clínica).",
             "catalogItemsUnknown": "Alguma opção escolhida já não está ativa no catálogo. Escolha de novo.",
             "serviceNotOfPatient": "O serviço escolhido não é deste paciente.",
-            "sourceNotFound": "A versão de origem já não existe ou foi anulada."
+            "sourceNotFound": "A versão de origem já não existe ou foi anulada.",
+            "diagnosisUnknown": "O diagnóstico escolhido já não existe no catálogo CID-11. Busque e escolha de novo.",
+            "terminologyUnavailable": "O catálogo CID-11 está indisponível neste momento. Tente de novo em alguns minutos."
           },
           "modalityPlaceholder": "Escolha a modalidade"
         }
@@ -4265,9 +4265,6 @@
         },
         "patients.catalogActivities": {
           "label": "Pacientes: Catálogo de rotina e atividades"
-        },
-        "patients.catalogPathologyTypes": {
-          "label": "Pacientes: Catálogo de tipos de patologia"
         }
       }
     },
@@ -4838,10 +4835,6 @@
         "activities": {
           "title": "Rotina e atividades do projeto terapêutico",
           "subtitle": "As opções de \"Rutina y Actividades\" do projeto terapêutico. Editadas aqui, sem deploy. Desativar não apaga: versões antigas guardam o texto que tinham."
-        },
-        "pathologyTypes": {
-          "title": "Tipos de patologia (segmento)",
-          "subtitle": "O segmento clínico escolhido no projeto terapêutico — o mesmo padrão do Ana Care. Lista própria da Enlite. Editada aqui, sem deploy; desativar não apaga."
         }
       },
       "newItem": "Nova opção",

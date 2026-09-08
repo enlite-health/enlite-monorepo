@@ -16,7 +16,6 @@ const version = {
   generalObjective: 'objetivo',
   specificObjectiveIds: [UUID],
   activityIds: [UUID],
-  pathologyTypeIds: [UUID],
   startDate: '2026-09-01',
   endDate: '2026-12-31',
 };
@@ -50,7 +49,9 @@ describe('therapeuticProjectSchemas — a borda (spec 017)', () => {
     expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, clinicalContext: 'x'.repeat(THERAPEUTIC_TEXT_MAX) } }).success).toBe(true);
     expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, clinicalContext: 'x'.repeat(THERAPEUTIC_TEXT_MAX + 1) } }).success).toBe(false);
     expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, generalObjective: '   ' } }).success).toBe(false);
-    for (const key of ['diagnoses', 'specificObjectiveIds', 'activityIds', 'pathologyTypeIds'] as const) {
+    // `pathologyTypeIds` (campo antigo do catálogo) é recusado pela borda `.strict()`: o segmento deriva do CID-11 no servidor.
+    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, pathologyTypeIds: [UUID] } }).success).toBe(false);
+    for (const key of ['diagnoses', 'specificObjectiveIds', 'activityIds'] as const) {
       expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, [key]: [] } }).success).toBe(false);
     }
   });

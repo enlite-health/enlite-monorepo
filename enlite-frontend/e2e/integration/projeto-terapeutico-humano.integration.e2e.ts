@@ -8,7 +8,7 @@
  *   1. o card existe na aba Datos Clínicos; sem serviço contratado ativo, "Nuevo" fica desabilitado;
  *   2. com serviço (criado pela UI do bloco C? — não: semeado por SQL, o fluxo do serviço já tem e2e
  *      próprio; aqui o objeto é o projeto), "Nuevo" abre a modal larga; o CID é escolhido pelo combobox
- *      real (catálogo `terminology` semeado com UMA entidade sintética); os 3 multi-selects têm o seed
+ *      real (catálogo `terminology` semeado com UMA entidade sintética + o seu capítulo 06); os 2 multi-selects têm o seed
  *      da migration 415 (8/13/8 opções); salvar → POST devolve V.1.0 e a tabela mostra;
  *   3. "Editar" → V.1.1: o banco tem DUAS linhas e a V.1.0 mantém o texto original (imutável, lex C5);
  *   4. a versão antiga abre em leitura e "Exportar PDF" busca `?purpose=export` (trilha C13) e baixa um
@@ -24,6 +24,9 @@ import { loginComoHumano } from '../helpers/login-humano';
 
 const STAFF_EMAIL = `e2e.tp.${Date.now()}@enlite.health`;
 const ICD_URI = 'http://id.who.int/icd/entity/e2e-tp-017';
+/** Capítulo do stem acima: é o que o servidor DERIVA como "Tipo de patología" (D163/D164) — nada se escolhe na tela. */
+const CAP06_URI = 'http://id.who.int/icd/entity/e2e-tp-017-cap06';
+const CAP06_TITLE = 'Trastornos mentales, del comportamiento y del neurodesarrollo (e2e 017)';
 const ICD_TITLE = 'Trastorno sintético de prueba 017';
 
 
@@ -50,9 +53,11 @@ async function marcarOpcoes(page: Page, id: string, n: number): Promise<void> {
 function seedIcd(): void {
   runSQL(`INSERT INTO terminology.icd_releases (release, entity_count, is_current, promoted_at, promoted_by) VALUES ('2026-01', 1, true, now(), 'e2e-017') ON CONFLICT (release) DO UPDATE SET is_current = true, promoted_at = now(), promoted_by = 'e2e-017'`);
   runSQL(`INSERT INTO terminology.icd_entities (icd_uri, release, code, title_es, title_en, chapter, parent_uri, kind, is_leaf) VALUES ('${ICD_URI}', '2026-01', '6E2E', '${ICD_TITLE}', 'Synthetic disorder 017', '06', NULL, 'stem', true) ON CONFLICT (icd_uri, release) DO NOTHING`);
+  // Só quando a base não tem o capítulo 06 real (o CI do backend ingere o catálogo; o do front não): a derivação precisa da linha do capítulo.
+  runSQL(`INSERT INTO terminology.icd_entities (icd_uri, release, code, title_es, title_en, chapter, parent_uri, kind, is_leaf) SELECT '${CAP06_URI}', '2026-01', '06', '${CAP06_TITLE}', NULL, '06', NULL, 'chapter', false WHERE NOT EXISTS (SELECT 1 FROM terminology.icd_entities WHERE release = '2026-01' AND kind = 'chapter' AND code = '06')`);
 }
 function cleanupIcd(): void {
-  runSQL(`DELETE FROM terminology.icd_entities WHERE icd_uri = '${ICD_URI}'`);
+  runSQL(`DELETE FROM terminology.icd_entities WHERE icd_uri IN ('${ICD_URI}', '${CAP06_URI}')`);
 }
 
 test.use({ viewport: { width: 1600, height: 1000 }, video: 'on', acceptDownloads: true });
@@ -130,7 +135,9 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     expect(await digitar(page, '#tp-generalObjective', 'Objetivo general digitado por humano 017')).toBe('Objetivo general digitado por humano 017');
     await marcarOpcoes(page, 'tp-specificObjectives', 2);
     await marcarOpcoes(page, 'tp-activities', 3);
-    await marcarOpcoes(page, 'tp-pathologyTypes', 1);
+    // Não existe campo de tipo de patologia (Gabriel 08/09): deriva do CID-11 no servidor; DEC-09 — nem na tela.
+    await expect(page.getByTestId('tp-pathologyTypes')).toHaveCount(0);
+    await expect(drawer).not.toContainText('Tipo de patología');
     // Datas: `type=date` recebe teclado no formato do locale do browser (mm/dd/yyyy em en-US).
     await page.locator('#tp-startDate').click();
     await page.keyboard.type('09012026');
@@ -142,12 +149,14 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
 
     const created = page.waitForResponse((r) => r.request().method() === 'POST' && /\/therapeutic-projects$/.test(r.url()));
     await page.getByTestId('tp-save').click();
-    const body = (await (await created).json()) as { data: { id: string; version: string; specificObjectives: unknown[]; activities: unknown[]; pathologyTypes: { label: string }[]; diagnoses: { title: string }[] } };
+    const body = (await (await created).json()) as { data: { id: string; version: string; specificObjectives: unknown[]; activities: unknown[]; pathologyTypes: { id: string; label: string }[]; diagnoses: { title: string }[] } };
     expect(body.data.version).toBe('V.1.0');
     expect(body.data.modality).toBe('HYBRID');
     expect(body.data.specificObjectives).toHaveLength(2);
     expect(body.data.activities).toHaveLength(3);
+    // DERIVADO: o capítulo CID-11 do diagnóstico escolhido, resolvido no servidor (id = código do capítulo).
     expect(body.data.pathologyTypes).toHaveLength(1);
+    expect(body.data.pathologyTypes[0].id).toBe('06');
     expect(body.data.diagnoses[0].title).toBe(ICD_TITLE);
     const v10 = body.data.id;
 
@@ -238,7 +247,6 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     await page.getByTestId('tp-modality').selectOption('IN_PERSON');
     await marcarOpcoes(page, 'tp-specificObjectives', 1); // a PRIMEIRA da lista (ORDER BY sort_order, lower(label))
     await marcarOpcoes(page, 'tp-activities', 1);
-    await marcarOpcoes(page, 'tp-pathologyTypes', 1);
     await page.locator('#tp-startDate').click();
     await page.keyboard.type('09012026');
     await page.locator('#tp-endDate').click();

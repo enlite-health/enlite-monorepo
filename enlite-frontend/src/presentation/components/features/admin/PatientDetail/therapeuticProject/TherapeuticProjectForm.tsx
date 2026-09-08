@@ -60,7 +60,6 @@ export function TherapeuticProjectForm({ services, patientDiagnoses, catalogs, f
   const [generalObjective, setGeneralObjective] = useState(from?.generalObjective ?? '');
   const [specificObjectiveIds, setSpecificObjectiveIds] = useState<string[]>(from?.specificObjectives.map((o) => o.id) ?? []);
   const [activityIds, setActivityIds] = useState<string[]>(from?.activities.map((a) => a.id) ?? []);
-  const [pathologyTypeIds, setPathologyTypeIds] = useState<string[]>(from?.pathologyTypes.map((p) => p.id) ?? []);
   const [startDate, setStartDate] = useState(from?.startDate ?? today());
   const [endDate, setEndDate] = useState(from?.endDate ?? '');
 
@@ -75,7 +74,6 @@ export function TherapeuticProjectForm({ services, patientDiagnoses, catalogs, f
   if (generalObjective.trim().length === 0) errors.push('generalObjective');
   if (specificObjectiveIds.length === 0) errors.push('specificObjectives');
   if (activityIds.length === 0) errors.push('activities');
-  if (pathologyTypeIds.length === 0) errors.push('pathologyTypes');
   if (!startDate || !endDate || endDate < startDate) errors.push('dates');
   const canSave = errors.length === 0 && !saving && !clinicalRedacted;
 
@@ -99,7 +97,7 @@ export function TherapeuticProjectForm({ services, patientDiagnoses, catalogs, f
         e.preventDefault();
         if (!canSave) return;
         // `canSave` já exige modalidade escolhida; o cast só fecha o tipo (`'' | TherapeuticModality`).
-        onSubmit({ contractedServiceId, modality: modality as TherapeuticModality, diagnoses, clinicalContext: clinicalContext.trim(), generalObjective: generalObjective.trim(), specificObjectiveIds, activityIds, pathologyTypeIds, startDate, endDate });
+        onSubmit({ contractedServiceId, modality: modality as TherapeuticModality, diagnoses, clinicalContext: clinicalContext.trim(), generalObjective: generalObjective.trim(), specificObjectiveIds, activityIds, startDate, endDate });
       }}
     >
       {clinicalRedacted && (
@@ -163,9 +161,7 @@ export function TherapeuticProjectForm({ services, patientDiagnoses, catalogs, f
           <FormField label={tc('activitiesPlan')} htmlFor="tp-activities" labelSize="compact" required>
             <MultiSelect id="tp-activities" options={optionsOf('activities', from?.activities)} value={activityIds} onChange={touch(setActivityIds)} placeholder={tf('selectPlaceholder')} />
           </FormField>
-          <FormField label={tc('pathologyTypes')} htmlFor="tp-pathologyTypes" labelSize="compact" required>
-            <MultiSelect id="tp-pathologyTypes" options={optionsOf('pathology-types', from?.pathologyTypes)} value={pathologyTypeIds} onChange={touch(setPathologyTypeIds)} placeholder={tf('selectPlaceholder')} />
-          </FormField>
+          {/* Sem "Tipo de patología": deriva dos CID-11 no servidor (Gabriel 08/09; D163/D164) — máscara invisível na tela (DEC-09). */}
           <div className="grid grid-cols-2 gap-4">
             <FormField label={tf('startDate')} htmlFor="tp-startDate" labelSize="compact" required>
               <Input id="tp-startDate" type="date" inputSize="compact" value={startDate} onChange={(e) => touch(setStartDate)(e.target.value)} data-testid="tp-startDate" />

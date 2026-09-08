@@ -39,7 +39,7 @@ export function useTherapeuticProjects(patientId: string | undefined, enabled = 
 
 export type TherapeuticCatalogs = Record<TherapeuticCatalogKind, TherapeuticCatalogItem[]>;
 
-/** Os 3 catálogos ATIVOS, para os multi-selects do formulário. Carrega uma vez por abertura do drawer. */
+/** Os 2 catálogos ATIVOS, para os multi-selects do formulário. Carrega uma vez por abertura do drawer. */
 export function useTherapeuticCatalogs(enabled: boolean) {
   const [catalogs, setCatalogs] = useState<TherapeuticCatalogs | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,12 +49,11 @@ export function useTherapeuticCatalogs(enabled: boolean) {
     let alive = true;
     (async () => {
       try {
-        const [so, ac, pt] = await Promise.all([
+        const [so, ac] = await Promise.all([
           AdminTherapeuticProjectsApiService.listCatalog('specific-objectives'),
           AdminTherapeuticProjectsApiService.listCatalog('activities'),
-          AdminTherapeuticProjectsApiService.listCatalog('pathology-types'),
         ]);
-        if (alive) setCatalogs({ 'specific-objectives': so, activities: ac, 'pathology-types': pt });
+        if (alive) setCatalogs({ 'specific-objectives': so, activities: ac });
       } catch (err: unknown) {
         if (alive) setError(err instanceof Error ? err.message : String(err));
       }

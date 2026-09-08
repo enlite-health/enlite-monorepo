@@ -134,7 +134,7 @@ describe('useTherapeuticProjects — as versões do paciente', () => {
   });
 });
 
-describe('useTherapeuticCatalogs — os 3 catálogos do formulário', () => {
+describe('useTherapeuticCatalogs — os 2 catálogos do formulário', () => {
   it('🔒 D286: `enabled=false` não busca catálogo nenhum', () => {
     const { result } = renderHook(() => useTherapeuticCatalogs(false));
 
@@ -149,13 +149,13 @@ describe('useTherapeuticCatalogs — os 3 catálogos do formulário', () => {
     const { result } = renderHook(() => useTherapeuticCatalogs(true));
 
     await waitFor(() => expect(result.current.catalogs).not.toBeNull());
-    expect(listCatalog.mock.calls.map((c) => c[0])).toEqual(['specific-objectives', 'activities', 'pathology-types']);
+    // só DOIS catálogos: o tipo de patologia deriva do CID-11 no servidor — nada a carregar
+    expect(listCatalog.mock.calls.map((c) => c[0])).toEqual(['specific-objectives', 'activities']);
     expect(result.current.catalogs!['specific-objectives'][0].id).toBe('specific-objectives-1');
     expect(result.current.catalogs!.activities[0].id).toBe('activities-1');
-    expect(result.current.catalogs!['pathology-types'][0].id).toBe('pathology-types-1');
   });
 
-  it('erro `Error` em qualquer um dos 3 vira a mensagem, e `catalogs` fica null', async () => {
+  it('erro `Error` em qualquer um dos 2 vira a mensagem, e `catalogs` fica null', async () => {
     listCatalog.mockImplementation(async (kind: string) => {
       if (kind === 'activities') throw new Error('catálogo indisponível');
       return [];
@@ -180,7 +180,7 @@ describe('useTherapeuticCatalogs — os 3 catálogos do formulário', () => {
     listCatalog.mockReturnValue(d.promise);
 
     const { result, unmount } = renderHook(() => useTherapeuticCatalogs(true));
-    expect(listCatalog).toHaveBeenCalledTimes(3);
+    expect(listCatalog).toHaveBeenCalledTimes(2);
 
     unmount();
     await act(async () => { d.resolve([ITEM('tarde')]); await Promise.resolve(); await Promise.resolve(); });

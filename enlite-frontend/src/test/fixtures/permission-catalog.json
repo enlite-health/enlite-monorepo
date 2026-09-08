@@ -4,8 +4,6 @@
     "analytics:export",
     "analytics:read",
     "api_docs:read",
-    "catalog_pathology_types:read",
-    "catalog_pathology_types:write",
     "catalog_therapeutic_activities:read",
     "catalog_therapeutic_activities:write",
     "catalog_therapeutic_objectives:read",

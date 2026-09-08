@@ -53,9 +53,6 @@ const ESPERADO: Record<string, string> = {
   'GET /therapeutic-catalogs/activities': 'catalog_therapeutic_activities:read',
   'POST /therapeutic-catalogs/activities': 'catalog_therapeutic_activities:write',
   'PATCH /therapeutic-catalogs/activities/:itemId': 'catalog_therapeutic_activities:write',
-  'GET /therapeutic-catalogs/pathology-types': 'catalog_pathology_types:read',
-  'POST /therapeutic-catalogs/pathology-types': 'catalog_pathology_types:write',
-  'PATCH /therapeutic-catalogs/pathology-types/:itemId': 'catalog_pathology_types:write',
 };
 
 /** Cada handler devolve o próprio nome — é o que identifica quem foi chamado (e com que kind). */
@@ -110,8 +107,8 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
     expect(declarado).toEqual(ESPERADO);
   });
 
-  it('são exatamente 13 rotas: 4 do projeto + 3 catálogos × 3 verbos', () => {
-    expect(scanExpressRouter(build())).toHaveLength(13);
+  it('são exatamente 10 rotas: 4 do projeto + 2 catálogos × 3 verbos (tipo de patologia não é catálogo)', () => {
+    expect(scanExpressRouter(build())).toHaveLength(10);
   });
 
   it('não existe DELETE em lugar nenhum — versão é imutável (lex C5) e catálogo é baixa lógica', () => {
@@ -121,7 +118,13 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
   it('a célula do catálogo é LITERAL por rota — não há `:kind` dinâmico que a calcule em runtime', () => {
     const caminhos = scanExpressRouter(build()).map((r) => r.path);
     expect(caminhos.some((p) => p.includes(':kind'))).toBe(false);
-    expect(caminhos).toContain('/therapeutic-catalogs/pathology-types');
+    expect(caminhos).toContain('/therapeutic-catalogs/activities');
+  });
+
+  it('NÃO existe rota nem célula de catálogo de tipo de patologia: deriva do CID-11 (Gabriel 08/09, D163/D164)', () => {
+    const rotas = scanExpressRouter(build());
+    expect(rotas.some((r) => r.path.includes('pathology'))).toBe(false);
+    expect(rotas.some((r) => r.cell?.resource === 'catalog_pathology_types')).toBe(false);
   });
 
   it('a leitura das versões NÃO exige a célula clínica — ela é cumulativa e conferida na projeção (lex C7)', () => {
@@ -143,9 +146,6 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
     ['get', '/api/admin/therapeutic-catalogs/activities', 'listCatalog'],
     ['post', '/api/admin/therapeutic-catalogs/activities', 'createCatalogItem'],
     ['patch', '/api/admin/therapeutic-catalogs/activities/i-1', 'updateCatalogItem'],
-    ['get', '/api/admin/therapeutic-catalogs/pathology-types', 'listCatalog'],
-    ['post', '/api/admin/therapeutic-catalogs/pathology-types', 'createCatalogItem'],
-    ['patch', '/api/admin/therapeutic-catalogs/pathology-types/i-1', 'updateCatalogItem'],
   ] as const)('%s %s → %s', async (metodo, caminho, esperado) => {
     const res = await request(app())[metodo](caminho).expect(200);
     expect(res.body.m).toBe(esperado);
@@ -154,7 +154,6 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
   it.each([
     ['specific-objectives'],
     ['activities'],
-    ['pathology-types'],
   ])('o kind `%s` chega ao controller pela ROTA, não por param do cliente', async (kind) => {
     const res = await request(app()).get(`/api/admin/therapeutic-catalogs/${kind}`).expect(200);
     expect(res.body.kind).toBe(kind);

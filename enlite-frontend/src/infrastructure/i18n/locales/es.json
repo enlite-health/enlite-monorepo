@@ -1107,8 +1107,7 @@
       "templateCatalog": "Plantillas",
       "templateDrafts": "Registrar mensaje",
       "catalogObjectives": "Objetivos específicos",
-      "catalogActivities": "Rutina y actividades",
-      "catalogPathologyTypes": "Tipos de patología"
+      "catalogActivities": "Rutina y actividades"
     },
     "dedup": {
       "title": "Centro de Duplicados",
@@ -3231,7 +3230,6 @@
           "symptoms": "Síntomas",
           "observations": "Observaciones",
           "deadlines": "Plazos",
-          "pathologyTypes": "Tipo de patología (segmento)",
           "tableVersion": "Versión",
           "tableAuthor": "Autor",
           "tableStartDate": "Fecha de Inicio",
@@ -3492,7 +3490,9 @@
             "forbidden": "No tenés permiso para escribir el proyecto terapéutico (hace falta también la celda clínica).",
             "catalogItemsUnknown": "Alguna opción elegida ya no está activa en el catálogo. Volvé a elegir.",
             "serviceNotOfPatient": "El servicio elegido no es de este paciente.",
-            "sourceNotFound": "La versión de origen ya no existe o fue anulada."
+            "sourceNotFound": "La versión de origen ya no existe o fue anulada.",
+            "diagnosisUnknown": "El diagnóstico elegido ya no existe en el catálogo CIE-11. Volvé a buscarlo y elegilo de nuevo.",
+            "terminologyUnavailable": "El catálogo CIE-11 no está disponible en este momento. Intentá de nuevo en unos minutos."
           },
           "modalityPlaceholder": "Elegí la modalidad"
         }
@@ -4344,9 +4344,6 @@
         },
         "patients.catalogActivities": {
           "label": "Pacientes: Catálogo de rutina y actividades"
-        },
-        "patients.catalogPathologyTypes": {
-          "label": "Pacientes: Catálogo de tipos de patología"
         }
       }
     },
@@ -4917,10 +4914,6 @@
         "activities": {
           "title": "Rutina y actividades del proyecto terapéutico",
           "subtitle": "Las opciones de \"Rutina y Actividades\" del proyecto terapéutico. Se editan acá, sin deploy. Desactivar no borra: las versiones antiguas guardan el texto que tenían."
-        },
-        "pathologyTypes": {
-          "title": "Tipos de patología (segmento)",
-          "subtitle": "El segmento clínico que se elige en el proyecto terapéutico — el mismo padrón del Ana Care. Lista propia de Enlite. Se edita acá, sin deploy; desactivar no borra."
         }
       },
       "newItem": "Nueva opción",

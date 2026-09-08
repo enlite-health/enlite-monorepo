@@ -117,10 +117,11 @@ describe('PDF do projeto terapêutico — bytes reais, texto extraído (spec 017
       identification: null,
       emergencyContacts: null,
       careTeam: null,
+      // `pathologyTypes` fica PREENCHIDO de propósito: o marcador `redacted.clinical` sozinho tem de redigi-lo (D303 — é capítulo CID-11).
       version: { ...version, clinicalContext: null, generalObjective: null, diagnoses: null, redacted: { clinical: true } },
     };
     const { text } = await texto(redigida);
-    for (const proibido of ['PACIENTE-SINTETICO', 'DNI 00.000.000', 'RESPONSABLE-SINTETICO', 'resp@example.test', 'SINTESIS-CLINICA-SINTETICA', 'OBJETIVO-GENERAL-SINTETICO', 'Hemiplejía sintética', 'Equipo tratante sintético']) {
+    for (const proibido of ['PACIENTE-SINTETICO', 'DNI 00.000.000', 'RESPONSABLE-SINTETICO', 'resp@example.test', 'SINTESIS-CLINICA-SINTETICA', 'OBJETIVO-GENERAL-SINTETICO', 'Hemiplejía sintética', 'Equipo tratante sintético', 'Trastornos psicóticos']) {
       expect(text, proibido).not.toContain(proibido);
     }
     expect(text).toContain(PDF_LABELS.sectionRedacted);

@@ -11,6 +11,9 @@
  *   4. anular passa uma vez; anulada não é origem de edição; UPDATE de conteúdo nunca existe;
  *   5. catálogo: criar/renomear/desativar; rótulo duplicado 409; rótulo com dado pessoal 400;
  *      id desativado no snapshot → 422 e NADA gravado;
+ *   5b. tipo de patologia DERIVADO do CID-11 (Gabriel 08/09; D163/D164): capítulo por diagnóstico,
+ *      distinto e ordenado; `pathologyTypeIds` no corpo → 400; CID que não resolve → 422 e nada
+ *      gravado; a rota do catálogo `pathology-types` NÃO existe (404); sem clínica sai `null`;
  *   6. trilha: `read_project:therapeuticProject+clinical` e `export_pdf:…` com `?purpose=export`,
  *      só UUID na linha;
  *   7. o uid do autor NUNCA sai — só `createdByName`; idem quem anulou (`annulledByName`).
@@ -30,7 +33,6 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
   let serviceOutroId: string;
   let objectiveIds: string[];
   let activityIds: string[];
-  let pathologyIds: string[];
 
   const U = {
     completa: 'pt017-completa',
@@ -55,8 +57,45 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     ['catalog_therapeutic_objectives', 'read'],
     ['catalog_therapeutic_objectives', 'write'],
     ['catalog_therapeutic_activities', 'read'],
-    ['catalog_pathology_types', 'read'],
   ];
+
+  /**
+   * Release-fixture do CID-11 (o ingestor real não roda aqui; o CI o tem, mas o teste não depende
+   * dele): capítulo 06 + um stem nele, capítulo 08 + um stem nele. Promovido como CORRENTE no
+   * beforeAll e o release anterior restaurado no afterAll (D2: só um corrente por vez).
+   */
+  const FIX_RELEASE = 'PT017-FIX';
+  const CAP06 = { code: '06', title: 'Trastornos mentales, del comportamiento y del neurodesarrollo' };
+  const CAP08 = { code: '08', title: 'Enfermedades del sistema nervioso' };
+  const URI_TEA = 'test://ptp017/tea';
+  const URI_EPI = 'test://ptp017/epilepsia';
+  const URI_SUMIDA = 'test://ptp017/nao-existe';
+  let releaseAnterior: string | null = null;
+  async function semearCid(): Promise<void> {
+    await pool.query(`INSERT INTO terminology.icd_releases (release, entity_count) VALUES ($1, 4) ON CONFLICT (release) DO NOTHING`, [FIX_RELEASE]);
+    const linhas: Array<[string, string, string, string, string, boolean]> = [
+      ['test://ptp017/cap06', CAP06.code, CAP06.title, CAP06.code, 'chapter', false],
+      ['test://ptp017/cap08', CAP08.code, CAP08.title, CAP08.code, 'chapter', false],
+      [URI_TEA, '6A02', 'Trastorno del espectro autista', CAP06.code, 'stem', true],
+      [URI_EPI, '8A60', 'Epilepsia', CAP08.code, 'stem', true],
+    ];
+    for (const [uri, code, title, chapter, kind, leaf] of linhas) {
+      await pool.query(
+        `INSERT INTO terminology.icd_entities (icd_uri, release, code, title_es, title_en, chapter, parent_uri, kind, is_leaf)
+         VALUES ($1, $2, $3, $4, NULL, $5, NULL, $6, $7) ON CONFLICT (icd_uri, release) DO NOTHING`,
+        [uri, FIX_RELEASE, code, title, chapter, kind, leaf],
+      );
+    }
+    releaseAnterior = (await pool.query<{ release: string }>(`SELECT release FROM terminology.icd_releases WHERE is_current LIMIT 1`)).rows[0]?.release ?? null;
+    await pool.query(`UPDATE terminology.icd_releases SET is_current = false, promoted_at = NULL, promoted_by = NULL WHERE is_current`);
+    await pool.query(`UPDATE terminology.icd_releases SET is_current = true, promoted_at = NOW(), promoted_by = 'pt017-e2e' WHERE release = $1`, [FIX_RELEASE]);
+  }
+  async function restaurarCid(): Promise<void> {
+    await pool.query(`UPDATE terminology.icd_releases SET is_current = false, promoted_at = NULL, promoted_by = NULL WHERE release = $1`, [FIX_RELEASE]);
+    if (releaseAnterior) await pool.query(`UPDATE terminology.icd_releases SET is_current = true, promoted_at = NOW(), promoted_by = 'pt017-e2e-restore' WHERE release = $1`, [releaseAnterior]);
+    await pool.query(`DELETE FROM terminology.icd_entities WHERE release = $1`, [FIX_RELEASE]);
+    await pool.query(`DELETE FROM terminology.icd_releases WHERE release = $1`, [FIX_RELEASE]);
+  }
   const envAnterior: Record<string, string | undefined> = {};
   const setEnv = (k: string, v: string): void => { envAnterior[k] = process.env[k]; process.env[k] = v; };
 
@@ -72,12 +111,11 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
   const versionBody = (over: Record<string, unknown> = {}) => ({
     contractedServiceId: serviceId,
     modality: 'IN_PERSON',
-    diagnoses: [{ uri: 'http://id.who.int/icd/entity/e2e', code: '8B11', title: 'Diagnóstico sintético e2e' }],
+    diagnoses: [{ uri: URI_TEA, code: '6A02', title: 'Diagnóstico sintético e2e' }],
     clinicalContext: 'Síntesis sintética e2e — texto de teste sem dado de titular.',
     generalObjective: 'Objetivo general sintético e2e.',
     specificObjectiveIds: objectiveIds.slice(0, 2),
     activityIds: activityIds.slice(0, 3),
-    pathologyTypeIds: pathologyIds.slice(0, 1),
     startDate: '2026-09-01',
     endDate: '2026-12-31',
     ...over,
@@ -122,7 +160,7 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     await pool.query(`INSERT INTO iam.permissions (resource, action, description, category) VALUES ('patient', 'read', 'e2e', 'Pacientes') ON CONFLICT DO NOTHING`);
     await grupoComCelulas(pool, {
       nome: GRUPOS.completa, uid: U.completa,
-      celulas: [['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write'], ['patient_clinical', 'read'], ['patient_clinical', 'write'], ['patient_services', 'read'], ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read'], ['catalog_pathology_types', 'read']],
+      celulas: [['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write'], ['patient_clinical', 'read'], ['patient_clinical', 'write'], ['patient_services', 'read'], ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read']],
     });
     await grupoComCelulas(pool, { nome: GRUPOS.soProjeto, uid: U.soProjeto, celulas: [['patient', 'read'], ['patient_therapeutic_project', 'read']] });
     await grupoComCelulas(pool, { nome: GRUPOS.semClinica, uid: U.semClinica, celulas: [['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write']] });
@@ -142,7 +180,7 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     )).rows[0].id;
     objectiveIds = (await pool.query<{ id: string }>(`SELECT id FROM therapeutic_specific_objectives WHERE active ORDER BY sort_order`)).rows.map((r) => r.id);
     activityIds = (await pool.query<{ id: string }>(`SELECT id FROM therapeutic_activities WHERE active ORDER BY sort_order`)).rows.map((r) => r.id);
-    pathologyIds = (await pool.query<{ id: string }>(`SELECT id FROM pathology_types WHERE active ORDER BY sort_order`)).rows.map((r) => r.id);
+    await semearCid();
 
     setEnv('USE_MOCK_AUTH', 'true');
     setEnv('PERMISSION_ENGINE_ENABLED', 'true');
@@ -163,6 +201,7 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
     await DatabaseConnection.getInstance().close();
     await limpar();
+    await restaurarCid();
     await pool.end();
     for (const [k, v] of Object.entries(envAnterior)) {
       if (v === undefined) delete process.env[k]; else process.env[k] = v;
@@ -182,6 +221,9 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     expect(r.body.data.specificObjectives).toHaveLength(2);
     expect(r.body.data.specificObjectives[0]).toEqual({ id: objectiveIds[0], label: expect.any(String) });
     expect(r.body.data.clinicalContext).toContain('Síntesis sintética');
+    // Tipo de patologia DERIVADO: o capítulo CID-11 do diagnóstico, congelado na linha (nada veio do cliente).
+    expect(r.body.data.pathologyTypes).toEqual([{ id: CAP06.code, label: CAP06.title }]);
+    expect((await pool.query(`SELECT pathology_types FROM patient_therapeutic_projects WHERE id = $1`, [r.body.data.id])).rows[0].pathology_types).toEqual([{ id: CAP06.code, label: CAP06.title }]);
     created['1.0'] = r.body.data.id;
   });
 
@@ -211,8 +253,10 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     expect(r.status).toBe(200);
     for (const v of r.body.data.versions) {
       // lex A1: sem `patient_services:read` o TIPO do serviço congelado também não sai — marcador constante.
-      expect(v).toMatchObject({ clinicalContext: null, generalObjective: null, diagnoses: null, contractedServiceCode: null, redacted: { clinical: true, services: true } });
+      expect(v).toMatchObject({ clinicalContext: null, generalObjective: null, diagnoses: null, pathologyTypes: null, contractedServiceCode: null, redacted: { clinical: true, services: true } });
       expect(JSON.stringify(v)).not.toContain('CAREGIVER');
+      // o capítulo 06 sozinho revela saúde mental (OP-18): não sai sem a célula clínica
+      expect(JSON.stringify(v)).not.toContain('Trastornos');
       expect(v.specificObjectives.length).toBeGreaterThan(0);
       expect(v.version).toMatch(/^V\.\d+\.\d+$/);
       expect(v).not.toHaveProperty('createdBy');
@@ -304,6 +348,33 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     // A leitura do catálogo de atividades exige a SUA célula: o grupo do catálogo só tem objetivos.
     const outroCatalogo = await chamar('GET', '/api/admin/therapeutic-catalogs/activities', U.catalogo);
     expect(outroCatalogo.status).toBe(403);
+  });
+
+  it('8b. tipo de patologia vem do CID-11: 2 diagnósticos de capítulos distintos → 2 capítulos ordenados; `pathologyTypeIds` → 400; CID sumido → 422 e nada gravado; rota do catálogo → 404', async () => {
+    const antes = (await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM patient_therapeutic_projects WHERE patient_id = $1`, [PATIENT])).rows[0].n;
+    const dois = await chamar('POST', BASE(), U.completa, { mode: 'new', version: versionBody({ diagnoses: [
+      { uri: URI_EPI, title: 'Epilepsia e2e' }, { uri: URI_TEA, title: 'TEA e2e' }, { uri: URI_TEA, title: 'TEA e2e repetido' },
+    ] }) });
+    expect(dois.status).toBe(201);
+    expect(dois.body.data.pathologyTypes).toEqual([{ id: CAP06.code, label: CAP06.title }, { id: CAP08.code, label: CAP08.title }]);
+    // O campo antigo é recusado pela borda `.strict()` — o cliente não escolhe o segmento.
+    const antigo = await chamar('POST', BASE(), U.completa, { mode: 'new', version: { ...versionBody(), pathologyTypeIds: ['11111111-1111-4111-8111-111111111111'] } });
+    expect(antigo.status).toBe(400);
+    expect(JSON.stringify(antigo.body)).not.toContain('Síntesis');
+    // CID que não resolve no release corrente → 422 tipado, sem a URI no corpo nem linha gravada.
+    const sumido = await chamar('POST', BASE(), U.completa, { mode: 'new', version: versionBody({ diagnoses: [{ uri: URI_SUMIDA, title: 'Sumido' }] }) });
+    expect(sumido.status).toBe(422);
+    expect(sumido.body).toMatchObject({ code: 'ptp_diagnosis_unknown' });
+    expect(JSON.stringify(sumido.body)).not.toContain(URI_SUMIDA);
+    const depois = (await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM patient_therapeutic_projects WHERE patient_id = $1`, [PATIENT])).rows[0].n;
+    expect(depois).toBe(antes + 1);
+    // Não existe catálogo de tipo de patologia — a rota sumiu (a célula, o sync do catálogo marca no boot; prova na stage).
+    const rota = await chamar('GET', '/api/admin/therapeutic-catalogs/pathology-types', U.completa);
+    expect(rota.status).toBe(404);
+    // A tabela da 415 ficou DEPRECADA (418): as 8 opções seedadas continuam (versões antigas apontam), TODAS inativas.
+    const tabela = await pool.query<{ total: number; ativas: number }>(`SELECT count(*)::int AS total, count(*) FILTER (WHERE active)::int AS ativas FROM pathology_types`);
+    expect(tabela.rows[0].total).toBeGreaterThan(0);
+    expect(tabela.rows[0].ativas).toBe(0);
   });
 
   it('9. 🔒 trilha: read_project com os containers servidos; ?purpose=export → export_pdf; só UUID na linha', async () => {

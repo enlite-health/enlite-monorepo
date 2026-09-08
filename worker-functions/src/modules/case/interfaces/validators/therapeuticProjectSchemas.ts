@@ -38,7 +38,7 @@ const versionBodySchema = z
     generalObjective: z.string().trim().min(1).max(THERAPEUTIC_TEXT_MAX),
     specificObjectiveIds: z.array(z.string().uuid()).min(1).max(50),
     activityIds: z.array(z.string().uuid()).min(1).max(50),
-    pathologyTypeIds: z.array(z.string().uuid()).min(1).max(20),
+    // Sem `pathologyTypeIds`: o tipo de patologia deriva dos `diagnoses` no servidor (D163/D164).
     startDate: z.string().regex(ISO_DATE),
     endDate: z.string().regex(ISO_DATE),
   })

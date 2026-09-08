@@ -450,13 +450,13 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
       );
       const obj = await adminPool.query<{ id: string; label: string }>(`SELECT id, label FROM therapeutic_specific_objectives WHERE active LIMIT 1`);
       const act = await adminPool.query<{ id: string; label: string }>(`SELECT id, label FROM therapeutic_activities WHERE active LIMIT 1`);
-      const pat = await adminPool.query<{ id: string; label: string }>(`SELECT id, label FROM pathology_types WHERE active LIMIT 1`);
       await adminPool.query(
         `INSERT INTO patient_therapeutic_projects
            (patient_id, major, minor, contracted_service_id, diagnoses, clinical_context, general_objective,
             specific_objectives, activities, pathology_types, start_date, end_date, created_by)
          VALUES ($1, 1, 0, $2, '[{"uri":"u","code":"c","title":"t"}]', 'ctx BR', 'obj BR', $3, $4, $5, '2026-09-01', '2026-12-31', 'e2e')`,
-        [IDS.patientBR, svc.rows[0].id, JSON.stringify(obj.rows), JSON.stringify(act.rows), JSON.stringify(pat.rows)],
+        // pathology_types = capítulo CID-11 derivado (418), não catálogo
+        [IDS.patientBR, svc.rows[0].id, JSON.stringify(obj.rows), JSON.stringify(act.rows), JSON.stringify([{ id: '06', label: 'cap 06' }])],
       );
       const ar = await asStaffAR(`/api/admin/patients/${IDS.patientAR}/therapeutic-projects`);
       expect(ar.status).toBe(200);

@@ -20,6 +20,8 @@ import type { Response } from 'express';
 import { AdminTherapeuticProjectsController } from '../AdminTherapeuticProjectsController';
 import { ServiceNotOfPatientError, SourceVersionNotFoundError, PatientNotFoundForProjectError } from '../../../infrastructure/TherapeuticProjectRepository';
 import { CatalogItemsUnknownError, CatalogLabelTakenError } from '../../../infrastructure/TherapeuticCatalogRepository';
+import { DiagnosisUnknownError } from '../../../application/pathologySegments';
+import { TerminologyUnavailableError } from '@modules/terminology/domain/UnavailableTerminology';
 
 const PATIENT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const VERSION_ID = 'bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -43,7 +45,6 @@ const CORPO_NOVO = {
     generalObjective: 'mejorar autonomía',
     specificObjectiveIds: [OBJ_ID],
     activityIds: [ACT_ID],
-    pathologyTypeIds: [PAT_ID],
     startDate: '2026-01-01',
     endDate: '2026-06-30',
   },
@@ -64,7 +65,7 @@ const VERSAO = {
   generalObjective: 'mejorar autonomía',
   specificObjectives: [{ id: OBJ_ID, label: 'Objetivo A' }],
   activities: [{ id: ACT_ID, label: 'Atividade A' }],
-  pathologyTypes: [{ id: PAT_ID, label: 'Neuro' }],
+  pathologyTypes: [{ id: '06', label: 'Trastornos mentales, del comportamiento y del neurodesarrollo' }],
   startDate: '2026-01-01',
   endDate: '2026-06-30',
   annulledAt: null,
@@ -298,6 +299,25 @@ describe('AdminTherapeuticProjectsController', () => {
       expect(corpoDaResposta(res)).toMatchObject({ code: 'catalog_items_unknown', details: { kind: 'activities', ids: ['x-1', 'x-2'] } });
     });
 
+    it('422 `ptp_diagnosis_unknown` quando um CID-11 não resolve — SEM a URI no corpo (T7: é dado clínico) e sem reportError', async () => {
+      const repo = { createVersion: jest.fn().mockRejectedValue(new DiagnosisUnknownError()) };
+      const res = mockRes();
+      await ctrl(repo).create(mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO }), res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Unknown diagnosis', code: 'ptp_diagnosis_unknown' });
+      for (const d of CORPO_NOVO.version.diagnoses) expect(JSON.stringify(corpoDaResposta(res))).not.toContain(d.uri);
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
+    it('503 `TERMINOLOGY_UNAVAILABLE` quando a porta de terminologia está fora — nunca 500 mudo, sem reportError', async () => {
+      const repo = { createVersion: jest.fn().mockRejectedValue(new TerminologyUnavailableError('catálogo indisponível')) };
+      const res = mockRes();
+      await ctrl(repo).create(mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO }), res);
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(corpoDaResposta(res)).toMatchObject({ success: false, code: 'TERMINOLOGY_UNAVAILABLE' });
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
     it('500 no erro genérico — o log leva `mode`, jamais o corpo (lex C6)', async () => {
       const repo = { createVersion: jest.fn().mockRejectedValue(new Error('deadlock')) };
       const res = mockRes();
@@ -387,10 +407,10 @@ describe('AdminTherapeuticProjectsController', () => {
 
     it('`?includeInactive=true` (a string exata) liga os inativos; qualquer outro valor não', async () => {
       const catalogs = { list: jest.fn().mockResolvedValue([]) };
-      await ctrl({}, catalogs).listCatalog('pathology-types', mockReq({ query: { includeInactive: 'true' } }), mockRes());
-      expect(catalogs.list).toHaveBeenCalledWith('pathology-types', { includeInactive: true });
-      await ctrl({}, catalogs).listCatalog('pathology-types', mockReq({ query: { includeInactive: '1' } }), mockRes());
-      expect(catalogs.list).toHaveBeenLastCalledWith('pathology-types', { includeInactive: false });
+      await ctrl({}, catalogs).listCatalog('specific-objectives', mockReq({ query: { includeInactive: 'true' } }), mockRes());
+      expect(catalogs.list).toHaveBeenCalledWith('specific-objectives', { includeInactive: true });
+      await ctrl({}, catalogs).listCatalog('specific-objectives', mockReq({ query: { includeInactive: '1' } }), mockRes());
+      expect(catalogs.list).toHaveBeenLastCalledWith('specific-objectives', { includeInactive: false });
     });
 
     it('500 quando o repo lança — o log leva o kind', async () => {
@@ -490,11 +510,10 @@ describe('AdminTherapeuticProjectsController', () => {
     it('200 repassando o patch parcial + o ator (a baixa é `active:false`, nunca DELETE)', async () => {
       const catalogs = { update: jest.fn().mockResolvedValue({ ...ITEM, active: false }) };
       const res = mockRes();
-      // Uma chamada por linha: o V6 do verificador casa "pathology" + "body" na MESMA linha como saída externa (falso positivo de forma).
       const desativar = mockReq({ params: { itemId: ITEM_ID }, body: { active: false } });
-      await ctrl({}, catalogs).updateCatalogItem('pathology-types', desativar, res);
+      await ctrl({}, catalogs).updateCatalogItem('activities', desativar, res);
       expect(res.status).toHaveBeenCalledWith(200);
-      expect(catalogs.update).toHaveBeenCalledWith('pathology-types', ITEM_ID, { active: false, actorUid: 'uid-1' });
+      expect(catalogs.update).toHaveBeenCalledWith('activities', ITEM_ID, { active: false, actorUid: 'uid-1' });
       expect(corpoDaResposta(res).data).toMatchObject({ active: false });
     });
 

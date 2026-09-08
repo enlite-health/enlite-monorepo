@@ -62,11 +62,11 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   patient_address: 'Pacientes',
   patient_services: 'Pacientes',
   patient_contract_value: 'Pacientes',
-  // Spec 017 (D299.3): o projeto terapêutico e os seus 3 catálogos, na MESMA família admin.patients.
+  // Spec 017 (D299.3): o projeto terapêutico e os seus 2 catálogos, na MESMA família admin.patients.
+  // `catalog_pathology_types` SAIU (08/09): tipo de patologia deriva do CID-11 — o sync marca a célula deprecada.
   patient_therapeutic_project: 'Pacientes',
   catalog_therapeutic_objectives: 'Pacientes',
   catalog_therapeutic_activities: 'Pacientes',
-  catalog_pathology_types: 'Pacientes',
   recruitment: 'Recrutamento',
   talentum: 'Recrutamento',
   prescreening: 'Recrutamento',
@@ -213,8 +213,8 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   // ── Spec 017 (D299; lex 08/09 C7): projeto terapêutico versionado e os seus catálogos ──
   'patient_therapeutic_project:read':
     'Ver o PROJETO TERAPÊUTICO do paciente: versões (major.minor), prazos, autor, serviço contratado '
-    + 'escolhido, objetivos, atividades e tipo de patologia. A síntese clínica, o objetivo geral e o '
-    + 'CID-11 só saem com `patient_clinical:read` (célula cumulativa). Dado sensível de saúde.',
+    + 'escolhido, objetivos e atividades. A síntese clínica, o objetivo geral, o CID-11 e o tipo de patologia '
+    + '(capítulo CID-11 derivado dos diagnósticos) só saem com `patient_clinical:read` (célula cumulativa). Dado sensível de saúde.',
   'patient_therapeutic_project:write':
     'Criar uma nova versão do projeto terapêutico ("Novo" = major seguinte, "Editar" = minor seguinte) '
     + 'e anular uma versão. Exige também `patient_clinical:write` — o corpo carrega texto clínico.',
@@ -226,10 +226,6 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Ver o catálogo de ROTINA E ATIVIDADES do projeto terapêutico (lista global, sem dado de paciente).',
   'catalog_therapeutic_activities:write':
     'Adicionar, renomear e desativar atividades do catálogo (backoffice).',
-  'catalog_pathology_types:read':
-    'Ver o catálogo de TIPO DE PATOLOGIA (segmento) do projeto terapêutico (lista global, sem dado de paciente).',
-  'catalog_pathology_types:write':
-    'Adicionar, renomear e desativar tipos de patologia do catálogo (backoffice).',
 };
 
 /** Célula do catálogo — o que `iam.permissions` guarda de uma linha. */

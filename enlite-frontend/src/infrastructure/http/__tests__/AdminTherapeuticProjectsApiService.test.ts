@@ -41,7 +41,6 @@ const CORPO: TherapeuticProjectVersionBody = {
   generalObjective: 'objetivo',
   specificObjectiveIds: ['so-1'],
   activityIds: ['a-1'],
-  pathologyTypeIds: ['pt-1'],
   startDate: '2026-09-01',
   endDate: '2026-12-01',
 };
@@ -193,7 +192,6 @@ describe('AdminTherapeuticProjectsApiService — os 3 catálogos (D299, lex C19)
   it.each([
     ['specific-objectives'],
     ['activities'],
-    ['pathology-types'],
   ] as const)('listCatalog(%s): GET na rota do kind, devolve `items` de dentro do envelope', async (kind) => {
     const f = mockFetch({ success: true, data: { kind, items: [{ id: ITEM_ID, label: 'Opção' }] } });
     const out = await AdminTherapeuticProjectsApiService.listCatalog(kind);
@@ -217,10 +215,10 @@ describe('AdminTherapeuticProjectsApiService — os 3 catálogos (D299, lex C19)
 
   it('createCatalogItem: POST na rota do kind com label e sortOrder', async () => {
     const f = mockFetch({ success: true, data: { id: ITEM_ID, label: 'Nova', sortOrder: 3 } });
-    const out = await AdminTherapeuticProjectsApiService.createCatalogItem('pathology-types', { label: 'Nova', sortOrder: 3 });
+    const out = await AdminTherapeuticProjectsApiService.createCatalogItem('activities', { label: 'Nova', sortOrder: 3 });
     expect(out).toMatchObject({ id: ITEM_ID });
     const [url, init] = chamada(f);
-    expect(url).toBe(`${BASE}/api/admin/therapeutic-catalogs/pathology-types`);
+    expect(url).toBe(`${BASE}/api/admin/therapeutic-catalogs/activities`);
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body as string)).toEqual({ label: 'Nova', sortOrder: 3 });
   });

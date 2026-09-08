@@ -4,12 +4,14 @@
  *
  * Duas células, cumulativas:
  *   · `patient_therapeutic_project:read`  — a rota abre: versões, números, datas, autor, serviço,
- *                                            os catálogos escolhidos (objetivos, atividades, tipo de
- *                                            patologia — texto genérico de cuidado).
+ *                                            os catálogos escolhidos (objetivos, atividades — texto
+ *                                            genérico de cuidado).
  *   · `patient_clinical:read`             — o que é TEXTO CLÍNICO ou diagnóstico: `clinicalContext`,
- *                                            `generalObjective`, `diagnoses`. Sem ela, esses três
- *                                            saem `null` e o marcador `redacted.clinical = true` sai
- *                                            SEMPRE (constante — não depende de haver conteúdo).
+ *                                            `generalObjective`, `diagnoses` e `pathologyTypes` (o
+ *                                            tipo de patologia é o CAPÍTULO CID-11 derivado dos
+ *                                            diagnósticos — `06` sozinho revela saúde mental, OP-18).
+ *                                            Sem ela, esses quatro saem `null` e o marcador
+ *                                            `redacted.clinical = true` sai SEMPRE (constante).
  * Escrita: `patient_therapeutic_project:write` E `patient_clinical:write` (o corpo carrega texto
  * clínico) — o middleware exige a primeira; a segunda é conferida aqui, com 403 nomeando a célula.
  *
@@ -24,12 +26,14 @@ export const PATIENT_CLINICAL_WRITE_CELL = patientContainerCell('clinical', 'wri
 /** lex 08/09 (A1): o TIPO do serviço congelado na versão é dado do container `services` (D286: célula é por dado). */
 export const PATIENT_SERVICES_READ_CELL = patientContainerCell('services', 'read');
 
-const CLINICAL_FIELDS = ['clinicalContext', 'generalObjective', 'diagnoses'] as const;
+const CLINICAL_FIELDS = ['clinicalContext', 'generalObjective', 'diagnoses', 'pathologyTypes'] as const;
 
-export type ProjectedTherapeuticVersion = Omit<TherapeuticProjectVersion, 'clinicalContext' | 'generalObjective' | 'diagnoses' | 'contractedServiceCode' | 'createdBy' | 'annulledBy'> & {
+export type ProjectedTherapeuticVersion = Omit<TherapeuticProjectVersion, 'clinicalContext' | 'generalObjective' | 'diagnoses' | 'pathologyTypes' | 'contractedServiceCode' | 'createdBy' | 'annulledBy'> & {
   clinicalContext: string | null;
   generalObjective: string | null;
   diagnoses: TherapeuticProjectVersion['diagnoses'] | null;
+  /** Capítulos CID-11 derivados — dado clínico como os `diagnoses` de que vem. */
+  pathologyTypes: TherapeuticProjectVersion['pathologyTypes'] | null;
   /** `null` sem `patient_services:read` (lex A1) — e o marcador `redacted.services` é CONSTANTE, nunca "tem valor?". */
   contractedServiceCode: string | null;
   redacted?: { clinical?: true; services?: true };
@@ -63,9 +67,9 @@ export function projectTherapeuticVersionForActor(
   const servicos = canReadTherapeuticServices(cells);
   if (clinica && servicos) return rest;
   const redacted: { clinical?: true; services?: true } = {};
-  // Os TRÊS campos clínicos zerados num literal só — `CLINICAL_FIELDS` é a lista que o teste confere
+  // Os QUATRO campos clínicos zerados num literal só — `CLINICAL_FIELDS` é a lista que o teste confere
   // contra este literal, para campo novo não entrar em um lado e não no outro.
-  const clinico = clinica ? {} : { clinicalContext: null, generalObjective: null, diagnoses: null };
+  const clinico = clinica ? {} : { clinicalContext: null, generalObjective: null, diagnoses: null, pathologyTypes: null };
   if (!clinica) redacted.clinical = true;
   // lex A1 (08/09): o tipo do serviço é dado de `services` — mesma régua da ficha (`DETAIL_FIELDS.services`).
   const servico = servicos ? {} : { contractedServiceCode: null };

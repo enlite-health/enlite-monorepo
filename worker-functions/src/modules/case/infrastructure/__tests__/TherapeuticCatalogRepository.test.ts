@@ -88,7 +88,6 @@ describe('TherapeuticCatalogRepository', () => {
     it.each([
       ['specific-objectives', 'therapeutic_specific_objectives'],
       ['activities', 'therapeutic_activities'],
-      ['pathology-types', 'pathology_types'],
     ] as const)('a tabela do kind %s vem do DOMÍNIO (%s), nunca de string do cliente', async (kind, tabela) => {
       mockPoolQuery.mockResolvedValue({ rows: [] });
       await new TherapeuticCatalogRepository().list(kind);
@@ -125,11 +124,11 @@ describe('TherapeuticCatalogRepository', () => {
     it('id desconhecido ou INATIVO → CatalogItemsUnknownError com o kind e SÓ os ids faltantes', async () => {
       mockPoolQuery.mockResolvedValue({ rows: [{ id: 'a', label: 'Objetivo A' }] });
       const erro: CatalogItemsUnknownError = await new TherapeuticCatalogRepository()
-        .snapshotOf('pathology-types', ['a', 'sumido-1', 'sumido-2'])
+        .snapshotOf('activities', ['a', 'sumido-1', 'sumido-2'])
         .then(() => { throw new Error('devia ter lançado'); }, (e: unknown) => e as CatalogItemsUnknownError);
       expect(erro).toBeInstanceOf(CatalogItemsUnknownError);
       expect(erro.code).toBe('catalog_items_unknown');
-      expect(erro.kind).toBe('pathology-types');
+      expect(erro.kind).toBe('activities');
       expect(erro.ids).toEqual(['sumido-1', 'sumido-2']);
     });
 
@@ -172,7 +171,7 @@ describe('TherapeuticCatalogRepository', () => {
     it('o mesmo uid carimba created_by E updated_by ($3 nos dois)', async () => {
       const { cli, chamadas } = cliente();
       mockConnect.mockResolvedValue(cli);
-      await new TherapeuticCatalogRepository().create('pathology-types', { label: 'Neurodesarrollo', actorUid: 'uid-9' });
+      await new TherapeuticCatalogRepository().create('activities', { label: 'Neurodesarrollo', actorUid: 'uid-9' });
       expect(chamadas[0].sql).toContain('created_by, updated_by');
       expect(chamadas[0].sql).toContain('$3, $3');
     });
@@ -265,7 +264,7 @@ describe('TherapeuticCatalogRepository', () => {
     it('active:false → carimba `deactivated_at = NOW()` (a baixa, nunca DELETE: versões antigas apontam para o id)', async () => {
       const { cli, chamadas } = cliente({ rows: [{ ...ROW, active: false, deactivated_at: '2026-09-08T12:00:00.000Z' }] });
       mockConnect.mockResolvedValue(cli);
-      const item = await new TherapeuticCatalogRepository().update('pathology-types', 'item-1', { active: false, actorUid: 'uid-1' });
+      const item = await new TherapeuticCatalogRepository().update('activities', 'item-1', { active: false, actorUid: 'uid-1' });
       expect(chamadas[0].sql).toContain('active = $2');
       expect(chamadas[0].sql).toContain('deactivated_at = NOW()');
       expect(chamadas[0].params).toEqual(['item-1', false, 'uid-1']);
@@ -275,7 +274,7 @@ describe('TherapeuticCatalogRepository', () => {
     it('active:true → LIMPA `deactivated_at` (reativar é caminho válido)', async () => {
       const { cli, chamadas } = cliente();
       mockConnect.mockResolvedValue(cli);
-      await new TherapeuticCatalogRepository().update('pathology-types', 'item-1', { active: true, actorUid: 'uid-1' });
+      await new TherapeuticCatalogRepository().update('activities', 'item-1', { active: true, actorUid: 'uid-1' });
       expect(chamadas[0].sql).toContain('deactivated_at = NULL');
       expect(chamadas[0].sql).not.toContain('deactivated_at = NOW()');
     });
@@ -301,10 +300,10 @@ describe('TherapeuticCatalogRepository', () => {
     });
 
     it('rótulo repetido no PATCH também vira CatalogLabelTakenError', async () => {
-      const { cli } = cliente(erroPg('23505', 'uq_pathology_types_label_ativo'));
+      const { cli } = cliente(erroPg('23505', 'uq_therapeutic_activities_label_ativo'));
       mockConnect.mockResolvedValue(cli);
       await expect(
-        new TherapeuticCatalogRepository().update('pathology-types', 'item-1', { label: 'Repetido', actorUid: 'uid-1' }),
+        new TherapeuticCatalogRepository().update('activities', 'item-1', { label: 'Repetido', actorUid: 'uid-1' }),
       ).rejects.toBeInstanceOf(CatalogLabelTakenError);
     });
 
