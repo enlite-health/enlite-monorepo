@@ -56,10 +56,8 @@ describe('invariante: coluna de contato/documento em claro em patients e satéli
 
     // Controle positivo do detector (D157): a tabela da 417 tem o telefone CIFRADO e o detector a vê como protegida.
     const contatos = rows.filter((r) => r.tabela === 'patient_coverage_emergency_contacts').map((r) => r.coluna);
-    if (contatos.length > 0) {
-      expect(contatos).toContain('phone_encrypted');
-      expect(contatos.filter((c) => PARECE_PII.test(c) && !PROTEGIDO_OU_NAO_VALOR.test(c))).toEqual([]);
-    }
+    expect(contatos).toContain('phone_encrypted'); // a 417 está na árvore: o controle é incondicional
+    expect(contatos.filter((c) => PARECE_PII.test(c) && !PROTEGIDO_OU_NAO_VALOR.test(c))).toEqual([]);
   });
 
   it('controle positivo: um telefone em claro numa satélite temporária é DETECTADO (o detector mede, não só passa)', async () => {

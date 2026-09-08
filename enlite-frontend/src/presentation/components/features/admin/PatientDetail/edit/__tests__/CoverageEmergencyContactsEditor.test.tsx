@@ -23,9 +23,9 @@ import { invalidCoverageContacts, contactFieldErrors } from '../coverageContactV
 const te = (k: string): string => t(`admin.patients.editDrawer.${k}`);
 const tc = (k: string): string => t(`admin.patients.detail.coverageCard.${k}`);
 
-function montar(value: PatientCoverageEmergencyContactInput[], disabled = false) {
+function montar(value: PatientCoverageEmergencyContactInput[], disabled = false, allowDirectProfessional = true) {
   const onChange = vi.fn();
-  render(<CoverageEmergencyContactsEditor value={value} onChange={onChange} disabled={disabled} />);
+  render(<CoverageEmergencyContactsEditor value={value} onChange={onChange} disabled={disabled} allowDirectProfessional={allowDirectProfessional} />);
   return onChange;
 }
 
@@ -75,9 +75,9 @@ describe('CoverageEmergencyContactsEditor', () => {
     expect((removes[removes.length - 1] as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('lex C3 (LISTA A2): com `allowDirectProfessional={false}` o select NÃO oferece "Profissional direto" — o servidor recusaria com 403', () => {
+  it('lex C3 (LISTA A2): sem `allowDirectProfessional` (o DEFAULT esconde) o select NÃO oferece "Profissional direto" — o servidor recusaria com 403', () => {
     const onChange = vi.fn();
-    render(<CoverageEmergencyContactsEditor value={[{ kind: 'AMBULANCE', name: 'A', phone: '1' }]} onChange={onChange} allowDirectProfessional={false} />);
+    render(<CoverageEmergencyContactsEditor value={[{ kind: 'AMBULANCE', name: 'A', phone: '1' }]} onChange={onChange} />);
     const select = screen.getByTestId('pcv-contact-kind-0') as HTMLSelectElement;
     expect(Array.from(select.options).map((o) => o.value)).toEqual(['AMBULANCE', 'EMERGENCY_CENTER']);
   });

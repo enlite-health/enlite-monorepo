@@ -281,6 +281,19 @@ describe('withClientOrActorContext (LISTA spec 017: nunca pool.connect() cru nos
     expect((de.query as jest.Mock).mock.calls.map((c) => String(c[0]))).toEqual(['SELECT 1']);
   });
 
+  it('🔒 sem client, DENTRO de uma request: a transação própria carrega o carimbo de país (a composição, não só BEGIN/COMMIT — gate 08/09 c′)', async () => {
+    process.env.COUNTRY_RLS_ENABLED = 'true';
+    const { pool, client } = makePool();
+    const appPool = createRlsAwarePool(pool);
+    const session: DbSession = { context: { kind: 'staff', uid: 'u1', country: 'BR' }, released: false };
+    await loggingAls.run({ traceId: 'test', dbSession: session }, () => withClientOrActorContext(appPool, undefined, async (c) => { await c.query('SELECT 3'); return 'ok'; }));
+    const countryStamp = client.query.mock.calls.find((c) => String(c[0]).includes('app.user_country'));
+    expect(countryStamp?.[1]).toEqual(['u1', 'BR', '']);
+    const sqls = sqlCalls(client);
+    expect(sqls.indexOf('BEGIN')).toBeLessThan(sqls.findIndex((s) => s.includes('app.user_country')));
+    expect(sqls.findIndex((s) => s.includes('app.user_country'))).toBeLessThan(sqls.indexOf('SELECT 3'));
+  });
+
   it('sem client: é o withActorContext — BEGIN, fn, COMMIT e release no client do pool', async () => {
     const { pool, rawPool, client } = makePool();
     const out = await withClientOrActorContext(pool, undefined, async (c) => { await c.query('SELECT 2'); return 'ok'; });

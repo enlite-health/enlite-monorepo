@@ -21,9 +21,10 @@ describe('lista de pacientes — busca e filtros clínicos sob o engine (orácul
   let app: AppDeFamilia;
   const PATIENT = 'ee0917aa-0a00-0001-0001-000000000001';
   const NOME = 'Oraculo';
-  const U = { operacional: 'plso-operacional', completa: 'plso-completa' };
-  const GRUPOS = { operacional: 'PLSO Operacional', completa: 'PLSO Completa' };
-  const CELULAS: ReadonlyArray<readonly [string, string]> = [['patient', 'read'], ['patient_identity', 'read'], ['patient_clinical', 'read']];
+  const U = { operacional: 'plso-operacional', completa: 'plso-completa', semFamilia: 'plso-sem-familia' };
+  const GRUPOS = { operacional: 'PLSO Operacional', completa: 'PLSO Completa', semFamilia: 'PLSO Sem família' };
+  const CELULAS: ReadonlyArray<readonly [string, string]> = [['patient', 'read'], ['patient_identity', 'read'], ['patient_clinical', 'read'], ['patient_family', 'read']];
+  const RESPONSAVEL = 'Responsaveloraculo';
   const envAnterior: Record<string, string | undefined> = {};
   const setEnv = (k: string, v: string): void => { envAnterior[k] = process.env[k]; process.env[k] = v; };
 
@@ -47,19 +48,25 @@ describe('lista de pacientes — busca e filtros clínicos sob o engine (orácul
     await limpar();
     await pool.query(
       `INSERT INTO users (firebase_uid, email, display_name, role, status, is_active, tenant_id) VALUES
-         ($1, 'plso-operacional@e2e.local', 'Operacional', 'admin', 'ACTIVE', true, $3),
-         ($2, 'plso-completa@e2e.local', 'Completa', 'admin', 'ACTIVE', true, $3)`,
-      [U.operacional, U.completa, TENANT_E2E],
+         ($1, 'plso-operacional@e2e.local', 'Operacional', 'admin', 'ACTIVE', true, $4),
+         ($2, 'plso-completa@e2e.local', 'Completa', 'admin', 'ACTIVE', true, $4),
+         ($3, 'plso-sem-familia@e2e.local', 'Sem família', 'admin', 'ACTIVE', true, $4)`,
+      [U.operacional, U.completa, U.semFamilia, TENANT_E2E],
     );
     for (const [resource, action] of CELULAS) {
       await pool.query(`INSERT INTO iam.permissions (resource, action, description, category) VALUES ($1, $2, 'e2e oraculo', 'Pacientes') ON CONFLICT DO NOTHING`, [resource, action]);
     }
     await grupoComCelulas(pool, { nome: GRUPOS.operacional, uid: U.operacional, celulas: [['patient', 'read']] });
-    await grupoComCelulas(pool, { nome: GRUPOS.completa, uid: U.completa, celulas: [['patient', 'read'], ['patient_identity', 'read'], ['patient_clinical', 'read']] });
+    await grupoComCelulas(pool, { nome: GRUPOS.completa, uid: U.completa, celulas: [['patient', 'read'], ['patient_identity', 'read'], ['patient_clinical', 'read'], ['patient_family', 'read']] });
+    await grupoComCelulas(pool, { nome: GRUPOS.semFamilia, uid: U.semFamilia, celulas: [['patient', 'read'], ['patient_identity', 'read']] });
     await pool.query(
       `INSERT INTO patients (id, clickup_task_id, first_name, last_name, country, is_test, clinical_specialty, dependency_level)
        VALUES ($1, 'e2e-oraculo', $2, 'Sintético', 'AR', true, 'NEUROLOGICAL', 'MILD')`,
       [PATIENT, NOME],
+    );
+    await pool.query(
+      `INSERT INTO patient_responsibles (patient_id, first_name, last_name, is_primary, display_order, source) VALUES ($1, $2, 'Sintético', true, 1, 'admin_manual')`,
+      [PATIENT, RESPONSAVEL],
     );
 
     setEnv('USE_MOCK_AUTH', 'true');
@@ -130,5 +137,14 @@ describe('lista de pacientes — busca e filtros clínicos sob o engine (orácul
     const r = await chamar(`/api/admin/patients?search=${NOME}&clinical_specialty=NEUROLOGICAL&dependency_level=MILD`, U.completa);
     expect(r.status).toBe(200);
     expect((r.body.data as Array<{ id: string }>).some((p) => p.id === PATIENT)).toBe(true);
+  });
+
+  it('🔒 busca pelo nome do RESPONSÁVEL: com identidade mas SEM família não acha (o ramo desliga); com família acha', async () => {
+    const sem = await chamar(`/api/admin/patients?search=${RESPONSAVEL}`, U.semFamilia);
+    expect(sem.status).toBe(200);
+    expect((sem.body.data as Array<{ id: string }>).some((p) => p.id === PATIENT)).toBe(false);
+    const com = await chamar(`/api/admin/patients?search=${RESPONSAVEL}`, U.completa);
+    expect(com.status).toBe(200);
+    expect((com.body.data as Array<{ id: string }>).some((p) => p.id === PATIENT)).toBe(true);
   });
 });

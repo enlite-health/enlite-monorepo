@@ -27,11 +27,11 @@ interface Props {
   value: PatientCoverageEmergencyContactInput[];
   onChange: (next: PatientCoverageEmergencyContactInput[]) => void;
   disabled?: boolean;
-  /** lex C3: sem `patient_care_team:read` o servidor recusa (403) um profissional direto — a tela não o oferece. */
+  /** lex C3: sem `patient_care_team:read` o servidor recusa (403) um profissional direto — a tela não o oferece. Esconder por omissão. */
   allowDirectProfessional?: boolean;
 }
 
-export function CoverageEmergencyContactsEditor({ value, onChange, disabled = false, allowDirectProfessional = true }: Props): JSX.Element {
+export function CoverageEmergencyContactsEditor({ value, onChange, disabled = false, allowDirectProfessional = false }: Props): JSX.Element {
   const { t } = useTranslation();
   const tc = (k: string) => t(`admin.patients.detail.coverageCard.${k}`);
   const te = (k: string) => t(`admin.patients.editDrawer.${k}`);

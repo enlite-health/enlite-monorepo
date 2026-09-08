@@ -194,7 +194,7 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
           {/* `null` = sem `patient_coverage:read` (o servidor recusa a escrita com 403 de qualquer forma); a lista não é oferecida. */}
           {patient.coverageEmergencyContacts === null
             ? <Text size="xs" className="text-amber-700" data-testid="pcv-contacts-redacted">{te('coverageContactsRedacted')}</Text>
-            : <CoverageEmergencyContactsEditor value={contacts} onChange={setContacts} disabled={busy} allowDirectProfessional={patient.coverageDirectProfessionalRedacted !== true} />}
+            : <CoverageEmergencyContactsEditor value={contacts} onChange={setContacts} disabled={busy} allowDirectProfessional={patient.coverageDirectProfessionalRedacted === false} />}
           {submitError && <Text size="sm" className="text-red-600" data-testid="pcv-error">{submitError}</Text>}
         </div>
       </div>

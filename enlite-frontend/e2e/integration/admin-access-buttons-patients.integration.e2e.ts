@@ -19,7 +19,7 @@ import { execFileSync } from 'child_process';
 import { test, expect, type Page, type Route, type APIRequestContext } from '@playwright/test';
 
 /** D286: a ficha é por CONTAINER — ler a aba exige a célula `:read` do container; editar, a `:write`. */
-const CONTAINERS = ['patient_identity', 'patient_clinical', 'patient_care_team', 'patient_family', 'patient_chat', 'patient_coverage', 'patient_address', 'patient_services'] as const;
+const CONTAINERS = ['patient_identity', 'patient_clinical', 'patient_care_team', 'patient_family', 'patient_chat', 'patient_coverage', 'patient_address', 'patient_services', 'patient_therapeutic_project'] as const;
 
 // ── Constantes ───────────────────────────────────────────────────────────────
 
@@ -242,7 +242,7 @@ test.describe('Botões da família pacientes — esconder, não desabilitar (D26
   const RECRUTADORA: MockUser = { uid: RECRUTADORA_UID, email: RECRUTADORA_EMAIL, role: 'recruiter', country: 'AR' };
   const SEM_GRUPO: MockUser = { uid: SEM_GRUPO_UID, email: SEM_GRUPO_EMAIL, role: 'recruiter', country: 'AR' };
 
-  test('1. só patient:read: lista e ficha sem NENHUM botão de adicionar/editar/ativar/vincular; kanban sem arrasto', async ({ page }) => {
+  test('1. só LEITURA (patient:read + :read de cada container, D286): lista e ficha sem NENHUM botão de adicionar/editar/ativar/vincular; kanban sem arrasto', async ({ page }) => {
     await loginAs(page, RECRUTADORA);
 
     // Lista
