@@ -219,7 +219,7 @@ function tokenFalso(): string {
 /**
  * Instala a auth forjada, o catch-all admin e o perfil de staff — e loga pela UI.
  *
- * O catch-all `**​/api/admin/**` não é zelo extra: sem ele, as chamadas que o spec
+ * O catch-all de `/api/admin/` não é zelo extra: sem ele, as chamadas que o spec
  * não mocka escapam para `VITE_API_WORKER_FUNCTIONS_URL` e morrem em CORS (o
  * backend local só libera a origem `localhost:5173`), derrubando a sessão admin em
  * qualquer outra porta. Registrado PRIMEIRO — no Playwright a última rota vence,

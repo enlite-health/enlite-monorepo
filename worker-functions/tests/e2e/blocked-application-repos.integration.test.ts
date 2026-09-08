@@ -346,12 +346,16 @@ describe('BlockedApplicationQueryRepository (banco real)', () => {
     expect(card!.missingFields).toContain('sex');
   });
 
-  it('listByVacancy — worker_disabled MANTÉM snapshot (não recomputa)', async () => {
+  it('listByVacancy — worker_disabled IGNORA o snapshot: não existe "campo faltante" de quem está desativado', async () => {
+    // Este teste media o comportamento ANTIGO ("MANTÉM snapshot"), que era metade
+    // do defeito da D300: o motivo e os campos ficavam congelados no instante da
+    // barrada e nunca mais atualizavam. A sentinela continua sendo o instrumento
+    // certo — só que agora prova o CONTRÁRIO: que o snapshot é ignorado.
     const repo = new BlockedApplicationQueryRepository();
-    const workerId = await makeWorker('DISABLED', 'stale-keep-snapshot');
+    const workerId = await makeWorker('DISABLED', 'stale-ignora-snapshot');
     qWorkerIds.push(workerId);
 
-    // Snapshot com sentinela que a função NUNCA produziria — prova ausência de recompute.
+    // Sentinela que a função NUNCA produziria — se aparecer, o snapshot vazou.
     await pool.query(
       `INSERT INTO worker_blocked_applications
          (worker_id, job_posting_id, blocked_reason, missing_fields, acquisition_channel,
@@ -363,7 +367,10 @@ describe('BlockedApplicationQueryRepository (banco real)', () => {
     const result = await repo.listByVacancy(qVacancyId);
     const card = result.find(r => r.workerId === workerId);
     expect(card).toBeDefined();
-    expect(card!.missingFields).toEqual(['__sentinel_snapshot__']);
+    expect(card!.missingFields).not.toContain('__sentinel_snapshot__');
+    expect(card!.missingFields).toEqual([]);
+    // E o motivo é recalculado contra o estado de hoje, não lido da coluna.
+    expect(card!.blockedReason).toBe('worker_disabled');
   });
 });
 
