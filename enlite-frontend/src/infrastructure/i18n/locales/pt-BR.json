@@ -2860,7 +2860,8 @@
         "serviceAddress": "Endereço",
         "serviceAddressHint": "Onde ESTE serviço é prestado. Cada serviço se vincula a um endereço do paciente; a vaga nasce ali.",
         "serviceSchedule": "Horários",
-        "serviceScheduleHint": "Opcional: a vaga pode ser criada sem horário e completada depois.",
+        "serviceScheduleHint": "Opcional para salvar. Mas sem horário o paciente não pode passar a ativo, busca nem substituição.",
+        "serviceScheduleNone": "Este serviço ainda não tem horário. Você pode salvar assim, mas o paciente não vai poder passar a ativo, busca nem substituição até você preenchê-lo.",
         "onlyNumbersHint": "Só números",
         "onlyNumbersWarning": "Este campo aceita só números.",
         "serviceAddressNone": "Este paciente não tem endereço cadastrado. Cadastre em \"Localizações\" para poder vincular o serviço — sem endereço, a vaga não pode ser criada.",
@@ -2889,8 +2890,10 @@
         "dragHint": "Arraste um cartão para mudar o estado do paciente.",
         "moveErrorCodes": {
           "PATIENT_STATUS_TRANSITION_NOT_ALLOWED": "Essa mudança de estado não é permitida.",
-          "ON_HOLD_REASON_REQUIRED": "Para colocar em espera é preciso indicar o motivo."
-        }
+          "ON_HOLD_REASON_REQUIRED": "Para colocar em espera é preciso indicar o motivo.",
+          "PATIENT_STATUS_NOT_READY": "Não é possível mover: faltam dados obrigatórios na ficha."
+        },
+        "moveNotReady": "Não é possível mover: falta {{items}}."
       },
       "countryLabel": "País",
       "countryOptions": {
@@ -3349,6 +3352,7 @@
             "COVERAGE": "Cobertura",
             "CONTRACTED_SERVICE": "Serviço contratado",
             "SERVICE_ADDRESS": "Endereço do serviço",
+            "SERVICE_SCHEDULE": "Horário do serviço",
             "CONSENT": "Consentimento"
           }
         },
@@ -3402,7 +3406,8 @@
           "to": "Para",
           "source": "Origem",
           "error": "Não foi possível carregar o histórico"
-        }
+        },
+        "notReady": "Não é possível passar para {{status}}: falta {{items}}."
       },
       "insuranceProviderOptions": {
         "API": "API",

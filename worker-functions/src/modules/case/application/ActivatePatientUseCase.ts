@@ -204,6 +204,11 @@ export class ActivatePatientUseCase {
         [patientId],
       );
       const servicesWithoutAddress = serviceRes.rows.filter((r) => r.live_address_id == null);
+      // Decisão do Gabriel 07/09: serviço ativo sem horário barra a ativação. `[]` conta como
+      // ausente tanto quanto `null` — o SELECT acima traz `pcs.schedule` cru do banco.
+      const servicesWithoutSchedule = serviceRes.rows.filter(
+        (r) => !Array.isArray(r.schedule) || r.schedule.length === 0,
+      );
 
       const respRes = await client.query<{ count: number }>(
         `SELECT COUNT(*)::int AS count FROM patient_responsibles WHERE patient_id = $1`,
@@ -224,6 +229,7 @@ export class ActivatePatientUseCase {
         activeResponsibleCount: respRes.rows[0]?.count ?? 0,
         activeContractedServiceCount: serviceRes.rowCount ?? 0,
         activeContractedServicesWithoutAddressCount: servicesWithoutAddress.length,
+        activeContractedServicesWithoutScheduleCount: servicesWithoutSchedule.length,
       });
 
       // GATE do POST /activate = ADDRESS e, desde a migration 330 (D283), SERVICE_ADDRESS — os
@@ -265,7 +271,10 @@ export class ActivatePatientUseCase {
               serviceId: svc.id,
               providersNeeded: svc.providers_needed,
               ageRange: vacancyRangeForProviderAgeBand(svc.provider_age_band as ProviderAgeBand | null),
-              schedule: svc.schedule ?? null,
+              // Desde a decisão do Gabriel 07/09, o gate SERVICE_SCHEDULE acima já recusou
+              // qualquer serviço ativo sem horário — o que chega aqui SEMPRE tem array não-vazio.
+              // Um `?? null` seria ramo inalcançável (a vaga nascia sem horário até 05/09).
+              schedule: svc.schedule,
             }))
           : addrRes.rows.map((addr) => ({
               addressId: addr.id,

@@ -28,7 +28,11 @@ import { Request, Response } from 'express';
 import { logger, reportError } from '@shared/logging';
 import { AdminPatientsController } from '../AdminPatientsController';
 import type { PatientService } from '../../../application/PatientService';
-import { PatientStatusTransitionError, OnHoldReasonRequiredError } from '../../../application/PatientStatusWriter';
+import {
+  PatientStatusTransitionError,
+  OnHoldReasonRequiredError,
+  PatientStatusNotReadyError,
+} from '../../../application/PatientStatusWriter';
 import { DeviceTypeUnknownError } from '../../../infrastructure/PatientDeviceTypeRepository';
 import { InsuranceProviderUnknownError } from '../../../infrastructure/PatientInsuranceVerifiedRepository';
 import { fetchPatientStatusHistory } from '../../../infrastructure/PatientStatusHistoryQueryHelper';
@@ -121,6 +125,26 @@ describe('AdminPatientsController — bloco B', () => {
       await ctrl.updatePatientStatus(req2, res2);
       expect(res2.status).toHaveBeenCalledWith(422);
       expect(bodyOf(res2).code).toBe('ON_HOLD_REASON_REQUIRED');
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
+    // Decisão do Gabriel 07/09: bloqueio por completude na mudança de status. O 422 carrega
+    // `details.missing` no MESMO formato do `POST /activate`, para a tela reusar as traduções
+    // do checklist em vez de inventar um segundo vocabulário.
+    it('completude faltando → 422 PATIENT_STATUS_NOT_READY com to/missing, sem reportError (não é falha nossa)', async () => {
+      const moveStatus = jest
+        .fn()
+        .mockRejectedValueOnce(new PatientStatusNotReadyError('ACTIVE', ['ADDRESS', 'SERVICE_SCHEDULE']));
+      const ctrl = makeController({ moveStatus });
+      const [req, res] = reqRes({ id: ID }, { status: 'ACTIVE', changeSource: 'kanban' });
+      await ctrl.updatePatientStatus(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(bodyOf(res)).toMatchObject({
+        success: false,
+        code: 'PATIENT_STATUS_NOT_READY',
+        details: { to: 'ACTIVE', missing: ['ADDRESS', 'SERVICE_SCHEDULE'] },
+      });
       expect(reportError).not.toHaveBeenCalled();
     });
 

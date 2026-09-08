@@ -32,9 +32,44 @@ const PID = '11111111-1111-4111-8111-111111111111';
 const calls = (): Array<{ sql: string; params?: unknown[] }> =>
   mockClient.query.mock.calls.map(([sql, params]) => ({ sql: String(sql), params }));
 
-/** Banco de mentira: status atual + quais transições existem. */
-function db(current: string | null, allowed: Array<[string, string]>) {
+/**
+ * Contadores do checklist devolvidos ao `loadPatientCompleteness` (guarda de completude,
+ * decisão do Gabriel 07/09). O DEFAULT é "ficha completa" de propósito: os testes desta suíte
+ * medem a FSM e a limpeza da nota, não a completude — sem o default, todos passariam a falhar
+ * por um motivo que não é o que eles verificam.
+ */
+const FICHA_COMPLETA: {
+  birth_date: string | null;
+  has_consent: boolean | null;
+  insurance_informed: string | null;
+  active_address_count: string;
+  active_responsible_count: string;
+  active_service_count: string;
+  services_without_address_count: string;
+  services_without_schedule_count: string;
+} = {
+  birth_date: '1980-01-01',
+  has_consent: true,
+  insurance_informed: 'OSDE',
+  active_address_count: '1',
+  active_responsible_count: '0',
+  active_service_count: '1',
+  services_without_address_count: '0',
+  services_without_schedule_count: '0',
+};
+
+/** Banco de mentira: status atual + quais transições existem (+ o que falta na ficha). */
+function db(
+  current: string | null,
+  allowed: Array<[string, string]>,
+  completeness: Partial<typeof FICHA_COMPLETA> = {},
+) {
   queryImpl = async (sql, params) => {
+    // A consulta do checklist vem ANTES do teste genérico de `FROM patients` — ela também lê
+    // essa tabela, mas sem FOR UPDATE.
+    if (/services_without_schedule_count/.test(sql)) {
+      return { rows: [{ ...FICHA_COMPLETA, ...completeness }], rowCount: 1 };
+    }
     if (/FROM patients/.test(sql) && /FOR UPDATE/.test(sql)) return { rows: current === undefined ? [] : [{ status: current }], rowCount: 1 };
     if (/patient_status_transitions/.test(sql)) {
       const [from, to] = params as [string, string];
@@ -99,6 +134,100 @@ describe('PatientService.moveStatus v2', () => {
     db('PENDING_ADMISSION', [['PENDING_ADMISSION', 'ACTIVE']]);
     await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'kanban' })).resolves.toEqual({ id: PID, status: 'ACTIVE' });
     expect(calls().some((x) => /patient_status_transitions/.test(x.sql))).toBe(true);
+  });
+
+  // ── Guarda de completude (decisão do Gabriel 07/09) ────────────────────────────────────────
+  describe('guarda de completude por status-alvo', () => {
+    it('serviço ativo SEM horário → ACTIVE é RECUSADO com PATIENT_STATUS_NOT_READY, ROLLBACK, nenhum UPDATE', async () => {
+      db('PENDING_ADMISSION', [['PENDING_ADMISSION', 'ACTIVE']], { services_without_schedule_count: '1' });
+      await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'admin_panel' })).rejects.toMatchObject({
+        name: 'PatientStatusNotReadyError',
+        code: 'PATIENT_STATUS_NOT_READY',
+        to: 'ACTIVE',
+        missing: ['SERVICE_SCHEDULE'],
+      });
+      const c = calls();
+      expect(c.some((x) => /^UPDATE patients/.test(x.sql))).toBe(false);
+      expect(c[c.length - 1].sql).toBe('ROLLBACK');
+    });
+
+    it('o DROP NO KANBAN em "Activo" agora passa pelo checklist INTEIRO — sem endereço é recusado (era o atalho que furava o gate)', async () => {
+      db('PENDING_ADMISSION', [['PENDING_ADMISSION', 'ACTIVE']], { active_address_count: '0' });
+      await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'kanban' })).rejects.toMatchObject({
+        code: 'PATIENT_STATUS_NOT_READY',
+        missing: ['ADDRESS'],
+      });
+      expect(calls().some((x) => /^UPDATE patients/.test(x.sql))).toBe(false);
+    });
+
+    it('SEARCHING exige SÓ o horário — falta de consentimento/cobertura NÃO barra a busca de prestador', async () => {
+      db('ON_HOLD', [['ON_HOLD', 'SEARCHING']], { has_consent: false, insurance_informed: null });
+      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'admin_panel' })).resolves.toEqual({
+        id: PID, status: 'SEARCHING',
+      });
+    });
+
+    it('REPLACEMENT sem horário é recusado; com horário passa', async () => {
+      db('ACTIVE', [['ACTIVE', 'REPLACEMENT']], { services_without_schedule_count: '2' });
+      await expect(service.moveStatus(PID, 'REPLACEMENT', { changeSource: 'admin_panel' })).rejects.toMatchObject({
+        code: 'PATIENT_STATUS_NOT_READY', missing: ['SERVICE_SCHEDULE'],
+      });
+      jest.clearAllMocks();
+      db('ACTIVE', [['ACTIVE', 'REPLACEMENT']]);
+      await expect(service.moveStatus(PID, 'REPLACEMENT', { changeSource: 'admin_panel' })).resolves.toEqual({
+        id: PID, status: 'REPLACEMENT',
+      });
+    });
+
+    it('pausa e saída NÃO exigem horário — ON_HOLD, SUSPENDED e DISCHARGED passam com a ficha vazia', async () => {
+      for (const [from, to, opts] of [
+        ['ACTIVE', 'ON_HOLD', { onHoldReason: 'OTHER' as const }],
+        ['ACTIVE', 'SUSPENDED', {}],
+        ['ACTIVE', 'DISCHARGED', {}],
+      ] as const) {
+        jest.clearAllMocks();
+        db(from, [[from, to]], { services_without_schedule_count: '1', active_address_count: '0' });
+        await expect(
+          service.moveStatus(PID, to, { ...opts, changeSource: 'admin_panel' }),
+        ).resolves.toEqual({ id: PID, status: to });
+      }
+    });
+
+    it('paciente SEM serviço nenhum não é barrado por horário (mesmo fallback do endereço do serviço)', async () => {
+      db('PENDING_ADMISSION', [['PENDING_ADMISSION', 'ACTIVE']], {
+        active_service_count: '0',
+        services_without_schedule_count: '0',
+      });
+      await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'kanban' })).resolves.toEqual({
+        id: PID, status: 'ACTIVE',
+      });
+    });
+
+    it('reenviar o MESMO status não dispara a guarda — salvar o select sem mudar nada não pode virar erro', async () => {
+      db('ACTIVE', [], { services_without_schedule_count: '1', active_address_count: '0' });
+      await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'admin_panel' })).resolves.toEqual({
+        id: PID, status: 'ACTIVE',
+      });
+      expect(calls().some((x) => /services_without_schedule_count/.test(x.sql))).toBe(false);
+    });
+
+    it('a FSM é consultada ANTES da completude — transição inexistente diz "não existe", não "falta horário"', async () => {
+      db('ACTIVE', [], { services_without_schedule_count: '1' });
+      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'admin_panel' })).rejects.toMatchObject({
+        code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED',
+      });
+      expect(calls().some((x) => /services_without_schedule_count/.test(x.sql))).toBe(false);
+    });
+
+    it('endereço E horário faltando ao ir para ACTIVE → os dois códigos vêm em missing', async () => {
+      db('PENDING_ADMISSION', [['PENDING_ADMISSION', 'ACTIVE']], {
+        active_address_count: '0',
+        services_without_schedule_count: '1',
+      });
+      await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'kanban' })).rejects.toMatchObject({
+        missing: ['ADDRESS', 'SERVICE_SCHEDULE'],
+      });
+    });
   });
 
   it('paciente inexistente → "not found" (404 no controller); status inválido (DISCONTINUED) → erro antes do banco', async () => {

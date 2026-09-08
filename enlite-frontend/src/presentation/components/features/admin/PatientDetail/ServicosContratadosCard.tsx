@@ -103,10 +103,25 @@ function ServiceRow({
         </div>
       </TableCell>
       <TableCell unwrapped data-testid={`contracted-service-schedule-${service.id}`}>
+        {/* Decisão do Gabriel 07/09: "Sin horario" deixou de ser um traço cinza. É o que trava a
+            mudança de status para activo/búsqueda/reemplazo (checklist SERVICE_SCHEDULE), então
+            recebe o MESMO âmbar do endereço faltante ao lado — pendência de igual peso, mesma cor. */}
         {scheduleText ? (
           <Text as="span" size="sm">{scheduleText}</Text>
         ) : (
-          <Text as="span" size="sm" color="muted">{tc('noSchedule')}</Text>
+          /* `color="inherit"` é obrigatório, não enfeite: o default do `Text` é `secondary` →
+             emite `text-gray-800`, e um `text-amber-700` no `className` PERDE pela ordem em que
+             o Tailwind emite as classes — medido com `getComputedStyle`: rgb(115,115,115), cinza.
+             `inherit` não emite classe nenhuma, então a do `className` é a única e vale. */
+          <Text
+            as="span"
+            size="sm"
+            color="inherit"
+            className="text-amber-700"
+            data-testid={`contracted-service-schedule-missing-${service.id}`}
+          >
+            {tc('noSchedule')}
+          </Text>
         )}
       </TableCell>
       {/* Lápis na linha (Gabriel, 06/09): a tabela É a lista — editar abre SÓ este serviço, sem
@@ -139,6 +154,14 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
     const vivos = new Set(patient.addresses.map((a) => a.id));
     const orfao = services.find((s) => s.active && (s.addressId == null || !vivos.has(s.addressId)));
     setEditing(orfao ? { kind: 'edit', serviceId: orfao.id } : { kind: 'new' });
+  });
+  // Decisão do Gabriel 07/09: "falta horário no serviço" → abre o PRIMEIRO serviço ativo sem
+  // horário. `[]` conta como sem horário tanto quanto `null` (o `[]` é gravável fora da borda zod).
+  useAutoOpenDrawer(focusRequest, 'SERVICE_SCHEDULE', () => {
+    const semHorario = services.find(
+      (s) => s.active && (!Array.isArray(s.schedule) || s.schedule.length === 0),
+    );
+    setEditing(semHorario ? { kind: 'edit', serviceId: semHorario.id } : { kind: 'new' });
   });
 
   return (

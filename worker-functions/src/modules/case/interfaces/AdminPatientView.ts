@@ -89,7 +89,13 @@ export function patientDetailCompleteness(patient: unknown): PatientCompleteness
     insuranceInformed: string | null;
     addresses?: Array<{ id: string }>;
     responsibles?: unknown[];
-    contractedServices?: Array<{ active: boolean; addressId: string | null }>;
+    contractedServices?: Array<{
+      active: boolean;
+      addressId: string | null;
+      /** `unknown` de propósito: o que chega aqui é o JSONB cru do banco — pode ser array, `null`
+       *  ou (fora da borda zod) qualquer outra coisa. Quem decide é o `Array.isArray` abaixo. */
+      schedule?: unknown;
+    }>;
   };
   const addresses = Array.isArray(detail.addresses) ? detail.addresses : [];
   const activeServices = Array.isArray(detail.contractedServices)
@@ -107,6 +113,11 @@ export function patientDetailCompleteness(patient: unknown): PatientCompleteness
     activeContractedServiceCount: activeServices.length,
     activeContractedServicesWithoutAddressCount: activeServices.filter(
       (s) => s.addressId == null || !liveAddressIds.has(s.addressId),
+    ).length,
+    // Decisão do Gabriel 07/09: `[]` conta como "sem horário" tanto quanto `null` — o mapper
+    // devolve o array tal qual veio do banco, e `[]` é gravável fora da borda zod.
+    activeContractedServicesWithoutScheduleCount: activeServices.filter(
+      (s) => !Array.isArray(s.schedule) || s.schedule.length === 0,
     ).length,
   });
 }

@@ -35,6 +35,7 @@ import {
 import {
   PatientStatusTransitionError,
   OnHoldReasonRequiredError,
+  PatientStatusNotReadyError,
 } from '../../application/PatientStatusWriter';
 import { DeviceTypeUnknownError } from '../../infrastructure/PatientDeviceTypeRepository';
 import { InsuranceProviderUnknownError } from '../../infrastructure/PatientInsuranceVerifiedRepository';
@@ -356,6 +357,17 @@ export class AdminPatientsController {
       }
       if (err instanceof OnHoldReasonRequiredError) {
         res.status(422).json({ success: false, error: err.message, code: err.code });
+        return;
+      }
+      // Decisão do Gabriel 07/09. `details.missing` tem o MESMO formato do 422 do
+      // `POST /activate` — a tela reusa as traduções do checklist para nomear o que falta.
+      if (err instanceof PatientStatusNotReadyError) {
+        res.status(422).json({
+          success: false,
+          error: err.message,
+          code: err.code,
+          details: { to: err.to, missing: err.missing },
+        });
         return;
       }
       const e = err instanceof Error ? err : new Error(String(err));

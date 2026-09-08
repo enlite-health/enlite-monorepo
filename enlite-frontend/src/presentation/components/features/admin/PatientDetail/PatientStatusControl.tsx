@@ -73,6 +73,14 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
         setError(ts('transitionNotAllowed', { from: label(d.from ?? current), to: label(d.to ?? status) }));
       } else if (err instanceof PatientApiError && err.code === 'ON_HOLD_REASON_REQUIRED') {
         setError(ts('reasonRequired'));
+      } else if (err instanceof PatientApiError && err.code === 'PATIENT_STATUS_NOT_READY') {
+        // Decisão do Gabriel 07/09: nomeia o que falta com as MESMAS chaves do checklist da
+        // ficha — o operador lê o mesmo vocabulário aqui e no bloco de completude acima.
+        const d = (err.details ?? {}) as { missing?: string[] };
+        const items = (d.missing ?? [])
+          .map((code) => t(`admin.patients.detail.completeness.items.${code}`, code))
+          .join(', ');
+        setError(ts('notReady', { status: label(status), items }));
       } else {
         setError(err instanceof Error ? err.message : ts('error'));
       }

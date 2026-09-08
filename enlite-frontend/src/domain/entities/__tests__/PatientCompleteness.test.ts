@@ -10,17 +10,19 @@ import {
   PATIENT_COMPLETENESS_CODES,
   ACTIVATION_BLOCKING_CODES,
   ACTIVATABLE_STATUSES,
+  SCHEDULE_REQUIRED_STATUSES,
   type PatientCompletenessCode,
 } from '../PatientCompleteness';
 
 describe('PATIENT_COMPLETENESS_CODES (front espelha o backend)', () => {
-  it('é exatamente os 6 códigos administrativos, nesta ordem (SERVICE_ADDRESS desde a migration 330)', () => {
+  it('é exatamente os 7 códigos administrativos, nesta ordem (SERVICE_SCHEDULE desde 07/09)', () => {
     expect(PATIENT_COMPLETENESS_CODES).toEqual([
       'ADDRESS',
       'RESPONSIBLE',
       'COVERAGE',
       'CONTRACTED_SERVICE',
       'SERVICE_ADDRESS',
+      'SERVICE_SCHEDULE',
       'CONSENT',
     ]);
   });
@@ -39,8 +41,21 @@ describe('PATIENT_COMPLETENESS_CODES (front espelha o backend)', () => {
 });
 
 describe('ACTIVATION_BLOCKING_CODES (D255 + migration 330, espelha o backend)', () => {
-  it('é ADDRESS e SERVICE_ADDRESS — a vaga precisa de endereço, e o serviço precisa apontar para um', () => {
-    expect(ACTIVATION_BLOCKING_CODES).toEqual(['ADDRESS', 'SERVICE_ADDRESS']);
+  it('é ADDRESS, SERVICE_ADDRESS e SERVICE_SCHEDULE (decisão do Gabriel 07/09)', () => {
+    expect(ACTIVATION_BLOCKING_CODES).toEqual(['ADDRESS', 'SERVICE_ADDRESS', 'SERVICE_SCHEDULE']);
+  });
+
+  it('todo código bloqueante pertence ao catálogo — sem código órfão no espelho', () => {
+    for (const code of ACTIVATION_BLOCKING_CODES) {
+      expect(PATIENT_COMPLETENESS_CODES as readonly string[]).toContain(code);
+    }
+  });
+
+  it('SCHEDULE_REQUIRED_STATUSES é ACTIVE/SEARCHING/REPLACEMENT — pausa e saída ficam de fora', () => {
+    expect(SCHEDULE_REQUIRED_STATUSES).toEqual(['ACTIVE', 'SEARCHING', 'REPLACEMENT']);
+    for (const s of ['ON_HOLD', 'SUSPENDED', 'DISCHARGED']) {
+      expect(SCHEDULE_REQUIRED_STATUSES as readonly string[]).not.toContain(s);
+    }
   });
 });
 

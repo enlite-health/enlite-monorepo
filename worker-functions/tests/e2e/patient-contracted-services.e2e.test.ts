@@ -345,9 +345,14 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
     );
     const [casa, escuela] = addrs.map((a) => a.id);
     const schedule1 = [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }];
-    // "Cuidador" na CASA com horário; "AT" na ESCOLA ainda sem horário (decisão 05/09: pode).
+    // Decisão do Gabriel 07/09: TODO serviço ativo precisa de horário para o paciente ativar —
+    // até 05/09 o "AT" entrava sem horário e a vaga nascia com `schedule: null`. Cada serviço leva
+    // o SEU horário para a SUA vaga; a recusa por falta dele tem suíte própria
+    // (`patient-status-completeness.e2e.test.ts`).
+    const schedule2 = [{ dayOfWeek: 3, startTime: '14:00', endTime: '18:00' }];
+    // "Cuidador" na CASA, "AT" na ESCOLA — cada um com o seu horário e o seu endereço.
     const s1 = await api.post(`/api/admin/patients/${withServices}/contracted-services`, { serviceCode: 'CAREGIVER', providersNeeded: 2, providerAgeBand: 'AGE_20_30', addressId: casa, schedule: schedule1 }, asAdmin);
-    const s2 = await api.post(`/api/admin/patients/${withServices}/contracted-services`, { serviceCode: 'AT', providersNeeded: 1, providerAgeBand: 'AGE_45_PLUS', addressId: escuela }, asAdmin);
+    const s2 = await api.post(`/api/admin/patients/${withServices}/contracted-services`, { serviceCode: 'AT', providersNeeded: 1, providerAgeBand: 'AGE_45_PLUS', addressId: escuela, schedule: schedule2 }, asAdmin);
     // Um 3º serviço SEM endereço trava tudo — e nada nasce, nem a vaga dos dois "bons".
     const s3 = await api.post(`/api/admin/patients/${withServices}/contracted-services`, { serviceCode: 'NURSE' }, asAdmin);
     const blocked = await api.post(`/api/admin/patients/${withServices}/activate`, {}, asAdmin);
@@ -373,7 +378,7 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
     const v2 = byService.get(s2.data.data.id);
     // Cada vaga no endereço do SEU serviço — Cuidador em casa, AT na escola, nunca o cruzado.
     expect(v1).toMatchObject({ patient_address_id: casa, providers_needed: 2, age_range_min: 20, age_range_max: 29, schedule: schedule1 });
-    expect(v2).toMatchObject({ patient_address_id: escuela, providers_needed: 1, age_range_min: 45, age_range_max: null, schedule: null });
+    expect(v2).toMatchObject({ patient_address_id: escuela, providers_needed: 1, age_range_min: 45, age_range_max: null, schedule: schedule2 });
     for (const v of vacancies) {
       expect(v.worker_profile_sought).toBeNull(); // lex C-b2: NUNCA vem do serviço
       expect(v.salary_text).toBe('A convenir'); // lex C-c.3: NUNCA vem do serviço

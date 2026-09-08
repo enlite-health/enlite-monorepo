@@ -3,7 +3,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { AdminContractedServicesApiService } from '@infrastructure/http/AdminContractedServicesApiService';
 import type { PatientAddressDetail, PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
 import type { ContractedServiceScheduleSlot } from '@domain/entities/PatientContractedService';
@@ -16,6 +16,7 @@ import { SelectField } from '@presentation/components/molecules/SelectField';
 import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
 import { DayScheduleEditor } from '@presentation/components/molecules/DayScheduleEditor';
 import { ContractedServiceProvidersSection } from './ContractedServiceProvidersSection';
+import { AvisoAmbar } from './AvisoAmbar';
 import { NumericField } from './NumericField';
 import { useContractedServiceOptions } from './useContractedServiceOptions';
 
@@ -292,14 +293,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
           className="sm:col-span-2"
         >
           {addresses.length === 0 && (
-            <div
-              role="alert"
-              data-testid={`svc-address-none-${index}`}
-              className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-800"
-            >
-              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
-              <Text as="span" size="sm" color="inherit">{te('serviceAddressNone')}</Text>
-            </div>
+            <AvisoAmbar testId={`svc-address-none-${index}`}>{te('serviceAddressNone')}</AvisoAmbar>
           )}
           <Controller control={control} name="addressId" render={({ field }) => (
             <SelectField
@@ -351,12 +345,26 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
         </FormField>
       </div>
 
-      {/* Migration 330: horário do encuadre — o MESMO editor da vaga (DayScheduleEditor). Vazio é
-          legítimo: "o operador pode criar uma vacante sem ter horário ainda" (Gabriel 05/09). */}
+      {/* Migration 330: horário do encuadre — o MESMO editor da vaga (DayScheduleEditor). Salvar
+          vazio continua legítimo (Gabriel 05/09: "o operador pode criar uma vacante sem ter
+          horário ainda") — o campo segue `optional`, sem asterisco e sem barrar o Guardar.
+          O que mudou em 07/09 é a CONSEQUÊNCIA: sem horário o paciente não muda de status para
+          activo/búsqueda/reemplazo. Por isso o aviso âmbar aparece enquanto está vazio, no mesmo
+          molde do "sem domicílio" acima — avisar na hora da carga é mais barato que descobrir na
+          hora de ativar. */}
       <FormField label={te('serviceSchedule')} htmlFor={`svc-schedule-${index}`} optional hint={te('serviceScheduleHint')} hintBelow>
         <div id={`svc-schedule-${index}`} data-testid={`svc-schedule-${index}`}>
           <Controller control={control} name="schedule" render={({ field }) => (
-            <DayScheduleEditor value={field.value} onChange={field.onChange} disabled={busy} />
+            <>
+              {/* `field.value` é SEMPRE array: o defaultValue é `service?.schedule ?? []` e o
+                  schema é `z.array(...)` não-nulo — um `?? []` aqui seria ramo inalcançável. */}
+              {field.value.length === 0 && (
+                <div className="mb-2">
+                  <AvisoAmbar testId={`svc-schedule-none-${index}`}>{te('serviceScheduleNone')}</AvisoAmbar>
+                </div>
+              )}
+              <DayScheduleEditor value={field.value} onChange={field.onChange} disabled={busy} />
+            </>
           )} />
         </div>
       </FormField>

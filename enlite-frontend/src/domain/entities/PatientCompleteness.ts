@@ -11,6 +11,12 @@ export const PATIENT_COMPLETENESS_CODES = [
   'CONTRACTED_SERVICE',
   /** Migration 330: há serviço ativo sem endereço vinculado — a vaga não tem de onde nascer. */
   'SERVICE_ADDRESS',
+  /**
+   * Decisão do Gabriel 07/09: há serviço ativo sem horário. O horário CONTINUA opcional na carga
+   * do serviço — o que ele passa a travar é a MUDANÇA DE STATUS para ACTIVE, SEARCHING ou
+   * REPLACEMENT.
+   */
+  'SERVICE_SCHEDULE',
   'CONSENT',
 ] as const;
 
@@ -22,7 +28,18 @@ export type PatientCompletenessCode = (typeof PATIENT_COMPLETENESS_CODES)[number
  * migration 330, SERVICE_ADDRESS bloqueiam o `POST /activate` (os dois pela mesma razão: a vaga
  * precisa de endereço); os demais códigos são checklist informativo, não bloqueio.
  */
-export const ACTIVATION_BLOCKING_CODES = ['ADDRESS', 'SERVICE_ADDRESS'] as const;
+export const ACTIVATION_BLOCKING_CODES = [
+  'ADDRESS',
+  'SERVICE_ADDRESS',
+  'SERVICE_SCHEDULE',
+] as const;
+
+/**
+ * Estados em que o paciente só entra com horário em todo serviço ativo (decisão do Gabriel
+ * 07/09) — espelha `SCHEDULE_REQUIRED_STATUSES` do backend. Usado só para EXPLICAR ao operador;
+ * quem recusa é sempre o servidor.
+ */
+export const SCHEDULE_REQUIRED_STATUSES = ['ACTIVE', 'SEARCHING', 'REPLACEMENT'] as const;
 
 /**
  * Status em que o checklist/botão "Activar paciente" fazem sentido — espelha

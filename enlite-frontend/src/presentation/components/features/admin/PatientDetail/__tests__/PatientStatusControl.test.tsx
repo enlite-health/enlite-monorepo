@@ -98,6 +98,28 @@ describe('PatientStatusControl', () => {
     fireEvent.click(screen.getByTestId('patient-status-save'));
     await waitFor(() => expect(screen.getByTestId('patient-status-error')).toHaveTextContent('Informe o motivo da espera'));
 
+    // Decisão do Gabriel 07/09: 422 de completude NOMEIA o que falta, com os rótulos do checklist.
+    updatePatientStatus.mockRejectedValueOnce(
+      new PatientApiError('nope', 422, {
+        code: 'PATIENT_STATUS_NOT_READY',
+        details: { to: 'SEARCHING', missing: ['SERVICE_SCHEDULE'] },
+      }),
+    );
+    fireEvent.click(screen.getByTestId('patient-status-save'));
+    await waitFor(() =>
+      expect(screen.getByTestId('patient-status-error')).toHaveTextContent('Horário do serviço'),
+    );
+
+    // 422 de completude SEM `details` — o servidor é a fonte, e o front não pode quebrar se o
+    // corpo vier incompleto: mostra a frase sem lista, nunca um crash.
+    updatePatientStatus.mockRejectedValueOnce(
+      new PatientApiError('nope', 422, { code: 'PATIENT_STATUS_NOT_READY' }),
+    );
+    fireEvent.click(screen.getByTestId('patient-status-save'));
+    await waitFor(() =>
+      expect(screen.getByTestId('patient-status-error')).toHaveTextContent('Não é possível passar'),
+    );
+
     updatePatientStatus.mockRejectedValueOnce(new Error('rede caiu'));
     fireEvent.click(screen.getByTestId('patient-status-save'));
     await waitFor(() => expect(screen.getByTestId('patient-status-error')).toHaveTextContent('rede caiu'));
