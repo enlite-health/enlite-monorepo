@@ -3,7 +3,9 @@
  *
  * D269 — prova, contra o backend real, que a família PACIENTES usa o
  * mecanismo `ActionButton`/`useActionGate` (D269, Gabriel: "desabilitar não,
- * ESCONDER. Não pode estar visível."): sem `patient:write` os botões de
+ * ESCONDER. Não pode estar visível."): sem a célula de ESCRITA os botões de
+ * (D286, atualizado em 08/09: a célula é por CONTAINER — `patient_<container>:write` para cada card,
+ * `patient:write` para criar/ativar/arrastar — e a aba só existe com o `:read` do container)
  * adicionar/editar (criar paciente, editar seções da ficha, ativar, vincular
  * chat, e o arrasto do kanban) SOMEM do DOM (`toHaveCount(0)`), nunca ficam
  * visíveis-e-desabilitados — e voltam assim que a célula chega.
@@ -15,6 +17,9 @@
 
 import { execFileSync } from 'child_process';
 import { test, expect, type Page, type Route, type APIRequestContext } from '@playwright/test';
+
+/** D286: a ficha é por CONTAINER — ler a aba exige a célula `:read` do container; editar, a `:write`. */
+const CONTAINERS = ['patient_identity', 'patient_clinical', 'patient_care_team', 'patient_family', 'patient_chat', 'patient_coverage', 'patient_address', 'patient_services'] as const;
 
 // ── Constantes ───────────────────────────────────────────────────────────────
 
@@ -202,6 +207,9 @@ test.describe('Botões da família pacientes — esconder, não desabilitar (D26
           VALUES ('${TENANT}', '${GROUP_NAME}', 'e2e pacientes — nao mexer manual')
           RETURNING id`);
     grantCell(groupId, 'patient', 'read');
+    // D286 (spec defasado até 08/09): sem a célula `:read` de cada container a aba nem existe — o cenário
+    // "só leitura" é `patient:read` + todos os `:read` de container, e NENHUM `:write`.
+    for (const c of CONTAINERS) grantCell(groupId, c, 'read');
     psql(`INSERT INTO iam.group_country_scopes (group_id, country, granted_by, reason)
           VALUES ('${groupId}', 'AR', '${RECRUTADORA_UID}', 'e2e setup')`);
     psql(`INSERT INTO iam.user_groups (user_id, group_id, tenant_id) VALUES ('${RECRUTADORA_UID}', '${groupId}', '${TENANT}')`);
@@ -270,8 +278,9 @@ test.describe('Botões da família pacientes — esconder, não desabilitar (D26
     await expect(page.getByTestId(`kanban-draggable-${patientId}`)).toHaveAttribute('data-drag-disabled', 'true');
   });
 
-  test('2. a conta ganha patient:write: os mesmos elementos passam a EXISTIR e o arrasto libera', async ({ page, request }) => {
+  test('2. a conta ganha patient:write E os `:write` de container (D286): os mesmos elementos passam a EXISTIR e o arrasto libera', async ({ page, request }) => {
     grantCell(groupId, 'patient', 'write');
+    for (const c of CONTAINERS) grantCell(groupId, c, 'write');
     const settled = await pollHasCell(request, RECRUTADORA, 'patient:write');
     console.log(`[prova] patient:write chegou em ${settled.elapsedMs}ms`);
     expect(settled.has).toBe(true);
