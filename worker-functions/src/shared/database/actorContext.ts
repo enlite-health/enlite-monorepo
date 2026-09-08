@@ -143,3 +143,19 @@ export async function withActorContext<T>(
     if (!pinned) client.release();
   }
 }
+
+/**
+ * "Client de fora OU transação própria" — o molde dos repositórios de coleção do paciente
+ * (dispositivos, coberturas verificadas, rótulos de origem): quando o chamador já está numa
+ * transação (drawer via `PatientSectionWriter`), roda NELA e não fecha nada; sem client, abre a
+ * transação por `withActorContext` — nunca `pool.connect()` cru, que chega SEM `app.user_country`
+ * e sob a policy de país (411) recusa com `rls_session_without_identity` (o 500 medido na stage em
+ * 07/09; LISTA da spec 017: 14 sites da mesma classe).
+ */
+export function withClientOrActorContext<T>(
+  pool: Pool,
+  client: PoolClient | undefined,
+  fn: (client: PoolClient) => Promise<T>,
+): Promise<T> {
+  return client ? fn(client) : withActorContext(pool, fn);
+}

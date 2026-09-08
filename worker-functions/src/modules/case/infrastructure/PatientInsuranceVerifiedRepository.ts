@@ -23,6 +23,7 @@
 
 import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { withClientOrActorContext } from '@shared/database/actorContext';
 import type { PatientSourceLabelsRead } from './PatientSourceLabelRepository';
 
 export interface PatientInsuranceVerifiedWriteInput {
@@ -130,10 +131,7 @@ export class PatientInsuranceVerifiedRepository {
     }
 
     const { accepted, rejected } = classifyInsuranceLabels(input.read.labels);
-    const proprio = !client;
-    const cli = client ?? await this.pool.connect();
-    try {
-      if (proprio) await cli.query('BEGIN');
+    await withClientOrActorContext(this.pool, client, async (cli) => {
       // Lock consultivo pelo paciente: dois syncs simultâneos do mesmo paciente não
       // intercalam DELETE e INSERT, que é como nasce conjunto pela metade.
       await cli.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`insurance:${input.patientId}`]);
@@ -150,13 +148,7 @@ export class PatientInsuranceVerifiedRepository {
            ON CONFLICT (patient_id, raw_label) DO NOTHING`,
           [input.patientId, i + 1, accepted[i], source, aliases.get(accepted[i]) ?? null]);
       }
-      if (proprio) await cli.query('COMMIT');
-    } catch (err) {
-      if (proprio) await cli.query('ROLLBACK');
-      throw err;
-    } finally {
-      if (proprio) cli.release();
-    }
+    });
 
     if (rejected.length > 0) {
       // C1: contagem por motivo. O rótulo recusado NÃO sai.
@@ -186,10 +178,7 @@ export class PatientInsuranceVerifiedRepository {
     client?: PoolClient,
   ): Promise<{ codes: string[] }> {
     const wanted = Array.from(new Set(codes));
-    const proprio = !client;
-    const cli = client ?? await this.pool.connect();
-    try {
-      if (proprio) await cli.query('BEGIN');
+    return withClientOrActorContext(this.pool, client, async (cli) => {
       const catalogo = await cli.query<{ code: string }>('SELECT code FROM insurance_providers WHERE active');
       const ativos = new Set(catalogo.rows.map(r => r.code));
       const desconhecidos = wanted.filter(c => !ativos.has(c));
@@ -204,14 +193,8 @@ export class PatientInsuranceVerifiedRepository {
            ON CONFLICT (patient_id, raw_label) DO NOTHING`,
           [patientId, PANEL_ORDINAL_BASE + i, wanted[i], 'admin_manual', wanted[i]]);
       }
-      if (proprio) await cli.query('COMMIT');
       return { codes: wanted };
-    } catch (err) {
-      if (proprio) await cli.query('ROLLBACK');
-      throw err;
-    } finally {
-      if (proprio) cli.release();
-    }
+    });
   }
 
   /** Os CÓDIGOS distintos do paciente (qualquer origem), na ordem do catálogo — o que a ficha mostra. */

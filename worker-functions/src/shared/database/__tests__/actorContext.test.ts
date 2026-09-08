@@ -1,4 +1,4 @@
-import { withActorContext, resolveActor } from '../actorContext';
+import { withActorContext, withClientOrActorContext, resolveActor } from '../actorContext';
 import { loggingAls } from '@shared/logging';
 import { luzActor, staffActor } from '@shared/audit/actorSource';
 import { createRlsAwarePool } from '../rlsAwarePool';
@@ -267,6 +267,30 @@ describe('withActorContext — client fixado da request', () => {
     expect(
       client.query.mock.calls.some((c) => String(c[0]).includes('app.user_country')),
     ).toBe(false);
+  });
+});
+
+describe('withClientOrActorContext (LISTA spec 017: nunca pool.connect() cru nos repositórios de coleção)', () => {
+  it('com client: roda NELE, sem BEGIN/COMMIT próprios e sem tocar o pool (a transação é do chamador)', async () => {
+    const { pool, rawPool, client } = makePool();
+    const de = { query: jest.fn().mockResolvedValue({ rows: [] }) } as unknown as import('pg').PoolClient;
+    const out = await withClientOrActorContext(pool, de, async (c) => { await c.query('SELECT 1'); return 'ok'; });
+    expect(out).toBe('ok');
+    expect(rawPool.connect).not.toHaveBeenCalled();
+    expect(client.query).not.toHaveBeenCalled();
+    expect((de.query as jest.Mock).mock.calls.map((c) => String(c[0]))).toEqual(['SELECT 1']);
+  });
+
+  it('sem client: é o withActorContext — BEGIN, fn, COMMIT e release no client do pool', async () => {
+    const { pool, rawPool, client } = makePool();
+    const out = await withClientOrActorContext(pool, undefined, async (c) => { await c.query('SELECT 2'); return 'ok'; });
+    expect(out).toBe('ok');
+    expect(rawPool.connect).toHaveBeenCalledTimes(1);
+    const sqls = sqlCalls(client);
+    expect(sqls[0]).toBe('BEGIN');
+    expect(sqls).toContain('SELECT 2');
+    expect(sqls.at(-1)).toBe('COMMIT');
+    expect(client.release).toHaveBeenCalled();
   });
 });
 
