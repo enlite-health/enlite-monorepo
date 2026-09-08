@@ -9,7 +9,7 @@ import { destinationFor, KNOWN_TOKENS, type TabId } from '@presentation/utils/in
  * que o portão de REGISTERED exige: `phone` e `title_certificate`. Resultado:
  * `isStep1Complete` devolvia `true` para quem o backend recusava, a home exibia
  * o cadastro como concluído e a postulação era barrada com "registro
- * incompleto". Medido em produção: 23 prestadoras nesse estado exato — 21 delas
+ * incompleto". Medido em produção: 23 prestadoras nesse estado exato — 18 delas
  * por `title_certificate`, campo que esta lista nunca conferiu.
  *
  * A causa não foi a lista estar errada: foi EXISTIR uma lista aqui. Havia sete
@@ -113,6 +113,9 @@ function tabProgress(data: WorkerProgressResponse, tab: TabId): StepProgress {
   return {
     completedFields,
     totalFields,
+    // `totalFields === 0` é inalcançável hoje: toda aba tem token, e o teste de
+    // contrato prova isso ("toda aba tem pelo menos um token"). O guard fica
+    // porque, se algum dia deixar de ser verdade, dividir por zero daria NaN%.
     percentage: totalFields === 0 ? 100 : Math.round((completedFields / totalFields) * 100),
   };
 }

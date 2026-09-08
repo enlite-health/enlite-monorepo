@@ -151,25 +151,45 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
       // Só envia `phone` quando o campo foi editado de fato. Ver buildSavePayload.
       const phoneDirty = Boolean(dirtyFields.phone);
       const saved = await saveGeneralInfo(buildSavePayload(values, phoneDirty));
-      // Sincroniza o store com o que o SERVIDOR gravou — nunca com o payload
-      // que acabamos de mandar. Era essa a origem do defeito de 08/09/2026: o
-      // cliente afirmava o próprio envio, o telefone que o backend não
-      // persistiu seguia na tela (e no localStorage), e a prestadora via o
-      // número dela enquanto o sistema recusava a postulação por falta dele.
-      hydrateFromServer(saved, { authoritative: true });
-      // Rebaselina o dirty-tracking com o que o SERVIDOR gravou, não com o que
-      // mandamos. `keepValues: true` NÃO altera valor nenhum do form — só move
-      // o baseline interno de "sujo".
+
+      // O 200 desta rota tem DOIS ramos (contrato: `WorkerGeneralInfoOk200`).
+      // O degradado — `{ message, missingFields: null }` — significa "gravei,
+      // mas não consegui reler": vem SEM nenhum campo de perfil.
       //
-      // A diferença é o conserto: se o backend NÃO persistiu o telefone, o
-      // baseline dele fica vazio, o campo continua "sujo" e o próximo autosave
-      // o reenvia. Antes, rebaselinar com o payload enviado dava por gravado o
-      // que não foi, e o número nunca mais era mandado — o laço que travou 129
-      // cadastros.
-      form.reset({ ...values, phone: saved.phone ?? '' }, { keepValues: true });
-      // Modal de vínculo aberta → suprime o toast de sucesso (não abafar o fluxo).
+      // 🔒 Entregar esse objeto ao hidratador autoritativo APAGA o cadastro:
+      // campo ausente vira vazio, o store (persistido em localStorage) fica
+      // zerado e, ao remontar a aba, o autosave grava o cadastro VAZIO no banco
+      // — com toast verde. Medido pelo gate em 08/09/2026, e é pior que o bug
+      // que este arquivo conserta. Autoritativo só sobre um PERFIL de verdade.
+      const confirmado = typeof (saved as { id?: unknown }).id === 'string';
+
+      if (confirmado) {
+        // Sincroniza o store com o que o SERVIDOR gravou — nunca com o payload
+        // que acabamos de mandar. Era essa a origem do defeito de 08/09/2026: o
+        // cliente afirmava o próprio envio, o telefone que o backend não
+        // persistiu seguia na tela (e no localStorage), e a prestadora via o
+        // número dela enquanto o sistema recusava a postulação por falta dele.
+        hydrateFromServer(saved, { authoritative: true });
+        // Rebaselina o dirty com o que o SERVIDOR gravou, não com o que mandamos.
+        // `keepValues: true` NÃO altera valor nenhum — só move o baseline de
+        // "sujo". Se o backend NÃO persistiu o telefone, o baseline fica vazio,
+        // o campo continua sujo e o próximo autosave o reenvia. Era o laço que
+        // travou 129 cadastros.
+        form.reset({ ...values, phone: saved.phone ?? '' }, { keepValues: true });
+      }
+      // Escrita NÃO confirmada: não mexe no store nem no baseline. O que está na
+      // tela continua sendo o que a pessoa digitou, e segue "sujo" para ser
+      // reenviado — nunca afirmamos um estado que o servidor não confirmou.
+
+      // Modal de vínculo aberta → suprime o toast (não abafar o fluxo).
       if (!phoneConflictOpenRef.current) {
-        showToast(t('profile.saveSuccess', 'Información guardada con éxito'), 'success', 'profile-save');
+        showToast(
+          confirmado
+            ? t('profile.saveSuccess', 'Información guardada con éxito')
+            : t('profile.saveUnconfirmed', 'Guardado, pero no pudimos confirmar. Revisá los datos.'),
+          confirmado ? 'success' : 'error',
+          'profile-save',
+        );
       }
     },
     500,

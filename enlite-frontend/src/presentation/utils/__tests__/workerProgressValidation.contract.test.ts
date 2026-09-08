@@ -97,9 +97,22 @@ describe('CONTRATO: campos do portão de REGISTERED (banco) × mapa do frontend'
     }
   });
 
+  it('toda aba tem pelo menos um token — o guard de divisão por zero é inalcançável', () => {
+    // `tabProgress` tem um ramo `totalFields === 0 ? 100 : …` que nenhum teste
+    // cobre. Em vez de fingir cobertura com um caso artificial, provo aqui que
+    // ele é INALCANÇÁVEL: se um dia uma aba ficar sem token, este teste cai
+    // ANTES de o denominador zerar em produção.
+    const porAba: Record<string, number> = { general: 0, address: 0, availability: 0, documents: 0 };
+    for (const token of KNOWN_TOKENS) porAba[destinationFor(token).tab] += 1;
+
+    for (const [aba, n] of Object.entries(porAba)) {
+      expect(n, `aba ${aba} sem token nenhum`).toBeGreaterThan(0);
+    }
+  });
+
   it('os dois campos que causaram o incidente estão cobertos', () => {
     // Regressão nominal: `phone` e `title_certificate` eram exigidos pelo portão
-    // e ignorados pela lista do frontend. 21 das 23 pessoas travadas eram
+    // e ignorados pela lista do frontend. 18 das 23 pessoas travadas eram
     // `title_certificate`.
     expect(backendTokens).toContain('phone');
     expect(backendTokens).toContain('title_certificate');

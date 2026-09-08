@@ -100,6 +100,25 @@ describe('hidratação: precedência servidor × local', () => {
     });
   });
 
+  describe('preferredAgeRange — o servidor às vezes manda string, não array', () => {
+    it('string única vira array de um elemento', () => {
+      const merged = mergeGeneralInfo(
+        server({ preferredAgeRange: 'adults' as unknown as string[] }),
+        local(),
+      );
+      expect(merged.preferredAgeRange).toEqual(['adults']);
+    });
+
+    it('string única também no caminho autoritativo', () => {
+      const merged = mergeGeneralInfo(
+        server({ preferredAgeRange: 'elderly' as unknown as string[] }),
+        local(),
+        { authoritative: true },
+      );
+      expect(merged.preferredAgeRange).toEqual(['elderly']);
+    });
+  });
+
   describe('endereço de atendimento', () => {
     it('preserva o local no carregamento', () => {
       const merged = mergeServiceAddress(server({}), {

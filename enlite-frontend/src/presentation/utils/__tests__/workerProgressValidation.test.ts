@@ -66,7 +66,7 @@ describe('workerProgressValidation — completude derivada do backend', () => {
     });
 
     it('REGRESSÃO — sem título profissional a etapa 1 NÃO está completa', () => {
-      // 21 das 23 prestadoras travadas em produção estavam neste caso exato.
+      // 18 das 23 prestadoras travadas em produção envolviam este campo.
       expect(isStep1Complete(withMissing(['title_certificate']))).toBe(false);
     });
 

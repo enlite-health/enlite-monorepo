@@ -228,6 +228,47 @@ describe('GeneralInfoTab - Auto Save & Toast', () => {
     expect(mockUpdateGeneralInfo).not.toHaveBeenCalled();
   });
 
+  // ── Ramo DEGRADADO do 200 (BLOCKER do gate, 08/09/2026) ──────────────────
+  //
+  // O PUT tem dois ramos de 200. O degradado — `{ message, missingFields: null }`
+  // — vem SEM campos de perfil. Entregá-lo ao hidratador autoritativo apagava o
+  // cadastro do store e do localStorage, e no remount da aba o autosave gravava
+  // o cadastro VAZIO no banco, com toast verde. Pior que o bug que este arquivo
+  // conserta.
+
+  it('escrita NÃO confirmada não toca o store — nunca apaga o cadastro', async () => {
+    setStoreGeneralInfo({ fullName: 'Gabriel', lastName: 'Stein' });
+    mockSaveGeneralInfo.mockResolvedValueOnce({ message: 'General info saved', missingFields: null });
+    render(<GeneralInfoTab />);
+    const saveFn = vi.mocked(useAutoSave).mock.calls[0][0];
+    await act(async () => { await saveFn(); });
+
+    expect(mockHydrateFromServer).not.toHaveBeenCalled();
+    expect(mockUpdateGeneralInfo).not.toHaveBeenCalled();
+  });
+
+  it('escrita NÃO confirmada avisa a prestadora — não dá sucesso liso', async () => {
+    mockSaveGeneralInfo.mockResolvedValueOnce({ message: 'General info saved', missingFields: null });
+    render(<><GeneralInfoTab /><Toaster /></>);
+    const saveFn = vi.mocked(useAutoSave).mock.calls[0][0];
+    await act(async () => { await saveFn(); });
+
+    expect(await screen.findByTestId('toast-error')).toBeTruthy();
+    expect(screen.queryByTestId('toast-success')).toBeNull();
+  });
+
+  it('resposta SEM telefone: hidrata o perfil e rebaselina o dirty com vazio', async () => {
+    // O `?? ''` é o que mantém o campo "sujo" quando o backend não persistiu o
+    // número — sem ele, o telefone nunca mais é reenviado (o laço das 129).
+    const semTelefone = { ...serverAfterSave, phone: undefined };
+    mockSaveGeneralInfo.mockResolvedValueOnce(semTelefone);
+    render(<GeneralInfoTab />);
+    const saveFn = vi.mocked(useAutoSave).mock.calls[0][0];
+    await act(async () => { await saveFn(); });
+
+    expect(mockHydrateFromServer).toHaveBeenCalledWith(semTelefone, { authoritative: true });
+  });
+
   it('shows a success toast when auto-save succeeds', async () => {
     render(<><GeneralInfoTab /><Toaster /></>);
 
