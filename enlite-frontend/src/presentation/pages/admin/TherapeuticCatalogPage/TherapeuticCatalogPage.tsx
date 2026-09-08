@@ -36,7 +36,6 @@ interface Props {
 const KIND_KEY: Readonly<Record<TherapeuticCatalogKind, string>> = {
   'specific-objectives': 'specificObjectives',
   activities: 'activities',
-  'pathology-types': 'pathologyTypes',
 };
 
 export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
@@ -56,7 +55,6 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
   const writeGates = {
     'specific-objectives': useActionGate('catalog_therapeutic_objectives', 'write'),
     activities: useActionGate('catalog_therapeutic_activities', 'write'),
-    'pathology-types': useActionGate('catalog_pathology_types', 'write'),
   } as const;
   const writeGate = writeGates[kind];
 

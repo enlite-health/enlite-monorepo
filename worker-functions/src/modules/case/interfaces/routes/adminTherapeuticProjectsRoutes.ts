@@ -14,8 +14,8 @@ import { THERAPEUTIC_CATALOG_KINDS, THERAPEUTIC_CATALOG_RESOURCE } from '../../d
  * Células (design 1b: declarar É enforçar; o sync do catálogo publica no boot):
  *   · `patient_therapeutic_project:read|write` — o container da ficha (D286); `patient_clinical`
  *     é cumulativa e conferida no controller/projeção (lex C7).
- *   · `catalog_therapeutic_objectives|catalog_therapeutic_activities|catalog_pathology_types :read|write`
- *     — uma célula por catálogo (Gabriel, 08/09). A célula sai do `kind` da URL, por isso há UMA
+ *   · `catalog_therapeutic_objectives|catalog_therapeutic_activities :read|write` — uma célula por
+ *     catálogo (Gabriel, 08/09). Tipo de patologia NÃO tem catálogo: deriva do CID-11 (D163/D164). A célula sai do `kind` da URL, por isso há UMA
  *     rota por catálogo em vez de `:kind` dinâmico: célula é declarada, nunca calculada em runtime.
  *
  * `untilEnforced: 'admin'` nas escritas: até a família virar, papel admin — o mesmo amortecedor

@@ -40,7 +40,13 @@ export interface TherapeuticProjectVersion {
   generalObjective: string | null;
   specificObjectives: CatalogSnapshotItem[];
   activities: CatalogSnapshotItem[];
-  pathologyTypes: CatalogSnapshotItem[];
+  /**
+   * "Tipo de patología (segmento)" — DERIVADO no servidor dos `diagnoses` (capítulos CID-11 distintos:
+   * `id` = código do capítulo, `label` = título). Não se escolhe (Gabriel 08/09; D163/D164). Dado
+   * clínico como os diagnósticos: `null` sem `patient_clinical:read`. Máscara para o Ana Care
+   * (DEC-09): sai no PDF, não é campo da tela.
+   */
+  pathologyTypes: CatalogSnapshotItem[] | null;
   startDate: string;
   endDate: string;
   annulledAt: string | null;
@@ -61,7 +67,6 @@ export interface TherapeuticProjectVersionBody {
   generalObjective: string;
   specificObjectiveIds: string[];
   activityIds: string[];
-  pathologyTypeIds: string[];
   startDate: string;
   endDate: string;
 }
@@ -70,15 +75,15 @@ export type CreateTherapeuticProjectBody =
   | { mode: 'new'; version: TherapeuticProjectVersionBody }
   | { mode: 'edit'; fromVersionId: string; version: TherapeuticProjectVersionBody };
 
-export type TherapeuticCatalogKind = 'specific-objectives' | 'activities' | 'pathology-types';
+/** Só DOIS catálogos: o tipo de patologia deriva do CID-11 (sem tela, sem célula, sem menu). */
+export type TherapeuticCatalogKind = 'specific-objectives' | 'activities';
 
-export const THERAPEUTIC_CATALOG_KINDS: readonly TherapeuticCatalogKind[] = ['specific-objectives', 'activities', 'pathology-types'];
+export const THERAPEUTIC_CATALOG_KINDS: readonly TherapeuticCatalogKind[] = ['specific-objectives', 'activities'];
 
 /** Recurso da célula ABAC de cada catálogo — espelho do backend (`THERAPEUTIC_CATALOG_RESOURCE`). */
 export const THERAPEUTIC_CATALOG_RESOURCE: Readonly<Record<TherapeuticCatalogKind, string>> = {
   'specific-objectives': 'catalog_therapeutic_objectives',
   activities: 'catalog_therapeutic_activities',
-  'pathology-types': 'catalog_pathology_types',
 };
 
 export interface TherapeuticCatalogItem {

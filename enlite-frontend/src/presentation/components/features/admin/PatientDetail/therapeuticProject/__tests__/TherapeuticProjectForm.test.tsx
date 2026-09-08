@@ -99,7 +99,6 @@ const item = (id: string, label: string): TherapeuticCatalogItem => ({
 const CATALOGOS: TherapeuticCatalogs = {
   'specific-objectives': [item('so1', 'Objetivo 1'), item('so2', 'Objetivo 2')],
   activities: [item('ac1', 'Atividade 1')],
-  'pathology-types': [item('pt1', 'Neurológica')],
 };
 
 const DIAGS: PatientDiagnosisDetail[] = [
@@ -180,7 +179,6 @@ function preencherTudo(): void {
   fireEvent.change(screen.getByTestId('tp-generalObjective'), { target: { value: '  objetivo geral  ' } });
   alternarNoMulti('tp-specificObjectives', 'Objetivo 1');
   alternarNoMulti('tp-activities', 'Atividade 1');
-  alternarNoMulti('tp-pathologyTypes', 'Neurológica');
   fireEvent.change(screen.getByTestId('tp-startDate'), { target: { value: '2026-09-01' } });
   fireEvent.change(screen.getByTestId('tp-endDate'), { target: { value: '2026-12-01' } });
 }
@@ -295,7 +293,6 @@ describe('"Salvar" fica travado até TODA regra passar', () => {
     ['objetivo geral só com espaço', () => fireEvent.change(screen.getByTestId('tp-generalObjective'), { target: { value: '   ' } })],
     ['objetivos específicos desmarcados', () => alternarNoMulti('tp-specificObjectives', 'Objetivo 1')],
     ['atividades desmarcadas', () => alternarNoMulti('tp-activities', 'Atividade 1')],
-    ['tipos de patologia desmarcados', () => alternarNoMulti('tp-pathologyTypes', 'Neurológica')],
     ['data de início apagada', () => fireEvent.change(screen.getByTestId('tp-startDate'), { target: { value: '' } })],
     ['data de término apagada', () => fireEvent.change(screen.getByTestId('tp-endDate'), { target: { value: '' } })],
   ])('%s → continua travado', (_nome, quebrar) => {
@@ -373,11 +370,13 @@ describe('submissão', () => {
       generalObjective: 'objetivo geral',
       specificObjectiveIds: ['so1'],
       activityIds: ['ac1'],
-      pathologyTypeIds: ['pt1'],
       startDate: '2026-09-01',
       endDate: '2026-12-01',
     });
     expect(Object.keys(onSubmit.mock.calls[0][0])).not.toContain('major');
+    // O tipo de patologia não é escolhido: deriva do CID-11 no servidor (Gabriel 08/09) — nem campo, nem chave no corpo.
+    expect(Object.keys(onSubmit.mock.calls[0][0])).not.toContain('pathologyTypeIds');
+    expect(screen.queryByTestId('tp-pathologyTypes')).not.toBeInTheDocument();
   });
 
   it('🔴 `submit` do formulário com regra pendente NÃO chama `onSubmit` (a trava não é só o `disabled`)', () => {

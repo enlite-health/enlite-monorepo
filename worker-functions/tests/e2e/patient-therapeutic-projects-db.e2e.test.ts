@@ -100,21 +100,25 @@ describe('416 — projeto terapêutico versionado e imutável (banco real)', () 
     serviceId = s.rows[0].id;
   });
 
-  it('1. seed dos 3 catálogos: 8 objetivos, 13 atividades, 8 tipos de patologia — e sem "ICHOM" em lugar nenhum', async () => {
+  it('1. seed dos 2 catálogos: 8 objetivos, 13 atividades; `pathology_types` DEPRECADA pela 418 (8 linhas, 0 ativas) — e sem "ICHOM"', async () => {
     const counts = await admin.query<{ t: string; n: number }>(
       `SELECT 'obj' AS t, count(*)::int AS n FROM therapeutic_specific_objectives WHERE active
        UNION ALL SELECT 'act', count(*)::int FROM therapeutic_activities WHERE active
-       UNION ALL SELECT 'pat', count(*)::int FROM pathology_types WHERE active`,
+       UNION ALL SELECT 'pat_total', count(*)::int FROM pathology_types
+       UNION ALL SELECT 'pat_ativas', count(*)::int FROM pathology_types WHERE active`,
     );
-    expect(Object.fromEntries(counts.rows.map((r) => [r.t, r.n]))).toEqual({ obj: 8, act: 13, pat: 8 });
+    // Tipo de patologia deriva do CID-11 (D163/D164): as 8 opções da 415 ficam (versões antigas apontam), todas inativas.
+    expect(Object.fromEntries(counts.rows.map((r) => [r.t, r.n]))).toEqual({ obj: 8, act: 13, pat_total: 8, pat_ativas: 0 });
+    const comentario = await admin.query<{ c: string }>(`SELECT obj_description('pathology_types'::regclass, 'pg_class') AS c`);
+    expect(comentario.rows[0].c).toMatch(/^DEPRECADA \(418/);
     const ichom = await admin.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM pathology_types WHERE label ILIKE '%ichom%'`,
     );
     expect(ichom.rows[0].n).toBe(0);
-    // Idempotência do seed: inserir um rótulo já ativo cai no índice único parcial.
+    // Idempotência do seed dos catálogos vivos: inserir um rótulo já ativo cai no índice único parcial.
     await expect(
-      admin.query(`INSERT INTO pathology_types (label) VALUES ('tdah')`),
-    ).rejects.toThrow(/uq_pathology_types_label_ativo/);
+      admin.query(`INSERT INTO therapeutic_activities (label) VALUES ((SELECT label FROM therapeutic_activities WHERE active LIMIT 1))`),
+    ).rejects.toThrow(/uq_therapeutic_activities_label_ativo/);
   });
 
   it('2. country vem do paciente por trigger; (patient, major, minor) é único', async () => {

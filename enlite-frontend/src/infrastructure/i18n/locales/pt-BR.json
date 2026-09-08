@@ -1107,8 +1107,7 @@
       "templateCatalog": "Modelos",
       "templateDrafts": "Registrar mensagem",
       "catalogObjectives": "Objetivos específicos",
-      "catalogActivities": "Rotina e atividades",
-      "catalogPathologyTypes": "Tipos de patologia"
+      "catalogActivities": "Rotina e atividades"
     },
     "dedup": {
       "title": "Central de Duplicatas",
@@ -3152,7 +3151,6 @@
           "symptoms": "Sintomas",
           "observations": "Observações",
           "deadlines": "Prazos",
-          "pathologyTypes": "Tipo de patologia (segmento)",
           "tableVersion": "Versão",
           "tableAuthor": "Autor",
           "tableStartDate": "Data de Início",
@@ -4265,9 +4263,6 @@
         },
         "patients.catalogActivities": {
           "label": "Pacientes: Catálogo de rotina e atividades"
-        },
-        "patients.catalogPathologyTypes": {
-          "label": "Pacientes: Catálogo de tipos de patologia"
         }
       }
     },
@@ -4838,10 +4833,6 @@
         "activities": {
           "title": "Rotina e atividades do projeto terapêutico",
           "subtitle": "As opções de \"Rutina y Actividades\" do projeto terapêutico. Editadas aqui, sem deploy. Desativar não apaga: versões antigas guardam o texto que tinham."
-        },
-        "pathologyTypes": {
-          "title": "Tipos de patologia (segmento)",
-          "subtitle": "O segmento clínico escolhido no projeto terapêutico — o mesmo padrão do Ana Care. Lista própria da Enlite. Editada aqui, sem deploy; desativar não apaga."
         }
       },
       "newItem": "Nova opção",

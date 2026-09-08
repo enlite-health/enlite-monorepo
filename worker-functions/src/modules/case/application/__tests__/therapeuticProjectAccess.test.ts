@@ -23,6 +23,7 @@ import {
   PATIENT_SERVICES_READ_CELL,
   PATIENT_CLINICAL_WRITE_CELL,
   THERAPEUTIC_PROJECT_RESOURCE,
+  THERAPEUTIC_CLINICAL_FIELDS,
 } from '../therapeuticProjectAccess';
 
 const PROJETO_READ = `${THERAPEUTIC_PROJECT_RESOURCE}:read`;
@@ -43,7 +44,7 @@ function versao(over: Partial<TherapeuticProjectVersion> = {}): TherapeuticProje
     generalObjective: 'objetivo geral do titular',
     specificObjectives: [{ id: 'o-1', label: 'Vínculo terapéutico' }],
     activities: [{ id: 'a-1', label: 'Acompañamiento escolar' }],
-    pathologyTypes: [{ id: 'pt-1', label: 'Neurodesarrollo' }],
+    pathologyTypes: [{ id: '06', label: 'Trastornos mentales, del comportamiento y del neurodesarrollo' }],
     startDate: '2026-01-01',
     endDate: '2026-06-30',
     annulledAt: null,
@@ -160,8 +161,18 @@ describe('projectTherapeuticVersionForActor', () => {
       createdByName: 'Ana Joulie',
       specificObjectives: [{ id: 'o-1', label: 'Vínculo terapéutico' }],
       activities: [{ id: 'a-1', label: 'Acompañamiento escolar' }],
-      pathologyTypes: [{ id: 'pt-1', label: 'Neurodesarrollo' }],
     });
+    // O tipo de patologia é o CAPÍTULO CID-11 derivado dos diagnósticos (D163/D164): `06` sozinho
+    // revela saúde mental (OP-18) — sai `null` como os `diagnoses` de que vem, e o marcador é o mesmo.
+    expect(out.pathologyTypes).toBeNull();
+    expect(JSON.stringify(out)).not.toContain('Trastornos mentales');
+  });
+
+  it('paridade: os campos zerados sem a célula clínica são EXATAMENTE `THERAPEUTIC_CLINICAL_FIELDS` (campo novo não entra de um lado só)', () => {
+    const cheia = versao();
+    const out = projectTherapeuticVersionForActor(cheia, ['patient_services:read']) as unknown as Record<string, unknown>;
+    const zerados = Object.keys(out).filter((k) => out[k] === null && (cheia as unknown as Record<string, unknown>)[k] !== null);
+    expect(zerados.sort()).toEqual([...THERAPEUTIC_CLINICAL_FIELDS].sort());
   });
 
   it('lex C8: o marcador é CONSTANTE — versão com e sem conteúdo clínico dão a MESMA resposta', () => {

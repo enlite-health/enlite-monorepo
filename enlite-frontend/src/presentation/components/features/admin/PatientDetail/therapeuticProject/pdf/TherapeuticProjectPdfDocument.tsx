@@ -175,7 +175,10 @@ export function TherapeuticProjectPdfDocument({ input }: { input: TherapeuticPro
         {/* II — só CID-11 (Gabriel Q5); sob patient_clinical:read (C7). */}
         <SectionTitle>{PDF_SECTIONS.diagnosis}</SectionTitle>
         {clinicalRedacted || v.diagnoses === null ? <Redacted /> : v.diagnoses.map((d) => <Bullet key={d.uri}>{d.title}</Bullet>)}
-        <Field label={PDF_LABELS.pathologyType} value={v.pathologyTypes.map((p) => p.label).join(', ')} />
+        {/* Derivado dos CID-11 (capítulo; D163/D164) — dado clínico como eles: redigido junto. */}
+        {clinicalRedacted || v.pathologyTypes === null
+          ? <Redacted />
+          : <Field label={PDF_LABELS.pathologyType} value={v.pathologyTypes.map((p) => p.label).join(', ')} />}
 
         <SectionTitle>{PDF_SECTIONS.careTeam}</SectionTitle>
         {input.careTeam ? (input.careTeam.length === 0 ? <Text style={styles.paragraph}>{PDF_LABELS.notInformed}</Text> : input.careTeam.map((n, i) => <Bullet key={i}>{n}</Bullet>)) : <Redacted />}

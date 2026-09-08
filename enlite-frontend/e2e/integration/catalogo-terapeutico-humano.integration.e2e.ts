@@ -132,14 +132,18 @@ test.describe('spec 017 — catálogo do projeto terapêutico: um HUMANO lista, 
     expect(((await daTela.json()) as { data: { items: { id: string }[] } }).data.items.map((i) => i.id)).toContain(novoId);
   });
 
-  test('as outras duas rotas abrem com o próprio título (mesmo componente, `kind` diferente)', async ({ page }) => {
+  test('a outra rota abre com o próprio título (mesmo componente, `kind` diferente); "tipos de patología" NÃO tem tela nem menu', async ({ page }) => {
     await loginComoHumano(page, STAFF_EMAIL, 'E2E Catalogo');
     await page.goto('/admin/catalogos/actividades');
     await expect(page.getByRole('heading', { name: 'Rutina y actividades del proyecto terapéutico' })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('therapeutic-catalog-table').locator('[data-testid^="therapeutic-catalog-row-"]')).toHaveCount(Number(runSQL(`SELECT count(*) FROM therapeutic_activities`)));
+    // Gabriel 08/09: tipo de patologia vem do CID-11 — "não tem motivo para um menu que adiciona isso".
+    await expect(page.getByRole('link', { name: 'Rutina y actividades' })).toBeVisible();
+    await expect(page.getByRole('link', { name: /Tipos de patolog/ })).toHaveCount(0);
     await page.goto('/admin/catalogos/tipos-de-patologia');
-    await expect(page.getByRole('heading', { name: 'Tipos de patología (segmento)' })).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByTestId('therapeutic-catalog-table').locator('[data-testid^="therapeutic-catalog-row-"]')).toHaveCount(Number(runSQL(`SELECT count(*) FROM pathology_types`)));
-    await expect(page.getByTestId('therapeutic-catalog-table')).not.toContainText('ICHOM');
+    // Rota inexistente cai no `path="*"` → raiz; a tela do catálogo não renderiza.
+    await expect(page.getByRole('heading', { name: /Tipos de patolog/ })).toHaveCount(0);
+    await expect(page).not.toHaveURL(/tipos-de-patologia/, { timeout: 15_000 });
+    await expect(page.getByTestId('therapeutic-catalog-table')).toHaveCount(0);
   });
 });

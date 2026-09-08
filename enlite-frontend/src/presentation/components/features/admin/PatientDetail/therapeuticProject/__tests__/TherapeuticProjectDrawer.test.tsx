@@ -389,7 +389,6 @@ describe('salvar — `new` cria a major seguinte, `edit` a minor da origem', () 
     fireEvent.change(screen.getByTestId('tp-generalObjective'), { target: { value: 'objetivo novo' } });
     alternarNoMulti('tp-specificObjectives', 'Rótulo specific-objectives');
     alternarNoMulti('tp-activities', 'Rótulo activities');
-    alternarNoMulti('tp-pathologyTypes', 'Rótulo pathology-types');
     fireEvent.change(screen.getByTestId('tp-startDate'), { target: { value: '2026-09-01' } });
     fireEvent.change(screen.getByTestId('tp-endDate'), { target: { value: '2026-12-01' } });
 
@@ -405,7 +404,6 @@ describe('salvar — `new` cria a major seguinte, `edit` a minor da origem', () 
         generalObjective: 'objetivo novo',
         specificObjectiveIds: ['specific-objectives-1'],
         activityIds: ['activities-1'],
-        pathologyTypeIds: ['pathology-types-1'],
         startDate: '2026-09-01',
         endDate: '2026-12-01',
       },

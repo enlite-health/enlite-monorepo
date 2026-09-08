@@ -91,7 +91,6 @@ describe('TherapeuticCatalogPage — os 3 catálogos, uma tela cada (D299, decis
   it.each([
     ['specific-objectives', COPY.kinds.specificObjectives],
     ['activities', COPY.kinds.activities],
-    ['pathology-types', COPY.kinds.pathologyTypes],
   ] as const)('kind %s: título e subtítulo próprios', async (kind, copy) => {
     await renderPage(kind);
     // ⚠️ `getByRole` e não o `data-testid` do código: o atom `Heading` NÃO repassa `data-*`
@@ -120,7 +119,7 @@ describe('TherapeuticCatalogPage — os 3 catálogos, uma tela cada (D299, decis
   });
 
   it('o default export é o mesmo componente (é como a rota o carrega)', async () => {
-    render(<TherapeuticCatalogPageDefault kind="pathology-types" />);
+    render(<TherapeuticCatalogPageDefault kind="activities" />);
     expect(await screen.findByTestId('therapeutic-catalog-table')).toBeInTheDocument();
   });
 
@@ -200,7 +199,7 @@ describe('TherapeuticCatalogPage — criar e renomear', () => {
   });
 
   it('editar: a modal abre com o texto atual e o salvar vira PATCH naquele id (D299 — sem DELETE)', async () => {
-    await renderPage('pathology-types');
+    await renderPage('activities');
     fireEvent.click(screen.getByTestId('therapeutic-catalog-edit-ativa'));
 
     expect(screen.getByTestId('therapeutic-catalog-label-input')).toHaveValue('Mejorar autonomía');
@@ -208,7 +207,7 @@ describe('TherapeuticCatalogPage — criar e renomear', () => {
     fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
 
     // A ordem já preenchida na modal viaja junto — renomear não perde a posição da opção.
-    await waitFor(() => expect(updateCatalogItem).toHaveBeenCalledWith('pathology-types', 'ativa', { label: 'Autonomía en el hogar', sortOrder: 1 }));
+    await waitFor(() => expect(updateCatalogItem).toHaveBeenCalledWith('activities', 'ativa', { label: 'Autonomía en el hogar', sortOrder: 1 }));
     await waitFor(() => expect(screen.queryByTestId('therapeutic-catalog-form-modal')).toBeNull());
     expect(listCatalog).toHaveBeenCalledTimes(2);
     expect(createCatalogItem).not.toHaveBeenCalled();
@@ -304,14 +303,13 @@ describe('TherapeuticCatalogPage — trava de rota pela célula de leitura (D286
 
   it('🔴 engine ON com a célula de OUTRO catálogo não abre esta tela', async () => {
     comEnforcement(['catalog_therapeutic_activities:read'], 'on');
-    render(<TherapeuticCatalogPage kind="pathology-types" />);
+    render(<TherapeuticCatalogPage kind="specific-objectives" />);
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('/admin', { replace: true }));
   });
 
   it.each([
     ['specific-objectives', 'catalog_therapeutic_objectives'],
     ['activities', 'catalog_therapeutic_activities'],
-    ['pathology-types', 'catalog_pathology_types'],
   ] as const)('engine ON com %s:read não redireciona', async (kind, resource) => {
     comEnforcement([`${resource}:read`], 'on');
     render(<TherapeuticCatalogPage kind={kind} />);
@@ -349,7 +347,6 @@ describe('TherapeuticCatalogPage — write-gate das ações (D269)', () => {
   it.each([
     ['specific-objectives', 'catalog_therapeutic_objectives'],
     ['activities', 'catalog_therapeutic_activities'],
-    ['pathology-types', 'catalog_pathology_types'],
   ] as const)('engine ON com %s:write — as ações existem', async (kind, resource) => {
     comEnforcement([`${resource}:read`, `${resource}:write`], 'on');
     render(<TherapeuticCatalogPage kind={kind} />);
@@ -361,8 +358,8 @@ describe('TherapeuticCatalogPage — write-gate das ações (D269)', () => {
   });
 
   it('🔴 a escrita de OUTRO catálogo não libera as ações desta tela', async () => {
-    comEnforcement(['catalog_pathology_types:read', 'catalog_therapeutic_activities:write'], 'on');
-    render(<TherapeuticCatalogPage kind="pathology-types" />);
+    comEnforcement(['catalog_therapeutic_objectives:read', 'catalog_therapeutic_activities:write'], 'on');
+    render(<TherapeuticCatalogPage kind="specific-objectives" />);
     await screen.findByTestId('therapeutic-catalog-table');
 
     expect(screen.queryByTestId('therapeutic-catalog-edit-ativa')).not.toBeInTheDocument();

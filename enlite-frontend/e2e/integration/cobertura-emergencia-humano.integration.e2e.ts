@@ -135,12 +135,11 @@ test.describe('417/D301 — contatos de emergência da cobertura e o PDF por ser
     // As versões entram por SQL (o fluxo humano de criar/editar tem spec próprio); o export é humano.
     const obj = runSQL(`SELECT id FROM therapeutic_specific_objectives WHERE active ORDER BY sort_order LIMIT 1`).trim();
     const act = runSQL(`SELECT id FROM therapeutic_activities WHERE active ORDER BY sort_order LIMIT 1`).trim();
-    const pat = runSQL(`SELECT id FROM pathology_types WHERE active ORDER BY sort_order LIMIT 1`).trim();
     const inserirVersao = (major: number, svc: string, modality: string): string => runSQL(`INSERT INTO patient_therapeutic_projects (patient_id, major, minor, contracted_service_id, modality, diagnoses, clinical_context, general_objective, specific_objectives, activities, pathology_types, start_date, end_date, created_by)
       VALUES ('${seed.patientId}', ${major}, 0, '${svc}', '${modality}', '[{"uri":"http://id.who.int/icd/entity/e2e-417","title":"Diagnóstico sintético 417"}]', 'Contexto sintético 417', 'Objetivo sintético 417 v${major}',
         (SELECT jsonb_build_array(jsonb_build_object('id', id, 'label', label)) FROM therapeutic_specific_objectives WHERE id = '${obj}'),
         (SELECT jsonb_build_array(jsonb_build_object('id', id, 'label', label)) FROM therapeutic_activities WHERE id = '${act}'),
-        (SELECT jsonb_build_array(jsonb_build_object('id', id, 'label', label)) FROM pathology_types WHERE id = '${pat}'),
+        '[{"id":"06","label":"Capítulo 06 sintético 417"}]',
         '2026-09-01', '2026-12-31', 'e2e-417') RETURNING id`).split('\n')[0].trim();
     const v1 = inserirVersao(1, serviceId, 'ONLINE');
     expect(v1).toMatch(/^[0-9a-f-]{36}$/);

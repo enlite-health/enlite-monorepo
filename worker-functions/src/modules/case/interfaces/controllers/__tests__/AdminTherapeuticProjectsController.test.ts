@@ -43,7 +43,6 @@ const CORPO_NOVO = {
     generalObjective: 'mejorar autonomía',
     specificObjectiveIds: [OBJ_ID],
     activityIds: [ACT_ID],
-    pathologyTypeIds: [PAT_ID],
     startDate: '2026-01-01',
     endDate: '2026-06-30',
   },
@@ -64,7 +63,7 @@ const VERSAO = {
   generalObjective: 'mejorar autonomía',
   specificObjectives: [{ id: OBJ_ID, label: 'Objetivo A' }],
   activities: [{ id: ACT_ID, label: 'Atividade A' }],
-  pathologyTypes: [{ id: PAT_ID, label: 'Neuro' }],
+  pathologyTypes: [{ id: '06', label: 'Trastornos mentales, del comportamiento y del neurodesarrollo' }],
   startDate: '2026-01-01',
   endDate: '2026-06-30',
   annulledAt: null,
@@ -387,10 +386,10 @@ describe('AdminTherapeuticProjectsController', () => {
 
     it('`?includeInactive=true` (a string exata) liga os inativos; qualquer outro valor não', async () => {
       const catalogs = { list: jest.fn().mockResolvedValue([]) };
-      await ctrl({}, catalogs).listCatalog('pathology-types', mockReq({ query: { includeInactive: 'true' } }), mockRes());
-      expect(catalogs.list).toHaveBeenCalledWith('pathology-types', { includeInactive: true });
-      await ctrl({}, catalogs).listCatalog('pathology-types', mockReq({ query: { includeInactive: '1' } }), mockRes());
-      expect(catalogs.list).toHaveBeenLastCalledWith('pathology-types', { includeInactive: false });
+      await ctrl({}, catalogs).listCatalog('specific-objectives', mockReq({ query: { includeInactive: 'true' } }), mockRes());
+      expect(catalogs.list).toHaveBeenCalledWith('specific-objectives', { includeInactive: true });
+      await ctrl({}, catalogs).listCatalog('specific-objectives', mockReq({ query: { includeInactive: '1' } }), mockRes());
+      expect(catalogs.list).toHaveBeenLastCalledWith('specific-objectives', { includeInactive: false });
     });
 
     it('500 quando o repo lança — o log leva o kind', async () => {
@@ -490,11 +489,10 @@ describe('AdminTherapeuticProjectsController', () => {
     it('200 repassando o patch parcial + o ator (a baixa é `active:false`, nunca DELETE)', async () => {
       const catalogs = { update: jest.fn().mockResolvedValue({ ...ITEM, active: false }) };
       const res = mockRes();
-      // Uma chamada por linha: o V6 do verificador casa "pathology" + "body" na MESMA linha como saída externa (falso positivo de forma).
       const desativar = mockReq({ params: { itemId: ITEM_ID }, body: { active: false } });
-      await ctrl({}, catalogs).updateCatalogItem('pathology-types', desativar, res);
+      await ctrl({}, catalogs).updateCatalogItem('activities', desativar, res);
       expect(res.status).toHaveBeenCalledWith(200);
-      expect(catalogs.update).toHaveBeenCalledWith('pathology-types', ITEM_ID, { active: false, actorUid: 'uid-1' });
+      expect(catalogs.update).toHaveBeenCalledWith('activities', ITEM_ID, { active: false, actorUid: 'uid-1' });
       expect(corpoDaResposta(res).data).toMatchObject({ active: false });
     });
 

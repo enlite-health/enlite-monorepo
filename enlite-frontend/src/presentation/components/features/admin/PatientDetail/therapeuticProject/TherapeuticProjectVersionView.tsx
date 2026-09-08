@@ -70,9 +70,7 @@ export function TherapeuticProjectVersionView({ version: v, services, compact = 
       </div>
       <div className="flex flex-col gap-4">
         <Row label={tc('activitiesPlan')} testId="tpv-activities"><ListValue items={compact ? v.activities.slice(0, 3) : v.activities} /></Row>
-        <Row label={tc('pathologyTypes')} testId="tpv-pathology">
-          <Text as="span" size="sm" color="primary">{v.pathologyTypes.map((p) => p.label).join(', ') || '—'}</Text>
-        </Row>
+        {/* "Tipo de patología" não aparece na tela: é máscara derivada do CID-11 para o Ana Care (DEC-09) — sai só no PDF. */}
         <Row label={tc('deadlines')} testId="tpv-deadlines">
           <Text as="span" size="sm" color="primary">{formatIsoDateEsAr(v.startDate)} - {formatIsoDateEsAr(v.endDate)}</Text>
         </Row>

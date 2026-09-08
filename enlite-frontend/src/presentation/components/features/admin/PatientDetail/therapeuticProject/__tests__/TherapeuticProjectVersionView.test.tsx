@@ -152,7 +152,9 @@ describe('modo completo (drawer) × compacto (card)', () => {
     expect(screen.getByText('Trastorno del espectro autista')).toBeInTheDocument();
     expect(screen.getByTestId('tpv-service')).toHaveTextContent('Acompanhante Terapêutico');
     expect(screen.getByTestId('tpv-modality')).toHaveTextContent(ptBR.admin.patients.detail.therapeuticProjectCard.modalityOptions.IN_PERSON);
-    expect(screen.getByTestId('tpv-pathology')).toHaveTextContent('Neurológica, Psiquiátrica');
+    // DEC-09: o tipo de patologia (capítulo CID-11 derivado) é máscara para o Ana Care — NÃO aparece na tela, só no PDF.
+    expect(screen.queryByTestId('tpv-pathology')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Neurológica/)).not.toBeInTheDocument();
     expect(screen.getByTestId('tpv-deadlines')).toHaveTextContent('01/09/2026 - 01/12/2026');
   });
 });
@@ -197,14 +199,13 @@ describe('🔒 lex C7 — versão redigida mostra o RÓTULO, nunca vazio', () =>
 // ── D113: `[]` não é `null` ──────────────────────────────────────────────────
 
 describe('🔒 D113 — lista VAZIA mostra `—` (não é o rótulo de redigido)', () => {
-  it('CID `[]`, objetivos `[]`, atividades `[]` e patologias `[]` viram `—`', () => {
+  it('CID `[]`, objetivos `[]` e atividades `[]` viram `—`', () => {
     montar({ diagnoses: [], specificObjectives: [], activities: [], pathologyTypes: [] });
 
     expect(screen.getByTestId('tpv-cid')).toHaveTextContent('—');
     expect(screen.getByTestId('tpv-cid')).not.toHaveTextContent(REDIGIDO);
     expect(screen.getByTestId('tpv-specific')).toHaveTextContent('—');
     expect(screen.getByTestId('tpv-activities')).toHaveTextContent('—');
-    expect(screen.getByTestId('tpv-pathology')).toHaveTextContent('—');
     expect(screen.getByTestId('tpv-specific').querySelectorAll('li')).toHaveLength(0);
   });
 });

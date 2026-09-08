@@ -23,27 +23,37 @@ export interface CatalogSnapshotItem {
   label: string;
 }
 
-export type TherapeuticCatalogKind = 'specific-objectives' | 'activities' | 'pathology-types';
+/**
+ * Só DOIS catálogos mantidos à mão. "Tipo de patología" NÃO é catálogo (Gabriel, 08/09: "vem do
+ * CID-11, não tem motivo para um menu que adiciona isso"; D163/D164): é DERIVADO dos diagnósticos
+ * CID-11 da versão — ver `pathologyTypes` abaixo. A tabela `pathology_types` da 415 fica
+ * deprecada pela 418; a célula `catalog_pathology_types` sumiu do código e o sync a marca.
+ */
+export type TherapeuticCatalogKind = 'specific-objectives' | 'activities';
 
-export const THERAPEUTIC_CATALOG_KINDS: readonly TherapeuticCatalogKind[] = [
-  'specific-objectives',
-  'activities',
-  'pathology-types',
-];
+export const THERAPEUTIC_CATALOG_KINDS: readonly TherapeuticCatalogKind[] = ['specific-objectives', 'activities'];
 
 /** Tabela de cada catálogo (migration 415). Fonte única — o repositório monta o SQL por aqui. */
 export const THERAPEUTIC_CATALOG_TABLE: Readonly<Record<TherapeuticCatalogKind, string>> = {
   'specific-objectives': 'therapeutic_specific_objectives',
   activities: 'therapeutic_activities',
-  'pathology-types': 'pathology_types',
 };
 
 /** Recurso da célula ABAC de cada catálogo (D299.3: uma célula por catálogo, família admin.patients). */
 export const THERAPEUTIC_CATALOG_RESOURCE: Readonly<Record<TherapeuticCatalogKind, string>> = {
   'specific-objectives': 'catalog_therapeutic_objectives',
   activities: 'catalog_therapeutic_activities',
-  'pathology-types': 'catalog_pathology_types',
 };
+
+/**
+ * "Tipo de patología (segmento)" — DERIVADO, nunca escolhido. `id` é o código do capítulo CID-11
+ * (ex.: `06`), `label` o título do capítulo em espanhol, resolvidos pela `TerminologyPort` no
+ * momento do INSERT e congelados na versão (mesma régua de `patient_diagnoses.concept_group`,
+ * spec 016). Capítulo, e não bloco, é a suspensão declarada da D164 (D261: bloco não tem código
+ * nem está no catálogo local; `2026-08-05a#ABERTO-12` segue no Marcel). Máscara para o padrão do
+ * Ana Care (`2026-08-26a#DEC-09`): sai no PDF, não é campo da tela.
+ */
+export type PathologySegment = CatalogSnapshotItem;
 
 /** Modalidade do acompanhamento — Ana (gestão) 08/09: "presencial, on-line e híbrida" (D301). */
 export const THERAPEUTIC_MODALITIES = ['IN_PERSON', 'ONLINE', 'HYBRID'] as const;
@@ -67,7 +77,8 @@ export interface TherapeuticProjectVersion {
   generalObjective: string;
   specificObjectives: CatalogSnapshotItem[];
   activities: CatalogSnapshotItem[];
-  pathologyTypes: CatalogSnapshotItem[];
+  /** Derivado dos `diagnoses` (capítulos CID-11 distintos, ordenados por código). Ver `PathologySegment`. */
+  pathologyTypes: PathologySegment[];
   startDate: string;
   endDate: string;
   annulledAt: string | null;

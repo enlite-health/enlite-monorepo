@@ -187,15 +187,6 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
     },
     {
       icon: (
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.5 12.75l6 6 9-13.5" />
-        </svg>
-      ),
-      label: t('admin.nav.catalogPathologyTypes', 'Tipos de patología'),
-      href: '/admin/catalogos/tipos-de-patologia',
-    },
-    {
-      icon: (
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3M5 11h14M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2zm7 9v-4m-2 2h4" />
             </svg>

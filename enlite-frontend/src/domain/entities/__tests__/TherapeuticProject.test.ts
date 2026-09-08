@@ -85,15 +85,15 @@ describe('currentVersion — a versão "em andamento" do card (D299)', () => {
 });
 
 describe('constantes espelhadas do backend', () => {
-  it('os 3 kinds do catálogo — uma TELA e uma CÉLULA por lista (D286, decisão do Gabriel 08/09)', () => {
-    expect(THERAPEUTIC_CATALOG_KINDS).toEqual(['specific-objectives', 'activities', 'pathology-types']);
+  it('os 2 kinds do catálogo — uma TELA e uma CÉLULA por lista; tipo de patologia NÃO é catálogo (deriva do CID-11, Gabriel 08/09)', () => {
+    expect(THERAPEUTIC_CATALOG_KINDS).toEqual(['specific-objectives', 'activities']);
+    expect(THERAPEUTIC_CATALOG_KINDS).not.toContain('pathology-types');
   });
 
   it('cada kind aponta para o recurso ABAC do backend (`THERAPEUTIC_CATALOG_RESOURCE`)', () => {
     expect(THERAPEUTIC_CATALOG_RESOURCE).toEqual({
       'specific-objectives': 'catalog_therapeutic_objectives',
       activities: 'catalog_therapeutic_activities',
-      'pathology-types': 'catalog_pathology_types',
     });
     // Todo kind declarado tem recurso — senão a tela gatearia por `undefined`.
     for (const kind of THERAPEUTIC_CATALOG_KINDS) {
