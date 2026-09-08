@@ -191,7 +191,7 @@ export default defineConfig({
         // ContractedServiceProvidersSection) eram INALCANÇÁVEIS via clique simulado — extraídos
         // em `deactivateService`/`runAssociateProvider` exportados e testados diretamente. Os 3
         // arquivos medem 100 nos 4 eixos agora.
-        '**/src/presentation/components/features/admin/PatientDetail/edit/{ContractedServiceFormRow,ContractedServiceProvidersSection,PatientContractedServicesEditDrawer}.tsx': {
+        '**/src/presentation/components/features/admin/PatientDetail/edit/{ContractedServiceFormRow,ContractedServiceProvidersSection,PatientContractedServicesEditDrawer,AvisoAmbar}.tsx': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
         '**/src/infrastructure/http/AdminContractedServicesApiService.ts': {

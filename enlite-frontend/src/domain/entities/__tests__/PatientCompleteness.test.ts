@@ -10,7 +10,6 @@ import {
   PATIENT_COMPLETENESS_CODES,
   ACTIVATION_BLOCKING_CODES,
   ACTIVATABLE_STATUSES,
-  SCHEDULE_REQUIRED_STATUSES,
   type PatientCompletenessCode,
 } from '../PatientCompleteness';
 
@@ -48,13 +47,6 @@ describe('ACTIVATION_BLOCKING_CODES (D255 + migration 330, espelha o backend)', 
   it('todo código bloqueante pertence ao catálogo — sem código órfão no espelho', () => {
     for (const code of ACTIVATION_BLOCKING_CODES) {
       expect(PATIENT_COMPLETENESS_CODES as readonly string[]).toContain(code);
-    }
-  });
-
-  it('SCHEDULE_REQUIRED_STATUSES é ACTIVE/SEARCHING/REPLACEMENT — pausa e saída ficam de fora', () => {
-    expect(SCHEDULE_REQUIRED_STATUSES).toEqual(['ACTIVE', 'SEARCHING', 'REPLACEMENT']);
-    for (const s of ['ON_HOLD', 'SUSPENDED', 'DISCHARGED']) {
-      expect(SCHEDULE_REQUIRED_STATUSES as readonly string[]).not.toContain(s);
     }
   });
 });

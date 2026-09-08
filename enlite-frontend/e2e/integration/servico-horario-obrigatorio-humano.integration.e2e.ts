@@ -177,4 +177,81 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
       cleanupPatientDeep(s2.patientId);
     }
   });
+
+  // ── Os dois caminhos que o Gabriel pediu para ver EM TELA, e que só tinham unit + e2e de API ──
+
+  test('arrastar o card para "Activo" no Kanban é RECUSADO e o toast NOMEIA o que falta', async ({ page }) => {
+    const s3 = seedActivatablePatient(720000);
+    try {
+      // serviço com endereço e SEM horário — o único bloqueio é o horário
+      runSQL(
+        `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule)
+         VALUES ('${s3.patientId}', 'AT', true, 'AR', 'e2e-horario', 'e2e-horario', '${s3.addressId}', NULL)`,
+      );
+      await loginComoHumano(page);
+      await page.goto('/admin/patients/kanban');
+
+      const card = page.locator(`[data-testid="kanban-draggable-${s3.patientId}"]`);
+      await expect(card).toBeVisible({ timeout: 30_000 });
+      const destino = page.locator('[data-testid="kanban-column-DONE"]'); // coluna "Activo"
+      await expect(destino).toBeVisible();
+
+      const cardBB = await card.boundingBox();
+      const destinoBB = await destino.boundingBox();
+      if (!cardBB || !destinoBB) throw new Error('bounding boxes nulas para o drag');
+
+      // Arraste de MOUSE de verdade (dnd-kit: o PointerSensor tem constraint de 8px)
+      const x = cardBB.x + cardBB.width / 2;
+      const y = cardBB.y + cardBB.height / 2;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.waitForTimeout(80);
+      await page.mouse.move(x + 15, y + 5, { steps: 8 });
+      await page.mouse.move(destinoBB.x + 50, destinoBB.y + destinoBB.height / 2, { steps: 30 });
+      await page.mouse.up();
+
+      // O toast NOMEIA a pendência, com o mesmo rótulo do checklist da ficha
+      const toast = page.getByRole('status').filter({ hasText: 'Horario del servicio' });
+      await expect(toast).toBeVisible({ timeout: 20_000 });
+      await expect(toast).toContainText('No se puede mover');
+
+      // E o banco NÃO mudou — o rollback otimista devolveu o card
+      const status = runSQL(`SELECT status FROM patients WHERE id = '${s3.patientId}'`).trim();
+      expect(status).toBe('PENDING_ADMISSION');
+    } finally {
+      cleanupPatientDeep(s3.patientId);
+    }
+  });
+
+  test('no select de estado da ficha, ir para "Reemplazo" é RECUSADO nomeando o que falta', async ({ page }) => {
+    const s4 = seedActivatablePatient(725000);
+    try {
+      // paciente JÁ ativo (o select clínico só aparece com admissionStatus DONE), com serviço sem horário
+      runSQL(`UPDATE patients SET status = 'ACTIVE' WHERE id = '${s4.patientId}'`);
+      runSQL(
+        `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule)
+         VALUES ('${s4.patientId}', 'AT', true, 'AR', 'e2e-horario', 'e2e-horario', '${s4.addressId}', NULL)`,
+      );
+      await loginComoHumano(page);
+      await page.goto(`/admin/patients/${s4.patientId}`);
+
+      const select = page.getByTestId('patient-status-select');
+      await expect(select).toBeVisible({ timeout: 30_000 });
+      // REPLACEMENT (reemplazo), não SEARCHING: a FSM não tem `ACTIVE → SEARCHING` (seed da 315),
+      // e ela é consultada ANTES da completude — a 1ª versão deste teste pedia uma transição
+      // inexistente e recebia "Transición no permitida", que é outra recusa.
+      await select.selectOption('REPLACEMENT');
+      await page.getByTestId('patient-status-save').click();
+
+      const erro = page.getByTestId('patient-status-error');
+      await expect(erro).toBeVisible({ timeout: 20_000 });
+      await expect(erro).toContainText('Horario del servicio');
+
+      // o banco não mudou
+      const status = runSQL(`SELECT status FROM patients WHERE id = '${s4.patientId}'`).trim();
+      expect(status).toBe('ACTIVE');
+    } finally {
+      cleanupPatientDeep(s4.patientId);
+    }
+  });
 });

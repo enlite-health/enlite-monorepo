@@ -34,12 +34,14 @@ export const ACTIVATION_BLOCKING_CODES = [
   'SERVICE_SCHEDULE',
 ] as const;
 
-/**
- * Estados em que o paciente só entra com horário em todo serviço ativo (decisão do Gabriel
- * 07/09) — espelha `SCHEDULE_REQUIRED_STATUSES` do backend. Usado só para EXPLICAR ao operador;
- * quem recusa é sempre o servidor.
+/*
+ * NÃO existe aqui um espelho de `SCHEDULE_REQUIRED_STATUSES` (os estados que exigem horário).
+ * A 1ª versão deste arquivo tinha um, "para explicar ao operador" — e nenhum componente o lia:
+ * a explicação vive nas strings de i18n ("no puede pasar a activo, búsqueda ni reemplazo"), e
+ * quem RECUSA é sempre o servidor. Constante espelhada que ninguém lê é a que diverge do backend
+ * em silêncio, então ela saiu. Se um dia a UI precisar decidir por esse conjunto, ele volta —
+ * com consumidor.
  */
-export const SCHEDULE_REQUIRED_STATUSES = ['ACTIVE', 'SEARCHING', 'REPLACEMENT'] as const;
 
 /**
  * Status em que o checklist/botão "Activar paciente" fazem sentido — espelha
