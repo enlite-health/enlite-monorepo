@@ -100,12 +100,51 @@ describe('Profile Tabs — Endpoints por aba', () => {
       privacyAccepted: true,
     };
 
-    it('deve retornar 200 e success: true', async () => {
+    it('deve retornar 200 e o cadastro RELIDO do banco (escrita confirmada)', async () => {
+      // Contrato mudou em 08/09/2026 (D302). Antes: `{ message: 'General info
+      // saved' }` — o cliente tinha de ACREDITAR. Agora a rota devolve o estado
+      // como o banco ficou, porque foi o eco do próprio envio que manteve na
+      // tela um telefone que o banco nunca gravou (129 cadastros travados).
       const res = await api.put('/api/workers/me/general-info', payload, authHeaders());
 
       expect(res.status).toBe(200);
       expect(res.data.success).toBe(true);
-      expect(res.data.data.message).toBe('General info saved');
+      expect(res.data.data.id).toBe(workerId);
+      expect(res.data.data).not.toHaveProperty('message');
+    });
+
+    it('devolve missingFields do BANCO, e o tipo chega como array de string', async () => {
+      // Este é o ponto que unit nenhum prova: `fn_worker_missing_fields` devolve
+      // JSONB, e o outro leitor do repo (BlockedApplicationRepository) faz
+      // `::text` + JSON.parse justamente por isso. Aqui o driver `pg` real
+      // responde — se ele entregasse string, o frontend receberia lixo.
+      const res = await api.put('/api/workers/me/general-info', payload, authHeaders());
+
+      const missing = res.data.data.missingFields;
+      expect(Array.isArray(missing)).toBe(true);
+      missing.forEach((t: unknown) => expect(typeof t).toBe('string'));
+      // `[]` significa "apurei e nada falta"; `null`, "não apurei". Nunca undefined.
+      expect(missing).not.toBeUndefined();
+    });
+
+    it('a vitrine bate com o portão: o campo que falta é o mesmo que barra a postulação', async () => {
+      // O defeito da D302 era exatamente os dois discordarem. O payload acima
+      // NÃO manda `titleCertificate`, e o portão de REGISTERED o exige.
+      const res = await api.put('/api/workers/me/general-info', payload, authHeaders());
+      expect(res.data.data.missingFields).toContain('title_certificate');
+
+      // A função do banco é a MESMA que a rota serviu — sem segunda definição.
+      const gate = await db.query('SELECT fn_worker_missing_fields($1) AS missing', [workerId]);
+      expect(new Set(res.data.data.missingFields)).toEqual(new Set(gate.rows[0].missing));
+
+      // E some da lista assim que a prestadora preenche o campo.
+      await api.put(
+        '/api/workers/me/general-info',
+        { ...payload, titleCertificate: 'MP-4321' },
+        authHeaders(),
+      );
+      const depois = await api.get('/api/workers/me', authHeaders());
+      expect(depois.data.data.missingFields).not.toContain('title_certificate');
     });
 
     it('deve ter salvo profissão e anos de experiência', async () => {

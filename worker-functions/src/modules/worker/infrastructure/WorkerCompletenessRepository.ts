@@ -10,11 +10,18 @@
  * incompleto". Medido em produção: 23 pessoas nesse estado exato.
  *
  * A regra vive no banco (`fn_worker_missing_fields`, SSOT declarado desde a
- * migration 209/212). Este módulo é o ÚNICO ponto do TypeScript que a lê, e a
- * serve para as rotas do prestador — que a repassam ao frontend em vez de
- * deixá-lo recalcular. Espelha o papel que `PatientCompleteness` já cumpre no
- * domínio de paciente: a MESMA função alimenta o que a tela mostra e o que o
- * portão decide, para os dois nunca divergirem.
+ * migration 209/212). Este módulo a lê e a serve para as rotas do prestador —
+ * que a repassam ao frontend em vez de deixá-lo recalcular. Espelha o papel que
+ * `PatientCompleteness` já cumpre no domínio de paciente: a MESMA função
+ * alimenta o que a tela mostra e o que o portão decide.
+ *
+ * ⚠️ Ele NÃO é (ainda) o único leitor da função em TypeScript. Há outros dois,
+ * no módulo de matching, e um deles usa contrato de tipo DIFERENTE:
+ *   - `BlockedApplicationRepository.ts:161` — faz `::text` + `JSON.parse`;
+ *   - `blockedAttemptLiveState.ts:122`      — devolve fragmento SQL, não valor.
+ * Unificar os três é o item 3 da fila em `estado/postulacao-completude.md`, e
+ * NÃO foi feito aqui. Escrever "único" antes de sê-lo seria repetir o defeito
+ * que este módulo existe para consertar.
  *
  * NÃO reimplemente a lista aqui. Se um campo entra ou sai do portão, muda a
  * função PL/pgSQL — e o teste de contrato do frontend acusa quem não seguiu.

@@ -41,7 +41,19 @@ const WorkerProfileSchema = registry.register(
     email: z.string().email().openapi({ example: 'worker@example.com' }),
     status: z.string().openapi({ example: 'INCOMPLETE_REGISTER' }),
     step: z.number().int().optional().openapi({ example: 2 }),
-  }).openapi({ description: 'Dados resumidos do worker autenticado.' }),
+    /**
+     * O que falta para o cadastro ficar completo, segundo `fn_worker_missing_fields`
+     * — a MESMA função que decide se a postulação passa (D302).
+     *
+     * `[]`   = apurei e nada falta.
+     * `null` = NÃO consegui apurar. É "não sei", nunca "está completo": o cliente
+     *          tem de tratar como desconhecido (fail-closed).
+     */
+    missingFields: z.array(z.string()).nullable().optional().openapi({
+      example: ['phone', 'title_certificate'],
+      description: '[] = nada falta · null = não foi possível apurar (NÃO significa completo)',
+    }),
+  }).openapi({ description: 'Dados do worker autenticado, com o veredito de completude.' }),
 );
 
 registry.registerPath({
@@ -128,7 +140,13 @@ registry.registerPath({
   security: [{ firebaseAuth: [] }],
   request: { body: { content: { 'application/json': { schema: WorkerGeneralInfoBody } } } },
   responses: {
-    200: { description: 'Informações atualizadas.', content: { 'application/json': { schema: OkMessage } } },
+    200: {
+      // ESCRITA CONFIRMADA (D302): devolve o cadastro como o BANCO ficou, relido
+      // pelo mesmo caminho do GET — não um "salvo com sucesso" que o cliente
+      // teria de acreditar. Se a releitura falhar, vem `missingFields: null`.
+      description: 'Informações atualizadas — devolve o cadastro relido, com missingFields.',
+      content: { 'application/json': { schema: WorkerProfileSchema } },
+    },
     400: { description: 'Dados inválidos.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },

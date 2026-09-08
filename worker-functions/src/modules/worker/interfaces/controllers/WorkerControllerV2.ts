@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Pool } from 'pg';
 import { InitWorkerUseCase } from '../../application/InitWorkerUseCase';
 import { SaveQuizResponsesUseCase } from '../../application/SaveQuizResponsesUseCase';
 import { SavePersonalInfoUseCase } from '../../application/SavePersonalInfoUseCase';
@@ -15,15 +16,13 @@ import { QuizResponseRepository } from '../../infrastructure/QuizResponseReposit
 import { ServiceAreaRepository } from '../../infrastructure/ServiceAreaRepository';
 import { AvailabilityRepository } from '../../infrastructure/AvailabilityRepository';
 import { TwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifyService';
-import { WORKER_ERROR_CODES } from '../../domain/workerErrors';
+import {
+  sendPersonalInfoFailure,
+  withMissingFields,
+  readFreshProgress,
+  resolveWorkerIdByAuthUid,
+} from './WorkerControllerV2Helpers';
 import { PubSubClient } from '@shared/events/PubSubClient';
-
-/**
- * Mensagem amigável (pt-BR fallback do backend) para PHONE_NOT_AVAILABLE.
- * Por privacidade NÃO revela que o número pertence a outra conta. O frontend
- * localiza a partir do `code`; esta string é a rede de segurança caso não o faça.
- */
-const PHONE_NOT_AVAILABLE_MESSAGE = 'El teléfono ingresado no puede ser utilizado.';
 
 export class WorkerControllerV2 {
   private initWorkerUseCase: InitWorkerUseCase;
@@ -181,7 +180,7 @@ export class WorkerControllerV2 {
       if (result.isFailure) {
         // step 2 (info pessoal) pode retornar PHONE_NOT_AVAILABLE — mapeia para
         // 409 + code; demais erros caem no 400 genérico.
-        this.sendPersonalInfoFailure(res, result.error);
+        sendPersonalInfoFailure(res, result.error);
         return;
       }
 
@@ -226,7 +225,7 @@ export class WorkerControllerV2 {
       if (restored) worker.status = restored;
       res.status(200).json({
         success: true,
-        data: await this.withMissingFields(worker),
+        data: await withMissingFields(this.pool(), worker),
       });
     } catch (error: any) {
       res.status(500).json({
@@ -236,57 +235,19 @@ export class WorkerControllerV2 {
     }
   }
 
-  /**
-   * Anexa `missingFields` ao worker devolvido ao prestador.
-   *
-   * `missingFields: []` = "nada falta". `missingFields: null` = "não consegui
-   * apurar" — e o cliente TEM de tratar null como desconhecido, nunca como
-   * completo. São coisas diferentes de propósito: confundir "ausência de
-   * informação" com "informação de ausência" é a causa raiz deste conserto.
-   */
-  private async withMissingFields<T extends { id: string }>(
-    worker: T,
-  ): Promise<T & { missingFields: string[] | null }> {
-    const pool = DatabaseConnection.getInstance().getPool();
-    const missingFields = await readWorkerMissingFields(pool, worker.id);
-    return { ...worker, missingFields };
+  private pool(): Pool {
+    return DatabaseConnection.getInstance().getPool();
   }
 
-  /**
-   * Relê o cadastro pelo MESMO caminho do GET /progress, para a resposta de uma
-   * escrita ser o estado real (com PII já decriptada) e não um eco do payload.
-   * Se a releitura falhar, devolve `missingFields: null` — "gravei, mas não sei
-   * te dizer o estado" — em vez de afirmar sucesso completo.
-   */
-  private async readFreshProgress(authUid: string): Promise<unknown> {
+  /** Relê pelo MESMO caminho do `GET /me` (PII decriptada). `null` = não deu. */
+  private async rereadWorker(authUid: string): Promise<{ id: string } | null> {
     const fresh = await this.getProgressUseCase.execute(authUid);
-    if (fresh.isFailure || !fresh.getValue()) {
-      return { message: 'General info saved', missingFields: null };
-    }
-    return this.withMissingFields(fresh.getValue()!);
+    return fresh.isFailure ? null : (fresh.getValue() ?? null);
   }
 
+  /** Só o id, sem os 9 decrypts KMS — este endpoint é autosave por blur. */
   private async resolveWorkerIdFromAuth(authUid: string): Promise<string | null> {
-    const result = await this.getProgressUseCase.execute(authUid);
-    if (result.isFailure || !result.getValue()) return null;
-    return result.getValue()!.id;
-  }
-
-  /**
-   * Traduz a falha de salvamento de info pessoal para a resposta HTTP.
-   * Códigos de domínio conhecidos (ex.: PHONE_NOT_AVAILABLE) viram status +
-   * `code` + mensagem amigável; qualquer outro erro mantém o 400 genérico.
-   */
-  private sendPersonalInfoFailure(res: Response, error: string | undefined): void {
-    if (error === WORKER_ERROR_CODES.PHONE_NOT_AVAILABLE) {
-      res.status(409).json({
-        success: false,
-        code: WORKER_ERROR_CODES.PHONE_NOT_AVAILABLE,
-        error: PHONE_NOT_AVAILABLE_MESSAGE,
-      });
-      return;
-    }
-    res.status(400).json({ success: false, error });
+    return resolveWorkerIdByAuthUid(this.pool(), authUid);
   }
 
   async saveGeneralInfo(req: Request, res: Response): Promise<void> {
@@ -306,18 +267,17 @@ export class WorkerControllerV2 {
       const result = await this.savePersonalInfoUseCase.execute({ workerId, ...req.body });
 
       if (result.isFailure) {
-        this.sendPersonalInfoFailure(res, result.error);
+        sendPersonalInfoFailure(res, result.error);
         return;
       }
 
-      // ESCRITA CONFIRMADA: devolve o estado como o BANCO ficou, não um
-      // "salvo com sucesso" que o cliente teria de acreditar. O incidente de
-      // 08/09/2026 nasceu aqui — a rota respondia só uma mensagem, o cliente
-      // gravava no próprio store o que ELE mandou, e um campo que o servidor
-      // não persistiu (telefone) seguia aparecendo preenchido na tela para
-      // sempre. Relendo pelo mesmo caminho do GET, o que a tela mostra passa a
-      // ser o que existe.
-      res.status(200).json({ success: true, data: await this.readFreshProgress(authUid) });
+      // ESCRITA CONFIRMADA (D302): devolve o estado como o BANCO ficou. Antes
+      // respondia só uma mensagem, o cliente gravava o que ELE mandou, e campo
+      // não persistido seguia na tela para sempre. Ver WorkerControllerV2Helpers.
+      res.status(200).json({
+        success: true,
+        data: await readFreshProgress(this.pool(), () => this.rereadWorker(authUid), authUid),
+      });
     } catch (error: any) {
       console.error('SaveGeneralInfo error:', error);
       res.status(500).json({ success: false, error: error.message || 'Internal server error' });

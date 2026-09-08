@@ -355,6 +355,59 @@ describe('WorkerControllerV2', () => {
       );
     });
 
+    // ── PUT /me/general-info: a ESCRITA CONFIRMADA (D302) ───────────────────
+    //
+    // O gate `revisao-pr` de 08/09 mediu ZERO execução neste caminho: o código
+    // que o PR existe para entregar não tinha teste nenhum. Os 3 casos abaixo
+    // são os ramos que ele nomeou.
+
+    it('saveGeneralInfo devolve o cadastro RELIDO do banco, com missingFields', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: mockWorker.id }] });          // resolve o id (sem KMS)
+      jest.spyOn(controller['savePersonalInfoUseCase'], 'execute')
+        .mockResolvedValue(Result.ok(mockWorker as never));
+      jest.spyOn(controller['getProgressUseCase'], 'execute')
+        .mockResolvedValue(Result.ok(mockWorker));
+      mockQuery.mockResolvedValueOnce({ rows: [{ missing: ['phone'] }] });         // veredito do portão
+
+      const [req, res] = mockReqRes({ firstName: 'Ana' }, {}, { uid: AUTH_UID });
+      await controller.saveGeneralInfo(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      // NÃO é mais `{ message: 'General info saved' }`: é o estado que o banco tem.
+      expect(body.data).toEqual({ ...mockWorker, missingFields: ['phone'] });
+    });
+
+    it('saveGeneralInfo: releitura falha → 200 com missingFields NULL, nunca "completo"', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: mockWorker.id }] });
+      jest.spyOn(controller['savePersonalInfoUseCase'], 'execute')
+        .mockResolvedValue(Result.ok(mockWorker as never));
+      jest.spyOn(controller['getProgressUseCase'], 'execute')
+        .mockResolvedValue(Result.fail('db down') as never);
+
+      const [req, res] = mockReqRes({ firstName: 'Ana' }, {}, { uid: AUTH_UID });
+      await controller.saveGeneralInfo(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect((res.json as jest.Mock).mock.calls[0][0].data).toHaveProperty('missingFields', null);
+    });
+
+    it('saveGeneralInfo NÃO relê o cadastro completo duas vezes (custo do autosave)', async () => {
+      // O endpoint dispara a cada blur de campo. Resolver o id pela leitura
+      // completa custaria 9 decrypts KMS a mais por blur — o gate mediu.
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: mockWorker.id }] });
+      jest.spyOn(controller['savePersonalInfoUseCase'], 'execute')
+        .mockResolvedValue(Result.ok(mockWorker as never));
+      const progress = jest.spyOn(controller['getProgressUseCase'], 'execute')
+        .mockResolvedValue(Result.ok(mockWorker));
+      mockQuery.mockResolvedValueOnce({ rows: [{ missing: [] }] });
+
+      const [req, res] = mockReqRes({ firstName: 'Ana' }, {}, { uid: AUTH_UID });
+      await controller.saveGeneralInfo(req, res);
+
+      expect(progress).toHaveBeenCalledTimes(1);
+    });
+
     it('retorna 404 com "Worker not found" quando getProgressUseCase falha por auth_uid sem vínculo no banco', async () => {
       jest.spyOn(controller['getProgressUseCase'], 'execute')
         .mockResolvedValue(Result.fail('Worker not found'));
