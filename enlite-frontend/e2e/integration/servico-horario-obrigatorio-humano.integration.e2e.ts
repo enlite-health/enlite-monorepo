@@ -77,6 +77,9 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
     await expect(avisoForm).toHaveAttribute('role', 'alert');
     await expect(avisoForm).toContainText('todavía no tiene horario');
     await expect(avisoForm).toContainText('activo, búsqueda ni reemplazo');
+    // Validação visual (regra do CLAUDE.md da raiz): o aviso é uma peça NOVA de tela, e o texto
+    // sozinho não guarda a moldura âmbar nem o ícone.
+    await expect(avisoForm).toHaveScreenshot('aviso-horario-formulario.png');
 
     // o campo segue OPCIONAL: o rótulo diz "(opcional)", não tem asterisco
     const rotulo = page.locator('label[for="svc-schedule-1"]');
@@ -104,11 +107,16 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
     // tela (medido: rgb(115,115,115)). Aqui a régua é a cor computada, não o atributo.
     const corHorario = await celulaSemHorario.evaluate((el) => getComputedStyle(el).color);
     expect(corHorario).toBe('rgb(180, 83, 9)'); // amber-700
+    // A linha inteira, para a regressão pegar também o que a cor sozinha não conta.
+    await expect(page.locator('[data-testid^="contracted-service-row-"]').first())
+      .toHaveScreenshot('tabela-sin-horario-ambar.png');
 
     // ── 4. O checklist da ficha nomeia a pendência e LEVA até ela ──
     // a pílula bloqueante tem testid fixo (`completeness-item`); o código vem no TEXTO
     const pilula = page.getByTestId('completeness-item').filter({ hasText: 'Horario del servicio' });
     await expect(pilula).toBeVisible();
+    await expect(page.getByTestId('completeness-checklist'))
+      .toHaveScreenshot('checklist-com-horario.png');
     await pilula.click();
     // clicar na pílula abre o drawer JÁ no serviço que está sem horário — a prova de que é ELE
     // (e não um "+ Nuevo") é o serviço vir hidratado: o select de código fica travado na edição.
@@ -214,6 +222,7 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
       const toast = page.getByRole('status').filter({ hasText: 'Horario del servicio' });
       await expect(toast).toBeVisible({ timeout: 20_000 });
       await expect(toast).toContainText('No se puede mover');
+      await expect(toast).toHaveScreenshot('toast-kanban-recusado.png');
 
       // E o banco NÃO mudou — o rollback otimista devolveu o card
       const status = runSQL(`SELECT status FROM patients WHERE id = '${s3.patientId}'`).trim();
@@ -246,6 +255,7 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
       const erro = page.getByTestId('patient-status-error');
       await expect(erro).toBeVisible({ timeout: 20_000 });
       await expect(erro).toContainText('Horario del servicio');
+      await expect(erro).toHaveScreenshot('erro-select-ficha.png');
 
       // o banco não mudou
       const status = runSQL(`SELECT status FROM patients WHERE id = '${s4.patientId}'`).trim();

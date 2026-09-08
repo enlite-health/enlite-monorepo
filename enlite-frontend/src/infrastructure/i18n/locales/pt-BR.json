@@ -3407,7 +3407,8 @@
           "source": "Origem",
           "error": "Não foi possível carregar o histórico"
         },
-        "notReady": "Não é possível passar para {{status}}: falta {{items}}."
+        "notReady": "Não é possível passar para {{status}}: falta {{items}}.",
+        "notReadyGeneric": "Não é possível mudar o estado: faltam dados obrigatórios na ficha."
       },
       "insuranceProviderOptions": {
         "API": "API",
