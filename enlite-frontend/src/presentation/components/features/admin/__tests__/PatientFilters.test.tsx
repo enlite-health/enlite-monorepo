@@ -70,4 +70,35 @@ describe('PatientFilters — oráculo por célula', () => {
     expect(screen.getAllByTestId('filter-search')).toHaveLength(2);
     expect(screen.getAllByTestId('filter-dependency')).toHaveLength(2);
   });
+
+  it('filtro de motivo só com "needs_attention"; "limpar" aparece com filtro ativo e zera TODOS (inclusive país quando existe)', () => {
+    const props = montar({ selectedAttention: 'needs_attention', reasonOptions: [{ value: 'X', label: 'X' }], selectedCountry: 'AR', onCountryChange: vi.fn(), countryOptions: [{ value: 'AR', label: 'AR' }] });
+    expect(screen.getByTestId('filter-reason')).toBeInTheDocument();
+    expect(screen.getByTestId('patient-country-filter')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('admin.patients.clearFilters'));
+    for (const fn of [props.onSearchChange, props.onCodeChange, props.onAttentionChange, props.onReasonChange, props.onSpecialtyChange, props.onDependencyChange, props.onCountryChange]) {
+      expect(fn).toHaveBeenCalledWith('');
+    }
+  });
+
+  it('sem filtro ativo e sem país: nem "limpar", nem motivo, nem país; com só código ativo o "limpar" aparece e não chama onCountryChange', () => {
+    montar();
+    expect(screen.queryByText('admin.patients.clearFilters')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('filter-reason')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('patient-country-filter')).not.toBeInTheDocument();
+    const props = montar({ codeValue: '12' });
+    const codeInputs = screen.getAllByTestId('filter-code');
+    fireEvent.change(codeInputs[codeInputs.length - 1].querySelector('input') as HTMLInputElement, { target: { value: '123' } });
+    expect(props.onCodeChange).toHaveBeenCalledWith('123');
+    fireEvent.click(screen.getByText('admin.patients.clearFilters'));
+    expect(props.onCodeChange).toHaveBeenCalledWith('');
+  });
+
+  it('país: sem `selectedCountry` o select nasce vazio; escolher chama onCountryChange', () => {
+    const props = montar({ onCountryChange: vi.fn(), countryOptions: [{ value: 'AR', label: 'AR' }, { value: 'BR', label: 'BR' }] });
+    const select = screen.getByTestId('patient-country-filter').querySelector('select') as HTMLSelectElement;
+    expect(select.value).toBe('');
+    fireEvent.change(select, { target: { value: 'BR' } });
+    expect(props.onCountryChange).toHaveBeenCalledWith('BR');
+  });
 });
