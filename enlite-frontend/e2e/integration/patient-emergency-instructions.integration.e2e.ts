@@ -16,7 +16,8 @@ import { test, expect, type Page } from '@playwright/test';
 import { execSync } from 'child_process';
 import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper';
 
-const EMULATOR = 'http://127.0.0.1:9099';
+// `E2E_FIREBASE_EMULATOR` aponta para o emulador de um stack isolado (`docker compose -p`); default inalterado.
+const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
 const EMULATOR_PROJECT = 'demo-no-project';
 const STAFF_EMAIL = `e2e.emerg.${Date.now()}@enlite.health`;
 const STAFF_PASSWORD = 'TestAdmin123!';
@@ -24,7 +25,7 @@ const STAFF_NAME = 'E2E Emergencia Coordinadora';
 const TEXT = 'Crisis: llamar al 107.\nAvisar a la madre antes de mover.\nNo dar medicación sin indicación.';
 
 function runSQL(sql: string): string {
-  return execSync(`docker exec enlite-postgres psql -U enlite_admin -d enlite_e2e -tAc "${sql.replace(/"/g, '\\"')}"`, { encoding: 'utf-8' }).trim();
+  return execSync(`docker exec ${process.env.E2E_PG_CONTAINER || 'enlite-postgres'} psql -U enlite_admin -d enlite_e2e -tAc "${sql.replace(/"/g, '\\"')}"`, { encoding: 'utf-8' }).trim();
 }
 
 async function loginAsRealStaff(page: Page): Promise<string> {
@@ -74,7 +75,8 @@ test.describe('Ficha do paciente: "Instrucciones de emergencia" + autoria (D211.
     const box = page.getByTestId('emergency-instructions');
     await expect(box).toBeVisible({ timeout: 30_000 });
     await expect(box).toHaveAttribute('data-clarity-mask', 'True');
-    await expect(page.getByTestId('emergency-instructions-text')).toHaveText('—');
+    // 06/09: idem observações — o vazio virou frase. Suíte em `es` (l. 47).
+    await expect(page.getByTestId('emergency-instructions-text')).toHaveText('Sin instrucciones registradas.');
     await expect(page.getByTestId('emergency-instructions-edited')).toHaveCount(0);
 
     await page.getByTestId('edit-clinical-btn').click();

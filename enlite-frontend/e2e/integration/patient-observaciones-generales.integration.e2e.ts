@@ -18,7 +18,8 @@ import { test, expect, type Page } from '@playwright/test';
 import { execSync } from 'child_process';
 import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper';
 
-const EMULATOR = 'http://127.0.0.1:9099';
+// `E2E_FIREBASE_EMULATOR` aponta para o emulador de um stack isolado (`docker compose -p`); default inalterado.
+const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
 const EMULATOR_PROJECT = 'demo-no-project';
 const STAFF_EMAIL = `e2e.req01.${Date.now()}@enlite.health`;
 const STAFF_PASSWORD = 'TestAdmin123!';
@@ -27,7 +28,7 @@ const NOTES = 'Paciente con TEA nivel 2.\nEvitar ruidos fuertes.\nCrisis: llamar
 
 function runSQL(sql: string): string {
   return execSync(
-    `docker exec enlite-postgres psql -U enlite_admin -d enlite_e2e -tAc "${sql.replace(/"/g, '\\"')}"`,
+    `docker exec ${process.env.E2E_PG_CONTAINER || 'enlite-postgres'} psql -U enlite_admin -d enlite_e2e -tAc "${sql.replace(/"/g, '\\"')}"`,
     { encoding: 'utf-8' },
   ).trim();
 }
@@ -84,7 +85,9 @@ test.describe('Ficha do paciente: "Observaciones generales" texto longo + autori
     const notes = page.getByTestId('general-notes');
     await expect(notes).toBeVisible({ timeout: 30_000 });
     await expect(notes).toHaveAttribute('data-clarity-mask', 'True');
-    await expect(page.getByTestId('general-notes-text')).toHaveText('—');
+    // 06/09: o vazio deixou de ser `—`. O traço não distinguia "não tem" de "não carregou", e
+    // `ClinicalLongText` passou a receber `emptyMessage`. A suíte roda em `es` (l. 52).
+    await expect(page.getByTestId('general-notes-text')).toHaveText('Sin observaciones registradas.');
     await expect(page.getByTestId('general-notes-edited')).toHaveCount(0);
     expect(runSQL(`SELECT additional_comments_updated_by IS NULL AND additional_comments_updated_at IS NULL FROM patients WHERE id = '${patientId}'`)).toBe('t');
     const diagnosisBefore = runSQL(`SELECT diagnosis FROM patients WHERE id = '${patientId}'`);
@@ -94,7 +97,7 @@ test.describe('Ficha do paciente: "Observaciones generales" texto longo + autori
     const ta = page.getByTestId('pce-comments');
     await expect(ta).toBeVisible();
     expect(await ta.evaluate((el) => el.tagName)).toBe('TEXTAREA');
-    await expect(ta).toHaveAttribute('rows', '8');
+    await expect(ta).toHaveAttribute('rows', '4');
     await expect(page.getByTestId('pce-comments-counter')).toHaveText('0/4000 caracteres');
     expect(await ta.evaluate((el) => el.parentElement?.getAttribute('data-clarity-mask'))).toBe('True');
     await ta.fill(NOTES);

@@ -1,24 +1,15 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
-import { Text } from '@presentation/components/atoms/Text';
 import { ActionButton } from '@presentation/components/features/access';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
 import { PatientGeneralEditDrawer } from './edit/PatientGeneralEditDrawer';
+import { FieldPair, FieldPairGrid } from './FieldPairs';
 
 interface PatientGeneralInfoCardProps {
   patient: PatientDetail;
   /** Called after a successful edit so the page can refetch the detail. */
   onSaved?: () => void;
-}
-
-function Field({ label, value }: { label: string; value: string | null }) {
-  return (
-    <Text size="sm" className="leading-snug">
-      <Text as="span" size="sm" weight="medium" color="secondary">{label} </Text>
-      <Text as="span" size="sm" color="muted">{value ?? '—'}</Text>
-    </Text>
-  );
 }
 
 function calculateAge(birthDateIso: string | null): number | null {
@@ -83,18 +74,18 @@ export function PatientGeneralInfoCard({ patient, onSaved }: PatientGeneralInfoC
         />
       )}
 
-      <div className="flex flex-col gap-2.5">
-        <Field label={`${t('admin.patients.detail.generalInfoCard.birthDate')}:`} value={formatBirthDate(patient.birthDate)} />
-        <Field label={`${t('admin.patients.detail.generalInfoCard.age')}:`} value={ageDisplay} />
-        <Field label={`${t('admin.patients.detail.generalInfoCard.ageBracket')}:`} value={ageBracket} />
-        <Field label={`${t('admin.patients.detail.generalInfoCard.sex')}:`} value={sexLabel} />
+      <FieldPairGrid>
+        <FieldPair label={t('admin.patients.detail.generalInfoCard.birthDate')} value={formatBirthDate(patient.birthDate)} />
+        <FieldPair label={t('admin.patients.detail.generalInfoCard.age')} value={ageDisplay} />
+        <FieldPair label={t('admin.patients.detail.generalInfoCard.ageBracket')} value={ageBracket} />
+        <FieldPair label={t('admin.patients.detail.generalInfoCard.sex')} value={sexLabel} />
         {/* US-B9 (spec 012): data de início do serviço — nativa do painel, não deriva da vaga. */}
-        <Field label={`${t('admin.patients.detail.generalInfoCard.serviceStartDate')}:`} value={formatBirthDate(patient.serviceStartDate)} />
+        <FieldPair label={t('admin.patients.detail.generalInfoCard.serviceStartDate')} value={formatBirthDate(patient.serviceStartDate)} />
         {/* Spec 014 US-D2 (decisão Gabriel 03/09, item 9): Género/Orientación Sexual/Origen
             racial/Religión/Idiomas REMOVIDOS — eram `value={null}` fixo, sem coluna em `patients`
             (só existem em `workers`; ver lex D2 e migrations/008,023,002). Manter o rótulo sem o
             dado não é só promessa vazia: é convite a coletar dado sensível sem base legal. */}
-      </div>
+      </FieldPairGrid>
     </div>
   );
 }

@@ -7,7 +7,7 @@
  * e 3 não existem. Por isso quase todo teste começa por `escolherAncora()`.
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AdminMapPage } from './AdminMapPage';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
@@ -579,5 +579,205 @@ describe('AdminMapPage', () => {
       expect(screen.getByTestId('map-tab-workers')).toBeInTheDocument();
       expect(screen.getByTestId('map-tab-patients')).toBeInTheDocument();
     });
+  });
+});
+
+/**
+ * Busca por NOME no seletor da âncora (07/09/2026).
+ *
+ * O defeito que isto fecha: o seletor trazia UMA lista — 50 km do centro do
+ * país — e a caixa de texto filtrava essa lista em memória. Paciente de Mar
+ * del Plata (381 km) não estava nela, e digitar o nome dizia "Sin resultados".
+ * O que se afirma aqui é que digitar TROCA O ESCOPO da chamada: some o
+ * centro+raio, entra `search`.
+ */
+describe('AdminMapPage — busca de âncora por nome', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  /** Digita no campo de busca do combobox aberto e vence o debounce. */
+  function digitar(texto: string, id = 'map-center-patient'): void {
+    const picker = openPicker(id);
+    const input = within(picker).getByRole('textbox');
+    fireEvent.change(input, { target: { value: texto } });
+    act(() => { vi.advanceTimersByTime(400); });
+  }
+
+  it('🔒 DOIS caracteres não buscam mais — `an` devolvia 38% da base (lex C-B)', () => {
+    vi.useFakeTimers();
+    try {
+      setup();
+      fireEvent.focusIn(screen.getByTestId('map-center-patient'));
+      digitar('an');
+      expect(pickerCall(mockPatients)[0]).toEqual(ancoraAR);
+      expect(pickerCall(mockPatients)[0]).not.toHaveProperty('search');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('🔒 digitar ≥3 letras troca o escopo: sai centro+raio, entra `search`', () => {
+    vi.useFakeTimers();
+    try {
+      setup();
+      fireEvent.focusIn(screen.getByTestId('map-center-patient'));
+      digitar('Reyna');
+      const [filtros] = pickerCall(mockPatients);
+      expect(filtros).toEqual({ country: 'AR', search: 'Reyna' });
+      expect(filtros).not.toHaveProperty('center');
+      expect(filtros).not.toHaveProperty('radius_km');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('1 letra NÃO busca: o escopo segue o raio de 50 km', () => {
+    vi.useFakeTimers();
+    try {
+      setup();
+      fireEvent.focusIn(screen.getByTestId('map-center-patient'));
+      digitar('R');
+      expect(pickerCall(mockPatients)[0]).toEqual(ancoraAR);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('apagar o texto devolve o escopo geográfico', () => {
+    vi.useFakeTimers();
+    try {
+      setup();
+      fireEvent.focusIn(screen.getByTestId('map-center-patient'));
+      digitar('Reyna');
+      expect(pickerCall(mockPatients)[0]).toEqual({ country: 'AR', search: 'Reyna' });
+      digitar('');
+      expect(pickerCall(mockPatients)[0]).toEqual(ancoraAR);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('NÃO filtra em memória: a lista do servidor aparece inteira', () => {
+    vi.useFakeTimers();
+    try {
+      // o servidor respondeu "P 9", que não contém o texto digitado — antes o
+      // filtro local escondia essa linha e a tela dizia "Sin resultados".
+      setup();
+      fireEvent.focusIn(screen.getByTestId('map-center-patient'));
+      digitar('Reyna');
+      expect(pickerOptions()).toContain('P 9 · CABA');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('lista vazia com busca ativa diz que a BUSCA não achou, não que a lista está vazia', () => {
+    vi.useFakeTimers();
+    try {
+      // achou ZERO — nem plotável nem sem-coordenada; é a busca que não casou
+      setup(okWorkers, { ...okPatients, points: [], total: 0, withoutCoordinates: 0, truncated: false });
+      fireEvent.focusIn(screen.getByTestId('map-center-patient'));
+      digitar('Reyna');
+      expect(last(screen.getAllByTestId('searchable-select-empty'))?.textContent)
+        .toBe('Sin resultados para ese nombre');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('com 1 letra a mensagem pede mais letras', () => {
+    vi.useFakeTimers();
+    try {
+      setup(okWorkers, { ...okPatients, points: [], total: 0, truncated: false });
+      fireEvent.focusIn(screen.getByTestId('map-center-patient'));
+      digitar('R');
+      expect(last(screen.getAllByTestId('searchable-select-empty'))?.textContent)
+        .toBe('Escribí al menos 3 letras');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('🔒 o seletor de PRESTADOR não busca no servidor: escopo segue o raio', () => {
+    vi.useFakeTimers();
+    try {
+      setup();
+      fireEvent.click(screen.getByTestId('map-tab-patients'));
+      fireEvent.focusIn(screen.getByTestId('map-center-worker'));
+      digitar('Reyna', 'map-center-worker');
+      expect(pickerCall(mockWorkers)[0]).toEqual(ancoraAR);
+      expect(pickerCall(mockWorkers)[0]).not.toHaveProperty('search');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+/**
+ * Achados da 2ª passada do gate (07/09/2026).
+ */
+describe('AdminMapPage — o que a 2ª passada do gate pegou', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  function digitar2(texto: string, id = 'map-center-patient'): void {
+    const picker = openPicker(id);
+    fireEvent.change(within(picker).getByRole('textbox'), { target: { value: texto } });
+    act(() => { vi.advanceTimersByTime(400); });
+  }
+
+  it('🔒 trocar de aba ABANDONA o termo: voltar não dispara busca por nome', () => {
+    vi.useFakeTimers();
+    try {
+      setup();
+      fireEvent.focusIn(screen.getByTestId('map-center-patient'));
+      digitar2('Reyna');
+      expect(pickerCall(mockPatients)[0]).toEqual({ country: 'AR', search: 'Reyna' });
+
+      fireEvent.click(screen.getByTestId('map-tab-patients'));
+      fireEvent.click(screen.getByTestId('map-tab-workers'));
+
+      /**
+       * SEM avançar o debounce, de propósito. O remount do seletor acaba
+       * notificando '' — mas 300 ms depois, e nessa janela o escopo ainda
+       * carrega o nome: sai uma request de busca por paciente que ninguém
+       * pediu, com a caixa visivelmente vazia. Avançar os timers aqui mediria
+       * só o estado final e deixaria a janela passar.
+       */
+      expect(pickerCall(mockPatients)[0]).toEqual(ancoraAR);
+      expect(pickerCall(mockPatients)[0]).not.toHaveProperty('search');
+
+      // e continua correto depois que o debounce corre
+      act(() => { vi.advanceTimersByTime(400); });
+      expect(pickerCall(mockPatients)[0]).toEqual(ancoraAR);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('🔒 achado por nome mas SEM coordenada não vira "essa pessoa não existe"', () => {
+    vi.useFakeTimers();
+    try {
+      // o servidor achou 2, nenhum plotável — a busca funcionou, falta geocódigo
+      setup(okWorkers, {
+        ...okPatients, points: [PT('x', { lat: null, lng: null })], total: 2, withoutCoordinates: 2, truncated: false,
+      });
+      fireEvent.focusIn(screen.getByTestId('map-center-patient'));
+      digitar2('Reyna');
+      expect(last(screen.getAllByTestId('searchable-select-empty'))?.textContent)
+        .toBe('2 encontrado(s), pero sin ubicación registrada');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('achado e plotável: nenhuma mensagem de lista vazia', () => {
+    vi.useFakeTimers();
+    try {
+      setup();
+      fireEvent.focusIn(screen.getByTestId('map-center-patient'));
+      digitar2('Reyna');
+      expect(screen.queryAllByTestId('searchable-select-empty')).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

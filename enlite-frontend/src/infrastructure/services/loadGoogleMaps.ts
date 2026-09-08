@@ -13,12 +13,19 @@ declare global {
   }
 }
 
+import { googleMapsScriptUrl } from './googleMapsScriptUrl';
+
 let loadingPromise: Promise<void> | null = null;
 
 const SCRIPT_SELECTOR = 'script[src*="maps.googleapis.com/maps/api/js"]';
 const POST_LOAD_GRACE_MS = 100;
 
 export function loadGoogleMaps(): Promise<void> {
+  // ⚠️ Sem teste, e de propósito: em jsdom `window` SEMPRE existe, então este
+  // ramo é inalcançável pela suíte. Esta aplicação não tem SSR — o guard é
+  // herança defensiva. Por isso o arquivo fica fora do piso de 100% no
+  // `vitest.config.ts`, com a razão escrita lá. Quem tirar o guard, tira também
+  // a exceção.
   if (typeof window === 'undefined') {
     return Promise.reject(new Error('Google Maps loader called outside browser'));
   }
@@ -48,7 +55,7 @@ export function loadGoogleMaps(): Promise<void> {
     }
 
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&language=es`;
+    script.src = googleMapsScriptUrl(apiKey);
     script.async = true;
     script.defer = true;
     script.onload = () => setTimeout(resolve, POST_LOAD_GRACE_MS);

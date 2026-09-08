@@ -75,7 +75,6 @@ export async function mapContractedServices(
     weeklyHours: r.weekly_hours != null ? Number(r.weekly_hours) : null,
     careLocation: r.care_location,
     hourlyValue: r.hourly_value != null ? Number(r.hourly_value) : null,
-    version: r.version,
     startDate: r.start_date,
     contractType: r.contract_type,
     taxCondition: r.tax_condition,
@@ -84,6 +83,10 @@ export async function mapContractedServices(
     // Spec 015 (US-A6.1, migration 322): franja etária solicitada do prestador. `SELECT *`
     // (fetchRelated) já traz a coluna nova — só falta espelhar no shape decorado.
     providerAgeBand: r.provider_age_band,
+    // Migration 330: ponteiro para o endereço do paciente + horário do encuadre (array, mesmo
+    // formato de job_postings.schedule). `SELECT *` já traz as duas colunas.
+    addressId: r.address_id,
+    schedule: r.schedule,
     active: r.active,
     endedAt: r.ended_at,
     country: r.country,

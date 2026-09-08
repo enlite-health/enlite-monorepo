@@ -6,7 +6,6 @@
  */
 
 import type { PatientChatIdMap, PatientChatRoleSpec } from '@domain/value-objects/patientChatRole';
-import type { PatientCoverageSectionPayload } from './PatientCoverage';
 import type { PatientCompleteness } from './PatientCompleteness';
 export type { PatientCompleteness, PatientCompletenessCode } from './PatientCompleteness';
 // Spec 012 (bloco B): estado v2 / Historial em `PatientLifecycle.ts`, cobertura em
@@ -251,73 +250,17 @@ export interface PatientVacancySummary {
 // Fase 2b — pipeline de ativação (edição de seções, mudança de status, ativar)
 // ============================================================================
 
-/** Section names accepted by PATCH /api/admin/patients/:id/:section. */
-export type PatientSectionName = 'general' | 'clinical' | 'coverage' | 'support-network' | 'service';
-
-/**
- * section = 'general' — identity fields. Mirrors generalSectionSchema (backend).
- * Every field is a partial update; `null` explicitly clears a nullable column.
- */
-export interface PatientGeneralSectionPayload {
-  firstName?: string;
-  lastName?: string | null;
-  birthDate?: string | null; // yyyy-MM-dd (backend coerces to Date)
-  documentType?: string | null;
-  documentNumber?: string | null;
-  sex?: string | null;
-  phoneWhatsapp?: string | null;
-  contactEmail?: string | null;
-  /** US-B9 (spec 012): yyyy-MM-dd; null limpa. */
-  serviceStartDate?: string | null;
-}
-
-/** section = 'clinical' — mirrors clinicalSectionSchema (backend). */
-export interface PatientClinicalSectionPayload {
-  diagnosis?: string | null;
-  dependencyLevel?: string | null;
-  // F6: `clinicalSpecialty` REMOVIDA — o `clinicalSectionSchema` `.strict()` do backend já não a
-  // aceita, e nenhum chamador a usava. Chave morta num payload é 400 latente, não enfeite.
-  serviceType?: string[] | null;
-  /** US-B4 (spec 012): códigos de `device_types` — substitui o texto livre `deviceType`. */
-  deviceTypes?: string[];
-  additionalComments?: string | null;
-  emergencyInstructions?: string | null;
-  hasJudicialProtection?: boolean | null;
-  hasCud?: boolean | null;
-  hasConsent?: boolean | null;
-}
-
-/** One responsible in the support-network replace payload. */
-export interface PatientResponsibleInput {
-  firstName: string;
-  lastName: string;
-  relationship?: string | null;
-  phone?: string | null;
-  email?: string | null;
-  documentType?: string | null;
-  documentNumber?: string | null;
-  isPrimary: boolean;
-  displayOrder: number;
-  /** Procedência da linha — reenviada do detalhe; linha nova do painel = 'admin_manual'. */
-  source?: string;
-}
-
-/** section = 'support-network' — replaces the whole responsibles set. */
-export interface PatientSupportNetworkSectionPayload {
-  responsibles: PatientResponsibleInput[];
-}
-
-/** section = 'service' — targeted service_type update. */
-export interface PatientServiceSectionPayload {
-  serviceType?: string[] | null;
-}
-
-export type PatientSectionPayload =
-  | PatientGeneralSectionPayload
-  | PatientClinicalSectionPayload
-  | PatientCoverageSectionPayload
-  | PatientSupportNetworkSectionPayload
-  | PatientServiceSectionPayload;
+// Payloads de seção do PATCH — extraídos em 06/09 (teto de 400 linhas do `validate:lines`).
+// Re-exportados aqui para nenhum consumidor precisar mudar de import.
+export type {
+  PatientSectionName,
+  PatientGeneralSectionPayload,
+  PatientClinicalSectionPayload,
+  PatientResponsibleInput,
+  PatientSupportNetworkSectionPayload,
+  PatientServiceSectionPayload,
+  PatientSectionPayload,
+} from './PatientSectionPayloads';
 
 /**
  * Body de PUT /api/admin/patients/:id/chat-ids — espelha patientChatIdsSchema

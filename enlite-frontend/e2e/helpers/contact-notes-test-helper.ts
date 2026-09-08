@@ -11,7 +11,7 @@
 
 import { execSync } from 'child_process';
 
-const CONTAINER = 'enlite-postgres';
+const CONTAINER = process.env.E2E_PG_CONTAINER || 'enlite-postgres';
 const DB_USER = 'enlite_admin';
 const DB_NAME = 'enlite_e2e';
 

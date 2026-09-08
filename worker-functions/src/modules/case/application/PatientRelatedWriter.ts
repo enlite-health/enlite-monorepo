@@ -54,8 +54,10 @@ export async function replacePatientAddresses(
     address_formatted: string | null;
     logistics_corridor: string | null;
     access_notes: string | null;
+    lat: string | number | null;
+    lng: string | number | null;
   }>(
-    `SELECT id, display_order, address_formatted, logistics_corridor, access_notes
+    `SELECT id, display_order, address_formatted, logistics_corridor, access_notes, lat, lng
        FROM patient_addresses
       WHERE patient_id = $1
         AND archived_at IS NULL`,
@@ -67,11 +69,34 @@ export async function replacePatientAddresses(
 
   if (valid.length === 0) return;
 
+  /**
+   * 🔒 Coordenadas que JÁ temos, indexadas pelo MESMO texto que vai ao Google.
+   *
+   * Sem isto, a rede de segurança do ClickUp (a cada 10 min, janela de 30 —
+   * logo ~3 passagens por card alterado) regeocodificava todo endereço de todo
+   * paciente que ela tocasse, com o texto inalterado e a coordenada já gravada.
+   * Medido em produção em 06/09: 132 chamadas por hora, 24h por dia, ~95 mil no
+   * mês contra uma franquia de 10 mil.
+   *
+   * A chave é `address_formatted` porque é o que o `buildGeocodingQuery` usa
+   * quando existe — mudar o texto do endereço muda a chave, o cache não bate, e
+   * o endereço volta a ser resolvido. É essa a metade que impede o conserto de
+   * virar "nunca mais geocodifica".
+   */
+  const conhecidas = new Map<string, { lat: number; lng: number }>();
+  for (const r of existing) {
+    const texto = (r.address_formatted ?? '').trim();
+    if (!texto || r.lat === null || r.lng === null) continue;
+    const lat = Number(r.lat); const lng = Number(r.lng);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) conhecidas.set(texto, { lat, lng });
+  }
+
   // Best-effort geocoding — never blocks the upsert. Failures persist
   // lat/lng=NULL so the backfill job can recover them later.
   const geocoded = await geocodePatientAddressesBestEffort(valid, geocoder, {
     delayMs: 0,
     timeoutMs: 8000,
+    known: conhecidas,
   });
 
   for (const g of geocoded) {
@@ -176,11 +201,24 @@ export async function replacePatientAddresses(
             AND deleted_at IS NULL`,
         [newAddressId, existingForSlot.id],
       );
+      // Migration 330: o serviço contratado aponta para o endereço como a vaga aponta — a linha
+      // versionada leva o ponteiro junto, senão o serviço ficaria preso ao endereço ARQUIVADO e o
+      // checklist acusaria SERVICE_ADDRESS num paciente que só teve o endereço regeocodificado.
+      // Só o serviço ATIVO acompanha o endereço novo: o encerrado guarda onde FOI prestado
+      // (a linha arquivada continua existindo) — mesma regra de snapshot da vaga publicada.
+      await client.query(
+        `UPDATE patient_contracted_services
+            SET address_id = $1
+          WHERE address_id = $2
+            AND active`,
+        [newAddressId, existingForSlot.id],
+      );
     }
   }
 
   // Slots that disappeared from the ClickUp payload:
-  //   - archive if referenced by any job_posting (preserve history)
+  //   - archive if referenced by any job_posting OR contracted service (preserve history;
+  //     migration 330 — the service FK has no ON DELETE, so a DELETE here would fail)
   //   - delete if orphan
   const newOrders = new Set(geocoded.map(g => g.address.displayOrder));
   const goneIds = existing
@@ -193,9 +231,15 @@ export async function replacePatientAddresses(
           SET archived_at = NOW()
         WHERE id = ANY($1::uuid[])
           AND archived_at IS NULL
-          AND EXISTS (
-            SELECT 1 FROM job_postings jp
-            WHERE jp.patient_address_id = patient_addresses.id
+          AND (
+            EXISTS (
+              SELECT 1 FROM job_postings jp
+              WHERE jp.patient_address_id = patient_addresses.id
+            )
+            OR EXISTS (
+              SELECT 1 FROM patient_contracted_services pcs
+              WHERE pcs.address_id = patient_addresses.id
+            )
           )`,
       [goneIds],
     );
@@ -205,6 +249,10 @@ export async function replacePatientAddresses(
           AND NOT EXISTS (
             SELECT 1 FROM job_postings jp
             WHERE jp.patient_address_id = patient_addresses.id
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM patient_contracted_services pcs
+            WHERE pcs.address_id = patient_addresses.id
           )`,
       [goneIds],
     );

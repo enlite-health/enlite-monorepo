@@ -15,7 +15,8 @@ import {
   cleanupPatientDeep, runSQL,
 } from '../helpers/patient-detail-a6-helper';
 
-const EMULATOR = 'http://127.0.0.1:9099';
+// `E2E_FIREBASE_EMULATOR` aponta para o emulador de um stack isolado (`docker compose -p`); default inalterado.
+const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
 const EMULATOR_PROJECT = 'demo-no-project';
 const STAFF_EMAIL = `e2e.a6.${Date.now()}@enlite.health`;
 const STAFF_PASSWORD = 'TestAdmin123!';
@@ -76,7 +77,7 @@ test.describe('Spec 015 (US-A6) — franja etária solicitada do prestador @inte
   test.describe.configure({ mode: 'serial' });
   test.setTimeout(180_000);
 
-  let seed: { patientId: string; stamp: string };
+  let seed: { patientId: string; addressId: string; stamp: string };
 
   test.beforeAll(() => {
     seed = seedActivatablePatientA6();
@@ -101,11 +102,15 @@ test.describe('Spec 015 (US-A6) — franja etária solicitada do prestador @inte
     await expect(page.getByTestId('servicos-contratados-card')).toBeVisible();
 
     // ── Abre o drawer, cria o serviço com a franja "30 a 45 años" ──
-    await forceClick(page.getByTestId('edit-service-btn'));
+    await forceClick(page.getByTestId('new-service-btn'));
     await expect(page.getByTestId('patient-contracted-services-edit-drawer')).toBeVisible();
-    await forceClick(page.getByTestId('contracted-service-add'));
     await forceSelect(page.getByTestId('svc-code-1'), 'AT');
     await forceSelect(page.getByTestId('svc-providerAgeBand-1'), 'AGE_30_45');
+    // Migration 330: sem endereço vinculado o activate recusa (SERVICE_ADDRESS).
+    await forceSelect(page.getByTestId('svc-addressId-1'), seed.addressId);
+    // Decisão do Gabriel 07/09: sem horário o activate também recusa (SERVICE_SCHEDULE) — este
+    // spec ativa mais abaixo esperando 200, então o serviço nasce com horário.
+    await forceClick(page.getByTestId('day-schedule-add-monday'));
     const createService = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
     await forceClick(page.getByTestId('contracted-service-new-save'));
     const svcBody = (await (await createService).json()) as { data: { id: string; providerAgeBand: string } };
@@ -117,10 +122,15 @@ test.describe('Spec 015 (US-A6) — franja etária solicitada do prestador @inte
     await forceClick(page.getByLabel('Cerrar'));
     await page.waitForTimeout(400);
     await expect(page.getByTestId('patient-contracted-services-edit-drawer')).not.toBeVisible();
-    const ageBandCell = page.getByTestId(`contracted-service-age-band-${serviceId}`);
-    await expect(ageBandCell).toHaveText('30 a 45 Años');
-    await expect(ageBandCell).not.toHaveText(/AGE_30_45/);
+    // 05/09: a franja saiu da tabela (5 colunas do Figma) e vive no DETALHE — clique na linha.
     await expect(page.locator('[data-testid="servicos-contratados-card"]')).toHaveScreenshot('a6-franja-card.png');
+    await forceClick(page.getByTestId(`contracted-service-row-${serviceId}`));
+    const ageBandCell = page.getByTestId('svc-detail-age-band');
+    await expect(ageBandCell).toContainText('30 a 45 Años');
+    await expect(ageBandCell).not.toHaveText(/AGE_30_45/);
+    await forceClick(page.getByTestId('contracted-service-detail-close'));
+    await page.waitForTimeout(400);
+    await expect(page.getByTestId('contracted-service-detail-drawer')).not.toBeVisible();
 
     // ── Ativar: sincroniza pela RESPOSTA do POST /activate (molde do bloco C, D-lição do brief) ──
     await forceClick(page.getByTestId('activate-patient-btn'));

@@ -33,6 +33,9 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
     { tag: 'C1B-attention-incompleto-pending',    status: 'PENDING_ADMISSION', completo: false },
     { tag: 'C1B-attention-completo-admission',    status: 'ADMISSION',         completo: true  },
     { tag: 'C1B-attention-active-incompleto',     status: 'ACTIVE',            completo: false },
+    // Migration 330: TUDO completo, menos o vínculo serviço→endereço — só SERVICE_ADDRESS acusa.
+    // É o cenário que prova que a cláusula SQL nova e o JS concordam.
+    { tag: 'C1B-attention-servico-sem-domicilio', status: 'ADMISSION',         completo: true, servicoSemEndereco: true },
   ];
 
   const limpar = async (): Promise<void> => {
@@ -50,9 +53,15 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
         [c.tag, c.status, c.completo, c.completo ? 'OSDE' : null],
       )).rows[0].id;
       if (c.completo) {
-        await pool.query(`INSERT INTO patient_addresses (patient_id, address_type, address_formatted, display_order) VALUES ($1,'primary','Calle C1B 1',1)`, [id]);
+        const addr = (await pool.query<{ id: string }>(`INSERT INTO patient_addresses (patient_id, address_type, address_formatted, display_order) VALUES ($1,'primary','Calle C1B 1',1) RETURNING id`, [id])).rows[0].id;
         await pool.query(`INSERT INTO patient_responsibles (patient_id, first_name, last_name, is_primary, display_order) VALUES ($1,'C1B','Resp',true,1)`, [id]);
-        await pool.query(`INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by) VALUES ($1,'CAREGIVER',true,'BR','c1b-e2e','c1b-e2e')`, [id]);
+        // Migration 330: "completo" exige o serviço APONTANDO para o endereço; o cenário
+        // `servicoSemEndereco` deixa address_id NULL de propósito.
+        await pool.query(
+          // Decisão do Gabriel 07/09: "completo" também exige HORÁRIO (SERVICE_SCHEDULE).
+          `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule) VALUES ($1,'CAREGIVER',true,'BR','c1b-e2e','c1b-e2e',$2,'[{"dayOfWeek":1,"startTime":"08:00","endTime":"12:00"}]'::jsonb)`,
+          [id, 'servicoSemEndereco' in c && c.servicoSemEndereco ? null : addr],
+        );
       }
     }
   });
@@ -69,10 +78,15 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
     const rows = await minhas();
     expect(rows).toHaveLength(cenarios.length);
     const incompletos = rows.filter((r) => r.attentionReasons.includes('INCOMPLETE_ADMISSION'));
-    // 2 em ADMISSION/PENDING_ADMISSION e incompletos; o ACTIVE incompleto NÃO conta (já foi aprovado)
-    expect(incompletos.map((r) => r.needsAttention)).toEqual([true, true]);
+    // 3 em ADMISSION/PENDING_ADMISSION e incompletos (2 sem nada + 1 só com serviço sem endereço,
+    // migration 330); o ACTIVE incompleto NÃO conta (já foi aprovado); o completo não aparece.
+    expect(incompletos.map((r) => r.needsAttention)).toEqual([true, true, true]);
+    const semDomicilio = rows.find((r) => r.clickupTaskId === 'C1B-attention-servico-sem-domicilio');
+    expect(semDomicilio?.attentionReasons).toContain('INCOMPLETE_ADMISSION');
+    const completo = rows.find((r) => r.clickupTaskId === 'C1B-attention-completo-admission');
+    expect(completo?.needsAttention).toBe(false);
     expect((ACTIVATABLE_STATUSES as readonly string[]).includes('ADMISSION')).toBe(true);
-    expect(computePatientCompleteness({ birthDate: null, hasConsent: false, insuranceInformed: null, activeAddressCount: 0, activeResponsibleCount: 0, activeContractedServiceCount: 0 }).missing.length).toBeGreaterThan(0);
+    expect(computePatientCompleteness({ birthDate: null, hasConsent: false, insuranceInformed: null, activeAddressCount: 0, activeResponsibleCount: 0, activeContractedServiceCount: 0, activeContractedServicesWithoutAddressCount: 0, activeContractedServicesWithoutScheduleCount: 0 }).missing.length).toBeGreaterThan(0);
   });
 
   it('b. filtrar por `needs_attention=true` devolve EXATAMENTE quem tem o badge — e nunca quem não tem', async () => {
@@ -127,6 +141,13 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
              (SELECT COUNT(*)::int FROM patient_addresses pa WHERE pa.patient_id = p.id AND pa.archived_at IS NULL) AS addrs,
              (EXISTS (SELECT 1 FROM patient_responsibles pr WHERE pr.patient_id = p.id))::int AS resp,
              (EXISTS (SELECT 1 FROM patient_contracted_services s WHERE s.patient_id = p.id AND s.active))::int AS svc,
+             (EXISTS (SELECT 1 FROM patient_contracted_services s
+                        LEFT JOIN patient_addresses sa ON sa.id = s.address_id AND sa.archived_at IS NULL
+                       WHERE s.patient_id = p.id AND s.active AND sa.id IS NULL))::int AS svc_noaddr,
+             -- Decisão do Gabriel 07/09: serviço ativo sem horário (NULL ou array vazio).
+             (EXISTS (SELECT 1 FROM patient_contracted_services s
+                       WHERE s.patient_id = p.id AND s.active
+                         AND (s.schedule IS NULL OR jsonb_array_length(s.schedule) = 0)))::int AS svc_nosched,
              ${patientNeedsAttentionSql('p')} AS sql_flag
         FROM patients p
        WHERE p.deleted_at IS NULL`);
@@ -141,6 +162,8 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
         activeAddressCount: r.addrs as number,
         activeResponsibleCount: r.resp as number,
         activeContractedServiceCount: r.svc as number,
+        activeContractedServicesWithoutAddressCount: r.svc_noaddr as number,
+        activeContractedServicesWithoutScheduleCount: r.svc_nosched as number,
         now,
       });
       const incompleta = (ACTIVATABLE_STATUSES as readonly (string | null)[]).includes(r.status as string | null) && missing.length > 0;

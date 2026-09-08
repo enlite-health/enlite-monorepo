@@ -2840,9 +2840,14 @@
         "unset": "—",
         "saveError": "Error al guardar",
         "deviceType": "Dispositivo",
+        "clinicalSections": {
+          "pathology": "Patología",
+          "profile": "Perfil clínico",
+          "documents": "Documentación",
+          "notes": "Observaciones"
+        },
         "diagnosisAssignment": {
-          "sectionTitle": "Diagnóstico (CIE-11)",
-          "searchPlaceholder": "Buscar diagnóstico en español...",
+          "searchPlaceholder": "Escribí el nombre de la patología…",
           "typing": "Escribiendo…",
           "searching": "Buscando…",
           "noResults": "No se encontraron resultados para \"{{query}}\".",
@@ -2856,6 +2861,9 @@
           "widenScopeHint": "¿No encontrás el diagnóstico? Probá en \"Todas las categorías\".",
           "whoAttribution": "Clasificación Internacional de Enfermedades, 11.ª revisión (CIE-11), Organización Mundial de la Salud. Licencia CC BY-ND 3.0 IGO.",
           "chipsEmpty": "Todavía no se agregó ningún diagnóstico.",
+          "adding": "Agregando…",
+          "removing": "Quitando…",
+          "saving": "Guardando…",
           "makePrimary": "Marcar como principal",
           "primaryBadge": "Principal",
           "remove": "Quitar",
@@ -2896,7 +2904,6 @@
         "careLocation": "Lugar de atención",
         "hourlyValue": "Valor por hora",
         "hourlyValueRedacted": "🔒 Solo admin",
-        "version": "Versión",
         "startDate": "Fecha de inicio",
         "contractType": "Tipo de contratación",
         "taxCondition": "Condición de IVA",
@@ -2925,8 +2932,20 @@
         "discardChangesDiscard": "Descartar cambios",
         "selectPlaceholder": "Seleccioná…",
         "affiliateHint": "Número de afiliado tal como figura en la credencial de la cobertura.",
-        "versionHint": "Versión del servicio contratado (si la cobertura la identifica por versión, no por fecha).",
-        "requiredField": "Este campo es obligatorio"
+        "requiredField": "Este campo es obligatorio",
+        "serviceAddress": "Domicilio",
+        "serviceAddressHint": "Dónde se presta ESTE servicio. Cada servicio se vincula a un domicilio del paciente; la vacante nace ahí.",
+        "serviceSchedule": "Horarios",
+        "serviceScheduleHint": "Opcional para guardar. Pero sin horario el paciente no puede pasar a activo, búsqueda ni reemplazo.",
+        "serviceScheduleNone": "Este servicio todavía no tiene horario. Podés guardarlo así, pero el paciente no va a poder pasar a activo, búsqueda ni reemplazo hasta que lo cargues.",
+        "onlyNumbersHint": "Solo números",
+        "onlyNumbersWarning": "Este campo acepta solo números.",
+        "serviceAddressNone": "Este paciente no tiene domicilio cargado. Cargalo en \"Localizaciones\" para poder vincular el servicio — sin domicilio, la vacante no puede crearse.",
+        "newServiceTitle": "Nuevo servicio contratado",
+        "editServiceTitle": "Editar servicio contratado",
+        "serviceNotFound": "Este servicio ya no existe en la ficha.",
+        "decimalCommaWarning": "Para decimales usá punto (.), no coma.",
+        "listReloadError": "El cambio se guardó, pero no pudimos recargar la lista. Cerrá y volvé a abrir."
       },
       "kanban": {
         "title": "Pacientes — Kanban",
@@ -2947,8 +2966,10 @@
         "dragHint": "Arrastrá una tarjeta para cambiar el estado del paciente.",
         "moveErrorCodes": {
           "PATIENT_STATUS_TRANSITION_NOT_ALLOWED": "Ese cambio de estado no está permitido.",
-          "ON_HOLD_REASON_REQUIRED": "Para poner en espera hace falta indicar el motivo."
-        }
+          "ON_HOLD_REASON_REQUIRED": "Para poner en espera hace falta indicar el motivo.",
+          "PATIENT_STATUS_NOT_READY": "No se puede mover: faltan datos obligatorios en la ficha."
+        },
+        "moveNotReady": "No se puede mover: falta {{items}}."
       },
       "countryLabel": "País",
       "countryOptions": {
@@ -3114,14 +3135,13 @@
           "admission": "Admisión",
           "lastUpdate": "Actualización",
           "discharge": "Desligamiento",
-          "emergencyContact": "Contacto de Emergencia",
           "responsibleName": "Nombre del Responsable",
           "responsiblePhone": "Teléfono del Responsable",
           "documentType": "Tipo de documento",
           "documentNumber": "Número del documento",
           "email": "Email",
           "patientEmail": "Email del paciente",
-          "address": "Dirección:",
+          "address": "Dirección",
           "patientWhatsapp": "WhatsApp del paciente",
           "phoneMatchWarning": "Este número coincide con el del responsable {{name}}.",
           "movePhoneToResponsible": "Mover al responsable",
@@ -3129,7 +3149,10 @@
           "movePhoneConfirmTitle": "Mover el número al responsable",
           "movePhoneConfirmBody": "Se va a borrar el WhatsApp del paciente (el del responsable no se toca). ¿Confirmás?",
           "movePhoneError": "No se pudo mover el número. Probá de nuevo.",
-          "movePhoneSuccess": "Número movido — el WhatsApp del paciente quedó vacío."
+          "movePhoneSuccess": "Número movido — el WhatsApp del paciente quedó vacío.",
+          "primaryResponsibleContact": "Contacto del responsable principal",
+          "responsibleContact": "Contacto del responsable",
+          "relationship": "Parentesco"
         },
         "documentTypes": {
           "CPF": "CPF",
@@ -3160,7 +3183,6 @@
         },
         "diagnosisCard": {
           "title": "Diagnóstico",
-          "cid": "Hipótesis Diagnóstica - CID",
           "details": "Detalles",
           "generalNotes": "Observaciones generales",
           "generalNotesCounter": "{{count}}/{{max}} caracteres",
@@ -3183,7 +3205,10 @@
           "devices": "Dispositivo",
           "patologiesUnavailable": "No se pudo cargar el diagnóstico.",
           "patologiesEmpty": "Sin diagnósticos registrados.",
-          "patologiesPrimaryBadge": "Principal"
+          "patologiesPrimaryBadge": "Principal",
+          "patologies": "Patologías",
+          "generalNotesEmpty": "Sin observaciones registradas.",
+          "emergencyInstructionsEmpty": "Sin instrucciones registradas."
         },
         "therapeuticProjectCard": {
           "title": "Proyecto Terapéutico",
@@ -3254,22 +3279,31 @@
         },
         "contractedServicesCard": {
           "title": "Servicios Contratados",
-          "editButton": "Editar servicios",
           "tableDevice": "Dispositivo(s)",
           "tableProfessional": "Servicio",
           "tableProvidersNeeded": "Prest. necesarios",
-          "tableProvidersActive": "Prest. activos",
           "tableWeeklyHours": "Hs. semanales",
           "tableAuthorizedHours": "Hs. autorizadas",
           "tableLocation": "Lugar de Atención",
           "tableValue": "Valor",
           "tableValueRedacted": "🔒",
-          "tableVersion": "Versión",
           "tableStart": "Inicio",
           "tableContract": "Contratación",
           "tableIVA": "IVA",
           "tableProviderAgeBand": "Franja etaria prestador",
           "inactiveBadge": "Baja",
+          "tableQuantity": "Cant.",
+          "tableAddress": "Domicilio",
+          "tableSchedule": "Horarios",
+          "noAddressLinked": "Sin domicilio vinculado",
+          "noSchedule": "Sin horario",
+          "detailTitle": "Detalle del servicio contratado",
+          "detailClose": "Cerrar",
+          "detailSupervision": "Supervisión",
+          "detailGuardShift": "Turno de guardia",
+          "detailProfessionalProfile": "Perfil profesional buscado",
+          "detailProviders": "Prestadores activos",
+          "detailNoProviders": "Sin prestadores asignados",
           "serviceTypes": {
             "AT": "Acompañante Terapéutico",
             "CAREGIVER": "Cuidador",
@@ -3312,7 +3346,11 @@
             "AGE_20_30": "20 a 30 Años",
             "AGE_30_45": "30 a 45 Años",
             "AGE_45_PLUS": "+ 45 Años"
-          }
+          },
+          "newButton": "Nuevo servicio",
+          "editRowAria": "Editar el servicio {{service}}",
+          "tableActions": "Acciones",
+          "detailEdit": "Editar"
         },
         "matchingCard": {
           "title": "Encuadre Terapéutico",
@@ -3392,6 +3430,8 @@
             "RESPONSIBLE": "Responsable",
             "COVERAGE": "Cobertura",
             "CONTRACTED_SERVICE": "Servicio contratado",
+            "SERVICE_ADDRESS": "Domicilio del servicio",
+            "SERVICE_SCHEDULE": "Horario del servicio",
             "CONSENT": "Consentimiento"
           }
         },
@@ -3445,7 +3485,9 @@
           "to": "A",
           "source": "Origen",
           "error": "No se pudo cargar el historial"
-        }
+        },
+        "notReady": "No se puede pasar a {{status}}: falta {{items}}.",
+        "notReadyGeneric": "No se puede cambiar el estado: faltan datos obligatorios en la ficha."
       },
       "insuranceProviderOptions": {
         "API": "API",
@@ -4442,14 +4484,20 @@
       },
       "anchorError": "No se pudo cargar la lista. Reintentá en unos segundos.",
       "anchorLoading": "Buscando…",
+      "anchorNoMatch": "Sin resultados para ese nombre",
+      "anchorTypeMore": "Escribí al menos {{n}} letras",
+      "anchorFoundNoLocation": "{{count}} encontrado(s), pero sin ubicación registrada",
       "anchorTruncated": "Hay más de los que entran en esta lista: escribí el nombre para filtrar.",
       "corridor": {
+        "transfers_one": "1 combinación",
+        "transfers_other": "{{count}} combinaciones",
+        "options_one": "1 opción",
+        "options_other": "{{count}} opciones",
         "loading": "Buscando recorrido…",
         "error": "No se pudo calcular el recorrido.",
         "noRoute": "No hay recorrido en transporte público entre estos dos puntos.",
         "noCoverage": "Falta la ubicación de uno de los dos — no podemos calcular el recorrido.",
         "direct": "directo",
-        "transfers": "{{count}} combinación(es)",
         "total": "{{count}} min puerta a puerta",
         "walkLeg": "caminar {{min}} min ({{meters}} m)",
         "straight": "en línea recta: ~{{count}} cuadras"

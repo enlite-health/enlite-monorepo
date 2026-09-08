@@ -1,0 +1,620 @@
+{
+    "routes": [
+        {
+            "legs": [
+                {
+                    "duration": "561s",
+                    "steps": [
+                        {
+                            "distanceMeters": 35,
+                            "staticDuration": "28s",
+                            "polyline": {
+                                "encodedPolyline": "`sfrE|vkcJEw@"
+                            },
+                            "travelMode": "WALK"
+                        },
+                        {
+                            "distanceMeters": 48,
+                            "staticDuration": "47s",
+                            "polyline": {
+                                "encodedPolyline": "zrfrEdukcJLFFu@h@K"
+                            },
+                            "travelMode": "WALK"
+                        },
+                        {
+                            "distanceMeters": 1762,
+                            "staticDuration": "289s",
+                            "polyline": {
+                                "encodedPolyline": "ztfrEpskcJ@XuAHWDwELoFH_FNqFVo@aRUkGc@kPYoOKe@OwAGoB@a@N[QqGJ?"
+                            },
+                            "transitDetails": {
+                                "stopDetails": {
+                                    "arrivalStop": {
+                                        "name": "Avenida Corrientes Y Suipacha (180)",
+                                        "location": {
+                                            "latLng": {
+                                                "latitude": -34.60365,
+                                                "longitude": -58.379619999999996
+                                            }
+                                        }
+                                    },
+                                    "arrivalTime": "2026-09-06T02:54:44Z",
+                                    "departureStop": {
+                                        "name": "Congreso (6 - 50)",
+                                        "location": {
+                                            "latLng": {
+                                                "latitude": -34.60958,
+                                                "longitude": -58.391769999999994
+                                            }
+                                        }
+                                    },
+                                    "departureTime": "2026-09-06T02:49:55Z"
+                                },
+                                "localizedValues": {
+                                    "arrivalTime": {
+                                        "time": {
+                                            "text": "23:54"
+                                        },
+                                        "timeZone": "America/Buenos_Aires"
+                                    },
+                                    "departureTime": {
+                                        "time": {
+                                            "text": "23:49"
+                                        },
+                                        "timeZone": "America/Buenos_Aires"
+                                    }
+                                },
+                                "headsign": "C: Correo Central x Soldati (Ex L\u00ednea 6)",
+                                "transitLine": {
+                                    "agencies": [
+                                        {
+                                            "name": "Nudo S.A.",
+                                            "phoneNumber": "+54 11 4687-2600",
+                                            "uri": "https://www.argentina.gob.ar/cnrt"
+                                        }
+                                    ],
+                                    "name": "Plaza Del Correo (79 - 105 - 146) - Terminal L\u00edneas 8 Y 50",
+                                    "color": "#1b6633",
+                                    "nameShort": "50",
+                                    "textColor": "#ffffff",
+                                    "vehicle": {
+                                        "name": {
+                                            "text": "Autob\u00fas"
+                                        },
+                                        "type": "BUS",
+                                        "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/bus2.png"
+                                    }
+                                },
+                                "stopCount": 4
+                            },
+                            "travelMode": "TRANSIT"
+                        },
+                        {
+                            "distanceMeters": 126,
+                            "staticDuration": "97s",
+                            "polyline": {
+                                "encodedPolyline": "bperEpgicJDlBCb@BjB"
+                            },
+                            "travelMode": "WALK"
+                        },
+                        {
+                            "distanceMeters": 60,
+                            "staticDuration": "100s",
+                            "polyline": {
+                                "encodedPolyline": "hperEnoicJYJIX]BHTRA?BQ?@XH??DT?Bn@"
+                            },
+                            "travelMode": "WALK"
+                        }
+                    ]
+                }
+            ],
+            "duration": "602s"
+        },
+        {
+            "legs": [
+                {
+                    "duration": "737s",
+                    "steps": [
+                        {
+                            "distanceMeters": 35,
+                            "staticDuration": "28s",
+                            "polyline": {
+                                "encodedPolyline": "`sfrE|vkcJCc@E@"
+                            },
+                            "travelMode": "WALK"
+                        },
+                        {
+                            "distanceMeters": 134,
+                            "staticDuration": "119s",
+                            "polyline": {
+                                "encodedPolyline": "vrfrEzukcJ]BAOqEN"
+                            },
+                            "travelMode": "WALK"
+                        },
+                        {
+                            "distanceMeters": 22,
+                            "staticDuration": "18s",
+                            "polyline": {
+                                "encodedPolyline": "dkfrE~ukcJ@V"
+                            },
+                            "travelMode": "WALK"
+                        },
+                        {
+                            "distanceMeters": 1290,
+                            "staticDuration": "270s",
+                            "polyline": {
+                                "encodedPolyline": "dkfrEvvkcJG@Eo@AaC[iLG}AcAa`@qFN_FFcKXAI"
+                            },
+                            "transitDetails": {
+                                "stopDetails": {
+                                    "arrivalStop": {
+                                        "name": "Libertad, 445",
+                                        "location": {
+                                            "latLng": {
+                                                "latitude": -34.6031532,
+                                                "longitude": -58.383712700000004
+                                            }
+                                        }
+                                    },
+                                    "arrivalTime": "2026-09-06T02:53:51Z",
+                                    "departureStop": {
+                                        "name": "Bartolom\u00e9 Mitre y Riobamba",
+                                        "location": {
+                                            "latLng": {
+                                                "latitude": -34.6080257,
+                                                "longitude": -58.39228399999999
+                                            }
+                                        }
+                                    },
+                                    "departureTime": "2026-09-06T02:49:21Z"
+                                },
+                                "localizedValues": {
+                                    "arrivalTime": {
+                                        "time": {
+                                            "text": "23:53"
+                                        },
+                                        "timeZone": "America/Buenos_Aires"
+                                    },
+                                    "departureTime": {
+                                        "time": {
+                                            "text": "23:49"
+                                        },
+                                        "timeZone": "America/Buenos_Aires"
+                                    }
+                                },
+                                "headsign": "Piedrabuena - Retiro",
+                                "transitLine": {
+                                    "agencies": [
+                                        {
+                                            "name": "Transportes Rio Grande S.A.C.I.F.",
+                                            "phoneNumber": "+54 11 4687-2600",
+                                            "uri": "https://www.argentina.gob.ar/cnrt"
+                                        }
+                                    ],
+                                    "name": "Avenida Costanera Rafael Obligado, 237 - Aeropuerto Ezeiza Acc. A",
+                                    "color": "#3061f2",
+                                    "nameShort": "8",
+                                    "textColor": "#ffffff",
+                                    "vehicle": {
+                                        "name": {
+                                            "text": "Autob\u00fas"
+                                        },
+                                        "type": "BUS",
+                                        "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/bus2.png"
+                                    }
+                                },
+                                "stopCount": 5
+                            },
+                            "travelMode": "TRANSIT"
+                        },
+                        {
+                            "distanceMeters": 67,
+                            "staticDuration": "53s",
+                            "polyline": {
+                                "encodedPolyline": "dmerEbajcJdBG"
+                            },
+                            "travelMode": "WALK"
+                        },
+                        {
+                            "distanceMeters": 224,
+                            "staticDuration": "217s",
+                            "polyline": {
+                                "encodedPolyline": "jperEz`jcJM}EB]AU[?I{AL?G{AB?"
+                            },
+                            "travelMode": "WALK"
+                        },
+                        {
+                            "distanceMeters": 29,
+                            "staticDuration": "32s",
+                            "polyline": {
+                                "encodedPolyline": "boerEpricJP?Bn@"
+                            },
+                            "travelMode": "WALK"
+                        }
+                    ]
+                }
+            ],
+            "duration": "761s"
+        },
+        {
+            "legs": [
+                {
+                    "duration": "538s",
+                    "steps": [
+                        {
+                            "distanceMeters": 35,
+                            "staticDuration": "28s",
+                            "polyline": {
+                                "encodedPolyline": "`sfrE|vkcJEw@"
+                            },
+                            "travelMode": "WALK"
+                        },
+                        {
+                            "distanceMeters": 48,
+                            "staticDuration": "47s",
+                            "polyline": {
+                                "encodedPolyline": "zrfrEdukcJLFFu@h@K"
+                            },
+                            "travelMode": "WALK"
+                        },
+                        {
+                            "distanceMeters": 1738,
+                            "staticDuration": "285s",
+                            "polyline": {
+                                "encodedPolyline": "ztfrEpskcJ@XuAHWDwELoFH_FNqFVo@aRUkGc@kPYoOKe@OwAGoB@a@N[MyEJA"
+                            },
+                            "transitDetails": {
+                                "stopDetails": {
+                                    "arrivalStop": {
+                                        "name": "Avenida Corrientes Y Suipacha (50 - 106 - 146)",
+                                        "location": {
+                                            "latLng": {
+                                                "latitude": -34.60367,
+                                                "longitude": -58.37988999999999
+                                            }
+                                        }
+                                    },
+                                    "arrivalTime": "2026-09-06T03:01:22Z",
+                                    "departureStop": {
+                                        "name": "Congreso (6 - 50)",
+                                        "location": {
+                                            "latLng": {
+                                                "latitude": -34.60958,
+                                                "longitude": -58.391769999999994
+                                            }
+                                        }
+                                    },
+                                    "departureTime": "2026-09-06T02:53:35Z"
+                                },
+                                "localizedValues": {
+                                    "arrivalTime": {
+                                        "time": {
+                                            "text": "0:01"
+                                        },
+                                        "timeZone": "America/Buenos_Aires"
+                                    },
+                                    "departureTime": {
+                                        "time": {
+                                            "text": "23:53"
+                                        },
+                                        "timeZone": "America/Buenos_Aires"
+                                    }
+                                },
+                                "headsign": "A: Av. Eva Per\u00f3n y Gral. Paz - Correo Central",
+                                "transitLine": {
+                                    "agencies": [
+                                        {
+                                            "name": "Nudo S.A.",
+                                            "phoneNumber": "+54 11 4687-2600",
+                                            "uri": "https://www.argentina.gob.ar/cnrt"
+                                        }
+                                    ],
+                                    "name": "Plaza Del Correo (79 - 105 - 146) - Terminal L\u00edneas 8 Y 50",
+                                    "color": "#1b6633",
+                                    "nameShort": "50",
+                                    "textColor": "#ffffff",
+                                    "vehicle": {
+                                        "name": {
+                                            "text": "Autob\u00fas"
+                                        },
+                                        "type": "BUS",
+                                        "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/bus2.png"
+                                    }
+                                },
+                                "stopCount": 4
+                            },
+                            "travelMode": "TRANSIT"
+                        },
+                        {
+                            "distanceMeters": 101,
+                            "staticDuration": "78s",
+                            "polyline": {
+                                "encodedPolyline": "fperEfiicJ@v@Cb@BjB"
+                            },
+                            "travelMode": "WALK"
+                        },
+                        {
+                            "distanceMeters": 60,
+                            "staticDuration": "100s",
+                            "polyline": {
+                                "encodedPolyline": "hperEnoicJYJIX]BHTRA?BQ?@XH??DT?Bn@"
+                            },
+                            "travelMode": "WALK"
+                        }
+                    ]
+                }
+            ],
+            "duration": "780s"
+        },
+        {
+            "legs": [
+                {
+                    "duration": "561s",
+                    "steps": [
+                        {
+                            "distanceMeters": 35,
+                            "staticDuration": "28s",
+                            "polyline": {
+                                "encodedPolyline": "`sfrE|vkcJEw@"
+                            },
+                            "travelMode": "WALK"
+                        },
+                        {
+                            "distanceMeters": 48,
+                            "staticDuration": "47s",
+                            "polyline": {
+                                "encodedPolyline": "zrfrEdukcJLFFu@h@K"
+                            },
+                            "travelMode": "WALK"
+                        },
+                        {
+                            "distanceMeters": 1762,
+                            "staticDuration": "289s",
+                            "polyline": {
+                                "encodedPolyline": "ztfrEpskcJ@XuAHWDwELoFH_FNqFVo@aRUkGc@kPYoOKe@OwAGoB@a@N[QqGJ?"
+                            },
+                            "transitDetails": {
+                                "stopDetails": {
+                                    "arrivalStop": {
+                                        "name": "Avenida Corrientes Y Suipacha (180)",
+                                        "location": {
+                                            "latLng": {
+                                                "latitude": -34.60365,
+                                                "longitude": -58.379619999999996
+                                            }
+                                        }
+                                    },
+                                    "arrivalTime": "2026-09-06T03:08:44Z",
+                                    "departureStop": {
+                                        "name": "Congreso (6 - 50)",
+                                        "location": {
+                                            "latLng": {
+                                                "latitude": -34.60958,
+                                                "longitude": -58.391769999999994
+                                            }
+                                        }
+                                    },
+                                    "departureTime": "2026-09-06T03:03:55Z"
+                                },
+                                "localizedValues": {
+                                    "arrivalTime": {
+                                        "time": {
+                                            "text": "0:08"
+                                        },
+                                        "timeZone": "America/Buenos_Aires"
+                                    },
+                                    "departureTime": {
+                                        "time": {
+                                            "text": "0:03"
+                                        },
+                                        "timeZone": "America/Buenos_Aires"
+                                    }
+                                },
+                                "headsign": "C: Correo Central x Soldati (Ex L\u00ednea 6)",
+                                "transitLine": {
+                                    "agencies": [
+                                        {
+                                            "name": "Nudo S.A.",
+                                            "phoneNumber": "+54 11 4687-2600",
+                                            "uri": "https://www.argentina.gob.ar/cnrt"
+                                        }
+                                    ],
+                                    "name": "Plaza Del Correo (79 - 105 - 146) - Terminal L\u00edneas 8 Y 50",
+                                    "color": "#1b6633",
+                                    "nameShort": "50",
+                                    "textColor": "#ffffff",
+                                    "vehicle": {
+                                        "name": {
+                                            "text": "Autob\u00fas"
+                                        },
+                                        "type": "BUS",
+                                        "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/bus2.png"
+                                    }
+                                },
+                                "stopCount": 4
+                            },
+                            "travelMode": "TRANSIT"
+                        },
+                        {
+                            "distanceMeters": 126,
+                            "staticDuration": "97s",
+                            "polyline": {
+                                "encodedPolyline": "bperEpgicJDlBCb@BjB"
+                            },
+                            "travelMode": "WALK"
+                        },
+                        {
+                            "distanceMeters": 60,
+                            "staticDuration": "100s",
+                            "polyline": {
+                                "encodedPolyline": "hperEnoicJYJIX]BHTRA?BQ?@XH??DT?Bn@"
+                            },
+                            "travelMode": "WALK"
+                        }
+                    ]
+                }
+            ],
+            "duration": "602s"
+        },
+        {
+            "legs": [
+                {
+                    "duration": "538s",
+                    "steps": [
+                        {
+                            "distanceMeters": 35,
+                            "staticDuration": "28s",
+                            "polyline": {
+                                "encodedPolyline": "`sfrE|vkcJEw@"
+                            },
+                            "travelMode": "WALK"
+                        },
+                        {
+                            "distanceMeters": 48,
+                            "staticDuration": "47s",
+                            "polyline": {
+                                "encodedPolyline": "zrfrEdukcJLFFu@h@K"
+                            },
+                            "travelMode": "WALK"
+                        },
+                        {
+                            "distanceMeters": 1738,
+                            "staticDuration": "285s",
+                            "polyline": {
+                                "encodedPolyline": "ztfrEpskcJ@XuAHWDwELoFH_FNqFVo@aRUkGc@kPYoOKe@OwAGoB@a@N[MyEJA"
+                            },
+                            "transitDetails": {
+                                "stopDetails": {
+                                    "arrivalStop": {
+                                        "name": "Avenida Corrientes Y Suipacha (50 - 106 - 146)",
+                                        "location": {
+                                            "latLng": {
+                                                "latitude": -34.60367,
+                                                "longitude": -58.37988999999999
+                                            }
+                                        }
+                                    },
+                                    "arrivalTime": "2026-09-06T03:16:57Z",
+                                    "departureStop": {
+                                        "name": "Congreso (6 - 50)",
+                                        "location": {
+                                            "latLng": {
+                                                "latitude": -34.60958,
+                                                "longitude": -58.391769999999994
+                                            }
+                                        }
+                                    },
+                                    "departureTime": "2026-09-06T03:09:10Z"
+                                },
+                                "localizedValues": {
+                                    "arrivalTime": {
+                                        "time": {
+                                            "text": "0:16"
+                                        },
+                                        "timeZone": "America/Buenos_Aires"
+                                    },
+                                    "departureTime": {
+                                        "time": {
+                                            "text": "0:09"
+                                        },
+                                        "timeZone": "America/Buenos_Aires"
+                                    }
+                                },
+                                "headsign": "A: Av. Eva Per\u00f3n y Gral. Paz - Correo Central",
+                                "transitLine": {
+                                    "agencies": [
+                                        {
+                                            "name": "Nudo S.A.",
+                                            "phoneNumber": "+54 11 4687-2600",
+                                            "uri": "https://www.argentina.gob.ar/cnrt"
+                                        }
+                                    ],
+                                    "name": "Plaza Del Correo (79 - 105 - 146) - Terminal L\u00edneas 8 Y 50",
+                                    "color": "#1b6633",
+                                    "nameShort": "50",
+                                    "textColor": "#ffffff",
+                                    "vehicle": {
+                                        "name": {
+                                            "text": "Autob\u00fas"
+                                        },
+                                        "type": "BUS",
+                                        "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/bus2.png"
+                                    }
+                                },
+                                "stopCount": 4
+                            },
+                            "travelMode": "TRANSIT"
+                        },
+                        {
+                            "distanceMeters": 101,
+                            "staticDuration": "78s",
+                            "polyline": {
+                                "encodedPolyline": "fperEfiicJ@v@Cb@BjB"
+                            },
+                            "travelMode": "WALK"
+                        },
+                        {
+                            "distanceMeters": 60,
+                            "staticDuration": "100s",
+                            "polyline": {
+                                "encodedPolyline": "hperEnoicJYJIX]BHTRA?BQ?@XH??DT?Bn@"
+                            },
+                            "travelMode": "WALK"
+                        }
+                    ]
+                }
+            ],
+            "duration": "780s"
+        },
+        {
+            "legs": [
+                {
+                    "duration": "1325s",
+                    "steps": [
+                        {
+                            "distanceMeters": 35,
+                            "staticDuration": "28s",
+                            "polyline": {
+                                "encodedPolyline": "`sfrE|vkcJCc@E@"
+                            },
+                            "travelMode": "WALK"
+                        },
+                        {
+                            "distanceMeters": 393,
+                            "staticDuration": "341s",
+                            "polyline": {
+                                "encodedPolyline": "vrfrEzukcJ]BI_AoELMA?DsFF?DqEN?EQ@"
+                            },
+                            "travelMode": "WALK"
+                        },
+                        {
+                            "distanceMeters": 968,
+                            "staticDuration": "818s",
+                            "polyline": {
+                                "encodedPolyline": "x{erEjukcJUgGOaHMkGE??SB?OcGC@@Y@?OkGC??Q@?MkGI?AOH?MmGI??e@D?A_@G?Ie@LA"
+                            },
+                            "travelMode": "WALK"
+                        },
+                        {
+                            "distanceMeters": 128,
+                            "staticDuration": "104s",
+                            "polyline": {
+                                "encodedPolyline": "xwerEnticJa@FAQc@SYUs@YWCc@D"
+                            },
+                            "travelMode": "WALK"
+                        },
+                        {
+                            "distanceMeters": 26,
+                            "staticDuration": "34s",
+                            "polyline": {
+                                "encodedPolyline": "fqerEbricJCPS`@"
+                            },
+                            "travelMode": "WALK"
+                        }
+                    ]
+                }
+            ],
+            "duration": "1325s"
+        }
+    ]
+}

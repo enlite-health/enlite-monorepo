@@ -60,11 +60,17 @@ const SEED = {
   diagnosis: `E2E-DIAG-${STAMP}`,
   additionalComments: `E2E-OBS-INICIAL-${STAMP}`,
   emergencyInstructions: `E2E-EMERG-INICIAL-${STAMP}`,
-  deviceType: `E2E-DEV-${STAMP}`,
+  /**
+   * Códigos do catálogo `device_types` (307), NÃO texto livre: `deviceType` escalar saiu do
+   * payload na US-B4 e `patients.device_type` virou derivado por trigger (310). Chumbar 'HOME'
+   * é deliberado — o catálogo muda sem deploy, então se este código sumir o PATCH devolve 422
+   * e o teste falha dizendo exatamente isso, que é a resposta certa (o mundo mudou).
+   * Medido em prod (07/09): HOME, SCHOOL, INSTITUTIONAL, INPATIENT, TRANSPORT.
+   */
+  deviceTypes: ['HOME'],
   /** ⚠️ NÃO existe campo para isto no drawer — é o cão de guarda do Merge Patch. */
   clinicalSegments: `E2E-SEG-FORA-DA-TELA-${STAMP}`,
   dependencyLevel: 'MILD',
-  clinicalSpecialty: 'GERIATRIC',
   serviceType: ['CAREGIVER'],
   hasCud: true,
   hasJudicialProtection: false,
@@ -92,6 +98,7 @@ interface PatientBody {
     emergencyInstructionsUpdatedAt?: string | null;
     emergencyInstructionsUpdatedBy?: string | null;
     deviceType?: string | null;
+    deviceTypes?: string[] | null;
     clinicalSegments?: string | null;
     dependencyLevel?: string | null;
     clinicalSpecialty?: string | null;
@@ -251,9 +258,13 @@ test.describe.serial('Spec 009 · Fase 2 — ficha do paciente pela tela do staf
       ).toBe(SEED.clinicalSegments);
       expect(depois.additionalComments, 'observações sobreviveram').toBe(SEED.additionalComments);
       expect(depois.emergencyInstructions, 'instruções de emergência sobreviveram').toBe(SEED.emergencyInstructions);
-      expect(depois.deviceType, 'tipo de dispositivo sobreviveu').toBe(SEED.deviceType);
+      expect(depois.deviceTypes, 'tipos de dispositivo sobreviveram').toEqual([...SEED.deviceTypes]);
       expect(depois.dependencyLevel, 'nível de dependência sobreviveu').toBe(SEED.dependencyLevel);
-      expect(depois.clinicalSpecialty, 'especialidade sobreviveu').toBe(SEED.clinicalSpecialty);
+      // ⚠️ LACUNA NOMEADA: `clinicalSpecialty` saía daqui e não sai mais. O campo deixou de ser
+      // escrevível por esta rota (spec 016 F2), então este spec não consegue mais semeá-lo — e
+      // asserção sobre um valor que nasce `null` provaria `null === null`, que é verde decorativo.
+      // A COLUNA continua viva e continua sendo tocada pelo `clinicalRepo.upsert`: se um `?? null`
+      // voltar lá, este spec NÃO vai ver. Quem cobre isso é o teste de unidade do repositório.
       expect(depois.serviceType, 'serviços contratados sobreviveram').toEqual([...SEED.serviceType]);
       expect(depois.hasCud, 'flag CUD sobreviveu').toBe(SEED.hasCud);
       expect(depois.hasJudicialProtection, 'flag de proteção judicial sobreviveu').toBe(

@@ -78,6 +78,46 @@ describe('GoogleTransitDirections', () => {
     });
   });
 
+  it('🔒 C1 do parecer: pede o traçado no caminho MAIS ESTREITO, e nada além dele', async () => {
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ routes: [{ legs: [] }] }) });
+    await (await comChave('k')).transit(A, B);
+    const mask = mockFetch.mock.calls[0][1].headers['X-Goog-FieldMask'];
+
+    // Só a geometria do PASSO. `routes.polyline` e `routes.legs.polyline`
+    // trariam o traçado agregado de novo, sem serem desenhados por ninguém.
+    expect(mask).toContain('routes.legs.steps.polyline.encodedPolyline');
+    expect(mask).not.toMatch(/(^|,)routes\.polyline/);
+    expect(mask).not.toMatch(/(^|,)routes\.legs\.polyline/);
+
+    // E o CORPO não muda: é ele que carrega as coordenadas para fora. Pedir o
+    // traçado é um header — não é mais dado saindo, é mais dado voltando.
+    // `polylineQuality` ausente = default OVERVIEW, com menos pontos.
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body).not.toHaveProperty('polylineQuality');
+    expect(Object.keys(body).sort()).toEqual(
+      ['computeAlternativeRoutes', 'destination', 'languageCode', 'origin', 'travelMode'],
+    );
+  });
+
+  it('🔒 C2 do parecer: a POLILINHA nunca entra no log — id + geometria dispensa trilateração', async () => {
+    // Uma linha de trilha com o par de ids E o traçado entrega o domicílio
+    // direto, sem precisar cruzar N observações. Por isso o log é conferido
+    // contra a string real, e não contra a ausência de uma chave.
+    const TRACADO = 'r|rnEnjmxJ?kBnAA';
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ routes: [{ legs: [{ steps: [{ travelMode: 'WALK', polyline: { encodedPolyline: TRACADO } }] }] }] }),
+    });
+    const r = await (await comChave('k')).transit(A, B);
+
+    // volta para quem desenha…
+    expect(JSON.stringify(r)).toContain(TRACADO);
+    // …e não aparece em NENHUMA chamada de log, em nenhum caminho.
+    const logado = JSON.stringify(mockInfo.mock.calls);
+    expect(logado).not.toContain(TRACADO);
+    expect(logado).not.toContain('encodedPolyline');
+  });
+
   it('200 sem rotas é resposta legítima ("não há trajeto"), não erro', async () => {
     mockFetch.mockResolvedValue({ ok: true, json: async () => ({}) });
     expect(await (await comChave('k')).transit(A, B)).toEqual([]);

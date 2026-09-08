@@ -182,6 +182,33 @@ export class PatientRepository {
   }
 
   async replaceAddresses(patientId: string, addresses: PatientAddress[]): Promise<void> {
+    /**
+     * 🔒 LÊ AS COORDENADAS ANTES DO `DELETE`. A ordem aqui É o conserto: este
+     * método apaga as linhas e regrava, e apagar joga fora a coordenada que já
+     * custou uma chamada ao Google. Sem esta leitura, cada passagem da rede de
+     * segurança do ClickUp (a cada 10 min, janela de 30) pagava de novo pela
+     * mesma resposta — medido em produção em 06/09: 132 chamadas por hora, 24h
+     * por dia, ~95 mil no mês contra uma franquia de 10 mil.
+     *
+     * A chave é o `address_formatted`, o mesmo texto que o `buildGeocodingQuery`
+     * manda ao Google: se o endereço mudar, a chave não bate e ele é resolvido
+     * de novo. É essa metade que impede o conserto de virar "nunca geocodifica".
+     */
+    const { rows: anteriores } = await this.pool.query<{
+      address_formatted: string | null; lat: string | number | null; lng: string | number | null;
+    }>(
+      'SELECT address_formatted, lat, lng FROM patient_addresses WHERE patient_id = $1',
+      [patientId],
+    );
+    const conhecidas = new Map<string, { lat: number; lng: number }>();
+    for (const r of anteriores) {
+      const texto = (r.address_formatted ?? '').trim();
+      if (!texto || r.lat === null || r.lng === null) continue;
+      const lat = Number(r.lat);
+      const lng = Number(r.lng);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) conhecidas.set(texto, { lat, lng });
+    }
+
     await this.pool.query(
       'DELETE FROM patient_addresses WHERE patient_id = $1',
       [patientId],
@@ -195,6 +222,7 @@ export class PatientRepository {
     const geocoded = await geocodePatientAddressesBestEffort(valid, this.geocoder, {
       delayMs: 0,
       timeoutMs: 8000,
+      known: conhecidas,
     });
 
     const values: unknown[] = [];

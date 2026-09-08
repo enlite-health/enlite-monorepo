@@ -241,7 +241,10 @@ test.describe('PatientDetailPage — happy path', () => {
     await expect(page.getByTestId('servicos-contratados-card')).toBeVisible();
   });
 
-  test('clicking Enquadre tab shows Serviços Contratados + Enquadre Terapêutico', async ({ page }) => {
+  // 05/09 (decisão do Gabriel): a aba "Encuadre" saiu — era a tabela de serviços contratados
+  // duplicada (montada sem `onSaved`) + placeholder. O encuadre do paciente É o serviço contratado.
+  // (O teste anterior já estava morto: asseria `enquadre-column-*`, removidas na spec 014.)
+  test('a aba Encuadre não existe mais — o tab bar tem 5 abas e "Servicio Contratado" é a única casa do card', async ({ page }) => {
     await seedAdminAndLogin(page);
 
     await page.route(`**/api/admin/patients/${PATIENT_ID}`, (route) =>
@@ -251,14 +254,11 @@ test.describe('PatientDetailPage — happy path', () => {
     await page.goto(`/admin/patients/${PATIENT_ID}`);
     await expect(page.getByText('Francisco Alomon')).toBeVisible({ timeout: 15000 });
 
-    const matchingTab = page.getByRole('button', { name: /^(Encuadre|Enquadre)$/i });
-    await matchingTab.first().click();
-
-    await expect(page.getByTestId('enquadre-terapeutico-card')).toBeVisible({ timeout: 5000 });
-    await expect(page.getByTestId('enquadre-column-interview')).toBeVisible();
-    await expect(page.getByTestId('enquadre-column-selected')).toBeVisible();
-    await expect(page.getByTestId('enquadre-column-inService')).toBeVisible();
-    await expect(page.getByTestId('enquadre-column-rejected')).toBeVisible();
+    const tabs = page.getByTestId('patient-profile-tabs');
+    await expect(tabs.getByRole('button')).toHaveCount(5);
+    await expect(tabs.getByRole('button', { name: /^(Encuadre|Enquadre)$/i })).toHaveCount(0);
+    await expect(page.getByTestId('enquadre-terapeutico-card')).toHaveCount(0);
+    await expect(tabs).toHaveScreenshot('patient-profile-tabs-sem-encuadre.png');
   });
 
   test('screenshot — detail page loaded', async ({ page }) => {

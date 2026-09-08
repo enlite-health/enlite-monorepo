@@ -198,7 +198,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
             id: 'svc-1', patient_id: PATIENT_ID, service_code: 'AT',
             professional_profile: 'perfil sintético', providers_needed: 2,
             authorized_hours: '20', weekly_hours: '20', care_location: 'HOME',
-            hourly_value: '1500', version: 'v1', start_date: '2026-09-01',
+            hourly_value: '1500', start_date: '2026-09-01',
             contract_type: 'OBRA_SOCIAL', tax_condition: 'IVA_EXEMPT',
             supervision_frequency: 'DAYS_30', guard_shift: 'MORNING',
             active: true, ended_at: null, country: 'AR',
@@ -249,7 +249,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
           {
             id: 'svc-1', patient_id: PATIENT_ID, service_code: 'AT', professional_profile: null,
             providers_needed: null, authorized_hours: null, weekly_hours: null, care_location: null,
-            hourly_value: null, version: null, start_date: null, contract_type: null, tax_condition: null,
+            hourly_value: null, start_date: null, contract_type: null, tax_condition: null,
             supervision_frequency: null, guard_shift: null, active: true, ended_at: null, country: 'AR',
             created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z',
           },

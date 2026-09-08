@@ -16,7 +16,7 @@ import { execSync } from 'child_process';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const CONTAINER = 'enlite-postgres';
+const CONTAINER = process.env.E2E_PG_CONTAINER || 'enlite-postgres';
 const DB_USER = 'enlite_admin';
 const DB_NAME = 'enlite_e2e';
 
@@ -315,6 +315,8 @@ export function cleanupMinimalVacancy(vacancyId: string): void {
   runSQL(`DELETE FROM encuadres WHERE job_posting_id = '${vacancyId}'`);
   runSQL(`DELETE FROM job_postings WHERE id = '${vacancyId}'`);
   if (patientId) {
+    // Migration 330: serviço contratado aponta para o endereço (FK) — sai antes do endereço.
+    runSQL(`DELETE FROM patient_contracted_services WHERE patient_id = '${patientId}'`);
     runSQL(`DELETE FROM patient_addresses WHERE patient_id = '${patientId}'`);
     runSQL(`DELETE FROM patients WHERE id = '${patientId}'`);
   }

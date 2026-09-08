@@ -35,8 +35,9 @@ const ENDPOINT = 'https://routes.googleapis.com/directions/v2:computeRoutes';
 
 /**
  * Só os campos que o parser lê. O FieldMask é obrigatório na Routes API — e
- * pedir menos também é minimização: o Google não devolve polilinha, tarifa nem
- * horário absoluto porque não pedimos.
+ * pedir menos também é minimização: o Google não devolve tarifa nem horário
+ * absoluto porque não pedimos. A polilinha PASSOU a ser pedida em 06/09, para
+ * desenhar a rota no mapa — decisão do Gabriel, com parecer do `lex`.
  */
 const FIELD_MASK = [
   'routes.duration',
@@ -45,6 +46,12 @@ const FIELD_MASK = [
   'routes.legs.steps.staticDuration',
   'routes.legs.steps.distanceMeters',
   'routes.legs.steps.transitDetails',
+  // O traçado, para desenhar a rota sobre o mapa. NÃO muda a faixa de cobrança:
+  // os gatilhos de Pro são waypoints/otimização/`TRAFFIC_AWARE`/modificadores de
+  // local, e os de Enterprise são moto, pedágio e *trânsito sobre a polilinha* —
+  // polilinha simples não está em nenhum dos dois (conferido em 06/09 na tabela
+  // de SKUs do Google). Seguimos em Compute Routes Essentials.
+  'routes.legs.steps.polyline.encodedPolyline',
 ].join(',');
 
 const TIMEOUT_MS = 8000;

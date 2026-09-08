@@ -5,32 +5,35 @@ import { z } from 'zod';
 import { useTranslation } from 'react-i18next';
 import { Trash2 } from 'lucide-react';
 import { AdminContractedServicesApiService } from '@infrastructure/http/AdminContractedServicesApiService';
-import type { PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
-import {
-  SERVICE_CODES,
-  CARE_LOCATIONS,
-  CONTRACT_TYPES,
-  TAX_CONDITIONS,
-  SUPERVISION_FREQUENCIES,
-  GUARD_SHIFTS,
-  PROVIDER_AGE_BANDS,
-} from '@domain/entities/PatientContractedService';
+import type { PatientAddressDetail, PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
+import type { ContractedServiceScheduleSlot } from '@domain/entities/PatientContractedService';
 import { Button } from '@presentation/components/atoms/Button';
 import { Text } from '@presentation/components/atoms/Text';
 import { Textarea } from '@presentation/components/atoms/Textarea';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
-import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
+import { SelectField } from '@presentation/components/molecules/SelectField';
 import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
-import { DEVICE_TYPE_CODES } from '@domain/entities/patientEnums';
+import { DayScheduleEditor } from '@presentation/components/molecules/DayScheduleEditor';
 import { ContractedServiceProvidersSection } from './ContractedServiceProvidersSection';
+import { AvisoAmbar } from './AvisoAmbar';
+import { NumericField } from './NumericField';
+import { useContractedServiceOptions } from './useContractedServiceOptions';
 
 interface Props {
   patientId: string;
+  /**
+   * Endereços VIVOS da ficha (`patient.addresses`) — o select "Domicilio" escolhe UM deles
+   * (migration 330: um serviço = um endereço; ponteiro, nada é copiado). Lista vazia → o select
+   * fica desabilitado com a dica de cadastrar o domicílio primeiro.
+   */
+  addresses: PatientAddressDetail[];
   service: PatientContractedServiceDetail | null;
   /** Index visual ("Serviço 1", "Serviço 2"…) — só para o rótulo, nunca enviado. */
   index: number;
-  onSaved: () => void;
+  /** Recebe o serviço que a API devolveu (create/update) — o pai não depende de um `list()` para
+   *  saber o id do recém-criado. A baixa chama sem argumento. */
+  onSaved: (saved?: PatientContractedServiceDetail) => void;
   onCancelNew?: () => void;
   /** Spec 014 (US-D4): avisa o pai (`PatientContractedServicesEditDrawer`) sempre que ESTA
    * linha tem mudança não salva — o drawer não tem "Guardar" próprio (cada linha salva sozinha,
@@ -55,13 +58,17 @@ const schema = z.object({
   weeklyHours: numericString,
   careLocation: z.string(),
   hourlyValue: numericString,
-  version: z.string(),
   startDate: z.string(),
   contractType: z.string(),
   taxCondition: z.string(),
   supervisionFrequency: z.string(),
   guardShift: z.string(),
   providerAgeBand: z.string(),
+  // Migration 330: '' = sem endereço (o checklist acusa SERVICE_ADDRESS; não é erro de form —
+  // a operadora pode salvar o serviço antes de ter o domicílio e vincular depois).
+  addressId: z.string(),
+  // Horário do encuadre — o mesmo slot do DayScheduleEditor. [] = "ainda sem horário" → null.
+  schedule: z.array(z.object({ dayOfWeek: z.number(), startTime: z.string(), endTime: z.string() })),
   deviceTypeCodes: z.array(z.string()),
 });
 type FormValues = z.infer<typeof schema>;
@@ -73,6 +80,11 @@ function empty(v: string | number | null | undefined): string {
 function numOrNull(v: string): number | null {
   const s = v.trim();
   return s === '' ? null : Number(s);
+}
+
+/** `[]` no formulário é "ainda sem horário" e viaja como `null` (migration 330). */
+function scheduleOrNull(slots: ContractedServiceScheduleSlot[]): ContractedServiceScheduleSlot[] | null {
+  return slots.length === 0 ? null : slots;
 }
 
 export interface DeactivateServiceDeps {
@@ -120,7 +132,7 @@ export async function deactivateService(
  * (PATCH, Merge Patch parcial) quando existe. `hourlyValue` fica DESABILITADO quando o backend
  * redigiu (lex C-c.4) — evita o operador não-admin sobrescrever um valor que não pode ver.
  */
-export function ContractedServiceFormRow({ patientId, service, index, onSaved, onCancelNew, onDirtyChange }: Props): JSX.Element {
+export function ContractedServiceFormRow({ patientId, addresses, service, index, onSaved, onCancelNew, onDirtyChange }: Props): JSX.Element {
   const { t } = useTranslation();
   const te = (k: string) => t(`admin.patients.editDrawer.${k}`);
   const isNew = service === null;
@@ -137,13 +149,17 @@ export function ContractedServiceFormRow({ patientId, service, index, onSaved, o
       weeklyHours: empty(service?.weeklyHours),
       careLocation: service?.careLocation ?? '',
       hourlyValue: empty(service?.hourlyValue),
-      version: service?.version ?? '',
       startDate: service?.startDate ? service.startDate.slice(0, 10) : '',
       contractType: service?.contractType ?? '',
       taxCondition: service?.taxCondition ?? '',
       supervisionFrequency: service?.supervisionFrequency ?? '',
       guardShift: service?.guardShift ?? '',
       providerAgeBand: service?.providerAgeBand ?? '',
+      // Só um endereço VIVO da ficha entra como valor inicial: um `addressId` arquivado não
+      // aparece no select e, se ficasse no form, o PATCH reenviaria o UUID morto que a tela
+      // mostra como "vazio" (gate, 06/09). Fora da lista → '' → salvar sem escolher manda null.
+      addressId: addresses.some((a) => a.id === service?.addressId) ? String(service?.addressId) : '',
+      schedule: service?.schedule ?? [],
       deviceTypeCodes: service?.deviceTypes ?? [],
     },
   });
@@ -153,46 +169,19 @@ export function ContractedServiceFormRow({ patientId, service, index, onSaved, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDirty]);
 
-  const serviceOptions: SelectOption[] = SERVICE_CODES.map((s) => ({
-    value: s,
-    label: t(`admin.patients.detail.contractedServicesCard.serviceTypes.${s}`, { defaultValue: s }),
-  }));
-  const careLocationOptions: SelectOption[] = CARE_LOCATIONS.map((v) => ({
-    value: v,
-    label: t(`admin.patients.detail.contractedServicesCard.careLocationOptions.${v}`, { defaultValue: v }),
-  }));
-  const contractTypeOptions: SelectOption[] = CONTRACT_TYPES.map((v) => ({
-    value: v,
-    label: t(`admin.patients.detail.contractedServicesCard.contractTypeOptions.${v}`, { defaultValue: v }),
-  }));
-  const taxConditionOptions: SelectOption[] = TAX_CONDITIONS.map((v) => ({
-    value: v,
-    label: t(`admin.patients.detail.contractedServicesCard.taxConditionOptions.${v}`, { defaultValue: v }),
-  }));
-  const supervisionOptions: SelectOption[] = SUPERVISION_FREQUENCIES.map((v) => ({
-    value: v,
-    label: t(`admin.patients.detail.contractedServicesCard.supervisionFrequencyOptions.${v}`, { defaultValue: v }),
-  }));
-  const guardShiftOptions: SelectOption[] = GUARD_SHIFTS.map((v) => ({
-    value: v,
-    label: t(`admin.patients.detail.contractedServicesCard.guardShiftOptions.${v}`, { defaultValue: v }),
-  }));
-  const deviceOptions: SelectOption[] = DEVICE_TYPE_CODES.map((v) => ({
-    value: v,
-    label: t(`admin.patients.deviceTypeOptions.${v}`, { defaultValue: v }),
-  }));
-  const providerAgeBandOptions: SelectOption[] = PROVIDER_AGE_BANDS.map((v) => ({
-    value: v,
-    label: t(`admin.patients.detail.contractedServicesCard.providerAgeBandOptions.${v}`, { defaultValue: v }),
-  }));
+  const {
+    serviceOptions, careLocationOptions, contractTypeOptions, taxConditionOptions,
+    supervisionOptions, guardShiftOptions, deviceOptions, providerAgeBandOptions, addressOptions,
+  } = useContractedServiceOptions(addresses);
 
   const onSubmit = async (values: FormValues): Promise<void> => {
     setError(null);
     setBusy(true);
     const nz = (v: string): string | null => (v.trim() ? v.trim() : null);
     try {
+      let saved: PatientContractedServiceDetail;
       if (isNew) {
-        await AdminContractedServicesApiService.createContractedService(patientId, {
+        saved = await AdminContractedServicesApiService.createContractedService(patientId, {
           serviceCode: values.serviceCode as never,
           professionalProfile: nz(values.professionalProfile),
           providersNeeded: numOrNull(values.providersNeeded),
@@ -200,17 +189,18 @@ export function ContractedServiceFormRow({ patientId, service, index, onSaved, o
           weeklyHours: numOrNull(values.weeklyHours),
           careLocation: nz(values.careLocation) as never,
           hourlyValue: numOrNull(values.hourlyValue),
-          version: nz(values.version),
           startDate: nz(values.startDate),
           contractType: nz(values.contractType) as never,
           taxCondition: nz(values.taxCondition) as never,
           supervisionFrequency: nz(values.supervisionFrequency) as never,
           guardShift: nz(values.guardShift) as never,
           providerAgeBand: nz(values.providerAgeBand) as never,
+          addressId: nz(values.addressId),
+          schedule: scheduleOrNull(values.schedule),
           deviceTypeCodes: values.deviceTypeCodes,
         });
       } else {
-        await AdminContractedServicesApiService.updateContractedService(patientId, service.id, {
+        saved = await AdminContractedServicesApiService.updateContractedService(patientId, service.id, {
           professionalProfile: nz(values.professionalProfile),
           providersNeeded: numOrNull(values.providersNeeded),
           authorizedHours: numOrNull(values.authorizedHours),
@@ -219,13 +209,14 @@ export function ContractedServiceFormRow({ patientId, service, index, onSaved, o
           // Campo desabilitado (redigido) nunca entra no submit — ver `disabled` abaixo; quando
           // habilitado, envia o que o operador digitou (inclusive limpar → null).
           hourlyValue: service.hourlyValueRedacted ? undefined : numOrNull(values.hourlyValue),
-          version: nz(values.version),
           startDate: nz(values.startDate),
           contractType: nz(values.contractType) as never,
           taxCondition: nz(values.taxCondition) as never,
           supervisionFrequency: nz(values.supervisionFrequency) as never,
           guardShift: nz(values.guardShift) as never,
           providerAgeBand: nz(values.providerAgeBand) as never,
+          addressId: nz(values.addressId),
+          schedule: scheduleOrNull(values.schedule),
           deviceTypeCodes: values.deviceTypeCodes,
         });
       }
@@ -234,7 +225,7 @@ export function ContractedServiceFormRow({ patientId, service, index, onSaved, o
       // ficaria `true` para sempre após a 1ª edição salva, e a confirmação de "descartar
       // cambios" apareceria ao fechar mesmo sem NADA pendente).
       reset(values);
-      onSaved();
+      onSaved(saved);
     } catch {
       setError(isNew ? te('createServiceError') : te('updateServiceError'));
     } finally {
@@ -282,30 +273,48 @@ export function ContractedServiceFormRow({ patientId, service, index, onSaved, o
             <SelectField id={`svc-code-${index}`} inputSize="compact" options={serviceOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} disabled={!isNew} data-testid={`svc-code-${index}`} />
           )} />
         </FormField>
-        <FormField label={te('providersNeeded')} htmlFor={`svc-providersNeeded-${index}`} optional>
-          <InputWithIcon id={`svc-providersNeeded-${index}`} type="number" inputSize="compact" data-testid={`svc-providersNeeded-${index}`} {...register('providersNeeded')} />
-        </FormField>
-        <FormField label={te('weeklyHours')} htmlFor={`svc-weeklyHours-${index}`} optional>
-          <InputWithIcon id={`svc-weeklyHours-${index}`} type="number" inputSize="compact" data-testid={`svc-weeklyHours-${index}`} {...register('weeklyHours')} />
-        </FormField>
-        <FormField label={te('authorizedHours')} htmlFor={`svc-authorizedHours-${index}`} optional>
-          <InputWithIcon id={`svc-authorizedHours-${index}`} type="number" inputSize="compact" data-testid={`svc-authorizedHours-${index}`} {...register('authorizedHours')} />
-        </FormField>
+        <NumericField id={`svc-providersNeeded-${index}`} label={te('providersNeeded')} testId={`svc-providersNeeded-${index}`} {...register('providersNeeded')} />
+        <NumericField id={`svc-weeklyHours-${index}`} label={te('weeklyHours')} testId={`svc-weeklyHours-${index}`} {...register('weeklyHours')} />
+        <NumericField id={`svc-authorizedHours-${index}`} label={te('authorizedHours')} testId={`svc-authorizedHours-${index}`} {...register('authorizedHours')} />
         <FormField label={te('careLocation')} htmlFor={`svc-careLocation-${index}`} optional>
           <Controller control={control} name="careLocation" render={({ field }) => (
             <SelectField id={`svc-careLocation-${index}`} inputSize="compact" options={careLocationOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`svc-careLocation-${index}`} />
           )} />
         </FormField>
-        <FormField label={te('hourlyValue')} htmlFor={`svc-hourlyValue-${index}`} optional>
-          {service?.hourlyValueRedacted ? (
-            <InputWithIcon id={`svc-hourlyValue-${index}`} inputSize="compact" value={te('hourlyValueRedacted')} disabled data-testid={`svc-hourlyValue-${index}`} />
-          ) : (
-            <InputWithIcon id={`svc-hourlyValue-${index}`} type="number" inputSize="compact" data-testid={`svc-hourlyValue-${index}`} {...register('hourlyValue')} />
+        {/* Migration 330: o ENDEREÇO (ponteiro para a ficha) é distinto do "lugar" (Casa/Escola)
+            e do dispositivo — três coisas, como no Figma. Sem ele a vaga não sabe onde nascer.
+            Ocupa a linha inteira (Gabriel, 06/09): é o campo que decide onde a vaga nasce, e sem
+            endereço na ficha o operador precisa VER o aviso, não um select cinza. */}
+        <FormField
+          label={te('serviceAddress')}
+          htmlFor={`svc-addressId-${index}`}
+          hint={addresses.length === 0 ? undefined : te('serviceAddressHint')}
+          hintBelow
+          className="sm:col-span-2"
+        >
+          {addresses.length === 0 && (
+            <AvisoAmbar testId={`svc-address-none-${index}`}>{te('serviceAddressNone')}</AvisoAmbar>
           )}
+          <Controller control={control} name="addressId" render={({ field }) => (
+            <SelectField
+              id={`svc-addressId-${index}`}
+              inputSize="compact"
+              options={addressOptions}
+              placeholder={te('selectPlaceholder')}
+              value={field.value}
+              onChange={field.onChange}
+              disabled={addresses.length === 0}
+              data-testid={`svc-addressId-${index}`}
+            />
+          )} />
         </FormField>
-        <FormField label={te('version')} htmlFor={`svc-version-${index}`} hint={te('versionHint')} optional>
-          <InputWithIcon id={`svc-version-${index}`} inputSize="compact" data-testid={`svc-version-${index}`} {...register('version')} />
-        </FormField>
+        {service?.hourlyValueRedacted ? (
+          <FormField label={te('hourlyValue')} htmlFor={`svc-hourlyValue-${index}`} optional>
+            <InputWithIcon id={`svc-hourlyValue-${index}`} inputSize="compact" value={te('hourlyValueRedacted')} disabled data-testid={`svc-hourlyValue-${index}`} />
+          </FormField>
+        ) : (
+          <NumericField id={`svc-hourlyValue-${index}`} label={te('hourlyValue')} testId={`svc-hourlyValue-${index}`} {...register('hourlyValue')} />
+        )}
         <FormField label={te('startDate')} htmlFor={`svc-startDate-${index}`} optional>
           <InputWithIcon id={`svc-startDate-${index}`} type="date" inputSize="compact" data-testid={`svc-startDate-${index}`} {...register('startDate')} />
         </FormField>
@@ -336,13 +345,37 @@ export function ContractedServiceFormRow({ patientId, service, index, onSaved, o
         </FormField>
       </div>
 
+      {/* Migration 330: horário do encuadre — o MESMO editor da vaga (DayScheduleEditor). Salvar
+          vazio continua legítimo (Gabriel 05/09: "o operador pode criar uma vacante sem ter
+          horário ainda") — o campo segue `optional`, sem asterisco e sem barrar o Guardar.
+          O que mudou em 07/09 é a CONSEQUÊNCIA: sem horário o paciente não muda de status para
+          activo/búsqueda/reemplazo. Por isso o aviso âmbar aparece enquanto está vazio, no mesmo
+          molde do "sem domicílio" acima — avisar na hora da carga é mais barato que descobrir na
+          hora de ativar. */}
+      <FormField label={te('serviceSchedule')} htmlFor={`svc-schedule-${index}`} optional hint={te('serviceScheduleHint')} hintBelow>
+        <div id={`svc-schedule-${index}`} data-testid={`svc-schedule-${index}`}>
+          <Controller control={control} name="schedule" render={({ field }) => (
+            <>
+              {/* `field.value` é SEMPRE array: o defaultValue é `service?.schedule ?? []` e o
+                  schema é `z.array(...)` não-nulo — um `?? []` aqui seria ramo inalcançável. */}
+              {field.value.length === 0 && (
+                <div className="mb-2">
+                  <AvisoAmbar testId={`svc-schedule-none-${index}`}>{te('serviceScheduleNone')}</AvisoAmbar>
+                </div>
+              )}
+              <DayScheduleEditor value={field.value} onChange={field.onChange} disabled={busy} />
+            </>
+          )} />
+        </div>
+      </FormField>
+
       <FormField label={te('deviceTypes')} htmlFor={`svc-devices-${index}`} optional>
         <Controller control={control} name="deviceTypeCodes" render={({ field }) => (
           <MultiSelect options={deviceOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id={`svc-devices-${index}`} />
         )} />
       </FormField>
 
-      <FormField label={te('professionalProfile')} htmlFor={`svc-profile-${index}`} optional hint={te('professionalProfileHint')}>
+      <FormField label={te('professionalProfile')} htmlFor={`svc-profile-${index}`} optional hint={te('professionalProfileHint')} hintBelow>
         <div data-clarity-mask="True">
           <Textarea id={`svc-profile-${index}`} inputSize="compact" resize="vertical" rows={3} data-testid={`svc-profile-${index}`} {...register('professionalProfile')} />
         </div>

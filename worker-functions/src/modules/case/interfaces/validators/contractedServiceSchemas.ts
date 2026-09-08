@@ -9,6 +9,34 @@ const PROFESSIONAL_PROFILE_MAX = 2000;
 const optionalEnum = <T extends readonly [string, ...string[]]>(values: T) =>
   z.enum(values).nullable().optional();
 
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * Horário do encuadre (migration 330) — o MESMO slot que o form da vaga persiste em
+ * `job_postings.schedule` (`scheduleToJsonb`): `{ dayOfWeek 0-6, startTime, endTime }` em HH:MM.
+ * `null` = "ainda sem horário" (decisão do Gabriel 05/09: a vacante pode nascer sem horário).
+ */
+const scheduleSlotSchema = z
+  .object({
+    dayOfWeek: z.number().int().min(0).max(6),
+    startTime: z.string().regex(HHMM),
+    endTime: z.string().regex(HHMM),
+  })
+  .strict()
+  .refine((s) => s.startTime < s.endTime, { message: 'startTime must be before endTime' });
+
+// `[]` vira `null` AQUI, na borda: "sem horário" tem UMA representação no banco (NULL), não
+// duas (NULL e '[]') — o `null` que significa duas coisas já apagou dado nesta casa (D167).
+const optionalSchedule = z
+  .array(scheduleSlotSchema)
+  .max(50)
+  .nullable()
+  .optional()
+  .transform((a) => (Array.isArray(a) && a.length === 0 ? null : a));
+
+/** Endereço do paciente onde o serviço é prestado (migration 330). `null` desvincula. */
+const optionalAddressId = z.string().uuid().nullable().optional();
+
 export const createContractedServiceSchema = z
   .object({
     serviceCode: z.enum(SERVICE_CODES),
@@ -18,7 +46,6 @@ export const createContractedServiceSchema = z
     weeklyHours: z.number().nonnegative().nullable().optional(),
     careLocation: optionalEnum(CARE_LOCATIONS as unknown as [string, ...string[]]),
     hourlyValue: z.number().nonnegative().nullable().optional(),
-    version: z.string().max(60).nullable().optional(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
     contractType: optionalEnum(CONTRACT_TYPES as unknown as [string, ...string[]]),
     taxCondition: optionalEnum(TAX_CONDITIONS as unknown as [string, ...string[]]),
@@ -28,6 +55,8 @@ export const createContractedServiceSchema = z
     // serviço — propaga para a vaga na ativação (ProviderAgeBandMapping.ts). Fora do enum → 400
     // "Invalid body" (convenção viva do controller para TODO erro zod; 422 é só DeviceTypeUnknownError).
     providerAgeBand: optionalEnum(PROVIDER_AGE_BANDS as unknown as [string, ...string[]]),
+    addressId: optionalAddressId,
+    schedule: optionalSchedule,
     deviceTypeCodes: z.array(z.string()).max(10).optional(),
     // `country` NÃO entra aqui de propósito (C7): a jurisdição é do PACIENTE e nasce do trigger da
     // migration 319, que só preenche quando a coluna vem NULL — valor explícito do cliente vencia
@@ -46,13 +75,14 @@ export const updateContractedServiceSchema = z
     weeklyHours: z.number().nonnegative().nullable().optional(),
     careLocation: optionalEnum(CARE_LOCATIONS as unknown as [string, ...string[]]),
     hourlyValue: z.number().nonnegative().nullable().optional(),
-    version: z.string().max(60).nullable().optional(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
     contractType: optionalEnum(CONTRACT_TYPES as unknown as [string, ...string[]]),
     taxCondition: optionalEnum(TAX_CONDITIONS as unknown as [string, ...string[]]),
     supervisionFrequency: optionalEnum(SUPERVISION_FREQUENCIES as unknown as [string, ...string[]]),
     guardShift: optionalEnum(GUARD_SHIFTS as unknown as [string, ...string[]]),
     providerAgeBand: optionalEnum(PROVIDER_AGE_BANDS as unknown as [string, ...string[]]),
+    addressId: optionalAddressId,
+    schedule: optionalSchedule,
     deviceTypeCodes: z.array(z.string()).max(10).optional(),
     // Só `false` é caminho de escrita válido (baixa, lex C-a.4) — reabrir não existe.
     active: z.literal(false).optional(),

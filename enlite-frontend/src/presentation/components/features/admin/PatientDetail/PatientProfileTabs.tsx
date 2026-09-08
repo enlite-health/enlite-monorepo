@@ -18,7 +18,6 @@ const TAB_I18N_KEYS: Record<PatientTab, string> = {
   supportNetwork: 'admin.patients.detail.tabs.supportNetwork',
   contractedService: 'admin.patients.detail.tabs.contractedService',
   vacancies: 'admin.patients.detail.tabs.vacancies',
-  matching: 'admin.patients.detail.tabs.matching',
   history: 'admin.patients.detail.tabs.history',
 };
 

@@ -44,8 +44,8 @@ describe('PatientIdentityCard — rótulo D3.1', () => {
     // "Teléfono del Responsable" segue existindo (rótulo correto para o telefone do RESPONSÁVEL,
     // na seção de contato de emergência) — o bug era usar esse rótulo para o dado do PACIENTE.
     // Prova de que não sobrou duplicado: só 1 ocorrência, dentro da seção de emergência.
-    const emergencySection = screen.getByText(/Contacto de Emergencia/).closest('div');
-    expect(emergencySection?.textContent).toContain('Teléfono del Responsable');
+    const responsibleSection = screen.getByText(/Contacto del responsable principal/).closest('div');
+    expect(responsibleSection?.textContent).toContain('Teléfono del Responsable');
     expectNoRawEnumLeaks(container);
   });
 

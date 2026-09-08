@@ -98,6 +98,46 @@ describe('PatientStatusControl', () => {
     fireEvent.click(screen.getByTestId('patient-status-save'));
     await waitFor(() => expect(screen.getByTestId('patient-status-error')).toHaveTextContent('Informe o motivo da espera'));
 
+    // Decisão do Gabriel 07/09: 422 de completude NOMEIA o que falta, com os rótulos do checklist.
+    updatePatientStatus.mockRejectedValueOnce(
+      new PatientApiError('nope', 422, {
+        code: 'PATIENT_STATUS_NOT_READY',
+        details: { to: 'SEARCHING', missing: ['SERVICE_SCHEDULE'] },
+      }),
+    );
+    fireEvent.click(screen.getByTestId('patient-status-save'));
+    await waitFor(() =>
+      expect(screen.getByTestId('patient-status-error')).toHaveTextContent('Horário do serviço'),
+    );
+
+    // 422 de completude SEM `details` — o servidor é a fonte, e o front não pode quebrar se o
+    // corpo vier incompleto. Cai na frase GENÉRICA: com a interpolação vazia sairia
+    // "Não é possível passar para Ativo: falta ." (achado do gate `revisao-pr`).
+    updatePatientStatus.mockRejectedValueOnce(
+      new PatientApiError('nope', 422, { code: 'PATIENT_STATUS_NOT_READY' }),
+    );
+    fireEvent.click(screen.getByTestId('patient-status-save'));
+    await waitFor(() =>
+      expect(screen.getByTestId('patient-status-error')).toHaveTextContent(
+        'faltam dados obrigatórios na ficha',
+      ),
+    );
+    expect(screen.getByTestId('patient-status-error').textContent).not.toMatch(/falta \.\s*$/);
+
+    // `missing` que não é array (corpo estranho) recebe o mesmo tratamento — nunca crash
+    updatePatientStatus.mockRejectedValueOnce(
+      new PatientApiError('nope', 422, {
+        code: 'PATIENT_STATUS_NOT_READY',
+        details: { missing: 'SERVICE_SCHEDULE' },
+      }),
+    );
+    fireEvent.click(screen.getByTestId('patient-status-save'));
+    await waitFor(() =>
+      expect(screen.getByTestId('patient-status-error')).toHaveTextContent(
+        'faltam dados obrigatórios na ficha',
+      ),
+    );
+
     updatePatientStatus.mockRejectedValueOnce(new Error('rede caiu'));
     fireEvent.click(screen.getByTestId('patient-status-save'));
     await waitFor(() => expect(screen.getByTestId('patient-status-error')).toHaveTextContent('rede caiu'));
@@ -148,5 +188,34 @@ describe('PatientStatusControl', () => {
     expect(screen.getByTestId('patient-status-save')).toBeDisabled();
     fireEvent.change(screen.getByTestId('patient-status-reason'), { target: { value: 'OTHER' } });
     expect(screen.getByTestId('patient-status-save')).not.toBeDisabled();
+  });
+
+  /* ── As duas travas de acessibilidade do controle v2 ──────────────────────────────────────────
+     Por que existem: ao virar UMA linha, o controle perdeu o `<Label>` VISÍVEL e o `<select>`
+     ficou transparente por cima da moldura. Os dois consertos (o `aria-label` que assume o nome
+     acessível e o `focus-within` no ancestral) entraram sem NENHUMA asserção — apagar os dois
+     deixava a suíte inteira verde, cobertura 100% intacta. Piso alto não vê atributo que ninguém
+     lê: `SIZE`/`VARIANT` do `buttonClasses` já tinham ensinado isso na B4 do `3477d2e7`, e a
+     instância vizinha ficou. */
+
+  it('o select transparente carrega o nome acessível que o rótulo visível carregava', () => {
+    render(<PatientStatusControl patient={active} onSaved={vi.fn()} />);
+    // getByLabelText resolve o nome ACESSÍVEL (aria-label, <label for>, aria-labelledby) — mede o
+    // que o leitor de tela anuncia, não a presença literal do atributo.
+    expect(screen.getByLabelText(t('admin.patients.status.title'))).toBe(
+      screen.getByTestId('patient-status-select'),
+    );
+  });
+
+  it('o anel de foco vive num ANCESTRAL do elemento focável — o select é transparente e não o mostra', () => {
+    render(<PatientStatusControl patient={active} onSaved={vi.fn()} />);
+    const select = screen.getByTestId('patient-status-select');
+    // O defeito que isto tranca: anel de foco numa div que NÃO é focável e sem `focus-within`.
+    // A moldura só acende se o ancestral que a desenha reagir ao foco de dentro dele.
+    const ring = select.closest('[class*="focus-within:ring"]');
+    expect(ring).not.toBeNull();
+    expect(ring).not.toBe(select);
+    expect(ring!.className).toMatch(/focus-within:ring-2/);
+    expect(ring!.className).toMatch(/focus-within:ring-primary/);
   });
 });

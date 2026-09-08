@@ -2,6 +2,8 @@ import * as functions from 'firebase-functions';
 import { inPatientTransaction } from './patientTransaction';
 import { isPatientStatus, isClinicalPatientStatus, type PatientStatus } from '../domain/enums/PatientStatus';
 import type { OnHoldReason } from '../domain/enums/OnHoldReason';
+import { blockingCodesForStatusChange } from '../domain/PatientCompleteness';
+import { loadPatientCompleteness } from '../infrastructure/PatientCompletenessLoader';
 
 /**
  * PatientStatusWriter — a TRANSIÇÃO DE ESTADO do paciente, e só ela.
@@ -22,6 +24,23 @@ export class PatientStatusTransitionError extends Error {
   constructor(readonly from: string | null, readonly to: string) {
     super(`Patient status transition not allowed: ${from ?? 'null'} → ${to}`);
     this.name = 'PatientStatusTransitionError';
+  }
+}
+
+/**
+ * Pré-condição de completude não atendida para o status pedido (decisão do Gabriel 07/09) — o
+ * controller devolve 422. Carrega `missing` para que a tela possa NOMEAR o que falta, no mesmo
+ * formato que o `POST /activate` já devolve (`details.missing`), e assim reusar as traduções do
+ * checklist em vez de inventar um segundo vocabulário.
+ */
+export class PatientStatusNotReadyError extends Error {
+  readonly code = 'PATIENT_STATUS_NOT_READY';
+  constructor(
+    readonly to: string,
+    readonly missing: readonly string[],
+  ) {
+    super(`Patient not ready for status ${to}: falta ${missing.join(', ')}`);
+    this.name = 'PatientStatusNotReadyError';
   }
 }
 
@@ -97,6 +116,26 @@ export async function movePatientStatus(
       );
       if (allowed.rows.length === 0) {
         throw new PatientStatusTransitionError(from, status);
+      }
+    }
+
+    // Pré-condição de COMPLETUDE (decisão do Gabriel 07/09). Roda DEPOIS da FSM de propósito:
+    // uma transição que nem existe deve dizer "não existe", não "falta horário".
+    //
+    // Só quando o status MUDA — reenviar o status atual (a tela salva o select sem alterar nada)
+    // não pode virar erro por um dado que já estava faltando antes.
+    //
+    // ACTIVE cobra o checklist bloqueante inteiro: até aqui, arrastar o card para a coluna
+    // "Activo" no Kanban ativava sem checklist NENHUM, furando inclusive o ADDRESS que barra o
+    // botão "Activar" desde a D255. SEARCHING/REPLACEMENT cobram só o horário.
+    if (from !== status) {
+      const required = blockingCodesForStatusChange(status);
+      if (required.length > 0) {
+        const { missing } = await loadPatientCompleteness(client, patientId);
+        const faltando = required.filter((code) => missing.includes(code));
+        if (faltando.length > 0) {
+          throw new PatientStatusNotReadyError(status, faltando);
+        }
       }
     }
 

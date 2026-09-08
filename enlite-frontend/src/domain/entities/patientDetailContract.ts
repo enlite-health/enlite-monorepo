@@ -13,6 +13,7 @@
  * quanto chave a menos — e é o que faz a fixture ser prova, não decoração.
  */
 import { z } from 'zod';
+import { PATIENT_COMPLETENESS_CODES } from './PatientCompleteness';
 import type { PatientDetail } from './PatientDetail';
 
 const isoDate = z.string();
@@ -129,7 +130,6 @@ const contractedServiceSchema = z
     // lex C-c.4: redigido (null) para quem não é admin — hourlyValueRedacted diz qual dos dois.
     hourlyValue: z.number().nullable(),
     hourlyValueRedacted: z.boolean(),
-    version: z.string().nullable(),
     startDate: isoDate.nullable(),
     contractType: z.string().nullable(),
     taxCondition: z.string().nullable(),
@@ -137,6 +137,11 @@ const contractedServiceSchema = z
     guardShift: z.string().nullable(),
     // Spec 015 (US-A6.1): franja etária solicitada do prestador — string frouxa, molde do resto.
     providerAgeBand: z.string().nullable(),
+    // Migration 330: ponteiro para o endereço + horário do encuadre (array do DayScheduleEditor).
+    addressId: z.string().nullable(),
+    schedule: z
+      .array(z.object({ dayOfWeek: z.number(), startTime: z.string(), endTime: z.string() }))
+      .nullable(),
     active: z.boolean(),
     endedAt: isoDate.nullable(),
     country: z.string(),
@@ -201,8 +206,10 @@ export const patientDetailContractSchema = z
     // D255/QA-caça: `blocking`/`canActivate` — só ADDRESS bloqueia o activate de verdade.
     completeness: z
       .object({
-        missing: z.array(z.enum(['ADDRESS', 'RESPONSIBLE', 'COVERAGE', 'CONTRACTED_SERVICE', 'CONSENT'])),
-        blocking: z.array(z.enum(['ADDRESS', 'RESPONSIBLE', 'COVERAGE', 'CONTRACTED_SERVICE', 'CONSENT'])),
+        // Migration 330: SERVICE_ADDRESS (serviço ativo sem endereço vivo) entra na lista e
+        // também bloqueia — o enum aqui é a fonte `PATIENT_COMPLETENESS_CODES`, não uma cópia.
+        missing: z.array(z.enum(PATIENT_COMPLETENESS_CODES)),
+        blocking: z.array(z.enum(PATIENT_COMPLETENESS_CODES)),
         ready: z.boolean(),
         canActivate: z.boolean(),
       })

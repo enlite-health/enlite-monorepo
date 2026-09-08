@@ -40,6 +40,26 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
     lead = (await pool.query<{ id: string }>(
       `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status) VALUES ('ps-v2-e2e-2', 'Estado', 'Lead', 'AR', 'SOLICITANTE') RETURNING id`,
     )).rows[0].id;
+
+    // Decisão do Gabriel 07/09: a entrada em ACTIVE pelo `PUT /status` passou a exigir o
+    // checklist bloqueante inteiro (endereço + endereço do serviço + horário do serviço) — antes
+    // dela o drop no Kanban ativava sem checar nada. Esta suíte mede a FSM, o motivo e a trilha:
+    // sem uma ficha completa, cada teste falharia por um motivo que não é o que ele verifica.
+    // A recusa por ficha incompleta tem suíte própria (`patient-status-completeness.e2e.test.ts`).
+    for (const id of [active, lead]) {
+      const addr = (await pool.query<{ id: string }>(
+        `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, display_order)
+         VALUES ($1,'primary','Calle Estado 1',1) RETURNING id`,
+        [id],
+      )).rows[0].id;
+      await pool.query(
+        `INSERT INTO patient_contracted_services
+           (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule)
+         VALUES ($1,'AT',true,'AR','ps-v2-e2e','ps-v2-e2e',$2,
+                 '[{"dayOfWeek":1,"startTime":"08:00","endTime":"12:00"}]'::jsonb)`,
+        [id, addr],
+      );
+    }
   });
 
   afterAll(async () => {

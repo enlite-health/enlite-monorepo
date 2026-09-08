@@ -111,18 +111,37 @@ function patientDetailCompletenessRaw(patient: unknown): PatientCompletenessResu
     birthDate: string | Date | null;
     hasConsent: boolean | null;
     insuranceInformed: string | null;
-    addresses?: unknown[];
+    addresses?: Array<{ id: string }>;
     responsibles?: unknown[];
-    contractedServices?: Array<{ active: boolean }>;
+    contractedServices?: Array<{
+      active: boolean;
+      addressId: string | null;
+      /** `unknown` de propósito: o que chega aqui é o JSONB cru do banco — pode ser array, `null`
+       *  ou (fora da borda zod) qualquer outra coisa. Quem decide é o `Array.isArray` abaixo. */
+      schedule?: unknown;
+    }>;
   };
+  const addresses = Array.isArray(detail.addresses) ? detail.addresses : [];
+  const activeServices = Array.isArray(detail.contractedServices)
+    ? detail.contractedServices.filter((s) => s.active)
+    : [];
+  // Migration 330: `addresses` da ficha já vem SÓ com os não arquivados (mapAddresses) — serviço
+  // apontando para endereço arquivado cai aqui como "sem endereço", igual ao gate do activate.
+  const liveAddressIds = new Set(addresses.map((a) => a.id));
   return computePatientCompleteness({
     birthDate: detail.birthDate,
     hasConsent: detail.hasConsent,
     insuranceInformed: detail.insuranceInformed,
-    activeAddressCount: Array.isArray(detail.addresses) ? detail.addresses.length : 0,
+    activeAddressCount: addresses.length,
     activeResponsibleCount: Array.isArray(detail.responsibles) ? detail.responsibles.length : 0,
-    activeContractedServiceCount: Array.isArray(detail.contractedServices)
-      ? detail.contractedServices.filter((s) => s.active).length
-      : 0,
+    activeContractedServiceCount: activeServices.length,
+    activeContractedServicesWithoutAddressCount: activeServices.filter(
+      (s) => s.addressId == null || !liveAddressIds.has(s.addressId),
+    ).length,
+    // Decisão do Gabriel 07/09: `[]` conta como "sem horário" tanto quanto `null` — o mapper
+    // devolve o array tal qual veio do banco, e `[]` é gravável fora da borda zod.
+    activeContractedServicesWithoutScheduleCount: activeServices.filter(
+      (s) => !Array.isArray(s.schedule) || s.schedule.length === 0,
+    ).length,
   });
 }

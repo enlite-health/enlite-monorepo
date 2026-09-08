@@ -18,6 +18,16 @@ export type PatientKanbanStatus = (typeof PATIENT_KANBAN_STATUSES)[number];
 
 export type PatientKanbanGroups = Record<PatientKanbanStatus, PatientKanbanItem[]>;
 
+/**
+ * Falha ao mover um card. `code` é o código de enum do backend (nunca o texto cru do servidor);
+ * `missing` só vem no 422 de completude (decisão do Gabriel 07/09) e carrega os códigos do
+ * checklist, para o toast poder NOMEAR o que falta em vez de dizer só "não foi possível".
+ */
+export interface PatientKanbanMoveError {
+  code: string;
+  missing?: string[];
+}
+
 function emptyGroups(): PatientKanbanGroups {
   return { SOLICITANTE: [], ADMISSION: [], PENDING_ADMISSION: [], DONE: [] };
 }
@@ -85,7 +95,7 @@ export function usePatientKanban(country?: string) {
   const moveStatus = useCallback(async (
     patientId: string,
     targetStatus: PatientKanbanStatus,
-  ): Promise<string | null> => {
+  ): Promise<PatientKanbanMoveError | null> => {
     const previous = groupsRef.current;
     // find the card in any column
     let card: PatientKanbanItem | undefined;
@@ -113,9 +123,16 @@ export function usePatientKanban(country?: string) {
       // sem código (rede, 500 genérico) cai na mensagem, que é o único dado que existe ali.
       if (err instanceof Error) {
         const code = (err as { code?: string }).code;
-        return code ?? err.message;
+        // Decisão do Gabriel 07/09: o 422 de completude vem com `details.missing` — os MESMOS
+        // códigos do checklist. Levá-los adiante deixa o toast dizer O QUE falta em vez de só
+        // "não foi possível mover"; a tradução continua sendo por código, nunca eco do servidor.
+        const missing = (err as { details?: { missing?: unknown } }).details?.missing;
+        return {
+          code: code ?? err.message,
+          missing: Array.isArray(missing) ? (missing as string[]) : undefined,
+        };
       }
-      return 'Failed to move patient';
+      return { code: 'Failed to move patient' };
     }
   }, [setGroups]);
 
