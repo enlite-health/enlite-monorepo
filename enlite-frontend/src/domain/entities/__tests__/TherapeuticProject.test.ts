@@ -34,7 +34,7 @@ function versao(over: Partial<TherapeuticProjectVersion> = {}): TherapeuticProje
     startDate: '2026-09-01',
     endDate: '2026-12-01',
     annulledAt: null,
-    annulledBy: null,
+    annulledByName: null,
     annulReason: null,
     createdByName: 'Ana',
     createdAt: '2026-09-01T10:00:00.000Z',
@@ -63,7 +63,7 @@ describe('currentVersion — a versão "em andamento" do card (D299)', () => {
       id: 'anulada',
       createdAt: '2026-09-09T10:00:00.000Z',
       annulledAt: '2026-09-09T11:00:00.000Z',
-      annulledBy: 'u1',
+      annulledByName: 'Ana',
       annulReason: 'erro de digitação',
     });
     expect(currentVersion([anulada, viva])?.id).toBe('viva');

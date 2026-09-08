@@ -13,7 +13,7 @@
  *      id desativado no snapshot → 422 e NADA gravado;
  *   6. trilha: `read_project:therapeuticProject+clinical` e `export_pdf:…` com `?purpose=export`,
  *      só UUID na linha;
- *   7. o uid do autor NUNCA sai — só `createdByName`.
+ *   7. o uid do autor NUNCA sai — só `createdByName`; idem quem anulou (`annulledByName`).
  */
 import { Pool } from 'pg';
 import { montarAppDeFamilia, tokenMock, grupoComCelulas, limparIamFixtures, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
@@ -244,6 +244,9 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     expect(a.status).toBe(200);
     expect(a.body.data).toMatchObject({ version: 'V.1.1', annulReason: 'erro de digitação' });
     expect(a.body.data.annulledAt).toBeTruthy();
+    // Quem anulou sai como NOME resolvido; o uid nunca (mesma régua do autor — gate 08/09).
+    expect(a.body.data.annulledByName).toBe('Ana Sintética');
+    expect(a.body.data).not.toHaveProperty('annulledBy');
     const again = await chamar('POST', `${BASE()}/${created['1.1']}/annul`, U.completa, { reason: 'de novo' });
     expect(again.status).toBe(404);
     const fromAnnulled = await chamar('POST', BASE(), U.completa, { mode: 'edit', fromVersionId: created['1.1'], version: versionBody() });

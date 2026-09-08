@@ -64,6 +64,8 @@ export interface TherapeuticProjectVersion {
   endDate: string;
   annulledAt: string | null;
   annulledBy: string | null;
+  /** Nome de quem anulou (`users.display_name`), resolvido na leitura — o uid nunca sai da API. */
+  annulledByName: string | null;
   annulReason: string | null;
   createdBy: string;
   /** Nome do autor (`users.display_name`), resolvido na leitura — "Proyecto elaborado por". */

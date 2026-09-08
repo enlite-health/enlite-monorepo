@@ -24,7 +24,7 @@ export const PATIENT_CLINICAL_WRITE_CELL = patientContainerCell('clinical', 'wri
 
 const CLINICAL_FIELDS = ['clinicalContext', 'generalObjective', 'diagnoses'] as const;
 
-export type ProjectedTherapeuticVersion = Omit<TherapeuticProjectVersion, 'clinicalContext' | 'generalObjective' | 'diagnoses' | 'createdBy'> & {
+export type ProjectedTherapeuticVersion = Omit<TherapeuticProjectVersion, 'clinicalContext' | 'generalObjective' | 'diagnoses' | 'createdBy' | 'annulledBy'> & {
   clinicalContext: string | null;
   generalObjective: string | null;
   diagnoses: TherapeuticProjectVersion['diagnoses'] | null;
@@ -42,14 +42,15 @@ export function canWriteTherapeuticClinical(cells: readonly string[] | null | un
 }
 
 /**
- * A versão projetada pelas células do ator. O uid do autor NUNCA sai (só o nome resolvido —
- * molde da autoria das observações, lex 29/08 item 3).
+ * A versão projetada pelas células do ator. Os uids (autor e quem anulou) NUNCA saem — só os
+ * nomes resolvidos (molde da autoria das observações, lex 29/08 item 3).
  */
 export function projectTherapeuticVersionForActor(
   version: TherapeuticProjectVersion,
   cells: readonly string[] | null | undefined,
 ): ProjectedTherapeuticVersion {
-  const { createdBy: _uid, ...rest } = version;
+  // Nenhum uid de colaborador sai: nem o autor, nem quem anulou (só os nomes resolvidos).
+  const { createdBy: _uid, annulledBy: _uidAnulou, ...rest } = version;
   if (canReadTherapeuticClinical(cells)) return rest;
   // Os TRÊS campos clínicos zerados num literal só — `CLINICAL_FIELDS` é a lista que o teste confere
   // contra este literal, para campo novo não entrar em um lado e não no outro.

@@ -34,7 +34,7 @@ const version: TherapeuticProjectVersion = {
   startDate: '2026-09-01',
   endDate: '2026-12-31',
   annulledAt: null,
-  annulledBy: null,
+  annulledByName: null,
   annulReason: null,
   createdByName: 'Ana Sintética',
   createdAt: '2026-09-07T13:00:00.000Z',
@@ -121,7 +121,7 @@ describe('PDF do projeto terapêutico — bytes reais, texto extraído (spec 017
   it('versão anulada leva o carimbo; campos vazios saem como "—", contatos vazios idem', async () => {
     const anulada: TherapeuticProjectPdfInput = {
       ...fullInput,
-      version: { ...version, annulledAt: '2026-09-08T00:00:00Z', annulledBy: 'uid', annulReason: 'erro', createdByName: null },
+      version: { ...version, annulledAt: '2026-09-08T00:00:00Z', annulledByName: 'Ana', annulReason: 'erro', createdByName: null },
       coverage: { insurance: null, affiliateId: null },
       service: { serviceLabel: 'Cuidador', deviceLabels: [], providerProfile: null, scheduleText: null, careLocationLabel: null },
       emergencyContacts: [],

@@ -29,6 +29,7 @@ interface VersionRow {
   end_date: string;
   annulled_at: string | null;
   annulled_by: string | null;
+  annulled_by_name: string | null;
   annul_reason: string | null;
   country: string;
   created_by: string;
@@ -87,7 +88,8 @@ const isoTs = (v: unknown): string | null => (v == null ? null : v instanceof Da
 // sairia para qualquer ator com a célula do projeto). Sem display_name a tela mostra "—" (SUP-14).
 const SELECT_VERSION = `
   SELECT v.*,
-         (SELECT u.display_name FROM users u WHERE u.firebase_uid = v.created_by) AS created_by_name
+         (SELECT u.display_name FROM users u WHERE u.firebase_uid = v.created_by) AS created_by_name,
+         (SELECT u.display_name FROM users u WHERE u.firebase_uid = v.annulled_by) AS annulled_by_name
     FROM patient_therapeutic_projects v`;
 
 function toVersion(r: VersionRow): TherapeuticProjectVersion {
@@ -109,6 +111,7 @@ function toVersion(r: VersionRow): TherapeuticProjectVersion {
     endDate: isoDate(r.end_date),
     annulledAt: isoTs(r.annulled_at),
     annulledBy: r.annulled_by,
+    annulledByName: r.annulled_by_name ?? null,
     annulReason: r.annul_reason,
     createdBy: r.created_by,
     createdByName: r.created_by_name,

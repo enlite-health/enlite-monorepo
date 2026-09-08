@@ -154,7 +154,7 @@ const VERSAO: TherapeuticProjectVersion = {
   startDate: '2026-01-10',
   endDate: '2026-06-10',
   annulledAt: null,
-  annulledBy: null,
+  annulledByName: null,
   annulReason: null,
   createdByName: 'Ana Fixture',
   createdAt: '2026-01-10T10:00:00Z',

@@ -206,6 +206,7 @@ describe('TherapeuticProjectRepository', () => {
         endDate: '2026-06-30',
         annulledAt: null,
         annulledBy: null,
+        annulledByName: null,
         annulReason: null,
         createdBy: 'uid-autor',
         createdByName: 'Ana Joulie',

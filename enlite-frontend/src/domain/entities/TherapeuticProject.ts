@@ -37,7 +37,8 @@ export interface TherapeuticProjectVersion {
   startDate: string;
   endDate: string;
   annulledAt: string | null;
-  annulledBy: string | null;
+  /** Nome de quem anulou, resolvido no servidor (o uid nunca sai — como `createdByName`). */
+  annulledByName: string | null;
   annulReason: string | null;
   createdByName: string | null;
   createdAt: string;

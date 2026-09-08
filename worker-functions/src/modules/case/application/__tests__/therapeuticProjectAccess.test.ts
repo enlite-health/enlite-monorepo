@@ -45,6 +45,7 @@ function versao(over: Partial<TherapeuticProjectVersion> = {}): TherapeuticProje
     endDate: '2026-06-30',
     annulledAt: null,
     annulledBy: null,
+    annulledByName: null,
     annulReason: null,
     createdBy: 'uid-do-autor',
     createdByName: 'Ana Joulie',
@@ -98,6 +99,10 @@ describe('projectTherapeuticVersionForActor', () => {
     const semClinica = projectTherapeuticVersionForActor(versao(), []);
     expect(comTudo).not.toHaveProperty('createdBy');
     expect(semClinica).not.toHaveProperty('createdBy');
+    // O uid de quem anulou também é dado de staff: sai só o nome resolvido (gate 08/09).
+    expect(comTudo).not.toHaveProperty('annulledBy');
+    expect(semClinica).not.toHaveProperty('annulledBy');
+    expect(comTudo.annulledByName).toBeNull();
     // o NOME resolvido continua saindo — é o "Proyecto elaborado por" da tela
     expect(comTudo.createdByName).toBe('Ana Joulie');
   });
