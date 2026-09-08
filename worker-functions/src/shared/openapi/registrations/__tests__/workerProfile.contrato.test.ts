@@ -14,11 +14,20 @@
  * ⚠️ Este teste NÃO prova que os campos são os certos. Prova que o que a rota
  * DEVOLVE de verdade passa pelo que a doc DECLARA — a régua que faltava.
  */
-import { z } from 'zod';
-import { WorkerProfileSchema, UnconfirmedWrite } from '../worker';
+import { UnconfirmedWrite, WorkerGeneralInfoOk200 } from '../worker';
+import { buildOpenApiDocument } from '../../document';
 import { UNCONFIRMED_WRITE } from '@modules/worker/interfaces/controllers/WorkerControllerV2Helpers';
 
-const OK_200 = z.union([WorkerProfileSchema, UnconfirmedWrite]);
+/**
+ * A MESMA constante que o `registerPath` publica — não uma união remontada aqui.
+ *
+ * A 1ª versão deste teste montava `z.union([...])` localmente, e a sabotagem S4
+ * do gate (rodada 4) provou que ele ficava VERDE mesmo trocando o `schema` da
+ * rota de volta para só o perfil: media os schemas, não a declaração da rota.
+ * Instrumento morto é pior que teste ausente — o ausente ninguém confunde com
+ * garantia.
+ */
+const OK_200 = WorkerGeneralInfoOk200;
 
 describe('contrato: o 200 declarado cobre os DOIS ramos que a rota devolve', () => {
   it('o objeto REAL do ramo degradado passa no schema publicado', () => {
@@ -53,6 +62,32 @@ describe('contrato: o 200 declarado cobre os DOIS ramos que a rota devolve', () 
     // confirmada se anunciasse completa.
     expect(UnconfirmedWrite.safeParse({ message: 'General info saved', missingFields: [] }).success)
       .toBe(false);
+  });
+
+  it('a ROTA publica os dois ramos — não basta a constante existir', () => {
+    // Esta é a asserção que a sabotagem S4 derrubaria. Ela lê o documento
+    // OpenAPI GERADO, que é o que vira cliente, e não o schema solto.
+    const doc = buildOpenApiDocument() as unknown as Record<string, any>;
+    const schema = doc.paths['/api/workers/me/general-info'].put.responses['200']
+      .content['application/json'].schema;
+
+    // O 200 tem de declarar OS DOIS ramos.
+    expect(schema.anyOf).toHaveLength(2);
+    const refs = (schema.anyOf as Array<{ $ref?: string }>).map((r) => r.$ref);
+    expect(refs).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('WorkerProfile'),
+        expect.stringContaining('UnconfirmedWrite'),
+      ]),
+    );
+  });
+
+  it('a rota declara 409 e 404, que ela comprovadamente devolve', () => {
+    const doc = buildOpenApiDocument() as unknown as Record<string, any>;
+    const responses = doc.paths['/api/workers/me/general-info'].put.responses;
+    expect(Object.keys(responses).sort()).toEqual(
+      expect.arrayContaining(['200', '400', '401', '404', '409', '500']),
+    );
   });
 
   it('o instrumento enxerga: um objeto que não é nenhum dos dois ramos REPROVA', () => {

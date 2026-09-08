@@ -125,10 +125,13 @@ describe('Profile Tabs — Endpoints por aba', () => {
       missing.forEach((t: unknown) => expect(typeof t).toBe('string'));
     });
 
-    it('a vitrine bate com o portão — a lista da rota é a MESMA função do banco', async () => {
-      // O defeito da D302 era exatamente os dois discordarem: a tela dizia
-      // "cadastro completo" e o portão recusava a postulação. Aqui a rota e a
-      // função do banco têm de devolver o MESMO conjunto, sem segunda definição.
+    it('a rota serve a função do banco sem intermediar — jsonb chega íntegro', async () => {
+      // ⚠️ O nome importa: isto prova o ENCANAMENTO (a rota não filtra, não
+      // reordena, não perde token, e o jsonb do Postgres chega como array), NÃO
+      // que a tela e o portão da postulação falem o mesmo vocabulário — o gate
+      // (rodada 4) mostrou que ainda não falam: o 403 expande `worker_documents`
+      // nos 4 `doc_*` e esta rota devolve o token cru. Essa igualdade é item de
+      // fila, e chamar este teste de "vitrine == portão" seria promessa falsa.
       const res = await api.put('/api/workers/me/general-info', payload, authHeaders());
       const gate = await db.query('SELECT fn_worker_missing_fields($1) AS missing', [workerId]);
 

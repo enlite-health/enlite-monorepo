@@ -24,41 +24,20 @@
  * que este módulo existe para consertar.
  *
  * NÃO reimplemente a lista aqui. Se um campo entra ou sai do portão, muda a
- * função PL/pgSQL — e o teste de contrato do frontend acusa quem não seguiu.
+ * função PL/pgSQL.
+ *
+ * ⚠️ NÃO existe, HOJE, régua comparando esta lista com a do frontend. O teste de
+ * contrato que faria isso vive na metade do frontend deste conserto, que ainda
+ * não foi mergeada — e a lista de lá já DIVERGE (21 tokens contra 19, porque o
+ * 403 da postulação expande `worker_documents` nos 4 `doc_*` e a rota devolve o
+ * token cru). Escrever aqui que "um teste te pega" antes de o teste existir é o
+ * mesmo defeito que este módulo combate: afirmar garantia que não há.
  */
 
 import { Pool } from 'pg';
 import { logger, reportError } from '@shared/logging';
 
 const TAG = '[WorkerCompletenessRepository]';
-
-/**
- * Tokens que a função pode devolver, para o contrato ficar explícito no TS.
- * É documentação do contrato — a VERDADE é a função no banco, não esta lista.
- * Um token novo no banco que não esteja aqui continua trafegando (o tipo é
- * `string`), e o teste de contrato do frontend é quem reprova a divergência.
- */
-export const WORKER_MISSING_FIELD_TOKENS = [
-  'first_name',
-  'last_name',
-  'sex',
-  'gender',
-  'birth_date',
-  'document_number',
-  'languages',
-  'phone',
-  'profession',
-  'knowledge_level',
-  'title_certificate',
-  'years_experience',
-  'experience_types',
-  'preferred_types',
-  'preferred_age_range',
-  'worker_service_areas',
-  'worker_availability',
-  'worker_documents',
-  'worker_not_found',
-] as const;
 
 /**
  * Lê os campos que faltam para o worker virar REGISTERED (e, portanto, poder

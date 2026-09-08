@@ -69,6 +69,16 @@ export const UnconfirmedWrite = registry.register(
   }).openapi({ description: 'Escrita gravada mas não confirmada.' }),
 );
 
+/**
+ * O `200` do `PUT /me/general-info` — os DOIS ramos, numa constante só.
+ *
+ * Exportada de propósito: o `registerPath` abaixo e o teste de contrato usam
+ * ESTA constante. Se o teste remontasse a união por conta própria, ficaria verde
+ * mesmo se alguém trocasse o `schema` da rota de volta para só o perfil — foi
+ * exatamente o que a sabotagem S4 do gate (rodada 4) provou da 1ª versão.
+ */
+export const WorkerGeneralInfoOk200 = z.union([WorkerProfileSchema, UnconfirmedWrite]);
+
 registry.registerPath({
   method: 'post',
   path: '/api/workers/init',
@@ -166,7 +176,7 @@ registry.registerPath({
       description:
         'Informações atualizadas. Devolve o cadastro relido; se a releitura falhar, ' +
         'devolve confirmação sem perfil com missingFields: null (gravou, não confirmou).',
-      content: { 'application/json': { schema: z.union([WorkerProfileSchema, UnconfirmedWrite]) } },
+      content: { 'application/json': { schema: WorkerGeneralInfoOk200 } },
     },
     404: { description: 'Worker não encontrado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     409: {
