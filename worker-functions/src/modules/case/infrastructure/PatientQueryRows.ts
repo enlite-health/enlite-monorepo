@@ -11,6 +11,7 @@
  * O repositório continua sendo a porta pública: ele re-exporta tudo daqui (`export type`, que
  * o TypeScript apaga na compilação), então nenhum chamador precisou mudar de import.
  */
+import type { PatientCoverageEmergencyContactDetail } from '../domain/PatientCoverageEmergencyContact';
 
 // ── Detail types ──────────────────────────────────────────────────────────────
 
@@ -143,6 +144,12 @@ export interface PatientDetailRow {
   phoneMatchesResponsible: boolean;
   // Related
   responsibles: PatientResponsibleDetail[];
+  /** 417 (D301): contatos de emergência da COBERTURA — `[]` sem `patient_coverage:read` (container). */
+  coverageEmergencyContacts: PatientCoverageEmergencyContactDetail[];
+  /** 417 / lex C3: `true` = o ator lê a cobertura mas NÃO a equipe — o profissional direto foi retido da lista. */
+  coverageDirectProfessionalRedacted: boolean;
+  /** Bulkhead (D167): `true` = a leitura dos contatos FALHOU (ex.: 417 ainda não aplicada) — não é lista vazia. */
+  coverageEmergencyContactsUnavailable: boolean;
   addresses: PatientAddressDetail[];
   professionals: PatientProfessionalDetail[];
   /**

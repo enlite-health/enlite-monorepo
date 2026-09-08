@@ -13,6 +13,31 @@ export interface PatientCoverageSectionPayload {
   affiliateId?: string | null;
   /** Códigos do catálogo `insurance_providers`. */
   insuranceVerifiedCodes?: string[];
+  /** 417 (D301): a lista INTEIRA dos contatos de emergência da cobertura; chave ausente = não toca. */
+  emergencyContacts?: PatientCoverageEmergencyContactInput[];
+}
+
+/**
+ * Contatos de emergência da COBERTURA MÉDICA (migration 417; D301 — Ana Joulie 08/09/2026: "profissional
+ * direto, ambulância, central de atendimento de emergência"). O familiar/responsável é outro campo
+ * (`responsibles`). O telefone é PII cifrada no servidor; o profissional direto só chega ao cliente
+ * quando o ator lê cobertura E equipe tratante (lex C3).
+ */
+export const COVERAGE_EMERGENCY_CONTACT_KINDS = ['DIRECT_PROFESSIONAL', 'AMBULANCE', 'EMERGENCY_CENTER'] as const;
+export type CoverageEmergencyContactKind = (typeof COVERAGE_EMERGENCY_CONTACT_KINDS)[number];
+export const COVERAGE_EMERGENCY_CONTACT_NAME_MAX = 200;
+export const COVERAGE_EMERGENCY_CONTACT_PHONE_MAX = 40;
+export const COVERAGE_EMERGENCY_CONTACTS_MAX = 20;
+
+export interface PatientCoverageEmergencyContactInput {
+  kind: CoverageEmergencyContactKind;
+  name: string;
+  phone: string;
+}
+
+export interface PatientCoverageEmergencyContact extends PatientCoverageEmergencyContactInput {
+  id: string;
+  sortOrder: number;
 }
 
 /** Uma opção do catálogo de coberturas (GET /api/admin/catalogs/insurance-providers). */

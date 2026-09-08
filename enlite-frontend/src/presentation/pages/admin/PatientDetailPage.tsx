@@ -228,7 +228,10 @@ export default function PatientDetailPage() {
             <ContainerGate resource="patient_clinical">
               <DiagnosticoCard patient={patient} onSaved={refetch} focusRequest={focusRequest} />
             </ContainerGate>
-            <ProjetoTerapeuticoCard />
+            {/* Spec 017: o projeto terapêutico virou container (D286) — célula própria, rota própria. */}
+            <ContainerGate resource="patient_therapeutic_project">
+              <ProjetoTerapeuticoCard patient={patient} />
+            </ContainerGate>
             <ContainerGate resource="patient_care_team">
               <EquipeTratanteCard professionals={patient.professionals} />
             </ContainerGate>

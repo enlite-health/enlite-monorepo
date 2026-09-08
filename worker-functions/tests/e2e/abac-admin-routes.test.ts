@@ -224,6 +224,11 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
             new AdminPatientDiagnosesController(),
             new AdminTerminologySearchController(),
           ),
+        ) &&
+        // Spec 017 (lex C3): o projeto terapêutico segue o paciente sob a RLS de país.
+        express.use(
+          '/api/admin',
+          caseModule.createAdminTherapeuticProjectsRoutes(new caseModule.AdminTherapeuticProjectsController(), auth, permissions),
         ),
     });
     baseUrl = app.url;
@@ -358,8 +363,8 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
         resource_type: 'patient',
         resource_id: IDS.patientAR,
         // D286: o `action` carrega os containers servidos. Aqui o engine está DESLIGADO
-        // (`cells = null`, D113) → a ficha inteira → todos os 8 containers, na ordem canônica.
-        action: 'read_detail:identity+clinical+careTeam+family+chat+coverage+address+services',
+        // (`cells = null`, D113) → a ficha inteira → todos os 9 containers, na ordem canônica.
+        action: 'read_detail:identity+clinical+careTeam+family+chat+coverage+address+services+therapeuticProject',
         origin: 'same_country',
       });
     });
@@ -432,6 +437,36 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
         [IDS.patientBR],
       );
       expect(count.rows[0].n).toBe(0);
+    });
+  });
+
+  // ── (f) projeto terapêutico sob RLS (spec 017, lex C3) ──────────────────────────────────
+  describe('(f) /patients/:id/therapeutic-projects', () => {
+    it('staff AR lista o SEU paciente (200, vazio) e o paciente BR devolve ZERO versões — nunca 500', async () => {
+      // Semeia uma versão no paciente BR como superuser: a prova é que o AR NÃO a vê.
+      const svc = await adminPool.query<{ id: string }>(
+        `INSERT INTO patient_contracted_services (patient_id, service_code, created_by, updated_by) VALUES ($1, 'CAREGIVER', 'e2e', 'e2e') RETURNING id`,
+        [IDS.patientBR],
+      );
+      const obj = await adminPool.query<{ id: string; label: string }>(`SELECT id, label FROM therapeutic_specific_objectives WHERE active LIMIT 1`);
+      const act = await adminPool.query<{ id: string; label: string }>(`SELECT id, label FROM therapeutic_activities WHERE active LIMIT 1`);
+      const pat = await adminPool.query<{ id: string; label: string }>(`SELECT id, label FROM pathology_types WHERE active LIMIT 1`);
+      await adminPool.query(
+        `INSERT INTO patient_therapeutic_projects
+           (patient_id, major, minor, contracted_service_id, diagnoses, clinical_context, general_objective,
+            specific_objectives, activities, pathology_types, start_date, end_date, created_by)
+         VALUES ($1, 1, 0, $2, '[{"uri":"u","code":"c","title":"t"}]', 'ctx BR', 'obj BR', $3, $4, $5, '2026-09-01', '2026-12-31', 'e2e')`,
+        [IDS.patientBR, svc.rows[0].id, JSON.stringify(obj.rows), JSON.stringify(act.rows), JSON.stringify(pat.rows)],
+      );
+      const ar = await asStaffAR(`/api/admin/patients/${IDS.patientAR}/therapeutic-projects`);
+      expect(ar.status).toBe(200);
+      expect(((await ar.json()) as { data: { versions: unknown[] } }).data.versions).toEqual([]);
+      const br = await asStaffAR(`/api/admin/patients/${IDS.patientBR}/therapeutic-projects`);
+      expect(br.status).toBe(200);
+      expect(((await br.json()) as { data: { versions: unknown[] } }).data.versions).toEqual([]);
+      // Existe MESMO — como superuser há 1 linha.
+      const real = await adminPool.query<{ n: number }>(`SELECT count(*)::int AS n FROM patient_therapeutic_projects WHERE patient_id = $1`, [IDS.patientBR]);
+      expect(real.rows[0].n).toBe(1);
     });
   });
 });

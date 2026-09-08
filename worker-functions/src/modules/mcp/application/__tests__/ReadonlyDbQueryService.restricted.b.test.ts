@@ -11,13 +11,13 @@ describe('ReadonlyDbQueryService — colunas restritas do bloco B', () => {
   const connect = jest.fn();
   const service = new ReadonlyDbQueryService({ connect } as unknown as Pool);
 
-  it.each(['on_hold_note', 'ON_HOLD_NOTE', 'access_notes'])('%s: recusado sem abrir conexão', async (col) => {
+  it.each(['on_hold_note', 'ON_HOLD_NOTE', 'access_notes', 'clinical_context', 'general_objective'])('%s: recusado sem abrir conexão', async (col) => {
     await expect(service.run(`SELECT ${col} FROM patients LIMIT 1`)).rejects.toThrow(/restricted clinical column/);
     expect(connect).not.toHaveBeenCalled();
   });
 
   it('a regex nomeia as três colunas e continua pegando emergency_instructions', () => {
-    for (const c of ['emergency_instructions', 'on_hold_note', 'access_notes']) expect(RESTRICTED_CLINICAL_COLUMNS.test(c)).toBe(true);
+    for (const c of ['emergency_instructions', 'on_hold_note', 'access_notes', 'clinical_context', 'general_objective']) expect(RESTRICTED_CLINICAL_COLUMNS.test(c)).toBe(true);
     expect(RESTRICTED_CLINICAL_COLUMNS.test('on_hold_reason')).toBe(false); // rótulo de catálogo, não texto
   });
 

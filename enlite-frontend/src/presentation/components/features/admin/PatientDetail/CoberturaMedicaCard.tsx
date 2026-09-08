@@ -23,6 +23,8 @@ export function CoberturaMedicaCard({ patient, onSaved, focusRequest }: Cobertur
   // Spec 012, US-B3: as verificadas por CÓDIGO do catálogo (traduzidas); o escalar antigo
   // (`insuranceVerified`, rótulo cru do ClickUp) só aparece quando não há código nenhum.
   const codes = patient.insuranceVerifiedCodes ?? [];
+  // 417 (D301.3b): `null` = sem célula (redação, D113); ausente = backend anterior; ambos viram "—".
+  const emergencyContacts = patient.coverageEmergencyContacts ?? [];
   const verifiedLabel = codes.length > 0
     ? codes.map((c) => t(`admin.patients.insuranceProviderOptions.${c}`, c)).join(', ')
     : patient.insuranceVerified;
@@ -61,10 +63,32 @@ export function CoberturaMedicaCard({ patient, onSaved, focusRequest }: Cobertur
         <DetailRow label={t('admin.patients.detail.coverageCard.verified')} testId="coverage-verified">
           <Text as="span" size="sm" color="muted">{verifiedLabel ?? '—'}</Text>
         </DetailRow>
-        {/* Spec 014 US-D2: "Números de Emergencia" REMOVIDO — era `value={null}` fixo, sem
-            coluna no schema (decisão Gabriel 03/09, item 9). */}
         <DetailRow label={t('admin.patients.detail.coverageCard.credential')}>
           <Text as="span" size="sm" color="muted">{patient.affiliateId ?? '—'}</Text>
+        </DetailRow>
+        {/* Spec 014 US-D2 tirou "Números de Emergencia" (era `null` fixo). Volta em 08/09 com dado de
+            verdade (417; D301.3b — Ana): a lista de contatos de emergência da COBERTURA. */}
+        <DetailRow label={t('admin.patients.detail.coverageCard.emergencyContacts')} testId="coverage-emergency-contacts">
+          {/* lex C2.1 (molde EquipeTratanteCard): nome de profissional é texto — o Clarity não o mascara sozinho; o bloco inteiro leva a máscara. */}
+          <div className="flex flex-col gap-0.5 text-right" data-clarity-mask="True">
+            {patient.coverageEmergencyContactsUnavailable ? (
+              <Text as="span" size="sm" className="text-amber-700" data-testid="coverage-emergency-contacts-unavailable">{t('admin.patients.detail.coverageCard.emergencyContactsUnavailable')}</Text>
+            ) : emergencyContacts.length === 0 ? (
+              <Text as="span" size="sm" color="muted">—</Text>
+            ) : (
+              <ul className="flex flex-col gap-0.5">
+                {emergencyContacts.map((c) => (
+                  <li key={c.id} data-testid={`coverage-emergency-contact-${c.kind}`}>
+                    <Text as="span" size="sm" color="muted">{t(`admin.patients.detail.coverageCard.emergencyContactKinds.${c.kind}`, c.kind)}: {c.name} · {c.phone}</Text>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {/* lex C3: a lista NÃO é completa para quem não lê a equipe — dizer, em vez de fingir. */}
+            {patient.coverageDirectProfessionalRedacted && (
+              <Text as="span" size="xs" color="muted" data-testid="coverage-direct-professional-redacted">{t('admin.patients.detail.coverageCard.directProfessionalRedacted')}</Text>
+            )}
+          </div>
         </DetailRow>
       </DetailRows>
     </div>

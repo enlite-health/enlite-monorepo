@@ -19,6 +19,14 @@
 
 import type { Pool } from 'pg';
 import type { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+
+// 417 bulkhead: o erro da tabela ausente é REPORTADO (nunca engolido) — o espião prova que ele saiu.
+const mockReportError = jest.fn();
+jest.mock('@shared/logging', () => ({
+  reportError: (...a: unknown[]) => mockReportError(...a),
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), child: () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }) },
+}));
+
 import { fetchPatientDetail } from '../PatientDetailQueryHelper';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -126,7 +134,8 @@ describe('fetchPatientDetail — happy path completo', () => {
           { id: 'vac-1', patient_address_id: 'addr-1', status: 'SEARCHING', schedule: null },
         ],
       }) // active vacancies
-      .mockResolvedValueOnce({ rows: [] }); // contracted services (spec 013, bloco C)
+      .mockResolvedValueOnce({ rows: [] }) // contracted services (spec 013, bloco C)
+      .mockResolvedValueOnce({ rows: [] }); // coverage emergency contacts (417)
 
     const pool = makePool(queryImpl);
     const enc = makeEncryptionService();
@@ -134,7 +143,7 @@ describe('fetchPatientDetail — happy path completo', () => {
     const result = await fetchPatientDetail(pool, enc, PATIENT_ID);
 
     expect(result).not.toBeNull();
-    expect(queryImpl).toHaveBeenCalledTimes(6);
+    expect(queryImpl).toHaveBeenCalledTimes(7);
     expect(result!.contractedServices).toEqual([]);
 
     // Identity/clinical passthrough
@@ -206,6 +215,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
           },
         ],
       }) // contracted services (main list)
+      .mockResolvedValueOnce({ rows: [] }) // coverage emergency contacts (417)
       .mockResolvedValueOnce({ rows: [{ service_id: 'svc-1', device_type: 'HOME' }] }) // devices
       .mockResolvedValueOnce({
         rows: [
@@ -222,7 +232,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
     const enc = makeEncryptionService();
     const result = await fetchPatientDetail(pool, enc, PATIENT_ID);
 
-    expect(queryImpl).toHaveBeenCalledTimes(8);
+    expect(queryImpl).toHaveBeenCalledTimes(9);
     expect(result!.contractedServices).toHaveLength(1);
     const svc = result!.contractedServices[0];
     expect(svc).toMatchObject({
@@ -255,6 +265,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
           },
         ],
       })
+      .mockResolvedValueOnce({ rows: [] }) // coverage emergency contacts (417)
       .mockResolvedValueOnce({ rows: [{ service_id: 'svc-OUTRO', device_type: 'HOME' }] }) // service_id diferente
       .mockResolvedValueOnce({
         rows: [
@@ -289,6 +300,7 @@ describe('fetchPatientDetail — defensive fallback branches', () => {
       .mockResolvedValueOnce({
         rows: [basePatientRow({ chatIds: null, attentionReasons: null, lastCaseNumber: null })],
       })
+      .mockResolvedValueOnce(emptyRelated())
       .mockResolvedValueOnce(emptyRelated())
       .mockResolvedValueOnce(emptyRelated())
       .mockResolvedValueOnce(emptyRelated())
@@ -329,6 +341,7 @@ describe('fetchPatientDetail — defensive fallback branches', () => {
         ],
       })
       .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated())
       .mockResolvedValueOnce(emptyRelated());
 
     const pool = makePool(queryImpl);
@@ -353,6 +366,7 @@ describe('fetchPatientDetail — cobertura e e-mail do paciente (spec 011, A3/A4
     const queryImpl = jest.fn();
     queryImpl
       .mockResolvedValueOnce({ rows: [row] })
+      .mockResolvedValueOnce(emptyRelated())
       .mockResolvedValueOnce(emptyRelated())
       .mockResolvedValueOnce(emptyRelated())
       .mockResolvedValueOnce(emptyRelated())
@@ -400,13 +414,14 @@ describe('fetchPatientDetail — containers sem célula NÃO passam pelo KMS (D2
       .mockResolvedValueOnce({ rows: [] }) // addresses
       .mockResolvedValueOnce({ rows: [{ id: 'prof-1', name: 'Dr. García', phone_encrypted: 'enc-phone-p1', email_encrypted: 'enc-email-p1', display_order: 1, is_team: true }] })
       .mockResolvedValueOnce({ rows: [] }) // vacancies
-      .mockResolvedValueOnce({ rows: [] }); // contracted services
+      .mockResolvedValueOnce({ rows: [] }) // contracted services
+      .mockResolvedValueOnce({ rows: [] }); // coverage emergency contacts (417)
     return makePool(queryImpl);
   }
   const reads = (on: string[]) => ({
     identity: on.includes('identity'), clinical: on.includes('clinical'), careTeam: on.includes('careTeam'),
     family: on.includes('family'), chat: on.includes('chat'), coverage: on.includes('coverage'),
-    address: on.includes('address'), services: on.includes('services'),
+    address: on.includes('address'), services: on.includes('services'), therapeuticProject: on.includes('therapeuticProject'),
   });
 
   it('🔴 sem familiares, equipe nem identidade: kms.decrypt tem 0 chamadas e os campos saem vazios', async () => {
@@ -426,6 +441,70 @@ describe('fetchPatientDetail — containers sem célula NÃO passam pelo KMS (D2
     expect(result?.responsibles).toHaveLength(1);
     expect(result?.professionals).toEqual([]);
     expect(result?.contactEmail).toBeNull();
+  });
+
+  it('417 (D301) — cobertura: decifra SÓ os contatos de emergência da cobertura; o profissional direto exige TAMBÉM equipe (lex C3); sem a célula, 0 decrypt e []', async () => {
+    const comContato = () => {
+      const queryImpl = jest.fn();
+      queryImpl
+        .mockResolvedValueOnce({ rows: [basePatientRow({ contactEmailEncrypted: 'enc-mail-p' })] })
+        .mockResolvedValueOnce({ rows: [{ id: 'resp-1', first_name: 'María', last_name: 'López', relationship: 'Madre', phone_encrypted: 'enc-phone-r1', email_encrypted: 'enc-email-r1', document_number_encrypted: 'enc-doc-r1', document_type: 'DNI', is_primary: true, display_order: 1, source: 'admin_manual' }] })
+        .mockResolvedValueOnce({ rows: [] }) // addresses
+        .mockResolvedValueOnce({ rows: [] }) // professionals
+        .mockResolvedValueOnce({ rows: [] }) // vacancies
+        .mockResolvedValueOnce({ rows: [] }) // contracted services
+        .mockResolvedValueOnce({ rows: [
+          { id: 'c1', kind: 'AMBULANCE', name: 'Ambulancia', phone_encrypted: 'enc-cov-1', sort_order: 0 },
+          { id: 'c2', kind: 'DIRECT_PROFESSIONAL', name: 'Dra. Pérez', phone_encrypted: 'enc-cov-2', sort_order: 1 },
+        ] }); // coverage emergency contacts (417)
+      return makePool(queryImpl);
+    };
+    // Só cobertura: a institucional sai; o profissional direto NÃO sai e NÃO é decifrado.
+    const enc = makeEncryptionService();
+    const soCobertura = await fetchPatientDetail(comContato(), enc, PATIENT_ID, reads(['coverage']));
+    expect((enc.decrypt as jest.Mock).mock.calls.map((c) => c[0])).toEqual(['enc-cov-1']);
+    expect(soCobertura?.coverageEmergencyContacts).toEqual([{ id: 'c1', kind: 'AMBULANCE', name: 'Ambulancia', phone: 'dec(enc-cov-1)', sortOrder: 0 }]);
+    expect(soCobertura?.responsibles).toEqual([]);
+    expect(soCobertura?.coverageDirectProfessionalRedacted).toBe(true); // marcador constante: a lista NÃO é completa
+    // Cobertura + equipe: os dois saem.
+    const enc2 = makeEncryptionService();
+    const ambos = await fetchPatientDetail(comContato(), enc2, PATIENT_ID, reads(['coverage', 'careTeam']));
+    expect((enc2.decrypt as jest.Mock).mock.calls.map((c) => c[0])).toEqual(['enc-cov-1', 'enc-cov-2']);
+    expect(ambos?.coverageEmergencyContacts?.map((c) => c.kind)).toEqual(['AMBULANCE', 'DIRECT_PROFESSIONAL']);
+    expect(ambos?.coverageDirectProfessionalRedacted).toBe(false);
+    // Só família: nada da cobertura é decifrado.
+    const enc3 = makeEncryptionService();
+    const sem = await fetchPatientDetail(comContato(), enc3, PATIENT_ID, reads(['family']));
+    expect((enc3.decrypt as jest.Mock).mock.calls.map((c) => c[0])).not.toContain('enc-cov-1');
+    expect(sem?.coverageEmergencyContacts).toEqual([]);
+    expect(sem?.coverageDirectProfessionalRedacted).toBe(false); // sem cobertura o campo inteiro é redigido pelo container
+  });
+
+  it('417 bulkhead (D167): a tabela de contatos ainda não existe (417 manual em prod) → a ficha NÃO cai, campo `[]` + `coverageEmergencyContactsUnavailable: true`, erro reportado', async () => {
+    const queryImpl = jest.fn();
+    queryImpl
+      .mockResolvedValueOnce({ rows: [basePatientRow()] })
+      .mockResolvedValueOnce({ rows: [] }) // responsibles
+      .mockResolvedValueOnce({ rows: [] }) // addresses
+      .mockResolvedValueOnce({ rows: [] }) // professionals
+      .mockResolvedValueOnce({ rows: [] }) // vacancies
+      .mockResolvedValueOnce({ rows: [] }) // contracted services
+      .mockRejectedValueOnce(new Error('relation "patient_coverage_emergency_contacts" does not exist')); // coverage contacts
+    const result = await fetchPatientDetail(makePool(queryImpl), makeEncryptionService(), PATIENT_ID, reads(['coverage', 'careTeam']));
+    expect(result?.coverageEmergencyContacts).toEqual([]);
+    expect(result?.coverageEmergencyContactsUnavailable).toBe(true);
+    expect(mockReportError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ source: 'PatientDetailQueryHelper:coverageEmergencyContacts' }));
+    // Rejeição que não é Error (driver antigo): vira Error no relato.
+    const q2 = jest.fn();
+    q2.mockResolvedValueOnce({ rows: [basePatientRow()] });
+    for (let i = 0; i < 5; i++) q2.mockResolvedValueOnce({ rows: [] });
+    q2.mockRejectedValueOnce('boom');
+    mockReportError.mockClear();
+    await fetchPatientDetail(makePool(q2), makeEncryptionService(), PATIENT_ID, reads(['coverage']));
+    expect(mockReportError.mock.calls[0][0]).toBeInstanceOf(Error);
+    // Caminho feliz: o marcador é false.
+    const ok = await fetchPatientDetail(stackComTudo(), makeEncryptionService(), PATIENT_ID, reads(['coverage']));
+    expect(ok?.coverageEmergencyContactsUnavailable).toBe(false);
   });
 
   it('só identidade: descriptografa o e-mail de contato e mais nada', async () => {

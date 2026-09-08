@@ -54,7 +54,7 @@ export class ReadonlyDbQueryService {
  *   patient_addresses.access_notes (spec 012, lex C2.1 — texto livre sobre o domicílio).
  * O controle que vale é a role (create-mcp-ro-role.sql); isto é defesa em profundidade.
  */
-export const RESTRICTED_CLINICAL_COLUMNS = /emergency_instructions|on_hold_note|access_notes/i;
+export const RESTRICTED_CLINICAL_COLUMNS = /emergency_instructions|on_hold_note|access_notes|clinical_context|general_objective/i;
 
 /**
  * Tabelas com texto clínico livre (`patients`, `patient_*`). A view `patients_ro` (D216) fica

@@ -39,6 +39,23 @@ describe('patientSectionSchemas — bloco B', () => {
     expect(patientSectionParamSchema.safeParse({ id: ID, section: 'coverage' }).success).toBe(true);
   });
 
+  it('coverage: emergencyContacts (417, D301) — kind fechado, nome ≤200, telefone ≤40, teto 20, chave estranha recusada; ausente = não toca', () => {
+    const ok = { emergencyContacts: [{ kind: 'DIRECT_PROFESSIONAL', name: ' Dra. Pérez ', phone: '+54 11 5555-0001' }, { kind: 'AMBULANCE', name: 'Ambulancia', phone: '0800' }] };
+    const parsed = coverageSectionSchema.safeParse(ok);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.emergencyContacts?.[0].name).toBe('Dra. Pérez'); // trim
+    expect(coverageSectionSchema.safeParse({ emergencyContacts: [] }).success).toBe(true);
+    expect(coverageSectionSchema.safeParse({ emergencyContacts: [{ kind: 'FAMILY', name: 'x', phone: '1' }] }).success).toBe(false);
+    expect(coverageSectionSchema.safeParse({ emergencyContacts: [{ kind: 'AMBULANCE', name: '', phone: '1' }] }).success).toBe(false);
+    expect(coverageSectionSchema.safeParse({ emergencyContacts: [{ kind: 'AMBULANCE', name: 'x', phone: '' }] }).success).toBe(false);
+    expect(coverageSectionSchema.safeParse({ emergencyContacts: [{ kind: 'AMBULANCE', name: 'x'.repeat(201), phone: '1' }] }).success).toBe(false);
+    expect(coverageSectionSchema.safeParse({ emergencyContacts: [{ kind: 'AMBULANCE', name: 'x', phone: '1'.repeat(41) }] }).success).toBe(false);
+    expect(coverageSectionSchema.safeParse({ emergencyContacts: [{ kind: 'AMBULANCE', name: 'x', phone: '1', email: 'a@b.co' }] }).success).toBe(false);
+    expect(coverageSectionSchema.safeParse({ emergencyContacts: Array.from({ length: 21 }, () => ({ kind: 'AMBULANCE', name: 'x', phone: '1' })) }).success).toBe(false);
+    const semChave = coverageSectionSchema.safeParse({ affiliateId: 'A' });
+    expect(semChave.success && semChave.data.emergencyContacts).toBeUndefined();
+  });
+
   it('support-network: relationship só aceita os códigos da 139 (CHILD…OTHER) ou null', () => {
     const row = { firstName: 'Ana', lastName: 'Diaz', isPrimary: true, displayOrder: 0 };
     expect(supportNetworkSectionSchema.safeParse({ responsibles: [{ ...row, relationship: 'PARENT' }] }).success).toBe(true);

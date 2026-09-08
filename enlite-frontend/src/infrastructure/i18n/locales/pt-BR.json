@@ -1105,7 +1105,10 @@
       "presentationInvite": "Convite à apresentação",
       "map": "Mapa",
       "templateCatalog": "Modelos",
-      "templateDrafts": "Registrar mensagem"
+      "templateDrafts": "Registrar mensagem",
+      "catalogObjectives": "Objetivos específicos",
+      "catalogActivities": "Rotina e atividades",
+      "catalogPathologyTypes": "Tipos de patologia"
     },
     "dedup": {
       "title": "Central de Duplicatas",
@@ -2866,7 +2869,14 @@
         "editServiceTitle": "Editar serviço contratado",
         "serviceNotFound": "Este serviço não existe mais na ficha.",
         "decimalCommaWarning": "Para decimais use ponto (.), não vírgula.",
-        "listReloadError": "A alteração foi salva, mas não conseguimos recarregar a lista. Feche e abra de novo."
+        "listReloadError": "A alteração foi salva, mas não conseguimos recarregar a lista. Feche e abra de novo.",
+        "coverageContactAdd": "Adicionar contato",
+        "coverageContactName": "Nome / instituição",
+        "coverageContactPhone": "Telefone",
+        "coverageContactRemove": "Remover contato",
+        "coverageContactEmpty": "Sem contatos de emergência da cobertura.",
+        "coverageContactNotice": "Estes dados ficam registrados na ficha do paciente e são impressos no Projeto Terapêutico entregue à família e à cobertura. Se cadastrar um profissional, avise-o de que o contato dele consta aqui.",
+        "coverageContactsRedacted": "Você não pode ver os contatos de emergência da cobertura, por isso não são editados aqui."
       },
       "kanban": {
         "title": "Pacientes — Kanban",
@@ -3142,11 +3152,26 @@
           "symptoms": "Sintomas",
           "observations": "Observações",
           "deadlines": "Prazos",
-          "pathologyTypes": "Tipos de patologias - ICHOM",
+          "pathologyTypes": "Tipo de patologia (segmento)",
           "tableVersion": "Versão",
           "tableAuthor": "Autor",
           "tableStartDate": "Data de Início",
-          "tableEndDate": "Data de Término"
+          "tableEndDate": "Data de Término",
+          "service": "Serviço contratado",
+          "serviceUnknown": "Serviço não encontrado",
+          "redacted": "Sem permissão para ver este dado",
+          "annulled": "Anulada",
+          "newButton": "Novo",
+          "empty": "Este paciente ainda não tem projeto terapêutico.",
+          "needsService": "Para criar um projeto terapêutico, o paciente precisa de um serviço contratado ativo.",
+          "tableView": "Ver",
+          "viewVersion": "Ver versão {{version}}",
+          "modality": "Modalidade",
+          "modalityOptions": {
+            "IN_PERSON": "Presencial",
+            "ONLINE": "On-line",
+            "HYBRID": "Híbrida"
+          }
         },
         "treatingTeamCard": {
           "title": "Equipe Tratante",
@@ -3185,7 +3210,15 @@
           "plan": "Plano do Paciente",
           "emergencyNumbers": "Números de Emergência",
           "credential": "Credencial",
-          "verified": "Cobertura verificada"
+          "verified": "Cobertura verificada",
+          "emergencyContacts": "Emergência da cobertura médica",
+          "emergencyContactKinds": {
+            "DIRECT_PROFESSIONAL": "Profissional direto",
+            "AMBULANCE": "Ambulância",
+            "EMERGENCY_CENTER": "Central de emergência"
+          },
+          "emergencyContactsUnavailable": "Indisponível agora — recarregue a ficha ou avise o suporte.",
+          "directProfessionalRedacted": "Profissional direto: não visível com a sua permissão (precisa da célula da equipe tratante)."
         },
         "locationsCard": {
           "title": "Localizações",
@@ -3356,7 +3389,34 @@
             "CONSENT": "Consentimento"
           }
         },
-        "viewInKanban": "Ver no Kanban"
+        "viewInKanban": "Ver no Kanban",
+        "therapeuticProjectForm": {
+          "newTitle": "Novo projeto terapêutico",
+          "newSubtitle": "Nova versão — numerada ao salvar",
+          "versionSubtitle": "{{version}} - Criado por: {{author}}",
+          "service": "Serviço contratado",
+          "servicePlaceholder": "Escolha o serviço",
+          "noActiveService": "O paciente não tem serviço contratado ativo.",
+          "removeDiagnosis": "Remover {{title}}",
+          "selectPlaceholder": "Escolha uma ou mais opções",
+          "startDate": "Data de início",
+          "endDate": "Data de término",
+          "endBeforeStart": "A data de término não pode ser anterior à de início.",
+          "save": "Salvar",
+          "saving": "Salvando…",
+          "exportPdf": "Exportar PDF",
+          "exporting": "Gerando…",
+          "loadingCatalogs": "Carregando catálogos…",
+          "discardConfirm": "Descartar as alterações não salvas?",
+          "redactedCannotEdit": "Você não tem permissão para ver o texto clínico desta versão; não dá para criar uma nova versão a partir dela.",
+          "errors": {
+            "forbidden": "Você não tem permissão para escrever o projeto terapêutico (precisa também da célula clínica).",
+            "catalogItemsUnknown": "Alguma opção escolhida já não está ativa no catálogo. Escolha de novo.",
+            "serviceNotOfPatient": "O serviço escolhido não é deste paciente.",
+            "sourceNotFound": "A versão de origem já não existe ou foi anulada."
+          },
+          "modalityPlaceholder": "Escolha a modalidade"
+        }
       },
       "statusOptions": {
         "SOLICITANTE": "Solicitante",
@@ -4121,7 +4181,8 @@
             "services": "Serviço contratado",
             "contractValue": "Valor-hora do serviço contratado",
             "vacancies": "Vagas do paciente",
-            "operational": "Status, ativação e histórico"
+            "operational": "Status, ativação e histórico",
+            "therapeuticProject": "Projeto terapêutico"
           }
         },
         "patients.chatRoles": {
@@ -4198,6 +4259,15 @@
         },
         "access": {
           "label": "Acessos e permissões"
+        },
+        "patients.catalogObjectives": {
+          "label": "Pacientes: Catálogo de objetivos específicos"
+        },
+        "patients.catalogActivities": {
+          "label": "Pacientes: Catálogo de rotina e atividades"
+        },
+        "patients.catalogPathologyTypes": {
+          "label": "Pacientes: Catálogo de tipos de patologia"
         }
       }
     },
@@ -4758,6 +4828,47 @@
       "inserirClausula": "Cláusula de baixa",
       "clausulaDeBaja": "\n\nResponda BAJA se não quiser mais receber mensagens.",
       "copiarParaTraduzir": "copiar o original para traduzir"
+    },
+    "therapeuticCatalog": {
+      "kinds": {
+        "specificObjectives": {
+          "title": "Objetivos específicos do projeto terapêutico",
+          "subtitle": "As opções que a equipe escolhe no projeto terapêutico (seção \"Objetivos Específicos\" do documento). Editadas aqui, sem deploy. Desativar não apaga: versões antigas do projeto guardam o texto que tinham."
+        },
+        "activities": {
+          "title": "Rotina e atividades do projeto terapêutico",
+          "subtitle": "As opções de \"Rutina y Actividades\" do projeto terapêutico. Editadas aqui, sem deploy. Desativar não apaga: versões antigas guardam o texto que tinham."
+        },
+        "pathologyTypes": {
+          "title": "Tipos de patologia (segmento)",
+          "subtitle": "O segmento clínico escolhido no projeto terapêutico — o mesmo padrão do Ana Care. Lista própria da Enlite. Editada aqui, sem deploy; desativar não apaga."
+        }
+      },
+      "newItem": "Nova opção",
+      "editItem": "Editar opção",
+      "noItems": "Ainda não há opções neste catálogo.",
+      "active": "Ativa",
+      "inactive": "Inativa",
+      "activate": "Ativar",
+      "deactivate": "Desativar",
+      "table": {
+        "order": "Ordem",
+        "label": "Texto",
+        "status": "Estado",
+        "actions": "Ações"
+      },
+      "form": {
+        "label": "Texto da opção",
+        "labelHelp": "Em espanhol, como vai sair no PDF. Sem dados de nenhuma pessoa.",
+        "sortOrder": "Ordem",
+        "sortOrderHelp": "Posição na lista (menor primeiro). Vazio = no fim.",
+        "save": "Salvar",
+        "saving": "Salvando…"
+      },
+      "errors": {
+        "duplicate": "Já existe uma opção ativa com esse texto.",
+        "invalidLabel": "O texto não pode ter dados de uma pessoa (e-mail, documento, telefone) nem passar de 200 caracteres."
+      }
     }
   },
   "publicVacancy": {

@@ -82,6 +82,11 @@ describe('SCREEN_REGISTRY — rotas', () => {
 });
 
 describe('screensByCell / containersOfTab / screenById', () => {
+  it('containersOfTab: tela sem containers e container sem abas (tela sem abas) devolvem vazio, sem lançar', () => {
+    expect(containersOfTab({ id: 'x.semContainers', route: '/admin/x', cells: ['x:read'] }, 'qualquer')).toEqual([]);
+    expect(containersOfTab({ id: 'x.semAbas', route: '/admin/x', containers: [{ id: 'c', resource: 'x', cells: ['x:read'] }] }, 'qualquer')).toEqual([]);
+  });
+
   it('célula compartilhada aparece em TODAS as telas que a consomem — é uma só', () => {
     const telas = todasAsCelulas().get('patient:read') ?? [];
     expect(telas).toEqual(expect.arrayContaining(['dashboard', 'patients.list', 'patients.kanban', 'patients.detail', 'patients.chatRoles']));
@@ -92,7 +97,7 @@ describe('screensByCell / containersOfTab / screenById', () => {
 
   it('as abas do detalhe do paciente: cada uma sabe os seus containers; Matching saiu (05/09)', () => {
     const s = screenById('patients.detail');
-    expect(containersOfTab(s, 'clinicalData').map((c) => c.resource)).toEqual(['patient_clinical', 'patient_care_team']);
+    expect(containersOfTab(s, 'clinicalData').map((c) => c.resource)).toEqual(['patient_clinical', 'patient_care_team', 'patient_therapeutic_project']);
     expect(containersOfTab(s, 'supportNetwork').map((c) => c.resource)).toEqual(['patient_family', 'patient_chat']);
     // D293: o valor-hora é container próprio (célula de DADO), na mesma aba do serviço.
     expect(containersOfTab(s, 'contractedService').map((c) => c.resource)).toEqual(['patient_coverage', 'patient_address', 'patient_services', 'patient_contract_value']);

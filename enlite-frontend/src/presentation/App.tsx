@@ -39,6 +39,7 @@ import { TemplateCatalogPage } from './pages/admin/TemplateCatalogPage';
 import { TemplateCatalogDetailPage } from './pages/admin/TemplateCatalogDetailPage';
 import { TemplateDraftsPage } from './pages/admin/TemplateDraftsPage';
 import PatientChatRolesPage from './pages/admin/PatientChatRolesPage';
+import TherapeuticCatalogPage from './pages/admin/TherapeuticCatalogPage/TherapeuticCatalogPage';
 import PresentationInvitePage from './pages/admin/PresentationInvitePage';
 import { DedupCenterPage } from './pages/admin/DedupCenterPage/DedupCenterPage';
 import { NewVersionBanner } from './components/molecules/NewVersionBanner/NewVersionBanner';
@@ -223,6 +224,10 @@ export function App() {
           {/* Depois de "registrar", senão o literal seria capturado pelo :slug. */}
           <Route path="plantillas/:slug" element={<TemplateCatalogDetailPage />} />
           <Route path="patient-chat-roles" element={<PatientChatRolesPage />} />
+          {/* Spec 017: uma TELA por catálogo do projeto terapêutico (célula própria cada); sem `screen:*` no manifest, como patient-chat-roles. */}
+          <Route path="catalogos/objetivos-especificos" element={<TherapeuticCatalogPage kind="specific-objectives" />} />
+          <Route path="catalogos/actividades" element={<TherapeuticCatalogPage kind="activities" />} />
+          <Route path="catalogos/tipos-de-patologia" element={<TherapeuticCatalogPage kind="pathology-types" />} />
           <Route path="invitacion-presentacion" element={<PresentationInvitePage />} />
           <Route path="dedup" element={<DedupCenterPage />} />
           {/* Painel de acessos — cada página se fecha sozinha em `permission_management:read` (AccessGate). */}

@@ -13,6 +13,9 @@ import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon'
 import type { SelectOption } from '@presentation/components/molecules/SelectField';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
+import { CoverageEmergencyContactsEditor } from './CoverageEmergencyContactsEditor';
+import { invalidCoverageContacts } from './coverageContactValidation';
+import type { PatientCoverageEmergencyContactInput } from '@domain/entities/PatientCoverage';
 
 interface Props {
   patient: PatientDetail;
@@ -58,6 +61,13 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
   const editableInitialCodes = entries.filter((e) => e.source !== LOCKED_SOURCE).map((e) => e.code);
 
   const [selected, setSelected] = useState<string[]>(editableInitialCodes);
+  // 417 (D301.3b): contatos de emergência da cobertura — a lista inteira; `null` (sem célula) e
+  // backend anterior à 417 (ausente) começam vazios e SÓ vão no payload se o humano mexer.
+  const initialContacts: PatientCoverageEmergencyContactInput[] = (patient.coverageEmergencyContacts ?? []).map(({ kind, name, phone }) => ({ kind, name, phone }));
+  const [contacts, setContacts] = useState<PatientCoverageEmergencyContactInput[]>(initialContacts);
+  const contactsKey = (l: PatientCoverageEmergencyContactInput[]) => JSON.stringify(l.map((c) => [c.kind, c.name.trim(), c.phone.trim()]));
+  const contactsDirty = contactsKey(contacts) !== contactsKey(initialContacts);
+  const contactsInvalid = invalidCoverageContacts(contacts);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setShow(true));
@@ -81,7 +91,8 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
   const isDirty =
     name !== (patient.insuranceInformed ?? '') ||
     affiliate !== (patient.affiliateId ?? '') ||
-    [...selected].sort().join(',') !== [...editableInitialCodes].sort().join(',');
+    [...selected].sort().join(',') !== [...editableInitialCodes].sort().join(',') ||
+    contactsDirty;
 
   const { confirmingClose, requestClose, keepEditing, confirmDiscard } = useConfirmDiscardClose({
     isDirty,
@@ -108,6 +119,7 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
     // PATCH à toa sempre que houvesse cobertura de origem ClickUp.
     const before = [...editableInitialCodes].sort().join(',');
     if ([...selected].sort().join(',') !== before) payload.insuranceVerifiedCodes = selected;
+    if (contactsDirty) payload.emergencyContacts = contacts.map((c) => ({ kind: c.kind, name: c.name.trim(), phone: c.phone.trim() }));
     if (Object.keys(payload).length === 0) { handleClose(); return; }
 
     setBusy(true);
@@ -140,7 +152,7 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
         <div className="flex items-center justify-between px-8 py-5 border-b border-slate-100 shrink-0">
           <Heading level={3} weight="semibold" color="primary">{te('coverageTitle')}</Heading>
           <div className="flex items-center gap-4">
-            <Button type="button" variant="primary" size="sm" onClick={onSubmit} isLoading={busy} className="w-32" data-testid="pcv-save">
+            <Button type="button" variant="primary" size="sm" onClick={onSubmit} isLoading={busy} disabled={contactsInvalid} className="w-32" data-testid="pcv-save">
               {te('save')}
             </Button>
             <button type="button" onClick={requestClose} aria-label={te('close')} className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded">
@@ -179,6 +191,10 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
           <FormField label={tc('credential')} htmlFor="pcv-affiliate" hint={te('affiliateHint')} optional>
             <InputWithIcon id="pcv-affiliate" inputSize="compact" value={affiliate} onChange={(e) => setAffiliate(e.target.value)} data-testid="pcv-affiliate" />
           </FormField>
+          {/* `null` = sem `patient_coverage:read` (o servidor recusa a escrita com 403 de qualquer forma); a lista não é oferecida. */}
+          {patient.coverageEmergencyContacts === null
+            ? <Text size="xs" className="text-amber-700" data-testid="pcv-contacts-redacted">{te('coverageContactsRedacted')}</Text>
+            : <CoverageEmergencyContactsEditor value={contacts} onChange={setContacts} disabled={busy} />}
           {submitError && <Text size="sm" className="text-red-600" data-testid="pcv-error">{submitError}</Text>}
         </div>
       </div>

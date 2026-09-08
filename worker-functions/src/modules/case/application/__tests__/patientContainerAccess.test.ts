@@ -66,7 +66,28 @@ describe('projectPatientDetailByContainers', () => {
     }
     expect(out.redacted).toEqual({
       identity: true, clinical: true, careTeam: true, family: true, chat: true, coverage: true, address: true, services: true,
+      // Spec 017: o container existe na ficha SÓ pelo marcador — nenhum campo (as versões têm rota própria).
+      therapeuticProject: true,
     });
+  });
+
+  it('417 (D301) — coverageEmergencyContacts é campo do container de COBERTURA: sem a célula sai null; com ela, sai', () => {
+    const comLista = { ...ficha, coverageEmergencyContacts: [{ id: 'c1', kind: 'AMBULANCE', name: 'A', phone: '1', sortOrder: 0 }], coverageDirectProfessionalRedacted: true } as typeof ficha;
+    const sem = projectPatientDetailByContainers(comLista, ['patient:read', 'patient_identity:read']);
+    expect((sem as Record<string, unknown>).coverageEmergencyContacts).toBeNull();
+    expect((sem as Record<string, unknown>).coverageDirectProfessionalRedacted).toBeNull(); // o marcador também é do container
+    expect(sem.redacted).toHaveProperty('coverage', true);
+    const com = projectPatientDetailByContainers(comLista, ['patient:read', 'patient_coverage:read']);
+    expect((com as Record<string, unknown>).coverageEmergencyContacts).toEqual([{ id: 'c1', kind: 'AMBULANCE', name: 'A', phone: '1', sortOrder: 0 }]);
+    expect(com.redacted).not.toHaveProperty('coverage');
+  });
+
+  it('spec 017 — therapeuticProject: sem célula o marcador sai; com ela, nada muda na ficha (não há campo)', () => {
+    const sem = projectPatientDetailByContainers(ficha, ['patient:read', 'patient_identity:read']);
+    expect(sem.redacted).toHaveProperty('therapeuticProject', true);
+    const com = projectPatientDetailByContainers(ficha, ['patient:read', 'patient_identity:read', 'patient_therapeutic_project:read']);
+    expect(com.redacted).not.toHaveProperty('therapeuticProject');
+    expect(Object.keys(com).sort()).toEqual(Object.keys(sem).sort());
   });
 
   it('só o container concedido sobrevive — familiares sem clínica', () => {

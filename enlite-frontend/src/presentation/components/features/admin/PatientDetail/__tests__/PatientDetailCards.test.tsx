@@ -62,7 +62,6 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
 import { PatientIdentityCard } from '../PatientIdentityCard';
 import { PatientGeneralInfoCard } from '../PatientGeneralInfoCard';
 import { DiagnosticoCard } from '../DiagnosticoCard';
-import { ProjetoTerapeuticoCard } from '../ProjetoTerapeuticoCard';
 import { EquipeTratanteCard } from '../EquipeTratanteCard';
 import { SupervisaoCard } from '../SupervisaoCard';
 import { RelatoriosAtendimentosCard } from '../RelatoriosAtendimentosCard';
@@ -499,24 +498,8 @@ describe('DiagnosticoCard', () => {
   });
 });
 
-// ── ProjetoTerapeuticoCard ───────────────────────────────────────────────────
-
-// Spec 014 US-D2 (decisão Gabriel 03/09, item 9): card sem dado nenhum vira "título +
-// Próximamente REAL" — nem tabela vazia, nem botão disabled, nem busca decorativa.
-describe('ProjetoTerapeuticoCard', () => {
-  it('renders card title Projeto Terapêutico', () => {
-    render(<ProjetoTerapeuticoCard />);
-    expect(screen.getByText('Projeto Terapêutico')).toBeInTheDocument();
-  });
-
-  it('mostra "Próximamente" — sem tabela, sem botão, sem busca', () => {
-    render(<ProjetoTerapeuticoCard />);
-    expect(screen.getByText('Em breve')).toBeInTheDocument();
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
-    expect(screen.queryByRole('table')).not.toBeInTheDocument();
-    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
-  });
-});
+// ── ProjetoTerapeuticoCard: deixou de ser placeholder na spec 017 — testes em
+//    `__tests__/ProjetoTerapeuticoCard.test.tsx`.
 
 // ── EquipeTratanteCard ───────────────────────────────────────────────────────
 

@@ -9,7 +9,7 @@ import { createPatientSchema } from '../validators/createPatientSchema';
 import { PatientQueryRepository } from '../../infrastructure/PatientQueryRepository';
 import { GetPatientByIdUseCase } from '../../application/GetPatientByIdUseCase';
 import { clinicalCellsOf, canReadPatientClinical, PATIENT_CLINICAL_READ_CELL } from '../../application/patientClinicalAccess';
-import { patientContainerReadsOf } from '../../application/patientContainerAccess';
+import { patientContainerReadsOf, canReadPatientContainer, patientContainerCell } from '../../application/patientContainerAccess';
 import { hourlyValueActorOf } from '../../application/contractedServiceHourlyValueAccess';
 import {
   toAdminPatientListItem,
@@ -265,6 +265,18 @@ export class AdminPatientsController {
       res.status(403).json({ success: false, error: 'Forbidden', details: { field: 'emergencyInstructions', cell: PATIENT_CLINICAL_READ_CELL } });
       return;
     }
+    // 417 / D301 (mesma régua da D211.2): quem não pode LER os contatos de emergência da cobertura não os
+    // escreve — a lista que ele mandaria nasce vazia e "substituir a lista" apagaria o que ele nunca viu.
+    const contatosNoCorpo = (bodyResult.data as { emergencyContacts?: Array<{ kind: string }> }).emergencyContacts;
+    if (contatosNoCorpo !== undefined && !canReadPatientContainer(clinicalCellsOf(req), 'coverage')) {
+      res.status(403).json({ success: false, error: 'Forbidden', details: { field: 'emergencyContacts', cell: patientContainerCell('coverage', 'read') } });
+      return;
+    }
+    // lex C3: o profissional direto é dado da equipe tratante — sem `patient_care_team:read` não se escreve um.
+    if (contatosNoCorpo?.some((c) => c.kind === 'DIRECT_PROFESSIONAL') && !canReadPatientContainer(clinicalCellsOf(req), 'careTeam')) {
+      res.status(403).json({ success: false, error: 'Forbidden', details: { field: 'emergencyContacts', cell: patientContainerCell('careTeam', 'read') } });
+      return;
+    }
     // lex C3.4 (spec 012): trilha de escrita do nº de afiliado SEM valor — uid, paciente, seção.
     if ('affiliateId' in (bodyResult.data as Record<string, unknown>)) {
       logger.info({ msg: 'patient_affiliate_id.write', uid: AuthMiddleware.getAuthContext(req)?.principal.id ?? null, patientId: id, section });
@@ -283,7 +295,7 @@ export class AdminPatientsController {
         id,
         section,
         bodyResult.data as PatientGeneralSectionData | PatientRelatedInput,
-        actorUid ? { uid: actorUid } : undefined,
+        actorUid ? { uid: actorUid, cells: clinicalCellsOf(req) } : undefined,
       );
       res.status(200).json({ success: true, data: { id } });
     } catch (err: unknown) {

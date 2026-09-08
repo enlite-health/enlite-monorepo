@@ -29,6 +29,8 @@ vi.mock('@presentation/components/ui/skeletons', () => ({ DetailSkeleton: () => 
 vi.mock('@presentation/components/features/admin/PatientDetail/PatientChatIdsCard', () => ({ PatientChatIdsCard: () => <div data-testid="chat-ids-stub" /> }));
 vi.mock('@presentation/components/features/admin/PatientDetail/PatientStatusHistoryCard', () => ({ PatientStatusHistoryCard: (p: { patientId: string }) => <div data-testid="history-stub">{p.patientId}</div> }));
 vi.mock('@presentation/components/features/admin/PatientDetail/PatientVacanciesCard', () => ({ PatientVacanciesCard: () => <div data-testid="vacancies-stub" /> }));
+// Spec 017: o card do projeto terapêutico tem client HTTP e i18n real por trás (drawer + PDF) — testado no próprio arquivo.
+vi.mock('@presentation/components/features/admin/PatientDetail/ProjetoTerapeuticoCard', () => ({ ProjetoTerapeuticoCard: (p: { patient: { id: string } }) => <div data-testid="projeto-terapeutico-stub">{p.patient.id}</div> }));
 vi.mock('@presentation/components/features/admin/PatientDetail/ActivatePatientButton', () => ({ ActivatePatientButton: (p: { onActivated: () => void }) => <button data-testid="activate-stub" onClick={p.onActivated}>activate</button> }));
 vi.mock('@presentation/components/features/admin/PatientDetail/PatientStatusControl', () => ({ PatientStatusControl: (p: { onSaved: () => void }) => <button data-testid="status-stub" onClick={p.onSaved}>status</button> }));
 vi.mock('@infrastructure/http/AdminApiService', () => ({ AdminApiService: { updatePatientSection: vi.fn(), listInsuranceProviders: vi.fn().mockResolvedValue([]) } }));
