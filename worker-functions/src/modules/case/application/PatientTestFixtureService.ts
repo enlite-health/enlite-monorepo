@@ -66,6 +66,10 @@ const CASCADE_CHILDREN = [
   // por isso não têm patient_id próprio para esta contagem; saem juntas mesmo assim (2 níveis
   // de FK ON DELETE CASCADE), só não aparecem no resultado por tabela.
   'patient_contracted_services',
+  // Spec 017 (lex C4): as versões do projeto terapêutico são filhas diretas de patients (ON DELETE
+  // CASCADE na 416) — o trigger de imutabilidade só deixa a linha sumir quando o pai já não existe,
+  // que é exatamente o que o purge faz.
+  'patient_therapeutic_projects',
 ] as const;
 
 interface AppointmentRow {

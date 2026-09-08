@@ -78,11 +78,29 @@ describe('PatientTestFixtureService.purge — Postgres real', () => {
       [id],
     );
 
+    // Spec 017 (lex C4): uma versão do projeto terapêutico — imutável (trigger 416), mas o
+    // CASCADE do pai a leva. Precisa de um serviço contratado do MESMO paciente (posse).
+    const { rows: [svcRow] } = await pool.query<{ id: string }>(
+      `INSERT INTO patient_contracted_services (patient_id, service_code, created_by, updated_by)
+       VALUES ($1, 'CAREGIVER', 'purge-e2e', 'purge-e2e') RETURNING id`,
+      [id],
+    );
+    await pool.query(
+      `INSERT INTO patient_therapeutic_projects
+         (patient_id, major, minor, contracted_service_id, diagnoses, clinical_context, general_objective,
+          specific_objectives, activities, pathology_types, start_date, end_date, created_by)
+       VALUES ($1, 1, 0, $2, '[{"uri":"u","code":"c","title":"t"}]', 'ctx', 'obj',
+               '[{"id":"a","label":"a"}]', '[{"id":"b","label":"b"}]', '[{"id":"c","label":"c"}]',
+               '2026-09-01', '2026-12-31', 'purge-e2e')`,
+      [id, svcRow.id],
+    );
+
     // O banco grava sozinho a 1a linha de histórico (trigger) — o mock nunca
     // contaria isso. Medimos o que EXISTE antes, em vez de supor o número.
     const historicoAntes = await contar('patient_status_history', 'patient_id', id);
     const enderecosAntes = await contar('patient_addresses', 'patient_id', id);
     expect(historicoAntes).toBeGreaterThanOrEqual(2);
+    expect(await contar('patient_therapeutic_projects', 'patient_id', id)).toBe(1);
 
     const result = await svc.purge(id);
 
@@ -90,6 +108,7 @@ describe('PatientTestFixtureService.purge — Postgres real', () => {
     expect(await contar('patients', 'id', id)).toBe(0);
     expect(await contar('patient_status_history', 'patient_id', id)).toBe(0);
     expect(await contar('patient_addresses', 'patient_id', id)).toBe(0);
+    expect(await contar('patient_therapeutic_projects', 'patient_id', id)).toBe(0);
 
     // E a contagem do log bate com o que existia. Um nome de tabela errado no
     // template do countCascadeChildren estouraria a query aqui, não em produção.
@@ -100,6 +119,8 @@ describe('PatientTestFixtureService.purge — Postgres real', () => {
       patient_chat_ids: 0,
       patient_professionals: 0,
       patient_field_overrides_audit: 0,
+      patient_contracted_services: 1,
+      patient_therapeutic_projects: 1,
     });
   });
 

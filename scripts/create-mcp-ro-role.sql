@@ -173,12 +173,20 @@ BEGIN
   -- FORA desta lista — raw_label das duas é rótulo cru do ClickUp (ex.: "Tipo de Patología"),
   -- mesma classe de patient_insurance_verified/patient_device_types. Consertar só uma seria
   -- deixar metade consertada, que é o próprio defeito (mesmo espírito do "achado #1" do QA-caça).
+  -- spec 017 (lex 08/09 C1/C18): patient_therapeutic_projects NÃO TEM coluna segura (pathology_types
+  -- sozinho já revela saúde mental; clinical_context é texto clínico) — tabela inteira revogada no
+  -- MESMO commit da migration 416. Os 3 catálogos (415) são globais e sem PHI por desenho, mas o
+  -- rótulo é texto livre do operador: ficam FORA até a guarda `containsLikelyPersonalData` ser provada.
   FOR alvo IN SELECT unnest(ARRAY[
     'patient_insurance_verified',
     'patient_device_types',
     'patient_diagnoses',
     'patient_source_labels',
-    'patient_source_label_rejections'
+    'patient_source_label_rejections',
+    'patient_therapeutic_projects',
+    'therapeutic_specific_objectives',
+    'therapeutic_activities',
+    'pathology_types'
   ]) AS tabela LOOP
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=alvo.tabela) THEN
       EXECUTE format('REVOKE SELECT ON public.%I FROM enlite_mcp_ro', alvo.tabela);
@@ -193,7 +201,9 @@ BEGIN
   FOR alvo IN SELECT unnest(ARRAY['patients','job_postings','job_postings_clickup_sync','job_posting_comments',
                                   'publications','worker_placement_audits','worker_job_applications','interview_slots',
                                   'patient_addresses','patient_contracted_services','contracted_service_providers',
-                                  'contracted_service_devices','service_types']) AS tabela LOOP
+                                  'contracted_service_devices','service_types',
+                                  'patient_therapeutic_projects','therapeutic_specific_objectives',
+                                  'therapeutic_activities','pathology_types']) AS tabela LOOP
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=alvo.tabela)
        AND has_table_privilege('enlite_mcp_ro', format('public.%I', alvo.tabela), 'SELECT') THEN
       RAISE EXCEPTION 'B2: enlite_mcp_ro ainda tem SELECT de TABELA em % — abortando a transação', alvo.tabela;
