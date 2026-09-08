@@ -25,7 +25,8 @@ import { useActionGate, useContainerAccess } from '@presentation/hooks/useCellAc
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@presentation/components/atoms/Table';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
-import { TherapeuticCatalogFormModal, catalogRefusalMessage, type CatalogItemFormData } from './TherapeuticCatalogFormModal';
+import { TherapeuticCatalogFormModal, type CatalogItemFormData } from './TherapeuticCatalogFormModal';
+import { catalogRefusalMessage } from './catalogRefusalMessage';
 
 interface Props {
   kind: TherapeuticCatalogKind;

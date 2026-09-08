@@ -14,7 +14,8 @@ import { useTranslation } from 'react-i18next';
 import { X, FileDown, Pencil } from 'lucide-react';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
 import type { TherapeuticProjectVersion, TherapeuticProjectVersionBody } from '@domain/entities/TherapeuticProject';
-import { AdminTherapeuticProjectsApiService, TherapeuticProjectApiError } from '@infrastructure/http/AdminTherapeuticProjectsApiService';
+import { AdminTherapeuticProjectsApiService } from '@infrastructure/http/AdminTherapeuticProjectsApiService';
+import { saveRefusalMessage } from './saveRefusalMessage';
 import { useTherapeuticCatalogs } from '@hooks/admin/useTherapeuticProjects';
 import { useContainerAccess } from '@presentation/hooks/useCellAccess';
 import { Heading } from '@presentation/components/atoms/Heading';
@@ -40,16 +41,6 @@ interface Props {
 
 const CLOSE_MS = 300;
 
-/** A recusa do servidor em frase da tela: célula clínica ausente, serviço de outro paciente, catálogo desativado. */
-export function saveRefusalMessage(err: unknown, t: (k: string, o?: Record<string, unknown>) => string): string {
-  if (err instanceof TherapeuticProjectApiError) {
-    if (err.status === 403) return t('admin.patients.detail.therapeuticProjectForm.errors.forbidden');
-    if (err.code === 'catalog_items_unknown') return t('admin.patients.detail.therapeuticProjectForm.errors.catalogItemsUnknown');
-    if (err.code === 'service_not_of_patient') return t('admin.patients.detail.therapeuticProjectForm.errors.serviceNotOfPatient');
-    if (err.code === 'source_version_not_found') return t('admin.patients.detail.therapeuticProjectForm.errors.sourceNotFound');
-  }
-  return err instanceof Error ? err.message : String(err);
-}
 
 export function TherapeuticProjectDrawer({ patient, target: initial, onClose, onSaved }: Props): JSX.Element {
   const { t } = useTranslation();

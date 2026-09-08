@@ -14,6 +14,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Label } from '@presentation/components/atoms/Label';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
+import { catalogRefusalMessage } from './catalogRefusalMessage';
 
 export interface CatalogItemFormData {
   label: string;
@@ -26,13 +27,6 @@ interface Props {
   onClose: () => void;
 }
 
-/** A recusa do servidor em frase da tela — 409 (duplicado) e 400 (dado pessoal no rótulo) têm frase própria. */
-export function catalogRefusalMessage(err: unknown, t: (k: string, o?: Record<string, unknown>) => string): string {
-  const status = typeof err === 'object' && err !== null ? (err as { status?: number }).status : undefined;
-  if (status === 409) return t('admin.therapeuticCatalog.errors.duplicate');
-  if (status === 400) return t('admin.therapeuticCatalog.errors.invalidLabel');
-  return err instanceof Error ? err.message : String(err);
-}
 
 export function TherapeuticCatalogFormModal({ item, onSave, onClose }: Props): JSX.Element {
   const { t } = useTranslation();

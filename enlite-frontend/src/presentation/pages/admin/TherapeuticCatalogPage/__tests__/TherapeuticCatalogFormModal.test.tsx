@@ -24,7 +24,8 @@ function t(key: string, opts?: any): string {
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t, i18n: { language: 'pt-BR' } }) }));
 
-const { TherapeuticCatalogFormModal, catalogRefusalMessage } = await import('../TherapeuticCatalogFormModal');
+const { TherapeuticCatalogFormModal } = await import('../TherapeuticCatalogFormModal');
+const { catalogRefusalMessage } = await import('../catalogRefusalMessage');
 
 const COPY = ptBR.admin.therapeuticCatalog;
 

@@ -17,7 +17,8 @@ function t(key: string, opts?: any): string {
 }
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t }) }));
 
-import { CoverageEmergencyContactsEditor, invalidCoverageContacts, contactFieldErrors } from '../CoverageEmergencyContactsEditor';
+import { CoverageEmergencyContactsEditor } from '../CoverageEmergencyContactsEditor';
+import { invalidCoverageContacts, contactFieldErrors } from '../coverageContactValidation';
 
 const te = (k: string): string => t(`admin.patients.editDrawer.${k}`);
 const tc = (k: string): string => t(`admin.patients.detail.coverageCard.${k}`);

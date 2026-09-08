@@ -340,6 +340,8 @@ describe('responsáveis e equipe tratante', () => {
     // Sem célula de serviço e com serviço não encontrado: o código congelado continua vindo da versão.
     expect(montar({ reads: { ...TODOS, services: false } }).fixedSectionsServiceCode).toBe('CAREGIVER');
     expect(montar({ version: { ...VERSAO, contractedServiceId: 'svc-inexistente' } }).fixedSectionsServiceCode).toBe('CAREGIVER');
+    // lex A1: o servidor retém o código sem `patient_services:read` → passa `null` adiante (rótulo neutro no PDF).
+    expect(montar({ version: { ...VERSAO, contractedServiceCode: null, redacted: { services: true } } }).fixedSectionsServiceCode).toBeNull();
   });
 
   it('lex C3 / D167 — marcadores da cobertura: profissional retido (do servidor) e leitura indisponível (ausente ou falhou) — ambos só sob `reads.coverage`', () => {

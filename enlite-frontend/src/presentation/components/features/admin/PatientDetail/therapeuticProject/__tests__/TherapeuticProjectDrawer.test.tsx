@@ -86,7 +86,8 @@ vi.mock('../../edit/IcdSearchCombobox', () => ({
 }));
 
 import { TherapeuticProjectApiError } from '@infrastructure/http/AdminTherapeuticProjectsApiService';
-import { TherapeuticProjectDrawer, saveRefusalMessage, type TherapeuticProjectTarget } from '../TherapeuticProjectDrawer';
+import { TherapeuticProjectDrawer, type TherapeuticProjectTarget } from '../TherapeuticProjectDrawer';
+import { saveRefusalMessage } from '../saveRefusalMessage';
 
 // ── Insumos ──────────────────────────────────────────────────────────────────
 

@@ -51,6 +51,7 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     ['patient_therapeutic_project', 'write'],
     ['patient_clinical', 'read'],
     ['patient_clinical', 'write'],
+    ['patient_services', 'read'],
     ['catalog_therapeutic_objectives', 'read'],
     ['catalog_therapeutic_objectives', 'write'],
     ['catalog_therapeutic_activities', 'read'],
@@ -121,7 +122,7 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     await pool.query(`INSERT INTO iam.permissions (resource, action, description, category) VALUES ('patient', 'read', 'e2e', 'Pacientes') ON CONFLICT DO NOTHING`);
     await grupoComCelulas(pool, {
       nome: GRUPOS.completa, uid: U.completa,
-      celulas: [['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write'], ['patient_clinical', 'read'], ['patient_clinical', 'write'], ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read'], ['catalog_pathology_types', 'read']],
+      celulas: [['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write'], ['patient_clinical', 'read'], ['patient_clinical', 'write'], ['patient_services', 'read'], ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read'], ['catalog_pathology_types', 'read']],
     });
     await grupoComCelulas(pool, { nome: GRUPOS.soProjeto, uid: U.soProjeto, celulas: [['patient', 'read'], ['patient_therapeutic_project', 'read']] });
     await grupoComCelulas(pool, { nome: GRUPOS.semClinica, uid: U.semClinica, celulas: [['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write']] });
@@ -209,13 +210,21 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     const r = await chamar('GET', BASE(), U.soProjeto);
     expect(r.status).toBe(200);
     for (const v of r.body.data.versions) {
-      expect(v).toMatchObject({ clinicalContext: null, generalObjective: null, diagnoses: null, redacted: { clinical: true } });
+      // lex A1: sem `patient_services:read` o TIPO do serviço congelado também não sai — marcador constante.
+      expect(v).toMatchObject({ clinicalContext: null, generalObjective: null, diagnoses: null, contractedServiceCode: null, redacted: { clinical: true, services: true } });
+      expect(JSON.stringify(v)).not.toContain('CAREGIVER');
       expect(v.specificObjectives.length).toBeGreaterThan(0);
       expect(v.version).toMatch(/^V\.\d+\.\d+$/);
       expect(v).not.toHaveProperty('createdBy');
     }
     const one = await chamar('GET', `${BASE()}/${created['1.0']}`, U.soProjeto);
-    expect(one.body.data).toMatchObject({ redacted: { clinical: true }, clinicalContext: null });
+    expect(one.body.data).toMatchObject({ redacted: { clinical: true, services: true }, clinicalContext: null, contractedServiceCode: null });
+    // Sem clínica mas com serviços (o grupo semClinica não tem serviços): só o marcador clínico.
+    const semClinica = await chamar('GET', `${BASE()}/${created['1.0']}`, U.semClinica);
+    expect(semClinica.body.data.redacted).toEqual({ clinical: true, services: true });
+    // A trilha diz o que serviu (C4).
+    const trilha = await pool.query(`SELECT action FROM resource_access_log WHERE operator_uid = $1 AND resource_id = $2 ORDER BY occurred_at DESC LIMIT 1`, [U.completa, PATIENT]);
+    expect(trilha.rows[0]?.action ?? '').toMatch(/^read_project:therapeuticProject\+clinical\+services$/);
   });
 
   it('5. 🔒 escrita: sem patient_clinical:write → 403 nomeando a célula; sem a célula do projeto → missing_cell; operacional → 403', async () => {
@@ -305,7 +314,7 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
       await new Promise((r) => setTimeout(r, 100));
     }
     expect(rows.some((r) => r.operator_uid === U.soProjeto && r.action === 'read_project:therapeuticProject' && r.resource_id === PATIENT)).toBe(true);
-    expect(rows.some((r) => r.operator_uid === U.completa && r.action === 'export_pdf:therapeuticProject+clinical')).toBe(true);
+    expect(rows.some((r) => r.operator_uid === U.completa && r.action === 'export_pdf:therapeuticProject+clinical+services')).toBe(true);
     expect(JSON.stringify(rows)).not.toContain('Síntesis');
   });
 });

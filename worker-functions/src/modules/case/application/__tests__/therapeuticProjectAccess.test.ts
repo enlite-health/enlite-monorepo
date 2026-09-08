@@ -20,6 +20,7 @@ import {
   projectTherapeuticVersionForActor,
   therapeuticTrailAction,
   PATIENT_CLINICAL_READ_CELL,
+  PATIENT_SERVICES_READ_CELL,
   PATIENT_CLINICAL_WRITE_CELL,
   THERAPEUTIC_PROJECT_RESOURCE,
 } from '../therapeuticProjectAccess';
@@ -117,18 +118,32 @@ describe('projectTherapeuticVersionForActor', () => {
     expect(out).not.toHaveProperty('redacted');
   });
 
-  it('com `patient_clinical:read` → idem: o texto clínico sai', () => {
-    const out = projectTherapeuticVersionForActor(versao(), [PROJETO_READ, PATIENT_CLINICAL_READ_CELL]);
+  it('com `patient_clinical:read` E `patient_services:read` → tudo sai, sem marcador', () => {
+    const out = projectTherapeuticVersionForActor(versao(), [PROJETO_READ, PATIENT_CLINICAL_READ_CELL, PATIENT_SERVICES_READ_CELL]);
     expect(out.clinicalContext).toBe('contexto clínico do titular');
+    expect(out.contractedServiceCode).toBe('CAREGIVER');
     expect(out).not.toHaveProperty('redacted');
   });
 
   it('sem a célula clínica → os TRÊS campos saem null e o marcador `redacted.clinical` sai (lex C7)', () => {
-    const out = projectTherapeuticVersionForActor(versao(), [PROJETO_READ]);
+    const out = projectTherapeuticVersionForActor(versao(), [PROJETO_READ, PATIENT_SERVICES_READ_CELL]);
     expect(out.clinicalContext).toBeNull();
     expect(out.generalObjective).toBeNull();
     expect(out.diagnoses).toBeNull();
     expect(out.redacted).toEqual({ clinical: true });
+    expect(out.contractedServiceCode).toBe('CAREGIVER');
+  });
+
+  it('lex A1 (08/09): sem `patient_services:read` o TIPO do serviço congelado sai null e `redacted.services` sai — mesma régua da ficha (D286); com CAREGIVER ou AT a resposta é indistinguível', () => {
+    const out = projectTherapeuticVersionForActor(versao(), [PROJETO_READ, PATIENT_CLINICAL_READ_CELL]);
+    expect(out.contractedServiceCode).toBeNull();
+    expect(out.clinicalContext).toBe('contexto clínico do titular');
+    expect(out.redacted).toEqual({ services: true });
+    expect(out.contractedServiceId).toBe('svc-1'); // o uuid opaco continua: resolvê-lo exige a célula de serviços
+    const at = projectTherapeuticVersionForActor(versao({ contractedServiceCode: 'AT' }), [PROJETO_READ, PATIENT_CLINICAL_READ_CELL]);
+    expect(at).toEqual(out);
+    // Sem nenhuma das duas: os dois marcadores.
+    expect(projectTherapeuticVersionForActor(versao(), [PROJETO_READ]).redacted).toEqual({ clinical: true, services: true });
   });
 
   it('o que NÃO é clínico continua saindo sem a célula: número, datas, autor, serviço e catálogos', () => {
@@ -140,7 +155,6 @@ describe('projectTherapeuticVersionForActor', () => {
       minor: 0,
       contractedServiceId: 'svc-1',
       modality: 'IN_PERSON',
-      contractedServiceCode: 'CAREGIVER',
       startDate: '2026-01-01',
       endDate: '2026-06-30',
       createdByName: 'Ana Joulie',
@@ -157,7 +171,7 @@ describe('projectTherapeuticVersionForActor', () => {
       [],
     );
     expect(vazia).toEqual(cheia);
-    expect(vazia.redacted).toEqual({ clinical: true });
+    expect(vazia.redacted).toEqual({ clinical: true, services: true });
   });
 
   it('nenhum resquício do texto clínico sobra no objeto serializado do ator sem célula', () => {
@@ -178,14 +192,17 @@ describe('projectTherapeuticVersionForActor', () => {
 
 describe('therapeuticTrailAction (lex C9/C13: só NOME de container)', () => {
   it.each([
-    ['read_project', 'read_project:therapeuticProject+clinical', 'read_project:therapeuticProject'],
-    ['write_project', 'write_project:therapeuticProject+clinical', 'write_project:therapeuticProject'],
-    ['export_pdf', 'export_pdf:therapeuticProject+clinical', 'export_pdf:therapeuticProject'],
-  ] as const)('%s: com clínica → "%s"; sem → "%s"', (prefixo, comClinica, semClinica) => {
-    expect(therapeuticTrailAction(prefixo, null)).toBe(comClinica);
-    expect(therapeuticTrailAction(prefixo, [PATIENT_CLINICAL_READ_CELL])).toBe(comClinica);
-    expect(therapeuticTrailAction(prefixo, [])).toBe(semClinica);
-    expect(therapeuticTrailAction(prefixo, [PROJETO_READ])).toBe(semClinica);
+    ['read_project', 'read_project:therapeuticProject+clinical+services', 'read_project:therapeuticProject'],
+    ['write_project', 'write_project:therapeuticProject+clinical+services', 'write_project:therapeuticProject'],
+    ['export_pdf', 'export_pdf:therapeuticProject+clinical+services', 'export_pdf:therapeuticProject'],
+  ] as const)('%s: com clínica e serviços → "%s"; sem → "%s"', (prefixo, comTudo, semNada) => {
+    expect(therapeuticTrailAction(prefixo, null)).toBe(comTudo);
+    expect(therapeuticTrailAction(prefixo, [PATIENT_CLINICAL_READ_CELL, PATIENT_SERVICES_READ_CELL])).toBe(comTudo);
+    expect(therapeuticTrailAction(prefixo, [])).toBe(semNada);
+    expect(therapeuticTrailAction(prefixo, [PROJETO_READ])).toBe(semNada);
+    // lex A1 C4: cada container servido entra na trilha, isoladamente.
+    expect(therapeuticTrailAction(prefixo, [PATIENT_SERVICES_READ_CELL])).toBe(`${prefixo}:therapeuticProject+services`);
+    expect(therapeuticTrailAction(prefixo, [PATIENT_CLINICAL_READ_CELL])).toBe(`${prefixo}:therapeuticProject+clinical`);
   });
 
   it('a trilha nunca carrega id nem texto — só os dois nomes de container', () => {

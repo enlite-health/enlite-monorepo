@@ -58,8 +58,8 @@ export interface TherapeuticProjectPdfInput {
   coverageDirectProfessionalRedacted: boolean;
   /** Bulkhead (D167): a leitura dos contatos falhou — imprime "indisponível", nunca "—". */
   coverageEmergencyContactsUnavailable: boolean;
-  /** `service_code` congelado NA VERSÃO (417): as seções fixas VIII/IX (texto constante) dependem só disto. */
-  fixedSectionsServiceCode: string;
+  /** `service_code` congelado NA VERSÃO (417): as seções fixas VIII/IX dependem só disto. `null` = sem `patient_services:read` → rótulo NEUTRO (lex A1 C3). */
+  fixedSectionsServiceCode: string | null;
   /** Modalidade já traduzida; `null` = versão anterior à 417. */
   modalityLabel: string | null;
   careTeam: string[] | null;

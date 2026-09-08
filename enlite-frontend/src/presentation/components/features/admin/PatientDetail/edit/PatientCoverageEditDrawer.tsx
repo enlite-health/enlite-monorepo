@@ -13,7 +13,8 @@ import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon'
 import type { SelectOption } from '@presentation/components/molecules/SelectField';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
-import { CoverageEmergencyContactsEditor, invalidCoverageContacts } from './CoverageEmergencyContactsEditor';
+import { CoverageEmergencyContactsEditor } from './CoverageEmergencyContactsEditor';
+import { invalidCoverageContacts } from './coverageContactValidation';
 import type { PatientCoverageEmergencyContactInput } from '@domain/entities/PatientCoverage';
 
 interface Props {

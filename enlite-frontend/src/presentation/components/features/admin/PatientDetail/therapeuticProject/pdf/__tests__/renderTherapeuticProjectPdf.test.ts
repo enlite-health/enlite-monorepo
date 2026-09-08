@@ -173,10 +173,21 @@ describe('PDF do projeto terapêutico — bytes reais, texto extraído (spec 017
     expect(at.text).not.toContain('El cuidador NO debe');
     expect(at.text).not.toContain('Por cuestiones Terapéuticas');
     const semServico = await texto({ ...fullInput, service: null });
-    expect(semServico.text).toContain('El cuidador NO debe'); // texto fixo não depende de célula
+    expect(semServico.text).toContain('El cuidador NO debe'); // o código congelado veio (a projeção do servidor decide, não o bloco de dados do serviço)
     expect(semServico.text).toContain('Por cuestiones Terapéuticas');
     expect(semServico.text).not.toContain(PDF_LABELS.sectionNotForService);
     expect(semServico.text).toContain(PDF_LABELS.sectionRedacted); // só o bloco do serviço (dados) é redigido
+  });
+
+  it('🔒 lex A1 C3 — código do serviço RETIDO (`null`, sem `patient_services:read`): VIII/IX saem com o rótulo neutro de permissão, NUNCA "no aplicable" nem o texto do cuidador', async () => {
+    const { text } = await texto({ ...fullInput, service: null, fixedSectionsServiceCode: null });
+    expect(text).toContain('Funciones y límites del cuidador');
+    expect(text).toContain('Regla fundamental de EnLite Care');
+    expect(text).not.toContain(PDF_LABELS.sectionNotForService);
+    expect(text).not.toContain('El cuidador NO debe');
+    expect(text).not.toContain('Por cuestiones Terapéuticas');
+    // bloco de dados do serviço + VIII + IX = 3 rótulos de omissão por permissão, no mínimo
+    expect(text.split(PDF_LABELS.sectionRedacted).length - 1).toBeGreaterThanOrEqual(3);
   });
 
   it('lex C3 / D167 — profissional direto retido: o rótulo sai junto da lista; leitura indisponível: "No disponible", nunca "—"', async () => {

@@ -166,7 +166,7 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
       await request(app()).get('/api/admin/therapeutic-catalogs/activities').expect(200);
       await request(app()).post('/api/admin/therapeutic-catalogs/activities').send({ label: 'x' }).expect(200);
       await request(app()).patch('/api/admin/therapeutic-catalogs/activities/i-1').send({ label: 'x' }).expect(200);
-      expect(trilhas).toEqual([{ tipo: 'patient', acao: 'read_project:therapeuticProject+clinical' }]);
+      expect(trilhas).toEqual([{ tipo: 'patient', acao: 'read_project:therapeuticProject+clinical+services' }]);
     });
 
     it('leitura sem `?purpose` → `read_project`; `?purpose=export` só vale na versão (lex C13) — na LISTA é leitura comum', async () => {
@@ -176,10 +176,10 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
       // A lista com `?purpose=export` não exporta PDF nenhum: a trilha não pode dizer que exportou.
       await request(app()).get('/api/admin/patients/abc-123/therapeutic-projects?purpose=export').expect(200);
       expect(trilhas.map((t) => t.acao)).toEqual([
-        'read_project:therapeuticProject+clinical',
-        'export_pdf:therapeuticProject+clinical',
-        'read_project:therapeuticProject+clinical',
-        'read_project:therapeuticProject+clinical',
+        'read_project:therapeuticProject+clinical+services',
+        'export_pdf:therapeuticProject+clinical+services',
+        'read_project:therapeuticProject+clinical+services',
+        'read_project:therapeuticProject+clinical+services',
       ]);
     });
 
@@ -187,8 +187,8 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
       await request(app()).post('/api/admin/patients/abc-123/therapeutic-projects').send({}).expect(200);
       await request(app()).post('/api/admin/patients/abc-123/therapeutic-projects/v-1/annul').send({}).expect(200);
       expect(trilhas.map((t) => t.acao)).toEqual([
-        'write_project:therapeuticProject+clinical',
-        'write_project:therapeuticProject+clinical',
+        'write_project:therapeuticProject+clinical+services',
+        'write_project:therapeuticProject+clinical+services',
       ]);
     });
 
@@ -203,9 +203,11 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
       ]);
     });
 
-    it('com a célula clínica declarada, a trilha diz os DOIS containers', async () => {
+    it('com a célula clínica declarada, a trilha diz os DOIS containers; com serviços também, os TRÊS (lex A1 C4)', async () => {
       await request(app([PROJETO_READ, 'patient_clinical:read'])).get('/api/admin/patients/abc-123/therapeutic-projects').expect(200);
       expect(trilhas.map((t) => t.acao)).toEqual(['read_project:therapeuticProject+clinical']);
+      await request(app([PROJETO_READ, 'patient_clinical:read', 'patient_services:read'])).get('/api/admin/patients/abc-123/therapeutic-projects').expect(200);
+      expect(trilhas.map((t) => t.acao).at(-1)).toBe('read_project:therapeuticProject+clinical+services');
     });
 
     it('a ação da trilha nunca carrega id nem texto — só nomes de container', async () => {

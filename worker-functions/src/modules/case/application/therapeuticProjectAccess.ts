@@ -21,14 +21,18 @@ import { patientContainerCell } from './patientContainerAccess';
 export const THERAPEUTIC_PROJECT_RESOURCE = 'patient_therapeutic_project';
 export const PATIENT_CLINICAL_READ_CELL = patientContainerCell('clinical', 'read');
 export const PATIENT_CLINICAL_WRITE_CELL = patientContainerCell('clinical', 'write');
+/** lex 08/09 (A1): o TIPO do serviço congelado na versão é dado do container `services` (D286: célula é por dado). */
+export const PATIENT_SERVICES_READ_CELL = patientContainerCell('services', 'read');
 
 const CLINICAL_FIELDS = ['clinicalContext', 'generalObjective', 'diagnoses'] as const;
 
-export type ProjectedTherapeuticVersion = Omit<TherapeuticProjectVersion, 'clinicalContext' | 'generalObjective' | 'diagnoses' | 'createdBy' | 'annulledBy'> & {
+export type ProjectedTherapeuticVersion = Omit<TherapeuticProjectVersion, 'clinicalContext' | 'generalObjective' | 'diagnoses' | 'contractedServiceCode' | 'createdBy' | 'annulledBy'> & {
   clinicalContext: string | null;
   generalObjective: string | null;
   diagnoses: TherapeuticProjectVersion['diagnoses'] | null;
-  redacted?: { clinical: true };
+  /** `null` sem `patient_services:read` (lex A1) — e o marcador `redacted.services` é CONSTANTE, nunca "tem valor?". */
+  contractedServiceCode: string | null;
+  redacted?: { clinical?: true; services?: true };
 };
 
 export function canReadTherapeuticClinical(cells: readonly string[] | null | undefined): boolean {
@@ -41,6 +45,11 @@ export function canWriteTherapeuticClinical(cells: readonly string[] | null | un
   return cells.includes(PATIENT_CLINICAL_WRITE_CELL);
 }
 
+export function canReadTherapeuticServices(cells: readonly string[] | null | undefined): boolean {
+  if (cells === null || cells === undefined) return true;
+  return cells.includes(PATIENT_SERVICES_READ_CELL);
+}
+
 /**
  * A versão projetada pelas células do ator. Os uids (autor e quem anulou) NUNCA saem — só os
  * nomes resolvidos (molde da autoria das observações, lex 29/08 item 3).
@@ -51,10 +60,18 @@ export function projectTherapeuticVersionForActor(
 ): ProjectedTherapeuticVersion {
   // Nenhum uid de colaborador sai: nem o autor, nem quem anulou (só os nomes resolvidos).
   const { createdBy: _uid, annulledBy: _uidAnulou, ...rest } = version;
-  if (canReadTherapeuticClinical(cells)) return rest;
+  const clinica = canReadTherapeuticClinical(cells);
+  const servicos = canReadTherapeuticServices(cells);
+  if (clinica && servicos) return rest;
+  const redacted: { clinical?: true; services?: true } = {};
   // Os TRÊS campos clínicos zerados num literal só — `CLINICAL_FIELDS` é a lista que o teste confere
   // contra este literal, para campo novo não entrar em um lado e não no outro.
-  return { ...rest, clinicalContext: null, generalObjective: null, diagnoses: null, redacted: { clinical: true } };
+  const clinico = clinica ? {} : { clinicalContext: null, generalObjective: null, diagnoses: null };
+  if (!clinica) redacted.clinical = true;
+  // lex A1 (08/09): o tipo do serviço é dado de `services` — mesma régua da ficha (`DETAIL_FIELDS.services`).
+  const servico = servicos ? {} : { contractedServiceCode: null };
+  if (!servicos) redacted.services = true;
+  return { ...rest, ...clinico, ...servico, redacted };
 }
 
 /** Os campos que a projeção redige — exportado para o teste conferir a paridade com o literal acima. */
@@ -62,6 +79,10 @@ export const THERAPEUTIC_CLINICAL_FIELDS = CLINICAL_FIELDS;
 
 /** O `action` da trilha (`resource_access_log`) — só nomes de container, nunca valor (lex C9/C13). */
 export function therapeuticTrailAction(prefix: 'read_project' | 'write_project' | 'export_pdf', cells: readonly string[] | null | undefined): string {
-  const served = ['therapeuticProject', ...(canReadTherapeuticClinical(cells) ? ['clinical'] : [])];
+  const served = [
+    'therapeuticProject',
+    ...(canReadTherapeuticClinical(cells) ? ['clinical'] : []),
+    ...(canReadTherapeuticServices(cells) ? ['services'] : []),
+  ];
   return `${prefix}:${served.join('+')}`;
 }

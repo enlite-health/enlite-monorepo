@@ -66,8 +66,13 @@ function Redacted(): JSX.Element {
   return <Text style={styles.redacted}>{PDF_LABELS.sectionRedacted}</Text>;
 }
 
-/** Seção fixa VIII/IX: só o serviço de cuidadores a carrega; nos demais, rótulo (uma regra, dois lugares). */
-function FixedSection({ serviceCode, children }: { serviceCode: string; children: JSX.Element }): JSX.Element {
+/**
+ * Seção fixa VIII/IX: só o serviço de cuidadores a carrega; nos demais, rótulo (uma regra, dois lugares).
+ * `null` = o emissor não lê o tipo do serviço (lex A1 C3): rótulo NEUTRO de permissão — "no aplicable"
+ * afirmaria que o serviço não é de cuidador, e isso é inferência sobre dado que ele não pode ver.
+ */
+function FixedSection({ serviceCode, children }: { serviceCode: string | null; children: JSX.Element }): JSX.Element {
+  if (serviceCode === null) return <Redacted />;
   if (serviceCode !== FIXED_SECTIONS_SERVICE_CODE) return <Text style={styles.redacted}>{PDF_LABELS.sectionNotForService}</Text>;
   return children;
 }
