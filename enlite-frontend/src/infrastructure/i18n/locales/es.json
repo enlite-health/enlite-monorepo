@@ -2939,7 +2939,8 @@
         "serviceAddress": "Domicilio",
         "serviceAddressHint": "Dónde se presta ESTE servicio. Cada servicio se vincula a un domicilio del paciente; la vacante nace ahí.",
         "serviceSchedule": "Horarios",
-        "serviceScheduleHint": "Opcional: la vacante puede crearse sin horario y completarse después.",
+        "serviceScheduleHint": "Opcional para guardar. Pero sin horario el paciente no puede pasar a activo, búsqueda ni reemplazo.",
+        "serviceScheduleNone": "Este servicio todavía no tiene horario. Podés guardarlo así, pero el paciente no va a poder pasar a activo, búsqueda ni reemplazo hasta que lo cargues.",
         "onlyNumbersHint": "Solo números",
         "onlyNumbersWarning": "Este campo acepta solo números.",
         "serviceAddressNone": "Este paciente no tiene domicilio cargado. Cargalo en \"Localizaciones\" para poder vincular el servicio — sin domicilio, la vacante no puede crearse.",
@@ -2968,8 +2969,10 @@
         "dragHint": "Arrastrá una tarjeta para cambiar el estado del paciente.",
         "moveErrorCodes": {
           "PATIENT_STATUS_TRANSITION_NOT_ALLOWED": "Ese cambio de estado no está permitido.",
-          "ON_HOLD_REASON_REQUIRED": "Para poner en espera hace falta indicar el motivo."
-        }
+          "ON_HOLD_REASON_REQUIRED": "Para poner en espera hace falta indicar el motivo.",
+          "PATIENT_STATUS_NOT_READY": "No se puede mover: faltan datos obligatorios en la ficha."
+        },
+        "moveNotReady": "No se puede mover: falta {{items}}."
       },
       "countryLabel": "País",
       "countryOptions": {
@@ -3428,6 +3431,7 @@
             "COVERAGE": "Cobertura",
             "CONTRACTED_SERVICE": "Servicio contratado",
             "SERVICE_ADDRESS": "Domicilio del servicio",
+            "SERVICE_SCHEDULE": "Horario del servicio",
             "CONSENT": "Consentimiento"
           }
         },
@@ -3481,7 +3485,9 @@
           "to": "A",
           "source": "Origen",
           "error": "No se pudo cargar el historial"
-        }
+        },
+        "notReady": "No se puede pasar a {{status}}: falta {{items}}.",
+        "notReadyGeneric": "No se puede cambiar el estado: faltan datos obligatorios en la ficha."
       },
       "insuranceProviderOptions": {
         "API": "API",

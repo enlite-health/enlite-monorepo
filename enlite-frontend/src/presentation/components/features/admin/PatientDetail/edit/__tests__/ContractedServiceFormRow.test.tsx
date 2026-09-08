@@ -314,6 +314,44 @@ describe('ContractedServiceFormRow', () => {
       expect(campo).not.toBeNull();
     });
 
+    // ── Aviso de horário (decisão do Gabriel 07/09) ──────────────────────────────────────────
+    it('serviço SEM horário: aviso âmbar role=alert diz que o paciente não vai poder mudar de status', () => {
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
+      const aviso = screen.getByTestId('svc-schedule-none-1');
+      expect(aviso).toHaveAttribute('role', 'alert');
+      expect(aviso.textContent).toContain('todavía no tiene horario');
+      expect(aviso.textContent).toContain('activo, búsqueda ni reemplazo');
+      expect(aviso.className).toContain('amber');
+    });
+
+    it('serviço COM horário: o aviso âmbar some', () => {
+      const svc = { ...SERVICE, schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }] };
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={svc} index={1} onSaved={vi.fn()} />);
+      expect(screen.queryByTestId('svc-schedule-none-1')).toBeNull();
+    });
+
+    it('o campo de horário segue OPCIONAL — sem asterisco, e Guardar continua funcionando com ele vazio', async () => {
+      mockCreate.mockResolvedValue({ ...SERVICE, id: 's-novo' });
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
+      // o rótulo diz "(opcional)", não "*" — salvar sem horário continua permitido (D283 item 4).
+      // Busca pelo `for` do campo: "Horarios" também é o cabeçalho da coluna na tabela.
+      const label = document.querySelector('label[for="svc-schedule-1"]');
+      expect(label?.textContent).toContain('Horarios');
+      expect(label?.textContent).toContain('(opcional)');
+      expect(label?.querySelector('.text-red-500')).toBeNull();
+
+      fireEvent.change(screen.getByTestId('svc-code-1'), { target: { value: 'AT' } });
+      fireEvent.click(screen.getByTestId('contracted-service-new-save'));
+      await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+      expect(mockCreate.mock.calls[0][1]).toMatchObject({ schedule: null });
+    });
+
+    it('a dica do campo avisa a CONSEQUÊNCIA (não diz mais "completar depois" sem ressalva)', () => {
+      render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
+      const dica = screen.getByText(/Opcional para guardar/);
+      expect(dica.textContent).toContain('no puede pasar a activo, búsqueda ni reemplazo');
+    });
+
     it('a dica "Solo números" fica ABAIXO do campo (hintBelow) — rótulo → campo → dica, para as colunas alinharem (gate 06/09)', () => {
       render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={null} index={1} onSaved={vi.fn()} />);
       const precede = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);

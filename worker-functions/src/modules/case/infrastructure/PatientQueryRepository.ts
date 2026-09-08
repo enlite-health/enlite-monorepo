@@ -149,6 +149,11 @@ export class PatientQueryRepository {
                         ON pa.id = pcs.address_id AND pa.archived_at IS NULL
                  WHERE pcs.patient_id = p.id AND pcs.active AND pa.id IS NULL)
                                AS "hasActiveServiceWithoutAddress",
+        -- Decisão do Gabriel 07/09: serviço ativo sem horário (NULL ou array vazio) → SERVICE_SCHEDULE.
+        EXISTS (SELECT 1 FROM patient_contracted_services pcs
+                 WHERE pcs.patient_id = p.id AND pcs.active
+                   AND (pcs.schedule IS NULL OR jsonb_array_length(pcs.schedule) = 0))
+                               AS "hasActiveServiceWithoutSchedule",
         created_at             AS "createdAt",
         updated_at             AS "updatedAt",
         -- SLA (Fase 4): quando o paciente entrou no status ATUAL. MAX(created_at)
@@ -236,6 +241,8 @@ export class PatientQueryRepository {
         activeResponsibleCount: row.hasActiveResponsible === true ? 1 : 0,
         activeContractedServiceCount: row.hasActiveContractedService === true ? 1 : 0,
         activeContractedServicesWithoutAddressCount: row.hasActiveServiceWithoutAddress === true ? 1 : 0,
+        activeContractedServicesWithoutScheduleCount:
+          row.hasActiveServiceWithoutSchedule === true ? 1 : 0,
         now,
       });
       const isActivatableStatus = (ACTIVATABLE_STATUSES as readonly (string | null)[]).includes(

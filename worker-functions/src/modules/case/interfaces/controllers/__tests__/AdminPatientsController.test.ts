@@ -318,12 +318,16 @@ describe('AdminPatientsController.getPatientById', () => {
   });
 
   describe('Cenário 1b — completeness (spec 014 US-D1, lex D1.1/D1.2)', () => {
+    /** Horário válido: desde 07/09 serviço ativo sem horário acusa SERVICE_SCHEDULE, e os testes
+     *  abaixo medem OUTROS códigos — sem isto falhariam por motivo alheio ao que verificam. */
+    const HORARIO_OK = [{ dayOfWeek: 2, startTime: '09:00', endTime: '13:00' }];
+
     // Migration 330: serviço ativo SEM endereço (ou com endereço que não está na ficha = arquivado)
     // → SERVICE_ADDRESS em missing E em blocking — a ficha mostra o mesmo que o activate recusa.
     it('serviço ativo sem endereço vinculado → SERVICE_ADDRESS em missing e blocking, canActivate false', async () => {
       const patient = makePatientDetail({
         addresses: [{ id: 'a1', addressType: 'primary' }],
-        contractedServices: [{ active: true, addressId: null }],
+        contractedServices: [{ active: true, addressId: null, schedule: HORARIO_OK }],
       });
       mockFindDetailById.mockResolvedValue(patient);
 
@@ -339,7 +343,7 @@ describe('AdminPatientsController.getPatientById', () => {
     it('serviço ativo apontando para endereço que NÃO está na ficha (arquivado) → SERVICE_ADDRESS', async () => {
       const patient = makePatientDetail({
         addresses: [{ id: 'a1', addressType: 'primary' }],
-        contractedServices: [{ active: true, addressId: 'a-arquivado' }],
+        contractedServices: [{ active: true, addressId: 'a-arquivado', schedule: HORARIO_OK }],
       });
       mockFindDetailById.mockResolvedValue(patient);
 
@@ -349,10 +353,56 @@ describe('AdminPatientsController.getPatientById', () => {
       expect((res as any).json.mock.calls[0][0].data.completeness.blocking).toEqual(['SERVICE_ADDRESS']);
     });
 
+    // Decisão do Gabriel 07/09: a ficha mostra a falta de horário do mesmo jeito que o activate a recusa.
+    it('serviço ativo sem horário → SERVICE_SCHEDULE em missing E em blocking, canActivate false', async () => {
+      const patient = makePatientDetail({
+        addresses: [{ id: 'a1', addressType: 'primary' }],
+        contractedServices: [{ active: true, addressId: 'a1', schedule: null }],
+      });
+      mockFindDetailById.mockResolvedValue(patient);
+
+      const [req, res] = mockReqRes({ id: PATIENT_ID });
+      await controller.getPatientById(req, res);
+
+      const c = (res as any).json.mock.calls[0][0].data.completeness;
+      expect(c.missing).toContain('SERVICE_SCHEDULE');
+      expect(c.blocking).toEqual(['SERVICE_SCHEDULE']);
+      expect(c.canActivate).toBe(false);
+    });
+
+    it('horário ARRAY VAZIO na ficha também acusa SERVICE_SCHEDULE (`[]` não é horário)', async () => {
+      const patient = makePatientDetail({
+        addresses: [{ id: 'a1', addressType: 'primary' }],
+        contractedServices: [{ active: true, addressId: 'a1', schedule: [] }],
+      });
+      mockFindDetailById.mockResolvedValue(patient);
+
+      const [req, res] = mockReqRes({ id: PATIENT_ID });
+      await controller.getPatientById(req, res);
+
+      expect((res as any).json.mock.calls[0][0].data.completeness.missing).toContain('SERVICE_SCHEDULE');
+    });
+
+    it('serviço INATIVO sem horário não acusa — a régua é sobre serviço ATIVO', async () => {
+      const patient = makePatientDetail({
+        addresses: [{ id: 'a1', addressType: 'primary' }],
+        contractedServices: [
+          { active: true, addressId: 'a1', schedule: HORARIO_OK },
+          { active: false, addressId: 'a1', schedule: null },
+        ],
+      });
+      mockFindDetailById.mockResolvedValue(patient);
+
+      const [req, res] = mockReqRes({ id: PATIENT_ID });
+      await controller.getPatientById(req, res);
+
+      expect((res as any).json.mock.calls[0][0].data.completeness.missing).not.toContain('SERVICE_SCHEDULE');
+    });
+
     it('todos os critérios satisfeitos → ready:true, missing:[]', async () => {
       const patient = makePatientDetail({
         addresses: [{ id: 'a1', addressType: 'primary' }],
-        contractedServices: [{ active: true, addressId: 'a1' }],
+        contractedServices: [{ active: true, addressId: 'a1', schedule: HORARIO_OK }],
       });
       mockFindDetailById.mockResolvedValue(patient);
 
@@ -384,7 +434,7 @@ describe('AdminPatientsController.getPatientById', () => {
       const patient = makePatientDetail({
         birthDate: new Date(new Date().getFullYear() - 5, 0, 1), // 5 anos
         addresses: [{ id: 'a1', addressType: 'primary' }],
-        contractedServices: [{ active: true, addressId: 'a1' }],
+        contractedServices: [{ active: true, addressId: 'a1', schedule: HORARIO_OK }],
         responsibles: [],
       });
       mockFindDetailById.mockResolvedValue(patient);
@@ -398,7 +448,7 @@ describe('AdminPatientsController.getPatientById', () => {
     it('sem consentimento (hasConsent false) → CONSENT em missing', async () => {
       const patient = makePatientDetail({
         addresses: [{ id: 'a1', addressType: 'primary' }],
-        contractedServices: [{ active: true, addressId: 'a1' }],
+        contractedServices: [{ active: true, addressId: 'a1', schedule: HORARIO_OK }],
         hasConsent: false,
       } as never);
       mockFindDetailById.mockResolvedValue(patient);

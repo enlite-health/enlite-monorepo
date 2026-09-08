@@ -80,11 +80,20 @@ export function PatientKanbanPage(): JSX.Element {
           onMove={async (patientId, target) => {
             const err = await moveStatus(patientId, target);
             if (err) {
-              // Spec 014 (US-D5, lex D5.1): `err` é um CÓDIGO de enum quando o backend manda um
-              // (PatientApiError.code) — traduz com i18n; nunca eco de campo do paciente, nunca
+              // Spec 014 (US-D5, lex D5.1): `err.code` é um CÓDIGO de enum quando o backend manda
+              // um (PatientApiError.code) — traduz com i18n; nunca eco de campo do paciente, nunca
               // console.* com o corpo da resposta. Código desconhecido/ausente cai no genérico.
-              const codeMessage = t(`admin.patients.kanban.moveErrorCodes.${err}`, { defaultValue: '' });
-              showToast(codeMessage || t('admin.patients.kanban.moveError'), 'error');
+              const codeMessage = t(`admin.patients.kanban.moveErrorCodes.${err.code}`, { defaultValue: '' });
+              // Decisão do Gabriel 07/09: quando o bloqueio é de completude, o toast NOMEIA o que
+              // falta — traduzido pelas MESMAS chaves do checklist da ficha, para o operador ler
+              // o mesmo vocabulário nos dois lugares.
+              const faltando = (err.missing ?? [])
+                .map((code) => t(`admin.patients.detail.completeness.items.${code}`, code))
+                .join(', ');
+              const mensagem = faltando
+                ? t('admin.patients.kanban.moveNotReady', { items: faltando })
+                : codeMessage || t('admin.patients.kanban.moveError');
+              showToast(mensagem, 'error');
             }
             return err;
           }}

@@ -108,6 +108,9 @@ test.describe('Spec 015 (US-A6) — franja etária solicitada do prestador @inte
     await forceSelect(page.getByTestId('svc-providerAgeBand-1'), 'AGE_30_45');
     // Migration 330: sem endereço vinculado o activate recusa (SERVICE_ADDRESS).
     await forceSelect(page.getByTestId('svc-addressId-1'), seed.addressId);
+    // Decisão do Gabriel 07/09: sem horário o activate também recusa (SERVICE_SCHEDULE) — este
+    // spec ativa mais abaixo esperando 200, então o serviço nasce com horário.
+    await forceClick(page.getByTestId('day-schedule-add-monday'));
     const createService = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
     await forceClick(page.getByTestId('contracted-service-new-save'));
     const svcBody = (await (await createService).json()) as { data: { id: string; providerAgeBand: string } };

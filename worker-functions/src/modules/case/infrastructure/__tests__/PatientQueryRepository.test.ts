@@ -75,6 +75,8 @@ function baseListRow(overrides: Record<string, unknown> = {}) {
     hasActiveContractedService: true,
     // Migration 330: serviço ativo sem endereço vivo — default false (= vinculado).
     hasActiveServiceWithoutAddress: false,
+    // Decisão do Gabriel 07/09: serviço ativo sem horário — default false (= com horário).
+    hasActiveServiceWithoutSchedule: false,
     ...overrides,
   };
 }
@@ -293,6 +295,21 @@ describe('PatientQueryRepository.list', () => {
     const sql = mockPoolQuery.mock.calls[0][0] as string;
     expect(sql).toMatch(/hasActiveServiceWithoutAddress/);
     expect(sql).toMatch(/LEFT JOIN patient_addresses pa\s+ON pa\.id = pcs\.address_id AND pa\.archived_at IS NULL/);
+  });
+
+  // Decisão do Gabriel 07/09: a listagem também projeta "serviço ativo sem horário" — o selo
+  // âmbar da lista acende sozinho, sem tela nova, porque o SQL percorre TODOS os códigos.
+  it('a11c. status ADMISSION + tudo completo MENOS o horário do serviço → needsAttention TRUE, INCOMPLETE_ADMISSION', async () => {
+    mockPoolQuery.mockResolvedValueOnce({
+      rows: [baseListRow({ status: 'ADMISSION', needsAttention: false, attentionReasons: [], hasActiveServiceWithoutSchedule: true })],
+    });
+    const repo = new PatientQueryRepository();
+    const { rows } = await repo.list(baseFilters());
+    expect(rows[0].needsAttention).toBe(true);
+    expect(rows[0].attentionReasons).toContain('INCOMPLETE_ADMISSION');
+    const sql = mockPoolQuery.mock.calls[0][0] as string;
+    expect(sql).toMatch(/hasActiveServiceWithoutSchedule/);
+    expect(sql).toMatch(/pcs\.schedule IS NULL OR jsonb_array_length\(pcs\.schedule\) = 0/);
   });
 
   it('a14. status PENDING_ADMISSION + checklist COMPLETO → needsAttention false, sem INCOMPLETE_ADMISSION', async () => {

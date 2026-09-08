@@ -138,6 +138,14 @@ function programClient(opts: DispatchOpts): { seen: string[] } {
   return { seen };
 }
 
+/**
+ * Horário mínimo válido para as fixtures. Desde a decisão do Gabriel 07/09, serviço ativo SEM
+ * horário BLOQUEIA a ativação (SERVICE_SCHEDULE) — então todo teste que mede OUTRA coisa (franja,
+ * LEFT JOIN de endereço, contagem de vagas) precisa dar horário aos seus serviços, senão falharia
+ * por um motivo que não é o que ele verifica. A recusa por falta de horário tem teste próprio (l4).
+ */
+const HORARIO_OK = [{ dayOfWeek: 2, startTime: '09:00', endTime: '13:00' }];
+
 const countSql = (seen: string[], needle: string): number =>
   seen.filter((s) => s.includes(needle)).length;
 
@@ -291,6 +299,11 @@ describe('ActivatePatientUseCase', () => {
 
   it('l. 2 serviços ativos, cada um no SEU endereço → 2 vagas (uma POR SERVIÇO, nunca serviços × endereços), cada uma no endereço do serviço, com contracted_service_id, providers_needed, franja E horário do serviço', async () => {
     const schedule1 = [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }];
+    // Decisão do Gabriel 07/09: os DOIS serviços precisam de horário para o paciente ativar —
+    // antes desta rodada o `svc-2` entrava sem horário e a vaga nascia com `schedule: null`.
+    // O que este teste mede continua sendo o fim do produto cartesiano; o horário do `svc-2` é
+    // agora pré-condição, e a recusa tem teste próprio (`l4`, abaixo).
+    const schedule2 = [{ dayOfWeek: 3, startTime: '14:00', endTime: '18:00' }];
     const { seen } = programClient({
       patientRow: { id: 'pat-cross', status: 'PENDING_ADMISSION', case_number: 77 },
       addressIds: ['addr-1', 'addr-2'],
@@ -298,9 +311,8 @@ describe('ActivatePatientUseCase', () => {
         // Migration 330 (decisão do Gabriel 05/09): "Cuidador" é na casa (addr-1) — a vaga nasce
         // SÓ ali. Antes desta migration o produto cartesiano criava svc-1 também em addr-2.
         { id: 'svc-1', providers_needed: 2, provider_age_band: 'AGE_30_45', live_address_id: 'addr-1', schedule: schedule1 },
-        // "AT" é na escola (addr-2), ainda sem horário — a vaga nasce sem schedule e o operador
-        // preenche nela (OPERATIONAL_EDITABLE_FIELDS), como hoje.
-        { id: 'svc-2', providers_needed: null, live_address_id: 'addr-2' },
+        // "AT" é na escola (addr-2), com o SEU horário — cada vaga leva o horário do seu serviço.
+        { id: 'svc-2', providers_needed: null, live_address_id: 'addr-2', schedule: schedule2 },
       ],
     });
 
@@ -321,7 +333,7 @@ describe('ActivatePatientUseCase', () => {
       2,
       expect.objectContaining({
         patient_address_id: 'addr-2', contracted_service_id: 'svc-2', providers_needed: null,
-        age_range_min: null, age_range_max: null, schedule: null,
+        age_range_min: null, age_range_max: null, schedule: schedule2,
       }),
     );
     // Nenhuma vaga de svc-1 em addr-2 nem de svc-2 em addr-1 — o par errado NÃO existe.
@@ -338,9 +350,9 @@ describe('ActivatePatientUseCase', () => {
       patientRow: { id: 'pat-svc-noaddr', status: 'PENDING_ADMISSION', case_number: 78 },
       addressIds: ['addr-1', 'addr-2'],
       activeServices: [
-        { id: 'svc-ok', providers_needed: 1, live_address_id: 'addr-1' },
+        { id: 'svc-ok', providers_needed: 1, live_address_id: 'addr-1', schedule: HORARIO_OK },
         // O LEFT JOIN devolve null tanto para "nunca vinculado" quanto para "endereço arquivado".
-        { id: 'svc-orfao', providers_needed: 1, live_address_id: null },
+        { id: 'svc-orfao', providers_needed: 1, live_address_id: null, schedule: HORARIO_OK },
       ],
     });
 
@@ -354,11 +366,68 @@ describe('ActivatePatientUseCase', () => {
     expect(countSql(seen, 'COMMIT')).toBe(0);
   });
 
+  // Decisão do Gabriel 07/09: horário do serviço é pré-condição da ativação.
+  it('l4. serviço ativo SEM horário (null) → PatientNotReadyError com SERVICE_SCHEDULE, NADA criado, rollback', async () => {
+    const { seen } = programClient({
+      patientRow: { id: 'pat-sem-horario', status: 'PENDING_ADMISSION', case_number: 80 },
+      addressIds: ['addr-1'],
+      activeServices: [{ id: 'svc-1', providers_needed: 1, live_address_id: 'addr-1' }],
+    });
+
+    await expect(new ActivatePatientUseCase().execute('pat-sem-horario')).rejects.toMatchObject({
+      name: 'PatientNotReadyError',
+      missing: ['SERVICE_SCHEDULE'],
+    });
+    expect(countSql(seen, 'INSERT INTO job_postings')).toBe(0);
+    expect(countSql(seen, 'ROLLBACK')).toBe(1);
+    expect(countSql(seen, 'COMMIT')).toBe(0);
+  });
+
+  it('l5. horário ARRAY VAZIO conta como sem horário — o CHECK do banco aceita `[]`, só a borda zod normaliza', async () => {
+    programClient({
+      patientRow: { id: 'pat-horario-vazio', status: 'PENDING_ADMISSION', case_number: 81 },
+      addressIds: ['addr-1'],
+      activeServices: [{ id: 'svc-1', providers_needed: 1, live_address_id: 'addr-1', schedule: [] }],
+    });
+
+    await expect(new ActivatePatientUseCase().execute('pat-horario-vazio')).rejects.toMatchObject({
+      missing: ['SERVICE_SCHEDULE'],
+    });
+  });
+
+  it('l6. UM serviço com horário e outro SEM → bloqueia (a régua é "todo serviço ativo")', async () => {
+    const { seen } = programClient({
+      patientRow: { id: 'pat-misto', status: 'PENDING_ADMISSION', case_number: 82 },
+      addressIds: ['addr-1', 'addr-2'],
+      activeServices: [
+        { id: 'svc-com', providers_needed: 1, live_address_id: 'addr-1', schedule: HORARIO_OK },
+        { id: 'svc-sem', providers_needed: 1, live_address_id: 'addr-2' },
+      ],
+    });
+
+    await expect(new ActivatePatientUseCase().execute('pat-misto')).rejects.toMatchObject({
+      missing: ['SERVICE_SCHEDULE'],
+    });
+    // Nem a vaga do serviço COM horário nasce — ou todas, ou nenhuma.
+    expect(countSql(seen, 'INSERT INTO job_postings')).toBe(0);
+  });
+
+  it('l7. paciente SEM serviço nenhum continua ativável — SERVICE_SCHEDULE não acusa (fallback por endereço)', async () => {
+    const { seen } = programClient({
+      patientRow: { id: 'pat-sem-servico', status: 'PENDING_ADMISSION', case_number: 83 },
+      addressIds: ['addr-1'],
+    });
+
+    const r = await new ActivatePatientUseCase().execute('pat-sem-servico');
+    expect(r.status).toBe('ACTIVE');
+    expect(countSql(seen, 'INSERT INTO job_postings')).toBe(1);
+  });
+
   it('l3. a query de serviços faz LEFT JOIN em patient_addresses NÃO arquivado — endereço arquivado conta como "sem endereço"', async () => {
     const { seen } = programClient({
       patientRow: { id: 'pat-q', status: 'PENDING_ADMISSION', case_number: 79 },
       addressIds: ['addr-1'],
-      activeServices: [{ id: 'svc-1', providers_needed: 1, live_address_id: 'addr-1' }],
+      activeServices: [{ id: 'svc-1', providers_needed: 1, live_address_id: 'addr-1', schedule: HORARIO_OK }],
     });
     await new ActivatePatientUseCase().execute('pat-q');
     const svcSql = seen.find((q) => q.includes('FROM patient_contracted_services'))!;
@@ -380,7 +449,7 @@ describe('ActivatePatientUseCase', () => {
     programClient({
       patientRow: { id: 'pat-band', status: 'PENDING_ADMISSION', case_number: 99 },
       addressIds: ['addr-1'],
-      activeServices: [{ id: 'svc-band', providers_needed: 1, provider_age_band: band as string, live_address_id: 'addr-1' }],
+      activeServices: [{ id: 'svc-band', providers_needed: 1, provider_age_band: band as string, live_address_id: 'addr-1', schedule: HORARIO_OK }],
     });
 
     await new ActivatePatientUseCase().execute('pat-band');
@@ -494,6 +563,7 @@ describe('ActivatePatientUseCase', () => {
       activeResponsibleCount: 0,
       activeContractedServiceCount: 0,
       activeContractedServicesWithoutAddressCount: 0,
+      activeContractedServicesWithoutScheduleCount: 0,
     });
     expect(missing).toContain('CONSENT');
   });
@@ -516,6 +586,7 @@ describe('ActivatePatientUseCase', () => {
       activeResponsibleCount: 0,
       activeContractedServiceCount: 0,
       activeContractedServicesWithoutAddressCount: 0,
+      activeContractedServicesWithoutScheduleCount: 0,
     });
     expect(missing).toContain('COVERAGE');
   });
@@ -539,6 +610,7 @@ describe('ActivatePatientUseCase', () => {
       activeResponsibleCount: 0,
       activeContractedServiceCount: 0,
       activeContractedServicesWithoutAddressCount: 0,
+      activeContractedServicesWithoutScheduleCount: 0,
     });
     expect(missing).toContain('RESPONSIBLE');
   });
@@ -671,6 +743,7 @@ describe('ActivatePatientUseCase', () => {
         activeResponsibleCount: 0,
         activeContractedServiceCount: 0,
         activeContractedServicesWithoutAddressCount: 0,
+        activeContractedServicesWithoutScheduleCount: 0,
       });
       expect(missing).toEqual(['CONTRACTED_SERVICE']);
     },

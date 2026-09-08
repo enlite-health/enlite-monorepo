@@ -58,7 +58,8 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
         // Migration 330: "completo" exige o serviço APONTANDO para o endereço; o cenário
         // `servicoSemEndereco` deixa address_id NULL de propósito.
         await pool.query(
-          `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id) VALUES ($1,'CAREGIVER',true,'BR','c1b-e2e','c1b-e2e',$2)`,
+          // Decisão do Gabriel 07/09: "completo" também exige HORÁRIO (SERVICE_SCHEDULE).
+          `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule) VALUES ($1,'CAREGIVER',true,'BR','c1b-e2e','c1b-e2e',$2,'[{"dayOfWeek":1,"startTime":"08:00","endTime":"12:00"}]'::jsonb)`,
           [id, 'servicoSemEndereco' in c && c.servicoSemEndereco ? null : addr],
         );
       }
@@ -85,7 +86,7 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
     const completo = rows.find((r) => r.clickupTaskId === 'C1B-attention-completo-admission');
     expect(completo?.needsAttention).toBe(false);
     expect((ACTIVATABLE_STATUSES as readonly string[]).includes('ADMISSION')).toBe(true);
-    expect(computePatientCompleteness({ birthDate: null, hasConsent: false, insuranceInformed: null, activeAddressCount: 0, activeResponsibleCount: 0, activeContractedServiceCount: 0, activeContractedServicesWithoutAddressCount: 0 }).missing.length).toBeGreaterThan(0);
+    expect(computePatientCompleteness({ birthDate: null, hasConsent: false, insuranceInformed: null, activeAddressCount: 0, activeResponsibleCount: 0, activeContractedServiceCount: 0, activeContractedServicesWithoutAddressCount: 0, activeContractedServicesWithoutScheduleCount: 0 }).missing.length).toBeGreaterThan(0);
   });
 
   it('b. filtrar por `needs_attention=true` devolve EXATAMENTE quem tem o badge — e nunca quem não tem', async () => {
@@ -143,6 +144,10 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
              (EXISTS (SELECT 1 FROM patient_contracted_services s
                         LEFT JOIN patient_addresses sa ON sa.id = s.address_id AND sa.archived_at IS NULL
                        WHERE s.patient_id = p.id AND s.active AND sa.id IS NULL))::int AS svc_noaddr,
+             -- Decisão do Gabriel 07/09: serviço ativo sem horário (NULL ou array vazio).
+             (EXISTS (SELECT 1 FROM patient_contracted_services s
+                       WHERE s.patient_id = p.id AND s.active
+                         AND (s.schedule IS NULL OR jsonb_array_length(s.schedule) = 0)))::int AS svc_nosched,
              ${patientNeedsAttentionSql('p')} AS sql_flag
         FROM patients p
        WHERE p.deleted_at IS NULL`);
@@ -158,6 +163,7 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
         activeResponsibleCount: r.resp as number,
         activeContractedServiceCount: r.svc as number,
         activeContractedServicesWithoutAddressCount: r.svc_noaddr as number,
+        activeContractedServicesWithoutScheduleCount: r.svc_nosched as number,
         now,
       });
       const incompleta = (ACTIVATABLE_STATUSES as readonly (string | null)[]).includes(r.status as string | null) && missing.length > 0;

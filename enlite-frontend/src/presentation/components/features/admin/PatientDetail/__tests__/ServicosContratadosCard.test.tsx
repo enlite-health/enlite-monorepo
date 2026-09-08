@@ -126,10 +126,34 @@ describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-0
     expect(screen.getByTestId('contracted-service-address-svc-1').textContent).toBe('Av. Cruzeiro do Sul, 1212');
   });
 
-  it('sem horário: "Sin horario" (estado legítimo — a vaga pode nascer sem horário)', () => {
+  // Decisão do Gabriel 07/09: "Sin horario" virou AVISO âmbar (era cinza neutro) — é o que trava
+  // a mudança de status, do mesmo peso que "Sin domicilio vinculado" ao lado.
+  it('sem horário: "Sin horario" em ÂMBAR, com testid próprio de pendência', () => {
     const patient = { ...patientDetailFixture, contractedServices: [SERVICE] };
     render(<ServicosContratadosCard patient={patient} />);
     expect(screen.getByTestId('contracted-service-schedule-svc-1').textContent).toBe('Sin horario');
+    const aviso = screen.getByTestId('contracted-service-schedule-missing-svc-1');
+    expect(aviso.className).toContain('text-amber-700');
+    // A classe SOZINHA não prova a cor: o `Text` emite `text-gray-800` por default e vence pela
+    // ordem de emissão do Tailwind (medido em tela: rgb(115,115,115) — cinza, não âmbar). O que
+    // impede a regressão é NÃO haver classe de cor concorrente no mesmo elemento.
+    expect(aviso.className).not.toMatch(/text-gray-\d/);
+  });
+
+  it('horário ARRAY VAZIO também acusa a pendência âmbar (`[]` não é horário)', () => {
+    const patient = {
+      ...patientDetailFixture,
+      contractedServices: [{ ...SERVICE, schedule: [] }],
+    };
+    render(<ServicosContratadosCard patient={patient} />);
+    expect(screen.getByTestId('contracted-service-schedule-missing-svc-1')).toBeTruthy();
+  });
+
+  it('COM horário: nenhum aviso âmbar na célula', () => {
+    const svc: PatientContractedServiceDetail = { ...SERVICE, schedule: SCHEDULE };
+    const patient = { ...patientDetailFixture, contractedServices: [svc] };
+    render(<ServicosContratadosCard patient={patient} />);
+    expect(screen.queryByTestId('contracted-service-schedule-missing-svc-1')).toBeNull();
   });
 
   it('sem serviços: empty state, não a tabela fantasma antiga', () => {
@@ -278,6 +302,42 @@ describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-0
     unmount();
     render(<ServicosContratadosCard patient={{ ...patientDetailFixture, addresses: [vivo], contractedServices: [ok] }} focusRequest={{ code: 'SERVICE_ADDRESS', token: 2 }} />);
     expect(screen.getByTestId('patient-contracted-services-edit-drawer').getAttribute('data-target')).toBe('new:');
+  });
+
+  // Decisão do Gabriel 07/09: a pílula "Horario del servicio" do checklist leva direto ao serviço
+  // que está sem horário — não adianta avisar sem levar até onde se conserta.
+  it('foco do checklist SERVICE_SCHEDULE abre o PRIMEIRO serviço ativo sem horário; sem candidato, abre um novo', () => {
+    const comHorario = { ...SERVICE, id: 'svc-com', schedule: SCHEDULE };
+    const semHorario = { ...SERVICE, id: 'svc-sem', schedule: null };
+    const { unmount } = render(
+      <ServicosContratadosCard
+        patient={{ ...patientDetailFixture, contractedServices: [comHorario, semHorario] }}
+        focusRequest={{ code: 'SERVICE_SCHEDULE', token: 10 }}
+      />,
+    );
+    expect(screen.getByTestId('patient-contracted-services-edit-drawer').getAttribute('data-target')).toBe('edit:svc-sem');
+    unmount();
+
+    // todos com horário → nada a focar: abre um serviço novo (mesmo fallback do SERVICE_ADDRESS)
+    render(
+      <ServicosContratadosCard
+        patient={{ ...patientDetailFixture, contractedServices: [comHorario] }}
+        focusRequest={{ code: 'SERVICE_SCHEDULE', token: 11 }}
+      />,
+    );
+    expect(screen.getByTestId('patient-contracted-services-edit-drawer').getAttribute('data-target')).toBe('new:');
+  });
+
+  it('foco SERVICE_SCHEDULE trata array VAZIO como sem horário, e ignora serviço INATIVO', () => {
+    const inativoSemHorario = { ...SERVICE, id: 'svc-inativo', active: false, schedule: null };
+    const ativoVazio = { ...SERVICE, id: 'svc-vazio', schedule: [] };
+    render(
+      <ServicosContratadosCard
+        patient={{ ...patientDetailFixture, contractedServices: [inativoSemHorario, ativoVazio] }}
+        focusRequest={{ code: 'SERVICE_SCHEDULE', token: 12 }}
+      />,
+    );
+    expect(screen.getByTestId('patient-contracted-services-edit-drawer').getAttribute('data-target')).toBe('edit:svc-vazio');
   });
 
   it('foco do checklist CONTRACTED_SERVICE abre um serviço NOVO', () => {

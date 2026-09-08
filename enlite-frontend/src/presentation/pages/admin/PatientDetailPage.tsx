@@ -38,6 +38,8 @@ const COMPLETENESS_TAB: Record<PatientCompletenessCode, PatientTab> = {
   CONTRACTED_SERVICE: 'contractedService',
   // Migration 330: serviço sem endereço vinculado — o select "Domicilio" vive no drawer do serviço.
   SERVICE_ADDRESS: 'contractedService',
+  // Decisão do Gabriel 07/09: serviço sem horário — o editor de horário vive no mesmo drawer.
+  SERVICE_SCHEDULE: 'contractedService',
   CONSENT: 'clinicalData',
 };
 

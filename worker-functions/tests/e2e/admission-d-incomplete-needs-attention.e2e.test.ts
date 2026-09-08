@@ -80,8 +80,9 @@ describe('needsAttention deriva do checklist na lista/kanban (QA-caça rodada 1,
       // Migration 330: "completo" exige o serviço apontando para o endereço (SERVICE_ADDRESS);
       // sem endereço na ficha o serviço nasce sem vínculo — e o checklist acusa os dois.
       await pool.query(
-        `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id)
-         VALUES ($1, 'AT', true, 'AR', 'qacaca-item1-e2e', 'qacaca-item1-e2e', $2)`,
+        // Decisão do Gabriel 07/09: "completo" também exige HORÁRIO no serviço (SERVICE_SCHEDULE).
+        `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule)
+         VALUES ($1, 'AT', true, 'AR', 'qacaca-item1-e2e', 'qacaca-item1-e2e', $2, '[{"dayOfWeek":1,"startTime":"08:00","endTime":"12:00"}]'::jsonb)`,
         [id, addressId],
       );
     }

@@ -143,6 +143,9 @@ test.describe('Spec 013 bloco C — serviço contratado como entidade @integrati
     // Migration 330: o serviço aponta para UM endereço da ficha (o seed cria 1) — sem isso o
     // checklist acusa SERVICE_ADDRESS e o activate recusa (422), em vez de multiplicar vagas.
     await forceSelect(page.getByTestId('svc-addressId-1'), seed.addressId);
+    // Decisão do Gabriel 07/09: serviço ativo SEM horário bloqueia o activate (SERVICE_SCHEDULE).
+    // Este spec ativa o paciente mais abaixo e espera 200 — então os serviços nascem com horário.
+    await forceClick(page.getByTestId('day-schedule-add-monday'));
     const createService1 = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
     await forceClick(page.getByTestId('contracted-service-new-save'));
     const svc1Body = (await (await createService1).json()) as { data: { id: string } };
@@ -171,6 +174,7 @@ test.describe('Spec 013 bloco C — serviço contratado como entidade @integrati
     await forceFill(page.getByTestId('svc-weeklyHours-2'), '10');
     await forceSelect(page.getByTestId('svc-careLocation-2'), 'SCHOOL');
     await forceSelect(page.getByTestId('svc-addressId-2'), seed.addressId);
+    await forceClick(page.getByTestId('day-schedule-add-wednesday'));
     const createService2 = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
     await forceClick(page.getByTestId('contracted-service-new-save'));
     const svc2Body = (await (await createService2).json()) as { data: { id: string } };
