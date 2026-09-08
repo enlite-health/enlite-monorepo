@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { mergeGeneralInfo, mergeServiceAddress } from './workerRegistrationHydration';
 import { WorkerProgressResponse } from '@infrastructure/http/WorkerApiService';
 import { isStep1Complete, isStep2Complete } from '@presentation/utils/workerProgressValidation';
 
@@ -102,7 +103,18 @@ interface WorkerRegistrationState {
   setWorkerId: (id: string) => void;
   
   // Server hydration: restores full state from GET /api/workers/me
-  hydrateFromServer: (serverData: WorkerProgressResponse) => void;
+  /**
+   * Sincroniza o store com o cadastro vindo do servidor.
+   *
+   * `authoritative: true` — usar DEPOIS de uma escrita: a resposta é o estado
+   * real, então campo ausente vira vazio (o valor local não "vence"). Sem a
+   * flag (carregamento de tela), o local é preservado quando o servidor devolve
+   * vazio, para não apagar edição ainda não salva.
+   */
+  hydrateFromServer: (
+    serverData: WorkerProgressResponse,
+    options?: { authoritative?: boolean },
+  ) => void;
   
   // Data updaters
   updateGeneralInfo: (data: Partial<GeneralInfoData>) => void;
@@ -190,7 +202,7 @@ export const useWorkerRegistrationStore = create<WorkerRegistrationState>()(
         set({ workerId: id });
       },
 
-      hydrateFromServer: (serverData) => {
+      hydrateFromServer: (serverData, options) => {
         // Derive step from actual field data (currentStep column was removed from DB)
         let stepName: WorkerRegistrationStep = 'general-info';
         if (isStep1Complete(serverData) && isStep2Complete(serverData)) {
@@ -213,37 +225,8 @@ export const useWorkerRegistrationStore = create<WorkerRegistrationState>()(
           completedSteps,
           data: {
             ...state.data,
-            generalInfo: {
-              ...state.data.generalInfo,
-              email: serverData.email,
-              fullName: serverData.firstName || state.data.generalInfo.fullName,
-              lastName: serverData.lastName || state.data.generalInfo.lastName,
-              phone: serverData.phone || state.data.generalInfo.phone,
-              birthDate: serverData.birthDate || state.data.generalInfo.birthDate,
-              sex: serverData.sex || state.data.generalInfo.sex,
-              gender: serverData.gender || state.data.generalInfo.gender,
-              documentType: serverData.documentType || state.data.generalInfo.documentType,
-              cpf: serverData.documentNumber || state.data.generalInfo.cpf,
-              languages: serverData.languages?.length ? serverData.languages : state.data.generalInfo.languages,
-              profession: serverData.profession || state.data.generalInfo.profession,
-              knowledgeLevel: serverData.knowledgeLevel || state.data.generalInfo.knowledgeLevel,
-              professionalLicense: serverData.titleCertificate || state.data.generalInfo.professionalLicense,
-              experienceTypes: serverData.experienceTypes?.length ? serverData.experienceTypes : state.data.generalInfo.experienceTypes,
-              yearsExperience: serverData.yearsExperience || state.data.generalInfo.yearsExperience,
-              preferredTypes: serverData.preferredTypes?.length ? serverData.preferredTypes : state.data.generalInfo.preferredTypes,
-              preferredAgeRange: Array.isArray(serverData.preferredAgeRange)
-                ? serverData.preferredAgeRange
-                : serverData.preferredAgeRange
-                  ? [serverData.preferredAgeRange]
-                  : state.data.generalInfo.preferredAgeRange,
-              profilePhoto: serverData.profilePhotoUrl || state.data.generalInfo.profilePhoto,
-            },
-            serviceAddress: {
-              ...state.data.serviceAddress,
-              address: serverData.serviceAddress || state.data.serviceAddress.address,
-              complement: serverData.serviceAddressComplement || state.data.serviceAddress.complement,
-              serviceRadius: serverData.serviceRadiusKm || state.data.serviceAddress.serviceRadius,
-            },
+            generalInfo: mergeGeneralInfo(serverData, state.data.generalInfo, options),
+            serviceAddress: mergeServiceAddress(serverData, state.data.serviceAddress, options),
           },
         }));
       },

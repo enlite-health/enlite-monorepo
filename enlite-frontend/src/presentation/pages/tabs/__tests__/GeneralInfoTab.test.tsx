@@ -22,7 +22,17 @@ vi.mock('react-i18next', async (importOriginal) => {
 });
 
 const mockTriggerSave = vi.fn();
-const mockSaveGeneralInfo = vi.fn().mockResolvedValue(undefined);
+// A rota agora devolve o cadastro COMO O BANCO FICOU (escrita confirmada).
+// O mock precisa refletir isso: um save que não devolve estado é o defeito
+// que este contrato eliminou, não um cenário a simular.
+const serverAfterSave = {
+  id: 'worker-1', authUid: 'auth-1', email: 'a@b.c',
+  country: 'AR', timezone: 'America/Argentina/Buenos_Aires',
+  createdAt: '2026-01-01', updatedAt: '2026-01-01',
+  phone: '+5491151265663',
+  missingFields: [] as string[],
+};
+const mockSaveGeneralInfo = vi.fn().mockResolvedValue(serverAfterSave);
 const mockGetProgress = vi.fn().mockResolvedValue({
   firstName: 'John',
   lastName: 'Doe',
@@ -60,6 +70,7 @@ vi.mock('@hookform/resolvers/zod', () => ({
 // deixou no store antes da aba montar — inclusive valores preservados quando o
 // backend devolve null).
 const mockUpdateGeneralInfo = vi.fn();
+const mockHydrateFromServer = vi.fn();
 function setStoreGeneralInfo(overrides: Record<string, unknown> = {}): void {
   const state = {
     data: {
@@ -75,6 +86,7 @@ function setStoreGeneralInfo(overrides: Record<string, unknown> = {}): void {
     },
     isFieldReadonly: () => false,
     updateGeneralInfo: mockUpdateGeneralInfo,
+    hydrateFromServer: mockHydrateFromServer,
   };
   vi.mocked(useWorkerRegistrationStore).mockImplementation((selector: (s: any) => any) => selector(state));
 }
@@ -200,18 +212,23 @@ describe('GeneralInfoTab - Auto Save & Toast', () => {
     );
   });
 
-  it('sincroniza o store no save (evita staleness ao trocar de aba)', async () => {
+  // ── Escrita confirmada (incidente 08/09/2026) ────────────────────────────
+  //
+  // O store passou a ser sincronizado com a RESPOSTA DO SERVIDOR, nunca com o
+  // payload enviado. Era o eco do próprio envio que mantinha na tela — e no
+  // localStorage — um telefone que o banco nunca gravou.
+  it('sincroniza o store com a RESPOSTA do servidor, não com o payload enviado', async () => {
     setStoreGeneralInfo({ fullName: 'Gabriel', lastName: 'Stein' });
     render(<GeneralInfoTab />);
     const saveFn = vi.mocked(useAutoSave).mock.calls[0][0];
     await act(async () => { await saveFn(); });
-    expect(mockUpdateGeneralInfo).toHaveBeenCalledWith(
-      expect.objectContaining({ fullName: 'Gabriel', lastName: 'Stein' }),
-    );
+
+    expect(mockHydrateFromServer).toHaveBeenCalledWith(serverAfterSave, { authoritative: true });
+    // O caminho antigo (gravar o que mandamos) não pode voltar.
+    expect(mockUpdateGeneralInfo).not.toHaveBeenCalled();
   });
 
   it('shows a success toast when auto-save succeeds', async () => {
-    mockSaveGeneralInfo.mockResolvedValueOnce(undefined);
     render(<><GeneralInfoTab /><Toaster /></>);
 
     const saveFn = vi.mocked(useAutoSave).mock.calls[0][0];

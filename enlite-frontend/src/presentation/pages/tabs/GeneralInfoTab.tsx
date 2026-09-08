@@ -20,7 +20,6 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
 
   const data = useWorkerRegistrationStore((state) => state.data);
   const isFieldReadonly = useWorkerRegistrationStore((state) => state.isFieldReadonly);
-  const updateGeneralInfo = useWorkerRegistrationStore((state) => state.updateGeneralInfo);
   const hydrateFromServer = useWorkerRegistrationStore((state) => state.hydrateFromServer);
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(data.generalInfo.profilePhoto || null);
   const showToast = useToast();
@@ -151,21 +150,23 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
       const values = getValues();
       // Só envia `phone` quando o campo foi editado de fato. Ver buildSavePayload.
       const phoneDirty = Boolean(dirtyFields.phone);
-      await saveGeneralInfo(buildSavePayload(values, phoneDirty));
-      // Mantém o store (fonte única) em sincronia com o que foi salvo, para que
-      // trocar de aba e voltar mostre o valor atual — sem re-fetch e sem o
-      // reset que zerava os campos.
-      updateGeneralInfo({
-        ...values,
-        birthDate: values.birthDate ? parseDateToISO(values.birthDate) : '',
-      });
-      // Rebaselina o dirty-tracking: o que acabou de ser salvo deixa de estar
-      // "sujo", então o próximo autosave só reenvia `phone` se ele mudar OUTRA
-      // vez. `keepValues: true` NÃO altera nenhum valor do form — só atualiza o
-      // baseline interno de dirty (diferente do antigo `reset({...''})` que
-      // zerava os campos). Sem isso, um telefone editado uma vez seguiria
-      // "dirty" e seria reenviado a cada blur subsequente.
-      form.reset(values, { keepValues: true });
+      const saved = await saveGeneralInfo(buildSavePayload(values, phoneDirty));
+      // Sincroniza o store com o que o SERVIDOR gravou — nunca com o payload
+      // que acabamos de mandar. Era essa a origem do defeito de 08/09/2026: o
+      // cliente afirmava o próprio envio, o telefone que o backend não
+      // persistiu seguia na tela (e no localStorage), e a prestadora via o
+      // número dela enquanto o sistema recusava a postulação por falta dele.
+      hydrateFromServer(saved, { authoritative: true });
+      // Rebaselina o dirty-tracking com o que o SERVIDOR gravou, não com o que
+      // mandamos. `keepValues: true` NÃO altera valor nenhum do form — só move
+      // o baseline interno de "sujo".
+      //
+      // A diferença é o conserto: se o backend NÃO persistiu o telefone, o
+      // baseline dele fica vazio, o campo continua "sujo" e o próximo autosave
+      // o reenvia. Antes, rebaselinar com o payload enviado dava por gravado o
+      // que não foi, e o número nunca mais era mandado — o laço que travou 129
+      // cadastros.
+      form.reset({ ...values, phone: saved.phone ?? '' }, { keepValues: true });
       // Modal de vínculo aberta → suprime o toast de sucesso (não abafar o fluxo).
       if (!phoneConflictOpenRef.current) {
         showToast(t('profile.saveSuccess', 'Información guardada con éxito'), 'success', 'profile-save');
