@@ -12,7 +12,7 @@
  */
 
 import { test, expect, Page } from '@playwright/test';
-import { E2E_EMAIL, loginAsAdmin } from './helpers/kanban-notes-e2e-helper';
+import { E2E_EMAIL, loginAsStaffOffline } from './helpers/kanban-notes-e2e-helper';
 
 const FIREBASE_API_KEY  = 'test-api-key';
 
@@ -85,7 +85,7 @@ async function seedAdminAndLogin(page: Page): Promise<void> {
     }),
   );
 
-  await loginAsAdmin(page);
+  await loginAsStaffOffline(page);
 }
 
 /**

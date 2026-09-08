@@ -107,6 +107,30 @@ export class PromoteBlockedApplicationsUseCase {
     const workerId = rows[0]?.worker_id;
     if (!workerId) return null;
 
+    // Guarda de opt-out — só no caminho MANUAL (parecer `lex`, 08/09).
+    //
+    // Promover recria a linha `worker_job_applications` em INVITED: exatamente a
+    // que a migration 246 APAGOU (~1.270 linhas) para tirar do board quem está em
+    // `messaging_opt_out`, depois do incidente de 10/07. A promoção não dispara
+    // mensagem — mas o card volta a aparecer, e a operação trabalha olhando o
+    // Kanban e ligando pelo Periskope, que não passa por guard nenhum. Card
+    // visível é telefonema.
+    //
+    // Medido em produção em 08/09: dos 89 cards elegíveis abertos, **7** são de
+    // pessoas com opt-out ativo. Sem esta guarda, um clique reverte a remediação
+    // em silêncio.
+    //
+    // ⚠️ A varredura automática (evento `worker.registration_completed`) NÃO ganha
+    // esta guarda aqui: é comportamento anterior a esta mudança, e alterá-lo muda a
+    // semântica de um caminho que ninguém pediu para mexer. Fica na LISTA.
+    const { rows: optOut } = await this.pool.query(
+      `SELECT 1 FROM messaging_opt_out WHERE worker_id = $1 AND opted_in_at IS NULL`,
+      [workerId],
+    );
+    if (optOut.length > 0) {
+      return { promoted: 0, skipped: 1, reasons: { worker_opted_out: 1 } };
+    }
+
     return this.execute(workerId, { blockedApplicationId, actor });
   }
 

@@ -102,7 +102,9 @@ describe('PromoteBlockedApplicationController', () => {
     await makeController(jest.fn().mockRejectedValue(new Error('boom'))).promote(makeReq(BLOCKED_ID), res);
 
     expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ success: false, error: 'boom' });
+    // Código genérico, NUNCA a mensagem do driver: a tela ecoa isto num
+    // console.error do navegador, e produção roda Clarity.
+    expect(res.json).toHaveBeenCalledWith({ success: false, error: 'promote_failed' });
   });
 });
 
@@ -127,7 +129,7 @@ describe('PromoteBlockedApplicationController — ramos defensivos', () => {
     await makeController(jest.fn().mockRejectedValue('string crua')).promote(makeReq(BLOCKED_ID), res);
 
     expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Unknown error' });
+    expect(res.json).toHaveBeenCalledWith({ success: false, error: 'promote_failed' });
   });
 
   it('sem uid no request (token sem uid) o ator vai nulo, e não quebra', async () => {

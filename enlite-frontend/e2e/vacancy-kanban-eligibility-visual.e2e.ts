@@ -9,7 +9,7 @@
  */
 
 import { test, expect, Page } from '@playwright/test';
-import { E2E_EMAIL, loginAsAdmin, dragKanbanCard } from './helpers/kanban-notes-e2e-helper';
+import { E2E_EMAIL, loginAsStaffOffline, dragKanbanCard } from './helpers/kanban-notes-e2e-helper';
 
 
 const MOCK_VACANCY_ID = 'eligvis-0001-0001-0001-000000000001';
@@ -107,7 +107,7 @@ async function seedAdminAndLogin(page: Page): Promise<void> {
     }),
   );
 
-  await loginAsAdmin(page);
+  await loginAsStaffOffline(page);
 }
 
 /**

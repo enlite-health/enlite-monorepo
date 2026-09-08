@@ -30,7 +30,7 @@ import { PromoteBlockedApplicationsUseCase } from '../../application/PromoteBloc
  * mudaram entre a tela ter sido carregada e o clique acontecer. A tela precisa
  * distinguir "deu errado" de "não vale mais", e o corpo carrega qual foi.
  */
-const CONFLICT_REASONS = ['worker_not_eligible', 'vacancy_invalid', 'wja_already_exists', 'unique_conflict'];
+const CONFLICT_REASONS = ['worker_not_eligible', 'vacancy_invalid', 'wja_already_exists', 'unique_conflict', 'worker_opted_out'];
 
 export class PromoteBlockedApplicationController {
   private readonly useCase: PromoteBlockedApplicationsUseCase;
@@ -67,11 +67,14 @@ export class PromoteBlockedApplicationController {
 
       res.json({ success: true, data: { blockedId, promoted: result.promoted } });
     } catch (error) {
+      // O ORIGINAL só para o servidor. O corpo devolve código genérico porque a
+      // tela joga a falha num `console.error` do navegador, e produção roda
+      // Microsoft Clarity — mensagem de erro do driver pode arrastar contexto da
+      // linha para uma ferramenta de terceiro. (Parecer `lex`, 08/09.)
       reportError(error instanceof Error ? error : new Error(String(error)), {
         source: 'PromoteBlockedApplicationController.promote',
       });
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      res.status(500).json({ success: false, error: message });
+      res.status(500).json({ success: false, error: 'promote_failed' });
     }
   }
 }

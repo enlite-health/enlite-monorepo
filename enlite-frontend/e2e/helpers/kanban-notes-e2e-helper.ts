@@ -171,3 +171,104 @@ export async function dragKanbanCard(
   await page.locator('div.opacity-80.rotate-2').waitFor({ state: 'detached', timeout: 5_000 })
     .catch(() => { /* overlay já saiu (ou nunca montou) — seguir */ });
 }
+
+/**
+ * Login de staff SEM emulador e SEM canal real.
+ *
+ * 🔒 Existe por uma regra dura do projeto — "teste nunca toca canal real" — que o
+ * `playwright.mocked.config.ts` enforça excluindo os specs que fazem signIn de
+ * verdade (`vacancy-enum-i18n-real` e os dois de staging). Um spec que loga no
+ * Firebase de PRODUÇÃO não pode entrar no conjunto mockado nem no CI.
+ *
+ * A alternativa que também não serve é o emulador: além de ser mais uma peça de
+ * infra, o usuário criado por `accounts:signUp` nele não carrega custom claim, e a
+ * sessão cai na navegação de PRESTADOR — o Kanban nunca monta.
+ *
+ * Aqui o identitytoolkit é INTERCEPTADO: a resposta de signIn é forjada com um JWT
+ * sem assinatura, e o perfil admin vem do mock de `/api/admin/auth/profile`. Zero
+ * rede para fora, zero infra, e a sessão é staff. Padrão emprestado de
+ * `blocked-attempts-visual.e2e.ts`, que já fazia isto sozinho.
+ */
+const AUTH_FALSA = {
+  uid: 'e2e-staff-uid',
+  email: 'staff@e2e.test',
+  /**
+   * `admin`, não `superadmin` — este último NÃO EXISTE em `EnliteRole`
+   * (admin | recruiter | community_manager). Com um papel inválido a casca do
+   * painel montava, mas `BlockedAttemptsPage` (`role === EnliteRole.ADMIN`)
+   * renderizava `<main>` VAZIO, e 7 testes falhavam sem erro nenhum na tela.
+   */
+  role: 'admin',
+};
+
+function tokenFalso(): string {
+  const agora = Math.floor(Date.now() / 1000);
+  const corpo = Buffer.from(
+    JSON.stringify({
+      sub: AUTH_FALSA.uid,
+      email: AUTH_FALSA.email,
+      iss: 'https://securetoken.google.com/enlite-prd',
+      aud: 'enlite-prd',
+      iat: agora,
+      exp: agora + 3600,
+    }),
+  ).toString('base64url');
+  return `eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.${corpo}.`;
+}
+
+/**
+ * Instala a auth forjada, o catch-all admin e o perfil de staff — e loga pela UI.
+ *
+ * O catch-all `**​/api/admin/**` não é zelo extra: sem ele, as chamadas que o spec
+ * não mocka escapam para `VITE_API_WORKER_FUNCTIONS_URL` e morrem em CORS (o
+ * backend local só libera a origem `localhost:5173`), derrubando a sessão admin em
+ * qualquer outra porta. Registrado PRIMEIRO — no Playwright a última rota vence,
+ * então os mocks específicos do spec continuam tendo precedência.
+ */
+export async function loginAsStaffOffline(page: Page, role: string = AUTH_FALSA.role): Promise<void> {
+  const idToken = tokenFalso();
+
+  await page.route('**/identitytoolkit.googleapis.com/**', (route: Route) => {
+    const url = route.request().url();
+    if (url.includes('signInWithPassword') || url.includes('signUp')) {
+      return route.fulfill(json({
+        localId: AUTH_FALSA.uid, email: AUTH_FALSA.email, idToken,
+        refreshToken: 'fake-refresh', expiresIn: '3600', registered: true,
+      }));
+    }
+    if (url.includes('token') || url.includes('securetoken')) {
+      return route.fulfill(json({
+        id_token: idToken, access_token: idToken, expires_in: '3600',
+        token_type: 'Bearer', refresh_token: 'fake-refresh',
+      }));
+    }
+    return route.fulfill(json({
+      users: [{ localId: AUTH_FALSA.uid, email: AUTH_FALSA.email, emailVerified: true }],
+    }));
+  });
+
+  await page.route('**/securetoken.googleapis.com/**', (route: Route) =>
+    route.fulfill(json({
+      id_token: idToken, expires_in: '3600', token_type: 'Bearer', refresh_token: 'fake-refresh',
+    })),
+  );
+
+  await page.route('**/api/admin/**', (route: Route) => route.fulfill(ok(null)));
+
+  await page.route('**/api/admin/auth/profile', (route: Route) =>
+    route.fulfill(ok({
+      id: AUTH_FALSA.uid, email: AUTH_FALSA.email, role,
+      firstName: 'Staff', lastName: 'E2E', isActive: true, mustChangePassword: false,
+    })),
+  );
+
+  await page.goto('/admin/login');
+  await page.locator('input[type="email"]').fill(AUTH_FALSA.email);
+  await page.locator('input[type="password"]').fill('nao-importa-a-auth-e-forjada');
+  await page.locator('button[type="submit"]').first().click();
+  await expect(page).not.toHaveURL(/.*login.*/, { timeout: 25_000 });
+}
+
+function json(body: unknown) {
+  return { status: 200, contentType: 'application/json', body: JSON.stringify(body) };
+}

@@ -1659,7 +1659,8 @@
         "vacancy_invalid": "La vacante ya no admite candidaturas.",
         "wja_already_exists": "Ya existe una candidatura de esta persona en esta vacante.",
         "unique_conflict": "Otra persona promovió esta tarjeta al mismo tiempo.",
-        "unknown": "No pudimos promover la tarjeta. Intentá de nuevo."
+        "unknown": "No pudimos promover la tarjeta. Intentá de nuevo.",
+        "worker_opted_out": "La persona pidió no recibir mensajes. Hablá con ella por otro canal antes de promover."
       }
     },
     "workerDetail": {

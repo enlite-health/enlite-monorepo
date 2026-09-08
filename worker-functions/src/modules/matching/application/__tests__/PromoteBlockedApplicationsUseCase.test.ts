@@ -321,6 +321,7 @@ describe('PromoteBlockedApplicationsUseCase — promoção de UM card (D300)', (
   it('executeForBlockedApplication resolve o worker da própria linha e promove só ela', async () => {
     const query = jest.fn();
     query.mockResolvedValueOnce({ rows: [{ worker_id: 'worker-7' }] });      // resolve worker
+    query.mockResolvedValueOnce({ rows: [] });                               // sem opt-out ativo
     query.mockResolvedValueOnce({                                            // lista (só a linha pedida)
       rows: [{ id: 'ba-3', job_posting_id: 'jp-3', acquisition_channel: null }],
     });
@@ -339,7 +340,7 @@ describe('PromoteBlockedApplicationsUseCase — promoção de UM card (D300)', (
 
     expect(result).not.toBeNull();
     expect(result!.promoted).toBe(1);
-    expect(query.mock.calls[1][1]).toEqual(['worker-7', 'ba-3']);
+    expect(query.mock.calls[2][1]).toEqual(['worker-7', 'ba-3']);
   });
 
   it('as guardas continuam valendo no caminho manual: worker que deixou de ser elegível não promove', async () => {
@@ -347,6 +348,7 @@ describe('PromoteBlockedApplicationsUseCase — promoção de UM card (D300)', (
     // pode ter sido desativada. Quem decide é o estado de agora, não o da tela.
     const query = jest.fn();
     query.mockResolvedValueOnce({ rows: [{ worker_id: 'worker-8' }] });
+    query.mockResolvedValueOnce({ rows: [] });                               // sem opt-out ativo
     query.mockResolvedValueOnce({ rows: [{ id: 'ba-4', job_posting_id: 'jp-4', acquisition_channel: null }] });
     query.mockResolvedValueOnce({ rows: [{ status: 'DISABLED' }] });
 
@@ -398,3 +400,42 @@ describe('PromoteBlockedApplicationsUseCase — ramos defensivos pré-existentes
     expect(result.reasons.error).toBe(1);
   });
 });
+
+describe('PromoteBlockedApplicationsUseCase — opt-out barra a promoção manual', () => {
+  it('worker com opt-out ativo NÃO é promovido — o card não volta ao board', async () => {
+    const query = jest.fn();
+    query.mockResolvedValueOnce({ rows: [{ worker_id: 'worker-optout' }] }); // resolve worker
+    query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });              // opt-out ativo
+
+    const useCase = new PromoteBlockedApplicationsUseCase(makePool(query) as never);
+    const result = await useCase.executeForBlockedApplication('ba-optout');
+
+    expect(result).toEqual({ promoted: 0, skipped: 1, reasons: { worker_opted_out: 1 } });
+    // Não seguiu para a promoção: só as DUAS consultas de guarda rodaram.
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it('opt-out já revogado (opted_in_at preenchido) não barra — a query filtra por IS NULL', async () => {
+    const query = jest.fn();
+    query.mockResolvedValueOnce({ rows: [{ worker_id: 'worker-ok' }] });
+    query.mockResolvedValueOnce({ rows: [] });                               // sem opt-out ativo
+    query.mockResolvedValueOnce({ rows: [{ id: 'ba-1', job_posting_id: 'jp-1', acquisition_channel: null }] });
+    query.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+    query.mockResolvedValueOnce({ rows: [{ is_draft: false, status: 'SEARCHING' }] });
+    query.mockResolvedValueOnce({ rows: [] });
+    query.mockResolvedValueOnce({ rows: [] });
+
+    const execute = jest.fn().mockResolvedValue({ wjaId: 'wja-1' });
+    const useCase = new PromoteBlockedApplicationsUseCase(
+      makePool(query) as never,
+      makeCreateWjaUseCase(execute),
+    );
+
+    const result = await useCase.executeForBlockedApplication('ba-1');
+
+    expect(result!.promoted).toBe(1);
+    const [sql] = query.mock.calls[1];
+    expect(sql).toContain('opted_in_at IS NULL');
+  });
+});
+

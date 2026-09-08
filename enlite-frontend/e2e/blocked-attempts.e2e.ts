@@ -15,7 +15,7 @@
  */
 
 import { test, expect, Page } from '@playwright/test';
-import { E2E_EMAIL, loginAsAdmin } from './helpers/kanban-notes-e2e-helper';
+import { E2E_EMAIL, loginAsStaffOffline } from './helpers/kanban-notes-e2e-helper';
 
 
 // ── Mock data ─────────────────────────────────────────────────────────────────
@@ -224,11 +224,18 @@ async function seedAdminAndLogin(page: Page): Promise<void> {
     }),
   );
 
-  await loginAsAdmin(page);
+  await loginAsStaffOffline(page);
 }
 
-function mockBlockedAPI(page: Page, attempts = MOCK_BLOCKED_ATTEMPTS): void {
-  page.route('**/api/admin/recruitment/blocked-attempts**', (route) =>
+/**
+ * ⚠️ `async` + `await` nos `page.route` não é cosmética: `page.route` devolve
+ * Promise, e chamar sem esperar deixava o `page.goto` correr antes do registro.
+ * Enquanto as chamadas iam para a rede (lentas) a corrida quase sempre caía do
+ * lado certo; com o catch-all admin respondendo na hora, ela passou a perder
+ * sempre — a página abria sem dados e `blocked-content` nunca montava.
+ */
+async function mockBlockedAPI(page: Page, attempts = MOCK_BLOCKED_ATTEMPTS): Promise<void> {
+  await page.route('**/api/admin/recruitment/blocked-attempts**', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -242,14 +249,14 @@ function mockBlockedAPI(page: Page, attempts = MOCK_BLOCKED_ATTEMPTS): void {
   );
 
   // Resolve worker names
-  page.route(`**/api/admin/workers/${WORKER_ID_1}`, (route) =>
+  await page.route(`**/api/admin/workers/${WORKER_ID_1}`, (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ success: true, data: MOCK_WORKER_1 }),
     }),
   );
-  page.route(`**/api/admin/workers/${WORKER_ID_2}`, (route) =>
+  await page.route(`**/api/admin/workers/${WORKER_ID_2}`, (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -258,7 +265,7 @@ function mockBlockedAPI(page: Page, attempts = MOCK_BLOCKED_ATTEMPTS): void {
   );
 
   // Resolve vacancy
-  page.route(`**/api/admin/vacancies/${VACANCY_ID_1}`, (route) =>
+  await page.route(`**/api/admin/vacancies/${VACANCY_ID_1}`, (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -274,7 +281,7 @@ test.describe('BlockedAttemptsPage', () => {
 
   test('página renderiza título e agrega totais', async ({ page }) => {
     await seedAdminAndLogin(page);
-    mockBlockedAPI(page);
+    await mockBlockedAPI(page);
 
     await page.goto('/admin/recruitment/blocked-attempts');
 
@@ -294,7 +301,7 @@ test.describe('BlockedAttemptsPage', () => {
 
   test('tabela exibe worker name, vacancy title e reason', async ({ page }) => {
     await seedAdminAndLogin(page);
-    mockBlockedAPI(page);
+    await mockBlockedAPI(page);
 
     await page.goto('/admin/recruitment/blocked-attempts');
     await expect(page.locator('[data-testid="blocked-content"]')).toBeVisible({ timeout: 20000 });
@@ -338,7 +345,7 @@ test.describe('BlockedAttemptsPage', () => {
 
   test('filtro por motivo inclui reason no query param', async ({ page }) => {
     await seedAdminAndLogin(page);
-    mockBlockedAPI(page);
+    await mockBlockedAPI(page);
 
     const capturedUrls: string[] = [];
     page.route('**/api/admin/recruitment/blocked-attempts**', (route) => {
@@ -374,7 +381,7 @@ test.describe('BlockedAttemptsPage', () => {
 
   test('screenshot visual — estado POPULADO', async ({ page }) => {
     await seedAdminAndLogin(page);
-    mockBlockedAPI(page);
+    await mockBlockedAPI(page);
 
     await page.goto('/admin/recruitment/blocked-attempts');
     await expect(page.locator('[data-testid="blocked-content"]')).toBeVisible({ timeout: 20000 });

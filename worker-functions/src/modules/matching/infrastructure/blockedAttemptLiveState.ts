@@ -40,11 +40,14 @@ export const ELIGIBLE_WORKER_STATUS = 'REGISTERED';
  * passaria hoje, e o card só continua na coluna porque a promoção depende do
  * evento `worker.registration_completed`, que já passou.
  */
-export type BlockedAttemptLiveState =
-  | 'worker_not_found'
-  | 'worker_disabled'
-  | 'registration_incomplete'
-  | 'eligible';
+export const BLOCKED_ATTEMPT_LIVE_STATES = [
+  'worker_not_found',
+  'worker_disabled',
+  'registration_incomplete',
+  'eligible',
+] as const;
+
+export type BlockedAttemptLiveState = (typeof BLOCKED_ATTEMPT_LIVE_STATES)[number];
 
 /**
  * JOIN obrigatório para quem usa os fragmentos abaixo.
