@@ -136,6 +136,10 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('tp-save')).toBeDisabled();
     await expect(page.getByTestId('tp-service')).toHaveValue(serviceId);
+    // D301.3a (Ana): modalidade obrigatória — select nativo; o valor é lido de volta da tela.
+    await expect(page.getByTestId('tp-modality')).toHaveValue('');
+    await page.getByTestId('tp-modality').selectOption('HYBRID');
+    await expect(page.getByTestId('tp-modality')).toHaveValue('HYBRID');
 
     // CID pelo combobox REAL: digita como humano, escolhe a opção.
     const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
@@ -168,6 +172,7 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     await page.getByTestId('tp-save').click();
     const body = (await (await created).json()) as { data: { id: string; version: string; specificObjectives: unknown[]; activities: unknown[]; pathologyTypes: { label: string }[]; diagnoses: { title: string }[] } };
     expect(body.data.version).toBe('V.1.0');
+    expect(body.data.modality).toBe('HYBRID');
     expect(body.data.specificObjectives).toHaveLength(2);
     expect(body.data.activities).toHaveLength(3);
     expect(body.data.pathologyTypes).toHaveLength(1);
@@ -180,6 +185,7 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     await expect(drawer).toHaveCount(0); // desmonta depois da animação (300 ms) — só então o próximo clique
     await expect(page.getByTestId(`tp-row-${v10}`)).toContainText('V.1.0');
     await expect(card.getByTestId('tpv-objective-text')).toContainText('Objetivo general digitado por humano 017');
+    await expect(card.getByTestId('tpv-modality')).toContainText('Híbrida');
     await expect(card).toHaveScreenshot('tp-card-v1-0.png', { mask: [page.locator('.firebase-emulator-warning'), page.getByTestId(`tp-row-${v10}`).locator('td').nth(3), page.getByTestId(`tp-row-${v10}`).locator('td').nth(4)], maxDiffPixelRatio: 0.02 });
 
     // ── Editar → V.1.1 ─────────────────────────────────────────────────────────────────────
@@ -187,6 +193,7 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     await expect(drawer).toBeVisible();
     await expect(page.getByTestId('therapeutic-project-subtitle')).toContainText('V.1.0');
     await expect(page.locator('#tp-generalObjective')).toHaveValue('Objetivo general digitado por humano 017');
+    await expect(page.getByTestId('tp-modality')).toHaveValue('HYBRID'); // a edição parte da versão de origem
     await page.locator('#tp-generalObjective').click();
     await page.keyboard.press('End');
     await page.keyboard.type(' — editado');
@@ -226,6 +233,10 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     expect(texto).toContain('Objetivo general digitado por humano 017');
     expect(texto).toContain(ICD_TITLE);
     expect(texto).toContain('Versión V.1.0');
+    expect(texto).toContain('Modalidad: Híbrida');
+    // D301.1: o serviço é CAREGIVER → as seções fixas VIII/IX saem inteiras.
+    expect(texto).toContain('El cuidador NO debe');
+    expect(texto).not.toContain('no aplicable a este servicio');
     expect(texto).not.toContain('ICHOM');
     expect(texto).not.toContain('6E2E');
     // lex C13: a trilha do export existe, com o UUID do paciente e sem texto.
@@ -252,6 +263,7 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     await opcao.click();
     await digitar(page, '#tp-clinicalContext', 'Contexto que no debe persistir 017');
     await digitar(page, '#tp-generalObjective', 'Objetivo que no debe persistir 017');
+    await page.getByTestId('tp-modality').selectOption('IN_PERSON');
     await marcarOpcoes(page, 'tp-specificObjectives', 1); // a PRIMEIRA da lista (ORDER BY sort_order, lower(label))
     await marcarOpcoes(page, 'tp-activities', 1);
     await marcarOpcoes(page, 'tp-pathologyTypes', 1);
