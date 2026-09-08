@@ -9,6 +9,7 @@
  */
 import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { withActorContext } from '@shared/database/actorContext';
 import { DeviceTypeUnknownError } from './PatientDeviceTypeRepository';
 import {
   ContractedServiceProviderRepository,
@@ -155,6 +156,9 @@ interface ServiceRow {
   updated_at: string;
 }
 
+/** Sentinela interna: desfaz a transação do `update` quando o serviço não existe (nunca sai do repositório). */
+const SERVICE_ROW_MISSING = Symbol('patient_contracted_services: linha inexistente');
+
 export class PatientContractedServiceRepository {
   private poolMemo?: Pool;
 
@@ -243,43 +247,47 @@ export class PatientContractedServiceRepository {
     }
   }
 
-  /** Cria um serviço contratado. `country`/autoria gravados na MESMA transação (lex C-a.1/C-a.3). */
+  /**
+   * Cria um serviço contratado. `country`/autoria gravados na MESMA transação (lex C-a.1/C-a.3).
+   *
+   * `withActorContext` (D95), não `pool.connect()` cru: o client cru chega SEM `app.user_country`
+   * e a policy de país da 411 recusa com `rls_session_without_identity` — foi o 500 medido na
+   * stage em 07/09. O helper reusa o client fixado da request (que já carrega o país) ou aplica
+   * `SET LOCAL` na transação; o `ROLLBACK` também é dele.
+   */
   async create(input: CreateContractedServiceInput): Promise<ContractedServiceDetail> {
-    const cli = await this.pool.connect();
     try {
-      await cli.query('BEGIN');
-      const cols = ['patient_id', 'service_code', 'created_by', 'updated_by'];
-      const values: unknown[] = [input.patientId, input.serviceCode, input.actorUid, input.actorUid];
-      if (input.country) {
-        cols.push('country');
-        values.push(input.country);
-      }
-      for (const [key, col] of WRITABLE_COLUMNS) {
-        if (key === 'serviceCode') continue;
-        const value = input[key];
-        if (value !== undefined) {
-          cols.push(col);
-          values.push(toColumnValue(key, value));
+      const row = await withActorContext(this.pool, async (cli) => {
+        const cols = ['patient_id', 'service_code', 'created_by', 'updated_by'];
+        const values: unknown[] = [input.patientId, input.serviceCode, input.actorUid, input.actorUid];
+        if (input.country) {
+          cols.push('country');
+          values.push(input.country);
         }
-      }
-      const placeholders = cols.map((_, i) => `$${i + 1}`);
-      const ins = await cli.query<{ id: string }>(
-        `INSERT INTO patient_contracted_services (${cols.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING id`,
-        values,
-      );
-      const serviceId = ins.rows[0].id;
-      if (input.deviceTypeCodes && input.deviceTypeCodes.length > 0) {
-        await this.replaceDevices(serviceId, input.deviceTypeCodes, cli);
-      }
-      const row = await cli.query<ServiceRow>('SELECT * FROM patient_contracted_services WHERE id = $1', [serviceId]);
-      await cli.query('COMMIT');
-      return this.decorate(row.rows[0], this.pool);
+        for (const [key, col] of WRITABLE_COLUMNS) {
+          if (key === 'serviceCode') continue;
+          const value = input[key];
+          if (value !== undefined) {
+            cols.push(col);
+            values.push(toColumnValue(key, value));
+          }
+        }
+        const placeholders = cols.map((_, i) => `$${i + 1}`);
+        const ins = await cli.query<{ id: string }>(
+          `INSERT INTO patient_contracted_services (${cols.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING id`,
+          values,
+        );
+        const serviceId = ins.rows[0].id;
+        if (input.deviceTypeCodes && input.deviceTypeCodes.length > 0) {
+          await this.replaceDevices(serviceId, input.deviceTypeCodes, cli);
+        }
+        const sel = await cli.query<ServiceRow>('SELECT * FROM patient_contracted_services WHERE id = $1', [serviceId]);
+        return sel.rows[0];
+      });
+      return this.decorate(row, this.pool);
     } catch (err) {
-      await cli.query('ROLLBACK');
       if (isAddressFkViolation(err)) throw new AddressNotOfPatientError(input.addressId);
       throw err;
-    } finally {
-      cli.release();
     }
   }
 
@@ -291,46 +299,43 @@ export class PatientContractedServiceRepository {
    * nunca envia essa combinação).
    */
   async update(serviceId: string, patch: ContractedServiceWriteInput): Promise<ContractedServiceDetail | null> {
-    const cli = await this.pool.connect();
     try {
-      await cli.query('BEGIN');
-      const sets: string[] = [];
-      const params: unknown[] = [serviceId];
-      const push = (col: string, value: unknown): void => {
-        params.push(value);
-        sets.push(`${col} = $${params.length}`);
-      };
-      for (const [key, col] of WRITABLE_COLUMNS) {
-        const value = patch[key];
-        if (value !== undefined) push(col, toColumnValue(key, value));
-      }
-      if (patch.active !== undefined) {
-        push('active', patch.active);
-        sets.push(patch.active ? 'ended_at = NULL' : 'ended_at = NOW()');
-      }
-      if (patch.deviceTypeCodes !== undefined) {
-        await this.replaceDevices(serviceId, patch.deviceTypeCodes, cli);
-      }
-      if (sets.length > 0) {
-        params.push(patch.actorUid);
-        sets.push(`updated_by = $${params.length}`);
-        sets.push('updated_at = NOW()');
-        const res = await cli.query(`UPDATE patient_contracted_services SET ${sets.join(', ')} WHERE id = $1`, params);
-        if ((res.rowCount ?? 0) === 0) {
-          await cli.query('ROLLBACK');
-          return null;
+      // Mesmo molde do `create`: transação COM contexto de país (D95), nunca client cru.
+      const row = await withActorContext(this.pool, async (cli) => {
+        const sets: string[] = [];
+        const params: unknown[] = [serviceId];
+        const push = (col: string, value: unknown): void => {
+          params.push(value);
+          sets.push(`${col} = $${params.length}`);
+        };
+        for (const [key, col] of WRITABLE_COLUMNS) {
+          const value = patch[key];
+          if (value !== undefined) push(col, toColumnValue(key, value));
         }
-      }
-      const row = await cli.query<ServiceRow>('SELECT * FROM patient_contracted_services WHERE id = $1', [serviceId]);
-      await cli.query('COMMIT');
-      if (row.rows.length === 0) return null;
-      return this.decorate(row.rows[0], this.pool);
+        if (patch.active !== undefined) {
+          push('active', patch.active);
+          sets.push(patch.active ? 'ended_at = NULL' : 'ended_at = NOW()');
+        }
+        if (patch.deviceTypeCodes !== undefined) {
+          await this.replaceDevices(serviceId, patch.deviceTypeCodes, cli);
+        }
+        if (sets.length > 0) {
+          params.push(patch.actorUid);
+          sets.push(`updated_by = $${params.length}`);
+          sets.push('updated_at = NOW()');
+          const res = await cli.query(`UPDATE patient_contracted_services SET ${sets.join(', ')} WHERE id = $1`, params);
+          // Linha inexistente → ROLLBACK (o `replaceDevices` acima pode já ter escrito) e null.
+          if ((res.rowCount ?? 0) === 0) throw SERVICE_ROW_MISSING;
+        }
+        const sel = await cli.query<ServiceRow>('SELECT * FROM patient_contracted_services WHERE id = $1', [serviceId]);
+        return sel.rows[0] ?? null;
+      });
+      if (row === null) return null;
+      return this.decorate(row, this.pool);
     } catch (err) {
-      await cli.query('ROLLBACK');
+      if (err === SERVICE_ROW_MISSING) return null;
       if (isAddressFkViolation(err)) throw new AddressNotOfPatientError(patch.addressId);
       throw err;
-    } finally {
-      cli.release();
     }
   }
 }
