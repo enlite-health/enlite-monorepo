@@ -15,10 +15,8 @@
  */
 
 import { test, expect, Page } from '@playwright/test';
-import { execSync } from 'child_process';
+import { E2E_EMAIL, loginAsStaffOffline } from './helpers/kanban-notes-e2e-helper';
 
-const FIREBASE_EMULATOR = 'http://127.0.0.1:9099';
-const FIREBASE_API_KEY = 'test-api-key';
 
 // ── Mock data ─────────────────────────────────────────────────────────────────
 
@@ -181,34 +179,23 @@ const MOCK_VACANCY_1 = {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function seedAdminAndLogin(page: Page): Promise<void> {
-  const rnd = Math.random().toString(36).slice(2, 8);
-  const email = `e2e.blocked.${Date.now()}.${rnd}@test.com`;
-  const password = 'TestAdmin123!';
-
-  const signUpRes = await fetch(
-    `${FIREBASE_EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FIREBASE_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, returnSecureToken: true }),
-    },
+  // Login com a conta STAFF REAL (enlite-prd). Antes: `accounts:signUp` no emulador
+  // + `docker exec enlite-postgres` para inserir o usuário — duas dependências de
+  // infra que este spec não precisa ter (ele mocka todos os endpoints que assere) e
+  // que o prendiam a um emulador e a um container de nome fixo, compartilhado entre
+  // worktrees. Usuário do emulador também não carrega custom claim, e sem ela a
+  // sessão cai na navegação de PRESTADOR.
+  //
+  // Catch-all primeiro: sem ele, chamadas não mockadas escapam para
+  // VITE_API_WORKER_FUNCTIONS_URL e morrem em CORS (o backend só libera a origem
+  // localhost:5173), derrubando a sessão admin em qualquer outra porta.
+  await page.route('**/api/admin/**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: null }),
+    }),
   );
-  const signUpData = (await signUpRes.json()) as { localId?: string };
-  if (!signUpData.localId) throw new Error(`Firebase sign-up failed: ${JSON.stringify(signUpData)}`);
-  const uid = signUpData.localId;
-
-  const sql = `
-    INSERT INTO users (firebase_uid, email, display_name, role, created_at, updated_at)
-      VALUES ('${uid}', '${email}', 'Blocked E2E', 'admin', NOW(), NOW()) ON CONFLICT DO NOTHING;
-    INSERT INTO admins_extension (user_id, must_change_password, created_at, updated_at)
-      VALUES ('${uid}', false, NOW(), NOW()) ON CONFLICT DO NOTHING;
-  `.replace(/\n/g, ' ').trim();
-
-  try {
-    execSync(`docker exec enlite-postgres psql -U enlite_admin -d enlite_e2e -c "${sql}"`, { stdio: 'pipe' });
-  } catch {
-    // Ignore — mock auth covers this
-  }
 
   await page.route('**/api/admin/auth/profile', (route) =>
     route.fulfill({
@@ -217,8 +204,8 @@ async function seedAdminAndLogin(page: Page): Promise<void> {
       body: JSON.stringify({
         success: true,
         data: {
-          id: uid,
-          email,
+          id: 'e2e-blocked-admin',
+          email: E2E_EMAIL,
           role: 'admin',
           firstName: 'Blocked',
           lastName: 'E2E',
@@ -237,15 +224,18 @@ async function seedAdminAndLogin(page: Page): Promise<void> {
     }),
   );
 
-  await page.goto('/admin/login');
-  await page.locator('input[type="email"]').fill(email);
-  await page.locator('input[type="password"]').fill(password);
-  await page.locator('button[type="submit"]').click();
-  await expect(page).not.toHaveURL(/.*login.*/, { timeout: 20000 });
+  await loginAsStaffOffline(page);
 }
 
-function mockBlockedAPI(page: Page, attempts = MOCK_BLOCKED_ATTEMPTS): void {
-  page.route('**/api/admin/recruitment/blocked-attempts**', (route) =>
+/**
+ * ⚠️ `async` + `await` nos `page.route` não é cosmética: `page.route` devolve
+ * Promise, e chamar sem esperar deixava o `page.goto` correr antes do registro.
+ * Enquanto as chamadas iam para a rede (lentas) a corrida quase sempre caía do
+ * lado certo; com o catch-all admin respondendo na hora, ela passou a perder
+ * sempre — a página abria sem dados e `blocked-content` nunca montava.
+ */
+async function mockBlockedAPI(page: Page, attempts = MOCK_BLOCKED_ATTEMPTS): Promise<void> {
+  await page.route('**/api/admin/recruitment/blocked-attempts**', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -259,14 +249,14 @@ function mockBlockedAPI(page: Page, attempts = MOCK_BLOCKED_ATTEMPTS): void {
   );
 
   // Resolve worker names
-  page.route(`**/api/admin/workers/${WORKER_ID_1}`, (route) =>
+  await page.route(`**/api/admin/workers/${WORKER_ID_1}`, (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ success: true, data: MOCK_WORKER_1 }),
     }),
   );
-  page.route(`**/api/admin/workers/${WORKER_ID_2}`, (route) =>
+  await page.route(`**/api/admin/workers/${WORKER_ID_2}`, (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -275,7 +265,7 @@ function mockBlockedAPI(page: Page, attempts = MOCK_BLOCKED_ATTEMPTS): void {
   );
 
   // Resolve vacancy
-  page.route(`**/api/admin/vacancies/${VACANCY_ID_1}`, (route) =>
+  await page.route(`**/api/admin/vacancies/${VACANCY_ID_1}`, (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -291,7 +281,7 @@ test.describe('BlockedAttemptsPage', () => {
 
   test('página renderiza título e agrega totais', async ({ page }) => {
     await seedAdminAndLogin(page);
-    mockBlockedAPI(page);
+    await mockBlockedAPI(page);
 
     await page.goto('/admin/recruitment/blocked-attempts');
 
@@ -311,7 +301,7 @@ test.describe('BlockedAttemptsPage', () => {
 
   test('tabela exibe worker name, vacancy title e reason', async ({ page }) => {
     await seedAdminAndLogin(page);
-    mockBlockedAPI(page);
+    await mockBlockedAPI(page);
 
     await page.goto('/admin/recruitment/blocked-attempts');
     await expect(page.locator('[data-testid="blocked-content"]')).toBeVisible({ timeout: 20000 });
@@ -355,7 +345,7 @@ test.describe('BlockedAttemptsPage', () => {
 
   test('filtro por motivo inclui reason no query param', async ({ page }) => {
     await seedAdminAndLogin(page);
-    mockBlockedAPI(page);
+    await mockBlockedAPI(page);
 
     const capturedUrls: string[] = [];
     page.route('**/api/admin/recruitment/blocked-attempts**', (route) => {
@@ -391,7 +381,7 @@ test.describe('BlockedAttemptsPage', () => {
 
   test('screenshot visual — estado POPULADO', async ({ page }) => {
     await seedAdminAndLogin(page);
-    mockBlockedAPI(page);
+    await mockBlockedAPI(page);
 
     await page.goto('/admin/recruitment/blocked-attempts');
     await expect(page.locator('[data-testid="blocked-content"]')).toBeVisible({ timeout: 20000 });

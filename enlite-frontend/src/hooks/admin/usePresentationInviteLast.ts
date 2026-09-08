@@ -19,7 +19,13 @@ export function usePresentationInviteLast(
     if (!enabled || !key) return;
     let alive = true;
     AdminPresentationInviteApiService.last(key.split(','))
-      .then((m) => { if (alive) setLast(m); })
+      // `?? {}` não é paranoia: o tipo promete um mapa, mas quem responde é a rede.
+      // Um `data: null` no corpo (backend fora do ar, resposta vazia, mock de teste)
+      // virava `null` aqui, e o Kanban inteiro caía na fronteira de erro no primeiro
+      // `lastPresentationByWorker[workerId]` — tela em branco, "No pudimos cargar
+      // esta página", para TODAS as tarjetas. O `.catch` já deixava a tela seguir
+      // sem o "último convite"; o sucesso com corpo nulo é que não estava coberto.
+      .then((m) => { if (alive) setLast(m ?? {}); })
       .catch(() => { /* sem "último convite" a tela segue; o botão continua funcionando */ });
     return () => { alive = false; };
   }, [enabled, key]);

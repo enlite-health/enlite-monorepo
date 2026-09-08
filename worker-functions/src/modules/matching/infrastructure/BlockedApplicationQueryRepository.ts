@@ -2,12 +2,19 @@ import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { WorkerEngagement } from '../domain/WorkerEngagement';
 import { KANBAN_COLUMN_BLOCKED } from '../domain/kanbanColumn';
+import {
+  liveWorkerJoinSql,
+  liveBlockedReasonSql,
+  liveMissingFieldsSql,
+  type BlockedAttemptLiveState,
+} from './blockedAttemptLiveState';
 
 export interface BlockedAttemptDto {
   id: string;
   workerId: string;
   jobPostingId: string;
-  blockedReason: string;
+  /** Estado AO VIVO, recalculado na leitura — inclui `eligible`. Ver `blockedAttemptLiveState`. */
+  blockedReason: BlockedAttemptLiveState;
   missingFields: string[];
   attemptCount: number;
   firstAttemptedAt: string;
@@ -24,7 +31,8 @@ export interface BlockedAttemptDto {
 export interface BlockedAttemptForFunnelDto {
   id: string;
   workerId: string | null;
-  blockedReason: string;
+  /** Estado AO VIVO, recalculado na leitura — inclui `eligible`. Ver `blockedAttemptLiveState`. */
+  blockedReason: BlockedAttemptLiveState;
   missingFields: string[];
   attemptCount: number;
   acquisitionChannel: string | null;
@@ -83,8 +91,10 @@ export class BlockedApplicationQueryRepository {
       conditions.push(`wba.worker_id = $${idx++}`);
       values.push(params.workerId);
     }
+    // Filtra pelo motivo AO VIVO, não pelo congelado: filtrar por um valor que a
+    // tela não exibe mais devolveria cards que contradizem o próprio filtro.
     if (params.reason) {
-      conditions.push(`wba.blocked_reason = $${idx++}`);
+      conditions.push(`${liveBlockedReasonSql()} = $${idx++}`);
       values.push(params.reason);
     }
 
@@ -95,14 +105,9 @@ export class BlockedApplicationQueryRepository {
         wba.id,
         wba.worker_id,
         wba.job_posting_id,
-        wba.blocked_reason,
-        -- Recompute ON-READ (mesmo motivo do listByVacancy): o snapshot só é
-        -- atualizado numa nova tentativa; recalcula ao vivo p/ registro incompleto.
-        CASE
-          WHEN wba.blocked_reason = 'registration_incomplete' AND wba.worker_id IS NOT NULL
-          THEN fn_worker_missing_fields(wba.worker_id)
-          ELSE wba.missing_fields
-        END AS missing_fields,
+        -- Motivo e campos recalculados ON-READ contra o estado de hoje (D300).
+        ${liveBlockedReasonSql()} AS blocked_reason,
+        ${liveMissingFieldsSql()} AS missing_fields,
         wba.attempt_count,
         wba.first_attempted_at,
         wba.last_attempted_at,
@@ -110,6 +115,7 @@ export class BlockedApplicationQueryRepository {
         wba.created_at,
         wba.updated_at
       FROM worker_blocked_applications wba
+      ${liveWorkerJoinSql()}
       ${whereClause}
       ORDER BY wba.last_attempted_at DESC
       LIMIT $${idx++} OFFSET $${idx++}
@@ -118,6 +124,7 @@ export class BlockedApplicationQueryRepository {
     const countQuery = `
       SELECT COUNT(*)::int AS total
       FROM worker_blocked_applications wba
+      ${liveWorkerJoinSql()}
       ${whereClause}
     `;
 
@@ -133,7 +140,7 @@ export class BlockedApplicationQueryRepository {
       id: r.id as string,
       workerId: r.worker_id as string,
       jobPostingId: r.job_posting_id as string,
-      blockedReason: r.blocked_reason as string,
+      blockedReason: r.blocked_reason as BlockedAttemptLiveState,
       missingFields: Array.isArray(r.missing_fields) ? r.missing_fields as string[] : [],
       attemptCount: r.attempt_count as number,
       firstAttemptedAt: (r.first_attempted_at as Date).toISOString(),
@@ -162,17 +169,14 @@ export class BlockedApplicationQueryRepository {
       `SELECT
          wba.id,
          wba.worker_id,
-         wba.blocked_reason,
-         -- missing_fields recomputado ON-READ: o snapshot materializado só é
-         -- atualizado numa nova tentativa de postulação, então editar o perfil
-         -- do worker (nome, doc, etc.) não zerava as tags. Recalcula ao vivo via
-         -- SSOT fn_worker_missing_fields quando o worker existe e o motivo é
-         -- registro incompleto; demais reasons mantêm o snapshot.
-         CASE
-           WHEN wba.blocked_reason = 'registration_incomplete' AND wba.worker_id IS NOT NULL
-           THEN fn_worker_missing_fields(wba.worker_id)
-           ELSE wba.missing_fields
-         END AS missing_fields,
+         -- Motivo E campos recomputados ON-READ (D300): o snapshot materializado
+         -- só é reescrito numa nova tentativa, então tanto completar o perfil
+         -- quanto ser reativado deixavam o card exibindo o rótulo de meses atrás.
+         -- Recalcular só os campos — como se fazia — não alcançava o caso: o
+         -- CASE antigo exigia que o motivo congelado JÁ fosse
+         -- registration_incomplete, que é justamente quando ele não muda.
+         ${liveBlockedReasonSql()} AS blocked_reason,
+         ${liveMissingFieldsSql()} AS missing_fields,
          wba.attempt_count,
          wba.acquisition_channel,
          wba.last_attempted_at,
@@ -181,6 +185,7 @@ export class BlockedApplicationQueryRepository {
          (SELECT COUNT(*)::int FROM wja_contact_notes cn
           WHERE cn.worker_id = wba.worker_id AND cn.job_posting_id = wba.job_posting_id) AS contact_notes_count
        FROM worker_blocked_applications wba
+       ${liveWorkerJoinSql()}
        WHERE wba.job_posting_id = $1
          AND NOT EXISTS (
            SELECT 1 FROM worker_job_applications wja
@@ -194,7 +199,7 @@ export class BlockedApplicationQueryRepository {
     return result.rows.map(r => ({
       id:                r.id as string,
       workerId:          (r.worker_id as string | null) ?? null,
-      blockedReason:     r.blocked_reason as string,
+      blockedReason:     r.blocked_reason as BlockedAttemptLiveState,
       missingFields:     Array.isArray(r.missing_fields) ? r.missing_fields as string[] : [],
       attemptCount:      r.attempt_count as number,
       acquisitionChannel: (r.acquisition_channel as string | null) ?? null,
@@ -211,8 +216,8 @@ export class BlockedApplicationQueryRepository {
    * da vaga/paciente para a aba de encuadre do worker-detail e mapeia para o shape
    * unificado WorkerEngagement (kanbanStage = BLOQUEADO).
    *
-   * missing_fields é recomputado ON-READ via fn_worker_missing_fields — editar o perfil
-   * do worker reflete aqui sem nova tentativa.
+   * Motivo e missing_fields são recomputados ON-READ (`blockedAttemptLiveState`) —
+   * editar o perfil do worker, ou ele ser reativado, reflete aqui sem nova tentativa.
    */
   async listByWorker(workerId: string): Promise<WorkerEngagement[]> {
     const result = await this.pool.query(
@@ -224,15 +229,12 @@ export class BlockedApplicationQueryRepository {
          jp.status AS vacancy_status,
          p.first_name AS patient_first_name,
          p.last_name  AS patient_last_name,
-         wba.blocked_reason,
-         CASE
-           WHEN wba.blocked_reason = 'registration_incomplete' AND wba.worker_id IS NOT NULL
-           THEN fn_worker_missing_fields(wba.worker_id)
-           ELSE wba.missing_fields
-         END AS missing_fields,
+         ${liveBlockedReasonSql()} AS blocked_reason,
+         ${liveMissingFieldsSql()} AS missing_fields,
          wba.attempt_count,
          wba.created_at
        FROM worker_blocked_applications wba
+       ${liveWorkerJoinSql()}
        LEFT JOIN job_postings jp ON jp.id = wba.job_posting_id
        LEFT JOIN patients p ON jp.patient_id = p.id
        WHERE wba.worker_id = $1
@@ -270,12 +272,18 @@ export class BlockedApplicationQueryRepository {
     }));
   }
 
+  /**
+   * Contagem por motivo — também AO VIVO (D300). Se o agregado contasse o motivo
+   * congelado enquanto a lista exibe o recalculado, o cabeçalho do painel
+   * contradiria as linhas logo abaixo dele.
+   */
   async aggregates(): Promise<BlockedAggregates> {
     const result = await this.pool.query<{ blocked_reason: string; count: number }>(
-      `SELECT blocked_reason, COUNT(*)::int AS count
-       FROM worker_blocked_applications
-       WHERE dismissed_at IS NULL
-       GROUP BY blocked_reason`,
+      `SELECT ${liveBlockedReasonSql()} AS blocked_reason, COUNT(*)::int AS count
+       FROM worker_blocked_applications wba
+       ${liveWorkerJoinSql()}
+       WHERE wba.dismissed_at IS NULL
+       GROUP BY 1`,
     );
 
     const byReason: Record<string, number> = {};

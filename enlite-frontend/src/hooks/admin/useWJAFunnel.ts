@@ -182,5 +182,23 @@ export function useWJAFunnel(vacancyId: string | undefined) {
     }
   }, [fetchFunnel]);
 
-  return { data, isLoading, error, refetch: fetchFunnel, moveEncuadre, rejectBlocked, unrejectBlocked };
+  /**
+   * "Promover" um card ELEGIBLE: a tentativa bloqueada vira candidatura real e o
+   * card sai da coluna vermelha para o funil. Recarrega o funil no sucesso.
+   */
+  const promoteBlocked = useCallback(async (blockedId: string): Promise<MoveEncuadreError | null> => {
+    try {
+      await AdminApiService.promoteBlockedAttempt(blockedId);
+      await fetchFunnel();
+      return null;
+    } catch (err) {
+      console.error('Failed to promote blocked application:', err);
+      if (err instanceof ApiError) {
+        return { message: err.message, code: err.code, reason: err.reason, workerStatus: err.workerStatus };
+      }
+      return { message: err instanceof Error ? err.message : 'Erro desconhecido' };
+    }
+  }, [fetchFunnel]);
+
+  return { data, isLoading, error, refetch: fetchFunnel, moveEncuadre, rejectBlocked, unrejectBlocked, promoteBlocked };
 }

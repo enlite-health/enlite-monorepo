@@ -200,6 +200,43 @@ jobs:
             e2e/template-catalog-visual.e2e.ts \
             e2e/template-catalog-detalhe-visual.e2e.ts
 
+      # 🔒 O FUNIL DE BLOQUEADOS ENTRA NO CI — e pela mesma razão do passo acima,
+      # medida em 08/09 (D300): estes specs estavam PODRES e nada avisava. Os 13
+      # do Kanban navegavam para `/admin/vacancies/:id/kanban`, rota removida do
+      # `App.tsx`; asseravam 6 colunas quando são 9, com nomes que mudaram; e
+      # mediam atributos de arrasto na tarjeta em vez do wrapper. Como nenhum
+      # pipeline os executava, apodreceram em silêncio por meses — enquanto a
+      # tela que eles deviam cobrir exibia, em produção, motivo errado em 135 de
+      # 1.271 cards.
+      #
+      # ⚠️ `--ignore-snapshots` pelo mesmo motivo do passo das plantillas: as
+      # baselines são geradas no macOS e o Linux renderiza fonte diferente. O que
+      # este passo pega é SELETOR e FLUXO — rota que sumiu, coluna renomeada,
+      # botão que deixou de existir. É isso que apodreceu, e é em segundos.
+      #
+      # Nenhum destes toca canal real: a auth é interceptada em `page.route`
+      # (`loginAsStaffOffline`), sem emulador e sem conta de produção — que é o
+      # requisito para caberem no `playwright.mocked.config.ts`.
+      - name: Prova mockada — funil de bloqueados e Kanban da vaga
+        working-directory: enlite-frontend
+        env:
+          CI: 'true'
+          E2E_BASE_URL: http://localhost:5173
+        run: |
+          # Caminho que não existe o Playwright trata como filtro que não casa nada,
+          # e SAI ZERO se os outros casarem. Renomear um spec deixaria este passo
+          # verde rodando menos — cobertura reduzida em silêncio lê como "coberto".
+          # Medido: com 1 nome inexistente, "Total: 7 tests in 1 file", exit 0.
+          SPECS="e2e/blocked-attempts.e2e.ts \
+                 e2e/blocked-attempts-visual.e2e.ts \
+                 e2e/vacancy-kanban.e2e.ts \
+                 e2e/vacancy-kanban-eligibility-visual.e2e.ts \
+                 e2e/kanban-card-promover-elegivel.e2e.ts"
+          for f in $SPECS; do
+            [ -f "$f" ] || { echo "::error::spec sumiu ou foi renomeado: $f"; exit 1; }
+          done
+          npx playwright test --config=playwright.mocked.config.ts --ignore-snapshots $SPECS
+
       # As fotos sobem SEMPRE, não só na falha: elas são o insumo da comparação
       # de pixel que se faz à mão. Guardá-las apenas quando o job quebra deixaria
       # de fora justamente o caso em que se quer olhar — o verde que está feio.

@@ -255,3 +255,76 @@ describe('useWJAFunnel — moveEncuadre', () => {
     expect(ret).toEqual({ message: 'Erro desconhecido' });
   });
 });
+
+/**
+ * D300 — promoteBlocked: o card ELEGIBLE vira candidatura real.
+ *
+ * Mesmo contrato dos irmãos (null = sucesso, objeto = falha mapeada), com uma
+ * diferença que importa: o 409 aqui não é erro de sistema, é o mundo tendo mudado
+ * entre a tela carregar e a recrutadora clicar. O `reason` é o que a tela traduz.
+ */
+describe('useWJAFunnel — promoteBlocked', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(AdminApiService.getEncuadreFunnel).mockResolvedValue(emptyFunnel());
+  });
+
+  async function mountReady() {
+    const hook = renderHook(() => useWJAFunnel(VACANCY_ID));
+    await waitFor(() => expect(hook.result.current.isLoading).toBe(false));
+    vi.mocked(AdminApiService.getEncuadreFunnel).mockClear();
+    return hook;
+  }
+
+  it('sucesso: chama promoteBlockedAttempt, refaz o fetch e retorna null', async () => {
+    vi.mocked(AdminApiService.promoteBlockedAttempt).mockResolvedValue(undefined);
+    const { result } = await mountReady();
+
+    let ret: unknown;
+    await act(async () => {
+      ret = await result.current.promoteBlocked('ba-eligible');
+    });
+
+    expect(ret).toBeNull();
+    expect(AdminApiService.promoteBlockedAttempt).toHaveBeenCalledWith('ba-eligible');
+    expect(AdminApiService.getEncuadreFunnel).toHaveBeenCalledTimes(1);
+  });
+
+  it('409 do backend: devolve o reason, que é o que a tela precisa para explicar', async () => {
+    vi.mocked(AdminApiService.promoteBlockedAttempt).mockRejectedValue(
+      new ApiError({ success: false, error: 'vacancy_invalid', reason: 'vacancy_invalid' }, 409),
+    );
+    const { result } = await mountReady();
+
+    let ret: { reason?: string } | null = null;
+    await act(async () => {
+      ret = await result.current.promoteBlocked('ba-eligible');
+    });
+
+    expect(ret!.reason).toBe('vacancy_invalid');
+  });
+
+  it('valor não-Error cai no fallback "Erro desconhecido"', async () => {
+    vi.mocked(AdminApiService.promoteBlockedAttempt).mockRejectedValue('boom-string');
+    const { result } = await mountReady();
+
+    let ret: { message: string } | null = null;
+    await act(async () => {
+      ret = await result.current.promoteBlocked('ba-eligible');
+    });
+
+    expect(ret).toEqual({ message: 'Erro desconhecido' });
+  });
+
+  it('Error comum: mapeia a mensagem', async () => {
+    vi.mocked(AdminApiService.promoteBlockedAttempt).mockRejectedValue(new Error('network down'));
+    const { result } = await mountReady();
+
+    let ret: { message: string } | null = null;
+    await act(async () => {
+      ret = await result.current.promoteBlocked('ba-eligible');
+    });
+
+    expect(ret).toEqual({ message: 'network down' });
+  });
+});

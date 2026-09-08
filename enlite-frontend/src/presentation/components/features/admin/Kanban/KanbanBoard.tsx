@@ -27,6 +27,8 @@ interface KanbanBoardProps {
   onRejectBlocked: (blockedId: string, rejectionReasonCategory: string) => Promise<MoveEncuadreError | null>;
   /** "Voltar a bloqueados": desfaz o rechazo de um card bloqueado (RECHAZADOS → BLOQUEADO). */
   onUnrejectBlocked: (blockedId: string) => Promise<MoveEncuadreError | null>;
+  /** "Promover" um card ELEGIBLE (D300). Devolve mensagem localizada de erro, ou null no sucesso. */
+  onPromoteBlocked?: (blockedId: string) => Promise<string | null>;
   /**
    * "Reenviar" da tarjeta (REQ-08): redispara a mensagem para o worker. Devolve
    * null quando enviou, ou a mensagem localizada do motivo da recusa/falha.
@@ -90,7 +92,7 @@ function cardProps(enc: FunnelCard, stage: string) {
   };
 }
 
-export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnrejectBlocked, onResendInvite, onPresentationInvite }: KanbanBoardProps) {
+export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnrejectBlocked, onPromoteBlocked, onResendInvite, onPresentationInvite }: KanbanBoardProps) {
   const { t } = useTranslation();
   /**
    * Modal de motivo de rejeição. Serve dois alvos com o MESMO dropdown:
@@ -112,6 +114,11 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
   /** Estado do "Reenviar" por card (id do card): enviando / enviado / motivo da recusa. */
   const [resendByCard, setResendByCard] = useState<
     Record<string, { status: 'sending' | 'sent' | 'error'; message: string | null }>
+  >({});
+
+  /** D300: estado do botão "Promover" por card — mesmo padrão do reenvio. */
+  const [promoteByCard, setPromoteByCard] = useState<
+    Record<string, { status: 'promoting' | 'promoted' | 'error'; message: string | null }>
   >({});
 
   /** REQ-09: estado do convite à reunión de presentación por card + último convite por worker. */
@@ -142,6 +149,16 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
     setResendByCard((prev) => ({
       ...prev,
       [cardId]: failure ? { status: 'error', message: failure } : { status: 'sent', message: null },
+    }));
+  }
+
+  async function handlePromote(cardId: string) {
+    if (!onPromoteBlocked) return;
+    setPromoteByCard((prev) => ({ ...prev, [cardId]: { status: 'promoting', message: null } }));
+    const failure = await onPromoteBlocked(cardId);
+    setPromoteByCard((prev) => ({
+      ...prev,
+      [cardId]: failure ? { status: 'error', message: failure } : { status: 'promoted', message: null },
     }));
   }
 
@@ -259,6 +276,13 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
                 ? () => handleResend(enc.id, enc.workerId!)
                 : undefined
             }
+            onPromote={
+              onPromoteBlocked && enc.isBlocked && !enc.isDismissed && enc.blockedReason === 'eligible'
+                ? () => handlePromote(enc.id)
+                : undefined
+            }
+            promoteStatus={promoteByCard[enc.id]?.status ?? 'idle'}
+            promoteMessage={promoteByCard[enc.id]?.message ?? null}
             resendStatus={resendByCard[enc.id]?.status ?? 'idle'}
             resendMessage={resendByCard[enc.id]?.message ?? null}
             presentationInvite={
