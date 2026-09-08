@@ -9,6 +9,8 @@ import { GetWorkerProgressUseCase } from '../../application/GetWorkerProgressUse
 import { LookupWorkerByEmailUseCase } from '../../application/LookupWorkerByEmailUseCase';
 import { reactivateOnActivity } from '../../application/ReactivateArchivedWorkerUseCase';
 import { WorkerRepository } from '../../infrastructure/WorkerRepository';
+import { readWorkerMissingFields } from '../../infrastructure/WorkerCompletenessRepository';
+import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { QuizResponseRepository } from '../../infrastructure/QuizResponseRepository';
 import { ServiceAreaRepository } from '../../infrastructure/ServiceAreaRepository';
 import { AvailabilityRepository } from '../../infrastructure/AvailabilityRepository';
@@ -224,7 +226,7 @@ export class WorkerControllerV2 {
       if (restored) worker.status = restored;
       res.status(200).json({
         success: true,
-        data: worker,
+        data: await this.withMissingFields(worker),
       });
     } catch (error: any) {
       res.status(500).json({
@@ -232,6 +234,36 @@ export class WorkerControllerV2 {
         error: 'Internal server error',
       });
     }
+  }
+
+  /**
+   * Anexa `missingFields` ao worker devolvido ao prestador.
+   *
+   * `missingFields: []` = "nada falta". `missingFields: null` = "não consegui
+   * apurar" — e o cliente TEM de tratar null como desconhecido, nunca como
+   * completo. São coisas diferentes de propósito: confundir "ausência de
+   * informação" com "informação de ausência" é a causa raiz deste conserto.
+   */
+  private async withMissingFields<T extends { id: string }>(
+    worker: T,
+  ): Promise<T & { missingFields: string[] | null }> {
+    const pool = DatabaseConnection.getInstance().getPool();
+    const missingFields = await readWorkerMissingFields(pool, worker.id);
+    return { ...worker, missingFields };
+  }
+
+  /**
+   * Relê o cadastro pelo MESMO caminho do GET /progress, para a resposta de uma
+   * escrita ser o estado real (com PII já decriptada) e não um eco do payload.
+   * Se a releitura falhar, devolve `missingFields: null` — "gravei, mas não sei
+   * te dizer o estado" — em vez de afirmar sucesso completo.
+   */
+  private async readFreshProgress(authUid: string): Promise<unknown> {
+    const fresh = await this.getProgressUseCase.execute(authUid);
+    if (fresh.isFailure || !fresh.getValue()) {
+      return { message: 'General info saved', missingFields: null };
+    }
+    return this.withMissingFields(fresh.getValue()!);
   }
 
   private async resolveWorkerIdFromAuth(authUid: string): Promise<string | null> {
@@ -278,7 +310,14 @@ export class WorkerControllerV2 {
         return;
       }
 
-      res.status(200).json({ success: true, data: { message: 'General info saved' } });
+      // ESCRITA CONFIRMADA: devolve o estado como o BANCO ficou, não um
+      // "salvo com sucesso" que o cliente teria de acreditar. O incidente de
+      // 08/09/2026 nasceu aqui — a rota respondia só uma mensagem, o cliente
+      // gravava no próprio store o que ELE mandou, e um campo que o servidor
+      // não persistiu (telefone) seguia aparecendo preenchido na tela para
+      // sempre. Relendo pelo mesmo caminho do GET, o que a tela mostra passa a
+      // ser o que existe.
+      res.status(200).json({ success: true, data: await this.readFreshProgress(authUid) });
     } catch (error: any) {
       console.error('SaveGeneralInfo error:', error);
       res.status(500).json({ success: false, error: error.message || 'Internal server error' });

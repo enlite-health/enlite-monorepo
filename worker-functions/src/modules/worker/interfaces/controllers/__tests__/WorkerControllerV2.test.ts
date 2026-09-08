@@ -272,6 +272,7 @@ describe('WorkerControllerV2', () => {
     it('retorna 200 com dados do worker quando getProgressUseCase encontra o worker via user.uid', async () => {
       jest.spyOn(controller['getProgressUseCase'], 'execute')
         .mockResolvedValue(Result.ok(mockWorker));
+      mockQuery.mockResolvedValueOnce({ rows: [{ missing: [] }] });
 
       const [req, res] = mockReqRes({}, {}, { uid: AUTH_UID });
 
@@ -281,7 +282,7 @@ describe('WorkerControllerV2', () => {
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
           success: true,
-          data: mockWorker,
+          data: { ...mockWorker, missingFields: [] },
         })
       );
     });
@@ -289,6 +290,7 @@ describe('WorkerControllerV2', () => {
     it('retorna 200 com dados do worker quando getProgressUseCase encontra o worker via header x-auth-uid', async () => {
       jest.spyOn(controller['getProgressUseCase'], 'execute')
         .mockResolvedValue(Result.ok(mockWorker));
+      mockQuery.mockResolvedValueOnce({ rows: [{ missing: [] }] });
 
       const [req, res] = mockReqRes({}, { 'x-auth-uid': AUTH_UID });
 
@@ -298,7 +300,57 @@ describe('WorkerControllerV2', () => {
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
           success: true,
-          data: mockWorker,
+          data: { ...mockWorker, missingFields: [] },
+        })
+      );
+    });
+
+    // ── missingFields: a fonte única de completude que a tela consome ────────
+    //
+    // Incidente 08/09/2026: o frontend mantinha a PRÓPRIA lista de campos
+    // obrigatórios, e ela omitia `phone` e `title_certificate`. A prestadora
+    // via "cadastro completo" na home e levava "registro incompleto" ao se
+    // postular — 23 pessoas nesse estado em produção. O GET agora devolve o
+    // veredito de `fn_worker_missing_fields`, a MESMA função que barra a
+    // postulação, para os dois nunca divergirem.
+
+    it('devolve missingFields com o que o portão exige — inclusive phone e title_certificate', async () => {
+      jest.spyOn(controller['getProgressUseCase'], 'execute')
+        .mockResolvedValue(Result.ok(mockWorker));
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ missing: ['phone', 'title_certificate'] }],
+      });
+
+      const [req, res] = mockReqRes({}, {}, { uid: AUTH_UID });
+
+      await controller.getProgress(req, res);
+
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            missingFields: ['phone', 'title_certificate'],
+          }),
+        })
+      );
+    });
+
+    it('quando não consegue apurar, devolve missingFields NULL — "não sei" nunca vira "completo"', async () => {
+      jest.spyOn(controller['getProgressUseCase'], 'execute')
+        .mockResolvedValue(Result.ok(mockWorker));
+      mockQuery.mockRejectedValueOnce(new Error('db down'));
+
+      const [req, res] = mockReqRes({}, {}, { uid: AUTH_UID });
+
+      await controller.getProgress(req, res);
+
+      // 200 com null (e não omissão da chave, nem `[]`): o cliente precisa
+      // conseguir distinguir "nada falta" de "não foi possível apurar". Fundir
+      // ausência de informação com informação de ausência é a causa raiz que
+      // este conserto ataca.
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ missingFields: null }),
         })
       );
     });
