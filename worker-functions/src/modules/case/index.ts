@@ -216,6 +216,8 @@ export { AdminPatientAddressesController } from './interfaces/controllers/AdminP
 export { AdminInsuranceProvidersController } from './interfaces/controllers/AdminInsuranceProvidersController';
 export { AdminPatientsMapController } from './interfaces/controllers/AdminPatientsMapController';
 export { AdminPatientContractedServicesController } from './interfaces/controllers/AdminPatientContractedServicesController';
+export { AdminTherapeuticProjectsController } from './interfaces/controllers/AdminTherapeuticProjectsController';
+export { createAdminTherapeuticProjectsRoutes } from './interfaces/routes/adminTherapeuticProjectsRoutes';
 export { AdminPatientChatIdsController } from './interfaces/controllers/AdminPatientChatIdsController';
 export { AdminPatientChatRolesController } from './interfaces/controllers/AdminPatientChatRolesController';
 export { patientChatIdsSchema, patientChatMapQuerySchema, chatGroupsQuerySchema } from './interfaces/validators/patientChatIdsSchema';

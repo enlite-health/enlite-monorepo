@@ -406,7 +406,7 @@ describe('fetchPatientDetail — containers sem célula NÃO passam pelo KMS (D2
   const reads = (on: string[]) => ({
     identity: on.includes('identity'), clinical: on.includes('clinical'), careTeam: on.includes('careTeam'),
     family: on.includes('family'), chat: on.includes('chat'), coverage: on.includes('coverage'),
-    address: on.includes('address'), services: on.includes('services'),
+    address: on.includes('address'), services: on.includes('services'), therapeuticProject: on.includes('therapeuticProject'),
   });
 
   it('🔴 sem familiares, equipe nem identidade: kms.decrypt tem 0 chamadas e os campos saem vazios', async () => {

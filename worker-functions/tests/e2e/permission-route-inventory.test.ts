@@ -302,6 +302,20 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'PUT /api/admin/funnel-stage-messages/:stage → messaging:write',
         'PUT /api/admin/presentation-invite/settings → messaging:write',
         'PUT /api/admin/template-drafts/:id → messaging:write',
+        // ── spec 017 (08/09/2026): projeto terapêutico versionado + 3 catálogos, família admin.patients (D299.3)
+        'GET /api/admin/patients/:id/therapeutic-projects → patient_therapeutic_project:read',
+        'GET /api/admin/patients/:id/therapeutic-projects/:vid → patient_therapeutic_project:read',
+        'POST /api/admin/patients/:id/therapeutic-projects → patient_therapeutic_project:write',
+        'POST /api/admin/patients/:id/therapeutic-projects/:vid/annul → patient_therapeutic_project:write',
+        'GET /api/admin/therapeutic-catalogs/specific-objectives → catalog_therapeutic_objectives:read',
+        'POST /api/admin/therapeutic-catalogs/specific-objectives → catalog_therapeutic_objectives:write',
+        'PATCH /api/admin/therapeutic-catalogs/specific-objectives/:itemId → catalog_therapeutic_objectives:write',
+        'GET /api/admin/therapeutic-catalogs/activities → catalog_therapeutic_activities:read',
+        'POST /api/admin/therapeutic-catalogs/activities → catalog_therapeutic_activities:write',
+        'PATCH /api/admin/therapeutic-catalogs/activities/:itemId → catalog_therapeutic_activities:write',
+        'GET /api/admin/therapeutic-catalogs/pathology-types → catalog_pathology_types:read',
+        'POST /api/admin/therapeutic-catalogs/pathology-types → catalog_pathology_types:write',
+        'PATCH /api/admin/therapeutic-catalogs/pathology-types/:itemId → catalog_pathology_types:write',
       ].sort(),
     );
   });

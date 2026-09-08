@@ -24,8 +24,12 @@
  *  · `patient_address`    endereços e localidade — a MESMA célula vale no mapa (`lex` C7)
  *  · `patient_services`   serviços contratados, profissão requerida, início do serviço
  *
- * Cards que ainda são placeholder (projeto terapêutico, supervisão, relatórios, enquadre) NÃO
- * têm célula: célula sem consumidor é o que a catraca de dívida acusa (`lex` P2; D286 adendo a).
+ *  · `patient_therapeutic_project` projeto terapêutico versionado (spec 017): a ficha só carrega o
+ *                         marcador; as versões saem por rota própria, projetadas em
+ *                         `therapeuticProjectAccess.ts` (texto clínico só com `patient_clinical:read`)
+ *
+ * Cards que ainda são placeholder (supervisão, relatórios) NÃO têm célula: célula sem consumidor é
+ * o que a catraca de dívida acusa (`lex` P2; D286 adendo a).
  *
  * ── `cells = null` NÃO é "nenhuma célula" ───────────────────────────────────────────────────
  * É "o engine não decidiu nesta request" (família fora de `PERMISSION_ENFORCED_ROUTES`, principal
@@ -47,6 +51,10 @@ export const PATIENT_CONTAINERS = [
   'coverage',
   'address',
   'services',
+  // Spec 017 (D299.3): o projeto terapêutico deixa de ser placeholder. As versões vivem em rota
+  // própria (`/patients/:id/therapeutic-projects`, `therapeuticProjectAccess.ts`); aqui o container
+  // existe para o marcador constante na ficha (lex C8) e para a trilha de containers servidos.
+  'therapeuticProject',
 ] as const;
 export type PatientContainer = (typeof PATIENT_CONTAINERS)[number];
 
@@ -60,6 +68,7 @@ export const PATIENT_CONTAINER_RESOURCE: Readonly<Record<PatientContainer, strin
   coverage: 'patient_coverage',
   address: 'patient_address',
   services: 'patient_services',
+  therapeuticProject: 'patient_therapeutic_project',
 };
 
 export const patientContainerCell = (container: PatientContainer, action: 'read' | 'write'): string =>
@@ -82,6 +91,9 @@ const DETAIL_FIELDS: Readonly<Record<PatientContainer, readonly string[]>> = {
   coverage: ['affiliateId', 'insuranceInformed', 'insuranceVerified', 'insuranceVerifiedCodes', 'insuranceVerifiedEntries'],
   address: ['addresses', 'cityLocality', 'province', 'zoneNeighborhood'],
   services: ['contractedServices', 'serviceType', 'serviceStartDate'],
+  // Nenhum campo na ficha: as versões saem pela rota própria. O marcador `redacted.therapeuticProject`
+  // continua constante (lex C8) — "existe projeto" não vaza por ausência de campo.
+  therapeuticProject: [],
 };
 
 /** O que cada container carrega na LISTA/Kanban (`toAdminPatientListItem`). */

@@ -66,7 +66,17 @@ describe('projectPatientDetailByContainers', () => {
     }
     expect(out.redacted).toEqual({
       identity: true, clinical: true, careTeam: true, family: true, chat: true, coverage: true, address: true, services: true,
+      // Spec 017: o container existe na ficha SÓ pelo marcador — nenhum campo (as versões têm rota própria).
+      therapeuticProject: true,
     });
+  });
+
+  it('spec 017 — therapeuticProject: sem célula o marcador sai; com ela, nada muda na ficha (não há campo)', () => {
+    const sem = projectPatientDetailByContainers(ficha, ['patient:read', 'patient_identity:read']);
+    expect(sem.redacted).toHaveProperty('therapeuticProject', true);
+    const com = projectPatientDetailByContainers(ficha, ['patient:read', 'patient_identity:read', 'patient_therapeutic_project:read']);
+    expect(com.redacted).not.toHaveProperty('therapeuticProject');
+    expect(Object.keys(com).sort()).toEqual(Object.keys(sem).sort());
   });
 
   it('só o container concedido sobrevive — familiares sem clínica', () => {

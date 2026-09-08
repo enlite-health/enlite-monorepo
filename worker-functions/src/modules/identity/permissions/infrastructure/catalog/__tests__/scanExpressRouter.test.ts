@@ -297,6 +297,16 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // 07/09 — o preço do serviço contratado deixou de ser "papel admin" e virou célula de DADO;
       // não é portão de rota (a rota abre com `patient_services:*`), então SÓ existe por aqui.
       'patient_contract_value:read',
+      // Spec 017 (08/09) — projeto terapêutico e os 3 catálogos: declaradas por rota no app real
+      // (`adminTherapeuticProjectsRoutes.ts`); o fixture deste teste não as declara.
+      'patient_therapeutic_project:read',
+      'patient_therapeutic_project:write',
+      'catalog_therapeutic_objectives:read',
+      'catalog_therapeutic_objectives:write',
+      'catalog_therapeutic_activities:read',
+      'catalog_therapeutic_activities:write',
+      'catalog_pathology_types:read',
+      'catalog_pathology_types:write',
     ]);
   });
 

@@ -28,6 +28,8 @@ import {
   AdminPatientAddressesController,
   AdminInsuranceProvidersController,
   AdminPatientContractedServicesController,
+  AdminTherapeuticProjectsController,
+  createAdminTherapeuticProjectsRoutes,
   createAdminPatientsRoutes,
   PublicLeadsController,
 } from '@modules/case';
@@ -505,6 +507,12 @@ app.use(
     new AdminPatientDiagnosesController(),
     new AdminTerminologySearchController(),
   ),
+);
+
+// ========== Admin Therapeutic Projects (spec 017) ==========
+app.use(
+  '/api/admin',
+  createAdminTherapeuticProjectsRoutes(new AdminTherapeuticProjectsController(), authMiddleware, permissionMiddleware),
 );
 
 // ========== Admin Dedup + Test Fixtures (extraído p/ bootstrap/) ==========
