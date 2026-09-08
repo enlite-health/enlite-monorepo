@@ -41,16 +41,18 @@ function ServiceRow({
   addresses,
   onOpen,
   onEdit,
+  podeEditar,
   t,
 }: {
   service: PatientContractedServiceDetail;
   addresses: PatientAddressDetail[];
   onOpen: (service: PatientContractedServiceDetail) => void;
   onEdit: (service: PatientContractedServiceDetail) => void;
+  /** A MESMA régua do "+ Nuevo" e do "Editar" do detalhe, lida uma vez no card. */
+  podeEditar: boolean;
   t: (k: string, o?: any) => string;
 }) {
   const tc = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.contractedServicesCard.${k}`, o);
-  const { allowed: podeEditar } = useActionGate('patient_services', 'write');
   const address = addresses.find((a) => a.id === service.addressId) ?? null;
   const scheduleText = contractedServiceScheduleText(service.schedule);
 
@@ -150,6 +152,9 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
   const { t } = useTranslation();
   const [editing, setEditing] = useState<ContractedServiceTarget | null>(null);
   const [selected, setSelected] = useState<PatientContractedServiceDetail | null>(null);
+  // D269/D286: as TRÊS portas para o PATCH (+ Nuevo, lápis da linha, "Editar" do detalhe) seguem a
+  // mesma célula — o gate do sync main→stage (08/09) achou a terceira aberta.
+  const { allowed: podeEditar } = useActionGate('patient_services', 'write');
   const services = patient.contractedServices;
   // Checklist "falta serviço" → formulário de um serviço NOVO.
   useAutoOpenDrawer(focusRequest, 'CONTRACTED_SERVICE', () => setEditing({ kind: 'new' }));
@@ -204,7 +209,7 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
           service={selected}
           addresses={patient.addresses}
           onClose={() => setSelected(null)}
-          onEdit={() => { const id = selected.id; setSelected(null); setEditing({ kind: 'edit', serviceId: id }); }}
+          onEdit={podeEditar ? () => { const id = selected.id; setSelected(null); setEditing({ kind: 'edit', serviceId: id }); } : undefined}
         />
       )}
 
@@ -228,7 +233,7 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
             </TableRow>
           ) : (
             services.map((svc) => (
-              <ServiceRow key={svc.id} service={svc} addresses={patient.addresses} onOpen={setSelected} onEdit={(s) => setEditing({ kind: 'edit', serviceId: s.id })} t={t} />
+              <ServiceRow key={svc.id} service={svc} addresses={patient.addresses} onOpen={setSelected} onEdit={(s) => setEditing({ kind: 'edit', serviceId: s.id })} podeEditar={podeEditar} t={t} />
             ))
           )}
         </TableBody>

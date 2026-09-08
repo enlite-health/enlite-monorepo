@@ -241,11 +241,21 @@ export class AdminPatientsMapController {
     const body = parseMapBody(PatientsMapBodySchema, req, res);
     if (!body) return;
 
+    // A busca por NOME é leitura de identidade: filtrar pelo nome em claro e devolver o pino
+    // (coordenada do domicílio) com `NOME_REDIGIDO` seria um oráculo — "existe alguém chamado X, e
+    // mora aqui". Achado do gate do sync main→stage (08/09/2026): a redação (stage, D286 fase 2) e a
+    // busca (main, 07/09) nunca tinham se encontrado. Sem `patient_identity:read`, `search` é 403
+    // nomeando o campo (molde do `hourlyValue` no serviço contratado), nunca ignorado em silêncio.
+    const identidade = canReadPatientContainer(cellsOfRequest(req), 'identity');
+    if (body.search && !identidade) {
+      res.status(403).json({ success: false, error: 'Forbidden', details: { field: 'search' } });
+      return;
+    }
+
     try {
       const { sql, params } = buildPatientsMapQuery(body);
       const result = await this.db.query<PatientMapRow>(sql, params);
 
-      const identidade = canReadPatientContainer(cellsOfRequest(req), 'identity');
       const data: PatientMapPoint[] = result.rows.map((row) => {
         const lat = num(row.lat);
         const lng = num(row.lng);

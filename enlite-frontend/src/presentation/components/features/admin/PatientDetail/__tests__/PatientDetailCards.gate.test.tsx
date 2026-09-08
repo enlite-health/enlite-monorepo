@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import { patientDetailFixture } from './patientDetailFixture';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
@@ -145,6 +145,10 @@ describe('D269/D286 — write-gate nos botões Editar/Novo (célula do CONTAINER
     render(<ServicosContratadosCard patient={{ ...patientDetailFixture, contractedServices: [SERVICO] }} />);
     expect(screen.queryByTestId('new-service-btn')).not.toBeInTheDocument();
     expect(screen.queryByTestId('contracted-service-edit-svc-gate')).not.toBeInTheDocument();
+    // A 3ª porta: clicar na linha abre o detalhe, e o "Editar" de lá também não existe.
+    fireEvent.click(screen.getByTestId('contracted-service-row-svc-gate'));
+    expect(screen.getByTestId('contracted-service-detail-drawer')).toBeInTheDocument();
+    expect(screen.queryByTestId('contracted-service-detail-edit')).not.toBeInTheDocument();
   });
 
   it('ServicosContratadosCard: enforcement=on, com a célula de escrita do container → new-service-btn e o lápis existem', () => {
@@ -152,5 +156,7 @@ describe('D269/D286 — write-gate nos botões Editar/Novo (célula do CONTAINER
     render(<ServicosContratadosCard patient={{ ...patientDetailFixture, contractedServices: [SERVICO] }} />);
     expect(screen.getByTestId('new-service-btn')).toBeInTheDocument();
     expect(screen.getByTestId('contracted-service-edit-svc-gate')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('contracted-service-row-svc-gate'));
+    expect(screen.getByTestId('contracted-service-detail-edit')).toBeInTheDocument();
   });
 });
