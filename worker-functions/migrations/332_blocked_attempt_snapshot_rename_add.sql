@@ -37,9 +37,26 @@
 BEGIN;
 
 -- Nomes que dizem a verdade: o valor é do momento da TENTATIVA, não de agora.
+-- ⚠️ A coluna nova herda TUDO que a antiga tinha, não só o tipo. A varredura de
+-- dependências (08/09) achou duas coisas que um `ADD COLUMN` ingênuo perderia em
+-- silêncio no DROP da 333:
+--   · `worker_blocked_applications_reason_check` — CHECK dos 3 motivos do gate
+--   · `DEFAULT '[]'::jsonb` em missing_fields
+-- Perder um CHECK não quebra nada na hora: só deixa entrar valor inválido depois,
+-- que é a falha silenciosa outra vez.
 ALTER TABLE worker_blocked_applications
   ADD COLUMN IF NOT EXISTS blocked_reason_at_attempt VARCHAR(64),
-  ADD COLUMN IF NOT EXISTS missing_fields_at_attempt JSONB;
+  ADD COLUMN IF NOT EXISTS missing_fields_at_attempt JSONB DEFAULT '[]'::jsonb;
+
+-- Os 3 valores são os do GATE (`WorkerEligibilityReason`). `eligible` NÃO entra:
+-- ele é estado calculado na leitura e nunca é gravado — se um dia aparecer aqui,
+-- é bug, e o CHECK é quem avisa.
+ALTER TABLE worker_blocked_applications
+  DROP CONSTRAINT IF EXISTS worker_blocked_applications_reason_at_attempt_check;
+ALTER TABLE worker_blocked_applications
+  ADD CONSTRAINT worker_blocked_applications_reason_at_attempt_check
+  CHECK (blocked_reason_at_attempt IS NULL OR blocked_reason_at_attempt IN
+         ('worker_not_found', 'registration_incomplete', 'worker_disabled'));
 
 -- Backfill do histórico inteiro. Sem WHERE: são ~1.700 linhas, e deixar linha
 -- antiga com o campo novo nulo criaria um terceiro estado ("não sei se foi
