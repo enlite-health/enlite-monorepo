@@ -14,42 +14,14 @@
  *   5. as outras duas rotas abrem com o próprio título;
  *   6. foto da tabela e da modal com a recusa (`toHaveScreenshot`).
  */
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { runSQL } from '../helpers/patient-detail-c-helper';
+import { loginComoHumano } from '../helpers/login-humano';
 
-const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
-const EMULATOR_PROJECT = 'demo-no-project';
 const STAFF_EMAIL = `e2e.cat.${Date.now()}@enlite.health`;
-const STAFF_PASSWORD = 'TestAdmin123!';
 const STAMP = Date.now().toString(36);
 const LABEL = `Objetivo e2e ${STAMP}`;
 
-async function loginComoHumano(page: Page): Promise<void> {
-  const signUp = await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=any`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: STAFF_EMAIL, password: STAFF_PASSWORD, returnSecureToken: true }),
-  });
-  const auth = signUp.ok ? signUp : await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=any`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: STAFF_EMAIL, password: STAFF_PASSWORD, returnSecureToken: true }),
-  });
-  expect(auth.ok).toBe(true);
-  const { localId } = (await auth.json()) as { localId: string };
-  const claims = await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/projects/${EMULATOR_PROJECT}/accounts:update`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer owner' },
-    body: JSON.stringify({ localId, customAttributes: JSON.stringify({ role: 'admin' }) }),
-  });
-  expect(claims.ok).toBe(true);
-  runSQL(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, email_verified) VALUES ('${localId}', '${STAFF_EMAIL}', 'E2E Catalogo', 'admin', true, true) ON CONFLICT (firebase_uid) DO NOTHING`);
-  await page.addInitScript(() => localStorage.setItem('i18nextLng', 'es'));
-  await page.goto('/admin/login');
-  await page.locator('input[type="email"]').click();
-  await page.keyboard.type(STAFF_EMAIL);
-  await page.locator('input[type="password"]').click();
-  await page.keyboard.type(STAFF_PASSWORD);
-  await page.getByRole('button', { name: /Iniciar sesi/i }).click();
-  await expect(page).not.toHaveURL(/login/, { timeout: 30_000 });
-}
 
 function ativos(): number {
   return Number(runSQL(`SELECT count(*) FROM therapeutic_specific_objectives WHERE active`));
@@ -73,7 +45,7 @@ test.describe('spec 017 — catálogo do projeto terapêutico: um HUMANO lista, 
   });
 
   test('a rota existe, lista o seed, cria pela tela (banco confirma) e recusa o duplicado (409 na tela, banco intacto)', async ({ page }) => {
-    await loginComoHumano(page);
+    await loginComoHumano(page, STAFF_EMAIL, 'E2E Catalogo');
     await page.goto('/admin/catalogos/objetivos-especificos');
     await expect(page.getByRole('heading', { name: 'Objetivos específicos del proyecto terapéutico' })).toBeVisible({ timeout: 30_000 });
     const table = page.getByTestId('therapeutic-catalog-table');
@@ -133,7 +105,7 @@ test.describe('spec 017 — catálogo do projeto terapêutico: um HUMANO lista, 
   });
 
   test('caminho alternativo: desativar pela tela → "Inactiva", banco com active=false, e o formulário do projeto deixa de oferecer a opção', async ({ page }) => {
-    await loginComoHumano(page);
+    await loginComoHumano(page, STAFF_EMAIL, 'E2E Catalogo');
     await page.goto('/admin/catalogos/objetivos-especificos');
     await expect(page.getByTestId(`therapeutic-catalog-status-${novoId}`)).toContainText('Activa', { timeout: 30_000 });
     const patched = page.waitForResponse((r) => r.request().method() === 'PATCH' && r.url().includes(`/therapeutic-catalogs/specific-objectives/${novoId}`));
@@ -161,7 +133,7 @@ test.describe('spec 017 — catálogo do projeto terapêutico: um HUMANO lista, 
   });
 
   test('as outras duas rotas abrem com o próprio título (mesmo componente, `kind` diferente)', async ({ page }) => {
-    await loginComoHumano(page);
+    await loginComoHumano(page, STAFF_EMAIL, 'E2E Catalogo');
     await page.goto('/admin/catalogos/actividades');
     await expect(page.getByRole('heading', { name: 'Rutina y actividades del proyecto terapéutico' })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('therapeutic-catalog-table').locator('[data-testid^="therapeutic-catalog-row-"]')).toHaveCount(Number(runSQL(`SELECT count(*) FROM therapeutic_activities`)));

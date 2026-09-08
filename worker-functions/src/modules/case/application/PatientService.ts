@@ -276,8 +276,8 @@ export class PatientService {
     patientId: string,
     section: PatientSection,
     data: PatientGeneralSectionData | PatientClinicalSectionData | PatientCoverageSectionData | PatientRelatedInput,
-    /** Quem está editando (uid do staff) — hoje só a seção clínica usa (autoria de additional_comments). */
-    actor?: { uid: string },
+    /** Quem está editando: uid do staff (autoria) e as células (417: decide o que a seção cobertura preserva). */
+    actor?: { uid: string; cells?: readonly string[] | null },
   ): Promise<{ id: string; updated: true }> {
     return writePatientSection(
       {

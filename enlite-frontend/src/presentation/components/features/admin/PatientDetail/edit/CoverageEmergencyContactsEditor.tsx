@@ -28,12 +28,19 @@ interface Props {
   disabled?: boolean;
 }
 
+/** Os dois campos de UMA linha, julgados num lugar só: alimenta o `aria-invalid` da linha e a trava do Guardar. */
+export function contactFieldErrors(c: PatientCoverageEmergencyContactInput): { name: boolean; phone: boolean } {
+  const name = c.name.trim().length;
+  const phone = c.phone.trim().length;
+  return {
+    name: name === 0 || name > COVERAGE_EMERGENCY_CONTACT_NAME_MAX,
+    phone: phone === 0 || phone > COVERAGE_EMERGENCY_CONTACT_PHONE_MAX,
+  };
+}
+
 /** Linha inválida = nome ou telefone vazio, ou acima do teto — o Guardar do drawer trava enquanto houver uma. */
 export function invalidCoverageContacts(list: PatientCoverageEmergencyContactInput[]): boolean {
-  return list.some((c) =>
-    c.name.trim().length === 0 || c.name.trim().length > COVERAGE_EMERGENCY_CONTACT_NAME_MAX
-    || c.phone.trim().length === 0 || c.phone.trim().length > COVERAGE_EMERGENCY_CONTACT_PHONE_MAX,
-  );
+  return list.some((c) => { const e = contactFieldErrors(c); return e.name || e.phone; });
 }
 
 export function CoverageEmergencyContactsEditor({ value, onChange, disabled = false }: Props): JSX.Element {
@@ -63,10 +70,10 @@ export function CoverageEmergencyContactsEditor({ value, onChange, disabled = fa
       {value.length === 0 && <Text size="sm" color="muted" data-testid="pcv-contacts-empty">{te('coverageContactEmpty')}</Text>}
 
       {value.map((c, i) => {
-        const nameBad = c.name.trim().length === 0 || c.name.trim().length > COVERAGE_EMERGENCY_CONTACT_NAME_MAX;
-        const phoneBad = c.phone.trim().length === 0 || c.phone.trim().length > COVERAGE_EMERGENCY_CONTACT_PHONE_MAX;
+        const { name: nameBad, phone: phoneBad } = contactFieldErrors(c);
         return (
-          <div key={i} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1fr)_auto] gap-2 items-start" data-testid={`pcv-contact-${i}`}>
+          // lex C2.1: nome de profissional é texto — a linha inteira leva a máscara do Clarity (molde EquipeTratanteCard).
+          <div key={i} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1fr)_auto] gap-2 items-start" data-clarity-mask="True" data-testid={`pcv-contact-${i}`}>
             <Select
               id={`pcv-contact-kind-${i}`}
               inputSize="compact"
@@ -100,7 +107,6 @@ export function CoverageEmergencyContactsEditor({ value, onChange, disabled = fa
                 onChange={(e) => update(i, { phone: e.target.value })}
                 disabled={disabled}
                 aria-invalid={phoneBad}
-                data-clarity-mask="True"
                 data-testid={`pcv-contact-phone-${i}`}
               />
             </div>

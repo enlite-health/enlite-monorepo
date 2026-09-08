@@ -21,8 +21,6 @@ export interface PdfCoverage {
 }
 
 export interface PdfService {
-  /** Código do serviço vinculado — decide as seções fixas VIII/IX (só CAREGIVER; D301.1). */
-  serviceCode: string;
   serviceLabel: string;
   deviceLabels: string[];
   providerProfile: string | null;
@@ -56,6 +54,12 @@ export interface TherapeuticProjectPdfInput {
   emergencyContacts: PdfContact[] | null;
   /** Emergencia de la cobertura médica — bloco PRÓPRIO, sob `patient_coverage:read` (lex C5); nunca somado ao de cima. */
   coverageEmergencyContacts: PdfCoverageContact[] | null;
+  /** lex C3: o profissional direto foi retido (sem `patient_care_team:read`) — o bloco acima diz isso, nunca finge completude. */
+  coverageDirectProfessionalRedacted: boolean;
+  /** Bulkhead (D167): a leitura dos contatos falhou — imprime "indisponível", nunca "—". */
+  coverageEmergencyContactsUnavailable: boolean;
+  /** `service_code` congelado NA VERSÃO (417): as seções fixas VIII/IX (texto constante) dependem só disto. */
+  fixedSectionsServiceCode: string;
   /** Modalidade já traduzida; `null` = versão anterior à 417. */
   modalityLabel: string | null;
   careTeam: string[] | null;

@@ -20,40 +20,12 @@ import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/patient-detail-c-helper';
+import { loginComoHumano } from '../helpers/login-humano';
 
-const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
-const EMULATOR_PROJECT = 'demo-no-project';
 const STAFF_EMAIL = `e2e.tp.${Date.now()}@enlite.health`;
-const STAFF_PASSWORD = 'TestAdmin123!';
 const ICD_URI = 'http://id.who.int/icd/entity/e2e-tp-017';
 const ICD_TITLE = 'Trastorno sintético de prueba 017';
 
-async function loginComoHumano(page: Page): Promise<void> {
-  const signUp = await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=any`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: STAFF_EMAIL, password: STAFF_PASSWORD, returnSecureToken: true }),
-  });
-  const auth = signUp.ok ? signUp : await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=any`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: STAFF_EMAIL, password: STAFF_PASSWORD, returnSecureToken: true }),
-  });
-  expect(auth.ok).toBe(true);
-  const { localId } = (await auth.json()) as { localId: string };
-  const claims = await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/projects/${EMULATOR_PROJECT}/accounts:update`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer owner' },
-    body: JSON.stringify({ localId, customAttributes: JSON.stringify({ role: 'admin' }) }),
-  });
-  expect(claims.ok).toBe(true);
-  runSQL(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, email_verified) VALUES ('${localId}', '${STAFF_EMAIL}', 'E2E Proyecto', 'admin', true, true) ON CONFLICT (firebase_uid) DO NOTHING`);
-  await page.addInitScript(() => localStorage.setItem('i18nextLng', 'es'));
-  await page.goto('/admin/login');
-  await page.locator('input[type="email"]').click();
-  await page.keyboard.type(STAFF_EMAIL);
-  await page.locator('input[type="password"]').click();
-  await page.keyboard.type(STAFF_PASSWORD);
-  await page.getByRole('button', { name: /Iniciar sesi/i }).click();
-  await expect(page).not.toHaveURL(/login/, { timeout: 30_000 });
-}
 
 /** Clica como um humano, digita, devolve o que a TELA mostra. */
 async function digitar(page: Page, selector: string, texto: string): Promise<string> {
@@ -106,7 +78,7 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
   });
 
   test('sem serviço contratado ativo, o card diz por quê e "Nuevo" fica desabilitado', async ({ page }) => {
-    await loginComoHumano(page);
+    await loginComoHumano(page, STAFF_EMAIL, 'E2E Proyecto');
     await page.goto(`/admin/patients/${seed.patientId}`);
     await expect(page.getByTestId('projeto-terapeutico-card')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('tp-empty')).toContainText('servicio contratado activo');
@@ -119,7 +91,7 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     serviceId = runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, created_by, updated_by) VALUES ('${seed.patientId}', 'CAREGIVER', 20, '${seed.addressId}', 'e2e-017', 'e2e-017') RETURNING id`).split('\n')[0].trim();
     expect(serviceId).toMatch(/^[0-9a-f-]{36}$/);
 
-    await loginComoHumano(page);
+    await loginComoHumano(page, STAFF_EMAIL, 'E2E Proyecto');
     await page.goto(`/admin/patients/${seed.patientId}`);
     const card = page.getByTestId('projeto-terapeutico-card');
     await expect(card).toBeVisible({ timeout: 30_000 });
@@ -249,7 +221,7 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     const antes = Number(runSQL(`SELECT count(*) FROM patient_therapeutic_projects WHERE patient_id = '${seed.patientId}'`));
     expect(antes).toBe(2);
 
-    await loginComoHumano(page);
+    await loginComoHumano(page, STAFF_EMAIL, 'E2E Proyecto');
     await page.goto(`/admin/patients/${seed.patientId}`);
     await expect(page.getByTestId('projeto-terapeutico-card')).toBeVisible({ timeout: 30_000 });
     await page.getByTestId('tp-new-btn').click();

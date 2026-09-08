@@ -196,6 +196,10 @@ export interface PatientDetail {
    * tem a célula (redação, D113); `[]` = tem a célula e a lista está vazia. Backend anterior à 417: ausente.
    */
   coverageEmergencyContacts?: PatientCoverageEmergencyContact[] | null;
+  /** lex C3: o ator lê a cobertura mas NÃO a equipe — o profissional direto foi RETIDO (a lista acima não é completa). */
+  coverageDirectProfessionalRedacted?: boolean | null;
+  /** Bulkhead (D167): a leitura dos contatos FALHOU no servidor — não é "sem contatos". */
+  coverageEmergencyContactsUnavailable?: boolean | null;
   addresses: PatientAddressDetail[];
   professionals: PatientProfessionalDetail[];
   /** Serviços contratados (spec 013, bloco C) — contrato do detalhe. */

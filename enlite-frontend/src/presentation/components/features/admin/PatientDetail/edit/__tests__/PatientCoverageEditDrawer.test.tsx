@@ -116,8 +116,9 @@ describe('PatientCoverageEditDrawer', () => {
     expect(onSaved).toHaveBeenCalledTimes(2);
   });
 
-  it('417 — linha inválida (nome vazio) trava o "Salvar"; remover a linha destrava e manda `[]`; `null` (sem célula) e ausente começam vazios', async () => {
-    render(<PatientCoverageEditDrawer patient={{ ...patient, coverageEmergencyContacts: null }} onClose={vi.fn()} onSaved={vi.fn()} />);
+  it('417 — linha inválida (nome vazio) trava o "Salvar"; remover a linha destrava; backend anterior (ausente) começa vazio', async () => {
+    const { coverageEmergencyContacts: _c, ...semCampo } = patient as typeof patient & { coverageEmergencyContacts?: unknown };
+    render(<PatientCoverageEditDrawer patient={semCampo as typeof patient} onClose={vi.fn()} onSaved={vi.fn()} />);
     expect(screen.getByTestId('pcv-contacts-empty')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('pcv-contact-add'));
     expect((screen.getByTestId('pcv-save') as HTMLButtonElement).disabled).toBe(true);
@@ -128,6 +129,15 @@ describe('PatientCoverageEditDrawer', () => {
     // Voltou ao estado inicial (vazio): nada mudou → fecha sem PATCH.
     fireEvent.click(screen.getByTestId('pcv-save'));
     await waitFor(() => expect(updatePatientSection).not.toHaveBeenCalled());
+  });
+
+  it('417 / gate — `null` (sem `patient_coverage:read`): a lista NÃO é oferecida (aviso no lugar) e nada dela vai no payload', async () => {
+    render(<PatientCoverageEditDrawer patient={{ ...patient, coverageEmergencyContacts: null }} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getByTestId('pcv-contacts-redacted')).toHaveTextContent(te('coverageContactsRedacted'));
+    expect(screen.queryByTestId('pcv-emergency-contacts')).toBeNull();
+    fireEvent.change(screen.getByTestId('pcv-affiliate'), { target: { value: 'AF-3' } });
+    fireEvent.click(screen.getByTestId('pcv-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'coverage', { affiliateId: 'AF-3' }));
   });
 
   it('417 — apagar um contato existente manda a lista SEM ele (o servidor substitui a lista inteira); Escape com a lista mexida pede confirmação', async () => {

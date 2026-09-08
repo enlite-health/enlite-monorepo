@@ -6,6 +6,7 @@
  *   C4  sem `patient_coverage:read` o campo sai `null` e `redacted.coverage = true`;
  *   C6  `created_by` = uid do ator do PATCH;
  *   C7  o país é FORÇADO do paciente também no UPDATE direto;
+ *   gate 08/09: quem não vê o profissional direto não o apaga (preservado) nem o cadastra (403); quem não lê não escreve (403);
  *   zod kind fechado (400), lista inteira substituída (`[]` apaga), e escrita exige `patient_coverage:write` (403).
  */
 import { Pool } from 'pg';
@@ -52,6 +53,7 @@ describe('417 — contatos de emergência da cobertura: API sob engine (HTTP rea
       await pool.query(`DELETE FROM iam.permissions WHERE resource = $1 AND action = $2`, [resource, action]);
     }
     await pool.query(`DELETE FROM patients WHERE id = $1`, [PATIENT]);
+    await limparIamFixtures(pool, { uids: ['pcec-write-only'], grupos: ['PCEC Write-only'] });
   }
 
   beforeAll(async () => {
@@ -153,12 +155,15 @@ describe('417 — contatos de emergência da cobertura: API sob engine (HTTP rea
     const soCobertura = await chamar('GET', DETAIL(), U.soCobertura);
     expect(soCobertura.status).toBe(200);
     expect(soCobertura.body.data.coverageEmergencyContacts.map((c: any) => c.kind)).toEqual(['AMBULANCE', 'EMERGENCY_CENTER']);
+    expect(soCobertura.body.data.coverageDirectProfessionalRedacted).toBe(true); // a lista NÃO é completa — e o corpo diz
+    expect(completa.body.data.coverageDirectProfessionalRedacted).toBe(false);
     expect(JSON.stringify(soCobertura.body)).not.toContain(TELEFONE_PROFISSIONAL);
     expect(JSON.stringify(soCobertura.body)).not.toContain('Dra. Sintética');
 
     const semCobertura = await chamar('GET', DETAIL(), U.semCobertura);
     expect(semCobertura.status).toBe(200);
     expect(semCobertura.body.data.coverageEmergencyContacts).toBeNull();
+    expect(semCobertura.body.data.coverageDirectProfessionalRedacted).toBeNull();
     expect(semCobertura.body.data.redacted).toHaveProperty('coverage', true);
     expect(JSON.stringify(semCobertura.body)).not.toContain('Ambulancia sintética');
   });
@@ -180,14 +185,32 @@ describe('417 — contatos de emergência da cobertura: API sob engine (HTTP rea
     expect(paises).toEqual(['AR']);
   });
 
-  it('5. a lista é substituída INTEIRA: PATCH com 1 contato deixa 1; PATCH com [] deixa 0; chave ausente não toca', async () => {
+  it('5. 🔒 gate 08/09 — SÓ cobertura substitui a lista mas o profissional direto que ele não vê é PRESERVADO; mandar um DIRECT_PROFESSIONAL sem equipe → 403; sem `patient_coverage:read` → 403', async () => {
+    // Antes: AMBULANCE, DIRECT_PROFESSIONAL, EMERGENCY_CENTER. O ator só-cobertura vê 2 e manda 1.
     expect((await chamar('PATCH', COVERAGE(), U.soCobertura, { emergencyContacts: [CONTATOS[2]] })).status).toBe(200);
-    expect((await linhas()).map((x) => x.kind)).toEqual(['EMERGENCY_CENTER']);
+    expect((await linhas()).map((x) => x.kind).sort()).toEqual(['DIRECT_PROFESSIONAL', 'EMERGENCY_CENTER']);
+    // Ele tenta cadastrar um profissional direto: recusado nomeando a célula da equipe; nada muda.
+    const semEquipe = await chamar('PATCH', COVERAGE(), U.soCobertura, { emergencyContacts: [CONTATOS[1]] });
+    expect(semEquipe.status).toBe(403);
+    expect(semEquipe.body.details).toEqual({ field: 'emergencyContacts', cell: 'patient_care_team:read' });
+    expect((await linhas()).map((x) => x.kind).sort()).toEqual(['DIRECT_PROFESSIONAL', 'EMERGENCY_CENTER']);
+    // Quem escreve sem ler a cobertura: recusado nomeando a célula de leitura.
+    await pool.query(`INSERT INTO users (firebase_uid, email, display_name, role, status, is_active, tenant_id) VALUES ('pcec-write-only', 'pcec-write-only@e2e.local', 'Write only', 'admin', 'ACTIVE', true, $1) ON CONFLICT DO NOTHING`, [TENANT_E2E]);
+    await grupoComCelulas(pool, { nome: 'PCEC Write-only', uid: 'pcec-write-only', celulas: [['patient', 'read'], ['patient_coverage', 'write']] });
+    const semLeitura = await chamar('PATCH', COVERAGE(), 'pcec-write-only', { emergencyContacts: [] });
+    expect(semLeitura.status).toBe(403);
+    expect(semLeitura.body.details).toEqual({ field: 'emergencyContacts', cell: 'patient_coverage:read' });
+    expect((await linhas())).toHaveLength(2);
+    await limparIamFixtures(pool, { uids: ['pcec-write-only'], grupos: ['PCEC Write-only'] });
+  });
+
+  it('6. a lista é substituída INTEIRA por quem vê tudo: PATCH com [] deixa 0; chave ausente não toca', async () => {
     expect((await chamar('PATCH', COVERAGE(), U.completa, { affiliateId: 'AF-417' })).status).toBe(200);
-    expect((await linhas()).map((x) => x.kind)).toEqual(['EMERGENCY_CENTER']);
+    expect((await linhas())).toHaveLength(2);
     expect((await chamar('PATCH', COVERAGE(), U.completa, { emergencyContacts: [] })).status).toBe(200);
     expect(await linhas()).toHaveLength(0);
     const detail = await chamar('GET', DETAIL(), U.completa);
     expect(detail.body.data.coverageEmergencyContacts).toEqual([]);
+    expect(detail.body.data.coverageEmergencyContactsUnavailable).toBe(false);
   });
 });

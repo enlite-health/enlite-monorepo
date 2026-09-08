@@ -130,7 +130,7 @@ export function TherapeuticProjectForm({ services, patientDiagnoses, catalogs, f
               value={modality}
               onValueChange={(v) => touch(setModality)(v as TherapeuticModality)}
               placeholder={tf('modalityPlaceholder')}
-              options={THERAPEUTIC_MODALITIES.map((m) => ({ value: m, label: tc(`modalityOptions.${m}`) }))}
+              options={THERAPEUTIC_MODALITIES.map((m) => ({ value: m, label: t(`admin.patients.detail.therapeuticProjectCard.modalityOptions.${m}`, m) }))}
               data-testid="tp-modality"
             />
           </FormField>

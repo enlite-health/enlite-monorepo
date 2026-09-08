@@ -65,18 +65,28 @@ export class PatientCoverageEmergencyContactRepository {
   }
 
   /**
-   * Substitui a lista inteira do paciente (o caminho do drawer). Linha sem nome ou sem telefone é
-   * descartada aqui — o zod já recusou antes; isto é a segunda trava, não a primeira.
+   * Substitui a lista do paciente (o caminho do drawer). Linha sem nome ou sem telefone é descartada aqui —
+   * o zod já recusou antes; isto é a segunda trava, não a primeira.
+   *
+   * `keepKinds` (lex C3, gate 08/09): os tipos que o ATOR NÃO ENXERGA (o profissional direto, sem
+   * `patient_care_team:read`) não são apagados nem aceitos — a tela dele nunca os mostrou, então a lista
+   * que ele manda não os contém, e "substituir a lista inteira" apagaria o que ele nunca viu (D167: o
+   * vazio que significa duas coisas apaga dado).
    */
   async replaceAll(
     patientId: string,
     contacts: PatientCoverageEmergencyContactInput[],
     actorUid: string,
     client?: PoolClient,
+    opts: { keepKinds?: readonly CoverageEmergencyContactKind[] } = {},
   ): Promise<void> {
     const executor = client ?? this.pool;
-    await executor.query('DELETE FROM patient_coverage_emergency_contacts WHERE patient_id = $1', [patientId]);
-    const valid = contacts.filter((c) => c.name?.trim() && c.phone?.trim());
+    const keep = opts.keepKinds ?? [];
+    await executor.query(
+      'DELETE FROM patient_coverage_emergency_contacts WHERE patient_id = $1 AND NOT (kind = ANY($2::text[]))',
+      [patientId, keep],
+    );
+    const valid = contacts.filter((c) => c.name?.trim() && c.phone?.trim() && !keep.includes(c.kind));
     if (valid.length === 0) return;
 
     const phones = await Promise.all(valid.map((c) => this.enc.encrypt(c.phone.trim())));

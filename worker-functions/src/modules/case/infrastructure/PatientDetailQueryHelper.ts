@@ -12,7 +12,8 @@ import {
   type ActiveVacancy,
 } from '../application/AddressAvailabilityCalculator';
 import { mapContractedServices } from './ContractedServiceDetailMapper';
-import { PatientCoverageEmergencyContactRepository } from './PatientCoverageEmergencyContactRepository';
+import { PatientCoverageEmergencyContactRepository, type CoverageEmergencyContactRow } from './PatientCoverageEmergencyContactRepository';
+import { reportError } from '@shared/logging';
 import { ALL_PATIENT_CONTAINERS_READABLE, type PatientContainerReads } from '../application/patientContainerAccess';
 import { phoneMatchesResponsible } from '../domain/PhoneMatch';
 
@@ -119,7 +120,7 @@ const PATIENT_DETAIL_SQL = `
     AND p.deleted_at IS NULL
 `;
 
-async function fetchRelated(pool: Pool, patientId: string) {
+async function fetchRelated(pool: Pool, patientId: string, enc: KMSEncryptionService) {
   return Promise.all([
     pool.query(
       `SELECT id, first_name, last_name, relationship,
@@ -164,8 +165,16 @@ async function fetchRelated(pool: Pool, patientId: string) {
     // Serviços contratados (spec 013, bloco C) — contrato do detalhe. hourlyValue vem CRU aqui;
     // a redação por papel (lex C-c.4) acontece no controller (ponto único).
     pool.query(`SELECT * FROM patient_contracted_services WHERE patient_id = $1 ORDER BY active DESC, created_at ASC`, [patientId]),
-    // 417 (D301): só o ciphertext; decifra depois, e só sob `patient_coverage:read`.
-    new PatientCoverageEmergencyContactRepository(pool).fetchRows(patientId, pool),
+    // 417 (D301): só o ciphertext; decifra depois, e só sob `patient_coverage:read`. Bulkhead (molde dos
+    // diagnósticos, D263 C4): a 417 é migration MANUAL em prod e o merge deploya o código — se a tabela ainda
+    // não existir, a ficha NÃO cai; o campo sai "indisponível" (D167: não-li ≠ vazio), com erro reportado.
+    new PatientCoverageEmergencyContactRepository(pool, enc).fetchRows(patientId, pool).then(
+      (rows) => ({ rows, unavailable: false }),
+      (err: unknown) => {
+        reportError(err instanceof Error ? err : new Error(String(err)), { source: 'PatientDetailQueryHelper:coverageEmergencyContacts', patientId });
+        return { rows: [] as CoverageEmergencyContactRow[], unavailable: true };
+      },
+    ),
   ]);
 }
 
@@ -259,7 +268,7 @@ export async function fetchPatientDetail(
   if (patientResult.rows.length === 0) return null;
 
   const p = patientResult.rows[0];
-  const [responsibleRows, addressRows, professionalRows, vacancyRows, contractedServiceRows, coverageContactRows] = await fetchRelated(pool, id);
+  const [responsibleRows, addressRows, professionalRows, vacancyRows, contractedServiceRows, coverageContactRows] = await fetchRelated(pool, id, encryptionService);
 
   const vacancies: ActiveVacancy[] = vacancyRows.rows.map((v: any) => ({
     id: v.id,
@@ -280,7 +289,7 @@ export async function fetchPatientDetail(
     // quando o ator lê os DOIS containers — cobertura e equipe.
     reads.coverage
       ? new PatientCoverageEmergencyContactRepository(pool, encryptionService).decryptRows(
-          coverageContactRows.filter((r) => r.kind !== 'DIRECT_PROFESSIONAL' || reads.careTeam),
+          coverageContactRows.rows.filter((r) => r.kind !== 'DIRECT_PROFESSIONAL' || reads.careTeam),
         )
       : Promise.resolve([]),
   ]);
@@ -339,6 +348,10 @@ export async function fetchPatientDetail(
     lastCaseNumber: p.lastCaseNumber != null ? Number(p.lastCaseNumber) : null,
     responsibles,
     coverageEmergencyContacts,
+    // Marcador CONSTANTE (não depende de haver linha): com cobertura mas sem equipe, o profissional direto
+    // foi retido — a tela e o PDF dizem isso em vez de mostrar a lista como se fosse completa.
+    coverageDirectProfessionalRedacted: reads.coverage && !reads.careTeam,
+    coverageEmergencyContactsUnavailable: coverageContactRows.unavailable,
     addresses,
     professionals,
     contractedServices,

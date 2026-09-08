@@ -174,7 +174,7 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
   it('1. new → V.1.0 com autor por NOME (nunca uid), snapshot dos catálogos com texto', async () => {
     const r = await chamar('POST', BASE(), U.completa, { mode: 'new', version: versionBody() });
     expect(r.status).toBe(201);
-    expect(r.body.data).toMatchObject({ major: 1, minor: 0, version: 'V.1.0', createdByName: 'Ana Sintética', editedFromVersionId: null, modality: 'IN_PERSON' });
+    expect(r.body.data).toMatchObject({ major: 1, minor: 0, version: 'V.1.0', createdByName: 'Ana Sintética', editedFromVersionId: null, modality: 'IN_PERSON', contractedServiceCode: 'CAREGIVER' });
     // D301.3a: a modalidade fica na linha (417) — e o trigger de imutabilidade a protege como as demais.
     expect((await pool.query(`SELECT modality FROM patient_therapeutic_projects WHERE id = $1`, [r.body.data.id])).rows[0].modality).toBe('IN_PERSON');
     expect(r.body.data).not.toHaveProperty('createdBy');

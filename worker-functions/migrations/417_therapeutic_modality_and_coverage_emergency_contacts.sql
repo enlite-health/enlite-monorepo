@@ -1,6 +1,8 @@
 -- 417 — Respostas da Ana Joulie (gestão, 08/09/2026) ao PDF do projeto terapêutico (spec 017; D301):
 --   (a) `patient_therapeutic_projects.modality` — modalidade do acompanhamento: presencial, on-line
---       ou híbrida ("vc pode usar para modalidade: presencial, on-line e hibrida").
+--       ou híbrida ("vc pode usar para modalidade: presencial, on-line e hibrida");
+--   (a2) `contracted_service_code` — o tipo do serviço congelado na versão (as seções fixas do PDF são
+--       do serviço de cuidadores — item 1 da Ana — e a versão é imutável).
 --   (b) `patient_coverage_emergency_contacts` — os contatos de EMERGÊNCIA DA COBERTURA MÉDICA do
 --       paciente ("pode ter varios contatos: profissional direto, ambulancia, central de atendimento
 --       de emergencia"). O outro campo de emergência do PDF — familiar/pessoa responsável — já
@@ -16,6 +18,34 @@ ALTER TABLE patient_therapeutic_projects
   ADD CONSTRAINT ptp_modality_check CHECK (modality IS NULL OR modality IN ('IN_PERSON', 'ONLINE', 'HYBRID'));
 COMMENT ON COLUMN patient_therapeutic_projects.modality IS
   'Modalidade do acompanhamento (IN_PERSON | ONLINE | HYBRID) — Ana 08/09; NULL só em versão anterior à 417.';
+
+-- ── (a2) contracted_service_code — o TIPO do serviço CONGELADO na versão (gate 08/09) ────────
+-- As seções fixas VIII/IX do PDF (texto legal, sem dado pessoal) dependem do tipo de serviço (D301.1).
+-- Lido ao vivo do serviço, (i) exigiria `patient_services:read` para imprimir texto constante e (ii) mudaria
+-- retroativamente o documento de uma versão IMUTÁVEL se o serviço trocasse de tipo. Congela-se aqui, no
+-- INSERT, pelo mesmo trigger que confere a posse do serviço; entra na lista de imutabilidade.
+ALTER TABLE patient_therapeutic_projects ADD COLUMN IF NOT EXISTS contracted_service_code TEXT NULL;
+COMMENT ON COLUMN patient_therapeutic_projects.contracted_service_code IS
+  'service_code do serviço contratado NO MOMENTO da versão (snapshot; decide as seções fixas do PDF). Preenchido por trigger.';
+
+CREATE OR REPLACE FUNCTION fn_patient_therapeutic_projects_service_do_paciente()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_code TEXT;
+BEGIN
+  SELECT s.service_code INTO v_code
+    FROM patient_contracted_services s
+   WHERE s.id = NEW.contracted_service_id AND s.patient_id = NEW.patient_id;
+  IF v_code IS NULL THEN
+    RAISE EXCEPTION 'ptp_service_de_outro_paciente: contracted_service_id não pertence ao paciente'
+      USING ERRCODE = '23503';
+  END IF;
+  NEW.contracted_service_code := v_code;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+ALTER TABLE patient_therapeutic_projects ALTER COLUMN contracted_service_code SET NOT NULL;
 
 CREATE OR REPLACE FUNCTION fn_patient_therapeutic_projects_imutavel()
 RETURNS TRIGGER AS $$
@@ -34,6 +64,7 @@ BEGIN
      OR NEW.edited_from_version_id IS DISTINCT FROM OLD.edited_from_version_id
      OR NEW.contracted_service_id IS DISTINCT FROM OLD.contracted_service_id
      OR NEW.modality IS DISTINCT FROM OLD.modality
+     OR NEW.contracted_service_code IS DISTINCT FROM OLD.contracted_service_code
      OR NEW.diagnoses IS DISTINCT FROM OLD.diagnoses
      OR NEW.clinical_context IS DISTINCT FROM OLD.clinical_context
      OR NEW.general_objective IS DISTINCT FROM OLD.general_objective

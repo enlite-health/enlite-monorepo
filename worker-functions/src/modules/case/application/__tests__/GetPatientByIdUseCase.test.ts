@@ -67,6 +67,8 @@ const mockPatient: PatientDetailRow = {
   phoneMatchesResponsible: false,
   lastCaseNumber: null,
   coverageEmergencyContacts: [],
+  coverageDirectProfessionalRedacted: false,
+  coverageEmergencyContactsUnavailable: false,
   responsibles: [
     {
       id: 'r1',

@@ -116,6 +116,7 @@ const VERSAO: TherapeuticProjectVersion = {
   version: 'V.1.0',
   editedFromVersionId: null,
   contractedServiceId: 'svc-2',
+  contractedServiceCode: 'CAREGIVER',
   modality: 'IN_PERSON',
   diagnoses: [{ uri: 'urn:icd:B', title: 'Diagnóstico B' }],
   clinicalContext: 'contexto de origem',

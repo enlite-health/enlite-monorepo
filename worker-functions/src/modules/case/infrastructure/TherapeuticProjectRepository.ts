@@ -20,6 +20,7 @@ interface VersionRow {
   minor: number;
   edited_from_version_id: string | null;
   contracted_service_id: string;
+  contracted_service_code: string;
   modality: TherapeuticModality | null;
   diagnoses: TherapeuticDiagnosis[];
   clinical_context: string;
@@ -104,6 +105,7 @@ function toVersion(r: VersionRow): TherapeuticProjectVersion {
     version: versionLabel(r.major, r.minor),
     editedFromVersionId: r.edited_from_version_id,
     contractedServiceId: r.contracted_service_id,
+    contractedServiceCode: r.contracted_service_code,
     modality: r.modality ?? null,
     diagnoses: r.diagnoses,
     clinicalContext: r.clinical_context,

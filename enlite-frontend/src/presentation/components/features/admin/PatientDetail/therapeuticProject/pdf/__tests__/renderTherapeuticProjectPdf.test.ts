@@ -25,6 +25,7 @@ const version: TherapeuticProjectVersion = {
   version: 'V.1.2',
   editedFromVersionId: 'v-0',
   contractedServiceId: 's-1',
+  contractedServiceCode: 'CAREGIVER',
   modality: 'IN_PERSON',
   diagnoses: [{ uri: 'u', code: '8B11', title: 'Hemiplejía sintética de prueba' }],
   clinicalContext: 'SINTESIS-CLINICA-SINTETICA texto de contexto para el test.',
@@ -47,13 +48,16 @@ const fullInput: TherapeuticProjectPdfInput = {
   version,
   identification: { fullName: 'PACIENTE-SINTETICO Apellido', documentLabel: 'DNI 00.000.000', birthDate: '1938-03-29', age: 88 },
   coverage: { insurance: 'Cobertura Sintética', affiliateId: '0000-TEST' },
-  service: { serviceCode: 'CAREGIVER', serviceLabel: 'Cuidador', deviceLabels: ['Domicilio'], providerProfile: 'Perfil sintético del prestador', scheduleText: 'Lunes a domingo, 24 hs', careLocationLabel: 'Domicilio' },
+  service: { serviceLabel: 'Cuidador', deviceLabels: ['Domicilio'], providerProfile: 'Perfil sintético del prestador', scheduleText: 'Lunes a domingo, 24 hs', careLocationLabel: 'Domicilio' },
   addressText: 'Calle Sintética 123, 4º A, CABA',
   emergencyContacts: [{ name: 'RESPONSABLE-SINTETICO', relationship: 'hijo', phone: '11 0000 0000', email: 'resp@example.test' }],
   coverageEmergencyContacts: [
     { kindLabel: 'Ambulancia', name: 'AMBULANCIA-SINTETICA', phone: '0800 000 0001' },
     { kindLabel: 'Profesional directo', name: 'PROFESIONAL-DIRECTO-SINTETICO', phone: '11 0000 0002' },
   ],
+  coverageDirectProfessionalRedacted: false,
+  coverageEmergencyContactsUnavailable: false,
+  fixedSectionsServiceCode: 'CAREGIVER',
   modalityLabel: 'Presencial',
   careTeam: ['Equipo tratante sintético'],
   issuedAtText: '08/09/2026 10:00',
@@ -131,7 +135,7 @@ describe('PDF do projeto terapêutico — bytes reais, texto extraído (spec 017
       ...fullInput,
       version: { ...version, annulledAt: '2026-09-08T00:00:00Z', annulledByName: 'Ana', annulReason: 'erro', createdByName: null },
       coverage: { insurance: null, affiliateId: null },
-      service: { serviceCode: 'CAREGIVER', serviceLabel: 'Cuidador', deviceLabels: [], providerProfile: null, scheduleText: null, careLocationLabel: null },
+      service: { serviceLabel: 'Cuidador', deviceLabels: [], providerProfile: null, scheduleText: null, careLocationLabel: null },
       emergencyContacts: [],
       coverageEmergencyContacts: [],
       modalityLabel: null,
@@ -161,17 +165,32 @@ describe('PDF do projeto terapêutico — bytes reais, texto extraído (spec 017
     expect(inverso).toContain('AMBULANCIA-SINTETICA');
   });
 
-  it('D301.1 — serviço AT: as seções VIII/IX saem com o rótulo "no aplicable" e SEM o texto do cuidador; sem célula de serviço, redigidas', async () => {
-    const at = await texto({ ...fullInput, service: { ...fullInput.service!, serviceCode: 'AT', serviceLabel: 'Acompañante Terapéutico' } });
+  it('D301.1 — serviço AT (congelado na VERSÃO): as seções VIII/IX saem com o rótulo "no aplicable" e SEM o texto do cuidador; sem célula de serviço o texto do cuidador CONTINUA (é constante)', async () => {
+    const at = await texto({ ...fullInput, fixedSectionsServiceCode: 'AT' });
     expect(at.text).toContain('Funciones y límites del cuidador');
     expect(at.text).toContain('Regla fundamental de EnLite Care');
     expect(at.text.split(PDF_LABELS.sectionNotForService).length - 1).toBe(2);
     expect(at.text).not.toContain('El cuidador NO debe');
     expect(at.text).not.toContain('Por cuestiones Terapéuticas');
     const semServico = await texto({ ...fullInput, service: null });
-    expect(semServico.text).not.toContain('El cuidador NO debe');
+    expect(semServico.text).toContain('El cuidador NO debe'); // texto fixo não depende de célula
+    expect(semServico.text).toContain('Por cuestiones Terapéuticas');
     expect(semServico.text).not.toContain(PDF_LABELS.sectionNotForService);
-    expect(semServico.text.split(PDF_LABELS.sectionRedacted).length - 1).toBeGreaterThanOrEqual(3);
+    expect(semServico.text).toContain(PDF_LABELS.sectionRedacted); // só o bloco do serviço (dados) é redigido
+  });
+
+  it('lex C3 / D167 — profissional direto retido: o rótulo sai junto da lista; leitura indisponível: "No disponible", nunca "—"', async () => {
+    const retido = await texto({ ...fullInput, coverageEmergencyContacts: [fullInput.coverageEmergencyContacts![0]], coverageDirectProfessionalRedacted: true });
+    expect(retido.text).toContain('Ambulancia: AMBULANCIA-SINTETICA');
+    expect(retido.text).toContain(PDF_LABELS.directProfessionalWithheld);
+    expect(retido.text).not.toContain('PROFESIONAL-DIRECTO-SINTETICO');
+    const indisponivel = await texto({ ...fullInput, coverageEmergencyContacts: [], coverageEmergencyContactsUnavailable: true });
+    expect(indisponivel.text).toContain(`Emergencia de la cobertura médica: ${PDF_LABELS.fieldUnavailable}`);
+    expect(indisponivel.text).not.toContain('Emergencia de la cobertura médica: —');
+    expect(fullInput.coverageDirectProfessionalRedacted).toBe(false);
+    const { text } = await texto(fullInput);
+    expect(text).not.toContain(PDF_LABELS.directProfessionalWithheld);
+    expect(text).not.toContain(PDF_LABELS.fieldUnavailable);
   });
 
   it('cobertura, serviço e endereço redigidos (containers separados): cada um vira o rótulo de omissão', async () => {

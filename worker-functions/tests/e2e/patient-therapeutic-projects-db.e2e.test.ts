@@ -137,6 +137,7 @@ describe('416 — projeto terapêutico versionado e imutável (banco real)', () 
       `diagnoses = '[]'::jsonb`,
       `minor = 9`,
       `modality = 'ONLINE'`, // 417: a modalidade entrou na lista do trigger (D301.3a)
+      `contracted_service_code = 'AT'`, // 417: o tipo do serviço é congelado na versão (gate 08/09)
     ]) {
       await expect(admin.query(`UPDATE patient_therapeutic_projects SET ${set} WHERE id = $1`, [v.id]))
         .rejects.toThrow(/ptp_imutavel/);
@@ -209,6 +210,14 @@ describe('416 — projeto terapêutico versionado e imutável (banco real)', () 
     const semModalidade = await insertVersion({ major: 7, modality: null });
     expect(semModalidade.id).toBeTruthy();
     const comModalidade = await insertVersion({ major: 8, modality: 'HYBRID' });
-    expect((await admin.query(`SELECT modality FROM patient_therapeutic_projects WHERE id = $1`, [comModalidade.id])).rows[0].modality).toBe('HYBRID');
+    const linha = (await admin.query(`SELECT modality, contracted_service_code FROM patient_therapeutic_projects WHERE id = $1`, [comModalidade.id])).rows[0];
+    expect(linha.modality).toBe('HYBRID');
+    expect(linha.contracted_service_code).toBe('CAREGIVER'); // preenchido pelo trigger a partir do serviço
+    // Trocar o tipo do serviço DEPOIS não muda a versão (imutável; a próxima versão congela o novo tipo).
+    await admin.query(`UPDATE patient_contracted_services SET service_code = 'AT' WHERE id = $1`, [serviceId]);
+    expect((await admin.query(`SELECT contracted_service_code FROM patient_therapeutic_projects WHERE id = $1`, [comModalidade.id])).rows[0].contracted_service_code).toBe('CAREGIVER');
+    const depois = await insertVersion({ major: 9 });
+    expect((await admin.query(`SELECT contracted_service_code FROM patient_therapeutic_projects WHERE id = $1`, [depois.id])).rows[0].contracted_service_code).toBe('AT');
+    await admin.query(`UPDATE patient_contracted_services SET service_code = 'CAREGIVER' WHERE id = $1`, [serviceId]);
   });
 });

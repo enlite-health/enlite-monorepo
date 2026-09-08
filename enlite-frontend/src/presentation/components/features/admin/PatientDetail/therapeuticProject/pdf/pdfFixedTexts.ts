@@ -54,6 +54,10 @@ export const PDF_LABELS = {
   sectionRedacted: 'Sección no incluida: el usuario que emitió este documento no tiene permiso para este dato.',
   /** D301.1 (Ana): o texto fixo VIII/IX é do serviço de CUIDADORES; nos demais serviços a seção sai omitida COM rótulo. */
   sectionNotForService: 'Sección no aplicable a este servicio: el texto está definido para el servicio de cuidadores.',
+  /** lex C3: o profissional direto existe ou não, mas o emissor não pode vê-lo — o documento diz isso. */
+  directProfessionalWithheld: 'Profesional directo: no incluido (el usuario que emitió este documento no tiene permiso para este dato).',
+  /** Bulkhead D167: "não consegui ler" nunca vira "—". */
+  fieldUnavailable: 'No disponible al momento de la emisión — verificar en la ficha.',
   /** Versão anulada — não deve ser exportada (C5), mas se o for, o documento diz. */
   annulled: 'VERSIÓN ANULADA',
 } as const;

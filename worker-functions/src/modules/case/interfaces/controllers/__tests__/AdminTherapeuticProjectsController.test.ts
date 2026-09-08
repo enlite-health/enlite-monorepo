@@ -58,6 +58,7 @@ const VERSAO = {
   editedFromVersionId: null,
   contractedServiceId: SERVICE_ID,
   modality: 'IN_PERSON',
+  contractedServiceCode: 'CAREGIVER',
   diagnoses: [{ uri: 'u', code: '6A02', title: 'TEA' }],
   clinicalContext: TEXTO_CLINICO,
   generalObjective: 'mejorar autonomía',

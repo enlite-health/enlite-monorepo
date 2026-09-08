@@ -88,7 +88,7 @@ const DETAIL_FIELDS: Readonly<Record<PatientContainer, readonly string[]>> = {
   careTeam: ['professionals'],
   family: ['responsibles', 'phoneMatchesResponsible'],
   chat: ['chatIds', 'familyChatId', 'providersChatId'],
-  coverage: ['affiliateId', 'insuranceInformed', 'insuranceVerified', 'insuranceVerifiedCodes', 'insuranceVerifiedEntries', 'coverageEmergencyContacts'],
+  coverage: ['affiliateId', 'insuranceInformed', 'insuranceVerified', 'insuranceVerifiedCodes', 'insuranceVerifiedEntries', 'coverageEmergencyContacts', 'coverageDirectProfessionalRedacted', 'coverageEmergencyContactsUnavailable'],
   address: ['addresses', 'cityLocality', 'province', 'zoneNeighborhood'],
   services: ['contractedServices', 'serviceType', 'serviceStartDate'],
   // Nenhum campo na ficha: as versões saem pela rota própria. O marcador `redacted.therapeuticProject`

@@ -103,6 +103,7 @@ const versao = (over: Partial<TherapeuticProjectVersion> = {}): TherapeuticProje
   version: 'V.1.0',
   editedFromVersionId: null,
   contractedServiceId: 'svc-1',
+  contractedServiceCode: 'CAREGIVER',
   modality: 'IN_PERSON',
   diagnoses: [],
   clinicalContext: 'contexto',

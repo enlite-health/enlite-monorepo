@@ -58,6 +58,8 @@ export interface TherapeuticProjectVersion {
   version: string;
   editedFromVersionId: string | null;
   contractedServiceId: string;
+  /** `service_code` CONGELADO na versão (417, trigger): decide as seções fixas do PDF sem depender de célula nem do serviço vivo. */
+  contractedServiceCode: string;
   /** `null` só em versão anterior à migration 417 (imutável: não se retroalimenta). */
   modality: TherapeuticModality | null;
   diagnoses: TherapeuticDiagnosis[];

@@ -31,6 +31,8 @@ export interface TherapeuticProjectVersion {
   version: string;
   editedFromVersionId: string | null;
   contractedServiceId: string;
+  /** `service_code` CONGELADO na versão (417): decide as seções fixas do PDF sem célula de serviço nem serviço vivo. */
+  contractedServiceCode: string;
   /** Modalidade (D301, Ana 08/09): presencial, on-line ou híbrida. `null` só em versão anterior à 417. */
   modality: TherapeuticModality | null;
   diagnoses: TherapeuticDiagnosis[] | null;

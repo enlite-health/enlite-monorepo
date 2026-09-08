@@ -17,7 +17,7 @@ function t(key: string, opts?: any): string {
 }
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t }) }));
 
-import { CoverageEmergencyContactsEditor, invalidCoverageContacts } from '../CoverageEmergencyContactsEditor';
+import { CoverageEmergencyContactsEditor, invalidCoverageContacts, contactFieldErrors } from '../CoverageEmergencyContactsEditor';
 
 const te = (k: string): string => t(`admin.patients.editDrawer.${k}`);
 const tc = (k: string): string => t(`admin.patients.detail.coverageCard.${k}`);
@@ -57,8 +57,8 @@ describe('CoverageEmergencyContactsEditor', () => {
     expect(onChange).toHaveBeenLastCalledWith([lista[0], { kind: 'EMERGENCY_CENTER', name: 'Central', phone: '911' }]);
     fireEvent.click(screen.getByTestId('pcv-contact-remove-0'));
     expect(onChange).toHaveBeenLastCalledWith([lista[1]]);
-    // lex C6 do Clarity: o telefone carrega a máscara.
-    expect(screen.getByTestId('pcv-contact-phone-0').getAttribute('data-clarity-mask')).toBe('True');
+    // lex C2.1: a LINHA inteira (nome de profissional é texto) carrega a máscara do Clarity.
+    expect(screen.getByTestId('pcv-contact-0').getAttribute('data-clarity-mask')).toBe('True');
   });
 
   it('linha inválida marca `aria-invalid` no campo certo; `disabled` trava tudo; teto de 20 trava o "Agregar"', () => {
@@ -81,5 +81,8 @@ describe('CoverageEmergencyContactsEditor', () => {
     expect(invalidCoverageContacts([{ kind: 'AMBULANCE', name: 'A', phone: '  ' }])).toBe(true);
     expect(invalidCoverageContacts([{ kind: 'AMBULANCE', name: 'a'.repeat(201), phone: '1' }])).toBe(true);
     expect(invalidCoverageContacts([{ kind: 'AMBULANCE', name: 'A', phone: '1'.repeat(41) }])).toBe(true);
+    // O predicado por campo é o MESMO que alimenta o aria-invalid da linha.
+    expect(contactFieldErrors({ kind: 'AMBULANCE', name: '', phone: '1' })).toEqual({ name: true, phone: false });
+    expect(contactFieldErrors({ kind: 'AMBULANCE', name: 'A', phone: ' ' })).toEqual({ name: false, phone: true });
   });
 });

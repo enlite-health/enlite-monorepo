@@ -54,18 +54,30 @@ describe('PatientService.updatePatientSection — bloco B', () => {
     expect(mockReplaceCodes).toHaveBeenCalledWith(PID, [], mockClient);
   });
 
-  it('coverage: emergencyContacts (417, D301) vai ao repositório na MESMA transação com o uid do ator; sem a chave não toca; sem ator carimba o sentinela', async () => {
+  it('coverage: emergencyContacts (417, D301) vai ao repositório na MESMA transação com o uid do ator; sem a chave não toca; sem ator → erro (lex C6)', async () => {
     const lista = [{ kind: 'AMBULANCE' as const, name: 'Ambulancia', phone: '0800' }];
     await service.updatePatientSection(PID, 'coverage', { emergencyContacts: lista }, { uid: 'u-staff' });
-    expect(mockReplaceContacts).toHaveBeenCalledWith(PID, lista, 'u-staff', mockClient);
+    expect(mockReplaceContacts).toHaveBeenCalledWith(PID, lista, 'u-staff', mockClient, { keepKinds: [] });
     expect(sqls()[0]).toBe('BEGIN'); expect(sqls().at(-1)).toBe('COMMIT');
     expect(sqls().some((s) => /^UPDATE patients/.test(s))).toBe(false); // só a lista veio: nenhum escalar
     jest.clearAllMocks();
     await service.updatePatientSection(PID, 'coverage', { affiliateId: 'AF-2' });
     expect(mockReplaceContacts).not.toHaveBeenCalled();
     jest.clearAllMocks();
-    await service.updatePatientSection(PID, 'coverage', { emergencyContacts: [] });
-    expect(mockReplaceContacts).toHaveBeenCalledWith(PID, [], 'admin:sem-ator', mockClient);
+    await expect(service.updatePatientSection(PID, 'coverage', { emergencyContacts: [] })).rejects.toThrow(/exige ator/);
+    expect(mockReplaceContacts).not.toHaveBeenCalled();
+  });
+
+  it('coverage: lex C3 — ator SEM `patient_care_team:read` preserva o profissional direto (keepKinds); com a célula ou sem engine (cells null) substitui tudo', async () => {
+    const lista = [{ kind: 'AMBULANCE' as const, name: 'Ambulancia', phone: '0800' }];
+    await service.updatePatientSection(PID, 'coverage', { emergencyContacts: lista }, { uid: 'u', cells: ['patient_coverage:read', 'patient_coverage:write'] });
+    expect(mockReplaceContacts).toHaveBeenCalledWith(PID, lista, 'u', mockClient, { keepKinds: ['DIRECT_PROFESSIONAL'] });
+    jest.clearAllMocks();
+    await service.updatePatientSection(PID, 'coverage', { emergencyContacts: lista }, { uid: 'u', cells: ['patient_coverage:read', 'patient_coverage:write', 'patient_care_team:read'] });
+    expect(mockReplaceContacts).toHaveBeenCalledWith(PID, lista, 'u', mockClient, { keepKinds: [] });
+    jest.clearAllMocks();
+    await service.updatePatientSection(PID, 'coverage', { emergencyContacts: lista }, { uid: 'u', cells: null });
+    expect(mockReplaceContacts).toHaveBeenCalledWith(PID, lista, 'u', mockClient, { keepKinds: [] });
   });
 
   it('clinical: deviceTypes vai ao repositório de dispositivo (só quando a chave veio); o upsert clínico NÃO recebe deviceType', async () => {

@@ -64,14 +64,13 @@ export function buildTherapeuticProjectPdfInput(args: {
   const pdfService = reads.services
     ? service
       ? {
-          serviceCode: service.serviceCode,
           serviceLabel: tEs(`${SERVICE_KEY}.${service.serviceCode}`, service.serviceCode),
           deviceLabels: service.deviceTypes.map((d) => tEs(`${DEVICE_KEY}.${d}`, d)),
           providerProfile: service.professionalProfile,
           scheduleText: contractedServiceScheduleText(service.schedule),
           careLocationLabel: service.careLocation ? tEs(`${CARE_LOCATION_KEY}.${service.careLocation}`, service.careLocation) : null,
         }
-      : { serviceCode: '', serviceLabel: '—', deviceLabels: [], providerProfile: null, scheduleText: null, careLocationLabel: null }
+      : { serviceLabel: '—', deviceLabels: [], providerProfile: null, scheduleText: null, careLocationLabel: null }
     : null;
 
   // Endereço: o do SERVIÇO escolhido; sem vínculo, o principal do paciente. Sem célula de endereço, omitido.
@@ -94,7 +93,10 @@ export function buildTherapeuticProjectPdfInput(args: {
     : null;
 
   // D301.3b / lex C5: bloco PRÓPRIO sob a célula de COBERTURA — nunca somado ao dos familiares. O profissional
-  // direto já vem filtrado pelo servidor (só com equipe também, C3); aqui não há o que filtrar.
+  // direto já vem filtrado pelo servidor (só com equipe também, C3) — e o servidor DIZ que filtrou
+  // (`coverageDirectProfessionalRedacted`); "campo ausente" (backend anterior à 417) e "leitura falhou"
+  // viram `unavailable`, nunca `[]` (D167: não-li ≠ vazio).
+  const contactsMissing = patient.coverageEmergencyContacts === undefined || patient.coverageEmergencyContactsUnavailable === true;
   const coverageEmergencyContacts = reads.coverage
     ? (patient.coverageEmergencyContacts ?? []).map((c) => ({
         kindLabel: tEs(`${COVERAGE_CONTACT_KIND_KEY}.${c.kind}`, c.kind),
@@ -115,6 +117,9 @@ export function buildTherapeuticProjectPdfInput(args: {
     addressText,
     emergencyContacts,
     coverageEmergencyContacts,
+    coverageDirectProfessionalRedacted: reads.coverage && patient.coverageDirectProfessionalRedacted === true,
+    coverageEmergencyContactsUnavailable: reads.coverage && contactsMissing,
+    fixedSectionsServiceCode: version.contractedServiceCode,
     modalityLabel: version.modality ? tEs(`${MODALITY_KEY}.${version.modality}`, version.modality) : null,
     careTeam,
     issuedAtText: formatIssuedAt(now),

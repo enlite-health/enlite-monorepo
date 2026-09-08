@@ -66,6 +66,12 @@ function Redacted(): JSX.Element {
   return <Text style={styles.redacted}>{PDF_LABELS.sectionRedacted}</Text>;
 }
 
+/** Seção fixa VIII/IX: só o serviço de cuidadores a carrega; nos demais, rótulo (uma regra, dois lugares). */
+function FixedSection({ serviceCode, children }: { serviceCode: string; children: JSX.Element }): JSX.Element {
+  if (serviceCode !== FIXED_SECTIONS_SERVICE_CODE) return <Text style={styles.redacted}>{PDF_LABELS.sectionNotForService}</Text>;
+  return children;
+}
+
 function Header({ logoSrc }: { logoSrc?: string }): JSX.Element {
   return (
     <View style={styles.header} fixed>
@@ -147,12 +153,18 @@ export function TherapeuticProjectPdfDocument({ input }: { input: TherapeuticPro
           />
         ) : <Redacted />}
         {input.coverageEmergencyContacts ? (
-          <Field
-            label={PDF_LABELS.coverageEmergencyContact}
-            value={input.coverageEmergencyContacts.length === 0 ? null : input.coverageEmergencyContacts
-              .map((c) => `${c.kindLabel}: ${c.name} - ${c.phone}`)
-              .join('. ')}
-          />
+          <>
+            <Field
+              label={PDF_LABELS.coverageEmergencyContact}
+              value={input.coverageEmergencyContactsUnavailable
+                ? PDF_LABELS.fieldUnavailable
+                : input.coverageEmergencyContacts.length === 0 ? null : input.coverageEmergencyContacts
+                  .map((c) => `${c.kindLabel}: ${c.name} - ${c.phone}`)
+                  .join('. ')}
+            />
+            {/* lex C3: a lista não é completa para este emissor — o documento diz, em vez de fingir. */}
+            {input.coverageDirectProfessionalRedacted && <Text style={styles.redacted}>{PDF_LABELS.directProfessionalWithheld}</Text>}
+          </>
         ) : <Redacted />}
 
         {/* II — só CID-11 (Gabriel Q5); sob patient_clinical:read (C7). */}
@@ -175,12 +187,10 @@ export function TherapeuticProjectPdfDocument({ input }: { input: TherapeuticPro
         <SectionTitle>{PDF_SECTIONS.activities}</SectionTitle>
         {v.activities.map((a) => <Bullet key={a.id}>{a.label}</Bullet>)}
 
-        {/* VIII e IX — texto fixo do serviço de CUIDADORES (Ana, 08/09 — D301.1): noutro serviço, omitido com rótulo.
-            Sem `patient_services:read` não se sabe o serviço: sai redigido, como as demais seções de container. */}
+        {/* VIII e IX — texto fixo (constante, sem dado pessoal) do serviço de CUIDADORES (Ana, 08/09 — D301.1).
+            Decide pelo `service_code` CONGELADO na versão (417): não depende de célula nem do serviço vivo. */}
         <SectionTitle>{PDF_SECTIONS.caregiverLimits}</SectionTitle>
-        {input.service === null ? <Redacted /> : input.service.serviceCode !== FIXED_SECTIONS_SERVICE_CODE ? (
-          <Text style={styles.redacted}>{PDF_LABELS.sectionNotForService}</Text>
-        ) : (
+        <FixedSection serviceCode={input.fixedSectionsServiceCode}>
           <>
             {CAREGIVER_LIMITS.map((g) => (
               <View key={g.title}>
@@ -195,17 +205,19 @@ export function TherapeuticProjectPdfDocument({ input }: { input: TherapeuticPro
             {NOT_DOMESTIC.map((it) => <Bullet key={it}>{it}</Bullet>)}
             <Text style={[styles.paragraph, { marginTop: 4 }]}>{NOT_DOMESTIC_OUTRO}</Text>
           </>
-        )}
+        </FixedSection>
 
         <SectionTitle>{PDF_SECTIONS.fundamentalRule}</SectionTitle>
-        {input.service === null ? <Redacted /> : input.service.serviceCode !== FIXED_SECTIONS_SERVICE_CODE ? (
-          <Text style={styles.redacted}>{PDF_LABELS.sectionNotForService}</Text>
-        ) : FUNDAMENTAL_RULE.map((g) => (
-          <View key={g.title}>
-            <Text style={styles.subsection}>{g.title}</Text>
-            {g.items.map((it) => <Bullet key={it}>{it}</Bullet>)}
-          </View>
-        ))}
+        <FixedSection serviceCode={input.fixedSectionsServiceCode}>
+          <>
+            {FUNDAMENTAL_RULE.map((g) => (
+              <View key={g.title}>
+                <Text style={styles.subsection}>{g.title}</Text>
+                {g.items.map((it) => <Bullet key={it}>{it}</Bullet>)}
+              </View>
+            ))}
+          </>
+        </FixedSection>
 
         <SectionTitle>{PDF_SECTIONS.projectData}</SectionTitle>
         <Text><Text style={styles.label}>{PDF_LABELS.elaboratedBy}: </Text>{v.createdByName ?? PDF_LABELS.notInformed}</Text>

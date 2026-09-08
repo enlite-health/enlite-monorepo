@@ -19,6 +19,14 @@
 
 import type { Pool } from 'pg';
 import type { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+
+// 417 bulkhead: o erro da tabela ausente é REPORTADO (nunca engolido) — o espião prova que ele saiu.
+const mockReportError = jest.fn();
+jest.mock('@shared/logging', () => ({
+  reportError: (...a: unknown[]) => mockReportError(...a),
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), child: () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }) },
+}));
+
 import { fetchPatientDetail } from '../PatientDetailQueryHelper';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -457,16 +465,46 @@ describe('fetchPatientDetail — containers sem célula NÃO passam pelo KMS (D2
     expect((enc.decrypt as jest.Mock).mock.calls.map((c) => c[0])).toEqual(['enc-cov-1']);
     expect(soCobertura?.coverageEmergencyContacts).toEqual([{ id: 'c1', kind: 'AMBULANCE', name: 'Ambulancia', phone: 'dec(enc-cov-1)', sortOrder: 0 }]);
     expect(soCobertura?.responsibles).toEqual([]);
+    expect(soCobertura?.coverageDirectProfessionalRedacted).toBe(true); // marcador constante: a lista NÃO é completa
     // Cobertura + equipe: os dois saem.
     const enc2 = makeEncryptionService();
     const ambos = await fetchPatientDetail(comContato(), enc2, PATIENT_ID, reads(['coverage', 'careTeam']));
     expect((enc2.decrypt as jest.Mock).mock.calls.map((c) => c[0])).toEqual(['enc-cov-1', 'enc-cov-2']);
     expect(ambos?.coverageEmergencyContacts?.map((c) => c.kind)).toEqual(['AMBULANCE', 'DIRECT_PROFESSIONAL']);
+    expect(ambos?.coverageDirectProfessionalRedacted).toBe(false);
     // Só família: nada da cobertura é decifrado.
     const enc3 = makeEncryptionService();
     const sem = await fetchPatientDetail(comContato(), enc3, PATIENT_ID, reads(['family']));
     expect((enc3.decrypt as jest.Mock).mock.calls.map((c) => c[0])).not.toContain('enc-cov-1');
     expect(sem?.coverageEmergencyContacts).toEqual([]);
+    expect(sem?.coverageDirectProfessionalRedacted).toBe(false); // sem cobertura o campo inteiro é redigido pelo container
+  });
+
+  it('417 bulkhead (D167): a tabela de contatos ainda não existe (417 manual em prod) → a ficha NÃO cai, campo `[]` + `coverageEmergencyContactsUnavailable: true`, erro reportado', async () => {
+    const queryImpl = jest.fn();
+    queryImpl
+      .mockResolvedValueOnce({ rows: [basePatientRow()] })
+      .mockResolvedValueOnce({ rows: [] }) // responsibles
+      .mockResolvedValueOnce({ rows: [] }) // addresses
+      .mockResolvedValueOnce({ rows: [] }) // professionals
+      .mockResolvedValueOnce({ rows: [] }) // vacancies
+      .mockResolvedValueOnce({ rows: [] }) // contracted services
+      .mockRejectedValueOnce(new Error('relation "patient_coverage_emergency_contacts" does not exist')); // coverage contacts
+    const result = await fetchPatientDetail(makePool(queryImpl), makeEncryptionService(), PATIENT_ID, reads(['coverage', 'careTeam']));
+    expect(result?.coverageEmergencyContacts).toEqual([]);
+    expect(result?.coverageEmergencyContactsUnavailable).toBe(true);
+    expect(mockReportError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ source: 'PatientDetailQueryHelper:coverageEmergencyContacts' }));
+    // Rejeição que não é Error (driver antigo): vira Error no relato.
+    const q2 = jest.fn();
+    q2.mockResolvedValueOnce({ rows: [basePatientRow()] });
+    for (let i = 0; i < 5; i++) q2.mockResolvedValueOnce({ rows: [] });
+    q2.mockRejectedValueOnce('boom');
+    mockReportError.mockClear();
+    await fetchPatientDetail(makePool(q2), makeEncryptionService(), PATIENT_ID, reads(['coverage']));
+    expect(mockReportError.mock.calls[0][0]).toBeInstanceOf(Error);
+    // Caminho feliz: o marcador é false.
+    const ok = await fetchPatientDetail(stackComTudo(), makeEncryptionService(), PATIENT_ID, reads(['coverage']));
+    expect(ok?.coverageEmergencyContactsUnavailable).toBe(false);
   });
 
   it('só identidade: descriptografa o e-mail de contato e mais nada', async () => {

@@ -61,7 +61,8 @@ export function TherapeuticProjectVersionView({ version: v, services, compact = 
         </Row>
         <Row label={tc('service')} testId="tpv-service"><Text as="span" size="sm" color="primary">{serviceLabel}</Text></Row>
         <Row label={tc('modality')} testId="tpv-modality">
-          <Text as="span" size="sm" color="primary">{v.modality ? tc(`modalityOptions.${v.modality}`) : '—'}</Text>
+          {/* Enum do backend: fallback para o valor cru (régua do CLAUDE.md), nunca a chave de i18n. */}
+          <Text as="span" size="sm" color="primary">{v.modality ? t(`admin.patients.detail.therapeuticProjectCard.modalityOptions.${v.modality}`, v.modality) : '—'}</Text>
         </Row>
         <Row label={tc('currentClinicalContext')} testId="tpv-clinical">{clinical(v.clinicalContext, 'tpv-clinical-text')}</Row>
         <Row label={tc('generalObjective')} testId="tpv-objective">{clinical(v.generalObjective, 'tpv-objective-text')}</Row>

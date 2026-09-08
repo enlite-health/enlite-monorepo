@@ -16,40 +16,12 @@ import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/patient-detail-c-helper';
+import { loginComoHumano } from '../helpers/login-humano';
 
-const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
-const EMULATOR_PROJECT = 'demo-no-project';
 const STAFF_EMAIL = `e2e.cov.${Date.now()}@enlite.health`;
-const STAFF_PASSWORD = 'TestAdmin123!';
 const TEL_AMBULANCIA = '0800 417 0001';
 const TEL_PROFISSIONAL = '11 5555 0417';
 
-async function loginComoHumano(page: Page): Promise<void> {
-  const signUp = await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=any`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: STAFF_EMAIL, password: STAFF_PASSWORD, returnSecureToken: true }),
-  });
-  const auth = signUp.ok ? signUp : await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=any`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: STAFF_EMAIL, password: STAFF_PASSWORD, returnSecureToken: true }),
-  });
-  expect(auth.ok).toBe(true);
-  const { localId } = (await auth.json()) as { localId: string };
-  const claims = await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/projects/${EMULATOR_PROJECT}/accounts:update`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer owner' },
-    body: JSON.stringify({ localId, customAttributes: JSON.stringify({ role: 'admin' }) }),
-  });
-  expect(claims.ok).toBe(true);
-  runSQL(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, email_verified) VALUES ('${localId}', '${STAFF_EMAIL}', 'E2E Cobertura', 'admin', true, true) ON CONFLICT (firebase_uid) DO NOTHING`);
-  await page.addInitScript(() => localStorage.setItem('i18nextLng', 'es'));
-  await page.goto('/admin/login');
-  await page.locator('input[type="email"]').click();
-  await page.keyboard.type(STAFF_EMAIL);
-  await page.locator('input[type="password"]').click();
-  await page.keyboard.type(STAFF_PASSWORD);
-  await page.getByRole('button', { name: /Iniciar sesi/i }).click();
-  await expect(page).not.toHaveURL(/login/, { timeout: 30_000 });
-}
 
 /** A cobertura vive na aba "Servicio Contratado" (D286: container `patient_coverage`); o humano clica na aba. */
 async function abrirAbaServicio(page: Page): Promise<void> {
@@ -74,7 +46,6 @@ test.describe('417/D301 — contatos de emergência da cobertura e o PDF por ser
 
   let seed: { patientId: string; addressId: string; stamp: string };
   let serviceId: string;
-  let versionId: string;
 
   test.beforeAll(() => {
     seed = seedActivatablePatient(710000); // faixa própria (710000–719999)
@@ -87,7 +58,7 @@ test.describe('417/D301 — contatos de emergência da cobertura e o PDF por ser
   });
 
   test('feliz: Editar cobertura → dois contatos digitados → o card lista os dois; no banco 2 linhas com o telefone CIFRADO', async ({ page }) => {
-    await loginComoHumano(page);
+    await loginComoHumano(page, STAFF_EMAIL, 'E2E Cobertura');
     await page.goto(`/admin/patients/${seed.patientId}`);
     await expect(page.getByTestId('patient-profile-tabs')).toBeVisible({ timeout: 30_000 });
     await abrirAbaServicio(page);
@@ -140,7 +111,7 @@ test.describe('417/D301 — contatos de emergência da cobertura e o PDF por ser
   });
 
   test('alternativo: tirar a ambulância e salvar → o card e o banco ficam SÓ com o profissional', async ({ page }) => {
-    await loginComoHumano(page);
+    await loginComoHumano(page, STAFF_EMAIL, 'E2E Cobertura');
     await page.goto(`/admin/patients/${seed.patientId}`);
     await expect(page.getByTestId('patient-profile-tabs')).toBeVisible({ timeout: 30_000 });
     await abrirAbaServicio(page);
@@ -160,24 +131,25 @@ test.describe('417/D301 — contatos de emergência da cobertura e o PDF por ser
     expect(contatosNoBanco(seed.patientId).split('|')).toHaveLength(1);
   });
 
-  test('alternativo (Ana, item 1): o PDF com serviço de CUIDADORES leva o contato da cobertura e as seções fixas; com o serviço passado a AT, as seções saem "no aplicable"', async ({ page }) => {
-    // A versão do projeto entra por SQL (o fluxo humano de criar/editar tem spec próprio); o export é humano.
+  test('alternativo (Ana, item 1): a versão ligada ao serviço de CUIDADORES imprime o contato da cobertura e as seções fixas; a versão ligada a um serviço AT imprime "no aplicable" — e a primeira NÃO muda (tipo congelado na versão)', async ({ page }) => {
+    // As versões entram por SQL (o fluxo humano de criar/editar tem spec próprio); o export é humano.
     const obj = runSQL(`SELECT id FROM therapeutic_specific_objectives WHERE active ORDER BY sort_order LIMIT 1`).trim();
     const act = runSQL(`SELECT id FROM therapeutic_activities WHERE active ORDER BY sort_order LIMIT 1`).trim();
     const pat = runSQL(`SELECT id FROM pathology_types WHERE active ORDER BY sort_order LIMIT 1`).trim();
-    versionId = runSQL(`INSERT INTO patient_therapeutic_projects (patient_id, major, minor, contracted_service_id, modality, diagnoses, clinical_context, general_objective, specific_objectives, activities, pathology_types, start_date, end_date, created_by)
-      VALUES ('${seed.patientId}', 1, 0, '${serviceId}', 'ONLINE', '[{"uri":"http://id.who.int/icd/entity/e2e-417","title":"Diagnóstico sintético 417"}]', 'Contexto sintético 417', 'Objetivo sintético 417',
+    const inserirVersao = (major: number, svc: string, modality: string): string => runSQL(`INSERT INTO patient_therapeutic_projects (patient_id, major, minor, contracted_service_id, modality, diagnoses, clinical_context, general_objective, specific_objectives, activities, pathology_types, start_date, end_date, created_by)
+      VALUES ('${seed.patientId}', ${major}, 0, '${svc}', '${modality}', '[{"uri":"http://id.who.int/icd/entity/e2e-417","title":"Diagnóstico sintético 417"}]', 'Contexto sintético 417', 'Objetivo sintético 417 v${major}',
         (SELECT jsonb_build_array(jsonb_build_object('id', id, 'label', label)) FROM therapeutic_specific_objectives WHERE id = '${obj}'),
         (SELECT jsonb_build_array(jsonb_build_object('id', id, 'label', label)) FROM therapeutic_activities WHERE id = '${act}'),
         (SELECT jsonb_build_array(jsonb_build_object('id', id, 'label', label)) FROM pathology_types WHERE id = '${pat}'),
         '2026-09-01', '2026-12-31', 'e2e-417') RETURNING id`).split('\n')[0].trim();
-    expect(versionId).toMatch(/^[0-9a-f-]{36}$/);
+    const v1 = inserirVersao(1, serviceId, 'ONLINE');
+    expect(v1).toMatch(/^[0-9a-f-]{36}$/);
+    expect(runSQL(`SELECT contracted_service_code FROM patient_therapeutic_projects WHERE id = '${v1}'`).trim()).toBe('CAREGIVER'); // congelado pelo trigger
 
-    await loginComoHumano(page);
+    await loginComoHumano(page, STAFF_EMAIL, 'E2E Cobertura');
     await page.goto(`/admin/patients/${seed.patientId}`);
-    const exportar = async (): Promise<string> => {
+    const exportar = async (versionId: string): Promise<string> => {
       await expect(page.getByTestId('projeto-terapeutico-card')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('projeto-terapeutico-card').getByTestId('tpv-modality')).toContainText('On-line');
       await page.getByTestId(`tp-view-${versionId}`).click();
       const drawer = page.getByTestId('therapeutic-project-drawer');
       await expect(drawer).toHaveAttribute('data-mode', 'view');
@@ -190,22 +162,33 @@ test.describe('417/D301 — contatos de emergência da cobertura e o PDF por ser
       return parsed.text.replace(/\s+/g, ' ');
     };
 
-    const cuidador = await exportar();
+    await expect(page.getByTestId('projeto-terapeutico-card').getByTestId('tpv-modality')).toContainText('On-line');
+    const cuidador = await exportar(v1);
     expect(cuidador).toContain('Modalidad: On-line');
     expect(cuidador).toContain('Emergencia de la cobertura médica: Profesional directo: Dra. Sintética 417 - 11 5555 0417');
     expect(cuidador).toContain('Familiar / persona responsable: —'); // sem responsável semeado: o campo existe e sai vazio, separado do da cobertura
+    expect(cuidador).not.toContain('no incluido (el usuario'); // o emissor lê a equipe: nada retido
     expect(cuidador).toContain('El cuidador NO debe');
     expect(cuidador).toContain('Por cuestiones Terapéuticas');
     expect(cuidador).not.toContain('no aplicable a este servicio');
 
-    // O MESMO projeto, com o serviço vinculado passado a Acompañante Terapéutico.
-    runSQL(`UPDATE patient_contracted_services SET service_code = 'AT' WHERE id = '${serviceId}'`);
+    // Uma versão NOVA, ligada a um serviço de Acompañante Terapéutico.
+    const serviceAtId = runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, created_by, updated_by) VALUES ('${seed.patientId}', 'AT', 10, '${seed.addressId}', 'e2e-417', 'e2e-417') RETURNING id`).split('\n')[0].trim();
+    const v2 = inserirVersao(2, serviceAtId, 'IN_PERSON');
+    expect(runSQL(`SELECT contracted_service_code FROM patient_therapeutic_projects WHERE id = '${v2}'`).trim()).toBe('AT');
     await page.reload();
-    const at = await exportar();
+    const at = await exportar(v2);
     expect(at).toContain('Servicio solicitado: Acompañante Terapéutico');
     expect(at.split('no aplicable a este servicio').length - 1).toBe(2);
     expect(at).not.toContain('El cuidador NO debe');
     expect(at).not.toContain('Por cuestiones Terapéuticas');
     expect(at).toContain('Profesional directo: Dra. Sintética 417'); // o contato continua: é da cobertura, não do serviço
+
+    // A V.1.0 continua imprimindo o texto do cuidador — mesmo depois de o serviço dela mudar de tipo no cadastro.
+    runSQL(`UPDATE patient_contracted_services SET service_code = 'AT' WHERE id = '${serviceId}'`);
+    await page.reload();
+    const v1DeNovo = await exportar(v1);
+    expect(v1DeNovo).toContain('El cuidador NO debe');
+    expect(v1DeNovo).not.toContain('no aplicable a este servicio');
   });
 });

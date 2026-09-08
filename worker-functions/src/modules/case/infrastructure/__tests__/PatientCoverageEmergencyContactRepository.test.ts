@@ -39,8 +39,8 @@ describe('PatientCoverageEmergencyContactRepository (417, D301)', () => {
         { kind: 'AMBULANCE', name: 'Ambulancia OSDE', phone: '0800-1' },
       ], 'uid-staff', client);
       const calls = (client.query as jest.Mock).mock.calls as [string, unknown[]][];
-      expect(calls[0][0]).toBe('DELETE FROM patient_coverage_emergency_contacts WHERE patient_id = $1');
-      expect(calls[0][1]).toEqual([PID]);
+      expect(calls[0][0]).toBe('DELETE FROM patient_coverage_emergency_contacts WHERE patient_id = $1 AND NOT (kind = ANY($2::text[]))');
+      expect(calls[0][1]).toEqual([PID, []]);
       expect(calls[1][0]).toContain('INSERT INTO patient_coverage_emergency_contacts (patient_id, kind, name, phone_encrypted, sort_order, created_by)');
       expect(calls[1][0]).toContain('($1, $2, $3, $4, $5, $6), ($7, $8, $9, $10, $11, $12)');
       expect(calls[1][1]).toEqual([
@@ -50,6 +50,22 @@ describe('PatientCoverageEmergencyContactRepository (417, D301)', () => {
       // 🔒 o telefone em claro NUNCA vai ao banco.
       expect(JSON.stringify(calls[1][1])).not.toContain('5555-0001');
       expect(mockPoolQuery).not.toHaveBeenCalled(); // usou o client da transação, não o pool
+    });
+
+    it('lex C3 (gate 08/09): `keepKinds` preserva no banco os tipos que o ator não enxerga e descarta os que ele mandar desse tipo', async () => {
+      const client = { query: jest.fn().mockResolvedValue({ rows: [] }) } as unknown as PoolClient;
+      await repo.replaceAll(PID, [
+        { kind: 'DIRECT_PROFESSIONAL', name: 'Nunca vi', phone: '1' },
+        { kind: 'AMBULANCE', name: 'Ambulancia', phone: '0800' },
+      ], 'uid', client, { keepKinds: ['DIRECT_PROFESSIONAL'] });
+      const calls = (client.query as jest.Mock).mock.calls as [string, unknown[]][];
+      expect(calls[0][0]).toBe('DELETE FROM patient_coverage_emergency_contacts WHERE patient_id = $1 AND NOT (kind = ANY($2::text[]))');
+      expect(calls[0][1]).toEqual([PID, ['DIRECT_PROFESSIONAL']]);
+      expect(calls[1][1]).toEqual([PID, 'AMBULANCE', 'Ambulancia', b64('0800'), 0, 'uid']); // só a ambulância entra
+      // Sem keepKinds: o DELETE leva tudo (array vazio no ANY).
+      (client.query as jest.Mock).mockClear();
+      await repo.replaceAll(PID, [], 'uid', client);
+      expect(((client.query as jest.Mock).mock.calls[0] as [string, unknown[]])[1]).toEqual([PID, []]);
     });
 
     it('lista vazia (ou só linhas sem nome/telefone): só o DELETE — a segunda trava depois do zod', async () => {

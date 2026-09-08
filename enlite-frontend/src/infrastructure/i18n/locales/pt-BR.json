@@ -2875,7 +2875,8 @@
         "coverageContactPhone": "Telefone",
         "coverageContactRemove": "Remover contato",
         "coverageContactEmpty": "Sem contatos de emergência da cobertura.",
-        "coverageContactNotice": "Estes dados ficam registrados na ficha do paciente e são impressos no Projeto Terapêutico entregue à família e à cobertura. Se cadastrar um profissional, avise-o de que o contato dele consta aqui."
+        "coverageContactNotice": "Estes dados ficam registrados na ficha do paciente e são impressos no Projeto Terapêutico entregue à família e à cobertura. Se cadastrar um profissional, avise-o de que o contato dele consta aqui.",
+        "coverageContactsRedacted": "Você não pode ver os contatos de emergência da cobertura, por isso não são editados aqui."
       },
       "kanban": {
         "title": "Pacientes — Kanban",
@@ -3215,7 +3216,9 @@
             "DIRECT_PROFESSIONAL": "Profissional direto",
             "AMBULANCE": "Ambulância",
             "EMERGENCY_CENTER": "Central de emergência"
-          }
+          },
+          "emergencyContactsUnavailable": "Indisponível agora — recarregue a ficha ou avise o suporte.",
+          "directProfessionalRedacted": "Profissional direto: não visível com a sua permissão (precisa da célula da equipe tratante)."
         },
         "locationsCard": {
           "title": "Localizações",
