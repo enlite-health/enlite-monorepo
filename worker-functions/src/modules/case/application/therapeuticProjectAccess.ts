@@ -16,7 +16,7 @@
  * `cells = null` é "o engine não decidiu" (D113): tudo passa, como a rota devolvia antes.
  */
 import type { TherapeuticProjectVersion } from '../domain/TherapeuticProject';
-import { patientContainerCell } from './patientContainerAccess';
+import { patientContainerCell, canReadPatientContainer } from './patientContainerAccess';
 
 export const THERAPEUTIC_PROJECT_RESOURCE = 'patient_therapeutic_project';
 export const PATIENT_CLINICAL_READ_CELL = patientContainerCell('clinical', 'read');
@@ -35,9 +35,9 @@ export type ProjectedTherapeuticVersion = Omit<TherapeuticProjectVersion, 'clini
   redacted?: { clinical?: true; services?: true };
 };
 
+/** Predicados nomeados do projeto — a régua é a de `patientContainerAccess` (um só lugar decide `null → tudo`, D113). */
 export function canReadTherapeuticClinical(cells: readonly string[] | null | undefined): boolean {
-  if (cells === null || cells === undefined) return true;
-  return cells.includes(PATIENT_CLINICAL_READ_CELL);
+  return canReadPatientContainer(cells, 'clinical');
 }
 
 export function canWriteTherapeuticClinical(cells: readonly string[] | null | undefined): boolean {
@@ -46,8 +46,7 @@ export function canWriteTherapeuticClinical(cells: readonly string[] | null | un
 }
 
 export function canReadTherapeuticServices(cells: readonly string[] | null | undefined): boolean {
-  if (cells === null || cells === undefined) return true;
-  return cells.includes(PATIENT_SERVICES_READ_CELL);
+  return canReadPatientContainer(cells, 'services');
 }
 
 /**

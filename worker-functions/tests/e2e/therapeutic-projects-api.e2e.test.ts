@@ -219,12 +219,18 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     }
     const one = await chamar('GET', `${BASE()}/${created['1.0']}`, U.soProjeto);
     expect(one.body.data).toMatchObject({ redacted: { clinical: true, services: true }, clinicalContext: null, contractedServiceCode: null });
-    // Sem clínica mas com serviços (o grupo semClinica não tem serviços): só o marcador clínico.
+    // O grupo semClinica não tem clínica NEM serviços: os dois marcadores (o caso "só serviços" está no unit).
     const semClinica = await chamar('GET', `${BASE()}/${created['1.0']}`, U.semClinica);
     expect(semClinica.body.data.redacted).toEqual({ clinical: true, services: true });
-    // A trilha diz o que serviu (C4).
-    const trilha = await pool.query(`SELECT action FROM resource_access_log WHERE operator_uid = $1 AND resource_id = $2 ORDER BY occurred_at DESC LIMIT 1`, [U.completa, PATIENT]);
-    expect(trilha.rows[0]?.action ?? '').toMatch(/^read_project:therapeuticProject\+clinical\+services$/);
+    // A trilha diz o que serviu (C4) — lida DEPOIS de uma leitura própria, com polling (a trilha é assíncrona).
+    await chamar('GET', BASE(), U.completa);
+    let ultima = '';
+    for (let i = 0; i < 20 && !/services$/.test(ultima); i++) {
+      const trilha = await pool.query(`SELECT action FROM resource_access_log WHERE operator_uid = $1 AND resource_id = $2 ORDER BY occurred_at DESC LIMIT 1`, [U.completa, PATIENT]);
+      ultima = trilha.rows[0]?.action ?? '';
+      if (!/services$/.test(ultima)) await new Promise((r) => setTimeout(r, 100));
+    }
+    expect(ultima).toBe('read_project:therapeuticProject+clinical+services');
   });
 
   it('5. 🔒 escrita: sem patient_clinical:write → 403 nomeando a célula; sem a célula do projeto → missing_cell; operacional → 403', async () => {
