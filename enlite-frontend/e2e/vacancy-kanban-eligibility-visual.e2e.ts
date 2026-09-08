@@ -9,7 +9,7 @@
  */
 
 import { test, expect, Page } from '@playwright/test';
-import { E2E_EMAIL, loginAsAdmin } from './helpers/kanban-notes-e2e-helper';
+import { E2E_EMAIL, loginAsAdmin, dragKanbanCard } from './helpers/kanban-notes-e2e-helper';
 
 
 const MOCK_VACANCY_ID = 'eligvis-0001-0001-0001-000000000001';
@@ -37,6 +37,7 @@ const MOCK_FUNNEL = {
       IN_PROGRESS: [
         {
           id: 'enc-incomplete',
+          encuadreId: 'enc-incomplete',
           workerId: 'worker-incomplete-001',
           workerName: 'Worker Incompleto',
           workerPhone: '5491133445566',
@@ -109,6 +110,24 @@ async function seedAdminAndLogin(page: Page): Promise<void> {
   await loginAsAdmin(page);
 }
 
+/**
+ * Abre a vaga com a aba de Encuadres já em visão KANBAN.
+ *
+ * A rota `/admin/vacancies/:id/kanban` que estes testes usavam NÃO EXISTE mais —
+ * `App.tsx` tem `vacancies/:id`, `/edit` e `/talentum`, e o catch-all `path="*"`
+ * mandava tudo para `/`. Por isso os 13 testes destes dois arquivos falhavam sem
+ * relação nenhuma com o código sob teste: navegavam para uma URL removida.
+ * O Kanban passou a viver DENTRO da página de detalhe da vaga, e a visão escolhida
+ * é lembrada em localStorage — mesma técnica de kanban-card-blocked-notes-button.
+ */
+async function gotoVacancyKanban(page: Page, vacancyId: string): Promise<void> {
+  await page.addInitScript(
+    ([key]) => window.localStorage.setItem(key, 'kanban'),
+    [`vacancy-funnel-view-${vacancyId}`],
+  );
+  await page.goto(`/admin/vacancies/${vacancyId}`);
+}
+
 function mockVacancyApis(page: Page) {
   return Promise.all([
     page.route(`**/api/admin/vacancies/${MOCK_VACANCY_ID}`, (route) =>
@@ -151,31 +170,13 @@ test.describe('Kanban — bloqueio por elegibilidade do worker (visual)', () => 
       }),
     );
 
-    await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}/kanban`);
+    await gotoVacancyKanban(page, MOCK_VACANCY_ID);
     await expect(page.locator('[data-testid="kanban-card-enc-incomplete"]')).toBeVisible({
       timeout: 15000,
     });
 
     // Drag do card pra coluna CONFIRMED (droppable)
-    const card = page.locator('[data-testid="kanban-card-enc-incomplete"]');
-    const target = page.locator('[data-testid="kanban-column-CONFIRMED"]');
-
-    const cardBox = await card.boundingBox();
-    const targetBox = await target.boundingBox();
-    expect(cardBox).not.toBeNull();
-    expect(targetBox).not.toBeNull();
-
-    const startX = cardBox!.x + cardBox!.width / 2;
-    const startY = cardBox!.y + cardBox!.height / 2;
-    const endX = targetBox!.x + targetBox!.width / 2;
-    const endY = targetBox!.y + targetBox!.height / 2;
-
-    await page.mouse.move(startX, startY);
-    await page.mouse.down();
-    // Mover além do threshold de 8px do PointerSensor
-    await page.mouse.move(startX + 10, startY, { steps: 3 });
-    await page.mouse.move(endX, endY, { steps: 15 });
-    await page.mouse.up();
+    await dragKanbanCard(page, 'enc-incomplete', 'INVITED');
 
     // Banner amber aparece com título e mensagem traduzida
     const banner = page.locator('[data-testid="kanban-move-error"]');
@@ -205,26 +206,12 @@ test.describe('Kanban — bloqueio por elegibilidade do worker (visual)', () => 
       }),
     );
 
-    await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}/kanban`);
+    await gotoVacancyKanban(page, MOCK_VACANCY_ID);
     await expect(page.locator('[data-testid="kanban-card-enc-incomplete"]')).toBeVisible({
       timeout: 15000,
     });
 
-    const card = page.locator('[data-testid="kanban-card-enc-incomplete"]');
-    const target = page.locator('[data-testid="kanban-column-CONFIRMED"]');
-
-    const cardBox = await card.boundingBox();
-    const targetBox = await target.boundingBox();
-    const startX = cardBox!.x + cardBox!.width / 2;
-    const startY = cardBox!.y + cardBox!.height / 2;
-    const endX = targetBox!.x + targetBox!.width / 2;
-    const endY = targetBox!.y + targetBox!.height / 2;
-
-    await page.mouse.move(startX, startY);
-    await page.mouse.down();
-    await page.mouse.move(startX + 10, startY, { steps: 3 });
-    await page.mouse.move(endX, endY, { steps: 15 });
-    await page.mouse.up();
+    await dragKanbanCard(page, 'enc-incomplete', 'INVITED');
 
     const banner = page.locator('[data-testid="kanban-move-error"]');
     await expect(banner).toBeVisible({ timeout: 10000 });

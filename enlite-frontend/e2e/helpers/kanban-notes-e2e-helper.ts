@@ -120,3 +120,47 @@ export async function loginAsAdmin(page: Page): Promise<void> {
   await page.locator('button[type="submit"]').first().click();
   await expect(page).not.toHaveURL(/.*login.*/, { timeout: 25_000 });
 }
+
+/**
+ * Arrasta um card do Kanban de um ponto ao outro, de um jeito que o dnd-kit aceita.
+ *
+ * O `PointerSensor` está configurado com `activationConstraint: { distance: 8 }`
+ * (KanbanBoardShell). Um `mouse.down()` seguido de dois ou três `mouse.move` com
+ * `steps` NÃO ativa: os eventos chegam rápido demais e o React não processa o
+ * `isDragging` entre eles — o teste então lia a tarjeta sem `opacity-30` e concluía
+ * que o arrasto não existia. Medido em 08/09/2026: com `hover()` + 20 passos curtos
+ * espaçados, o sensor ativa (`opacity-30` presente no wrapper) e o drop dispara.
+ *
+ * ⚠️ Arrasta pelo WRAPPER `kanban-draggable-<id>`, não pela tarjeta: é ele que
+ * carrega os listeners do dnd-kit.
+ *
+ * ⚠️ Soltar em REJECTED, SELECTED ou CONFIRMED NÃO move — `handleDrop` intercepta
+ * as três para abrir modal (motivo, papel, data da entrevista). Para exercitar a
+ * request de movimento, o alvo tem de ser outra coluna droppable (ex.: INVITED).
+ */
+export async function dragKanbanCard(
+  page: Page,
+  cardId: string,
+  targetColumnId: string,
+): Promise<void> {
+  const origem = page.locator(`[data-testid="kanban-draggable-${cardId}"]`);
+  const alvo = page.locator(`[data-testid="kanban-column-${targetColumnId}"]`);
+
+  const a = await origem.boundingBox();
+  const t = await alvo.boundingBox();
+  if (!a || !t) throw new Error(`dragKanbanCard: sem caixa para ${cardId} → ${targetColumnId}`);
+
+  const x0 = a.x + a.width / 2;
+  const y0 = a.y + a.height / 2;
+  const x1 = t.x + t.width / 2;
+  const y1 = t.y + t.height / 2;
+
+  await origem.hover();
+  await page.mouse.down();
+  const PASSOS = 20;
+  for (let k = 1; k <= PASSOS; k++) {
+    await page.mouse.move(x0 + ((x1 - x0) * k) / PASSOS, y0 + ((y1 - y0) * k) / PASSOS);
+    await page.waitForTimeout(30);
+  }
+  await page.mouse.up();
+}
