@@ -90,7 +90,8 @@ describe('PatientCoverageEditDrawer', () => {
 
   it('417 (D301.3b) — contatos de emergência da cobertura: abre com os atuais; adicionar/editar manda a LISTA inteira (trim) na seção coverage; sem mexer, a chave não vai', async () => {
     const onSaved = vi.fn();
-    const comContatos = { ...patient, coverageEmergencyContacts: [{ id: 'c1', kind: 'AMBULANCE' as const, name: 'Ambulancia OSDE', phone: '0800-1', sortOrder: 0 }] };
+    // O marcador `false` (lê cobertura E equipe) é o que libera o tipo "Profissional direto" no select.
+    const comContatos = { ...patient, coverageEmergencyContacts: [{ id: 'c1', kind: 'AMBULANCE' as const, name: 'Ambulancia OSDE', phone: '0800-1', sortOrder: 0 }], coverageDirectProfessionalRedacted: false };
     render(<PatientCoverageEditDrawer patient={comContatos} onClose={vi.fn()} onSaved={onSaved} />);
     expect(screen.getByTestId('pcv-contact-name-0')).toHaveValue('Ambulancia OSDE');
     expect(screen.getByTestId('pcv-contact-phone-0')).toHaveValue('0800-1');
@@ -129,6 +130,16 @@ describe('PatientCoverageEditDrawer', () => {
     // Voltou ao estado inicial (vazio): nada mudou → fecha sem PATCH.
     fireEvent.click(screen.getByTestId('pcv-save'));
     await waitFor(() => expect(updatePatientSection).not.toHaveBeenCalled());
+  });
+
+  it('417 / lex C3 (LISTA A2) — marcador `true` (sem equipe) OU ausente (backend antigo): o tipo "Profissional direto" não é oferecido; só `false` o libera', () => {
+    for (const marcador of [true, undefined]) {
+      const r = render(<PatientCoverageEditDrawer patient={{ ...patient, coverageEmergencyContacts: [], coverageDirectProfessionalRedacted: marcador }} onClose={vi.fn()} onSaved={vi.fn()} />);
+      fireEvent.click(screen.getByTestId('pcv-contact-add'));
+      const select = screen.getByTestId('pcv-contact-kind-0') as HTMLSelectElement;
+      expect(Array.from(select.options).map((o) => o.value)).not.toContain('DIRECT_PROFESSIONAL');
+      r.unmount();
+    }
   });
 
   it('417 / gate — `null` (sem `patient_coverage:read`): a lista NÃO é oferecida (aviso no lugar) e nada dela vai no payload', async () => {

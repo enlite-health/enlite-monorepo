@@ -89,7 +89,13 @@ export class PatientQueryRepository {
     params.push(filters.country ?? null);
     const countryIdx = i++;
 
-    // $8 limit, $9 offset
+    // lex 08/09 (gate da LISTA 017): o ramo da busca que casa o NOME DO RESPONSÁVEL é dado do container
+    // família — sem `patient_family:read` o ramo desliga (a busca por nome do paciente é guardada no controller
+    // pela célula de identidade; este é o segundo oráculo, na mesma cláusula).
+    params.push(reads.family);
+    const familyIdx = i++;
+
+    // $9 limit, $10 offset ($8 é reads.family, o ramo do responsável na busca)
     params.push(filters.limit);
     const limitIdx = i++;
     params.push(filters.offset);
@@ -198,11 +204,11 @@ export class PatientQueryRepository {
           -- D249: a lista mostra "Responsável: X" quando o paciente não tem
           -- nome. Sem isto, o operador lê um nome na tela, digita esse nome na
           -- busca e não acha nada — que é pior do que não mostrar.
-          OR EXISTS (
+          OR ($${familyIdx}::boolean AND EXISTS (
                SELECT 1 FROM patient_responsibles r
                 WHERE r.patient_id = p.id
                   AND (r.first_name ILIKE '%' || $${searchIdx} || '%'
-                    OR r.last_name  ILIKE '%' || $${searchIdx} || '%')))
+                    OR r.last_name  ILIKE '%' || $${searchIdx} || '%'))))
         -- O filtro e o total leem a MESMA regra que o payload publica (PatientCompleteness.ts):
         -- ler a coluna guardada aqui fazia o paciente com badge SUMIR quando a operadora
         -- filtrava por ele, e INCOMPLETE_ADMISSION nunca casar com ninguém.

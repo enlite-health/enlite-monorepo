@@ -84,6 +84,10 @@ describe('CoberturaMedicaCard — contatos de emergência da cobertura (417, D30
     render(<CoberturaMedicaCard patient={{ ...patientDetailFixture, coverageEmergencyContacts: [], coverageEmergencyContactsUnavailable: true }} />);
     expect(screen.getByTestId('coverage-emergency-contacts-unavailable')).toHaveTextContent(t('admin.patients.detail.coverageCard.emergencyContactsUnavailable'));
     expect(screen.getByTestId('coverage-emergency-contacts').querySelectorAll('li')).toHaveLength(0); // nem lista, nem o "—" de vazio
+    // LISTA A3: campo AUSENTE (backend anterior à 417) = "não li", como o PDF — nunca "—".
+    const { coverageEmergencyContacts: _c, ...semCampo } = patientDetailFixture as typeof patientDetailFixture & { coverageEmergencyContacts?: unknown };
+    render(<CoberturaMedicaCard patient={semCampo as typeof patientDetailFixture} />);
+    expect(screen.getAllByTestId('coverage-emergency-contacts-unavailable')).toHaveLength(2);
   });
 });
 

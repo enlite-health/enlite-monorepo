@@ -527,9 +527,24 @@ export class AdminPatientsController {
       return;
     }
 
+    // lex 08/09 (mesma classe do oráculo do mapa, #322): `search` casa nome/documento/responsável e os
+    // filtros clínicos casam atributos de saúde — filtrar por um dado que o ator não pode LER é um oráculo
+    // ("existe alguém chamado X"; "quantos têm demência"). Sem a célula do container, 403 nomeando o campo,
+    // nunca ignorado em silêncio. A tela esconde o controle para quem não tem a célula.
+    const cellsDaLista = clinicalCellsOf(req);
+    if (parsed.data.search?.trim() && !canReadPatientContainer(cellsDaLista, 'identity')) {
+      res.status(403).json({ success: false, error: 'Forbidden', details: { field: 'search', cell: patientContainerCell('identity', 'read') } });
+      return;
+    }
+    const filtroClinico = (['clinical_specialty', 'dependency_level'] as const).find((f) => parsed.data[f] !== undefined);
+    if (filtroClinico && !canReadPatientContainer(cellsDaLista, 'clinical')) {
+      res.status(403).json({ success: false, error: 'Forbidden', details: { field: filtroClinico, cell: patientContainerCell('clinical', 'read') } });
+      return;
+    }
+
     try {
       // D286: as células do ator decidem o que a lista carrega — e o que o KMS descriptografa.
-      const cells = clinicalCellsOf(req);
+      const cells = cellsDaLista;
       const { rows, total } = await this.repo.list(parsed.data, patientContainerReadsOf(cells));
 
       const data = rows.map((row) => toAdminPatientListItem(row, cells));

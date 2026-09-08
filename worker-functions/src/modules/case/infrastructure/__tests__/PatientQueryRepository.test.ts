@@ -29,6 +29,7 @@ jest.mock('../PatientDetailQueryHelper', () => ({
 }));
 
 import { PatientQueryRepository } from '../PatientQueryRepository';
+import { ALL_PATIENT_CONTAINERS_READABLE } from '../../application/patientContainerAccess';
 import type { AdminPatientsListParams } from '../../interfaces/validators/adminPatientsListSchema';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -118,8 +119,20 @@ describe('PatientQueryRepository.list', () => {
     expect(sql).toContain('FROM patients p');
     // $1 search (trimmed), $2 needsAttention bool, $3 attentionReason,
     // $4 clinicalSpecialty, $5 dependencyLevel, $6 caseNumber, $7 country,
-    // $8 limit, $9 offset.
-    expect(params).toEqual(['Ana', true, 'MISSING_INFO', 'ASD', 'MILD', '766', 'AR', 20, 0]);
+    // $8 reads.family (o ramo do nome do responsável), $9 limit, $10 offset.
+    expect(params).toEqual(['Ana', true, 'MISSING_INFO', 'ASD', 'MILD', '766', 'AR', true, 20, 0]);
+    // lex 08/09: o ramo do responsável é gated pelo parâmetro, não por string SQL montada.
+    expect(sql).toMatch(/\$8::boolean AND EXISTS \(\s*SELECT 1 FROM patient_responsibles/);
+  });
+
+  it('a1b. sem `patient_family:read` o ramo da busca por nome de RESPONSÁVEL desliga (param false); com engine não decidido, liga', async () => {
+    const repo = new PatientQueryRepository();
+    mockPoolQuery.mockResolvedValue({ rows: [] });
+    await repo.list({ search: 'Ana', limit: 20, offset: 0 } as never, { ...ALL_PATIENT_CONTAINERS_READABLE, family: false });
+    expect(mockPoolQuery.mock.calls[0][1][7]).toBe(false);
+    mockPoolQuery.mockClear();
+    await repo.list({ search: 'Ana', limit: 20, offset: 0 } as never);
+    expect(mockPoolQuery.mock.calls[0][1][7]).toBe(true);
   });
 
   it('a2. isTest=true quando a linha marca is_test', async () => {

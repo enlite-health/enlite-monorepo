@@ -75,6 +75,38 @@ describe('AdminPatientsController — filtro país', () => {
     expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ country: 'AR' }), expect.anything());
   });
 
+  it('lex 08/09 — `search` sem `patient_identity:read` → 403 nomeando campo e célula; filtro clínico sem `patient_clinical:read` → 403; com as células (ou sem engine) passa', async () => {
+    mockList.mockResolvedValue({ rows: [], total: 0 });
+    const soOperacional = ['patient:read'];
+    const [r1, s1] = mockReqRes({ search: 'Ana' });
+    (r1 as unknown as { permissionCells: string[] }).permissionCells = soOperacional;
+    await controller.listPatients(r1, s1);
+    expect(s1.status).toHaveBeenCalledWith(403);
+    expect(s1.json).toHaveBeenCalledWith(expect.objectContaining({ details: { field: 'search', cell: 'patient_identity:read' } }));
+    expect(mockList).not.toHaveBeenCalled();
+    // `search` só com espaço não é busca: passa.
+    const [r1b, s1b] = mockReqRes({ search: '   ' });
+    (r1b as unknown as { permissionCells: string[] }).permissionCells = soOperacional;
+    await controller.listPatients(r1b, s1b);
+    expect(s1b.status).toHaveBeenCalledWith(200);
+    for (const [campo, valor] of [['clinical_specialty', 'NEUROLOGICAL'], ['dependency_level', 'MILD']] as const) {
+      const [r2, s2] = mockReqRes({ [campo]: valor });
+      (r2 as unknown as { permissionCells: string[] }).permissionCells = soOperacional;
+      await controller.listPatients(r2, s2);
+      expect(s2.status).toHaveBeenCalledWith(403);
+      expect(s2.json).toHaveBeenCalledWith(expect.objectContaining({ details: { field: campo, cell: 'patient_clinical:read' } }));
+    }
+    mockList.mockClear();
+    const [r3, s3] = mockReqRes({ search: 'Ana', clinical_specialty: 'NEUROLOGICAL' });
+    (r3 as unknown as { permissionCells: string[] }).permissionCells = ['patient:read', 'patient_identity:read', 'patient_clinical:read'];
+    await controller.listPatients(r3, s3);
+    expect(s3.status).toHaveBeenCalledWith(200);
+    expect(mockList).toHaveBeenCalledTimes(1);
+    const [r4, s4] = mockReqRes({ search: 'Ana', dependency_level: 'MILD' }); // sem células: engine não decidiu → como antes
+    await controller.listPatients(r4, s4);
+    expect(s4.status).toHaveBeenCalledWith(200);
+  });
+
   it('listPatients 400 em country inválido', async () => {
     const [req, res] = mockReqRes({ country: 'XX' });
     await controller.listPatients(req, res);

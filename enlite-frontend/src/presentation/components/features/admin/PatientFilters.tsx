@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Search, X } from 'lucide-react';
 import { Select, SelectOption } from '@presentation/components/atoms/Select';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 
 interface PatientFiltersProps {
   searchValue: string;
@@ -64,11 +65,18 @@ export function PatientFilters({
     onCountryChange?.('');
   };
 
+  // lex 08/09 (oráculo por célula): o servidor recusa `search` sem `patient_identity:read` e os filtros
+  // clínicos sem `patient_clinical:read` (403 nomeando o campo). A tela não oferece o que ele recusaria —
+  // pela célula LITERAL de leitura (`useActionGate`), não pelo OR de container. Sem engine: tudo aparece (D268).
+  const { allowed: podeBuscarPorNome } = useActionGate('patient_identity', 'read');
+  const { allowed: podeFiltrarClinico } = useActionGate('patient_clinical', 'read');
+
   return (
     <div className="bg-white rounded-b-[20px] border-r-2 border-b-2 border-l-2 border-[#D9D9D9] px-7 py-5">
       <div className="flex items-end gap-3 flex-wrap">
         {/* Search */}
-        <div className="flex-1 min-w-[200px] max-w-[320px]">
+        {podeBuscarPorNome && (
+        <div className="flex-1 min-w-[200px] max-w-[320px]" data-testid="filter-search">
           <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
             {t('admin.patients.searchLabel')}
           </label>
@@ -83,6 +91,7 @@ export function PatientFilters({
             />
           </div>
         </div>
+        )}
 
         {/* Code / case number filter */}
         <div className="w-[160px]" data-testid="filter-code">
@@ -129,6 +138,7 @@ export function PatientFilters({
         )}
 
         {/* Specialty filter */}
+        {podeFiltrarClinico && (
         <div className="w-[210px]" data-testid="filter-specialty">
           <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
             {t('admin.patients.specialtyLabel')}
@@ -141,6 +151,7 @@ export function PatientFilters({
             placeholder={t('admin.patients.specialtyOptions.all')}
           />
         </div>
+        )}
 
         {/* Country filter (Fase 4). 210px: cabe o rótulo mais longo ("Todos los
             países") — select nativo trunca sem reticências quando não cabe. */}
@@ -160,6 +171,7 @@ export function PatientFilters({
         )}
 
         {/* Dependency filter */}
+        {podeFiltrarClinico && (
         <div className="w-[180px]" data-testid="filter-dependency">
           <label className="block text-xs font-medium text-[#9CA3AF] mb-1.5 font-lexend uppercase tracking-wide">
             {t('admin.patients.dependencyLabel')}
@@ -172,6 +184,7 @@ export function PatientFilters({
             placeholder={t('admin.patients.dependencyOptions.all')}
           />
         </div>
+        )}
 
         {/* Clear filters */}
         {hasActiveFilters && (

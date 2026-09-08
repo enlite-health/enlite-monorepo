@@ -146,7 +146,10 @@ describe('T9 — a busca LÊ terminology.icd_synonyms (Postgres real) @integrati
 
     // O ganho do D6 (Bitmap Index Scan sobre o GIN de trigrama) continua no plano...
     expect(plano).toMatch(/Bitmap Index Scan/);
-    // ...e nenhum Seq Scan varre a tabela grande do catálogo.
-    expect(plano).not.toMatch(/Seq Scan on icd_entities/);
+    // ...e nenhum Seq Scan varre a tabela grande do catálogo NA BUSCA (alias `t`). O lado do JOIN (`e`,
+    // filtrado por release) o planejador pode varrer por hash join conforme a estatística do momento —
+    // no CI de 08/09 (#325) ele escolheu `Seq Scan on icd_entities e` com o índice de trigrama intacto,
+    // e o oráculo antigo (qualquer `Seq Scan on icd_entities`) reprovou uma regressão que não existia.
+    expect(plano).not.toMatch(/Seq Scan on icd_entities t\b/);
   });
 });

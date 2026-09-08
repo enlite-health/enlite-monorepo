@@ -1,4 +1,4 @@
-import { withActorContext, resolveActor } from '../actorContext';
+import { withActorContext, withClientOrActorContext, resolveActor } from '../actorContext';
 import { loggingAls } from '@shared/logging';
 import { luzActor, staffActor } from '@shared/audit/actorSource';
 import { createRlsAwarePool } from '../rlsAwarePool';
@@ -267,6 +267,43 @@ describe('withActorContext — client fixado da request', () => {
     expect(
       client.query.mock.calls.some((c) => String(c[0]).includes('app.user_country')),
     ).toBe(false);
+  });
+});
+
+describe('withClientOrActorContext (LISTA spec 017: nunca pool.connect() cru nos repositórios de coleção)', () => {
+  it('com client: roda NELE, sem BEGIN/COMMIT próprios e sem tocar o pool (a transação é do chamador)', async () => {
+    const { pool, rawPool, client } = makePool();
+    const de = { query: jest.fn().mockResolvedValue({ rows: [] }) } as unknown as import('pg').PoolClient;
+    const out = await withClientOrActorContext(pool, de, async (c) => { await c.query('SELECT 1'); return 'ok'; });
+    expect(out).toBe('ok');
+    expect(rawPool.connect).not.toHaveBeenCalled();
+    expect(client.query).not.toHaveBeenCalled();
+    expect((de.query as jest.Mock).mock.calls.map((c) => String(c[0]))).toEqual(['SELECT 1']);
+  });
+
+  it('🔒 sem client, DENTRO de uma request: a transação própria carrega o carimbo de país (a composição, não só BEGIN/COMMIT — gate 08/09 c′)', async () => {
+    process.env.COUNTRY_RLS_ENABLED = 'true';
+    const { pool, client } = makePool();
+    const appPool = createRlsAwarePool(pool);
+    const session: DbSession = { context: { kind: 'staff', uid: 'u1', country: 'BR' }, released: false };
+    await loggingAls.run({ traceId: 'test', dbSession: session }, () => withClientOrActorContext(appPool, undefined, async (c) => { await c.query('SELECT 3'); return 'ok'; }));
+    const countryStamp = client.query.mock.calls.find((c) => String(c[0]).includes('app.user_country'));
+    expect(countryStamp?.[1]).toEqual(['u1', 'BR', '']);
+    const sqls = sqlCalls(client);
+    expect(sqls.indexOf('BEGIN')).toBeLessThan(sqls.findIndex((s) => s.includes('app.user_country')));
+    expect(sqls.findIndex((s) => s.includes('app.user_country'))).toBeLessThan(sqls.indexOf('SELECT 3'));
+  });
+
+  it('sem client: é o withActorContext — BEGIN, fn, COMMIT e release no client do pool', async () => {
+    const { pool, rawPool, client } = makePool();
+    const out = await withClientOrActorContext(pool, undefined, async (c) => { await c.query('SELECT 2'); return 'ok'; });
+    expect(out).toBe('ok');
+    expect(rawPool.connect).toHaveBeenCalledTimes(1);
+    const sqls = sqlCalls(client);
+    expect(sqls[0]).toBe('BEGIN');
+    expect(sqls).toContain('SELECT 2');
+    expect(sqls.at(-1)).toBe('COMMIT');
+    expect(client.release).toHaveBeenCalled();
   });
 });
 
