@@ -34,7 +34,7 @@ const WorkerAvailabilityBody = z.object({
   }),
 });
 
-const WorkerProfileSchema = registry.register(
+export const WorkerProfileSchema = registry.register(
   'WorkerProfile',
   z.object({
     id: UuidParam,
@@ -54,6 +54,19 @@ const WorkerProfileSchema = registry.register(
       description: '[] = nada falta · null = não foi possível apurar (NÃO significa completo)',
     }),
   }).openapi({ description: 'Dados do worker autenticado, com o veredito de completude.' }),
+);
+
+/**
+ * Ramo degradado do 200 do `PUT /me/general-info`: a escrita ACONTECEU, mas a
+ * releitura que a confirmaria falhou. `missingFields: null` mantém o contrato —
+ * "gravei, mas não sei te dizer o estado", nunca "está completo".
+ */
+export const UnconfirmedWrite = registry.register(
+  'UnconfirmedWrite',
+  z.object({
+    message: z.string().openapi({ example: 'General info saved' }),
+    missingFields: z.null().openapi({ description: 'Sempre null: não foi possível apurar.' }),
+  }).openapi({ description: 'Escrita gravada mas não confirmada.' }),
 );
 
 registry.registerPath({
@@ -143,9 +156,22 @@ registry.registerPath({
     200: {
       // ESCRITA CONFIRMADA (D302): devolve o cadastro como o BANCO ficou, relido
       // pelo mesmo caminho do GET — não um "salvo com sucesso" que o cliente
-      // teria de acreditar. Se a releitura falhar, vem `missingFields: null`.
-      description: 'Informações atualizadas — devolve o cadastro relido, com missingFields.',
-      content: { 'application/json': { schema: WorkerProfileSchema } },
+      // teria de acreditar.
+      //
+      // São DOIS ramos de 200, e o schema declara os dois de propósito: se a
+      // releitura pós-escrita falhar, a gravação ACONTECEU mas não pôde ser
+      // confirmada, e a rota devolve `{ message, missingFields: null }` — sem
+      // perfil. Declarar só o perfil faria a spec mentir exatamente no ramo que
+      // esta mudança existe para tornar honesto.
+      description:
+        'Informações atualizadas. Devolve o cadastro relido; se a releitura falhar, ' +
+        'devolve confirmação sem perfil com missingFields: null (gravou, não confirmou).',
+      content: { 'application/json': { schema: z.union([WorkerProfileSchema, UnconfirmedWrite]) } },
+    },
+    404: { description: 'Worker não encontrado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    409: {
+      description: 'Telefone pertence a outra conta (PHONE_NOT_AVAILABLE).',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     400: { description: 'Dados inválidos.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },

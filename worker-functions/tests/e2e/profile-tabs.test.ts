@@ -123,8 +123,6 @@ describe('Profile Tabs — Endpoints por aba', () => {
       const missing = res.data.data.missingFields;
       expect(Array.isArray(missing)).toBe(true);
       missing.forEach((t: unknown) => expect(typeof t).toBe('string'));
-      // `[]` significa "apurei e nada falta"; `null`, "não apurei". Nunca undefined.
-      expect(missing).not.toBeUndefined();
     });
 
     it('a vitrine bate com o portão — a lista da rota é a MESMA função do banco', async () => {
@@ -151,7 +149,10 @@ describe('Profile Tabs — Endpoints por aba', () => {
       const headers = { headers: { Authorization: `Bearer ${tk.data.data.token}`, 'x-auth-uid': uid } };
 
       try {
-        const semTitulo = { ...payload };
+        // Telefone PRÓPRIO: o `payload` do describe carrega o número do worker
+        // dele, e `resolvePhoneToPersist` recusa número que já pertence a outro
+        // (409 PHONE_NOT_AVAILABLE) — o axios estouraria antes da 1ª asserção.
+        const semTitulo = { ...payload, phone: `+54911${String(Date.now()).slice(-8)}` };
         delete (semTitulo as Record<string, unknown>).titleCertificate;
 
         const antes = await api.put('/api/workers/me/general-info', semTitulo, headers);
