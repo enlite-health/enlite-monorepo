@@ -384,4 +384,54 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
       expect(existe.rows[0]?.country).toBe('BR');
     });
   });
+  // ── (e) POST/PATCH /patients/:id/contracted-services sob RLS — a transação leva o país ──
+  // Achado da stage (07/09/2026): o `create` do repositório abria `pool.connect()` cru, sem
+  // `app.user_country`, e a policy da 411 recusava com 500 `rls_session_without_identity`
+  // (D299 item 5). O conserto é `withActorContext` (D95). Só o ambiente COM RLS ligada
+  // reproduz — o unit mocka o pool e passa nos dois estados.
+  describe('(e) POST/PATCH /api/admin/patients/:id/contracted-services', () => {
+    let servicoId: string | undefined;
+
+    it('staff AR cria serviço no SEU paciente → 201, e a LINHA nasce com o país do paciente', async () => {
+      const res = await asStaffAR(`/api/admin/patients/${IDS.patientAR}/contracted-services`, {
+        method: 'POST',
+        body: JSON.stringify({ serviceCode: 'CAREGIVER', weeklyHours: 10 }),
+      });
+      const body = (await res.json()) as { success?: boolean; data?: { id?: string } };
+      expect({ status: res.status, success: body.success }).toEqual({ status: 201, success: true });
+      servicoId = body.data?.id;
+      expect(servicoId).toBeTruthy();
+
+      const row = await adminPool.query(
+        `SELECT country, created_by FROM patient_contracted_services WHERE id = $1`,
+        [servicoId],
+      );
+      expect(row.rows[0]).toEqual({ country: 'AR', created_by: STAFF_AR.uid });
+    });
+
+    it('PATCH no mesmo serviço → 200, mesma transação com país', async () => {
+      const res = await asStaffAR(`/api/admin/patients/${IDS.patientAR}/contracted-services/${servicoId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ weeklyHours: 12 }),
+      });
+      expect(res.status).toBe(200);
+      const row = await adminPool.query(`SELECT weekly_hours FROM patient_contracted_services WHERE id = $1`, [servicoId]);
+      expect(Number(row.rows[0]?.weekly_hours)).toBe(12);
+    });
+
+    it('staff AR no paciente BR → recusado e NADA gravado (a policy follow_patient da 413 barra o INSERT)', async () => {
+      const res = await asStaffAR(`/api/admin/patients/${IDS.patientBR}/contracted-services`, {
+        method: 'POST',
+        body: JSON.stringify({ serviceCode: 'CAREGIVER' }),
+      });
+      // Hoje sai 500 ("new row violates row-level security policy"): o isolamento vale, mas o
+      // status é o genérico — LISTA (D299): devolver 404 como o GET /patients/:id faz.
+      expect(res.status).toBeGreaterThanOrEqual(400);
+      const count = await adminPool.query(
+        `SELECT count(*)::int AS n FROM patient_contracted_services WHERE patient_id = $1`,
+        [IDS.patientBR],
+      );
+      expect(count.rows[0].n).toBe(0);
+    });
+  });
 });
