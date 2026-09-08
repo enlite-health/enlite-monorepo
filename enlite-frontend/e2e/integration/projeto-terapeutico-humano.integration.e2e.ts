@@ -13,7 +13,8 @@
  *   3. "Editar" → V.1.1: o banco tem DUAS linhas e a V.1.0 mantém o texto original (imutável, lex C5);
  *   4. a versão antiga abre em leitura e "Exportar PDF" busca `?purpose=export` (trilha C13) e baixa um
  *      `.pdf` cujo texto (pdf-parse) contém o nome do paciente e o objetivo — e NÃO contém "ICHOM";
- *   5. foto do card e da modal (`toHaveScreenshot`).
+ *   5. foto do card e da modal (`toHaveScreenshot`);
+ *   6. caminho alternativo: opção do catálogo desativada no meio do preenchimento → 422 na tela, nada gravado.
  */
 import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
@@ -230,5 +231,54 @@ test.describe('spec 017 — projeto terapêutico: um HUMANO cria, edita (minor),
     // lex C13: a trilha do export existe, com o UUID do paciente e sem texto.
     const trilha = runSQL(`SELECT count(*) FROM resource_access_log WHERE resource_id = '${seed.patientId}' AND action LIKE 'export_pdf:%'`);
     expect(Number(trilha)).toBeGreaterThanOrEqual(1);
+  });
+  test('caminho alternativo: uma opção do catálogo é desativada no backoffice ENQUANTO o humano preenche → o servidor recusa (422), a tela diz por quê e NADA é gravado', async ({ page }) => {
+    // O que se prova: o snapshot do catálogo é validado na hora de salvar (repositório: só ids ATIVOS
+    // entram), a recusa vira frase na tela (`catalog_items_unknown`), e o banco não ganha versão.
+    const antes = Number(runSQL(`SELECT count(*) FROM patient_therapeutic_projects WHERE patient_id = '${seed.patientId}'`));
+    expect(antes).toBe(2);
+
+    await loginComoHumano(page);
+    await page.goto(`/admin/patients/${seed.patientId}`);
+    await expect(page.getByTestId('projeto-terapeutico-card')).toBeVisible({ timeout: 30_000 });
+    await page.getByTestId('tp-new-btn').click();
+    const drawer = page.getByTestId('therapeutic-project-drawer');
+    await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
+
+    await page.getByTestId('tp-icd-input').click();
+    await page.keyboard.type('sintetico');
+    const opcao = page.getByTestId('tp-icd-option-0');
+    await expect(opcao).toBeVisible({ timeout: 10_000 });
+    await opcao.click();
+    await digitar(page, '#tp-clinicalContext', 'Contexto que no debe persistir 017');
+    await digitar(page, '#tp-generalObjective', 'Objetivo que no debe persistir 017');
+    await marcarOpcoes(page, 'tp-specificObjectives', 1); // a PRIMEIRA da lista (ORDER BY sort_order, lower(label))
+    await marcarOpcoes(page, 'tp-activities', 1);
+    await marcarOpcoes(page, 'tp-pathologyTypes', 1);
+    await page.locator('#tp-startDate').click();
+    await page.keyboard.type('09012026');
+    await page.locator('#tp-endDate').click();
+    await page.keyboard.type('12312026');
+    await expect(page.getByTestId('tp-save')).toBeEnabled();
+
+    // Enquanto o formulário está aberto, o backoffice desativa exatamente a opção escolhida.
+    const primeira = runSQL(`SELECT id FROM therapeutic_specific_objectives WHERE active ORDER BY sort_order, lower(label) LIMIT 1`).split('\n')[0].trim();
+    expect(primeira).toMatch(/^[0-9a-f-]{36}$/);
+    runSQL(`UPDATE therapeutic_specific_objectives SET active = false, deactivated_at = now(), updated_by = 'e2e-017' WHERE id = '${primeira}'`);
+    try {
+      const recusa = page.waitForResponse((r) => r.request().method() === 'POST' && /\/therapeutic-projects$/.test(r.url()));
+      await page.getByTestId('tp-save').click();
+      const resp = await recusa;
+      expect(resp.status()).toBe(422);
+      expect(((await resp.json()) as { code: string }).code).toBe('catalog_items_unknown');
+      await expect(page.getByTestId('tp-form-error')).toContainText('ya no está activa en el catálogo');
+      await expect(drawer).toHaveAttribute('data-mode', 'new'); // o formulário fica aberto para o humano corrigir
+      await expect(page.getByTestId('tp-form-error')).toHaveScreenshot('tp-form-error-catalogo.png', { maxDiffPixelRatio: 0.02 });
+    } finally {
+      runSQL(`UPDATE therapeutic_specific_objectives SET active = true, deactivated_at = NULL, updated_by = 'seed:415' WHERE id = '${primeira}'`);
+    }
+    const depois = Number(runSQL(`SELECT count(*) FROM patient_therapeutic_projects WHERE patient_id = '${seed.patientId}'`));
+    expect(depois).toBe(antes);
+    expect(Number(runSQL(`SELECT count(*) FROM patient_therapeutic_projects WHERE general_objective LIKE '%no debe persistir%'`))).toBe(0);
   });
 });

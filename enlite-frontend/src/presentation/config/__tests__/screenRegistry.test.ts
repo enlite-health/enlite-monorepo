@@ -82,6 +82,11 @@ describe('SCREEN_REGISTRY — rotas', () => {
 });
 
 describe('screensByCell / containersOfTab / screenById', () => {
+  it('containersOfTab: tela sem containers e container sem abas (tela sem abas) devolvem vazio, sem lançar', () => {
+    expect(containersOfTab({ id: 'x.semContainers', route: '/admin/x', cells: ['x:read'] }, 'qualquer')).toEqual([]);
+    expect(containersOfTab({ id: 'x.semAbas', route: '/admin/x', containers: [{ id: 'c', resource: 'x', cells: ['x:read'] }] }, 'qualquer')).toEqual([]);
+  });
+
   it('célula compartilhada aparece em TODAS as telas que a consomem — é uma só', () => {
     const telas = todasAsCelulas().get('patient:read') ?? [];
     expect(telas).toEqual(expect.arrayContaining(['dashboard', 'patients.list', 'patients.kanban', 'patients.detail', 'patients.chatRoles']));
