@@ -45,6 +45,10 @@ export const THERAPEUTIC_CATALOG_RESOURCE: Readonly<Record<TherapeuticCatalogKin
   'pathology-types': 'catalog_pathology_types',
 };
 
+/** Modalidade do acompanhamento — Ana (gestão) 08/09: "presencial, on-line e híbrida" (D301). */
+export const THERAPEUTIC_MODALITIES = ['IN_PERSON', 'ONLINE', 'HYBRID'] as const;
+export type TherapeuticModality = (typeof THERAPEUTIC_MODALITIES)[number];
+
 export interface TherapeuticProjectVersion {
   id: string;
   patientId: string;
@@ -54,6 +58,8 @@ export interface TherapeuticProjectVersion {
   version: string;
   editedFromVersionId: string | null;
   contractedServiceId: string;
+  /** `null` só em versão anterior à migration 417 (imutável: não se retroalimenta). */
+  modality: TherapeuticModality | null;
   diagnoses: TherapeuticDiagnosis[];
   clinicalContext: string;
   generalObjective: string;

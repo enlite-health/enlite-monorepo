@@ -8,6 +8,7 @@ import {
   versionLabel,
   type CatalogSnapshotItem,
   type TherapeuticDiagnosis,
+  type TherapeuticModality,
   type TherapeuticProjectVersion,
 } from '../domain/TherapeuticProject';
 import { TherapeuticCatalogRepository } from './TherapeuticCatalogRepository';
@@ -19,6 +20,7 @@ interface VersionRow {
   minor: number;
   edited_from_version_id: string | null;
   contracted_service_id: string;
+  modality: TherapeuticModality | null;
   diagnoses: TherapeuticDiagnosis[];
   clinical_context: string;
   general_objective: string;
@@ -39,6 +41,7 @@ interface VersionRow {
 
 export interface TherapeuticProjectVersionInput {
   contractedServiceId: string;
+  modality: TherapeuticModality;
   diagnoses: TherapeuticDiagnosis[];
   clinicalContext: string;
   generalObjective: string;
@@ -101,6 +104,7 @@ function toVersion(r: VersionRow): TherapeuticProjectVersion {
     version: versionLabel(r.major, r.minor),
     editedFromVersionId: r.edited_from_version_id,
     contractedServiceId: r.contracted_service_id,
+    modality: r.modality ?? null,
     diagnoses: r.diagnoses,
     clinicalContext: r.clinical_context,
     generalObjective: r.general_objective,
@@ -178,14 +182,14 @@ export class TherapeuticProjectRepository {
           `INSERT INTO patient_therapeutic_projects
              (patient_id, major, minor, edited_from_version_id, contracted_service_id, diagnoses,
               clinical_context, general_objective, specific_objectives, activities, pathology_types,
-              start_date, end_date, created_by)
-           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12, $13, $14)
+              start_date, end_date, created_by, modality)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12, $13, $14, $15)
            RETURNING id`,
           [
             cmd.patientId, number.major, number.minor, editedFrom, cmd.version.contractedServiceId,
             JSON.stringify(cmd.version.diagnoses), cmd.version.clinicalContext, cmd.version.generalObjective,
             JSON.stringify(specificObjectives), JSON.stringify(activities), JSON.stringify(pathologyTypes),
-            cmd.version.startDate, cmd.version.endDate, cmd.actorUid,
+            cmd.version.startDate, cmd.version.endDate, cmd.actorUid, cmd.version.modality,
           ],
         );
         const sel = await cli.query<VersionRow>(`${SELECT_VERSION} WHERE v.id = $1`, [ins.rows[0].id]);

@@ -60,6 +60,9 @@ export function TherapeuticProjectVersionView({ version: v, services, compact = 
             : <ListValue items={v.diagnoses.map((d) => ({ id: d.uri, label: d.title }))} />}
         </Row>
         <Row label={tc('service')} testId="tpv-service"><Text as="span" size="sm" color="primary">{serviceLabel}</Text></Row>
+        <Row label={tc('modality')} testId="tpv-modality">
+          <Text as="span" size="sm" color="primary">{v.modality ? tc(`modalityOptions.${v.modality}`) : '—'}</Text>
+        </Row>
         <Row label={tc('currentClinicalContext')} testId="tpv-clinical">{clinical(v.clinicalContext, 'tpv-clinical-text')}</Row>
         <Row label={tc('generalObjective')} testId="tpv-objective">{clinical(v.generalObjective, 'tpv-objective-text')}</Row>
         <Row label={tc('specificObjectives')} testId="tpv-specific"><ListValue items={compact ? v.specificObjectives.slice(0, 3) : v.specificObjectives} /></Row>

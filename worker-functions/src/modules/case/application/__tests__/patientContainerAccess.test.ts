@@ -71,6 +71,16 @@ describe('projectPatientDetailByContainers', () => {
     });
   });
 
+  it('417 (D301) — coverageEmergencyContacts é campo do container de COBERTURA: sem a célula sai null; com ela, sai', () => {
+    const comLista = { ...ficha, coverageEmergencyContacts: [{ id: 'c1', kind: 'AMBULANCE', name: 'A', phone: '1', sortOrder: 0 }] } as typeof ficha;
+    const sem = projectPatientDetailByContainers(comLista, ['patient:read', 'patient_identity:read']);
+    expect((sem as Record<string, unknown>).coverageEmergencyContacts).toBeNull();
+    expect(sem.redacted).toHaveProperty('coverage', true);
+    const com = projectPatientDetailByContainers(comLista, ['patient:read', 'patient_coverage:read']);
+    expect((com as Record<string, unknown>).coverageEmergencyContacts).toEqual([{ id: 'c1', kind: 'AMBULANCE', name: 'A', phone: '1', sortOrder: 0 }]);
+    expect(com.redacted).not.toHaveProperty('coverage');
+  });
+
   it('spec 017 — therapeuticProject: sem célula o marcador sai; com ela, nada muda na ficha (não há campo)', () => {
     const sem = projectPatientDetailByContainers(ficha, ['patient:read', 'patient_identity:read']);
     expect(sem.redacted).toHaveProperty('therapeuticProject', true);

@@ -94,6 +94,12 @@ describe('PatientTestFixtureService.purge — Postgres real', () => {
                '2026-09-01', '2026-12-31', 'purge-e2e')`,
       [id, svcRow.id],
     );
+    // 417 (D301): contato de emergência da cobertura — filha direta, sai no CASCADE.
+    await pool.query(
+      `INSERT INTO patient_coverage_emergency_contacts (patient_id, kind, name, phone_encrypted, created_by)
+       VALUES ($1, 'AMBULANCE', 'Ambulancia sintética', 'enc:sintetico', 'purge-e2e')`,
+      [id],
+    );
 
     // O banco grava sozinho a 1a linha de histórico (trigger) — o mock nunca
     // contaria isso. Medimos o que EXISTE antes, em vez de supor o número.
@@ -101,6 +107,7 @@ describe('PatientTestFixtureService.purge — Postgres real', () => {
     const enderecosAntes = await contar('patient_addresses', 'patient_id', id);
     expect(historicoAntes).toBeGreaterThanOrEqual(2);
     expect(await contar('patient_therapeutic_projects', 'patient_id', id)).toBe(1);
+    expect(await contar('patient_coverage_emergency_contacts', 'patient_id', id)).toBe(1);
 
     const result = await svc.purge(id);
 
@@ -109,6 +116,7 @@ describe('PatientTestFixtureService.purge — Postgres real', () => {
     expect(await contar('patient_status_history', 'patient_id', id)).toBe(0);
     expect(await contar('patient_addresses', 'patient_id', id)).toBe(0);
     expect(await contar('patient_therapeutic_projects', 'patient_id', id)).toBe(0);
+    expect(await contar('patient_coverage_emergency_contacts', 'patient_id', id)).toBe(0);
 
     // E a contagem do log bate com o que existia. Um nome de tabela errado no
     // template do countCascadeChildren estouraria a query aqui, não em produção.
@@ -121,6 +129,7 @@ describe('PatientTestFixtureService.purge — Postgres real', () => {
       patient_field_overrides_audit: 0,
       patient_contracted_services: 1,
       patient_therapeutic_projects: 1,
+      patient_coverage_emergency_contacts: 1,
     });
   });
 

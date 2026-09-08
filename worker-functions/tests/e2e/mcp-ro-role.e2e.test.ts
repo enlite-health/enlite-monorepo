@@ -302,7 +302,7 @@ describe('Role enlite_mcp_ro — SELECT por coluna em patients (D216) @integrati
     // tabelas fora desta fase, ex. patient_chat_ids/patient_responsibles, que ficam de fora
     // desta prova de propósito e vão para a LISTA do relatório, não para este teste).
     const columnScoped = ['patients', 'patient_addresses', 'patient_contracted_services'];
-    const fullyRevoked = ['patient_insurance_verified', 'patient_device_types', 'patient_diagnoses', 'patient_source_labels', 'patient_source_label_rejections', 'patient_therapeutic_projects', 'therapeutic_specific_objectives', 'therapeutic_activities', 'pathology_types'];
+    const fullyRevoked = ['patient_insurance_verified', 'patient_device_types', 'patient_diagnoses', 'patient_source_labels', 'patient_source_label_rejections', 'patient_therapeutic_projects', 'patient_coverage_emergency_contacts', 'therapeutic_specific_objectives', 'therapeutic_activities', 'pathology_types'];
     for (const tabela of [...columnScoped, ...fullyRevoked]) {
       const priv = await admin.query<{ t: boolean }>(
         `SELECT has_table_privilege('enlite_mcp_ro', $1, 'SELECT') AS t`,

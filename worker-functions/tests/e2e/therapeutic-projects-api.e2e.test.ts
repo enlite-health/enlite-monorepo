@@ -70,6 +70,7 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
 
   const versionBody = (over: Record<string, unknown> = {}) => ({
     contractedServiceId: serviceId,
+    modality: 'IN_PERSON',
     diagnoses: [{ uri: 'http://id.who.int/icd/entity/e2e', code: '8B11', title: 'Diagnóstico sintético e2e' }],
     clinicalContext: 'Síntesis sintética e2e — texto de teste sem dado de titular.',
     generalObjective: 'Objetivo general sintético e2e.',
@@ -173,7 +174,9 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
   it('1. new → V.1.0 com autor por NOME (nunca uid), snapshot dos catálogos com texto', async () => {
     const r = await chamar('POST', BASE(), U.completa, { mode: 'new', version: versionBody() });
     expect(r.status).toBe(201);
-    expect(r.body.data).toMatchObject({ major: 1, minor: 0, version: 'V.1.0', createdByName: 'Ana Sintética', editedFromVersionId: null });
+    expect(r.body.data).toMatchObject({ major: 1, minor: 0, version: 'V.1.0', createdByName: 'Ana Sintética', editedFromVersionId: null, modality: 'IN_PERSON' });
+    // D301.3a: a modalidade fica na linha (417) — e o trigger de imutabilidade a protege como as demais.
+    expect((await pool.query(`SELECT modality FROM patient_therapeutic_projects WHERE id = $1`, [r.body.data.id])).rows[0].modality).toBe('IN_PERSON');
     expect(r.body.data).not.toHaveProperty('createdBy');
     expect(r.body.data.specificObjectives).toHaveLength(2);
     expect(r.body.data.specificObjectives[0]).toEqual({ id: objectiveIds[0], label: expect.any(String) });
@@ -235,6 +238,10 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     const bad = await chamar('POST', BASE(), U.completa, { mode: 'new', version: versionBody({ major: 9 }) });
     expect(bad.status).toBe(400);
     expect(JSON.stringify(bad.body)).not.toContain('Síntesis sintética');
+    // D301.3a: modalidade obrigatória e fechada — sem ela ou fora do enum, 400.
+    const { modality: _m, ...semModalidade } = versionBody();
+    expect((await chamar('POST', BASE(), U.completa, { mode: 'new', version: semModalidade })).status).toBe(400);
+    expect((await chamar('POST', BASE(), U.completa, { mode: 'new', version: versionBody({ modality: 'presencial' }) })).status).toBe(400);
     const total = await pool.query(`SELECT count(*)::int AS n FROM patient_therapeutic_projects WHERE patient_id = $1`, [PATIENT]);
     expect(total.rows[0].n).toBe(4);
   });

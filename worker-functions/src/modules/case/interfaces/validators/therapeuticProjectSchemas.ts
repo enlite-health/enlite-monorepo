@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { containsLikelyPersonalData } from '@modules/identity/permissions';
-import { THERAPEUTIC_CATALOG_KINDS } from '../../domain/TherapeuticProject';
+import { THERAPEUTIC_CATALOG_KINDS, THERAPEUTIC_MODALITIES } from '../../domain/TherapeuticProject';
 
 /** Teto dos textos clínicos — espelha `ptp_clinical_context_len`/`ptp_general_objective_len` (migration 416, lex C6). */
 export const THERAPEUTIC_TEXT_MAX = 4000;
@@ -32,6 +32,7 @@ const diagnosisSchema = z
 const versionBodySchema = z
   .object({
     contractedServiceId: z.string().uuid(),
+    modality: z.enum(THERAPEUTIC_MODALITIES),
     diagnoses: z.array(diagnosisSchema).min(1).max(20),
     clinicalContext: z.string().trim().min(1).max(THERAPEUTIC_TEXT_MAX),
     generalObjective: z.string().trim().min(1).max(THERAPEUTIC_TEXT_MAX),

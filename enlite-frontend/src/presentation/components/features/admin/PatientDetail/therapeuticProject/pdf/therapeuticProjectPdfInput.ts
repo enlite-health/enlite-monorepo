@@ -21,6 +21,8 @@ export interface PdfCoverage {
 }
 
 export interface PdfService {
+  /** Código do serviço vinculado — decide as seções fixas VIII/IX (só CAREGIVER; D301.1). */
+  serviceCode: string;
   serviceLabel: string;
   deviceLabels: string[];
   providerProfile: string | null;
@@ -35,6 +37,13 @@ export interface PdfContact {
   email: string | null;
 }
 
+/** Contato de emergência da COBERTURA (417; D301.3b) — rótulo do tipo já traduzido. */
+export interface PdfCoverageContact {
+  kindLabel: string;
+  name: string;
+  phone: string;
+}
+
 export interface TherapeuticProjectPdfInput {
   /** `caseNumber` do paciente ou, sem ele, o id — vai no rodapé de toda página (lex C14). */
   caseRef: string;
@@ -43,7 +52,12 @@ export interface TherapeuticProjectPdfInput {
   coverage: PdfCoverage | null;
   service: PdfService | null;
   addressText: string | null;
+  /** Familiar/persona responsable — sob `patient_family:read`. */
   emergencyContacts: PdfContact[] | null;
+  /** Emergencia de la cobertura médica — bloco PRÓPRIO, sob `patient_coverage:read` (lex C5); nunca somado ao de cima. */
+  coverageEmergencyContacts: PdfCoverageContact[] | null;
+  /** Modalidade já traduzida; `null` = versão anterior à 417. */
+  modalityLabel: string | null;
   careTeam: string[] | null;
   /** Data/hora de emissão, já formatada (es-AR). */
   issuedAtText: string;

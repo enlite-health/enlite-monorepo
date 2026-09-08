@@ -19,6 +19,9 @@ export interface CatalogSnapshotItem {
   label: string;
 }
 
+export const THERAPEUTIC_MODALITIES = ['IN_PERSON', 'ONLINE', 'HYBRID'] as const;
+export type TherapeuticModality = (typeof THERAPEUTIC_MODALITIES)[number];
+
 export interface TherapeuticProjectVersion {
   id: string;
   patientId: string;
@@ -28,6 +31,8 @@ export interface TherapeuticProjectVersion {
   version: string;
   editedFromVersionId: string | null;
   contractedServiceId: string;
+  /** Modalidade (D301, Ana 08/09): presencial, on-line ou híbrida. `null` só em versão anterior à 417. */
+  modality: TherapeuticModality | null;
   diagnoses: TherapeuticDiagnosis[] | null;
   clinicalContext: string | null;
   generalObjective: string | null;
@@ -48,6 +53,7 @@ export interface TherapeuticProjectVersion {
 
 export interface TherapeuticProjectVersionBody {
   contractedServiceId: string;
+  modality: TherapeuticModality;
   diagnoses: TherapeuticDiagnosis[];
   clinicalContext: string;
   generalObjective: string;

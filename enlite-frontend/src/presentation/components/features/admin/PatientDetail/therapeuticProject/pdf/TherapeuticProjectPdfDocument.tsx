@@ -11,7 +11,7 @@ import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/render
 import {
   PDF_TITLE, PDF_SECTIONS, PDF_LABELS, PDF_FOOTER,
   CAREGIVER_LIMITS, CAREGIVER_LIMITS_INTRO, CAREGIVER_MUST_NOT_TITLE, CAREGIVER_MUST_NOT,
-  NOT_DOMESTIC_TITLE, NOT_DOMESTIC, NOT_DOMESTIC_OUTRO, FUNDAMENTAL_RULE,
+  NOT_DOMESTIC_TITLE, NOT_DOMESTIC, NOT_DOMESTIC_OUTRO, FUNDAMENTAL_RULE, FIXED_SECTIONS_SERVICE_CODE,
 } from './pdfFixedTexts';
 import { formatIsoDateEsAr, implementationPeriodText, type TherapeuticProjectPdfInput } from './therapeuticProjectPdfInput';
 
@@ -133,12 +133,24 @@ export function TherapeuticProjectPdfDocument({ input }: { input: TherapeuticPro
             />
           </>
         ) : <Redacted />}
+        {/* D301.3a — modalidade é da VERSÃO, não do cadastro: não depende de célula de container. */}
+        <Field label={PDF_LABELS.modality} value={input.modalityLabel} />
         {input.addressText !== null ? <Field label={PDF_LABELS.address} value={input.addressText} /> : <Redacted />}
+        {/* D301.3b (Ana): DOIS campos de emergência, cada um sob a célula do SEU container (lex C5). */}
+        <Text style={styles.subsection}>{PDF_LABELS.emergencyContact}</Text>
         {input.emergencyContacts ? (
           <Field
-            label={PDF_LABELS.emergencyContact}
+            label={PDF_LABELS.familyEmergencyContact}
             value={input.emergencyContacts.length === 0 ? null : input.emergencyContacts
               .map((c) => [c.name + (c.relationship ? ` (${c.relationship})` : ''), c.phone, c.email].filter(Boolean).join(' - '))
+              .join('. ')}
+          />
+        ) : <Redacted />}
+        {input.coverageEmergencyContacts ? (
+          <Field
+            label={PDF_LABELS.coverageEmergencyContact}
+            value={input.coverageEmergencyContacts.length === 0 ? null : input.coverageEmergencyContacts
+              .map((c) => `${c.kindLabel}: ${c.name} - ${c.phone}`)
               .join('. ')}
           />
         ) : <Redacted />}
@@ -163,23 +175,32 @@ export function TherapeuticProjectPdfDocument({ input }: { input: TherapeuticPro
         <SectionTitle>{PDF_SECTIONS.activities}</SectionTitle>
         {v.activities.map((a) => <Bullet key={a.id}>{a.label}</Bullet>)}
 
-        {/* VIII e IX — texto fixo (Gabriel, 08/09). */}
+        {/* VIII e IX — texto fixo do serviço de CUIDADORES (Ana, 08/09 — D301.1): noutro serviço, omitido com rótulo.
+            Sem `patient_services:read` não se sabe o serviço: sai redigido, como as demais seções de container. */}
         <SectionTitle>{PDF_SECTIONS.caregiverLimits}</SectionTitle>
-        {CAREGIVER_LIMITS.map((g) => (
-          <View key={g.title}>
-            <Text style={styles.subsection}>{g.title}</Text>
-            {g.items.map((it) => <Bullet key={it}>{it}</Bullet>)}
-          </View>
-        ))}
-        <Text style={[styles.paragraph, { marginTop: 6 }]}>{CAREGIVER_LIMITS_INTRO}</Text>
-        <Text style={styles.subsection}>{CAREGIVER_MUST_NOT_TITLE}</Text>
-        {CAREGIVER_MUST_NOT.map((it) => <Bullet key={it}>{it}</Bullet>)}
-        <Text style={styles.subsection}>{NOT_DOMESTIC_TITLE}</Text>
-        {NOT_DOMESTIC.map((it) => <Bullet key={it}>{it}</Bullet>)}
-        <Text style={[styles.paragraph, { marginTop: 4 }]}>{NOT_DOMESTIC_OUTRO}</Text>
+        {input.service === null ? <Redacted /> : input.service.serviceCode !== FIXED_SECTIONS_SERVICE_CODE ? (
+          <Text style={styles.redacted}>{PDF_LABELS.sectionNotForService}</Text>
+        ) : (
+          <>
+            {CAREGIVER_LIMITS.map((g) => (
+              <View key={g.title}>
+                <Text style={styles.subsection}>{g.title}</Text>
+                {g.items.map((it) => <Bullet key={it}>{it}</Bullet>)}
+              </View>
+            ))}
+            <Text style={[styles.paragraph, { marginTop: 6 }]}>{CAREGIVER_LIMITS_INTRO}</Text>
+            <Text style={styles.subsection}>{CAREGIVER_MUST_NOT_TITLE}</Text>
+            {CAREGIVER_MUST_NOT.map((it) => <Bullet key={it}>{it}</Bullet>)}
+            <Text style={styles.subsection}>{NOT_DOMESTIC_TITLE}</Text>
+            {NOT_DOMESTIC.map((it) => <Bullet key={it}>{it}</Bullet>)}
+            <Text style={[styles.paragraph, { marginTop: 4 }]}>{NOT_DOMESTIC_OUTRO}</Text>
+          </>
+        )}
 
         <SectionTitle>{PDF_SECTIONS.fundamentalRule}</SectionTitle>
-        {FUNDAMENTAL_RULE.map((g) => (
+        {input.service === null ? <Redacted /> : input.service.serviceCode !== FIXED_SECTIONS_SERVICE_CODE ? (
+          <Text style={styles.redacted}>{PDF_LABELS.sectionNotForService}</Text>
+        ) : FUNDAMENTAL_RULE.map((g) => (
           <View key={g.title}>
             <Text style={styles.subsection}>{g.title}</Text>
             {g.items.map((it) => <Bullet key={it}>{it}</Bullet>)}

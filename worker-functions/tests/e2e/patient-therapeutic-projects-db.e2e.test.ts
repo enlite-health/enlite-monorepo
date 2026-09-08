@@ -136,6 +136,7 @@ describe('416 — projeto terapêutico versionado e imutável (banco real)', () 
       `end_date = '2027-01-01'`,
       `diagnoses = '[]'::jsonb`,
       `minor = 9`,
+      `modality = 'ONLINE'`, // 417: a modalidade entrou na lista do trigger (D301.3a)
     ]) {
       await expect(admin.query(`UPDATE patient_therapeutic_projects SET ${set} WHERE id = $1`, [v.id]))
         .rejects.toThrow(/ptp_imutavel/);
@@ -203,5 +204,11 @@ describe('416 — projeto terapêutico versionado e imutável (banco real)', () 
     await expect(insertVersion({ clinical_context: 'x'.repeat(4001) })).rejects.toThrow(/ptp_clinical_context_len/);
     await expect(insertVersion({ specific_objectives: '[]' })).rejects.toThrow(/ptp_specific_objectives_lista/);
     await expect(insertVersion({ end_date: '2026-08-31' })).rejects.toThrow(/ptp_prazo_coerente/);
+    // 417 (D301.3a): modalidade fechada no CHECK; NULL aceito (versão anterior à 417).
+    await expect(insertVersion({ modality: 'presencial' })).rejects.toThrow(/ptp_modality_check/);
+    const semModalidade = await insertVersion({ major: 7, modality: null });
+    expect(semModalidade.id).toBeTruthy();
+    const comModalidade = await insertVersion({ major: 8, modality: 'HYBRID' });
+    expect((await admin.query(`SELECT modality FROM patient_therapeutic_projects WHERE id = $1`, [comModalidade.id])).rows[0].modality).toBe('HYBRID');
   });
 });

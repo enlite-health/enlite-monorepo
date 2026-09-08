@@ -14,7 +14,7 @@
  * são os REAIS — a régua é o que o operador consegue fazer na tela, não o que a prop aceita.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, cleanup } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import type { PatientContractedServiceDetail, PatientDiagnosisDetail } from '@domain/entities/PatientDetail';
 import type { TherapeuticCatalogItem, TherapeuticProjectVersion } from '@domain/entities/TherapeuticProject';
@@ -116,6 +116,7 @@ const VERSAO: TherapeuticProjectVersion = {
   version: 'V.1.0',
   editedFromVersionId: null,
   contractedServiceId: 'svc-2',
+  modality: 'IN_PERSON',
   diagnoses: [{ uri: 'urn:icd:B', title: 'Diagnóstico B' }],
   clinicalContext: 'contexto de origem',
   generalObjective: 'objetivo de origem',
@@ -172,6 +173,7 @@ function alternarNoMulti(id: string, label: string): void {
 }
 
 function preencherTudo(): void {
+  fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'HYBRID' } });
   fireEvent.click(screen.getByTestId('icd-pick-a'));
   fireEvent.change(screen.getByTestId('tp-clinicalContext'), { target: { value: '  contexto clínico  ' } });
   fireEvent.change(screen.getByTestId('tp-generalObjective'), { target: { value: '  objetivo geral  ' } });
@@ -325,6 +327,23 @@ describe('"Salvar" fica travado até TODA regra passar', () => {
     expect(salvar().disabled).toBe(false);
   });
 
+  it('D301 — modalidade: obrigatória (sem ela "Salvar" trava), 3 opções traduzidas; versão antiga com `null` abre vazia e exige escolha', () => {
+    montar({ patientDiagnoses: [] });
+    preencherTudo();
+    expect(salvar().disabled).toBe(false);
+    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: '' } });
+    expect(salvar().disabled).toBe(true);
+    const opcoes = Array.from((screen.getByTestId('tp-modality') as HTMLSelectElement).options).map((o) => o.value).filter(Boolean);
+    expect(opcoes).toEqual(['IN_PERSON', 'ONLINE', 'HYBRID']);
+    expect(screen.getByText(ptBR.admin.patients.detail.therapeuticProjectCard.modalityOptions.ONLINE)).toBeInTheDocument();
+    cleanup();
+    montar({ from: { ...VERSAO, modality: null } });
+    expect((screen.getByTestId('tp-modality') as HTMLSelectElement).value).toBe('');
+    expect(salvar().disabled).toBe(true);
+    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
+    expect(salvar().disabled).toBe(false);
+  });
+
   it('`saving` trava o botão, troca o rótulo, desabilita "Cancelar" e o combobox de CID', () => {
     montar({ saving: true });
 
@@ -347,6 +366,7 @@ describe('submissão', () => {
     expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(onSubmit).toHaveBeenCalledWith({
       contractedServiceId: 'svc-1',
+      modality: 'HYBRID',
       diagnoses: [{ uri: 'urn:icd:A', title: 'Diagnóstico A' }],
       clinicalContext: 'contexto clínico',
       generalObjective: 'objetivo geral',
@@ -428,6 +448,7 @@ describe('modo "Editar" — os campos nascem da versão de origem', () => {
 
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
       contractedServiceId: 'svc-2',
+      modality: 'IN_PERSON',
       specificObjectiveIds: ['so-morto'],
       startDate: '2026-01-10',
       endDate: '2026-06-10',

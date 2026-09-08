@@ -10,6 +10,7 @@ import {
 const UUID = '11111111-1111-4111-8111-111111111111';
 const version = {
   contractedServiceId: UUID,
+  modality: 'IN_PERSON',
   diagnoses: [{ uri: 'http://id.who.int/icd/entity/1', code: '8B11', title: 'Sintético' }],
   clinicalContext: 'contexto',
   generalObjective: 'objetivo',
@@ -26,6 +27,16 @@ describe('therapeuticProjectSchemas — a borda (spec 017)', () => {
     expect(createTherapeuticProjectSchema.safeParse({ mode: 'edit', fromVersionId: UUID, version }).success).toBe(true);
     expect(createTherapeuticProjectSchema.safeParse({ mode: 'edit', version }).success).toBe(false);
     expect(createTherapeuticProjectSchema.safeParse({ mode: 'novo', version }).success).toBe(false);
+  });
+
+  it('modalidade (D301, Ana 08/09): obrigatória e fechada em IN_PERSON | ONLINE | HYBRID', () => {
+    for (const modality of ['IN_PERSON', 'ONLINE', 'HYBRID']) {
+      expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, modality } }).success).toBe(true);
+    }
+    const { modality: _m, ...semModalidade } = version;
+    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: semModalidade }).success).toBe(false);
+    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, modality: 'presencial' } }).success).toBe(false);
+    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, modality: null } }).success).toBe(false);
   });
 
   it('🔒 major/minor/patientId/country NÃO entram pelo corpo (.strict())', () => {

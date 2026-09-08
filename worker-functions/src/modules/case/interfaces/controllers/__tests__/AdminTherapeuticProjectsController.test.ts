@@ -37,6 +37,7 @@ const CORPO_NOVO = {
   mode: 'new',
   version: {
     contractedServiceId: SERVICE_ID,
+    modality: 'IN_PERSON',
     diagnoses: [{ uri: 'http://id.who.int/icd/entity/1', code: '6A02', title: 'TEA' }],
     clinicalContext: TEXTO_CLINICO,
     generalObjective: 'mejorar autonomía',
@@ -56,6 +57,7 @@ const VERSAO = {
   version: 'V.1.0',
   editedFromVersionId: null,
   contractedServiceId: SERVICE_ID,
+  modality: 'IN_PERSON',
   diagnoses: [{ uri: 'u', code: '6A02', title: 'TEA' }],
   clinicalContext: TEXTO_CLINICO,
   generalObjective: 'mejorar autonomía',

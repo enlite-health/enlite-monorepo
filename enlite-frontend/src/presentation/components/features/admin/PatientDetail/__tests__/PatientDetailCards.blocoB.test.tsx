@@ -56,6 +56,22 @@ describe('CoberturaMedicaCard — drawer', () => {
   });
 });
 
+describe('CoberturaMedicaCard — contatos de emergência da cobertura (417, D301.3b)', () => {
+  it('lista tipo traduzido, nome e telefone (telefone com máscara do Clarity); sem contatos ou sem célula (`null`) mostra "—"', () => {
+    const { unmount } = render(<CoberturaMedicaCard patient={{ ...patientDetailFixture, coverageEmergencyContacts: [
+      { id: 'c1', kind: 'AMBULANCE', name: 'Ambulancia OSDE', phone: '0800-1', sortOrder: 0 },
+      { id: 'c2', kind: 'DIRECT_PROFESSIONAL', name: 'Dra. Pérez', phone: '11-5555', sortOrder: 1 },
+    ] }} />);
+    const row = screen.getByTestId('coverage-emergency-contacts');
+    expect(row).toHaveTextContent(`${t('admin.patients.detail.coverageCard.emergencyContactKinds.AMBULANCE')}: Ambulancia OSDE · 0800-1`);
+    expect(row).toHaveTextContent(`${t('admin.patients.detail.coverageCard.emergencyContactKinds.DIRECT_PROFESSIONAL')}: Dra. Pérez · 11-5555`);
+    expect(row.querySelectorAll('[data-clarity-mask="True"]')).toHaveLength(2);
+    unmount();
+    render(<CoberturaMedicaCard patient={{ ...patientDetailFixture, coverageEmergencyContacts: null }} />);
+    expect(screen.getByTestId('coverage-emergency-contacts')).toHaveTextContent('—');
+  });
+});
+
 describe('LocalizacoesCard — drawer', () => {
   it('criar pelo drawer → onSaved; Escape → onClose (drawer some)', async () => {
     const onSaved = vi.fn();

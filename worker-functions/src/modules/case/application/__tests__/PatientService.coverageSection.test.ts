@@ -20,6 +20,8 @@ const mockReplaceDevices = jest.fn().mockResolvedValue({ changed: true, codes: [
 jest.mock('../../infrastructure/PatientDeviceTypeRepository', () => ({ PatientDeviceTypeRepository: jest.fn().mockImplementation(() => ({ replaceCodesForPatient: (...a: unknown[]) => mockReplaceDevices(...a) })) }));
 const mockReplaceCodes = jest.fn().mockResolvedValue({ codes: [] });
 jest.mock('../../infrastructure/PatientInsuranceVerifiedRepository', () => ({ PatientInsuranceVerifiedRepository: jest.fn().mockImplementation(() => ({ replaceCodesForPatient: (...a: unknown[]) => mockReplaceCodes(...a) })) }));
+const mockReplaceContacts = jest.fn().mockResolvedValue(undefined);
+jest.mock('../../infrastructure/PatientCoverageEmergencyContactRepository', () => ({ PatientCoverageEmergencyContactRepository: jest.fn().mockImplementation(() => ({ replaceAll: (...a: unknown[]) => mockReplaceContacts(...a) })) }));
 jest.mock('../../../../infrastructure/services/GeocodingService', () => ({ GeocodingService: jest.fn().mockImplementation(() => ({})) }));
 jest.mock('firebase-functions', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 
@@ -50,6 +52,20 @@ describe('PatientService.updatePatientSection — bloco B', () => {
     await service.updatePatientSection(PID, 'coverage', { insuranceVerifiedCodes: [] });
     expect(sqls().some((s) => /^UPDATE patients/.test(s))).toBe(false);
     expect(mockReplaceCodes).toHaveBeenCalledWith(PID, [], mockClient);
+  });
+
+  it('coverage: emergencyContacts (417, D301) vai ao repositório na MESMA transação com o uid do ator; sem a chave não toca; sem ator carimba o sentinela', async () => {
+    const lista = [{ kind: 'AMBULANCE' as const, name: 'Ambulancia', phone: '0800' }];
+    await service.updatePatientSection(PID, 'coverage', { emergencyContacts: lista }, { uid: 'u-staff' });
+    expect(mockReplaceContacts).toHaveBeenCalledWith(PID, lista, 'u-staff', mockClient);
+    expect(sqls()[0]).toBe('BEGIN'); expect(sqls().at(-1)).toBe('COMMIT');
+    expect(sqls().some((s) => /^UPDATE patients/.test(s))).toBe(false); // só a lista veio: nenhum escalar
+    jest.clearAllMocks();
+    await service.updatePatientSection(PID, 'coverage', { affiliateId: 'AF-2' });
+    expect(mockReplaceContacts).not.toHaveBeenCalled();
+    jest.clearAllMocks();
+    await service.updatePatientSection(PID, 'coverage', { emergencyContacts: [] });
+    expect(mockReplaceContacts).toHaveBeenCalledWith(PID, [], 'admin:sem-ator', mockClient);
   });
 
   it('clinical: deviceTypes vai ao repositório de dispositivo (só quando a chave veio); o upsert clínico NÃO recebe deviceType', async () => {

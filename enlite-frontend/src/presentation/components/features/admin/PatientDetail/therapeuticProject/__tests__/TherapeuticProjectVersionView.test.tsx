@@ -75,6 +75,7 @@ const VERSAO: TherapeuticProjectVersion = {
   version: 'V.1.0',
   editedFromVersionId: null,
   contractedServiceId: 'svc-1',
+  modality: 'IN_PERSON',
   diagnoses: [
     { uri: 'urn:icd:1', title: 'Trastorno del espectro autista' },
     { uri: 'urn:icd:2', title: 'TDAH' },
@@ -149,6 +150,7 @@ describe('modo completo (drawer) × compacto (card)', () => {
     expect(screen.getByTestId('tpv-cid').querySelectorAll('li')).toHaveLength(2);
     expect(screen.getByText('Trastorno del espectro autista')).toBeInTheDocument();
     expect(screen.getByTestId('tpv-service')).toHaveTextContent('Acompanhante Terapêutico');
+    expect(screen.getByTestId('tpv-modality')).toHaveTextContent(ptBR.admin.patients.detail.therapeuticProjectCard.modalityOptions.IN_PERSON);
     expect(screen.getByTestId('tpv-pathology')).toHaveTextContent('Neurológica, Psiquiátrica');
     expect(screen.getByTestId('tpv-deadlines')).toHaveTextContent('01/09/2026 - 01/12/2026');
   });
@@ -157,6 +159,11 @@ describe('modo completo (drawer) × compacto (card)', () => {
 // ── Redigido (lex C7) ────────────────────────────────────────────────────────
 
 describe('🔒 lex C7 — versão redigida mostra o RÓTULO, nunca vazio', () => {
+  it('D301 — versão anterior à 417 (`modality: null`) mostra "—" na modalidade', () => {
+    render(<TherapeuticProjectVersionView version={{ ...VERSAO, modality: null }} services={[SERVICO]} />);
+    expect(screen.getByTestId('tpv-modality')).toHaveTextContent('—');
+  });
+
   it('`redacted.clinical` → CID, contexto e objetivo viram o rótulo de redigido', () => {
     montar({ redacted: { clinical: true }, diagnoses: null, clinicalContext: null, generalObjective: null });
 

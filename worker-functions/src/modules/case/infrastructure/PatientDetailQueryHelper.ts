@@ -12,6 +12,7 @@ import {
   type ActiveVacancy,
 } from '../application/AddressAvailabilityCalculator';
 import { mapContractedServices } from './ContractedServiceDetailMapper';
+import { PatientCoverageEmergencyContactRepository } from './PatientCoverageEmergencyContactRepository';
 import { ALL_PATIENT_CONTAINERS_READABLE, type PatientContainerReads } from '../application/patientContainerAccess';
 import { phoneMatchesResponsible } from '../domain/PhoneMatch';
 
@@ -163,6 +164,8 @@ async function fetchRelated(pool: Pool, patientId: string) {
     // Serviços contratados (spec 013, bloco C) — contrato do detalhe. hourlyValue vem CRU aqui;
     // a redação por papel (lex C-c.4) acontece no controller (ponto único).
     pool.query(`SELECT * FROM patient_contracted_services WHERE patient_id = $1 ORDER BY active DESC, created_at ASC`, [patientId]),
+    // 417 (D301): só o ciphertext; decifra depois, e só sob `patient_coverage:read`.
+    new PatientCoverageEmergencyContactRepository(pool).fetchRows(patientId, pool),
   ]);
 }
 
@@ -256,7 +259,7 @@ export async function fetchPatientDetail(
   if (patientResult.rows.length === 0) return null;
 
   const p = patientResult.rows[0];
-  const [responsibleRows, addressRows, professionalRows, vacancyRows, contractedServiceRows] = await fetchRelated(pool, id);
+  const [responsibleRows, addressRows, professionalRows, vacancyRows, contractedServiceRows, coverageContactRows] = await fetchRelated(pool, id);
 
   const vacancies: ActiveVacancy[] = vacancyRows.rows.map((v: any) => ({
     id: v.id,
@@ -265,13 +268,21 @@ export async function fetchPatientDetail(
     schedule: v.schedule,
   }));
 
-  const [responsibles, professionals, contactEmail, contractedServices] = await Promise.all([
+  const [responsibles, professionals, contactEmail, contractedServices, coverageEmergencyContacts] = await Promise.all([
     reads.family ? decryptResponsibles(responsibleRows.rows, encryptionService) : Promise.resolve([]),
     reads.careTeam ? decryptProfessionals(professionalRows.rows, encryptionService) : Promise.resolve([]),
     // Sem ciphertext não há decrypt: o passthrough de teste devolve '' para
     // entrada vazia, e '' na ficha seria "tem e-mail e está em branco".
     reads.identity && p.contactEmailEncrypted ? encryptionService.decrypt(p.contactEmailEncrypted) : Promise.resolve(null),
     reads.services ? mapContractedServices(contractedServiceRows.rows, pool, encryptionService) : Promise.resolve([]),
+    // 417 (D301): mesma régua dos responsáveis — sem a célula do container, o KMS não roda. lex C3: o
+    // profissional direto é o MESMO dado da equipe tratante (`patient_care_team`): só sai (e só decifra)
+    // quando o ator lê os DOIS containers — cobertura e equipe.
+    reads.coverage
+      ? new PatientCoverageEmergencyContactRepository(pool, encryptionService).decryptRows(
+          coverageContactRows.filter((r) => r.kind !== 'DIRECT_PROFESSIONAL' || reads.careTeam),
+        )
+      : Promise.resolve([]),
   ]);
 
   const addresses = mapAddresses(addressRows.rows, vacancies);
@@ -327,6 +338,7 @@ export async function fetchPatientDetail(
     phoneMatchesResponsible: phoneMatchesResponsible(p.phoneWhatsapp, responsibles.map((r) => r.phone)),
     lastCaseNumber: p.lastCaseNumber != null ? Number(p.lastCaseNumber) : null,
     responsibles,
+    coverageEmergencyContacts,
     addresses,
     professionals,
     contractedServices,

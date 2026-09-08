@@ -27,6 +27,8 @@ const DEVICE_KEY = 'admin.patients.deviceTypeOptions';
 const CARE_LOCATION_KEY = 'admin.patients.detail.contractedServicesCard.careLocationOptions';
 const RELATIONSHIP_KEY = 'admin.patients.detail.relationshipOptions';
 const DOCUMENT_KEY = 'admin.patients.detail.documentTypes';
+const MODALITY_KEY = 'admin.patients.detail.therapeuticProjectCard.modalityOptions';
+const COVERAGE_CONTACT_KIND_KEY = 'admin.patients.detail.coverageCard.emergencyContactKinds';
 
 export function buildTherapeuticProjectPdfInput(args: {
   patient: PatientDetail;
@@ -62,13 +64,14 @@ export function buildTherapeuticProjectPdfInput(args: {
   const pdfService = reads.services
     ? service
       ? {
+          serviceCode: service.serviceCode,
           serviceLabel: tEs(`${SERVICE_KEY}.${service.serviceCode}`, service.serviceCode),
           deviceLabels: service.deviceTypes.map((d) => tEs(`${DEVICE_KEY}.${d}`, d)),
           providerProfile: service.professionalProfile,
           scheduleText: contractedServiceScheduleText(service.schedule),
           careLocationLabel: service.careLocation ? tEs(`${CARE_LOCATION_KEY}.${service.careLocation}`, service.careLocation) : null,
         }
-      : { serviceLabel: '—', deviceLabels: [], providerProfile: null, scheduleText: null, careLocationLabel: null }
+      : { serviceCode: '', serviceLabel: '—', deviceLabels: [], providerProfile: null, scheduleText: null, careLocationLabel: null }
     : null;
 
   // Endereço: o do SERVIÇO escolhido; sem vínculo, o principal do paciente. Sem célula de endereço, omitido.
@@ -90,6 +93,16 @@ export function buildTherapeuticProjectPdfInput(args: {
       }))
     : null;
 
+  // D301.3b / lex C5: bloco PRÓPRIO sob a célula de COBERTURA — nunca somado ao dos familiares. O profissional
+  // direto já vem filtrado pelo servidor (só com equipe também, C3); aqui não há o que filtrar.
+  const coverageEmergencyContacts = reads.coverage
+    ? (patient.coverageEmergencyContacts ?? []).map((c) => ({
+        kindLabel: tEs(`${COVERAGE_CONTACT_KIND_KEY}.${c.kind}`, c.kind),
+        name: c.name,
+        phone: c.phone,
+      }))
+    : null;
+
   const careTeam = reads.careTeam ? patient.professionals.map((p) => p.name ?? '—') : null;
 
   return {
@@ -101,6 +114,8 @@ export function buildTherapeuticProjectPdfInput(args: {
     service: pdfService,
     addressText,
     emergencyContacts,
+    coverageEmergencyContacts,
+    modalityLabel: version.modality ? tEs(`${MODALITY_KEY}.${version.modality}`, version.modality) : null,
     careTeam,
     issuedAtText: formatIssuedAt(now),
     logoSrc,

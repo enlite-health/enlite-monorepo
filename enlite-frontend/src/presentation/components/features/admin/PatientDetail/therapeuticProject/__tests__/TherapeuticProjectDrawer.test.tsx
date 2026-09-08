@@ -145,6 +145,7 @@ const VERSAO: TherapeuticProjectVersion = {
   version: 'V.1.0',
   editedFromVersionId: null,
   contractedServiceId: 'svc-1',
+  modality: 'IN_PERSON',
   diagnoses: [{ uri: 'urn:icd:A', title: 'Diagnóstico A' }],
   clinicalContext: 'contexto de origem',
   generalObjective: 'objetivo de origem',
@@ -381,6 +382,7 @@ describe('salvar — `new` cria a major seguinte, `edit` a minor da origem', () 
     montar({ mode: 'new' });
     await esperarFormulario();
 
+    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'IN_PERSON' } });
     fireEvent.change(screen.getByTestId('tp-clinicalContext'), { target: { value: 'contexto novo' } });
     fireEvent.change(screen.getByTestId('tp-generalObjective'), { target: { value: 'objetivo novo' } });
     alternarNoMulti('tp-specificObjectives', 'Rótulo specific-objectives');
@@ -395,6 +397,7 @@ describe('salvar — `new` cria a major seguinte, `edit` a minor da origem', () 
       mode: 'new',
       version: {
         contractedServiceId: 'svc-1',
+        modality: 'IN_PERSON',
         diagnoses: [{ uri: 'urn:icd:A', title: 'Diagnóstico A' }],
         clinicalContext: 'contexto novo',
         generalObjective: 'objetivo novo',

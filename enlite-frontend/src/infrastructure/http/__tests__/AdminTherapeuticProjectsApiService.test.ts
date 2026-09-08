@@ -35,6 +35,7 @@ const BASE = 'http://localhost:8080';
 
 const CORPO: TherapeuticProjectVersionBody = {
   contractedServiceId: 'svc-1',
+  modality: 'IN_PERSON',
   diagnoses: [{ uri: 'http://id.who.int/icd/entity/1', code: '6A00', title: 'Trastorno' }],
   clinicalContext: 'contexto',
   generalObjective: 'objetivo',

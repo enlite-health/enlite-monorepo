@@ -19,6 +19,7 @@ import {
 } from './PatientStatusWriter';
 import { PatientDeviceTypeRepository } from '../infrastructure/PatientDeviceTypeRepository';
 import { PatientInsuranceVerifiedRepository } from '../infrastructure/PatientInsuranceVerifiedRepository';
+import { PatientCoverageEmergencyContactRepository } from '../infrastructure/PatientCoverageEmergencyContactRepository';
 
 
 // ── Contrato de escrita ───────────────────────────────────────────────────────
@@ -74,6 +75,7 @@ export class PatientService {
   // cobertura abre pool — as suítes que dublam o banco não precisam saber deles.
   private deviceTypeRepoMemo?: PatientDeviceTypeRepository;
   private insuranceRepoMemo?: PatientInsuranceVerifiedRepository;
+  private coverageContactRepoMemo?: PatientCoverageEmergencyContactRepository;
 
   private get deviceTypeRepo(): PatientDeviceTypeRepository {
     this.deviceTypeRepoMemo ??= new PatientDeviceTypeRepository();
@@ -83,6 +85,11 @@ export class PatientService {
   private get insuranceRepo(): PatientInsuranceVerifiedRepository {
     this.insuranceRepoMemo ??= new PatientInsuranceVerifiedRepository();
     return this.insuranceRepoMemo;
+  }
+
+  private get coverageContactRepo(): PatientCoverageEmergencyContactRepository {
+    this.coverageContactRepoMemo ??= new PatientCoverageEmergencyContactRepository();
+    return this.coverageContactRepoMemo;
   }
 
   /** As dependências que a escrita das coleções auxiliares precisa (`PatientRelatedWriter`). */
@@ -279,6 +286,7 @@ export class PatientService {
         encryptionService: this.encryptionService,
         deviceTypeRepo:    () => this.deviceTypeRepo,
         insuranceRepo:     () => this.insuranceRepo,
+        coverageContactRepo: () => this.coverageContactRepo,
       },
       patientId, section, data, actor,
     );

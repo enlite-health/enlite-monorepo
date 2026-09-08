@@ -37,6 +37,7 @@ function row(over: Record<string, unknown> = {}) {
     minor: 0,
     edited_from_version_id: null,
     contracted_service_id: 'svc-1',
+    modality: 'IN_PERSON',
     diagnoses: [{ uri: 'u', code: '6A02', title: 'TEA' }],
     clinical_context: 'contexto',
     general_objective: 'objetivo',
@@ -58,6 +59,7 @@ function row(over: Record<string, unknown> = {}) {
 
 const CORPO: TherapeuticProjectVersionInput = {
   contractedServiceId: 'svc-1',
+  modality: 'IN_PERSON',
   diagnoses: [{ uri: 'u', code: '6A02', title: 'TEA' }],
   clinicalContext: 'contexto',
   generalObjective: 'objetivo',
@@ -185,6 +187,13 @@ describe('TherapeuticProjectRepository', () => {
       expect(v).toMatchObject({ startDate: '2026-01-01', createdAt: '2026-09-08T10:00:00.000Z', annulledAt: null });
     });
 
+    it('versão anterior à 417 (modality ausente/undefined no row) sai com `modality: null`, nunca undefined', async () => {
+      const { modality: _m, ...semModalidade } = row();
+      mockPoolQuery.mockResolvedValue({ rows: [semModalidade] });
+      const v = await new TherapeuticProjectRepository().findById(PACIENTE, 'v-1');
+      expect(v).toHaveProperty('modality', null);
+    });
+
     it('o rótulo `V.M.m` sai do domínio e todo o resto do row é mapeado', async () => {
       mockPoolQuery.mockResolvedValue({ rows: [row({ major: 2, minor: 3, edited_from_version_id: 'v-pai' })] });
       const v = await new TherapeuticProjectRepository().findById(PACIENTE, 'v-1');
@@ -196,6 +205,7 @@ describe('TherapeuticProjectRepository', () => {
         version: 'V.2.3',
         editedFromVersionId: 'v-pai',
         contractedServiceId: 'svc-1',
+        modality: 'IN_PERSON',
         diagnoses: [{ uri: 'u', code: '6A02', title: 'TEA' }],
         clinicalContext: 'contexto',
         generalObjective: 'objetivo',

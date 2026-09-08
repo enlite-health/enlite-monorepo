@@ -58,6 +58,7 @@ const VERSAO: TherapeuticProjectVersion = {
   version: 'V.1.0',
   editedFromVersionId: null,
   contractedServiceId: 'svc-1',
+  modality: 'IN_PERSON',
   diagnoses: [{ uri: 'http://id.who.int/icd/entity/1', title: 'Trastorno del espectro autista' }],
   clinicalContext: 'contexto sintético',
   generalObjective: 'objetivo sintético',
@@ -107,6 +108,8 @@ describe('lex C12 — cada `reads.*` decide se a seção existe no PDF', () => {
     expect(input.service).not.toBeNull();
     expect(input.addressText).not.toBeNull();
     expect(input.emergencyContacts).not.toBeNull();
+    expect(input.coverageEmergencyContacts).not.toBeNull();
+    expect(input.modalityLabel).toBe('es:admin.patients.detail.therapeuticProjectCard.modalityOptions.IN_PERSON');
     expect(input.careTeam).not.toBeNull();
     expect(input.issuedAtText).toBe('08/09/2026 14:05');
     expect(input.logoSrc).toBeUndefined();
@@ -120,7 +123,10 @@ describe('lex C12 — cada `reads.*` decide se a seção existe no PDF', () => {
     expect(input.service).toBeNull();
     expect(input.addressText).toBeNull();
     expect(input.emergencyContacts).toBeNull();
+    expect(input.coverageEmergencyContacts).toBeNull();
     expect(input.careTeam).toBeNull();
+    // A modalidade é da VERSÃO (não de container): continua mesmo sem célula nenhuma da ficha.
+    expect(input.modalityLabel).toBe('es:admin.patients.detail.therapeuticProjectCard.modalityOptions.IN_PERSON');
     // o que NÃO depende de célula continua: a referência do rodapé e a versão (lex C14).
     expect(input.caseRef).toBe(patientDetailFixture.id);
     expect(input.version).toBe(VERSAO);
@@ -193,6 +199,7 @@ describe('serviço contratado', () => {
     const { service } = montar();
 
     expect(service).toEqual({
+      serviceCode: 'AT',
       serviceLabel: 'es:admin.patients.detail.contractedServicesCard.serviceTypes.AT',
       deviceLabels: ['es:admin.patients.deviceTypeOptions.HOME'],
       providerProfile: 'Perfil sintético do prestador',
@@ -210,7 +217,7 @@ describe('serviço contratado', () => {
   it('🔴 serviço NÃO achado (a versão aponta para um id que não está na ficha): bloco com `—`, não `null`', () => {
     const { service } = montar({ version: { ...VERSAO, contractedServiceId: 'svc-inexistente' } });
 
-    expect(service).toEqual({ serviceLabel: '—', deviceLabels: [], providerProfile: null, scheduleText: null, careLocationLabel: null });
+    expect(service).toEqual({ serviceCode: '', serviceLabel: '—', deviceLabels: [], providerProfile: null, scheduleText: null, careLocationLabel: null });
   });
 
   it('sem a célula de serviços, o bloco inteiro é `null` — e a busca do serviço nem acontece', () => {
@@ -304,6 +311,32 @@ describe('responsáveis e equipe tratante', () => {
   it('sem a célula de família → `null`; com a célula e zero responsáveis → `[]`', () => {
     expect(montar({ reads: { ...TODOS, family: false } }).emergencyContacts).toBeNull();
     expect(montar({ patient: paciente({ contractedServices: [SERVICO], responsibles: [] }) }).emergencyContacts).toEqual([]);
+  });
+
+  it('417 / lex C5 — contatos da COBERTURA: bloco próprio sob `reads.coverage` (não sob família); tipo traduzido; ausente/redigido no backend → `[]`', () => {
+    const p = paciente({
+      contractedServices: [SERVICO],
+      coverageEmergencyContacts: [
+        { id: 'c1', kind: 'AMBULANCE', name: 'Ambulancia X', phone: '0800-1', sortOrder: 0 },
+        { id: 'c2', kind: 'DIRECT_PROFESSIONAL', name: 'Dra. Pérez', phone: '11-2', sortOrder: 1 },
+      ],
+    });
+    expect(montar({ patient: p }).coverageEmergencyContacts).toEqual([
+      { kindLabel: 'es:admin.patients.detail.coverageCard.emergencyContactKinds.AMBULANCE', name: 'Ambulancia X', phone: '0800-1' },
+      { kindLabel: 'es:admin.patients.detail.coverageCard.emergencyContactKinds.DIRECT_PROFESSIONAL', name: 'Dra. Pérez', phone: '11-2' },
+    ]);
+    // A célula que manda é a de COBERTURA: sem família o bloco continua; sem cobertura ele some.
+    expect(montar({ patient: p, reads: { ...TODOS, family: false } }).coverageEmergencyContacts).toHaveLength(2);
+    expect(montar({ patient: p, reads: { ...TODOS, coverage: false } }).coverageEmergencyContacts).toBeNull();
+    // Backend anterior à 417 (campo ausente) ou lista vazia → `[]`, nunca null (a célula existe).
+    expect(montar({ patient: paciente({ contractedServices: [SERVICO] }) }).coverageEmergencyContacts).toEqual([]);
+    expect(montar({ patient: paciente({ contractedServices: [SERVICO], coverageEmergencyContacts: null }) }).coverageEmergencyContacts).toEqual([]);
+  });
+
+  it('D301 — modalidade: `null` na versão anterior à 417 vira `null` no PDF; o serviço leva `serviceCode` para as seções fixas', () => {
+    expect(montar({ version: { ...VERSAO, modality: null } }).modalityLabel).toBeNull();
+    expect(montar().service?.serviceCode).toBe(SERVICO.serviceCode);
+    expect(montar({ version: { ...VERSAO, contractedServiceId: 'svc-inexistente' } }).service?.serviceCode).toBe('');
   });
 
   it('profissional sem nome vira `—`; sem a célula de equipe, o bloco é `null`', () => {

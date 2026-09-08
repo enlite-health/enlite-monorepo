@@ -25,6 +25,7 @@ const version: TherapeuticProjectVersion = {
   version: 'V.1.2',
   editedFromVersionId: 'v-0',
   contractedServiceId: 's-1',
+  modality: 'IN_PERSON',
   diagnoses: [{ uri: 'u', code: '8B11', title: 'Hemiplejía sintética de prueba' }],
   clinicalContext: 'SINTESIS-CLINICA-SINTETICA texto de contexto para el test.',
   generalObjective: 'OBJETIVO-GENERAL-SINTETICO para el test.',
@@ -46,9 +47,14 @@ const fullInput: TherapeuticProjectPdfInput = {
   version,
   identification: { fullName: 'PACIENTE-SINTETICO Apellido', documentLabel: 'DNI 00.000.000', birthDate: '1938-03-29', age: 88 },
   coverage: { insurance: 'Cobertura Sintética', affiliateId: '0000-TEST' },
-  service: { serviceLabel: 'Cuidador', deviceLabels: ['Domicilio'], providerProfile: 'Perfil sintético del prestador', scheduleText: 'Lunes a domingo, 24 hs', careLocationLabel: 'Domicilio' },
+  service: { serviceCode: 'CAREGIVER', serviceLabel: 'Cuidador', deviceLabels: ['Domicilio'], providerProfile: 'Perfil sintético del prestador', scheduleText: 'Lunes a domingo, 24 hs', careLocationLabel: 'Domicilio' },
   addressText: 'Calle Sintética 123, 4º A, CABA',
   emergencyContacts: [{ name: 'RESPONSABLE-SINTETICO', relationship: 'hijo', phone: '11 0000 0000', email: 'resp@example.test' }],
+  coverageEmergencyContacts: [
+    { kindLabel: 'Ambulancia', name: 'AMBULANCIA-SINTETICA', phone: '0800 000 0001' },
+    { kindLabel: 'Profesional directo', name: 'PROFESIONAL-DIRECTO-SINTETICO', phone: '11 0000 0002' },
+  ],
+  modalityLabel: 'Presencial',
   careTeam: ['Equipo tratante sintético'],
   issuedAtText: '08/09/2026 10:00',
 };
@@ -81,6 +87,8 @@ describe('PDF do projeto terapêutico — bytes reais, texto extraído (spec 017
       'Cobertura Sintética', '0000-TEST',
       'Cuidador', 'Domicilio', 'Perfil sintético del prestador', 'Lunes a domingo, 24 hs',
       'Calle Sintética 123', 'RESPONSABLE-SINTETICO (hijo) - 11 0000 0000 - resp@example.test',
+      'Modalidad: Presencial', 'Familiar / persona responsable', 'Emergencia de la cobertura médica',
+      'Ambulancia: AMBULANCIA-SINTETICA - 0800 000 0001', 'Profesional directo: PROFESIONAL-DIRECTO-SINTETICO - 11 0000 0002',
       'Hemiplejía sintética de prueba', 'Trastornos psicóticos', 'Equipo tratante sintético',
       'SINTESIS-CLINICA-SINTETICA', 'OBJETIVO-GENERAL-SINTETICO',
       'Favorecer la prevención de escaras (test).', 'Realizar cambios posturales frecuentes (test).',
@@ -123,8 +131,10 @@ describe('PDF do projeto terapêutico — bytes reais, texto extraído (spec 017
       ...fullInput,
       version: { ...version, annulledAt: '2026-09-08T00:00:00Z', annulledByName: 'Ana', annulReason: 'erro', createdByName: null },
       coverage: { insurance: null, affiliateId: null },
-      service: { serviceLabel: 'Cuidador', deviceLabels: [], providerProfile: null, scheduleText: null, careLocationLabel: null },
+      service: { serviceCode: 'CAREGIVER', serviceLabel: 'Cuidador', deviceLabels: [], providerProfile: null, scheduleText: null, careLocationLabel: null },
       emergencyContacts: [],
+      coverageEmergencyContacts: [],
+      modalityLabel: null,
       careTeam: [],
       identification: { fullName: 'X Y', documentLabel: 'DNI —', birthDate: null, age: null },
     };
@@ -132,8 +142,36 @@ describe('PDF do projeto terapêutico — bytes reais, texto extraído (spec 017
     expect(text).toContain(PDF_LABELS.annulled);
     expect(text).toContain('Proyecto elaborado por: —');
     expect(text).toContain('Cobertura médica: —');
-    expect(text).toContain('Contacto de emergencia: —');
+    expect(text).toContain('Familiar / persona responsable: —');
+    expect(text).toContain('Emergencia de la cobertura médica: —');
+    expect(text).toContain('Modalidad: —'); // versão anterior à 417
     expect(text).toContain('Fecha de nacimiento: —');
+  });
+
+  it('🔒 lex C5 — contatos da COBERTURA redigidos com família visível: o bloco da cobertura vira rótulo e o nome/telefone NÃO estão; o familiar continua', async () => {
+    const { text } = await texto({ ...fullInput, coverageEmergencyContacts: null });
+    expect(text).not.toContain('AMBULANCIA-SINTETICA');
+    expect(text).not.toContain('PROFESIONAL-DIRECTO-SINTETICO');
+    expect(text).not.toContain('0800 000 0001');
+    expect(text).toContain('RESPONSABLE-SINTETICO (hijo)');
+    expect(text).toContain(PDF_LABELS.sectionRedacted);
+    // E o inverso: família redigida, cobertura visível.
+    const { text: inverso } = await texto({ ...fullInput, emergencyContacts: null });
+    expect(inverso).not.toContain('RESPONSABLE-SINTETICO');
+    expect(inverso).toContain('AMBULANCIA-SINTETICA');
+  });
+
+  it('D301.1 — serviço AT: as seções VIII/IX saem com o rótulo "no aplicable" e SEM o texto do cuidador; sem célula de serviço, redigidas', async () => {
+    const at = await texto({ ...fullInput, service: { ...fullInput.service!, serviceCode: 'AT', serviceLabel: 'Acompañante Terapéutico' } });
+    expect(at.text).toContain('Funciones y límites del cuidador');
+    expect(at.text).toContain('Regla fundamental de EnLite Care');
+    expect(at.text.split(PDF_LABELS.sectionNotForService).length - 1).toBe(2);
+    expect(at.text).not.toContain('El cuidador NO debe');
+    expect(at.text).not.toContain('Por cuestiones Terapéuticas');
+    const semServico = await texto({ ...fullInput, service: null });
+    expect(semServico.text).not.toContain('El cuidador NO debe');
+    expect(semServico.text).not.toContain(PDF_LABELS.sectionNotForService);
+    expect(semServico.text.split(PDF_LABELS.sectionRedacted).length - 1).toBeGreaterThanOrEqual(3);
   });
 
   it('cobertura, serviço e endereço redigidos (containers separados): cada um vira o rótulo de omissão', async () => {
@@ -179,7 +217,7 @@ describe('PDF do projeto terapêutico — bytes reais, texto extraído (spec 017
     expect(text).not.toContain('años');
     expect(text).toContain('Cobertura médica: Cobertura Sintética');
     expect(text).not.toContain('N.º de afiliado');
-    expect(text).toContain('Contacto de emergencia: CONTATO-SEM-VINCULO');
+    expect(text).toContain('Familiar / persona responsable: CONTATO-SEM-VINCULO');
   });
 
   it('prazo em anos diferentes e nome do arquivo sem nome de paciente', async () => {

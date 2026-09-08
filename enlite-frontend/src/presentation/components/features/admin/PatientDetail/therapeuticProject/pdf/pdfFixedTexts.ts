@@ -9,6 +9,9 @@
 
 export const PDF_TITLE = 'Proyecto Terapéutico – EnLite Care';
 
+/** Só o serviço de cuidadores carrega as seções fixas VIII/IX (Ana Joulie, 08/09 — D301.1). */
+export const FIXED_SECTIONS_SERVICE_CODE = 'CAREGIVER';
+
 export const PDF_SECTIONS = {
   identification: 'I. Datos de Identificación',
   diagnosis: 'II. Datos del Diagnóstico',
@@ -36,6 +39,9 @@ export const PDF_LABELS = {
   authorizedSchedule: 'Días y horarios autorizados',
   address: 'Dirección',
   emergencyContact: 'Contacto de emergencia',
+  familyEmergencyContact: 'Familiar / persona responsable',
+  coverageEmergencyContact: 'Emergencia de la cobertura médica',
+  modality: 'Modalidad',
   pathologyType: 'Tipo de patología (segmento)',
   elaboratedBy: 'Proyecto elaborado por',
   implementationPeriod: 'Plazo de implementación',
@@ -46,6 +52,8 @@ export const PDF_LABELS = {
   notInformed: '—',
   /** Seção cujo container foi redigido para o ator (lex C12): omitida COM rótulo, nunca em branco. */
   sectionRedacted: 'Sección no incluida: el usuario que emitió este documento no tiene permiso para este dato.',
+  /** D301.1 (Ana): o texto fixo VIII/IX é do serviço de CUIDADORES; nos demais serviços a seção sai omitida COM rótulo. */
+  sectionNotForService: 'Sección no aplicable a este servicio: el texto está definido para el servicio de cuidadores.',
   /** Versão anulada — não deve ser exportada (C5), mas se o for, o documento diz. */
   annulled: 'VERSIÓN ANULADA',
 } as const;

@@ -14,6 +14,8 @@ export type { PatientCompleteness, PatientCompletenessCode } from './PatientComp
 export type { PatientCoverageSectionPayload } from './PatientCoverage';
 export type { UpdatePatientStatusPayload, PatientStatusHistoryEntry } from './PatientLifecycle';
 export type { InsuranceProvider } from './PatientCoverage';
+export type { PatientCoverageEmergencyContact, PatientCoverageEmergencyContactInput, CoverageEmergencyContactKind } from './PatientCoverage';
+import type { PatientCoverageEmergencyContact } from './PatientCoverage';
 export type { PatientAddressLogisticsPayload } from './PatientAddress';
 export type { PatientKanbanItem, PatientFunnelData } from './PatientLifecycle';
 // Só os 2 tipos que algum consumidor importa DAQUI (o resto — payloads de escrita, enums —
@@ -189,6 +191,11 @@ export interface PatientDetail {
   /** Spec 014 (US-D3): `phoneWhatsapp` coincide com o de um responsável. */
   phoneMatchesResponsible: boolean;
   responsibles: PatientResponsibleDetail[];
+  /**
+   * 417 (D301): contatos de emergência da COBERTURA (container `patient_coverage`). `null` = o ator não
+   * tem a célula (redação, D113); `[]` = tem a célula e a lista está vazia. Backend anterior à 417: ausente.
+   */
+  coverageEmergencyContacts?: PatientCoverageEmergencyContact[] | null;
   addresses: PatientAddressDetail[];
   professionals: PatientProfessionalDetail[];
   /** Serviços contratados (spec 013, bloco C) — contrato do detalhe. */

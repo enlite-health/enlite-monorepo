@@ -4,6 +4,8 @@ import { PatientClinicalRepository } from '../infrastructure/PatientClinicalRepo
 import { PatientResponsibleRepository } from '../infrastructure/PatientResponsibleRepository';
 import { PatientDeviceTypeRepository } from '../infrastructure/PatientDeviceTypeRepository';
 import { PatientInsuranceVerifiedRepository } from '../infrastructure/PatientInsuranceVerifiedRepository';
+import type { PatientCoverageEmergencyContactRepository } from '../infrastructure/PatientCoverageEmergencyContactRepository';
+import type { PatientCoverageEmergencyContactInput } from '../domain/PatientCoverageEmergencyContact';
 import type { PatientRelatedInput, PatientServiceUpsertInput } from './PatientWriteInputs';
 
 /**
@@ -30,6 +32,7 @@ export interface PatientSectionWriterDeps {
   encryptionService: KMSEncryptionService;
   deviceTypeRepo: () => PatientDeviceTypeRepository;
   insuranceRepo: () => PatientInsuranceVerifiedRepository;
+  coverageContactRepo: () => PatientCoverageEmergencyContactRepository;
 }
 
 /** Section-scoped partial update of a native (or any) patient. */
@@ -43,6 +46,8 @@ export interface PatientCoverageSectionData {
   healthInsuranceName?: string | null;
   affiliateId?: string | null;
   insuranceVerifiedCodes?: string[];
+  /** 417 (D301): a lista inteira dos contatos de emergência da cobertura; ausente = não toca. */
+  emergencyContacts?: PatientCoverageEmergencyContactInput[];
 }
 
 /** Identity fields updatable via the 'general' section. */
@@ -120,6 +125,10 @@ export async function writePatientSection(
         await updateGeneralSection(deps, patientId, scalars, client);
         if (cov.insuranceVerifiedCodes !== undefined) {
           await deps.insuranceRepo().replaceCodesForPatient(patientId, cov.insuranceVerifiedCodes, client);
+        }
+        // 417 (D301): contatos de emergência da cobertura — lista inteira, mesma transação, autor carimbado.
+        if (cov.emergencyContacts !== undefined) {
+          await deps.coverageContactRepo().replaceAll(patientId, cov.emergencyContacts, actor?.uid ?? 'admin:sem-ator', client);
         }
         break;
       }

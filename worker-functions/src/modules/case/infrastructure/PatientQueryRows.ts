@@ -1,3 +1,4 @@
+import type { PatientCoverageEmergencyContactDetail } from '../domain/PatientCoverageEmergencyContact';
 /**
  * PatientQueryRows — o READ MODEL da ficha e da listagem de paciente.
  *
@@ -143,6 +144,8 @@ export interface PatientDetailRow {
   phoneMatchesResponsible: boolean;
   // Related
   responsibles: PatientResponsibleDetail[];
+  /** 417 (D301): contatos de emergência da COBERTURA — `[]` sem `patient_coverage:read` (container). */
+  coverageEmergencyContacts: PatientCoverageEmergencyContactDetail[];
   addresses: PatientAddressDetail[];
   professionals: PatientProfessionalDetail[];
   /**

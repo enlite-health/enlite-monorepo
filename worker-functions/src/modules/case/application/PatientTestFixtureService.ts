@@ -70,6 +70,8 @@ const CASCADE_CHILDREN = [
   // CASCADE na 416) — o trigger de imutabilidade só deixa a linha sumir quando o pai já não existe,
   // que é exatamente o que o purge faz.
   'patient_therapeutic_projects',
+  // 417 (D301): contatos de emergência da cobertura — filha direta, ON DELETE CASCADE.
+  'patient_coverage_emergency_contacts',
 ] as const;
 
 interface AppointmentRow {

@@ -2869,7 +2869,13 @@
         "editServiceTitle": "Editar serviço contratado",
         "serviceNotFound": "Este serviço não existe mais na ficha.",
         "decimalCommaWarning": "Para decimais use ponto (.), não vírgula.",
-        "listReloadError": "A alteração foi salva, mas não conseguimos recarregar a lista. Feche e abra de novo."
+        "listReloadError": "A alteração foi salva, mas não conseguimos recarregar a lista. Feche e abra de novo.",
+        "coverageContactAdd": "Adicionar contato",
+        "coverageContactName": "Nome / instituição",
+        "coverageContactPhone": "Telefone",
+        "coverageContactRemove": "Remover contato",
+        "coverageContactEmpty": "Sem contatos de emergência da cobertura.",
+        "coverageContactNotice": "Estes dados ficam registrados na ficha do paciente e são impressos no Projeto Terapêutico entregue à família e à cobertura. Se cadastrar um profissional, avise-o de que o contato dele consta aqui."
       },
       "kanban": {
         "title": "Pacientes — Kanban",
@@ -3158,7 +3164,13 @@
           "empty": "Este paciente ainda não tem projeto terapêutico.",
           "needsService": "Para criar um projeto terapêutico, o paciente precisa de um serviço contratado ativo.",
           "tableView": "Ver",
-          "viewVersion": "Ver versão {{version}}"
+          "viewVersion": "Ver versão {{version}}",
+          "modality": "Modalidade",
+          "modalityOptions": {
+            "IN_PERSON": "Presencial",
+            "ONLINE": "On-line",
+            "HYBRID": "Híbrida"
+          }
         },
         "treatingTeamCard": {
           "title": "Equipe Tratante",
@@ -3197,7 +3209,13 @@
           "plan": "Plano do Paciente",
           "emergencyNumbers": "Números de Emergência",
           "credential": "Credencial",
-          "verified": "Cobertura verificada"
+          "verified": "Cobertura verificada",
+          "emergencyContacts": "Emergência da cobertura médica",
+          "emergencyContactKinds": {
+            "DIRECT_PROFESSIONAL": "Profissional direto",
+            "AMBULANCE": "Ambulância",
+            "EMERGENCY_CENTER": "Central de emergência"
+          }
         },
         "locationsCard": {
           "title": "Localizações",
@@ -3393,7 +3411,8 @@
             "catalogItemsUnknown": "Alguma opção escolhida já não está ativa no catálogo. Escolha de novo.",
             "serviceNotOfPatient": "O serviço escolhido não é deste paciente.",
             "sourceNotFound": "A versão de origem já não existe ou foi anulada."
-          }
+          },
+          "modalityPlaceholder": "Escolha a modalidade"
         }
       },
       "statusOptions": {

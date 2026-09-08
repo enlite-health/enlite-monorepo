@@ -11,8 +11,10 @@ import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import type { PatientContractedServiceDetail, PatientDiagnosisDetail } from '@domain/entities/PatientDetail';
 import {
+  THERAPEUTIC_MODALITIES,
   THERAPEUTIC_TEXT_MAX,
   type TherapeuticDiagnosis,
+  type TherapeuticModality,
   type TherapeuticProjectVersion,
   type TherapeuticProjectVersionBody,
 } from '@domain/entities/TherapeuticProject';
@@ -49,6 +51,8 @@ export function TherapeuticProjectForm({ services, patientDiagnoses, catalogs, f
 
   const activeServices = services.filter((s) => s.active);
   const [contractedServiceId, setContractedServiceId] = useState(from?.contractedServiceId ?? activeServices[0]?.id ?? '');
+  // D301 (Ana 08/09): modalidade obrigatória na versão nova; versão anterior à 417 chega `null` — o humano escolhe.
+  const [modality, setModality] = useState<TherapeuticModality | ''>(from?.modality ?? '');
   const [diagnoses, setDiagnoses] = useState<TherapeuticDiagnosis[]>(
     from?.diagnoses ?? patientDiagnoses.filter((d) => d.active).map((d) => ({ uri: d.uri, title: d.title })),
   );
@@ -65,6 +69,7 @@ export function TherapeuticProjectForm({ services, patientDiagnoses, catalogs, f
   const clinicalRedacted = from?.redacted?.clinical === true;
   const errors: string[] = [];
   if (!contractedServiceId) errors.push('service');
+  if (!modality) errors.push('modality');
   if (diagnoses.length === 0) errors.push('diagnoses');
   if (clinicalContext.trim().length === 0) errors.push('clinicalContext');
   if (generalObjective.trim().length === 0) errors.push('generalObjective');
@@ -93,7 +98,8 @@ export function TherapeuticProjectForm({ services, patientDiagnoses, catalogs, f
       onSubmit={(e) => {
         e.preventDefault();
         if (!canSave) return;
-        onSubmit({ contractedServiceId, diagnoses, clinicalContext: clinicalContext.trim(), generalObjective: generalObjective.trim(), specificObjectiveIds, activityIds, pathologyTypeIds, startDate, endDate });
+        // `canSave` já exige modalidade escolhida; o cast só fecha o tipo (`'' | TherapeuticModality`).
+        onSubmit({ contractedServiceId, modality: modality as TherapeuticModality, diagnoses, clinicalContext: clinicalContext.trim(), generalObjective: generalObjective.trim(), specificObjectiveIds, activityIds, pathologyTypeIds, startDate, endDate });
       }}
     >
       {clinicalRedacted && (
@@ -115,6 +121,18 @@ export function TherapeuticProjectForm({ services, patientDiagnoses, catalogs, f
               data-testid="tp-service"
             />
             {activeServices.length === 0 && <Text size="xs" className="text-amber-700" data-testid="tp-no-service">{tf('noActiveService')}</Text>}
+          </FormField>
+
+          <FormField label={tc('modality')} htmlFor="tp-modality" labelSize="compact" required>
+            <Select
+              id="tp-modality"
+              inputSize="compact"
+              value={modality}
+              onValueChange={(v) => touch(setModality)(v as TherapeuticModality)}
+              placeholder={tf('modalityPlaceholder')}
+              options={THERAPEUTIC_MODALITIES.map((m) => ({ value: m, label: tc(`modalityOptions.${m}`) }))}
+              data-testid="tp-modality"
+            />
           </FormField>
 
           <div className="flex flex-col gap-2" data-testid="tp-diagnoses">
