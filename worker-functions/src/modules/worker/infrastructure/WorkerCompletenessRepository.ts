@@ -28,7 +28,7 @@
  */
 
 import { Pool } from 'pg';
-import { logger } from '@shared/logging';
+import { logger, reportError } from '@shared/logging';
 
 const TAG = '[WorkerCompletenessRepository]';
 
@@ -86,10 +86,12 @@ export async function readWorkerMissingFields(
     return rows[0].missing;
   } catch (err: unknown) {
     const e = err instanceof Error ? err : new Error(String(err));
-    logger.child({ workerId }).warn({
-      msg: `${TAG} failed to read missing fields`,
-      error: e.message,
-    });
+    // `reportError`, não `warn`: se a função sumir do banco (migration não
+    // aplicada) TODA resposta passa a dizer "não sei" indefinidamente, e com
+    // `warn` ninguém é acordado — `severity=ERROR` é o que chega ao Error
+    // Reporting. Mesmo modo de falha que o gate reprovou em `readFreshProgress`.
+    reportError(e, { source: 'WorkerCompletenessRepository:readWorkerMissingFields' });
+    logger.child({ workerId }).warn({ msg: `${TAG} failed to read missing fields` });
     return null;
   }
 }

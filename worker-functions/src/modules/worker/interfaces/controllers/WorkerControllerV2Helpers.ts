@@ -58,38 +58,6 @@ export async function withMissingFields<T extends { id: string }>(
 }
 
 /**
- * Resolve só o `id` do worker a partir do `auth_uid`.
- *
- * Existe para NÃO pagar a leitura completa duas vezes no `PUT
- * /me/general-info`. `findByAuthUid` decripta 9 campos por KMS, e o
- * `KMSEncryptionService` não tem cache — usá-lo só para descobrir o id, e
- * depois de novo para reler o estado gravado, dobrava o tráfego KMS num
- * endpoint que é AUTOSAVE (dispara a cada blur de campo, não a cada submit).
- * Medido no gate `revisao-pr` de 08/09/2026: ia de ~1 SELECT + 9 KMS para
- * ~3 SELECT + 18 KMS por blur.
- *
- * `WHERE w.auth_uid = $1` espelha EXATAMENTE o `findByAuthUid`
- * (`WorkerAuthRepository.ts:45`) — sem filtro de merge e sem LIMIT — para os
- * dois nunca resolverem workers diferentes.
- */
-export async function resolveWorkerIdByAuthUid(
-  pool: Pool,
-  authUid: string,
-): Promise<string | null> {
-  try {
-    const { rows } = await pool.query<{ id: string }>(
-      'SELECT w.id FROM workers w WHERE w.auth_uid = $1',
-      [authUid],
-    );
-    return rows.length > 0 ? rows[0].id : null;
-  } catch (err: unknown) {
-    const e = err instanceof Error ? err : new Error(String(err));
-    reportError(e, { source: 'WorkerControllerV2Helpers:resolveWorkerIdByAuthUid' });
-    return null;
-  }
-}
-
-/**
  * Estado devolvido por uma escrita que não pôde ser confirmada.
  * `missingFields: null` mantém o contrato: "gravei, mas não sei te dizer o
  * estado" — nunca "está completo".

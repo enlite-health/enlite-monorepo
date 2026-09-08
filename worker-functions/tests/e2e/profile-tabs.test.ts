@@ -127,24 +127,43 @@ describe('Profile Tabs — Endpoints por aba', () => {
       expect(missing).not.toBeUndefined();
     });
 
-    it('a vitrine bate com o portão: o campo que falta é o mesmo que barra a postulação', async () => {
-      // O defeito da D302 era exatamente os dois discordarem. O payload acima
-      // NÃO manda `titleCertificate`, e o portão de REGISTERED o exige.
+    it('a vitrine bate com o portão — a lista da rota é a MESMA função do banco', async () => {
+      // O defeito da D302 era exatamente os dois discordarem: a tela dizia
+      // "cadastro completo" e o portão recusava a postulação. Aqui a rota e a
+      // função do banco têm de devolver o MESMO conjunto, sem segunda definição.
       const res = await api.put('/api/workers/me/general-info', payload, authHeaders());
-      expect(res.data.data.missingFields).toContain('title_certificate');
-
-      // A função do banco é a MESMA que a rota serviu — sem segunda definição.
       const gate = await db.query('SELECT fn_worker_missing_fields($1) AS missing', [workerId]);
-      expect(new Set(res.data.data.missingFields)).toEqual(new Set(gate.rows[0].missing));
 
-      // E some da lista assim que a prestadora preenche o campo.
-      await api.put(
-        '/api/workers/me/general-info',
-        { ...payload, titleCertificate: 'MP-4321' },
-        authHeaders(),
-      );
-      const depois = await api.get('/api/workers/me', authHeaders());
-      expect(depois.data.data.missingFields).not.toContain('title_certificate');
+      expect(new Set(res.data.data.missingFields)).toEqual(new Set(gate.rows[0].missing));
+    });
+
+    it('campo do portão que falta aparece, e some quando a prestadora preenche', async () => {
+      // Worker PRÓPRIO, criado limpo: os testes acima já gravaram
+      // `titleCertificate` no worker do describe, e `title_certificate` é
+      // COALESCE no banco — uma vez gravado não dá para "desgravar". Depender
+      // da ordem dos testes vizinhos seria fixture frágil.
+      const uid = `profile-tabs-missing-${Date.now()}`;
+      const init = await api.post('/api/workers/init', {
+        authUid: uid, email: `${uid}@example.com`, country: 'AR',
+      });
+      const novoId = init.data.data.worker.id;
+      const tk = await api.post('/api/test/auth/token', { uid, email: `${uid}@example.com`, role: 'worker' });
+      const headers = { headers: { Authorization: `Bearer ${tk.data.data.token}`, 'x-auth-uid': uid } };
+
+      try {
+        const semTitulo = { ...payload };
+        delete (semTitulo as Record<string, unknown>).titleCertificate;
+
+        const antes = await api.put('/api/workers/me/general-info', semTitulo, headers);
+        expect(antes.data.data.missingFields).toContain('title_certificate');
+
+        await api.put('/api/workers/me/general-info', { ...semTitulo, titleCertificate: 'MP-4321' }, headers);
+
+        const depois = await api.get('/api/workers/me', headers);
+        expect(depois.data.data.missingFields).not.toContain('title_certificate');
+      } finally {
+        await db.query('DELETE FROM workers WHERE id = $1', [novoId]);
+      }
     });
 
     it('deve ter salvo profissão e anos de experiência', async () => {

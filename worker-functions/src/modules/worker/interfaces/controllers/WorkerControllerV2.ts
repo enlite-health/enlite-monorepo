@@ -10,7 +10,6 @@ import { GetWorkerProgressUseCase } from '../../application/GetWorkerProgressUse
 import { LookupWorkerByEmailUseCase } from '../../application/LookupWorkerByEmailUseCase';
 import { reactivateOnActivity } from '../../application/ReactivateArchivedWorkerUseCase';
 import { WorkerRepository } from '../../infrastructure/WorkerRepository';
-import { readWorkerMissingFields } from '../../infrastructure/WorkerCompletenessRepository';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { QuizResponseRepository } from '../../infrastructure/QuizResponseRepository';
 import { ServiceAreaRepository } from '../../infrastructure/ServiceAreaRepository';
@@ -20,7 +19,6 @@ import {
   sendPersonalInfoFailure,
   withMissingFields,
   readFreshProgress,
-  resolveWorkerIdByAuthUid,
 } from './WorkerControllerV2Helpers';
 import { PubSubClient } from '@shared/events/PubSubClient';
 
@@ -239,15 +237,21 @@ export class WorkerControllerV2 {
     return DatabaseConnection.getInstance().getPool();
   }
 
-  /** Relê pelo MESMO caminho do `GET /me` (PII decriptada). `null` = não deu. */
+  /** Relê pelo MESMO caminho do `GET /me`. `null` = não deu. */
   private async rereadWorker(authUid: string): Promise<{ id: string } | null> {
     const fresh = await this.getProgressUseCase.execute(authUid);
     return fresh.isFailure ? null : (fresh.getValue() ?? null);
   }
 
-  /** Só o id, sem os 9 decrypts KMS — este endpoint é autosave por blur. */
+  /**
+   * Passa por `findByAuthUid` DE PROPÓSITO: ele segue a corrente de
+   * `merged_into_id` (WorkerAuthRepository.ts:68-76); SELECT direto por
+   * `auth_uid` devolveria o CASCO absorvido e a escrita iria para o registro
+   * morto. Custo (9 KMS por blur) é dívida medida, na fila da frente.
+   */
   private async resolveWorkerIdFromAuth(authUid: string): Promise<string | null> {
-    return resolveWorkerIdByAuthUid(this.pool(), authUid);
+    const worker = await this.rereadWorker(authUid);
+    return worker?.id ?? null;
   }
 
   async saveGeneralInfo(req: Request, res: Response): Promise<void> {
@@ -271,13 +275,9 @@ export class WorkerControllerV2 {
         return;
       }
 
-      // ESCRITA CONFIRMADA (D302): devolve o estado como o BANCO ficou. Antes
-      // respondia só uma mensagem, o cliente gravava o que ELE mandou, e campo
-      // não persistido seguia na tela para sempre. Ver WorkerControllerV2Helpers.
-      res.status(200).json({
-        success: true,
-        data: await readFreshProgress(this.pool(), () => this.rereadWorker(authUid), authUid),
-      });
+      // ESCRITA CONFIRMADA (D302) — ver WorkerControllerV2Helpers.
+      const data = await readFreshProgress(this.pool(), () => this.rereadWorker(authUid), authUid);
+      res.status(200).json({ success: true, data });
     } catch (error: any) {
       console.error('SaveGeneralInfo error:', error);
       res.status(500).json({ success: false, error: error.message || 'Internal server error' });

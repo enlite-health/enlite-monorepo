@@ -11,7 +11,6 @@ import { readWorkerMissingFields } from '../../../infrastructure/WorkerCompleten
 import {
   withMissingFields,
   readFreshProgress,
-  resolveWorkerIdByAuthUid,
   sendPersonalInfoFailure,
   UNCONFIRMED_WRITE,
   PHONE_NOT_AVAILABLE_MESSAGE,
@@ -136,36 +135,6 @@ describe('readFreshProgress — a escrita confirmada', () => {
     // que não conseguimos confirmar.
     expect(UNCONFIRMED_WRITE.missingFields).toBeNull();
     expect(UNCONFIRMED_WRITE.missingFields).not.toEqual([]);
-  });
-});
-
-describe('resolveWorkerIdByAuthUid', () => {
-  it('devolve só o id, sem tocar em coluna encriptada', async () => {
-    const q = jest.fn().mockResolvedValue({ rows: [{ id: 'w1' }] });
-    await expect(resolveWorkerIdByAuthUid(poolWith(q), 'auth-1')).resolves.toBe('w1');
-
-    const sql = q.mock.calls[0][0] as string;
-    // O ponto do helper é NÃO pagar os 9 decrypts KMS do findByAuthUid num
-    // endpoint que é autosave por blur.
-    expect(sql).not.toMatch(/_encrypted/);
-    expect(sql).toMatch(/w\.auth_uid = \$1/);
-  });
-
-  it('sem worker → null', async () => {
-    const q = jest.fn().mockResolvedValue({ rows: [] });
-    await expect(resolveWorkerIdByAuthUid(poolWith(q), 'auth-1')).resolves.toBeNull();
-  });
-
-  it('erro de banco → null e reportError', async () => {
-    const q = jest.fn().mockRejectedValue(new Error('db down'));
-    await expect(resolveWorkerIdByAuthUid(poolWith(q), 'auth-1')).resolves.toBeNull();
-    expect(mockReportError).toHaveBeenCalledTimes(1);
-  });
-
-  it('throw que NÃO é Error também vira null (ramo String(err))', async () => {
-    const q = jest.fn().mockRejectedValue('boom');
-    await expect(resolveWorkerIdByAuthUid(poolWith(q), 'auth-1')).resolves.toBeNull();
-    expect(mockReportError).toHaveBeenCalledTimes(1);
   });
 });
 

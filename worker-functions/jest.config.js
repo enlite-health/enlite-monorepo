@@ -81,6 +81,26 @@ module.exports = {
     // Paciente como fonte da verdade: leitura clínica, repositórios e o guarda
     // de acesso ao texto clínico. `patientClinicalAccess` é o que decide quem
     // vê texto clínico — regra dura do CLAUDE.md, não pode regredir calado.
+    // Completude do cadastro do prestador (D302). É a fonte ÚNICA da resposta
+    // "o que falta para se postular", e o defeito que ela conserta foi
+    // exatamente uma segunda definição divergir da do banco. A distinção
+    // `null` ("não apurei") x `[]` ("nada falta") mora aqui: se ela regredir, a
+    // tela volta a dizer "completo" para quem o portão recusa.
+    'src/modules/worker/infrastructure/WorkerCompletenessRepository.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Escrita confirmada do perfil: `readFreshProgress` é o que impede a rota de
+    // responder "salvo" sem dizer o que o banco ficou, e o ramo degradado tem de
+    // devolver `missingFields: null`, nunca `[]`.
+    'src/modules/worker/interfaces/controllers/WorkerControllerV2Helpers.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     'src/modules/case/application/patientClinicalAccess.ts': {
       statements: 100,
       branches: 100,

@@ -53,6 +53,7 @@ jest.mock('@shared/security/KMSEncryptionService', () => ({
 
 import { WorkerControllerV2 } from '../WorkerControllerV2';
 import { Request, Response } from 'express';
+import { WORKER_ERROR_CODES } from '@modules/worker/domain/workerErrors';
 import { Result } from '@shared/utils/Result';
 import { Worker } from '../../../domain/Worker';
 
@@ -106,6 +107,9 @@ describe('WorkerControllerV2', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // `clearAllMocks` NÃO drena a fila de `mockResolvedValueOnce`: um teste que
+    // falha no meio deixa respostas enfileiradas e contamina o seguinte.
+    mockQuery.mockReset();
     controller = new WorkerControllerV2();
   });
 
@@ -361,8 +365,39 @@ describe('WorkerControllerV2', () => {
     // que o PR existe para entregar não tinha teste nenhum. Os 3 casos abaixo
     // são os ramos que ele nomeou.
 
+    // As DUAS chamadas de `sendPersonalInfoFailure` foram trocadas por este PR
+    // (de método privado para função importada) e o gate mediu ambas sem
+    // cobertura. Trocar chamada e não exercitar é como o defeito viaja.
+
+    it('saveGeneralInfo: colisão de telefone vira 409 com code, não 500', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ missing: [] }] });
+      jest.spyOn(controller['getProgressUseCase'], 'execute').mockResolvedValue(Result.ok(mockWorker));
+      jest.spyOn(controller['savePersonalInfoUseCase'], 'execute')
+        .mockResolvedValue(Result.fail(WORKER_ERROR_CODES.PHONE_NOT_AVAILABLE) as never);
+
+      const [req, res] = mockReqRes({ phone: '+5491151265663' }, {}, { uid: AUTH_UID });
+      await controller.saveGeneralInfo(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(409);
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      expect(body.code).toBe(WORKER_ERROR_CODES.PHONE_NOT_AVAILABLE);
+      // Não revela que o número pertence a outra conta.
+      expect(JSON.stringify(body)).not.toMatch(/idx_workers_phone_unique|outra conta/i);
+    });
+
+    it('saveStep: a mesma tradução de falha vale no passo 2 do wizard', async () => {
+      jest.spyOn(controller['savePersonalInfoUseCase'], 'execute')
+        .mockResolvedValue(Result.fail(WORKER_ERROR_CODES.PHONE_NOT_AVAILABLE) as never);
+
+      const [req, res] = mockReqRes(
+        { workerId: mockWorker.id, step: 2, data: { phone: '+5491151265663' } }, {}, { uid: AUTH_UID },
+      );
+      await controller.saveStep(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(409);
+    });
+
     it('saveGeneralInfo devolve o cadastro RELIDO do banco, com missingFields', async () => {
-      mockQuery.mockResolvedValueOnce({ rows: [{ id: mockWorker.id }] });          // resolve o id (sem KMS)
       jest.spyOn(controller['savePersonalInfoUseCase'], 'execute')
         .mockResolvedValue(Result.ok(mockWorker as never));
       jest.spyOn(controller['getProgressUseCase'], 'execute')
@@ -379,10 +414,13 @@ describe('WorkerControllerV2', () => {
     });
 
     it('saveGeneralInfo: releitura falha → 200 com missingFields NULL, nunca "completo"', async () => {
-      mockQuery.mockResolvedValueOnce({ rows: [{ id: mockWorker.id }] });
       jest.spyOn(controller['savePersonalInfoUseCase'], 'execute')
         .mockResolvedValue(Result.ok(mockWorker as never));
+      // 1ª leitura resolve o id e SUCEDE; a 2ª (a releitura pós-escrita) cai.
+      // É justamente o que torna o estado anômalo: a mesma leitura acabou de
+      // funcionar nesta request.
       jest.spyOn(controller['getProgressUseCase'], 'execute')
+        .mockResolvedValueOnce(Result.ok(mockWorker))
         .mockResolvedValue(Result.fail('db down') as never);
 
       const [req, res] = mockReqRes({ firstName: 'Ana' }, {}, { uid: AUTH_UID });
@@ -392,10 +430,14 @@ describe('WorkerControllerV2', () => {
       expect((res.json as jest.Mock).mock.calls[0][0].data).toHaveProperty('missingFields', null);
     });
 
-    it('saveGeneralInfo NÃO relê o cadastro completo duas vezes (custo do autosave)', async () => {
-      // O endpoint dispara a cada blur de campo. Resolver o id pela leitura
-      // completa custaria 9 decrypts KMS a mais por blur — o gate mediu.
-      mockQuery.mockResolvedValueOnce({ rows: [{ id: mockWorker.id }] });
+    it('resolve o id pelo caminho que trata MERGE — custa 2 leituras, e isso é deliberado', async () => {
+      // Trava contra uma "otimização" que já tentei e o gate reprovou: trocar
+      // isto por um `SELECT id FROM workers WHERE auth_uid = $1` economiza 9
+      // decrypts KMS por blur, MAS devolve o CASCO absorvido de quem foi
+      // mesclado — a escrita iria para o registro morto e o que a prestadora
+      // digitou sumiria com 200 na tela. `findByAuthUid` segue a corrente de
+      // `merged_into_id` (WorkerAuthRepository.ts:68-76); o atalho não.
+      // Se este número mudar para 1, o atalho voltou: cheque o merge primeiro.
       jest.spyOn(controller['savePersonalInfoUseCase'], 'execute')
         .mockResolvedValue(Result.ok(mockWorker as never));
       const progress = jest.spyOn(controller['getProgressUseCase'], 'execute')
@@ -405,7 +447,7 @@ describe('WorkerControllerV2', () => {
       const [req, res] = mockReqRes({ firstName: 'Ana' }, {}, { uid: AUTH_UID });
       await controller.saveGeneralInfo(req, res);
 
-      expect(progress).toHaveBeenCalledTimes(1);
+      expect(progress).toHaveBeenCalledTimes(2);
     });
 
     it('retorna 404 com "Worker not found" quando getProgressUseCase falha por auth_uid sem vínculo no banco', async () => {
