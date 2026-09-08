@@ -13,7 +13,8 @@
 
 export interface TherapeuticDiagnosis {
   uri: string;
-  code: string;
+  /** Opcional: a projeção pública do CID-11 no painel esconde o código (REQ-21). */
+  code?: string;
   title: string;
 }
 

@@ -18,7 +18,8 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const diagnosisSchema = z
   .object({
     uri: z.string().min(1).max(500),
-    code: z.string().min(1).max(50),
+    // O painel NÃO conhece o código (REQ-21: a projeção pública do CID esconde `code`); fica opcional.
+    code: z.string().max(50).optional(),
     title: z.string().min(1).max(500),
   })
   .strict();

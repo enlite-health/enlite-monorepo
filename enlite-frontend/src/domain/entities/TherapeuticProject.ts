@@ -9,7 +9,8 @@
 
 export interface TherapeuticDiagnosis {
   uri: string;
-  code: string;
+  /** Opcional: o combobox do painel não expõe o código (REQ-21). */
+  code?: string;
   title: string;
 }
 

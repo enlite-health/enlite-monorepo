@@ -209,6 +209,26 @@ export default defineConfig({
         '**/src/hooks/admin/useAutoOpenDrawer.ts': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
+        // Spec 017 (08/09): o projeto terapêutico inteiro nasce em 100% — card, drawer, form, view, PDF, hook,
+        // client, domínio e as 3 telas de catálogo. Entram no piso no MESMO PR que os cria.
+        '**/src/presentation/components/features/admin/PatientDetail/therapeuticProject/**/*.{ts,tsx}': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        '**/src/{hooks/admin/useTherapeuticProjects.ts,infrastructure/http/AdminTherapeuticProjectsApiService.ts,domain/entities/TherapeuticProject.ts}': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        '**/src/presentation/pages/admin/TherapeuticCatalogPage/*.tsx': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
         '**/src/presentation/components/features/admin/PatientDetail/{CompletenessChecklist,PlaceholderCard,SupervisaoCard,RelatoriosAtendimentosCard,EnquadreTerapeuticoCard,ProjetoTerapeuticoCard,ActivatePatientButton,PatientProfileTabs}.tsx': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },

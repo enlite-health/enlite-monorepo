@@ -49,9 +49,11 @@ describe('therapeuticProjectSchemas — a borda (spec 017)', () => {
     expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, startDate: '01/09/2026' } }).success).toBe(false);
   });
 
-  it('diagnóstico é snapshot estrito {uri, code, title} — campo a mais é recusado (lex C19)', () => {
+  it('diagnóstico é snapshot estrito {uri, code?, title} — campo a mais é recusado (lex C19); code é opcional (REQ-21)', () => {
     const diag = { ...version.diagnoses[0], note: 'texto livre' };
     expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, diagnoses: [diag] } }).success).toBe(false);
+    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, diagnoses: [{ uri: 'u', title: 't' }] } }).success).toBe(true);
+    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, diagnoses: [{ uri: 'u', code: '', title: 't' }] } }).success).toBe(true);
   });
 
   it('anulação: motivo obrigatório, ≤200, sem e-mail nem documento (lex C5/C18)', () => {

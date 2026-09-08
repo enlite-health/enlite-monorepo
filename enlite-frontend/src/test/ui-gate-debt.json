@@ -13,10 +13,6 @@
       "motivo": "D116: purga de paciente de TESTE (DELETE /patients/:id, só is_test) — ferramenta do monitoramento sintético (e2e-prod), sem botão no painel por desenho."
     },
     {
-      "cell": "patient_therapeutic_project:write",
-      "motivo": "Spec 017 F1 (08/09/2026) — a rota POST /patients/:id/therapeutic-projects já declara a célula; o consumidor (card + modal na ficha, F4 da mesma spec) entra no commit seguinte. Remover esta linha na F4."
-    },
-    {
       "cell": "recruitment:write",
       "motivo": "D269 — única rota (POST calculate-reemplazos) é servida por ReemplazosButton/useReemplazosCalculator, componentes que NÃO estão montados em página nenhuma (código órfão). Gate entra quando o botão for montado."
     },

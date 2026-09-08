@@ -3145,11 +3145,20 @@
           "symptoms": "Sintomas",
           "observations": "Observações",
           "deadlines": "Prazos",
-          "pathologyTypes": "Tipos de patologias - ICHOM",
+          "pathologyTypes": "Tipo de patologia (segmento)",
           "tableVersion": "Versão",
           "tableAuthor": "Autor",
           "tableStartDate": "Data de Início",
-          "tableEndDate": "Data de Término"
+          "tableEndDate": "Data de Término",
+          "service": "Serviço contratado",
+          "serviceUnknown": "Serviço não encontrado",
+          "redacted": "Sem permissão para ver este dado",
+          "annulled": "Anulada",
+          "newButton": "Novo",
+          "empty": "Este paciente ainda não tem projeto terapêutico.",
+          "needsService": "Para criar um projeto terapêutico, o paciente precisa de um serviço contratado ativo.",
+          "tableView": "Ver",
+          "viewVersion": "Ver versão {{version}}"
         },
         "treatingTeamCard": {
           "title": "Equipe Tratante",
@@ -3359,7 +3368,33 @@
             "CONSENT": "Consentimento"
           }
         },
-        "viewInKanban": "Ver no Kanban"
+        "viewInKanban": "Ver no Kanban",
+        "therapeuticProjectForm": {
+          "newTitle": "Novo projeto terapêutico",
+          "newSubtitle": "Nova versão — numerada ao salvar",
+          "versionSubtitle": "{{version}} - Criado por: {{author}}",
+          "service": "Serviço contratado",
+          "servicePlaceholder": "Escolha o serviço",
+          "noActiveService": "O paciente não tem serviço contratado ativo.",
+          "removeDiagnosis": "Remover {{title}}",
+          "selectPlaceholder": "Escolha uma ou mais opções",
+          "startDate": "Data de início",
+          "endDate": "Data de término",
+          "endBeforeStart": "A data de término não pode ser anterior à de início.",
+          "save": "Salvar",
+          "saving": "Salvando…",
+          "exportPdf": "Exportar PDF",
+          "exporting": "Gerando…",
+          "loadingCatalogs": "Carregando catálogos…",
+          "discardConfirm": "Descartar as alterações não salvas?",
+          "redactedCannotEdit": "Você não tem permissão para ver o texto clínico desta versão; não dá para criar uma nova versão a partir dela.",
+          "errors": {
+            "forbidden": "Você não tem permissão para escrever o projeto terapêutico (precisa também da célula clínica).",
+            "catalogItemsUnknown": "Alguma opção escolhida já não está ativa no catálogo. Escolha de novo.",
+            "serviceNotOfPatient": "O serviço escolhido não é deste paciente.",
+            "sourceNotFound": "A versão de origem já não existe ou foi anulada."
+          }
+        }
       },
       "statusOptions": {
         "SOLICITANTE": "Solicitante",
