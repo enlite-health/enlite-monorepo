@@ -5,6 +5,7 @@ import { formatPhoneDisplay } from '@presentation/utils/recruitmentHelpers';
 import { NotesCountBadge } from '@presentation/components/features/admin/VacancyDetail/Funnel/NotesCountBadge';
 import { MoveToMenu } from './MoveToMenu';
 import { KanbanCardStageMessage } from './KanbanCardStageMessage';
+import { KanbanCardBlocked, type PromoteStatus } from './KanbanCardBlocked';
 import { KanbanCardResend, type ResendStatus } from './KanbanCardResend';
 import { KanbanCardPresentationInvite, type PresentationInviteState } from './KanbanCardPresentationInvite';
 
@@ -29,14 +30,24 @@ interface KanbanCardProps {
   internalStage?: string | null;
   /** INICIADO column: true when worker was blocked by the postulation gate */
   isBlocked?: boolean;
-  /** Reason the gate blocked the attempt: worker_not_found | registration_incomplete | worker_disabled */
+  /**
+   * Estado AO VIVO do gate, recalculado na leitura (D300):
+   * worker_not_found | registration_incomplete | worker_disabled | eligible.
+   * `eligible` = a pessoa passaria agora; o card só continua aqui porque a
+   * promoção automática depende de um evento que já passou.
+   */
   blockedReason?: string;
-  /** Fields that need to be completed (only relevant when blockedReason='registration_incomplete') */
+  /** Campos a completar — só preenchidos quando o motivo vivo é registro incompleto. */
   missingFields?: string[];
   /** How many times this worker attempted to apply */
   attemptCount?: number;
   /** Blocked card "rechazado" (soft-dismiss) — aparece em RECHAZADOS com botão de voltar. */
   isDismissed?: boolean;
+  /** Promove um card `eligible` a candidatura real. Ausente = sem botão. */
+  onPromote?: () => void;
+  promoteStatus?: PromoteStatus;
+  /** Motivo localizado quando a promoção é recusada (409) ou falha. */
+  promoteMessage?: string | null;
   onReject?: () => void;
   /** "Voltar a bloqueados": desfaz o rechazo de um card bloqueado (só para isDismissed). */
   onUndismiss?: () => void;
@@ -124,6 +135,9 @@ export function KanbanCard({
   missingFields,
   attemptCount,
   isDismissed,
+  onPromote,
+  promoteStatus,
+  promoteMessage,
   onReject,
   onUndismiss,
   onMoveTo,
@@ -282,33 +296,14 @@ export function KanbanCard({
       )}
 
       {isBlocked && (
-        <div className="mt-2 flex flex-col gap-1" data-testid="blocked-section">
-          <span data-testid="blocked-badge" className="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-100 text-red-700">
-            {t('admin.kanban.blockedBadge')}
-          </span>
-          {blockedReason && (
-            <span data-testid="blocked-reason" className="text-[10px] text-slate-500">
-              {t(`admin.blockedAttempts.reason.${blockedReason}`, { defaultValue: blockedReason })}
-            </span>
-          )}
-          {missingFields && missingFields.length > 0 && (
-            <div data-testid="blocked-missing-fields" className="flex flex-wrap gap-1 mt-0.5">
-              {missingFields.map((field) => (
-                <span
-                  key={field}
-                  className="inline-block px-1 py-0.5 rounded text-[9px] font-medium bg-amber-50 text-amber-700"
-                >
-                  {t(`admin.blockedAttempts.missingField.${field}`, { defaultValue: field })}
-                </span>
-              ))}
-            </div>
-          )}
-          {attemptCount !== undefined && attemptCount > 0 && (
-            <span data-testid="blocked-attempt-count" className="text-[10px] text-slate-400">
-              {t('admin.kanban.blockedAttemptCount', { count: attemptCount })}
-            </span>
-          )}
-        </div>
+        <KanbanCardBlocked
+          blockedReason={blockedReason}
+          missingFields={missingFields}
+          attemptCount={attemptCount}
+          onPromote={onPromote}
+          promoteStatus={promoteStatus}
+          promoteMessage={promoteMessage}
+        />
       )}
 
       {onOpenNotes && (

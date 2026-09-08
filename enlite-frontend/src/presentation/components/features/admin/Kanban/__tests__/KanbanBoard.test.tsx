@@ -81,6 +81,7 @@ vi.mock('lucide-react', () => ({
   ChevronDown: (props: Record<string, unknown>) => <svg data-testid="icon-chevron" {...props} />,
   ChevronsLeft: (props: Record<string, unknown>) => <svg data-testid="icon-collapse" {...props} />,
   ChevronsRight: (props: Record<string, unknown>) => <svg data-testid="icon-expand" {...props} />,
+  UserCheck: (props: Record<string, unknown>) => <svg data-testid="icon-user-check" {...props} />,
 }));
 
 // ── ContactNotesModal mock — evita montar o hook/data-fetching real ──────────
@@ -934,5 +935,106 @@ describe('KanbanBoard — convite à reunión de presentación (REQ-09)', () => 
     render(<KanbanBoard stages={stages} vacancyId="v" onMove={noopAsync} onRejectBlocked={noopAsync} onUnrejectBlocked={noopAsync} onPresentationInvite={vi.fn().mockRejectedValue('x')} />);
     fireEvent.click(screen.getByTestId('presentation-invite-button'));
     await waitFor(() => expect(screen.getByTestId('presentation-invite-feedback')).toHaveTextContent('admin.presentationInvite.error'));
+  });
+});
+
+// ── D300: card ELEGIBLE e o botão "Promover" ─────────────────────────────────
+//
+// A ligação de ponta a ponta: o board só oferece a ação quando o backend disse
+// que a pessoa passa no gate AGORA. É o que impede o botão de reaparecer para os
+// cards realmente bloqueados — que era o defeito original, ao contrário.
+
+describe('KanbanBoard — promover card elegível', () => {
+  function blockedStages(overrides: Record<string, unknown> = {}) {
+    const stages = emptyStages();
+    stages.BLOQUEADO = [makeEncuadre({
+      id: 'ba-eligible',
+      encuadreId: null,
+      isBlocked: true,
+      blockedReason: 'eligible',
+      missingFields: [],
+      attemptCount: 5,
+      ...overrides,
+    })];
+    return stages;
+  }
+
+  it('oferece "Promover" só quando o motivo vivo é eligible', () => {
+    render(
+      <KanbanBoard
+        stages={blockedStages()}
+        vacancyId="v"
+        onMove={noop}
+        onRejectBlocked={noop}
+        onUnrejectBlocked={noop}
+        onPromoteBlocked={vi.fn().mockResolvedValue(null)}
+      />,
+    );
+
+    const card = within(screen.getByTestId('kanban-column-BLOQUEADO')).getByTestId('kanban-card-ba-eligible');
+    expect(within(card).getByTestId('promote-button')).toBeInTheDocument();
+  });
+
+  it('NÃO oferece "Promover" a card que segue bloqueado de verdade', () => {
+    render(
+      <KanbanBoard
+        stages={blockedStages({ blockedReason: 'registration_incomplete', missingFields: ['phone'] })}
+        vacancyId="v"
+        onMove={noop}
+        onRejectBlocked={noop}
+        onUnrejectBlocked={noop}
+        onPromoteBlocked={vi.fn()}
+      />,
+    );
+
+    const card = within(screen.getByTestId('kanban-column-BLOQUEADO')).getByTestId('kanban-card-ba-eligible');
+    expect(within(card).queryByTestId('promote-button')).toBeNull();
+  });
+
+  it('clicar chama o callback com o id da TENTATIVA (não do encuadre, que não existe)', async () => {
+    const onPromoteBlocked = vi.fn().mockResolvedValue(null);
+    render(
+      <KanbanBoard
+        stages={blockedStages()}
+        vacancyId="v"
+        onMove={noop}
+        onRejectBlocked={noop}
+        onUnrejectBlocked={noop}
+        onPromoteBlocked={onPromoteBlocked}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('promote-button'));
+
+    await waitFor(() => expect(onPromoteBlocked).toHaveBeenCalledWith('ba-eligible'));
+  });
+
+  it('recusa do backend vira mensagem NO CARD, e o botão volta a ser clicável', async () => {
+    const onPromoteBlocked = vi.fn().mockResolvedValue('La vacante ya no admite candidaturas.');
+    render(
+      <KanbanBoard
+        stages={blockedStages()}
+        vacancyId="v"
+        onMove={noop}
+        onRejectBlocked={noop}
+        onUnrejectBlocked={noop}
+        onPromoteBlocked={onPromoteBlocked}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('promote-button'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('promote-message')).toHaveTextContent('La vacante ya no admite candidaturas.'),
+    );
+    expect(screen.getByTestId('promote-button')).toBeEnabled();
+  });
+
+  it('sem onPromoteBlocked (tela que não passa a ação) o card elegível não ganha botão', () => {
+    render(
+      <KanbanBoard stages={blockedStages()} vacancyId="v" onMove={noop} onRejectBlocked={noop} onUnrejectBlocked={noop} />,
+    );
+
+    expect(screen.queryByTestId('promote-button')).toBeNull();
   });
 });

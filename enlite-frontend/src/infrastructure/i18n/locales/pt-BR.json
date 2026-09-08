@@ -1473,7 +1473,8 @@
       "reason": {
         "registration_incomplete": "Cadastro incompleto",
         "worker_disabled": "Worker desativado",
-        "worker_not_found": "Worker não encontrado"
+        "worker_not_found": "Worker não encontrado",
+        "eligible": "Cadastro completo"
       },
       "missingField": {
         "profession": "Profissão",
@@ -1645,7 +1646,21 @@
         "cancel": "Cancelar",
         "unknown": "Ainda não sei a data — mover assim mesmo"
       },
-      "stageLastMessage": "Mensagem de etapa ({{stage}}): {{date}}"
+      "stageLastMessage": "Mensagem de etapa ({{stage}}): {{date}}",
+      "eligibleBadge": "ELEGÍVEL AGORA",
+      "promote": {
+        "idle": "Promover a candidatura",
+        "promoting": "Promovendo...",
+        "promoted": "Promovido",
+        "error": "Tentar de novo"
+      },
+      "promoteError": {
+        "worker_not_eligible": "O cadastro deixou de estar completo. Atualize a tela.",
+        "vacancy_invalid": "A vaga não aceita mais candidaturas.",
+        "wja_already_exists": "Já existe uma candidatura desta pessoa nesta vaga.",
+        "unique_conflict": "Outra pessoa promoveu este card ao mesmo tempo.",
+        "unknown": "Não foi possível promover o card. Tente de novo."
+      }
     },
     "workerDetail": {
       "status": "Status do Prestador",

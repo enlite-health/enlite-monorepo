@@ -341,6 +341,15 @@ class AdminApiServiceClass {
     await this.request<unknown>('POST', `/api/admin/vacancies/blocked-applications/${blockedId}/restore`);
   }
 
+  /**
+   * "Promover" (D300): card ELEGIBLE vira candidatura real. Só faz sentido quando o
+   * motivo vivo devolvido pelo funil é `eligible` — o backend revalida de todo jeito
+   * e responde 409 com o motivo se o estado mudou desde que a tela carregou.
+   */
+  async promoteBlockedAttempt(blockedId: string): Promise<void> {
+    await this.request<unknown>('POST', `/api/admin/vacancies/blocked-applications/${blockedId}/promote`);
+  }
+
   async getVacancyFunnelTable(
     vacancyId: string,
     bucket?: 'INVITED' | 'POSTULATED' | 'PRE_SELECTED' | 'REJECTED' | 'WITHDREW' | 'ALL',

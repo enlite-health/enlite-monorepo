@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
-import { systemActor } from '@shared/audit/actorSource';
+import { systemActor, type ActorContext } from '@shared/audit/actorSource';
 import { logger } from '@shared/logging';
 import {
   assertWorkerCanApply,
@@ -21,6 +21,23 @@ interface BlockedRow {
 interface JobPostingGuardRow {
   is_draft: boolean;
   status: string;
+}
+
+export interface PromoteBlockedApplicationsOptions {
+  /**
+   * Promove SÓ esta linha. Ausente = varredura de todas as tentativas do worker,
+   * que é o caminho do evento `worker.registration_completed`.
+   *
+   * Existe porque o botão "Promover" do card age sobre UM card: promover as
+   * outras vagas junto seria efeito colateral que a recrutadora não pediu nem vê.
+   */
+  blockedApplicationId?: string;
+  /**
+   * Ator da escrita, para a trilha. Ausente = `system:promote-blocked` (a
+   * varredura automática). A ação manual passa `staffActor(uid)` — sem isso a
+   * trilha registraria como decisão de máquina algo que uma pessoa decidiu.
+   */
+  actor?: ActorContext;
 }
 
 export interface PromoteBlockedApplicationsResult {
@@ -64,7 +81,45 @@ export class PromoteBlockedApplicationsUseCase {
     this.createWjaUseCase = createWjaUseCase ?? new CreateManualWjaWithEncuadreUseCase();
   }
 
-  async execute(workerId: string): Promise<PromoteBlockedApplicationsResult> {
+  /**
+   * Caminho do botão "Promover" de UM card (D300): resolve o worker da própria
+   * linha e promove só ela, carimbando quem clicou.
+   *
+   * Existe para o controller não precisar saber que a promoção é indexada por
+   * worker — e para a resolução do par (linha → worker) não ser reescrita na
+   * camada de interface.
+   *
+   * @returns `null` quando a linha não existe ou já foi promovida (404 para quem
+   *          chama); caso contrário o resultado da promoção, que ainda pode ser
+   *          `promoted: 0` se uma das guardas recusar (worker deixou de ser
+   *          elegível, vaga fechada, WJA já existente) — o motivo vem em `reasons`.
+   */
+  async executeForBlockedApplication(
+    blockedApplicationId: string,
+    actor?: ActorContext,
+  ): Promise<PromoteBlockedApplicationsResult | null> {
+    const { rows } = await this.pool.query<{ worker_id: string | null }>(
+      `SELECT worker_id FROM worker_blocked_applications
+       WHERE id = $1 AND promoted_at IS NULL`,
+      [blockedApplicationId],
+    );
+
+    const workerId = rows[0]?.worker_id;
+    if (!workerId) return null;
+
+    return this.execute(workerId, { blockedApplicationId, actor });
+  }
+
+  /**
+   * @param workerId worker cujas tentativas bloqueadas serão promovidas.
+   * @param opts     ver `PromoteBlockedApplicationsOptions`. Vazio = comportamento
+   *                 original (varredura do worker inteiro, ator do sistema), que é
+   *                 o que o handler do evento continua chamando.
+   */
+  async execute(
+    workerId: string,
+    opts: PromoteBlockedApplicationsOptions = {},
+  ): Promise<PromoteBlockedApplicationsResult> {
     const log = logger.child({ workerId, useCase: 'PromoteBlockedApplicationsUseCase' });
     const result: PromoteBlockedApplicationsResult = { promoted: 0, skipped: 0, reasons: {} };
 
@@ -78,8 +133,9 @@ export class PromoteBlockedApplicationsUseCase {
       const { rows: fetched } = await this.pool.query<BlockedRow>(
         `SELECT id, job_posting_id, acquisition_channel
          FROM worker_blocked_applications
-         WHERE worker_id = $1 AND promoted_at IS NULL`,
-        [workerId],
+         WHERE worker_id = $1 AND promoted_at IS NULL
+           AND ($2::uuid IS NULL OR id = $2::uuid)`,
+        [workerId, opts.blockedApplicationId ?? null],
       );
       rows = fetched;
     } catch (err) {
@@ -129,9 +185,12 @@ export class PromoteBlockedApplicationsUseCase {
           continue;
         }
 
-        // Promoção automática (worker completou o cadastro) — não é ação de
-        // ninguém do time. A marcação de promovido entra na MESMA transação:
-        // se ela falhar, a candidatura não fica criada sem o vínculo.
+        // A marcação de promovido entra na MESMA transação: se ela falhar, a
+        // candidatura não fica criada sem o vínculo.
+        //
+        // O ator distingue os dois caminhos que chegam aqui: a varredura
+        // automática (worker completou o cadastro — decisão de máquina) e o botão
+        // "Promover" do card (decisão de uma pessoa do time, D300).
         await withActorContext(
           this.pool,
           async (client) => {
@@ -148,7 +207,7 @@ export class PromoteBlockedApplicationsUseCase {
               [row.id, wjaId],
             );
           },
-          systemActor('promote-blocked'),
+          opts.actor ?? systemActor('promote-blocked'),
         );
 
         result.promoted += 1;
