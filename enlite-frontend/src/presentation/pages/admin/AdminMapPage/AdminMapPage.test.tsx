@@ -630,6 +630,43 @@ describe('AdminMapPage — busca de âncora por nome', () => {
     }
   });
 
+  // Gate do sync main→stage (08/09): sem `patient_identity:read` a rota responde 403 ao `search`
+  // (oráculo de nome). O hook nem manda: o escopo segue geográfico. Com o engine OFF, busca como sempre.
+  it('🔒 enforcement=on SEM patient_identity:read: digitar o nome NÃO troca o escopo (nunca chega a `search`)', () => {
+    vi.useFakeTimers();
+    try {
+      useAdminAuthStore.setState({
+        authzStatus: 'ready',
+        authz: { uid: 'u', tenantId: 't', status: 'ACTIVE', permissions: ['worker_address:read', 'patient_address:read'], countries: [], groups: [], features: {}, enforcement: 'on' } as AuthzContract,
+      });
+      setup();
+      fireEvent.focusIn(screen.getByTestId('map-center-patient'));
+      digitar('Reyna');
+      expect(pickerCall(mockPatients)[0]).toEqual(ancoraAR);
+      expect(pickerCall(mockPatients)[0]).not.toHaveProperty('search');
+    } finally {
+      useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+      vi.useRealTimers();
+    }
+  });
+
+  it('enforcement=on COM patient_identity:read: `search` entra', () => {
+    vi.useFakeTimers();
+    try {
+      useAdminAuthStore.setState({
+        authzStatus: 'ready',
+        authz: { uid: 'u', tenantId: 't', status: 'ACTIVE', permissions: ['worker_address:read', 'patient_address:read', 'patient_identity:read'], countries: [], groups: [], features: {}, enforcement: 'on' } as AuthzContract,
+      });
+      setup();
+      fireEvent.focusIn(screen.getByTestId('map-center-patient'));
+      digitar('Reyna');
+      expect(pickerCall(mockPatients)[0]).toEqual({ country: 'AR', search: 'Reyna' });
+    } finally {
+      useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+      vi.useRealTimers();
+    }
+  });
+
   it('1 letra NÃO busca: o escopo segue o raio de 50 km', () => {
     vi.useFakeTimers();
     try {

@@ -22,6 +22,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePatientsMapPoints, useWorkersMapPoints } from '@hooks/admin/useMapPoints';
+import { useContainerAccess } from '@presentation/hooks/useCellAccess';
 import type {
   MapCountry, PatientsMapFilters, WorkersMapFilters,
 } from '@infrastructure/http/AdminMapApiService';
@@ -99,7 +100,14 @@ export function useAnchorCandidates({
 }): AnchorCandidatesResult {
   const [searchText, setSearchText] = useState('');
   const term = searchText.trim();
-  const isSearching = term.length >= ANCHOR_SEARCH_MIN_CHARS;
+  /**
+   * Buscar paciente por NOME é leitura de identidade: sem `patient_identity:read` a rota
+   * responde 403 (gate do sync main→stage, 08/09 — o nome vem `NOME_REDIGIDO`, e filtrar por ele
+   * seria um oráculo). Sem a célula, o que se digita filtra só a lista local do raio.
+   * Mesmo freio de enforcement dos containers (D268): com o engine OFF, busca como sempre.
+   */
+  const { visible: podeBuscarPorNome } = useContainerAccess('patient_identity');
+  const isSearching = podeBuscarPorNome && term.length >= ANCHOR_SEARCH_MIN_CHARS;
 
   /**
    * Trocar de aba abandona o termo. O `key` no seletor remonta o FILHO e limpa
