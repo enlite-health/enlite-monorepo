@@ -95,7 +95,7 @@ export class PatientQueryRepository {
     params.push(reads.family);
     const familyIdx = i++;
 
-    // $8 limit, $9 offset
+    // $9 limit, $10 offset ($8 é reads.family, o ramo do responsável na busca)
     params.push(filters.limit);
     const limitIdx = i++;
     params.push(filters.offset);
