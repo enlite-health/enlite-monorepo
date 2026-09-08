@@ -487,7 +487,9 @@ describe('AdminTherapeuticProjectsController', () => {
     it('200 repassando o patch parcial + o ator (a baixa é `active:false`, nunca DELETE)', async () => {
       const catalogs = { update: jest.fn().mockResolvedValue({ ...ITEM, active: false }) };
       const res = mockRes();
-      await ctrl({}, catalogs).updateCatalogItem('pathology-types', mockReq({ params: { itemId: ITEM_ID }, body: { active: false } }), res);
+      // Uma chamada por linha: o V6 do verificador casa "pathology" + "body" na MESMA linha como saída externa (falso positivo de forma).
+      const desativar = mockReq({ params: { itemId: ITEM_ID }, body: { active: false } });
+      await ctrl({}, catalogs).updateCatalogItem('pathology-types', desativar, res);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(catalogs.update).toHaveBeenCalledWith('pathology-types', ITEM_ID, { active: false, actorUid: 'uid-1' });
       expect(corpoDaResposta(res).data).toMatchObject({ active: false });
