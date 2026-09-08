@@ -223,11 +223,19 @@ jobs:
           CI: 'true'
           E2E_BASE_URL: http://localhost:5173
         run: |
-          npx playwright test --config=playwright.mocked.config.ts --ignore-snapshots \
-            e2e/blocked-attempts.e2e.ts \
-            e2e/blocked-attempts-visual.e2e.ts \
-            e2e/vacancy-kanban.e2e.ts \
-            e2e/vacancy-kanban-eligibility-visual.e2e.ts
+          # Caminho que não existe o Playwright trata como filtro que não casa nada,
+          # e SAI ZERO se os outros casarem. Renomear um spec deixaria este passo
+          # verde rodando menos — cobertura reduzida em silêncio lê como "coberto".
+          # Medido: com 1 nome inexistente, "Total: 7 tests in 1 file", exit 0.
+          SPECS="e2e/blocked-attempts.e2e.ts \
+                 e2e/blocked-attempts-visual.e2e.ts \
+                 e2e/vacancy-kanban.e2e.ts \
+                 e2e/vacancy-kanban-eligibility-visual.e2e.ts \
+                 e2e/kanban-card-promover-elegivel.e2e.ts"
+          for f in $SPECS; do
+            [ -f "$f" ] || { echo "::error::spec sumiu ou foi renomeado: $f"; exit 1; }
+          done
+          npx playwright test --config=playwright.mocked.config.ts --ignore-snapshots $SPECS
 
       # As fotos sobem SEMPRE, não só na falha: elas são o insumo da comparação
       # de pixel que se faz à mão. Guardá-las apenas quando o job quebra deixaria

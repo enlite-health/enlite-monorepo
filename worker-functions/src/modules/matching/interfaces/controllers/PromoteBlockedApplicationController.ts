@@ -61,7 +61,18 @@ export class PromoteBlockedApplicationController {
       if (result.promoted === 0) {
         const reason = Object.keys(result.reasons)[0] ?? 'unknown';
         const status = CONFLICT_REASONS.includes(reason) ? 409 : 500;
-        res.status(status).json({ success: false, error: reason, data: { blockedId, reasons: result.reasons } });
+        // `code` e `reason` NÃO são redundância: `ApiError` do frontend só popula
+        // esses dois campos, e a tela escolhe a frase por eles. Sem isto, todo 409
+        // caía no `defaultValue` e a recrutadora lia "Tente de novo" — inclusive no
+        // caso de opt-out, onde repetir é exatamente o que ela NÃO deve fazer.
+        // Mesmo formato da rota irmã do funil (WJAFunnelController).
+        res.status(status).json({
+          success: false,
+          error: reason,
+          code: reason,
+          reason,
+          data: { blockedId, reasons: result.reasons },
+        });
         return;
       }
 

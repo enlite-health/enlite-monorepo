@@ -27,20 +27,22 @@ export function BlockedAttemptsFilters({
   const { t } = useTranslation();
   const ba = (key: string) => t(`admin.blockedAttempts.${key}`);
 
+  /**
+   * Derivado de `BlockedReason` para não divergir da API — foi a divergência que
+   * deixou o painel exibindo o balde "Registro completo" no topo sem deixar
+   * filtrar por ele. São justamente as pessoas prontas para trabalhar, que o
+   * recálculo ao vivo passou a revelar (D300).
+   */
+  const REASONS: BlockedReason[] = [
+    'registration_incomplete',
+    'worker_disabled',
+    'worker_not_found',
+    'eligible',
+  ];
+
   const reasonOptions = [
     { value: '', label: ba('filters.allReasons') },
-    {
-      value: 'registration_incomplete',
-      label: t('admin.blockedAttempts.reason.registration_incomplete'),
-    },
-    {
-      value: 'worker_disabled',
-      label: t('admin.blockedAttempts.reason.worker_disabled'),
-    },
-    {
-      value: 'worker_not_found',
-      label: t('admin.blockedAttempts.reason.worker_not_found'),
-    },
+    ...REASONS.map((r) => ({ value: r, label: t(`admin.blockedAttempts.reason.${r}`) })),
   ];
 
   return (

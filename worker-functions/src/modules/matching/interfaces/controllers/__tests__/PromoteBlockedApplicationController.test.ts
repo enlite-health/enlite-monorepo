@@ -80,6 +80,7 @@ describe('PromoteBlockedApplicationController', () => {
     ['vacancy_invalid'],
     ['wja_already_exists'],
     ['unique_conflict'],
+    ['worker_opted_out'],
   ])('409 (não 500) quando a guarda recusa por %s', async (reason) => {
     const res = makeRes();
     await makeController(jest.fn().mockResolvedValue({ promoted: 0, skipped: 1, reasons: { [reason]: 1 } }))
@@ -142,3 +143,43 @@ describe('PromoteBlockedApplicationController — ramos defensivos', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
   });
 });
+
+/**
+ * CONTRATO com a tela — o vão onde o defeito morava.
+ *
+ * O 409 saía sem `code`/`reason`. O `ApiError` do frontend popula a escolha da
+ * frase SÓ por esses dois campos, então toda recusa caía no `defaultValue` e a
+ * recrutadora lia "Não foi possível promover. Tente de novo." — inclusive no caso
+ * de opt-out, onde repetir é exatamente o que ela não deve fazer.
+ *
+ * Os dois lados tinham teste, e nenhum pegou: o do controller assertava
+ * `objectContaining({ error })` e o da tela alimentava um objeto que o backend
+ * nunca produz. Este teste roda o controller REAL e deriva o que a tela leria.
+ */
+describe('PromoteBlockedApplicationController — contrato com a tela', () => {
+  /** Réplica mínima do que `ApiError` faz com o corpo, e do que a tela lê dele. */
+  function chaveDaFraseNaTela(corpo: Record<string, unknown>): string {
+    const code = corpo.code as string | undefined;
+    const reason = corpo.reason as string | undefined;
+    return `admin.kanban.promoteError.${reason ?? code ?? 'unknown'}`;
+  }
+
+  it.each([
+    ['worker_opted_out'],
+    ['vacancy_invalid'],
+    ['wja_already_exists'],
+    ['worker_not_eligible'],
+    ['unique_conflict'],
+  ])('%s chega à tela como frase PRÓPRIA, nunca como "unknown"', async (reason) => {
+    const res = makeRes();
+    await makeController(jest.fn().mockResolvedValue({ promoted: 0, skipped: 1, reasons: { [reason]: 1 } }))
+      .promote(makeReq(BLOCKED_ID), res);
+
+    const corpo = res.json.mock.calls[0][0] as Record<string, unknown>;
+    expect(corpo.code).toBe(reason);
+    expect(corpo.reason).toBe(reason);
+    expect(chaveDaFraseNaTela(corpo)).toBe(`admin.kanban.promoteError.${reason}`);
+    expect(chaveDaFraseNaTela(corpo)).not.toContain('unknown');
+  });
+});
+

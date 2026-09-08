@@ -3,6 +3,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import { systemActor, type ActorContext } from '@shared/audit/actorSource';
 import { logger } from '@shared/logging';
+import { optedOutExistsSql } from '@shared/database/messagingOptOutFilter';
 import {
   assertWorkerCanApply,
   WorkerNotEligibleError,
@@ -124,7 +125,7 @@ export class PromoteBlockedApplicationsUseCase {
     // esta guarda aqui: é comportamento anterior a esta mudança, e alterá-lo muda a
     // semântica de um caminho que ninguém pediu para mexer. Fica na LISTA.
     const { rows: optOut } = await this.pool.query(
-      `SELECT 1 FROM messaging_opt_out WHERE worker_id = $1 AND opted_in_at IS NULL`,
+      `SELECT 1 WHERE ${optedOutExistsSql('$1')}`,
       [workerId],
     );
     if (optOut.length > 0) {

@@ -22,9 +22,14 @@
  * ⚠️ A regra aqui é um ESPELHO de `assertWorkerCanApply`
  * (`../domain/WorkerApplicationEligibility.ts`) — mesma ordem, mesmos predicados.
  * Se as duas divergirem, o card volta a mentir, agora ao contrário: promete
- * elegibilidade que o gate nega. `__tests__/blockedAttemptLiveState.test.ts` prende
- * as duas implementações uma na outra justamente para que a divergência quebre o
- * build em vez de aparecer na tela da recrutadora.
+ * elegibilidade que o gate nega.
+ *
+ * 🔒 **O guarda dessa divergência é `tests/e2e/blocked-attempt-live-state.test.ts`,
+ * e ele exige BANCO REAL** — roda no job `backend-e2e` (`npm run test:e2e`), NÃO
+ * em `npm test`. Medido em 08/09: com o espelho sabotado, a suíte unitária inteira
+ * (88 suítes, 1.108 testes) fica VERDE, e o `pre-push` também. Os asserts unitários
+ * comparam o SQL com o próprio módulo — são tautológicos por construção e não podem
+ * pegar conteúdo errado. Quem mexer em `assertWorkerCanApply` tem de rodar o e2e.
  */
 
 import { DISABLED_WORKER_STATUS } from '@shared/database/activeWorkerFilter';
