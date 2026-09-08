@@ -3,9 +3,13 @@
  *
  * Fonte única do estado AO VIVO de uma tentativa bloqueada.
  *
- * `worker_blocked_applications` é um snapshot: `blocked_reason` e `missing_fields`
- * são escritos no instante em que o gate barrou a postulação e NUNCA mais são
- * atualizados — só uma nova tentativa os reescreve. A pessoa, porém, muda depois:
+ * `worker_blocked_applications` é um snapshot: `blocked_reason_at_attempt` e
+ * `missing_fields_at_attempt` são escritos no instante em que o gate barrou a
+ * postulação e NUNCA mais são atualizados — só uma nova tentativa os reescreve.
+ * Os nomes carregam o `_at_attempt` de propósito (migrations 332/333): antes eles
+ * estavam no presente (`blocked_reason`), e todo mundo que escrevia consulta nova
+ * lia o nome, acreditava, e fazia `WHERE b.blocked_reason = '...'` — sintaxe
+ * certa, pergunta errada. Hoje esse SQL não compila mais. A pessoa, porém, muda depois:
  * completa o cadastro, é reativada por atividade (`ReactivateArchivedWorkerUseCase`),
  * é destravada pelo staff. O card seguia exibindo o motivo de meses atrás.
  *

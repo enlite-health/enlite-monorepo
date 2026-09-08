@@ -97,7 +97,7 @@ beforeAll(async () => {
     [REGISTERED_WORKER_ID, SEARCHING_JOB_ID],
   );
   await pool.query(
-    `INSERT INTO worker_blocked_applications (worker_id, job_posting_id, blocked_reason, missing_fields)
+    `INSERT INTO worker_blocked_applications (worker_id, job_posting_id, blocked_reason_at_attempt, missing_fields_at_attempt)
      VALUES ($1, $2, 'registration_incomplete', '[]')`,
     [INCOMPLETE_WORKER_ID, SEARCHING_JOB_ID],
   );

@@ -97,15 +97,15 @@ describe('BlockedApplicationRepository (banco real)', () => {
     await repo.upsert({ workerId, jobPostingId: VACANCY_ID, reason: 'registration_incomplete', acquisitionChannel: 'facebook' });
 
     const { rows } = await pool.query(
-      `SELECT attempt_count, blocked_reason, acquisition_channel, missing_fields
+      `SELECT attempt_count, blocked_reason_at_attempt, acquisition_channel, missing_fields_at_attempt
        FROM worker_blocked_applications WHERE worker_id = $1 AND job_posting_id = $2`,
       [workerId, VACANCY_ID],
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].attempt_count).toBe(1);
-    expect(rows[0].blocked_reason).toBe('registration_incomplete');
+    expect(rows[0].blocked_reason_at_attempt).toBe('registration_incomplete');
     expect(rows[0].acquisition_channel).toBe('facebook');
-    expect(Array.isArray(rows[0].missing_fields)).toBe(true);
+    expect(Array.isArray(rows[0].missing_fields_at_attempt)).toBe(true);
   });
 
   it('segunda tentativa incrementa attempt_count SEM duplicar linha', async () => {
@@ -141,39 +141,39 @@ describe('BlockedApplicationRepository (banco real)', () => {
     expect(rows[0].acquisition_channel).toBe('whatsapp');
   });
 
-  it('reason=worker_disabled → missing_fields=[]', async () => {
+  it('reason=worker_disabled → missing_fields_at_attempt=[]', async () => {
     const workerId = await makeWorker('DISABLED', 'upsert-disabled');
     upsertWorkerIds.push(workerId);
 
     const repo = new BlockedApplicationRepository();
     await repo.upsert({ workerId, jobPostingId: VACANCY_ID, reason: 'worker_disabled', acquisitionChannel: null });
 
-    const { rows } = await pool.query(`SELECT missing_fields, blocked_reason FROM worker_blocked_applications WHERE worker_id = $1`, [workerId]);
-    expect(rows[0].missing_fields).toEqual([]);
-    expect(rows[0].blocked_reason).toBe('worker_disabled');
+    const { rows } = await pool.query(`SELECT missing_fields_at_attempt, blocked_reason_at_attempt FROM worker_blocked_applications WHERE worker_id = $1`, [workerId]);
+    expect(rows[0].missing_fields_at_attempt).toEqual([]);
+    expect(rows[0].blocked_reason_at_attempt).toBe('worker_disabled');
   });
 
-  it('reason=worker_not_found → missing_fields contém "worker_not_found"', async () => {
+  it('reason=worker_not_found → missing_fields_at_attempt contém "worker_not_found"', async () => {
     const nonExistentId = '00000000-0000-0000-0000-000000000003';
     const repo = new BlockedApplicationRepository();
     await repo.upsert({ workerId: nonExistentId, jobPostingId: VACANCY_ID, reason: 'worker_not_found', acquisitionChannel: 'site' });
 
-    const { rows } = await pool.query(`SELECT missing_fields FROM worker_blocked_applications WHERE worker_id = $1`, [nonExistentId]);
+    const { rows } = await pool.query(`SELECT missing_fields_at_attempt FROM worker_blocked_applications WHERE worker_id = $1`, [nonExistentId]);
     await pool.query(`DELETE FROM worker_blocked_applications WHERE worker_id = $1`, [nonExistentId]);
 
     expect(rows).toHaveLength(1);
-    expect(rows[0].missing_fields).toContain('worker_not_found');
+    expect(rows[0].missing_fields_at_attempt).toContain('worker_not_found');
   });
 
-  it('missing_fields preenchido para worker incompleto', async () => {
+  it('missing_fields_at_attempt preenchido para worker incompleto', async () => {
     const workerId = await makeWorker('INCOMPLETE_REGISTER', 'upsert-missing');
     upsertWorkerIds.push(workerId);
 
     const repo = new BlockedApplicationRepository();
     await repo.upsert({ workerId, jobPostingId: VACANCY_ID, reason: 'registration_incomplete', acquisitionChannel: null });
 
-    const { rows } = await pool.query(`SELECT missing_fields FROM worker_blocked_applications WHERE worker_id = $1`, [workerId]);
-    expect(rows[0].missing_fields.length).toBeGreaterThan(0);
+    const { rows } = await pool.query(`SELECT missing_fields_at_attempt FROM worker_blocked_applications WHERE worker_id = $1`, [workerId]);
+    expect(rows[0].missing_fields_at_attempt.length).toBeGreaterThan(0);
   });
 });
 
@@ -210,7 +210,7 @@ describe('BlockedApplicationQueryRepository (banco real)', () => {
 
     await pool.query(
       `INSERT INTO worker_blocked_applications
-         (worker_id, job_posting_id, blocked_reason, missing_fields, acquisition_channel,
+         (worker_id, job_posting_id, blocked_reason_at_attempt, missing_fields_at_attempt, acquisition_channel,
           attempt_count, first_attempted_at, last_attempted_at)
        VALUES
          ($1, $2, 'registration_incomplete', '["phone"]', 'facebook', 2, NOW()-interval '2m', NOW()-interval '1m'),
@@ -308,7 +308,7 @@ describe('BlockedApplicationQueryRepository (banco real)', () => {
     expect(agg.byReason).toMatchObject({ registration_incomplete: expect.any(Number) });
   });
 
-  // ── Regressão: listByVacancy recomputa missing_fields ON-READ ─────────
+  // ── Regressão: listByVacancy recomputa missing_fields_at_attempt ON-READ ─────────
   // Bug: editar o perfil do worker (grava first_name/last_name) atualizava o
   // nome do card mas NÃO as tags de campos faltantes, pois vinham do snapshot
   // materializado. Fix: recompute via fn_worker_missing_fields p/ registration_incomplete.
@@ -321,7 +321,7 @@ describe('BlockedApplicationQueryRepository (banco real)', () => {
     // Snapshot OBSOLETO gravado quando o worker ainda não tinha nome.
     await pool.query(
       `INSERT INTO worker_blocked_applications
-         (worker_id, job_posting_id, blocked_reason, missing_fields, acquisition_channel,
+         (worker_id, job_posting_id, blocked_reason_at_attempt, missing_fields_at_attempt, acquisition_channel,
           attempt_count, first_attempted_at, last_attempted_at)
        VALUES ($1, $2, 'registration_incomplete',
                '["first_name","last_name","sex"]', 'portal', 1, NOW(), NOW())`,
@@ -358,7 +358,7 @@ describe('BlockedApplicationQueryRepository (banco real)', () => {
     // Sentinela que a função NUNCA produziria — se aparecer, o snapshot vazou.
     await pool.query(
       `INSERT INTO worker_blocked_applications
-         (worker_id, job_posting_id, blocked_reason, missing_fields, acquisition_channel,
+         (worker_id, job_posting_id, blocked_reason_at_attempt, missing_fields_at_attempt, acquisition_channel,
           attempt_count, first_attempted_at, last_attempted_at)
        VALUES ($1, $2, 'worker_disabled', '["__sentinel_snapshot__"]', 'portal', 1, NOW(), NOW())`,
       [workerId, qVacancyId],
@@ -425,7 +425,7 @@ describe('Worker engagements por worker (banco real)', () => {
     // Blocked em vPre (JÁ tem WJA → deve ser EXCLUÍDO por NOT EXISTS) e em vBlocked (deve aparecer).
     await pool.query(
       `INSERT INTO worker_blocked_applications
-         (worker_id, job_posting_id, blocked_reason, missing_fields, acquisition_channel,
+         (worker_id, job_posting_id, blocked_reason_at_attempt, missing_fields_at_attempt, acquisition_channel,
           attempt_count, first_attempted_at, last_attempted_at)
        VALUES
          ($1, $2, 'registration_incomplete', '["worker_documents"]', 'site', 1, NOW(), NOW()),
@@ -465,7 +465,7 @@ describe('Worker engagements por worker (banco real)', () => {
     expect(rows[0].isBlocked).toBe(true);
     expect(rows[0].caseNumber).toBe(88883);
     expect(rows[0].attemptCount).toBe(5);
-    // missing_fields é recomputado ON-READ (fn_worker_missing_fields) — cobertura fina
+    // missing_fields_at_attempt é recomputado ON-READ (fn_worker_missing_fields) — cobertura fina
     // dessa lógica vive nos testes listByVacancy; aqui basta o shape.
     expect(Array.isArray(rows[0].missingFields)).toBe(true);
   });
