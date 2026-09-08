@@ -450,6 +450,8 @@ describe('saveRefusalMessage — a recusa do servidor em frase de tela', () => {
     ['catalog_items_unknown', 'catalogItemsUnknown'],
     ['service_not_of_patient', 'serviceNotOfPatient'],
     ['source_version_not_found', 'sourceNotFound'],
+    ['ptp_diagnosis_unknown', 'diagnosisUnknown'],
+    ['TERMINOLOGY_UNAVAILABLE', 'terminologyUnavailable'],
   ])('`%s` vira a frase própria', (code, chave) => {
     expect(saveRefusalMessage(new TherapeuticProjectApiError('nope', 422, { code }), t)).toBe(tfErr(chave));
   });

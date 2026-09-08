@@ -107,7 +107,7 @@ describe('416 — projeto terapêutico versionado e imutável (banco real)', () 
        UNION ALL SELECT 'pat_total', count(*)::int FROM pathology_types
        UNION ALL SELECT 'pat_ativas', count(*)::int FROM pathology_types WHERE active`,
     );
-    // Tipo de patologia deriva do CID-11 (D163/D164): as 8 opções da 415 ficam (versões antigas apontam), todas inativas.
+    // Tipo de patologia deriva do CID-11 (D163/D164): as 8 opções da 415 ficam (regra aditiva; DROP na fila), todas inativas.
     expect(Object.fromEntries(counts.rows.map((r) => [r.t, r.n]))).toEqual({ obj: 8, act: 13, pat_total: 8, pat_ativas: 0 });
     const comentario = await admin.query<{ c: string }>(`SELECT obj_description('pathology_types'::regclass, 'pg_class') AS c`);
     expect(comentario.rows[0].c).toMatch(/^DEPRECADA \(418/);

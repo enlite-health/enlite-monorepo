@@ -213,8 +213,8 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   // ── Spec 017 (D299; lex 08/09 C7): projeto terapêutico versionado e os seus catálogos ──
   'patient_therapeutic_project:read':
     'Ver o PROJETO TERAPÊUTICO do paciente: versões (major.minor), prazos, autor, serviço contratado '
-    + 'escolhido, objetivos, atividades e tipo de patologia (capítulo CID-11 derivado dos diagnósticos). A síntese clínica, o objetivo geral e o '
-    + 'CID-11 só saem com `patient_clinical:read` (célula cumulativa). Dado sensível de saúde.',
+    + 'escolhido, objetivos e atividades. A síntese clínica, o objetivo geral, o CID-11 e o tipo de patologia '
+    + '(capítulo CID-11 derivado dos diagnósticos) só saem com `patient_clinical:read` (célula cumulativa). Dado sensível de saúde.',
   'patient_therapeutic_project:write':
     'Criar uma nova versão do projeto terapêutico ("Novo" = major seguinte, "Editar" = minor seguinte) '
     + 'e anular uma versão. Exige também `patient_clinical:write` — o corpo carrega texto clínico.',

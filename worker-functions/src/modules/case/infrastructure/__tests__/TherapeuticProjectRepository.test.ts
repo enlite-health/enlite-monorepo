@@ -26,7 +26,6 @@ import {
   type TherapeuticProjectVersionInput,
 } from '../TherapeuticProjectRepository';
 import { CatalogItemsUnknownError } from '../TherapeuticCatalogRepository';
-import { TerminologyEntityNotFoundError } from '@modules/terminology/infrastructure/IcdCatalogTerminology';
 import { DiagnosisUnknownError } from '../../application/pathologySegments';
 import type { TerminologyPort } from '@modules/terminology/domain/TerminologyPort';
 
@@ -39,7 +38,8 @@ const CAPITULO_06 = { code: '06', title: 'Trastornos mentales, del comportamient
 function terminologia(over: Partial<TerminologyPort> = {}): TerminologyPort {
   return {
     search: jest.fn(),
-    getByUri: jest.fn(),
+    // Entidade "existe" para qualquer URI, salvo quando o teste sobrescreve (o "não existe" é `null`, pela porta).
+    getByUri: jest.fn(async (uri: string) => ({ uri })),
     ancestorsOf: jest.fn(async () => ({ chapter: CAPITULO_06 })),
     ...over,
   } as unknown as TerminologyPort;
@@ -328,13 +328,14 @@ describe('TherapeuticProjectRepository', () => {
       expect(sqls(chamadas).some((s) => /pathology_types\b(?!,)/.test(s) && !/^INSERT/.test(s))).toBe(false);
     });
 
-    it('CID-11 que não resolve no catálogo → DiagnosisUnknownError (422), sem INSERT; falha de infra da porta propaga como está', async () => {
+    it('CID-11 que não resolve no catálogo (`getByUri` → null) → DiagnosisUnknownError (422), sem INSERT nem `ancestorsOf`; falha de infra da porta propaga como está', async () => {
       const { cli, chamadas } = cliente();
       mockConnect.mockResolvedValue(cli);
-      const sumido = terminologia({ ancestorsOf: jest.fn(async () => { throw new TerminologyEntityNotFoundError(); }) });
+      const sumido = terminologia({ getByUri: jest.fn(async () => null) });
       await expect(repo(sumido).createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: CORPO }))
         .rejects.toBeInstanceOf(DiagnosisUnknownError);
       expect(chamadas.some((c) => /^INSERT INTO patient_therapeutic_projects/.test(c.sql))).toBe(false);
+      expect(sumido.ancestorsOf).not.toHaveBeenCalled();
       const caiu = new Error('porta fora do ar');
       const fora = terminologia({ ancestorsOf: jest.fn(async () => { throw caiu; }) });
       await expect(repo(fora).createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: CORPO })).rejects.toBe(caiu);

@@ -1,16 +1,17 @@
 /**
  * derivePathologySegments — "Tipo de patología (segmento)" do Projeto Terapêutico NÃO se escolhe:
- * deriva dos diagnósticos CID-11 da versão (Gabriel, 08/09; D163/D164). Hoje o agrupador é o
+ * deriva dos diagnósticos CID-11 da versão (Gabriel, 08/09; D163/D164; D303). Hoje o agrupador é o
  * CAPÍTULO, resolvido pela `TerminologyPort` — a mesma régua de `patient_diagnoses.concept_group`
  * (spec 016) e a suspensão declarada da D164 (D261: bloco não tem código nem linha no catálogo
  * local; `2026-08-05a#ABERTO-12` no Marcel). Trocar para bloco quando a porta o devolver é mexer
  * SÓ aqui.
  *
- * Puro em relação ao banco: recebe a porta por parâmetro (DIP), não conhece `pg`. Nunca loga a
- * URI (texto clínico identificado — T7 da terminologia): o erro tipado é o status.
+ * Só a PORTA (DIP): nenhum import de adaptador — "não existe" é `getByUri() === null`, como em
+ * `RecordPatientDiagnosis`, para o fake e o real darem o MESMO 422. Nunca loga a URI (texto clínico
+ * identificado — T7 da terminologia): o erro tipado é o status. Falha de infra da porta
+ * (`TerminologyUnavailableError`) propaga como está — o controller responde 503.
  */
 import type { TerminologyPort } from '@modules/terminology/domain/TerminologyPort';
-import { TerminologyEntityNotFoundError } from '@modules/terminology/infrastructure/IcdCatalogTerminology';
 import type { PathologySegment, TherapeuticDiagnosis } from '../domain/TherapeuticProject';
 
 /** Uma URI escolhida no combobox não resolve no catálogo corrente — 422, nunca 500. */
@@ -29,13 +30,8 @@ export async function derivePathologySegments(
 ): Promise<PathologySegment[]> {
   const byCode = new Map<string, PathologySegment>();
   for (const uri of new Set(diagnoses.map((d) => d.uri))) {
-    let chapter: { code: string; title: string };
-    try {
-      ({ chapter } = await terminology.ancestorsOf(uri));
-    } catch (err) {
-      if (err instanceof TerminologyEntityNotFoundError) throw new DiagnosisUnknownError();
-      throw err;
-    }
+    if ((await terminology.getByUri(uri)) === null) throw new DiagnosisUnknownError();
+    const { chapter } = await terminology.ancestorsOf(uri);
     byCode.set(chapter.code, { id: chapter.code, label: chapter.title });
   }
   return [...byCode.values()].sort((a, b) => a.id.localeCompare(b.id));

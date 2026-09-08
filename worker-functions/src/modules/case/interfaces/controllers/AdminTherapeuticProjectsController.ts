@@ -50,8 +50,8 @@ const invalidBody = (res: Response, error: z.ZodError): void => {
  *   PATCH     /api/admin/therapeutic-catalogs/:kind/:itemId        (catalog_<kind>:write)
  *
  * Sem DELETE em lugar nenhum: versão é imutável (lex C5) e catálogo é soft delete.
- * `clinicalContext`/`generalObjective`/`diagnoses` saem só com `patient_clinical:read` — a
- * projeção é o ponto único `projectTherapeuticVersionForActor`. Nenhum `reportError` abaixo
+ * `clinicalContext`/`generalObjective`/`diagnoses`/`pathologyTypes` (capítulo CID-11 derivado) saem só
+ * com `patient_clinical:read` — a projeção é o ponto único `projectTherapeuticVersionForActor`. Nenhum `reportError` abaixo
  * carrega `req.body`.
  */
 export class AdminTherapeuticProjectsController {

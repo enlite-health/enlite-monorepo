@@ -3411,7 +3411,9 @@
             "forbidden": "Você não tem permissão para escrever o projeto terapêutico (precisa também da célula clínica).",
             "catalogItemsUnknown": "Alguma opção escolhida já não está ativa no catálogo. Escolha de novo.",
             "serviceNotOfPatient": "O serviço escolhido não é deste paciente.",
-            "sourceNotFound": "A versão de origem já não existe ou foi anulada."
+            "sourceNotFound": "A versão de origem já não existe ou foi anulada.",
+            "diagnosisUnknown": "O diagnóstico escolhido já não existe no catálogo CID-11. Busque e escolha de novo.",
+            "terminologyUnavailable": "O catálogo CID-11 está indisponível neste momento. Tente de novo em alguns minutos."
           },
           "modalityPlaceholder": "Escolha a modalidade"
         }

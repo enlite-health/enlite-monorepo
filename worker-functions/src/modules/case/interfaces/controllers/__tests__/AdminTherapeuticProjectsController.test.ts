@@ -20,6 +20,8 @@ import type { Response } from 'express';
 import { AdminTherapeuticProjectsController } from '../AdminTherapeuticProjectsController';
 import { ServiceNotOfPatientError, SourceVersionNotFoundError, PatientNotFoundForProjectError } from '../../../infrastructure/TherapeuticProjectRepository';
 import { CatalogItemsUnknownError, CatalogLabelTakenError } from '../../../infrastructure/TherapeuticCatalogRepository';
+import { DiagnosisUnknownError } from '../../../application/pathologySegments';
+import { TerminologyUnavailableError } from '@modules/terminology/domain/UnavailableTerminology';
 
 const PATIENT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const VERSION_ID = 'bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -295,6 +297,25 @@ describe('AdminTherapeuticProjectsController', () => {
       await ctrl(repo).create(mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO }), res);
       expect(res.status).toHaveBeenCalledWith(422);
       expect(corpoDaResposta(res)).toMatchObject({ code: 'catalog_items_unknown', details: { kind: 'activities', ids: ['x-1', 'x-2'] } });
+    });
+
+    it('422 `ptp_diagnosis_unknown` quando um CID-11 não resolve — SEM a URI no corpo (T7: é dado clínico) e sem reportError', async () => {
+      const repo = { createVersion: jest.fn().mockRejectedValue(new DiagnosisUnknownError()) };
+      const res = mockRes();
+      await ctrl(repo).create(mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO }), res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Unknown diagnosis', code: 'ptp_diagnosis_unknown' });
+      for (const d of CORPO_NOVO.version.diagnoses) expect(JSON.stringify(corpoDaResposta(res))).not.toContain(d.uri);
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
+    it('503 `TERMINOLOGY_UNAVAILABLE` quando a porta de terminologia está fora — nunca 500 mudo, sem reportError', async () => {
+      const repo = { createVersion: jest.fn().mockRejectedValue(new TerminologyUnavailableError('catálogo indisponível')) };
+      const res = mockRes();
+      await ctrl(repo).create(mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO }), res);
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(corpoDaResposta(res)).toMatchObject({ success: false, code: 'TERMINOLOGY_UNAVAILABLE' });
+      expect(reportError).not.toHaveBeenCalled();
     });
 
     it('500 no erro genérico — o log leva `mode`, jamais o corpo (lex C6)', async () => {

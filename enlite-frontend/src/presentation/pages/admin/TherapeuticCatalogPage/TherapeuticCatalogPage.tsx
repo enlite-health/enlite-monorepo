@@ -1,7 +1,7 @@
 /**
  * TherapeuticCatalogPage — administração de UM catálogo do projeto terapêutico (spec 017, D299):
- * objetivos específicos, rotina e atividades, ou tipo de patologia (segmento). Uma TELA por lista e
- * uma célula por lista (decisão do Gabriel, 08/09) — o componente é o mesmo, parametrizado por `kind`;
+ * objetivos específicos e rotina e atividades (o tipo de patologia NÃO é catálogo: deriva do CID-11, D303).
+ * Uma TELA por lista e uma célula por lista (decisão do Gabriel, 08/09) — o componente é o mesmo, parametrizado por `kind`;
  * a rota, a célula e o título mudam.
  *
  * POR QUE TELA E NÃO ENUM: a operação muda estas listas toda semana (as 8 opções do Figma são o

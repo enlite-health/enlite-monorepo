@@ -11,8 +11,9 @@
 -- e não bloco, é a suspensão declarada da D164 (D261; ABERTO-12 no Marcel), a mesma régua de
 -- `patient_diagnoses.concept_group`. Versões já gravadas ficam como estão (imutáveis).
 --
--- Migração ADITIVA (regra do repo): a tabela `pathology_types` NÃO é dropada — fica deprecada,
--- desativada e sem escrita. As células `catalog_pathology_types:*` sumiram do código; o sync do
+-- Migração ADITIVA (regra do repo): a tabela `pathology_types` NÃO é dropada — fica deprecada e
+-- desativada. Medido na stage antes desta migration (lex C3, 08/09): 8 linhas, todas `seed:415`, e
+-- ZERO versão de projeto apontando para elas; em prod a tabela não existe. O DROP entra na fila. As células `catalog_pathology_types:*` sumiram do código; o sync do
 -- catálogo de permissões (`iam.deprecate_missing_permission_cells`) as marca no boot.
 
 -- 1. Tabela: deprecada e opções desativadas (soft delete, como o próprio catálogo manda). Sem DROP.
@@ -22,8 +23,10 @@ UPDATE pathology_types SET active = FALSE, deactivated_at = COALESCE(deactivated
 
 COMMENT ON TABLE pathology_types IS
   'DEPRECADA (418, 08/09/2026): "Tipo de patología" deriva dos CID-11 da versão, não de catálogo '
-  '(D163/D164, DEC-09). Linhas desativadas e mantidas só porque versões anteriores à 418 apontam para '
-  'os ids no snapshot. Nenhuma rota lê ou escreve aqui; sem DROP (migração aditiva).';
+  '(D163/D164, DEC-09, D303). Linhas desativadas. Fica pela regra aditiva do repo (nunca DROP sem '
+  'deprecação) — medido na stage em 08/09 (lex C3): 8 linhas, todas do seed, e ZERO versão apontando '
+  'para elas; prod nunca teve a tabela. Nenhuma rota lê ou escreve aqui. DROP fica para migration '
+  'futura, na fila.';
 
 -- 2. A coluna da versão muda de SIGNIFICADO, não de tipo.
 COMMENT ON COLUMN patient_therapeutic_projects.pathology_types IS
