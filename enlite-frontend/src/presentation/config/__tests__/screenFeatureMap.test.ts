@@ -44,6 +44,8 @@ const ROTAS_ADMIN: RotaAdmin[] = BLOCO_ADMIN.split('\n')
 const ROTAS_SEM_CHAVE_SCREEN = new Set([
   '', 'tags', 'patient-chat-roles', 'dedup', 'api-docs',
   'mapa', 'mensajes-por-etapa', 'plantillas', 'plantillas/registrar', 'plantillas/:slug', 'invitacion-presentacion',
+  // Spec 017: os 3 catálogos do projeto terapêutico — gateados pela célula própria de cada um, não por país.
+  'catalogos/objetivos-especificos', 'catalogos/actividades', 'catalogos/tipos-de-patologia',
 ]);
 
 /** Todo `href: '...'` literal declarado em `adminNavigation.tsx` (baseItems + adminItems + accessItems). */

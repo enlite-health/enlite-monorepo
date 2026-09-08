@@ -1105,7 +1105,10 @@
       "presentationInvite": "Invitación a presentación",
       "map": "Mapa",
       "templateCatalog": "Plantillas",
-      "templateDrafts": "Registrar mensaje"
+      "templateDrafts": "Registrar mensaje",
+      "catalogObjectives": "Objetivos específicos",
+      "catalogActivities": "Rutina y actividades",
+      "catalogPathologyTypes": "Tipos de patología"
     },
     "dedup": {
       "title": "Centro de Duplicados",
@@ -4200,7 +4203,8 @@
             "services": "Servicio contratado",
             "contractValue": "Valor hora del servicio contratado",
             "vacancies": "Vacantes del paciente",
-            "operational": "Estado, activación e historial"
+            "operational": "Estado, activación e historial",
+            "therapeuticProject": "Proyecto terapéutico"
           }
         },
         "patients.chatRoles": {
@@ -4277,6 +4281,15 @@
         },
         "access": {
           "label": "Accesos y permisos"
+        },
+        "patients.catalogObjectives": {
+          "label": "Pacientes: Catálogo de objetivos específicos"
+        },
+        "patients.catalogActivities": {
+          "label": "Pacientes: Catálogo de rutina y actividades"
+        },
+        "patients.catalogPathologyTypes": {
+          "label": "Pacientes: Catálogo de tipos de patología"
         }
       }
     },
@@ -4837,6 +4850,47 @@
       "inserirClausula": "Cláusula de baja",
       "clausulaDeBaja": "\n\nRespondé BAJA si no querés recibir más mensajes.",
       "copiarParaTraduzir": "copiar el español para traducir"
+    },
+    "therapeuticCatalog": {
+      "kinds": {
+        "specificObjectives": {
+          "title": "Objetivos específicos del proyecto terapéutico",
+          "subtitle": "Las opciones que el equipo elige en el proyecto terapéutico (sección \"Objetivos Específicos\" del documento). Se editan acá, sin deploy. Desactivar no borra: las versiones antiguas del proyecto guardan el texto que tenían."
+        },
+        "activities": {
+          "title": "Rutina y actividades del proyecto terapéutico",
+          "subtitle": "Las opciones de \"Rutina y Actividades\" del proyecto terapéutico. Se editan acá, sin deploy. Desactivar no borra: las versiones antiguas guardan el texto que tenían."
+        },
+        "pathologyTypes": {
+          "title": "Tipos de patología (segmento)",
+          "subtitle": "El segmento clínico que se elige en el proyecto terapéutico — el mismo padrón del Ana Care. Lista propia de Enlite. Se edita acá, sin deploy; desactivar no borra."
+        }
+      },
+      "newItem": "Nueva opción",
+      "editItem": "Editar opción",
+      "noItems": "Todavía no hay opciones en este catálogo.",
+      "active": "Activa",
+      "inactive": "Inactiva",
+      "activate": "Activar",
+      "deactivate": "Desactivar",
+      "table": {
+        "order": "Orden",
+        "label": "Texto",
+        "status": "Estado",
+        "actions": "Acciones"
+      },
+      "form": {
+        "label": "Texto de la opción",
+        "labelHelp": "En español, como va a salir en el PDF. Sin datos de ninguna persona.",
+        "sortOrder": "Orden",
+        "sortOrderHelp": "Posición en la lista (menor primero). Vacío = al final.",
+        "save": "Guardar",
+        "saving": "Guardando…"
+      },
+      "errors": {
+        "duplicate": "Ya existe una opción activa con ese texto.",
+        "invalidLabel": "El texto no puede tener datos de una persona (e-mail, documento, teléfono) ni superar 200 caracteres."
+      }
     }
   },
   "publicVacancy": {

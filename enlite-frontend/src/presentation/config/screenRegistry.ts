@@ -92,6 +92,8 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       c('identity', 'patient_identity', ['read', 'write']),
       c('clinical', 'patient_clinical', ['read', 'write'], 'clinicalData'),
       c('careTeam', 'patient_care_team', ['read'], 'clinicalData'),
+      // Spec 017: o projeto terapêutico deixa de ser placeholder — container próprio, na aba clínica.
+      c('therapeuticProject', 'patient_therapeutic_project', ['read', 'write'], 'clinicalData'),
       c('family', 'patient_family', ['read', 'write'], 'supportNetwork'),
       c('chat', 'patient_chat', ['read', 'write'], 'supportNetwork'),
       c('coverage', 'patient_coverage', ['read', 'write'], 'contractedService'),
@@ -109,6 +111,10 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
     ],
   },
   { id: 'patients.chatRoles', route: '/admin/patient-chat-roles', cells: ['patient:read', 'patient:write'] },
+  // Spec 017 (D299.3): os 3 catálogos do projeto terapêutico — uma tela e uma célula por lista.
+  { id: 'patients.catalogObjectives', route: '/admin/catalogos/objetivos-especificos', cells: ['catalog_therapeutic_objectives:read', 'catalog_therapeutic_objectives:write'] },
+  { id: 'patients.catalogActivities', route: '/admin/catalogos/actividades', cells: ['catalog_therapeutic_activities:read', 'catalog_therapeutic_activities:write'] },
+  { id: 'patients.catalogPathologyTypes', route: '/admin/catalogos/tipos-de-patologia', cells: ['catalog_pathology_types:read', 'catalog_pathology_types:write'] },
   {
     id: 'map',
     route: '/admin/mapa',
