@@ -44,4 +44,20 @@ describe('usePresentationInviteLast', () => {
     await act(async () => { resolve({ 'w-1': { at: 'late', by: null } }); });
     expect(result.current[0]).toEqual({});
   });
+
+  /**
+   * O caso que derrubava o Kanban inteiro (08/09): resposta 200 com corpo nulo.
+   * O `.catch` já cobria a falha de rede; o SUCESSO com `data: null` não — e o mapa
+   * virava `null`, quebrando `lastPresentationByWorker[workerId]` no primeiro card
+   * e levando a tela toda para a fronteira de erro.
+   */
+  it('sucesso com corpo nulo devolve mapa VAZIO, nunca null', async () => {
+    last.mockResolvedValue(null);
+
+    const { result } = renderHook(() => usePresentationInviteLast(['w-1']));
+
+    await waitFor(() => expect(result.current[0]).toEqual({}));
+    expect(result.current[0]).not.toBeNull();
+  });
+
 });
