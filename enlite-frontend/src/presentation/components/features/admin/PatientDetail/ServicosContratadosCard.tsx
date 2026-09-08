@@ -11,7 +11,8 @@ import {
   TableHead,
   TableCell,
 } from '@presentation/components/atoms/Table';
-import { ActionButton, Gated } from '@presentation/components/features/access';
+import { ActionButton } from '@presentation/components/features/access';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import type { PatientAddressDetail, PatientDetail, PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
 import { patientAddressLabel } from '@domain/entities/PatientContractedService';
 import { PatientContractedServicesEditDrawer, type ContractedServiceTarget } from './edit/PatientContractedServicesEditDrawer';
@@ -49,6 +50,7 @@ function ServiceRow({
   t: (k: string, o?: any) => string;
 }) {
   const tc = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.contractedServicesCard.${k}`, o);
+  const { allowed: podeEditar } = useActionGate('patient_services', 'write');
   const address = addresses.find((a) => a.id === service.addressId) ?? null;
   const scheduleText = contractedServiceScheduleText(service.schedule);
 
@@ -127,8 +129,8 @@ function ServiceRow({
       {/* Lápis na linha (Gabriel, 06/09): a tabela É a lista — editar abre SÓ este serviço, sem
           passar por um drawer-lista. `stopPropagation` para o clique não abrir o detalhe junto. */}
       <TableCell unwrapped align="right">
-        {/* D286: o lápis faz PATCH → só existe com `patient_services:write` (mesma célula do "Nuevo"). */}
-        <Gated resource="patient_services" atLeast="write">
+        {/* D269/D286: o lápis faz PATCH → mesma régua do "Nuevo" (`useActionGate`, só com enforcement on). */}
+        {podeEditar && (
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onEdit(service); }}
@@ -138,7 +140,7 @@ function ServiceRow({
           >
             <Pencil className="w-4 h-4" strokeWidth={2} />
           </button>
-        </Gated>
+        )}
       </TableCell>
     </TableRow>
   );

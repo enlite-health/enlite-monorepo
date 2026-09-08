@@ -220,10 +220,10 @@ describe('PatientDetailPage — D286: abas e cards por container', () => {
     expect(screen.queryByTestId('edit-general-btn')).not.toBeInTheDocument();
   });
 
-  it('serviços contratados vale nas DUAS abas: com ela, Serviço Contratado e Enquadre existem; Dados Clínicos não', () => {
+  it('serviços contratados: com ela, Serviço Contratado existe (Enquadre saiu em 05/09); Dados Clínicos não', () => {
     comCelulas(['patient:read', 'patient_services:read'], 'on');
     render(<PatientDetailPage />);
-    expect(abasNaTela()).toEqual(['Serviço Contratado', 'Enquadre', 'Histórico']);
+    expect(abasNaTela()).toEqual(['Serviço Contratado', 'Histórico']);
     expect(screen.queryByTestId('edit-coverage-btn')).not.toBeInTheDocument();
   });
 
@@ -247,7 +247,7 @@ describe('PatientDetailPage — D286: abas e cards por container', () => {
   it('enforcement OFF: tudo como antes, mesmo sem célula nenhuma (as células novas nascem sem grupo)', () => {
     comCelulas([], 'off');
     render(<PatientDetailPage />);
-    expect(abasNaTela()).toHaveLength(6);
+    expect(abasNaTela()).toHaveLength(5);
     fireEvent.click(screen.getByText('Rede de Apoio'));
     expect(screen.getByTestId('familiares-card')).toBeInTheDocument();
   });
