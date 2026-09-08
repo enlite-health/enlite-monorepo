@@ -75,6 +75,13 @@ describe('CoverageEmergencyContactsEditor', () => {
     expect((removes[removes.length - 1] as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it('lex C3 (LISTA A2): com `allowDirectProfessional={false}` o select NÃO oferece "Profissional direto" — o servidor recusaria com 403', () => {
+    const onChange = vi.fn();
+    render(<CoverageEmergencyContactsEditor value={[{ kind: 'AMBULANCE', name: 'A', phone: '1' }]} onChange={onChange} allowDirectProfessional={false} />);
+    const select = screen.getByTestId('pcv-contact-kind-0') as HTMLSelectElement;
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(['AMBULANCE', 'EMERGENCY_CENTER']);
+  });
+
   it('invalidCoverageContacts: vazio é válido; nome/telefone em branco ou acima do teto invalidam; espaços contam como branco', () => {
     expect(invalidCoverageContacts([])).toBe(false);
     expect(invalidCoverageContacts([{ kind: 'AMBULANCE', name: 'A', phone: '1' }])).toBe(false);

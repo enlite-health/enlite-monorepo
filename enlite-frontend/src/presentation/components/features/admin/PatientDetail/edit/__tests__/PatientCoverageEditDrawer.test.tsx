@@ -131,6 +131,13 @@ describe('PatientCoverageEditDrawer', () => {
     await waitFor(() => expect(updatePatientSection).not.toHaveBeenCalled());
   });
 
+  it('417 / lex C3 (LISTA A2) — `coverageDirectProfessionalRedacted: true` (sem equipe): o tipo "Profissional direto" não é oferecido no select', () => {
+    render(<PatientCoverageEditDrawer patient={{ ...patient, coverageEmergencyContacts: [], coverageDirectProfessionalRedacted: true }} onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('pcv-contact-add'));
+    const select = screen.getByTestId('pcv-contact-kind-0') as HTMLSelectElement;
+    expect(Array.from(select.options).map((o) => o.value)).not.toContain('DIRECT_PROFESSIONAL');
+  });
+
   it('417 / gate — `null` (sem `patient_coverage:read`): a lista NÃO é oferecida (aviso no lugar) e nada dela vai no payload', async () => {
     render(<PatientCoverageEditDrawer patient={{ ...patient, coverageEmergencyContacts: null }} onClose={vi.fn()} onSaved={vi.fn()} />);
     expect(screen.getByTestId('pcv-contacts-redacted')).toHaveTextContent(te('coverageContactsRedacted'));

@@ -27,9 +27,11 @@ interface Props {
   value: PatientCoverageEmergencyContactInput[];
   onChange: (next: PatientCoverageEmergencyContactInput[]) => void;
   disabled?: boolean;
+  /** lex C3: sem `patient_care_team:read` o servidor recusa (403) um profissional direto — a tela não o oferece. */
+  allowDirectProfessional?: boolean;
 }
 
-export function CoverageEmergencyContactsEditor({ value, onChange, disabled = false }: Props): JSX.Element {
+export function CoverageEmergencyContactsEditor({ value, onChange, disabled = false, allowDirectProfessional = true }: Props): JSX.Element {
   const { t } = useTranslation();
   const tc = (k: string) => t(`admin.patients.detail.coverageCard.${k}`);
   const te = (k: string) => t(`admin.patients.editDrawer.${k}`);
@@ -39,7 +41,9 @@ export function CoverageEmergencyContactsEditor({ value, onChange, disabled = fa
   const remove = (i: number): void => onChange(value.filter((_, j) => j !== i));
   const add = (): void => onChange([...value, { kind: 'AMBULANCE', name: '', phone: '' }]);
 
-  const kindOptions = COVERAGE_EMERGENCY_CONTACT_KINDS.map((k) => ({ value: k, label: tc(`emergencyContactKinds.${k}`) }));
+  const kindOptions = COVERAGE_EMERGENCY_CONTACT_KINDS
+    .filter((k) => allowDirectProfessional || k !== 'DIRECT_PROFESSIONAL')
+    .map((k) => ({ value: k, label: tc(`emergencyContactKinds.${k}`) }));
 
   return (
     <div className="flex flex-col gap-3" data-testid="pcv-emergency-contacts">

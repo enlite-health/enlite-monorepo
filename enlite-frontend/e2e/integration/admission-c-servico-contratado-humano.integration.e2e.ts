@@ -15,40 +15,11 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/patient-detail-c-helper';
+import { loginComoHumano } from '../helpers/login-humano';
 
-const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
-const EMULATOR_PROJECT = 'demo-no-project';
 const STAFF_EMAIL = `e2e.humano.${Date.now()}@enlite.health`;
-const STAFF_PASSWORD = 'TestAdmin123!';
 
 /** Login como um humano: clica no campo, digita, clica no botão. Sem `fill`. */
-async function loginComoHumano(page: Page): Promise<void> {
-  const signUp = await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=any`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: STAFF_EMAIL, password: STAFF_PASSWORD, returnSecureToken: true }),
-  });
-  // 2º teste do mesmo arquivo reusa a conta (o e-mail é constante do módulo): cai no signIn.
-  const auth = signUp.ok ? signUp : await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=any`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: STAFF_EMAIL, password: STAFF_PASSWORD, returnSecureToken: true }),
-  });
-  expect(auth.ok).toBe(true);
-  const { localId } = (await auth.json()) as { localId: string };
-  const claims = await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/projects/${EMULATOR_PROJECT}/accounts:update`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer owner' },
-    body: JSON.stringify({ localId, customAttributes: JSON.stringify({ role: 'admin' }) }),
-  });
-  expect(claims.ok).toBe(true);
-  runSQL(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, email_verified) VALUES ('${localId}', '${STAFF_EMAIL}', 'E2E Humano', 'admin', true, true) ON CONFLICT (firebase_uid) DO NOTHING`);
-  await page.addInitScript(() => localStorage.setItem('i18nextLng', 'es'));
-  await page.goto('/admin/login');
-  await page.locator('input[type="email"]').click();
-  await page.keyboard.type(STAFF_EMAIL);
-  await page.locator('input[type="password"]').click();
-  await page.keyboard.type(STAFF_PASSWORD);
-  await page.getByRole('button', { name: /Iniciar sesi/i }).click();
-  await expect(page).not.toHaveURL(/login/, { timeout: 30_000 });
-}
 
 /** Clica no campo como um humano, digita, e devolve o que a TELA mostra depois. */
 async function digitar(page: Page, testId: string, texto: string): Promise<string> {
@@ -72,7 +43,7 @@ test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salva
   test.afterAll(() => { cleanupPatientDeep(seed.patientId); });
 
   test('mouse e teclado reais: todos os campos do drawer aceitam entrada; o domicílio é escolhível; salvar grava; a tabela e o detalhe mostram', async ({ page }) => {
-    await loginComoHumano(page);
+    await loginComoHumano(page, STAFF_EMAIL, 'E2E Humano');
     await page.goto(`/admin/patients/${seed.patientId}`);
 
     await page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Servicio Contratado' }).click();
@@ -188,7 +159,7 @@ test.describe('D283 — serviço contratado: um HUMANO consegue preencher, salva
     // `runSQL` devolve "id\nINSERT 0 1" num INSERT … RETURNING — só a 1ª linha é o id.
     const semEndereco = runSQL(`INSERT INTO patients (clickup_task_id, first_name, last_name, country, status) VALUES ('E2E-HUMANO-SEMDOM-${seed.stamp}', 'Humano', 'SinDomicilio', 'AR', 'PENDING_ADMISSION') RETURNING id`).split('\n')[0].trim();
     try {
-      await loginComoHumano(page);
+      await loginComoHumano(page, STAFF_EMAIL, 'E2E Humano');
       await page.goto(`/admin/patients/${semEndereco}`);
       await page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Servicio Contratado' }).click();
       await page.getByTestId('new-service-btn').click();

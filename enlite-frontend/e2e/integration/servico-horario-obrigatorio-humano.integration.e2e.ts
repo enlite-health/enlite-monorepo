@@ -15,41 +15,13 @@
  *
  * API e Postgres reais (stack docker), login real pelo emulador do Firebase.
  */
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/patient-detail-c-helper';
+import { loginComoHumano } from '../helpers/login-humano';
 
-const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
-const EMULATOR_PROJECT = 'demo-no-project';
 const STAFF_EMAIL = `e2e.horario.${Date.now()}@enlite.health`;
-const STAFF_PASSWORD = 'TestAdmin123!';
 
 /** Login como um humano: clica no campo, digita, clica no botão. Sem `fill`. */
-async function loginComoHumano(page: Page): Promise<void> {
-  const signUp = await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=any`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: STAFF_EMAIL, password: STAFF_PASSWORD, returnSecureToken: true }),
-  });
-  const auth = signUp.ok ? signUp : await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=any`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: STAFF_EMAIL, password: STAFF_PASSWORD, returnSecureToken: true }),
-  });
-  expect(auth.ok).toBe(true);
-  const { localId } = (await auth.json()) as { localId: string };
-  const claims = await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/projects/${EMULATOR_PROJECT}/accounts:update`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer owner' },
-    body: JSON.stringify({ localId, customAttributes: JSON.stringify({ role: 'admin' }) }),
-  });
-  expect(claims.ok).toBe(true);
-  runSQL(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, email_verified) VALUES ('${localId}', '${STAFF_EMAIL}', 'E2E Horario', 'admin', true, true) ON CONFLICT (firebase_uid) DO NOTHING`);
-  await page.addInitScript(() => localStorage.setItem('i18nextLng', 'es'));
-  await page.goto('/admin/login');
-  await page.locator('input[type="email"]').click();
-  await page.keyboard.type(STAFF_EMAIL);
-  await page.locator('input[type="password"]').click();
-  await page.keyboard.type(STAFF_PASSWORD);
-  await page.getByRole('button', { name: /Iniciar sesi/i }).click();
-  await expect(page).not.toHaveURL(/login/, { timeout: 30_000 });
-}
 
 test.use({ viewport: { width: 1600, height: 1000 }, video: 'on' });
 
@@ -64,7 +36,7 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
   test.afterAll(() => { cleanupPatientDeep(seed.patientId); });
 
   test('salvar sem horário avisa em âmbar, a ativação é recusada nomeando o que falta, e preencher o horário destrava', async ({ page }) => {
-    await loginComoHumano(page);
+    await loginComoHumano(page, STAFF_EMAIL, 'E2E Humano');
     await page.goto(`/admin/patients/${seed.patientId}`);
 
     // ── 1. O formulário: o aviso aparece ANTES de salvar, com o horário vazio ──
@@ -167,7 +139,7 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
          VALUES ('${s2.patientId}', 'AT', true, 'AR', 'e2e-horario', 'e2e-horario', '${s2.addressId}', NULL)`,
       );
 
-      await loginComoHumano(page);
+      await loginComoHumano(page, STAFF_EMAIL, 'E2E Humano');
       await page.goto(`/admin/patients/${s2.patientId}`);
 
       await page.getByTestId('activate-patient-btn').click();
@@ -196,7 +168,7 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
         `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule)
          VALUES ('${s3.patientId}', 'AT', true, 'AR', 'e2e-horario', 'e2e-horario', '${s3.addressId}', NULL)`,
       );
-      await loginComoHumano(page);
+      await loginComoHumano(page, STAFF_EMAIL, 'E2E Humano');
       await page.goto('/admin/patients/kanban');
 
       const card = page.locator(`[data-testid="kanban-draggable-${s3.patientId}"]`);
@@ -241,7 +213,7 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
         `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule)
          VALUES ('${s4.patientId}', 'AT', true, 'AR', 'e2e-horario', 'e2e-horario', '${s4.addressId}', NULL)`,
       );
-      await loginComoHumano(page);
+      await loginComoHumano(page, STAFF_EMAIL, 'E2E Humano');
       await page.goto(`/admin/patients/${s4.patientId}`);
 
       const select = page.getByTestId('patient-status-select');

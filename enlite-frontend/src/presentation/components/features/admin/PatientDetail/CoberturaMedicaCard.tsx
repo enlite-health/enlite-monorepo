@@ -23,7 +23,8 @@ export function CoberturaMedicaCard({ patient, onSaved, focusRequest }: Cobertur
   // Spec 012, US-B3: as verificadas por CÓDIGO do catálogo (traduzidas); o escalar antigo
   // (`insuranceVerified`, rótulo cru do ClickUp) só aparece quando não há código nenhum.
   const codes = patient.insuranceVerifiedCodes ?? [];
-  // 417 (D301.3b): `null` = sem célula (redação, D113); ausente = backend anterior; ambos viram "—".
+  // 417 (D301.3b): `null` = sem célula (redação, D113) → "—"; AUSENTE (backend anterior à 417, deploy-skew) =
+  // "não li", nunca "não tem" (D167) → indisponível, como o PDF já faz.
   const emergencyContacts = patient.coverageEmergencyContacts ?? [];
   const verifiedLabel = codes.length > 0
     ? codes.map((c) => t(`admin.patients.insuranceProviderOptions.${c}`, c)).join(', ')
@@ -71,7 +72,7 @@ export function CoberturaMedicaCard({ patient, onSaved, focusRequest }: Cobertur
         <DetailRow label={t('admin.patients.detail.coverageCard.emergencyContacts')} testId="coverage-emergency-contacts">
           {/* lex C2.1 (molde EquipeTratanteCard): nome de profissional é texto — o Clarity não o mascara sozinho; o bloco inteiro leva a máscara. */}
           <div className="flex flex-col gap-0.5 text-right" data-clarity-mask="True">
-            {patient.coverageEmergencyContactsUnavailable ? (
+            {patient.coverageEmergencyContactsUnavailable || patient.coverageEmergencyContacts === undefined ? (
               <Text as="span" size="sm" className="text-amber-700" data-testid="coverage-emergency-contacts-unavailable">{t('admin.patients.detail.coverageCard.emergencyContactsUnavailable')}</Text>
             ) : emergencyContacts.length === 0 ? (
               <Text as="span" size="sm" color="muted">—</Text>
