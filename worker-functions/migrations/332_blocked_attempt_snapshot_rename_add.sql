@@ -46,7 +46,14 @@ BEGIN;
 -- que é a falha silenciosa outra vez.
 ALTER TABLE worker_blocked_applications
   ADD COLUMN IF NOT EXISTS blocked_reason_at_attempt VARCHAR(64),
-  ADD COLUMN IF NOT EXISTS missing_fields_at_attempt JSONB DEFAULT '[]'::jsonb;
+  ADD COLUMN IF NOT EXISTS missing_fields_at_attempt JSONB;
+-- ⚠️ O DEFAULT '[]' da coluna antiga NÃO entra aqui — entra só na 333, depois que a
+-- janela fecha. Motivo medido: com DEFAULT, a linha que a revisão VELHA grava nesta
+-- janela nasce com `'[]'` em vez de NULL, e o `COALESCE(nova, antiga)` do backfill
+-- da 333 devolve `'[]'` — apagando os campos faltantes reais, dentro do COMMIT e
+-- sem erro. Provado: ["first_name","phone","worker_documents"] virava [].
+-- Foi o commit que "herdou tudo" que criou esse caminho. Herdar sem pensar em
+-- QUANDO é a mesma classe de descuido que esta frente inteira está consertando.
 
 -- Os 3 valores são os do GATE (`WorkerEligibilityReason`). `eligible` NÃO entra:
 -- ele é estado calculado na leitura e nunca é gravado — se um dia aparecer aqui,
@@ -66,6 +73,24 @@ UPDATE worker_blocked_applications
        missing_fields_at_attempt = missing_fields
  WHERE blocked_reason_at_attempt IS NULL
     OR missing_fields_at_attempt IS NULL;
+
+-- 🔒 A PEÇA SEM A QUAL A JANELA NÃO FUNCIONA.
+--
+-- `blocked_reason` e `missing_fields` são NOT NULL desde a 209. O código NOVO
+-- escreve apenas as colunas `*_at_attempt` — então, enquanto as antigas existirem
+-- com NOT NULL e sem DEFAULT, TODO INSERT de tentativa bloqueada morre com
+-- `null value in column "blocked_reason" violates not-null constraint`.
+--
+-- Ou seja: sem isto, a janela entre esta migration e a 333 derruba exatamente o
+-- caminho de quem está tentando se candidatar — o dano que este desenho existe
+-- para evitar, só que vindo da outra direção (código novo × schema intermediário).
+-- Medido: a suíte de banco ficou vermelha por isso antes deste bloco existir.
+--
+-- Afrouxar é seguro: a revisão VELHA continua preenchendo as duas, e a 333 dropa
+-- as colunas logo depois.
+ALTER TABLE worker_blocked_applications
+  ALTER COLUMN blocked_reason DROP NOT NULL,
+  ALTER COLUMN missing_fields DROP NOT NULL;
 
 COMMENT ON COLUMN worker_blocked_applications.blocked_reason_at_attempt IS
   'INSTANTÂNEO: motivo no momento da tentativa. NÃO é o estado atual — para o '

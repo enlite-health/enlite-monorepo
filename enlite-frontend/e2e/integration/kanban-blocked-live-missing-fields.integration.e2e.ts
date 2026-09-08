@@ -4,17 +4,17 @@
  * Regressão VISUAL do bug reportado: no card da coluna BLOQUEADO, ao editar o
  * nome/sobrenome do worker o nome do card atualizava, mas as tags de campos
  * faltantes "Nombre"/"Apellido" NÃO sumiam (vinham de um snapshot materializado
- * em worker_blocked_applications.missing_fields, só recalculado numa nova
+ * em worker_blocked_applications.missing_fields_at_attempt, só recalculado numa nova
  * tentativa de postulação).
  *
- * Fix provado aqui: BlockedApplicationQueryRepository recomputa missing_fields
+ * Fix provado aqui: BlockedApplicationQueryRepository recomputa missing_fields_at_attempt
  * ON-READ via fn_worker_missing_fields para registration_incomplete. Editar o
  * perfil reflete no card sem nova tentativa.
  *
  * Fluxo 100% real (backend localhost:8080 + Postgres real, zero mock no caminho):
  *   1. Worker INCOMPLETE_REGISTER sem nome → tentativa REAL de postulação
  *      (POST /api/worker-applications/track-channel → 403 do gate) grava a linha
- *      bloqueada com missing_fields incluindo first_name/last_name.
+ *      bloqueada com missing_fields_at_attempt incluindo first_name/last_name.
  *   2. ANTES: card em BLOQUEADO mostra "Sin nombre registrado" + tags Nombre/Apellido/Sexo.
  *   3. Operador edita o nome pelo MESMO endpoint do WorkerEditModal
  *      (PATCH /api/admin/workers/:id/profile { firstName, lastName }).
@@ -100,7 +100,7 @@ test.describe('Kanban BLOQUEADO — tags de campos faltantes recomputam ao edita
 
     // Snapshot inicial no banco DEVE conter first_name/last_name (estado obsoleto que o bug expunha).
     const missingBefore = runSQL(
-      `SELECT missing_fields FROM worker_blocked_applications WHERE worker_id = '${workerId}' AND job_posting_id = '${vacancyId}'`,
+      `SELECT missing_fields_at_attempt FROM worker_blocked_applications WHERE worker_id = '${workerId}' AND job_posting_id = '${vacancyId}'`,
     );
     expect(missingBefore, 'snapshot inicial deve listar first_name').toContain('first_name');
     expect(missingBefore, 'snapshot inicial deve listar last_name').toContain('last_name');

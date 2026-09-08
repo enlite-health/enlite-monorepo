@@ -102,6 +102,22 @@ beforeAll(async () => {
     [INCOMPLETE_WORKER_ID, SEARCHING_JOB_ID],
   );
 
+  // 🔒 A LINHA QUE DISCRIMINA — sem ela este teste fica verde com o bug de volta.
+  //
+  // Worker JÁ REGISTERED com o snapshot congelado em 'registration_incomplete':
+  // é o caso real das 169 pessoas que o dashboard contava a mais em produção
+  // (735 onde a verdade era 583). A query ANTIGA, que lia a coluna do
+  // instantâneo, contava esta linha; a NOVA, que recalcula, não conta.
+  //
+  // Com só o worker INCOMPLETE_REGISTER acima, as duas versões devolvem o MESMO
+  // número e o assert `>= 1` passa nas duas — teste que não distingue o conserto
+  // do defeito. Medido em 08/09: antiga=2, nova=1.
+  await pool.query(
+    `INSERT INTO worker_blocked_applications (worker_id, job_posting_id, blocked_reason_at_attempt, missing_fields_at_attempt)
+     VALUES ($1, $2, 'registration_incomplete', '[]')`,
+    [REGISTERED_WORKER_ID, SEARCHING_JOB_ID],
+  );
+
   // ARMADA: providers_needed=1 → precisa 1 TITULAR + 10 RAPID_RESPONSE, com schedule 4h.
   ARMADA_JOB_ID = await makeJob('SEARCHING', '1', SCHEDULE_4H, 'armada');
   const titular = await makeWorker('REGISTERED', 'armada-tit');
@@ -263,5 +279,60 @@ describe('GetManagementDashboardUseCase — % de capacidade semanal (integration
     expect(data.encuadres.pctCapacidadeSemana).toBeUndefined();
     // O card cru continua sendo publicado — some o percentual, não o número.
     expect(data.encuadres.agendadosEstaSemana).toBeGreaterThanOrEqual(SEEDED_ESTA_SEMANA);
+  });
+});
+
+/**
+ * 🔒 A GUARDA DO CONSERTO DE 152 PESSOAS.
+ *
+ * O `bloqueados` do dashboard era a 5ª leitura — a única que continuou lendo o
+ * motivo CONGELADO quando as outras quatro passaram a recalcular. Medido em
+ * produção em 08/09: contava 735 onde a verdade era 583, inflando 152 pessoas.
+ *
+ * ⚠️ A primeira versão desta guarda rodava SQL direto no banco e nunca chamava o
+ * use case — sabotar o conserto deixava ela VERDE. Teste que não executa o código
+ * sob teste não mede nada. Esta versão é DIFERENCIAL e passa pelo use case:
+ *
+ *   1. roda o dashboard → conta A
+ *   2. insere UMA linha do caso que discrimina: worker JÁ REGISTERED com o
+ *      snapshot congelado em 'registration_incomplete' (as 169 pessoas reais)
+ *   3. roda de novo → conta B
+ *
+ * Com o motivo recalculado, B === A: a pessoa completou o cadastro, não é mais
+ * fila de trabalho. Lendo o snapshot, B === A + 1 — e o assert cai. Diferencial
+ * porque o banco é compartilhado: total absoluto não serve.
+ */
+describe('GetManagementDashboardUseCase — bloqueados conta o motivo de HOJE', () => {
+  const W_JA_PRONTO = '99999999-0000-0000-0000-00000000dcba';
+
+  afterAll(async () => {
+    await pool.query(`DELETE FROM worker_blocked_applications WHERE worker_id = $1`, [W_JA_PRONTO]);
+    await pool.query(`DELETE FROM workers WHERE id = $1`, [W_JA_PRONTO]);
+  });
+
+  it('NÃO conta quem já completou o cadastro, mesmo com o snapshot congelado', async () => {
+    const useCase = new GetManagementDashboardUseCase(pool);
+
+    const antes = (await useCase.execute()).funnel.bloqueados;
+
+    await pool.query(
+      `INSERT INTO workers (id, auth_uid, email, status, country)
+       VALUES ($1::uuid, $2::text, 'ja-pronto@dashboard.test', 'REGISTERED', 'AR')
+       ON CONFLICT (id) DO NOTHING`,
+      [W_JA_PRONTO, `uid-${W_JA_PRONTO}`],
+    );
+    await pool.query(
+      `INSERT INTO worker_blocked_applications
+         (worker_id, job_posting_id, blocked_reason_at_attempt, missing_fields_at_attempt)
+       VALUES ($1, $2, 'registration_incomplete', '[]')
+       ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
+      [W_JA_PRONTO, SEARCHING_JOB_ID],
+    );
+
+    const depois = (await useCase.execute()).funnel.bloqueados;
+
+    // Se este assert cair com `depois === antes + 1`, o dashboard voltou a ler o
+    // snapshot congelado — é o defeito de 152 pessoas de volta.
+    expect(depois).toBe(antes);
   });
 });

@@ -29,9 +29,16 @@ UPDATE worker_blocked_applications
  WHERE blocked_reason_at_attempt IS NULL
     OR missing_fields_at_attempt IS NULL;
 
--- Trava de segurança: se ainda houver linha sem o valor novo, aborta em vez de
--- dropar. Contagem zero aqui é o único caso em que o zero significa "pode seguir"
--- — e por isso ele é medido, não presumido.
+-- Trava de segurança. ⚠️ O que ela vigia NÃO é "sobrou linha sem backfill" — isso é
+-- estruturalmente impossível, porque `blocked_reason` é NOT NULL desde a 209 e o
+-- COALESCE acima sempre preenche. Instrumento que não pode ficar vermelho é
+-- decoração, e a versão anterior desta trava era exatamente isso.
+--
+-- O que ela vigia de verdade: que esta migration NÃO está rodando antes da 332 num
+-- banco onde a coluna nova sequer existe com dado. Se `blocked_reason_at_attempt`
+-- não existir, o UPDATE acima já explode antes daqui — e é esse o comportamento
+-- desejado. Este bloco fica como segunda barreira para o caso de alguém adicionar
+-- um caminho de escrita que deixe a coluna nova nula.
 DO $$
 DECLARE v_pendentes INT;
 BEGIN
@@ -52,8 +59,16 @@ ALTER TABLE worker_blocked_applications
   DROP COLUMN IF EXISTS blocked_reason,
   DROP COLUMN IF EXISTS missing_fields;
 
--- Agora o NOT NULL cabe: toda linha tem valor, e toda escrita nova preenche.
+-- Agora os invariantes da coluna antiga cabem, e TODOS entram: NOT NULL nas duas
+-- (a 209 exigia isso desde sempre) e o DEFAULT que a 332 deliberadamente adiou
+-- para não estragar o backfill da janela.
+UPDATE worker_blocked_applications
+   SET missing_fields_at_attempt = '[]'::jsonb
+ WHERE missing_fields_at_attempt IS NULL;
+
 ALTER TABLE worker_blocked_applications
-  ALTER COLUMN blocked_reason_at_attempt SET NOT NULL;
+  ALTER COLUMN blocked_reason_at_attempt SET NOT NULL,
+  ALTER COLUMN missing_fields_at_attempt SET NOT NULL,
+  ALTER COLUMN missing_fields_at_attempt SET DEFAULT '[]'::jsonb;
 
 COMMIT;

@@ -9,19 +9,6 @@ export interface BlockedApplicationUpsertParams {
   acquisitionChannel: string | null;
 }
 
-export interface BlockedApplicationRow {
-  id: string;
-  worker_id: string;
-  job_posting_id: string;
-  blocked_reason: string;
-  missing_fields: string[];
-  attempt_count: number;
-  first_attempted_at: Date;
-  last_attempted_at: Date;
-  acquisition_channel: string | null;
-  created_at: Date;
-  updated_at: Date;
-}
 
 /** Maps worker_documents SQL column names to their doc_* tokens. */
 const DOC_COLUMN_TO_TOKEN: Record<string, string> = {
