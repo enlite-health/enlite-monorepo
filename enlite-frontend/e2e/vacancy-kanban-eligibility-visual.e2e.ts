@@ -9,9 +9,8 @@
  */
 
 import { test, expect, Page } from '@playwright/test';
+import { E2E_EMAIL, loginAsAdmin } from './helpers/kanban-notes-e2e-helper';
 
-const FIREBASE_EMULATOR = 'http://127.0.0.1:9099';
-const FIREBASE_API_KEY = 'test-api-key';
 
 const MOCK_VACANCY_ID = 'eligvis-0001-0001-0001-000000000001';
 
@@ -66,19 +65,28 @@ const MOCK_FUNNEL = {
 };
 
 async function seedAdminAndLogin(page: Page): Promise<void> {
-  const email = `e2e.kanban.elig.${Date.now()}@test.com`;
-  const password = 'TestAdmin123!';
+  // Login com a conta STAFF REAL (enlite-prd), não com usuário do emulador.
+  //
+  // Por que mudou: o usuário criado por `accounts:signUp` no emulador não carrega
+  // custom claim nenhuma. Mockar `/auth/profile` com role=superadmin não basta —
+  // o app decide staff × prestador pelo TOKEN, então a sessão caía na navegação de
+  // prestador ("Home/Perfil") e o Kanban nunca montava. Os 13 testes destes dois
+  // arquivos falhavam por isso, na `main` inclusive.
+  //
+  // Catch-all admin PRIMEIRO — rotas específicas registradas depois vencem
+  // (Playwright: a última rota registrada tem precedência).
+  //
+  // Sem ele, as chamadas que o spec não mocka (lista de usuários, telemetria)
+  // escapam para a API de `VITE_API_WORKER_FUNCTIONS_URL` e morrem em CORS: o
+  // backend local só libera a origem `localhost:5173`, e um dev server em
+  // qualquer outra porta faz o app cair na home de PRESTADOR — Kanban nunca
+  // monta. Com o catch-all o spec fica hermético e roda em qualquer porta.
+  await page.route('**/api/admin/**', (route) => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({ success: true, data: null }),
+  }));
 
-  const signUpRes = await fetch(
-    `${FIREBASE_EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FIREBASE_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, returnSecureToken: true }),
-    },
-  );
-  const { localId: uid } = (await signUpRes.json()) as any;
-
+  // O perfil segue mockado: dá o papel sem depender do backend.
   await page.route('**/api/admin/auth/profile', (route) =>
     route.fulfill({
       status: 200,
@@ -86,8 +94,8 @@ async function seedAdminAndLogin(page: Page): Promise<void> {
       body: JSON.stringify({
         success: true,
         data: {
-          id: uid,
-          email,
+          id: 'e2e-elig-admin',
+          email: E2E_EMAIL,
           role: 'superadmin',
           firstName: 'Admin',
           lastName: 'Elig',
@@ -98,11 +106,7 @@ async function seedAdminAndLogin(page: Page): Promise<void> {
     }),
   );
 
-  await page.goto('/admin/login');
-  await page.locator('input[type="email"]').fill(email);
-  await page.locator('input[type="password"]').fill(password);
-  await page.getByRole('button', { name: /Iniciar sesión/i }).click();
-  await expect(page).not.toHaveURL(/.*login.*/, { timeout: 20000 });
+  await loginAsAdmin(page);
 }
 
 function mockVacancyApis(page: Page) {
