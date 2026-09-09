@@ -13,7 +13,7 @@ const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
 
 /**
  * Ordem de aplicação: pelo PREFIXO NUMÉRICO, não pelo nome.
- * Hoje é no-op (as 338 migrations têm 3 dígitos), e é exatamente por isso que a troca é barata:
+ * Hoje é no-op (as 337 migrations têm 3 dígitos), e é exatamente por isso que a troca é barata:
  * com `.sort()` lexicográfico, a primeira `1000_` seria aplicada ANTES da `323_` — silenciosamente,
  * numa ordem que nenhuma review pega. Empate (mesmo número) cai no nome com comparação CRUA (`<`),
  * NUNCA `localeCompare`: há duas `040_consolidate_clickup_columns*.sql` no repo e a colação de locale
@@ -34,12 +34,20 @@ function sortMigrationFiles(files) {
  * a 273 promete por escrito que o aviso "aparece no log de deploy" para o caso em que ela não
  * consegue conceder — e não aparecia. Migration que passa sem fazer o que diz é o pior dos mundos:
  * fica registrada como aplicada e não volta a rodar.
+ *
+ * ⚠️ DEVOLVE o desligamento, e quem chama TEM de usá-lo: `pool.connect()` entrega o MESMO client de
+ * volta a cada migration e `release()` não tira handler nenhum. Sem o `detach`, um banco novo (1º boot,
+ * stack do CI) acumula um listener por migration — o aviso da última sai N vezes, N-1 delas NOMEANDO A
+ * MIGRATION ERRADA, mais `MaxListenersExceededWarning` no log. Seria piorar o log em vez de consertá-lo.
+ * Medido pelo gate em 09/09/2026 (iteração 30 → 30 listeners no mesmo client).
  */
 function attachNoticeLogger(client, file) {
-  client.on('notice', (n) => {
+  const handler = (n) => {
     const onde = file ? ` (${file})` : '';
-    console.warn(`⚠️  [${n.severity || 'NOTICE'}]${onde} ${n.message}${n.hint ? ` — ${n.hint}` : ''}`);
-  });
+    console.warn(`⚠️  [${n.severity || 'NOTICE'}]${onde} ${n.message || '(sem mensagem)'}${n.hint ? ` — ${n.hint}` : ''}`);
+  };
+  client.on('notice', handler);
+  return () => client.removeListener('notice', handler);
 }
 
 function createPool() {
@@ -115,7 +123,7 @@ async function run() {
       const { rows } = await pool.query('SELECT filename FROM schema_migrations');
       const applied = new Set(rows.map((r) => r.filename));
 
-      // List all .sql files, sorted alphabetically (stable order)
+      // Ordem de aplicação pelo PREFIXO NUMÉRICO (ver sortMigrationFiles)
       const files = sortMigrationFiles(
         fs.readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql'))
       );
@@ -132,7 +140,7 @@ async function run() {
         const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
 
         const client = await pool.connect();
-        attachNoticeLogger(client, file);
+        const pararDeEscutar = attachNoticeLogger(client, file);
         try {
           await client.query('BEGIN');
           await client.query(sql);
@@ -149,6 +157,7 @@ async function run() {
           console.error(err.message);
           process.exit(1);
         } finally {
+          pararDeEscutar(); // ANTES do release: o client volta ao pool sem o handler desta migration
           client.release();
         }
       }
