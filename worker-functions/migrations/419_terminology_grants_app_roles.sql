@@ -2,28 +2,26 @@
 --
 -- Medido na stage em 08/09/2026 (D303, fecho): a API conecta como `enlite_runtime` (membro de
 -- `app_runtime`, RLS ligado — 269/271/273) e `GET /api/admin/terminology/search` respondia 503
--- "error de infraestructura" mesmo com 35.692 entidades na base: `has_schema_privilege('app_runtime',
--- 'terminology', 'USAGE') = false`. A 271 concedeu `public` (tabelas + default privileges), a 274
--- cuidou de `iam`, e a 323 criou `terminology` DEPOIS, concedendo só a `enlite_app` (dona) e ao
--- `enlite_mcp_ro`. Em prod não apareceu porque lá a API ainda conecta como `enlite_app`
--- (`DB_USER`); apareceria na virada do RLS — esta migration fecha a classe antes.
+-- "error de infraestructura" mesmo com 35.692 entidades na base (copiadas de prod, onde o
+-- catálogo foi ingerido; o ingestor `scripts/ingest-icd11-catalog.ts` só aceita banco LOCAL —
+-- `assertLocalDatabaseTarget`): `has_schema_privilege('app_runtime', 'terminology', 'USAGE') = false`.
+-- A 271 concedeu `public`, a 274 cuidou de `iam`, e a 323 criou `terminology` DEPOIS, concedendo
+-- só a `enlite_app` (dona) e ao `enlite_mcp_ro`. Em prod não apareceu porque lá a API ainda
+-- conecta como `enlite_app` (`DB_USER`); apareceria na virada do RLS — esta migration fecha antes.
 --
--- Só LEITURA: nenhum código de produção escreve em `terminology.*` (o ingestor roda como
--- `enlite_app`, fora da esteira; sinônimos T9 são cadastrados por operação). Guardado por
--- existência das roles, como a 323 — no e2e local elas nascem na 269. Idempotente: GRANT
+-- Concessão EXPLÍCITA, por tabela, e só de leitura:
+--   · nenhum código de produção escreve em `terminology.*` (sinônimos T9 são cadastrados por
+--     operação; o ingestor roda como dono, fora da esteira);
+--   · SEM `ALTER DEFAULT PRIVILEGES`: a 324 revogou exatamente essa herança automática neste
+--     schema (D261/C4, governança item 4) — tabela futura do `terminology` nasce ILEGÍVEL até
+--     uma migration decidir o GRANT dela, para qualquer papel;
+--   · sem `ON ALL TABLES`: a lista é a das 3 tabelas de hoje, revisável neste diff.
+--
+-- Sem guarda de existência das roles: a 269 as cria sempre, antes desta. Se faltarem, o GRANT
+-- FALHA ALTO (42704) e a migration NÃO é registrada — o runner não imprime `RAISE WARNING`, e
+-- "aplicada sem conceder" seria o mesmo 503 de volta, agora invisível. Idempotente: GRANT
 -- repetido é no-op.
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_runtime')
-     AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_system') THEN
-    GRANT USAGE ON SCHEMA terminology TO app_runtime, app_system;
-    GRANT SELECT ON ALL TABLES IN SCHEMA terminology TO app_runtime, app_system;
-    -- Tabela futura no schema (release novo não cria tabela, mas a regra vale): nasce legível.
-    EXECUTE format(
-      'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA terminology GRANT SELECT ON TABLES TO app_runtime, app_system',
-      current_user
-    );
-  ELSE
-    RAISE WARNING '[419] app_runtime/app_system ausentes neste ambiente — nada concedido (a 269 cria as roles).';
-  END IF;
-END $$;
+GRANT USAGE ON SCHEMA terminology TO app_runtime, app_system;
+GRANT SELECT ON terminology.icd_releases TO app_runtime, app_system;
+GRANT SELECT ON terminology.icd_entities TO app_runtime, app_system;
+GRANT SELECT ON terminology.icd_synonyms TO app_runtime, app_system;

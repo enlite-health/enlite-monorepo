@@ -469,4 +469,44 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
       expect(real.rows[0].n).toBe(1);
     });
   });
+
+  // 419 (D303, fecho na stage): a API conecta como membro de `app_runtime` — é ESTE processo — e o
+  // catálogo CID-11 mora no schema `terminology`, que a 323 concedeu só à dona. Sem a 419 a rota
+  // respondia 503 "error de infraestructura" com o catálogo carregado. Prova pela ROTA, não só pelo
+  // GRANT: release-fixture promovido a corrente e restaurado no fim (D2: um corrente por vez).
+  describe('(g) GET /api/admin/terminology/search como app_runtime (419)', () => {
+    const RELEASE = 'ABAC-419';
+    const URI = 'test://abac-419/stem';
+    let releaseAnterior: string | null = null;
+
+    beforeAll(async () => {
+      await adminPool.query(`INSERT INTO terminology.icd_releases (release, entity_count) VALUES ($1, 1) ON CONFLICT (release) DO NOTHING`, [RELEASE]);
+      await adminPool.query(
+        `INSERT INTO terminology.icd_entities (icd_uri, release, code, title_es, title_en, chapter, parent_uri, kind, is_leaf)
+         VALUES ($1, $2, 'ZZ99', 'Trastorno sintético abac 419', NULL, '99', NULL, 'stem', true) ON CONFLICT (icd_uri, release) DO NOTHING`,
+        [URI, RELEASE],
+      );
+      releaseAnterior = (await adminPool.query<{ release: string }>(`SELECT release FROM terminology.icd_releases WHERE is_current LIMIT 1`)).rows[0]?.release ?? null;
+      await adminPool.query(`UPDATE terminology.icd_releases SET is_current = false, promoted_at = NULL, promoted_by = NULL WHERE is_current`);
+      await adminPool.query(`UPDATE terminology.icd_releases SET is_current = true, promoted_at = NOW(), promoted_by = 'abac-419' WHERE release = $1`, [RELEASE]);
+    });
+
+    afterAll(async () => {
+      await adminPool.query(`UPDATE terminology.icd_releases SET is_current = false, promoted_at = NULL, promoted_by = NULL WHERE release = $1`, [RELEASE]);
+      if (releaseAnterior) await adminPool.query(`UPDATE terminology.icd_releases SET is_current = true, promoted_at = NOW(), promoted_by = 'abac-419-restore' WHERE release = $1`, [releaseAnterior]);
+      await adminPool.query(`DELETE FROM terminology.icd_entities WHERE release = $1`, [RELEASE]);
+      await adminPool.query(`DELETE FROM terminology.icd_releases WHERE release = $1`, [RELEASE]);
+    });
+
+    it('200 com o candidato do release corrente — a leitura do catálogo passa pelo papel de runtime, não pela dona', async () => {
+      const r = await asStaffAR('/api/admin/terminology/search?q=sintetico');
+      expect(r.status).toBe(200);
+      const body = (await r.json()) as { candidates?: { uri: string }[]; data?: { candidates: { uri: string }[] } };
+      const candidatos = body.candidates ?? body.data?.candidates ?? [];
+      expect(candidatos.map((c) => c.uri)).toContain(URI);
+      // O processo conecta como o login de runtime, não como enlite_admin (senão a prova seria vazia).
+      const quem = await adminPool.query<{ n: number }>(`SELECT count(*)::int AS n FROM pg_stat_activity WHERE usename = $1`, [RUNTIME_USER]);
+      expect(quem.rows[0].n).toBeGreaterThan(0);
+    });
+  });
 });
