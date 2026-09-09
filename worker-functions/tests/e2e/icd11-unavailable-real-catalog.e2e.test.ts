@@ -108,7 +108,7 @@ describe('D3 — catálogo indisponível em 3 estados distintos (Postgres real, 
       await expect(repo.getByUri('qualquer')).rejects.toBeInstanceOf(TerminologyUnavailableError);
       await expect(repo.ancestorsOf('qualquer')).rejects.toBeInstanceOf(TerminologyUnavailableError);
     } finally {
-      await recreateTerminologySchema(pool); // schema INTEIRO de volta (323 + 328) para o próximo cenário
+      await recreateTerminologySchema(pool); // schema INTEIRO de volta (lista derivada: 323, 324, 328, 419…) para o próximo cenário
     }
   });
 
