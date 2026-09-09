@@ -111,6 +111,15 @@ describe('PDF do projeto terapêutico — bytes reais, texto extraído (spec 017
     expect(fetchSpy.mock.calls.map((c) => String(c[0])).filter((u) => !u.startsWith('data:'))).toEqual([]);
   });
 
+  it('🔒 REQ-21 no PDF: o NOME do CID-11 sai, o CÓDIGO nunca — nem do diagnóstico, nem o id do capítulo derivado (Gabriel, 09/09)', async () => {
+    const { text } = await texto(fullInput);
+    expect(text).toContain('Hemiplejía sintética de prueba');
+    expect(text).toContain('Trastornos psicóticos');
+    // a fixture carrega `code: '8B11'` e `id: 'pt1'` de propósito: o documento entregue à família/obra social não os imprime
+    expect(text).not.toContain('8B11');
+    expect(text).not.toContain('pt1');
+  });
+
   it('🔒 sem identidade, família e clínica: o NOME, o contato e o texto clínico NÃO estão; o rótulo de omissão está', async () => {
     const redigida: TherapeuticProjectPdfInput = {
       ...fullInput,
