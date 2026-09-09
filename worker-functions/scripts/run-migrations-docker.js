@@ -11,6 +11,37 @@ const path = require('path');
 
 const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
 
+/**
+ * Ordem de aplicação: pelo PREFIXO NUMÉRICO, não pelo nome.
+ * Hoje é no-op (as 338 migrations têm 3 dígitos), e é exatamente por isso que a troca é barata:
+ * com `.sort()` lexicográfico, a primeira `1000_` seria aplicada ANTES da `323_` — silenciosamente,
+ * numa ordem que nenhuma review pega. Empate (mesmo número) cai no nome com comparação CRUA (`<`),
+ * NUNCA `localeCompare`: há duas `040_consolidate_clickup_columns*.sql` no repo e a colação de locale
+ * as inverte — trocar a ordem de migrations já aplicadas é a mudança silenciosa que este arquivo não
+ * pode fazer (medido pelo próprio teste, que reprovou a 1ª versão).
+ */
+function sortMigrationFiles(files) {
+  const num = (f) => {
+    const m = /^(\d+)_/.exec(f);
+    return m ? Number(m[1]) : Number.MAX_SAFE_INTEGER; // sem prefixo numérico: por último, pelo nome
+  };
+  return [...files].sort((a, b) => num(a) - num(b) || (a < b ? -1 : a > b ? 1 : 0));
+}
+
+/**
+ * `RAISE WARNING`/`NOTICE` de dentro de uma migration só chega ao log se ALGUÉM escutar: o `pg`
+ * emite o evento `notice` e, sem listener, o Node o descarta. Medido em 09/09/2026 (gate da 419):
+ * a 273 promete por escrito que o aviso "aparece no log de deploy" para o caso em que ela não
+ * consegue conceder — e não aparecia. Migration que passa sem fazer o que diz é o pior dos mundos:
+ * fica registrada como aplicada e não volta a rodar.
+ */
+function attachNoticeLogger(client, file) {
+  client.on('notice', (n) => {
+    const onde = file ? ` (${file})` : '';
+    console.warn(`⚠️  [${n.severity || 'NOTICE'}]${onde} ${n.message}${n.hint ? ` — ${n.hint}` : ''}`);
+  });
+}
+
 function createPool() {
   // Cloud Run: DB_HOST is a unix socket path like /cloudsql/project:region:instance
   if (process.env.DB_HOST && process.env.DB_HOST.startsWith('/cloudsql/')) {
@@ -85,10 +116,9 @@ async function run() {
       const applied = new Set(rows.map((r) => r.filename));
 
       // List all .sql files, sorted alphabetically (stable order)
-      const files = fs
-        .readdirSync(MIGRATIONS_DIR)
-        .filter((f) => f.endsWith('.sql'))
-        .sort();
+      const files = sortMigrationFiles(
+        fs.readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql'))
+      );
 
       let ran = 0;
       let skipped = 0;
@@ -102,6 +132,7 @@ async function run() {
         const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
 
         const client = await pool.connect();
+        attachNoticeLogger(client, file);
         try {
           await client.query('BEGIN');
           await client.query(sql);
@@ -132,7 +163,11 @@ async function run() {
   }
 }
 
-run().catch((err) => {
-  console.error('Migration runner error:', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  run().catch((err) => {
+    console.error('Migration runner error:', err);
+    process.exit(1);
+  });
+}
+
+module.exports = { sortMigrationFiles, attachNoticeLogger };
