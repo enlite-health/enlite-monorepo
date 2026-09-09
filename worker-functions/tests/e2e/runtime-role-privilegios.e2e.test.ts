@@ -36,7 +36,7 @@ const TRILHAS = ['iam.permission_audit_log', 'public.resource_access_log'] as co
  * reprova aqui, e consertar os grants também reprova (obriga a atualizar a lista no mesmo PR).
  * ⚖️ A migration que concede está na fila do Gabriel; este teste só impede que a dívida CRESÇA.
  */
-const DIVIDA_VIEWS_SEM_GRANT = [
+const DIVIDA_VIEWS_SEM_GRANT = [ // eslint-disable-line -- lista medida, não `as const`: comparada com o banco
   'public.permission_audit_log', // view de compat da trilha — negada de propósito (iam-permissions-foundation)
   'public.users_active',
   'public.v_potential_duplicate_workers', // 🔴 lida em produção: AnalyticsRepository
@@ -156,6 +156,20 @@ describe('privilégios do papel de runtime nos schemas da aplicação (banco rea
       [SCHEMAS, papel],
     );
     expect(rows.map((r) => r.nome)).toEqual([]);
+  });
+
+  it('🔒 nenhum SCHEMA da aplicação fica FORA da régua — schema novo entra ou reprova (foi assim que `terminology` nasceu invisível)', async () => {
+    // `SCHEMAS` é literal; estreitá-lo silenciaria tudo. Aqui ele é confrontado com o CATÁLOGO: todo
+    // schema não-sistema tem de estar na régua, menos os três do PostGIS. Uma migration que crie
+    // `schema X` sem grant reprova aqui — o caso da 323, que nasceu invisível.
+    // ⚠️ Filtrar por `pg_extension.extnamespace` NÃO serve (tentado, reprovou o baseline): postgis,
+    // pg_trgm, fuzzystrmatch e uuid-ossp vivem DENTRO de `public`, que é o schema principal da app.
+    const { rows } = await pool.query<{ nspname: string }>(
+      `SELECT n.nspname FROM pg_namespace n
+        WHERE n.nspname NOT LIKE 'pg_%'
+          AND n.nspname NOT IN ('information_schema', 'tiger', 'tiger_data', 'topology')
+        ORDER BY 1`);
+    expect(rows.map((r) => r.nspname)).toEqual([...SCHEMAS].sort());
   });
 
   it('a régua está MEDINDO: contagem por schema acima do piso (schema fora da varredura não passa despercebido)', async () => {
