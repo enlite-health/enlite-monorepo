@@ -12,8 +12,7 @@
  * outro arquivo roda em paralelo enquanto o schema está fora do ar.
  */
 import { Pool } from 'pg';
-import { readFileSync } from 'fs';
-import { join } from 'path';
+import { MIGRATIONS_TERMINOLOGY_SQL } from './helpers/terminologyMigrations';
 import { IcdCatalogTerminology } from '../../src/modules/terminology/infrastructure/IcdCatalogTerminology';
 import { TerminologyUnavailableError } from '../../src/modules/terminology/domain/UnavailableTerminology';
 import { upsertEntities, main as ingestMain } from '../../scripts/ingest-icd11-catalog';
@@ -29,9 +28,8 @@ const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enli
  * Regra que fica: quem recria o schema `terminology` aplica a lista INTEIRA de migrations dele,
  * na ordem — nunca só a que criou as tabelas.
  */
-const MIGRATIONS_TERMINOLOGY = ['323_terminology_icd11_catalog.sql', '328_terminology_concept_key.sql'].map((f) =>
-  readFileSync(join(__dirname, '../../migrations', f), 'utf-8'),
-);
+// 🔧 419 (08/09/2026): a lista fixa ['323','328'] virou derivação em `helpers/terminologyMigrations` (ver lá o porquê).
+const MIGRATIONS_TERMINOLOGY = MIGRATIONS_TERMINOLOGY_SQL;
 
 async function recreateTerminologySchema(pool: Pool): Promise<void> {
   for (const sql of MIGRATIONS_TERMINOLOGY) await pool.query(sql);
@@ -110,7 +108,7 @@ describe('D3 — catálogo indisponível em 3 estados distintos (Postgres real, 
       await expect(repo.getByUri('qualquer')).rejects.toBeInstanceOf(TerminologyUnavailableError);
       await expect(repo.ancestorsOf('qualquer')).rejects.toBeInstanceOf(TerminologyUnavailableError);
     } finally {
-      await recreateTerminologySchema(pool); // schema INTEIRO de volta (323 + 328) para o próximo cenário
+      await recreateTerminologySchema(pool); // schema INTEIRO de volta (lista derivada: 323, 324, 328, 419…) para o próximo cenário
     }
   });
 
