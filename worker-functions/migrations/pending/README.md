@@ -52,6 +52,11 @@ ser fire-and-forget, então a perda é **silenciosa**: sem 500, sem alerta, só 
 Caminho de volta correto: **redeploy da revisão nova** (ou revert do commit + deploy),
 nunca `update-traffic` para a revisão velha. Quem libera avisa o time na hora.
 
+E vale para a janela INTEIRA, não só depois: **entre o deploy do expand e a CONTRACT**, a
+revisão anterior lê colunas que o código novo deixou de preencher. Ali o rollback não dá
+erro — dá **número menor**, calado, em qualquer tela que ainda leia a coluna velha. Dos
+dois lados, a saída de incidente é para a FRENTE.
+
 ## O que está pendente hoje
 
 | Arquivo | Depende de | O que faz |

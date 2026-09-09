@@ -24,6 +24,7 @@
 
 import { Pool } from 'pg';
 import { spawnSync } from 'child_process';
+import * as fs from 'fs';
 import * as path from 'path';
 
 const TEST_DATABASE_URL =
@@ -34,6 +35,7 @@ const TEST_DATABASE_URL =
 /** Mesmo id do runner. Se ele mudar lá, este teste para de medir — e é o ponto. */
 const LOCK_ID = 20241201;
 const RUNNER = path.join(__dirname, '..', '..', 'scripts', 'run-migrations-docker.js');
+const MIGRATIONS_DIR = path.join(__dirname, '..', '..', 'migrations');
 
 /** Roda o runner exatamente como o CMD do Dockerfile, e devolve o exit code. */
 function rodarRunner(): { code: number; saida: string } {
@@ -72,11 +74,18 @@ describe('run-migrations-docker — perder o advisory lock NÃO pode virar suces
   });
 
   it('com o lock OCUPADO e NADA pendente, sobe — esperar não é falhar', async () => {
-    // Pré-condição: a chamada acima já aplicou tudo. Medida, não presumida.
-    const { rows } = await bloqueador.query<{ pendentes: string }>(
-      `SELECT (SELECT count(*) FROM schema_migrations)::text AS pendentes`,
+    // Pré-condição: NADA pendente. Medida contra o disco, não presumida.
+    // ⚠️ A versão anterior contava `schema_migrations` e assertava `> 0` — isso conta o
+    // que foi APLICADO, não o que FALTA, e passaria igual num banco com 1 aplicada e
+    // 310 pendentes, que é o oposto do estado que este teste precisa. Régua que se
+    // anuncia como medição e não mede é pior que régua nenhuma.
+    const noDisco = fs.readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql'));
+    expect(noDisco.length).toBeGreaterThan(0); // contagem zero é falha, não sucesso
+    const { rows } = await bloqueador.query<{ filename: string }>(
+      `SELECT filename FROM schema_migrations`,
     );
-    expect(Number(rows[0].pendentes)).toBeGreaterThan(0);
+    const aplicadas = new Set(rows.map((r) => r.filename));
+    expect(noDisco.filter((f) => !aplicadas.has(f))).toEqual([]);
 
     await bloqueador.query('SELECT pg_advisory_lock($1)', [LOCK_ID]);
     try {

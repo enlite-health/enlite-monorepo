@@ -21,6 +21,18 @@
 -- Caminho de volta correto a partir daqui: **redeploy da revisão nova** (ou revert do
 -- commit + deploy), nunca `gcloud run services update-traffic` para a revisão velha.
 -- Quem libera esta migration avisa o time disso na hora.
+--
+-- ⚠️ E o rollback já é ruim ANTES daqui, na janela — de um jeito mais discreto, que é
+-- pior. Entre o deploy e esta migration, a revisão anterior ainda lê `b.blocked_reason`
+-- cru no dashboard (`GetManagementDashboardUseCase`), e as linhas que o código NOVO
+-- grava têm essa coluna NULL. Voltar tráfego para ela nessa fase não dá erro: o card
+-- "bloqueados" simplesmente PARA DE CONTAR as tentativas novas. Volume medido em
+-- produção (09/09): ~29 linhas novas por dia, então uma janela de horas já move o
+-- número. Não há dado perdido — só um número menor do que a verdade, calado.
+--
+-- Regra que vale para a janela INTEIRA, dos dois lados desta migration: uma vez
+-- deployada a revisão nova, a saída de incidente é para a FRENTE (redeploy/revert +
+-- deploy), nunca para trás.
 -- Como liberar: ver `migrations/pending/README.md` (mover para `migrations/` com o
 -- próximo número livre; o nome aqui não tem número de propósito).
 --

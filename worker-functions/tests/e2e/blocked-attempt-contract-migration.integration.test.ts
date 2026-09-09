@@ -192,6 +192,17 @@ describe('CONTRACT do rename honesto — a janela do rolling deploy', () => {
       const segunda = rodarContract(db.url);
       expect(segunda.code).toBe(0);
       await conferir('2a');
+
+      // 🔒 E a 332 tem de sobreviver a rodar DEPOIS da CONTRACT — que é o estado em
+      // que o guard dela existe para salvar, e o único que faltava régua aqui.
+      // O runner re-executa a 332 em TODO boot enquanto ela não estiver registrada em
+      // `schema_migrations` (e `run-migration-prod.sh` não registra). Sem o guard, ela
+      // morre em `column "blocked_reason" does not exist` — `process.exit(1)`, o `&&`
+      // do Dockerfile corta o `npm start`, nenhuma instância sobe, em loop a cada
+      // autoscale. Foi a forma do arquivo até 09/09, e as outras 4 provas ficavam
+      // verdes com ela.
+      expect(rodarSql(db.url, M332).code).toBe(0);
+      await conferir('332 pos-contract');
     } finally {
       await db.destruir();
     }
