@@ -89,8 +89,12 @@ test.describe('@integration Vitrine × portão — a tela não pode liberar quem
     // Âncora POSITIVA antes da ausência: `JobsEmbeddedSection` retorna cedo em
     // `isLoading` e em `error`, ANTES do bloco do banner — sem isto o controle
     // ficaria verde com a tela morta, que é o oposto de um controle.
-    await expect(page.getByRole('button', { name: /Postularse|Ver Detalles/i }).first())
-      .toBeVisible({ timeout: 30_000 });
+    //
+    // A âncora é a SEÇÃO (`#jobs-section`, que só existe no return final), não
+    // um card de vaga: o CI não semeia vaga nenhuma, e um feed vazio é estado
+    // legítimo. Ancorar no botão "Postularse" deixaria o controle vermelho por
+    // ausência de dado, não por defeito — foi o blocker 1 da 3ª rodada do gate.
+    await expect(page.locator('#jobs-section')).toBeVisible({ timeout: 30_000 });
 
     await expect(page.locator(BANNER)).toHaveCount(0);
   });

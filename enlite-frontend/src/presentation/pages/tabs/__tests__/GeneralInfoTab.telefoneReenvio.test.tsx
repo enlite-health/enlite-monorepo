@@ -122,7 +122,12 @@ describe('telefone recusado pelo servidor continua sendo reenviado', () => {
     // Sem este caso, a asserção acima passaria com um "manda phone sempre",
     // que traz de volta o 409 por round-trip que o gate de `dirty` existe para
     // evitar.
-    mockSave.mockResolvedValue({ ...perfilSemTelefone, phone: '+541151265663', missingFields: [] });
+    // O valor TEM de ser o canônico que `normalizePhoneAR` grava no banco
+    // (`5491151265663`), não a string que o formulário guarda (`+541151265663`).
+    // Com a string igual à do form, o `setValue` compara, acha idêntico, não
+    // suja — e o controle passava verde mesmo com a condição sabotada para
+    // "manda sempre". Instrumento verde que não mede: blocker 2 da 3ª rodada.
+    mockSave.mockResolvedValue({ ...perfilSemTelefone, phone: '5491151265663', missingFields: [] });
 
     const { container } = render(<GeneralInfoTab />);
     const input = container.querySelector('#phone input') as HTMLInputElement;
