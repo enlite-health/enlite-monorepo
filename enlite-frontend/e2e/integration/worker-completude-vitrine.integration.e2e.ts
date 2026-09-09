@@ -86,6 +86,12 @@ test.describe('@integration Vitrine × portão — a tela não pode liberar quem
     const w = insertEligibilityWorker();
     await entrar(page, w);
 
+    // Âncora POSITIVA antes da ausência: `JobsEmbeddedSection` retorna cedo em
+    // `isLoading` e em `error`, ANTES do bloco do banner — sem isto o controle
+    // ficaria verde com a tela morta, que é o oposto de um controle.
+    await expect(page.getByRole('button', { name: /Postularse|Ver Detalles/i }).first())
+      .toBeVisible({ timeout: 30_000 });
+
     await expect(page.locator(BANNER)).toHaveCount(0);
   });
 

@@ -176,6 +176,16 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
         // o campo continua sujo e o próximo autosave o reenvia. Era o laço que
         // travou 129 cadastros.
         form.reset({ ...values, phone: saved.phone ?? '' }, { keepValues: true });
+
+        // ⚠️ `reset` LIMPA o dirty-tracking, qualquer que seja o baseline que se
+        // passe — descobrir isso custou um teste que reprovou o próprio
+        // conserto. Então, se mandamos um telefone e o servidor NÃO o devolveu,
+        // ele não foi persistido: remarcamos o campo como sujo à mão, para o
+        // próximo autosave reenviá-lo. Sem isto o número nunca mais é mandado,
+        // que é exatamente o laço que travou 129 cadastros.
+        if (values.phone && !saved.phone) {
+          form.setValue('phone', values.phone, { shouldDirty: true });
+        }
       }
       // Escrita NÃO confirmada: não mexe no store nem no baseline. O que está na
       // tela continua sendo o que a pessoa digitou, e segue "sujo" para ser
