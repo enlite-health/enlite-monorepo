@@ -8,6 +8,19 @@
 -- se candidatar.
 --
 -- Ordem: 332 → deploy → (conferir revisão única no Cloud Run) → esta.
+--
+-- 🔒 E DEPOIS DESTA MIGRATION, ROLLBACK DE REVISÃO DEIXA DE SER SEGURO.
+-- A conferência de "revisão única" acima protege o ANTES. Nada protegia o DEPOIS:
+-- num incidente qualquer, voltar a revisão anterior é um clique e é a resposta padrão
+-- — só que aquele código faz `INSERT ... blocked_reason` contra coluna que já não
+-- existe, e `RecordBlockedAttemptUseCase` é fire-and-forget: engole no `catch`, devolve
+-- `[]`, loga `warn`. Toda tentativa de candidatura barrada durante o rollback SOME —
+-- sem 500 para a pessoa, sem alerta. É exatamente a perda que o runner passou a falhar
+-- fechado para evitar, entrando pela outra porta.
+--
+-- Caminho de volta correto a partir daqui: **redeploy da revisão nova** (ou revert do
+-- commit + deploy), nunca `gcloud run services update-traffic` para a revisão velha.
+-- Quem libera esta migration avisa o time disso na hora.
 -- Como liberar: ver `migrations/pending/README.md` (mover para `migrations/` com o
 -- próximo número livre; o nome aqui não tem número de propósito).
 --

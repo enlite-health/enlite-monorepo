@@ -108,7 +108,7 @@ describe('BlockedApplicationRepository', () => {
     const insertCall = mockQuery.mock.calls[1];
     expect(insertCall[0]).toContain('INSERT INTO worker_blocked_applications');
     expect(insertCall[0]).toContain('ON CONFLICT (worker_id, job_posting_id)');
-    // 🔒 Os nomes com `_at_attempt` são o conserto da CAUSA (migrations 332/333):
+    // 🔒 Os nomes com `_at_attempt` são o conserto da CAUSA (migration 332 + CONTRACT):
     // a coluna guarda o INSTANTÂNEO da tentativa, e o nome antigo estava no
     // presente — foi o que fez 135 de 1.271 cards exibirem motivo velho. Voltar ao
     // nome antigo aqui quebra este assert antes de quebrar a tela de alguém.

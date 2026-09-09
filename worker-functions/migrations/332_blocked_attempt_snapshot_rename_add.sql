@@ -109,9 +109,27 @@ ALTER TABLE worker_blocked_applications
 --
 -- Afrouxar é seguro: a revisão VELHA continua preenchendo as duas, e a CONTRACT dropa
 -- as colunas logo depois.
-ALTER TABLE worker_blocked_applications
-  ALTER COLUMN blocked_reason DROP NOT NULL,
-  ALTER COLUMN missing_fields DROP NOT NULL;
+-- 🔒 Guard de existência, pelo mesmo motivo da CONTRACT — e este arquivo é o que
+-- fica em `migrations/` PARA SEMPRE, então ele é o mais exposto dos dois.
+-- Depois que a CONTRACT rodar, estas colunas não existem mais. Um `ALTER COLUMN`
+-- cru aqui vira `ERROR: column "blocked_reason" does not exist` em qualquer boot que
+-- re-execute a 332 — e re-execução é o normal, porque `run-migration-prod.sh` não
+-- registra em `schema_migrations`. Erro no runner é `process.exit(1)`, o `&&` do
+-- Dockerfile corta o `npm start`: nenhuma instância sobe, em loop a cada autoscale.
+-- Consertei essa classe na CONTRACT e não fui procurar o irmão; o gate foi.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name   = 'worker_blocked_applications'
+       AND column_name  = 'blocked_reason'
+  ) THEN
+    EXECUTE 'ALTER TABLE worker_blocked_applications
+               ALTER COLUMN blocked_reason DROP NOT NULL,
+               ALTER COLUMN missing_fields DROP NOT NULL';
+  END IF;
+END $$;
 -- (O DEFAULT '[]' da coluna antiga fica. Uma versão anterior o derrubava porque
 -- dependia de "antiga NULL = a revisão nova escreveu" para detectar divergência;
 -- sem backfill aqui, quem carrega essa marca é a coluna NOVA, e o DEFAULT da velha

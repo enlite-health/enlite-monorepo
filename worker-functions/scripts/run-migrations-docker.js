@@ -73,6 +73,17 @@ async function run() {
     const LOCK_ID = 20241201; // arbitrary fixed int
     // Configurável só para o teste conseguir exercitar o ramo de aborto sem
     // esperar 2 minutos. Em produção ninguém passa a env, e o default vale.
+    // 🔒 TETO MEDIDO, não escolhido no chute. O `startupProbe` do serviço em produção
+    // (medido 09/09 em `enlite-prd`/`southamerica-west1`) é TCP na 8080 com
+    // `timeoutSeconds: 240` e `failureThreshold: 1` — UMA falha e o contêiner morre,
+    // sem retry. O orçamento até o `npm start` abrir a porta é:
+    //
+    //     waitForDB (até 30s) + esta espera (120s) + tempo das migrations  <  240s
+    //
+    // ou seja, ~90s de folga. Quem aumentar MIGRATIONS_LOCK_WAIT_MS gasta essa folga:
+    // acima de ~180s o boot passa a ser morto pelo probe em vez de esperar, e aí a
+    // trava que existe para não servir schema velho vira indisponibilidade.
+    // `minScale: 1`, então enquanto a revisão nova não sobe a antiga segue atendendo.
     const ESPERA_MAX_MS = Number(process.env.MIGRATIONS_LOCK_WAIT_MS ?? 120_000);
     const INTERVALO_MS = 2_000;
 

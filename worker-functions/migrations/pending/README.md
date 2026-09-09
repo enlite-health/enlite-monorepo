@@ -24,6 +24,11 @@ estiver confirmado em produção.
    e então `git mv` para `migrations/`, com o **próximo número livre** da sequência
    (o nome aqui não tem número de propósito, para não reservar um slot que outra
    pessoa vai querer usar antes).
+4. **Apagar o teste que provava a janela**, se houver. Uma suíte que simula "as duas
+   colunas coexistem" perde o objeto no instante em que a CONTRACT roda — ela não
+   quebrou, ela terminou. Para esta:
+   `tests/e2e/blocked-attempt-contract-migration.integration.test.ts` (ele falha com
+   uma mensagem dizendo isso, em vez de um `column does not exist` sem contexto).
 
 ### 🔒 Por que 2 antes de 3, e não o contrário
 
@@ -38,11 +43,19 @@ instância sobe**. O ramo desenhado para proteger o dado vira apagão.
 Rodando de `pending/` e registrando antes de mover, um aborto é só um comando que
 falhou no terminal de quem está olhando — que é o que um aborto deve ser.
 
+### 🔒 Depois de liberar uma CONTRACT, ROLLBACK deixa de ser seguro
+
+A metade CONTRACT dropa coisa que a revisão anterior ainda sabe escrever. Voltar tráfego
+para ela é um clique e é a resposta padrão de incidente — e o write path afetado costuma
+ser fire-and-forget, então a perda é **silenciosa**: sem 500, sem alerta, só um `warn`.
+
+Caminho de volta correto: **redeploy da revisão nova** (ou revert do commit + deploy),
+nunca `update-traffic` para a revisão velha. Quem libera avisa o time na hora.
+
 ## O que está pendente hoje
 
 | Arquivo | Depende de | O que faz |
 |---|---|---|
-| `CONTRACT_drop_patients_chat_id_columns.sql` | migration `261` deployada e confirmada em produção | Derruba `patients.family_chat_id` e `patients.providers_chat_id`, que a `261` substituiu por `patient_chat_ids` |
 | `CONTRACT_drop_blocked_attempt_old_columns.sql` | migration `332` deployada e confirmada em produção (revisão ÚNICA no Cloud Run) | Fecha a janela (backfill: a `332` deliberadamente não o faz), derruba `blocked_reason` e `missing_fields` — substituídas por `*_at_attempt` — e o índice `idx_wba_blocked_reason`, que convidava à consulta errada |
 
 ## ⚠️ Migration liberada daqui PRECISA ser re-executável

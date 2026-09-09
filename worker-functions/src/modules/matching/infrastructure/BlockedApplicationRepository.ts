@@ -166,7 +166,7 @@ export class BlockedApplicationRepository {
     // Grava o array cru (pode conter `worker_documents`) — é o INSTANTÂNEO da
     // tentativa, para histórico. Quem quer o estado de HOJE não lê estas colunas:
     // usa `blockedAttemptLiveState`. Os nomes `*_at_attempt` existem justamente
-    // para que a diferença não dependa de alguém lembrar (migration 332/333).
+    // para que a diferença não dependa de alguém lembrar (migration 332 + CONTRACT).
     await this.pool.query(
       `INSERT INTO worker_blocked_applications
          (worker_id, job_posting_id, blocked_reason_at_attempt, missing_fields_at_attempt,

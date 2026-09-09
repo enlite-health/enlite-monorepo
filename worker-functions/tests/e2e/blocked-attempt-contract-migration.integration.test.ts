@@ -57,6 +57,32 @@ async function bancoDescartavel(sufixo: string): Promise<{ url: string; pool: Po
   execFileSync('node', [RUNNER], { env: { ...process.env, DATABASE_URL: url }, stdio: 'pipe' });
 
   const pool = new Pool({ connectionString: url, max: 1 });
+
+  // 🔒 PRÉ-CONDIÇÃO EXPLÍCITA, porque a alternativa é quebra misteriosa.
+  // Este arquivo inteiro simula a JANELA — o intervalo em que as colunas antigas e as
+  // novas coexistem. No dia em que a CONTRACT for liberada (movida de
+  // `migrations/pending/` para `migrations/`), o runner acima passa a aplicá-la, as
+  // colunas antigas somem, e os 4 testes quebram com `column does not exist` — no dia
+  // do release, sob pressão, e o caminho barato vira apagar a suíte.
+  // Falhar aqui, dizendo o que fazer, custa menos.
+  const { rows } = await pool.query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'worker_blocked_applications'
+        AND column_name IN ('blocked_reason', 'missing_fields')`,
+  );
+  if (Number(rows[0].n) !== 2) {
+    await pool.end();
+    await admin.query(`DROP DATABASE IF EXISTS ${nome} WITH (FORCE)`);
+    await admin.end();
+    throw new Error(
+      'As colunas antigas não existem depois das migrations — a CONTRACT já foi ' +
+      'liberada para migrations/. Este arquivo prova a JANELA, que deixou de existir: ' +
+      'APAGUE tests/e2e/blocked-attempt-contract-migration.integration.test.ts junto ' +
+      'com a liberação (passo 4 do migrations/pending/README.md). Não o conserte.',
+    );
+  }
+
   return {
     url,
     pool,
