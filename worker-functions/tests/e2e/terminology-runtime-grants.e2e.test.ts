@@ -10,6 +10,7 @@
  */
 import { Client, Pool } from 'pg';
 import { urlFor, ensureLoginRole, dropLoginRoles } from './helpers/loginRoles';
+import { MIGRATION_FILES_TERMINOLOGY } from './helpers/terminologyMigrations';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -89,6 +90,15 @@ describe('419 — grants de leitura do schema terminology para app_runtime/app_s
 
   it('só leitura: app_runtime NÃO escreve no catálogo (nenhum código de produção o faz)', async () => {
     expect(await como(RUNTIME_USER, `INSERT INTO terminology.icd_releases (release, entity_count) VALUES ('tgrants-x', 0)`)).toEqual({ ok: false, code: '42501' });
+  });
+
+  it('quem RECRIA o schema (icd11-unavailable-real-catalog) reaplica a 324 e a 419 — a lista derivada as contém, na ordem', () => {
+    expect(MIGRATION_FILES_TERMINOLOGY).toEqual([
+      '323_terminology_icd11_catalog.sql',
+      '324_terminology_revoke_default_privileges.sql',
+      '328_terminology_concept_key.sql',
+      '419_terminology_grants_app_roles.sql',
+    ]);
   });
 
   it('324 continua valendo: NENHUM default privilege no schema para os grupos (tabela futura nasce ilegível)', async () => {
