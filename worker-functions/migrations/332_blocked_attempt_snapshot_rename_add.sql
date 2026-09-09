@@ -65,19 +65,35 @@ ALTER TABLE worker_blocked_applications
   CHECK (blocked_reason_at_attempt IS NULL OR blocked_reason_at_attempt IN
          ('worker_not_found', 'registration_incomplete', 'worker_disabled'));
 
--- Backfill do histórico inteiro. Sem WHERE: são ~1.700 linhas, e deixar linha
--- antiga com o campo novo nulo criaria um terceiro estado ("não sei se foi
--- migrada") — que é a ambiguidade que já apagou dado nesta casa antes.
--- ⚠️ COALESCE por COLUNA, não `SET` das duas. A versão anterior gravava as DUAS
--- sempre que QUALQUER uma estivesse nula — então re-rodar a migration sobre uma
--- linha meio-preenchida APAGAVA a metade que já estava certa, calada e com exit 0.
--- É a classe "vazio ambíguo apaga dado" (D167), e o runner re-roda migration não
--- registrada em todo boot.
-UPDATE worker_blocked_applications
-   SET blocked_reason_at_attempt = COALESCE(blocked_reason_at_attempt, blocked_reason),
-       missing_fields_at_attempt = COALESCE(missing_fields_at_attempt, missing_fields)
- WHERE blocked_reason_at_attempt IS NULL
-    OR missing_fields_at_attempt IS NULL;
+-- 🔒 AQUI NÃO HÁ BACKFILL — E ISSO É O DESENHO, NÃO ESQUECIMENTO.
+--
+-- Uma versão anterior copiava `blocked_reason` → `blocked_reason_at_attempt` já
+-- nesta migration, "para não deixar linha antiga com o campo novo nulo". Isso
+-- DESTRÓI a única informação que resolve a janela.
+--
+-- Com o backfill aqui, `blocked_reason_at_attempt IS NOT NULL` passa a significar
+-- duas coisas — "o código novo escreveu" OU "a migration copiou" — e as duas ficam
+-- indistinguíveis. Sem ele, a leitura é limpa e vale para sempre:
+--
+--   at_attempt IS NULL      → o código NOVO nunca escreveu esta linha
+--                             ⇒ a coluna antiga é a verdade
+--   at_attempt IS NOT NULL  → o código NOVO escreveu
+--                             ⇒ ela é a verdade
+--
+-- Ninguém lê `*_at_attempt` durante a janela: desde o PR #324 TODA leitura recalcula
+-- o motivo ao vivo (`blockedAttemptLiveState`). O instantâneo é histórico. Então
+-- deixá-lo nulo por alguns minutos não aparece em tela nenhuma.
+--
+-- O backfill mora na CONTRACT, no único momento em que ele é uma cópia e não um
+-- palpite: depois que a janela fechou.
+--
+-- ⚠️ Por que isto importa tanto: MEDIDO em produção em 09/09, 30 reescritas em 24 h,
+-- 170 em 7 dias, e 1.180 das 1.727 linhas com mais de uma tentativa. Retentativa é a
+-- NORMA. Com o backfill aqui, QUALQUER reescrita durante a janela deixava as duas
+-- colunas preenchidas e diferentes — e a versão anterior da CONTRACT tratava isso
+-- como corrupção e abortava. Um `RAISE EXCEPTION` numa migration dentro de
+-- `migrations/` é `process.exit(1)` no boot do Cloud Run: nenhuma instância sobe.
+-- Eu tinha trocado uma defasagem inofensiva de campo histórico por um apagão.
 
 -- 🔒 A PEÇA SEM A QUAL A JANELA NÃO FUNCIONA.
 --
@@ -95,16 +111,11 @@ UPDATE worker_blocked_applications
 -- as colunas logo depois.
 ALTER TABLE worker_blocked_applications
   ALTER COLUMN blocked_reason DROP NOT NULL,
-  ALTER COLUMN missing_fields DROP NOT NULL,
-  -- ⚠️ E o DEFAULT '[]' da coluna ANTIGA sai junto — não é enfeite.
-  -- Com ele de pé, a linha que a revisão NOVA insere na janela não nasce com
-  -- `missing_fields` NULL: nasce com `'[]'`. O NULL é a única marca de "esta
-  -- coluna não foi escrita nesta janela"; um DEFAULT a apaga e faz a linha
-  -- parecer preenchida-e-divergente. Medido: com o DEFAULT, a checagem de
-  -- ambiguidade da CONTRACT abortava numa linha perfeitamente normal.
-  -- Ninguém depende dele: o único INSERT do código (BlockedApplicationRepository)
-  -- sempre passa missing_fields explicitamente.
-  ALTER COLUMN missing_fields DROP DEFAULT;
+  ALTER COLUMN missing_fields DROP NOT NULL;
+-- (O DEFAULT '[]' da coluna antiga fica. Uma versão anterior o derrubava porque
+-- dependia de "antiga NULL = a revisão nova escreveu" para detectar divergência;
+-- sem backfill aqui, quem carrega essa marca é a coluna NOVA, e o DEFAULT da velha
+-- deixou de importar. Mexer nele seria mudança sem propósito no schema.)
 
 COMMENT ON COLUMN worker_blocked_applications.blocked_reason_at_attempt IS
   'INSTANTÂNEO: motivo no momento da tentativa. NÃO é o estado atual — para o '

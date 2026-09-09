@@ -37,6 +37,9 @@ const CONTRACT = path.join(
   __dirname, '..', '..', 'migrations', 'pending',
   'CONTRACT_drop_blocked_attempt_old_columns.sql',
 );
+const M332 = path.join(
+  __dirname, '..', '..', 'migrations', '332_blocked_attempt_snapshot_rename_add.sql',
+);
 
 const urlPara = (db: string): string => {
   const u = new URL(BASE_URL);
@@ -65,9 +68,9 @@ async function bancoDescartavel(sufixo: string): Promise<{ url: string; pool: Po
   };
 }
 
-/** Roda a CONTRACT via psql, como `run-migration-prod.sh` faz. Devolve o exit code. */
-function rodarContract(url: string): { code: number; saida: string } {
-  const sql = fs.readFileSync(CONTRACT, 'utf8');
+/** Roda um arquivo .sql via psql, como `run-migration-prod.sh` faz. Devolve o exit code. */
+function rodarSql(url: string, arquivo: string): { code: number; saida: string } {
+  const sql = fs.readFileSync(arquivo, 'utf8');
   try {
     const out = execFileSync('psql', [url, '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=terse'], {
       input: sql, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
@@ -78,6 +81,8 @@ function rodarContract(url: string): { code: number; saida: string } {
     return { code: err.status ?? -1, saida: `${err.stdout ?? ''}${err.stderr ?? ''}` };
   }
 }
+
+const rodarContract = (url: string) => rodarSql(url, CONTRACT);
 
 const VAGA = 'bbbb2222-0000-0000-0000-0000000000f1';
 
@@ -101,19 +106,16 @@ describe('CONTRACT do rename honesto — a janela do rolling deploy', () => {
         `INSERT INTO job_postings (id, case_number, vacancy_number, title, status, is_draft)
          VALUES ($1, 7001, 1, 'C', 'SEARCHING', false)`, [VAGA],
       );
-      // 1. histórica: a 332 backfillou, as duas colunas iguais
+      // 1. histórica: nunca tocada pelo código novo (a 332 NÃO backfilla), então
+      //    `*_at_attempt` está nulo e a coluna antiga é a verdade
       const w1 = await semear(db.pool, '00001');
       await db.pool.query(
         `INSERT INTO worker_blocked_applications
-           (worker_id, job_posting_id, blocked_reason, missing_fields,
-            blocked_reason_at_attempt, missing_fields_at_attempt)
-         VALUES ($1,$2,'registration_incomplete','["phone"]','registration_incomplete','["phone"]')`,
+           (worker_id, job_posting_id, blocked_reason, missing_fields)
+         VALUES ($1,$2,'registration_incomplete','["phone"]')`,
         [w1, VAGA],
       );
-      // 2. revisão NOVA escreveu na janela → coluna ANTIGA fica NULL.
-      //    🔒 Só fica NULL porque a 332 derruba o DEFAULT '[]' da coluna antiga.
-      //    Com o DEFAULT de pé, esta linha nasce `'[]'` e a checagem de ambiguidade
-      //    aborta numa linha perfeitamente normal. Foi assim que o defeito apareceu.
+      // 2. revisão NOVA escreveu na janela → só o par novo preenchido
       const w2 = await semear(db.pool, '00002');
       await db.pool.query(
         `INSERT INTO worker_blocked_applications
@@ -169,44 +171,128 @@ describe('CONTRACT do rename honesto — a janela do rolling deploy', () => {
     }
   });
 
-  it('ABORTA quando as duas colunas divergem — não escolhe uma no chute', async () => {
-    const db = await bancoDescartavel('ambiguo');
+  it('ATRAVESSA a divergência das duas revisões — nunca aborta o boot por tráfego normal', async () => {
+    const db = await bancoDescartavel('divergente');
     try {
       await db.pool.query(
         `INSERT INTO job_postings (id, case_number, vacancy_number, title, status, is_draft)
          VALUES ($1, 7002, 1, 'C', 'SEARCHING', false)`, [VAGA],
       );
-      // A 332 backfillou 'registration_incomplete'; depois, ainda na janela, a
-      // revisão VELHA registrou nova tentativa e gravou 'worker_disabled' só na
-      // coluna antiga. Não há como saber qual é a mais recente.
+      // A linha que a revisão NOVA criou na janela ('worker_disabled' / ["phone"]) e
+      // que a revisão VELHA depois reescreveu no par antigo, porque a pessoa tentou de
+      // novo. As duas colunas ficam preenchidas e DIFERENTES — que é o caso comum, não
+      // o excepcional: em produção, 1.180 das 1.727 linhas têm mais de uma tentativa.
       const w = await semear(db.pool, '0000f');
       await db.pool.query(
         `INSERT INTO worker_blocked_applications
            (worker_id, job_posting_id, blocked_reason, missing_fields,
             blocked_reason_at_attempt, missing_fields_at_attempt)
-         VALUES ($1,$2,'worker_disabled','[]','registration_incomplete','["phone"]')`,
+         VALUES ($1,$2,'registration_incomplete','["phone"]','worker_disabled','["phone","first_name"]')`,
         [w, VAGA],
+      );
+
+      const r = rodarContract(db.url);
+
+      // 🔒 O assert que importa. Se isto virar != 0, a migration voltou a abortar em
+      // cima de tráfego normal — e, com o arquivo em `migrations/`, isso é o boot do
+      // Cloud Run morrendo em loop, não um teste vermelho.
+      expect(r.code).toBe(0);
+
+      // Fica o que o código NOVO gravou: `at_attempt` só é não-nulo quando ele escreveu
+      // (a 332 não backfilla, justamente para essa leitura não ser ambígua).
+      const { rows } = await db.pool.query(
+        `SELECT blocked_reason_at_attempt AS m, missing_fields_at_attempt AS c
+           FROM worker_blocked_applications WHERE worker_id = $1`, [w],
+      );
+      expect(rows[0].m).toBe('worker_disabled');
+      expect(rows[0].c).toEqual(['phone', 'first_name']);
+
+      // E as colunas antigas se foram — a migration completou o serviço.
+      const { rows: cols } = await db.pool.query<{ column_name: string }>(
+        `SELECT column_name FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'worker_blocked_applications'
+            AND column_name IN ('blocked_reason', 'missing_fields')`,
+      );
+      expect(cols).toHaveLength(0);
+    } finally {
+      await db.destruir();
+    }
+  });
+
+  it('ABORTA só no que o código não produz: linha sem valor em NENHUMA das duas', async () => {
+    const db = await bancoDescartavel('semvalor');
+    try {
+      await db.pool.query(
+        `INSERT INTO job_postings (id, case_number, vacancy_number, title, status, is_draft)
+         VALUES ($1, 7003, 1, 'C', 'SEARCHING', false)`, [VAGA],
+      );
+      // Impossível pelo código (a revisão velha sempre grava o par antigo, a nova
+      // sempre o novo) — só sai de escrita à mão ou corrupção. Aqui o fail-closed é o
+      // certo: não há o que recuperar depois do DROP.
+      const w = await semear(db.pool, '0000e');
+      await db.pool.query(
+        `INSERT INTO worker_blocked_applications (worker_id, job_posting_id)
+         VALUES ($1,$2)`, [w, VAGA],
       );
 
       const r = rodarContract(db.url);
       expect(r.code).not.toBe(0);
       expect(r.saida).toContain('ABORTADO');
 
-      // O que importa depois do aborto: NADA foi destruído. As duas colunas
-      // continuam de pé com os dois valores, para um humano comparar e decidir.
+      // Nada destruído: as duas colunas de pé para alguém investigar.
       const { rows: cols } = await db.pool.query<{ column_name: string }>(
         `SELECT column_name FROM information_schema.columns
-          WHERE table_name = 'worker_blocked_applications'
+          WHERE table_schema = 'public'
+            AND table_name = 'worker_blocked_applications'
             AND column_name IN ('blocked_reason', 'missing_fields')`,
       );
       expect(cols).toHaveLength(2);
+    } finally {
+      await db.destruir();
+    }
+  });
 
-      const { rows } = await db.pool.query(
-        `SELECT blocked_reason AS antiga, blocked_reason_at_attempt AS nova
-           FROM worker_blocked_applications WHERE worker_id = $1`, [w],
+  it('a 332 NÃO pode backfillar: senão a janela perde a escrita da revisão velha', async () => {
+    const db = await bancoDescartavel('sembackfill');
+    try {
+      await db.pool.query(
+        `INSERT INTO job_postings (id, case_number, vacancy_number, title, status, is_draft)
+         VALUES ($1, 7004, 1, 'C', 'SEARCHING', false)`, [VAGA],
       );
-      expect(rows[0].antiga).toBe('worker_disabled');
-      expect(rows[0].nova).toBe('registration_incomplete');
+      // Ordem REAL, e é ela que discrimina: a linha já existia ANTES da 332.
+      const w = await semear(db.pool, '0000d');
+      await db.pool.query(
+        `INSERT INTO worker_blocked_applications
+           (worker_id, job_posting_id, blocked_reason, missing_fields)
+         VALUES ($1,$2,'registration_incomplete','["phone","first_name"]')`,
+        [w, VAGA],
+      );
+
+      // Roda a 332 REAL por cima dela (é re-executável — o runner faz isso todo boot).
+      // Com backfill, aqui `*_at_attempt` seria preenchido com o valor de AGORA.
+      expect(rodarSql(db.url, M332).code).toBe(0);
+
+      // Janela: a pessoa preencheu first_name e tentou de novo; quem atendeu foi uma
+      // instância da revisão VELHA, que só sabe escrever o par antigo.
+      await db.pool.query(
+        `UPDATE worker_blocked_applications
+            SET missing_fields = '["phone"]'::jsonb, updated_at = NOW()
+          WHERE worker_id = $1`, [w],
+      );
+
+      expect(rodarContract(db.url).code).toBe(0);
+
+      // 🔒 O assert que fixa o desenho. Sem backfill na 332, `*_at_attempt` continuou
+      // NULL até aqui, então o COALESCE pega a coluna antiga — a escrita da revisão
+      // velha, que é a mais recente. COM backfill na 332, `*_at_attempt` já valeria
+      // ["phone","first_name"] e o COALESCE o preferiria, PERDENDO a escrita da janela
+      // e devolvendo um campo que a pessoa já tinha preenchido.
+      const { rows } = await db.pool.query(
+        `SELECT missing_fields_at_attempt AS c FROM worker_blocked_applications
+          WHERE worker_id = $1`, [w],
+      );
+      expect(rows[0].c).toEqual(['phone']);
     } finally {
       await db.destruir();
     }

@@ -32,90 +32,97 @@
 
 BEGIN;
 
--- 🔒 PRIMEIRO a checagem de AMBIGUIDADE — e ela tem de vir ANTES do backfill,
--- senão nunca dispara (o backfill iguala as duas colunas e apaga a evidência).
+-- ── FECHA A JANELA ────────────────────────────────────────────────────────────
 --
--- O caso: durante a janela, a revisão VELHA e a NOVA escrevem colunas diferentes.
--- A velha grava `blocked_reason` e não toca em `blocked_reason_at_attempt`; a nova
--- faz o inverso. Nenhuma das duas deixa marca de QUEM escreveu por último — não há
--- timestamp por coluna. Então, se as duas estiverem preenchidas e DIFERENTES, a
--- pergunta "qual é o motivo da última tentativa?" não tem resposta no banco.
+-- A 332 deliberadamente NÃO backfillou (ver o bloco lá). Por isso a leitura aqui é
+-- inequívoca, e não um palpite:
 --
--- `COALESCE` em qualquer das duas ordens seria um CHUTE com cara de conserto: uma
--- ordem descarta o que a revisão velha acabou de gravar, a outra descarta o que a
--- nova gravou. As duas erram calado, dentro do COMMIT, e o DROP logo abaixo apaga a
--- outra metade — a evidência de que houve escolha some junto.
+--   at_attempt IS NULL      → o código NOVO nunca escreveu esta linha. Ou ela é
+--                             histórica, ou quem a escreveu na janela foi a revisão
+--                             VELHA. Nos dois casos a coluna antiga é a verdade.
+--   at_attempt IS NOT NULL  → o código NOVO escreveu. Ele é o único que escreve
+--                             essa coluna, então ela é a verdade.
 --
--- Abortar não perde nada: as duas colunas continuam de pé e um humano decide.
--- É o caso "vazio ambíguo apaga dado" (D167) na sua forma mais cara — aqui nem
--- vazio é: são dois valores válidos e incomparáveis.
+-- `COALESCE(at_attempt, antiga)` é exatamente essa regra.
 --
--- Divergência esperada: ZERO. Exige uma tentativa REPETIDA do mesmo par
--- (worker, vaga) dentro dos poucos minutos do rolling deploy, com o motivo tendo
--- mudado nesse intervalo. A checagem custa um seq scan em ~1.700 linhas.
+-- ⚠️ O ÚNICO caso imperfeito, dito sem enfeite: a mesma linha escrita pelas DUAS
+-- revisões durante a janela, com a VELHA escrevendo por último. Aí guardamos o valor
+-- da escrita anterior — o instantâneo fica UMA tentativa defasado. Não há como
+-- distinguir: as duas revisões bombam `updated_at`, e não existe timestamp por
+-- coluna.
+--
+-- Por que isso é aceitável, e por que ABORTAR não era:
+--   · o dano é um campo HISTÓRICO uma tentativa defasado, em poucas linhas. Desde o
+--     PR #324 nenhuma tela lê esta coluna — todas recalculam ao vivo.
+--   · a janela é o rolling deploy (minutos), e o caso exige DUAS escritas na MESMA
+--     linha nesses minutos, uma por cada revisão.
+--   · a versão anterior abortava quando as colunas divergiam, chamando isso de
+--     "divergência esperada: ZERO". Medido em produção em 09/09: 30 reescritas em
+--     24 h, 170 em 7 dias, 1.180 das 1.727 linhas com mais de uma tentativa.
+--     Retentativa é a NORMA — o aborto dispararia de rotina. E aborto aqui, uma vez
+--     que o arquivo esteja em `migrations/`, é `process.exit(1)` no boot do Cloud
+--     Run: NENHUMA INSTÂNCIA SOBE. Trocar campo histórico defasado por apagão de
+--     produção é o pior negócio possível.
+--
+-- O guard é por EXISTÊNCIA das colunas antigas (com `table_schema`, senão uma tabela
+-- homônima noutro schema responde por esta), e o `EXECUTE` garante que o SQL nem
+-- chega a ser planejado quando o ramo está morto — na segunda execução as colunas
+-- já não existem.
 DO $$
-DECLARE v_ambiguas INT;
+DECLARE v_divergentes INT;
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns
-     WHERE table_name = 'worker_blocked_applications'
-       AND column_name = 'blocked_reason'
+     WHERE table_schema = 'public'
+       AND table_name   = 'worker_blocked_applications'
+       AND column_name  = 'blocked_reason'
   ) THEN
-    RETURN; -- já contraída; nada a comparar (re-execução do runner no boot)
+    RAISE NOTICE 'Colunas antigas já removidas — nada a fechar (re-execução).';
+    RETURN;
+  END IF;
+
+  -- Só para quem está olhando a saída do psql: quantas linhas tiveram atividade das
+  -- duas revisões na janela. NOTICE, nunca EXCEPTION — é informação, não corrupção.
+  EXECUTE $sql$
+    SELECT COUNT(*) FROM worker_blocked_applications
+     WHERE blocked_reason IS NOT NULL
+       AND blocked_reason_at_attempt IS NOT NULL
+       AND (blocked_reason IS DISTINCT FROM blocked_reason_at_attempt
+         OR missing_fields IS DISTINCT FROM missing_fields_at_attempt)
+  $sql$ INTO v_divergentes;
+
+  IF v_divergentes > 0 THEN
+    RAISE NOTICE
+      '% linha(s) foram escritas pelas duas revisões durante a janela. Fica o valor '
+      'que o código NOVO gravou. Se precisar auditar, compare blocked_reason x '
+      'blocked_reason_at_attempt ANTES de rodar isto — o DROP abaixo é definitivo.',
+      v_divergentes;
   END IF;
 
   EXECUTE $sql$
-    SELECT COUNT(*) FROM worker_blocked_applications
-     WHERE (blocked_reason IS NOT NULL
-            AND blocked_reason_at_attempt IS NOT NULL
-            AND blocked_reason IS DISTINCT FROM blocked_reason_at_attempt)
-        OR (missing_fields IS NOT NULL
-            AND missing_fields_at_attempt IS NOT NULL
-            AND missing_fields IS DISTINCT FROM missing_fields_at_attempt)
-  $sql$ INTO v_ambiguas;
-
-  IF v_ambiguas > 0 THEN
-    RAISE EXCEPTION
-      'ABORTADO: % linha(s) com a coluna antiga e a nova preenchidas e DIFERENTES. '
-      'Isso só acontece se as duas revisões gravaram a mesma linha durante a janela, '
-      'e o banco não guarda quem escreveu por último — escolher uma seria chute. '
-      'Compare blocked_reason x blocked_reason_at_attempt (e missing_fields) nessas '
-      'linhas, decida na mão, iguale as duas colunas e rode de novo.', v_ambiguas;
-  END IF;
+    UPDATE worker_blocked_applications
+       SET blocked_reason_at_attempt = COALESCE(blocked_reason_at_attempt, blocked_reason),
+           missing_fields_at_attempt = COALESCE(missing_fields_at_attempt, missing_fields)
+     WHERE blocked_reason_at_attempt IS NULL
+        OR missing_fields_at_attempt IS NULL
+  $sql$;
 END $$;
 
--- Fecha a janela: linhas que a revisão velha gravou entre a 332 e o fim do deploy
--- ficaram com a coluna nova nula. Sem isto, o histórico perde essas tentativas.
+-- Trava de segurança. AQUI o fail-closed é o certo, e a diferença em relação ao caso
+-- acima é o ponto: divergência entre as colunas é TRÁFEGO NORMAL; linha sem valor em
+-- NENHUMA das duas é impossível pelo código (a revisão velha sempre grava o par
+-- antigo, a nova sempre grava o novo) e significa escrita à mão ou corrupção. Dropar
+-- ali apagaria a única pista do que era aquela tentativa, e não há nada a recuperar
+-- depois.
 --
--- O guard é por EXISTÊNCIA das colunas antigas, não por contagem: na segunda
--- execução elas já não existem, e o `EXECUTE` nem chega a ser planejado.
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-     WHERE table_name = 'worker_blocked_applications'
-       AND column_name = 'blocked_reason'
-  ) THEN
-    EXECUTE $sql$
-      UPDATE worker_blocked_applications
-         SET blocked_reason_at_attempt = COALESCE(blocked_reason_at_attempt, blocked_reason),
-             missing_fields_at_attempt = COALESCE(missing_fields_at_attempt, missing_fields)
-       WHERE blocked_reason_at_attempt IS NULL
-          OR missing_fields_at_attempt IS NULL
-    $sql$;
-  END IF;
-END $$;
-
--- Trava de segurança — e agora ela é ALCANÇÁVEL.
+-- ⚠️ Correção de uma premissa errada que esta migration afirmava: dizia que sobrar
+-- linha sem valor é impossível porque `blocked_reason` é NOT NULL desde a 209. A 332
+-- deste mesmo PR derruba esse NOT NULL — ela precisa, porque o código novo escreve
+-- só as colunas `*_at_attempt`.
 --
--- ⚠️ Correção de uma premissa errada que esta própria migration afirmava: dizia que
--- "sobrar linha sem valor é impossível porque `blocked_reason` é NOT NULL desde a
--- 209". A 332 **deste mesmo PR** derruba esse NOT NULL (ela precisa: o código novo
--- escreve só as colunas `*_at_attempt`). Ou seja, durante a janela o banco ACEITA
--- tentativa sem motivo nenhum, e o COALESCE não tem de onde recuperar.
---
--- Se isso acontecer, dropar as colunas antigas apagaria a única pista do que era
--- aquela linha. Melhor abortar e alguém olhar.
+-- 🔒 Para que este aborto NUNCA vire boot quebrado, o README de `migrations/pending/`
+-- manda rodar este arquivo AINDA em `pending/` e só movê-lo para `migrations/` (com
+-- registro em `schema_migrations`) DEPOIS de ele ter passado.
 DO $$
 DECLARE v_pendentes INT;
 BEGIN
@@ -124,9 +131,10 @@ BEGIN
    WHERE blocked_reason_at_attempt IS NULL;
   IF v_pendentes > 0 THEN
     RAISE EXCEPTION
-      'ABORTADO: % linha(s) sem blocked_reason_at_attempt e sem blocked_reason para recuperar. '
-      'Dropar agora apagaria a única pista do que era essa tentativa. '
-      'Investigue essas linhas antes de liberar esta migration.', v_pendentes;
+      'ABORTADO: % linha(s) sem blocked_reason_at_attempt e sem blocked_reason para '
+      'recuperar. Isso não sai do código — investigue essas linhas antes de liberar '
+      'esta migration. Dropar agora apagaria a única pista do que era a tentativa.',
+      v_pendentes;
   END IF;
 END $$;
 
