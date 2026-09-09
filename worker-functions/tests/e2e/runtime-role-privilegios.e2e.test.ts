@@ -88,9 +88,16 @@ describe('privilégios do papel de runtime nos schemas da aplicação (banco rea
   }
 
   it.each(PAPEIS)('🔒 %s LÊ DE VERDADE uma tabela de cada schema (pega USAGE + SELECT; a régua de catálogo sozinha é cega ao USAGE)', async (papel) => {
+    // `public.device_types` — NÃO `patients` — de propósito: `patients` tem RLS de país (411) que
+    // FALHA ALTO (`rls_session_without_identity`, 42501) para QUALQUER role sem `app.user_uid`/
+    // `app.user_country`/`app.system_context` na sessão, mesmo membro de `app_runtime`/`app_system`
+    // — é comportamento correto da policy, não bug. Medido no CI (não reproduzia local): misturar essa
+    // prova de PRIVILÉGIO com a exigência de IDENTIDADE de outra migration não é o que este arquivo
+    // testa. `device_types` é catálogo puro, sem RLS (`relrowsecurity=false`), então a única coisa que
+    // pode barrar a leitura aqui é falta de GRANT — exatamente o que este teste mede.
     const cliente = new Pool({ connectionString: urlFor(DATABASE_URL, LOGIN[papel], SENHA), max: 1 });
     try {
-      for (const [schema, tabela] of [['public', 'patients'], ['iam', 'permissions'], ['terminology', 'icd_entities']]) {
+      for (const [schema, tabela] of [['public', 'device_types'], ['iam', 'permissions'], ['terminology', 'icd_entities']]) {
         await expect(cliente.query(`SELECT 1 FROM ${schema}.${tabela} LIMIT 1`)).resolves.toBeDefined();
       }
     } finally {
