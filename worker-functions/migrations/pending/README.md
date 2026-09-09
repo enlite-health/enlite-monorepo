@@ -24,3 +24,18 @@ estiver confirmado em produção.
 | Arquivo | Depende de | O que faz |
 |---|---|---|
 | `CONTRACT_drop_patients_chat_id_columns.sql` | migration `261` deployada e confirmada em produção | Derruba `patients.family_chat_id` e `patients.providers_chat_id`, que a `261` substituiu por `patient_chat_ids` |
+| `CONTRACT_drop_blocked_attempt_old_columns.sql` | migration `332` deployada e confirmada em produção (revisão ÚNICA no Cloud Run) | Derruba `blocked_reason` e `missing_fields`, que a `332` substituiu por `*_at_attempt`, mais o índice `idx_wba_blocked_reason` que convidava à consulta errada |
+
+## ⚠️ Migration liberada daqui PRECISA ser re-executável
+
+`scripts/run-migration-prod.sh` roda o psql e **não** escreve em `schema_migrations`.
+Assim que o arquivo sai daqui para `migrations/`, o runner do CMD do Dockerfile o vê
+como não-aplicado e o **re-executa no próximo boot** do Cloud Run.
+
+Como a metade CONTRACT costuma ser destrutiva (`DROP COLUMN`), o corpo dela referencia
+coisas que ela mesma acabou de remover. Sem guard de existência, o re-run explode — e
+o runner agora **falha fechado** (`exit != 0` aborta o `npm start`), então isso deixa
+de ser barulho no log e vira **nenhuma instância subindo**.
+
+Guard: `IF EXISTS (SELECT 1 FROM information_schema.columns ...) THEN EXECUTE $sql$ ... $sql$; END IF;`
+— por existência, não por contagem, e com `EXECUTE` para não planejar o SQL no ramo morto.

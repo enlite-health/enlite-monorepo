@@ -301,13 +301,22 @@ describe('GetManagementDashboardUseCase — % de capacidade semanal (integration
  * Com o motivo recalculado, B === A: a pessoa completou o cadastro, não é mais
  * fila de trabalho. Lendo o snapshot, B === A + 1 — e o assert cai. Diferencial
  * porque o banco é compartilhado: total absoluto não serve.
+ *
+ * ⚠️ E o erro tinha DOIS sentidos, não um. Além das 169 contadas a mais, havia 17
+ * contadas a MENOS: gente cujo instantâneo dizia outra coisa (não tinha conta na
+ * hora da tentativa) e que hoje está incompleta — fila de trabalho real, invisível
+ * no card. Um guard só do primeiro sentido aprova uma leitura que nunca conta
+ * ninguém: `bloqueados = 0` passaria no teste das 169 e falharia a operação.
+ * Por isso são dois testes, um para cada direção.
  */
 describe('GetManagementDashboardUseCase — bloqueados conta o motivo de HOJE', () => {
   const W_JA_PRONTO = '99999999-0000-0000-0000-00000000dcba';
+  const W_VOLTOU_INCOMPLETO = '99999999-0000-0000-0000-00000000dcbb';
 
   afterAll(async () => {
-    await pool.query(`DELETE FROM worker_blocked_applications WHERE worker_id = $1`, [W_JA_PRONTO]);
-    await pool.query(`DELETE FROM workers WHERE id = $1`, [W_JA_PRONTO]);
+    const semeados = [W_JA_PRONTO, W_VOLTOU_INCOMPLETO];
+    await pool.query(`DELETE FROM worker_blocked_applications WHERE worker_id = ANY($1::uuid[])`, [semeados]);
+    await pool.query(`DELETE FROM workers WHERE id = ANY($1::uuid[])`, [semeados]);
   });
 
   it('NÃO conta quem já completou o cadastro, mesmo com o snapshot congelado', async () => {
@@ -334,5 +343,35 @@ describe('GetManagementDashboardUseCase — bloqueados conta o motivo de HOJE', 
     // Se este assert cair com `depois === antes + 1`, o dashboard voltou a ler o
     // snapshot congelado — é o defeito de 152 pessoas de volta.
     expect(depois).toBe(antes);
+  });
+
+  it('CONTA quem hoje está incompleto, mesmo com o snapshot dizendo outra coisa', async () => {
+    const useCase = new GetManagementDashboardUseCase(pool);
+
+    const antes = (await useCase.execute()).funnel.bloqueados;
+
+    // A pessoa tentou quando ainda não tinha conta → instantâneo 'worker_not_found'.
+    // Hoje ela TEM conta e está com o cadastro incompleto: é fila de trabalho, e
+    // alguém deveria ligar para ela. São as 17 que o card escondia.
+    await pool.query(
+      `INSERT INTO workers (id, auth_uid, email, status, country)
+       VALUES ($1::uuid, $2::text, 'voltou-incompleto@dashboard.test', 'INCOMPLETE_REGISTER', 'AR')
+       ON CONFLICT (id) DO NOTHING`,
+      [W_VOLTOU_INCOMPLETO, `uid-${W_VOLTOU_INCOMPLETO}`],
+    );
+    await pool.query(
+      `INSERT INTO worker_blocked_applications
+         (worker_id, job_posting_id, blocked_reason_at_attempt, missing_fields_at_attempt)
+       VALUES ($1, $2, 'worker_not_found', '[]')
+       ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
+      [W_VOLTOU_INCOMPLETO, SEARCHING_JOB_ID],
+    );
+
+    const depois = (await useCase.execute()).funnel.bloqueados;
+
+    // Lendo o snapshot, 'worker_not_found' <> 'registration_incomplete' e a pessoa
+    // não entra: `depois === antes`, e o assert cai. É o sentido que o outro teste
+    // não vê — e sem ele uma leitura que conta ZERO passaria no conjunto.
+    expect(depois).toBe(antes + 1);
   });
 });

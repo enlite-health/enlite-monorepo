@@ -29,17 +29,17 @@
 -- ORDEM OBRIGATÓRIA:
 --   1. esta migration (aditiva — a revisão velha continua funcionando)
 --   2. deploy do código que escreve SÓ as colunas novas
---   3. migration 333 (backfill da janela + DROP das antigas + do índice morto)
+--   3. `migrations/pending/CONTRACT_drop_blocked_attempt_old_columns.sql` (backfill da janela + DROP das antigas + do índice morto)
 --
 -- Entre 1 e 2 as duas colunas coexistem; entre 2 e 3 a coluna velha só recebe
--- escrita de revisão velha que ainda não saiu. A 333 fecha isso.
+-- escrita de revisão velha que ainda não saiu. A CONTRACT fecha isso.
 
 BEGIN;
 
 -- Nomes que dizem a verdade: o valor é do momento da TENTATIVA, não de agora.
 -- ⚠️ A coluna nova herda TUDO que a antiga tinha, não só o tipo. A varredura de
 -- dependências (08/09) achou duas coisas que um `ADD COLUMN` ingênuo perderia em
--- silêncio no DROP da 333:
+-- silêncio no DROP da CONTRACT:
 --   · `worker_blocked_applications_reason_check` — CHECK dos 3 motivos do gate
 --   · `DEFAULT '[]'::jsonb` em missing_fields
 -- Perder um CHECK não quebra nada na hora: só deixa entrar valor inválido depois,
@@ -47,10 +47,10 @@ BEGIN;
 ALTER TABLE worker_blocked_applications
   ADD COLUMN IF NOT EXISTS blocked_reason_at_attempt VARCHAR(64),
   ADD COLUMN IF NOT EXISTS missing_fields_at_attempt JSONB;
--- ⚠️ O DEFAULT '[]' da coluna antiga NÃO entra aqui — entra só na 333, depois que a
+-- ⚠️ O DEFAULT '[]' da coluna antiga NÃO entra aqui — entra só na CONTRACT, depois que a
 -- janela fecha. Motivo medido: com DEFAULT, a linha que a revisão VELHA grava nesta
 -- janela nasce com `'[]'` em vez de NULL, e o `COALESCE(nova, antiga)` do backfill
--- da 333 devolve `'[]'` — apagando os campos faltantes reais, dentro do COMMIT e
+-- da CONTRACT devolve `'[]'` — apagando os campos faltantes reais, dentro do COMMIT e
 -- sem erro. Provado: ["first_name","phone","worker_documents"] virava [].
 -- Foi o commit que "herdou tudo" que criou esse caminho. Herdar sem pensar em
 -- QUANDO é a mesma classe de descuido que esta frente inteira está consertando.
@@ -68,9 +68,14 @@ ALTER TABLE worker_blocked_applications
 -- Backfill do histórico inteiro. Sem WHERE: são ~1.700 linhas, e deixar linha
 -- antiga com o campo novo nulo criaria um terceiro estado ("não sei se foi
 -- migrada") — que é a ambiguidade que já apagou dado nesta casa antes.
+-- ⚠️ COALESCE por COLUNA, não `SET` das duas. A versão anterior gravava as DUAS
+-- sempre que QUALQUER uma estivesse nula — então re-rodar a migration sobre uma
+-- linha meio-preenchida APAGAVA a metade que já estava certa, calada e com exit 0.
+-- É a classe "vazio ambíguo apaga dado" (D167), e o runner re-roda migration não
+-- registrada em todo boot.
 UPDATE worker_blocked_applications
-   SET blocked_reason_at_attempt = blocked_reason,
-       missing_fields_at_attempt = missing_fields
+   SET blocked_reason_at_attempt = COALESCE(blocked_reason_at_attempt, blocked_reason),
+       missing_fields_at_attempt = COALESCE(missing_fields_at_attempt, missing_fields)
  WHERE blocked_reason_at_attempt IS NULL
     OR missing_fields_at_attempt IS NULL;
 
@@ -81,16 +86,25 @@ UPDATE worker_blocked_applications
 -- com NOT NULL e sem DEFAULT, TODO INSERT de tentativa bloqueada morre com
 -- `null value in column "blocked_reason" violates not-null constraint`.
 --
--- Ou seja: sem isto, a janela entre esta migration e a 333 derruba exatamente o
+-- Ou seja: sem isto, a janela entre esta migration e a CONTRACT derruba exatamente o
 -- caminho de quem está tentando se candidatar — o dano que este desenho existe
 -- para evitar, só que vindo da outra direção (código novo × schema intermediário).
 -- Medido: a suíte de banco ficou vermelha por isso antes deste bloco existir.
 --
--- Afrouxar é seguro: a revisão VELHA continua preenchendo as duas, e a 333 dropa
+-- Afrouxar é seguro: a revisão VELHA continua preenchendo as duas, e a CONTRACT dropa
 -- as colunas logo depois.
 ALTER TABLE worker_blocked_applications
   ALTER COLUMN blocked_reason DROP NOT NULL,
-  ALTER COLUMN missing_fields DROP NOT NULL;
+  ALTER COLUMN missing_fields DROP NOT NULL,
+  -- ⚠️ E o DEFAULT '[]' da coluna ANTIGA sai junto — não é enfeite.
+  -- Com ele de pé, a linha que a revisão NOVA insere na janela não nasce com
+  -- `missing_fields` NULL: nasce com `'[]'`. O NULL é a única marca de "esta
+  -- coluna não foi escrita nesta janela"; um DEFAULT a apaga e faz a linha
+  -- parecer preenchida-e-divergente. Medido: com o DEFAULT, a checagem de
+  -- ambiguidade da CONTRACT abortava numa linha perfeitamente normal.
+  -- Ninguém depende dele: o único INSERT do código (BlockedApplicationRepository)
+  -- sempre passa missing_fields explicitamente.
+  ALTER COLUMN missing_fields DROP DEFAULT;
 
 COMMENT ON COLUMN worker_blocked_applications.blocked_reason_at_attempt IS
   'INSTANTÂNEO: motivo no momento da tentativa. NÃO é o estado atual — para o '
