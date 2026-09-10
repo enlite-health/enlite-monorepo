@@ -628,3 +628,35 @@ tem).
 tenho as credenciais de admin desta sessão, e não vou tentar obtê-las ou contornar o guard. Fica para
 o Gabriel rodar localmente com `.env.local`, ou para o próximo disparo do Cloud Run Job agendado —
 que, pelo `monitor-completeness.spec.ts`, já pega o arquivo sozinho.
+
+## 10/09/2026 (mesmo dia, depois) — a spec nova FALHOU na 1ª execução em prod. Dois defeitos meus.
+
+**Defeito 1 — asserção sobre semântica inventada.** Eu assertava
+`initBody.data.status === 'INCOMPLETE_REGISTER'` logo depois do `POST /api/workers/init`.
+Mas `data.status` é o status da **OPERAÇÃO** (`'ok'` | `'claim_pending'`,
+`WorkerControllerV2.initWorker:115`), não o status de cadastro do worker. A Fatia 3 declara
+o MESMO tipo errado — só que nunca asserta sobre ele, então o erro dormia lá.
+Conserto: a precondição passou a ser lida de `GET /api/admin/workers/:id`, a mesma fonte que
+o passo 6 já usava.
+
+**Defeito 2, mais caro — resíduo em produção.** A asserção morta ficava ENTRE criar o worker
+(`init`) e marcá-lo `is_test`. O worker já existe em prod a partir do `init`; enquanto
+`is_test` for false ele está **fora da rede** do `test-fixtures/cleanup` E do sweeper (os dois
+acham por `is_test = true`). Resultado: 2 workers órfãos em produção, invisíveis para toda a
+limpeza automática. Limpei pela própria API do app (test-flag → cleanup → `workers: 2`
+deletados, 0 restantes) em vez de SQL cru, porque o `CleanupTestFixturesUseCase` conhece a
+ordem correta entre as tabelas filhas.
+Conserto estrutural: **nenhuma asserção entre criar e marcar**, com o porquê escrito no
+arquivo para o próximo não repetir.
+
+**Por que EU não peguei isso antes?** Minha prova local (`prova-regressao.mjs`) semeava o
+cenário direto no Postgres por SQL e chamava só o endpoint de leitura. Ela provou a
+ASSERÇÃO CENTRAL (motivo ao vivo × congelado — e provou bem: verde com o conserto, vermelho
+com ele revertido), mas **não exercitou o caminho de SETUP** — `signUpWorker`, `init`,
+`test-flag`. Cobri a pergunta e deixei o andaime sem régua. Lição:
+*prova de asserção ≠ prova de fluxo; um cenário semeado por SQL não valida os contratos das
+rotas que o teste real usa para chegar lá.*
+
+**Nota de custo:** a 1ª execução do Job com a imagem nova rodou a suíte inteira em prod
+(~30 min) só para descobrir isso. Rodar `--project=regression --grep` contra prod ANTES de
+apontar o Job teria custado minutos.
