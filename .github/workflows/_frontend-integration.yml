@@ -100,6 +100,11 @@ jobs:
         working-directory: enlite-frontend
         env:
           VITE_API_WORKER_FUNCTIONS_URL: http://localhost:8080
+          # Sem isto a home cai em `/api/jobs`, que dispara RASPAGEM REAL de
+          # https://jobs.enlite.health/es/ a partir do runner — a mesma classe de
+          # dependência de terceiro pela qual `worker-address-keyboard` está fora
+          # deste portão. Com `true`, as vagas vêm da API local do próprio stack.
+          VITE_USE_PUBLIC_JOBS_API: 'true'
           VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
           # Config do Firebase FALSA de propósito, e nenhum segredo é preciso: o
           # helper de auth desta suíte intercepta `identitytoolkit.googleapis.com`

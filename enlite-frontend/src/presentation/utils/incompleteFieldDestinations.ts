@@ -56,12 +56,34 @@ const FIELD_DESTINATION_MAP: Record<string, FieldDestination> = {
   // Disponibilidade — aba availability, sem focus específico
   worker_availability: { tab: 'availability' },
 
+  /**
+   * Token GROSSO de documentos, como `fn_worker_missing_fields` o devolve.
+   *
+   * O 403 da postulação expande `worker_documents` nos `doc_*` específicos
+   * (`BlockedApplicationRepository.expandDocumentToken`), mas o `GET /progress`
+   * entrega o token cru. Os dois vocabulários existem; ambos têm de cair na
+   * MESMA aba, senão o token não mapeado cairia no fallback 'general' e
+   * marcaria a etapa 1 como pendente sem motivo.
+   */
+  worker_documents: { tab: 'documents' },
+
   // Documentos — focus = docType sem prefixo "doc_"
   doc_resume_cv: { tab: 'documents', focus: 'resume_cv' },
   doc_identity_document: { tab: 'documents', focus: 'identity_document' },
   doc_criminal_record: { tab: 'documents', focus: 'criminal_record' },
   doc_at_certificate: { tab: 'documents', focus: 'at_certificate' },
 };
+
+/**
+ * Tokens que este mapa conhece — a lista de campos do portão de REGISTERED,
+ * do ponto de vista do frontend.
+ *
+ * NÃO é uma segunda definição de completude: é a tradução token→aba. Quem
+ * decide o que falta é `fn_worker_missing_fields` no banco, e o teste de
+ * contrato (`workerProgressValidation.contract.test.ts`) reprova se o backend
+ * passar a devolver um token que não esteja aqui.
+ */
+export const KNOWN_TOKENS: string[] = Object.keys(FIELD_DESTINATION_MAP);
 
 /** Fallback seguro para tokens desconhecidos */
 const FALLBACK_DESTINATION: FieldDestination = { tab: 'general' };

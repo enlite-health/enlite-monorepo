@@ -104,7 +104,10 @@ jobs:
       # terceiro cria justamente o portão intermitente que o time desliga.
       # A cobertura dele não se perde: roda local e no `e2e-prod`, onde o Google
       # real É o ponto e uma falha vira alerta, não bloqueio de merge.
-      grep: 'worker-profile-fields-persist'
+      # `worker-completude-vitrine` entra aqui porque é a ÚNICA guarda que
+      # atravessa as camadas do conserto da D302 (banco → API → tela). Guarda
+      # que nenhum pipeline executa apodrece — foi o blocker B-A do gate.
+      grep: 'worker-profile-fields-persist|worker-completude-vitrine'
 
   # O agregador. `if: always()` é o que garante que ele reporta mesmo quando
   # tudo acima foi pulado — sem isso, voltaríamos ao problema que este arquivo

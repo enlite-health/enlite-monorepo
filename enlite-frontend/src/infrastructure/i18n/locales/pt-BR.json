@@ -592,6 +592,7 @@
     "title": "Meu Perfil",
     "save": "Salvar",
     "saveSuccess": "Informações salvas com sucesso",
+    "saveUnconfirmed": "Salvo, mas não conseguimos confirmar. Confira os dados.",
     "completionCard": {
       "title": "Complete seu Perfil Profissional"
     },

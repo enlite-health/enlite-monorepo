@@ -82,6 +82,32 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
+        // Completude do cadastro do prestador (D302) — o SSOT do que a tela
+        // mostra como pendente, e o alvo exato do incidente. Os quatro medem
+        // 100% hoje; sem esta entrada o número cai no próximo PR em silêncio,
+        // que é a régua morta que este arquivo existe para impedir.
+        '**/src/presentation/stores/{workerRegistrationHydration,workerRegistrationStore}.ts': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        '**/src/presentation/utils/incompleteFieldDestinations.ts': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        // `branches` em 95,24: o ramo `totalFields === 0` é INALCANÇÁVEL por
+        // construção, e o teste de contrato prova isso ("toda aba tem pelo
+        // menos um token"). Piso nos outros três eixos, e branches no medido —
+        // fingir 100% aqui exigiria um caso artificial.
+        '**/src/presentation/utils/workerProgressValidation.ts': {
+          statements: 100,
+          branches: 95,
+          functions: 100,
+          lines: 100,
+        },
         '**/src/infrastructure/http/{AdminFunnelStageMessagesApiService,AdminMapApiService,AdminPresentationInviteApiService}.ts': {
           statements: 100,
           branches: 100,
