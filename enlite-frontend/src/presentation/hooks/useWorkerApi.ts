@@ -49,7 +49,9 @@ export function useWorkerApi() {
   );
 
   const saveGeneralInfo = useCallback(
-    async (data: Record<string, any>): Promise<void> => {
+    // Devolve o estado gravado (escrita confirmada) — quem chama sincroniza o
+    // store com ISSO, nunca com o payload que mandou.
+    async (data: Record<string, any>): Promise<WorkerProgressResponse> => {
       if (!userId) throw new Error('User must be authenticated');
       return WorkerApiService.saveGeneralInfo(data);
     },

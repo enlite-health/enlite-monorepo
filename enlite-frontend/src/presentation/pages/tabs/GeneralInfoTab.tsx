@@ -20,7 +20,6 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
 
   const data = useWorkerRegistrationStore((state) => state.data);
   const isFieldReadonly = useWorkerRegistrationStore((state) => state.isFieldReadonly);
-  const updateGeneralInfo = useWorkerRegistrationStore((state) => state.updateGeneralInfo);
   const hydrateFromServer = useWorkerRegistrationStore((state) => state.hydrateFromServer);
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(data.generalInfo.profilePhoto || null);
   const showToast = useToast();
@@ -151,24 +150,56 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
       const values = getValues();
       // Só envia `phone` quando o campo foi editado de fato. Ver buildSavePayload.
       const phoneDirty = Boolean(dirtyFields.phone);
-      await saveGeneralInfo(buildSavePayload(values, phoneDirty));
-      // Mantém o store (fonte única) em sincronia com o que foi salvo, para que
-      // trocar de aba e voltar mostre o valor atual — sem re-fetch e sem o
-      // reset que zerava os campos.
-      updateGeneralInfo({
-        ...values,
-        birthDate: values.birthDate ? parseDateToISO(values.birthDate) : '',
-      });
-      // Rebaselina o dirty-tracking: o que acabou de ser salvo deixa de estar
-      // "sujo", então o próximo autosave só reenvia `phone` se ele mudar OUTRA
-      // vez. `keepValues: true` NÃO altera nenhum valor do form — só atualiza o
-      // baseline interno de dirty (diferente do antigo `reset({...''})` que
-      // zerava os campos). Sem isso, um telefone editado uma vez seguiria
-      // "dirty" e seria reenviado a cada blur subsequente.
-      form.reset(values, { keepValues: true });
-      // Modal de vínculo aberta → suprime o toast de sucesso (não abafar o fluxo).
+      const saved = await saveGeneralInfo(buildSavePayload(values, phoneDirty));
+
+      // O 200 desta rota tem DOIS ramos (contrato: `WorkerGeneralInfoOk200`).
+      // O degradado — `{ message, missingFields: null }` — significa "gravei,
+      // mas não consegui reler": vem SEM nenhum campo de perfil.
+      //
+      // 🔒 Entregar esse objeto ao hidratador autoritativo APAGA o cadastro:
+      // campo ausente vira vazio, o store (persistido em localStorage) fica
+      // zerado e, ao remontar a aba, o autosave grava o cadastro VAZIO no banco
+      // — com toast verde. Medido pelo gate em 08/09/2026, e é pior que o bug
+      // que este arquivo conserta. Autoritativo só sobre um PERFIL de verdade.
+      const confirmado = typeof (saved as { id?: unknown }).id === 'string';
+
+      if (confirmado) {
+        // Sincroniza o store com o que o SERVIDOR gravou — nunca com o payload
+        // que acabamos de mandar. Era essa a origem do defeito de 08/09/2026: o
+        // cliente afirmava o próprio envio, o telefone que o backend não
+        // persistiu seguia na tela (e no localStorage), e a prestadora via o
+        // número dela enquanto o sistema recusava a postulação por falta dele.
+        hydrateFromServer(saved, { authoritative: true });
+        // Rebaselina o dirty com o que o SERVIDOR gravou, não com o que mandamos.
+        // `keepValues: true` NÃO altera valor nenhum — só move o baseline de
+        // "sujo". Se o backend NÃO persistiu o telefone, o baseline fica vazio,
+        // o campo continua sujo e o próximo autosave o reenvia. Era o laço que
+        // travou 129 cadastros.
+        form.reset({ ...values, phone: saved.phone ?? '' }, { keepValues: true });
+
+        // ⚠️ `reset` LIMPA o dirty-tracking, qualquer que seja o baseline que se
+        // passe — descobrir isso custou um teste que reprovou o próprio
+        // conserto. Então, se mandamos um telefone e o servidor NÃO o devolveu,
+        // ele não foi persistido: remarcamos o campo como sujo à mão, para o
+        // próximo autosave reenviá-lo. Sem isto o número nunca mais é mandado,
+        // que é exatamente o laço que travou 129 cadastros.
+        if (values.phone && !saved.phone) {
+          form.setValue('phone', values.phone, { shouldDirty: true });
+        }
+      }
+      // Escrita NÃO confirmada: não mexe no store nem no baseline. O que está na
+      // tela continua sendo o que a pessoa digitou, e segue "sujo" para ser
+      // reenviado — nunca afirmamos um estado que o servidor não confirmou.
+
+      // Modal de vínculo aberta → suprime o toast (não abafar o fluxo).
       if (!phoneConflictOpenRef.current) {
-        showToast(t('profile.saveSuccess', 'Información guardada con éxito'), 'success', 'profile-save');
+        showToast(
+          confirmado
+            ? t('profile.saveSuccess', 'Información guardada con éxito')
+            : t('profile.saveUnconfirmed', 'Guardado, pero no pudimos confirmar. Revisá los datos.'),
+          confirmado ? 'success' : 'error',
+          'profile-save',
+        );
       }
     },
     500,

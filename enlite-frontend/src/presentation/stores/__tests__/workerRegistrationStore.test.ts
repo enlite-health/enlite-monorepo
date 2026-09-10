@@ -285,8 +285,11 @@ describe('workerRegistrationStore', () => {
     it('should hydrate from server data at step 2', () => {
       const { hydrateFromServer } = useWorkerRegistrationStore.getState();
 
-      // All step1 fields present, no step2 fields → derives service-address (step 1)
+      // Etapa 1 completa, etapa 2 pendente → deriva service-address (step 1).
+      // Quem diz o que falta é o BACKEND (`missingFields`), não a contagem de
+      // campos desta fixture — os campos ficam só para hidratar a tela.
       const serverData: WorkerProgressResponse = {
+        missingFields: ['worker_service_areas', 'worker_availability', 'worker_documents'],
         id: 'worker-123',
         authUid: 'auth-123',
         email: 'worker@example.com',
@@ -324,8 +327,10 @@ describe('workerRegistrationStore', () => {
     it('should hydrate from server data at step 3', () => {
       const { hydrateFromServer } = useWorkerRegistrationStore.getState();
 
-      // All step1 + step2 fields present → derives availability (step 2)
+      // Etapas 1 e 2 completas, disponibilidade pendente → deriva availability
+      // (step 2). O veredito vem do backend, não da contagem de campos.
       const serverData: WorkerProgressResponse = {
+        missingFields: ['worker_availability', 'worker_documents'],
         id: 'worker-123',
         authUid: 'auth-123',
         email: 'worker@example.com',

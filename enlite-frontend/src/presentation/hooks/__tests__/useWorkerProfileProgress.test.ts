@@ -42,6 +42,15 @@ function makeWorker(overrides: Partial<WorkerProgressResponse> = {}): WorkerProg
     serviceRadiusKm: 10,
     // Campos de step3 completos
     availability: { monday: { start: '09:00', end: '17:00' } },
+    // Veredito do BACKEND: nada falta. É ele que define completude desde
+    // 08/09/2026 — os campos acima só hidratam a tela.
+    //
+    // Reparo que esta fixture NUNCA teve `phone` nem `titleCertificate`, e
+    // mesmo assim era considerada "step1 completo" pela lista que o frontend
+    // mantinha. Eram exatamente os dois campos que o portão exige e a lista
+    // ignorava — o defeito que travou 23 prestadoras estava dentro da própria
+    // fixture, verde.
+    missingFields: [],
     ...overrides,
   };
 }
