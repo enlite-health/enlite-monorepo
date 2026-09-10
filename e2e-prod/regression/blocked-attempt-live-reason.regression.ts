@@ -61,6 +61,12 @@ const WORKER_EMAIL = `gabriel+e2e-worker-liveblock-${Date.now()}@gmail.com`;
 
 interface WorkerInitBody {
   success: boolean;
+  // ⚠️ `data.status` é o status da OPERAÇÃO ('ok' | 'claim_pending'), NÃO o status de
+  // cadastro do worker (WorkerControllerV2.initWorker:115). Errar isso custou uma
+  // execução em produção: eu assertava 'INCOMPLETE_REGISTER' aqui e o teste morria
+  // logo depois do init — antes de marcar is_test, deixando worker órfão que o
+  // sweeper (que acha por is_test=true) não pegava. A precondição real é lida do
+  // admin, abaixo.
   data: { status: string; worker: { id: string } };
 }
 interface WorkerDetailBody {
@@ -137,16 +143,28 @@ test.describe('Tentativa bloqueada — o motivo é AO VIVO, nunca o instantâneo
     const initBody = (await initRes.json()) as WorkerInitBody;
     workerId = initBody.data.worker.id;
     expect(workerId, 'init retorna o id do worker criado').toBeTruthy();
-    expect(initBody.data.status, 'worker nasce INCOMPLETE_REGISTER (precondição do bloqueio)').toBe(
-      'INCOMPLETE_REGISTER',
-    );
 
-    // ── PASSO 2: ADMIN marca is_test=true ANTES de qualquer outro write ──
+    // ── PASSO 2: ADMIN marca is_test=true — PRIMEIRA COISA depois do init ──
+    // 🔒 NENHUMA asserção entre criar o worker e marcá-lo. O worker já existe em prod
+    // a partir do init; enquanto `is_test` for false ele está FORA da rede do
+    // `test-fixtures/cleanup` e do sweeper (os dois acham por is_test=true), então
+    // qualquer falha nessa janela vira resíduo permanente — gente falsa no funil que
+    // alguém teria de caçar à mão. Medido: uma asserção minha aqui deixou 2 órfãos em
+    // produção em 10/09. Asserção sobre o estado do worker vem DEPOIS da marca.
     adminCtx = await newAdminApiContext();
     const flagRes = await adminCtx.patch(`/api/admin/workers/${workerId}/test-flag`, {
       data: { isTest: true },
     });
     expect(flagRes.status(), 'PATCH test-flag deve responder 200').toBe(200);
+
+    // Agora sim a precondição, lida da fonte certa (o mesmo endpoint que o passo 6 usa).
+    const preRes = await adminCtx.get(`/api/admin/workers/${workerId}`);
+    expect(preRes.status(), 'GET /api/admin/workers/:id deve responder 200').toBe(200);
+    const preBody = (await preRes.json()) as WorkerDetailBody;
+    expect(preBody.data.status, 'precondição do bloqueio: worker ainda NÃO é REGISTERED').not.toBe(
+      'REGISTERED',
+    );
+    expect(preBody.data.isTest, 'worker está marcado is_test — dentro da rede do cleanup').toBe(true);
 
     // ── PASSO 3: ADMIN obtém um paciente real e cria a vaga is_test (draft, feed-safe) ──
     const patientsRes = await adminCtx.get('/api/admin/patients');
