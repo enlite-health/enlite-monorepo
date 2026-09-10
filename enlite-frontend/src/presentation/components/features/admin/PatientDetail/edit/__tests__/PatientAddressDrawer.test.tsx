@@ -232,15 +232,35 @@ describe('PatientAddressDrawer — criar', () => {
     fireEvent.click(screen.getByTestId('pad-save'));
     await waitFor(() => expect(createPatientAddress).toHaveBeenCalled());
 
-    // A asserção é sobre TUDO que atravessou a fronteira, não sobre a chamada que eu
-    // lembrei de conferir (molde da D170).
-    const atravessou = JSON.stringify([
+    const colher = (): string => JSON.stringify([
       ...Object.values(espioes).flatMap((e) => e.mock.calls),
       ...clarity.mock.calls,
     ]);
+
+    // 1) A asserção real, sobre TUDO que o DRAWER produziu — não sobre a chamada que eu
+    //    lembrei de conferir (molde da D170).
+    const atravessou = colher();
     expect(atravessou).not.toContain('Corrientes');
     expect(atravessou).not.toContain('Portero');
     expect(atravessou).not.toContain('ChIJ-place-id-do-google');
+
+    // 2) ⚠️ CONTROLE POSITIVO, DEPOIS de medir — e ele existe porque o conjunto acima é
+    //    VAZIO. Sem esta parte, `"[]".not.toContain(...)` passaria com os espiões desligados,
+    //    com o nome errado no `spyOn` ou com o `JSON.stringify` mudando de forma: o zero
+    //    significaria "não olhei" em vez de "não foi". Aqui planto um vazamento e exijo que o
+    //    instrumento o veja, nas DUAS metades.
+    console.warn('vazamento plantado:', 'Av. Corrientes 1234');
+    clarity('set', 'endereco', 'Portero de 8 a 12');
+    const comVazamentoPlantado = colher();
+    expect(comVazamentoPlantado, 'o espião de console enxerga um vazamento').toContain('Corrientes');
+    expect(comVazamentoPlantado, 'o espião do Clarity enxerga um vazamento').toContain('Portero');
+
+    // ⚖️ Honestidade sobre o alcance: HOJE nenhum caminho do drawer chama `window.clarity` —
+    //    o único uso em todo o `src/` é `identify`/`set` em `analytics/clarity.ts`, por
+    //    `authStore`/`WorkerHome`. A metade "clarity" desta asserção não mede um risco vivo;
+    //    ela é guarda de REGRESSÃO, para o dia em que alguém instrumentar esta tela. O risco
+    //    vivo do Clarity nesta feature é outro e mora no DOM: a lista de sugestões do Google,
+    //    coberta em `useGooglePlacesAutocomplete.test.tsx`.
   });
 
   it('Enter SEM escolher não grava, não preenche e NÃO gasta chamada ao Places', async () => {
