@@ -98,6 +98,22 @@ interface UseGooglePlacesAutocompleteOptions {
    */
   onPlaceApplied: (place: google.maps.places.PlaceResult) => void;
   /**
+   * Ao receber Enter SEM escolha, resolver a 1ª predição do Google e aplicá-la.
+   *
+   * ⚠️ Isto é um CHUTE, e a tela precisa poder recusá-lo. Medido no Chrome contra o Google
+   * real em 10/09/2026, digitando "Av. Corrientes 1234" e variando só o gesto:
+   *   • ArrowDown + Enter → place COMPLETO (`formatted_address`, `geometry`, …)
+   *   • clique na sugestão → place COMPLETO
+   *   • Enter SEM seta     → place com a chave `name` e MAIS NADA
+   * O toco não é "o teclado confirmando", como o código supunha desde 31/08: é a assinatura
+   * de "ninguém escolheu". Aplicar `predictions[0]` aí grava um endereço que o operador nunca
+   * viu — no cadastro do prestador é um resgate de UX aceitável (ele digita a PRÓPRIA casa e
+   * enxerga o resultado); no domicílio de um PACIENTE, sob promessa de escolha obrigatória,
+   * é fabricação silenciosa. Por isso o default preserva o comportamento antigo e quem exige
+   * escolha de verdade desliga.
+   */
+  guessFirstPredictionOnEnter?: boolean;
+  /**
    * `false` não carrega script nem cria widget. Serve à tela que renderiza o
    * campo condicionalmente (drawer em modo leitura): sem isto, ela baixaria o
    * Maps e mostraria "erro ao carregar" num campo que nem está na tela.
@@ -114,6 +130,7 @@ export function useGooglePlacesAutocomplete({
   inputRef,
   onPlaceApplied,
   enabled = true,
+  guessFirstPredictionOnEnter = true,
 }: UseGooglePlacesAutocompleteOptions): UseGooglePlacesAutocompleteResult {
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
@@ -271,6 +288,10 @@ export function useGooglePlacesAutocomplete({
             applyPlace(place);
             return;
           }
+          // Sem `formatted_address` = ninguém escolheu (ver `guessFirstPredictionOnEnter`).
+          // Quem exige escolha de verdade não passa por aqui: fica sem endereço aplicado, que
+          // é a verdade, e o Salvar explica o que falta.
+          if (!guessFirstPredictionOnEnter) return;
           resolveFirstPrediction(place?.name ?? inputRef.current?.value ?? '');
         });
 
@@ -321,7 +342,7 @@ export function useGooglePlacesAutocomplete({
     // novo por tecla, e com ele a conta do Places. O teste
     // `GooglePlacesAutocomplete.test.tsx` trava isso: com o callback de volta aqui, ele
     // conta 20 instâncias para 19 teclas e fica vermelho.
-  }, [inputRef, enabled]);
+  }, [inputRef, enabled, guessFirstPredictionOnEnter]);
 
   return { apiError };
 }
