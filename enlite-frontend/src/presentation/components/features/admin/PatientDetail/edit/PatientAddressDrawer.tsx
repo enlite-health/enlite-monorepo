@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
@@ -13,6 +13,7 @@ import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon'
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import { ServiceAreaMap } from '@presentation/components/molecules/ServiceAreaMap';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
+import { useGooglePlacesAutocomplete } from '@presentation/hooks/useGooglePlacesAutocomplete';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
 
 interface Props {
@@ -29,11 +30,24 @@ const ADDRESS_TYPES = ['primary', 'secondary', 'service'] as const;
 export const ACCESS_NOTES_MAX = 2000;
 
 /**
- * Domicílio na ficha (spec 012, US-B2). Criar reusa o MESMO `POST /patients/:id/addresses` do
- * wizard de vaga (`AdminApiService.createPatientAddress`) e o mesmo mapa (`ServiceAreaMap`, que
- * geocodifica no cliente enquanto se digita); editar troca só zona (`neighborhood`), corredor e
- * acesso por `PATCH /patients/:id/addresses/:addressId`. A nota de acesso é texto livre sobre a
- * casa de um paciente: `data-clarity-mask` no wrapper; o erro nunca ecoa o que foi digitado (lex C2.3).
+ * Domicílio na ficha (spec 012, US-B2). Criar reusa o MESMO `POST /patients/:id/addresses`
+ * do wizard de vaga (`AdminApiService.createPatientAddress`); editar troca só zona
+ * (`neighborhood`), corredor e acesso por `PATCH /patients/:id/addresses/:addressId`. A nota
+ * de acesso é texto livre sobre a casa de um paciente: `data-clarity-mask` no wrapper; o erro
+ * nunca ecoa o que foi digitado (lex C2.3).
+ *
+ * ── Autocomplete de endereço (PEND-06 da ata de 09/09/2026) ────────────────────────────────
+ * O endereço NASCE de uma escolha na lista do Google, nunca de texto digitado à mão —
+ * decisão do Gabriel em 10/09, contra a recomendação do `lex` (condição C4, que pedia texto
+ * livre por minimização) e pelo ramo que a própria C4 abre: justificativa escrita. A razão é
+ * erro de digitação — endereço torto vira vaga publicada no lugar errado e prestador enviado
+ * à porta errada. ⚠️ O preço, conhecido e aceito: domicílio que o Google não conhece (zona
+ * rural, rua sem numeração) não entra por esta tela.
+ *
+ * ⚠️ O mapa NÃO geocodifica mais o que se digita (lex C3). Antes, `ServiceAreaMap` recebia o
+ * texto do campo e chamava o Geocoder a CADA tecla, sem debounce — 19 letras, 19 chamadas
+ * (D289). Agora a coordenada vem no Place Details da escolha (`fields: geometry`), e enquanto
+ * não houver escolha o mapa fica no placeholder. Menos ida ao Google, não mais.
  */
 export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: Props): JSX.Element {
   const { t } = useTranslation();
@@ -50,7 +64,49 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
   const [neighborhood, setNeighborhood] = useState(address?.neighborhood ?? '');
   const [corridor, setCorridor] = useState(address?.logisticsCorridor ?? '');
   const [access, setAccess] = useState(address?.accessNotes ?? '');
-  const [addressMissing, setAddressMissing] = useState(false);
+  /** `required` = campo vazio; `notPicked` = digitado sem escolher da lista do Google. */
+  const [addressMissing, setAddressMissing] = useState<'required' | 'notPicked' | null>(null);
+  /**
+   * DUAS perguntas diferentes, e de propósito em dois estados:
+   *  • `pickedFromList` — a operadora escolheu uma linha da lista do Google? É isto, e só
+   *    isto, que autoriza gravar.
+   *  • `coords` — a escolha trouxe coordenada? Nem todo place do Google traz `geometry`.
+   * Juntar as duas num campo só faria "escolheu, mas sem coordenada" ser lido como "não
+   * escolheu", e um endereço legítimo ficaria barrado sem motivo visível — o modo de falha
+   * da D302. Sem coordenada o mapa fica no placeholder e o servidor geocodifica no insert,
+   * que é o que ele já faz hoje.
+   */
+  const [pickedFromList, setPickedFromList] = useState(false);
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const addressInputRef = useRef<HTMLInputElement>(null);
+
+  // Arrow inline de propósito: o hook lê a versão mais recente por ref. `enabled` desliga o
+  // widget no modo edição, onde o campo nem é renderizado — sem isto o drawer baixaria o
+  // script do Maps para nada e ainda acenderia "erro ao carregar" num campo ausente.
+  const { apiError: autocompleteError } = useGooglePlacesAutocomplete({
+    inputRef: addressInputRef,
+    enabled: !editing,
+    // ⚠️ Aqui o chute é PROIBIDO. Enter sem escolher devolve um place só com `name`, e
+    // resolver a 1ª predição gravaria um domicílio que a operadora nunca viu — de cara
+    // validado. Medido contra o Google real em 10/09; sem isto a escolha obrigatória é
+    // decorativa para quem usa teclado.
+    guessFirstPredictionOnEnter: false,
+    onPlaceApplied: (place) => {
+      setFormatted(place.formatted_address as string);
+      setAddressMissing(null);
+      setPickedFromList(true);
+      const loc = place.geometry?.location;
+      setCoords(loc ? { lat: loc.lat(), lng: loc.lng() } : null);
+    },
+  });
+
+  // Digitar de novo desfaz a escolha: o texto deixa de corresponder à coordenada, e gravar
+  // um endereço com a coordenada de OUTRO manda o prestador para a porta errada.
+  const handleAddressTyped = (typed: string): void => {
+    setFormatted(typed);
+    setPickedFromList(false);
+    setCoords(null);
+  };
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setShow(true));
@@ -103,8 +159,14 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
     }
 
     const f = formatted.trim();
-    if (!f) { setAddressMissing(true); return; }
-    setAddressMissing(false);
+    if (!f) { setAddressMissing('required'); return; }
+    // Escolha da lista é obrigatória (ver o bloco de autocomplete no topo). Texto digitado
+    // que não veio de uma escolha NÃO grava: é o erro de digitação que esta tela existe
+    // para não deixar passar.
+    if (!pickedFromList) { setAddressMissing('notPicked'); return; }
+    setAddressMissing(null);
+    // ⚠️ lex C5: `place_id` NÃO entra aqui. Ele é identificador estável do Google para a
+    // residência do paciente; persistir cria categoria de dado que hoje não existe no banco.
     const payload: PatientAddressCreateInput = { address_formatted: f, address_type: type };
     if (nz(raw)) payload.address_raw = nz(raw) as string;
     if (nz(neighborhood)) payload.neighborhood = nz(neighborhood) as string;
@@ -158,9 +220,38 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
             </div>
           ) : (
             <>
-              <FormField label={ta('address')} htmlFor="pad-address" required error={addressMissing ? ta('addressRequired') : undefined}>
-                <InputWithIcon id="pad-address" inputSize="compact" value={formatted} onChange={(e) => setFormatted(e.target.value)} aria-invalid={addressMissing ? 'true' : 'false'} data-testid="pad-address" />
+              <FormField
+                label={ta('address')}
+                htmlFor="pad-address"
+                required
+                hint={ta('addressPickHint')}
+                hintBelow
+                error={addressMissing ? ta(addressMissing === 'required' ? 'addressRequired' : 'addressNotPicked') : undefined}
+              >
+                {/* O texto digitado é o domicílio de um paciente: o Clarity não grava (lex C1).
+                    A LISTA de sugestões é mascarada no próprio nó pelo hook — ela é pendurada
+                    no <body>, fora deste wrapper. */}
+                <div data-clarity-mask="True">
+                  <InputWithIcon
+                    ref={addressInputRef}
+                    id="pad-address"
+                    inputSize="compact"
+                    value={formatted}
+                    onChange={(e) => handleAddressTyped(e.target.value)}
+                    aria-invalid={addressMissing ? 'true' : 'false'}
+                    data-testid="pad-address"
+                  />
+                </div>
               </FormField>
+              {/* Sem o Google no ar não existe escolha, e sem escolha não se grava endereço
+                  nenhum. Calar aqui deixaria a operadora presa num "escolha da lista" que ela
+                  não tem como cumprir — o beco sem saída silencioso. Ela precisa saber que o
+                  problema não é ela, e a quem recorrer. */}
+              {autocompleteError && (
+                <Text size="sm" className="text-amber-700" data-testid="pad-autocomplete-down">
+                  {ta('addressAutocompleteDown')}
+                </Text>
+              )}
               <FormField label={ta('addressRaw')} htmlFor="pad-raw" optional>
                 <InputWithIcon id="pad-raw" inputSize="compact" value={raw} onChange={(e) => setRaw(e.target.value)} data-testid="pad-raw" />
               </FormField>
@@ -170,9 +261,16 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
             </>
           )}
 
-          {/* O mapa: coordenadas do servidor quando editando; geocodificação no cliente enquanto se digita. */}
+          {/* O mapa: editando, coordenada do servidor (e, só para linha legada sem coordenada,
+              uma geocodificação única do endereço já gravado). Criando, SÓ a coordenada que veio
+              junto com a escolha na lista — nada do que se digita vai ao Google (lex C3). */}
           <div className="h-56 rounded-xl overflow-hidden border border-slate-200" data-clarity-mask="True" data-testid="pad-map">
-            <ServiceAreaMap lat={address?.lat ?? null} lng={address?.lng ?? null} address={editing ? (address.addressFormatted ?? address.addressRaw) : formatted} className="h-full" />
+            <ServiceAreaMap
+              lat={editing ? address.lat ?? null : coords?.lat ?? null}
+              lng={editing ? address.lng ?? null : coords?.lng ?? null}
+              address={editing ? address.addressFormatted ?? address.addressRaw : null}
+              className="h-full"
+            />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100">

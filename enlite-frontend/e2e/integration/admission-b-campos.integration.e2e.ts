@@ -19,6 +19,16 @@ import {
   readDeviceTypes, readRelationship, readBirthAndServiceStart, findPatientIdByFirstName, countVacancies,
   cleanupPatientDeep, runSQL,
 } from '../helpers/patient-detail-b-helper';
+// ⚠️ O autocomplete do e2e é FAKE, e isso é requisito, não atalho: a PEND-06 da ata de
+// 09/09/2026 manda reimplementar o campo "sem os testes automatizados que disparavam custo".
+// Teste que bate no Places de verdade paga SKU por corrida do CI — foi o que levou o
+// autocomplete a ser desligado da primeira vez.
+//
+// O fake usado aqui reproduz os GESTOS medidos contra o Google real em 10/09 (digitar não
+// dispara nada; Enter sem seta devolve um toco só com `name`; seta+Enter e clique devolvem o
+// place completo). O `google-maps-fake.ts` genérico NÃO serve a estes casos: ele dispara ao
+// DIGITAR, o que faria "digitar sem escolher não grava" passar por acidente.
+import { instalarFakeDeGestos, contarChamadasAoGoogle, CABA_CORRIENTES } from '../helpers/google-places-fake-gestos';
 
 // `E2E_FIREBASE_EMULATOR` aponta para o emulador de um stack isolado (`docker compose -p`); default inalterado.
 const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
@@ -138,6 +148,7 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
   });
 
   test('B2 — criar domicílio na ficha (drawer com mapa + logística) e ativar sem sair dela', async ({ page }, testInfo) => {
+    await instalarFakeDeGestos(page);
     await loginAsRealStaff(page);
     await openDetail(page, admission.patientId);
     await page.getByTestId('patient-profile-tabs').getByRole('button', { name: /Servicio Contratado/i }).click(); // spec 014: escopado — checklist de completude pode render chip com o mesmo texto
@@ -147,7 +158,19 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     const drawer = page.getByTestId('patient-address-drawer');
     await expect(drawer).toBeVisible();
     await expect(page.getByTestId('pad-map')).toBeVisible();
-    await page.getByTestId('pad-address').fill('Av. Corrientes 1234, CABA, Argentina');
+
+    // Gesto humano: o widget do Google escuta DIGITAÇÃO, não `value=`. `fill()` provaria
+    // que o estado do React aceita uma string — não que a operadora consegue usar a tela.
+    const campoEndereco = page.getByTestId('pad-address');
+    await campoEndereco.click();
+    await campoEndereco.pressSequentially('Av. Corrientes 1234', { delay: 60 });
+    // Digitar não escolhe nada — a lista abre e só. É preciso o gesto de escolher.
+    await expect(campoEndereco).toHaveValue('Av. Corrientes 1234');
+    await campoEndereco.press('ArrowDown');
+    await campoEndereco.press('Enter');
+    // Escolhido: o campo passa a mostrar o endereço FORMATADO do Google, não o digitado.
+    await expect(campoEndereco).toHaveValue(CABA_CORRIENTES.formatted_address, { timeout: 10_000 });
+
     await page.getByTestId('pad-type').selectOption('primary');
     await page.getByTestId('pad-neighborhood').fill('San Nicolás');
     await page.getByTestId('pad-corridor').fill('Corredor Norte');
@@ -179,6 +202,76 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     const st = readPatientStatus(admission.patientId);
     expect(st).toMatchObject({ status: 'ACTIVE', admissionStatus: 'DONE' });
     expect(countVacancies(admission.patientId)).toBe(1);
+  });
+
+  // ── Caminhos alternativos do domicílio (escolha obrigatória, decisão de 10/09) ──────────
+  // Os dois são recusas REAIS de gravação, medidas no banco — não "botão desabilitado".
+
+  test('B2-alt1 — texto digitado à mão, sem escolher da lista, NÃO grava endereço', async ({ page }, testInfo) => {
+    await instalarFakeDeGestos(page);
+    await loginAsRealStaff(page);
+    const alvo = seedAdmissionPatient();
+    try {
+      await openDetail(page, alvo.patientId);
+      await page.getByTestId('patient-profile-tabs').getByRole('button', { name: /Servicio Contratado/i }).click();
+      await page.getByTestId('new-address-btn').click();
+      await expect(page.getByTestId('patient-address-drawer')).toBeVisible();
+
+      // O gesto que de fato fura o portão: digitar o endereço INTEIRO e apertar Enter sem
+      // descer na lista. Medido contra o Google real em 10/09 — dispara `place_changed` com
+      // um place que só tem `name`. Antes do conserto, a tela resolvia a 1ª predição e
+      // gravava um domicílio que ninguém viu, marcado como escolhido.
+      const campo = page.getByTestId('pad-address');
+      await campo.click();
+      await campo.pressSequentially('Av. Corrientes 1234', { delay: 60 });
+      await campo.press('Enter');
+      await page.waitForTimeout(500);
+      await page.getByTestId('pad-save').click();
+
+      await expect(page.getByTestId('patient-address-drawer')).toBeVisible();
+      await expect(page.getByTestId('patient-address-drawer')).toContainText(/lista de sugerencias|lista de sugestões/i);
+
+      // A prova não é a mensagem na tela: é a ausência da linha no banco.
+      const rows = readAddresses(alvo.patientId);
+      const google = await contarChamadasAoGoogle(page);
+      testInfo.annotations.push({ type: 'evidência', description: `B2-alt1 — patient_addresses: ${JSON.stringify(rows)} · chamadas ao Google: ${JSON.stringify(google)}` });
+      expect(rows).toHaveLength(0);
+      // Não é só "não gravou": a tela nem PERGUNTOU ao Google qual endereço seria. Adivinhar
+      // aqui é fabricar domicílio de paciente.
+      expect(google.predictions, 'nenhuma predição pedida no Enter sem escolha').toBe(0);
+      expect(google.details, 'nenhum Place Details pedido no Enter sem escolha').toBe(0);
+    } finally {
+      cleanupPatientDeep(alvo.patientId);
+    }
+  });
+
+  test('B2-alt2 — buscador do Google fora do ar: a tela AVISA e segue sem gravar', async ({ page }, testInfo) => {
+    // A queda é encenada bloqueando o host do Google — nenhuma chamada real sai daqui.
+    // Com escolha obrigatória, buscador morto significa que nenhum domicílio entra por esta
+    // tela; o que não pode acontecer é a operadora não saber disso.
+    await page.route('https://maps.googleapis.com/**', (r) => r.abort());
+    await loginAsRealStaff(page);
+    const alvo = seedAdmissionPatient();
+    try {
+      await openDetail(page, alvo.patientId);
+      await page.getByTestId('patient-profile-tabs').getByRole('button', { name: /Servicio Contratado/i }).click();
+      await page.getByTestId('new-address-btn').click();
+      await expect(page.getByTestId('patient-address-drawer')).toBeVisible();
+
+      await expect(page.getByTestId('pad-autocomplete-down')).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByTestId('patient-address-drawer')).toHaveScreenshot('bloco-b-drawer-buscador-caido.png', { maxDiffPixelRatio: 0.08 });
+
+      const campo = page.getByTestId('pad-address');
+      await campo.click();
+      await campo.pressSequentially('Av. Corrientes 1234', { delay: 40 });
+      await page.getByTestId('pad-save').click();
+
+      const rows = readAddresses(alvo.patientId);
+      testInfo.annotations.push({ type: 'evidência', description: `B2-alt2 — patient_addresses com o buscador caído: ${JSON.stringify(rows)}` });
+      expect(rows).toHaveLength(0);
+    } finally {
+      cleanupPatientDeep(alvo.patientId);
+    }
   });
 
   test('B3 — duas coberturas verificadas por código do catálogo', async ({ page }, testInfo) => {
