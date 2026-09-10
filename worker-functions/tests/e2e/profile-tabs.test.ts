@@ -100,12 +100,74 @@ describe('Profile Tabs — Endpoints por aba', () => {
       privacyAccepted: true,
     };
 
-    it('deve retornar 200 e success: true', async () => {
+    it('deve retornar 200 e o cadastro RELIDO do banco (escrita confirmada)', async () => {
+      // Contrato mudou em 08/09/2026 (D302). Antes: `{ message: 'General info
+      // saved' }` — o cliente tinha de ACREDITAR. Agora a rota devolve o estado
+      // como o banco ficou, porque foi o eco do próprio envio que manteve na
+      // tela um telefone que o banco nunca gravou (129 cadastros travados).
       const res = await api.put('/api/workers/me/general-info', payload, authHeaders());
 
       expect(res.status).toBe(200);
       expect(res.data.success).toBe(true);
-      expect(res.data.data.message).toBe('General info saved');
+      expect(res.data.data.id).toBe(workerId);
+      expect(res.data.data).not.toHaveProperty('message');
+    });
+
+    it('devolve missingFields do BANCO, e o tipo chega como array de string', async () => {
+      // Este é o ponto que unit nenhum prova: `fn_worker_missing_fields` devolve
+      // JSONB, e o outro leitor do repo (BlockedApplicationRepository) faz
+      // `::text` + JSON.parse justamente por isso. Aqui o driver `pg` real
+      // responde — se ele entregasse string, o frontend receberia lixo.
+      const res = await api.put('/api/workers/me/general-info', payload, authHeaders());
+
+      const missing = res.data.data.missingFields;
+      expect(Array.isArray(missing)).toBe(true);
+      missing.forEach((t: unknown) => expect(typeof t).toBe('string'));
+    });
+
+    it('a rota serve a função do banco sem intermediar — jsonb chega íntegro', async () => {
+      // ⚠️ O nome importa: isto prova o ENCANAMENTO (a rota não filtra, não
+      // reordena, não perde token, e o jsonb do Postgres chega como array), NÃO
+      // que a tela e o portão da postulação falem o mesmo vocabulário — o gate
+      // (rodada 4) mostrou que ainda não falam: o 403 expande `worker_documents`
+      // nos 4 `doc_*` e esta rota devolve o token cru. Essa igualdade é item de
+      // fila, e chamar este teste de "vitrine == portão" seria promessa falsa.
+      const res = await api.put('/api/workers/me/general-info', payload, authHeaders());
+      const gate = await db.query('SELECT fn_worker_missing_fields($1) AS missing', [workerId]);
+
+      expect(new Set(res.data.data.missingFields)).toEqual(new Set(gate.rows[0].missing));
+    });
+
+    it('campo do portão que falta aparece, e some quando a prestadora preenche', async () => {
+      // Worker PRÓPRIO, criado limpo: os testes acima já gravaram
+      // `titleCertificate` no worker do describe, e `title_certificate` é
+      // COALESCE no banco — uma vez gravado não dá para "desgravar". Depender
+      // da ordem dos testes vizinhos seria fixture frágil.
+      const uid = `profile-tabs-missing-${Date.now()}`;
+      const init = await api.post('/api/workers/init', {
+        authUid: uid, email: `${uid}@example.com`, country: 'AR',
+      });
+      const novoId = init.data.data.worker.id;
+      const tk = await api.post('/api/test/auth/token', { uid, email: `${uid}@example.com`, role: 'worker' });
+      const headers = { headers: { Authorization: `Bearer ${tk.data.data.token}`, 'x-auth-uid': uid } };
+
+      try {
+        // Telefone PRÓPRIO: o `payload` do describe carrega o número do worker
+        // dele, e `resolvePhoneToPersist` recusa número que já pertence a outro
+        // (409 PHONE_NOT_AVAILABLE) — o axios estouraria antes da 1ª asserção.
+        const semTitulo = { ...payload, phone: `+54911${String(Date.now()).slice(-8)}` };
+        delete (semTitulo as Record<string, unknown>).titleCertificate;
+
+        const antes = await api.put('/api/workers/me/general-info', semTitulo, headers);
+        expect(antes.data.data.missingFields).toContain('title_certificate');
+
+        await api.put('/api/workers/me/general-info', { ...semTitulo, titleCertificate: 'MP-4321' }, headers);
+
+        const depois = await api.get('/api/workers/me', headers);
+        expect(depois.data.data.missingFields).not.toContain('title_certificate');
+      } finally {
+        await db.query('DELETE FROM workers WHERE id = $1', [novoId]);
+      }
     });
 
     it('deve ter salvo profissão e anos de experiência', async () => {

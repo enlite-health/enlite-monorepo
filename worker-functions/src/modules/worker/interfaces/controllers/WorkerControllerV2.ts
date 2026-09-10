@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Pool } from 'pg';
 import { InitWorkerUseCase } from '../../application/InitWorkerUseCase';
 import { SaveQuizResponsesUseCase } from '../../application/SaveQuizResponsesUseCase';
 import { SavePersonalInfoUseCase } from '../../application/SavePersonalInfoUseCase';
@@ -9,19 +10,17 @@ import { GetWorkerProgressUseCase } from '../../application/GetWorkerProgressUse
 import { LookupWorkerByEmailUseCase } from '../../application/LookupWorkerByEmailUseCase';
 import { reactivateOnActivity } from '../../application/ReactivateArchivedWorkerUseCase';
 import { WorkerRepository } from '../../infrastructure/WorkerRepository';
+import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { QuizResponseRepository } from '../../infrastructure/QuizResponseRepository';
 import { ServiceAreaRepository } from '../../infrastructure/ServiceAreaRepository';
 import { AvailabilityRepository } from '../../infrastructure/AvailabilityRepository';
 import { TwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifyService';
-import { WORKER_ERROR_CODES } from '../../domain/workerErrors';
+import {
+  sendPersonalInfoFailure,
+  withMissingFields,
+  readFreshProgress,
+} from './WorkerControllerV2Helpers';
 import { PubSubClient } from '@shared/events/PubSubClient';
-
-/**
- * Mensagem amigável (pt-BR fallback do backend) para PHONE_NOT_AVAILABLE.
- * Por privacidade NÃO revela que o número pertence a outra conta. O frontend
- * localiza a partir do `code`; esta string é a rede de segurança caso não o faça.
- */
-const PHONE_NOT_AVAILABLE_MESSAGE = 'El teléfono ingresado no puede ser utilizado.';
 
 export class WorkerControllerV2 {
   private initWorkerUseCase: InitWorkerUseCase;
@@ -179,7 +178,7 @@ export class WorkerControllerV2 {
       if (result.isFailure) {
         // step 2 (info pessoal) pode retornar PHONE_NOT_AVAILABLE — mapeia para
         // 409 + code; demais erros caem no 400 genérico.
-        this.sendPersonalInfoFailure(res, result.error);
+        sendPersonalInfoFailure(res, result.error);
         return;
       }
 
@@ -224,7 +223,7 @@ export class WorkerControllerV2 {
       if (restored) worker.status = restored;
       res.status(200).json({
         success: true,
-        data: worker,
+        data: await withMissingFields(this.pool(), worker),
       });
     } catch (error: any) {
       res.status(500).json({
@@ -234,27 +233,25 @@ export class WorkerControllerV2 {
     }
   }
 
-  private async resolveWorkerIdFromAuth(authUid: string): Promise<string | null> {
-    const result = await this.getProgressUseCase.execute(authUid);
-    if (result.isFailure || !result.getValue()) return null;
-    return result.getValue()!.id;
+  private pool(): Pool {
+    return DatabaseConnection.getInstance().getPool();
+  }
+
+  /** Relê pelo MESMO caminho do `GET /me`. `null` = não deu. */
+  private async rereadWorker(authUid: string): Promise<{ id: string } | null> {
+    const fresh = await this.getProgressUseCase.execute(authUid);
+    return fresh.isFailure ? null : (fresh.getValue() ?? null);
   }
 
   /**
-   * Traduz a falha de salvamento de info pessoal para a resposta HTTP.
-   * Códigos de domínio conhecidos (ex.: PHONE_NOT_AVAILABLE) viram status +
-   * `code` + mensagem amigável; qualquer outro erro mantém o 400 genérico.
+   * Passa por `findByAuthUid` DE PROPÓSITO: ele segue a corrente de
+   * `merged_into_id` (WorkerAuthRepository.ts:68-76); SELECT direto por
+   * `auth_uid` devolveria o CASCO absorvido e a escrita iria para o registro
+   * morto. Custo (9 KMS por blur) é dívida medida, na fila da frente.
    */
-  private sendPersonalInfoFailure(res: Response, error: string | undefined): void {
-    if (error === WORKER_ERROR_CODES.PHONE_NOT_AVAILABLE) {
-      res.status(409).json({
-        success: false,
-        code: WORKER_ERROR_CODES.PHONE_NOT_AVAILABLE,
-        error: PHONE_NOT_AVAILABLE_MESSAGE,
-      });
-      return;
-    }
-    res.status(400).json({ success: false, error });
+  private async resolveWorkerIdFromAuth(authUid: string): Promise<string | null> {
+    const worker = await this.rereadWorker(authUid);
+    return worker?.id ?? null;
   }
 
   async saveGeneralInfo(req: Request, res: Response): Promise<void> {
@@ -274,11 +271,13 @@ export class WorkerControllerV2 {
       const result = await this.savePersonalInfoUseCase.execute({ workerId, ...req.body });
 
       if (result.isFailure) {
-        this.sendPersonalInfoFailure(res, result.error);
+        sendPersonalInfoFailure(res, result.error);
         return;
       }
 
-      res.status(200).json({ success: true, data: { message: 'General info saved' } });
+      // ESCRITA CONFIRMADA (D302) — ver WorkerControllerV2Helpers.
+      const data = await readFreshProgress(this.pool(), () => this.rereadWorker(authUid), authUid);
+      res.status(200).json({ success: true, data });
     } catch (error: any) {
       console.error('SaveGeneralInfo error:', error);
       res.status(500).json({ success: false, error: error.message || 'Internal server error' });
