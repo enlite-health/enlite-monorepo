@@ -52,6 +52,42 @@ function maskPacContainers(): void {
     .forEach((el) => el.setAttribute(CLARITY_MASK_ATTR, 'True'));
 }
 
+/**
+ * ⚠️ A recusa da chave NÃO passa pelo caminho de erro do carregamento.
+ *
+ * Medido em navegador real em 10/09/2026: com a chave recusada, o `<script>` do Maps carrega
+ * com **200** e a `AuthenticationService.Authenticate` também — o erro só aparece depois, e a
+ * ÚNICA notificação programática que a API dá é chamar `window.gm_authFailure`. Sem escutar
+ * esse global, `apiError` fica `null` para sempre e a tela jura que está tudo bem.
+ *
+ * E o estrago é maior do que "sem sugestões": o widget **desabilita o `<input>`** e troca o
+ * placeholder por *"Se ha producido un error."*. Como o domicílio do paciente só pode nascer de
+ * uma escolha na lista, o operador fica sem nenhuma saída — e, sem este aviso, sem nenhuma pista
+ * de por quê. Os gatilhos reais: quota estourada, faturamento suspenso, restrição de referrer
+ * alterada, origem nova não cadastrada.
+ *
+ * O global é UM só para a página inteira, então quem instala é o módulo, e cada campo montado
+ * se inscreve. A flag persiste: um campo montado DEPOIS da falha também precisa saber.
+ */
+const AUTH_FAILURE_MESSAGE = 'O buscador de endereços do Google recusou esta aplicação.';
+type Ouvinte = () => void;
+const ouvintesDeFalhaDeChave = new Set<Ouvinte>();
+let chaveJaRecusada = false;
+
+interface JanelaComGoogleAuth extends Window {
+  gm_authFailure?: () => void;
+}
+
+function instalarEscutaDeFalhaDeChave(): void {
+  const w = window as JanelaComGoogleAuth;
+  // Não sequestra um handler que não é nosso: se alguém já registrou o seu, respeitamos.
+  if (w.gm_authFailure) return;
+  w.gm_authFailure = (): void => {
+    chaveJaRecusada = true;
+    ouvintesDeFalhaDeChave.forEach((o) => o());
+  };
+}
+
 interface UseGooglePlacesAutocompleteOptions {
   /** O `<input>` a ligar. Precisa ser um ref ESTÁVEL (`useRef`), não recriado por render. */
   inputRef: RefObject<HTMLInputElement>;
@@ -108,6 +144,11 @@ export function useGooglePlacesAutocomplete({
 
   useEffect(() => {
     if (!enabled) return;
+
+    instalarEscutaDeFalhaDeChave();
+    if (chaveJaRecusada) setApiError(AUTH_FAILURE_MESSAGE);
+    const aoRecusarChave = (): void => setApiError(AUTH_FAILURE_MESSAGE);
+    ouvintesDeFalhaDeChave.add(aoRecusarChave);
 
     // O <input> é capturado AGORA: no unmount o React já zerou `inputRef.current`
     // antes de rodar este cleanup, e a limpeza dos listeners do campo era pulada
@@ -233,7 +274,8 @@ export function useGooglePlacesAutocomplete({
           resolveFirstPrediction(place?.name ?? inputRef.current?.value ?? '');
         });
 
-        setApiError(null);
+        // Não apaga um aviso de chave recusada: o widget foi criado, mas está morto.
+        if (!chaveJaRecusada) setApiError(null);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         console.error('Error initializing Google Places Autocomplete:', error);
@@ -253,6 +295,7 @@ export function useGooglePlacesAutocomplete({
     initAutocomplete();
 
     return () => {
+      ouvintesDeFalhaDeChave.delete(aoRecusarChave);
       observer.disconnect();
       // Guarda de existência ANTES de tocar em `google`: quando o script do Maps não
       // carregou (sem chave, rede fora, bloqueador), o global não existe e o cleanup
