@@ -86,6 +86,11 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
   const { apiError: autocompleteError } = useGooglePlacesAutocomplete({
     inputRef: addressInputRef,
     enabled: !editing,
+    // ⚠️ Aqui o chute é PROIBIDO. Enter sem escolher devolve um place só com `name`, e
+    // resolver a 1ª predição gravaria um domicílio que a operadora nunca viu — de cara
+    // validado. Medido contra o Google real em 10/09; sem isto a escolha obrigatória é
+    // decorativa para quem usa teclado.
+    guessFirstPredictionOnEnter: false,
     onPlaceApplied: (place) => {
       setFormatted(place.formatted_address as string);
       setAddressMissing(null);

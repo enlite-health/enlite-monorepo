@@ -13,7 +13,7 @@
  *  • C5 — `place_id` não entra no payload.
  *  • C6 — nada do que se digita atravessa para `console.*` nem para o Clarity.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 
@@ -55,6 +55,9 @@ const existing = {
 let placeChanged: Array<() => void>;
 let placeDevolvido: Partial<google.maps.places.PlaceResult> | undefined;
 let widgetsCriados: number;
+/** Toda ida ao Places que sairia do drawer — o chute do Enter passaria por aqui. */
+let getPlacePredictions: Mock;
+let getDetails: Mock;
 
 const ESCOLHIDO: Partial<google.maps.places.PlaceResult> = {
   formatted_address: 'Av. Corrientes 1234, C1043 CABA, Argentina',
@@ -68,9 +71,18 @@ function stubGoogle(): void {
     addListener(evento: string, cb: () => void): void { if (evento === 'place_changed') placeChanged.push(cb); }
     getPlace(): Partial<google.maps.places.PlaceResult> | undefined { return placeDevolvido; }
   }
+  getPlacePredictions = vi.fn((_req, cb: (p: unknown, s: string) => void) =>
+    cb([{ place_id: 'chutado' }], 'OK'));
+  getDetails = vi.fn((_req, cb: (d: unknown, s: string) => void) =>
+    cb({ formatted_address: 'ENDEREÇO CHUTADO PELO GOOGLE', geometry: { location: { lat: () => 1, lng: () => 2 } } }, 'OK'));
   vi.stubGlobal('google', {
     maps: {
-      places: { Autocomplete: AutocompleteFake, PlacesServiceStatus: { OK: 'OK' } },
+      places: {
+        Autocomplete: AutocompleteFake,
+        PlacesServiceStatus: { OK: 'OK' },
+        AutocompleteService: class { getPlacePredictions = getPlacePredictions; },
+        PlacesService: class { getDetails = getDetails; },
+      },
       event: { clearInstanceListeners: vi.fn() },
     },
   });
@@ -229,6 +241,29 @@ describe('PatientAddressDrawer — criar', () => {
     expect(atravessou).not.toContain('Corrientes');
     expect(atravessou).not.toContain('Portero');
     expect(atravessou).not.toContain('ChIJ-place-id-do-google');
+  });
+
+  it('Enter SEM escolher não grava, não preenche e NÃO gasta chamada ao Places', async () => {
+    // Medido no Chrome contra o Google real (10/09): Enter sem seta dispara `place_changed`
+    // com um place que só tem `name`. Antes deste conserto, o hook resolvia `predictions[0]`
+    // e o drawer marcava como ESCOLHIDO — gravando um domicílio que ninguém viu, com cara de
+    // validado. A escolha obrigatória era decorativa para quem usa teclado.
+    render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={vi.fn()} />);
+    await assentar();
+
+    fireEvent.change(screen.getByTestId('pad-address'), { target: { value: 'Av. Corrientes 1234' } });
+    await escolherDaLista({ name: 'Av. Corrientes 1234' }); // o toco do Enter sem seta
+
+    expect(screen.getByTestId('pad-address')).toHaveValue('Av. Corrientes 1234');
+    expect(screen.getByTestId('pad-address')).not.toHaveValue('ENDEREÇO CHUTADO PELO GOOGLE');
+    // Não é só "não gravou": nem sequer PERGUNTOU ao Google. Menos ida ao Places, e nenhum
+    // endereço fabricado. Asserção na fronteira, no molde da D170.
+    expect(getPlacePredictions).not.toHaveBeenCalled();
+    expect(getDetails).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('pad-save'));
+    await waitFor(() => expect(screen.getByText(t('admin.patients.detail.addressDrawer.addressNotPicked'))).toBeInTheDocument());
+    expect(createPatientAddress).not.toHaveBeenCalled();
   });
 
   it('Google fora do ar: a tela DIZ que o buscador caiu, em vez de exigir uma escolha impossível', async () => {
