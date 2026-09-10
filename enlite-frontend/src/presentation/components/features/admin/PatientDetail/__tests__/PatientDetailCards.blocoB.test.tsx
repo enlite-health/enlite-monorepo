@@ -4,7 +4,7 @@
  * as faixas etárias e a data de início do serviço.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import { patientDetailFixture, patientDetailMinimal } from './patientDetailFixture';
 
@@ -57,11 +57,36 @@ describe('CoberturaMedicaCard — drawer', () => {
 });
 
 describe('LocalizacoesCard — drawer', () => {
+  /**
+   * Desde 10/09 o endereço só nasce de uma ESCOLHA na lista do Google (PEND-06 + lex C4):
+   * digitar à mão não grava mais. Este stub encena o gesto da operadora — sem ele o teste
+   * ficava esperando um `onSaved` que, corretamente, não vem.
+   */
+  let placeChanged: Array<() => void> = [];
+  const escolhido = {
+    formatted_address: 'Rua Nova 1',
+    geometry: { location: { lat: () => -34.6, lng: () => -58.4 } },
+  };
+  function stubGooglePlaces(): void {
+    placeChanged = [];
+    class AutocompleteFake {
+      addListener(evento: string, cb: () => void): void { if (evento === 'place_changed') placeChanged.push(cb); }
+      getPlace(): typeof escolhido { return escolhido; }
+    }
+    vi.stubGlobal('google', {
+      maps: { places: { Autocomplete: AutocompleteFake, PlacesServiceStatus: { OK: 'OK' } }, event: { clearInstanceListeners: vi.fn() } },
+    });
+    vi.stubEnv('VITE_GOOGLE_MAPS_API_KEY', 'chave-de-teste');
+  }
+
   it('criar pelo drawer → onSaved; Escape → onClose (drawer some)', async () => {
+    stubGooglePlaces();
     const onSaved = vi.fn();
     render(<LocalizacoesCard addresses={[]} patientId="p1" onSaved={onSaved} />);
     fireEvent.click(screen.getByTestId('new-address-btn'));
-    fireEvent.change(screen.getByTestId('pad-address'), { target: { value: 'Rua Nova 1' } });
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+    await act(async () => { placeChanged.forEach((cb) => cb()); });
+    expect(screen.getByTestId('pad-address')).toHaveValue('Rua Nova 1');
     fireEvent.click(screen.getByTestId('pad-save'));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     await waitFor(() => expect(screen.queryByTestId('patient-address-drawer')).toBeNull(), { timeout: 1500 });
