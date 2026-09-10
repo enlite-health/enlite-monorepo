@@ -19,6 +19,11 @@ import {
   readDeviceTypes, readRelationship, readBirthAndServiceStart, findPatientIdByFirstName, countVacancies,
   cleanupPatientDeep, runSQL,
 } from '../helpers/patient-detail-b-helper';
+// ⚠️ O autocomplete do e2e é FAKE, e isso é requisito, não atalho: a PEND-06 da ata de
+// 09/09/2026 manda reimplementar o campo "sem os testes automatizados que disparavam custo".
+// Teste que bate no Places de verdade paga SKU por corrida do CI — foi o que levou o
+// autocomplete a ser desligado da primeira vez.
+import { installGoogleMapsFake } from '../helpers/google-maps-fake';
 
 // `E2E_FIREBASE_EMULATOR` aponta para o emulador de um stack isolado (`docker compose -p`); default inalterado.
 const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
@@ -138,6 +143,7 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
   });
 
   test('B2 — criar domicílio na ficha (drawer com mapa + logística) e ativar sem sair dela', async ({ page }, testInfo) => {
+    await installGoogleMapsFake(page);
     await loginAsRealStaff(page);
     await openDetail(page, admission.patientId);
     await page.getByTestId('patient-profile-tabs').getByRole('button', { name: /Servicio Contratado/i }).click(); // spec 014: escopado — checklist de completude pode render chip com o mesmo texto
@@ -147,7 +153,16 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     const drawer = page.getByTestId('patient-address-drawer');
     await expect(drawer).toBeVisible();
     await expect(page.getByTestId('pad-map')).toBeVisible();
-    await page.getByTestId('pad-address').fill('Av. Corrientes 1234, CABA, Argentina');
+
+    // Gesto humano: o widget do Google escuta DIGITAÇÃO, não `value=`. `fill()` provaria
+    // que o estado do React aceita uma string — não que a operadora consegue usar a tela.
+    const campoEndereco = page.getByTestId('pad-address');
+    await campoEndereco.click();
+    await campoEndereco.pressSequentially('Av. Corrientes 1234', { delay: 60 });
+    // A escolha na lista é o que autoriza gravar (lex C4): o campo passa a mostrar o
+    // endereço FORMATADO que voltou do Google, não o que foi digitado.
+    await expect(campoEndereco).toHaveValue('Av. Corrientes 1234, Buenos Aires', { timeout: 10_000 });
+
     await page.getByTestId('pad-type').selectOption('primary');
     await page.getByTestId('pad-neighborhood').fill('San Nicolás');
     await page.getByTestId('pad-corridor').fill('Corredor Norte');
@@ -179,6 +194,67 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     const st = readPatientStatus(admission.patientId);
     expect(st).toMatchObject({ status: 'ACTIVE', admissionStatus: 'DONE' });
     expect(countVacancies(admission.patientId)).toBe(1);
+  });
+
+  // ── Caminhos alternativos do domicílio (escolha obrigatória, decisão de 10/09) ──────────
+  // Os dois são recusas REAIS de gravação, medidas no banco — não "botão desabilitado".
+
+  test('B2-alt1 — texto digitado à mão, sem escolher da lista, NÃO grava endereço', async ({ page }, testInfo) => {
+    await installGoogleMapsFake(page);
+    await loginAsRealStaff(page);
+    const alvo = seedAdmissionPatient();
+    try {
+      await openDetail(page, alvo.patientId);
+      await page.getByTestId('patient-profile-tabs').getByRole('button', { name: /Servicio Contratado/i }).click();
+      await page.getByTestId('new-address-btn').click();
+      await expect(page.getByTestId('patient-address-drawer')).toBeVisible();
+
+      // Três letras: abaixo do gatilho do buscador, então nenhuma escolha acontece —
+      // é o operador que digitou e foi salvar direto.
+      const campo = page.getByTestId('pad-address');
+      await campo.click();
+      await campo.pressSequentially('Av.', { delay: 60 });
+      await page.getByTestId('pad-save').click();
+
+      await expect(page.getByTestId('patient-address-drawer')).toBeVisible();
+      await expect(page.getByTestId('patient-address-drawer')).toContainText(/lista de sugerencias|lista de sugestões/i);
+
+      // A prova não é a mensagem na tela: é a ausência da linha no banco.
+      const rows = readAddresses(alvo.patientId);
+      testInfo.annotations.push({ type: 'evidência', description: `B2-alt1 — patient_addresses após tentar salvar: ${JSON.stringify(rows)}` });
+      expect(rows).toHaveLength(0);
+    } finally {
+      cleanupPatientDeep(alvo.patientId);
+    }
+  });
+
+  test('B2-alt2 — buscador do Google fora do ar: a tela AVISA e segue sem gravar', async ({ page }, testInfo) => {
+    // A queda é encenada bloqueando o host do Google — nenhuma chamada real sai daqui.
+    // Com escolha obrigatória, buscador morto significa que nenhum domicílio entra por esta
+    // tela; o que não pode acontecer é a operadora não saber disso.
+    await page.route('https://maps.googleapis.com/**', (r) => r.abort());
+    await loginAsRealStaff(page);
+    const alvo = seedAdmissionPatient();
+    try {
+      await openDetail(page, alvo.patientId);
+      await page.getByTestId('patient-profile-tabs').getByRole('button', { name: /Servicio Contratado/i }).click();
+      await page.getByTestId('new-address-btn').click();
+      await expect(page.getByTestId('patient-address-drawer')).toBeVisible();
+
+      await expect(page.getByTestId('pad-autocomplete-down')).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByTestId('patient-address-drawer')).toHaveScreenshot('bloco-b-drawer-buscador-caido.png', { maxDiffPixelRatio: 0.08 });
+
+      const campo = page.getByTestId('pad-address');
+      await campo.click();
+      await campo.pressSequentially('Av. Corrientes 1234', { delay: 40 });
+      await page.getByTestId('pad-save').click();
+
+      const rows = readAddresses(alvo.patientId);
+      testInfo.annotations.push({ type: 'evidência', description: `B2-alt2 — patient_addresses com o buscador caído: ${JSON.stringify(rows)}` });
+      expect(rows).toHaveLength(0);
+    } finally {
+      cleanupPatientDeep(alvo.patientId);
+    }
   });
 
   test('B3 — duas coberturas verificadas por código do catálogo', async ({ page }, testInfo) => {

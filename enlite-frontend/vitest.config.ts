@@ -277,6 +277,17 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
+        // A ligação com o Google saiu do componente e virou hook em 10/09 (o painel monta
+        // formulário denso e não pode herdar o rótulo do componente). O piso veio JUNTO: é
+        // aqui que mora a disciplina do "um widget por campo" acima e a máscara do dropdown
+        // para o Clarity (lex C1) — sem a linha, a cobertura conquistada cairia calada no
+        // primeiro PR que passasse por perto.
+        '**/src/presentation/hooks/useGooglePlacesAutocomplete.ts': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
         // Navegação de admin: quem some daqui some da tela de alguém.
         '**/src/presentation/config/adminNavigation.tsx': {
           statements: 100,
