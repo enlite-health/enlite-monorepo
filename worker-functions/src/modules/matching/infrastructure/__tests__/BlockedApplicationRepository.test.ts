@@ -6,14 +6,14 @@
  * Cenários:
  * 1. Upsert (insertion) — reason=registration_incomplete: chama fn_worker_missing_fields + INSERT
  * 2. Upsert — reason=worker_not_found: também chama fn_worker_missing_fields
- * 3. Upsert — reason=worker_disabled: NÃO chama fn_worker_missing_fields, missing_fields=[]
+ * 3. Upsert — reason=worker_disabled: NÃO chama fn_worker_missing_fields, missing_fields_at_attempt=[]
  * 4. Falha no SELECT da função SQL — loga warn mas não re-lança
  * 5. Falha no INSERT — propaga erro
  * 6. missingFields = array retornado pela função SQL é serializado corretamente
  * 7. expandDocumentToken: AT faltando at_certificate → doc_at_certificate
  * 8. expandDocumentToken: CUIDADOR sem DNI → doc_identity_document (sem doc_at_certificate)
  * 9. expandDocumentToken: profession NULL → trata como AT (resume_cv + at_certificate obrigatórios)
- * 10. expandDocumentToken: worker_documents ausente dos missing_fields → sem expansão
+ * 10. expandDocumentToken: worker_documents ausente dos missing_fields_at_attempt → sem expansão
  * 11. title_certificate aparece em missingFields sem afetar doc expansion
  */
 
@@ -108,6 +108,13 @@ describe('BlockedApplicationRepository', () => {
     const insertCall = mockQuery.mock.calls[1];
     expect(insertCall[0]).toContain('INSERT INTO worker_blocked_applications');
     expect(insertCall[0]).toContain('ON CONFLICT (worker_id, job_posting_id)');
+    // 🔒 Os nomes com `_at_attempt` são o conserto da CAUSA (migration 332 + CONTRACT):
+    // a coluna guarda o INSTANTÂNEO da tentativa, e o nome antigo estava no
+    // presente — foi o que fez 135 de 1.271 cards exibirem motivo velho. Voltar ao
+    // nome antigo aqui quebra este assert antes de quebrar a tela de alguém.
+    expect(insertCall[0]).toContain('blocked_reason_at_attempt');
+    expect(insertCall[0]).toContain('missing_fields_at_attempt');
+    expect(insertCall[0]).not.toMatch(/[^_]blocked_reason[^_]/);
     expect(insertCall[1][2]).toBe('registration_incomplete');
     expect(insertCall[1][3]).toBe('["first_name","phone"]');
     expect(insertCall[1][4]).toBe('facebook');
@@ -131,7 +138,7 @@ describe('BlockedApplicationRepository', () => {
     expect(result).toEqual(['worker_not_found']);
   });
 
-  it('NÃO chama fn_worker_missing_fields para reason=worker_disabled — missing_fields=[]', async () => {
+  it('NÃO chama fn_worker_missing_fields para reason=worker_disabled — missing_fields_at_attempt=[]', async () => {
     mockQuery.mockResolvedValueOnce({ rowCount: 1 });
 
     const result = await repo.upsert({
@@ -144,12 +151,12 @@ describe('BlockedApplicationRepository', () => {
     expect(mockQuery).toHaveBeenCalledTimes(1);
     const insertCall = mockQuery.mock.calls[0];
     expect(insertCall[0]).toContain('INSERT INTO worker_blocked_applications');
-    // missing_fields deve ser array vazio serializado
+    // missing_fields_at_attempt deve ser array vazio serializado
     expect(insertCall[1][3]).toBe('[]');
     expect(result).toEqual([]);
   });
 
-  it('missing_fields = [] quando fn_worker_missing_fields retorna resultado inesperado', async () => {
+  it('missing_fields_at_attempt = [] quando fn_worker_missing_fields retorna resultado inesperado', async () => {
     // Retorna undefined (campo ausente)
     mockQuery.mockResolvedValueOnce({ rows: [{}] });
     mockQuery.mockResolvedValueOnce({ rowCount: 1 });
@@ -199,7 +206,7 @@ describe('BlockedApplicationRepository', () => {
     ).rejects.toThrow('DB connection lost');
   });
 
-  it('serializa array de missing_fields como JSON string no INSERT (inclui worker_documents cru)', async () => {
+  it('serializa array de missing_fields_at_attempt como JSON string no INSERT (inclui worker_documents cru)', async () => {
     const fields = ['first_name', 'worker_availability', 'worker_documents'];
     mockUpsertWithDocExpand(JSON.stringify(fields), {
       profession: 'AT',
@@ -322,7 +329,7 @@ describe('BlockedApplicationRepository', () => {
     expect(result).not.toContain('doc_criminal_record');
   });
 
-  it('worker_documents ausente dos missing_fields → sem query de expansão', async () => {
+  it('worker_documents ausente dos missing_fields_at_attempt → sem query de expansão', async () => {
     // worker_documents NÃO está em missingFields → expandDocumentToken não faz query
     mockUpsertNoExpand('["title_certificate","phone"]');
 

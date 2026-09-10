@@ -3,9 +3,23 @@
  *
  * Fonte única do estado AO VIVO de uma tentativa bloqueada.
  *
- * `worker_blocked_applications` é um snapshot: `blocked_reason` e `missing_fields`
- * são escritos no instante em que o gate barrou a postulação e NUNCA mais são
- * atualizados — só uma nova tentativa os reescreve. A pessoa, porém, muda depois:
+ * `worker_blocked_applications` é um snapshot: `blocked_reason_at_attempt` e
+ * `missing_fields_at_attempt` são escritos no instante em que o gate barrou a
+ * postulação e NUNCA mais são atualizados — só uma nova tentativa os reescreve.
+ * Os nomes carregam o `_at_attempt` de propósito (migration 332 + a CONTRACT em
+ * `migrations/pending/`): antes eles estavam no presente (`blocked_reason`), e todo
+ * mundo que escrevia consulta nova lia o nome, acreditava, e fazia
+ * `WHERE b.blocked_reason = '...'` — sintaxe certa, pergunta errada.
+ *
+ * ⚠️ **A coluna antiga AINDA EXISTE, e escrever contra ela é PIOR do que era.** Só a
+ * CONTRACT a derruba, e ela é passo MANUAL posterior ao deploy (ver
+ * `migrations/pending/README.md`). Até lá, `WHERE b.blocked_reason = '...'` compila e
+ * roda — só que as linhas que este código grava têm `blocked_reason` NULL, então a
+ * consulta não devolve resposta velha: devolve resposta que ESCONDE toda tentativa
+ * nova, sem erro nenhum. Se você veio parar aqui procurando o motivo de uma
+ * postulação, o que você quer é `liveBlockedReasonSql()`, nunca a coluna.
+ *
+ * A pessoa, porém, muda depois:
  * completa o cadastro, é reativada por atividade (`ReactivateArchivedWorkerUseCase`),
  * é destravada pelo staff. O card seguia exibindo o motivo de meses atrás.
  *

@@ -29,8 +29,8 @@ export interface JourneyVacancy {
 export interface BlockedAttemptRow {
   worker_id: string;
   job_posting_id: string;
-  blocked_reason: string;
-  missing_fields: string[];
+  blocked_reason_at_attempt: string;
+  missing_fields_at_attempt: string[];
   attempt_count: number;
 }
 
@@ -264,8 +264,8 @@ export async function getBlockedAttempt(
   vacancyId: string,
 ): Promise<BlockedAttemptRow | null> {
   const { rows } = await pool.query<BlockedAttemptRow>(
-    `SELECT worker_id, job_posting_id, blocked_reason,
-            missing_fields, attempt_count
+    `SELECT worker_id, job_posting_id, blocked_reason_at_attempt,
+            missing_fields_at_attempt, attempt_count
      FROM worker_blocked_applications
      WHERE worker_id = $1 AND job_posting_id = $2`,
     [workerId, vacancyId],

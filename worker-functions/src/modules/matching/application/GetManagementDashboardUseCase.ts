@@ -8,6 +8,10 @@ import {
 } from '../domain/interviewSchedule';
 import { LIVE_JOB_POSTING_SQL } from '../domain/openJobStatuses';
 import {
+  liveWorkerJoinSql,
+  liveBlockedReasonSql,
+} from '../infrastructure/blockedAttemptLiveState';
+import {
   excludeDisabledWorkersSql,
   workerNotDisabledSql,
 } from '@shared/database/activeWorkerFilter';
@@ -233,10 +237,19 @@ export class GetManagementDashboardUseCase {
           // Tentativas de candidatura barradas pelo gate de cadastro incompleto.
           // Conta PESSOAS distintas em VAGA VIVA: é fila de trabalho ("quem quis
           // trabalhar e não conseguiu"), não acervo. Sem o recorte eram 668; com ele, 355.
+          //
+          // 🔒 O motivo é o de HOJE, recalculado — não a coluna do instantâneo.
+          // Esta era a QUINTA leitura, a única que ficou de fora quando as outras
+          // quatro migraram (D300), e por isso o card divergia das demais telas.
+          // Medido em produção em 08/09, com estes mesmos predicados: contava 735
+          // onde a verdade era 583 — inflava 152 pessoas (26%). Errava nos dois
+          // sentidos: 169 que já haviam completado o cadastro continuavam contadas,
+          // e 17 que voltaram incompletas por outro motivo não entravam.
           `SELECT COUNT(DISTINCT b.worker_id)::int AS bloqueados
              FROM worker_blocked_applications b
              JOIN job_postings jp ON jp.id = b.job_posting_id
-            WHERE b.blocked_reason = 'registration_incomplete'
+             ${liveWorkerJoinSql('b')}
+            WHERE ${liveBlockedReasonSql()} = 'registration_incomplete'
               AND ${LIVE_JOB_POSTING_SQL}
               -- fila de trabalho: quem deu baixa não é mais destravável
               AND ${workerNotDisabledSql('b.worker_id')}`,

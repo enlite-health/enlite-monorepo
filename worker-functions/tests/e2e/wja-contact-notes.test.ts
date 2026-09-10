@@ -535,7 +535,7 @@ async function seedFixtures(pool: Pool): Promise<void> {
   );
   await pool.query(
     `INSERT INTO worker_blocked_applications
-       (worker_id, job_posting_id, blocked_reason, missing_fields, attempt_count, acquisition_channel)
+       (worker_id, job_posting_id, blocked_reason_at_attempt, missing_fields_at_attempt, attempt_count, acquisition_channel)
      VALUES ($1, $2, 'registration_incomplete', '["phone"]', 1, 'facebook')
      ON CONFLICT (worker_id, job_posting_id) DO NOTHING`,
     [IDS.blockedWorker, IDS.vacancy],

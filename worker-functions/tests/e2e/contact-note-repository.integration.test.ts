@@ -117,7 +117,7 @@ describe('ContactNoteRepository (banco real — migration 235)', () => {
   it('insert() grava worker_job_application_id NULL quando só existe worker_blocked_applications (card ainda BLOQUEADO)', async () => {
     const workerId = await makeWorker('insert-blocked-only');
     await pool.query(
-      `INSERT INTO worker_blocked_applications (worker_id, job_posting_id, blocked_reason, missing_fields, attempt_count)
+      `INSERT INTO worker_blocked_applications (worker_id, job_posting_id, blocked_reason_at_attempt, missing_fields_at_attempt, attempt_count)
        VALUES ($1, $2, 'registration_incomplete', '["phone"]', 1)`,
       [workerId, VACANCY_ID],
     );
@@ -139,7 +139,7 @@ describe('ContactNoteRepository (banco real — migration 235)', () => {
   it('nota sobrevive à promoção: criada sem WJA, permanece visível pelo par depois que a WJA nasce', async () => {
     const workerId = await makeWorker('survives-promotion');
     await pool.query(
-      `INSERT INTO worker_blocked_applications (worker_id, job_posting_id, blocked_reason, missing_fields, attempt_count)
+      `INSERT INTO worker_blocked_applications (worker_id, job_posting_id, blocked_reason_at_attempt, missing_fields_at_attempt, attempt_count)
        VALUES ($1, $2, 'registration_incomplete', '["phone"]', 1)`,
       [workerId, VACANCY_ID],
     );
@@ -263,7 +263,7 @@ describe('ContactNoteRepository (banco real — migration 235)', () => {
     it('true quando existe apenas worker_blocked_applications para o par', async () => {
       const workerId = await makeWorker('validate-blocked');
       await pool.query(
-        `INSERT INTO worker_blocked_applications (worker_id, job_posting_id, blocked_reason, missing_fields, attempt_count)
+        `INSERT INTO worker_blocked_applications (worker_id, job_posting_id, blocked_reason_at_attempt, missing_fields_at_attempt, attempt_count)
          VALUES ($1, $2, 'registration_incomplete', '["phone"]', 1)`,
         [workerId, VACANCY_ID],
       );
