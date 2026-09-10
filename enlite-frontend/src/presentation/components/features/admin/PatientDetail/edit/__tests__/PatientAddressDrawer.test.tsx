@@ -42,6 +42,7 @@ vi.mock('@presentation/components/molecules/ServiceAreaMap', () => ({
 }));
 
 import { PatientAddressDrawer } from '../PatientAddressDrawer';
+import { LocalizacoesCard } from '../../LocalizacoesCard';
 
 const existing = {
   id: 'addr1', addressType: 'primary', addressFormatted: 'Rua A 1', addressRaw: null, complement: null, displayOrder: 1,
@@ -407,5 +408,89 @@ describe('PatientAddressDrawer — editar logística', () => {
       await waitFor(() => expect(onSaved).toHaveBeenCalled());
       expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
     });
+  });
+});
+
+/**
+ * Conserto #3 — o drawer não remonta ao trocar de modo (criar ↔ editar) DENTRO do mesmo
+ * `LocalizacoesCard`, porque `drawer` (null | undefined | objeto) ocupa o MESMO slot de JSX
+ * e os `useState(address?.campo ?? '')` de logística só rodam na PRIMEIRA montagem. Isto é
+ * DIFERENTE dos testes acima, que sempre montam `PatientAddressDrawer` isolado (um `render`
+ * por caso) — lá o bug é invisível porque cada `render` já É uma montagem nova. Só reproduz
+ * pelo pai real: `LocalizacoesCard`, com DOIS cliques sem fechar o drawer entre eles.
+ */
+describe('LocalizacoesCard — troca de modo do drawer sem fechar (regressão do remonte)', () => {
+  const enderecoCompleto = {
+    id: 'addr-completo', addressType: 'primary', addressFormatted: 'Rua B 2', addressRaw: null,
+    complement: null, displayOrder: 1, lat: -23.5, lng: -46.6, isPrimary: true,
+    neighborhood: 'Palermo', logisticsCorridor: 'Este', accessNotes: 'Portero 24h', country: 'AR',
+  };
+
+  beforeEach(() => {
+    createPatientAddress.mockReset().mockResolvedValue({ id: 'new' });
+    updatePatientAddressLogistics.mockReset().mockResolvedValue({ id: 'addr-completo' });
+    mapSpy.mockReset();
+    placeChanged = [];
+    placeDevolvido = undefined;
+    widgetsCriados = 0;
+    stubGoogle();
+    vi.stubEnv('VITE_GOOGLE_MAPS_API_KEY', 'chave-de-teste');
+  });
+
+  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
+
+  it('CRIAR → EDITAR: o form de edição chega com os valores do endereço, não com os campos vazios do criar anterior — e sem tocar em nada não sai PATCH nenhum', async () => {
+    render(<LocalizacoesCard addresses={[enderecoCompleto]} patientId="p1" onSaved={vi.fn()} />);
+
+    // Abre CRIAR primeiro — os 3 campos de logística nascem ''.
+    fireEvent.click(screen.getByTestId('new-address-btn'));
+    await assentar();
+    expect(screen.getByTestId('pad-address')).toBeInTheDocument();
+
+    // Sem fechar, edita o endereço existente — MESMO slot de JSX no LocalizacoesCard.
+    fireEvent.click(screen.getByTestId('edit-address-addr-completo'));
+    await assentar();
+
+    // Se remontou de verdade, os 3 campos vêm HIDRATADOS com o endereço — não com o ''
+    // herdado do form de criação que estava montado antes.
+    expect(screen.getByTestId('pad-neighborhood')).toHaveValue('Palermo');
+    expect(screen.getByTestId('pad-corridor')).toHaveValue('Este');
+    expect(screen.getByTestId('pad-access')).toHaveValue('Portero 24h');
+
+    // Nada mudou de verdade: salvar não pode gerar PATCH nenhum, e MUITO menos um que
+    // apague os 3 campos com null — o defeito medido em produção.
+    fireEvent.click(screen.getByTestId('pad-save'));
+    await waitFor(() => expect(screen.queryByTestId('pad-neighborhood')).not.toBeInTheDocument());
+    expect(updatePatientAddressLogistics).not.toHaveBeenCalled();
+  });
+
+  it('EDITAR → CRIAR: o form de criação não herda o access_notes (nem zona/corredor) do endereço que estava em edição', async () => {
+    render(<LocalizacoesCard addresses={[enderecoCompleto]} patientId="p1" onSaved={vi.fn()} />);
+
+    // Abre EDITAR primeiro — os 3 campos vêm preenchidos do endereço.
+    fireEvent.click(screen.getByTestId('edit-address-addr-completo'));
+    await assentar();
+    expect(screen.getByTestId('pad-access')).toHaveValue('Portero 24h');
+
+    // Sem fechar, troca para CRIAR — MESMO slot de JSX.
+    fireEvent.click(screen.getByTestId('new-address-btn'));
+    await assentar();
+    expect(screen.getByTestId('pad-address')).toBeInTheDocument();
+
+    // Se remontou de verdade, o form de criação nasce limpo — não com o access_notes (nem
+    // zona/corredor) do endereço que estava sendo editado um instante atrás.
+    expect(screen.getByTestId('pad-neighborhood')).toHaveValue('');
+    expect(screen.getByTestId('pad-corridor')).toHaveValue('');
+    expect(screen.getByTestId('pad-access')).toHaveValue('');
+
+    // Prova pela ponta que importa: o POST de um endereço NOVO não pode levar o dado de
+    // acesso à casa do endereço ANTERIOR.
+    await escolherDaLista();
+    fireEvent.click(screen.getByTestId('pad-save'));
+    await waitFor(() => expect(createPatientAddress).toHaveBeenCalled());
+    const enviado = createPatientAddress.mock.calls[0][1] as Record<string, unknown>;
+    expect(enviado.access_notes).toBeUndefined();
+    expect(enviado.neighborhood).toBeUndefined();
+    expect(enviado.logistics_corridor).toBeUndefined();
   });
 });
