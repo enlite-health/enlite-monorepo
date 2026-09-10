@@ -50,7 +50,14 @@ export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }
       </div>
 
       {drawer !== null && patientId && (
+        // `key` muda entre criar (`'novo'`) e editar (`drawer.id`): força REMONTAGEM ao
+        // trocar de modo sem fechar o drawer. Sem isto os dois ocupam o MESMO slot de JSX e
+        // os `useState(address?.campo ?? '')` de logística (que só rodam na 1ª montagem)
+        // ficam com o valor do modo anterior — PATCH apagando zona/corredor/acesso ao editar
+        // depois de ter aberto "criar", ou POST levando o acesso do endereço que estava em
+        // edição para um endereço novo. Medido pelo QA em jsdom; conserto #3.
         <PatientAddressDrawer
+          key={drawer?.id ?? 'novo'}
           patientId={patientId}
           address={drawer}
           onClose={() => setDrawer(null)}
