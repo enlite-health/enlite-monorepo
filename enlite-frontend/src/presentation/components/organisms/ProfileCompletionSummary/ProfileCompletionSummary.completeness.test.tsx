@@ -58,6 +58,14 @@ describe('ProfileCompletionSummary — completude combina registro + documentos'
     await waitFor(() => expect(screen.getByTestId('summary-pending')).toBeInTheDocument());
     expect(screen.queryByTestId('summary-complete')).not.toBeInTheDocument();
     expect(screen.queryByTestId('summary-view-vacancies')).not.toBeInTheDocument();
+    // BLOCKER 2 (gate 11/09): `useWorkerProfileProgress` só sabe de REGISTRO
+    // (DD1) — o mock acima devolve `overallPercentage: 100` porque o
+    // REGISTRO está completo aqui; só o documento falta. Antes do fix, o
+    // ramo pendente renderizava `ProfileCompletionCard` sempre, mostrando
+    // "100%" em cima de "Te falta completar: Documentos" — uma mentira
+    // visual. Quem só tem documento pendente não deve ver NENHUM percentual
+    // de registro na tela.
+    expect(screen.queryByText('100%')).not.toBeInTheDocument();
   });
 
   it('registro completo E os dois documentos de Cuidador presentes → tela de PARABÉNS', async () => {
