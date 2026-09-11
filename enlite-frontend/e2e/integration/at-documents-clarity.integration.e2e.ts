@@ -21,6 +21,8 @@ import {
 } from '../helpers/eligibility-worker-helper';
 import { loginNewWorker } from '../helpers/worker-realreg-auth-helper';
 
+test.use({ video: 'on' }); // definição de pronto exige vídeo do fluxo real
+
 test.describe('@integration AT documents clarity — worker-facing', () => {
   test.setTimeout(90_000);
   const workers: InsertEligibilityWorkerResult[] = [];
