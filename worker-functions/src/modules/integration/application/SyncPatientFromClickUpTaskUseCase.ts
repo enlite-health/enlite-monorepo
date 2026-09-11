@@ -68,11 +68,11 @@ export interface SyncPatientDeps {
   deviceTypeRepository: PatientDeviceTypeRepository;
   /**
    * spec 016 F4 — sincroniza "Tipo de Patología" com o diagnóstico CID-11 estruturado
-   * (`patient_diagnoses`, source='CLICKUP'). OPCIONAL, diferente de `insuranceRepository`/
-   * `deviceTypeRepository`: esta é uma capacidade NOVA desta fase, e o único chamador vivo
-   * hoje (`scripts/import-patients-from-clickup.ts`, 11/09/2026) ainda não a passa — não
-   * sincroniza diagnóstico por enquanto, decisão de escopo do F4 registrada no relatório, não
-   * um esquecimento.
+   * (`patient_diagnoses`, source='CLICKUP'). OPCIONAL na assinatura (permanece opcional para
+   * quem monta o use case em teste sem essa dependência), mas o único chamador vivo hoje
+   * (`scripts/import-patients-from-clickup.ts`, no branch `--apply`) SEMPRE a passa desde
+   * 11/09/2026 (decisão do Gabriel: a carga manual passou a sincronizar diagnóstico também,
+   * mesma construção que `ClickUpPatientWebhookController.getDiagnosisMapper()` fazia).
    */
   diagnosisMapper?: ClickUpDiagnosisMapper;
 }
