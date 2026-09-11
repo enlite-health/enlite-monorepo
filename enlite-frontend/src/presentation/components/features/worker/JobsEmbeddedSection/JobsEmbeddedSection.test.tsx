@@ -320,16 +320,61 @@ describe('JobsEmbeddedSection — cadastro incompleto (bug #2)', () => {
     expect(screen.getByRole('button', { name: /phone/i })).toBeInTheDocument();
   });
 
-  it('missingFields nulo/ausente (não apurado) → modal genérico, fail-closed, link não abre', async () => {
+  it('missingFields nulo/ausente (não apurado — GET ainda não voltou, ou backend não devolveu) → mensagem de VERIFICAÇÃO (não "incompleto"), fail-closed, sem CTA de completar', async () => {
     mockFetchOnce(legacyResponse());
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
     render(<JobsEmbeddedSection isRegistrationComplete={false} />);
     await waitForLoaded();
 
     fireEvent.click(screen.getByRole('button', { name: 'jobs.apply' }));
-    expect(screen.getByText('publicVacancy.incompleteModal.bodyGeneric')).toBeInTheDocument();
+
+    // Incidente 08/09: a tela NÃO PODE afirmar "incompleto" sobre um estado que
+    // não apurou. Mostra o mesmo texto do PostularseErrorModal (/vacantes/:id),
+    // não o modal de pendências (bodyGeneric) nem um terceiro texto.
+    expect(screen.getByText('publicVacancy.errorModal.title')).toBeInTheDocument();
+    expect(screen.getByText('publicVacancy.errorModal.body')).toBeInTheDocument();
+    expect(screen.queryByText('publicVacancy.incompleteModal.bodyGeneric')).not.toBeInTheDocument();
+    expect(screen.queryByText('publicVacancy.incompleteModal.title')).not.toBeInTheDocument();
+    // Sem CTA de "completar registro": pode estar tudo certo, não dá pra mandar
+    // completar algo que talvez já esteja completo.
+    expect(screen.queryByText('publicVacancy.errorModal.complete')).not.toBeInTheDocument();
     expect(openSpy).not.toHaveBeenCalled();
     openSpy.mockRestore();
+  });
+
+  it('missingFields nulo em "Ver Detalles" → MESMA mensagem de verificação, link da vaga não abre', async () => {
+    mockFetchOnce(legacyResponse());
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    render(<JobsEmbeddedSection isRegistrationComplete={false} />);
+    await waitForLoaded();
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'jobs.viewDetails' })[0]);
+
+    expect(screen.getByText('publicVacancy.errorModal.title')).toBeInTheDocument();
+    expect(openSpy).not.toHaveBeenCalled();
+    openSpy.mockRestore();
+  });
+
+  it('mensagem de verificação fecha ao clicar "Cerrar"', async () => {
+    mockFetchOnce(legacyResponse());
+    render(<JobsEmbeddedSection isRegistrationComplete={false} />);
+    await waitForLoaded();
+
+    fireEvent.click(screen.getByRole('button', { name: 'jobs.apply' }));
+    expect(screen.getByText('publicVacancy.errorModal.title')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'publicVacancy.errorModal.cancel' }));
+    expect(screen.queryByText('publicVacancy.errorModal.title')).not.toBeInTheDocument();
+  });
+
+  it('missingFields=[] (array vazio, conhecido) → CONTINUA usando o modal de pendências normal (não é o caso "não apurado")', async () => {
+    mockFetchOnce(legacyResponse());
+    render(<JobsEmbeddedSection isRegistrationComplete={false} missingFields={[]} />);
+    await waitForLoaded();
+
+    fireEvent.click(screen.getByRole('button', { name: 'jobs.apply' }));
+    expect(screen.getByText('publicVacancy.incompleteModal.title')).toBeInTheDocument();
+    expect(screen.queryByText('publicVacancy.errorModal.title')).not.toBeInTheDocument();
   });
 
   it('fechar o modal (cancelar) esconde-o de novo', async () => {
