@@ -111,6 +111,16 @@ describe('IncompleteRegistrationModal — navegação por item', () => {
     expect(mockOnClose).toHaveBeenCalledTimes(1);
   });
 
+  it('worker_documents (token cru do GET /workers/me) cai na seção "Documentos", NÃO em "Datos personales" (bucket por destino, não por prefixo doc_)', () => {
+    renderModal(['worker_documents']);
+
+    // O token não começa com "doc_" — bucket por PREFIXO (bug) o jogaria na
+    // seção de dados pessoais e o título "Documentos" nunca apareceria.
+    expect(screen.getByText('documentsTitle')).toBeInTheDocument();
+    expect(screen.queryByText('registrationTitle')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /worker_documents/i })).toBeInTheDocument();
+  });
+
   it('clicar em worker_documents (token cru do GET /workers/me, não expandido) navega para ?tab=documents (sem focus)', () => {
     renderModal(['worker_documents']);
 

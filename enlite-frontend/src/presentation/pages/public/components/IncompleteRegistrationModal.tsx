@@ -23,8 +23,14 @@ export function IncompleteRegistrationModal({
   const navigate = useNavigate();
 
   const allTokens = missingFields ?? [];
-  const docTokens = allTokens.filter((f) => f.startsWith('doc_'));
-  const registrationTokens = allTokens.filter((f) => !f.startsWith('doc_'));
+  // Bucket pelo DESTINO real (incompleteFieldDestinations), não por prefixo:
+  // `worker_documents` — o token AGREGADO que o GET /workers/me devolve (não
+  // expandido em doc_*, só o 403 de track-channel expande) — não começa com
+  // "doc_", mas destinationFor(...).tab É 'documents'. Bucket por prefixo
+  // jogava esse token pra seção errada e o título "Documentos" nunca
+  // aparecia quando ele era o único pendente.
+  const docTokens = allTokens.filter((f) => destinationFor(f).tab === 'documents');
+  const registrationTokens = allTokens.filter((f) => destinationFor(f).tab !== 'documents');
 
   const isEmpty = !missingFields || missingFields.length === 0;
 
