@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { DocumentsGrid } from './DocumentsGrid';
 import type { WorkerDocumentsResponse } from '@infrastructure/http/DocumentApiService';
+import { makeWorkerDocuments as makeDocuments } from '../../../../test/workerProgressFixtures';
 
 // ── i18n mock — returns fallback text (or key when no fallback) so
 // assertions read naturally and the AT/não-AT texts stay distinguishable ────
@@ -12,29 +13,10 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-// ── Fixtures ──────────────────────────────────────────────────────────────────
-
-function makeDocuments(overrides: Partial<WorkerDocumentsResponse> = {}): WorkerDocumentsResponse {
-  return {
-    id: 'docs-test-001',
-    workerId: 'worker-test-001',
-    resumeCvUrl: null,
-    identityDocumentUrl: null,
-    identityDocumentBackUrl: null,
-    criminalRecordUrl: null,
-    professionalRegistrationUrl: null,
-    liabilityInsuranceUrl: null,
-    monotributoCertificateUrl: null,
-    atCertificateUrl: null,
-    aptoPsicofisicoUrl: null,
-    analiticoUniversitarioUrl: null,
-    cartaRecomendacionUrl: null,
-    documentsStatus: 'pending',
-    submittedAt: null,
-    updatedAt: '2026-01-01T00:00:00Z',
-    ...overrides,
-  };
-}
+// ── Fixtures ────────────────────────────────────────────────────────────────
+// makeDocuments vem de test/workerProgressFixtures.ts (fixture compartilhada
+// com useWorkerProfileProgress.test.ts e WorkerHome.test.tsx — gate
+// revisao-pr, critério 2).
 
 const noop = vi.fn().mockResolvedValue(undefined);
 
