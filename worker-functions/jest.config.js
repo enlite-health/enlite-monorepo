@@ -27,6 +27,11 @@ module.exports = {
     // (`backfill-patient-diagnosis-catalog.ts`, HTTP/DB via TerminologyPort + duas conexões)
     // fica fora — provado pelo dry-run real contra a réplica (evidências da F4), não por mock.
     'scripts/backfill-diagnosis-catalog/{matching,cli-guards}.ts',
+    // Carga pontual manual do ClickUp (decisão 11/09/2026 — remoção do sync automático): o
+    // parser PURO de flags (`--apply` é a única combinação que grava; dry-run é o default)
+    // entra pela MESMA régua acima. O orquestrador (`import-patients-from-clickup.ts`,
+    // paginação HTTP + Postgres) fica fora, como todo outro script CLI da pasta.
+    'scripts/import-patients-from-clickup-flags.ts',
   ],
   coverageDirectory: 'coverage',
 
@@ -613,6 +618,16 @@ module.exports = {
     // cobrem o arquivo (300 testes). 🔒 Piso de 100 % sobre ramo morto é régua que não mede nada:
     // o número só vale depois de o ramo inalcançável sair.
     'src/modules/integration/infrastructure/clickup/ClickUpPatientMapper.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Carga pontual manual do ClickUp (decisão 11/09/2026 — remoção do sync automático,
+    // webhook + reconciliador + resync-one-clickup-task.ts): `--apply` é a ÚNICA combinação
+    // que sai do dry-run, mesma disciplina do D10 do ingestor CID-11 e do backfill de
+    // diagnóstico acima. Nasce em 100% nos quatro eixos — medido antes de entrar.
+    'scripts/import-patients-from-clickup-flags.ts': {
       statements: 100,
       branches: 100,
       functions: 100,

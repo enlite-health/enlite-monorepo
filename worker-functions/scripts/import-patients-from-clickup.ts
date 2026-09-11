@@ -2,27 +2,38 @@
 /**
  * import-patients-from-clickup.ts
  *
- * Paginates the ClickUp list "Estado de Pacientes" (901304883903) and upserts
- * each task as a patient via PatientService.upsertFromClickUp().
+ * Carga PONTUAL manual (decisão 11/09/2026 — sem sync automático); dry-run por padrão;
+ * nunca agendar.
+ *
+ * A plataforma é a fonte da verdade do paciente — não existe mais webhook nem reconciliador
+ * ClickUp→paciente (removidos nesta mesma decisão). Este script é a ÚNICA ferramenta de carga
+ * do ClickUp que resta, e roda MANUALMENTE, numa sessão de terminal, quando alguém decide
+ * puxar 1 ou N cards. Nunca colocar em Cloud Scheduler / cron / CI.
+ *
+ * Paginates the ClickUp list "Estado de Pacientes" (901304883903) — ou busca UMA task por id
+ * com `--task-id` — e upserta cada task como paciente via PatientService.upsertFromClickUp(),
+ * pelo MESMO motor que o webhook (removido) usava: SyncPatientFromClickUpTaskUseCase.
  *
  * ── Pre-requisites ────────────────────────────────────────────────────────────
- *   - CLICKUP_API_TOKEN set in environment
- *   - DATABASE_URL set (required in --live mode, optional in --dry-run)
+ *   - CLICKUP_API_TOKEN set in environment (Secret Manager em prod, sessão local em dev)
+ *   - DATABASE_URL set (required with --apply, optional otherwise)
  *
  * ── Usage ─────────────────────────────────────────────────────────────────────
  *   set -a && source worker-functions/.env && set +a
  *   cd worker-functions
- *   npx ts-node -r tsconfig-paths/register scripts/import-patients-from-clickup.ts --dry-run --limit 3
- *   npx ts-node -r tsconfig-paths/register scripts/import-patients-from-clickup.ts --live
- *   npx ts-node -r tsconfig-paths/register scripts/import-patients-from-clickup.ts --live --status busqueda --limit 10
+ *   npx ts-node -r tsconfig-paths/register scripts/import-patients-from-clickup.ts --limit 3
+ *   npx ts-node -r tsconfig-paths/register scripts/import-patients-from-clickup.ts --apply
+ *   npx ts-node -r tsconfig-paths/register scripts/import-patients-from-clickup.ts --apply --status busqueda --limit 10
+ *   npx ts-node -r tsconfig-paths/register scripts/import-patients-from-clickup.ts --task-id 86abq2pzg --apply
  *
  * ── Flags ─────────────────────────────────────────────────────────────────────
- *   --dry-run          (default) logs what would happen; no DB writes
- *   --live             alias for --dry-run=false; persists to DB
- *   --dry-run=false    same as --live
- *   --limit N          process only the first N tasks (default: all)
- *   --status X,Y,Z     filter tasks by status.status (comma-separated)
- *   --verbose          print the full PatientServiceUpsertInput per task
+ *   (nenhuma)          dry-run (DEFAULT) — loga o que aconteceria; nenhuma escrita no DB
+ *   --apply            grava no banco — ÚNICA flag que sai do dry-run
+ *   --task-id <id>     carga pontual de UMA task específica (GET direto, sem paginar a lista) —
+ *                      cobre o caso antes servido por resync-one-clickup-task.ts (removido)
+ *   --limit N          processa só as N primeiras tasks (default: todas)
+ *   --status X,Y,Z     filtra tasks por status.status (comma-separated)
+ *   --verbose          imprime o PatientServiceUpsertInput inteiro por task
  */
 
 /* eslint-disable no-console */
@@ -42,6 +53,7 @@ import {
   processDryRun,
   type DryRunCounters,
 } from './import-patients-dry-run';
+import { parseImportPatientsFlags } from './import-patients-from-clickup-flags';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -51,35 +63,12 @@ const SCRIPT_TAG = '[import-patients-from-clickup]';
 
 // ── Arg parsing ───────────────────────────────────────────────────────────────
 
-const argv = process.argv.slice(2);
-
-function hasFlag(name: string): boolean {
-  return argv.includes(name);
-}
-
-function flagValue(name: string): string | null {
-  const idx = argv.indexOf(name);
-  if (idx === -1) return null;
-  return argv[idx + 1] ?? null;
-}
-
-// --dry-run is default true; override with --live or --dry-run=false
-let isDryRun = true;
-if (hasFlag('--live')) isDryRun = false;
-const dryRunFlag = argv.find(a => a.startsWith('--dry-run='));
-if (dryRunFlag) {
-  isDryRun = dryRunFlag.split('=')[1] !== 'false';
-}
-
-const limitRaw = flagValue('--limit');
-const limit = limitRaw !== null ? parseInt(limitRaw, 10) : null;
-
-const statusFilterRaw = flagValue('--status');
-const statusFilter: string[] = statusFilterRaw
-  ? statusFilterRaw.split(',').map(s => s.trim().toLowerCase())
-  : [];
-
-const isVerbose = hasFlag('--verbose');
+const flags        = parseImportPatientsFlags(process.argv.slice(2));
+const isDryRun      = !flags.apply;
+const limit         = flags.limit;
+const statusFilter  = flags.statusFilter;
+const isVerbose     = flags.verbose;
+const singleTaskId  = flags.taskId;
 
 // ── Env validation ─────────────────────────────────────────────────────────────
 
@@ -94,15 +83,25 @@ const DATABASE_URL =
   'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 
 if (!isDryRun && !process.env.DATABASE_URL) {
-  console.error(`${SCRIPT_TAG} ERROR: DATABASE_URL is required in --live mode.`);
+  console.error(`${SCRIPT_TAG} ERROR: DATABASE_URL is required with --apply.`);
   process.exit(1);
 }
 
-// ── ClickUp pagination ────────────────────────────────────────────────────────
+// ── ClickUp fetch ─────────────────────────────────────────────────────────────
 
 interface TasksPage {
   tasks: ClickUpTask[];
   last_page: boolean;
+}
+
+async function fetchOneTask(taskId: string): Promise<ClickUpTask> {
+  const res = await fetch(`${CLICKUP_API_BASE}/task/${taskId}`, {
+    headers: { Authorization: CLICKUP_TOKEN as string },
+  });
+  if (!res.ok) {
+    throw new Error(`ClickUp GET /task/${taskId} failed: HTTP ${res.status} ${res.statusText}`);
+  }
+  return (await res.json()) as ClickUpTask;
 }
 
 async function fetchPage(page: number): Promise<TasksPage> {
@@ -142,7 +141,7 @@ async function fetchAllTasks(): Promise<ClickUpTask[]> {
 
 async function main(): Promise<void> {
   // Lazy-load PatientService (imports DatabaseConnection → needs DATABASE_URL).
-  // Only in live mode; avoids a DB connection in pure dry-run.
+  // Only with --apply; avoids a DB connection in pure dry-run.
   let useCase: SyncPatientFromClickUpTaskUseCase | null = null;
   let pool: Pool | null = null;
 
@@ -161,6 +160,33 @@ async function main(): Promise<void> {
       deviceTypeRepository:  new PatientDeviceTypeRepository(),
     });
     pool = new Pool({ connectionString: DATABASE_URL });
+  }
+
+  // ── --task-id: carga pontual de UMA task, sem paginar a lista ────────────────
+  if (singleTaskId !== null) {
+    console.log(`${SCRIPT_TAG} --task-id=${singleTaskId} — carga pontual, sem paginação.`);
+    const task = await fetchOneTask(singleTaskId);
+    console.log(`${SCRIPT_TAG} task=${task.id} status=${task.status?.status} list=${(task as unknown as { list?: { id?: string } }).list?.id}`);
+
+    if ((task as unknown as { list?: { id?: string } }).list?.id !== LIST_ID) {
+      console.error(`${SCRIPT_TAG} ABORTADO: task não pertence à lista Estado de Pacientes (${LIST_ID}).`);
+      process.exit(1);
+    }
+
+    if (isDryRun) {
+      const resolver = await ClickUpFieldResolver.fromList(LIST_ID, { token: CLICKUP_TOKEN as string });
+      const mapper = new ClickUpPatientMapper(resolver);
+      const mapped = mapper.map(task);
+      console.log(`${SCRIPT_TAG} case_number mapeado = ${(mapped as { caseNumber?: number } | null)?.caseNumber ?? 'null'}`);
+      console.log(`${SCRIPT_TAG} DRY-RUN — nada foi gravado. Rode com --apply para persistir.`);
+      return;
+    }
+
+    const result = await useCase!.execute(task);
+    console.log(`${SCRIPT_TAG} RESULTADO: ${JSON.stringify(result, null, 2)}`);
+    if (pool) await pool.end();
+    if (result.kind === 'ERROR') process.exit(1);
+    return;
   }
 
   // For dry-run with DATABASE_URL available we can classify create vs update.
@@ -188,7 +214,7 @@ async function main(): Promise<void> {
   // Step 3: Apply limit
   const tasksToProcess = limit !== null ? filteredTasks.slice(0, limit) : filteredTasks;
 
-  const modeStr   = isDryRun ? 'dry-run=true' : 'live (DB writes enabled)';
+  const modeStr   = isDryRun ? 'dry-run=true' : 'APPLY (DB writes enabled)';
   const limitStr  = limit !== null ? `limit=${limit}` : 'no limit';
   const statusStr = statusFilter.length > 0 ? `status=${statusFilter.join(',')}` : 'all statuses';
   console.log(`Processing with flags: ${modeStr} ${limitStr} ${statusStr}`);
@@ -231,7 +257,7 @@ async function main(): Promise<void> {
       continue;
     }
 
-    // Live mode — delegate entirely to the UseCase
+    // --apply — delegate entirely to the UseCase
     const result = await useCase!.execute(task);
 
     switch (result.kind) {
@@ -317,7 +343,7 @@ async function main(): Promise<void> {
   }
 
   console.log(`  Errors:        ${errors}`);
-  console.log(`  Mode:          ${isDryRun ? 'DRY-RUN (no DB writes)' : 'LIVE (DB writes committed)'}`);
+  console.log(`  Mode:          ${isDryRun ? 'DRY-RUN (no DB writes)' : 'APPLY (DB writes committed)'}`);
 
   // Cleanup
   if (pool) await pool.end();
