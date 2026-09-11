@@ -9,10 +9,12 @@
  *   - i18n keys are resolved correctly
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import { patientDetailFixture, patientDetailMinimal } from './patientDetailFixture';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 
 // ── i18n mock ────────────────────────────────────────────────────────────────
 
@@ -862,6 +864,34 @@ describe('LocalizacoesCard', () => {
     const linhas = screen.getAllByRole('row').slice(1); // pula o cabeçalho
     expect(linhas[0]).toHaveTextContent('Rua Augusta');
     expect(linhas[1]).toHaveTextContent('Rua B');
+  });
+
+  // ── D286 (ABAC) — os DOIS ramos do gate `useActionGate('patient_address', 'write')` ────────
+  // Achado do gate revisao-pr (variante stage): as 115 asserções acima já cobriam o ramo
+  // ALLOWED por padrão — a store nasce com `authz: null`/`authzStatus: 'idle'`, que
+  // `useActionGate` lê como `enforcement !== 'on'` e devolve `{ allowed: true }` sempre (freio
+  // fail-open do D268/D269). O ramo DENIED nunca era exercitado por nenhum teste. `afterEach`
+  // devolve a store ao estado neutro — é um singleton global (Zustand), não por render.
+  const contrato = (permissions: string[]): AuthzContract => ({
+    uid: 'u-abac-test', tenantId: 't1', status: 'ACTIVE', permissions, countries: ['AR'], groups: [], features: {},
+  });
+
+  describe('gate ABAC patient_address:write (D286)', () => {
+    afterEach(() => {
+      useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+    });
+
+    it('enforcement "on" SEM a célula patient_address:write: o lápis não aparece (denied)', () => {
+      useAdminAuthStore.setState({ authz: { ...contrato([]), enforcement: 'on' }, authzStatus: 'ready' });
+      render(<LocalizacoesCard addresses={patientDetailFixture.addresses} patientId="p1" />);
+      expect(screen.queryByTestId('edit-address-addr1')).not.toBeInTheDocument();
+    });
+
+    it('enforcement "on" COM a célula patient_address:write: o lápis aparece (allowed)', () => {
+      useAdminAuthStore.setState({ authz: { ...contrato(['patient_address:write']), enforcement: 'on' }, authzStatus: 'ready' });
+      render(<LocalizacoesCard addresses={patientDetailFixture.addresses} patientId="p1" />);
+      expect(screen.getByTestId('edit-address-addr1')).toBeInTheDocument();
+    });
   });
 });
 
