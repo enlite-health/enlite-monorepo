@@ -6,8 +6,15 @@ import { Text } from '@presentation/components/atoms/Text';
 
 interface PostularseErrorModalProps {
   onClose: () => void;
-  onRetry: () => void;
-  onCompleteRegistration: () => void;
+  /**
+   * Omitidos na home (JobsEmbeddedSection, completude "não apurada" — D1,
+   * incidente 08/09): ali não há tentativa de postulação pra reintentar, e
+   * mandar "completar registro" seria afirmar que falta algo que talvez já
+   * esteja completo. Em /vacantes/:id (fluxo original) os dois continuam
+   * obrigatórios em uso — só ficam opcionais no TIPO.
+   */
+  onRetry?: () => void;
+  onCompleteRegistration?: () => void;
 }
 
 /**
@@ -49,12 +56,16 @@ export function PostularseErrorModal({
           <Button variant="ghost" size="sm" onClick={onClose}>
             {t('publicVacancy.errorModal.cancel')}
           </Button>
-          <Button variant="outline" size="sm" onClick={onRetry}>
-            {t('publicVacancy.errorModal.retry')}
-          </Button>
-          <Button variant="primary" size="sm" onClick={onCompleteRegistration}>
-            {t('publicVacancy.errorModal.complete')}
-          </Button>
+          {onRetry && (
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              {t('publicVacancy.errorModal.retry')}
+            </Button>
+          )}
+          {onCompleteRegistration && (
+            <Button variant="primary" size="sm" onClick={onCompleteRegistration}>
+              {t('publicVacancy.errorModal.complete')}
+            </Button>
+          )}
         </div>
       </div>
     </div>
