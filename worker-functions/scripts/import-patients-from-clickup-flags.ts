@@ -16,6 +16,11 @@
  *      classe de defeito que `--task-id` sem valor (caía na paginação da lista inteira) e
  *      `--limit` não numérico (caía em "sem limite") — achada por gate de revisão em `--status`
  *      DEPOIS de já ter sido corrigida em `--task-id`/`--limit`: mesma régua, os 3 agora.
+ *   3. `--task-id ""` (string vazia ou só espaços) é ERRO — sem isto, `--task-id " "` passava
+ *      no `looksLikeAnotherFlag` (não é undefined, não começa com `--`) e virava uma chamada
+ *      `GET /task/ ` real. `--task-id` junto de `--limit`/`--status` também é ERRO: as duas
+ *      são flags do caminho de PAGINAÇÃO (lista inteira), incompatíveis com a busca de UMA
+ *      task por id — combinar as duas seria silenciosamente ignorar uma delas.
  *
  * Por isso o parser devolve um RESULTADO (`ok: true` com os flags, ou `ok: false` com a
  * mensagem) em vez de lançar ou sair do processo — quem decide como reportar o erro (console +
@@ -25,8 +30,11 @@
 export interface ImportPatientsFlags {
   /** true = grava no banco. Default false (dry-run). `--dry-run` sempre vence `--apply`. */
   apply: boolean;
-  /** `--task-id <id>`: carga pontual de UMA task (substitui resync-one-clickup-task.ts,
-   *  removido 11/09/2026). null = nenhum `--task-id` foi passado. */
+  /** `--task-id <id>`: carga pontual de UMA task (cobre a CRIAÇÃO que resync-one-clickup-task.ts,
+   *  removido 11/09/2026, também cobria — NÃO cobre mais o reprocessamento de um card com
+   *  CASE_NUMBER_CONFLICT já resolvido no ClickUp, que era o outro uso daquele script: esse
+   *  caso é sempre um paciente que JÁ EXISTE, e a regra "só cria" recusa. Gap conhecido, sem
+   *  caminho manual hoje). null = nenhum `--task-id` foi passado. */
   taskId: string | null;
   /** `--limit N`: processa só as N primeiras tasks (após filtro de status). null = sem limite. */
   limit: number | null;
@@ -44,21 +52,28 @@ function looksLikeAnotherFlag(value: string | undefined): boolean {
   return value === undefined || value.startsWith('--');
 }
 
+/** Além de "outra flag"/"ausente": string vazia ou só espaço também não é um valor de verdade
+ *  (achado do gate — `--task-id " "` passava e virava `GET /task/ ` real). */
+function isMissingValue(value: string | undefined): boolean {
+  if (value === undefined) return true;
+  return value.startsWith('--') || value.trim() === '';
+}
+
 export function parseImportPatientsFlags(argv: string[]): ParseFlagsResult {
   // ── --dry-run vence --apply, sempre (fail-safe) ─────────────────────────────
   const hasDryRunFlag = argv.includes('--dry-run');
   const hasApplyFlag  = argv.includes('--apply');
   const apply = hasApplyFlag && !hasDryRunFlag;
 
-  // ── --task-id: sem valor (ou seguido de outra flag) é ERRO, nunca "ausente" ──
+  // ── --task-id: sem valor (ou seguido de outra flag, ou string vazia/só espaço) é ERRO ────────
   const taskIdIdx = argv.indexOf('--task-id');
   let taskId: string | null = null;
   if (taskIdIdx !== -1) {
     const value = argv[taskIdIdx + 1];
-    if (looksLikeAnotherFlag(value)) {
+    if (isMissingValue(value)) {
       return {
         ok: false,
-        error: `--task-id requer um valor (ex.: --task-id 86abq2pzg) — recebido: ${value ?? '<nada>'}`,
+        error: `--task-id requer um valor não-vazio (ex.: --task-id 86abq2pzg) — recebido: ${value === undefined ? '<nada>' : JSON.stringify(value)}`,
       };
     }
     taskId = value as string;
@@ -97,6 +112,15 @@ export function parseImportPatientsFlags(argv: string[]): ParseFlagsResult {
   }
 
   const verbose = argv.includes('--verbose');
+
+  // ── --task-id é incompatível com --limit/--status (caminhos diferentes: 1 task por id vs
+  // paginação da lista inteira) — combinar as duas é ERRO, nunca "ignora uma delas em silêncio".
+  if (taskId !== null && (limit !== null || statusFilter.length > 0)) {
+    return {
+      ok: false,
+      error: '--task-id não pode ser combinado com --limit/--status — são flags do caminho de paginação (lista inteira), incompatíveis com a busca de UMA task por id.',
+    };
+  }
 
   // ── --apply só com --task-id (lex): carga em massa NUNCA grava ──────────────────────────────
   // A ferramenta manual só está autorizada a CRIAR um paciente novo por vez, com autorização
