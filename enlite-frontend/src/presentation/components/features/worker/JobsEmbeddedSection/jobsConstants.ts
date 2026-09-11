@@ -4,6 +4,14 @@ import { buildPendingRows } from '@presentation/utils/pendingRows';
 export type { PublicJobListing } from '@domain/entities/PublicJobListing';
 
 export interface Job {
+  /**
+   * job_postings.id (UUID) — só a API pública (`/api/public/v1/jobs`,
+   * `PublicJobListing.id`) fornece. O scraper legado (`/api/jobs`) não tem
+   * este dado; vagas dessa fonte chegam com `id: ''`, e a home (Postularse
+   * via `usePostularseAction`) trata "sem id" como "não disponível" — não
+   * é possível checar elegibilidade real nem criar WJA sem o UUID da vaga.
+   */
+  id: string;
   code: string;
   title: string;
   workerType: string;
@@ -124,6 +132,7 @@ export const getSexOptions = (t: TFunction): SelectOption[] => [
 
 export const MOCK_JOBS: Job[] = [
   {
+    id: '',
     code: '736',
     title: '736 - Acompañante Terapéutico - Provincia de Buenos Aires - Lanús Este',
     workerType: 'acompañante terapéutico',
@@ -140,6 +149,7 @@ export const MOCK_JOBS: Job[] = [
     detailLink: 'https://jobs.enlite.health/es/vagas/736/',
   },
   {
+    id: '',
     code: '732',
     title: '732 - Acompañante Terapéutico - Provincia de Buenos Aires - Nordelta (Tigre) y Puerto Madero (CABA)',
     workerType: 'acompañante terapéutico',
@@ -156,6 +166,7 @@ export const MOCK_JOBS: Job[] = [
     detailLink: 'https://jobs.enlite.health/es/vagas/732/',
   },
   {
+    id: '',
     code: '735',
     title: '735 - Acompañante Terapéutico - Provincia de Buenos Aires - Lomas de Zamora',
     workerType: 'acompañante terapéutico',
@@ -172,6 +183,7 @@ export const MOCK_JOBS: Job[] = [
     detailLink: 'https://jobs.enlite.health/es/vagas/735/',
   },
   {
+    id: '',
     code: '734',
     title: '734 - Acompañante Terapéutico - CABA - Balvanera',
     workerType: 'acompañante terapéutico',
@@ -188,6 +200,7 @@ export const MOCK_JOBS: Job[] = [
     detailLink: 'https://jobs.enlite.health/es/vagas/734/',
   },
   {
+    id: '',
     code: '733',
     title: '733 - Acompañante Terapéutico - Provincia de Buenos Aires - Quilmes',
     workerType: 'acompañante terapéutico',
