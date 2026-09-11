@@ -183,6 +183,10 @@ test.describe('@integration Home — Postularse/Ver Detalles com cadastro incomp
     // verificado" — nunca "Registro incompleto".
     const verifyTitle = page.getByRole('heading', { name: 'No pudimos verificar tu registro' });
     await expect(verifyTitle).toBeVisible({ timeout: 5_000 });
+    // Texto PRÓPRIO da home (rodada 5, D1) — o texto padrão fala em WhatsApp
+    // e "Completá tu registro o intentá nuevamente", que não fazem sentido
+    // aqui (Ver Detalles não abre WhatsApp; não há CTA de completar/retry).
+    await expect(page.getByText('No pudimos verificar tu registro en este momento. Volvé a intentarlo en unos minutos.')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Registro incompleto' })).toHaveCount(0);
     // Sem CTA de completar registro — não dá pra mandar completar algo que
     // talvez já esteja completo.
