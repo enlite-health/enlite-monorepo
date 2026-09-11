@@ -90,6 +90,7 @@ export function JobCard({ job, applyLabel, onViewDetails }: JobCardProps): JSX.E
               onClick={() => { void postularse(); }}
               disabled={state === 'loading'}
               className="px-3 py-1.5 bg-[#075E54] text-white text-xs rounded hover:bg-[#054C44] transition-colors font-lexend font-medium disabled:opacity-70"
+              data-clarity-mask="True"
             >
               {applyLabel}
             </button>

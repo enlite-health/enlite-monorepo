@@ -583,13 +583,32 @@ describe('JobsEmbeddedSection — rótulo dinâmico do Postularse (Fase 4, DD5)'
     });
   });
 
-  describe('data-clarity-mask (condição C12 do lex)', () => {
-    it('o botão Postularse ("Subí … para postularte") tem data-clarity-mask="True"', async () => {
+  describe('data-clarity-mask (condição C12 do lex) — atualizado pra arquitetura JobCard/API pública', () => {
+    // C12 protege o RÓTULO dinâmico do botão Postularse (pode conter o nome
+    // do documento pendente — dado do próprio worker) de vazar pro Clarity
+    // (session replay). O botão só existe hoje quando o job tem `whatsappLink`
+    // E `id` real (job_postings.id — só a API pública fornece); job legado
+    // do scraper nunca tem `id`, então o botão não é exibido (comportamento
+    // NOVO E INTENCIONAL da rodada "home vagas API pública" — NÃO É
+    // REGRESSÃO: sem `id` não dá pra checar elegibilidade real, e um botão
+    // que sempre falharia seria peor que a ausência dele). Este describe
+    // cobre as duas pontas: mask presente onde o botão existe, e confirma
+    // que "não existe" é o esperado onde não existe.
+    it('vaga da API pública (COM id) — botão Postularse tem data-clarity-mask="True"', async () => {
+      (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
+      mockGetPublicJobs.mockResolvedValue([publicListing()]);
+      render(<JobsEmbeddedSection isRegistrationComplete={false} missingFields={['doc_criminal_record']} profession="AT" />);
+      await waitFor(() => expect(screen.getByText('900-1')).toBeInTheDocument());
+
+      expect(screen.getByRole('button', { name: 'jobs.applyLabel.document' })).toHaveAttribute('data-clarity-mask', 'True');
+    });
+
+    it('vaga legada do scraper (SEM id) — botão Postularse NÃO existe (novo comportamento intencional, não regressão do C12)', async () => {
       mockFetchOnce(legacyResponse());
       render(<JobsEmbeddedSection isRegistrationComplete={false} missingFields={['doc_criminal_record']} profession="AT" />);
       await waitForLoaded();
 
-      expect(screen.getByRole('button', { name: 'jobs.applyLabel.document' })).toHaveAttribute('data-clarity-mask', 'True');
+      expect(screen.queryByRole('button', { name: 'jobs.applyLabel.document' })).not.toBeInTheDocument();
     });
   });
 });
