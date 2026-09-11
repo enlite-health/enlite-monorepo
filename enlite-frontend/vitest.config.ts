@@ -381,6 +381,28 @@ export default defineConfig({
         '**/src/presentation/components/organisms/ProfileCompletionSummary/ProfileCompletionSummary.tsx': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
+        // Fase 3 de postulacao-documento-pendente (DD4/F12, 11/09): ajuda
+        // "¿No lo tenés? Cómo sacarlo" do antecedentes — um componente,
+        // dois usos (PendingTasksCard e DocumentsGrid). `country` passou a
+        // fluir pelo store de registro (hidratação) e pela aba Documentos
+        // pra gatear "só Argentina" nos dois lugares.
+        '**/src/presentation/components/molecules/AntecedentesHelpExpandable/*.{ts,tsx}': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/components/organisms/DocumentsGrid/DocumentsGrid.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        // Sem teste unitário nenhum antes desta rodada (só e2e) — D200.12
+        // exige o ARQUIVO INTEIRO ao tocar, não só a linha nova de country.
+        '**/src/presentation/pages/tabs/DocumentsTab.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/stores/workerRegistrationHydration.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/stores/workerRegistrationStore.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
       },
     },
   },
