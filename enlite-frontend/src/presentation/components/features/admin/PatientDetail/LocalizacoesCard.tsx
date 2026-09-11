@@ -13,7 +13,7 @@ import {
 } from '@presentation/components/atoms/Table';
 import { ActionButton } from '@presentation/components/features/access';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
-import { streetLineOf, summarizeAddress } from '@presentation/utils/summarizeAddress';
+import { addressLines } from '@presentation/utils/summarizeAddress';
 import type { PatientAddressDetail } from '@domain/entities/PatientDetail';
 import { PatientAddressDrawer } from './edit/PatientAddressDrawer';
 import { AvisoAmbar } from './edit/AvisoAmbar';
@@ -30,16 +30,20 @@ interface LocalizacoesCardProps {
 }
 
 /**
- * O que a coluna Dirección mostra em 2 linhas:
- *  • linha 1 — rua + número, via `streetLineOf` (utils/summarizeAddress.ts) — a MESMA
- *    fronteira rua↔resto que `VacancyFormSection.tsx` já usa por `summarizeAddress`. Achado
- *    do gate `revisao-pr` (BLOCKER): esta função tinha uma cópia local dessa fronteira que
- *    divergia da de produção (cortava o número no formato BR real "975 - Consolação") — a
- *    cópia foi apagada, as duas leituras vêm do mesmo módulo agora.
- *  • linha 2 (texto secundário) — `neighborhood` quando existe; senão `summarizeAddress(full)`
- *    (o resumo em nível de localidade, país e CEP já removidos); `null` quando não sobra nada.
- * `null` nas duas quando o endereço não tem NEM formatado NEM cru (linha vira alerta) — ""
- * conta como ausente nos dois campos (`.trim()`), não só `null`/`undefined`.
+ * O que a coluna Dirección mostra em 2 linhas — via `addressLines` (utils/summarizeAddress.ts),
+ * a MESMA fronteira rua↔resto que `VacancyFormSection.tsx` já usa por `summarizeAddress`.
+ * Achado do gate `revisao-pr`, 1ª rodada (BLOCKER): esta função tinha uma cópia local dessa
+ * fronteira que divergia da de produção — apagada, a leitura vem do módulo compartilhado.
+ * Achado da 2ª rodada (MINOR): chamar `streetLineOf` (linha 1) e `summarizeAddress` (linha 2)
+ * em PARALELO sobre o mesmo texto fazia a linha 2 repetir a linha 1 quando nenhuma rua era
+ * reconhecida (ex.: "Tigre, Provincia de Buenos Aires, Argentina" virava linha 1 "Tigre" +
+ * linha 2 "Tigre, Provincia de Buenos Aires") e deixava o país sobrar sozinho na linha 2
+ * ("Ruta 9 km 42, Argentina" → linha 2 "Argentina"). `addressLines` resolve as DUAS linhas
+ * juntas, sabendo o que a linha 1 já consumiu — por isso a troca das duas chamadas por uma só.
+ *
+ * `neighborhood` continua tendo prioridade sobre o resumo calculado para a linha 2; `null` nas
+ * duas quando o endereço não tem NEM formatado NEM cru (linha vira alerta) — "" conta como
+ * ausente nos dois campos (`.trim()`), não só `null`/`undefined`.
  */
 function splitAddressForDisplay(
   addr: Pick<PatientAddressDetail, 'addressFormatted' | 'addressRaw' | 'neighborhood'>,
@@ -49,8 +53,9 @@ function splitAddressForDisplay(
   const full = formatted || raw || null;
   if (!full) return { line1: null, line2: null };
 
-  const line1 = streetLineOf(full) || full;
-  const line2 = addr.neighborhood ?? (summarizeAddress(full) || null);
+  const lines = addressLines(full);
+  const line1 = lines.line1 || full;
+  const line2 = addr.neighborhood ?? lines.line2;
   return { line1, line2 };
 }
 
