@@ -30,17 +30,11 @@ jest.mock('firebase-functions', () => ({
 }));
 
 import { Pool } from 'pg';
-import {
-  PatientService,
-  PatientSourceLabelRepository,
-  PatientInsuranceVerifiedRepository,
-  PatientDeviceTypeRepository,
-} from '../../src/modules/case';
-import { ClickUpFieldResolver } from '../../src/modules/integration/infrastructure/clickup/ClickUpFieldResolver';
-import { ClickUpPatientMapper } from '../../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
 import { SyncPatientFromClickUpTaskUseCase, type SyncPatientResult } from '../../src/modules/integration/application/SyncPatientFromClickUpTaskUseCase';
 import type { ClickUpTask } from '../../src/modules/integration/infrastructure/clickup/ClickUpTask';
 import { PatientQueryRepository } from '../../src/modules/case/infrastructure/PatientQueryRepository';
+import { PatientService } from '../../src/modules/case';
+import { makeUseCase, syncTask } from './helpers/clickupSyncEngine';
 
 const PATIENT_LIST_ID = '901304883903';
 const DATABASE_URL    = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -67,32 +61,8 @@ function makeClickUpTask(taskId: string): ClickUpTask {
   } as unknown as ClickUpTask;
 }
 
-function makeStubResolver(): ClickUpFieldResolver {
-  return {
-    resolveDropdown: () => null, resolveLabel: () => null, resolveLabels: () => [],
-    // Preflight 1.11 (migrations 304-310): `null` = campo renomeado/apagado → o mapper recusa
-    // a task inteira de propósito. O stub diz que os campos EXISTEM.
-    getFieldType: () => 'drop_down', dropdownFieldNames: [], labelsFieldNames: [],
-    getDropdownOptions: () => ({}), getLabelsOptions: () => ({}),
-  } as unknown as ClickUpFieldResolver;
-}
-
-/** Mesmas deps que `ClickUpPatientWebhookController.create()` montava — sem o
- *  refresher de catálogo (defesa específica de processo webhook de vida longa;
- *  este motor roda uma vez por chamada, catálogo sempre fresco). */
-function makeUseCase(): SyncPatientFromClickUpTaskUseCase {
-  const resolver = makeStubResolver();
-  return new SyncPatientFromClickUpTaskUseCase({
-    mapper:                 new ClickUpPatientMapper(resolver),
-    patientService:         new PatientService(),
-    sourceLabelRepository:  new PatientSourceLabelRepository(),
-    insuranceRepository:    new PatientInsuranceVerifiedRepository(),
-    deviceTypeRepository:   new PatientDeviceTypeRepository(),
-  });
-}
-
 async function runSync(useCase: SyncPatientFromClickUpTaskUseCase): Promise<SyncPatientResult> {
-  const result = await useCase.execute(makeClickUpTask(TASK_ID), { onMissingContact: 'flag' });
+  const result = await syncTask(useCase, makeClickUpTask(TASK_ID));
   expect(['CREATED', 'UPDATED']).toContain(result.kind);
   return result;
 }

@@ -50,17 +50,10 @@ jest.mock('firebase-functions', () => ({
 // ── Imports ───────────────────────────────────────────────────────────────────
 
 import { Pool } from 'pg';
-import {
-  PatientService,
-  PatientSourceLabelRepository,
-  PatientInsuranceVerifiedRepository,
-  PatientDeviceTypeRepository,
-} from '../../src/modules/case';
-import { ClickUpFieldResolver } from '../../src/modules/integration/infrastructure/clickup/ClickUpFieldResolver';
-import { ClickUpPatientMapper } from '../../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
-import { SyncPatientFromClickUpTaskUseCase, type SyncPatientResult } from '../../src/modules/integration/application/SyncPatientFromClickUpTaskUseCase';
+import { SyncPatientFromClickUpTaskUseCase } from '../../src/modules/integration/application/SyncPatientFromClickUpTaskUseCase';
 import type { ClickUpTask } from '../../src/modules/integration/infrastructure/clickup/ClickUpTask';
 import { createApiClient, createPatientFixture, getMockToken, waitForBackend } from './helpers';
+import { makeUseCase, syncTask } from './helpers/clickupSyncEngine';
 
 const PATIENT_LIST_ID = '901304883903';
 const DATABASE_URL    =
@@ -109,44 +102,6 @@ function makeClickUpTask(
       { id: 'cf-raw3',      name: 'Domicilio Informado Paciente 3',    type: 'text',     value: null },
     ],
   } as unknown as ClickUpTask;
-}
-
-function makeStubResolver(): ClickUpFieldResolver {
-  return {
-    resolveDropdown: () => null,
-    resolveLabel:    () => null,
-    resolveLabels:   () => [],
-    // Task 1.11: o catálogo diz que os campos EXISTEM (é o que este stub quer dizer com
-    // "resolves nothing"); `null` aqui significaria campo renomeado/apagado e o mapper
-    // recusaria a task inteira, de propósito.
-    getFieldType:    () => 'drop_down',
-    dropdownFieldNames: [],
-    labelsFieldNames:   [],
-    getDropdownOptions: () => ({}),
-    getLabelsOptions:   () => ({}),
-  } as unknown as ClickUpFieldResolver;
-}
-
-/** Mesmas deps que `ClickUpPatientWebhookController.create()` montava — sem o
- *  refresher de catálogo (era defesa específica de processo webhook de vida longa;
- *  este motor roda uma vez por chamada, catálogo sempre fresco). */
-function makeUseCase(): SyncPatientFromClickUpTaskUseCase {
-  const resolver = makeStubResolver();
-  const mapper   = new ClickUpPatientMapper(resolver);
-  return new SyncPatientFromClickUpTaskUseCase({
-    mapper,
-    patientService:        new PatientService(),
-    sourceLabelRepository: new PatientSourceLabelRepository(),
-    insuranceRepository:   new PatientInsuranceVerifiedRepository(),
-    deviceTypeRepository:  new PatientDeviceTypeRepository(),
-  });
-}
-
-async function syncTask(
-  useCase: SyncPatientFromClickUpTaskUseCase,
-  task: ClickUpTask,
-): Promise<SyncPatientResult> {
-  return useCase.execute(task, { onMissingContact: 'flag' });
 }
 
 async function insertActiveAddress(
