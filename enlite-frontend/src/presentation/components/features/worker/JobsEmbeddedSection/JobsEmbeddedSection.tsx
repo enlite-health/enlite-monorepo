@@ -5,6 +5,7 @@ import { Select } from '@presentation/components/atoms/Select';
 import { SearchInput } from '@presentation/components/molecules/SearchBar';
 import { PublicApiService } from '@infrastructure/http/PublicApiService';
 import { IncompleteRegistrationModal } from '@presentation/pages/public/components/IncompleteRegistrationModal';
+import { PostularseErrorModal } from '@presentation/pages/public/components/PostularseErrorModal';
 import type { PublicJobListing } from '@domain/entities/PublicJobListing';
 import {
   type Job,
@@ -336,12 +337,28 @@ export const JobsEmbeddedSection = ({
       {/* Cadastro incompleto — MESMO modal de /vacantes/:id (IncompleteRegistrationModal),
           alimentado pelo missingFields que a home já tem do GET /api/workers/me (sem
           requisição nova, sem recálculo local de completude — D302, decisão do parecer
-          jurídico de 10/09). Nem Postularse nem Ver Detalles chamam track-channel. */}
+          jurídico de 10/09). Nem Postularse nem Ver Detalles chamam track-channel.
+          
+          D1 (QA caça, incidente 08/09): `missingFields` null/ausente é "NÃO APUREI" —
+          nunca "incompleto". Acontece quando o backend não devolveu o array (ainda) OU
+          quando a worker clica ANTES do GET /api/workers/me da home resolver (a lista de
+          vagas tem fetch PRÓPRIO, independente, e pode carregar primeiro). Mostrar
+          "incompleto" nesse estado afirmaria o que a tela não sabe — mesmo defeito do
+          incidente. Reusa o MESMO PostularseErrorModal (mesmo texto) de /vacantes/:id
+          pro estado "não verificado", sem os CTAs de retry/completar (não fazem sentido
+          aqui e não dá pra mandar completar algo que talvez já esteja completo). */}
       {showIncompleteModal && (
-        <IncompleteRegistrationModal
-          missingFields={missingFields}
-          onClose={() => setShowIncompleteModal(false)}
-        />
+        missingFields == null ? (
+          <PostularseErrorModal
+            onClose={() => setShowIncompleteModal(false)}
+            body={t('publicVacancy.errorModal.bodyHome')}
+          />
+        ) : (
+          <IncompleteRegistrationModal
+            missingFields={missingFields}
+            onClose={() => setShowIncompleteModal(false)}
+          />
+        )
       )}
     </div>
   );

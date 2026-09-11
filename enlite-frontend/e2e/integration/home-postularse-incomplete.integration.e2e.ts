@@ -26,6 +26,7 @@ import {
   type InsertEligibilityWorkerResult,
 } from '../helpers/eligibility-worker-helper';
 import { loginNewWorker } from '../helpers/worker-realreg-auth-helper';
+import { buildMockToken } from '../helpers/worker-auth-helper';
 
 test.use({ video: 'on' });
 
@@ -128,5 +129,74 @@ test.describe('@integration Home — Postularse/Ver Detalles com cadastro incomp
 
     expect(popupOpened).toBe(false);
     expect(trackChannelRequests).toHaveLength(0);
+  });
+
+  // D1 (QA caça, rodada 4, incidente 08/09): a home NÃO PODE afirmar
+  // "incompleto" sobre um estado que não apurou. Isso acontece de verdade
+  // quando a worker clica Postularse/Ver Detalles ANTES do GET
+  // /api/workers/me da home resolver — a lista de vagas tem fetch PRÓPRIO
+  // e pode carregar primeiro. Pra forçar essa janela de corrida de forma
+  // determinística sem mockar DADO nenhum, atrasamos (route.continue() só
+  // depois de um sleep — a resposta que chega é a REAL, do backend real)
+  // só a chamada /api/workers/me; a lista de vagas segue seu caminho normal
+  // e carrega rápido.
+  test('completude NÃO APURADA (clique antes do GET /api/workers/me resolver) → mensagem de verificação, NÃO "incompleto", link não abre', async ({ page }) => {
+    const vacancyId = insertMinimalVacancy({ includeInPublicListing: true });
+    vacancies.push(vacancyId);
+    // Worker REGISTERED de verdade — a prova do defeito é que, mesmo sem
+    // faltar nada, a tela não pode dizer "incompleto" enquanto não apurou.
+    const w = insertEligibilityWorker({ occupation: 'CAREGIVER' });
+    workers.push(w);
+
+    await page.addInitScript(() => {
+      (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
+    });
+    await loginNewWorker(page, w.authUid, `${w.authUid}@test.local`);
+
+    // Registrado DEPOIS do loginNewWorker: rotas do Playwright disparam na
+    // ordem INVERSA de registro (a mais recente primeiro), então esta é a
+    // que intercepta a chamada. Repete o MESMO rewrite de header que o
+    // interceptor de auth faria (senão a requisição sai sem o Bearer
+    // mock_* e o real backend devolve 401 em vez de dado real atrasado).
+    const mockToken = buildMockToken(w.authUid, `${w.authUid}@test.local`);
+    await page.route('**/api/workers/me', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 6_000));
+      await route.continue({
+        headers: { ...route.request().headers(), authorization: `Bearer ${mockToken}` },
+      });
+    });
+
+    // SEM 'networkidle' de propósito: esperar rede ociosa esperaria os 6s do
+    // /api/workers/me atrasado e fecharia exatamente a janela que queremos
+    // testar. A lista de vagas usa um fetch independente e carrega rápido.
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+
+    const postularseBtn = page.getByRole('button', { name: 'Postularse' }).first();
+    await expect(postularseBtn).toBeVisible({ timeout: 15_000 });
+
+    let popupOpened = false;
+    page.once('popup', () => { popupOpened = true; });
+
+    await postularseBtn.click();
+
+    // Texto REAL (es.json), o mesmo que /vacantes/:id usa pro estado "não
+    // verificado" — nunca "Registro incompleto".
+    const verifyTitle = page.getByRole('heading', { name: 'No pudimos verificar tu registro' });
+    await expect(verifyTitle).toBeVisible({ timeout: 5_000 });
+    // Texto PRÓPRIO da home (rodada 5, D1) — o texto padrão fala em WhatsApp
+    // e "Completá tu registro o intentá nuevamente", que não fazem sentido
+    // aqui (Ver Detalles não abre WhatsApp; não há CTA de completar/retry).
+    await expect(page.getByText('No pudimos verificar tu registro en este momento. Volvé a intentarlo en unos minutos.')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Registro incompleto' })).toHaveCount(0);
+    // Sem CTA de completar registro — não dá pra mandar completar algo que
+    // talvez já esteja completo.
+    await expect(page.getByRole('button', { name: 'Completar registro' })).toHaveCount(0);
+
+    await expect(page.locator('[data-testid="postularse-error-modal-card"]')).toHaveScreenshot(
+      'home-completeness-unknown-modal.png',
+      { maxDiffPixels: 200 },
+    );
+
+    expect(popupOpened).toBe(false);
   });
 });
