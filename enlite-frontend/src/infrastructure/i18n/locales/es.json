@@ -652,6 +652,11 @@
     "pendingRequiredGeneric": "Para postularte necesitás subir:",
     "allRequiredDone": "Ya subiste todos los documentos obligatorios para postularte.",
     "requiredBadge": "Obligatorio",
+    "antecedentesHelp": {
+      "toggle": "¿No lo tenés? Cómo sacarlo",
+      "body": "Se tramita online con Clave Fiscal o Mi Argentina y te llega por e-mail. Podés elegir recibirlo en 5 días hábiles o en 24 horas.",
+      "link": "Cómo sacarlo"
+    },
     "additionalTitle": "Otros Documentos",
     "addDocument": "Agregar",
     "labelPlaceholder": "Nombre del documento (ej: Certificado Primeros Auxilios)",
