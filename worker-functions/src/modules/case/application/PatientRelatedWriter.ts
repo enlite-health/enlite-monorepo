@@ -238,9 +238,13 @@ export async function replacePatientAddresses(
     .map(r => r.id);
 
   if (goneIds.length > 0) {
-    // `goneIds` já só contém id de linha `source = 'clickup'` (veio do SELECT filtrado acima),
-    // mas o filtro é repetido aqui também — cada DML que toca patient_addresses neste arquivo
-    // declara a mesma invariante, sem depender de nenhum outro trecho tê-la garantido antes.
+    // A GARANTIA de que só linha `clickup` é tocada está no SELECT filtrado lá em cima (linha
+    // ~74): `goneIds` só existe a partir de `existing`, que já não contém nenhuma linha do
+    // painel. Isso vale para TODO este arquivo — Path 1 (UPDATE), Path 2 (archive) e o INSERT
+    // só agem sobre `existingForSlot`, derivado do mesmo `existing` filtrado.
+    // O `AND source = 'clickup'` repetido abaixo, nestes DOIS comandos, NÃO é essa garantia —
+    // é defesa em profundidade: se algum dia `goneIds` passar a vir de outro lugar, estes dois
+    // DML continuam não tocando linha de outra origem por conta própria.
     await client.query(
       `UPDATE patient_addresses
           SET archived_at = NOW()
