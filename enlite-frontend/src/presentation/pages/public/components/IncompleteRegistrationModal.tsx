@@ -131,9 +131,17 @@ export function IncompleteRegistrationModal({
         )}
         </div>
 
-        <Text size="sm" weight="medium" color="muted" className="mb-4 mt-4">
-          {t('publicVacancy.incompleteModal.redirectNotice')}
-        </Text>
+        {/* D4 (QA caça, rodada 4): redirectNotice só soma informação quando
+            existe LISTA (diz o que vai acontecer depois de ver os itens
+            específicos) — no estado genérico (isEmpty) o bodyGeneric já cobre
+            a mesma ideia ("vamos te redirecionar pro perfil"), e mostrar os
+            dois juntos repetia a mesma frase de dois jeitos. Comportamento
+            COM lista (o que o /vacantes mostra hoje) não muda. */}
+        {!isEmpty && (
+          <Text size="sm" weight="medium" color="muted" className="mb-4 mt-4">
+            {t('publicVacancy.incompleteModal.redirectNotice')}
+          </Text>
+        )}
 
         <div className="flex justify-end gap-3">
           <Button variant="ghost" size="sm" onClick={onClose}>
