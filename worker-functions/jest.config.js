@@ -32,6 +32,9 @@ module.exports = {
     // entra pela MESMA régua acima. O orquestrador (`import-patients-from-clickup.ts`,
     // paginação HTTP + Postgres) fica fora, como todo outro script CLI da pasta.
     'scripts/import-patients-from-clickup-flags.ts',
+    // Parecer do lex: guarda que recusa UPDATE via ClickUp (só cria paciente NOVO). Mesma
+    // régua acima — puro, testável, entra no piso.
+    'scripts/import-patients-from-clickup-guard.ts',
   ],
   coverageDirectory: 'coverage',
 
@@ -628,6 +631,14 @@ module.exports = {
     // que sai do dry-run, mesma disciplina do D10 do ingestor CID-11 e do backfill de
     // diagnóstico acima. Nasce em 100% nos quatro eixos — medido antes de entrar.
     'scripts/import-patients-from-clickup-flags.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Parecer do lex (11/09/2026): recusa UPDATE via ClickUp — a carga manual só cria paciente
+    // NOVO. Mesma régua da linha acima. Nasce em 100% nos quatro eixos.
+    'scripts/import-patients-from-clickup-guard.ts': {
       statements: 100,
       branches: 100,
       functions: 100,

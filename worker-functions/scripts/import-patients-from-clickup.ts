@@ -53,7 +53,8 @@ import { Pool } from 'pg';
 import { ClickUpFieldResolver } from '../src/modules/integration/infrastructure/clickup/ClickUpFieldResolver';
 import { ClickUpPatientMapper } from '../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
 import type { ClickUpTask } from '../src/modules/integration/infrastructure/clickup/ClickUpTask';
-import { SyncPatientFromClickUpTaskUseCase } from '../src/modules/integration/application/SyncPatientFromClickUpTaskUseCase';
+import { SyncPatientFromClickUpTaskUseCase, type SyncPatientResult } from '../src/modules/integration/application/SyncPatientFromClickUpTaskUseCase';
+import { decideIfNewPatientAllowed } from './import-patients-from-clickup-guard';
 import {
   PatientSourceLabelRepository,
   PatientInsuranceVerifiedRepository,
@@ -174,6 +175,55 @@ async function fetchAllTasks(): Promise<ClickUpTask[]> {
   return all;
 }
 
+/**
+ * Parecer do lex: quantos pacientes JÁ existem na plataforma com este `clickup_task_id`.
+ * `null` = não deu para checar (DB inacessível neste dry-run) — o script NUNCA trata isso como
+ * "zero" (F19: contagem zero é falha, não sucesso, quando na verdade é ausência de leitura).
+ * Reusa o pool de `--apply` quando existe; em dry-run abre um efêmero, best-effort.
+ */
+async function countExistingPatients(taskId: string, existingPool: Pool | null): Promise<number | null> {
+  let localPool = existingPool;
+  let shouldClose = false;
+  if (!localPool) {
+    try {
+      localPool = new Pool({ connectionString: DATABASE_URL });
+      shouldClose = true;
+    } catch {
+      return null;
+    }
+  }
+  try {
+    const { rows } = await localPool.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM patients WHERE clickup_task_id = $1`,
+      [taskId],
+    );
+    return rows[0]?.n ?? 0;
+  } catch {
+    return null;
+  } finally {
+    if (shouldClose) await localPool.end();
+  }
+}
+
+/**
+ * C1 do parecer do lex: o stdout deste script roda DENTRO de sessões do Claude — nunca pode
+ * levar nome/rótulo clínico. `SyncPatientResult` carrega `patientName` em 3 dos 7 `kind`
+ * possíveis; aqui fica só status/kind/ids/contagens.
+ */
+function redactSyncResult(result: SyncPatientResult): Record<string, unknown> {
+  switch (result.kind) {
+    case 'CREATED':
+    case 'UPDATED':
+      return { kind: result.kind, taskId: result.taskId, patientId: result.patientId, flagged: result.flagged };
+    case 'CASE_NUMBER_CONFLICT':
+      return { kind: result.kind, taskId: result.taskId, patientId: result.patientId, caseNumber: result.caseNumber };
+    case 'ERROR':
+      return { kind: result.kind, taskId: result.taskId, errorMessage: result.error.message };
+    default:
+      return { kind: result.kind, taskId: result.taskId };
+  }
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -223,17 +273,37 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
+    // Parecer do lex: SÓ cria paciente NOVO — nunca UPDATE. A checagem roda ANTES do motor em
+    // ambos os modos (dry-run classifica "criaria"/"já existe"; --apply recusa de verdade).
+    const existingCount = await countExistingPatients(singleTaskId, pool);
+    const decision = existingCount !== null
+      ? decideIfNewPatientAllowed({ clickupTaskId: singleTaskId, existingCount })
+      : null;
+
     if (isDryRun) {
       const resolver = await ClickUpFieldResolver.fromList(LIST_ID, { token: CLICKUP_TOKEN as string });
       const mapper = new ClickUpPatientMapper(resolver);
       const mapped = mapper.map(task);
       console.log(`${SCRIPT_TAG} case_number mapeado = ${(mapped as { caseNumber?: number } | null)?.caseNumber ?? 'null'}`);
+      if (decision === null) {
+        console.log(`${SCRIPT_TAG} classificação: DESCONHECIDA (banco não acessível neste dry-run — --apply consultaria de novo).`);
+      } else if (decision.allowed) {
+        console.log(`${SCRIPT_TAG} classificação: criaria (paciente novo — clickup_task_id não existe na plataforma).`);
+      } else {
+        console.log(`${SCRIPT_TAG} classificação: já existe (seria recusado) — ${decision.reason}`);
+      }
       console.log(`${SCRIPT_TAG} DRY-RUN — nada foi gravado. Rode com --apply para persistir.`);
       return;
     }
 
+    if (decision !== null && !decision.allowed) {
+      console.error(`${SCRIPT_TAG} ABORTADO: ${decision.reason}`);
+      if (pool) await pool.end();
+      process.exit(1);
+    }
+
     const result = await useCase!.execute(task);
-    console.log(`${SCRIPT_TAG} RESULTADO: ${JSON.stringify(result, null, 2)}`);
+    console.log(`${SCRIPT_TAG} RESULTADO: ${JSON.stringify(redactSyncResult(result), null, 2)}`);
     if (pool) await pool.end();
     if (result.kind === 'ERROR') process.exit(1);
     return;
