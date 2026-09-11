@@ -123,3 +123,41 @@ export function celulasForaDasTelas(catalog: readonly CatalogCategory[], registr
   const listadas = screensByCell(registry);
   return [...indexaCatalogo(catalog).keys()].filter((k) => !listadas.has(k)).sort();
 }
+
+const normaliza = (s: string): string => s.trim().toLowerCase();
+
+/**
+ * Busca/filtro da tela do grupo (US-21, FR-720, contracts/permissions-split.md §Busca).
+ *
+ * Filtra no CLIENTE, sobre a árvore já montada — nada muda no que é gravado (a `cells` marcada
+ * fica no `Set` da página, intacta; esta função só decide o que a grade DESENHA). Casa por três
+ * campos, todos em minúsculo e sem acento de propósito simples (o vocabulário é es-AR/pt-BR sem
+ * diacrítico nas palavras que a régua usa — "familia", "cobertura"):
+ *   1. o rótulo da TELA (bloco.rotulo) — bate a tela inteira, mostra TODAS as linhas dela;
+ *   2. o rótulo da LINHA (container ou recurso) — filtra só as linhas que baterem;
+ *   3. a chave TÉCNICA de cada célula da linha (`patient_family:read`) — para quem já sabe o nome
+ *      do recurso e busca por ele.
+ *
+ * Sem query, devolve os blocos como vieram (mesma referência de array, nova cópia rasa).
+ */
+export function filtraBlocosPorTexto(blocos: readonly BlocoDeTela[], query: string): BlocoDeTela[] {
+  const q = normaliza(query);
+  if (!q) return [...blocos];
+
+  const bate = (texto: string): boolean => normaliza(texto).includes(q);
+  const linhaBate = (linha: LinhaDeTela): boolean =>
+    bate(linha.rotulo)
+    || bate(linha.resource)
+    || Object.keys(linha.porAcao).some((acao) => bate(`${linha.resource}:${acao}`));
+
+  const filtrados: BlocoDeTela[] = [];
+  for (const bloco of blocos) {
+    if (bate(bloco.rotulo)) {
+      filtrados.push(bloco);
+      continue;
+    }
+    const grade = bloco.grade.filter(linhaBate);
+    if (grade.length > 0) filtrados.push({ ...bloco, grade });
+  }
+  return filtrados;
+}

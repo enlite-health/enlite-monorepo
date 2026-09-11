@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { Search } from 'lucide-react';
 import {
   AdminPermissionsApiService,
   type CatalogCategory,
@@ -73,6 +74,12 @@ function GroupDetail(): JSX.Element {
   const [cells, setCells] = useState<Set<string>>(new Set());
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [candidates, setCandidates] = useState<AdminUser[]>([]);
+  /**
+   * Busca da tela de permissões (US-21, FR-720). SÓ filtra o que a `ScreenTree` desenha — nunca
+   * toca `cells`: uma célula marcada com o filtro ativo continua marcada quando ele limpa, e o
+   * PUT de `cellsSave` manda o `Set` inteiro (contracts/permissions-split.md §Busca).
+   */
+  const [buscaCelulas, setBuscaCelulas] = useState('');
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -343,6 +350,22 @@ function GroupDetail(): JSX.Element {
           )}
         </div>
 
+        {/* Busca/filtro (US-21, FR-720): só sobre o que a grade DESENHA — o conjunto marcado que
+            fica fora do filtro não muda e vai junto no PUT (contracts/permissions-split.md). */}
+        {catalog.length > 0 && (
+          <Input
+            id="g-cells-search"
+            type="search"
+            inputSize="compact"
+            role="searchbox"
+            aria-label={t('admin.access.group.cells.searchLabel')}
+            placeholder={t('admin.access.group.cells.searchPlaceholder')}
+            leftIcon={<Search className="h-4 w-4 text-gray-800" />}
+            value={buscaCelulas}
+            onChange={(e) => setBuscaCelulas(e.target.value)}
+          />
+        )}
+
         {/* D286: por TELA → container → ações (a matriz recurso × ação saiu; ver ScreenTree). */}
         <ScreenTree
           catalog={catalog}
@@ -352,6 +375,7 @@ function GroupDetail(): JSX.Element {
           /* Quem aplica a implicação `mexer ⇒ ver` é o modelo, não a tela:
              marcar Crear y editar marca Ver junto (item 2 do Gabriel, 05/09). */
           onToggle={(key) => setCells((prev) => alternaCelula(catalog, prev, key))}
+          query={buscaCelulas}
         />
 
         {editable && (
