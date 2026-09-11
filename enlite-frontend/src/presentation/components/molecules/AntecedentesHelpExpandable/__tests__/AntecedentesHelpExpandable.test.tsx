@@ -13,7 +13,7 @@
  * `href`/`target`/`rel` exatos, nunca navega de verdade.
  */
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
@@ -40,6 +40,21 @@ beforeEach(() => {
   i18n.changeLanguage('es');
 });
 
+/**
+ * `userEvent.setup()` já wrappa o click em `act()` internamente, mas o
+ * `beforeAll` acima reinicializa o singleton `i18next` (a mesma instância
+ * que `src/test/setup.ts` já inicializou) — a promise dessa reinicialização
+ * some solta e o update que ela dispara no próximo render some da wrap do
+ * `act()` do userEvent, que só cobre o PRÓPRIO click. `act()` explícito
+ * aqui garante que a asserção só roda depois de QUALQUER efeito pendente
+ * assentar — sem isso, "not wrapped in act(...)" (achado do gate 11/09).
+ */
+async function clickToggle(user: ReturnType<typeof userEvent.setup>, toggle: HTMLElement): Promise<void> {
+  await act(async () => {
+    await user.click(toggle);
+  });
+}
+
 describe('AntecedentesHelpExpandable', () => {
   it('fechado por padrão — nem o texto nem o link aparecem', () => {
     render(<AntecedentesHelpExpandable />);
@@ -52,7 +67,7 @@ describe('AntecedentesHelpExpandable', () => {
     const user = userEvent.setup();
     render(<AntecedentesHelpExpandable />);
 
-    await user.click(screen.getByRole('button', { name: /¿No lo tenés\? Cómo sacarlo/i }));
+    await clickToggle(user, screen.getByRole('button', { name: /¿No lo tenés\? Cómo sacarlo/i }));
 
     expect(
       screen.getByText(
@@ -67,17 +82,17 @@ describe('AntecedentesHelpExpandable', () => {
     render(<AntecedentesHelpExpandable />);
     const toggle = screen.getByRole('button', { name: /¿No lo tenés\? Cómo sacarlo/i });
 
-    await user.click(toggle);
+    await clickToggle(user, toggle);
     expect(screen.getByTestId('antecedentes-help-body')).toBeInTheDocument();
 
-    await user.click(toggle);
+    await clickToggle(user, toggle);
     expect(screen.queryByTestId('antecedentes-help-body')).not.toBeInTheDocument();
   });
 
   it('C9 do lex: link com href EXATO (sem query string), target="_blank" e rel="noopener noreferrer"', async () => {
     const user = userEvent.setup();
     render(<AntecedentesHelpExpandable />);
-    await user.click(screen.getByRole('button', { name: /¿No lo tenés\? Cómo sacarlo/i }));
+    await clickToggle(user, screen.getByRole('button', { name: /¿No lo tenés\? Cómo sacarlo/i }));
 
     const link = screen.getByRole('link', { name: 'Cómo sacarlo' });
     expect(link).toHaveAttribute('href', ANTECEDENTES_HELP_URL);
@@ -93,7 +108,7 @@ describe('AntecedentesHelpExpandable', () => {
     const toggle = screen.getByRole('button', { name: /¿No lo tenés\? Cómo sacarlo/i });
 
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    await user.click(toggle);
+    await clickToggle(user, toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
   });
 
@@ -102,7 +117,7 @@ describe('AntecedentesHelpExpandable', () => {
     const user = userEvent.setup();
     render(<AntecedentesHelpExpandable />);
 
-    await user.click(screen.getByRole('button', { name: /Não tem\? Como conseguir/i }));
+    await clickToggle(user, screen.getByRole('button', { name: /Não tem\? Como conseguir/i }));
     expect(
       screen.getByText(
         'O trâmite é feito online com Clave Fiscal ou Mi Argentina e chega por e-mail. Você pode escolher recebê-lo em 5 dias úteis ou em 24 horas.',
