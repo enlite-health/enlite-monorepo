@@ -83,44 +83,7 @@ registry.registerPath({
   },
 });
 
-registry.registerPath({
-  method: 'post',
-  path: '/api/webhooks-test/clickup/patient',
-  tags: ['Webhooks · Test'],
-  summary: '[DEPRECATED] ClickUp patient webhook (teste)',
-  description:
-    'Variante de teste do webhook ClickUp de pacientes. ' +
-    'Mesmo comportamento de /api/webhooks/clickup/patient. Usar apenas para validação.',
-  deprecated: true,
-  security: [{ clickupHmac: [] }],
-  request: {
-    body: {
-      content: {
-        'application/json': {
-          schema: z.record(z.unknown()).openapi({ description: 'Payload ClickUp (teste).' }),
-        },
-      },
-    },
-  },
-  responses: {
-    200: { description: 'Evento de teste processado.', content: { 'application/json': { schema: OkMessage } } },
-    400: { description: 'Schema inválido.', content: { 'application/json': { schema: ErrorResponseSchema } } },
-    401: { description: 'HMAC inválido.', content: { 'application/json': { schema: ErrorResponseSchema } } },
-    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/webhooks-test/clickup/patient/_health',
-  tags: ['Webhooks · Test'],
-  summary: '[DEPRECATED] Liveness probe ClickUp (teste)',
-  description:
-    'Variante de teste do liveness probe do webhook ClickUp. ' +
-    'Sem autenticação. Usar apenas para validação de infraestrutura.',
-  deprecated: true,
-  security: [],
-  responses: {
-    200: { description: 'Serviço vivo (ambiente de teste).', content: { 'application/json': { schema: OkMessage } } },
-  },
-});
+// As variantes de teste do webhook ClickUp (`/api/webhooks-test/clickup/patient` e
+// `.../clickup/patient/_health`) saíram em 11/09/2026 junto com o webhook de produção —
+// decisão do Gabriel: a plataforma é a fonte, sem sync automático (ver
+// `ClickUpPatientWebhookController`, removido).

@@ -5,8 +5,6 @@
 import { Express } from 'express';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { createWebhookRoutes, PartnerAuthMiddleware, GoogleApiKeyValidator, WebhookPartnerRepository } from '@modules/integration';
-import { ClickUpPatientWebhookController } from '@modules/integration/interfaces/webhooks/controllers/ClickUpPatientWebhookController';
-import { ClickUpHmacMiddleware } from '@modules/integration/interfaces/webhooks/middleware/ClickUpHmacMiddleware';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { CloudTasksClient } from '@shared/events/CloudTasksClient';
 import { BookSlotFromWhatsAppUseCase } from '@modules/notification/application/BookSlotFromWhatsAppUseCase';
@@ -93,23 +91,8 @@ export async function startServer(
     console.log('[startup] Periskope inbound webhook route enabled');
   }
 
-  // ── ClickUp Patient webhook (async: fetches field definitions from ClickUp API) ──
-  const clickupSecret = process.env.CLICKUP_WEBHOOK_SECRET;
-  let clickupPatientController: ClickUpPatientWebhookController | undefined;
-  let clickupHmac: ClickUpHmacMiddleware | undefined;
-  if (clickupSecret) {
-    try {
-      clickupPatientController = await ClickUpPatientWebhookController.create();
-      clickupHmac = new ClickUpHmacMiddleware(clickupSecret);
-    } catch (err) {
-      console.error('[startup] ClickUp webhook controller init failed — route will be unavailable:', err);
-    }
-  } else {
-    console.warn('[startup] CLICKUP_WEBHOOK_SECRET not set — ClickUp webhook route will be unavailable');
-  }
-
-  app.use('/api/webhooks', createWebhookRoutes(partnerAuth, inboundWhatsAppController, clickupPatientController, clickupHmac, periskopeWebhookController));
-  app.use('/api/webhooks-test', createWebhookRoutes(partnerAuth, inboundWhatsAppController, clickupPatientController, clickupHmac, periskopeWebhookController));
+  app.use('/api/webhooks', createWebhookRoutes(partnerAuth, inboundWhatsAppController, periskopeWebhookController));
+  app.use('/api/webhooks-test', createWebhookRoutes(partnerAuth, inboundWhatsAppController, periskopeWebhookController));
 
   // Espelho da conversa da Luz (Chatwoot) → NOTA no Periskope, pro time ver e assumir.
   // Configurar um 2º webhook message_created no Chatwoot apontando pra cá (go-live).

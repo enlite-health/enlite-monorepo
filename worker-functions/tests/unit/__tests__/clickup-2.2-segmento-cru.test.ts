@@ -54,7 +54,6 @@ import { ClickUpFieldResolver } from '../../../src/modules/integration/infrastru
 import { ClickUpPatientMapper } from '../../../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
 import { ClickUpUnreadableFieldError } from '../../../src/modules/integration/infrastructure/clickup/helpers/dropdownCatalogGuard';
 import { resolveCatalogValue } from '../../../src/modules/integration/infrastructure/clickup/helpers/resolveCatalogValue';
-import { findCatalogDrift, staleCatalogImpactOnMapper } from '../../../src/modules/integration/infrastructure/clickup/helpers/catalogRefresher';
 import { CATALOGO_PACIENTES_FASE0, type ClickUpCatalogField } from '../../fixtures/clickup/catalogo-pacientes-fase0';
 import type { ClickUpTask, ClickUpTaskCustomField } from '../../../src/modules/integration/infrastructure/clickup/ClickUpTask';
 
@@ -997,56 +996,6 @@ describe('2.2/rodada3/defeito 1 — três estados, não dois', () => {
     expect(meus.some(l => l.includes('options_partially_resolved'))).toBe(true);
     expect(meus.some(l => l.includes('"requested":3') && l.includes('"resolved":1'))).toBe(true);
     expect(meus.filter(l => [U1, U_MORTO_A, U_MORTO_B, S1, PACIENTE].some(a => l.includes(a)))).toEqual([]);
-  });
-
-  it('AGRAVANTE (b): a deriva de OPÇÃO agora dispara a recarga do catálogo (1.13), com controle positivo', async () => {
-    const foto = await resolverComTresOpcoes();
-    const campoNaTarefa = (value: unknown): ClickUpTaskCustomField[] => ([
-      { id: 'c', name: CAMPO, type: 'labels', value },
-    ] as ClickUpTaskCustomField[]);
-
-    const saudavel = findCatalogDrift(foto, campoNaTarefa([U1, U2]), [CAMPO]);
-    const opcaoMorta = findCatalogDrift(foto, campoNaTarefa([U_MORTO_A]), [CAMPO]);
-    const parcial = findCatalogDrift(foto, campoNaTarefa([U1, U_MORTO_A]), [CAMPO]);
-    // CONTROLE POSITIVO: o detector de CAMPO continua funcionando (era o único que existia).
-    const renomeado = findCatalogDrift(
-      foto, [{ id: 'c', name: `${CAMPO} NOVO`, type: 'labels', value: [U1] }] as ClickUpTaskCustomField[], [CAMPO],
-    );
-
-    const resumo = (d: ReturnType<typeof findCatalogDrift>) =>
-      JSON.stringify(d.items.map(i => ({ kind: i.kind, req: i.optionsRequested, res: i.optionsResolved })));
-    console.log(`>>> 2.2/r3/d1-1.13 | opções CONHECIDAS       → deriva=${resumo(saudavel)}  (esperado: nenhuma)`);
-    console.log(`>>> 2.2/r3/d1-1.13 | opção RECRIADA/APAGADA  → deriva=${resumo(opcaoMorta)}`);
-    console.log(`>>> 2.2/r3/d1-1.13 | PARCIAL                 → deriva=${resumo(parcial)}`);
-    console.log(`>>> 2.2/r3/d1-1.13 | CONTROLE+ campo RENOMEADO → deriva=${resumo(renomeado)}`);
-
-    expect(saudavel.items).toEqual([]);                                  // sem falso positivo
-    expect(opcaoMorta.items.map(i => i.kind)).toEqual(['option_unknown']);
-    expect(opcaoMorta.fromTask).toHaveLength(1);                          // é o gatilho de RECARGA
-    expect(parcial.items[0]).toMatchObject({ kind: 'option_unknown', optionsRequested: 2, optionsResolved: 1 });
-    expect(renomeado.items.map(i => i.kind).sort()).toEqual(['declared_absent', 'unknown_field']);
-
-    // C1: o item vai INTEIRO para o log do controller. Nada aqui pode ser uuid ou rótulo.
-    const serializado = JSON.stringify(opcaoMorta.items);
-    console.log(`>>> 2.2/r3/d1-1.13/C1 | item serializado=${serializado}`);
-    expect([U1, U2, U3, U_MORTO_A, S1, S2, S3].some(a => serializado.includes(a))).toBe(false);
-  });
-
-  it('AGRAVANTE (b), 2ª metade: com a recarga FALHA, a opção desconhecida FECHA o sync', async () => {
-    const foto = await resolverComTresOpcoes();
-    const taskFields = [{ id: 'c', name: CAMPO, type: 'labels', value: [U_MORTO_A] }] as ClickUpTaskCustomField[];
-    const drift = findCatalogDrift(foto, taskFields, [CAMPO]);
-
-    const impacto = staleCatalogImpactOnMapper(foto, taskFields, [CAMPO]);
-    const impactoSaudavel = staleCatalogImpactOnMapper(
-      foto, [{ id: 'c', name: CAMPO, type: 'labels', value: [U1] }] as ClickUpTaskCustomField[], [CAMPO],
-    );
-
-    console.log(`>>> 2.2/r3/d1-fecha | drift=${drift.items.length} | impacto no mapper=${JSON.stringify(impacto.map(i => i.kind))}`);
-    console.log(`>>> 2.2/r3/d1-fecha | CONTROLE+ opções conhecidas → impacto=${JSON.stringify(impactoSaudavel)} (esperado [])`);
-
-    expect(impacto.map(i => i.kind)).toEqual(['option_unknown']);
-    expect(impactoSaudavel).toEqual([]);   // a régua não é "recusar sempre"
   });
 });
 

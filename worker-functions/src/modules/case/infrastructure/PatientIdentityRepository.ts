@@ -161,7 +161,12 @@ export class PatientIdentityRepository {
         health_insurance_name       = COALESCE(patients.health_insurance_name, EXCLUDED.health_insurance_name),
         health_insurance_member_id  = COALESCE(patients.health_insurance_member_id, EXCLUDED.health_insurance_member_id),
         case_number         = EXCLUDED.case_number,
-        -- status: always overwrite — ClickUp is the source of truth for patient lifecycle
+        -- status: always overwrite. 11/09/2026: a PLATAFORMA é a fonte da verdade do paciente
+        -- (decisão do Gabriel, sem sync automático) — este UPSERT só roda hoje na carga manual
+        -- pontual de paciente NOVO (scripts/import-patients-from-clickup.ts --task-id --apply,
+        -- que recusa UPDATE de paciente já existente antes de chegar aqui). Overwrite
+        -- incondicional continua correto porque, nesse caminho, EXCLUDED é sempre o primeiro
+        -- valor que o registro recebe.
         status              = EXCLUDED.status,
         updated_at          = NOW()
       RETURNING id, xmax::text`,

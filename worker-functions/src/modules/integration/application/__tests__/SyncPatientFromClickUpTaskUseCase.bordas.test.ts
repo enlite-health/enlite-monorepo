@@ -154,6 +154,20 @@ describe('erro NÃO-Error em cada passo best-effort vira mensagem legível, e o 
     expect(eventos(b.erros)).toContain('clickup_patient_sync.device_type_error');
   });
 
+  it('dispositivo: escrita lançando um Error DE VERDADE → a mensagem original chega ao log', async () => {
+    const b = bancada();
+    const repo = b.deps.deviceTypeRepository.replaceForPatient as unknown as jest.Mock;
+    // A 1ª chamada é a da cobertura (mesmo dublê); a 2ª é a do dispositivo.
+    repo.mockResolvedValueOnce({ outcome: 'written', received: 0, accepted: [], rejected: [], quarantined: 0 })
+        .mockRejectedValueOnce(new Error('pool esgotado i2c-dispositivo'));
+
+    const r = await new SyncPatientFromClickUpTaskUseCase(b.deps).execute(tarefa(), {}, 'cid-b4b');
+
+    expect(r.kind).toBe('UPDATED');
+    const evento = b.erros.find(a => a[0] === 'clickup_patient_sync.device_type_error');
+    expect(evento![1]).toMatchObject({ error: 'pool esgotado i2c-dispositivo', stage: 'write' });
+  });
+
   it('diagnóstico: `readPatologia` lançando string → stage=read, `syncFromLabel` não é chamado', async () => {
     const syncFromLabel = jest.fn();
     const b = bancada({ diagnosisMapper: { syncFromLabel } as unknown as SyncPatientDeps['diagnosisMapper'] });

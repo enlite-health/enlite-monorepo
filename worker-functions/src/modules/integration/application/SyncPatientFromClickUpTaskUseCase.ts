@@ -2,7 +2,10 @@
  * SyncPatientFromClickUpTaskUseCase
  *
  * Processes a single ClickUp task and upserts the corresponding patient record.
- * Designed to be called by both the batch CLI script and the incoming webhook handler.
+ *
+ * 11/09/2026 — o webhook e o reconciliador automáticos foram removidos (decisão do Gabriel:
+ * a plataforma é a fonte, sem sync automático). O ÚNICO chamador vivo hoje é o script manual
+ * de carga pontual (`scripts/import-patients-from-clickup.ts`).
  *
  * Does NOT fetch from the ClickUp API — the caller is responsible for fetching
  * and passing in an already-retrieved ClickUpTask.
@@ -65,11 +68,11 @@ export interface SyncPatientDeps {
   deviceTypeRepository: PatientDeviceTypeRepository;
   /**
    * spec 016 F4 — sincroniza "Tipo de Patología" com o diagnóstico CID-11 estruturado
-   * (`patient_diagnoses`, source='CLICKUP'). OPCIONAL, diferente de `insuranceRepository`/
-   * `deviceTypeRepository`: esta é uma capacidade NOVA desta fase, e os chamadores que ainda
-   * não a passam (scripts de import em lote, `ReconcileClickUpPatientsController`) apenas não
-   * sincronizam diagnóstico por enquanto — decisão de escopo do F4, registrada no relatório,
-   * não um esquecimento. O webhook (`ClickUpPatientWebhookController.create()`) sempre passa.
+   * (`patient_diagnoses`, source='CLICKUP'). OPCIONAL na assinatura (permanece opcional para
+   * quem monta o use case em teste sem essa dependência), mas o único chamador vivo hoje
+   * (`scripts/import-patients-from-clickup.ts`, no branch `--apply`) SEMPRE a passa desde
+   * 11/09/2026 (decisão do Gabriel: a carga manual passou a sincronizar diagnóstico também,
+   * mesma construção que `ClickUpPatientWebhookController.getDiagnosisMapper()` fazia).
    */
   diagnosisMapper?: ClickUpDiagnosisMapper;
 }
@@ -291,10 +294,14 @@ export class SyncPatientFromClickUpTaskUseCase {
       }
     } catch (err) {
       // Falha de infraestrutura no passo de chat ids (banco fora etc.): reporta
-      // e segue — a ficha do paciente já foi gravada. ⚠️ NÃO há retry
-      // automático garantido: o reconcile `cycle` só revisita tasks alteradas
-      // nos últimos 30min; a cura para falha antiga é o card mudar de novo ou
-      // um `mode=full` manual.
+      // e segue — a ficha do paciente já foi gravada. ⚠️ 11/09/2026: NÃO EXISTE MAIS retry
+      // automático nenhum — o reconciliador que revisitava tasks alteradas (`cycle`, janela de
+      // 30min) foi removido junto com o webhook (decisão do Gabriel: sem sync automático). E o
+      // script manual que ficou (`import-patients-from-clickup.ts`) é create-only (parecer do
+      // lex): se esta falha aconteceu na criação, um re-run com `--task-id --apply` para o
+      // MESMO task_id é RECUSADO (paciente já existe) — não há caminho automático nem manual
+      // simples para reprocessar só os chat ids depois do fato. Gap operacional conhecido,
+      // reportado, não fechado nesta mudança.
       reportError(err instanceof Error ? err : new Error(String(err)), {
         source: 'clickup_patient_sync.chat_ids',
         taskId: task.id,

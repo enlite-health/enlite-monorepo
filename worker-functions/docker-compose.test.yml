@@ -58,8 +58,6 @@ services:
       INTERNAL_TOKEN_SECRET: test-secret-for-e2e-only
       # Libera /api/docs sem requerer staff (somente em test)
       OPENAPI_PUBLIC: "true"
-      # Habilita a rota condicional de webhook ClickUp pro teste de cobertura
-      CLICKUP_WEBHOOK_SECRET: "test-secret-clickup-e2e-only"
       # Chat IDs do paciente (migration 260): busca de grupos no Periskope.
       #
       # LIGADO por default NESTE arquivo, que é só de teste. A versão anterior

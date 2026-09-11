@@ -43,14 +43,6 @@ type LabelsMap = Record<string, Record<string, string>>;
 export interface ClickUpFieldResolverOptions {
   token?: string;
   fetchImpl?: typeof fetch;
-  /**
-   * Task 1.13b — a chamada precisa poder DESISTIR. Sem isto, `/list/<id>/field` pendurado
-   * deixa a promessa em voo para sempre: quem espera por ela (o webhook) nunca responde e o
-   * período de silêncio do refresher nunca liga, porque ele só arma no `catch`. O prazo é do
-   * chamador (`ClickUpCatalogRefresher`); aqui só se garante que o `fetch` seja de fato
-   * abortado, e não apenas abandonado com a conexão aberta.
-   */
-  signal?: AbortSignal;
 }
 
 export class ClickUpFieldResolver {
@@ -72,7 +64,6 @@ export class ClickUpFieldResolver {
     const doFetch = opts.fetchImpl ?? fetch;
     const res = await doFetch(`${CLICKUP_API_BASE}/list/${listId}/field`, {
       headers: { Authorization: token },
-      signal:  opts.signal,
     });
     if (!res.ok) {
       throw new Error(`ClickUp /field API failed: HTTP ${res.status} ${res.statusText}`);

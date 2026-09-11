@@ -109,8 +109,15 @@ export const PATIENT_CATALOG_FIELDS: readonly CatalogFieldExpectation[] = [
 
 /**
  * Só os NOMES dos campos acima, derivados — nunca escritos duas vezes. Duas listas à mão
- * divergem em silêncio, que é o F20/F49/F51 desta casa. Consumido pelo controller
- * (`declaredFields` do refresher) e pelas travas de deriva das tasks 1.11/1.12.
+ * divergem em silêncio, que é o F20/F49/F51 desta casa.
+ *
+ * 11/09/2026 — o único CONSUMIDOR de produção era `ClickUpPatientWebhookController.create()`
+ * (`declaredFields` do `ClickUpCatalogRefresher`, removido junto com o webhook: decisão do
+ * Gabriel, sem sync automático). Hoje `PATIENT_DROPDOWN_FIELDS` não tem consumidor em `src/`
+ * fora da própria definição — mas continua vivo como fonte de verdade das travas de deriva das
+ * tasks 1.11/1.12, usado por 7 arquivos de teste do MAPPER (clickup-1.6-17, clickup-1.11,
+ * clickup-1.12, clickup-2.3, ClickUpPatientMapper.test.ts) para provar que a lista declarada
+ * aqui bate com o que o código realmente lê — sem relação com webhook ou sync automático.
  */
 /**
  * Campos que ficam no preflight mas NÃO são persistidos no cru genérico — C-H do parecer do
@@ -185,40 +192,12 @@ export class ClickUpPatientMapper {
     return [...this.requestedFieldNames];
   }
 
-  /**
-   * Task 1.13b — QUEM PERGUNTA é quem sabe responder "este campo importa ao mapper?".
-   *
-   * O harvester da 1.12 (o `Proxy` de `buildCustomFieldMap`) já anota o nome de CADA leitura,
-   * inclusive nome vindo de variável ou de laço. O que faltava era poder consultá-lo ANTES de
-   * decidir escrever. Isto roda a mesma varredura de `map()` só para colher os nomes: não
-   * escreve nada, não faz rede, e o resultado é DESCARTADO.
-   *
-   * Por que uma varredura de verdade, e não uma lista: lista escrita à mão nasce desatualizada
-   * (F20/F49/F51) — foi assim que `Equipo Tratante Multidisciplinario` escapou da 1.11. Aqui o
-   * conjunto é o que o código ACABOU de ler, para ESTA tarefa.
-   *
-   * Dois cuidados:
-   *   - `status` é zerado na cópia para que o `console.warn` de status desconhecido, que carrega
-   *     `task.id`, NÃO seja emitido por causa da sonda (C1 do parecer do `lex`: `task.id` é
-   *     proibido na linha). A cópia é rasa e `status` não é custom field: nenhuma leitura muda.
-   *   - `map()` pode lançar antes da varredura (o preflight da 1.11 roda primeiro). Nesse caso o
-   *     conjunto volta VAZIO — e vazio significa "não sei", nunca "nada importa". Quem decide
-   *     trata a contagem zero como falha (F19).
-   *
-   * LIMITE DECLARADO: `extractCaseNumber` lê `task.custom_fields` direto, sem passar pelo mapa,
-   * então `Caso Número` não aparece aqui. Não é buraco desta decisão: aquele campo é lido da
-   * TAREFA por nome, não do catálogo — recarregar o catálogo não muda nada para ele.
-   */
-  fieldNamesReadFor(task: ClickUpTask): readonly string[] {
-    const semStatus: ClickUpTask = { ...task, status: { ...task.status, status: '' } };
-    try {
-      this.map(semStatus);
-    } catch {
-      // Deliberadamente silencioso: a sonda não decide nada sozinha, e o erro que importa
-      // (campo ilegível) já é gritado por `assertReadableDropdownFields` no caminho real.
-    }
-    return this.getRequestedFieldNames();
-  }
+  // `fieldNamesReadFor()` (task 1.13b) foi removido em 11/09/2026 junto com
+  // `ClickUpCatalogRefresher`/`unsettledDriftThatMatters` — era a sonda que alimentava só a
+  // decisão de reload do webhook (removido, decisão do Gabriel: sem sync automático). Zero
+  // chamadores restantes (confirmado por grep). `getRequestedFieldNames()` continua vivo:
+  // `tests/unit/__tests__/clickup-1.12-nomes-de-campo.test.ts` o usa direto, sem passar por
+  // `fieldNamesReadFor`.
 
   /**
    * Task 2.3 — as LEITURAS CRUAS dos campos de catálogo, para persistir o rótulo literal ao
@@ -341,8 +320,12 @@ export class ClickUpPatientMapper {
     // cabeçalho de `dropdownCatalogGuard.ts`: 348 linhas de `dependency_level`, 185 de `sex`.
     // `resolveCatalogValue` separa os dois estados, e a bandeira `*Readable` leva a distinção
     // até o `UPDATE` — o MESMO desenho já aplicado a `clinical_specialty` e `insurance_verified`.
-    // ⚠️ O refresher de catálogo não salva: quando o reload FUNCIONA, `reloadIsSuspect === false`
-    // e o mapeamento segue contra um catálogo que continua sem saber traduzir aquele valor.
+    // ⚠️ 11/09/2026: não existe mais reload de catálogo (o `ClickUpCatalogRefresher` era
+    // defesa exclusiva do processo de vida longa do webhook, removido). O script manual busca
+    // um catálogo fresco a cada invocação (`ClickUpFieldResolver.fromList`), mas isso não
+    // resolve este caso: se a OPÇÃO em si não existe no catálogo (dado torto no ClickUp, não
+    // foto velha), nenhuma releitura — nem a de boot — traduz o valor. `dependencyLevelReadable`
+    // continua sendo o que impede o `UPDATE` de apagar o dado gravado antes.
     const dependenciaRead    = resolveCatalogValue(this.resolver, 'Dependencia', cf['Dependencia']);
     const dependencyLabel    = dependenciaRead.readable ? (dependenciaRead.labels[0] ?? null) : null;
     const sexoRead           = resolveCatalogValue(this.resolver, 'Sexo Asignado al Nacer (Uso Clínico)', cf['Sexo Asignado al Nacer (Uso Clínico)']);
@@ -410,6 +393,10 @@ export class ClickUpPatientMapper {
       hasCud:             this.parseClickUpBoolean(cf['Posee CUD']),
       hasConsent:         this.parseClickUpBoolean(cf['Consentimiento']),
       hasJudicialProtection: this.parseClickUpBoolean(cf['Amparo Judicial']),
+      // ⚠️ FIXO — a lista "Estado de Pacientes" só tem paciente argentino, e nenhum campo do
+      // card indica país/cidade fora da AR de forma confiável. Sem sinal para guardar contra:
+      // quem opera scripts/import-patients-from-clickup.ts é responsável por confirmar que o
+      // card é de paciente na AR ANTES de `--apply` (documentado no cabeçalho do script).
       country:            'AR',
 
       // Clinical

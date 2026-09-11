@@ -52,10 +52,17 @@ Quais caminhos podem criar/alterar uma `job_postings` row em prod, e quais escre
 
 ## Endereço do paciente (`patient_addresses`)
 
-### P8 — Webhook ClickUp paciente
+### P8 — Sync ClickUp paciente (HISTÓRICO — webhook removido 11/09/2026)
 
-- **Trigger:** ClickUp dispara webhook (taskCreated/taskUpdated).
-- **Endpoint:** `POST /api/webhooks/clickup/patient` → `ClickUpPatientWebhookController`.
+> ⚠️ O webhook `POST /api/webhooks/clickup/patient` e o reconciliador foram removidos em
+> 11/09/2026 (decisão do Gabriel: a plataforma é a fonte, sem sync automático). A carga do
+> ClickUp agora é só pontual/manual via `scripts/import-patients-from-clickup.ts`
+> (dry-run por padrão, grava só com `--apply`), que chama o MESMO motor
+> (`SyncPatientFromClickUpTaskUseCase`) descrito abaixo — a regra de versionamento de
+> endereço não mudou, só o gatilho deixou de ser automático.
+
+- **Trigger (antigo):** ClickUp disparava webhook (taskCreated/taskUpdated).
+- **Trigger (atual):** operador roda o script manual numa sessão.
 - **Persistência via `PatientService.upsertFromClickUp` → `PatientRelatedWriter.replacePatientAddresses`:**
   - Lê endereços ATIVOS do paciente (`archived_at IS NULL`).
   - Pra cada slot do ClickUp (1, 2, 3):
@@ -67,11 +74,23 @@ Quais caminhos podem criar/alterar uma `job_postings` row em prod, e quais escre
     - Se referenciado por vaga: `archived_at = NOW()` (preserva contexto)
     - Se órfão: `DELETE`
 
-### P9 — CLI `import-patients-from-clickup.ts`
+### P9 — CLI `import-patients-from-clickup.ts` (ÚNICO pipeline de sync ativo desde 11/09/2026)
 
-- **Trigger:** `npx ts-node scripts/import-patients-from-clickup.ts --live`.
-- **Lógica:** mesma do webhook (chama `PatientService.upsertFromClickUp` → `PatientRelatedWriter.replacePatientAddresses`).
-- **Uso:** backfill manual após deploys ou correções de massa.
+- **Trigger:** `npx ts-node scripts/import-patients-from-clickup.ts --task-id <id> --apply`
+  (dry-run por padrão; `--live` não existe mais).
+- **Lógica:** mesmo motor do P8 (`SyncPatientFromClickUpTaskUseCase` → `PatientService.upsertFromClickUp`
+  → `PatientRelatedWriter.replacePatientAddresses`), agora também sincronizando diagnóstico
+  (`ClickUpDiagnosisMapper`, decisão do Gabriel 11/09/2026).
+- **Regras de operação (decisão do Gabriel + parecer do lex, 11/09/2026 — NÃO é mais "correção
+  de massa"):**
+  1. `--apply` só é aceito junto de `--task-id` — carga em massa (lista inteira) nunca grava.
+  2. Só CRIA paciente novo — recusa se `clickup_task_id` já existir na plataforma (nunca UPDATE).
+  3. Autorização ESCRITA do Gabriel por carga, ANTES de rodar.
+  4. Registro em `docs/legal/registros/AAAA-MM-DD-carga-clickup.md` por carga executada — sem
+     nome do paciente nem rótulo clínico.
+  5. Nunca agendar (Cloud Scheduler/cron/CI) — carga PONTUAL numa sessão de terminal.
+- **Uso:** carga de UM paciente novo por vez, numa sessão manual — não é mais um mecanismo de
+  backfill em lote.
 
 ### P10 — POST `/api/admin/patients/:patientId/addresses`
 
@@ -87,7 +106,8 @@ Quais caminhos podem criar/alterar uma `job_postings` row em prod, e quais escre
 | `parseFromPdf` / `parseFromText` endpoints | Removidos |
 | `MatchPdfAddressToPatientAddressUseCase` | Removido |
 | `JobScraperService` (cheerio + WP) | Removido |
-| Sync de **vagas** ClickUp (`import-vacancies-from-clickup.ts`) | Depreciado (memória `project_clickup_deprecation`). Sync de pacientes (P8 + P9) é o único ativo. |
+| Sync de **vagas** ClickUp (`import-vacancies-from-clickup.ts`) | Depreciado (memória `project_clickup_deprecation`). |
+| Webhook + reconciliador automático de paciente (P8) | Removido 11/09/2026 — decisão do Gabriel, sem sync automático. Sync de pacientes (P9, manual) é o único ativo. |
 
 ## Auditoria
 
