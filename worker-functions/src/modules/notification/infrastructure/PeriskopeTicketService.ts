@@ -1,7 +1,7 @@
 import { AxiosInstance } from 'axios';
 import { createPeriskopeHttpClient } from './periskopeHttpClient';
 import { IPeriskopeTicketService, TicketPriority } from '../domain/IPeriskopeTicketService';
-import { logger, reportError } from '@shared/logging';
+import { logger, reportError, safeErrorFields, redactContact } from '@shared/logging';
 
 /**
  * PeriskopeTicketService — cria tickets no Periskope (gestão de fila humana),
@@ -48,7 +48,7 @@ export class PeriskopeTicketService implements IPeriskopeTicketService {
       return true;
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));
-      logger.warn({ error: e.message, chatPhone }, '[PeriskopeTicketService] createTicket failed (best-effort)');
+      logger.warn({ ...safeErrorFields(err), chatPhone: redactContact(chatPhone, 'phone') }, '[PeriskopeTicketService] createTicket failed (best-effort)');
       reportError(e, { source: 'PeriskopeTicketService:createTicket' });
       return false;
     }
