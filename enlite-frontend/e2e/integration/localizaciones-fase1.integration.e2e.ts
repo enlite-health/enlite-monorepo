@@ -24,7 +24,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { insertTestPatient } from '../helpers/db-test-helper';
 import { readAddresses, cleanupPatientDeep, runSQL } from '../helpers/patient-detail-b-helper';
-import { instalarFakeDeGestos, CABA_CORRIENTES, CABA_CORRIENTES_CON_ZONA } from '../helpers/google-places-fake-gestos';
+import { instalarFakeDeGestos, CABA_CORRIENTES_CON_ZONA } from '../helpers/google-places-fake-gestos';
 
 const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
 const EMULATOR_PROJECT = 'demo-no-project';
