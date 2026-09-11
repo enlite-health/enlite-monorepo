@@ -361,9 +361,7 @@ export default defineConfig({
         // o cálculo local de documentos (`useWorkerProfileProgress.ts` — só
         // registro agora — e `WorkerHome.tsx`, que passou a decidir
         // completude só por `missingFields` do servidor). Nascem/ficam em
-        // 100% nos 4 eixos, medidos na suíte inteira. `ProfileCompletionSummary.tsx`
-        // NÃO entra aqui — mede 99,46/85/80/99,46: o gap é PRÉ-EXISTENTE
-        // (linha 81 e outros ramos que esta fase não tocou), não desta change.
+        // 100% nos 4 eixos, medidos na suíte inteira.
         '**/src/presentation/components/organisms/PendingTasksCard/PendingTasksCard.tsx': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
@@ -371,6 +369,16 @@ export default defineConfig({
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
         '**/src/presentation/pages/home/WorkerHome.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        // D200.12: ProfileCompletionSummary.tsx estava no diff da Fase 2 (a
+        // assinatura de useWorkerProfileProgress mudou embaixo dele), então a
+        // régua é o ARQUIVO INTEIRO — não só a linha nova. Fechado o gap
+        // pré-existente (linha 81 do catch, os cliques de fechar/aba
+        // pendente, e as combinações de step completo/incompleto que
+        // faltavam) com ProfileCompletionSummary.test.tsx; mede 100 nos 4
+        // eixos na suíte inteira agora.
+        '**/src/presentation/components/organisms/ProfileCompletionSummary/ProfileCompletionSummary.tsx': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
       },
