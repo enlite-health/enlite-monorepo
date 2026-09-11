@@ -78,9 +78,10 @@ export function useWorkerProfileProgress(
         })),
         completedCount: registrationCompletedSteps,
         totalCount: registrationTotalSteps,
-        percentage: registrationTotalFields > 0
-          ? Math.round((registrationCompletedFields / registrationTotalFields) * 100)
-          : 0,
+        // registrationTotalFields nunca é 0: é a SOMA dos totalFields de step1/2/3, e cada um
+        // é TOKENS_BY_TAB[tab].length (workerProgressValidation.ts:100) — toda aba tem token.
+        // Sem ramo morto: se algum dia isso deixar de valer, o teste denuncia NaN%, não silêncio.
+        percentage: Math.round((registrationCompletedFields / registrationTotalFields) * 100),
       },
       {
         id: 'documents',
@@ -99,9 +100,9 @@ export function useWorkerProfileProgress(
 
     const totalFields = registrationTotalFields + documentsTotal;
     const completedFields = registrationCompletedFields + documentsCompleted;
-    const overallPercentage = totalFields > 0
-      ? Math.round((completedFields / totalFields) * 100)
-      : 0;
+    // totalFields nunca é 0 pela mesma razão acima, mais documentsTotal (getRequiredDocSlugs
+    // devolve 2 pra Cuidador ou 4 pra AT — nunca vazio).
+    const overallPercentage = Math.round((completedFields / totalFields) * 100);
 
     const allStepsComplete = stepValidation.step1 && stepValidation.step2 && stepValidation.step3;
 
