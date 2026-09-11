@@ -92,7 +92,9 @@ test.describe('@integration Home — Postularse/Ver Detalles com cadastro incomp
     await phoneItem.click();
 
     await expect(page).toHaveURL(/\/worker\/profile\?tab=general&focus=phone/, { timeout: 15_000 });
-    await expect(page.locator('[data-testid="tab-btn-general"]')).toBeVisible({ timeout: 15_000 });
+    const generalTab = page.locator('[data-testid="tab-btn-general"]');
+    await expect(generalTab).toBeVisible({ timeout: 15_000 });
+    await expect(generalTab).toHaveScreenshot('home-incomplete-modal-phone-general-tab.png', { maxDiffPixels: 200 });
   });
 
   test('alt — "Ver Detalles" com cadastro incompleto abre o MESMO modal e NENHUMA request pra track-channel', async ({ page }) => {
@@ -119,6 +121,10 @@ test.describe('@integration Home — Postularse/Ver Detalles com cadastro incomp
 
     const modal = page.getByRole('heading', { name: 'Registro incompleto' });
     await expect(modal).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="incomplete-modal-pending-list"]')).toHaveScreenshot(
+      'home-incomplete-modal-ver-detalles.png',
+      { maxDiffPixels: 200 },
+    );
 
     expect(popupOpened).toBe(false);
     expect(trackChannelRequests).toHaveLength(0);

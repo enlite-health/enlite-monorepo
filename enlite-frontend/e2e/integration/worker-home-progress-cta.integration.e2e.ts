@@ -85,14 +85,22 @@ test.describe('@integration Home — CTA do card de progresso', () => {
     // '/worker-registration' é hoje um alias (<Navigate to="/worker/profile" replace />)
     // — a prova é que a prestadora chega no cadastro, não numa rota morta.
     await expect(page).toHaveURL(/\/worker\/profile/, { timeout: 15_000 });
-    await expect(page.locator('[data-testid="tab-btn-general"]')).toBeVisible({ timeout: 15_000 });
+    const generalTab = page.locator('[data-testid="tab-btn-general"]');
+    await expect(generalTab).toBeVisible({ timeout: 15_000 });
+    await expect(generalTab).toHaveScreenshot('home-cta-general-tab-active.png', { maxDiffPixels: 200 });
   });
 
   test('cadastro + documentos completos: card de progresso não aparece', async ({ page }) => {
     const w = insertEligibilityWorker({ occupation: 'CAREGIVER' }); // todos os campos/docs default=true
     await loginAndGoHome(page, w);
 
-    await expect(page.locator('[data-testid="jobs-section"], #jobs-section')).toBeVisible({ timeout: 20_000 });
+    const jobsSection = page.locator('[data-testid="jobs-section"], #jobs-section');
+    await expect(jobsSection).toBeVisible({ timeout: 20_000 });
     await expect(page.locator('[data-testid="profile-completion-card"]')).toHaveCount(0);
+    // Prova visual de que NADA (nenhum card de progresso) renderiza acima da
+    // seção de vagas quando o cadastro está completo.
+    await expect(jobsSection).toHaveScreenshot('home-no-progress-card-jobs-section.png', {
+      maxDiffPixels: 300,
+    });
   });
 });
