@@ -9,6 +9,12 @@
  *
  * `missingFields` é SEMPRE o array vindo do servidor (Fase 1) — este
  * componente NUNCA recalcula completude local (F1/DD1).
+ *
+ * BLOCKER 1 (gate 11/09): título (N) e "X de Y" tinham unidades diferentes —
+ * N contava `missingFields.length` cru, Y usava um total fixo calculado com
+ * `getRequiredDocSlugs` (que trata profissão NULL como CUIDADOR, divergindo
+ * do portão SQL). O bloco "BLOCKER 1 — contagem" abaixo prova, caso a caso,
+ * que agora N = linhas renderizadas e Y é derivado delas.
  */
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -18,7 +24,12 @@ import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
 import ptBRJson from '@infrastructure/i18n/locales/pt-BR.json';
 
-import { PendingTasksCard } from '../PendingTasksCard';
+// Importa pelo BARREL (index.ts), não pelo arquivo direto — BLOCKER 3 do
+// gate (11/09): `PendingTasksCard/index.ts` aparecia com 0% de cobertura
+// porque nenhum teste real passava por ele (WorkerHome.test.tsx mocka o
+// componente pelo mesmo caminho de barrel). Mesmo caminho de import que
+// `WorkerHome.tsx` usa em produção.
+import { PendingTasksCard } from '..';
 
 const mockNavigate = vi.fn();
 vi.mock('react-router-dom', () => ({
@@ -91,9 +102,9 @@ describe('PendingTasksCard', () => {
       expect(texts.indexOf('Información General')).toBeLessThan(texts.indexOf('Antecedentes penales'));
     });
 
-    it('título conta as DUAS pendências ("Te falta 2 pasos")', () => {
+    it('título conta as DUAS pendências ("Te faltan 2 pasos")', () => {
       render(<PendingTasksCard missingFields={['doc_criminal_record', 'phone']} profession="CAREGIVER" />);
-      expect(screen.getByText('Te falta 2 pasos para postularte')).toBeInTheDocument();
+      expect(screen.getByText('Te faltan 2 pasos para postularte')).toBeInTheDocument();
     });
 
     it('botão da linha de registro diz "Completar", não "Subir ahora"', () => {
@@ -143,6 +154,89 @@ describe('PendingTasksCard', () => {
       i18n.changeLanguage('pt-BR');
       render(<PendingTasksCard missingFields={['doc_criminal_record']} profession="AT" />);
       expect(screen.getByText('Falta 1 passo para você se candidatar')).toBeInTheDocument();
+    });
+  });
+
+  /**
+   * BLOCKER 1 — contagem reproduzida pelo gate (11/09).
+   *
+   * O gate encontrou o bug com o script de diagnóstico
+   * `.../scratchpad/vt/pending-count.test.tsx`, rodado contra o código
+   * ANTIGO (pré-fix). Os valores "ANTES" citados nos comentários de cada
+   * caso abaixo são os que aquele script logou (buggy); os asserts são os
+   * valores CORRETOS pós-fix — cada um comprovado à mão contra a fórmula
+   * (a)-(c) do gate e batido de volta contra o valor antigo.
+   */
+  describe('BLOCKER 1 — contagem: N (título) e Y ("X de Y") na MESMA unidade (linha renderizada)', () => {
+    it('caso A: AT com phone + title_certificate (mesma aba) + doc_criminal_record → ANTES "Te falta 3 pasos"/2 linhas/"4 de 7" (unidades divergentes); AGORA "Te faltan 2 pasos", 2 linhas, "5 de 7"', () => {
+      render(
+        <PendingTasksCard
+          missingFields={['phone', 'title_certificate', 'doc_criminal_record']}
+          profession="AT"
+        />,
+      );
+      expect(screen.getByText('Te faltan 2 pasos para postularte')).toBeInTheDocument();
+      expect(screen.getByText('Ya completaste 5 de 7')).toBeInTheDocument();
+      expect(screen.getAllByTestId('pending-task-row')).toHaveLength(2);
+    });
+
+    it('caso B: profession NULL com profession + doc_resume_cv + doc_at_certificate pendentes → ANTES "2 de 5" (NULL tratado como CUIDADOR); AGORA "4 de 7" (NULL tratado como AT, paridade com o portão)', () => {
+      render(
+        <PendingTasksCard
+          missingFields={['profession', 'doc_resume_cv', 'doc_at_certificate']}
+          profession={null}
+        />,
+      );
+      expect(screen.getByText('Te faltan 3 pasos para postularte')).toBeInTheDocument();
+      expect(screen.getByText('Ya completaste 4 de 7')).toBeInTheDocument();
+      expect(screen.getAllByTestId('pending-task-row')).toHaveLength(3);
+    });
+
+    it('caso C: cadastro novo CAREGIVER (14 campos gerais + área + disponibilidade + 2 docs = 18 tokens crus, só 5 linhas) → ANTES título "Te falta 18 pasos" contra 5 botões na tela; AGORA "Te faltan 5 pasos"', () => {
+      const generalTokens = [
+        'first_name', 'last_name', 'sex', 'gender', 'birth_date', 'document_number',
+        'phone', 'languages', 'profession', 'knowledge_level', 'title_certificate',
+        'years_experience', 'experience_types', 'preferred_types',
+      ];
+      render(
+        <PendingTasksCard
+          missingFields={[
+            ...generalTokens,
+            'worker_service_areas',
+            'worker_availability',
+            'doc_identity_document',
+            'doc_criminal_record',
+          ]}
+          profession="CAREGIVER"
+        />,
+      );
+      expect(screen.getByText('Te faltan 5 pasos para postularte')).toBeInTheDocument();
+      expect(screen.getByText('Ya completaste 0 de 5')).toBeInTheDocument();
+      expect(screen.getAllByTestId('pending-task-row')).toHaveLength(5);
+    });
+
+    it('caso D: token cru "worker_documents" (fallback da Fase 1, expansão por documento indisponível) → UMA linha genérica "Documentos", NENHUM doc_* marcado como concluído', () => {
+      render(<PendingTasksCard missingFields={['worker_documents']} profession="CAREGIVER" />);
+      expect(screen.getByText('Te falta 1 paso para postularte')).toBeInTheDocument();
+      expect(screen.getByText('Ya completaste 3 de 4')).toBeInTheDocument();
+      expect(screen.getAllByTestId('pending-task-row')).toHaveLength(1);
+      expect(screen.getAllByText('Documentos').length).toBeGreaterThan(0);
+      // ANTES (bug): os 4 doc_* apareciam no recolhido como "concluídos" sem
+      // saber qual documento realmente falta. AGORA: nenhum doc_* nomeado no
+      // recolhido — só os 3 passos de registro (não pendentes aqui).
+      const collapsed = screen.getByTestId('pending-tasks-completed');
+      expect(collapsed).not.toHaveTextContent('Documento de identidad');
+      expect(collapsed).not.toHaveTextContent('Antecedentes penales');
+      expect(collapsed).not.toHaveTextContent('Currículum vitae');
+      expect(collapsed).not.toHaveTextContent('Certificado de Acompañante Terapéutico');
+    });
+
+    it('2+ tokens na MESMA aba de registro colapsam em UMA linha — título usa a linha, não os tokens crus', () => {
+      render(<PendingTasksCard missingFields={['phone', 'first_name']} profession="CAREGIVER" />);
+      // ANTES (bug): pendingCount = missingFields.length = 2 → "Te falta 2 pasos" com 1 linha só na tela.
+      expect(screen.getByText('Te falta 1 paso para postularte')).toBeInTheDocument();
+      expect(screen.getByText('Ya completaste 4 de 5')).toBeInTheDocument();
+      expect(screen.getAllByTestId('pending-task-row')).toHaveLength(1);
     });
   });
 });

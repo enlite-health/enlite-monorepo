@@ -4,8 +4,8 @@ import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { destinationFor, buildProfileUrl, type TabId } from '@presentation/utils/incompleteFieldDestinations';
-import { getRequiredDocSlugs } from '@presentation/utils/workerDocumentRequirements';
+import { destinationFor, buildProfileUrl, TAB_ORDER, type TabId } from '@presentation/utils/incompleteFieldDestinations';
+import { requiredDocTypesFor } from '@presentation/utils/workerDocumentPolicy';
 
 interface PendingTasksCardProps {
   /**
@@ -18,23 +18,8 @@ interface PendingTasksCardProps {
   className?: string;
 }
 
-/** Ordem fixa de registro (DD2): general → address → availability. */
-const REGISTRATION_TAB_ORDER: readonly TabId[] = ['general', 'address', 'availability'];
-
-/**
- * Ordem da política de documentos (F5): DNI → antecedentes → CV → certificado
- * AT. Espelha `BASE_COLUMNS`/`AT_EXTRA_COLUMNS` de
- * worker-functions/.../documentTokenExpansion.ts — NÃO a ordem de
- * `workerDocumentRequirements.getRequiredDocSlugs` (que lista resume_cv
- * primeiro para AT). A ordem de EXIBIÇÃO segue F5; a CONTAGEM de exigidos
- * (Y) segue a política do frontend, como pedido.
- */
-const DOC_TOKEN_ORDER = [
-  'doc_identity_document',
-  'doc_criminal_record',
-  'doc_resume_cv',
-  'doc_at_certificate',
-] as const;
+/** Ordem de registro (DD2): `TAB_ORDER` sem 'documents' — general → address → availability. */
+const REGISTRATION_TAB_ORDER: readonly TabId[] = TAB_ORDER.filter((tab) => tab !== 'documents');
 
 interface TaskRow {
   key: string;
@@ -47,8 +32,26 @@ interface TaskRow {
  * Lista de tarefas da home (Fase 2, DD2/DD3) — substitui o
  * `ProfileCompletionCard`. Uma linha por pendência: registro AGRUPADO por
  * aba (general/address/availability), documento como linha própria por
- * `doc_*`. Botão de cada linha leva direto ao destino
- * (`incompleteFieldDestinations` — sem segundo mapa token→destino).
+ * `doc_*` — na ordem da POLÍTICA DE PARIDADE COM O PORTÃO
+ * (`workerDocumentPolicy.requiredDocTypesFor`, NULL/'' tratado como AT,
+ * igual ao SQL gate e ao `BlockedApplicationRepository.expandDocumentToken`
+ * do backend — NÃO `workerDocumentRequirements.ts`, que diverge de
+ * propósito pra outro consumidor). Botão de cada linha leva direto ao
+ * destino (`incompleteFieldDestinations` — sem segundo mapa
+ * token→destino).
+ *
+ * Achado do gate (BLOCKER 1, 11/09): N (título) e "X de Y" tinham UNIDADES
+ * DIFERENTES — N contava `missingFields.length` (tokens crus; 2 campos na
+ * mesma aba contavam 2, mas só geravam 1 linha) enquanto X/Y usavam um
+ * total FIXO (3 + docs exigidos). Um cadastro novo mostrava "Te falta 18
+ * pasos" com 5 botões na tela. Agora as duas contas usam a MESMA unidade —
+ * a LINHA renderizada (`rows.length`) — e Y é derivado delas, não fixo.
+ *
+ * `worker_documents` cru (BLOCKER 1b — fallback da Fase 1 quando a
+ * expansão por documento falha): vira UMA linha genérica "Documentos" e
+ * NENHUM documento entra no recolhido — marcar `doc_*` como concluído sem
+ * saber quais é a mesma classe de erro que este componente existe pra
+ * consertar (a home mentindo sobre o que falta).
  *
  * `data-clarity-mask="True"` no contêiner das linhas: nomeia o que falta no
  * cadastro da pessoa (parecer do lex, condição C12 — mesma régua do
@@ -64,13 +67,10 @@ export function PendingTasksCard({
 
   if (missingFields.length === 0) return null;
 
-  const pendingTabsSet = new Set<TabId>(
-    missingFields
-      .filter((token) => destinationFor(token).tab !== 'documents')
-      .map((token) => destinationFor(token).tab),
-  );
+  const registrationTokens = missingFields.filter((token) => destinationFor(token).tab !== 'documents');
+  const documentsTokens = missingFields.filter((token) => destinationFor(token).tab === 'documents');
 
-  const pendingDocTokens = DOC_TOKEN_ORDER.filter((token) => missingFields.includes(token));
+  const pendingTabsSet = new Set<TabId>(registrationTokens.map((token) => destinationFor(token).tab));
 
   const registrationRows: TaskRow[] = REGISTRATION_TAB_ORDER.filter((tab) => pendingTabsSet.has(tab)).map(
     (tab) => ({
@@ -81,35 +81,52 @@ export function PendingTasksCard({
     }),
   );
 
-  const documentRows: TaskRow[] = pendingDocTokens.map((token) => ({
-    key: token,
-    label: t(`publicVacancy.incompleteModal.fields.${token}`, { defaultValue: token }),
-    actionLabel: t('profile.pendingTasks.uploadAction'),
-    url: buildProfileUrl(destinationFor(token)),
-  }));
+  // Documentos obrigatórios pela política de PARIDADE COM O PORTÃO — NULL/''
+  // vira AT (4 docs), igual ao SQL gate. Ordem já é DNI → antecedentes → CV
+  // → certificado AT (mesma ordem que o backend expande).
+  const requiredDocTokens = requiredDocTypesFor(profession).map((docType) => `doc_${docType}`);
+
+  // Token cru (ex.: `worker_documents`) na aba documents que NÃO é `doc_*`:
+  // a expansão por documento da Fase 1 falhou/não rodou — não dá pra saber
+  // QUAL documento falta, então uma linha genérica, e nenhum doc_* entra
+  // no recolhido como concluído (não sabemos que está feito).
+  const hasGenericDocToken = documentsTokens.some((token) => !token.startsWith('doc_'));
+
+  const documentRows: TaskRow[] = hasGenericDocToken
+    ? [
+        {
+          key: 'documents-generic',
+          label: t('profile.tabs.documents'),
+          actionLabel: t('profile.pendingTasks.uploadAction'),
+          url: buildProfileUrl({ tab: 'documents' }),
+        },
+      ]
+    : requiredDocTokens
+        .filter((token) => documentsTokens.includes(token))
+        .map((token) => ({
+          key: token,
+          label: t(`publicVacancy.incompleteModal.fields.${token}`, { defaultValue: token }),
+          actionLabel: t('profile.pendingTasks.uploadAction'),
+          url: buildProfileUrl(destinationFor(token)),
+        }));
 
   const rows: TaskRow[] = [...registrationRows, ...documentRows];
-
-  // Y (denominador "de brinde"): 3 passos de registro + docs obrigatórios da
-  // profissão PELA POLÍTICA DO FRONTEND (workerDocumentRequirements.ts) —
-  // fonte pedida explicitamente para este número cosmético. A pendência em
-  // si (N, e QUAIS docs faltam) já é 100% do servidor (Fase 1) — só este
-  // total "quantos existem" usa a política local.
-  const requiredDocSlugSet = new Set(getRequiredDocSlugs(profession));
-  const requiredDocTokens = DOC_TOKEN_ORDER.filter((token) =>
-    requiredDocSlugSet.has(token.replace('doc_', '')),
-  );
-  const total = REGISTRATION_TAB_ORDER.length + requiredDocTokens.length;
-  const pendingCount = missingFields.length;
-  const completedCount = Math.max(0, total - pendingCount);
 
   const completedRegistrationLabels = REGISTRATION_TAB_ORDER.filter((tab) => !pendingTabsSet.has(tab)).map(
     (tab) => t(`profile.tabs.${tab}`),
   );
-  const completedDocLabels = requiredDocTokens
-    .filter((token) => !missingFields.includes(token))
-    .map((token) => t(`publicVacancy.incompleteModal.fields.${token}`, { defaultValue: token }));
+  const completedDocLabels = hasGenericDocToken
+    ? []
+    : requiredDocTokens
+        .filter((token) => !documentsTokens.includes(token))
+        .map((token) => t(`publicVacancy.incompleteModal.fields.${token}`, { defaultValue: token }));
   const completedLabels = [...completedRegistrationLabels, ...completedDocLabels];
+
+  // N (título) e Y (denominador) usam a MESMA unidade — a linha renderizada
+  // (rows.length) — pra nunca mais divergir do que a pessoa vê na tela.
+  const pendingCount = rows.length;
+  const completedCount = completedLabels.length;
+  const total = pendingCount + completedCount;
 
   return (
     <div
@@ -127,6 +144,7 @@ export function PendingTasksCard({
         {rows.map((row) => (
           <div
             key={row.key}
+            data-testid="pending-task-row"
             className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2"
           >
             <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
