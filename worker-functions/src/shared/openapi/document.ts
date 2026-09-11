@@ -58,12 +58,6 @@ const SECURITY_SCHEMES = {
     name: 'X-Twilio-Signature',
     description: 'Assinatura HMAC-SHA1 do Twilio para webhooks (status / inbound).',
   },
-  clickupHmac: {
-    type: 'apiKey' as const,
-    in: 'header' as const,
-    name: 'X-Signature',
-    description: 'HMAC-SHA256 do ClickUp sobre o body do webhook.',
-  },
 };
 
 export function buildOpenApiDocument(): OpenAPIObject {

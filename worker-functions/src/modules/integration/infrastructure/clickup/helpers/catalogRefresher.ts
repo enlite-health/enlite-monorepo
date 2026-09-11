@@ -1,5 +1,16 @@
 /**
- * catalogRefresher - keeps the field CATALOG as fresh as the TASK it is compared against.
+ * catalogRefresher - pure catalog-drift detection helpers.
+ *
+ * ── 11/09/2026 — remoção do sync automático ClickUp ──────────────────────────
+ * A classe `ClickUpCatalogRefresher` (reload sob demanda, cooldowns, single-flight) e
+ * `unsettledDriftThatMatters` foram removidas junto com `ClickUpPatientWebhookController` —
+ * essa orquestração existia só para o processo de vida longa do webhook (catálogo é FOTO de
+ * boot, `ClickUpFieldResolver.fromList` roda uma vez em `startServer.ts`). O script manual
+ * busca um catálogo fresco a cada invocação (`ClickUpFieldResolver.fromList` de novo), então
+ * o problema de "foto ficou velha entre eventos" não existe mais nesse caminho.
+ * `findCatalogDrift` e `staleCatalogImpactOnMapper` ficam: são funções puras, sem rede,
+ * usadas por `tests/unit/__tests__/clickup-2.2-segmento-cru.test.ts` (mapeamento de rótulo
+ * cru, não do webhook).
  *
  * WHY THIS FILE EXISTS (task 1.13 da change `campos-admissao`, achado do QA-caca / F48):
  *
@@ -165,16 +176,6 @@ export interface CatalogDrift {
   fromDeclared: CatalogDriftItem[];
 }
 
-const EMPTY_DRIFT: CatalogDrift = { items: [], fromTask: [], fromDeclared: [] };
-
-/** Stable identity of one drift item, used to memoise "already confirmed against a fresh read". */
-function driftKey(item: CatalogDriftItem): string {
-  const opcoes = item.kind === 'option_unknown'
-    ? ` ${item.optionsRequested ?? 0}/${item.optionsResolved ?? 0}`
-    : '';
-  return `${item.kind} ${item.field} ${item.taskType ?? ''}${opcoes}`;
-}
-
 /**
  * O VALOR desta tarefa resolve contra a foto? Puro, sem rede, sem lançar - e sem avisar
  * (`warn:false`), porque o caminho vivo do mapper ja emite o aviso desse mesmo fato.
@@ -276,53 +277,6 @@ export function findCatalogDrift(
   };
 }
 
-export type CatalogRefreshOutcome =
-  /** Live task and snapshot agree. Nothing read, nothing to do - the common case. */
-  | 'no_drift'
-  /** The catalog was re-read; the caller must rebuild whatever it derived from the old one. */
-  | 'reloaded'
-  /** Drift is real but a fresh read already confirmed it is not a stale-photo problem. */
-  | 'suppressed_already_confirmed'
-  /** Only `declared_absent` drift, and the rate limit says not yet. */
-  | 'suppressed_cooldown'
-  /** A recent reload FAILED; inside the quiet period we do not hammer the API. */
-  | 'suppressed_after_failure'
-  /** A reload was attempted and threw. The old snapshot is kept and is known-suspect. */
-  | 'reload_failed';
-
-export interface CatalogRefreshResult {
-  outcome: CatalogRefreshOutcome;
-  reloaded: boolean;
-  /** Drift measured against the snapshot that was in place when the call started. */
-  drift: CatalogDrift;
-  /** Drift still present AFTER a successful reload (empty unless `reloaded`). */
-  driftAfterReload: CatalogDrift;
-  /** Catalog reads this call attempted: 0 or 1. Failed attempts count. */
-  reads: number;
-}
-
-export interface CatalogRefresherOptions {
-  /** Field names whose absence from the live task is itself a signal (the 1.11 declared list). */
-  declaredFields: readonly string[];
-  /**
-   * Reads the catalog again. Injected so this is testable without touching the ClickUp API.
-   * Receives an `AbortSignal` that fires when the deadline below expires - a loader that
-   * ignores it still gets abandoned on time, but leaves the socket open, so pass it through.
-   */
-  load: (signal?: AbortSignal) => Promise<ClickUpFieldResolver>;
-  /** Rate limit for reloads triggered ONLY by `declared_absent`. Default 60 s. */
-  declaredAbsentCooldownMs?: number;
-  /** Quiet period after a failed reload. Default 60 s. */
-  failureCooldownMs?: number;
-  /**
-   * Deadline for ONE reload. Default 5 s. This runs inside the webhook, so it is the caller's
-   * latency budget, not a retry budget. Expiry is a failure: it arms `failureCooldownMs`.
-   */
-  loadTimeoutMs?: number;
-  /** Injectable clock - tests drive the cooldowns without sleeping. */
-  now?: () => number;
-}
-
 /**
  * Which of the names the MAPPER READS this (suspect) snapshot can no longer serve for this
  * task. Pure, no network, no throw. Every item here is a field the mapper will actually touch:
@@ -412,175 +366,4 @@ export function staleCatalogImpactOnMapper(
   }
 
   return out;
-}
-
-/**
- * The fail-closed decision. Non-empty = the caller is about to derive from a snapshot it has
- * reason to distrust, on a field the mapper really reads: WRITE NOTHING.
- *
- * Gated on the reload having failed (or being inside the quiet period after one): with a
- * FRESH snapshot in hand there is nothing to distrust, and what is still wrong there is the
- * 1.11 preflight's business, not this one's.
- */
-export function unsettledDriftThatMatters(
-  result: CatalogRefreshResult,
-  snapshot: CatalogSnapshotProbe,
-  taskFields: readonly ClickUpTaskCustomField[] | null | undefined,
-  mapperFieldNames: readonly string[],
-): CatalogDriftItem[] {
-  if (result.outcome !== 'reload_failed' && result.outcome !== 'suppressed_after_failure') return [];
-  if (result.drift.items.length === 0) return [];
-  // F19: an empty harvest is "I could not tell", never "nothing matters". The mapper reads
-  // dozens of names on every task, so zero can only mean the probe did not run.
-  if (mapperFieldNames.length === 0) return [...result.drift.items];
-  return staleCatalogImpactOnMapper(snapshot, taskFields, mapperFieldNames);
-}
-
-export class ClickUpCatalogRefresher {
-  private snapshot: ClickUpFieldResolver;
-  private readonly declaredFields: readonly string[];
-  private readonly load: (signal?: AbortSignal) => Promise<ClickUpFieldResolver>;
-  private readonly declaredAbsentCooldownMs: number;
-  private readonly failureCooldownMs: number;
-  private readonly loadTimeoutMs: number;
-  private readonly now: () => number;
-
-  /** Drift keys a FRESH read already confirmed. Never re-triggers a reload. */
-  private readonly confirmed = new Set<string>();
-  private lastReloadAt  = Number.NEGATIVE_INFINITY;
-  private lastFailureAt = Number.NEGATIVE_INFINITY;
-  private reads = 0;
-  /**
-   * Task 1.13b - the read currently in flight, if any. Concurrent webhooks that see the same
-   * stale snapshot wait on THIS instead of opening one call each.
-   */
-  private inFlight: Promise<ClickUpFieldResolver> | null = null;
-
-  constructor(initial: ClickUpFieldResolver, opts: CatalogRefresherOptions) {
-    this.snapshot                 = initial;
-    this.declaredFields           = opts.declaredFields;
-    this.load                     = opts.load;
-    this.declaredAbsentCooldownMs = opts.declaredAbsentCooldownMs ?? 60_000;
-    this.failureCooldownMs        = opts.failureCooldownMs ?? 60_000;
-    this.loadTimeoutMs            = opts.loadTimeoutMs ?? 5_000;
-    this.now                      = opts.now ?? Date.now;
-  }
-
-  /**
-   * ONE reload, under a deadline. Rejects on expiry - and a rejection is what arms the quiet
-   * period, which is the whole point: an API that hangs used to be invisible to it.
-   */
-  private loadWithDeadline(): Promise<ClickUpFieldResolver> {
-    const aborter = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    const deadline = new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(() => {
-        aborter.abort();
-        reject(new Error(`ClickUp /field read timed out after ${this.loadTimeoutMs}ms`));
-      }, this.loadTimeoutMs);
-      // Não segurar o processo vivo só por causa deste relógio.
-      if (typeof (timer as { unref?: () => void }).unref === 'function') {
-        (timer as unknown as { unref: () => void }).unref();
-      }
-    });
-
-    return Promise.race([this.load(aborter.signal), deadline]).finally(() => {
-      if (timer !== undefined) clearTimeout(timer);
-    });
-  }
-
-  /**
-   * Single-flight: start a read, or join the one already running. Only the caller that STARTS
-   * one counts a read - the joiners ride it, and that is exactly the cost being bounded.
-   */
-  private beginRead(): { flight: Promise<ClickUpFieldResolver>; reads: 0 | 1 } {
-    const running = this.inFlight;
-    if (running !== null) return { flight: running, reads: 0 };
-
-    this.reads += 1;
-    const flight = this.loadWithDeadline();
-    this.inFlight = flight;
-    const clear = () => { if (this.inFlight === flight) this.inFlight = null; };
-    // Os dois lados tratados: `then(clear, clear)` não deixa rejeição sem tratador aqui, e
-    // quem espera pelo resultado (abaixo) continua vendo o erro normalmente.
-    flight.then(clear, clear);
-    return { flight, reads: 1 };
-  }
-
-  /** The snapshot in force right now. Swapped in place by a successful reload. */
-  get resolver(): ClickUpFieldResolver {
-    return this.snapshot;
-  }
-
-  /** Total catalog reads attempted since construction. This is the network cost, observable. */
-  get catalogReads(): number {
-    return this.reads;
-  }
-
-  /**
-   * Re-read the catalog IF the live task says the snapshot is stale. Never throws:
-   * a reload failure is reported as an outcome, so the caller decides what to do about it.
-   */
-  async ensureFreshFor(
-    taskFields: readonly ClickUpTaskCustomField[] | null | undefined,
-  ): Promise<CatalogRefreshResult> {
-    const drift = findCatalogDrift(this.snapshot, taskFields, this.declaredFields);
-    if (drift.items.length === 0) {
-      return { outcome: 'no_drift', reloaded: false, drift, driftAfterReload: EMPTY_DRIFT, reads: 0 };
-    }
-
-    const now       = this.now();
-    const unsettled = drift.fromTask.filter(i => !this.confirmed.has(driftKey(i)));
-
-    let trigger: 'task' | 'declared' | null = null;
-    if (unsettled.length > 0) {
-      trigger = 'task';
-    } else if (drift.fromDeclared.length > 0 && now - this.lastReloadAt >= this.declaredAbsentCooldownMs) {
-      trigger = 'declared';
-    }
-
-    if (trigger === null) {
-      const outcome: CatalogRefreshOutcome =
-        drift.fromDeclared.length > 0 ? 'suppressed_cooldown' : 'suppressed_already_confirmed';
-      return { outcome, reloaded: false, drift, driftAfterReload: EMPTY_DRIFT, reads: 0 };
-    }
-
-    if (now - this.lastFailureAt < this.failureCooldownMs) {
-      return { outcome: 'suppressed_after_failure', reloaded: false, drift, driftAfterReload: EMPTY_DRIFT, reads: 0 };
-    }
-
-    const { flight, reads } = this.beginRead();
-    let fresh: ClickUpFieldResolver;
-    try {
-      fresh = await flight;
-    } catch (err) {
-      this.lastFailureAt = this.now();
-      // C1/lex: field names and counts only. No value, no orderindex, no task id.
-      console.error('[ClickUpCatalogRefresher] catalog reload FAILED - snapshot is stale and suspect:', {
-        trigger,
-        driftItems: drift.items.length,
-        fields:     drift.items.map(i => ({ field: i.field, kind: i.kind, taskType: i.taskType, catalogType: i.catalogType })),
-        error:      err instanceof Error ? err.message : String(err),
-      });
-      return { outcome: 'reload_failed', reloaded: false, drift, driftAfterReload: EMPTY_DRIFT, reads };
-    }
-
-    this.snapshot     = fresh;
-    this.lastReloadAt = this.now();
-    // A new catalog invalidates every earlier confirmation.
-    this.confirmed.clear();
-    const after = findCatalogDrift(fresh, taskFields, this.declaredFields);
-    for (const item of after.fromTask) this.confirmed.add(driftKey(item));
-
-    // C1/lex: field names and types only. This is the alarm an operator can act on -
-    // "the ClickUp field catalog moved under us" - and it needs no patient value to say so.
-    console.warn('[ClickUpCatalogRefresher] catalog snapshot was stale - re-read from ClickUp:', {
-      trigger,
-      driftBefore: drift.items.map(i => ({ field: i.field, kind: i.kind, taskType: i.taskType, catalogType: i.catalogType })),
-      driftAfter:  after.items.map(i => ({ field: i.field, kind: i.kind, taskType: i.taskType, catalogType: i.catalogType })),
-    });
-
-    return { outcome: 'reloaded', reloaded: true, drift, driftAfterReload: after, reads };
-  }
 }
