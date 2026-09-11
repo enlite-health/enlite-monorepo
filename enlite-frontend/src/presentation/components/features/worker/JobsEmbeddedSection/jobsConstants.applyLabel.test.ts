@@ -83,17 +83,21 @@ describe('buildApplyLabel', () => {
     );
   });
 
-  it('pt-BR: 1 pendência de documento', () => {
+  it('pt-BR: 1 pendência de documento — verbo alinhado com a lista de tarefas ("se candidatar", não "se postular")', () => {
+    // Achado do gate (11/09, rodada 3): profile.pendingTasks (lista de
+    // tarefas) já dizia "para você se candidatar"; jobs.applyLabel (este
+    // rótulo) dizia "para se postular" — dois verbos pra mesma ação, na
+    // MESMA tela. Alinhado com o que a lista já usa.
     i18n.changeLanguage('pt-BR');
     expect(buildApplyLabel(['doc_criminal_record'], 'AT', i18n.t.bind(i18n))).toBe(
-      'Envie Antecedentes penais para se postular',
+      'Envie Antecedentes penais para se candidatar',
     );
   });
 
-  it('pt-BR: 2+ pendências', () => {
+  it('pt-BR: 2+ pendências — mesmo verbo', () => {
     i18n.changeLanguage('pt-BR');
     expect(buildApplyLabel(['phone', 'doc_criminal_record'], 'CAREGIVER', i18n.t.bind(i18n))).toBe(
-      'Complete 2 passos para se postular',
+      'Complete 2 passos para se candidatar',
     );
   });
 

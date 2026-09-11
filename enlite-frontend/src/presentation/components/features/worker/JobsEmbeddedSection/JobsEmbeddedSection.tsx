@@ -312,10 +312,20 @@ export const JobsEmbeddedSection = ({
                   </h3>
                 </div>
                 <div className="flex flex-wrap gap-2 flex-shrink-0">
+                  {/*
+                    🔒 Achado do gate (11/09, rodada 3): `bg-[#25d366]`
+                    (verde claro do ícone do WhatsApp) media 1,98:1 com
+                    texto branco — abaixo do mínimo WCAG AA (4,5:1) — e a
+                    partir da Fase 4/DD5 o botão carrega a FRASE inteira da
+                    entrega, não mais uma palavra curta. Decisão de
+                    desenho do orquestrador: mantém a identidade WhatsApp
+                    com o verde-escuro da marca — `#075E54` (7,67:1 em
+                    repouso, hover `#054C44` ~9,89:1).
+                  */}
                   {job.whatsappLink && (
                     <button
                       onClick={() => handleWhatsAppClick(job)}
-                      className="px-3 py-1.5 bg-[#25d366] text-white text-xs rounded hover:bg-[#128c7e] transition-colors font-lexend font-medium"
+                      className="px-3 py-1.5 bg-[#075E54] text-white text-xs rounded hover:bg-[#054C44] transition-colors font-lexend font-medium"
                     >
                       {applyLabel}
                     </button>
