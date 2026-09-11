@@ -285,12 +285,37 @@ describe('useWorkerProfileProgress', () => {
   });
 
   describe('nextAction', () => {
-    it('retorna uploadDocuments quando cadastro está completo mas documentos faltam', () => {
+    it('CTA de documentos leva direto ao slot do 1º documento obrigatório pendente (rota real, com foco)', () => {
       const worker = makeWorker({ profession: 'CUIDADOR' });
+      const docs = makeDocuments(); // todos null — falta identity_document primeiro
+
+      const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
+      // Regressão: a rota antiga '/worker/documents' NÃO existe em App.tsx (cai no catch-all
+      // e devolve pra '/'). O CTA tem de usar o contrato real de WorkerProfilePage
+      // (?tab=documents&focus=<docType>), reaproveitando incompleteFieldDestinations.
+      expect(result.current.progress.nextAction?.route).toBe(
+        '/worker/profile?tab=documents&focus=identity_document',
+      );
+    });
+
+    it('CTA de documentos aponta pro 2º doc pendente quando o 1º já foi enviado (Cuidador)', () => {
+      const worker = makeWorker({ profession: 'CUIDADOR' });
+      const docs = makeDocuments({ identityDocumentUrl: 'path/dni-front.pdf' }); // falta criminal_record
+
+      const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
+      expect(result.current.progress.nextAction?.route).toBe(
+        '/worker/profile?tab=documents&focus=criminal_record',
+      );
+    });
+
+    it('CTA de documentos para AT aponta pro 1º doc obrigatório pendente (resume_cv)', () => {
+      const worker = makeWorker({ profession: 'AT' });
       const docs = makeDocuments(); // todos null
 
       const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
-      expect(result.current.progress.nextAction?.route).toBe('/worker/documents');
+      expect(result.current.progress.nextAction?.route).toBe(
+        '/worker/profile?tab=documents&focus=resume_cv',
+      );
     });
 
     it('nextAction é undefined quando tudo está completo (Cuidador — verso não exigido)', () => {

@@ -10,6 +10,7 @@ import {
   getStep3Progress,
 } from '../utils/workerProgressValidation';
 import { getRequiredDocSlugs, getRequiredDocFields } from '../utils/workerDocumentRequirements';
+import { destinationFor, buildProfileUrl } from '../utils/incompleteFieldDestinations';
 
 interface UseWorkerProfileProgressResult {
   progress: WorkerProfileProgress;
@@ -111,9 +112,16 @@ export function useWorkerProfileProgress(
         route: '/worker-registration',
       };
     } else if (documentsCompleted < documentsTotal) {
+      // A rota antiga '/worker/documents' não existe em App.tsx (cai no catch-all
+      // e devolve pra '/') — o CTA deve levar direto ao slot do 1º documento
+      // obrigatório pendente, reaproveitando o mesmo mapa token→aba/focus que
+      // o IncompleteRegistrationModal usa (incompleteFieldDestinations).
+      const firstMissingIndex = documentsSteps.findIndex((step) => !step.completed);
+      const missingSlug = requiredSlugs[firstMissingIndex];
+      const dest = destinationFor(`doc_${missingSlug}`);
       nextAction = {
         label: t('profile.progress.uploadDocuments'),
-        route: '/worker/documents',
+        route: buildProfileUrl(dest),
       };
     }
 
