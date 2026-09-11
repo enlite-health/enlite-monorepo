@@ -22,8 +22,26 @@ vi.mock('react-i18next', () => ({
 }));
 
 // Força o estado "cadastro completo" para renderizar o CTA "Ver vacantes".
+//
+// Fase 2 de postulacao-documento-pendente: `useWorkerProfileProgress` só
+// sabe de REGISTRO (documentos saíram — DD1). `ProfileCompletionSummary`
+// combina esse veredito com `areAllRequiredDocsComplete(documentsData, ...)`
+// pra decidir "completo" de verdade — então o mock de documentos abaixo
+// também precisa estar completo, senão o CTA nunca aparece (documentos
+// pendentes → tela de pendências, não a de parabéns).
+//
+// `progress` precisa da FORMA real (WorkerProfileProgress: overallPercentage
+// + sections[]), não um número cru — um mock raso (`progress: 100`) nunca
+// quebrava este teste especificamente (ele só passa pelo ramo "completo",
+// que não renderiza `ProfileCompletionCard`), mas mascarava silenciosamente
+// o ramo "pendente" pra quem reusasse o padrão sem saber — corrigido junto
+// com o fechamento de cobertura do arquivo (achado ao escrever
+// ProfileCompletionSummary.test.tsx, que SÓ testa o ramo pendente).
 vi.mock('@presentation/hooks/useWorkerProfileProgress', () => ({
-  useWorkerProfileProgress: () => ({ progress: 100, isComplete: true }),
+  useWorkerProfileProgress: () => ({
+    progress: { overallPercentage: 100, sections: [] },
+    isComplete: true,
+  }),
 }));
 
 vi.mock('@presentation/hooks/useWorkerApi', () => ({
@@ -34,7 +52,15 @@ vi.mock('@presentation/hooks/useWorkerApi', () => ({
 }));
 
 vi.mock('@infrastructure/http/DocumentApiService', () => ({
-  DocumentApiService: { getDocuments: vi.fn().mockResolvedValue({}) },
+  DocumentApiService: {
+    // profession ausente no mock de getProgress → classifyProfession trata
+    // como Cuidador (identity_document + criminal_record). Os dois presentes
+    // aqui é o que faz areAllRequiredDocsComplete devolver true.
+    getDocuments: vi.fn().mockResolvedValue({
+      identityDocumentUrl: 'path/identity.pdf',
+      criminalRecordUrl: 'path/criminal.pdf',
+    }),
+  },
 }));
 
 import { ProfileCompletionSummary } from './ProfileCompletionSummary';
