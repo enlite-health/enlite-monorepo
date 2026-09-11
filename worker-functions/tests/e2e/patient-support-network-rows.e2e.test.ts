@@ -25,7 +25,15 @@ describe('PR-1 — rede de apoio (responsáveis) por LINHA: API sob engine (HTTP
   const OUTRO_PACIENTE = 'ee420100-0a00-0001-0001-000000000099';
   const U = { familia: 'psnr-familia', semFamilia: 'psnr-sem-familia' };
   const GRUPOS = { familia: 'PSNR Familia', semFamilia: 'PSNR Sem familia' };
+  // `patient:read` é célula GLOBAL, compartilhada por várias famílias de e2e (terapêutico,
+  // busca, cobertura...) — nenhum arquivo é "dono" dela, e apagá-la no cleanup derruba quem
+  // rodar depois na mesma suíte serial (achado: patient-support-network-rows corria antes de
+  // permission-enforcement-admin-patients/iam-permissions-foundation/permissions-iam-schema no
+  // jest --runInBand e a deleção fazia as três falharem com "célula não existe"). Este arquivo só
+  // GARANTE que ela existe (insert idempotente) e só APAGA a célula que ele de fato criou:
+  // `patient_family:write` — nunca some, mas nunca é usada fora de PR-1/rede-de-apoio.
   const CELULAS: ReadonlyArray<readonly [string, string]> = [['patient', 'read'], ['patient_family', 'write']];
+  const CELULAS_PROPRIAS: ReadonlyArray<readonly [string, string]> = [['patient_family', 'write']];
   const envAnterior: Record<string, string | undefined> = {};
   const setEnv = (k: string, v: string): void => { envAnterior[k] = process.env[k]; process.env[k] = v; };
 
@@ -40,7 +48,7 @@ describe('PR-1 — rede de apoio (responsáveis) por LINHA: API sob engine (HTTP
 
   async function limpar(): Promise<void> {
     await limparIamFixtures(pool, { uids: Object.values(U), grupos: Object.values(GRUPOS) });
-    for (const [resource, action] of CELULAS) {
+    for (const [resource, action] of CELULAS_PROPRIAS) {
       await pool.query(`DELETE FROM iam.group_permissions WHERE permission_id IN (SELECT id FROM iam.permissions WHERE resource = $1 AND action = $2)`, [resource, action]);
       await pool.query(`DELETE FROM iam.permissions WHERE resource = $1 AND action = $2`, [resource, action]);
     }

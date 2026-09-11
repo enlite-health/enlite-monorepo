@@ -116,12 +116,16 @@ describe('Domicílio na ficha, dispositivo por catálogo, início do serviço (s
   it('6. serviceStartDate no drawer geral grava; relationship fora do enum → 400 (US-B5/B9)', async () => {
     expect((await api.patch(`/api/admin/patients/${patientId}/general`, { serviceStartDate: '2026-09-10' }, asAdmin)).status).toBe(200);
     expect((await pool.query(`SELECT service_start_date::text AS d FROM patients WHERE id = $1`, [patientId])).rows[0].d).toBe('2026-09-10');
-    const bad = await api.patch(`/api/admin/patients/${patientId}/support-network`,
-      { responsibles: [{ firstName: 'Ana', lastName: 'Diaz', relationship: 'Madre', isPrimary: true, displayOrder: 0, phone: '+5491100000001' }] }, asAdmin);
+    // `PATCH /support-network` saiu (spec 018, PR-1, ADR-1, SUP-37) — a escrita de responsáveis
+    // agora é por LINHA (`POST/PATCH .../responsibles`); a rota antiga fica 410 incondicional.
+    const gone = await api.patch(`/api/admin/patients/${patientId}/support-network`, {}, asAdmin);
+    expect(gone.status).toBe(410);
+    const bad = await api.post(`/api/admin/patients/${patientId}/responsibles`,
+      { firstName: 'Ana', lastName: 'Diaz', relationship: 'Madre', isPrimary: true, phone: '+5491100000001' }, asAdmin);
     expect(bad.status).toBe(400);
-    const ok = await api.patch(`/api/admin/patients/${patientId}/support-network`,
-      { responsibles: [{ firstName: 'Ana', lastName: 'Diaz', relationship: 'PARENT', isPrimary: true, displayOrder: 0, phone: '+5491100000001', source: 'admin_manual' }] }, asAdmin);
-    expect(ok.status).toBe(200);
+    const ok = await api.post(`/api/admin/patients/${patientId}/responsibles`,
+      { firstName: 'Ana', lastName: 'Diaz', relationship: 'PARENT', isPrimary: true, phone: '+5491100000001' }, asAdmin);
+    expect(ok.status).toBe(201);
     expect((await pool.query(`SELECT relationship FROM patient_responsibles WHERE patient_id = $1`, [patientId])).rows[0].relationship).toBe('PARENT');
   });
 });
