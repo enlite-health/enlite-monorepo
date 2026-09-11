@@ -116,7 +116,7 @@ describe('erro NÃO-Error em cada passo best-effort vira mensagem legível, e o 
     expect(eventos(b.erros)).toContain('clickup_patient_sync.insurance_verified_error');
   });
 
-  it('cobertura: escrita lançando um Error DE VERDADE → a mensagem original chega ao log', async () => {
+  it('cobertura: escrita lançando um Error DE VERDADE → NUNCA a mensagem original, só errorName+code', async () => {
     const b = bancada();
     (b.deps.insuranceRepository.replaceForPatient as unknown as jest.Mock)
       .mockRejectedValueOnce(new Error('pool esgotado i2c'));
@@ -125,10 +125,13 @@ describe('erro NÃO-Error em cada passo best-effort vira mensagem legível, e o 
 
     expect(r.kind).toBe('UPDATED');
     const evento = b.erros.find(a => a[0] === 'clickup_patient_sync.insurance_verified_error');
-    expect(evento![1]).toMatchObject({ error: 'pool esgotado i2c', stage: 'write' });
+    expect(evento![1]).toMatchObject({ errorName: 'Error', code: null, stage: 'write' });
+    expect(evento![1]).not.toHaveProperty('message');
+    expect(evento![1]).not.toHaveProperty('stack');
+    expect(JSON.stringify(evento)).not.toContain('pool esgotado i2c');
   });
 
-  it('cru: `readSourceLabels` lançando um Error DE VERDADE → a mensagem original chega ao log', async () => {
+  it('cru: `readSourceLabels` lançando um Error DE VERDADE → NUNCA a mensagem original, só errorName+code', async () => {
     const b = bancada();
     jest.spyOn(b.deps.mapper, 'readSourceLabels').mockImplementation(() => {
       throw new Error('catálogo mudou no meio da requisição i2c');
@@ -138,7 +141,10 @@ describe('erro NÃO-Error em cada passo best-effort vira mensagem legível, e o 
 
     expect(r.kind).toBe('UPDATED');
     const evento = b.erros.find(a => a[0] === 'clickup_patient_sync.source_labels_error');
-    expect(evento![1]).toMatchObject({ error: 'catálogo mudou no meio da requisição i2c', stage: 'read' });
+    expect(evento![1]).toMatchObject({ errorName: 'Error', code: null, stage: 'read' });
+    expect(evento![1]).not.toHaveProperty('message');
+    expect(evento![1]).not.toHaveProperty('stack');
+    expect(JSON.stringify(evento)).not.toContain('catálogo mudou no meio da requisição i2c');
   });
 
   it('dispositivo: escrita lançando string → evento próprio de erro, `kind` intacto', async () => {
@@ -154,7 +160,7 @@ describe('erro NÃO-Error em cada passo best-effort vira mensagem legível, e o 
     expect(eventos(b.erros)).toContain('clickup_patient_sync.device_type_error');
   });
 
-  it('dispositivo: escrita lançando um Error DE VERDADE → a mensagem original chega ao log', async () => {
+  it('dispositivo: escrita lançando um Error DE VERDADE → NUNCA a mensagem original, só errorName+code', async () => {
     const b = bancada();
     const repo = b.deps.deviceTypeRepository.replaceForPatient as unknown as jest.Mock;
     // A 1ª chamada é a da cobertura (mesmo dublê); a 2ª é a do dispositivo.
@@ -165,7 +171,10 @@ describe('erro NÃO-Error em cada passo best-effort vira mensagem legível, e o 
 
     expect(r.kind).toBe('UPDATED');
     const evento = b.erros.find(a => a[0] === 'clickup_patient_sync.device_type_error');
-    expect(evento![1]).toMatchObject({ error: 'pool esgotado i2c-dispositivo', stage: 'write' });
+    expect(evento![1]).toMatchObject({ errorName: 'Error', code: null, stage: 'write' });
+    expect(evento![1]).not.toHaveProperty('message');
+    expect(evento![1]).not.toHaveProperty('stack');
+    expect(JSON.stringify(evento)).not.toContain('pool esgotado i2c-dispositivo');
   });
 
   it('diagnóstico: `readPatologia` lançando string → stage=read, `syncFromLabel` não é chamado', async () => {

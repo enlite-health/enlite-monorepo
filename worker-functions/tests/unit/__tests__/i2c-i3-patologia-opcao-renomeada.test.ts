@@ -133,7 +133,10 @@ describe('I3 — orderindex que NÃO resolve não vira "ausência legítima" no 
     expect(r.kind).toBe('UPDATED');
     const falha = b.erros.find(a => String(a[0]).includes('diagnosis_error'));
     expect(falha).toBeDefined();
-    expect(falha![1]).toMatchObject({ stage: 'reject', error: 'deadlock detected' });
+    expect(falha![1]).toMatchObject({ stage: 'reject', errorName: 'Error', code: null });
+    // PII: nunca `message`/`stack` do erro no log — só a classe e o SQLSTATE.
+    expect(falha![1]).not.toHaveProperty('message');
+    expect(JSON.stringify(falha)).not.toContain('deadlock detected');
   });
 
   it('I3b: rejeição NÃO-Error ao registrar vira mensagem legível, sem valor de paciente', async () => {
@@ -146,7 +149,9 @@ describe('I3 — orderindex que NÃO resolve não vira "ausência legítima" no 
     );
 
     const falha = b.erros.find(a => String(a[0]).includes('diagnosis_error'));
-    expect(falha![1]).toMatchObject({ stage: 'reject', error: 'ECONNRESET' });
+    expect(falha![1]).toMatchObject({ stage: 'reject', errorName: 'string', code: null });
+    expect(falha![1]).not.toHaveProperty('message');
+    expect(JSON.stringify(falha)).not.toContain('ECONNRESET');
   });
 
   it('CONTROLE POSITIVO — campo VAZIO continua sendo ausência legítima: syncFromLabel(id, null)', async () => {

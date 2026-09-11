@@ -12,7 +12,7 @@
  */
 
 import * as functions from 'firebase-functions';
-import { reportError } from '@shared/logging';
+import { reportError, safeErrorFields } from '@shared/logging';
 import type { ClickUpTask } from '../infrastructure/clickup/ClickUpTask';
 import type { ClickUpPatientMapper } from '../infrastructure/clickup/ClickUpPatientMapper';
 import { PATOLOGIA_FIELD_NAME } from '../infrastructure/clickup/ClickUpPatientMapper';
@@ -151,8 +151,7 @@ export class SyncPatientFromClickUpTaskUseCase {
       const error = err instanceof Error ? err : new Error(String(err));
       functions.logger.error('clickup_patient_sync.error', {
         taskId,
-        error: error.message,
-        stack: error.stack,
+        ...safeErrorFields(err),
         correlationId: cid,
       });
       return { kind: 'ERROR', taskId, error };
@@ -243,8 +242,7 @@ export class SyncPatientFromClickUpTaskUseCase {
       const error = err instanceof Error ? err : new Error(String(err));
       functions.logger.error('clickup_patient_sync.error', {
         taskId,
-        error: error.message,
-        stack: error.stack,
+        ...safeErrorFields(err),
         durationMs: Date.now() - startMs,
         correlationId: cid,
       });
@@ -355,9 +353,8 @@ export class SyncPatientFromClickUpTaskUseCase {
         gravados: r.accepted.length, recusados: r.rejected.length, correlationId: cid,
       });
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
       functions.logger.error('clickup_patient_sync.insurance_verified_error', {
-        patientId, error: error.message, stage: 'write', correlationId: cid,
+        patientId, ...safeErrorFields(err), stage: 'write', correlationId: cid,
       });
     }
   }
@@ -403,9 +400,8 @@ export class SyncPatientFromClickUpTaskUseCase {
         quarentena: r.quarantined, correlationId: cid,
       });
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
       functions.logger.error('clickup_patient_sync.device_type_error', {
-        patientId, error: error.message, stage: 'write', correlationId: cid,
+        patientId, ...safeErrorFields(err), stage: 'write', correlationId: cid,
       });
     }
   }
@@ -428,9 +424,8 @@ export class SyncPatientFromClickUpTaskUseCase {
     try {
       read = this.deps.mapper.readPatologia(task);
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
       functions.logger.error('clickup_patient_sync.diagnosis_error', {
-        patientId, error: error.message, stage: 'read', correlationId: cid,
+        patientId, ...safeErrorFields(err), stage: 'read', correlationId: cid,
       });
       return;
     }
@@ -466,9 +461,8 @@ export class SyncPatientFromClickUpTaskUseCase {
       } catch (err) {
         // Best-effort como os irmãos deste método: o paciente já foi gravado e a falha do
         // registro não pode derrubar o sync — mas também não passa muda (F43).
-        const error = err instanceof Error ? err : new Error(String(err));
         functions.logger.error('clickup_patient_sync.diagnosis_error', {
-          patientId, error: error.message, stage: 'reject', correlationId: cid,
+          patientId, ...safeErrorFields(err), stage: 'reject', correlationId: cid,
         });
       }
       return;
@@ -486,9 +480,8 @@ export class SyncPatientFromClickUpTaskUseCase {
         correlationId: cid,
       });
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
       functions.logger.error('clickup_patient_sync.diagnosis_error', {
-        patientId, error: error.message, stage: 'write', correlationId: cid,
+        patientId, ...safeErrorFields(err), stage: 'write', correlationId: cid,
       });
     }
   }
@@ -507,9 +500,8 @@ export class SyncPatientFromClickUpTaskUseCase {
     } catch (err) {
       // O preflight da 1.11 lançando aqui é ANOMALIA: `map()` acabou de passar por ele. Se
       // acontecer, o catálogo mudou no meio da requisição.
-      const error = err instanceof Error ? err : new Error(String(err));
       functions.logger.error('clickup_patient_sync.source_labels_error', {
-        patientId, error: error.message, stage: 'read', correlationId: cid,
+        patientId, ...safeErrorFields(err), stage: 'read', correlationId: cid,
       });
       return;
     }
@@ -534,9 +526,8 @@ export class SyncPatientFromClickUpTaskUseCase {
       } catch (err) {
         // Um campo que falha não impede os outros 7: perder tudo porque um deu erro é pior.
         falhas += 1;
-        const error = err instanceof Error ? err : new Error(String(err));
         functions.logger.error('clickup_patient_sync.source_labels_error', {
-          patientId, field: fieldName, error: error.message, stage: 'write', correlationId: cid,
+          patientId, field: fieldName, ...safeErrorFields(err), stage: 'write', correlationId: cid,
         });
       }
     }

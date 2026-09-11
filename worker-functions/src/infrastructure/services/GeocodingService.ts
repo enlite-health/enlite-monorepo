@@ -161,10 +161,12 @@ export class GeocodingService {
           try {
             result = await this.geocode(addresses[i], country, opts);
           } catch {
-            console.warn(`  ⚠ Geocoding falhou definitivamente: "${addresses[i].substring(0, 50)}" — ${msg}`);
+            // PII: nunca logar o endereço (dado pessoal do paciente/worker). Índice,
+            // tamanho e o status da API bastam pra achar o item na lista e diagnosticar.
+            console.warn(`  ⚠ Geocoding falhou definitivamente: index=${i} length=${addresses[i].length} status=${msg}`);
           }
         } else {
-          console.warn(`  ⚠ Geocoding erro: "${addresses[i].substring(0, 50)}" — ${msg}`);
+          console.warn(`  ⚠ Geocoding erro: index=${i} length=${addresses[i].length} status=${msg}`);
         }
       }
       results.push(result);
