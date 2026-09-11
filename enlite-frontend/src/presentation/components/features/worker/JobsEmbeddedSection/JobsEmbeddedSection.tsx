@@ -349,7 +349,10 @@ export const JobsEmbeddedSection = ({
           aqui e não dá pra mandar completar algo que talvez já esteja completo). */}
       {showIncompleteModal && (
         missingFields == null ? (
-          <PostularseErrorModal onClose={() => setShowIncompleteModal(false)} />
+          <PostularseErrorModal
+            onClose={() => setShowIncompleteModal(false)}
+            body={t('publicVacancy.errorModal.bodyHome')}
+          />
         ) : (
           <IncompleteRegistrationModal
             missingFields={missingFields}

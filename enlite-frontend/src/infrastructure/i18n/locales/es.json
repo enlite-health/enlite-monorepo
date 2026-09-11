@@ -5047,6 +5047,7 @@
     "errorModal": {
       "title": "No pudimos verificar tu registro",
       "body": "No pudimos confirmar que tu registro esté completo. Por tu seguridad, no te enviamos al pre-screening de WhatsApp. Completá tu registro o intentá nuevamente.",
+      "bodyHome": "No pudimos verificar tu registro en este momento. Volvé a intentarlo en unos minutos.",
       "retry": "Reintentar",
       "complete": "Completar registro",
       "cancel": "Cerrar"

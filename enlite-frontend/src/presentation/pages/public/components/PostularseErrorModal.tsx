@@ -15,6 +15,16 @@ interface PostularseErrorModalProps {
    */
   onRetry?: () => void;
   onCompleteRegistration?: () => void;
+  /**
+   * Corpo alternativo (rodada 5, D1): o texto padrão
+   * (`publicVacancy.errorModal.body`) fala em "no te enviamos al
+   * pre-screening de WhatsApp" e "Completá tu registro o intentá
+   * nuevamente" — faz sentido em /vacantes/:id (onde HÁ WhatsApp e os
+   * botões de retry/completar), mas não na home (sem WhatsApp no fluxo de
+   * "Ver Detalles", sem os dois CTAs). Prop opcional em vez de um segundo
+   * componente — mesmo modal, texto ajustado ao contexto que o chama.
+   */
+  body?: string;
 }
 
 /**
@@ -29,6 +39,7 @@ export function PostularseErrorModal({
   onClose,
   onRetry,
   onCompleteRegistration,
+  body,
 }: PostularseErrorModalProps) {
   const { t } = useTranslation();
 
@@ -50,7 +61,7 @@ export function PostularseErrorModal({
         </div>
 
         <Text size="sm" weight="medium" color="muted" className="mb-6">
-          {t('publicVacancy.errorModal.body')}
+          {body ?? t('publicVacancy.errorModal.body')}
         </Text>
 
         <div className="flex flex-col sm:flex-row justify-end gap-3">

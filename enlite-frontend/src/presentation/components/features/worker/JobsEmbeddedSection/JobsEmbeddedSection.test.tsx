@@ -329,10 +329,12 @@ describe('JobsEmbeddedSection — cadastro incompleto (bug #2)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'jobs.apply' }));
 
     // Incidente 08/09: a tela NÃO PODE afirmar "incompleto" sobre um estado que
-    // não apurou. Mostra o mesmo texto do PostularseErrorModal (/vacantes/:id),
-    // não o modal de pendências (bodyGeneric) nem um terceiro texto.
+    // não apurou. Mostra o MESMO componente do PostularseErrorModal
+    // (/vacantes/:id), mas com texto PRÓPRIO da home (rodada 5): o texto
+    // padrão fala em WhatsApp/retry/completar — nada disso existe aqui.
     expect(screen.getByText('publicVacancy.errorModal.title')).toBeInTheDocument();
-    expect(screen.getByText('publicVacancy.errorModal.body')).toBeInTheDocument();
+    expect(screen.getByText('publicVacancy.errorModal.bodyHome')).toBeInTheDocument();
+    expect(screen.queryByText('publicVacancy.errorModal.body')).not.toBeInTheDocument();
     expect(screen.queryByText('publicVacancy.incompleteModal.bodyGeneric')).not.toBeInTheDocument();
     expect(screen.queryByText('publicVacancy.incompleteModal.title')).not.toBeInTheDocument();
     // Sem CTA de "completar registro": pode estar tudo certo, não dá pra mandar
