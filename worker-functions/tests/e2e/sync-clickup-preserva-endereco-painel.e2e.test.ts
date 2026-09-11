@@ -17,24 +17,16 @@ import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth } from './helpers/staffAuth';
 import { replacePatientAddresses } from '@modules/case/application/PatientRelatedWriter';
-import type { GeocodingService } from '../../src/infrastructure/services/GeocodingService';
-import type { PatientAddress } from '../../src/infrastructure/repositories/PatientRepository';
+import { noopGeocoder, clickupAddressInput, limparPacientesDeTeste } from './helpers/patientAddressSyncFixtures';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const TAG = 'sync-preserva-painel-%';
 
-/** O geocoder nunca é a peça sob teste aqui: devolve "não resolvi" sem tocar rede. */
-const geocoder = { geocodeBatch: async (queries: string[]) => queries.map(() => null) } as unknown as GeocodingService;
+const geocoder = noopGeocoder;
 
-const clickupSlot = (displayOrder: number, formatted: string): PatientAddress => ({
-  addressType: displayOrder === 1 ? 'primary' : 'secondary',
-  addressFormatted: formatted,
-  addressRaw: null,
-  displayOrder,
-  state: 'Buenos Aires',
-  city: 'Vicente López',
-  neighborhood: 'Florida',
-} as unknown as PatientAddress);
+/** O slot que o ClickUp manda para `replacePatientAddresses`: `primary` só no 1, `secondary` no resto. */
+const clickupSlot = (displayOrder: number, formatted: string) =>
+  clickupAddressInput(formatted, { displayOrder, addressType: displayOrder === 1 ? 'primary' : 'secondary' });
 
 describe('sync do ClickUp preserva endereço criado no painel @integration', () => {
   const api = createApiClient();
@@ -42,10 +34,7 @@ describe('sync do ClickUp preserva endereço criado no painel @integration', () 
   let pool: Pool;
   let patientId = '';
 
-  const limpar = async (): Promise<void> => {
-    await pool.query(`DELETE FROM job_postings WHERE patient_id IN (SELECT id FROM patients WHERE clickup_task_id LIKE $1)`, [TAG]);
-    await pool.query('DELETE FROM patients WHERE clickup_task_id LIKE $1', [TAG]);
-  };
+  const limpar = async (): Promise<void> => limparPacientesDeTeste(pool, TAG);
 
   const linhasAtivas = async () => (await pool.query<{
     id: string; display_order: number; source: string; address_formatted: string | null; archived_at: string | null;
@@ -78,7 +67,7 @@ describe('sync do ClickUp preserva endereço criado no painel @integration', () 
   });
 
   it('endereço criado pelo painel (fora do slot 1-3) continua ativo e intacto depois do sync trazer só 1-3', async () => {
-    // Painel: display_order = MAX+1 (não informado) → nasce em 1, único endereço até aqui.
+    // Painel: display_order explícito (4) — fora dos slots 1-3 que o ClickUp conhece.
     const criado = await api.post(`/api/admin/patients/${patientId}/addresses`,
       { address_formatted: 'Rua do Painel 500', address_type: 'secondary', display_order: 4 }, asAdmin);
     expect(criado.status).toBe(201);
