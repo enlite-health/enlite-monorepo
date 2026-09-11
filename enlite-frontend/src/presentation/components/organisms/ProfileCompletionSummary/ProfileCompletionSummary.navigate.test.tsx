@@ -29,8 +29,19 @@ vi.mock('react-i18next', () => ({
 // pra decidir "completo" de verdade — então o mock de documentos abaixo
 // também precisa estar completo, senão o CTA nunca aparece (documentos
 // pendentes → tela de pendências, não a de parabéns).
+//
+// `progress` precisa da FORMA real (WorkerProfileProgress: overallPercentage
+// + sections[]), não um número cru — um mock raso (`progress: 100`) nunca
+// quebrava este teste especificamente (ele só passa pelo ramo "completo",
+// que não renderiza `ProfileCompletionCard`), mas mascarava silenciosamente
+// o ramo "pendente" pra quem reusasse o padrão sem saber — corrigido junto
+// com o fechamento de cobertura do arquivo (achado ao escrever
+// ProfileCompletionSummary.test.tsx, que SÓ testa o ramo pendente).
 vi.mock('@presentation/hooks/useWorkerProfileProgress', () => ({
-  useWorkerProfileProgress: () => ({ progress: 100, isComplete: true }),
+  useWorkerProfileProgress: () => ({
+    progress: { overallPercentage: 100, sections: [] },
+    isComplete: true,
+  }),
 }));
 
 vi.mock('@presentation/hooks/useWorkerApi', () => ({
