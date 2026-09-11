@@ -324,7 +324,8 @@ describe('PatientService.upsertFromClickUp', () => {
       'patient_service.upsert.failed',
       expect.objectContaining({
         clickupTaskId: 'task-abc',
-        error:         'connection reset',
+        errorName:     'Error',
+        code:          null,
         correlationId: 'cid-fail',
       }),
     );
@@ -333,6 +334,42 @@ describe('PatientService.upsertFromClickUp', () => {
     );
     const payload = failCall![1] as Record<string, unknown>;
     expect(typeof payload['durationMs']).toBe('number');
+  });
+
+  // ── 8b. PII/valor NUNCA em message/stack no catch de upsert.failed ──────────
+  // Achado do lex (11/09): `error.message`/`error.stack` do Postgres carregam VALOR
+  // (ex.: "invalid input syntax for type uuid: \"<valor>\""). Este teste planta o valor
+  // sensível DENTRO do message/stack do erro e prova que ele NÃO escapa pro log — só
+  // `errorName` + `code` (SQLSTATE) saem, que é o suficiente pro operador diagnosticar
+  // sem reconstituir o dado do paciente a partir do log.
+  it('8b. nunca loga message/stack do erro — mesmo quando eles carregam valor sensível', async () => {
+    const sensitiveValue = 'DIAGNOSTICO_SENSIVEL_XPTO_12345';
+    const pgError = Object.assign(
+      new Error(`invalid input syntax for type uuid: "${sensitiveValue}"`),
+      { code: '22P02' },
+    );
+    pgError.stack = `Error: invalid input syntax for type uuid: "${sensitiveValue}"\n    at fakeStack`;
+    mockIdentityUpsert.mockRejectedValueOnce(pgError);
+
+    await expect(
+      service.upsertFromClickUp(makeInput(), { correlationId: 'cid-fail-sensitive' }),
+    ).rejects.toThrow();
+
+    const failCall = mockLoggerError.mock.calls.find(
+      (c: unknown[]) => c[0] === 'patient_service.upsert.failed',
+    );
+    expect(failCall).toBeDefined();
+    const payload = failCall![1] as Record<string, unknown>;
+
+    // Nunca `message` nem `stack` no payload logado.
+    expect(payload).not.toHaveProperty('message');
+    expect(payload).not.toHaveProperty('stack');
+    // O valor sensível não aparece em NENHUM lugar do que foi logado.
+    expect(JSON.stringify(failCall)).not.toContain(sensitiveValue);
+    // Mas o SQLSTATE e o nome da classe do erro — o suficiente pra diagnosticar — saem.
+    expect(payload).toEqual(
+      expect.objectContaining({ errorName: 'Error', code: '22P02' }),
+    );
   });
 
   // ── 9. PII guard ────────────────────────────────────────────────────────────

@@ -191,8 +191,12 @@ describe('SyncPatientFromClickUpTaskUseCase', () => {
     }
     expect(mockLoggerError).toHaveBeenCalledWith(
       'clickup_patient_sync.error',
-      expect.objectContaining({ taskId: 'task-001', error: 'field resolver exploded' }),
+      expect.objectContaining({ taskId: 'task-001', errorName: 'Error', code: null }),
     );
+    // PII: nunca `message`/`stack` no log — só `errorName`+`code`.
+    const errCall = mockLoggerError.mock.calls.find((c: unknown[]) => c[0] === 'clickup_patient_sync.error');
+    expect(errCall![1]).not.toHaveProperty('message');
+    expect(errCall![1]).not.toHaveProperty('stack');
   });
 
   // ── 3. SKIPPED_NO_PATIENT_NAME ──────────────────────────────────────────────
@@ -325,8 +329,34 @@ describe('SyncPatientFromClickUpTaskUseCase', () => {
     }
     expect(mockLoggerError).toHaveBeenCalledWith(
       'clickup_patient_sync.error',
-      expect.objectContaining({ error: 'DB constraint violation' }),
+      expect.objectContaining({ errorName: 'Error', code: null }),
     );
+    const errCall = mockLoggerError.mock.calls.find((c: unknown[]) => c[0] === 'clickup_patient_sync.error');
+    expect(errCall![1]).not.toHaveProperty('message');
+    expect(errCall![1]).not.toHaveProperty('stack');
+  });
+
+  // ── 8b. PII/valor nunca em message/stack — mesmo com valor sensível dentro do erro ──
+  it('8b. nunca loga message/stack, mesmo quando carregam valor sensível (SQLSTATE do pg)', async () => {
+    const input = makeUpsertInput();
+    const sensitiveValue = 'ENDERECO_SENSIVEL_XPTO_999';
+    const pgError = Object.assign(
+      new Error(`invalid input syntax for type uuid: "${sensitiveValue}"`),
+      { code: '22P02' },
+    );
+    pgError.stack = `Error: invalid input syntax for type uuid: "${sensitiveValue}"\n    at fakeStack`;
+    const deps = makeDeps({ mapResult: input, upsertResult: pgError });
+    useCase = new SyncPatientFromClickUpTaskUseCase(deps);
+
+    const result = await useCase.execute(makeTask());
+
+    expect(result.kind).toBe('ERROR');
+    const errCall = mockLoggerError.mock.calls.find((c: unknown[]) => c[0] === 'clickup_patient_sync.error');
+    expect(errCall).toBeDefined();
+    expect(errCall![1]).not.toHaveProperty('message');
+    expect(errCall![1]).not.toHaveProperty('stack');
+    expect(JSON.stringify(errCall)).not.toContain(sensitiveValue);
+    expect(errCall![1]).toEqual(expect.objectContaining({ errorName: 'Error', code: '22P02' }));
   });
 
   // ── 9. CASE_NUMBER_CONFLICT ───────────────────────────────────────────────
