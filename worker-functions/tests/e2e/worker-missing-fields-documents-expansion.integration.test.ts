@@ -13,7 +13,7 @@
  */
 
 import { Pool } from 'pg';
-import { createApiClient, getMockToken, waitForBackend } from './helpers';
+import { createApiClient, createPatientFixture, getMockToken, waitForBackend } from './helpers';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -25,19 +25,37 @@ const ALL_WORKER_IDS: string[] = [];
 describe('GET /api/workers/me e PUT /api/workers/me/general-info — expansão doc_* (Fase 1, DD1)', () => {
   const api = createApiClient();
   let pool: Pool;
+  let patientId: string;
+  let jobPostingId: string;
 
   beforeAll(async () => {
     await waitForBackend(api);
     pool = new Pool({ connectionString: DATABASE_URL });
+
+    // Vaga PRÓPRIA da suíte (nunca pega emprestada de outro teste via
+    // `SELECT ... status='SEARCHING' LIMIT 1` — isso lia estado de fixture
+    // alheia e não tinha dono pra limpar). Só o teste de regressão do 403
+    // usa, mas nasce aqui pra existir uma fonte única e ser limpa no afterAll
+    // mesmo que aquele teste falhe antes de chegar lá.
+    patientId = await createPatientFixture(pool, 'docexp');
+    const posting = await pool.query<{ id: string }>(
+      `INSERT INTO job_postings (title, country, status, patient_id, case_number)
+       VALUES ('Caso E2E docexp', 'AR', 'SEARCHING', $1, 99972) RETURNING id`,
+      [patientId],
+    );
+    jobPostingId = posting.rows[0].id;
   });
 
   afterAll(async () => {
     if (ALL_WORKER_IDS.length) {
+      await pool.query(`DELETE FROM worker_blocked_applications WHERE worker_id = ANY($1::uuid[])`, [ALL_WORKER_IDS]);
       await pool.query(`DELETE FROM worker_service_areas WHERE worker_id = ANY($1::uuid[])`, [ALL_WORKER_IDS]);
       await pool.query(`DELETE FROM worker_availability WHERE worker_id = ANY($1::uuid[])`, [ALL_WORKER_IDS]);
       await pool.query(`DELETE FROM worker_documents WHERE worker_id = ANY($1::uuid[])`, [ALL_WORKER_IDS]);
       await pool.query(`DELETE FROM workers WHERE id = ANY($1::uuid[])`, [ALL_WORKER_IDS]);
     }
+    if (jobPostingId) await pool.query(`DELETE FROM job_postings WHERE id = $1`, [jobPostingId]);
+    if (patientId) await pool.query(`DELETE FROM patients WHERE id = $1`, [patientId]);
     await pool.end();
   });
 
@@ -207,27 +225,9 @@ describe('GET /api/workers/me e PUT /api/workers/me/general-info — expansão d
        VALUES ($1, 'http://e.com/id', 'http://e.com/cr')`,
       [w.id],
     );
-    const { rows: postings } = await pool.query<{ id: string }>(
-      `SELECT id FROM job_postings WHERE status = 'SEARCHING' LIMIT 1`,
-    );
-    if (postings.length === 0) {
-      // Sem vaga em SEARCHING no banco de teste: cria uma mínima com patient próprio.
-      const patient = await pool.query<{ id: string }>(
-        `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status)
-         VALUES ($1, 'E2E-docexp', 'Patient', 'AR', 'ACTIVE') RETURNING id`,
-        [`e2e-docexp-${SUFFIX}`],
-      );
-      const posting = await pool.query<{ id: string }>(
-        `INSERT INTO job_postings (title, country, status, patient_id, case_number)
-         VALUES ('Caso E2E docexp', 'AR', 'SEARCHING', $1, 99972) RETURNING id`,
-        [patient.rows[0].id],
-      );
-      postings.push(posting.rows[0]);
-    }
-
     const res = await api.post(
       '/api/worker-applications/track-channel',
-      { jobPostingId: postings[0].id, channel: 'facebook' },
+      { jobPostingId, channel: 'facebook' },
       { headers: { Authorization: `Bearer ${w.token}` } },
     );
 
