@@ -59,7 +59,7 @@ describe('expandDocumentToken', () => {
     expect(result).not.toContain('doc_criminal_record');
   });
 
-  it('profession vazia ("") → mesmo tratamento de NULL (AT)', () => {
+  it('profession vazia ("") → tratada como AT AQUI, mas isso NÃO é paridade com o SQL (lá seria NÃO-AT); "" é inalcançável na tabela real (CHECK valid_profession_values, migration 064) — ramo é defesa inerte, não comportamento observável em produção', () => {
     const result = expandDocumentToken(['worker_documents'], rowAT({ profession: '', resume_cv_url: null }));
     expect(result).toContain('doc_resume_cv');
   });
