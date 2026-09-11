@@ -65,6 +65,10 @@ export function PendingTasksCard({
   const { t } = useTranslation();
   const navigate = useNavigate();
 
+  /** Nome legível de um token doc_* (ex.: doc_resume_cv → "Currículum vitae"). */
+  const docLabel = (token: string): string =>
+    t(`publicVacancy.incompleteModal.fields.${token}`, { defaultValue: token });
+
   if (missingFields.length === 0) return null;
 
   const registrationTokens = missingFields.filter((token) => destinationFor(token).tab !== 'documents');
@@ -101,14 +105,23 @@ export function PendingTasksCard({
           url: buildProfileUrl({ tab: 'documents' }),
         },
       ]
-    : requiredDocTokens
-        .filter((token) => documentsTokens.includes(token))
-        .map((token) => ({
-          key: token,
-          label: t(`publicVacancy.incompleteModal.fields.${token}`, { defaultValue: token }),
-          actionLabel: t('profile.pendingTasks.uploadAction'),
-          url: buildProfileUrl(destinationFor(token)),
-        }));
+    : [
+        // Exigidos pela política (paridade com o portão) que o servidor
+        // também está pedindo, na ordem da política — depois, qualquer
+        // token EXTRA que o servidor pediu e a política local não conhece
+        // (achado do gate 11/09, caso E: CAREGIVER com doc_resume_cv
+        // pendente). F1/DD1 — `missingFields` é a fonte única; um doc_*
+        // que o servidor marcou como pendente NUNCA pode desaparecer da
+        // lista só porque a política local do frontend não o exige para
+        // esta profissão.
+        ...requiredDocTokens.filter((token) => documentsTokens.includes(token)),
+        ...documentsTokens.filter((token) => !requiredDocTokens.includes(token)),
+      ].map((token) => ({
+        key: token,
+        label: docLabel(token),
+        actionLabel: t('profile.pendingTasks.uploadAction'),
+        url: buildProfileUrl(destinationFor(token)),
+      }));
 
   const rows: TaskRow[] = [...registrationRows, ...documentRows];
 
@@ -117,9 +130,7 @@ export function PendingTasksCard({
   );
   const completedDocLabels = hasGenericDocToken
     ? []
-    : requiredDocTokens
-        .filter((token) => !documentsTokens.includes(token))
-        .map((token) => t(`publicVacancy.incompleteModal.fields.${token}`, { defaultValue: token }));
+    : requiredDocTokens.filter((token) => !documentsTokens.includes(token)).map(docLabel);
   const completedLabels = [...completedRegistrationLabels, ...completedDocLabels];
 
   // N (título) e Y (denominador) usam a MESMA unidade — a linha renderizada
