@@ -102,10 +102,12 @@ export function DocumentsGrid({ documents, profession, onUpload, onDelete, onVie
   const row2 = visibleSlots.slice(3, 6);
   const row3 = visibleSlots.slice(6);
 
-  const renderCard = (slot: DocumentSlot, className?: string): JSX.Element => {
+  // Todos os 3 call sites (row1/row2/row3) sempre passam className — sem uso
+  // opcional a cobrir, então o parâmetro é obrigatório (D200.12).
+  const renderCard = (slot: DocumentSlot, className: string): JSX.Element => {
     const filePath = getFilePath(slot.docType);
     return (
-      <div key={slot.docType} data-testid={`doc-slot-${slot.docType}`} className={`flex flex-col gap-1 ${className ?? ''}`}>
+      <div key={slot.docType} data-testid={`doc-slot-${slot.docType}`} className={`flex flex-col gap-1 ${className}`}>
         <DocumentUploadCard
           label={t(`documentTypes.${slot.docType}`)}
           isUploaded={!!filePath}
@@ -113,7 +115,11 @@ export function DocumentsGrid({ documents, profession, onUpload, onDelete, onVie
           isRequired={isRequiredDoc(slot.docType)}
           onFileSelect={(file) => withLoading(slot.docType, () => onUpload(slot.docType, file))}
           onDelete={() => withLoading(slot.docType, () => onDelete(slot.docType))}
-          onView={() => filePath ? onView(filePath) : Promise.resolve()}
+          // DocumentUploadCard só desenha (e só chama) o botão "Visualizar"
+          // quando isUploaded=true, e isUploaded aqui é exatamente `!!filePath`
+          // — logo, sempre que onView for de fato invocado, filePath já é
+          // string. Sem ramo pra cobrir (e sem função nunca chamada sobrando).
+          onView={() => onView(filePath as string)}
           className="flex-1"
         />
         {cardErrors[slot.docType] && (
