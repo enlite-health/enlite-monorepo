@@ -42,8 +42,6 @@ import { expandDocumentToken, type WorkerDocumentRow } from '../domain/documentT
 
 const TAG = '[WorkerCompletenessRepository]';
 
-export type { WorkerDocumentRow };
-
 /**
  * Lê a linha necessária para expandir `worker_documents` (profissão + as 4
  * URLs de `worker_documents`) para um worker. `null` = worker não encontrado

@@ -1,8 +1,8 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { logger } from '@shared/logging';
-import { expandDocumentToken as expandDocumentTokenPure } from '../../worker/domain/documentTokenExpansion';
-import { fetchWorkerDocumentRow } from '../../worker/infrastructure/WorkerCompletenessRepository';
+import { expandDocumentToken as expandDocumentTokenPure } from '@modules/worker/domain/documentTokenExpansion';
+import { fetchWorkerDocumentRow } from '@modules/worker/infrastructure/WorkerCompletenessRepository';
 
 export interface BlockedApplicationUpsertParams {
   workerId: string;
