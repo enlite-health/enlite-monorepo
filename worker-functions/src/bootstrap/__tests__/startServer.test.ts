@@ -47,14 +47,6 @@ jest.mock('@modules/integration', () => ({
   GoogleApiKeyValidator: class {},
   WebhookPartnerRepository: class {},
 }));
-jest.mock('@modules/integration/interfaces/webhooks/controllers/ClickUpPatientWebhookController', () => ({
-  ClickUpPatientWebhookController: class {},
-}));
-jest.mock('@modules/integration/interfaces/webhooks/middleware/ClickUpHmacMiddleware', () => ({
-  ClickUpHmacMiddleware: class {
-    handle = (_req: unknown, _res: unknown, next: () => void) => next();
-  },
-}));
 jest.mock('@shared/events/PubSubClient', () => ({ PubSubClient: class {} }));
 jest.mock('@shared/events/CloudTasksClient', () => ({ CloudTasksClient: class {} }));
 jest.mock('@modules/notification/application/BookSlotFromWhatsAppUseCase', () => ({ BookSlotFromWhatsAppUseCase: class {} }));
@@ -216,30 +208,6 @@ describe('startServer — ramos de wiring e desligamento', () => {
     // O controller é INJETADO em `createWebhookRoutes` (não vira rota própria),
     // então o sinal observável do ramo é o log de boot.
     expect(log.mock.calls.flat().some((l) => String(l).includes('Periskope inbound webhook'))).toBe(true);
-  });
-
-  it('falha ao inicializar o controller do ClickUp NÃO derruba o boot — só some a rota', async () => {
-    process.env.CLICKUP_WEBHOOK_SECRET = 'segredo';
-    const { ClickUpPatientWebhookController } = jest.requireMock(
-      '@modules/integration/interfaces/webhooks/controllers/ClickUpPatientWebhookController',
-    ) as { ClickUpPatientWebhookController: { create?: () => Promise<unknown> } };
-    ClickUpPatientWebhookController.create = () => Promise.reject(new Error('sem credencial'));
-
-    await expect(startServer(fakeApp() as never, false, messaging)).resolves.toBeUndefined();
-    expect(listenMock).toHaveBeenCalled();
-  });
-
-  it('com o controller do ClickUp OK, o HMAC é montado junto', async () => {
-    process.env.CLICKUP_WEBHOOK_SECRET = 'segredo';
-    const { ClickUpPatientWebhookController } = jest.requireMock(
-      '@modules/integration/interfaces/webhooks/controllers/ClickUpPatientWebhookController',
-    ) as { ClickUpPatientWebhookController: { create?: () => Promise<unknown> } };
-    ClickUpPatientWebhookController.create = () => Promise.resolve({});
-    const erro = jest.spyOn(console, 'error').mockImplementation(() => undefined);
-
-    await startServer(fakeApp() as never, false, messaging);
-
-    expect(erro.mock.calls.flat().some((l) => String(l).includes('ClickUp webhook controller init failed'))).toBe(false);
   });
 
   it('SIGTERM para de aceitar conexões antes de drenar os pools', async () => {
