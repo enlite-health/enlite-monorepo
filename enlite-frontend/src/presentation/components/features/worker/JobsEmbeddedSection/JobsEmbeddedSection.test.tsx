@@ -453,6 +453,27 @@ describe('JobsEmbeddedSection — rótulo dinâmico do Postularse (Fase 4, DD5)'
 
     expect(screen.getAllByRole('button', { name: 'jobs.applyLabel.document' })).toHaveLength(2);
   });
+
+  describe('contraste WCAG AA (gate 11/09, rodada 3 — unit barato que fixa a cor sem depender de e2e)', () => {
+    // `bg-[#25d366]` (verde claro do ícone do WhatsApp) media 1,98:1 com
+    // texto branco — abaixo do mínimo WCAG AA (4,5:1), achado do gate
+    // quando o botão passou a carregar a frase inteira da entrega
+    // (Fase 4/DD5). Decisão de desenho do orquestrador: verde-escuro da
+    // marca `#075E54` (7,67:1) — mantém a identidade WhatsApp. Este teste
+    // não recalcula contraste (papel do e2e, via getComputedStyle) — só
+    // trava que ninguém reintroduz o verde claro num refactor futuro.
+    it('botão Postularse usa bg-[#075E54] (verde-escuro da marca), NÃO bg-[#25d366] (verde claro, 1,98:1)', async () => {
+      mockFetchOnce(legacyResponse());
+      render(<JobsEmbeddedSection isRegistrationComplete />);
+      await waitForLoaded();
+
+      const applyBtn = screen.getAllByRole('button', { name: 'jobs.apply' })[0];
+      expect(applyBtn).toHaveClass('bg-[#075E54]');
+      expect(applyBtn).not.toHaveClass('bg-[#25d366]');
+      expect(applyBtn).toHaveClass('hover:bg-[#054C44]');
+      expect(applyBtn).not.toHaveClass('hover:bg-[#128c7e]');
+    });
+  });
 });
 
 // ── Filtros e busca ───────────────────────────────────────────────────────────

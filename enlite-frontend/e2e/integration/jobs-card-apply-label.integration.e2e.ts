@@ -44,8 +44,12 @@ import {
   type InsertEligibilityWorkerResult,
 } from '../helpers/eligibility-worker-helper';
 import { loginNewWorker } from '../helpers/worker-realreg-auth-helper';
+import { readTextContrastRatio } from '../helpers/contrast-helper';
 
 test.use({ video: 'on' });
+
+/** WCAG AA, texto pequeno (< 18pt/24px ou < 14pt/18.5px bold). */
+const WCAG_AA_MIN_CONTRAST = 4.5;
 
 test.describe('@integration Card da vaga — rótulo dinâmico do Postularse (Fase 4, DD5)', () => {
   test.setTimeout(90_000);
@@ -81,6 +85,25 @@ test.describe('@integration Card da vaga — rótulo dinâmico do Postularse (Fa
 
     const applyBtn = page.getByRole('button', { name: 'Subí Antecedentes penales para postularte' }).first();
     await expect(applyBtn).toBeVisible({ timeout: 15_000 });
+
+    // Achado do gate (11/09, rodada 3): o botão "Postularse" (bg-[#25d366],
+    // identidade WhatsApp) mede 1,98:1 sobre o texto branco — bem abaixo do
+    // mínimo WCAG AA (4,5:1) — e agora carrega a frase inteira da entrega,
+    // não só uma palavra curta. Mede o PRÓPRIO botão (o helper começa pelo
+    // elemento passado — aqui o fundo colorido É do botão, não de um
+    // wrapper sem cor, lição da Fase 3/rodada 2 do gate).
+    const applyBtnContrast = await readTextContrastRatio(applyBtn);
+    expect(applyBtnContrast).toBeGreaterThanOrEqual(WCAG_AA_MIN_CONTRAST);
+
+    // `:hover` de verdade (pseudo-classe do navegador, não estado JS) —
+    // `getComputedStyle` já reflete `hover:bg-[#054C44]` com o mouse em
+    // cima. `transition-colors` do Tailwind anima a troca (~150ms
+    // default) — espera passar pra não capturar uma cor NO MEIO da
+    // transição.
+    await applyBtn.hover();
+    await page.waitForTimeout(300);
+    const applyBtnHoverContrast = await readTextContrastRatio(applyBtn);
+    expect(applyBtnHoverContrast).toBeGreaterThanOrEqual(WCAG_AA_MIN_CONTRAST);
 
     await applyBtn.click();
 
