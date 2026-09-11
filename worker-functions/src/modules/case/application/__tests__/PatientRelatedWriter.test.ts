@@ -28,16 +28,27 @@ type Chamada = { sql: string; params: unknown[] };
 /**
  * Cliente de mentira: responde por FORMA da query. `existing` são as linhas ativas de
  * `patient_addresses`; `published` é o conjunto de ids com vaga publicada apontando para eles.
+ *
+ * O SELECT inicial simula o `WHERE` de verdade: só filtra por `source = 'clickup'` quando o SQL
+ * recebido CONTÉM esse trecho — se a sabotagem (contrato item 4) remover o filtro do código, o
+ * mock deixa de filtrar também, porque está espelhando o que o Postgres faria com aquele SQL
+ * exato, não reimplementando a regra por fora.
  */
 function cliente(opts: {
-  existing?: Array<{ id: string; display_order: number; address_formatted: string | null; logistics_corridor: string | null; access_notes: string | null; lat?: string | number | null; lng?: string | number | null }>;
+  existing?: Array<{ id: string; display_order: number; address_formatted: string | null; logistics_corridor: string | null; access_notes: string | null; lat?: string | number | null; lng?: string | number | null; source?: string }>;
   published?: string[];
 } = {}) {
   const chamadas: Chamada[] = [];
   let novos = 0;
   const query = jest.fn(async (sql: string, params: unknown[] = []) => {
     chamadas.push({ sql, params });
-    if (/SELECT id, display_order, address_formatted/.test(sql)) return { rows: opts.existing ?? [], rowCount: (opts.existing ?? []).length };
+    if (/SELECT id, display_order, address_formatted/.test(sql)) {
+      const todasExistentes = opts.existing ?? [];
+      const rows = /AND\s+source\s*=\s*'clickup'/.test(sql)
+        ? todasExistentes.filter(r => (r.source ?? 'clickup') === 'clickup')
+        : todasExistentes;
+      return { rows, rowCount: rows.length };
+    }
     if (/COUNT\(\*\)::text AS count FROM job_postings/.test(sql)) {
       return { rows: [{ count: (opts.published ?? []).includes(String(params[0])) ? '1' : '0' }], rowCount: 1 };
     }
@@ -61,7 +72,7 @@ const endereco = (over: Partial<PatientAddress> = {}): PatientAddress => ({
   ...over,
 });
 
-const linha = (over: Partial<{ id: string; display_order: number; address_formatted: string | null; logistics_corridor: string | null; access_notes: string | null; lat: string | number | null; lng: string | number | null }> = {}) => ({
+const linha = (over: Partial<{ id: string; display_order: number; address_formatted: string | null; logistics_corridor: string | null; access_notes: string | null; lat: string | number | null; lng: string | number | null; source: string }> = {}) => ({
   id: 'antiga-1',
   display_order: 1,
   address_formatted: 'Av. Maipú 1234',
@@ -193,6 +204,62 @@ describe('replacePatientAddresses', () => {
     await replacePatientAddresses(PID, [endereco(), endereco({ displayOrder: 2, addressFormatted: 'Calle Nueva 900' })], client, geocoder);
     expect(todos(chamadas, /^UPDATE patient_addresses SET\s+address_type/)).toHaveLength(1);
     expect(todos(chamadas, /INSERT INTO patient_addresses/)).toHaveLength(1);
+  });
+
+  describe('convivência com linha do painel (source admin_manual)', () => {
+    it('linha admin_manual no display_order 4 SOBREVIVE a um sync que só traz slots 1-3: não é arquivada nem apagada', async () => {
+      const painel = linha({ id: 'painel-4', display_order: 4, source: 'admin_manual' });
+      const { client, chamadas } = cliente({ existing: [painel] });
+
+      await replacePatientAddresses(
+        PID,
+        [endereco({ displayOrder: 1 }), endereco({ displayOrder: 2 }), endereco({ displayOrder: 3 })],
+        client,
+        geocoder,
+      );
+
+      // O SELECT filtrado nunca devolve a linha do painel — o bloco "gone" (goneIds) é
+      // calculado a partir dessa lista, então o id dela não pode aparecer em NENHUM
+      // UPDATE (archive) ou DELETE.
+      const arquiva = sqlDe(chamadas, /SET archived_at = NOW\(\)\s+WHERE id = ANY/);
+      const apaga = sqlDe(chamadas, /^\s*DELETE FROM patient_addresses/);
+      expect(arquiva).toBeUndefined();
+      expect(apaga).toBeUndefined();
+      for (const c of chamadas) expect(c.params.flat()).not.toContain('painel-4');
+    });
+
+    it('linha admin_manual no display_order 1 NÃO é sobrescrita (Path 1) nem arquivada (Path 2) quando o ClickUp traz o slot 1 — os dois convivem', async () => {
+      const painel = linha({ id: 'painel-1', display_order: 1, source: 'admin_manual', address_formatted: 'Rua do Painel 1' });
+      const { client, chamadas } = cliente({ existing: [painel] });
+
+      await replacePatientAddresses(PID, [endereco({ displayOrder: 1, addressFormatted: 'Av. Maipú 1234' })], client, geocoder);
+
+      // Nenhum UPDATE in-place (Path 1) e nenhum archived_at (Path 2) mira o id do painel —
+      // porque o SELECT filtrado nunca o devolveu como `existingForSlot`.
+      expect(sqlDe(chamadas, /^UPDATE patient_addresses SET\s+address_type/)).toBeUndefined();
+      expect(sqlDe(chamadas, /SET archived_at = NOW\(\)\s+WHERE id = \$1/)).toBeUndefined();
+      for (const c of chamadas) expect(c.params.flat()).not.toContain('painel-1');
+
+      // A convivência: o slot 1 do ClickUp vira Path 3 (INSERT novo), sem tocar a linha do
+      // painel — os dois passam a existir no MESMO display_order.
+      const ins = sqlDe(chamadas, /INSERT INTO patient_addresses/);
+      expect(ins?.params).toEqual([PID, 'primary', 'Av. Maipú 1234', null, 1, 'Buenos Aires', 'Vicente López', 'Florida', -34.5, -58.5, null, null]);
+    });
+
+    it('linhas `clickup` continuam com o comportamento de sempre: slot que sumiu ainda arquiva/apaga, mesmo com uma linha admin_manual no meio', async () => {
+      const painel = linha({ id: 'painel-9', display_order: 9, source: 'admin_manual' });
+      const clickupSumiu = linha({ id: 'ck-2', display_order: 2, source: 'clickup' });
+      const { client, chamadas } = cliente({ existing: [linha({ source: 'clickup' }), clickupSumiu, painel] });
+
+      await replacePatientAddresses(PID, [endereco({ displayOrder: 1 })], client, geocoder);
+
+      const arquiva = sqlDe(chamadas, /SET archived_at = NOW\(\)\s+WHERE id = ANY/);
+      const apaga = sqlDe(chamadas, /^\s*DELETE FROM patient_addresses/);
+      // Só a linha clickup que sumiu (ck-2) entra no lote — nem a clickup que ficou (antiga-1,
+      // atualizada via Path 1) nem a admin_manual (painel-9, nunca lida).
+      expect(arquiva?.params).toEqual([['ck-2']]);
+      expect(apaga?.params).toEqual([['ck-2']]);
+    });
   });
 });
 
