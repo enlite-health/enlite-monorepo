@@ -35,6 +35,9 @@ module.exports = {
     // Parecer do lex: guarda que recusa UPDATE via ClickUp (só cria paciente NOVO). Mesma
     // régua acima — puro, testável, entra no piso.
     'scripts/import-patients-from-clickup-guard.ts',
+    // Achado do gate (crit. 3): este arquivo FOI TOCADO (redação C1 do parecer do lex) — entra
+    // no piso, medido 100/100/100/100 antes de entrar.
+    'scripts/import-patients-dry-run.ts',
   ],
   coverageDirectory: 'coverage',
 
@@ -639,6 +642,15 @@ module.exports = {
     // Parecer do lex (11/09/2026): recusa UPDATE via ClickUp — a carga manual só cria paciente
     // NOVO. Mesma régua da linha acima. Nasce em 100% nos quatro eixos.
     'scripts/import-patients-from-clickup-guard.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Achado do gate (crit. 3): a redação C1 do parecer do lex tocou este arquivo — entra no
+    // piso (era 60%, sem teste nenhum, antes desta rodada). `checkExistingTaskIds` e todos os
+    // ramos de skip/classificação de `processDryRun` agora têm teste.
+    'scripts/import-patients-dry-run.ts': {
       statements: 100,
       branches: 100,
       functions: 100,

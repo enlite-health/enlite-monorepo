@@ -92,8 +92,12 @@ export function processDryRun(
   try {
     input = mapper.map(task);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.log(`  ERROR  task=${task.id} msg=mapper threw: ${msg}`);
+    // Achado do gate: `err.message` podia levar o VALOR que o preflight recusou (ex.: um
+    // orderindex/rótulo do ClickUp citado na mensagem de erro do mapper). Nunca imprimir
+    // `.message`/`.stack` — só a classe do erro, mesma disciplina de `redactError()` no
+    // script principal.
+    const errorName = err instanceof Error ? err.name : 'NaoEError';
+    console.log(`  ERROR  task=${task.id} mapper threw: ${errorName}`);
     return;
   }
 
