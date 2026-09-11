@@ -3,9 +3,11 @@
  * flags do CLI. Puro: sem rede, sem DB, sem process.exit. Prova as duas travas fail-safe do
  * gate revisao-pr:
  *   1. `--dry-run` presente VENCE `--apply`, sempre (nunca grava).
- *   2. `--task-id` sem valor e `--limit` não numérico/≤0 são `ok:false` (ERRO), nunca um
- *      valor "ausente" silencioso — sem isto, digitar errado cairia muda na paginação da
- *      lista INTEIRA (task-id) ou em "sem limite"/"zero" sem avisar (limit).
+ *   2. `--task-id`, `--limit` e `--status` sem valor (ou seguidos de outra flag) são `ok:false`
+ *      (ERRO), nunca um valor "ausente" silencioso — sem isto, digitar errado cairia muda na
+ *      paginação da lista INTEIRA (task-id), em "sem limite"/"zero" (limit), ou em
+ *      `statusFilter: []` lido como "sem filtro" = LISTA INTEIRA gravando (status — achado numa
+ *      2ª rodada do gate, DEPOIS de task-id/limit já corrigidos: mesma classe de defeito).
  */
 import { parseImportPatientsFlags, type ParseFlagsResult } from '../import-patients-from-clickup-flags';
 
@@ -38,12 +40,6 @@ describe('parseImportPatientsFlags — caminho feliz', () => {
   it('--status X,Y,Z: lista normalizada para minúsculas', () => {
     expect(ok(parseImportPatientsFlags(['--status', 'Busqueda,Activo'])).statusFilter).toEqual(['busqueda', 'activo']);
     expect(ok(parseImportPatientsFlags([])).statusFilter).toEqual([]);
-  });
-
-  it('--status como último argumento (sem valor depois): trata como ausente, sem lista vazia por engano', () => {
-    // Diferente de --task-id/--limit: --status sem valor não é ambíguo entre "carrega tudo" e
-    // "carrega nada" — cai no MESMO comportamento de não ter passado --status (sem filtro).
-    expect(ok(parseImportPatientsFlags(['--status'])).statusFilter).toEqual([]);
   });
 
   it('--verbose liga o flag de log completo', () => {
@@ -120,5 +116,34 @@ describe('parseImportPatientsFlags — --limit não numérico ou ≤ 0 é ERRO, 
     const r = parseImportPatientsFlags(['--limit', '1']);
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.flags.limit).toBe(1);
+  });
+});
+
+describe('parseImportPatientsFlags — --status sem valor é ERRO, nunca "sem filtro" (2ª rodada do gate)', () => {
+  it('--status como último argumento (sem nada depois) → ok:false', () => {
+    const r = parseImportPatientsFlags(['--status']);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/--status/);
+  });
+
+  it('--apply --status (esqueceu o valor) → ok:false, NUNCA grava a lista inteira', () => {
+    // Este é o caso exato que o gate achou: sem a guarda, isto virava
+    // { ok: true, flags: { apply: true, statusFilter: [] } } — "sem filtro" = TODOS os
+    // pacientes da lista, com --apply ligado.
+    const r = parseImportPatientsFlags(['--apply', '--status']);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/--status/);
+  });
+
+  it('--status seguido de OUTRA flag → ok:false', () => {
+    const r = parseImportPatientsFlags(['--status', '--verbose']);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/--status/);
+  });
+
+  it('--status com valor de verdade → ok:true, lista normalizada para minúsculas', () => {
+    const r = parseImportPatientsFlags(['--status', 'Busqueda,Activo']);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.flags.statusFilter).toEqual(['busqueda', 'activo']);
   });
 });
