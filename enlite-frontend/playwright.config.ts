@@ -7,7 +7,9 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  // `undefined` local deixava o Playwright escalar workers por CPU — mesmo
+  // defeito medido no jest do worker-functions (11/09, 13,1 GB). CI já tinha teto (1).
+  workers: process.env.CI ? 1 : 2,
   reporter: 'html',
 
   use: {

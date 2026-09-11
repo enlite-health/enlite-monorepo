@@ -8,6 +8,10 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
+    // Sem isto, o pool de workers escala por core: mesmo defeito medido no
+    // jest do worker-functions (11/09, 13,1 GB / 10 processos). Em CI a
+    // máquina é dedicada; local, teto de 2.
+    maxWorkers: process.env.CI ? '50%' : 2,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

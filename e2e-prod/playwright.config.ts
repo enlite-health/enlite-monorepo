@@ -65,8 +65,9 @@ export default defineConfig({
   // num único `playwright test`, e as jornadas de regression chamam o cleanup GLOBAL is_test
   // (`DELETE ... WHERE is_test=true`). Dois testes is_test concorrentes → o cleanup de um
   // apaga os dados do outro no meio (corrupção). Serial custa poucos minutos (~6min a suíte
-  // toda) e o job tem 15min de timeout — segurança > velocidade num monitor. Local = auto.
-  workers: IS_CI ? 1 : undefined,
+  // toda) e o job tem 15min de timeout — segurança > velocidade num monitor. Local = teto de 2
+  // (era `undefined`/auto por CPU — mesmo defeito medido no jest do worker-functions, 11/09).
+  workers: IS_CI ? 1 : 2,
   reporter: [
     ['list'],
     ['html', { open: 'never', outputFolder: 'playwright-report' }],

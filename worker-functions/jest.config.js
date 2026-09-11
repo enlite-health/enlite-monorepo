@@ -41,6 +41,11 @@ module.exports = {
   ],
   coverageDirectory: 'coverage',
 
+  // Sem isto, jest abre 1 worker por core: medido 11/09 — 10 processos
+  // `jest-worker/processChild.js` de 1,1-1,4 GB cada (13,1 GB) numa máquina de
+  // 18 GB, travou 3x em 1h. Em CI a máquina é dedicada; local, teto de 2.
+  maxWorkers: process.env.CI ? '50%' : 2,
+
   /**
    * PISO DE COBERTURA — a trava que faltava nesta release (30/08/2026).
    *
