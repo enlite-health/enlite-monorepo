@@ -3201,13 +3201,10 @@
         },
         "locationsCard": {
           "title": "Localizações",
-          "tableName": "Nome",
+          "tableType": "Tipo",
           "tableAddress": "Endereço",
-          "tableNote": "Observação",
-          "addressGeneric": "Endereço {{index}}",
-          "tableZone": "Zona / Bairro",
-          "tableCorridor": "Corredor logístico",
-          "tableAccess": "Logística e acesso",
+          "primaryBadge": "Principal",
+          "noAddress": "Sem endereço cadastrado",
           "editAddress": "Editar"
         },
         "contractedServicesCard": {
