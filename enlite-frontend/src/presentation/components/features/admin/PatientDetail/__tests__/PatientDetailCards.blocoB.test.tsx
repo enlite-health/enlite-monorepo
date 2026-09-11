@@ -26,6 +26,21 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({ AdminApiService: {
   createPatientAddress: (...a: unknown[]) => api.createPatientAddress(...a),
   updatePatientAddressLogistics: (...a: unknown[]) => api.updatePatientAddressLogistics(...a),
 } }));
+// spec 018, PR-1, ADR-1: a rede de apoio (FamiliaresCard) e os contatos de emergência da
+// cobertura (dentro de CoberturaMedicaCard) gravam por LINHA — não passam mais por
+// `updatePatientSection`.
+const rows = {
+  createResponsible: vi.fn(), updateResponsible: vi.fn(), deactivateResponsible: vi.fn(),
+  createCoverageEmergencyContact: vi.fn(), updateCoverageEmergencyContact: vi.fn(), deactivateCoverageEmergencyContact: vi.fn(),
+};
+vi.mock('@infrastructure/http/AdminPatientContactRowsApiService', () => ({ AdminPatientContactRowsApiService: {
+  createResponsible: (...a: unknown[]) => rows.createResponsible(...a),
+  updateResponsible: (...a: unknown[]) => rows.updateResponsible(...a),
+  deactivateResponsible: (...a: unknown[]) => rows.deactivateResponsible(...a),
+  createCoverageEmergencyContact: (...a: unknown[]) => rows.createCoverageEmergencyContact(...a),
+  updateCoverageEmergencyContact: (...a: unknown[]) => rows.updateCoverageEmergencyContact(...a),
+  deactivateCoverageEmergencyContact: (...a: unknown[]) => rows.deactivateCoverageEmergencyContact(...a),
+} }));
 vi.mock('@presentation/components/molecules/ServiceAreaMap', () => ({ ServiceAreaMap: () => <div data-testid="map-stub" /> }));
 
 import { CoberturaMedicaCard } from '../CoberturaMedicaCard';
@@ -39,6 +54,12 @@ beforeEach(() => {
   api.listInsuranceProviders.mockReset().mockResolvedValue([]);
   api.createPatientAddress.mockReset().mockResolvedValue({ id: 'new' });
   api.updatePatientAddressLogistics.mockReset().mockResolvedValue({ id: 'addr1' });
+  rows.createResponsible.mockReset().mockResolvedValue({ id: 'novo' });
+  rows.updateResponsible.mockReset().mockResolvedValue({ id: 'r1' });
+  rows.deactivateResponsible.mockReset().mockResolvedValue({ id: 'r1', active: false });
+  rows.createCoverageEmergencyContact.mockReset().mockResolvedValue({ id: 'novo' });
+  rows.updateCoverageEmergencyContact.mockReset().mockResolvedValue({ id: 'c1' });
+  rows.deactivateCoverageEmergencyContact.mockReset().mockResolvedValue({ id: 'c1', active: false });
 });
 
 describe('CoberturaMedicaCard — drawer', () => {
@@ -157,7 +178,11 @@ describe('FamiliaresCard — ramos', () => {
     render(<FamiliaresCard responsibles={patientDetailFixture.responsibles} patientId="p2" />);
     fireEvent.click(screen.getAllByTestId('edit-support-btn')[1]);
     fireEvent.click(screen.getAllByTestId('psn-save').slice(-1)[0] as HTMLElement);
-    await waitFor(() => expect(api.updatePatientSection).toHaveBeenCalledTimes(2));
+    // spec 018, PR-1, ADR-1: a rede de apoio grava por LINHA — cada responsável existente do
+    // fixture (`patientDetailFixture.responsibles`, 1 linha) vira um `updateResponsible` próprio;
+    // `updatePatientSection` NUNCA é chamado por este drawer.
+    await waitFor(() => expect(rows.updateResponsible).toHaveBeenCalledTimes(2));
+    expect(api.updatePatientSection).not.toHaveBeenCalled();
   });
 });
 

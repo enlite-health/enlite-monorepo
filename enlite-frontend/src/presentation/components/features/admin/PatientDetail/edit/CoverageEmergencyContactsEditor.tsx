@@ -1,7 +1,9 @@
 /**
  * CoverageEmergencyContactsEditor — a lista dos contatos de emergência da COBERTURA MÉDICA dentro do
  * drawer de cobertura (417; D301.3b — Ana Joulie 08/09: "profissional direto, ambulância, central de
- * atendimento de emergência"). A tela edita a lista inteira e manda a lista inteira (`replaceAll`).
+ * atendimento de emergência"). Escrita POR LINHA (spec 018, PR-1, ADR-1): cada linha carrega um `id`
+ * ('' = nova) que o drawer usa para decidir create/update/deactivate no submit — este componente só
+ * edita o array local, nunca chama a API diretamente (o Guardar do drawer é o ÚNICO ponto de escrita).
  *
  * lex C10 (dever de informar, Ley 25.326 art. 6): o aviso abaixo do título diz, em es-AR, que o contato
  * do terceiro será registrado e impresso no documento entregue à família/financiador.
@@ -14,9 +16,8 @@ import {
   COVERAGE_EMERGENCY_CONTACT_PHONE_MAX,
   COVERAGE_EMERGENCY_CONTACTS_MAX,
   type CoverageEmergencyContactKind,
-  type PatientCoverageEmergencyContactInput,
 } from '@domain/entities/PatientCoverage';
-import { contactFieldErrors } from './coverageContactValidation';
+import { contactFieldErrors, type EditableCoverageEmergencyContact } from './coverageContactValidation';
 import { Button } from '@presentation/components/atoms/Button';
 import { Select } from '@presentation/components/atoms/Select';
 import { Text } from '@presentation/components/atoms/Text';
@@ -24,8 +25,8 @@ import { Label } from '@presentation/components/atoms/Label';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 
 interface Props {
-  value: PatientCoverageEmergencyContactInput[];
-  onChange: (next: PatientCoverageEmergencyContactInput[]) => void;
+  value: EditableCoverageEmergencyContact[];
+  onChange: (next: EditableCoverageEmergencyContact[]) => void;
   disabled?: boolean;
   /** lex C3: sem `patient_care_team:read` o servidor recusa (403) um profissional direto — a tela não o oferece. Esconder por omissão. */
   allowDirectProfessional?: boolean;
@@ -36,10 +37,10 @@ export function CoverageEmergencyContactsEditor({ value, onChange, disabled = fa
   const tc = (k: string) => t(`admin.patients.detail.coverageCard.${k}`);
   const te = (k: string) => t(`admin.patients.editDrawer.${k}`);
 
-  const update = (i: number, patch: Partial<PatientCoverageEmergencyContactInput>): void =>
+  const update = (i: number, patch: Partial<EditableCoverageEmergencyContact>): void =>
     onChange(value.map((c, j) => (j === i ? { ...c, ...patch } : c)));
   const remove = (i: number): void => onChange(value.filter((_, j) => j !== i));
-  const add = (): void => onChange([...value, { kind: 'AMBULANCE', name: '', phone: '' }]);
+  const add = (): void => onChange([...value, { id: '', kind: 'AMBULANCE', name: '', phone: '' }]);
 
   const kindOptions = COVERAGE_EMERGENCY_CONTACT_KINDS
     .filter((k) => allowDirectProfessional || k !== 'DIRECT_PROFESSIONAL')

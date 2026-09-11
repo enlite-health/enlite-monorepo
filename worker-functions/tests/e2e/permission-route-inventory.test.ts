@@ -120,16 +120,24 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/patients/funnel → patient:read',
         'GET /api/admin/patients/stats → patient:read',
         'PATCH /api/admin/patient-chat-roles/:code → patient:write',
-        // D286: o PATCH dinâmico por seção virou 5 rotas explícitas, uma por container
-        'PATCH /api/admin/patients/:id/general → patient_identity:write',
+        // D286: o PATCH dinâmico por seção virou rotas explícitas, uma por container.
+        // `support-network` SAIU (spec 018, PR-1, SUP-37) — a rota é 410, isenta em
+        // EXEMPT_ROUTES (não aparece aqui, que é só o que tem `status: 'declared'`).
         'PATCH /api/admin/patients/:id/clinical → patient_clinical:write',
         'PATCH /api/admin/patients/:id/coverage → patient_coverage:write',
-        'PATCH /api/admin/patients/:id/support-network → patient_family:write',
+        // Escrita por linha (spec 018, PR-1, ADR-1; contracts/support-network.md).
+        'PATCH /api/admin/patients/:id/coverage-emergency-contacts/:cid → patient_coverage:write',
+        'PATCH /api/admin/patients/:id/general → patient_identity:write',
+        'PATCH /api/admin/patients/:id/responsibles/:rid → patient_family:write',
         'PATCH /api/admin/patients/:id/service → patient_services:write',
         'PATCH /api/admin/patients/:id/test-flag → patient:write',
         'POST /api/admin/patient-chat-roles → patient:write',
         'POST /api/admin/patients → patient:write',
         'POST /api/admin/patients/:id/activate → patient:write',
+        'POST /api/admin/patients/:id/coverage-emergency-contacts → patient_coverage:write',
+        'POST /api/admin/patients/:id/coverage-emergency-contacts/:cid/deactivate → patient_coverage:write',
+        'POST /api/admin/patients/:id/responsibles → patient_family:write',
+        'POST /api/admin/patients/:id/responsibles/:rid/deactivate → patient_family:write',
         'POST /api/admin/patients/:patientId/addresses → patient_address:write',
         'PUT /api/admin/patients/:id/chat-ids → patient_chat:write',
         'PUT /api/admin/patients/:id/status → patient:write',
@@ -317,7 +325,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
     );
   });
 
-  it('as isentas são as QUATRO decididas, e nenhuma a mais', () => {
+  it('as isentas são as CINCO decididas, e nenhuma a mais', () => {
     // Eram três (D116). `GET /v1/me/authz` entrou na F3: ela é `self` como as
     // outras, mas mora em `/v1/`, fora dos `GOVERNED_PREFIXES` — nascia
     // `not_governed`, isto é, isenta SEM linha, invisível a este teste. Foi o
@@ -325,10 +333,14 @@ describe('inventário de rotas governadas (app real de pé)', () => {
     // linha que a torna. Desde 28/08 ela entra aqui pela MARCA da montagem
     // (`exemptHandler` em `meAuthzRoute.ts`), não por lista: tirar a marca faz
     // a rota sumir deste inventário e este caso acusa.
+    // `PATCH /patients/:id/support-network` entrou no PR-1 (spec 018, ADR-1,
+    // SUP-37): a rota da lista inteira virou 410 e não decide mais nada sobre
+    // o dado — não há célula que faça sentido pedir para uma rota que só recusa.
     const isentas = inventario.governedRoutes.filter((r) => r.status === 'exempt');
     expect(isentas.map((r) => `${r.method} ${r.path}`).sort()).toEqual([
       'GET /api/admin/auth/profile',
       'GET /v1/me/authz',
+      'PATCH /api/admin/patients/:id/support-network',
       'POST /api/admin/auth/telemetry',
       'POST /api/admin/setup',
     ]);

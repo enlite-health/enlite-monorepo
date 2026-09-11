@@ -8,6 +8,13 @@ import {
   type PatientCoverageEmergencyContactInput,
 } from '@domain/entities/PatientCoverage';
 
+/**
+ * Uma linha do editor por LINHA (spec 018, PR-1, ADR-1): `id` ausente/'' = linha nova (ainda não
+ * existe no servidor, vira `POST` no submit); `id` presente = linha existente (vira `PATCH`/
+ * `deactivate`). O editor SÓ conhece esta forma — o drawer converte de/para o detalhe da API.
+ */
+export type EditableCoverageEmergencyContact = PatientCoverageEmergencyContactInput & { id: string };
+
 /** Os dois campos de UMA linha, julgados num lugar só: alimenta o `aria-invalid` da linha e a trava do Guardar. */
 export function contactFieldErrors(c: PatientCoverageEmergencyContactInput): { name: boolean; phone: boolean } {
   const name = c.name.trim().length;

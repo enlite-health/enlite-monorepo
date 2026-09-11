@@ -221,9 +221,11 @@ const MISSING_SQL: Record<PatientCompletenessCode, (p: string) => string> = {
   ADDRESS: (p) => `NOT EXISTS (SELECT 1 FROM patient_addresses pa WHERE pa.patient_id = ${p}.id AND pa.archived_at IS NULL)`,
   // isMinor(birthDate) && activeResponsibleCount < 1 — "menos de 18 anos HOJE, em UTC", igual ao
   // `isMinor` acima: quem nasceu exatamente na data de corte já fez 18 e NÃO é menor (`>` estrito).
+  // `AND pr.active` (spec 018, PR-1, FR-004): responsável desativado (nunca DELETE) não conta
+  // como presente — mesma régua de `activeResponsibleCount` (PatientCompletenessLoader.ts).
   RESPONSIBLE: (p) => `(${p}.birth_date IS NOT NULL
         AND ${p}.birth_date > (((NOW() AT TIME ZONE 'UTC')::date - INTERVAL '${MINOR_AGE_YEARS} years')::date)
-        AND NOT EXISTS (SELECT 1 FROM patient_responsibles pr WHERE pr.patient_id = ${p}.id))`,
+        AND NOT EXISTS (SELECT 1 FROM patient_responsibles pr WHERE pr.patient_id = ${p}.id AND pr.active))`,
   // !insuranceInformed || trim() === '' — mesmo COALESCE que a listagem projeta.
   COVERAGE: (p) => `BTRIM(COALESCE(${p}.insurance_informed, ${p}.health_insurance_name, '')) = ''`,
   // activeContractedServiceCount < 1

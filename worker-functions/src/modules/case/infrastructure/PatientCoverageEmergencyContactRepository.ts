@@ -15,6 +15,7 @@ import type {
   CoverageEmergencyContactKind,
   PatientCoverageEmergencyContactDetail,
   PatientCoverageEmergencyContactInput,
+  PatientCoverageEmergencyContactPatch,
 } from '../domain/PatientCoverageEmergencyContact';
 
 export interface CoverageEmergencyContactRow {
@@ -25,6 +26,12 @@ export interface CoverageEmergencyContactRow {
   sort_order: number;
 }
 
+/** Resultado de `deactivate` — o controller mapeia para 404/409/200 (mesmo molde do responsável). */
+export type CoverageContactDeactivateOutcome =
+  | { outcome: 'not_found' }
+  | { outcome: 'already_inactive' }
+  | { outcome: 'deactivated'; id: string };
+
 export class PatientCoverageEmergencyContactRepository {
   private readonly pool: Pool;
   private readonly enc: KMSEncryptionService;
@@ -34,12 +41,15 @@ export class PatientCoverageEmergencyContactRepository {
     this.enc = enc ?? new KMSEncryptionService();
   }
 
-  /** Só o SELECT (ciphertext): roda junto das outras leituras da ficha, sem decifrar nada. */
+  /**
+   * Só o SELECT (ciphertext): roda junto das outras leituras da ficha, sem decifrar nada.
+   * `active` sempre filtrado (FR-004, spec 018 PR-1) — a ficha só mostra linhas vivas.
+   */
   async fetchRows(patientId: string, executor: Pool | PoolClient = this.pool): Promise<CoverageEmergencyContactRow[]> {
     const res = await executor.query<CoverageEmergencyContactRow>(
       `SELECT id, kind, name, phone_encrypted, sort_order
          FROM patient_coverage_emergency_contacts
-        WHERE patient_id = $1
+        WHERE patient_id = $1 AND active
         ORDER BY sort_order ASC, created_at ASC`,
       [patientId],
     );
@@ -65,41 +75,98 @@ export class PatientCoverageEmergencyContactRepository {
   }
 
   /**
-   * Substitui a lista do paciente (o caminho do drawer). Linha sem nome ou sem telefone é descartada aqui —
-   * o zod já recusou antes; isto é a segunda trava, não a primeira.
-   *
-   * `keepKinds` (lex C3, gate 08/09): os tipos que o ATOR NÃO ENXERGA (o profissional direto, sem
-   * `patient_care_team:read`) não são apagados nem aceitos — a tela dele nunca os mostrou, então a lista
-   * que ele manda não os contém, e "substituir a lista inteira" apagaria o que ele nunca viu (D167: o
-   * vazio que significa duas coisas apaga dado).
+   * O `kind` ATUAL de uma linha — para o controller decidir o 403 de `patient_care_team:read`
+   * ANTES de tocar em UPDATE/deactivate de uma linha que já é (ou vira) `DIRECT_PROFESSIONAL`
+   * (lex C3: sem a célula da equipe, o ator nunca viu essa linha e não pode mexer nela).
    */
-  async replaceAll(
-    patientId: string,
-    contacts: PatientCoverageEmergencyContactInput[],
-    actorUid: string,
-    client?: PoolClient,
-    opts: { keepKinds?: readonly CoverageEmergencyContactKind[] } = {},
-  ): Promise<void> {
-    const executor = client ?? this.pool;
-    const keep = opts.keepKinds ?? [];
-    await executor.query(
-      'DELETE FROM patient_coverage_emergency_contacts WHERE patient_id = $1 AND NOT (kind = ANY($2::text[]))',
-      [patientId, keep],
+  async getKind(patientId: string, id: string, executor: Pool | PoolClient = this.pool): Promise<CoverageEmergencyContactKind | null> {
+    const { rows } = await executor.query<{ kind: CoverageEmergencyContactKind }>(
+      `SELECT kind FROM patient_coverage_emergency_contacts WHERE id = $2 AND patient_id = $1`,
+      [patientId, id],
     );
-    const valid = contacts.filter((c) => c.name?.trim() && c.phone?.trim() && !keep.includes(c.kind));
-    if (valid.length === 0) return;
+    return rows[0]?.kind ?? null;
+  }
 
-    const phones = await Promise.all(valid.map((c) => this.enc.encrypt(c.phone.trim())));
-    const values: unknown[] = [];
-    const placeholders = valid.map((c, i) => {
-      const base = i * 6;
-      values.push(patientId, c.kind, c.name.trim(), phones[i], i, actorUid);
-      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6})`;
-    });
-    await executor.query(
+  /**
+   * `POST /patients/:id/coverage-emergency-contacts` (spec 018, PR-1, ADR-1) — escrita por LINHA.
+   * O 403 de `DIRECT_PROFESSIONAL` sem `patient_care_team:read` é decidido no CONTROLLER (a
+   * mesma regra do `keepKinds` de antes, agora antes do INSERT em vez de dentro do `replaceAll`).
+   */
+  async insertOne(
+    patientId: string,
+    input: PatientCoverageEmergencyContactInput,
+    actorUid: string,
+    client: PoolClient,
+  ): Promise<{ id: string }> {
+    const phoneEnc = await this.enc.encrypt(input.phone.trim());
+    const { rows } = await client.query<{ id: string }>(
       `INSERT INTO patient_coverage_emergency_contacts (patient_id, kind, name, phone_encrypted, sort_order, created_by)
-       VALUES ${placeholders.join(', ')}`,
+       VALUES ($1, $2, $3, $4,
+         COALESCE((SELECT MAX(sort_order) + 1 FROM patient_coverage_emergency_contacts WHERE patient_id = $1), 0),
+         $5)
+       RETURNING id`,
+      [patientId, input.kind, input.name.trim(), phoneEnc, actorUid],
+    );
+    return { id: rows[0].id };
+  }
+
+  /**
+   * `PATCH /patients/:id/coverage-emergency-contacts/:cid` — UPDATE parcial de UMA linha (RFC
+   * 7396). Devolve `null` quando a linha não existe ou é de outro paciente (404 no controller).
+   */
+  async updateOne(
+    patientId: string,
+    id: string,
+    patch: PatientCoverageEmergencyContactPatch,
+    client: PoolClient,
+  ): Promise<{ id: string } | null> {
+    const sets: string[] = [];
+    const values: unknown[] = [patientId, id];
+    const setColumn = (column: string, value: unknown): void => {
+      values.push(value);
+      sets.push(`${column} = $${values.length}`);
+    };
+
+    if (patch.kind !== undefined) setColumn('kind', patch.kind);
+    if (patch.name !== undefined) setColumn('name', patch.name.trim());
+    if (patch.phone !== undefined) setColumn('phone_encrypted', await this.enc.encrypt(patch.phone.trim()));
+
+    if (sets.length === 0) return { id }; // PATCH vazio é no-op
+    sets.push('updated_at = NOW()');
+
+    // `AND active` (mesma régua de PatientResponsibleRepository.updateOne, task 1.10 alt 2):
+    // editar uma linha já desativada por outra aba devolve 0 linhas ⇒ null ⇒ 404 no controller.
+    const { rows } = await client.query<{ id: string }>(
+      `UPDATE patient_coverage_emergency_contacts SET ${sets.join(', ')}
+        WHERE id = $2 AND patient_id = $1 AND active
+        RETURNING id`,
       values,
     );
+    return rows[0] ? { id: rows[0].id } : null;
+  }
+
+  /**
+   * `POST /patients/:id/coverage-emergency-contacts/:cid/deactivate` — nunca DELETE (FR-002).
+   * `SELECT … FOR UPDATE` antes do `UPDATE`, mesmo molde do `PatientResponsibleRepository`, para
+   * o controller distinguir 404 de 409 (já inativa).
+   */
+  async deactivate(
+    patientId: string,
+    id: string,
+    actorUid: string,
+    client: PoolClient,
+  ): Promise<CoverageContactDeactivateOutcome> {
+    const { rows } = await client.query<{ id: string; active: boolean }>(
+      `SELECT id, active FROM patient_coverage_emergency_contacts WHERE id = $2 AND patient_id = $1 FOR UPDATE`,
+      [patientId, id],
+    );
+    if (!rows[0]) return { outcome: 'not_found' };
+    if (!rows[0].active) return { outcome: 'already_inactive' };
+    await client.query(
+      `UPDATE patient_coverage_emergency_contacts SET active = false, deactivated_at = NOW(), deactivated_by = $3
+        WHERE id = $2 AND patient_id = $1`,
+      [patientId, id, actorUid],
+    );
+    return { outcome: 'deactivated', id };
   }
 }

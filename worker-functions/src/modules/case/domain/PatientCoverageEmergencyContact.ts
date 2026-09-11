@@ -26,3 +26,13 @@ export interface PatientCoverageEmergencyContactDetail extends PatientCoverageEm
   id: string;
   sortOrder: number;
 }
+
+/**
+ * PATCH parcial de uma linha — escrita por linha (spec 018 PR-1, ADR-1). RFC 7396: chave
+ * ausente não toca a coluna. `kind`/`name`/`phone` não aceitam `null` (colunas NOT NULL).
+ */
+export interface PatientCoverageEmergencyContactPatch {
+  kind?: CoverageEmergencyContactKind;
+  name?: string;
+  phone?: string;
+}

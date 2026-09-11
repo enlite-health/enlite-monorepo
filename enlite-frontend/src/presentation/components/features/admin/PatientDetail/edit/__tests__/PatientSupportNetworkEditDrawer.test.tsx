@@ -1,10 +1,10 @@
 /**
- * PatientSupportNetworkEditDrawer — spec 011, A1 (lex C1.1 / C1.2 / C1.3).
+ * PatientSupportNetworkEditDrawer — spec 018, PR-1, ADR-1 (SUP-37); lex C1.1 / C1.2 / C1.3.
  *
- * A seção `support-network` é gravada por SUBSTITUIÇÃO TOTAL (DELETE + INSERT).
- * Tudo que o drawer não reenvia, o banco perde. Estes testes travam que o
- * payload carrega documento (tipo + número) e procedência (`source`) de cada
- * responsável — e que o número nunca é ecoado na mensagem de erro.
+ * A seção passou a ser gravada POR LINHA: `PATCH /support-network` (a lista inteira) é 410. Estes
+ * testes travam que cada linha nasce/muda/desaparece pela própria chamada (create/update/deactivate),
+ * que editar uma linha NÃO chama a API das outras, que o titular é demovido ANTES de promover
+ * outro (evita o 409 do índice único), e que o número do documento nunca é ecoado no erro.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -22,9 +22,15 @@ function t(key: string, optsOrDefault?: any): string {
 }
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t }) }));
 
-const updatePatientSection = vi.fn();
-vi.mock('@infrastructure/http/AdminApiService', () => ({
-  AdminApiService: { updatePatientSection: (...a: unknown[]) => updatePatientSection(...a) },
+const createResponsible = vi.fn();
+const updateResponsible = vi.fn();
+const deactivateResponsible = vi.fn();
+vi.mock('@infrastructure/http/AdminPatientContactRowsApiService', () => ({
+  AdminPatientContactRowsApiService: {
+    createResponsible: (...a: unknown[]) => createResponsible(...a),
+    updateResponsible: (...a: unknown[]) => updateResponsible(...a),
+    deactivateResponsible: (...a: unknown[]) => deactivateResponsible(...a),
+  },
 }));
 
 import { PatientSupportNetworkEditDrawer } from '../PatientSupportNetworkEditDrawer';
@@ -50,8 +56,12 @@ function renderDrawer(rows: PatientResponsibleDetail[] = [responsible]) {
   return render(<PatientSupportNetworkEditDrawer patientId={PATIENT_ID} responsibles={rows} onClose={vi.fn()} onSaved={vi.fn()} />);
 }
 
-describe('PatientSupportNetworkEditDrawer — documento e procedência do responsável (A1)', () => {
-  beforeEach(() => { updatePatientSection.mockReset().mockResolvedValue({ id: PATIENT_ID }); });
+describe('PatientSupportNetworkEditDrawer — documento (A1) por LINHA', () => {
+  beforeEach(() => {
+    createResponsible.mockReset().mockResolvedValue({ id: 'novo' });
+    updateResponsible.mockReset().mockResolvedValue({ id: 'r1' });
+    deactivateResponsible.mockReset().mockResolvedValue({ id: 'r1', active: false });
+  });
 
   it('C1.1 — carrega tipo e número do documento do responsável nos campos do drawer', () => {
     renderDrawer();
@@ -59,24 +69,22 @@ describe('PatientSupportNetworkEditDrawer — documento e procedência do respon
     expect(screen.getByTestId('psn-documentNumber-0')).toHaveValue(DOC_NUMBER);
   });
 
-  it('C1.1 + C1.2 — editar SÓ o telefone reenvia documento e source intactos (a seção é replace-all)', async () => {
+  it('C1.1 — editar SÓ o telefone chama updateResponsible(patientId, id, patch) com o documento intacto', async () => {
     renderDrawer();
     fireEvent.change(screen.getByTestId('psn-phone-0'), { target: { value: '(11) 90000-0000' } });
     fireEvent.click(screen.getByTestId('psn-save'));
-    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
-    expect(updatePatientSection).toHaveBeenCalledWith(PATIENT_ID, 'support-network', {
-      responsibles: [{
-        firstName: 'Luciana',
-        lastName: 'Soto',
-        relationship: 'MOM',
-        phone: '(11) 90000-0000',
-        email: 'luciana.soto@example.com',
-        documentType: 'CPF',
-        documentNumber: DOC_NUMBER,
-        source: 'web_form',
-        isPrimary: true,
-        displayOrder: 0,
-      }],
+    await waitFor(() => expect(updateResponsible).toHaveBeenCalledTimes(1));
+    expect(createResponsible).not.toHaveBeenCalled();
+    expect(deactivateResponsible).not.toHaveBeenCalled();
+    expect(updateResponsible).toHaveBeenCalledWith(PATIENT_ID, 'r1', {
+      firstName: 'Luciana',
+      lastName: 'Soto',
+      relationship: 'MOM',
+      phone: '(11) 90000-0000',
+      email: 'luciana.soto@example.com',
+      documentType: 'CPF',
+      documentNumber: DOC_NUMBER,
+      isPrimary: true,
     });
   });
 
@@ -84,34 +92,38 @@ describe('PatientSupportNetworkEditDrawer — documento e procedência do respon
     renderDrawer();
     fireEvent.change(screen.getByTestId('psn-documentNumber-0'), { target: { value: '   ' } });
     fireEvent.click(screen.getByTestId('psn-save'));
-    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
-    const payload = updatePatientSection.mock.calls[0][2] as { responsibles: Array<{ documentNumber: string | null; documentType: string | null }> };
-    expect(payload.responsibles[0].documentNumber).toBeNull();
-    expect(payload.responsibles[0].documentType).toBe('CPF');
+    await waitFor(() => expect(updateResponsible).toHaveBeenCalledTimes(1));
+    const patch = updateResponsible.mock.calls[0][2] as { documentNumber: string | null; documentType: string | null };
+    expect(patch.documentNumber).toBeNull();
+    expect(patch.documentType).toBe('CPF');
   });
 
-  it('trocar o tipo de documento pelo select vai no payload', async () => {
+  it('trocar o tipo de documento pelo select vai no PATCH', async () => {
     renderDrawer();
     fireEvent.change(screen.getByTestId('psn-documentType-0'), { target: { value: 'DNI' } });
     fireEvent.click(screen.getByTestId('psn-save'));
-    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
-    const payload = updatePatientSection.mock.calls[0][2] as { responsibles: Array<{ documentType: string | null }> };
-    expect(payload.responsibles[0].documentType).toBe('DNI');
+    await waitFor(() => expect(updateResponsible).toHaveBeenCalledTimes(1));
+    const patch = updateResponsible.mock.calls[0][2] as { documentType: string | null };
+    expect(patch.documentType).toBe('DNI');
   });
 
-  it('C1.2 — familiar NOVO nasce com source do painel (admin_manual), nunca herda "clickup"', async () => {
+  it('C1.2 — familiar NOVO chama createResponsible (sem id), nunca herda origem', async () => {
     renderDrawer([]);
     fireEvent.click(screen.getByTestId('psn-add'));
     fireEvent.change(screen.getByTestId('psn-firstName-0'), { target: { value: 'Nuevo' } });
     fireEvent.change(screen.getByTestId('psn-lastName-0'), { target: { value: 'Familiar' } });
     fireEvent.click(screen.getByTestId('psn-save'));
-    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
-    const payload = updatePatientSection.mock.calls[0][2] as { responsibles: Array<{ source: string; documentType: string | null; documentNumber: string | null; isPrimary: boolean }> };
-    expect(payload.responsibles[0]).toMatchObject({ source: 'admin_manual', documentType: null, documentNumber: null, isPrimary: true });
+    await waitFor(() => expect(createResponsible).toHaveBeenCalledTimes(1));
+    expect(updateResponsible).not.toHaveBeenCalled();
+    const [pid, payload] = createResponsible.mock.calls[0] as [string, Record<string, unknown>];
+    expect(pid).toBe(PATIENT_ID);
+    expect(payload).toMatchObject({ firstName: 'Nuevo', lastName: 'Familiar', documentType: null, documentNumber: null, isPrimary: true });
+    expect(payload).not.toHaveProperty('source');
+    expect(payload).not.toHaveProperty('displayOrder');
   });
 
   it('C1.3 — a mensagem de erro NUNCA ecoa o número do documento (mesmo que a API o devolva)', async () => {
-    updatePatientSection.mockRejectedValueOnce(new Error(`Validation failed for documentNumber ${DOC_NUMBER}`));
+    updateResponsible.mockRejectedValueOnce(new Error(`Validation failed for documentNumber ${DOC_NUMBER}`));
     renderDrawer();
     fireEvent.click(screen.getByTestId('psn-save'));
     const err = await screen.findByTestId('psn-error');
@@ -123,7 +135,11 @@ describe('PatientSupportNetworkEditDrawer — documento e procedência do respon
 // ── Cobertura 100 % do arquivo (D200): nulos, primário, remover, validação, fechar ──
 
 describe('PatientSupportNetworkEditDrawer — todos os ramos', () => {
-  beforeEach(() => { updatePatientSection.mockReset().mockResolvedValue({ id: PATIENT_ID }); });
+  beforeEach(() => {
+    createResponsible.mockReset().mockResolvedValue({ id: 'novo' });
+    updateResponsible.mockReset().mockResolvedValue({ id: 'r1' });
+    deactivateResponsible.mockReset().mockResolvedValue({ id: 'r1', active: false });
+  });
 
   it('responsável com campos nulos carrega vazio; lista ausente vira vazia', () => {
     const nulls: PatientResponsibleDetail = { id: 'r0', firstName: null, lastName: null, relationship: null, phone: null, email: null, documentType: null, documentNumber: null, isPrimary: false, displayOrder: 1, source: 'clickup' };
@@ -138,30 +154,48 @@ describe('PatientSupportNetworkEditDrawer — todos os ramos', () => {
     expect(screen.getByTestId('psn-empty')).toBeInTheDocument();
   });
 
-  it('ninguém marcado como principal → o primeiro vira principal ao salvar; marcar outro desmarca o resto', async () => {
+  it('ninguém marcado como principal → o primeiro vira principal ao salvar; marcar outro DEMOVE o antigo titular ANTES de promover (evita 409 do índice único)', async () => {
+    const chamadasEmOrdem: string[] = [];
+    updateResponsible.mockImplementation(async (_pid: string, id: string, patch: { isPrimary: boolean }) => {
+      chamadasEmOrdem.push(`${id}:${patch.isPrimary}`);
+      return { id };
+    });
     const second: PatientResponsibleDetail = { ...responsible, id: 'r2', firstName: 'Pedro', isPrimary: false };
     renderDrawer([{ ...responsible, isPrimary: false }, second]);
     fireEvent.click(screen.getByTestId('psn-save'));
-    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
-    let payload = updatePatientSection.mock.calls[0][2] as { responsibles: Array<{ isPrimary: boolean }> };
-    expect(payload.responsibles.map((r) => r.isPrimary)).toEqual([true, false]);
+    await waitFor(() => expect(updateResponsible).toHaveBeenCalledTimes(2));
+    // r1 vira titular (só ele existia sem marcação): a linha titular (r1) é a ÚLTIMA chamada.
+    expect(chamadasEmOrdem).toEqual(['r2:false', 'r1:true']);
 
+    chamadasEmOrdem.length = 0;
     fireEvent.click(screen.getByTestId('psn-primary-1'));
     expect(screen.getByTestId('psn-primary-1')).toBeChecked();
     expect(screen.getByTestId('psn-primary-0')).not.toBeChecked();
     fireEvent.click(screen.getByTestId('psn-save'));
-    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(2));
-    payload = updatePatientSection.mock.calls[1][2] as { responsibles: Array<{ isPrimary: boolean }> };
-    expect(payload.responsibles.map((r) => r.isPrimary)).toEqual([false, true]);
+    await waitFor(() => expect(updateResponsible).toHaveBeenCalledTimes(4));
+    // Agora r2 é o titular novo: r1 (que estava titular) é demovido PRIMEIRO, r2 promovido por ÚLTIMO.
+    expect(chamadasEmOrdem).toEqual(['r1:false', 'r2:true']);
   });
 
-  it('remover um familiar tira a linha do payload', async () => {
+  it('remover um familiar EXISTENTE chama deactivateResponsible com o id dele; a linha some da tela na hora', async () => {
     renderDrawer([responsible, { ...responsible, id: 'r2', firstName: 'Pedro', isPrimary: false }]);
     fireEvent.click(screen.getByTestId('psn-remove-1'));
     expect(screen.queryByTestId('psn-row-1')).toBeNull();
     fireEvent.click(screen.getByTestId('psn-save'));
-    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
-    expect((updatePatientSection.mock.calls[0][2] as { responsibles: unknown[] }).responsibles).toHaveLength(1);
+    await waitFor(() => expect(deactivateResponsible).toHaveBeenCalledWith(PATIENT_ID, 'r2'));
+    expect(updateResponsible).toHaveBeenCalledTimes(1); // só a linha que ficou (r1)
+    expect(updateResponsible).not.toHaveBeenCalledWith(PATIENT_ID, 'r2', expect.anything());
+  });
+
+  it('remover uma linha NOVA (sem id, ainda não salva) NÃO chama deactivate — ela só some do formulário', async () => {
+    renderDrawer([]);
+    fireEvent.click(screen.getByTestId('psn-add'));
+    fireEvent.click(screen.getByTestId('psn-remove-0'));
+    expect(screen.getByTestId('psn-empty')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('psn-save'));
+    await waitFor(() => expect(screen.queryByTestId('patient-support-edit-drawer')).not.toBeNull());
+    expect(deactivateResponsible).not.toHaveBeenCalled();
+    expect(createResponsible).not.toHaveBeenCalled();
   });
 
   it('nome/sobrenome vazios e e-mail inválido: erros na tela, sem chamar a API', async () => {
@@ -174,7 +208,8 @@ describe('PatientSupportNetworkEditDrawer — todos os ramos', () => {
     // mais o default em inglês do zod ("String must contain at least 1 character(s)").
     expect((await screen.findAllByText(t('admin.patients.editDrawer.requiredField'))).length).toBe(2);
     expect(screen.getByText(/Invalid email/)).toBeInTheDocument();
-    expect(updatePatientSection).not.toHaveBeenCalled();
+    expect(updateResponsible).not.toHaveBeenCalled();
+    expect(createResponsible).not.toHaveBeenCalled();
   });
 
   it('Escape e clique no backdrop fecham; outra tecla não', async () => {

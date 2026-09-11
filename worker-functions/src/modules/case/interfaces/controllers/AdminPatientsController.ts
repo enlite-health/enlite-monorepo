@@ -231,7 +231,8 @@ export class AdminPatientsController {
 
   /**
    * PATCH /api/admin/patients/:id/:section
-   *   section ∈ general | clinical | support-network | service
+   *   section ∈ general | clinical | coverage | service
+   *   (`support-network` saiu — spec 018 PR-1, SUP-37: vira 410 na rota, a escrita é por linha)
    *
    * Section-scoped partial update. The section decides the whitelist (a
    * per-section zod schema); an unknown section or an unknown field is a 400.
@@ -263,18 +264,6 @@ export class AdminPatientsController {
     // Ponto ÚNICO (D211.2, lex C1): quem não pode LER o texto clínico restrito também não o escreve.
     if ('emergencyInstructions' in (bodyResult.data as Record<string, unknown>) && !canReadPatientClinical(clinicalCellsOf(req))) {
       res.status(403).json({ success: false, error: 'Forbidden', details: { field: 'emergencyInstructions', cell: PATIENT_CLINICAL_READ_CELL } });
-      return;
-    }
-    // 417 / D301 (mesma régua da D211.2): quem não pode LER os contatos de emergência da cobertura não os
-    // escreve — a lista que ele mandaria nasce vazia e "substituir a lista" apagaria o que ele nunca viu.
-    const contatosNoCorpo = (bodyResult.data as { emergencyContacts?: Array<{ kind: string }> }).emergencyContacts;
-    if (contatosNoCorpo !== undefined && !canReadPatientContainer(clinicalCellsOf(req), 'coverage')) {
-      res.status(403).json({ success: false, error: 'Forbidden', details: { field: 'emergencyContacts', cell: patientContainerCell('coverage', 'read') } });
-      return;
-    }
-    // lex C3: o profissional direto é dado da equipe tratante — sem `patient_care_team:read` não se escreve um.
-    if (contatosNoCorpo?.some((c) => c.kind === 'DIRECT_PROFESSIONAL') && !canReadPatientContainer(clinicalCellsOf(req), 'careTeam')) {
-      res.status(403).json({ success: false, error: 'Forbidden', details: { field: 'emergencyContacts', cell: patientContainerCell('careTeam', 'read') } });
       return;
     }
     // lex C3.4 (spec 012): trilha de escrita do nº de afiliado SEM valor — uid, paciente, seção.

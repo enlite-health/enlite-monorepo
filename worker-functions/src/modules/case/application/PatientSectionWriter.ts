@@ -4,9 +4,6 @@ import { PatientClinicalRepository } from '../infrastructure/PatientClinicalRepo
 import { PatientResponsibleRepository } from '../infrastructure/PatientResponsibleRepository';
 import { PatientDeviceTypeRepository } from '../infrastructure/PatientDeviceTypeRepository';
 import { PatientInsuranceVerifiedRepository } from '../infrastructure/PatientInsuranceVerifiedRepository';
-import type { PatientCoverageEmergencyContactRepository } from '../infrastructure/PatientCoverageEmergencyContactRepository';
-import type { PatientCoverageEmergencyContactInput } from '../domain/PatientCoverageEmergencyContact';
-import { canReadPatientContainer } from './patientContainerAccess';
 import type { PatientRelatedInput, PatientServiceUpsertInput } from './PatientWriteInputs';
 
 /**
@@ -33,7 +30,6 @@ export interface PatientSectionWriterDeps {
   encryptionService: KMSEncryptionService;
   deviceTypeRepo: () => PatientDeviceTypeRepository;
   insuranceRepo: () => PatientInsuranceVerifiedRepository;
-  coverageContactRepo: () => PatientCoverageEmergencyContactRepository;
 }
 
 /** Section-scoped partial update of a native (or any) patient. */
@@ -47,8 +43,6 @@ export interface PatientCoverageSectionData {
   healthInsuranceName?: string | null;
   affiliateId?: string | null;
   insuranceVerifiedCodes?: string[];
-  /** 417 (D301): a lista inteira dos contatos de emergência da cobertura; ausente = não toca. */
-  emergencyContacts?: PatientCoverageEmergencyContactInput[];
 }
 
 /** Identity fields updatable via the 'general' section. */
@@ -127,15 +121,10 @@ export async function writePatientSection(
         if (cov.insuranceVerifiedCodes !== undefined) {
           await deps.insuranceRepo().replaceCodesForPatient(patientId, cov.insuranceVerifiedCodes, client);
         }
-        // 417 (D301): contatos de emergência da cobertura — lista inteira, mesma transação, autor carimbado.
-        // lex C3 / gate 08/09: sem `patient_care_team:read` o ator nunca viu o profissional direto — a
-        // substituição preserva essas linhas (e o controller já recusou com 403 se ele tentou mandar uma).
-        if (cov.emergencyContacts !== undefined) {
-          // lex C6: `created_by` é o uid REAL do ator — sem ator não há sentinela, há erro (a rota é staffOnly).
-          if (!actor?.uid) throw new Error('coverage.emergencyContacts: escrita exige ator identificado (lex C6)');
-          const keepKinds = canReadPatientContainer(actor.cells, 'careTeam') ? [] : (['DIRECT_PROFESSIONAL'] as const);
-          await deps.coverageContactRepo().replaceAll(patientId, cov.emergencyContacts, actor.uid, client, { keepKinds });
-        }
+        // Os contatos de emergência da cobertura SAÍRAM desta seção (spec 018, PR-1, ADR-1,
+        // SUP-37): a escrita é por LINHA, em rotas próprias
+        // (`AdminPatientContactRowsController`), não mais aqui. `emergencyContacts` nem chega —
+        // o schema `.strict()` de `coverage` já recusa o campo com 400.
         break;
       }
       case 'support-network': {

@@ -29,6 +29,17 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
   },
 }));
 
+const createCoverageEmergencyContact = vi.fn();
+const updateCoverageEmergencyContact = vi.fn();
+const deactivateCoverageEmergencyContact = vi.fn();
+vi.mock('@infrastructure/http/AdminPatientContactRowsApiService', () => ({
+  AdminPatientContactRowsApiService: {
+    createCoverageEmergencyContact: (...a: unknown[]) => createCoverageEmergencyContact(...a),
+    updateCoverageEmergencyContact: (...a: unknown[]) => updateCoverageEmergencyContact(...a),
+    deactivateCoverageEmergencyContact: (...a: unknown[]) => deactivateCoverageEmergencyContact(...a),
+  },
+}));
+
 import { PatientCoverageEditDrawer } from '../PatientCoverageEditDrawer';
 
 const patient = { ...patientDetailFixture, insuranceInformed: 'OSDE 210', affiliateId: 'AF-1', insuranceVerifiedCodes: ['OSDE'] };
@@ -39,6 +50,9 @@ describe('PatientCoverageEditDrawer', () => {
     listInsuranceProviders.mockReset().mockResolvedValue([
       { code: 'OSDE', sortOrder: 15 }, { code: 'SWISS_MEDICAL', sortOrder: 28 }, { code: 'NUEVA_OS_E2E', sortOrder: 34 },
     ]);
+    createCoverageEmergencyContact.mockReset().mockResolvedValue({ id: 'novo' });
+    updateCoverageEmergencyContact.mockReset().mockResolvedValue({ id: 'c1' });
+    deactivateCoverageEmergencyContact.mockReset().mockResolvedValue({ id: 'c1', active: false });
   });
 
   it('carrega os valores atuais e o catálogo (opção nova vinda do endpoint aparece, com fallback no código)', async () => {
@@ -88,33 +102,45 @@ describe('PatientCoverageEditDrawer', () => {
     await waitFor(() => expect(screen.getByTestId('pcv-error')).toHaveTextContent('Erro ao salvar'));
   });
 
-  it('417 (D301.3b) — contatos de emergência da cobertura: abre com os atuais; adicionar/editar manda a LISTA inteira (trim) na seção coverage; sem mexer, a chave não vai', async () => {
+  it('417/PR-1 (spec 018, ADR-1) — contatos de emergência da cobertura: abre com os atuais; editar chama update SÓ daquela linha; adicionar chama create (sem `emergencyContacts` na seção coverage); sem mexer, nenhuma chamada de contato', async () => {
     const onSaved = vi.fn();
     // O marcador `false` (lê cobertura E equipe) é o que libera o tipo "Profissional direto" no select.
     const comContatos = { ...patient, coverageEmergencyContacts: [{ id: 'c1', kind: 'AMBULANCE' as const, name: 'Ambulancia OSDE', phone: '0800-1', sortOrder: 0 }], coverageDirectProfessionalRedacted: false };
     render(<PatientCoverageEditDrawer patient={comContatos} onClose={vi.fn()} onSaved={onSaved} />);
     expect(screen.getByTestId('pcv-contact-name-0')).toHaveValue('Ambulancia OSDE');
     expect(screen.getByTestId('pcv-contact-phone-0')).toHaveValue('0800-1');
-    // Só o afiliado muda → a chave `emergencyContacts` NÃO vai (a lista não foi tocada).
+    // Só o afiliado muda → nenhuma chamada de contato (a linha não foi tocada).
     fireEvent.change(screen.getByTestId('pcv-affiliate'), { target: { value: 'AF-2' } });
     fireEvent.click(screen.getByTestId('pcv-save'));
     await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'coverage', { affiliateId: 'AF-2' }));
+    expect(updateCoverageEmergencyContact).not.toHaveBeenCalled();
+    expect(createCoverageEmergencyContact).not.toHaveBeenCalled();
     updatePatientSection.mockClear();
-    // Adiciona um profissional direto (com espaços) → a lista inteira, com trim.
+    // Adiciona um profissional direto (com espaços) → createCoverageEmergencyContact, com trim.
     fireEvent.click(screen.getByTestId('pcv-contact-add'));
     fireEvent.change(screen.getByTestId('pcv-contact-kind-1'), { target: { value: 'DIRECT_PROFESSIONAL' } });
     fireEvent.change(screen.getByTestId('pcv-contact-name-1'), { target: { value: '  Dra. Pérez  ' } });
     fireEvent.change(screen.getByTestId('pcv-contact-phone-1'), { target: { value: ' 11-5555 ' } });
     fireEvent.click(screen.getByTestId('pcv-save'));
-    // O drawer segue aberto (fecha em 300 ms): o afiliado mudado continua no diff, e a lista entra inteira.
-    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'coverage', {
-      affiliateId: 'AF-2',
-      emergencyContacts: [
-        { kind: 'AMBULANCE', name: 'Ambulancia OSDE', phone: '0800-1' },
-        { kind: 'DIRECT_PROFESSIONAL', name: 'Dra. Pérez', phone: '11-5555' },
-      ],
-    }));
+    await waitFor(() => expect(createCoverageEmergencyContact).toHaveBeenCalledWith(patient.id, { kind: 'DIRECT_PROFESSIONAL', name: 'Dra. Pérez', phone: '11-5555' }));
+    // A linha existente (c1) não mudou → NÃO chama update. `updatePatientSection('coverage')` é
+    // chamado de novo com o afiliado — o baseline de comparação da seção é o PROP `patient`
+    // (não atualizado entre saves nesta suíte), então o mesmo campo permanece "dirty"; é
+    // comportamento PRÉ-EXISTENTE do drawer (idêntico antes desta mudança), não desta spec.
+    expect(updateCoverageEmergencyContact).not.toHaveBeenCalled();
+    expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'coverage', { affiliateId: 'AF-2' });
     expect(onSaved).toHaveBeenCalledTimes(2);
+  });
+
+  it('417/PR-1 — editar o telefone de uma linha existente chama updateCoverageEmergencyContact(patientId, id, patch) — só aquela linha', async () => {
+    const onSaved = vi.fn();
+    const comContatos = { ...patient, coverageEmergencyContacts: [{ id: 'c1', kind: 'AMBULANCE' as const, name: 'Ambulancia OSDE', phone: '0800-1', sortOrder: 0 }] };
+    render(<PatientCoverageEditDrawer patient={comContatos} onClose={vi.fn()} onSaved={onSaved} />);
+    fireEvent.change(screen.getByTestId('pcv-contact-phone-0'), { target: { value: '0800-2' } });
+    fireEvent.click(screen.getByTestId('pcv-save'));
+    await waitFor(() => expect(updateCoverageEmergencyContact).toHaveBeenCalledWith(patient.id, 'c1', { kind: 'AMBULANCE', name: 'Ambulancia OSDE', phone: '0800-2' }));
+    expect(createCoverageEmergencyContact).not.toHaveBeenCalled();
+    expect(deactivateCoverageEmergencyContact).not.toHaveBeenCalled();
   });
 
   it('417 — linha inválida (nome vazio) trava o "Salvar"; remover a linha destrava; backend anterior (ausente) começa vazio', async () => {
@@ -151,7 +177,7 @@ describe('PatientCoverageEditDrawer', () => {
     await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'coverage', { affiliateId: 'AF-3' }));
   });
 
-  it('417 — apagar um contato existente manda a lista SEM ele (o servidor substitui a lista inteira); Escape com a lista mexida pede confirmação', async () => {
+  it('417/PR-1 — apagar um contato EXISTENTE chama deactivateCoverageEmergencyContact(patientId, id) — a outra linha nem é chamada; Escape com a lista mexida pede confirmação', async () => {
     const comContatos = { ...patient, coverageEmergencyContacts: [
       { id: 'c1', kind: 'AMBULANCE' as const, name: 'Ambulancia', phone: '0800', sortOrder: 0 },
       { id: 'c2', kind: 'EMERGENCY_CENTER' as const, name: 'Central', phone: '107', sortOrder: 1 },
@@ -162,7 +188,20 @@ describe('PatientCoverageEditDrawer', () => {
     expect(screen.getByTestId('discard-changes-confirm')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('discard-changes-keep-editing'));
     fireEvent.click(screen.getByTestId('pcv-save'));
-    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'coverage', { emergencyContacts: [{ kind: 'EMERGENCY_CENTER', name: 'Central', phone: '107' }] }));
+    await waitFor(() => expect(deactivateCoverageEmergencyContact).toHaveBeenCalledWith(patient.id, 'c1'));
+    expect(updateCoverageEmergencyContact).not.toHaveBeenCalled(); // a linha que SOBROU (c2) não mudou
+    expect(updatePatientSection).not.toHaveBeenCalled();
+  });
+
+  it('417/PR-1 — remover uma linha NOVA (ainda sem id) não chama deactivate; ela só some do formulário', async () => {
+    const comContatos = { ...patient, coverageEmergencyContacts: [{ id: 'c1', kind: 'AMBULANCE' as const, name: 'Ambulancia', phone: '0800', sortOrder: 0 }] };
+    render(<PatientCoverageEditDrawer patient={comContatos} onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('pcv-contact-add'));
+    fireEvent.click(screen.getByTestId('pcv-contact-remove-1'));
+    fireEvent.click(screen.getByTestId('pcv-save'));
+    await waitFor(() => expect(updatePatientSection).not.toHaveBeenCalled());
+    expect(deactivateCoverageEmergencyContact).not.toHaveBeenCalled();
+    expect(createCoverageEmergencyContact).not.toHaveBeenCalled();
   });
 
   it('Escape e o backdrop fecham', () => {
