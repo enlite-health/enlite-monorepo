@@ -76,13 +76,21 @@ Quais caminhos podem criar/alterar uma `job_postings` row em prod, e quais escre
 
 ### P9 — CLI `import-patients-from-clickup.ts` (ÚNICO pipeline de sync ativo desde 11/09/2026)
 
-- **Trigger:** `npx ts-node scripts/import-patients-from-clickup.ts --apply` (dry-run por
-  padrão; `--apply` é a única flag que grava — `--live` não existe mais).
+- **Trigger:** `npx ts-node scripts/import-patients-from-clickup.ts --task-id <id> --apply`
+  (dry-run por padrão; `--live` não existe mais).
 - **Lógica:** mesmo motor do P8 (`SyncPatientFromClickUpTaskUseCase` → `PatientService.upsertFromClickUp`
   → `PatientRelatedWriter.replacePatientAddresses`), agora também sincronizando diagnóstico
   (`ClickUpDiagnosisMapper`, decisão do Gabriel 11/09/2026).
-- **Uso:** carga PONTUAL manual, numa sessão — nunca agendado (decisão 11/09/2026, sem sync
-  automático). Backfill manual após deploys ou correções de massa.
+- **Regras de operação (decisão do Gabriel + parecer do lex, 11/09/2026 — NÃO é mais "correção
+  de massa"):**
+  1. `--apply` só é aceito junto de `--task-id` — carga em massa (lista inteira) nunca grava.
+  2. Só CRIA paciente novo — recusa se `clickup_task_id` já existir na plataforma (nunca UPDATE).
+  3. Autorização ESCRITA do Gabriel por carga, ANTES de rodar.
+  4. Registro em `docs/legal/registros/AAAA-MM-DD-carga-clickup.md` por carga executada — sem
+     nome do paciente nem rótulo clínico.
+  5. Nunca agendar (Cloud Scheduler/cron/CI) — carga PONTUAL numa sessão de terminal.
+- **Uso:** carga de UM paciente novo por vez, numa sessão manual — não é mais um mecanismo de
+  backfill em lote.
 
 ### P10 — POST `/api/admin/patients/:patientId/addresses`
 
