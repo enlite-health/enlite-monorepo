@@ -24,17 +24,43 @@
 
 import { type Page } from '@playwright/test';
 
+/** Um `address_components` do Google (long_name/short_name/types) — molde do widget legado. */
+export interface AddressComponentFalso {
+  long_name: string;
+  short_name: string;
+  types: string[];
+}
+
 /** O que o "Google" devolve quando o operador escolhe de fato. */
 export interface PlaceFalso {
   formatted_address: string;
   lat: number;
   lng: number;
+  /**
+   * Spec Localizaciones Fase 1 (T1/T2): sobrescreve os `address_components` que `completo()`
+   * devolve. Default = sem `sublocality_level_1`/`sublocality`/`neighborhood` nenhum (o mesmo
+   * comportamento de sempre: `derivePatientZone` dá `null`, e o campo Zona do drawer não é
+   * pré-preenchido). Passe esta lista com um componente de zona para exercitar o pré-preenchimento.
+   */
+  addressComponents?: AddressComponentFalso[];
 }
 
 export const CABA_CORRIENTES: PlaceFalso = {
   formatted_address: 'Av. Corrientes 1234, C1043AAZ Cdad. Autónoma de Buenos Aires, Argentina',
   lat: -34.6037,
   lng: -58.3816,
+};
+
+/** Mesma escolha, mas com um componente `sublocality_level_1` — para testar a Zona pré-preenchida (T2). */
+export const CABA_CORRIENTES_CON_ZONA: PlaceFalso = {
+  ...CABA_CORRIENTES,
+  addressComponents: [
+    { long_name: 'Av. Corrientes', short_name: 'Av. Corrientes', types: ['route'] },
+    { long_name: '1234', short_name: '1234', types: ['street_number'] },
+    { long_name: 'San Nicolás', short_name: 'San Nicolás', types: ['sublocality_level_1', 'sublocality', 'political'] },
+    { long_name: 'Buenos Aires', short_name: 'CABA', types: ['locality'] },
+    { long_name: 'Argentina', short_name: 'AR', types: ['country'] },
+  ],
 };
 
 export function scriptFakeDeGestos(place: PlaceFalso): string {
@@ -45,7 +71,7 @@ export function scriptFakeDeGestos(place: PlaceFalso): string {
     formatted_address: PLACE.formatted_address,
     name: 'Av. Corrientes 1234',
     geometry: { location: { lat: () => PLACE.lat, lng: () => PLACE.lng } },
-    address_components: [
+    address_components: PLACE.addressComponents || [
       { long_name: 'Av. Corrientes', short_name: 'Av. Corrientes', types: ['route'] },
       { long_name: '1234', short_name: '1234', types: ['street_number'] },
       { long_name: 'Buenos Aires', short_name: 'CABA', types: ['locality'] },
