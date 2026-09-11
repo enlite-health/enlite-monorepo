@@ -67,7 +67,6 @@ jobs:
             --build-arg VITE_API_WORKER_FUNCTIONS_URL="${{ secrets.VITE_API_WORKER_FUNCTIONS_URL }}" \
             --build-arg VITE_API_WORKER_FUNCTIONS_DIRECT_URL="${{ secrets.VITE_API_WORKER_FUNCTIONS_DIRECT_URL }}" \
             --build-arg VITE_GOOGLE_MAPS_API_KEY="${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}" \
-            --build-arg VITE_USE_PUBLIC_JOBS_API="true" \
             --build-arg VITE_CLARITY_PROJECT_ID="xftpznri3x" \
             -t $IMAGE_TAG .
           docker push $IMAGE_TAG
