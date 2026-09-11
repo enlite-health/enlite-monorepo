@@ -20,8 +20,12 @@ const PUBLIC_PATHS = new Set<string>([
   'POST /api/workers/init',
   'GET /api/vacancies/{id}',
   'POST /api/admin/setup',
-  'GET /api/webhooks/clickup/patient/_health',
-  'GET /api/webhooks-test/clickup/patient/_health',
+  'GET /api/test/recruitment/clickup-cases',
+  'GET /api/test/recruitment/talentum-workers',
+  'GET /api/test/recruitment/progreso',
+  'GET /api/test/recruitment/publications',
+  'GET /api/test/recruitment/encuadres',
+  'GET /api/test/recruitment/global-metrics',
 ]);
 
 interface ExpressRouteInfo {
@@ -127,8 +131,6 @@ test('toda operação documenta pelo menos um response 2xx e o envelope de erro'
   // Liveness/health probes legitimamente nunca retornam erro (só 200 ou crash).
   const livenessProbes = new Set([
     'GET /health',
-    'GET /api/webhooks/clickup/patient/_health',
-    'GET /api/webhooks-test/clickup/patient/_health',
   ]);
 
   for (const [path, methods] of Object.entries(doc.paths)) {

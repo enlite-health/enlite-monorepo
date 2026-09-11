@@ -1,8 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { PartnerAuthMiddleware } from '../middleware/PartnerAuthMiddleware';
 import { TalentumWebhookController } from '../controllers/TalentumWebhookController';
-import { ClickUpPatientWebhookController } from '../controllers/ClickUpPatientWebhookController';
-import { ClickUpHmacMiddleware } from '../middleware/ClickUpHmacMiddleware';
 import { TwilioWebhookController } from '@modules/notification/interfaces/controllers/TwilioWebhookController';
 import { InboundWhatsAppController } from '@modules/notification/interfaces/controllers/InboundWhatsAppController';
 import { PeriskopeWebhookController } from '@modules/notification/interfaces/controllers/PeriskopeWebhookController';
@@ -15,8 +13,6 @@ import { PeriskopeWebhookController } from '@modules/notification/interfaces/con
 export function createWebhookRoutes(
   partnerAuth: PartnerAuthMiddleware,
   inboundWhatsAppController?: InboundWhatsAppController,
-  clickupPatientController?: ClickUpPatientWebhookController,
-  clickupHmac?: ClickUpHmacMiddleware,
   periskopeWebhookController?: PeriskopeWebhookController,
 ): Router {
   const router = Router();
@@ -49,20 +45,6 @@ export function createWebhookRoutes(
     router.post(
       '/periskope/inbound',
       (req: Request, res: Response) => periskopeWebhookController.handleWebhook(req, res),
-    );
-  }
-
-  // ── ClickUp Patient — autenticado via HMAC X-Signature ──────────
-  if (clickupPatientController && clickupHmac) {
-    router.post(
-      '/clickup/patient',
-      clickupHmac.verify(),
-      (req: Request, res: Response) => clickupPatientController.handle(req, res),
-    );
-    // Liveness probe — sem auth, sem PII; usar em uptime check
-    router.get(
-      '/clickup/patient/_health',
-      (req: Request, res: Response) => clickupPatientController.health(req, res),
     );
   }
 

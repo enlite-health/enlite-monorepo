@@ -185,40 +185,12 @@ export class ClickUpPatientMapper {
     return [...this.requestedFieldNames];
   }
 
-  /**
-   * Task 1.13b — QUEM PERGUNTA é quem sabe responder "este campo importa ao mapper?".
-   *
-   * O harvester da 1.12 (o `Proxy` de `buildCustomFieldMap`) já anota o nome de CADA leitura,
-   * inclusive nome vindo de variável ou de laço. O que faltava era poder consultá-lo ANTES de
-   * decidir escrever. Isto roda a mesma varredura de `map()` só para colher os nomes: não
-   * escreve nada, não faz rede, e o resultado é DESCARTADO.
-   *
-   * Por que uma varredura de verdade, e não uma lista: lista escrita à mão nasce desatualizada
-   * (F20/F49/F51) — foi assim que `Equipo Tratante Multidisciplinario` escapou da 1.11. Aqui o
-   * conjunto é o que o código ACABOU de ler, para ESTA tarefa.
-   *
-   * Dois cuidados:
-   *   - `status` é zerado na cópia para que o `console.warn` de status desconhecido, que carrega
-   *     `task.id`, NÃO seja emitido por causa da sonda (C1 do parecer do `lex`: `task.id` é
-   *     proibido na linha). A cópia é rasa e `status` não é custom field: nenhuma leitura muda.
-   *   - `map()` pode lançar antes da varredura (o preflight da 1.11 roda primeiro). Nesse caso o
-   *     conjunto volta VAZIO — e vazio significa "não sei", nunca "nada importa". Quem decide
-   *     trata a contagem zero como falha (F19).
-   *
-   * LIMITE DECLARADO: `extractCaseNumber` lê `task.custom_fields` direto, sem passar pelo mapa,
-   * então `Caso Número` não aparece aqui. Não é buraco desta decisão: aquele campo é lido da
-   * TAREFA por nome, não do catálogo — recarregar o catálogo não muda nada para ele.
-   */
-  fieldNamesReadFor(task: ClickUpTask): readonly string[] {
-    const semStatus: ClickUpTask = { ...task, status: { ...task.status, status: '' } };
-    try {
-      this.map(semStatus);
-    } catch {
-      // Deliberadamente silencioso: a sonda não decide nada sozinha, e o erro que importa
-      // (campo ilegível) já é gritado por `assertReadableDropdownFields` no caminho real.
-    }
-    return this.getRequestedFieldNames();
-  }
+  // `fieldNamesReadFor()` (task 1.13b) foi removido em 11/09/2026 junto com
+  // `ClickUpCatalogRefresher`/`unsettledDriftThatMatters` — era a sonda que alimentava só a
+  // decisão de reload do webhook (removido, decisão do Gabriel: sem sync automático). Zero
+  // chamadores restantes (confirmado por grep). `getRequestedFieldNames()` continua vivo:
+  // `tests/unit/__tests__/clickup-1.12-nomes-de-campo.test.ts` o usa direto, sem passar por
+  // `fieldNamesReadFor`.
 
   /**
    * Task 2.3 — as LEITURAS CRUAS dos campos de catálogo, para persistir o rótulo literal ao
