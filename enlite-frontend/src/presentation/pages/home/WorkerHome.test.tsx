@@ -15,6 +15,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { WorkerHome } from './WorkerHome';
 import type { WorkerProgressResponse } from '@infrastructure/http/WorkerApiService';
 import type { WorkerDocumentsResponse } from '@infrastructure/http/DocumentApiService';
+import { makeWorkerProgress, makeWorkerDocuments } from '../../../test/workerProgressFixtures';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -93,58 +94,34 @@ vi.mock('@presentation/components/features/worker/JobsEmbeddedSection', () => ({
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
+// makeWorker/makeDocs envolvem a fixture compartilhada
+// (test/workerProgressFixtures.ts — gate revisao-pr, critério 2) com os
+// defaults específicos desta suíte (worker Ana, CUIDADOR, docs enviados).
 function makeWorker(overrides: Partial<WorkerProgressResponse> = {}): WorkerProgressResponse {
-  return {
+  return makeWorkerProgress({
     id: 'worker-1',
     authUid: 'auth-1',
     email: 'ana@test.com',
-    country: 'AR',
-    timezone: 'America/Argentina/Buenos_Aires',
-    createdAt: '2026-01-01T00:00:00Z',
-    updatedAt: '2026-01-01T00:00:00Z',
     firstName: 'Ana',
     lastName: 'Prestadora',
-    birthDate: '1990-01-01',
     sex: 'female',
     gender: 'female',
-    documentType: 'DNI',
-    documentNumber: '12345678',
-    languages: ['es'],
     profession: 'CUIDADOR',
-    knowledgeLevel: 'technical',
-    experienceTypes: ['adults'],
-    yearsExperience: '3_5',
-    preferredTypes: ['adults'],
-    preferredAgeRange: ['adults'],
-    serviceAddress: 'Av. Corrientes 1234, Buenos Aires',
-    serviceRadiusKm: 10,
     availability: undefined,
-    missingFields: [],
     status: 'REGISTERED',
     ...overrides,
-  };
+  });
 }
 
 function makeDocs(overrides: Partial<WorkerDocumentsResponse> = {}): WorkerDocumentsResponse {
-  return {
+  return makeWorkerDocuments({
     id: 'docs-1',
     workerId: 'worker-1',
-    resumeCvUrl: null,
     identityDocumentUrl: 'path/dni.pdf',
-    identityDocumentBackUrl: null,
     criminalRecordUrl: 'path/crim.pdf',
-    professionalRegistrationUrl: null,
-    liabilityInsuranceUrl: null,
-    monotributoCertificateUrl: null,
-    atCertificateUrl: null,
-    aptoPsicofisicoUrl: null,
-    analiticoUniversitarioUrl: null,
-    cartaRecomendacionUrl: null,
     documentsStatus: 'submitted',
-    submittedAt: null,
-    updatedAt: '2026-01-01T00:00:00Z',
     ...overrides,
-  };
+  });
 }
 
 beforeEach(() => {
