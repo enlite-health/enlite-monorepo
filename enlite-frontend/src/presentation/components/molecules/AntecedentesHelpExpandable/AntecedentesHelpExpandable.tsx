@@ -31,6 +31,14 @@ interface AntecedentesHelpExpandableProps {
  * SEM valor em pesos (DD4): o preço do trâmite muda sem aviso e a tela
  * mentiria. `grep -rnE "\$ ?[0-9]" .../locales/*.json | grep -i antecedente`
  * tem de continuar vazio.
+ *
+ * 🔒 Achado do gate (11/09): `color="muted"` do atom `Text` mapeia pra
+ * `gray-700`, que na paleta desta casa (`tailwind.config.js`) é
+ * `rgba(115, 115, 115, 0.5)` — um cinza com ALPHA, invisível no nome da
+ * classe. Composto sobre fundo branco isso vira ~#B9B9B9, contraste
+ * 1,96:1 (WCAG AA texto pequeno exige ≥ 4,5:1). Por isso `tertiary`
+ * (`#374151`, 10,31:1) aqui — não `secondary` (mais claro, mas ainda
+ * abaixo do peso visual que este texto de apoio pede).
  */
 export function AntecedentesHelpExpandable({ className = '' }: AntecedentesHelpExpandableProps): JSX.Element {
   const { t } = useTranslation();
@@ -44,18 +52,18 @@ export function AntecedentesHelpExpandable({ className = '' }: AntecedentesHelpE
         aria-expanded={isOpen}
         className="flex items-center gap-1 text-left"
       >
-        <Text as="span" size="xs" weight="medium" color="muted">
+        <Text as="span" size="xs" weight="medium" color="tertiary">
           {t('documents.antecedentesHelp.toggle')}
         </Text>
         <ChevronDown
-          className={`w-3.5 h-3.5 text-gray-500 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          className={`w-3.5 h-3.5 text-gray-800 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}
           aria-hidden="true"
         />
       </button>
 
       {isOpen && (
         <div data-testid="antecedentes-help-body" className="mt-1 flex flex-col items-start gap-1">
-          <Text as="p" size="xs" color="muted">
+          <Text as="p" size="xs" color="tertiary">
             {t('documents.antecedentesHelp.body')}
           </Text>
           <a

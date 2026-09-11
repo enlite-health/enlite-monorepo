@@ -66,6 +66,13 @@ interface TaskRow {
  * `data-clarity-mask="True"` no contêiner das linhas: nomeia o que falta no
  * cadastro da pessoa (parecer do lex, condição C12 — mesma régua do
  * `IncompleteRegistrationModal`).
+ *
+ * 🔒 Achado do gate (11/09, defeito já na stage desde a Fase 2): "Ya
+ * completaste X de Y" e o recolhido de concluídos usavam `color="muted"`
+ * do atom `Text`, que mapeia pra `rgba(115, 115, 115, 0.5)` na paleta
+ * desta casa (`tailwind.config.js`) — 1,96:1 sobre branco, abaixo do
+ * mínimo WCAG AA (4,5:1). `secondary` (`gray-800` = `#737373`, opaco,
+ * 4,74:1) resolve sem pesar visualmente o texto de apoio.
  */
 export function PendingTasksCard({
   missingFields,
@@ -163,7 +170,7 @@ export function PendingTasksCard({
       <Heading level={2} color="primary" className="text-base sm:text-xl mb-1" as="h2">
         {t('profile.pendingTasks.title', { count: pendingCount })}
       </Heading>
-      <Text size="sm" color="muted" className="mb-4" data-testid="pending-tasks-progress">
+      <Text size="sm" color="secondary" className="mb-4" data-testid="pending-tasks-progress">
         {t('profile.pendingTasks.completedOf', { done: completedCount, total })}
       </Text>
 
@@ -195,7 +202,7 @@ export function PendingTasksCard({
         {completedLabels.length > 0 && (
           <div className="flex items-center gap-2 px-3 py-1" data-testid="pending-tasks-completed">
             <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
-            <Text as="span" size="sm" color="muted">
+            <Text as="span" size="sm" color="secondary">
               {completedLabels.join(' · ')}
             </Text>
           </div>
