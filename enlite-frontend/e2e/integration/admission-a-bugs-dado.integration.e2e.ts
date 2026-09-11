@@ -122,7 +122,10 @@ test.describe('Spec 011 bloco A — a ficha mostra e não apaga dado do paciente
     // A2 + A3 — aba Servicio Contratado: endereço de rua e cobertura.
     await page.getByTestId('patient-profile-tabs').getByRole('button', { name: /Servicio Contratado/i }).click(); // spec 014: escopado — checklist de completude pode render chip com o mesmo texto
     const localizacoes = page.getByTestId('localizacoes-card');
-    await expect(localizacoes).toContainText(seed.addressFormatted);
+    // Spec Localizaciones Fase 1 (T3): a Dirección quebra em 2 linhas na 1ª vírgula — o texto
+    // INTEIRO não é mais um único nó (`seed.addressFormatted` some do toContainText); a linha 1
+    // é o que sobrevive sempre.
+    await expect(localizacoes).toContainText(seed.addressFormatted.split(',')[0]);
     expect(await localizacoes.locator('table').evaluate((el) => el.closest('[data-clarity-mask="True"]') !== null)).toBe(true);
     const cobertura = page.getByTestId('cobertura-medica-card');
     await expect(cobertura).toContainText(seed.coverage);
