@@ -764,20 +764,22 @@ describe('LocalizacoesCard', () => {
     expect(screen.getByText('Localizações')).toBeInTheDocument();
   });
 
-  it('Dirección em 2 linhas: linha 1 até a 1ª vírgula, linha 2 é a Zona quando existe (spec Localizaciones Fase 1, T3)', () => {
+  it('Dirección em 2 linhas: linha 1 é rua+número (streetLineOf), linha 2 é a Zona quando existe (spec Localizaciones Fase 1, T3 + achado do gate)', () => {
+    // 'Rua Augusta, 975 - São Paulo/SP' é o formato BR REAL (número e o que vem depois no MESMO
+    // segmento) — achado do gate revisao-pr: a linha 1 tem de levar o número também.
     render(<LocalizacoesCard addresses={patientDetailFixture.addresses} />);
-    expect(screen.getByText('Rua Augusta')).toBeInTheDocument();
+    expect(screen.getByText('Rua Augusta, 975')).toBeInTheDocument();
     expect(screen.getByText('Bela Vista')).toBeInTheDocument();
   });
 
-  it('sem Zona, a linha 2 cai no resto do endereço após a 1ª vírgula (sem sufixo de país)', () => {
+  it('sem Zona, a linha 2 cai no resumo de localidade de summarizeAddress (sem repetir rua+número, sem sufixo de país)', () => {
     render(<LocalizacoesCard addresses={[{ ...patientDetailFixture.addresses[0], neighborhood: null }]} />);
-    expect(screen.getByText('Rua Augusta')).toBeInTheDocument();
-    expect(screen.getByText('975 - São Paulo/SP')).toBeInTheDocument();
+    expect(screen.getByText('Rua Augusta, 975')).toBeInTheDocument();
+    expect(screen.getByText('São Paulo/SP')).toBeInTheDocument();
   });
 
-  it('sem vírgula nenhuma, a linha 1 é o texto inteiro', () => {
-    render(<LocalizacoesCard addresses={[{ ...patientDetailFixture.addresses[0], addressFormatted: 'Endereço sem vírgula', neighborhood: null }]} />);
+  it('sem vírgula nenhuma, a linha 1 é o texto inteiro (streetLineOf sem padrão reconhecido cai no 1º segmento)', () => {
+    render(<LocalizacoesCard addresses={[{ ...patientDetailFixture.addresses[0], addressFormatted: 'Endereço sem vírgula', neighborhood: 'Alguma Zona' }]} />);
     expect(screen.getByText('Endereço sem vírgula')).toBeInTheDocument();
   });
 
@@ -910,10 +912,38 @@ describe('LocalizacoesCard — lê o contrato da API (A2, lex C2.1)', () => {
     expect(screen.getByText('Av. Contrato 123').closest('[data-clarity-mask="True"]')).not.toBeNull();
   });
 
-  it('o sufixo de país sozinho após a vírgula não sobra como linha 2 (fica sem linha 2)', () => {
+  it('só rua+número, sem NENHUMA localidade sobrando: fica sem linha 2 (summarizeAddress devolve "")', () => {
+    render(<LocalizacoesCard addresses={[{ ...base, addressFormatted: 'Rua Augusta, 975', addressRaw: null }]} />);
+    expect(screen.getByText('Rua Augusta, 975')).toBeInTheDocument();
+  });
+
+  it('quando o país é o ÚNICO segmento que sobra depois da rua, ele aparece na linha 2 — mesma regra de summarizeAddress para entrada degenerada (summarizeAddress.test.ts: "does not drop the only segment if it is a country")', () => {
     render(<LocalizacoesCard addresses={[{ ...base, addressFormatted: 'Ruta 9 km 42, Argentina', addressRaw: null }]} />);
     expect(screen.getByText('Ruta 9 km 42')).toBeInTheDocument();
-    expect(screen.queryByText('Argentina')).not.toBeInTheDocument();
+    expect(screen.getByText('Argentina')).toBeInTheDocument();
+  });
+
+  // ── Achados MINOR do gate revisao-pr (spec Localizaciones Fase 1) ───────────────────────
+  it('addressFormatted "" (string vazia) conta como ausente — cai para addressRaw, não para o alerta', () => {
+    render(<LocalizacoesCard addresses={[{ ...base, addressFormatted: '', addressRaw: 'Calle cruda 9' }]} />);
+    expect(screen.getByText('Calle cruda 9')).toBeInTheDocument();
+    expect(screen.queryByTestId(`address-missing-${base.id}`)).not.toBeInTheDocument();
+  });
+
+  it('addressFormatted só com espaços conta como ausente — mesma regra do addressRaw', () => {
+    render(<LocalizacoesCard addresses={[{ ...base, addressFormatted: '   ', addressRaw: '   ', complement: null }]} />);
+    expect(screen.getByTestId(`address-missing-${base.id}`)).toHaveTextContent('Sem endereço cadastrado');
+  });
+
+  it('texto que começa com vírgula não vira linha 1 vazia (não cai no alerta com texto presente)', () => {
+    render(<LocalizacoesCard addresses={[{ ...base, addressFormatted: ', CABA, Argentina', addressRaw: null }]} />);
+    expect(screen.queryByTestId(`address-missing-${base.id}`)).not.toBeInTheDocument();
+    expect(screen.getAllByText('CABA').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('degenerado: só vírgulas — streetLineOf devolve "" e o fallback usa o texto cru inteiro', () => {
+    render(<LocalizacoesCard addresses={[{ ...base, addressFormatted: ',', addressRaw: null }]} />);
+    expect(screen.getByText(',')).toBeInTheDocument();
   });
 });
 

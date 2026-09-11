@@ -13,6 +13,7 @@ import {
 } from '@presentation/components/atoms/Table';
 import { ActionButton } from '@presentation/components/features/access';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
+import { streetLineOf, summarizeAddress } from '@presentation/utils/summarizeAddress';
 import type { PatientAddressDetail } from '@domain/entities/PatientDetail';
 import { PatientAddressDrawer } from './edit/PatientAddressDrawer';
 import { AvisoAmbar } from './edit/AvisoAmbar';
@@ -28,31 +29,29 @@ interface LocalizacoesCardProps {
   focusRequest?: DrawerFocusRequest | null;
 }
 
-/** Sufixo de país que a linha 2 do endereço não repete (spec Localizaciones Fase 1, T3). */
-const TRAILING_COUNTRY = /,?\s*(Argentina|Brasil)\s*$/i;
-
 /**
  * O que a coluna Dirección mostra em 2 linhas:
- *  • linha 1 — `addressFormatted ?? addressRaw` até a primeira vírgula (o texto inteiro
- *    quando não há vírgula nenhuma).
- *  • linha 2 (texto secundário) — `neighborhood` quando existe; senão o resto do endereço
- *    após a primeira vírgula, sem o sufixo de país; `null` quando não sobra nada.
- * `null` nas duas quando o endereço não tem NEM formatado NEM cru (linha vira alerta).
+ *  • linha 1 — rua + número, via `streetLineOf` (utils/summarizeAddress.ts) — a MESMA
+ *    fronteira rua↔resto que `VacancyFormSection.tsx` já usa por `summarizeAddress`. Achado
+ *    do gate `revisao-pr` (BLOCKER): esta função tinha uma cópia local dessa fronteira que
+ *    divergia da de produção (cortava o número no formato BR real "975 - Consolação") — a
+ *    cópia foi apagada, as duas leituras vêm do mesmo módulo agora.
+ *  • linha 2 (texto secundário) — `neighborhood` quando existe; senão `summarizeAddress(full)`
+ *    (o resumo em nível de localidade, país e CEP já removidos); `null` quando não sobra nada.
+ * `null` nas duas quando o endereço não tem NEM formatado NEM cru (linha vira alerta) — ""
+ * conta como ausente nos dois campos (`.trim()`), não só `null`/`undefined`.
  */
 function splitAddressForDisplay(
   addr: Pick<PatientAddressDetail, 'addressFormatted' | 'addressRaw' | 'neighborhood'>,
 ): { line1: string | null; line2: string | null } {
-  const full = addr.addressFormatted ?? addr.addressRaw;
+  const formatted = (addr.addressFormatted ?? '').trim();
+  const raw = (addr.addressRaw ?? '').trim();
+  const full = formatted || raw || null;
   if (!full) return { line1: null, line2: null };
 
-  const commaIdx = full.indexOf(',');
-  if (commaIdx === -1) return { line1: full, line2: addr.neighborhood ?? null };
-
-  const line1 = full.slice(0, commaIdx).trim();
-  if (addr.neighborhood) return { line1, line2: addr.neighborhood };
-
-  const rest = full.slice(commaIdx + 1).trim().replace(TRAILING_COUNTRY, '').trim();
-  return { line1, line2: rest || null };
+  const line1 = streetLineOf(full) || full;
+  const line2 = addr.neighborhood ?? (summarizeAddress(full) || null);
+  return { line1, line2 };
 }
 
 export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }: LocalizacoesCardProps) {
