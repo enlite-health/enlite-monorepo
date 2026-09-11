@@ -109,8 +109,15 @@ export const PATIENT_CATALOG_FIELDS: readonly CatalogFieldExpectation[] = [
 
 /**
  * Só os NOMES dos campos acima, derivados — nunca escritos duas vezes. Duas listas à mão
- * divergem em silêncio, que é o F20/F49/F51 desta casa. Consumido pelo controller
- * (`declaredFields` do refresher) e pelas travas de deriva das tasks 1.11/1.12.
+ * divergem em silêncio, que é o F20/F49/F51 desta casa.
+ *
+ * 11/09/2026 — o único CONSUMIDOR de produção era `ClickUpPatientWebhookController.create()`
+ * (`declaredFields` do `ClickUpCatalogRefresher`, removido junto com o webhook: decisão do
+ * Gabriel, sem sync automático). Hoje `PATIENT_DROPDOWN_FIELDS` não tem consumidor em `src/`
+ * fora da própria definição — mas continua vivo como fonte de verdade das travas de deriva das
+ * tasks 1.11/1.12, usado por 7 arquivos de teste do MAPPER (clickup-1.6-17, clickup-1.11,
+ * clickup-1.12, clickup-2.3, ClickUpPatientMapper.test.ts) para provar que a lista declarada
+ * aqui bate com o que o código realmente lê — sem relação com webhook ou sync automático.
  */
 /**
  * Campos que ficam no preflight mas NÃO são persistidos no cru genérico — C-H do parecer do
@@ -313,8 +320,12 @@ export class ClickUpPatientMapper {
     // cabeçalho de `dropdownCatalogGuard.ts`: 348 linhas de `dependency_level`, 185 de `sex`.
     // `resolveCatalogValue` separa os dois estados, e a bandeira `*Readable` leva a distinção
     // até o `UPDATE` — o MESMO desenho já aplicado a `clinical_specialty` e `insurance_verified`.
-    // ⚠️ O refresher de catálogo não salva: quando o reload FUNCIONA, `reloadIsSuspect === false`
-    // e o mapeamento segue contra um catálogo que continua sem saber traduzir aquele valor.
+    // ⚠️ 11/09/2026: não existe mais reload de catálogo (o `ClickUpCatalogRefresher` era
+    // defesa exclusiva do processo de vida longa do webhook, removido). O script manual busca
+    // um catálogo fresco a cada invocação (`ClickUpFieldResolver.fromList`), mas isso não
+    // resolve este caso: se a OPÇÃO em si não existe no catálogo (dado torto no ClickUp, não
+    // foto velha), nenhuma releitura — nem a de boot — traduz o valor. `dependencyLevelReadable`
+    // continua sendo o que impede o `UPDATE` de apagar o dado gravado antes.
     const dependenciaRead    = resolveCatalogValue(this.resolver, 'Dependencia', cf['Dependencia']);
     const dependencyLabel    = dependenciaRead.readable ? (dependenciaRead.labels[0] ?? null) : null;
     const sexoRead           = resolveCatalogValue(this.resolver, 'Sexo Asignado al Nacer (Uso Clínico)', cf['Sexo Asignado al Nacer (Uso Clínico)']);
