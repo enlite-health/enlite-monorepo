@@ -786,17 +786,21 @@ describe('LocalizacoesCard', () => {
     expect(screen.getByTestId('address-missing-addr1')).toHaveTextContent('Sem endereço cadastrado');
   });
 
-  it('Tipo mostra o rótulo do address_type; o selo Principal só aparece quando isPrimary', () => {
-    // `isPrimary` é 100% derivado de `address_type === 'primary'`
-    // (worker-functions/src/modules/case/infrastructure/PatientDetailQueryHelper.ts:228) —
-    // a fixture abaixo tem os dois juntos de propósito, reportado na LISTA como redundância
-    // visual (o rótulo do Tipo já diz "Principal"; o selo repete a mesma palavra).
+  it('Tipo mostra SÓ o selo Principal quando isPrimary, SÓ o rótulo do address_type quando não (sem repetir a palavra)', () => {
+    // Conserto pós-Fase 1 (achado da própria LISTA): `isPrimary` é 100% derivado de
+    // `address_type === 'primary'` (PatientDetailQueryHelper.ts:228) — mostrar os dois juntos
+    // repetia a palavra "Principal". Agora é OU selo OU rótulo, nunca os dois.
     render(<LocalizacoesCard addresses={patientDetailFixture.addresses} />);
-    expect(screen.getByTestId('address-primary-badge-addr1')).toHaveTextContent('Principal');
+    const badge = screen.getByTestId('address-primary-badge-addr1');
+    expect(badge).toHaveTextContent('Principal');
+    expect(badge.closest('td')).toHaveTextContent('Principal');
+    // A célula do Tipo não repete "Principal" fora do selo — só o texto do selo existe ali.
+    expect(badge.closest('td')?.textContent).toBe('Principal');
 
     const secundario = { ...patientDetailFixture.addresses[0], id: 'addr2', addressType: 'secondary', isPrimary: false };
     render(<LocalizacoesCard addresses={[secundario]} />);
     expect(screen.queryByTestId('address-primary-badge-addr2')).not.toBeInTheDocument();
+    expect(screen.getByText('Secundário')).toBeInTheDocument();
   });
 
   it('renders empty state when no addresses', () => {
