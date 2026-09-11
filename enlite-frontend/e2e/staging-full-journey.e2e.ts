@@ -1233,7 +1233,13 @@ test.describe('Staging Full Journey — Navegador Real (CORS corrigido)', () => 
       }
 
       // Upload de documentos (CAREGIVER: identity_document, identity_document_back, criminal_record)
-      if (missingFields.includes('worker_documents')) {
+      //
+      // Fase 1 (DD1, postulacao-documento-pendente): GET /api/workers/me deixa
+      // de devolver o agregado `worker_documents` — devolve os `doc_*`
+      // específicos. Sem este OR, a condição nunca mais bate quando a fase 1
+      // sobe na stage, e o upload deste Passo 4 é pulado EM SILÊNCIO (sem
+      // erro, sem log) — achado do coordenador, 11/09.
+      if (missingFields.includes('worker_documents') || missingFields.some((t) => t.startsWith('doc_'))) {
         const docTypes = ['identity_document', 'identity_document_back', 'criminal_record'];
         for (const docType of docTypes) {
           const pdfContent = fs.readFileSync(FIXTURE_PDF);

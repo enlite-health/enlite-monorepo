@@ -440,6 +440,25 @@ describe('BlockedApplicationRepository', () => {
     );
   });
 
+  it('expandDocumentToken: rejeição NÃO-Error → mesmo fallback (ramo String(err) do log)', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ missing: '["worker_documents"]' }] });
+    mockQuery.mockResolvedValueOnce({ rowCount: 1 });
+    mockQuery.mockRejectedValueOnce('boom cru, não é Error');
+
+    const result = await repo.upsert({
+      workerId: WORKER_ID,
+      jobPostingId: JOB_ID,
+      reason: 'registration_incomplete',
+      acquisitionChannel: null,
+    });
+
+    expect(result).toEqual(['worker_documents']);
+    const childLogger = mockLoggerChild.mock.results[0]?.value;
+    expect(childLogger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ error: 'boom cru, não é Error' }),
+    );
+  });
+
   // ── dismiss / undismiss (soft-dismiss do "Rechazar" no kanban, migration 250) ──
   describe('dismiss', () => {
     const ID = 'aabbccdd-0000-0000-0000-999999999999';
@@ -461,6 +480,14 @@ describe('BlockedApplicationRepository', () => {
       mockQuery.mockResolvedValueOnce({ rowCount: 0 });
       expect(await repo.dismiss(ID, 'OTHER')).toBe(false);
     });
+
+    it('retorna false quando o driver não informa rowCount (ramo ?? 0)', async () => {
+      // pg pode devolver rowCount ausente/null em alguns drivers/mocks — o `?? 0`
+      // é o que garante `false` em vez de `undefined > 0` (que também é false,
+      // mas por acidente de JS, não por contrato).
+      mockQuery.mockResolvedValueOnce({});
+      expect(await repo.dismiss(ID, 'OTHER')).toBe(false);
+    });
   });
 
   describe('undismiss', () => {
@@ -480,6 +507,11 @@ describe('BlockedApplicationRepository', () => {
 
     it('retorna false quando o id não existe', async () => {
       mockQuery.mockResolvedValueOnce({ rowCount: 0 });
+      expect(await repo.undismiss(ID)).toBe(false);
+    });
+
+    it('retorna false quando o driver não informa rowCount (ramo ?? 0)', async () => {
+      mockQuery.mockResolvedValueOnce({});
       expect(await repo.undismiss(ID)).toBe(false);
     });
   });
