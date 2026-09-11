@@ -18,9 +18,19 @@
  * CUIDADOR (conjunto base). O gate SQL (`fn_worker_missing_fields`, migration
  * 212) faz `profession != 'AT'`, que em NULL avalia NULL (nem TRUE nem FALSE)
  * — então o OR só passa quando `resume_cv` E `at_certificate` estão
- * presentes, ou seja, profissão desconhecida é tratada como AT. Este módulo
- * espelha o SQL, não o helper TS — paridade com o portão é requisito
+ * presentes, ou seja, profissão desconhecida (NULL) é tratada como AT. Este
+ * módulo espelha o SQL, não o helper TS — paridade com o portão é requisito
  * explícito (ver teste "profession NULL → tratado como AT").
+ *
+ * `profession === ''` recebe o MESMO tratamento de NULL aqui só por defesa —
+ * NÃO é mirror do SQL: em SQL `'' != 'AT'` é TRUE (comparação normal entre
+ * dois valores não-nulos), então se `''` pudesse existir na coluna o gate a
+ * trataria como NÃO-AT (só DNI + antecedentes), o oposto do que este código
+ * faz. A diferença é inerte: `workers.profession` tem `CHECK
+ * valid_profession_values` (migrations/064_update_profession_and_patient_enums.sql:23-25)
+ * — só aceita `NULL` ou um dos 5 valores do enum, `''` é INALCANÇÁVEL na
+ * tabela real. O ramo fica como cinto-e-suspensório para `WorkerDocumentRow`
+ * vindo de fora do banco (ex.: teste), não como paridade com o portão.
  */
 
 export interface WorkerDocumentRow {
@@ -66,8 +76,10 @@ export function expandDocumentToken(
     return missingFields;
   }
 
-  // Semântica de profession IS NULL: espelha EXATAMENTE o gate SQL
-  // fn_worker_missing_fields (migration 212). Ver aviso no topo do arquivo.
+  // profession === null: espelha EXATAMENTE o gate SQL fn_worker_missing_fields
+  // (migration 212). profession === '': NÃO espelha o SQL (lá seria NÃO-AT) —
+  // é defesa inerte, pois '' é inalcançável na tabela real (CHECK
+  // valid_profession_values, migration 064). Ver aviso no topo do arquivo.
   const isAtOrUnknown = row.profession === 'AT' || row.profession === null || row.profession === '';
   const requiredColumns = isAtOrUnknown ? [...BASE_COLUMNS, ...AT_EXTRA_COLUMNS] : BASE_COLUMNS;
 
