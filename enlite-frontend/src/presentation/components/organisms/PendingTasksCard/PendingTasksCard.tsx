@@ -202,7 +202,14 @@ export function PendingTasksCard({
         {completedLabels.length > 0 && (
           <div className="flex items-center gap-2 px-3 py-1" data-testid="pending-tasks-completed">
             <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
-            <Text as="span" size="sm" color="secondary">
+            {/*
+              Achado do gate (11/09, rodada 2): o testid de CONTRASTE tem
+              de ficar no elemento que carrega a classe de cor. O `<div>`
+              acima não define `color` nenhuma — sem esse testid AQUI, uma
+              medição em `pending-tasks-completed` lê o preto HERDADO
+              (~21:1) e nunca vê o cinza real deste `<Text>`.
+            */}
+            <Text as="span" size="sm" color="secondary" data-testid="pending-tasks-completed-text">
               {completedLabels.join(' · ')}
             </Text>
           </div>

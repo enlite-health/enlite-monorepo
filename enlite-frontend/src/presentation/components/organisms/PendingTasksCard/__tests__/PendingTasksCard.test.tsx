@@ -309,4 +309,26 @@ describe('PendingTasksCard', () => {
       expect(screen.getAllByTestId('pending-task-row')).toHaveLength(1);
     });
   });
+
+  describe('contraste WCAG AA (gate 11/09, rodada 2 — unit barato que fixa a cor sem depender de e2e)', () => {
+    // `color="muted"` do atom Text mapeia pra `text-gray-700`, que na
+    // paleta desta casa é `rgba(115, 115, 115, 0.5)` — 1,96:1 sobre
+    // branco, abaixo do mínimo WCAG AA. Este teste não recalcula
+    // contraste (isso é papel do e2e, que mede a cor REAL via
+    // getComputedStyle) — só trava que ninguém reintroduz `muted` aqui
+    // por engano num refactor futuro, sem precisar subir o stack.
+    it('"Ya completaste X de Y" usa a classe do secondary (text-gray-800), NÃO a do muted (text-gray-700)', () => {
+      render(<PendingTasksCard missingFields={['doc_criminal_record']} profession="AT" country="AR" />);
+      const progress = screen.getByTestId('pending-tasks-progress');
+      expect(progress).toHaveClass('text-gray-800');
+      expect(progress).not.toHaveClass('text-gray-700');
+    });
+
+    it('recolhido de concluídos usa a classe do secondary (text-gray-800), NÃO a do muted (text-gray-700)', () => {
+      render(<PendingTasksCard missingFields={['doc_criminal_record']} profession="AT" country="AR" />);
+      const completedText = screen.getByTestId('pending-tasks-completed-text');
+      expect(completedText).toHaveClass('text-gray-800');
+      expect(completedText).not.toHaveClass('text-gray-700');
+    });
+  });
 });

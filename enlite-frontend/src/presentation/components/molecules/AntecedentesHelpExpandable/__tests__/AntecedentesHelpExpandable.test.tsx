@@ -130,4 +130,28 @@ describe('AntecedentesHelpExpandable', () => {
     render(<AntecedentesHelpExpandable className="mt-2" />);
     expect(screen.getByTestId('antecedentes-help')).toHaveClass('mt-2');
   });
+
+  describe('contraste WCAG AA (gate 11/09, rodada 2 — unit barato que fixa a cor sem depender de e2e)', () => {
+    // `color="muted"` do atom Text mapeia pra `text-gray-700`
+    // (`rgba(115, 115, 115, 0.5)` na paleta desta casa) — 1,96:1 sobre
+    // branco, abaixo do mínimo WCAG AA. Este teste não recalcula
+    // contraste (papel do e2e, via getComputedStyle) — só trava que
+    // ninguém reintroduz `muted` aqui num refactor futuro.
+    it('toggle usa a classe do tertiary (#374151), NÃO a do muted (text-gray-700)', () => {
+      render(<AntecedentesHelpExpandable />);
+      const toggleText = screen.getByTestId('antecedentes-help-toggle-text');
+      expect(toggleText).toHaveClass('text-[#374151]');
+      expect(toggleText).not.toHaveClass('text-gray-700');
+    });
+
+    it('corpo do texto usa a classe do tertiary (#374151), NÃO a do muted (text-gray-700)', async () => {
+      const user = userEvent.setup();
+      render(<AntecedentesHelpExpandable />);
+      await clickToggle(user, screen.getByRole('button', { name: /¿No lo tenés\? Cómo sacarlo/i }));
+
+      const bodyText = screen.getByTestId('antecedentes-help-body-text');
+      expect(bodyText).toHaveClass('text-[#374151]');
+      expect(bodyText).not.toHaveClass('text-gray-700');
+    });
+  });
 });
