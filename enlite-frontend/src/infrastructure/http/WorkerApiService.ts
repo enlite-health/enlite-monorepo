@@ -52,6 +52,17 @@ export interface WorkerProgressResponse {
   serviceLng?: number;
   acceptsRemoteService?: boolean;
   availability?: Record<string, unknown>;
+  /**
+   * O que falta para o cadastro ficar completo, segundo o BACKEND
+   * (`fn_worker_missing_fields` — a mesma função que decide se a postulação
+   * passa). Fonte única de completude; o frontend não recalcula.
+   *
+   * `[]`   = nada falta.
+   * `null` / ausente = o backend não conseguiu apurar. É "não sei", NÃO é
+   *          "está completo" — tratar como desconhecido (ver
+   *          `isCompletenessKnown`).
+   */
+  missingFields?: string[] | null;
 }
 
 /** Shape returned by GET /api/workers/me/availability */
@@ -219,8 +230,18 @@ class WorkerApiServiceClass {
    * PUT /api/workers/me/general-info
    * Saves general/personal info for the authenticated worker.
    */
-  async saveGeneralInfo(data: Record<string, any>): Promise<void> {
-    await this.request<unknown>('PUT', '/api/workers/me/general-info', data);
+  /**
+   * ESCRITA CONFIRMADA — devolve o cadastro como o BANCO ficou.
+   *
+   * Antes retornava `void`: a rota respondia "General info saved" e o cliente
+   * gravava no próprio store o payload que ELE tinha montado. Um campo que o
+   * servidor não persistiu (o telefone, por causa do `COALESCE`) seguia
+   * aparecendo preenchido na tela — e, como o store é persistido em
+   * localStorage, para sempre. A prestadora via o número dela e o sistema dizia
+   * "falta o telefone". Quem responde o que existe é o servidor.
+   */
+  async saveGeneralInfo(data: Record<string, any>): Promise<WorkerProgressResponse> {
+    return this.request<WorkerProgressResponse>('PUT', '/api/workers/me/general-info', data);
   }
 
   /**

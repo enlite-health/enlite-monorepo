@@ -580,18 +580,13 @@
       "man": "Hombre",
       "registered": "Inscrito",
       "selected": "Seleccionado"
-    },
-    "incompleteModal": {
-      "title": "Complete su registro",
-      "description": "Para postularse a esta vacante y acceder al WhatsApp y detalles completos, necesita completar su registro y subir los documentos necesarios.",
-      "completeRegistration": "Completar Registro",
-      "cancel": "Cancelar"
     }
   },
   "profile": {
     "title": "Mi Perfil",
     "save": "Guardar",
     "saveSuccess": "Información guardada con éxito",
+    "saveUnconfirmed": "Guardado, pero no pudimos confirmar. Revisá los datos.",
     "completionCard": {
       "title": "Complete su Perfil Profesional"
     },
@@ -649,6 +644,7 @@
     "atCertificate": "Certificado de Acompañante Terapéutico",
     "atRequiredWarning": "Como Acompañante Terapéutico, estos documentos son obligatorios para completar tu registro.",
     "atRequiredPending": "Para postularte como Acompañante Terapéutico necesitás subir:",
+    "pendingRequiredGeneric": "Para postularte necesitás subir:",
     "allRequiredDone": "Ya subiste todos los documentos obligatorios para postularte.",
     "requiredBadge": "Obligatorio",
     "additionalTitle": "Otros Documentos",
@@ -5031,7 +5027,8 @@
         "doc_resume_cv": "Currículum vitae",
         "doc_identity_document": "Documento de identidad",
         "doc_criminal_record": "Antecedentes penales",
-        "doc_at_certificate": "Certificado de Acompañante Terapéutico"
+        "doc_at_certificate": "Certificado de Acompañante Terapéutico",
+        "worker_documents": "Documentos"
       },
       "bodyGeneric": "Su registro está incompleto. Lo redirigiremos a su perfil para completarlo.",
       "redirectNotice": "Lo redirigiremos a su perfil para que pueda completar los datos faltantes.",

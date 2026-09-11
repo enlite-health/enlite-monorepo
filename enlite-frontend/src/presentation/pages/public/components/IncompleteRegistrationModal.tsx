@@ -23,8 +23,14 @@ export function IncompleteRegistrationModal({
   const navigate = useNavigate();
 
   const allTokens = missingFields ?? [];
-  const docTokens = allTokens.filter((f) => f.startsWith('doc_'));
-  const registrationTokens = allTokens.filter((f) => !f.startsWith('doc_'));
+  // Bucket pelo DESTINO real (incompleteFieldDestinations), não por prefixo:
+  // `worker_documents` — o token AGREGADO que o GET /workers/me devolve (não
+  // expandido em doc_*, só o 403 de track-channel expande) — não começa com
+  // "doc_", mas destinationFor(...).tab É 'documents'. Bucket por prefixo
+  // jogava esse token pra seção errada e o título "Documentos" nunca
+  // aparecia quando ele era o único pendente.
+  const docTokens = allTokens.filter((f) => destinationFor(f).tab === 'documents');
+  const registrationTokens = allTokens.filter((f) => destinationFor(f).tab !== 'documents');
 
   const isEmpty = !missingFields || missingFields.length === 0;
 
@@ -63,6 +69,11 @@ export function IncompleteRegistrationModal({
           </Text>
         )}
 
+        {/* 🔒 O Clarity grava a home em produção com sessão identificada (worker
+            logado). A lista de pendências nomeia o que falta no cadastro da
+            pessoa — parecer do lex, condição C3: mascarar o contêiner inteiro,
+            não campo por campo. */}
+        <div data-clarity-mask="True" data-testid="incomplete-modal-pending-list">
         {registrationTokens.length > 0 && (
           <div className="mb-3">
             <Text size="sm" weight="semibold" color="primary" className="mb-1.5">
@@ -118,6 +129,7 @@ export function IncompleteRegistrationModal({
             </div>
           </div>
         )}
+        </div>
 
         <Text size="sm" weight="medium" color="muted" className="mb-4 mt-4">
           {t('publicVacancy.incompleteModal.redirectNotice')}

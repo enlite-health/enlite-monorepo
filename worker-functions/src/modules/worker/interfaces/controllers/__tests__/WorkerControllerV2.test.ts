@@ -53,6 +53,7 @@ jest.mock('@shared/security/KMSEncryptionService', () => ({
 
 import { WorkerControllerV2 } from '../WorkerControllerV2';
 import { Request, Response } from 'express';
+import { WORKER_ERROR_CODES } from '@modules/worker/domain/workerErrors';
 import { Result } from '@shared/utils/Result';
 import { Worker } from '../../../domain/Worker';
 
@@ -106,6 +107,9 @@ describe('WorkerControllerV2', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // `clearAllMocks` NÃO drena a fila de `mockResolvedValueOnce`: um teste que
+    // falha no meio deixa respostas enfileiradas e contamina o seguinte.
+    mockQuery.mockReset();
     controller = new WorkerControllerV2();
   });
 
@@ -272,6 +276,7 @@ describe('WorkerControllerV2', () => {
     it('retorna 200 com dados do worker quando getProgressUseCase encontra o worker via user.uid', async () => {
       jest.spyOn(controller['getProgressUseCase'], 'execute')
         .mockResolvedValue(Result.ok(mockWorker));
+      mockQuery.mockResolvedValueOnce({ rows: [{ missing: [] }] });
 
       const [req, res] = mockReqRes({}, {}, { uid: AUTH_UID });
 
@@ -281,7 +286,7 @@ describe('WorkerControllerV2', () => {
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
           success: true,
-          data: mockWorker,
+          data: { ...mockWorker, missingFields: [] },
         })
       );
     });
@@ -289,6 +294,7 @@ describe('WorkerControllerV2', () => {
     it('retorna 200 com dados do worker quando getProgressUseCase encontra o worker via header x-auth-uid', async () => {
       jest.spyOn(controller['getProgressUseCase'], 'execute')
         .mockResolvedValue(Result.ok(mockWorker));
+      mockQuery.mockResolvedValueOnce({ rows: [{ missing: [] }] });
 
       const [req, res] = mockReqRes({}, { 'x-auth-uid': AUTH_UID });
 
@@ -298,9 +304,150 @@ describe('WorkerControllerV2', () => {
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
           success: true,
-          data: mockWorker,
+          data: { ...mockWorker, missingFields: [] },
         })
       );
+    });
+
+    // ── missingFields: a fonte única de completude que a tela consome ────────
+    //
+    // Incidente 08/09/2026: o frontend mantinha a PRÓPRIA lista de campos
+    // obrigatórios, e ela omitia `phone` e `title_certificate`. A prestadora
+    // via "cadastro completo" na home e levava "registro incompleto" ao se
+    // postular — 23 pessoas nesse estado em produção. O GET agora devolve o
+    // veredito de `fn_worker_missing_fields`, a MESMA função que barra a
+    // postulação, para os dois nunca divergirem.
+
+    it('devolve missingFields com o que o portão exige — inclusive phone e title_certificate', async () => {
+      jest.spyOn(controller['getProgressUseCase'], 'execute')
+        .mockResolvedValue(Result.ok(mockWorker));
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ missing: ['phone', 'title_certificate'] }],
+      });
+
+      const [req, res] = mockReqRes({}, {}, { uid: AUTH_UID });
+
+      await controller.getProgress(req, res);
+
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            missingFields: ['phone', 'title_certificate'],
+          }),
+        })
+      );
+    });
+
+    it('quando não consegue apurar, devolve missingFields NULL — "não sei" nunca vira "completo"', async () => {
+      jest.spyOn(controller['getProgressUseCase'], 'execute')
+        .mockResolvedValue(Result.ok(mockWorker));
+      mockQuery.mockRejectedValueOnce(new Error('db down'));
+
+      const [req, res] = mockReqRes({}, {}, { uid: AUTH_UID });
+
+      await controller.getProgress(req, res);
+
+      // 200 com null (e não omissão da chave, nem `[]`): o cliente precisa
+      // conseguir distinguir "nada falta" de "não foi possível apurar". Fundir
+      // ausência de informação com informação de ausência é a causa raiz que
+      // este conserto ataca.
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ missingFields: null }),
+        })
+      );
+    });
+
+    // ── PUT /me/general-info: a ESCRITA CONFIRMADA (D302) ───────────────────
+    //
+    // O gate `revisao-pr` de 08/09 mediu ZERO execução neste caminho: o código
+    // que o PR existe para entregar não tinha teste nenhum. Os 3 casos abaixo
+    // são os ramos que ele nomeou.
+
+    // As DUAS chamadas de `sendPersonalInfoFailure` foram trocadas por este PR
+    // (de método privado para função importada) e o gate mediu ambas sem
+    // cobertura. Trocar chamada e não exercitar é como o defeito viaja.
+
+    it('saveGeneralInfo: colisão de telefone vira 409 com code, não 500', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ missing: [] }] });
+      jest.spyOn(controller['getProgressUseCase'], 'execute').mockResolvedValue(Result.ok(mockWorker));
+      jest.spyOn(controller['savePersonalInfoUseCase'], 'execute')
+        .mockResolvedValue(Result.fail(WORKER_ERROR_CODES.PHONE_NOT_AVAILABLE) as never);
+
+      const [req, res] = mockReqRes({ phone: '+5491151265663' }, {}, { uid: AUTH_UID });
+      await controller.saveGeneralInfo(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(409);
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      expect(body.code).toBe(WORKER_ERROR_CODES.PHONE_NOT_AVAILABLE);
+      // Não revela que o número pertence a outra conta.
+      expect(JSON.stringify(body)).not.toMatch(/idx_workers_phone_unique|outra conta/i);
+    });
+
+    it('saveStep: a mesma tradução de falha vale no passo 2 do wizard', async () => {
+      jest.spyOn(controller['savePersonalInfoUseCase'], 'execute')
+        .mockResolvedValue(Result.fail(WORKER_ERROR_CODES.PHONE_NOT_AVAILABLE) as never);
+
+      const [req, res] = mockReqRes(
+        { workerId: mockWorker.id, step: 2, data: { phone: '+5491151265663' } }, {}, { uid: AUTH_UID },
+      );
+      await controller.saveStep(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(409);
+    });
+
+    it('saveGeneralInfo devolve o cadastro RELIDO do banco, com missingFields', async () => {
+      jest.spyOn(controller['savePersonalInfoUseCase'], 'execute')
+        .mockResolvedValue(Result.ok(mockWorker as never));
+      jest.spyOn(controller['getProgressUseCase'], 'execute')
+        .mockResolvedValue(Result.ok(mockWorker));
+      mockQuery.mockResolvedValueOnce({ rows: [{ missing: ['phone'] }] });         // veredito do portão
+
+      const [req, res] = mockReqRes({ firstName: 'Ana' }, {}, { uid: AUTH_UID });
+      await controller.saveGeneralInfo(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      // NÃO é mais `{ message: 'General info saved' }`: é o estado que o banco tem.
+      expect(body.data).toEqual({ ...mockWorker, missingFields: ['phone'] });
+    });
+
+    it('saveGeneralInfo: releitura falha → 200 com missingFields NULL, nunca "completo"', async () => {
+      jest.spyOn(controller['savePersonalInfoUseCase'], 'execute')
+        .mockResolvedValue(Result.ok(mockWorker as never));
+      // 1ª leitura resolve o id e SUCEDE; a 2ª (a releitura pós-escrita) cai.
+      // É justamente o que torna o estado anômalo: a mesma leitura acabou de
+      // funcionar nesta request.
+      jest.spyOn(controller['getProgressUseCase'], 'execute')
+        .mockResolvedValueOnce(Result.ok(mockWorker))
+        .mockResolvedValue(Result.fail('db down') as never);
+
+      const [req, res] = mockReqRes({ firstName: 'Ana' }, {}, { uid: AUTH_UID });
+      await controller.saveGeneralInfo(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect((res.json as jest.Mock).mock.calls[0][0].data).toHaveProperty('missingFields', null);
+    });
+
+    it('resolve o id pelo caminho que trata MERGE — custa 2 leituras, e isso é deliberado', async () => {
+      // Trava contra uma "otimização" que já tentei e o gate reprovou: trocar
+      // isto por um `SELECT id FROM workers WHERE auth_uid = $1` economiza 9
+      // decrypts KMS por blur, MAS devolve o CASCO absorvido de quem foi
+      // mesclado — a escrita iria para o registro morto e o que a prestadora
+      // digitou sumiria com 200 na tela. `findByAuthUid` segue a corrente de
+      // `merged_into_id` (WorkerAuthRepository.ts:68-76); o atalho não.
+      // Se este número mudar para 1, o atalho voltou: cheque o merge primeiro.
+      jest.spyOn(controller['savePersonalInfoUseCase'], 'execute')
+        .mockResolvedValue(Result.ok(mockWorker as never));
+      const progress = jest.spyOn(controller['getProgressUseCase'], 'execute')
+        .mockResolvedValue(Result.ok(mockWorker));
+      mockQuery.mockResolvedValueOnce({ rows: [{ missing: [] }] });
+
+      const [req, res] = mockReqRes({ firstName: 'Ana' }, {}, { uid: AUTH_UID });
+      await controller.saveGeneralInfo(req, res);
+
+      expect(progress).toHaveBeenCalledTimes(2);
     });
 
     it('retorna 404 com "Worker not found" quando getProgressUseCase falha por auth_uid sem vínculo no banco', async () => {

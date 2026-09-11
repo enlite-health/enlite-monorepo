@@ -34,15 +34,54 @@ const WorkerAvailabilityBody = z.object({
   }),
 });
 
-const WorkerProfileSchema = registry.register(
+export const WorkerProfileSchema = registry.register(
   'WorkerProfile',
   z.object({
     id: UuidParam,
     email: z.string().email().openapi({ example: 'worker@example.com' }),
     status: z.string().openapi({ example: 'INCOMPLETE_REGISTER' }),
     step: z.number().int().optional().openapi({ example: 2 }),
-  }).openapi({ description: 'Dados resumidos do worker autenticado.' }),
+    /**
+     * O que falta para o cadastro ficar completo, segundo `fn_worker_missing_fields`
+     * — a MESMA função que decide se a postulação passa (D302).
+     *
+     * `[]`   = apurei e nada falta.
+     * `null` = NÃO consegui apurar. É "não sei", nunca "está completo": o cliente
+     *          tem de tratar como desconhecido (fail-closed).
+     */
+    // NÃO é `.optional()`: `withMissingFields` sempre emite a chave, e um
+    // terceiro estado (`undefined`) na spec daria a um cliente gerado o
+    // `if (!missingFields?.length) → "completo"` — a D302 renascendo por uma
+    // porta nova. Dois estados, e só: `[]` = nada falta · `null` = não apurei.
+    missingFields: z.array(z.string()).nullable().openapi({
+      example: ['phone', 'title_certificate'],
+      description: '[] = nada falta · null = não foi possível apurar (NÃO significa completo)',
+    }),
+  }).openapi({ description: 'Dados do worker autenticado, com o veredito de completude.' }),
 );
+
+/**
+ * Ramo degradado do 200 do `PUT /me/general-info`: a escrita ACONTECEU, mas a
+ * releitura que a confirmaria falhou. `missingFields: null` mantém o contrato —
+ * "gravei, mas não sei te dizer o estado", nunca "está completo".
+ */
+export const UnconfirmedWrite = registry.register(
+  'UnconfirmedWrite',
+  z.object({
+    message: z.string().openapi({ example: 'General info saved' }),
+    missingFields: z.null().openapi({ description: 'Sempre null: não foi possível apurar.' }),
+  }).openapi({ description: 'Escrita gravada mas não confirmada.' }),
+);
+
+/**
+ * O `200` do `PUT /me/general-info` — os DOIS ramos, numa constante só.
+ *
+ * Exportada de propósito: o `registerPath` abaixo e o teste de contrato usam
+ * ESTA constante. Se o teste remontasse a união por conta própria, ficaria verde
+ * mesmo se alguém trocasse o `schema` da rota de volta para só o perfil — foi
+ * exatamente o que a sabotagem S4 do gate (rodada 4) provou da 1ª versão.
+ */
+export const WorkerGeneralInfoOk200 = z.union([WorkerProfileSchema, UnconfirmedWrite]);
 
 registry.registerPath({
   method: 'post',
@@ -128,7 +167,26 @@ registry.registerPath({
   security: [{ firebaseAuth: [] }],
   request: { body: { content: { 'application/json': { schema: WorkerGeneralInfoBody } } } },
   responses: {
-    200: { description: 'Informações atualizadas.', content: { 'application/json': { schema: OkMessage } } },
+    200: {
+      // ESCRITA CONFIRMADA (D302): devolve o cadastro como o BANCO ficou, relido
+      // pelo mesmo caminho do GET — não um "salvo com sucesso" que o cliente
+      // teria de acreditar.
+      //
+      // São DOIS ramos de 200, e o schema declara os dois de propósito: se a
+      // releitura pós-escrita falhar, a gravação ACONTECEU mas não pôde ser
+      // confirmada, e a rota devolve `{ message, missingFields: null }` — sem
+      // perfil. Declarar só o perfil faria a spec mentir exatamente no ramo que
+      // esta mudança existe para tornar honesto.
+      description:
+        'Informações atualizadas. Devolve o cadastro relido; se a releitura falhar, ' +
+        'devolve confirmação sem perfil com missingFields: null (gravou, não confirmou).',
+      content: { 'application/json': { schema: WorkerGeneralInfoOk200 } },
+    },
+    404: { description: 'Worker não encontrado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    409: {
+      description: 'Telefone pertence a outra conta (PHONE_NOT_AVAILABLE).',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
     400: { description: 'Dados inválidos.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },

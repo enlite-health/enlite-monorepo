@@ -61,10 +61,12 @@ export const WorkerHome = (): JSX.Element => {
     fetchWorkerData();
   }, [user?.id, getProgress, getAvailability]);
 
+  // ProfileCompletionCard só desenha (e só chama) este botão quando
+  // `progress.nextAction` existe (ProfileCompletionCard.tsx:48 —
+  // `{progress.nextAction && (<button onClick={onActionClick}>`) — logo,
+  // sempre que isto for de fato invocado, nextAction já é não-nulo.
   const handleActionClick = (): void => {
-    if (progress.nextAction) {
-      navigate(progress.nextAction.route);
-    }
+    navigate(progress.nextAction!.route);
   };
 
   return (
@@ -79,7 +81,10 @@ export const WorkerHome = (): JSX.Element => {
         />
       )}
 
-      <JobsEmbeddedSection isRegistrationComplete={isFullyRegistered} />
+      <JobsEmbeddedSection
+        isRegistrationComplete={isFullyRegistered}
+        missingFields={workerData?.missingFields ?? null}
+      />
     </AppLayout>
   );
 };
