@@ -10,6 +10,7 @@ import {
   getStep3Progress,
 } from '../utils/workerProgressValidation';
 import { getRequiredDocSlugs, getRequiredDocFields } from '../utils/workerDocumentRequirements';
+import { destinationFor, buildProfileUrl } from '../utils/incompleteFieldDestinations';
 
 interface UseWorkerProfileProgressResult {
   progress: WorkerProfileProgress;
@@ -77,9 +78,10 @@ export function useWorkerProfileProgress(
         })),
         completedCount: registrationCompletedSteps,
         totalCount: registrationTotalSteps,
-        percentage: registrationTotalFields > 0
-          ? Math.round((registrationCompletedFields / registrationTotalFields) * 100)
-          : 0,
+        // registrationTotalFields nunca é 0: é a SOMA dos totalFields de step1/2/3, e cada um
+        // é TOKENS_BY_TAB[tab].length (workerProgressValidation.ts:100) — toda aba tem token.
+        // Sem ramo morto: se algum dia isso deixar de valer, o teste denuncia NaN%, não silêncio.
+        percentage: Math.round((registrationCompletedFields / registrationTotalFields) * 100),
       },
       {
         id: 'documents',
@@ -98,9 +100,9 @@ export function useWorkerProfileProgress(
 
     const totalFields = registrationTotalFields + documentsTotal;
     const completedFields = registrationCompletedFields + documentsCompleted;
-    const overallPercentage = totalFields > 0
-      ? Math.round((completedFields / totalFields) * 100)
-      : 0;
+    // totalFields nunca é 0 pela mesma razão acima, mais documentsTotal (getRequiredDocSlugs
+    // devolve 2 pra Cuidador ou 4 pra AT — nunca vazio).
+    const overallPercentage = Math.round((completedFields / totalFields) * 100);
 
     const allStepsComplete = stepValidation.step1 && stepValidation.step2 && stepValidation.step3;
 
@@ -111,9 +113,16 @@ export function useWorkerProfileProgress(
         route: '/worker-registration',
       };
     } else if (documentsCompleted < documentsTotal) {
+      // A rota antiga '/worker/documents' não existe em App.tsx (cai no catch-all
+      // e devolve pra '/') — o CTA deve levar direto ao slot do 1º documento
+      // obrigatório pendente, reaproveitando o mesmo mapa token→aba/focus que
+      // o IncompleteRegistrationModal usa (incompleteFieldDestinations).
+      const firstMissingIndex = documentsSteps.findIndex((step) => !step.completed);
+      const missingSlug = requiredSlugs[firstMissingIndex];
+      const dest = destinationFor(`doc_${missingSlug}`);
       nextAction = {
         label: t('profile.progress.uploadDocuments'),
-        route: '/worker/documents',
+        route: buildProfileUrl(dest),
       };
     }
 

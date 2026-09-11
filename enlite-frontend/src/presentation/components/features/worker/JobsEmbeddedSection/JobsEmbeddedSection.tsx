@@ -4,6 +4,8 @@ import { useEffect, useState, useMemo } from 'react';
 import { Select } from '@presentation/components/atoms/Select';
 import { SearchInput } from '@presentation/components/molecules/SearchBar';
 import { PublicApiService } from '@infrastructure/http/PublicApiService';
+import { IncompleteRegistrationModal } from '@presentation/pages/public/components/IncompleteRegistrationModal';
+import { PostularseErrorModal } from '@presentation/pages/public/components/PostularseErrorModal';
 import type { PublicJobListing } from '@domain/entities/PublicJobListing';
 import {
   type Job,
@@ -12,15 +14,14 @@ import {
   getProvinceOptions,
   getLocalityOptions,
   getSexOptions,
-  MOCK_JOBS,
-  USE_MOCK,
 } from './jobsConstants';
 
+// `window` é sempre definido: esta é uma SPA Vite pura, sem SSR (arquitetura em
+// enlite-frontend/CLAUDE.md) — o guard `typeof window !== 'undefined'` nunca
+// tinha o ramo falso alcançado em nenhum ambiente real desta app.
 function readUsePublicApi(): boolean {
-  if (typeof window !== 'undefined') {
-    const override = (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API;
-    if (typeof override === 'boolean') return override;
-  }
+  const override = (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API;
+  if (typeof override === 'boolean') return override;
   return import.meta.env.VITE_USE_PUBLIC_JOBS_API === 'true';
 }
 
@@ -52,9 +53,19 @@ function adaptPublicJobListing(dto: PublicJobListing): Job {
 
 interface JobsEmbeddedSectionProps {
   isRegistrationComplete?: boolean;
+  /**
+   * `missingFields` do GET /api/workers/me (mesma fonte que WorkerHome usa
+   * pra `isRegistrationComplete`) — SEM requisição nova. `null`/ausente =
+   * "não apurado" (fail-closed, D302): o `IncompleteRegistrationModal` mostra
+   * a mensagem genérica e honesta, nunca finge saber o que falta.
+   */
+  missingFields?: string[] | null;
 }
 
-export const JobsEmbeddedSection = ({ isRegistrationComplete = false }: JobsEmbeddedSectionProps): JSX.Element => {
+export const JobsEmbeddedSection = ({
+  isRegistrationComplete = false,
+  missingFields = null,
+}: JobsEmbeddedSectionProps): JSX.Element => {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
@@ -82,10 +93,6 @@ export const JobsEmbeddedSection = ({ isRegistrationComplete = false }: JobsEmbe
       return;
     }
     window.open(job.detailLink, '_blank');
-  };
-
-  const handleCompleteRegistration = (): void => {
-    navigate('/worker-registration');
   };
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -117,11 +124,6 @@ export const JobsEmbeddedSection = ({ isRegistrationComplete = false }: JobsEmbe
     setIsLoading(true);
     setError(null);
     const fetchJobs = async (): Promise<void> => {
-      if (USE_MOCK) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        setJobs(MOCK_JOBS);
-        return;
-      }
       if (readUsePublicApi()) {
         const listings = await PublicApiService.getPublicJobs();
         setJobs(listings.map(adaptPublicJobListing));
@@ -332,39 +334,31 @@ export const JobsEmbeddedSection = ({ isRegistrationComplete = false }: JobsEmbe
         )}
       </div>
 
-      {/* Modal de Cadastro Incompleto */}
+      {/* Cadastro incompleto — MESMO modal de /vacantes/:id (IncompleteRegistrationModal),
+          alimentado pelo missingFields que a home já tem do GET /api/workers/me (sem
+          requisição nova, sem recálculo local de completude — D302, decisão do parecer
+          jurídico de 10/09). Nem Postularse nem Ver Detalles chamam track-channel.
+          
+          D1 (QA caça, incidente 08/09): `missingFields` null/ausente é "NÃO APUREI" —
+          nunca "incompleto". Acontece quando o backend não devolveu o array (ainda) OU
+          quando a worker clica ANTES do GET /api/workers/me da home resolver (a lista de
+          vagas tem fetch PRÓPRIO, independente, e pode carregar primeiro). Mostrar
+          "incompleto" nesse estado afirmaria o que a tela não sabe — mesmo defeito do
+          incidente. Reusa o MESMO PostularseErrorModal (mesmo texto) de /vacantes/:id
+          pro estado "não verificado", sem os CTAs de retry/completar (não fazem sentido
+          aqui e não dá pra mandar completar algo que talvez já esteja completo). */}
       {showIncompleteModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-[20px] p-8 max-w-md w-full mx-4">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg className="w-8 h-8 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-              </div>
-              <h3 className="text-xl font-semibold text-[#180149] font-lexend mb-2">
-                {t('jobs.incompleteModal.title')}
-              </h3>
-              <p className="text-[#737373] font-lexend text-sm mb-4">
-                {t('jobs.incompleteModal.description')}
-              </p>
-            </div>
-            <div className="flex flex-col gap-3">
-              <button
-                onClick={handleCompleteRegistration}
-                className="w-full px-6 py-3 bg-[#180149] text-white rounded-full font-lexend font-medium hover:bg-[#2a014d] transition-colors"
-              >
-                {t('jobs.incompleteModal.completeRegistration')}
-              </button>
-              <button
-                onClick={() => setShowIncompleteModal(false)}
-                className="w-full px-6 py-3 border border-[#d9d9d9] text-[#737373] rounded-full font-lexend font-medium hover:border-[#180149] transition-colors"
-              >
-                {t('jobs.incompleteModal.cancel')}
-              </button>
-            </div>
-          </div>
-        </div>
+        missingFields == null ? (
+          <PostularseErrorModal
+            onClose={() => setShowIncompleteModal(false)}
+            body={t('publicVacancy.errorModal.bodyHome')}
+          />
+        ) : (
+          <IncompleteRegistrationModal
+            missingFields={missingFields}
+            onClose={() => setShowIncompleteModal(false)}
+          />
+        )
       )}
     </div>
   );

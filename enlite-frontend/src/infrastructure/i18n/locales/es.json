@@ -580,12 +580,6 @@
       "man": "Hombre",
       "registered": "Inscrito",
       "selected": "Seleccionado"
-    },
-    "incompleteModal": {
-      "title": "Complete su registro",
-      "description": "Para postularse a esta vacante y acceder al WhatsApp y detalles completos, necesita completar su registro y subir los documentos necesarios.",
-      "completeRegistration": "Completar Registro",
-      "cancel": "Cancelar"
     }
   },
   "profile": {
@@ -650,6 +644,7 @@
     "atCertificate": "Certificado de Acompañante Terapéutico",
     "atRequiredWarning": "Como Acompañante Terapéutico, estos documentos son obligatorios para completar tu registro.",
     "atRequiredPending": "Para postularte como Acompañante Terapéutico necesitás subir:",
+    "pendingRequiredGeneric": "Para postularte necesitás subir:",
     "allRequiredDone": "Ya subiste todos los documentos obligatorios para postularte.",
     "requiredBadge": "Obligatorio",
     "additionalTitle": "Otros Documentos",
@@ -4384,7 +4379,8 @@
         "doc_resume_cv": "Currículum vitae",
         "doc_identity_document": "Documento de identidad",
         "doc_criminal_record": "Antecedentes penales",
-        "doc_at_certificate": "Certificado de Acompañante Terapéutico"
+        "doc_at_certificate": "Certificado de Acompañante Terapéutico",
+        "worker_documents": "Documentos"
       },
       "bodyGeneric": "Su registro está incompleto. Lo redirigiremos a su perfil para completarlo.",
       "redirectNotice": "Lo redirigiremos a su perfil para que pueda completar los datos faltantes.",
@@ -4403,6 +4399,7 @@
     "errorModal": {
       "title": "No pudimos verificar tu registro",
       "body": "No pudimos confirmar que tu registro esté completo. Por tu seguridad, no te enviamos al pre-screening de WhatsApp. Completá tu registro o intentá nuevamente.",
+      "bodyHome": "No pudimos verificar tu registro en este momento. Volvé a intentarlo en unos minutos.",
       "retry": "Reintentar",
       "complete": "Completar registro",
       "cancel": "Cerrar"

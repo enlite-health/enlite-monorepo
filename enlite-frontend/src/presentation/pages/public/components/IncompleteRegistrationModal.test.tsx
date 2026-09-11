@@ -111,6 +111,26 @@ describe('IncompleteRegistrationModal — navegação por item', () => {
     expect(mockOnClose).toHaveBeenCalledTimes(1);
   });
 
+  it('worker_documents (token cru do GET /workers/me) cai na seção "Documentos", NÃO em "Datos personales" (bucket por destino, não por prefixo doc_)', () => {
+    renderModal(['worker_documents']);
+
+    // O token não começa com "doc_" — bucket por PREFIXO (bug) o jogaria na
+    // seção de dados pessoais e o título "Documentos" nunca apareceria.
+    expect(screen.getByText('documentsTitle')).toBeInTheDocument();
+    expect(screen.queryByText('registrationTitle')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /worker_documents/i })).toBeInTheDocument();
+  });
+
+  it('clicar em worker_documents (token cru do GET /workers/me, não expandido) navega para ?tab=documents (sem focus)', () => {
+    renderModal(['worker_documents']);
+
+    const item = screen.getByRole('button', { name: /worker_documents/i });
+    fireEvent.click(item);
+
+    expect(mockNavigate).toHaveBeenCalledWith('/worker/profile?tab=documents');
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
+  });
+
   it('clicar em worker_service_areas navega para ?tab=address (sem focus)', () => {
     renderModal(['worker_service_areas']);
 
@@ -155,6 +175,17 @@ describe('IncompleteRegistrationModal — botão "Completar registro"', () => {
   });
 });
 
+describe('IncompleteRegistrationModal — Clarity (LEX C3)', () => {
+  it('lista de pendências vem com data-clarity-mask="True" (sessão do Clarity não pode gravar o que falta)', () => {
+    renderModal(['phone', 'doc_resume_cv']);
+
+    const maskedList = screen.getByTestId('incomplete-modal-pending-list');
+    expect(maskedList).toHaveAttribute('data-clarity-mask', 'True');
+    // O item nomeado está DENTRO do contêiner mascarado, não fora dele.
+    expect(maskedList).toContainElement(screen.getByRole('button', { name: /phone/i }));
+  });
+});
+
 describe('IncompleteRegistrationModal — estado vazio', () => {
   it('missingFields=null: nenhuma seção de campos; sem erro', () => {
     renderModal(null);
@@ -169,5 +200,24 @@ describe('IncompleteRegistrationModal — estado vazio', () => {
     expect(screen.queryAllByRole('button', { name: /Ir a/i })).toHaveLength(0);
     // bodyGeneric key returned by mock
     expect(screen.getByText('bodyGeneric')).toBeInTheDocument();
+  });
+
+  // D4 (QA caça, rodada 4): estado genérico repetia a MESMA ideia duas vezes —
+  // bodyGeneric ("...Lo redirigiremos a su perfil para completarlo.") E
+  // redirectNotice ("Lo redirigiremos a su perfil para que pueda completar
+  // los datos faltantes.") juntos. redirectNotice só soma informação quando
+  // tem LISTA (diz o que vai acontecer DEPOIS de ver os itens); no genérico
+  // ele só repete o que bodyGeneric já disse.
+  it('missingFields=[]: NÃO duplica — redirectNotice não aparece junto de bodyGeneric', () => {
+    renderModal([]);
+
+    expect(screen.getByText('bodyGeneric')).toBeInTheDocument();
+    expect(screen.queryByText('redirectNotice')).not.toBeInTheDocument();
+  });
+
+  it('COM lista (missingFields com item): redirectNotice CONTINUA aparecendo — comportamento do /vacantes não muda', () => {
+    renderModal(['phone']);
+
+    expect(screen.getByText('redirectNotice')).toBeInTheDocument();
   });
 });

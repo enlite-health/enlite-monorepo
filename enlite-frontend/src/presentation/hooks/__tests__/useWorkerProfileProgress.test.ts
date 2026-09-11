@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useWorkerProfileProgress } from '../useWorkerProfileProgress';
-import type { WorkerProgressResponse } from '@infrastructure/http/WorkerApiService';
-import type { WorkerDocumentsResponse } from '@infrastructure/http/DocumentApiService';
+import {
+  makeWorkerProgress as makeWorker,
+  makeWorkerDocuments as makeDocuments,
+} from '../../../test/workerProgressFixtures';
 
 // Suprime os avisos do i18next em ambiente de teste
 vi.mock('react-i18next', () => ({
@@ -11,71 +13,10 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function makeWorker(overrides: Partial<WorkerProgressResponse> = {}): WorkerProgressResponse {
-  return {
-    id: 'worker-test-001',
-    authUid: 'auth-test-001',
-    email: 'test@test.com',
-    country: 'AR',
-    timezone: 'America/Argentina/Buenos_Aires',
-    createdAt: '2026-01-01T00:00:00Z',
-    updatedAt: '2026-01-01T00:00:00Z',
-    // Campos de step1 completos
-    firstName: 'Test',
-    lastName: 'Worker',
-    birthDate: '1990-01-01',
-    sex: 'male',
-    gender: 'male',
-    documentType: 'DNI',
-    documentNumber: '12345678',
-    languages: ['es'],
-    profession: undefined,
-    knowledgeLevel: 'technical',
-    experienceTypes: ['adults'],
-    yearsExperience: '3_5',
-    preferredTypes: ['adults'],
-    preferredAgeRange: ['adults'],
-    // Campos de step2 completos
-    serviceAddress: 'Av. Corrientes 1234, Buenos Aires',
-    serviceRadiusKm: 10,
-    // Campos de step3 completos
-    availability: { monday: { start: '09:00', end: '17:00' } },
-    // Veredito do BACKEND: nada falta. É ele que define completude desde
-    // 08/09/2026 — os campos acima só hidratam a tela.
-    //
-    // Reparo que esta fixture NUNCA teve `phone` nem `titleCertificate`, e
-    // mesmo assim era considerada "step1 completo" pela lista que o frontend
-    // mantinha. Eram exatamente os dois campos que o portão exige e a lista
-    // ignorava — o defeito que travou 23 prestadoras estava dentro da própria
-    // fixture, verde.
-    missingFields: [],
-    ...overrides,
-  };
-}
-
-function makeDocuments(overrides: Partial<WorkerDocumentsResponse> = {}): WorkerDocumentsResponse {
-  return {
-    id: 'docs-test-001',
-    workerId: 'worker-test-001',
-    resumeCvUrl: null,
-    identityDocumentUrl: null,
-    identityDocumentBackUrl: null,
-    criminalRecordUrl: null,
-    professionalRegistrationUrl: null,
-    liabilityInsuranceUrl: null,
-    monotributoCertificateUrl: null,
-    atCertificateUrl: null,
-    aptoPsicofisicoUrl: null,
-    analiticoUniversitarioUrl: null,
-    cartaRecomendacionUrl: null,
-    documentsStatus: 'pending',
-    submittedAt: null,
-    updatedAt: '2026-01-01T00:00:00Z',
-    ...overrides,
-  };
-}
+// ── Helpers ─────────────────────────────────────────────────────────────────
+// makeWorker/makeDocuments vêm de test/workerProgressFixtures.ts (fixture
+// compartilhada com DocumentsGrid.test.tsx e WorkerHome.test.tsx — gate
+// revisao-pr, critério 2).
 
 // ── Suite ─────────────────────────────────────────────────────────────────────
 
@@ -285,12 +226,51 @@ describe('useWorkerProfileProgress', () => {
   });
 
   describe('nextAction', () => {
-    it('retorna uploadDocuments quando cadastro está completo mas documentos faltam', () => {
+    it('CTA de documentos leva direto ao slot do 1º documento obrigatório pendente (rota real, com foco)', () => {
       const worker = makeWorker({ profession: 'CUIDADOR' });
+      const docs = makeDocuments(); // todos null — falta identity_document primeiro
+
+      const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
+      // Regressão: a rota antiga '/worker/documents' NÃO existe em App.tsx (cai no catch-all
+      // e devolve pra '/'). O CTA tem de usar o contrato real de WorkerProfilePage
+      // (?tab=documents&focus=<docType>), reaproveitando incompleteFieldDestinations.
+      expect(result.current.progress.nextAction?.route).toBe(
+        '/worker/profile?tab=documents&focus=identity_document',
+      );
+    });
+
+    it('CTA de documentos aponta pro 2º doc pendente quando o 1º já foi enviado (Cuidador)', () => {
+      const worker = makeWorker({ profession: 'CUIDADOR' });
+      const docs = makeDocuments({ identityDocumentUrl: 'path/dni-front.pdf' }); // falta criminal_record
+
+      const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
+      expect(result.current.progress.nextAction?.route).toBe(
+        '/worker/profile?tab=documents&focus=criminal_record',
+      );
+    });
+
+    it('CTA de documentos para AT aponta pro 1º doc obrigatório pendente (resume_cv)', () => {
+      const worker = makeWorker({ profession: 'AT' });
       const docs = makeDocuments(); // todos null
 
       const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
-      expect(result.current.progress.nextAction?.route).toBe('/worker/documents');
+      expect(result.current.progress.nextAction?.route).toBe(
+        '/worker/profile?tab=documents&focus=resume_cv',
+      );
+    });
+
+    it('cadastro incompleto (falta telefone) → CTA leva ao cadastro, mesmo com documentos ok', () => {
+      const worker = makeWorker({ profession: 'CUIDADOR', missingFields: ['phone'] });
+      const docs = makeDocuments({
+        identityDocumentUrl: 'path/dni-front.pdf',
+        criminalRecordUrl: 'path/criminal.pdf',
+      });
+
+      const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
+      expect(result.current.progress.nextAction).toEqual({
+        label: 'profile.progress.completeRegistration',
+        route: '/worker-registration',
+      });
     });
 
     it('nextAction é undefined quando tudo está completo (Cuidador — verso não exigido)', () => {
