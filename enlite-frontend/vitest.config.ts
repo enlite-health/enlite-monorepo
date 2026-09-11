@@ -423,6 +423,21 @@ export default defineConfig({
         '**/src/presentation/stores/workerRegistrationStore.ts': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
+        // Fase 4 de postulacao-documento-pendente (DD5, 11/09): a montagem
+        // das linhas de pendência saiu do PendingTasksCard pra
+        // `pendingRows.ts` (função pura, sem `t()`/JSX) — o rótulo
+        // dinâmico do botão "Postularse" (`buildApplyLabel`, em
+        // `jobsConstants.ts`) usa a MESMA função, pra nunca contar duas
+        // vezes (correção b do orquestrador). `JobsEmbeddedSection.tsx`
+        // já tinha suíte própria 100% da Fase anterior a esta mudança
+        // (achado do gate original, "0% fn" — comentário acima, linha 54);
+        // entra na régua fixa agora que ganhou lógica nova.
+        '**/src/presentation/utils/pendingRows.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/components/features/worker/JobsEmbeddedSection/{JobsEmbeddedSection.tsx,jobsConstants.ts}': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
       },
     },
   },

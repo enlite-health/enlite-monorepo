@@ -14,6 +14,7 @@ import {
   getProvinceOptions,
   getLocalityOptions,
   getSexOptions,
+  buildApplyLabel,
 } from './jobsConstants';
 
 // `window` é sempre definido: esta é uma SPA Vite pura, sem SSR (arquitetura em
@@ -60,14 +61,30 @@ interface JobsEmbeddedSectionProps {
    * a mensagem genérica e honesta, nunca finge saber o que falta.
    */
   missingFields?: string[] | null;
+  /**
+   * Profissão da worker (Fase 4/DD5) — só pra `buildApplyLabel` decidir
+   * quais documentos a política exige (paridade com o portão SQL, mesma
+   * fonte que `PendingTasksCard` usa). Sem chamada nova: vem da MESMA
+   * `GET /api/workers/me` que `WorkerHome` já buscou.
+   */
+  profession?: string | null;
 }
 
 export const JobsEmbeddedSection = ({
   isRegistrationComplete = false,
   missingFields = null,
+  profession = null,
 }: JobsEmbeddedSectionProps): JSX.Element => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+
+  // Fase 4/DD5 — o mesmo rótulo pra TODOS os jobs desta lista (depende só
+  // da worker, não do job): "Subí {documento}" / "Completá {item}" /
+  // "Completá {N} pasos", ou "Postularse" original se `missingFields` não
+  // foi apurado (null) ou o cadastro já está completo (0 linhas). Passo 0
+  // da Fase 4: nenhuma requisição nova — usa a MESMA prop `missingFields`
+  // que já chega pronta (contada no e2e).
+  const applyLabel = buildApplyLabel(missingFields, profession, t);
 
   const workerTypeOptions = useMemo(() => getWorkerTypeOptions(t), [t]);
   const provinceOptions = useMemo(() => getProvinceOptions(t), [t]);
@@ -295,12 +312,22 @@ export const JobsEmbeddedSection = ({
                   </h3>
                 </div>
                 <div className="flex flex-wrap gap-2 flex-shrink-0">
+                  {/*
+                    🔒 Achado do gate (11/09, rodada 3): `bg-[#25d366]`
+                    (verde claro do ícone do WhatsApp) media 1,98:1 com
+                    texto branco — abaixo do mínimo WCAG AA (4,5:1) — e a
+                    partir da Fase 4/DD5 o botão carrega a FRASE inteira da
+                    entrega, não mais uma palavra curta. Decisão de
+                    desenho do orquestrador: mantém a identidade WhatsApp
+                    com o verde-escuro da marca — `#075E54` (7,67:1 em
+                    repouso, hover `#054C44` ~9,89:1).
+                  */}
                   {job.whatsappLink && (
                     <button
                       onClick={() => handleWhatsAppClick(job)}
-                      className="px-3 py-1.5 bg-[#25d366] text-white text-xs rounded hover:bg-[#128c7e] transition-colors font-lexend font-medium"
+                      className="px-3 py-1.5 bg-[#075E54] text-white text-xs rounded hover:bg-[#054C44] transition-colors font-lexend font-medium"
                     >
-                      {t('jobs.apply')}
+                      {applyLabel}
                     </button>
                   )}
                   <button

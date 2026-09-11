@@ -486,6 +486,11 @@
     "clearFilters": "Limpar Filtros",
     "interested": "Me Interessa",
     "apply": "Candidatar-se",
+    "applyLabel": {
+      "document": "Envie {{doc}} para se candidatar",
+      "registration": "Complete {{item}} para se candidatar",
+      "multiple": "Complete {{count}} passos para se candidatar"
+    },
     "viewDetails": "Ver Detalhes",
     "results": "vagas encontradas",
     "filters": {

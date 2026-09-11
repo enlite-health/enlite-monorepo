@@ -78,14 +78,17 @@ vi.mock('@presentation/components/features/worker/JobsEmbeddedSection', () => ({
   JobsEmbeddedSection: ({
     isRegistrationComplete,
     missingFields,
+    profession,
   }: {
     isRegistrationComplete: boolean;
     missingFields: string[] | null;
+    profession?: string | null;
   }) => (
     <div
       data-testid="jobs-embedded-section"
       data-registration-complete={String(isRegistrationComplete)}
       data-missing-fields={JSON.stringify(missingFields)}
+      data-profession={profession ?? ''}
     />
   ),
 }));
@@ -194,6 +197,10 @@ describe('WorkerHome — cadastro incompleto (missingFields com pendência)', ()
     const jobs = screen.getByTestId('jobs-embedded-section');
     expect(jobs).toHaveAttribute('data-registration-complete', 'false');
     expect(jobs).toHaveAttribute('data-missing-fields', '["phone","doc_criminal_record"]');
+    // Fase 4/DD5: JobsEmbeddedSection precisa da profession pro MESMO
+    // motivo que PendingTasksCard precisa — buildPendingRows/buildApplyLabel
+    // decidem quais documentos a política exige (paridade com o portão).
+    expect(jobs).toHaveAttribute('data-profession', 'AT');
   });
 });
 

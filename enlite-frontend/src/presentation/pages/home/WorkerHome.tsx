@@ -70,6 +70,7 @@ export const WorkerHome = (): JSX.Element => {
       <JobsEmbeddedSection
         isRegistrationComplete={isFullyRegistered}
         missingFields={workerData?.missingFields ?? null}
+        profession={workerData?.profession}
       />
     </AppLayout>
   );
