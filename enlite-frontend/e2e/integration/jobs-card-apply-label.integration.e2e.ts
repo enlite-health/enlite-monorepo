@@ -7,12 +7,21 @@
  * "Completá {N} pasos para postularte" (2+), ou "Postularse" original
  * (completo, ou completude não apurada). "Termina quando" de `fase-4.md`.
  *
- * Correção a do orquestrador (11/09): o critério antigo ("clique registra
- * linha em worker_blocked_applications") está OBSOLETO — a camada 0 decidiu
- * que a home NÃO chama track-channel (cards de /api/jobs sem
- * job_postings.id; condição C1 do lex). O clique mantém EXATAMENTE o
- * caminho da camada 0 (modal, sem request nova) — provado abaixo contando
- * requests, não lendo Postgres.
+ * ATUALIZAÇÃO (rodada "home vagas API pública", autorizada por Gabriel): o
+ * critério de "Correção a" abaixo (11/09) foi SUPERADO — não é mais o texto
+ * histórico, é a decisão vigente. Naquela rodada, o clique em Postularse não
+ * chamava track-channel porque os cards vinham do scraper legado (sem
+ * job_posting_id real). Agora a home usa a API pública (job com `id` real)
+ * e Postularse passa pelo MESMO `usePostularseAction` de /vacantes/:id
+ * (JobCard.tsx, canal fixo 'site') — o clique CHAMA track-channel de
+ * verdade, e o modal que aparece vem do 403 do servidor (missingFields
+ * fresco), não mais só da prop. Só "Ver Detalles" continua nunca chamando
+ * track-channel (condição C1 do lex, inalterada — ver
+ * home-postularse-incomplete.integration.e2e.ts). Prova de banco completa
+ * (worker_blocked_applications/worker_job_applications, channel='site') vive
+ * em home-vagas-api-publica.integration.e2e.ts; aqui o teste "feliz" só
+ * confirma que a request AO SERVIDOR acontece (1, não 0) — o foco deste
+ * arquivo continua sendo o rótulo dinâmico e o contraste.
  *
  * Correção b do orquestrador: o Nº de pendências vem de `buildPendingRows`
  * — a MESMA função que `PendingTasksCard` usa — nunca uma segunda contagem.
@@ -71,14 +80,18 @@ test.describe('@integration Card da vaga — rótulo dinâmico do Postularse (Fa
     await expect(page.locator('#jobs-section')).toBeVisible({ timeout: 20_000 });
   }
 
-  test('feliz — 1 pendência de documento (antecedentes): botão nomeia, clique abre o modal que nomeia, SEM request ao track-channel', async ({ page }) => {
+  test('feliz — 1 pendência de documento (antecedentes): botão nomeia, clique chama track-channel (1x, 403) e abre o modal com o retorno do servidor', async ({ page }) => {
     const vacancyId = insertMinimalVacancy({ includeInPublicListing: true });
     vacancies.push(vacancyId);
     const w = insertEligibilityWorker({ occupation: 'AT', docCriminalRecord: false });
 
     const trackChannelRequests: Request[] = [];
+    let trackStatus: number | null = null;
     page.on('request', (req) => {
       if (req.url().includes('track-channel')) trackChannelRequests.push(req);
+    });
+    page.on('response', (r) => {
+      if (r.url().includes('track-channel')) trackStatus = r.status();
     });
 
     await loginAndGoHome(page, w);
@@ -111,7 +124,12 @@ test.describe('@integration Card da vaga — rótulo dinâmico do Postularse (Fa
     await expect(modal).toBeVisible({ timeout: 10_000 });
     await expect(page.getByRole('button', { name: /Ir a Antecedentes penales/i })).toBeVisible();
 
-    expect(trackChannelRequests).toHaveLength(0);
+    // Postularse agora passa pelo servidor (usePostularseAction, JobCard.tsx)
+    // — exatamente 1 request, e o servidor bloqueia com 403 (worker
+    // INCOMPLETE_REGISTER). Prova de banco completa (worker_blocked_applications,
+    // channel='site') vive em home-vagas-api-publica.integration.e2e.ts.
+    expect(trackChannelRequests).toHaveLength(1);
+    expect(trackStatus).toBe(403);
 
     await expect(page.locator('[data-testid="incomplete-modal-pending-list"]')).toHaveScreenshot(
       'fase4-modal-1-documento.png',

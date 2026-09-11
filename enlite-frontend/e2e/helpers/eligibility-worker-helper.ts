@@ -330,6 +330,37 @@ export function cleanupMinimalVacancy(vacancyId: string): void {
   }
 }
 
+/**
+ * Reads back the most recent worker_blocked_applications row's
+ * acquisition_channel for a worker+vacancy pair — the real Postgres proof
+ * that a blocked Postularse click (home vagas API pública, canal fixo
+ * 'site') was actually instrumented, not just that the modal showed.
+ * Returns null if no blocked-attempt row exists — AND ALSO if a row exists
+ * with acquisition_channel NULL (both collapse to '' at the SQL layer via
+ * COALESCE). Fine for this helper's purpose (asserting `=== 'site'`, where
+ * both cases must equally fail); do not reuse this to distinguish "no row"
+ * from "row with null channel" without adding a row-existence check first.
+ *
+ * `-t -A -F'|'` (tuples only, unaligned, pipe-separated): acquisition_channel
+ * is free text — regexing it out of the default aligned table output (like
+ * extractUUID does for UUIDs) would be fragile.
+ */
+export function getBlockedApplicationChannel(workerId: string, jobPostingId: string): string | null {
+  const sql = `SELECT COALESCE(acquisition_channel, '') FROM worker_blocked_applications WHERE worker_id = '${workerId}' AND job_posting_id = '${jobPostingId}' ORDER BY created_at DESC LIMIT 1`;
+  const escaped = sql.replace(/'/g, "'\\''");
+  let out: string;
+  try {
+    out = execSync(
+      `docker exec ${CONTAINER} psql -U ${DB_USER} -d ${DB_NAME} -t -A -F'|' -c '${escaped}'`,
+      { stdio: 'pipe' },
+    ).toString().trim();
+  } catch (err: unknown) {
+    const e = err instanceof Error ? err : new Error(String(err));
+    throw new Error(`DB error: ${e.message}`);
+  }
+  return out === '' ? null : out;
+}
+
 /** Resolves a worker's DB id from its auth_uid (workers provisioned via the real UI). */
 export function resolveWorkerIdByAuthUid(authUid: string): string | null {
   if (!authUid) return null;

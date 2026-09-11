@@ -119,6 +119,43 @@ export function insertWJA(opts: InsertWJAOpts): string {
   return id;
 }
 
+export interface WjaRow {
+  id: string;
+  acquisitionChannel: string | null;
+  funnelStage: string;
+}
+
+/**
+ * Reads back a worker_job_applications row created by a REAL click (not via
+ * insertWJA — via the actual track-channel endpoint). Used by the "home
+ * vagas API pública" e2e (elegible case): confirms acquisition_channel='site'
+ * and application_funnel_stage='INVITED' after Postularse, straight from
+ * Postgres — never inferred from the UI.
+ *
+ * `-t -A -F'|'` (tuples only, unaligned, pipe-separated) instead of the
+ * default aligned table output used elsewhere in this file — regex-parsing
+ * multiple non-UUID columns (acquisition_channel is free text) out of an
+ * aligned table is fragile; this format is a clean, unambiguous split.
+ */
+export function getWjaByWorkerAndJob(workerId: string, jobPostingId: string): WjaRow | null {
+  const sql = `SELECT id, COALESCE(acquisition_channel, ''), application_funnel_stage FROM worker_job_applications WHERE worker_id = '${workerId}' AND job_posting_id = '${jobPostingId}' LIMIT 1`;
+  const escaped = sql.replace(/'/g, "'\\''");
+  let out: string;
+  try {
+    out = execSync(
+      `docker exec ${CONTAINER} psql -U ${DB_USER} -d ${DB_NAME} -t -A -F'|' -c '${escaped}'`,
+      { stdio: 'pipe' },
+    ).toString().trim();
+  } catch (err: unknown) {
+    const e = err instanceof Error ? err : new Error(String(err));
+    throw new Error(`DB error: ${e.message}`);
+  }
+  if (!out) return null;
+  const [id, channel, stage] = out.split('|');
+  if (!id) return null;
+  return { id, acquisitionChannel: channel || null, funnelStage: stage };
+}
+
 export interface InsertEncuadreOpts {
   workerId: string;
   jobPostingId: string;
