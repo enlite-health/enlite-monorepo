@@ -364,16 +364,23 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
         [ENLITE_TENANT_ID],
       );
       const { id, name: nomeOriginal } = rec.rows[0];
-      await asStaff(U.gestor, () =>
-        permissions.groups.update.execute({ tenantId: ENLITE_TENANT_ID, groupId: id, name: 'Recrutador (e2e temp)' }),
-      );
-      const renomeado = await admin.query(`SELECT name FROM iam.permission_groups WHERE id = $1`, [id]);
-      expect(renomeado.rows[0].name).toBe('Recrutador (e2e temp)');
-
-      // restaura — este teste não pode deixar o grupo real de outro nome
-      await asStaff(U.gestor, () =>
-        permissions.groups.update.execute({ tenantId: ENLITE_TENANT_ID, groupId: id, name: nomeOriginal }),
-      );
+      // `try/finally`: o Recrutador é o grupo REAL do seed, compartilhado com
+      // outros PRs no mesmo banco — se o `expect` do meio falhar, o `finally`
+      // ainda restaura o nome. Sem isto, um `expect` vermelho aqui deixaria o
+      // grupo com `name='Recrutador (e2e temp)'` e quebraria em cascata todo
+      // teste (deste PR ou de outro) que busca `name = 'Recrutador'`.
+      try {
+        await asStaff(U.gestor, () =>
+          permissions.groups.update.execute({ tenantId: ENLITE_TENANT_ID, groupId: id, name: 'Recrutador (e2e temp)' }),
+        );
+        const renomeado = await admin.query(`SELECT name FROM iam.permission_groups WHERE id = $1`, [id]);
+        expect(renomeado.rows[0].name).toBe('Recrutador (e2e temp)');
+      } finally {
+        // restaura — este teste não pode deixar o grupo real de outro nome
+        await asStaff(U.gestor, () =>
+          permissions.groups.update.execute({ tenantId: ENLITE_TENANT_ID, groupId: id, name: nomeOriginal }),
+        );
+      }
       const restaurado = await admin.query(`SELECT name FROM iam.permission_groups WHERE id = $1`, [id]);
       expect(restaurado.rows[0].name).toBe(nomeOriginal);
     });
