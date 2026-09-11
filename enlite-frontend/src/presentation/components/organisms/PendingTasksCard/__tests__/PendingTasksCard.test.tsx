@@ -17,7 +17,7 @@
  * que agora N = linhas renderizadas e Y é derivado delas.
  */
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
@@ -256,6 +256,57 @@ describe('PendingTasksCard', () => {
       // os 2 docs que a política de Cuidador conhece, DNI e antecedentes,
       // ambos ausentes de missingFields) = 6.
       expect(screen.getByText('Ya completaste 5 de 6')).toBeInTheDocument();
+    });
+  });
+
+  describe('Fase 3 — ajuda "¿No lo tenés? Cómo sacarlo" (DD4, só no item doc_criminal_record)', () => {
+    it('país AR + antecedentes pendente → mostra o toggle da ajuda, fechado por padrão', () => {
+      render(<PendingTasksCard missingFields={['doc_criminal_record']} profession="AT" country="AR" />);
+      expect(screen.getByRole('button', { name: /¿No lo tenés\? Cómo sacarlo/i })).toBeInTheDocument();
+      expect(screen.queryByTestId('antecedentes-help-body')).not.toBeInTheDocument();
+    });
+
+    it('clicar no toggle abre o texto (sem preço) e o link "Cómo sacarlo" com href/target/rel corretos', () => {
+      render(<PendingTasksCard missingFields={['doc_criminal_record']} profession="AT" country="AR" />);
+      fireEvent.click(screen.getByRole('button', { name: /¿No lo tenés\? Cómo sacarlo/i }));
+
+      expect(
+        screen.getByText(
+          'Se tramita online con Clave Fiscal o Mi Argentina y te llega por e-mail. Podés elegir recibirlo en 5 días hábiles o en 24 horas.',
+        ),
+      ).toBeInTheDocument();
+      const link = screen.getByRole('link', { name: 'Cómo sacarlo' });
+      expect(link).toHaveAttribute(
+        'href',
+        'https://www.argentina.gob.ar/justicia/reincidencia/antecedentespenales',
+      );
+      expect(link).toHaveAttribute('target', '_blank');
+      expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    });
+
+    it('país diferente de AR (trâmite é argentino) → NÃO mostra a ajuda, mesmo com antecedentes pendente', () => {
+      render(<PendingTasksCard missingFields={['doc_criminal_record']} profession="AT" country="BR" />);
+      expect(screen.queryByRole('button', { name: /¿No lo tenés\? Cómo sacarlo/i })).not.toBeInTheDocument();
+    });
+
+    it('país AR mas antecedentes NÃO pendente (só doc_resume_cv) → some a ajuda', () => {
+      render(<PendingTasksCard missingFields={['doc_resume_cv']} profession="CAREGIVER" country="AR" />);
+      expect(screen.queryByRole('button', { name: /¿No lo tenés\? Cómo sacarlo/i })).not.toBeInTheDocument();
+    });
+
+    it('token genérico worker_documents (não sabemos se é antecedentes) → some a ajuda mesmo em AR', () => {
+      render(<PendingTasksCard missingFields={['worker_documents']} profession="CAREGIVER" country="AR" />);
+      expect(screen.queryByRole('button', { name: /¿No lo tenés\? Cómo sacarlo/i })).not.toBeInTheDocument();
+    });
+
+    it('sem prop country (chamador não informou) → some a ajuda (fail-closed, não presume Argentina)', () => {
+      render(<PendingTasksCard missingFields={['doc_criminal_record']} profession="AT" />);
+      expect(screen.queryByRole('button', { name: /¿No lo tenés\? Cómo sacarlo/i })).not.toBeInTheDocument();
+    });
+
+    it('a contagem de linhas (pending-task-row) NÃO conta a ajuda — ela é parte da MESMA linha do antecedentes', () => {
+      render(<PendingTasksCard missingFields={['doc_criminal_record']} profession="AT" country="AR" />);
+      expect(screen.getAllByTestId('pending-task-row')).toHaveLength(1);
     });
   });
 });

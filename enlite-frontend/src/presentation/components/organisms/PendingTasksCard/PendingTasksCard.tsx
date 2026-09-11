@@ -6,6 +6,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { destinationFor, buildProfileUrl, TAB_ORDER, type TabId } from '@presentation/utils/incompleteFieldDestinations';
 import { requiredDocTypesFor } from '@presentation/utils/workerDocumentPolicy';
+import { AntecedentesHelpExpandable } from '@presentation/components/molecules/AntecedentesHelpExpandable';
 
 interface PendingTasksCardProps {
   /**
@@ -15,6 +16,13 @@ interface PendingTasksCardProps {
    */
   missingFields: string[];
   profession?: string | null;
+  /**
+   * País da worker (`WorkerProgressResponse.country`, Fase 3/DD4) — só
+   * gateia a ajuda "¿No lo tenés? Cómo sacarlo" do antecedentes, que é um
+   * trâmite ARGENTINO (F12). Sem esta prop (chamador não informou), a ajuda
+   * fica ESCONDIDA — fail-closed, nunca presume Argentina.
+   */
+  country?: string | null;
   className?: string;
 }
 
@@ -26,6 +34,8 @@ interface TaskRow {
   label: string;
   actionLabel: string;
   url: string;
+  /** Fase 3/DD4 — só `true` na linha do `doc_criminal_record`, país AR. */
+  showAntecedentesHelp?: boolean;
 }
 
 /**
@@ -60,6 +70,7 @@ interface TaskRow {
 export function PendingTasksCard({
   missingFields,
   profession,
+  country,
   className = '',
 }: PendingTasksCardProps): JSX.Element | null {
   const { t } = useTranslation();
@@ -121,6 +132,11 @@ export function PendingTasksCard({
         label: docLabel(token),
         actionLabel: t('profile.pendingTasks.uploadAction'),
         url: buildProfileUrl(destinationFor(token)),
+        // Fase 3/DD4: só o item ESPECÍFICO `doc_criminal_record` (nunca o
+        // fallback genérico — ali não dá pra saber se antecedentes é o que
+        // falta), e só Argentina (F12: trâmite argentino). `country` sem
+        // valor = ajuda escondida (fail-closed).
+        showAntecedentesHelp: token === 'doc_criminal_record' && country === 'AR',
       }));
 
   const rows: TaskRow[] = [...registrationRows, ...documentRows];
@@ -153,24 +169,26 @@ export function PendingTasksCard({
 
       <div className="flex flex-col gap-3" data-testid="pending-tasks-rows" data-clarity-mask="True">
         {rows.map((row) => (
-          <div
-            key={row.key}
-            data-testid="pending-task-row"
-            className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2"
-          >
-            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-            <Text as="span" size="sm" weight="medium" color="inherit" className="text-amber-900 flex-1">
-              {row.label}
-            </Text>
-            <Button
-              type="button"
-              variant="primary"
-              size="sm"
-              aria-label={`${row.actionLabel} — ${row.label}`}
-              onClick={() => navigate(row.url)}
+          <div key={row.key}>
+            <div
+              data-testid="pending-task-row"
+              className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2"
             >
-              {row.actionLabel}
-            </Button>
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+              <Text as="span" size="sm" weight="medium" color="inherit" className="text-amber-900 flex-1">
+                {row.label}
+              </Text>
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                aria-label={`${row.actionLabel} — ${row.label}`}
+                onClick={() => navigate(row.url)}
+              >
+                {row.actionLabel}
+              </Button>
+            </div>
+            {row.showAntecedentesHelp && <AntecedentesHelpExpandable className="mt-1 pl-1" />}
           </div>
         ))}
 

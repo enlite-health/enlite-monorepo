@@ -62,6 +62,7 @@ export const WorkerHome = (): JSX.Element => {
         <PendingTasksCard
           missingFields={missingFields as string[]}
           profession={workerData?.profession}
+          country={workerData?.country}
           className="mb-8"
         />
       )}
