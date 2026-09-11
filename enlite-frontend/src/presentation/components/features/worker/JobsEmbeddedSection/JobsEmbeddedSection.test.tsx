@@ -160,7 +160,12 @@ async function waitForLoaded(): Promise<void> {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  delete (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API;
+  // Default do SUÍTE é a fonte LEGADA (fetch), não a do produto (ver describe
+  // "fonte pública por padrão" abaixo) — a maioria destes testes existe pra
+  // cobrir o `fetch` legado deliberadamente, e usa o override de window
+  // exatamente como "quem precisa desligar" a API pública seria esperado a
+  // fazer. Só os testes que chamam `mockGetPublicJobs` setam `= true`.
+  (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = false;
   mockUseAuth.mockReturnValue({
     isAuthenticated: true,
     isLoading: false,
@@ -175,6 +180,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 // ── Estados de carregamento (fetch legado /api/jobs) ─────────────────────────
@@ -263,6 +269,50 @@ describe('JobsEmbeddedSection — fonte pública de vagas', () => {
     mockGetPublicJobs.mockResolvedValue([publicListing({ case_number: 824, vacancy_number: 5012 })]);
     render(<JobsEmbeddedSection isRegistrationComplete />);
     await waitFor(() => expect(screen.getByText('824-5012')).toBeInTheDocument());
+  });
+});
+
+// ── PADRÃO da fonte de vagas (achado do gate 12/09): a home liga a API ────────
+// pública por padrão — sem override de window nem env definida, a fonte é a
+// API pública, não mais o scraper legado. `window.__USE_PUBLIC_JOBS_API` e
+// `VITE_USE_PUBLIC_JOBS_API` continuam existindo como override pra quem
+// precisar desligar (ex.: stage, cuja massa sintética não aparece no feed
+// público — ver frontend-stg.yml). Prioridade: window > env > default (true).
+
+describe('JobsEmbeddedSection — padrão da fonte de vagas (API pública ligada por padrão)', () => {
+  it('sem override de window E sem env definida → usa a API pública por padrão', async () => {
+    delete (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API;
+    mockGetPublicJobs.mockResolvedValue([publicListing()]);
+    render(<JobsEmbeddedSection isRegistrationComplete />);
+    await waitFor(() => expect(screen.getByText('900-1')).toBeInTheDocument());
+    expect(mockGetPublicJobs).toHaveBeenCalled();
+  });
+
+  it('VITE_USE_PUBLIC_JOBS_API="false" (sem override de window) → desliga, usa o fetch legado', async () => {
+    delete (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API;
+    vi.stubEnv('VITE_USE_PUBLIC_JOBS_API', 'false');
+    mockFetchOnce(legacyResponse());
+    render(<JobsEmbeddedSection isRegistrationComplete />);
+    await waitForLoaded();
+    expect(screen.getByText('736')).toBeInTheDocument();
+    expect(mockGetPublicJobs).not.toHaveBeenCalled();
+  });
+
+  it('window.__USE_PUBLIC_JOBS_API=false desliga mesmo com env indefinida (override sempre vence)', async () => {
+    (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = false;
+    mockFetchOnce(legacyResponse());
+    render(<JobsEmbeddedSection isRegistrationComplete />);
+    await waitForLoaded();
+    expect(screen.getByText('736')).toBeInTheDocument();
+    expect(mockGetPublicJobs).not.toHaveBeenCalled();
+  });
+
+  it('window.__USE_PUBLIC_JOBS_API=true liga mesmo com VITE_USE_PUBLIC_JOBS_API="false" (override sempre vence)', async () => {
+    (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
+    vi.stubEnv('VITE_USE_PUBLIC_JOBS_API', 'false');
+    mockGetPublicJobs.mockResolvedValue([publicListing()]);
+    render(<JobsEmbeddedSection isRegistrationComplete />);
+    await waitFor(() => expect(screen.getByText('900-1')).toBeInTheDocument());
   });
 });
 
