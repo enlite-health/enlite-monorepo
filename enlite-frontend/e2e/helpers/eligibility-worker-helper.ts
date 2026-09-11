@@ -239,12 +239,19 @@ function insertDocuments(
  * Inserts a minimal job_posting (with patient + address) for postularse tests.
  * The vacancy has is_draft=false and status='SEARCHING' so track-channel does
  * not fail before reaching the eligibility gate.
+ *
+ * `includeInPublicListing`: also sets `social_short_links->'site'` — the LIST
+ * endpoint (GET /api/public/v1/jobs, JobPostingARRepository.findActivePublic)
+ * filters on `social_short_links ? 'site'` (PublicJobsQueryBuilder.ts), which
+ * a bare insertMinimalVacancy() does NOT satisfy (the vacancy is still
+ * fetchable by id via GET /api/vacancies/:id, just invisible in the list).
+ *
  * Returns the job posting UUID.
  */
 export function insertMinimalVacancy(
-  opts: { talentumWhatsappUrl?: string } = {},
+  opts: { talentumWhatsappUrl?: string; includeInPublicListing?: boolean } = {},
 ): string {
-  const { talentumWhatsappUrl = 'https://wa.me/5491100000001' } = opts;
+  const { talentumWhatsappUrl = 'https://wa.me/5491100000001', includeInPublicListing = false } = opts;
 
   const clickupTaskId = `E2E-POS-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   runSQL(`
@@ -282,7 +289,7 @@ export function insertMinimalVacancy(
       patient_id, patient_address_id,
       required_professions, providers_needed,
       status, is_draft, country,
-      talentum_whatsapp_url,
+      talentum_whatsapp_url, social_short_links,
       created_at, updated_at
     ) VALUES (
       nextval('job_postings_vacancy_number_seq'), ${caseNum},
@@ -291,6 +298,7 @@ export function insertMinimalVacancy(
       ARRAY['AT']::varchar[], 1,
       'SEARCHING', false, 'AR',
       '${talentumWhatsappUrl}',
+      ${includeInPublicListing ? `'{"site": "https://jobs.enlite.health/es/vagas/${caseNum}/"}'::jsonb` : 'NULL'},
       NOW(), NOW()
     )
   `);
