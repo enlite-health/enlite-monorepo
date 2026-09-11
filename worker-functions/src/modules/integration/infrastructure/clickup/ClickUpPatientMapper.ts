@@ -393,6 +393,10 @@ export class ClickUpPatientMapper {
       hasCud:             this.parseClickUpBoolean(cf['Posee CUD']),
       hasConsent:         this.parseClickUpBoolean(cf['Consentimiento']),
       hasJudicialProtection: this.parseClickUpBoolean(cf['Amparo Judicial']),
+      // ⚠️ FIXO — a lista "Estado de Pacientes" só tem paciente argentino, e nenhum campo do
+      // card indica país/cidade fora da AR de forma confiável. Sem sinal para guardar contra:
+      // quem opera scripts/import-patients-from-clickup.ts é responsável por confirmar que o
+      // card é de paciente na AR ANTES de `--apply` (documentado no cabeçalho do script).
       country:            'AR',
 
       // Clinical
