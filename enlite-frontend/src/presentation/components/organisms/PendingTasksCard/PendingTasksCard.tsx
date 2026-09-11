@@ -4,8 +4,9 @@ import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { destinationFor, buildProfileUrl, TAB_ORDER, type TabId } from '@presentation/utils/incompleteFieldDestinations';
+import { destinationFor, buildProfileUrl } from '@presentation/utils/incompleteFieldDestinations';
 import { requiredDocTypesFor } from '@presentation/utils/workerDocumentPolicy';
+import { buildPendingRows, REGISTRATION_TAB_ORDER, type PendingRow } from '@presentation/utils/pendingRows';
 import { AntecedentesHelpExpandable } from '@presentation/components/molecules/AntecedentesHelpExpandable';
 
 interface PendingTasksCardProps {
@@ -25,9 +26,6 @@ interface PendingTasksCardProps {
   country?: string | null;
   className?: string;
 }
-
-/** Ordem de registro (DD2): `TAB_ORDER` sem 'documents' — general → address → availability. */
-const REGISTRATION_TAB_ORDER: readonly TabId[] = TAB_ORDER.filter((tab) => tab !== 'documents');
 
 interface TaskRow {
   key: string;
@@ -73,6 +71,15 @@ interface TaskRow {
  * desta casa (`tailwind.config.js`) — 1,96:1 sobre branco, abaixo do
  * mínimo WCAG AA (4,5:1). `secondary` (`gray-800` = `#737373`, opaco,
  * 4,74:1) resolve sem pesar visualmente o texto de apoio.
+ *
+ * Fase 4/DD5: a montagem das linhas saiu daqui pra `buildPendingRows`
+ * (`presentation/utils/pendingRows.ts`) — função PURA, sem `t()`/JSX —
+ * porque o rótulo do botão "Postularse" no card da vaga
+ * (`JobsEmbeddedSection`) precisa do MESMO N que esta lista mostra.
+ * Correção b do orquestrador (11/09): sem essa extração, o botão e a
+ * lista contavam cada um por conta própria — a mesma classe de bug que os
+ * gates das fases 2/3 encontraram AQUI DENTRO (entre o título e o "X de
+ * Y"), agora entre dois COMPONENTES.
  */
 export function PendingTasksCard({
   missingFields,
@@ -89,71 +96,58 @@ export function PendingTasksCard({
 
   if (missingFields.length === 0) return null;
 
-  const registrationTokens = missingFields.filter((token) => destinationFor(token).tab !== 'documents');
-  const documentsTokens = missingFields.filter((token) => destinationFor(token).tab === 'documents');
+  const pendingRows: PendingRow[] = buildPendingRows(missingFields, profession);
 
-  const pendingTabsSet = new Set<TabId>(registrationTokens.map((token) => destinationFor(token).tab));
-
-  const registrationRows: TaskRow[] = REGISTRATION_TAB_ORDER.filter((tab) => pendingTabsSet.has(tab)).map(
-    (tab) => ({
-      key: tab,
-      label: t(`profile.tabs.${tab}`),
-      actionLabel: t('profile.pendingTasks.completeAction'),
-      url: buildProfileUrl({ tab }),
-    }),
+  const pendingTabsSet = new Set(
+    pendingRows.filter((row) => row.kind === 'registration').map((row) => row.tab!),
+  );
+  const hasGenericDocToken = pendingRows.some((row) => row.kind === 'document-generic');
+  const pendingDocTokensSet = new Set(
+    pendingRows.filter((row) => row.kind === 'document').map((row) => row.token!),
   );
 
-  // Documentos obrigatórios pela política de PARIDADE COM O PORTÃO — NULL/''
-  // vira AT (4 docs), igual ao SQL gate. Ordem já é DNI → antecedentes → CV
-  // → certificado AT (mesma ordem que o backend expande).
-  const requiredDocTokens = requiredDocTypesFor(profession).map((docType) => `doc_${docType}`);
-
-  // Token cru (ex.: `worker_documents`) na aba documents que NÃO é `doc_*`:
-  // a expansão por documento da Fase 1 falhou/não rodou — não dá pra saber
-  // QUAL documento falta, então uma linha genérica, e nenhum doc_* entra
-  // no recolhido como concluído (não sabemos que está feito).
-  const hasGenericDocToken = documentsTokens.some((token) => !token.startsWith('doc_'));
-
-  const documentRows: TaskRow[] = hasGenericDocToken
-    ? [
-        {
-          key: 'documents-generic',
-          label: t('profile.tabs.documents'),
-          actionLabel: t('profile.pendingTasks.uploadAction'),
-          url: buildProfileUrl({ tab: 'documents' }),
-        },
-      ]
-    : [
-        // Exigidos pela política (paridade com o portão) que o servidor
-        // também está pedindo, na ordem da política — depois, qualquer
-        // token EXTRA que o servidor pediu e a política local não conhece
-        // (achado do gate 11/09, caso E: CAREGIVER com doc_resume_cv
-        // pendente). F1/DD1 — `missingFields` é a fonte única; um doc_*
-        // que o servidor marcou como pendente NUNCA pode desaparecer da
-        // lista só porque a política local do frontend não o exige para
-        // esta profissão.
-        ...requiredDocTokens.filter((token) => documentsTokens.includes(token)),
-        ...documentsTokens.filter((token) => !requiredDocTokens.includes(token)),
-      ].map((token) => ({
-        key: token,
-        label: docLabel(token),
+  const rows: TaskRow[] = pendingRows.map((row) => {
+    if (row.kind === 'registration') {
+      return {
+        key: row.key,
+        label: t(`profile.tabs.${row.tab}`),
+        actionLabel: t('profile.pendingTasks.completeAction'),
+        url: buildProfileUrl({ tab: row.tab! }),
+      };
+    }
+    if (row.kind === 'document-generic') {
+      return {
+        key: row.key,
+        label: t('profile.tabs.documents'),
         actionLabel: t('profile.pendingTasks.uploadAction'),
-        url: buildProfileUrl(destinationFor(token)),
-        // Fase 3/DD4: só o item ESPECÍFICO `doc_criminal_record` (nunca o
-        // fallback genérico — ali não dá pra saber se antecedentes é o que
-        // falta), e só Argentina (F12: trâmite argentino). `country` sem
-        // valor = ajuda escondida (fail-closed).
-        showAntecedentesHelp: token === 'doc_criminal_record' && country === 'AR',
-      }));
+        url: buildProfileUrl({ tab: 'documents' }),
+      };
+    }
+    // row.kind === 'document'
+    return {
+      key: row.key,
+      label: docLabel(row.token!),
+      actionLabel: t('profile.pendingTasks.uploadAction'),
+      url: buildProfileUrl(destinationFor(row.token!)),
+      // Fase 3/DD4: só o item ESPECÍFICO `doc_criminal_record` (nunca o
+      // fallback genérico — ali não dá pra saber se antecedentes é o que
+      // falta), e só Argentina (F12: trâmite argentino). `country` sem
+      // valor = ajuda escondida (fail-closed).
+      showAntecedentesHelp: row.token === 'doc_criminal_record' && country === 'AR',
+    };
+  });
 
-  const rows: TaskRow[] = [...registrationRows, ...documentRows];
+  // Documentos obrigatórios pela política de PARIDADE COM O PORTÃO — NULL/''
+  // vira AT (4 docs), igual ao SQL gate — usados só pra saber quais estão
+  // COMPLETOS (o pendente já veio pronto de `buildPendingRows`).
+  const requiredDocTokens = requiredDocTypesFor(profession).map((docType) => `doc_${docType}`);
 
   const completedRegistrationLabels = REGISTRATION_TAB_ORDER.filter((tab) => !pendingTabsSet.has(tab)).map(
     (tab) => t(`profile.tabs.${tab}`),
   );
   const completedDocLabels = hasGenericDocToken
     ? []
-    : requiredDocTokens.filter((token) => !documentsTokens.includes(token)).map(docLabel);
+    : requiredDocTokens.filter((token) => !pendingDocTokensSet.has(token)).map(docLabel);
   const completedLabels = [...completedRegistrationLabels, ...completedDocLabels];
 
   // N (título) e Y (denominador) usam a MESMA unidade — a linha renderizada
