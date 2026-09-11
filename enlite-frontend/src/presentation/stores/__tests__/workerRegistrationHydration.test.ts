@@ -45,6 +45,7 @@ const local = () => ({
   preferredTypes: ['psicosis'],
   preferredAgeRange: ['adults'],
   profilePhoto: null as string | null,
+  country: 'AR',
 });
 
 describe('hidratação: precedência servidor × local', () => {
@@ -116,6 +117,23 @@ describe('hidratação: precedência servidor × local', () => {
         { authoritative: true },
       );
       expect(merged.preferredAgeRange).toEqual(['elderly']);
+    });
+  });
+
+  describe('country — Fase 3/DD4 (gateia a ajuda de antecedentes, trâmite argentino)', () => {
+    // `country` é atributo de CONTA (não editável no formulário de registro,
+    // sem campo próprio na tela) — o servidor é sempre a fonte, nos dois
+    // caminhos (carregamento e pós-escrita), igual a `email`.
+    it('carregamento de tela: country do servidor vence, mesmo com local diferente', () => {
+      const merged = mergeGeneralInfo(server({ country: 'AR' }), { ...local(), country: 'BR' });
+      expect(merged.country).toBe('AR');
+    });
+
+    it('pós-escrita (authoritative): country do servidor também vence', () => {
+      const merged = mergeGeneralInfo(server({ country: 'AR' }), { ...local(), country: 'BR' }, {
+        authoritative: true,
+      });
+      expect(merged.country).toBe('AR');
     });
   });
 
