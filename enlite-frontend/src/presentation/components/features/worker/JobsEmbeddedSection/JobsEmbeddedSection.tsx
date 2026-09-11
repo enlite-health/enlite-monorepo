@@ -326,6 +326,7 @@ export const JobsEmbeddedSection = ({
                     <button
                       onClick={() => handleWhatsAppClick(job)}
                       className="px-3 py-1.5 bg-[#075E54] text-white text-xs rounded hover:bg-[#054C44] transition-colors font-lexend font-medium"
+                      data-clarity-mask="True"
                     >
                       {applyLabel}
                     </button>

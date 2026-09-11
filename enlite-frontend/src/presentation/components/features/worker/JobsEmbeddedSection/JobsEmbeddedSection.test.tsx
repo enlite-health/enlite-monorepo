@@ -474,6 +474,16 @@ describe('JobsEmbeddedSection — rótulo dinâmico do Postularse (Fase 4, DD5)'
       expect(applyBtn).not.toHaveClass('hover:bg-[#128c7e]');
     });
   });
+
+  describe('data-clarity-mask (condição C12 do lex)', () => {
+    it('o botão Postularse ("Subí … para postularte") tem data-clarity-mask="True"', async () => {
+      mockFetchOnce(legacyResponse());
+      render(<JobsEmbeddedSection isRegistrationComplete={false} missingFields={['doc_criminal_record']} profession="AT" />);
+      await waitForLoaded();
+
+      expect(screen.getByRole('button', { name: 'jobs.applyLabel.document' })).toHaveAttribute('data-clarity-mask', 'True');
+    });
+  });
 });
 
 // ── Filtros e busca ───────────────────────────────────────────────────────────
