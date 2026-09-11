@@ -52,10 +52,17 @@ Quais caminhos podem criar/alterar uma `job_postings` row em prod, e quais escre
 
 ## Endereço do paciente (`patient_addresses`)
 
-### P8 — Webhook ClickUp paciente
+### P8 — Sync ClickUp paciente (HISTÓRICO — webhook removido 11/09/2026)
 
-- **Trigger:** ClickUp dispara webhook (taskCreated/taskUpdated).
-- **Endpoint:** `POST /api/webhooks/clickup/patient` → `ClickUpPatientWebhookController`.
+> ⚠️ O webhook `POST /api/webhooks/clickup/patient` e o reconciliador foram removidos em
+> 11/09/2026 (decisão do Gabriel: a plataforma é a fonte, sem sync automático). A carga do
+> ClickUp agora é só pontual/manual via `scripts/import-patients-from-clickup.ts`
+> (dry-run por padrão, grava só com `--apply`), que chama o MESMO motor
+> (`SyncPatientFromClickUpTaskUseCase`) descrito abaixo — a regra de versionamento de
+> endereço não mudou, só o gatilho deixou de ser automático.
+
+- **Trigger (antigo):** ClickUp disparava webhook (taskCreated/taskUpdated).
+- **Trigger (atual):** operador roda o script manual numa sessão.
 - **Persistência via `PatientService.upsertFromClickUp` → `PatientRelatedWriter.replacePatientAddresses`:**
   - Lê endereços ATIVOS do paciente (`archived_at IS NULL`).
   - Pra cada slot do ClickUp (1, 2, 3):
