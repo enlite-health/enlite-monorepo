@@ -5033,7 +5033,8 @@
         "doc_resume_cv": "Currículum vitae",
         "doc_identity_document": "Documento de identidad",
         "doc_criminal_record": "Antecedentes penales",
-        "doc_at_certificate": "Certificado de Acompañante Terapéutico"
+        "doc_at_certificate": "Certificado de Acompañante Terapéutico",
+        "worker_documents": "Documentos"
       },
       "bodyGeneric": "Su registro está incompleto. Lo redirigiremos a su perfil para completarlo.",
       "redirectNotice": "Lo redirigiremos a su perfil para que pueda completar los datos faltantes.",

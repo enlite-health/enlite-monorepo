@@ -111,6 +111,16 @@ describe('IncompleteRegistrationModal — navegação por item', () => {
     expect(mockOnClose).toHaveBeenCalledTimes(1);
   });
 
+  it('clicar em worker_documents (token cru do GET /workers/me, não expandido) navega para ?tab=documents (sem focus)', () => {
+    renderModal(['worker_documents']);
+
+    const item = screen.getByRole('button', { name: /worker_documents/i });
+    fireEvent.click(item);
+
+    expect(mockNavigate).toHaveBeenCalledWith('/worker/profile?tab=documents');
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
+  });
+
   it('clicar em worker_service_areas navega para ?tab=address (sem focus)', () => {
     renderModal(['worker_service_areas']);
 
@@ -152,6 +162,17 @@ describe('IncompleteRegistrationModal — botão "Completar registro"', () => {
 
     expect(mockNavigate).toHaveBeenCalledWith('/worker/profile?tab=general');
     expect(mockOnClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('IncompleteRegistrationModal — Clarity (LEX C3)', () => {
+  it('lista de pendências vem com data-clarity-mask="True" (sessão do Clarity não pode gravar o que falta)', () => {
+    renderModal(['phone', 'doc_resume_cv']);
+
+    const maskedList = screen.getByTestId('incomplete-modal-pending-list');
+    expect(maskedList).toHaveAttribute('data-clarity-mask', 'True');
+    // O item nomeado está DENTRO do contêiner mascarado, não fora dele.
+    expect(maskedList).toContainElement(screen.getByRole('button', { name: /phone/i }));
   });
 });
 

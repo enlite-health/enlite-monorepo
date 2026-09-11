@@ -4954,7 +4954,8 @@
         "doc_resume_cv": "Currículo",
         "doc_identity_document": "Documento de identidade",
         "doc_criminal_record": "Antecedentes penais",
-        "doc_at_certificate": "Certificado de Acompanhante Terapêutico"
+        "doc_at_certificate": "Certificado de Acompanhante Terapêutico",
+        "worker_documents": "Documentos"
       },
       "bodyGeneric": "Seu cadastro está incompleto. Vamos redirecioná-lo ao seu perfil para completá-lo.",
       "redirectNotice": "Você será redirecionado ao seu perfil para completar os dados faltantes.",
