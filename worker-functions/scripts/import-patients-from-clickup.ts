@@ -24,20 +24,34 @@
  * `country: 'AR'` errado, em silêncio.
  *
  * ── Pre-requisites ────────────────────────────────────────────────────────────
- *   - CLICKUP_API_TOKEN set in environment (Secret Manager em prod, sessão local em dev)
- *   - DATABASE_URL set (required with --apply, optional otherwise)
+ *   - CLICKUP_API_TOKEN e DATABASE_URL de produção vêm do Secret Manager, INJETADOS NA SESSÃO
+ *     por quem opera — NUNCA em `.env`. Este script não lê `.env` nem espera que alguém dê
+ *     `source` num arquivo local: o token/URL de prod não devem existir em disco.
+ *
+ * ── REGRAS DE OPERAÇÃO (decisão do Gabriel + parecer do lex, 11/09/2026) ──────
+ *   1. `--apply` SÓ é aceito junto de `--task-id` — carga em massa (lista inteira) NUNCA
+ *      grava (imposto em import-patients-from-clickup-flags.ts, não é só convenção).
+ *   2. SÓ CRIA paciente NOVO — nunca UPDATE. Se `clickup_task_id` já existe na plataforma,
+ *      `--apply` recusa antes de chamar o motor (import-patients-from-clickup-guard.ts).
+ *   3. Cada carga (`--apply --task-id <id>`) exige AUTORIZAÇÃO ESCRITA do Gabriel — não é
+ *      autoatendimento. Peça antes de rodar, não depois.
+ *   4. TODA carga (autorizada e executada) precisa de registro em
+ *      `docs/legal/registros/AAAA-MM-DD-carga-clickup.md`: data, task id, quem autorizou, quem
+ *      rodou, resultado (criado/recusado/erro) — SEM nome do paciente nem rótulo clínico
+ *      (esses ficam só na plataforma, nunca em doc).
+ *   5. NUNCA agendar — Cloud Scheduler, cron, CI ou qualquer automação. É carga PONTUAL, numa
+ *      sessão de terminal, por decisão explícita a cada vez.
  *
  * ── Usage ─────────────────────────────────────────────────────────────────────
- *   set -a && source worker-functions/.env && set +a
  *   cd worker-functions
  *   npx ts-node -r tsconfig-paths/register scripts/import-patients-from-clickup.ts --limit 3
- *   npx ts-node -r tsconfig-paths/register scripts/import-patients-from-clickup.ts --apply
- *   npx ts-node -r tsconfig-paths/register scripts/import-patients-from-clickup.ts --apply --status busqueda --limit 10
+ *   npx ts-node -r tsconfig-paths/register scripts/import-patients-from-clickup.ts --task-id 86abq2pzg
  *   npx ts-node -r tsconfig-paths/register scripts/import-patients-from-clickup.ts --task-id 86abq2pzg --apply
  *
  * ── Flags ─────────────────────────────────────────────────────────────────────
  *   (nenhuma)          dry-run (DEFAULT) — loga o que aconteceria; nenhuma escrita no DB
- *   --apply            grava no banco — só sai do dry-run se `--dry-run` NÃO também foi passado
+ *   --apply            grava no banco — SÓ junto de `--task-id` (regra 1 acima); e só CRIA
+ *                      (regra 2) — recusa se o paciente já existir na plataforma
  *   --dry-run          força dry-run — VENCE `--apply` sempre (fail-safe; nunca há combinação
  *                      de flags que grave se `--dry-run` foi digitado)
  *   --task-id <id>     carga pontual de UMA task específica (GET direto, sem paginar a lista) —
@@ -47,7 +61,8 @@
  *   --limit N          processa só as N primeiras tasks (default: todas). N não-numérico ou
  *                      ≤ 0 é ERRO — nunca "sem limite" por omissão.
  *   --status X,Y,Z     filtra tasks por status.status (comma-separated)
- *   --verbose          imprime o PatientServiceUpsertInput inteiro por task
+ *   --verbose          imprime nome de campo + presença/tamanho do payload mapeado por task —
+ *                      NUNCA o valor (C1 do parecer do lex: stdout roda dentro de sessão do Claude)
  *
  * ⚠️ Chat IDs de WhatsApp (Chat ID Familia/Equipo → `patient_chat_ids`) só são espelhados com
  * `PATIENT_CHAT_IDS_CLICKUP_SYNC_ENABLED=true` no ambiente — sem a flag esse passo é um NO-OP
