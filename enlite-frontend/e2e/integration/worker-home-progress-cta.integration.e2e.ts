@@ -81,7 +81,7 @@ test.describe('@integration Home — lista de tarefas (Fase 2, DD2)', () => {
 
     const card = page.locator('[data-testid="pending-tasks-card"]');
     await expect(card).toBeVisible({ timeout: 20_000 });
-    await expect(card.getByText('Te falta 2 pasos para postularte')).toBeVisible();
+    await expect(card.getByText('Te faltan 2 pasos para postularte')).toBeVisible();
 
     const registrationRow = card.getByText('Información General');
     const documentRow = card.getByText('Documento de identidad');
@@ -116,8 +116,18 @@ test.describe('@integration Home — lista de tarefas (Fase 2, DD2)', () => {
     await expect(page.locator('[data-testid="pending-tasks-card"]')).toHaveCount(0);
     // Prova visual de que NADA (nenhuma lista de tarefas) renderiza acima da
     // seção de vagas quando o cadastro está completo.
+    //
+    // Achado do gate (11/09): screenshotar `#jobs-section` inteira incluía a
+    // lista de VAGAS de verdade (dado externo, não-determinístico — a
+    // baseline tinha congelado "0 vacantes", quebrando sempre que houvesse
+    // vaga real). O que este teste precisa provar é só a área ESTÁVEL —
+    // cabeçalho + filtros + ausência do card de tarefas acima — então a
+    // lista de vagas em si (`jobs-list`) é mascarada, não removida do
+    // screenshot: ela continua visível pra quem revisar, só não entra na
+    // comparação de pixels.
     await expect(jobsSection).toHaveScreenshot('home-no-progress-card-jobs-section.png', {
       maxDiffPixels: 300,
+      mask: [page.getByTestId('jobs-list')],
     });
   });
 });

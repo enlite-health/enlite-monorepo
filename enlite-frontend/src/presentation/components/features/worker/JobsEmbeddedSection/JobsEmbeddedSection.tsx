@@ -266,7 +266,10 @@ export const JobsEmbeddedSection = ({
       </div>
 
       {/* Jobs List */}
-      <div className="flex-1 overflow-y-auto px-4 md:px-6 pb-6 space-y-3 max-h-[50vh] md:max-h-[600px]">
+      <div
+        data-testid="jobs-list"
+        className="flex-1 overflow-y-auto px-4 md:px-6 pb-6 space-y-3 max-h-[50vh] md:max-h-[600px]"
+      >
         {filteredJobs.length === 0 ? (
           <div className="text-center py-8 text-[#737373] font-lexend text-[14px] font-medium">
             {t('jobs.noResults')}
