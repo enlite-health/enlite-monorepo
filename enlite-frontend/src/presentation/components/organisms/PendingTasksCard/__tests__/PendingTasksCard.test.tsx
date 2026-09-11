@@ -238,5 +238,24 @@ describe('PendingTasksCard', () => {
       expect(screen.getByText('Ya completaste 4 de 5')).toBeInTheDocument();
       expect(screen.getAllByTestId('pending-task-row')).toHaveLength(1);
     });
+
+    it('caso E: CAREGIVER com doc_resume_cv pendente (o servidor pede um doc que a política LOCAL de Cuidador não exige) → 1 linha "Currículum vitae", NÃO some da tela', () => {
+      // Re-gate 11/09: `documentRows` (ramo não-genérico) fazia
+      // `requiredDocTokens.filter((t) => documentsTokens.includes(t))` —
+      // isso filtra a linha pela política LOCAL (requiredDocTypesFor), que
+      // pra CAREGIVER só conhece identity_document/criminal_record. Um
+      // doc_resume_cv pendente vindo do SERVIDOR (fn_worker_missing_fields,
+      // fonte única, F1/DD1) desaparecia da tela: 0 linhas, "Te faltan 0
+      // pasos", "5 de 5" — a home mentia que o cadastro estava completo.
+      render(<PendingTasksCard missingFields={['doc_resume_cv']} profession="CAREGIVER" />);
+      expect(screen.getByText('Te falta 1 paso para postularte')).toBeInTheDocument();
+      expect(screen.getByText('Currículum vitae')).toBeInTheDocument();
+      expect(screen.getAllByTestId('pending-task-row')).toHaveLength(1);
+      // Y = linhas + concluídos, nunca um total fixo que ignora o extra do
+      // servidor: 1 pendente (doc_resume_cv) + 5 concluídos (3 registro +
+      // os 2 docs que a política de Cuidador conhece, DNI e antecedentes,
+      // ambos ausentes de missingFields) = 6.
+      expect(screen.getByText('Ya completaste 5 de 6')).toBeInTheDocument();
+    });
   });
 });
