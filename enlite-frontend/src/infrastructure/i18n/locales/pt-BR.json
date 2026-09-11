@@ -4320,6 +4320,7 @@
     "errorModal": {
       "title": "Não conseguimos verificar seu cadastro",
       "body": "Não conseguimos confirmar que seu cadastro está completo. Por segurança, não te enviamos ao pré-screening do WhatsApp. Complete seu cadastro ou tente novamente.",
+      "bodyHome": "Não conseguimos verificar seu cadastro neste momento. Tente novamente em alguns minutos.",
       "retry": "Tentar novamente",
       "complete": "Completar cadastro",
       "cancel": "Fechar"

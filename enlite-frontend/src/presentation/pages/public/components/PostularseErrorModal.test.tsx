@@ -51,6 +51,19 @@ describe('PostularseErrorModal — onClose', () => {
   });
 });
 
+describe('PostularseErrorModal — body customizado (opcional, D1 rodada 5)', () => {
+  it('sem prop `body` → usa o texto padrão (publicVacancy.errorModal.body)', () => {
+    render(<PostularseErrorModal onClose={vi.fn()} />);
+    expect(screen.getByText('publicVacancy.errorModal.body')).toBeInTheDocument();
+  });
+
+  it('com prop `body` → usa o texto CUSTOM, não o padrão (home passa um texto próprio, sem CTA embutido)', () => {
+    render(<PostularseErrorModal onClose={vi.fn()} body="Texto próprio da home." />);
+    expect(screen.getByText('Texto próprio da home.')).toBeInTheDocument();
+    expect(screen.queryByText('publicVacancy.errorModal.body')).not.toBeInTheDocument();
+  });
+});
+
 describe('PostularseErrorModal — onRetry (opcional)', () => {
   it('omitido (uso na home) → botão "Reintentar" NÃO renderiza', () => {
     render(<PostularseErrorModal onClose={vi.fn()} />);
