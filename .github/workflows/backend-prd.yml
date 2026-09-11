@@ -109,6 +109,7 @@ jobs:
             ENCUADRE_WEEKLY_CAPACITY=30
             ACCOUNT_LINK_ENABLED=true
             PATIENT_CHAT_LOOKUP_ENABLED=true
+            PATIENT_CHAT_IDS_CLICKUP_SYNC_ENABLED=true
             ACCOUNT_LINK_PUBLIC_BASE_URL=https://api.enlite.health
             ADMISSION_CALENDAR_ID_AR=c_2b45b5a65a8cc01085d06a6c7576067dc019716e4448d156482a9060bac97be4@group.calendar.google.com
             ADMISSION_CALENDAR_ID_BR=c_4269afcf3b1a3e84facf0215e4cab5aa48d6286ade21c3aed5240262e418bad8@group.calendar.google.com
