@@ -764,19 +764,39 @@ describe('LocalizacoesCard', () => {
     expect(screen.getByText('Localizações')).toBeInTheDocument();
   });
 
-  it('renders addressFormatted from fixture', () => {
+  it('Dirección em 2 linhas: linha 1 até a 1ª vírgula, linha 2 é a Zona quando existe (spec Localizaciones Fase 1, T3)', () => {
     render(<LocalizacoesCard addresses={patientDetailFixture.addresses} />);
-    expect(screen.getByText('Rua Augusta, 975 - São Paulo/SP')).toBeInTheDocument();
+    expect(screen.getByText('Rua Augusta')).toBeInTheDocument();
+    expect(screen.getByText('Bela Vista')).toBeInTheDocument();
   });
 
-  it('renders generic name "Endereço 1" since nameLabel is missing in schema', () => {
-    render(<LocalizacoesCard addresses={patientDetailFixture.addresses} />);
-    expect(screen.getByText('Endereço 1')).toBeInTheDocument();
+  it('sem Zona, a linha 2 cai no resto do endereço após a 1ª vírgula (sem sufixo de país)', () => {
+    render(<LocalizacoesCard addresses={[{ ...patientDetailFixture.addresses[0], neighborhood: null }]} />);
+    expect(screen.getByText('Rua Augusta')).toBeInTheDocument();
+    expect(screen.getByText('975 - São Paulo/SP')).toBeInTheDocument();
   });
 
-  it('renders complement as observation', () => {
+  it('sem vírgula nenhuma, a linha 1 é o texto inteiro', () => {
+    render(<LocalizacoesCard addresses={[{ ...patientDetailFixture.addresses[0], addressFormatted: 'Endereço sem vírgula', neighborhood: null }]} />);
+    expect(screen.getByText('Endereço sem vírgula')).toBeInTheDocument();
+  });
+
+  it('endereço sem addressFormatted e sem addressRaw mostra o alerta "Sem endereço cadastrado" (sem ação falsa)', () => {
+    render(<LocalizacoesCard addresses={[{ ...patientDetailFixture.addresses[0], addressFormatted: null, addressRaw: null }]} />);
+    expect(screen.getByTestId('address-missing-addr1')).toHaveTextContent('Sem endereço cadastrado');
+  });
+
+  it('Tipo mostra o rótulo do address_type; o selo Principal só aparece quando isPrimary', () => {
+    // `isPrimary` é 100% derivado de `address_type === 'primary'`
+    // (worker-functions/src/modules/case/infrastructure/PatientDetailQueryHelper.ts:228) —
+    // a fixture abaixo tem os dois juntos de propósito, reportado na LISTA como redundância
+    // visual (o rótulo do Tipo já diz "Principal"; o selo repete a mesma palavra).
     render(<LocalizacoesCard addresses={patientDetailFixture.addresses} />);
-    expect(screen.getByText('Torre A, Ap. 701')).toBeInTheDocument();
+    expect(screen.getByTestId('address-primary-badge-addr1')).toHaveTextContent('Principal');
+
+    const secundario = { ...patientDetailFixture.addresses[0], id: 'addr2', addressType: 'secondary', isPrimary: false };
+    render(<LocalizacoesCard addresses={[secundario]} />);
+    expect(screen.queryByTestId('address-primary-badge-addr2')).not.toBeInTheDocument();
   });
 
   it('renders empty state when no addresses', () => {
@@ -795,47 +815,32 @@ describe('LocalizacoesCard', () => {
     expect(screen.getByTestId('pad-address')).toBeInTheDocument(); // modo criar
   });
 
-  it('spec 012 US-B2: zona / corredor / acesso por endereço, dentro do bloco mascarado; lápis abre a edição da logística', () => {
+  it('spec 012 US-B2: a Zona aparece na 2ª linha da Dirección, dentro do bloco mascarado; lápis abre a edição da logística', () => {
     const onSaved = vi.fn();
     render(<LocalizacoesCard addresses={patientDetailFixture.addresses} patientId="p1" onSaved={onSaved} />);
-    expect(screen.getByText('Bela Vista')).toBeInTheDocument();
-    expect(screen.getByText('Centro')).toBeInTheDocument();
-    const access = screen.getByText('Portaria 24h, interfone 701');
-    expect(access.closest('[data-clarity-mask="True"]')).not.toBeNull();
+    const zona = screen.getByText('Bela Vista');
+    expect(zona.closest('[data-clarity-mask="True"]')).not.toBeNull();
     fireEvent.click(screen.getByTestId('edit-address-addr1'));
     expect(screen.getByTestId('patient-address-drawer')).toBeInTheDocument();
     expect(screen.getByTestId('pad-address-readonly')).toHaveTextContent('Rua Augusta, 975 - São Paulo/SP');
     expect(screen.getByTestId('pad-access')).toHaveValue('Portaria 24h, interfone 701');
   });
 
-  it('sem patientId não há coluna de edição; endereço sem logística mostra —', () => {
+  it('sem patientId não há coluna de edição', () => {
     render(<LocalizacoesCard addresses={[{ ...patientDetailFixture.addresses[0], neighborhood: null, logisticsCorridor: null, accessNotes: null }]} />);
     expect(screen.queryByTestId('edit-address-addr1')).not.toBeInTheDocument();
-    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(3);
   });
 
-  it('renders multiple addresses with sequential generic names', () => {
-    const many = [
-      ...patientDetailFixture.addresses,
-      {
-        id: 'addr2',
-        addressType: 'secondary',
-        addressFormatted: 'Rua B, 10, SP, SP',
-        addressRaw: null,
-        complement: null,
-        displayOrder: 2,
-        lat: null,
-        lng: null,
-        isPrimary: false,
-        neighborhood: null,
-        logisticsCorridor: null,
-        accessNotes: null,
-        country: 'BR',
-      },
-    ];
-    render(<LocalizacoesCard addresses={many} />);
-    expect(screen.getByText('Endereço 1')).toBeInTheDocument();
-    expect(screen.getByText('Endereço 2')).toBeInTheDocument();
+  it('ordena o endereço Principal primeiro, mantendo a ordem relativa dos demais', () => {
+    const secundario = {
+      id: 'addr2', addressType: 'secondary', addressFormatted: 'Rua B, 10, SP, SP', addressRaw: null,
+      complement: null, displayOrder: 0, lat: null, lng: null, isPrimary: false,
+      neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'BR',
+    };
+    render(<LocalizacoesCard addresses={[secundario, patientDetailFixture.addresses[0]]} />);
+    const linhas = screen.getAllByRole('row').slice(1); // pula o cabeçalho
+    expect(linhas[0]).toHaveTextContent('Rua Augusta');
+    expect(linhas[1]).toHaveTextContent('Rua B');
   });
 });
 
@@ -881,23 +886,24 @@ describe('EquipeTratanteCard — lê o contrato da API (A2, lex C2.1/C2.2)', () 
 describe('LocalizacoesCard — lê o contrato da API (A2, lex C2.1)', () => {
   const base = { id: 'a1', addressType: 'primary', complement: 'Piso 2', displayOrder: 1, lat: -34.6, lng: -58.38, isPrimary: true, neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'AR' };
 
-  it('renderiza addressFormatted (`fullAddress` nunca existiu na API)', () => {
+  it('renderiza addressFormatted (`fullAddress` nunca existiu na API) — linha 1 até a 1ª vírgula', () => {
     render(<LocalizacoesCard addresses={[{ ...base, addressFormatted: 'Av. Contrato 123, CABA, AR', addressRaw: 'Av. Contrato 123' }]} />);
-    expect(screen.getByText('Av. Contrato 123, CABA, AR')).toBeInTheDocument();
+    expect(screen.getByText('Av. Contrato 123')).toBeInTheDocument();
+    expect(screen.getByText('CABA, AR')).toBeInTheDocument();
   });
 
-  it('cai em addressRaw quando o formatado é nulo, e em "—" quando os dois são', () => {
+  it('cai em addressRaw quando o formatado é nulo, e no alerta "Sem endereço cadastrado" quando os dois são', () => {
     render(<LocalizacoesCard addresses={[
       { ...base, id: 'a2', addressFormatted: null, addressRaw: 'Calle cruda 9' },
       { ...base, id: 'a3', addressFormatted: null, addressRaw: null, complement: null },
     ]} />);
     expect(screen.getByText('Calle cruda 9')).toBeInTheDocument();
-    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByTestId('address-missing-a3')).toHaveTextContent('Sem endereço cadastrado');
   });
 
   it('o bloco de endereços leva data-clarity-mask="True" (rua é texto: sobe em claro sem isto)', () => {
     render(<LocalizacoesCard addresses={[{ ...base, addressFormatted: 'Av. Contrato 123, CABA, AR', addressRaw: null }]} />);
-    expect(screen.getByText('Av. Contrato 123, CABA, AR').closest('[data-clarity-mask="True"]')).not.toBeNull();
+    expect(screen.getByText('Av. Contrato 123').closest('[data-clarity-mask="True"]')).not.toBeNull();
   });
 });
 

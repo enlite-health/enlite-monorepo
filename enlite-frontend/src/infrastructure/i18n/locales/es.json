@@ -3295,13 +3295,10 @@
         },
         "locationsCard": {
           "title": "Localizaciones",
-          "tableName": "Nombre",
+          "tableType": "Tipo",
           "tableAddress": "Dirección",
-          "tableNote": "Observación",
-          "addressGeneric": "Dirección {{index}}",
-          "tableZone": "Zona / Barrio",
-          "tableCorridor": "Corredor logístico",
-          "tableAccess": "Logística y acceso",
+          "primaryBadge": "Principal",
+          "noAddress": "Sin dirección cargada",
           "editAddress": "Editar"
         },
         "contractedServicesCard": {

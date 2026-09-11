@@ -15,6 +15,7 @@ import { ActionButton } from '@presentation/components/features/access';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import type { PatientAddressDetail } from '@domain/entities/PatientDetail';
 import { PatientAddressDrawer } from './edit/PatientAddressDrawer';
+import { AvisoAmbar } from './edit/AvisoAmbar';
 import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 
 interface LocalizacoesCardProps {
@@ -27,12 +28,39 @@ interface LocalizacoesCardProps {
   focusRequest?: DrawerFocusRequest | null;
 }
 
+/** Sufixo de país que a linha 2 do endereço não repete (spec Localizaciones Fase 1, T3). */
+const TRAILING_COUNTRY = /,?\s*(Argentina|Brasil)\s*$/i;
+
+/**
+ * O que a coluna Dirección mostra em 2 linhas:
+ *  • linha 1 — `addressFormatted ?? addressRaw` até a primeira vírgula (o texto inteiro
+ *    quando não há vírgula nenhuma).
+ *  • linha 2 (texto secundário) — `neighborhood` quando existe; senão o resto do endereço
+ *    após a primeira vírgula, sem o sufixo de país; `null` quando não sobra nada.
+ * `null` nas duas quando o endereço não tem NEM formatado NEM cru (linha vira alerta).
+ */
+function splitAddressForDisplay(
+  addr: Pick<PatientAddressDetail, 'addressFormatted' | 'addressRaw' | 'neighborhood'>,
+): { line1: string | null; line2: string | null } {
+  const full = addr.addressFormatted ?? addr.addressRaw;
+  if (!full) return { line1: null, line2: null };
+
+  const commaIdx = full.indexOf(',');
+  if (commaIdx === -1) return { line1: full, line2: addr.neighborhood ?? null };
+
+  const line1 = full.slice(0, commaIdx).trim();
+  if (addr.neighborhood) return { line1, line2: addr.neighborhood };
+
+  const rest = full.slice(commaIdx + 1).trim().replace(TRAILING_COUNTRY, '').trim();
+  return { line1, line2: rest || null };
+}
+
 export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }: LocalizacoesCardProps) {
   const { t } = useTranslation();
   // D286: o lápis de cada endereço some para quem não tem a escrita do container (PATCH .../addresses/:id).
   const addressWriteGate = useActionGate('patient_address', 'write');
-  const rows = addresses ?? [];
-  const empty = '—';
+  // Principal primeiro, depois a ordem recebida (sort é estável — ordem relativa preservada).
+  const rows = [...(addresses ?? [])].sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary));
   // null = fechado · undefined = criar · objeto = editar a logística daquele endereço
   const [drawer, setDrawer] = useState<PatientAddressDetail | undefined | null>(null);
   useAutoOpenDrawer(focusRequest, 'ADDRESS', () => setDrawer(undefined));
@@ -66,50 +94,68 @@ export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }
       <div data-clarity-mask="True">
       <Table>
         <TableHeader>
-          <TableHead>{t('admin.patients.detail.locationsCard.tableName')}</TableHead>
+          <TableHead>{t('admin.patients.detail.locationsCard.tableType')}</TableHead>
           <TableHead>{t('admin.patients.detail.locationsCard.tableAddress')}</TableHead>
-          <TableHead>{t('admin.patients.detail.locationsCard.tableZone')}</TableHead>
-          <TableHead>{t('admin.patients.detail.locationsCard.tableCorridor')}</TableHead>
-          <TableHead>{t('admin.patients.detail.locationsCard.tableAccess')}</TableHead>
-          <TableHead>{t('admin.patients.detail.locationsCard.tableNote')}</TableHead>
           {patientId && <TableHead unwrapped><span className="sr-only">{t('admin.patients.detail.edit')}</span></TableHead>}
         </TableHeader>
         <TableBody>
           {rows.length === 0 ? (
             <TableRow>
-              <TableCell unwrapped colSpan={7} className="py-6 text-center">
+              <TableCell unwrapped colSpan={patientId ? 3 : 2} className="py-6 text-center">
                 <Text as="span" size="sm" color="secondary">
                   {t('admin.patients.detail.noData')}
                 </Text>
               </TableCell>
             </TableRow>
           ) : (
-            rows.map((addr, idx) => (
-              <TableRow key={addr.id} className="align-top">
-                <TableCell>
-                  {t('admin.patients.detail.locationsCard.addressGeneric', {
-                    index: idx + 1,
-                    defaultValue: `Endereço ${idx + 1}`,
-                  })}
-                </TableCell>
-                {/* Contrato real da API (spec 011 A2): formatado pelo geocoder, senão o cru do operador. */}
-                <TableCell>{addr.addressFormatted ?? addr.addressRaw ?? empty}</TableCell>
-                {/* Spec 012 US-B2: logística POR endereço — zona (`neighborhood`), corredor e acesso (texto livre, dentro da máscara). */}
-                <TableCell>{addr.neighborhood ?? empty}</TableCell>
-                <TableCell>{addr.logisticsCorridor ?? empty}</TableCell>
-                <TableCell className="text-gray-600 whitespace-pre-line">{addr.accessNotes ?? empty}</TableCell>
-                <TableCell className="text-gray-600">{addr.complement ?? empty}</TableCell>
-                {patientId && (
+            rows.map((addr) => {
+              const { line1, line2 } = splitAddressForDisplay(addr);
+              return (
+                <TableRow key={addr.id} className="align-top">
                   <TableCell unwrapped>
-                    {addressWriteGate.allowed && (
-                      <button type="button" onClick={() => setDrawer(addr)} aria-label={t('admin.patients.detail.locationsCard.editAddress')} className="text-slate-400 hover:text-primary transition-colors p-1 rounded" data-testid={`edit-address-${addr.id}`}>
-                        <Pencil className="w-4 h-4" />
-                      </button>
+                    <div className="flex items-center gap-2 px-3 py-2">
+                      <Text as="span" size="sm" color="inherit">
+                        {t(`admin.patients.detail.addressDrawer.type_${addr.addressType}`, addr.addressType)}
+                      </Text>
+                      {addr.isPrimary && (
+                        <span
+                          className="shrink-0 bg-primary/10 text-primary px-1.5 py-0.5 rounded-full"
+                          data-testid={`address-primary-badge-${addr.id}`}
+                        >
+                          <Text as="span" size="2xs" weight="medium" color="inherit">
+                            {t('admin.patients.detail.locationsCard.primaryBadge')}
+                          </Text>
+                        </span>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell unwrapped>
+                    {line1 ? (
+                      <div className="flex flex-col px-3 py-2">
+                        <Text as="span" size="sm" color="inherit">{line1}</Text>
+                        {line2 && <Text as="span" size="xs" color="secondary">{line2}</Text>}
+                      </div>
+                    ) : (
+                      <div className="px-3 py-2">
+                        <AvisoAmbar testId={`address-missing-${addr.id}`}>
+                          {t('admin.patients.detail.locationsCard.noAddress')}
+                        </AvisoAmbar>
+                      </div>
                     )}
                   </TableCell>
-                )}
-              </TableRow>
-            ))
+                  {patientId && (
+                    <TableCell unwrapped>
+                      {/* D286: PATCH /patients/:id/addresses/:addressId → patient_address:write. */}
+                      {addressWriteGate.allowed && (
+                        <button type="button" onClick={() => setDrawer(addr)} aria-label={t('admin.patients.detail.locationsCard.editAddress')} className="text-slate-400 hover:text-primary transition-colors p-1 rounded" data-testid={`edit-address-${addr.id}`}>
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      )}
+                    </TableCell>
+                  )}
+                </TableRow>
+              );
+            })
           )}
         </TableBody>
       </Table>
