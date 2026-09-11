@@ -288,7 +288,12 @@ describe('JobsEmbeddedSection — cadastro incompleto (bug #2)', () => {
     render(<JobsEmbeddedSection isRegistrationComplete={false} missingFields={['phone']} />);
     await waitForLoaded();
 
-    fireEvent.click(screen.getByRole('button', { name: 'jobs.apply' }));
+    // Fase 4/DD5: com 1 pendência de REGISTRO (phone → aba general), o
+    // rótulo do botão deixa de ser "Postularse" — vira dinâmico
+    // (`jobs.applyLabel.registration` sob este mock de i18n literal). O
+    // CLIQUE continua abrindo o MESMO modal, sem request nova (é o que
+    // este teste prova).
+    fireEvent.click(screen.getByRole('button', { name: 'jobs.applyLabel.registration' }));
 
     expect(screen.getByRole('heading', { name: 'publicVacancy.incompleteModal.title' })).toBeInTheDocument();
     expect(openSpy).not.toHaveBeenCalled();
@@ -316,7 +321,7 @@ describe('JobsEmbeddedSection — cadastro incompleto (bug #2)', () => {
     render(<JobsEmbeddedSection isRegistrationComplete={false} missingFields={['phone']} />);
     await waitForLoaded();
 
-    fireEvent.click(screen.getByRole('button', { name: 'jobs.apply' }));
+    fireEvent.click(screen.getByRole('button', { name: 'jobs.applyLabel.registration' }));
     expect(screen.getByRole('button', { name: /phone/i })).toBeInTheDocument();
   });
 
@@ -384,11 +389,69 @@ describe('JobsEmbeddedSection — cadastro incompleto (bug #2)', () => {
     render(<JobsEmbeddedSection isRegistrationComplete={false} missingFields={['phone']} />);
     await waitForLoaded();
 
-    fireEvent.click(screen.getByRole('button', { name: 'jobs.apply' }));
+    fireEvent.click(screen.getByRole('button', { name: 'jobs.applyLabel.registration' }));
     expect(screen.getByRole('heading', { name: 'publicVacancy.incompleteModal.title' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'publicVacancy.incompleteModal.cancel' }));
     expect(screen.queryByRole('heading', { name: 'publicVacancy.incompleteModal.title' })).not.toBeInTheDocument();
+  });
+});
+
+// ── Fase 4/DD5 — rótulo dinâmico do "Postularse" (usa buildPendingRows,     ──
+// ── a MESMA função da lista de tarefas — sem segunda contagem)               ─
+
+describe('JobsEmbeddedSection — rótulo dinâmico do Postularse (Fase 4, DD5)', () => {
+  it('1 pendência de DOCUMENTO → rótulo vira dinâmico (jobs.applyLabel.document sob este mock literal)', async () => {
+    mockFetchOnce(legacyResponse());
+    render(<JobsEmbeddedSection isRegistrationComplete={false} missingFields={['doc_criminal_record']} profession="AT" />);
+    await waitForLoaded();
+
+    expect(screen.getByRole('button', { name: 'jobs.applyLabel.document' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'jobs.apply' })).not.toBeInTheDocument();
+  });
+
+  it('2+ pendências → rótulo vira dinâmico (jobs.applyLabel.multiple) — MESMO N que buildPendingRows devolve pra lista de tarefas', async () => {
+    mockFetchOnce(legacyResponse());
+    render(
+      <JobsEmbeddedSection
+        isRegistrationComplete={false}
+        missingFields={['phone', 'doc_criminal_record', 'doc_identity_document']}
+        profession="CAREGIVER"
+      />,
+    );
+    await waitForLoaded();
+
+    expect(screen.getByRole('button', { name: 'jobs.applyLabel.multiple' })).toBeInTheDocument();
+  });
+
+  it('cadastro COMPLETO (missingFields=[]) → rótulo continua "Postularse" original', async () => {
+    mockFetchOnce(legacyResponse());
+    render(<JobsEmbeddedSection isRegistrationComplete missingFields={[]} />);
+    await waitForLoaded();
+
+    expect(screen.getByRole('button', { name: 'jobs.apply' })).toBeInTheDocument();
+  });
+
+  it('missingFields NULO (não apurado) → rótulo continua "Postularse" original, mesmo com profession informada', async () => {
+    mockFetchOnce(legacyResponse());
+    render(<JobsEmbeddedSection isRegistrationComplete={false} profession="AT" />);
+    await waitForLoaded();
+
+    expect(screen.getByRole('button', { name: 'jobs.apply' })).toBeInTheDocument();
+  });
+
+  it('todos os jobs com whatsappLink mostram o MESMO rótulo (depende só de missingFields/profession, não do job)', async () => {
+    mockFetchOnce(legacyResponse({
+      data: [
+        { code: '1', title: 'A', workerType: 'cuidador/a', provincia: '', localidad: '', barrio: '', workerSex: '', description: '', service: '', daysAndHours: '', ageRange: '', profile: '', whatsappLink: 'https://wa.me/1', detailLink: 'https://x/1' },
+        { code: '2', title: 'B', workerType: 'cuidador/a', provincia: '', localidad: '', barrio: '', workerSex: '', description: '', service: '', daysAndHours: '', ageRange: '', profile: '', whatsappLink: 'https://wa.me/2', detailLink: 'https://x/2' },
+      ],
+      count: 2,
+    }));
+    render(<JobsEmbeddedSection isRegistrationComplete={false} missingFields={['doc_criminal_record']} profession="AT" />);
+    await waitForLoaded();
+
+    expect(screen.getAllByRole('button', { name: 'jobs.applyLabel.document' })).toHaveLength(2);
   });
 });
 
