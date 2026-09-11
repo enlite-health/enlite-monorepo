@@ -294,10 +294,14 @@ export class SyncPatientFromClickUpTaskUseCase {
       }
     } catch (err) {
       // Falha de infraestrutura no passo de chat ids (banco fora etc.): reporta
-      // e segue — a ficha do paciente já foi gravada. ⚠️ NÃO há retry
-      // automático garantido: o reconcile `cycle` só revisita tasks alteradas
-      // nos últimos 30min; a cura para falha antiga é o card mudar de novo ou
-      // um `mode=full` manual.
+      // e segue — a ficha do paciente já foi gravada. ⚠️ 11/09/2026: NÃO EXISTE MAIS retry
+      // automático nenhum — o reconciliador que revisitava tasks alteradas (`cycle`, janela de
+      // 30min) foi removido junto com o webhook (decisão do Gabriel: sem sync automático). E o
+      // script manual que ficou (`import-patients-from-clickup.ts`) é create-only (parecer do
+      // lex): se esta falha aconteceu na criação, um re-run com `--task-id --apply` para o
+      // MESMO task_id é RECUSADO (paciente já existe) — não há caminho automático nem manual
+      // simples para reprocessar só os chat ids depois do fato. Gap operacional conhecido,
+      // reportado, não fechado nesta mudança.
       reportError(err instanceof Error ? err : new Error(String(err)), {
         source: 'clickup_patient_sync.chat_ids',
         taskId: task.id,
