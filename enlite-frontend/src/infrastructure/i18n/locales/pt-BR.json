@@ -618,12 +618,10 @@
     },
     "progress": {
       "registration": "Cadastro Básico",
-      "documents": "Documentos obrigatórios",
       "step1": "Informações Gerais",
       "step2": "Endereço de Atendimento",
       "step3": "Disponibilidade",
-      "completeRegistration": "Completar Cadastro",
-      "uploadDocuments": "Enviar Documentos"
+      "completeRegistration": "Completar Cadastro"
     }
   },
   "documentTypes": {

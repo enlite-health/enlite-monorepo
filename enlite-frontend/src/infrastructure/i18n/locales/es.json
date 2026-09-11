@@ -592,7 +592,7 @@
     },
     "pendingTasks": {
       "title_one": "Te falta {{count}} paso para postularte",
-      "title_other": "Te falta {{count}} pasos para postularte",
+      "title_other": "Te faltan {{count}} pasos para postularte",
       "completedOf": "Ya completaste {{done}} de {{total}}",
       "completeAction": "Completar",
       "uploadAction": "Subir ahora"
@@ -618,12 +618,10 @@
     },
     "progress": {
       "registration": "Registro Básico",
-      "documents": "Documentos obligatorios",
       "step1": "Información General",
       "step2": "Dirección de Atención",
       "step3": "Disponibilidad",
-      "completeRegistration": "Completar Registro",
-      "uploadDocuments": "Enviar Documentos"
+      "completeRegistration": "Completar Registro"
     }
   },
   "documentTypes": {
