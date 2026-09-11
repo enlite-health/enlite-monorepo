@@ -183,14 +183,15 @@ export function addressLines(
   const parts = splitParts(formatted);
   if (parts.length === 0) return { line1: '', line2: null };
 
+  // A linha 1 vem de `streetLineOf` — não reescreve aqui o "cai no 1º segmento quando
+  // nenhuma rua é reconhecida": é a MESMA regra, reusada (achado MINOR do gate
+  // `revisao-pr`, 3ª rodada — as duas funções tinham a mesma queda-para-parts[0] escrita
+  // duas vezes). `splitStreetAndRest` roda de novo só para decidir o que sobra PARA a
+  // linha 2 (`rest`, quando a rua foi reconhecida, ou `parts.slice(1)`, quando não foi —
+  // ver o comentário do módulo para o porquê da diferença).
   const { streetParts, rest } = splitStreetAndRest(parts);
-  if (streetParts.length > 0) {
-    const line2 = stripCountryAndPostal(rest, /* keepDegenerateCountry */ false) || null;
-    return { line1: streetParts.join(', '), line2 };
-  }
-
-  // Nenhuma rua reconhecida: `streetLineOf` cai no 1º segmento (linha 1). A
-  // linha 2 resume o que sobra DEPOIS dele — nunca o 1º segmento de novo.
-  const line2 = stripCountryAndPostal(parts.slice(1), /* keepDegenerateCountry */ false) || null;
-  return { line1: parts[0], line2 };
+  const restForLine2 = streetParts.length > 0 ? rest : parts.slice(1);
+  const line1 = streetLineOf(formatted);
+  const line2 = stripCountryAndPostal(restForLine2, /* keepDegenerateCountry */ false) || null;
+  return { line1, line2 };
 }
