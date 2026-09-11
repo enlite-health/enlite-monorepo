@@ -650,6 +650,7 @@
     "atCertificate": "Certificado de Acompañante Terapéutico",
     "atRequiredWarning": "Como Acompañante Terapéutico, estos documentos son obligatorios para completar tu registro.",
     "atRequiredPending": "Para postularte como Acompañante Terapéutico necesitás subir:",
+    "pendingRequiredGeneric": "Para postularte necesitás subir:",
     "allRequiredDone": "Ya subiste todos los documentos obligatorios para postularte.",
     "requiredBadge": "Obligatorio",
     "additionalTitle": "Otros Documentos",

@@ -131,23 +131,27 @@ export function DocumentsGrid({ documents, profession, onUpload, onDelete, onVie
         {t('documents.title', 'Documentos')}
       </Heading>
 
-      {/* AT requirement notice — prominent and specific (lists the docs still
-          pending). Shown for AT and for profession=NULL (gate treats NULL as AT). */}
-      {isAT && pendingRequiredDocs.length > 0 && (
+      {/* Aviso dos documentos obrigatórios pendentes — prominente e específico
+          (lista os que faltam). Cuidador/enfermeiro/psicólogo TAMBÉM têm DNI +
+          antecedentes obrigatórios (workerDocumentPolicy.ts); só o texto muda
+          por profissão — para não-AT ele nunca cita "Acompañante Terapéutico". */}
+      {pendingRequiredDocs.length > 0 && (
         <div
           data-testid="at-required-notice"
           className="flex items-start gap-2 px-4 py-3 rounded-lg bg-amber-50 border border-amber-300"
         >
           <AlertTriangle size={18} className="text-amber-600 shrink-0 mt-0.5" />
           <Text as="p" size="sm" color="secondary" className="text-amber-900">
-            {t('documents.atRequiredPending', 'Para postularte como Acompañante Terapéutico necesitás subir:')}{' '}
+            {isAT
+              ? t('documents.atRequiredPending', 'Para postularte como Acompañante Terapéutico necesitás subir:')
+              : t('documents.pendingRequiredGeneric', 'Para postularte necesitás subir:')}{' '}
             <Text as="span" size="sm" weight="semibold" color="inherit">
               {pendingRequiredDocs.map((dt) => t(`documentTypes.${dt}`)).join(', ')}
             </Text>
           </Text>
         </div>
       )}
-      {isAT && pendingRequiredDocs.length === 0 && (
+      {pendingRequiredDocs.length === 0 && (
         <div
           data-testid="at-required-done"
           className="flex items-start gap-2 px-4 py-3 rounded-lg bg-green-50 border border-green-200"

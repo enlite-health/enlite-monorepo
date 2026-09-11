@@ -62,16 +62,15 @@ test.describe('@integration AT documents clarity — worker-facing', () => {
     await expect(notice).toHaveScreenshot('at-docs-null-notice.png', { maxDiffPixels: 150 });
   });
 
-  test('CAREGIVER → SEM slot/aviso de AT, mas docs base marcados obrigatórios', async ({ page }) => {
+  test('CAREGIVER → SEM slot de AT, mas docs base marcados obrigatórios', async ({ page }) => {
     const w = insertEligibilityWorker({
       occupation: 'CAREGIVER',
       docIdentityDocument: false, docCriminalRecord: false,
     });
     await openDocumentsTab(page, w);
 
-    // No AT-specific slot and no AT notice for a Cuidador.
+    // No AT-specific slot for a Cuidador (atOnly).
     await expect(page.locator('[data-testid="doc-slot-at_certificate"]')).toHaveCount(0);
-    await expect(page.locator('[data-testid="at-required-notice"]')).toHaveCount(0);
 
     // Base required docs (identity/criminal) are still flagged as mandatory.
     const identitySlot = page.locator('[data-testid="doc-slot-identity_document"]');
@@ -79,5 +78,40 @@ test.describe('@integration AT documents clarity — worker-facing', () => {
     await expect(identitySlot.locator('[data-testid="doc-required-badge"]')).toBeVisible();
 
     await expect(identitySlot).toHaveScreenshot('at-docs-caregiver-identity-slot.png', { maxDiffPixels: 150 });
+  });
+
+  // CAMADA 0 — bug #3: o aviso "necesitás subir: ..." só aparecia pra isAT.
+  // Cuidador/enfermeiro/psicólogo TAMBÉM têm DNI + antecedentes obrigatórios
+  // (workerDocumentPolicy.ts) e nunca viam o que faltava pra postular — sem
+  // nenhum aviso, só o texto sumia. Regressão: o teste acima, ANTES deste
+  // conserto, afirmava `at-required-notice` com count 0 para CAREGIVER — essa
+  // asserção codificava o próprio bug.
+  test('CAREGIVER sem antecedentes → vê o MESMO aviso, nomeando "Antecedentes penales", sem citar AT', async ({ page }) => {
+    const w = insertEligibilityWorker({
+      occupation: 'CAREGIVER',
+      docIdentityDocument: true, docCriminalRecord: false,
+    });
+    await openDocumentsTab(page, w);
+
+    const notice = page.locator('[data-testid="at-required-notice"]');
+    await expect(notice).toBeVisible({ timeout: 15_000 });
+    await expect(notice).toContainText('Antecedentes penales');
+    await expect(notice).not.toContainText('Acompañante Terapéutico');
+
+    await expect(notice).toHaveScreenshot('at-docs-caregiver-pending-notice.png', { maxDiffPixels: 150 });
+  });
+
+  test('CAREGIVER com identity_document + criminal_record → aviso VERDE de tudo enviado', async ({ page }) => {
+    const w = insertEligibilityWorker({
+      occupation: 'CAREGIVER',
+      docIdentityDocument: true, docCriminalRecord: true,
+    });
+    await openDocumentsTab(page, w);
+
+    const done = page.locator('[data-testid="at-required-done"]');
+    await expect(done).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('[data-testid="at-required-notice"]')).toHaveCount(0);
+
+    await expect(done).toHaveScreenshot('at-docs-caregiver-done-notice.png', { maxDiffPixels: 150 });
   });
 });
