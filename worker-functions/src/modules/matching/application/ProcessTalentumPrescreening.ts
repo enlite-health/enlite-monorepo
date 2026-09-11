@@ -5,7 +5,7 @@ import { TalentumPrescreeningResponseParsed } from '@modules/integration';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import { resolveCanonicalWorkerId, MAX_MERGE_DEPTH } from '@shared/database/resolveCanonicalWorkerId';
-import { reportError } from '@shared/logging';
+import { reportError, redactContact } from '@shared/logging';
 import { PrescreeningQuestionsWriter } from './PrescreeningQuestionsWriter';
 
 const TAG = '[ProcessTalentumPrescreening]';
@@ -76,8 +76,10 @@ export class ProcessTalentumPrescreening {
     payload: TalentumPrescreeningResponseParsed,
     dryRun: boolean,
   ): Promise<string | null> {
-    const { email, phoneNumber, cuil } = payload.data.profile;
-    console.log(`${TAG} resolveWorker | email=${email} | phone=${phoneNumber} | cuil=${cuil ?? 'none'}`);
+    const { email, phoneNumber } = payload.data.profile;
+    // PII: e-mail/telefone mascarados (redactContact); CUIL é documento — nunca no log,
+    // nem mascarado (achado do gate, 11/09).
+    console.log(`${TAG} resolveWorker | email=${redactContact(email, 'email')} | phone=${redactContact(phoneNumber, 'phone')}`);
 
     const workerId = await this.resolveWorkerId(payload);
     if (workerId) {
@@ -394,7 +396,9 @@ export class ProcessTalentumPrescreening {
       .update(`talentum|${payload.data.prescreening.id}|${payload.data.profile.id}`)
       .digest('hex');
 
-    console.log(`${TAG} ensureEncuadre | worker=${workerId} | job=${jobPostingId} | name=${workerName}`);
+    // PII: nunca o nome — worker/job já são o id estável pra achar a pessoa no banco;
+    // `hasName` só confirma que o campo veio preenchido do Talentum.
+    console.log(`${TAG} ensureEncuadre | worker=${workerId} | job=${jobPostingId} | hasName=${Boolean(workerName.trim())}`);
     try {
       await this.pool.query(
         `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, import_source_audit, dedup_hash)
