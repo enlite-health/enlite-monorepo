@@ -12,7 +12,9 @@
  *
  * Paginates the ClickUp list "Estado de Pacientes" (901304883903) — ou busca UMA task por id
  * com `--task-id` — e upserta cada task como paciente via PatientService.upsertFromClickUp(),
- * pelo MESMO motor que o webhook (removido) usava: SyncPatientFromClickUpTaskUseCase.
+ * pelo MESMO motor que o webhook (removido) usava: SyncPatientFromClickUpTaskUseCase. Com
+ * `--apply`, também sincroniza "Tipo de Patología" → CID-11 (spec 016 F4, decisão do Gabriel
+ * 11/09/2026) — dry-run nunca grava diagnóstico.
  *
  * ── Pre-requisites ────────────────────────────────────────────────────────────
  *   - CLICKUP_API_TOKEN set in environment (Secret Manager em prod, sessão local em dev)
@@ -48,6 +50,18 @@ import {
   PatientInsuranceVerifiedRepository,
   PatientDeviceTypeRepository,
 } from '../src/modules/case';
+// spec 016 F4 — mesma construção que ClickUpPatientWebhookController.getDiagnosisMapper()
+// fazia (webhook removido 11/09/2026): decisão do Gabriel, a carga manual passa a sincronizar
+// diagnóstico também. Repositório JÁ ESCOPADO a DiagnosisSource.CLICKUP por construtor
+// (contrato de arquitetura da spec 016) — este script é fisicamente incapaz de tocar uma
+// linha PANEL.
+import { ClickUpDiagnosisMapper } from '../src/modules/diagnosis/infrastructure/clickup/ClickUpDiagnosisMapper';
+import { ClickUpDiagnosisLabelRepository } from '../src/modules/diagnosis/infrastructure/clickup/ClickUpDiagnosisLabelRepository';
+import { ClickUpDiagnosisRejectionRepository } from '../src/modules/diagnosis/infrastructure/clickup/ClickUpDiagnosisRejectionRepository';
+import { PatientDiagnosisService } from '../src/modules/diagnosis/application/PatientDiagnosisService';
+import { PostgresPatientDiagnosisRepository } from '../src/modules/diagnosis/infrastructure/PostgresPatientDiagnosisRepository';
+import { DiagnosisSource } from '../src/modules/diagnosis/domain/DiagnosisSource';
+import { createTerminologyPort } from '../src/modules/terminology/infrastructure/TerminologyPortFactory';
 import {
   checkExistingTaskIds,
   processDryRun,
@@ -150,6 +164,18 @@ async function main(): Promise<void> {
     const patientService = new PatientService();
     const resolver = await ClickUpFieldResolver.fromList(LIST_ID, { token: CLICKUP_TOKEN as string });
     const mapper = new ClickUpPatientMapper(resolver);
+    // spec 016 F4 — decisão do Gabriel (11/09/2026): a carga manual passa a sincronizar
+    // "Tipo de Patología" → CID-11 também, MESMA construção que o webhook fazia
+    // (ClickUpPatientWebhookController.getDiagnosisMapper(), removido). Nunca loga texto
+    // clínico — persistDiagnosis (dentro do use case) só emite nome de campo e contagem (C1).
+    const diagnosisMapper = new ClickUpDiagnosisMapper(
+      new ClickUpDiagnosisLabelRepository(),
+      new ClickUpDiagnosisRejectionRepository(),
+      new PatientDiagnosisService(
+        createTerminologyPort(process.env),
+        new PostgresPatientDiagnosisRepository(DiagnosisSource.CLICKUP),
+      ),
+    );
     useCase = new SyncPatientFromClickUpTaskUseCase({
       mapper, patientService,
       // Task 2.3 — o cru vai junto do derivado, também no caminho de recuperação manual.
@@ -158,6 +184,7 @@ async function main(): Promise<void> {
       // existe) — `scripts/` está fora do tsconfig e por isso o compilador não acusou aqui.
       insuranceRepository:   new PatientInsuranceVerifiedRepository(),
       deviceTypeRepository:  new PatientDeviceTypeRepository(),
+      diagnosisMapper,
     });
     pool = new Pool({ connectionString: DATABASE_URL });
   }
