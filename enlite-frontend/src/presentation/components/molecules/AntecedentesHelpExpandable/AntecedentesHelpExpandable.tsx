@@ -52,7 +52,7 @@ export function AntecedentesHelpExpandable({ className = '' }: AntecedentesHelpE
         aria-expanded={isOpen}
         className="flex items-center gap-1 text-left"
       >
-        <Text as="span" size="xs" weight="medium" color="tertiary">
+        <Text as="span" size="xs" weight="medium" color="tertiary" data-testid="antecedentes-help-toggle-text">
           {t('documents.antecedentesHelp.toggle')}
         </Text>
         <ChevronDown
@@ -63,7 +63,13 @@ export function AntecedentesHelpExpandable({ className = '' }: AntecedentesHelpE
 
       {isOpen && (
         <div data-testid="antecedentes-help-body" className="mt-1 flex flex-col items-start gap-1">
-          <Text as="p" size="xs" color="tertiary">
+          {/*
+            Achado do gate (11/09, rodada 2): testid DIRETO no `<Text>`
+            que carrega `color` — o `<div data-testid="antecedentes-help-body">`
+            que envolve texto+link não tem cor própria; medir nele leria o
+            preto herdado, não o cinza real deste parágrafo.
+          */}
+          <Text as="p" size="xs" color="tertiary" data-testid="antecedentes-help-body-text">
             {t('documents.antecedentesHelp.body')}
           </Text>
           <a

@@ -71,8 +71,20 @@ test.describe('@integration Ajuda de antecedentes — "¿No lo tenés? Cómo sac
     // classe (`toHaveClass(/text-gray-700/)`) não pegaria. Mede o que o
     // navegador REALMENTE pinta (cor composta sobre o fundo efetivo) —
     // WCAG AA texto pequeno exige ≥ 4,5:1.
-    const bodyContrast = await readTextContrastRatio(bodyText);
+    //
+    // Achado do gate (11/09, RODADA 2): a medição tem de cair no elemento
+    // que carrega a classe de cor — `getByText(..., {exact:false})`
+    // acima é ótimo pra provar que o texto está VISÍVEL, mas não garante
+    // que o locator resolvido é o `<Text>` colorido (poderia casar um
+    // ancestral sem `color` própria, cuja cor herdada mascara o defeito).
+    // `antecedentes-help-body-text` é o testid direto no `<Text as="p">`.
+    const bodyTextColored = card.locator('[data-testid="antecedentes-help-body-text"]');
+    const bodyContrast = await readTextContrastRatio(bodyTextColored);
     expect(bodyContrast).toBeGreaterThanOrEqual(WCAG_AA_MIN_CONTRAST);
+
+    const toggleTextColored = card.locator('[data-testid="antecedentes-help-toggle-text"]');
+    const toggleContrast = await readTextContrastRatio(toggleTextColored);
+    expect(toggleContrast).toBeGreaterThanOrEqual(WCAG_AA_MIN_CONTRAST);
 
     // C9 do lex: link com href CONSTANTE (sem query string), target/rel
     // corretos — conferido por atributo, NUNCA clicado (não navega de
