@@ -201,4 +201,23 @@ describe('IncompleteRegistrationModal — estado vazio', () => {
     // bodyGeneric key returned by mock
     expect(screen.getByText('bodyGeneric')).toBeInTheDocument();
   });
+
+  // D4 (QA caça, rodada 4): estado genérico repetia a MESMA ideia duas vezes —
+  // bodyGeneric ("...Lo redirigiremos a su perfil para completarlo.") E
+  // redirectNotice ("Lo redirigiremos a su perfil para que pueda completar
+  // los datos faltantes.") juntos. redirectNotice só soma informação quando
+  // tem LISTA (diz o que vai acontecer DEPOIS de ver os itens); no genérico
+  // ele só repete o que bodyGeneric já disse.
+  it('missingFields=[]: NÃO duplica — redirectNotice não aparece junto de bodyGeneric', () => {
+    renderModal([]);
+
+    expect(screen.getByText('bodyGeneric')).toBeInTheDocument();
+    expect(screen.queryByText('redirectNotice')).not.toBeInTheDocument();
+  });
+
+  it('COM lista (missingFields com item): redirectNotice CONTINUA aparecendo — comportamento do /vacantes não muda', () => {
+    renderModal(['phone']);
+
+    expect(screen.getByText('redirectNotice')).toBeInTheDocument();
+  });
 });
