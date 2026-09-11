@@ -26,12 +26,18 @@
  *
  * Gap #5 (doc text inconsistencies in 04-estados-status.md and
  * 09-edicao-e-restricoes.md) is not E2E-testable.
+ *
+ * ── 11/09/2026 — decisão de remoção do sync automático ClickUp ──────────────
+ * O Gap 4 originalmente disparava o sync via `ClickUpPatientWebhookController`
+ * real (supertest + HMAC + fetch mockado). O webhook foi removido (decisão do
+ * Gabriel: a plataforma é a fonte, carga do ClickUp só pontual/manual). Este
+ * arquivo passou a chamar `SyncPatientFromClickUpTaskUseCase.execute()`
+ * diretamente — MESMO motor, mesma regra de versionamento de endereço, sem o
+ * transporte HTTP/HMAC que só o webhook precisava. Gaps 1/2a/2b/3 não usam
+ * ClickUp — seguem inalterados.
  */
 
 // ── Mocks must come before any module imports ────────────────────────────────
-
-const mockFetch = jest.fn();
-global.fetch = mockFetch as unknown as typeof fetch;
 
 jest.mock('firebase-functions', () => ({
   logger: {
@@ -43,27 +49,24 @@ jest.mock('firebase-functions', () => ({
 
 // ── Imports ───────────────────────────────────────────────────────────────────
 
-import * as crypto from 'crypto';
-import express, { Request, Response } from 'express';
-import supertest from 'supertest';
 import { Pool } from 'pg';
-import { ClickUpPatientWebhookController } from '../../src/modules/integration/interfaces/webhooks/controllers/ClickUpPatientWebhookController';
-import { ClickUpHmacMiddleware } from '../../src/modules/integration/interfaces/webhooks/middleware/ClickUpHmacMiddleware';
+import {
+  PatientService,
+  PatientSourceLabelRepository,
+  PatientInsuranceVerifiedRepository,
+  PatientDeviceTypeRepository,
+} from '../../src/modules/case';
 import { ClickUpFieldResolver } from '../../src/modules/integration/infrastructure/clickup/ClickUpFieldResolver';
 import { ClickUpPatientMapper } from '../../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
-import { PatientService } from '../../src/modules/case/application/PatientService';
+import { SyncPatientFromClickUpTaskUseCase, type SyncPatientResult } from '../../src/modules/integration/application/SyncPatientFromClickUpTaskUseCase';
+import type { ClickUpTask } from '../../src/modules/integration/infrastructure/clickup/ClickUpTask';
 import { createApiClient, createPatientFixture, getMockToken, waitForBackend } from './helpers';
 
-const WEBHOOK_SECRET  = 'test-secret-e2e-gaps';
 const PATIENT_LIST_ID = '901304883903';
 const DATABASE_URL    =
   process.env.DATABASE_URL ||
   'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const TASK_PREFIX = 'cu-e2e-gaps-';
-
-function signBody(rawBody: string, secret: string): string {
-  return crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
-}
 
 function locationField(
   formattedAddress: string,
@@ -84,7 +87,7 @@ function makeClickUpTask(
   caseNumber: number,
   primaryLocation: ReturnType<typeof locationField>,
   primaryRaw: string,
-) {
+): ClickUpTask {
   return {
     id:     taskId,
     name:   `Caso ${caseNumber}, Paciente Gap-Test`,
@@ -105,7 +108,7 @@ function makeClickUpTask(
       { id: 'cf-dom3',      name: 'Domicilio 3 Principal Paciente',    type: 'location', value: null },
       { id: 'cf-raw3',      name: 'Domicilio Informado Paciente 3',    type: 'text',     value: null },
     ],
-  };
+  } as unknown as ClickUpTask;
 }
 
 function makeStubResolver(): ClickUpFieldResolver {
@@ -124,49 +127,26 @@ function makeStubResolver(): ClickUpFieldResolver {
   } as unknown as ClickUpFieldResolver;
 }
 
-function buildWebhookApp(pool: Pool): express.Express {
-  const app = express();
-  app.use(
-    express.json({
-      verify: (req, _res, buf) => {
-        (req as Request & { rawBody?: string }).rawBody = buf.toString('utf8');
-      },
-    }),
-  );
-  const hmac     = new ClickUpHmacMiddleware(WEBHOOK_SECRET);
+/** Mesmas deps que `ClickUpPatientWebhookController.create()` montava — sem o
+ *  refresher de catálogo (era defesa específica de processo webhook de vida longa;
+ *  este motor roda uma vez por chamada, catálogo sempre fresco). */
+function makeUseCase(): SyncPatientFromClickUpTaskUseCase {
   const resolver = makeStubResolver();
   const mapper   = new ClickUpPatientMapper(resolver);
-  const svc      = new PatientService();
-  const ctrl     = new ClickUpPatientWebhookController('mock-token', resolver, mapper, svc, pool);
-  app.post(
-    '/api/webhooks/clickup/patient',
-    hmac.verify(),
-    (req: Request, res: Response) => ctrl.handle(req, res),
-  );
-  return app;
+  return new SyncPatientFromClickUpTaskUseCase({
+    mapper,
+    patientService:        new PatientService(),
+    sourceLabelRepository: new PatientSourceLabelRepository(),
+    insuranceRepository:   new PatientInsuranceVerifiedRepository(),
+    deviceTypeRepository:  new PatientDeviceTypeRepository(),
+  });
 }
 
-async function postWebhook(
-  webhookApp: express.Express,
-  taskId: string,
-  task: ReturnType<typeof makeClickUpTask>,
-) {
-  mockFetch.mockResolvedValueOnce({
-    ok:     true,
-    status: 200,
-    json:   async () => task,
-    statusText: 'OK',
-  } as unknown as Response);
-
-  const body      = { event: 'taskUpdated', webhook_id: 'wh-test', task_id: taskId, list_id: PATIENT_LIST_ID };
-  const bodyJson  = JSON.stringify(body);
-  const signature = signBody(bodyJson, WEBHOOK_SECRET);
-
-  return supertest(webhookApp)
-    .post('/api/webhooks/clickup/patient')
-    .set('Content-Type', 'application/json')
-    .set('X-Signature', signature)
-    .send(bodyJson);
+async function syncTask(
+  useCase: SyncPatientFromClickUpTaskUseCase,
+  task: ClickUpTask,
+): Promise<SyncPatientResult> {
+  return useCase.execute(task, { onMissingContact: 'flag' });
 }
 
 async function insertActiveAddress(
@@ -189,14 +169,14 @@ async function insertActiveAddress(
 describe('Vacancy creation gaps — review 2026-05-27', () => {
   const api = createApiClient();
   let pool: Pool;
-  let webhookApp: express.Express;
+  let useCase: SyncPatientFromClickUpTaskUseCase;
   let adminToken: string;
   const trackedVacancies: string[] = [];
   const trackedPatients: string[] = [];
 
   beforeAll(async () => {
-    pool       = new Pool({ connectionString: DATABASE_URL });
-    webhookApp = buildWebhookApp(pool);
+    pool    = new Pool({ connectionString: DATABASE_URL });
+    useCase = makeUseCase();
     await waitForBackend(api);
     adminToken = await getMockToken(api, {
       uid:   'gaps-admin',
@@ -429,12 +409,11 @@ describe('Vacancy creation gaps — review 2026-05-27', () => {
         { long_name: 'Palermo Old',  short_name: 'Palermo Old',  types: ['sublocality_level_1', 'political'] },
       ],
     );
-    const wh1 = await postWebhook(
-      webhookApp,
-      taskId,
+    const r1 = await syncTask(
+      useCase,
       makeClickUpTask(taskId, caseNumber, oldLocation, `Av Gap4 ${caseNumber}`),
     );
-    expect(wh1.status).toBe(200);
+    expect(r1.kind).toBe('CREATED');
 
     const { rows: pRows } = await pool.query<{ id: string }>(
       `SELECT id FROM patients WHERE clickup_task_id = $1`,
@@ -457,12 +436,11 @@ describe('Vacancy creation gaps — review 2026-05-27', () => {
         { long_name: 'Palermo New',  short_name: 'Palermo New',  types: ['sublocality_level_1', 'political'] },
       ],
     );
-    const wh2 = await postWebhook(
-      webhookApp,
-      taskId,
+    const r2 = await syncTask(
+      useCase,
       makeClickUpTask(taskId, caseNumber, refreshedLocation, `Av Gap4 ${caseNumber}`),
     );
-    expect(wh2.status).toBe(200);
+    expect(r2.kind).toBe('UPDATED');
   }
 
   it('Gap 4a: vaga DRAFT (is_draft=true) reflete neighborhood novo após sync', async () => {
