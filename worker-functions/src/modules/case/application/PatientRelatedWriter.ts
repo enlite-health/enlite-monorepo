@@ -48,6 +48,17 @@ export async function replacePatientAddresses(
   //     `taskUpdated` de paciente com vaga publicada os apagava em silêncio (não é preciso nem
   //     mudar a rua: `publishedReference` sozinho força o Path 2). `country` sobrevive pelo
   //     trigger da 316; estes dois não têm trigger nenhum, então a cópia é aqui.
+  //
+  //  5. `AND source = 'clickup'` (mesma correção já feita para `patient_responsibles`, ver
+  //     `PatientResponsibleRepository.replaceBySource`): o sync do ClickUp só emite
+  //     display_order 1/2/3 (ClickUpPatientMapper), enquanto o painel cria linha com
+  //     `source = 'admin_manual'` e display_order = MAX+1 (PatientAddressQueryHelper). Sem este
+  //     filtro, uma linha do painel cujo display_order colidisse com um slot do ClickUp era
+  //     sobrescrita (Path 1) ou arquivada (Path 2), e uma linha do painel fora dos slots 1-3 era
+  //     arquivada/apagada pelo bloco "gone" — mesmo nunca tendo vindo do ClickUp. Decisão do
+  //     Gabriel para a colisão de slot: os dois convivem (painel e ClickUp podem compartilhar o
+  //     mesmo display_order); o sync do ClickUp nunca lê, casa, atualiza, arquiva ou apaga linha
+  //     de outra origem.
   const { rows: existing } = await client.query<{
     id: string;
     display_order: number;
@@ -60,7 +71,8 @@ export async function replacePatientAddresses(
     `SELECT id, display_order, address_formatted, logistics_corridor, access_notes, lat, lng
        FROM patient_addresses
       WHERE patient_id = $1
-        AND archived_at IS NULL`,
+        AND archived_at IS NULL
+        AND source = 'clickup'`,
     [patientId],
   );
   const existingByOrder = new Map<number, { id: string; address_formatted: string | null; logistics_corridor: string | null; access_notes: string | null }>(
@@ -226,11 +238,19 @@ export async function replacePatientAddresses(
     .map(r => r.id);
 
   if (goneIds.length > 0) {
+    // A GARANTIA de que só linha `clickup` é tocada está no SELECT filtrado lá em cima (linha
+    // ~74): `goneIds` só existe a partir de `existing`, que já não contém nenhuma linha do
+    // painel. Isso vale para TODO este arquivo — Path 1 (UPDATE), Path 2 (archive) e o INSERT
+    // só agem sobre `existingForSlot`, derivado do mesmo `existing` filtrado.
+    // O `AND source = 'clickup'` repetido abaixo, nestes DOIS comandos, NÃO é essa garantia —
+    // é defesa em profundidade: se algum dia `goneIds` passar a vir de outro lugar, estes dois
+    // DML continuam não tocando linha de outra origem por conta própria.
     await client.query(
       `UPDATE patient_addresses
           SET archived_at = NOW()
         WHERE id = ANY($1::uuid[])
           AND archived_at IS NULL
+          AND source = 'clickup'
           AND (
             EXISTS (
               SELECT 1 FROM job_postings jp
@@ -246,6 +266,7 @@ export async function replacePatientAddresses(
     await client.query(
       `DELETE FROM patient_addresses
         WHERE id = ANY($1::uuid[])
+          AND source = 'clickup'
           AND NOT EXISTS (
             SELECT 1 FROM job_postings jp
             WHERE jp.patient_address_id = patient_addresses.id
