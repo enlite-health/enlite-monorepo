@@ -280,85 +280,23 @@ async function main(): Promise<void> {
     }
   }
 
-  // Step 5: Process tasks
+  // Step 5: Process tasks — SEMPRE dry-run aqui. `--apply` só é aceito junto de `--task-id`
+  // (parecer do lex, imposto em parseImportPatientsFlags), e `--task-id` tem seu PRÓPRIO
+  // caminho de retorno antecipado acima — este loop de paginação nunca vê `--apply` ligado.
   let processed = 0;
   let skippedNoName = 0;
   let skippedSubtask = 0;
   let skippedMapper = 0;
   let wouldCreate = 0;
   let wouldUpdate = 0;
-  let created = 0;
-  let updated = 0;
-  let flaggedCreated = 0;
-  let flaggedUpdated = 0;
-  let caseNumberConflicts = 0;
-  let errors = 0;
 
   for (let i = 0; i < tasksToProcess.length; i++) {
     const task = tasksToProcess[i];
-    const num  = `[${i + 1}/${tasksToProcess.length}]`;
-
-    if (isDryRun) {
-      const counters: DryRunCounters = {
-        processed, skippedNoName, skippedSubtask, skippedMapper, wouldCreate, wouldUpdate,
-      };
-      processDryRun(task, i, tasksToProcess.length, dryRunMapper!, existingIds, counters, isVerbose);
-      ({ processed, skippedNoName, skippedSubtask, skippedMapper, wouldCreate, wouldUpdate } = counters);
-      continue;
-    }
-
-    // --apply — delegate entirely to the UseCase
-    const result = await useCase!.execute(task);
-
-    switch (result.kind) {
-      case 'SKIPPED_SUBTASK':
-        skippedSubtask++;
-        break;
-
-      case 'SKIPPED_NO_PATIENT_NAME':
-        console.log(`  ${num} task=${result.taskId} → SKIPPED (no patient name)`);
-        skippedNoName++;
-        break;
-
-      case 'SKIPPED_MAPPER_NULL':
-        console.log(`  ${num} task=${result.taskId} → SKIPPED (mapper returned null)`);
-        skippedMapper++;
-        break;
-
-      case 'ERROR':
-        console.log(`  ERROR  task=${result.taskId} msg=${result.error.message}`);
-        if (result.error.stack) {
-          console.log(`         stack: ${result.error.stack.split('\n').slice(0, 5).join(' | ')}`);
-        }
-        errors++;
-        break;
-
-      case 'CASE_NUMBER_CONFLICT':
-        processed++;
-        caseNumberConflicts++;
-        console.log(
-          `  ${num} task=${result.taskId} case=${result.caseNumber ?? 'unknown'} → CONFLICT (patient persisted without case_number, needs_attention)`,
-        );
-        break;
-
-      case 'CREATED':
-        processed++;
-        created++;
-        if (result.flagged) flaggedCreated++;
-        console.log(
-          `  ${num} task=${result.taskId} → CREATED patient id=${result.patientId} (${result.patientName})${result.flagged ? ' [flagged]' : ''}`,
-        );
-        break;
-
-      case 'UPDATED':
-        processed++;
-        updated++;
-        if (result.flagged) flaggedUpdated++;
-        console.log(
-          `  ${num} task=${result.taskId} → UPDATED patient id=${result.patientId} (${result.patientName})${result.flagged ? ' [flagged]' : ''}`,
-        );
-        break;
-    }
+    const counters: DryRunCounters = {
+      processed, skippedNoName, skippedSubtask, skippedMapper, wouldCreate, wouldUpdate,
+    };
+    processDryRun(task, i, tasksToProcess.length, dryRunMapper!, existingIds, counters, isVerbose);
+    ({ processed, skippedNoName, skippedSubtask, skippedMapper, wouldCreate, wouldUpdate } = counters);
   }
 
   // Step 6: Summary
@@ -373,37 +311,23 @@ async function main(): Promise<void> {
   console.log(`  Processed:     ${processed}${limit !== null ? ` (limit=${limit})` : ''}`);
   console.log(`  Skipped:       ${totalSkipped} (${skippedNoName} no name, ${skippedSubtask} subtask, ${skippedMapper} mapper null)`);
 
-  if (isDryRun) {
-    if (existingIds.size > 0) {
-      console.log(`  Would create:  ${wouldCreate}`);
-      console.log(`  Would update:  ${wouldUpdate}`);
-    } else {
-      console.log(`  Would upsert:  ${processed} (DB not queried for classification)`);
-    }
+  if (existingIds.size > 0) {
+    console.log(`  Would create:  ${wouldCreate}`);
+    console.log(`  Would update:  ${wouldUpdate} (aviso: --apply recusaria TODOS estes — só cria paciente novo)`);
   } else {
-    console.log(`  Created:       ${created}`);
-    console.log(`  Updated:       ${updated}`);
-    const totalFlagged = flaggedCreated + flaggedUpdated;
-    if (totalFlagged > 0) {
-      console.log(`  Flagged:       ${totalFlagged} (needs_attention=true, reason=MISSING_INFO)`);
-    }
-    if (caseNumberConflicts > 0) {
-      console.log(`  Conflicts:     ${caseNumberConflicts} (case_number duplicate — persisted with case_number=null, needs_attention=CASE_NUMBER_CONFLICT)`);
-    }
+    console.log(`  Would upsert:  ${processed} (DB not queried for classification)`);
   }
 
-  console.log(`  Errors:        ${errors}`);
-  console.log(`  Mode:          ${isDryRun ? 'DRY-RUN (no DB writes)' : 'APPLY (DB writes committed)'}`);
+  console.log('  Mode:          DRY-RUN (no DB writes) — carga em massa nunca grava; use --task-id --apply para 1 paciente novo por vez.');
 
-  // Cleanup
-  if (pool) await pool.end();
+  // Cleanup. `pool` (construído lá em cima, só quando !isDryRun) nunca é aberto neste caminho:
+  // chegar aqui exige singleTaskId === null (o --task-id tem retorno antecipado, acima), e
+  // --apply exige --task-id (parseImportPatientsFlags) — logo isDryRun é sempre true aqui.
   if (dryRunPool) await dryRunPool.end();
 
   const fs = await import('fs');
   const probePath = '/tmp/clickup-fields-probe.json';
   if (fs.existsSync(probePath)) fs.unlinkSync(probePath);
-
-  if (errors > 0 && !isDryRun) process.exit(1);
 }
 
 main().catch(err => {

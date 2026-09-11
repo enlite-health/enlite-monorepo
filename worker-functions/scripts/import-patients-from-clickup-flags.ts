@@ -98,5 +98,16 @@ export function parseImportPatientsFlags(argv: string[]): ParseFlagsResult {
 
   const verbose = argv.includes('--verbose');
 
+  // ── --apply só com --task-id (lex): carga em massa NUNCA grava ──────────────────────────────
+  // A ferramenta manual só está autorizada a CRIAR um paciente novo por vez, com autorização
+  // escrita do Gabriel por carga (ver cabeçalho do script) — nunca uma passada em massa sobre a
+  // lista inteira. `--apply` sem `--task-id` é ERRO, não "processa tudo".
+  if (apply && taskId === null) {
+    return {
+      ok: false,
+      error: '--apply só é permitido junto de --task-id — carga em massa (lista inteira) nunca grava, por decisão do lex (11/09/2026).',
+    };
+  }
+
   return { ok: true, flags: { apply, taskId, limit, statusFilter, verbose } };
 }
