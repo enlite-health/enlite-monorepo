@@ -452,6 +452,76 @@ describe('usePostularseAction', () => {
   });
 
   // -------------------------------------------------------------------------
+  // 7b. fixedChannel (home vagas API pública) — overrides sessionStorage UTM
+  //     with a caller-fixed channel. Undefined (default) preserves the exact
+  //     /vacantes/:id behavior above — regression, not touched.
+  // -------------------------------------------------------------------------
+
+  it('calls trackAcquisitionChannel with fixedChannel when provided, ignoring sessionStorage', async () => {
+    const { result } = renderHook(
+      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID, 'site'),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.postularse();
+    });
+
+    expect(mockTrackAcquisitionChannel).toHaveBeenCalledWith(JOB_POSTING_ID, 'site');
+    expect(window.open).toHaveBeenCalledWith(WHATSAPP_URL, '_blank');
+  });
+
+  it('fixedChannel takes precedence over an existing sessionStorage UTM value', async () => {
+    sessionStorage.setItem('enlite_utm_source', 'instagram');
+
+    const { result } = renderHook(
+      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID, 'site'),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.postularse();
+    });
+
+    expect(mockTrackAcquisitionChannel).toHaveBeenCalledWith(JOB_POSTING_ID, 'site');
+  });
+
+  it('outer catch: sessionStorage.getItem throwing (private-browsing restriction) fails closed to error, no WhatsApp', async () => {
+    const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('SecurityError');
+    });
+
+    const { result } = renderHook(
+      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.postularse();
+    });
+
+    expect(result.current.state).toBe('error');
+    expect(result.current.missingFields).toBeNull();
+    expect(window.open).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('omitting fixedChannel keeps the exact sessionStorage-UTM behavior (regression)', async () => {
+    sessionStorage.setItem('enlite_utm_source', 'facebook');
+
+    const { result } = renderHook(
+      () => usePostularseAction(WHATSAPP_URL, JOB_POSTING_ID),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.postularse();
+    });
+
+    expect(mockTrackAcquisitionChannel).toHaveBeenCalledWith(JOB_POSTING_ID, 'facebook');
+  });
+
+  // -------------------------------------------------------------------------
   // 8. dismissModal resets state and missingFields
   // -------------------------------------------------------------------------
 

@@ -34,6 +34,13 @@ export interface UsePostularseActionResult {
 export function usePostularseAction(
   whatsappUrl: string | null,
   jobPostingId: string | null = null,
+  /**
+   * Overrides the sessionStorage-UTM channel read below with a caller-fixed
+   * value (e.g. 'site' for the home — it's not a UTM click-through, so there
+   * is no UTM to read). Undefined (default, every existing caller) preserves
+   * /vacantes/:id's exact behavior — regression-tested.
+   */
+  fixedChannel?: string,
 ): UsePostularseActionResult {
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
@@ -60,7 +67,7 @@ export function usePostularseAction(
     setState('loading');
 
     try {
-      const channel = sessionStorage.getItem(SESSION_KEY_UTM);
+      const channel = fixedChannel ?? sessionStorage.getItem(SESSION_KEY_UTM);
       try {
         await WorkerApiService.trackAcquisitionChannel(jobPostingId, channel);
         // Backend confirmed eligibility — ONLY here do we open WhatsApp.
@@ -88,7 +95,7 @@ export function usePostularseAction(
       setMissingFields(null);
       setState('error');
     }
-  }, [whatsappUrl, isAuthenticated, jobPostingId]);
+  }, [whatsappUrl, isAuthenticated, jobPostingId, fixedChannel]);
 
   const dismissModal = useCallback(() => {
     setState('idle');
