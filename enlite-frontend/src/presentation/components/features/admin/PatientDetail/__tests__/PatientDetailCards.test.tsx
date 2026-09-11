@@ -800,6 +800,21 @@ describe('LocalizacoesCard', () => {
     expect(screen.getByText('Endereço sem vírgula')).toBeInTheDocument();
   });
 
+  // ── Achado MINOR do gate revisao-pr, 2ª rodada: linha 2 repetia a linha 1 quando nenhuma
+  // rua era reconhecida (o 1º segmento vira linha 1 pelo fallback, e sobrava no resumo de
+  // novo). Medido pelo gate com estes 2 endereços exatos.
+  it('sem NENHUMA rua reconhecida, a linha 2 não repete a linha 1 (endereço só de localidade)', () => {
+    render(<LocalizacoesCard addresses={[{ ...patientDetailFixture.addresses[0], addressFormatted: 'Tigre, Provincia de Buenos Aires, Argentina', neighborhood: null }]} />);
+    expect(screen.getAllByText('Tigre')).toHaveLength(1);
+    expect(screen.getByText('Provincia de Buenos Aires')).toBeInTheDocument();
+  });
+
+  it('"Barrio X" não é reconhecido como rua: a linha 2 não repete o nome do barrio', () => {
+    render(<LocalizacoesCard addresses={[{ ...patientDetailFixture.addresses[0], addressFormatted: 'Barrio Los Pinos, Pilar, Buenos Aires, Argentina', neighborhood: null }]} />);
+    expect(screen.getAllByText('Barrio Los Pinos')).toHaveLength(1);
+    expect(screen.getByText('Pilar, Buenos Aires')).toBeInTheDocument();
+  });
+
   it('endereço sem addressFormatted e sem addressRaw mostra o alerta "Sem endereço cadastrado" (sem ação falsa)', () => {
     render(<LocalizacoesCard addresses={[{ ...patientDetailFixture.addresses[0], addressFormatted: null, addressRaw: null }]} />);
     expect(screen.getByTestId('address-missing-addr1')).toHaveTextContent('Sem endereço cadastrado');
@@ -934,10 +949,10 @@ describe('LocalizacoesCard — lê o contrato da API (A2, lex C2.1)', () => {
     expect(screen.getByText('Rua Augusta, 975')).toBeInTheDocument();
   });
 
-  it('quando o país é o ÚNICO segmento que sobra depois da rua, ele aparece na linha 2 — mesma regra de summarizeAddress para entrada degenerada (summarizeAddress.test.ts: "does not drop the only segment if it is a country")', () => {
+  it('quando o país é o ÚNICO segmento que sobra depois da rua, a linha 2 fica null — país nunca vira linha 2 sozinho (achado MINOR do gate, 2ª rodada; desinverte o teste anterior)', () => {
     render(<LocalizacoesCard addresses={[{ ...base, addressFormatted: 'Ruta 9 km 42, Argentina', addressRaw: null }]} />);
     expect(screen.getByText('Ruta 9 km 42')).toBeInTheDocument();
-    expect(screen.getByText('Argentina')).toBeInTheDocument();
+    expect(screen.queryByText('Argentina')).not.toBeInTheDocument();
   });
 
   // ── Achados MINOR do gate revisao-pr (spec Localizaciones Fase 1) ───────────────────────
@@ -952,10 +967,11 @@ describe('LocalizacoesCard — lê o contrato da API (A2, lex C2.1)', () => {
     expect(screen.getByTestId(`address-missing-${base.id}`)).toHaveTextContent('Sem endereço cadastrado');
   });
 
-  it('texto que começa com vírgula não vira linha 1 vazia (não cai no alerta com texto presente)', () => {
+  it('texto que começa com vírgula não vira linha 1 vazia (não cai no alerta com texto presente) — e a linha 2 NÃO repete "CABA" nem mostra o país sozinho (achado MINOR do gate, 2ª rodada — a asserção anterior tolerava a repetição)', () => {
     render(<LocalizacoesCard addresses={[{ ...base, addressFormatted: ', CABA, Argentina', addressRaw: null }]} />);
     expect(screen.queryByTestId(`address-missing-${base.id}`)).not.toBeInTheDocument();
-    expect(screen.getAllByText('CABA').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('CABA')).toHaveLength(1);
+    expect(screen.queryByText('Argentina')).not.toBeInTheDocument();
   });
 
   it('degenerado: só vírgulas — streetLineOf devolve "" e o fallback usa o texto cru inteiro', () => {

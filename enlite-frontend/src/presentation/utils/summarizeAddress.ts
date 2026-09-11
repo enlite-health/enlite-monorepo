@@ -1,19 +1,38 @@
 /**
- * summarizeAddress / streetLineOf
+ * summarizeAddress / streetLineOf / addressLines
  *
- * Duas leituras do MESMO endereço formatado (tipicamente
+ * Três leituras do MESMO endereço formatado (tipicamente
  * `patient_addresses.address_formatted`, vindo do Google Places), pela MESMA
  * fronteira rua↔resto — por isso moram no mesmo módulo e compartilham
  * `splitStreetAndRest`:
- *  - `summarizeAddress` — o que sobra DEPOIS da rua: um resumo em nível de
- *    localidade (ex.: "Tigre, Provincia de Buenos Aires" ou "Consolação, São
- *    Paulo - SP"). Já existia; comportamento OBSERVÁVEL inalterado para os
- *    chamadores atuais (VacancyFormSection) — ver summarizeAddress.test.ts.
- *  - `streetLineOf` — o que a rua É: nome + número (spec Localizaciones Fase
- *    1, achado do gate `revisao-pr`: a Dirección da lista precisava da rua
- *    completa, e uma cópia local dessa fronteira em LocalizacoesCard.tsx
- *    divergia desta — BLOCKER, ver `derivePatientZone.ts`-style de porte
- *    fiel, mas para a fronteira rua/resto).
+ *  - `summarizeAddress` — chamada STANDALONE (VacancyFormSection.tsx:356,
+ *    campo "Location" da vaga): um resumo em nível de localidade (ex.:
+ *    "Tigre, Provincia de Buenos Aires" ou "Consolação, São Paulo - SP").
+ *    ⚠️ Comportamento observável NÃO é mais idêntico ao de antes do porte de
+ *    `streetLineOf` para o formato BR real (rua, "número - bairro" no MESMO
+ *    segmento, ex. "975 - Consolação"): antes o número vazava para o resumo
+ *    ("975 - Consolação, São Paulo - SP"); agora sai ("Consolação, São Paulo
+ *    - SP") — mudança AUTORIZADA pelo Gabriel (achado BLOCKER do gate
+ *    `revisao-pr`, spec Localizaciones Fase 1). Os endereços AR (número
+ *    sempre inline no 1º segmento, nunca "NNN - resto") são bit-a-bit
+ *    idênticos a antes — provado em summarizeAddress.test.ts pelo describe
+ *    "paridade com origin/main (endereços AR reais)".
+ *  - `streetLineOf` — o que a rua É: nome + número (mesma origem acima).
+ *  - `addressLines` — a combinação usada por LocalizacoesCard.tsx: linha 1 =
+ *    `streetLineOf`, linha 2 = resumo de localidade SEM repetir o que a
+ *    linha 1 já mostrou. Precisa existir separado de `summarizeAddress`
+ *    porque, quando NENHUM padrão de rua é reconhecido (`streetParts` vazio
+ *    — ex. "Tigre, Provincia de Buenos Aires, Argentina", sem rua nenhuma),
+ *    `streetLineOf` cai no 1º segmento como melhor esforço ("Tigre") — e
+ *    `summarizeAddress`, chamada standalone sobre o MESMO texto, começaria
+ *    a resumir DAQUELE MESMO 1º segmento em diante, repetindo-o na linha 2
+ *    ("Tigre, Provincia de Buenos Aires"). Achado MINOR do gate
+ *    `revisao-pr`, 2ª rodada. `addressLines` corta esse 1º segmento (o que
+ *    virou linha 1) antes de resumir, e NUNCA deixa o país sozinho virar
+ *    linha 2 (`summarizeAddress` mantém o país sozinho só no caso
+ *    degenerado de entrada SEM rua nenhuma reconhecida E sem mais nada —
+ *    ver `stripCountryAndPostal`; para linha 2 isso não faz sentido: `null`
+ *    é a resposta certa quando não sobra localidade real).
  *
  * Heurísticas da fronteira (`splitStreetAndRest`):
  *  - segmento único "Av. Italia 736" (AR): termina em " <número>".
@@ -21,13 +40,11 @@
  *    parte).
  *  - dois segmentos "Rua Augusta", "975 - Consolação" (BR real — o formato
  *    que o Google de fato devolve: número e bairro no MESMO segmento,
- *    separados por " - "). Sem este terceiro caso, `summarizeAddress`
- *    incluía "975 -" no resumo (bug real, achado do gate) e `streetLineOf`
- *    perdia o número inteiro.
+ *    separados por " - ").
  *  - drop do país final (Argentina/Brasil/etc.) e dos CEPs (AR prefixo,
- *    BR `NNNNN-NNN`) — só em `summarizeAddress`.
+ *    BR `NNNNN-NNN`).
  *
- * Pure functions — sem DOM, sem I/O. `''` quando a entrada é vazia.
+ * Pure functions — sem DOM, sem I/O. `''`/`null` quando a entrada é vazia.
  */
 
 const STREET_PREFIX_RE =
@@ -101,17 +118,23 @@ function splitParts(formatted: string | null | undefined): string[] {
     .filter(Boolean);
 }
 
-export function summarizeAddress(formatted: string | null | undefined): string {
-  const parts = splitParts(formatted);
-  if (parts.length === 0) return '';
+/**
+ * Tira o país final e os CEPs de `rest`. `keepDegenerateCountry` preserva o
+ * comportamento HISTÓRICO de `summarizeAddress` quando o país é o ÚNICO
+ * segmento restante (`summarizeAddress('Argentina')` → `'Argentina'`, não
+ * `''` — "não invente ausência apagando o único dado que a entrada trazia").
+ * `addressLines` passa `false`: ali um país sozinho na linha 2 não é essa
+ * garantia nenhuma, é ruído — `null` (sem linha 2) é a resposta certa.
+ */
+function stripCountryAndPostal(rest: string[], keepDegenerateCountry: boolean): string {
+  let result = rest;
 
-  let result = splitStreetAndRest(parts).rest;
-
-  // Drop trailing country.
-  if (
-    result.length > 1 &&
-    COUNTRIES.has(result[result.length - 1].toLowerCase())
-  ) {
+  const lastIsCountry =
+    result.length > 0 && COUNTRIES.has(result[result.length - 1].toLowerCase());
+  const shouldStripCountry = keepDegenerateCountry
+    ? result.length > 1 && lastIsCountry
+    : lastIsCountry;
+  if (shouldStripCountry) {
     result = result.slice(0, -1);
   }
 
@@ -122,6 +145,14 @@ export function summarizeAddress(formatted: string | null | undefined): string {
     .filter(Boolean);
 
   return result.join(', ');
+}
+
+export function summarizeAddress(formatted: string | null | undefined): string {
+  const parts = splitParts(formatted);
+  if (parts.length === 0) return '';
+
+  const result = splitStreetAndRest(parts).rest;
+  return stripCountryAndPostal(result, /* keepDegenerateCountry */ true);
 }
 
 /**
@@ -137,4 +168,29 @@ export function streetLineOf(formatted: string | null | undefined): string {
 
   const { streetParts } = splitStreetAndRest(parts);
   return (streetParts.length > 0 ? streetParts : [parts[0]]).join(', ');
+}
+
+/**
+ * A combinação que `LocalizacoesCard.tsx` usa: linha 1 = `streetLineOf`,
+ * linha 2 = resumo de localidade que NUNCA repete o que a linha 1 já
+ * mostrou, e NUNCA vira só o país sozinho (`null` nesses dois casos). Ver o
+ * comentário do módulo para o porquê de não bastar `streetLineOf` +
+ * `summarizeAddress` chamadas em paralelo sobre o mesmo texto.
+ */
+export function addressLines(
+  formatted: string | null | undefined,
+): { line1: string; line2: string | null } {
+  const parts = splitParts(formatted);
+  if (parts.length === 0) return { line1: '', line2: null };
+
+  const { streetParts, rest } = splitStreetAndRest(parts);
+  if (streetParts.length > 0) {
+    const line2 = stripCountryAndPostal(rest, /* keepDegenerateCountry */ false) || null;
+    return { line1: streetParts.join(', '), line2 };
+  }
+
+  // Nenhuma rua reconhecida: `streetLineOf` cai no 1º segmento (linha 1). A
+  // linha 2 resume o que sobra DEPOIS dele — nunca o 1º segmento de novo.
+  const line2 = stripCountryAndPostal(parts.slice(1), /* keepDegenerateCountry */ false) || null;
+  return { line1: parts[0], line2 };
 }
