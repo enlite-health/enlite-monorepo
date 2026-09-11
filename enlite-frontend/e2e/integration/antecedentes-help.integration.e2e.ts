@@ -23,6 +23,10 @@ import {
   type InsertEligibilityWorkerResult,
 } from '../helpers/eligibility-worker-helper';
 import { loginNewWorker } from '../helpers/worker-realreg-auth-helper';
+import { readTextContrastRatio } from '../helpers/contrast-helper';
+
+/** WCAG AA, texto pequeno (< 18pt/24px ou < 14pt/18.5px bold). */
+const WCAG_AA_MIN_CONTRAST = 4.5;
 
 test.use({ video: 'on' }); // definição de pronto exige vídeo do fluxo real
 
@@ -56,12 +60,19 @@ test.describe('@integration Ajuda de antecedentes — "¿No lo tenés? Cómo sac
 
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    await expect(
-      card.getByText(
-        'Se tramita online con Clave Fiscal o Mi Argentina y te llega por e-mail.',
-        { exact: false },
-      ),
-    ).toBeVisible();
+    const bodyText = card.getByText(
+      'Se tramita online con Clave Fiscal o Mi Argentina y te llega por e-mail.',
+      { exact: false },
+    );
+    await expect(bodyText).toBeVisible();
+
+    // Achado do gate (11/09): `color="muted"` do atom Text vira
+    // `rgba(115,115,115,0.5)` — um cinza com ALPHA que uma asserção de
+    // classe (`toHaveClass(/text-gray-700/)`) não pegaria. Mede o que o
+    // navegador REALMENTE pinta (cor composta sobre o fundo efetivo) —
+    // WCAG AA texto pequeno exige ≥ 4,5:1.
+    const bodyContrast = await readTextContrastRatio(bodyText);
+    expect(bodyContrast).toBeGreaterThanOrEqual(WCAG_AA_MIN_CONTRAST);
 
     // C9 do lex: link com href CONSTANTE (sem query string), target/rel
     // corretos — conferido por atributo, NUNCA clicado (não navega de
@@ -99,6 +110,12 @@ test.describe('@integration Ajuda de antecedentes — "¿No lo tenés? Cómo sac
     await expect(link).toHaveAttribute('href', ANTECEDENTES_HELP_URL);
     await expect(link).toHaveAttribute('target', '_blank');
     await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+
+    // Barato do gate (11/09): este cenário (2º uso do MESMO componente)
+    // não tinha screenshot — CLAUDE.md exige toHaveScreenshot em todo
+    // teste de frontend.
+    const helpBlock = slot.locator('[data-testid="antecedentes-help"]');
+    await expect(helpBlock).toHaveScreenshot('fase3-ajuda-documentos.png', { maxDiffPixels: 200 });
   });
 
   test('alt — antecedentes NÃO pendente: a ajuda não aparece nem na home nem na aba Documentos', async ({ page }) => {
