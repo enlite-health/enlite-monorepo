@@ -16,6 +16,13 @@
  * `--apply`, também sincroniza "Tipo de Patología" → CID-11 (spec 016 F4, decisão do Gabriel
  * 11/09/2026) — dry-run nunca grava diagnóstico.
  *
+ * ⚠️ SÓ PACIENTE COM DOMICÍLIO NA ARGENTINA. `ClickUpPatientMapper` grava `country: 'AR'`
+ * FIXO (não lê nenhum campo de país/cidade do card) — não existe NENHUM campo confiável no
+ * card do ClickUp para detectar automaticamente um paciente fora da AR, então NÃO HÁ GUARDA
+ * AUTOMÁTICA POSSÍVEL aqui. Quem roda o script é responsável por confirmar que o card é de
+ * paciente argentino ANTES de usar `--apply` — carregar um paciente de outro país gravaria
+ * `country: 'AR'` errado, em silêncio.
+ *
  * ── Pre-requisites ────────────────────────────────────────────────────────────
  *   - CLICKUP_API_TOKEN set in environment (Secret Manager em prod, sessão local em dev)
  *   - DATABASE_URL set (required with --apply, optional otherwise)
