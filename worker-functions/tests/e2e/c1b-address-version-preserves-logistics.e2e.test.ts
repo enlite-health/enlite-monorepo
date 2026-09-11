@@ -15,37 +15,22 @@
  */
 import { Pool } from 'pg';
 import { replacePatientAddresses } from '@modules/case/application/PatientRelatedWriter';
-import type { GeocodingService } from '../../src/infrastructure/services/GeocodingService';
-import type { PatientAddress } from '../../src/infrastructure/repositories/PatientRepository';
+import { noopGeocoder, clickupAddressInput, limparPacientesDeTeste } from './helpers/patientAddressSyncFixtures';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const TAG = 'C1B-address-logistics-%';
 const ACCESS = 'C1B: portero 24h, timbre 4B roto — llamar al 11-5555-0000; perro suelto en el patio';
 const CORRIDOR = 'C1B: Corredor Norte — Vicente López / San Isidro';
 
-/** O geocoder nunca é a peça sob teste aqui: devolve "não resolvi" sem tocar rede. */
-const geocoder = { geocodeBatch: async (queries: string[]) => queries.map(() => null) } as unknown as GeocodingService;
-
-const addressInput = (formatted: string): PatientAddress => ({
-  addressType: 'primary',
-  addressFormatted: formatted,
-  addressRaw: null,
-  displayOrder: 1,
-  state: 'Buenos Aires',
-  city: 'Vicente López',
-  neighborhood: 'Florida',
-} as unknown as PatientAddress);
+const geocoder = noopGeocoder;
+const addressInput = clickupAddressInput;
 
 describe('C2 — versionar endereço preserva access_notes e logistics_corridor (Postgres real) @integration', () => {
   let pool: Pool;
   let patientId = '';
   let addressId = '';
 
-  /** job_postings tem FK ON DELETE RESTRICT para patient_addresses — a vaga sai primeiro. */
-  const limpar = async (): Promise<void> => {
-    await pool.query(`DELETE FROM job_postings WHERE patient_id IN (SELECT id FROM patients WHERE clickup_task_id LIKE $1)`, [TAG]);
-    await pool.query('DELETE FROM patients WHERE clickup_task_id LIKE $1', [TAG]);
-  };
+  const limpar = async (): Promise<void> => limparPacientesDeTeste(pool, TAG);
 
   const activeRow = async () => (await pool.query<{ id: string; access_notes: string | null; logistics_corridor: string | null; country: string; address_formatted: string | null }>(
     `SELECT id, access_notes, logistics_corridor, country, address_formatted
@@ -114,7 +99,7 @@ describe('C2 — versionar endereço preserva access_notes e logistics_corridor 
     try {
       await replacePatientAddresses(
         patientId,
-        [addressInput('Av. Maipú 1234, Vicente López'), { ...addressInput('Calle Nueva 900'), displayOrder: 2 } as PatientAddress],
+        [addressInput('Av. Maipú 1234, Vicente López'), addressInput('Calle Nueva 900', { displayOrder: 2 })],
         client,
         geocoder,
       );
