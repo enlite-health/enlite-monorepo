@@ -55,9 +55,15 @@
  *   --dry-run          força dry-run — VENCE `--apply` sempre (fail-safe; nunca há combinação
  *                      de flags que grave se `--dry-run` foi digitado)
  *   --task-id <id>     carga pontual de UMA task específica (GET direto, sem paginar a lista) —
- *                      cobre o caso antes servido por resync-one-clickup-task.ts (removido).
- *                      Sem valor depois (ou seguido de outra flag) é ERRO — nunca cai muda na
- *                      paginação da lista inteira.
+ *                      cobre a criação de paciente NOVO que `resync-one-clickup-task.ts`
+ *                      (removido) também cobria. NÃO cobre mais o outro uso que aquele script
+ *                      tinha: reprocessar um card cujo CASE_NUMBER_CONFLICT foi resolvido no
+ *                      ClickUp — isso é sempre um paciente que JÁ EXISTE na plataforma
+ *                      (criado antes, com conflito), e a regra 2 (só cria, nunca UPDATE)
+ *                      recusa. Não há caminho manual para esse caso hoje — gap conhecido,
+ *                      reportado, não fechado nesta mudança. Sem valor depois (ou seguido de
+ *                      outra flag, ou string vazia) é ERRO — nunca cai muda na paginação da
+ *                      lista inteira. Incompatível com `--limit`/`--status` (caminhos diferentes).
  *   --limit N          processa só as N primeiras tasks (default: todas). N não-numérico ou
  *                      ≤ 0 é ERRO — nunca "sem limite" por omissão.
  *   --status X,Y,Z     filtra tasks por status.status (comma-separated)
@@ -76,7 +82,11 @@ import { ClickUpFieldResolver } from '../src/modules/integration/infrastructure/
 import { ClickUpPatientMapper } from '../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
 import type { ClickUpTask } from '../src/modules/integration/infrastructure/clickup/ClickUpTask';
 import { SyncPatientFromClickUpTaskUseCase, type SyncPatientResult } from '../src/modules/integration/application/SyncPatientFromClickUpTaskUseCase';
-import { decideIfNewPatientAllowed } from './import-patients-from-clickup-guard';
+import {
+  decideIfNewPatientAllowed,
+  runSingleTaskApply,
+  EXISTING_CHECK_FAILED_MESSAGE,
+} from './import-patients-from-clickup-guard';
 import {
   PatientSourceLabelRepository,
   PatientInsuranceVerifiedRepository,
@@ -228,9 +238,23 @@ async function countExistingPatients(taskId: string, existingPool: Pool | null):
 }
 
 /**
+ * `Error.message`/`.stack` NUNCA aparecem no stdout — um erro de `pg` pode ecoar o VALOR que
+ * violou uma constraint (a memória `psql-contra-dado-real-verbosity-terse` já mediu isso: o
+ * `DETAIL` do Postgres ecoa a linha inteira). Só `error.name` (a classe do erro, ex.
+ * `DatabaseError`) e o SQLSTATE de 5 dígitos que o driver `pg` expõe em `.code` quando o erro
+ * vem do Postgres — nenhum dos dois carrega dado do paciente.
+ */
+function redactError(error: Error): { errorName: string; sqlState: string | null } {
+  const code = (error as unknown as { code?: unknown }).code;
+  const sqlState = typeof code === 'string' ? code : null;
+  return { errorName: error.name, sqlState };
+}
+
+/**
  * C1 do parecer do lex: o stdout deste script roda DENTRO de sessões do Claude — nunca pode
  * levar nome/rótulo clínico. `SyncPatientResult` carrega `patientName` em 3 dos 7 `kind`
- * possíveis; aqui fica só status/kind/ids/contagens.
+ * possíveis; aqui fica só status/kind/ids/contagens. `ERROR` nunca leva `error.message`/`.stack`
+ * (achado do gate) — só `redactError()`.
  */
 function redactSyncResult(result: SyncPatientResult): Record<string, unknown> {
   switch (result.kind) {
@@ -240,7 +264,7 @@ function redactSyncResult(result: SyncPatientResult): Record<string, unknown> {
     case 'CASE_NUMBER_CONFLICT':
       return { kind: result.kind, taskId: result.taskId, patientId: result.patientId, caseNumber: result.caseNumber };
     case 'ERROR':
-      return { kind: result.kind, taskId: result.taskId, errorMessage: result.error.message };
+      return { kind: result.kind, taskId: result.taskId, ...redactError(result.error) };
     default:
       return { kind: result.kind, taskId: result.taskId };
   }
@@ -295,22 +319,22 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
-    // Parecer do lex: SÓ cria paciente NOVO — nunca UPDATE. A checagem roda ANTES do motor em
-    // ambos os modos (dry-run classifica "criaria"/"já existe"; --apply recusa de verdade).
+    // Parecer do lex (BLOCKER do gate): SÓ cria paciente NOVO — nunca UPDATE, e FAIL-CLOSED se
+    // não der para confirmar (SELECT falhou). `decideIfNewPatientAllowed` é o ÚNICO lugar que
+    // decide isso — `existingCount: null` já entra como "não é seguro criar" (allowed:false),
+    // não existe mais um 3º caminho no script que contorne a decisão.
     const existingCount = await countExistingPatients(singleTaskId, pool);
-    const decision = existingCount !== null
-      ? decideIfNewPatientAllowed({ clickupTaskId: singleTaskId, existingCount })
-      : null;
+    const decision = decideIfNewPatientAllowed({ clickupTaskId: singleTaskId, existingCount });
 
     if (isDryRun) {
       const resolver = await ClickUpFieldResolver.fromList(LIST_ID, { token: CLICKUP_TOKEN as string });
       const mapper = new ClickUpPatientMapper(resolver);
       const mapped = mapper.map(task);
       console.log(`${SCRIPT_TAG} case_number mapeado = ${(mapped as { caseNumber?: number } | null)?.caseNumber ?? 'null'}`);
-      if (decision === null) {
-        console.log(`${SCRIPT_TAG} classificação: DESCONHECIDA (banco não acessível neste dry-run — --apply consultaria de novo).`);
-      } else if (decision.allowed) {
+      if (decision.allowed) {
         console.log(`${SCRIPT_TAG} classificação: criaria (paciente novo — clickup_task_id não existe na plataforma).`);
+      } else if (decision.reason === EXISTING_CHECK_FAILED_MESSAGE) {
+        console.log(`${SCRIPT_TAG} classificação: DESCONHECIDA (banco não acessível neste dry-run — --apply consultaria de novo e recusaria por segurança).`);
       } else {
         console.log(`${SCRIPT_TAG} classificação: já existe (seria recusado) — ${decision.reason}`);
       }
@@ -318,16 +342,20 @@ async function main(): Promise<void> {
       return;
     }
 
-    if (decision !== null && !decision.allowed) {
-      console.error(`${SCRIPT_TAG} ABORTADO: ${decision.reason}`);
+    // `runSingleTaskApply` é o ÚNICO ponto que decide entre abortar e chamar `useCase.execute`
+    // — testado isoladamente (import-patients-from-clickup.guard.test.ts) provando que o motor
+    // NUNCA roda quando `decision.allowed === false`, inclusive quando a causa é `existingCount
+    // === null` (banco inteiro fora — aborta AQUI, não deixa o motor tentar e falhar depois).
+    const outcome = await runSingleTaskApply(decision, () => useCase!.execute(task));
+    if (outcome.aborted) {
+      console.error(`${SCRIPT_TAG} ABORTADO: ${outcome.reason}`);
       if (pool) await pool.end();
       process.exit(1);
     }
 
-    const result = await useCase!.execute(task);
-    console.log(`${SCRIPT_TAG} RESULTADO: ${JSON.stringify(redactSyncResult(result), null, 2)}`);
+    console.log(`${SCRIPT_TAG} RESULTADO: ${JSON.stringify(redactSyncResult(outcome.result), null, 2)}`);
     if (pool) await pool.end();
-    if (result.kind === 'ERROR') process.exit(1);
+    if (outcome.result.kind === 'ERROR') process.exit(1);
     return;
   }
 
@@ -423,6 +451,9 @@ async function main(): Promise<void> {
 }
 
 main().catch(err => {
-  console.error(`${SCRIPT_TAG} Fatal error:`, err);
+  // Nunca `err` cru: um erro não tratado em algum ponto do fluxo pode ser um erro do `pg` com
+  // o valor que violou a constraint no `.message`/`.stack` (mesma razão de `redactError` acima).
+  const error = err instanceof Error ? err : new Error(String(err));
+  console.error(`${SCRIPT_TAG} Fatal error:`, redactError(error));
   process.exit(1);
 });
