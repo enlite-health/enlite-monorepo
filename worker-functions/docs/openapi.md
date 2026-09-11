@@ -37,7 +37,7 @@ Sempre que tocar em uma rota Express:
      tags: ['Admin · Foo'],              // string EXATA de TAGS_ORDER (document.ts)
      summary: 'Cria bar para foo',       // 3-8 palavras
      description: '...',                  // 1-3 frases: quando usar, side effects, idempotência
-     security: [{ firebaseAuth: [] }],    // ou internalApiKey / partnerKey / clickupHmac / twilioSignature / []
+     security: [{ firebaseAuth: [] }],    // ou internalApiKey / partnerKey / twilioSignature / []
      request: {
        params: z.object({ id: UuidParam }),
        body: { content: { 'application/json': { schema: z.object({ ... }) } } },
@@ -62,7 +62,6 @@ Sempre que tocar em uma rota Express:
 | `requireAuth()`, `requireStaff()`, `requireAdmin()`, `requirePermission(...)` | `firebaseAuth` |
 | `requireApiKey()`, internal token middleware | `internalApiKey` |
 | `PartnerAuthMiddleware.requirePartnerKey()` (Talentum) | `partnerKey` |
-| `ClickUpHmacMiddleware.verify()` | `clickupHmac` |
 | Twilio inbound/status (X-Twilio-Signature) | `twilioSignature` |
 | Sem auth | `security: []` (sem entradas) |
 

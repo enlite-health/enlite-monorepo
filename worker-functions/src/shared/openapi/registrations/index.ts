@@ -30,7 +30,6 @@ import './internalWebhooks';
 import './publicJobs';
 import './publicVacancies';
 import './user';
-import './webhooksClickup';
 import './webhooksTalentum';
 import './webhooksTest';
 import './webhooksTwilio';

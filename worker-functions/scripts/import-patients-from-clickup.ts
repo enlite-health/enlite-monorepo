@@ -2,27 +2,77 @@
 /**
  * import-patients-from-clickup.ts
  *
- * Paginates the ClickUp list "Estado de Pacientes" (901304883903) and upserts
- * each task as a patient via PatientService.upsertFromClickUp().
+ * Carga PONTUAL manual (decisão 11/09/2026 — sem sync automático); dry-run por padrão;
+ * nunca agendar.
+ *
+ * A plataforma é a fonte da verdade do paciente — não existe mais webhook nem reconciliador
+ * ClickUp→paciente (removidos nesta mesma decisão). Este script é a ÚNICA ferramenta de carga
+ * do ClickUp que resta, e roda MANUALMENTE, numa sessão de terminal, quando alguém decide
+ * puxar 1 ou N cards. Nunca colocar em Cloud Scheduler / cron / CI.
+ *
+ * Paginates the ClickUp list "Estado de Pacientes" (901304883903) — ou busca UMA task por id
+ * com `--task-id` — e upserta cada task como paciente via PatientService.upsertFromClickUp(),
+ * pelo MESMO motor que o webhook (removido) usava: SyncPatientFromClickUpTaskUseCase. Com
+ * `--apply`, também sincroniza "Tipo de Patología" → CID-11 (spec 016 F4, decisão do Gabriel
+ * 11/09/2026) — dry-run nunca grava diagnóstico.
+ *
+ * ⚠️ SÓ PACIENTE COM DOMICÍLIO NA ARGENTINA. `ClickUpPatientMapper` grava `country: 'AR'`
+ * FIXO (não lê nenhum campo de país/cidade do card) — não existe NENHUM campo confiável no
+ * card do ClickUp para detectar automaticamente um paciente fora da AR, então NÃO HÁ GUARDA
+ * AUTOMÁTICA POSSÍVEL aqui. Quem roda o script é responsável por confirmar que o card é de
+ * paciente argentino ANTES de usar `--apply` — carregar um paciente de outro país gravaria
+ * `country: 'AR'` errado, em silêncio.
  *
  * ── Pre-requisites ────────────────────────────────────────────────────────────
- *   - CLICKUP_API_TOKEN set in environment
- *   - DATABASE_URL set (required in --live mode, optional in --dry-run)
+ *   - CLICKUP_API_TOKEN e DATABASE_URL de produção vêm do Secret Manager, INJETADOS NA SESSÃO
+ *     por quem opera — NUNCA em `.env`. Este script não lê `.env` nem espera que alguém dê
+ *     `source` num arquivo local: o token/URL de prod não devem existir em disco.
+ *
+ * ── REGRAS DE OPERAÇÃO (decisão do Gabriel + parecer do lex, 11/09/2026) ──────
+ *   1. `--apply` SÓ é aceito junto de `--task-id` — carga em massa (lista inteira) NUNCA
+ *      grava (imposto em import-patients-from-clickup-flags.ts, não é só convenção).
+ *   2. SÓ CRIA paciente NOVO — nunca UPDATE. Se `clickup_task_id` já existe na plataforma,
+ *      `--apply` recusa antes de chamar o motor (import-patients-from-clickup-guard.ts).
+ *   3. Cada carga (`--apply --task-id <id>`) exige AUTORIZAÇÃO ESCRITA do Gabriel — não é
+ *      autoatendimento. Peça antes de rodar, não depois.
+ *   4. TODA carga (autorizada e executada) precisa de registro em
+ *      `docs/legal/registros/AAAA-MM-DD-carga-clickup.md`: data, task id, quem autorizou, quem
+ *      rodou, resultado (criado/recusado/erro) — SEM nome do paciente nem rótulo clínico
+ *      (esses ficam só na plataforma, nunca em doc).
+ *   5. NUNCA agendar — Cloud Scheduler, cron, CI ou qualquer automação. É carga PONTUAL, numa
+ *      sessão de terminal, por decisão explícita a cada vez.
  *
  * ── Usage ─────────────────────────────────────────────────────────────────────
- *   set -a && source worker-functions/.env && set +a
  *   cd worker-functions
- *   npx ts-node -r tsconfig-paths/register scripts/import-patients-from-clickup.ts --dry-run --limit 3
- *   npx ts-node -r tsconfig-paths/register scripts/import-patients-from-clickup.ts --live
- *   npx ts-node -r tsconfig-paths/register scripts/import-patients-from-clickup.ts --live --status busqueda --limit 10
+ *   npx ts-node -r tsconfig-paths/register scripts/import-patients-from-clickup.ts --limit 3
+ *   npx ts-node -r tsconfig-paths/register scripts/import-patients-from-clickup.ts --task-id 86abq2pzg
+ *   npx ts-node -r tsconfig-paths/register scripts/import-patients-from-clickup.ts --task-id 86abq2pzg --apply
  *
  * ── Flags ─────────────────────────────────────────────────────────────────────
- *   --dry-run          (default) logs what would happen; no DB writes
- *   --live             alias for --dry-run=false; persists to DB
- *   --dry-run=false    same as --live
- *   --limit N          process only the first N tasks (default: all)
- *   --status X,Y,Z     filter tasks by status.status (comma-separated)
- *   --verbose          print the full PatientServiceUpsertInput per task
+ *   (nenhuma)          dry-run (DEFAULT) — loga o que aconteceria; nenhuma escrita no DB
+ *   --apply            grava no banco — SÓ junto de `--task-id` (regra 1 acima); e só CRIA
+ *                      (regra 2) — recusa se o paciente já existir na plataforma
+ *   --dry-run          força dry-run — VENCE `--apply` sempre (fail-safe; nunca há combinação
+ *                      de flags que grave se `--dry-run` foi digitado)
+ *   --task-id <id>     carga pontual de UMA task específica (GET direto, sem paginar a lista) —
+ *                      cobre a criação de paciente NOVO que `resync-one-clickup-task.ts`
+ *                      (removido) também cobria. NÃO cobre mais o outro uso que aquele script
+ *                      tinha: reprocessar um card cujo CASE_NUMBER_CONFLICT foi resolvido no
+ *                      ClickUp — isso é sempre um paciente que JÁ EXISTE na plataforma
+ *                      (criado antes, com conflito), e a regra 2 (só cria, nunca UPDATE)
+ *                      recusa. Não há caminho manual para esse caso hoje — gap conhecido,
+ *                      reportado, não fechado nesta mudança. Sem valor depois (ou seguido de
+ *                      outra flag, ou string vazia) é ERRO — nunca cai muda na paginação da
+ *                      lista inteira. Incompatível com `--limit`/`--status` (caminhos diferentes).
+ *   --limit N          processa só as N primeiras tasks (default: todas). N não-numérico ou
+ *                      ≤ 0 é ERRO — nunca "sem limite" por omissão.
+ *   --status X,Y,Z     filtra tasks por status.status (comma-separated)
+ *   --verbose          imprime nome de campo + presença/tamanho do payload mapeado por task —
+ *                      NUNCA o valor (C1 do parecer do lex: stdout roda dentro de sessão do Claude)
+ *
+ * ⚠️ Chat IDs de WhatsApp (Chat ID Familia/Equipo → `patient_chat_ids`) só são espelhados com
+ * `PATIENT_CHAT_IDS_CLICKUP_SYNC_ENABLED=true` no ambiente — sem a flag esse passo é um NO-OP
+ * SILENCIOSO (mesmo aviso que `resync-one-clickup-task.ts`, removido, já dava).
  */
 
 /* eslint-disable no-console */
@@ -31,17 +81,35 @@ import { Pool } from 'pg';
 import { ClickUpFieldResolver } from '../src/modules/integration/infrastructure/clickup/ClickUpFieldResolver';
 import { ClickUpPatientMapper } from '../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
 import type { ClickUpTask } from '../src/modules/integration/infrastructure/clickup/ClickUpTask';
-import { SyncPatientFromClickUpTaskUseCase } from '../src/modules/integration/application/SyncPatientFromClickUpTaskUseCase';
+import { SyncPatientFromClickUpTaskUseCase, type SyncPatientResult } from '../src/modules/integration/application/SyncPatientFromClickUpTaskUseCase';
+import {
+  decideIfNewPatientAllowed,
+  runSingleTaskApply,
+  EXISTING_CHECK_FAILED_MESSAGE,
+} from './import-patients-from-clickup-guard';
 import {
   PatientSourceLabelRepository,
   PatientInsuranceVerifiedRepository,
   PatientDeviceTypeRepository,
 } from '../src/modules/case';
+// spec 016 F4 — mesma construção que ClickUpPatientWebhookController.getDiagnosisMapper()
+// fazia (webhook removido 11/09/2026): decisão do Gabriel, a carga manual passa a sincronizar
+// diagnóstico também. Repositório JÁ ESCOPADO a DiagnosisSource.CLICKUP por construtor
+// (contrato de arquitetura da spec 016) — este script é fisicamente incapaz de tocar uma
+// linha PANEL.
+import { ClickUpDiagnosisMapper } from '../src/modules/diagnosis/infrastructure/clickup/ClickUpDiagnosisMapper';
+import { ClickUpDiagnosisLabelRepository } from '../src/modules/diagnosis/infrastructure/clickup/ClickUpDiagnosisLabelRepository';
+import { ClickUpDiagnosisRejectionRepository } from '../src/modules/diagnosis/infrastructure/clickup/ClickUpDiagnosisRejectionRepository';
+import { PatientDiagnosisService } from '../src/modules/diagnosis/application/PatientDiagnosisService';
+import { PostgresPatientDiagnosisRepository } from '../src/modules/diagnosis/infrastructure/PostgresPatientDiagnosisRepository';
+import { DiagnosisSource } from '../src/modules/diagnosis/domain/DiagnosisSource';
+import { createTerminologyPort } from '../src/modules/terminology/infrastructure/TerminologyPortFactory';
 import {
   checkExistingTaskIds,
   processDryRun,
   type DryRunCounters,
 } from './import-patients-dry-run';
+import { parseImportPatientsFlags } from './import-patients-from-clickup-flags';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -50,36 +118,27 @@ const CLICKUP_API_BASE = 'https://api.clickup.com/api/v2';
 const SCRIPT_TAG = '[import-patients-from-clickup]';
 
 // ── Arg parsing ───────────────────────────────────────────────────────────────
+// `--task-id` sem valor e `--limit` não numérico/≤0 são ERRO aqui, não "flag ausente" — sem
+// isto, digitar errado caía muda na paginação da lista INTEIRA ou processava zero em silêncio.
 
-const argv = process.argv.slice(2);
-
-function hasFlag(name: string): boolean {
-  return argv.includes(name);
+const parsed = parseImportPatientsFlags(process.argv.slice(2));
+if (!parsed.ok) {
+  console.error(`${SCRIPT_TAG} ERROR: ${parsed.error}`);
+  process.exit(1);
 }
+const flags        = parsed.flags;
+const isDryRun      = !flags.apply;
+const limit         = flags.limit;
+const statusFilter  = flags.statusFilter;
+const isVerbose     = flags.verbose;
+const singleTaskId  = flags.taskId;
 
-function flagValue(name: string): string | null {
-  const idx = argv.indexOf(name);
-  if (idx === -1) return null;
-  return argv[idx + 1] ?? null;
+if (!isDryRun && process.env.PATIENT_CHAT_IDS_CLICKUP_SYNC_ENABLED !== 'true') {
+  console.warn(
+    `${SCRIPT_TAG} AVISO: PATIENT_CHAT_IDS_CLICKUP_SYNC_ENABLED não está "true" — o espelho de ` +
+    `Chat IDs de WhatsApp (Chat ID Familia/Equipo → patient_chat_ids) será um NO-OP SILENCIOSO.`,
+  );
 }
-
-// --dry-run is default true; override with --live or --dry-run=false
-let isDryRun = true;
-if (hasFlag('--live')) isDryRun = false;
-const dryRunFlag = argv.find(a => a.startsWith('--dry-run='));
-if (dryRunFlag) {
-  isDryRun = dryRunFlag.split('=')[1] !== 'false';
-}
-
-const limitRaw = flagValue('--limit');
-const limit = limitRaw !== null ? parseInt(limitRaw, 10) : null;
-
-const statusFilterRaw = flagValue('--status');
-const statusFilter: string[] = statusFilterRaw
-  ? statusFilterRaw.split(',').map(s => s.trim().toLowerCase())
-  : [];
-
-const isVerbose = hasFlag('--verbose');
 
 // ── Env validation ─────────────────────────────────────────────────────────────
 
@@ -94,15 +153,25 @@ const DATABASE_URL =
   'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 
 if (!isDryRun && !process.env.DATABASE_URL) {
-  console.error(`${SCRIPT_TAG} ERROR: DATABASE_URL is required in --live mode.`);
+  console.error(`${SCRIPT_TAG} ERROR: DATABASE_URL is required with --apply.`);
   process.exit(1);
 }
 
-// ── ClickUp pagination ────────────────────────────────────────────────────────
+// ── ClickUp fetch ─────────────────────────────────────────────────────────────
 
 interface TasksPage {
   tasks: ClickUpTask[];
   last_page: boolean;
+}
+
+async function fetchOneTask(taskId: string): Promise<ClickUpTask> {
+  const res = await fetch(`${CLICKUP_API_BASE}/task/${taskId}`, {
+    headers: { Authorization: CLICKUP_TOKEN as string },
+  });
+  if (!res.ok) {
+    throw new Error(`ClickUp GET /task/${taskId} failed: HTTP ${res.status} ${res.statusText}`);
+  }
+  return (await res.json()) as ClickUpTask;
 }
 
 async function fetchPage(page: number): Promise<TasksPage> {
@@ -138,11 +207,74 @@ async function fetchAllTasks(): Promise<ClickUpTask[]> {
   return all;
 }
 
+/**
+ * Parecer do lex: quantos pacientes JÁ existem na plataforma com este `clickup_task_id`.
+ * `null` = não deu para checar (DB inacessível neste dry-run) — o script NUNCA trata isso como
+ * "zero" (F19: contagem zero é falha, não sucesso, quando na verdade é ausência de leitura).
+ * Reusa o pool de `--apply` quando existe; em dry-run abre um efêmero, best-effort.
+ */
+async function countExistingPatients(taskId: string, existingPool: Pool | null): Promise<number | null> {
+  let localPool = existingPool;
+  let shouldClose = false;
+  if (!localPool) {
+    try {
+      localPool = new Pool({ connectionString: DATABASE_URL });
+      shouldClose = true;
+    } catch {
+      return null;
+    }
+  }
+  try {
+    const { rows } = await localPool.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM patients WHERE clickup_task_id = $1`,
+      [taskId],
+    );
+    return rows[0]?.n ?? 0;
+  } catch {
+    return null;
+  } finally {
+    if (shouldClose) await localPool.end();
+  }
+}
+
+/**
+ * `Error.message`/`.stack` NUNCA aparecem no stdout — um erro de `pg` pode ecoar o VALOR que
+ * violou uma constraint (a memória `psql-contra-dado-real-verbosity-terse` já mediu isso: o
+ * `DETAIL` do Postgres ecoa a linha inteira). Só `error.name` (a classe do erro, ex.
+ * `DatabaseError`) e o SQLSTATE de 5 dígitos que o driver `pg` expõe em `.code` quando o erro
+ * vem do Postgres — nenhum dos dois carrega dado do paciente.
+ */
+function redactError(error: Error): { errorName: string; sqlState: string | null } {
+  const code = (error as unknown as { code?: unknown }).code;
+  const sqlState = typeof code === 'string' ? code : null;
+  return { errorName: error.name, sqlState };
+}
+
+/**
+ * C1 do parecer do lex: o stdout deste script roda DENTRO de sessões do Claude — nunca pode
+ * levar nome/rótulo clínico. `SyncPatientResult` carrega `patientName` em 3 dos 7 `kind`
+ * possíveis; aqui fica só status/kind/ids/contagens. `ERROR` nunca leva `error.message`/`.stack`
+ * (achado do gate) — só `redactError()`.
+ */
+function redactSyncResult(result: SyncPatientResult): Record<string, unknown> {
+  switch (result.kind) {
+    case 'CREATED':
+    case 'UPDATED':
+      return { kind: result.kind, taskId: result.taskId, patientId: result.patientId, flagged: result.flagged };
+    case 'CASE_NUMBER_CONFLICT':
+      return { kind: result.kind, taskId: result.taskId, patientId: result.patientId, caseNumber: result.caseNumber };
+    case 'ERROR':
+      return { kind: result.kind, taskId: result.taskId, ...redactError(result.error) };
+    default:
+      return { kind: result.kind, taskId: result.taskId };
+  }
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
   // Lazy-load PatientService (imports DatabaseConnection → needs DATABASE_URL).
-  // Only in live mode; avoids a DB connection in pure dry-run.
+  // Only with --apply; avoids a DB connection in pure dry-run.
   let useCase: SyncPatientFromClickUpTaskUseCase | null = null;
   let pool: Pool | null = null;
 
@@ -151,6 +283,18 @@ async function main(): Promise<void> {
     const patientService = new PatientService();
     const resolver = await ClickUpFieldResolver.fromList(LIST_ID, { token: CLICKUP_TOKEN as string });
     const mapper = new ClickUpPatientMapper(resolver);
+    // spec 016 F4 — decisão do Gabriel (11/09/2026): a carga manual passa a sincronizar
+    // "Tipo de Patología" → CID-11 também, MESMA construção que o webhook fazia
+    // (ClickUpPatientWebhookController.getDiagnosisMapper(), removido). Nunca loga texto
+    // clínico — persistDiagnosis (dentro do use case) só emite nome de campo e contagem (C1).
+    const diagnosisMapper = new ClickUpDiagnosisMapper(
+      new ClickUpDiagnosisLabelRepository(),
+      new ClickUpDiagnosisRejectionRepository(),
+      new PatientDiagnosisService(
+        createTerminologyPort(process.env),
+        new PostgresPatientDiagnosisRepository(DiagnosisSource.CLICKUP),
+      ),
+    );
     useCase = new SyncPatientFromClickUpTaskUseCase({
       mapper, patientService,
       // Task 2.3 — o cru vai junto do derivado, também no caminho de recuperação manual.
@@ -159,8 +303,60 @@ async function main(): Promise<void> {
       // existe) — `scripts/` está fora do tsconfig e por isso o compilador não acusou aqui.
       insuranceRepository:   new PatientInsuranceVerifiedRepository(),
       deviceTypeRepository:  new PatientDeviceTypeRepository(),
+      diagnosisMapper,
     });
     pool = new Pool({ connectionString: DATABASE_URL });
+  }
+
+  // ── --task-id: carga pontual de UMA task, sem paginar a lista ────────────────
+  if (singleTaskId !== null) {
+    console.log(`${SCRIPT_TAG} --task-id=${singleTaskId} — carga pontual, sem paginação.`);
+    const task = await fetchOneTask(singleTaskId);
+    console.log(`${SCRIPT_TAG} task=${task.id} status=${task.status?.status} list=${(task as unknown as { list?: { id?: string } }).list?.id}`);
+
+    if ((task as unknown as { list?: { id?: string } }).list?.id !== LIST_ID) {
+      console.error(`${SCRIPT_TAG} ABORTADO: task não pertence à lista Estado de Pacientes (${LIST_ID}).`);
+      process.exit(1);
+    }
+
+    // Parecer do lex (BLOCKER do gate): SÓ cria paciente NOVO — nunca UPDATE, e FAIL-CLOSED se
+    // não der para confirmar (SELECT falhou). `decideIfNewPatientAllowed` é o ÚNICO lugar que
+    // decide isso — `existingCount: null` já entra como "não é seguro criar" (allowed:false),
+    // não existe mais um 3º caminho no script que contorne a decisão.
+    const existingCount = await countExistingPatients(singleTaskId, pool);
+    const decision = decideIfNewPatientAllowed({ clickupTaskId: singleTaskId, existingCount });
+
+    if (isDryRun) {
+      const resolver = await ClickUpFieldResolver.fromList(LIST_ID, { token: CLICKUP_TOKEN as string });
+      const mapper = new ClickUpPatientMapper(resolver);
+      const mapped = mapper.map(task);
+      console.log(`${SCRIPT_TAG} case_number mapeado = ${(mapped as { caseNumber?: number } | null)?.caseNumber ?? 'null'}`);
+      if (decision.allowed) {
+        console.log(`${SCRIPT_TAG} classificação: criaria (paciente novo — clickup_task_id não existe na plataforma).`);
+      } else if (decision.reason === EXISTING_CHECK_FAILED_MESSAGE) {
+        console.log(`${SCRIPT_TAG} classificação: DESCONHECIDA (banco não acessível neste dry-run — --apply consultaria de novo e recusaria por segurança).`);
+      } else {
+        console.log(`${SCRIPT_TAG} classificação: já existe (seria recusado) — ${decision.reason}`);
+      }
+      console.log(`${SCRIPT_TAG} DRY-RUN — nada foi gravado. Rode com --apply para persistir.`);
+      return;
+    }
+
+    // `runSingleTaskApply` é o ÚNICO ponto que decide entre abortar e chamar `useCase.execute`
+    // — testado isoladamente (import-patients-from-clickup.guard.test.ts) provando que o motor
+    // NUNCA roda quando `decision.allowed === false`, inclusive quando a causa é `existingCount
+    // === null` (banco inteiro fora — aborta AQUI, não deixa o motor tentar e falhar depois).
+    const outcome = await runSingleTaskApply(decision, () => useCase!.execute(task));
+    if (outcome.aborted) {
+      console.error(`${SCRIPT_TAG} ABORTADO: ${outcome.reason}`);
+      if (pool) await pool.end();
+      process.exit(1);
+    }
+
+    console.log(`${SCRIPT_TAG} RESULTADO: ${JSON.stringify(redactSyncResult(outcome.result), null, 2)}`);
+    if (pool) await pool.end();
+    if (outcome.result.kind === 'ERROR') process.exit(1);
+    return;
   }
 
   // For dry-run with DATABASE_URL available we can classify create vs update.
@@ -188,7 +384,7 @@ async function main(): Promise<void> {
   // Step 3: Apply limit
   const tasksToProcess = limit !== null ? filteredTasks.slice(0, limit) : filteredTasks;
 
-  const modeStr   = isDryRun ? 'dry-run=true' : 'live (DB writes enabled)';
+  const modeStr   = isDryRun ? 'dry-run=true' : 'APPLY (DB writes enabled)';
   const limitStr  = limit !== null ? `limit=${limit}` : 'no limit';
   const statusStr = statusFilter.length > 0 ? `status=${statusFilter.join(',')}` : 'all statuses';
   console.log(`Processing with flags: ${modeStr} ${limitStr} ${statusStr}`);
@@ -204,85 +400,23 @@ async function main(): Promise<void> {
     }
   }
 
-  // Step 5: Process tasks
+  // Step 5: Process tasks — SEMPRE dry-run aqui. `--apply` só é aceito junto de `--task-id`
+  // (parecer do lex, imposto em parseImportPatientsFlags), e `--task-id` tem seu PRÓPRIO
+  // caminho de retorno antecipado acima — este loop de paginação nunca vê `--apply` ligado.
   let processed = 0;
   let skippedNoName = 0;
   let skippedSubtask = 0;
   let skippedMapper = 0;
   let wouldCreate = 0;
   let wouldUpdate = 0;
-  let created = 0;
-  let updated = 0;
-  let flaggedCreated = 0;
-  let flaggedUpdated = 0;
-  let caseNumberConflicts = 0;
-  let errors = 0;
 
   for (let i = 0; i < tasksToProcess.length; i++) {
     const task = tasksToProcess[i];
-    const num  = `[${i + 1}/${tasksToProcess.length}]`;
-
-    if (isDryRun) {
-      const counters: DryRunCounters = {
-        processed, skippedNoName, skippedSubtask, skippedMapper, wouldCreate, wouldUpdate,
-      };
-      processDryRun(task, i, tasksToProcess.length, dryRunMapper!, existingIds, counters, isVerbose);
-      ({ processed, skippedNoName, skippedSubtask, skippedMapper, wouldCreate, wouldUpdate } = counters);
-      continue;
-    }
-
-    // Live mode — delegate entirely to the UseCase
-    const result = await useCase!.execute(task);
-
-    switch (result.kind) {
-      case 'SKIPPED_SUBTASK':
-        skippedSubtask++;
-        break;
-
-      case 'SKIPPED_NO_PATIENT_NAME':
-        console.log(`  ${num} task=${result.taskId} → SKIPPED (no patient name)`);
-        skippedNoName++;
-        break;
-
-      case 'SKIPPED_MAPPER_NULL':
-        console.log(`  ${num} task=${result.taskId} → SKIPPED (mapper returned null)`);
-        skippedMapper++;
-        break;
-
-      case 'ERROR':
-        console.log(`  ERROR  task=${result.taskId} msg=${result.error.message}`);
-        if (result.error.stack) {
-          console.log(`         stack: ${result.error.stack.split('\n').slice(0, 5).join(' | ')}`);
-        }
-        errors++;
-        break;
-
-      case 'CASE_NUMBER_CONFLICT':
-        processed++;
-        caseNumberConflicts++;
-        console.log(
-          `  ${num} task=${result.taskId} case=${result.caseNumber ?? 'unknown'} → CONFLICT (patient persisted without case_number, needs_attention)`,
-        );
-        break;
-
-      case 'CREATED':
-        processed++;
-        created++;
-        if (result.flagged) flaggedCreated++;
-        console.log(
-          `  ${num} task=${result.taskId} → CREATED patient id=${result.patientId} (${result.patientName})${result.flagged ? ' [flagged]' : ''}`,
-        );
-        break;
-
-      case 'UPDATED':
-        processed++;
-        updated++;
-        if (result.flagged) flaggedUpdated++;
-        console.log(
-          `  ${num} task=${result.taskId} → UPDATED patient id=${result.patientId} (${result.patientName})${result.flagged ? ' [flagged]' : ''}`,
-        );
-        break;
-    }
+    const counters: DryRunCounters = {
+      processed, skippedNoName, skippedSubtask, skippedMapper, wouldCreate, wouldUpdate,
+    };
+    processDryRun(task, i, tasksToProcess.length, dryRunMapper!, existingIds, counters, isVerbose);
+    ({ processed, skippedNoName, skippedSubtask, skippedMapper, wouldCreate, wouldUpdate } = counters);
   }
 
   // Step 6: Summary
@@ -297,40 +431,29 @@ async function main(): Promise<void> {
   console.log(`  Processed:     ${processed}${limit !== null ? ` (limit=${limit})` : ''}`);
   console.log(`  Skipped:       ${totalSkipped} (${skippedNoName} no name, ${skippedSubtask} subtask, ${skippedMapper} mapper null)`);
 
-  if (isDryRun) {
-    if (existingIds.size > 0) {
-      console.log(`  Would create:  ${wouldCreate}`);
-      console.log(`  Would update:  ${wouldUpdate}`);
-    } else {
-      console.log(`  Would upsert:  ${processed} (DB not queried for classification)`);
-    }
+  if (existingIds.size > 0) {
+    console.log(`  Would create:  ${wouldCreate}`);
+    console.log(`  Would update:  ${wouldUpdate} (aviso: --apply recusaria TODOS estes — só cria paciente novo)`);
   } else {
-    console.log(`  Created:       ${created}`);
-    console.log(`  Updated:       ${updated}`);
-    const totalFlagged = flaggedCreated + flaggedUpdated;
-    if (totalFlagged > 0) {
-      console.log(`  Flagged:       ${totalFlagged} (needs_attention=true, reason=MISSING_INFO)`);
-    }
-    if (caseNumberConflicts > 0) {
-      console.log(`  Conflicts:     ${caseNumberConflicts} (case_number duplicate — persisted with case_number=null, needs_attention=CASE_NUMBER_CONFLICT)`);
-    }
+    console.log(`  Would upsert:  ${processed} (DB not queried for classification)`);
   }
 
-  console.log(`  Errors:        ${errors}`);
-  console.log(`  Mode:          ${isDryRun ? 'DRY-RUN (no DB writes)' : 'LIVE (DB writes committed)'}`);
+  console.log('  Mode:          DRY-RUN (no DB writes) — carga em massa nunca grava; use --task-id --apply para 1 paciente novo por vez.');
 
-  // Cleanup
-  if (pool) await pool.end();
+  // Cleanup. `pool` (construído lá em cima, só quando !isDryRun) nunca é aberto neste caminho:
+  // chegar aqui exige singleTaskId === null (o --task-id tem retorno antecipado, acima), e
+  // --apply exige --task-id (parseImportPatientsFlags) — logo isDryRun é sempre true aqui.
   if (dryRunPool) await dryRunPool.end();
 
   const fs = await import('fs');
   const probePath = '/tmp/clickup-fields-probe.json';
   if (fs.existsSync(probePath)) fs.unlinkSync(probePath);
-
-  if (errors > 0 && !isDryRun) process.exit(1);
 }
 
 main().catch(err => {
-  console.error(`${SCRIPT_TAG} Fatal error:`, err);
+  // Nunca `err` cru: um erro não tratado em algum ponto do fluxo pode ser um erro do `pg` com
+  // o valor que violou a constraint no `.message`/`.stack` (mesma razão de `redactError` acima).
+  const error = err instanceof Error ? err : new Error(String(err));
+  console.error(`${SCRIPT_TAG} Fatal error:`, redactError(error));
   process.exit(1);
 });
