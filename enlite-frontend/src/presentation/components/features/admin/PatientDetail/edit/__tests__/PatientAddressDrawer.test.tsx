@@ -66,6 +66,14 @@ const ESCOLHIDO: Partial<google.maps.places.PlaceResult> = {
   geometry: { location: { lat: () => -34.6037, lng: () => -58.3816 } } as google.maps.places.PlaceResult['geometry'],
 };
 
+/** T2: mesma escolha, mas com `address_components` — para exercitar a pré-preencher a Zona. */
+const ESCOLHIDO_COM_ZONA: Partial<google.maps.places.PlaceResult> = {
+  ...ESCOLHIDO,
+  address_components: [
+    { long_name: 'San Telmo', short_name: 'San Telmo', types: ['neighborhood', 'political'] },
+  ] as unknown as google.maps.places.PlaceResult['address_components'],
+};
+
 function stubGoogle(): void {
   class AutocompleteFake {
     constructor() { widgetsCriados += 1; }
@@ -200,6 +208,29 @@ describe('PatientAddressDrawer — criar', () => {
     expect(screen.queryByText(t('admin.patients.detail.addressDrawer.addressNotPicked'))).not.toBeInTheDocument();
   });
 
+  it('T2: escolher da lista pré-preenche a Zona quando ela está vazia (mesma regra do servidor)', async () => {
+    render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={vi.fn()} />);
+    await assentar();
+    expect(screen.getByTestId('pad-neighborhood')).toHaveValue('');
+    await escolherDaLista(ESCOLHIDO_COM_ZONA);
+    expect(screen.getByTestId('pad-neighborhood')).toHaveValue('San Telmo');
+  });
+
+  it('T2: campo já preenchido → escolher lugar → valor NÃO muda', async () => {
+    render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={vi.fn()} />);
+    await assentar();
+    fireEvent.change(screen.getByTestId('pad-neighborhood'), { target: { value: 'Zona digitada pela operadora' } });
+    await escolherDaLista(ESCOLHIDO_COM_ZONA);
+    expect(screen.getByTestId('pad-neighborhood')).toHaveValue('Zona digitada pela operadora');
+  });
+
+  it('T2: escolha sem componentes de zona derivável não mexe no campo (fica vazio)', async () => {
+    render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={vi.fn()} />);
+    await assentar();
+    await escolherDaLista(ESCOLHIDO); // sem address_components
+    expect(screen.getByTestId('pad-neighborhood')).toHaveValue('');
+  });
+
   it('erro do servidor → mensagem genérica, nunca o payload (lex C2.3)', async () => {
     createPatientAddress.mockRejectedValueOnce(new Error('ERRO COM Portero'));
     render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={vi.fn()} />);
@@ -262,6 +293,33 @@ describe('PatientAddressDrawer — criar', () => {
     //    ela é guarda de REGRESSÃO, para o dia em que alguém instrumentar esta tela. O risco
     //    vivo do Clarity nesta feature é outro e mora no DOM: a lista de sugestões do Google,
     //    coberta em `useGooglePlacesAutocomplete.test.tsx`.
+  });
+
+  it('T2 + lex C6: a Zona derivada dos address_components também não atravessa para console nem Clarity', async () => {
+    const espioes = {
+      log: vi.spyOn(console, 'log').mockImplementation(() => undefined),
+      warn: vi.spyOn(console, 'warn').mockImplementation(() => undefined),
+      error: vi.spyOn(console, 'error').mockImplementation(() => undefined),
+      info: vi.spyOn(console, 'info').mockImplementation(() => undefined),
+    };
+    const clarity = vi.fn();
+    vi.stubGlobal('clarity', clarity);
+
+    render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={vi.fn()} />);
+    await assentar();
+    await escolherDaLista(ESCOLHIDO_COM_ZONA);
+    expect(screen.getByTestId('pad-neighborhood')).toHaveValue('San Telmo');
+
+    const colher = (): string => JSON.stringify([
+      ...Object.values(espioes).flatMap((e) => e.mock.calls),
+      ...clarity.mock.calls,
+    ]);
+    expect(colher()).not.toContain('San Telmo');
+
+    // Controle positivo (molde da D170): o zero acima só vale porque o espião ENXERGA um
+    // vazamento plantado.
+    console.warn('vazamento plantado:', 'San Telmo');
+    expect(colher(), 'o espião de console enxerga um vazamento').toContain('San Telmo');
   });
 
   it('Enter SEM escolher não grava, não preenche e NÃO gasta chamada ao Places', async () => {
