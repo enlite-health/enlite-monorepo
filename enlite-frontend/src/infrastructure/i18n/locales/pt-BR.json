@@ -590,6 +590,13 @@
     "completionCard": {
       "title": "Complete seu Perfil Profissional"
     },
+    "pendingTasks": {
+      "title_one": "Falta {{count}} passo para você se candidatar",
+      "title_other": "Faltam {{count}} passos para você se candidatar",
+      "completedOf": "Você já completou {{done}} de {{total}}",
+      "completeAction": "Completar",
+      "uploadAction": "Enviar agora"
+    },
     "wizard": {
       "back": "Voltar",
       "next": "Próximo",
