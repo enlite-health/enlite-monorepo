@@ -184,9 +184,11 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     await expect(drawer).toHaveCount(0, { timeout: 15_000 });
 
     await expect(card).toContainText('Av. Corrientes 1234', { timeout: 20_000 });
+    // Spec Localizaciones Fase 1 (T3): a Zona (`neighborhood`) é a única logística visível na
+    // LISTA agora (linha 2 da Dirección) — Corredor logístico e Logística y acceso saíram das
+    // colunas (ficam só dentro do drawer de edição). Continuam gravados: conferidos no banco
+    // logo abaixo (`rows[0]`), não mais na tela.
     await expect(card).toContainText('San Nicolás');
-    await expect(card).toContainText('Corredor Norte');
-    await expect(card).toContainText('Timbre 3B');
     const rows = readAddresses(admission.patientId);
     testInfo.annotations.push({ type: 'evidência', description: `B2 — patient_addresses: ${JSON.stringify(rows)}` });
     expect(rows).toHaveLength(1);
