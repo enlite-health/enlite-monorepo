@@ -39,6 +39,7 @@ export function PostularseErrorModal({
     >
       <div
         className="bg-white rounded-lg shadow-xl max-w-md w-full m-4 p-6"
+        data-testid="postularse-error-modal-card"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 mb-2">
