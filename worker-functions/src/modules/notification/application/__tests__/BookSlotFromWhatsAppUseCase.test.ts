@@ -1,5 +1,6 @@
 import { BookSlotFromWhatsAppUseCase } from '../BookSlotFromWhatsAppUseCase';
 import { poolMockWithConnect } from '@shared/database/poolMockSupport';
+import { redactContact } from '@shared/logging';
 
 describe('BookSlotFromWhatsAppUseCase', () => {
   let mockQuery: jest.Mock;
@@ -132,9 +133,12 @@ describe('BookSlotFromWhatsAppUseCase', () => {
       true,
       VACANCY.meet_datetime_1,
     );
+    // PII: o e-mail cru nunca aparece no log — só workerId + máscara.
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Calendar invite sent to worker@test.com'),
+      expect.stringContaining(`Calendar invite sent to worker=${WORKER.id} email=${redactContact(WORKER.email, 'email')}`),
     );
+    const loggedLines = consoleSpy.mock.calls.map((c) => String(c[0]));
+    expect(loggedLines.join('\n')).not.toContain(WORKER.email);
     consoleSpy.mockRestore();
   });
 
@@ -233,6 +237,19 @@ describe('BookSlotFromWhatsAppUseCase', () => {
     expect(result.isFailure).toBe(true);
     expect(result.error).toBe('Worker not found');
     expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+
+  // PII guard (ponto 4 do achado do gate 11/09): telefone mascarado no warn.
+  it('PII: worker not found → telefone mascarado no console.warn', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    await useCase.execute('whatsapp:+5491122334455', 'slot_1');
+
+    const lines = warnSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(lines).not.toContain('1122334455');
+    expect(lines).toMatch(/Worker not found for phone 549\*\*\*4455/);
+    warnSpy.mockRestore();
   });
 
   it('retorna fail se não há interview pendente (nem via SID nem via fallback)', async () => {
