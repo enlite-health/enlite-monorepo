@@ -1,13 +1,15 @@
 /**
  * Carga PONTUAL manual do ClickUp (decisão 11/09/2026 — sem sync automático) — parsing dos
- * flags do CLI. Puro: sem rede, sem DB, sem process.exit. Prova as duas travas fail-safe do
- * gate revisao-pr:
+ * flags do CLI. Puro: sem rede, sem DB, sem process.exit. Prova as travas fail-safe do gate
+ * revisao-pr:
  *   1. `--dry-run` presente VENCE `--apply`, sempre (nunca grava).
  *   2. `--task-id`, `--limit` e `--status` sem valor (ou seguidos de outra flag) são `ok:false`
  *      (ERRO), nunca um valor "ausente" silencioso — sem isto, digitar errado cairia muda na
  *      paginação da lista INTEIRA (task-id), em "sem limite"/"zero" (limit), ou em
  *      `statusFilter: []` lido como "sem filtro" = LISTA INTEIRA gravando (status — achado numa
  *      2ª rodada do gate, DEPOIS de task-id/limit já corrigidos: mesma classe de defeito).
+ *   3. `--apply` SÓ é permitido junto de `--task-id` (parecer do lex) — carga em massa nunca
+ *      grava, só criação pontual de UM paciente por vez, com autorização escrita do Gabriel.
  */
 import { parseImportPatientsFlags, type ParseFlagsResult } from '../import-patients-from-clickup-flags';
 
@@ -23,8 +25,8 @@ describe('parseImportPatientsFlags — caminho feliz', () => {
     });
   });
 
-  it('--apply: sai do dry-run', () => {
-    expect(ok(parseImportPatientsFlags(['--apply'])).apply).toBe(true);
+  it('--apply + --task-id: sai do dry-run', () => {
+    expect(ok(parseImportPatientsFlags(['--apply', '--task-id', 'x'])).apply).toBe(true);
   });
 
   it('--task-id <id>: carga pontual de UMA task (substitui resync-one-clickup-task.ts)', () => {
@@ -57,7 +59,7 @@ describe('parseImportPatientsFlags — caminho feliz', () => {
 describe('parseImportPatientsFlags — --dry-run VENCE --apply, sempre (fail-safe)', () => {
   it.each([
     [[], false],
-    [['--apply'], true],
+    [['--apply', '--task-id', 'x'], true],
     [['--dry-run'], false],
     [['--dry-run', '--apply'], false],
     [['--apply', '--dry-run'], false],
@@ -145,5 +147,37 @@ describe('parseImportPatientsFlags — --status sem valor é ERRO, nunca "sem fi
     const r = parseImportPatientsFlags(['--status', 'Busqueda,Activo']);
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.flags.statusFilter).toEqual(['busqueda', 'activo']);
+  });
+});
+
+describe('parseImportPatientsFlags — --apply SÓ com --task-id (parecer do lex): carga em massa nunca grava', () => {
+  it('--apply sozinho (sem --task-id) → ok:false — nunca "processa a lista inteira"', () => {
+    const r = parseImportPatientsFlags(['--apply']);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/--task-id/);
+  });
+
+  it('--apply --limit N (sem --task-id) → ok:false — filtro/limite não substitui a exigência', () => {
+    const r = parseImportPatientsFlags(['--apply', '--limit', '5']);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/--task-id/);
+  });
+
+  it('--apply --status busqueda (sem --task-id) → ok:false', () => {
+    const r = parseImportPatientsFlags(['--apply', '--status', 'busqueda']);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/--task-id/);
+  });
+
+  it('--apply + --task-id → ok:true (a única combinação que grava)', () => {
+    const r = parseImportPatientsFlags(['--apply', '--task-id', '86abq2pzg']);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.flags.apply).toBe(true);
+  });
+
+  it('--dry-run + --apply (sem --task-id) → ok:true, apply=false — --dry-run já venceu antes desta trava rodar', () => {
+    const r = parseImportPatientsFlags(['--dry-run', '--apply']);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.flags.apply).toBe(false);
   });
 });
