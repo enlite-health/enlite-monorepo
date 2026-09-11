@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { redactContact } from '@shared/logging';
 import { Result } from '@shared/utils/Result';
 import { canTransition } from '../domain/InterviewStateMachine';
 import { PubSubClient } from '@shared/events/PubSubClient';
@@ -102,7 +103,8 @@ export class HandleReminderResponseUseCase extends HandleReminderResponseQueries
         application.interview_datetime ?? undefined,
       );
       if (calResult.success) {
-        console.log(`[HandleReminderResponse] Calendar RSVP confirmed for ${worker.email}`);
+        // PII: e-mail mascarado; worker.id é o que acha a pessoa no banco.
+        console.log(`[HandleReminderResponse] Calendar RSVP confirmed for worker=${worker.id} email=${redactContact(worker.email, 'email')}`);
       } else {
         console.warn(
           `[HandleReminderResponse] Failed to confirm RSVP for ${worker.email}: ${calResult.reason}`,

@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { redactContact } from '@shared/logging';
 import { formatDateInTimezone, formatTimeInTimezone } from '@shared/utils/dateFormatters';
 import { resolveOfferedSlots, type OfferedSlot, type VacancySlotSource } from '@modules/matching/domain/interviewSlotResolver';
 import { withActorContext } from '@shared/database/actorContext';
@@ -152,7 +153,9 @@ export class BookInterviewSlotUseCase {
     if (workerEmail) {
       const calResult = await this.googleCalendarService.addGuestToMeeting(meetLink, workerEmail, true, meetDatetime);
       if (calResult.success) {
-        console.log(`[BookInterviewSlot] Calendar invite sent to ${workerEmail}`);
+        // PII: e-mail mascarado; workerId (já logado nas linhas irmãs deste método) é o
+        // que realmente acha a pessoa no banco — a máscara só confirma "é o mesmo e-mail".
+        console.log(`[BookInterviewSlot] Calendar invite sent to worker=${workerId} email=${redactContact(workerEmail, 'email')}`);
         calendarInvite = 'sent';
       } else {
         console.error(

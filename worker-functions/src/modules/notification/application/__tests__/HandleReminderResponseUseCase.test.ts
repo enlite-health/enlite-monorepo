@@ -371,4 +371,51 @@ describe('HandleReminderResponseUseCase', () => {
     expect(result.isFailure).toBe(true);
     expect(result.error).toBe('Unknown button payload');
   });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // PII guard — achado do gate 11/09 (pontos 3 e 11 da lista medida)
+  // ═══════════════════════════════════════════════════════════════════
+
+  describe('PII guard — telefone/e-mail nunca crus no log', () => {
+    const SENSITIVE_PHONE = '+5491122334455';
+
+    it('ponto 3 (HandleReminderResponseQueries): worker não encontrado → telefone mascarado no warn', async () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      mockQuery.mockResolvedValueOnce({ rows: [] }); // findWorker não acha ninguém
+
+      const result = await useCase.execute(SENSITIVE_PHONE, 'confirm_yes');
+
+      expect(result.isFailure).toBe(true);
+      const lines = warnSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(lines).not.toContain('1122334455');
+      expect(lines).toMatch(/Worker not found for phone 549\*\*\*4455/);
+      warnSpy.mockRestore();
+    });
+
+    it('ponto 11 (HandleReminderResponseUseCase): RSVP confirmado → e-mail mascarado, workerId visível', async () => {
+      const logSpy = jest.spyOn(console, 'log').mockImplementation();
+      mockQuery
+        .mockResolvedValueOnce({ rows: [WORKER] })
+        .mockResolvedValueOnce({ rows: [CONFIRMED_APP] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      await useCase.execute('whatsapp:+5491112345678', 'confirm_yes');
+
+      const lines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(lines).not.toContain(WORKER.email);
+      expect(lines).toContain(`Calendar RSVP confirmed for worker=${WORKER.id} email=`);
+      logSpy.mockRestore();
+    });
+
+    // Sabotagem (2º ponto pedido, junto do de ProcessTalentumPrescreening): reproduz o
+    // comportamento ANTIGO do warn de telefone — prova que a asserção acima pegaria o
+    // vazamento se o fix fosse desfeito.
+    it('sabotagem: reproduzindo o warn ANTIGO (telefone cru), a asserção do ponto 3 cairia', () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      console.warn(`[HandleReminderResponse] Worker not found for phone ${SENSITIVE_PHONE}`);
+      const oldLines = warnSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(oldLines).toContain(SENSITIVE_PHONE); // confirma: o formato antigo vazava
+      warnSpy.mockRestore();
+    });
+  });
 });
