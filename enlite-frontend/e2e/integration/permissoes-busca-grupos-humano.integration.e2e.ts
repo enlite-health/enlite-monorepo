@@ -278,7 +278,7 @@ test.describe('Permissões — grupos fixos e busca (PR-8a) @integration', () =>
     const busca = page.getByRole('searchbox', { name: 'Buscar permisos' });
     await busca.click();
     await page.keyboard.type('zzz-nao-existe-no-catalogo-de-verdade');
-    await expect(page.getByText('Ninguna permiso coincide con la búsqueda.')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Ningún permiso coincide con la búsqueda.')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId('screen-tree')).toHaveCount(0);
 
     await expect(page.getByTestId('screen-tree-no-results')).toHaveScreenshot('permissoes-busca-sem-resultado.png', { maxDiffPixelRatio: 0.02 });

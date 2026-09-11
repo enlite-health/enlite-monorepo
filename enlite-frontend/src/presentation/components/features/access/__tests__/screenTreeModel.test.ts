@@ -122,4 +122,28 @@ describe('filtraBlocosPorTexto (US-21, FR-720 — busca da tela de permissões)'
     filtraBlocosPorTexto(blocos, 'familia');
     expect(blocos).toEqual(antes);
   });
+
+  // Achado do gate `revisao-pr` (D209): 32 dos 96 rótulos reais do painel têm
+  // diacrítico ("Gestión a la Vista", "Mensajería", "Dirección", "Diagnóstico",
+  // "Preselección", "Números clave", "Analítica", "Importación"…) — digitar
+  // sem acento (o que qualquer teclado ES-AR sem morto faz) tinha que achar
+  // "nenhum resultado" para permissão que existe. `normalizeText` (o MESMO
+  // util do `SearchableSelect`) fecha isso.
+  it('🔒 "gestion" (sem acento) bate rótulo de TELA "Gestión a la Vista"', () => {
+    const comAcento = montaBlocosPorTela(CATALOG, {
+      ...rotulos,
+      tela: (id) => (id === 'patients.list' ? 'Gestión a la Vista' : rotulos.tela(id)),
+    }, REGISTRY);
+    const filtrado = filtraBlocosPorTexto(comAcento, 'gestion');
+    expect(filtrado.map((b) => b.category)).toEqual(['patients.list']);
+  });
+
+  it('🔒 "mensajeria" (sem acento) bate rótulo de LINHA "Mensajería"', () => {
+    const comAcento = montaBlocosPorTela(CATALOG, {
+      ...rotulos,
+      recurso: (r) => (r === 'dedup' ? 'Mensajería' : rotulos.recurso(r)),
+    }, REGISTRY);
+    const filtrado = filtraBlocosPorTexto(comAcento, 'mensajeria');
+    expect(filtrado.some((b) => b.grade.some((l) => l.resource === 'dedup'))).toBe(true);
+  });
 });

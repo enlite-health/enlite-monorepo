@@ -1,5 +1,6 @@
 import type { CatalogCategory, PermissionCell } from '@infrastructure/http/AdminPermissionsApiService';
 import { SCREEN_REGISTRY, screensByCell, type ScreenDef } from '@presentation/config/screenRegistry';
+import { normalizeText } from '@presentation/utils/normalizeText';
 import { cellKey, colunasDe, type Bloco, type Linha } from './cellMatrixModel';
 
 /**
@@ -124,15 +125,17 @@ export function celulasForaDasTelas(catalog: readonly CatalogCategory[], registr
   return [...indexaCatalogo(catalog).keys()].filter((k) => !listadas.has(k)).sort();
 }
 
-const normaliza = (s: string): string => s.trim().toLowerCase();
+const normaliza = (s: string): string => normalizeText(s.trim());
 
 /**
  * Busca/filtro da tela do grupo (US-21, FR-720, contracts/permissions-split.md §Busca).
  *
  * Filtra no CLIENTE, sobre a árvore já montada — nada muda no que é gravado (a `cells` marcada
  * fica no `Set` da página, intacta; esta função só decide o que a grade DESENHA). Casa por três
- * campos, todos em minúsculo e sem acento de propósito simples (o vocabulário é es-AR/pt-BR sem
- * diacrítico nas palavras que a régua usa — "familia", "cobertura"):
+ * campos, com `normalizeText` (minúsculo + sem diacrítico — o MESMO util do `SearchableSelect`,
+ * D209 do gate `revisao-pr`: 32 dos 96 rótulos do painel têm acento — "Gestión a la Vista",
+ * "Mensajería", "Dirección", "Diagnóstico", "Preselección", "Números clave", "Analítica",
+ * "Importación" — e `toLowerCase()` sozinho não casa "gestion" com "Gestión"):
  *   1. o rótulo da TELA (bloco.rotulo) — bate a tela inteira, mostra TODAS as linhas dela;
  *   2. o rótulo da LINHA (container ou recurso) — filtra só as linhas que baterem;
  *   3. a chave TÉCNICA de cada célula da linha (`patient_family:read`) — para quem já sabe o nome
