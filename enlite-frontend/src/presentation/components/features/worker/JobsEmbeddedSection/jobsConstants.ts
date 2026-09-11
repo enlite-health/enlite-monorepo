@@ -1,5 +1,6 @@
 import { TFunction } from 'i18next';
 import type { SelectOption } from '@presentation/components/molecules/SelectField';
+import { buildPendingRows } from '@presentation/utils/pendingRows';
 export type { PublicJobListing } from '@domain/entities/PublicJobListing';
 
 export interface Job {
@@ -211,4 +212,44 @@ export interface JobsResponse {
   data: Job[];
   count: number;
   cached?: boolean;
+}
+
+/**
+ * Rótulo do botão "Postularse" no card da vaga (Fase 4, DD5 · consome
+ * F1/F2/F3). Usa `buildPendingRows` — a MESMA função que `PendingTasksCard`
+ * usa pra montar a lista de tarefas da home — pra nunca contar duas vezes
+ * (correção b do orquestrador, 11/09): o botão dizia "Completá N pasos"
+ * com um N PRÓPRIO, que podia divergir do "Te faltan M pasos" da lista
+ * logo acima, a MESMA classe de bug que os gates das fases 2/3 encontraram
+ * dentro do próprio `PendingTasksCard` (entre o título e o "X de Y").
+ *
+ * `missingFields === null` (não apurado, D302/camada 0 — o GET ainda não
+ * voltou, ou o backend não devolveu) → rótulo ORIGINAL "Postularse": não
+ * dá pra nomear o que a tela não sabe. O clique já abre o aviso "No
+ * pudimos verificar" (camada 0, `JobsEmbeddedSection`) — nada muda aqui.
+ * `missingFields: []` (completo, conhecido) → 0 linhas → também
+ * "Postularse" original.
+ */
+export function buildApplyLabel(
+  missingFields: string[] | null,
+  profession: string | null | undefined,
+  t: TFunction,
+): string {
+  if (missingFields == null) return t('jobs.apply');
+
+  const rows = buildPendingRows(missingFields, profession);
+  if (rows.length === 0) return t('jobs.apply');
+
+  if (rows.length === 1) {
+    const [row] = rows;
+    if (row.kind === 'registration') {
+      return t('jobs.applyLabel.registration', { item: t(`profile.tabs.${row.tab}`) });
+    }
+    const doc = row.kind === 'document-generic'
+      ? t('profile.tabs.documents')
+      : t(`publicVacancy.incompleteModal.fields.${row.token}`, { defaultValue: row.token });
+    return t('jobs.applyLabel.document', { doc });
+  }
+
+  return t('jobs.applyLabel.multiple', { count: rows.length });
 }
