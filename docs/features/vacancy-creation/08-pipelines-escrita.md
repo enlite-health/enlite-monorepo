@@ -74,11 +74,15 @@ Quais caminhos podem criar/alterar uma `job_postings` row em prod, e quais escre
     - Se referenciado por vaga: `archived_at = NOW()` (preserva contexto)
     - Se órfão: `DELETE`
 
-### P9 — CLI `import-patients-from-clickup.ts`
+### P9 — CLI `import-patients-from-clickup.ts` (ÚNICO pipeline de sync ativo desde 11/09/2026)
 
-- **Trigger:** `npx ts-node scripts/import-patients-from-clickup.ts --live`.
-- **Lógica:** mesma do webhook (chama `PatientService.upsertFromClickUp` → `PatientRelatedWriter.replacePatientAddresses`).
-- **Uso:** backfill manual após deploys ou correções de massa.
+- **Trigger:** `npx ts-node scripts/import-patients-from-clickup.ts --apply` (dry-run por
+  padrão; `--apply` é a única flag que grava — `--live` não existe mais).
+- **Lógica:** mesmo motor do P8 (`SyncPatientFromClickUpTaskUseCase` → `PatientService.upsertFromClickUp`
+  → `PatientRelatedWriter.replacePatientAddresses`), agora também sincronizando diagnóstico
+  (`ClickUpDiagnosisMapper`, decisão do Gabriel 11/09/2026).
+- **Uso:** carga PONTUAL manual, numa sessão — nunca agendado (decisão 11/09/2026, sem sync
+  automático). Backfill manual após deploys ou correções de massa.
 
 ### P10 — POST `/api/admin/patients/:patientId/addresses`
 
@@ -94,7 +98,8 @@ Quais caminhos podem criar/alterar uma `job_postings` row em prod, e quais escre
 | `parseFromPdf` / `parseFromText` endpoints | Removidos |
 | `MatchPdfAddressToPatientAddressUseCase` | Removido |
 | `JobScraperService` (cheerio + WP) | Removido |
-| Sync de **vagas** ClickUp (`import-vacancies-from-clickup.ts`) | Depreciado (memória `project_clickup_deprecation`). Sync de pacientes (P8 + P9) é o único ativo. |
+| Sync de **vagas** ClickUp (`import-vacancies-from-clickup.ts`) | Depreciado (memória `project_clickup_deprecation`). |
+| Webhook + reconciliador automático de paciente (P8) | Removido 11/09/2026 — decisão do Gabriel, sem sync automático. Sync de pacientes (P9, manual) é o único ativo. |
 
 ## Auditoria
 

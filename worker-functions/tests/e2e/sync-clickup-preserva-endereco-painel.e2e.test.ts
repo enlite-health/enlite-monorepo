@@ -1,8 +1,9 @@
 /**
  * sync-clickup-preserva-endereco-painel.e2e.test.ts @integration
  *
- * `PatientRelatedWriter.replacePatientAddresses` — chamado pelo sync do ClickUp (webhook
- * `taskUpdated` e `ReconcileClickUpPatientsUseCase`, a cada ~10 min) — lia TODA linha ativa de
+ * `PatientRelatedWriter.replacePatientAddresses` — chamado pelo sync do ClickUp (até 11/09/2026:
+ * webhook `taskUpdated` + `ReconcileClickUpPatientsUseCase` a cada ~10 min, ambos removidos;
+ * hoje: `scripts/import-patients-from-clickup.ts`, carga manual) — lia TODA linha ativa de
  * `patient_addresses` sem filtrar `source`. O ClickUp só emite `display_order` 1/2/3
  * (`ClickUpPatientMapper`); o painel cria linha com `source = 'admin_manual'` e
  * `display_order = MAX+1` (`PatientAddressQueryHelper.insertPatientAddress`). Sem o filtro, o

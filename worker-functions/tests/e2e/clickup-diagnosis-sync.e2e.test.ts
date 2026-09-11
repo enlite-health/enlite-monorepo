@@ -7,11 +7,11 @@
  * apaga dado") pela porta do ClickUp — o mesmo defeito que o gate já pegou uma vez nesta
  * branch, agora provado com os DOIS escritores reais, banco real, catálogo CID-11 real.
  *
- * Roda exatamente o caminho de produção do webhook (`ClickUpPatientWebhookController.handle`
- * → `SyncPatientFromClickUpTaskUseCase.execute` → `persistDiagnosis` →
- * `ClickUpDiagnosisMapper.syncFromLabel`), só sem o HTTP/fetch da API do ClickUp — o `task` é
- * construído em memória (o controller também recebe um `ClickUpTask` já buscado; a fronteira de
- * rede não é o que este teste teria de provar de novo).
+ * Roda exatamente o caminho de produção da carga do ClickUp (11/09/2026: script manual
+ * `scripts/import-patients-from-clickup.ts`, sem webhook) — `SyncPatientFromClickUpTaskUseCase.execute`
+ * → `persistDiagnosis` → `ClickUpDiagnosisMapper.syncFromLabel` —, só sem o HTTP/fetch da API
+ * do ClickUp — o `task` é construído em memória (o motor também recebe um `ClickUpTask` já
+ * buscado; a fronteira de rede não é o que este teste teria de provar de novo).
  *
  * Entidades REAIS do catálogo 2026-01 (medidas via psql — mesmas de `patient-diagnoses-api.e2e.test.ts`):
  *   6A02.Z  "Trastorno del espectro autista, sin especificación"  (chapter 06)
