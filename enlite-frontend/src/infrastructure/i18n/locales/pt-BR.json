@@ -652,6 +652,11 @@
     "pendingRequiredGeneric": "Para se postular você precisa enviar:",
     "allRequiredDone": "Você já enviou todos os documentos obrigatórios para se postular.",
     "requiredBadge": "Obrigatório",
+    "antecedentesHelp": {
+      "toggle": "Não tem? Como conseguir",
+      "body": "O trâmite é feito online com Clave Fiscal ou Mi Argentina e chega por e-mail. Você pode escolher recebê-lo em 5 dias úteis ou em 24 horas.",
+      "link": "Como conseguir"
+    },
     "additionalTitle": "Outros Documentos",
     "addDocument": "Adicionar",
     "labelPlaceholder": "Nome do documento (ex: Certificado Primeiros Socorros)",
