@@ -905,6 +905,12 @@ describe('LocalizacoesCard — lê o contrato da API (A2, lex C2.1)', () => {
     render(<LocalizacoesCard addresses={[{ ...base, addressFormatted: 'Av. Contrato 123, CABA, AR', addressRaw: null }]} />);
     expect(screen.getByText('Av. Contrato 123').closest('[data-clarity-mask="True"]')).not.toBeNull();
   });
+
+  it('o sufixo de país sozinho após a vírgula não sobra como linha 2 (fica sem linha 2)', () => {
+    render(<LocalizacoesCard addresses={[{ ...base, addressFormatted: 'Ruta 9 km 42, Argentina', addressRaw: null }]} />);
+    expect(screen.getByText('Ruta 9 km 42')).toBeInTheDocument();
+    expect(screen.queryByText('Argentina')).not.toBeInTheDocument();
+  });
 });
 
 describe('PatientIdentityCard — e-mail do paciente em claro com máscara do Clarity (A4, lex C4.2)', () => {
