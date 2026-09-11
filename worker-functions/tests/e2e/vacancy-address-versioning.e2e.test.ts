@@ -3,9 +3,9 @@
  *
  * Full end-to-end flow that covers the scenario reported by the operator:
  *
- *   1. Patient created via ClickUp webhook with address "Av A".
+ *   1. Patient created via ClickUp sync with address "Av A".
  *   2. Vacancy 1 created via admin API → points to the patient_addresses row.
- *   3. Operator updates the address in ClickUp to "Av B" → webhook fires.
+ *   3. Operator updates the address in ClickUp to "Av B" → sync runs again.
  *   4. Vacancy 2 created via admin API → must point to the NEW address.
  *
  * The migration 198 versioning rule guarantees:
@@ -13,16 +13,22 @@
  *   - Vacancy 2 shows "Av B" (new row, active).
  *   - GET /api/admin/patients/:id/addresses lists only "Av B" (archived filtered).
  *
- * The flow uses the real webhook controller (supertest, mocked global.fetch)
- * + the real admin API (axios, mock token) + the real Postgres DB.
+ * The flow uses the real sync engine (SyncPatientFromClickUpTaskUseCase,
+ * in-memory task — no HTTP) + the real admin API (axios, mock token) + the
+ * real Postgres DB.
  *
  * Documented in: docs/features/vacancy-creation/10-bug-historico-endereco-antigo.md
+ *
+ * ── 11/09/2026 — decisão de remoção do sync automático ClickUp ──────────────
+ * Chamava `ClickUpPatientWebhookController` via supertest + HMAC + fetch
+ * mockado. O webhook foi removido — a plataforma é a fonte, carga do ClickUp
+ * só pontual/manual. Este teste passou a chamar
+ * `SyncPatientFromClickUpTaskUseCase.execute()` diretamente: MESMO motor,
+ * mesma regra de versionamento de endereço, sem o transporte HTTP/HMAC que só
+ * o webhook precisava.
  */
 
 // ── Mocks must come before any module imports ────────────────────────────────
-
-const mockFetch = jest.fn();
-global.fetch = mockFetch as unknown as typeof fetch;
 
 jest.mock('firebase-functions', () => ({
   logger: {
@@ -34,27 +40,24 @@ jest.mock('firebase-functions', () => ({
 
 // ── Imports ───────────────────────────────────────────────────────────────────
 
-import * as crypto from 'crypto';
-import express, { Request, Response } from 'express';
-import supertest from 'supertest';
 import { Pool } from 'pg';
-import { ClickUpPatientWebhookController } from '../../src/modules/integration/interfaces/webhooks/controllers/ClickUpPatientWebhookController';
-import { ClickUpHmacMiddleware } from '../../src/modules/integration/interfaces/webhooks/middleware/ClickUpHmacMiddleware';
+import {
+  PatientService,
+  PatientSourceLabelRepository,
+  PatientInsuranceVerifiedRepository,
+  PatientDeviceTypeRepository,
+} from '../../src/modules/case';
 import { ClickUpFieldResolver } from '../../src/modules/integration/infrastructure/clickup/ClickUpFieldResolver';
 import { ClickUpPatientMapper } from '../../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
-import { PatientService } from '../../src/modules/case/application/PatientService';
+import { SyncPatientFromClickUpTaskUseCase, type SyncPatientResult } from '../../src/modules/integration/application/SyncPatientFromClickUpTaskUseCase';
+import type { ClickUpTask } from '../../src/modules/integration/infrastructure/clickup/ClickUpTask';
 import { createApiClient, getMockToken, waitForBackend } from './helpers';
 
-const WEBHOOK_SECRET  = 'test-secret-e2e-versioning';
 const PATIENT_LIST_ID = '901304883903';
 const DATABASE_URL    =
   process.env.DATABASE_URL ||
   'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const TASK_PREFIX = 'cu-e2e-versioning-';
-
-function signBody(rawBody: string, secret: string): string {
-  return crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
-}
 
 function locationField(
   formattedAddress: string,
@@ -75,7 +78,7 @@ function makeClickUpTask(
   caseNumber: number,
   primaryLocation: ReturnType<typeof locationField>,
   primaryRaw: string,
-) {
+): ClickUpTask {
   return {
     id:     taskId,
     name:   `Caso ${caseNumber}, Paciente Versioning`,
@@ -96,7 +99,7 @@ function makeClickUpTask(
       { id: 'cf-dom3',      name: 'Domicilio 3 Principal Paciente',    type: 'location', value: null },
       { id: 'cf-raw3',      name: 'Domicilio Informado Paciente 3',    type: 'text',     value: null },
     ],
-  };
+  } as unknown as ClickUpTask;
 }
 
 function makeStubResolver(): ClickUpFieldResolver {
@@ -115,51 +118,25 @@ function makeStubResolver(): ClickUpFieldResolver {
   } as unknown as ClickUpFieldResolver;
 }
 
-function buildWebhookApp(pool: Pool): express.Express {
-  const app = express();
-  app.use(
-    express.json({
-      verify: (req, _res, buf) => {
-        (req as Request & { rawBody?: string }).rawBody = buf.toString('utf8');
-      },
-    }),
-  );
-  const hmac     = new ClickUpHmacMiddleware(WEBHOOK_SECRET);
+/** Mesmas deps que `ClickUpPatientWebhookController.create()` montava — sem o
+ *  refresher de catálogo (defesa específica de processo webhook de vida longa;
+ *  este motor roda uma vez por chamada, catálogo sempre fresco). */
+function makeUseCase(): SyncPatientFromClickUpTaskUseCase {
   const resolver = makeStubResolver();
-  const mapper   = new ClickUpPatientMapper(resolver);
-  const svc      = new PatientService();
-  const ctrl     = new ClickUpPatientWebhookController('mock-token', resolver, mapper, svc, pool);
-  app.post(
-    '/api/webhooks/clickup/patient',
-    hmac.verify(),
-    (req: Request, res: Response) => ctrl.handle(req, res),
-  );
-  return app;
+  return new SyncPatientFromClickUpTaskUseCase({
+    mapper:                new ClickUpPatientMapper(resolver),
+    patientService:        new PatientService(),
+    sourceLabelRepository: new PatientSourceLabelRepository(),
+    insuranceRepository:   new PatientInsuranceVerifiedRepository(),
+    deviceTypeRepository:  new PatientDeviceTypeRepository(),
+  });
 }
 
-async function postWebhook(
-  webhookApp: express.Express,
-  taskId: string,
-  task: ReturnType<typeof makeClickUpTask>,
-) {
-  mockFetch.mockResolvedValueOnce({
-    ok:     true,
-    status: 200,
-    json:   async () => task,
-    statusText: 'OK',
-  } as unknown as Response);
-
-  const body      = { event: 'taskUpdated', webhook_id: 'wh-test', task_id: taskId, list_id: PATIENT_LIST_ID };
-  const bodyJson  = JSON.stringify(body);
-  const signature = signBody(bodyJson, WEBHOOK_SECRET);
-
-  const res = await supertest(webhookApp)
-    .post('/api/webhooks/clickup/patient')
-    .set('Content-Type', 'application/json')
-    .set('X-Signature', signature)
-    .send(bodyJson);
-
-  return res;
+async function syncTask(
+  useCase: SyncPatientFromClickUpTaskUseCase,
+  task: ClickUpTask,
+): Promise<SyncPatientResult> {
+  return useCase.execute(task, { onMissingContact: 'flag' });
 }
 
 // ── Test suite ────────────────────────────────────────────────────────────────
@@ -167,13 +144,13 @@ async function postWebhook(
 describe('Vacancy address versioning — full flow (ClickUp → vacancy 1 → update → vacancy 2)', () => {
   const api = createApiClient();
   let pool: Pool;
-  let webhookApp: express.Express;
+  let useCase: SyncPatientFromClickUpTaskUseCase;
   let adminToken: string;
   let createdVacancyIds: string[] = [];
 
   beforeAll(async () => {
-    pool       = new Pool({ connectionString: DATABASE_URL });
-    webhookApp = buildWebhookApp(pool);
+    pool    = new Pool({ connectionString: DATABASE_URL });
+    useCase = makeUseCase();
     await waitForBackend(api);
     adminToken = await getMockToken(api, {
       uid:   'versioning-admin',
@@ -204,7 +181,7 @@ describe('Vacancy address versioning — full flow (ClickUp → vacancy 1 → up
     const taskId      = `${TASK_PREFIX}primary`;
     const caseNumber  = 920001;
 
-    // ── 1) Webhook creates patient with "Av A, Villa Ballester" ──────────────
+    // ── 1) Sync creates patient with "Av A, Villa Ballester" ────────────────
     const initialLocation = locationField(
       'Av A 100, Villa Ballester, Buenos Aires, Argentina',
       [
@@ -215,9 +192,8 @@ describe('Vacancy address versioning — full flow (ClickUp → vacancy 1 → up
     );
 
     const initialTask = makeClickUpTask(taskId, caseNumber, initialLocation, 'Av A 100');
-    const webhookRes1 = await postWebhook(webhookApp, taskId, initialTask);
-    expect(webhookRes1.status).toBe(200);
-    expect(webhookRes1.body.action).toBe('synced');
+    const syncResult1 = await syncTask(useCase, initialTask);
+    expect(syncResult1.kind).toBe('CREATED');
 
     const patientRow = await pool.query<{ id: string }>(
       `SELECT id FROM patients WHERE clickup_task_id = $1`,
@@ -259,7 +235,7 @@ describe('Vacancy address versioning — full flow (ClickUp → vacancy 1 → up
     // vacancies (is_draft=false) and remaps drafts to the refreshed row.
     await pool.query(`UPDATE job_postings SET is_draft = false WHERE id = $1`, [vacancy1Id]);
 
-    // ── 3) Webhook updates patient with new address "Av B, CABA" ────────────
+    // ── 3) Sync updates patient with new address "Av B, CABA" ───────────────
     const newLocation = locationField(
       'Av B 999, CABA, Argentina',
       [
@@ -270,8 +246,8 @@ describe('Vacancy address versioning — full flow (ClickUp → vacancy 1 → up
       -34.62, -58.39,
     );
     const updateTask  = makeClickUpTask(taskId, caseNumber, newLocation, 'Av B 999');
-    const webhookRes2 = await postWebhook(webhookApp, taskId, updateTask);
-    expect(webhookRes2.status).toBe(200);
+    const syncResult2 = await syncTask(useCase, updateTask);
+    expect(syncResult2.kind).toBe('UPDATED');
 
     // Old address row: still in DB, NOW with archived_at set
     const oldAddrAfter = await pool.query<{ archived_at: string | null }>(
@@ -400,8 +376,8 @@ describe('Vacancy address versioning — full flow (ClickUp → vacancy 1 → up
       return cf;
     });
 
-    const res = await postWebhook(webhookApp, taskId, taskTwo);
-    expect(res.status).toBe(200);
+    const syncResult = await syncTask(useCase, taskTwo);
+    expect(syncResult.kind).toBe('CREATED');
 
     const patientRow = await pool.query<{ id: string }>(
       `SELECT id FROM patients WHERE clickup_task_id = $1`,
