@@ -1,5 +1,6 @@
 import { PeriskopeInboundRouter } from '../PeriskopeInboundRouter';
 import { Result } from '@shared/utils/Result';
+import { logger } from '@shared/logging';
 
 describe('PeriskopeInboundRouter', () => {
   let mockDbQuery: jest.Mock;
@@ -214,5 +215,64 @@ describe('PeriskopeInboundRouter', () => {
 
     expect(result).toBe(true);
     expect(mockBookSlot.execute).toHaveBeenCalledWith('+5491112345678', 'slot_1', 'sid-6');
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // PII guard — pontos 5/6/7 do achado do gate 11/09 (telefone mascarado)
+  // ═══════════════════════════════════════════════════════════════════
+
+  describe('PII guard — telefone mascarado nos 3 logger.warn de falha', () => {
+    const SENSITIVE_PHONE = '+5491122334455';
+
+    it('ponto 5 — BookSlot failed: telefone mascarado', async () => {
+      const warnSpy = jest.spyOn(logger, 'warn').mockImplementation();
+      mockBookSlot.execute.mockResolvedValue(Result.fail('No pending interview'));
+      mockDbQuery
+        .mockResolvedValueOnce(WORKER_ROW)
+        .mockResolvedValueOnce({ rows: [{ template_slug: 'qualified_worker_request', twilio_sid: 'sid-5', buttons: [{ label: 'a', payload: 'slot_1' }] }] });
+
+      await router.routeNumberedReply(SENSITIVE_PHONE, '1');
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const [payload, msg] = warnSpy.mock.calls[0] as [Record<string, unknown>, string];
+      expect(msg).toBe('[PeriskopeInboundRouter] BookSlot failed');
+      expect(JSON.stringify(payload)).not.toContain('1122334455');
+      expect(payload.phone).toBe('549***4455');
+      warnSpy.mockRestore();
+    });
+
+    it('ponto 6 — ReminderResponse failed: telefone mascarado', async () => {
+      const warnSpy = jest.spyOn(logger, 'warn').mockImplementation();
+      mockHandleReminder.execute.mockResolvedValue(Result.fail('Invalid transition'));
+      mockDbQuery
+        .mockResolvedValueOnce(WORKER_ROW)
+        .mockResolvedValueOnce({ rows: [{ template_slug: 'qualified_reminder_confirm', twilio_sid: 'sid-2', buttons: [{ label: 'Sí', payload: 'confirm_yes' }, { label: 'No', payload: 'confirm_no' }] }] });
+
+      await router.routeNumberedReply(SENSITIVE_PHONE, '1');
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const [payload, msg] = warnSpy.mock.calls[0] as [Record<string, unknown>, string];
+      expect(msg).toBe('[PeriskopeInboundRouter] ReminderResponse failed');
+      expect(JSON.stringify(payload)).not.toContain('1122334455');
+      expect(payload.phone).toBe('549***4455');
+      warnSpy.mockRestore();
+    });
+
+    it('ponto 7 — RescheduleResponse failed: telefone mascarado', async () => {
+      const warnSpy = jest.spyOn(logger, 'warn').mockImplementation();
+      mockHandleReminder.execute.mockResolvedValue(Result.fail('Invalid transition'));
+      mockDbQuery
+        .mockResolvedValueOnce(WORKER_ROW)
+        .mockResolvedValueOnce({ rows: [{ template_slug: 'qualified_reminder_reschedule', twilio_sid: 'sid-3', buttons: [{ label: 'Sí', payload: 'reschedule_yes' }, { label: 'No', payload: 'reschedule_no' }] }] });
+
+      await router.routeNumberedReply(SENSITIVE_PHONE, '2');
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const [payload, msg] = warnSpy.mock.calls[0] as [Record<string, unknown>, string];
+      expect(msg).toBe('[PeriskopeInboundRouter] RescheduleResponse failed');
+      expect(JSON.stringify(payload)).not.toContain('1122334455');
+      expect(payload.phone).toBe('549***4455');
+      warnSpy.mockRestore();
+    });
   });
 });
