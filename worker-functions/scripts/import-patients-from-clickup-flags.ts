@@ -2,19 +2,28 @@
  * import-patients-from-clickup-flags.ts
  *
  * Parser PURO dos flags do CLI de `import-patients-from-clickup.ts`. Extraído para ser
- * testável sem rodar o script inteiro (que faz I/O de rede/DB e `process.exit`).
+ * testável sem rodar o script inteiro (que faz I/O de rede/DB e `process.exit`) — mesmo padrão
+ * de `backfill-diagnosis-catalog/cli-guards.ts` (D10 do ingestor CID-11): falha VISÍVEL, nunca
+ * escrita por omissão.
  *
- * `--apply` é a ÚNICA combinação que grava — dry-run é o DEFAULT (decisão 11/09/2026: carga
- * do ClickUp só pontual/manual, nunca agendada; ver cabeçalho de import-patients-from-clickup.ts).
- * Mesma disciplina do `backfill-diagnosis-catalog/cli-guards.ts` (D10 do ingestor CID-11):
- * falha visível, nunca escrita por omissão.
+ * Duas travas fail-safe (achado do gate revisao-pr, BLOCKER/MAJOR):
+ *   1. `--dry-run` presente VENCE `--apply`, sempre — nunca existe combinação de flags que
+ *      grave se `--dry-run` foi digitado (mesma disciplina de `parseBackfillFlags`).
+ *   2. `--task-id` sem valor depois (ou seguido de outra flag) é ERRO, não "task-id ausente" —
+ *      sem isto, `--task-id` digitado errado (esqueceu o id) caía muda na paginação da LISTA
+ *      INTEIRA em vez de travar. Mesma disciplina para `--limit` não numérico ou ≤ 0: silêncio
+ *      aqui vira "processa tudo" ou "processa zero" sem avisar ninguém.
+ *
+ * Por isso o parser devolve um RESULTADO (`ok: true` com os flags, ou `ok: false` com a
+ * mensagem) em vez de lançar ou sair do processo — quem decide como reportar o erro (console +
+ * `process.exit`) é o script, não este arquivo puro.
  */
 
 export interface ImportPatientsFlags {
-  /** true = grava no banco. Default false (dry-run). Só `--apply` liga isto. */
+  /** true = grava no banco. Default false (dry-run). `--dry-run` sempre vence `--apply`. */
   apply: boolean;
-  /** `--task-id <id>`: carga de UMA task específica (GET direto), sem paginar a lista.
-   *  Cobre o caso antes servido por `resync-one-clickup-task.ts` (removido 11/09/2026). */
+  /** `--task-id <id>`: carga pontual de UMA task (substitui resync-one-clickup-task.ts,
+   *  removido 11/09/2026). null = nenhum `--task-id` foi passado. */
   taskId: string | null;
   /** `--limit N`: processa só as N primeiras tasks (após filtro de status). null = sem limite. */
   limit: number | null;
@@ -24,19 +33,55 @@ export interface ImportPatientsFlags {
   verbose: boolean;
 }
 
+export type ParseFlagsResult =
+  | { ok: true; flags: ImportPatientsFlags }
+  | { ok: false; error: string };
+
+function looksLikeAnotherFlag(value: string | undefined): boolean {
+  return value === undefined || value.startsWith('--');
+}
+
 function flagValue(argv: string[], name: string): string | null {
   const idx = argv.indexOf(name);
   if (idx === -1) return null;
   return argv[idx + 1] ?? null;
 }
 
-export function parseImportPatientsFlags(argv: string[]): ImportPatientsFlags {
-  const apply = argv.includes('--apply');
+export function parseImportPatientsFlags(argv: string[]): ParseFlagsResult {
+  // ── --dry-run vence --apply, sempre (fail-safe) ─────────────────────────────
+  const hasDryRunFlag = argv.includes('--dry-run');
+  const hasApplyFlag  = argv.includes('--apply');
+  const apply = hasApplyFlag && !hasDryRunFlag;
 
-  const taskId = flagValue(argv, '--task-id');
+  // ── --task-id: sem valor (ou seguido de outra flag) é ERRO, nunca "ausente" ──
+  const taskIdIdx = argv.indexOf('--task-id');
+  let taskId: string | null = null;
+  if (taskIdIdx !== -1) {
+    const value = argv[taskIdIdx + 1];
+    if (looksLikeAnotherFlag(value)) {
+      return {
+        ok: false,
+        error: `--task-id requer um valor (ex.: --task-id 86abq2pzg) — recebido: ${value ?? '<nada>'}`,
+      };
+    }
+    taskId = value as string;
+  }
 
-  const limitRaw = flagValue(argv, '--limit');
-  const limit = limitRaw !== null ? parseInt(limitRaw, 10) : null;
+  // ── --limit: não numérico ou ≤ 0 é ERRO, nunca "sem limite" ─────────────────
+  const limitIdx = argv.indexOf('--limit');
+  let limit: number | null = null;
+  if (limitIdx !== -1) {
+    const raw = argv[limitIdx + 1];
+    const parsed = raw !== undefined ? Number(raw) : NaN;
+    const valido = raw !== undefined && Number.isInteger(parsed) && parsed > 0;
+    if (!valido) {
+      return {
+        ok: false,
+        error: `--limit precisa ser um inteiro positivo — recebido: ${raw ?? '<nada>'}`,
+      };
+    }
+    limit = parsed;
+  }
 
   const statusFilterRaw = flagValue(argv, '--status');
   const statusFilter = statusFilterRaw
@@ -45,5 +90,5 @@ export function parseImportPatientsFlags(argv: string[]): ImportPatientsFlags {
 
   const verbose = argv.includes('--verbose');
 
-  return { apply, taskId, limit, statusFilter, verbose };
+  return { ok: true, flags: { apply, taskId, limit, statusFilter, verbose } };
 }
