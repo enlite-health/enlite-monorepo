@@ -181,3 +181,46 @@ describe('parseImportPatientsFlags — --apply SÓ com --task-id (parecer do lex
     if (r.ok) expect(r.flags.apply).toBe(false);
   });
 });
+
+describe('parseImportPatientsFlags — --task-id "" (vazio/só espaço) é ERRO (achado do gate, 4ª rodada)', () => {
+  it('--task-id "" (string vazia) → ok:false — nunca vira GET /task/ real', () => {
+    const r = parseImportPatientsFlags(['--task-id', '']);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/--task-id/);
+  });
+
+  it('--task-id "   " (só espaço) → ok:false', () => {
+    const r = parseImportPatientsFlags(['--task-id', '   ']);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/--task-id/);
+  });
+
+  it('--task-id com espaço nas pontas mas conteúdo de verdade → ok:true (não é o mesmo caso)', () => {
+    const r = parseImportPatientsFlags(['--task-id', ' 86abq2pzg ']);
+    expect(r.ok).toBe(true);
+  });
+});
+
+describe('parseImportPatientsFlags — --task-id NÃO pode ser combinado com --limit/--status (achado do gate, 4ª rodada)', () => {
+  it('--task-id + --limit → ok:false, nunca ignora um dos dois em silêncio', () => {
+    const r = parseImportPatientsFlags(['--task-id', 'abc', '--limit', '5']);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/--task-id/);
+  });
+
+  it('--task-id + --status → ok:false', () => {
+    const r = parseImportPatientsFlags(['--task-id', 'abc', '--status', 'busqueda']);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/--task-id/);
+  });
+
+  it('--task-id + --apply + --limit → ok:false (a incompatibilidade vale mesmo com --apply presente)', () => {
+    const r = parseImportPatientsFlags(['--task-id', 'abc', '--apply', '--limit', '5']);
+    expect(r.ok).toBe(false);
+  });
+
+  it('--task-id sozinho (sem --limit/--status) → ok:true — a trava não reprova o caso normal', () => {
+    const r = parseImportPatientsFlags(['--task-id', 'abc']);
+    expect(r.ok).toBe(true);
+  });
+});
