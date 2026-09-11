@@ -1,10 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useWorkerProfileProgress } from '../useWorkerProfileProgress';
-import {
-  makeWorkerProgress as makeWorker,
-  makeWorkerDocuments as makeDocuments,
-} from '../../../test/workerProgressFixtures';
+import { makeWorkerProgress as makeWorker } from '../../../test/workerProgressFixtures';
 
 // Suprime os avisos do i18next em ambiente de teste
 vi.mock('react-i18next', () => ({
@@ -13,13 +10,16 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
-// makeWorker/makeDocuments vêm de test/workerProgressFixtures.ts (fixture
-// compartilhada com DocumentsGrid.test.tsx e WorkerHome.test.tsx — gate
-// revisao-pr, critério 2).
-
-// ── Suite ─────────────────────────────────────────────────────────────────────
-
+/**
+ * Fase 2 de postulacao-documento-pendente (DD1/DD2, fecha F4): este hook
+ * PAROU de calcular documentos — a pendência de documento agora vem NOMEADA
+ * do servidor (`missingFields` com `doc_*`, Fase 1) e é exibida pela lista
+ * de tarefas (`PendingTasksCard`), não aqui. Os testes que existiam para a
+ * seção "documents" (AT × Cuidador, `documentsData`, CTA de upload) saíram
+ * COM a funcionalidade — não fazia sentido manter teste de comportamento que
+ * o hook não tem mais. `useWorkerProfileProgress.contract.test.ts` (se
+ * existir depois) e `PendingTasksCard.test.tsx` cobrem documentos agora.
+ */
 describe('useWorkerProfileProgress', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -34,254 +34,59 @@ describe('useWorkerProfileProgress', () => {
     });
   });
 
-  describe('profissão AT', () => {
-    it('worker AT completo com todos os 4 docs obrigatórios → seção docs 100%', () => {
-      const worker = makeWorker({ profession: 'AT' });
-      const docs = makeDocuments({
-        resumeCvUrl: 'path/cv.pdf',
-        identityDocumentUrl: 'path/dni-front.pdf',
-        criminalRecordUrl: 'path/criminal.pdf',
-        atCertificateUrl: 'path/at-cert.pdf',
-      });
-
-      const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
-      const docsSection = result.current.progress.sections.find((s) => s.id === 'documents');
-
-      expect(docsSection?.totalCount).toBe(4);
-      expect(docsSection?.completedCount).toBe(4);
-      expect(docsSection?.percentage).toBe(100);
-    });
-
-    it('worker AT sem DNI verso → seção docs 100% (verso é opcional)', () => {
-      const worker = makeWorker({ profession: 'AT' });
-      const docs = makeDocuments({
-        resumeCvUrl: 'path/cv.pdf',
-        identityDocumentUrl: 'path/dni-front.pdf',
-        // identityDocumentBackUrl: ausente — não deve impactar
-        criminalRecordUrl: 'path/criminal.pdf',
-        atCertificateUrl: 'path/at-cert.pdf',
-      });
-
-      const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
-      const docsSection = result.current.progress.sections.find((s) => s.id === 'documents');
-
-      expect(docsSection?.totalCount).toBe(4);
-      expect(docsSection?.completedCount).toBe(4);
-      expect(docsSection?.percentage).toBe(100);
-    });
-
-    it('worker AT completo COM docs AT → isComplete true (overall 100%)', () => {
-      const worker = makeWorker({ profession: 'AT' });
-      const docs = makeDocuments({
-        resumeCvUrl: 'path/cv.pdf',
-        identityDocumentUrl: 'path/dni-front.pdf',
-        criminalRecordUrl: 'path/criminal.pdf',
-        atCertificateUrl: 'path/at-cert.pdf',
-      });
-
-      const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
-      expect(result.current.isComplete).toBe(true);
-    });
-
-    it('worker AT sem at_certificate → seção docs < 100%', () => {
-      const worker = makeWorker({ profession: 'AT' });
-      const docs = makeDocuments({
-        resumeCvUrl: 'path/cv.pdf',
-        identityDocumentUrl: 'path/dni-front.pdf',
-        criminalRecordUrl: 'path/criminal.pdf',
-        // atCertificateUrl ausente
-      });
-
-      const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
-      const docsSection = result.current.progress.sections.find((s) => s.id === 'documents');
-
-      expect(docsSection?.totalCount).toBe(4);
-      expect(docsSection?.completedCount).toBe(3);
-      expect(docsSection?.percentage).toBe(75);
-      expect(result.current.isComplete).toBe(false);
-    });
-
-    it('worker AT NÃO tem professional_registration nem liability_insurance nos steps de doc', () => {
-      const worker = makeWorker({ profession: 'AT' });
-      const docs = makeDocuments({
-        professionalRegistrationUrl: 'path/reg.pdf',
-        liabilityInsuranceUrl: 'path/ins.pdf',
-      });
-
-      const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
-      const docsSection = result.current.progress.sections.find((s) => s.id === 'documents');
-
-      // Apenas os 4 docs AT — profReg e insurance não contam
-      expect(docsSection?.totalCount).toBe(4);
-      expect(docsSection?.completedCount).toBe(0);
-    });
-
-    it('worker AT — steps de doc incluem as chaves corretas (sem identity_document_back)', () => {
-      const worker = makeWorker({ profession: 'AT' });
+  describe('seção única: registro', () => {
+    it('só existe UMA seção ("registration") — não "documents"', () => {
+      const worker = makeWorker({ missingFields: [] });
       const { result } = renderHook(() => useWorkerProfileProgress(worker));
-      const docsSection = result.current.progress.sections.find((s) => s.id === 'documents');
-      const stepIds = docsSection?.steps.map((s) => s.id) ?? [];
-
-      expect(stepIds).toContain('doc1'); // resume_cv
-      expect(stepIds).toContain('doc2'); // identity_document
-      expect(stepIds).toContain('doc3'); // criminal_record
-      expect(stepIds).toContain('doc4'); // at_certificate
-      expect(stepIds).toHaveLength(4);
-    });
-  });
-
-  describe('profissão Cuidador (não-AT)', () => {
-    it('worker Cuidador com DNI frente + antecedentes → seção docs 100% (verso opcional)', () => {
-      const worker = makeWorker({ profession: 'CUIDADOR' });
-      const docs = makeDocuments({
-        identityDocumentUrl: 'path/dni-front.pdf',
-        // identityDocumentBackUrl: ausente — não deve bloquear
-        criminalRecordUrl: 'path/criminal.pdf',
-      });
-
-      const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
-      const docsSection = result.current.progress.sections.find((s) => s.id === 'documents');
-
-      expect(docsSection?.totalCount).toBe(2);
-      expect(docsSection?.completedCount).toBe(2);
-      expect(docsSection?.percentage).toBe(100);
+      expect(result.current.progress.sections.map((s) => s.id)).toEqual(['registration']);
     });
 
-    it('worker Cuidador com DNI frente+antecedentes → isComplete true (verso opcional)', () => {
-      const worker = makeWorker({ profession: 'CUIDADOR' });
-      const docs = makeDocuments({
-        identityDocumentUrl: 'path/dni-front.pdf',
-        criminalRecordUrl: 'path/criminal.pdf',
-      });
-
-      const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
+    it('3 passos completos (missingFields: []) → seção 100%, isComplete true', () => {
+      const worker = makeWorker({ missingFields: [] });
+      const { result } = renderHook(() => useWorkerProfileProgress(worker));
+      const section = result.current.progress.sections[0];
+      expect(section.completedCount).toBe(3);
+      expect(section.totalCount).toBe(3);
+      expect(section.percentage).toBe(100);
       expect(result.current.isComplete).toBe(true);
+      expect(result.current.progress.overallPercentage).toBe(100);
     });
 
-    it('worker Cuidador NÃO exige identityDocumentBack (DNI verso é opcional)', () => {
-      const worker = makeWorker({ profession: 'CUIDADOR' });
-      const docs = makeDocuments({
-        identityDocumentUrl: 'path/dni-front.pdf',
-        identityDocumentBackUrl: null, // verso ausente — deve ser ignorado
-        criminalRecordUrl: 'path/criminal.pdf',
-      });
-
-      const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
-      const docsSection = result.current.progress.sections.find((s) => s.id === 'documents');
-      expect(docsSection?.totalCount).toBe(2);
-      expect(docsSection?.percentage).toBe(100);
+    it('falta phone (aba general) → step1 pendente, isComplete false', () => {
+      const worker = makeWorker({ missingFields: ['phone'] });
+      const { result } = renderHook(() => useWorkerProfileProgress(worker));
+      expect(result.current.isComplete).toBe(false);
+      expect(result.current.progress.overallPercentage).toBeLessThan(100);
     });
 
-    it('worker Cuidador NÃO exige resume_cv', () => {
-      const worker = makeWorker({ profession: 'CUIDADOR' });
-      const docs = makeDocuments({
-        identityDocumentUrl: 'path/dni-front.pdf',
-        criminalRecordUrl: 'path/criminal.pdf',
-        resumeCvUrl: null,
-      });
-
-      const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
-      const docsSection = result.current.progress.sections.find((s) => s.id === 'documents');
-      expect(docsSection?.totalCount).toBe(2);
-      expect(docsSection?.percentage).toBe(100);
-    });
-
-    it('worker Cuidador NÃO exige at_certificate', () => {
-      const worker = makeWorker({ profession: 'CUIDADOR' });
-      const docs = makeDocuments({
-        identityDocumentUrl: 'path/dni-front.pdf',
-        criminalRecordUrl: 'path/criminal.pdf',
-        atCertificateUrl: null,
-      });
-
-      const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
-      const docsSection = result.current.progress.sections.find((s) => s.id === 'documents');
-      expect(docsSection?.totalCount).toBe(2);
-      expect(docsSection?.percentage).toBe(100);
-    });
-
-    it('worker com profession undefined (inclui undefined como não-AT) → 2 docs obrigatórios', () => {
-      const worker = makeWorker({ profession: undefined });
-      const docs = makeDocuments({
-        identityDocumentUrl: 'path/dni-front.pdf',
-        criminalRecordUrl: 'path/criminal.pdf',
-      });
-
-      const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
-      const docsSection = result.current.progress.sections.find((s) => s.id === 'documents');
-      expect(docsSection?.totalCount).toBe(2);
-      expect(docsSection?.completedCount).toBe(2);
-      expect(docsSection?.percentage).toBe(100);
-    });
-
-    it('worker não-AT sem docs → completedCount 0, totalCount 2', () => {
-      const worker = makeWorker({ profession: undefined });
-      const docs = makeDocuments();
-
-      const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
-      const docsSection = result.current.progress.sections.find((s) => s.id === 'documents');
-      expect(docsSection?.totalCount).toBe(2);
-      expect(docsSection?.completedCount).toBe(0);
+    it('doc_* em missingFields NÃO afeta a seção de registro (não é aba general/address/availability)', () => {
+      const worker = makeWorker({ missingFields: ['doc_criminal_record'] });
+      const { result } = renderHook(() => useWorkerProfileProgress(worker));
+      // Só documento pendente → registro 100%, isComplete true (a
+      // completude de DOCUMENTO não é mais responsabilidade deste hook).
+      expect(result.current.isComplete).toBe(true);
     });
   });
 
   describe('nextAction', () => {
-    it('CTA de documentos leva direto ao slot do 1º documento obrigatório pendente (rota real, com foco)', () => {
-      const worker = makeWorker({ profession: 'CUIDADOR' });
-      const docs = makeDocuments(); // todos null — falta identity_document primeiro
-
-      const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
-      // Regressão: a rota antiga '/worker/documents' NÃO existe em App.tsx (cai no catch-all
-      // e devolve pra '/'). O CTA tem de usar o contrato real de WorkerProfilePage
-      // (?tab=documents&focus=<docType>), reaproveitando incompleteFieldDestinations.
-      expect(result.current.progress.nextAction?.route).toBe(
-        '/worker/profile?tab=documents&focus=identity_document',
-      );
-    });
-
-    it('CTA de documentos aponta pro 2º doc pendente quando o 1º já foi enviado (Cuidador)', () => {
-      const worker = makeWorker({ profession: 'CUIDADOR' });
-      const docs = makeDocuments({ identityDocumentUrl: 'path/dni-front.pdf' }); // falta criminal_record
-
-      const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
-      expect(result.current.progress.nextAction?.route).toBe(
-        '/worker/profile?tab=documents&focus=criminal_record',
-      );
-    });
-
-    it('CTA de documentos para AT aponta pro 1º doc obrigatório pendente (resume_cv)', () => {
-      const worker = makeWorker({ profession: 'AT' });
-      const docs = makeDocuments(); // todos null
-
-      const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
-      expect(result.current.progress.nextAction?.route).toBe(
-        '/worker/profile?tab=documents&focus=resume_cv',
-      );
-    });
-
-    it('cadastro incompleto (falta telefone) → CTA leva ao cadastro, mesmo com documentos ok', () => {
-      const worker = makeWorker({ profession: 'CUIDADOR', missingFields: ['phone'] });
-      const docs = makeDocuments({
-        identityDocumentUrl: 'path/dni-front.pdf',
-        criminalRecordUrl: 'path/criminal.pdf',
-      });
-
-      const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
+    it('cadastro incompleto (falta telefone) → CTA leva ao cadastro', () => {
+      const worker = makeWorker({ missingFields: ['phone'] });
+      const { result } = renderHook(() => useWorkerProfileProgress(worker));
       expect(result.current.progress.nextAction).toEqual({
         label: 'profile.progress.completeRegistration',
         route: '/worker-registration',
       });
     });
 
-    it('nextAction é undefined quando tudo está completo (Cuidador — verso não exigido)', () => {
-      const worker = makeWorker({ profession: 'CUIDADOR' });
-      const docs = makeDocuments({
-        identityDocumentUrl: 'path/dni-front.pdf',
-        // identityDocumentBackUrl: ausente — não é obrigatório
-        criminalRecordUrl: 'path/criminal.pdf',
-      });
+    it('nextAction é undefined quando os 3 passos de registro estão completos', () => {
+      const worker = makeWorker({ missingFields: [] });
+      const { result } = renderHook(() => useWorkerProfileProgress(worker));
+      expect(result.current.progress.nextAction).toBeUndefined();
+    });
 
-      const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
+    it('nextAction é undefined mesmo com doc_* pendente (upload não é mais CTA deste hook)', () => {
+      const worker = makeWorker({ missingFields: ['doc_criminal_record'] });
+      const { result } = renderHook(() => useWorkerProfileProgress(worker));
       expect(result.current.progress.nextAction).toBeUndefined();
     });
   });

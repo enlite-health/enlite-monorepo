@@ -486,6 +486,11 @@
     "clearFilters": "Limpar Filtros",
     "interested": "Me Interessa",
     "apply": "Candidatar-se",
+    "applyLabel": {
+      "document": "Envie {{doc}} para se candidatar",
+      "registration": "Complete {{item}} para se candidatar",
+      "multiple": "Complete {{count}} passos para se candidatar"
+    },
     "viewDetails": "Ver Detalhes",
     "results": "vagas encontradas",
     "filters": {
@@ -590,6 +595,13 @@
     "completionCard": {
       "title": "Complete seu Perfil Profissional"
     },
+    "pendingTasks": {
+      "title_one": "Falta {{count}} passo para você se candidatar",
+      "title_other": "Faltam {{count}} passos para você se candidatar",
+      "completedOf": "Você já completou {{done}} de {{total}}",
+      "completeAction": "Completar",
+      "uploadAction": "Enviar agora"
+    },
     "wizard": {
       "back": "Voltar",
       "next": "Próximo",
@@ -611,12 +623,10 @@
     },
     "progress": {
       "registration": "Cadastro Básico",
-      "documents": "Documentos obrigatórios",
       "step1": "Informações Gerais",
       "step2": "Endereço de Atendimento",
       "step3": "Disponibilidade",
-      "completeRegistration": "Completar Cadastro",
-      "uploadDocuments": "Enviar Documentos"
+      "completeRegistration": "Completar Cadastro"
     }
   },
   "documentTypes": {
@@ -647,6 +657,11 @@
     "pendingRequiredGeneric": "Para se postular você precisa enviar:",
     "allRequiredDone": "Você já enviou todos os documentos obrigatórios para se postular.",
     "requiredBadge": "Obrigatório",
+    "antecedentesHelp": {
+      "toggle": "Não tem? Como conseguir",
+      "body": "O trâmite é feito online com Clave Fiscal ou Mi Argentina e chega por e-mail. Você pode escolher recebê-lo em 5 dias úteis ou em 24 horas.",
+      "link": "Como conseguir"
+    },
     "additionalTitle": "Outros Documentos",
     "addDocument": "Adicionar",
     "labelPlaceholder": "Nome do documento (ex: Certificado Primeiros Socorros)",

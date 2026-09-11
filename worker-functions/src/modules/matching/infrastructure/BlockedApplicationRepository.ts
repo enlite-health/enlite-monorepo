@@ -1,6 +1,8 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { logger } from '@shared/logging';
+import { expandDocumentToken as expandDocumentTokenPure } from '@modules/worker/domain/documentTokenExpansion';
+import { fetchWorkerDocumentRow } from '@modules/worker/infrastructure/WorkerCompletenessRepository';
 
 export interface BlockedApplicationUpsertParams {
   workerId: string;
@@ -9,14 +11,6 @@ export interface BlockedApplicationUpsertParams {
   acquisitionChannel: string | null;
 }
 
-
-/** Maps worker_documents SQL column names to their doc_* tokens. */
-const DOC_COLUMN_TO_TOKEN: Record<string, string> = {
-  resume_cv_url: 'doc_resume_cv',
-  identity_document_url: 'doc_identity_document',
-  criminal_record_url: 'doc_criminal_record',
-  at_certificate_url: 'doc_at_certificate',
-};
 
 /**
  * BlockedApplicationRepository (write side)
@@ -39,14 +33,16 @@ export class BlockedApplicationRepository {
   /**
    * Expande o token grosso `worker_documents` para tokens específicos de documento.
    *
-   * Semântica de profession IS NULL: espelha EXATAMENTE o gate SQL fn_worker_missing_fields
-   * (migration 212, linhas 209-220). No SQL, `profession != 'AT'` com NULL retorna NULL
-   * (não-TRUE), portanto a condição OR só passa se resume_cv+at_certificate estiverem
-   * ambos presentes — ou seja, profession NULL é tratado como AT para fins de documentos.
-   * DIVERGÊNCIA com workerDocumentPolicy.ts (UNKNOWN→BASE apenas): não usamos o helper TS
-   * para este método porque a paridade com o SQL é requisito explícito da spec.
+   * Busca (`fetchWorkerDocumentRow`) e regra pura (`expandDocumentTokenPure`) vivem em
+   * `worker/domain/documentTokenExpansion.ts` — ponto ÚNICO, reusado pelo
+   * `GET /api/workers/me` (`WorkerCompletenessRepository.readWorkerMissingFields`),
+   * desde a Fase 1 de `postulacao-documento-pendente` (DD1). Este método só resolve
+   * o `workerId` da instância e trata a falha de forma NÃO-FATAL — mesmo comportamento
+   * de antes da extração.
    *
-   * Se `worker_documents` não estiver em missingFields, retorna missingFields sem alteração.
+   * Se `worker_documents` não estiver em missingFields, retorna missingFields sem alteração
+   * (checagem redundante com a de `expandDocumentTokenPure`, mas evita a query quando óbvio
+   * que não é necessária).
    *
    * Escolha de armazenamento: o banco continua gravando o token cru `worker_documents`
    * (para manter compatibilidade com queries analíticas/existentes). O retorno do método
@@ -63,55 +59,8 @@ export class BlockedApplicationRepository {
     const log = logger.child({ workerId });
 
     try {
-      const { rows } = await this.pool.query<{
-        profession: string | null;
-        resume_cv_url: string | null;
-        identity_document_url: string | null;
-        criminal_record_url: string | null;
-        at_certificate_url: string | null;
-      }>(
-        `SELECT
-           w.profession,
-           wd.resume_cv_url,
-           wd.identity_document_url,
-           wd.criminal_record_url,
-           wd.at_certificate_url
-         FROM workers w
-         LEFT JOIN worker_documents wd ON wd.worker_id = w.id
-         WHERE w.id = $1
-           AND w.merged_into_id IS NULL`,
-        [workerId],
-      );
-
-      if (rows.length === 0) {
-        // Worker not found or merged — keep raw token, return as-is
-        return missingFields;
-      }
-
-      const row = rows[0];
-      const profession = row.profession;
-
-      // Determine required columns per SQL gate semantics:
-      //   - profession = 'AT': identity_document_url + criminal_record_url + resume_cv_url + at_certificate_url
-      //   - profession IS NULL or '': treat as AT (NULL != 'AT' is NULL in SQL → OR branch
-      //     only passes when both resume_cv and at_certificate are present)
-      //   - profession != 'AT' (non-null, non-empty): identity_document_url + criminal_record_url only
-      const isAtOrUnknown = profession === 'AT' || profession === null || profession === '';
-      const requiredColumns = isAtOrUnknown
-        ? ['identity_document_url', 'criminal_record_url', 'resume_cv_url', 'at_certificate_url']
-        : ['identity_document_url', 'criminal_record_url'];
-
-      const missingDocTokens = requiredColumns
-        .filter(col => row[col as keyof typeof row] === null)
-        .map(col => DOC_COLUMN_TO_TOKEN[col])
-        .filter((t): t is string => t !== undefined);
-
-      // Replace `worker_documents` with specific doc_* tokens
-      const expanded = missingFields
-        .filter(f => f !== 'worker_documents')
-        .concat(missingDocTokens);
-
-      return expanded;
+      const row = await fetchWorkerDocumentRow(this.pool, workerId);
+      return expandDocumentTokenPure(missingFields, row);
     } catch (err) {
       log.warn({
         msg: 'BlockedApplicationRepository.expandDocumentToken: failed to expand doc token (non-fatal)',

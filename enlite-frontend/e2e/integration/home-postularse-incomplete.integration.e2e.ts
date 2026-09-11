@@ -50,28 +50,44 @@ test.describe('@integration Home — Postularse/Ver Detalles com cadastro incomp
     await expect(page.locator('#jobs-section')).toBeVisible({ timeout: 20_000 });
   }
 
-  test('feliz — AT sem antecedentes clica Postularse → modal lista Documentos → "Ir a" cai na aba com o aviso nomeando "Antecedentes penales"', async ({ page }) => {
+  test('feliz — AT sem antecedentes e sem CV clica Postularse → modal nomeia os DOIS documentos → "Ir a Antecedentes penales" cai na aba, no slot certo, com o aviso nomeando "Antecedentes penales"', async ({ page }) => {
+    // Fase 1 (DD1, postulacao-documento-pendente): GET /api/workers/me deixou
+    // de devolver o agregado `worker_documents` — devolve os `doc_*`
+    // específicos (mesmo detalhe que o 403 do track-channel já dava). Com
+    // DOIS documentos faltando, o modal nomeia OS DOIS, não mais um item
+    // genérico "Documentos" (i18n real, es.json: fields.doc_criminal_record=
+    // "Antecedentes penales", fields.doc_resume_cv="Currículum vitae").
     const vacancyId = insertMinimalVacancy({ includeInPublicListing: true });
     vacancies.push(vacancyId);
-    const w = insertEligibilityWorker({ occupation: 'AT', docCriminalRecord: false });
+    const w = insertEligibilityWorker({ occupation: 'AT', docCriminalRecord: false, docResumeCv: false });
     await loginAndGoHome(page, w);
 
-    const postularseBtn = page.getByRole('button', { name: 'Postularse' }).first();
+    // Fase 4/DD5: com 2 documentos pendentes (antecedentes + CV), o rótulo
+    // do botão deixa de ser "Postularse" — vira "Completá 2 pasos para
+    // postularte" (buildApplyLabel, mesma contagem de buildPendingRows que
+    // a lista de tarefas da home usa). O CLIQUE continua o MESMO — ainda
+    // abre o modal que nomeia, sem request pra track-channel.
+    const postularseBtn = page.getByRole('button', { name: 'Completá 2 pasos para postularte' }).first();
     await expect(postularseBtn).toBeVisible({ timeout: 15_000 });
     await postularseBtn.click();
 
     const modal = page.getByRole('heading', { name: 'Registro incompleto' });
     await expect(modal).toBeVisible({ timeout: 10_000 });
-    const docsItem = page.getByRole('button', { name: /Ir a Documentos/i });
-    await expect(docsItem).toBeVisible();
+    const criminalRecordItem = page.getByRole('button', { name: /Ir a Antecedentes penales/i });
+    const resumeCvItem = page.getByRole('button', { name: /Ir a Currículum vitae/i });
+    await expect(criminalRecordItem).toBeVisible();
+    await expect(resumeCvItem).toBeVisible();
 
     await expect(page.locator('[data-testid="incomplete-modal-pending-list"]')).toHaveScreenshot(
       'home-incomplete-modal-at-docs.png',
       { maxDiffPixels: 200 },
     );
 
-    await docsItem.click();
-    await expect(page).toHaveURL(/\/worker\/profile\?tab=documents/, { timeout: 15_000 });
+    await criminalRecordItem.click();
+    // focus=criminal_record: leva ao slot ESPECÍFICO do documento clicado, não
+    // só à aba (destinationFor('doc_criminal_record') → { tab: 'documents',
+    // focus: 'criminal_record' }, incompleteFieldDestinations.ts).
+    await expect(page).toHaveURL(/\/worker\/profile\?tab=documents&focus=criminal_record/, { timeout: 15_000 });
 
     const notice = page.locator('[data-testid="at-required-notice"]');
     await expect(notice).toBeVisible({ timeout: 15_000 });
@@ -84,7 +100,9 @@ test.describe('@integration Home — Postularse/Ver Detalles com cadastro incomp
     const w = insertEligibilityWorker({ occupation: 'AT', phone: false });
     await loginAndGoHome(page, w);
 
-    const postularseBtn = page.getByRole('button', { name: 'Postularse' }).first();
+    // Fase 4/DD5: 1 pendência de REGISTRO (phone → aba general) → "Completá
+    // Información General para postularte".
+    const postularseBtn = page.getByRole('button', { name: 'Completá Información General para postularte' }).first();
     await expect(postularseBtn).toBeVisible({ timeout: 15_000 });
     await postularseBtn.click();
 

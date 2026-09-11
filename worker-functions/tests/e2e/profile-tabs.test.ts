@@ -125,17 +125,33 @@ describe('Profile Tabs — Endpoints por aba', () => {
       missing.forEach((t: unknown) => expect(typeof t).toBe('string'));
     });
 
-    it('a rota serve a função do banco sem intermediar — jsonb chega íntegro', async () => {
+    it('a rota serve a função do banco sem intermediar, com worker_documents expandido em doc_* (Fase 1, DD1)', async () => {
       // ⚠️ O nome importa: isto prova o ENCANAMENTO (a rota não filtra, não
-      // reordena, não perde token, e o jsonb do Postgres chega como array), NÃO
-      // que a tela e o portão da postulação falem o mesmo vocabulário — o gate
-      // (rodada 4) mostrou que ainda não falam: o 403 expande `worker_documents`
-      // nos 4 `doc_*` e esta rota devolve o token cru. Essa igualdade é item de
-      // fila, e chamar este teste de "vitrine == portão" seria promessa falsa.
+      // reordena, não perde token, e o jsonb do Postgres chega como array) E
+      // que a rota detalha documentos — desde a Fase 1 de
+      // postulacao-documento-pendente (DD1), `PUT /general-info` (e o `GET
+      // /me`, mesmo caminho) não devolvem mais o agregado `worker_documents`:
+      // devolvem os `doc_*` específicos, igual ao 403 do track-channel já
+      // fazia (F3). Os tokens que NÃO são de documento continuam idênticos
+      // aos da função SQL — só documentos ganham detalhe.
+      //
+      // O oráculo dos `doc_*` esperados é ESCRITO À MÃO (não chama
+      // `expandDocumentToken`, senão o teste provaria só que o código
+      // concorda consigo mesmo): este `workerId` é CAREGIVER (payload acima)
+      // e NUNCA recebeu upload de documento em todo o describe — sem linha em
+      // `worker_documents`, então os 2 obrigatórios de CAREGIVER (F5: DNI +
+      // antecedentes; CV e certificado AT são só de AT) faltam os dois.
       const res = await api.put('/api/workers/me/general-info', payload, authHeaders());
       const gate = await db.query('SELECT fn_worker_missing_fields($1) AS missing', [workerId]);
+      const gateTokens: string[] = gate.rows[0].missing;
 
-      expect(new Set(res.data.data.missingFields)).toEqual(new Set(gate.rows[0].missing));
+      const nonDocGateTokens = gateTokens.filter((t) => t !== 'worker_documents');
+      const EXPECTED_DOC_TOKENS_FOR_THIS_FIXTURE = ['doc_identity_document', 'doc_criminal_record'];
+      const expectedRouteTokens = gateTokens.includes('worker_documents')
+        ? [...nonDocGateTokens, ...EXPECTED_DOC_TOKENS_FOR_THIS_FIXTURE]
+        : nonDocGateTokens; // função não pede documento → rota não devolve doc_* nenhum
+
+      expect(new Set(res.data.data.missingFields)).toEqual(new Set(expectedRouteTokens));
     });
 
     it('campo do portão que falta aparece, e some quando a prestadora preenche', async () => {

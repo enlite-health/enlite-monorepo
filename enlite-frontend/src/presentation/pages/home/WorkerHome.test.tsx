@@ -1,28 +1,20 @@
 /**
  * WorkerHome.test.tsx
  *
- * CAMADA 0 — item 2 (parecer lex 10/09): WorkerHome agora repassa
- * `missingFields` (do GET /api/workers/me que ela já busca) pra
- * JobsEmbeddedSection — sem requisição nova.
- *
- * Arquivo não tinha teste nenhum antes deste fix (0% funcs/lines na suíte
- * cheia) — cobertura 100% cobre o componente inteiro: fetch (Promise.all de
- * progress/docs/availability), Clarity, cálculo de isFullyRegistered, o CTA
- * do card de progresso e o repasse de props pra JobsEmbeddedSection.
+ * Fase 2 de postulacao-documento-pendente (DD1/DD2): a home PAROU de buscar
+ * `DocumentApiService.getDocuments()` e de calcular completude local
+ * (`areAllRequiredDocsComplete`) — `isFullyRegistered`/`hasPendingTasks`
+ * vêm SÓ de `workerData.missingFields` (Fase 1, servidor). O card antigo
+ * (`ProfileCompletionCard`) foi trocado por `PendingTasksCard`, que recebe
+ * `missingFields`/`profession` crus e decide sozinho o que mostrar.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { WorkerHome } from './WorkerHome';
 import type { WorkerProgressResponse } from '@infrastructure/http/WorkerApiService';
-import type { WorkerDocumentsResponse } from '@infrastructure/http/DocumentApiService';
-import { makeWorkerProgress, makeWorkerDocuments } from '../../../test/workerProgressFixtures';
+import { makeWorkerProgress } from '../../../test/workerProgressFixtures';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
-
-const mockNavigate = vi.fn();
-vi.mock('react-router-dom', () => ({
-  useNavigate: () => mockNavigate,
-}));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -37,11 +29,6 @@ const mockGetProgress = vi.fn();
 const mockGetAvailability = vi.fn();
 vi.mock('@presentation/hooks/useWorkerApi', () => ({
   useWorkerApi: () => ({ getProgress: mockGetProgress, getAvailability: mockGetAvailability }),
-}));
-
-const mockGetDocuments = vi.fn();
-vi.mock('@infrastructure/http/DocumentApiService', () => ({
-  DocumentApiService: { getDocuments: (...args: unknown[]) => mockGetDocuments(...args) },
 }));
 
 const mockIdentifyClarity = vi.fn();
@@ -68,11 +55,22 @@ vi.mock('@presentation/components/templates/DashboardLayout/TopNavbar', () => ({
   TopNavbar: ({ userName }: { userName: string }) => <div data-testid="top-navbar">{userName}</div>,
 }));
 
-vi.mock('@presentation/components/organisms/ProfileCompletionCard', () => ({
-  ProfileCompletionCard: ({ onActionClick }: { onActionClick: () => void }) => (
-    <div data-testid="profile-completion-card">
-      <button onClick={onActionClick}>action</button>
-    </div>
+vi.mock('@presentation/components/organisms/PendingTasksCard', () => ({
+  PendingTasksCard: ({
+    missingFields,
+    profession,
+    country,
+  }: {
+    missingFields: string[];
+    profession?: string | null;
+    country?: string | null;
+  }) => (
+    <div
+      data-testid="pending-tasks-card"
+      data-missing-fields={JSON.stringify(missingFields)}
+      data-profession={profession ?? ''}
+      data-country={country ?? ''}
+    />
   ),
 }));
 
@@ -80,23 +78,23 @@ vi.mock('@presentation/components/features/worker/JobsEmbeddedSection', () => ({
   JobsEmbeddedSection: ({
     isRegistrationComplete,
     missingFields,
+    profession,
   }: {
     isRegistrationComplete: boolean;
     missingFields: string[] | null;
+    profession?: string | null;
   }) => (
     <div
       data-testid="jobs-embedded-section"
       data-registration-complete={String(isRegistrationComplete)}
       data-missing-fields={JSON.stringify(missingFields)}
+      data-profession={profession ?? ''}
     />
   ),
 }));
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-// makeWorker/makeDocs envolvem a fixture compartilhada
-// (test/workerProgressFixtures.ts — gate revisao-pr, critério 2) com os
-// defaults específicos desta suíte (worker Ana, CUIDADOR, docs enviados).
 function makeWorker(overrides: Partial<WorkerProgressResponse> = {}): WorkerProgressResponse {
   return makeWorkerProgress({
     id: 'worker-1',
@@ -109,17 +107,6 @@ function makeWorker(overrides: Partial<WorkerProgressResponse> = {}): WorkerProg
     profession: 'CUIDADOR',
     availability: undefined,
     status: 'REGISTERED',
-    ...overrides,
-  });
-}
-
-function makeDocs(overrides: Partial<WorkerDocumentsResponse> = {}): WorkerDocumentsResponse {
-  return makeWorkerDocuments({
-    id: 'docs-1',
-    workerId: 'worker-1',
-    identityDocumentUrl: 'path/dni.pdf',
-    criminalRecordUrl: 'path/crim.pdf',
-    documentsStatus: 'submitted',
     ...overrides,
   });
 }
@@ -139,22 +126,21 @@ describe('WorkerHome — sem user.id', () => {
 
     expect(mockGetProgress).not.toHaveBeenCalled();
     expect(mockGetAvailability).not.toHaveBeenCalled();
-    expect(mockGetDocuments).not.toHaveBeenCalled();
 
     const jobs = screen.getByTestId('jobs-embedded-section');
     expect(jobs).toHaveAttribute('data-registration-complete', 'false');
     expect(jobs).toHaveAttribute('data-missing-fields', 'null');
+    expect(screen.queryByTestId('pending-tasks-card')).not.toBeInTheDocument();
   });
 });
 
 // ── Fetch com sucesso — cadastro completo ────────────────────────────────────
 
-describe('WorkerHome — cadastro completo', () => {
-  it('worker + docs completos, disponibilidade presente → isComplete, card some, Clarity chamado, JobsEmbeddedSection completo', async () => {
+describe('WorkerHome — cadastro completo (missingFields: [] do servidor)', () => {
+  it('worker completo → PendingTasksCard NÃO aparece, Clarity chamado, JobsEmbeddedSection completo', async () => {
     const worker = makeWorker({ missingFields: [] });
     mockGetProgress.mockResolvedValue(worker);
     mockGetAvailability.mockResolvedValue([{ day: 'monday', start: '09:00', end: '17:00' }]);
-    mockGetDocuments.mockResolvedValue(makeDocs());
 
     render(<WorkerHome />);
 
@@ -162,7 +148,7 @@ describe('WorkerHome — cadastro completo', () => {
       expect(screen.getByTestId('jobs-embedded-section')).toHaveAttribute('data-registration-complete', 'true');
     });
 
-    expect(screen.queryByTestId('profile-completion-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('pending-tasks-card')).not.toBeInTheDocument();
     expect(mockIdentifyClarity).toHaveBeenCalledWith('auth-1', { workerId: 'worker-1', workerStatus: 'REGISTERED' });
     expect(screen.getByTestId('jobs-embedded-section')).toHaveAttribute('data-missing-fields', '[]');
   });
@@ -171,7 +157,6 @@ describe('WorkerHome — cadastro completo', () => {
     const worker = makeWorker({ missingFields: [], status: undefined });
     mockGetProgress.mockResolvedValue(worker);
     mockGetAvailability.mockResolvedValue([]);
-    mockGetDocuments.mockResolvedValue(makeDocs());
 
     render(<WorkerHome />);
 
@@ -183,44 +168,59 @@ describe('WorkerHome — cadastro completo', () => {
     const worker = makeWorker({ missingFields: [] });
     mockGetProgress.mockResolvedValue(worker);
     mockGetAvailability.mockResolvedValue([]);
-    mockGetDocuments.mockResolvedValue(makeDocs());
 
     render(<WorkerHome />);
     await waitFor(() => expect(mockIdentifyClarity).toHaveBeenCalled());
-    // isComplete ainda depende de step3 (disponibilidade) via missingFields do
-    // backend, não deste array — cobre só o ramo `: undefined`.
     expect(screen.getByTestId('jobs-embedded-section')).toBeInTheDocument();
   });
 });
 
 // ── Fetch com sucesso — cadastro incompleto ──────────────────────────────────
 
-describe('WorkerHome — cadastro incompleto', () => {
-  it('missingFields com pendência → card aparece, JobsEmbeddedSection incompleto com os mesmos missingFields', async () => {
-    const worker = makeWorker({ missingFields: ['phone'] });
+describe('WorkerHome — cadastro incompleto (missingFields com pendência)', () => {
+  it('PendingTasksCard aparece com os missingFields e a profession crus; JobsEmbeddedSection incompleto', async () => {
+    const worker = makeWorker({ missingFields: ['phone', 'doc_criminal_record'], profession: 'AT' });
     mockGetProgress.mockResolvedValue(worker);
     mockGetAvailability.mockResolvedValue([]);
-    mockGetDocuments.mockResolvedValue(makeDocs({ identityDocumentUrl: null }));
 
     render(<WorkerHome />);
 
-    await waitFor(() => expect(screen.getByTestId('profile-completion-card')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId('pending-tasks-card')).toBeInTheDocument());
+    const card = screen.getByTestId('pending-tasks-card');
+    expect(card).toHaveAttribute('data-missing-fields', '["phone","doc_criminal_record"]');
+    expect(card).toHaveAttribute('data-profession', 'AT');
+    // Fase 3/DD4: PendingTasksCard precisa do país pra gatear a ajuda de
+    // antecedentes (trâmite argentino, F12) — a home já busca isso em
+    // workerData.country (GET /api/workers/me), sem fetch novo.
+    expect(card).toHaveAttribute('data-country', 'AR');
+
     const jobs = screen.getByTestId('jobs-embedded-section');
     expect(jobs).toHaveAttribute('data-registration-complete', 'false');
-    expect(jobs).toHaveAttribute('data-missing-fields', '["phone"]');
+    expect(jobs).toHaveAttribute('data-missing-fields', '["phone","doc_criminal_record"]');
+    // Fase 4/DD5: JobsEmbeddedSection precisa da profession pro MESMO
+    // motivo que PendingTasksCard precisa — buildPendingRows/buildApplyLabel
+    // decidem quais documentos a política exige (paridade com o portão).
+    expect(jobs).toHaveAttribute('data-profession', 'AT');
   });
+});
 
-  it('CTA do card de progresso navega pra progress.nextAction.route', async () => {
-    const worker = makeWorker({ missingFields: ['phone'] });
+// ── Completude NÃO apurada (missingFields null) ──────────────────────────────
+
+describe('WorkerHome — completude não apurada (missingFields null/ausente)', () => {
+  it('null é fail-closed: NÃO é tratado como completo nem como "tem pendência conhecida" (sem card, sem afirmar completo)', async () => {
+    const worker = makeWorker({ missingFields: null });
     mockGetProgress.mockResolvedValue(worker);
     mockGetAvailability.mockResolvedValue([]);
-    mockGetDocuments.mockResolvedValue(makeDocs());
 
     render(<WorkerHome />);
-    await waitFor(() => expect(screen.getByTestId('profile-completion-card')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole('button', { name: 'action' }));
-    expect(mockNavigate).toHaveBeenCalledWith('/worker-registration');
+    await waitFor(() => expect(mockIdentifyClarity).toHaveBeenCalled());
+    const jobs = screen.getByTestId('jobs-embedded-section');
+    // Fail-closed (D302/camada 0): null NUNCA vira "registro completo".
+    expect(jobs).toHaveAttribute('data-registration-complete', 'false');
+    // Sem tokens conhecidos, não há linha para montar — o card não aparece,
+    // mas isso não afirma completude (JobsEmbeddedSection acima já barra).
+    expect(screen.queryByTestId('pending-tasks-card')).not.toBeInTheDocument();
   });
 });
 
@@ -231,7 +231,6 @@ describe('WorkerHome — falha no fetch', () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     mockGetProgress.mockRejectedValue(new Error('network down'));
     mockGetAvailability.mockResolvedValue([]);
-    mockGetDocuments.mockResolvedValue(makeDocs());
 
     render(<WorkerHome />);
 
@@ -250,7 +249,6 @@ describe('WorkerHome — fallback de nome e avatar', () => {
   it('user.name presente → usado no AppLayout/TopNavbar', async () => {
     mockGetProgress.mockResolvedValue(makeWorker());
     mockGetAvailability.mockResolvedValue([]);
-    mockGetDocuments.mockResolvedValue(makeDocs());
     render(<WorkerHome />);
     expect(screen.getByTestId('app-layout')).toHaveAttribute('data-username', 'Ana Prestadora');
     expect(screen.getByTestId('top-navbar')).toHaveTextContent('Ana Prestadora');
@@ -261,7 +259,6 @@ describe('WorkerHome — fallback de nome e avatar', () => {
     mockUser = { id: 'worker-1', name: '' };
     mockGetProgress.mockResolvedValue(makeWorker());
     mockGetAvailability.mockResolvedValue([]);
-    mockGetDocuments.mockResolvedValue(makeDocs());
     render(<WorkerHome />);
     expect(screen.getByTestId('app-layout')).toHaveAttribute('data-username', 'common.userFallback');
     await waitFor(() => expect(mockGetProgress).toHaveBeenCalled());
@@ -271,7 +268,6 @@ describe('WorkerHome — fallback de nome e avatar', () => {
     mockProfilePhoto = 'https://cdn.test/photo.jpg';
     mockGetProgress.mockResolvedValue(makeWorker());
     mockGetAvailability.mockResolvedValue([]);
-    mockGetDocuments.mockResolvedValue(makeDocs());
     render(<WorkerHome />);
     expect(screen.getByTestId('app-layout')).toBeInTheDocument();
     await waitFor(() => expect(mockGetProgress).toHaveBeenCalled());

@@ -1,19 +1,22 @@
 /**
  * worker-home-progress-cta.integration.e2e.ts @integration
  *
- * CAMADA 0 — bug #1: o CTA "Enviar Documentos" do card de progresso na home
- * gerava `nextAction.route = '/worker/documents'`, uma rota que NÃO existe em
- * App.tsx — o catch-all devolvia pra '/', e a prestadora nunca chegava no
- * documento que faltava (useWorkerProfileProgress.ts:107-118, versão antiga).
+ * CAMADA 0 — bug #1 original: o CTA do card de progresso na home gerava uma
+ * rota morta (`useWorkerProfileProgress.ts`, versão antiga). Fase 2 de
+ * postulacao-documento-pendente (DD1/DD2) substituiu o card inteiro:
+ * `ProfileCompletionCard` (uma barra + 1 CTA pro PRIMEIRO pendente) virou
+ * `PendingTasksCard` (uma linha por pendência — `missingFields` do
+ * servidor, Fase 1 — cada uma com seu próprio botão e destino). Os 3
+ * cenários abaixo são os do "Termina quando" de `fase-2.md`.
  *
  * Prova de fluxo REAL: frontend real + backend real (USE_MOCK_AUTH=true) +
  * Postgres real. O worker é semeado no banco (fn_worker_missing_fields decide
  * a completude — SSOT), login via helper pass-through, e o clique navega de
  * verdade (sem page.route de dado).
  *
- * Pré-condições: docker (postgres + api desta worktree) + pnpm dev na porta
- * 5199. Run: PW_BASE_URL=http://localhost:5199 E2E_PG_CONTAINER=postulacao0-postgres
- * pnpm test:e2e:integration --grep "worker-home-progress-cta"
+ * Pré-condições: docker (postgres + api desta worktree) + pnpm dev.
+ * Run: PW_BASE_URL=<url> E2E_PG_CONTAINER=<container> pnpm test:e2e:integration
+ *      --grep "worker-home-progress-cta"
  */
 
 import { test, expect, type Page } from '@playwright/test';
@@ -23,10 +26,14 @@ import {
   type InsertEligibilityWorkerResult,
 } from '../helpers/eligibility-worker-helper';
 import { loginNewWorker } from '../helpers/worker-realreg-auth-helper';
+import { readTextContrastRatio } from '../helpers/contrast-helper';
 
 test.use({ video: 'on' }); // definição de pronto exige vídeo do fluxo real
 
-test.describe('@integration Home — CTA do card de progresso', () => {
+/** WCAG AA, texto pequeno (< 18pt/24px ou < 14pt/18.5px bold). */
+const WCAG_AA_MIN_CONTRAST = 4.5;
+
+test.describe('@integration Home — lista de tarefas (Fase 2, DD2)', () => {
   test.setTimeout(90_000);
   const workers: InsertEligibilityWorkerResult[] = [];
 
@@ -40,27 +47,51 @@ test.describe('@integration Home — CTA do card de progresso', () => {
     await page.goto('/', { waitUntil: 'networkidle', timeout: 30_000 });
   }
 
-  test('feliz — só falta documento: CTA leva direto a /worker/profile?tab=documents&focus=<docType> com o slot em destaque', async ({ page }) => {
-    // Cadastro (etapas 1-3) completo, mas falta o DNI (identity_document).
+  test('feliz — AT só sem antecedentes: "Te falta 1 paso" + linha "Antecedentes penales" + botão leva ao slot destacado', async ({ page }) => {
     const w = insertEligibilityWorker({
-      occupation: 'CAREGIVER',
-      docIdentityDocument: false,
-      docCriminalRecord: true,
+      occupation: 'AT',
+      docCriminalRecord: false,
     });
     await loginAndGoHome(page, w);
 
-    const card = page.locator('[data-testid="profile-completion-card"]');
+    const card = page.locator('[data-testid="pending-tasks-card"]');
     await expect(card).toBeVisible({ timeout: 20_000 });
+    await expect(card.getByText('Te falta 1 paso para postularte')).toBeVisible();
+    await expect(card.getByText('Antecedentes penales')).toBeVisible();
 
-    const cta = card.getByRole('button', { name: 'Enviar Documentos' });
+    // Achado do gate (11/09): `color="muted"` do atom Text vira
+    // `rgba(115,115,115,0.5)` — cinza com ALPHA, 1,96:1 composto sobre
+    // branco (bem abaixo do mínimo WCAG AA 4,5:1 pra texto pequeno). Mede
+    // o que o navegador REALMENTE pinta, não o nome da classe.
+    //
+    // Achado do gate (11/09, RODADA 2): a medição tem de cair no elemento
+    // que carrega a classe de cor, nunca num `<div>` wrapper sem `color`
+    // — senão ela lê a cor HERDADA (preto, ~21:1) e a asserção nunca
+    // falha, mesmo com `muted` de volta (prova nunca falha ≠ prova).
+    // `pending-tasks-progress` já é o próprio `<Text>` (testid repassado
+    // via `{...rest}`, `Text.tsx:69`); `pending-tasks-completed-text` é
+    // um testid NOVO, colocado direto no `<Text>` interno — o `<div
+    // data-testid="pending-tasks-completed">` que o envolve não tem cor
+    // própria.
+    const progressText = page.locator('[data-testid="pending-tasks-progress"]');
+    await expect(progressText).toBeVisible();
+    const progressContrast = await readTextContrastRatio(progressText);
+    expect(progressContrast).toBeGreaterThanOrEqual(WCAG_AA_MIN_CONTRAST);
+
+    const completedText = page.locator('[data-testid="pending-tasks-completed-text"]');
+    await expect(completedText).toBeVisible();
+    const completedContrast = await readTextContrastRatio(completedText);
+    expect(completedContrast).toBeGreaterThanOrEqual(WCAG_AA_MIN_CONTRAST);
+
+    const cta = card.getByRole('button', { name: /Subir ahora — Antecedentes penales/i });
     await expect(cta).toBeVisible();
     await cta.click();
 
-    await expect(page).toHaveURL(/\/worker\/profile\?tab=documents&focus=identity_document/, {
+    await expect(page).toHaveURL(/\/worker\/profile\?tab=documents&focus=criminal_record/, {
       timeout: 15_000,
     });
 
-    const slot = page.locator('[data-testid="doc-slot-identity_document"]');
+    const slot = page.locator('[data-testid="doc-slot-criminal_record"]');
     await expect(slot).toBeVisible({ timeout: 15_000 });
     // Highlight transitório aplicado pelo WorkerProfilePage ao alvo do focus.
     await expect(slot).toHaveClass(/ring-2/, { timeout: 5_000 });
@@ -68,39 +99,63 @@ test.describe('@integration Home — CTA do card de progresso', () => {
     await expect(slot).toHaveScreenshot('home-cta-doc-slot-highlighted.png', { maxDiffPixels: 200 });
   });
 
-  test('alt — falta dado geral (telefone): CTA leva ao cadastro (rota existente /worker-registration → /worker/profile)', async ({ page }) => {
+  test('alt — dado geral e documento pendentes juntos: os dois grupos aparecem, registro ANTES de documento (ordem DD2)', async ({ page }) => {
     const w = insertEligibilityWorker({
       occupation: 'CAREGIVER',
       phone: false,
+      docIdentityDocument: false,
     });
     await loginAndGoHome(page, w);
 
-    const card = page.locator('[data-testid="profile-completion-card"]');
+    const card = page.locator('[data-testid="pending-tasks-card"]');
     await expect(card).toBeVisible({ timeout: 20_000 });
+    await expect(card.getByText('Te faltan 2 pasos para postularte')).toBeVisible();
 
-    const cta = card.getByRole('button', { name: 'Completar Registro' });
-    await expect(cta).toBeVisible();
-    await cta.click();
+    const registrationRow = card.getByText('Información General');
+    const documentRow = card.getByText('Documento de identidad');
+    await expect(registrationRow).toBeVisible();
+    await expect(documentRow).toBeVisible();
 
-    // '/worker-registration' é hoje um alias (<Navigate to="/worker/profile" replace />)
-    // — a prova é que a prestadora chega no cadastro, não numa rota morta.
-    await expect(page).toHaveURL(/\/worker\/profile/, { timeout: 15_000 });
-    const generalTab = page.locator('[data-testid="tab-btn-general"]');
-    await expect(generalTab).toBeVisible({ timeout: 15_000 });
-    await expect(generalTab).toHaveScreenshot('home-cta-general-tab-active.png', { maxDiffPixels: 200 });
+    // Ordem no DOM: registro antes de documento (DD2).
+    const rowsOrder = await card.locator('[data-testid="pending-tasks-rows"] > div').allTextContents();
+    const generalIdx = rowsOrder.findIndex((t) => t.includes('Información General'));
+    const docIdx = rowsOrder.findIndex((t) => t.includes('Documento de identidad'));
+    expect(generalIdx).toBeGreaterThanOrEqual(0);
+    expect(docIdx).toBeGreaterThan(generalIdx);
+
+    await expect(card.locator('[data-testid="pending-tasks-rows"]')).toHaveScreenshot(
+      'home-pending-tasks-two-groups.png',
+      { maxDiffPixels: 200 },
+    );
+
+    // O botão de registro leva à aba (sem focus — o `incompleteFieldDestinations`
+    // decide, sem segundo mapa token→destino, DD2).
+    const registrationCta = card.getByRole('button', { name: /Completar — Información General/i });
+    await registrationCta.click();
+    await expect(page).toHaveURL(/\/worker\/profile\?tab=general$/, { timeout: 15_000 });
   });
 
-  test('cadastro + documentos completos: card de progresso não aparece', async ({ page }) => {
+  test('cadastro + documentos completos: a lista de tarefas não aparece', async ({ page }) => {
     const w = insertEligibilityWorker({ occupation: 'CAREGIVER' }); // todos os campos/docs default=true
     await loginAndGoHome(page, w);
 
     const jobsSection = page.locator('[data-testid="jobs-section"], #jobs-section');
     await expect(jobsSection).toBeVisible({ timeout: 20_000 });
-    await expect(page.locator('[data-testid="profile-completion-card"]')).toHaveCount(0);
-    // Prova visual de que NADA (nenhum card de progresso) renderiza acima da
+    await expect(page.locator('[data-testid="pending-tasks-card"]')).toHaveCount(0);
+    // Prova visual de que NADA (nenhuma lista de tarefas) renderiza acima da
     // seção de vagas quando o cadastro está completo.
+    //
+    // Achado do gate (11/09): screenshotar `#jobs-section` inteira incluía a
+    // lista de VAGAS de verdade (dado externo, não-determinístico — a
+    // baseline tinha congelado "0 vacantes", quebrando sempre que houvesse
+    // vaga real). O que este teste precisa provar é só a área ESTÁVEL —
+    // cabeçalho + filtros + ausência do card de tarefas acima — então a
+    // lista de vagas em si (`jobs-list`) é mascarada, não removida do
+    // screenshot: ela continua visível pra quem revisar, só não entra na
+    // comparação de pixels.
     await expect(jobsSection).toHaveScreenshot('home-no-progress-card-jobs-section.png', {
       maxDiffPixels: 300,
+      mask: [page.getByTestId('jobs-list')],
     });
   });
 });

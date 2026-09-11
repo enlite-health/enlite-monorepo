@@ -486,6 +486,11 @@
     "clearFilters": "Limpiar Filtros",
     "interested": "Me Interesa",
     "apply": "Postularse",
+    "applyLabel": {
+      "document": "Subí {{doc}} para postularte",
+      "registration": "Completá {{item}} para postularte",
+      "multiple": "Completá {{count}} pasos para postularte"
+    },
     "viewDetails": "Ver Detalles",
     "results": "vacantes encontradas",
     "filters": {
@@ -590,6 +595,13 @@
     "completionCard": {
       "title": "Complete su Perfil Profesional"
     },
+    "pendingTasks": {
+      "title_one": "Te falta {{count}} paso para postularte",
+      "title_other": "Te faltan {{count}} pasos para postularte",
+      "completedOf": "Ya completaste {{done}} de {{total}}",
+      "completeAction": "Completar",
+      "uploadAction": "Subir ahora"
+    },
     "wizard": {
       "back": "Atrás",
       "next": "Siguiente",
@@ -611,12 +623,10 @@
     },
     "progress": {
       "registration": "Registro Básico",
-      "documents": "Documentos obligatorios",
       "step1": "Información General",
       "step2": "Dirección de Atención",
       "step3": "Disponibilidad",
-      "completeRegistration": "Completar Registro",
-      "uploadDocuments": "Enviar Documentos"
+      "completeRegistration": "Completar Registro"
     }
   },
   "documentTypes": {
@@ -647,6 +657,11 @@
     "pendingRequiredGeneric": "Para postularte necesitás subir:",
     "allRequiredDone": "Ya subiste todos los documentos obligatorios para postularte.",
     "requiredBadge": "Obligatorio",
+    "antecedentesHelp": {
+      "toggle": "¿No lo tenés? Cómo sacarlo",
+      "body": "Se tramita online con Clave Fiscal o Mi Argentina y te llega por e-mail. Podés elegir recibirlo en 5 días hábiles o en 24 horas.",
+      "link": "Cómo sacarlo"
+    },
     "additionalTitle": "Otros Documentos",
     "addDocument": "Agregar",
     "labelPlaceholder": "Nombre del documento (ej: Certificado Primeros Auxilios)",

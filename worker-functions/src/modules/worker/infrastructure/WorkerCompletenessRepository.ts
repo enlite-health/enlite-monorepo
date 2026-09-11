@@ -26,18 +26,52 @@
  * NÃO reimplemente a lista aqui. Se um campo entra ou sai do portão, muda a
  * função PL/pgSQL.
  *
- * ⚠️ NÃO existe, HOJE, régua comparando esta lista com a do frontend. O teste de
- * contrato que faria isso vive na metade do frontend deste conserto, que ainda
- * não foi mergeada — e a lista de lá já DIVERGE (21 tokens contra 19, porque o
- * 403 da postulação expande `worker_documents` nos 4 `doc_*` e a rota devolve o
- * token cru). Escrever aqui que "um teste te pega" antes de o teste existir é o
- * mesmo defeito que este módulo combate: afirmar garantia que não há.
+ * ── Fase 1 de postulacao-documento-pendente (DD1, 11/09) ──────────────────
+ * `readWorkerMissingFields` agora expande `worker_documents` em `doc_*` pelo
+ * MESMO ponto único que o 403 do track-channel usa
+ * (`documentTokenExpansion.expandDocumentToken`, domínio puro) — o `GET /me`
+ * e a resposta do `PUT` (via `readFreshProgress`) deixam de ser o único lugar
+ * que devolvia o token cru. A régua do teste de contrato do frontend
+ * (`workerProgressValidation.contract.test.ts`) já excluía tokens `doc_*` da
+ * checagem de órfão — ela sabia que este dia chegaria.
  */
 
 import { Pool } from 'pg';
 import { logger, reportError } from '@shared/logging';
+import { expandDocumentToken, type WorkerDocumentRow } from '../domain/documentTokenExpansion';
 
 const TAG = '[WorkerCompletenessRepository]';
+
+/**
+ * Lê a linha necessária para expandir `worker_documents` (profissão + as 4
+ * URLs de `worker_documents`) para um worker. `null` = worker não encontrado
+ * ou absorvido por merge (`merged_into_id`) — mesma semântica que
+ * `BlockedApplicationRepository` já usava antes desta extração.
+ *
+ * Compartilhada entre `readWorkerMissingFields` (abaixo) e
+ * `BlockedApplicationRepository.upsert` — ponto único da query, para não
+ * duplicar as colunas de F5 em dois lugares (grep de `resume_cv_url`/
+ * `criminal_record_url` fora daqui é achado de revisão).
+ */
+export async function fetchWorkerDocumentRow(
+  pool: Pool,
+  workerId: string,
+): Promise<WorkerDocumentRow | null> {
+  const { rows } = await pool.query<WorkerDocumentRow>(
+    `SELECT
+       w.profession,
+       wd.resume_cv_url,
+       wd.identity_document_url,
+       wd.criminal_record_url,
+       wd.at_certificate_url
+     FROM workers w
+     LEFT JOIN worker_documents wd ON wd.worker_id = w.id
+     WHERE w.id = $1
+       AND w.merged_into_id IS NULL`,
+    [workerId],
+  );
+  return rows.length === 0 ? null : rows[0];
+}
 
 /**
  * Lê os campos que faltam para o worker virar REGISTERED (e, portanto, poder
@@ -56,13 +90,14 @@ export async function readWorkerMissingFields(
   pool: Pool,
   workerId: string,
 ): Promise<string[] | null> {
+  let missing: string[];
   try {
     const { rows } = await pool.query<{ missing: string[] }>(
       'SELECT fn_worker_missing_fields($1) AS missing',
       [workerId],
     );
     if (rows.length === 0 || rows[0].missing === null) return null;
-    return rows[0].missing;
+    missing = rows[0].missing;
   } catch (err: unknown) {
     const e = err instanceof Error ? err : new Error(String(err));
     // `reportError`, não `warn`: se a função sumir do banco (migration não
@@ -72,5 +107,21 @@ export async function readWorkerMissingFields(
     reportError(e, { source: 'WorkerCompletenessRepository:readWorkerMissingFields' });
     logger.child({ workerId }).warn({ msg: `${TAG} failed to read missing fields` });
     return null;
+  }
+
+  if (!missing.includes('worker_documents')) return missing;
+
+  // Expansão em query SEPARADA e NÃO-FATAL: uma falha aqui detalha só QUAL
+  // documento falta, e não deve derrubar a completude das outras abas que a
+  // primeira query já apurou com sucesso — fallback é o token cru
+  // (`worker_documents`), que o frontend já sabe interpretar (F13).
+  try {
+    const row = await fetchWorkerDocumentRow(pool, workerId);
+    return expandDocumentToken(missing, row);
+  } catch (err: unknown) {
+    const e = err instanceof Error ? err : new Error(String(err));
+    reportError(e, { source: 'WorkerCompletenessRepository:readWorkerMissingFields:expand' });
+    logger.child({ workerId }).warn({ msg: `${TAG} failed to expand worker_documents token (non-fatal)` });
+    return missing;
   }
 }

@@ -44,6 +44,7 @@ describe('workerRegistrationStore', () => {
         yearsExperience: '',
         preferredTypes: [],
         preferredAgeRange: [],
+        country: '',
       });
 
       expect(state.data.serviceAddress).toEqual({

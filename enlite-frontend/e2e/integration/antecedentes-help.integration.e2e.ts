@@ -1,0 +1,149 @@
+/**
+ * antecedentes-help.integration.e2e.ts @integration
+ *
+ * Fase 3 de postulacao-documento-pendente (DD4 · consome F12): expansível
+ * "¿No lo tenés? Cómo sacarlo" no documento de antecedentes penais — um
+ * componente, dois usos: item `doc_criminal_record` da lista de tarefas da
+ * home (`PendingTasksCard`) e slot `criminal_record` da aba Documentos
+ * (`DocumentsGrid`). "Termina quando" de `fase-3.md`.
+ *
+ * Prova de fluxo REAL: frontend real + backend real (USE_MOCK_AUTH=true) +
+ * Postgres real. O worker é semeado no banco (`country='AR'` fixo no
+ * helper — condição pra ajuda aparecer), login via helper pass-through.
+ *
+ * Pré-condições: docker (postgres + api desta worktree) + pnpm dev.
+ * Run: PW_BASE_URL=<url> E2E_PG_CONTAINER=<container> pnpm test:e2e:integration
+ *      --grep "antecedentes-help"
+ */
+
+import { test, expect, type Page } from '@playwright/test';
+import {
+  insertEligibilityWorker,
+  cleanupEligibilityWorker,
+  type InsertEligibilityWorkerResult,
+} from '../helpers/eligibility-worker-helper';
+import { loginNewWorker } from '../helpers/worker-realreg-auth-helper';
+import { readTextContrastRatio } from '../helpers/contrast-helper';
+
+/** WCAG AA, texto pequeno (< 18pt/24px ou < 14pt/18.5px bold). */
+const WCAG_AA_MIN_CONTRAST = 4.5;
+
+test.use({ video: 'on' }); // definição de pronto exige vídeo do fluxo real
+
+const ANTECEDENTES_HELP_URL =
+  'https://www.argentina.gob.ar/justicia/reincidencia/antecedentespenales';
+
+test.describe('@integration Ajuda de antecedentes — "¿No lo tenés? Cómo sacarlo" (Fase 3, DD4)', () => {
+  test.setTimeout(90_000);
+  const workers: InsertEligibilityWorkerResult[] = [];
+
+  test.afterAll(() => {
+    for (const w of workers) cleanupEligibilityWorker(w.workerId);
+  });
+
+  async function login(page: Page, w: InsertEligibilityWorkerResult): Promise<void> {
+    workers.push(w);
+    await loginNewWorker(page, w.authUid, `${w.authUid}@test.local`);
+  }
+
+  test('feliz — home: abre o expansível no item de antecedentes e lê o texto', async ({ page }) => {
+    const w = insertEligibilityWorker({ occupation: 'AT', docCriminalRecord: false });
+    await login(page, w);
+    await page.goto('/', { waitUntil: 'networkidle', timeout: 30_000 });
+
+    const card = page.locator('[data-testid="pending-tasks-card"]');
+    await expect(card).toBeVisible({ timeout: 20_000 });
+
+    const toggle = card.getByRole('button', { name: /¿No lo tenés\? Cómo sacarlo/i });
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    const bodyText = card.getByText(
+      'Se tramita online con Clave Fiscal o Mi Argentina y te llega por e-mail.',
+      { exact: false },
+    );
+    await expect(bodyText).toBeVisible();
+
+    // Achado do gate (11/09): `color="muted"` do atom Text vira
+    // `rgba(115,115,115,0.5)` — um cinza com ALPHA que uma asserção de
+    // classe (`toHaveClass(/text-gray-700/)`) não pegaria. Mede o que o
+    // navegador REALMENTE pinta (cor composta sobre o fundo efetivo) —
+    // WCAG AA texto pequeno exige ≥ 4,5:1.
+    //
+    // Achado do gate (11/09, RODADA 2): a medição tem de cair no elemento
+    // que carrega a classe de cor — `getByText(..., {exact:false})`
+    // acima é ótimo pra provar que o texto está VISÍVEL, mas não garante
+    // que o locator resolvido é o `<Text>` colorido (poderia casar um
+    // ancestral sem `color` própria, cuja cor herdada mascara o defeito).
+    // `antecedentes-help-body-text` é o testid direto no `<Text as="p">`.
+    const bodyTextColored = card.locator('[data-testid="antecedentes-help-body-text"]');
+    const bodyContrast = await readTextContrastRatio(bodyTextColored);
+    expect(bodyContrast).toBeGreaterThanOrEqual(WCAG_AA_MIN_CONTRAST);
+
+    const toggleTextColored = card.locator('[data-testid="antecedentes-help-toggle-text"]');
+    const toggleContrast = await readTextContrastRatio(toggleTextColored);
+    expect(toggleContrast).toBeGreaterThanOrEqual(WCAG_AA_MIN_CONTRAST);
+
+    // C9 do lex: link com href CONSTANTE (sem query string), target/rel
+    // corretos — conferido por atributo, NUNCA clicado (não navega de
+    // verdade pra fora da app).
+    const link = card.getByRole('link', { name: 'Cómo sacarlo' });
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute('href', ANTECEDENTES_HELP_URL);
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+
+    const helpBlock = card.locator('[data-testid="antecedentes-help"]');
+    await expect(helpBlock).toHaveScreenshot('fase3-ajuda-home.png', { maxDiffPixels: 200 });
+  });
+
+  test('alt — aba Documentos: abre o expansível no slot criminal_record', async ({ page }) => {
+    const w = insertEligibilityWorker({ occupation: 'AT', docCriminalRecord: false });
+    await login(page, w);
+    await page.goto('/worker/profile?tab=documents', { waitUntil: 'networkidle', timeout: 30_000 });
+
+    const slot = page.locator('[data-testid="doc-slot-criminal_record"]');
+    await expect(slot).toBeVisible({ timeout: 20_000 });
+
+    const toggle = slot.getByRole('button', { name: /¿No lo tenés\? Cómo sacarlo/i });
+    await expect(toggle).toBeVisible();
+
+    await toggle.click();
+    await expect(
+      slot.getByText(
+        'Se tramita online con Clave Fiscal o Mi Argentina y te llega por e-mail.',
+        { exact: false },
+      ),
+    ).toBeVisible();
+
+    const link = slot.getByRole('link', { name: 'Cómo sacarlo' });
+    await expect(link).toHaveAttribute('href', ANTECEDENTES_HELP_URL);
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+
+    // Barato do gate (11/09): este cenário (2º uso do MESMO componente)
+    // não tinha screenshot — CLAUDE.md exige toHaveScreenshot em todo
+    // teste de frontend.
+    const helpBlock = slot.locator('[data-testid="antecedentes-help"]');
+    await expect(helpBlock).toHaveScreenshot('fase3-ajuda-documentos.png', { maxDiffPixels: 200 });
+  });
+
+  test('alt — antecedentes NÃO pendente: a ajuda não aparece nem na home nem na aba Documentos', async ({ page }) => {
+    // docCriminalRecord: true (default) → antecedentes já enviado, não
+    // entra em missingFields nem fica "sem arquivo" no slot.
+    const w = insertEligibilityWorker({ occupation: 'AT', phone: false });
+    await login(page, w);
+
+    await page.goto('/', { waitUntil: 'networkidle', timeout: 30_000 });
+    const card = page.locator('[data-testid="pending-tasks-card"]');
+    await expect(card).toBeVisible({ timeout: 20_000 }); // ainda tem o phone pendente
+    await expect(card.getByRole('button', { name: /¿No lo tenés\? Cómo sacarlo/i })).toHaveCount(0);
+
+    await page.goto('/worker/profile?tab=documents', { waitUntil: 'networkidle', timeout: 30_000 });
+    const slot = page.locator('[data-testid="doc-slot-criminal_record"]');
+    await expect(slot).toBeVisible({ timeout: 20_000 });
+    await expect(slot.getByRole('button', { name: /¿No lo tenés\? Cómo sacarlo/i })).toHaveCount(0);
+  });
+});

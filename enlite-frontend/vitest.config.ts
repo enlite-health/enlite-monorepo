@@ -356,6 +356,68 @@ export default defineConfig({
         '**/src/presentation/components/features/admin/PatientDetail/edit/{IcdSearchCombobox,DiagnosisChipList,DiagnosisAssignmentSection}.tsx': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
+        // Fase 2 de postulacao-documento-pendente (11/09): a lista de tarefas
+        // da home (`PendingTasksCard`, nova) e os dois arquivos que perderam
+        // o cálculo local de documentos (`useWorkerProfileProgress.ts` — só
+        // registro agora — e `WorkerHome.tsx`, que passou a decidir
+        // completude só por `missingFields` do servidor). Nascem/ficam em
+        // 100% nos 4 eixos, medidos na suíte inteira.
+        '**/src/presentation/components/organisms/PendingTasksCard/PendingTasksCard.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/hooks/useWorkerProfileProgress.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/pages/home/WorkerHome.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        // D200.12: ProfileCompletionSummary.tsx estava no diff da Fase 2 (a
+        // assinatura de useWorkerProfileProgress mudou embaixo dele), então a
+        // régua é o ARQUIVO INTEIRO — não só a linha nova. Fechado o gap
+        // pré-existente (linha 81 do catch, os cliques de fechar/aba
+        // pendente, e as combinações de step completo/incompleto que
+        // faltavam) com ProfileCompletionSummary.test.tsx; mede 100 nos 4
+        // eixos na suíte inteira agora.
+        '**/src/presentation/components/organisms/ProfileCompletionSummary/ProfileCompletionSummary.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        // Fase 3 de postulacao-documento-pendente (DD4/F12, 11/09): ajuda
+        // "¿No lo tenés? Cómo sacarlo" do antecedentes — um componente,
+        // dois usos (PendingTasksCard e DocumentsGrid). `country` passou a
+        // fluir pelo store de registro (hidratação) e pela aba Documentos
+        // pra gatear "só Argentina" nos dois lugares.
+        '**/src/presentation/components/molecules/AntecedentesHelpExpandable/*.{ts,tsx}': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/components/organisms/DocumentsGrid/DocumentsGrid.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        // Sem teste unitário nenhum antes desta rodada (só e2e) — D200.12
+        // exige o ARQUIVO INTEIRO ao tocar, não só a linha nova de country.
+        '**/src/presentation/pages/tabs/DocumentsTab.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/stores/workerRegistrationHydration.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/stores/workerRegistrationStore.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        // Fase 4 de postulacao-documento-pendente (DD5, 11/09): a montagem
+        // das linhas de pendência saiu do PendingTasksCard pra
+        // `pendingRows.ts` (função pura, sem `t()`/JSX) — o rótulo
+        // dinâmico do botão "Postularse" (`buildApplyLabel`, em
+        // `jobsConstants.ts`) usa a MESMA função, pra nunca contar duas
+        // vezes (correção b do orquestrador). `JobsEmbeddedSection.tsx`
+        // já tinha suíte própria 100% da Fase anterior a esta mudança
+        // (achado do gate original, "0% fn" — comentário acima, linha 54);
+        // entra na régua fixa agora que ganhou lógica nova.
+        '**/src/presentation/utils/pendingRows.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/components/features/worker/JobsEmbeddedSection/{JobsEmbeddedSection.tsx,jobsConstants.ts}': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
       },
     },
   },

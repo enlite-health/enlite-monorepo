@@ -96,8 +96,13 @@ export function destinationFor(token: string): FieldDestination {
   return FIELD_DESTINATION_MAP[token] ?? FALLBACK_DESTINATION;
 }
 
-/** Ordem de prioridade das abas para determinar a "primeira aba pendente". */
-const TAB_ORDER: TabId[] = ['general', 'address', 'availability', 'documents'];
+/**
+ * Ordem de prioridade das abas para determinar a "primeira aba pendente" —
+ * e, geral/address/availability (sem 'documents'), a ordem de registro que
+ * `PendingTasksCard` usa pra agrupar linhas (DD2). Exportado pra não nascer
+ * uma segunda lista da mesma ordem em outro arquivo.
+ */
+export const TAB_ORDER: readonly TabId[] = ['general', 'address', 'availability', 'documents'];
 
 /**
  * Retorna a TabId da primeira aba que contém algum campo pendente.

@@ -49,7 +49,18 @@ export function ProfileCompletionSummary({
   const [documentsData, setDocumentsData] = useState<WorkerDocumentsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const { progress, isComplete } = useWorkerProfileProgress(workerData, documentsData);
+  const { progress, isComplete: isRegistrationComplete } = useWorkerProfileProgress(workerData);
+  // Fase 2 de postulacao-documento-pendente: `useWorkerProfileProgress` só
+  // sabe de REGISTRO desde que documentos saíram de lá (DD1). Este resumo
+  // ainda precisa do veredito COMPLETO (registro + documentos) pra decidir
+  // "¡Tu registro está completo!" — sem este AND, um worker com registro OK
+  // e documento pendente veria a tela de parabéns incorretamente, mesmo a
+  // lista de pendências logo abaixo (que já checa `areAllRequiredDocsComplete`
+  // por conta própria) continuando certa. `isRegistrationComplete` já é
+  // `false` quando `workerData` é null (hook), então o `?.` abaixo nunca
+  // precisa decidir sozinho.
+  const isComplete =
+    isRegistrationComplete && areAllRequiredDocsComplete(documentsData, workerData?.profession);
 
   useEffect(() => {
     let cancelled = false;
@@ -141,7 +152,15 @@ export function ProfileCompletionSummary({
           </div>
         ) : (
           <div className="flex flex-col gap-4" data-testid="summary-pending">
-            <ProfileCompletionCard progress={progress} />
+            {/*
+              BLOCKER 2 (gate 11/09): este card mostra SÓ o percentual de
+              REGISTRO (useWorkerProfileProgress não sabe de documentos
+              desde a Fase 2, DD1). Renderizar sempre fazia quem só tinha
+              documento pendente ver "100%" em cima de "Te falta completar:
+              Documentos" — mentira visual. Só faz sentido mostrar a barra
+              de registro quando o registro em si ainda está incompleto.
+            */}
+            {!isRegistrationComplete && <ProfileCompletionCard progress={progress} />}
 
             <div className="flex flex-col gap-2">
               <Text size="sm" weight="semibold" color="primary">
