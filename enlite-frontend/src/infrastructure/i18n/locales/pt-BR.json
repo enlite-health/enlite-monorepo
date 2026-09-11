@@ -580,12 +580,6 @@
       "man": "Homem",
       "registered": "Inscrito",
       "selected": "Selecionado"
-    },
-    "incompleteModal": {
-      "title": "Complete seu cadastro",
-      "description": "Para se candidatar a esta vaga e ter acesso ao WhatsApp e detalhes completos, você precisa completar seu cadastro e fazer o upload dos documentos necessários.",
-      "completeRegistration": "Completar Cadastro",
-      "cancel": "Cancelar"
     }
   },
   "profile": {
