@@ -29,7 +29,7 @@ describe('derivePatientZone — paridade com o servidor (T1)', () => {
     expect(fixture.cases.length).toBe(5);
   });
 
-  it.each(fixture.cases.map((c) => [c.id, c] as const))('caso %s: %s', (_id, c) => {
+  it.each(fixture.cases.map((c) => [c.id, c.description, c] as const))('caso %s: %s', (_id, _description, c) => {
     expect(derivePatientZone(c.addressComponents)).toBe(c.expected);
   });
 
