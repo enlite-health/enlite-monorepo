@@ -580,12 +580,6 @@
       "man": "Hombre",
       "registered": "Inscrito",
       "selected": "Seleccionado"
-    },
-    "incompleteModal": {
-      "title": "Complete su registro",
-      "description": "Para postularse a esta vacante y acceder al WhatsApp y detalles completos, necesita completar su registro y subir los documentos necesarios.",
-      "completeRegistration": "Completar Registro",
-      "cancel": "Cancelar"
     }
   },
   "profile": {
