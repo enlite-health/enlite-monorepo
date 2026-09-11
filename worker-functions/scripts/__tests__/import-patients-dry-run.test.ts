@@ -4,9 +4,10 @@
  * `console.log` de verdade com uma fixture que TEM nome, diagnóstico e responsável, e prova que
  * nenhum desses VALORES escapa — só nome de campo, presença/tamanho, ids e contagens.
  */
-import { processDryRun, type DryRunCounters } from '../import-patients-dry-run';
+import { processDryRun, checkExistingTaskIds, type DryRunCounters } from '../import-patients-dry-run';
 import type { ClickUpPatientMapper } from '../../src/modules/integration/infrastructure/clickup/ClickUpPatientMapper';
 import type { ClickUpTask } from '../../src/modules/integration/infrastructure/clickup/ClickUpTask';
+import type { Pool } from 'pg';
 
 const NOME = 'Juan';
 const SOBRENOME = 'Pérez Rodríguez';
@@ -101,5 +102,114 @@ describe('processDryRun — nunca imprime valor clínico/PII, nem com --verbose 
     const texto = saida.join('\n');
     expect(texto).toContain('hasSpecialty=false');
     expect(texto).toMatch(/diagnosis:ausente/);
+  });
+
+  it('mapper.map() LANÇA com um valor sensível na própria mensagem de erro → a saída NÃO contém o valor, só a classe do erro', () => {
+    const mapper = { map: jest.fn(() => { throw new TypeError(`campo inválido: ${DIAGNOSTICO}`); }) } as unknown as ClickUpPatientMapper;
+    processDryRun(tarefa(), 0, 1, mapper, new Set(), counters(), false);
+
+    const texto = saida.join('\n');
+    expect(texto).not.toContain(DIAGNOSTICO);
+    expect(texto).toContain('TypeError');
+    expect(texto).toContain(TASK_ID);
+  });
+
+  it('erro não-Error lançado por mapper.map() → classe "NaoEError", nunca o valor lançado', () => {
+    const mapper = { map: jest.fn(() => { throw `string sensível: ${NOME}`; }) } as unknown as ClickUpPatientMapper;
+    processDryRun(tarefa(), 0, 1, mapper, new Set(), counters(), false);
+
+    const texto = saida.join('\n');
+    expect(texto).not.toContain(NOME);
+    expect(texto).toContain('NaoEError');
+  });
+
+  it('task.parent !== null (subtask) → pulada, sem chamar o mapper', () => {
+    const mapper = mapperDublado(inputComDadosSensiveis());
+    const c = counters();
+    const subtask = { id: TASK_ID, parent: 'algum-pai', status: { status: 'activo' }, custom_fields: [] } as unknown as ClickUpTask;
+
+    processDryRun(subtask, 0, 1, mapper, new Set(), c, false);
+
+    expect(c.skippedSubtask).toBe(1);
+    expect(mapper.map).not.toHaveBeenCalled();
+  });
+
+  function tarefaSemCampos(): ClickUpTask {
+    return { id: TASK_ID, status: { status: 'activo' }, parent: null, custom_fields: [] } as unknown as ClickUpTask;
+  }
+
+  it('mapper.map() devolve null e a task não tem nome → SKIPPED_NO_PATIENT_NAME', () => {
+    const mapper = mapperDublado(null);
+    const c = counters();
+    processDryRun(tarefaSemCampos(), 0, 1, mapper, new Set(), c, false);
+    expect(c.skippedNoName).toBe(1);
+  });
+
+  it('mapper.map() devolve null e a task TEM nome → SKIPPED_MAPPER_NULL (outro motivo de recusa)', () => {
+    const mapper = mapperDublado(null);
+    const c = counters();
+    const comNome = {
+      id: TASK_ID, status: { status: 'activo' }, parent: null,
+      custom_fields: [{ id: 'x', name: 'Nombre de Paciente', value: NOME }],
+    } as unknown as ClickUpTask;
+    processDryRun(comNome, 0, 1, mapper, new Set(), c, false);
+    expect(c.skippedMapper).toBe(1);
+  });
+
+  it('existingIds JÁ TEM o task.id → classificado "would UPDATE", conta wouldUpdate', () => {
+    const mapper = mapperDublado(inputComDadosSensiveis());
+    const c = counters();
+    processDryRun(tarefa(), 0, 1, mapper, new Set([TASK_ID]), c, false);
+
+    expect(c.wouldUpdate).toBe(1);
+    expect(c.wouldCreate).toBe(0);
+    expect(saida.join('\n')).toContain('would UPDATE');
+  });
+
+  it('existingIds não vazio mas SEM o task.id → classificado "would CREATE", conta wouldCreate', () => {
+    const mapper = mapperDublado(inputComDadosSensiveis());
+    const c = counters();
+    processDryRun(tarefa(), 0, 1, mapper, new Set(['outro-task-id']), c, false);
+
+    expect(c.wouldCreate).toBe(1);
+    expect(saida.join('\n')).toContain('would CREATE');
+  });
+
+  it('existingIds VAZIO (banco não classificou nada) → "would UPSERT"', () => {
+    const mapper = mapperDublado(inputComDadosSensiveis());
+    processDryRun(tarefa(), 0, 1, mapper, new Set(), counters(), false);
+    expect(saida.join('\n')).toContain('would UPSERT');
+  });
+
+  it('serviceType e responsibles AUSENTES (undefined, não array vazio) → serviceTypeCount=0, hasResponsible=false', () => {
+    const semListas = { ...inputComDadosSensiveis(), serviceType: undefined, responsibles: undefined };
+    const mapper = mapperDublado(semListas as unknown as ReturnType<typeof inputComDadosSensiveis>);
+    processDryRun(tarefa(), 0, 1, mapper, new Set(), counters(), false);
+
+    const texto = saida.join('\n');
+    expect(texto).toContain('serviceTypeCount=0');
+    expect(texto).toContain('hasResponsible=false');
+  });
+});
+
+describe('checkExistingTaskIds', () => {
+  it('taskIds vazio → não consulta o banco, devolve Set vazio', async () => {
+    const query = jest.fn();
+    const pool = { query } as unknown as Pool;
+
+    const result = await checkExistingTaskIds(pool, []);
+
+    expect(result).toEqual(new Set());
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('consulta o banco e devolve só os ids que existem', async () => {
+    const query = jest.fn(async () => ({ rows: [{ clickup_task_id: 'a' }, { clickup_task_id: 'b' }] }));
+    const pool = { query } as unknown as Pool;
+
+    const result = await checkExistingTaskIds(pool, ['a', 'b', 'c']);
+
+    expect(result).toEqual(new Set(['a', 'b']));
+    expect(query).toHaveBeenCalledTimes(1);
   });
 });
