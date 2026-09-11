@@ -318,6 +318,20 @@ describe('useWorkerProfileProgress', () => {
       );
     });
 
+    it('cadastro incompleto (falta telefone) → CTA leva ao cadastro, mesmo com documentos ok', () => {
+      const worker = makeWorker({ profession: 'CUIDADOR', missingFields: ['phone'] });
+      const docs = makeDocuments({
+        identityDocumentUrl: 'path/dni-front.pdf',
+        criminalRecordUrl: 'path/criminal.pdf',
+      });
+
+      const { result } = renderHook(() => useWorkerProfileProgress(worker, docs));
+      expect(result.current.progress.nextAction).toEqual({
+        label: 'profile.progress.completeRegistration',
+        route: '/worker-registration',
+      });
+    });
+
     it('nextAction é undefined quando tudo está completo (Cuidador — verso não exigido)', () => {
       const worker = makeWorker({ profession: 'CUIDADOR' });
       const docs = makeDocuments({
