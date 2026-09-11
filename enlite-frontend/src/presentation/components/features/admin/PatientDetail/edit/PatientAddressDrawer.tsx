@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { PatientAddressDetail, PatientAddressLogisticsPayload } from '@domain/entities/PatientDetail';
 import type { PatientAddressCreateInput } from '@domain/entities/PatientAddress';
+import { derivePatientZone, type PatientZoneAddressComponent } from '@application/use-cases/derivePatientZone';
 import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
@@ -97,6 +98,14 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
       setPickedFromList(true);
       const loc = place.geometry?.location;
       setCoords(loc ? { lat: loc.lat(), lng: loc.lng() } : null);
+      // Card Localizaciones, T2: pré-preenche a Zona com a MESMA regra do servidor
+      // (derivePatientZone.ts porta extractNeighborhoodFromLocation FIELMENTE — condição
+      // do jurídico). SÓ preenche se o campo estiver vazio agora — setState funcional para
+      // nunca sobrescrever o que a operadora já digitou, mesmo com escolhas em sequência.
+      const zone = derivePatientZone(place.address_components as PatientZoneAddressComponent[] | undefined);
+      if (zone) {
+        setNeighborhood((prev) => (prev.trim() === '' ? zone : prev));
+      }
     },
   });
 

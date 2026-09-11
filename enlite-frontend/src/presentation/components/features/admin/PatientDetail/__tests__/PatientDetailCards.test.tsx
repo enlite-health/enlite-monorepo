@@ -781,19 +781,60 @@ describe('LocalizacoesCard', () => {
     expect(screen.getByText('Localizações')).toBeInTheDocument();
   });
 
-  it('renders addressFormatted from fixture', () => {
+  it('Dirección em 2 linhas: linha 1 é rua+número (streetLineOf), linha 2 é a Zona quando existe (spec Localizaciones Fase 1, T3 + achado do gate)', () => {
+    // 'Rua Augusta, 975 - São Paulo/SP' é o formato BR REAL (número e o que vem depois no MESMO
+    // segmento) — achado do gate revisao-pr: a linha 1 tem de levar o número também.
     render(<LocalizacoesCard addresses={patientDetailFixture.addresses} />);
-    expect(screen.getByText('Rua Augusta, 975 - São Paulo/SP')).toBeInTheDocument();
+    expect(screen.getByText('Rua Augusta, 975')).toBeInTheDocument();
+    expect(screen.getByText('Bela Vista')).toBeInTheDocument();
   });
 
-  it('renders generic name "Endereço 1" since nameLabel is missing in schema', () => {
-    render(<LocalizacoesCard addresses={patientDetailFixture.addresses} />);
-    expect(screen.getByText('Endereço 1')).toBeInTheDocument();
+  it('sem Zona, a linha 2 cai no resumo de localidade de summarizeAddress (sem repetir rua+número, sem sufixo de país)', () => {
+    render(<LocalizacoesCard addresses={[{ ...patientDetailFixture.addresses[0], neighborhood: null }]} />);
+    expect(screen.getByText('Rua Augusta, 975')).toBeInTheDocument();
+    expect(screen.getByText('São Paulo/SP')).toBeInTheDocument();
   });
 
-  it('renders complement as observation', () => {
+  it('sem vírgula nenhuma, a linha 1 é o texto inteiro (streetLineOf sem padrão reconhecido cai no 1º segmento)', () => {
+    render(<LocalizacoesCard addresses={[{ ...patientDetailFixture.addresses[0], addressFormatted: 'Endereço sem vírgula', neighborhood: 'Alguma Zona' }]} />);
+    expect(screen.getByText('Endereço sem vírgula')).toBeInTheDocument();
+  });
+
+  // ── Achado MINOR do gate revisao-pr, 2ª rodada: linha 2 repetia a linha 1 quando nenhuma
+  // rua era reconhecida (o 1º segmento vira linha 1 pelo fallback, e sobrava no resumo de
+  // novo). Medido pelo gate com estes 2 endereços exatos.
+  it('sem NENHUMA rua reconhecida, a linha 2 não repete a linha 1 (endereço só de localidade)', () => {
+    render(<LocalizacoesCard addresses={[{ ...patientDetailFixture.addresses[0], addressFormatted: 'Tigre, Provincia de Buenos Aires, Argentina', neighborhood: null }]} />);
+    expect(screen.getAllByText('Tigre')).toHaveLength(1);
+    expect(screen.getByText('Provincia de Buenos Aires')).toBeInTheDocument();
+  });
+
+  it('"Barrio X" não é reconhecido como rua: a linha 2 não repete o nome do barrio', () => {
+    render(<LocalizacoesCard addresses={[{ ...patientDetailFixture.addresses[0], addressFormatted: 'Barrio Los Pinos, Pilar, Buenos Aires, Argentina', neighborhood: null }]} />);
+    expect(screen.getAllByText('Barrio Los Pinos')).toHaveLength(1);
+    expect(screen.getByText('Pilar, Buenos Aires')).toBeInTheDocument();
+  });
+
+  it('endereço sem addressFormatted e sem addressRaw mostra o alerta "Sem endereço cadastrado" (sem ação falsa)', () => {
+    render(<LocalizacoesCard addresses={[{ ...patientDetailFixture.addresses[0], addressFormatted: null, addressRaw: null }]} />);
+    expect(screen.getByTestId('address-missing-addr1')).toHaveTextContent('Sem endereço cadastrado');
+  });
+
+  it('Tipo mostra SÓ o selo Principal quando isPrimary, SÓ o rótulo do address_type quando não (sem repetir a palavra)', () => {
+    // Conserto pós-Fase 1 (achado da própria LISTA): `isPrimary` é 100% derivado de
+    // `address_type === 'primary'` (PatientDetailQueryHelper.ts:228) — mostrar os dois juntos
+    // repetia a palavra "Principal". Agora é OU selo OU rótulo, nunca os dois.
     render(<LocalizacoesCard addresses={patientDetailFixture.addresses} />);
-    expect(screen.getByText('Torre A, Ap. 701')).toBeInTheDocument();
+    const badge = screen.getByTestId('address-primary-badge-addr1');
+    expect(badge).toHaveTextContent('Principal');
+    expect(badge.closest('td')).toHaveTextContent('Principal');
+    // A célula do Tipo não repete "Principal" fora do selo — só o texto do selo existe ali.
+    expect(badge.closest('td')?.textContent).toBe('Principal');
+
+    const secundario = { ...patientDetailFixture.addresses[0], id: 'addr2', addressType: 'secondary', isPrimary: false };
+    render(<LocalizacoesCard addresses={[secundario]} />);
+    expect(screen.queryByTestId('address-primary-badge-addr2')).not.toBeInTheDocument();
+    expect(screen.getByText('Secundário')).toBeInTheDocument();
   });
 
   it('renders empty state when no addresses', () => {
@@ -812,47 +853,32 @@ describe('LocalizacoesCard', () => {
     expect(screen.getByTestId('pad-address')).toBeInTheDocument(); // modo criar
   });
 
-  it('spec 012 US-B2: zona / corredor / acesso por endereço, dentro do bloco mascarado; lápis abre a edição da logística', () => {
+  it('spec 012 US-B2: a Zona aparece na 2ª linha da Dirección, dentro do bloco mascarado; lápis abre a edição da logística', () => {
     const onSaved = vi.fn();
     render(<LocalizacoesCard addresses={patientDetailFixture.addresses} patientId="p1" onSaved={onSaved} />);
-    expect(screen.getByText('Bela Vista')).toBeInTheDocument();
-    expect(screen.getByText('Centro')).toBeInTheDocument();
-    const access = screen.getByText('Portaria 24h, interfone 701');
-    expect(access.closest('[data-clarity-mask="True"]')).not.toBeNull();
+    const zona = screen.getByText('Bela Vista');
+    expect(zona.closest('[data-clarity-mask="True"]')).not.toBeNull();
     fireEvent.click(screen.getByTestId('edit-address-addr1'));
     expect(screen.getByTestId('patient-address-drawer')).toBeInTheDocument();
     expect(screen.getByTestId('pad-address-readonly')).toHaveTextContent('Rua Augusta, 975 - São Paulo/SP');
     expect(screen.getByTestId('pad-access')).toHaveValue('Portaria 24h, interfone 701');
   });
 
-  it('sem patientId não há coluna de edição; endereço sem logística mostra —', () => {
+  it('sem patientId não há coluna de edição', () => {
     render(<LocalizacoesCard addresses={[{ ...patientDetailFixture.addresses[0], neighborhood: null, logisticsCorridor: null, accessNotes: null }]} />);
     expect(screen.queryByTestId('edit-address-addr1')).not.toBeInTheDocument();
-    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(3);
   });
 
-  it('renders multiple addresses with sequential generic names', () => {
-    const many = [
-      ...patientDetailFixture.addresses,
-      {
-        id: 'addr2',
-        addressType: 'secondary',
-        addressFormatted: 'Rua B, 10, SP, SP',
-        addressRaw: null,
-        complement: null,
-        displayOrder: 2,
-        lat: null,
-        lng: null,
-        isPrimary: false,
-        neighborhood: null,
-        logisticsCorridor: null,
-        accessNotes: null,
-        country: 'BR',
-      },
-    ];
-    render(<LocalizacoesCard addresses={many} />);
-    expect(screen.getByText('Endereço 1')).toBeInTheDocument();
-    expect(screen.getByText('Endereço 2')).toBeInTheDocument();
+  it('ordena o endereço Principal primeiro, mantendo a ordem relativa dos demais', () => {
+    const secundario = {
+      id: 'addr2', addressType: 'secondary', addressFormatted: 'Rua B, 10, SP, SP', addressRaw: null,
+      complement: null, displayOrder: 0, lat: null, lng: null, isPrimary: false,
+      neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'BR',
+    };
+    render(<LocalizacoesCard addresses={[secundario, patientDetailFixture.addresses[0]]} />);
+    const linhas = screen.getAllByRole('row').slice(1); // pula o cabeçalho
+    expect(linhas[0]).toHaveTextContent('Rua Augusta');
+    expect(linhas[1]).toHaveTextContent('Rua B');
   });
 });
 
@@ -898,23 +924,59 @@ describe('EquipeTratanteCard — lê o contrato da API (A2, lex C2.1/C2.2)', () 
 describe('LocalizacoesCard — lê o contrato da API (A2, lex C2.1)', () => {
   const base = { id: 'a1', addressType: 'primary', complement: 'Piso 2', displayOrder: 1, lat: -34.6, lng: -58.38, isPrimary: true, neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'AR' };
 
-  it('renderiza addressFormatted (`fullAddress` nunca existiu na API)', () => {
+  it('renderiza addressFormatted (`fullAddress` nunca existiu na API) — linha 1 até a 1ª vírgula', () => {
     render(<LocalizacoesCard addresses={[{ ...base, addressFormatted: 'Av. Contrato 123, CABA, AR', addressRaw: 'Av. Contrato 123' }]} />);
-    expect(screen.getByText('Av. Contrato 123, CABA, AR')).toBeInTheDocument();
+    expect(screen.getByText('Av. Contrato 123')).toBeInTheDocument();
+    expect(screen.getByText('CABA, AR')).toBeInTheDocument();
   });
 
-  it('cai em addressRaw quando o formatado é nulo, e em "—" quando os dois são', () => {
+  it('cai em addressRaw quando o formatado é nulo, e no alerta "Sem endereço cadastrado" quando os dois são', () => {
     render(<LocalizacoesCard addresses={[
       { ...base, id: 'a2', addressFormatted: null, addressRaw: 'Calle cruda 9' },
       { ...base, id: 'a3', addressFormatted: null, addressRaw: null, complement: null },
     ]} />);
     expect(screen.getByText('Calle cruda 9')).toBeInTheDocument();
-    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByTestId('address-missing-a3')).toHaveTextContent('Sem endereço cadastrado');
   });
 
   it('o bloco de endereços leva data-clarity-mask="True" (rua é texto: sobe em claro sem isto)', () => {
     render(<LocalizacoesCard addresses={[{ ...base, addressFormatted: 'Av. Contrato 123, CABA, AR', addressRaw: null }]} />);
-    expect(screen.getByText('Av. Contrato 123, CABA, AR').closest('[data-clarity-mask="True"]')).not.toBeNull();
+    expect(screen.getByText('Av. Contrato 123').closest('[data-clarity-mask="True"]')).not.toBeNull();
+  });
+
+  it('só rua+número, sem NENHUMA localidade sobrando: fica sem linha 2 (summarizeAddress devolve "")', () => {
+    render(<LocalizacoesCard addresses={[{ ...base, addressFormatted: 'Rua Augusta, 975', addressRaw: null }]} />);
+    expect(screen.getByText('Rua Augusta, 975')).toBeInTheDocument();
+  });
+
+  it('quando o país é o ÚNICO segmento que sobra depois da rua, a linha 2 fica null — país nunca vira linha 2 sozinho (achado MINOR do gate, 2ª rodada; desinverte o teste anterior)', () => {
+    render(<LocalizacoesCard addresses={[{ ...base, addressFormatted: 'Ruta 9 km 42, Argentina', addressRaw: null }]} />);
+    expect(screen.getByText('Ruta 9 km 42')).toBeInTheDocument();
+    expect(screen.queryByText('Argentina')).not.toBeInTheDocument();
+  });
+
+  // ── Achados MINOR do gate revisao-pr (spec Localizaciones Fase 1) ───────────────────────
+  it('addressFormatted "" (string vazia) conta como ausente — cai para addressRaw, não para o alerta', () => {
+    render(<LocalizacoesCard addresses={[{ ...base, addressFormatted: '', addressRaw: 'Calle cruda 9' }]} />);
+    expect(screen.getByText('Calle cruda 9')).toBeInTheDocument();
+    expect(screen.queryByTestId(`address-missing-${base.id}`)).not.toBeInTheDocument();
+  });
+
+  it('addressFormatted só com espaços conta como ausente — mesma regra do addressRaw', () => {
+    render(<LocalizacoesCard addresses={[{ ...base, addressFormatted: '   ', addressRaw: '   ', complement: null }]} />);
+    expect(screen.getByTestId(`address-missing-${base.id}`)).toHaveTextContent('Sem endereço cadastrado');
+  });
+
+  it('texto que começa com vírgula não vira linha 1 vazia (não cai no alerta com texto presente) — e a linha 2 NÃO repete "CABA" nem mostra o país sozinho (achado MINOR do gate, 2ª rodada — a asserção anterior tolerava a repetição)', () => {
+    render(<LocalizacoesCard addresses={[{ ...base, addressFormatted: ', CABA, Argentina', addressRaw: null }]} />);
+    expect(screen.queryByTestId(`address-missing-${base.id}`)).not.toBeInTheDocument();
+    expect(screen.getAllByText('CABA')).toHaveLength(1);
+    expect(screen.queryByText('Argentina')).not.toBeInTheDocument();
+  });
+
+  it('degenerado: só vírgulas — streetLineOf devolve "" e o fallback usa o texto cru inteiro', () => {
+    render(<LocalizacoesCard addresses={[{ ...base, addressFormatted: ',', addressRaw: null }]} />);
+    expect(screen.getByText(',')).toBeInTheDocument();
   });
 });
 

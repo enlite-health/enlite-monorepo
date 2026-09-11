@@ -1,0 +1,66 @@
+{
+  "_readme": "Fixtures de paridade front×servidor para a derivação de Zona/Barrio (card Localizaciones, Fase 1, T1). Cada caso traz `addressComponents` no formato do widget legado google.maps.places.Autocomplete (long_name/short_name/types) — o MESMO formato usado pela função de location do ClickUp no servidor (worker-functions/src/modules/integration/infrastructure/clickup/helpers/locationHelpers.ts, extractNeighborhoodFromLocation). `expected` é o valor que AMBOS front (derivePatientZone.ts) e servidor devem produzir para o MESMO input. ⚠️ A ordem dos componentes no array dentro de cada fixture é uma CONSTRUÇÃO deste teste (não capturada de uma chamada real ao Google) — a extração real depende da ordem em que o Google retorna os componentes, que este ambiente não tem como verificar contra a API viva (ver portão 4 do relatório). Ordenado aqui do mais específico para o menos específico (convenção documentada em locationHelpers.ts), que é a única suposição feita.",
+  "cases": [
+    {
+      "id": "a",
+      "description": "CABA — neighborhood=Balvanera E sublocality_level_1=Comuna 3 juntos (barrio, mais específico, na frente da comuna)",
+      "addressComponents": [
+        { "long_name": "1225", "short_name": "1225", "types": ["street_number"] },
+        { "long_name": "Avenida Rivadavia", "short_name": "Av. Rivadavia", "types": ["route"] },
+        { "long_name": "Balvanera", "short_name": "Balvanera", "types": ["neighborhood", "political"] },
+        { "long_name": "Comuna 3", "short_name": "Comuna 3", "types": ["sublocality_level_1", "sublocality", "political"] },
+        { "long_name": "Ciudad Autónoma de Buenos Aires", "short_name": "CABA", "types": ["locality", "political"] },
+        { "long_name": "Ciudad Autónoma de Buenos Aires", "short_name": "CABA", "types": ["administrative_area_level_1", "political"] },
+        { "long_name": "Argentina", "short_name": "AR", "types": ["country", "political"] },
+        { "long_name": "C1033", "short_name": "C1033", "types": ["postal_code"] }
+      ],
+      "expected": "Balvanera"
+    },
+    {
+      "id": "b",
+      "description": "CABA — só sublocality_level_1=Palermo (sem neighborhood separado)",
+      "addressComponents": [
+        { "long_name": "2000", "short_name": "2000", "types": ["street_number"] },
+        { "long_name": "Avenida Santa Fe", "short_name": "Av. Santa Fe", "types": ["route"] },
+        { "long_name": "Palermo", "short_name": "Palermo", "types": ["sublocality_level_1", "sublocality", "political"] },
+        { "long_name": "Ciudad Autónoma de Buenos Aires", "short_name": "CABA", "types": ["locality", "political"] },
+        { "long_name": "Ciudad Autónoma de Buenos Aires", "short_name": "CABA", "types": ["administrative_area_level_1", "political"] },
+        { "long_name": "Argentina", "short_name": "AR", "types": ["country", "political"] },
+        { "long_name": "C1425", "short_name": "C1425", "types": ["postal_code"] }
+      ],
+      "expected": "Palermo"
+    },
+    {
+      "id": "c",
+      "description": "GBA — só locality=Lomas de Zamora, sem sublocality/neighborhood nenhum",
+      "addressComponents": [
+        { "long_name": "500", "short_name": "500", "types": ["street_number"] },
+        { "long_name": "Avenida Meeks", "short_name": "Av. Meeks", "types": ["route"] },
+        { "long_name": "Lomas de Zamora", "short_name": "Lomas de Zamora", "types": ["locality", "political"] },
+        { "long_name": "Buenos Aires", "short_name": "Buenos Aires", "types": ["administrative_area_level_1", "political"] },
+        { "long_name": "Argentina", "short_name": "AR", "types": ["country", "political"] },
+        { "long_name": "B1832", "short_name": "B1832", "types": ["postal_code"] }
+      ],
+      "expected": null
+    },
+    {
+      "id": "d",
+      "description": "GBA — neighborhood de barrio cerrado (Nordelta) + locality (Tigre)",
+      "addressComponents": [
+        { "long_name": "Avenida de los Lagos", "short_name": "Av. de los Lagos", "types": ["route"] },
+        { "long_name": "Nordelta", "short_name": "Nordelta", "types": ["neighborhood", "political"] },
+        { "long_name": "Tigre", "short_name": "Tigre", "types": ["locality", "political"] },
+        { "long_name": "Buenos Aires", "short_name": "Buenos Aires", "types": ["administrative_area_level_1", "political"] },
+        { "long_name": "Argentina", "short_name": "AR", "types": ["country", "political"] },
+        { "long_name": "B1670", "short_name": "B1670", "types": ["postal_code"] }
+      ],
+      "expected": "Nordelta"
+    },
+    {
+      "id": "e",
+      "description": "Vazio — sem address_components nenhum",
+      "addressComponents": [],
+      "expected": null
+    }
+  ]
+}
