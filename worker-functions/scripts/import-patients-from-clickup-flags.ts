@@ -9,10 +9,13 @@
  * Duas travas fail-safe (achado do gate revisao-pr, BLOCKER/MAJOR):
  *   1. `--dry-run` presente VENCE `--apply`, sempre — nunca existe combinação de flags que
  *      grave se `--dry-run` foi digitado (mesma disciplina de `parseBackfillFlags`).
- *   2. `--task-id` sem valor depois (ou seguido de outra flag) é ERRO, não "task-id ausente" —
- *      sem isto, `--task-id` digitado errado (esqueceu o id) caía muda na paginação da LISTA
- *      INTEIRA em vez de travar. Mesma disciplina para `--limit` não numérico ou ≤ 0: silêncio
- *      aqui vira "processa tudo" ou "processa zero" sem avisar ninguém.
+ *   2. TODA flag que espera um VALOR (`--task-id`, `--limit`, `--status`) trata "sem valor
+ *      depois" ou "seguido de outra flag" como ERRO, nunca como "flag ausente" — sem isto,
+ *      `--status` digitado errado (ex.: `--apply --status`, esqueceu o valor) caía MUDO em
+ *      `statusFilter: []`, que o código lê como "sem filtro" = LISTA INTEIRA gravando. Mesma
+ *      classe de defeito que `--task-id` sem valor (caía na paginação da lista inteira) e
+ *      `--limit` não numérico (caía em "sem limite") — achada por gate de revisão em `--status`
+ *      DEPOIS de já ter sido corrigida em `--task-id`/`--limit`: mesma régua, os 3 agora.
  *
  * Por isso o parser devolve um RESULTADO (`ok: true` com os flags, ou `ok: false` com a
  * mensagem) em vez de lançar ou sair do processo — quem decide como reportar o erro (console +
@@ -39,12 +42,6 @@ export type ParseFlagsResult =
 
 function looksLikeAnotherFlag(value: string | undefined): boolean {
   return value === undefined || value.startsWith('--');
-}
-
-function flagValue(argv: string[], name: string): string | null {
-  const idx = argv.indexOf(name);
-  if (idx === -1) return null;
-  return argv[idx + 1] ?? null;
 }
 
 export function parseImportPatientsFlags(argv: string[]): ParseFlagsResult {
@@ -83,10 +80,21 @@ export function parseImportPatientsFlags(argv: string[]): ParseFlagsResult {
     limit = parsed;
   }
 
-  const statusFilterRaw = flagValue(argv, '--status');
-  const statusFilter = statusFilterRaw
-    ? statusFilterRaw.split(',').map(s => s.trim().toLowerCase())
-    : [];
+  // ── --status: sem valor (ou seguido de outra flag) é ERRO, nunca "sem filtro" ───────────────
+  // Sem esta guarda, `--apply --status` (esqueceu o valor) caía muda em `statusFilter: []`, que
+  // o script lê como "nenhum filtro" — LISTA INTEIRA gravando. Mesma disciplina de --task-id.
+  const statusIdx = argv.indexOf('--status');
+  let statusFilter: string[] = [];
+  if (statusIdx !== -1) {
+    const value = argv[statusIdx + 1];
+    if (looksLikeAnotherFlag(value)) {
+      return {
+        ok: false,
+        error: `--status requer um valor (ex.: --status busqueda,activo) — recebido: ${value ?? '<nada>'}`,
+      };
+    }
+    statusFilter = (value as string).split(',').map(s => s.trim().toLowerCase());
+  }
 
   const verbose = argv.includes('--verbose');
 
