@@ -187,8 +187,9 @@ test.describe('@integration Home — vagas da API pública, Postularse pelo serv
     // "Ver Detalles" com cadastro incompleto (missingFields não apurado, já
     // que loginAsWorker estuba /api/workers/me sem esse campo) mostra o
     // aviso de verificação — não é o foco deste teste, só confirma que o
-    // link externo não abriu por engano.
-    await expect(page.getByText(/No pudimos verificar tu registro/i)).toBeVisible({ timeout: 10_000 });
+    // link externo não abriu por engano. getByRole('heading', ...) evita
+    // ambiguidade com o parágrafo do corpo, que repete o mesmo texto.
+    await expect(page.getByRole('heading', { name: /No pudimos verificar tu registro/i })).toBeVisible({ timeout: 10_000 });
 
     expect(trackChannelRequests, 'Ver Detalles jamais chama track-channel').toHaveLength(0);
     const opened = await getOpenedUrls(page);
