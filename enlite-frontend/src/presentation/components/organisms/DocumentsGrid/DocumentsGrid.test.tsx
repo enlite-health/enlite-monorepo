@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, within, fireEvent, act } from '@testing-library/react';
 import { DocumentsGrid } from './DocumentsGrid';
 import type { WorkerDocumentsResponse } from '@infrastructure/http/DocumentApiService';
 import { makeWorkerDocuments as makeDocuments } from '../../../../test/workerProgressFixtures';
@@ -23,6 +23,7 @@ const noop = vi.fn().mockResolvedValue(undefined);
 function buildProps(overrides: Partial<{
   documents: WorkerDocumentsResponse | null;
   profession: string | null;
+  country: string | null;
 }> = {}) {
   return {
     documents: makeDocuments(),
@@ -151,5 +152,44 @@ describe('DocumentsGrid — aviso de pendentes por profissão (bug camada 0 #3)'
       fireEvent.change(input, { target: { files: [file] } });
     });
     await screen.findByText('Erro');
+  });
+});
+
+describe('DocumentsGrid — ajuda "¿No lo tenés? Cómo sacarlo" no slot criminal_record (Fase 3/DD4)', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('país AR + antecedentes NÃO enviado → o slot criminal_record mostra o toggle da ajuda', () => {
+    const documents = makeDocuments(); // nenhum documento enviado
+    render(<DocumentsGrid {...buildProps({ profession: 'CUIDADOR', documents, country: 'AR' } as any)} />);
+    const slot = screen.getByTestId('doc-slot-criminal_record');
+    expect(within(slot).getByRole('button', { name: /documents.antecedentesHelp.toggle/i })).toBeInTheDocument();
+  });
+
+  it('a ajuda NÃO aparece em nenhum outro slot (ex.: identity_document)', () => {
+    const documents = makeDocuments();
+    render(<DocumentsGrid {...buildProps({ profession: 'CUIDADOR', documents, country: 'AR' } as any)} />);
+    const dniSlot = screen.getByTestId('doc-slot-identity_document');
+    expect(within(dniSlot).queryByRole('button', { name: /documents.antecedentesHelp.toggle/i })).not.toBeInTheDocument();
+  });
+
+  it('antecedentes JÁ enviado → some a ajuda mesmo em AR', () => {
+    const documents = makeDocuments({ criminalRecordUrl: 'path/crim.pdf' });
+    render(<DocumentsGrid {...buildProps({ profession: 'CUIDADOR', documents, country: 'AR' } as any)} />);
+    const slot = screen.getByTestId('doc-slot-criminal_record');
+    expect(within(slot).queryByRole('button', { name: /documents.antecedentesHelp.toggle/i })).not.toBeInTheDocument();
+  });
+
+  it('país diferente de AR (trâmite é argentino) → some a ajuda mesmo com antecedentes pendente', () => {
+    const documents = makeDocuments();
+    render(<DocumentsGrid {...buildProps({ profession: 'CUIDADOR', documents, country: 'BR' } as any)} />);
+    const slot = screen.getByTestId('doc-slot-criminal_record');
+    expect(within(slot).queryByRole('button', { name: /documents.antecedentesHelp.toggle/i })).not.toBeInTheDocument();
+  });
+
+  it('sem prop country → some a ajuda (fail-closed, não presume Argentina)', () => {
+    const documents = makeDocuments();
+    render(<DocumentsGrid {...buildProps({ profession: 'CUIDADOR', documents } as any)} />);
+    const slot = screen.getByTestId('doc-slot-criminal_record');
+    expect(within(slot).queryByRole('button', { name: /documents.antecedentesHelp.toggle/i })).not.toBeInTheDocument();
   });
 });
