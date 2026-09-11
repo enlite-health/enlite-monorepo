@@ -152,7 +152,15 @@ export function ProfileCompletionSummary({
           </div>
         ) : (
           <div className="flex flex-col gap-4" data-testid="summary-pending">
-            <ProfileCompletionCard progress={progress} />
+            {/*
+              BLOCKER 2 (gate 11/09): este card mostra SÓ o percentual de
+              REGISTRO (useWorkerProfileProgress não sabe de documentos
+              desde a Fase 2, DD1). Renderizar sempre fazia quem só tinha
+              documento pendente ver "100%" em cima de "Te falta completar:
+              Documentos" — mentira visual. Só faz sentido mostrar a barra
+              de registro quando o registro em si ainda está incompleto.
+            */}
+            {!isRegistrationComplete && <ProfileCompletionCard progress={progress} />}
 
             <div className="flex flex-col gap-2">
               <Text size="sm" weight="semibold" color="primary">
