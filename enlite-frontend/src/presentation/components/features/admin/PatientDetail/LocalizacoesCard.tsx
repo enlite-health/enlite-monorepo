@@ -117,10 +117,11 @@ export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }
                 <TableRow key={addr.id} className="align-top">
                   <TableCell unwrapped>
                     <div className="flex items-center gap-2 px-3 py-2">
-                      <Text as="span" size="sm" color="inherit">
-                        {t(`admin.patients.detail.addressDrawer.type_${addr.addressType}`, addr.addressType)}
-                      </Text>
-                      {addr.isPrimary && (
+                      {/* Fix do jurídico (sessão seguinte à Fase 1): isPrimary é 100% derivado
+                          de address_type === 'primary' (PatientDetailQueryHelper.ts:228) — mostrar
+                          o rótulo do Tipo E o selo juntos repetia a mesma palavra "Principal".
+                          Agora é OU/OU: selo quando isPrimary, rótulo do tipo quando não. */}
+                      {addr.isPrimary ? (
                         <span
                           className="shrink-0 bg-primary/10 text-primary px-1.5 py-0.5 rounded-full"
                           data-testid={`address-primary-badge-${addr.id}`}
@@ -129,6 +130,10 @@ export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }
                             {t('admin.patients.detail.locationsCard.primaryBadge')}
                           </Text>
                         </span>
+                      ) : (
+                        <Text as="span" size="sm" color="inherit">
+                          {t(`admin.patients.detail.addressDrawer.type_${addr.addressType}`, addr.addressType)}
+                        </Text>
                       )}
                     </div>
                   </TableCell>
