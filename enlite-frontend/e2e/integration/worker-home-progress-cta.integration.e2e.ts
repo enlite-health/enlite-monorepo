@@ -26,8 +26,12 @@ import {
   type InsertEligibilityWorkerResult,
 } from '../helpers/eligibility-worker-helper';
 import { loginNewWorker } from '../helpers/worker-realreg-auth-helper';
+import { readTextContrastRatio } from '../helpers/contrast-helper';
 
 test.use({ video: 'on' }); // definição de pronto exige vídeo do fluxo real
+
+/** WCAG AA, texto pequeno (< 18pt/24px ou < 14pt/18.5px bold). */
+const WCAG_AA_MIN_CONTRAST = 4.5;
 
 test.describe('@integration Home — lista de tarefas (Fase 2, DD2)', () => {
   test.setTimeout(90_000);
@@ -54,6 +58,30 @@ test.describe('@integration Home — lista de tarefas (Fase 2, DD2)', () => {
     await expect(card).toBeVisible({ timeout: 20_000 });
     await expect(card.getByText('Te falta 1 paso para postularte')).toBeVisible();
     await expect(card.getByText('Antecedentes penales')).toBeVisible();
+
+    // Achado do gate (11/09): `color="muted"` do atom Text vira
+    // `rgba(115,115,115,0.5)` — cinza com ALPHA, 1,96:1 composto sobre
+    // branco (bem abaixo do mínimo WCAG AA 4,5:1 pra texto pequeno). Mede
+    // o que o navegador REALMENTE pinta, não o nome da classe.
+    //
+    // Achado do gate (11/09, RODADA 2): a medição tem de cair no elemento
+    // que carrega a classe de cor, nunca num `<div>` wrapper sem `color`
+    // — senão ela lê a cor HERDADA (preto, ~21:1) e a asserção nunca
+    // falha, mesmo com `muted` de volta (prova nunca falha ≠ prova).
+    // `pending-tasks-progress` já é o próprio `<Text>` (testid repassado
+    // via `{...rest}`, `Text.tsx:69`); `pending-tasks-completed-text` é
+    // um testid NOVO, colocado direto no `<Text>` interno — o `<div
+    // data-testid="pending-tasks-completed">` que o envolve não tem cor
+    // própria.
+    const progressText = page.locator('[data-testid="pending-tasks-progress"]');
+    await expect(progressText).toBeVisible();
+    const progressContrast = await readTextContrastRatio(progressText);
+    expect(progressContrast).toBeGreaterThanOrEqual(WCAG_AA_MIN_CONTRAST);
+
+    const completedText = page.locator('[data-testid="pending-tasks-completed-text"]');
+    await expect(completedText).toBeVisible();
+    const completedContrast = await readTextContrastRatio(completedText);
+    expect(completedContrast).toBeGreaterThanOrEqual(WCAG_AA_MIN_CONTRAST);
 
     const cta = card.getByRole('button', { name: /Subir ahora — Antecedentes penales/i });
     await expect(cta).toBeVisible();

@@ -44,6 +44,12 @@ type GeneralInfoShape = {
   preferredTypes: string[];
   preferredAgeRange: string[];
   profilePhoto: string | null;
+  /**
+   * Atributo de CONTA (não editável na tela) — vem só pra gatear a ajuda de
+   * antecedentes (Fase 3/DD4, F12: trâmite ARGENTINO). Igual a `email`,
+   * sempre a fonte é o servidor — sem precedência local×servidor.
+   */
+  country: string;
 };
 
 type ServiceAddressShape = {
@@ -77,6 +83,7 @@ export function mergeGeneralInfo<T extends GeneralInfoShape>(
   return {
     ...local,
     email: serverData.email,
+    country: serverData.country,
     fullName: str(serverData.firstName, local.fullName),
     lastName: str(serverData.lastName, local.lastName),
     phone: str(serverData.phone, local.phone),

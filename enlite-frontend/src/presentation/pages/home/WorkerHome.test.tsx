@@ -59,14 +59,17 @@ vi.mock('@presentation/components/organisms/PendingTasksCard', () => ({
   PendingTasksCard: ({
     missingFields,
     profession,
+    country,
   }: {
     missingFields: string[];
     profession?: string | null;
+    country?: string | null;
   }) => (
     <div
       data-testid="pending-tasks-card"
       data-missing-fields={JSON.stringify(missingFields)}
       data-profession={profession ?? ''}
+      data-country={country ?? ''}
     />
   ),
 }));
@@ -183,6 +186,10 @@ describe('WorkerHome — cadastro incompleto (missingFields com pendência)', ()
     const card = screen.getByTestId('pending-tasks-card');
     expect(card).toHaveAttribute('data-missing-fields', '["phone","doc_criminal_record"]');
     expect(card).toHaveAttribute('data-profession', 'AT');
+    // Fase 3/DD4: PendingTasksCard precisa do país pra gatear a ajuda de
+    // antecedentes (trâmite argentino, F12) — a home já busca isso em
+    // workerData.country (GET /api/workers/me), sem fetch novo.
+    expect(card).toHaveAttribute('data-country', 'AR');
 
     const jobs = screen.getByTestId('jobs-embedded-section');
     expect(jobs).toHaveAttribute('data-registration-complete', 'false');

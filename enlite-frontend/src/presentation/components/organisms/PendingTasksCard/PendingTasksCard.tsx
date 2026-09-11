@@ -6,6 +6,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { destinationFor, buildProfileUrl, TAB_ORDER, type TabId } from '@presentation/utils/incompleteFieldDestinations';
 import { requiredDocTypesFor } from '@presentation/utils/workerDocumentPolicy';
+import { AntecedentesHelpExpandable } from '@presentation/components/molecules/AntecedentesHelpExpandable';
 
 interface PendingTasksCardProps {
   /**
@@ -15,6 +16,13 @@ interface PendingTasksCardProps {
    */
   missingFields: string[];
   profession?: string | null;
+  /**
+   * País da worker (`WorkerProgressResponse.country`, Fase 3/DD4) — só
+   * gateia a ajuda "¿No lo tenés? Cómo sacarlo" do antecedentes, que é um
+   * trâmite ARGENTINO (F12). Sem esta prop (chamador não informou), a ajuda
+   * fica ESCONDIDA — fail-closed, nunca presume Argentina.
+   */
+  country?: string | null;
   className?: string;
 }
 
@@ -26,6 +34,8 @@ interface TaskRow {
   label: string;
   actionLabel: string;
   url: string;
+  /** Fase 3/DD4 — só `true` na linha do `doc_criminal_record`, país AR. */
+  showAntecedentesHelp?: boolean;
 }
 
 /**
@@ -56,10 +66,18 @@ interface TaskRow {
  * `data-clarity-mask="True"` no contêiner das linhas: nomeia o que falta no
  * cadastro da pessoa (parecer do lex, condição C12 — mesma régua do
  * `IncompleteRegistrationModal`).
+ *
+ * 🔒 Achado do gate (11/09, defeito já na stage desde a Fase 2): "Ya
+ * completaste X de Y" e o recolhido de concluídos usavam `color="muted"`
+ * do atom `Text`, que mapeia pra `rgba(115, 115, 115, 0.5)` na paleta
+ * desta casa (`tailwind.config.js`) — 1,96:1 sobre branco, abaixo do
+ * mínimo WCAG AA (4,5:1). `secondary` (`gray-800` = `#737373`, opaco,
+ * 4,74:1) resolve sem pesar visualmente o texto de apoio.
  */
 export function PendingTasksCard({
   missingFields,
   profession,
+  country,
   className = '',
 }: PendingTasksCardProps): JSX.Element | null {
   const { t } = useTranslation();
@@ -121,6 +139,11 @@ export function PendingTasksCard({
         label: docLabel(token),
         actionLabel: t('profile.pendingTasks.uploadAction'),
         url: buildProfileUrl(destinationFor(token)),
+        // Fase 3/DD4: só o item ESPECÍFICO `doc_criminal_record` (nunca o
+        // fallback genérico — ali não dá pra saber se antecedentes é o que
+        // falta), e só Argentina (F12: trâmite argentino). `country` sem
+        // valor = ajuda escondida (fail-closed).
+        showAntecedentesHelp: token === 'doc_criminal_record' && country === 'AR',
       }));
 
   const rows: TaskRow[] = [...registrationRows, ...documentRows];
@@ -147,37 +170,46 @@ export function PendingTasksCard({
       <Heading level={2} color="primary" className="text-base sm:text-xl mb-1" as="h2">
         {t('profile.pendingTasks.title', { count: pendingCount })}
       </Heading>
-      <Text size="sm" color="muted" className="mb-4" data-testid="pending-tasks-progress">
+      <Text size="sm" color="secondary" className="mb-4" data-testid="pending-tasks-progress">
         {t('profile.pendingTasks.completedOf', { done: completedCount, total })}
       </Text>
 
       <div className="flex flex-col gap-3" data-testid="pending-tasks-rows" data-clarity-mask="True">
         {rows.map((row) => (
-          <div
-            key={row.key}
-            data-testid="pending-task-row"
-            className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2"
-          >
-            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-            <Text as="span" size="sm" weight="medium" color="inherit" className="text-amber-900 flex-1">
-              {row.label}
-            </Text>
-            <Button
-              type="button"
-              variant="primary"
-              size="sm"
-              aria-label={`${row.actionLabel} — ${row.label}`}
-              onClick={() => navigate(row.url)}
+          <div key={row.key}>
+            <div
+              data-testid="pending-task-row"
+              className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2"
             >
-              {row.actionLabel}
-            </Button>
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+              <Text as="span" size="sm" weight="medium" color="inherit" className="text-amber-900 flex-1">
+                {row.label}
+              </Text>
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                aria-label={`${row.actionLabel} — ${row.label}`}
+                onClick={() => navigate(row.url)}
+              >
+                {row.actionLabel}
+              </Button>
+            </div>
+            {row.showAntecedentesHelp && <AntecedentesHelpExpandable className="mt-1 pl-1" />}
           </div>
         ))}
 
         {completedLabels.length > 0 && (
           <div className="flex items-center gap-2 px-3 py-1" data-testid="pending-tasks-completed">
             <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
-            <Text as="span" size="sm" color="muted">
+            {/*
+              Achado do gate (11/09, rodada 2): o testid de CONTRASTE tem
+              de ficar no elemento que carrega a classe de cor. O `<div>`
+              acima não define `color` nenhuma — sem esse testid AQUI, uma
+              medição em `pending-tasks-completed` lê o preto HERDADO
+              (~21:1) e nunca vê o cinza real deste `<Text>`.
+            */}
+            <Text as="span" size="sm" color="secondary" data-testid="pending-tasks-completed-text">
               {completedLabels.join(' · ')}
             </Text>
           </div>

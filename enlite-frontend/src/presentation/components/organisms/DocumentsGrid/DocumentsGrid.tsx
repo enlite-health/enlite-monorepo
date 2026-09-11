@@ -5,6 +5,7 @@ import { Heading, Text } from '@presentation/components/atoms';
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { DocumentType, WorkerDocumentsResponse } from '@infrastructure/http/DocumentApiService';
 import { isATProfession, requiredDocTypesFor } from '@presentation/utils/workerDocumentPolicy';
+import { AntecedentesHelpExpandable } from '@presentation/components/molecules/AntecedentesHelpExpandable';
 
 interface DocumentSlot {
   docType: DocumentType;
@@ -53,12 +54,19 @@ const DOC_URL_MAP: Record<DocumentType, keyof WorkerDocumentsResponse> = {
 interface DocumentsGridProps {
   documents: WorkerDocumentsResponse | null;
   profession?: string | null;
+  /**
+   * País da worker (Fase 3/DD4) — só gateia a ajuda "¿No lo tenés? Cómo
+   * sacarlo" do slot `criminal_record`, um trâmite ARGENTINO (F12). Sem
+   * esta prop, a ajuda fica ESCONDIDA — fail-closed, nunca presume
+   * Argentina.
+   */
+  country?: string | null;
   onUpload: (docType: DocumentType, file: File) => Promise<void>;
   onDelete: (docType: DocumentType) => Promise<void>;
   onView: (filePath: string) => Promise<void>;
 }
 
-export function DocumentsGrid({ documents, profession, onUpload, onDelete, onView }: DocumentsGridProps): JSX.Element {
+export function DocumentsGrid({ documents, profession, country, onUpload, onDelete, onView }: DocumentsGridProps): JSX.Element {
   const { t } = useTranslation();
   const [loadingTypes, setLoadingTypes] = useState<Set<DocumentType>>(new Set());
   const [cardErrors, setCardErrors] = useState<Partial<Record<DocumentType, string>>>({});
@@ -122,6 +130,15 @@ export function DocumentsGrid({ documents, profession, onUpload, onDelete, onVie
           onView={() => onView(filePath as string)}
           className="flex-1"
         />
+        {/*
+          Fase 3/DD4: ajuda "¿No lo tenés? Cómo sacarlo" — só no slot
+          criminal_record, só quando ainda NÃO foi enviado (some assim que
+          `filePath` existir) e só Argentina (F12: trâmite argentino).
+          `country` sem valor = escondida (fail-closed).
+        */}
+        {slot.docType === 'criminal_record' && !filePath && country === 'AR' && (
+          <AntecedentesHelpExpandable className="mt-1" />
+        )}
         {cardErrors[slot.docType] && (
           <Text as="p" size="xs" color="secondary" className="text-red-500">
             {cardErrors[slot.docType]}

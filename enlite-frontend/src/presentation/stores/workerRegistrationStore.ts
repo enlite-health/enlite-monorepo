@@ -28,6 +28,13 @@ export interface GeneralInfoData {
   yearsExperience: string;
   preferredTypes: string[];
   preferredAgeRange: string[];
+  /**
+   * Atributo de CONTA (`WorkerProgressResponse.country`), não editável no
+   * formulário — usado só pra gatear a ajuda de antecedentes na aba
+   * Documentos (Fase 3/DD4, F12: trâmite ARGENTINO). Sempre vem do
+   * servidor via `hydrateFromServer` (ver `mergeGeneralInfo`).
+   */
+  country: string;
 }
 
 export interface ServiceAddressData {
@@ -155,6 +162,7 @@ const initialData: WorkerRegistrationData = {
     yearsExperience: '',
     preferredTypes: [],
     preferredAgeRange: [],
+    country: '',
   },
   serviceAddress: {
     serviceRadius: 10,

@@ -8,6 +8,9 @@ import { useWorkerRegistrationStore } from '@presentation/stores/workerRegistrat
 
 export function DocumentsTab(): JSX.Element {
   const profession = useWorkerRegistrationStore((s) => s.data.generalInfo.profession);
+  // Fase 3/DD4 — só gateia a ajuda de antecedentes (trâmite argentino, F12)
+  // dentro do DocumentsGrid; este componente não decide nada com ele.
+  const country = useWorkerRegistrationStore((s) => s.data.generalInfo.country);
   const { documents, isLoading, error, fetchDocuments, uploadDocument, deleteDocument, viewDocument } =
     useDocumentsApi();
   const additional = useAdditionalDocumentsApi();
@@ -45,6 +48,7 @@ export function DocumentsTab(): JSX.Element {
       <DocumentsGrid
         documents={documents}
         profession={profession || null}
+        country={country || null}
         onUpload={(docType: DocumentType, file: File) => uploadDocument(docType, file)}
         onDelete={(docType: DocumentType) => deleteDocument(docType)}
         onView={(filePath: string) => viewDocument(filePath)}
