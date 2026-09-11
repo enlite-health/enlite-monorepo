@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { CatalogCategory } from '@infrastructure/http/AdminPermissionsApiService';
 import type { ScreenDef } from '@presentation/config/screenRegistry';
-import { celulasForaDasTelas, montaBlocosPorTela, ROTULOS_CRUS } from '../screenTreeModel';
+import { celulasForaDasTelas, filtraBlocosPorTexto, montaBlocosPorTela, ROTULOS_CRUS } from '../screenTreeModel';
 
 const cell = (resource: string, action: string, category = 'Pacientes') => ({ resource, action, category, ownerService: 'wf' });
 const CATALOG: CatalogCategory[] = [
@@ -73,5 +73,77 @@ describe('montaBlocosPorTela', () => {
     expect(b[1].grade[0].rotulo).toBe('C:patients.detail/family');
     expect(b[0].grade[0].nota).toBe('também em T:patients.detail');
     expect(b[2].rotulo).toBe('RESTO');
+  });
+});
+
+describe('filtraBlocosPorTexto (US-21, FR-720 — busca da tela de permissões)', () => {
+  // Rótulos próximos do real, para o caso "buscar 'familia' → só as células de família" (contrato).
+  const rotulos = {
+    tela: (id: string) => (id === 'patients.detail' ? 'Pacientes: Detalles' : id),
+    container: (_s: string, c: string) => (c === 'family' ? 'Familiares' : c),
+    recurso: (r: string) => r,
+    tambemEm: (t: readonly string[]) => t.join(', '),
+    outras: 'Otras',
+  };
+  const blocos = montaBlocosPorTela(CATALOG, rotulos, REGISTRY);
+
+  it('sem query devolve tudo, intacto', () => {
+    expect(filtraBlocosPorTexto(blocos, '')).toEqual(blocos);
+  });
+
+  it('busca por rótulo da LINHA (container) filtra só a linha que bate, dentro do bloco certo', () => {
+    const filtrado = filtraBlocosPorTexto(blocos, 'familia');
+    expect(filtrado.map((b) => b.category)).toEqual(['patients.detail']);
+    expect(filtrado[0].grade.map((l) => l.resource)).toEqual(['patient_family']);
+  });
+
+  it('busca por CHAVE TÉCNICA (recurso:ação) também casa, mesmo sem bater o rótulo', () => {
+    const filtrado = filtraBlocosPorTexto(blocos, 'patient_family:write');
+    expect(filtrado).toHaveLength(1);
+    expect(filtrado[0].grade.map((l) => l.resource)).toEqual(['patient_family']);
+  });
+
+  it('busca pelo rótulo da TELA mostra TODAS as linhas dela — não só a que bateu no nome', () => {
+    const filtrado = filtraBlocosPorTexto(blocos, 'Detalles');
+    expect(filtrado).toHaveLength(1);
+    expect(filtrado[0].grade.map((l) => l.resource).sort()).toEqual(['patient', 'patient_family']);
+  });
+
+  it('busca sem nenhum resultado devolve lista VAZIA — é a tela quem mostra a mensagem', () => {
+    expect(filtraBlocosPorTexto(blocos, 'nada-disso-existe-no-catalogo')).toEqual([]);
+  });
+
+  it('case-insensitive e ignora espaço nas pontas', () => {
+    expect(filtraBlocosPorTexto(blocos, '  FAMILIA  ').map((b) => b.category)).toEqual(['patients.detail']);
+  });
+
+  it('🔒 não muda os objetos de entrada — a página decide o que MARCAR, isto só decide o que MOSTRAR', () => {
+    const antes = JSON.parse(JSON.stringify(blocos));
+    filtraBlocosPorTexto(blocos, 'familia');
+    expect(blocos).toEqual(antes);
+  });
+
+  // Achado do gate `revisao-pr` (D209): 32 dos 96 rótulos reais do painel têm
+  // diacrítico ("Gestión a la Vista", "Mensajería", "Dirección", "Diagnóstico",
+  // "Preselección", "Números clave", "Analítica", "Importación"…) — digitar
+  // sem acento (o que qualquer teclado ES-AR sem morto faz) tinha que achar
+  // "nenhum resultado" para permissão que existe. `normalizeText` (o MESMO
+  // util do `SearchableSelect`) fecha isso.
+  it('🔒 "gestion" (sem acento) bate rótulo de TELA "Gestión a la Vista"', () => {
+    const comAcento = montaBlocosPorTela(CATALOG, {
+      ...rotulos,
+      tela: (id) => (id === 'patients.list' ? 'Gestión a la Vista' : rotulos.tela(id)),
+    }, REGISTRY);
+    const filtrado = filtraBlocosPorTexto(comAcento, 'gestion');
+    expect(filtrado.map((b) => b.category)).toEqual(['patients.list']);
+  });
+
+  it('🔒 "mensajeria" (sem acento) bate rótulo de LINHA "Mensajería"', () => {
+    const comAcento = montaBlocosPorTela(CATALOG, {
+      ...rotulos,
+      recurso: (r) => (r === 'dedup' ? 'Mensajería' : rotulos.recurso(r)),
+    }, REGISTRY);
+    const filtrado = filtraBlocosPorTexto(comAcento, 'mensajeria');
+    expect(filtrado.some((b) => b.grade.some((l) => l.resource === 'dedup'))).toBe(true);
   });
 });

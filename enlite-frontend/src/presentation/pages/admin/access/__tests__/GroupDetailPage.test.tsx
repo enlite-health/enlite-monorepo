@@ -540,4 +540,88 @@ describe('GroupDetailPage — a regra por componente', () => {
     await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.cellsSave' }));
     await waitFor(() => expect(api.setGroupPermissions).toHaveBeenCalledWith(GRUPO.id, ['funnel:read'], null));
   });
+
+  // ── US-21 / FR-720 — busca na tela de permissões ────────────────────────────────────────────
+  it('🔒 buscar filtra a grade por rótulo/tela/chave técnica, digitação humana (click + type)', async () => {
+    postura('write');
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByTestId('g-name-readonly');
+    // as duas linhas do catálogo (worker, funnel) estão visíveis de largada
+    expect(screen.getAllByLabelText(/^worker:read/).length).toBeGreaterThan(0);
+    expect(screen.getAllByLabelText(/^funnel:read/).length).toBeGreaterThan(0);
+
+    const busca = screen.getByRole('searchbox', { name: 'admin.access.group.cells.searchLabel' });
+    await userEvent.click(busca);
+    await userEvent.keyboard('funnel');
+    expect(busca).toHaveValue('funnel');
+
+    // "worker" sumiu da grade; "funnel" continua
+    expect(screen.queryByLabelText(/^worker:read/)).not.toBeInTheDocument();
+    expect(screen.getAllByLabelText(/^funnel:read/).length).toBeGreaterThan(0);
+  });
+
+  it('🔒 busca sem resultado nenhum mostra a mensagem — não uma grade vazia muda', async () => {
+    postura('write');
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByTestId('g-name-readonly');
+    const busca = screen.getByRole('searchbox', { name: 'admin.access.group.cells.searchLabel' });
+    await userEvent.click(busca);
+    await userEvent.keyboard('nada-disso-existe-no-catalogo');
+    expect(await screen.findByTestId('screen-tree-no-results')).toHaveTextContent('admin.access.group.cells.noSearchResults');
+    expect(screen.queryByTestId('screen-tree')).not.toBeInTheDocument();
+  });
+
+  it('🔒 filtrar, marcar, salvar → PUT com o conjunto INTEIRO (o que ficou fora do filtro não se perde)', async () => {
+    // contracts/permissions-split.md §Busca: "o conjunto marcado fora do filtro é preservado no
+    // PUT — teste explícito: filtrar, marcar 1, salvar → as demais continuam."
+    postura('write');
+    api.setGroupPermissions.mockResolvedValue({ cells: 3 });
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByTestId('g-name-readonly');
+
+    const busca = screen.getByRole('searchbox', { name: 'admin.access.group.cells.searchLabel' });
+    await userEvent.click(busca);
+    await userEvent.keyboard('worker');
+    // funnel:read (já marcada em GRUPO.cells) some da grade — mas o Set que a
+    // página guarda não muda: a busca só decide o que a grade DESENHA.
+    expect(screen.queryByLabelText(/^funnel:read/)).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getAllByLabelText(/^worker:write/)[0]);
+    await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.cellsSave' }));
+    await waitFor(() => expect(api.setGroupPermissions).toHaveBeenCalledWith(
+      GRUPO.id,
+      ['funnel:read', 'worker:read', 'worker:write'],
+      null,
+    ));
+  });
+
+  it('read: a busca também existe (some SÓ sem catálogo) — filtra a lista somente leitura', async () => {
+    postura('read');
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByTestId('g-name-readonly');
+    const busca = screen.getByRole('searchbox', { name: 'admin.access.group.cells.searchLabel' });
+    await userEvent.click(busca);
+    await userEvent.keyboard('funnel');
+    expect(screen.queryByLabelText(/^worker:read/)).not.toBeInTheDocument();
+    expect(screen.getAllByLabelText(/^funnel:read/).length).toBeGreaterThan(0);
+  });
+
+  it('🔒 sem catálogo, a busca nem aparece — nada para filtrar', async () => {
+    postura('write');
+    api.getCatalog.mockResolvedValue([]);
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByText('admin.access.group.cells.empty');
+    expect(screen.queryByRole('searchbox', { name: 'admin.access.group.cells.searchLabel' })).not.toBeInTheDocument();
+  });
+
+  it('abre e fecha o painel de ajuda de uma célula (o "?" da linha)', async () => {
+    postura('write');
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByTestId('g-name-readonly');
+    expect(screen.queryByTestId('cell-help')).not.toBeInTheDocument();
+    await userEvent.click(screen.getAllByTestId('cell-help-worker')[0]);
+    expect(await screen.findByTestId('cell-help')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'admin.access.group.cells.help.close' }));
+    expect(screen.queryByTestId('cell-help')).not.toBeInTheDocument();
+  });
 });

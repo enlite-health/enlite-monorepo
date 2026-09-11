@@ -6,7 +6,10 @@
  * Cobertura:
  *   S1 — Tabelas existem com colunas/constraints chave
  *   S2 — users tem tenant_id e status; trigger mantém is_active em sync
- *   S3 — Seed: tenant Enlite, count exato de permissions (43), 5 grupos de sistema
+ *   S3 — Seed: tenant Enlite, count exato de permissions (43), 5 grupos — Acesso Master e
+ *        Super Admin de SISTEMA; Recrutador, Community Manager e Financeiro CUSTOMIZÁVEIS
+ *        desde a mig 432 (PR-8a 018-grupos-fixos-busca, D285/FR-701 — a F11 caiu, só as 4
+ *        contas do Acesso Master ficam fixas, não os grupos do seed)
  *   S4 — get_user_effective_permissions() retorna array correto
  */
 
@@ -309,7 +312,7 @@ describe('S2 — users.tenant_id e users.status; trigger is_active em sync', () 
 
 // ─── S3: Seeds ────────────────────────────────────────────────────────────────
 
-describe('S3 — Seeds: tenant Enlite, 43 permissions, 5 grupos de sistema', () => {
+describe('S3 — Seeds: tenant Enlite, 43 permissions, 5 grupos (2 de sistema + 3 customizáveis pela mig 432)', () => {
 
   it('tenant Enlite existe com UUID 00000000-...-0001 e region=SA', async () => {
     const row = await pool.query<{ id: string; name: string; region: string; status: string }>(`
@@ -389,28 +392,31 @@ describe('S3 — Seeds: tenant Enlite, 43 permissions, 5 grupos de sistema', () 
     expect(set.has('dedup:delete')).toBe(false);
   });
 
-  it('5 grupos de sistema existem com is_system=true', async () => {
+  it('5 grupos do seed existem: Acesso Master e Super Admin de SISTEMA; Recrutador, Community Manager e Financeiro CUSTOMIZÁVEIS (mig 432, D285/FR-701)', async () => {
+    // A F11 caiu (D285, 05/09): não é mais "grupos validados por migration" —
+    // só as 4 contas do Acesso Master ficam fixas. A mig 432 (PR-8a) tirou
+    // `is_system` de Recrutador/Community Manager/Financeiro; Acesso Master
+    // e Super Admin continuam travados (não renomeiam nem arquivam — mesma
+    // regra de sempre, só mudou QUAIS grupos a carregam). Este teste é o
+    // guardião do seed: se alguém reverter a 432 por acidente, ele morre.
     const groups = await pool.query<{ id: string; name: string; is_system: boolean }>(`
       SELECT id::text, name, is_system FROM permission_groups
-      WHERE tenant_id = $1 AND is_system = true
+      WHERE tenant_id = $1
       ORDER BY name
     `, [TENANT_ENLITE]);
 
-    expect(groups.rows.length).toBe(5);
+    expect(groups.rows.length).toBe(5); // ainda 5 grupos no total — só a flag de 3 deles mudou
 
-    const ids = groups.rows.map(r => r.id);
-    expect(ids).toContain(GROUP_MASTER);
-    expect(ids).toContain(GROUP_REC);
-    expect(ids).toContain(GROUP_CM);
-    expect(ids).toContain(GROUP_FIN);
-    expect(ids).toContain(GROUP_SUPER);
+    const byId = new Map(groups.rows.map(r => [r.id, r]));
 
-    const names = groups.rows.map(r => r.name);
-    expect(names).toContain('Acesso Master');
-    expect(names).toContain('Recrutador');
-    expect(names).toContain('Community Manager');
-    expect(names).toContain('Financeiro');
-    expect(names).toContain('Super Admin');
+    // metade 1: continuam de SISTEMA — não renomeiam, não arquivam
+    expect(byId.get(GROUP_MASTER)).toMatchObject({ name: 'Acesso Master', is_system: true });
+    expect(byId.get(GROUP_SUPER)).toMatchObject({ name: 'Super Admin', is_system: true });
+
+    // metade 2: a mig 432 tirou a flag — agora CUSTOMIZÁVEIS pelo painel
+    expect(byId.get(GROUP_REC)).toMatchObject({ name: 'Recrutador', is_system: false });
+    expect(byId.get(GROUP_CM)).toMatchObject({ name: 'Community Manager', is_system: false });
+    expect(byId.get(GROUP_FIN)).toMatchObject({ name: 'Financeiro', is_system: false });
   });
 
   it('grupo Acesso Master tem todas as 43 permissões', async () => {

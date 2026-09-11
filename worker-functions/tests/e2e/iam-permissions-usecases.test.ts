@@ -329,6 +329,108 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
     });
   });
 
+  // ── Grupos fixos da mig 432 (PR-8a, US-19, FR-701/FR-702) ───────────────────
+  describe('grupos fixos: só Acesso Master e Super Admin continuam is_system (mig 432)', () => {
+    it('Recrutador, Community Manager e Financeiro NÃO são mais de sistema — a migration 432 tirou a flag', async () => {
+      const rows = await admin.query<{ name: string; is_system: boolean }>(
+        `SELECT name, is_system FROM iam.permission_groups
+          WHERE tenant_id = $1 AND name IN ('Recrutador', 'Community Manager', 'Financeiro')
+          ORDER BY name`,
+        [ENLITE_TENANT_ID],
+      );
+      expect(rows.rows).toEqual([
+        { name: 'Community Manager', is_system: false },
+        { name: 'Financeiro', is_system: false },
+        { name: 'Recrutador', is_system: false },
+      ]);
+    });
+
+    it('Acesso Master e Super Admin CONTINUAM de sistema (FR-701 — só os 3 nomeados mudaram)', async () => {
+      const rows = await admin.query<{ name: string; is_system: boolean }>(
+        `SELECT name, is_system FROM iam.permission_groups
+          WHERE tenant_id = $1 AND name IN ('Acesso Master', 'Super Admin')
+          ORDER BY name`,
+        [ENLITE_TENANT_ID],
+      );
+      expect(rows.rows).toEqual([
+        { name: 'Acesso Master', is_system: true },
+        { name: 'Super Admin', is_system: true },
+      ]);
+    });
+
+    it('Recrutador (agora customizável) renomeia e volta ao nome original — sem `system_group`', async () => {
+      const rec = await admin.query<{ id: string; name: string }>(
+        `SELECT id, name FROM iam.permission_groups WHERE tenant_id = $1 AND name = 'Recrutador'`,
+        [ENLITE_TENANT_ID],
+      );
+      const { id, name: nomeOriginal } = rec.rows[0];
+      // `try/finally`: o Recrutador é o grupo REAL do seed, compartilhado com
+      // outros PRs no mesmo banco — se o `expect` do meio falhar, o `finally`
+      // ainda restaura o nome. Sem isto, um `expect` vermelho aqui deixaria o
+      // grupo com `name='Recrutador (e2e temp)'` e quebraria em cascata todo
+      // teste (deste PR ou de outro) que busca `name = 'Recrutador'`.
+      try {
+        await asStaff(U.gestor, () =>
+          permissions.groups.update.execute({ tenantId: ENLITE_TENANT_ID, groupId: id, name: 'Recrutador (e2e temp)' }),
+        );
+        const renomeado = await admin.query(`SELECT name FROM iam.permission_groups WHERE id = $1`, [id]);
+        expect(renomeado.rows[0].name).toBe('Recrutador (e2e temp)');
+      } finally {
+        // restaura — este teste não pode deixar o grupo real de outro nome
+        await asStaff(U.gestor, () =>
+          permissions.groups.update.execute({ tenantId: ENLITE_TENANT_ID, groupId: id, name: nomeOriginal }),
+        );
+      }
+      const restaurado = await admin.query(`SELECT name FROM iam.permission_groups WHERE id = $1`, [id]);
+      expect(restaurado.rows[0].name).toBe(nomeOriginal);
+    });
+
+    it('Super Admin (ainda de sistema) recusa rename E archive — a mesma regra que já valia para Acesso Master', async () => {
+      const superAdmin = await admin.query<{ id: string }>(
+        `SELECT id FROM iam.permission_groups WHERE tenant_id = $1 AND name = 'Super Admin'`,
+        [ENLITE_TENANT_ID],
+      );
+      const id = superAdmin.rows[0].id;
+      await expect(
+        asStaff(U.gestor, () => permissions.groups.update.execute({ tenantId: ENLITE_TENANT_ID, groupId: id, name: 'Outro nome' })),
+      ).rejects.toMatchObject({ code: 'system_group' });
+      await expect(
+        asStaff(U.gestor, () => permissions.groups.archive.execute({ tenantId: ENLITE_TENANT_ID, groupId: id })),
+      ).rejects.toMatchObject({ code: 'system_group' });
+      // e nada mudou: nem nome, nem arquivamento
+      const depois = await admin.query(`SELECT name, archived_at FROM iam.permission_groups WHERE id = $1`, [id]);
+      expect(depois.rows[0]).toEqual({ name: 'Super Admin', archived_at: null });
+    });
+
+    it('a migration 432 não mudou NENHUMA filiação — FR-702, prova por sabotagem: reverter is_system para true faz o rename dos 3 voltar a recusar', async () => {
+      // Prova de que a REGRA depende só da flag (não de nome hardcoded em outro
+      // lugar): sabotar a flag no banco e ver o use case recusar de novo — sem
+      // isto a "prova" de que FR-701 mudou algo seria só a migration ter rodado,
+      // não que o comportamento do painel dependa dela.
+      const rec = await admin.query<{ id: string }>(
+        `SELECT id FROM iam.permission_groups WHERE tenant_id = $1 AND name = 'Recrutador'`,
+        [ENLITE_TENANT_ID],
+      );
+      const id = rec.rows[0].id;
+      await admin.query(`UPDATE iam.permission_groups SET is_system = true WHERE id = $1`, [id]);
+      try {
+        await expect(
+          asStaff(U.gestor, () => permissions.groups.update.execute({ tenantId: ENLITE_TENANT_ID, groupId: id, name: 'Sabotado' })),
+        ).rejects.toMatchObject({ code: 'system_group' });
+      } finally {
+        // restaura a flag — sabotagem de teste, nunca `git checkout`: aqui é UPDATE de volta
+        await admin.query(`UPDATE iam.permission_groups SET is_system = false WHERE id = $1`, [id]);
+      }
+      // com a flag restaurada, o rename volta a funcionar (prova que a sabotagem
+      // era real e a restauração também)
+      await asStaff(U.gestor, () =>
+        permissions.groups.update.execute({ tenantId: ENLITE_TENANT_ID, groupId: id, name: 'Recrutador' }),
+      );
+      const final = await admin.query(`SELECT name, is_system FROM iam.permission_groups WHERE id = $1`, [id]);
+      expect(final.rows[0]).toEqual({ name: 'Recrutador', is_system: false });
+    });
+  });
+
   // ── Tenant ─────────────────────────────────────────────────────────────────
   describe('escopo por tenant', () => {
     it('grupo de OUTRO tenant é indistinguível de inexistente (404, não 403)', async () => {

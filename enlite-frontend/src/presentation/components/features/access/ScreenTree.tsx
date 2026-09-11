@@ -5,7 +5,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import type { Linha } from './cellMatrixModel';
 import { BlocoCategoria } from './CellMatrix';
 import { CellHelpDrawer } from './CellHelpDrawer';
-import { montaBlocosPorTela } from './screenTreeModel';
+import { filtraBlocosPorTexto, montaBlocosPorTela } from './screenTreeModel';
 
 interface ScreenTreeProps {
   catalog: CatalogCategory[];
@@ -13,6 +13,12 @@ interface ScreenTreeProps {
   saved: readonly string[];
   editable: boolean;
   onToggle: (key: string) => void;
+  /**
+   * Texto da busca (US-21, FR-720) — SÓ filtra o que a grade DESENHA. O `Set` de `selected` que a
+   * página guarda não é tocado aqui: uma célula marcada fora do filtro continua marcada quando a
+   * busca limpa, e o PUT de `cellsSave` manda o `Set` inteiro, filtro ou não.
+   */
+  query?: string;
 }
 
 /**
@@ -21,7 +27,7 @@ interface ScreenTreeProps {
  * agrupamento, que agora é o das telas do painel, e a nota "também em" nas células
  * compartilhadas. O bloco final "Outras células" recolhe o que nenhuma tela lista.
  */
-export function ScreenTree({ catalog, selected, saved, editable, onToggle }: ScreenTreeProps): JSX.Element {
+export function ScreenTree({ catalog, selected, saved, editable, onToggle, query = '' }: ScreenTreeProps): JSX.Element {
   const { t } = useTranslation();
   const [ajuda, setAjuda] = useState<{ linha: Linha; acoes: string[] } | null>(null);
   const blocos = useMemo(
@@ -34,12 +40,16 @@ export function ScreenTree({ catalog, selected, saved, editable, onToggle }: Scr
     }),
     [catalog, t],
   );
+  const blocosFiltrados = useMemo(() => filtraBlocosPorTexto(blocos, query), [blocos, query]);
   if (catalog.length === 0) {
     return <Text size="sm" color="secondary">{t('admin.access.group.cells.empty')}</Text>;
   }
+  if (blocosFiltrados.length === 0) {
+    return <Text size="sm" color="secondary" data-testid="screen-tree-no-results">{t('admin.access.group.cells.noSearchResults')}</Text>;
+  }
   return (
     <div className="space-y-5" data-testid="screen-tree">
-      {blocos.map((bloco) => (
+      {blocosFiltrados.map((bloco) => (
         <BlocoCategoria
           key={bloco.category}
           bloco={bloco}
