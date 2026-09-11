@@ -376,6 +376,23 @@ export default defineConfig({
         '**/src/presentation/components/features/admin/PatientDetail/edit/{IcdSearchCombobox,DiagnosisChipList,DiagnosisAssignmentSection}.tsx': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
+        // Fase 2 de postulacao-documento-pendente (11/09): a lista de tarefas
+        // da home (`PendingTasksCard`, nova) e os dois arquivos que perderam
+        // o cálculo local de documentos (`useWorkerProfileProgress.ts` — só
+        // registro agora — e `WorkerHome.tsx`, que passou a decidir
+        // completude só por `missingFields` do servidor). Nascem/ficam em
+        // 100% nos 4 eixos, medidos na suíte inteira. `ProfileCompletionSummary.tsx`
+        // NÃO entra aqui — mede 99,46/85/80/99,46: o gap é PRÉ-EXISTENTE
+        // (linha 81 e outros ramos que esta fase não tocou), não desta change.
+        '**/src/presentation/components/organisms/PendingTasksCard/PendingTasksCard.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/hooks/useWorkerProfileProgress.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/pages/home/WorkerHome.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
       },
     },
   },
