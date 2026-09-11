@@ -30,12 +30,21 @@
  *
  * ── Flags ─────────────────────────────────────────────────────────────────────
  *   (nenhuma)          dry-run (DEFAULT) — loga o que aconteceria; nenhuma escrita no DB
- *   --apply            grava no banco — ÚNICA flag que sai do dry-run
+ *   --apply            grava no banco — só sai do dry-run se `--dry-run` NÃO também foi passado
+ *   --dry-run          força dry-run — VENCE `--apply` sempre (fail-safe; nunca há combinação
+ *                      de flags que grave se `--dry-run` foi digitado)
  *   --task-id <id>     carga pontual de UMA task específica (GET direto, sem paginar a lista) —
- *                      cobre o caso antes servido por resync-one-clickup-task.ts (removido)
- *   --limit N          processa só as N primeiras tasks (default: todas)
+ *                      cobre o caso antes servido por resync-one-clickup-task.ts (removido).
+ *                      Sem valor depois (ou seguido de outra flag) é ERRO — nunca cai muda na
+ *                      paginação da lista inteira.
+ *   --limit N          processa só as N primeiras tasks (default: todas). N não-numérico ou
+ *                      ≤ 0 é ERRO — nunca "sem limite" por omissão.
  *   --status X,Y,Z     filtra tasks por status.status (comma-separated)
  *   --verbose          imprime o PatientServiceUpsertInput inteiro por task
+ *
+ * ⚠️ Chat IDs de WhatsApp (Chat ID Familia/Equipo → `patient_chat_ids`) só são espelhados com
+ * `PATIENT_CHAT_IDS_CLICKUP_SYNC_ENABLED=true` no ambiente — sem a flag esse passo é um NO-OP
+ * SILENCIOSO (mesmo aviso que `resync-one-clickup-task.ts`, removido, já dava).
  */
 
 /* eslint-disable no-console */
@@ -76,13 +85,27 @@ const CLICKUP_API_BASE = 'https://api.clickup.com/api/v2';
 const SCRIPT_TAG = '[import-patients-from-clickup]';
 
 // ── Arg parsing ───────────────────────────────────────────────────────────────
+// `--task-id` sem valor e `--limit` não numérico/≤0 são ERRO aqui, não "flag ausente" — sem
+// isto, digitar errado caía muda na paginação da lista INTEIRA ou processava zero em silêncio.
 
-const flags        = parseImportPatientsFlags(process.argv.slice(2));
+const parsed = parseImportPatientsFlags(process.argv.slice(2));
+if (!parsed.ok) {
+  console.error(`${SCRIPT_TAG} ERROR: ${parsed.error}`);
+  process.exit(1);
+}
+const flags        = parsed.flags;
 const isDryRun      = !flags.apply;
 const limit         = flags.limit;
 const statusFilter  = flags.statusFilter;
 const isVerbose     = flags.verbose;
 const singleTaskId  = flags.taskId;
+
+if (!isDryRun && process.env.PATIENT_CHAT_IDS_CLICKUP_SYNC_ENABLED !== 'true') {
+  console.warn(
+    `${SCRIPT_TAG} AVISO: PATIENT_CHAT_IDS_CLICKUP_SYNC_ENABLED não está "true" — o espelho de ` +
+    `Chat IDs de WhatsApp (Chat ID Familia/Equipo → patient_chat_ids) será um NO-OP SILENCIOSO.`,
+  );
+}
 
 // ── Env validation ─────────────────────────────────────────────────────────────
 
