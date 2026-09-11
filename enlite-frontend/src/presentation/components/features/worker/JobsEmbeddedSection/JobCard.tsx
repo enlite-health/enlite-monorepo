@@ -36,12 +36,28 @@ export function JobCard({ job, applyLabel, onViewDetails }: JobCardProps): JSX.E
 
   return (
     <div
+      data-testid="job-card"
       className="border border-[#d9d9d9] rounded-[10px] p-4 hover:border-[#180149] transition-colors bg-white"
     >
-      <div className="flex items-start justify-between mb-3 gap-2">
+      {/*
+        Defeito do print (depois-1-home-celular.png, 390px): botão/badge na
+        MESMA linha (flex row) em toda largura fazia o botão verde (o de
+        rótulo mais longo, Fase 4/DD5 — "Completá N pasos para postularte")
+        empurrar o container do badge pra largura zero (flex-1 min-w-0
+        encolhendo) — o badge ficava por baixo do botão, e "Ver Detalles"
+        saía cortado pela borda direita do card. Em telas estreitas (abaixo
+        de `sm`) os dois blocos empilham (flex-col); a partir de `sm` volta a
+        ser row, lado a lado, como no desktop hoje. Mesmo padrão de
+        breakpoint mobile-first já usado nos filtros (`grid-cols-1
+        md:grid-cols-2`) e na `JobsEmbeddedSection` de modo geral.
+      */}
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-3 gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="px-2 py-1 bg-[#180149] text-white text-xs rounded font-medium font-lexend">
+            <span
+              data-testid="job-code-badge"
+              className="px-2 py-1 bg-[#180149] text-white text-xs rounded font-medium font-lexend"
+            >
               {job.code}
             </span>
             <span className="text-xs text-[#737373] capitalize font-lexend font-medium">
@@ -52,7 +68,12 @@ export function JobCard({ job, applyLabel, onViewDetails }: JobCardProps): JSX.E
             {[job.barrio, job.localidad, job.provincia].filter(Boolean).join(' · ')}
           </h3>
         </div>
-        <div className="flex flex-wrap gap-2 flex-shrink-0">
+        {/* `w-full` no mobile empilhado: os botões ocupam a largura do card
+            (podem quebrar linha entre si via flex-wrap, e o rótulo longo
+            pode quebrar em 2 linhas dentro do próprio botão — sem truncar).
+            `sm:w-auto sm:flex-shrink-0` devolve o comportamento de hoje a
+            partir do breakpoint `sm`. */}
+        <div className="flex flex-wrap gap-2 w-full sm:w-auto sm:flex-shrink-0">
           {/*
             🔒 Achado do gate (11/09, rodada 3): `bg-[#25d366]`
             (verde claro do ícone do WhatsApp) media 1,98:1 com
