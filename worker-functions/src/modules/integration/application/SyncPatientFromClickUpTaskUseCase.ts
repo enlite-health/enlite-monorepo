@@ -2,7 +2,10 @@
  * SyncPatientFromClickUpTaskUseCase
  *
  * Processes a single ClickUp task and upserts the corresponding patient record.
- * Designed to be called by both the batch CLI script and the incoming webhook handler.
+ *
+ * 11/09/2026 — o webhook e o reconciliador automáticos foram removidos (decisão do Gabriel:
+ * a plataforma é a fonte, sem sync automático). O ÚNICO chamador vivo hoje é o script manual
+ * de carga pontual (`scripts/import-patients-from-clickup.ts`).
  *
  * Does NOT fetch from the ClickUp API — the caller is responsible for fetching
  * and passing in an already-retrieved ClickUpTask.
@@ -66,10 +69,10 @@ export interface SyncPatientDeps {
   /**
    * spec 016 F4 — sincroniza "Tipo de Patología" com o diagnóstico CID-11 estruturado
    * (`patient_diagnoses`, source='CLICKUP'). OPCIONAL, diferente de `insuranceRepository`/
-   * `deviceTypeRepository`: esta é uma capacidade NOVA desta fase, e os chamadores que ainda
-   * não a passam (scripts de import em lote, `ReconcileClickUpPatientsController`) apenas não
-   * sincronizam diagnóstico por enquanto — decisão de escopo do F4, registrada no relatório,
-   * não um esquecimento. O webhook (`ClickUpPatientWebhookController.create()`) sempre passa.
+   * `deviceTypeRepository`: esta é uma capacidade NOVA desta fase, e o único chamador vivo
+   * hoje (`scripts/import-patients-from-clickup.ts`, 11/09/2026) ainda não a passa — não
+   * sincroniza diagnóstico por enquanto, decisão de escopo do F4 registrada no relatório, não
+   * um esquecimento.
    */
   diagnosisMapper?: ClickUpDiagnosisMapper;
 }

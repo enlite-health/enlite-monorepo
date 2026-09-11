@@ -280,9 +280,11 @@ export class PatientSourceLabelRepository {
    * As duas tabelas têm `patient_id ... REFERENCES patients(id) ON DELETE CASCADE`, e o
    * comentário da migration apresentava esse CASCADE como o cumprimento dos arts. 4º inc. 5 e
    * 16 da Ley 25.326. **O CASCADE nunca dispara.** Medido: `grep -rn "DELETE FROM patients"`
-   * no código de aplicação = ZERO; o único caminho de exclusão é
+   * no código de aplicação = ZERO; o único caminho de exclusão era
    * `UPDATE patients SET deleted_at = NOW()` (`ClickUpPatientWebhookController`, evento
-   * `taskDeleted`). E isso não é uma lacuna a ser fechada com um `DELETE` — é **requisito de
+   * `taskDeleted` — o webhook foi removido em 11/09/2026, decisão de sync só manual; hoje não
+   * há caminho automático de soft-delete por origem ClickUp). E isso não é uma lacuna a ser
+   * fechada com um `DELETE` — é **requisito de
    * produto**: a ata `2026-07-22a#REQ-04` registra *"ID único de paciente e nunca apagar
    * cadastro (soft delete), para preservar rastreabilidade de quem retorna"*.
    *
