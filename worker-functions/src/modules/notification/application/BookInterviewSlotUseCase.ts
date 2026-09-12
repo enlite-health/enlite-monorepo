@@ -158,8 +158,9 @@ export class BookInterviewSlotUseCase {
         console.log(`[BookInterviewSlot] Calendar invite sent to worker=${workerId} email=${redactContact(workerEmail, 'email')}`);
         calendarInvite = 'sent';
       } else {
+        // PII: mesmo padrão da linha irmã acima (sucesso) — e-mail mascarado, workerId visível.
         console.error(
-          `[BookInterviewSlot] Failed to add ${workerEmail} to calendar: ${calResult.reason}${calResult.detail ? ` (${calResult.detail})` : ''}`,
+          `[BookInterviewSlot] Failed to add worker=${workerId} email=${redactContact(workerEmail, 'email')} to calendar: ${calResult.reason}${calResult.detail ? ` (${calResult.detail})` : ''}`,
         );
         calendarInvite = calResult.reason;
       }
