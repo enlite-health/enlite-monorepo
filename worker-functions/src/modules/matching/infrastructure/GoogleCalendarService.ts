@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
-import { redactContact, safeErrorFields } from '@shared/logging';
+import { safeErrorFields } from '@shared/logging';
+import { maskEmailForLog } from '@shared/utils/emailMask';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import {
   MEET_LINK_REGEX,
@@ -98,7 +99,7 @@ export class GoogleCalendarService {
       const organizerEmail = found.event.organizer?.email;
       // PII (C1, 11/09): organizerEmail mascarado — não é o worker, é o colaborador
       // dono do evento, mas ainda é PII de pessoa (Ley 25.326).
-      console.log(`[GoogleCalendarService] Found event: id=${found.event.id} calendar=${found.calendarId} organizer=${organizerEmail ? redactContact(organizerEmail, 'email') : 'unknown'}`);
+      console.log(`[GoogleCalendarService] Found event: id=${found.event.id} calendar=${found.calendarId} organizer=${organizerEmail ? maskEmailForLog(organizerEmail) : 'unknown'}`);
 
       const currentAttendees = found.event.attendees ?? [];
       const normalized = guestEmail.trim().toLowerCase();
@@ -113,7 +114,7 @@ export class GoogleCalendarService {
         if (orgToken) {
           patchToken = orgToken;
         } else {
-          console.warn(`[GoogleCalendarService] Could not get organizer token for ${redactContact(organizerEmail, 'email')}, using default`);
+          console.warn(`[GoogleCalendarService] Could not get organizer token for ${maskEmailForLog(organizerEmail)}, using default`);
         }
       }
 
@@ -122,7 +123,7 @@ export class GoogleCalendarService {
 
       const result = await this.patchEventAttendees(found.calendarId, found.event.id, updatedAttendees, sendUpdates, patchToken);
       if (result.ok) {
-        console.log(`[GoogleCalendarService] PATCH success: added ${redactContact(normalized, 'email')} to event ${found.event.id} (via ${organizerEmail ? redactContact(organizerEmail, 'email') : 'default'})`);
+        console.log(`[GoogleCalendarService] PATCH success: added ${maskEmailForLog(normalized)} to event ${found.event.id} (via ${organizerEmail ? maskEmailForLog(organizerEmail) : 'default'})`);
       }
       return result.ok ? { success: true } : { success: false, reason: 'api_error', detail: `HTTP ${result.status}` };
     } catch (err: unknown) {
@@ -130,7 +131,7 @@ export class GoogleCalendarService {
       const seguro = code ? `${errorName} ${code}` : errorName;
       // PII (C1, 11/09): a mensagem do erro pode ecoar o e-mail que o Google rejeitou
       // (ex.: "Invalid email: <valor>") — nunca a message crua, só errorName+código.
-      console.warn('[GoogleCalendarService] addGuestToMeeting error:', safeErrorFields(err));
+      console.warn('[GoogleCalendarService] addGuestToMeeting error:', { errorName, code });
       return { success: false, reason: 'api_error', detail: seguro };
     }
   }
@@ -166,13 +167,13 @@ export class GoogleCalendarService {
 
       const result = await this.patchEventAttendees(found.calendarId, found.event.id, updatedAttendees, 'none', patchToken);
       if (result.ok) {
-        console.log(`[GoogleCalendarService] PATCH success: confirmed ${normalized} on event ${found.event.id}`);
+        console.log(`[GoogleCalendarService] PATCH success: confirmed ${maskEmailForLog(normalized)} on event ${found.event.id}`);
       }
       return result.ok ? { success: true } : { success: false, reason: 'api_error', detail: `HTTP ${result.status}` };
     } catch (err: unknown) {
       const { errorName, code } = safeErrorFields(err);
       const seguro = code ? `${errorName} ${code}` : errorName;
-      console.warn('[GoogleCalendarService] confirmAttendee error:', safeErrorFields(err));
+      console.warn('[GoogleCalendarService] confirmAttendee error:', { errorName, code });
       return { success: false, reason: 'api_error', detail: seguro };
     }
   }
@@ -208,13 +209,13 @@ export class GoogleCalendarService {
 
       const result = await this.patchEventAttendees(found.calendarId, found.event.id, updatedAttendees, 'none', patchToken);
       if (result.ok) {
-        console.log(`[GoogleCalendarService] PATCH success: declined ${normalized} on event ${found.event.id}`);
+        console.log(`[GoogleCalendarService] PATCH success: declined ${maskEmailForLog(normalized)} on event ${found.event.id}`);
       }
       return result.ok ? { success: true } : { success: false, reason: 'api_error', detail: `HTTP ${result.status}` };
     } catch (err: unknown) {
       const { errorName, code } = safeErrorFields(err);
       const seguro = code ? `${errorName} ${code}` : errorName;
-      console.warn('[GoogleCalendarService] declineAttendee error:', safeErrorFields(err));
+      console.warn('[GoogleCalendarService] declineAttendee error:', { errorName, code });
       return { success: false, reason: 'api_error', detail: seguro };
     }
   }
@@ -249,7 +250,7 @@ export class GoogleCalendarService {
     } catch (err: unknown) {
       const { errorName, code } = safeErrorFields(err);
       const seguro = code ? `${errorName} ${code}` : errorName;
-      console.warn('[GoogleCalendarService] removeGuestFromMeeting error:', safeErrorFields(err));
+      console.warn('[GoogleCalendarService] removeGuestFromMeeting error:', { errorName, code });
       return { success: false, reason: 'api_error', detail: seguro };
     }
   }
@@ -276,8 +277,12 @@ export class GoogleCalendarService {
         },
       );
       if (!res.ok) {
+        // PII: NUNCA logar `detail` (corpo de erro cru) — a resposta de erro do Google
+        // ecoa o payload rejeitado, `attendees` incluído (e-mails). `fetch` não lança em
+        // HTTP 4xx/5xx, então isto é o único ponto que vê essa resposta; status + tamanho
+        // do corpo bastam pra diagnosticar sem expor o e-mail (achado do gate, 11/09).
         const detail = await res.text().catch(() => '');
-        console.warn(`[GoogleCalendarService] PATCH error ${res.status}: ${detail}`);
+        console.warn(`[GoogleCalendarService] PATCH error ${res.status}, body length=${detail.length}`);
       }
       return { ok: res.ok, status: res.status };
     } finally {
