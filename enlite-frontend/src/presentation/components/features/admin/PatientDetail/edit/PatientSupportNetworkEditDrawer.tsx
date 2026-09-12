@@ -157,8 +157,13 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
       // 2. Todas as linhas NÃO-titulares primeiro (nunca colidem com o índice único).
       // 3. A linha titular (no máximo uma) por ÚLTIMO — o titular anterior já foi
       //    desmarcado/desativado nos passos 1-2, então promovê-la agora não colide.
-      const ordenadas = [...rows.filter((r) => !r.isPrimary), ...rows.filter((r) => r.isPrimary)];
-      for (const r of ordenadas) {
+      // `i` é o índice no ARRAY DO FORM (`fields`/`rows`), preservado através do reordenamento —
+      // é ele que aponta de volta pro `setValue` abaixo.
+      const indexadas = rows.map((r, i) => ({ r, i }));
+      const ordenadas = [...indexadas.filter(({ r }) => !r.isPrimary), ...indexadas.filter(({ r }) => r.isPrimary)];
+      let savedCount = 0;
+      let failedCount = 0;
+      for (const { r, i } of ordenadas) {
         const payload = {
           firstName: r.firstName.trim(),
           lastName: r.lastName.trim(),
@@ -169,20 +174,35 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
           documentNumber: nz(r.documentNumber),
           isPrimary: r.isPrimary,
         };
-        if (r.id) {
-          await AdminPatientContactRowsApiService.updateResponsible(patientId, r.id, payload);
-        } else {
-          await AdminPatientContactRowsApiService.createResponsible(patientId, payload);
+        try {
+          if (r.id) {
+            await AdminPatientContactRowsApiService.updateResponsible(patientId, r.id, payload);
+          } else {
+            // ACHADO 2 (018/PR-1): a linha nasce sem id (POST). Sem gravar o id REAL devolvido
+            // de volta no form, um retry após a falha de OUTRA linha reenviava esta como POST de
+            // novo — cada tentativa duplicava as linhas que já tinham sido criadas com sucesso.
+            const created = await AdminPatientContactRowsApiService.createResponsible(patientId, payload);
+            setValue(`responsibles.${i}.id`, created.id);
+          }
+          savedCount += 1;
+        } catch {
+          failedCount += 1;
         }
       }
+      // `onSaved()` sempre relê a lista do servidor — a tela nunca mostra o snapshot de ANTES do
+      // submit, que mentiria sobre o que já foi salvo (achado do gate `revisao-pr`).
       onSaved();
+      if (failedCount > 0) {
+        // Falha parcial não pode se apresentar como sucesso: diz quantas salvaram e quantas não.
+        // Não fecha o drawer — a pessoa decide se tenta de novo com o que sobrou na tela (nenhuma
+        // linha salva se perde: o id devolvido já está no form, então o próximo Guardar so tenta
+        // de novo as que falharam).
+        setSubmitError(t('admin.patients.editDrawer.savePartialError', { saved: savedCount, total: savedCount + failedCount, failed: failedCount }));
+        return;
+      }
       handleClose();
     } catch {
-      // Achado do gate `revisao-pr`: a escrita é uma sequência de chamadas (sem transação
-      // única) — se UMA falhar no meio, algumas linhas já foram gravadas no servidor. Sem
-      // isto, a TELA (o card por trás do drawer) continuava mostrando o snapshot de ANTES do
-      // submit, mentindo sobre o que já foi salvo. `onSaved()` relê a lista do servidor —
-      // sem fechar o drawer, para a pessoa ver o erro e decidir o que fazer com o que sobrou.
+      // Falha antes/fora do laço por linha (ex.: uma das desativações do passo 1).
       onSaved();
       // lex C1.3: a mensagem NUNCA ecoa o payload — uma resposta da API que cite
       // o número do documento não pode virar texto na tela. Genérica de propósito.

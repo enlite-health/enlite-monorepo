@@ -2773,6 +2773,7 @@
         "close": "Fechar",
         "unset": "—",
         "saveError": "Erro ao salvar",
+        "savePartialError": "{{saved}} de {{total}} linhas foram salvas. {{failed}} não puderam ser salvas — revise e tente novamente.",
         "deviceType": "Dispositivo",
         "clinicalSections": {
           "pathology": "Patologia",

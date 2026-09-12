@@ -168,6 +168,41 @@ describe('PatientCoverageEditDrawer', () => {
     expect(onClose).not.toHaveBeenCalled(); // mas o drawer continua aberto
   });
 
+  // ACHADO 2 (018/PR-1, PR #359): sem gravar o id REAL devolvido de volta no estado, um retry
+  // após a falha de UMA linha reenviava as OUTRAS (já criadas com sucesso) como POST de novo —
+  // duplicando o contato de cobertura no servidor a cada tentativa de Guardar.
+  it('ACHADO 2 — falha na 2ª de 3 linhas NOVAS: o 2º Guardar NÃO recria as que já foram criadas com sucesso', async () => {
+    const semContatos = { ...patient, coverageEmergencyContacts: [] };
+    createCoverageEmergencyContact.mockReset()
+      .mockResolvedValueOnce({ id: 'novo-0' }) // linha 0: sucesso
+      .mockRejectedValueOnce(new Error('boom')) // linha 1: falha
+      .mockResolvedValueOnce({ id: 'novo-2' }) // linha 2: sucesso
+      .mockResolvedValueOnce({ id: 'novo-1-retry' }); // linha 1 no reenvio: sucesso
+    updateCoverageEmergencyContact.mockReset().mockResolvedValue({ id: 'ok' });
+
+    render(<PatientCoverageEditDrawer patient={semContatos} onClose={vi.fn()} onSaved={vi.fn()} />);
+    for (const [i, nome] of ['Central A', 'Central B', 'Central C'].entries()) {
+      fireEvent.click(screen.getByTestId('pcv-contact-add'));
+      fireEvent.change(screen.getByTestId(`pcv-contact-name-${i}`), { target: { value: nome } });
+      fireEvent.change(screen.getByTestId(`pcv-contact-phone-${i}`), { target: { value: `080${i}` } });
+    }
+
+    fireEvent.click(screen.getByTestId('pcv-save'));
+    await screen.findByTestId('pcv-error');
+    expect(createCoverageEmergencyContact).toHaveBeenCalledTimes(3);
+    expect(createCoverageEmergencyContact.mock.calls.map((c) => (c[1] as { name: string }).name)).toEqual(['Central A', 'Central B', 'Central C']);
+    expect(updateCoverageEmergencyContact).not.toHaveBeenCalled();
+
+    // Reenvio: linha 0 e 2 já têm id real — viram UPDATE. Só a linha 1 (que falhou) continua sem
+    // id e é a ÚNICA que volta a chamar createCoverageEmergencyContact.
+    fireEvent.click(screen.getByTestId('pcv-save'));
+    await waitFor(() => expect(createCoverageEmergencyContact).toHaveBeenCalledTimes(4));
+    expect(updateCoverageEmergencyContact).toHaveBeenCalledTimes(2);
+    expect(updateCoverageEmergencyContact).toHaveBeenCalledWith(patient.id, 'novo-0', expect.objectContaining({ name: 'Central A' }));
+    expect(updateCoverageEmergencyContact).toHaveBeenCalledWith(patient.id, 'novo-2', expect.objectContaining({ name: 'Central C' }));
+    expect(createCoverageEmergencyContact.mock.calls[3][1]).toMatchObject({ name: 'Central B' });
+  });
+
   it('417 — linha inválida (nome vazio) trava o "Salvar"; remover a linha destrava; backend anterior (ausente) começa vazio', async () => {
     const { coverageEmergencyContacts: _c, ...semCampo } = patient as typeof patient & { coverageEmergencyContacts?: unknown };
     render(<PatientCoverageEditDrawer patient={semCampo as typeof patient} onClose={vi.fn()} onSaved={vi.fn()} />);

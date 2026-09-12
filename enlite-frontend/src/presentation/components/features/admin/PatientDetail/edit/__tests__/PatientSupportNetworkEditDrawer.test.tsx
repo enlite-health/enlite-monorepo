@@ -123,12 +123,15 @@ describe('PatientSupportNetworkEditDrawer — documento (A1) por LINHA', () => {
   });
 
   it('C1.3 — a mensagem de erro NUNCA ecoa o número do documento (mesmo que a API o devolva)', async () => {
+    // ACHADO 2: a falha de UMA linha agora é capturada POR LINHA (para não abortar as outras) —
+    // a mensagem vira a de falha parcial, não a genérica; a garantia C1.3 (nunca ecoar o
+    // payload/erro cru da API) continua valendo, só o texto exibido mudou.
     updateResponsible.mockRejectedValueOnce(new Error(`Validation failed for documentNumber ${DOC_NUMBER}`));
     renderDrawer();
     fireEvent.click(screen.getByTestId('psn-save'));
     const err = await screen.findByTestId('psn-error');
     expect(err.textContent).not.toContain(DOC_NUMBER);
-    expect(err.textContent).toBe('Erro ao salvar');
+    expect(err.textContent).toBe(t('admin.patients.editDrawer.savePartialError'));
   });
 
   // Achado do gate `revisao-pr`: a escrita por linha é uma sequência de chamadas sem transação
@@ -151,6 +154,44 @@ describe('PatientSupportNetworkEditDrawer — documento (A1) por LINHA', () => {
     expect(createResponsible).toHaveBeenCalledTimes(2); // a 1ª foi, a 2ª morreu
     expect(onSaved).toHaveBeenCalledTimes(1); // relê a lista MESMO no erro
     expect(onClose).not.toHaveBeenCalled(); // mas o drawer continua aberto — a pessoa vê o erro
+  });
+
+  // ACHADO 2 (018/PR-1, PR #359): o Guardar faz N chamadas sem transação; sem gravar o id REAL
+  // devolvido de volta no form, um retry após falha de UMA linha reenviava as OUTRAS (já criadas
+  // com sucesso) como POST de novo — duplicando-as no servidor a cada tentativa.
+  it('ACHADO 2 — falha na 2ª de 3 linhas: o 2º Guardar NÃO recria as linhas que já tinham sido salvas (o id real voltou pro form)', async () => {
+    createResponsible.mockReset()
+      .mockResolvedValueOnce({ id: 'novo-0' }) // linha 0: sucesso
+      .mockRejectedValueOnce(new Error('boom')) // linha 1: falha
+      .mockResolvedValueOnce({ id: 'novo-2' }) // linha 2: sucesso
+      .mockResolvedValueOnce({ id: 'novo-1-retry' }); // linha 1 no reenvio: sucesso
+    updateResponsible.mockReset().mockResolvedValue({ id: 'ok' });
+
+    render(<PatientSupportNetworkEditDrawer patientId={PATIENT_ID} responsibles={[]} onClose={vi.fn()} onSaved={vi.fn()} />);
+    for (const [i, nome] of ['Ana', 'Beatriz', 'Carla'].entries()) {
+      fireEvent.click(screen.getByTestId('psn-add'));
+      fireEvent.change(screen.getByTestId(`psn-firstName-${i}`), { target: { value: nome } });
+      fireEvent.change(screen.getByTestId(`psn-lastName-${i}`), { target: { value: 'Diaz' } });
+    }
+    // Marca a ÚLTIMA linha como titular explicitamente — preserva a ordem de chamada 0,1,2
+    // (senão o "ninguém marcado → o primeiro vira titular" reordenaria a linha 0 pro final).
+    fireEvent.click(screen.getByTestId('psn-primary-2'));
+
+    fireEvent.click(screen.getByTestId('psn-save'));
+    await screen.findByTestId('psn-error');
+    expect(createResponsible).toHaveBeenCalledTimes(3);
+    expect(createResponsible.mock.calls.map((c) => (c[1] as { firstName: string }).firstName)).toEqual(['Ana', 'Beatriz', 'Carla']);
+    expect(updateResponsible).not.toHaveBeenCalled();
+
+    // Reenvio: linha 0 (Ana) e 2 (Carla) já têm id real — viram UPDATE. Só a linha 1 (Beatriz,
+    // que falhou) permanece sem id e é a ÚNICA que volta a chamar createResponsible.
+    fireEvent.click(screen.getByTestId('psn-save'));
+    await waitFor(() => expect(createResponsible).toHaveBeenCalledTimes(4));
+    expect(updateResponsible).toHaveBeenCalledTimes(2);
+    expect(updateResponsible).toHaveBeenCalledWith(PATIENT_ID, 'novo-0', expect.objectContaining({ firstName: 'Ana' }));
+    expect(updateResponsible).toHaveBeenCalledWith(PATIENT_ID, 'novo-2', expect.objectContaining({ firstName: 'Carla' }));
+    // A 4ª chamada de createResponsible (a única do reenvio) é a linha que falhou, não uma duplicata.
+    expect(createResponsible.mock.calls[3][1]).toMatchObject({ firstName: 'Beatriz' });
   });
 });
 

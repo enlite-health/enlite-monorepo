@@ -130,30 +130,50 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
       // Contatos de emergência da cobertura: escrita POR LINHA (spec 018, PR-1, ADR-1) — diff
       // contra o que o drawer abriu com. Removidas primeiro (nada aqui colide com índice único
       // como em responsáveis, mas a ordem "sai antes de entrar" é a mesma disciplina).
+      let savedCount = 0;
+      let failedCount = 0;
       if (contactsDirty) {
         const initialIds = new Set(initialContacts.map((c) => c.id).filter(Boolean));
         const currentIds = new Set(contacts.map((c) => c.id).filter(Boolean));
         for (const id of initialIds) {
           if (!currentIds.has(id)) await AdminPatientContactRowsApiService.deactivateCoverageEmergencyContact(patient.id, id);
         }
-        for (const c of contacts) {
+        // ACHADO 2 (018/PR-1): cada linha nova nasce sem `id` (POST). Sem gravar de volta o id
+        // REAL devolvido pela API, um retry após a falha de OUTRA linha reenviava esta como POST
+        // de novo — cada tentativa duplicava as linhas já criadas com sucesso. `setContacts` com
+        // updater funcional edita SÓ o índice que acabou de ser criado, sem perder o que a pessoa
+        // já tiver digitado nas outras linhas enquanto a chamada estava em voo.
+        for (let index = 0; index < contacts.length; index += 1) {
+          const c = contacts[index];
           const trimmed = { kind: c.kind, name: c.name.trim(), phone: c.phone.trim() };
-          if (!c.id) {
-            await AdminPatientContactRowsApiService.createCoverageEmergencyContact(patient.id, trimmed);
-          } else {
-            const original = initialContacts.find((o) => o.id === c.id);
-            const changed = !original || original.kind !== trimmed.kind || original.name.trim() !== trimmed.name || original.phone.trim() !== trimmed.phone;
-            if (changed) await AdminPatientContactRowsApiService.updateCoverageEmergencyContact(patient.id, c.id, trimmed);
+          try {
+            if (!c.id) {
+              const created = await AdminPatientContactRowsApiService.createCoverageEmergencyContact(patient.id, trimmed);
+              setContacts((prev) => prev.map((row, i) => (i === index ? { ...row, id: created.id } : row)));
+            } else {
+              const original = initialContacts.find((o) => o.id === c.id);
+              const changed = !original || original.kind !== trimmed.kind || original.name.trim() !== trimmed.name || original.phone.trim() !== trimmed.phone;
+              if (changed) await AdminPatientContactRowsApiService.updateCoverageEmergencyContact(patient.id, c.id, trimmed);
+            }
+            savedCount += 1;
+          } catch {
+            failedCount += 1;
           }
         }
       }
+      // `onSaved()` sempre relê a lista do servidor — a tela nunca mostra o snapshot de ANTES do
+      // submit, que mentiria sobre o que já foi salvo (achado do gate `revisao-pr`).
       onSaved();
+      if (failedCount > 0) {
+        // Falha parcial não pode se apresentar como sucesso: diz quantas salvaram e quantas não.
+        // Não fecha o drawer — o id já devolvido está no estado, então o próximo Guardar só
+        // tenta de novo as que falharam (nenhuma linha salva se perde).
+        setSubmitError(t('admin.patients.editDrawer.savePartialError', { saved: savedCount, total: savedCount + failedCount, failed: failedCount }));
+        return;
+      }
       handleClose();
     } catch (err) {
-      // Achado do gate `revisao-pr`: os contatos de emergência são escritos em SEQUÊNCIA (sem
-      // transação única) — se UMA chamada falhar no meio, algumas linhas já foram gravadas no
-      // servidor. `onSaved()` relê a lista sem fechar o drawer, para o card por trás não
-      // continuar mostrando o snapshot de ANTES do submit (mentindo sobre o que já foi salvo).
+      // Falha antes/fora do laço por linha (ex.: uma das desativações, ou o PATCH de `coverage`).
       onSaved();
       setSubmitError(err instanceof Error ? err.message : te('saveError'));
     } finally {
