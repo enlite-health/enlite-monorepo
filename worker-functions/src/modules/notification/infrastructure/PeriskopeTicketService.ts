@@ -1,7 +1,8 @@
 import { AxiosInstance } from 'axios';
 import { createPeriskopeHttpClient } from './periskopeHttpClient';
 import { IPeriskopeTicketService, TicketPriority } from '../domain/IPeriskopeTicketService';
-import { logger, reportError } from '@shared/logging';
+import { logger, reportError, safeErrorFields } from '@shared/logging';
+import { maskPhoneForLog } from '@shared/utils/phoneMask';
 
 /**
  * PeriskopeTicketService — cria tickets no Periskope (gestão de fila humana),
@@ -48,7 +49,12 @@ export class PeriskopeTicketService implements IPeriskopeTicketService {
       return true;
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));
-      logger.warn({ error: e.message, chatPhone }, '[PeriskopeTicketService] createTicket failed (best-effort)');
+      logger.warn({ ...safeErrorFields(err), chatPhone: maskPhoneForLog(chatPhone) }, '[PeriskopeTicketService] createTicket failed (best-effort)');
+      // ⚠️ NÃO CONSERTADO AQUI (decisão do Gabriel, PR separado): o `warn` acima está
+      // mascarado, mas `reportError` manda `err` inteiro pro MESMO Cloud Error Reporting
+      // — `message`/`stack` do erro (que pode ecoar `chatPhone`/corpo da request) ainda
+      // saem crus por este segundo sink. O teste desta classe MOCKA `reportError`, então
+      // não cobre este caminho — ver comentário no `.test.ts`.
       reportError(e, { source: 'PeriskopeTicketService:createTicket' });
       return false;
     }

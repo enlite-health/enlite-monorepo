@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { maskPhoneForLog } from '@shared/utils/phoneMask';
 
 export interface PendingApplication {
   id: string;
@@ -24,7 +25,7 @@ export abstract class HandleReminderResponseQueries {
       [phone],
     );
     if (result.rows.length === 0) {
-      console.warn(`[HandleReminderResponse] Worker not found for phone ${phone}`);
+      console.warn(`[HandleReminderResponse] Worker not found for phone ${maskPhoneForLog(phone)}`);
       return null;
     }
     return result.rows[0] as { id: string; email: string | null };

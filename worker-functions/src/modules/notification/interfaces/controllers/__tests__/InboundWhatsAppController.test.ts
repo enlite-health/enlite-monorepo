@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { InboundWhatsAppController } from '../InboundWhatsAppController';
 import { Result } from '@shared/utils/Result';
+import { logger } from '@shared/logging';
+import { maskPhoneForLog } from '@shared/utils/phoneMask';
 
 // Mock twilio.validateRequest
 jest.mock('twilio', () => ({
@@ -100,6 +102,38 @@ describe('InboundWhatsAppController', () => {
       await c.handleInbound(req, mockRes());
 
       expect(mirror.mirrorIncomingMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── PII guard — opt-out nunca loga telefone cru (achado do gate 12/09) ──
+  // Mesmo bug do controller Periskope, canal Twilio: `logger.child({ phone, ... })`
+  // publicava o telefone CRU no contexto de todo log do handler.
+  describe('PII guard — handleOptOut (canal Twilio)', () => {
+    it('telefone mascarado no logger.child, nunca o valor cru', async () => {
+      const childSpy = jest.spyOn(logger, 'child');
+      mockDbQuery.mockResolvedValue({ rows: [] }); // worker não encontrado, mas o log já foi montado
+      const req = mockReq({ From: 'whatsapp:+5491198887766', Body: 'baja', MessageSid: 'SMz' });
+
+      await controller.handleInbound(req, mockRes());
+
+      const optOutChildCall = childSpy.mock.calls.find(
+        (c) => (c[0] as Record<string, unknown>)?.handler === 'OptOut',
+      );
+      expect(optOutChildCall).toBeDefined();
+      const ctx = optOutChildCall![0] as Record<string, unknown>;
+      expect(ctx.phone).toBe('+549******7766');
+      expect(JSON.stringify(ctx)).not.toContain('5491198887766');
+      expect(JSON.stringify(ctx)).not.toContain('1198887766');
+      childSpy.mockRestore();
+    });
+
+    // Sabotagem: reproduz em CÓPIA o comportamento ANTIGO (telefone cru no
+    // child) — prova que a asserção acima é capaz de detectar o vazamento.
+    it('sabotagem: reproduzindo o logger.child ANTIGO (telefone cru), a asserção acima cairia', () => {
+      const RAW_PHONE = '+5491198887766';
+      const oldStyleContext = { phone: RAW_PHONE, keyword: 'baja', handler: 'OptOut' };
+      expect(JSON.stringify(oldStyleContext)).toContain('5491198887766'); // confirma: formato antigo VAZAVA
+      expect(oldStyleContext.phone).not.toBe(maskPhoneForLog(RAW_PHONE));
     });
   });
 

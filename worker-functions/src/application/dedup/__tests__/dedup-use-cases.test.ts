@@ -22,6 +22,8 @@ jest.mock('../../../infrastructure/services/WorkerPhoneMergeService');
 jest.mock('../../../infrastructure/services/WorkerPhoneMergeFkDiscovery');
 
 import type { Pool, QueryResult } from 'pg';
+import { logger } from '@shared/logging';
+import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import { DismissGroupUseCase } from '../DismissGroupUseCase';
 import { ListMergeHistoryUseCase } from '../ListMergeHistoryUseCase';
 import { UndoMergeUseCase } from '../UndoMergeUseCase';
@@ -78,6 +80,26 @@ describe('DismissGroupUseCase', () => {
 
     const call = (pool.query as jest.Mock).mock.calls[0];
     expect(call[1]).toEqual(['5491112345678', 'número de empresa', 'admin-uid-abc']);
+  });
+
+  // Achado do gate 12/09: dismiss_group_start/dismiss_group_done logavam
+  // phoneNormalized CRU. dismissedBy é um uid de admin (não PII de terceiro),
+  // então continua cru — só o telefone é mascarado.
+  it('mascara phoneNormalized nos logs (dismiss_group_start/done), nunca o valor cru', async () => {
+    const pool = makePool([{ rows: [{ id: 3 }] }]);
+    const useCase = new DismissGroupUseCase(pool as unknown as Pool);
+    const RAW_PHONE = '5491198887766';
+
+    await useCase.execute({ phoneNormalized: RAW_PHONE, dismissedBy: 'admin-uid-xyz' });
+
+    const mockChildLogger = (logger.child as jest.Mock)();
+    const infoArgs = JSON.stringify((mockChildLogger.info as jest.Mock).mock.calls);
+    expect(infoArgs).not.toContain(RAW_PHONE);
+    expect(infoArgs).not.toContain('1198887766');
+    expect(infoArgs).toContain(maskPhoneForLog(RAW_PHONE));
+    // dismissedBy (uid, não PII de terceiro) permanece cru — prova que não
+    // sumiu do log por engano.
+    expect(infoArgs).toContain('admin-uid-xyz');
   });
 });
 

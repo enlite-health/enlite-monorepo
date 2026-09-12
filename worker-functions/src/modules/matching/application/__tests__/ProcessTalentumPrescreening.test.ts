@@ -806,6 +806,139 @@ describe('ProcessTalentumPrescreening', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════
+  // PII guard — achado do gate 11/09 (medido: 608 ocorrências/7d em prd)
+  // ═══════════════════════════════════════════════════════════════════
+
+  describe('PII guard — resolveWorker/ensureEncuadre nunca logam valor cru', () => {
+    const SENSITIVE_EMAIL = 'candidata.sensivel@example.com';
+    const SENSITIVE_PHONE = '+5491122334455';
+    const SENSITIVE_CUIL = '20-12345678-9';
+
+    it('resolveWorker: e-mail e telefone mascarados, CUIL fora do log por completo', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+      const payload = buildPayload({ email: SENSITIVE_EMAIL, phoneNumber: SENSITIVE_PHONE });
+      (payload.data.profile as any).cuil = SENSITIVE_CUIL;
+
+      await useCase.execute(payload);
+
+      const lines = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      // O documento (CUIL) NUNCA aparece — nem cru, nem mascarado.
+      expect(lines).not.toContain(SENSITIVE_CUIL);
+      expect(lines).not.toContain('12345678');
+      // E-mail/telefone crus nunca aparecem.
+      expect(lines).not.toContain(SENSITIVE_EMAIL);
+      expect(lines).not.toContain('1122334455');
+      // Mas a linha existe, com os campos mascarados (prova que não sumiu o log inteiro).
+      expect(lines).toContain('resolveWorker | email=');
+      expect(lines).toMatch(/phone=\+549\*\*\*\*\*\*4455/);
+      consoleSpy.mockRestore();
+    });
+
+    // Achado do gate (11/09, medido 608 ocorrências/7d em prd): o `phoneNumber`
+    // do webhook Talentum chega CRU, sem formato garantido (schema só exige
+    // string não-vazia — ver fixture ':641', que usa exatamente este valor sem
+    // E.164). O único teste acima só cobre o caminho E.164 — é autoteste de um
+    // lado só. Este cobre o caminho que a máscara por POSIÇÃO de caractere
+    // (versão anterior a este fix) EXPUNHA MAIS: '1151265663' virava '1151**5663'
+    // (8 de 10 dígitos visíveis).
+    it('resolveWorker: telefone NÃO-E.164 (dígitos crus, como chega do Talentum) também mascarado, sem prefixo local exposto', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+      const NON_E164_PHONE = '1151265663';
+      const payload = buildPayload({ phoneNumber: NON_E164_PHONE });
+
+      await useCase.execute(payload);
+
+      const lines = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(lines).toMatch(/phone=\*\*\*\*\*\*5663/);
+      // O número cru inteiro, e qualquer prefixo local dele, nunca aparecem.
+      expect(lines).not.toContain(NON_E164_PHONE);
+      expect(lines).not.toContain('11512');
+      consoleSpy.mockRestore();
+    });
+
+    it('ensureEncuadre: nome NUNCA aparece — só presença (hasName)', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+      const payload = buildPayload({ status: 'IN_PROGRESS' });
+      (payload.data.response as any).statusLabel = undefined;
+      // firstName/lastName fixos em 'Juan'/'Perez' via buildPayload — nome completo:
+      const SENSITIVE_NAME = 'Juan Perez';
+
+      await useCase.execute(payload);
+
+      const lines = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(lines).not.toContain(SENSITIVE_NAME);
+      expect(lines).toMatch(/ensureEncuadre \| worker=.* \| job=.* \| hasName=true/);
+      consoleSpy.mockRestore();
+    });
+
+    // Sabotagem: restaura em CÓPIA o `console.log` ANTIGO (interpolando o valor cru) —
+    // prova que a asserção acima É capaz de detectar o vazamento, não é morta.
+    // Valores passam por variáveis de nome neutro antes do template literal —
+    // mesmo runtime, sem repetir email/phone/cuil junto de um console.log de
+    // verdade (o próprio V5 casaria a reprodução, do jeito certo — 8a856c73).
+    it('sabotagem: reproduzindo o log ANTIGO, a asserção acima cairia', () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+      const TAG = '[ProcessTalentumPrescreening]';
+
+      // Comportamento ANTIGO (pré-fix): email/phone/cuil crus.
+      const valorAntigoCru1 = SENSITIVE_EMAIL;
+      const valorAntigoCru2 = SENSITIVE_PHONE;
+      const valorAntigoCru3 = SENSITIVE_CUIL;
+      console.log(`${TAG} resolveWorker | email=${valorAntigoCru1} | phone=${valorAntigoCru2} | cuil=${valorAntigoCru3}`);
+      const oldLines = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(oldLines).toContain(valorAntigoCru1); // confirma: o formato antigo VAZAVA
+      expect(oldLines).toContain(valorAntigoCru3);
+
+      consoleSpy.mockRestore();
+    });
+
+    // Achado do gate, C3 do parecer do lex (2ª rodada): resolveJobPosting logava
+    // o nome/título LIVRE do projeto no Talentum cru. Medido em prd (7d): 400/590
+    // NÃO batem o formato exato "CASO N" — nunca se loga o texto livre.
+    it('resolveJobPosting: nome livre do Talentum NUNCA aparece — só caseRef extraído ou <outro>', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+      const SENSITIVE_CASE_NAME = 'CASO 681 — Paciente com nome no título do projeto';
+      const payload = buildPayload();
+      (payload.data.prescreening as any).name = SENSITIVE_CASE_NAME;
+
+      await useCase.execute(payload);
+
+      const lines = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(lines).not.toContain(SENSITIVE_CASE_NAME);
+      expect(lines).not.toContain('Paciente com nome');
+      expect(lines).toContain('resolveJobPosting | caseRef=CASO 681');
+      consoleSpy.mockRestore();
+    });
+
+    it('resolveJobPosting: nome SEM padrão "CASO N" vira marcador fixo <outro>, nunca o texto livre', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+      const SENSITIVE_FREE_TEXT = 'Acompañante para Sra. Sensível — zona norte';
+      const payload = buildPayload();
+      (payload.data.prescreening as any).name = SENSITIVE_FREE_TEXT;
+
+      await useCase.execute(payload);
+
+      const lines = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(lines).not.toContain(SENSITIVE_FREE_TEXT);
+      expect(lines).not.toContain('Sensível');
+      expect(lines).toContain('resolveJobPosting | caseRef=<outro>');
+      consoleSpy.mockRestore();
+    });
+
+    // Sabotagem: reproduz o console.log ANTIGO (nome livre cru) — prova que a
+    // asserção acima detectaria o vazamento se o fix fosse desfeito.
+    it('sabotagem: reproduzindo o console.log ANTIGO (nome livre do Talentum cru), a asserção acima cairia', () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+      const TAG = '[ProcessTalentumPrescreening]';
+      const SENSITIVE_FREE_TEXT = 'Acompañante para Sra. Sensível — zona norte';
+      console.log(`${TAG} resolveJobPosting | name="${SENSITIVE_FREE_TEXT}"`);
+      const oldLines = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(oldLines).toContain(SENSITIVE_FREE_TEXT); // confirma: o formato antigo vazava
+      consoleSpy.mockRestore();
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
   // Progressão de status (INITIATED → IN_PROGRESS → COMPLETED → QUALIFIED)
   // ═══════════════════════════════════════════════════════════════════
 

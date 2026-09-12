@@ -1,4 +1,6 @@
 import twilio from 'twilio';
+import { safeErrorFields } from '@shared/logging';
+import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import { extractPlaceholders } from '../application/StageTemplateEligibility';
 import { IMessagingService, MessageSentResult, SendWhatsAppOptions } from '../domain/IMessagingService';
 import { Result } from '@shared/utils/Result';
@@ -189,8 +191,12 @@ export class TwilioMessagingService implements IMessagingService {
         twilioSid: params.twilioSid,
       });
     } catch (err: any) {
+      // PII (achado do gate, 2ª rodada): telefone mascarado; err.message cru também
+      // saía (podia carregar o telefone de volta, vindo do corpo/URL da API do
+      // Chatwoot) — troca por safeErrorFields.
       console.warn(
-        `[Chatwoot mirror] failed to mirror sid=${params.twilioSid} phone=${params.phone}: ${err?.message || err}`,
+        `[Chatwoot mirror] failed to mirror sid=${params.twilioSid} phone=${maskPhoneForLog(params.phone)}:`,
+        safeErrorFields(err),
       );
     }
   }

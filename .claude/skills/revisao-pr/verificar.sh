@@ -28,6 +28,11 @@
 #   · V2 — só olha arquivo do diff; órfão em arquivo não tocado passa
 #   · V3 — import montado dinamicamente (`from \`./\${x}\``) é invisível
 #   · V5/V6 — heurística de texto: PII repassada por variável de nome neutro passa
+#   · V5 — D-11/09 (atualizado): `maskPhoneForLog(...)`/`maskEmailForLog(...)`/
+#     `safeErrorFields(...)` são reconhecidos como saída segura (removidos antes
+#     do 2º passo do detector) — qualquer OUTRA forma de "parecer mascarado"
+#     (nome de variável, comentário, helper diferente, INCLUSIVE o extinto
+#     `redactContact`) continua reprovando, de propósito
 #   · V7 — só AVISA; rota sem célula não reprova (definição pode ser multilinha)
 #   · V9 — mede EXISTÊNCIA de teste no diff, nunca se o teste testa algo
 #   · V10 — segredo sem palavra-chave por perto (um UUID solto) passa
@@ -290,11 +295,159 @@ echo
 # reprovava `console.log(\`breakdown: sem_telefone=${n}\`)` — uma contagem — só
 # porque a palavra "telefone" aparecia. Agora exige o campo sendo INTERPOLADO
 # como valor, e exclui os sufixos de agregação.
+#
+# D-11/09 (2ª rodada, achado do gate): a 1ª versão só via a chamada de log
+# quando `console./logger.` e o campo pessoal estavam na MESMA LINHA. Chamada
+# MULTILINHA —
+#   console.warn(
+#     `worker ${phone} não encontrado`,
+#   );
+# — tinha o abridor numa linha e o campo na seguinte: nenhuma das duas linhas
+# tem os DOIS padrões juntos, e o EXIT era 0 sobre um vazamento de verdade
+# (sabotagem que o gate reproduziu). Conserto: em vez de casar POR LINHA, junta
+# cada abridor de log com as N linhas seguintes (`grep -A$V5_JANELA`, sem
+# fechamento de parêntese balanceado — mais simples, portável, e cobre o caso
+# real; parêntese balanceado ficaria pra uma 3ª rodada se aparecer motivo) e
+# roda o detector sobre o BLOCO JUNTO. Isso cobre o caso de 1 linha só também
+# (o bloco degenera pra ela mesma), então substitui o detector antigo inteiro.
+V5_JANELA=5
+
+# D-12/09 (achado do gate, item 2): duas cegueiras na régua, as duas MEDIDAS —
+# rc=0 (aprovado) nas 5 linhas abaixo, que deveriam reprovar:
+#   log.info({ msg:"otp", candidateWorkerId, phoneE164 });
+#   log.info({ msg:"x", phoneNumber });
+#   log.info({ msg:"x", emailAddress });
+#   console.log(`otp para ${phoneE164}`);
+#   log.info({ msg:"x", phone });
+#
+# 1) ABRIDOR: `logger?\.` exige "logge" + "r" opcional — cobre `logger.info(`
+#    e (por SUBSTRING, sem \b) `batchLogger.info(`, mas NUNCA `log.info(` — a
+#    convenção documentada no CLAUDE.md (`const log = logger.child(...); log.info(...)`).
+#    As 4 fixtures com `log.info` nem chegavam a entrar no bloco: o abridor não
+#    casava, e CAMPO_CHAVE nunca rodava. Conserto: alternativa nova `\blog\.` COM
+#    \b (senão "catalog.info(" também casaria por substring).
+# 2) CAMPO_CHAVE: `\b(phone|email|cuil|…)\b` é PALAVRA EXATA — `\b` não separa
+#    camelCase/snake_case (não há fronteira \w→\w entre "e" e "E" em "phoneE164",
+#    nem entre "e" e "_" em... — ela SÓ separa \w de não-\w). Por isso
+#    `phoneE164`, `phoneNumber`, `emailAddress` atravessavam ilesos. Conserto:
+#    pros termos abaixo (RAIZ) — os que aparecem em compostos na prática — o
+#    match vira `\w*(termo)\w*` (a palavra TODA, não só o termo, ainda respeita
+#    \b nas duas pontas do composto). `firstName/lastName/documentNumber/
+#    document_number/diagnosis/diagnostico` ficam EXATOS de propósito: "document"
+#    e "name"/"first"/"last" soltos são palavra comum demais neste código (upload
+#    de currículo/certificado, "documento" de confidencialidade, timestamps
+#    "firstLoginAt"/"lastSeenAt") — mesma lição do V6 (`diagnos` substring pegava
+#    `diagnosticsHttpTimeoutMs`). "documento" (raiz nova, ES) widened é aceito
+#    porque o equivalente EN problemático ("document") não entra na lista.
+#    Terminador do arm de shorthand ganha `}` além de `,)` — `phoneE164` antes
+#    de `}` (fim do objeto, sem vírgula) não batia em NENHUM dos dois grupos.
+#
+# D-12/09 (2ª rodada, achado do gate rodando verificar.sh origin/main NESTA
+# branch): o abridor `\blog\.(info|...)` novo (item acima) não exigia `(` —
+# casava a PROSA "...mascara o e-mail no log.info, nunca o valor cru..." no
+# TÍTULO de um `it(...)` (string, não código) e puxava RAW_EMAIL da linha
+# seguinte pro bloco, como se fosse uma chamada de log de verdade
+# (onUserCreate.test.ts:73). `console\.(log|...)` e `logger?\.(...)` tinham a
+# MESMA lacuna (nenhum dos três exigia parêntese) — só não tinha aparecido
+# ainda porque nenhuma prosa de teste citava "console.log," ou "logger.info,"
+# sem parêntese logo depois. Conserto nos três: exige `[[:space:]]*\(` (a
+# chamada de verdade sempre abre parêntese; `functions.logger.info(` continua
+# coberto por SUBSTRING via `logger?\.` — sem \b nesse ramo — então ganha o
+# aperto de graça, sem alternativa própria).
+ABRIDOR_LOG='console\.(log|error|warn)[[:space:]]*\(|logger?\.(info|warn|error|debug)[[:space:]]*\(|\blog\.(info|warn|error|debug)[[:space:]]*\('
+CAMPO_RAIZ='phone|telefone|email|mail|cuil|cuit|dni|documento|address|direcci[oó]n|endere[cç]o|nombre|apellido|birth|nasc'
+CAMPO_EXATO='firstName|lastName|first_name|last_name|documentNumber|document_number|diagnosis|diagnostico'
+CAMPO_CHAVE='\$\{[^}]*\b(\w*('"$CAMPO_RAIZ"')\w*|'"$CAMPO_EXATO"')\b[^}]*\}|\b(\w*('"$CAMPO_RAIZ"')\w*|'"$CAMPO_EXATO"')\b[[:space:]]*[,)}]'
+
+# Exclusão (Passo 2) — contagem/agregação (regra da casa PERMITE contagem) +
+# marcador seguro por SUFIXO/PREFIXO explícito (achado do gate, item 2:
+# `emailService`/`phoneMask`/`hasEmail`/`emailSent`/`phoneMasked`/`addressId`/
+# `patient_address_id` contêm o termo mas NÃO são o valor cru — são serviço,
+# utilitário de máscara, booleano ou referência de registro). Escopada ao
+# CAMPO_RAIZ prefixado por \w* ("patient_address_id" tem "_" — \w — ANTES da
+# raiz, então o \b tem que vir antes do PREFIXO, não da raiz; "\w*id\b" SOLTO
+# pegaria "valid"/"paid" à toa, por isso o sufixo exige a raiz logo antes) — e
+# CUIL/CUIT ficam de FORA de propósito: nenhum sufixo os torna seguros (regra
+# dura, Passo 3). `\bhas\w*\b` widened pelo mesmo motivo do CAMPO_CHAVE
+# (`\bhas\b` sozinho não casava "hasEmail"). Exclusão roda no NÍVEL DO BLOCO
+# (limitação herdada do desenho original — "count"/"total" já eram assim): se
+# QUALQUER um destes aparecer em algum lugar do bloco, o bloco inteiro passa —
+# não é por token. Não redesenhado aqui (fora do escopo do achado).
+EXCLUSAO_SEGURA='\b(count|total|qtd|quantidade|length|size|missing)\b|\bhas\w*\b|\bsem_|\bcom_|\.length'
+EXCLUSAO_SEGURA="$EXCLUSAO_SEGURA"'|\b\w*(phone|telefone|email|mail|dni|documento|address|direcci[oó]n|endere[cç]o|nombre|apellido|birth|nasc)_?(id|mask|masked|service|servicio|sent|enviado|verified|confirmed|exists|existe)\b'
+# NÃO entram maskPhoneForLog/maskEmailForLog/safeErrorFields aqui — achado ao
+# rodar testar.sh (3 regressões): esta exclusão roda no NÍVEL DO BLOCO, ANTES
+# do Passo 3. `logger.warn({ phone: maskPhoneForLog(phone) }, phone);` tem um
+# phone MASCARADO e um phone CRU no mesmo bloco — se o nome do helper entrasse
+# aqui, o bloco INTEIRO sumia do Passo 2 (por conter "maskPhoneForLog" em
+# QUALQUER lugar) e o phone cru (2º argumento) nunca chegava ao strip-e-testa-
+# de-novo do Passo 3, que é o único lugar que sabe distinguir "só o mascarado"
+# de "mascarado E cru juntos". Os 3 helpers seguem tratados SOMENTE no Passo 3.
+
 echo "## V5 — PII em log adicionado"
 if [ "$N_CODE" -eq 0 ]; then na "0 linha de código no diff"; else
-PII=$(grep -E "(console\.(log|error|warn)|logger?\.(info|warn|error|debug))" "$TMP/add_code" \
-      | grep -iE '\$\{[^}]*\b(phone|telefone|email|firstName|lastName|first_name|last_name|dni|documentNumber|document_number|birthDate|birth_date|diagnosis|diagnostico)\b[^}]*\}|\b(phone|email|firstName|lastName|dni|diagnosis)\b[[:space:]]*[,)]' \
-      | grep -viE '\\b(count|total|qtd|quantidade|length|size|has|missing)\\b|\\bsem_|\\bcom_|\\.length' || true)
+
+# ── Passo 1: junta cada abridor de log com as N linhas seguintes num BLOCO ────
+# `grep -A` separa grupos não-contíguos com uma linha só de "--"; o loop abaixo
+# funde cada grupo (linhas até o próximo "--") numa string só, então o detector
+# do passo 2 enxerga o campo pessoal mesmo que ele esteja numa linha diferente
+# do abridor `console./logger.`.
+BLOCOS=""
+BUFFER=""
+while IFS= read -r linha; do
+  if [ "$linha" = "--" ]; then
+    BLOCOS="${BLOCOS}${BUFFER}
+"
+    BUFFER=""
+  elif [ -z "$BUFFER" ]; then
+    BUFFER="$linha"
+  else
+    BUFFER="${BUFFER} ${linha}"
+  fi
+done <<BRUTO
+$(grep -A"$V5_JANELA" -E "($ABRIDOR_LOG)" "$TMP/add_code" 2>/dev/null || true)
+BRUTO
+[ -n "$BUFFER" ] && BLOCOS="${BLOCOS}${BUFFER}
+"
+
+# ── Passo 2: detector — campo pessoal interpolado, campo de contagem excluído ─
+PII=$(printf '%s\n' "$BLOCOS" \
+      | grep -iE "$CAMPO_CHAVE" \
+      | grep -viE "$EXCLUSAO_SEGURA" || true)
+
+# ── Passo 3: maskPhoneForLog(...)/maskEmailForLog(...)/safeErrorFields(...) são
+# SAÍDA SEGURA — e SOMENTE eles (D-11/09, atualizado: o extinto `redactContact`
+# saiu da lista quando o helper foi apagado — item 1 do gate — e NÃO volta a
+# ser reconhecido, de propósito: chamar uma função que não existe mais não pode
+# "parecer seguro" pro verificador). MENOS pra CUIL/CUIT, que "não se mascara,
+# se remove" (parecer do lex, C2/C3): NENHUMA chamada torna uma interpolação de
+# CUIL/CUIT segura, então o bloco roda direto pro reprova sem passar pelo
+# strip. Pros demais campos (telefone, e-mail, nome, endereço, diagnóstico...),
+# o nome do campo continua no bloco (é argumento da chamada), mas o VALOR que
+# sai no log já passou por máscara — remove as três chamadas do texto e roda O
+# MESMO detector de novo: se ainda casar depois de removidas, o campo vazou por
+# FORA do helper — aí SIM reprova. "Somente isso": nenhuma outra forma de
+# "parecer seguro" conta.
+if [ -n "$PII" ]; then
+  SOBROU=""
+  while IFS= read -r bloco; do
+    [ -z "$bloco" ] && continue
+    if printf '%s\n' "$bloco" | grep -qiE '\b\w*(cuil|cuit)\w*\b'; then
+      SOBROU="${SOBROU}${bloco}
+"
+      continue
+    fi
+    despida=$(printf '%s\n' "$bloco" | sed -E 's/maskPhoneForLog\([^()]*\)//g; s/maskEmailForLog\([^()]*\)//g; s/safeErrorFields\([^()]*\)//g')
+    if printf '%s\n' "$despida" | grep -qiE "$CAMPO_CHAVE"; then
+      SOBROU="${SOBROU}${bloco}
+"
+    fi
+  done <<PII_BLOCOS
+$PII
+PII_BLOCOS
+  PII="$SOBROU"
+fi
+
 if [ -n "$PII" ]; then
   falha "log novo interpolando campo pessoal — conferir um a um:"
   echo "$PII" | head -8 | sed 's/^/        /'
@@ -308,6 +461,14 @@ echo
 # Regra mais dura da casa. ⚠️ A 1ª versão casava SUBSTRING: `diagnos` pegava
 # `diagnosticsHttpTimeoutMs` e `http` pegava qualquer URL — reprovava
 # `const DIAGNOSTIC_ENDPOINT = 'http://localhost:8080/healthz'`. Agora é PALAVRA.
+#
+# D-11/09: avaliado se a MESMA cegueira do V5 (helper de saída segura) se
+# aplica aqui — NÃO se aplica. `redactContact`/`safeErrorFields` mascaram
+# valor; dado clínico não tem "versão mascarada aceitável" na regra da casa
+# (texto clínico NUNCA sai do perímetro, ponto — CLAUDE.md). Não existe hoje
+# nenhum helper de "redação de diagnóstico" no código, e não seria a correção
+# certa se existisse (a correção é NÃO MANDAR, não ofuscar). V6 continua sem
+# exceção nenhuma de propósito.
 echo "## V6 — dado clínico rumo a terceiro/URL/prompt"
 if [ "$N_CODE" -eq 0 ]; then na "0 linha de código no diff"; else
 CLIN=$(grep -iE '\b(diagnosis|diagnostico|diagnóstico|pathology|pathologies|patologia|patologias|patología|patologías)\b' "$TMP/add_code" \

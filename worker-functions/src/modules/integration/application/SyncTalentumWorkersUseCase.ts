@@ -26,7 +26,7 @@ import { TalentumApiClient } from '../infrastructure/TalentumApiClient';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { normalizePhoneAR, generatePhoneCandidates } from '@shared/utils/phoneNormalization';
-import { logger } from '@shared/logging';
+import { logger, safeErrorFields } from '@shared/logging';
 import type { TalentumDashboardProfile } from '../domain/ITalentumApiClient';
 
 const TAG = '[SyncTalentumWorkers]';
@@ -77,7 +77,9 @@ export class SyncTalentumWorkersUseCase {
         await this.processProfile(profile, report);
       } catch (err: unknown) {
         const e = err instanceof Error ? err : new Error(String(err));
-        logger.error({ msg: `${TAG} Error processing profile ${profile._id} (${profile.fullName})`, error: e.message });
+        // PII: nunca o nome no log — profile._id já é o id estável pra achar o registro;
+        // `error`/`stack` do erro cru também não (podem carregar valor) — só errorName+SQLSTATE.
+        logger.error({ msg: `${TAG} Error processing profile ${profile._id}`, ...safeErrorFields(err) });
         report.errors.push({ profileId: profile._id, name: profile.fullName, error: e.message });
       }
     }

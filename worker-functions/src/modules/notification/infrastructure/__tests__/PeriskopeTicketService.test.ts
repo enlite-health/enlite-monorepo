@@ -13,15 +13,26 @@ import axios from 'axios';
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
-jest.mock('@shared/logging', () => ({
-  logger: {
-    child: jest.fn().mockReturnValue({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }),
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-  },
-  reportError: jest.fn(),
-}));
+const mockLoggerWarn = jest.fn();
+
+jest.mock('@shared/logging', () => {
+  const actual = jest.requireActual('@shared/logging');
+  return {
+    logger: {
+      child: jest.fn().mockReturnValue({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }),
+      info: jest.fn(),
+      warn: (...args: unknown[]) => mockLoggerWarn(...args),
+      error: jest.fn(),
+    },
+    // NOTA: mockado — este teste NÃO cobre o que `reportError` de fato envia ao Cloud
+    // Error Reporting (message/stack crus do erro, PR separado, ver comentário na
+    // linha do `reportError(e, ...)` em PeriskopeTicketService.ts).
+    reportError: jest.fn(),
+    // Funções puras — usar a implementação REAL prova o comportamento de verdade,
+    // não um dublê que sempre concorda com o que o produção manda.
+    safeErrorFields: actual.safeErrorFields,
+  };
+});
 
 import { PeriskopeTicketService } from '../PeriskopeTicketService';
 
@@ -130,5 +141,58 @@ describe('PeriskopeTicketService', () => {
     await expect(
       service.createTicket('+5491122334455', 'asunto'),
     ).resolves.toBe(false);
+  });
+
+  // ── PII guard (ponto 8 do achado 11/09) ─────────────────────────────────────
+  // O erro do axios pode carregar a URL/corpo da request COM o telefone; nunca deve
+  // sair cru — nem o telefone, nem `message`/`stack` do erro.
+  it('PII: telefone mascarado e error SEM message/stack no log de falha', async () => {
+    process.env.PERISKOPE_API_KEY = 'test-key';
+    process.env.PERISKOPE_PHONE = '5491100000000';
+    const SENSITIVE_PHONE = '+5491122334455';
+    const sensitiveMessage = `Request failed for chat ${SENSITIVE_PHONE.replace('+', '')}@c.us`;
+    const mockPost = jest.fn().mockRejectedValue(Object.assign(new Error(sensitiveMessage), { code: 'ETIMEDOUT' }));
+    mockedAxios.create.mockReturnValue({ post: mockPost } as any);
+
+    const service = new PeriskopeTicketService();
+    const result = await service.createTicket(SENSITIVE_PHONE, 'asunto');
+
+    expect(result).toBe(false);
+    expect(mockLoggerWarn).toHaveBeenCalledTimes(1);
+    const [payload] = mockLoggerWarn.mock.calls[0] as [Record<string, unknown>, string];
+
+    // O telefone cru nunca aparece — só os últimos 4 dígitos.
+    expect(JSON.stringify(payload)).not.toContain(SENSITIVE_PHONE.replace('+', ''));
+    expect(payload.chatPhone).toBe('+549******4455');
+    // Nem message nem stack do erro — só errorName + SQLSTATE/código.
+    expect(payload).not.toHaveProperty('message');
+    expect(payload).not.toHaveProperty('stack');
+    expect(payload).toEqual(expect.objectContaining({ errorName: 'Error', code: 'ETIMEDOUT' }));
+    expect(JSON.stringify(payload)).not.toContain(sensitiveMessage);
+  });
+
+  // Sabotagem: restaura em CÓPIA o comportamento ANTIGO (log cru de phone/message) —
+  // se alguém desfizer o fix, este teste morre. Restaurar (código atual) → passa.
+  it('sabotagem: se o log voltasse a expor chatPhone/message crus, este teste cairia', async () => {
+    process.env.PERISKOPE_API_KEY = 'test-key';
+    process.env.PERISKOPE_PHONE = '5491100000000';
+    const SENSITIVE_PHONE = '+5491122334455';
+
+    // Simula o comportamento ANTIGO diretamente — prova que a asserção abaixo É
+    // capaz de pegar o vazamento (não é uma asserção morta).
+    mockLoggerWarn({ error: 'Periskope 500', chatPhone: SENSITIVE_PHONE }, '[PeriskopeTicketService] createTicket failed (best-effort)');
+    const oldPayload = mockLoggerWarn.mock.calls[0][0] as Record<string, unknown>;
+    expect(oldPayload.chatPhone).toBe(SENSITIVE_PHONE); // comportamento antigo vazava — confirmado
+    mockLoggerWarn.mockClear();
+
+    // Código ATUAL: não vaza.
+    const mockPost = jest.fn().mockRejectedValue(new Error('Periskope 500'));
+    mockedAxios.create.mockReturnValue({ post: mockPost } as any);
+    const service = new PeriskopeTicketService();
+    await service.createTicket(SENSITIVE_PHONE, 'asunto');
+
+    const [newPayload] = mockLoggerWarn.mock.calls[0] as [Record<string, unknown>, string];
+    expect(newPayload.chatPhone).not.toBe(SENSITIVE_PHONE);
+    expect(newPayload.chatPhone).toBe('+549******4455');
   });
 });

@@ -188,6 +188,140 @@ novo_repo
 printf 'console.log(`breakdown: sem_telefone=${semTelefone}`);\n' > src/a.ts; commit c1
 rodar; checa "[-] CONTAGEM passa (a regra permite status e contagem)" 0
 
+# ── D-11/09 (atualizado, item 1 do gate): redactContact foi APAGADO; os donos
+#    únicos da máscara agora são maskPhoneForLog/maskEmailForLog/safeErrorFields
+#    — e SOMENTE eles são SAÍDA SEGURA ──────────────────────────────────────
+novo_repo
+printf "console.log(\`worker \${maskPhoneForLog(phone)} convidado\`);\n" > src/a.ts; commit c1
+rodar; checa "[-] telefone mascarado via maskPhoneForLog(...) NÃO reprova" 0
+novo_repo
+printf 'console.log(`worker ${phone} convidado`);\n' > src/a.ts; commit c1
+rodar; checa "[+] CONTROLE: o mesmo telefone SEM maskPhoneForLog continua reprovando" 1 "interpolando campo pessoal"
+novo_repo
+printf "console.log(\`user \${maskEmailForLog(email)} registered\`);\n" > src/a.ts; commit c1
+rodar; checa "[-] e-mail mascarado via maskEmailForLog(...) NÃO reprova" 0
+novo_repo
+printf "console.log(\`worker \${safeErrorFields(phone)} convidado\`);\n" > src/a.ts; commit c1
+rodar; checa "[-] campo pessoal mascarado via safeErrorFields(...) NÃO reprova" 0
+novo_repo
+printf 'console.log(`user ${email} registered`);\n' > src/a.ts; commit c1
+rodar; checa "[+] CONTROLE: e-mail cru (sem nenhum helper) continua reprovando" 1 "interpolando campo pessoal"
+novo_repo
+printf "logger.warn({ phone: maskPhoneForLog(phone) }, phone);\n" > src/a.ts; commit c1
+rodar; checa "[+] linha com UM campo mascarado e outro campo pessoal cru na MESMA linha continua reprovando" 1 "interpolando campo pessoal"
+novo_repo
+printf "console.log(\`worker \${redactContact(phone, 'phone')} convidado\`);\n" > src/a.ts; commit c1
+rodar; checa "[+] CONTROLE: helper EXTINTO (redactContact) não é mais saída segura — reprova como qualquer nome desconhecido" 1 "interpolando campo pessoal"
+
+# ── C2 (parecer do lex): campos novos no detector, e CUIL/CUIT NUNCA tem saída
+#    segura — "documento não se mascara, se remove", mesmo dentro de maskPhoneForLog ──
+novo_repo
+printf 'console.log(`worker ${cuil} cadastrado`);\n' > src/a.ts; commit c1
+rodar; checa "[+] CUIL cru REPROVA (campo novo, C2)" 1 "interpolando campo pessoal"
+novo_repo
+printf "console.log(\`worker \${maskPhoneForLog(cuil)} cadastrado\`);\n" > src/a.ts; commit c1
+rodar; checa "[+] CONTROLE: CUIL dentro de maskPhoneForLog(...) TAMBÉM reprova — não existe saída segura pra documento" 1 "interpolando campo pessoal"
+novo_repo
+printf 'console.log(`endereco ${address} confirmado`);\n' > src/a.ts; commit c1
+rodar; checa "[+] endereço (address) INTERPOLADO REPROVA (campo novo, C2)" 1 "interpolando campo pessoal"
+novo_repo
+printf 'console.log(`paciente ${nombre} confirmado`);\n' > src/a.ts; commit c1
+rodar; checa "[+] nome (nombre) INTERPOLADO REPROVA (campo novo, C2)" 1 "interpolando campo pessoal"
+
+# ── item 5 (2ª rodada do gate): chamada de log MULTILINHA — sabotagem que o
+#    gate reproduziu (EXIT=0 com telefone cru numa linha de continuação) ─────
+novo_repo
+printf 'console.warn(\n  `worker ${phone} nao encontrado`,\n);\n' > src/a.ts; commit c1
+rodar; checa "[+] MULTILINHA: telefone cru na linha SEGUINTE ao abridor REPROVA (sabotagem do gate)" 1 "interpolando campo pessoal"
+novo_repo
+printf "console.warn(\n  \`worker \${maskPhoneForLog(phone)} nao encontrado\`,\n);\n" > src/a.ts; commit c1
+rodar; checa "[-] MULTILINHA: telefone mascarado na linha seguinte NÃO reprova" 0
+novo_repo
+printf "logger.warn({\n  phone: maskPhoneForLog(phone),\n}, phone);\n" > src/a.ts; commit c1
+rodar; checa "[+] MULTILINHA: um campo mascarado e outro campo cru em linhas DIFERENTES continua reprovando" 1 "interpolando campo pessoal"
+
+# ── D-12/09 (achado do gate, item 2) — duas cegueiras MEDIDAS: rc=0 (aprovado)
+#    nas 5 linhas abaixo, quando deveriam reprovar. (1) abridor `logger?\.` não
+#    cobre `log.` (child logger da convenção do CLAUDE.md: `const log =
+#    logger.child(...)`); (2) `\b(phone|email|…)\b` é PALAVRA EXATA e não
+#    separa camelCase/snake_case, então `phoneE164`/`phoneNumber`/
+#    `emailAddress` atravessavam ilesos, e shorthand antes de `}` (sem vírgula)
+#    não batia em nenhum arm do CAMPO_CHAVE ──────────────────────────────────
+novo_repo
+printf 'log.info({ msg:"otp", candidateWorkerId, phoneE164 });
+' > src/a.ts; commit c1
+rodar; checa "[+] abridor log.info (child logger) + phoneE164 shorthand antes de '}' REPROVA" 1 "interpolando campo pessoal"
+novo_repo
+printf 'log.info({ msg:"x", phoneNumber });
+' > src/a.ts; commit c1
+rodar; checa "[+] phoneNumber (composto camelCase) REPROVA" 1 "interpolando campo pessoal"
+novo_repo
+printf 'log.info({ msg:"x", emailAddress });
+' > src/a.ts; commit c1
+rodar; checa "[+] emailAddress (composto camelCase) REPROVA" 1 "interpolando campo pessoal"
+novo_repo
+printf 'console.log(`otp para ${phoneE164}`);
+' > src/a.ts; commit c1
+rodar; checa "[+] phoneE164 INTERPOLADO (console.log) REPROVA" 1 "interpolando campo pessoal"
+novo_repo
+printf 'log.info({ msg:"x", phone });
+' > src/a.ts; commit c1
+rodar; checa "[+] phone shorthand via log.info (abridor child logger) REPROVA" 1 "interpolando campo pessoal"
+novo_repo
+printf 'log.info({ msg:"x", cuilNumber });
+' > src/a.ts; commit c1
+rodar; checa "[+] CONTROLE: cuilNumber (composto) REPROVA igual cuil sozinho (C2, nunca seguro)" 1 "interpolando campo pessoal"
+
+# ── negativas do mesmo achado: nome contém o termo mas NÃO é o valor cru ─────
+novo_repo
+printf 'log.info({ msg:"x", emailService });
+' > src/a.ts; commit c1
+rodar; checa "[-] emailService (objeto/cliente, não valor) NÃO reprova" 0
+novo_repo
+printf 'log.info({ msg:"x", phoneMask });
+' > src/a.ts; commit c1
+rodar; checa "[-] phoneMask (referência ao utilitário, não valor) NÃO reprova" 0
+novo_repo
+printf 'log.info({ msg:"x", email: maskEmailForLog(rawEmail) });
+' > src/a.ts; commit c1
+rodar; checa "[-] email: maskEmailForLog(rawEmail) (chave explícita, valor mascarado) NÃO reprova" 0
+novo_repo
+printf 'log.info({ msg:"x", hasEmail });
+' > src/a.ts; commit c1
+rodar; checa "[-] hasEmail (booleano de presença, composto de 'has') NÃO reprova" 0
+novo_repo
+printf 'log.info({ msg:"x", emailSent });
+' > src/a.ts; commit c1
+rodar; checa "[-] emailSent (booleano de estado) NÃO reprova" 0
+novo_repo
+printf 'log.info({ msg:"x", phoneMasked });
+' > src/a.ts; commit c1
+rodar; checa "[-] phoneMasked (já mascarado, nome da variável) NÃO reprova" 0
+novo_repo
+printf 'log.info({ msg:"x", addressId });
+' > src/a.ts; commit c1
+rodar; checa "[-] addressId (referência de registro, camelCase) NÃO reprova" 0
+novo_repo
+printf 'log.info({ msg:"x", patient_address_id });
+' > src/a.ts; commit c1
+rodar; checa "[-] patient_address_id (referência de registro, snake_case) NÃO reprova" 0
+novo_repo
+printf 'log.info({ msg:"x", nameOf });
+' > src/a.ts; commit c1
+rodar; checa "[-] nameOf (não existe raiz genérica 'name' na lista) NÃO reprova" 0
+
+# ── D-12/09 (2ª rodada, achado do gate rodando verificar.sh origin/main NESTA
+#    branch): abridor `\blog\.(info|...)` sem exigir `(` casava PROSA de título
+#    de teste ("...no log.info, nunca...") como se fosse chamada de log de
+#    verdade (onUserCreate.test.ts:73). Conserto: os 3 abridores (console./
+#    logger?./\blog\.) passam a exigir `[[:space:]]*\(` ────────────────────────
+novo_repo
+printf "it('mascara o e-mail no log.info, nunca o valor cru', async () => {\n  const RAW_EMAIL = 'candidata.sensivel@example.com';\n});\n" > src/a.ts; commit c1
+rodar; checa "[-] título de teste com a prosa 'no log.info,' + campo pessoal na linha seguinte NÃO reprova (abridor exige parêntese)" 0
+novo_repo
+printf 'log.info({ phoneE164 });\n' > src/a.ts; commit c1
+rodar; checa "[+] CONTROLE: log.info({ phoneE164 }) — chamada REAL — REPROVA (o aperto do abridor não cegou)" 1 "interpolando campo pessoal"
+
 # ══ V6 — dado clínico ════════════════════════════════════════════════════════
 echo "## V6 — dado clínico rumo a terceiro"
 novo_repo

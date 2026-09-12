@@ -54,6 +54,7 @@ jest.mock('../../infrastructure/TalentumApiClient', () => ({
 
 import { SyncTalentumWorkersUseCase, WorkerSyncReport } from '../SyncTalentumWorkersUseCase';
 import type { TalentumDashboardProfile } from '../../domain/ITalentumApiClient';
+import { logger } from '@shared/logging';
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -510,6 +511,45 @@ describe('SyncTalentumWorkersUseCase', () => {
         name: 'Error Worker',
         error: 'timeout',
       });
+    });
+
+    // ── PII guard (ponto 12 do achado do gate 11/09) ────────────────────────
+    it('PII: nome NUNCA no logger.error — só o profileId; erro sem message/stack', async () => {
+      const errorSpy = jest.spyOn(logger, 'error').mockImplementation();
+      const SENSITIVE_NAME = 'Fulana Muito Sensível';
+      const sensitiveMessage = `constraint violation for "${SENSITIVE_NAME}"`;
+      const profile = makeProfile({ _id: 'err-pii', fullName: SENSITIVE_NAME });
+      mockListAllDashboardProfiles.mockResolvedValue([profile]);
+      mockQuery.mockRejectedValue(Object.assign(new Error(sensitiveMessage), { code: '23505' }));
+
+      await useCase.execute();
+
+      const call = errorSpy.mock.calls.find((c) => {
+        const arg = c[0] as Record<string, unknown>;
+        return typeof arg.msg === 'string' && arg.msg.includes('Error processing profile');
+      });
+      expect(call).toBeDefined();
+      const payload = call![0] as Record<string, unknown>;
+
+      expect(payload.msg).not.toContain(SENSITIVE_NAME);
+      expect(payload.msg).toBe('[SyncTalentumWorkers] Error processing profile err-pii');
+      expect(payload).not.toHaveProperty('message');
+      expect(payload).not.toHaveProperty('stack');
+      expect(payload).toEqual(expect.objectContaining({ errorName: 'Error', code: '23505' }));
+      expect(JSON.stringify(payload)).not.toContain(sensitiveMessage);
+      errorSpy.mockRestore();
+    });
+
+    // Sabotagem: reproduz o formato ANTIGO (nome + message no msg/error) e prova
+    // que a asserção acima detectaria o vazamento se o fix fosse desfeito.
+    it('sabotagem: reproduzindo o logger.error ANTIGO (nome + message), a asserção acima cairia', () => {
+      const errorSpy = jest.spyOn(logger, 'error').mockImplementation();
+      const SENSITIVE_NAME = 'Fulana Muito Sensível';
+      logger.error({ msg: `[SyncTalentumWorkers] Error processing profile err-pii (${SENSITIVE_NAME})`, error: 'connection reset' });
+
+      const [oldPayload] = errorSpy.mock.calls[0] as [Record<string, unknown>];
+      expect(String(oldPayload.msg)).toContain(SENSITIVE_NAME); // confirma: o formato antigo vazava
+      errorSpy.mockRestore();
     });
   });
 

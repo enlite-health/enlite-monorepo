@@ -1,4 +1,5 @@
 import * as functions from 'firebase-functions';
+import { safeErrorFields } from '@shared/logging';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import {
   PatientIdentityRepository,
@@ -185,8 +186,7 @@ export class PatientService {
     } catch (err) {
       functions.logger.error('patient_service.upsert.failed', {
         clickupTaskId: input.clickupTaskId,
-        error:         err instanceof Error ? err.message : String(err),
-        stack:         err instanceof Error ? err.stack   : undefined,
+        ...safeErrorFields(err),
         durationMs:    Date.now() - startMs,
         correlationId: cid,
       });
