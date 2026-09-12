@@ -42,6 +42,8 @@ vi.mock('@presentation/components/molecules/ServiceAreaMap', () => ({
 }));
 
 import { PatientAddressDrawer } from '../PatientAddressDrawer';
+import { LocalizacoesCard } from '../../LocalizacoesCard';
+import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
 
 const existing = {
   id: 'addr1', addressType: 'primary', addressTypeOther: null, addressFormatted: 'Rua A 1', addressRaw: null, complement: null, displayOrder: 1,
@@ -245,6 +247,20 @@ describe('PatientAddressDrawer — criar', () => {
     expect(err).not.toHaveTextContent('Portero');
   });
 
+  // F2 (gate revisao-pr): spec 019 passa a devolver 409 também na criação concorrente (dois
+  // endereços tentando nascer principal ao mesmo tempo). O catch do POST já era genérico — sem
+  // `instanceof`/status —, então um 409 JÁ caía neste mesmo caminho e já mostrava erro; este
+  // teste prova isso (em vez de assumir), como o F1 exigiu conferir antes de "consertar".
+  it('F2: POST 409 (criação concorrente) também mostra o erro genérico — mesmo catch do erro comum', async () => {
+    createPatientAddress.mockRejectedValueOnce(new PatientApiError('Conflict', 409));
+    render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={vi.fn()} />);
+    await assentar();
+    await escolherDaLista();
+    fireEvent.click(screen.getByTestId('pad-save'));
+    await waitFor(() => expect(createPatientAddress).toHaveBeenCalled());
+    expect(await screen.findByTestId('pad-error')).toHaveTextContent('Erro ao salvar');
+  });
+
   it('lex C6: nada do que se digita atravessa para console nem para o Clarity', async () => {
     const espioes = {
       log: vi.spyOn(console, 'log').mockImplementation(() => undefined),
@@ -408,6 +424,16 @@ describe('PatientAddressDrawer — editar logística', () => {
     expect(await screen.findByTestId('pad-error')).toHaveTextContent('Erro ao salvar');
     fireEvent.keyDown(document, { key: 'Escape' });
     fireEvent.click(screen.getByTestId('patient-address-backdrop'));
+  });
+
+  // F2 (gate revisao-pr): mesma conferência do lado do PATCH — o backend também passa a devolver
+  // 409 quando duas edições de logística/principal colidem. O catch já era genérico; prova.
+  it('F2: PATCH 409 (edição concorrente) também mostra o erro genérico', async () => {
+    updatePatientAddressLogistics.mockRejectedValueOnce(new PatientApiError('Conflict', 409));
+    render(<PatientAddressDrawer patientId="p1" address={existing} onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByTestId('pad-neighborhood'), { target: { value: 'Outro' } });
+    fireEvent.click(screen.getByTestId('pad-save'));
+    expect(await screen.findByTestId('pad-error')).toHaveTextContent('Erro ao salvar');
   });
 
   it('endereço sem nada (formatado e cru nulos, logística nula): mostra —, mapa recebe null, preencher zona manda só ela', async () => {
