@@ -176,6 +176,32 @@ describe('BookInterviewSlotUseCase', () => {
     consoleSpy.mockRestore();
   });
 
+  // PII guard (irmão do ponto 10, achado do gate 11/09): o branch de FALHA do
+  // Calendar ainda logava o e-mail cru — mesmo padrão do branch de sucesso.
+  it('PII: falha do Calendar → e-mail mascarado, workerId visível no console.error', async () => {
+    setupHappyPath();
+    mockCalendar.addGuestToMeeting.mockResolvedValue({ success: false, reason: 'event_not_found', detail: 'boom' });
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+
+    await useCase.execute(PARAMS);
+
+    const lines = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(lines).not.toContain(PARAMS.workerEmail);
+    expect(lines).toContain(`Failed to add worker=${PARAMS.workerId} email=`);
+    expect(lines).toContain('event_not_found');
+    consoleSpy.mockRestore();
+  });
+
+  // Sabotagem: reproduz o console.error ANTIGO (e-mail cru) — prova que a
+  // asserção acima detectaria o vazamento se o fix fosse desfeito.
+  it('sabotagem: reproduzindo o console.error ANTIGO (e-mail cru), a asserção acima cairia', () => {
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+    console.error(`[BookInterviewSlot] Failed to add ${PARAMS.workerEmail} to calendar: event_not_found`);
+    const oldLines = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(oldLines).toContain(PARAMS.workerEmail); // confirma: o formato antigo vazava
+    consoleSpy.mockRestore();
+  });
+
   // ─── Outbox, Pub/Sub e lembretes ──────────────────────────────
 
   it('dedup da outbox → ok:true sem publicar nem agendar lembrete de novo', async () => {
