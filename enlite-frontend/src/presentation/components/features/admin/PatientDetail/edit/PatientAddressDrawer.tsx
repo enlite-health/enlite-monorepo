@@ -17,6 +17,7 @@ import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { useGooglePlacesAutocomplete } from '@presentation/hooks/useGooglePlacesAutocomplete';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
 import { AddressTypeFields, ADDRESS_TYPE_OTHER_MAX } from './AddressTypeFields';
+import { MarkPrimaryCheckbox } from './MarkPrimaryCheckbox';
 
 interface Props {
   patientId: string;
@@ -273,15 +274,7 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
                 otherError={addressTypeOtherError}
               />
               {!address.isPrimary && (
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={markPrimary}
-                    onChange={(e) => setMarkPrimary(e.target.checked)}
-                    data-testid="pad-mark-primary"
-                  />
-                  <Text as="span" size="sm" color="inherit">{ta('markPrimary')}</Text>
-                </label>
+                <MarkPrimaryCheckbox checked={markPrimary} onChange={setMarkPrimary} ta={ta} />
               )}
             </>
           ) : (
@@ -323,15 +316,7 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
               </FormField>
               {/* Spec 019 (US 4.2): opt-in — sem marcar, vale a regra de nascimento do servidor
                   (sem principal ativo, este nasce principal de qualquer forma). */}
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={markPrimary}
-                  onChange={(e) => setMarkPrimary(e.target.checked)}
-                  data-testid="pad-mark-primary"
-                />
-                <Text as="span" size="sm" color="inherit">{ta('markPrimary')}</Text>
-              </label>
+              <MarkPrimaryCheckbox checked={markPrimary} onChange={setMarkPrimary} ta={ta} />
             </>
           )}
 
