@@ -141,6 +141,8 @@ describe('Endereço PRINCIPAL + TIPO por parentesco (spec 019) @integration', ()
     const reloaded2 = (reload2.data.data.addresses as Array<{ id: string; addressType: string | null; addressTypeOther?: string | null }>)
       .find((a) => a.id === addrA.id);
     expect(reloaded2?.addressType).toBe('otro');
+    // K9: address_type_other também sobrevive ao reload — não só o enum.
+    expect(reloaded2?.addressTypeOther).toBe('Casa de una tía cercana');
   });
 
   it('5.4 alt1 — address_type_other com 41 caracteres → 400 do servidor (não do zod isolado)', async () => {
