@@ -29,26 +29,32 @@ describe('redactContact', () => {
     expect(redactContact('4455', 'phone')).toBe('***4455');
   });
 
-  it('e-mail: domínio visível, local-part vira hash curto (nunca o valor original)', () => {
+  it('e-mail: domínio visível, local-part NUNCA aparece (nem em claro, nem hash)', () => {
     const out = redactContact(SENSITIVE_EMAIL, 'email');
-    expect(out).toMatch(/^[0-9a-f]{6}@example\.com$/);
+    expect(out).toBe('***@example.com');
     expect(out).not.toContain('joao');
     expect(out).not.toContain('garcia');
     expect(out).not.toContain(SENSITIVE_EMAIL);
   });
 
-  it('e-mail: o hash é ESTÁVEL — a mesma entrada gera sempre a mesma saída', () => {
-    const a = redactContact(SENSITIVE_EMAIL, 'email');
-    const b = redactContact(SENSITIVE_EMAIL, 'email');
-    const c = redactContact(SENSITIVE_EMAIL, 'email');
-    expect(a).toBe(b);
-    expect(b).toBe(c);
-  });
-
-  it('e-mail: local-parts diferentes no MESMO domínio geram hashes diferentes', () => {
+  // Parecer do lex (C4, 11/09): a versão anterior (hash sha256 do local-part)
+  // era REVERSÍVEL por dicionário — local-part de e-mail tem entropia baixa
+  // (nome.sobrenome), então o hash curto não protegia de verdade. A queda
+  // segura aceita pelo lex é justamente ISTO: e-mails diferentes do MESMO
+  // domínio saem INDISTINGUÍVEIS no log — não dá pra saber se são a mesma
+  // pessoa ou duas, e é intencional (o custo de dar essa correlação de volta
+  // pediria chave em Secret Manager, fora do escopo deste conserto).
+  it('e-mail: local-parts DIFERENTES no MESMO domínio ficam INDISTINGUÍVEIS (queda segura do lex)', () => {
     const a = redactContact('ana@example.com', 'email');
     const b = redactContact('bruno@example.com', 'email');
-    expect(a).not.toBe(b);
+    expect(a).toBe(b);
+    expect(a).toBe('***@example.com');
+  });
+
+  it('e-mail: o mesmo e-mail chamado 2x continua determinístico (mesma saída, sem precisar de hash)', () => {
+    const a = redactContact(SENSITIVE_EMAIL, 'email');
+    const b = redactContact(SENSITIVE_EMAIL, 'email');
+    expect(a).toBe(b);
   });
 
   it('e-mail malformado (sem @, @ no início ou @ no fim): nunca ecoa o valor cru', () => {
