@@ -580,4 +580,99 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
       expect(quem.rows[0].n).toBeGreaterThan(0);
     });
   });
+
+  // ── (h) L9-5 — consolidado multi-país (`?country=ALL`) exige TODO grant do ator
+  //      documentado com `reason` (D113, versão forte) — em /patients/stats E /patients/funnel,
+  //      o MESMO caminho de (b)/(b2) (`resolveCountryScope`), não uma cópia da regra.
+  describe('(h) L9-5 — /patients/stats|funnel: consolidado multi-país exige grant documentado', () => {
+    const STAFF_MULTI = { uid: 'abac-routes-staff-multi', email: 'abac-routes-multi@enlite.health', role: 'recruiter' };
+    const IDS_MULTI = {
+      group: 'ee270000-0f00-0002-0001-000000000009',
+      scopeAR: 'ee270000-0f00-0003-0001-000000000009',
+      scopeBR: 'ee270000-0f00-0003-0002-000000000009',
+    };
+
+    const asStaffMulti = async (path: string): Promise<Response> =>
+      fetch(`${baseUrl}${path}`, {
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenFor(STAFF_MULTI)}` },
+      });
+
+    beforeAll(async () => {
+      await adminPool.query(
+        `INSERT INTO users (firebase_uid, email, role, is_active, tenant_id) VALUES ($1, $2, 'recruiter', true, $3)`,
+        [STAFF_MULTI.uid, STAFF_MULTI.email, TENANT],
+      );
+      await adminPool.query(
+        `INSERT INTO permission_groups (id, tenant_id, name) VALUES ($1, $2, 'abac-routes staff multi-país')`,
+        [IDS_MULTI.group, TENANT],
+      );
+      await adminPool.query(
+        `INSERT INTO user_groups (user_id, group_id, tenant_id) VALUES ($1, $2, $3)`,
+        [STAFF_MULTI.uid, IDS_MULTI.group, TENANT],
+      );
+      // Os DOIS países do ator, de saída: AR documentado, BR SEM reason (o caso que
+      // a D113 versão forte recusa — um grant sem motivo reprova mesmo com o outro ok).
+      await adminPool.query(
+        `INSERT INTO group_country_scopes (id, group_id, country, granted_by, reason) VALUES
+           ($1, $2, 'AR', 'abac-routes-e2e', 'grant AR documentado'),
+           ($3, $2, 'BR', 'abac-routes-e2e', NULL)`,
+        [IDS_MULTI.scopeAR, IDS_MULTI.group, IDS_MULTI.scopeBR],
+      );
+    });
+
+    afterAll(async () => {
+      await adminPool.query(`DELETE FROM group_country_scopes WHERE id = ANY($1)`, [[IDS_MULTI.scopeAR, IDS_MULTI.scopeBR]]);
+      await adminPool.query(`DELETE FROM user_groups WHERE group_id = $1`, [IDS_MULTI.group]);
+      await adminPool.query(`DELETE FROM permission_groups WHERE id = $1`, [IDS_MULTI.group]);
+      await adminPool.query(`DELETE FROM users WHERE firebase_uid = $1`, [STAFF_MULTI.uid]);
+    });
+
+    it('SEM grant documentado (BR sem reason): "todos" em /patients/stats → 403 COUNTRY_SCOPE_REQUIRED', async () => {
+      const res = await asStaffMulti('/api/admin/patients/stats');
+      expect(res.status).toBe(403);
+      const body = await bodyOf(res);
+      expect(body.success).toBe(false);
+      expect(body.error).toBe('COUNTRY_SCOPE_REQUIRED');
+    });
+
+    it('SEM grant documentado (BR sem reason): "todos" em /patients/funnel → 403 COUNTRY_SCOPE_REQUIRED', async () => {
+      const res = await asStaffMulti('/api/admin/patients/funnel');
+      expect(res.status).toBe(403);
+      const body = await bodyOf(res);
+      expect(body.success).toBe(false);
+      expect(body.error).toBe('COUNTRY_SCOPE_REQUIRED');
+    });
+
+    it('COM os DOIS grants documentados: "todos" em /patients/stats → 200, união AR+BR (mais que só AR)', async () => {
+      // Fecha a lacuna: dá reason ao grant BR (o único que faltava) — nada mais muda.
+      await adminPool.query(`UPDATE group_country_scopes SET reason = 'grant BR documentado depois' WHERE id = $1`, [IDS_MULTI.scopeBR]);
+
+      const res = await asStaffMulti('/api/admin/patients/stats');
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { success: boolean; data: { total: number } };
+      expect(body.success).toBe(true);
+
+      const [{ n: totalAR }] = (
+        await adminPool.query<{ n: string }>(`SELECT COUNT(*)::int AS n FROM patients WHERE deleted_at IS NULL AND country = 'AR'`)
+      ).rows;
+      const [{ n: totalTodos }] = (
+        await adminPool.query<{ n: string }>(`SELECT COUNT(*)::int AS n FROM patients WHERE deleted_at IS NULL`)
+      ).rows;
+      // Prova pela CONTAGEM: o ator multi-país documentado vê AR+BR — mais que um staff só-AR veria.
+      expect(body.data.total).toBe(Number(totalTodos));
+      expect(Number(totalTodos)).toBeGreaterThan(Number(totalAR));
+    });
+
+    it('COM os DOIS grants documentados: "todos" em /patients/funnel → 200, país null (multi-país)', async () => {
+      // Idempotente (não depende do teste anterior já ter corrigido): garante o reason do BR.
+      await adminPool.query(`UPDATE group_country_scopes SET reason = 'grant BR documentado depois' WHERE id = $1`, [IDS_MULTI.scopeBR]);
+
+      const res = await asStaffMulti('/api/admin/patients/funnel');
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { success: boolean; data: { country: string | null } };
+      expect(body.success).toBe(true);
+      // Escopo com 2 países: o contrato de saída ecoa null — "não é um só" — nunca 403.
+      expect(body.data.country).toBeNull();
+    });
+  });
 });
