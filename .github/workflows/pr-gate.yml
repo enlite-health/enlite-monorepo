@@ -107,7 +107,16 @@ jobs:
       # `worker-completude-vitrine` entra aqui porque é a ÚNICA guarda que
       # atravessa as camadas do conserto da D302 (banco → API → tela). Guarda
       # que nenhum pipeline executa apodrece — foi o blocker B-A do gate.
-      grep: 'worker-profile-fields-persist|worker-completude-vitrine'
+      #
+      # `admission-b-campos` entra aqui e NÃO é a mesma exceção do
+      # `worker-address-keyboard` acima: os 3 casos de domicílio (B2/B2-alt1/
+      # B2-alt2) usam `instalarFakeDeGestos` (helper `google-places-fake-gestos.ts`),
+      # um fake local instalado via `addInitScript` antes da navegação — sem
+      # rede real. O caso "Google fora do ar" (B2-alt2) até bloqueia
+      # explicitamente `maps.googleapis.com` para provar que não sai chamada
+      # real. Confirmado lendo os 9 testes: nenhum depende do widget real nem
+      # de terceiro — então o argumento do portão intermitente não se aplica.
+      grep: 'worker-profile-fields-persist|worker-completude-vitrine|admission-b-campos'
 
   # O agregador. `if: always()` é o que garante que ele reporta mesmo quando
   # tudo acima foi pulado — sem isso, voltaríamos ao problema que este arquivo
