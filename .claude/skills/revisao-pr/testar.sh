@@ -205,6 +205,33 @@ novo_repo
 printf "logger.warn({ phone: redactContact(phone, 'phone') }, phone);\n" > src/a.ts; commit c1
 rodar; checa "[+] linha com UM campo mascarado e outro campo pessoal cru na MESMA linha continua reprovando" 1 "interpolando campo pessoal"
 
+# ── C2 (parecer do lex): campos novos no detector, e CUIL/CUIT NUNCA tem saída
+#    segura — "documento não se mascara, se remove", mesmo dentro de redactContact ──
+novo_repo
+printf 'console.log(`worker ${cuil} cadastrado`);\n' > src/a.ts; commit c1
+rodar; checa "[+] CUIL cru REPROVA (campo novo, C2)" 1 "interpolando campo pessoal"
+novo_repo
+printf "console.log(\`worker \${redactContact(cuil, 'phone')} cadastrado\`);\n" > src/a.ts; commit c1
+rodar; checa "[+] CONTROLE: CUIL dentro de redactContact(...) TAMBÉM reprova — não existe saída segura pra documento" 1 "interpolando campo pessoal"
+novo_repo
+printf 'console.log(`endereco ${address} confirmado`);\n' > src/a.ts; commit c1
+rodar; checa "[+] endereço (address) INTERPOLADO REPROVA (campo novo, C2)" 1 "interpolando campo pessoal"
+novo_repo
+printf 'console.log(`paciente ${nombre} confirmado`);\n' > src/a.ts; commit c1
+rodar; checa "[+] nome (nombre) INTERPOLADO REPROVA (campo novo, C2)" 1 "interpolando campo pessoal"
+
+# ── item 5 (2ª rodada do gate): chamada de log MULTILINHA — sabotagem que o
+#    gate reproduziu (EXIT=0 com telefone cru numa linha de continuação) ─────
+novo_repo
+printf 'console.warn(\n  `worker ${phone} nao encontrado`,\n);\n' > src/a.ts; commit c1
+rodar; checa "[+] MULTILINHA: telefone cru na linha SEGUINTE ao abridor REPROVA (sabotagem do gate)" 1 "interpolando campo pessoal"
+novo_repo
+printf "console.warn(\n  \`worker \${redactContact(phone, 'phone')} nao encontrado\`,\n);\n" > src/a.ts; commit c1
+rodar; checa "[-] MULTILINHA: telefone mascarado na linha seguinte NÃO reprova" 0
+novo_repo
+printf "logger.warn({\n  phone: redactContact(phone, 'phone'),\n}, phone);\n" > src/a.ts; commit c1
+rodar; checa "[+] MULTILINHA: um campo mascarado e outro campo cru em linhas DIFERENTES continua reprovando" 1 "interpolando campo pessoal"
+
 # ══ V6 — dado clínico ════════════════════════════════════════════════════════
 echo "## V6 — dado clínico rumo a terceiro"
 novo_repo
