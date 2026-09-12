@@ -1,4 +1,4 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import type { GeocodingService } from '../../../infrastructure/services/GeocodingService';
 
 /**
@@ -55,6 +55,23 @@ export interface PatientAddressRow {
   lng: string | null;
 }
 
+// K8 (spec 019): fonte ÚNICA do "o paciente já tem principal ativo?" — antes duplicado (SQL
+// idêntico, letra por letra) aqui e em `PatientRelatedWriter.ts` (Path 3, import do ClickUp).
+// Aceita `Pool` (fora de transação) OU `PoolClient` (dentro de uma, como aqui e no PATCH) — as
+// duas expõem a mesma assinatura de `.query`.
+export async function patientHasActiveDefaultAddress(
+  db: Pool | PoolClient,
+  patientId: string,
+): Promise<boolean> {
+  const { rows } = await db.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM patient_addresses WHERE patient_id = $1 AND is_default AND archived_at IS NULL
+     ) AS exists`,
+    [patientId],
+  );
+  return rows[0].exists;
+}
+
 export async function insertPatientAddress(
   db: Pool,
   geocoder: GeocodingService,
@@ -91,13 +108,7 @@ export async function insertPatientAddress(
       isDefault = false;
     } else {
       // Regra de nascimento (spec 019): sem principal ativo, este nasce principal.
-      const { rows } = await client.query<{ exists: boolean }>(
-        `SELECT EXISTS (
-           SELECT 1 FROM patient_addresses WHERE patient_id = $1 AND is_default AND archived_at IS NULL
-         ) AS exists`,
-        [input.patientId],
-      );
-      isDefault = !rows[0].exists;
+      isDefault = !(await patientHasActiveDefaultAddress(client, input.patientId));
     }
 
     // `country` explícito, do paciente (mig 316, lex C2.8) — o trigger cobre quem não manda;

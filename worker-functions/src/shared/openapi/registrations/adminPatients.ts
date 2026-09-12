@@ -1,6 +1,6 @@
 import { registry, z } from '../registry';
 import { ErrorResponseSchema, OkMessage, UuidParam } from '../schemas/common';
-import { PATIENT_CHAT_ROLE_PATTERN } from '@modules/case';
+import { PATIENT_CHAT_ROLE_PATTERN, updatePatientAddressSchema } from '@modules/case';
 
 const AdminPatientsListQuery = z.object({
   status: z.string().optional().openapi({ description: 'Filtro por status do paciente.', example: 'ACTIVE' }),
@@ -32,28 +32,13 @@ const CreatePatientAddressBody = z.object({
   }),
 });
 
-// Spec 019 (D310 item c, override do lex 12/09/2026 — Caminho B): lista fechada por parentesco,
-// reaproveitando `address_type`. Decisão B7: nomear 'escuela' no contrato publicado do PATCH —
-// é staff-only (`requireStaff`), o contrato já não é público, e omitir o valor não esconde nada
-// de quem já tem acesso ao endpoint, só dificulta o cliente gerado.
-const PATIENT_ADDRESS_TYPES = [
-  'domicilio_propio', 'casa_madre', 'casa_padre', 'casa_abuela',
-  'casa_abuelo', 'escuela', 'trabajo', 'otro',
-] as const;
-
-const UpdatePatientAddressBody = z.object({
-  neighborhood: z.string().trim().min(1).max(120).nullable().optional().openapi({ description: 'Zona/bairro.', example: 'Palermo' }),
-  logistics_corridor: z.string().trim().min(1).max(200).nullable().optional().openapi({ description: 'Corredor logístico.', example: 'Zona Norte' }),
-  access_notes: z.string().trim().min(1).max(2000).nullable().optional().openapi({ description: 'Notas de acesso ao domicílio (texto livre).' }),
-  is_default: z.boolean().optional().openapi({ description: 'Marca como principal — desmarca o anterior na mesma transação.', example: true }),
-  address_type: z.enum(PATIENT_ADDRESS_TYPES).nullable().optional().openapi({
-    description: 'Tipo de local por parentesco. `null` = sin especificar.',
-    example: 'escuela',
-  }),
-  address_type_other: z.string().trim().min(1).max(40).nullable().optional().openapi({
-    description: 'Texto livre do "Otro" (≤40) — só aceito junto de address_type="otro".',
-  }),
-});
+// K8 (spec 019): `UpdatePatientAddressBody` deixa de duplicar a lista fechada e o shape do
+// PATCH — deriva de `updatePatientAddressSchema`, a MESMA fonte que valida a requisição em
+// `AdminPatientAddressesController` (`.strict()` + `.refine()` do "Otro"). Duplicar aqui já tinha
+// divergido uma vez (faltava `.strict()`/`.refine()` nesta cópia) — decisão B7 (nomear `escuela`
+// no contrato publicado do PATCH, staff-only) continua valendo: a lista fechada vem do MESMO
+// `PATIENT_ADDRESS_TYPES` que o controller exporta, sem segunda cópia.
+const UpdatePatientAddressBody = updatePatientAddressSchema;
 
 registry.registerPath({
   method: 'get',
