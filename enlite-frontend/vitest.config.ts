@@ -209,7 +209,7 @@ export default defineConfig({
         '**/src/domain/entities/PatientContractedService.ts': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
-        '**/src/presentation/components/features/admin/PatientDetail/ServicosContratadosCard.tsx': {
+        '**/src/presentation/components/features/admin/PatientDetail/{ServicosContratadosCard.tsx,activateRecruitmentClick.ts}': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
         // QA-caça #4 (03/09): os 2 branches que faltavam (`if (!service) return` no deactivate de
