@@ -33,7 +33,21 @@ jest.mock('../../../infrastructure/PatientQueryRepository', () => ({
   })),
 }));
 
+// PR-9 (`lex` #9): `getPatientStats`/`getPatientFunnel` resolvem o escopo de país
+// (grupo do ator, `iam.effective_countries`) ANTES de chamar repo/use case — não
+// mais o valor cru de `?country=`. Mocka só `resolveCountryScope`; o resto do
+// módulo (`CountryScopeError`, `AuthMiddleware`) continua real.
+const mockResolveCountryScope = jest.fn();
+jest.mock('@modules/identity', () => {
+  const actual = jest.requireActual('@modules/identity');
+  return {
+    ...actual,
+    resolveCountryScope: (...args: unknown[]) => mockResolveCountryScope(...args),
+  };
+});
+
 import { AdminPatientsController } from '../AdminPatientsController';
+import { CountryScopeError } from '@modules/identity';
 import { adminPatientsListSchema } from '../../validators/adminPatientsListSchema';
 import { Request, Response } from 'express';
 
@@ -114,18 +128,57 @@ describe('AdminPatientsController — filtro país', () => {
     expect(mockList).not.toHaveBeenCalled();
   });
 
-  it('getPatientStats repassa country=BR ao repo', async () => {
+  // PR-9 (`lex` #9): país deixou de ser o valor cru de `?country=` repassado ao
+  // repo — agora é `resolveCountryScope` (grupo do ator, `iam.effective_countries`)
+  // quem decide `scope.countries`, e É esse array que chega no repo/use case.
+  it('getPatientStats repassa scope.countries (resolvido) ao repo — nunca o `?country=` cru', async () => {
     mockStats.mockResolvedValue({});
+    mockResolveCountryScope.mockResolvedValue({ countries: ['BR'], requested: 'BR' });
     const [req, res] = mockReqRes({ country: 'BR' });
     await controller.getPatientStats(req, res);
-    expect(mockStats).toHaveBeenCalledWith('BR');
+    expect(mockResolveCountryScope).toHaveBeenCalledWith(expect.anything(), undefined, 'BR');
+    expect(mockStats).toHaveBeenCalledWith(['BR']);
   });
 
-  it('getPatientStats sem country repassa undefined (todos)', async () => {
+  it('getPatientStats sem country: resolvedor devolve ALL (união do ator) — repo recebe o array, não undefined', async () => {
     mockStats.mockResolvedValue({});
+    mockResolveCountryScope.mockResolvedValue({ countries: ['AR', 'BR'], requested: 'ALL' });
     const [req, res] = mockReqRes({});
     await controller.getPatientStats(req, res);
-    expect(mockStats).toHaveBeenCalledWith(undefined);
+    expect(mockResolveCountryScope).toHaveBeenCalledWith(expect.anything(), undefined, undefined);
+    expect(mockStats).toHaveBeenCalledWith(['AR', 'BR']);
+  });
+
+  it('getPatientStats: país fora do escopo do ator → 403 (nunca chega no repo)', async () => {
+    mockResolveCountryScope.mockRejectedValue(
+      new CountryScopeError(403, 'COUNTRY_SCOPE_REQUIRED', 'Fora do escopo do ator: BR.'),
+    );
+    const [req, res] = mockReqRes({ country: 'BR' });
+    await controller.getPatientStats(req, res);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: 'COUNTRY_SCOPE_REQUIRED',
+      detail: 'Fora do escopo do ator: BR.',
+    });
+    expect(mockStats).not.toHaveBeenCalled();
+  });
+
+  it('getPatientStats: erro genérico (não CountryScopeError) ao resolver o escopo → 500, nunca chega no repo', async () => {
+    mockResolveCountryScope.mockRejectedValue(new Error('banco fora do ar'));
+    const [req, res] = mockReqRes({});
+    await controller.getPatientStats(req, res);
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Failed to resolve country scope' });
+    expect(mockStats).not.toHaveBeenCalled();
+  });
+
+  it('getPatientStats: erro genérico NÃO-Error (valor cru rejeitado) ao resolver o escopo → 500 do mesmo jeito', async () => {
+    mockResolveCountryScope.mockRejectedValue('banco fora do ar (valor cru)');
+    const [req, res] = mockReqRes({});
+    await controller.getPatientStats(req, res);
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(mockStats).not.toHaveBeenCalled();
   });
 });
 
@@ -134,17 +187,50 @@ describe('AdminPatientsController.getPatientFunnel — validação', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     controller = new AdminPatientsController();
+    mockResolveCountryScope.mockResolvedValue({ countries: ['AR', 'BR'], requested: 'ALL' });
   });
 
-  it('400 em country inválido', async () => {
+  it('country inválido (fora de AR|BR|ALL): 400 vem do resolvedor, não mais do zod (country saiu do schema)', async () => {
+    mockResolveCountryScope.mockRejectedValue(
+      new CountryScopeError(400, 'INVALID_COUNTRY', 'country deve ser AR, BR ou ALL.'),
+    );
     const [req, res] = mockReqRes({ country: 'US' });
     await controller.getPatientFunnel(req, res);
     expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: 'INVALID_COUNTRY',
+      detail: 'country deve ser AR, BR ou ALL.',
+    });
   });
 
-  it('400 em from não-ISO', async () => {
+  it('país fora do escopo do ator → 403 (nunca chega no use case)', async () => {
+    mockResolveCountryScope.mockRejectedValue(
+      new CountryScopeError(403, 'COUNTRY_SCOPE_REQUIRED', 'Fora do escopo do ator: BR.'),
+    );
+    const [req, res] = mockReqRes({ country: 'BR' });
+    await controller.getPatientFunnel(req, res);
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('400 em from não-ISO (zod — `from`/`to` continuam validados aqui)', async () => {
     const [req, res] = mockReqRes({ from: 'ontem' });
     await controller.getPatientFunnel(req, res);
     expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  it('erro genérico (não CountryScopeError) ao resolver o escopo → 500, nunca chega no use case', async () => {
+    mockResolveCountryScope.mockRejectedValue(new Error('banco fora do ar'));
+    const [req, res] = mockReqRes({});
+    await controller.getPatientFunnel(req, res);
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Failed to resolve country scope' });
+  });
+
+  it('erro genérico NÃO-Error (valor cru rejeitado) ao resolver o escopo → 500 do mesmo jeito', async () => {
+    mockResolveCountryScope.mockRejectedValue('banco fora do ar (valor cru)');
+    const [req, res] = mockReqRes({});
+    await controller.getPatientFunnel(req, res);
+    expect(res.status).toHaveBeenCalledWith(500);
   });
 });

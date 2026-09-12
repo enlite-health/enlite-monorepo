@@ -86,6 +86,12 @@ export {
   routeKey,
 } from './interfaces/middleware/undeclaredRouteLists';
 export { requireCountryScope, hasLiveCountryGrant } from './interfaces/middleware/countryScopeGuard';
+export { resolveCountryScope, CountryScopeError } from './application/resolveCountryScope';
+export type {
+  CountryScopeRequested,
+  CountryScopeResolution,
+  CountryScopeErrorCode,
+} from './application/resolveCountryScope';
 export { createAuthTelemetryRoutes } from './interfaces/routes/authTelemetryRoutes';
 export { createAdminUsersRoutes } from './interfaces/routes/adminUsersRoutes';
 export { createPermissionPanelRoutes, ADMIN_PERMISSIONS_FAMILY } from './interfaces/routes/permissionPanelRoutes';

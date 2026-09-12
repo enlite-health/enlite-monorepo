@@ -2,29 +2,41 @@ import type { Pool } from 'pg';
 import { managementDashboardSchema, type ManagementDashboardData } from './managementDashboardSchema';
 import { GetArmedCasesUseCase } from './GetArmedCasesUseCase';
 import { GetFunnelByWorkerUseCase } from './GetFunnelByWorkerUseCase';
-import {
-  INTERVIEW_DATE_RESOLVED_SQL,
-  CURRENT_WEEK_START_SQL,
-} from '../domain/interviewSchedule';
-import { LIVE_JOB_POSTING_SQL } from '../domain/openJobStatuses';
-import {
-  excludeDisabledWorkersSql,
-  workerNotDisabledSql,
-} from '@shared/database/activeWorkerFilter';
+import { COUNTRY_CODES, type CountryCode } from '@shared/domain/countryCodes';
 import {
   computeScheduleWeeklyHours,
   hasStructuredSchedule,
 } from '../domain/scheduleHours';
-
-/** Linha de contagem simples chave→valor. */
-interface CountRow {
-  k: string;
-  count: number;
-}
+import {
+  jobStatusCountsQuery,
+  patientsActiveCountQuery,
+  pacienteEstadosQuery,
+  ubicacionesActivasQuery,
+  horasAtivasQuery,
+  workerCadastrosQuery,
+  funnelLegadoQuery,
+  esperandoAgendaQuery,
+  alocadosAnaCareQuery,
+  bloqueadosQuery,
+  encuadresSemanaQuery,
+  type CountRow,
+} from './managementDashboardQueries';
 
 export interface ManagementDashboardOptions {
   /** Filtro por ENTRADA no funil por prestador (7/30/90 dias). Ausente = tudo. */
   funnelPeriodDays?: number;
+  /**
+   * Países que a agregação deve enxergar (PR-9, `lex` #9, FR-732). Resolvido
+   * SEMPRE pelo controller via `resolveCountryScope` — nunca opcional na
+   * prática, mas default para os dois países aqui para não quebrar chamador
+   * antigo (ex.: teste unitário direto do use case) com um comportamento
+   * silenciosamente diferente: os dois países é o universo inteiro de hoje,
+   * então o predicado explícito vira um no-op funcional sem deixar de existir
+   * na query (L9-3 — nunca depende de a RLS estar ligada).
+   */
+  countries?: CountryCode[];
+  /** O que foi pedido (`?country=`), já normalizado pelo resolvedor — ecoado em `scope.requested`. */
+  requested?: CountryCode | 'ALL';
 }
 
 /**
@@ -70,10 +82,12 @@ export class GetManagementDashboardUseCase {
   constructor(private readonly db: Pool) {}
 
   async execute(options?: ManagementDashboardOptions): Promise<ManagementDashboardData> {
+    const countries: CountryCode[] = options?.countries ?? [...COUNTRY_CODES];
+
     // Equipe Armada RODA ANTES do Promise.all: o card "Em Busca" precisa dos ids
     // dos casos ARMADA (classificação de domínio em JS — nunca replicada em SQL).
     // Custo: 1 query serializada (~17ms em prod, medido na change anterior).
-    const armed = await new GetArmedCasesUseCase(this.db).execute();
+    const armed = await new GetArmedCasesUseCase(this.db).execute(countries);
 
     const [
       funnelPorPrestador,
@@ -91,181 +105,18 @@ export class GetManagementDashboardUseCase {
     ] =
       await Promise.all([
         // Funil por PRESTADOR, recortado à operação viva (ver GetFunnelByWorkerUseCase).
-        new GetFunnelByWorkerUseCase(this.db).execute(options?.funnelPeriodDays),
-        this.db.query<CountRow>(
-          `SELECT status AS k, COUNT(*)::int AS count
-             FROM job_postings
-            WHERE deleted_at IS NULL AND is_draft = false
-            GROUP BY status`,
-        ),
-        this.db.query<{ activos: number }>(
-          // deleted_at IS NULL: paciente soft-deletado não está em atenção. Sem
-          // esse filtro o card contava 192 em vez de 190 (2 apagados em prod).
-          `SELECT COUNT(*) FILTER (WHERE status = 'ACTIVE')::int AS activos
-             FROM patients
-            WHERE deleted_at IS NULL`,
-        ),
-        this.db.query<{
-          solicitudes: number;
-          entrevista_agendada: number;
-          en_admision: number;
-          en_busca: number;
-        }>(
-          // Linha CHEGANDO (Diego, 30/07): 4 estados ATUAIS com precedência exclusiva
-          // Em Busca > Em Admissão > Entrevista Agendada > Solicitações.
-          // - Em Busca: ≥1 vaga viva de caso NÃO-ARMADA ($1 = ids ARMADA vindos do
-          //   classificador de domínio), status não-terminal. Vaga viva de paciente
-          //   DISCONTINUED/DISCHARGED é zumbi de dado (16 em prod, 31/07) — fora.
-          // - Em Admissão: ADMISSION/PENDING_ADMISSION ainda sem vaga ("precisam
-          //   gerar vacante").
-          // - Entrevista Agendada: admission_appointments 'booked' no futuro.
-          `WITH base AS (
-             SELECT p.status,
-               EXISTS (
-                 SELECT 1 FROM job_postings jp
-                  WHERE jp.patient_id = p.id AND ${LIVE_JOB_POSTING_SQL}
-                    AND NOT (jp.id = ANY($1::uuid[]))
-               ) AS em_busca_vaga,
-               EXISTS (
-                 SELECT 1 FROM admission_appointments aa
-                  WHERE aa.patient_id = p.id AND aa.status = 'booked' AND aa.slot_start > NOW()
-               ) AS entrevista_futura
-             FROM patients p
-             WHERE p.deleted_at IS NULL AND COALESCE(p.is_test, false) = false
-           )
-           SELECT
-             COUNT(*) FILTER (
-               WHERE em_busca_vaga AND status NOT IN ('DISCONTINUED', 'DISCHARGED')
-             )::int AS en_busca,
-             COUNT(*) FILTER (
-               WHERE NOT em_busca_vaga AND status IN ('ADMISSION', 'PENDING_ADMISSION')
-             )::int AS en_admision,
-             COUNT(*) FILTER (
-               WHERE NOT em_busca_vaga AND status = 'SOLICITANTE' AND entrevista_futura
-             )::int AS entrevista_agendada,
-             COUNT(*) FILTER (
-               WHERE NOT em_busca_vaga AND status = 'SOLICITANTE' AND NOT entrevista_futura
-             )::int AS solicitudes
-           FROM base`,
-          [armed.armadaCaseIds],
-        ),
-        this.db.query<{ ubicaciones: number }>(
-          // Ubicaciones DISTINTAS de pacientes ativos (D8). Dedup por (paciente,
-          // texto do endereço): a importação grava linhas repetidas — 566 cruas
-          // viram 339 reais (prod, 31/07). Endereço vazio não é ubicación.
-          `SELECT COUNT(*)::int AS ubicaciones FROM (
-             SELECT DISTINCT pa.patient_id,
-               COALESCE(NULLIF(TRIM(pa.address_formatted), ''), NULLIF(TRIM(pa.address_raw), '')) AS addr
-             FROM patient_addresses pa
-             JOIN patients p ON p.id = pa.patient_id
-             WHERE p.deleted_at IS NULL AND COALESCE(p.is_test, false) = false
-               AND p.status = 'ACTIVE'
-               AND COALESCE(NULLIF(TRIM(pa.address_formatted), ''), NULLIF(TRIM(pa.address_raw), '')) IS NOT NULL
-           ) u`,
-        ),
-        this.db.query<{ schedule: unknown }>(
-          // Horas EM ATENDIMENTO (linha RODANDO, D2 resolvida 31/07): vagas
-          // status='ACTIVE' — fora do recorte "vivo", que é só busca. O parser de
-          // horas é o mesmo do domínio (computeScheduleWeeklyHours), em JS.
-          `SELECT jp.schedule
-             FROM job_postings jp
-             JOIN patients p ON p.id = jp.patient_id
-            WHERE jp.deleted_at IS NULL AND jp.is_draft = false AND jp.status = 'ACTIVE'
-              AND p.deleted_at IS NULL AND COALESCE(p.is_test, false) = false`,
-        ),
-        this.db.query<{
-          leads: number;
-          completos: number;
-          incompletos: number;
-          nuevos: number;
-        }>(
-          `SELECT
-             COUNT(*)::int AS leads,
-             COUNT(*) FILTER (WHERE status = 'REGISTERED')::int AS completos,
-             COUNT(*) FILTER (WHERE status = 'INCOMPLETE_REGISTER')::int AS incompletos,
-             COUNT(*) FILTER (
-               WHERE status = 'REGISTERED' AND created_at >= date_trunc('month', CURRENT_DATE)
-             )::int AS nuevos
-           FROM workers w
-           WHERE merged_into_id IS NULL
-             -- quem deu baixa sai do acervo de prestadores; a contagem de
-             -- desativados vive em GET /workers/status ("Desativados")
-             AND ${excludeDisabledWorkersSql('w')}`,
-        ),
-        this.db.query<CountRow>(
-          `SELECT application_funnel_stage AS k, COUNT(*)::int AS count
-             FROM worker_job_applications wja
-            WHERE ${workerNotDisabledSql('wja.worker_id')}
-            GROUP BY application_funnel_stage`,
-        ),
-        this.db.query<{ esperando: number }>(
-          // "Completos esperando agenda" é FILA DE CONTATO: quem ligar primeiro.
-          // Conta PESSOAS distintas em VAGA VIVA. Sem esse recorte eram 2.429 candidaturas
-          // (incluindo vaga apagada, rascunho e fechada, e a mesma pessoa N vezes);
-          // o trabalho real são 569 pessoas — 4,3× menos.
-          `SELECT COUNT(DISTINCT wja.worker_id)::int AS esperando
-             FROM worker_job_applications wja
-             JOIN job_postings jp ON jp.id = wja.job_posting_id
-             JOIN workers      w  ON w.id  = wja.worker_id
-            WHERE wja.application_funnel_stage = 'QUALIFIED'
-              AND ${LIVE_JOB_POSTING_SQL}
-              AND w.merged_into_id IS NULL
-              -- fila de contato: quem deu baixa não deve ser ligado
-              AND ${excludeDisabledWorkersSql('w')}`,
-        ),
-        this.db.query<{ activos: number; cubriendo_guardias: number }>(
-          // "Alocados" = prestadores EM UM CASO segundo o Ana Care (workers.ana_care_status),
-          // não o funil. O funil ('SELECTED') morre antes da alocação real — overlap ZERO
-          // com quem atende paciente (verificado prod 22/07). Ver decisoes.md D53.
-          // Composição explícita: 'Activo' = ocupado num paciente; 'Cubriendo guardias' =
-          // disponível cobrindo plantão (migração 049). O card mostra os dois separados.
-          // ⚠️ ana_care_status é FOTO de import — NÃO sincroniza ao vivo (zero writers inbound;
-          // a integração AnaCare é outbound-only). Leitura viva depende do conector inbound
-          // Ana Care (ClickUp 86ajgv39a, 31/07).
-          `SELECT
-             COUNT(*) FILTER (WHERE ana_care_status = 'Activo')::int             AS activos,
-             COUNT(*) FILTER (WHERE ana_care_status = 'Cubriendo guardias')::int AS cubriendo_guardias
-             FROM workers
-            WHERE merged_into_id IS NULL
-              AND ana_care_status IN ('Activo', 'Cubriendo guardias')`,
-        ),
-        this.db.query<{ bloqueados: number }>(
-          // Tentativas de candidatura barradas pelo gate de cadastro incompleto.
-          // Conta PESSOAS distintas em VAGA VIVA: é fila de trabalho ("quem quis
-          // trabalhar e não conseguiu"), não acervo. Sem o recorte eram 668; com ele, 355.
-          `SELECT COUNT(DISTINCT b.worker_id)::int AS bloqueados
-             FROM worker_blocked_applications b
-             JOIN job_postings jp ON jp.id = b.job_posting_id
-            WHERE b.blocked_reason = 'registration_incomplete'
-              AND ${LIVE_JOB_POSTING_SQL}
-              -- fila de trabalho: quem deu baixa não é mais destravável
-              AND ${workerNotDisabledSql('b.worker_id')}`,
-        ),
-        this.db.query<{ agendados: number; sem_data: number }>(
-          // Entrevistas da semana + quantos cards estão em "Agendados" SEM data.
-          //
-          // O card mostrava 0 desde sempre: lia só `encuadres.interview_date`, campo que
-          // nenhuma origem do produto jamais preencheu (as 9.214 datas vieram todas da
-          // importação de 22-23/03/2026). Agora resolve as duas fontes pelo helper
-          // compartilhado e conta a semana no fuso da OPERAÇÃO, não em UTC.
-          //
-          // `semData` é a medida de ADOÇÃO da captura (design D4): enquanto for alto, o
-          // número da semana subestima — e isso fica visível em vez de virar zero mudo.
-          `SELECT
-             COUNT(*) FILTER (
-               WHERE ${INTERVIEW_DATE_RESOLVED_SQL} >= ${CURRENT_WEEK_START_SQL}::date
-                 AND ${INTERVIEW_DATE_RESOLVED_SQL} <  ${CURRENT_WEEK_START_SQL}::date + INTERVAL '7 days'
-             )::int AS agendados,
-             COUNT(*) FILTER (
-               WHERE wja.application_funnel_stage = 'CONFIRMED'
-                 AND ${INTERVIEW_DATE_RESOLVED_SQL} IS NULL
-             )::int AS sem_data
-             FROM worker_job_applications wja
-             LEFT JOIN encuadres e
-                    ON e.worker_id = wja.worker_id
-                   AND e.job_posting_id = wja.job_posting_id
-            WHERE ${workerNotDisabledSql('wja.worker_id')}`,
-        ),
+        new GetFunnelByWorkerUseCase(this.db).execute(options?.funnelPeriodDays, countries),
+        jobStatusCountsQuery(this.db, countries),
+        patientsActiveCountQuery(this.db, countries),
+        pacienteEstadosQuery(this.db, armed.armadaCaseIds, countries),
+        ubicacionesActivasQuery(this.db, countries),
+        horasAtivasQuery(this.db, countries),
+        workerCadastrosQuery(this.db, countries),
+        funnelLegadoQuery(this.db, countries),
+        esperandoAgendaQuery(this.db, countries),
+        alocadosAnaCareQuery(this.db, countries),
+        bloqueadosQuery(this.db, countries),
+        encuadresSemanaQuery(this.db, countries),
       ]);
 
     const jobs = toRecord(jobRows.rows);
@@ -305,6 +156,12 @@ export class GetManagementDashboardUseCase {
       pick(jobs, 'SEARCHING') + pick(jobs, 'SEARCHING_REPLACEMENT') + pick(jobs, 'RAPID_RESPONSE');
 
     const data: ManagementDashboardData = {
+      // PR-9 (`lex` #9, FR-734): o seletor do front lista `scope.countries`
+      // (nunca COUNTRY_CODES inteiro) — nunca uma string livre, só enum de país.
+      scope: {
+        countries,
+        requested: options?.requested ?? 'ALL',
+      },
       bigNumbers: {
         // Agora baseado na regra "Equipe Armada" (não mais job_postings.status).
         equiposArmados: armed.armados,

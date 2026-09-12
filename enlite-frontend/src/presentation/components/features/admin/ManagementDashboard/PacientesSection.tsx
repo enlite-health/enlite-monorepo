@@ -5,7 +5,7 @@ import { Text, MetricCard } from '@presentation/components/atoms';
 import { Select } from '@presentation/components/atoms/Select';
 import { usePatientStats } from '@hooks/admin/usePatientStats';
 import { usePatientFunnel } from '@hooks/admin/usePatientFunnel';
-import { getCountryOptions, getFunnelPeriodOptions } from '@presentation/pages/admin/patientsData';
+import { getFunnelPeriodOptions } from '@presentation/pages/admin/patientsData';
 import { SectionHeader } from './SectionHeader';
 import { useMetricHelp } from './useMetricHelp';
 import type { ManagementHelpKey } from './helpKeys';
@@ -30,13 +30,23 @@ const STAGES = [
   { key: 'vacantes', dot: 'bg-[#10B981]', value: 'text-[#0F766E]' },
 ] as const;
 
+export interface PacientesSectionProps {
+  /**
+   * PR-9 (`lex` #9, US-22): país escolhido no CABEÇALHO da Gestão à Vista.
+   * '' = Todos (ALL, resolvido no servidor). A seção não tem mais seletor
+   * próprio — segue o seletor da página, a mesma fonte que os outros blocos.
+   */
+  country: string;
+}
+
 /**
  * Pacientes na Gestão à Vista: estado atual da base + embudo de admissão.
  *
  * Saiu da tela /admin/patients (que é operação: lista, filtros, kanban) e passou
  * a viver aqui, junto dos demais indicadores da coordenação.
  *
- * Duas fontes distintas, ambas escopadas pelo MESMO filtro de país:
+ * Duas fontes distintas, ambas escopadas pelo MESMO filtro de país — que agora
+ * vem de `ManagementDashboardPage` (PR-9), não mais de um seletor próprio:
  *   - estado  → GET /patients/stats  (snapshot, sem janela de tempo)
  *   - embudo  → GET /patients/funnel (janela relativa: 7/30/90 dias)
  * O período só se aplica ao embudo — por isso o seletor fica no cabeçalho dele.
@@ -45,16 +55,14 @@ const STAGES = [
  * engana — "Solicitantes" conta pacientes CRIADOS no período, não quem está
  * parado na etapa Solicitantes do kanban.
  */
-export function PacientesSection(): JSX.Element {
+export function PacientesSection({ country }: PacientesSectionProps): JSX.Element {
   const { t } = useTranslation();
   const { helpProps, openHelp, helpAriaLabel, helpDrawer } = useMetricHelp();
-  const [country, setCountry] = useState('');
   const [periodDays, setPeriodDays] = useState('30');
 
   const { stats, error: statsError } = usePatientStats(country);
   const { funnel, isLoading, error: funnelError } = usePatientFunnel(country, parseInt(periodDays, 10));
 
-  const countryOptions = getCountryOptions(t);
   const periodOptions = getFunnelPeriodOptions(t);
 
   const values: Record<(typeof STAGES)[number]['key'], number> = {
@@ -79,15 +87,6 @@ export function PacientesSection(): JSX.Element {
           title={t('admin.managementDashboard.sections.pacientes')}
           hint={t('admin.managementDashboard.sections.pacientesHint')}
         />
-        <div className="w-[210px]" data-testid="mgmt-pacientes-country">
-          <Select
-            inputSize="compact"
-            options={countryOptions}
-            value={country}
-            onValueChange={setCountry}
-            placeholder={t('admin.patients.countryOptions.all')}
-          />
-        </div>
       </div>
 
       {/* Estado atual da base (snapshot; o período não se aplica) */}

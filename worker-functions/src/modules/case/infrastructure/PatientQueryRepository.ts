@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import type { CountryCode } from '@shared/domain/countryCodes';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { fetchPatientDetail } from './PatientDetailQueryHelper';
 import type { AdminPatientsListParams } from '../interfaces/validators/adminPatientsListSchema';
@@ -310,7 +311,12 @@ export class PatientQueryRepository {
     return { rows, total };
   }
 
-  async stats(country?: 'AR' | 'BR'): Promise<PatientStatsRow> {
+  /**
+   * @param countries escopo de país já resolvido (PR-9, `lex` #9) — nunca um
+   *   `undefined`/"sem filtro" solto: quem chama (`resolveCountryScope`) sempre
+   *   entrega um array não-vazio, interseção do pedido com o escopo do ator.
+   */
+  async stats(countries: CountryCode[]): Promise<PatientStatsRow> {
     const result = await this.pool.query<{
       total: string;
       complete: string;
@@ -333,8 +339,8 @@ export class PatientQueryRepository {
         COUNT(*) FILTER (WHERE p.created_at >= NOW() - INTERVAL '7 days')::int      AS created_last_7_days
       FROM patients p
       WHERE p.deleted_at IS NULL
-        AND ($1::text IS NULL OR p.country = $1)
-    `, [country ?? null]);
+        AND p.country = ANY($1::bpchar[])
+    `, [countries]);
 
     const row = result.rows[0];
     return {

@@ -125,7 +125,7 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
     expect(total).toBe(cenarios.length);
     expect(comBadge).toBeGreaterThan(0); // controle positivo: as fixtures deste teste estão dentro
 
-    const stats = await repo.stats('BR');
+    const stats = await repo.stats(['BR']);
     expect(stats.total).toBe(total);
     expect(stats.needsAttention).toBe(comBadge);
     expect(stats.complete).toBe(total - comBadge);

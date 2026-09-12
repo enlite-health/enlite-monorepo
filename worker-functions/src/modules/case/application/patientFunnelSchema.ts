@@ -9,9 +9,16 @@ import { z } from 'zod';
 
 const nonNegInt = z.number().int().nonnegative();
 
-/** Query params. Sem from/to → default últimos 30 dias (resolvido no use-case). */
+/**
+ * Query params. Sem from/to → default últimos 30 dias (resolvido no use-case).
+ *
+ * `country` NÃO entra aqui (PR-9, `lex` #9): validá-lo com `z.enum(['AR','BR'])`
+ * rejeitaria `?country=ALL` antes mesmo de chegar no resolvedor. Quem valida e
+ * resolve o país agora é `resolveCountryScope` (AR|BR|ALL, interseção com o
+ * escopo do ator) — o controller lê `req.query.country` cru para ele, à parte
+ * deste schema.
+ */
 export const patientFunnelQuerySchema = z.object({
-  country: z.enum(['AR', 'BR']).optional(),
   from: z.string().datetime({ message: 'from must be an ISO datetime' }).optional(),
   to: z.string().datetime({ message: 'to must be an ISO datetime' }).optional(),
 });

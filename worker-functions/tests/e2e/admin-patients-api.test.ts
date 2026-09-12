@@ -17,6 +17,10 @@ const DATABASE_URL =
   process.env.DATABASE_URL ||
   'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 
+const TENANT_ID = '00000000-0000-0000-0000-000000000001';
+const ADMIN_GROUP_ID = 'ee270000-0f00-0002-0001-000000000001';
+const ADMIN_SCOPE_ID = 'ee270000-0f00-0003-0001-000000000001';
+
 describe('Admin Patients API', () => {
   const api = createApiClient();
   let adminToken: string;
@@ -91,6 +95,31 @@ describe('Admin Patients API', () => {
       role: 'worker',
     });
 
+    // Grupo com escopo AR VIVO (PR-9, `lex` #9): /patients/stats|funnel agora resolvem
+    // país via `resolveCountryScope` (iam.effective_countries, por GRUPO — não pelo
+    // `role`/claim do mock token). Sem este grant, `adminToken` teria [] e os testes
+    // 16/17 (200 + contagem real) virariam 403. Os pacientes semeados abaixo nascem
+    // 'AR' (default da coluna, migration 037) — o grant casa com o dado.
+    // `getMockToken` NÃO grava `users` (token puro) — `user_groups.user_id` tem FK
+    // para `users.firebase_uid`, então a linha precisa existir antes do grupo.
+    await pool.query(
+      `INSERT INTO users (firebase_uid, email, role, is_active, tenant_id) VALUES ($1, $2, 'admin', true, $3)
+       ON CONFLICT (firebase_uid) DO NOTHING`,
+      ['patients-admin-e2e', 'patients-admin@e2e.local', TENANT_ID],
+    );
+    await pool.query(
+      `INSERT INTO permission_groups (id, tenant_id, name) VALUES ($1, $2, 'admin-patients-api e2e AR')`,
+      [ADMIN_GROUP_ID, TENANT_ID],
+    );
+    await pool.query(
+      `INSERT INTO user_groups (user_id, group_id, tenant_id) VALUES ($1, $2, $3)`,
+      ['patients-admin-e2e', ADMIN_GROUP_ID, TENANT_ID],
+    );
+    await pool.query(
+      `INSERT INTO group_country_scopes (id, group_id, country, granted_by, reason) VALUES ($1, $2, 'AR', 'admin-patients-api-e2e', 'grant do teste de stats/funnel')`,
+      [ADMIN_SCOPE_ID, ADMIN_GROUP_ID],
+    );
+
     // Seed patients for filter tests
     await seedPatient({ firstName: 'Francisco', lastName: 'Alomon', documentNumber: 'DOC-E2E-001', needsAttention: false });
     await seedPatient({ firstName: 'MariaNeural', lastName: 'TestNeuro', needsAttention: true, attentionReasons: ['MISSING_INFO'], clinicalSpecialty: 'NEUROLOGICAL', dependencyLevel: 'SEVERE' });
@@ -106,6 +135,10 @@ describe('Admin Patients API', () => {
         [insertedIds],
       );
     }
+    await pool.query(`DELETE FROM group_country_scopes WHERE id = $1`, [ADMIN_SCOPE_ID]);
+    await pool.query(`DELETE FROM user_groups WHERE group_id = $1`, [ADMIN_GROUP_ID]);
+    await pool.query(`DELETE FROM permission_groups WHERE id = $1`, [ADMIN_GROUP_ID]);
+    await pool.query(`DELETE FROM users WHERE firebase_uid = $1`, ['patients-admin-e2e']);
     await pool.end();
   });
 

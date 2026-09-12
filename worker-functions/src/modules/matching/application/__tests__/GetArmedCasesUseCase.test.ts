@@ -107,4 +107,28 @@ describe('GetArmedCasesUseCase', () => {
     expect(result.respostaRapida).toEqual({ num: 2, den: 3, excluidos: 2 });
     expect(result.armadaCaseIds).toEqual(['jp-armada']);
   });
+
+  /**
+   * PR-9 (`lex` #9, FR-732/L9-3): a consulta de casos ARMADOS toca `job_postings`
+   * e alimenta `bigNumbers.equiposArmados`/`equiposPorArmar` E os `armadaCaseIds`
+   * que recortam o card "Em Busca" — ou seja, é dado de país como qualquer outro.
+   *
+   * Esta é a ÚNICA trava sobre o predicado desta query: o teste de forma do
+   * dashboard (`GetManagementDashboardUseCase.test.ts`) percorre as 12 consultas
+   * do `Promise.all` por índice, e a de armados roda SERIALIZADA antes dele, fora
+   * daquele mapa. Medido no gate (12/09): sem este teste, apagar
+   * `countryPredicateSql('jp', 1)` de `GetArmedCasesUseCase` deixava a suíte
+   * inteira verde (2249/2249) — guarda de regressão que não morre não é guarda.
+   *
+   * Sabotagem que derruba este teste: remover o predicado da query, ou parar de
+   * repassar `countries` ao parâmetro $1.
+   */
+  it('🔒 país vira predicado explícito na query de armados, e o escopo pedido chega em $1', async () => {
+    const db = mockDb([]);
+    await new GetArmedCasesUseCase(db as never).execute(['AR']);
+
+    const [sql, params] = db.query.mock.calls[0];
+    expect(sql).toContain('jp.country = ANY($1::bpchar[])');
+    expect(params).toEqual([['AR']]);
+  });
 });

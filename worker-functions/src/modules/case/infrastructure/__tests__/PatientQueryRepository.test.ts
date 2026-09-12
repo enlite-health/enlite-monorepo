@@ -421,13 +421,14 @@ describe('PatientQueryRepository.stats', () => {
     };
   }
 
-  it('b1. sem country → passa null e coerce todos os campos pra número', async () => {
+  it('b1. countries=["AR","BR"] (escopo multi-país) → passa o array e coerce todos os campos pra número', async () => {
     mockPoolQuery.mockResolvedValueOnce({ rows: [statsRow()] });
     const repo = new PatientQueryRepository();
 
-    const result = await repo.stats();
+    const result = await repo.stats(['AR', 'BR']);
 
-    expect(mockPoolQuery.mock.calls[0][1]).toEqual([null]);
+    expect(mockPoolQuery.mock.calls[0][1]).toEqual([['AR', 'BR']]);
+    expect(mockPoolQuery.mock.calls[0][0]).toContain('ANY($1::bpchar[])');
     expect(result).toEqual({
       total: 10,
       complete: 7,
@@ -438,12 +439,12 @@ describe('PatientQueryRepository.stats', () => {
     });
   });
 
-  it('b2. com country=BR → passa "BR" como param', async () => {
+  it('b2. countries=["BR"] (país único) → passa ["BR"] como param (PR-9: nunca string escalar)', async () => {
     mockPoolQuery.mockResolvedValueOnce({ rows: [statsRow()] });
     const repo = new PatientQueryRepository();
 
-    await repo.stats('BR');
-    expect(mockPoolQuery.mock.calls[0][1]).toEqual(['BR']);
+    await repo.stats(['BR']);
+    expect(mockPoolQuery.mock.calls[0][1]).toEqual([['BR']]);
   });
 });
 

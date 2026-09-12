@@ -57,6 +57,18 @@ jest.mock('@modules/matching', () => ({
   buildInsertParams: jest.fn(),
 }));
 
+// PR-9 (`lex` #9): `getPatientStats`/`getPatientFunnel` agora resolvem o escopo de
+// país ANTES de chamar repo/use case. Este arquivo testa os catches DEPOIS do
+// resolvedor — mocka só `resolveCountryScope` (sempre concede os dois países),
+// preservando o resto do módulo real (`CountryScopeError`, `AuthMiddleware`).
+jest.mock('@modules/identity', () => {
+  const actual = jest.requireActual('@modules/identity');
+  return {
+    ...actual,
+    resolveCountryScope: jest.fn().mockResolvedValue({ countries: ['AR', 'BR'], requested: 'ALL' }),
+  };
+});
+
 import { reportError } from '@shared/logging';
 import { AdminPatientsController } from '../AdminPatientsController';
 import type { PatientService } from '../../../application/PatientService';

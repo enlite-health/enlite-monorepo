@@ -28,6 +28,15 @@ export const getCountryOptions = (t: TFunction): SelectOption[] => [
   { value: 'BR', label: t('admin.patients.countryOptions.BR') },
 ];
 
+/**
+ * PR-9 (`lex` #9, FR-734): opções do seletor de país escopadas ao ATOR — nunca
+ * `COUNTRY_CODES`/`getCountryOptions` inteiro. `countries` vem de
+ * `data.scope.countries` (resolvido no servidor); sem Portugal, sem jurisdição
+ * fora do que o ator tem concedido.
+ */
+export const getScopedCountryOptions = (t: TFunction, countries: readonly string[]): SelectOption[] =>
+  countries.map((c) => ({ value: c, label: t(`admin.patients.countryOptions.${c}`) }));
+
 /** Fase 4 — funnel period presets (relative to now). */
 export const getFunnelPeriodOptions = (t: TFunction): SelectOption[] => [
   { value: '7', label: t('admin.patients.funnel.period.7') },

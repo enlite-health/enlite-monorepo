@@ -33,6 +33,17 @@ export const DASHBOARD_SECTION_RESOURCE: Readonly<Record<DashboardSection, strin
 /** Rota própria; entra no catálogo pela rota, e no painel como bloco da mesma tela. */
 export const DASHBOARD_ZONES_RESOURCE = 'dashboard_zones';
 
+/**
+ * Chaves do payload SEMPRE visíveis, independente de qualquer célula de seção
+ * (PR-9, `lex` #9): `scope` é meta-dado da RESOLUÇÃO DE PAÍS da request (quais
+ * países o ator enxerga, o que foi pedido) — não é um bloco de dado de nenhuma
+ * seção, é o que o cabeçalho da tela usa para montar o seletor. Um ator sem
+ * célula de NENHUMA seção (todas `null`) ainda precisa ver `scope` para o
+ * seletor funcionar — nulá-lo junto com os blocos de dado seria incoerente
+ * com FR-734 (o seletor lista `scope.countries`, sempre).
+ */
+export const DASHBOARD_ALWAYS_VISIBLE_KEYS = ['scope'] as const;
+
 /** Sub-objetos do payload de `management` que cada seção da tela lê (espelho de ManagementDashboardPage). */
 export const DASHBOARD_SECTION_KEYS: Readonly<Record<DashboardSection, readonly string[]>> = {
   // BigNumbersSection: bigNumbers, pacientes, horas, equipoArmada.pctRespostaRapidaArmado, encuadres.pctCapacidadeSemana
@@ -72,7 +83,12 @@ export function projectManagementDashboard<T extends Record<string, unknown>>(
   const needed = new Set<string>();
   for (const s of DASHBOARD_SECTIONS) if (reads[s]) for (const k of DASHBOARD_SECTION_KEYS[s]) needed.add(k);
   const out: Record<string, unknown> = { ...data };
-  for (const s of hidden) for (const k of DASHBOARD_SECTION_KEYS[s]) if (!needed.has(k) && k in out) out[k] = null;
+  const alwaysVisible = new Set<string>(DASHBOARD_ALWAYS_VISIBLE_KEYS);
+  for (const s of hidden) {
+    for (const k of DASHBOARD_SECTION_KEYS[s]) {
+      if (!needed.has(k) && !alwaysVisible.has(k) && k in out) out[k] = null;
+    }
+  }
   const redacted: Partial<Record<DashboardSection, true>> = {};
   for (const s of hidden) redacted[s] = true;
   out.redacted = redacted;
