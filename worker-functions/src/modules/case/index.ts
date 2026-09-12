@@ -212,7 +212,11 @@ export type {
 
 // Interfaces
 export { AdminPatientsController } from './interfaces/controllers/AdminPatientsController';
-export { AdminPatientAddressesController } from './interfaces/controllers/AdminPatientAddressesController';
+export {
+  AdminPatientAddressesController,
+  PATIENT_ADDRESS_TYPES,
+  updatePatientAddressSchema,
+} from './interfaces/controllers/AdminPatientAddressesController';
 export { AdminInsuranceProvidersController } from './interfaces/controllers/AdminInsuranceProvidersController';
 export { AdminPatientsMapController } from './interfaces/controllers/AdminPatientsMapController';
 export { AdminPatientChatIdsController } from './interfaces/controllers/AdminPatientChatIdsController';

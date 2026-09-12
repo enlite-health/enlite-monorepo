@@ -11,6 +11,7 @@
 import { geocodePatientAddressesBestEffort } from '../infrastructure/geocodePatientAddresses';
 import { GeocodingService } from '../../../infrastructure/services/GeocodingService';
 import { PatientAddress, PatientProfessional } from '../../../infrastructure/repositories/PatientRepository';
+import { patientHasActiveDefaultAddress } from '../infrastructure/PatientAddressQueryHelper';
 
 export async function replacePatientAddresses(
   patientId: string,
@@ -87,12 +88,9 @@ export async function replacePatientAddresses(
   // 'clickup' — a marca é do paciente, não da fonte). Medido uma vez por chamada: como todo
   // paciente que passa pela ferramenta de import é NOVO (guard `decideIfNewPatientAllowed`),
   // isto na prática roda sempre contra "nenhum principal ainda".
-  const { rows: [{ exists: patientHasDefault }] } = await client.query<{ exists: boolean }>(
-    `SELECT EXISTS (
-       SELECT 1 FROM patient_addresses WHERE patient_id = $1 AND is_default AND archived_at IS NULL
-     ) AS exists`,
-    [patientId],
-  );
+  // K8 (spec 019): mesma verificação de `PatientAddressQueryHelper.insertPatientAddress`
+  // (caminho do painel) — fonte única, ver `patientHasActiveDefaultAddress`.
+  const patientHasDefault = await patientHasActiveDefaultAddress(client, patientId);
 
   /**
    * 🔒 Coordenadas que JÁ temos, indexadas pelo MESMO texto que vai ao Google.
