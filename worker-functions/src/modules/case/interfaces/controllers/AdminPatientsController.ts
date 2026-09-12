@@ -630,6 +630,15 @@ export class AdminPatientsController {
       });
       res.status(201).json({ success: true, data: created });
     } catch (err: unknown) {
+      // K5 (spec 019): dois POSTs concorrentes para o mesmo paciente sem principal — os dois
+      // podem calcular `isDefault=true` (nenhum viu o principal do outro ainda) e o índice único
+      // parcial (`patient_addresses_one_default_per_patient`) recusa o segundo INSERT. Mesmo
+      // tratamento do PATCH (`AdminPatientAddressesController`): 409 tratado, nunca 500.
+      const pgCode = (err as { code?: string } | null)?.code;
+      if (pgCode === '23505') {
+        res.status(409).json({ success: false, error: 'Concurrent update — try again' });
+        return;
+      }
       const e = err instanceof Error ? err : new Error(String(err));
       // lex C2.3: nada do corpo na resposta — um erro do Postgres pode ecoar a linha inteira.
       reportError(e, { source: 'AdminPatientsController:createPatientAddress', patientId });

@@ -158,4 +158,37 @@ describe('Endereço PRINCIPAL + TIPO por parentesco (spec 019) @integration', ()
     );
     expect(rows[0].address_type_other).not.toBe(tooLong);
   });
+
+  // K5 (spec 019): dois POSTs concorrentes para um paciente SEM nenhum principal ativo — os dois
+  // podem calcular `isDefault=true` (nenhum enxergou o principal do outro ainda) antes do INSERT;
+  // o índice único parcial recusa o segundo, que deve responder 409 tratado (nunca 500), e o banco
+  // termina com exatamente 1 principal. NÃO executado nesta rodada (stack Docker completa — ver
+  // controle de RAM do dispatch).
+  it('K5 — POST concorrente: dois "+ Nuevo" simultâneos num paciente sem principal, um vence com 201, o outro 409', async () => {
+    const p2 = (await pool.query<{ id: string }>(
+      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status)
+       VALUES ('addr-principal-e2e-concurrent-post', 'Concurrent', 'Post', 'AR', 'ACTIVE') RETURNING id`,
+    )).rows[0].id;
+    try {
+      const post = (formatted: string) =>
+        api.post(`/api/admin/patients/${p2}/addresses`, { address_formatted: formatted }, asAdmin);
+
+      const resultados = await Promise.allSettled([
+        post('Rua Concorrente A, Buenos Aires'),
+        post('Rua Concorrente B, Buenos Aires'),
+      ]);
+
+      const statuses = resultados.map((r) =>
+        r.status === 'fulfilled' ? (r as PromiseFulfilledResult<{ status: number }>).value.status : -1);
+      expect(statuses).not.toContain(-1); // 0 erro de rede/exceção crua escapando do axios
+      expect(statuses.filter((s) => s === 500)).toEqual([]);
+      // Um 201 (o vencedor) + um 409 (o perdedor tratado) — nunca os dois 201.
+      expect(statuses.filter((s) => s === 201)).toHaveLength(1);
+      expect(statuses.filter((s) => s === 409)).toHaveLength(1);
+      expect(await countActivePrincipals(p2)).toBe(1);
+    } finally {
+      await pool.query(`DELETE FROM patient_addresses WHERE patient_id = $1`, [p2]);
+      await pool.query(`DELETE FROM patients WHERE id = $1`, [p2]);
+    }
+  }, 30000);
 });
