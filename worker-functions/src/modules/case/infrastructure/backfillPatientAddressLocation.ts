@@ -263,7 +263,12 @@ export function buildBackfillPlan(
   geocode: GeocodedAddress | null,
 ): BackfillPlan | null {
   if (classifyBackfillUnresolved(row, geocode) !== null) return null;
-  if (!geocode) return null; // unreachable (classify already returns ZERO_RESULTS above) — kept for type narrowing
+  // istanbul ignore next -- unreachable at runtime: `classifyBackfillUnresolved` returns
+  // 'ZERO_RESULTS' (never null) whenever `geocode` is null, so the guard above already
+  // returns before this line is ever reached. Kept ONLY for TypeScript null-narrowing of
+  // `geocode` below (confirmed by reading both functions together, spec 019 rodada de
+  // cobertura — coverage measured 98.7% stmts without this line reachable by any test).
+  if (!geocode) return null;
 
   const location = {
     formatted_address: geocode.formattedAddress,
