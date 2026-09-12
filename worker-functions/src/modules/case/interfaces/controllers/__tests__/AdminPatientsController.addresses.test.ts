@@ -300,6 +300,28 @@ describe('AdminPatientsController.createPatientAddress', () => {
     expect(mockClientRelease).toHaveBeenCalledTimes(1);
   });
 
+  it('409 (K5, spec 019): unique_violation no índice parcial (dois POSTs concorrentes sem principal) — tratado, não 500', async () => {
+    const controller = makeController();
+    mockClientQuery.mockReset();
+    mockClientQuery
+      .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ exists: false }] }) // SELECT EXISTS (nenhum principal ainda visto)
+      .mockRejectedValueOnce(Object.assign(
+        new Error('duplicate key value violates unique constraint "patient_addresses_one_default_per_patient"'),
+        { code: '23505' },
+      )) // INSERT perde a corrida
+      .mockResolvedValueOnce(undefined); // ROLLBACK
+
+    const [req, res] = mockReqRes({ patientId: PATIENT_ID }, { address_formatted: 'Concorrente 111' });
+    await controller.createPatientAddress(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect((res as any).json.mock.calls[0][0]).toEqual({ success: false, error: 'Concurrent update — try again' });
+    expect(reportError).not.toHaveBeenCalled();
+    expect(mockClientQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(mockClientRelease).toHaveBeenCalledTimes(1);
+  });
+
   it('500 quando o INSERT rejeita com uma instância de Error (branch instanceof=true)', async () => {
     const controller = makeController();
     mockClientQuery.mockReset();
