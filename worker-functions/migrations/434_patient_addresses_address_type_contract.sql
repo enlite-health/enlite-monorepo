@@ -16,6 +16,23 @@
 -- ordem "is_default antes de NULL" da spec.md existe para evitar, agora reaplicado à janela
 -- entre as duas migrations, não só dentro de uma.
 --
+-- ── Conserto do gate revisao-pr (K2) — DUAS mudanças, nada mais neste arquivo ─
+-- Entre o deploy do código novo e esta migration rodar, o PATCH novo já está no ar: ele já grava
+-- tipo válido e já faz a troca atômica de principal (desmarca/marca `is_default`). A versão
+-- anterior deste passo 0 ignorava isso:
+--   (a) o backfill batia com `is_default = false` de propósito idempotente, mas SEM checar se o
+--       PACIENTE já tem outro principal (ex.: o operador já trocou via PATCH para a `secondary`
+--       nessa janela) — reafirmar `is_default = true` na linha `primary` original então CRIAVA um
+--       segundo principal ativo (violaria o índice único da 433, ou pior, corrida com o CHECK
+--       ainda não criado). O `NOT EXISTS` novo só reafirma o backfill quando o paciente AINDA NÃO
+--       tem nenhum principal ativo — nunca sobrepõe uma troca que já aconteceu.
+--   (b) o passo 5 apagava QUALQUER `address_type` não-nulo em linha ativa, inclusive um valor da
+--       lista NOVA que o PATCH já tivesse gravado nessa mesma janela (ex.: paciente com endereço
+--       já marcado `'escuela'` pelo painel antes da 434 rodar) — a migration apagaria esse tipo
+--       recém-escrito por engano. O filtro `address_type IN (...)` restringe o apagamento aos
+--       QUATRO valores legados (`primary`/`secondary`/`tertiary`/`service`), preservando qualquer
+--       valor da lista nova já gravado pelo código publicado.
+--
 -- ── O que esta migration faz (passos 5, 7 e 8 da ordem da spec.md) ────────────
 -- 0. Backfill idempotente (repetição do passo 2 da 433) — cobre linha escrita pelo código velho
 --    na janela entre as duas migrations.
@@ -59,19 +76,28 @@ BEGIN;
 
 -- 0. Re-backfill idempotente — cobre linha escrita pelo código velho entre a 433 e o deploy.
 --    ANTES do passo 5, pelo mesmo motivo da 433: is_default precisa estar preenchido antes de
---    address_type ser apagado.
-UPDATE patient_addresses
+--    address_type ser apagado. `NOT EXISTS`: só reafirma quando o PACIENTE ainda não tem nenhum
+--    principal ativo — nunca sobrepõe uma troca de principal que o PATCH novo já fez na janela
+--    entre o deploy e esta migration (K2).
+UPDATE patient_addresses pa
    SET is_default = true
- WHERE address_type = 'primary'
-   AND archived_at IS NULL
-   AND is_default = false;
+ WHERE pa.address_type = 'primary'
+   AND pa.archived_at IS NULL
+   AND pa.is_default = false
+   AND NOT EXISTS (
+     SELECT 1 FROM patient_addresses o
+      WHERE o.patient_id = pa.patient_id
+        AND o.is_default
+        AND o.archived_at IS NULL
+   );
 
--- 5. Apaga o valor legado só das linhas ATIVAS. Idempotente (WHERE já filtra o que falta
---    apagar) — rodar duas vezes não faz diferença na segunda.
+-- 5. Apaga só o valor LEGADO ('primary'/'secondary'/'tertiary'/'service') das linhas ATIVAS —
+--    nunca um valor da lista NOVA que o PATCH publicado já tenha gravado na mesma janela (K2).
+--    Idempotente (WHERE já filtra o que falta apagar) — rodar duas vezes não faz diferença.
 UPDATE patient_addresses
    SET address_type = NULL
  WHERE archived_at IS NULL
-   AND address_type IS NOT NULL;
+   AND address_type IN ('primary', 'secondary', 'tertiary', 'service');
 
 -- 7. Lista fechada do tipo por parentesco. Escape `archived_at IS NOT NULL OR ...`: sem ele, a
 --    primeira linha arquivada com valor legado (`primary`/`secondary`/`tertiary`, fora da lista
