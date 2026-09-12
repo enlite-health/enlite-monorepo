@@ -97,15 +97,24 @@ describe('Endereço PRINCIPAL + TIPO por parentesco (spec 019) @integration', ()
         api.patch(`/api/admin/patients/${patientId}/addresses/${addressId}`, { is_default: true }, asAdmin);
 
       const resultados = await Promise.allSettled([req(addrA.id), req(addrB.id)]);
+      const rodadaStatuses: number[] = [];
       for (const r of resultados) {
         if (r.status === 'rejected') {
           errosDeRede.push(String((r as PromiseRejectedResult).reason));
         } else {
-          statuses.push((r as PromiseFulfilledResult<{ status: number }>).value.status);
+          const status = (r as PromiseFulfilledResult<{ status: number }>).value.status;
+          statuses.push(status);
+          rodadaStatuses.push(status);
         }
       }
-      // Invariante do banco, checado a CADA rodada: nunca 0, nunca 2 principais ativos.
+      // Invariante do banco, checado a CADA rodada: nunca 0, nunca 2 principais ativos (spec 019
+      // linhas 103-104/113-114 — a garantia DURA é "nunca 0 ou 2 principais" / "ao final,
+      // exatamente 1 principal ativo"; não "sempre 1×200 e 1×409").
       expect(await countActivePrincipals(patientId)).toBe(1);
+      // Nunca as duas falham: cada rodada tem sempre pelo menos um PATCH bem-sucedido — se
+      // ambos falhassem (0 vitórias), nenhum dos dois cliques do usuário teria efeito, o que
+      // violaria a troca atômica da spec.
+      expect(rodadaStatuses.filter((s) => s === 200).length).toBeGreaterThanOrEqual(1);
     }
 
     // 0 erro de rede/exceção crua escapando do axios.
@@ -113,11 +122,14 @@ describe('Endereço PRINCIPAL + TIPO por parentesco (spec 019) @integration', ()
     // 0 HTTP 500 em toda a corrida (2 * ROUNDS respostas).
     expect(statuses.filter((s) => s === 500)).toEqual([]);
     expect(statuses).toHaveLength(2 * ROUNDS);
-    // Cada rodada: 1 vencedor (200) + 1 perdedor tratado (409) — nunca os dois 200, nunca os dois 409.
-    const count200 = statuses.filter((s) => s === 200).length;
+    // Toda resposta é 200 (vitória, inclusive reafirmação idempotente de quem já era principal)
+    // ou 409 (perda tratada pelo índice único/lock) — nunca outra coisa.
+    expect(statuses.every((s) => s === 200 || s === 409)).toBe(true);
+    // Pelo menos 1 vitória por rodada já é verificado acima; aqui confirmamos que 409 SÓ ocorre
+    // quando de fato houve disputa pelo mesmo slot (nunca mais 409 do que rodadas — isso
+    // indicaria as duas falhando na mesma rodada, o que a asserção por rodada já barra).
     const count409 = statuses.filter((s) => s === 409).length;
-    expect(count200).toBe(ROUNDS);
-    expect(count409).toBe(ROUNDS);
+    expect(count409).toBeLessThanOrEqual(ROUNDS);
   }, 60000);
 
   it('5.4 feliz — PATCH com address_type persiste e sobrevive a um GET novo', async () => {
