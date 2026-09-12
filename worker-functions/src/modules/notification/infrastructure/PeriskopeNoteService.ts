@@ -1,5 +1,6 @@
 import { AxiosInstance } from 'axios';
-import { logger, reportError, safeErrorFields, redactContact } from '@shared/logging';
+import { logger, reportError, safeErrorFields } from '@shared/logging';
+import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import { createPeriskopeHttpClient } from './periskopeHttpClient';
 
 /**
@@ -55,7 +56,7 @@ export class PeriskopeNoteService {
       return true;
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));
-      logger.warn({ ...safeErrorFields(err), workerPhone: redactContact(workerPhone, 'phone') }, '[PeriskopeNoteService] mirrorAsNote failed (best-effort)');
+      logger.warn({ ...safeErrorFields(err), workerPhone: maskPhoneForLog(workerPhone) }, '[PeriskopeNoteService] mirrorAsNote failed (best-effort)');
       reportError(e, { source: 'PeriskopeNoteService:mirrorAsNote' });
       return false;
     }

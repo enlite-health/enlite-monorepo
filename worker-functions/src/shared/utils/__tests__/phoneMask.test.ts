@@ -1,4 +1,4 @@
-import { maskPhone } from '../phoneMask';
+import { maskPhone, maskPhoneForLog } from '../phoneMask';
 
 describe('maskPhone', () => {
   describe('Argentina — formato canônico +549 (13 dígitos)', () => {
@@ -59,5 +59,48 @@ describe('maskPhone', () => {
       expect(masked).toContain('****');
       expect(masked).toContain('1243');
     });
+  });
+});
+
+// ── maskPhoneForLog — sem espaço, otimizado pra filtro exato no Cloud Logging ──
+// Casos migrados do extinto `redactContact` (D-11/09, item 1 do gate): mesma
+// GARANTIA (nunca o meio do número, só os 4 últimos dígitos), formato
+// DIFERENTE (`+549******1243` em vez de `549***1243` — `redactContact` não
+// tinha o `+` nem o tamanho variável do miolo).
+describe('maskPhoneForLog', () => {
+  it('mostra só prefixo (4 chars) + últimos 4 dígitos, nunca o miolo', () => {
+    const out = maskPhoneForLog('+5491122334455');
+    expect(out).toBe('+549******4455');
+    expect(out).not.toContain('1122334455'); // miolo inteiro
+    expect(out).not.toContain('112233');     // nem em pedaços
+  });
+
+  it('é determinístico — mesmo input, mesma saída (usável como filtro literal)', () => {
+    const a = maskPhoneForLog('+5491122334455');
+    const b = maskPhoneForLog('+5491122334455');
+    expect(a).toBe(b);
+  });
+
+  it('nunca ecoa o valor inteiro mesmo pra número menor — telefone curto (<8 chars): "****" fixo', () => {
+    // Diferença de comportamento MEDIDA e ACEITA na troca por `redactContact`
+    // (item 1d do gate, 11/09): `redactContact('4455','phone')` ecoava
+    // `***4455` (o valor INTEIRO, só prefixado) pra entradas de até 4 dígitos.
+    // `maskPhoneForLog` não tem esse caso especial — abaixo de 8 chars vira
+    // sempre o marcador fixo `****`, sem nenhum dígito visível.
+    expect(maskPhoneForLog('4455')).toBe('****');
+    expect(maskPhoneForLog('123')).toBe('****');
+    expect(maskPhoneForLog('1234567')).toBe('****'); // 7 chars — ainda abaixo do piso
+  });
+
+  it('telefone só com caracteres não numéricos e curto: mesmo marcador fixo', () => {
+    expect(maskPhoneForLog('+++---')).toBe('****');
+  });
+
+  it('vazio: marcador fixo', () => {
+    expect(maskPhoneForLog('')).toBe('****');
+  });
+
+  it('exatamente 8 chars: já passa do piso e mascara com o miolo mínimo (1 asterisco)', () => {
+    expect(maskPhoneForLog('12345678')).toBe('1234*5678');
   });
 });

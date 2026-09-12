@@ -28,7 +28,6 @@ jest.mock('@shared/logging', () => {
     // Funções puras — usar a implementação REAL prova o comportamento de verdade,
     // não um dublê que sempre concorda com o que o produção manda.
     safeErrorFields: actual.safeErrorFields,
-    redactContact: actual.redactContact,
   };
 });
 
@@ -161,7 +160,7 @@ describe('PeriskopeTicketService', () => {
 
     // O telefone cru nunca aparece — só os últimos 4 dígitos.
     expect(JSON.stringify(payload)).not.toContain(SENSITIVE_PHONE.replace('+', ''));
-    expect(payload.chatPhone).toBe('549***4455');
+    expect(payload.chatPhone).toBe('+549******4455');
     // Nem message nem stack do erro — só errorName + SQLSTATE/código.
     expect(payload).not.toHaveProperty('message');
     expect(payload).not.toHaveProperty('stack');
@@ -191,6 +190,6 @@ describe('PeriskopeTicketService', () => {
 
     const [newPayload] = mockLoggerWarn.mock.calls[0] as [Record<string, unknown>, string];
     expect(newPayload.chatPhone).not.toBe(SENSITIVE_PHONE);
-    expect(newPayload.chatPhone).toBe('549***4455');
+    expect(newPayload.chatPhone).toBe('+549******4455');
   });
 });

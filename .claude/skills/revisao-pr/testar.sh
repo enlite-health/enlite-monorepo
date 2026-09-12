@@ -188,13 +188,18 @@ novo_repo
 printf 'console.log(`breakdown: sem_telefone=${semTelefone}`);\n' > src/a.ts; commit c1
 rodar; checa "[-] CONTAGEM passa (a regra permite status e contagem)" 0
 
-# ── D-11/09: redactContact/safeErrorFields são SAÍDA SEGURA — e SOMENTE eles ──
+# ── D-11/09 (atualizado, item 1 do gate): redactContact foi APAGADO; os donos
+#    únicos da máscara agora são maskPhoneForLog/maskEmailForLog/safeErrorFields
+#    — e SOMENTE eles são SAÍDA SEGURA ──────────────────────────────────────
 novo_repo
-printf "console.log(\`worker \${redactContact(phone, 'phone')} convidado\`);\n" > src/a.ts; commit c1
-rodar; checa "[-] telefone mascarado via redactContact(...) NÃO reprova" 0
+printf "console.log(\`worker \${maskPhoneForLog(phone)} convidado\`);\n" > src/a.ts; commit c1
+rodar; checa "[-] telefone mascarado via maskPhoneForLog(...) NÃO reprova" 0
 novo_repo
 printf 'console.log(`worker ${phone} convidado`);\n' > src/a.ts; commit c1
-rodar; checa "[+] CONTROLE: o mesmo telefone SEM redactContact continua reprovando" 1 "interpolando campo pessoal"
+rodar; checa "[+] CONTROLE: o mesmo telefone SEM maskPhoneForLog continua reprovando" 1 "interpolando campo pessoal"
+novo_repo
+printf "console.log(\`user \${maskEmailForLog(email)} registered\`);\n" > src/a.ts; commit c1
+rodar; checa "[-] e-mail mascarado via maskEmailForLog(...) NÃO reprova" 0
 novo_repo
 printf "console.log(\`worker \${safeErrorFields(phone)} convidado\`);\n" > src/a.ts; commit c1
 rodar; checa "[-] campo pessoal mascarado via safeErrorFields(...) NÃO reprova" 0
@@ -202,17 +207,20 @@ novo_repo
 printf 'console.log(`user ${email} registered`);\n' > src/a.ts; commit c1
 rodar; checa "[+] CONTROLE: e-mail cru (sem nenhum helper) continua reprovando" 1 "interpolando campo pessoal"
 novo_repo
-printf "logger.warn({ phone: redactContact(phone, 'phone') }, phone);\n" > src/a.ts; commit c1
+printf "logger.warn({ phone: maskPhoneForLog(phone) }, phone);\n" > src/a.ts; commit c1
 rodar; checa "[+] linha com UM campo mascarado e outro campo pessoal cru na MESMA linha continua reprovando" 1 "interpolando campo pessoal"
+novo_repo
+printf "console.log(\`worker \${redactContact(phone, 'phone')} convidado\`);\n" > src/a.ts; commit c1
+rodar; checa "[+] CONTROLE: helper EXTINTO (redactContact) não é mais saída segura — reprova como qualquer nome desconhecido" 1 "interpolando campo pessoal"
 
 # ── C2 (parecer do lex): campos novos no detector, e CUIL/CUIT NUNCA tem saída
-#    segura — "documento não se mascara, se remove", mesmo dentro de redactContact ──
+#    segura — "documento não se mascara, se remove", mesmo dentro de maskPhoneForLog ──
 novo_repo
 printf 'console.log(`worker ${cuil} cadastrado`);\n' > src/a.ts; commit c1
 rodar; checa "[+] CUIL cru REPROVA (campo novo, C2)" 1 "interpolando campo pessoal"
 novo_repo
-printf "console.log(\`worker \${redactContact(cuil, 'phone')} cadastrado\`);\n" > src/a.ts; commit c1
-rodar; checa "[+] CONTROLE: CUIL dentro de redactContact(...) TAMBÉM reprova — não existe saída segura pra documento" 1 "interpolando campo pessoal"
+printf "console.log(\`worker \${maskPhoneForLog(cuil)} cadastrado\`);\n" > src/a.ts; commit c1
+rodar; checa "[+] CONTROLE: CUIL dentro de maskPhoneForLog(...) TAMBÉM reprova — não existe saída segura pra documento" 1 "interpolando campo pessoal"
 novo_repo
 printf 'console.log(`endereco ${address} confirmado`);\n' > src/a.ts; commit c1
 rodar; checa "[+] endereço (address) INTERPOLADO REPROVA (campo novo, C2)" 1 "interpolando campo pessoal"
@@ -226,10 +234,10 @@ novo_repo
 printf 'console.warn(\n  `worker ${phone} nao encontrado`,\n);\n' > src/a.ts; commit c1
 rodar; checa "[+] MULTILINHA: telefone cru na linha SEGUINTE ao abridor REPROVA (sabotagem do gate)" 1 "interpolando campo pessoal"
 novo_repo
-printf "console.warn(\n  \`worker \${redactContact(phone, 'phone')} nao encontrado\`,\n);\n" > src/a.ts; commit c1
+printf "console.warn(\n  \`worker \${maskPhoneForLog(phone)} nao encontrado\`,\n);\n" > src/a.ts; commit c1
 rodar; checa "[-] MULTILINHA: telefone mascarado na linha seguinte NÃO reprova" 0
 novo_repo
-printf "logger.warn({\n  phone: redactContact(phone, 'phone'),\n}, phone);\n" > src/a.ts; commit c1
+printf "logger.warn({\n  phone: maskPhoneForLog(phone),\n}, phone);\n" > src/a.ts; commit c1
 rodar; checa "[+] MULTILINHA: um campo mascarado e outro campo cru em linhas DIFERENTES continua reprovando" 1 "interpolando campo pessoal"
 
 # ══ V6 — dado clínico ════════════════════════════════════════════════════════

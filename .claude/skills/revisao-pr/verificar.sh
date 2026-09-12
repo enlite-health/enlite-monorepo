@@ -28,10 +28,11 @@
 #   · V2 — só olha arquivo do diff; órfão em arquivo não tocado passa
 #   · V3 — import montado dinamicamente (`from \`./\${x}\``) é invisível
 #   · V5/V6 — heurística de texto: PII repassada por variável de nome neutro passa
-#   · V5 — D-11/09: `redactContact(...)`/`safeErrorFields(...)` são reconhecidos
-#     como saída segura (removidos antes do 2º passo do detector) — qualquer
-#     OUTRA forma de "parecer mascarado" (nome de variável, comentário, helper
-#     diferente) continua reprovando, de propósito
+#   · V5 — D-11/09 (atualizado): `maskPhoneForLog(...)`/`maskEmailForLog(...)`/
+#     `safeErrorFields(...)` são reconhecidos como saída segura (removidos antes
+#     do 2º passo do detector) — qualquer OUTRA forma de "parecer mascarado"
+#     (nome de variável, comentário, helper diferente, INCLUSIVE o extinto
+#     `redactContact`) continua reprovando, de propósito
 #   · V7 — só AVISA; rota sem célula não reprova (definição pode ser multilinha)
 #   · V9 — mede EXISTÊNCIA de teste no diff, nunca se o teste testa algo
 #   · V10 — segredo sem palavra-chave por perto (um UUID solto) passa
@@ -342,15 +343,19 @@ PII=$(printf '%s\n' "$BLOCOS" \
       | grep -iE "$CAMPO_CHAVE" \
       | grep -viE '\\b(count|total|qtd|quantidade|length|size|has|missing)\\b|\\bsem_|\\bcom_|\\.length' || true)
 
-# ── Passo 3: redactContact(...)/safeErrorFields(...) são SAÍDA SEGURA — MENOS
-# pra CUIL/CUIT, que "não se mascara, se remove" (parecer do lex, C2/C3): NENHUMA
-# chamada torna uma interpolação de CUIL/CUIT segura, então o bloco roda direto
-# pro reprova sem passar pelo strip. Pros demais campos (telefone, e-mail,
-# nome, endereço, diagnóstico...), o nome do campo continua no bloco (é
-# argumento da chamada), mas o VALOR que sai no log já passou por máscara —
-# remove as duas chamadas do texto e roda O MESMO detector de novo: se ainda
-# casar depois de removidas, o campo vazou por FORA do helper — aí SIM
-# reprova. "Somente isso": nenhuma outra forma de "parecer seguro" conta.
+# ── Passo 3: maskPhoneForLog(...)/maskEmailForLog(...)/safeErrorFields(...) são
+# SAÍDA SEGURA — e SOMENTE eles (D-11/09, atualizado: o extinto `redactContact`
+# saiu da lista quando o helper foi apagado — item 1 do gate — e NÃO volta a
+# ser reconhecido, de propósito: chamar uma função que não existe mais não pode
+# "parecer seguro" pro verificador). MENOS pra CUIL/CUIT, que "não se mascara,
+# se remove" (parecer do lex, C2/C3): NENHUMA chamada torna uma interpolação de
+# CUIL/CUIT segura, então o bloco roda direto pro reprova sem passar pelo
+# strip. Pros demais campos (telefone, e-mail, nome, endereço, diagnóstico...),
+# o nome do campo continua no bloco (é argumento da chamada), mas o VALOR que
+# sai no log já passou por máscara — remove as três chamadas do texto e roda O
+# MESMO detector de novo: se ainda casar depois de removidas, o campo vazou por
+# FORA do helper — aí SIM reprova. "Somente isso": nenhuma outra forma de
+# "parecer seguro" conta.
 if [ -n "$PII" ]; then
   SOBROU=""
   while IFS= read -r bloco; do
@@ -360,7 +365,7 @@ if [ -n "$PII" ]; then
 "
       continue
     fi
-    despida=$(printf '%s\n' "$bloco" | sed -E 's/redactContact\([^()]*\)//g; s/safeErrorFields\([^()]*\)//g')
+    despida=$(printf '%s\n' "$bloco" | sed -E 's/maskPhoneForLog\([^()]*\)//g; s/maskEmailForLog\([^()]*\)//g; s/safeErrorFields\([^()]*\)//g')
     if printf '%s\n' "$despida" | grep -qiE "$CAMPO_CHAVE"; then
       SOBROU="${SOBROU}${bloco}
 "

@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { redactContact } from '@shared/logging';
+import { maskEmailForLog } from '@shared/utils/emailMask';
 import { Result } from '@shared/utils/Result';
 import { canTransition } from '../domain/InterviewStateMachine';
 import { PubSubClient } from '@shared/events/PubSubClient';
@@ -104,11 +104,11 @@ export class HandleReminderResponseUseCase extends HandleReminderResponseQueries
       );
       if (calResult.success) {
         // PII: e-mail mascarado; worker.id é o que acha a pessoa no banco.
-        console.log(`[HandleReminderResponse] Calendar RSVP confirmed for worker=${worker.id} email=${redactContact(worker.email, 'email')}`);
+        console.log(`[HandleReminderResponse] Calendar RSVP confirmed for worker=${worker.id} email=${maskEmailForLog(worker.email)}`);
       } else {
         // PII (achado do gate, 2ª rodada): mesmo padrão da linha irmã acima (sucesso).
         console.warn(
-          `[HandleReminderResponse] Failed to confirm RSVP for worker=${worker.id} email=${redactContact(worker.email, 'email')}: ${calResult.reason}`,
+          `[HandleReminderResponse] Failed to confirm RSVP for worker=${worker.id} email=${maskEmailForLog(worker.email)}: ${calResult.reason}`,
         );
       }
     }

@@ -5,7 +5,9 @@ import { TalentumPrescreeningResponseParsed } from '@modules/integration';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import { resolveCanonicalWorkerId, MAX_MERGE_DEPTH } from '@shared/database/resolveCanonicalWorkerId';
-import { reportError, redactContact } from '@shared/logging';
+import { reportError } from '@shared/logging';
+import { maskPhoneForLog } from '@shared/utils/phoneMask';
+import { maskEmailForLog } from '@shared/utils/emailMask';
 import { PrescreeningQuestionsWriter } from './PrescreeningQuestionsWriter';
 
 const TAG = '[ProcessTalentumPrescreening]';
@@ -77,9 +79,9 @@ export class ProcessTalentumPrescreening {
     dryRun: boolean,
   ): Promise<string | null> {
     const { email, phoneNumber } = payload.data.profile;
-    // PII: e-mail/telefone mascarados (redactContact); CUIL é documento — nunca no log,
-    // nem mascarado (achado do gate, 11/09).
-    console.log(`${TAG} resolveWorker | email=${redactContact(email, 'email')} | phone=${redactContact(phoneNumber, 'phone')}`);
+    // PII: e-mail/telefone mascarados (maskEmailForLog/maskPhoneForLog); CUIL é documento —
+    // nunca no log, nem mascarado (achado do gate, 11/09).
+    console.log(`${TAG} resolveWorker | email=${maskEmailForLog(email)} | phone=${maskPhoneForLog(phoneNumber)}`);
 
     const workerId = await this.resolveWorkerId(payload);
     if (workerId) {
