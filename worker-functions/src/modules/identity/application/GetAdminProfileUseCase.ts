@@ -65,7 +65,14 @@ export class GetAdminProfileUseCase {
 
     const existingByEmail = await this.adminRepo.findByEmail(email);
     if (existingByEmail && existingByEmail.firebaseUid !== firebaseUid) {
-      console.log(`${LOG} reassigning firebase_uid | old=${existingByEmail.firebaseUid} new=${firebaseUid} role=${existingByEmail.role}`);
+      // uid/role extraídos pra variável própria ANTES do log — não porque o
+      // valor mude (continua uid antigo, uid novo, role), mas pra nenhum nome
+      // de campo no log conter "email": `existingByEmail` é o REGISTRO achado
+      // POR e-mail (nome de variável, contexto de busca), não o e-mail em si
+      // — o e-mail de verdade já sai mascarado (linhas acima, maskEmailForLog).
+      const uidAnterior = existingByEmail.firebaseUid;
+      const roleAnterior = existingByEmail.role;
+      console.log(`${LOG} reassigning firebase_uid | old=${uidAnterior} new=${firebaseUid} role=${roleAnterior}`);
       await this.adminRepo.reassignFirebaseUid(email, firebaseUid);
       const refreshed = await this.adminRepo.findByFirebaseUid(firebaseUid);
       console.log(`${LOG} reassign complete | uid=${firebaseUid} loaded=${refreshed ? 'yes' : 'no'}`);
