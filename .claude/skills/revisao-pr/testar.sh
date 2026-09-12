@@ -240,6 +240,76 @@ novo_repo
 printf "logger.warn({\n  phone: maskPhoneForLog(phone),\n}, phone);\n" > src/a.ts; commit c1
 rodar; checa "[+] MULTILINHA: um campo mascarado e outro campo cru em linhas DIFERENTES continua reprovando" 1 "interpolando campo pessoal"
 
+# ── D-12/09 (achado do gate, item 2) — duas cegueiras MEDIDAS: rc=0 (aprovado)
+#    nas 5 linhas abaixo, quando deveriam reprovar. (1) abridor `logger?\.` não
+#    cobre `log.` (child logger da convenção do CLAUDE.md: `const log =
+#    logger.child(...)`); (2) `\b(phone|email|…)\b` é PALAVRA EXATA e não
+#    separa camelCase/snake_case, então `phoneE164`/`phoneNumber`/
+#    `emailAddress` atravessavam ilesos, e shorthand antes de `}` (sem vírgula)
+#    não batia em nenhum arm do CAMPO_CHAVE ──────────────────────────────────
+novo_repo
+printf 'log.info({ msg:"otp", candidateWorkerId, phoneE164 });
+' > src/a.ts; commit c1
+rodar; checa "[+] abridor log.info (child logger) + phoneE164 shorthand antes de '}' REPROVA" 1 "interpolando campo pessoal"
+novo_repo
+printf 'log.info({ msg:"x", phoneNumber });
+' > src/a.ts; commit c1
+rodar; checa "[+] phoneNumber (composto camelCase) REPROVA" 1 "interpolando campo pessoal"
+novo_repo
+printf 'log.info({ msg:"x", emailAddress });
+' > src/a.ts; commit c1
+rodar; checa "[+] emailAddress (composto camelCase) REPROVA" 1 "interpolando campo pessoal"
+novo_repo
+printf 'console.log(`otp para ${phoneE164}`);
+' > src/a.ts; commit c1
+rodar; checa "[+] phoneE164 INTERPOLADO (console.log) REPROVA" 1 "interpolando campo pessoal"
+novo_repo
+printf 'log.info({ msg:"x", phone });
+' > src/a.ts; commit c1
+rodar; checa "[+] phone shorthand via log.info (abridor child logger) REPROVA" 1 "interpolando campo pessoal"
+novo_repo
+printf 'log.info({ msg:"x", cuilNumber });
+' > src/a.ts; commit c1
+rodar; checa "[+] CONTROLE: cuilNumber (composto) REPROVA igual cuil sozinho (C2, nunca seguro)" 1 "interpolando campo pessoal"
+
+# ── negativas do mesmo achado: nome contém o termo mas NÃO é o valor cru ─────
+novo_repo
+printf 'log.info({ msg:"x", emailService });
+' > src/a.ts; commit c1
+rodar; checa "[-] emailService (objeto/cliente, não valor) NÃO reprova" 0
+novo_repo
+printf 'log.info({ msg:"x", phoneMask });
+' > src/a.ts; commit c1
+rodar; checa "[-] phoneMask (referência ao utilitário, não valor) NÃO reprova" 0
+novo_repo
+printf 'log.info({ msg:"x", email: maskEmailForLog(rawEmail) });
+' > src/a.ts; commit c1
+rodar; checa "[-] email: maskEmailForLog(rawEmail) (chave explícita, valor mascarado) NÃO reprova" 0
+novo_repo
+printf 'log.info({ msg:"x", hasEmail });
+' > src/a.ts; commit c1
+rodar; checa "[-] hasEmail (booleano de presença, composto de 'has') NÃO reprova" 0
+novo_repo
+printf 'log.info({ msg:"x", emailSent });
+' > src/a.ts; commit c1
+rodar; checa "[-] emailSent (booleano de estado) NÃO reprova" 0
+novo_repo
+printf 'log.info({ msg:"x", phoneMasked });
+' > src/a.ts; commit c1
+rodar; checa "[-] phoneMasked (já mascarado, nome da variável) NÃO reprova" 0
+novo_repo
+printf 'log.info({ msg:"x", addressId });
+' > src/a.ts; commit c1
+rodar; checa "[-] addressId (referência de registro, camelCase) NÃO reprova" 0
+novo_repo
+printf 'log.info({ msg:"x", patient_address_id });
+' > src/a.ts; commit c1
+rodar; checa "[-] patient_address_id (referência de registro, snake_case) NÃO reprova" 0
+novo_repo
+printf 'log.info({ msg:"x", nameOf });
+' > src/a.ts; commit c1
+rodar; checa "[-] nameOf (não existe raiz genérica 'name' na lista) NÃO reprova" 0
+
 # ══ V6 — dado clínico ════════════════════════════════════════════════════════
 echo "## V6 — dado clínico rumo a terceiro"
 novo_repo

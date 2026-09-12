@@ -311,7 +311,66 @@ echo
 # roda o detector sobre o BLOCO JUNTO. Isso cobre o caso de 1 linha só também
 # (o bloco degenera pra ela mesma), então substitui o detector antigo inteiro.
 V5_JANELA=5
-CAMPO_CHAVE='\$\{[^}]*\b(phone|telefone|email|firstName|lastName|first_name|last_name|dni|documentNumber|document_number|birthDate|birth_date|diagnosis|diagnostico|cuil|cuit|address|direccion|dirección|endereco|endereço|nombre|apellido)\b[^}]*\}|\b(phone|email|firstName|lastName|dni|diagnosis|cuil|cuit|nombre|apellido)\b[[:space:]]*[,)]'
+
+# D-12/09 (achado do gate, item 2): duas cegueiras na régua, as duas MEDIDAS —
+# rc=0 (aprovado) nas 5 linhas abaixo, que deveriam reprovar:
+#   log.info({ msg:"otp", candidateWorkerId, phoneE164 });
+#   log.info({ msg:"x", phoneNumber });
+#   log.info({ msg:"x", emailAddress });
+#   console.log(`otp para ${phoneE164}`);
+#   log.info({ msg:"x", phone });
+#
+# 1) ABRIDOR: `logger?\.` exige "logge" + "r" opcional — cobre `logger.info(`
+#    e (por SUBSTRING, sem \b) `batchLogger.info(`, mas NUNCA `log.info(` — a
+#    convenção documentada no CLAUDE.md (`const log = logger.child(...); log.info(...)`).
+#    As 4 fixtures com `log.info` nem chegavam a entrar no bloco: o abridor não
+#    casava, e CAMPO_CHAVE nunca rodava. Conserto: alternativa nova `\blog\.` COM
+#    \b (senão "catalog.info(" também casaria por substring).
+# 2) CAMPO_CHAVE: `\b(phone|email|cuil|…)\b` é PALAVRA EXATA — `\b` não separa
+#    camelCase/snake_case (não há fronteira \w→\w entre "e" e "E" em "phoneE164",
+#    nem entre "e" e "_" em... — ela SÓ separa \w de não-\w). Por isso
+#    `phoneE164`, `phoneNumber`, `emailAddress` atravessavam ilesos. Conserto:
+#    pros termos abaixo (RAIZ) — os que aparecem em compostos na prática — o
+#    match vira `\w*(termo)\w*` (a palavra TODA, não só o termo, ainda respeita
+#    \b nas duas pontas do composto). `firstName/lastName/documentNumber/
+#    document_number/diagnosis/diagnostico` ficam EXATOS de propósito: "document"
+#    e "name"/"first"/"last" soltos são palavra comum demais neste código (upload
+#    de currículo/certificado, "documento" de confidencialidade, timestamps
+#    "firstLoginAt"/"lastSeenAt") — mesma lição do V6 (`diagnos` substring pegava
+#    `diagnosticsHttpTimeoutMs`). "documento" (raiz nova, ES) widened é aceito
+#    porque o equivalente EN problemático ("document") não entra na lista.
+#    Terminador do arm de shorthand ganha `}` além de `,)` — `phoneE164` antes
+#    de `}` (fim do objeto, sem vírgula) não batia em NENHUM dos dois grupos.
+ABRIDOR_LOG='console\.(log|error|warn)|logger?\.(info|warn|error|debug)|\blog\.(info|warn|error|debug)'
+CAMPO_RAIZ='phone|telefone|email|mail|cuil|cuit|dni|documento|address|direcci[oó]n|endere[cç]o|nombre|apellido|birth|nasc'
+CAMPO_EXATO='firstName|lastName|first_name|last_name|documentNumber|document_number|diagnosis|diagnostico'
+CAMPO_CHAVE='\$\{[^}]*\b(\w*('"$CAMPO_RAIZ"')\w*|'"$CAMPO_EXATO"')\b[^}]*\}|\b(\w*('"$CAMPO_RAIZ"')\w*|'"$CAMPO_EXATO"')\b[[:space:]]*[,)}]'
+
+# Exclusão (Passo 2) — contagem/agregação (regra da casa PERMITE contagem) +
+# marcador seguro por SUFIXO/PREFIXO explícito (achado do gate, item 2:
+# `emailService`/`phoneMask`/`hasEmail`/`emailSent`/`phoneMasked`/`addressId`/
+# `patient_address_id` contêm o termo mas NÃO são o valor cru — são serviço,
+# utilitário de máscara, booleano ou referência de registro). Escopada ao
+# CAMPO_RAIZ prefixado por \w* ("patient_address_id" tem "_" — \w — ANTES da
+# raiz, então o \b tem que vir antes do PREFIXO, não da raiz; "\w*id\b" SOLTO
+# pegaria "valid"/"paid" à toa, por isso o sufixo exige a raiz logo antes) — e
+# CUIL/CUIT ficam de FORA de propósito: nenhum sufixo os torna seguros (regra
+# dura, Passo 3). `\bhas\w*\b` widened pelo mesmo motivo do CAMPO_CHAVE
+# (`\bhas\b` sozinho não casava "hasEmail"). Exclusão roda no NÍVEL DO BLOCO
+# (limitação herdada do desenho original — "count"/"total" já eram assim): se
+# QUALQUER um destes aparecer em algum lugar do bloco, o bloco inteiro passa —
+# não é por token. Não redesenhado aqui (fora do escopo do achado).
+EXCLUSAO_SEGURA='\b(count|total|qtd|quantidade|length|size|missing)\b|\bhas\w*\b|\bsem_|\bcom_|\.length'
+EXCLUSAO_SEGURA="$EXCLUSAO_SEGURA"'|\b\w*(phone|telefone|email|mail|dni|documento|address|direcci[oó]n|endere[cç]o|nombre|apellido|birth|nasc)_?(id|mask|masked|service|servicio|sent|enviado|verified|confirmed|exists|existe)\b'
+# NÃO entram maskPhoneForLog/maskEmailForLog/safeErrorFields aqui — achado ao
+# rodar testar.sh (3 regressões): esta exclusão roda no NÍVEL DO BLOCO, ANTES
+# do Passo 3. `logger.warn({ phone: maskPhoneForLog(phone) }, phone);` tem um
+# phone MASCARADO e um phone CRU no mesmo bloco — se o nome do helper entrasse
+# aqui, o bloco INTEIRO sumia do Passo 2 (por conter "maskPhoneForLog" em
+# QUALQUER lugar) e o phone cru (2º argumento) nunca chegava ao strip-e-testa-
+# de-novo do Passo 3, que é o único lugar que sabe distinguir "só o mascarado"
+# de "mascarado E cru juntos". Os 3 helpers seguem tratados SOMENTE no Passo 3.
+
 echo "## V5 — PII em log adicionado"
 if [ "$N_CODE" -eq 0 ]; then na "0 linha de código no diff"; else
 
@@ -333,7 +392,7 @@ while IFS= read -r linha; do
     BUFFER="${BUFFER} ${linha}"
   fi
 done <<BRUTO
-$(grep -A"$V5_JANELA" -E "(console\.(log|error|warn)|logger?\.(info|warn|error|debug))" "$TMP/add_code" 2>/dev/null || true)
+$(grep -A"$V5_JANELA" -E "($ABRIDOR_LOG)" "$TMP/add_code" 2>/dev/null || true)
 BRUTO
 [ -n "$BUFFER" ] && BLOCOS="${BLOCOS}${BUFFER}
 "
@@ -341,7 +400,7 @@ BRUTO
 # ── Passo 2: detector — campo pessoal interpolado, campo de contagem excluído ─
 PII=$(printf '%s\n' "$BLOCOS" \
       | grep -iE "$CAMPO_CHAVE" \
-      | grep -viE '\\b(count|total|qtd|quantidade|length|size|has|missing)\\b|\\bsem_|\\bcom_|\\.length' || true)
+      | grep -viE "$EXCLUSAO_SEGURA" || true)
 
 # ── Passo 3: maskPhoneForLog(...)/maskEmailForLog(...)/safeErrorFields(...) são
 # SAÍDA SEGURA — e SOMENTE eles (D-11/09, atualizado: o extinto `redactContact`
@@ -360,7 +419,7 @@ if [ -n "$PII" ]; then
   SOBROU=""
   while IFS= read -r bloco; do
     [ -z "$bloco" ] && continue
-    if printf '%s\n' "$bloco" | grep -qiE '\b(cuil|cuit)\b'; then
+    if printf '%s\n' "$bloco" | grep -qiE '\b\w*(cuil|cuit)\w*\b'; then
       SOBROU="${SOBROU}${bloco}
 "
       continue
