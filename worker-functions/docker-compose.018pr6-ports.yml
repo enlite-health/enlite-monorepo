@@ -1,0 +1,18 @@
+# Override de portas para a worktree 018-pr6 (PR-6, ativação de recrutamento).
+# Portas escolhidas por `docker ps -a` em 12/09: livres (5432/3, 5440/1, 5563/5,
+# 8080/1/98/180 e as 90xx ja ocupadas por outras worktrees).
+services:
+  postgres:
+    container_name: 018-pr6-postgres
+    ports: !override
+      - "5568:5432"
+  api:
+    container_name: 018-pr6-api
+    ports: !override
+      - "8280:8080"
+  firebase-emulator:
+    container_name: 018-pr6-firebase-emulator
+    ports: !override
+      - "9109:9099"
+      - "9209:9199"
+      - "4009:4000"

@@ -178,7 +178,8 @@ test.describe('Spec 013 bloco C — serviço contratado como entidade @integrati
     const createService2 = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
     await forceClick(page.getByTestId('contracted-service-new-save'));
     const svc2Body = (await (await createService2).json()) as { data: { id: string } };
-    await expect(page.getByTestId(`contracted-service-form-${svc2Body.data.id}`)).toBeVisible({ timeout: 15_000 });
+    const service2Id = svc2Body.data.id;
+    await expect(page.getByTestId(`contracted-service-form-${service2Id}`)).toBeVisible({ timeout: 15_000 });
 
     // ── Fecha o drawer e confere o card com dado REAL (não "—") ──
     await forceClick(page.getByLabel('Cerrar'));
@@ -204,15 +205,32 @@ test.describe('Spec 013 bloco C — serviço contratado como entidade @integrati
     await page.waitForTimeout(400);
     await expect(page.getByTestId('contracted-service-detail-drawer')).not.toBeVisible();
 
-    // ── Ativar: 1 vaga POR SERVIÇO, no endereço do serviço (migration 330) = 2 vagas ──
-    await forceClick(page.getByTestId('activate-patient-btn'));
-    // Sincroniza pela RESPOSTA do POST, não pelo sumiço do botão: a ficha desmonta o botão no
-    // skeleton do refetch antes de a API terminar, e sob carga a leitura do banco abaixo chegava
-    // antes das vagas (medido 03/09: verde sozinho, `toHaveLength(2)` vermelho com jest rodando junto).
-    const activated = page.waitForResponse((r) => r.request().method() === 'POST' && /\/activate$/.test(r.url()), { timeout: 30_000 });
-    await forceClick(page.getByTestId('activate-confirm'));
-    expect((await activated).status()).toBe(200);
-    await expect(page.getByTestId('activate-patient-btn')).not.toBeVisible({ timeout: 15_000 }); // status vira ACTIVE, some
+    // ── Ativar: 1 vaga POR SERVIÇO (spec 018, PR-6, ADR-5) — um clique no Rocket de CADA
+    //    serviço, no endereço do serviço (migration 330) = 2 vagas. Sincroniza pela RESPOSTA do
+    //    POST, não pelo sumiço do ícone: a ficha desmonta no skeleton do refetch antes de a API
+    //    terminar, e sob carga a leitura do banco abaixo chegava antes das vagas (medido 03/09:
+    //    verde sozinho, `toHaveLength(2)` vermelho com jest rodando junto).
+    const activated1 = page.waitForResponse((r) => r.request().method() === 'POST' && /\/activate-recruitment$/.test(r.url()), { timeout: 30_000 });
+    await forceClick(page.getByTestId(`contracted-service-activate-recruitment-${service1Id}`));
+    expect((await activated1).status()).toBe(201);
+    await expect(page.getByTestId(`contracted-service-view-vacancy-${service1Id}`)).toBeVisible({ timeout: 15_000 });
+
+    const activated2 = page.waitForResponse((r) => r.request().method() === 'POST' && /\/activate-recruitment$/.test(r.url()), { timeout: 30_000 });
+    await forceClick(page.getByTestId(`contracted-service-activate-recruitment-${service2Id}`));
+    expect((await activated2).status()).toBe(201);
+    await expect(page.getByTestId(`contracted-service-view-vacancy-${service2Id}`)).toBeVisible({ timeout: 15_000 });
+
+    // paciente do funil → SEARCHING na 1ª ativação; a 2ª não regride nada (statusChanged: false)
+    expect(runSQL(`SELECT status FROM patients WHERE id = '${seed.patientId}'`).trim()).toBe('SEARCHING');
+
+    // 3º momento (checklist `SCHEDULE_REQUIRED_STATUSES`): SEARCHING → ACTIVE pelo mesmo
+    // `patient-status-control` que a ficha já usa para todo estado clínico.
+    await expect(page.getByTestId('patient-status-control')).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId('patient-status-select').selectOption('ACTIVE');
+    const putActive = page.waitForResponse((r) => r.request().method() === 'PUT' && /\/status$/.test(r.url()));
+    await forceClick(page.getByTestId('patient-status-save'));
+    expect((await putActive).status()).toBe(200);
+    await expect(page.getByTestId('patient-status-badge')).toHaveText('Activo', { timeout: 20_000 }); // status vira ACTIVE
 
     const services = readContractedServices(seed.patientId);
     expect(services).toHaveLength(2);

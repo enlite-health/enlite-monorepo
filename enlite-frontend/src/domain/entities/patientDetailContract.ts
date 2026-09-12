@@ -142,6 +142,8 @@ const contractedServiceSchema = z
     schedule: z
       .array(z.object({ dayOfWeek: z.number(), startTime: z.string(), endTime: z.string() }))
       .nullable(),
+    // Spec 018, PR-6: vaga viva deste serviço (null = pode ativar recrutamento; "Ver vacante" senão).
+    liveVacancyId: z.string().nullable(),
     active: z.boolean(),
     endedAt: isoDate.nullable(),
     country: z.string(),

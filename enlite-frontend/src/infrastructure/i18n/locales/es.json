@@ -2832,17 +2832,6 @@
     "patients": {
       "title": "Pacientes",
       "listTitle": "Lista de Pacientes",
-      "activate": {
-        "button": "Activar paciente",
-        "confirmTitle": "Activar paciente",
-        "confirmBody": "Se generará una vacante borrador por cada localización activa y el paciente pasará a Activo. ¿Confirmás?",
-        "confirm": "Activar",
-        "cancel": "Cancelar",
-        "successToast": "Paciente activado — {{count}} vacantes borrador creadas",
-        "noAddress": "Agregá al menos una localización antes de activar.",
-        "error": "No se pudo activar el paciente",
-        "notReady": "No se puede activar: falta {{items}}."
-      },
       "editDrawer": {
         "generalTitle": "Editar información general",
         "clinicalTitle": "Editar diagnóstico",
@@ -2987,7 +2976,8 @@
         "moveErrorCodes": {
           "PATIENT_STATUS_TRANSITION_NOT_ALLOWED": "Ese cambio de estado no está permitido.",
           "ON_HOLD_REASON_REQUIRED": "Para poner en espera hace falta indicar el motivo.",
-          "PATIENT_STATUS_NOT_READY": "No se puede mover: faltan datos obligatorios en la ficha."
+          "PATIENT_STATUS_NOT_READY": "No se puede mover: faltan datos obligatorios en la ficha.",
+          "KANBAN_ACTIVATION_MOVED_TO_SERVICE": "Para activar, usá \"Activar reclutamiento\" en el servicio contratado de la ficha del paciente."
         },
         "moveNotReady": "No se puede mover: falta {{items}}."
       },
@@ -3389,7 +3379,14 @@
           "newButton": "Nuevo servicio",
           "editRowAria": "Editar el servicio {{service}}",
           "tableActions": "Acciones",
-          "detailEdit": "Editar"
+          "detailEdit": "Editar",
+          "activateRecruitmentAria": "Activar reclutamiento para {{service}}",
+          "activateRecruitmentTooltip": "Falta: {{items}}",
+          "viewVacancyAria": "Ver vacante de {{service}}",
+          "viewVacancy": "Ver vacante",
+          "activateRecruitmentToast": "Vacante en borrador creada",
+          "activateRecruitmentError": "No se pudo activar el reclutamiento",
+          "activateRecruitmentAlreadyRecruiting": "Este servicio ya tiene una vacante en curso"
         },
         "matchingCard": {
           "title": "Encuadre Terapéutico",

@@ -122,16 +122,20 @@ export type { GetPatientByIdOutput } from './application/GetPatientByIdUseCase';
 export { CreatePatientUseCase, PatientContactValidationError } from './application/CreatePatientUseCase';
 export type { CreatePatientInput } from './application/CreatePatientUseCase';
 export {
-  ActivatePatientUseCase,
-  PatientNotFoundError,
-  PatientNotReadyError,
-  NoActiveAddressError,
-} from './application/ActivatePatientUseCase';
-export type { ActivatePatientResult } from './application/ActivatePatientUseCase';
+  ActivateRecruitmentUseCase,
+  PatientNotFoundForRecruitmentError,
+  ServiceNotFoundForRecruitmentError,
+  ServiceAlreadyRecruitingError,
+  RecruitmentNotReadyError,
+} from './application/ActivateRecruitmentUseCase';
+export type { ActivateRecruitmentResult } from './application/ActivateRecruitmentUseCase';
 export {
   computePatientCompleteness,
+  computeRecruitmentReadiness,
   isMinor,
+  isPlaceholderCoverageValue,
   PATIENT_COMPLETENESS_CODES,
+  RECRUITMENT_BLOCKING_CODES,
 } from './domain/PatientCompleteness';
 export type {
   PatientCompletenessCode,

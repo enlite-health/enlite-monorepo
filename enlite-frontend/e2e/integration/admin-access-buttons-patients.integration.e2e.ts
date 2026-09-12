@@ -38,6 +38,7 @@ const PASSWORD = 'TestAdmin123!';
 
 let groupId = '';
 let patientId = '';
+let serviceId = '';
 
 // ── SQL helper — psql direto em 5439 (mesmo padrão de admin-access-buttons-vacancies). ──
 
@@ -215,12 +216,20 @@ test.describe('Botões da família pacientes — esconder, não desabilitar (D26
     psql(`INSERT INTO iam.user_groups (user_id, group_id, tenant_id) VALUES ('${RECRUTADORA_UID}', '${groupId}', '${TENANT}')`);
 
     // Paciente mínimo, status ADMISSION (ativável — testa a régua do
-    // ActivatePatientButton também) e no kanban (coluna ADMISSION).
+    // ActivateRecruitmentAction, spec 018 PR-6 ADR-5, também) e no kanban (coluna ADMISSION).
     const clickupTaskId = `E2E-PT-${RUN_ID}`;
     psql(`INSERT INTO patients (clickup_task_id, first_name, last_name, status, diagnosis, dependency_level, country, created_at, updated_at)
           VALUES ('${clickupTaskId}', 'E2E', 'Pacientes ${RUN_ID}', 'ADMISSION', 'TEA leve', 'MODERATE', 'AR', NOW(), NOW())`);
     patientId = scalar(`SELECT id FROM patients WHERE clickup_task_id = '${clickupTaskId}'`);
     if (!patientId) throw new Error('paciente e2e não foi inserido');
+
+    // Spec 018, PR-6, ADR-5: ativar deixou de ser um botão no cabeçalho e virou um ícone POR
+    // SERVIÇO — sem UM serviço contratado o ícone nem tem linha pra renderizar, e este teste
+    // deixaria de provar qualquer coisa sobre a célula `patient_services:write`. O serviço nasce
+    // sem endereço/horário de propósito: a régua daqui é VISIBILIDADE por permissão, não completude.
+    serviceId = scalar(`INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by)
+          VALUES ('${patientId}', 'AT', true, 'AR', 'e2e-pt-setup', 'e2e-pt-setup') RETURNING id`);
+    if (!serviceId) throw new Error('serviço contratado e2e não foi inserido');
   });
 
   test.afterAll(() => {
@@ -254,7 +263,6 @@ test.describe('Botões da família pacientes — esconder, não desabilitar (D26
     // Ficha — espera o conteúdo (título, sempre visível) ANTES da screenshot.
     await page.goto(`/admin/patients/${patientId}`);
     await expect(page.getByRole('heading', { name: 'Ficha del Paciente', exact: true })).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId('activate-patient-btn')).toHaveCount(0);
     await expect(page.getByTestId('edit-general-btn')).toHaveCount(0);
     await expect(page.getByTestId('edit-clinical-btn')).toHaveCount(0);
 
@@ -268,9 +276,12 @@ test.describe('Botões da família pacientes — esconder, não desabilitar (D26
     await expect(page.getByTestId('edit-support-btn')).toHaveCount(0);
     await expect(page.getByTestId('chat-ids-edit-btn')).toHaveCount(0);
 
-    // Servicio contratado
+    // Servicio contratado — spec 018, PR-6, ADR-5: "Activar reclutamiento" é o ícone POR
+    // SERVIÇO (`ActivateRecruitmentAction`, mesma célula `patient_services:write` do botão
+    // antigo) — some do DOM sem a célula, igual a `new-service-btn`.
     await page.getByRole('button', { name: 'Servicio Contratado', exact: true }).click();
     await expect(page.getByTestId('new-service-btn')).toHaveCount(0);
+    await expect(page.getByTestId(`contracted-service-activate-recruitment-${serviceId}`)).toHaveCount(0);
 
     // Kanban — o card existe (leitura), mas o arrasto está bloqueado.
     await page.goto('/admin/patients/kanban');
@@ -292,7 +303,6 @@ test.describe('Botões da família pacientes — esconder, não desabilitar (D26
     await expect(page.getByTestId('new-patient-btn')).toBeVisible({ timeout: 10_000 });
 
     await page.goto(`/admin/patients/${patientId}`);
-    await expect(page.getByTestId('activate-patient-btn')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('edit-general-btn')).toBeVisible();
     await expect(page.getByTestId('edit-clinical-btn')).toBeVisible();
 
@@ -302,6 +312,10 @@ test.describe('Botões da família pacientes — esconder, não desabilitar (D26
 
     await page.getByRole('button', { name: 'Servicio Contratado', exact: true }).click();
     await expect(page.getByTestId('new-service-btn')).toBeVisible();
+    // "Activar reclutamiento" (ícone por serviço) volta a existir assim que a célula chega —
+    // desabilitado (falta endereço/horário do serviço de teste), mas VISÍVEL: a régua do D269
+    // é sobre esconder/mostrar, não sobre habilitar/desabilitar.
+    await expect(page.getByTestId(`contracted-service-activate-recruitment-${serviceId}`)).toBeVisible({ timeout: 15_000 });
 
     await page.goto('/admin/patients/kanban');
     await expect(page.getByTestId(`patient-kanban-card-${patientId}`)).toBeVisible({ timeout: 15_000 });

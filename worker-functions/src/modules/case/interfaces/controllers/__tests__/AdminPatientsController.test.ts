@@ -245,8 +245,7 @@ describe('AdminPatientsController.getPatientById', () => {
         undefined,
         undefined,
         undefined,
-        undefined,
-        fakeDiagnosisService as unknown as ConstructorParameters<typeof AdminPatientsController>[4],
+        fakeDiagnosisService as unknown as ConstructorParameters<typeof AdminPatientsController>[3],
       );
       const [req, res] = mockReqRes({ id: PATIENT_ID });
       await withDiagnosis.getPatientById(req, res);
@@ -260,8 +259,8 @@ describe('AdminPatientsController.getPatientById', () => {
       mockFindDetailById.mockResolvedValue(makePatientDetail());
       const fakeDiagnosisService = { listForPatient: jest.fn().mockResolvedValue({ found: false }) };
       const withDiagnosis = new AdminPatientsController(
-        undefined, undefined, undefined, undefined,
-        fakeDiagnosisService as unknown as ConstructorParameters<typeof AdminPatientsController>[4],
+        undefined, undefined, undefined,
+        fakeDiagnosisService as unknown as ConstructorParameters<typeof AdminPatientsController>[3],
       );
       const [req, res] = mockReqRes({ id: PATIENT_ID });
       await withDiagnosis.getPatientById(req, res);
@@ -273,8 +272,8 @@ describe('AdminPatientsController.getPatientById', () => {
       mockFindDetailById.mockResolvedValue(makePatientDetail());
       const fakeDiagnosisService = { listForPatient: jest.fn().mockRejectedValue('rejeição crua') };
       const withDiagnosis = new AdminPatientsController(
-        undefined, undefined, undefined, undefined,
-        fakeDiagnosisService as unknown as ConstructorParameters<typeof AdminPatientsController>[4],
+        undefined, undefined, undefined,
+        fakeDiagnosisService as unknown as ConstructorParameters<typeof AdminPatientsController>[3],
       );
       const [req, res] = mockReqRes({ id: PATIENT_ID });
       await withDiagnosis.getPatientById(req, res);

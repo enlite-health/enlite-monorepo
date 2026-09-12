@@ -226,19 +226,23 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
             first_name_encrypted: 'enc-first', last_name_encrypted: 'enc-last',
           },
         ],
-      }); // providers
+      }) // providers
+      // Spec 018, PR-6: vaga viva DESTE serviço — exercita o Map liveVacancyId (o outro teste da
+      // suíte cobre o caso "nenhuma vaga viva").
+      .mockResolvedValueOnce({ rows: [{ contracted_service_id: 'svc-1', id: 'vac-live-1' }] });
 
     const pool = makePool(queryImpl);
     const enc = makeEncryptionService();
     const result = await fetchPatientDetail(pool, enc, PATIENT_ID);
 
-    expect(queryImpl).toHaveBeenCalledTimes(9);
+    expect(queryImpl).toHaveBeenCalledTimes(10);
     expect(result!.contractedServices).toHaveLength(1);
     const svc = result!.contractedServices[0];
     expect(svc).toMatchObject({
       id: 'svc-1', patientId: PATIENT_ID, serviceCode: 'AT',
       authorizedHours: 20, weeklyHours: 20, hourlyValue: 1500, // string → Number
       deviceTypes: ['HOME'],
+      liveVacancyId: 'vac-live-1',
     });
     expect(svc.providers).toHaveLength(1);
     expect(svc.providers[0]).toMatchObject({
@@ -276,7 +280,8 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
             first_name_encrypted: null, last_name_encrypted: null,
           },
         ],
-      });
+      })
+      .mockResolvedValueOnce({ rows: [] }); // live vacancies (spec 018, PR-6) — nenhuma
 
     const pool = makePool(queryImpl);
     const enc = makeEncryptionService();

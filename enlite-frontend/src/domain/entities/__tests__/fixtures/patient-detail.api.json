@@ -186,6 +186,7 @@
       "supervisionFrequency": "DAYS_30",
       "guardShift": "MORNING",
       "providerAgeBand": "AGE_30_45",
+      "liveVacancyId": null,
       "active": true,
       "endedAt": null,
       "country": "AR",

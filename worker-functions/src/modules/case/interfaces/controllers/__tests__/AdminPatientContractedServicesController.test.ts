@@ -466,4 +466,94 @@ describe('AdminPatientContractedServicesController', () => {
       expect(res2.status).toHaveBeenCalledWith(200);
     });
   });
+
+  // spec 018, PR-6, ADR-5, contracts/activation.md
+  describe('activateRecruitment', () => {
+    it('400 quando params inválidos', async () => {
+      const useCase = { execute: jest.fn() };
+      const controller = new AdminPatientContractedServicesController({} as never, {} as never, useCase as never);
+      const res = mockRes();
+      await controller.activateRecruitment(mockReq({ params: { id: 'not-a-uuid', sid: SERVICE_ID } }), res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(useCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('201 quando o use case cria a vaga — devolve vacancyId/patientStatus/statusChanged', async () => {
+      const useCase = { execute: jest.fn().mockResolvedValue({ vacancyId: 'vac-1', patientStatus: 'SEARCHING', statusChanged: true }) };
+      const controller = new AdminPatientContractedServicesController({} as never, {} as never, useCase as never);
+      const res = mockRes();
+      await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID } }), res);
+      expect(useCase.execute).toHaveBeenCalledWith(PATIENT_ID, SERVICE_ID);
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        data: { vacancyId: 'vac-1', patientStatus: 'SEARCHING', statusChanged: true },
+      });
+    });
+
+    it('404 quando o paciente não existe', async () => {
+      const { PatientNotFoundForRecruitmentError } = jest.requireActual('../../../application/ActivateRecruitmentUseCase');
+      const useCase = { execute: jest.fn().mockRejectedValue(new PatientNotFoundForRecruitmentError(PATIENT_ID)) };
+      const controller = new AdminPatientContractedServicesController({} as never, {} as never, useCase as never);
+      const res = mockRes();
+      await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID } }), res);
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith({ success: false, code: 'NOT_FOUND' });
+    });
+
+    it('404 quando o serviço não existe / é de outro paciente / está inativo', async () => {
+      const { ServiceNotFoundForRecruitmentError } = jest.requireActual('../../../application/ActivateRecruitmentUseCase');
+      const useCase = { execute: jest.fn().mockRejectedValue(new ServiceNotFoundForRecruitmentError(PATIENT_ID, SERVICE_ID)) };
+      const controller = new AdminPatientContractedServicesController({} as never, {} as never, useCase as never);
+      const res = mockRes();
+      await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID } }), res);
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith({ success: false, code: 'NOT_FOUND' });
+    });
+
+    it('409 quando o serviço já tem vaga viva — devolve o vacancyId existente', async () => {
+      const { ServiceAlreadyRecruitingError } = jest.requireActual('../../../application/ActivateRecruitmentUseCase');
+      const useCase = { execute: jest.fn().mockRejectedValue(new ServiceAlreadyRecruitingError('vac-old')) };
+      const controller = new AdminPatientContractedServicesController({} as never, {} as never, useCase as never);
+      const res = mockRes();
+      await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID } }), res);
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith({ success: false, code: 'SERVICE_ALREADY_RECRUITING', vacancyId: 'vac-old' });
+    });
+
+    it('422 quando o gate recusa — devolve PATIENT_NOT_READY com details.missing', async () => {
+      const { RecruitmentNotReadyError } = jest.requireActual('../../../application/ActivateRecruitmentUseCase');
+      const useCase = { execute: jest.fn().mockRejectedValue(new RecruitmentNotReadyError(PATIENT_ID, SERVICE_ID, ['SERVICE_SCHEDULE'])) };
+      const controller = new AdminPatientContractedServicesController({} as never, {} as never, useCase as never);
+      const res = mockRes();
+      await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID } }), res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json.mock.calls[0][0]).toMatchObject({
+        success: false,
+        code: 'PATIENT_NOT_READY',
+        details: { missing: ['SERVICE_SCHEDULE'] },
+      });
+    });
+
+    it('500 em erro genérico (instância de Error)', async () => {
+      const useCase = { execute: jest.fn().mockRejectedValue(new Error('boom')) };
+      const controller = new AdminPatientContractedServicesController({} as never, {} as never, useCase as never);
+      const res = mockRes();
+      await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID } }), res);
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+
+    it('500 quando rejeita com algo que não é Error', async () => {
+      const useCase = { execute: jest.fn().mockRejectedValue('rejeição crua') };
+      const controller = new AdminPatientContractedServicesController({} as never, {} as never, useCase as never);
+      const res = mockRes();
+      await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID } }), res);
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Failed to activate recruitment' });
+    });
+
+    it('construtor sem use case injetado constrói o real (pool preguiçoso — não abre conexão)', () => {
+      expect(new AdminPatientContractedServicesController()).toBeInstanceOf(AdminPatientContractedServicesController);
+    });
+  });
 });

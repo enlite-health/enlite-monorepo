@@ -130,6 +130,26 @@ class AdminContractedServicesApiServiceClass {
       body,
     );
   }
+
+  /**
+   * POST /api/admin/patients/:id/contracted-services/:sid/activate-recruitment
+   * (spec 018, PR-6, ADR-5, `contracts/activation.md`). 201 quando cria a vaga em rascunho;
+   * 404/409/422 viram `ContractedServiceApiError` (o `code` diz qual — `NOT_FOUND`,
+   * `SERVICE_ALREADY_RECRUITING`, `PATIENT_NOT_READY`).
+   */
+  async activateRecruitment(patientId: string, serviceId: string): Promise<ActivateRecruitmentResult> {
+    return this.request<ActivateRecruitmentResult>(
+      'POST',
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/activate-recruitment`,
+    );
+  }
+}
+
+/** Result of POST /:id/contracted-services/:sid/activate-recruitment. */
+export interface ActivateRecruitmentResult {
+  vacancyId: string;
+  patientStatus: string;
+  statusChanged: boolean;
 }
 
 export const AdminContractedServicesApiService = new AdminContractedServicesApiServiceClass();

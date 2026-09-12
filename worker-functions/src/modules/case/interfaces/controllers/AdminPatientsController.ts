@@ -25,11 +25,6 @@ import {
   type CreatePatientInput,
 } from '../../application/CreatePatientUseCase';
 import {
-  ActivatePatientUseCase,
-  PatientNotFoundError,
-  PatientNotReadyError,
-} from '../../application/ActivatePatientUseCase';
-import {
   PatientService,
   type PatientGeneralSectionData,
   type PatientRelatedInput,
@@ -95,7 +90,6 @@ export class AdminPatientsController {
   private readonly getPatientByIdUseCase: GetPatientByIdUseCase;
   private readonly getPatientFunnelUseCase: GetPatientFunnelUseCase;
   private readonly createPatientUseCase: CreatePatientUseCase;
-  private readonly activatePatientUseCase: ActivatePatientUseCase;
   private readonly patientService: PatientService;
   private readonly testFixtures: PatientTestFixtureService;
   private readonly db: Pool;
@@ -119,7 +113,6 @@ export class AdminPatientsController {
     geocoder?: GeocodingService,
     createPatientUseCase?: CreatePatientUseCase,
     patientService?: PatientService,
-    activatePatientUseCase?: ActivatePatientUseCase,
     diagnosisService?: PatientDiagnosisService,
   ) {
     this.repo = new PatientQueryRepository();
@@ -128,7 +121,6 @@ export class AdminPatientsController {
     this.getPatientFunnelUseCase = new GetPatientFunnelUseCase(this.db);
     this.createPatientUseCase = createPatientUseCase ?? new CreatePatientUseCase();
     this.patientService = patientService ?? new PatientService();
-    this.activatePatientUseCase = activatePatientUseCase ?? new ActivatePatientUseCase();
     this.geocoder = geocoder ?? new GeocodingService();
     this.testFixtures = new PatientTestFixtureService(this.db);
     this.diagnosisServiceOverride = diagnosisService;
@@ -410,63 +402,6 @@ export class AdminPatientsController {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientsController:getPatientStatusHistory' });
       res.status(500).json({ success: false, error: 'Failed to get patient status history' });
-    }
-  }
-
-  /**
-   * POST /api/admin/patients/:id/activate
-   *
-   * Approves the patient and opens recruitment: creates ONE draft vacancy per
-   * active location (decisão D5) and moves the patient to ACTIVE. Idempotent —
-   * an already-ACTIVE patient returns 200 with createdVacancyIds:[] (no dup).
-   *   - 404 when the patient does not exist.
-   *   - 422 when the patient has no active address (cannot activate without a
-   *     location — nothing to create).
-   */
-  async activatePatient(req: Request, res: Response): Promise<void> {
-    const parsed = adminPatientParamsSchema.safeParse(req.params);
-    if (!parsed.success) {
-      res.status(400).json({
-        success: false,
-        error: 'Invalid params',
-        details: parsed.error.flatten(),
-      });
-      return;
-    }
-
-    try {
-      const result = await this.activatePatientUseCase.execute(parsed.data.id);
-      res.status(200).json({
-        success: true,
-        data: {
-          patientId: result.patientId,
-          status: result.status,
-          createdVacancyIds: result.createdVacancyIds,
-        },
-      });
-    } catch (err: unknown) {
-      if (err instanceof PatientNotFoundError) {
-        res.status(404).json({ success: false, error: 'Patient not found' });
-        return;
-      }
-      if (err instanceof PatientNotReadyError) {
-        // Spec 014 US-D1: mesmos códigos do checklist (`completeness.missing`), para o front
-        // traduzir com o MESMO i18n em vez de repetir a frase crua do backend.
-        res.status(422).json({
-          success: false,
-          error: err.message,
-          code: 'PATIENT_NOT_READY',
-          details: { missing: err.missing },
-        });
-        return;
-      }
-      const e = err instanceof Error ? err : new Error(String(err));
-      reportError(e, { source: 'AdminPatientsController:activatePatient' });
-      res.status(500).json({
-        success: false,
-        error: 'Failed to activate patient',
-        details: e.message,
-      });
     }
   }
 

@@ -2753,17 +2753,6 @@
     "patients": {
       "title": "Pacientes",
       "listTitle": "Lista de Pacientes",
-      "activate": {
-        "button": "Ativar paciente",
-        "confirmTitle": "Ativar paciente",
-        "confirmBody": "Será gerada uma vaga rascunho por localização ativa e o paciente passará a Ativo. Confirmar?",
-        "confirm": "Ativar",
-        "cancel": "Cancelar",
-        "successToast": "Paciente ativado — {{count}} vagas rascunho criadas",
-        "noAddress": "Adicione ao menos uma localização antes de ativar.",
-        "error": "Não foi possível ativar o paciente",
-        "notReady": "Não é possível ativar: falta {{items}}."
-      },
       "editDrawer": {
         "generalTitle": "Editar informações gerais",
         "clinicalTitle": "Editar diagnóstico",
@@ -2908,7 +2897,8 @@
         "moveErrorCodes": {
           "PATIENT_STATUS_TRANSITION_NOT_ALLOWED": "Essa mudança de estado não é permitida.",
           "ON_HOLD_REASON_REQUIRED": "Para colocar em espera é preciso indicar o motivo.",
-          "PATIENT_STATUS_NOT_READY": "Não é possível mover: faltam dados obrigatórios na ficha."
+          "PATIENT_STATUS_NOT_READY": "Não é possível mover: faltam dados obrigatórios na ficha.",
+          "KANBAN_ACTIVATION_MOVED_TO_SERVICE": "Para ativar, use \"Ativar recrutamento\" no serviço contratado da ficha do paciente."
         },
         "moveNotReady": "Não é possível mover: falta {{items}}."
       },
@@ -3310,7 +3300,14 @@
           "newButton": "Novo serviço",
           "editRowAria": "Editar o serviço {{service}}",
           "tableActions": "Ações",
-          "detailEdit": "Editar"
+          "detailEdit": "Editar",
+          "activateRecruitmentAria": "Ativar recrutamento para {{service}}",
+          "activateRecruitmentTooltip": "Falta: {{items}}",
+          "viewVacancyAria": "Ver vaga de {{service}}",
+          "viewVacancy": "Ver vaga",
+          "activateRecruitmentToast": "Vaga em rascunho criada",
+          "activateRecruitmentError": "Não foi possível ativar o recrutamento",
+          "activateRecruitmentAlreadyRecruiting": "Este serviço já tem uma vaga em andamento"
         },
         "matchingCard": {
           "title": "Enquadre Terapêutico",

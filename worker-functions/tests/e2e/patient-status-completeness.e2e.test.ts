@@ -33,11 +33,13 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
     schedule: string | null;
     comServico?: boolean;
     comEndereco?: boolean;
+    /** `health_insurance_name` — só usado pelos testes de `activate-recruitment` (RECRUITMENT_BLOCKING_CODES cobra COVERAGE). */
+    coverage?: string | null;
   }): Promise<string> {
     const id = (await pool.query<{ id: string }>(
-      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status)
-       VALUES ($1, 'Horario', 'Gate', 'AR', $2) RETURNING id`,
-      [opts.tag, opts.status],
+      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, health_insurance_name)
+       VALUES ($1, 'Horario', 'Gate', 'AR', $2, $3) RETURNING id`,
+      [opts.tag, opts.status, opts.coverage ?? null],
     )).rows[0].id;
 
     let addr: string | null = null;
@@ -83,8 +85,19 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
     await pool.end();
   });
 
+  // migration 428 (este PR, spec 018/PR-6/ADR-5) removeu funil→ACTIVE de
+  // `patient_status_transitions`: esse pulo direto não existe mais (é
+  // `activate-recruitment` que move para SEARCHING; ver testes 11-13). Os
+  // testes 1-4/7-9 abaixo mediam a régua de completude sobre ACTIVE partindo
+  // do funil (PENDING_ADMISSION) — pré-428 isso passava pela FSM e caía no
+  // gate de completude. Agora a FSM barra ANTES (`PatientStatusWriter` roda a
+  // tabela antes do checklist, de propósito: "transição que nem existe deve
+  // dizer 'não existe', não 'falta horário'"), e a resposta vira sempre
+  // PATIENT_STATUS_TRANSITION_NOT_ALLOWED. Migrados para partir de SEARCHING
+  // (transição SEARCHING→ACTIVE continua na 315) — mesma régua de completude,
+  // caminho que ainda existe.
   it('1. serviço sem horário (NULL) → PUT status ACTIVE devolve 422 PATIENT_STATUS_NOT_READY com SERVICE_SCHEDULE, e o banco NÃO muda', async () => {
-    const id = await criarPaciente({ tag: 'sched-gate-e2e-1', status: 'PENDING_ADMISSION', schedule: null });
+    const id = await criarPaciente({ tag: 'sched-gate-e2e-1', status: 'SEARCHING', schedule: null });
 
     const r = await put(id, { status: 'ACTIVE' });
     expect(r.status).toBe(422);
@@ -95,11 +108,11 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
     });
 
     const { rows } = await pool.query<{ status: string }>('SELECT status FROM patients WHERE id = $1', [id]);
-    expect(rows[0].status).toBe('PENDING_ADMISSION');
+    expect(rows[0].status).toBe('SEARCHING');
   });
 
   it('2. ARRAY VAZIO gravado por SQL conta como sem horário — o CHECK do banco o aceita, o predicado tem de pegá-lo', async () => {
-    const id = await criarPaciente({ tag: 'sched-gate-e2e-2', status: 'PENDING_ADMISSION', schedule: '[]' });
+    const id = await criarPaciente({ tag: 'sched-gate-e2e-2', status: 'SEARCHING', schedule: '[]' });
 
     // controle positivo: o `[]` REALMENTE está gravado (se o CHECK o tivesse recusado, o teste
     // estaria medindo um NULL e passaria pelo motivo errado)
@@ -114,7 +127,7 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
   });
 
   it('3. COM horário → ACTIVE passa (200) e o banco grava', async () => {
-    const id = await criarPaciente({ tag: 'sched-gate-e2e-3', status: 'PENDING_ADMISSION', schedule: HORARIO });
+    const id = await criarPaciente({ tag: 'sched-gate-e2e-3', status: 'SEARCHING', schedule: HORARIO });
 
     const r = await put(id, { status: 'ACTIVE' });
     expect(r.status).toBe(200);
@@ -124,7 +137,7 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
 
   it('4. o DROP NO KANBAN (changeSource kanban) passa a cobrar o checklist INTEIRO — sem endereço é 422 ADDRESS', async () => {
     const id = await criarPaciente({
-      tag: 'sched-gate-e2e-4', status: 'PENDING_ADMISSION', schedule: HORARIO, comEndereco: false,
+      tag: 'sched-gate-e2e-4', status: 'SEARCHING', schedule: HORARIO, comEndereco: false,
     });
 
     const r = await put(id, { status: 'ACTIVE', changeSource: 'kanban' });
@@ -134,7 +147,7 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
     expect(r.data.details.missing).toEqual(expect.arrayContaining(['ADDRESS', 'SERVICE_ADDRESS']));
 
     const { rows } = await pool.query<{ status: string }>('SELECT status FROM patients WHERE id = $1', [id]);
-    expect(rows[0].status).toBe('PENDING_ADMISSION');
+    expect(rows[0].status).toBe('SEARCHING');
   });
 
   it('5. SEARCHING e REPLACEMENT exigem só o horário — recusados sem ele, aceitos com ele', async () => {
@@ -161,13 +174,13 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
 
   it('7. paciente SEM serviço nenhum não é barrado pelo horário (mesmo fallback do endereço do serviço)', async () => {
     const id = await criarPaciente({
-      tag: 'sched-gate-e2e-7', status: 'PENDING_ADMISSION', schedule: null, comServico: false,
+      tag: 'sched-gate-e2e-7', status: 'SEARCHING', schedule: null, comServico: false,
     });
     expect((await put(id, { status: 'ACTIVE' })).status).toBe(200);
   });
 
   it('8. UM serviço com horário e outro SEM → bloqueia (a régua é "todo serviço ativo", não "algum")', async () => {
-    const id = await criarPaciente({ tag: 'sched-gate-e2e-8', status: 'PENDING_ADMISSION', schedule: HORARIO });
+    const id = await criarPaciente({ tag: 'sched-gate-e2e-8', status: 'SEARCHING', schedule: HORARIO });
     const addr = (await pool.query<{ id: string }>(
       `SELECT id FROM patient_addresses WHERE patient_id = $1`, [id],
     )).rows[0].id;
@@ -184,7 +197,7 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
   });
 
   it('9. serviço INATIVO sem horário não bloqueia — a régua é sobre serviço ATIVO', async () => {
-    const id = await criarPaciente({ tag: 'sched-gate-e2e-9', status: 'PENDING_ADMISSION', schedule: HORARIO });
+    const id = await criarPaciente({ tag: 'sched-gate-e2e-9', status: 'SEARCHING', schedule: HORARIO });
     await pool.query(
       // `ended_at` é obrigatório quando `active=false` (CHECK pcs_active_ended_coerente)
       `INSERT INTO patient_contracted_services
@@ -205,11 +218,32 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
     expect(g.data.data.completeness.canActivate).toBe(false);
   });
 
-  it('11. `POST /activate` recusa pelo mesmo código, e NÃO cria vaga nenhuma', async () => {
-    const id = await criarPaciente({ tag: 'sched-gate-e2e-11', status: 'PENDING_ADMISSION', schedule: null });
+  // Spec 018, PR-6, ADR-5: `POST /:id/activate` virou 410 (`ACTIVATION_SPLIT`) — ativar
+  // recrutamento agora é POR SERVIÇO, em `POST /:id/contracted-services/:sid/activate-recruitment`
+  // (`RECRUITMENT_BLOCKING_CODES`, contracts/activation.md). Testes 11/12 migrados para a rota nova.
 
+  it('11. `POST /:id/activate` (removido) → 410 ACTIVATION_SPLIT, nunca 422/200', async () => {
+    const id = await criarPaciente({ tag: 'sched-gate-e2e-11', status: 'PENDING_ADMISSION', schedule: null });
     const r = await api.post(`/api/admin/patients/${id}/activate`, {}, asAdmin);
+    expect(r.status).toBe(410);
+    expect(r.data.code).toBe('ACTIVATION_SPLIT');
+  });
+
+  it('12. sem horário no serviço, `activate-recruitment` recusa (422 SERVICE_SCHEDULE) e não cria vaga', async () => {
+    const id = await criarPaciente({
+      tag: 'sched-gate-e2e-12',
+      status: 'PENDING_ADMISSION',
+      schedule: null,
+      coverage: 'Particular',
+    });
+    const { rows: svcRows } = await pool.query<{ id: string }>(
+      'SELECT id FROM patient_contracted_services WHERE patient_id = $1', [id],
+    );
+    const sid = svcRows[0].id;
+
+    const r = await api.post(`/api/admin/patients/${id}/contracted-services/${sid}/activate-recruitment`, {}, asAdmin);
     expect(r.status).toBe(422);
+    expect(r.data.code).toBe('PATIENT_NOT_READY');
     expect(r.data.details.missing).toContain('SERVICE_SCHEDULE');
 
     const { rows } = await pool.query<{ n: string }>(
@@ -218,11 +252,22 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
     expect(Number(rows[0].n)).toBe(0);
   });
 
-  it('12. com horário, o `POST /activate` cria a vaga E copia o horário do serviço para ela', async () => {
-    const id = await criarPaciente({ tag: 'sched-gate-e2e-12', status: 'PENDING_ADMISSION', schedule: HORARIO });
+  it('13. com horário e cobertura, `activate-recruitment` cria a vaga (201) e copia o horário do serviço para ela', async () => {
+    const id = await criarPaciente({
+      tag: 'sched-gate-e2e-13',
+      status: 'PENDING_ADMISSION',
+      schedule: HORARIO,
+      coverage: 'Particular',
+    });
+    const { rows: svcRows } = await pool.query<{ id: string }>(
+      'SELECT id FROM patient_contracted_services WHERE patient_id = $1', [id],
+    );
+    const sid = svcRows[0].id;
 
-    const r = await api.post(`/api/admin/patients/${id}/activate`, {}, asAdmin);
-    expect(r.status).toBe(200);
+    const r = await api.post(`/api/admin/patients/${id}/contracted-services/${sid}/activate-recruitment`, {}, asAdmin);
+    expect(r.status).toBe(201);
+    expect(r.data.data.patientStatus).toBe('SEARCHING');
+    expect(r.data.data.statusChanged).toBe(true);
 
     const { rows } = await pool.query<{ schedule: unknown }>(
       'SELECT schedule FROM job_postings WHERE patient_id = $1', [id],

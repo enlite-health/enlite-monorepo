@@ -6,16 +6,18 @@
  * horas, local, valor) e falha se qualquer coluna voltar a mostrar placeholder para dado que
  * existe. Usa i18n REAL (molde `sex-both-i18n.test.tsx`) — sem isso o enum cru escaparia.
  */
-import { describe, it, expect, beforeAll, vi } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
 import ptBRJson from '@infrastructure/i18n/locales/pt-BR.json';
 import { expectNoRawEnumLeaks } from '../../../../../../test/rawEnumLeakGuard';
 import { ServicosContratadosCard } from '../ServicosContratadosCard';
+import { runActivateRecruitmentClick } from '../activateRecruitmentClick';
 import { patientDetailFixture } from './patientDetailFixture';
 import type { PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
+import { ContractedServiceApiError } from '@infrastructure/http/AdminContractedServicesApiService';
 
 // Dublê do drawer: isola os dois closures que o CARD passa pra ele (`onClose`/`onSaved`) sem
 // precisar montar o drawer real (que busca a lista via API na hora que abre).
@@ -27,6 +29,24 @@ vi.mock('../edit/PatientContractedServicesEditDrawer', () => ({
     </div>
   ),
 }));
+
+// `ActivateRecruitmentAction` (018-pr6, ADR-5) — o CLIENTE http é dublê (controla sucesso/erro do
+// POST activate-recruitment); `ContractedServiceApiError` é a classe REAL (importActual), porque o
+// componente faz `instanceof` sobre ela no catch — um dublê ad-hoc quebraria esse `instanceof`.
+const mockActivateRecruitment = vi.fn();
+vi.mock('@infrastructure/http/AdminContractedServicesApiService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@infrastructure/http/AdminContractedServicesApiService')>();
+  return {
+    ...actual,
+    AdminContractedServicesApiService: {
+      ...actual.AdminContractedServicesApiService,
+      activateRecruitment: (...a: unknown[]) => mockActivateRecruitment(...a),
+    },
+  };
+});
+
+const mockShowToast = vi.fn();
+vi.mock('@presentation/hooks/useToast', () => ({ useToast: () => mockShowToast }));
 
 beforeAll(async () => {
   await i18n.use(initReactI18next).init({
@@ -57,6 +77,7 @@ const SERVICE: PatientContractedServiceDetail = {
   providerAgeBand: 'AGE_30_45',
   addressId: null,
   schedule: null,
+  liveVacancyId: null,
   active: true,
   endedAt: null,
   country: 'AR',
@@ -172,6 +193,7 @@ describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-0
       providerAgeBand: null,
       addressId: null,
       schedule: null,
+      liveVacancyId: null,
       active: false, endedAt: '2026-09-02T00:00:00Z', country: 'AR', deviceTypes: [], providers: [],
       createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
     };
@@ -364,5 +386,157 @@ describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-0
     fireEvent.click(screen.getByTestId('new-service-btn'));
     fireEvent.click(screen.getByTestId('drawer-stub-saved'));
     expect(screen.getByTestId('patient-contracted-services-edit-drawer')).toBeTruthy();
+  });
+});
+
+/**
+ * Ícone "Activar reclutamiento" (018-pr6, ADR-5) — `ActivateRecruitmentAction`, DENTRO deste
+ * arquivo (não um componente próprio: o botão some quando falta um código do gate, vira
+ * "Ver vacante" quando o serviço já tem vaga viva). A régua real é o backend — este componente só
+ * antecipa o estado; por isso o teste cobre as respostas HTTP que o backend devolve (201/409/422/
+ * erro genérico), não a lógica de negócio (que tem suíte própria em `activation.e2e.test.ts`).
+ */
+describe('ServicosContratadosCard — ícone de ativação de recrutamento por serviço (018-pr6, ADR-5)', () => {
+  const READY_SERVICE: PatientContractedServiceDetail = {
+    ...SERVICE,
+    addressId: 'addr-home',
+    schedule: SCHEDULE,
+    liveVacancyId: null,
+  };
+  const READY_PATIENT = {
+    ...patientDetailFixture,
+    addresses: [ADDRESS_HOME],
+    contractedServices: [READY_SERVICE],
+    insuranceInformed: 'Particular',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('clique com sucesso (201): chama o endpoint, toast de sucesso, aciona onSaved (refetch)', async () => {
+    mockActivateRecruitment.mockResolvedValueOnce({ vacancyId: 'vac-1', patientStatus: 'SEARCHING', statusChanged: true });
+    const onSaved = vi.fn();
+    render(<ServicosContratadosCard patient={READY_PATIENT} onSaved={onSaved} />);
+
+    const btn = screen.getByTestId('contracted-service-activate-recruitment-svc-1');
+    expect(btn).not.toBeDisabled();
+    fireEvent.click(btn);
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(mockActivateRecruitment).toHaveBeenCalledWith(READY_PATIENT.id, 'svc-1');
+    expect(mockShowToast).toHaveBeenCalledWith(expect.any(String), 'success');
+    // Clicar na linha, não no botão, não deve ter aberto o detalhe (stopPropagation).
+    expect(screen.queryByTestId('contracted-service-detail-drawer')).toBeNull();
+  });
+
+  it('409 SERVICE_ALREADY_RECRUITING: toast de erro, mas aciona onSaved (a ficha vai mostrar "Ver vacante")', async () => {
+    mockActivateRecruitment.mockRejectedValueOnce(
+      new ContractedServiceApiError('já tem vaga', 409, { code: 'SERVICE_ALREADY_RECRUITING' }),
+    );
+    const onSaved = vi.fn();
+    render(<ServicosContratadosCard patient={READY_PATIENT} onSaved={onSaved} />);
+
+    fireEvent.click(screen.getByTestId('contracted-service-activate-recruitment-svc-1'));
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(mockShowToast).toHaveBeenCalledWith(expect.any(String), 'error');
+  });
+
+  it('422 PATIENT_NOT_READY: toast de erro NOMEIA o código que falta (traduzido), não aciona onSaved', async () => {
+    mockActivateRecruitment.mockRejectedValueOnce(
+      new ContractedServiceApiError('falta cobertura', 422, { code: 'PATIENT_NOT_READY', details: { missing: ['COVERAGE'] } }),
+    );
+    const onSaved = vi.fn();
+    render(<ServicosContratadosCard patient={READY_PATIENT} onSaved={onSaved} />);
+
+    fireEvent.click(screen.getByTestId('contracted-service-activate-recruitment-svc-1'));
+
+    await waitFor(() => expect(mockShowToast).toHaveBeenCalled());
+    expect(onSaved).not.toHaveBeenCalled();
+    // O segundo argumento do t() é o texto traduzido de COVERAGE (completeness.items.COVERAGE) —
+    // o toast tem que citar o NOME do que falta, não só "algo deu errado".
+    const [, params] = mockShowToast.mock.calls[0];
+    expect(params).toBe('error');
+    const [message] = mockShowToast.mock.calls[0];
+    expect(typeof message).toBe('string');
+    expect((message as string).length).toBeGreaterThan(0);
+  });
+
+  it('erro genérico (rede/500, não ContractedServiceApiError): toast de erro genérico, não aciona onSaved', async () => {
+    mockActivateRecruitment.mockRejectedValueOnce(new Error('network down'));
+    const onSaved = vi.fn();
+    render(<ServicosContratadosCard patient={READY_PATIENT} onSaved={onSaved} />);
+
+    fireEvent.click(screen.getByTestId('contracted-service-activate-recruitment-svc-1'));
+
+    await waitFor(() => expect(mockShowToast).toHaveBeenCalledWith(expect.any(String), 'error'));
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it('caminho "Ver vacante": serviço com vaga viva mostra o link (não o botão), abre em nova rota e não dispara o detalhe da linha', () => {
+    const withVacancy = { ...READY_SERVICE, liveVacancyId: 'vac-9' };
+    const patient = { ...READY_PATIENT, contractedServices: [withVacancy] };
+    render(<ServicosContratadosCard patient={patient} />);
+
+    expect(screen.queryByTestId('contracted-service-activate-recruitment-svc-1')).toBeNull();
+    const link = screen.getByTestId('contracted-service-view-vacancy-svc-1');
+    expect(link.getAttribute('href')).toBe('/admin/vacancies/vac-9');
+
+    fireEvent.click(link);
+    expect(screen.queryByTestId('contracted-service-detail-drawer')).toBeNull();
+    expect(mockActivateRecruitment).not.toHaveBeenCalled();
+  });
+
+  it('clique duplo enquanto a 1ª chamada está em voo: a 2ª é ignorada (guarda de `busy`, via clique real)', async () => {
+    let resolveCall: (v: unknown) => void = () => {};
+    mockActivateRecruitment.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveCall = resolve; }),
+    );
+    render(<ServicosContratadosCard patient={READY_PATIENT} />);
+    const btn = screen.getByTestId('contracted-service-activate-recruitment-svc-1');
+    fireEvent.click(btn);
+    fireEvent.click(btn); // enquanto a 1ª ainda não resolveu — o `disabled` nativo já barra a 2ª
+    expect(mockActivateRecruitment).toHaveBeenCalledTimes(1);
+    resolveCall({ vacancyId: 'vac-1', patientStatus: 'SEARCHING', statusChanged: true });
+    await waitFor(() => expect(mockShowToast).toHaveBeenCalled());
+  });
+
+  // O `disabled` nativo do botão barra o clique ANTES do handler rodar — o guard
+  // `missing.length > 0 || busy` dentro de `runActivateRecruitmentClick` nunca vê `busy=true` por
+  // um clique simulado (mesma armadilha do `runAssociateProvider` vizinho). Chamando a função
+  // exportada direto, sem o DOM: prova que a guarda RECUSA quando `busy` já é true, sem invocar a API.
+  it('runActivateRecruitmentClick: `busy=true` recusa direto (guarda testada sem depender do `disabled` do DOM)', async () => {
+    const onActivated = vi.fn();
+    const setBusy = vi.fn();
+    await runActivateRecruitmentClick({
+      patientId: 'p1', serviceId: 'svc-1', missing: [], busy: true, setBusy,
+      onActivated, tc: (k) => k, t: (k) => k, showToast: mockShowToast,
+    });
+    expect(mockActivateRecruitment).not.toHaveBeenCalled();
+    expect(setBusy).not.toHaveBeenCalled();
+    expect(onActivated).not.toHaveBeenCalled();
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  it('422 PATIENT_NOT_READY sem `details.missing` (undefined): não quebra, ainda mostra toast de erro', async () => {
+    mockActivateRecruitment.mockRejectedValueOnce(
+      new ContractedServiceApiError('não pronto', 422, { code: 'PATIENT_NOT_READY' }),
+    );
+    render(<ServicosContratadosCard patient={READY_PATIENT} />);
+    fireEvent.click(screen.getByTestId('contracted-service-activate-recruitment-svc-1'));
+    await waitFor(() => expect(mockShowToast).toHaveBeenCalledWith(expect.any(String), 'error'));
+  });
+
+  it('faltando SERVICE_ADDRESS: botão desabilitado com tooltip nomeando o pendente; clique não chama a API', () => {
+    const semEndereco = { ...READY_SERVICE, addressId: null };
+    const patient = { ...READY_PATIENT, contractedServices: [semEndereco] };
+    render(<ServicosContratadosCard patient={patient} />);
+
+    const btn = screen.getByTestId('contracted-service-activate-recruitment-svc-1');
+    expect(btn).toBeDisabled();
+    expect(btn.getAttribute('title')).toBeTruthy();
+    fireEvent.click(btn);
+    expect(mockActivateRecruitment).not.toHaveBeenCalled();
   });
 });

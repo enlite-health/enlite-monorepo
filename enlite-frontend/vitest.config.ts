@@ -209,7 +209,7 @@ export default defineConfig({
         '**/src/domain/entities/PatientContractedService.ts': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
-        '**/src/presentation/components/features/admin/PatientDetail/ServicosContratadosCard.tsx': {
+        '**/src/presentation/components/features/admin/PatientDetail/{ServicosContratadosCard.tsx,activateRecruitmentClick.ts}': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
         // QA-caça #4 (03/09): os 2 branches que faltavam (`if (!service) return` no deactivate de
@@ -255,7 +255,11 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
-        '**/src/presentation/components/features/admin/PatientDetail/{CompletenessChecklist,PlaceholderCard,SupervisaoCard,RelatoriosAtendimentosCard,EnquadreTerapeuticoCard,ProjetoTerapeuticoCard,ActivatePatientButton,PatientProfileTabs}.tsx': {
+        // `ActivatePatientButton` saiu do glob (018-pr6, ADR-5): o componente foi removido —
+        // a ativação virou o `ActivateRecruitmentAction` DENTRO de `ServicosContratadosCard.tsx`,
+        // que já tem piso próprio de 100% (linha acima). Glob apontando pra arquivo morto não
+        // media nada — só mascarava que o piso real do card novo não estava coberto.
+        '**/src/presentation/components/features/admin/PatientDetail/{CompletenessChecklist,PlaceholderCard,SupervisaoCard,RelatoriosAtendimentosCard,EnquadreTerapeuticoCard,ProjetoTerapeuticoCard,PatientProfileTabs}.tsx': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
         '**/src/presentation/pages/admin/PatientKanbanPage.tsx': {

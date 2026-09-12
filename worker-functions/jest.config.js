@@ -174,7 +174,23 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
-    'src/modules/case/application/ActivatePatientUseCase.ts': {
+    // Spec 018, PR-6: `liveVacancyId` (JOIN batched com `job_postings`) e `activateRecruitment`
+    // TOCARAM os dois arquivos abaixo — medidos a 100 antes de entrar no piso.
+    'src/modules/case/infrastructure/ContractedServiceDetailMapper.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/interfaces/controllers/AdminPatientContractedServicesController.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // `ActivatePatientUseCase.ts` foi REMOVIDO (spec 018, PR-6, ADR-5) — sucedido por
+    // `ActivateRecruitmentUseCase.ts` (ativação por SERVIÇO, não mais por paciente inteiro).
+    'src/modules/case/application/ActivateRecruitmentUseCase.ts': {
       statements: 100,
       branches: 100,
       functions: 100,

@@ -6,6 +6,7 @@ import { PATIENT_STATUSES } from '../../domain/enums/PatientStatus';
 import { ON_HOLD_REASONS } from '../../domain/enums/OnHoldReason';
 import { RELATIONSHIPS } from '../../domain/enums/Relationship';
 import { PROFESSIONS } from '@modules/worker';
+import { isPlaceholderCoverageValue } from '../../domain/PatientCompleteness';
 
 /**
  * Section-scoped validators for PATCH /api/admin/patients/:id/:section.
@@ -81,10 +82,24 @@ export const clinicalSectionSchema = z
  * cobertura passou a ser escrita por LINHA (`POST/PATCH/deactivate
  * /patients/:id/coverage-emergency-contacts[/:cid]`, `patientContactRowSchemas.ts`) — mandar o
  * campo aqui agora é 400 pelo `.strict()` abaixo (contracts/support-network.md).
+ *
+ * FR-122 (spec 018, PR-6): `healthInsuranceName` recusa PLACEHOLDER (só zeros, só pontuação, ou
+ * < 2 caracteres alfanuméricos) com 400 — o `.refine` usa a MESMA função
+ * (`isPlaceholderCoverageValue`) que o gate de `COVERAGE` em `PatientCompleteness.ts`, senão a
+ * escrita aceitaria um valor que o checklist já trataria como ausente. "Particular"/"Sin
+ * cobertura" (FR-121) PASSAM — são texto real, ≥ 2 caracteres alfanuméricos.
  */
 export const coverageSectionSchema = z
   .object({
-    healthInsuranceName: z.string().trim().min(1).nullable().optional(),
+    healthInsuranceName: z
+      .string()
+      .trim()
+      .min(1)
+      .nullable()
+      .optional()
+      .refine((v) => v == null || !isPlaceholderCoverageValue(v), {
+        message: 'healthInsuranceName: valor placeholder não é uma cobertura válida (use "Particular" ou "Sin cobertura" quando não houver obra social)',
+      }),
     affiliateId: z.string().trim().min(1).nullable().optional(),
     insuranceVerifiedCodes: z.array(catalogCode).optional(),
   })

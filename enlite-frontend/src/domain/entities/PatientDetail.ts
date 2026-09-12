@@ -373,9 +373,6 @@ export interface UpdatePatientStatusResult {
 }
 
 
-/** Result of POST /api/admin/patients/:id/activate. */
-export interface ActivatePatientResult {
-  patientId: string;
-  status: string; // always 'ACTIVE'
-  createdVacancyIds: string[];
-}
+// `ActivatePatientResult` (POST /:id/activate) SAIU (spec 018, PR-6, ADR-5) — a rota é 410.
+// O resultado da ativação por serviço é `ActivateRecruitmentResult`, em
+// `@infrastructure/http/AdminContractedServicesApiService`.

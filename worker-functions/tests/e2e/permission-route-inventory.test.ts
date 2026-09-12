@@ -133,7 +133,9 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'PATCH /api/admin/patients/:id/test-flag → patient:write',
         'POST /api/admin/patient-chat-roles → patient:write',
         'POST /api/admin/patients → patient:write',
-        'POST /api/admin/patients/:id/activate → patient:write',
+        // POST /:id/activate SAIU (spec 018, PR-6, ADR-5) — a rota é 410, isenta em EXEMPT_ROUTES
+        // (mesmo molde do support-network acima).
+        'POST /api/admin/patients/:id/contracted-services/:sid/activate-recruitment → patient_services:write',
         'POST /api/admin/patients/:id/coverage-emergency-contacts → patient_coverage:write',
         'POST /api/admin/patients/:id/coverage-emergency-contacts/:cid/deactivate → patient_coverage:write',
         'POST /api/admin/patients/:id/responsibles → patient_family:write',
@@ -325,7 +327,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
     );
   });
 
-  it('as isentas são as CINCO decididas, e nenhuma a mais', () => {
+  it('as isentas são as SEIS decididas, e nenhuma a mais', () => {
     // Eram três (D116). `GET /v1/me/authz` entrou na F3: ela é `self` como as
     // outras, mas mora em `/v1/`, fora dos `GOVERNED_PREFIXES` — nascia
     // `not_governed`, isto é, isenta SEM linha, invisível a este teste. Foi o
@@ -336,12 +338,17 @@ describe('inventário de rotas governadas (app real de pé)', () => {
     // `PATCH /patients/:id/support-network` entrou no PR-1 (spec 018, ADR-1,
     // SUP-37): a rota da lista inteira virou 410 e não decide mais nada sobre
     // o dado — não há célula que faça sentido pedir para uma rota que só recusa.
+    // `POST /patients/:id/activate` entrou no PR-6 (spec 018, ADR-5): mesmo
+    // molde do support-network — a rota virou 410 puro (ACTIVATION_SPLIT),
+    // substituída por `POST .../contracted-services/:sid/activate-recruitment`
+    // (declarada com `patient_services:write`, não isenta).
     const isentas = inventario.governedRoutes.filter((r) => r.status === 'exempt');
     expect(isentas.map((r) => `${r.method} ${r.path}`).sort()).toEqual([
       'GET /api/admin/auth/profile',
       'GET /v1/me/authz',
       'PATCH /api/admin/patients/:id/support-network',
       'POST /api/admin/auth/telemetry',
+      'POST /api/admin/patients/:id/activate',
       'POST /api/admin/setup',
     ]);
   });

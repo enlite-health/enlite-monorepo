@@ -38,9 +38,9 @@ function concretizar(path: string): string {
 }
 
 /**
- * As 5 rotas isentas do perímetro têm contrato próprio para um prestador — nenhuma
+ * As 6 rotas isentas do perímetro têm contrato próprio para um prestador — nenhuma
  * devolve dado de staff. O que se afirma aqui é o status EXATO de cada uma, para
- * uma isenção nova nunca passar despercebida (a varredura falha se aparecer uma 6ª).
+ * uma isenção nova nunca passar despercebida (a varredura falha se aparecer uma 7ª).
  */
 const ISENTAS_ESPERADO: Record<string, number> = {
   'POST /api/admin/setup': 403, // bootstrap desligado por env
@@ -51,6 +51,10 @@ const ISENTAS_ESPERADO: Record<string, number> = {
   // pra QUALQUER ator, mas o `staffOnly` na frente do handler barra o prestador
   // ANTES do 410 — medido: 403 "Staff access required", igual ao /v1/me/authz.
   'PATCH /api/admin/patients/:id/support-network': 403,
+  // POST /activate (spec 018, PR-6) entrou isenta: vira 410 para QUALQUER ator, com o
+  // mesmo desenho do /support-network — o `staffOnly` na frente barra o prestador ANTES
+  // do 410, então o contrato para o prestador é 403, não 410.
+  'POST /api/admin/patients/:id/activate': 403,
 };
 
 describe('prestador com token REAL nunca entra no painel (account_type, D294)', () => {
@@ -130,7 +134,7 @@ describe('prestador com token REAL nunca entra no painel (account_type, D294)', 
     expect(declaradas.length).toBeGreaterThan(150);
   });
 
-  it('as rotas ISENTAS são exatamente 5 e cada uma responde ao prestador o que o contrato diz', async () => {
+  it('as rotas ISENTAS são exatamente 6 e cada uma responde ao prestador o que o contrato diz', async () => {
     const isentas = rotas.filter((r) => r.status === 'exempt');
     expect(isentas.map((r) => `${r.method} ${r.path}`).sort()).toEqual(Object.keys(ISENTAS_ESPERADO).sort());
     for (const rota of isentas) {

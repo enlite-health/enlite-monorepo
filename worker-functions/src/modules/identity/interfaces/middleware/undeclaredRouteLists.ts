@@ -45,6 +45,12 @@ export const EXEMPT_ROUTES: ReadonlySet<string> = new Set([
   // para uma rota que só recusa; a escrita de verdade migrou para as rotas por
   // linha (`patient_family:write`), que declaram normalmente.
   'PATCH /api/admin/patients/:id/support-network',
+  // `POST /api/admin/patients/:id/activate` (spec 018, PR-6, ADR-5,
+  // contracts/activation.md): mesma decisão — a rota responde 410 sempre (`ACTIVATION_SPLIT`),
+  // sem tocar em nenhum dado de paciente. Ativar recrutamento migrou para
+  // `POST /:id/contracted-services/:sid/activate-recruitment` (`patient_services:write` +
+  // `vacancy:write`), que declara célula normalmente.
+  'POST /api/admin/patients/:id/activate',
 ]);
 
 /**
