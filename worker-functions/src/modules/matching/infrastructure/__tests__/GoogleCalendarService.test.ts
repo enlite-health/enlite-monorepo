@@ -115,6 +115,33 @@ describe('GoogleCalendarService.addGuestToMeeting — PII guard (C1, 11/09)', ()
     // safeErrorFields: errorName + code — o suficiente pra diagnosticar sem o valor.
     expect(lines).toContain('"errorName":"Error"');
     expect(lines).toContain('"code":"EINVAL"');
+    // N1 (lex, 11/09): o log ficou seguro mas o valor saía pelo RETORNO — o
+    // chamador (BookInterviewSlotUseCase) imprime `detail`. Agora `detail` leva
+    // só errorName + código.
+    expect(JSON.stringify(result)).not.toContain(GUEST_EMAIL);
+    expect(JSON.stringify(result)).not.toContain(sensitiveMessage);
+    expect(result).toMatchObject({ detail: 'Error EINVAL' });
+  });
+
+  // N1 (lex, 11/09) — a MESMA classe nos outros 3 catches do arquivo: cada um
+  // logava a message crua E a devolvia em `detail`.
+  it.each([
+    ['confirmAttendee', (svc: GoogleCalendarService) => svc.confirmAttendee(MEET_LINK, GUEST_EMAIL)],
+    ['declineAttendee', (svc: GoogleCalendarService) => svc.declineAttendee(MEET_LINK, GUEST_EMAIL)],
+    ['removeGuestFromMeeting', (svc: GoogleCalendarService) => svc.removeGuestFromMeeting(MEET_LINK, GUEST_EMAIL)],
+  ])('N1 — %s: nem o log nem o detail levam a message crua', async (_nome, chamar) => {
+    mockFindEvent.mockResolvedValue(foundEvent({ attendees: [{ email: GUEST_EMAIL.toLowerCase() }] }));
+    const sensitiveMessage = `Invalid email: ${GUEST_EMAIL}`;
+    fetchSpy = jest.spyOn(global, 'fetch').mockRejectedValue(Object.assign(new Error(sensitiveMessage), { code: 'EINVAL' }));
+
+    const result = await chamar(service);
+
+    const lines = warnSpy.mock.calls.map((c) => JSON.stringify(c)).join('\n');
+    expect(lines).not.toContain(GUEST_EMAIL);
+    expect(lines).not.toContain(sensitiveMessage);
+    expect(JSON.stringify(result)).not.toContain(GUEST_EMAIL);
+    expect(JSON.stringify(result)).not.toContain(sensitiveMessage);
+    expect(JSON.stringify(result)).toContain('Error EINVAL');
   });
 
   // ── Sabotagem (evidência) ────────────────────────────────────────────────────
