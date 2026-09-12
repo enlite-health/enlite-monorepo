@@ -18,9 +18,15 @@ jest.mock('firebase-functions', () => ({
   },
 }));
 
+// Stage (D294): onUserCreate grava claim via `mergeCustomClaims`, que faz
+// `getUser` antes do `setCustomUserClaims` pra preservar claims existentes
+// (ex: `country` da ABAC) — sem esse mock, o merge quebra com
+// "getUser is not a function". Não é comportamento do PII fix; é o que já
+// existe em produção na stage.
+const mockGetUser = jest.fn().mockResolvedValue({ customClaims: {} });
 const mockSetCustomUserClaims = jest.fn().mockResolvedValue(undefined);
 jest.mock('firebase-admin', () => ({
-  auth: () => ({ setCustomUserClaims: mockSetCustomUserClaims }),
+  auth: () => ({ getUser: mockGetUser, setCustomUserClaims: mockSetCustomUserClaims }),
 }));
 
 jest.mock('@shared/database/DatabaseConnection');
@@ -67,6 +73,7 @@ describe('onUserCreate — PII guard', () => {
     (DatabaseConnection.getInstance as jest.Mock).mockReturnValue({
       getPool: () => ({ connect: jest.fn().mockResolvedValue(mockClient) }),
     });
+    mockGetUser.mockResolvedValue({ customClaims: {} });
     mockSetCustomUserClaims.mockResolvedValue(undefined);
   });
 
