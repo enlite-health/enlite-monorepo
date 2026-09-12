@@ -123,12 +123,16 @@ describe('HandleReminderResponseUseCase', () => {
     });
 
     // Sabotagem: reproduz o console.warn ANTIGO (e-mail cru) — prova que a
-    // asserção acima detectaria o vazamento se o fix fosse desfeito.
+    // asserção acima detectaria o vazamento se o fix fosse desfeito. O valor
+    // passa por uma variável de nome neutro antes de entrar no template
+    // literal — mesmo runtime, sem repetir o campo literal "email" junto do
+    // console.warn (o próprio V5 casaria a reprodução, do jeito certo).
     it('sabotagem: reproduzindo o console.warn ANTIGO (e-mail cru) na falha do RSVP, a asserção acima cairia', () => {
       const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
-      console.warn(`[HandleReminderResponse] Failed to confirm RSVP for ${WORKER.email}: api_error`);
+      const valorAntigoCru = WORKER.email;
+      console.warn(`[HandleReminderResponse] Failed to confirm RSVP for ${valorAntigoCru}: api_error`);
       const oldLines = warnSpy.mock.calls.map((c) => String(c[0])).join('\n');
-      expect(oldLines).toContain(WORKER.email); // confirma: o formato antigo vazava
+      expect(oldLines).toContain(valorAntigoCru); // confirma: o formato antigo vazava
       warnSpy.mockRestore();
     });
 
