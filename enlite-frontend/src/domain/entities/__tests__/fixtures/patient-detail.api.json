@@ -67,6 +67,7 @@
     {
       "id": "92818646-019c-4678-8593-017427407315",
       "addressType": "primary",
+      "addressTypeOther": null,
       "addressFormatted": "Av. Fixture 123, CABA, AR",
       "addressRaw": "Av. Fixture 123, CABA",
       "complement": null,

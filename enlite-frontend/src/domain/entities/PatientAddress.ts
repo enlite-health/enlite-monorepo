@@ -35,10 +35,25 @@ export interface ParseVacancyFullResult {
   patientId: string | null;
 }
 
+/**
+ * Lista fechada por parentesco (spec 019, D310 item c; migration 434 — `patient_addresses_type_check`).
+ * `otro` exige `address_type_other` (≤40) na MESMA requisição. Sem `.default(...)` — ausência = `NULL`
+ * = "sin especificar" (nunca inferido do `address_type` legado — spec 019 "Proibido").
+ * MESMA lista do zod do backend (`AdminPatientAddressesController.ts`, `PATIENT_ADDRESS_TYPES`).
+ */
+export const PATIENT_ADDRESS_TYPES = [
+  'domicilio_propio', 'casa_madre', 'casa_padre', 'casa_abuela',
+  'casa_abuelo', 'escuela', 'trabajo', 'otro',
+] as const;
+export type PatientAddressType = (typeof PATIENT_ADDRESS_TYPES)[number];
+
 export interface PatientAddressCreateInput {
   address_formatted: string;
   address_raw?: string;
-  address_type: string;
+  // Spec 019 (B4): `address_type` sai da criação — a lista fechada só entra pelo PATCH
+  // (AdminPatientAddressesController). Endereço nasce com tipo NULL.
+  /** Regra de nascimento (spec 019): sem principal ativo, nasce principal mesmo sem pedir. */
+  is_default?: boolean;
   /** Spec 012, US-B2 — logística por endereço (mig 316). Zona = `neighborhood` (lex C2.7). */
   neighborhood?: string;
   logistics_corridor?: string;
@@ -46,11 +61,18 @@ export interface PatientAddressCreateInput {
   access_notes?: string;
 }
 
-/** Body de PATCH /api/admin/patients/:id/addresses/:addressId — só a logística por endereço (spec 012, US-B2). */
+/**
+ * Body de PATCH /api/admin/patients/:id/addresses/:addressId — logística + PRINCIPAL + TIPO por
+ * endereço (spec 012, US-B2; spec 019, D310 item c). `null` limpa o campo, exceto `is_default`
+ * (booleano — `true` marca principal com troca atômica no servidor; `false`/ausente não desmarca).
+ */
 export interface PatientAddressLogisticsPayload {
   neighborhood?: string | null;
   logistics_corridor?: string | null;
   access_notes?: string | null;
+  is_default?: boolean;
+  address_type?: PatientAddressType | null;
+  address_type_other?: string | null;
 }
 
 export interface PatientAddressRow {
