@@ -7,6 +7,7 @@ import { PublicApiService } from '@infrastructure/http/PublicApiService';
 import { IncompleteRegistrationModal } from '@presentation/pages/public/components/IncompleteRegistrationModal';
 import { PostularseErrorModal } from '@presentation/pages/public/components/PostularseErrorModal';
 import type { PublicJobListing } from '@domain/entities/PublicJobListing';
+import { JobCard } from './JobCard';
 import {
   type Job,
   type JobsResponse,
@@ -20,10 +21,17 @@ import {
 // `window` é sempre definido: esta é uma SPA Vite pura, sem SSR (arquitetura em
 // enlite-frontend/CLAUDE.md) — o guard `typeof window !== 'undefined'` nunca
 // tinha o ramo falso alcançado em nenhum ambiente real desta app.
+//
+// PADRÃO (achado do gate 12/09): a API pública é a fonte por padrão — sem
+// override de window nem env definida, `readUsePublicApi()` retorna `true`.
+// O scraper legado só roda quando alguém desliga explicitamente: env
+// `VITE_USE_PUBLIC_JOBS_API="false"` (ex.: stage — massa sintética não
+// aparece no feed público, ver frontend-stg.yml) ou o override de window
+// (usado nos testes). Prioridade: window > env > default (true).
 function readUsePublicApi(): boolean {
   const override = (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API;
   if (typeof override === 'boolean') return override;
-  return import.meta.env.VITE_USE_PUBLIC_JOBS_API === 'true';
+  return import.meta.env.VITE_USE_PUBLIC_JOBS_API !== 'false';
 }
 
 function formatAgeRange(min: number | null, max: number | null): string {
@@ -35,7 +43,12 @@ function formatAgeRange(min: number | null, max: number | null): string {
 
 function adaptPublicJobListing(dto: PublicJobListing): Job {
   return {
-    code: String(dto.case_number),
+    id: dto.id,
+    // "824-5012" — MESMO formato que o painel admin usa (VacancyDetailPage.tsx,
+    // `${case_number}-${vacancy_number}`). Antes só mostrava case_number
+    // ("824"), perdendo o vacancy_number — os dois campos existem e vêm
+    // sempre populados na API pública (confirmado: 189/189 vagas).
+    code: `${dto.case_number}-${dto.vacancy_number}`,
     title: dto.title,
     workerType: (dto.worker_type ?? []).join(', '),
     provincia: dto.state ?? '',
@@ -95,14 +108,6 @@ export const JobsEmbeddedSection = ({
   const [error, setError] = useState<string | null>(null);
 
   const [showIncompleteModal, setShowIncompleteModal] = useState(false);
-
-  const handleWhatsAppClick = (job: Job): void => {
-    if (!isRegistrationComplete) {
-      setShowIncompleteModal(true);
-      return;
-    }
-    window.open(job.whatsappLink, '_blank');
-  };
 
   const handleDetailsClick = (job: Job): void => {
     if (!isRegistrationComplete) {
@@ -293,83 +298,25 @@ export const JobsEmbeddedSection = ({
           </div>
         ) : (
           filteredJobs.map((job) => (
-            <div
-              key={job.code}
-              className="border border-[#d9d9d9] rounded-[10px] p-4 hover:border-[#180149] transition-colors bg-white"
-            >
-              <div className="flex items-start justify-between mb-3 gap-2">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <span className="px-2 py-1 bg-[#180149] text-white text-xs rounded font-medium font-lexend">
-                      {job.code}
-                    </span>
-                    <span className="text-xs text-[#737373] capitalize font-lexend font-medium">
-                      {job.workerType.split(', ').map(p => t(`jobs.profession.${p}`, { defaultValue: p })).join(', ')}
-                    </span>
-                  </div>
-                  <h3 className="font-semibold text-[#180149] text-sm font-lexend">
-                    {[job.barrio, job.localidad, job.provincia].filter(Boolean).join(' · ')}
-                  </h3>
-                </div>
-                <div className="flex flex-wrap gap-2 flex-shrink-0">
-                  {/*
-                    🔒 Achado do gate (11/09, rodada 3): `bg-[#25d366]`
-                    (verde claro do ícone do WhatsApp) media 1,98:1 com
-                    texto branco — abaixo do mínimo WCAG AA (4,5:1) — e a
-                    partir da Fase 4/DD5 o botão carrega a FRASE inteira da
-                    entrega, não mais uma palavra curta. Decisão de
-                    desenho do orquestrador: mantém a identidade WhatsApp
-                    com o verde-escuro da marca — `#075E54` (7,67:1 em
-                    repouso, hover `#054C44` ~9,89:1).
-                  */}
-                  {job.whatsappLink && (
-                    <button
-                      onClick={() => handleWhatsAppClick(job)}
-                      className="px-3 py-1.5 bg-[#075E54] text-white text-xs rounded hover:bg-[#054C44] transition-colors font-lexend font-medium"
-                      data-clarity-mask="True"
-                    >
-                      {applyLabel}
-                    </button>
-                  )}
-                  <button
-                    onClick={() => handleDetailsClick(job)}
-                    className="px-3 py-1.5 bg-[#180149] text-white text-xs rounded hover:bg-[#2a014d] transition-colors font-lexend font-medium"
-                  >
-                    {t('jobs.viewDetails')}
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-[#737373] mb-3 font-lexend font-medium">
-                <div>
-                  <span className="text-[#180149] font-semibold">{t('jobs.fields.sex')}:</span>{' '}
-                  {t(`jobs.sex.${job.workerSex}`, { defaultValue: job.workerSex })}
-                </div>
-                <div>
-                  <span className="text-[#180149] font-semibold">{t('jobs.fields.ageRange')}:</span> {job.ageRange}
-                </div>
-                <div>
-                  <span className="text-[#180149] font-semibold">{t('jobs.fields.serviceType')}:</span> {job.service}
-                </div>
-                <div>
-                  <span className="text-[#180149] font-semibold">{t('jobs.fields.schedule')}:</span> {job.daysAndHours.substring(0, 30)}...
-                </div>
-              </div>
-
-              <div className="text-xs text-[#737373] font-lexend font-medium">
-                <p className="mb-1"><span className="text-[#180149] font-semibold">{t('jobs.fields.profile')}:</span> {job.profile}</p>
-                <p className="line-clamp-2">{job.description}</p>
-              </div>
-            </div>
+            <JobCard
+              key={job.id || job.code}
+              job={job}
+              applyLabel={applyLabel}
+              onViewDetails={handleDetailsClick}
+            />
           ))
         )}
       </div>
 
-      {/* Cadastro incompleto — MESMO modal de /vacantes/:id (IncompleteRegistrationModal),
-          alimentado pelo missingFields que a home já tem do GET /api/workers/me (sem
-          requisição nova, sem recálculo local de completude — D302, decisão do parecer
-          jurídico de 10/09). Nem Postularse nem Ver Detalles chamam track-channel.
-          
+      {/* Cadastro incompleto — "Ver Detalles" continua usando o MESMO modal de
+          /vacantes/:id (IncompleteRegistrationModal), alimentado pelo missingFields
+          que a home já tem do GET /api/workers/me (sem requisição nova, sem
+          recálculo local de completude — D302, decisão do parecer jurídico de
+          10/09). "Ver Detalles" NUNCA chama track-channel (condição C1 do lex).
+          "Postularse" NÃO usa mais este modal/estado — cada card tem o SEU
+          PRÓPRIO fluxo via `usePostularseAction` (JobCard.tsx), que chama o
+          servidor de verdade (elegibilidade real, canal fixo 'site').
+
           D1 (QA caça, incidente 08/09): `missingFields` null/ausente é "NÃO APUREI" —
           nunca "incompleto". Acontece quando o backend não devolveu o array (ainda) OU
           quando a worker clica ANTES do GET /api/workers/me da home resolver (a lista de

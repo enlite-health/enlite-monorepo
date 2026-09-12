@@ -4,9 +4,19 @@
  * CAMADA 0 — bug #2 (versão sem servidor novo, parecer lex 10/09): clicar
  * "Postularse"/"Ver Detalles" na HOME com cadastro incompleto abria um modal
  * genérico que não nomeava o que faltava e não reaproveitava o caminho real
- * de /vacantes/:id. Agora os dois botões abrem o MESMO IncompleteRegistrationModal,
- * alimentado por `missingFields` que a home já tem do GET /api/workers/me —
- * SEM chamar track-channel (LEX C1, cumprido pela ausência da chamada).
+ * de /vacantes/:id. Os dois botões passaram a abrir o MESMO
+ * IncompleteRegistrationModal.
+ *
+ * ATUALIZAÇÃO (rodada "home vagas API pública", autorizada por Gabriel):
+ * "Ver Detalles" continua usando a prop `missingFields` (GET /api/workers/me)
+ * e NUNCA chama track-channel (LEX C1, inalterado — teste "alt" abaixo).
+ * "Postularse" MUDOU: agora chama o servidor de verdade por clique
+ * (usePostularseAction/JobCard.tsx, canal fixo 'site') — o modal que aparece
+ * vem do 403 fresco do track-channel, não mais só da prop (que pode estar
+ * desatualizada). Os testes "feliz"/"alt — falta telefone" abaixo continuam
+ * passando sem mudança de asserção porque o servidor usa a MESMA função
+ * (fn_worker_missing_fields) que o GET /api/workers/me — o conteúdo do
+ * modal é idêntico, só a fonte mudou.
  *
  * Frontend real + backend real (USE_MOCK_AUTH=true) + Postgres real. A lista
  * de vagas vem de /api/public/v1/jobs (dado real do banco, via o toggle de
@@ -26,7 +36,6 @@ import {
   type InsertEligibilityWorkerResult,
 } from '../helpers/eligibility-worker-helper';
 import { loginNewWorker } from '../helpers/worker-realreg-auth-helper';
-import { buildMockToken } from '../helpers/worker-auth-helper';
 
 test.use({ video: 'on' });
 
@@ -149,20 +158,32 @@ test.describe('@integration Home — Postularse/Ver Detalles com cadastro incomp
     expect(trackChannelRequests).toHaveLength(0);
   });
 
-  // D1 (QA caça, rodada 4, incidente 08/09): a home NÃO PODE afirmar
-  // "incompleto" sobre um estado que não apurou. Isso acontece de verdade
-  // quando a worker clica Postularse/Ver Detalles ANTES do GET
-  // /api/workers/me da home resolver — a lista de vagas tem fetch PRÓPRIO
-  // e pode carregar primeiro. Pra forçar essa janela de corrida de forma
-  // determinística sem mockar DADO nenhum, atrasamos (route.continue() só
-  // depois de um sleep — a resposta que chega é a REAL, do backend real)
-  // só a chamada /api/workers/me; a lista de vagas segue seu caminho normal
-  // e carrega rápido.
-  test('completude NÃO APURADA (clique antes do GET /api/workers/me resolver) → mensagem de verificação, NÃO "incompleto", link não abre', async ({ page }) => {
+  // D1 (QA caça, rodada 4, incidente 08/09) — ATUALIZADO na rodada "home
+  // vagas API pública": a versão ORIGINAL deste teste atrasava o GET
+  // /api/workers/me pra provar que a home não afirma "incompleto" sobre uma
+  // completude que ainda não tinha chegado (a decisão de completude vinha de
+  // uma PROP local, sujeita à corrida entre dois fetches independentes).
+  //
+  // Essa classe de corrida deixou de EXISTIR: Postularse agora chama o
+  // servidor DIRETO por clique (usePostularseAction/JobCard.tsx), sem
+  // depender do GET /api/workers/me da home nem da prop `missingFields` — um
+  // worker REGISTERED completo abre o WhatsApp normalmente mesmo que aquele
+  // GET ainda esteja em voo (comportamento CORRETO, não mais um bug: prova
+  // disso é o caso "elegível" de home-vagas-api-publica.integration.e2e.ts).
+  //
+  // O que CONTINUA valendo (mesmo princípio, ponto de incerteza NOVO): a
+  // home nunca pode afirmar "Registro incompleto" nem abrir o WhatsApp
+  // quando o PRÓPRIO check de elegibilidade (agora o round-trip real pro
+  // track-channel) falha por erro de servidor/rede. Este teste passa a
+  // simular ISSO — interceptando track-channel (não mais /api/workers/me)
+  // pra devolver 500 — com um worker REGISTERED completo, provando que
+  // mesmo assim a home fica fail-closed.
+  test('erro do servidor no check de elegibilidade (track-channel 500) → mensagem de verificação, NÃO "incompleto", WhatsApp não abre (fail-closed)', async ({ page }) => {
     const vacancyId = insertMinimalVacancy({ includeInPublicListing: true });
     vacancies.push(vacancyId);
-    // Worker REGISTERED de verdade — a prova do defeito é que, mesmo sem
-    // faltar nada, a tela não pode dizer "incompleto" enquanto não apurou.
+    // Worker REGISTERED de verdade — sem a falha simulada abaixo, esta
+    // worker é elegível e o WhatsApp abriria. A prova é que o ERRO do
+    // servidor bloqueia mesmo assim, sem afirmar "incompleto".
     const w = insertEligibilityWorker({ occupation: 'CAREGIVER' });
     workers.push(w);
 
@@ -171,23 +192,19 @@ test.describe('@integration Home — Postularse/Ver Detalles com cadastro incomp
     });
     await loginNewWorker(page, w.authUid, `${w.authUid}@test.local`);
 
-    // Registrado DEPOIS do loginNewWorker: rotas do Playwright disparam na
+    // Registrada DEPOIS do loginNewWorker: rotas do Playwright disparam na
     // ordem INVERSA de registro (a mais recente primeiro), então esta é a
-    // que intercepta a chamada. Repete o MESMO rewrite de header que o
-    // interceptor de auth faria (senão a requisição sai sem o Bearer
-    // mock_* e o real backend devolve 401 em vez de dado real atrasado).
-    const mockToken = buildMockToken(w.authUid, `${w.authUid}@test.local`);
-    await page.route('**/api/workers/me', async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, 6_000));
-      await route.continue({
-        headers: { ...route.request().headers(), authorization: `Bearer ${mockToken}` },
+    // que intercepta a chamada — sem tocar no restante do fluxo (login,
+    // GET /api/workers/me, lista de vagas) que segue 100% real.
+    await page.route('**/api/worker-applications/track-channel', async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: false, error: 'Internal error' }),
       });
     });
 
-    // SEM 'networkidle' de propósito: esperar rede ociosa esperaria os 6s do
-    // /api/workers/me atrasado e fecharia exatamente a janela que queremos
-    // testar. A lista de vagas usa um fetch independente e carrega rápido.
-    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    await page.goto('/', { waitUntil: 'networkidle', timeout: 30_000 });
 
     const postularseBtn = page.getByRole('button', { name: 'Postularse' }).first();
     await expect(postularseBtn).toBeVisible({ timeout: 15_000 });
