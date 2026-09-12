@@ -205,7 +205,8 @@ export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }
                           {typeLabel(t, addr.addressType)}
                         </Text>
                       </div>
-                      {patientId && !addr.isPrimary && (
+                      {/* D286: mesma célula do lápis — quem não tem patient_address:write não vê a ação. */}
+                      {patientId && !addr.isPrimary && addressWriteGate.allowed && (
                         <button
                           type="button"
                           onClick={() => onMarkPrimary(addr.id)}

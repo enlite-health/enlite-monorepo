@@ -964,6 +964,27 @@ describe('LocalizacoesCard', () => {
       render(<LocalizacoesCard addresses={patientDetailFixture.addresses} patientId="p1" />);
       expect(screen.getByTestId('edit-address-addr1')).toBeInTheDocument();
     });
+
+    // Spec 019 — "Marcar como principal" só existe em endereço NÃO principal (addr1 da fixture
+    // já É o principal, nunca mostraria o botão); a mesma célula do lápis gate a ação (D286): não
+    // é permissão dedicada nova, é a MESMA patient_address:write.
+    const secundario = {
+      id: 'addr2', addressType: 'secondary', addressTypeOther: null, addressFormatted: 'Rua B, 10, SP, SP', addressRaw: null,
+      complement: null, displayOrder: 0, lat: null, lng: null, isPrimary: false,
+      neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'BR',
+    };
+
+    it('enforcement "on" SEM a célula patient_address:write: "Marcar como principal" não aparece (denied)', () => {
+      useAdminAuthStore.setState({ authz: { ...contrato([]), enforcement: 'on' }, authzStatus: 'ready' });
+      render(<LocalizacoesCard addresses={[secundario]} patientId="p1" />);
+      expect(screen.queryByTestId('address-mark-primary-addr2')).not.toBeInTheDocument();
+    });
+
+    it('enforcement "on" COM a célula patient_address:write: "Marcar como principal" aparece (allowed)', () => {
+      useAdminAuthStore.setState({ authz: { ...contrato(['patient_address:write']), enforcement: 'on' }, authzStatus: 'ready' });
+      render(<LocalizacoesCard addresses={[secundario]} patientId="p1" />);
+      expect(screen.getByTestId('address-mark-primary-addr2')).toBeInTheDocument();
+    });
   });
 });
 
