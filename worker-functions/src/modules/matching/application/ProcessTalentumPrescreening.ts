@@ -6,6 +6,8 @@ import { PubSubClient } from '@shared/events/PubSubClient';
 import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import { resolveCanonicalWorkerId, MAX_MERGE_DEPTH } from '@shared/database/resolveCanonicalWorkerId';
 import { reportError } from '@shared/logging';
+import { maskPhoneForLog } from '@shared/utils/phoneMask';
+import { maskEmailForLog } from '@shared/utils/emailMask';
 import { PrescreeningQuestionsWriter } from './PrescreeningQuestionsWriter';
 
 const TAG = '[ProcessTalentumPrescreening]';
@@ -76,8 +78,10 @@ export class ProcessTalentumPrescreening {
     payload: TalentumPrescreeningResponseParsed,
     dryRun: boolean,
   ): Promise<string | null> {
-    const { email, phoneNumber, cuil } = payload.data.profile;
-    console.log(`${TAG} resolveWorker | email=${email} | phone=${phoneNumber} | cuil=${cuil ?? 'none'}`);
+    const { email, phoneNumber } = payload.data.profile;
+    // PII: e-mail/telefone mascarados (maskEmailForLog/maskPhoneForLog); CUIL é documento —
+    // nunca no log, nem mascarado (achado do gate, 11/09).
+    console.log(`${TAG} resolveWorker | email=${maskEmailForLog(email)} | phone=${maskPhoneForLog(phoneNumber)}`);
 
     const workerId = await this.resolveWorkerId(payload);
     if (workerId) {
@@ -186,13 +190,22 @@ export class ProcessTalentumPrescreening {
   // ── Job posting resolution ───────────────────────────────────────
 
   private async resolveJobPosting(caseName: string): Promise<string | null> {
-    console.log(`${TAG} resolveJobPosting | name="${caseName}"`);
+    // PII (achado do gate, C3 do parecer do lex, 11/09): `caseName`/`searchTerm`
+    // são texto livre do título do projeto no Talentum, não um id — MEDIDO em prd
+    // (7d, textPayload local, nunca colado): 400/590 nomes NÃO batem o formato
+    // exato "CASO N" (só 190 batem 100%); do lado do searchTerm, 522/590 extraem
+    // "CASO N" como SUBSTRING (a regex abaixo já faz isso), e os 68 restantes
+    // caem no fallback pro texto livre inteiro. Como nem todos batem, nunca se
+    // loga o texto livre — só o "CASO N" extraído (`caseRef`) ou o marcador fixo
+    // `<outro>` quando a extração falha, nos dois logs.
+    const casoMatch = caseName.match(/CASO\s+\d+/i);
+    const caseRef = casoMatch ? casoMatch[0] : '<outro>';
+    console.log(`${TAG} resolveJobPosting | caseRef=${caseRef}`);
     try {
-      const casoMatch = caseName.match(/CASO\s+\d+/i);
       const searchTerm = casoMatch ? casoMatch[0] : caseName;
       const posting = await this.jobPostingLookup.findByTitleILike(searchTerm);
       const id = posting?.id ?? null;
-      console.log(`${TAG} resolveJobPosting → ${id ?? 'NOT FOUND'} (searchTerm="${searchTerm}")`);
+      console.log(`${TAG} resolveJobPosting → ${id ?? 'NOT FOUND'} (caseRef=${caseRef})`);
       return id;
     } catch {
       console.log(`${TAG} resolveJobPosting → ERROR (returning null)`);
@@ -394,7 +407,9 @@ export class ProcessTalentumPrescreening {
       .update(`talentum|${payload.data.prescreening.id}|${payload.data.profile.id}`)
       .digest('hex');
 
-    console.log(`${TAG} ensureEncuadre | worker=${workerId} | job=${jobPostingId} | name=${workerName}`);
+    // PII: nunca o nome — worker/job já são o id estável pra achar a pessoa no banco;
+    // `hasName` só confirma que o campo veio preenchido do Talentum.
+    console.log(`${TAG} ensureEncuadre | worker=${workerId} | job=${jobPostingId} | hasName=${Boolean(workerName.trim())}`);
     try {
       await this.pool.query(
         `INSERT INTO encuadres (worker_id, job_posting_id, worker_raw_name, worker_raw_phone, import_source_audit, dedup_hash)

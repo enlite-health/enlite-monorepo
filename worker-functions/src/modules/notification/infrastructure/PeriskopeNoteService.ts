@@ -1,5 +1,6 @@
 import { AxiosInstance } from 'axios';
-import { logger, reportError } from '@shared/logging';
+import { logger, reportError, safeErrorFields } from '@shared/logging';
+import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import { createPeriskopeHttpClient } from './periskopeHttpClient';
 
 /**
@@ -55,7 +56,12 @@ export class PeriskopeNoteService {
       return true;
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));
-      logger.warn({ error: e.message, workerPhone }, '[PeriskopeNoteService] mirrorAsNote failed (best-effort)');
+      logger.warn({ ...safeErrorFields(err), workerPhone: maskPhoneForLog(workerPhone) }, '[PeriskopeNoteService] mirrorAsNote failed (best-effort)');
+      // ⚠️ NÃO CONSERTADO AQUI (decisão do Gabriel, PR separado): o `warn` acima está
+      // mascarado, mas `reportError` manda `err` inteiro pro MESMO Cloud Error Reporting
+      // — `message`/`stack` do erro (que pode ecoar `workerPhone`/corpo da request) ainda
+      // saem crus por este segundo sink. O teste desta classe MOCKA `reportError`, então
+      // não cobre este caminho — ver comentário no `.test.ts`.
       reportError(e, { source: 'PeriskopeNoteService:mirrorAsNote' });
       return false;
     }

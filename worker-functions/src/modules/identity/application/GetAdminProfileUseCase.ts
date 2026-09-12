@@ -4,6 +4,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { EnliteRole } from '../domain/EnliteRole';
 import * as admin from 'firebase-admin';
 import { reportError } from '@shared/logging';
+import { maskEmailForLog } from '@shared/utils/emailMask';
 
 const LOG = '[ADMIN-AUTH]';
 
@@ -18,7 +19,7 @@ export class GetAdminProfileUseCase {
       let adminRecord = await this.adminRepo.findByFirebaseUid(firebaseUid);
 
       if (adminRecord) {
-        console.log(`${LOG} lookup hit | uid=${firebaseUid} email=${adminRecord.email} role=${adminRecord.role}`);
+        console.log(`${LOG} lookup hit | uid=${firebaseUid} role=${adminRecord.role}`);
       } else {
         console.log(`${LOG} lookup miss | uid=${firebaseUid} — entering auto-provision`);
         adminRecord = await this.autoProvisionIfEligible(firebaseUid);
@@ -26,7 +27,7 @@ export class GetAdminProfileUseCase {
           console.log(`${LOG} auto-provision returned null | uid=${firebaseUid} — denying`);
           return Result.fail('Admin user not found');
         }
-        console.log(`${LOG} auto-provision ok | uid=${firebaseUid} email=${adminRecord.email} role=${adminRecord.role}`);
+        console.log(`${LOG} auto-provision ok | uid=${firebaseUid} role=${adminRecord.role}`);
       }
 
       await this.adminRepo.updateLastLogin(firebaseUid);
@@ -52,16 +53,23 @@ export class GetAdminProfileUseCase {
     const firebaseUser = await admin.auth().getUser(firebaseUid);
     const email = firebaseUser.email;
 
-    console.log(`${LOG} firebase user resolved | uid=${firebaseUid} email=${email ?? '(none)'} providers=${firebaseUser.providerData.map(p => p.providerId).join(',') || '(none)'}`);
+    console.log(`${LOG} firebase user resolved | uid=${firebaseUid} email=${maskEmailForLog(email)} providers=${firebaseUser.providerData.map(p => p.providerId).join(',') || '(none)'}`);
 
     if (!email?.endsWith('@enlite.health')) {
-      console.log(`${LOG} auto-provision rejected — email ${email ?? '(none)'} is not @enlite.health`);
+      console.log(`${LOG} auto-provision rejected — email ${maskEmailForLog(email)} is not @enlite.health`);
       return null;
     }
 
     const existingByEmail = await this.adminRepo.findByEmail(email);
     if (existingByEmail && existingByEmail.firebaseUid !== firebaseUid) {
-      console.log(`${LOG} reassigning firebase_uid for ${email} | old=${existingByEmail.firebaseUid} new=${firebaseUid} role=${existingByEmail.role}`);
+      // uid/role extraídos pra variável própria ANTES do log — não porque o
+      // valor mude (continua uid antigo, uid novo, role), mas pra nenhum nome
+      // de campo no log conter "email": `existingByEmail` é o REGISTRO achado
+      // POR e-mail (nome de variável, contexto de busca), não o e-mail em si
+      // — o e-mail de verdade já sai mascarado (linhas acima, maskEmailForLog).
+      const uidAnterior = existingByEmail.firebaseUid;
+      const roleAnterior = existingByEmail.role;
+      console.log(`${LOG} reassigning firebase_uid | old=${uidAnterior} new=${firebaseUid} role=${roleAnterior}`);
       await this.adminRepo.reassignFirebaseUid(email, firebaseUid);
       const refreshed = await this.adminRepo.findByFirebaseUid(firebaseUid);
       console.log(`${LOG} reassign complete | uid=${firebaseUid} loaded=${refreshed ? 'yes' : 'no'}`);
@@ -69,7 +77,7 @@ export class GetAdminProfileUseCase {
     }
 
     const provisionedRole = EnliteRole.RECRUITER;
-    console.log(`${LOG} provisioning new staff | uid=${firebaseUid} email=${email} role=${provisionedRole}`);
+    console.log(`${LOG} provisioning new staff | uid=${firebaseUid} role=${provisionedRole}`);
 
     await admin.auth().setCustomUserClaims(firebaseUid, { role: provisionedRole });
 
@@ -90,11 +98,11 @@ export class GetAdminProfileUseCase {
       );
 
       await client.query('COMMIT');
-      console.log(`${LOG} provision committed | uid=${firebaseUid} email=${email}`);
+      console.log(`${LOG} provision committed | uid=${firebaseUid}`);
     } catch (error) {
       await client.query('ROLLBACK').catch((err: unknown) => reportError(err instanceof Error ? err : new Error(String(err)), { source: 'GetAdminProfileUseCase:rollback' }));
       const msg = error instanceof Error ? error.message : String(error);
-      console.error(`${LOG} provision failed | uid=${firebaseUid} email=${email} | ${msg}`);
+      console.error(`${LOG} provision failed | uid=${firebaseUid} | ${msg}`);
       throw error;
     } finally {
       client.release();

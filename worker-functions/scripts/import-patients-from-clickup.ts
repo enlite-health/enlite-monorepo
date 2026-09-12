@@ -27,6 +27,15 @@
  *   - CLICKUP_API_TOKEN e DATABASE_URL de produção vêm do Secret Manager, INJETADOS NA SESSÃO
  *     por quem opera — NUNCA em `.env`. Este script não lê `.env` nem espera que alguém dê
  *     `source` num arquivo local: o token/URL de prod não devem existir em disco.
+ *   - ⚠️ Achado do gate (RLS): o guard de "só cria" (import-patients-from-clickup-guard.ts) decide
+ *     a partir de `SELECT count(*) FROM patients WHERE clickup_task_id = $1` rodado por ESTE
+ *     script. Com Row-Level Security ligado na tabela `patients`, esse `count` mede LINHAS
+ *     VISÍVEIS para a role da conexão — não linhas existentes. Rodar com uma role sem a policy
+ *     (ex.: role de app comum, sem contexto de sistema) faz o guard achar "não existe" para uma
+ *     task que já foi carregada por outra role, e a carga tenta CRIAR de novo — e a escrita
+ *     seguinte é recusada pelo banco com `42501` (insufficient_privilege), não silenciosamente
+ *     ignorada. `DATABASE_URL` precisa apontar pra role dona da tabela (ou contexto de sistema
+ *     que a policy reconhece) — senão a carga falha, não "funciona errado".
  *
  * ── REGRAS DE OPERAÇÃO (decisão do Gabriel + parecer do lex, 11/09/2026) ──────
  *   1. `--apply` SÓ é aceito junto de `--task-id` — carga em massa (lista inteira) NUNCA
