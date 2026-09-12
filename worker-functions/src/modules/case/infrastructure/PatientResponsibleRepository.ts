@@ -2,6 +2,7 @@ import { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { PatientResponsibleInput, PatientResponsiblePatch } from '../domain/PatientResponsible';
+import { deactivateRow, type DeactivateOutcome } from './deactivateRowByRow';
 
 /**
  * 409 — já existe titular ATIVO para este paciente (índice `idx_patient_responsibles_one_primary`,
@@ -15,11 +16,7 @@ export class ResponsiblePrimaryAlreadySetError extends Error {
 const PRIMARY_UNIQUE_VIOLATION = '23505';
 const PRIMARY_INDEX_NAME = 'idx_patient_responsibles_one_primary';
 
-/** Resultado de `deactivate` — o controller mapeia para 404/409/200. */
-export type DeactivateOutcome =
-  | { outcome: 'not_found' }
-  | { outcome: 'already_inactive' }
-  | { outcome: 'deactivated'; id: string };
+export type { DeactivateOutcome };
 
 /**
  * PatientResponsibleRepository — CRUD on patient_responsibles.
@@ -139,10 +136,15 @@ export class PatientResponsibleRepository {
    * `POST /patients/:id/responsibles` (spec 018, PR-1, ADR-1) — escrita por LINHA: id novo,
    * nunca mexe nos outros. `client` é obrigatório (a rota sempre roda sob `withActorContext` —
    * RLS de país da stage; `inPatientTransaction`).
+   *
+   * `display_order` NÃO vem do chamador (achado do gate `revisao-pr`): é `MAX(display_order)+1`
+   * dentre as linhas do paciente, no MOLDE de `PatientAddressRepository.insertOne` (o repositório
+   * irmão que já resolvia "nova linha entra no FIM"). Antes, o controller mandava `0` fixo — com
+   * dois não-titulares (`display_order` empatado), a ordem da ficha virava indeterminada (heap).
    */
   async insertOne(
     patientId: string,
-    input: PatientResponsibleInput,
+    input: Omit<PatientResponsibleInput, 'displayOrder'>,
     actorUid: string,
     client: PoolClient,
   ): Promise<{ id: string }> {
@@ -157,7 +159,9 @@ export class PatientResponsibleRepository {
           (patient_id, first_name, last_name, relationship,
            phone_encrypted, email_encrypted, document_number_encrypted,
            document_type, is_primary, display_order, source, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+           (SELECT COALESCE(MAX(display_order), 0) + 1 FROM patient_responsibles WHERE patient_id = $1),
+           $10, $11)
          RETURNING id`,
         [
           patientId,
@@ -169,7 +173,6 @@ export class PatientResponsibleRepository {
           documentNumberEnc,
           input.documentType ?? null,
           input.isPrimary,
-          input.displayOrder,
           input.source ?? 'admin_manual',
           actorUid,
         ],
@@ -226,7 +229,16 @@ export class PatientResponsibleRepository {
       setColumn('document_number_encrypted', await this.encryptionService.encrypt(patch.documentNumber ?? null));
     }
 
-    if (sets.length === 0) return { id }; // nada para gravar — não é erro (PATCH vazio é no-op)
+    if (sets.length === 0) {
+      // PATCH vazio é no-op — MAS não é sucesso cego (achado do gate `revisao-pr`: um PATCH {}
+      // no id de OUTRO paciente, ou numa linha já desativada, respondia 200 sem checar nada).
+      // Mesma régua do UPDATE abaixo: só existe/pertence/está ativa → { id }; senão, null (404).
+      const { rows } = await client.query<{ id: string }>(
+        `SELECT id FROM patient_responsibles WHERE id = $2 AND patient_id = $1 AND active`,
+        [patientId, id],
+      );
+      return rows[0] ? { id: rows[0].id } : null;
+    }
     sets.push('updated_at = NOW()');
 
     try {
@@ -256,18 +268,7 @@ export class PatientResponsibleRepository {
     actorUid: string,
     client: PoolClient,
   ): Promise<DeactivateOutcome> {
-    const { rows } = await client.query<{ id: string; active: boolean }>(
-      `SELECT id, active FROM patient_responsibles WHERE id = $2 AND patient_id = $1 FOR UPDATE`,
-      [patientId, id],
-    );
-    if (!rows[0]) return { outcome: 'not_found' };
-    if (!rows[0].active) return { outcome: 'already_inactive' };
-    await client.query(
-      `UPDATE patient_responsibles SET active = false, deactivated_at = NOW(), deactivated_by = $3
-        WHERE id = $2 AND patient_id = $1`,
-      [patientId, id, actorUid],
-    );
-    return { outcome: 'deactivated', id };
+    return deactivateRow(client, 'patient_responsibles', patientId, id, actorUid);
   }
 
   /** 23505 no índice de titular único → 409 legível; qualquer outro erro passa intocado. */

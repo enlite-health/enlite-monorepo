@@ -130,6 +130,28 @@ describe('PatientSupportNetworkEditDrawer — documento (A1) por LINHA', () => {
     expect(err.textContent).not.toContain(DOC_NUMBER);
     expect(err.textContent).toBe('Erro ao salvar');
   });
+
+  // Achado do gate `revisao-pr`: a escrita por linha é uma sequência de chamadas sem transação
+  // única — se a 2ª falhar, a 1ª já foi gravada no servidor. Sem reler a lista, o card por trás
+  // do drawer continuava mostrando o snapshot de ANTES do submit, mentindo sobre o que já salvou.
+  it('quando UMA chamada falha no meio da sequência, o drawer RELÊ a lista (onSaved) sem fechar — a tela não mente sobre o que já foi gravado', async () => {
+    createResponsible.mockResolvedValueOnce({ id: 'novo-1' }).mockRejectedValueOnce(new Error('boom'));
+    const onSaved = vi.fn();
+    const onClose = vi.fn();
+    render(<PatientSupportNetworkEditDrawer patientId={PATIENT_ID} responsibles={[]} onClose={onClose} onSaved={onSaved} />);
+    fireEvent.click(screen.getByTestId('psn-add'));
+    fireEvent.change(screen.getByTestId('psn-firstName-0'), { target: { value: 'Ana' } });
+    fireEvent.change(screen.getByTestId('psn-lastName-0'), { target: { value: 'Diaz' } });
+    fireEvent.click(screen.getByTestId('psn-add'));
+    fireEvent.change(screen.getByTestId('psn-firstName-1'), { target: { value: 'Beatriz' } });
+    fireEvent.change(screen.getByTestId('psn-lastName-1'), { target: { value: 'Diaz' } });
+    fireEvent.click(screen.getByTestId('psn-save'));
+
+    await screen.findByTestId('psn-error');
+    expect(createResponsible).toHaveBeenCalledTimes(2); // a 1ª foi, a 2ª morreu
+    expect(onSaved).toHaveBeenCalledTimes(1); // relê a lista MESMO no erro
+    expect(onClose).not.toHaveBeenCalled(); // mas o drawer continua aberto — a pessoa vê o erro
+  });
 });
 
 // ── Cobertura 100 % do arquivo (D200): nulos, primário, remover, validação, fechar ──

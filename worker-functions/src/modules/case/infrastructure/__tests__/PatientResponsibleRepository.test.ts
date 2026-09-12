@@ -112,23 +112,27 @@ describe('PatientResponsibleRepository', () => {
   });
 
   describe('insertOne/updateOne/deactivate (escrita por linha — spec 018, PR-1, ADR-1)', () => {
-    it('insertOne: INSERT com PII cifrada, trim nos nomes, source default admin_manual, created_by = ator', async () => {
+    it('insertOne: INSERT com PII cifrada, trim nos nomes, source default admin_manual, created_by = ator; display_order é MAX+1 EM SQL, nunca vem do chamador', async () => {
       const client = { query: jest.fn().mockResolvedValue({ rows: [{ id: 'novo' }] }) } as unknown as PoolClient;
       const out = await repo.insertOne(PID, row({ source: undefined, displayOrder: 0 }), 'uid-staff', client);
       expect(out).toEqual({ id: 'novo' });
       const [sql, params] = (client.query as jest.Mock).mock.calls[0] as [string, unknown[]];
       expect(sql).toContain('INSERT INTO patient_responsibles');
       expect(sql).toContain('created_by');
-      expect(params).toEqual([PID, 'Ana', 'Lima', 'PARENT', b64('+54911'), b64('a@b.co'), b64('123'), 'DNI', true, 0, 'admin_manual', 'uid-staff']);
+      // O molde é `PatientAddressRepository.insertOne` (repositório irmão): `display_order` é
+      // subquery MAX+1, nunca um valor passado — achado do gate `revisao-pr` (ordem indeterminada
+      // com dois não-titulares empatados em `display_order`).
+      expect(sql).toMatch(/COALESCE\(MAX\(display_order\),\s*0\)\s*\+\s*1/);
+      expect(params).toEqual([PID, 'Ana', 'Lima', 'PARENT', b64('+54911'), b64('a@b.co'), b64('123'), 'DNI', true, 'admin_manual', 'uid-staff']);
       expect(mockPoolQuery).not.toHaveBeenCalled(); // usou o client, não o pool
     });
 
     it('insertOne: campos opcionais AUSENTES viram null (phone/email/documentNumber/relationship/documentType)', async () => {
       const client = { query: jest.fn().mockResolvedValue({ rows: [{ id: 'novo' }] }) } as unknown as PoolClient;
-      const minimo: PatientResponsibleInput = { firstName: 'B', lastName: 'C', isPrimary: false, displayOrder: 0 };
+      const minimo: Omit<PatientResponsibleInput, 'displayOrder'> = { firstName: 'B', lastName: 'C', isPrimary: false };
       await repo.insertOne(PID, minimo, 'uid-staff', client);
       const [, params] = (client.query as jest.Mock).mock.calls[0] as [string, unknown[]];
-      expect(params).toEqual([PID, 'B', 'C', null, null, null, null, null, false, 0, 'admin_manual', 'uid-staff']);
+      expect(params).toEqual([PID, 'B', 'C', null, null, null, null, null, false, 'admin_manual', 'uid-staff']);
     });
 
     it('insertOne: 23505 no índice de titular único vira ResponsiblePrimaryAlreadySetError (409 legível)', async () => {
@@ -144,7 +148,7 @@ describe('PatientResponsibleRepository', () => {
       await expect(repo.insertOne(PID, row(), 'uid', client)).rejects.toBe(erroQualquer);
     });
 
-    it('updateOne: só as chaves presentes viram SET; `null` explícito apaga; ausente não toca; PATCH vazio é no-op (sem query)', async () => {
+    it('updateOne: só as chaves presentes viram SET; `null` explícito apaga; ausente não toca', async () => {
       const client = { query: jest.fn().mockResolvedValue({ rows: [{ id: 'r1' }] }) } as unknown as PoolClient;
       const out = await repo.updateOne(PID, 'r1', { phone: null, firstName: ' Nova ' }, client);
       expect(out).toEqual({ id: 'r1' });
@@ -152,11 +156,27 @@ describe('PatientResponsibleRepository', () => {
       expect(sql).toMatch(/SET first_name = \$3, phone_encrypted = \$4, updated_at = NOW\(\)/);
       expect(sql).toMatch(/WHERE id = \$2 AND patient_id = \$1/);
       expect(params).toEqual([PID, 'r1', 'Nova', null]);
+    });
 
-      (client.query as jest.Mock).mockClear();
-      const noop = await repo.updateOne(PID, 'r1', {}, client);
-      expect(noop).toEqual({ id: 'r1' });
-      expect(client.query).not.toHaveBeenCalled();
+    // Achado do gate `revisao-pr`: um PATCH {} respondia 200 sem checar NADA — id de outro
+    // paciente, linha inexistente ou já desativada também virava `{ id }`. Agora o no-op ainda
+    // não faz UPDATE, mas CONFERE posse/existência/`active` com a MESMA régua do UPDATE real.
+    describe('updateOne: PATCH vazio ({}) é no-op, mas verifica a linha antes de responder', () => {
+      it('linha existe, é do paciente e está ativa → { id } (SELECT, nunca UPDATE)', async () => {
+        const client = { query: jest.fn().mockResolvedValue({ rows: [{ id: 'r1' }] }) } as unknown as PoolClient;
+        const out = await repo.updateOne(PID, 'r1', {}, client);
+        expect(out).toEqual({ id: 'r1' });
+        const [sql, params] = (client.query as jest.Mock).mock.calls[0] as [string, unknown[]];
+        expect(sql).toMatch(/^SELECT id FROM patient_responsibles WHERE id = \$2 AND patient_id = \$1 AND active/);
+        expect(sql).not.toMatch(/UPDATE/);
+        expect(params).toEqual([PID, 'r1']);
+      });
+
+      it('linha de OUTRO paciente, inexistente ou desativada → null (404 no controller), nunca 200 cego', async () => {
+        const client = { query: jest.fn().mockResolvedValue({ rows: [] }) } as unknown as PoolClient;
+        const out = await repo.updateOne('outro-paciente', 'r1', {}, client);
+        expect(out).toBeNull();
+      });
     });
 
     it('updateOne: todas as OUTRAS chaves (lastName, relationship, documentType, isPrimary, email, documentNumber) viram SET, cada uma no seu branch', async () => {

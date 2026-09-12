@@ -147,4 +147,22 @@ describe('lista de pacientes — busca e filtros clínicos sob o engine (orácul
     expect(com.status).toBe(200);
     expect((com.body.data as Array<{ id: string }>).some((p) => p.id === PATIENT)).toBe(true);
   });
+
+  // Achado do gate `revisao-pr` (spec 018, PR-1, FR-004): a migration 420 trocou DELETE por
+  // `active=false` em `patient_responsibles` — sem filtrar `active` aqui, um familiar REMOVIDO
+  // pelo painel continuava achando o paciente pela busca, indefinidamente.
+  it('🔒 busca pelo nome de um responsável DESATIVADO (removido pelo painel, nunca DELETE) NÃO acha o paciente', async () => {
+    const REMOVIDO = 'RespRemovidoOraculo';
+    await pool.query(
+      `INSERT INTO patient_responsibles (patient_id, first_name, last_name, is_primary, display_order, source, active, deactivated_at, deactivated_by)
+       VALUES ($1, $2, 'Sintético', false, 2, 'admin_manual', false, NOW(), 'e2e')`,
+      [PATIENT, REMOVIDO],
+    );
+    const r = await chamar(`/api/admin/patients?search=${REMOVIDO}`, U.completa);
+    expect(r.status).toBe(200);
+    expect((r.body.data as Array<{ id: string }>).some((p) => p.id === PATIENT)).toBe(false);
+    // controle: o titular ATIVO continua achável — a régua é `active`, não "responsável nenhum".
+    const controle = await chamar(`/api/admin/patients?search=${RESPONSAVEL}`, U.completa);
+    expect((controle.body.data as Array<{ id: string }>).some((p) => p.id === PATIENT)).toBe(true);
+  });
 });

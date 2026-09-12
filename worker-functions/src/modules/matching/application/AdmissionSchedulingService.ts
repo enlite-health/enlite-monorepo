@@ -596,7 +596,7 @@ export class AdmissionSchedulingService {
       `SELECT p.id, p.country, p.contact_email_encrypted,
               (SELECT r.email_encrypted
                  FROM patient_responsibles r
-                WHERE r.patient_id = p.id AND r.email_encrypted IS NOT NULL
+                WHERE r.patient_id = p.id AND r.email_encrypted IS NOT NULL AND r.active
                 ORDER BY r.is_primary DESC, r.display_order ASC
                 LIMIT 1) AS responsible_email_encrypted
          FROM patients p

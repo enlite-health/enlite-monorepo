@@ -70,7 +70,7 @@ describe('AdminPatientContactRowsController', () => {
       expect(repo.insertOne).not.toHaveBeenCalled();
     });
 
-    it('201 com {id}; displayOrder=0 e source=admin_manual fixos pelo controller; uid do ator vai ao repositório', async () => {
+    it('201 com {id}; source=admin_manual fixo pelo controller; uid do ator vai ao repositório; displayOrder NÃO é mandado (o repositório é quem calcula MAX+1)', async () => {
       const repo = { insertOne: jest.fn().mockResolvedValue({ id: RESPONSIBLE_ID }) };
       const controller = new AdminPatientContactRowsController(repo as never, {} as never, db() as never);
       const res = mockRes();
@@ -79,10 +79,14 @@ describe('AdminPatientContactRowsController', () => {
       expect(res.json).toHaveBeenCalledWith({ success: true, data: { id: RESPONSIBLE_ID } });
       expect(repo.insertOne).toHaveBeenCalledWith(
         PATIENT_ID,
-        { firstName: 'Ana', lastName: 'Diaz', isPrimary: false, displayOrder: 0, source: 'admin_manual' },
+        { firstName: 'Ana', lastName: 'Diaz', isPrimary: false, source: 'admin_manual' },
         'uid-1',
         { marker: 'client' },
       );
+      // Achado do gate `revisao-pr`: `displayOrder` fixo em 0 empatava não-titulares e a ordem
+      // da ficha virava indeterminada (heap) — o controller não decide mais essa coluna.
+      const [, corpo] = (repo.insertOne as jest.Mock).mock.calls[0];
+      expect(corpo).not.toHaveProperty('displayOrder');
     });
 
     it('409 quando o repositório recusa por titular já ativo', async () => {
@@ -217,13 +221,14 @@ describe('AdminPatientContactRowsController', () => {
       expect(repo.deactivate).toHaveBeenCalledWith(PATIENT_ID, RESPONSIBLE_ID, 'uid-1', { marker: 'client' });
     });
 
-    it('sem contexto de auth, uid do ator é "unknown"', async () => {
+    it('lex C6 — sem contexto de auth, a escrita é RECUSADA (500), nunca grava sentinela "unknown" em deactivated_by', async () => {
       (AuthMiddleware.getAuthContext as jest.Mock).mockReturnValue(undefined);
       const repo = { deactivate: jest.fn().mockResolvedValue({ outcome: 'deactivated', id: RESPONSIBLE_ID }) };
       const controller = new AdminPatientContactRowsController(repo as never, {} as never, db() as never);
       const res = mockRes();
       await controller.deactivateResponsible(mockReq({ params: { id: PATIENT_ID, rid: RESPONSIBLE_ID } }), res);
-      expect(repo.deactivate).toHaveBeenCalledWith(PATIENT_ID, RESPONSIBLE_ID, 'unknown', { marker: 'client' });
+      expect(repo.deactivate).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(500);
     });
 
     it.each([

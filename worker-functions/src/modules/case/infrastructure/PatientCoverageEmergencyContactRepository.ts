@@ -1,10 +1,12 @@
 /**
  * PatientCoverageEmergencyContactRepository — `patient_coverage_emergency_contacts` (migration 417; D301).
  *
- * Molde do `PatientResponsibleRepository`: a tela edita a lista inteira → `replaceAll` (DELETE + INSERT
- * no MESMO client da transação da seção); telefone cifrado via KMS antes de tocar o banco, decifrado
- * na leitura só quando o chamador já decidiu que o ator lê o container (D286 / lex P3: a célula decide
- * ANTES de o KMS rodar — `fetchPatientDetail` só chama `listForPatient` sob `reads.coverage`).
+ * Molde do `PatientResponsibleRepository`: escrita POR LINHA (spec 018, PR-1, ADR-1) —
+ * `insertOne`/`updateOne`/`deactivate`, nunca `replaceAll` (achado do gate `revisao-pr`: este
+ * comentário ainda descrevia o `replaceAll` DELETE+INSERT que o PR-1 aposentou). Telefone cifrado
+ * via KMS antes de tocar o banco, decifrado na leitura só quando o chamador já decidiu que o ator
+ * lê o container (D286 / lex P3: a célula decide ANTES de o KMS rodar — `fetchPatientDetail` só
+ * chama `listForPatient` sob `reads.coverage`).
  *
  * Não faz JOIN fora de `patients`. Nada aqui emite nome/telefone em log: contagem, sempre.
  */
@@ -17,6 +19,7 @@ import type {
   PatientCoverageEmergencyContactInput,
   PatientCoverageEmergencyContactPatch,
 } from '../domain/PatientCoverageEmergencyContact';
+import { deactivateRow, type DeactivateOutcome } from './deactivateRowByRow';
 
 export interface CoverageEmergencyContactRow {
   id: string;
@@ -26,11 +29,7 @@ export interface CoverageEmergencyContactRow {
   sort_order: number;
 }
 
-/** Resultado de `deactivate` — o controller mapeia para 404/409/200 (mesmo molde do responsável). */
-export type CoverageContactDeactivateOutcome =
-  | { outcome: 'not_found' }
-  | { outcome: 'already_inactive' }
-  | { outcome: 'deactivated'; id: string };
+export type { DeactivateOutcome as CoverageContactDeactivateOutcome };
 
 export class PatientCoverageEmergencyContactRepository {
   private readonly pool: Pool;
@@ -131,7 +130,16 @@ export class PatientCoverageEmergencyContactRepository {
     if (patch.name !== undefined) setColumn('name', patch.name.trim());
     if (patch.phone !== undefined) setColumn('phone_encrypted', await this.enc.encrypt(patch.phone.trim()));
 
-    if (sets.length === 0) return { id }; // PATCH vazio é no-op
+    if (sets.length === 0) {
+      // PATCH vazio é no-op — MAS não é sucesso cego (achado do gate `revisao-pr`: um PATCH {} no
+      // id de OUTRO paciente, ou numa linha já desativada, respondia 200 sem checar nada). Mesma
+      // régua do UPDATE abaixo: só existe/pertence/está ativa → { id }; senão, null (404).
+      const { rows } = await client.query<{ id: string }>(
+        `SELECT id FROM patient_coverage_emergency_contacts WHERE id = $2 AND patient_id = $1 AND active`,
+        [patientId, id],
+      );
+      return rows[0] ? { id: rows[0].id } : null;
+    }
     sets.push('updated_at = NOW()');
 
     // `AND active` (mesma régua de PatientResponsibleRepository.updateOne, task 1.10 alt 2):
@@ -155,18 +163,7 @@ export class PatientCoverageEmergencyContactRepository {
     id: string,
     actorUid: string,
     client: PoolClient,
-  ): Promise<CoverageContactDeactivateOutcome> {
-    const { rows } = await client.query<{ id: string; active: boolean }>(
-      `SELECT id, active FROM patient_coverage_emergency_contacts WHERE id = $2 AND patient_id = $1 FOR UPDATE`,
-      [patientId, id],
-    );
-    if (!rows[0]) return { outcome: 'not_found' };
-    if (!rows[0].active) return { outcome: 'already_inactive' };
-    await client.query(
-      `UPDATE patient_coverage_emergency_contacts SET active = false, deactivated_at = NOW(), deactivated_by = $3
-        WHERE id = $2 AND patient_id = $1`,
-      [patientId, id, actorUid],
-    );
-    return { outcome: 'deactivated', id };
+  ): Promise<DeactivateOutcome> {
+    return deactivateRow(client, 'patient_coverage_emergency_contacts', patientId, id, actorUid);
   }
 }

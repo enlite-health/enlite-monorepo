@@ -40,8 +40,17 @@ export class AdminPatientContactRowsController {
     private readonly db: Pool = DatabaseConnection.getInstance().getPool(),
   ) {}
 
+  /**
+   * lex C6 — `created_by`/`deactivated_by` é o uid REAL do ator; sem ator não há sentinela, há
+   * erro (achado do gate `revisao-pr`: o `PatientSectionWriter` que este PR substitui lançava
+   * `throw new Error('… escrita exige ator identificado (lex C6)')` para o mesmo caso — um
+   * `?? 'unknown'` aqui revogava essa regra em silêncio). A rota é `staffOnly`; isto é a defesa
+   * para o contexto de auth vir vazio mesmo assim.
+   */
   private actorUid(req: Request): string {
-    return AuthMiddleware.getAuthContext(req)?.principal.id ?? 'unknown';
+    const uid = AuthMiddleware.getAuthContext(req)?.principal.id;
+    if (!uid) throw new Error('escrita exige ator identificado (lex C6)');
+    return uid;
   }
 
   private async patientExists(id: string): Promise<boolean> {
@@ -67,7 +76,7 @@ export class AdminPatientContactRowsController {
       }
       const actorUid = this.actorUid(req);
       const created = await inPatientTransaction((client) =>
-        this.responsibleRepo.insertOne(params.data.id, { ...body.data, displayOrder: 0, source: 'admin_manual' }, actorUid, client),
+        this.responsibleRepo.insertOne(params.data.id, { ...body.data, source: 'admin_manual' }, actorUid, client),
       );
       res.status(201).json({ success: true, data: created });
     } catch (err: unknown) {

@@ -36,6 +36,10 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
     // Migration 330: TUDO completo, menos o vínculo serviço→endereço — só SERVICE_ADDRESS acusa.
     // É o cenário que prova que a cláusula SQL nova e o JS concordam.
     { tag: 'C1B-attention-servico-sem-domicilio', status: 'ADMISSION',         completo: true, servicoSemEndereco: true },
+    // Task 1.7 (spec 018, PR-1, FR-004): paciente MENOR (RESPONSIBLE só conta pra menor de
+    // idade), tudo mais completo, cujo ÚNICO responsável foi DESATIVADO (nunca DELETE) — o SQL
+    // e o JS têm de concordar que RESPONSIBLE está faltando (linha ainda existe, `active=false`).
+    { tag: 'C1B-attention-menor-resp-inativo',    status: 'ADMISSION',         completo: true, respInativo: true },
   ];
 
   const limpar = async (): Promise<void> => {
@@ -47,14 +51,27 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
     pool = new Pool({ connectionString: DATABASE_URL });
     await limpar();
     for (const c of cenarios) {
+      // `respInativo`: precisa ser MENOR hoje (RESPONSIBLE só entra no checklist pra menor de
+      // idade) — 10 anos atrás, bem dentro do corte de `MINOR_AGE_YEARS`.
+      const birthDate = 'respInativo' in c && c.respInativo ? "(NOW() - INTERVAL '10 years')::date" : "'1970-01-01'";
       const id = (await pool.query<{ id: string }>(
         `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, has_consent, insurance_informed, birth_date)
-         VALUES ($1, 'C1B', 'Atencion QA', 'BR', $2, $3, $4, '1970-01-01') RETURNING id`,
+         VALUES ($1, 'C1B', 'Atencion QA', 'BR', $2, $3, $4, ${birthDate}) RETURNING id`,
         [c.tag, c.status, c.completo, c.completo ? 'OSDE' : null],
       )).rows[0].id;
       if (c.completo) {
         const addr = (await pool.query<{ id: string }>(`INSERT INTO patient_addresses (patient_id, address_type, address_formatted, display_order) VALUES ($1,'primary','Calle C1B 1',1) RETURNING id`, [id])).rows[0].id;
-        await pool.query(`INSERT INTO patient_responsibles (patient_id, first_name, last_name, is_primary, display_order) VALUES ($1,'C1B','Resp',true,1)`, [id]);
+        if ('respInativo' in c && c.respInativo) {
+          // A linha existe (nunca DELETE, spec 018 PR-1) mas está DESATIVADA — não conta como
+          // responsável presente nem no SQL (`AND pr.active`) nem no JS (`activeResponsibleCount`).
+          await pool.query(
+            `INSERT INTO patient_responsibles (patient_id, first_name, last_name, is_primary, display_order, active, deactivated_at, deactivated_by)
+             VALUES ($1,'C1B','Resp Removido',true,1,false,NOW(),'c1b-e2e')`,
+            [id],
+          );
+        } else {
+          await pool.query(`INSERT INTO patient_responsibles (patient_id, first_name, last_name, is_primary, display_order) VALUES ($1,'C1B','Resp',true,1)`, [id]);
+        }
         // Migration 330: "completo" exige o serviço APONTANDO para o endereço; o cenário
         // `servicoSemEndereco` deixa address_id NULL de propósito.
         await pool.query(
@@ -78,11 +95,15 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
     const rows = await minhas();
     expect(rows).toHaveLength(cenarios.length);
     const incompletos = rows.filter((r) => r.attentionReasons.includes('INCOMPLETE_ADMISSION'));
-    // 3 em ADMISSION/PENDING_ADMISSION e incompletos (2 sem nada + 1 só com serviço sem endereço,
-    // migration 330); o ACTIVE incompleto NÃO conta (já foi aprovado); o completo não aparece.
-    expect(incompletos.map((r) => r.needsAttention)).toEqual([true, true, true]);
+    // 4 em ADMISSION/PENDING_ADMISSION e incompletos (2 sem nada + 1 só com serviço sem endereço,
+    // migration 330 + 1 menor com o único responsável desativado, task 1.7); o ACTIVE incompleto
+    // NÃO conta (já foi aprovado); o completo não aparece.
+    expect(incompletos.map((r) => r.needsAttention)).toEqual([true, true, true, true]);
     const semDomicilio = rows.find((r) => r.clickupTaskId === 'C1B-attention-servico-sem-domicilio');
     expect(semDomicilio?.attentionReasons).toContain('INCOMPLETE_ADMISSION');
+    const respInativo = rows.find((r) => r.clickupTaskId === 'C1B-attention-menor-resp-inativo');
+    expect(respInativo?.needsAttention).toBe(true);
+    expect(respInativo?.attentionReasons).toContain('INCOMPLETE_ADMISSION');
     const completo = rows.find((r) => r.clickupTaskId === 'C1B-attention-completo-admission');
     expect(completo?.needsAttention).toBe(false);
     expect((ACTIVATABLE_STATUSES as readonly string[]).includes('ADMISSION')).toBe(true);
@@ -139,7 +160,7 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
       SELECT p.id, p.status, p.needs_attention, p.birth_date, p.has_consent,
              COALESCE(p.insurance_informed, p.health_insurance_name) AS ins,
              (SELECT COUNT(*)::int FROM patient_addresses pa WHERE pa.patient_id = p.id AND pa.archived_at IS NULL) AS addrs,
-             (EXISTS (SELECT 1 FROM patient_responsibles pr WHERE pr.patient_id = p.id))::int AS resp,
+             (EXISTS (SELECT 1 FROM patient_responsibles pr WHERE pr.patient_id = p.id AND pr.active))::int AS resp,
              (EXISTS (SELECT 1 FROM patient_contracted_services s WHERE s.patient_id = p.id AND s.active))::int AS svc,
              (EXISTS (SELECT 1 FROM patient_contracted_services s
                         LEFT JOIN patient_addresses sa ON sa.id = s.address_id AND sa.archived_at IS NULL

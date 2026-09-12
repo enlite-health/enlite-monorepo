@@ -211,7 +211,7 @@ export class ActivatePatientUseCase {
       );
 
       const respRes = await client.query<{ count: number }>(
-        `SELECT COUNT(*)::int AS count FROM patient_responsibles WHERE patient_id = $1`,
+        `SELECT COUNT(*)::int AS count FROM patient_responsibles WHERE patient_id = $1 AND active`,
         [patientId],
       );
 

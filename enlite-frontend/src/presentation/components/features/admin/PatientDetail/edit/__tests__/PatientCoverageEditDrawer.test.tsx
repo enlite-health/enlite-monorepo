@@ -143,6 +143,31 @@ describe('PatientCoverageEditDrawer', () => {
     expect(deactivateCoverageEmergencyContact).not.toHaveBeenCalled();
   });
 
+  // Achado do gate `revisao-pr`: os contatos são escritos em SEQUÊNCIA (sem transação única) —
+  // se a 2ª chamada falhar, a 1ª já foi gravada no servidor. Sem reler a lista, o card por trás
+  // do drawer continuava mostrando o snapshot de ANTES do submit, mentindo sobre o que já salvou.
+  it('quando UMA chamada de contato falha no meio da sequência, o drawer RELÊ (onSaved) sem fechar — a tela não mente sobre o que já foi gravado', async () => {
+    const onSaved = vi.fn();
+    const onClose = vi.fn();
+    const duasLinhas = {
+      ...patient,
+      coverageEmergencyContacts: [
+        { id: 'c1', kind: 'AMBULANCE' as const, name: 'Ambulancia OSDE', phone: '0800-1', sortOrder: 0 },
+        { id: 'c2', kind: 'EMERGENCY_CENTER' as const, name: 'Central Vieja', phone: '0800-9', sortOrder: 1 },
+      ],
+    };
+    updateCoverageEmergencyContact.mockReset().mockResolvedValueOnce({ id: 'c1' }).mockRejectedValueOnce(new Error('boom'));
+    render(<PatientCoverageEditDrawer patient={duasLinhas} onClose={onClose} onSaved={onSaved} />);
+    fireEvent.change(screen.getByTestId('pcv-contact-phone-0'), { target: { value: '0800-2' } });
+    fireEvent.change(screen.getByTestId('pcv-contact-name-1'), { target: { value: 'Central Nueva' } });
+    fireEvent.click(screen.getByTestId('pcv-save'));
+
+    await screen.findByTestId('pcv-error');
+    expect(updateCoverageEmergencyContact).toHaveBeenCalledTimes(2); // a 1ª foi, a 2ª morreu
+    expect(onSaved).toHaveBeenCalledTimes(1); // relê a lista MESMO no erro
+    expect(onClose).not.toHaveBeenCalled(); // mas o drawer continua aberto
+  });
+
   it('417 — linha inválida (nome vazio) trava o "Salvar"; remover a linha destrava; backend anterior (ausente) começa vazio', async () => {
     const { coverageEmergencyContacts: _c, ...semCampo } = patient as typeof patient & { coverageEmergencyContacts?: unknown };
     render(<PatientCoverageEditDrawer patient={semCampo as typeof patient} onClose={vi.fn()} onSaved={vi.fn()} />);

@@ -215,6 +215,7 @@ export class PatientQueryRepository {
           OR ($${familyIdx}::boolean AND EXISTS (
                SELECT 1 FROM patient_responsibles r
                 WHERE r.patient_id = p.id
+                  AND r.active
                   AND (r.first_name ILIKE '%' || $${searchIdx} || '%'
                     OR r.last_name  ILIKE '%' || $${searchIdx} || '%'))))
         -- O filtro e o total leem a MESMA regra que o payload publica (PatientCompleteness.ts):

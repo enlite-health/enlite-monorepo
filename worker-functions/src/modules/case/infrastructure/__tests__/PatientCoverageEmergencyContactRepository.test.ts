@@ -63,7 +63,7 @@ describe('PatientCoverageEmergencyContactRepository (417, D301)', () => {
       expect(mockPoolQuery).not.toHaveBeenCalled(); // usou o client da transação, não o pool
     });
 
-    it('updateOne: PATCH parcial — só as chaves presentes viram SET; telefone recifrado; ausente = não toca; sem chave nenhuma é no-op (sem query)', async () => {
+    it('updateOne: PATCH parcial — só as chaves presentes viram SET; telefone recifrado; ausente = não toca', async () => {
       const client = { query: jest.fn().mockResolvedValue({ rows: [{ id: 'c1' }] }) } as unknown as PoolClient;
       const out = await repo.updateOne(PID, 'c1', { phone: ' 0800-2 ' }, client);
       expect(out).toEqual({ id: 'c1' });
@@ -71,11 +71,27 @@ describe('PatientCoverageEmergencyContactRepository (417, D301)', () => {
       expect(sql).toMatch(/SET phone_encrypted = \$3, updated_at = NOW\(\)/);
       expect(sql).toMatch(/WHERE id = \$2 AND patient_id = \$1/);
       expect(params).toEqual([PID, 'c1', b64('0800-2')]);
+    });
 
-      (client.query as jest.Mock).mockClear();
-      const noop = await repo.updateOne(PID, 'c1', {}, client);
-      expect(noop).toEqual({ id: 'c1' });
-      expect(client.query).not.toHaveBeenCalled();
+    // Achado do gate `revisao-pr`: um PATCH {} respondia 200 sem checar NADA — id de outro
+    // paciente, linha inexistente ou já desativada também virava `{ id }`. Agora o no-op ainda
+    // não faz UPDATE, mas CONFERE posse/existência/`active` com a MESMA régua do UPDATE real.
+    describe('updateOne: PATCH vazio ({}) é no-op, mas verifica a linha antes de responder', () => {
+      it('linha existe, é do paciente e está ativa → { id } (SELECT, nunca UPDATE)', async () => {
+        const client = { query: jest.fn().mockResolvedValue({ rows: [{ id: 'c1' }] }) } as unknown as PoolClient;
+        const out = await repo.updateOne(PID, 'c1', {}, client);
+        expect(out).toEqual({ id: 'c1' });
+        const [sql, params] = (client.query as jest.Mock).mock.calls[0] as [string, unknown[]];
+        expect(sql).toMatch(/^SELECT id FROM patient_coverage_emergency_contacts WHERE id = \$2 AND patient_id = \$1 AND active/);
+        expect(sql).not.toMatch(/UPDATE/);
+        expect(params).toEqual([PID, 'c1']);
+      });
+
+      it('linha de OUTRO paciente, inexistente ou desativada → null (404 no controller), nunca 200 cego', async () => {
+        const client = { query: jest.fn().mockResolvedValue({ rows: [] }) } as unknown as PoolClient;
+        const out = await repo.updateOne('outro-paciente', 'c1', {}, client);
+        expect(out).toBeNull();
+      });
     });
 
     it('updateOne: `kind` e `name` também viram SET, cada um no seu branch', async () => {

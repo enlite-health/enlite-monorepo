@@ -172,6 +172,12 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
       onSaved();
       handleClose();
     } catch {
+      // Achado do gate `revisao-pr`: a escrita é uma sequência de chamadas (sem transação
+      // única) — se UMA falhar no meio, algumas linhas já foram gravadas no servidor. Sem
+      // isto, a TELA (o card por trás do drawer) continuava mostrando o snapshot de ANTES do
+      // submit, mentindo sobre o que já foi salvo. `onSaved()` relê a lista do servidor —
+      // sem fechar o drawer, para a pessoa ver o erro e decidir o que fazer com o que sobrou.
+      onSaved();
       // lex C1.3: a mensagem NUNCA ecoa o payload — uma resposta da API que cite
       // o número do documento não pode virar texto na tela. Genérica de propósito.
       setSubmitError(te('saveError'));

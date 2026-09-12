@@ -150,6 +150,11 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
       onSaved();
       handleClose();
     } catch (err) {
+      // Achado do gate `revisao-pr`: os contatos de emergência são escritos em SEQUÊNCIA (sem
+      // transação única) — se UMA chamada falhar no meio, algumas linhas já foram gravadas no
+      // servidor. `onSaved()` relê a lista sem fechar o drawer, para o card por trás não
+      // continuar mostrando o snapshot de ANTES do submit (mentindo sobre o que já foi salvo).
+      onSaved();
       setSubmitError(err instanceof Error ? err.message : te('saveError'));
     } finally {
       setBusy(false);
