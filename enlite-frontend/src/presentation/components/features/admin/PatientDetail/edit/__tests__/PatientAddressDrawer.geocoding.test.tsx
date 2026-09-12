@@ -109,7 +109,7 @@ describe('PatientAddressDrawer — o que sai para o Google ao digitar (lex C3)',
       <PatientAddressDrawer
         patientId="p1"
         address={{
-          id: 'addr1', addressType: 'primary', addressFormatted: 'Rua Legada 9', addressRaw: null,
+          id: 'addr1', addressType: 'primary', addressTypeOther: null, addressFormatted: 'Rua Legada 9', addressRaw: null,
           complement: null, displayOrder: 1, lat: null, lng: null, isPrimary: true,
           neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'AR',
         }}
