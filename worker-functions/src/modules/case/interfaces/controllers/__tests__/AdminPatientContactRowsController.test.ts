@@ -357,6 +357,17 @@ describe('AdminPatientContactRowsController', () => {
       expect(repo.updateOne).not.toHaveBeenCalled();
     });
 
+    it('corpo traz kind=DIRECT_PROFESSIONAL (destino) sem a célula da equipe: 403 IMEDIATO, nem chega a ler o kind da linha (getKind não é chamado)', async () => {
+      const repo = { getKind: jest.fn(), updateOne: jest.fn() };
+      const controller = new AdminPatientContactRowsController({} as never, repo as never, db() as never);
+      const res = mockRes();
+      const req = mockReq({ params: { id: PATIENT_ID, cid: CONTACT_ID }, body: { kind: 'DIRECT_PROFESSIONAL' }, permissionCells: ['patient_coverage:write'] });
+      await controller.updateCoverageEmergencyContact(req, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(repo.getKind).not.toHaveBeenCalled();
+      expect(repo.updateOne).not.toHaveBeenCalled();
+    });
+
     it('corpo traz kind=AMBULANCE e a linha ATUAL também é AMBULANCE: sem a célula da equipe, passa — e agora getKind É chamado (checa a origem mesmo com kind no corpo)', async () => {
       const repo = { getKind: jest.fn().mockResolvedValue('AMBULANCE'), updateOne: jest.fn().mockResolvedValue({ id: CONTACT_ID }) };
       const controller = new AdminPatientContactRowsController({} as never, repo as never, db() as never);
