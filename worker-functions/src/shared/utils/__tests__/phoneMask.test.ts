@@ -63,16 +63,61 @@ describe('maskPhone', () => {
 });
 
 // ── maskPhoneForLog — sem espaço, otimizado pra filtro exato no Cloud Logging ──
-// Casos migrados do extinto `redactContact` (D-11/09, item 1 do gate): mesma
-// GARANTIA (nunca o meio do número, só os 4 últimos dígitos), formato
-// DIFERENTE (`+549******1243` em vez de `549***1243` — `redactContact` não
-// tinha o `+` nem o tamanho variável do miolo).
+// Trabalha por DÍGITO (não por posição de caractere) desde o fix do achado do
+// gate 11/09 (608 ocorrências/7d em prd): a versão por posição mascarava MENOS
+// quanto mais a entrada se afastava de E.164 — `maskPhoneForLog('1151265663')`
+// dava `1151**5663` (8 de 10 dígitos expostos). Ver ProcessTalentumPrescreening,
+// que recebe `phoneNumber` cru do webhook Talentum sem formato garantido.
+//
+// Regra de prova, pra CADA caso da tabela abaixo: nenhuma sequência de 5+
+// dígitos consecutivos do original aparece na saída, e os 4 últimos dígitos
+// aparecem (exceto no piso `****`, onde nenhum dígito aparece).
 describe('maskPhoneForLog', () => {
-  it('mostra só prefixo (4 chars) + últimos 4 dígitos, nunca o miolo', () => {
-    const out = maskPhoneForLog('+5491122334455');
-    expect(out).toBe('+549******4455');
-    expect(out).not.toContain('1122334455'); // miolo inteiro
-    expect(out).not.toContain('112233');     // nem em pedaços
+  /** Nenhuma janela de `n` dígitos consecutivos do `original` aparece em `masked`. */
+  function assertNoDigitRunLeaks(original: string, masked: string, n = 5): void {
+    const digits = original.replace(/\D/g, '');
+    for (let i = 0; i + n <= digits.length; i++) {
+      expect(masked).not.toContain(digits.slice(i, i + n));
+    }
+  }
+
+  describe.each([
+    // [rótulo, entrada, saída esperada]
+    ['E.164 com +', '+5491151265663', '+549******5663'],
+    ['E.164 sem +', '5491151265663', '+549******5663'],
+    ['local 10 dígitos (fixture Talentum, sem formato)', '1151265663', '******5663'],
+    ['local com espaço/traço', '11 5126-5663', '******5663'],
+    ['exatamente 8 dígitos (piso mínimo pra mascarar)', '12345678', '******5678'],
+    ['7 dígitos — abaixo do piso', '1234567', '****'],
+    ['vazio', '', '****'],
+    ['string sem nenhum dígito', '+++---', '****'],
+  ])('%s', (_label, input, expected) => {
+    it(`"${input}" → "${expected}"`, () => {
+      expect(maskPhoneForLog(input)).toBe(expected);
+    });
+
+    it('nunca vaza 5+ dígitos consecutivos do original, e mostra os 4 últimos quando não é o piso', () => {
+      const out = maskPhoneForLog(input);
+      assertNoDigitRunLeaks(input, out);
+      const digits = input.replace(/\D/g, '');
+      if (digits.length >= 8) {
+        expect(out).toContain(digits.slice(-4));
+      } else {
+        expect(out).toBe('****');
+      }
+    });
+  });
+
+  it('null e undefined: marcador fixo, sem lançar', () => {
+    expect(maskPhoneForLog(null)).toBe('****');
+    expect(maskPhoneForLog(undefined)).toBe('****');
+  });
+
+  it('E.164 INALTERADO — mesma saída de antes do fix (não pode quebrar filtro salvo no Cloud Logging)', () => {
+    // Valor usado pelos sítios pré-existentes (TwilioVerifyService,
+    // StartClaimUseCase, PeriskopeInboundRouter/NoteService/TicketService,
+    // TwilioMessagingService, ProcessTalentumPrescreening PII guard).
+    expect(maskPhoneForLog('+5491122334455')).toBe('+549******4455');
   });
 
   it('é determinístico — mesmo input, mesma saída (usável como filtro literal)', () => {
@@ -81,26 +126,10 @@ describe('maskPhoneForLog', () => {
     expect(a).toBe(b);
   });
 
-  it('nunca ecoa o valor inteiro mesmo pra número menor — telefone curto (<8 chars): "****" fixo', () => {
-    // Diferença de comportamento MEDIDA e ACEITA na troca por `redactContact`
-    // (item 1d do gate, 11/09): `redactContact('4455','phone')` ecoava
-    // `***4455` (o valor INTEIRO, só prefixado) pra entradas de até 4 dígitos.
-    // `maskPhoneForLog` não tem esse caso especial — abaixo de 8 chars vira
-    // sempre o marcador fixo `****`, sem nenhum dígito visível.
-    expect(maskPhoneForLog('4455')).toBe('****');
-    expect(maskPhoneForLog('123')).toBe('****');
-    expect(maskPhoneForLog('1234567')).toBe('****'); // 7 chars — ainda abaixo do piso
-  });
-
-  it('telefone só com caracteres não numéricos e curto: mesmo marcador fixo', () => {
-    expect(maskPhoneForLog('+++---')).toBe('****');
-  });
-
-  it('vazio: marcador fixo', () => {
-    expect(maskPhoneForLog('')).toBe('****');
-  });
-
-  it('exatamente 8 chars: já passa do piso e mascara com o miolo mínimo (1 asterisco)', () => {
-    expect(maskPhoneForLog('12345678')).toBe('1234*5678');
+  it('não vaza o TAMANHO do número pelo comprimento da máscara — asteriscos são sempre 6', () => {
+    const curto = maskPhoneForLog('+5491151265663'); // 13 dígitos
+    const longo = maskPhoneForLog('+549115126566312345'); // 19 dígitos
+    expect(curto.match(/\*/g)?.length).toBe(6);
+    expect(longo.match(/\*/g)?.length).toBe(6);
   });
 });
