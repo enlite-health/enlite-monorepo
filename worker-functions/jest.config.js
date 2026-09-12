@@ -46,6 +46,22 @@ module.exports = {
   // 18 GB, travou 3x em 1h. Em CI a máquina é dedicada; local, teto de 2.
   maxWorkers: process.env.CI ? '50%' : 2,
 
+  // Teto de memória POR WORKER — ataca o processo que INCHA ao longo da
+  // suíte (o que fez cada um chegar a 1,1-1,4 GB acima), diferente do
+  // `maxWorkers` acima, que só limita QUANTOS workers existem. Doc oficial
+  // (jestjs.io/docs/configuration#workeridlememorylimit-numberstring):
+  // "Specifies the memory limit for workers before they are recycled (...)
+  // After the worker has executed a test the memory usage of it is checked.
+  // If it exceeds the value specified the worker is killed and restarted."
+  // Grafia aceita para valor fixo: `G` / `GB` (gigabytes, x1000) ou `GiB`
+  // (gibibytes, x1024) — usamos `1GB` (~1000 MB), abaixo do observado hoje.
+  // Só vale na config RAIZ: é uma das opções que a doc lista como ignoradas
+  // dentro de `projects` ("Some options only take effect at the root
+  // (global) config level and are ignored when set inside a project
+  // config: (...) workerIdleMemoryLimit (...)"). Este arquivo não usa
+  // `projects`, então fica aqui mesmo, no nível raiz.
+  workerIdleMemoryLimit: '1GB',
+
   /**
    * PISO DE COBERTURA — a trava que faltava nesta release (30/08/2026).
    *
