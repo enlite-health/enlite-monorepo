@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { redactContact, safeErrorFields } from '@shared/logging';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import {
   MEET_LINK_REGEX,
@@ -96,7 +97,9 @@ export class GoogleCalendarService {
       }
 
       const organizerEmail = found.event.organizer?.email;
-      console.log(`[GoogleCalendarService] Found event: id=${found.event.id} calendar=${found.calendarId} organizer=${organizerEmail ?? 'unknown'}`);
+      // PII (C1, 11/09): organizerEmail mascarado — não é o worker, é o colaborador
+      // dono do evento, mas ainda é PII de pessoa (Ley 25.326).
+      console.log(`[GoogleCalendarService] Found event: id=${found.event.id} calendar=${found.calendarId} organizer=${organizerEmail ? redactContact(organizerEmail, 'email') : 'unknown'}`);
 
       const currentAttendees = found.event.attendees ?? [];
       const normalized = guestEmail.trim().toLowerCase();
@@ -111,7 +114,7 @@ export class GoogleCalendarService {
         if (orgToken) {
           patchToken = orgToken;
         } else {
-          console.warn(`[GoogleCalendarService] Could not get organizer token for ${organizerEmail}, using default`);
+          console.warn(`[GoogleCalendarService] Could not get organizer token for ${redactContact(organizerEmail, 'email')}, using default`);
         }
       }
 
@@ -120,12 +123,14 @@ export class GoogleCalendarService {
 
       const result = await this.patchEventAttendees(found.calendarId, found.event.id, updatedAttendees, sendUpdates, patchToken);
       if (result.ok) {
-        console.log(`[GoogleCalendarService] PATCH success: added ${normalized} to event ${found.event.id} (via ${organizerEmail ?? 'default'})`);
+        console.log(`[GoogleCalendarService] PATCH success: added ${redactContact(normalized, 'email')} to event ${found.event.id} (via ${organizerEmail ? redactContact(organizerEmail, 'email') : 'default'})`);
       }
       return result.ok ? { success: true } : { success: false, reason: 'api_error', detail: `HTTP ${result.status}` };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn('[GoogleCalendarService] addGuestToMeeting error:', msg);
+      // PII (C1, 11/09): a mensagem do erro pode ecoar o e-mail que o Google rejeitou
+      // (ex.: "Invalid email: <valor>") — nunca a message crua, só errorName+código.
+      console.warn('[GoogleCalendarService] addGuestToMeeting error:', safeErrorFields(err));
       return { success: false, reason: 'api_error', detail: msg };
     }
   }
