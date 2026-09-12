@@ -15,6 +15,7 @@ import {
 import { Button } from '@presentation/components/atoms/Button';
 import { addressLines } from '@presentation/utils/summarizeAddress';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
+import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
 import type { PatientAddressDetail } from '@domain/entities/PatientDetail';
 import { PatientAddressDrawer } from './edit/PatientAddressDrawer';
 import { AvisoAmbar } from './edit/AvisoAmbar';
@@ -83,6 +84,14 @@ export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }
   // Ação inline "Marcar como principal" (spec 019, US 4.2) — troca atômica no servidor
   // (AdminPatientAddressesController), sem precisar abrir o drawer de edição.
   const [markingId, setMarkingId] = useState<string | null>(null);
+  /**
+   * F1 (gate revisao-pr) — este `try/finally` NÃO tinha `catch`: um 409 de concorrência (outra
+   * pessoa marcou principal ao mesmo tempo — ver "Concorrência" na spec 019) ou um 500 virava
+   * promise rejeitada sem NENHUM aviso à operadora — o spinner do botão só parava, igual ao
+   * defeito já corrigido em `PatientIdentityCard.tsx` (F4) e `ContractedServiceFormRow.tsx` (F4).
+   * Mesmo canal de erro que esses cards já usam: `Text` vermelho com `role="alert"`, sem modal.
+   */
+  const [markError, setMarkError] = useState<string | null>(null);
   // `patientId` sempre presente aqui: o botão que chama isto só renderiza dentro de
   // `{patientId && ...}` (ver a célula do Tipo, abaixo). Reentrância dupla é bloqueada pelo
   // `disabled` do próprio botão (abaixo) enquanto `markingId` aponta pra este endereço — checar
@@ -90,9 +99,22 @@ export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }
   // click em elemento `disabled`, igual ao navegador real).
   const onMarkPrimary = async (addressId: string): Promise<void> => {
     setMarkingId(addressId);
+    setMarkError(null);
     try {
       await AdminApiService.updatePatientAddressLogistics(patientId as string, addressId, { is_default: true });
       onSaved?.();
+    } catch (err) {
+      // 409 (índice único vencido por outra requisição concorrente, ver spec 019 §Concorrência)
+      // é o caso PREVISTO — a spec não define o texto, então a mensagem é curta e diz o que
+      // aconteceu e o que fazer. Qualquer outro erro (500, rede) usa a mensagem genérica.
+      if (err instanceof PatientApiError && err.status === 409) {
+        setMarkError(t('admin.patients.detail.locationsCard.markPrimaryConflict'));
+        // A lista pode ter mudado (outra pessoa já é o principal agora) — recarrega, já que
+        // o card TEM função de recarga (`onSaved`, o mesmo refetch usado no caminho de sucesso).
+        onSaved?.();
+      } else {
+        setMarkError(t('admin.patients.detail.locationsCard.markPrimaryError'));
+      }
     } finally {
       setMarkingId(null);
     }
@@ -117,6 +139,12 @@ export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }
         <AvisoAmbar testId="address-no-principal-warning">
           {t('admin.patients.detail.locationsCard.noPrincipalWarning')}
         </AvisoAmbar>
+      )}
+
+      {markError && (
+        <Text size="sm" role="alert" className="text-red-600" data-testid="address-mark-primary-error">
+          {markError}
+        </Text>
       )}
 
       {drawer !== null && patientId && (

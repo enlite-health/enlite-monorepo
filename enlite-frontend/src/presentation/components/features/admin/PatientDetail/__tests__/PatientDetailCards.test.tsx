@@ -73,6 +73,7 @@ import { PatientProfileTabs } from '../PatientProfileTabs';
 import { FamiliaresCard } from '../FamiliaresCard';
 import { CoberturaMedicaCard } from '../CoberturaMedicaCard';
 import { LocalizacoesCard } from '../LocalizacoesCard';
+import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
 
 // ── PatientIdentityCard ──────────────────────────────────────────────────────
 
@@ -875,6 +876,37 @@ describe('LocalizacoesCard', () => {
     resolveCall?.();
     await waitFor(() => expect(markBtn).not.toBeDisabled());
     expect(updatePatientAddressLogistics).toHaveBeenCalledTimes(1);
+  });
+
+  // F1 (gate revisao-pr): o `try/finally` de `onMarkPrimary` não tinha `catch` — um 409
+  // (concorrência, spec 019 §Concorrência) ou 500 virava promise rejeitada sem NENHUM aviso;
+  // o spinner só parava e a operadora não sabia se salvou.
+  it('F1: 409 (outra pessoa marcou principal ao mesmo tempo) mostra mensagem de conflito e recarrega os endereços', async () => {
+    updatePatientAddressLogistics.mockClear().mockRejectedValueOnce(
+      new PatientApiError('Conflict', 409),
+    );
+    const onSaved = vi.fn();
+    const secundario = { ...patientDetailFixture.addresses[0], id: 'addr2', isPrimary: false };
+    render(<LocalizacoesCard addresses={[secundario]} patientId="p1" onSaved={onSaved} />);
+
+    fireEvent.click(screen.getByTestId('address-mark-primary-addr2'));
+    const err = await screen.findByTestId('address-mark-primary-error');
+    expect(err).toHaveTextContent('Outra pessoa já trocou o principal');
+    // 409 recarrega os endereços — o card já tem essa função de recarga (onSaved).
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(screen.getByTestId('address-mark-primary-addr2')).not.toBeDisabled();
+  });
+
+  it('F1: erro genérico (500/rede) mostra mensagem genérica, sem recarregar', async () => {
+    updatePatientAddressLogistics.mockClear().mockRejectedValueOnce(new Error('boom'));
+    const onSaved = vi.fn();
+    const secundario = { ...patientDetailFixture.addresses[0], id: 'addr2', isPrimary: false };
+    render(<LocalizacoesCard addresses={[secundario]} patientId="p1" onSaved={onSaved} />);
+
+    fireEvent.click(screen.getByTestId('address-mark-primary-addr2'));
+    const err = await screen.findByTestId('address-mark-primary-error');
+    expect(err).toHaveTextContent('Não foi possível marcar como principal');
+    expect(onSaved).not.toHaveBeenCalled();
   });
 
   it('renders empty state when no addresses', () => {
