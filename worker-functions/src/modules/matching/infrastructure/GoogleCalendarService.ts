@@ -74,8 +74,7 @@ export class GoogleCalendarService {
 
       return found.event.start?.dateTime ?? found.event.start?.date ?? null;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[GoogleCalendarService] resolveDateTime error: ${msg}`);
+      console.warn('[GoogleCalendarService] resolveDateTime error:', safeErrorFields(err));
       return null;
     }
   }
@@ -127,11 +126,12 @@ export class GoogleCalendarService {
       }
       return result.ok ? { success: true } : { success: false, reason: 'api_error', detail: `HTTP ${result.status}` };
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const { errorName, code } = safeErrorFields(err);
+      const seguro = code ? `${errorName} ${code}` : errorName;
       // PII (C1, 11/09): a mensagem do erro pode ecoar o e-mail que o Google rejeitou
       // (ex.: "Invalid email: <valor>") — nunca a message crua, só errorName+código.
       console.warn('[GoogleCalendarService] addGuestToMeeting error:', safeErrorFields(err));
-      return { success: false, reason: 'api_error', detail: msg };
+      return { success: false, reason: 'api_error', detail: seguro };
     }
   }
 
@@ -170,9 +170,10 @@ export class GoogleCalendarService {
       }
       return result.ok ? { success: true } : { success: false, reason: 'api_error', detail: `HTTP ${result.status}` };
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn('[GoogleCalendarService] confirmAttendee error:', msg);
-      return { success: false, reason: 'api_error', detail: msg };
+      const { errorName, code } = safeErrorFields(err);
+      const seguro = code ? `${errorName} ${code}` : errorName;
+      console.warn('[GoogleCalendarService] confirmAttendee error:', safeErrorFields(err));
+      return { success: false, reason: 'api_error', detail: seguro };
     }
   }
 
@@ -211,9 +212,10 @@ export class GoogleCalendarService {
       }
       return result.ok ? { success: true } : { success: false, reason: 'api_error', detail: `HTTP ${result.status}` };
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn('[GoogleCalendarService] declineAttendee error:', msg);
-      return { success: false, reason: 'api_error', detail: msg };
+      const { errorName, code } = safeErrorFields(err);
+      const seguro = code ? `${errorName} ${code}` : errorName;
+      console.warn('[GoogleCalendarService] declineAttendee error:', safeErrorFields(err));
+      return { success: false, reason: 'api_error', detail: seguro };
     }
   }
 
@@ -245,9 +247,10 @@ export class GoogleCalendarService {
       const result = await this.patchEventAttendees(found.calendarId, found.event.id, filtered, 'none', patchToken);
       return result.ok ? { success: true } : { success: false, reason: 'api_error', detail: `HTTP ${result.status}` };
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn('[GoogleCalendarService] removeGuestFromMeeting error:', msg);
-      return { success: false, reason: 'api_error', detail: msg };
+      const { errorName, code } = safeErrorFields(err);
+      const seguro = code ? `${errorName} ${code}` : errorName;
+      console.warn('[GoogleCalendarService] removeGuestFromMeeting error:', safeErrorFields(err));
+      return { success: false, reason: 'api_error', detail: seguro };
     }
   }
 
