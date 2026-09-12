@@ -60,7 +60,25 @@ jest.mock('../../../src/modules/matching/infrastructure/MatchmakingService', () 
   })),
 }));
 
-import { VacancyCrudController } from '../../../src/modules/matching/interfaces/controllers/VacancyCrudController';
+// ── tryEnsureShortLink guard (is_test) ──────────────────────────────
+// ShortLinkService.fromEnv() e EnsureVacancyShortLinkUseCase mockados para
+// provar o guard sem depender de SHORT_IO_API_KEY estar setado no ambiente
+// de teste (o guard de is_test deve valer ANTES de qualquer chamada real).
+const mockShortLinkFromEnv = jest.fn();
+const mockEnsureUseCaseExecute = jest.fn();
+
+jest.mock('../../../src/modules/matching/infrastructure/shortlinks/ShortLinkService', () => ({
+  ShortLinkService: { fromEnv: (...args: unknown[]) => mockShortLinkFromEnv(...args) },
+}));
+
+jest.mock('../../../src/modules/matching/application/EnsureVacancyShortLinkUseCase', () => ({
+  EnsureVacancyShortLinkUseCase: jest.fn().mockImplementation(() => ({
+    execute: mockEnsureUseCaseExecute,
+  })),
+}));
+
+import { VacancyCrudController, tryEnsureShortLink } from '../../../src/modules/matching/interfaces/controllers/VacancyCrudController';
+import { EnsureVacancyShortLinkUseCase } from '../../../src/modules/matching/application/EnsureVacancyShortLinkUseCase';
 
 // Flush setImmediate callbacks from background matching
 afterEach(() => new Promise(resolve => setImmediate(resolve)));
@@ -124,6 +142,13 @@ describe('VacancyCrudController', () => {
     mockClientRelease.mockReset();
     mockConnect.mockReset();
     mockConnect.mockResolvedValue({ query: mockClientQuery, release: mockClientRelease });
+    // Default: no Short.io env configured — mirrors real behaviour in this test
+    // env (SHORT_IO_API_KEY unset) so existing createVacancy/updateVacancy
+    // assertions are unaffected by the mocked ShortLinkService.
+    mockShortLinkFromEnv.mockReset();
+    mockShortLinkFromEnv.mockReturnValue(null);
+    mockEnsureUseCaseExecute.mockReset();
+    mockEnsureUseCaseExecute.mockResolvedValue({ shortURL: 'https://srt.io/x', alreadyExisted: false });
     // Default: any unspecified client call (BEGIN/COMMIT/audit queries) resolves safely.
     mockQuery.mockResolvedValue({ rows: [] });
     mockClientQuery.mockResolvedValue({ rows: [] });
@@ -250,7 +275,7 @@ describe('VacancyCrudController', () => {
       expect(sql).toMatch(/VALUES\s*\(\s*\$1,\s*\$2,\s*\$3,\s*\$4,/);
     });
 
-    it('sends 23 parameters ($1 through $23, including patient_address_id, status, published_at, closes_at, is_test, contracted_service_id)', async () => {
+    it('sends 24 parameters ($1 through $24, including patient_address_id, status, published_at, closes_at, is_test, contracted_service_id, is_draft)', async () => {
       mockCreateSuccess();
       const req = mockReq(FULL_BODY);
       const res = mockRes();
@@ -260,8 +285,10 @@ describe('VacancyCrudController', () => {
       const params = mockQuery.mock.calls[2][1] as unknown[];
       // +1 vs. the pre-spec-013 count (22): contracted_service_id (migration 320) — always null
       // from this path, POST /vacancies does not go through a contracted service.
-      expect(params).toHaveLength(23);
+      // +1 more: is_draft (computed by buildInsertParams, see is_draft field describe block below).
+      expect(params).toHaveLength(24);
       expect(params[22]).toBeNull();
+      expect(params[23]).toBe(true); // is_draft default (vaga normal, DB default equivalente)
     });
 
     it('maps all fields to correct parameter positions', async () => {
@@ -294,6 +321,7 @@ describe('VacancyCrudController', () => {
       expect(params[17]).toBeNull();                         // patient_address_id (not in FULL_BODY)
       expect(params[18]).toBe('PENDING_ACTIVATION');         // status default
       expect(params[21]).toBe(false);                        // is_test default (not in FULL_BODY)
+      expect(params[23]).toBe(true);                         // is_draft default (vaga normal)
     });
 
     it('passes status as $19 param (defaulting to PENDING_ACTIVATION) and hardcodes country=AR', async () => {
@@ -423,9 +451,10 @@ describe('VacancyCrudController', () => {
       expect(colMatch).toBeTruthy();
       const columns = colMatch![1].split(',').map(c => c.trim()).filter(Boolean);
       // 21 param columns + country (literal 'AR') + is_test (param) + contracted_service_id
-      // (migration 320, spec 013 bloco C) = 24 total.
+      // (migration 320, spec 013 bloco C) + is_draft (param, computed by buildInsertParams,
+      // ver describe 'is_draft field' abaixo) = 25 total.
       // (description column dropped in migration 214 — no longer inserted)
-      expect(columns).toHaveLength(24);
+      expect(columns).toHaveLength(25);
     });
 
     it('does NOT include state, city, pathology_types, dependency_level, service_device_types in INSERT SQL', async () => {
@@ -443,24 +472,23 @@ describe('VacancyCrudController', () => {
       expect(sql).not.toContain('service_device_types');
     });
 
-    it('does NOT mention is_draft in INSERT — relies on migration 168 DEFAULT true so every new vacancy starts as a draft', async () => {
-      // Migration 168 sets `is_draft BOOLEAN NOT NULL DEFAULT true`. The
-      // INSERT must NOT pass this column so the default applies. If anyone
-      // ever adds `is_draft` to the SQL (intentional or not), this test fails
-      // loudly — protecting the invariant "newly created vacancies are
-      // drafts until Talentum publish flips them" that fixed the 771-718
-      // regression.
+    it('vaga normal sempre nasce is_draft=true — mesmo passando is_draft:false no body sem is_test', async () => {
+      // Migration 168 sets `is_draft BOOLEAN NOT NULL DEFAULT true`. A partir
+      // desta mudança o INSERT passa a incluir `is_draft` explicitamente (para
+      // permitir a exceção de is_test), mas o VALOR computado por
+      // buildInsertParams para vaga real é sempre `true` — a exceção NÃO vaza
+      // para produção. Protege o invariante "vaga real nasce draft até o
+      // publish no Talentum" que fixou a regressão 771-718, agora testado pelo
+      // valor do parâmetro em vez da ausência da coluna.
       mockCreateSuccess();
-      const req = mockReq(FULL_BODY);
+      const req = mockReq({ ...FULL_BODY, is_draft: false }); // is_test ausente → exceção não se aplica
       const res = mockRes();
 
       await controller.createVacancy(req as never, res as never);
 
-      const sql = mockQuery.mock.calls[2][0] as string;
-      const colMatch = sql.match(/INSERT INTO job_postings\s*\(([\s\S]*?)\)\s*VALUES/);
-      expect(colMatch).toBeTruthy();
-      const columns = colMatch![1].split(',').map(c => c.trim()).filter(Boolean);
-      expect(columns).not.toContain('is_draft');
+      const params = mockQuery.mock.calls[2][1] as unknown[];
+      expect(params[21]).toBe(false); // is_test (não fornecido)
+      expect(params[23]).toBe(true);  // is_draft — exceção NÃO vaza para vaga normal
     });
 
     // ── is_test guard field (migration 248) ────────────────────────
@@ -524,6 +552,91 @@ describe('VacancyCrudController', () => {
 
         const sql = mockQuery.mock.calls[2][0] as string;
         expect(sql).toContain('is_test');
+      });
+    });
+
+    // ── is_draft field (exceção restrita a is_test=true) ───────────
+
+    describe('is_draft field — só honrado quando is_test=true', () => {
+      it('(a) vaga is_test=true com is_draft:false no payload nasce publicável (is_draft=false)', async () => {
+        mockCreateSuccess();
+        const req = mockReq({ ...FULL_BODY, is_test: true, is_draft: false });
+        const res = mockRes();
+
+        await controller.createVacancy(req as never, res as never);
+
+        const params = mockQuery.mock.calls[2][1] as unknown[];
+        expect(params[21]).toBe(true);  // is_test
+        expect(params[23]).toBe(false); // is_draft — exceção aplicada
+        expect(res.status).toHaveBeenCalledWith(201);
+      });
+
+      it('(b) vaga normal (is_test ausente/false) com is_draft:false no payload continua nascendo draft — exceção NÃO vaza', async () => {
+        mockCreateSuccess();
+        const req = mockReq({ ...FULL_BODY, is_test: false, is_draft: false });
+        const res = mockRes();
+
+        await controller.createVacancy(req as never, res as never);
+
+        const params = mockQuery.mock.calls[2][1] as unknown[];
+        expect(params[21]).toBe(false); // is_test
+        expect(params[23]).toBe(true);  // is_draft — DEFAULT preservado
+      });
+
+      it('is_test=true SEM is_draft no payload continua nascendo draft (exceção exige is_draft:false explícito)', async () => {
+        mockCreateSuccess();
+        const req = mockReq({ ...FULL_BODY, is_test: true });
+        const res = mockRes();
+
+        await controller.createVacancy(req as never, res as never);
+
+        const params = mockQuery.mock.calls[2][1] as unknown[];
+        expect(params[21]).toBe(true); // is_test
+        expect(params[23]).toBe(true); // is_draft — sem is_draft:false explícito, mantém default
+      });
+
+      it('is_test=true com is_draft:true explícito continua draft (não força false)', async () => {
+        mockCreateSuccess();
+        const req = mockReq({ ...FULL_BODY, is_test: true, is_draft: true });
+        const res = mockRes();
+
+        await controller.createVacancy(req as never, res as never);
+
+        const params = mockQuery.mock.calls[2][1] as unknown[];
+        expect(params[23]).toBe(true);
+      });
+
+      it('returns 400 when is_draft is not a boolean (no query executed)', async () => {
+        const req = mockReq({ ...FULL_BODY, is_test: true, is_draft: 'yes' });
+        const res = mockRes();
+
+        await controller.createVacancy(req as never, res as never);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+          success: false,
+          error: expect.stringContaining('is_draft'),
+        }));
+        expect(mockQuery).not.toHaveBeenCalled();
+      });
+
+      it('(c) short link NÃO é criado para a vaga is_test publicável (guard de is_test em tryEnsureShortLink continua valendo)', async () => {
+        // Se o guard de is_test não valesse, o ShortLinkService.fromEnv() truthy
+        // + status ACTIVE (publicável) fariam este teste FALHAR — prova real,
+        // não um "não chamou porque não tinha como chamar mesmo".
+        mockShortLinkFromEnv.mockReturnValue({ /* fake truthy service */ });
+        mockCreateSuccess({
+          vacancyRow: { ...VACANCY_ROW, id: 'uuid-test-publicavel', status: 'ACTIVE', is_test: true },
+        });
+        const req = mockReq({ ...FULL_BODY, is_test: true, is_draft: false, status: 'ACTIVE' });
+        const res = mockRes();
+
+        await controller.createVacancy(req as never, res as never);
+        // setImmediate() dispara tryEnsureShortLink de forma assíncrona
+        await new Promise(resolve => setImmediate(resolve));
+
+        expect(mockShortLinkFromEnv).not.toHaveBeenCalled();
+        expect(mockEnsureUseCaseExecute).not.toHaveBeenCalled();
       });
     });
   });
@@ -1037,5 +1150,52 @@ describe('VacancyCrudController', () => {
       expect(mockClientQuery).toHaveBeenCalledWith('ROLLBACK');
       expect(mockClientRelease).toHaveBeenCalled();
     });
+  });
+});
+
+// ── tryEnsureShortLink — is_test guard ──────────────────────────────
+// Vaga is_test=true nunca pode criar short link real no Short.io (terceiro
+// sem teardown — o cleanup de fixtures apaga a vaga, não o link). Guarda
+// exercitada aqui diretamente sobre a função (exportada só para teste),
+// porque em produção ela roda fire-and-forget dentro de um setImmediate.
+describe('tryEnsureShortLink — is_test guard', () => {
+  const FAKE_POOL = {} as unknown as import('pg').Pool;
+  const VACANCY_ID = 'vac-uuid-999';
+
+  beforeEach(() => {
+    (EnsureVacancyShortLinkUseCase as jest.Mock).mockClear();
+    mockEnsureUseCaseExecute.mockClear();
+    mockShortLinkFromEnv.mockReset();
+    // Short.io "configurado" — se o guard de is_test não interceptar antes,
+    // o caminho chegaria até aqui e criaria o link.
+    mockShortLinkFromEnv.mockReturnValue({ buildAndCreate: jest.fn() });
+  });
+
+  it('vaga is_test=true NÃO chama o criador de link, mesmo com status publicável', async () => {
+    await tryEnsureShortLink(FAKE_POOL, VACANCY_ID, 'SEARCHING', true);
+
+    expect(EnsureVacancyShortLinkUseCase).not.toHaveBeenCalled();
+    expect(mockEnsureUseCaseExecute).not.toHaveBeenCalled();
+    // O guard é fail-fast: nem chega a consultar ShortLinkService.fromEnv().
+    expect(mockShortLinkFromEnv).not.toHaveBeenCalled();
+  });
+
+  it('vaga normal (is_test=false) com status publicável CONTINUA chamando o criador de link', async () => {
+    await tryEnsureShortLink(FAKE_POOL, VACANCY_ID, 'SEARCHING', false);
+
+    expect(EnsureVacancyShortLinkUseCase).toHaveBeenCalledTimes(1);
+    expect(mockEnsureUseCaseExecute).toHaveBeenCalledWith(VACANCY_ID, 'site');
+  });
+
+  it('vaga is_test=true com status NÃO publicável também não chama (dupla garantia)', async () => {
+    await tryEnsureShortLink(FAKE_POOL, VACANCY_ID, 'PENDING_ACTIVATION', true);
+
+    expect(EnsureVacancyShortLinkUseCase).not.toHaveBeenCalled();
+  });
+
+  it('vaga is_test=false com status NÃO publicável não chama (comportamento pré-existente, não regrediu)', async () => {
+    await tryEnsureShortLink(FAKE_POOL, VACANCY_ID, 'PENDING_ACTIVATION', false);
+
+    expect(EnsureVacancyShortLinkUseCase).not.toHaveBeenCalled();
   });
 });

@@ -41,6 +41,15 @@ export interface VacancyInsertParams {
    */
   is_test?: boolean;
   /**
+   * Permite a vaga nascer publicável (is_draft=false) SEM passar pelo
+   * PublishVacancyToTalentumUseCase. Só tem efeito quando is_test=true
+   * (ver buildInsertParams) — vaga real sempre nasce is_draft=true (DEFAULT
+   * da migration 168), porque só o publish no Talentum pode destravar isso.
+   * Existe para a fixture de E2E: ela precisa de uma vaga publicável sem
+   * tocar Talentum/Groq (canal real proibido em teste).
+   */
+  is_draft?: boolean;
+  /**
    * De qual serviço contratado esta vaga nasceu (migration 320, spec 013 bloco C). NULL para
    * `POST /vacancies` normal (o operador cria a vaga direto, sem passar por um serviço) e para
    * `activate` de paciente sem nenhum serviço declarado (fallback por endereço).
@@ -191,7 +200,8 @@ export function buildInsertQuery(): string {
       published_at, closes_at,
       country,
       is_test,
-      contracted_service_id
+      contracted_service_id,
+      is_draft
     ) VALUES (
       $1, $2, $3, $4,
       $5, $6,
@@ -205,7 +215,8 @@ export function buildInsertQuery(): string {
       COALESCE($20::timestamptz, NOW()), $21::timestamptz,
       'AR',
       $22,
-      $23
+      $23,
+      $24
     )
     RETURNING *
   `;
@@ -245,6 +256,11 @@ export function buildInsertParams(p: VacancyInsertParams): unknown[] {
   const status =
     p.status && CANONICAL_STATUSES.has(p.status) ? p.status : 'PENDING_ACTIVATION';
 
+  // Vaga real SEMPRE nasce is_draft=true (mesmo comportamento de sempre — só
+  // o publish no Talentum destrava). A exceção é restrita a is_test=true:
+  // fixture de E2E precisa nascer publicável sem tocar Talentum/Groq.
+  const isDraft = !(p.is_test === true && p.is_draft === false);
+
   return [
     p.vacancyNumber,
     p.case_number,
@@ -269,5 +285,6 @@ export function buildInsertParams(p: VacancyInsertParams): unknown[] {
     p.closes_at ?? null,
     p.is_test === true,
     p.contracted_service_id ?? null,
+    isDraft,
   ];
 }

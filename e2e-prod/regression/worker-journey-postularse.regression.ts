@@ -34,34 +34,57 @@
  *   criada exclusivamente pela nossa chamada de API. Zero double-write, zero mock.
  *
  * ── FIDELIDADE request↔DOM (ponto seguro) ───────────────────────────────────────
- *   `GET /api/vacancies/:id` (PublicVacancyController.ts:22) é público e NÃO filtra
- *   status/is_test (só `deleted_at IS NULL`), então a página `/vacantes/:id` RENDERIZA
- *   a vaga is_test por URL direta. Abrimos essa página SEM auth (render read-only) e
- *   asseramos que dois valores que ENVIAMOS no POST de criação da vaga chegam ao DOM:
- *   (a) `worker_attributes` (string única, renderizada crua em PublicVacancyPage.tsx:203)
- *   e (b) o `title` auto-gerado ("CASO {case}-{vacancy_number}") no H1.
- *   SEGURANÇA: a vaga NÃO vaza no feed público `/api/public/v1/jobs` — o feed exige
- *   status IN (ACTIVE,SEARCHING,…) AND is_draft=false AND social_short_links ? 'site'
- *   (PublicJobsQueryBuilder.ts:31-34); nossa vaga nasce PENDING_ACTIVATION + is_draft=true
- *   + sem short link → excluída em 3 frentes. Só é alcançável por quem tem o UUID, e
- *   existe por segundos até o cleanup. (Follow-up de backend: nem o feed nem o endpoint
- *   single-vacancy filtram is_test — uma vaga is_test posta como ACTIVE + com short link
- *   'site' VAZARIA no feed. Nosso teste evita isso mantendo o default draft.)
+ *   `GET /api/vacancies/:id` (PublicVacancyController.ts:57-78) FILTRA desde 25-30/08/2026
+ *   (ver o docblock do próprio controller, "O que mudou em 25/08/2026"): exige
+ *   `deleted_at IS NULL AND is_draft = false AND status = ANY(STATUS_PUBLICAVEL)`. NÃO
+ *   filtra `is_test` — só status/is_draft.
+ *   ✅ RESOLVIDO (12/09/2026, decisão do Gabriel — CONDICIONADO AO DEPLOY): `POST
+ *   /vacancies` agora aceita `is_draft` no payload de criação, mas SÓ quando `is_test=true`
+ *   (buildInsertParams, vacancyCrudHelpers.ts — vaga real continua sempre nascendo
+ *   is_draft=true, o DEFAULT do banco / migration 168; a exceção não vaza pra produção).
+ *   Por isso o PASSO 5 abaixo passa `is_draft: false` + um status de STATUS_PUBLICAVEL —
+ *   a vaga de fixture nasce publicável SEM passar por `publish-talentum` (Talentum real +
+ *   Groq, canais de terceiro sem teardown, proibidos nesta suíte). O PASSO 8 (fidelidade
+ *   request↔DOM) só fica verde depois que este backend for deployado — antes disso, a vaga
+ *   ainda nasce is_draft=true (default) e a asserção bateria 404. Ver "O que fica condicionado
+ *   ao deploy" no relatório da mudança.
+ *   SEGURANÇA: mesmo publicável, a vaga NÃO vaza no feed público `/api/public/v1/jobs` — o
+ *   feed exige status IN (ACTIVE,SEARCHING,…) AND is_draft=false AND social_short_links ? 'site'
+ *   AND is_test = false (PublicJobsQueryBuilder.ts:24-37). A nossa vaga agora bate status+
+ *   is_draft=false, mas continua excluída por DOIS guards independentes: `is_test = false`
+ *   no feed (a nossa é is_test=true) e a ausência de `social_short_links.site` — desde a
+ *   decisão do Gabriel de 12/09/2026, `VacancyCrudController.tryEnsureShortLink` recusa criar
+ *   short link para vaga is_test (`if (isTest) return;`, ANTES do check de status/serviço),
+ *   então mesmo publicável ela nunca ganha o `social_short_links.site` que o feed exige.
+ *   Só é alcançável por quem tem o UUID direto, e existe por segundos até o cleanup.
  *
- * ── SEGURANÇA DO MATCHMAKING (auto-invite: hoje NÃO dispara; mitigação DEFENSIVA) ──
- *   Verificado em origin/main 2026-07-13: criar vaga insere `vacancy.created`
- *   (VacancyCrudController.ts:183) mas o evento é CRU (sem pubsub.publish) E está fora do
- *   SWEEP_SAFE (DomainEventProcessor.ts:117-120 evita reprocessar vacancy.created "which
- *   fires WhatsApp") → o `VacancyAutoInviteHandler` (registrado em index.ts:359) NUNCA é
- *   chamado. Logo, criar a vaga HOJE = 0 matchmaking, 0 WhatsApp.
- *   MAS o auto-invite é um recurso planejado pra religar (flag AUTO_INVITE_ENABLED). SE
- *   religado, o handler NÃO pula is_test (o comentário em vacancyCrudHelpers.ts:37-42 diz
- *   que pula, mas NÃO implementa — só a segregação de realm protege, e ela NÃO cobre o
- *   nosso worker is_test). Então mantemos uma MITIGAÇÃO DEFENSIVA: a vaga exige uma
- *   profissão que o worker de teste NÃO tem (worker=CAREGIVER; vaga=['PSYCHOLOGIST']) →
- *   ProfessionSpecification o excluiria no SQL → 0 candidatos → 0 WhatsApp, mesmo se o
- *   auto-invite for religado. O postularse (manual, track-channel) NÃO checa profissão,
- *   então a WJA é criada normalmente. Ver memória project_auto_invite_dead_vacancy_created_unpublished.
+ * ── SEGURANÇA DO MATCHMAKING (auto-invite: JÁ LIGADO hoje; a trava real é is_test) ──
+ *   Verificado em origin/main 12/09/2026 — corrige a nota anterior deste arquivo, que dizia
+ *   "hoje NÃO dispara": criar vaga insere `vacancy.created` cru, sem `pubsub.publish`
+ *   (VacancyCrudController.createVacancy, ainda verdade), MAS o evento NÃO está mais fora
+ *   do sweep de durabilidade — `SWEEP_SAFE_EVENTS` (InternalController.ts:50) inclui
+ *   `'vacancy.created'` explicitamente, com o comentário do próprio arquivo dizendo
+ *   "go-live do auto-invite: idempotência provada em 3 camadas". O Cloud Scheduler
+ *   `events-sweep-safe` (terraform/environments/prd/events.tf) chama
+ *   `POST /api/internal/events/sweep-safe` a cada 10 minutos; qualquer `vacancy.created`
+ *   pendente mais velho que 5 min é processado por `sweepPendingByEvent`, chamando
+ *   `VacancyAutoInviteHandler` de verdade. Não depende de nenhuma flag — está ligado.
+ *   O que continua nos protegendo NÃO é o evento estar morto (não está): é que
+ *   `VacancyAutoInviteHandler` (VacancyAutoInviteHandler.ts:90-101) TEM, sim, o guard de
+ *   is_test — `if (row.is_test === true) return` ANTES de rodar matchmaking. A nota antiga
+ *   dizia "o handler NÃO pula is_test, só implementa no comentário"; isso também mudou (ou
+ *   nunca foi verificado direito) — está implementado e é o único ponto de entrada do
+ *   handler, cobrindo matchmaking + WJA + outbox + WhatsApp de uma vez. Para a nossa vaga
+ *   (is_test=true) isso já garante 0 matchmaking, 0 WhatsApp, MESMO SE o Cloud Scheduler
+ *   processar o evento durante os segundos de vida do teste.
+ *   Mantemos a MITIGAÇÃO DEFENSIVA por redundância, não porque seja a única trava: a vaga
+ *   exige uma profissão que o worker de teste NÃO tem (worker=CAREGIVER;
+ *   vaga=['PSYCHOLOGIST']) → ProfessionSpecification o excluiria no matchmaking mesmo que o
+ *   guard de is_test algum dia regredisse. O postularse (manual, track-channel) NÃO checa
+ *   profissão, então a WJA é criada normalmente por essa via.
+ *   ⚠️ A memória `project_auto_invite_dead_vacancy_created_unpublished` (nome antigo) está
+ *   desatualizada por este mesmo motivo — o evento não está mais "dead"; não foi corrigida
+ *   aqui por estar fora do worktree do backend.
  *
  * REGRAS DA SUÍTE (e2e-prod/CLAUDE.md): zero page.route/mock; web-first assertions;
  * teardown por marca (is_test) + delete da conta Firebase; segredos nunca logados.
@@ -178,9 +201,15 @@ test.describe('Jornada worker — FATIA 3 (postularse → WJA INVITED, vaga is_t
       return;
     }
 
-    // ── PASSO 5: ADMIN cria a VAGA is_test (draft/PENDING_ACTIVATION — feed-safe) ──
+    // ── PASSO 5: ADMIN cria a VAGA is_test JÁ PUBLICÁVEL (is_draft=false, feed-safe) ──
     // `worker_attributes` é uma string única: é o valor que provaremos no DOM (fidelidade
-    // request↔DOM). status é omitido de propósito → default PENDING_ACTIVATION + is_draft=true.
+    // request↔DOM, PASSO 8). Antes desta mudança o status era omitido de propósito → default
+    // PENDING_ACTIVATION + is_draft=true (fixture nascia draft e o PASSO 8 batia 404 em prod).
+    // Agora: `is_draft: false` só é honrado pelo backend porque `is_test: true` também está
+    // presente (ver header, "FIDELIDADE request↔DOM") — vaga real nunca teria esse efeito.
+    // `status: 'SEARCHING'` é o membro de STATUS_PUBLICAVEL mais fiel ao estado real de uma
+    // vaga recém-criada (procurando candidato) — ACTIVE sugere já ocupada/em atendimento,
+    // RAPID_RESPONSE e SEARCHING_REPLACEMENT sugerem urgência/substituição que não é o caso.
     const uniqueAttrs = `E2E-PERFIL-${Date.now()}`;
     const createRes = await adminCtx.post('/api/admin/vacancies', {
       data: {
@@ -189,6 +218,8 @@ test.describe('Jornada worker — FATIA 3 (postularse → WJA INVITED, vaga is_t
         case_number: patient.caseNumber ?? 0,
         patient_id: patient.id,
         is_test: true,
+        is_draft: false,
+        status: 'SEARCHING',
         // SEGURANÇA: profissão que o worker (CAREGIVER) NÃO tem → o auto-invite (vivo, sem
         // skip de is_test) NÃO casa o nosso worker → 0 WhatsApp. Ver header. Postularse é
         // manual e não checa profissão, então a WJA é criada mesmo assim.
@@ -235,6 +266,9 @@ test.describe('Jornada worker — FATIA 3 (postularse → WJA INVITED, vaga is_t
     // ── PASSO 8: FIDELIDADE request↔DOM — a página pública renderiza dado que criamos ──
     // Render read-only, SEM auth (GET /api/vacancies/:id é público). Provamos que o valor
     // que ENVIAMOS no POST (worker_attributes) e o título auto-gerado chegam ao DOM real.
+    // ⚠️ CONDICIONADO AO DEPLOY do backend (is_draft aceito no create quando is_test=true,
+    // ver header) — antes do deploy a vaga nasce is_draft=true (default) e este passo bate
+    // 404. Não rodamos este arquivo agora por esse motivo exato (ver relatório da mudança).
     await page.goto(`/vacantes/${vacancyId}`, { waitUntil: 'domcontentloaded' });
     await expect(
       page.getByText(uniqueAttrs),
