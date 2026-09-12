@@ -474,7 +474,7 @@ describe('SyncPatientFromClickUpTaskUseCase — persistDiagnosis catch (:465)', 
       syncFromLabel: jest.fn(),
     } as unknown as SyncPatientDeps['diagnosisMapper'];
 
-    useCase = new SyncPatientFromClickUpTaskUseCase(deps);
+    const useCase = new SyncPatientFromClickUpTaskUseCase(deps);
     const result = await useCase.execute(makeTask(), {}, 'corr-diag-1');
 
     // best-effort: a falha do registro NÃO derruba o kind do sync.
