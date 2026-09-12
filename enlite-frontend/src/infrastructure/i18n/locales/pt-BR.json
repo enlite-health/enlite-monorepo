@@ -3229,7 +3229,9 @@
           "editAddress": "Editar",
           "typeUnspecified": "Não especificado",
           "noPrincipalWarning": "Sem principal — marque um",
-          "markPrimary": "Marcar como principal"
+          "markPrimary": "Marcar como principal",
+          "markPrimaryConflict": "Outra pessoa já trocou o principal. Recarregue a página e tente de novo.",
+          "markPrimaryError": "Não foi possível marcar como principal. Tente de novo."
         },
         "contractedServicesCard": {
           "title": "Serviços Contratados",
