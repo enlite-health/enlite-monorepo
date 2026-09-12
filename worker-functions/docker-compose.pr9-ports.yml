@@ -1,0 +1,14 @@
+# Override de portas para a worktree 018-pr9 (PR-9, filtro de país). Só
+# `postgres` — os testes deste PR instanciam o use case/resolvedor com o pool
+# direto (mesmo padrão de management-dashboard.integration.test.ts), sem API
+# nem Firebase Emulator. 5565 evita colisão com enlite-postgres (5432/5433),
+# 018-pr1 (5563) e 018-pr1-base (5564) — vistos com `docker ps -a` antes de subir.
+services:
+  postgres:
+    container_name: 018-pr9-postgres
+    ports: !override
+      - "5565:5432"
+  api:
+    container_name: 018-pr9-api
+    ports: !override
+      - "8180:8080"

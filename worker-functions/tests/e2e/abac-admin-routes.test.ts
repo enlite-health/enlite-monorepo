@@ -48,6 +48,8 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
   const IDS = {
     patientAR: 'ee270000-0e00-0001-0001-000000000001',
     patientBR: 'ee270000-0e00-0001-0002-000000000001',
+    groupAR: 'ee270000-0e00-0002-0001-000000000001',
+    scopeAR: 'ee270000-0e00-0003-0001-000000000001',
   };
   /** Pacientes criados PELA ROTA — id desconhecido até o POST responder. */
   const criadosPelaRota: string[] = [];
@@ -120,6 +122,9 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
     const semeados = [IDS.patientAR, IDS.patientBR, ...criadosPelaRota];
     await adminPool.query(`DELETE FROM patient_status_history WHERE patient_id = ANY($1)`, [semeados]);
     await adminPool.query(`DELETE FROM patients WHERE id = ANY($1)`, [semeados]);
+    await adminPool.query(`DELETE FROM group_country_scopes WHERE id = $1`, [IDS.scopeAR]);
+    await adminPool.query(`DELETE FROM user_groups WHERE user_id = $1`, [STAFF_AR.uid]);
+    await adminPool.query(`DELETE FROM permission_groups WHERE id = $1`, [IDS.groupAR]);
     await adminPool.query(`DELETE FROM users WHERE firebase_uid = $1`, [STAFF_AR.uid]);
   }
 
@@ -158,6 +163,22 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
     await adminPool.query(
       `INSERT INTO users (firebase_uid, email, role, is_active, tenant_id) VALUES ($1, $2, 'recruiter', true, $3)`,
       [STAFF_AR.uid, STAFF_AR.email, TENANT],
+    );
+    // Grupo com escopo AR VIVO (PR-9, `lex` #9): `resolveCountryScope` (usado agora
+    // também por /patients/stats|funnel) lê `iam.effective_countries` — GRUPO, não o
+    // claim do token. Sem este grant o staff teria [] e ?country=AR também viraria
+    // 403, quebrando o caso (b) "passa (200)" por um motivo que não é o do teste.
+    await adminPool.query(
+      `INSERT INTO permission_groups (id, tenant_id, name) VALUES ($1, $2, 'abac-routes staff AR')`,
+      [IDS.groupAR, TENANT],
+    );
+    await adminPool.query(
+      `INSERT INTO user_groups (user_id, group_id, tenant_id) VALUES ($1, $2, $3)`,
+      [STAFF_AR.uid, IDS.groupAR, TENANT],
+    );
+    await adminPool.query(
+      `INSERT INTO group_country_scopes (id, group_id, country, granted_by, reason) VALUES ($1, $2, 'AR', 'abac-routes-e2e', 'grant do teste de rotas')`,
+      [IDS.scopeAR, IDS.groupAR],
     );
 
     // 3. Envs ANTES do primeiro getInstance() (ver cabeçalho). `maxWorkers: 1` faz todos
@@ -343,6 +364,56 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
       expect(res.status).toBe(200);
       const body = await bodyOf(res);
       expect(body.success).toBe(true);
+    });
+
+    // PR-9 (`lex` #9): o vazamento medido era exatamente este — ANTES do resolvedor,
+    // `?country=` ausente devolvia a contagem de TODOS os países, sem checar o escopo
+    // do ator. Prova pela CONTAGEM real (1 paciente AR semeado neste arquivo), não só
+    // pelo status: se o predicado sumir da query, total volta a incluir o BR também.
+    it('sem ?country= (ALL): total reflete só o escopo do ator (AR), nunca soma AR+BR', async () => {
+      const res = await asStaffAR('/api/admin/patients/stats');
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { success: boolean; data: { total: number } };
+      const [{ n: totalAR }] = (
+        await adminPool.query<{ n: string }>(
+          `SELECT COUNT(*)::int AS n FROM patients WHERE deleted_at IS NULL AND country = 'AR'`,
+        )
+      ).rows;
+      const [{ n: totalTodos }] = (
+        await adminPool.query<{ n: string }>(`SELECT COUNT(*)::int AS n FROM patients WHERE deleted_at IS NULL`)
+      ).rows;
+      expect(Number(totalTodos)).toBeGreaterThan(Number(totalAR)); // sanidade: BR existe e conta a mais
+      expect(body.data.total).toBe(Number(totalAR));
+    });
+  });
+
+  // ── (b2) GET /patients/funnel?country= — MESMO resolvedor de (b) ───────────────────
+  describe('(b2) GET /api/admin/patients/funnel', () => {
+    it('staff AR pedindo ?country=BR leva 403', async () => {
+      const res = await asStaffAR('/api/admin/patients/funnel?country=BR');
+
+      expect(res.status).toBe(403);
+      const body = await bodyOf(res);
+      expect(body.success).toBe(false);
+    });
+
+    it('staff AR pedindo ?country=AR passa (200)', async () => {
+      const res = await asStaffAR('/api/admin/patients/funnel?country=AR');
+
+      expect(res.status).toBe(200);
+      const body = await bodyOf(res);
+      expect(body.success).toBe(true);
+    });
+
+    it('sem ?country= (ALL): byStatus.ACTIVE (se houver) reflete só o escopo do ator — nunca 403 nem vazamento cross-país', async () => {
+      const res = await asStaffAR('/api/admin/patients/funnel');
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { success: boolean; data: { country: string | null } };
+      expect(body.success).toBe(true);
+      // Ator {AR} só: o escopo resolvido é ['AR'] (um país só) — o contrato de
+      // saída ecoa o país (não fica null, que é reservado a multi-país/ALL).
+      expect(body.data.country).toBe('AR');
     });
   });
 

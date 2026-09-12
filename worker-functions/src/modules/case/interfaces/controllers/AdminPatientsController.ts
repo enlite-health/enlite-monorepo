@@ -2,7 +2,8 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import { Pool } from 'pg';
 import { reportError, logger } from '@shared/logging';
-import { AuthMiddleware } from '@modules/identity';
+import { AuthMiddleware, resolveCountryScope, CountryScopeError } from '@modules/identity';
+import { currentDbContext } from '@shared/database/requestDbSession';
 import { adminPatientsListSchema } from '../validators/adminPatientsListSchema';
 import { adminPatientParamsSchema } from '../validators/adminPatientParamsSchema';
 import { createPatientSchema } from '../validators/createPatientSchema';
@@ -740,13 +741,30 @@ export class AdminPatientsController {
     }
   }
 
-  /** GET /api/admin/patients/stats?country=AR|BR */
+  /**
+   * GET /api/admin/patients/stats?country=AR|BR|ALL
+   *
+   * País resolvido NO SERVIDOR (PR-9, `lex` #9, FR-730/731): `resolveCountryScope`
+   * decide, nunca o valor cru da query — pedido fora do escopo do ator (grupo,
+   * `iam.effective_countries`) vira 403, nunca uma contagem cross-país silenciosa.
+   */
   async getPatientStats(req: Request, res: Response): Promise<void> {
+    let scope;
     try {
-      const country = req.query.country === 'AR' || req.query.country === 'BR'
-        ? req.query.country
-        : undefined;
-      const stats = await this.repo.stats(country);
+      scope = await resolveCountryScope(this.db, currentDbContext()?.uid, req.query.country);
+    } catch (err) {
+      if (err instanceof CountryScopeError) {
+        res.status(err.status).json({ success: false, error: err.code, detail: err.message });
+        return;
+      }
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientsController:getPatientStats:scope' });
+      res.status(500).json({ success: false, error: 'Failed to resolve country scope' });
+      return;
+    }
+
+    try {
+      const stats = await this.repo.stats(scope.countries);
       res.status(200).json({ success: true, data: stats });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
@@ -760,10 +778,11 @@ export class AdminPatientsController {
   }
 
   /**
-   * GET /api/admin/patients/funnel?country=AR|BR&from=ISO&to=ISO
+   * GET /api/admin/patients/funnel?country=AR|BR|ALL&from=ISO&to=ISO
    *
    * Conversão do funil de pacientes por país e período (Fase 4). Sem from/to,
-   * usa os últimos 30 dias. Controller fino — delega ao GetPatientFunnelUseCase.
+   * usa os últimos 30 dias. País pelo MESMO resolvedor de `getPatientStats`
+   * (PR-9, `lex` #9) — controller fino, delega a agregação ao GetPatientFunnelUseCase.
    */
   async getPatientFunnel(req: Request, res: Response): Promise<void> {
     const parsed = patientFunnelQuerySchema.safeParse(req.query);
@@ -776,8 +795,22 @@ export class AdminPatientsController {
       return;
     }
 
+    let scope;
     try {
-      const data = await this.getPatientFunnelUseCase.execute(parsed.data);
+      scope = await resolveCountryScope(this.db, currentDbContext()?.uid, req.query.country);
+    } catch (err) {
+      if (err instanceof CountryScopeError) {
+        res.status(err.status).json({ success: false, error: err.code, detail: err.message });
+        return;
+      }
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientsController:getPatientFunnel:scope' });
+      res.status(500).json({ success: false, error: 'Failed to resolve country scope' });
+      return;
+    }
+
+    try {
+      const data = await this.getPatientFunnelUseCase.execute({ ...parsed.data, countries: scope.countries });
       res.status(200).json({ success: true, data });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
