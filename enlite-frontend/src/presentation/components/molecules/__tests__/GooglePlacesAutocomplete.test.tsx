@@ -513,3 +513,189 @@ describe('GooglePlacesAutocomplete — seleção por teclado e validação', () 
     expect(screen.getByText('Dirección obligatoria')).toBeInTheDocument();
   });
 });
+
+/**
+ * Conserto #4 — predição atrasada.
+ *
+ * `resolveFirstPrediction` é assíncrono em DOIS saltos (predições → Details) e não
+ * tinha nenhuma guarda de obsolescência: usuário digita "A", aperta Enter, desiste,
+ * digita "B" — e quando a resposta de "A" volta, ela SOBRESCREVE "B". No cadastro do
+ * prestador isso é grave porque `ServiceAddressTab` autossalva a área de serviço no
+ * `handlePlaceSelected`: o endereço errado vira zoneamento gravado sem o prestador ver.
+ *
+ * Estes testes controlam a chegada das respostas NA MÃO: `stubGoogle()` sem opções
+ * registra a chamada mas não invoca o callback sozinho — o teste decide quando (e com
+ * que valor) a resposta "chega", exatamente o controle que o defeito precisa expor.
+ */
+describe('GooglePlacesAutocomplete — predição atrasada não sobrescreve o texto atual', () => {
+  it('resposta atrasada da predição não sobrescreve o texto já trocado pelo usuário', async () => {
+    placeDevolvido = {}; // sem `name`: cai no valor do input, como o Enter real faz
+    stubGoogle();
+    const onChange = vi.fn();
+    const onPlaceSelected = vi.fn();
+    const onValidationChange = vi.fn();
+
+    render(
+      <GooglePlacesAutocomplete
+        label="Dirección"
+        onChange={onChange}
+        onPlaceSelected={onPlaceSelected}
+        onValidationChange={onValidationChange}
+      />,
+    );
+    await waitFor(() => expect(placeChangedHandlers.length).toBe(1));
+
+    const input = screen.getByTestId('address-autocomplete-input');
+    fireEvent.change(input, { target: { value: 'A' } });
+    await act(async () => {
+      placeChangedHandlers.forEach((h) => h());
+    });
+
+    expect(getPlacePredictions).toHaveBeenCalledTimes(1);
+    expect(getPlacePredictions.mock.calls[0]![0]).toMatchObject({ input: 'A' });
+
+    // O usuário desiste de "A" e digita "B" ANTES da resposta do Google chegar.
+    fireEvent.change(input, { target: { value: 'B' } });
+
+    // A resposta de "A" chega agora, atrasada.
+    const callbackDaPredicao = getPlacePredictions.mock.calls[0]![1] as (
+      p: unknown,
+      s: string,
+    ) => void;
+    await act(async () => {
+      callbackDaPredicao([{ place_id: 'p-a' }], 'OK');
+    });
+
+    // Se a guarda não existir, o fluxo segue e pede Details da predição velha — e
+    // quando o Details "responde" também, o resultado se aplica por cima de "B".
+    if (getDetails.mock.calls.length > 0) {
+      const callbackDoDetails = getDetails.mock.calls[0]![1] as (
+        d: unknown,
+        s: string,
+      ) => void;
+      await act(async () => {
+        callbackDoDetails({ formatted_address: 'Endereço A resolvido' }, 'OK');
+      });
+    }
+
+    expect(
+      input,
+      'o texto do usuário é a verdade — a resposta atrasada não pode voltar por cima',
+    ).toHaveValue('B');
+    expect(onPlaceSelected, 'predição velha não pode aplicar seleção nenhuma').not.toHaveBeenCalled();
+    expect(onValidationChange).not.toHaveBeenCalledWith(true);
+    expect(onChange).not.toHaveBeenCalledWith('Endereço A resolvido');
+  });
+
+  it('resposta atrasada do Place Details não sobrescreve o texto trocado depois da predição', async () => {
+    // Aqui o texto NÃO muda antes da predição resolver (Details chega a ser pedido) —
+    // só muda depois, enquanto o Details ainda está no ar. Cobre a guarda que vive no
+    // SEGUNDO salto, distinta da guarda do primeiro (coberta pelo teste acima).
+    placeDevolvido = {};
+    stubGoogle();
+    const onChange = vi.fn();
+    const onPlaceSelected = vi.fn();
+
+    render(
+      <GooglePlacesAutocomplete label="Dirección" onChange={onChange} onPlaceSelected={onPlaceSelected} />,
+    );
+    await waitFor(() => expect(placeChangedHandlers.length).toBe(1));
+
+    const input = screen.getByTestId('address-autocomplete-input');
+    fireEvent.change(input, { target: { value: 'A' } });
+    await act(async () => {
+      placeChangedHandlers.forEach((h) => h());
+    });
+
+    const callbackDaPredicao = getPlacePredictions.mock.calls[0]![1] as (
+      p: unknown,
+      s: string,
+    ) => void;
+    await act(async () => {
+      callbackDaPredicao([{ place_id: 'p-a' }], 'OK');
+    });
+    expect(getDetails, 'texto ainda é "A" — Details é pedido normalmente').toHaveBeenCalledTimes(1);
+
+    // O usuário troca o texto DEPOIS que a predição já resolveu, mas ANTES do Details voltar.
+    fireEvent.change(input, { target: { value: 'C' } });
+
+    const callbackDoDetails = getDetails.mock.calls[0]![1] as (d: unknown, s: string) => void;
+    await act(async () => {
+      callbackDoDetails({ formatted_address: 'Endereço A resolvido' }, 'OK');
+    });
+
+    expect(onPlaceSelected, 'Details da predição velha não aplica mais nada').not.toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalledWith('Endereço A resolvido');
+    expect(input).toHaveValue('C');
+  });
+
+  it('desmontar entre pedir predições e a resposta chegar não gasta Details', async () => {
+    // O `enabled`/unmount zera a mesma guarda de obsolescência: aqui o texto do campo
+    // não muda (ele nem existe mais), então só o flag de cancelamento pode barrar.
+    placeDevolvido = {};
+    stubGoogle();
+    const { unmount } = render(<GooglePlacesAutocomplete label="Dirección" />);
+    await waitFor(() => expect(placeChangedHandlers.length).toBe(1));
+
+    const input = screen.getByTestId('address-autocomplete-input');
+    fireEvent.change(input, { target: { value: 'A' } });
+    await act(async () => {
+      placeChangedHandlers.forEach((h) => h());
+    });
+    expect(getPlacePredictions).toHaveBeenCalledTimes(1);
+
+    unmount();
+
+    const callbackDaPredicao = getPlacePredictions.mock.calls[0]![1] as (
+      p: unknown,
+      s: string,
+    ) => void;
+    await act(async () => {
+      expect(() => {
+        callbackDaPredicao([{ place_id: 'p-a' }], 'OK');
+      }, 'resposta depois do unmount não pode lançar').not.toThrow();
+    });
+
+    expect(getDetails, 'componente desmontado não pede Details').not.toHaveBeenCalled();
+  });
+
+  it('desmontar entre pedir Details e a resposta chegar não aplica nada', async () => {
+    placeDevolvido = {};
+    stubGoogle();
+    const onChange = vi.fn();
+    const { unmount } = render(<GooglePlacesAutocomplete label="Dirección" onChange={onChange} />);
+    await waitFor(() => expect(placeChangedHandlers.length).toBe(1));
+
+    const input = screen.getByTestId('address-autocomplete-input');
+    fireEvent.change(input, { target: { value: 'A' } });
+    await act(async () => {
+      placeChangedHandlers.forEach((h) => h());
+    });
+
+    const callbackDaPredicao = getPlacePredictions.mock.calls[0]![1] as (
+      p: unknown,
+      s: string,
+    ) => void;
+    await act(async () => {
+      callbackDaPredicao([{ place_id: 'p-a' }], 'OK');
+    });
+    expect(getDetails).toHaveBeenCalledTimes(1);
+
+    unmount();
+
+    const callbackDoDetails = getDetails.mock.calls[0]![1] as (d: unknown, s: string) => void;
+    await act(async () => {
+      expect(() => {
+        callbackDoDetails({ formatted_address: 'Endereço tardio' }, 'OK');
+      }, 'resposta de Details depois do unmount não pode lançar').not.toThrow();
+    });
+
+    // `onChange('A')` já aconteceu antes, pelo próprio `fireEvent.change` (teclado
+    // normal) — o que a guarda impede é o Details tardio aplicar o endereço por cima.
+    expect(
+      onChange,
+      'componente desmontado não pode receber o endereço resolvido tardiamente',
+    ).not.toHaveBeenCalledWith('Endereço tardio');
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+});

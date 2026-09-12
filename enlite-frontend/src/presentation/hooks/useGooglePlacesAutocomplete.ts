@@ -172,6 +172,22 @@ export function useGooglePlacesAutocomplete({
     // em silêncio. (Pego pelo teste "limpa os listeners do widget E do input".)
     const inputEl = inputRef.current;
 
+    // ⚠️ Guarda de obsolescência (conserto #4, 10/09/2026).
+    //
+    // `resolveFirstPrediction` é assíncrona em DOIS saltos (predições → Details) e
+    // nada garantia que a resposta ainda servia quando ela chegasse: usuário digita
+    // "A", aperta Enter, desiste, digita "B" — e a resposta de "A" voltava e
+    // SOBRESCREVIA "B" (`onPlaceApplied` troca o texto do campo sem perguntar nada).
+    // No cadastro do prestador isso é grave porque `ServiceAddressTab` autossalva a
+    // área de serviço na seleção: o endereço errado virava zoneamento gravado sem o
+    // prestador ver.
+    //
+    // Duas checagens, em cada um dos dois callbacks: `canceladaRef` cobre o efeito
+    // sendo limpo (unmount, ou `enabled`/`guessFirstPredictionOnEnter` mudando) — o
+    // campo pode nem existir mais; a comparação com `inputRef.current?.value` cobre
+    // o caso mais comum, o efeito continua vivo mas o usuário já trocou o texto.
+    const canceladaRef = { valor: false };
+
     // A escuta começa ANTES de o widget existir — e é por isso que UM mecanismo basta: o
     // construtor do Google só pendura o dropdown depois que o script carrega, bem depois
     // desta linha. Houve aqui uma varredura inicial "por garantia"; ela foi removida em
@@ -257,6 +273,20 @@ export function useGooglePlacesAutocomplete({
         // chamada nenhuma ao fluxo de quem usa o mouse.
         const resolveFirstPrediction = (typed: string): void => {
           if (!typed.trim()) return;
+          // ⚠️ Comparar contra `typed` (o texto usado na BUSCA) e não contra o campo
+          // quebrava o teste do defeito de 31/08: ali `typed` vem de `place.name` (o
+          // Google já resolveu o texto), mas o `<input>` do teste nunca foi digitado —
+          // fica em `''` a vida toda. Em produção os dois nascem iguais (mesmo campo),
+          // mas a guarda de obsolescência precisa comparar contra o que o campo
+          // REALMENTE mostra agora versus o que ele mostrava no INSTANTE desta
+          // chamada — não contra a string que foi para a busca.
+          //
+          // ⚠️ Sem `?? ''`: chegar aqui já provou `typed.trim()` não-vazio, e não há
+          // salto assíncrono entre esta linha e a leitura de `typed` — então
+          // `inputRef.current` não muda de estado no meio do caminho. Um `?? ''` aqui
+          // seria ramo que nenhuma sabotagem mata (igual à varredura removida em
+          // 10/09/2026, ver comentário acima): instrumento morto, não rede de segurança.
+          const textoNoMomentoDaChamada = inputRef.current?.value;
           const svc = new google.maps.places.AutocompleteService();
           svc.getPlacePredictions(
             {
@@ -265,6 +295,10 @@ export function useGooglePlacesAutocomplete({
               componentRestrictions: { country: COUNTRIES },
             },
             (predictions, status) => {
+              // Efeito limpo (unmount/`enabled` desligado) OU o campo já diz outra
+              // coisa: a resposta é de uma pergunta que ninguém faz mais.
+              if (canceladaRef.valor) return;
+              if (inputRef.current?.value !== textoNoMomentoDaChamada) return;
               const first = predictions?.[0];
               if (status !== google.maps.places.PlacesServiceStatus.OK || !first) return;
               const details = new google.maps.places.PlacesService(document.createElement('div'));
@@ -274,6 +308,10 @@ export function useGooglePlacesAutocomplete({
                   fields: PLACE_FIELDS,
                 },
                 (detail, detailStatus) => {
+                  // Mesma guarda no segundo salto: o texto pode ter mudado ENTRE a
+                  // predição resolver e o Details voltar, não só antes da predição.
+                  if (canceladaRef.valor) return;
+                  if (inputRef.current?.value !== textoNoMomentoDaChamada) return;
                   if (detailStatus !== google.maps.places.PlacesServiceStatus.OK || !detail) return;
                   applyPlace(detail);
                 },
@@ -316,6 +354,10 @@ export function useGooglePlacesAutocomplete({
     initAutocomplete();
 
     return () => {
+      // Zerada ANTES de tudo: qualquer resposta de predição/Details que volte depois
+      // deste ponto encontra a guarda ligada, mesmo que o input ainda exista (caso
+      // `enabled` desligue sem desmontar o campo).
+      canceladaRef.valor = true;
       ouvintesDeFalhaDeChave.delete(aoRecusarChave);
       observer.disconnect();
       // Guarda de existência ANTES de tocar em `google`: quando o script do Maps não
