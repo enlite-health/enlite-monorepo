@@ -150,9 +150,12 @@ describe('BookSlotFromWhatsAppUseCase', () => {
     const result = await useCase.execute('whatsapp:+5491112345678', 'slot_1', 'SM-abc123');
 
     expect(result.isSuccess).toBe(true);
+    // PII: o e-mail cru nunca aparece — só workerId + máscara (irmão do achado 10).
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Failed to add worker@test.com to calendar: event_not_found'),
+      expect.stringContaining(`Failed to add worker=${WORKER.id} email=${redactContact(WORKER.email, 'email')} to calendar: event_not_found`),
     );
+    const loggedLines = consoleSpy.mock.calls.map((c) => String(c[0]));
+    expect(loggedLines.join('\n')).not.toContain(WORKER.email);
     consoleSpy.mockRestore();
   });
 
