@@ -188,6 +188,23 @@ novo_repo
 printf 'console.log(`breakdown: sem_telefone=${semTelefone}`);\n' > src/a.ts; commit c1
 rodar; checa "[-] CONTAGEM passa (a regra permite status e contagem)" 0
 
+# ── D-11/09: redactContact/safeErrorFields são SAÍDA SEGURA — e SOMENTE eles ──
+novo_repo
+printf "console.log(\`worker \${redactContact(phone, 'phone')} convidado\`);\n" > src/a.ts; commit c1
+rodar; checa "[-] telefone mascarado via redactContact(...) NÃO reprova" 0
+novo_repo
+printf 'console.log(`worker ${phone} convidado`);\n' > src/a.ts; commit c1
+rodar; checa "[+] CONTROLE: o mesmo telefone SEM redactContact continua reprovando" 1 "interpolando campo pessoal"
+novo_repo
+printf "console.log(\`worker \${safeErrorFields(phone)} convidado\`);\n" > src/a.ts; commit c1
+rodar; checa "[-] campo pessoal mascarado via safeErrorFields(...) NÃO reprova" 0
+novo_repo
+printf 'console.log(`user ${email} registered`);\n' > src/a.ts; commit c1
+rodar; checa "[+] CONTROLE: e-mail cru (sem nenhum helper) continua reprovando" 1 "interpolando campo pessoal"
+novo_repo
+printf "logger.warn({ phone: redactContact(phone, 'phone') }, phone);\n" > src/a.ts; commit c1
+rodar; checa "[+] linha com UM campo mascarado e outro campo pessoal cru na MESMA linha continua reprovando" 1 "interpolando campo pessoal"
+
 # ══ V6 — dado clínico ════════════════════════════════════════════════════════
 echo "## V6 — dado clínico rumo a terceiro"
 novo_repo

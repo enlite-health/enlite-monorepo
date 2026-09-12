@@ -28,6 +28,10 @@
 #   · V2 — só olha arquivo do diff; órfão em arquivo não tocado passa
 #   · V3 — import montado dinamicamente (`from \`./\${x}\``) é invisível
 #   · V5/V6 — heurística de texto: PII repassada por variável de nome neutro passa
+#   · V5 — D-11/09: `redactContact(...)`/`safeErrorFields(...)` são reconhecidos
+#     como saída segura (removidos antes do 2º passo do detector) — qualquer
+#     OUTRA forma de "parecer mascarado" (nome de variável, comentário, helper
+#     diferente) continua reprovando, de propósito
 #   · V7 — só AVISA; rota sem célula não reprova (definição pode ser multilinha)
 #   · V9 — mede EXISTÊNCIA de teste no diff, nunca se o teste testa algo
 #   · V10 — segredo sem palavra-chave por perto (um UUID solto) passa
@@ -295,6 +299,31 @@ if [ "$N_CODE" -eq 0 ]; then na "0 linha de código no diff"; else
 PII=$(grep -E "(console\.(log|error|warn)|logger?\.(info|warn|error|debug))" "$TMP/add_code" \
       | grep -iE '\$\{[^}]*\b(phone|telefone|email|firstName|lastName|first_name|last_name|dni|documentNumber|document_number|birthDate|birth_date|diagnosis|diagnostico)\b[^}]*\}|\b(phone|email|firstName|lastName|dni|diagnosis)\b[[:space:]]*[,)]' \
       | grep -viE '\\b(count|total|qtd|quantidade|length|size|has|missing)\\b|\\bsem_|\\bcom_|\\.length' || true)
+
+# ── D-11/09 (autorizado pelo Gabriel): redactContact(...)/safeErrorFields(...)
+# são SAÍDA SEGURA. O nome do campo pessoal continua na linha (é o argumento da
+# chamada), mas o VALOR que sai no log já passou por máscara — não é o
+# vazamento que o V5 existe pra pegar. Remove as duas chamadas do texto e RODA
+# O MESMO detector de novo: se ainda casar depois de removidas, o campo vazou
+# por FORA do helper (2ª interpolação na mesma linha, sem máscara) — aí SIM
+# reprova. "Somente isso": nenhuma outra forma de "parecer seguro" conta — é
+# obrigatoriamente uma chamada de verdade a um dos dois nomes.
+if [ -n "$PII" ]; then
+  SOBROU=""
+  while IFS= read -r linha; do
+    [ -z "$linha" ] && continue
+    despida=$(printf '%s\n' "$linha" | sed -E 's/redactContact\([^()]*\)//g; s/safeErrorFields\([^()]*\)//g')
+    if printf '%s\n' "$despida" \
+       | grep -qiE '\$\{[^}]*\b(phone|telefone|email|firstName|lastName|first_name|last_name|dni|documentNumber|document_number|birthDate|birth_date|diagnosis|diagnostico)\b[^}]*\}|\b(phone|email|firstName|lastName|dni|diagnosis)\b[[:space:]]*[,)]'; then
+      SOBROU="${SOBROU}${linha}
+"
+    fi
+  done <<PII_LINHAS
+$PII
+PII_LINHAS
+  PII="$SOBROU"
+fi
+
 if [ -n "$PII" ]; then
   falha "log novo interpolando campo pessoal — conferir um a um:"
   echo "$PII" | head -8 | sed 's/^/        /'
@@ -308,6 +337,14 @@ echo
 # Regra mais dura da casa. ⚠️ A 1ª versão casava SUBSTRING: `diagnos` pegava
 # `diagnosticsHttpTimeoutMs` e `http` pegava qualquer URL — reprovava
 # `const DIAGNOSTIC_ENDPOINT = 'http://localhost:8080/healthz'`. Agora é PALAVRA.
+#
+# D-11/09: avaliado se a MESMA cegueira do V5 (helper de saída segura) se
+# aplica aqui — NÃO se aplica. `redactContact`/`safeErrorFields` mascaram
+# valor; dado clínico não tem "versão mascarada aceitável" na regra da casa
+# (texto clínico NUNCA sai do perímetro, ponto — CLAUDE.md). Não existe hoje
+# nenhum helper de "redação de diagnóstico" no código, e não seria a correção
+# certa se existisse (a correção é NÃO MANDAR, não ofuscar). V6 continua sem
+# exceção nenhuma de propósito.
 echo "## V6 — dado clínico rumo a terceiro/URL/prompt"
 if [ "$N_CODE" -eq 0 ]; then na "0 linha de código no diff"; else
 CLIN=$(grep -iE '\b(diagnosis|diagnostico|diagnóstico|pathology|pathologies|patologia|patologias|patología|patologías)\b' "$TMP/add_code" \
