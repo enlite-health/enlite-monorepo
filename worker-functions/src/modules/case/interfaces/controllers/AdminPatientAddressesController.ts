@@ -96,6 +96,18 @@ export class AdminPatientAddressesController {
         sets.push(`${column} = $${values.length}`);
       }
     }
+    // K4: texto do "Otro" órfão — quando o PATCH define address_type para qualquer valor
+    // diferente de 'otro' (inclusive `null`), o mesmo UPDATE já limpa address_type_other na
+    // MESMA transação. Sem isto, um endereço que já tinha address_type='otro' com texto livre e
+    // depois muda de tipo (ex.: para 'casa_madre') ficava com o texto velho órfão no banco — a
+    // zod já impede o cliente de mandar os dois juntos fora de 'otro' (refine acima), mas não
+    // limpa o que já estava persistido de uma requisição anterior.
+    const addressTypeProvided = Object.prototype.hasOwnProperty.call(bodyData, 'address_type');
+    const addressTypeOtherProvided = Object.prototype.hasOwnProperty.call(bodyData, 'address_type_other');
+    if (addressTypeProvided && bodyData.address_type !== 'otro' && !addressTypeOtherProvided) {
+      values.push(null);
+      sets.push(`address_type_other = $${values.length}`);
+    }
     const markingDefault = Object.prototype.hasOwnProperty.call(bodyData, 'is_default') && bodyData.is_default === true;
     if (markingDefault) {
       sets.push('is_default = true');
@@ -150,6 +162,10 @@ export class AdminPatientAddressesController {
         patientId: params.data.patientId,
         addressId: params.data.addressId,
         fields: Object.fromEntries(Object.keys(bodyData).map((k) => {
+          // K1: `address_type`/`address_type_other` NUNCA saem como tamanho — mesmo o enum
+          // fechado permite deduzir o valor pelo `.length` (ex.: 4 caracteres só bate com
+          // 'otro'). Sai só `true` ("o campo mudou"), igual ao booleano de `is_default`.
+          if (k === 'address_type' || k === 'address_type_other') return [k, true];
           const v = bodyData[k];
           if (typeof v === 'boolean') return [k, v];
           return [k, ((v ?? '') as string).length];
