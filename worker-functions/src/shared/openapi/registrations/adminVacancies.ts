@@ -38,7 +38,8 @@ const ResolveAddressBody = z.object({
   createAddress: z.object({
     address_formatted: z.string().min(1).openapi({ description: 'Endereço formatado.', example: 'Av. Corrientes 1234, Buenos Aires' }),
     address_raw: z.string().optional().openapi({ description: 'Endereço bruto.', example: 'Corrientes 1234' }),
-    address_type: z.string().min(1).openapi({ description: 'Tipo do endereço.', example: 'primary' }),
+    // Spec 019 (B4/B7): `address_type` sai daqui — era o único ponto aceitando string livre sem
+    // validação de lista. Endereço nasce com tipo NULL; valor só via PATCH.
   }).optional().openapi({ description: 'Dados para criar novo endereço inline.' }),
 }).openapi({ description: 'Vincula um endereço existente ou cria um novo para resolver a revisão pendente.' });
 

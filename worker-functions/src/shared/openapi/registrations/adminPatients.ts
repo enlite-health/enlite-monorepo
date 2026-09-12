@@ -19,13 +19,39 @@ const CreatePatientAddressBody = z.object({
     description: 'Endereço bruto original (sem formatação).',
     example: 'Corrientes 1234',
   }),
-  address_type: z.enum(['primary', 'secondary', 'service']).default('secondary').openapi({
-    description: 'Tipo do endereço: primary (residência principal), secondary ou service.',
-    example: 'secondary',
+  // Spec 019 (B4/B7): `address_type` sai da criação — nasce NULL ("sin especificar"), valor só
+  // via PATCH. `is_default` opcional: sem principal ativo, o endereço nasce principal mesmo
+  // que o cliente não peça (regra de nascimento).
+  is_default: z.boolean().optional().openapi({
+    description: 'Marca como principal. Se omitido e o paciente não tiver nenhum principal ativo, nasce principal mesmo assim.',
+    example: false,
   }),
   display_order: z.number().int().positive().optional().openapi({
     description: 'Ordem de exibição (auto-incrementa se omitido).',
     example: 2,
+  }),
+});
+
+// Spec 019 (D310 item c, override do lex 12/09/2026 — Caminho B): lista fechada por parentesco,
+// reaproveitando `address_type`. Decisão B7: nomear 'escuela' no contrato publicado do PATCH —
+// é staff-only (`requireStaff`), o contrato já não é público, e omitir o valor não esconde nada
+// de quem já tem acesso ao endpoint, só dificulta o cliente gerado.
+const PATIENT_ADDRESS_TYPES = [
+  'domicilio_propio', 'casa_madre', 'casa_padre', 'casa_abuela',
+  'casa_abuelo', 'escuela', 'trabajo', 'otro',
+] as const;
+
+const UpdatePatientAddressBody = z.object({
+  neighborhood: z.string().trim().min(1).max(120).nullable().optional().openapi({ description: 'Zona/bairro.', example: 'Palermo' }),
+  logistics_corridor: z.string().trim().min(1).max(200).nullable().optional().openapi({ description: 'Corredor logístico.', example: 'Zona Norte' }),
+  access_notes: z.string().trim().min(1).max(2000).nullable().optional().openapi({ description: 'Notas de acesso ao domicílio (texto livre).' }),
+  is_default: z.boolean().optional().openapi({ description: 'Marca como principal — desmarca o anterior na mesma transação.', example: true }),
+  address_type: z.enum(PATIENT_ADDRESS_TYPES).nullable().optional().openapi({
+    description: 'Tipo de local por parentesco. `null` = sin especificar.',
+    example: 'escuela',
+  }),
+  address_type_other: z.string().trim().min(1).max(40).nullable().optional().openapi({
+    description: 'Texto livre do "Otro" (≤40) — só aceito junto de address_type="otro".',
   }),
 });
 
@@ -230,6 +256,33 @@ registry.registerPath({
     201: { description: 'Endereço criado.', content: { 'application/json': { schema: OkMessage } } },
     400: { description: 'Dados inválidos.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/admin/patients/{patientId}/addresses/{addressId}',
+  tags: ['Admin · Patients'],
+  summary: 'Edita logística, principal e tipo de um endereço',
+  description:
+    'Atualiza zona/corredor/notas de acesso, marca como principal (troca atômica — nunca existe ' +
+    'instante com 0 ou 2 principais) e/ou o tipo de local por parentesco (spec 019). ' +
+    'Único escritor de valor autorizado para `address_type`/`address_type_other`.',
+  security: [{ firebaseAuth: [] }],
+  request: {
+    params: z.object({
+      patientId: z.string().uuid().openapi({ description: 'UUID do paciente.', example: '6f7c1d4a-9b2e-4c8a-9d5e-1f3b8a2c7e91' }),
+      addressId: z.string().uuid().openapi({ description: 'UUID do endereço.', example: '6f7c1d4a-9b2e-4c8a-9d5e-1f3b8a2c7e91' }),
+    }),
+    body: { content: { 'application/json': { schema: UpdatePatientAddressBody } } },
+  },
+  responses: {
+    200: { description: 'Endereço atualizado.', content: { 'application/json': { schema: OkMessage } } },
+    400: { description: 'Dados inválidos (inclui address_type_other sem address_type="otro").', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    404: { description: 'Endereço não encontrado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    409: { description: 'Conflito de concorrência ao marcar principal.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
 });
