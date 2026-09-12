@@ -2852,7 +2852,6 @@
         "close": "Cerrar",
         "unset": "—",
         "saveError": "Error al guardar",
-        "savePartialError": "Se guardaron {{saved}} de {{total}} líneas. {{failed}} no se pudieron guardar — revisá e intentá de nuevo.",
         "deviceType": "Dispositivo",
         "clinicalSections": {
           "pathology": "Patología",

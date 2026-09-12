@@ -130,8 +130,6 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
       // Contatos de emergência da cobertura: escrita POR LINHA (spec 018, PR-1, ADR-1) — diff
       // contra o que o drawer abriu com. Removidas primeiro (nada aqui colide com índice único
       // como em responsáveis, mas a ordem "sai antes de entrar" é a mesma disciplina).
-      let savedCount = 0;
-      let failedCount = 0;
       if (contactsDirty) {
         const initialIds = new Set(initialContacts.map((c) => c.id).filter(Boolean));
         const currentIds = new Set(contacts.map((c) => c.id).filter(Boolean));
@@ -146,34 +144,24 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
         for (let index = 0; index < contacts.length; index += 1) {
           const c = contacts[index];
           const trimmed = { kind: c.kind, name: c.name.trim(), phone: c.phone.trim() };
-          try {
-            if (!c.id) {
-              const created = await AdminPatientContactRowsApiService.createCoverageEmergencyContact(patient.id, trimmed);
-              setContacts((prev) => prev.map((row, i) => (i === index ? { ...row, id: created.id } : row)));
-            } else {
-              const original = initialContacts.find((o) => o.id === c.id);
-              const changed = !original || original.kind !== trimmed.kind || original.name.trim() !== trimmed.name || original.phone.trim() !== trimmed.phone;
-              if (changed) await AdminPatientContactRowsApiService.updateCoverageEmergencyContact(patient.id, c.id, trimmed);
-            }
-            savedCount += 1;
-          } catch {
-            failedCount += 1;
+          if (!c.id) {
+            const created = await AdminPatientContactRowsApiService.createCoverageEmergencyContact(patient.id, trimmed);
+            setContacts((prev) => prev.map((row, i) => (i === index ? { ...row, id: created.id } : row)));
+          } else {
+            const original = initialContacts.find((o) => o.id === c.id);
+            const changed = !original || original.kind !== trimmed.kind || original.name.trim() !== trimmed.name || original.phone.trim() !== trimmed.phone;
+            if (changed) await AdminPatientContactRowsApiService.updateCoverageEmergencyContact(patient.id, c.id, trimmed);
           }
         }
       }
       // `onSaved()` sempre relê a lista do servidor — a tela nunca mostra o snapshot de ANTES do
       // submit, que mentiria sobre o que já foi salvo (achado do gate `revisao-pr`).
       onSaved();
-      if (failedCount > 0) {
-        // Falha parcial não pode se apresentar como sucesso: diz quantas salvaram e quantas não.
-        // Não fecha o drawer — o id já devolvido está no estado, então o próximo Guardar só
-        // tenta de novo as que falharam (nenhuma linha salva se perde).
-        setSubmitError(t('admin.patients.editDrawer.savePartialError', { saved: savedCount, total: savedCount + failedCount, failed: failedCount }));
-        return;
-      }
       handleClose();
     } catch (err) {
-      // Falha antes/fora do laço por linha (ex.: uma das desativações, ou o PATCH de `coverage`).
+      // Falha em qualquer chamada (desativação, criação/atualização de linha, ou o PATCH de
+      // `coverage`) aborta aqui — próximo Guardar reenvia a partir de onde parou (o id já
+      // gravado no estado evita duplicar a linha que já tinha sido criada com sucesso).
       onSaved();
       setSubmitError(err instanceof Error ? err.message : te('saveError'));
     } finally {
