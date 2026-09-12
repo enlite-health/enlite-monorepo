@@ -341,7 +341,20 @@ V5_JANELA=5
 #    porque o equivalente EN problemático ("document") não entra na lista.
 #    Terminador do arm de shorthand ganha `}` além de `,)` — `phoneE164` antes
 #    de `}` (fim do objeto, sem vírgula) não batia em NENHUM dos dois grupos.
-ABRIDOR_LOG='console\.(log|error|warn)|logger?\.(info|warn|error|debug)|\blog\.(info|warn|error|debug)'
+#
+# D-12/09 (2ª rodada, achado do gate rodando verificar.sh origin/main NESTA
+# branch): o abridor `\blog\.(info|...)` novo (item acima) não exigia `(` —
+# casava a PROSA "...mascara o e-mail no log.info, nunca o valor cru..." no
+# TÍTULO de um `it(...)` (string, não código) e puxava RAW_EMAIL da linha
+# seguinte pro bloco, como se fosse uma chamada de log de verdade
+# (onUserCreate.test.ts:73). `console\.(log|...)` e `logger?\.(...)` tinham a
+# MESMA lacuna (nenhum dos três exigia parêntese) — só não tinha aparecido
+# ainda porque nenhuma prosa de teste citava "console.log," ou "logger.info,"
+# sem parêntese logo depois. Conserto nos três: exige `[[:space:]]*\(` (a
+# chamada de verdade sempre abre parêntese; `functions.logger.info(` continua
+# coberto por SUBSTRING via `logger?\.` — sem \b nesse ramo — então ganha o
+# aperto de graça, sem alternativa própria).
+ABRIDOR_LOG='console\.(log|error|warn)[[:space:]]*\(|logger?\.(info|warn|error|debug)[[:space:]]*\(|\blog\.(info|warn|error|debug)[[:space:]]*\('
 CAMPO_RAIZ='phone|telefone|email|mail|cuil|cuit|dni|documento|address|direcci[oó]n|endere[cç]o|nombre|apellido|birth|nasc'
 CAMPO_EXATO='firstName|lastName|first_name|last_name|documentNumber|document_number|diagnosis|diagnostico'
 CAMPO_CHAVE='\$\{[^}]*\b(\w*('"$CAMPO_RAIZ"')\w*|'"$CAMPO_EXATO"')\b[^}]*\}|\b(\w*('"$CAMPO_RAIZ"')\w*|'"$CAMPO_EXATO"')\b[[:space:]]*[,)}]'

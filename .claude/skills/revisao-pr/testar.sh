@@ -310,6 +310,18 @@ printf 'log.info({ msg:"x", nameOf });
 ' > src/a.ts; commit c1
 rodar; checa "[-] nameOf (não existe raiz genérica 'name' na lista) NÃO reprova" 0
 
+# ── D-12/09 (2ª rodada, achado do gate rodando verificar.sh origin/main NESTA
+#    branch): abridor `\blog\.(info|...)` sem exigir `(` casava PROSA de título
+#    de teste ("...no log.info, nunca...") como se fosse chamada de log de
+#    verdade (onUserCreate.test.ts:73). Conserto: os 3 abridores (console./
+#    logger?./\blog\.) passam a exigir `[[:space:]]*\(` ────────────────────────
+novo_repo
+printf "it('mascara o e-mail no log.info, nunca o valor cru', async () => {\n  const RAW_EMAIL = 'candidata.sensivel@example.com';\n});\n" > src/a.ts; commit c1
+rodar; checa "[-] título de teste com a prosa 'no log.info,' + campo pessoal na linha seguinte NÃO reprova (abridor exige parêntese)" 0
+novo_repo
+printf 'log.info({ phoneE164 });\n' > src/a.ts; commit c1
+rodar; checa "[+] CONTROLE: log.info({ phoneE164 }) — chamada REAL — REPROVA (o aperto do abridor não cegou)" 1 "interpolando campo pessoal"
+
 # ══ V6 — dado clínico ════════════════════════════════════════════════════════
 echo "## V6 — dado clínico rumo a terceiro"
 novo_repo
