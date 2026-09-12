@@ -11,14 +11,18 @@ describe('ReadonlyDbQueryService — colunas restritas do bloco B', () => {
   const connect = jest.fn();
   const service = new ReadonlyDbQueryService({ connect } as unknown as Pool);
 
-  it.each(['on_hold_note', 'ON_HOLD_NOTE', 'access_notes'])('%s: recusado sem abrir conexão', async (col) => {
-    await expect(service.run(`SELECT ${col} FROM patients LIMIT 1`)).rejects.toThrow(/restricted clinical column/);
+  it.each(['on_hold_note', 'ON_HOLD_NOTE', 'access_notes', 'address_type_other'])('%s: recusado sem abrir conexão', async (col) => {
+    await expect(service.run(`SELECT ${col} FROM patient_addresses LIMIT 1`)).rejects.toThrow(/restricted clinical column/);
     expect(connect).not.toHaveBeenCalled();
   });
 
-  it('a regex nomeia as três colunas e continua pegando emergency_instructions', () => {
-    for (const c of ['emergency_instructions', 'on_hold_note', 'access_notes']) expect(RESTRICTED_CLINICAL_COLUMNS.test(c)).toBe(true);
+  it('a regex nomeia as quatro colunas e continua pegando emergency_instructions', () => {
+    for (const c of ['emergency_instructions', 'on_hold_note', 'access_notes', 'address_type_other']) expect(RESTRICTED_CLINICAL_COLUMNS.test(c)).toBe(true);
     expect(RESTRICTED_CLINICAL_COLUMNS.test('on_hold_reason')).toBe(false); // rótulo de catálogo, não texto
+  });
+
+  it('spec 019: address_type (enum fechado) NÃO entra na regex — o controle dele é o REVOKE (B1/B2), não a redação de log', () => {
+    expect(RESTRICTED_CLINICAL_COLUMNS.test('address_type')).toBe(false);
   });
 
   it('quando a query falha E o ROLLBACK também falha, o erro original é o que sobe (o catch do ROLLBACK engole o segundo)', async () => {
