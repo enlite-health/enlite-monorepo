@@ -347,14 +347,24 @@ describe('AdminPatientContactRowsController', () => {
       expect(res.status).toHaveBeenCalledWith(200);
     });
 
-    it('quando o corpo TRAZ `kind`, usa o do corpo e NÃO chama getKind (curto-circuito do `??`)', async () => {
-      const repo = { getKind: jest.fn(), updateOne: jest.fn().mockResolvedValue({ id: CONTACT_ID }) };
+    it('BYPASS DE CÉLULA — corpo traz kind=AMBULANCE mas a linha ATUAL é DIRECT_PROFESSIONAL: o `??` não pode curto-circuitar o kind de ORIGEM; 403, updateOne NÃO chamado', async () => {
+      const repo = { getKind: jest.fn().mockResolvedValue('DIRECT_PROFESSIONAL'), updateOne: jest.fn().mockResolvedValue({ id: CONTACT_ID }) };
+      const controller = new AdminPatientContactRowsController({} as never, repo as never, db() as never);
+      const res = mockRes();
+      const req = mockReq({ params: { id: PATIENT_ID, cid: CONTACT_ID }, body: { kind: 'AMBULANCE' }, permissionCells: ['patient_coverage:write'] });
+      await controller.updateCoverageEmergencyContact(req, res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(repo.updateOne).not.toHaveBeenCalled();
+    });
+
+    it('corpo traz kind=AMBULANCE e a linha ATUAL também é AMBULANCE: sem a célula da equipe, passa — e agora getKind É chamado (checa a origem mesmo com kind no corpo)', async () => {
+      const repo = { getKind: jest.fn().mockResolvedValue('AMBULANCE'), updateOne: jest.fn().mockResolvedValue({ id: CONTACT_ID }) };
       const controller = new AdminPatientContactRowsController({} as never, repo as never, db() as never);
       const res = mockRes();
       const req = mockReq({ params: { id: PATIENT_ID, cid: CONTACT_ID }, body: { kind: 'AMBULANCE' }, permissionCells: ['patient_coverage:write'] });
       await controller.updateCoverageEmergencyContact(req, res);
       expect(res.status).toHaveBeenCalledWith(200);
-      expect(repo.getKind).not.toHaveBeenCalled();
+      expect(repo.getKind).toHaveBeenCalledWith(PATIENT_ID, CONTACT_ID);
     });
 
     it('404 quando updateOne devolve null', async () => {

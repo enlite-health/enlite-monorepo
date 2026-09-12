@@ -210,11 +210,14 @@ export class AdminPatientContactRowsController {
         res.status(404).json({ success: false, error: 'Patient not found' });
         return;
       }
-      // O kind EFETIVO depois do PATCH: o que o corpo traz, senão o que a linha JÁ TEM (lex C3 —
-      // sem `patient_care_team:read` o ator não pode nem editar uma linha que já é
-      // DIRECT_PROFESSIONAL, mesmo sem tocar no `kind`).
-      const kindAtual = body.data.kind ?? (await this.coverageContactRepo.getKind(params.data.id, params.data.cid)) ?? undefined;
-      if (this.refuseDirectProfessionalWithoutCareTeam(req, res, kindAtual)) return;
+      // Checa os DOIS lados do PATCH, nesta ordem (lex C3): primeiro o kind de DESTINO (o que o
+      // corpo traz, sem tocar no banco), depois o kind de ORIGEM (o que a linha JÁ TEM) — sem
+      // `patient_care_team:read` o ator não pode nem editar uma linha que já é
+      // DIRECT_PROFESSIONAL, mesmo que o PATCH não toque no `kind`. A ordem importa para o 403
+      // não vazar a existência da linha antes de validar o corpo.
+      if (this.refuseDirectProfessionalWithoutCareTeam(req, res, body.data.kind)) return;
+      const kindDaLinha = await this.coverageContactRepo.getKind(params.data.id, params.data.cid);
+      if (this.refuseDirectProfessionalWithoutCareTeam(req, res, kindDaLinha ?? undefined)) return;
       const updated = await inPatientTransaction((client) =>
         this.coverageContactRepo.updateOne(params.data.id, params.data.cid, body.data, client),
       );
