@@ -1890,3 +1890,23 @@ autoritativo e apagaria junto as **5 vars aplicadas à mão que só existem no s
 `--update-env-vars='^:^MCP_PRINCIPAL_NAMES=triage-service,claude-code,e2e-prod'` (revisão 00164).
 Vale até o próximo deploy; depois deste PR, o deploy passa a aplicar o valor certo sozinho.
 **Não afeta** `worker-functions` — `backend-prd.yml` não tem valor com vírgula (conferido).
+
+### Adendo (31/08) — comentário DENTRO do bloco `env_vars` vira env var
+
+Ao documentar o escape, os comentários foram escritos **dentro** do bloco `env_vars`. A action lê
+**cada linha** como `KEY=VALUE` e não conhece `#`: as 11 linhas de comentário viraram **15 env vars**
+no serviço de prd (26 → 41), com nomes como `# A action \`deploy-cloudrun\` separa...`.
+Medido no primeiro deploy após o merge, e corrigido em seguida movendo os comentários para **antes**
+da chave `env_vars:`, onde são YAML de verdade.
+
+**A lição, que vale para os dois blocos (`env_vars` e `secrets`):** dentro deles não existe
+comentário — existe entrada. Comentário só acima da chave.
+
+Limpeza do resíduo em prd (as 15 chaves + as 3 antigas do split), depois que o YAML corrigido
+estiver em `main`:
+```bash
+gcloud run services describe worker-functions-mcp --region=southamerica-west1 --project=enlite-prd \
+  --format=json | python3 -c "import sys,json; e=json.load(sys.stdin)['spec']['template']['spec']['containers'][0]['env']; \
+  print(':'.join(x['name'] for x in e if not x['name'].replace('_','').isupper()))"
+# passar o resultado para: gcloud run services update ... --remove-env-vars='^:^<lista>'
+```
