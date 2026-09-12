@@ -834,6 +834,28 @@ describe('ProcessTalentumPrescreening', () => {
       consoleSpy.mockRestore();
     });
 
+    // Achado do gate (11/09, medido 608 ocorrências/7d em prd): o `phoneNumber`
+    // do webhook Talentum chega CRU, sem formato garantido (schema só exige
+    // string não-vazia — ver fixture ':641', que usa exatamente este valor sem
+    // E.164). O único teste acima só cobre o caminho E.164 — é autoteste de um
+    // lado só. Este cobre o caminho que a máscara por POSIÇÃO de caractere
+    // (versão anterior a este fix) EXPUNHA MAIS: '1151265663' virava '1151**5663'
+    // (8 de 10 dígitos visíveis).
+    it('resolveWorker: telefone NÃO-E.164 (dígitos crus, como chega do Talentum) também mascarado, sem prefixo local exposto', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+      const NON_E164_PHONE = '1151265663';
+      const payload = buildPayload({ phoneNumber: NON_E164_PHONE });
+
+      await useCase.execute(payload);
+
+      const lines = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(lines).toMatch(/phone=\*\*\*\*\*\*5663/);
+      // O número cru inteiro, e qualquer prefixo local dele, nunca aparecem.
+      expect(lines).not.toContain(NON_E164_PHONE);
+      expect(lines).not.toContain('11512');
+      consoleSpy.mockRestore();
+    });
+
     it('ensureEncuadre: nome NUNCA aparece — só presença (hasName)', async () => {
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
       const payload = buildPayload({ status: 'IN_PROGRESS' });

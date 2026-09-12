@@ -1,20 +1,40 @@
 /**
- * Mascara phone E.164 pra log: mantém prefixo país (4) + últimos 4, oculta meio.
- * Sem espaços — otimizado pra busca no Cloud Logging por filtro exato.
+ * Mascara telefone pra log — dono único da máscara de telefone em log (substitui
+ * o extinto `redactContact`; achado do gate 11/09, 608 ocorrências/7d em prd:
+ * a versão por POSIÇÃO de caractere que `maskPhoneForLog` tinha antes desse fix
+ * EXPUNHA MAIS que `redactContact` sempre que a entrada não chegava em E.164 —
+ * ex.: `maskPhoneForLog('1151265663')` dava `1151**5663` (8 de 10 dígitos
+ * visíveis), o extinto dava `***5663` (4 de 10). Sítio medido:
+ * `ProcessTalentumPrescreening.ts` recebe `phoneNumber` CRU do webhook Talentum,
+ * sem formato garantido (schema só exige string não-vazia).
  *
- * Ex: "+5491155261243" → "+549******1243"
+ * Por isso trabalha por DÍGITO, não por posição de caractere — a entrada pode vir
+ * em QUALQUER formato (E.164 com/sem `+`, local, com espaço/traço), a saída é
+ * sempre a mesma pro mesmo telefone lógico:
+ *   - < 8 dígitos → "****" (dígitos insuficientes pra qualquer prefixo seguro)
+ *   - >= 11 dígitos (tem código de país) → "+" + 3 primeiros dígitos + 6
+ *     asteriscos + 4 últimos dígitos (mantém IDÊNTICO o formato E.164 de antes:
+ *     "+5491155261243" → "+549******1243")
+ *   - 8-10 dígitos (local, sem código de país) → 6 asteriscos + 4 últimos
+ *     dígitos — NUNCA o prefixo local, que sozinho já ajuda a identificar
+ *     (DDD + começo do número, em vez de código de país)
  *
- * Diferente de maskPhone (pra UI): este não tem espaços nem traço, é mais curto
- * e permite usar como valor literal em filtros jsonPayload.phoneMasked="...".
+ * O número de asteriscos é FIXO (6) nos dois ramos — a versão anterior variava
+ * o meio por `phone.length - 8`, o que vazava o TAMANHO do número original só
+ * pelo comprimento da máscara; fixo em 6 esconde também esse metadado.
+ *
+ * Sem espaços — otimizado pra busca no Cloud Logging por filtro exato, e permite
+ * usar como valor literal em filtros jsonPayload.phoneMasked="...".
  *
  * NUNCA usar para exibição ao usuário — use maskPhone.
  */
-export function maskPhoneForLog(phone: string): string {
-  if (!phone || phone.length < 8) return '****';
-  const head = phone.slice(0, 4); // +549, +551, etc.
-  const tail = phone.slice(-4);
-  const middle = '*'.repeat(Math.max(phone.length - 8, 1));
-  return `${head}${middle}${tail}`;
+export function maskPhoneForLog(phone: string | null | undefined): string {
+  const digits = String(phone ?? '').replace(/\D/g, '');
+  if (digits.length < 8) return '****';
+  if (digits.length >= 11) {
+    return `+${digits.slice(0, 3)}******${digits.slice(-4)}`;
+  }
+  return `******${digits.slice(-4)}`;
 }
 
 /**
