@@ -4,7 +4,7 @@ import { InitWorkerOutput } from '../domain/InitWorkerOutput';
 import { Result } from '@shared/utils/Result';
 import { logger } from '@shared/logging';
 import { generatePhoneCandidates, normalizePhoneAR } from '@shared/utils/phoneNormalization';
-import { maskPhone } from '@shared/utils/phoneMask';
+import { maskPhone, maskPhoneForLog } from '@shared/utils/phoneMask';
 import { ITwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifyService';
 
 /**
@@ -107,7 +107,7 @@ export class InitWorkerUseCase {
             msg: 'worker_claim_otp_triggered',
             candidateWorkerId: existingByPhone.id,
             fromAuthUid: existingByPhone.authUid,
-            phoneE164,
+            phoneE164: maskPhoneForLog(phoneE164),
           });
 
           if (!this.twilioVerify) {

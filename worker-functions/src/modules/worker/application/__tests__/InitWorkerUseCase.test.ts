@@ -1,6 +1,14 @@
+jest.mock('@shared/logging', () => ({
+  logger:      { child: jest.fn().mockReturnValue({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }) },
+  reportError: jest.fn(),
+  loggingAls:  { run: jest.fn() },
+}));
+
 import { InitWorkerUseCase } from '../InitWorkerUseCase';
 import { Result } from '@shared/utils/Result';
 import { Worker } from '../../domain/Worker';
+import { logger } from '@shared/logging';
+import { maskPhoneForLog } from '@shared/utils/phoneMask';
 
 // ─── Dados de teste realistas ────────────────────────────────────────────────
 
@@ -370,6 +378,37 @@ describe('InitWorkerUseCase', () => {
       if (output.status === 'claim_pending') {
         expect(output.verificationSid).toBe('TWILIO_NOT_CONFIGURED');
       }
+    });
+
+    // Achado do gate 12/09: worker_claim_otp_triggered logava phoneE164 CRU.
+    // Padrão dos outros 4 sítios corrigidos nesta branch: planta telefone
+    // sentinela distinto de qualquer outro usado no arquivo, prova ausência
+    // do valor cru (inteiro e por dígitos finais) e presença do mascarado.
+    it('mascara phoneE164 no log worker_claim_otp_triggered, nunca o valor cru', async () => {
+      const SENTINEL_PHONE = '+5491199990000';
+      const importedWorkerSentinel: Worker = {
+        ...importedWorkerAnacare,
+        phone: SENTINEL_PHONE,
+      };
+      const twilio = makeTwilioVerify();
+      const repo = makeRepository({
+        findByAuthUid: jest.fn().mockResolvedValue(Result.ok(null)),
+        findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
+        findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorkerSentinel)),
+      });
+      const useCase = new InitWorkerUseCase(repo as any, twilio as any);
+
+      await useCase.execute(makeCreateDTO());
+
+      const mockChildLogger = (logger.child as jest.Mock)();
+      const infoArgs = JSON.stringify((mockChildLogger.info as jest.Mock).mock.calls);
+      expect(infoArgs).not.toContain(SENTINEL_PHONE);
+      expect(infoArgs).not.toContain('1199990000');
+      expect(infoArgs).toContain(maskPhoneForLog(SENTINEL_PHONE));
+      // candidateWorkerId e fromAuthUid identificam o REGISTRO (não são PII de
+      // terceiro) — permanecem crus, prova que não sumiram do log por engano.
+      expect(infoArgs).toContain(importedWorkerSentinel.id);
+      expect(infoArgs).toContain(IMPORTED_AUTH_UID_ANACARE);
     });
   });
 
