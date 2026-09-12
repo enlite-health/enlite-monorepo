@@ -22,6 +22,9 @@ jest.mock('@shared/logging', () => {
       warn: (...args: unknown[]) => mockLoggerWarn(...args),
       error: jest.fn(),
     },
+    // NOTA: mockado — este teste NÃO cobre o que `reportError` de fato envia ao Cloud
+    // Error Reporting (message/stack crus do erro, PR separado, ver comentário na
+    // linha do `reportError(e, ...)` em PeriskopeNoteService.ts).
     reportError: jest.fn(),
     safeErrorFields: actual.safeErrorFields,
   };
