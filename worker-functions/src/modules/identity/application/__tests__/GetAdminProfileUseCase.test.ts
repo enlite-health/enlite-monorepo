@@ -539,4 +539,103 @@ describe('GetAdminProfileUseCase', () => {
     });
   });
 
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  describe('PII — e-mail de staff nunca aparece cru em log (gate revisao-pr, 12/09)', () => {
+    // Local-part sentinela, improvável de aparecer por acaso em qualquer outro
+    // valor logado (role, uid, msg) — se aparecer capturado, é vazamento.
+    const SENSITIVE_LOCAL_PART = 'zzsentinela-nao-pode-vazar';
+    const SENSITIVE_EMAIL = `${SENSITIVE_LOCAL_PART}@enlite.health`;
+
+    let logSpy: jest.SpyInstance;
+    let errorSpy: jest.SpyInstance;
+
+    const capturedOutput = () =>
+      [...logSpy.mock.calls, ...errorSpy.mock.calls]
+        .map((args) => args.join(' '))
+        .join('\n');
+
+    beforeEach(() => {
+      logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+      errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+    });
+
+    it('lookup hit: loga uid+role, NUNCA o e-mail (nem cru nem mascarado)', async () => {
+      mockFindByFirebaseUid.mockResolvedValue({ ...mockAdminRecord, email: SENSITIVE_EMAIL });
+
+      const useCase = new GetAdminProfileUseCase();
+      await useCase.execute(FIREBASE_UID);
+
+      const out = capturedOutput();
+      expect(out).not.toContain(SENSITIVE_LOCAL_PART);
+      expect(out).not.toContain(SENSITIVE_EMAIL);
+      expect(out).toContain(`uid=${FIREBASE_UID}`);
+    });
+
+    it('auto-provision ok / provision committed: loga uid, NUNCA o e-mail cru', async () => {
+      mockFindByFirebaseUid
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ ...mockAdminRecord, email: SENSITIVE_EMAIL });
+      mockGetUser.mockResolvedValue(makeFirebaseUser({ email: SENSITIVE_EMAIL }));
+
+      const useCase = new GetAdminProfileUseCase();
+      await useCase.execute(FIREBASE_UID);
+
+      const out = capturedOutput();
+      expect(out).not.toContain(SENSITIVE_LOCAL_PART);
+      // "firebase user resolved" e "auto-provision rejected" usam maskEmailForLog
+      // — domínio pode aparecer, local-part nunca.
+      expect(out).toContain('***@enlite.health');
+      expect(out).toContain(`uid=${FIREBASE_UID}`);
+    });
+
+    it('email fora do domínio: log de rejeição mostra domínio mascarado, não o local-part', async () => {
+      mockFindByFirebaseUid.mockResolvedValue(null);
+      mockGetUser.mockResolvedValue(makeFirebaseUser({ email: `${SENSITIVE_LOCAL_PART}@gmail.com` }));
+
+      const useCase = new GetAdminProfileUseCase();
+      await useCase.execute(FIREBASE_UID);
+
+      const out = capturedOutput();
+      expect(out).not.toContain(SENSITIVE_LOCAL_PART);
+      expect(out).toContain('***@gmail.com');
+    });
+
+    it('reassign de firebase_uid: loga old/new uid, NUNCA o e-mail cru', async () => {
+      mockFindByFirebaseUid
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ ...mockAdminRecord, email: SENSITIVE_EMAIL, firebaseUid: FIREBASE_UID });
+      mockGetUser.mockResolvedValue(makeFirebaseUser({ email: SENSITIVE_EMAIL }));
+      mockFindByEmail.mockResolvedValue({ ...mockAdminRecord, email: SENSITIVE_EMAIL, firebaseUid: 'old-uid-xyz' });
+
+      const useCase = new GetAdminProfileUseCase();
+      await useCase.execute(FIREBASE_UID);
+
+      const out = capturedOutput();
+      expect(out).not.toContain(SENSITIVE_LOCAL_PART);
+      expect(out).toContain('old=old-uid-xyz');
+      expect(out).toContain(`new=${FIREBASE_UID}`);
+    });
+
+    it('erro de DB durante provisioning: log de falha mostra uid, NUNCA o e-mail cru', async () => {
+      mockFindByFirebaseUid.mockResolvedValue(null);
+      mockGetUser.mockResolvedValue(makeFirebaseUser({ email: SENSITIVE_EMAIL }));
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] }) // BEGIN
+        .mockRejectedValueOnce(new Error('db down'));
+
+      const useCase = new GetAdminProfileUseCase();
+      await useCase.execute(FIREBASE_UID);
+
+      const out = capturedOutput();
+      expect(out).not.toContain(SENSITIVE_LOCAL_PART);
+      expect(out).toContain(`provision failed | uid=${FIREBASE_UID}`);
+    });
+  });
+
 });
