@@ -50,6 +50,11 @@ export class PeriskopeTicketService implements IPeriskopeTicketService {
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));
       logger.warn({ ...safeErrorFields(err), chatPhone: maskPhoneForLog(chatPhone) }, '[PeriskopeTicketService] createTicket failed (best-effort)');
+      // ⚠️ NÃO CONSERTADO AQUI (decisão do Gabriel, PR separado): o `warn` acima está
+      // mascarado, mas `reportError` manda `err` inteiro pro MESMO Cloud Error Reporting
+      // — `message`/`stack` do erro (que pode ecoar `chatPhone`/corpo da request) ainda
+      // saem crus por este segundo sink. O teste desta classe MOCKA `reportError`, então
+      // não cobre este caminho — ver comentário no `.test.ts`.
       reportError(e, { source: 'PeriskopeTicketService:createTicket' });
       return false;
     }
