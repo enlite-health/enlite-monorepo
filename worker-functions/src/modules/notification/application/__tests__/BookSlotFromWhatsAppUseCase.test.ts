@@ -251,7 +251,7 @@ describe('BookSlotFromWhatsAppUseCase', () => {
 
     const lines = warnSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(lines).not.toContain('1122334455');
-    expect(lines).toMatch(/Worker not found for phone 549\*\*\*4455/);
+    expect(lines).toMatch(/Worker not found for phone \+549\*\*\*\*\*\*4455/);
     warnSpy.mockRestore();
   });
 

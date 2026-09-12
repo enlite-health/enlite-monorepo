@@ -830,7 +830,7 @@ describe('ProcessTalentumPrescreening', () => {
       expect(lines).not.toContain('1122334455');
       // Mas a linha existe, com os campos mascarados (prova que não sumiu o log inteiro).
       expect(lines).toContain('resolveWorker | email=');
-      expect(lines).toMatch(/phone=549\*\*\*4455/);
+      expect(lines).toMatch(/phone=\+549\*\*\*\*\*\*4455/);
       consoleSpy.mockRestore();
     });
 
