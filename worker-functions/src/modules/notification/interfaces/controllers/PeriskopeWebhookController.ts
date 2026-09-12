@@ -11,6 +11,7 @@ import {
   PeriskopeAckUpdatedDataSchema,
 } from '../validators/periskopeWebhookSchema';
 import { logger } from '@shared/logging';
+import { maskPhoneForLog } from '@shared/utils/phoneMask';
 
 const OPT_OUT_KEYWORDS = new Set([
   'parar', 'stop', 'cancelar', 'desuscribir', 'desuscribirme',
@@ -200,7 +201,7 @@ export class PeriskopeWebhookController {
    * Mesma semântica do canal Twilio — a tabela é compartilhada entre providers.
    */
   private async handleOptOut(phone: string, keyword: string): Promise<void> {
-    const log = logger.child({ phone, keyword, handler: 'PeriskopeOptOut' });
+    const log = logger.child({ phone: maskPhoneForLog(phone), keyword, handler: 'PeriskopeOptOut' });
 
     try {
       const result = await new RegisterOptOutUseCase(this.db).execute({

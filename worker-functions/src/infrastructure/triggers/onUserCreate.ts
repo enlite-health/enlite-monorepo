@@ -4,6 +4,7 @@ import { mergeCustomClaims } from '@modules/identity/infrastructure/mergeCustomC
 import { v4 as uuidv4 } from 'uuid';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { loggingAls, logger, reportError } from '@shared/logging';
+import { maskEmailForLog } from '@shared/utils/emailMask';
 
 /**
  * Firebase Auth trigger — sincroniza usuário criado no Firebase com
@@ -49,7 +50,7 @@ export const onUserCreate = functions.auth.user().onCreate(async (user) => {
 
       await client.query('COMMIT');
 
-      log.info({ email: user.email, role: defaultRole }, 'User created successfully');
+      log.info({ email: maskEmailForLog(user.email), role: defaultRole }, 'User created successfully');
     } catch (error) {
       await client.query('ROLLBACK').catch((err: unknown) => {
         const e = err instanceof Error ? err : new Error(String(err));
