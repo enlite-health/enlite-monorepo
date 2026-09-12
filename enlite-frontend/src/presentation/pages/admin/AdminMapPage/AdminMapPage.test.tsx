@@ -64,7 +64,7 @@ vi.mock('@presentation/components/molecules/PointsMap/PointsMap', () => ({
 }));
 
 const W = (id: string, over: Record<string, unknown> = {}) => ({ id, name: `W ${id}`, lat: -34.6, lng: -58.4, status: 'REGISTERED', documentsComplete: true, profession: 'AT', city: 'CABA', neighborhood: 'Flores', state: 'BA', distanceKm: 1.2, ...over });
-const PT = (id: string, over: Record<string, unknown> = {}) => ({ id, addressId: `a-${id}`, name: `P ${id}`, lat: -34.61, lng: -58.41, status: 'ACTIVE', addressType: 'primary', city: 'CABA', neighborhood: null, state: 'BA', openVacancies: 1, distanceKm: 0.4, ...over });
+const PT = (id: string, over: Record<string, unknown> = {}) => ({ id, addressId: `a-${id}`, name: `P ${id}`, lat: -34.61, lng: -58.41, status: 'ACTIVE', city: 'CABA', neighborhood: null, state: 'BA', openVacancies: 1, distanceKm: 0.4, ...over });
 
 type Res<P> = { points: P[]; total: number; withoutCoordinates: number; truncated: boolean; isLoading: boolean; error: string | null; refetch: () => void };
 
