@@ -65,21 +65,34 @@ export async function replacePatientAddresses(
     address_formatted: string | null;
     logistics_corridor: string | null;
     access_notes: string | null;
+    is_default: boolean;
     lat: string | number | null;
     lng: string | number | null;
   }>(
-    `SELECT id, display_order, address_formatted, logistics_corridor, access_notes, lat, lng
+    `SELECT id, display_order, address_formatted, logistics_corridor, access_notes, is_default, lat, lng
        FROM patient_addresses
       WHERE patient_id = $1
         AND archived_at IS NULL
         AND source = 'clickup'`,
     [patientId],
   );
-  const existingByOrder = new Map<number, { id: string; address_formatted: string | null; logistics_corridor: string | null; access_notes: string | null }>(
-    existing.map(r => [r.display_order, { id: r.id, address_formatted: r.address_formatted, logistics_corridor: r.logistics_corridor, access_notes: r.access_notes }]),
+  const existingByOrder = new Map<number, { id: string; address_formatted: string | null; logistics_corridor: string | null; access_notes: string | null; is_default: boolean }>(
+    existing.map(r => [r.display_order, { id: r.id, address_formatted: r.address_formatted, logistics_corridor: r.logistics_corridor, access_notes: r.access_notes, is_default: r.is_default }]),
   );
 
   if (valid.length === 0) return;
+
+  // Spec 019 — regra de nascimento do principal (Path 3, INSERT puro): o slot 1 nasce
+  // `is_default = true` SE o paciente ainda não tem principal ativo (de QUALQUER origem, não só
+  // 'clickup' — a marca é do paciente, não da fonte). Medido uma vez por chamada: como todo
+  // paciente que passa pela ferramenta de import é NOVO (guard `decideIfNewPatientAllowed`),
+  // isto na prática roda sempre contra "nenhum principal ainda".
+  const { rows: [{ exists: patientHasDefault }] } = await client.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM patient_addresses WHERE patient_id = $1 AND is_default AND archived_at IS NULL
+     ) AS exists`,
+    [patientId],
+  );
 
   /**
    * 🔒 Coordenadas que JÁ temos, indexadas pelo MESMO texto que vai ao Google.
@@ -139,20 +152,21 @@ export async function replacePatientAddresses(
     if (existingForSlot && !formattedChanged && !publishedReference) {
       // Path 1: UPDATE in-place (no street change, no published vacancy
       // depends on this row). Cheapest path — geocoding refresh.
+      // Spec 019 (B4): `address_type` sai deste UPDATE — este caminho nunca fabrica valor de
+      // tipo; quem escreve é só o PATCH humano (AdminPatientAddressesController). `is_default`
+      // também não é tocado aqui — refresh de geocoding não deve mexer na marca de principal.
       await client.query(
         `UPDATE patient_addresses SET
-           address_type      = $2,
-           address_formatted = $3,
-           address_raw       = $4,
-           state             = $5,
-           city              = $6,
-           neighborhood      = $7,
-           lat               = $8,
-           lng               = $9
+           address_formatted = $2,
+           address_raw       = $3,
+           state             = $4,
+           city              = $5,
+           neighborhood      = $6,
+           lat               = $7,
+           lng               = $8
          WHERE id = $1`,
         [
           existingForSlot.id,
-          a.addressType,
           a.addressFormatted ?? null,
           a.addressRaw ?? null,
           a.state ?? null,
@@ -175,18 +189,28 @@ export async function replacePatientAddresses(
     }
 
     // Path 2 (continued) or Path 3 (no existing row in this slot): INSERT new.
-    // Logística e acesso viajam da linha ARQUIVADA para a nova (ver nota 4 acima). Slot novo
-    // (Path 3) não tem de onde copiar e nasce NULL, que é o correto — não havia dado.
+    // Logística, acesso e a marca de principal viajam da linha ARQUIVADA para a nova (Path 2 —
+    // ver nota 4 acima). Slot novo (Path 3) não tem de onde copiar `logistics_corridor`/
+    // `access_notes` e nasce NULL, que é o correto — não havia dado. `address_type` NUNCA é
+    // escrito aqui (spec 019, B4): nasce NULL, valor só via PATCH humano.
+    //
+    // `is_default` (spec 019): Path 2 preserva o que a linha arquivada já tinha (a versão nova É
+    // o mesmo endereço, só o texto mudou). Path 3 (slot novo, sem linha anterior) só nasce
+    // principal quando é o slot 1 ("Domicilio 1 Principal Paciente") E o paciente ainda não tem
+    // nenhum principal ativo — nunca por dedução em slots 2/3.
+    const isDefault = existingForSlot
+      ? existingForSlot.is_default
+      : (a.displayOrder === 1 && !patientHasDefault);
+
     const insertRes = await client.query<{ id: string }>(
       `INSERT INTO patient_addresses
-         (patient_id, address_type, address_formatted, address_raw,
+         (patient_id, address_formatted, address_raw,
           display_order, state, city, neighborhood, lat, lng,
-          logistics_corridor, access_notes)
+          logistics_corridor, access_notes, is_default)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING id`,
       [
         patientId,
-        a.addressType,
         a.addressFormatted ?? null,
         a.addressRaw ?? null,
         a.displayOrder,
@@ -197,6 +221,7 @@ export async function replacePatientAddresses(
         g.lng,
         existingForSlot?.logistics_corridor ?? null,
         existingForSlot?.access_notes ?? null,
+        isDefault,
       ],
     );
     const newAddressId = insertRes.rows[0].id;

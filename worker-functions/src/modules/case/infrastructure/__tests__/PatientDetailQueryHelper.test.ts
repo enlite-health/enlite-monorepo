@@ -108,7 +108,9 @@ describe('fetchPatientDetail — happy path completo', () => {
       .mockResolvedValueOnce({
         rows: [
           {
-            id: 'addr-1', address_type: 'primary', address_formatted: 'Av. Siempre Viva 742',
+            // Spec 019: is_default (não mais address_type='primary') decide isPrimary.
+            id: 'addr-1', address_type: 'domicilio_propio', address_type_other: null, is_default: true,
+            address_formatted: 'Av. Siempre Viva 742',
             address_raw: 'raw', complement: 'Depto 2B', display_order: 1, lat: '-34.6037', lng: '-58.3816',
           },
         ],
@@ -318,7 +320,8 @@ describe('fetchPatientDetail — defensive fallback branches', () => {
       .mockResolvedValueOnce({
         rows: [
           {
-            id: 'addr-2', address_type: 'secondary', address_formatted: 'Sin coords',
+            id: 'addr-2', address_type: null, address_type_other: null, is_default: false,
+            address_formatted: 'Sin coords',
             address_raw: null, complement: null, display_order: 2, lat: null, lng: null,
           },
         ],
@@ -340,7 +343,7 @@ describe('fetchPatientDetail — defensive fallback branches', () => {
     expect(result!.addresses[0].complement).toBeNull();
     expect(result!.addresses[0].lat).toBeNull();
     expect(result!.addresses[0].lng).toBeNull();
-    expect(result!.addresses[0].isPrimary).toBe(false); // address_type !== 'primary'
+    expect(result!.addresses[0].isPrimary).toBe(false); // is_default (spec 019), não mais address_type === 'primary'
   });
 });
 

@@ -15,7 +15,10 @@ import { GeocodingService } from '../services/GeocodingService';
 import { geocodePatientAddressesBestEffort } from '../../modules/case/infrastructure/geocodePatientAddresses';
 
 export interface PatientAddress {
-  addressType: string;         // 'primary' | 'secondary' | 'tertiary'
+  // Spec 019 (B4): deixou de ser obrigatório — a coluna `address_type` nasce NULL, valor só
+  // entra via PATCH (AdminPatientAddressesController). Mantido opcional só para não quebrar
+  // callers que ainda montam o objeto com o valor legado ('primary' | 'secondary' | 'tertiary').
+  addressType?: string;
   addressFormatted?: string | null;  // ClickUp location field (formatted)
   addressRaw?: string | null;        // Domicilio Informado (free text)
   displayOrder: number;
@@ -225,16 +228,18 @@ export class PatientRepository {
       known: conhecidas,
     });
 
+    // Spec 019 (B4): `address_type` sai do INSERT — nasce NULL, valor só via PATCH
+    // (AdminPatientAddressesController, único escritor de valor autorizado).
     const values: unknown[] = [];
     const placeholders = geocoded.map((g, i) => {
-      const base = i * 7;
+      const base = i * 6;
       const a = g.address;
-      values.push(patientId, a.addressType, a.addressFormatted ?? null, a.addressRaw ?? null, a.displayOrder, g.lat, g.lng);
-      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7})`;
+      values.push(patientId, a.addressFormatted ?? null, a.addressRaw ?? null, a.displayOrder, g.lat, g.lng);
+      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6})`;
     });
 
     await this.pool.query(
-      `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, address_raw, display_order, lat, lng)
+      `INSERT INTO patient_addresses (patient_id, address_formatted, address_raw, display_order, lat, lng)
        VALUES ${placeholders.join(', ')}`,
       values,
     );

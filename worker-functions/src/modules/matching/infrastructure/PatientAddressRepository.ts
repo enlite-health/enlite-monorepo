@@ -55,10 +55,13 @@ export class PatientAddressRepository {
       // Not found → geocode (best-effort) + create new patient_addresses row
       const { lat, lng } = await this.tryGeocode(addressFormatted);
 
+      // Spec 019 (B4): removido o literal hardcoded `'service'` de `address_type` — a coluna
+      // nasce NULL ("sin especificar"); a lista fechada por parentesco só entra via PATCH
+      // (AdminPatientAddressesController, único escritor de valor autorizado).
       const inserted = await this.pool.query<{ id: string }>(
         `INSERT INTO patient_addresses
-           (patient_id, address_type, address_formatted, address_raw, display_order, source, lat, lng)
-         VALUES ($1, 'service', $2, $3,
+           (patient_id, address_formatted, address_raw, display_order, source, lat, lng)
+         VALUES ($1, $2, $3,
            (SELECT COALESCE(MAX(display_order), 0) + 1 FROM patient_addresses WHERE patient_id = $1 AND archived_at IS NULL),
            'clickup_sync', $4, $5)
          RETURNING id`,

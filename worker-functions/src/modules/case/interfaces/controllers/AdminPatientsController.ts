@@ -64,7 +64,10 @@ import { insertPatientAddress, fetchPatientAddresses } from '../../infrastructur
 const createPatientAddressSchema = z.object({
   address_formatted: z.string().min(1),
   address_raw: z.string().optional(),
-  address_type: z.enum(['primary', 'secondary', 'service']).default('secondary'),
+  // Spec 019: tipo de local não entra mais na criação (lista fechada só via PATCH,
+  // AdminPatientAddressesController). `is_default` opcional — regra de nascimento (spec 019):
+  // sem principal ativo, este endereço nasce principal mesmo sem o cliente pedir.
+  is_default: z.boolean().optional(),
   display_order: z.number().int().positive().optional(),
   // Spec 012, US-B2 (mig 316): logística por endereço. Zona = `neighborhood` (lex C2.7).
   neighborhood: z.string().trim().min(1).max(120).nullable().optional(),
@@ -637,14 +640,14 @@ export class AdminPatientsController {
     }
 
     const { patientId } = paramsResult.data;
-    const { address_formatted, address_raw, address_type, display_order, neighborhood, logistics_corridor, access_notes } = bodyResult.data;
+    const { address_formatted, address_raw, is_default, display_order, neighborhood, logistics_corridor, access_notes } = bodyResult.data;
 
     try {
       const created = await insertPatientAddress(this.db, this.geocoder, {
         patientId,
         addressFormatted:   address_formatted,
         addressRaw:         address_raw ?? null,
-        addressType:        address_type,
+        isDefault:          is_default,
         displayOrder:       display_order ?? null,
         neighborhood:       neighborhood ?? null,
         logisticsCorridor:  logistics_corridor ?? null,
