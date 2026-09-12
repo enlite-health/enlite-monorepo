@@ -13,6 +13,13 @@ import {
   updateProviderSchema,
 } from '../validators/contractedServiceSchemas';
 import { hourlyValueActorOf, projectContractedServiceForActor, canReadHourlyValue, bodyWritesHourlyValue } from '../../application/contractedServiceHourlyValueAccess';
+import {
+  ActivateRecruitmentUseCase,
+  PatientNotFoundForRecruitmentError,
+  ServiceNotFoundForRecruitmentError,
+  ServiceAlreadyRecruitingError,
+  RecruitmentNotReadyError,
+} from '../../application/ActivateRecruitmentUseCase';
 
 const patientParamsSchema = z.object({ id: z.string().uuid() });
 const serviceParamsSchema = z.object({ id: z.string().uuid(), sid: z.string().uuid() });
@@ -33,6 +40,7 @@ export class AdminPatientContractedServicesController {
   constructor(
     private readonly repo: PatientContractedServiceRepository = new PatientContractedServiceRepository(),
     private readonly providerRepo: ContractedServiceProviderRepository = new ContractedServiceProviderRepository(),
+    private readonly activateRecruitmentUseCase: ActivateRecruitmentUseCase = new ActivateRecruitmentUseCase(),
   ) {}
 
   private project(req: Request, service: ContractedServiceDetail) {
@@ -146,6 +154,50 @@ export class AdminPatientContractedServicesController {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientContractedServicesController:update', patientId: params.data.id, serviceId: params.data.sid });
       res.status(500).json({ success: false, error: 'Failed to update contracted service' });
+    }
+  }
+
+  /**
+   * POST /api/admin/patients/:id/contracted-services/:sid/activate-recruitment
+   * (spec 018, PR-6, ADR-5, `contracts/activation.md`).
+   */
+  async activateRecruitment(req: Request, res: Response): Promise<void> {
+    const params = serviceParamsSchema.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ success: false, error: 'Invalid params' });
+      return;
+    }
+    try {
+      const result = await this.activateRecruitmentUseCase.execute(params.data.id, params.data.sid);
+      res.status(201).json({
+        success: true,
+        data: {
+          vacancyId: result.vacancyId,
+          patientStatus: result.patientStatus,
+          statusChanged: result.statusChanged,
+        },
+      });
+    } catch (err: unknown) {
+      if (err instanceof PatientNotFoundForRecruitmentError || err instanceof ServiceNotFoundForRecruitmentError) {
+        res.status(404).json({ success: false, code: 'NOT_FOUND' });
+        return;
+      }
+      if (err instanceof ServiceAlreadyRecruitingError) {
+        res.status(409).json({ success: false, code: 'SERVICE_ALREADY_RECRUITING', vacancyId: err.vacancyId });
+        return;
+      }
+      if (err instanceof RecruitmentNotReadyError) {
+        res.status(422).json({
+          success: false,
+          error: err.message,
+          code: 'PATIENT_NOT_READY',
+          details: { missing: err.missing },
+        });
+        return;
+      }
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientContractedServicesController:activateRecruitment', patientId: params.data.id, serviceId: params.data.sid });
+      res.status(500).json({ success: false, error: 'Failed to activate recruitment' });
     }
   }
 

@@ -285,7 +285,8 @@ class AdminApiServiceClass {
   createPatientChatRole(...args: Parameters<typeof AdminPatientsApiService.createPatientChatRole>) { return AdminPatientsApiService.createPatientChatRole(...args); }
   updatePatientChatRole(...args: Parameters<typeof AdminPatientsApiService.updatePatientChatRole>) { return AdminPatientsApiService.updatePatientChatRole(...args); }
   deletePatientChatRole(code: string) { return AdminPatientsApiService.deletePatientChatRole(code); }
-  activatePatient(id: string) { return AdminPatientsApiService.activatePatient(id); }
+  // `activatePatient` SAIU (spec 018, PR-6, ADR-5) — usar
+  // `AdminContractedServicesApiService.activateRecruitment(patientId, serviceId)`.
   listPatientsForKanban(country?: string) { return AdminPatientsApiService.listPatientsForKanban(country); }
   getPatientFunnel(p?: Parameters<typeof AdminPatientsApiService.getPatientFunnel>[0]) { return AdminPatientsApiService.getPatientFunnel(p); }
 

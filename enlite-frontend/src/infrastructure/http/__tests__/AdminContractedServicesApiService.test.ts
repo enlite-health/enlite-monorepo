@@ -72,6 +72,30 @@ describe('AdminContractedServicesApiService', () => {
     expect(init.method).toBe('PATCH');
   });
 
+  it('activateRecruitment: POST em /:sid/activate-recruitment, sem corpo — 201 com vacancyId/patientStatus/statusChanged', async () => {
+    const f = mockFetch({ success: true, data: { vacancyId: 'v1', patientStatus: 'SEARCHING', statusChanged: true } }, 201);
+    const out = await AdminContractedServicesApiService.activateRecruitment(PATIENT_ID, SERVICE_ID);
+    expect(out).toEqual({ vacancyId: 'v1', patientStatus: 'SEARCHING', statusChanged: true });
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain(`/api/admin/patients/${PATIENT_ID}/contracted-services/${SERVICE_ID}/activate-recruitment`);
+    expect(init.method).toBe('POST');
+    expect(init.body).toBeUndefined();
+  });
+
+  it('activateRecruitment: 409 SERVICE_ALREADY_RECRUITING vira ContractedServiceApiError com o código', async () => {
+    mockFetch({ success: false, error: 'já tem vaga', code: 'SERVICE_ALREADY_RECRUITING' }, 409);
+    await expect(
+      AdminContractedServicesApiService.activateRecruitment(PATIENT_ID, SERVICE_ID),
+    ).rejects.toMatchObject({ name: 'ContractedServiceApiError', status: 409, code: 'SERVICE_ALREADY_RECRUITING' });
+  });
+
+  it('activateRecruitment: 422 PATIENT_NOT_READY carrega details.missing', async () => {
+    mockFetch({ success: false, error: 'falta', code: 'PATIENT_NOT_READY', details: { missing: ['SERVICE_SCHEDULE'] } }, 422);
+    await expect(
+      AdminContractedServicesApiService.activateRecruitment(PATIENT_ID, SERVICE_ID),
+    ).rejects.toMatchObject({ status: 422, code: 'PATIENT_NOT_READY', details: { missing: ['SERVICE_SCHEDULE'] } });
+  });
+
   it('erro do backend (success:false) vira ContractedServiceApiError com status/code/details', async () => {
     mockFetch({ success: false, error: 'Worker already actively allocated to this service', code: 'PROVIDER_ALREADY_ACTIVE' }, 409);
     await expect(

@@ -14,7 +14,6 @@ import type {
   PatientSectionName,
   PatientSectionPayload,
   UpdatePatientStatusResult,
-  ActivatePatientResult,
   PatientKanbanItem,
   PatientFunnelData,
   UpdatePatientStatusPayload,
@@ -340,14 +339,8 @@ export class AdminPatientsApiServiceClass {
     return this.writeJson<{ id: string }>('PATCH', `/api/admin/patients/${patientId}/addresses/${addressId}`, payload);
   }
 
-  /**
-   * POST /api/admin/patients/:id/activate — approve → one draft vacancy per
-   * active location + move to ACTIVE. Idempotent (already-ACTIVE → []).
-   * Throws PatientApiError with status 422 when the patient has no active address.
-   */
-  async activatePatient(id: string): Promise<ActivatePatientResult> {
-    return this.writeJson<ActivatePatientResult>('POST', `/api/admin/patients/${id}/activate`);
-  }
+  // `activatePatient` (POST /:id/activate) SAIU (spec 018, PR-6, ADR-5): a rota é 410. Ativar
+  // recrutamento agora é por serviço — `AdminContractedServicesApiService.activateRecruitment`.
 
   /**
    * Fetch a large page of patients for the kanban board. Reuses the same list

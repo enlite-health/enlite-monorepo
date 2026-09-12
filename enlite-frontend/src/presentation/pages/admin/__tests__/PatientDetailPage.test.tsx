@@ -31,7 +31,10 @@ vi.mock('@presentation/components/features/admin/PatientDetail/PatientStatusHist
 vi.mock('@presentation/components/features/admin/PatientDetail/PatientVacanciesCard', () => ({ PatientVacanciesCard: () => <div data-testid="vacancies-stub" /> }));
 // Spec 017: o card do projeto terapêutico tem client HTTP e i18n real por trás (drawer + PDF) — testado no próprio arquivo.
 vi.mock('@presentation/components/features/admin/PatientDetail/ProjetoTerapeuticoCard', () => ({ ProjetoTerapeuticoCard: (p: { patient: { id: string } }) => <div data-testid="projeto-terapeutico-stub">{p.patient.id}</div> }));
-vi.mock('@presentation/components/features/admin/PatientDetail/ActivatePatientButton', () => ({ ActivatePatientButton: (p: { onActivated: () => void }) => <button data-testid="activate-stub" onClick={p.onActivated}>activate</button> }));
+// `ActivatePatientButton` SAIU do cabeçalho (spec 018, PR-6, ADR-5) — ativar agora é por
+// serviço, dentro do `ServicosContratadosCard`. O stub aqui cobre o mesmo contrato que o botão
+// cobria: `onSaved` refetcha ficha E vagas (a vaga nasce da ativação).
+vi.mock('@presentation/components/features/admin/PatientDetail/ServicosContratadosCard', () => ({ ServicosContratadosCard: (p: { onSaved?: () => void }) => <button data-testid="services-saved-stub" onClick={() => p.onSaved?.()}>services</button> }));
 vi.mock('@presentation/components/features/admin/PatientDetail/PatientStatusControl', () => ({ PatientStatusControl: (p: { onSaved: () => void }) => <button data-testid="status-stub" onClick={p.onSaved}>status</button> }));
 vi.mock('@infrastructure/http/AdminApiService', () => ({ AdminApiService: { updatePatientSection: vi.fn(), listInsuranceProviders: vi.fn().mockResolvedValue([]) } }));
 
@@ -60,12 +63,16 @@ describe('PatientDetailPage', () => {
     expect(screen.getByText("Erro ao carregar paciente")).toBeInTheDocument();
   });
 
-  it('ficha: estado v2 no cabeçalho (onSaved → refetch), ativar → refetch dos dois; país sem bandeira cai em AR', () => {
+  it('ficha: estado v2 no cabeçalho (onSaved → refetch), ativar recrutamento no serviço → refetch dos dois; país sem bandeira cai em AR', () => {
     detail.patient = { ...(detail.patient as object), country: 'XX' };
     render(<PatientDetailPage />);
     fireEvent.click(screen.getByTestId('status-stub'));
     expect(detail.refetch).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByTestId('activate-stub'));
+    // Spec 018, PR-6: ativar é por SERVIÇO agora (`ServicosContratadosCard`), não um botão do
+    // cabeçalho — o `onSaved` do card refetcha os dois (ficha + vagas), porque a ativação cria vaga.
+    // O card mora na aba "Serviço Contratado", não na inicial ("Dados Clínicos").
+    fireEvent.click(screen.getByText('Serviço Contratado'));
+    fireEvent.click(screen.getByTestId('services-saved-stub'));
     expect(detail.refetch).toHaveBeenCalledTimes(2);
     expect(vac.refetch).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('img', { name: 'XX' })).toHaveTextContent('🇦🇷');

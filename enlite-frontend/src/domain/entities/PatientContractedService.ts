@@ -111,6 +111,8 @@ export interface PatientContractedServiceDetail {
   addressId: string | null;
   /** Horário do encuadre (migration 330) — `null` = ainda sem horário. */
   schedule: ContractedServiceScheduleSlot[] | null;
+  /** Spec 018, PR-6: vaga viva deste serviço — `null` habilita "Activar reclutamiento". */
+  liveVacancyId: string | null;
   active: boolean;
   endedAt: string | null;
   country: string;

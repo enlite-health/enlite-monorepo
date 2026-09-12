@@ -57,6 +57,7 @@ const SERVICE: PatientContractedServiceDetail = {
   providerAgeBand: 'AGE_30_45',
   addressId: null,
   schedule: null,
+  liveVacancyId: null,
   active: true,
   endedAt: null,
   country: 'AR',
@@ -172,6 +173,7 @@ describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-0
       providerAgeBand: null,
       addressId: null,
       schedule: null,
+      liveVacancyId: null,
       active: false, endedAt: '2026-09-02T00:00:00Z', country: 'AR', deviceTypes: [], providers: [],
       createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
     };

@@ -72,7 +72,6 @@ jest.mock('@modules/identity', () => {
 import { reportError } from '@shared/logging';
 import { AdminPatientsController } from '../AdminPatientsController';
 import type { PatientService } from '../../../application/PatientService';
-import type { ActivatePatientUseCase } from '../../../application/ActivatePatientUseCase';
 import { Request, Response } from 'express';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -93,13 +92,11 @@ const VALID_ID = '11111111-1111-4111-8111-111111111111';
 
 function makeController(opts: {
   moveStatus?: jest.Mock;
-  activate?: jest.Mock;
 }): AdminPatientsController {
   const patientService = {
     moveStatus: opts.moveStatus ?? jest.fn(),
   } as unknown as PatientService;
-  const activateUseCase = { execute: opts.activate ?? jest.fn() } as unknown as ActivatePatientUseCase;
-  return new AdminPatientsController(undefined, undefined, patientService, activateUseCase);
+  return new AdminPatientsController(undefined, undefined, patientService);
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -206,35 +203,6 @@ describe('AdminPatientsController — updatePatientStatus', () => {
       error: 'Failed to update patient status',
       details: 'deadlock detected',
     });
-  });
-});
-
-describe('AdminPatientsController — activatePatient (500 genérico)', () => {
-  beforeEach(() => jest.clearAllMocks());
-
-  it('500 quando o use case lança um erro que NÃO é PatientNotFoundError/NoActiveAddressError (valor não-Error)', async () => {
-    const activate = jest.fn().mockRejectedValue('vacancy creation failed');
-    const controller = makeController({ activate });
-    const [req, res] = mockReqRes({ id: VALID_ID });
-
-    await controller.activatePatient(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(500);
-    expect((res as any).json.mock.calls[0][0]).toMatchObject({
-      success: false,
-      error: 'Failed to activate patient',
-      details: 'vacancy creation failed',
-    });
-  });
-
-  it('500 quando o use case rejeita com uma instância de Error (branch instanceof=true)', async () => {
-    const activate = jest.fn().mockRejectedValue(new Error('vacancy creation failed (Error instance)'));
-    const controller = makeController({ activate });
-    const [req, res] = mockReqRes({ id: VALID_ID });
-
-    await controller.activatePatient(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(500);
   });
 });
 

@@ -25,6 +25,7 @@ const SERVICO: PatientContractedServiceDetail = {
   guardShift: 'MORNING',
   providerAgeBand: 'AGE_30_45',
   addressId: null,
+  liveVacancyId: null,
   schedule: null,
   active: true,
   endedAt: null,

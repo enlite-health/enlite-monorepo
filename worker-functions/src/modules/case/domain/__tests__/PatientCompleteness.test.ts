@@ -10,6 +10,9 @@ import {
   patientIncompleteAdmissionSql,
   patientNeedsAttentionSql,
   patientHasAttentionReasonSql,
+  RECRUITMENT_BLOCKING_CODES,
+  isPlaceholderCoverageValue,
+  computeRecruitmentReadiness,
   type PatientCompletenessCode,
 } from '../PatientCompleteness';
 
@@ -359,7 +362,8 @@ describe('a regra em SQL (filtro/contadores da listagem)', () => {
     const clausulaDe: Record<PatientCompletenessCode, RegExp> = {
       ADDRESS: /NOT EXISTS \(SELECT 1 FROM patient_addresses/,
       RESPONSIBLE: /NOT EXISTS \(SELECT 1 FROM patient_responsibles/,
-      COVERAGE: /BTRIM\(COALESCE\(p\.insurance_informed, p\.health_insurance_name, ''\)\) = ''/,
+      // FR-122 (spec 018, PR-6): placeholder — < 2 caracteres alfanuméricos, ou só zeros.
+      COVERAGE: /LENGTH\(REGEXP_REPLACE\(COALESCE\(p\.insurance_informed, p\.health_insurance_name, ''\)/,
       CONTRACTED_SERVICE: /NOT EXISTS \(SELECT 1 FROM patient_contracted_services/,
       SERVICE_ADDRESS: /EXISTS \(SELECT 1 FROM patient_contracted_services pcs\s+LEFT JOIN patient_addresses pa ON pa\.id = pcs\.address_id AND pa\.archived_at IS NULL/,
       SERVICE_SCHEDULE:
@@ -405,5 +409,81 @@ describe('a regra em SQL (filtro/contadores da listagem)', () => {
       expect(sql).not.toMatch(/(?<![a-z_])p\.(status|needs_attention|has_consent|birth_date|attention_reasons|insurance_informed|id)/);
     }
     expect(patientNeedsAttentionSql()).toContain('p.needs_attention');
+  });
+});
+
+// Spec 018, PR-6, ADR-5, `contracts/activation.md`.
+describe('isPlaceholderCoverageValue (FR-121/122)', () => {
+  it.each([null, undefined, '', '   '])('%p (vazio) é placeholder', (v) => {
+    expect(isPlaceholderCoverageValue(v as never)).toBe(true);
+  });
+
+  it.each(['0', '00', '000', ' 0 '])('%p (só zeros) é placeholder', (v) => {
+    expect(isPlaceholderCoverageValue(v)).toBe(true);
+  });
+
+  it.each(['-', '.', ',', 'x', 'a', '--.,'])('%p (< 2 alfanuméricos) é placeholder', (v) => {
+    expect(isPlaceholderCoverageValue(v)).toBe(true);
+  });
+
+  it.each(['Particular', 'Sin cobertura', 'OSDE', 'IOMA', 'N/A'])(
+    'FR-121: %p é resposta EXPLÍCITA válida — NÃO é placeholder',
+    (v) => {
+      expect(isPlaceholderCoverageValue(v)).toBe(false);
+    },
+  );
+
+  it('1 dígito não-zero (ex.: "5") já tem 1 caractere alfanumérico só — placeholder pela régua de tamanho', () => {
+    expect(isPlaceholderCoverageValue('5')).toBe(true);
+  });
+
+  it('"10" (2 dígitos, não todo zero) passa — não é só zero nem < 2 caracteres', () => {
+    expect(isPlaceholderCoverageValue('10')).toBe(false);
+  });
+});
+
+describe('computeRecruitmentReadiness (RECRUITMENT_BLOCKING_CODES — gate de activate-recruitment)', () => {
+  const READY = { serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: 'Particular' };
+
+  it('RECRUITMENT_BLOCKING_CODES é exatamente [SERVICE_ADDRESS, SERVICE_SCHEDULE, COVERAGE]', () => {
+    expect([...RECRUITMENT_BLOCKING_CODES]).toEqual(['SERVICE_ADDRESS', 'SERVICE_SCHEDULE', 'COVERAGE']);
+  });
+
+  it('tudo pronto → missing:[] e ready:true', () => {
+    expect(computeRecruitmentReadiness(READY)).toEqual({ missing: [], ready: true });
+  });
+
+  it('sem endereço do serviço → SERVICE_ADDRESS', () => {
+    expect(computeRecruitmentReadiness({ ...READY, serviceHasAddress: false })).toEqual({
+      missing: ['SERVICE_ADDRESS'],
+      ready: false,
+    });
+  });
+
+  it('sem horário do serviço → SERVICE_SCHEDULE', () => {
+    expect(computeRecruitmentReadiness({ ...READY, serviceHasSchedule: false })).toEqual({
+      missing: ['SERVICE_SCHEDULE'],
+      ready: false,
+    });
+  });
+
+  it('cobertura placeholder → COVERAGE', () => {
+    expect(computeRecruitmentReadiness({ ...READY, insuranceInformed: '0' })).toEqual({
+      missing: ['COVERAGE'],
+      ready: false,
+    });
+  });
+
+  it('cobertura null → COVERAGE (mesma régua de ausência)', () => {
+    expect(computeRecruitmentReadiness({ ...READY, insuranceInformed: null })).toEqual({
+      missing: ['COVERAGE'],
+      ready: false,
+    });
+  });
+
+  it('os três juntos, NA ORDEM address → schedule → coverage', () => {
+    expect(
+      computeRecruitmentReadiness({ serviceHasAddress: false, serviceHasSchedule: false, insuranceInformed: null }),
+    ).toEqual({ missing: ['SERVICE_ADDRESS', 'SERVICE_SCHEDULE', 'COVERAGE'], ready: false });
   });
 });

@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, type MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pencil, Plus } from 'lucide-react';
+import { Pencil, Plus, Rocket, ExternalLink } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import {
@@ -13,8 +13,11 @@ import {
 } from '@presentation/components/atoms/Table';
 import { ActionButton } from '@presentation/components/features/access';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
+import { useToast } from '@presentation/hooks/useToast';
 import type { PatientAddressDetail, PatientDetail, PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
 import { patientAddressLabel } from '@domain/entities/PatientContractedService';
+import { recruitmentMissingCodes } from '@domain/entities/PatientCompleteness';
+import { AdminContractedServicesApiService, ContractedServiceApiError } from '@infrastructure/http/AdminContractedServicesApiService';
 import { PatientContractedServicesEditDrawer, type ContractedServiceTarget } from './edit/PatientContractedServicesEditDrawer';
 import { ContractedServiceDetailDrawer } from './ContractedServiceDetailDrawer';
 import { contractedServiceScheduleText } from './contractedServiceScheduleText';
@@ -36,18 +39,106 @@ const EMPTY = '—';
  * pelo PONTEIRO `service.addressId` contra `patient.addresses` — nada de endereço é copiado no
  * serviço (migration 330). Clique na linha abre o detalhe completo (`ContractedServiceDetailDrawer`).
  */
+/**
+ * Ícone "Activar reclutamiento" — 1 por linha de serviço ATIVO (spec 018, PR-6, ADR-5,
+ * `contracts/activation.md`). Desabilitado + tooltip quando falta código do gate
+ * (`RECRUITMENT_BLOCKING_CODES`); some (vira "Ver vacante") quando o serviço já tem vaga viva.
+ * A régua real é sempre o backend (422 `PATIENT_NOT_READY`) — este componente só antecipa o
+ * estado na tela para a operadora não bater numa recusa óbvia.
+ */
+function ActivateRecruitmentAction({
+  patientId,
+  service,
+  missing,
+  onActivated,
+  t,
+}: {
+  patientId: string;
+  service: PatientContractedServiceDetail;
+  missing: string[];
+  onActivated: () => void;
+  t: (k: string, o?: any) => string;
+}) {
+  const showToast = useToast();
+  const [busy, setBusy] = useState(false);
+  const tc = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.contractedServicesCard.${k}`, o);
+  const serviceLabel = t(`admin.patients.detail.contractedServicesCard.serviceTypes.${service.serviceCode}`, service.serviceCode);
+
+  if (service.liveVacancyId) {
+    return (
+      <a
+        href={`/admin/vacancies/${service.liveVacancyId}`}
+        onClick={(e) => e.stopPropagation()}
+        aria-label={tc('viewVacancyAria', { service: serviceLabel })}
+        data-testid={`contracted-service-view-vacancy-${service.id}`}
+        className="text-primary hover:text-primary/70 transition-colors p-1 rounded focus:outline-none focus:ring-2 focus:ring-primary inline-flex items-center gap-1"
+      >
+        <ExternalLink className="w-4 h-4" strokeWidth={2} />
+      </a>
+    );
+  }
+
+  const handleClick = async (e: MouseEvent): Promise<void> => {
+    e.stopPropagation();
+    if (missing.length > 0 || busy) return;
+    setBusy(true);
+    try {
+      await AdminContractedServicesApiService.activateRecruitment(patientId, service.id);
+      showToast(tc('activateRecruitmentToast'), 'success');
+      onActivated();
+    } catch (err) {
+      if (err instanceof ContractedServiceApiError && err.code === 'SERVICE_ALREADY_RECRUITING') {
+        showToast(tc('activateRecruitmentAlreadyRecruiting'), 'error');
+        onActivated(); // refetch: a ficha vai mostrar "Ver vacante" agora
+      } else if (err instanceof ContractedServiceApiError && err.code === 'PATIENT_NOT_READY') {
+        const codes = ((err.details?.missing as string[] | undefined) ?? []).map((code) =>
+          t(`admin.patients.detail.completeness.items.${code}`, code),
+        );
+        showToast(tc('activateRecruitmentTooltip', { items: codes.join(', ') }), 'error');
+      } else {
+        showToast(tc('activateRecruitmentError'), 'error');
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ActionButton
+      resource="patient_services"
+      action="write"
+      variant="ghost"
+      size="sm"
+      onClick={handleClick}
+      disabled={missing.length > 0 || busy}
+      title={missing.length > 0 ? tc('activateRecruitmentTooltip', { items: missing.map((code) => t(`admin.patients.detail.completeness.items.${code}`, code)).join(', ') }) : undefined}
+      aria-label={tc('activateRecruitmentAria', { service: serviceLabel })}
+      data-testid={`contracted-service-activate-recruitment-${service.id}`}
+      className="text-primary hover:text-primary/70 transition-colors p-1 rounded focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-40 disabled:cursor-not-allowed"
+    >
+      <Rocket className="w-4 h-4" strokeWidth={2} />
+    </ActionButton>
+  );
+}
+
 function ServiceRow({
+  patientId,
   service,
   addresses,
+  insuranceInformed,
   onOpen,
   onEdit,
+  onActivated,
   podeEditar,
   t,
 }: {
+  patientId: string;
   service: PatientContractedServiceDetail;
   addresses: PatientAddressDetail[];
+  insuranceInformed: string | null;
   onOpen: (service: PatientContractedServiceDetail) => void;
   onEdit: (service: PatientContractedServiceDetail) => void;
+  onActivated: () => void;
   /** A MESMA régua do "+ Nuevo" e do "Editar" do detalhe, lida uma vez no card. */
   podeEditar: boolean;
   t: (k: string, o?: any) => string;
@@ -131,18 +222,36 @@ function ServiceRow({
       {/* Lápis na linha (Gabriel, 06/09): a tabela É a lista — editar abre SÓ este serviço, sem
           passar por um drawer-lista. `stopPropagation` para o clique não abrir o detalhe junto. */}
       <TableCell unwrapped align="right">
-        {/* D269/D286: o lápis faz PATCH → mesma régua do "Nuevo" (`useActionGate`, só com enforcement on). */}
-        {podeEditar && (
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onEdit(service); }}
-            aria-label={tc('editRowAria', { service: t(`admin.patients.detail.contractedServicesCard.serviceTypes.${service.serviceCode}`, service.serviceCode) })}
-            data-testid={`contracted-service-edit-${service.id}`}
-            className="text-primary hover:text-primary/70 transition-colors p-1 rounded focus:outline-none focus:ring-2 focus:ring-primary"
-          >
-            <Pencil className="w-4 h-4" strokeWidth={2} />
-          </button>
-        )}
+        <div className="flex items-center justify-end gap-1">
+          {/* Spec 018, PR-6: ativar recrutamento é POR SERVIÇO ATIVO — a baixa (não `service.active`)
+              não mostra o ícone, é ativação de nada. As 2 células que alimentam o gate (endereço
+              vivo + horário) já estão nesta MESMA linha, mais a cobertura do paciente. */}
+          {service.active && (
+            <ActivateRecruitmentAction
+              patientId={patientId}
+              service={service}
+              missing={recruitmentMissingCodes({
+                serviceHasAddress: addresses.some((a) => a.id === service.addressId),
+                serviceHasSchedule: Array.isArray(service.schedule) && service.schedule.length > 0,
+                insuranceInformed,
+              })}
+              onActivated={onActivated}
+              t={t}
+            />
+          )}
+          {/* D269/D286: o lápis faz PATCH → mesma régua do "Nuevo" (`useActionGate`, só com enforcement on). */}
+          {podeEditar && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onEdit(service); }}
+              aria-label={tc('editRowAria', { service: t(`admin.patients.detail.contractedServicesCard.serviceTypes.${service.serviceCode}`, service.serviceCode) })}
+              data-testid={`contracted-service-edit-${service.id}`}
+              className="text-primary hover:text-primary/70 transition-colors p-1 rounded focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <Pencil className="w-4 h-4" strokeWidth={2} />
+            </button>
+          )}
+        </div>
       </TableCell>
     </TableRow>
   );
@@ -233,7 +342,18 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
             </TableRow>
           ) : (
             services.map((svc) => (
-              <ServiceRow key={svc.id} service={svc} addresses={patient.addresses} onOpen={setSelected} onEdit={(s) => setEditing({ kind: 'edit', serviceId: s.id })} podeEditar={podeEditar} t={t} />
+              <ServiceRow
+                key={svc.id}
+                patientId={patient.id}
+                service={svc}
+                addresses={patient.addresses}
+                insuranceInformed={patient.insuranceInformed}
+                onOpen={setSelected}
+                onEdit={(s) => setEditing({ kind: 'edit', serviceId: s.id })}
+                onActivated={() => onSaved?.()}
+                podeEditar={podeEditar}
+                t={t}
+              />
             ))
           )}
         </TableBody>

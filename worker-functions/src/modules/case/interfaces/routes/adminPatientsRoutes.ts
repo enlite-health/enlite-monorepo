@@ -41,7 +41,7 @@ import { AdminPatientContactRowsController } from '../controllers/AdminPatientCo
  * CONTAINER (D286: `patient_diagnosis:*`, `patient_services:*`, …) é a change
  * seguinte, não este merge.
  */
-import { ADMIN_PATIENTS_FAMILY } from '@modules/identity/permissions';
+import { ADMIN_PATIENTS_FAMILY, ADMIN_VACANCIES_FAMILY } from '@modules/identity/permissions';
 import { patientDetailTrailOf } from '../../application/patientContainerAccess';
 export { ADMIN_PATIENTS_FAMILY };
 export function createAdminPatientsRoutes(
@@ -72,6 +72,9 @@ export function createAdminPatientsRoutes(
   const router = Router();
   const staffOnly = authMiddleware.requireStaff();
   const perm = permissions.family(ADMIN_PATIENTS_FAMILY);
+  // SUP-19 (contracts/activation.md): ativar recrutamento também exige `vacancy:write` — quem cria
+  // uma vaga (mesmo em rascunho) passa pela família de VAGAS, não só pela de pacientes.
+  const permVacancy = permissions.family(ADMIN_VACANCIES_FAMILY);
   // Cortesia de UX sobre a RLS: `?country=` de outro país sem grant explica em
   // vez de devolver contadores zerados (task 3.5). Inerte com a flag off.
   const countryScope = requireCountryScope();
@@ -189,10 +192,18 @@ export function createAdminPatientsRoutes(
     controller.getPatientStatusHistory(req, res),
   );
 
-  // POST /patients/:id/activate — approve → generate one draft vacancy per location
-  router.post('/patients/:id/activate', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
-    controller.activatePatient(req, res),
-  );
+  // POST /patients/:id/activate → 410 (spec 018, PR-6, ADR-5, contracts/activation.md).
+  // Ativar deixou de ser um botão único no cabeçalho: agora é por SERVIÇO
+  // (`POST /patients/:id/contracted-services/:sid/activate-recruitment`, abaixo). `ActivatePatientUseCase`
+  // foi removido no mesmo PR — sem célula, a rota só recusa (mesmo molde do 410 de support-network).
+  router.post('/patients/:id/activate', staffOnly, (req: Request, res: Response) => {
+    res.status(410).json({
+      success: false,
+      error: 'ACTIVATION_SPLIT',
+      code: 'ACTIVATION_SPLIT',
+      detail: 'Use activate-recruitment en el servicio contratado; activar al paciente es un cambio de estado posterior.',
+    });
+  });
 
   // ── Chat IDs do Periskope (tasks 86ajy0859 / 86ajy085a) ────────────────────
   // GET  candidatos: leitura no Periskope, atrás de PATIENT_CHAT_LOOKUP_ENABLED.
@@ -229,6 +240,17 @@ export function createAdminPatientsRoutes(
   );
   router.patch('/patients/:id/contracted-services/:sid', staffOnly, perm.require('patient_services', 'write'), (req: Request, res: Response) =>
     contractedServicesController.update(req, res),
+  );
+  // POST /patients/:id/contracted-services/:sid/activate-recruitment (spec 018, PR-6, ADR-5,
+  // contracts/activation.md). Guardas na ORDEM do contrato: staffOnly → patient_services:write →
+  // vacancy:write (SUP-19: a vaga nasce daqui, mesmo em rascunho) → logResourceAccess.
+  router.post(
+    '/patients/:id/contracted-services/:sid/activate-recruitment',
+    staffOnly,
+    perm.require('patient_services', 'write'),
+    permVacancy.require('vacancy', 'write'),
+    logResourceAccess('patient', 'activate_recruitment'),
+    (req: Request, res: Response) => contractedServicesController.activateRecruitment(req, res),
   );
   router.post('/patients/:id/contracted-services/:sid/providers', staffOnly, perm.require('patient_services', 'write'), (req: Request, res: Response) =>
     contractedServicesController.associateProvider(req, res),

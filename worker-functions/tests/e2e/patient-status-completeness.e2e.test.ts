@@ -33,11 +33,13 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
     schedule: string | null;
     comServico?: boolean;
     comEndereco?: boolean;
+    /** `health_insurance_name` — só usado pelos testes de `activate-recruitment` (RECRUITMENT_BLOCKING_CODES cobra COVERAGE). */
+    coverage?: string | null;
   }): Promise<string> {
     const id = (await pool.query<{ id: string }>(
-      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status)
-       VALUES ($1, 'Horario', 'Gate', 'AR', $2) RETURNING id`,
-      [opts.tag, opts.status],
+      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, health_insurance_name)
+       VALUES ($1, 'Horario', 'Gate', 'AR', $2, $3) RETURNING id`,
+      [opts.tag, opts.status, opts.coverage ?? null],
     )).rows[0].id;
 
     let addr: string | null = null;
@@ -205,11 +207,32 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
     expect(g.data.data.completeness.canActivate).toBe(false);
   });
 
-  it('11. `POST /activate` recusa pelo mesmo código, e NÃO cria vaga nenhuma', async () => {
-    const id = await criarPaciente({ tag: 'sched-gate-e2e-11', status: 'PENDING_ADMISSION', schedule: null });
+  // Spec 018, PR-6, ADR-5: `POST /:id/activate` virou 410 (`ACTIVATION_SPLIT`) — ativar
+  // recrutamento agora é POR SERVIÇO, em `POST /:id/contracted-services/:sid/activate-recruitment`
+  // (`RECRUITMENT_BLOCKING_CODES`, contracts/activation.md). Testes 11/12 migrados para a rota nova.
 
+  it('11. `POST /:id/activate` (removido) → 410 ACTIVATION_SPLIT, nunca 422/200', async () => {
+    const id = await criarPaciente({ tag: 'sched-gate-e2e-11', status: 'PENDING_ADMISSION', schedule: null });
     const r = await api.post(`/api/admin/patients/${id}/activate`, {}, asAdmin);
+    expect(r.status).toBe(410);
+    expect(r.data.code).toBe('ACTIVATION_SPLIT');
+  });
+
+  it('12. sem horário no serviço, `activate-recruitment` recusa (422 SERVICE_SCHEDULE) e não cria vaga', async () => {
+    const id = await criarPaciente({
+      tag: 'sched-gate-e2e-12',
+      status: 'PENDING_ADMISSION',
+      schedule: null,
+      coverage: 'Particular',
+    });
+    const { rows: svcRows } = await pool.query<{ id: string }>(
+      'SELECT id FROM patient_contracted_services WHERE patient_id = $1', [id],
+    );
+    const sid = svcRows[0].id;
+
+    const r = await api.post(`/api/admin/patients/${id}/contracted-services/${sid}/activate-recruitment`, {}, asAdmin);
     expect(r.status).toBe(422);
+    expect(r.data.code).toBe('PATIENT_NOT_READY');
     expect(r.data.details.missing).toContain('SERVICE_SCHEDULE');
 
     const { rows } = await pool.query<{ n: string }>(
@@ -218,11 +241,22 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
     expect(Number(rows[0].n)).toBe(0);
   });
 
-  it('12. com horário, o `POST /activate` cria a vaga E copia o horário do serviço para ela', async () => {
-    const id = await criarPaciente({ tag: 'sched-gate-e2e-12', status: 'PENDING_ADMISSION', schedule: HORARIO });
+  it('13. com horário e cobertura, `activate-recruitment` cria a vaga (201) e copia o horário do serviço para ela', async () => {
+    const id = await criarPaciente({
+      tag: 'sched-gate-e2e-13',
+      status: 'PENDING_ADMISSION',
+      schedule: HORARIO,
+      coverage: 'Particular',
+    });
+    const { rows: svcRows } = await pool.query<{ id: string }>(
+      'SELECT id FROM patient_contracted_services WHERE patient_id = $1', [id],
+    );
+    const sid = svcRows[0].id;
 
-    const r = await api.post(`/api/admin/patients/${id}/activate`, {}, asAdmin);
-    expect(r.status).toBe(200);
+    const r = await api.post(`/api/admin/patients/${id}/contracted-services/${sid}/activate-recruitment`, {}, asAdmin);
+    expect(r.status).toBe(201);
+    expect(r.data.data.patientStatus).toBe('SEARCHING');
+    expect(r.data.data.statusChanged).toBe(true);
 
     const { rows } = await pool.query<{ schedule: unknown }>(
       'SELECT schedule FROM job_postings WHERE patient_id = $1', [id],

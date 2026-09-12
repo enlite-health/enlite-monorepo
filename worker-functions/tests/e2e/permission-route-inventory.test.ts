@@ -133,7 +133,9 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'PATCH /api/admin/patients/:id/test-flag → patient:write',
         'POST /api/admin/patient-chat-roles → patient:write',
         'POST /api/admin/patients → patient:write',
-        'POST /api/admin/patients/:id/activate → patient:write',
+        // POST /:id/activate SAIU (spec 018, PR-6, ADR-5) — a rota é 410, isenta em EXEMPT_ROUTES
+        // (mesmo molde do support-network acima).
+        'POST /api/admin/patients/:id/contracted-services/:sid/activate-recruitment → patient_services:write',
         'POST /api/admin/patients/:id/coverage-emergency-contacts → patient_coverage:write',
         'POST /api/admin/patients/:id/coverage-emergency-contacts/:cid/deactivate → patient_coverage:write',
         'POST /api/admin/patients/:id/responsibles → patient_family:write',

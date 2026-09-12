@@ -40,6 +40,7 @@ const SERVICO: PatientContractedServiceDetail = {
   guardShift: 'MORNING',
   providerAgeBand: 'AGE_30_45',
   addressId: 'addr1',
+  liveVacancyId: null,
   schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
   active: true,
   endedAt: null,

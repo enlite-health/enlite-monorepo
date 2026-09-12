@@ -188,7 +188,8 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
         createPatientAddress: marca('createPatientAddress'),
         listPatientVacancies: marca('listPatientVacancies'),
         updatePatientStatus: marca('updatePatientStatus'),
-        activatePatient: marca('activatePatient'),
+        // `activatePatient` saiu (spec 018, PR-6): a rota `/activate` responde 410 sem chamar
+        // controller nenhum — `activateRecruitment` mora em `outros` (é do contracted-services).
         updatePatientTestFlag: marca('updatePatientTestFlag'),
         purgeTestPatient: marca('purgeTestPatient'),
         updatePatientSection: marca('updatePatientSection'),

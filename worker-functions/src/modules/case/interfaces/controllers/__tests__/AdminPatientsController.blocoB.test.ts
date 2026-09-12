@@ -37,7 +37,6 @@ import { DeviceTypeUnknownError } from '../../../infrastructure/PatientDeviceTyp
 import { InsuranceProviderUnknownError } from '../../../infrastructure/PatientInsuranceVerifiedRepository';
 import { fetchPatientStatusHistory } from '../../../infrastructure/PatientStatusHistoryQueryHelper';
 import type { CreatePatientUseCase } from '../../../application/CreatePatientUseCase';
-import type { ActivatePatientUseCase } from '../../../application/ActivatePatientUseCase';
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const NOTE = 'nota clinica que nao sai 8e2f';
@@ -51,7 +50,7 @@ const bodyOf = (res: Response) => ((res as unknown as { status: jest.Mock }).sta
 
 function makeController(svc: Partial<Record<'updatePatientSection' | 'moveStatus', jest.Mock>> = {}): AdminPatientsController {
   const patientService = { updatePatientSection: svc.updatePatientSection ?? jest.fn(), moveStatus: svc.moveStatus ?? jest.fn() } as unknown as PatientService;
-  return new AdminPatientsController(undefined, { execute: jest.fn() } as unknown as CreatePatientUseCase, patientService, { execute: jest.fn() } as unknown as ActivatePatientUseCase);
+  return new AdminPatientsController(undefined, { execute: jest.fn() } as unknown as CreatePatientUseCase, patientService);
 }
 
 describe('AdminPatientsController — bloco B', () => {
@@ -224,7 +223,7 @@ describe('AdminPatientsController — bloco B', () => {
       await ctrl.updatePatientSection(r1, s1);
       expect(s1.status).toHaveBeenCalledWith(500);
       // createPatient / getPatientById / listPatientVacancies: os use cases/repos internos rejeitam com string
-      const create = new AdminPatientsController(undefined, { execute: jest.fn().mockRejectedValue('str') } as unknown as CreatePatientUseCase, undefined, { execute: jest.fn() } as unknown as ActivatePatientUseCase);
+      const create = new AdminPatientsController(undefined, { execute: jest.fn().mockRejectedValue('str') } as unknown as CreatePatientUseCase);
       // `country` é obrigatório no createPatientSchema (abac-pais-fase1 5.1): sem ele o 400 do zod responde antes do use case.
       const [r2, s2] = reqRes({}, { firstName: 'Ana', country: 'AR' });
       await create.createPatient(r2, s2);

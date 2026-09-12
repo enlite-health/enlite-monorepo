@@ -67,6 +67,8 @@ export interface ContractedServiceDetail {
   addressId: string | null;
   /** Horário do encuadre, formato do editor (migration 330) — null = ainda sem horário. */
   schedule: ContractedServiceScheduleSlot[] | null;
+  /** Vaga viva deste serviço (spec 018, PR-6) — null = ainda pode ativar recrutamento. */
+  liveVacancyId: string | null;
   active: boolean;
   endedAt: string | null;
   country: string;
@@ -181,8 +183,17 @@ export class PatientContractedServiceRepository {
       [row.id],
     );
     const providers = await this.providerRepo.listForService(row.id);
+    // Spec 018, PR-6 (`contracts/activation.md`): "some quando o serviço já tem vaga viva (mostra
+    // Ver vacante)" — a MESMA condição do 409 de `ActivateRecruitmentUseCase`
+    // (`contracted_service_id = :sid AND deleted_at IS NULL`), lida aqui para a ficha exibir sem
+    // reimplementar o critério.
+    const liveVacancy = await cli.query<{ id: string }>(
+      `SELECT id FROM job_postings WHERE contracted_service_id = $1 AND deleted_at IS NULL LIMIT 1`,
+      [row.id],
+    );
     return {
       id: row.id,
+      liveVacancyId: liveVacancy.rows[0]?.id ?? null,
       patientId: row.patient_id,
       serviceCode: row.service_code,
       professionalProfile: row.professional_profile,

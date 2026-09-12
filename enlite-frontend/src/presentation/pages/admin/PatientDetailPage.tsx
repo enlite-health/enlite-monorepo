@@ -21,7 +21,6 @@ import { CoberturaMedicaCard } from '@presentation/components/features/admin/Pat
 import { LocalizacoesCard } from '@presentation/components/features/admin/PatientDetail/LocalizacoesCard';
 import { ServicosContratadosCard } from '@presentation/components/features/admin/PatientDetail/ServicosContratadosCard';
 import { PatientVacanciesCard } from '@presentation/components/features/admin/PatientDetail/PatientVacanciesCard';
-import { ActivatePatientButton } from '@presentation/components/features/admin/PatientDetail/ActivatePatientButton';
 import { PatientChatIdsCard } from '@presentation/components/features/admin/PatientDetail/PatientChatIdsCard';
 import { PatientStatusControl } from '@presentation/components/features/admin/PatientDetail/PatientStatusControl';
 import { PatientStatusHistoryCard } from '@presentation/components/features/admin/PatientDetail/PatientStatusHistoryCard';
@@ -118,8 +117,8 @@ export default function PatientDetailPage() {
           só aparecia dentro do primeiro cartão. Agora o NOME é o título, e "Ficha del Paciente"
           desce para o rastro de navegação, onde rótulo de página pertence.
 
-          🔒 O que NÃO mudou, de propósito: o `PatientStatusControl` e o `ActivatePatientButton`
-          continuam intactos (regra de negócio, spec 012 US-B7), e o badge de estado continua
+          🔒 O que NÃO mudou, de propósito: o `PatientStatusControl` continua intacto (regra de
+          negócio, spec 012 US-B7), e o badge de estado continua
           DENTRO do `PatientIdentityCard` — trazê-lo para cá tiraria dado de dentro de um container
           de permissão, que é justamente o que a D286 não admite. O país vira chip ao lado do
           título para liberar a direita, que estava com quatro elementos soltos disputando espaço. */}
@@ -187,19 +186,16 @@ export default function PatientDetailPage() {
             <LayoutGrid className="w-3.5 h-3.5" />
             {t('admin.patients.detail.viewInKanban')}
           </Button>
-          {/* Spec 012 US-B7: estado clínico v2 (só depois da admissão); antes, o botão Activar. */}
+          {/* Spec 012 US-B7: estado clínico v2 (só depois da admissão). O botão "Activar paciente"
+              SAIU do cabeçalho (spec 018, PR-6, ADR-5) — ativar virou uma ação POR SERVIÇO, no
+              ícone "Activar reclutamiento" de cada linha do `ServicosContratadosCard`. */}
           <PatientStatusControl patient={patient} onSaved={refetch} />
-          <ActivatePatientButton
-            patientId={patient.id}
-            status={patient.status}
-            onActivated={() => { refetch(); refetchVacancies(); }}
-          />
         </div>
       </div>
 
       {/* Checklist de completude (spec 014 US-D1) — bloco fixo no topo, SÓ em status
           ACTIVATABLE (QA-caça rodada 1, item 3): fora dali (ex.: ACTIVE, já aprovado) é ruído
-          permanente sem ação possível — a mesma constante que ActivatePatientButton usa. */}
+          permanente sem ação possível. */}
       {patient.status != null &&
         (ACTIVATABLE_STATUSES as readonly string[]).includes(patient.status) && (
           <CompletenessChecklist completeness={patient.completeness} onFocusItem={focusChecklistItem} />
@@ -261,7 +257,11 @@ export default function PatientDetailPage() {
               <LocalizacoesCard addresses={patient.addresses} patientId={patient.id} onSaved={refetch} focusRequest={focusRequest} />
             </ContainerGate>
             <ContainerGate resource="patient_services">
-              <ServicosContratadosCard patient={patient} onSaved={refetch} focusRequest={focusRequest} />
+              <ServicosContratadosCard
+                patient={patient}
+                onSaved={() => { refetch(); refetchVacancies(); }}
+                focusRequest={focusRequest}
+              />
             </ContainerGate>
           </>
         )}

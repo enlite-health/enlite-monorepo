@@ -42,13 +42,14 @@ function groupByAdmissionStatus(items: PatientKanbanItem[]): PatientKanbanGroups
 }
 
 /**
- * Soltar em DONE é a SAÍDA do funil: o `PUT /status` recebe `ACTIVE` (a transição que o seed
- * da migration 315 permite a partir de qualquer coluna do funil). Dentro do funil, o alvo é o
- * próprio status. `changeSource: 'kanban'` vira a coluna "origem" do Historial.
+ * Código devolvido quando o alvo é DONE ("Activo") — spec 018, PR-6, ADR-5. Até 07/09 soltar
+ * ali mandava `PUT /status {status:'ACTIVE'}` (a transição que a 315 seedava a partir de
+ * qualquer coluna do funil); a migration 428 REMOVE essa linha do catálogo — o Kanban não pode
+ * continuar chamando uma transição que o backend vai recusar (422
+ * `PATIENT_STATUS_TRANSITION_NOT_ALLOWED`). Ativar virou uma ação por SERVIÇO
+ * (`ServicosContratadosCard`, "Activar reclutamiento"), não um drop de card.
  */
-function statusForColumn(target: PatientKanbanStatus): string {
-  return target === 'DONE' ? 'ACTIVE' : target;
-}
+export const KANBAN_ACTIVATION_MOVED_TO_SERVICE = 'KANBAN_ACTIVATION_MOVED_TO_SERVICE';
 
 /**
  * Data + move logic for the patient kanban. Mirrors useWJAFunnel's shape (fetch
@@ -96,6 +97,14 @@ export function usePatientKanban(country?: string) {
     patientId: string,
     targetStatus: PatientKanbanStatus,
   ): Promise<PatientKanbanMoveError | null> => {
+    // Spec 018, PR-6, ADR-5: DONE ("Activo") não é mais um alvo de drop — a 428 tirou
+    // funil→ACTIVE do catálogo. O card NÃO se move (sem otimismo para desfazer) e o chamador
+    // toasta o caminho novo. Mover DENTRO do funil (SOLICITANTE/ADMISSION/PENDING_ADMISSION)
+    // continua livre, exatamente como antes.
+    if (targetStatus === 'DONE') {
+      return { code: KANBAN_ACTIVATION_MOVED_TO_SERVICE };
+    }
+
     const previous = groupsRef.current;
     // find the card in any column
     let card: PatientKanbanItem | undefined;
@@ -113,7 +122,7 @@ export function usePatientKanban(country?: string) {
     }
 
     try {
-      await AdminApiService.updatePatientStatus(patientId, { status: statusForColumn(targetStatus), changeSource: 'kanban' });
+      await AdminApiService.updatePatientStatus(patientId, { status: targetStatus, changeSource: 'kanban' });
       return null;
     } catch (err) {
       setGroups(previous);

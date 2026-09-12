@@ -77,7 +77,10 @@ const ESPERADO: Record<string, string | null> = {
   'GET /patients/:id/vacancies': 'vacancy:read',
   'PUT /patients/:id/status': 'patient:write',
   'GET /patients/:id/status-history': 'patient:read',
-  'POST /patients/:id/activate': 'patient:write',
+  // 410 (spec 018, PR-6, ADR-5): ativar deixou de ser rota única do paciente. Sem célula, como o
+  // 410 de support-network.
+  'POST /patients/:id/activate': null,
+  'POST /patients/:id/contracted-services/:sid/activate-recruitment': 'patient_services:write',
   'GET /patients/:id/chat-candidates': 'messaging:read',
   'PUT /patients/:id/chat-ids': 'patient_chat:write',
   'PATCH /patients/:id/test-flag': 'patient:write',
@@ -110,9 +113,10 @@ const ESPERADO: Record<string, string | null> = {
   'POST /patients/:id/coverage-emergency-contacts/:cid/deactivate': 'patient_coverage:write',
 };
 
-/** A única rota da família SEM célula, de propósito: só recusa (410), nunca faz nada com o dado. */
+/** Rotas da família SEM célula, de propósito: só recusam (410), nunca fazem nada com o dado. */
 const SEM_CELULA_DE_PROPOSITO = (route: { method: string; path: string }): boolean =>
-  route.method === 'PATCH' && route.path === '/patients/:id/support-network';
+  (route.method === 'PATCH' && route.path === '/patients/:id/support-network') ||
+  (route.method === 'POST' && route.path === '/patients/:id/activate');
 
 /** Cada handler devolve o próprio nome — é o que identifica quem foi chamado. */
 function pecas() {
@@ -129,7 +133,6 @@ function pecas() {
     createPatientAddress: responde('createPatientAddress'),
     listPatientVacancies: responde('listPatientVacancies'),
     updatePatientStatus: responde('updatePatientStatus'),
-    activatePatient: responde('activatePatient'),
     updatePatientTestFlag: responde('updatePatientTestFlag'),
     purgeTestPatient: responde('purgeTestPatient'),
     updatePatientSection: responde('updatePatientSection'),
@@ -160,6 +163,7 @@ function pecas() {
     list: responde('cs.list'),
     create: responde('cs.create'),
     update: responde('cs.update'),
+    activateRecruitment: responde('cs.activateRecruitment'),
     associateProvider: responde('cs.associateProvider'),
     updateProvider: responde('cs.updateProvider'),
   } as unknown as AdminPatientContractedServicesController;
@@ -194,7 +198,7 @@ function build() {
 }
 
 describe('createAdminPatientsRoutes', () => {
-  it('TODA rota da família declara célula, exceto o 410 de support-network (não faz nada com o dado)', () => {
+  it('TODA rota da família declara célula, exceto os 410 (support-network e /activate — não fazem nada com o dado)', () => {
     expect(undeclaredRoutes(scanExpressRouter(build()), (r) => !SEM_CELULA_DE_PROPOSITO(r))).toEqual([]);
   });
 
@@ -208,8 +212,8 @@ describe('createAdminPatientsRoutes', () => {
     expect(declarado).toEqual(ESPERADO);
   });
 
-  it('a família declara exatamente 45 rotas — 39 de antes (D286) + o 410 de support-network + as 6 rotas por linha (spec 018, PR-1, ADR-1)', () => {
-    expect(scanExpressRouter(build())).toHaveLength(45);
+  it('a família declara exatamente 46 rotas — 45 do PR-1 + activate-recruitment (spec 018, PR-6)', () => {
+    expect(scanExpressRouter(build())).toHaveLength(46);
   });
 
   it('a família é `admin.patients` — o nome que PERMISSION_ENFORCED_ROUTES liga', () => {
@@ -230,7 +234,7 @@ describe('createAdminPatientsRoutes', () => {
         p.map, p.addresses, p.insurance, p.contracted, p.diagnoses, p.terminology,
         // 12º omitido de propósito
       );
-      expect(scanExpressRouter(router)).toHaveLength(45);
+      expect(scanExpressRouter(router)).toHaveLength(46);
     } finally {
       if (antes === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = antes;
     }
@@ -268,7 +272,7 @@ describe('createAdminPatientsRoutes', () => {
     ['get', '/api/admin/patients/abc-123/vacancies', 'listPatientVacancies'],
     ['get', '/api/admin/patients/abc-123/addresses', 'listPatientAddresses'],
     ['put', '/api/admin/patients/abc-123/status', 'updatePatientStatus'],
-    ['post', '/api/admin/patients/abc-123/activate', 'activatePatient'],
+    ['post', '/api/admin/patients/abc-123/contracted-services/svc-1/activate-recruitment', 'cs.activateRecruitment'],
     ['get', '/api/admin/patients/abc-123/chat-candidates', 'getChatCandidates'],
     ['put', '/api/admin/patients/abc-123/chat-ids', 'updateChatIds'],
     ['patch', '/api/admin/patients/abc-123/test-flag', 'updatePatientTestFlag'],
@@ -352,6 +356,14 @@ describe('createAdminPatientsRoutes', () => {
     app.use('/api/admin', build());
     const res = await request(app).patch('/api/admin/patients/abc-123/support-network').expect(410);
     expect(res.body).toMatchObject({ success: false, code: 'SUPPORT_NETWORK_LIST_WRITE_REMOVED' });
+  });
+
+  it('POST /patients/:id/activate → 410 (spec 018, PR-6, ADR-5) — nunca chega em nenhum controller', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use('/api/admin', build());
+    const res = await request(app).post('/api/admin/patients/abc-123/activate').expect(410);
+    expect(res.body).toMatchObject({ success: false, code: 'ACTIVATION_SPLIT' });
   });
 
   it('seção fora do whitelist é 404 — não existe mais rota dinâmica que a aceite', async () => {
