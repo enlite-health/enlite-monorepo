@@ -442,6 +442,56 @@ describe('SyncPatientFromClickUpTaskUseCase', () => {
   });
 });
 
+// ── persistDiagnosis — catch de :465 (critério 3 do gate, achado 11/09) ───────
+// `recordUnreadableLabel` é best-effort (comentário do próprio método: "a falha
+// do registro não pode derrubar o sync"), mas nenhum teste desta suíte fazia
+// esse `catch` executar — a linha estava tocada pelo diff e sem cobertura
+// própria. O risco real: mensagens de erro do `pg` interpolam VALOR (ver
+// docstring de `safeErrorFields`), e aqui o valor em jogo é o rótulo clínico
+// não lido — exatamente o dado que a regra da casa proíbe sair em log.
+describe('SyncPatientFromClickUpTaskUseCase — persistDiagnosis catch (:465)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it(':465 — recordUnreadableLabel falha: log de erro nunca leva message/stack do err', async () => {
+    const input = makeUpsertInput();
+    const deps = makeDeps({
+      mapResult:    input,
+      upsertResult: { id: 'patient-diag-1', created: true, flagged: false },
+    });
+
+    const sensitiveMessage = 'invalid input syntax for type uuid: "TEA grave, não classificado"';
+    (deps.mapper as unknown as { readPatologia: jest.Mock }).readPatologia = jest.fn(() => ({
+      readable:    false,
+      catalogType: 'labels',
+      reason:      'options_unresolved',
+      requested:   1,
+      resolved:    0,
+    }));
+    deps.diagnosisMapper = {
+      recordUnreadableLabel: jest.fn(() => Promise.reject(Object.assign(new Error(sensitiveMessage), { code: '22P02' }))),
+      syncFromLabel: jest.fn(),
+    } as unknown as SyncPatientDeps['diagnosisMapper'];
+
+    useCase = new SyncPatientFromClickUpTaskUseCase(deps);
+    const result = await useCase.execute(makeTask(), {}, 'corr-diag-1');
+
+    // best-effort: a falha do registro NÃO derruba o kind do sync.
+    expect(result.kind).toBe('CREATED');
+
+    const rejectCall = mockLoggerError.mock.calls.find(
+      (c: unknown[]) => c[0] === 'clickup_patient_sync.diagnosis_error' && (c[1] as Record<string, unknown>).stage === 'reject',
+    );
+    expect(rejectCall).toBeDefined();
+    const payload = rejectCall![1] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty('message');
+    expect(payload).not.toHaveProperty('stack');
+    expect(JSON.stringify(payload)).not.toContain(sensitiveMessage);
+    expect(payload).toEqual(expect.objectContaining({ errorName: 'Error', code: '22P02', patientId: 'patient-diag-1', correlationId: 'corr-diag-1' }));
+  });
+});
+
 // ── Helper unit tests ─────────────────────────────────────────────────────────
 
 describe('classifyMapperNullReason', () => {
