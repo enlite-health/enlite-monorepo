@@ -16,12 +16,21 @@
  * paciente; (b) o apagamento do passo 5 é restrito a `address_type IN ('primary','secondary',
  * 'tertiary','service')` — nunca a um valor da lista nova.
  *
- * Como rodar (banco só até a 433 — a 434 é aplicada DENTRO do teste, não antes):
+ * SELF-CONTAINED (rodada 2, achado do orquestrador): a versão anterior deste arquivo exigia um
+ * banco "só até a 433" fornecido de fora — falha contra QUALQUER banco já totalmente migrado
+ * (inclusive o `enlite_e2e` normal de `run-migrations-docker.js`). Agora o próprio teste monta o
+ * cenário: cria um banco EFÊMERO próprio (`CREATE DATABASE`, nome único por execução), aplica só
+ * as migrations com prefixo numérico <= 433 (mesma ordenação de `run-migrations-docker.js`,
+ * reaproveitada aqui — ver `sortMigrationFiles`), roda a 434 manualmente (é o objeto do teste) e
+ * derruba o banco no `afterAll`. Fica indiferente ao estado do `DATABASE_URL` de fora: passa igual
+ * num container recém-criado ou num que já rodou as 434 migrations inteiras, porque não usa esse
+ * banco para nada além de descobrir os parâmetros de conexão (host/porta/usuário/senha) e criar o
+ * banco de teste como sibling na mesma instância Postgres.
+ *
+ * Como rodar (basta UM Postgres de pé, migrado ou não):
  *   docker run -d --name 019fix-pg -p 127.0.0.1:5450:5432 \
  *     -e POSTGRES_USER=enlite_admin -e POSTGRES_PASSWORD=enlite_password -e POSTGRES_DB=enlite_e2e \
  *     postgis/postgis:16-3.4
- *   # aplicar só até a 433 (mover a 434 pra fora do diretório antes de rodar o runner, ou usar
- *   # um checkout de migrations/ anterior a ela) — ver docs/funcionalidades desta rodada.
  *   DATABASE_URL=postgresql://enlite_admin:enlite_password@127.0.0.1:5450/enlite_e2e \
  *     npx jest --config jest.config.repo.js --runInBand migration434
  */
@@ -29,39 +38,128 @@ import { Pool } from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@127.0.0.1:5450/enlite_e2e';
+const BASE_DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@127.0.0.1:5450/enlite_e2e';
+const MIGRATIONS_DIR = path.join(__dirname, '..', '..', 'migrations');
+
 const MIGRATION_434_SQL = fs.readFileSync(
-  path.join(__dirname, '../../migrations/434_patient_addresses_address_type_contract.sql'),
+  path.join(MIGRATIONS_DIR, '434_patient_addresses_address_type_contract.sql'),
   'utf8',
 );
 
-describe('migration 434 (contract) @repo — Postgres real, schema só até a 433', () => {
+/** Mesma regra de ordenação de `scripts/run-migrations-docker.js` (prefixo numérico, empate por nome CRU). */
+function sortMigrationFiles(files: string[]): string[] {
+  const num = (f: string): number => {
+    const m = /^(\d+)_/.exec(f);
+    return m ? Number(m[1]) : Number.MAX_SAFE_INTEGER;
+  };
+  return [...files].sort((a, b) => num(a) - num(b) || (a < b ? -1 : a > b ? 1 : 0));
+}
+
+/** Banco novo (sibling na mesma instância do `baseUrl`) só com migrations até `maxPrefix` (inclusive). */
+async function createEphemeralDbUpTo(baseUrl: string, maxPrefix: number): Promise<{ url: string; dbName: string; adminUrl: string }> {
+  const parsed = new URL(baseUrl);
+  const dbName = `mig434_test_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+
+  // CREATE/DROP DATABASE não rodam dentro de uma conexão que já está NAQUELE banco — conecta no
+  // banco original (`baseUrl`) só para criar o banco de teste como sibling.
+  const adminUrlObj = new URL(baseUrl);
+  const adminUrl = adminUrlObj.toString();
+  const adminPool = new Pool({ connectionString: adminUrl });
+  try {
+    await adminPool.query(`CREATE DATABASE ${dbName}`);
+  } finally {
+    await adminPool.end();
+  }
+
+  const testUrlObj = new URL(baseUrl);
+  testUrlObj.pathname = `/${dbName}`;
+  const testUrl = testUrlObj.toString();
+
+  const files = sortMigrationFiles(fs.readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')));
+  const upToFiles = files.filter((f) => {
+    const m = /^(\d+)_/.exec(f);
+    const n = m ? Number(m[1]) : Number.MAX_SAFE_INTEGER;
+    return n <= maxPrefix;
+  });
+
+  const pool = new Pool({ connectionString: testUrl });
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        filename TEXT PRIMARY KEY,
+        applied_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    for (const file of upToFiles) {
+      const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
+      const client = await pool.connect();
+      // Silencia NOTICE/WARNING de migration para não poluir o log do teste (idem ao runner).
+      const handler = () => undefined;
+      client.on('notice', handler);
+      try {
+        await client.query('BEGIN');
+        await client.query(sql);
+        await client.query('INSERT INTO schema_migrations (filename) VALUES ($1)', [file]);
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => undefined);
+        throw new Error(`Falhou aplicando ${file} no banco efêmero ${dbName}: ${(err as Error).message}`);
+      } finally {
+        client.removeListener('notice', handler);
+        client.release();
+      }
+    }
+  } finally {
+    await pool.end();
+  }
+
+  return { url: testUrl, dbName, adminUrl };
+}
+
+async function dropEphemeralDb(adminUrl: string, dbName: string): Promise<void> {
+  const adminPool = new Pool({ connectionString: adminUrl });
+  try {
+    // Derruba conexões residuais antes do DROP (o pool de teste já foi encerrado em afterAll,
+    // mas outra ferramenta pode ter aberto uma sessão de inspeção nesse meio-tempo).
+    await adminPool.query(
+      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
+      [dbName],
+    );
+    await adminPool.query(`DROP DATABASE IF EXISTS ${dbName}`);
+  } finally {
+    await adminPool.end();
+  }
+}
+
+describe('migration 434 (contract) @repo — banco efêmero próprio, migrado só até a 433', () => {
   let pool: Pool;
+  let dbName: string;
+  let adminUrl: string;
   const patientIds: Record<'A' | 'B' | 'C', string> = { A: '', B: '', C: '' };
 
   beforeAll(async () => {
-    pool = new Pool({ connectionString: DATABASE_URL });
-    await pool.query('SELECT 1'); // falha cedo e claro se o container não estiver de pé
+    const created = await createEphemeralDbUpTo(BASE_DATABASE_URL, 433);
+    dbName = created.dbName;
+    adminUrl = created.adminUrl;
+    pool = new Pool({ connectionString: created.url });
+    await pool.query('SELECT 1');
 
-    // Pré-condição do teste: 434 ainda NÃO deve ter rodado neste banco (senão o CHECK da lista
-    // fechada já rejeitaria os valores legados que este teste semeia). Falha alto e claro se
-    // alguém rodar isto contra um banco que já tem a 434.
+    // Confere a pré-condição mesmo assim (defesa em profundidade: se o banco efêmero nasceu
+    // errado, falha aqui em vez de um erro de constraint confuso mais abaixo).
     const { rows } = await pool.query<{ exists: boolean }>(
       `SELECT EXISTS (
          SELECT 1 FROM pg_constraint WHERE conname = 'patient_addresses_type_check'
        ) AS exists`,
     );
     if (rows[0].exists) {
-      throw new Error(
-        'Pré-condição falhou: patient_addresses_type_check já existe — este banco já rodou a 434. ' +
-        'Use um container fresco com migrations só até a 433 (ver header deste arquivo).',
-      );
+      throw new Error('Banco efêmero nasceu com a 434 já aplicada — bug na criação do fixture deste teste.');
     }
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await pool.end();
-  });
+    await dropEphemeralDb(adminUrl, dbName);
+  }, 30_000);
 
   beforeEach(async () => {
     for (const key of ['A', 'B', 'C'] as const) {
