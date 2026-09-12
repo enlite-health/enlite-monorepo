@@ -30,8 +30,17 @@ describe('417/PR-1 — contatos de emergência da cobertura por LINHA: API sob e
   const OUTRO_PACIENTE = 'ee417000-0c00-0001-0001-000000000099';
   const U = { completa: 'pcec-completa', soCobertura: 'pcec-so-cobertura', semCobertura: 'pcec-sem-cobertura' };
   const GRUPOS = { completa: 'PCEC Completa', soCobertura: 'PCEC Só cobertura', semCobertura: 'PCEC Sem cobertura' };
+  // `patient:read` é célula GLOBAL, compartilhada por várias famílias de e2e — nenhum arquivo é
+  // "dono" dela, e apagá-la no cleanup derruba quem rodar depois na mesma suíte serial (achado do
+  // CI do PR #359: este arquivo corria antes de `permission-enforcement-admin-patients` no jest
+  // --runInBand e a deleção fazia 22 testes falharem com "célula não existe"). `CELULAS` continua
+  // servindo o INSERT idempotente (ON CONFLICT DO NOTHING); `CELULAS_PROPRIAS` é o que o cleanup
+  // de fato apaga — só o que este arquivo criou, nunca o do seed global.
   const CELULAS: ReadonlyArray<readonly [string, string]> = [
     ['patient', 'read'], ['patient_coverage', 'read'], ['patient_coverage', 'write'], ['patient_care_team', 'read'],
+  ];
+  const CELULAS_PROPRIAS: ReadonlyArray<readonly [string, string]> = [
+    ['patient_coverage', 'read'], ['patient_coverage', 'write'], ['patient_care_team', 'read'],
   ];
   const envAnterior: Record<string, string | undefined> = {};
   const setEnv = (k: string, v: string): void => { envAnterior[k] = process.env[k]; process.env[k] = v; };
@@ -55,7 +64,7 @@ describe('417/PR-1 — contatos de emergência da cobertura por LINHA: API sob e
   async function limpar(): Promise<void> {
     await pool.query(`DELETE FROM resource_access_log WHERE operator_uid = ANY($1)`, [Object.values(U)]);
     await limparIamFixtures(pool, { uids: Object.values(U), grupos: Object.values(GRUPOS) });
-    for (const [resource, action] of CELULAS) {
+    for (const [resource, action] of CELULAS_PROPRIAS) {
       await pool.query(`DELETE FROM iam.group_permissions WHERE permission_id IN (SELECT id FROM iam.permissions WHERE resource = $1 AND action = $2)`, [resource, action]);
       await pool.query(`DELETE FROM iam.permissions WHERE resource = $1 AND action = $2`, [resource, action]);
     }
