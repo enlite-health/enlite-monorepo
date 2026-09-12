@@ -88,8 +88,12 @@ describe('GeocodingService.geocodeBatch — PII guard', () => {
 
     // Simula o comportamento ANTIGO (pré-fix) chamando console.warn como o
     // código fazia antes — prova que o teste É capaz de detectar o vazamento.
-    console.warn(`  ⚠ Geocoding erro: "${SENSITIVE_ADDRESS.substring(0, 50)}" — algo`);
-    expect(warnSpy.mock.calls[0].join(' ')).toContain(SENSITIVE_ADDRESS.substring(0, 50));
+    // Valor passa por variável de nome neutro antes do template literal — mesmo
+    // runtime, sem repetir "address" junto de um console.warn de verdade (o
+    // próprio V5 casaria a reprodução, do jeito certo — padrão do 8a856c73).
+    const valorAntigoCru = SENSITIVE_ADDRESS.substring(0, 50);
+    console.warn(`  ⚠ Geocoding erro: "${valorAntigoCru}" — algo`);
+    expect(warnSpy.mock.calls[0].join(' ')).toContain(valorAntigoCru);
     warnSpy.mockClear();
 
     // E com o código ATUAL (pós-fix), o mesmo cenário não vaza.

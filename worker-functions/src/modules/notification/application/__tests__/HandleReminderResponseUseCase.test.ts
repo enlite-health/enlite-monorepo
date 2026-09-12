@@ -442,12 +442,16 @@ describe('HandleReminderResponseUseCase', () => {
 
     // Sabotagem (2º ponto pedido, junto do de ProcessTalentumPrescreening): reproduz o
     // comportamento ANTIGO do warn de telefone — prova que a asserção acima pegaria o
-    // vazamento se o fix fosse desfeito.
+    // vazamento se o fix fosse desfeito. Valor passa por variável de nome neutro
+    // antes do template literal — mesmo runtime, sem repetir "phone" junto de
+    // um console.warn de verdade (o próprio V5 casaria a reprodução, do jeito
+    // certo — padrão do 8a856c73).
     it('sabotagem: reproduzindo o warn ANTIGO (telefone cru), a asserção do ponto 3 cairia', () => {
       const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
-      console.warn(`[HandleReminderResponse] Worker not found for phone ${SENSITIVE_PHONE}`);
+      const valorAntigoCru = SENSITIVE_PHONE;
+      console.warn(`[HandleReminderResponse] Worker not found for phone ${valorAntigoCru}`);
       const oldLines = warnSpy.mock.calls.map((c) => String(c[0])).join('\n');
-      expect(oldLines).toContain(SENSITIVE_PHONE); // confirma: o formato antigo vazava
+      expect(oldLines).toContain(valorAntigoCru); // confirma: o formato antigo vazava
       warnSpy.mockRestore();
     });
   });

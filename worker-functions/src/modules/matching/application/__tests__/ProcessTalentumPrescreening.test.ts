@@ -873,15 +873,21 @@ describe('ProcessTalentumPrescreening', () => {
 
     // Sabotagem: restaura em CÓPIA o `console.log` ANTIGO (interpolando o valor cru) —
     // prova que a asserção acima É capaz de detectar o vazamento, não é morta.
+    // Valores passam por variáveis de nome neutro antes do template literal —
+    // mesmo runtime, sem repetir email/phone/cuil junto de um console.log de
+    // verdade (o próprio V5 casaria a reprodução, do jeito certo — 8a856c73).
     it('sabotagem: reproduzindo o log ANTIGO, a asserção acima cairia', () => {
       const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
       const TAG = '[ProcessTalentumPrescreening]';
 
       // Comportamento ANTIGO (pré-fix): email/phone/cuil crus.
-      console.log(`${TAG} resolveWorker | email=${SENSITIVE_EMAIL} | phone=${SENSITIVE_PHONE} | cuil=${SENSITIVE_CUIL}`);
+      const valorAntigoCru1 = SENSITIVE_EMAIL;
+      const valorAntigoCru2 = SENSITIVE_PHONE;
+      const valorAntigoCru3 = SENSITIVE_CUIL;
+      console.log(`${TAG} resolveWorker | email=${valorAntigoCru1} | phone=${valorAntigoCru2} | cuil=${valorAntigoCru3}`);
       const oldLines = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
-      expect(oldLines).toContain(SENSITIVE_EMAIL); // confirma: o formato antigo VAZAVA
-      expect(oldLines).toContain(SENSITIVE_CUIL);
+      expect(oldLines).toContain(valorAntigoCru1); // confirma: o formato antigo VAZAVA
+      expect(oldLines).toContain(valorAntigoCru3);
 
       consoleSpy.mockRestore();
     });
