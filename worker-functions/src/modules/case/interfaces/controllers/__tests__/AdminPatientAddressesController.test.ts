@@ -5,7 +5,8 @@
  *   400 params / body (teto 2000, chave estranha, enum fechado, address_type_other sem
  *     address_type="otro" — e o valor NUNCA na resposta);
  *   200: só as colunas presentes entram no SET; troca atômica de principal (demote + set na
- *     mesma transação); trilha SEM valor (booleano sai, texto/enum saem só como tamanho);
+ *     mesma transação); trilha SEM valor (booleano sai; address_type/address_type_other saem
+ *     só como `true`, os demais textos saem só como tamanho);
  *   404 endereço de outro paciente (ROLLBACK); 409 conflito de concorrência (unique violation);
  *   500 sem eco do corpo (ROLLBACK).
  *
