@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { redactContact } from '@shared/logging';
+import { maskEmailForLog } from '@shared/utils/emailMask';
 import { formatDateInTimezone, formatTimeInTimezone } from '@shared/utils/dateFormatters';
 import { resolveOfferedSlots, type OfferedSlot, type VacancySlotSource } from '@modules/matching/domain/interviewSlotResolver';
 import { withActorContext } from '@shared/database/actorContext';
@@ -155,12 +155,12 @@ export class BookInterviewSlotUseCase {
       if (calResult.success) {
         // PII: e-mail mascarado; workerId (já logado nas linhas irmãs deste método) é o
         // que realmente acha a pessoa no banco — a máscara só confirma "é o mesmo e-mail".
-        console.log(`[BookInterviewSlot] Calendar invite sent to worker=${workerId} email=${redactContact(workerEmail, 'email')}`);
+        console.log(`[BookInterviewSlot] Calendar invite sent to worker=${workerId} email=${maskEmailForLog(workerEmail)}`);
         calendarInvite = 'sent';
       } else {
         // PII: mesmo padrão da linha irmã acima (sucesso) — e-mail mascarado, workerId visível.
         console.error(
-          `[BookInterviewSlot] Failed to add worker=${workerId} email=${redactContact(workerEmail, 'email')} to calendar: ${calResult.reason}${calResult.detail ? ` (${calResult.detail})` : ''}`,
+          `[BookInterviewSlot] Failed to add worker=${workerId} email=${maskEmailForLog(workerEmail)} to calendar: ${calResult.reason}${calResult.detail ? ` (${calResult.detail})` : ''}`,
         );
         calendarInvite = calResult.reason;
       }

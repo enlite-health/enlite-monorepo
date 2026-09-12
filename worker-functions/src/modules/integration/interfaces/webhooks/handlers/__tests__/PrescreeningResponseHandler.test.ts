@@ -8,7 +8,7 @@
  * esperado e fora do escopo deste teste, coberto pelo `catch`).
  */
 import { PrescreeningResponseHandler } from '../PrescreeningResponseHandler';
-import { redactContact } from '@shared/logging';
+import { maskEmailForLog } from '@shared/utils/emailMask';
 import type { TalentumWebhookContext } from '../TalentumWebhookHandler';
 import type { TalentumPrescreeningResponseParsed } from '../../validators/talentumPrescreeningSchema';
 
@@ -49,7 +49,7 @@ describe('PrescreeningResponseHandler — PII guard (log INCOMING)', () => {
     const lines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(lines).not.toContain(SENSITIVE_EMAIL);
     expect(lines).toContain(`INCOMING | extId=tp-1`);
-    expect(lines).toContain(`email=${redactContact(SENSITIVE_EMAIL, 'email')}`);
+    expect(lines).toContain(`email=${maskEmailForLog(SENSITIVE_EMAIL)}`);
     expect(lines).toContain('profile=prof-1');
     logSpy.mockRestore();
     errSpy.mockRestore();

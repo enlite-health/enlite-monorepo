@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { Pool } from 'pg';
-import { redactContact } from '@shared/logging';
+import { maskEmailForLog } from '@shared/utils/emailMask';
 import { TalentumWebhookHandler, TalentumWebhookContext } from './TalentumWebhookHandler';
 import { TalentumPrescreeningResponseParsed } from '../validators/talentumPrescreeningSchema';
 import { TalentumPrescreeningRepository, ProcessTalentumPrescreening } from '@modules/matching';
@@ -33,7 +33,7 @@ export class PrescreeningResponseHandler implements TalentumWebhookHandler<Talen
     // em ProcessTalentumPrescreening — e-mail mascarado; profile.id já é o id estável.
     console.log(
       `${TAG} INCOMING | extId=${extId} | subtype=${payload.subtype}` +
-      ` | profile=${profile.id} | email=${redactContact(profile.email, 'email')}` +
+      ` | profile=${profile.id} | email=${maskEmailForLog(profile.email)}` +
       ` | statusLabel=${response.statusLabel ?? 'none'} | score=${response.score ?? 'none'}` +
       ` | env=${ctx.environment}`,
     );

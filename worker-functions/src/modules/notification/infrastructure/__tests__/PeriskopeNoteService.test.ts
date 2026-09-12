@@ -24,7 +24,6 @@ jest.mock('@shared/logging', () => {
     },
     reportError: jest.fn(),
     safeErrorFields: actual.safeErrorFields,
-    redactContact: actual.redactContact,
   };
 });
 
@@ -71,7 +70,7 @@ describe('PeriskopeNoteService', () => {
     const [payload] = mockLoggerWarn.mock.calls[0] as [Record<string, unknown>, string];
 
     expect(JSON.stringify(payload)).not.toContain(SENSITIVE_PHONE.replace('+', ''));
-    expect(payload.workerPhone).toBe('549***4455');
+    expect(payload.workerPhone).toBe('+549******4455');
     expect(payload).not.toHaveProperty('message');
     expect(payload).not.toHaveProperty('stack');
     expect(payload).toEqual(expect.objectContaining({ errorName: 'Error', code: 'ETIMEDOUT' }));
@@ -93,6 +92,6 @@ describe('PeriskopeNoteService', () => {
 
     const [newPayload] = mockLoggerWarn.mock.calls[0] as [Record<string, unknown>, string];
     expect(newPayload.workerPhone).not.toBe(SENSITIVE_PHONE);
-    expect(newPayload.workerPhone).toBe('549***4455');
+    expect(newPayload.workerPhone).toBe('+549******4455');
   });
 });

@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { redactContact } from '@shared/logging';
+import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import { Result } from '@shared/utils/Result';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { CloudTasksClient } from '@shared/events/CloudTasksClient';
@@ -36,7 +36,7 @@ export class BookSlotFromWhatsAppUseCase {
     );
 
     if (workerResult.rows.length === 0) {
-      console.warn(`[BookSlotFromWhatsApp] Worker not found for phone ${redactContact(phone, 'phone')}`);
+      console.warn(`[BookSlotFromWhatsApp] Worker not found for phone ${maskPhoneForLog(phone)}`);
       return Result.fail('Worker not found');
     }
 

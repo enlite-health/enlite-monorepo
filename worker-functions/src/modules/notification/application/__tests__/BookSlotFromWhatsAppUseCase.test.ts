@@ -1,6 +1,6 @@
 import { BookSlotFromWhatsAppUseCase } from '../BookSlotFromWhatsAppUseCase';
 import { poolMockWithConnect } from '@shared/database/poolMockSupport';
-import { redactContact } from '@shared/logging';
+import { maskEmailForLog } from '@shared/utils/emailMask';
 
 describe('BookSlotFromWhatsAppUseCase', () => {
   let mockQuery: jest.Mock;
@@ -135,7 +135,7 @@ describe('BookSlotFromWhatsAppUseCase', () => {
     );
     // PII: o e-mail cru nunca aparece no log — só workerId + máscara.
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining(`Calendar invite sent to worker=${WORKER.id} email=${redactContact(WORKER.email, 'email')}`),
+      expect.stringContaining(`Calendar invite sent to worker=${WORKER.id} email=${maskEmailForLog(WORKER.email)}`),
     );
     const loggedLines = consoleSpy.mock.calls.map((c) => String(c[0]));
     expect(loggedLines.join('\n')).not.toContain(WORKER.email);
@@ -152,7 +152,7 @@ describe('BookSlotFromWhatsAppUseCase', () => {
     expect(result.isSuccess).toBe(true);
     // PII: o e-mail cru nunca aparece — só workerId + máscara (irmão do achado 10).
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining(`Failed to add worker=${WORKER.id} email=${redactContact(WORKER.email, 'email')} to calendar: event_not_found`),
+      expect.stringContaining(`Failed to add worker=${WORKER.id} email=${maskEmailForLog(WORKER.email)} to calendar: event_not_found`),
     );
     const loggedLines = consoleSpy.mock.calls.map((c) => String(c[0]));
     expect(loggedLines.join('\n')).not.toContain(WORKER.email);

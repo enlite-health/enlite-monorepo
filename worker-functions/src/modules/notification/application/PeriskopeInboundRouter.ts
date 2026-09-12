@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
-import { logger, redactContact } from '@shared/logging';
+import { logger } from '@shared/logging';
+import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import { BookSlotFromWhatsAppUseCase } from './BookSlotFromWhatsAppUseCase';
 import { HandleReminderResponseUseCase } from './HandleReminderResponseUseCase';
 import { TemplateButton } from '../domain/MessageTemplate';
@@ -121,7 +122,7 @@ export class PeriskopeInboundRouter {
     ) {
       const result = await this.bookSlotUseCase.execute(phone, button.payload, sid);
       if (result.isFailure) {
-        logger.warn({ phone: redactContact(phone, 'phone'), templateSlug, error: result.error }, '[PeriskopeInboundRouter] BookSlot failed');
+        logger.warn({ phone: maskPhoneForLog(phone), templateSlug, error: result.error }, '[PeriskopeInboundRouter] BookSlot failed');
       }
       return true;
     }
@@ -129,7 +130,7 @@ export class PeriskopeInboundRouter {
     if (templateSlug === REMINDER_CONFIRM_SLUG && button.payload.startsWith('confirm_')) {
       const result = await this.handleReminderResponseUseCase.execute(phone, button.payload, sid);
       if (result.isFailure) {
-        logger.warn({ phone: redactContact(phone, 'phone'), templateSlug, error: result.error }, '[PeriskopeInboundRouter] ReminderResponse failed');
+        logger.warn({ phone: maskPhoneForLog(phone), templateSlug, error: result.error }, '[PeriskopeInboundRouter] ReminderResponse failed');
       }
       return true;
     }
@@ -137,7 +138,7 @@ export class PeriskopeInboundRouter {
     if (templateSlug === REMINDER_RESCHEDULE_SLUG && button.payload.startsWith('reschedule_')) {
       const result = await this.handleReminderResponseUseCase.execute(phone, button.payload, sid);
       if (result.isFailure) {
-        logger.warn({ phone: redactContact(phone, 'phone'), templateSlug, error: result.error }, '[PeriskopeInboundRouter] RescheduleResponse failed');
+        logger.warn({ phone: maskPhoneForLog(phone), templateSlug, error: result.error }, '[PeriskopeInboundRouter] RescheduleResponse failed');
       }
       return true;
     }
@@ -146,7 +147,7 @@ export class PeriskopeInboundRouter {
     // texto livre digitado pela pessoa — nunca cru, só o tamanho (o slug já diz
     // "o quê", o tamanho ajuda a distinguir "vazio" de "algo inesperado").
     logger.info(
-      { phone: redactContact(phone, 'phone'), templateSlug, payloadLength: button.payload.length },
+      { phone: maskPhoneForLog(phone), templateSlug, payloadLength: button.payload.length },
       '[PeriskopeInboundRouter] Correlated message found but slug/payload not recognized',
     );
     return false;

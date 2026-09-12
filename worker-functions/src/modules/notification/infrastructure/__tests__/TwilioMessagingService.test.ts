@@ -547,7 +547,7 @@ describe('TwilioMessagingService', () => {
       const joined = JSON.stringify(args);
       expect(joined).not.toContain(SENSITIVE_PHONE.replace('+', ''));
       expect(joined).not.toContain(sensitiveMessage);
-      expect(args[0]).toContain('549***4455');
+      expect(args[0]).toContain('+549******4455');
       expect(args[1]).toEqual(expect.objectContaining({ errorName: 'Error', code: 'ECONNRESET' }));
       warnSpy.mockRestore();
     });

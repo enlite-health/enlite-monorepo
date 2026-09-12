@@ -237,7 +237,7 @@ describe('PeriskopeInboundRouter', () => {
       const [payload, msg] = warnSpy.mock.calls[0] as [Record<string, unknown>, string];
       expect(msg).toBe('[PeriskopeInboundRouter] BookSlot failed');
       expect(JSON.stringify(payload)).not.toContain('1122334455');
-      expect(payload.phone).toBe('549***4455');
+      expect(payload.phone).toBe('+549******4455');
       warnSpy.mockRestore();
     });
 
@@ -254,7 +254,7 @@ describe('PeriskopeInboundRouter', () => {
       const [payload, msg] = warnSpy.mock.calls[0] as [Record<string, unknown>, string];
       expect(msg).toBe('[PeriskopeInboundRouter] ReminderResponse failed');
       expect(JSON.stringify(payload)).not.toContain('1122334455');
-      expect(payload.phone).toBe('549***4455');
+      expect(payload.phone).toBe('+549******4455');
       warnSpy.mockRestore();
     });
 
@@ -271,7 +271,7 @@ describe('PeriskopeInboundRouter', () => {
       const [payload, msg] = warnSpy.mock.calls[0] as [Record<string, unknown>, string];
       expect(msg).toBe('[PeriskopeInboundRouter] RescheduleResponse failed');
       expect(JSON.stringify(payload)).not.toContain('1122334455');
-      expect(payload.phone).toBe('549***4455');
+      expect(payload.phone).toBe('+549******4455');
       warnSpy.mockRestore();
     });
 
@@ -292,7 +292,7 @@ describe('PeriskopeInboundRouter', () => {
       const [payload] = call as [Record<string, unknown>, string];
       expect(JSON.stringify(payload)).not.toContain('1122334455');
       expect(JSON.stringify(payload)).not.toContain(SENSITIVE_PAYLOAD);
-      expect(payload.phone).toBe('549***4455');
+      expect(payload.phone).toBe('+549******4455');
       expect(payload.payloadLength).toBe(SENSITIVE_PAYLOAD.length);
       infoSpy.mockRestore();
     });
