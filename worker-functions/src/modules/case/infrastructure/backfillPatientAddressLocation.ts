@@ -225,8 +225,11 @@ export function buildBackfillCandidatesPredicate(
  * between write-path and backfill.
  */
 export function buildBackfillGeocodingQuery(row: BackfillAddressRow, country = 'AR'): string | null {
+  // Spec 019 (B4): `addressType` deixou de ser obrigatório em `PatientAddress` — este dummy
+  // ('primary') fabricava um valor que não existe mais como vocabulário (a lista nova é por
+  // parentesco). `buildGeocodingQuery` nunca leu este campo para montar a query; omiti-lo aqui é
+  // seguro.
   const asPatientAddress: PatientAddress = {
-    addressType: 'primary',
     displayOrder: 1,
     addressFormatted: row.address_formatted,
     addressRaw: row.address_raw,

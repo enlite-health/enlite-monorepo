@@ -69,6 +69,10 @@ describe('PatientAddressRepository.resolveOrCreatePatientAddress', () => {
     // Second call should be INSERT
     const insertCall = pool.query.mock.calls[1][0] as string;
     expect(insertCall).toMatch(/INSERT INTO patient_addresses/i);
+    // Spec 019 (B4): o literal hardcoded 'service' de address_type saiu — a coluna nasce NULL,
+    // valor só via PATCH (AdminPatientAddressesController).
+    expect(insertCall).not.toMatch(/address_type/);
+    expect(insertCall).not.toMatch(/'service'/);
   });
 
   it('(c) both null → returns null immediately without querying', async () => {

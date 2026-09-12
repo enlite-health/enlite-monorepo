@@ -899,8 +899,10 @@ describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () 
 
     // Addresses — primary slot with location metadata
     expect(result.addresses).toHaveLength(1);
+    // Spec 019 (B4): o mapper para de escrever `addressType` a partir da posição do slot — o
+    // endereço nasce com tipo NULL, atribuído depois pelo PATCH humano.
+    expect(result.addresses![0]).not.toHaveProperty('addressType');
     expect(result.addresses![0]).toMatchObject({
-      addressType:      'primary',
       addressFormatted: 'Av. Hipólito Yrigoyen 123, Temperley, Buenos Aires',
       addressRaw:       'Hipólito Yrigoyen 123, Temperley',
       displayOrder:     1,

@@ -87,7 +87,8 @@ const mockPatient: PatientDetailRow = {
   addresses: [
     {
       id: 'a1',
-      addressType: 'primary',
+      addressType: 'domicilio_propio',
+      addressTypeOther: null,
       addressFormatted: 'Av. Corrientes 1234',
       addressRaw: 'Av. Corrientes 1234, CABA',
       complement: null,

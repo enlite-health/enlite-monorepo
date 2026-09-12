@@ -25,7 +25,9 @@ const resolveAddressBodySchema = z.union([
     createAddress: z.object({
       address_formatted: z.string().min(1),
       address_raw: z.string().optional(),
-      address_type: z.string().min(1),
+      // Spec 019 (B4): `address_type` sai daqui — era o único ponto aceitando STRING LIVRE sem
+      // validação de lista. Endereço nasce com tipo NULL; a lista fechada só entra pelo PATCH
+      // (AdminPatientAddressesController).
     }),
   }),
 ]);
@@ -74,7 +76,7 @@ export class VacancyAddressReviewController {
 
       if (bodyResult.data.createAddress) {
         // 3. Create a new address for the patient
-        const { address_formatted, address_raw, address_type } = bodyResult.data.createAddress;
+        const { address_formatted, address_raw } = bodyResult.data.createAddress;
 
         if (!patientId) {
           res.status(422).json({
@@ -99,10 +101,10 @@ export class VacancyAddressReviewController {
 
         const insertResult = await this.db.query<{ id: string }>(
           `INSERT INTO patient_addresses
-             (patient_id, address_formatted, address_raw, address_type, source, lat, lng)
-           VALUES ($1, $2, $3, $4, 'admin_review', $5, $6)
+             (patient_id, address_formatted, address_raw, source, lat, lng)
+           VALUES ($1, $2, $3, 'admin_review', $4, $5)
            RETURNING id`,
-          [patientId, address_formatted, address_raw ?? null, address_type, lat, lng],
+          [patientId, address_formatted, address_raw ?? null, lat, lng],
         );
 
         resolvedAddressId = insertResult.rows[0].id;
