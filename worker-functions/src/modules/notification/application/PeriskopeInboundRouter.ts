@@ -142,8 +142,11 @@ export class PeriskopeInboundRouter {
       return true;
     }
 
+    // PII (achado do gate, 2ª rodada): telefone mascarado; `payload` pode carregar
+    // texto livre digitado pela pessoa — nunca cru, só o tamanho (o slug já diz
+    // "o quê", o tamanho ajuda a distinguir "vazio" de "algo inesperado").
     logger.info(
-      { phone, templateSlug, payload: button.payload },
+      { phone: redactContact(phone, 'phone'), templateSlug, payloadLength: button.payload.length },
       '[PeriskopeInboundRouter] Correlated message found but slug/payload not recognized',
     );
     return false;
