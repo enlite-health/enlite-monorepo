@@ -12,12 +12,18 @@
  * em QUALQUER formato (E.164 com/sem `+`, local, com espaço/traço), a saída é
  * sempre a mesma pro mesmo telefone lógico:
  *   - < 8 dígitos → "****" (dígitos insuficientes pra qualquer prefixo seguro)
- *   - >= 11 dígitos (tem código de país) → "+" + 3 primeiros dígitos + 6
- *     asteriscos + 4 últimos dígitos (mantém IDÊNTICO o formato E.164 de antes:
- *     "+5491155261243" → "+549******1243")
- *   - 8-10 dígitos (local, sem código de país) → 6 asteriscos + 4 últimos
- *     dígitos — NUNCA o prefixo local, que sozinho já ajuda a identificar
- *     (DDD + começo do número, em vez de código de país)
+ *   - >= 11 dígitos E não começa com "0" (tem código de país) → "+" + 3
+ *     primeiros dígitos + 6 asteriscos + 4 últimos dígitos (mantém IDÊNTICO o
+ *     formato E.164 de antes: "+5491155261243" → "+549******1243").
+ *     O "não começa com 0" é obrigatório: pelo plano E.164 nenhum código de
+ *     país começa em "0" (são sempre 1-3 dígitos, atribuídos a partir de 1..9)
+ *     — quem começa com "0" é tronco nacional (ex.: local argentino
+ *     "011 5126-5663", 11 dígitos), e sem esse filtro esse caso caía aqui e
+ *     expunha tronco+área (achado do gate: "+011******5663").
+ *   - 8-10 dígitos, OU >= 11 dígitos começando com "0" (local, sem código de
+ *     país) → 6 asteriscos + 4 últimos dígitos — NUNCA o prefixo local, que
+ *     sozinho já ajuda a identificar (DDD + começo do número, em vez de
+ *     código de país)
  *
  * O número de asteriscos é FIXO (6) nos dois ramos — a versão anterior variava
  * o meio por `phone.length - 8`, o que vazava o TAMANHO do número original só
@@ -31,7 +37,7 @@
 export function maskPhoneForLog(phone: string | null | undefined): string {
   const digits = String(phone ?? '').replace(/\D/g, '');
   if (digits.length < 8) return '****';
-  if (digits.length >= 11) {
+  if (digits.length >= 11 && !digits.startsWith('0')) {
     return `+${digits.slice(0, 3)}******${digits.slice(-4)}`;
   }
   return `******${digits.slice(-4)}`;

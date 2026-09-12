@@ -91,6 +91,15 @@ describe('maskPhoneForLog', () => {
     ['7 dígitos — abaixo do piso', '1234567', '****'],
     ['vazio', '', '****'],
     ['string sem nenhum dígito', '+++---', '****'],
+    // Achado do gate 12/09: local argentino com 0 de tronco tem >= 11 dígitos
+    // e caía (antes deste fix) no ramo "tem código de país", expondo
+    // tronco+área — "011 5126-5663" → "+011******5663". Nenhum código de país
+    // E.164 começa em "0" (plano ITU-T atribui 1-3 dígitos a partir de 1..9),
+    // então dígitos começando em "0" são sempre tronco nacional, nunca país.
+    ['local AR com 0 de tronco (11 dígitos)', '011 5126-5663', '******5663'],
+    ['local AR com 0 de tronco, sem formatação', '01151265663', '******5663'],
+    ['local AR com 0 de tronco (13 dígitos)', '0111551265663', '******5663'],
+    ['BR E.164 — não começa com 0, ramo país inalterado', '+5511998887766', '+551******7766'],
   ])('%s', (_label, input, expected) => {
     it(`"${input}" → "${expected}"`, () => {
       expect(maskPhoneForLog(input)).toBe(expected);
