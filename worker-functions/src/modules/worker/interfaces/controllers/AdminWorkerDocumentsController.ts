@@ -6,6 +6,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { UploadWorkerDocumentsUseCase } from '../../application/UploadWorkerDocumentsUseCase';
 import { ValidateWorkerDocumentUseCase } from '../../application/ValidateWorkerDocumentUseCase';
 import { IWorkerRepository } from '../../ports/IWorkerRepository';
+import { maskEmailForLog } from '@shared/utils/emailMask';
 
 const VALID_DOC_TYPES: DocumentType[] = [
   'resume_cv', 'identity_document', 'identity_document_back', 'criminal_record',
@@ -78,7 +79,7 @@ export class AdminWorkerDocumentsController {
       const { docType, contentType } = req.body as { docType: unknown; contentType?: unknown };
 
       console.log('[AdminWorkerDocs.getUploadSignedUrl] ADMIN_ACTION | adminUid:', admin.uid,
-        '| adminEmail:', admin.email, '| workerId:', workerId, '| docType:', docType);
+        '| workerId:', workerId, '| docType:', docType);
 
       if (!docType || !VALID_DOC_TYPES.includes(docType as DocumentType)) {
         res.status(400).json({ success: false, error: `docType must be one of: ${VALID_DOC_TYPES.join(', ')}` }); return;
@@ -88,7 +89,7 @@ export class AdminWorkerDocumentsController {
         ? contentType : 'application/pdf';
 
       const result = await this.gcs.generateUploadSignedUrl(workerId, docType as DocumentType, resolvedContentType);
-      console.log('[AdminWorkerDocs.getUploadSignedUrl] SUCCESS | adminEmail:', admin.email, '| workerId:', workerId, '| filePath:', result.filePath);
+      console.log('[AdminWorkerDocs.getUploadSignedUrl] SUCCESS | adminEmail:', maskEmailForLog(admin.email), '| workerId:', workerId, '| filePath:', result.filePath);
       res.status(200).json({ success: true, data: result });
     } catch (err) {
       console.error('[AdminWorkerDocs.getUploadSignedUrl] ERROR:', err);
@@ -104,7 +105,7 @@ export class AdminWorkerDocumentsController {
       const { docType, filePath } = req.body as { docType: unknown; filePath: unknown };
 
       console.log('[AdminWorkerDocs.saveDocumentPath] ADMIN_UPLOAD | adminUid:', admin.uid,
-        '| adminEmail:', admin.email, '| workerId:', workerId, '| docType:', docType);
+        '| workerId:', workerId, '| docType:', docType);
 
       if (!docType || !VALID_DOC_TYPES.includes(docType as DocumentType) || !filePath) {
         res.status(400).json({ success: false, error: 'docType and filePath are required' }); return;
@@ -119,7 +120,7 @@ export class AdminWorkerDocumentsController {
       // Record admin audit trail
       await this.recordAdminUpload(workerId, admin);
 
-      console.log('[AdminWorkerDocs.saveDocumentPath] SUCCESS | UPLOADED_BY_ADMIN | adminEmail:', admin.email,
+      console.log('[AdminWorkerDocs.saveDocumentPath] SUCCESS | UPLOADED_BY_ADMIN | adminEmail:', maskEmailForLog(admin.email),
         '| workerId:', workerId, '| docType:', docType, '| newStatus:', docs.documentsStatus);
       res.status(200).json({ success: true, data: docs });
     } catch (err) {
@@ -153,7 +154,7 @@ export class AdminWorkerDocumentsController {
       const { id: workerId, type: docType } = req.params;
 
       console.log('[AdminWorkerDocs.deleteDocument] ADMIN_DELETE | adminUid:', admin.uid,
-        '| adminEmail:', admin.email, '| workerId:', workerId, '| docType:', docType);
+        '| workerId:', workerId, '| docType:', docType);
 
       if (!VALID_DOC_TYPES.includes(docType as DocumentType)) {
         res.status(400).json({ success: false, error: 'Invalid document type' }); return;
@@ -173,7 +174,7 @@ export class AdminWorkerDocumentsController {
       // Record admin audit trail
       await this.recordAdminUpload(workerId, admin);
 
-      console.log('[AdminWorkerDocs.deleteDocument] SUCCESS | DELETED_BY_ADMIN | adminEmail:', admin.email,
+      console.log('[AdminWorkerDocs.deleteDocument] SUCCESS | DELETED_BY_ADMIN | adminEmail:', maskEmailForLog(admin.email),
         '| workerId:', workerId, '| docType:', docType);
       res.status(200).json({ success: true, data: updatedDocs });
     } catch (err) {
@@ -189,7 +190,7 @@ export class AdminWorkerDocumentsController {
       const { id: workerId, type: docType } = req.params;
 
       console.log('[AdminWorkerDocs.validateDocument] ADMIN_ACTION | adminUid:', admin.uid,
-        '| adminEmail:', admin.email, '| workerId:', workerId, '| docType:', docType);
+        '| workerId:', workerId, '| docType:', docType);
 
       const useCase = new ValidateWorkerDocumentUseCase(this.documentsRepo);
       const docs = await useCase.execute({
@@ -198,7 +199,7 @@ export class AdminWorkerDocumentsController {
         adminEmail: admin.email ?? '',
       });
 
-      console.log('[AdminWorkerDocs.validateDocument] SUCCESS | adminEmail:', admin.email,
+      console.log('[AdminWorkerDocs.validateDocument] SUCCESS | adminEmail:', maskEmailForLog(admin.email),
         '| workerId:', workerId, '| docType:', docType);
       res.status(200).json({ success: true, data: docs });
     } catch (err) {
@@ -218,7 +219,7 @@ export class AdminWorkerDocumentsController {
       const { id: workerId, type: docType } = req.params;
 
       console.log('[AdminWorkerDocs.invalidateDocument] ADMIN_ACTION | adminUid:', admin.uid,
-        '| adminEmail:', admin.email, '| workerId:', workerId, '| docType:', docType);
+        '| workerId:', workerId, '| docType:', docType);
 
       if (!VALID_DOC_TYPES.includes(docType as DocumentType)) {
         res.status(400).json({ success: false, error: `Invalid document type: ${docType}` }); return;
@@ -226,7 +227,7 @@ export class AdminWorkerDocumentsController {
 
       const docs = await this.documentsRepo.clearDocumentValidation(workerId, docType);
 
-      console.log('[AdminWorkerDocs.invalidateDocument] SUCCESS | adminEmail:', admin.email,
+      console.log('[AdminWorkerDocs.invalidateDocument] SUCCESS | adminEmail:', maskEmailForLog(admin.email),
         '| workerId:', workerId, '| docType:', docType);
       res.status(200).json({ success: true, data: docs });
     } catch (err) {
