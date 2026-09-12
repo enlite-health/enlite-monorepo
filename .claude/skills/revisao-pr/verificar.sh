@@ -294,33 +294,80 @@ echo
 # reprovava `console.log(\`breakdown: sem_telefone=${n}\`)` — uma contagem — só
 # porque a palavra "telefone" aparecia. Agora exige o campo sendo INTERPOLADO
 # como valor, e exclui os sufixos de agregação.
+#
+# D-11/09 (2ª rodada, achado do gate): a 1ª versão só via a chamada de log
+# quando `console./logger.` e o campo pessoal estavam na MESMA LINHA. Chamada
+# MULTILINHA —
+#   console.warn(
+#     `worker ${phone} não encontrado`,
+#   );
+# — tinha o abridor numa linha e o campo na seguinte: nenhuma das duas linhas
+# tem os DOIS padrões juntos, e o EXIT era 0 sobre um vazamento de verdade
+# (sabotagem que o gate reproduziu). Conserto: em vez de casar POR LINHA, junta
+# cada abridor de log com as N linhas seguintes (`grep -A$V5_JANELA`, sem
+# fechamento de parêntese balanceado — mais simples, portável, e cobre o caso
+# real; parêntese balanceado ficaria pra uma 3ª rodada se aparecer motivo) e
+# roda o detector sobre o BLOCO JUNTO. Isso cobre o caso de 1 linha só também
+# (o bloco degenera pra ela mesma), então substitui o detector antigo inteiro.
+V5_JANELA=5
+CAMPO_CHAVE='\$\{[^}]*\b(phone|telefone|email|firstName|lastName|first_name|last_name|dni|documentNumber|document_number|birthDate|birth_date|diagnosis|diagnostico|cuil|cuit|address|direccion|dirección|endereco|endereço|nombre|apellido)\b[^}]*\}|\b(phone|email|firstName|lastName|dni|diagnosis|cuil|cuit|nombre|apellido)\b[[:space:]]*[,)]'
 echo "## V5 — PII em log adicionado"
 if [ "$N_CODE" -eq 0 ]; then na "0 linha de código no diff"; else
-PII=$(grep -E "(console\.(log|error|warn)|logger?\.(info|warn|error|debug))" "$TMP/add_code" \
-      | grep -iE '\$\{[^}]*\b(phone|telefone|email|firstName|lastName|first_name|last_name|dni|documentNumber|document_number|birthDate|birth_date|diagnosis|diagnostico)\b[^}]*\}|\b(phone|email|firstName|lastName|dni|diagnosis)\b[[:space:]]*[,)]' \
+
+# ── Passo 1: junta cada abridor de log com as N linhas seguintes num BLOCO ────
+# `grep -A` separa grupos não-contíguos com uma linha só de "--"; o loop abaixo
+# funde cada grupo (linhas até o próximo "--") numa string só, então o detector
+# do passo 2 enxerga o campo pessoal mesmo que ele esteja numa linha diferente
+# do abridor `console./logger.`.
+BLOCOS=""
+BUFFER=""
+while IFS= read -r linha; do
+  if [ "$linha" = "--" ]; then
+    BLOCOS="${BLOCOS}${BUFFER}
+"
+    BUFFER=""
+  elif [ -z "$BUFFER" ]; then
+    BUFFER="$linha"
+  else
+    BUFFER="${BUFFER} ${linha}"
+  fi
+done <<BRUTO
+$(grep -A"$V5_JANELA" -E "(console\.(log|error|warn)|logger?\.(info|warn|error|debug))" "$TMP/add_code" 2>/dev/null || true)
+BRUTO
+[ -n "$BUFFER" ] && BLOCOS="${BLOCOS}${BUFFER}
+"
+
+# ── Passo 2: detector — campo pessoal interpolado, campo de contagem excluído ─
+PII=$(printf '%s\n' "$BLOCOS" \
+      | grep -iE "$CAMPO_CHAVE" \
       | grep -viE '\\b(count|total|qtd|quantidade|length|size|has|missing)\\b|\\bsem_|\\bcom_|\\.length' || true)
 
-# ── D-11/09 (autorizado pelo Gabriel): redactContact(...)/safeErrorFields(...)
-# são SAÍDA SEGURA. O nome do campo pessoal continua na linha (é o argumento da
-# chamada), mas o VALOR que sai no log já passou por máscara — não é o
-# vazamento que o V5 existe pra pegar. Remove as duas chamadas do texto e RODA
-# O MESMO detector de novo: se ainda casar depois de removidas, o campo vazou
-# por FORA do helper (2ª interpolação na mesma linha, sem máscara) — aí SIM
-# reprova. "Somente isso": nenhuma outra forma de "parecer seguro" conta — é
-# obrigatoriamente uma chamada de verdade a um dos dois nomes.
+# ── Passo 3: redactContact(...)/safeErrorFields(...) são SAÍDA SEGURA — MENOS
+# pra CUIL/CUIT, que "não se mascara, se remove" (parecer do lex, C2/C3): NENHUMA
+# chamada torna uma interpolação de CUIL/CUIT segura, então o bloco roda direto
+# pro reprova sem passar pelo strip. Pros demais campos (telefone, e-mail,
+# nome, endereço, diagnóstico...), o nome do campo continua no bloco (é
+# argumento da chamada), mas o VALOR que sai no log já passou por máscara —
+# remove as duas chamadas do texto e roda O MESMO detector de novo: se ainda
+# casar depois de removidas, o campo vazou por FORA do helper — aí SIM
+# reprova. "Somente isso": nenhuma outra forma de "parecer seguro" conta.
 if [ -n "$PII" ]; then
   SOBROU=""
-  while IFS= read -r linha; do
-    [ -z "$linha" ] && continue
-    despida=$(printf '%s\n' "$linha" | sed -E 's/redactContact\([^()]*\)//g; s/safeErrorFields\([^()]*\)//g')
-    if printf '%s\n' "$despida" \
-       | grep -qiE '\$\{[^}]*\b(phone|telefone|email|firstName|lastName|first_name|last_name|dni|documentNumber|document_number|birthDate|birth_date|diagnosis|diagnostico)\b[^}]*\}|\b(phone|email|firstName|lastName|dni|diagnosis)\b[[:space:]]*[,)]'; then
-      SOBROU="${SOBROU}${linha}
+  while IFS= read -r bloco; do
+    [ -z "$bloco" ] && continue
+    if printf '%s\n' "$bloco" | grep -qiE '\b(cuil|cuit)\b'; then
+      SOBROU="${SOBROU}${bloco}
+"
+      continue
+    fi
+    despida=$(printf '%s\n' "$bloco" | sed -E 's/redactContact\([^()]*\)//g; s/safeErrorFields\([^()]*\)//g')
+    if printf '%s\n' "$despida" | grep -qiE "$CAMPO_CHAVE"; then
+      SOBROU="${SOBROU}${bloco}
 "
     fi
-  done <<PII_LINHAS
+  done <<PII_BLOCOS
 $PII
-PII_LINHAS
+PII_BLOCOS
   PII="$SOBROU"
 fi
 
