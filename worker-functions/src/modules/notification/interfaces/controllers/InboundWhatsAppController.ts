@@ -5,6 +5,7 @@ import { BookSlotFromWhatsAppUseCase } from '../../application/BookSlotFromWhats
 import { HandleReminderResponseUseCase } from '../../application/HandleReminderResponseUseCase';
 import { TriggerWorkerHandoverUseCase } from '../../application/TriggerWorkerHandoverUseCase';
 import { logger } from '@shared/logging';
+import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import {
   INTERVIEW_INVITE_SLUG,
   LEGACY_INVITE_SLUG,
@@ -195,7 +196,7 @@ export class InboundWhatsAppController {
    */
   private async handleOptOut(from: string, keyword: string): Promise<void> {
     const phone = from.replace('whatsapp:', '');
-    const log = logger.child({ phone, keyword, handler: 'OptOut' });
+    const log = logger.child({ phone: maskPhoneForLog(phone), keyword, handler: 'OptOut' });
 
     try {
       const result = await new RegisterOptOutUseCase(this.db).execute({

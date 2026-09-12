@@ -23,6 +23,7 @@ import { Request, Response } from 'express';
 import { createHmac } from 'crypto';
 import { PeriskopeWebhookController } from '../PeriskopeWebhookController';
 import { Result } from '@shared/utils/Result';
+import { logger } from '@shared/logging';
 
 function mockRes() {
   return {
@@ -184,6 +185,35 @@ describe('PeriskopeWebhookController', () => {
     );
     expect(mockHandleReminder.executeTextResponse).not.toHaveBeenCalled();
     expect(mockInboundRouter.routeNumberedReply).not.toHaveBeenCalled();
+  });
+
+  // ─── PII guard — opt-out nunca loga telefone cru (achado do gate 12/09) ──
+  // O controller publica `logger.child({ phone, ... })` com o telefone CRU no
+  // contexto — todo log emitido por esse child o carrega. Mesmo bug que o
+  // PeriskopeInboundRouter já tinha e este PR mascarou; o controller é o
+  // CHAMADOR do router, na mesma requisição, e ficou de fora daquele fix.
+  it('handleOptOut: telefone mascarado no logger.child, nunca o valor cru', async () => {
+    const childSpy = jest.spyOn(logger, 'child');
+    mockDbQuery
+      .mockResolvedValueOnce({ rows: [{ id: 'worker-1' }] }) // SELECT workers
+      .mockResolvedValueOnce({ rows: [] }); // INSERT opt_out
+
+    const body = envelope({ chat_id: '5491198887766@c.us', body: 'PARAR', from_me: false });
+    const raw = JSON.stringify(body);
+    const req = mockReq(body, { signature: sign(raw, SECRET), rawBody: raw });
+    const res = mockRes();
+
+    await controller.handleWebhook(req, res);
+
+    const optOutChildCall = childSpy.mock.calls.find(
+      (c) => (c[0] as Record<string, unknown>)?.handler === 'PeriskopeOptOut',
+    );
+    expect(optOutChildCall).toBeDefined();
+    const ctx = optOutChildCall![0] as Record<string, unknown>;
+    expect(ctx.phone).toBe('+549******7766');
+    expect(JSON.stringify(ctx)).not.toContain('5491198887766');
+    expect(JSON.stringify(ctx)).not.toContain('1198887766');
+    childSpy.mockRestore();
   });
 
   // ─── Resposta numerada (item 2.3) ──────────────────────────────

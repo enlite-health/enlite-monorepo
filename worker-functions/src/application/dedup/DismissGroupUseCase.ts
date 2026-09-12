@@ -8,6 +8,7 @@
 
 import type { Pool } from 'pg';
 import { logger } from '@shared/logging';
+import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import type { DismissGroupParams } from './DedupTypes';
 
 const log = logger.child({ source: 'DismissGroupUseCase' });
@@ -23,7 +24,7 @@ export class DismissGroupUseCase {
   async execute(params: DismissGroupParams): Promise<DismissResult> {
     const { phoneNormalized, reason, dismissedBy } = params;
 
-    log.info({ msg: 'dismiss_group_start', phoneNormalized, dismissedBy });
+    log.info({ msg: 'dismiss_group_start', phoneNormalized: maskPhoneForLog(phoneNormalized), dismissedBy });
 
     const res = await this.pool.query<{ id: number }>(
       `INSERT INTO dedup_dismissed (phone_normalized, reason, dismissed_by)
@@ -37,7 +38,7 @@ export class DismissGroupUseCase {
 
     log.info({
       msg: 'dismiss_group_done',
-      phoneNormalized,
+      phoneNormalized: maskPhoneForLog(phoneNormalized),
       alreadyDismissed,
     });
 
