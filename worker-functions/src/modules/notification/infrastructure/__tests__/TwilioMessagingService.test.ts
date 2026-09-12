@@ -522,6 +522,46 @@ describe('TwilioMessagingService', () => {
         '¡Hola Sabrina! Hay una oportunidad en Palermo.',
       );
     });
+
+    // PII guard (achado do gate, 2ª rodada): falha do mirror não pode logar o
+    // telefone cru nem a message crua do erro do Chatwoot (podia carregar o
+    // telefone de volta, vindo da URL/corpo da request).
+    it('PII: falha do mirror → telefone mascarado, err.message nunca cru no console.warn', async () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      mockTemplateRepo.findBySlug.mockResolvedValueOnce({
+        slug: 'complete_register_ofc',
+        body: 'texto',
+        contentSid: 'HXf7a25b327e14989f78e6d6d4572debc0',
+        isActive: true,
+      });
+      mockCreate.mockResolvedValueOnce({ sid: 'SMmirror-fail', status: 'queued' });
+      const SENSITIVE_PHONE = '+5491122334455';
+      const sensitiveMessage = `Chatwoot rejected contact for ${SENSITIVE_PHONE}`;
+      const mirrorOutgoingMessage = jest.fn().mockRejectedValue(Object.assign(new Error(sensitiveMessage), { code: 'ECONNRESET' }));
+      const svc = new TwilioMessagingService(mockTemplateRepo as any, { mirrorOutgoingMessage } as any);
+
+      await svc.sendWhatsApp({ to: SENSITIVE_PHONE, templateSlug: 'complete_register_ofc' });
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const args = warnSpy.mock.calls[0];
+      const joined = JSON.stringify(args);
+      expect(joined).not.toContain(SENSITIVE_PHONE.replace('+', ''));
+      expect(joined).not.toContain(sensitiveMessage);
+      expect(args[0]).toContain('549***4455');
+      expect(args[1]).toEqual(expect.objectContaining({ errorName: 'Error', code: 'ECONNRESET' }));
+      warnSpy.mockRestore();
+    });
+
+    // Sabotagem: reproduz o console.warn ANTIGO (telefone + message crus) —
+    // prova que a asserção acima detectaria o vazamento se o fix fosse desfeito.
+    it('sabotagem: reproduzindo o console.warn ANTIGO (telefone+message crus) do mirror, a asserção acima cairia', () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const SENSITIVE_PHONE = '+5491122334455';
+      console.warn(`[Chatwoot mirror] failed to mirror sid=SM1 phone=${SENSITIVE_PHONE}: boom`);
+      const oldArgs = warnSpy.mock.calls[0];
+      expect(String(oldArgs[0])).toContain(SENSITIVE_PHONE); // confirma: o formato antigo vazava
+      warnSpy.mockRestore();
+    });
   });
 
   // ─── Guard de tokens PII não-resolvidos ───────────────────────
