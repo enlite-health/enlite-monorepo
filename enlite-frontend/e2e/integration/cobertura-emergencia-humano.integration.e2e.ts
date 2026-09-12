@@ -36,7 +36,9 @@ async function digitar(page: Page, testId: string, texto: string): Promise<void>
   await expect(campo).toHaveValue(texto);
 }
 
-const contatosNoBanco = (patientId: string) => runSQL(`SELECT string_agg(kind || '=' || name || '=' || phone_encrypted, '|' ORDER BY sort_order) FROM patient_coverage_emergency_contacts WHERE patient_id = '${patientId}'`).trim();
+// AND active (spec 018, PR-1, FR-002): desativar não apaga a linha — sem o filtro, a linha
+// "removida" do teste 2 continuaria contando aqui, e o toHaveLength(1) do teste 2 quebraria.
+const contatosNoBanco = (patientId: string) => runSQL(`SELECT string_agg(kind || '=' || name || '=' || phone_encrypted, '|' ORDER BY sort_order) FROM patient_coverage_emergency_contacts WHERE patient_id = '${patientId}' AND active`).trim();
 
 test.use({ viewport: { width: 1600, height: 1000 }, video: 'on', acceptDownloads: true });
 
@@ -86,9 +88,11 @@ test.describe('417/D301 — contatos de emergência da cobertura e o PDF por ser
     await digitar(page, 'pcv-contact-name-1', 'Dra. Sintética 417');
     await digitar(page, 'pcv-contact-phone-1', TEL_PROFISSIONAL);
 
-    const patch = page.waitForResponse((r) => r.request().method() === 'PATCH' && r.url().includes(`/patients/${seed.patientId}/coverage`));
+    // spec 018, PR-1, ADR-1: cada contato nasce por LINHA (POST próprio), não mais um PATCH da
+    // lista inteira — o "Guardar" dispara 2 POSTs sequenciais (ambulância, depois profissional).
+    const post = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes(`/patients/${seed.patientId}/coverage-emergency-contacts`) && !r.url().includes('deactivate'));
     await page.getByTestId('pcv-save').click();
-    expect((await patch).status()).toBe(200);
+    expect((await post).status()).toBe(201);
     await expect(drawer).toHaveCount(0);
 
     // O card mostra os dois, com o tipo por extenso.
@@ -121,9 +125,11 @@ test.describe('417/D301 — contatos de emergência da cobertura e o PDF por ser
     await expect(page.getByTestId('pcv-contact-name-0')).toHaveValue('Ambulancia Sintética 417');
     await page.getByTestId('pcv-contact-remove-0').click();
     await expect(page.getByTestId('pcv-contact-name-0')).toHaveValue('Dra. Sintética 417');
-    const patch = page.waitForResponse((r) => r.request().method() === 'PATCH' && r.url().includes('/coverage'));
+    // Escrita por linha (PR-1): remover a AMBULÂNCIA (linha EXISTENTE) chama o deactivate dela — a
+    // outra linha (profissional), que não mudou, não gera nenhuma chamada.
+    const deactivate = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().includes('/coverage-emergency-contacts/') && r.url().includes('/deactivate'));
     await page.getByTestId('pcv-save').click();
-    expect((await patch).status()).toBe(200);
+    expect((await deactivate).status()).toBe(200);
     await expect(page.getByTestId('patient-coverage-edit-drawer')).toHaveCount(0);
     const row = card.getByTestId('coverage-emergency-contacts');
     await expect(row).not.toContainText('Ambulancia Sintética 417');

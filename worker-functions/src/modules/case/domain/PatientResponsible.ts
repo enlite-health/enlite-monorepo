@@ -20,6 +20,10 @@ export interface PatientResponsible {
   isPrimary: boolean;
   displayOrder: number;
   source: string;
+  /** Escrita por linha (spec 018 PR-1, ADR-1): false = removido pelo painel, nunca DELETE. */
+  active: boolean;
+  deactivatedAt: Date | null;
+  deactivatedBy: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -45,6 +49,22 @@ export interface PatientResponsibleInput {
  * Validation: at least one contact channel between patient and primary responsible.
  * Enforced in PatientService (not via SQL constraint).
  */
+/**
+ * PATCH parcial de uma linha — escrita por linha (PR-1). RFC 7396: chave AUSENTE não toca a
+ * coluna; chave presente com `null` explícito apaga o campo (onde a coluna aceita NULL).
+ * `isPrimary`/`displayOrder` não aceitam `null` (a coluna é NOT NULL).
+ */
+export interface PatientResponsiblePatch {
+  firstName?: string;
+  lastName?: string;
+  relationship?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  documentType?: string | null;
+  documentNumber?: string | null;
+  isPrimary?: boolean;
+}
+
 export interface ContactChannelValidationInput {
   patientPhoneWhatsapp: string | null | undefined;
   primaryResponsible: PatientResponsibleInput | undefined;

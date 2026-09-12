@@ -13,8 +13,9 @@ export interface PatientCoverageSectionPayload {
   affiliateId?: string | null;
   /** Códigos do catálogo `insurance_providers`. */
   insuranceVerifiedCodes?: string[];
-  /** 417 (D301): a lista INTEIRA dos contatos de emergência da cobertura; chave ausente = não toca. */
-  emergencyContacts?: PatientCoverageEmergencyContactInput[];
+  // `emergencyContacts` SAIU (spec 018, PR-1, ADR-1, SUP-37): a lista de contatos de emergência
+  // da cobertura passou a ser escrita por LINHA — `AdminPatientContactRowsApiService`. Mandar o
+  // campo aqui agora é 400 no backend (`.strict()`).
 }
 
 /**
@@ -39,6 +40,12 @@ export interface PatientCoverageEmergencyContact extends PatientCoverageEmergenc
   id: string;
   sortOrder: number;
 }
+
+/**
+ * PATCH parcial de UMA linha (spec 018, PR-1, ADR-1) — chave ausente não toca; nenhum campo
+ * aceita `null` (as três colunas são NOT NULL no backend).
+ */
+export type PatientCoverageEmergencyContactPatch = Partial<PatientCoverageEmergencyContactInput>;
 
 /** Uma opção do catálogo de coberturas (GET /api/admin/catalogs/insurance-providers). */
 export interface InsuranceProvider {

@@ -280,6 +280,15 @@ export async function replacePatientAddresses(
   }
 }
 
+/**
+ * Substitui as linhas 'clickup' da equipe tratante — NUNCA as do painel (spec 018, PR-1, `lex`
+ * #5(f), L5f adiantado). Antes do PR-1 este DELETE apagava a tabela inteira; uma linha criada
+ * pelo painel (`source='admin_manual'`, PR-5) sumiria no próximo `taskUpdated` do ClickUp — a
+ * mesma classe de bug já corrigida para `patient_responsibles.replaceBySource`
+ * (`PatientResponsibleRepository.ts:51-70`) e para `patient_addresses`
+ * (`replacePatientAddresses`, `AND source = 'clickup'` acima). A equipe do painel ainda não
+ * existe em produção (nasce no PR-5) — este filtro é a metade que evita reabrir a mesma classe.
+ */
 export async function replacePatientProfessionals(
   patientId: string,
   professionals: PatientProfessional[],
@@ -289,7 +298,7 @@ export async function replacePatientProfessionals(
   const encryptionService = new KMSEncryptionService();
 
   await client.query(
-    'DELETE FROM patient_professionals WHERE patient_id = $1',
+    "DELETE FROM patient_professionals WHERE patient_id = $1 AND source = 'clickup'",
     [patientId],
   );
 

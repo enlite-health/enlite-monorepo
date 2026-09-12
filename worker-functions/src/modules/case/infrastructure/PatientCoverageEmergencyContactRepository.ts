@@ -1,21 +1,26 @@
 /**
  * PatientCoverageEmergencyContactRepository — `patient_coverage_emergency_contacts` (migration 417; D301).
  *
- * Molde do `PatientResponsibleRepository`: a tela edita a lista inteira → `replaceAll` (DELETE + INSERT
- * no MESMO client da transação da seção); telefone cifrado via KMS antes de tocar o banco, decifrado
- * na leitura só quando o chamador já decidiu que o ator lê o container (D286 / lex P3: a célula decide
- * ANTES de o KMS rodar — `fetchPatientDetail` só chama `listForPatient` sob `reads.coverage`).
+ * Molde do `PatientResponsibleRepository`: escrita POR LINHA (spec 018, PR-1, ADR-1) —
+ * `insertOne`/`updateOne`/`deactivate`, nunca `replaceAll` (achado do gate `revisao-pr`: este
+ * comentário ainda descrevia o `replaceAll` DELETE+INSERT que o PR-1 aposentou). Telefone cifrado
+ * via KMS antes de tocar o banco, decifrado na leitura só quando o chamador já decidiu que o ator
+ * lê o container (D286 / lex P3: a célula decide ANTES de o KMS rodar — `fetchPatientDetail` só
+ * chama `listForPatient` sob `reads.coverage`).
  *
  * Não faz JOIN fora de `patients`. Nada aqui emite nome/telefone em log: contagem, sempre.
  */
 import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
-import type {
-  CoverageEmergencyContactKind,
-  PatientCoverageEmergencyContactDetail,
-  PatientCoverageEmergencyContactInput,
+import {
+  COVERAGE_EMERGENCY_CONTACTS_MAX,
+  type CoverageEmergencyContactKind,
+  type PatientCoverageEmergencyContactDetail,
+  type PatientCoverageEmergencyContactInput,
+  type PatientCoverageEmergencyContactPatch,
 } from '../domain/PatientCoverageEmergencyContact';
+import { deactivateRow, type DeactivateOutcome } from './deactivateRowByRow';
 
 export interface CoverageEmergencyContactRow {
   id: string;
@@ -24,6 +29,21 @@ export interface CoverageEmergencyContactRow {
   phone_encrypted: string;
   sort_order: number;
 }
+
+/**
+ * 409 — o paciente já tem `COVERAGE_EMERGENCY_CONTACTS_MAX` contatos ATIVOS (achado do gate
+ * `revisao-pr`, BLOCKER: o teto de 20 saiu do backend junto com o `emergencyContacts` array e a
+ * `.max()` do zod que o media — a única trava que sobrou era o `disabled` do botão no navegador).
+ */
+export class CoverageEmergencyContactLimitReachedError extends Error {
+  readonly code = 'COVERAGE_EMERGENCY_CONTACTS_LIMIT_REACHED';
+  constructor(readonly limit: number = COVERAGE_EMERGENCY_CONTACTS_MAX) {
+    super(`Limite de ${limit} contatos de emergência da cobertura já atingido`);
+    this.name = 'CoverageEmergencyContactLimitReachedError';
+  }
+}
+
+export type { DeactivateOutcome as CoverageContactDeactivateOutcome };
 
 export class PatientCoverageEmergencyContactRepository {
   private readonly pool: Pool;
@@ -34,12 +54,15 @@ export class PatientCoverageEmergencyContactRepository {
     this.enc = enc ?? new KMSEncryptionService();
   }
 
-  /** Só o SELECT (ciphertext): roda junto das outras leituras da ficha, sem decifrar nada. */
+  /**
+   * Só o SELECT (ciphertext): roda junto das outras leituras da ficha, sem decifrar nada.
+   * `active` sempre filtrado (FR-004, spec 018 PR-1) — a ficha só mostra linhas vivas.
+   */
   async fetchRows(patientId: string, executor: Pool | PoolClient = this.pool): Promise<CoverageEmergencyContactRow[]> {
     const res = await executor.query<CoverageEmergencyContactRow>(
       `SELECT id, kind, name, phone_encrypted, sort_order
          FROM patient_coverage_emergency_contacts
-        WHERE patient_id = $1
+        WHERE patient_id = $1 AND active
         ORDER BY sort_order ASC, created_at ASC`,
       [patientId],
     );
@@ -65,41 +88,108 @@ export class PatientCoverageEmergencyContactRepository {
   }
 
   /**
-   * Substitui a lista do paciente (o caminho do drawer). Linha sem nome ou sem telefone é descartada aqui —
-   * o zod já recusou antes; isto é a segunda trava, não a primeira.
-   *
-   * `keepKinds` (lex C3, gate 08/09): os tipos que o ATOR NÃO ENXERGA (o profissional direto, sem
-   * `patient_care_team:read`) não são apagados nem aceitos — a tela dele nunca os mostrou, então a lista
-   * que ele manda não os contém, e "substituir a lista inteira" apagaria o que ele nunca viu (D167: o
-   * vazio que significa duas coisas apaga dado).
+   * O `kind` ATUAL de uma linha — para o controller decidir o 403 de `patient_care_team:read`
+   * ANTES de tocar em UPDATE/deactivate de uma linha que já é (ou vira) `DIRECT_PROFESSIONAL`
+   * (lex C3: sem a célula da equipe, o ator nunca viu essa linha e não pode mexer nela).
    */
-  async replaceAll(
-    patientId: string,
-    contacts: PatientCoverageEmergencyContactInput[],
-    actorUid: string,
-    client?: PoolClient,
-    opts: { keepKinds?: readonly CoverageEmergencyContactKind[] } = {},
-  ): Promise<void> {
-    const executor = client ?? this.pool;
-    const keep = opts.keepKinds ?? [];
-    await executor.query(
-      'DELETE FROM patient_coverage_emergency_contacts WHERE patient_id = $1 AND NOT (kind = ANY($2::text[]))',
-      [patientId, keep],
+  async getKind(patientId: string, id: string, executor: Pool | PoolClient = this.pool): Promise<CoverageEmergencyContactKind | null> {
+    const { rows } = await executor.query<{ kind: CoverageEmergencyContactKind }>(
+      `SELECT kind FROM patient_coverage_emergency_contacts WHERE id = $2 AND patient_id = $1`,
+      [patientId, id],
     );
-    const valid = contacts.filter((c) => c.name?.trim() && c.phone?.trim() && !keep.includes(c.kind));
-    if (valid.length === 0) return;
+    return rows[0]?.kind ?? null;
+  }
 
-    const phones = await Promise.all(valid.map((c) => this.enc.encrypt(c.phone.trim())));
-    const values: unknown[] = [];
-    const placeholders = valid.map((c, i) => {
-      const base = i * 6;
-      values.push(patientId, c.kind, c.name.trim(), phones[i], i, actorUid);
-      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6})`;
-    });
-    await executor.query(
+  /**
+   * `POST /patients/:id/coverage-emergency-contacts` (spec 018, PR-1, ADR-1) — escrita por LINHA.
+   * O 403 de `DIRECT_PROFESSIONAL` sem `patient_care_team:read` é decidido no CONTROLLER (a
+   * mesma regra do `keepKinds` de antes, agora antes do INSERT em vez de dentro do `replaceAll`).
+   */
+  async insertOne(
+    patientId: string,
+    input: PatientCoverageEmergencyContactInput,
+    actorUid: string,
+    client: PoolClient,
+  ): Promise<{ id: string }> {
+    // Teto (BLOCKER do gate `revisao-pr`): conta as linhas ATIVAS ANTES do INSERT — uma
+    // desativada não ocupa vaga (nunca DELETE, spec 018 PR-1). `FOR UPDATE` da CONTAGEM não dá
+    // (não é linha, é agregado) — corrida rara vira 1 linha a mais, não perda de dado; aceitável
+    // pelo mesmo padrão do índice de titular único (é o BANCO, via CHECK futuro, que fecharia de
+    // vez; hoje a régua é esta contagem, como o resto do arquivo já faz para `active`).
+    const { rows: countRows } = await client.query<{ count: string }>(
+      `SELECT COUNT(*)::int AS count FROM patient_coverage_emergency_contacts WHERE patient_id = $1 AND active`,
+      [patientId],
+    );
+    if (Number(countRows[0].count) >= COVERAGE_EMERGENCY_CONTACTS_MAX) {
+      throw new CoverageEmergencyContactLimitReachedError();
+    }
+    const phoneEnc = await this.enc.encrypt(input.phone.trim());
+    const { rows } = await client.query<{ id: string }>(
       `INSERT INTO patient_coverage_emergency_contacts (patient_id, kind, name, phone_encrypted, sort_order, created_by)
-       VALUES ${placeholders.join(', ')}`,
+       VALUES ($1, $2, $3, $4,
+         (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM patient_coverage_emergency_contacts WHERE patient_id = $1),
+         $5)
+       RETURNING id`,
+      [patientId, input.kind, input.name.trim(), phoneEnc, actorUid],
+    );
+    return { id: rows[0].id };
+  }
+
+  /**
+   * `PATCH /patients/:id/coverage-emergency-contacts/:cid` — UPDATE parcial de UMA linha (RFC
+   * 7396). Devolve `null` quando a linha não existe ou é de outro paciente (404 no controller).
+   */
+  async updateOne(
+    patientId: string,
+    id: string,
+    patch: PatientCoverageEmergencyContactPatch,
+    client: PoolClient,
+  ): Promise<{ id: string } | null> {
+    const sets: string[] = [];
+    const values: unknown[] = [patientId, id];
+    const setColumn = (column: string, value: unknown): void => {
+      values.push(value);
+      sets.push(`${column} = $${values.length}`);
+    };
+
+    if (patch.kind !== undefined) setColumn('kind', patch.kind);
+    if (patch.name !== undefined) setColumn('name', patch.name.trim());
+    if (patch.phone !== undefined) setColumn('phone_encrypted', await this.enc.encrypt(patch.phone.trim()));
+
+    if (sets.length === 0) {
+      // PATCH vazio é no-op — MAS não é sucesso cego (achado do gate `revisao-pr`: um PATCH {} no
+      // id de OUTRO paciente, ou numa linha já desativada, respondia 200 sem checar nada). Mesma
+      // régua do UPDATE abaixo: só existe/pertence/está ativa → { id }; senão, null (404).
+      const { rows } = await client.query<{ id: string }>(
+        `SELECT id FROM patient_coverage_emergency_contacts WHERE id = $2 AND patient_id = $1 AND active`,
+        [patientId, id],
+      );
+      return rows[0] ? { id: rows[0].id } : null;
+    }
+    sets.push('updated_at = NOW()');
+
+    // `AND active` (mesma régua de PatientResponsibleRepository.updateOne, task 1.10 alt 2):
+    // editar uma linha já desativada por outra aba devolve 0 linhas ⇒ null ⇒ 404 no controller.
+    const { rows } = await client.query<{ id: string }>(
+      `UPDATE patient_coverage_emergency_contacts SET ${sets.join(', ')}
+        WHERE id = $2 AND patient_id = $1 AND active
+        RETURNING id`,
       values,
     );
+    return rows[0] ? { id: rows[0].id } : null;
+  }
+
+  /**
+   * `POST /patients/:id/coverage-emergency-contacts/:cid/deactivate` — nunca DELETE (FR-002).
+   * `SELECT … FOR UPDATE` antes do `UPDATE`, mesmo molde do `PatientResponsibleRepository`, para
+   * o controller distinguir 404 de 409 (já inativa).
+   */
+  async deactivate(
+    patientId: string,
+    id: string,
+    actorUid: string,
+    client: PoolClient,
+  ): Promise<DeactivateOutcome> {
+    return deactivateRow(client, 'patient_coverage_emergency_contacts', patientId, id, actorUid);
   }
 }

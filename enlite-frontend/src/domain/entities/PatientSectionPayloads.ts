@@ -8,8 +8,12 @@
  */
 import type { PatientCoverageSectionPayload } from './PatientCoverage';
 
-/** Section names accepted by PATCH /api/admin/patients/:id/:section. */
-export type PatientSectionName = 'general' | 'clinical' | 'coverage' | 'support-network' | 'service';
+/**
+ * Section names accepted by PATCH /api/admin/patients/:id/:section.
+ * `support-network` SAIU (spec 018, PR-1, ADR-1, SUP-37): a rota é 410 — a escrita dos
+ * responsáveis passou a ser por LINHA, em `AdminPatientContactRowsApiService`.
+ */
+export type PatientSectionName = 'general' | 'clinical' | 'coverage' | 'service';
 
 /**
  * section = 'general' — identity fields. Mirrors generalSectionSchema (backend).
@@ -44,7 +48,11 @@ export interface PatientClinicalSectionPayload {
   hasConsent?: boolean | null;
 }
 
-/** One responsible in the support-network replace payload. */
+/**
+ * `POST /patients/:id/responsibles` — corpo completo de UMA linha (spec 018, PR-1, ADR-1).
+ * `displayOrder`/`source` SAÍRAM: o servidor fixa os dois (posição no fim, `admin_manual`) — só
+ * quem cria por linha do painel usa este tipo, e ele nunca escolhe onde a linha entra na lista.
+ */
 export interface PatientResponsibleInput {
   firstName: string;
   lastName: string;
@@ -53,16 +61,14 @@ export interface PatientResponsibleInput {
   email?: string | null;
   documentType?: string | null;
   documentNumber?: string | null;
-  isPrimary: boolean;
-  displayOrder: number;
-  /** Procedência da linha — reenviada do detalhe; linha nova do painel = 'admin_manual'. */
-  source?: string;
+  isPrimary?: boolean;
 }
 
-/** section = 'support-network' — replaces the whole responsibles set. */
-export interface PatientSupportNetworkSectionPayload {
-  responsibles: PatientResponsibleInput[];
-}
+/**
+ * `PATCH /patients/:id/responsibles/:rid` — parcial de UMA linha (RFC 7396): chave ausente não
+ * toca; `null` explícito apaga onde a coluna aceita. `isPrimary` não aceita `null` (coluna NOT NULL).
+ */
+export type PatientResponsiblePatch = Partial<Omit<PatientResponsibleInput, 'isPrimary'>> & { isPrimary?: boolean };
 
 /** section = 'service' — targeted service_type update. */
 export interface PatientServiceSectionPayload {
@@ -73,5 +79,4 @@ export type PatientSectionPayload =
   | PatientGeneralSectionPayload
   | PatientClinicalSectionPayload
   | PatientCoverageSectionPayload
-  | PatientSupportNetworkSectionPayload
   | PatientServiceSectionPayload;

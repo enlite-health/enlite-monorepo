@@ -268,7 +268,7 @@ export type {
   PatientGeneralSectionPayload,
   PatientClinicalSectionPayload,
   PatientResponsibleInput,
-  PatientSupportNetworkSectionPayload,
+  PatientResponsiblePatch,
   PatientServiceSectionPayload,
   PatientSectionPayload,
 } from './PatientSectionPayloads';

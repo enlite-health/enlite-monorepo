@@ -37,8 +37,10 @@ export async function loadPatientCompleteness(
        COALESCE(p.insurance_informed, p.health_insurance_name) AS insurance_informed,
        (SELECT COUNT(*) FROM patient_addresses pa
          WHERE pa.patient_id = p.id AND pa.archived_at IS NULL)      AS active_address_count,
+       -- AND pr.active (spec 018, PR-1, FR-004): responsável desativado não conta como
+       -- presente — a mesma régua de MISSING_SQL.RESPONSIBLE (PatientCompleteness.ts).
        (SELECT COUNT(*) FROM patient_responsibles pr
-         WHERE pr.patient_id = p.id)                                 AS active_responsible_count,
+         WHERE pr.patient_id = p.id AND pr.active)                   AS active_responsible_count,
        (SELECT COUNT(*) FROM patient_contracted_services pcs
          WHERE pcs.patient_id = p.id AND pcs.active)                 AS active_service_count,
        -- serviço ativo sem endereço VIVO (NULL ou arquivado) — migration 330

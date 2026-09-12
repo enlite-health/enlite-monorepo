@@ -231,6 +231,7 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
             c.outros as never,
             c.outros as never,
             c.outros as never,
+            c.outros as never,
           ),
         ),
     });
@@ -319,15 +320,22 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
   });
 
   describe('D286 — permissão por CONTAINER: a célula do container manda, patient:write não', () => {
-    it('quem tem patient:write mas NÃO patient_family:write NÃO edita a rede de apoio', async () => {
-      const res = await chamar('PATCH', '/api/admin/patients/abc-123/support-network', U.admissao);
+    it('spec 018, PR-1, SUP-37: PATCH /support-network é 410 para QUALQUER ator (sem célula, a rota não decide mais nada sobre o dado)', async () => {
+      const semNada = await chamar('PATCH', '/api/admin/patients/abc-123/support-network', U.admissao);
+      expect(semNada.status).toBe(410);
+      const comFamilia = await chamar('PATCH', '/api/admin/patients/abc-123/support-network', U.familia);
+      expect(comFamilia.status).toBe(410);
+    });
+
+    it('quem tem patient:write mas NÃO patient_family:write NÃO cria responsável por linha', async () => {
+      const res = await chamar('POST', '/api/admin/patients/abc-123/responsibles', U.admissao);
       expect(res.status).toBe(403);
       expect(res.body).toMatchObject({ code: 'missing_cell' });
     });
 
-    it('quem tem só o container de familiares edita a rede de apoio — e o handler recebe a seção fixada pela rota', async () => {
-      const res = await chamar('PATCH', '/api/admin/patients/abc-123/support-network', U.familia);
-      expect(res).toMatchObject({ status: 200, body: { chegou: 'updatePatientSection' } });
+    it('quem tem só o container de familiares chega no controller da escrita por linha (a seção não existe mais — a rota É a decisão)', async () => {
+      const res = await chamar('POST', '/api/admin/patients/abc-123/responsibles', U.familia);
+      expect(res).toMatchObject({ status: 200, body: { chegou: 'outros.createResponsible' } });
     });
 
     it('… mas NÃO edita a clínica nem a identidade', async () => {

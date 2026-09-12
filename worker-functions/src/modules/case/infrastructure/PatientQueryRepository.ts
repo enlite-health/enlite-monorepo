@@ -147,8 +147,10 @@ export class PatientQueryRepository {
         p.has_consent           AS "hasConsent",
         COALESCE(p.insurance_informed, p.health_insurance_name)
                                AS "insuranceInformed",
+        -- AND pr.active (spec 018, PR-1, FR-004): responsável desativado não conta como
+        -- presente — mesma régua de MISSING_SQL.RESPONSIBLE (PatientCompleteness.ts).
         EXISTS (SELECT 1 FROM patient_responsibles pr
-                 WHERE pr.patient_id = p.id)
+                 WHERE pr.patient_id = p.id AND pr.active)
                                AS "hasActiveResponsible",
         EXISTS (SELECT 1 FROM patient_contracted_services pcs
                  WHERE pcs.patient_id = p.id AND pcs.active)
@@ -180,10 +182,15 @@ export class PatientQueryRepository {
         -- feita DEPOIS, e só nas linhas com placeholder (C2/C4).
         p.contact_email_encrypted
                                AS "contactEmailEnc",
+        -- AND r.active nas 2 subqueries abaixo (spec 018, PR-1, FR-004): um titular
+        -- DESATIVADO não é mais "o responsável primário" para a lista — sem o filtro, desativar
+        -- o titular não trocava quem a lista mostra (o índice de titular único já passou a
+        -- olhar só ativos na migration 420; a leitura tinha de acompanhar).
         (SELECT r.email_encrypted
            FROM patient_responsibles r
           WHERE r.patient_id = p.id
             AND r.is_primary
+            AND r.active
           ORDER BY r.display_order, r.created_at
           LIMIT 1)            AS "responsibleEmailEnc",
         -- Nome do responsável primário (D249). Texto claro, sem KMS: a coluna
@@ -193,6 +200,7 @@ export class PatientQueryRepository {
            FROM patient_responsibles r
           WHERE r.patient_id = p.id
             AND r.is_primary
+            AND r.active
           ORDER BY r.display_order, r.created_at
           LIMIT 1)            AS "responsibleName",
         COUNT(*) OVER()        AS total_count
@@ -208,6 +216,7 @@ export class PatientQueryRepository {
           OR ($${familyIdx}::boolean AND EXISTS (
                SELECT 1 FROM patient_responsibles r
                 WHERE r.patient_id = p.id
+                  AND r.active
                   AND (r.first_name ILIKE '%' || $${searchIdx} || '%'
                     OR r.last_name  ILIKE '%' || $${searchIdx} || '%'))))
         -- O filtro e o total leem a MESMA regra que o payload publica (PatientCompleteness.ts):

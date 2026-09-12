@@ -23,6 +23,7 @@ import type { AdminInsuranceProvidersController } from '../../controllers/AdminI
 import type { AdminPatientContractedServicesController } from '../../controllers/AdminPatientContractedServicesController';
 import type { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import type { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
+import type { AdminPatientContactRowsController } from '../../controllers/AdminPatientContactRowsController';
 
 jest.mock('@shared/logging', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -52,7 +53,7 @@ jest.mock('@shared/audit/resourceAccessLog', () => ({
 }));
 
 /** Mapa esperado — copiado do route-permission-map.md, não do código. */
-const ESPERADO: Record<string, string> = {
+const ESPERADO: Record<string, string | null> = {
   'GET /patient-chat-roles': 'patient:read',
   'POST /patient-chat-roles': 'patient:write',
   'PATCH /patient-chat-roles/:code': 'patient:write',
@@ -92,13 +93,26 @@ const ESPERADO: Record<string, string> = {
   'POST /patients/:id/diagnoses': 'patient_clinical:write',
   'PATCH /patients/:id/diagnoses/:did': 'patient_clinical:write',
   'GET /terminology/search': 'patient_clinical:read',
-  // D286 (lex C5): o PATCH dinâmico por seção virou 5 rotas explícitas, uma por container.
+  // D286 (lex C5): o PATCH dinâmico por seção virou rotas explícitas, uma por container.
+  // `support-network` SAIU do whitelist (spec 018, PR-1, SUP-37) — a rota abaixo é 410, sem célula.
   'PATCH /patients/:id/general': 'patient_identity:write',
   'PATCH /patients/:id/clinical': 'patient_clinical:write',
   'PATCH /patients/:id/coverage': 'patient_coverage:write',
-  'PATCH /patients/:id/support-network': 'patient_family:write',
   'PATCH /patients/:id/service': 'patient_services:write',
+  // 410 sem célula (a rota não faz mais nada com o dado — só recusa).
+  'PATCH /patients/:id/support-network': null,
+  // Escrita por linha (spec 018, PR-1, ADR-1; contracts/support-network.md).
+  'POST /patients/:id/responsibles': 'patient_family:write',
+  'PATCH /patients/:id/responsibles/:rid': 'patient_family:write',
+  'POST /patients/:id/responsibles/:rid/deactivate': 'patient_family:write',
+  'POST /patients/:id/coverage-emergency-contacts': 'patient_coverage:write',
+  'PATCH /patients/:id/coverage-emergency-contacts/:cid': 'patient_coverage:write',
+  'POST /patients/:id/coverage-emergency-contacts/:cid/deactivate': 'patient_coverage:write',
 };
+
+/** A única rota da família SEM célula, de propósito: só recusa (410), nunca faz nada com o dado. */
+const SEM_CELULA_DE_PROPOSITO = (route: { method: string; path: string }): boolean =>
+  route.method === 'PATCH' && route.path === '/patients/:id/support-network';
 
 /** Cada handler devolve o próprio nome — é o que identifica quem foi chamado. */
 function pecas() {
@@ -155,9 +169,17 @@ function pecas() {
     update: responde('diag.update'),
   } as unknown as AdminPatientDiagnosesController;
   const terminology = { search: responde('terminology.search') } as unknown as AdminTerminologySearchController;
+  const contactRows = {
+    createResponsible: responde('rows.createResponsible'),
+    updateResponsible: responde('rows.updateResponsible'),
+    deactivateResponsible: responde('rows.deactivateResponsible'),
+    createCoverageEmergencyContact: responde('rows.createCoverageEmergencyContact'),
+    updateCoverageEmergencyContact: responde('rows.updateCoverageEmergencyContact'),
+    deactivateCoverageEmergencyContact: responde('rows.deactivateCoverageEmergencyContact'),
+  } as unknown as AdminPatientContactRowsController;
 
   return {
-    controller, chatIds, chatRoles, map, addresses, insurance, contracted, diagnoses, terminology,
+    controller, chatIds, chatRoles, map, addresses, insurance, contracted, diagnoses, terminology, contactRows,
     auth: authDouble(), permissions: permissionsDouble(),
   };
 }
@@ -167,13 +189,13 @@ function build() {
   const p = pecas();
   return createAdminPatientsRoutes(
     p.controller, p.auth, p.permissions, p.chatIds, p.chatRoles,
-    p.map, p.addresses, p.insurance, p.contracted, p.diagnoses, p.terminology,
+    p.map, p.addresses, p.insurance, p.contracted, p.diagnoses, p.terminology, p.contactRows,
   );
 }
 
 describe('createAdminPatientsRoutes', () => {
-  it('TODA rota da família declara célula', () => {
-    expect(undeclaredRoutes(scanExpressRouter(build()), () => true)).toEqual([]);
+  it('TODA rota da família declara célula, exceto o 410 de support-network (não faz nada com o dado)', () => {
+    expect(undeclaredRoutes(scanExpressRouter(build()), (r) => !SEM_CELULA_DE_PROPOSITO(r))).toEqual([]);
   });
 
   it('cada rota declara a célula do mapa (route-permission-map.md)', () => {
@@ -186,12 +208,32 @@ describe('createAdminPatientsRoutes', () => {
     expect(declarado).toEqual(ESPERADO);
   });
 
-  it('a família declara exatamente 39 rotas — 21 do PENDING_DECLARATIONS + 14 do main (specs 011-016, mapa) + as 5 seções explícitas no lugar do PATCH dinâmico (D286)', () => {
-    expect(scanExpressRouter(build())).toHaveLength(39);
+  it('a família declara exatamente 45 rotas — 39 de antes (D286) + o 410 de support-network + as 6 rotas por linha (spec 018, PR-1, ADR-1)', () => {
+    expect(scanExpressRouter(build())).toHaveLength(45);
   });
 
   it('a família é `admin.patients` — o nome que PERMISSION_ENFORCED_ROUTES liga', () => {
     expect(ADMIN_PATIENTS_FAMILY).toBe('admin.patients');
+  });
+
+  it('sem o 12º argumento (contactRowsController omitido), o factory usa o DEFAULT', () => {
+    // O default `new AdminPatientContactRowsController()` constrói os repositórios reais, que
+    // pegam o pool de `DatabaseConnection.getInstance()` NA CONSTRUÇÃO (não é preguiçoso como o
+    // comentário do factory presumia) — precisa de config de banco só para o `new` não estourar;
+    // nenhuma query roda neste teste.
+    const antes = process.env.DATABASE_URL;
+    process.env.DATABASE_URL = 'postgresql://user:pass@localhost:5432/db';
+    try {
+      const p = pecas();
+      const router = createAdminPatientsRoutes(
+        p.controller, p.auth, p.permissions, p.chatIds, p.chatRoles,
+        p.map, p.addresses, p.insurance, p.contracted, p.diagnoses, p.terminology,
+        // 12º omitido de propósito
+      );
+      expect(scanExpressRouter(router)).toHaveLength(45);
+    } finally {
+      if (antes === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = antes;
+    }
   });
 
   // As 3 escolhas de célula que NÃO são o óbvio `patient:*`. Se alguém
@@ -251,6 +293,12 @@ describe('createAdminPatientsRoutes', () => {
     ['post', '/api/admin/patients/abc-123/diagnoses', 'diag.create'],
     ['patch', '/api/admin/patients/abc-123/diagnoses/d1', 'diag.update'],
     ['get', '/api/admin/terminology/search', 'terminology.search'],
+    ['post', '/api/admin/patients/abc-123/responsibles', 'rows.createResponsible'],
+    ['patch', '/api/admin/patients/abc-123/responsibles/r1', 'rows.updateResponsible'],
+    ['post', '/api/admin/patients/abc-123/responsibles/r1/deactivate', 'rows.deactivateResponsible'],
+    ['post', '/api/admin/patients/abc-123/coverage-emergency-contacts', 'rows.createCoverageEmergencyContact'],
+    ['patch', '/api/admin/patients/abc-123/coverage-emergency-contacts/c1', 'rows.updateCoverageEmergencyContact'],
+    ['post', '/api/admin/patients/abc-123/coverage-emergency-contacts/c1/deactivate', 'rows.deactivateCoverageEmergencyContact'],
   ] as const)('%s %s → %s', async (metodo, caminho, esperado) => {
     const app = express();
     app.use(express.json());
@@ -287,7 +335,7 @@ describe('createAdminPatientsRoutes', () => {
     expect(res.body.m).toBe('updatePatientTestFlag');
   });
 
-  it.each(['general', 'clinical', 'coverage', 'support-network', 'service'])(
+  it.each(['general', 'clinical', 'coverage', 'service'])(
     'PATCH /patients/:id/%s chega em updatePatientSection com a seção fixada pela rota (D286)',
     async (section) => {
       const app = express();
@@ -297,6 +345,14 @@ describe('createAdminPatientsRoutes', () => {
       expect(res.body).toMatchObject({ m: 'updatePatientSection', id: 'abc-123', section });
     },
   );
+
+  it('PATCH /patients/:id/support-network → 410 (spec 018, PR-1, SUP-37) — nunca chega no controller de seção', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use('/api/admin', build());
+    const res = await request(app).patch('/api/admin/patients/abc-123/support-network').expect(410);
+    expect(res.body).toMatchObject({ success: false, code: 'SUPPORT_NETWORK_LIST_WRITE_REMOVED' });
+  });
 
   it('seção fora do whitelist é 404 — não existe mais rota dinâmica que a aceite', async () => {
     const app = express();

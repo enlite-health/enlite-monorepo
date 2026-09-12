@@ -115,37 +115,15 @@ describe('AdminPatientsController — pipeline (Fase 2 Task 3)', () => {
       expect(res2.status).not.toHaveBeenCalledWith(403);
     });
 
-    it('417 / D301: emergencyContacts exige `patient_coverage:read` (quem não lê não escreve); DIRECT_PROFESSIONAL exige também `patient_care_team:read`; as células vão ao service', async () => {
+    it('spec 018, PR-1, ADR-1 (SUP-37): emergencyContacts SAIU da seção coverage — 400 pelo .strict(), o service NUNCA é chamado (a escrita virou rota por linha)', async () => {
       const updatePatientSection = jest.fn().mockResolvedValue({ id: VALID_ID, updated: true });
       const controller = makeController({ updatePatientSection });
       const ambulancia = { emergencyContacts: [{ kind: 'AMBULANCE', name: 'A', phone: '1' }] };
-      const profissional = { emergencyContacts: [{ kind: 'DIRECT_PROFESSIONAL', name: 'Dra.', phone: '1' }] };
-      // Só write, sem read da cobertura → 403 nomeando a célula de leitura.
-      const [r1, s1] = mockReqRes({ id: VALID_ID, section: 'coverage' }, ambulancia);
-      (r1 as unknown as { permissionCells: string[] }).permissionCells = ['patient_coverage:write'];
-      await controller.updatePatientSection(r1, s1);
-      expect(s1.status).toHaveBeenCalledWith(403);
-      expect(s1.json).toHaveBeenCalledWith(expect.objectContaining({ details: { field: 'emergencyContacts', cell: 'patient_coverage:read' } }));
-      // Cobertura r/w sem equipe: ambulância passa; profissional direto → 403 nomeando a célula da equipe.
-      const [r2, s2] = mockReqRes({ id: VALID_ID, section: 'coverage' }, ambulancia);
-      (r2 as unknown as { permissionCells: string[] }).permissionCells = ['patient_coverage:read', 'patient_coverage:write'];
-      (r2 as unknown as { authContext: unknown }).authContext = { principal: { id: 'uid-staff-1' } };
-      await controller.updatePatientSection(r2, s2);
-      expect(s2.status).not.toHaveBeenCalledWith(403);
-      expect(updatePatientSection).toHaveBeenLastCalledWith(VALID_ID, 'coverage', ambulancia, { uid: 'uid-staff-1', cells: ['patient_coverage:read', 'patient_coverage:write'] });
-      const [r3, s3] = mockReqRes({ id: VALID_ID, section: 'coverage' }, profissional);
-      (r3 as unknown as { permissionCells: string[] }).permissionCells = ['patient_coverage:read', 'patient_coverage:write'];
-      await controller.updatePatientSection(r3, s3);
-      expect(s3.status).toHaveBeenCalledWith(403);
-      expect(s3.json).toHaveBeenCalledWith(expect.objectContaining({ details: { field: 'emergencyContacts', cell: 'patient_care_team:read' } }));
-      // Com a equipe também: passa. Sem células (engine não decidiu): passa.
-      const [r4, s4] = mockReqRes({ id: VALID_ID, section: 'coverage' }, profissional);
-      (r4 as unknown as { permissionCells: string[] }).permissionCells = ['patient_coverage:read', 'patient_coverage:write', 'patient_care_team:read'];
-      await controller.updatePatientSection(r4, s4);
-      expect(s4.status).not.toHaveBeenCalledWith(403);
-      const [r5, s5] = mockReqRes({ id: VALID_ID, section: 'coverage' }, profissional);
-      await controller.updatePatientSection(r5, s5);
-      expect(s5.status).not.toHaveBeenCalledWith(403);
+      const [req, res] = mockReqRes({ id: VALID_ID, section: 'coverage' }, ambulancia);
+      (req as unknown as { permissionCells: string[] }).permissionCells = ['patient_coverage:read', 'patient_coverage:write', 'patient_care_team:read'];
+      await controller.updatePatientSection(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(updatePatientSection).not.toHaveBeenCalled();
     });
 
     it.each([

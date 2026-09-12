@@ -11,6 +11,7 @@ import { AdminInsuranceProvidersController } from '../controllers/AdminInsurance
 import { AdminPatientContractedServicesController } from '../controllers/AdminPatientContractedServicesController';
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
+import { AdminPatientContactRowsController } from '../controllers/AdminPatientContactRowsController';
 
 /**
  * Admin patients routes — mounted at /api/admin.
@@ -60,6 +61,13 @@ export function createAdminPatientsRoutes(
   contractedServicesController: AdminPatientContractedServicesController,
   diagnosesController: AdminPatientDiagnosesController,
   terminologySearchController: AdminTerminologySearchController,
+  // Escrita por linha (spec 018, PR-1). Default de propósito, mesmo padrão do `repo` default de
+  // `AdminPatientContractedServicesController` — evita reescrever os 6 call sites de teste que já
+  // existem para este factory. `DatabaseConnection.getInstance()` roda na CONSTRUÇÃO (pega o pool
+  // singleton do processo, não abre conexão nova) — em produção o singleton já existe quando o
+  // `index.ts` monta as rotas; testes que constroem o factory sem DB configurado precisam de
+  // `DATABASE_URL` no ambiente só para o `new` não estourar (nenhuma query roda aqui).
+  contactRowsController: AdminPatientContactRowsController = new AdminPatientContactRowsController(),
 ): Router {
   const router = Router();
   const staffOnly = authMiddleware.requireStaff();
@@ -255,16 +263,15 @@ export function createAdminPatientsRoutes(
   // O controller é o mesmo (`updatePatientSection` lê `req.params.section`), e o whitelist de
   // seções continua sendo o de `patientSectionParamSchema`: rota inexistente = 404 como antes.
   // Mapa seção → célula:
-  //   general         → patient_identity:write   (nome, documento, nascimento, telefone, e-mail)
-  //   clinical        → patient_clinical:write   (quadro clínico e textos restritos)
-  //   coverage        → patient_coverage:write   (obra social, afiliado, verificação)
-  //   support-network → patient_family:write     (familiares/responsáveis — terceiros)
-  //   service         → patient_services:write   (profissão requerida)
+  //   general  → patient_identity:write   (nome, documento, nascimento, telefone, e-mail)
+  //   clinical → patient_clinical:write   (quadro clínico e textos restritos)
+  //   coverage → patient_coverage:write   (obra social, afiliado, verificação)
+  //   service  → patient_services:write   (profissão requerida)
+  // `support-network` SAIU do whitelist (spec 018, PR-1, SUP-37) — a rota vira 410 abaixo.
   const PATIENT_SECTION_CELL: ReadonlyArray<readonly [string, string]> = [
     ['general', 'patient_identity'],
     ['clinical', 'patient_clinical'],
     ['coverage', 'patient_coverage'],
-    ['support-network', 'patient_family'],
     ['service', 'patient_services'],
   ];
   for (const [section, resource] of PATIENT_SECTION_CELL) {
@@ -273,6 +280,36 @@ export function createAdminPatientsRoutes(
       return controller.updatePatientSection(req, res);
     });
   }
+
+  // ── Rede de apoio — escrita por LINHA (spec 018, PR-1, ADR-1; contracts/support-network.md) ──
+  // `PATCH /patients/:id/support-network` (a lista inteira) vira 410: o único consumidor era o
+  // drawer (SUP-37, `git grep` colado no relatório do PR), que passa a chamar as rotas por linha
+  // abaixo. Sem `perm.require` — a rota não faz mais nada além de recusar; a célula de verdade é
+  // `patient_family:write`, exigida pelas rotas novas.
+  router.patch('/patients/:id/support-network', staffOnly, (req: Request, res: Response) => {
+    res.status(410).json({ success: false, error: 'SUPPORT_NETWORK_LIST_WRITE_REMOVED', code: 'SUPPORT_NETWORK_LIST_WRITE_REMOVED' });
+  });
+
+  router.post('/patients/:id/responsibles', staffOnly, perm.require('patient_family', 'write'), (req: Request, res: Response) =>
+    contactRowsController.createResponsible(req, res),
+  );
+  router.patch('/patients/:id/responsibles/:rid', staffOnly, perm.require('patient_family', 'write'), (req: Request, res: Response) =>
+    contactRowsController.updateResponsible(req, res),
+  );
+  router.post('/patients/:id/responsibles/:rid/deactivate', staffOnly, perm.require('patient_family', 'write'), (req: Request, res: Response) =>
+    contactRowsController.deactivateResponsible(req, res),
+  );
+
+  // ── Contatos de emergência da cobertura — escrita por LINHA (PR-1; taxonomia no PR-2) ────────
+  router.post('/patients/:id/coverage-emergency-contacts', staffOnly, perm.require('patient_coverage', 'write'), (req: Request, res: Response) =>
+    contactRowsController.createCoverageEmergencyContact(req, res),
+  );
+  router.patch('/patients/:id/coverage-emergency-contacts/:cid', staffOnly, perm.require('patient_coverage', 'write'), (req: Request, res: Response) =>
+    contactRowsController.updateCoverageEmergencyContact(req, res),
+  );
+  router.post('/patients/:id/coverage-emergency-contacts/:cid/deactivate', staffOnly, perm.require('patient_coverage', 'write'), (req: Request, res: Response) =>
+    contactRowsController.deactivateCoverageEmergencyContact(req, res),
+  );
 
   return router;
 }

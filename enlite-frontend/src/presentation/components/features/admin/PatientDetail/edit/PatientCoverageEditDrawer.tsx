@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
+import { AdminPatientContactRowsApiService } from '@infrastructure/http/AdminPatientContactRowsApiService';
 import type { PatientDetail, PatientCoverageSectionPayload } from '@domain/entities/PatientDetail';
 import { INSURANCE_PROVIDER_CODES } from '@domain/entities/patientEnums';
 import { Button } from '@presentation/components/atoms/Button';
@@ -14,8 +15,7 @@ import type { SelectOption } from '@presentation/components/molecules/SelectFiel
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
 import { CoverageEmergencyContactsEditor } from './CoverageEmergencyContactsEditor';
-import { invalidCoverageContacts } from './coverageContactValidation';
-import type { PatientCoverageEmergencyContactInput } from '@domain/entities/PatientCoverage';
+import { invalidCoverageContacts, type EditableCoverageEmergencyContact } from './coverageContactValidation';
 
 interface Props {
   patient: PatientDetail;
@@ -61,11 +61,12 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
   const editableInitialCodes = entries.filter((e) => e.source !== LOCKED_SOURCE).map((e) => e.code);
 
   const [selected, setSelected] = useState<string[]>(editableInitialCodes);
-  // 417 (D301.3b): contatos de emergência da cobertura — a lista inteira; `null` (sem célula) e
-  // backend anterior à 417 (ausente) começam vazios e SÓ vão no payload se o humano mexer.
-  const initialContacts: PatientCoverageEmergencyContactInput[] = (patient.coverageEmergencyContacts ?? []).map(({ kind, name, phone }) => ({ kind, name, phone }));
-  const [contacts, setContacts] = useState<PatientCoverageEmergencyContactInput[]>(initialContacts);
-  const contactsKey = (l: PatientCoverageEmergencyContactInput[]) => JSON.stringify(l.map((c) => [c.kind, c.name.trim(), c.phone.trim()]));
+  // 417/PR-1 (spec 018, ADR-1): contatos de emergência da cobertura — escrita POR LINHA. `id`
+  // presente = linha existente (o submit decide update/deactivate por diff); `null` (sem célula) e
+  // backend anterior à 417 (ausente) começam vazios.
+  const initialContacts: EditableCoverageEmergencyContact[] = (patient.coverageEmergencyContacts ?? []).map(({ id, kind, name, phone }) => ({ id, kind, name, phone }));
+  const [contacts, setContacts] = useState<EditableCoverageEmergencyContact[]>(initialContacts);
+  const contactsKey = (l: EditableCoverageEmergencyContact[]) => JSON.stringify(l.map((c) => [c.id, c.kind, c.name.trim(), c.phone.trim()]));
   const contactsDirty = contactsKey(contacts) !== contactsKey(initialContacts);
   const contactsInvalid = invalidCoverageContacts(contacts);
 
@@ -119,15 +120,49 @@ export function PatientCoverageEditDrawer({ patient, onClose, onSaved }: Props):
     // PATCH à toa sempre que houvesse cobertura de origem ClickUp.
     const before = [...editableInitialCodes].sort().join(',');
     if ([...selected].sort().join(',') !== before) payload.insuranceVerifiedCodes = selected;
-    if (contactsDirty) payload.emergencyContacts = contacts.map((c) => ({ kind: c.kind, name: c.name.trim(), phone: c.phone.trim() }));
-    if (Object.keys(payload).length === 0) { handleClose(); return; }
+    if (Object.keys(payload).length === 0 && !contactsDirty) { handleClose(); return; }
 
     setBusy(true);
     try {
-      await AdminApiService.updatePatientSection(patient.id, 'coverage', payload);
+      if (Object.keys(payload).length > 0) {
+        await AdminApiService.updatePatientSection(patient.id, 'coverage', payload);
+      }
+      // Contatos de emergência da cobertura: escrita POR LINHA (spec 018, PR-1, ADR-1) — diff
+      // contra o que o drawer abriu com. Removidas primeiro (nada aqui colide com índice único
+      // como em responsáveis, mas a ordem "sai antes de entrar" é a mesma disciplina).
+      if (contactsDirty) {
+        const initialIds = new Set(initialContacts.map((c) => c.id).filter(Boolean));
+        const currentIds = new Set(contacts.map((c) => c.id).filter(Boolean));
+        for (const id of initialIds) {
+          if (!currentIds.has(id)) await AdminPatientContactRowsApiService.deactivateCoverageEmergencyContact(patient.id, id);
+        }
+        // ACHADO 2 (018/PR-1): cada linha nova nasce sem `id` (POST). Sem gravar de volta o id
+        // REAL devolvido pela API, um retry após a falha de OUTRA linha reenviava esta como POST
+        // de novo — cada tentativa duplicava as linhas já criadas com sucesso. `setContacts` com
+        // updater funcional edita SÓ o índice que acabou de ser criado, sem perder o que a pessoa
+        // já tiver digitado nas outras linhas enquanto a chamada estava em voo.
+        for (let index = 0; index < contacts.length; index += 1) {
+          const c = contacts[index];
+          const trimmed = { kind: c.kind, name: c.name.trim(), phone: c.phone.trim() };
+          if (!c.id) {
+            const created = await AdminPatientContactRowsApiService.createCoverageEmergencyContact(patient.id, trimmed);
+            setContacts((prev) => prev.map((row, i) => (i === index ? { ...row, id: created.id } : row)));
+          } else {
+            const original = initialContacts.find((o) => o.id === c.id);
+            const changed = !original || original.kind !== trimmed.kind || original.name.trim() !== trimmed.name || original.phone.trim() !== trimmed.phone;
+            if (changed) await AdminPatientContactRowsApiService.updateCoverageEmergencyContact(patient.id, c.id, trimmed);
+          }
+        }
+      }
+      // `onSaved()` sempre relê a lista do servidor — a tela nunca mostra o snapshot de ANTES do
+      // submit, que mentiria sobre o que já foi salvo (achado do gate `revisao-pr`).
       onSaved();
       handleClose();
     } catch (err) {
+      // Falha em qualquer chamada (desativação, criação/atualização de linha, ou o PATCH de
+      // `coverage`) aborta aqui — próximo Guardar reenvia a partir de onde parou (o id já
+      // gravado no estado evita duplicar a linha que já tinha sido criada com sucesso).
+      onSaved();
       setSubmitError(err instanceof Error ? err.message : te('saveError'));
     } finally {
       setBusy(false);

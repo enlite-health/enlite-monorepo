@@ -123,12 +123,14 @@ const PATIENT_DETAIL_SQL = `
 async function fetchRelated(pool: Pool, patientId: string, enc: KMSEncryptionService) {
   return Promise.all([
     pool.query(
+      // `AND active` (spec 018, PR-1, FR-004): a ficha só mostra responsáveis vivos — quem foi
+      // desativado pelo painel some daqui, mas continua na tabela (nunca DELETE).
       `SELECT id, first_name, last_name, relationship,
               phone_encrypted, email_encrypted,
               document_number_encrypted, document_type,
               is_primary, display_order, source
          FROM patient_responsibles
-        WHERE patient_id = $1
+        WHERE patient_id = $1 AND active
         ORDER BY display_order ASC, is_primary DESC`,
       [patientId],
     ),

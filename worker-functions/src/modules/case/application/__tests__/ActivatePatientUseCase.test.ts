@@ -615,6 +615,24 @@ describe('ActivatePatientUseCase', () => {
     expect(missing).toContain('RESPONSIBLE');
   });
 
+  // 3º sítio de contagem de responsáveis (achado do gate `revisao-pr`, spec 018 PR-1, FR-004):
+  // a query aqui é a MESMA fonte que alimenta `activeResponsibleCount` — sem `AND active`, um
+  // responsável desativado (nunca DELETE, migration 420) contaria como presente e o checklist
+  // mentiria "RESPONSIBLE ok" para um menor cujo único responsável foi removido.
+  it('p2. a contagem de responsáveis filtra `active` — a query em patient_responsibles nunca conta linha desativada', async () => {
+    const { seen } = programClient({
+      patientRow: { id: 'pat-minor-resp-inativo', status: 'PENDING_ADMISSION', case_number: 13, birth_date: '2015-01-01' },
+      addressIds: ['addr-1'],
+      responsibleCount: 0,
+    });
+
+    await new ActivatePatientUseCase().execute('pat-minor-resp-inativo');
+
+    const respSql = seen.find((sql) => sql.includes('FROM patient_responsibles'));
+    expect(respSql).toBeDefined();
+    expect(respSql).toMatch(/\bactive\b/);
+  });
+
   it('v. SEM endereço E sem consentimento/cobertura/responsável (menor) ao mesmo tempo → ainda assim NoActiveAddressError (só ADDRESS decide), nunca PatientNotReadyError genérico', async () => {
     const { seen } = programClient({
       patientRow: {

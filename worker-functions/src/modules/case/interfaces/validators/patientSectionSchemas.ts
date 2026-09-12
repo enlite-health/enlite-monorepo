@@ -1,10 +1,4 @@
 import { z } from 'zod';
-import {
-  COVERAGE_EMERGENCY_CONTACT_KINDS,
-  COVERAGE_EMERGENCY_CONTACT_NAME_MAX,
-  COVERAGE_EMERGENCY_CONTACT_PHONE_MAX,
-  COVERAGE_EMERGENCY_CONTACTS_MAX,
-} from '../../domain/PatientCoverageEmergencyContact';
 import { DOCUMENT_TYPES } from '../../domain/enums/DocumentType';
 import { SEXES } from '../../domain/enums/Sex';
 import { DEPENDENCY_LEVELS } from '../../domain/enums/DependencyLevel';
@@ -82,23 +76,17 @@ export const clinicalSectionSchema = z
  * section = 'coverage' (US-B3) → cobertura informada (texto), nº de afiliado e as coberturas
  * VERIFICADAS por código do catálogo (insurance_providers). IVA e tipo de contratação NÃO
  * entram aqui — são do contrato/pagador (lex C3.3), bloco C.
+ *
+ * `emergencyContacts` SAIU (spec 018, PR-1, ADR-1, SUP-37): a lista de contatos de emergência da
+ * cobertura passou a ser escrita por LINHA (`POST/PATCH/deactivate
+ * /patients/:id/coverage-emergency-contacts[/:cid]`, `patientContactRowSchemas.ts`) — mandar o
+ * campo aqui agora é 400 pelo `.strict()` abaixo (contracts/support-network.md).
  */
-/** 417 (D301): contato de emergência da cobertura — telefone é PII (KMS no repositório). */
-const coverageEmergencyContactSchema = z
-  .object({
-    kind: z.enum(COVERAGE_EMERGENCY_CONTACT_KINDS),
-    name: z.string().trim().min(1).max(COVERAGE_EMERGENCY_CONTACT_NAME_MAX),
-    phone: z.string().trim().min(1).max(COVERAGE_EMERGENCY_CONTACT_PHONE_MAX),
-  })
-  .strict();
-
 export const coverageSectionSchema = z
   .object({
     healthInsuranceName: z.string().trim().min(1).nullable().optional(),
     affiliateId: z.string().trim().min(1).nullable().optional(),
     insuranceVerifiedCodes: z.array(catalogCode).optional(),
-    /** Lista INTEIRA (o drawer substitui); chave ausente não toca a tabela. */
-    emergencyContacts: z.array(coverageEmergencyContactSchema).max(COVERAGE_EMERGENCY_CONTACTS_MAX).optional(),
   })
   .strict();
 

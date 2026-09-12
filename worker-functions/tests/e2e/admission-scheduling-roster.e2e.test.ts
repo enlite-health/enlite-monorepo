@@ -376,4 +376,66 @@ describe('convidado do Meet = quem solicitou (PEND-09)', () => {
     // eslint-disable-next-line no-console
     console.log('[PEND-09] convidado no evento:', invitedEmails[0]);
   });
+
+  // Achado do gate `revisao-pr` (BLOCKER): antes da migration 420, um responsável removido virava
+  // DELETE — a linha simplesmente não existia mais, e a subquery nunca a via. Depois da 420, ela
+  // fica no banco com `active=false`. Sem `AND r.active` em `loadPatientForCountry`, essa linha
+  // volta a ser candidata ao convite do Meet — uma pessoa REMOVIDA da ficha entraria na sala da
+  // entrevista sem autorização. Prova contra o Postgres REAL (nunca mock de repositório): duas
+  // linhas de responsável no MESMO paciente, uma ativa e uma desativada, e `service.book()` real.
+  describe('BLOCKER (gate revisao-pr): responsável DESATIVADO não vira convidado', () => {
+    const EMAIL_ATIVO = 'ativo.e2e@admissionroster.test';
+    const EMAIL_DESATIVADO = 'desativado.e2e@admissionroster.test';
+    let patientId: string;
+
+    beforeAll(async () => {
+      const res = await pool.query<{ id: string }>(
+        `INSERT INTO patients (first_name, last_name, country, contact_email_encrypted)
+         VALUES ('Paciente', 'E2E Desativado', 'AR', NULL) RETURNING id`,
+      );
+      patientId = res.rows[0].id;
+      // O responsável REMOVIDO pelo painel — nunca DELETE (spec 018, PR-1, FR-002): a linha
+      // continua no banco, só com `active=false`. É TITULAR (`is_primary=true`) e vem PRIMEIRO
+      // no `display_order` — de propósito: sem o `AND r.active`, é ELE que a query escolheria
+      // (`ORDER BY is_primary DESC, display_order ASC LIMIT 1`), não o ativo abaixo. Se o teste
+      // passasse mesmo com os dois em prioridade igual, não provaria nada — o desativado tem de
+      // ser quem GANHARIA o desempate para a sabotagem (tirar o `AND r.active`) virar vermelho de
+      // verdade.
+      await pool.query(
+        `INSERT INTO patient_responsibles (patient_id, first_name, last_name, email_encrypted, is_primary, display_order, source, active, deactivated_at, deactivated_by)
+         VALUES ($1, 'Familiar', 'Removido', $2, true, 1, 'web_form', false, NOW(), 'e2e-gate')`,
+        [patientId, Buffer.from(EMAIL_DESATIVADO, 'utf8').toString('base64')],
+      );
+      // O titular ATIVO (controle) — não-titular e com display_order pior; só é escolhido porque
+      // o de cima está desativado.
+      await pool.query(
+        `INSERT INTO patient_responsibles (patient_id, first_name, last_name, email_encrypted, is_primary, display_order, source, active)
+         VALUES ($1, 'Familiar', 'Ativo', $2, false, 2, 'web_form', true)`,
+        [patientId, Buffer.from(EMAIL_ATIVO, 'utf8').toString('base64')],
+      );
+    });
+
+    afterAll(async () => {
+      await pool.query(`DELETE FROM admission_appointments WHERE patient_id = $1`, [patientId]);
+      await pool.query(`DELETE FROM patient_responsibles WHERE patient_id = $1`, [patientId]);
+      await pool.query(`DELETE FROM patients WHERE id = $1`, [patientId]);
+    });
+
+    it('paciente sem e-mail próprio, com um responsável ATIVO e um DESATIVADO (ambos com e-mail) → o evento convida SÓ o ativo; o desativado nunca entra na sala', async () => {
+      await pool.query(
+        `INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1, 'Ana', 'AR', true)`,
+        [ANA],
+      );
+      const invitedEmails: (string | undefined)[] = [];
+      const service = makeServiceWithBase64Kms(stubCalendar({ invitedEmails }));
+      // Horário diferente do resto do arquivo — evita SlotTakenError contra um agendamento que
+      // outro teste já fez para a mesma atendente no mesmo slot (a trava é por atendente+horário).
+      const slotProprio = SLOT_START.plus({ hours: 4 });
+
+      await service.book({ patientId, slotStartISO: slotProprio.toISO() as string, country: 'AR' }, NOW);
+
+      expect(invitedEmails).toEqual([EMAIL_ATIVO]); // só o ativo
+      expect(invitedEmails).not.toContain(EMAIL_DESATIVADO); // o removido NUNCA entra na sala
+    });
+  });
 });

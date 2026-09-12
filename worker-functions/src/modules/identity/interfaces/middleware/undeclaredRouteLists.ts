@@ -38,6 +38,13 @@ export const EXEMPT_ROUTES: ReadonlySet<string> = new Set([
   // marca é o que a põe no perímetro como `exempt`. As três acima moram sob o
   // prefixo e seguem isentas por esta lista — migrá-las para a marca é decisão
   // dos donos de cada router.
+  //
+  // `PATCH /api/admin/patients/:id/support-network` (spec 018, PR-1, ADR-1,
+  // SUP-37): a rota da lista INTEIRA foi decomissionada — responde 410 sempre,
+  // sem tocar em nenhum dado de paciente. Não há célula que faça sentido pedir
+  // para uma rota que só recusa; a escrita de verdade migrou para as rotas por
+  // linha (`patient_family:write`), que declaram normalmente.
+  'PATCH /api/admin/patients/:id/support-network',
 ]);
 
 /**
