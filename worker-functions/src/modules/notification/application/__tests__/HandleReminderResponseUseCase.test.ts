@@ -103,6 +103,35 @@ describe('HandleReminderResponseUseCase', () => {
       expect(result.isSuccess).toBe(true);
     });
 
+    // PII (achado do gate, 2ª rodada): o ramo de FALHA do RSVP (linha irmã do
+    // sucesso, já mascarado) ainda logava o e-mail cru — mesmo teste acima
+    // exercitava o código, mas sem checar o console.
+    it('PII: falha do Calendar RSVP → e-mail mascarado, workerId visível no console.warn', async () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      mockCalendar.confirmAttendee.mockResolvedValue({ success: false, reason: 'api_error' });
+      mockQuery
+        .mockResolvedValueOnce({ rows: [WORKER] })
+        .mockResolvedValueOnce({ rows: [CONFIRMED_APP] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      await useCase.execute('whatsapp:+5491112345678', 'confirm_yes');
+
+      const lines = warnSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(lines).not.toContain(WORKER.email);
+      expect(lines).toContain(`Failed to confirm RSVP for worker=${WORKER.id} email=`);
+      warnSpy.mockRestore();
+    });
+
+    // Sabotagem: reproduz o console.warn ANTIGO (e-mail cru) — prova que a
+    // asserção acima detectaria o vazamento se o fix fosse desfeito.
+    it('sabotagem: reproduzindo o console.warn ANTIGO (e-mail cru) na falha do RSVP, a asserção acima cairia', () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      console.warn(`[HandleReminderResponse] Failed to confirm RSVP for ${WORKER.email}: api_error`);
+      const oldLines = warnSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(oldLines).toContain(WORKER.email); // confirma: o formato antigo vazava
+      warnSpy.mockRestore();
+    });
+
     it('falha se transicao invalida (declined → confirmed)', async () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [WORKER] })

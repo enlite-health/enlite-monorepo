@@ -106,8 +106,9 @@ export class HandleReminderResponseUseCase extends HandleReminderResponseQueries
         // PII: e-mail mascarado; worker.id é o que acha a pessoa no banco.
         console.log(`[HandleReminderResponse] Calendar RSVP confirmed for worker=${worker.id} email=${redactContact(worker.email, 'email')}`);
       } else {
+        // PII (achado do gate, 2ª rodada): mesmo padrão da linha irmã acima (sucesso).
         console.warn(
-          `[HandleReminderResponse] Failed to confirm RSVP for ${worker.email}: ${calResult.reason}`,
+          `[HandleReminderResponse] Failed to confirm RSVP for worker=${worker.id} email=${redactContact(worker.email, 'email')}: ${calResult.reason}`,
         );
       }
     }
