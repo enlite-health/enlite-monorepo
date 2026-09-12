@@ -148,8 +148,10 @@ describe('417/PR-1 — contatos de emergência da cobertura por LINHA: API sob e
       expect(rows).toHaveLength(i + 1);
     }
     const rows = await linhasAtivas();
+    // CR-4 (achado do gate revisao-pr): sort_order agora começa em 1 (COALESCE(MAX,0)+1), no
+    // mesmo molde de PatientResponsibleRepository — não mais 0.
     expect(rows.map((x) => [x.kind, x.name, x.sort_order])).toEqual([
-      ['AMBULANCE', 'Ambulancia sintética', 0], ['DIRECT_PROFESSIONAL', 'Dra. Sintética', 1], ['EMERGENCY_CENTER', 'Central sintética', 2],
+      ['AMBULANCE', 'Ambulancia sintética', 1], ['DIRECT_PROFESSIONAL', 'Dra. Sintética', 2], ['EMERGENCY_CENTER', 'Central sintética', 3],
     ]);
     for (const x of rows) {
       expect(x.phone_encrypted).not.toBe('');
@@ -265,5 +267,44 @@ describe('417/PR-1 — contatos de emergência da cobertura por LINHA: API sob e
     // task 1.10, alt 2: editar a linha que acabou de ser desativada (outra aba chegou primeiro) → 404.
     const editarDesativada = await chamar('PATCH', ROW(idCentral), U.completa, { name: 'Tarde Demais' });
     expect(editarDesativada.status).toBe(404);
+  });
+
+  // BLOCKER do gate `revisao-pr`: o teto de 20 saiu do backend junto com o array
+  // `emergencyContacts` (e a `.max()` do zod que o media) — a única trava que sobrava era o
+  // `disabled` do botão no navegador. Semeia 20 linhas ATIVAS direto no banco (mais rápido que
+  // 20 POSTs) e prova que o SERVIDOR recusa a 21ª — nunca confiar só no cliente.
+  it('7. BLOCKER — teto de 20 contatos ATIVOS: a 21ª linha é recusada com 409 pelo SERVIDOR (nunca só o botão desabilitado no navegador)', async () => {
+    const patientTeto = `${OUTRO_PACIENTE.slice(0, -2)}98`;
+    // Idempotente: se uma corrida anterior desta suíte morreu no meio, limpa antes de semear.
+    await pool.query(`DELETE FROM patient_coverage_emergency_contacts WHERE patient_id = $1`, [patientTeto]);
+    await pool.query(`DELETE FROM patients WHERE id = $1`, [patientTeto]);
+    await pool.query(
+      `INSERT INTO patients (id, clickup_task_id, first_name, last_name, country, is_test) VALUES ($1, 'e2e-417-teto', 'Teto', 'Sintético', 'AR', true)`,
+      [patientTeto],
+    );
+    const valores: string[] = [];
+    const params: unknown[] = [];
+    for (let i = 0; i < 20; i++) {
+      const base = i * 5;
+      valores.push(`($${base + 1}, 'AMBULANCE', $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`);
+      params.push(patientTeto, `Ambulancia ${i}`, Buffer.from('0800', 'utf8').toString('base64'), i + 1, 'e2e-teto');
+    }
+    await pool.query(
+      `INSERT INTO patient_coverage_emergency_contacts (patient_id, kind, name, phone_encrypted, sort_order, created_by) VALUES ${valores.join(', ')}`,
+      params,
+    );
+
+    const antesDoEstouro = (await pool.query(`SELECT COUNT(*)::int AS n FROM patient_coverage_emergency_contacts WHERE patient_id = $1 AND active`, [patientTeto])).rows[0].n;
+    expect(antesDoEstouro).toBe(20);
+
+    const r = await chamar('POST', `/api/admin/patients/${patientTeto}/coverage-emergency-contacts`, U.completa, { kind: 'AMBULANCE', name: 'A 21ª', phone: '0800' });
+    expect(r.status).toBe(409);
+    expect(r.body.code).toBe('COVERAGE_EMERGENCY_CONTACTS_LIMIT_REACHED');
+
+    const depoisDoEstouro = (await pool.query(`SELECT COUNT(*)::int AS n FROM patient_coverage_emergency_contacts WHERE patient_id = $1`, [patientTeto])).rows[0].n;
+    expect(depoisDoEstouro).toBe(20); // nada foi inserido
+
+    await pool.query(`DELETE FROM patient_coverage_emergency_contacts WHERE patient_id = $1`, [patientTeto]);
+    await pool.query(`DELETE FROM patients WHERE id = $1`, [patientTeto]);
   });
 });

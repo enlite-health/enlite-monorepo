@@ -209,6 +209,37 @@ describe('PatientSupportNetworkEditDrawer — todos os ramos', () => {
     expect(updateResponsible).not.toHaveBeenCalledWith(PATIENT_ID, 'r2', expect.anything());
   });
 
+  // CR-1 (achado do gate revisao-pr): antes, `toDeactivateRef` só era limpo DEPOIS do laço
+  // inteiro — se a 2ª de 3 desativações falhasse, a 1ª (já desativada no servidor) continuava
+  // no ref, e o reenvio tentava desativá-la de novo (409 already_inactive) para sempre.
+  it('CR-1 — falha na 2ª de 2 desativações: reenviar tenta SÓ a que faltou, nunca a que já desativou', async () => {
+    deactivateResponsible.mockReset()
+      .mockResolvedValueOnce({ id: 'r2', active: false }) // 1ª chamada: sucesso
+      .mockRejectedValueOnce(new Error('boom')) // 2ª chamada: falha
+      .mockResolvedValueOnce({ id: 'r3', active: false }); // no reenvio: sucesso
+    renderDrawer([
+      responsible,
+      { ...responsible, id: 'r2', firstName: 'Pedro', isPrimary: false },
+      { ...responsible, id: 'r3', firstName: 'Rita', isPrimary: false },
+    ]);
+    fireEvent.click(screen.getByTestId('psn-remove-1')); // remove Pedro (r2) — 1º no ref
+    fireEvent.click(screen.getByTestId('psn-remove-1')); // (era o índice 2/Rita, reindexado após a remoção acima) remove Rita (r3) — 2º no ref
+    fireEvent.click(screen.getByTestId('psn-save'));
+
+    await screen.findByTestId('psn-error');
+    expect(deactivateResponsible).toHaveBeenCalledTimes(2);
+    expect(deactivateResponsible).toHaveBeenNthCalledWith(1, PATIENT_ID, 'r2');
+    expect(deactivateResponsible).toHaveBeenNthCalledWith(2, PATIENT_ID, 'r3');
+
+    // Reenvio: só 'r3' deveria ser tentado de novo — 'r2' já saiu do ref (sucesso anterior).
+    fireEvent.click(screen.getByTestId('psn-save'));
+    await waitFor(() => expect(deactivateResponsible).toHaveBeenCalledTimes(3));
+    expect(deactivateResponsible).toHaveBeenNthCalledWith(3, PATIENT_ID, 'r3');
+    // 'r2' só apareceu UMA vez em todas as chamadas (a 1ª) — nunca repetiu, nunca levaria 409.
+    const chamadasComR2 = (deactivateResponsible.mock.calls as unknown as Array<[string, string]>).filter(([, id]) => id === 'r2');
+    expect(chamadasComR2).toHaveLength(1);
+  });
+
   it('remover uma linha NOVA (sem id, ainda não salva) NÃO chama deactivate — ela só some do formulário', async () => {
     renderDrawer([]);
     fireEvent.click(screen.getByTestId('psn-add'));

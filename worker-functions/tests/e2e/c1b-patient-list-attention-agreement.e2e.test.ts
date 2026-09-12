@@ -81,6 +81,19 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
         );
       }
     }
+    // CR-3 (achado do gate revisao-pr): o controle positivo do teste 'g' precisa de uma linha
+    // FORA de `cenarios` para provar que a query lê a base INTEIRA, não só as minhas fixtures —
+    // depender de sobra incidental de OUTRAS suítes é frágil (quebrou quando `cenarios` cresceu
+    // de 5 para 6 e por acaso não sobrava mais nenhuma linha alheia). Esta testemunha usa o MESMO
+    // prefixo de tag (`limpar()` já a remove) mas um `last_name` diferente — invisível para
+    // `minhas()` (que filtra por 'Atencion QA'), então não interfere nos testes a-f.
+    // country='AR' (não 'BR', o país dos cenários): fica FORA do filtro `BASE` (country:'BR') que
+    // os testes e/f usam, mas ainda conta no `WHERE p.deleted_at IS NULL` sem filtro de país do
+    // teste 'g' — testemunha só onde precisa, sem contaminar total/stats dos outros testes.
+    await pool.query(
+      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status)
+       VALUES ('C1B-attention-testemunha-controle', 'C1B', 'Testemunha Controle', 'AR', 'ADMISSION')`,
+    );
   });
 
   afterAll(async () => { await limpar(); await pool.end(); });

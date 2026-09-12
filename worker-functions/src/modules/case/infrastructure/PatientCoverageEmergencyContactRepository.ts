@@ -13,11 +13,12 @@
 import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
-import type {
-  CoverageEmergencyContactKind,
-  PatientCoverageEmergencyContactDetail,
-  PatientCoverageEmergencyContactInput,
-  PatientCoverageEmergencyContactPatch,
+import {
+  COVERAGE_EMERGENCY_CONTACTS_MAX,
+  type CoverageEmergencyContactKind,
+  type PatientCoverageEmergencyContactDetail,
+  type PatientCoverageEmergencyContactInput,
+  type PatientCoverageEmergencyContactPatch,
 } from '../domain/PatientCoverageEmergencyContact';
 import { deactivateRow, type DeactivateOutcome } from './deactivateRowByRow';
 
@@ -27,6 +28,19 @@ export interface CoverageEmergencyContactRow {
   name: string;
   phone_encrypted: string;
   sort_order: number;
+}
+
+/**
+ * 409 — o paciente já tem `COVERAGE_EMERGENCY_CONTACTS_MAX` contatos ATIVOS (achado do gate
+ * `revisao-pr`, BLOCKER: o teto de 20 saiu do backend junto com o `emergencyContacts` array e a
+ * `.max()` do zod que o media — a única trava que sobrou era o `disabled` do botão no navegador).
+ */
+export class CoverageEmergencyContactLimitReachedError extends Error {
+  readonly code = 'COVERAGE_EMERGENCY_CONTACTS_LIMIT_REACHED';
+  constructor(readonly limit: number = COVERAGE_EMERGENCY_CONTACTS_MAX) {
+    super(`Limite de ${limit} contatos de emergência da cobertura já atingido`);
+    this.name = 'CoverageEmergencyContactLimitReachedError';
+  }
 }
 
 export type { DeactivateOutcome as CoverageContactDeactivateOutcome };
@@ -97,11 +111,23 @@ export class PatientCoverageEmergencyContactRepository {
     actorUid: string,
     client: PoolClient,
   ): Promise<{ id: string }> {
+    // Teto (BLOCKER do gate `revisao-pr`): conta as linhas ATIVAS ANTES do INSERT — uma
+    // desativada não ocupa vaga (nunca DELETE, spec 018 PR-1). `FOR UPDATE` da CONTAGEM não dá
+    // (não é linha, é agregado) — corrida rara vira 1 linha a mais, não perda de dado; aceitável
+    // pelo mesmo padrão do índice de titular único (é o BANCO, via CHECK futuro, que fecharia de
+    // vez; hoje a régua é esta contagem, como o resto do arquivo já faz para `active`).
+    const { rows: countRows } = await client.query<{ count: string }>(
+      `SELECT COUNT(*)::int AS count FROM patient_coverage_emergency_contacts WHERE patient_id = $1 AND active`,
+      [patientId],
+    );
+    if (Number(countRows[0].count) >= COVERAGE_EMERGENCY_CONTACTS_MAX) {
+      throw new CoverageEmergencyContactLimitReachedError();
+    }
     const phoneEnc = await this.enc.encrypt(input.phone.trim());
     const { rows } = await client.query<{ id: string }>(
       `INSERT INTO patient_coverage_emergency_contacts (patient_id, kind, name, phone_encrypted, sort_order, created_by)
        VALUES ($1, $2, $3, $4,
-         COALESCE((SELECT MAX(sort_order) + 1 FROM patient_coverage_emergency_contacts WHERE patient_id = $1), 0),
+         (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM patient_coverage_emergency_contacts WHERE patient_id = $1),
          $5)
        RETURNING id`,
       [patientId, input.kind, input.name.trim(), phoneEnc, actorUid],

@@ -15,6 +15,7 @@ jest.mock('../../../application/patientTransaction', () => ({
 
 import { AdminPatientContactRowsController } from '../AdminPatientContactRowsController';
 import { ResponsiblePrimaryAlreadySetError } from '../../../infrastructure/PatientResponsibleRepository';
+import { CoverageEmergencyContactLimitReachedError } from '../../../infrastructure/PatientCoverageEmergencyContactRepository';
 import { AuthMiddleware } from '@modules/identity';
 import type { Response } from 'express';
 
@@ -292,6 +293,15 @@ describe('AdminPatientContactRowsController', () => {
       const req = mockReq({ params: { id: PATIENT_ID }, body: { kind: 'AMBULANCE', name: 'A', phone: '1' }, permissionCells: ['patient_coverage:write'] });
       await controller.createCoverageEmergencyContact(req, res);
       expect(res.status).toHaveBeenCalledWith(201);
+    });
+
+    it('BLOCKER do gate revisao-pr — 409 nomeando o código quando o repositório recusa por teto (CoverageEmergencyContactLimitReachedError)', async () => {
+      const repo = { insertOne: jest.fn().mockRejectedValue(new CoverageEmergencyContactLimitReachedError()) };
+      const controller = new AdminPatientContactRowsController({} as never, repo as never, db() as never);
+      const res = mockRes();
+      await controller.createCoverageEmergencyContact(mockReq({ params: { id: PATIENT_ID }, body: { kind: 'AMBULANCE', name: 'A', phone: '1' } }), res);
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, code: 'COVERAGE_EMERGENCY_CONTACTS_LIMIT_REACHED' }));
     });
 
     it('404 quando o paciente não existe', async () => {

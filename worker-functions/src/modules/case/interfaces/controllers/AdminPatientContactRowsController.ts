@@ -11,7 +11,10 @@ import {
   PatientResponsibleRepository,
   ResponsiblePrimaryAlreadySetError,
 } from '../../infrastructure/PatientResponsibleRepository';
-import { PatientCoverageEmergencyContactRepository } from '../../infrastructure/PatientCoverageEmergencyContactRepository';
+import {
+  PatientCoverageEmergencyContactRepository,
+  CoverageEmergencyContactLimitReachedError,
+} from '../../infrastructure/PatientCoverageEmergencyContactRepository';
 import {
   responsibleIdParamsSchema,
   createResponsibleSchema,
@@ -183,6 +186,10 @@ export class AdminPatientContactRowsController {
       );
       res.status(201).json({ success: true, data: created });
     } catch (err: unknown) {
+      if (err instanceof CoverageEmergencyContactLimitReachedError) {
+        res.status(409).json({ success: false, error: err.message, code: err.code });
+        return;
+      }
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientContactRowsController:createCoverageEmergencyContact', patientId: params.data.id });
       res.status(500).json({ success: false, error: 'Failed to create coverage emergency contact' });

@@ -143,10 +143,16 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
     try {
       // 1. Desativar as removidas PRIMEIRO — libera o índice de titular único antes de
       //    promover outra linha (a mesma ordem vale para o passo 2/3 abaixo).
-      for (const id of toDeactivateRef.current) {
+      // CR-1 (achado do gate revisao-pr): cada id sai do ref assim que a SUA chamada tem
+      // sucesso — não só depois do laço inteiro. Sem isto, se a 2ª de 3 desativações falhasse,
+      // a 1ª (já desativada no servidor) continuava no ref, e todo reenvio tentava desativá-la
+      // de novo → 409 (already_inactive) → catch → o drawer nunca mais salvava sem fechar e
+      // reabrir (o ref só é reconstruído no próximo mount, via `removeRow`).
+      while (toDeactivateRef.current.length > 0) {
+        const id = toDeactivateRef.current[0];
         await AdminPatientContactRowsApiService.deactivateResponsible(patientId, id);
+        toDeactivateRef.current = toDeactivateRef.current.slice(1);
       }
-      toDeactivateRef.current = [];
 
       // 2. Todas as linhas NÃO-titulares primeiro (nunca colidem com o índice único).
       // 3. A linha titular (no máximo uma) por ÚLTIMO — o titular anterior já foi

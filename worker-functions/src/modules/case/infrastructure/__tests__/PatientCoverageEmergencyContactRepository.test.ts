@@ -18,7 +18,7 @@ jest.mock('@shared/security/KMSEncryptionService', () => ({
   })),
 }));
 
-import { PatientCoverageEmergencyContactRepository, type CoverageEmergencyContactRow } from '../PatientCoverageEmergencyContactRepository';
+import { PatientCoverageEmergencyContactRepository, CoverageEmergencyContactLimitReachedError, type CoverageEmergencyContactRow } from '../PatientCoverageEmergencyContactRepository';
 
 const PID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const sqlOf = (i: number): [string, unknown[]] => mockPoolQuery.mock.calls[i] as [string, unknown[]];
@@ -50,17 +50,43 @@ describe('PatientCoverageEmergencyContactRepository (417, D301)', () => {
   });
 
   describe('insertOne/updateOne/deactivate (escrita por linha — spec 018, PR-1, ADR-1)', () => {
-    it('insertOne: INSERT com telefone CIFRADO, nome com trim, sort_order = MAX+1 (COALESCE 0 quando vazio) e autor carimbado', async () => {
-      const client = { query: jest.fn().mockResolvedValue({ rows: [{ id: 'novo' }] }) } as unknown as PoolClient;
+    it('insertOne: conta as ATIVAS ANTES do INSERT; telefone CIFRADO, nome com trim, sort_order = MAX+1 (COALESCE 0 quando vazio, MESMO padrão do responsável) e autor carimbado', async () => {
+      const client = {
+        query: jest.fn()
+          .mockResolvedValueOnce({ rows: [{ count: 0 }] }) // a contagem (teto)
+          .mockResolvedValueOnce({ rows: [{ id: 'novo' }] }), // o INSERT
+      } as unknown as PoolClient;
       const out = await repo.insertOne(PID, { kind: 'DIRECT_PROFESSIONAL', name: ' Dra. Pérez ', phone: ' +54 11 5555-0001 ' }, 'uid-staff', client);
       expect(out).toEqual({ id: 'novo' });
-      const [sql, params] = (client.query as jest.Mock).mock.calls[0] as [string, unknown[]];
+      const [countSql, countParams] = (client.query as jest.Mock).mock.calls[0] as [string, unknown[]];
+      expect(countSql).toMatch(/SELECT COUNT\(\*\)::int AS count FROM patient_coverage_emergency_contacts WHERE patient_id = \$1 AND active/);
+      expect(countParams).toEqual([PID]);
+      const [sql, params] = (client.query as jest.Mock).mock.calls[1] as [string, unknown[]];
       expect(sql).toContain('INSERT INTO patient_coverage_emergency_contacts (patient_id, kind, name, phone_encrypted, sort_order, created_by)');
-      expect(sql).toContain('COALESCE((SELECT MAX(sort_order) + 1 FROM patient_coverage_emergency_contacts WHERE patient_id = $1), 0)');
+      // CR-4 (achado do gate revisao-pr): mesmo molde de PatientResponsibleRepository.insertOne —
+      // tabela vazia → MAX(NULL)+1 via COALESCE(MAX,0)+1 = 1, não 0.
+      expect(sql).toContain('(SELECT COALESCE(MAX(sort_order), 0) + 1 FROM patient_coverage_emergency_contacts WHERE patient_id = $1)');
       expect(params).toEqual([PID, 'DIRECT_PROFESSIONAL', 'Dra. Pérez', b64('+54 11 5555-0001'), 'uid-staff']);
       // 🔒 o telefone em claro NUNCA vai ao banco.
       expect(JSON.stringify(params)).not.toContain('5555-0001');
       expect(mockPoolQuery).not.toHaveBeenCalled(); // usou o client da transação, não o pool
+    });
+
+    it('insertOne: BLOCKER do gate revisao-pr — no teto (20 ATIVAS), recusa com CoverageEmergencyContactLimitReachedError; NUNCA insere', async () => {
+      const client = {
+        query: jest.fn().mockResolvedValue({ rows: [{ count: 20 }] }),
+      } as unknown as PoolClient;
+      await expect(
+        repo.insertOne(PID, { kind: 'AMBULANCE', name: 'Ambulancia 21', phone: '0800' }, 'uid-staff', client),
+      ).rejects.toBeInstanceOf(CoverageEmergencyContactLimitReachedError);
+      expect((client.query as jest.Mock).mock.calls).toHaveLength(1); // só a contagem — nunca chegou no INSERT
+
+      const client2 = {
+        query: jest.fn().mockResolvedValue({ rows: [{ count: 20 }] }),
+      } as unknown as PoolClient;
+      await expect(
+        repo.insertOne(PID, { kind: 'AMBULANCE', name: 'Ambulancia 21', phone: '0800' }, 'uid-staff', client2),
+      ).rejects.toMatchObject({ code: 'COVERAGE_EMERGENCY_CONTACTS_LIMIT_REACHED' });
     });
 
     it('updateOne: PATCH parcial — só as chaves presentes viram SET; telefone recifrado; ausente = não toca', async () => {
