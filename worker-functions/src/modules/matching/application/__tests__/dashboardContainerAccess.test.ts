@@ -1,5 +1,5 @@
 import {
-  DASHBOARD_SECTIONS, DASHBOARD_SECTION_KEYS, canReadDashboardSection, dashboardReadsOf, dashboardSectionCell,
+  DASHBOARD_SECTIONS, DASHBOARD_SECTION_KEYS, DASHBOARD_ALWAYS_VISIBLE_KEYS, canReadDashboardSection, dashboardReadsOf, dashboardSectionCell,
   projectManagementDashboard,
 } from '../dashboardContainerAccess';
 import { managementDashboardSchema } from '../managementDashboardSchema';
@@ -15,9 +15,13 @@ describe('dashboardContainerAccess — Gestión a la Vista por bloco (D286)', ()
     expect(DASHBOARD_SECTIONS.map(dashboardSectionCell)).toEqual([
       'dashboard_numbers:read', 'dashboard_team:read', 'dashboard_priorities:read', 'dashboard_registrations:read', 'dashboard_funnel:read',
     ]);
-    // toda chave do PAYLOAD REAL (o schema zod de management) está mapeada em alguma seção — chave
-    // nova que ninguém mapear ficaria visível para todo mundo em silêncio (achado do gate, 06/09)
-    expect(new Set(Object.values(DASHBOARD_SECTION_KEYS).flat())).toEqual(new Set(Object.keys(managementDashboardSchema.shape)));
+    // toda chave do PAYLOAD REAL (o schema zod de management) está mapeada em alguma seção OU
+    // declarada explicitamente como SEMPRE visível (`scope`, PR-9 — meta-dado da resolução de
+    // país, não bloco de nenhuma seção) — chave nova que ninguém classificar fica visível para
+    // todo mundo em silêncio (achado do gate, 06/09)
+    expect(new Set([...Object.values(DASHBOARD_SECTION_KEYS).flat(), ...DASHBOARD_ALWAYS_VISIBLE_KEYS])).toEqual(
+      new Set(Object.keys(managementDashboardSchema.shape)),
+    );
   });
 
   it('cells = null → o MESMO objeto (D113); [] → tudo null e as 5 seções no marcador', () => {
@@ -27,6 +31,14 @@ describe('dashboardContainerAccess — Gestión a la Vista por bloco (D286)', ()
     for (const k of Object.keys(DATA)) expect(nada[k as keyof typeof DATA]).toBeNull();
     expect(nada.redacted).toEqual({ numbers: true, team: true, priorities: true, registrations: true, funnel: true });
     expect(canReadDashboardSection(undefined, 'team')).toBe(true);
+  });
+
+  it('PR-9: `scope` nunca vira null, mesmo sem NENHUMA célula de seção (FR-734 — o seletor precisa dele)', () => {
+    const comScope = { ...DATA, scope: { countries: ['AR'], requested: 'ALL' } };
+    const nada = projectManagementDashboard(comScope, ['dashboard:read']);
+    expect(nada.scope).toEqual({ countries: ['AR'], requested: 'ALL' });
+    // o resto continua redigido normalmente — só `scope` é a exceção
+    expect(nada.bigNumbers).toBeNull();
   });
 
   it('sub-objeto compartilhado FICA se qualquer seção permitida o usa: só Equipo armado → equipoArmada e horas ficam, bigNumbers não', () => {

@@ -24,6 +24,8 @@ import { GetManagementDashboardUseCase } from '../../application/GetManagementDa
 import { GetZoneAnalyticsUseCase } from '../../application/GetZoneAnalyticsUseCase';
 import { zoneAnalyticsQuerySchema } from '../../application/zoneAnalyticsSchema';
 import { cellsOfRequest } from '@modules/identity/permissions';
+import { resolveCountryScope, CountryScopeError } from '@modules/identity';
+import { currentDbContext } from '@shared/database/requestDbSession';
 import { projectManagementDashboard } from '../../application/dashboardContainerAccess';
 
 export class AnalyticsDashboardController {
@@ -93,11 +95,16 @@ export class AnalyticsDashboardController {
   }
 
   /**
-   * GET /analytics/dashboard/management?funnelPeriodDays=7|30|90
+   * GET /analytics/dashboard/management?funnelPeriodDays=7|30|90&country=AR|BR|ALL
    * "Dashboard para Gestão à Vista" (ClickUp 86ajb4qnw): big numbers operacionais,
    * prioridades de contato, totalização do funil e cadastros. Read-only, sem PII.
    * `funnelPeriodDays` (opcional) filtra o funil por prestador pela ENTRADA da
    * candidatura (call 22/07); ausente = tudo. Valor fora do conjunto é 400.
+   *
+   * `country` (PR-9, `lex` #9, FR-730/731): resolvido NO SERVIDOR por
+   * `resolveCountryScope` — nunca gated por `COUNTRY_RLS_ENABLED` (L9-3). País
+   * fora do escopo do ator → 403 `COUNTRY_SCOPE_REQUIRED`; valor fora de
+   * AR|BR|ALL → 400.
    */
   async getManagementMetrics(req: Request, res: Response): Promise<void> {
     try {
@@ -114,8 +121,23 @@ export class AnalyticsDashboardController {
         funnelPeriodDays = Number(rawPeriod);
       }
 
+      let scope;
+      try {
+        scope = await resolveCountryScope(this.db, currentDbContext()?.uid, req.query.country);
+      } catch (err) {
+        if (err instanceof CountryScopeError) {
+          res.status(err.status).json({ success: false, error: err.code, detail: err.message });
+          return;
+        }
+        throw err;
+      }
+
       const useCase = new GetManagementDashboardUseCase(this.db);
-      const data = await useCase.execute({ funnelPeriodDays });
+      const data = await useCase.execute({
+        funnelPeriodDays,
+        countries: scope.countries,
+        requested: scope.requested,
+      });
       // D286: cada bloco da tela tem célula própria — a resposta sai projetada por seção.
       res.json({ success: true, data: projectManagementDashboard(data as unknown as Record<string, unknown>, cellsOfRequest(req)) });
     } catch (err) {

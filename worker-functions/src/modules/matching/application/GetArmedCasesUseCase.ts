@@ -9,6 +9,8 @@ import {
   hasStructuredSchedule,
 } from '../domain/scheduleHours';
 import { LIVE_JOB_POSTING_SQL } from '../domain/openJobStatuses';
+import { countryPredicateSql } from '@shared/database/countryScopeSql';
+import { COUNTRY_CODES, type CountryCode } from '@shared/domain/countryCodes';
 
 /** Linha por job_posting (não-draft, não deletado) com contagens de seleção. */
 interface JobPostingArmedRow {
@@ -70,7 +72,12 @@ export interface ArmedCasesResult {
 export class GetArmedCasesUseCase {
   constructor(private readonly db: Pool) {}
 
-  async execute(): Promise<ArmedCasesResult> {
+  /**
+   * @param countries países que a agregação deve enxergar (PR-9, FR-732).
+   *   Default = os dois países (universo inteiro de hoje) — o predicado
+   *   continua na query mesmo assim (nunca depende de a RLS estar ligada).
+   */
+  async execute(countries: CountryCode[] = [...COUNTRY_CODES]): Promise<ArmedCasesResult> {
     const { rows } = await this.db.query<JobPostingArmedRow>(
       `SELECT
          jp.id,
@@ -92,7 +99,9 @@ export class GetArmedCasesUseCase {
          WHERE job_posting_id IS NOT NULL
          GROUP BY job_posting_id
        ) s ON s.job_posting_id = jp.id
-       WHERE ${LIVE_JOB_POSTING_SQL}`,
+       WHERE ${LIVE_JOB_POSTING_SQL}
+         AND ${countryPredicateSql('jp', 1)}`,
+      [countries],
     );
 
     const buckets: Record<ArmedCaseBucket, number> = {
