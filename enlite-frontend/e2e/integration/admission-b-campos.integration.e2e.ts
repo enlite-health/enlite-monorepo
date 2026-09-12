@@ -195,12 +195,39 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     expect(rows[0]).toMatchObject({ neighborhood: 'San Nicolás', corridor: 'Corredor Norte', access: 'Timbre 3B, portero de 8 a 12', country: 'AR' });
     await expect(card).toHaveScreenshot('bloco-b-localizaciones.png', { maxDiffPixelRatio: 0.05 });
 
-    // Ativar sem sair da ficha: 1 vaga borrador por endereço, ACTIVE / DONE
-    await page.getByTestId('activate-patient-btn').click();
-    await page.getByTestId('activate-confirm').click();
+    // Ativar sem sair da ficha (spec 018, PR-6, ADR-5): ativação virou POR SERVIÇO — cria o
+    // serviço apontando pro endereço recém-criado (horário via o mesmo widget de dia da semana
+    // que o bloco C usa), dispara "Activar reclutamiento" no serviço e, com o paciente em
+    // SEARCHING, usa o mesmo `patient-status-control` do teste B7 acima para o 3º momento
+    // (SEARCHING → ACTIVE).
+    await page.getByTestId('new-service-btn').click();
+    await expect(page.getByTestId('patient-contracted-services-edit-drawer')).toBeVisible();
+    await page.getByTestId('svc-code-1').selectOption('AT');
+    const enderecoRecemCriadoId = runSQL(
+      `SELECT id FROM patient_addresses WHERE patient_id = '${admission.patientId}' AND archived_at IS NULL ORDER BY display_order LIMIT 1`,
+    ).trim();
+    await page.getByTestId('svc-addressId-1').selectOption(enderecoRecemCriadoId);
+    await page.getByTestId('day-schedule-add-monday').click();
+    const createService = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
+    await page.getByTestId('contracted-service-new-save').click();
+    const svcBody = (await (await createService).json()) as { data: { id: string } };
+    const serviceId = svcBody.data.id;
+    await expect(page.getByTestId(`contracted-service-form-${serviceId}`)).toBeVisible({ timeout: 15_000 });
+    await page.getByLabel('Cerrar').click();
+    await expect(page.getByTestId('patient-contracted-services-edit-drawer')).not.toBeVisible();
+
+    const activated = page.waitForResponse((r) => r.request().method() === 'POST' && /\/activate-recruitment$/.test(r.url()));
+    await page.getByTestId(`contracted-service-activate-recruitment-${serviceId}`).click();
+    expect((await activated).status()).toBe(201);
+    await expect(page.getByTestId(`contracted-service-view-vacancy-${serviceId}`)).toBeVisible({ timeout: 15_000 });
+    expect(readPatientStatus(admission.patientId).status).toBe('SEARCHING');
+
+    await expect(page.getByTestId('patient-status-control')).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId('patient-status-select').selectOption('ACTIVE');
+    const putActive = page.waitForResponse((r) => r.request().method() === 'PUT' && /\/status$/.test(r.url()));
+    await page.getByTestId('patient-status-save').click();
+    expect((await putActive).status()).toBe(200);
     await expect(page.getByTestId('patient-status-badge')).toHaveText('Activo', { timeout: 20_000 });
-    await expect(page.getByTestId('activate-patient-btn')).toHaveCount(0);
-    await expect(page.getByTestId('patient-status-control')).toBeVisible();
     const st = readPatientStatus(admission.patientId);
     expect(st).toMatchObject({ status: 'ACTIVE', admissionStatus: 'DONE' });
     expect(countVacancies(admission.patientId)).toBe(1);
