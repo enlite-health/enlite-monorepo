@@ -1106,7 +1106,6 @@
       "recruitment": "Recrutamento",
       "blockedAttempts": "Candidaturas bloqueadas",
       "patients": "Pacientes",
-      "apiDocs": "API Docs",
       "tags": "Etiquetas",
       "dedup": "Duplicatas",
       "adminSection": "Administração",
@@ -1348,10 +1347,6 @@
           "imported": "Importado"
         }
       }
-    },
-    "apiDocs": {
-      "title": "Documentação da API",
-      "subtitle": "Referência completa do worker-functions. Todas as chamadas usam seu token de staff atual automaticamente."
     },
     "login": {
       "title": "Painel Administrativo",

@@ -12,7 +12,7 @@
  *   `npx vite --port 5173 --strictPort &` e
  *   `npx playwright test --config=playwright.mocked.config.ts e2e/fsm-picker-visual.e2e.ts`
  *
- * Auth pelo Firebase Emulator real (mesmo padrão do admin-api-docs). O payload
+ * Auth pelo Firebase Emulator real (mesmo padrão dos demais e2e de admin). O payload
  * de `/api/admin/funnel-stage-messages` é fixado aqui com os DADOS REAIS de
  * produção lidos em 31/08/2026 — inclusive o corpo aprovado que veio da Content
  * API — para fotografar os três estados que importam:
