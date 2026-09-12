@@ -103,19 +103,36 @@ describe('AdminPatientAddressesController.updatePatientAddress', () => {
     const updateCall = mockClientQuery.mock.calls[1];
     expect(updateCall[0]).toMatch(/UPDATE patient_addresses SET address_type = \$3, address_type_other = \$4, updated_at = NOW\(\)/);
     expect(updateCall[1]).toEqual([A, P, 'otro', 'Casa de la tía']);
-    // Trilha SEM valor: nem o enum, nem o texto do "Otro".
+    // Trilha SEM valor: nem o enum, nem o texto do "Otro". K1 — nem o `.length` do enum
+    // fechado sai (dá para deduzir o valor pelo tamanho, ex.: 4 = 'otro'): só `true`, igual ao
+    // booleano de `is_default`. Esta asserção FALHA se algum dia voltar a sair um número.
     const logged = (logger.info as jest.Mock).mock.calls[0][0];
-    expect(logged.fields).toEqual({ address_type: 'otro'.length, address_type_other: 'Casa de la tía'.length });
+    expect(logged.fields).toEqual({ address_type: true, address_type_other: true });
+    expect(typeof logged.fields.address_type).toBe('boolean');
+    expect(typeof logged.fields.address_type_other).toBe('boolean');
     expect(JSON.stringify((logger.info as jest.Mock).mock.calls)).not.toContain('Casa de la tía');
   });
 
-  it('200: address_type = null limpa o campo ("sin especificar")', async () => {
+  it('200: address_type = null limpa o campo ("sin especificar") — e address_type_other órfão junto (K4)', async () => {
     queueUpdate({ rowCount: 1 });
     const [req, res] = reqRes({ patientId: P, addressId: A }, { address_type: null });
     await ctrl.updatePatientAddress(req, res);
     expect(res.status).toHaveBeenCalledWith(200);
     const updateCall = mockClientQuery.mock.calls[1];
-    expect(updateCall[1]).toEqual([A, P, null]);
+    expect(updateCall[0]).toMatch(/UPDATE patient_addresses SET address_type = \$3, address_type_other = \$4, updated_at = NOW\(\)/);
+    expect(updateCall[1]).toEqual([A, P, null, null]);
+  });
+
+  it('200: address_type muda para valor ≠ "otro" sem mandar address_type_other → o mesmo UPDATE limpa o texto órfão (K4)', async () => {
+    queueUpdate({ rowCount: 1 });
+    const [req, res] = reqRes({ patientId: P, addressId: A }, { address_type: 'casa_madre' });
+    await ctrl.updatePatientAddress(req, res);
+    expect(res.status).toHaveBeenCalledWith(200);
+    const updateCall = mockClientQuery.mock.calls[1];
+    expect(updateCall[0]).toMatch(/UPDATE patient_addresses SET address_type = \$3, address_type_other = \$4, updated_at = NOW\(\)/);
+    expect(updateCall[1]).toEqual([A, P, 'casa_madre', null]);
+    const logged = (logger.info as jest.Mock).mock.calls[0][0];
+    expect(logged.fields).toEqual({ address_type: true });
   });
 
   it('200: is_default=true → demove o principal anterior NA MESMA TRANSAÇÃO, antes do UPDATE do próprio endereço', async () => {
