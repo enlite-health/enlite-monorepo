@@ -221,7 +221,7 @@ describe('PeriskopeInboundRouter', () => {
   // PII guard — pontos 5/6/7 do achado do gate 11/09 (telefone mascarado)
   // ═══════════════════════════════════════════════════════════════════
 
-  describe('PII guard — telefone mascarado nos 3 logger.warn de falha', () => {
+  describe('PII guard — telefone mascarado nos 3 logger.warn de falha + o logger.info de fallback', () => {
     const SENSITIVE_PHONE = '+5491122334455';
 
     it('ponto 5 — BookSlot failed: telefone mascarado', async () => {
@@ -273,6 +273,38 @@ describe('PeriskopeInboundRouter', () => {
       expect(JSON.stringify(payload)).not.toContain('1122334455');
       expect(payload.phone).toBe('549***4455');
       warnSpy.mockRestore();
+    });
+
+    // Achado do gate (2ª rodada): 4º ponto do arquivo — o logger.info de fallback
+    // (slug/payload não reconhecido) logava telefone cru + o payload do botão
+    // (texto livre em potencial).
+    it('4º ponto — fallback "not recognized": telefone mascarado, payload vira só tamanho', async () => {
+      const infoSpy = jest.spyOn(logger, 'info').mockImplementation();
+      const SENSITIVE_PAYLOAD = 'texto_livre_digitado_pela_pessoa';
+      mockDbQuery
+        .mockResolvedValueOnce(WORKER_ROW)
+        .mockResolvedValueOnce({ rows: [{ template_slug: 'some_other_slug', twilio_sid: 'sid-4', buttons: [{ label: 'x', payload: SENSITIVE_PAYLOAD }] }] });
+
+      await router.routeNumberedReply(SENSITIVE_PHONE, '1');
+
+      const call = infoSpy.mock.calls.find((c) => c[1] === '[PeriskopeInboundRouter] Correlated message found but slug/payload not recognized');
+      expect(call).toBeDefined();
+      const [payload] = call as [Record<string, unknown>, string];
+      expect(JSON.stringify(payload)).not.toContain('1122334455');
+      expect(JSON.stringify(payload)).not.toContain(SENSITIVE_PAYLOAD);
+      expect(payload.phone).toBe('549***4455');
+      expect(payload.payloadLength).toBe(SENSITIVE_PAYLOAD.length);
+      infoSpy.mockRestore();
+    });
+
+    // Sabotagem: reproduz o logger.info ANTIGO (telefone + payload crus) — prova
+    // que a asserção acima detectaria o vazamento se o fix fosse desfeito.
+    it('sabotagem: reproduzindo o logger.info ANTIGO (telefone+payload crus) do fallback, a asserção acima cairia', () => {
+      const infoSpy = jest.spyOn(logger, 'info').mockImplementation();
+      logger.info({ phone: SENSITIVE_PHONE, templateSlug: 'x', payload: 'texto_livre' }, '[PeriskopeInboundRouter] Correlated message found but slug/payload not recognized');
+      const [oldPayload] = infoSpy.mock.calls[0] as [Record<string, unknown>];
+      expect(oldPayload.phone).toBe(SENSITIVE_PHONE); // confirma: o formato antigo vazava
+      infoSpy.mockRestore();
     });
   });
 });
