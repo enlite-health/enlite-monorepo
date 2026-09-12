@@ -863,6 +863,51 @@ describe('ProcessTalentumPrescreening', () => {
 
       consoleSpy.mockRestore();
     });
+
+    // Achado do gate, C3 do parecer do lex (2ª rodada): resolveJobPosting logava
+    // o nome/título LIVRE do projeto no Talentum cru. Medido em prd (7d): 400/590
+    // NÃO batem o formato exato "CASO N" — nunca se loga o texto livre.
+    it('resolveJobPosting: nome livre do Talentum NUNCA aparece — só caseRef extraído ou <outro>', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+      const SENSITIVE_CASE_NAME = 'CASO 681 — Paciente com nome no título do projeto';
+      const payload = buildPayload();
+      (payload.data.prescreening as any).name = SENSITIVE_CASE_NAME;
+
+      await useCase.execute(payload);
+
+      const lines = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(lines).not.toContain(SENSITIVE_CASE_NAME);
+      expect(lines).not.toContain('Paciente com nome');
+      expect(lines).toContain('resolveJobPosting | caseRef=CASO 681');
+      consoleSpy.mockRestore();
+    });
+
+    it('resolveJobPosting: nome SEM padrão "CASO N" vira marcador fixo <outro>, nunca o texto livre', async () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+      const SENSITIVE_FREE_TEXT = 'Acompañante para Sra. Sensível — zona norte';
+      const payload = buildPayload();
+      (payload.data.prescreening as any).name = SENSITIVE_FREE_TEXT;
+
+      await useCase.execute(payload);
+
+      const lines = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(lines).not.toContain(SENSITIVE_FREE_TEXT);
+      expect(lines).not.toContain('Sensível');
+      expect(lines).toContain('resolveJobPosting | caseRef=<outro>');
+      consoleSpy.mockRestore();
+    });
+
+    // Sabotagem: reproduz o console.log ANTIGO (nome livre cru) — prova que a
+    // asserção acima detectaria o vazamento se o fix fosse desfeito.
+    it('sabotagem: reproduzindo o console.log ANTIGO (nome livre do Talentum cru), a asserção acima cairia', () => {
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+      const TAG = '[ProcessTalentumPrescreening]';
+      const SENSITIVE_FREE_TEXT = 'Acompañante para Sra. Sensível — zona norte';
+      console.log(`${TAG} resolveJobPosting | name="${SENSITIVE_FREE_TEXT}"`);
+      const oldLines = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(oldLines).toContain(SENSITIVE_FREE_TEXT); // confirma: o formato antigo vazava
+      consoleSpy.mockRestore();
+    });
   });
 
   // ═══════════════════════════════════════════════════════════════════
