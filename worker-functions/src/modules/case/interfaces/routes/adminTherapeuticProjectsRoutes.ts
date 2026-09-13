@@ -1,8 +1,8 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { AuthMiddleware, type PermissionMiddleware } from '@modules/identity';
 import { ADMIN_PATIENTS_FAMILY } from '@modules/identity/permissions';
 import { logResourceAccess } from '@shared/audit/resourceAccessLog';
-import { AdminTherapeuticProjectsController } from '../controllers/AdminTherapeuticProjectsController';
+import { AdminTherapeuticProjectsController, type RequestWithTherapeuticContactContainers } from '../controllers/AdminTherapeuticProjectsController';
 import { THERAPEUTIC_PROJECT_RESOURCE, therapeuticTrailAction } from '../../application/therapeuticProjectAccess';
 import { THERAPEUTIC_CATALOG_KINDS, THERAPEUTIC_CATALOG_RESOURCE } from '../../domain/TherapeuticProject';
 
@@ -30,10 +30,13 @@ export function createAdminTherapeuticProjectsRoutes(
   const staffOnly = authMiddleware.requireStaff();
   const perm = permissions.family(ADMIN_PATIENTS_FAMILY);
 
-  const readTrail = (req: Request): string => therapeuticTrailAction('read_project', req.permissionCells ?? null);
+  // `req.therapeuticContactContainers` (lex C6): containers de CONTATO efetivamente resolvidos —
+  // o controller escreve nesse campo ANTES de `res.json`, e `logResourceAccess` lê no `finish`.
+  const contactContainersOf = (req: Request): string[] => (req as RequestWithTherapeuticContactContainers).therapeuticContactContainers ?? [];
+  const readTrail = (req: Request): string => therapeuticTrailAction('read_project', req.permissionCells ?? null, contactContainersOf(req));
   // Só a leitura de UMA versão pode ser export (lex C13): a lista com `?purpose=export` é leitura comum.
   const versionTrail = (req: Request): string =>
-    therapeuticTrailAction(req.query.purpose === 'export' ? 'export_pdf' : 'read_project', req.permissionCells ?? null);
+    therapeuticTrailAction(req.query.purpose === 'export' ? 'export_pdf' : 'read_project', req.permissionCells ?? null, contactContainersOf(req));
   const writeTrail = (req: Request): string => therapeuticTrailAction('write_project', req.permissionCells ?? null);
 
   router.get(
@@ -50,10 +53,18 @@ export function createAdminTherapeuticProjectsRoutes(
     logResourceAccess('patient', writeTrail),
     (req: Request, res: Response) => controller.create(req, res),
   );
+  // `?purpose=export` (lex C8(b), contract §Export do PDF): exige a célula `…:export` ALÉM da
+  // leitura — mesmo para versão ANTIGA (permissão da versão antiga = vigente, lex C8). A trilha
+  // sai `export_pdf:` (ver `versionTrail`), nunca `read_project:`, quando o purpose é export.
+  const exportGate = (req: Request, res: Response, next: NextFunction): void => {
+    if (req.query.purpose !== 'export') return next();
+    return perm.require(THERAPEUTIC_PROJECT_RESOURCE, 'export')(req, res, next);
+  };
   router.get(
     '/patients/:id/therapeutic-projects/:vid',
     staffOnly,
     perm.require(THERAPEUTIC_PROJECT_RESOURCE, 'read'),
+    exportGate,
     logResourceAccess('patient', versionTrail),
     (req: Request, res: Response) => controller.get(req, res),
   );

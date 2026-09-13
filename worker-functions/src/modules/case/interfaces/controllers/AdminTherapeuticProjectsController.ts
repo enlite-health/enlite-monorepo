@@ -10,7 +10,10 @@ import {
   PatientNotFoundForProjectError,
   VersionNotCurrentError,
   MacroFieldsLockedError,
+  ContactInactiveError,
+  ContactNotFoundError,
 } from '../../infrastructure/TherapeuticProjectRepository';
+import { TherapeuticProjectContactsRepository } from '../../infrastructure/TherapeuticProjectContactsRepository';
 import {
   TherapeuticCatalogRepository,
   CatalogItemsUnknownError,
@@ -19,8 +22,10 @@ import {
 import {
   canWriteTherapeuticClinical,
   projectTherapeuticVersionForActor,
+  missingContactOriginCell,
   PATIENT_CLINICAL_WRITE_CELL,
 } from '../../application/therapeuticProjectAccess';
+import type { ResolvedTherapeuticContact } from '../../domain/TherapeuticProject';
 import {
   createTherapeuticProjectSchema,
   annulTherapeuticProjectSchema,
@@ -56,14 +61,35 @@ const invalidBody = (res: Response, error: z.ZodError): void => {
  * com `patient_clinical:read` — a projeção é o ponto único `projectTherapeuticVersionForActor`. Nenhum `reportError` abaixo
  * carrega `req.body`.
  */
+/** Onde a trilha (`therapeuticTrailAction`, lex C6) lê os containers de contato EFETIVAMENTE servidos — ver `adminTherapeuticProjectsRoutes.ts`. */
+export interface RequestWithTherapeuticContactContainers extends Request {
+  therapeuticContactContainers?: string[];
+}
+
 export class AdminTherapeuticProjectsController {
   constructor(
     private readonly repo: TherapeuticProjectRepository = new TherapeuticProjectRepository(),
     private readonly catalogs: TherapeuticCatalogRepository = new TherapeuticCatalogRepository(),
+    private readonly contacts: TherapeuticProjectContactsRepository = new TherapeuticProjectContactsRepository(),
   ) {}
 
   private actorUid(req: Request): string {
     return AuthMiddleware.getAuthContext(req)?.principal.id ?? 'unknown';
+  }
+
+  /** Resolve os contatos de UMA versão + acumula os containers servidos em `req` para a trilha (lex C6). */
+  private async resolveContacts(
+    req: RequestWithTherapeuticContactContainers,
+    versionId: string,
+    cells: readonly string[] | null | undefined,
+  ): Promise<ResolvedTherapeuticContact[]> {
+    const { contacts, containersServed } = await this.contacts.resolve(versionId, cells);
+    if (containersServed.size > 0) {
+      const acc = new Set(req.therapeuticContactContainers ?? []);
+      for (const c of containersServed) acc.add(c);
+      req.therapeuticContactContainers = Array.from(acc);
+    }
+    return contacts;
   }
 
   /** GET /patients/:id/therapeutic-projects */
@@ -76,7 +102,13 @@ export class AdminTherapeuticProjectsController {
     try {
       const versions = await this.repo.listForPatient(params.data.id);
       const cells = cellsOfRequest(req);
-      res.status(200).json({ success: true, data: { versions: versions.map((v) => projectTherapeuticVersionForActor(v, cells)) } });
+      const projected = await Promise.all(
+        versions.map(async (v) => ({
+          ...projectTherapeuticVersionForActor(v, cells),
+          contacts: await this.resolveContacts(req, v.id, cells),
+        })),
+      );
+      res.status(200).json({ success: true, data: { versions: projected } });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminTherapeuticProjectsController:list', patientId: params.data.id });
@@ -97,7 +129,12 @@ export class AdminTherapeuticProjectsController {
         res.status(404).json({ success: false, error: 'Therapeutic project version not found' });
         return;
       }
-      res.status(200).json({ success: true, data: projectTherapeuticVersionForActor(version, cellsOfRequest(req)) });
+      const cells = cellsOfRequest(req);
+      // lex C8(a): a permissão de leitura da versão ANTIGA é a MESMA da vigente — nenhum ramo
+      // especial por `annulledAt`/"não é a última": a projeção e a resolução de contatos são
+      // por CÉLULA, sempre, nunca por status da versão.
+      const contacts = await this.resolveContacts(req, version.id, cells);
+      res.status(200).json({ success: true, data: { ...projectTherapeuticVersionForActor(version, cells), contacts } });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminTherapeuticProjectsController:get', patientId: params.data.id, versionId: params.data.vid });
@@ -123,6 +160,13 @@ export class AdminTherapeuticProjectsController {
       res.status(403).json({ success: false, error: 'Forbidden', details: { cell: PATIENT_CLINICAL_WRITE_CELL } });
       return;
     }
+    // lex-pr7 §alterado: célula de escrita do projeto + célula de LEITURA da origem de cada
+    // contato selecionado — quem não vê o familiar/cobertura/equipe não pode selecioná-lo.
+    const missingCell = missingContactOriginCell(body.data.version.contactRefs, body.data.version.careTeamIds, cells);
+    if (missingCell) {
+      res.status(403).json({ success: false, error: 'Forbidden', details: { cell: missingCell } });
+      return;
+    }
     try {
       const actorUid = this.actorUid(req);
       const created = body.data.mode === 'new'
@@ -146,6 +190,15 @@ export class AdminTherapeuticProjectsController {
       // D328: só NOMES de campo — nunca o valor clínico enviado (lex #7 C7).
       if (err instanceof MacroFieldsLockedError) {
         res.status(422).json({ success: false, error: 'Macro fields are locked outside of a new version', code: err.code, details: { fields: err.fields } });
+        return;
+      }
+      // lex #7 C7: só `kind`/`id` — nunca nome/telefone do contato (nem no erro, nem no log).
+      if (err instanceof ContactInactiveError) {
+        res.status(422).json({ success: false, error: 'Selected contact is inactive', code: err.code, details: { kind: err.kind, id: err.id } });
+        return;
+      }
+      if (err instanceof ContactNotFoundError) {
+        res.status(404).json({ success: false, error: 'Selected contact not found', code: err.code, details: { kind: err.kind, id: err.id } });
         return;
       }
       if (err instanceof ServiceNotOfPatientError) {

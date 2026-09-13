@@ -9,6 +9,7 @@ import {
   currentVersionOf,
   macroFieldsChanged,
   type CatalogSnapshotItem,
+  type ContactRef,
   type PathologySegment,
   type TherapeuticDiagnosis,
   type TherapeuticMacroField,
@@ -57,6 +58,9 @@ export interface TherapeuticProjectVersionInput {
   activityIds: string[];
   startDate: string;
   endDate: string;
+  /** MICRO (D328/SUP-24) — só ids; a linha de origem tem de estar ATIVA (trigger 429). */
+  contactRefs: ContactRef[];
+  careTeamIds: string[];
 }
 
 export type CreateVersionCommand =
@@ -113,6 +117,38 @@ export class ServiceNotOfPatientError extends Error {
 
 const isServiceOfOtherPatient = (err: unknown): boolean =>
   /ptp_service_de_outro_paciente/.test(String((err as { message?: string })?.message ?? ''));
+
+/**
+ * `mode:'new'|'edit'` com `contactRefs`/`careTeamIds` apontando para contato INATIVO ou de outro
+ * paciente (trigger `fn_patient_therapeutic_project_contacts_imutavel`, 429): 422, só `kind`/`id`
+ * — nunca nome/telefone (lex #7 C7). FK violada (23503, o par id/patient_id não existe) vira 404.
+ */
+export class ContactInactiveError extends Error {
+  readonly code = 'ptp_contact_inactive';
+  constructor(readonly kind: string, readonly id: string) {
+    super('ptp_contact_inactive');
+  }
+}
+
+/** O `id` referenciado não é uma linha ATIVA deste paciente (FK 23503 das 4 constraints da 429). */
+export class ContactNotFoundError extends Error {
+  readonly code = 'contact_not_found';
+  constructor(readonly kind: string, readonly id: string) {
+    super('contact_not_found');
+  }
+}
+
+const isContactInactiveViolation = (err: unknown): boolean =>
+  (err as { code?: string })?.code === '22023' && /ptp_contact_inactive/.test(String((err as { message?: string })?.message ?? ''));
+
+const isForeignKeyViolation = (err: unknown): boolean => (err as { code?: string })?.code === '23503';
+
+const CONTACT_COLUMN: Record<'RESPONSIBLE' | 'EXTERNAL' | 'COVERAGE' | 'CARE_TEAM', string> = {
+  RESPONSIBLE: 'responsible_id',
+  EXTERNAL: 'external_contact_id',
+  COVERAGE: 'coverage_contact_id',
+  CARE_TEAM: 'professional_id',
+};
 
 // `date` chega como Date pelo driver quando não há tipo customizado; a API fala ISO yyyy-mm-dd.
 const isoDate = (v: unknown): string => (v instanceof Date ? v.toISOString().slice(0, 10) : String(v));
@@ -253,6 +289,10 @@ export class TherapeuticProjectRepository {
             cmd.version.startDate, cmd.version.endDate, cmd.actorUid, cmd.version.modality,
           ],
         );
+        // SUP-26: a ligação só nasce NESTA transação, com a versão já gravada — nunca "adicionar
+        // depois" numa versão antiga. Erro daqui vira 422/404 (lex #7 C7: nunca nome/telefone).
+        await this.insertContacts(cli, ins.rows[0].id, cmd.patientId, cmd.version.contactRefs, cmd.version.careTeamIds);
+
         const sel = await cli.query<VersionRow>(`${SELECT_VERSION} WHERE v.id = $1`, [ins.rows[0].id]);
         return sel.rows[0];
       });
@@ -260,6 +300,37 @@ export class TherapeuticProjectRepository {
     } catch (err) {
       if (isServiceOfOtherPatient(err)) throw new ServiceNotOfPatientError();
       throw err;
+    }
+  }
+
+  /**
+   * Insere a ligação versão→contato UMA LINHA POR VEZ (não em lote): o erro do trigger (429) não
+   * diz QUAL linha violou, e o contrato exige `{kind,id}` do contato específico no 422/404.
+   */
+  private async insertContacts(
+    cli: PoolClient,
+    versionId: string,
+    patientId: string,
+    contactRefs: ContactRef[],
+    careTeamIds: string[],
+  ): Promise<void> {
+    const rows: { kind: 'RESPONSIBLE' | 'EXTERNAL' | 'COVERAGE' | 'CARE_TEAM'; id: string }[] = [
+      ...contactRefs.map((r) => ({ kind: r.kind, id: r.id })),
+      ...careTeamIds.map((id) => ({ kind: 'CARE_TEAM' as const, id })),
+    ];
+    for (const [sortOrder, row] of rows.entries()) {
+      const column = CONTACT_COLUMN[row.kind];
+      try {
+        await cli.query(
+          `INSERT INTO patient_therapeutic_project_contacts (version_id, patient_id, contact_kind, ${column}, sort_order)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [versionId, patientId, row.kind, row.id, sortOrder],
+        );
+      } catch (err) {
+        if (isContactInactiveViolation(err)) throw new ContactInactiveError(row.kind, row.id);
+        if (isForeignKeyViolation(err)) throw new ContactNotFoundError(row.kind, row.id);
+        throw err;
+      }
     }
   }
 

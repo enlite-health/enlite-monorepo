@@ -1,6 +1,22 @@
 import { z } from 'zod';
 import { containsLikelyPersonalData } from '@modules/identity/permissions';
-import { THERAPEUTIC_CATALOG_KINDS, THERAPEUTIC_MODALITIES } from '../../domain/TherapeuticProject';
+import { CONTACT_REF_KINDS, THERAPEUTIC_CATALOG_KINDS, THERAPEUTIC_MODALITIES } from '../../domain/TherapeuticProject';
+
+/** Teto de contatos/equipe por versão — espelha o `.max(20)` do contrato (lex #7, migration 429). */
+export const THERAPEUTIC_CONTACT_REFS_MAX = 20;
+export const THERAPEUTIC_CARE_TEAM_IDS_MAX = 20;
+
+/**
+ * `contactRefs`/`careTeamIds` (PR-7, contract `therapeutic-project.md` §alterado): só ids de linhas
+ * ATIVAS do mesmo paciente — texto livre de contato não existe aqui (`.strict()` → 400). A
+ * ativação/existência real é conferida no repositório (trigger 429), nunca no zod.
+ */
+const contactRefSchema = z
+  .object({
+    kind: z.enum(CONTACT_REF_KINDS),
+    id: z.string().uuid(),
+  })
+  .strict();
 
 /** Teto dos textos clínicos — espelha `ptp_clinical_context_len`/`ptp_general_objective_len` (migration 416, lex C6). */
 export const THERAPEUTIC_TEXT_MAX = 4000;
@@ -41,6 +57,9 @@ const versionBodySchema = z
     // Sem `pathologyTypeIds`: o tipo de patologia deriva dos `diagnoses` no servidor (D163/D164).
     startDate: z.string().regex(ISO_DATE),
     endDate: z.string().regex(ISO_DATE),
+    // MICRO (D328/SUP-24): trocar a seleção de contato não pede versão nova nem trava em `mode:'edit'`.
+    contactRefs: z.array(contactRefSchema).max(THERAPEUTIC_CONTACT_REFS_MAX).optional().default([]),
+    careTeamIds: z.array(z.string().uuid()).max(THERAPEUTIC_CARE_TEAM_IDS_MAX).optional().default([]),
   })
   .strict()
   .refine((b) => b.endDate >= b.startDate, { message: 'endDate must be on or after startDate', path: ['endDate'] });

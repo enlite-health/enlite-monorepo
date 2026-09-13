@@ -96,6 +96,29 @@ export interface TherapeuticProjectVersion {
 export const versionLabel = (major: number, minor: number): string => `V.${major}.${minor}`;
 
 /**
+ * Contato por SELEÇÃO (PR-7, migration 429, lex #7 C1-C6) — só ids, nunca nome/telefone. `CARE_TEAM`
+ * fica de fora (é `careTeamIds: string[]` no corpo, sem o wrapper `{kind,id}` — molde do contrato).
+ */
+export const CONTACT_REF_KINDS = ['RESPONSIBLE', 'EXTERNAL', 'COVERAGE'] as const;
+export type ContactRefKind = (typeof CONTACT_REF_KINDS)[number];
+export interface ContactRef {
+  kind: ContactRefKind;
+  id: string;
+}
+
+export type ResolvedTherapeuticContactKind = ContactRefKind | 'CARE_TEAM';
+
+/**
+ * O que a LEITURA devolve por contato (lex #7 C5, regra única): resolvido (célula de origem +
+ * contato ativo) | inativo (sem célula nenhuma resolve nome/telefone de linha inativa) | redigido
+ * (sem a célula de origem). Nunca as três formas ao mesmo tempo — o `kind`+`id` sempre saem.
+ */
+export type ResolvedTherapeuticContact =
+  | { kind: ResolvedTherapeuticContactKind; id: string; name: string; phone: string | null; relation?: string; specialty?: string }
+  | { kind: ResolvedTherapeuticContactKind; id: string; inactive: true }
+  | { kind: ResolvedTherapeuticContactKind; id: string; redacted: true };
+
+/**
  * ADR-4 / D328 — campo MACRO só muda quando o operador cria uma versão NOVA (`mode:'new'`);
  * `mode:'edit'` recusa alteração de MACRO com 422 `ptp_macro_locked`. `modality` é MICRO
  * (D328/SUP-24: trocar presencial↔online é edição, não pede projeto novo — fecha o que o
