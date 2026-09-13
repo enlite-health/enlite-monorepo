@@ -3567,11 +3567,7 @@
         "cancel": "Cancelar",
         "legacyLabel": "Endereço anterior (referência)",
         "addressFormatted": "Endereço",
-        "addressRaw": "Endereço abreviado",
-        "addressType": "Tipo",
-        "typeService": "Serviço",
-        "typeHome": "Casa",
-        "typeOther": "Outro"
+        "addressRaw": "Endereço abreviado"
       }
     },
     "match": {

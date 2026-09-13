@@ -3646,11 +3646,7 @@
         "cancel": "Cancelar",
         "legacyLabel": "Domicilio anterior (referencia)",
         "addressFormatted": "Dirección",
-        "addressRaw": "Dirección abreviada",
-        "addressType": "Tipo",
-        "typeService": "Servicio",
-        "typeHome": "Casa",
-        "typeOther": "Otro"
+        "addressRaw": "Dirección abreviada"
       }
     },
     "match": {

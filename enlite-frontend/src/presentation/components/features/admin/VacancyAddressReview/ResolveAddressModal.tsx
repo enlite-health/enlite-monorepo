@@ -12,8 +12,6 @@ export interface ResolveAddressModalProps {
   isLoading: boolean;
 }
 
-type AddressType = 'service' | 'home' | 'other';
-
 export function ResolveAddressModal({
   item,
   onConfirm,
@@ -31,7 +29,6 @@ export function ResolveAddressModal({
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newAddressFormatted, setNewAddressFormatted] = useState('');
   const [newAddressRaw, setNewAddressRaw] = useState('');
-  const [newAddressType, setNewAddressType] = useState<AddressType>('service');
 
   useEffect(() => {
     if (!item.patient_id) return;
@@ -46,15 +43,16 @@ export function ResolveAddressModal({
     (!showCreateForm && selectedAddressId !== null) ||
     (showCreateForm && newAddressFormatted.trim().length > 0);
 
+  // Sem guarda de `canConfirm` aqui: o único chamador é o botão "Confirmar", que já vem
+  // `disabled` sempre que `canConfirm` é false — um segundo guard interno é código morto
+  // (inalcançável por clique real ou simulado; disabled suprime o próprio evento).
   const handleConfirm = async () => {
-    if (!canConfirm) return;
     let body: ResolveAddressBody;
     if (showCreateForm) {
       body = {
         createAddress: {
           address_formatted: newAddressFormatted.trim(),
           ...(newAddressRaw.trim() ? { address_raw: newAddressRaw.trim() } : {}),
-          address_type: newAddressType,
         },
       };
     } else {
@@ -186,18 +184,6 @@ export function ResolveAddressModal({
                     placeholder={s('addressRaw')}
                     className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                   />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-semibold text-slate-600">{s('addressType')}</label>
-                  <select
-                    value={newAddressType}
-                    onChange={e => setNewAddressType(e.target.value as AddressType)}
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  >
-                    <option value="service">{s('typeService')}</option>
-                    <option value="home">{s('typeHome')}</option>
-                    <option value="other">{s('typeOther')}</option>
-                  </select>
                 </div>
               </div>
             )}
