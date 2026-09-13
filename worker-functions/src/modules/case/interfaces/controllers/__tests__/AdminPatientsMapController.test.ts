@@ -49,7 +49,7 @@ function parse(body: Record<string, unknown>) {
 const req = (body: unknown, uid = 'staff-1') => ({ body, user: { uid } }) as unknown as Request;
 
 const row = (over: Record<string, unknown> = {}) => ({
-  id: 'p1', first_name: 'Ana', last_name: 'Paz', status: 'ACTIVE', address_id: 'a1', address_type: 'primary',
+  id: 'p1', first_name: 'Ana', last_name: 'Paz', status: 'ACTIVE', address_id: 'a1',
   lat: '-34.60', lng: '-58.38', city: 'CABA', neighborhood: 'Flores', state: 'Buenos Aires', open_vacancies: '2',
   distance_km: null, total_count: 1, ...over,
 });
@@ -83,6 +83,11 @@ describe('buildPatientsMapQuery', () => {
   it('TRAVA DE PHI: o SQL não cita coluna clínica', () => {
     const { sql } = buildPatientsMapQuery(parse({ ...SCOPE, status: ['ACTIVE'], with_open_vacancies: true, state: 'x', city: 'y' }));
     expect(sql).not.toMatch(/diagnosis|additional_comments|dependency_level|clinical|emergency|medication|document_number|has_consent|attention/i);
+  });
+
+  it('A9 (spec 019): o SQL não projeta address_type do mapa', () => {
+    const { sql } = buildPatientsMapQuery(parse(SCOPE));
+    expect(sql).not.toMatch(/address_type/);
   });
 
   it('escopo por localidade: país, deleted_at, endereços ativos, sem raio', () => {
@@ -213,8 +218,8 @@ describe('AdminPatientsMapController.getMapPoints', () => {
   it('200: um ponto por endereço; sem endereço vira lat/lng nulos; contagens; trilha sem PII', async () => {
     mockQuery.mockResolvedValueOnce({ rows: withTotal(4, [
       row(),
-      row({ address_id: 'a2', address_type: 'secondary', lat: '-34.61', lng: '-58.39', distance_km: '0.5' }),
-      row({ id: 'p2', first_name: null, last_name: null, address_id: null, address_type: null, lat: null, lng: null, city: null, neighborhood: null, state: null, open_vacancies: null }),
+      row({ address_id: 'a2', lat: '-34.61', lng: '-58.39', distance_km: '0.5' }),
+      row({ id: 'p2', first_name: null, last_name: null, address_id: null, lat: null, lng: null, city: null, neighborhood: null, state: null, open_vacancies: null }),
       // o driver pode entregar número (coluna double) em vez de string
       row({ id: 'p3', address_id: 'a3', lat: -34.62, lng: -58.4, open_vacancies: 1, distance_km: 3 }),
     ]) });
@@ -226,9 +231,11 @@ describe('AdminPatientsMapController.getMapPoints', () => {
     expect(body.withoutCoordinates).toBe(1);
     // 4 vieram e 4 existem: encheu o limit e mesmo assim NÃO está cortado.
     expect(body.truncated).toBe(false);
-    expect(body.data[0]).toEqual({ id: 'p1', addressId: 'a1', name: 'Ana Paz', lat: -34.6, lng: -58.38, status: 'ACTIVE', addressType: 'primary', city: 'CABA', neighborhood: 'Flores', state: 'Buenos Aires', openVacancies: 2, distanceKm: null });
+    // A9 (spec 019): addressType não faz mais parte do payload do mapa (removido do SQL/mapeamento/tipo).
+    expect(body.data[0]).toEqual({ id: 'p1', addressId: 'a1', name: 'Ana Paz', lat: -34.6, lng: -58.38, status: 'ACTIVE', city: 'CABA', neighborhood: 'Flores', state: 'Buenos Aires', openVacancies: 2, distanceKm: null });
+    expect(body.data[0]).not.toHaveProperty('addressType');
     expect(body.data[1]).toMatchObject({ addressId: 'a2', distanceKm: 0.5 });
-    expect(body.data[2]).toEqual({ id: 'p2', addressId: null, name: '—', lat: null, lng: null, status: 'ACTIVE', addressType: null, city: null, neighborhood: null, state: null, openVacancies: 0, distanceKm: null });
+    expect(body.data[2]).toEqual({ id: 'p2', addressId: null, name: '—', lat: null, lng: null, status: 'ACTIVE', city: null, neighborhood: null, state: null, openVacancies: 0, distanceKm: null });
     expect(body.data[3]).toMatchObject({ id: 'p3', lat: -34.62, lng: -58.4, openVacancies: 1, distanceKm: 3 });
     expect(JSON.stringify(body)).not.toMatch(/diagnos/i);
     const entry = mockLogInfo.mock.calls[0][0];

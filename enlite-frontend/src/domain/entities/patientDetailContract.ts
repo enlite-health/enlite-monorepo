@@ -75,7 +75,8 @@ const availabilitySchema = z
 const addressSchema = z
   .object({
     id: z.string(),
-    addressType: z.string(),
+    addressType: z.string().nullable(),
+    addressTypeOther: z.string().nullable(),
     addressFormatted: z.string().nullable(),
     addressRaw: z.string().nullable(),
     complement: z.string().nullable(),

@@ -139,7 +139,7 @@ async function fetchRelated(pool: Pool, patientId: string, enc: KMSEncryptionSer
       // operator. Archived rows still exist in the table to preserve historic
       // vacancies that point to them — see migration 198 and
       // docs/features/vacancy-creation/06-endereco-servico.md.
-      `SELECT id, address_type, address_formatted, address_raw, complement, display_order, lat, lng,
+      `SELECT id, address_type, address_type_other, is_default, address_formatted, address_raw, complement, display_order, lat, lng,
               neighborhood, logistics_corridor, access_notes, country
          FROM patient_addresses
         WHERE patient_id = $1
@@ -238,13 +238,18 @@ function mapAddresses(rows: any[], vacancyRows: ActiveVacancy[]): PatientAddress
   return rows.map((a) => ({
     id: a.id,
     addressType: a.address_type,
+    // Spec 019 (D310 item c): texto livre do "Otro" (≤40) — coerente com addressType='otro'
+    // em linha ativa (CHECK da migration 434). Nunca sai em log/trilha (lex).
+    addressTypeOther: a.address_type_other ?? null,
     addressFormatted: a.address_formatted,
     addressRaw: a.address_raw,
     complement: a.complement ?? null,
     displayOrder: a.display_order,
     lat: a.lat != null ? parseFloat(a.lat) : null,
     lng: a.lng != null ? parseFloat(a.lng) : null,
-    isPrimary: a.address_type === 'primary',
+    // Spec 019: PRINCIPAL própria — não mais deduzida de `address_type === 'primary'` (posição
+    // do slot no ClickUp). `is_default` é a marca real da operação (migration 433).
+    isPrimary: a.is_default,
     // Spec 012, US-B2: logística POR endereço (316); zona = `neighborhood` (147, lex C2.7).
     neighborhood: a.neighborhood ?? null,
     logisticsCorridor: a.logistics_corridor ?? null,

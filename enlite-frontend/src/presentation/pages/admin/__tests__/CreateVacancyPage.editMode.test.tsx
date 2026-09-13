@@ -89,7 +89,6 @@ const ADDRESS_LINKED = {
   patient_id: PATIENT_ID,
   address_formatted: 'Av. Italia 736, Tigre, Buenos Aires, Argentina',
   address_raw: 'Av. Italia 736',
-  address_type: 'service',
   display_order: 1,
   source: 'manual',
   complement: null,

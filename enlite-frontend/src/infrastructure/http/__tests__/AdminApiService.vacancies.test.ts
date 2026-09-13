@@ -233,12 +233,12 @@ describe('AdminApiService - Vacancies Methods', () => {
 
       const result = await AdminApiService.createPatientAddress('pat-1', {
         address_formatted: 'Av. Y 200',
-        address_type: 'primary',
+        is_default: true,
       });
 
       expect(mockCreatePatientAddress).toHaveBeenCalledWith('pat-1', {
         address_formatted: 'Av. Y 200',
-        address_type: 'primary',
+        is_default: true,
       });
       expect(result).toEqual(mockRow);
     });

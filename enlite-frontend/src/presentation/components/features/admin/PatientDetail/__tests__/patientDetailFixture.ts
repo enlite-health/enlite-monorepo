@@ -74,6 +74,7 @@ export const patientDetailFixture: PatientDetail = {
     {
       id: 'addr1',
       addressType: 'primary',
+      addressTypeOther: null,
       addressFormatted: 'Rua Augusta, 975 - São Paulo/SP',
       addressRaw: 'Rua Augusta 975, Consolação',
       complement: 'Torre A, Ap. 701',

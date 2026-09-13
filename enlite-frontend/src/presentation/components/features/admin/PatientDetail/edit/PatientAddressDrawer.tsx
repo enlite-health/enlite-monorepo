@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { PatientAddressDetail, PatientAddressLogisticsPayload } from '@domain/entities/PatientDetail';
-import type { PatientAddressCreateInput } from '@domain/entities/PatientAddress';
+import { patientAddressTypeSchema, type PatientAddressCreateInput, type PatientAddressType } from '@domain/entities/PatientAddress';
 import { derivePatientZone, type PatientZoneAddressComponent } from '@application/use-cases/derivePatientZone';
 import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
@@ -11,11 +11,12 @@ import { Text } from '@presentation/components/atoms/Text';
 import { Textarea } from '@presentation/components/atoms/Textarea';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
-import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import { ServiceAreaMap } from '@presentation/components/molecules/ServiceAreaMap';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { useGooglePlacesAutocomplete } from '@presentation/hooks/useGooglePlacesAutocomplete';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
+import { AddressTypeFields, ADDRESS_TYPE_OTHER_MAX } from './AddressTypeFields';
+import { MarkPrimaryCheckbox } from './MarkPrimaryCheckbox';
 
 interface Props {
   patientId: string;
@@ -26,7 +27,6 @@ interface Props {
 }
 
 const CLOSE_MS = 300;
-const ADDRESS_TYPES = ['primary', 'secondary', 'service'] as const;
 /** Teto de `access_notes` — espelha o servidor (lex C2.6). */
 export const ACCESS_NOTES_MAX = 2000;
 
@@ -61,10 +61,22 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [formatted, setFormatted] = useState('');
   const [raw, setRaw] = useState('');
-  const [type, setType] = useState<string>('secondary');
   const [neighborhood, setNeighborhood] = useState(address?.neighborhood ?? '');
   const [corridor, setCorridor] = useState(address?.logisticsCorridor ?? '');
   const [access, setAccess] = useState(address?.accessNotes ?? '');
+  // Spec 019 (D310 item c) — TIPO por parentesco, só editável (a coluna `address_type` deixou de
+  // ser aceita na criação, B4). `''` = "sin especificar" (`address_type = NULL`). Normalizado pelo
+  // MESMO schema do submit — uma linha legada com `'primary'`/`'secondary'`/`'service'` (não
+  // deveria sobrar em linha ativa depois da migration 434, mas o front não confia sem checar) vira
+  // `null` aqui igual ao <select> (sem `<option>` pra esse valor, a UI já mostra "sin especificar").
+  const originalAddressType = patientAddressTypeSchema.parse(address?.addressType ?? null);
+  const [addressType, setAddressType] = useState<PatientAddressType | ''>(originalAddressType ?? '');
+  const [addressTypeOther, setAddressTypeOther] = useState(address?.addressTypeOther ?? '');
+  const addressTypeOtherError =
+    addressType === 'otro' && addressTypeOther.trim().length > ADDRESS_TYPE_OTHER_MAX ? te('typeOtherTooLong') : undefined;
+  // Marcar como principal — disponível ao criar (opt-in, vira `is_default: true` no POST) e ao
+  // editar (só aparece se este endereço ainda não é o principal; troca atômica no servidor).
+  const [markPrimary, setMarkPrimary] = useState(false);
   /** `required` = campo vazio; `notPicked` = digitado sem escolher da lista do Google. */
   const [addressMissing, setAddressMissing] = useState<'required' | 'notPicked' | null>(null);
   /**
@@ -124,13 +136,16 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
 
   const handleClose = (): void => { setShow(false); setTimeout(onClose, CLOSE_MS); };
 
-  // Spec 014 (US-D4, lex D4 AUTORIZADO): editando, só os 3 campos de logística contam
+  // Spec 014 (US-D4, lex D4 AUTORIZADO) + spec 019: editando, logística + tipo + principal contam
   // (o endereço em si é somente-leitura aqui); criando, qualquer campo preenchido conta.
   const isDirty = editing
     ? neighborhood !== (address.neighborhood ?? '') ||
       corridor !== (address.logisticsCorridor ?? '') ||
-      access !== (address.accessNotes ?? '')
-    : formatted !== '' || raw !== '' || type !== 'secondary' || neighborhood !== '' || corridor !== '' || access !== '';
+      access !== (address.accessNotes ?? '') ||
+      addressType !== (originalAddressType ?? '') ||
+      addressTypeOther !== (address.addressTypeOther ?? '') ||
+      markPrimary
+    : formatted !== '' || raw !== '' || neighborhood !== '' || corridor !== '' || access !== '' || markPrimary;
 
   const { confirmingClose, requestClose, keepEditing, confirmDiscard } = useConfirmDiscardClose({
     isDirty,
@@ -143,16 +158,30 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [requestClose]);
 
-  const typeOptions: SelectOption[] = ADDRESS_TYPES.map((v) => ({ value: v, label: ta(`type_${v}`) }));
   const nz = (v: string): string | null => { const s = v.trim(); return s ? s : null; };
 
   const onSubmit = async (): Promise<void> => {
     setSubmitError(null);
     if (editing) {
+      if (addressTypeOtherError) return;
       const payload: PatientAddressLogisticsPayload = {};
       if (nz(neighborhood) !== (address.neighborhood ?? null)) payload.neighborhood = nz(neighborhood);
       if (nz(corridor) !== (address.logisticsCorridor ?? null)) payload.logistics_corridor = nz(corridor);
       if (nz(access) !== (address.accessNotes ?? null)) payload.access_notes = nz(access);
+      // Spec 019: `address_type`/`address_type_other` validados pela MESMA lista fechada do CHECK
+      // do banco (`patientAddressTypeSchema`, zod na borda), sem `.default(...)` — ausência do
+      // select ('') é `null` = "sin especificar", nunca um valor chutado.
+      const nextType = patientAddressTypeSchema.parse(addressType === '' ? null : addressType);
+      if (nextType !== originalAddressType) payload.address_type = nextType;
+      const nextOther = nextType === 'otro' ? nz(addressTypeOther) : null;
+      if (nextOther !== (address.addressTypeOther ?? null)) {
+        payload.address_type_other = nextOther;
+        // O `.refine` do servidor exige address_type === 'otro' NA MESMA requisição sempre que
+        // address_type_other vier preenchido — mesmo quando o tipo já era 'otro' e só o texto
+        // mudou (`nextType` não entraria no payload sozinho, pois não mudou do original).
+        if (nextOther !== null) payload.address_type = nextType;
+      }
+      if (markPrimary && !address.isPrimary) payload.is_default = true;
       if (Object.keys(payload).length === 0) { handleClose(); return; }
       setBusy(true);
       try {
@@ -176,11 +205,13 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
     setAddressMissing(null);
     // ⚠️ lex C5: `place_id` NÃO entra aqui. Ele é identificador estável do Google para a
     // residência do paciente; persistir cria categoria de dado que hoje não existe no banco.
-    const payload: PatientAddressCreateInput = { address_formatted: f, address_type: type };
+    // Spec 019 (B4): `address_type` sai da criação — nasce `NULL`, atribuído depois pela ficha.
+    const payload: PatientAddressCreateInput = { address_formatted: f };
     if (nz(raw)) payload.address_raw = nz(raw) as string;
     if (nz(neighborhood)) payload.neighborhood = nz(neighborhood) as string;
     if (nz(corridor)) payload.logistics_corridor = nz(corridor) as string;
     if (nz(access)) payload.access_notes = nz(access) as string;
+    if (markPrimary) payload.is_default = true;
     setBusy(true);
     try {
       await AdminApiService.createPatientAddress(patientId, payload);
@@ -223,10 +254,24 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
 
         <div className="flex-1 overflow-y-auto px-8 py-6 flex flex-col gap-5">
           {editing ? (
-            <div data-clarity-mask="True" data-testid="pad-address-readonly">
-              <Text size="sm" weight="medium" color="secondary">{ta('address')}</Text>
-              <Text size="sm" color="muted">{address.addressFormatted ?? address.addressRaw ?? '—'}</Text>
-            </div>
+            <>
+              <div data-clarity-mask="True" data-testid="pad-address-readonly">
+                <Text size="sm" weight="medium" color="secondary">{ta('address')}</Text>
+                <Text size="sm" color="muted">{address.addressFormatted ?? address.addressRaw ?? '—'}</Text>
+              </div>
+              {/* Spec 019: o tipo (`address_type`) só entra pelo PATCH — nunca na criação (B4). */}
+              <AddressTypeFields
+                addressType={addressType}
+                addressTypeOther={addressTypeOther}
+                onAddressTypeChange={setAddressType}
+                onAddressTypeOtherChange={setAddressTypeOther}
+                ta={ta}
+                otherError={addressTypeOtherError}
+              />
+              {!address.isPrimary && (
+                <MarkPrimaryCheckbox checked={markPrimary} onChange={setMarkPrimary} ta={ta} />
+              )}
+            </>
           ) : (
             <>
               <FormField
@@ -264,9 +309,9 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
               <FormField label={ta('addressRaw')} htmlFor="pad-raw" optional>
                 <InputWithIcon id="pad-raw" inputSize="compact" value={raw} onChange={(e) => setRaw(e.target.value)} data-testid="pad-raw" />
               </FormField>
-              <FormField label={ta('type')} htmlFor="pad-type" optional>
-                <SelectField id="pad-type" inputSize="compact" options={typeOptions} value={type} onChange={setType} data-testid="pad-type" />
-              </FormField>
+              {/* Spec 019 (US 4.2): opt-in — sem marcar, vale a regra de nascimento do servidor
+                  (sem principal ativo, este nasce principal de qualquer forma). */}
+              <MarkPrimaryCheckbox checked={markPrimary} onChange={setMarkPrimary} ta={ta} />
             </>
           )}
 

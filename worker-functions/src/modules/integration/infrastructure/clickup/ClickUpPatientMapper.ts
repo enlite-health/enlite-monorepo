@@ -614,7 +614,8 @@ export class ClickUpPatientMapper {
                         ?? (slot.useLegacyFallback ? legacyPatientNeighborhood : null);
 
       addresses.push({
-        addressType:      slot.type,
+        // Spec 019 (B4): para de escrever `addressType` a partir da posição do slot — o tipo
+        // de local por parentesco só entra via PATCH humano (AdminPatientAddressesController).
         addressFormatted: formatted ?? undefined,
         addressRaw:       slot.raw   ?? undefined,
         displayOrder:     slot.order,

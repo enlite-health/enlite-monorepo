@@ -345,10 +345,15 @@ describe('I7: PatientService writes state/city/neighborhood in patient_addresses
       city: string | null;
       neighborhood: string | null;
     }>(
+      // Spec 019 (B4): `PatientRepository.replaceAddresses` parou de escrever `address_type`
+      // no INSERT — nasce NULL, valor só entra via PATCH (AdminPatientAddressesController).
+      // Filtrar por `address_type = 'primary'` aqui nunca mais casa nenhuma linha desta via
+      // de escrita; o teste tinha 1 endereço só, então o join por `clickup_task_id` já é
+      // suficiente (achado ao investigar F3 do run 34731108498).
       `SELECT pa.state, pa.city, pa.neighborhood
        FROM patient_addresses pa
        JOIN patients p ON p.id = pa.patient_id
-       WHERE p.clickup_task_id = $1 AND pa.address_type = 'primary'`,
+       WHERE p.clickup_task_id = $1`,
       [TASK.i7],
     );
 
@@ -393,10 +398,11 @@ describe('I8: PatientService leaves state/city/neighborhood NULL when not provid
       city: string | null;
       neighborhood: string | null;
     }>(
+      // Mesmo achado de I7: `address_type` nasce NULL nesta via de escrita (spec 019, B4).
       `SELECT pa.state, pa.city, pa.neighborhood
        FROM patient_addresses pa
        JOIN patients p ON p.id = pa.patient_id
-       WHERE p.clickup_task_id = $1 AND pa.address_type = 'primary'`,
+       WHERE p.clickup_task_id = $1`,
       [TASK.i8],
     );
 

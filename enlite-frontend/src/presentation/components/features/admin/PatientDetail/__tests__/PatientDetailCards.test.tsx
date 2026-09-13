@@ -64,10 +64,13 @@ vi.mock('react-router-dom', () => ({
 const updatePatientSection = vi.fn();
 // Spec 012: o drawer de cobertura lê o catálogo ao abrir (cai no seed dos 33 se falhar).
 const listInsuranceProviders = vi.fn().mockResolvedValue([]);
+// Spec 019 (US 4.2): ação inline "Marcar como principal" do LocalizacoesCard.
+const updatePatientAddressLogistics = vi.fn().mockResolvedValue({ id: 'addr1' });
 vi.mock('@infrastructure/http/AdminApiService', () => ({
   AdminApiService: {
     updatePatientSection: (...a: unknown[]) => updatePatientSection(...a),
     listInsuranceProviders: (...a: unknown[]) => listInsuranceProviders(...a),
+    updatePatientAddressLogistics: (...a: unknown[]) => updatePatientAddressLogistics(...a),
   },
 }));
 
@@ -83,6 +86,7 @@ import { PatientProfileTabs } from '../PatientProfileTabs';
 import { FamiliaresCard } from '../FamiliaresCard';
 import { CoberturaMedicaCard } from '../CoberturaMedicaCard';
 import { LocalizacoesCard } from '../LocalizacoesCard';
+import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
 
 // ── PatientIdentityCard ──────────────────────────────────────────────────────
 
@@ -945,21 +949,108 @@ describe('LocalizacoesCard', () => {
     expect(screen.getByTestId('address-missing-addr1')).toHaveTextContent('Sem endereço cadastrado');
   });
 
-  it('Tipo mostra SÓ o selo Principal quando isPrimary, SÓ o rótulo do address_type quando não (sem repetir a palavra)', () => {
-    // Conserto pós-Fase 1 (achado da própria LISTA): `isPrimary` é 100% derivado de
-    // `address_type === 'primary'` (PatientDetailQueryHelper.ts:228) — mostrar os dois juntos
-    // repetia a palavra "Principal". Agora é OU selo OU rótulo, nunca os dois.
-    render(<LocalizacoesCard addresses={patientDetailFixture.addresses} />);
+  it('spec 019: selo Principal (de isPrimary/is_default) e rótulo do TIPO (address_type) são campos independentes — mostram-se JUNTOS', () => {
+    // Antes da spec 019, `isPrimary` era 100% derivado de `address_type === 'primary'`
+    // (PatientDetailQueryHelper.ts:228) — mostrar os dois juntos repetia a palavra "Principal",
+    // por isso o card fazia OU selo OU rótulo. Agora `is_default` é a marca real da operação,
+    // independente do tipo por parentesco — os dois convivem na mesma célula.
+    const principalComTipo = { ...patientDetailFixture.addresses[0], addressType: 'domicilio_propio', isPrimary: true };
+    render(<LocalizacoesCard addresses={[principalComTipo]} />);
     const badge = screen.getByTestId('address-primary-badge-addr1');
     expect(badge).toHaveTextContent('Principal');
-    expect(badge.closest('td')).toHaveTextContent('Principal');
-    // A célula do Tipo não repete "Principal" fora do selo — só o texto do selo existe ali.
-    expect(badge.closest('td')?.textContent).toBe('Principal');
+    expect(badge.closest('td')).toHaveTextContent('Domicílio próprio');
 
-    const secundario = { ...patientDetailFixture.addresses[0], id: 'addr2', addressType: 'secondary', isPrimary: false };
+    const secundario = { ...patientDetailFixture.addresses[0], id: 'addr2', addressType: 'secondary', addressTypeOther: null, isPrimary: false };
     render(<LocalizacoesCard addresses={[secundario]} />);
     expect(screen.queryByTestId('address-primary-badge-addr2')).not.toBeInTheDocument();
-    expect(screen.getByText('Secundário')).toBeInTheDocument();
+    expect(screen.getByText('Não especificado')).toBeInTheDocument();
+  });
+
+  // Achado do gate `revisao-pr` (migration 434, D323): `typeLabel` tinha que usar a MESMA
+  // validação do drawer — 'primary'/'secondary'/'service' são chaves antigas (pré-434), não
+  // parentesco novo; qualquer linha que ainda as carregue cai em "sin especificar", igual ao
+  // <select> do drawer (`patientAddressTypeSchema`, `.catch(null)`). Valor novo da lista fechada
+  // (`casa_madre`) continua mostrando o rótulo certo.
+  it('spec 019 (D323): tipo legado (primary/secondary/service) mostra "Sin especificar" — só a lista fechada por parentesco tem rótulo próprio', () => {
+    const primary = { ...patientDetailFixture.addresses[0], addressType: 'primary', isPrimary: false };
+    render(<LocalizacoesCard addresses={[primary]} />);
+    expect(screen.getByText('Não especificado')).toBeInTheDocument();
+
+    const service = { ...patientDetailFixture.addresses[0], id: 'addr3', addressType: 'service', isPrimary: false };
+    render(<LocalizacoesCard addresses={[service]} />);
+    expect(screen.getAllByText('Não especificado').length).toBeGreaterThan(0);
+
+    const casaMadre = { ...patientDetailFixture.addresses[0], id: 'addr4', addressType: 'casa_madre', isPrimary: false };
+    render(<LocalizacoesCard addresses={[casaMadre]} />);
+    expect(screen.getByText('Casa da mãe')).toBeInTheDocument();
+  });
+
+  it('spec 019: address_type NULL mostra "Não especificado" e o aviso de sem principal aparece quando nenhum endereço é principal', () => {
+    const semTipoNemPrincipal = { ...patientDetailFixture.addresses[0], addressType: null, isPrimary: false };
+    render(<LocalizacoesCard addresses={[semTipoNemPrincipal]} patientId="p1" />);
+    expect(screen.getByText('Não especificado')).toBeInTheDocument();
+    expect(screen.getByTestId('address-no-principal-warning')).toHaveTextContent('Sem principal');
+  });
+
+  it('spec 019 (US 4.2): ação inline "Marcar como principal" — some quando já é principal, PATCH is_default:true quando clicada', async () => {
+    updatePatientAddressLogistics.mockClear();
+    const onSaved = vi.fn();
+    const secundario = { ...patientDetailFixture.addresses[0], id: 'addr2', isPrimary: false };
+    render(<LocalizacoesCard addresses={[secundario]} patientId="p1" onSaved={onSaved} />);
+    // Endereço já principal não mostra a ação (não existe "marcar principal" pra quem já é).
+    expect(screen.queryByTestId('address-mark-primary-addr1')).not.toBeInTheDocument();
+
+    const markBtn = screen.getByTestId('address-mark-primary-addr2');
+    fireEvent.click(markBtn);
+    await waitFor(() => expect(updatePatientAddressLogistics).toHaveBeenCalledWith('p1', 'addr2', { is_default: true }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  });
+
+  it('spec 019 (US 4.2): botão fica disabled enquanto o PATCH está pendente — reentrância dupla é bloqueada pelo DOM, não precisa de guarda em JS', async () => {
+    updatePatientAddressLogistics.mockClear();
+    let resolveCall: (() => void) | undefined;
+    updatePatientAddressLogistics.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveCall = () => resolve({ id: 'addr2' }); }),
+    );
+    const secundario = { ...patientDetailFixture.addresses[0], id: 'addr2', isPrimary: false };
+    render(<LocalizacoesCard addresses={[secundario]} patientId="p1" />);
+    const markBtn = screen.getByTestId('address-mark-primary-addr2');
+    fireEvent.click(markBtn);
+    expect(markBtn).toBeDisabled();
+    resolveCall?.();
+    await waitFor(() => expect(markBtn).not.toBeDisabled());
+    expect(updatePatientAddressLogistics).toHaveBeenCalledTimes(1);
+  });
+
+  // F1 (gate revisao-pr): o `try/finally` de `onMarkPrimary` não tinha `catch` — um 409
+  // (concorrência, spec 019 §Concorrência) ou 500 virava promise rejeitada sem NENHUM aviso;
+  // o spinner só parava e a operadora não sabia se salvou.
+  it('F1: 409 (outra pessoa marcou principal ao mesmo tempo) mostra mensagem de conflito e recarrega os endereços', async () => {
+    updatePatientAddressLogistics.mockClear().mockRejectedValueOnce(
+      new PatientApiError('Conflict', 409),
+    );
+    const onSaved = vi.fn();
+    const secundario = { ...patientDetailFixture.addresses[0], id: 'addr2', isPrimary: false };
+    render(<LocalizacoesCard addresses={[secundario]} patientId="p1" onSaved={onSaved} />);
+
+    fireEvent.click(screen.getByTestId('address-mark-primary-addr2'));
+    const err = await screen.findByTestId('address-mark-primary-error');
+    expect(err).toHaveTextContent('Outra pessoa já trocou o principal');
+    // 409 recarrega os endereços — o card já tem essa função de recarga (onSaved).
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(screen.getByTestId('address-mark-primary-addr2')).not.toBeDisabled();
+  });
+
+  it('F1: erro genérico (500/rede) mostra mensagem genérica, sem recarregar', async () => {
+    updatePatientAddressLogistics.mockClear().mockRejectedValueOnce(new Error('boom'));
+    const onSaved = vi.fn();
+    const secundario = { ...patientDetailFixture.addresses[0], id: 'addr2', isPrimary: false };
+    render(<LocalizacoesCard addresses={[secundario]} patientId="p1" onSaved={onSaved} />);
+
+    fireEvent.click(screen.getByTestId('address-mark-primary-addr2'));
+    const err = await screen.findByTestId('address-mark-primary-error');
+    expect(err).toHaveTextContent('Não foi possível marcar como principal');
+    expect(onSaved).not.toHaveBeenCalled();
   });
 
   it('renders empty state when no addresses', () => {
@@ -996,7 +1087,7 @@ describe('LocalizacoesCard', () => {
 
   it('ordena o endereço Principal primeiro, mantendo a ordem relativa dos demais', () => {
     const secundario = {
-      id: 'addr2', addressType: 'secondary', addressFormatted: 'Rua B, 10, SP, SP', addressRaw: null,
+      id: 'addr2', addressType: 'secondary', addressTypeOther: null, addressFormatted: 'Rua B, 10, SP, SP', addressRaw: null,
       complement: null, displayOrder: 0, lat: null, lng: null, isPrimary: false,
       neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'BR',
     };
@@ -1031,6 +1122,27 @@ describe('LocalizacoesCard', () => {
       useAdminAuthStore.setState({ authz: { ...contrato(['patient_address:write']), enforcement: 'on' }, authzStatus: 'ready' });
       render(<LocalizacoesCard addresses={patientDetailFixture.addresses} patientId="p1" />);
       expect(screen.getByTestId('edit-address-addr1')).toBeInTheDocument();
+    });
+
+    // Spec 019 — "Marcar como principal" só existe em endereço NÃO principal (addr1 da fixture
+    // já É o principal, nunca mostraria o botão); a mesma célula do lápis gate a ação (D286): não
+    // é permissão dedicada nova, é a MESMA patient_address:write.
+    const secundario = {
+      id: 'addr2', addressType: 'secondary', addressTypeOther: null, addressFormatted: 'Rua B, 10, SP, SP', addressRaw: null,
+      complement: null, displayOrder: 0, lat: null, lng: null, isPrimary: false,
+      neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'BR',
+    };
+
+    it('enforcement "on" SEM a célula patient_address:write: "Marcar como principal" não aparece (denied)', () => {
+      useAdminAuthStore.setState({ authz: { ...contrato([]), enforcement: 'on' }, authzStatus: 'ready' });
+      render(<LocalizacoesCard addresses={[secundario]} patientId="p1" />);
+      expect(screen.queryByTestId('address-mark-primary-addr2')).not.toBeInTheDocument();
+    });
+
+    it('enforcement "on" COM a célula patient_address:write: "Marcar como principal" aparece (allowed)', () => {
+      useAdminAuthStore.setState({ authz: { ...contrato(['patient_address:write']), enforcement: 'on' }, authzStatus: 'ready' });
+      render(<LocalizacoesCard addresses={[secundario]} patientId="p1" />);
+      expect(screen.getByTestId('address-mark-primary-addr2')).toBeInTheDocument();
     });
   });
 });
@@ -1075,7 +1187,7 @@ describe('EquipeTratanteCard — lê o contrato da API (A2, lex C2.1/C2.2)', () 
 });
 
 describe('LocalizacoesCard — lê o contrato da API (A2, lex C2.1)', () => {
-  const base = { id: 'a1', addressType: 'primary', complement: 'Piso 2', displayOrder: 1, lat: -34.6, lng: -58.38, isPrimary: true, neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'AR' };
+  const base = { id: 'a1', addressType: 'primary', addressTypeOther: null, complement: 'Piso 2', displayOrder: 1, lat: -34.6, lng: -58.38, isPrimary: true, neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'AR' };
 
   it('renderiza addressFormatted (`fullAddress` nunca existiu na API) — linha 1 até a 1ª vírgula', () => {
     render(<LocalizacoesCard addresses={[{ ...base, addressFormatted: 'Av. Contrato 123, CABA, AR', addressRaw: 'Av. Contrato 123' }]} />);
@@ -1147,7 +1259,7 @@ describe('PatientIdentityCard — e-mail do paciente em claro com máscara do Cl
   });
 
   it('o endereço do cabeçalho lê addresses[0].addressFormatted (A2)', () => {
-    render(<PatientIdentityCard patient={{ ...patientDetailFixture, addresses: [{ id: 'a1', addressType: 'primary', addressFormatted: 'Rua Contrato, 1 - SP', addressRaw: null, complement: null, displayOrder: 1, lat: null, lng: null, isPrimary: true, neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'BR' }] }} />);
+    render(<PatientIdentityCard patient={{ ...patientDetailFixture, addresses: [{ id: 'a1', addressType: 'primary', addressTypeOther: null, addressFormatted: 'Rua Contrato, 1 - SP', addressRaw: null, complement: null, displayOrder: 1, lat: null, lng: null, isPrimary: true, neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'BR' }] }} />);
     expect(screen.getByText('Rua Contrato, 1 - SP')).toBeInTheDocument();
   });
 });
@@ -1169,7 +1281,7 @@ describe('cards tocados na spec 011 — ramos defensivos', () => {
   });
 
   it('PatientIdentityCard: sem endereço formatado, o cabeçalho cai no texto cru do operador', () => {
-    render(<PatientIdentityCard patient={{ ...patientDetailFixture, addresses: [{ id: 'a1', addressType: 'primary', addressFormatted: null, addressRaw: 'Rua Crua 77', complement: null, displayOrder: 1, lat: null, lng: null, isPrimary: true, neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'BR' }] }} />);
+    render(<PatientIdentityCard patient={{ ...patientDetailFixture, addresses: [{ id: 'a1', addressType: 'primary', addressTypeOther: null, addressFormatted: null, addressRaw: 'Rua Crua 77', complement: null, displayOrder: 1, lat: null, lng: null, isPrimary: true, neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'BR' }] }} />);
     expect(screen.getByText('Rua Crua 77')).toBeInTheDocument();
   });
 });
@@ -1177,7 +1289,7 @@ describe('cards tocados na spec 011 — ramos defensivos', () => {
 // ── QA caça 🔴2 (spec 011, rodada 2): rua no card de identidade com máscara e rótulo i18n ──
 
 describe('PatientIdentityCard — endereço com data-clarity-mask (lex C2.1)', () => {
-  const addr = { id: 'a1', addressType: 'primary', addressFormatted: 'Rua Mascarada, 9 - SP', addressRaw: null, complement: null, displayOrder: 1, lat: null, lng: null, isPrimary: true, neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'BR' };
+  const addr = { id: 'a1', addressType: 'primary', addressTypeOther: null, addressFormatted: 'Rua Mascarada, 9 - SP', addressRaw: null, complement: null, displayOrder: 1, lat: null, lng: null, isPrimary: true, neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'BR' };
 
   it('a rua fica dentro de um container com data-clarity-mask="True" e o rótulo vem do i18n', () => {
     render(<PatientIdentityCard patient={{ ...patientDetailFixture, addresses: [addr] }} />);

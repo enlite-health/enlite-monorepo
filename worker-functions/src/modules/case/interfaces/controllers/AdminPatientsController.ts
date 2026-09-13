@@ -61,7 +61,10 @@ import { insertPatientAddress, fetchPatientAddresses } from '../../infrastructur
 const createPatientAddressSchema = z.object({
   address_formatted: z.string().min(1),
   address_raw: z.string().optional(),
-  address_type: z.enum(['primary', 'secondary', 'service']).default('secondary'),
+  // Spec 019: tipo de local não entra mais na criação (lista fechada só via PATCH,
+  // AdminPatientAddressesController). `is_default` opcional — regra de nascimento (spec 019):
+  // sem principal ativo, este endereço nasce principal mesmo sem o cliente pedir.
+  is_default: z.boolean().optional(),
   display_order: z.number().int().positive().optional(),
   // Spec 012, US-B2 (mig 316): logística por endereço. Zona = `neighborhood` (lex C2.7).
   neighborhood: z.string().trim().min(1).max(120).nullable().optional(),
@@ -602,14 +605,14 @@ export class AdminPatientsController {
     }
 
     const { patientId } = paramsResult.data;
-    const { address_formatted, address_raw, address_type, display_order, neighborhood, logistics_corridor, access_notes } = bodyResult.data;
+    const { address_formatted, address_raw, is_default, display_order, neighborhood, logistics_corridor, access_notes } = bodyResult.data;
 
     try {
       const created = await insertPatientAddress(this.db, this.geocoder, {
         patientId,
         addressFormatted:   address_formatted,
         addressRaw:         address_raw ?? null,
-        addressType:        address_type,
+        isDefault:          is_default,
         displayOrder:       display_order ?? null,
         neighborhood:       neighborhood ?? null,
         logisticsCorridor:  logistics_corridor ?? null,
@@ -627,6 +630,15 @@ export class AdminPatientsController {
       });
       res.status(201).json({ success: true, data: created });
     } catch (err: unknown) {
+      // K5 (spec 019): dois POSTs concorrentes para o mesmo paciente sem principal — os dois
+      // podem calcular `isDefault=true` (nenhum viu o principal do outro ainda) e o índice único
+      // parcial (`patient_addresses_one_default_per_patient`) recusa o segundo INSERT. Mesmo
+      // tratamento do PATCH (`AdminPatientAddressesController`): 409 tratado, nunca 500.
+      const pgCode = (err as { code?: string } | null)?.code;
+      if (pgCode === '23505') {
+        res.status(409).json({ success: false, error: 'Concurrent update — try again' });
+        return;
+      }
       const e = err instanceof Error ? err : new Error(String(err));
       // lex C2.3: nada do corpo na resposta — um erro do Postgres pode ecoar a linha inteira.
       reportError(e, { source: 'AdminPatientsController:createPatientAddress', patientId });

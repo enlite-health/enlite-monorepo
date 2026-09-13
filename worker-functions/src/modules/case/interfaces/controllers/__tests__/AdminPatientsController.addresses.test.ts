@@ -1,18 +1,27 @@
 /**
  * AdminPatientsController — createPatientAddress + listPatientAddresses.
  *
- * These two endpoints (POST/GET /api/admin/patients/:patientId/addresses)
- * had ZERO test coverage before this file. Covers:
+ * Spec 019 (D310 item c): `address_type` sai do schema de criação — só `is_default` (opcional)
+ * entra. `insertPatientAddress` passa a usar `db.connect()` (transação: troca atômica do
+ * principal / regra de nascimento) em vez de `db.query()` direto — os mocks abaixo espelham isso.
+ *
+ * Covers:
  *   a. createPatientAddress: 400 invalid patientId, 400 invalid body,
  *      201 happy path (geocode succeeds), 201 with geocode returning null,
  *      201 when geocode THROWS (best-effort — never fails the request),
- *      displayOrder omitted → COALESCE default (null passed as $5), 500 on DB error.
- *   b. listPatientAddresses: 400 invalid patientId, 200 with rows, 500 on DB error.
+ *      displayOrder omitido → COALESCE default (null passado no INSERT),
+ *      is_default omitido → regra de nascimento (SELECT EXISTS decide),
+ *      is_default explícito true → demove o principal anterior na mesma transação,
+ *      500 on DB error (ROLLBACK).
+ *   b. listPatientAddresses: 400 invalid patientId, 200 com rows (inclui is_default), 500 on DB error.
  */
 
 // ── Mocks (before importing the module under test) ────────────────────────────
 
 const mockPoolQuery = jest.fn();
+const mockClientQuery = jest.fn();
+const mockClientRelease = jest.fn();
+const mockConnect = jest.fn(() => Promise.resolve({ query: mockClientQuery, release: mockClientRelease }));
 
 jest.mock('@shared/logging', () => ({
   reportError: jest.fn(),
@@ -22,7 +31,7 @@ jest.mock('@shared/logging', () => ({
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
     getInstance: jest.fn().mockReturnValue({
-      getPool: jest.fn().mockReturnValue({ query: mockPoolQuery, connect: jest.fn() }),
+      getPool: jest.fn().mockReturnValue({ query: mockPoolQuery, connect: mockConnect }),
     }),
   },
 }));
@@ -71,11 +80,22 @@ function makeController(geocode?: jest.Mock): AdminPatientsController {
   return new AdminPatientsController(geocoder);
 }
 
+/** Configura o client de transação: BEGIN → (opcional demote) → (opcional SELECT EXISTS) → INSERT → COMMIT. */
+function queueClientHappyPath(opts: { hasExistingDefault?: boolean; insertedRow: Record<string, unknown> }) {
+  mockClientQuery.mockReset();
+  mockClientQuery
+    .mockResolvedValueOnce(undefined) // BEGIN
+    .mockResolvedValueOnce({ rows: [{ exists: opts.hasExistingDefault ?? false }] }) // SELECT EXISTS
+    .mockResolvedValueOnce({ rows: [opts.insertedRow] }) // INSERT
+    .mockResolvedValueOnce(undefined); // COMMIT
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe('AdminPatientsController.createPatientAddress', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockConnect.mockImplementation(() => Promise.resolve({ query: mockClientQuery, release: mockClientRelease }));
   });
 
   it('400 quando patientId não é UUID (não chega no DB)', async () => {
@@ -86,7 +106,7 @@ describe('AdminPatientsController.createPatientAddress', () => {
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect((res as any).json.mock.calls[0][0]).toMatchObject({ success: false, error: 'Invalid params' });
-    expect(mockPoolQuery).not.toHaveBeenCalled();
+    expect(mockConnect).not.toHaveBeenCalled();
   });
 
   it('400 quando body não tem address_formatted', async () => {
@@ -97,93 +117,150 @@ describe('AdminPatientsController.createPatientAddress', () => {
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect((res as any).json.mock.calls[0][0]).toMatchObject({ success: false, error: 'Invalid body' });
-    expect(mockPoolQuery).not.toHaveBeenCalled();
+    expect(mockConnect).not.toHaveBeenCalled();
   });
 
-  it('201 happy path: geocode retorna lat/lng, INSERT recebe as coordenadas', async () => {
+  it('address_type no body é ignorado pelo zod (campo removido do schema na spec 019) e nunca chega ao INSERT', async () => {
+    const controller = makeController();
+    const [req, res] = mockReqRes({ patientId: PATIENT_ID }, { address_formatted: 'Av. X 123', address_type: 'primary' });
+
+    // zod não é .strict() aqui, então um campo desconhecido é IGNORADO (não gera 400) — o que
+    // importa é que ele nunca chega ao INSERT. Prova via 201 + params sem 'primary'.
+    queueClientHappyPath({ insertedRow: { id: 'addr-1', patient_id: PATIENT_ID, address_formatted: 'Av. X 123', address_raw: null, is_default: true } });
+    await controller.createPatientAddress(req, res);
+    expect(res.status).toHaveBeenCalledWith(201);
+    const insertCall = mockClientQuery.mock.calls.find((c) => typeof c[0] === 'string' && (c[0] as string).includes('INSERT INTO patient_addresses'));
+    expect(insertCall![0]).not.toMatch(/address_type/);
+  });
+
+  it('201 happy path: geocode retorna lat/lng, sem principal ativo → nasce is_default=true (regra de nascimento)', async () => {
     const geocode = jest.fn().mockResolvedValue({ latitude: -34.6, longitude: -58.4 });
     const controller = makeController(geocode);
     const insertedRow = {
       id: 'addr-1', patient_id: PATIENT_ID, address_formatted: 'Av. X 123',
-      address_raw: null, address_type: 'secondary',
+      address_raw: null, is_default: true,
     };
-    mockPoolQuery.mockResolvedValueOnce({ rows: [insertedRow] });
+    queueClientHappyPath({ hasExistingDefault: false, insertedRow });
 
     const [req, res] = mockReqRes(
       { patientId: PATIENT_ID },
-      { address_formatted: 'Av. X 123', address_type: 'secondary', display_order: 2 },
+      { address_formatted: 'Av. X 123', display_order: 2 },
     );
 
     await controller.createPatientAddress(req, res);
 
     expect(geocode).toHaveBeenCalledWith('Av. X 123');
+    expect(mockConnect).toHaveBeenCalledTimes(1);
     expect(res.status).toHaveBeenCalledWith(201);
     expect((res as any).json).toHaveBeenCalledWith({ success: true, data: insertedRow });
 
-    const [sql, params] = mockPoolQuery.mock.calls[0];
+    const insertCall = mockClientQuery.mock.calls[2];
+    const [sql, params] = insertCall;
     expect(sql).toContain('INSERT INTO patient_addresses');
-    // Spec 012 US-B2: + zona/corredor/acesso (null quando ausentes); `country` vem do paciente no próprio SQL.
-    expect(params).toEqual([PATIENT_ID, 'Av. X 123', null, 'secondary', 2, -34.6, -58.4, null, null, null]);
+    expect(params).toEqual([PATIENT_ID, 'Av. X 123', null, 2, -34.6, -58.4, null, null, null, true]);
     expect(sql).toMatch(/\(SELECT country FROM patients WHERE id = \$1\)/);
+    expect(mockClientRelease).toHaveBeenCalledTimes(1);
+  });
+
+  it('201: paciente JÁ tem principal ativo e is_default omitido → nasce false', async () => {
+    const controller = makeController();
+    queueClientHappyPath({ hasExistingDefault: true, insertedRow: { id: 'addr-2', is_default: false } });
+
+    const [req, res] = mockReqRes({ patientId: PATIENT_ID }, { address_formatted: 'Sin match 000' });
+    await controller.createPatientAddress(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    const [, params] = mockClientQuery.mock.calls[2];
+    expect(params[9]).toBe(false);
+  });
+
+  it('201: is_default=true explícito → desmarca o principal anterior NA MESMA TRANSAÇÃO antes do INSERT', async () => {
+    const controller = makeController();
+    mockClientQuery.mockReset();
+    mockClientQuery
+      .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce(undefined) // UPDATE demote (is_default explícito, sem SELECT EXISTS)
+      .mockResolvedValueOnce({ rows: [{ id: 'addr-3', is_default: true }] }) // INSERT
+      .mockResolvedValueOnce(undefined); // COMMIT
+
+    const [req, res] = mockReqRes({ patientId: PATIENT_ID }, { address_formatted: 'Nova principal', is_default: true });
+    await controller.createPatientAddress(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    const demoteCall = mockClientQuery.mock.calls[1];
+    expect(demoteCall[0]).toMatch(/UPDATE patient_addresses SET is_default = false/);
+    expect(demoteCall[1]).toEqual([PATIENT_ID]);
+    const [, insertParams] = mockClientQuery.mock.calls[2];
+    expect(insertParams[9]).toBe(true);
+  });
+
+  it('201: is_default=false explícito → nasce false sem consultar EXISTS nem demover ninguém', async () => {
+    const controller = makeController();
+    mockClientQuery.mockReset();
+    mockClientQuery
+      .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: 'addr-4', is_default: false }] }) // INSERT direto
+      .mockResolvedValueOnce(undefined); // COMMIT
+
+    const [req, res] = mockReqRes({ patientId: PATIENT_ID }, { address_formatted: 'Secundario', is_default: false });
+    await controller.createPatientAddress(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(mockClientQuery).toHaveBeenCalledTimes(3); // BEGIN, INSERT, COMMIT — sem EXISTS nem demote
+    const [, params] = mockClientQuery.mock.calls[1];
+    expect(params[9]).toBe(false);
   });
 
   it('201: geocode retorna null (sem match) → lat/lng ficam null, request não falha', async () => {
     const geocode = jest.fn().mockResolvedValue(null);
     const controller = makeController(geocode);
-    mockPoolQuery.mockResolvedValueOnce({ rows: [{ id: 'addr-2' }] });
+    queueClientHappyPath({ insertedRow: { id: 'addr-5' } });
 
     const [req, res] = mockReqRes({ patientId: PATIENT_ID }, { address_formatted: 'Sin match 000' });
 
     await controller.createPatientAddress(req, res);
 
     expect(res.status).toHaveBeenCalledWith(201);
-    const [, params] = mockPoolQuery.mock.calls[0];
+    const [, params] = mockClientQuery.mock.calls[2];
+    expect(params[4]).toBeNull();
     expect(params[5]).toBeNull();
-    expect(params[6]).toBeNull();
   });
 
   it('201: geocode lança exceção (best-effort) → lat/lng null, ainda 201', async () => {
     const geocode = jest.fn().mockRejectedValue(new Error('geocoding API down'));
     const controller = makeController(geocode);
-    mockPoolQuery.mockResolvedValueOnce({ rows: [{ id: 'addr-3' }] });
+    queueClientHappyPath({ insertedRow: { id: 'addr-6' } });
 
     const [req, res] = mockReqRes({ patientId: PATIENT_ID }, { address_formatted: 'Falha no geocode 456' });
 
     await controller.createPatientAddress(req, res);
 
     expect(res.status).toHaveBeenCalledWith(201);
-    const [, params] = mockPoolQuery.mock.calls[0];
+    const [, params] = mockClientQuery.mock.calls[2];
+    expect(params[4]).toBeNull();
     expect(params[5]).toBeNull();
-    expect(params[6]).toBeNull();
   });
 
   it('display_order ausente → passa null pro COALESCE (default no SQL)', async () => {
     const controller = makeController();
-    mockPoolQuery.mockResolvedValueOnce({ rows: [{ id: 'addr-4' }] });
+    queueClientHappyPath({ insertedRow: { id: 'addr-7' } });
 
     const [req, res] = mockReqRes({ patientId: PATIENT_ID }, { address_formatted: 'Sem display order 789' });
 
     await controller.createPatientAddress(req, res);
 
-    const [, params] = mockPoolQuery.mock.calls[0];
-    expect(params[4]).toBeNull(); // display_order
+    const [, params] = mockClientQuery.mock.calls[2];
+    expect(params[3]).toBeNull(); // display_order
   });
 
-  it('address_type ausente usa o default "secondary" do schema', async () => {
+  it('500 quando o INSERT lança exceção → ROLLBACK e release, resposta genérica', async () => {
     const controller = makeController();
-    mockPoolQuery.mockResolvedValueOnce({ rows: [{ id: 'addr-5' }] });
-
-    const [req, res] = mockReqRes({ patientId: PATIENT_ID }, { address_formatted: 'Default type 000' });
-
-    await controller.createPatientAddress(req, res);
-
-    const [, params] = mockPoolQuery.mock.calls[0];
-    expect(params[3]).toBe('secondary');
-  });
-
-  it('500 quando o INSERT lança exceção (valor não-Error → branch instanceof)', async () => {
-    const controller = makeController();
-    mockPoolQuery.mockRejectedValueOnce('constraint violation');
+    mockClientQuery.mockReset();
+    mockClientQuery
+      .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ exists: false }] }) // SELECT EXISTS
+      .mockRejectedValueOnce('constraint violation') // INSERT falha
+      .mockResolvedValueOnce(undefined); // ROLLBACK
 
     const [req, res] = mockReqRes({ patientId: PATIENT_ID }, { address_formatted: 'Vai falhar 999' });
 
@@ -199,11 +276,60 @@ describe('AdminPatientsController.createPatientAddress', () => {
       expect.any(Error),
       { source: 'AdminPatientsController:createPatientAddress', patientId: PATIENT_ID },
     );
+    expect(mockClientQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(mockClientRelease).toHaveBeenCalledTimes(1);
+  });
+
+  it('500 quando o INSERT E o ROLLBACK falham (duplo erro) — a exceção original ainda sobe, release chamado', async () => {
+    const controller = makeController();
+    mockClientQuery.mockReset();
+    mockClientQuery
+      .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ exists: false }] }) // SELECT EXISTS
+      .mockRejectedValueOnce(new Error('insert falhou')) // INSERT
+      .mockRejectedValueOnce(new Error('rollback também falhou')); // ROLLBACK
+
+    const [req, res] = mockReqRes({ patientId: PATIENT_ID }, { address_formatted: 'Duplo erro' });
+    await controller.createPatientAddress(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(reportError).toHaveBeenCalledWith(
+      new Error('insert falhou'),
+      { source: 'AdminPatientsController:createPatientAddress', patientId: PATIENT_ID },
+    );
+    expect(mockClientRelease).toHaveBeenCalledTimes(1);
+  });
+
+  it('409 (K5, spec 019): unique_violation no índice parcial (dois POSTs concorrentes sem principal) — tratado, não 500', async () => {
+    const controller = makeController();
+    mockClientQuery.mockReset();
+    mockClientQuery
+      .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ exists: false }] }) // SELECT EXISTS (nenhum principal ainda visto)
+      .mockRejectedValueOnce(Object.assign(
+        new Error('duplicate key value violates unique constraint "patient_addresses_one_default_per_patient"'),
+        { code: '23505' },
+      )) // INSERT perde a corrida
+      .mockResolvedValueOnce(undefined); // ROLLBACK
+
+    const [req, res] = mockReqRes({ patientId: PATIENT_ID }, { address_formatted: 'Concorrente 111' });
+    await controller.createPatientAddress(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect((res as any).json.mock.calls[0][0]).toEqual({ success: false, error: 'Concurrent update — try again' });
+    expect(reportError).not.toHaveBeenCalled();
+    expect(mockClientQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(mockClientRelease).toHaveBeenCalledTimes(1);
   });
 
   it('500 quando o INSERT rejeita com uma instância de Error (branch instanceof=true)', async () => {
     const controller = makeController();
-    mockPoolQuery.mockRejectedValueOnce(new Error('constraint violation (Error instance)'));
+    mockClientQuery.mockReset();
+    mockClientQuery
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })
+      .mockRejectedValueOnce(new Error('constraint violation (Error instance)'))
+      .mockResolvedValueOnce(undefined);
 
     const [req, res] = mockReqRes({ patientId: PATIENT_ID }, { address_formatted: 'Vai falhar 999' });
     await controller.createPatientAddress(req, res);
@@ -227,10 +353,10 @@ describe('AdminPatientsController.listPatientAddresses', () => {
     expect(mockPoolQuery).not.toHaveBeenCalled();
   });
 
-  it('200 com a lista de endereços ativos do paciente', async () => {
+  it('200 com a lista de endereços ativos do paciente, incluindo is_default', async () => {
     const controller = makeController();
     const rows = [
-      { id: 'a1', address_formatted: 'Calle 1', address_raw: null, address_type: 'primary', display_order: 1, source: 'admin_manual', complement: null, lat: '-34.6', lng: '-58.4' },
+      { id: 'a1', address_formatted: 'Calle 1', address_raw: null, is_default: true, display_order: 1, source: 'admin_manual', complement: null, lat: '-34.6', lng: '-58.4' },
     ];
     mockPoolQuery.mockResolvedValueOnce({ rows });
 
@@ -242,6 +368,10 @@ describe('AdminPatientsController.listPatientAddresses', () => {
     const [sql, params] = mockPoolQuery.mock.calls[0];
     expect(sql).toContain('FROM patient_addresses');
     expect(sql).toContain('archived_at IS NULL');
+    expect(sql).toContain('is_default');
+    // C3 (spec 019): morre se o SELECT voltar a trazer address_type — este endpoint alimenta o
+    // wizard de criação de vaga (CaseSelectStep), que não deve exibir o parentesco do domicílio.
+    expect(sql).not.toContain('address_type');
     expect(params).toEqual([PATIENT_ID]);
   });
 

@@ -186,7 +186,6 @@ describe('VacancyAddressReviewController', () => {
           createAddress: {
             address_formatted: 'Rua A, 123',
             address_raw: 'Rua A 123',
-            address_type: 'primary',
           },
         },
         { id: VACANCY_ID },
@@ -209,7 +208,7 @@ describe('VacancyAddressReviewController', () => {
         .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
 
       const req = mockReq(
-        { createAddress: { address_formatted: 'Av B', address_type: 'secondary' } },
+        { createAddress: { address_formatted: 'Av B' } },
         { id: VACANCY_ID },
       );
       const res = mockRes();
@@ -219,13 +218,38 @@ describe('VacancyAddressReviewController', () => {
       // INSERT patient_address is still a pool query (call index 1)
       const insertSql = mockQuery.mock.calls[1][0] as string;
       expect(insertSql).toContain("'admin_review'");
+      // Spec 019 (B4): address_type saiu do schema/INSERT — era o único ponto aceitando string
+      // livre sem validação de lista.
+      expect(insertSql).not.toMatch(/address_type/);
+    });
+
+    it('persists lat/lng from the injected geocoder when it resolves a result', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: VACANCY_ID, patient_id: PATIENT_ID }] })
+        .mockResolvedValueOnce({ rows: [{ id: NEW_ADDRESS_ID }] })
+        .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
+
+      const geocoder = { geocode: jest.fn().mockResolvedValue({ latitude: -34.6, longitude: -58.4 }) };
+      const controllerWithGeocoder = new VacancyAddressReviewController(geocoder as any);
+
+      const req = mockReq(
+        { createAddress: { address_formatted: 'Av. Geocoded 1' } },
+        { id: VACANCY_ID },
+      );
+      const res = mockRes();
+
+      await controllerWithGeocoder.resolveAddressReview(req as never, res as never);
+
+      const insertParams = mockQuery.mock.calls[1][1] as unknown[];
+      expect(insertParams).toContain(-34.6);
+      expect(insertParams).toContain(-58.4);
     });
 
     it('returns 422 when vacancy has no patient_id and createAddress is provided', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [{ id: VACANCY_ID, patient_id: null }] });
 
       const req = mockReq(
-        { createAddress: { address_formatted: 'Rua X', address_type: 'primary' } },
+        { createAddress: { address_formatted: 'Rua X' } },
         { id: VACANCY_ID },
       );
       const res = mockRes();
@@ -333,7 +357,7 @@ describe('VacancyAddressReviewController', () => {
 
     it('returns 400 when createAddress has empty address_formatted', async () => {
       const req = mockReq(
-        { createAddress: { address_formatted: '', address_type: 'primary' } },
+        { createAddress: { address_formatted: '' } },
         { id: VACANCY_ID },
       );
       const res = mockRes();
@@ -359,6 +383,20 @@ describe('VacancyAddressReviewController', () => {
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ success: false, details: 'connection reset' }),
+      );
+    });
+
+    it('returns 500 with a stringified message when a non-Error value is thrown (branch coverage)', async () => {
+      mockQuery.mockRejectedValueOnce('connection reset as a raw string');
+
+      const req = mockReq({ patient_address_id: ADDRESS_ID }, { id: VACANCY_ID });
+      const res = mockRes();
+
+      await controller.resolveAddressReview(req as never, res as never);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ success: false, details: 'connection reset as a raw string' }),
       );
     });
 
