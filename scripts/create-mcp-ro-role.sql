@@ -141,7 +141,11 @@ BEGIN
       ('interview_slots',           ARRAY['notes']),  -- lex M2: entrevista de matching fala de patologia
       -- spec 012 (lex C2.1): `access_notes` é texto livre sobre o DOMICÍLIO de um paciente. A tabela
       -- tinha GRANT de tabela inteira — a coluna nova (mig 316) nasceria legível pelo LLM no dia 1.
-      ('patient_addresses',         ARRAY['access_notes']),
+      -- spec 019 (D320/B2, tasks 7.1.e): `address_type` e `address_type_other` também saem — o
+      -- "Otro" é texto livre até 40 chars sobre o domicílio (mesma classe de risco do
+      -- `access_notes`), e a lista fechada por parentesco pode nomear um vínculo familiar sensível
+      -- (ex.: `casa_abuela`) que a role não precisa ver para nada do que o MCP faz hoje.
+      ('patient_addresses',         ARRAY['access_notes','address_type','address_type_other']),
       -- spec 013 bloco C (QA-caça #1, mesma classe D216/D218): `professional_profile` (texto livre
       -- sobre o profissional buscado) e `hourly_value` (preço do contrato, lex C-c) da 319 tinham
       -- GRANT de tabela inteira via "ALL TABLES" — legíveis pelo MCP no dia 1. As 3 tabelas irmãs
