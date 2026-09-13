@@ -178,6 +178,23 @@ export default defineConfig({
         '**/src/presentation/components/features/admin/PatientDetail/edit/{PatientGeneralEditDrawer,PatientSupportNetworkEditDrawer}.tsx': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
+        // Equipe tratante por linha (spec 018, PR-5, US-11) — Nuevo/lápis/desativar sob
+        // patient_care_team:write (D269), máscara Clarity (C6), aviso es-AR (C13). Medidos
+        // 100/100/100/100 nesta execução (PatientDetailCards.test.tsx +
+        // DeactivateProfessionalConfirm.test.tsx + PatientProfessionalEditDrawer.test.tsx).
+        '**/src/presentation/components/features/admin/PatientDetail/DeactivateProfessionalConfirm.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/components/features/admin/PatientDetail/edit/PatientProfessionalEditDrawer.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        // Branch 95,83% (não 100): a única lacuna é o fallback do construtor herdado
+        // (`?? 'http://localhost:8080'`, pré-existente — nunca exercido porque o ambiente de
+        // teste sempre define VITE_API_WORKER_FUNCTIONS_URL). Os 3 métodos novos desta
+        // execução (createProfessional/updateProfessional/deactivateProfessional) estão 100%.
+        '**/src/infrastructure/http/AdminPatientContactRowsApiService.ts': {
+          statements: 100, branches: 95.83, functions: 100, lines: 100,
+        },
         // Spec 012 bloco B (03/09): estado v2 (controle + Historial), cobertura por catálogo,
         // domicílio na ficha, dispositivo/parentesco por enum, Kanban por admission_status.
         // Nascem/ficam em 100% medidos na suíte inteira — entram no mesmo PR.

@@ -99,4 +99,21 @@ describe('PatientProfessionalEditDrawer', () => {
     await waitFor(() => expect(screen.getByTestId('professional-error')).toBeInTheDocument());
     expect(screen.getByTestId('professional-error').textContent).not.toMatch(/boom/);
   });
+
+  it('e-mail inválido: erro de validação exibido no campo (zod .email())', async () => {
+    render(<PatientProfessionalEditDrawer patientId={PATIENT_ID} professional={null} onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByTestId('professional-name'), { target: { value: 'Dr. X' } });
+    fireEvent.change(screen.getByTestId('professional-email'), { target: { value: 'nao-e-email' } });
+    fireEvent.click(screen.getByTestId('professional-save'));
+    await waitFor(() => expect(createProfessional).not.toHaveBeenCalled());
+  });
+
+  it('form sujo + Escape: pede confirmação de descarte antes de fechar (DiscardChangesConfirm)', async () => {
+    const onClose = vi.fn();
+    render(<PatientProfessionalEditDrawer patientId={PATIENT_ID} professional={null} onClose={onClose} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByTestId('professional-name'), { target: { value: 'Dr. Sujo' } });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(await screen.findByTestId('discard-changes-confirm')).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });

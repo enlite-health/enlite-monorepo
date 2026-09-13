@@ -16,6 +16,18 @@ import { patientDetailFixture, patientDetailMinimal } from './patientDetailFixtu
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
 
+// ── AdminPatientContactRowsApiService mock (EquipeTratanteCard — deactivate flow, spec 018 PR-5) ──
+const mockDeactivateProfessional = vi.fn();
+const mockCreateProfessional = vi.fn();
+const mockUpdateProfessional = vi.fn();
+vi.mock('@infrastructure/http/AdminPatientContactRowsApiService', () => ({
+  AdminPatientContactRowsApiService: {
+    deactivateProfessional: (...a: unknown[]) => mockDeactivateProfessional(...a),
+    createProfessional: (...a: unknown[]) => mockCreateProfessional(...a),
+    updateProfessional: (...a: unknown[]) => mockUpdateProfessional(...a),
+  },
+}));
+
 // ── i18n mock ────────────────────────────────────────────────────────────────
 
 const translations = ptBR as Record<string, any>;
@@ -584,6 +596,87 @@ describe('EquipeTratanteCard — gate ABAC patient_care_team:write (spec 018 PR-
     expect(screen.getByTestId('equipe-tratante-add')).toBeInTheDocument();
     expect(screen.getByTestId('equipe-tratante-edit-p1')).toBeInTheDocument();
     expect(screen.getByTestId('equipe-tratante-deactivate-p1')).toBeInTheDocument();
+  });
+
+  it('clicar em "Nuevo" abre o drawer de criação (professional=null)', () => {
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    render(<EquipeTratanteCard professionals={professionals} patientId="p1" />);
+    fireEvent.click(screen.getByTestId('equipe-tratante-add'));
+    expect(screen.getByTestId('professional-edit-drawer')).toBeInTheDocument();
+    expect((screen.getByTestId('professional-name') as HTMLInputElement).value).toBe('');
+  });
+
+  it('fechar o drawer (X) chama o onClose do card e o desmonta', async () => {
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    render(<EquipeTratanteCard professionals={professionals} patientId="p1" />);
+    fireEvent.click(screen.getByTestId('equipe-tratante-add'));
+    expect(screen.getByTestId('professional-edit-drawer')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Fechar'));
+    // O drawer anima a saída (CLOSE_MS) antes de chamar onClose — espera pelo desmonte real.
+    await waitFor(() => expect(screen.queryByTestId('professional-edit-drawer')).not.toBeInTheDocument(), { timeout: 1000 });
+  });
+
+  it('criar com sucesso pelo drawer chama o onSaved do card', async () => {
+    mockCreateProfessional.mockResolvedValueOnce({ id: 'novo' });
+    const onSaved = vi.fn();
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    render(<EquipeTratanteCard professionals={professionals} patientId="p1" onSaved={onSaved} />);
+    fireEvent.click(screen.getByTestId('equipe-tratante-add'));
+    fireEvent.change(screen.getByTestId('professional-name'), { target: { value: 'Dr. Novo' } });
+    fireEvent.click(screen.getByTestId('professional-save'));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  });
+
+  it('clicar no lápis abre o drawer de edição PRÉ-PREENCHIDO com a linha clicada', () => {
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    render(<EquipeTratanteCard professionals={professionals} patientId="p1" />);
+    fireEvent.click(screen.getByTestId('equipe-tratante-edit-p1'));
+    expect(screen.getByTestId('professional-edit-drawer')).toBeInTheDocument();
+    expect((screen.getByTestId('professional-name') as HTMLInputElement).value).toBe('Dr. Kine');
+  });
+
+  it('clicar no lixeiro abre a confirmação; Cancelar fecha sem chamar a API (C8)', () => {
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    render(<EquipeTratanteCard professionals={professionals} patientId="p1" />);
+    fireEvent.click(screen.getByTestId('equipe-tratante-deactivate-p1'));
+    expect(screen.getByTestId('deactivate-professional-confirm')).toBeInTheDocument();
+    expect(screen.getByTestId('deactivate-professional-name').textContent).toBe('Dr. Kine');
+    fireEvent.click(screen.getByText('Cancelar'));
+    expect(screen.queryByTestId('deactivate-professional-confirm')).not.toBeInTheDocument();
+    expect(mockDeactivateProfessional).not.toHaveBeenCalled();
+  });
+
+  it('confirmar desativação chama a API com (patientId, id) e fecha o modal ao concluir; onSaved é chamado', async () => {
+    mockDeactivateProfessional.mockResolvedValueOnce({ id: 'p1', active: false });
+    const onSaved = vi.fn();
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    render(<EquipeTratanteCard professionals={professionals} patientId="p1" onSaved={onSaved} />);
+    fireEvent.click(screen.getByTestId('equipe-tratante-deactivate-p1'));
+    fireEvent.click(screen.getByTestId('deactivate-professional-confirm-button'));
+    await waitFor(() => expect(mockDeactivateProfessional).toHaveBeenCalledWith('p1', 'p1'));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByTestId('deactivate-professional-confirm')).not.toBeInTheDocument());
+  });
+
+  it('profissional sem nome (legado): a confirmação mostra "—" (branch `name ?? \'—\'`)', () => {
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    const semNome = [{ id: 'p9', name: null, phone: null, email: null, specialty: null, displayOrder: 1, isTeam: false }];
+    render(<EquipeTratanteCard professionals={semNome} patientId="p1" />);
+    fireEvent.click(screen.getByTestId('equipe-tratante-deactivate-p9'));
+    expect(screen.getByTestId('deactivate-professional-name').textContent).toBe('—');
+  });
+
+  it('confirmDeactivate: guarda defensiva — sem patientId, não chama a API mesmo se deactivating estiver setado', async () => {
+    mockDeactivateProfessional.mockClear();
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    const { rerender } = render(<EquipeTratanteCard professionals={professionals} patientId="p1" />);
+    fireEvent.click(screen.getByTestId('equipe-tratante-deactivate-p1'));
+    expect(screen.getByTestId('deactivate-professional-confirm')).toBeInTheDocument();
+    // patientId some (ex.: navegação/refetch no meio) — a confirmação clicada não pode chamar a API.
+    rerender(<EquipeTratanteCard professionals={professionals} />);
+    fireEvent.click(screen.getByTestId('deactivate-professional-confirm-button'));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockDeactivateProfessional).not.toHaveBeenCalled();
   });
 });
 
