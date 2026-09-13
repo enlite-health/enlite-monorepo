@@ -3,6 +3,8 @@
  * Used in the vacancy creation wizard (Phase 7)
  */
 
+import { z } from 'zod';
+
 export interface AddressMatchCandidate {
   patient_address_id: string;
   addressFormatted: string;
@@ -46,6 +48,17 @@ export const PATIENT_ADDRESS_TYPES = [
   'casa_abuelo', 'escuela', 'trabajo', 'otro',
 ] as const;
 export type PatientAddressType = (typeof PATIENT_ADDRESS_TYPES)[number];
+
+/**
+ * Zod na borda (spec 019, US 4.5) — MESMA lista fechada do CHECK do banco (migration 434,
+ * `PATIENT_ADDRESS_TYPES` em `AdminPatientAddressesController.ts`), sem `.default(...)`: ausência
+ * é `null` ("sin especificar"), nunca um valor chutado. `.catch(null)`: uma linha legada que ainda
+ * carregue `'primary'`/`'secondary'`/`'service'` (não deveria existir em linha ATIVA depois do
+ * backfill da migration 434, mas nem drawer nem card podem confiar nisso sem checar) normaliza
+ * para `null` — único ponto da validação, reusado por `PatientAddressDrawer.tsx` (o <select>) e
+ * por `LocalizacoesCard.tsx` (`typeLabel`), pra não discordarem sobre o que é "sin especificar".
+ */
+export const patientAddressTypeSchema = z.enum(PATIENT_ADDRESS_TYPES).nullable().catch(null);
 
 export interface PatientAddressCreateInput {
   address_formatted: string;

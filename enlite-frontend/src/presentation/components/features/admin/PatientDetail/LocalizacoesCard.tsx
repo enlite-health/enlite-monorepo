@@ -18,6 +18,7 @@ import { addressLines } from '@presentation/utils/summarizeAddress';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
 import type { PatientAddressDetail } from '@domain/entities/PatientDetail';
+import { patientAddressTypeSchema } from '@domain/entities/PatientAddress';
 import { PatientAddressDrawer } from './edit/PatientAddressDrawer';
 import { AvisoAmbar } from './edit/AvisoAmbar';
 import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
@@ -62,10 +63,18 @@ function splitAddressForDisplay(
   return { line1, line2 };
 }
 
-/** `null`/`undefined` (`address_type` "sin especificar") e a lista fechada por parentesco (spec 019). */
+/**
+ * `null`/`undefined` (`address_type` "sin especificar") e a lista fechada por parentesco (spec
+ * 019) — MESMA validação do drawer (`patientAddressTypeSchema`, `PatientAddress.ts`): uma linha
+ * legada com `'primary'`/`'secondary'`/`'service'` (não deveria sobrar em linha ATIVA depois da
+ * migration 434, mas o card não confia sem checar) cai em "Sin especificar", igual ao <select>
+ * do drawer — antes deste conserto o card mostrava "Principal"/"Secundária" para esses valores,
+ * discordando do drawer (achado do gate `revisao-pr`).
+ */
 function typeLabel(t: TFunction, addressType: string | null): string {
-  if (!addressType) return t('admin.patients.detail.locationsCard.typeUnspecified');
-  return t(`admin.patients.detail.addressDrawer.type_${addressType}`, addressType);
+  const parsed = patientAddressTypeSchema.parse(addressType);
+  if (!parsed) return t('admin.patients.detail.locationsCard.typeUnspecified');
+  return t(`admin.patients.detail.addressDrawer.type_${parsed}`, parsed);
 }
 
 export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }: LocalizacoesCardProps) {

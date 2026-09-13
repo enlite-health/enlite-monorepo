@@ -196,8 +196,11 @@ test.describe('Card Localizaciones — engine ABAC LIGADO (D286) @integration', 
     await loginAs(page, LEITORA);
     const { patientId, addressId } = insertTestPatient({ status: 'PENDING_ADMISSION', firstName: 'AbacLei', lastName: `Humano${Date.now()}`, withAddress: false });
     pacientes.push(patientId);
-    // Endereço semeado direto no schema NOVO (o helper `insertTestPatient` ainda grava
-    // `address_type = 'primary'`, valor que a migration 434 já não aceita).
+    // Endereço semeado direto no schema NOVO, com `address_type = NULL` ("sin especificar") —
+    // a lista fechada por parentesco já é garantida pelo zod da API (`patientAddressTypeSchema`,
+    // `AdminPatientAddressesController.ts`) e, quando o PR-B aplicar a migration 434, também pelo
+    // CHECK do banco (`patient_addresses_type_check`); este INSERT direto não passa por nenhum
+    // dos dois, por isso usa um valor que já está na lista (NULL), em vez de um legado.
     psql(`INSERT INTO patient_addresses (patient_id, is_default, address_type, address_formatted, address_raw, lat, lng, display_order, source, created_at, updated_at)
           VALUES ('${patientId}', true, NULL, 'Av. Corrientes 1234, CABA, AR', 'Av. Corrientes 1234, CABA', -34.6037, -58.3816, 1, 'manual', NOW(), NOW())`);
     const enderecoId = scalar(`SELECT id FROM patient_addresses WHERE patient_id = '${patientId}' LIMIT 1`);

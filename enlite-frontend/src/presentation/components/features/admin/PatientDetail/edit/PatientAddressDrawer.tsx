@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { z } from 'zod';
 import { X } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { PatientAddressDetail, PatientAddressLogisticsPayload } from '@domain/entities/PatientDetail';
-import { PATIENT_ADDRESS_TYPES, type PatientAddressCreateInput, type PatientAddressType } from '@domain/entities/PatientAddress';
+import { patientAddressTypeSchema, type PatientAddressCreateInput, type PatientAddressType } from '@domain/entities/PatientAddress';
 import { derivePatientZone, type PatientZoneAddressComponent } from '@application/use-cases/derivePatientZone';
 import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
@@ -30,16 +29,6 @@ interface Props {
 const CLOSE_MS = 300;
 /** Teto de `access_notes` — espelha o servidor (lex C2.6). */
 export const ACCESS_NOTES_MAX = 2000;
-/**
- * Zod na borda (spec 019, US 4.5) — MESMA lista fechada do CHECK do banco (migration 434,
- * `PATIENT_ADDRESS_TYPES` em `AdminPatientAddressesController.ts`), sem `.default(...)`: ausência
- * é `null` ("sin especificar"), nunca um valor chutado. `.catch(null)`: uma linha legada que ainda
- * carregue `'primary'`/`'secondary'`/`'service'` (não deveria existir em linha ATIVA depois do
- * backfill da migration 434, mas o front não pode confiar nisso sem checar) normaliza para `null`
- * em vez de estourar — o <select> já mostra "sin especificar" pra esse valor (não há `<option>`
- * pra ele), então o dado interno tem de bater com o que a tela mostra.
- */
-const patientAddressTypeSchema = z.enum(PATIENT_ADDRESS_TYPES).nullable().catch(null);
 
 /**
  * Domicílio na ficha (spec 012, US-B2). Criar reusa o MESMO `POST /patients/:id/addresses`

@@ -823,7 +823,26 @@ describe('LocalizacoesCard', () => {
     const secundario = { ...patientDetailFixture.addresses[0], id: 'addr2', addressType: 'secondary', addressTypeOther: null, isPrimary: false };
     render(<LocalizacoesCard addresses={[secundario]} />);
     expect(screen.queryByTestId('address-primary-badge-addr2')).not.toBeInTheDocument();
-    expect(screen.getByText('Secundário')).toBeInTheDocument();
+    expect(screen.getByText('Não especificado')).toBeInTheDocument();
+  });
+
+  // Achado do gate `revisao-pr` (migration 434, D323): `typeLabel` tinha que usar a MESMA
+  // validação do drawer — 'primary'/'secondary'/'service' são chaves antigas (pré-434), não
+  // parentesco novo; qualquer linha que ainda as carregue cai em "sin especificar", igual ao
+  // <select> do drawer (`patientAddressTypeSchema`, `.catch(null)`). Valor novo da lista fechada
+  // (`casa_madre`) continua mostrando o rótulo certo.
+  it('spec 019 (D323): tipo legado (primary/secondary/service) mostra "Sin especificar" — só a lista fechada por parentesco tem rótulo próprio', () => {
+    const primary = { ...patientDetailFixture.addresses[0], addressType: 'primary', isPrimary: false };
+    render(<LocalizacoesCard addresses={[primary]} />);
+    expect(screen.getByText('Não especificado')).toBeInTheDocument();
+
+    const service = { ...patientDetailFixture.addresses[0], id: 'addr3', addressType: 'service', isPrimary: false };
+    render(<LocalizacoesCard addresses={[service]} />);
+    expect(screen.getAllByText('Não especificado').length).toBeGreaterThan(0);
+
+    const casaMadre = { ...patientDetailFixture.addresses[0], id: 'addr4', addressType: 'casa_madre', isPrimary: false };
+    render(<LocalizacoesCard addresses={[casaMadre]} />);
+    expect(screen.getByText('Casa da mãe')).toBeInTheDocument();
   });
 
   it('spec 019: address_type NULL mostra "Não especificado" e o aviso de sem principal aparece quando nenhum endereço é principal', () => {
