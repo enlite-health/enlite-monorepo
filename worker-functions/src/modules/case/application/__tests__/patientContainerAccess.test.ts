@@ -25,6 +25,7 @@ const TODAS = PATIENT_CONTAINERS.map((c) => patientContainerCell(c, 'read'));
 const ficha = {
   id: 'p1', status: 'ACTIVE', admissionStatus: 'DONE', country: 'AR', caseNumber: 12,
   firstName: 'Ana', lastName: 'G', documentNumber: '123', phoneWhatsapp: '+54', contactEmail: 'a@x',
+  gender: 'FEMALE', languages: ['pt', 'es'], dischargedAt: '2026-08-01T12:00:00.000Z',
   diagnosis: 'TEA', diagnoses: [{ code: 'x' }], dependencyLevel: 'ALTA', emergencyInstructions: 'llamar', hasConsent: true,
   professionals: [{ name: 'Dr' }],
   responsibles: [{ name: 'Mãe' }], phoneMatchesResponsible: true,
@@ -61,7 +62,7 @@ describe('projectPatientDetailByContainers', () => {
   it('ator só operacional (patient:read): todo container vira null e o marcador aparece para todos', () => {
     const out = projectPatientDetailByContainers(ficha, ['patient:read']);
     expect(out).toMatchObject({ id: 'p1', status: 'ACTIVE', admissionStatus: 'DONE', country: 'AR', caseNumber: 12 });
-    for (const f of ['firstName', 'documentNumber', 'contactEmail', 'diagnosis', 'diagnoses', 'emergencyInstructions', 'professionals', 'responsibles', 'chatIds', 'familyChatId', 'insuranceInformed', 'affiliateId', 'addresses', 'cityLocality', 'contractedServices', 'serviceType']) {
+    for (const f of ['firstName', 'documentNumber', 'contactEmail', 'gender', 'languages', 'dischargedAt', 'diagnosis', 'diagnoses', 'emergencyInstructions', 'professionals', 'responsibles', 'chatIds', 'familyChatId', 'insuranceInformed', 'affiliateId', 'addresses', 'cityLocality', 'contractedServices', 'serviceType']) {
       expect((out as Record<string, unknown>)[f]).toBeNull();
     }
     expect(out.redacted).toEqual({
@@ -88,6 +89,20 @@ describe('projectPatientDetailByContainers', () => {
     const com = projectPatientDetailByContainers(ficha, ['patient:read', 'patient_identity:read', 'patient_therapeutic_project:read']);
     expect(com.redacted).not.toHaveProperty('therapeuticProject');
     expect(Object.keys(com).sort()).toEqual(Object.keys(sem).sort());
+  });
+
+  it('spec 018 PR-3 (migration 425, lex CONDIÇÃO 5/6): gender/languages/dischargedAt vivem no container `identity`, nunca mais fracos que ele', () => {
+    const semIdentidade = projectPatientDetailByContainers(ficha, ['patient:read', 'patient_family:read']);
+    expect(semIdentidade.gender).toBeNull();
+    expect(semIdentidade.languages).toBeNull();
+    expect(semIdentidade.dischargedAt).toBeNull();
+    expect(semIdentidade.redacted).toHaveProperty('identity', true);
+
+    const comIdentidade = projectPatientDetailByContainers(ficha, ['patient:read', 'patient_identity:read']);
+    expect(comIdentidade.gender).toBe('FEMALE');
+    expect(comIdentidade.languages).toEqual(['pt', 'es']);
+    expect(comIdentidade.dischargedAt).toBe('2026-08-01T12:00:00.000Z');
+    expect(comIdentidade.redacted).not.toHaveProperty('identity');
   });
 
   it('só o container concedido sobrevive — familiares sem clínica', () => {

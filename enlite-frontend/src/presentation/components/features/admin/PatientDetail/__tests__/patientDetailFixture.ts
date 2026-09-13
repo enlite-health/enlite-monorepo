@@ -12,6 +12,9 @@ export const patientDetailFixture: PatientDetail = {
   sex: 'MALE',
   phoneWhatsapp: '+55 (11) 91571-1717',
   contactEmail: 'santiago.claiman@example.com',
+  gender: 'MALE',
+  languages: ['pt', 'es'],
+  dischargedAt: null,
   chatIds: {
     FAMILY: '120363090000000001@g.us',
     PROVIDERS: '120363090000000002@g.us',
@@ -70,6 +73,10 @@ export const patientDetailFixture: PatientDetail = {
       source: 'web_form',
     },
   ],
+  // Spec 018 PR-2/PR-3: `[]` = ator TEM patient_family:read (lista vazia é diferente de `null`,
+  // que significaria "sem a célula" — D113). A marca aponta para o responsável acima.
+  externalContacts: [],
+  emergencyContactRef: { kind: 'RESPONSIBLE', id: 'r1' },
   addresses: [
     {
       id: 'addr1',
@@ -120,6 +127,9 @@ export const patientDetailMinimal: PatientDetail = {
   sex: null,
   phoneWhatsapp: null,
   contactEmail: null,
+  gender: null,
+  languages: null,
+  dischargedAt: null,
   chatIds: {},
   familyChatId: null,
   providersChatId: null,
@@ -159,6 +169,8 @@ export const patientDetailMinimal: PatientDetail = {
   completeness: { missing: ['ADDRESS', 'COVERAGE', 'CONTRACTED_SERVICE', 'CONSENT'], blocking: ['ADDRESS'], ready: false, canActivate: false },
   phoneMatchesResponsible: false,
   responsibles: [],
+  externalContacts: [],
+  emergencyContactRef: null,
   addresses: [],
   professionals: [],
   contractedServices: [],

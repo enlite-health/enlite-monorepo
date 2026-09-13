@@ -415,6 +415,109 @@ describe('fetchPatientDetail — cobertura e e-mail do paciente (spec 011, A3/A4
   });
 });
 
+describe('fetchPatientDetail — gênero, idiomas e dischargedAt (spec 018 PR-3, migration 425)', () => {
+  const emptyRelated = () => ({ rows: [] });
+
+  function runWithRow(row: Record<string, unknown>) {
+    const queryImpl = jest.fn();
+    queryImpl
+      .mockResolvedValueOnce({ rows: [row] })
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated());
+    const enc = makeEncryptionService();
+    return { queryImpl, enc, run: () => fetchPatientDetail(makePool(queryImpl), enc, PATIENT_ID) };
+  }
+
+  it('decripta gender e languages (JSON válido) sob reads.identity; dischargedAt passa direto (não é KMS)', async () => {
+    const { queryImpl, enc, run } = runWithRow(basePatientRow({
+      genderEncrypted: 'enc-gender',
+      languagesEncrypted: 'enc-languages',
+      dischargedAt: new Date('2026-08-01T12:00:00Z'),
+    }));
+    const decrypt = enc.decrypt as jest.Mock;
+    decrypt.mockImplementation(async (v: string | null) => {
+      if (v === 'enc-gender') return 'FEMALE';
+      if (v === 'enc-languages') return JSON.stringify(['pt', 'es']);
+      return v ? `dec(${v})` : null;
+    });
+    const result = await run();
+    expect(String(queryImpl.mock.calls[0][0])).toContain('gender_encrypted');
+    expect(String(queryImpl.mock.calls[0][0])).toContain('languages_encrypted');
+    expect(result!.gender).toBe('FEMALE');
+    expect(result!.languages).toEqual(['pt', 'es']);
+    expect(result!.dischargedAt).toEqual(new Date('2026-08-01T12:00:00Z'));
+  });
+
+  it('gender/languages ausentes (coluna NULL) → null, null, 0 decrypt a mais além do e-mail', async () => {
+    const { queryImpl, enc, run } = runWithRow(basePatientRow({ genderEncrypted: null, languagesEncrypted: null, contactEmailEncrypted: null }));
+    const result = await run();
+    expect(result!.gender).toBeNull();
+    expect(result!.languages).toBeNull();
+    expect((enc.decrypt as jest.Mock)).not.toHaveBeenCalled();
+    void queryImpl;
+  });
+
+  it('languages_encrypted decripta para JSON corrompido → languages null e o erro é REPORTADO (nunca 500 na ficha inteira, D167)', async () => {
+    const { enc, run } = runWithRow(basePatientRow({ languagesEncrypted: 'enc-languages-bad' }));
+    (enc.decrypt as jest.Mock).mockImplementation(async (v: string | null) => (v === 'enc-languages-bad' ? '{not-json' : null));
+    const result = await run();
+    expect(result!.languages).toBeNull();
+    expect(mockReportError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ source: 'PatientDetailQueryHelper:languages' }));
+  });
+
+  it('branch defensivo: JSON.parse lança um valor NÃO-Error → embrulhado em Error antes de reportError (mesmo molde de todo catch do arquivo)', async () => {
+    const { enc, run } = runWithRow(basePatientRow({ languagesEncrypted: 'enc-languages-throw-string' }));
+    (enc.decrypt as jest.Mock).mockImplementation(async (v: string | null) => (v === 'enc-languages-throw-string' ? 'x' : null));
+    const originalParse = JSON.parse;
+    jest.spyOn(JSON, 'parse').mockImplementationOnce(() => { throw 'não é um Error'; });
+    try {
+      const result = await run();
+      expect(result!.languages).toBeNull();
+      expect(mockReportError).toHaveBeenCalledWith(new Error('não é um Error'), expect.objectContaining({ source: 'PatientDetailQueryHelper:languages' }));
+    } finally {
+      (JSON.parse as jest.Mock).mockRestore?.();
+      JSON.parse = originalParse;
+    }
+  });
+
+  it('languages_encrypted decripta para um JSON válido que NÃO é array (ex: objeto) → languages null, sem lançar', async () => {
+    const { enc, run } = runWithRow(basePatientRow({ languagesEncrypted: 'enc-languages-obj' }));
+    (enc.decrypt as jest.Mock).mockImplementation(async (v: string | null) => (v === 'enc-languages-obj' ? '{"a":1}' : null));
+    const result = await run();
+    expect(result!.languages).toBeNull();
+  });
+
+  it('lex CONDIÇÃO 5/6: sem reads.identity, gender/languages NUNCA passam pelo KMS (mesma régua do e-mail)', async () => {
+    const { enc, run } = ((): { enc: KMSEncryptionService; run: () => ReturnType<typeof fetchPatientDetail> } => {
+      const queryImpl = jest.fn();
+      queryImpl
+        .mockResolvedValueOnce({ rows: [basePatientRow({ genderEncrypted: 'enc-gender', languagesEncrypted: 'enc-languages', contactEmailEncrypted: 'enc-mail' })] })
+        .mockResolvedValueOnce(emptyRelated())
+        .mockResolvedValueOnce(emptyRelated())
+        .mockResolvedValueOnce(emptyRelated())
+        .mockResolvedValueOnce(emptyRelated())
+        .mockResolvedValueOnce(emptyRelated())
+        .mockResolvedValueOnce(emptyRelated())
+        .mockResolvedValueOnce(emptyRelated());
+      const enc2 = makeEncryptionService();
+      const reads = {
+        identity: false, clinical: false, careTeam: false, family: false, chat: false,
+        coverage: false, address: false, services: false, therapeuticProject: false,
+      };
+      return { enc: enc2, run: () => fetchPatientDetail(makePool(queryImpl), enc2, PATIENT_ID, reads) };
+    })();
+    const result = await run();
+    expect(result!.gender).toBeNull();
+    expect(result!.languages).toBeNull();
+    expect((enc.decrypt as jest.Mock)).not.toHaveBeenCalled();
+  });
+});
+
 // ── D286 / lex P3: a célula decide ANTES do KMS ───────────────────────────────
 // A prova é o espião com ZERO chamadas — não uma leitura do código. É o mesmo
 // desenho da C3 de prestador (`projectWorkerFields`): redigir DEPOIS de

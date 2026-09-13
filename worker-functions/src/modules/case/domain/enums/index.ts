@@ -6,3 +6,5 @@ export * from './ClinicalSpecialty';
 export * from './AcquisitionChannel';
 export * from './AttentionReason';
 export * from './PatientStatus';
+export * from './PatientGender';
+export * from './PatientLanguage';

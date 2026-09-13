@@ -213,6 +213,27 @@ describe('AdminPatientsController — bloco B', () => {
       await ctrl.updatePatientSection(r2, s2);
       expect((logger.info as jest.Mock).mock.calls.some((c) => c[0].msg === 'patient_affiliate_id.write')).toBe(false);
     });
+
+    it('spec 018 PR-3 (lex CONDIÇÃO 10): gender/languages inválidos → 400 e NENHUM log (logger/reportError) ecoa o corpo', async () => {
+      const updatePatientSection = jest.fn();
+      const ctrl = makeController({ updatePatientSection });
+      const GENDER_SEGREDO = 'CATOLICO-XPTO-SEGREDO-99';
+      const [r1, s1] = reqRes({ id: ID, section: 'general' }, { gender: GENDER_SEGREDO });
+      await ctrl.updatePatientSection(r1, s1);
+      expect(s1.status).toHaveBeenCalledWith(400);
+      // O serviço nunca é chamado (a escrita não acontece) — e nenhum log/relatório carrega o valor.
+      expect(updatePatientSection).not.toHaveBeenCalled();
+      expect(JSON.stringify((logger.info as jest.Mock).mock.calls)).not.toContain(GENDER_SEGREDO);
+      expect(JSON.stringify((logger.warn as jest.Mock).mock.calls)).not.toContain(GENDER_SEGREDO);
+      expect(JSON.stringify((logger.error as jest.Mock).mock.calls)).not.toContain(GENDER_SEGREDO);
+      expect(JSON.stringify((reportError as jest.Mock).mock.calls)).not.toContain(GENDER_SEGREDO);
+      expect(reportError).not.toHaveBeenCalled();
+
+      const [r2, s2] = reqRes({ id: ID, section: 'general' }, { languages: ['fr'] });
+      await ctrl.updatePatientSection(r2, s2);
+      expect(s2.status).toHaveBeenCalledWith(400);
+      expect(reportError).not.toHaveBeenCalled();
+    });
   });
 
   describe('catch com valor não-Error (ramo `instanceof` — a régua de 100% do arquivo tocado)', () => {

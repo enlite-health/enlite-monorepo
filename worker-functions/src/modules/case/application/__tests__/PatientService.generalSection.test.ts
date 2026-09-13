@@ -169,6 +169,54 @@ describe('PatientService.updatePatientSection(general) / updateGeneralSection', 
     expect(update!.params![1]).toBeNull();
   });
 
+  it('spec 018 PR-3 (Emenda 13/09): gender present → encrypted via KMS and set as gender_encrypted', async () => {
+    const seen: Array<{ sql: string; params?: unknown[] }> = [];
+    _queryImpl = async (sql: string, params?: unknown[]) => { seen.push({ sql, params }); return undefined; };
+
+    await service.updatePatientSection('pid-general-gender', 'general', { gender: 'FEMALE' } as PatientGeneralSectionData);
+
+    expect(mockEncrypt).toHaveBeenCalledWith('FEMALE');
+    const update = seen.find((s) => s.sql.startsWith('UPDATE patients SET'));
+    expect(update!.sql).toContain('gender_encrypted = $2');
+    expect(update!.params![1]).toBe(Buffer.from('FEMALE', 'utf8').toString('base64'));
+  });
+
+  it('spec 018 PR-3: gender explicitly null → still encrypts (null) — "não perguntado" grava NULL, distinto de PREFER_NOT_TO_SAY', async () => {
+    const seen: Array<{ sql: string; params?: unknown[] }> = [];
+    _queryImpl = async (sql: string, params?: unknown[]) => { seen.push({ sql, params }); return undefined; };
+
+    await service.updatePatientSection('pid-general-gender-null', 'general', { gender: null } as PatientGeneralSectionData);
+
+    expect(mockEncrypt).toHaveBeenCalledWith(null);
+    const update = seen.find((s) => s.sql.startsWith('UPDATE patients SET'));
+    expect(update!.sql).toContain('gender_encrypted = $2');
+    expect(update!.params![1]).toBeNull();
+  });
+
+  it('spec 018 PR-3: languages present → serialized to JSON, encrypted via KMS, set as languages_encrypted', async () => {
+    const seen: Array<{ sql: string; params?: unknown[] }> = [];
+    _queryImpl = async (sql: string, params?: unknown[]) => { seen.push({ sql, params }); return undefined; };
+
+    await service.updatePatientSection('pid-general-lang', 'general', { languages: ['pt', 'es'] } as PatientGeneralSectionData);
+
+    expect(mockEncrypt).toHaveBeenCalledWith(JSON.stringify(['pt', 'es']));
+    const update = seen.find((s) => s.sql.startsWith('UPDATE patients SET'));
+    expect(update!.sql).toContain('languages_encrypted = $2');
+    expect(update!.params![1]).toBe(Buffer.from(JSON.stringify(['pt', 'es']), 'utf8').toString('base64'));
+  });
+
+  it('spec 018 PR-3: languages = null → encrypts null (limpa a coluna)', async () => {
+    const seen: Array<{ sql: string; params?: unknown[] }> = [];
+    _queryImpl = async (sql: string, params?: unknown[]) => { seen.push({ sql, params }); return undefined; };
+
+    await service.updatePatientSection('pid-general-lang-null', 'general', { languages: null } as PatientGeneralSectionData);
+
+    expect(mockEncrypt).toHaveBeenCalledWith(null);
+    const update = seen.find((s) => s.sql.startsWith('UPDATE patients SET'));
+    expect(update!.sql).toContain('languages_encrypted = $2');
+    expect(update!.params![1]).toBeNull();
+  });
+
   it('4. data = {} (no whitelisted key, no contactEmail) → returns without issuing UPDATE', async () => {
     const seen: string[] = [];
     _queryImpl = async (sql: string) => { seen.push(sql); return undefined; };
