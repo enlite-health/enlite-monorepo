@@ -143,23 +143,29 @@ describe('Role enlite_mcp_ro — SELECT por coluna em patients (D216) @integrati
 
   it('spec 012 lex C2.1: patient_addresses.access_notes é negado à role (colunas irmãs passam); C3.1: provider_code não reabre patient_insurance_verified', async () => {
     const { rows: [a] } = await admin.query<{ id: string }>(
-      `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, access_notes) VALUES ($1, 'trabajo', 'Calle Falsa 123', $2) RETURNING id`,
+      `INSERT INTO patient_addresses (patient_id, address_type, address_type_other, address_formatted, access_notes) VALUES ($1, 'otro', 'Casa de la abuela', 'Calle Falsa 123', $2) RETURNING id`,
       [patientId, CLINICAL_TEXT],
     );
     try {
       await expect(ro.query('SELECT access_notes FROM patient_addresses WHERE id = $1', [a.id])).rejects.toThrow(NEGADO_POR_COLUNA_OU_RLS);
       await expect(ro.query('SELECT * FROM patient_addresses WHERE id = $1', [a.id])).rejects.toThrow(NEGADO_POR_COLUNA_OU_RLS);
+      // spec 019 (D320/B2, tasks 7.1.e): address_type/address_type_other saem junto com access_notes —
+      // mesma classe de risco (texto livre do "Otro", vínculo familiar sensível no valor fechado).
+      await expect(ro.query('SELECT address_type FROM patient_addresses WHERE id = $1', [a.id])).rejects.toThrow(NEGADO_POR_COLUNA_OU_RLS);
+      await expect(ro.query('SELECT address_type_other FROM patient_addresses WHERE id = $1', [a.id])).rejects.toThrow(NEGADO_POR_COLUNA_OU_RLS);
       // colunas não sensíveis seguem legíveis (item 1: contagem/rótulo sempre) — só sem RLS (ver nota acima)
       if (!rlsLigada) {
-        const ok = await ro.query('SELECT id, address_type, country, neighborhood, logistics_corridor FROM patient_addresses WHERE id = $1', [a.id]);
-        expect(ok.rows).toEqual([{ id: a.id, address_type: 'trabajo', country: 'AR', neighborhood: null, logistics_corridor: null }]);
+        const ok = await ro.query('SELECT id, country, neighborhood, logistics_corridor FROM patient_addresses WHERE id = $1', [a.id]);
+        expect(ok.rows).toEqual([{ id: a.id, country: 'AR', neighborhood: null, logistics_corridor: null }]);
       }
-      const priv = await admin.query<{ t: boolean; c: boolean; n: boolean }>(
+      const priv = await admin.query<{ t: boolean; c: boolean; n: boolean; at: boolean; ato: boolean }>(
         `SELECT has_table_privilege('enlite_mcp_ro', 'public.patient_addresses', 'SELECT') AS t,
                 has_column_privilege('enlite_mcp_ro', 'public.patient_addresses', 'access_notes', 'SELECT') AS c,
-                has_column_privilege('enlite_mcp_ro', 'public.patient_addresses', 'neighborhood', 'SELECT') AS n`,
+                has_column_privilege('enlite_mcp_ro', 'public.patient_addresses', 'neighborhood', 'SELECT') AS n,
+                has_column_privilege('enlite_mcp_ro', 'public.patient_addresses', 'address_type', 'SELECT') AS at,
+                has_column_privilege('enlite_mcp_ro', 'public.patient_addresses', 'address_type_other', 'SELECT') AS ato`,
       );
-      expect(priv.rows[0]).toEqual({ t: false, c: false, n: true });
+      expect(priv.rows[0]).toEqual({ t: false, c: false, n: true, at: false, ato: false });
       // CONTROLE POSITIVO (D157): GRANT reabre; REVOKE fecha
       await admin.query('GRANT SELECT (access_notes) ON public.patient_addresses TO enlite_mcp_ro');
       try {
