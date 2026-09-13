@@ -126,6 +126,26 @@ export function missingContactOriginCell(
   return null;
 }
 
+/**
+ * `patient_care_team:read` A MAIS quando o `COVERAGE` referenciado é um contato `DIRECT_PROFESSIONAL`
+ * (contract `therapeutic-project.md:12`, lex C3 — mesma regra do support-network: sem a célula da
+ * equipe, o ator nunca viu esse profissional e não pode selecioná-lo aqui). `kindOf` é injetado (o
+ * repositório de contatos da cobertura) para esta função continuar PURA de I/O — só orquestra.
+ * `cells = null` (D113) e a célula já presente pulam a consulta ao banco inteira.
+ */
+export async function missingCoverageDirectProfessionalCell(
+  refs: readonly ContactRef[],
+  cells: readonly string[] | null | undefined,
+  kindOf: (id: string) => Promise<string | null>,
+): Promise<string | null> {
+  if (cells === null || cells === undefined) return null;
+  if (cells.includes(PATIENT_CARE_TEAM_READ_CELL)) return null;
+  const coverageIds = refs.filter((r) => r.kind === 'COVERAGE').map((r) => r.id);
+  if (coverageIds.length === 0) return null;
+  const kinds = await Promise.all(coverageIds.map((id) => kindOf(id)));
+  return kinds.some((k) => k === 'DIRECT_PROFESSIONAL') ? PATIENT_CARE_TEAM_READ_CELL : null;
+}
+
 /** Container (`family`/`coverage`/`care_team`) de cada tipo de contato — para a trilha (lex C6/C9). */
 export function containerOfContactKind(kind: 'RESPONSIBLE' | 'EXTERNAL' | 'COVERAGE' | 'CARE_TEAM'): 'family' | 'coverage' | 'care_team' {
   if (kind === 'COVERAGE') return 'coverage';

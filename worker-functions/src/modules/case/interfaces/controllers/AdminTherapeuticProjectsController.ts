@@ -18,19 +18,22 @@ import {
   TherapeuticCatalogRepository,
   CatalogItemsUnknownError,
   CatalogLabelTakenError,
+  CatalogSegmentInvalidError,
 } from '../../infrastructure/TherapeuticCatalogRepository';
+import { PatientCoverageEmergencyContactRepository } from '../../infrastructure/PatientCoverageEmergencyContactRepository';
 import {
   canWriteTherapeuticClinical,
   projectTherapeuticVersionForActor,
   missingContactOriginCell,
+  missingCoverageDirectProfessionalCell,
   PATIENT_CLINICAL_WRITE_CELL,
 } from '../../application/therapeuticProjectAccess';
 import type { ResolvedTherapeuticContact } from '../../domain/TherapeuticProject';
 import {
   createTherapeuticProjectSchema,
   annulTherapeuticProjectSchema,
-  createCatalogItemSchema,
-  updateCatalogItemSchema,
+  createCatalogItemSchemaFor,
+  updateCatalogItemSchemaFor,
 } from '../validators/therapeuticProjectSchemas';
 import type { TherapeuticCatalogKind } from '../../domain/TherapeuticProject';
 import { DiagnosisUnknownError } from '../../application/pathologySegments';
@@ -71,7 +74,16 @@ export class AdminTherapeuticProjectsController {
     private readonly repo: TherapeuticProjectRepository = new TherapeuticProjectRepository(),
     private readonly catalogs: TherapeuticCatalogRepository = new TherapeuticCatalogRepository(),
     private readonly contacts: TherapeuticProjectContactsRepository = new TherapeuticProjectContactsRepository(),
+    // Injetado LAZY (molde das outras 3 acima): construir aqui em cima tocaria o pool no
+    // construtor sem repo (PatientCoverageEmergencyContactRepository NÃO tem getter preguiçoso).
+    private readonly coverageContactsInjected?: PatientCoverageEmergencyContactRepository,
   ) {}
+
+  private coverageContactsMemo?: PatientCoverageEmergencyContactRepository;
+  /** lex-pr7 §alterado: só é criado (e só toca o pool) quando `create()` de fato precisa checar um `COVERAGE` ref. */
+  private get coverageContacts(): PatientCoverageEmergencyContactRepository {
+    return (this.coverageContactsMemo ??= this.coverageContactsInjected ?? new PatientCoverageEmergencyContactRepository());
+  }
 
   private actorUid(req: Request): string {
     return AuthMiddleware.getAuthContext(req)?.principal.id ?? 'unknown';
@@ -165,6 +177,18 @@ export class AdminTherapeuticProjectsController {
     const missingCell = missingContactOriginCell(body.data.version.contactRefs, body.data.version.careTeamIds, cells);
     if (missingCell) {
       res.status(403).json({ success: false, error: 'Forbidden', details: { cell: missingCell } });
+      return;
+    }
+    // contract `therapeutic-project.md:12`: COVERAGE exige `patient_care_team:read` A MAIS quando o
+    // id referenciado é um contato DIRECT_PROFESSIONAL (mesma régua do `refuseDirectProfessionalWithoutCareTeam`
+    // do support-network, lex C3) — quem não vê o profissional direto não pode selecioná-lo aqui também.
+    const missingDirectProfessionalCell = await missingCoverageDirectProfessionalCell(
+      body.data.version.contactRefs,
+      cells,
+      (id) => this.coverageContacts.getKind(params.data.id, id),
+    );
+    if (missingDirectProfessionalCell) {
+      res.status(403).json({ success: false, error: 'Forbidden', details: { cell: missingDirectProfessionalCell } });
       return;
     }
     try {
@@ -264,9 +288,9 @@ export class AdminTherapeuticProjectsController {
     }
   }
 
-  /** POST /therapeutic-catalogs/<kind> */
+  /** POST /therapeutic-catalogs/<kind> — `segmentId` (430) só entra no corpo de objetivos/atividades (schema por `kind`). */
   async createCatalogItem(kind: TherapeuticCatalogKind, req: Request, res: Response): Promise<void> {
-    const body = createCatalogItemSchema.safeParse(req.body);
+    const body = createCatalogItemSchemaFor(kind).safeParse(req.body);
     if (!body.success) {
       invalidBody(res, body.error);
       return;
@@ -277,6 +301,11 @@ export class AdminTherapeuticProjectsController {
     } catch (err: unknown) {
       if (err instanceof CatalogLabelTakenError) {
         res.status(409).json({ success: false, error: 'An active item with this label already exists', code: err.code });
+        return;
+      }
+      // Segmento inexistente/inativo: 422 SEM ecoar o id (só o tipo do erro — molde de `DiagnosisUnknownError`).
+      if (err instanceof CatalogSegmentInvalidError) {
+        res.status(422).json({ success: false, error: 'Unknown or inactive segment', code: err.code });
         return;
       }
       const e = err instanceof Error ? err : new Error(String(err));
@@ -292,7 +321,7 @@ export class AdminTherapeuticProjectsController {
       res.status(400).json({ success: false, error: 'Invalid params' });
       return;
     }
-    const body = updateCatalogItemSchema.safeParse(req.body);
+    const body = updateCatalogItemSchemaFor(kind).safeParse(req.body);
     if (!body.success) {
       invalidBody(res, body.error);
       return;
@@ -307,6 +336,10 @@ export class AdminTherapeuticProjectsController {
     } catch (err: unknown) {
       if (err instanceof CatalogLabelTakenError) {
         res.status(409).json({ success: false, error: 'An active item with this label already exists', code: err.code });
+        return;
+      }
+      if (err instanceof CatalogSegmentInvalidError) {
+        res.status(422).json({ success: false, error: 'Unknown or inactive segment', code: err.code });
         return;
       }
       const e = err instanceof Error ? err : new Error(String(err));

@@ -20,6 +20,7 @@ import {
   projectTherapeuticVersionForActor,
   therapeuticTrailAction,
   missingContactOriginCell,
+  missingCoverageDirectProfessionalCell,
   containerOfContactKind,
   PATIENT_CLINICAL_READ_CELL,
   PATIENT_SERVICES_READ_CELL,
@@ -283,6 +284,49 @@ describe('missingContactOriginCell (lex-pr7 §alterado: "quem não vê não sele
     expect(
       missingContactOriginCell([{ kind: 'RESPONSIBLE', id: 'r-1' }, { kind: 'COVERAGE', id: 'c-1' }], ['p-1'], []),
     ).toBe(PATIENT_FAMILY_READ_CELL);
+  });
+});
+
+describe('missingCoverageDirectProfessionalCell (contract `therapeutic-project.md:12`, lex C3)', () => {
+  it('cells=null (D113) deixa passar SEM consultar `kindOf`', async () => {
+    const kindOf = jest.fn();
+    expect(await missingCoverageDirectProfessionalCell([{ kind: 'COVERAGE', id: 'c-1' }], null, kindOf)).toBeNull();
+    expect(kindOf).not.toHaveBeenCalled();
+  });
+
+  it('já tem `patient_care_team:read` → deixa passar SEM consultar `kindOf`', async () => {
+    const kindOf = jest.fn();
+    expect(await missingCoverageDirectProfessionalCell([{ kind: 'COVERAGE', id: 'c-1' }], [PATIENT_CARE_TEAM_READ_CELL], kindOf)).toBeNull();
+    expect(kindOf).not.toHaveBeenCalled();
+  });
+
+  it('sem refs COVERAGE nenhuma → deixa passar SEM consultar `kindOf`', async () => {
+    const kindOf = jest.fn();
+    expect(await missingCoverageDirectProfessionalCell([{ kind: 'RESPONSIBLE', id: 'r-1' }], [], kindOf)).toBeNull();
+    expect(kindOf).not.toHaveBeenCalled();
+  });
+
+  it('COVERAGE é DIRECT_PROFESSIONAL e falta a célula da equipe → falta `patient_care_team:read`', async () => {
+    const kindOf = jest.fn().mockResolvedValue('DIRECT_PROFESSIONAL');
+    expect(await missingCoverageDirectProfessionalCell([{ kind: 'COVERAGE', id: 'c-1' }], [], kindOf)).toBe(PATIENT_CARE_TEAM_READ_CELL);
+    expect(kindOf).toHaveBeenCalledWith('c-1');
+  });
+
+  it('COVERAGE não é DIRECT_PROFESSIONAL → nada falta', async () => {
+    const kindOf = jest.fn().mockResolvedValue('PUBLIC_EMERGENCY_SERVICE');
+    expect(await missingCoverageDirectProfessionalCell([{ kind: 'COVERAGE', id: 'c-1' }], [], kindOf)).toBeNull();
+  });
+
+  it('id sem linha (kindOf devolve null) → nada falta (a inexistência é assunto do repositório, não desta função)', async () => {
+    const kindOf = jest.fn().mockResolvedValue(null);
+    expect(await missingCoverageDirectProfessionalCell([{ kind: 'COVERAGE', id: 'c-1' }], [], kindOf)).toBeNull();
+  });
+
+  it('várias refs COVERAGE, só uma é DIRECT_PROFESSIONAL → ainda falta a célula', async () => {
+    const kindOf = jest.fn(async (id: string) => (id === 'c-2' ? 'DIRECT_PROFESSIONAL' : 'PUBLIC_EMERGENCY_SERVICE'));
+    expect(
+      await missingCoverageDirectProfessionalCell([{ kind: 'COVERAGE', id: 'c-1' }, { kind: 'COVERAGE', id: 'c-2' }], [], kindOf),
+    ).toBe(PATIENT_CARE_TEAM_READ_CELL);
   });
 });
 

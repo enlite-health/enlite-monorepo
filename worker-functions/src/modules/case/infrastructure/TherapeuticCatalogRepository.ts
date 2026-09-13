@@ -15,6 +15,8 @@ export interface CatalogItem {
   deactivatedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Só objetivos/atividades (migration 430) — a tabela `therapeutic_segments` não tem esta coluna. */
+  segmentId?: string | null;
 }
 
 interface CatalogRow {
@@ -25,6 +27,7 @@ interface CatalogRow {
   deactivated_at: string | null;
   created_at: string;
   updated_at: string;
+  segment_id?: string | null;
 }
 
 /** Rótulo já existe entre os ATIVOS (índice `uq_<tabela>_label_ativo`, 415). */
@@ -43,6 +46,14 @@ export class CatalogItemsUnknownError extends Error {
   }
 }
 
+/** `segmentId` (430) referenciado não é um segmento ATIVO — 422 SEM ecoar o id (nenhum campo aqui). */
+export class CatalogSegmentInvalidError extends Error {
+  readonly code = 'catalog_segment_invalid';
+  constructor() {
+    super('catalog_segment_invalid');
+  }
+}
+
 const isLabelUnique = (err: unknown): boolean =>
   typeof err === 'object' && err !== null && (err as { code?: string }).code === '23505'
   && /_label_ativo/.test(String((err as { constraint?: string }).constraint ?? ''));
@@ -55,6 +66,9 @@ const toItem = (r: CatalogRow): CatalogItem => ({
   deactivatedAt: r.deactivated_at,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
+  // Só entra quando a linha TEM a coluna (objetivos/atividades) — `segments` não tem `segment_id`,
+  // e o mock de teste sem a chave não pode ganhar `segmentId: undefined` (quebraria o `toEqual` exato).
+  ...(r.segment_id !== undefined ? { segmentId: r.segment_id } : {}),
 });
 
 /**
@@ -103,14 +117,43 @@ export class TherapeuticCatalogRepository {
     return res.rows.map((r) => ({ id: r.id, label: r.label, segmentId: r.segment_id, segmentLabel: r.segment_label }));
   }
 
-  async create(kind: TherapeuticCatalogKind, input: { label: string; sortOrder?: number; actorUid: string }): Promise<CatalogItem> {
+  /**
+   * `segmentId` (430) — só um `segmento` ATIVO pode ser referenciado; `null` limpa o vínculo sem
+   * checar nada. Fora da transação de escrita (leitura pura, antes do INSERT/UPDATE) — mesmo
+   * desenho do `snapshotOf` para os ids de catálogo (lex C19).
+   */
+  private async assertSegmentActive(segmentId: string): Promise<void> {
+    const res = await this.pool.query<{ ok: number }>(
+      'SELECT 1 AS ok FROM therapeutic_segments WHERE id = $1 AND active',
+      [segmentId],
+    );
+    if (res.rows.length === 0) throw new CatalogSegmentInvalidError();
+  }
+
+  async create(kind: TherapeuticCatalogKind, input: { label: string; sortOrder?: number; segmentId?: string | null; actorUid: string }): Promise<CatalogItem> {
+    if (input.segmentId !== undefined && input.segmentId !== null) await this.assertSegmentActive(input.segmentId);
     try {
       const row = await withActorContext(this.pool, async (cli) => {
+        // `segment_id` só entra na coluna quando o CHAMADOR mandou a chave (schema por `kind` já
+        // garante que só objetivos/atividades chegam aqui com ela) — ausente não toca a coluna,
+        // mesmo Merge Patch do `update` abaixo, para não quebrar o molde de params do `create` de
+        // `segments` nem dos testes que não passam `segmentId`.
+        const cols = ['label', 'sort_order'];
+        const params: unknown[] = [input.label, input.sortOrder ?? null];
+        const placeholders = ['$1', `COALESCE($2, (SELECT COALESCE(MAX(sort_order), 0) + 10 FROM ${this.table(kind)}))`];
+        if (input.segmentId !== undefined) {
+          params.push(input.segmentId);
+          cols.push('segment_id');
+          placeholders.push(`$${params.length}`);
+        }
+        params.push(input.actorUid);
+        cols.push('created_by', 'updated_by');
+        placeholders.push(`$${params.length}`, `$${params.length}`);
         const res = await cli.query<CatalogRow>(
-          `INSERT INTO ${this.table(kind)} (label, sort_order, created_by, updated_by)
-           VALUES ($1, COALESCE($2, (SELECT COALESCE(MAX(sort_order), 0) + 10 FROM ${this.table(kind)})), $3, $3)
+          `INSERT INTO ${this.table(kind)} (${cols.join(', ')})
+           VALUES (${placeholders.join(', ')})
            RETURNING *`,
-          [input.label, input.sortOrder ?? null, input.actorUid],
+          params,
         );
         return res.rows[0];
       });
@@ -125,8 +168,9 @@ export class TherapeuticCatalogRepository {
   async update(
     kind: TherapeuticCatalogKind,
     id: string,
-    patch: { label?: string; sortOrder?: number; active?: boolean; actorUid: string },
+    patch: { label?: string; sortOrder?: number; segmentId?: string | null; active?: boolean; actorUid: string },
   ): Promise<CatalogItem | null> {
+    if (patch.segmentId !== undefined && patch.segmentId !== null) await this.assertSegmentActive(patch.segmentId);
     const sets: string[] = [];
     const params: unknown[] = [id];
     const push = (col: string, value: unknown): void => {
@@ -135,6 +179,7 @@ export class TherapeuticCatalogRepository {
     };
     if (patch.label !== undefined) push('label', patch.label);
     if (patch.sortOrder !== undefined) push('sort_order', patch.sortOrder);
+    if (patch.segmentId !== undefined) push('segment_id', patch.segmentId);
     if (patch.active !== undefined) {
       push('active', patch.active);
       sets.push(patch.active ? 'deactivated_at = NULL' : 'deactivated_at = NOW()');

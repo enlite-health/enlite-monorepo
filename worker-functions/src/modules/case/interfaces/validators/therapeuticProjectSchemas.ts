@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { containsLikelyPersonalData } from '@modules/identity/permissions';
-import { CONTACT_REF_KINDS, THERAPEUTIC_CATALOG_KINDS, THERAPEUTIC_MODALITIES } from '../../domain/TherapeuticProject';
+import { CONTACT_REF_KINDS, THERAPEUTIC_CATALOG_KINDS, THERAPEUTIC_MODALITIES, type TherapeuticCatalogKind } from '../../domain/TherapeuticProject';
 
 /** Teto de contatos/equipe por versão — espelha o `.max(20)` do contrato (lex #7, migration 429). */
 export const THERAPEUTIC_CONTACT_REFS_MAX = 20;
@@ -100,21 +100,43 @@ const catalogLabel = z
   .max(CATALOG_LABEL_MAX)
   .refine((l) => !containsLikelyPersonalData(l), { message: 'label must not contain personal data' });
 
-export const createCatalogItemSchema = z
-  .object({
-    label: catalogLabel,
-    sortOrder: z.number().int().min(0).max(100000).optional(),
-  })
-  .strict();
+/**
+ * `segmentId` (migration 430, US-17): filtro por segmento da Ana Care — só em `specific-objectives`/
+ * `activities` (contract `therapeutic-project.md` §Catálogo de segmentos). O catálogo `segments`
+ * NÃO recebe `segmentId` de si mesmo — por isso o campo entra por schema À PARTE, escolhido pelo
+ * `kind` da ROTA (nunca do corpo), e `.strict()` recusa (400) quem mandar `segmentId` para `segments`.
+ * `null` explícito limpa o vínculo; ausente não toca a coluna (Merge Patch, molde do resto do PATCH).
+ */
+const segmentIdField = z.string().uuid().nullable();
+
+const createCatalogItemBase = {
+  label: catalogLabel,
+  sortOrder: z.number().int().min(0).max(100000).optional(),
+};
+export const createCatalogItemSchema = z.object(createCatalogItemBase).strict();
+const createCatalogItemWithSegmentSchema = z.object({ ...createCatalogItemBase, segmentId: segmentIdField.optional() }).strict();
 
 /** PATCH parcial: rótulo, ordem, e `active:false` para desativar (reativar também é permitido). */
-export const updateCatalogItemSchema = z
-  .object({
-    label: catalogLabel.optional(),
-    sortOrder: z.number().int().min(0).max(100000).optional(),
-    active: z.boolean().optional(),
-  })
+const updateCatalogItemBase = {
+  label: catalogLabel.optional(),
+  sortOrder: z.number().int().min(0).max(100000).optional(),
+  active: z.boolean().optional(),
+};
+export const updateCatalogItemSchema = z.object(updateCatalogItemBase).strict().refine((b) => Object.keys(b).length > 0, { message: 'empty patch' });
+const updateCatalogItemWithSegmentSchema = z
+  .object({ ...updateCatalogItemBase, segmentId: segmentIdField.optional() })
   .strict()
   .refine((b) => Object.keys(b).length > 0, { message: 'empty patch' });
-export type CreateCatalogItemBody = z.infer<typeof createCatalogItemSchema>;
-export type UpdateCatalogItemBody = z.infer<typeof updateCatalogItemSchema>;
+
+export type CreateCatalogItemBody = z.infer<typeof createCatalogItemWithSegmentSchema>;
+export type UpdateCatalogItemBody = z.infer<typeof updateCatalogItemWithSegmentSchema>;
+
+/** Schema de CRIAÇÃO pelo `kind` da rota (célula literal, D299.3) — só objetivos/atividades aceitam `segmentId`. */
+export function createCatalogItemSchemaFor(kind: TherapeuticCatalogKind): typeof createCatalogItemSchema | typeof createCatalogItemWithSegmentSchema {
+  return kind === 'segments' ? createCatalogItemSchema : createCatalogItemWithSegmentSchema;
+}
+
+/** Schema de PATCH pelo `kind` da rota — mesma régua do de criação. */
+export function updateCatalogItemSchemaFor(kind: TherapeuticCatalogKind): typeof updateCatalogItemSchema | typeof updateCatalogItemWithSegmentSchema {
+  return kind === 'segments' ? updateCatalogItemSchema : updateCatalogItemWithSegmentSchema;
+}

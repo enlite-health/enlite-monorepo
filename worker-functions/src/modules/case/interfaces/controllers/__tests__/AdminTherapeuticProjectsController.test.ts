@@ -92,9 +92,18 @@ function mockRes(): Response & { status: jest.Mock; json: jest.Mock } {
 function stubContacts(): Record<string, unknown> {
   return { resolve: jest.fn().mockResolvedValue({ contacts: [], containersServed: new Set() }) };
 }
-/** O controller com os três repos falsos (a fronteira; o SQL é provado no e2e). */
-function ctrl(repo: Record<string, unknown> = {}, catalogs: Record<string, unknown> = {}, contacts: Record<string, unknown> = stubContacts()) {
-  return new AdminTherapeuticProjectsController(repo as never, catalogs as never, contacts as never);
+/** Stub de `PatientCoverageEmergencyContactRepository`: por padrão, nenhum `COVERAGE` é `DIRECT_PROFESSIONAL`. */
+function stubCoverageContacts(kinds: Record<string, string> = {}): Record<string, unknown> {
+  return { getKind: jest.fn(async (_patientId: string, id: string) => kinds[id] ?? null) };
+}
+/** O controller com os quatro repos falsos (a fronteira; o SQL é provado no e2e). */
+function ctrl(
+  repo: Record<string, unknown> = {},
+  catalogs: Record<string, unknown> = {},
+  contacts: Record<string, unknown> = stubContacts(),
+  coverageContacts: Record<string, unknown> = stubCoverageContacts(),
+) {
+  return new AdminTherapeuticProjectsController(repo as never, catalogs as never, contacts as never, coverageContacts as never);
 }
 const corpoDaResposta = (res: { json: jest.Mock }) => res.json.mock.calls[0][0];
 
@@ -300,6 +309,59 @@ describe('AdminTherapeuticProjectsController', () => {
       );
       expect(res.status).toHaveBeenCalledWith(403);
       expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Forbidden', details: { cell: 'patient_care_team:read' } });
+    });
+
+    it('403 sem `patient_care_team:read`: COVERAGE é DIRECT_PROFESSIONAL (contract `therapeutic-project.md:12`, lex C3)', async () => {
+      const repo = { createVersion: jest.fn() };
+      const coverageContacts = stubCoverageContacts({ [PAT_ID]: 'DIRECT_PROFESSIONAL' });
+      const res = mockRes();
+      const corpo = { ...CORPO_NOVO, version: { ...CORPO_NOVO.version, contactRefs: [{ kind: 'COVERAGE', id: PAT_ID }] } };
+      await ctrl(repo, {}, stubContacts(), coverageContacts).create(
+        mockReq({ params: { id: PATIENT_ID }, body: corpo, permissionCells: ['patient_clinical:write', 'patient_coverage:read'] }),
+        res,
+      );
+      expect(coverageContacts.getKind).toHaveBeenCalledWith(PATIENT_ID, PAT_ID);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Forbidden', details: { cell: 'patient_care_team:read' } });
+      expect(repo.createVersion).not.toHaveBeenCalled();
+    });
+
+    it('201: COVERAGE é DIRECT_PROFESSIONAL, mas o ator TEM `patient_care_team:read` — passa', async () => {
+      const repo = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
+      const coverageContacts = stubCoverageContacts({ [PAT_ID]: 'DIRECT_PROFESSIONAL' });
+      const res = mockRes();
+      const corpo = { ...CORPO_NOVO, version: { ...CORPO_NOVO.version, contactRefs: [{ kind: 'COVERAGE', id: PAT_ID }] } };
+      await ctrl(repo, {}, stubContacts(), coverageContacts).create(
+        mockReq({
+          params: { id: PATIENT_ID },
+          body: corpo,
+          permissionCells: ['patient_clinical:write', 'patient_coverage:read', 'patient_care_team:read'],
+        }),
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(201);
+    });
+
+    it('201: COVERAGE não é DIRECT_PROFESSIONAL (kind normal) — não exige `patient_care_team:read`', async () => {
+      const repo = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
+      const coverageContacts = stubCoverageContacts({ [PAT_ID]: 'PUBLIC_EMERGENCY_SERVICE' });
+      const res = mockRes();
+      const corpo = { ...CORPO_NOVO, version: { ...CORPO_NOVO.version, contactRefs: [{ kind: 'COVERAGE', id: PAT_ID }] } };
+      await ctrl(repo, {}, stubContacts(), coverageContacts).create(
+        mockReq({ params: { id: PATIENT_ID }, body: corpo, permissionCells: ['patient_clinical:write', 'patient_coverage:read'] }),
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(201);
+    });
+
+    it('`cells = null` (D113, engine não decidiu) pula a checagem inteira — o repo de cobertura nem é consultado', async () => {
+      const repo = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
+      const coverageContacts = stubCoverageContacts({ [PAT_ID]: 'DIRECT_PROFESSIONAL' });
+      const res = mockRes();
+      const corpo = { ...CORPO_NOVO, version: { ...CORPO_NOVO.version, contactRefs: [{ kind: 'COVERAGE', id: PAT_ID }] } };
+      await ctrl(repo, {}, stubContacts(), coverageContacts).create(mockReq({ params: { id: PATIENT_ID }, body: corpo }), res);
+      expect(coverageContacts.getKind).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(201);
     });
 
     it('201 com `contactRefs`/`careTeamIds` e as células de origem — nenhuma célula falta', async () => {

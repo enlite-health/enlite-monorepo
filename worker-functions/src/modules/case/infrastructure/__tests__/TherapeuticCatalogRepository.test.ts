@@ -21,6 +21,7 @@ import {
   TherapeuticCatalogRepository,
   CatalogItemsUnknownError,
   CatalogLabelTakenError,
+  CatalogSegmentInvalidError,
 } from '../TherapeuticCatalogRepository';
 import { THERAPEUTIC_CATALOG_TABLE } from '../../domain/TherapeuticProject';
 
@@ -88,6 +89,7 @@ describe('TherapeuticCatalogRepository', () => {
     it.each([
       ['specific-objectives', 'therapeutic_specific_objectives'],
       ['activities', 'therapeutic_activities'],
+      ['segments', 'therapeutic_segments'],
     ] as const)('a tabela do kind %s vem do DOMÍNIO (%s), nunca de string do cliente', async (kind, tabela) => {
       mockPoolQuery.mockResolvedValue({ rows: [] });
       await new TherapeuticCatalogRepository().list(kind);
@@ -239,6 +241,44 @@ describe('TherapeuticCatalogRepository', () => {
       expect(chamadas).toHaveLength(1);
     });
 
+    it('US-17/430: com `segmentId` de um segmento ATIVO → checa o segmento ANTES, e o INSERT ganha a coluna', async () => {
+      mockPoolQuery.mockResolvedValue({ rows: [{ ok: 1 }] }); // `assertSegmentActive` usa o pool, não a transação
+      const { cli, chamadas } = cliente();
+      mockConnect.mockResolvedValue(cli);
+      await new TherapeuticCatalogRepository().create('specific-objectives', { label: 'Vínculo', segmentId: 'seg-1', actorUid: 'uid-1' });
+      expect(mockPoolQuery.mock.calls[0][0]).toContain('FROM therapeutic_segments WHERE id = $1 AND active');
+      expect(mockPoolQuery.mock.calls[0][1]).toEqual(['seg-1']);
+      expect(chamadas[0].sql).toContain('segment_id');
+      expect(chamadas[0].params).toEqual(['Vínculo', null, 'seg-1', 'uid-1']);
+    });
+
+    it('US-17/430: `segmentId` de segmento INATIVO/inexistente → `CatalogSegmentInvalidError`, SEM abrir transação', async () => {
+      mockPoolQuery.mockResolvedValue({ rows: [] });
+      const p = new TherapeuticCatalogRepository().create('activities', { label: 'Acompañamiento', segmentId: 'sumido', actorUid: 'uid-1' });
+      await expect(p).rejects.toBeInstanceOf(CatalogSegmentInvalidError);
+      await expect(p).rejects.toMatchObject({ code: 'catalog_segment_invalid' });
+      expect(mockConnect).not.toHaveBeenCalled();
+    });
+
+    it('US-17/430: `segmentId: null` (sem vínculo) NÃO consulta `therapeutic_segments`, mas a coluna entra NULL (chave presente)', async () => {
+      const { cli, chamadas } = cliente();
+      mockConnect.mockResolvedValue(cli);
+      await new TherapeuticCatalogRepository().create('activities', { label: 'Acompañamiento', segmentId: null, actorUid: 'uid-1' });
+      expect(mockPoolQuery).not.toHaveBeenCalled();
+      expect(chamadas[0].sql).toContain('segment_id');
+      expect(chamadas[0].params).toEqual(['Acompañamiento', null, null, 'uid-1']);
+    });
+
+    it('US-17/430: SEM `segmentId` na chamada (kind `segments`, ou chamador que não manda a chave) — coluna fora do INSERT, params intactos', async () => {
+      const { cli, chamadas } = cliente();
+      mockConnect.mockResolvedValue(cli);
+      await new TherapeuticCatalogRepository().create('segments', { label: 'Salud mental', actorUid: 'uid-1' });
+      expect(mockPoolQuery).not.toHaveBeenCalled();
+      expect(chamadas[0].sql).toContain('INSERT INTO therapeutic_segments');
+      expect(chamadas[0].sql).not.toContain('segment_id');
+      expect(chamadas[0].params).toEqual(['Salud mental', null, 'uid-1']);
+    });
+
     it('rejeição `null` também passa pelo detector sem quebrar', async () => {
       const cli = {
         query: jest.fn(async (sql: string) => {
@@ -304,6 +344,32 @@ describe('TherapeuticCatalogRepository', () => {
       expect(chamadas[0].sql).toContain('SET label = $2, sort_order = $3, active = $4, deactivated_at = NOW(), updated_by = $5, updated_at = NOW()');
       expect(chamadas[0].sql).toContain('WHERE id = $1 RETURNING *');
       expect(chamadas[0].params).toEqual(['item-1', 'Novo', 20, false, 'uid-7']);
+    });
+
+    it('US-17/430: `segmentId` de um segmento ATIVO → checa ANTES do UPDATE, coluna entra no SET', async () => {
+      mockPoolQuery.mockResolvedValue({ rows: [{ ok: 1 }] });
+      const { cli, chamadas } = cliente();
+      mockConnect.mockResolvedValue(cli);
+      await new TherapeuticCatalogRepository().update('specific-objectives', 'item-1', { segmentId: 'seg-1', actorUid: 'uid-1' });
+      expect(mockPoolQuery.mock.calls[0][0]).toContain('FROM therapeutic_segments WHERE id = $1 AND active');
+      expect(chamadas[0].sql).toContain('segment_id = $2');
+      expect(chamadas[0].params).toEqual(['item-1', 'seg-1', 'uid-1']);
+    });
+
+    it('US-17/430: `segmentId` de segmento INATIVO/inexistente → `CatalogSegmentInvalidError`, SEM abrir transação', async () => {
+      mockPoolQuery.mockResolvedValue({ rows: [] });
+      const p = new TherapeuticCatalogRepository().update('activities', 'item-1', { segmentId: 'sumido', actorUid: 'uid-1' });
+      await expect(p).rejects.toBeInstanceOf(CatalogSegmentInvalidError);
+      expect(mockConnect).not.toHaveBeenCalled();
+    });
+
+    it('US-17/430: `segmentId: null` LIMPA o vínculo — sem checar `therapeutic_segments`', async () => {
+      const { cli, chamadas } = cliente();
+      mockConnect.mockResolvedValue(cli);
+      await new TherapeuticCatalogRepository().update('activities', 'item-1', { segmentId: null, actorUid: 'uid-1' });
+      expect(mockPoolQuery).not.toHaveBeenCalled();
+      expect(chamadas[0].sql).toContain('segment_id = $2');
+      expect(chamadas[0].params).toEqual(['item-1', null, 'uid-1']);
     });
 
     it('nenhuma linha atingida (id inexistente) → null, e o controller responde 404', async () => {

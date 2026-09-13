@@ -3,6 +3,8 @@ import {
   annulTherapeuticProjectSchema,
   createCatalogItemSchema,
   updateCatalogItemSchema,
+  createCatalogItemSchemaFor,
+  updateCatalogItemSchemaFor,
   catalogKindSchema,
   THERAPEUTIC_TEXT_MAX,
 } from '../therapeuticProjectSchemas';
@@ -86,5 +88,27 @@ describe('therapeuticProjectSchemas — a borda (spec 017)', () => {
     expect(updateCatalogItemSchema.safeParse({}).success).toBe(false);
     expect(updateCatalogItemSchema.safeParse({ active: false }).success).toBe(true);
     expect(updateCatalogItemSchema.safeParse({ label: 'novo rótulo', sortOrder: 5 }).success).toBe(true);
+  });
+
+  it('catálogo: kind fechado agora inclui `segments` (US-17, migration 430)', () => {
+    expect(catalogKindSchema.safeParse('segments').success).toBe(true);
+  });
+
+  it('segmentId (contract §Catálogo de segmentos, US-17): só objetivos/atividades aceitam; `segments` recusa (.strict())', () => {
+    const UUID_SEG = '22222222-2222-4222-8222-222222222222';
+    // specific-objectives/activities: aceitam `segmentId` uuid ou `null` (limpa o vínculo); ausente não toca a coluna.
+    for (const kind of ['specific-objectives', 'activities'] as const) {
+      expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'Objetivo', segmentId: UUID_SEG }).success).toBe(true);
+      expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'Objetivo', segmentId: null }).success).toBe(true);
+      expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'Objetivo' }).success).toBe(true);
+      expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'Objetivo', segmentId: 'nao-uuid' }).success).toBe(false);
+      expect(updateCatalogItemSchemaFor(kind).safeParse({ segmentId: UUID_SEG }).success).toBe(true);
+      expect(updateCatalogItemSchemaFor(kind).safeParse({ segmentId: null }).success).toBe(true);
+    }
+    // `segments` (o próprio catálogo de segmentos) NÃO tem `segmentId` de si mesmo — campo a mais é 400.
+    expect(createCatalogItemSchemaFor('segments').safeParse({ label: 'Salud mental', segmentId: UUID_SEG }).success).toBe(false);
+    expect(updateCatalogItemSchemaFor('segments').safeParse({ label: 'Salud mental', segmentId: UUID_SEG }).success).toBe(false);
+    // `segments` continua aceitando o corpo comum, sem o campo.
+    expect(createCatalogItemSchemaFor('segments').safeParse({ label: 'Salud mental' }).success).toBe(true);
   });
 });
