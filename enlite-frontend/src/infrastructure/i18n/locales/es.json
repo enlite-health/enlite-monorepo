@@ -2889,6 +2889,16 @@
         "email": "E-mail",
         "documentType": "Tipo de documento",
         "documentNumber": "Número de documento",
+        "externalContactsTitle": "Editar red de contactos",
+        "externalContact": "Contacto",
+        "addExternalContact": "Agregar contacto",
+        "removeExternalContact": "Quitar",
+        "relation": "Relación",
+        "name": "Nombre",
+        "externalContactsNotice": "El contacto de esta persona queda registrado en la ficha y puede figurar en documentos entregados a la familia o al financiador.",
+        "markEmergencyContact": "Marcar como contacto de emergencia",
+        "unmarkEmergencyContact": "Contacto de emergencia (quitar)",
+        "markEmergencyContactError": "No se pudo actualizar el contacto de emergencia. Probá de nuevo.",
         "coverageTitle": "Editar cobertura médica",
         "coverageFromClickup": "(del ClickUp)",
         "contractedServicesTitle": "Editar servicios contratados",
@@ -3307,6 +3317,13 @@
           "tableName": "Nombre",
           "tablePhone": "Teléfono"
         },
+        "externalContactsCard": {
+          "title": "Red de contactos",
+          "tableRelation": "Relación",
+          "tableName": "Nombre",
+          "tablePhone": "Teléfono",
+          "tableEmergency": "Emergencia"
+        },
         "coverageCard": {
           "title": "Cobertura Médica",
           "providerName": "Nombre de la Cobertura",
@@ -3470,6 +3487,16 @@
           "IN_LAW": "Familiar político",
           "STEP_RELATIVE": "Familiar por afinidad",
           "RESPONSIBLE_PERSON": "Persona responsable"
+        },
+        "externalContactRelationOptions": {
+          "TEACHER": "Docente",
+          "SCHOOL_DIRECTOR": "Director/a de escuela",
+          "SCHOOL_STAFF": "Personal de la escuela",
+          "NEIGHBOR": "Vecino/a",
+          "EMPLOYER": "Empleador/a",
+          "INSURANCE_CASE_MANAGER": "Gestor/a de caso de la obra social",
+          "COMMUNITY_REFERENT": "Referente comunitario",
+          "OTHER": "Otro"
         },
         "addressDrawer": {
           "createTitle": "Nueva localización",

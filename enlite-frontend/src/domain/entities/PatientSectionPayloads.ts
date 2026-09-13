@@ -85,6 +85,19 @@ export interface PatientProfessionalInput {
 /** `PATCH /patients/:id/professionals/:pid` — parcial de UMA linha (RFC 7396). `name` não aceita `null`. */
 export type PatientProfessionalPatch = Partial<PatientProfessionalInput>;
 
+/**
+ * `POST /patients/:id/external-contacts` — corpo completo de UMA linha (spec 018, PR-2, `lex` #4).
+ * SEM categoria de saúde no `relation` (condição do lex), SEM documento, SEM texto livre.
+ */
+export interface PatientExternalContactInput {
+  relation: string;
+  name: string;
+  phone?: string | null;
+}
+
+/** `PATCH /patients/:id/external-contacts/:xid` — parcial (RFC 7396); `phone: null` apaga (bloqueado se marcado). */
+export type PatientExternalContactPatch = Partial<PatientExternalContactInput>;
+
 /** section = 'service' — targeted service_type update. */
 export interface PatientServiceSectionPayload {
   serviceType?: string[] | null;

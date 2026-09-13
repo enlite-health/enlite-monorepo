@@ -75,13 +75,19 @@ CREATE POLICY patient_external_contacts_follow_patient ON patient_external_conta
 -- GRANT explícito (lex #4; sem ALTER DEFAULT PRIVILEGES — molde de sintaxe 419_…sql:24-27).
 GRANT SELECT, INSERT, UPDATE, DELETE ON patient_external_contacts TO app_runtime, app_system;
 
--- REVOKE do papel read-only do MCP: nome em claro + telefone de terceiro sem coluna segura.
-REVOKE ALL ON patient_external_contacts FROM enlite_mcp_ro;
+-- REVOKE do papel read-only do MCP: NÃO aqui — `enlite_mcp_ro` não é criada por migration (só
+-- por `scripts/create-mcp-ro-role.sql`, aplicado à parte), e um REVOKE inline quebraria em
+-- qualquer banco onde a role ainda não existe (confirmado rodando esta migration num Postgres
+-- limpo: 42704 role "enlite_mcp_ro" does not exist). MESMO padrão da 417 (nome em claro +
+-- telefone de terceiro sem coluna segura): a tabela nova já foi adicionada às duas listas de
+-- REVOKE em `scripts/create-mcp-ro-role.sql` (prova: `grep -n patient_external_contacts
+-- scripts/create-mcp-ro-role.sql` → 2 linhas) — é ELE quem revoga, sempre que rodar.
 
 COMMENT ON TABLE patient_external_contacts IS
   'Contato de terceiro SEM vínculo familiar na rede de apoio do paciente (professor, escola, '
   'vizinho, empregador, gestor de caso, referente comunitário) — spec 018 PR-2, lex #4. Satélite '
   'de patients: country por trigger, RLS follow_patient, CASCADE no purge. SEM categoria de '
   'saúde no enum de relation, SEM documento, SEM texto livre. Telefone cifrado por KMS. Sem '
-  'coluna segura para o MCP: REVOGADA por inteiro. Fora da cópia prd→stg (SKIP_TABLES no ebrain — '
-  'ver linha reportada, não aplicada nesta migration). Troca = desativar + criar, nunca DELETE.';
+  'coluna segura para o MCP: REVOGADA por scripts/create-mcp-ro-role.sql (não nesta migration — '
+  'a role não existe em todo banco). Fora da cópia prd→stg (SKIP_TABLES no ebrain — ver linha '
+  'reportada, não aplicada nesta migration). Troca = desativar + criar, nunca DELETE.';

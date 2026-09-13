@@ -71,6 +71,16 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
   },
 }));
 
+// Spec 018, PR-2: EmergencyMarkButton (FamiliaresCard/ExternalContactsCard) chama esta API ao clicar.
+const markEmergencyContact = vi.fn().mockResolvedValue({});
+const unmarkEmergencyContact = vi.fn().mockResolvedValue({});
+vi.mock('@infrastructure/http/AdminPatientContactRowsApiService', () => ({
+  AdminPatientContactRowsApiService: {
+    markEmergencyContact: (...a: unknown[]) => markEmergencyContact(...a),
+    unmarkEmergencyContact: (...a: unknown[]) => unmarkEmergencyContact(...a),
+  },
+}));
+
 // ── Imports (after mocks) ────────────────────────────────────────────────────
 
 import { PatientIdentityCard } from '../PatientIdentityCard';
@@ -831,6 +841,25 @@ describe('FamiliaresCard', () => {
     render(<FamiliaresCard responsibles={many} />);
     expect(screen.getByText('Luciana Soto')).toBeInTheDocument();
     expect(screen.getByText('João Silva')).toBeInTheDocument();
+  });
+
+  // Spec 018, PR-2 (D-A): a coluna de emergência — só existe COM patientId.
+  it('com patientId: mostra o botão de marcar emergência; a linha marcada mostra "quitar"', () => {
+    render(<FamiliaresCard responsibles={patientDetailFixture.responsibles} patientId="p1" emergencyContactRef={{ kind: 'RESPONSIBLE', id: patientDetailFixture.responsibles[0].id }} />);
+    expect(screen.getByTestId(`emergency-mark-RESPONSIBLE-${patientDetailFixture.responsibles[0].id}`)).toHaveTextContent(t('admin.patients.editDrawer.unmarkEmergencyContact'));
+  });
+
+  it('sem emergencyContactRef (ou apontando para outro kind/id): mostra "marcar"', () => {
+    render(<FamiliaresCard responsibles={patientDetailFixture.responsibles} patientId="p1" />);
+    expect(screen.getByTestId(`emergency-mark-RESPONSIBLE-${patientDetailFixture.responsibles[0].id}`)).toHaveTextContent(t('admin.patients.editDrawer.markEmergencyContact'));
+  });
+
+  it('clicar no botão de emergência chama a API e o onSaved do card (refetch)', async () => {
+    const onSaved = vi.fn();
+    render(<FamiliaresCard responsibles={patientDetailFixture.responsibles} patientId="p1" onSaved={onSaved} />);
+    fireEvent.click(screen.getByTestId(`emergency-mark-RESPONSIBLE-${patientDetailFixture.responsibles[0].id}`));
+    await waitFor(() => expect(markEmergencyContact).toHaveBeenCalled());
+    expect(onSaved).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -56,9 +56,9 @@ describe('417/PR-1 — contatos de emergência da cobertura por LINHA: API sob e
 
   const TELEFONE_PROFISSIONAL = '+54 11 5555-0417';
   const CONTATOS = [
-    { kind: 'AMBULANCE', name: 'Ambulancia sintética', phone: '0800-417-0001' },
+    { kind: 'PRIVATE_AMBULANCE', name: 'Ambulancia sintética', phone: '0800-417-0001' },
     { kind: 'DIRECT_PROFESSIONAL', name: 'Dra. Sintética', phone: TELEFONE_PROFISSIONAL },
-    { kind: 'EMERGENCY_CENTER', name: 'Central sintética', phone: '107' },
+    { kind: 'PUBLIC_EMERGENCY_SERVICE', name: 'Central sintética', phone: '107' },
   ];
 
   async function limpar(): Promise<void> {
@@ -160,7 +160,7 @@ describe('417/PR-1 — contatos de emergência da cobertura por LINHA: API sob e
     // CR-4 (achado do gate revisao-pr): sort_order agora começa em 1 (COALESCE(MAX,0)+1), no
     // mesmo molde de PatientResponsibleRepository — não mais 0.
     expect(rows.map((x) => [x.kind, x.name, x.sort_order])).toEqual([
-      ['AMBULANCE', 'Ambulancia sintética', 1], ['DIRECT_PROFESSIONAL', 'Dra. Sintética', 2], ['EMERGENCY_CENTER', 'Central sintética', 3],
+      ['PRIVATE_AMBULANCE', 'Ambulancia sintética', 1], ['DIRECT_PROFESSIONAL', 'Dra. Sintética', 2], ['PUBLIC_EMERGENCY_SERVICE', 'Central sintética', 3],
     ]);
     for (const x of rows) {
       expect(x.phone_encrypted).not.toBe('');
@@ -177,15 +177,15 @@ describe('417/PR-1 — contatos de emergência da cobertura por LINHA: API sob e
     const completa = await chamar('GET', DETAIL(), U.completa);
     expect(completa.status).toBe(200);
     expect(completa.body.data.coverageEmergencyContacts.map((c: any) => [c.kind, c.name, c.phone])).toEqual([
-      ['AMBULANCE', 'Ambulancia sintética', '0800-417-0001'],
+      ['PRIVATE_AMBULANCE', 'Ambulancia sintética', '0800-417-0001'],
       ['DIRECT_PROFESSIONAL', 'Dra. Sintética', TELEFONE_PROFISSIONAL],
-      ['EMERGENCY_CENTER', 'Central sintética', '107'],
+      ['PUBLIC_EMERGENCY_SERVICE', 'Central sintética', '107'],
     ]);
     expect(completa.body.data.redacted ?? {}).not.toHaveProperty('coverage');
 
     const soCobertura = await chamar('GET', DETAIL(), U.soCobertura);
     expect(soCobertura.status).toBe(200);
-    expect(soCobertura.body.data.coverageEmergencyContacts.map((c: any) => c.kind)).toEqual(['AMBULANCE', 'EMERGENCY_CENTER']);
+    expect(soCobertura.body.data.coverageEmergencyContacts.map((c: any) => c.kind)).toEqual(['PRIVATE_AMBULANCE', 'PUBLIC_EMERGENCY_SERVICE']);
     expect(soCobertura.body.data.coverageDirectProfessionalRedacted).toBe(true);
     expect(completa.body.data.coverageDirectProfessionalRedacted).toBe(false);
     expect(JSON.stringify(soCobertura.body)).not.toContain(TELEFONE_PROFISSIONAL);
@@ -200,12 +200,12 @@ describe('417/PR-1 — contatos de emergência da cobertura por LINHA: API sob e
   });
 
   it('3. escrita: sem `patient_coverage:write` → 403 e o banco não muda; kind fora do enum → 400; chave a mais → 400', async () => {
-    const proibido = await chamar('POST', ROWS(), U.semCobertura, { kind: 'AMBULANCE', name: 'x', phone: '1' });
+    const proibido = await chamar('POST', ROWS(), U.semCobertura, { kind: 'PRIVATE_AMBULANCE', name: 'x', phone: '1' });
     expect(proibido.status).toBe(403);
     expect((await linhasAtivas())).toHaveLength(3);
     const kindRuim = await chamar('POST', ROWS(), U.completa, { kind: 'FAMILY', name: 'x', phone: '1' });
     expect(kindRuim.status).toBe(400);
-    const chaveAMais = await chamar('POST', ROWS(), U.completa, { kind: 'AMBULANCE', name: 'x', phone: '1', email: 'a@b.co' });
+    const chaveAMais = await chamar('POST', ROWS(), U.completa, { kind: 'PRIVATE_AMBULANCE', name: 'x', phone: '1', email: 'a@b.co' });
     expect(chaveAMais.status).toBe(400);
     expect((await linhasAtivas())).toHaveLength(3);
   });
@@ -229,11 +229,11 @@ describe('417/PR-1 — contatos de emergência da cobertura por LINHA: API sob e
     // Desativar: idem — preservada.
     const desativarSemEquipe = await chamar('POST', DEACTIVATE(idProfissional), U.soCobertura);
     expect(desativarSemEquipe.status).toBe(403);
-    expect((await linhasAtivas()).map((x) => x.kind).sort()).toEqual(['AMBULANCE', 'DIRECT_PROFESSIONAL', 'EMERGENCY_CENTER']);
+    expect((await linhasAtivas()).map((x) => x.kind).sort()).toEqual(['DIRECT_PROFESSIONAL', 'PRIVATE_AMBULANCE', 'PUBLIC_EMERGENCY_SERVICE']);
     // Quem escreve sem ler a cobertura: recusado nomeando a célula de leitura (patient_coverage:read).
     await pool.query(`INSERT INTO users (firebase_uid, email, display_name, role, status, is_active, tenant_id) VALUES ('pcec-write-only', 'pcec-write-only@e2e.local', 'Write only', 'admin', 'ACTIVE', true, $1) ON CONFLICT DO NOTHING`, [TENANT_E2E]);
     await grupoComCelulas(pool, { nome: 'PCEC Write-only', uid: 'pcec-write-only', celulas: [['patient', 'read'], ['patient_coverage', 'write']] });
-    const semLeitura = await chamar('POST', ROWS(), 'pcec-write-only', { kind: 'AMBULANCE', name: 'y', phone: '2' });
+    const semLeitura = await chamar('POST', ROWS(), 'pcec-write-only', { kind: 'PRIVATE_AMBULANCE', name: 'y', phone: '2' });
     // A célula de leitura não é checada no CREATE (só no C3 do profissional direto) — mas a
     // rota exige `patient_coverage:write`, que este uid TEM; então o create passa (201). O
     // 403 de "quem não lê não escreve" é o caso já coberto pelo `semCobertura` (item 3): a
@@ -244,8 +244,8 @@ describe('417/PR-1 — contatos de emergência da cobertura por LINHA: API sob e
   });
 
   it('6. desativar é `active=false` + `deactivated_by`, NUNCA DELETE — some da leitura ativa, continua no banco; editar 1 mantém o id dos outros', async () => {
-    const idAmbulancia = idsCriados['AMBULANCE'];
-    const idCentral = idsCriados['EMERGENCY_CENTER'];
+    const idAmbulancia = idsCriados['PRIVATE_AMBULANCE'];
+    const idCentral = idsCriados['PUBLIC_EMERGENCY_SERVICE'];
     const antes = await todasAsLinhas();
     expect(antes).toHaveLength(3);
 
@@ -266,7 +266,7 @@ describe('417/PR-1 — contatos de emergência da cobertura por LINHA: API sob e
     expect(central.deactivated_by).toBe(U.completa);
 
     const detail = await chamar('GET', DETAIL(), U.completa);
-    expect(detail.body.data.coverageEmergencyContacts.map((c: any) => c.kind)).not.toContain('EMERGENCY_CENTER'); // sumiu da FICHA
+    expect(detail.body.data.coverageEmergencyContacts.map((c: any) => c.kind)).not.toContain('PUBLIC_EMERGENCY_SERVICE'); // sumiu da FICHA
 
     // Desativar de novo → 409 (já inativa); id de outro paciente → 404.
     expect((await chamar('POST', DEACTIVATE(idCentral), U.completa)).status).toBe(409);
@@ -295,7 +295,7 @@ describe('417/PR-1 — contatos de emergência da cobertura por LINHA: API sob e
     const params: unknown[] = [];
     for (let i = 0; i < 20; i++) {
       const base = i * 5;
-      valores.push(`($${base + 1}, 'AMBULANCE', $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`);
+      valores.push(`($${base + 1}, 'PRIVATE_AMBULANCE', $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`);
       params.push(patientTeto, `Ambulancia ${i}`, Buffer.from('0800', 'utf8').toString('base64'), i + 1, 'e2e-teto');
     }
     await pool.query(
@@ -306,7 +306,7 @@ describe('417/PR-1 — contatos de emergência da cobertura por LINHA: API sob e
     const antesDoEstouro = (await pool.query(`SELECT COUNT(*)::int AS n FROM patient_coverage_emergency_contacts WHERE patient_id = $1 AND active`, [patientTeto])).rows[0].n;
     expect(antesDoEstouro).toBe(20);
 
-    const r = await chamar('POST', `/api/admin/patients/${patientTeto}/coverage-emergency-contacts`, U.completa, { kind: 'AMBULANCE', name: 'A 21ª', phone: '0800' });
+    const r = await chamar('POST', `/api/admin/patients/${patientTeto}/coverage-emergency-contacts`, U.completa, { kind: 'PRIVATE_AMBULANCE', name: 'A 21ª', phone: '0800' });
     expect(r.status).toBe(409);
     expect(r.body.code).toBe('COVERAGE_EMERGENCY_CONTACTS_LIMIT_REACHED');
 

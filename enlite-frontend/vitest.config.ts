@@ -206,6 +206,19 @@ export default defineConfig({
         '**/src/presentation/components/features/admin/PatientDetail/{PatientStatusControl,PatientStatusHistoryCard,CoberturaMedicaCard,FamiliaresCard,PatientGeneralInfoCard}.tsx': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
+        // Spec 018, PR-2 (`lex` #4, D-A): contatos externos sem vínculo familiar e marca de
+        // emergência. Novos nesta release, medidos em 100 nos quatro eixos com os próprios testes.
+        '**/src/presentation/components/features/admin/PatientDetail/{EmergencyMarkButton,ExternalContactsCard}.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/components/features/admin/PatientDetail/edit/PatientExternalContactsEditDrawer.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        // Spec 018, PR-1/PR-2: escrita por linha de responsáveis, cobertura, contatos externos e
+        // marca de emergência — os 11 métodos públicos medem 100 nos quatro eixos.
+        '**/src/infrastructure/http/AdminPatientContactRowsApiService.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
         '**/src/presentation/components/features/admin/PatientDetail/edit/{PatientCoverageEditDrawer,PatientAddressDrawer,PatientClinicalEditDrawer}.tsx': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },

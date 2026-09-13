@@ -13,6 +13,8 @@ import {
 } from '../application/AddressAvailabilityCalculator';
 import { mapContractedServices } from './ContractedServiceDetailMapper';
 import { PatientCoverageEmergencyContactRepository, type CoverageEmergencyContactRow } from './PatientCoverageEmergencyContactRepository';
+import { PatientExternalContactRepository } from './PatientExternalContactRepository';
+import type { EmergencyMarkTarget } from './PatientEmergencyMarkRepository';
 import { reportError } from '@shared/logging';
 import { ALL_PATIENT_CONTAINERS_READABLE, type PatientContainerReads } from '../application/patientContainerAccess';
 import { phoneMatchesResponsible } from '../domain/PhoneMatch';
@@ -114,7 +116,10 @@ const PATIENT_DETAIL_SQL = `
       (SELECT MAX(jp.case_number) FROM job_postings jp WHERE jp.patient_id = p.id AND jp.deleted_at IS NULL)
     )                        AS "lastCaseNumber",
     p.created_at               AS "createdAt",
-    p.updated_at               AS "updatedAt"
+    p.updated_at               AS "updatedAt",
+    -- Marca de emergência (migration 423, spec 018 PR-2, D-A): no máximo 1 das duas é NOT NULL.
+    p.emergency_responsible_id      AS "emergencyResponsibleId",
+    p.emergency_external_contact_id AS "emergencyExternalContactId"
   FROM patients p
   WHERE p.id = $1
     AND p.deleted_at IS NULL
@@ -155,6 +160,15 @@ async function fetchRelated(pool: Pool, patientId: string, enc: KMSEncryptionSer
          FROM patient_professionals
         WHERE patient_id = $1 AND active
         ORDER BY display_order ASC`,
+      [patientId],
+    ),
+    // Spec 018, PR-2: contatos externos sem vínculo familiar — `active` sempre filtrado (mesma
+    // régua dos responsáveis, FR-004).
+    pool.query(
+      `SELECT id, relation, name, phone_encrypted, sort_order
+         FROM patient_external_contacts
+        WHERE patient_id = $1 AND active
+        ORDER BY sort_order ASC, created_at ASC`,
       [patientId],
     ),
     // Active vacancies for addresses of this patient (for availability computation)
@@ -274,7 +288,7 @@ export async function fetchPatientDetail(
   if (patientResult.rows.length === 0) return null;
 
   const p = patientResult.rows[0];
-  const [responsibleRows, addressRows, professionalRows, vacancyRows, contractedServiceRows, coverageContactRows] = await fetchRelated(pool, id, encryptionService);
+  const [responsibleRows, addressRows, professionalRows, externalContactRows, vacancyRows, contractedServiceRows, coverageContactRows] = await fetchRelated(pool, id, encryptionService);
 
   const vacancies: ActiveVacancy[] = vacancyRows.rows.map((v: any) => ({
     id: v.id,
@@ -283,9 +297,13 @@ export async function fetchPatientDetail(
     schedule: v.schedule,
   }));
 
-  const [responsibles, professionals, contactEmail, contractedServices, coverageEmergencyContacts] = await Promise.all([
+  const [responsibles, professionals, externalContacts, contactEmail, contractedServices, coverageEmergencyContacts] = await Promise.all([
     reads.family ? decryptResponsibles(responsibleRows.rows, encryptionService) : Promise.resolve([]),
     reads.careTeam ? decryptProfessionals(professionalRows.rows, encryptionService) : Promise.resolve([]),
+    // Spec 018, PR-2: mesma régua dos responsáveis — sem `patient_family:read` o KMS não roda.
+    reads.family
+      ? new PatientExternalContactRepository(pool, encryptionService).decryptRows(externalContactRows.rows)
+      : Promise.resolve([]),
     // Sem ciphertext não há decrypt: o passthrough de teste devolve '' para
     // entrada vazia, e '' na ficha seria "tem e-mail e está em branco".
     reads.identity && p.contactEmailEncrypted ? encryptionService.decrypt(p.contactEmailEncrypted) : Promise.resolve(null),
@@ -299,6 +317,15 @@ export async function fetchPatientDetail(
         )
       : Promise.resolve([]),
   ]);
+
+  // Marca de emergência (spec 018, PR-2, D-A): não vaza QUAL contato é o marcado sem `patient_family:read`.
+  const emergencyContactRef: EmergencyMarkTarget = reads.family
+    ? p.emergencyResponsibleId
+      ? { kind: 'RESPONSIBLE', id: p.emergencyResponsibleId }
+      : p.emergencyExternalContactId
+        ? { kind: 'EXTERNAL', id: p.emergencyExternalContactId }
+        : null
+    : null;
 
   const addresses = mapAddresses(addressRows.rows, vacancies);
 
@@ -353,6 +380,8 @@ export async function fetchPatientDetail(
     phoneMatchesResponsible: phoneMatchesResponsible(p.phoneWhatsapp, responsibles.map((r) => r.phone)),
     lastCaseNumber: p.lastCaseNumber != null ? Number(p.lastCaseNumber) : null,
     responsibles,
+    externalContacts,
+    emergencyContactRef,
     coverageEmergencyContacts,
     // Marcador CONSTANTE (não depende de haver linha): com cobertura mas sem equipe, o profissional direto
     // foi retido — a tela e o PDF dizem isso em vez de mostrar a lista como se fosse completa.

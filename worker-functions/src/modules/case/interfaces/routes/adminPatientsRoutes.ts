@@ -12,6 +12,8 @@ import { AdminPatientContractedServicesController } from '../controllers/AdminPa
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
 import { AdminPatientContactRowsController } from '../controllers/AdminPatientContactRowsController';
+import { AdminPatientExternalContactsController } from '../controllers/AdminPatientExternalContactsController';
+import { AdminPatientEmergencyContactController } from '../controllers/AdminPatientEmergencyContactController';
 
 /**
  * Admin patients routes — mounted at /api/admin.
@@ -68,6 +70,9 @@ export function createAdminPatientsRoutes(
   // `index.ts` monta as rotas; testes que constroem o factory sem DB configurado precisam de
   // `DATABASE_URL` no ambiente só para o `new` não estourar (nenhuma query roda aqui).
   contactRowsController: AdminPatientContactRowsController = new AdminPatientContactRowsController(),
+  // Contatos externos + marca de emergência (spec 018, PR-2). Mesmo padrão de default acima.
+  externalContactsController: AdminPatientExternalContactsController = new AdminPatientExternalContactsController(),
+  emergencyContactController: AdminPatientEmergencyContactController = new AdminPatientEmergencyContactController(),
 ): Router {
   const router = Router();
   const staffOnly = authMiddleware.requireStaff();
@@ -344,6 +349,25 @@ export function createAdminPatientsRoutes(
   );
   router.post('/patients/:id/professionals/:pid/deactivate', staffOnly, perm.require('patient_care_team', 'write'), (req: Request, res: Response) =>
     contactRowsController.deactivateProfessional(req, res),
+  );
+
+  // ── Contatos externos sem vínculo familiar (spec 018, PR-2, `lex` #4) ────────────────────────
+  router.post('/patients/:id/external-contacts', staffOnly, perm.require('patient_family', 'write'), (req: Request, res: Response) =>
+    externalContactsController.create(req, res),
+  );
+  router.patch('/patients/:id/external-contacts/:xid', staffOnly, perm.require('patient_family', 'write'), (req: Request, res: Response) =>
+    externalContactsController.update(req, res),
+  );
+  router.post('/patients/:id/external-contacts/:xid/deactivate', staffOnly, perm.require('patient_family', 'write'), (req: Request, res: Response) =>
+    externalContactsController.deactivate(req, res),
+  );
+
+  // ── Marca de emergência (spec 018, PR-2, D-A) ───────────────────────────────────────────────
+  router.put('/patients/:id/emergency-contact', staffOnly, perm.require('patient_family', 'write'), (req: Request, res: Response) =>
+    emergencyContactController.mark(req, res),
+  );
+  router.delete('/patients/:id/emergency-contact', staffOnly, perm.require('patient_family', 'write'), (req: Request, res: Response) =>
+    emergencyContactController.unmark(req, res),
   );
 
   return router;

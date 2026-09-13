@@ -1,8 +1,9 @@
 /**
- * AdminPatientContactRowsApiService — spec 018, PR-1, ADR-1: escrita POR LINHA de responsáveis e de
- * contatos de emergência da cobertura. Régua do arquivo tocado é 100% (definição de pronto): os 6
- * métodos públicos, verbo/rota corretos, corpo enviado, e os ramos de erro do `writeJson` privado
- * (não-JSON, `success:false` com/sem mensagem, header Authorization presente/ausente).
+ * AdminPatientContactRowsApiService — spec 018, PR-1/PR-2, ADR-1: escrita POR LINHA de
+ * responsáveis, contatos de emergência da cobertura, contatos externos e marca de emergência.
+ * Régua do arquivo tocado é 100% (definição de pronto): os 11 métodos públicos, verbo/rota
+ * corretos, corpo enviado, e os ramos de erro do `writeJson` privado (não-JSON, `success:false`
+ * com/sem mensagem, header Authorization presente/ausente).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -42,9 +43,9 @@ describe('AdminPatientContactRowsApiService', () => {
   });
 
   it('deactivateResponsible: POST em /responsibles/:id/deactivate, sem corpo', async () => {
-    fetchMock.mockResolvedValueOnce(json({ success: true, data: { id: 'r1', active: false } }));
+    fetchMock.mockResolvedValueOnce(json({ success: true, data: { id: 'r1', active: false, emergencyMarkCleared: false } }));
     const result = await AdminPatientContactRowsApiService.deactivateResponsible('p1', 'r1');
-    expect(result).toEqual({ id: 'r1', active: false });
+    expect(result).toEqual({ id: 'r1', active: false, emergencyMarkCleared: false });
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toMatch(/\/api\/admin\/patients\/p1\/responsibles\/r1\/deactivate$/);
     expect(init.method).toBe('POST');
@@ -104,6 +105,55 @@ describe('AdminPatientContactRowsApiService', () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toMatch(/\/api\/admin\/patients\/p1\/professionals\/pr1\/deactivate$/);
     expect(init.method).toBe('POST');
+    expect(init.body).toBeUndefined();
+  });
+
+  it('createExternalContact: POST em /external-contacts, corpo = input', async () => {
+    fetchMock.mockResolvedValueOnce(json({ success: true, data: { id: 'x1' } }, 201));
+    const result = await AdminPatientContactRowsApiService.createExternalContact('p1', { relation: 'TEACHER', name: 'Prof. X', phone: '11-5555' });
+    expect(result).toEqual({ id: 'x1' });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toMatch(/\/api\/admin\/patients\/p1\/external-contacts$/);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ relation: 'TEACHER', name: 'Prof. X', phone: '11-5555' });
+  });
+
+  it('updateExternalContact: PATCH em /external-contacts/:id, corpo = patch', async () => {
+    fetchMock.mockResolvedValueOnce(json({ success: true, data: { id: 'x1' } }));
+    await AdminPatientContactRowsApiService.updateExternalContact('p1', 'x1', { phone: null });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toMatch(/\/api\/admin\/patients\/p1\/external-contacts\/x1$/);
+    expect(init.method).toBe('PATCH');
+    expect(JSON.parse(init.body)).toEqual({ phone: null });
+  });
+
+  it('deactivateExternalContact: POST em /external-contacts/:id/deactivate, sem corpo', async () => {
+    fetchMock.mockResolvedValueOnce(json({ success: true, data: { id: 'x1', active: false, emergencyMarkCleared: true } }));
+    const result = await AdminPatientContactRowsApiService.deactivateExternalContact('p1', 'x1');
+    expect(result).toEqual({ id: 'x1', active: false, emergencyMarkCleared: true });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toMatch(/\/api\/admin\/patients\/p1\/external-contacts\/x1\/deactivate$/);
+    expect(init.method).toBe('POST');
+    expect(init.body).toBeUndefined();
+  });
+
+  it('markEmergencyContact: PUT em /emergency-contact, corpo = {kind, id}', async () => {
+    fetchMock.mockResolvedValueOnce(json({ success: true, data: { emergencyContactRef: { kind: 'RESPONSIBLE', id: 'r1' } } }));
+    const result = await AdminPatientContactRowsApiService.markEmergencyContact('p1', { kind: 'RESPONSIBLE', id: 'r1' });
+    expect(result).toEqual({ emergencyContactRef: { kind: 'RESPONSIBLE', id: 'r1' } });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toMatch(/\/api\/admin\/patients\/p1\/emergency-contact$/);
+    expect(init.method).toBe('PUT');
+    expect(JSON.parse(init.body)).toEqual({ kind: 'RESPONSIBLE', id: 'r1' });
+  });
+
+  it('unmarkEmergencyContact: DELETE em /emergency-contact, sem corpo', async () => {
+    fetchMock.mockResolvedValueOnce(json({ success: true, data: { emergencyContactRef: null } }));
+    const result = await AdminPatientContactRowsApiService.unmarkEmergencyContact('p1');
+    expect(result).toEqual({ emergencyContactRef: null });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toMatch(/\/api\/admin\/patients\/p1\/emergency-contact$/);
+    expect(init.method).toBe('DELETE');
     expect(init.body).toBeUndefined();
   });
 

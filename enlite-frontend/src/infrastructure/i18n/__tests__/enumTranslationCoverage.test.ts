@@ -15,6 +15,7 @@ import { WORKER_PROFESSIONS } from '@domain/entities/Worker';
 import {
   PATIENT_STATUSES, ON_HOLD_REASONS, ADMISSION_STATUSES, DEVICE_TYPE_CODES, RELATIONSHIP_CODES, INSURANCE_PROVIDER_CODES,
   PATIENT_PROFESSIONAL_SPECIALTY_CODES,
+  EXTERNAL_CONTACT_RELATION_CODES,
 } from '@domain/entities/patientEnums';
 import {
   SERVICE_CODES,
@@ -97,6 +98,8 @@ const PATIENT_ENUM_GROUPS: Array<[string, readonly string[]]> = [
   ['admin.patients.detail.relationshipOptions', RELATIONSHIP_CODES],
   ['admin.patients.detail.treatingTeamCard.specialtyOptions', PATIENT_PROFESSIONAL_SPECIALTY_CODES],
   ['admin.patients.insuranceProviderOptions', INSURANCE_PROVIDER_CODES],
+  // Spec 018, PR-2 (`lex` #4): contatos externos sem vínculo familiar (migration 422, SUP-15).
+  ['admin.patients.detail.externalContactRelationOptions', EXTERNAL_CONTACT_RELATION_CODES],
   // QA 🟡4: o mapa tinha vocabulário PRÓPRIO (mapPageConfig.ts), desincronizado do estado v2 —
   // faltavam ON_HOLD/SEARCHING/REPLACEMENT e sobrava DISCONTINUED (saiu do vocabulário, migration
   // 314). A fonte viva é a mesma PATIENT_STATUSES do resto da ficha, não uma lista própria do mapa.

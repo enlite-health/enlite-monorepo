@@ -97,6 +97,45 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // Spec 018, PR-2 (`lex` #4, D-A): contatos externos sem vínculo familiar e marca de
+    // emergência. Arquivos novos nesta release, medidos em 100 nos quatro eixos com os próprios
+    // testes (unit) — anti-regressão desde o nascimento, não meta a alcançar depois.
+    'src/modules/case/domain/PatientExternalContact.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/infrastructure/EmergencyContactRequiresPhoneError.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/infrastructure/PatientEmergencyMarkRepository.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/infrastructure/PatientExternalContactRepository.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/interfaces/controllers/AdminPatientEmergencyContactController.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/interfaces/controllers/AdminPatientExternalContactsController.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     'src/modules/worker/application/workerContainerAccess.ts': {
       statements: 100,
       branches: 100,

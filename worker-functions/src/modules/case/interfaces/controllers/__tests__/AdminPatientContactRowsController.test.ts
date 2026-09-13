@@ -16,6 +16,7 @@ jest.mock('../../../application/patientTransaction', () => ({
 import { AdminPatientContactRowsController } from '../AdminPatientContactRowsController';
 import { ResponsiblePrimaryAlreadySetError } from '../../../infrastructure/PatientResponsibleRepository';
 import { CoverageEmergencyContactLimitReachedError } from '../../../infrastructure/PatientCoverageEmergencyContactRepository';
+import { EmergencyContactRequiresPhoneError } from '../../../infrastructure/EmergencyContactRequiresPhoneError';
 import { AuthMiddleware } from '@modules/identity';
 import type { Response } from 'express';
 
@@ -174,6 +175,15 @@ describe('AdminPatientContactRowsController', () => {
       await controller.updateResponsible(mockReq({ params: { id: PATIENT_ID, rid: RESPONSIBLE_ID }, body: { isPrimary: true } }), res);
       expect(res.status).toHaveBeenCalledWith(409);
     });
+
+    it('422 EMERGENCY_CONTACT_REQUIRES_PHONE quando o PATCH apaga o telefone de um responsável marcado de emergência (migration 423, D-A #4/SUP-40)', async () => {
+      const repo = { updateOne: jest.fn().mockRejectedValue(new EmergencyContactRequiresPhoneError()) };
+      const controller = new AdminPatientContactRowsController(repo as never, {} as never, db() as never);
+      const res = mockRes();
+      await controller.updateResponsible(mockReq({ params: { id: PATIENT_ID, rid: RESPONSIBLE_ID }, body: { phone: null } }), res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: expect.any(String), code: 'EMERGENCY_CONTACT_REQUIRES_PHONE' });
+    });
   });
 
   describe('deactivateResponsible', () => {
@@ -212,14 +222,22 @@ describe('AdminPatientContactRowsController', () => {
       expect(res.status).toHaveBeenCalledWith(409);
     });
 
-    it('200 { id, active:false } quando desativado; uid do ator vai ao repositório', async () => {
+    it('200 { id, active:false, emergencyMarkCleared:false } quando desativado sem estar marcado; uid do ator vai ao repositório', async () => {
       const repo = { deactivate: jest.fn().mockResolvedValue({ outcome: 'deactivated', id: RESPONSIBLE_ID }) };
       const controller = new AdminPatientContactRowsController(repo as never, {} as never, db() as never, {} as never);
       const res = mockRes();
       await controller.deactivateResponsible(mockReq({ params: { id: PATIENT_ID, rid: RESPONSIBLE_ID } }), res);
       expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith({ success: true, data: { id: RESPONSIBLE_ID, active: false } });
+      expect(res.json).toHaveBeenCalledWith({ success: true, data: { id: RESPONSIBLE_ID, active: false, emergencyMarkCleared: false } });
       expect(repo.deactivate).toHaveBeenCalledWith(PATIENT_ID, RESPONSIBLE_ID, 'uid-1', { marker: 'client' });
+    });
+
+    it('200 { emergencyMarkCleared:true } quando a linha desativada ERA a marca de emergência (migration 423, D-A #4)', async () => {
+      const repo = { deactivate: jest.fn().mockResolvedValue({ outcome: 'deactivated', id: RESPONSIBLE_ID, emergencyMarkCleared: true }) };
+      const controller = new AdminPatientContactRowsController(repo as never, {} as never, db() as never);
+      const res = mockRes();
+      await controller.deactivateResponsible(mockReq({ params: { id: PATIENT_ID, rid: RESPONSIBLE_ID } }), res);
+      expect(res.json).toHaveBeenCalledWith({ success: true, data: { id: RESPONSIBLE_ID, active: false, emergencyMarkCleared: true } });
     });
 
     it('lex C6 — sem contexto de auth, a escrita é RECUSADA (500), nunca grava sentinela "unknown" em deactivated_by', async () => {

@@ -129,6 +129,7 @@ describe('fetchPatientDetail — happy path completo', () => {
           },
         ],
       }) // professionals
+      .mockResolvedValueOnce({ rows: [] }) // external contacts (spec 018, PR-2)
       .mockResolvedValueOnce({
         rows: [
           { id: 'vac-1', patient_address_id: 'addr-1', status: 'SEARCHING', schedule: null },
@@ -143,7 +144,7 @@ describe('fetchPatientDetail — happy path completo', () => {
     const result = await fetchPatientDetail(pool, enc, PATIENT_ID);
 
     expect(result).not.toBeNull();
-    expect(queryImpl).toHaveBeenCalledTimes(7);
+    expect(queryImpl).toHaveBeenCalledTimes(8);
     expect(result!.contractedServices).toEqual([]);
 
     // Identity/clinical passthrough
@@ -200,6 +201,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
       .mockResolvedValueOnce({ rows: [] }) // responsibles
       .mockResolvedValueOnce({ rows: [] }) // addresses
       .mockResolvedValueOnce({ rows: [] }) // professionals
+      .mockResolvedValueOnce({ rows: [] }) // external contacts (spec 018, PR-2)
       .mockResolvedValueOnce({ rows: [] }) // active vacancies
       .mockResolvedValueOnce({
         rows: [
@@ -257,6 +259,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] }) // external contacts (spec 018, PR-2)
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({
         rows: [
@@ -308,6 +311,7 @@ describe('fetchPatientDetail — defensive fallback branches', () => {
       .mockResolvedValueOnce(emptyRelated())
       .mockResolvedValueOnce(emptyRelated())
       .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated()) // external contacts (spec 018, PR-2)
       .mockResolvedValueOnce(emptyRelated())
       .mockResolvedValueOnce(emptyRelated())
       .mockResolvedValueOnce(emptyRelated());
@@ -345,6 +349,7 @@ describe('fetchPatientDetail — defensive fallback branches', () => {
           { id: 'prof-2', name: 'Equipo sin marca', phone_encrypted: null, email_encrypted: null, display_order: 1, is_team: undefined },
         ],
       })
+      .mockResolvedValueOnce(emptyRelated()) // external contacts (spec 018, PR-2)
       .mockResolvedValueOnce(emptyRelated())
       .mockResolvedValueOnce(emptyRelated())
       .mockResolvedValueOnce(emptyRelated());
@@ -374,6 +379,7 @@ describe('fetchPatientDetail — cobertura e e-mail do paciente (spec 011, A3/A4
       .mockResolvedValueOnce(emptyRelated())
       .mockResolvedValueOnce(emptyRelated())
       .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated()) // external contacts (spec 018, PR-2)
       .mockResolvedValueOnce(emptyRelated())
       .mockResolvedValueOnce(emptyRelated())
       .mockResolvedValueOnce(emptyRelated());
@@ -418,6 +424,7 @@ describe('fetchPatientDetail — containers sem célula NÃO passam pelo KMS (D2
       .mockResolvedValueOnce({ rows: [{ id: 'resp-1', first_name: 'María', last_name: 'López', relationship: 'Madre', phone_encrypted: 'enc-phone-r1', email_encrypted: 'enc-email-r1', document_number_encrypted: 'enc-doc-r1', document_type: 'DNI', is_primary: true, display_order: 1, source: 'admin_manual' }] })
       .mockResolvedValueOnce({ rows: [] }) // addresses
       .mockResolvedValueOnce({ rows: [{ id: 'prof-1', name: 'Dr. García', phone_encrypted: 'enc-phone-p1', email_encrypted: 'enc-email-p1', display_order: 1, is_team: true }] })
+      .mockResolvedValueOnce({ rows: [] }) // external contacts (spec 018, PR-2)
       .mockResolvedValueOnce({ rows: [] }) // vacancies
       .mockResolvedValueOnce({ rows: [] }) // contracted services
       .mockResolvedValueOnce({ rows: [] }); // coverage emergency contacts (417)
@@ -456,6 +463,7 @@ describe('fetchPatientDetail — containers sem célula NÃO passam pelo KMS (D2
         .mockResolvedValueOnce({ rows: [{ id: 'resp-1', first_name: 'María', last_name: 'López', relationship: 'Madre', phone_encrypted: 'enc-phone-r1', email_encrypted: 'enc-email-r1', document_number_encrypted: 'enc-doc-r1', document_type: 'DNI', is_primary: true, display_order: 1, source: 'admin_manual' }] })
         .mockResolvedValueOnce({ rows: [] }) // addresses
         .mockResolvedValueOnce({ rows: [] }) // professionals
+        .mockResolvedValueOnce({ rows: [] }) // external contacts (spec 018, PR-2)
         .mockResolvedValueOnce({ rows: [] }) // vacancies
         .mockResolvedValueOnce({ rows: [] }) // contracted services
         .mockResolvedValueOnce({ rows: [
@@ -492,6 +500,7 @@ describe('fetchPatientDetail — containers sem célula NÃO passam pelo KMS (D2
       .mockResolvedValueOnce({ rows: [] }) // responsibles
       .mockResolvedValueOnce({ rows: [] }) // addresses
       .mockResolvedValueOnce({ rows: [] }) // professionals
+      .mockResolvedValueOnce({ rows: [] }) // external contacts (spec 018, PR-2)
       .mockResolvedValueOnce({ rows: [] }) // vacancies
       .mockResolvedValueOnce({ rows: [] }) // contracted services
       .mockRejectedValueOnce(new Error('relation "patient_coverage_emergency_contacts" does not exist')); // coverage contacts
@@ -502,7 +511,7 @@ describe('fetchPatientDetail — containers sem célula NÃO passam pelo KMS (D2
     // Rejeição que não é Error (driver antigo): vira Error no relato.
     const q2 = jest.fn();
     q2.mockResolvedValueOnce({ rows: [basePatientRow()] });
-    for (let i = 0; i < 5; i++) q2.mockResolvedValueOnce({ rows: [] });
+    for (let i = 0; i < 6; i++) q2.mockResolvedValueOnce({ rows: [] });
     q2.mockRejectedValueOnce('boom');
     mockReportError.mockClear();
     await fetchPatientDetail(makePool(q2), makeEncryptionService(), PATIENT_ID, reads(['coverage']));
@@ -525,5 +534,74 @@ describe('fetchPatientDetail — containers sem célula NÃO passam pelo KMS (D2
     expect((enc.decrypt as jest.Mock).mock.calls.length).toBe(6);
     expect(result?.responsibles).toHaveLength(1);
     expect(result?.professionals).toHaveLength(1);
+  });
+});
+
+// Spec 018, PR-2: contatos externos + marca de emergência — mesma régua dos responsáveis (family).
+describe('fetchPatientDetail — contatos externos e marca de emergência (spec 018, PR-2)', () => {
+  const reads = (on: string[]) => ({
+    identity: on.includes('identity'), clinical: on.includes('clinical'), careTeam: on.includes('careTeam'),
+    family: on.includes('family'), chat: on.includes('chat'), coverage: on.includes('coverage'),
+    address: on.includes('address'), services: on.includes('services'), therapeuticProject: on.includes('therapeuticProject'),
+  });
+
+  function stackComContatoExterno(overrides: Record<string, unknown> = {}) {
+    const queryImpl = jest.fn();
+    queryImpl
+      .mockResolvedValueOnce({ rows: [basePatientRow({ emergencyResponsibleId: null, emergencyExternalContactId: 'x1', ...overrides })] })
+      .mockResolvedValueOnce({ rows: [] }) // responsibles
+      .mockResolvedValueOnce({ rows: [] }) // addresses
+      .mockResolvedValueOnce({ rows: [] }) // professionals
+      .mockResolvedValueOnce({ rows: [{ id: 'x1', relation: 'TEACHER', name: 'Prof. Gómez', phone_encrypted: 'enc-ext-1', sort_order: 0 }] }) // external contacts
+      .mockResolvedValueOnce({ rows: [] }) // vacancies
+      .mockResolvedValueOnce({ rows: [] }) // contracted services
+      .mockResolvedValueOnce({ rows: [] }); // coverage emergency contacts
+    return makePool(queryImpl);
+  }
+
+  it('com patient_family:read: decifra o contato externo e projeta emergencyContactRef apontando para ele', async () => {
+    const enc = makeEncryptionService();
+    const result = await fetchPatientDetail(stackComContatoExterno(), enc, PATIENT_ID, reads(['family']));
+    expect(result?.externalContacts).toEqual([{ id: 'x1', relation: 'TEACHER', name: 'Prof. Gómez', phone: 'dec(enc-ext-1)', active: true }]);
+    expect(result?.emergencyContactRef).toEqual({ kind: 'EXTERNAL', id: 'x1' });
+    expect((enc.decrypt as jest.Mock).mock.calls.map((c) => c[0])).toEqual(['enc-ext-1']);
+  });
+
+  it('sem patient_family:read: 0 decrypt, externalContacts [] e emergencyContactRef null (D113/lex C3 — não vaza nem QUAL contato é a marca)', async () => {
+    const enc = makeEncryptionService();
+    const result = await fetchPatientDetail(stackComContatoExterno(), enc, PATIENT_ID, reads([]));
+    expect(result?.externalContacts).toEqual([]);
+    expect(result?.emergencyContactRef).toBeNull();
+    expect(enc.decrypt).not.toHaveBeenCalled();
+  });
+
+  it('marca apontando para um RESPONSIBLE: emergencyContactRef reflete a coluna certa', async () => {
+    const queryImpl = jest.fn();
+    queryImpl
+      .mockResolvedValueOnce({ rows: [basePatientRow({ emergencyResponsibleId: 'r1', emergencyExternalContactId: null })] })
+      .mockResolvedValueOnce({ rows: [] }) // responsibles
+      .mockResolvedValueOnce({ rows: [] }) // addresses
+      .mockResolvedValueOnce({ rows: [] }) // professionals
+      .mockResolvedValueOnce({ rows: [] }) // external contacts
+      .mockResolvedValueOnce({ rows: [] }) // vacancies
+      .mockResolvedValueOnce({ rows: [] }) // contracted services
+      .mockResolvedValueOnce({ rows: [] }); // coverage emergency contacts
+    const result = await fetchPatientDetail(makePool(queryImpl), makeEncryptionService(), PATIENT_ID, reads(['family']));
+    expect(result?.emergencyContactRef).toEqual({ kind: 'RESPONSIBLE', id: 'r1' });
+  });
+
+  it('sem marca definida (as duas colunas NULL): emergencyContactRef null mesmo com a célula', async () => {
+    const queryImpl = jest.fn();
+    queryImpl
+      .mockResolvedValueOnce({ rows: [basePatientRow({ emergencyResponsibleId: null, emergencyExternalContactId: null })] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+    const result = await fetchPatientDetail(makePool(queryImpl), makeEncryptionService(), PATIENT_ID, reads(['family']));
+    expect(result?.emergencyContactRef).toBeNull();
   });
 });

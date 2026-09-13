@@ -109,6 +109,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         // ── admin.patients (24) — a 2ª
         'DELETE /api/admin/patient-chat-roles/:code → patient:write',
         'DELETE /api/admin/patients/:id → patient:delete',
+        // Marca de emergência (spec 018, PR-2, D-A; contracts/support-network.md).
+        'DELETE /api/admin/patients/:id/emergency-contact → patient_family:write',
         'GET /api/admin/chat-groups → messaging:read',
         'GET /api/admin/patient-chat-roles → patient:read',
         'GET /api/admin/patients → patient:read',
@@ -127,6 +129,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'PATCH /api/admin/patients/:id/coverage → patient_coverage:write',
         // Escrita por linha (spec 018, PR-1, ADR-1; contracts/support-network.md).
         'PATCH /api/admin/patients/:id/coverage-emergency-contacts/:cid → patient_coverage:write',
+        // Contatos externos sem vínculo familiar (spec 018, PR-2, `lex` #4).
+        'PATCH /api/admin/patients/:id/external-contacts/:xid → patient_family:write',
         'PATCH /api/admin/patients/:id/general → patient_identity:write',
         // Escrita por linha (spec 018, PR-5, US-11) — célula NOVA `patient_care_team:write`.
         'PATCH /api/admin/patients/:id/professionals/:pid → patient_care_team:write',
@@ -140,12 +144,15 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/patients/:id/contracted-services/:sid/activate-recruitment → patient_services:write',
         'POST /api/admin/patients/:id/coverage-emergency-contacts → patient_coverage:write',
         'POST /api/admin/patients/:id/coverage-emergency-contacts/:cid/deactivate → patient_coverage:write',
+        'POST /api/admin/patients/:id/external-contacts → patient_family:write',
+        'POST /api/admin/patients/:id/external-contacts/:xid/deactivate → patient_family:write',
         'POST /api/admin/patients/:id/professionals → patient_care_team:write',
         'POST /api/admin/patients/:id/professionals/:pid/deactivate → patient_care_team:write',
         'POST /api/admin/patients/:id/responsibles → patient_family:write',
         'POST /api/admin/patients/:id/responsibles/:rid/deactivate → patient_family:write',
         'POST /api/admin/patients/:patientId/addresses → patient_address:write',
         'PUT /api/admin/patients/:id/chat-ids → patient_chat:write',
+        'PUT /api/admin/patients/:id/emergency-contact → patient_family:write',
         'PUT /api/admin/patients/:id/status → patient:write',
         // ── admin.workers (31) — a 3ª, espalhada em 4 arquivos
         'DELETE /api/admin/worker-tags/:id → worker:write',

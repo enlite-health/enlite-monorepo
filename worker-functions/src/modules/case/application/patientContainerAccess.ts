@@ -86,7 +86,8 @@ const DETAIL_FIELDS: Readonly<Record<PatientContainer, readonly string[]>> = {
     'hasJudicialProtection', 'hasCud', 'hasConsent',
   ],
   careTeam: ['professionals'],
-  family: ['responsibles', 'phoneMatchesResponsible'],
+  // externalContacts/emergencyContactRef: spec 018, PR-2 (contatos externos + marca de emergência).
+  family: ['responsibles', 'phoneMatchesResponsible', 'externalContacts', 'emergencyContactRef'],
   chat: ['chatIds', 'familyChatId', 'providersChatId'],
   coverage: ['affiliateId', 'insuranceInformed', 'insuranceVerified', 'insuranceVerifiedCodes', 'insuranceVerifiedEntries', 'coverageEmergencyContacts', 'coverageDirectProfessionalRedacted', 'coverageEmergencyContactsUnavailable'],
   address: ['addresses', 'cityLocality', 'province', 'zoneNeighborhood'],

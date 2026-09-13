@@ -41,12 +41,16 @@ describe('migration 420 — active/deactivated_* nos três conjuntos de contato 
     await pool.query('DELETE FROM patient_responsibles WHERE patient_id = $1', [PATIENT]);
     await pool.query('DELETE FROM patient_coverage_emergency_contacts WHERE patient_id = $1', [PATIENT]);
     await pool.query('DELETE FROM patient_professionals WHERE patient_id = $1', [PATIENT]);
+    await pool.query('DELETE FROM patient_external_contacts WHERE patient_id = $1', [PATIENT]);
   });
 
   it.each([
     ['patient_responsibles', `INSERT INTO patient_responsibles (patient_id, first_name, last_name, is_primary, display_order) VALUES ($1, 'A', 'B', false, 1) RETURNING id`],
-    ['patient_coverage_emergency_contacts', `INSERT INTO patient_coverage_emergency_contacts (patient_id, kind, name, phone_encrypted, created_by) VALUES ($1, 'AMBULANCE', 'A', 'enc', 'e2e') RETURNING id`],
+    ['patient_coverage_emergency_contacts', `INSERT INTO patient_coverage_emergency_contacts (patient_id, kind, name, phone_encrypted, created_by) VALUES ($1, 'PRIVATE_AMBULANCE', 'A', 'enc', 'e2e') RETURNING id`],
     ['patient_professionals', `INSERT INTO patient_professionals (patient_id, name) VALUES ($1, 'A') RETURNING id`],
+    // Spec 018, PR-2: patient_external_contacts (migration 422) tem a MESMA invariante
+    // (`pxc_active_coerente`) — mesmo molde das 3 tabelas acima.
+    ['patient_external_contacts', `INSERT INTO patient_external_contacts (patient_id, relation, name, created_by) VALUES ($1, 'NEIGHBOR', 'A', 'e2e') RETURNING id`],
   ])('%s: CHECK *_active_coerente recusa active=false com deactivated_at NULL, e active=true com deactivated_at preenchido', async (tabela, insertSql) => {
     const { rows } = await pool.query<{ id: string }>(insertSql, [PATIENT]);
     const id = rows[0].id;

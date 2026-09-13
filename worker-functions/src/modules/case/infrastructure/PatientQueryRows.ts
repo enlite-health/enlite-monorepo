@@ -12,6 +12,8 @@
  * o TypeScript apaga na compilação), então nenhum chamador precisou mudar de import.
  */
 import type { PatientCoverageEmergencyContactDetail } from '../domain/PatientCoverageEmergencyContact';
+import type { PatientExternalContactDetail } from '../domain/PatientExternalContact';
+import type { EmergencyMarkTarget } from './PatientEmergencyMarkRepository';
 
 // ── Detail types ──────────────────────────────────────────────────────────────
 
@@ -146,6 +148,10 @@ export interface PatientDetailRow {
   phoneMatchesResponsible: boolean;
   // Related
   responsibles: PatientResponsibleDetail[];
+  /** Spec 018, PR-2 (`lex` #4): contatos externos sem vínculo familiar — `[]` sem `patient_family:read`. */
+  externalContacts: PatientExternalContactDetail[];
+  /** Spec 018, PR-2 (D-A): a marca de emergência do paciente — `null` sem definição OU sem `patient_family:read`. */
+  emergencyContactRef: EmergencyMarkTarget;
   /** 417 (D301): contatos de emergência da COBERTURA — `[]` sem `patient_coverage:read` (container). */
   coverageEmergencyContacts: PatientCoverageEmergencyContactDetail[];
   /** 417 / lex C3: `true` = o ator lê a cobertura mas NÃO a equipe — o profissional direto foi retido da lista. */
