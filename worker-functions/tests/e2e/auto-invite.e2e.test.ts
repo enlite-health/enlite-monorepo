@@ -106,8 +106,8 @@ describe('Fluxo A — convite automático pós-criação de vaga (templates Twil
     // 2. Criar endereço do paciente com lat/lng (CABA, Buenos Aires)
     const addrRes = await pool.query<{ id: string }>(
       `INSERT INTO patient_addresses
-         (patient_id, address_type, city, neighborhood, address_formatted, lat, lng)
-       VALUES ($1, 'primary', 'CABA', 'Palermo', 'Av Santa Fe 1234, CABA', -34.5874, -58.4079)
+         (patient_id, city, neighborhood, address_formatted, lat, lng)
+       VALUES ($1, 'CABA', 'Palermo', 'Av Santa Fe 1234, CABA', -34.5874, -58.4079)
        RETURNING id`,
       [patientId],
     );

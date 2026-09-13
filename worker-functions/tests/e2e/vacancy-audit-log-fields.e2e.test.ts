@@ -71,8 +71,8 @@ async function cleanupVacancy(pool: Pool, id: string): Promise<void> {
 
 async function createPatientAddress(pool: Pool, patientId: string): Promise<string> {
   const res = await pool.query<{ id: string }>(
-    `INSERT INTO patient_addresses (patient_id, address_formatted, address_type, source)
-     VALUES ($1, $2, 'primary', 'admin_manual')
+    `INSERT INTO patient_addresses (patient_id, address_formatted, source)
+     VALUES ($1, $2, 'admin_manual')
      RETURNING id`,
     [patientId, `Av. Audit Fields Test ${randomUUID().slice(0, 8)}, CABA`],
   );

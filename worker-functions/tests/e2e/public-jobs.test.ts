@@ -114,8 +114,8 @@ async function insertAddress(
   neighborhood: string,
 ): Promise<void> {
   await p.query(
-    `INSERT INTO patient_addresses (id, patient_id, address_type, state, city, neighborhood, lat, lng)
-     VALUES ($1, $2, 'primary', $3, $4, $5, -34.6, -58.4)
+    `INSERT INTO patient_addresses (id, patient_id, state, city, neighborhood, lat, lng)
+     VALUES ($1, $2, $3, $4, $5, -34.6, -58.4)
      ON CONFLICT (id) DO NOTHING`,
     [id, patientId, state, city, neighborhood],
   );

@@ -74,7 +74,7 @@ describe('PatientTestFixtureService.purge — Postgres real', () => {
       [id],
     );
     await pool.query(
-      `INSERT INTO patient_addresses (patient_id, address_type) VALUES ($1, 'SERVICE')`,
+      `INSERT INTO patient_addresses (patient_id) VALUES ($1)`,
       [id],
     );
 

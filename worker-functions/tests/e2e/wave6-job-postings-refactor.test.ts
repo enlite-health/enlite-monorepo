@@ -301,14 +301,14 @@ describe('N3 — Patient inline location migrado para patient_addresses', () => 
     // Insert a primary address (as the migration would do)
     await pool.query(
       `INSERT INTO patient_addresses (patient_id, address_type, address_raw, source)
-       VALUES ($1, 'primary', 'Palermo, Buenos Aires, CABA', 'migration_083_from_inline')`,
+       VALUES ($1, 'domicilio_propio', 'Palermo, Buenos Aires, CABA', 'migration_083_from_inline')`,
       [IDS.patient1]
     );
 
     const result = await pool.query(
       `SELECT pa.address_raw, pa.address_type
        FROM patient_addresses pa
-       WHERE pa.patient_id = $1 AND pa.address_type = 'primary'`,
+       WHERE pa.patient_id = $1 AND pa.address_type = 'domicilio_propio'`,
       [IDS.patient1]
     );
     expect(result.rows).toHaveLength(1);
@@ -327,14 +327,14 @@ describe('N3 — Patient inline location migrado para patient_addresses', () => 
     // Simulate migration running twice
     const migrationSQL = `
       INSERT INTO patient_addresses (patient_id, address_type, address_raw, source)
-      SELECT p.id, 'primary', CONCAT_WS(', ', p.zone_neighborhood, p.city_locality, p.province),
+      SELECT p.id, 'domicilio_propio', CONCAT_WS(', ', p.zone_neighborhood, p.city_locality, p.province),
              'migration_083_from_inline'
       FROM patients p
       WHERE p.id = $1
         AND (p.city_locality IS NOT NULL OR p.province IS NOT NULL OR p.zone_neighborhood IS NOT NULL)
         AND NOT EXISTS (
           SELECT 1 FROM patient_addresses pa
-          WHERE pa.patient_id = p.id AND pa.address_type = 'primary'
+          WHERE pa.patient_id = p.id AND pa.address_type = 'domicilio_propio'
         )
     `;
 
@@ -343,7 +343,7 @@ describe('N3 — Patient inline location migrado para patient_addresses', () => 
 
     const result = await pool.query(
       `SELECT COUNT(*)::int AS cnt FROM patient_addresses
-       WHERE patient_id = $1 AND address_type = 'primary'`,
+       WHERE patient_id = $1 AND address_type = 'domicilio_propio'`,
       [IDS.patient1]
     );
     expect(result.rows[0].cnt).toBe(1);
@@ -359,14 +359,14 @@ describe('N3 — Patient inline location migrado para patient_addresses', () => 
     // Migration logic should skip this patient
     const migrationSQL = `
       INSERT INTO patient_addresses (patient_id, address_type, address_raw, source)
-      SELECT p.id, 'primary', CONCAT_WS(', ', p.zone_neighborhood, p.city_locality, p.province),
+      SELECT p.id, 'domicilio_propio', CONCAT_WS(', ', p.zone_neighborhood, p.city_locality, p.province),
              'migration_083_from_inline'
       FROM patients p
       WHERE p.id = $1
         AND (p.city_locality IS NOT NULL OR p.province IS NOT NULL OR p.zone_neighborhood IS NOT NULL)
         AND NOT EXISTS (
           SELECT 1 FROM patient_addresses pa
-          WHERE pa.patient_id = p.id AND pa.address_type = 'primary'
+          WHERE pa.patient_id = p.id AND pa.address_type = 'domicilio_propio'
         )
     `;
     await pool.query(migrationSQL, [IDS.patient1]);

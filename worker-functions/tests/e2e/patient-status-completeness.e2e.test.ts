@@ -43,8 +43,8 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
     let addr: string | null = null;
     if (opts.comEndereco !== false) {
       addr = (await pool.query<{ id: string }>(
-        `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, display_order)
-         VALUES ($1,'primary','Calle Horario 1',1) RETURNING id`,
+        `INSERT INTO patient_addresses (patient_id, address_formatted, display_order)
+         VALUES ($1,'Calle Horario 1',1) RETURNING id`,
         [id],
       )).rows[0].id;
     }

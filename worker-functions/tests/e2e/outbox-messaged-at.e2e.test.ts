@@ -65,8 +65,8 @@ describe('D200.9 — auto-invite (outbox) grava messaged_at na candidatura', () 
     );
     patientId = await createPatientFixture(pool, 'outbox-messaged-at');
     const addr = await pool.query<{ id: string }>(
-      `INSERT INTO patient_addresses (patient_id, address_type, city, neighborhood, address_formatted, lat, lng)
-       VALUES ($1, 'primary', 'CABA', 'Palermo', 'Av Santa Fe 1234, CABA', -34.5874, -58.4079) RETURNING id`,
+      `INSERT INTO patient_addresses (patient_id, city, neighborhood, address_formatted, lat, lng)
+       VALUES ($1, 'CABA', 'Palermo', 'Av Santa Fe 1234, CABA', -34.5874, -58.4079) RETURNING id`,
       [patientId],
     );
     addressId = addr.rows[0].id;

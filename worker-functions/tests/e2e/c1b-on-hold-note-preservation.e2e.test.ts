@@ -69,8 +69,8 @@ describe('C1 — a nota clínica de ON_HOLD sobrevive a quem não pode lê-la (P
     // Esta suíte mede a NOTA clínica, não a completude — a ficha nasce completa para que o teste
     // "e." falhe só se a nota sobreviver, nunca por um dado que ele não verifica.
     const addr = (await pool.query<{ id: string }>(
-      `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, display_order)
-       VALUES ($1,'primary','Calle C1B 1',1) RETURNING id`,
+      `INSERT INTO patient_addresses (patient_id, address_formatted, display_order)
+       VALUES ($1,'Calle C1B 1',1) RETURNING id`,
       [patientId],
     )).rows[0].id;
     await pool.query(

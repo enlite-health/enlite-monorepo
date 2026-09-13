@@ -53,7 +53,7 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
         [c.tag, c.status, c.completo, c.completo ? 'OSDE' : null],
       )).rows[0].id;
       if (c.completo) {
-        const addr = (await pool.query<{ id: string }>(`INSERT INTO patient_addresses (patient_id, address_type, address_formatted, display_order) VALUES ($1,'primary','Calle C1B 1',1) RETURNING id`, [id])).rows[0].id;
+        const addr = (await pool.query<{ id: string }>(`INSERT INTO patient_addresses (patient_id, address_formatted, display_order) VALUES ($1,'Calle C1B 1',1) RETURNING id`, [id])).rows[0].id;
         await pool.query(`INSERT INTO patient_responsibles (patient_id, first_name, last_name, is_primary, display_order) VALUES ($1,'C1B','Resp',true,1)`, [id]);
         // Migration 330: "completo" exige o serviço APONTANDO para o endereço; o cenário
         // `servicoSemEndereco` deixa address_id NULL de propósito.

@@ -73,8 +73,8 @@ async function insertPatientAddress(
   addressFormatted: string,
 ): Promise<string> {
   const res = await p.query<{ id: string }>(
-    `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, address_raw, source)
-     VALUES ($1, 'primary', $2, $2, 'e2e-test')
+    `INSERT INTO patient_addresses (patient_id, address_formatted, address_raw, source)
+     VALUES ($1, $2, $2, 'e2e-test')
      RETURNING id`,
     [patientId, addressFormatted],
   );

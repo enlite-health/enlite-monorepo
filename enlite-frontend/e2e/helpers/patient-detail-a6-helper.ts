@@ -22,8 +22,8 @@ export function seedActivatablePatientA6(): { patientId: string; addressId: stri
   `);
   const patientId = runSQL(`SELECT id FROM patients WHERE clickup_task_id = '${clickupTaskId}'`);
   runSQL(`
-    INSERT INTO patient_addresses (patient_id, address_type, address_formatted, address_raw, lat, lng, display_order, source, created_at, updated_at)
-    VALUES ('${patientId}', 'primary', 'Av. A6 999, CABA, AR', 'Av. A6 999, CABA', -34.60, -58.38, 1, 'manual', NOW(), NOW())
+    INSERT INTO patient_addresses (patient_id, address_formatted, address_raw, lat, lng, display_order, source, created_at, updated_at)
+    VALUES ('${patientId}', 'Av. A6 999, CABA, AR', 'Av. A6 999, CABA', -34.60, -58.38, 1, 'manual', NOW(), NOW())
   `);
   runSQL(`UPDATE patients SET case_number = ${910000 + Number(stamp) % 90000} WHERE id = '${patientId}'`);
   // Migration 330: o serviço aponta para o endereço — o teste vincula no drawer antes de ativar.

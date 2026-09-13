@@ -40,8 +40,8 @@ describe('Activate limpa on_hold_* e grava change_source no Historial (QA 🟡2)
        RETURNING id`,
     )).rows[0].id;
     await pool.query(
-      `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, display_order, country)
-       VALUES ($1, 'primary', 'Calle Falsa 123, CABA', 0, 'AR')`,
+      `INSERT INTO patient_addresses (patient_id, address_formatted, display_order, country)
+       VALUES ($1, 'Calle Falsa 123, CABA', 0, 'AR')`,
       [patientId],
     );
   });
