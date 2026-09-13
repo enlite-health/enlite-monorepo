@@ -135,7 +135,7 @@ describe('migration 434 (contract) @repo — banco efêmero próprio, migrado s�
   let pool: Pool;
   let dbName: string;
   let adminUrl: string;
-  const patientIds: Record<'A' | 'B' | 'C', string> = { A: '', B: '', C: '' };
+  const patientIds: Record<'A' | 'B' | 'C' | 'D', string> = { A: '', B: '', C: '', D: '' };
 
   beforeAll(async () => {
     const created = await createEphemeralDbUpTo(BASE_DATABASE_URL, 433);
@@ -162,7 +162,7 @@ describe('migration 434 (contract) @repo — banco efêmero próprio, migrado s�
   }, 30_000);
 
   beforeEach(async () => {
-    for (const key of ['A', 'B', 'C'] as const) {
+    for (const key of ['A', 'B', 'C', 'D'] as const) {
       const { rows: [p] } = await pool.query<{ id: string }>(
         `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status)
          VALUES ($1, 'K2', $2, 'AR', 'ACTIVE') RETURNING id`,
@@ -197,6 +197,15 @@ describe('migration 434 (contract) @repo — banco efêmero próprio, migrado s�
       `INSERT INTO patient_addresses (patient_id, address_formatted, display_order, address_type, is_default, source)
        VALUES ($1, 'C - primary', 1, 'primary', false, 'admin_manual')`,
       [patientIds.C],
+    );
+    // Paciente D: DUAS linhas 'primary' ATIVAS, nenhuma principal (código velho, ambas escritas
+    // antes de qualquer troca via PATCH novo) — a versão anterior do passo 0 batia nas DUAS na
+    // mesma UPDATE e violava o índice único de principal por paciente (K2, item C2).
+    await pool.query(
+      `INSERT INTO patient_addresses (patient_id, address_formatted, display_order, address_type, is_default, source)
+       VALUES ($1, 'D - primary 1', 1, 'primary', false, 'admin_manual'),
+              ($1, 'D - primary 2', 2, 'primary', false, 'admin_manual')`,
+      [patientIds.D],
     );
     // Linha arquivada de A com valor legado — nunca deve ser tocada.
     const { rows: [arquivada] } = await pool.query<{ id: string }>(
@@ -238,5 +247,13 @@ describe('migration 434 (contract) @repo — banco efêmero próprio, migrado s�
       [arquivada.id],
     );
     expect(arquivadaRow.address_type).toBe('primary'); // arquivada nunca tocada
+
+    // Paciente D: a migration NÃO falha (índice único não é violado) e termina com EXATAMENTE
+    // 1 principal — o `DISTINCT ON (patient_id)` do passo 0 escolheu só uma das duas linhas.
+    const { rows: [dCount] } = await pool.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM patient_addresses WHERE patient_id = $1 AND is_default AND archived_at IS NULL`,
+      [patientIds.D],
+    );
+    expect(dCount.n).toBe('1'); // nunca 0, nunca 2 — nem a migration inteira teria completado
   });
 });

@@ -26,6 +26,9 @@
 --       segundo principal ativo (violaria o índice único da 433, ou pior, corrida com o CHECK
 --       ainda não criado). O `NOT EXISTS` novo só reafirma o backfill quando o paciente AINDA NÃO
 --       tem nenhum principal ativo — nunca sobrepõe uma troca que já aconteceu.
+--   (a.1) mesmo com o `NOT EXISTS`, um paciente com DUAS linhas 'primary' ativas sem nenhum
+--       principal batia as duas na mesma UPDATE e violava o índice único sozinho. O passo 0 agora
+--       usa `DISTINCT ON (patient_id)` para escolher UMA linha por paciente antes de marcar.
 --   (b) o passo 5 apagava QUALQUER `address_type` não-nulo em linha ativa, inclusive um valor da
 --       lista NOVA que o PATCH já tivesse gravado nessa mesma janela (ex.: paciente com endereço
 --       já marcado `'escuela'` pelo painel antes da 434 rodar) — a migration apagaria esse tipo
@@ -79,17 +82,27 @@ BEGIN;
 --    address_type ser apagado. `NOT EXISTS`: só reafirma quando o PACIENTE ainda não tem nenhum
 --    principal ativo — nunca sobrepõe uma troca de principal que o PATCH novo já fez na janela
 --    entre o deploy e esta migration (K2).
+--    DISTINCT ON (c.patient_id): a versão anterior batia em TODAS as linhas 'primary' ativas sem
+--    principal do mesmo paciente na MESMA UPDATE — se um paciente tivesse 2, as duas eram
+--    marcadas `is_default = true` juntas e o índice único (433) abortava a migration inteira.
+--    Agora escolhe UMA linha por paciente (menor display_order, depois created_at, depois id).
 UPDATE patient_addresses pa
    SET is_default = true
- WHERE pa.address_type = 'primary'
-   AND pa.archived_at IS NULL
-   AND pa.is_default = false
-   AND NOT EXISTS (
-     SELECT 1 FROM patient_addresses o
-      WHERE o.patient_id = pa.patient_id
-        AND o.is_default
-        AND o.archived_at IS NULL
-   );
+  FROM (
+    SELECT DISTINCT ON (c.patient_id) c.id
+      FROM patient_addresses c
+     WHERE c.address_type = 'primary'
+       AND c.archived_at IS NULL
+       AND c.is_default = false
+       AND NOT EXISTS (
+         SELECT 1 FROM patient_addresses o
+          WHERE o.patient_id = c.patient_id
+            AND o.is_default
+            AND o.archived_at IS NULL
+         )
+     ORDER BY c.patient_id, c.display_order NULLS LAST, c.created_at, c.id
+  ) pick
+ WHERE pa.id = pick.id;
 
 -- 5. Apaga só o valor LEGADO ('primary'/'secondary'/'tertiary'/'service') das linhas ATIVAS —
 --    nunca um valor da lista NOVA que o PATCH publicado já tenha gravado na mesma janela (K2).
