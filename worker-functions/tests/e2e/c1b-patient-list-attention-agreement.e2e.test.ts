@@ -60,7 +60,7 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
         [c.tag, c.status, c.completo, c.completo ? 'OSDE' : null],
       )).rows[0].id;
       if (c.completo) {
-        const addr = (await pool.query<{ id: string }>(`INSERT INTO patient_addresses (patient_id, address_type, address_formatted, display_order) VALUES ($1,'primary','Calle C1B 1',1) RETURNING id`, [id])).rows[0].id;
+        const addr = (await pool.query<{ id: string }>(`INSERT INTO patient_addresses (patient_id, address_formatted, display_order) VALUES ($1,'Calle C1B 1',1) RETURNING id`, [id])).rows[0].id;
         if ('respInativo' in c && c.respInativo) {
           // A linha existe (nunca DELETE, spec 018 PR-1) mas está DESATIVADA — não conta como
           // responsável presente nem no SQL (`AND pr.active`) nem no JS (`activeResponsibleCount`).

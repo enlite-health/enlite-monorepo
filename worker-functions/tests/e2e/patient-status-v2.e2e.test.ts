@@ -64,8 +64,8 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
     // A recusa por ficha incompleta tem suíte própria (`patient-status-completeness.e2e.test.ts`).
     for (const id of [active, lead]) {
       const addr = (await pool.query<{ id: string }>(
-        `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, display_order)
-         VALUES ($1,'primary','Calle Estado 1',1) RETURNING id`,
+        `INSERT INTO patient_addresses (patient_id, address_formatted, display_order)
+         VALUES ($1,'Calle Estado 1',1) RETURNING id`,
         [id],
       )).rows[0].id;
       const svc = (await pool.query<{ id: string }>(

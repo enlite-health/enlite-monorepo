@@ -222,8 +222,8 @@ test.describe('Botões da família vagas — desabilitar em vez de sumir (D269) 
     patientId = scalar(`SELECT id FROM patients WHERE clickup_task_id = '${clickupTaskId}'`);
     if (!patientId) throw new Error('paciente e2e não foi inserido');
 
-    psql(`INSERT INTO patient_addresses (patient_id, address_type, address_formatted, address_raw, lat, lng, display_order, source, created_at, updated_at)
-          VALUES ('${patientId}', 'primary', 'Av. Corrientes 1234, CABA, AR', 'Av. Corrientes 1234, CABA', -34.6037, -58.3816, 1, 'manual', NOW(), NOW())`);
+    psql(`INSERT INTO patient_addresses (patient_id, address_formatted, address_raw, lat, lng, display_order, source, created_at, updated_at)
+          VALUES ('${patientId}', 'Av. Corrientes 1234, CABA, AR', 'Av. Corrientes 1234, CABA', -34.6037, -58.3816, 1, 'manual', NOW(), NOW())`);
     addressId = scalar(`SELECT id FROM patient_addresses WHERE patient_id = '${patientId}' LIMIT 1`);
     if (!addressId) throw new Error('endereço e2e não foi inserido');
 

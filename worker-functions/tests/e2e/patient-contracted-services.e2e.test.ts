@@ -238,11 +238,11 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
 
   it('13. addressId: do MESMO paciente grava e volta no GET; de OUTRO paciente → 422 ADDRESS_NOT_OF_PATIENT (o banco recusa, nada escrito); schedule round-trip, inválido → 400, null limpa', async () => {
     const own = (await pool.query<{ id: string }>(
-      `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, display_order) VALUES ($1,'primary','Calle Propia 1',1) RETURNING id`,
+      `INSERT INTO patient_addresses (patient_id, address_formatted, display_order) VALUES ($1,'Calle Propia 1',1) RETURNING id`,
       [patientAR],
     )).rows[0].id;
     const foreign = (await pool.query<{ id: string }>(
-      `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, display_order) VALUES ($1,'primary','Calle Ajena 1',1) RETURNING id`,
+      `INSERT INTO patient_addresses (patient_id, address_formatted, display_order) VALUES ($1,'Calle Ajena 1',1) RETURNING id`,
       [patientBR],
     )).rows[0].id;
     const schedule = [
@@ -307,7 +307,7 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
       [`${TASK_PREFIX}chk`],
     )).rows[0].id;
     const addr = (await pool.query<{ id: string }>(
-      `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, display_order) VALUES ($1,'primary','Calle Chk 1',1) RETURNING id`,
+      `INSERT INTO patient_addresses (patient_id, address_formatted, display_order) VALUES ($1,'Calle Chk 1',1) RETURNING id`,
       [pid],
     )).rows[0].id;
     const svc = (await api.post(`/api/admin/patients/${pid}/contracted-services`, { serviceCode: 'AT' }, asAdmin)).data.data.id;
