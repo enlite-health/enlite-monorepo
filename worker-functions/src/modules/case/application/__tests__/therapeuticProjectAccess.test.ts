@@ -19,9 +19,14 @@ import {
   canWriteTherapeuticClinical,
   projectTherapeuticVersionForActor,
   therapeuticTrailAction,
+  missingContactOriginCell,
+  containerOfContactKind,
   PATIENT_CLINICAL_READ_CELL,
   PATIENT_SERVICES_READ_CELL,
   PATIENT_CLINICAL_WRITE_CELL,
+  PATIENT_FAMILY_READ_CELL,
+  PATIENT_COVERAGE_READ_CELL,
+  PATIENT_CARE_TEAM_READ_CELL,
   THERAPEUTIC_PROJECT_RESOURCE,
   THERAPEUTIC_CLINICAL_FIELDS,
 } from '../therapeuticProjectAccess';
@@ -218,5 +223,61 @@ describe('therapeuticTrailAction (lex C9/C13: só NOME de container)', () => {
 
   it('a trilha nunca carrega id nem texto — só os dois nomes de container', () => {
     expect(therapeuticTrailAction('read_project', undefined)).toMatch(/^read_project:[A-Za-z+]+$/);
+  });
+
+  it('contactContainersServed (lex C6) entra na trilha, deduplicado, além de clinical/services', () => {
+    expect(therapeuticTrailAction('read_project', [], ['family', 'family', 'coverage'])).toBe(
+      'read_project:therapeuticProject+family+coverage',
+    );
+    expect(therapeuticTrailAction('export_pdf', [PATIENT_CLINICAL_READ_CELL], ['care_team'])).toBe(
+      'export_pdf:therapeuticProject+clinical+care_team',
+    );
+    // Sem contato nenhum resolvido (padrão): nada muda em relação ao comportamento anterior.
+    expect(therapeuticTrailAction('read_project', [])).toBe('read_project:therapeuticProject');
+  });
+});
+
+describe('missingContactOriginCell (lex-pr7 §alterado: "quem não vê não seleciona")', () => {
+  it('cells=null (D113, engine não decidiu) deixa passar mesmo com refs pedidas', () => {
+    expect(missingContactOriginCell([{ kind: 'RESPONSIBLE', id: 'r-1' }], ['ct-1'], null)).toBeNull();
+  });
+
+  it('sem refs nem careTeamIds: nunca falta célula', () => {
+    expect(missingContactOriginCell([], [], [])).toBeNull();
+  });
+
+  it.each([
+    ['RESPONSIBLE', PATIENT_FAMILY_READ_CELL],
+    ['EXTERNAL', PATIENT_FAMILY_READ_CELL],
+  ] as const)('%s sem `patient_family:read` → falta essa célula', (kind, expected) => {
+    expect(missingContactOriginCell([{ kind, id: 'r-1' }], [], [])).toBe(expected);
+    expect(missingContactOriginCell([{ kind, id: 'r-1' }], [], [PATIENT_FAMILY_READ_CELL])).toBeNull();
+  });
+
+  it('COVERAGE sem `patient_coverage:read` → falta essa célula', () => {
+    expect(missingContactOriginCell([{ kind: 'COVERAGE', id: 'c-1' }], [], [])).toBe(PATIENT_COVERAGE_READ_CELL);
+    expect(missingContactOriginCell([{ kind: 'COVERAGE', id: 'c-1' }], [], [PATIENT_COVERAGE_READ_CELL])).toBeNull();
+  });
+
+  it('careTeamIds não-vazio sem `patient_care_team:read` → falta essa célula', () => {
+    expect(missingContactOriginCell([], ['p-1'], [])).toBe(PATIENT_CARE_TEAM_READ_CELL);
+    expect(missingContactOriginCell([], ['p-1'], [PATIENT_CARE_TEAM_READ_CELL])).toBeNull();
+  });
+
+  it('a primeira célula que falta é reportada (family antes de coverage antes de care_team)', () => {
+    expect(
+      missingContactOriginCell([{ kind: 'RESPONSIBLE', id: 'r-1' }, { kind: 'COVERAGE', id: 'c-1' }], ['p-1'], []),
+    ).toBe(PATIENT_FAMILY_READ_CELL);
+  });
+});
+
+describe('containerOfContactKind', () => {
+  it.each([
+    ['RESPONSIBLE', 'family'],
+    ['EXTERNAL', 'family'],
+    ['COVERAGE', 'coverage'],
+    ['CARE_TEAM', 'care_team'],
+  ] as const)('%s → %s', (kind, container) => {
+    expect(containerOfContactKind(kind)).toBe(container);
   });
 });

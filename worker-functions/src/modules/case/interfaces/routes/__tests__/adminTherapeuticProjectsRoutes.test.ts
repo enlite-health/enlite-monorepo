@@ -213,5 +213,13 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
       await request(app([PROJETO_READ])).get('/api/admin/patients/abc-123/therapeutic-projects/v-1').expect(200);
       expect(trilhas[0].acao).toMatch(/^read_project:[A-Za-z+]+$/);
     });
+
+    // ⚠️ `req.therapeuticContactContainers` (lex C6) só é lido no `finish` do `logResourceAccess`
+    // REAL (`res.once('finish', ...)`, depois do handler rodar). O dublê deste arquivo captura a
+    // ação SÍNCRONA, antes do controller — não reproduz essa ordem. A prova de que o campo chega
+    // à trilha depois de escrito pelo controller é do `resourceAccessLog` real (unit próprio) +
+    // e2e; aqui já está provado que `readTrail`/`versionTrail` LEEM o campo quando presente
+    // (`contactContainersOf`, testado indiretamente pelas asserções de `therapeuticTrailAction`
+    // em `therapeuticProjectAccess.test.ts`).
   });
 });

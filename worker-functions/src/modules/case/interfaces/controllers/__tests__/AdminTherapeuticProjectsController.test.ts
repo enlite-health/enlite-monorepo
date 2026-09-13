@@ -88,9 +88,13 @@ function mockRes(): Response & { status: jest.Mock; json: jest.Mock } {
   res.json.mockReturnValue(res);
   return res as unknown as Response & { status: jest.Mock; json: jest.Mock };
 }
-/** O controller com os dois repos falsos (a fronteira; o SQL é provado no e2e). */
-function ctrl(repo: Record<string, unknown> = {}, catalogs: Record<string, unknown> = {}) {
-  return new AdminTherapeuticProjectsController(repo as never, catalogs as never);
+/** Stub de `TherapeuticProjectContactsRepository`: por padrão, versão sem contato nenhum (lex C5/C6). */
+function stubContacts(): Record<string, unknown> {
+  return { resolve: jest.fn().mockResolvedValue({ contacts: [], containersServed: new Set() }) };
+}
+/** O controller com os três repos falsos (a fronteira; o SQL é provado no e2e). */
+function ctrl(repo: Record<string, unknown> = {}, catalogs: Record<string, unknown> = {}, contacts: Record<string, unknown> = stubContacts()) {
+  return new AdminTherapeuticProjectsController(repo as never, catalogs as never, contacts as never);
 }
 const corpoDaResposta = (res: { json: jest.Mock }) => res.json.mock.calls[0][0];
 
@@ -179,6 +183,35 @@ describe('AdminTherapeuticProjectsController', () => {
       expect(corpoDaResposta(res).data).toMatchObject({ version: 'V.1.0', redacted: { clinical: true } });
     });
 
+    it('200 anexa `contacts` resolvidos e grava os containers servidos em `req` (lex C6/C9)', async () => {
+      const repo = { findById: jest.fn().mockResolvedValue(VERSAO) };
+      const contacts = {
+        resolve: jest.fn().mockResolvedValue({
+          contacts: [{ kind: 'RESPONSIBLE', id: PAT_ID, name: 'Ana', phone: '+54...' }],
+          containersServed: new Set(['family']),
+        }),
+      };
+      const res = mockRes();
+      const req = mockReq({ params: { id: PATIENT_ID, vid: VERSION_ID }, permissionCells: ['patient_family:read'] });
+      await ctrl(repo, {}, contacts).get(req, res);
+      expect(contacts.resolve).toHaveBeenCalledWith(VERSION_ID, ['patient_family:read']);
+      expect(corpoDaResposta(res).data.contacts).toEqual([{ kind: 'RESPONSIBLE', id: PAT_ID, name: 'Ana', phone: '+54...' }]);
+      expect((req as unknown as { therapeuticContactContainers: string[] }).therapeuticContactContainers).toEqual(['family']);
+    });
+
+    it('200 numa versão NÃO vigente: a permissão de contatos é a MESMA da vigente (lex C8(a)) — nenhum ramo por status', async () => {
+      const versaoAntiga = { ...VERSAO, annulledAt: null, id: '99999999-bbbb-cccc-dddd-eeeeeeeeeeee' };
+      const repo = { findById: jest.fn().mockResolvedValue(versaoAntiga) };
+      const contacts = stubContacts();
+      const res = mockRes();
+      await ctrl(repo, {}, contacts).get(
+        mockReq({ params: { id: PATIENT_ID, vid: versaoAntiga.id }, permissionCells: ['patient_family:read'] }),
+        res,
+      );
+      // Mesma chamada, mesmas células — nada em `get` decide por `annulledAt`/"é a última".
+      expect((contacts.resolve as jest.Mock)).toHaveBeenCalledWith(versaoAntiga.id, ['patient_family:read']);
+    });
+
     it('500 quando o repo lança', async () => {
       const repo = { findById: jest.fn().mockRejectedValue(new Error('boom')) };
       const res = mockRes();
@@ -232,6 +265,126 @@ describe('AdminTherapeuticProjectsController', () => {
       expect(repo.createVersion).not.toHaveBeenCalled();
     });
 
+    it('403 sem `patient_family:read`: RESPONSIBLE/EXTERNAL selecionado sem a célula de origem (lex-pr7 §alterado)', async () => {
+      const repo = { createVersion: jest.fn() };
+      const res = mockRes();
+      const corpo = { ...CORPO_NOVO, version: { ...CORPO_NOVO.version, contactRefs: [{ kind: 'RESPONSIBLE', id: PAT_ID }] } };
+      await ctrl(repo).create(
+        mockReq({ params: { id: PATIENT_ID }, body: corpo, permissionCells: ['patient_clinical:write'] }),
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Forbidden', details: { cell: 'patient_family:read' } });
+      expect(repo.createVersion).not.toHaveBeenCalled();
+    });
+
+    it('403 sem `patient_coverage:read`: COVERAGE selecionado sem a célula de origem', async () => {
+      const repo = { createVersion: jest.fn() };
+      const res = mockRes();
+      const corpo = { ...CORPO_NOVO, version: { ...CORPO_NOVO.version, contactRefs: [{ kind: 'COVERAGE', id: PAT_ID }] } };
+      await ctrl(repo).create(
+        mockReq({ params: { id: PATIENT_ID }, body: corpo, permissionCells: ['patient_clinical:write'] }),
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Forbidden', details: { cell: 'patient_coverage:read' } });
+    });
+
+    it('403 sem `patient_care_team:read`: `careTeamIds` sem a célula de origem', async () => {
+      const repo = { createVersion: jest.fn() };
+      const res = mockRes();
+      const corpo = { ...CORPO_NOVO, version: { ...CORPO_NOVO.version, careTeamIds: [PAT_ID] } };
+      await ctrl(repo).create(
+        mockReq({ params: { id: PATIENT_ID }, body: corpo, permissionCells: ['patient_clinical:write'] }),
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Forbidden', details: { cell: 'patient_care_team:read' } });
+    });
+
+    it('201 com `contactRefs`/`careTeamIds` e as células de origem — nenhuma célula falta', async () => {
+      const repo = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
+      const res = mockRes();
+      const corpo = {
+        ...CORPO_NOVO,
+        version: { ...CORPO_NOVO.version, contactRefs: [{ kind: 'RESPONSIBLE', id: PAT_ID }], careTeamIds: [PAT_ID] },
+      };
+      await ctrl(repo).create(
+        mockReq({
+          params: { id: PATIENT_ID },
+          body: corpo,
+          permissionCells: ['patient_clinical:write', 'patient_family:read', 'patient_care_team:read'],
+        }),
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(201);
+    });
+
+    it('409 `ptp_not_current` quando `fromVersionId` não é mais a vigente (ADR-4/SUP-24) — nunca 422', async () => {
+      const { VersionNotCurrentError } = await import('../../../infrastructure/TherapeuticProjectRepository');
+      const repo = { createVersion: jest.fn().mockRejectedValue(new VersionNotCurrentError()) };
+      const res = mockRes();
+      await ctrl(repo).create(
+        mockReq({ params: { id: PATIENT_ID }, body: { mode: 'edit', fromVersionId: SOURCE_ID, version: CORPO_NOVO.version }, permissionCells: ['patient_clinical:write'] }),
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Only the current version can be edited', code: 'ptp_not_current' });
+    });
+
+    it('422 `ptp_macro_locked` com SÓ os nomes dos campos — nunca o valor (lex #7 C7/D328)', async () => {
+      const { MacroFieldsLockedError } = await import('../../../infrastructure/TherapeuticProjectRepository');
+      const repo = { createVersion: jest.fn().mockRejectedValue(new MacroFieldsLockedError(['clinicalContext', 'diagnoses'])) };
+      const res = mockRes();
+      await ctrl(repo).create(
+        mockReq({ params: { id: PATIENT_ID }, body: { mode: 'edit', fromVersionId: SOURCE_ID, version: CORPO_NOVO.version }, permissionCells: ['patient_clinical:write'] }),
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(corpoDaResposta(res)).toEqual({
+        success: false,
+        error: 'Macro fields are locked outside of a new version',
+        code: 'ptp_macro_locked',
+        details: { fields: ['clinicalContext', 'diagnoses'] },
+      });
+      expect(JSON.stringify(corpoDaResposta(res))).not.toContain(TEXTO_CLINICO);
+    });
+
+    it('422 `ptp_contact_inactive` com SÓ kind/id — nunca nome/telefone (lex #7 C7)', async () => {
+      const { ContactInactiveError } = await import('../../../infrastructure/TherapeuticProjectRepository');
+      const repo = { createVersion: jest.fn().mockRejectedValue(new ContactInactiveError('RESPONSIBLE', PAT_ID)) };
+      const res = mockRes();
+      await ctrl(repo).create(
+        mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO, permissionCells: ['patient_clinical:write'] }),
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(corpoDaResposta(res)).toEqual({
+        success: false,
+        error: 'Selected contact is inactive',
+        code: 'ptp_contact_inactive',
+        details: { kind: 'RESPONSIBLE', id: PAT_ID },
+      });
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
+    it('404 `contact_not_found` quando o id não é linha ATIVA deste paciente (FK 23503)', async () => {
+      const { ContactNotFoundError } = await import('../../../infrastructure/TherapeuticProjectRepository');
+      const repo = { createVersion: jest.fn().mockRejectedValue(new ContactNotFoundError('COVERAGE', PAT_ID)) };
+      const res = mockRes();
+      await ctrl(repo).create(
+        mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO, permissionCells: ['patient_clinical:write'] }),
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(corpoDaResposta(res)).toEqual({
+        success: false,
+        error: 'Selected contact not found',
+        code: 'contact_not_found',
+        details: { kind: 'COVERAGE', id: PAT_ID },
+      });
+    });
+
     it('201 no `new`: manda mode/patientId/actorUid e devolve a versão projetada', async () => {
       const repo = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
       const res = mockRes();
@@ -241,7 +394,7 @@ describe('AdminTherapeuticProjectsController', () => {
       );
       expect(res.status).toHaveBeenCalledWith(201);
       expect(repo.createVersion).toHaveBeenCalledWith({
-        mode: 'new', patientId: PATIENT_ID, actorUid: 'uid-1', version: CORPO_NOVO.version,
+        mode: 'new', patientId: PATIENT_ID, actorUid: 'uid-1', version: { ...CORPO_NOVO.version, contactRefs: [], careTeamIds: [] },
       });
       expect(corpoDaResposta(res).data.version).toBe('V.1.0');
     });
@@ -253,7 +406,7 @@ describe('AdminTherapeuticProjectsController', () => {
       await ctrl(repo).create(mockReq({ params: { id: PATIENT_ID }, body: corpo }), res);
       expect(res.status).toHaveBeenCalledWith(201);
       expect(repo.createVersion).toHaveBeenCalledWith({
-        mode: 'edit', patientId: PATIENT_ID, actorUid: 'uid-1', fromVersionId: SOURCE_ID, version: CORPO_NOVO.version,
+        mode: 'edit', patientId: PATIENT_ID, actorUid: 'uid-1', fromVersionId: SOURCE_ID, version: { ...CORPO_NOVO.version, contactRefs: [], careTeamIds: [] },
       });
     });
 
