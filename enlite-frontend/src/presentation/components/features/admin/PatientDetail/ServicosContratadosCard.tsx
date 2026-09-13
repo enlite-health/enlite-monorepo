@@ -52,6 +52,11 @@ function ActivateRecruitmentAction({
   const tc = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.contractedServicesCard.${k}`, o);
   const serviceLabel = t(`admin.patients.detail.contractedServicesCard.serviceTypes.${service.serviceCode}`, service.serviceCode);
 
+  // Hooks incondicionais (regra do React) — o GATE em si só se aplica depois do ramo
+  // "Ver vacante" abaixo, que não muda em relação à `stage`.
+  const { allowed: podeEscreverServico } = useActionGate('patient_services', 'write');
+  const { allowed: podeEscreverVaga } = useActionGate('vacancy', 'write');
+
   if (service.liveVacancyId) {
     return (
       <a
@@ -65,6 +70,11 @@ function ActivateRecruitmentAction({
       </a>
     );
   }
+
+  // Regra do Gabriel (12/09): a rota de ativação exige patient_services:write E vacancy:write —
+  // quem não tem as duas células não vê o BOTÃO de ativar. Só este ramo (o "Ver vacante" acima
+  // já retornou e não passa por aqui).
+  if (!podeEscreverServico || !podeEscreverVaga) return null;
 
   const handleClick = async (e: MouseEvent): Promise<void> => {
     e.stopPropagation();
