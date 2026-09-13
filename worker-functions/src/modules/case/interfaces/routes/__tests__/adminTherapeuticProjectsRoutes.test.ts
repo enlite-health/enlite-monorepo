@@ -53,6 +53,10 @@ const ESPERADO: Record<string, string> = {
   'GET /therapeutic-catalogs/activities': 'catalog_therapeutic_activities:read',
   'POST /therapeutic-catalogs/activities': 'catalog_therapeutic_activities:write',
   'PATCH /therapeutic-catalogs/activities/:itemId': 'catalog_therapeutic_activities:write',
+  // US-17 (migration 430) — mesmo molde, célula literal própria.
+  'GET /therapeutic-catalogs/segments': 'catalog_therapeutic_segments:read',
+  'POST /therapeutic-catalogs/segments': 'catalog_therapeutic_segments:write',
+  'PATCH /therapeutic-catalogs/segments/:itemId': 'catalog_therapeutic_segments:write',
 };
 
 /** Cada handler devolve o próprio nome — é o que identifica quem foi chamado (e com que kind). */
@@ -107,8 +111,8 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
     expect(declarado).toEqual(ESPERADO);
   });
 
-  it('são exatamente 10 rotas: 4 do projeto + 2 catálogos × 3 verbos (tipo de patologia não é catálogo)', () => {
-    expect(scanExpressRouter(build())).toHaveLength(10);
+  it('são exatamente 13 rotas: 4 do projeto + 3 catálogos × 3 verbos (tipo de patologia não é catálogo)', () => {
+    expect(scanExpressRouter(build())).toHaveLength(13);
   });
 
   it('não existe DELETE em lugar nenhum — versão é imutável (lex C5) e catálogo é baixa lógica', () => {
@@ -146,6 +150,9 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
     ['get', '/api/admin/therapeutic-catalogs/activities', 'listCatalog'],
     ['post', '/api/admin/therapeutic-catalogs/activities', 'createCatalogItem'],
     ['patch', '/api/admin/therapeutic-catalogs/activities/i-1', 'updateCatalogItem'],
+    ['get', '/api/admin/therapeutic-catalogs/segments', 'listCatalog'],
+    ['post', '/api/admin/therapeutic-catalogs/segments', 'createCatalogItem'],
+    ['patch', '/api/admin/therapeutic-catalogs/segments/i-1', 'updateCatalogItem'],
   ] as const)('%s %s → %s', async (metodo, caminho, esperado) => {
     const res = await request(app())[metodo](caminho).expect(200);
     expect(res.body.m).toBe(esperado);
@@ -154,6 +161,7 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
   it.each([
     ['specific-objectives'],
     ['activities'],
+    ['segments'],
   ])('o kind `%s` chega ao controller pela ROTA, não por param do cliente', async (kind) => {
     const res = await request(app()).get(`/api/admin/therapeutic-catalogs/${kind}`).expect(200);
     expect(res.body.kind).toBe(kind);

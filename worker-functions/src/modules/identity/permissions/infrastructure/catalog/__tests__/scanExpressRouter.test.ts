@@ -309,6 +309,9 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'catalog_therapeutic_objectives:write',
       'catalog_therapeutic_activities:read',
       'catalog_therapeutic_activities:write',
+      // US-17 (spec 018, PR-7, migration 430) — catálogo dos segmentos da Ana Care, mesmo molde.
+      'catalog_therapeutic_segments:read',
+      'catalog_therapeutic_segments:write',
     ]);
   });
 

@@ -50,14 +50,17 @@ describe('TherapeuticProject — numeração major.minor (spec 017, D299)', () =
     expect(out.map((v) => v.id)).toEqual(['b', 'd', 'c', 'a']);
   });
 
-  it('os 2 catálogos têm tabela e recurso de célula próprios; "tipo de patologia" NÃO é catálogo (deriva do CID-11)', () => {
-    expect(THERAPEUTIC_CATALOG_KINDS).toHaveLength(2);
+  it('os 3 catálogos (US-17: segments entrou na 430) têm tabela e recurso de célula próprios; "tipo de patologia" NÃO é catálogo (deriva do CID-11)', () => {
+    expect(THERAPEUTIC_CATALOG_KINDS).toHaveLength(3);
+    expect(THERAPEUTIC_CATALOG_KINDS).toContain('segments');
     expect(THERAPEUTIC_CATALOG_KINDS).not.toContain('pathology-types');
     for (const k of THERAPEUTIC_CATALOG_KINDS) {
       expect(THERAPEUTIC_CATALOG_TABLE[k]).toMatch(/^[a-z_]+$/);
       expect(THERAPEUTIC_CATALOG_RESOURCE[k]).toMatch(/^catalog_[a-z_]+$/);
     }
-    expect(new Set(Object.values(THERAPEUTIC_CATALOG_RESOURCE)).size).toBe(2);
+    expect(new Set(Object.values(THERAPEUTIC_CATALOG_RESOURCE)).size).toBe(3);
+    expect(THERAPEUTIC_CATALOG_TABLE.segments).toBe('therapeutic_segments');
+    expect(THERAPEUTIC_CATALOG_RESOURCE.segments).toBe('catalog_therapeutic_segments');
   });
 });
 

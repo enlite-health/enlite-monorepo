@@ -67,6 +67,8 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   patient_therapeutic_project: 'Pacientes',
   catalog_therapeutic_objectives: 'Pacientes',
   catalog_therapeutic_activities: 'Pacientes',
+  // US-17 (spec 018, PR-7, migration 430): catálogo dos segmentos da Ana Care, mesma família.
+  catalog_therapeutic_segments: 'Pacientes',
   recruitment: 'Recrutamento',
   talentum: 'Recrutamento',
   prescreening: 'Recrutamento',
@@ -229,6 +231,10 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Ver o catálogo de ROTINA E ATIVIDADES do projeto terapêutico (lista global, sem dado de paciente).',
   'catalog_therapeutic_activities:write':
     'Adicionar, renomear e desativar atividades do catálogo (backoffice).',
+  'catalog_therapeutic_segments:read':
+    'Ver o catálogo de SEGMENTOS da Ana Care (US-17, lista global, sem dado de paciente).',
+  'catalog_therapeutic_segments:write':
+    'Adicionar, renomear e desativar segmentos do catálogo (backoffice).',
 };
 
 /** Célula do catálogo — o que `iam.permissions` guarda de uma linha. */

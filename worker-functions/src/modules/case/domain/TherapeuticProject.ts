@@ -40,20 +40,29 @@ export interface TherapeuticCatalogSnapshotItem extends CatalogSnapshotItem {
  * CID-11 da versão — ver `pathologyTypes` abaixo. A tabela `pathology_types` da 415 fica
  * deprecada pela 418; a célula `catalog_pathology_types` sumiu do código e o sync a marca.
  */
-export type TherapeuticCatalogKind = 'specific-objectives' | 'activities';
+/**
+ * `segments` (migration 430, US-17, spec 018 PR-7): catálogo GLOBAL dos segmentos da Ana Care,
+ * mesmo molde dos dois de cima — mesma tabela genérica (id/label/sort_order/active/deactivated_at),
+ * por isso entra no MESMO repositório/rotas sem código novo (célula literal na rota, D299.3).
+ * `specific-objectives`/`activities` ganham `segment_id` (FK opcional) como FILTRO — não recorte
+ * do que pode ser gravado (#REQ-16) — tratado à parte no `create`/`update` do repositório.
+ */
+export type TherapeuticCatalogKind = 'specific-objectives' | 'activities' | 'segments';
 
-export const THERAPEUTIC_CATALOG_KINDS: readonly TherapeuticCatalogKind[] = ['specific-objectives', 'activities'];
+export const THERAPEUTIC_CATALOG_KINDS: readonly TherapeuticCatalogKind[] = ['specific-objectives', 'activities', 'segments'];
 
-/** Tabela de cada catálogo (migration 415). Fonte única — o repositório monta o SQL por aqui. */
+/** Tabela de cada catálogo (migrations 415/430). Fonte única — o repositório monta o SQL por aqui. */
 export const THERAPEUTIC_CATALOG_TABLE: Readonly<Record<TherapeuticCatalogKind, string>> = {
   'specific-objectives': 'therapeutic_specific_objectives',
   activities: 'therapeutic_activities',
+  segments: 'therapeutic_segments',
 };
 
 /** Recurso da célula ABAC de cada catálogo (D299.3: uma célula por catálogo, família admin.patients). */
 export const THERAPEUTIC_CATALOG_RESOURCE: Readonly<Record<TherapeuticCatalogKind, string>> = {
   'specific-objectives': 'catalog_therapeutic_objectives',
   activities: 'catalog_therapeutic_activities',
+  segments: 'catalog_therapeutic_segments',
 };
 
 /**

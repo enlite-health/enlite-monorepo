@@ -334,6 +334,10 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/therapeutic-catalogs/activities → catalog_therapeutic_activities:read',
         'POST /api/admin/therapeutic-catalogs/activities → catalog_therapeutic_activities:write',
         'PATCH /api/admin/therapeutic-catalogs/activities/:itemId → catalog_therapeutic_activities:write',
+        // US-17 (spec 018, PR-7, migration 430) — catálogo dos segmentos da Ana Care, mesmo molde.
+        'GET /api/admin/therapeutic-catalogs/segments → catalog_therapeutic_segments:read',
+        'POST /api/admin/therapeutic-catalogs/segments → catalog_therapeutic_segments:write',
+        'PATCH /api/admin/therapeutic-catalogs/segments/:itemId → catalog_therapeutic_segments:write',
       ].sort(),
     );
   });
