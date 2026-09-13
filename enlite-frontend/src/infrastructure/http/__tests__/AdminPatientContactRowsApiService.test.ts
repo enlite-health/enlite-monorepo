@@ -138,4 +138,5 @@ describe('AdminPatientContactRowsApiService', () => {
     fetchMock.mockResolvedValueOnce(json({ success: false }, 404));
     await expect(AdminPatientContactRowsApiService.deactivateResponsible('p1', 'r1')).rejects.toThrow('HTTP 404');
   });
+
 });

@@ -188,12 +188,11 @@ export default defineConfig({
         '**/src/presentation/components/features/admin/PatientDetail/edit/PatientProfessionalEditDrawer.tsx': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
-        // Branch 95,83% (não 100): a única lacuna é o fallback do construtor herdado
-        // (`?? 'http://localhost:8080'`, pré-existente — nunca exercido porque o ambiente de
-        // teste sempre define VITE_API_WORKER_FUNCTIONS_URL). Os 3 métodos novos desta
-        // execução (createProfessional/updateProfessional/deactivateProfessional) estão 100%.
+        // 100/100/100/100 medido SEM `.env` na worktree (o CI nunca tem `.env` — só assim o
+        // fallback do construtor herdado, `?? 'http://localhost:8080'`, é exercido; um `.env`
+        // local com VITE_API_WORKER_FUNCTIONS_URL sempre definido mascara essa branch).
         '**/src/infrastructure/http/AdminPatientContactRowsApiService.ts': {
-          statements: 100, branches: 95.83, functions: 100, lines: 100,
+          statements: 100, branches: 100, functions: 100, lines: 100,
         },
         // Spec 012 bloco B (03/09): estado v2 (controle + Historial), cobertura por catálogo,
         // domicílio na ficha, dispositivo/parentesco por enum, Kanban por admission_status.

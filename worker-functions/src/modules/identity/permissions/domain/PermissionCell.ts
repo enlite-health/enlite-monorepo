@@ -180,6 +180,9 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Editar o quadro clínico do paciente, inclusive registrar e dar baixa em patologías CID-11.',
   'patient_care_team:read':
     'Ver a EQUIPE TRATANTE do paciente: nome, papel, telefone e e-mail dos profissionais — dado de terceiro.',
+  'patient_care_team:write':
+    'Criar, editar e dar baixa em profissionais da equipe tratante do paciente (nome, telefone, '
+    + 'e-mail, especialidade) — nunca DELETE (spec 018, PR-5, US-11).',
   'patient_family:read':
     'Ver FAMILIARES e responsáveis do paciente: nome, vínculo, telefone, e-mail e documento — dado de '
     + 'terceiro, com base legal própria; revela por inferência que há paciente de home care na família.',

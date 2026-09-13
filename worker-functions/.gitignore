@@ -16,3 +16,4 @@ seeds/.last-snapshot-image-id
 tests/e2e/.wja-full-flow-state.json
 tests/e2e/.wja-outbox-delivery-state.json
 
+docker-compose.*-ports.yml

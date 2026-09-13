@@ -147,6 +147,10 @@ export function PatientProfessionalEditDrawer({ patientId, professional, onClose
           {/* lex C13 — dever de informar no ponto da coleta (mesma régua do C10 da cobertura). */}
           <Text size="xs" color="muted" data-testid="professional-notice">{tc('notice')}</Text>
 
+          {/* lex C2.1/C6: nome/telefone/e-mail/especialidade de terceiro é dado clínico do paciente
+              — o Clarity (Balanced) não mascara texto por si só (molde PatientAddressDrawer.tsx,
+              CoverageEmergencyContactsEditor.tsx). */}
+          <div data-clarity-mask="True" className="flex flex-col gap-5">
           <FormField label={tc('tableFullName')} htmlFor="professional-name" required error={terr(errors.name?.message)}>
             <InputWithIcon id="professional-name" inputSize="compact" data-testid="professional-name" {...register('name')} />
           </FormField>
@@ -161,6 +165,7 @@ export function PatientProfessionalEditDrawer({ patientId, professional, onClose
               <SelectField id="professional-specialty" inputSize="compact" options={specialtyOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid="professional-specialty" />
             )} />
           </FormField>
+          </div>
 
           {submitError && <Text size="sm" className="text-red-600" data-testid="professional-error">{submitError}</Text>}
         </form>

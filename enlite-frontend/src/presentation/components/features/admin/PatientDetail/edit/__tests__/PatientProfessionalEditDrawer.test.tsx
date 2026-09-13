@@ -116,4 +116,16 @@ describe('PatientProfessionalEditDrawer', () => {
     expect(await screen.findByTestId('discard-changes-confirm')).toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
   });
+
+  // lex C6: nome/telefone/e-mail/especialidade de terceiro é dado clínico do paciente — sem a
+  // máscara do Clarity, a coluna NÃO pode renderizar (achado do gate `revisao-pr`). Prova por
+  // sabotagem: `cp` backup do arquivo-fonte, remover o atributo, este teste tem de ficar VERMELHO,
+  // restaurar por `cp` (nunca `git checkout --`), md5 igual.
+  it('C6: os campos de nome/telefone/e-mail/especialidade ficam sob data-clarity-mask="True"', () => {
+    render(<PatientProfessionalEditDrawer patientId={PATIENT_ID} professional={professional} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getByTestId('professional-name').closest('[data-clarity-mask="True"]')).not.toBeNull();
+    expect(screen.getByTestId('professional-phone').closest('[data-clarity-mask="True"]')).not.toBeNull();
+    expect(screen.getByTestId('professional-email').closest('[data-clarity-mask="True"]')).not.toBeNull();
+    expect(screen.getByTestId('professional-specialty').closest('[data-clarity-mask="True"]')).not.toBeNull();
+  });
 });
