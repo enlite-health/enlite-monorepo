@@ -259,35 +259,69 @@ describe('Endereço PRINCIPAL + TIPO por parentesco (spec 019) @integration', ()
   });
 
   // K5 (spec 019): dois POSTs concorrentes para um paciente SEM nenhum principal ativo — os dois
-  // podem calcular `isDefault=true` (nenhum enxergou o principal do outro ainda) antes do INSERT;
-  // o índice único parcial recusa o segundo, que deve responder 409 tratado (nunca 500), e o banco
-  // termina com exatamente 1 principal. NÃO executado nesta rodada (stack Docker completa — ver
-  // controle de RAM do dispatch).
-  it('K5 — POST concorrente: dois "+ Nuevo" simultâneos num paciente sem principal, um vence com 201, o outro 409', async () => {
-    const p2 = (await pool.query<{ id: string }>(
-      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status)
-       VALUES ('addr-principal-e2e-concurrent-post', 'Concurrent', 'Post', 'AR', 'ACTIVE') RETURNING id`,
-    )).rows[0].id;
-    try {
-      const post = (formatted: string) =>
-        api.post(`/api/admin/patients/${p2}/addresses`, { address_formatted: formatted }, asAdmin);
+  // podem calcular `isDefault=true` (nenhum enxergou o principal do outro ainda) antes do INSERT.
+  // O índice único parcial `patient_addresses_one_default_per_patient` é quem decide: as DUAS
+  // linhas podem nascer (INSERT não contende por linha existente, só o índice barra 2 ATIVAS com
+  // is_default=true) — a que perder a corrida do índice pode responder 201 com is_default=false
+  // (regra de nascimento: spec.md linhas 99-102/113-115 — "se omitido e o paciente não tem
+  // nenhum principal ativo, o endereço nasce principal"; a SEGUNDA request, se já viu o principal
+  // que a primeira comitou, nasce sem a marca — 201 legítimo, não 409) OU tomar 409 tratado, se a
+  // colisão for de fato no índice (spec.md linhas 116-117 — "duas requisições... uma vence pelo
+  // índice único/lock, a outra recebe erro tratado; ao final, exatamente 1 principal ativo"). O
+  // contrato certo (mesmo padrão do teste irmão "5.3 alt2", commit 2fe38c46) mede o INVARIANTE —
+  // nunca 500, pelo menos 1 vitória, nº de linhas criadas == nº de 201, exatamente 1 principal ao
+  // final, e nenhuma linha órfã quando houve 409 — não uma distribuição fixa de status code.
+  it('K5 — POST concorrente: dois "+ Nuevo" simultâneos num paciente sem principal, N rodadas — contrato do índice único', async () => {
+    const ROUNDS_K5 = 10;
+    for (let i = 0; i < ROUNDS_K5; i++) {
+      const p2 = (await pool.query<{ id: string }>(
+        `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status)
+         VALUES ($1, 'Concurrent', 'Post', 'AR', 'ACTIVE') RETURNING id`,
+        [`addr-principal-e2e-concurrent-post-${i}`],
+      )).rows[0].id;
+      try {
+        const post = (formatted: string) =>
+          api.post(`/api/admin/patients/${p2}/addresses`, { address_formatted: formatted }, asAdmin);
 
-      const resultados = await Promise.allSettled([
-        post('Rua Concorrente A, Buenos Aires'),
-        post('Rua Concorrente B, Buenos Aires'),
-      ]);
+        const resultados = await Promise.allSettled([
+          post(`Rua Concorrente A ${i}, Buenos Aires`),
+          post(`Rua Concorrente B ${i}, Buenos Aires`),
+        ]);
 
-      const statuses = resultados.map((r) =>
-        r.status === 'fulfilled' ? (r as PromiseFulfilledResult<{ status: number }>).value.status : -1);
-      expect(statuses).not.toContain(-1); // 0 erro de rede/exceção crua escapando do axios
-      expect(statuses.filter((s) => s === 500)).toEqual([]);
-      // Um 201 (o vencedor) + um 409 (o perdedor tratado) — nunca os dois 201.
-      expect(statuses.filter((s) => s === 201)).toHaveLength(1);
-      expect(statuses.filter((s) => s === 409)).toHaveLength(1);
-      expect(await countActivePrincipals(p2)).toBe(1);
-    } finally {
-      await pool.query(`DELETE FROM patient_addresses WHERE patient_id = $1`, [p2]);
-      await pool.query(`DELETE FROM patients WHERE id = $1`, [p2]);
+        const statuses: number[] = [];
+        const ids: string[] = [];
+        for (const r of resultados) {
+          if (r.status === 'rejected') {
+            throw new Error(`erro de rede/exceção crua na rodada ${i}: ${String((r as PromiseRejectedResult).reason)}`);
+          }
+          const value = (r as PromiseFulfilledResult<{ status: number; data?: { data?: { id?: string } } }>).value;
+          statuses.push(value.status);
+          if (value.status === 201 && value.data?.data?.id) ids.push(value.data.data.id);
+        }
+
+        // Nenhum 500; todo status ∈ {201, 409}.
+        expect(statuses.filter((s) => s !== 201 && s !== 409)).toEqual([]);
+        // Pelo menos 1 vitória (201) na rodada.
+        const count201 = statuses.filter((s) => s === 201).length;
+        expect(count201).toBeGreaterThanOrEqual(1);
+        // Linhas ativas criadas pela rodada == nº de 201 (nenhuma linha fantasma, nenhum 201
+        // sem linha correspondente).
+        const { rows: linhasCriadas } = await pool.query<{ n: string }>(
+          `SELECT count(*)::text AS n FROM patient_addresses WHERE patient_id = $1 AND archived_at IS NULL`,
+          [p2],
+        );
+        expect(Number(linhasCriadas[0].n)).toBe(count201);
+        // Ao final, exatamente 1 principal ativo (spec.md linha 117).
+        expect(await countActivePrincipals(p2)).toBe(1);
+        // Se houve 409, a linha da requisição perdedora não pode ter ficado como lixo: o total
+        // de linhas ativas do paciente é exatamente o nº de ids retornados pelos 201.
+        if (statuses.includes(409)) {
+          expect(Number(linhasCriadas[0].n)).toBe(ids.length);
+        }
+      } finally {
+        await pool.query(`DELETE FROM patient_addresses WHERE patient_id = $1`, [p2]);
+        await pool.query(`DELETE FROM patients WHERE id = $1`, [p2]);
+      }
     }
-  }, 30000);
+  }, 60000);
 });
