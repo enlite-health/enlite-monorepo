@@ -96,6 +96,34 @@ describe('PatientExternalContactsEditDrawer', () => {
     expect(err.textContent).toBe(t('admin.patients.editDrawer.saveError'));
   });
 
+  // Defeito 1 (Gabriel 13/09): apagar o telefone do contato marcado de emergência dá 422 — a
+  // mensagem NUNCA pintava porque o catch chamava `onSaved()` (o `refetch` do pai), que liga
+  // `isLoading` e desmonta a PÁGINA INTEIRA (skeleton) por trás do drawer antes da mensagem
+  // aparecer. Causa provada aqui no nível do componente: falha NUNCA aciona `onSaved` — só
+  // sucesso. `onSaved` é o único jeito de o pai remontar o drawer via `usePatientDetail`/
+  // `PatientDetailPage`; sem essa chamada, o drawer (que só depende de `editing` no
+  // `ExternalContactsCard`) permanece montado e a mensagem fica visível.
+  it('falha no PATCH (422 simulado): onSaved NÃO é chamado — drawer continua aberto com o erro visível', async () => {
+    const onSaved = vi.fn();
+    const onClose = vi.fn();
+    updateExternalContact.mockRejectedValueOnce(new Error('422 Unprocessable Entity'));
+    render(<PatientExternalContactsEditDrawer patientId={PATIENT_ID} externalContacts={[contact]} onClose={onClose} onSaved={onSaved} />);
+    fireEvent.change(screen.getByTestId('pxc-phone-0'), { target: { value: '' } });
+    fireEvent.click(screen.getByTestId('pxc-save'));
+    await screen.findByTestId('pxc-error');
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByTestId('patient-external-contacts-edit-drawer')).toBeInTheDocument();
+  });
+
+  it('sucesso no PATCH: onSaved É chamado (refetch continua acontecendo quando não há erro)', async () => {
+    const onSaved = vi.fn();
+    render(<PatientExternalContactsEditDrawer patientId={PATIENT_ID} externalContacts={[contact]} onClose={vi.fn()} onSaved={onSaved} />);
+    fireEvent.change(screen.getByTestId('pxc-phone-0'), { target: { value: '11-9999-0000' } });
+    fireEvent.click(screen.getByTestId('pxc-save'));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+  });
+
   it('remover um contato EXISTENTE chama deactivateExternalContact com o id; some da tela na hora', async () => {
     renderDrawer([contact, { ...contact, id: 'x2', name: 'Otro' }]);
     fireEvent.click(screen.getByTestId('pxc-remove-1'));

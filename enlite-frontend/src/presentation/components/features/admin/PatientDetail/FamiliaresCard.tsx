@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus } from 'lucide-react';
+import { Plus, ShieldAlert } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import {
@@ -88,6 +88,10 @@ export function FamiliaresCard({ responsibles, emergencyContactRef, patientId, o
               const docTypeLabel = r.documentType
                 ? t(`admin.patients.detail.documentTypes.${r.documentType}`, r.documentType)
                 : null;
+              // Spec 018 PR-2 fix (Gabriel 13/09): "isMarked" é INFORMAÇÃO — mostra pra qualquer
+              // ator com patient_family:read, mesmo sem :write (o botão abaixo é que é a AÇÃO e
+              // esse sim some sem :write, D269).
+              const isMarked = emergencyContactRef?.kind === 'RESPONSIBLE' && emergencyContactRef.id === r.id;
               return (
                 <TableRow key={r.id} className="align-top">
                   {/* Spec 012 US-B5: o parentesco é ENUM (139) — traduzido, com fallback no cru. */}
@@ -112,15 +116,28 @@ export function FamiliaresCard({ responsibles, emergencyContactRef, patientId, o
                   </TableCell>
                   <TableCell>{r.phone ?? empty}</TableCell>
                   <TableCell unwrapped>
-                    {patientId ? (
-                      <EmergencyMarkButton
-                        patientId={patientId}
-                        kind="RESPONSIBLE"
-                        contactId={r.id}
-                        isMarked={emergencyContactRef?.kind === 'RESPONSIBLE' && emergencyContactRef.id === r.id}
-                        onChanged={() => onSaved?.()}
-                      />
-                    ) : empty}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {isMarked && (
+                        <span
+                          className="inline-flex items-center gap-1 text-red-600"
+                          data-testid={`familiares-emergency-marked-${r.id}`}
+                        >
+                          <ShieldAlert className="w-3.5 h-3.5" />
+                          <Text as="span" size="xs" weight="semibold" color="inherit">
+                            {t('admin.patients.detail.externalContactsCard.tableEmergency')}
+                          </Text>
+                        </span>
+                      )}
+                      {patientId ? (
+                        <EmergencyMarkButton
+                          patientId={patientId}
+                          kind="RESPONSIBLE"
+                          contactId={r.id}
+                          isMarked={isMarked}
+                          onChanged={() => onSaved?.()}
+                        />
+                      ) : (!isMarked && empty)}
+                    </div>
                   </TableCell>
                 </TableRow>
               );
