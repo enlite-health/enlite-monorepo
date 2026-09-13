@@ -1,0 +1,9 @@
+# Override de portas para a worktree 018-pr5 (PR-5, equipe tratante). Só `postgres` — a prova da
+# migration 427 roda com `psql`/pool direto, sem API nem Firebase Emulator (mesmo padrão do
+# docker-compose.pr9-ports.yml). 5566 evita colisão com enlite-postgres (5432), 018-pr1 (5563/5564),
+# 018-pr9 (5565), 019e2e — vistos com `docker ps -a` antes de subir.
+services:
+  postgres:
+    container_name: 018-pr5-postgres
+    ports: !override
+      - "5566:5432"

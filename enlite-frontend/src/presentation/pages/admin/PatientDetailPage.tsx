@@ -229,7 +229,7 @@ export default function PatientDetailPage() {
               <ProjetoTerapeuticoCard patient={patient} />
             </ContainerGate>
             <ContainerGate resource="patient_care_team">
-              <EquipeTratanteCard professionals={patient.professionals} />
+              <EquipeTratanteCard professionals={patient.professionals} patientId={patient.id} onSaved={refetch} />
             </ContainerGate>
             <SupervisaoCard />
             <RelatoriosAtendimentosCard />

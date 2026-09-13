@@ -15,6 +15,7 @@ import {
   PatientCoverageEmergencyContactRepository,
   CoverageEmergencyContactLimitReachedError,
 } from '../../infrastructure/PatientCoverageEmergencyContactRepository';
+import { PatientProfessionalRepository } from '../../infrastructure/PatientProfessionalRepository';
 import {
   responsibleIdParamsSchema,
   createResponsibleSchema,
@@ -22,6 +23,9 @@ import {
   coverageContactIdParamsSchema,
   createCoverageEmergencyContactSchema,
   updateCoverageEmergencyContactSchema,
+  professionalIdParamsSchema,
+  createProfessionalSchema,
+  updateProfessionalSchema,
 } from '../validators/patientContactRowSchemas';
 
 const patientIdParamsSchema = z.object({ id: z.string().uuid() });
@@ -41,6 +45,11 @@ export class AdminPatientContactRowsController {
     private readonly responsibleRepo: PatientResponsibleRepository = new PatientResponsibleRepository(),
     private readonly coverageContactRepo: PatientCoverageEmergencyContactRepository = new PatientCoverageEmergencyContactRepository(),
     private readonly db: Pool = DatabaseConnection.getInstance().getPool(),
+    // Último parâmetro (não no meio): testes existentes chamam este construtor POSICIONALMENTE
+    // com 3 args (responsibleRepo, coverageRepo, db) — inserir no meio deslocaria `db` e quebraria
+    // tudo em silêncio (o `db()` do teste viraria `professionalRepo`, e o `db` real cairia no
+    // default `DatabaseConnection.getInstance()`, que nos testes unitários não existe/não conecta).
+    private readonly professionalRepo: PatientProfessionalRepository = new PatientProfessionalRepository(),
   ) {}
 
   /**
@@ -263,6 +272,97 @@ export class AdminPatientContactRowsController {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientContactRowsController:deactivateCoverageEmergencyContact', patientId: params.data.id, contactId: params.data.cid });
       res.status(500).json({ success: false, error: 'Failed to deactivate coverage emergency contact' });
+    }
+  }
+
+  // ── Equipe tratante (`patient_professionals`, spec 018 PR-5, US-11; `lex` 12/09 CONDICIONADO) ──
+
+  /** POST /api/admin/patients/:id/professionals — sempre `source='admin_manual'` (repo). */
+  async createProfessional(req: Request, res: Response): Promise<void> {
+    const params = patientIdParamsSchema.safeParse(req.params);
+    if (!params.success) { res.status(400).json({ success: false, error: 'Invalid params' }); return; }
+    const body = createProfessionalSchema.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ success: false, error: 'Invalid body', details: { fields: Object.keys(body.error.flatten().fieldErrors) } });
+      return;
+    }
+    try {
+      if (!(await this.patientExists(params.data.id))) {
+        res.status(404).json({ success: false, error: 'Patient not found' });
+        return;
+      }
+      const actorUid = this.actorUid(req);
+      const created = await inPatientTransaction((client) =>
+        this.professionalRepo.insertOne(
+          params.data.id,
+          { name: body.data.name, phone: body.data.phone ?? null, email: body.data.email ?? null, specialty: body.data.specialty ?? null },
+          actorUid,
+          client,
+        ),
+      );
+      res.status(201).json({ success: true, data: created });
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientContactRowsController:createProfessional', patientId: params.data.id });
+      res.status(500).json({ success: false, error: 'Failed to create professional' });
+    }
+  }
+
+  /** PATCH /api/admin/patients/:id/professionals/:pid */
+  async updateProfessional(req: Request, res: Response): Promise<void> {
+    const params = professionalIdParamsSchema.safeParse(req.params);
+    if (!params.success) { res.status(400).json({ success: false, error: 'Invalid params' }); return; }
+    const body = updateProfessionalSchema.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ success: false, error: 'Invalid body', details: { fields: Object.keys(body.error.flatten().fieldErrors) } });
+      return;
+    }
+    try {
+      if (!(await this.patientExists(params.data.id))) {
+        res.status(404).json({ success: false, error: 'Patient not found' });
+        return;
+      }
+      const updated = await inPatientTransaction((client) =>
+        this.professionalRepo.updateOne(params.data.id, params.data.pid, body.data, client),
+      );
+      if (!updated) {
+        res.status(404).json({ success: false, error: 'Professional not found' });
+        return;
+      }
+      res.status(200).json({ success: true, data: updated });
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientContactRowsController:updateProfessional', patientId: params.data.id, professionalId: params.data.pid });
+      res.status(500).json({ success: false, error: 'Failed to update professional' });
+    }
+  }
+
+  /** POST /api/admin/patients/:id/professionals/:pid/deactivate — nunca DELETE (C8). */
+  async deactivateProfessional(req: Request, res: Response): Promise<void> {
+    const params = professionalIdParamsSchema.safeParse(req.params);
+    if (!params.success) { res.status(400).json({ success: false, error: 'Invalid params' }); return; }
+    try {
+      if (!(await this.patientExists(params.data.id))) {
+        res.status(404).json({ success: false, error: 'Patient not found' });
+        return;
+      }
+      const actorUid = this.actorUid(req);
+      const outcome = await inPatientTransaction((client) =>
+        this.professionalRepo.deactivate(params.data.id, params.data.pid, actorUid, client),
+      );
+      if (outcome.outcome === 'not_found') {
+        res.status(404).json({ success: false, error: 'Professional not found' });
+        return;
+      }
+      if (outcome.outcome === 'already_inactive') {
+        res.status(409).json({ success: false, error: 'Professional already inactive' });
+        return;
+      }
+      res.status(200).json({ success: true, data: { id: outcome.id, active: false } });
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientContactRowsController:deactivateProfessional', patientId: params.data.id, professionalId: params.data.pid });
+      res.status(500).json({ success: false, error: 'Failed to deactivate professional' });
     }
   }
 }

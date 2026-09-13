@@ -337,6 +337,47 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // Equipe tratante por linha (spec 018, PR-5, US-11) — medidos 100/100/100/100 nesta
+    // execução (`AdminPatientContactRowsController.test.ts`, `PatientProfessionalRepository.
+    // test.ts`, `adminPatientsRoutes.test.ts`, `PatientDetailQueryHelper.test.ts`,
+    // `PatientRelatedWriter.test.ts`). Entram no piso pela MESMA régua acima: anti-regressão,
+    // não meta — arquivo tocado por esta release, medido antes de entrar.
+    'src/modules/case/domain/PatientProfessional.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/infrastructure/PatientProfessionalRepository.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/infrastructure/deactivateRowByRow.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/interfaces/validators/patientContactRowSchemas.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/interfaces/controllers/AdminPatientContactRowsController.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/infrastructure/PatientDetailQueryHelper.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     // Funil e vagas públicas: emissor de evento de etapa, resolução de slot de
     // entrevista e o filtro/mapper do que sai para o portal público. O mapper e
     // o query builder são a fronteira do que vira PII no ar.

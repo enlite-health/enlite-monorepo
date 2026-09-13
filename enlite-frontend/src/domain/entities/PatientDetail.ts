@@ -95,6 +95,8 @@ export interface PatientProfessionalDetail {
   name: string | null;
   phone: string | null;
   email: string | null;
+  /** Enum fechado (migration 427, spec 018 PR-5). NULL = legado ou `isTeam` (equipe sem especialidade própria). */
+  specialty: import('./patientEnums').PatientProfessionalSpecialtyCode | null;
   displayOrder: number;
   isTeam: boolean;
 }

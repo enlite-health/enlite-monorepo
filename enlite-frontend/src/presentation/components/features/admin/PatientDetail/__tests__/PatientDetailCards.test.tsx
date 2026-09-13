@@ -531,12 +531,59 @@ describe('EquipeTratanteCard', () => {
     expect(screen.getByText('Sem dados cadastrados')).toBeInTheDocument();
   });
 
-  // Spec 014 US-D2: o botão "Nuevo" fantasma (disabled, sem ação — não há endpoint de criar
-  // profissional nesta spec) e a busca decorativa `readOnly` SOMEM; a tabela real fica.
-  it('não tem mais o botão "Novo" fantasma nem a busca decorativa', () => {
+  // Spec 018 PR-5 (US-11): o "Nuevo" agora É real (POST /patients/:id/professionals sob
+  // patient_care_team:write) — sem `patientId` ele existe mas fica desabilitado (nunca chama a
+  // API sem paciente); a busca decorativa nunca existiu de verdade e continua fora.
+  it('sem patientId, o botão "Novo" existe mas fica desabilitado; sem busca decorativa', () => {
     render(<EquipeTratanteCard professionals={[]} />);
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.getByTestId('equipe-tratante-add')).toBeDisabled();
     expect(screen.queryByPlaceholderText('Pesquisar')).not.toBeInTheDocument();
+  });
+
+  it('renderiza a coluna Especialidad traduzida (migration 427, spec 018 PR-5)', () => {
+    render(<EquipeTratanteCard professionals={[
+      { id: 'p1', name: 'Dr. Kine', phone: null, email: null, specialty: 'PHYSIOTHERAPIST', displayOrder: 1, isTeam: false },
+    ]} />);
+    expect(screen.getByText('Fisioterapeuta')).toBeInTheDocument();
+  });
+
+  it('especialidade null renderiza travessão, nunca quebra (legado ou equipe multidisciplinar)', () => {
+    render(<EquipeTratanteCard professionals={[
+      { id: 'p1', name: 'Equipo', phone: null, email: null, specialty: null, displayOrder: 1, isTeam: true },
+    ]} />);
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+  });
+});
+
+// ── D286 (ABAC) — patient_care_team:write gateia Nuevo/lápis/desativar (spec 018 PR-5) ────────
+describe('EquipeTratanteCard — gate ABAC patient_care_team:write (spec 018 PR-5)', () => {
+  const professionals = [
+    { id: 'p1', name: 'Dr. Kine', phone: '+54 11 5555-0002', email: null, specialty: 'PHYSIOTHERAPIST' as const, displayOrder: 1, isTeam: false },
+  ];
+  const contrato = (permissions: string[]): AuthzContract => ({
+    uid: 'u-abac-test', tenantId: 't1', status: 'ACTIVE', permissions, countries: ['AR'], groups: [], features: {},
+  });
+
+  afterEach(() => {
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+  });
+
+  it('enforcement "on" SEM patient_care_team:write: Nuevo/lápis/desativar NÃO existem (D269 — escondido, não desabilitado)', () => {
+    useAdminAuthStore.setState({ authz: { ...contrato([]), enforcement: 'on' }, authzStatus: 'ready' });
+    render(<EquipeTratanteCard professionals={professionals} patientId="p1" />);
+    expect(screen.queryByTestId('equipe-tratante-add')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('equipe-tratante-edit-p1')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('equipe-tratante-deactivate-p1')).not.toBeInTheDocument();
+    // Leitura continua: a tabela em si não depende da célula de ESCRITA.
+    expect(screen.getByText('Dr. Kine')).toBeInTheDocument();
+  });
+
+  it('enforcement "on" COM patient_care_team:write: os três botões existem', () => {
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    render(<EquipeTratanteCard professionals={professionals} patientId="p1" />);
+    expect(screen.getByTestId('equipe-tratante-add')).toBeInTheDocument();
+    expect(screen.getByTestId('equipe-tratante-edit-p1')).toBeInTheDocument();
+    expect(screen.getByTestId('equipe-tratante-deactivate-p1')).toBeInTheDocument();
   });
 });
 
@@ -912,8 +959,8 @@ describe('LocalizacoesCard', () => {
 
 describe('EquipeTratanteCard — lê o contrato da API (A2, lex C2.1/C2.2)', () => {
   const professionals = [
-    { id: 'p1', name: 'Dra. Contrato Tratante', phone: '+54 11 5555-0001', email: 'dra@example.test', displayOrder: 1, isTeam: false },
-    { id: 'p2', name: 'Equipo Interdisciplinario', phone: null, email: null, displayOrder: 2, isTeam: true },
+    { id: 'p1', name: 'Dra. Contrato Tratante', phone: '+54 11 5555-0001', email: 'dra@example.test', specialty: 'PHYSICIAN' as const, displayOrder: 1, isTeam: false },
+    { id: 'p2', name: 'Equipo Interdisciplinario', phone: null, email: null, specialty: null, displayOrder: 2, isTeam: true },
   ];
 
   it('renderiza o NOME que a API manda (`name`, não `fullName`)', () => {
@@ -1019,7 +1066,7 @@ describe('cards tocados na spec 011 — ramos defensivos', () => {
     const { unmount } = render(<EquipeTratanteCard professionals={undefined as unknown as []} />);
     expect(screen.getByText('Sem dados cadastrados')).toBeInTheDocument();
     unmount();
-    render(<EquipeTratanteCard professionals={[{ id: 'p0', name: null, phone: null, email: null, displayOrder: 1, isTeam: false }]} />);
+    render(<EquipeTratanteCard professionals={[{ id: 'p0', name: null, phone: null, email: null, specialty: null, displayOrder: 1, isTeam: false }]} />);
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2);
   });
 

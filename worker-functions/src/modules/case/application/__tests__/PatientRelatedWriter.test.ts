@@ -275,6 +275,19 @@ describe('replacePatientProfessionals', () => {
     expect(sqlDe(chamadas, /INSERT INTO patient_professionals/)?.params).toEqual([PID, 'Dra. Ana', 'enc(+5491100000000)', 'enc(ana@example.com)', 1, false]);
   });
 
+  /**
+   * 🔒 C8 do `lex` (12/09, PR-5): o sync do ClickUp NUNCA apaga a linha que o painel criou
+   * (`source='admin_manual'`) — achado do gate `revisao-pr` já corrigido no PR-1 (`AND source =
+   * 'clickup'` no DELETE). Este teste prende o texto exato do WHERE, não só "existe um DELETE":
+   * sem o filtro por `source`, este teste FICA VERMELHO (sabotagem provada nesta execução —
+   * ver relatório: `sed` removendo ` AND source = 'clickup'` → vermelho → restaurado por `cp` → verde).
+   */
+  it('C8: o DELETE filtra POR SOURCE — nunca apaga a linha admin_manual do painel', async () => {
+    const { client, chamadas } = cliente();
+    await replacePatientProfessionals(PID, [pro()], client);
+    expect(chamadas[0].sql).toMatch(/DELETE FROM patient_professionals WHERE patient_id = \$1 AND source = 'clickup'/);
+  });
+
   it('`isTeam` explícito e contato ausente: null cifrado é null, e o default de isTeam é false', async () => {
     const { client, chamadas } = cliente();
     await replacePatientProfessionals(PID, [pro({ phone: null, email: null, isTeam: true })], client);

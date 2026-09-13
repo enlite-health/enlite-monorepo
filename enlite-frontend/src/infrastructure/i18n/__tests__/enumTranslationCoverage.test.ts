@@ -14,6 +14,7 @@ import ptBRJson from '@infrastructure/i18n/locales/pt-BR.json';
 import { WORKER_PROFESSIONS } from '@domain/entities/Worker';
 import {
   PATIENT_STATUSES, ON_HOLD_REASONS, ADMISSION_STATUSES, DEVICE_TYPE_CODES, RELATIONSHIP_CODES, INSURANCE_PROVIDER_CODES,
+  PATIENT_PROFESSIONAL_SPECIALTY_CODES,
 } from '@domain/entities/patientEnums';
 import {
   SERVICE_CODES,
@@ -94,6 +95,7 @@ const PATIENT_ENUM_GROUPS: Array<[string, readonly string[]]> = [
   ['admin.patients.kanban.columns', ADMISSION_STATUSES],
   ['admin.patients.deviceTypeOptions', DEVICE_TYPE_CODES],
   ['admin.patients.detail.relationshipOptions', RELATIONSHIP_CODES],
+  ['admin.patients.detail.treatingTeamCard.specialtyOptions', PATIENT_PROFESSIONAL_SPECIALTY_CODES],
   ['admin.patients.insuranceProviderOptions', INSURANCE_PROVIDER_CODES],
   // QA 🟡4: o mapa tinha vocabulário PRÓPRIO (mapPageConfig.ts), desincronizado do estado v2 —
   // faltavam ON_HOLD/SEARCHING/REPLACEMENT e sobrava DISCONTINUED (saiu do vocabulário, migration
