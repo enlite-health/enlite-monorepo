@@ -5,6 +5,9 @@ import {
   montarAppDeFamilia,
   limparIamFixtures,
   grupoComCelulas,
+  limparTrilhaDrenada,
+  aguardarTrilhaQuieta,
+  contarTrilhaEstavel,
   type AppDeFamilia,
 } from './helpers/permissionFamilyHarness';
 
@@ -278,44 +281,29 @@ describe('família admin.vacancies sob a decisão real por célula (HTTP real, b
 
   describe('trilha — aqui ela é decidida pelo VERBO, não pelo recurso', () => {
     it('o ALLOW de uma AÇÃO sensível (delete) é registrado, mesmo o recurso não sendo sensível', async () => {
-      await pool.query(`DELETE FROM iam.permission_audit_log WHERE user_id = $1`, [U.destrutiva]);
+      await limparTrilhaDrenada(pool, [U.destrutiva]);
 
       await chamar('DELETE', '/api/admin/vacancies/v1', U.destrutiva);
-      await new Promise((r) => setTimeout(r, 300));
-
-      const trilha = await pool.query(
-        `SELECT resource, action, decision, resource_id FROM iam.permission_audit_log WHERE user_id = $1`,
-        [U.destrutiva],
-      );
-      expect(trilha.rows).toEqual([
+      const trilha = await aguardarTrilhaQuieta(pool, [U.destrutiva], 1);
+      expect(trilha).toEqual([
         expect.objectContaining({ resource: 'vacancy', action: 'delete', decision: 'ALLOW', resource_id: 'v1' }),
       ]);
     });
 
     it('… e o ALLOW de uma LEITURA de vaga não enche a trilha', async () => {
-      await pool.query(`DELETE FROM iam.permission_audit_log WHERE user_id = $1`, [U.editora]);
+      await limparTrilhaDrenada(pool, [U.editora]);
 
       await chamar('GET', '/api/admin/vacancies', U.editora);
-      await new Promise((r) => setTimeout(r, 300));
-
-      const trilha = await pool.query(
-        `SELECT count(*)::int AS n FROM iam.permission_audit_log WHERE user_id = $1`,
-        [U.editora],
-      );
-      expect(trilha.rows[0].n).toBe(0);
+      const n = await contarTrilhaEstavel(pool, [U.editora]);
+      expect(n).toBe(0);
     });
 
     it('a NEGATIVA é registrada sempre, sensível ou não', async () => {
-      await pool.query(`DELETE FROM iam.permission_audit_log WHERE user_id = $1`, [U.coordenacao]);
+      await limparTrilhaDrenada(pool, [U.coordenacao]);
 
       await chamar('PUT', '/api/admin/vacancies/v1', U.coordenacao);
-      await new Promise((r) => setTimeout(r, 300));
-
-      const trilha = await pool.query(
-        `SELECT resource, action, decision FROM iam.permission_audit_log WHERE user_id = $1`,
-        [U.coordenacao],
-      );
-      expect(trilha.rows).toEqual([
+      const trilha = await aguardarTrilhaQuieta(pool, [U.coordenacao], 1, 'resource, action, decision');
+      expect(trilha).toEqual([
         expect.objectContaining({ resource: 'vacancy', action: 'write', decision: 'DENY' }),
       ]);
     });

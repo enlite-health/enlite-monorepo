@@ -5,6 +5,9 @@ import {
   montarAppDeFamilia,
   limparIamFixtures,
   grupoComCelulas,
+  limparTrilhaDrenada,
+  aguardarTrilhaQuieta,
+  contarTrilhaEstavel,
   type AppDeFamilia,
 } from './helpers/permissionFamilyHarness';
 
@@ -195,40 +198,18 @@ describe('família admin.dedup sob a decisão real por célula (HTTP real, banco
   });
 
   describe('trilha (D-P4: execute é ação sensível)', () => {
-    /**
-     * A trilha é gravada fora do caminho da resposta (fire-and-forget). Sob carga (a suíte
-     * inteira em paralelo), as negativas dos testes ANTERIORES ainda estão chegando quando
-     * este bloco apaga a trilha — e caem depois do DELETE, inflando a contagem. Drena antes:
-     * espera a contagem ficar estável em duas amostras seguidas, só então limpa.
-     */
-    async function limparTrilhaDrenada(uid: string): Promise<void> {
-      let anterior = -1;
-      for (let i = 0; i < 20; i += 1) {
-        const r = await pool.query<{ n: string }>(`SELECT count(*) AS n FROM iam.permission_audit_log WHERE user_id = $1`, [uid]);
-        const n = Number(r.rows[0].n);
-        if (n === anterior) break;
-        anterior = n;
-        await new Promise((res) => setTimeout(res, 200));
-      }
-      await pool.query(`DELETE FROM iam.permission_audit_log WHERE user_id = $1`, [uid]);
-    }
-    async function esperarTrilha(uid: string, minimo: number): Promise<{ resource: string; action: string; decision: string }[]> {
-      for (let i = 0; i < 25; i += 1) {
-        const r = await pool.query<{ resource: string; action: string; decision: string }>(
-          `SELECT resource, action, decision FROM iam.permission_audit_log WHERE user_id = $1`,
-          [uid],
-        );
-        if (r.rows.length >= minimo) return r.rows;
-        await new Promise((res) => setTimeout(res, 200));
-      }
-      return (await pool.query(`SELECT resource, action, decision FROM iam.permission_audit_log WHERE user_id = $1`, [uid])).rows;
-    }
+    // O drenar-antes-de-limpar/esperar-quieto nasceu aqui (fire-and-forget —
+    // PgPermissionAuditRepository.ts:9-11 — não muda) e virou o helper
+    // compartilhado `limparTrilhaDrenada`/`aguardarTrilhaQuieta` em
+    // `helpers/permissionFamilyHarness.ts`, usado agora pelas outras famílias
+    // que tinham o mesmo `setTimeout` fixo (PR #376: admin-patients,
+    // admin-vacancies, admin-users, admin-workers, encuadre, analytics).
 
     it('a negativa de merge vira linha DENY', async () => {
-      await limparTrilhaDrenada(U.auditora);
+      await limparTrilhaDrenada(pool, [U.auditora]);
 
       await chamar('POST', '/api/admin/dedup/merge', U.auditora);
-      const rows = await esperarTrilha(U.auditora, 1);
+      const rows = await aguardarTrilhaQuieta(pool, [U.auditora], 1, 'resource, action, decision');
 
       expect(rows).toEqual([
         expect.objectContaining({ resource: 'dedup', action: 'execute', decision: 'DENY' }),
@@ -236,26 +217,21 @@ describe('família admin.dedup sob a decisão real por célula (HTTP real, banco
     });
 
     it('e o ALLOW do merge TAMBÉM — é o que permite auditar quem fundiu', async () => {
-      await limparTrilhaDrenada(U.operadora);
+      await limparTrilhaDrenada(pool, [U.operadora]);
 
       await chamar('POST', '/api/admin/dedup/merge', U.operadora);
-      const rows = await esperarTrilha(U.operadora, 1);
+      const rows = await aguardarTrilhaQuieta(pool, [U.operadora], 1, 'resource, action, decision');
       expect(rows).toEqual([
         expect.objectContaining({ resource: 'dedup', action: 'execute', decision: 'ALLOW' }),
       ]);
     });
 
     it('a LEITURA do Centro não enche a trilha', async () => {
-      await limparTrilhaDrenada(U.auditora);
+      await limparTrilhaDrenada(pool, [U.auditora]);
 
       await chamar('GET', '/api/admin/dedup/groups', U.auditora);
-      await new Promise((r) => setTimeout(r, 600));
-
-      const n = await pool.query(
-        `SELECT count(*)::int AS n FROM iam.permission_audit_log WHERE user_id = $1`,
-        [U.auditora],
-      );
-      expect(n.rows[0].n).toBe(0);
+      const n = await contarTrilhaEstavel(pool, [U.auditora]);
+      expect(n).toBe(0);
     });
   });
 

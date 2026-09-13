@@ -5,6 +5,8 @@ import {
   montarAppDeFamilia,
   limparIamFixtures,
   grupoComCelulas,
+  limparTrilhaDrenada,
+  aguardarTrilhaQuieta,
   type AppDeFamilia,
 } from './helpers/permissionFamilyHarness';
 
@@ -344,18 +346,15 @@ describe('A4 — famílias de mensageria, integração e fixtures (HTTP real, ba
 
   describe('trilha — D-P4 pela ação', () => {
     it('o ALLOW de integration:execute é registrado; o de messaging:read não', async () => {
-      await pool.query(`DELETE FROM iam.permission_audit_log WHERE user_id = ANY($1)`, [
-        [U.manutencao, U.disparo],
-      ]);
+      await limparTrilhaDrenada(pool, [U.manutencao, U.disparo]);
 
       await chamar('POST', '/api/admin/integrations/anacare/backfill', U.manutencao);
       await chamar('GET', '/api/admin/messaging/templates', U.disparo);
-      await new Promise((r) => setTimeout(r, 300));
-
-      const trilha = await pool.query(
-        `SELECT user_id, resource, action, decision FROM iam.permission_audit_log WHERE user_id = ANY($1)`,
-        [[U.manutencao, U.disparo]],
-      );
+      // A leitura abaixo já não depende de timing fixo — `aguardarTrilhaQuieta`
+      // poll até a contagem ficar estável, em vez de dormir e torcer.
+      const trilha = {
+        rows: await aguardarTrilhaQuieta(pool, [U.manutencao, U.disparo], 1, 'user_id, resource, action, decision'),
+      };
 
       // ⚠️ A asserção é sobre a ALEGAÇÃO, não sobre o tamanho da tabela.
       //
