@@ -142,6 +142,7 @@ test.describe('Card Localizaciones — engine ABAC LIGADO (D286) @integration', 
     await expect(campoOtro).toBeFocused();
     await campoOtro.pressSequentially('Casa de un tio ABAC', { delay: 40 });
     await expect(campoOtro).toHaveValue('Casa de un tio ABAC');
+    await expect(page.getByTestId('pad-type-other-counter')).toHaveText('19/40');
     const patchTipo2 = page.waitForResponse((r) => r.request().method() === 'PATCH' && /\/addresses\//.test(r.url()));
     await page.getByTestId('pad-save').click();
     expect((await patchTipo2).status()).toBe(200);
@@ -158,6 +159,37 @@ test.describe('Card Localizaciones — engine ABAC LIGADO (D286) @integration', 
     testInfo.annotations.push({ type: 'evidência', description: `tipo persistido após reload: ${rowsDb}` });
     expect(rowsDb).toContain('otro');
     expect(rowsDb).toContain('Casa de un tio ABAC');
+
+    // ── editar SÓ o texto do "Otro" já salvo (o tipo não muda) — regressão do bug em que o front
+    //    só mandava `address_type` quando o tipo MUDAVA, e o servidor exige `address_type: 'otro'`
+    //    na MESMA requisição sempre que `address_type_other` vier preenchido (400 sem isso).
+    //    Confere que o PATCH sai 200 e que o texto novo PERSISTE após reload, com o engine ABAC
+    //    ligado e a escritora usando a célula `patient_address:write` já concedida acima. ────────
+    await editButtons.first().click();
+    await expect(drawer2).toBeVisible();
+    await expect(tipoSelect).toHaveValue('otro');
+    await expect(campoOtro).toHaveValue('Casa de un tio ABAC');
+    await campoOtro.click({ clickCount: 3 });
+    await campoOtro.pressSequentially('Casa de una tia ABAC', { delay: 40 });
+    await expect(campoOtro).toHaveValue('Casa de una tia ABAC');
+    const patchSoTexto = page.waitForResponse((r) => r.request().method() === 'PATCH' && /\/addresses\//.test(r.url()));
+    await page.getByTestId('pad-save').click();
+    expect((await patchSoTexto).status()).toBe(200);
+    await expect(drawer2).toHaveCount(0, { timeout: 15_000 });
+    // O card mostra só o rótulo i18n do tipo ("Otro"), nunca o texto livre — quem prova o texto
+    // é o banco (a mesma régua da asserção original, linhas acima).
+    await expect(card).toContainText('Otro', { timeout: 20_000 });
+
+    await page.reload();
+    await abrirTabServicioContratado(page, patientId);
+    await expect(card).toBeVisible({ timeout: 20_000 });
+    await expect(card).toContainText('Otro', { timeout: 20_000 });
+    const rowsDb2 = psql(`SELECT address_type, address_type_other FROM patient_addresses WHERE patient_id = '${patientId}' AND archived_at IS NULL AND address_type = 'otro'`);
+    testInfo.annotations.push({ type: 'evidência', description: `após editar SÓ o texto + reload: ${rowsDb2}` });
+    expect(rowsDb2).toContain('otro');
+    expect(rowsDb2).toContain('Casa de una tia ABAC');
+
+    await expect(card).toHaveScreenshot('localizaciones-abac-principal-tipo.png', { maxDiffPixelRatio: 0.05 });
   });
 
   test('(b) staff SÓ com patient_address:read — sem "Marcar como principal"/lápis, e PATCH direto na API dá 403 sem tocar o banco', async ({ page, request }, testInfo) => {
@@ -194,5 +226,35 @@ test.describe('Card Localizaciones — engine ABAC LIGADO (D286) @integration', 
     const depoisIsDefault = scalar(`SELECT is_default FROM patient_addresses WHERE id = '${enderecoId}'`);
     testInfo.annotations.push({ type: 'evidência', description: `is_default antes=${antesIsDefault} depois=${depoisIsDefault}` });
     expect(depoisIsDefault).toBe(antesIsDefault);
+  });
+
+  test('(c) arquivar o único endereço principal via SQL e conferir aviso "Sin principal"', async ({ page }, testInfo) => {
+    await instalarFakeDeGestos(page, CABA_CORRIENTES);
+    await loginAs(page, ESCRITORA);
+    const { patientId } = insertTestPatient({ status: 'PENDING_ADMISSION', firstName: 'AbacAviso', lastName: `Humano${Date.now()}`, withAddress: false });
+    pacientes.push(patientId);
+
+    await abrirTabServicioContratado(page, patientId);
+    await page.getByTestId('new-address-btn').click();
+    const drawer = page.getByTestId('patient-address-drawer');
+    await expect(drawer).toBeVisible();
+    await escolherPlace(page, 'Av. Corrientes 1234');
+    await expect(page.getByTestId('pad-address')).toHaveValue(CABA_CORRIENTES.formatted_address, { timeout: 10_000 });
+    const post = page.waitForResponse((r) => r.request().method() === 'POST' && /\/addresses$/.test(r.url()));
+    await page.getByTestId('pad-save').click();
+    expect((await post).status()).toBe(201);
+    await expect(drawer).toHaveCount(0, { timeout: 15_000 });
+
+    // Único jeito hoje de chegar a "nenhum principal" (rota de arquivar pela ficha é pendência
+    // separada, OP-04) — desmarca via SQL direto, igual ao molde de
+    // `localizaciones-fase2-principal-tipo.integration.e2e.ts` (5.8), agora com o engine ABAC ligado.
+    psql(`UPDATE patient_addresses SET is_default = false WHERE patient_id = '${patientId}'`);
+    await page.reload();
+    await abrirTabServicioContratado(page, patientId);
+    const card = page.getByTestId('localizacoes-card');
+    await expect(card.getByTestId('address-no-principal-warning')).toContainText('Sin principal', { timeout: 20_000 });
+
+    testInfo.annotations.push({ type: 'evidência', description: `aviso Sin principal renderizado para patient ${patientId} (engine ABAC ligado)` });
+    await expect(card).toHaveScreenshot('localizaciones-abac-sin-principal.png', { maxDiffPixelRatio: 0.05 });
   });
 });
