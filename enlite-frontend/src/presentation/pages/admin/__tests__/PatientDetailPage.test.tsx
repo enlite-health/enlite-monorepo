@@ -198,6 +198,18 @@ describe('PatientDetailPage', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Santiago Claiman');
   });
 
+  // gate `revisao-pr` (frontend-quality, branches 100%): a fixture passou a fixar
+  // `externalContacts: []` explícito (spec 018 PR-3, D113 — `[]` ≠ `null`/ausência de célula),
+  // e nenhum teste aqui restava exercitando `patient.externalContacts ?? []` com o valor
+  // AUSENTE na resposta (backend antigo / payload sem o campo). Sem isto, o ramo `??` da
+  // linha fica descoberto.
+  it('sem `externalContacts` na resposta (undefined), a Rede de Apoio ainda renderiza (fallback `?? []`)', () => {
+    detail.patient = { ...(detail.patient as object), externalContacts: undefined };
+    render(<PatientDetailPage />);
+    fireEvent.click(screen.getByText('Rede de Apoio'));
+    expect(screen.getByTestId('external-contacts-card')).toBeInTheDocument();
+  });
+
   // lex 06/09 (C1): o nome virou nó de PÁGINA, fora do cartão. A máscara não pode depender de
   // regra do dashboard do Clarity — que é remota e muda sem PR. Trava no DOM.
   it('o h1 com o nome do paciente está dentro de data-clarity-mask="True"', () => {
