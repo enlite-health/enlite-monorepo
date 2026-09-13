@@ -44,8 +44,8 @@ describe('PatientCoverageEmergencyContactRepository (417, D301)', () => {
       expect(await repo.getKind(PID, 'c1', semLinha)).toBeNull();
 
       // Sem executor: usa o pool do repositório.
-      mockPoolQuery.mockResolvedValue({ rows: [{ kind: 'AMBULANCE' }] });
-      expect(await repo.getKind(PID, 'c1')).toBe('AMBULANCE');
+      mockPoolQuery.mockResolvedValue({ rows: [{ kind: 'PRIVATE_AMBULANCE' }] });
+      expect(await repo.getKind(PID, 'c1')).toBe('PRIVATE_AMBULANCE');
     });
   });
 
@@ -77,7 +77,7 @@ describe('PatientCoverageEmergencyContactRepository (417, D301)', () => {
         query: jest.fn().mockResolvedValue({ rows: [{ count: 20 }] }),
       } as unknown as PoolClient;
       await expect(
-        repo.insertOne(PID, { kind: 'AMBULANCE', name: 'Ambulancia 21', phone: '0800' }, 'uid-staff', client),
+        repo.insertOne(PID, { kind: 'PRIVATE_AMBULANCE', name: 'Ambulancia 21', phone: '0800' }, 'uid-staff', client),
       ).rejects.toBeInstanceOf(CoverageEmergencyContactLimitReachedError);
       expect((client.query as jest.Mock).mock.calls).toHaveLength(1); // só a contagem — nunca chegou no INSERT
 
@@ -85,7 +85,7 @@ describe('PatientCoverageEmergencyContactRepository (417, D301)', () => {
         query: jest.fn().mockResolvedValue({ rows: [{ count: 20 }] }),
       } as unknown as PoolClient;
       await expect(
-        repo.insertOne(PID, { kind: 'AMBULANCE', name: 'Ambulancia 21', phone: '0800' }, 'uid-staff', client2),
+        repo.insertOne(PID, { kind: 'PRIVATE_AMBULANCE', name: 'Ambulancia 21', phone: '0800' }, 'uid-staff', client2),
       ).rejects.toMatchObject({ code: 'COVERAGE_EMERGENCY_CONTACTS_LIMIT_REACHED' });
     });
 
@@ -122,10 +122,10 @@ describe('PatientCoverageEmergencyContactRepository (417, D301)', () => {
 
     it('updateOne: `kind` e `name` também viram SET, cada um no seu branch', async () => {
       const client = { query: jest.fn().mockResolvedValue({ rows: [{ id: 'c1' }] }) } as unknown as PoolClient;
-      await repo.updateOne(PID, 'c1', { kind: 'EMERGENCY_CENTER', name: ' Central Nueva ' }, client);
+      await repo.updateOne(PID, 'c1', { kind: 'PUBLIC_EMERGENCY_SERVICE', name: ' Central Nueva ' }, client);
       const [sql, params] = (client.query as jest.Mock).mock.calls[0] as [string, unknown[]];
       expect(sql).toMatch(/SET kind = \$3, name = \$4, updated_at = NOW\(\)/);
-      expect(params).toEqual([PID, 'c1', 'EMERGENCY_CENTER', 'Central Nueva']);
+      expect(params).toEqual([PID, 'c1', 'PUBLIC_EMERGENCY_SERVICE', 'Central Nueva']);
     });
 
     it('updateOne: linha de outro paciente, inexistente OU já desativada por outra aba (task 1.10 alt 2) → null (o controller decide 404); a query leva `AND active`', async () => {
@@ -158,7 +158,7 @@ describe('PatientCoverageEmergencyContactRepository (417, D301)', () => {
 
   describe('leitura', () => {
     const rows: CoverageEmergencyContactRow[] = [
-      { id: 'c1', kind: 'EMERGENCY_CENTER', name: 'Central', phone_encrypted: 'enc-1', sort_order: 0 },
+      { id: 'c1', kind: 'PUBLIC_EMERGENCY_SERVICE', name: 'Central', phone_encrypted: 'enc-1', sort_order: 0 },
       { id: 'c2', kind: 'DIRECT_PROFESSIONAL', name: 'Dr. X', phone_encrypted: 'enc-2', sort_order: 1 },
     ];
 
@@ -172,12 +172,12 @@ describe('PatientCoverageEmergencyContactRepository (417, D301)', () => {
     });
 
     it('decryptRows: decifra CADA telefone e mapeia para o detalhe; ciphertext vazio vira ""', async () => {
-      const out = await repo.decryptRows([...rows, { id: 'c3', kind: 'AMBULANCE' as const, name: 'A', phone_encrypted: '', sort_order: 2 }]);
+      const out = await repo.decryptRows([...rows, { id: 'c3', kind: 'PRIVATE_AMBULANCE' as const, name: 'A', phone_encrypted: '', sort_order: 2 }]);
       expect(mockDecrypt.mock.calls.map((c) => c[0])).toEqual(['enc-1', 'enc-2', '']);
       expect(out).toEqual([
-        { id: 'c1', kind: 'EMERGENCY_CENTER', name: 'Central', phone: 'dec(enc-1)', sortOrder: 0 },
+        { id: 'c1', kind: 'PUBLIC_EMERGENCY_SERVICE', name: 'Central', phone: 'dec(enc-1)', sortOrder: 0 },
         { id: 'c2', kind: 'DIRECT_PROFESSIONAL', name: 'Dr. X', phone: 'dec(enc-2)', sortOrder: 1 },
-        { id: 'c3', kind: 'AMBULANCE', name: 'A', phone: '', sortOrder: 2 },
+        { id: 'c3', kind: 'PRIVATE_AMBULANCE', name: 'A', phone: '', sortOrder: 2 },
       ]);
     });
 
@@ -186,7 +186,7 @@ describe('PatientCoverageEmergencyContactRepository (417, D301)', () => {
       const out = await repo.listForPatient(PID, executor);
       expect((executor.query as jest.Mock)).toHaveBeenCalledTimes(1);
       expect(mockPoolQuery).not.toHaveBeenCalled();
-      expect(out).toEqual([{ id: 'c1', kind: 'EMERGENCY_CENTER', name: 'Central', phone: 'dec(enc-1)', sortOrder: 0 }]);
+      expect(out).toEqual([{ id: 'c1', kind: 'PUBLIC_EMERGENCY_SERVICE', name: 'Central', phone: 'dec(enc-1)', sortOrder: 0 }]);
       // Sem executor: o pool do repositório.
       mockPoolQuery.mockResolvedValue({ rows: [rows[1]] });
       expect(await repo.listForPatient(PID)).toEqual([{ id: 'c2', kind: 'DIRECT_PROFESSIONAL', name: 'Dr. X', phone: 'dec(enc-2)', sortOrder: 1 }]);

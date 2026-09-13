@@ -105,7 +105,7 @@ describe('PatientCoverageEditDrawer', () => {
   it('417/PR-1 (spec 018, ADR-1) — contatos de emergência da cobertura: abre com os atuais; editar chama update SÓ daquela linha; adicionar chama create (sem `emergencyContacts` na seção coverage); sem mexer, nenhuma chamada de contato', async () => {
     const onSaved = vi.fn();
     // O marcador `false` (lê cobertura E equipe) é o que libera o tipo "Profissional direto" no select.
-    const comContatos = { ...patient, coverageEmergencyContacts: [{ id: 'c1', kind: 'AMBULANCE' as const, name: 'Ambulancia OSDE', phone: '0800-1', sortOrder: 0 }], coverageDirectProfessionalRedacted: false };
+    const comContatos = { ...patient, coverageEmergencyContacts: [{ id: 'c1', kind: 'PRIVATE_AMBULANCE' as const, name: 'Ambulancia OSDE', phone: '0800-1', sortOrder: 0 }], coverageDirectProfessionalRedacted: false };
     render(<PatientCoverageEditDrawer patient={comContatos} onClose={vi.fn()} onSaved={onSaved} />);
     expect(screen.getByTestId('pcv-contact-name-0')).toHaveValue('Ambulancia OSDE');
     expect(screen.getByTestId('pcv-contact-phone-0')).toHaveValue('0800-1');
@@ -134,11 +134,11 @@ describe('PatientCoverageEditDrawer', () => {
 
   it('417/PR-1 — editar o telefone de uma linha existente chama updateCoverageEmergencyContact(patientId, id, patch) — só aquela linha', async () => {
     const onSaved = vi.fn();
-    const comContatos = { ...patient, coverageEmergencyContacts: [{ id: 'c1', kind: 'AMBULANCE' as const, name: 'Ambulancia OSDE', phone: '0800-1', sortOrder: 0 }] };
+    const comContatos = { ...patient, coverageEmergencyContacts: [{ id: 'c1', kind: 'PRIVATE_AMBULANCE' as const, name: 'Ambulancia OSDE', phone: '0800-1', sortOrder: 0 }] };
     render(<PatientCoverageEditDrawer patient={comContatos} onClose={vi.fn()} onSaved={onSaved} />);
     fireEvent.change(screen.getByTestId('pcv-contact-phone-0'), { target: { value: '0800-2' } });
     fireEvent.click(screen.getByTestId('pcv-save'));
-    await waitFor(() => expect(updateCoverageEmergencyContact).toHaveBeenCalledWith(patient.id, 'c1', { kind: 'AMBULANCE', name: 'Ambulancia OSDE', phone: '0800-2' }));
+    await waitFor(() => expect(updateCoverageEmergencyContact).toHaveBeenCalledWith(patient.id, 'c1', { kind: 'PRIVATE_AMBULANCE', name: 'Ambulancia OSDE', phone: '0800-2' }));
     expect(createCoverageEmergencyContact).not.toHaveBeenCalled();
     expect(deactivateCoverageEmergencyContact).not.toHaveBeenCalled();
   });
@@ -152,8 +152,8 @@ describe('PatientCoverageEditDrawer', () => {
     const duasLinhas = {
       ...patient,
       coverageEmergencyContacts: [
-        { id: 'c1', kind: 'AMBULANCE' as const, name: 'Ambulancia OSDE', phone: '0800-1', sortOrder: 0 },
-        { id: 'c2', kind: 'EMERGENCY_CENTER' as const, name: 'Central Vieja', phone: '0800-9', sortOrder: 1 },
+        { id: 'c1', kind: 'PRIVATE_AMBULANCE' as const, name: 'Ambulancia OSDE', phone: '0800-1', sortOrder: 0 },
+        { id: 'c2', kind: 'PUBLIC_EMERGENCY_SERVICE' as const, name: 'Central Vieja', phone: '0800-9', sortOrder: 1 },
       ],
     };
     updateCoverageEmergencyContact.mockReset().mockResolvedValueOnce({ id: 'c1' }).mockRejectedValueOnce(new Error('boom'));
@@ -242,8 +242,8 @@ describe('PatientCoverageEditDrawer', () => {
 
   it('417/PR-1 — apagar um contato EXISTENTE chama deactivateCoverageEmergencyContact(patientId, id) — a outra linha nem é chamada; Escape com a lista mexida pede confirmação', async () => {
     const comContatos = { ...patient, coverageEmergencyContacts: [
-      { id: 'c1', kind: 'AMBULANCE' as const, name: 'Ambulancia', phone: '0800', sortOrder: 0 },
-      { id: 'c2', kind: 'EMERGENCY_CENTER' as const, name: 'Central', phone: '107', sortOrder: 1 },
+      { id: 'c1', kind: 'PRIVATE_AMBULANCE' as const, name: 'Ambulancia', phone: '0800', sortOrder: 0 },
+      { id: 'c2', kind: 'PUBLIC_EMERGENCY_SERVICE' as const, name: 'Central', phone: '107', sortOrder: 1 },
     ] };
     render(<PatientCoverageEditDrawer patient={comContatos} onClose={vi.fn()} onSaved={vi.fn()} />);
     fireEvent.click(screen.getByTestId('pcv-contact-remove-0'));
@@ -257,7 +257,7 @@ describe('PatientCoverageEditDrawer', () => {
   });
 
   it('417/PR-1 — remover uma linha NOVA (ainda sem id) não chama deactivate; ela só some do formulário', async () => {
-    const comContatos = { ...patient, coverageEmergencyContacts: [{ id: 'c1', kind: 'AMBULANCE' as const, name: 'Ambulancia', phone: '0800', sortOrder: 0 }] };
+    const comContatos = { ...patient, coverageEmergencyContacts: [{ id: 'c1', kind: 'PRIVATE_AMBULANCE' as const, name: 'Ambulancia', phone: '0800', sortOrder: 0 }] };
     render(<PatientCoverageEditDrawer patient={comContatos} onClose={vi.fn()} onSaved={vi.fn()} />);
     fireEvent.click(screen.getByTestId('pcv-contact-add'));
     fireEvent.click(screen.getByTestId('pcv-contact-remove-1'));

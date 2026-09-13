@@ -72,6 +72,8 @@ const CASCADE_CHILDREN = [
   'patient_therapeutic_projects',
   // 417 (D301): contatos de emergência da cobertura — filha direta, ON DELETE CASCADE.
   'patient_coverage_emergency_contacts',
+  // 422 (spec 018, PR-2): contatos externos sem vínculo familiar — filha direta, ON DELETE CASCADE.
+  'patient_external_contacts',
 ] as const;
 
 interface AppointmentRow {

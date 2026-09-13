@@ -80,11 +80,11 @@ describe('CoberturaMedicaCard — drawer', () => {
 describe('CoberturaMedicaCard — contatos de emergência da cobertura (417, D301.3b)', () => {
   it('lista tipo traduzido, nome e telefone com o BLOCO mascarado para o Clarity (lex C2.1); sem contatos ou sem célula (`null`) mostra "—"', () => {
     const { unmount } = render(<CoberturaMedicaCard patient={{ ...patientDetailFixture, coverageEmergencyContacts: [
-      { id: 'c1', kind: 'AMBULANCE', name: 'Ambulancia OSDE', phone: '0800-1', sortOrder: 0 },
+      { id: 'c1', kind: 'PRIVATE_AMBULANCE', name: 'Ambulancia OSDE', phone: '0800-1', sortOrder: 0 },
       { id: 'c2', kind: 'DIRECT_PROFESSIONAL', name: 'Dra. Pérez', phone: '11-5555', sortOrder: 1 },
     ] }} />);
     const row = screen.getByTestId('coverage-emergency-contacts');
-    expect(row).toHaveTextContent(`${t('admin.patients.detail.coverageCard.emergencyContactKinds.AMBULANCE')}: Ambulancia OSDE · 0800-1`);
+    expect(row).toHaveTextContent(`${t('admin.patients.detail.coverageCard.emergencyContactKinds.PRIVATE_AMBULANCE')}: Ambulancia OSDE · 0800-1`);
     expect(row).toHaveTextContent(`${t('admin.patients.detail.coverageCard.emergencyContactKinds.DIRECT_PROFESSIONAL')}: Dra. Pérez · 11-5555`);
     const bloco = row.querySelector('[data-clarity-mask="True"]') as HTMLElement;
     expect(bloco).not.toBeNull();
@@ -97,7 +97,7 @@ describe('CoberturaMedicaCard — contatos de emergência da cobertura (417, D30
 
   it('lex C3 / D167 — profissional retido: aviso junto da lista; leitura indisponível: aviso âmbar, nunca "—"', () => {
     const { unmount } = render(<CoberturaMedicaCard patient={{ ...patientDetailFixture, coverageEmergencyContacts: [
-      { id: 'c1', kind: 'AMBULANCE', name: 'Ambulancia OSDE', phone: '0800-1', sortOrder: 0 },
+      { id: 'c1', kind: 'PRIVATE_AMBULANCE', name: 'Ambulancia OSDE', phone: '0800-1', sortOrder: 0 },
     ], coverageDirectProfessionalRedacted: true }} />);
     expect(screen.getByTestId('coverage-direct-professional-redacted')).toHaveTextContent(t('admin.patients.detail.coverageCard.directProfessionalRedacted'));
     expect(screen.getByTestId('coverage-emergency-contacts')).toHaveTextContent('Ambulancia OSDE');

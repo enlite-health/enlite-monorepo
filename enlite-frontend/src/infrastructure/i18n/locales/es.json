@@ -3317,8 +3317,9 @@
           "emergencyContacts": "Emergencia de la cobertura médica",
           "emergencyContactKinds": {
             "DIRECT_PROFESSIONAL": "Profesional directo",
-            "AMBULANCE": "Ambulancia",
-            "EMERGENCY_CENTER": "Central de emergencias"
+            "PUBLIC_EMERGENCY_SERVICE": "Emergencias públicas (SAME 107)",
+            "PRIVATE_AMBULANCE": "Ambulancia privada",
+            "INSURANCE_EMERGENCY": "Emergencias de la cobertura/plan"
           },
           "emergencyContactsUnavailable": "No disponible ahora — recargá la ficha o avisá a soporte.",
           "directProfessionalRedacted": "Profesional directo: no visible con tu permiso (hace falta la celda del equipo tratante)."
@@ -3462,7 +3463,13 @@
           "GUARDIAN": "Tutor/a",
           "FRIEND": "Amigo/a",
           "PARTNER": "Pareja",
-          "OTHER": "Otro"
+          "OTHER": "Otro",
+          "GRANDPARENT": "Abuelo/a",
+          "UNCLE_AUNT": "Tío/a",
+          "COUSIN": "Primo/a",
+          "IN_LAW": "Familiar político",
+          "STEP_RELATIVE": "Familiar por afinidad",
+          "RESPONSIBLE_PERSON": "Persona responsable"
         },
         "addressDrawer": {
           "createTitle": "Nueva localización",

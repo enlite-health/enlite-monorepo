@@ -184,6 +184,9 @@ BEGIN
   -- já era plaintext (só phone/email viraram `*_encrypted` na 071). Tabela inteira revogada no
   -- MESMO commit da migration 427 (achado do gate: `GRANT SELECT ON ALL TABLES IN SCHEMA public`
   -- do topo deste script cobria `patient_professionals` por omissão até aqui).
+  -- 422 (spec 018, PR-2, Emenda 12/09-B): patient_external_contacts tem nome+telefone de terceiro
+  -- sem vínculo familiar (professor, escola, vizinho, empregador, gestor de caso, referente
+  -- comunitário) — sem coluna segura, revogada inteira no MESMO commit que a cria.
   FOR alvo IN SELECT unnest(ARRAY[
     'patient_insurance_verified',
     'patient_device_types',
@@ -193,6 +196,7 @@ BEGIN
     'patient_therapeutic_projects',
     'patient_coverage_emergency_contacts',
     'patient_professionals',
+    'patient_external_contacts',
     'therapeutic_specific_objectives',
     'therapeutic_activities',
     'pathology_types'
@@ -212,7 +216,7 @@ BEGIN
                                   'patient_addresses','patient_contracted_services','contracted_service_providers',
                                   'contracted_service_devices','service_types',
                                   'patient_therapeutic_projects','patient_coverage_emergency_contacts',
-                                  'patient_professionals',
+                                  'patient_professionals','patient_external_contacts',
                                   'therapeutic_specific_objectives','therapeutic_activities','pathology_types']) AS tabela LOOP
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=alvo.tabela)
        AND has_table_privilege('enlite_mcp_ro', format('public.%I', alvo.tabela), 'SELECT') THEN

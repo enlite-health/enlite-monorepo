@@ -22,7 +22,10 @@ describe('patientEnums (spec 012)', () => {
     expect([...ON_HOLD_REASONS]).toEqual(['SCHOOL', 'INSURER', 'OTHER']);
     expect([...ADMISSION_STATUSES]).toEqual(['SOLICITANTE', 'ADMISSION', 'PENDING_ADMISSION', 'DONE']);
     expect([...DEVICE_TYPE_CODES]).toEqual(['HOME', 'SCHOOL', 'INSTITUTIONAL', 'INPATIENT', 'TRANSPORT']);
-    expect([...RELATIONSHIP_CODES]).toEqual(['CHILD', 'PARENT', 'SIBLING', 'NEPHEW', 'GRANDCHILD', 'GUARDIAN', 'FRIEND', 'PARTNER', 'OTHER']);
+    expect([...RELATIONSHIP_CODES]).toEqual([
+      'CHILD', 'PARENT', 'SIBLING', 'NEPHEW', 'GRANDCHILD', 'GUARDIAN', 'FRIEND', 'PARTNER', 'OTHER',
+      'GRANDPARENT', 'UNCLE_AUNT', 'COUSIN', 'IN_LAW', 'STEP_RELATIVE', 'RESPONSIBLE_PERSON',
+    ]); // ampliado na migration 421 (spec 018, PR-2, SUP-16)
   });
 
   it('os 33 códigos de cobertura do contrato 001 (§Enums canônicos), sem duplicata', () => {

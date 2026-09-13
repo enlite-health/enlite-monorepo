@@ -318,12 +318,12 @@ describe('responsáveis e equipe tratante', () => {
     const p = paciente({
       contractedServices: [SERVICO],
       coverageEmergencyContacts: [
-        { id: 'c1', kind: 'AMBULANCE', name: 'Ambulancia X', phone: '0800-1', sortOrder: 0 },
+        { id: 'c1', kind: 'PRIVATE_AMBULANCE', name: 'Ambulancia X', phone: '0800-1', sortOrder: 0 },
         { id: 'c2', kind: 'DIRECT_PROFESSIONAL', name: 'Dra. Pérez', phone: '11-2', sortOrder: 1 },
       ],
     });
     expect(montar({ patient: p }).coverageEmergencyContacts).toEqual([
-      { kindLabel: 'es:admin.patients.detail.coverageCard.emergencyContactKinds.AMBULANCE', name: 'Ambulancia X', phone: '0800-1' },
+      { kindLabel: 'es:admin.patients.detail.coverageCard.emergencyContactKinds.PRIVATE_AMBULANCE', name: 'Ambulancia X', phone: '0800-1' },
       { kindLabel: 'es:admin.patients.detail.coverageCard.emergencyContactKinds.DIRECT_PROFESSIONAL', name: 'Dra. Pérez', phone: '11-2' },
     ]);
     // A célula que manda é a de COBERTURA: sem família o bloco continua; sem cobertura ele some.

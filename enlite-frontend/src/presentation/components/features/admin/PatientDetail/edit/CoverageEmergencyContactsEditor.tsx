@@ -40,7 +40,7 @@ export function CoverageEmergencyContactsEditor({ value, onChange, disabled = fa
   const update = (i: number, patch: Partial<EditableCoverageEmergencyContact>): void =>
     onChange(value.map((c, j) => (j === i ? { ...c, ...patch } : c)));
   const remove = (i: number): void => onChange(value.filter((_, j) => j !== i));
-  const add = (): void => onChange([...value, { id: '', kind: 'AMBULANCE', name: '', phone: '' }]);
+  const add = (): void => onChange([...value, { id: '', kind: 'INSURANCE_EMERGENCY', name: '', phone: '' }]);
 
   const kindOptions = COVERAGE_EMERGENCY_CONTACT_KINDS
     .filter((k) => allowDirectProfessional || k !== 'DIRECT_PROFESSIONAL')

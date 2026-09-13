@@ -286,11 +286,11 @@ describe('AdminPatientContactRowsController', () => {
       expect(res.status).not.toHaveBeenCalledWith(403);
     });
 
-    it('AMBULANCE não exige patient_care_team:read', async () => {
+    it('PRIVATE_AMBULANCE não exige patient_care_team:read', async () => {
       const repo = { insertOne: jest.fn().mockResolvedValue({ id: CONTACT_ID }) };
       const controller = new AdminPatientContactRowsController({} as never, repo as never, db() as never, {} as never);
       const res = mockRes();
-      const req = mockReq({ params: { id: PATIENT_ID }, body: { kind: 'AMBULANCE', name: 'A', phone: '1' }, permissionCells: ['patient_coverage:write'] });
+      const req = mockReq({ params: { id: PATIENT_ID }, body: { kind: 'PRIVATE_AMBULANCE', name: 'A', phone: '1' }, permissionCells: ['patient_coverage:write'] });
       await controller.createCoverageEmergencyContact(req, res);
       expect(res.status).toHaveBeenCalledWith(201);
     });
@@ -299,7 +299,7 @@ describe('AdminPatientContactRowsController', () => {
       const repo = { insertOne: jest.fn().mockRejectedValue(new CoverageEmergencyContactLimitReachedError()) };
       const controller = new AdminPatientContactRowsController({} as never, repo as never, db() as never, {} as never);
       const res = mockRes();
-      await controller.createCoverageEmergencyContact(mockReq({ params: { id: PATIENT_ID }, body: { kind: 'AMBULANCE', name: 'A', phone: '1' } }), res);
+      await controller.createCoverageEmergencyContact(mockReq({ params: { id: PATIENT_ID }, body: { kind: 'PRIVATE_AMBULANCE', name: 'A', phone: '1' } }), res);
       expect(res.status).toHaveBeenCalledWith(409);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, code: 'COVERAGE_EMERGENCY_CONTACTS_LIMIT_REACHED' }));
     });
@@ -309,7 +309,7 @@ describe('AdminPatientContactRowsController', () => {
       const pool = { query: jest.fn().mockResolvedValue({ rows: [] }) };
       const controller = new AdminPatientContactRowsController({} as never, repo as never, pool as never, {} as never);
       const res = mockRes();
-      await controller.createCoverageEmergencyContact(mockReq({ params: { id: PATIENT_ID }, body: { kind: 'AMBULANCE', name: 'A', phone: '1' } }), res);
+      await controller.createCoverageEmergencyContact(mockReq({ params: { id: PATIENT_ID }, body: { kind: 'PRIVATE_AMBULANCE', name: 'A', phone: '1' } }), res);
       expect(res.status).toHaveBeenCalledWith(404);
       expect(repo.insertOne).not.toHaveBeenCalled();
     });
@@ -321,7 +321,7 @@ describe('AdminPatientContactRowsController', () => {
       const repo = { insertOne: jest.fn().mockRejectedValue(rejeicao) };
       const controller = new AdminPatientContactRowsController({} as never, repo as never, db() as never, {} as never);
       const res = mockRes();
-      await controller.createCoverageEmergencyContact(mockReq({ params: { id: PATIENT_ID }, body: { kind: 'AMBULANCE', name: 'A', phone: '1' } }), res);
+      await controller.createCoverageEmergencyContact(mockReq({ params: { id: PATIENT_ID }, body: { kind: 'PRIVATE_AMBULANCE', name: 'A', phone: '1' } }), res);
       expect(res.status).toHaveBeenCalledWith(500);
     });
   });
@@ -347,11 +347,11 @@ describe('AdminPatientContactRowsController', () => {
       expect(res.status).toHaveBeenCalledWith(200);
     });
 
-    it('BYPASS DE CÉLULA — corpo traz kind=AMBULANCE mas a linha ATUAL é DIRECT_PROFESSIONAL: o `??` não pode curto-circuitar o kind de ORIGEM; 403, updateOne NÃO chamado', async () => {
+    it('BYPASS DE CÉLULA — corpo traz kind=PRIVATE_AMBULANCE mas a linha ATUAL é DIRECT_PROFESSIONAL: o `??` não pode curto-circuitar o kind de ORIGEM; 403, updateOne NÃO chamado', async () => {
       const repo = { getKind: jest.fn().mockResolvedValue('DIRECT_PROFESSIONAL'), updateOne: jest.fn().mockResolvedValue({ id: CONTACT_ID }) };
       const controller = new AdminPatientContactRowsController({} as never, repo as never, db() as never, {} as never);
       const res = mockRes();
-      const req = mockReq({ params: { id: PATIENT_ID, cid: CONTACT_ID }, body: { kind: 'AMBULANCE' }, permissionCells: ['patient_coverage:write'] });
+      const req = mockReq({ params: { id: PATIENT_ID, cid: CONTACT_ID }, body: { kind: 'PRIVATE_AMBULANCE' }, permissionCells: ['patient_coverage:write'] });
       await controller.updateCoverageEmergencyContact(req, res);
       expect(res.status).toHaveBeenCalledWith(403);
       expect(repo.updateOne).not.toHaveBeenCalled();
@@ -368,18 +368,18 @@ describe('AdminPatientContactRowsController', () => {
       expect(repo.updateOne).not.toHaveBeenCalled();
     });
 
-    it('corpo traz kind=AMBULANCE e a linha ATUAL também é AMBULANCE: sem a célula da equipe, passa — e agora getKind É chamado (checa a origem mesmo com kind no corpo)', async () => {
-      const repo = { getKind: jest.fn().mockResolvedValue('AMBULANCE'), updateOne: jest.fn().mockResolvedValue({ id: CONTACT_ID }) };
+    it('corpo traz kind=PRIVATE_AMBULANCE e a linha ATUAL também é PRIVATE_AMBULANCE: sem a célula da equipe, passa — e agora getKind É chamado (checa a origem mesmo com kind no corpo)', async () => {
+      const repo = { getKind: jest.fn().mockResolvedValue('PRIVATE_AMBULANCE'), updateOne: jest.fn().mockResolvedValue({ id: CONTACT_ID }) };
       const controller = new AdminPatientContactRowsController({} as never, repo as never, db() as never, {} as never);
       const res = mockRes();
-      const req = mockReq({ params: { id: PATIENT_ID, cid: CONTACT_ID }, body: { kind: 'AMBULANCE' }, permissionCells: ['patient_coverage:write'] });
+      const req = mockReq({ params: { id: PATIENT_ID, cid: CONTACT_ID }, body: { kind: 'PRIVATE_AMBULANCE' }, permissionCells: ['patient_coverage:write'] });
       await controller.updateCoverageEmergencyContact(req, res);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(repo.getKind).toHaveBeenCalledWith(PATIENT_ID, CONTACT_ID);
     });
 
     it('404 quando updateOne devolve null', async () => {
-      const repo = { getKind: jest.fn().mockResolvedValue('AMBULANCE'), updateOne: jest.fn().mockResolvedValue(null) };
+      const repo = { getKind: jest.fn().mockResolvedValue('PRIVATE_AMBULANCE'), updateOne: jest.fn().mockResolvedValue(null) };
       const controller = new AdminPatientContactRowsController({} as never, repo as never, db() as never, {} as never);
       const res = mockRes();
       await controller.updateCoverageEmergencyContact(mockReq({ params: { id: PATIENT_ID, cid: CONTACT_ID }, body: { name: 'x' } }), res);
@@ -415,7 +415,7 @@ describe('AdminPatientContactRowsController', () => {
       ['é uma Error de verdade', new Error('boom')],
       ['NÃO é uma Error (rejeição crua)', 'boom-nao-e-Error'],
     ])('500 em erro inesperado do repositório — quando a rejeição %s', async (_desc, rejeicao) => {
-      const repo = { getKind: jest.fn().mockResolvedValue('AMBULANCE'), updateOne: jest.fn().mockRejectedValue(rejeicao) };
+      const repo = { getKind: jest.fn().mockResolvedValue('PRIVATE_AMBULANCE'), updateOne: jest.fn().mockRejectedValue(rejeicao) };
       const controller = new AdminPatientContactRowsController({} as never, repo as never, db() as never, {} as never);
       const res = mockRes();
       await controller.updateCoverageEmergencyContact(mockReq({ params: { id: PATIENT_ID, cid: CONTACT_ID }, body: { name: 'x' } }), res);
@@ -447,7 +447,7 @@ describe('AdminPatientContactRowsController', () => {
         ['already_inactive', 409],
       ] as const;
       for (const [outcome, status] of casos) {
-        const repo = { getKind: jest.fn().mockResolvedValue('AMBULANCE'), deactivate: jest.fn().mockResolvedValue({ outcome }) };
+        const repo = { getKind: jest.fn().mockResolvedValue('PRIVATE_AMBULANCE'), deactivate: jest.fn().mockResolvedValue({ outcome }) };
         const controller = new AdminPatientContactRowsController({} as never, repo as never, db() as never, {} as never);
         const res = mockRes();
         await controller.deactivateCoverageEmergencyContact(mockReq({ params: { id: PATIENT_ID, cid: CONTACT_ID } }), res);
@@ -461,7 +461,7 @@ describe('AdminPatientContactRowsController', () => {
       await controllerNula.deactivateCoverageEmergencyContact(mockReq({ params: { id: PATIENT_ID, cid: CONTACT_ID } }), resNula);
       expect(resNula.status).toHaveBeenCalledWith(404);
 
-      const repoOk = { getKind: jest.fn().mockResolvedValue('AMBULANCE'), deactivate: jest.fn().mockResolvedValue({ outcome: 'deactivated', id: CONTACT_ID }) };
+      const repoOk = { getKind: jest.fn().mockResolvedValue('PRIVATE_AMBULANCE'), deactivate: jest.fn().mockResolvedValue({ outcome: 'deactivated', id: CONTACT_ID }) };
       const controllerOk = new AdminPatientContactRowsController({} as never, repoOk as never, db() as never, {} as never);
       const resOk = mockRes();
       await controllerOk.deactivateCoverageEmergencyContact(mockReq({ params: { id: PATIENT_ID, cid: CONTACT_ID } }), resOk);
@@ -473,7 +473,7 @@ describe('AdminPatientContactRowsController', () => {
       ['é uma Error de verdade', new Error('boom')],
       ['NÃO é uma Error (rejeição crua)', 'boom-nao-e-Error'],
     ])('500 em erro inesperado — quando a rejeição %s', async (_desc, rejeicao) => {
-      const repo = { getKind: jest.fn().mockResolvedValue('AMBULANCE'), deactivate: jest.fn().mockRejectedValue(rejeicao) };
+      const repo = { getKind: jest.fn().mockResolvedValue('PRIVATE_AMBULANCE'), deactivate: jest.fn().mockRejectedValue(rejeicao) };
       const controller = new AdminPatientContactRowsController({} as never, repo as never, db() as never, {} as never);
       const res = mockRes();
       await controller.deactivateCoverageEmergencyContact(mockReq({ params: { id: PATIENT_ID, cid: CONTACT_ID } }), res);
