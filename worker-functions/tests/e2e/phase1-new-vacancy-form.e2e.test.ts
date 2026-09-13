@@ -52,11 +52,16 @@ describe('Phase1 — New Vacancy Form', () => {
   }
 
   async function seedPatientAddress(patientId: string, addressType = 'primary'): Promise<string> {
+    // Spec 019 (B4/migration 433): quem manda no principal é `is_default`, não
+    // `address_type='primary'` — a leitura (`PatientDetailQueryHelper.isPrimary`) já usa a
+    // coluna nova. Sem isto o seed marcava `address_type` mas nascia `is_default=false`, e
+    // `1.2 › addresses have isPrimary field` recebia `false` (achado F2 do run 34731108498).
+    const isDefault = addressType === 'primary';
     const result = await pool.query<{ id: string }>(
-      `INSERT INTO patient_addresses (patient_id, address_formatted, address_type, source)
-       VALUES ($1, $2, $3, 'admin_manual')
+      `INSERT INTO patient_addresses (patient_id, address_formatted, address_type, is_default, source)
+       VALUES ($1, $2, $3, $4, 'admin_manual')
        RETURNING id`,
-      [patientId, `Av. Test ${randomUUID().slice(0, 8)}, CABA`, addressType],
+      [patientId, `Av. Test ${randomUUID().slice(0, 8)}, CABA`, addressType, isDefault],
     );
     return result.rows[0]!.id;
   }
