@@ -96,8 +96,11 @@ export class TherapeuticProjectContactsRepository {
     }
 
     // Reordena pela `sort_order` original (redigidos + resolvidos foram empilhados em ordens distintas).
+    // Invariante: todo `contacts.push` acima usa `kind`/`id` tirados de UMA linha de `links.rows`
+    // (o mesmo `refId` que monta a chave aqui) — a chave SEMPRE existe no mapa; `!` documenta isso
+    // em vez de um `?? 0` que nenhum teste alcançaria (ramo morto).
     const orderById = new Map(links.rows.map((r, i) => [`${r.contact_kind}:${r.responsible_id ?? r.external_contact_id ?? r.coverage_contact_id ?? r.professional_id}`, i]));
-    contacts.sort((a, b) => (orderById.get(`${a.kind}:${a.id}`) ?? 0) - (orderById.get(`${b.kind}:${b.id}`) ?? 0));
+    contacts.sort((a, b) => orderById.get(`${a.kind}:${a.id}`)! - orderById.get(`${b.kind}:${b.id}`)!);
 
     return { contacts, containersServed };
   }

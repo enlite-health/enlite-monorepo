@@ -377,6 +377,23 @@ describe('TherapeuticProjectRepository', () => {
         const corpo = { ...CORPO, careTeamIds: ['p-1'] };
         await expect(repo().createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: corpo })).rejects.toBe(boom);
       });
+
+      it('rejeição `null` na ligação (sem `.code`) passa pelo `?.` do detector sem quebrar — propaga cru', async () => {
+        const { cli } = cliente({ erroEm: { padrao: /^INSERT INTO patient_therapeutic_project_contacts/, erro: null } });
+        mockConnect.mockResolvedValue(cli);
+        const corpo = { ...CORPO, contactRefs: [{ kind: 'RESPONSIBLE' as const, id: 'r-1' }] };
+        await expect(repo().createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: corpo })).rejects.toBeNull();
+      });
+
+      it('22023 SEM `.message` (o `?? \'\'` do detector segura) não vira ContactInactiveError — propaga cru', async () => {
+        // Objeto puro, SEM protótipo de Error — `.message` é `undefined` de verdade (Error.prototype.message
+        // seria `''`, e `'' ?? ''` não exercita o fallback: precisa do `undefined` genuíno).
+        const semMensagem = { code: '22023' };
+        const { cli } = cliente({ erroEm: { padrao: /^INSERT INTO patient_therapeutic_project_contacts/, erro: semMensagem } });
+        mockConnect.mockResolvedValue(cli);
+        const corpo = { ...CORPO, contactRefs: [{ kind: 'RESPONSIBLE' as const, id: 'r-1' }] };
+        await expect(repo().createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: corpo })).rejects.toBe(semMensagem);
+      });
     });
 
     it('o tipo de patologia é DERIVADO dos CID-11 (D163/D164): capítulo por diagnóstico, distinto e ordenado — o cliente não manda nada', async () => {
