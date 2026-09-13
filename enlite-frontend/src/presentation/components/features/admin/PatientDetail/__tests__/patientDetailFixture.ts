@@ -94,6 +94,7 @@ export const patientDetailFixture: PatientDetail = {
       name: 'Dr. João Alves Pereira',
       phone: '+55 (11) 97580-1332',
       email: 'joao.pereira@clinic.com',
+      specialty: null,
       displayOrder: 1,
       isTeam: false,
     },

@@ -166,6 +166,7 @@
       "name": "Dra. Fixture Tratante",
       "phone": "",
       "email": "",
+      "specialty": null,
       "displayOrder": 1,
       "isTeam": false
     }

@@ -79,6 +79,34 @@ describe('AdminPatientContactRowsApiService', () => {
     expect(init.body).toBeUndefined();
   });
 
+  it('createProfessional: POST em /professionals, corpo = input (spec 018 PR-5)', async () => {
+    fetchMock.mockResolvedValueOnce(json({ success: true, data: { id: 'pr1' } }, 201));
+    await AdminPatientContactRowsApiService.createProfessional('p1', { name: 'Dr. X', phone: '+54', email: null, specialty: 'PHYSICIAN' });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toMatch(/\/api\/admin\/patients\/p1\/professionals$/);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ name: 'Dr. X', phone: '+54', email: null, specialty: 'PHYSICIAN' });
+  });
+
+  it('updateProfessional: PATCH em /professionals/:id, corpo = patch', async () => {
+    fetchMock.mockResolvedValueOnce(json({ success: true, data: { id: 'pr1' } }));
+    await AdminPatientContactRowsApiService.updateProfessional('p1', 'pr1', { specialty: 'NURSE' });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toMatch(/\/api\/admin\/patients\/p1\/professionals\/pr1$/);
+    expect(init.method).toBe('PATCH');
+    expect(JSON.parse(init.body)).toEqual({ specialty: 'NURSE' });
+  });
+
+  it('deactivateProfessional: POST em /professionals/:id/deactivate, sem corpo (C8 — nunca DELETE)', async () => {
+    fetchMock.mockResolvedValueOnce(json({ success: true, data: { id: 'pr1', active: false } }));
+    const result = await AdminPatientContactRowsApiService.deactivateProfessional('p1', 'pr1');
+    expect(result).toEqual({ id: 'pr1', active: false });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toMatch(/\/api\/admin\/patients\/p1\/professionals\/pr1\/deactivate$/);
+    expect(init.method).toBe('POST');
+    expect(init.body).toBeUndefined();
+  });
+
   it('sem token: getAuthHeaders não manda Authorization', async () => {
     token = null;
     fetchMock.mockResolvedValueOnce(json({ success: true, data: { id: 'r2' } }, 201));
@@ -110,4 +138,5 @@ describe('AdminPatientContactRowsApiService', () => {
     fetchMock.mockResolvedValueOnce(json({ success: false }, 404));
     await expect(AdminPatientContactRowsApiService.deactivateResponsible('p1', 'r1')).rejects.toThrow('HTTP 404');
   });
+
 });

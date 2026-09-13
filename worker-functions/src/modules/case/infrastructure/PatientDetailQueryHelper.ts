@@ -147,10 +147,13 @@ async function fetchRelated(pool: Pool, patientId: string, enc: KMSEncryptionSer
         ORDER BY display_order ASC`,
       [patientId],
     ),
+    // `AND active` (migration 420/427, spec 018 PR-5): a ficha só mostra linhas vivas — achado
+    // desta execução, a mesma classe do FR-004 que responsibles/coverage já cumprem; sem o filtro,
+    // desativar um profissional pelo painel não o tirava da tela.
     pool.query(
-      `SELECT id, name, phone_encrypted, email_encrypted, display_order, is_team
+      `SELECT id, name, phone_encrypted, email_encrypted, specialty, display_order, is_team
          FROM patient_professionals
-        WHERE patient_id = $1
+        WHERE patient_id = $1 AND active
         ORDER BY display_order ASC`,
       [patientId],
     ),
@@ -223,6 +226,7 @@ async function decryptProfessionals(
         name: pr.name,
         phone,
         email,
+        specialty: pr.specialty ?? null,
         displayOrder: pr.display_order,
         isTeam: pr.is_team ?? false,
       };

@@ -91,7 +91,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
     containers: [
       c('identity', 'patient_identity', ['read', 'write']),
       c('clinical', 'patient_clinical', ['read', 'write'], 'clinicalData'),
-      c('careTeam', 'patient_care_team', ['read'], 'clinicalData'),
+      c('careTeam', 'patient_care_team', ['read', 'write'], 'clinicalData'),
       // Spec 017: o projeto terapêutico deixa de ser placeholder — container próprio, na aba clínica.
       c('therapeuticProject', 'patient_therapeutic_project', ['read', 'write'], 'clinicalData'),
       c('family', 'patient_family', ['read', 'write'], 'supportNetwork'),

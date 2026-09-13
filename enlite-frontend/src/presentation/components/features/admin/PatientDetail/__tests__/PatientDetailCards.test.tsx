@@ -16,6 +16,18 @@ import { patientDetailFixture, patientDetailMinimal } from './patientDetailFixtu
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
 
+// ── AdminPatientContactRowsApiService mock (EquipeTratanteCard — deactivate flow, spec 018 PR-5) ──
+const mockDeactivateProfessional = vi.fn();
+const mockCreateProfessional = vi.fn();
+const mockUpdateProfessional = vi.fn();
+vi.mock('@infrastructure/http/AdminPatientContactRowsApiService', () => ({
+  AdminPatientContactRowsApiService: {
+    deactivateProfessional: (...a: unknown[]) => mockDeactivateProfessional(...a),
+    createProfessional: (...a: unknown[]) => mockCreateProfessional(...a),
+    updateProfessional: (...a: unknown[]) => mockUpdateProfessional(...a),
+  },
+}));
+
 // ── i18n mock ────────────────────────────────────────────────────────────────
 
 const translations = ptBR as Record<string, any>;
@@ -535,12 +547,140 @@ describe('EquipeTratanteCard', () => {
     expect(screen.getByText('Sem dados cadastrados')).toBeInTheDocument();
   });
 
-  // Spec 014 US-D2: o botão "Nuevo" fantasma (disabled, sem ação — não há endpoint de criar
-  // profissional nesta spec) e a busca decorativa `readOnly` SOMEM; a tabela real fica.
-  it('não tem mais o botão "Novo" fantasma nem a busca decorativa', () => {
+  // Spec 018 PR-5 (US-11): o "Nuevo" agora É real (POST /patients/:id/professionals sob
+  // patient_care_team:write) — sem `patientId` ele existe mas fica desabilitado (nunca chama a
+  // API sem paciente); a busca decorativa nunca existiu de verdade e continua fora.
+  it('sem patientId, o botão "Novo" existe mas fica desabilitado; sem busca decorativa', () => {
     render(<EquipeTratanteCard professionals={[]} />);
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.getByTestId('equipe-tratante-add')).toBeDisabled();
     expect(screen.queryByPlaceholderText('Pesquisar')).not.toBeInTheDocument();
+  });
+
+  it('renderiza a coluna Especialidad traduzida (migration 427, spec 018 PR-5)', () => {
+    render(<EquipeTratanteCard professionals={[
+      { id: 'p1', name: 'Dr. Kine', phone: null, email: null, specialty: 'PHYSIOTHERAPIST', displayOrder: 1, isTeam: false },
+    ]} />);
+    expect(screen.getByText('Fisioterapeuta')).toBeInTheDocument();
+  });
+
+  it('especialidade null renderiza travessão, nunca quebra (legado ou equipe multidisciplinar)', () => {
+    render(<EquipeTratanteCard professionals={[
+      { id: 'p1', name: 'Equipo', phone: null, email: null, specialty: null, displayOrder: 1, isTeam: true },
+    ]} />);
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+  });
+});
+
+// ── D286 (ABAC) — patient_care_team:write gateia Nuevo/lápis/desativar (spec 018 PR-5) ────────
+describe('EquipeTratanteCard — gate ABAC patient_care_team:write (spec 018 PR-5)', () => {
+  const professionals = [
+    { id: 'p1', name: 'Dr. Kine', phone: '+54 11 5555-0002', email: null, specialty: 'PHYSIOTHERAPIST' as const, displayOrder: 1, isTeam: false },
+  ];
+  const contrato = (permissions: string[]): AuthzContract => ({
+    uid: 'u-abac-test', tenantId: 't1', status: 'ACTIVE', permissions, countries: ['AR'], groups: [], features: {},
+  });
+
+  afterEach(() => {
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+  });
+
+  it('enforcement "on" SEM patient_care_team:write: Nuevo/lápis/desativar NÃO existem (D269 — escondido, não desabilitado)', () => {
+    useAdminAuthStore.setState({ authz: { ...contrato([]), enforcement: 'on' }, authzStatus: 'ready' });
+    render(<EquipeTratanteCard professionals={professionals} patientId="p1" />);
+    expect(screen.queryByTestId('equipe-tratante-add')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('equipe-tratante-edit-p1')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('equipe-tratante-deactivate-p1')).not.toBeInTheDocument();
+    // Leitura continua: a tabela em si não depende da célula de ESCRITA.
+    expect(screen.getByText('Dr. Kine')).toBeInTheDocument();
+  });
+
+  it('enforcement "on" COM patient_care_team:write: os três botões existem', () => {
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    render(<EquipeTratanteCard professionals={professionals} patientId="p1" />);
+    expect(screen.getByTestId('equipe-tratante-add')).toBeInTheDocument();
+    expect(screen.getByTestId('equipe-tratante-edit-p1')).toBeInTheDocument();
+    expect(screen.getByTestId('equipe-tratante-deactivate-p1')).toBeInTheDocument();
+  });
+
+  it('clicar em "Nuevo" abre o drawer de criação (professional=null)', () => {
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    render(<EquipeTratanteCard professionals={professionals} patientId="p1" />);
+    fireEvent.click(screen.getByTestId('equipe-tratante-add'));
+    expect(screen.getByTestId('professional-edit-drawer')).toBeInTheDocument();
+    expect((screen.getByTestId('professional-name') as HTMLInputElement).value).toBe('');
+  });
+
+  it('fechar o drawer (X) chama o onClose do card e o desmonta', async () => {
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    render(<EquipeTratanteCard professionals={professionals} patientId="p1" />);
+    fireEvent.click(screen.getByTestId('equipe-tratante-add'));
+    expect(screen.getByTestId('professional-edit-drawer')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Fechar'));
+    // O drawer anima a saída (CLOSE_MS) antes de chamar onClose — espera pelo desmonte real.
+    await waitFor(() => expect(screen.queryByTestId('professional-edit-drawer')).not.toBeInTheDocument(), { timeout: 1000 });
+  });
+
+  it('criar com sucesso pelo drawer chama o onSaved do card', async () => {
+    mockCreateProfessional.mockResolvedValueOnce({ id: 'novo' });
+    const onSaved = vi.fn();
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    render(<EquipeTratanteCard professionals={professionals} patientId="p1" onSaved={onSaved} />);
+    fireEvent.click(screen.getByTestId('equipe-tratante-add'));
+    fireEvent.change(screen.getByTestId('professional-name'), { target: { value: 'Dr. Novo' } });
+    fireEvent.click(screen.getByTestId('professional-save'));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  });
+
+  it('clicar no lápis abre o drawer de edição PRÉ-PREENCHIDO com a linha clicada', () => {
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    render(<EquipeTratanteCard professionals={professionals} patientId="p1" />);
+    fireEvent.click(screen.getByTestId('equipe-tratante-edit-p1'));
+    expect(screen.getByTestId('professional-edit-drawer')).toBeInTheDocument();
+    expect((screen.getByTestId('professional-name') as HTMLInputElement).value).toBe('Dr. Kine');
+  });
+
+  it('clicar no lixeiro abre a confirmação; Cancelar fecha sem chamar a API (C8)', () => {
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    render(<EquipeTratanteCard professionals={professionals} patientId="p1" />);
+    fireEvent.click(screen.getByTestId('equipe-tratante-deactivate-p1'));
+    expect(screen.getByTestId('deactivate-professional-confirm')).toBeInTheDocument();
+    expect(screen.getByTestId('deactivate-professional-name').textContent).toBe('Dr. Kine');
+    fireEvent.click(screen.getByText('Cancelar'));
+    expect(screen.queryByTestId('deactivate-professional-confirm')).not.toBeInTheDocument();
+    expect(mockDeactivateProfessional).not.toHaveBeenCalled();
+  });
+
+  it('confirmar desativação chama a API com (patientId, id) e fecha o modal ao concluir; onSaved é chamado', async () => {
+    mockDeactivateProfessional.mockResolvedValueOnce({ id: 'p1', active: false });
+    const onSaved = vi.fn();
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    render(<EquipeTratanteCard professionals={professionals} patientId="p1" onSaved={onSaved} />);
+    fireEvent.click(screen.getByTestId('equipe-tratante-deactivate-p1'));
+    fireEvent.click(screen.getByTestId('deactivate-professional-confirm-button'));
+    await waitFor(() => expect(mockDeactivateProfessional).toHaveBeenCalledWith('p1', 'p1'));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByTestId('deactivate-professional-confirm')).not.toBeInTheDocument());
+  });
+
+  it('profissional sem nome (legado): a confirmação mostra "—" (branch `name ?? \'—\'`)', () => {
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    const semNome = [{ id: 'p9', name: null, phone: null, email: null, specialty: null, displayOrder: 1, isTeam: false }];
+    render(<EquipeTratanteCard professionals={semNome} patientId="p1" />);
+    fireEvent.click(screen.getByTestId('equipe-tratante-deactivate-p9'));
+    expect(screen.getByTestId('deactivate-professional-name').textContent).toBe('—');
+  });
+
+  it('confirmDeactivate: guarda defensiva — sem patientId, não chama a API mesmo se deactivating estiver setado', async () => {
+    mockDeactivateProfessional.mockClear();
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    const { rerender } = render(<EquipeTratanteCard professionals={professionals} patientId="p1" />);
+    fireEvent.click(screen.getByTestId('equipe-tratante-deactivate-p1'));
+    expect(screen.getByTestId('deactivate-professional-confirm')).toBeInTheDocument();
+    // patientId some (ex.: navegação/refetch no meio) — a confirmação clicada não pode chamar a API.
+    rerender(<EquipeTratanteCard professionals={professionals} />);
+    fireEvent.click(screen.getByTestId('deactivate-professional-confirm-button'));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockDeactivateProfessional).not.toHaveBeenCalled();
   });
 });
 
@@ -1024,8 +1164,8 @@ describe('LocalizacoesCard', () => {
 
 describe('EquipeTratanteCard — lê o contrato da API (A2, lex C2.1/C2.2)', () => {
   const professionals = [
-    { id: 'p1', name: 'Dra. Contrato Tratante', phone: '+54 11 5555-0001', email: 'dra@example.test', displayOrder: 1, isTeam: false },
-    { id: 'p2', name: 'Equipo Interdisciplinario', phone: null, email: null, displayOrder: 2, isTeam: true },
+    { id: 'p1', name: 'Dra. Contrato Tratante', phone: '+54 11 5555-0001', email: 'dra@example.test', specialty: 'PHYSICIAN' as const, displayOrder: 1, isTeam: false },
+    { id: 'p2', name: 'Equipo Interdisciplinario', phone: null, email: null, specialty: null, displayOrder: 2, isTeam: true },
   ];
 
   it('renderiza o NOME que a API manda (`name`, não `fullName`)', () => {
@@ -1131,7 +1271,7 @@ describe('cards tocados na spec 011 — ramos defensivos', () => {
     const { unmount } = render(<EquipeTratanteCard professionals={undefined as unknown as []} />);
     expect(screen.getByText('Sem dados cadastrados')).toBeInTheDocument();
     unmount();
-    render(<EquipeTratanteCard professionals={[{ id: 'p0', name: null, phone: null, email: null, displayOrder: 1, isTeam: false }]} />);
+    render(<EquipeTratanteCard professionals={[{ id: 'p0', name: null, phone: null, email: null, specialty: null, displayOrder: 1, isTeam: false }]} />);
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2);
   });
 

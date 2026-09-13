@@ -8,7 +8,7 @@
  * `AdminApiService`); callers usam `AdminApiService`, que delega transparentemente.
  */
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
-import type { PatientResponsibleInput, PatientResponsiblePatch } from '@domain/entities/PatientSectionPayloads';
+import type { PatientResponsibleInput, PatientResponsiblePatch, PatientProfessionalInput, PatientProfessionalPatch } from '@domain/entities/PatientSectionPayloads';
 import type { PatientCoverageEmergencyContactInput, PatientCoverageEmergencyContactPatch } from '@domain/entities/PatientCoverage';
 import { PatientApiError } from './AdminPatientsApiService';
 
@@ -92,6 +92,23 @@ class AdminPatientContactRowsApiServiceClass {
   /** POST /api/admin/patients/:id/coverage-emergency-contacts/:cid/deactivate */
   async deactivateCoverageEmergencyContact(patientId: string, id: string): Promise<{ id: string; active: false }> {
     return this.writeJson<{ id: string; active: false }>('POST', `/api/admin/patients/${patientId}/coverage-emergency-contacts/${id}/deactivate`);
+  }
+
+  // ── Equipe tratante (`patient_professionals`, spec 018 PR-5, US-11) ─────────────────────────
+
+  /** POST /api/admin/patients/:id/professionals */
+  async createProfessional(patientId: string, input: PatientProfessionalInput): Promise<{ id: string }> {
+    return this.writeJson<{ id: string }>('POST', `/api/admin/patients/${patientId}/professionals`, input);
+  }
+
+  /** PATCH /api/admin/patients/:id/professionals/:pid */
+  async updateProfessional(patientId: string, id: string, patch: PatientProfessionalPatch): Promise<{ id: string }> {
+    return this.writeJson<{ id: string }>('PATCH', `/api/admin/patients/${patientId}/professionals/${id}`, patch);
+  }
+
+  /** POST /api/admin/patients/:id/professionals/:pid/deactivate */
+  async deactivateProfessional(patientId: string, id: string): Promise<{ id: string; active: false }> {
+    return this.writeJson<{ id: string; active: false }>('POST', `/api/admin/patients/${patientId}/professionals/${id}/deactivate`);
   }
 }
 

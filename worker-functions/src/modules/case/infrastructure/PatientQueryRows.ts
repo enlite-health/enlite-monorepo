@@ -72,6 +72,8 @@ export interface PatientProfessionalDetail {
   phone: string | null;
   /** Decrypted email or null. */
   email: string | null;
+  /** Especialidade (enum fechado, migration 427). NULL = legado ou equipe multidisciplinar (`isTeam`). */
+  specialty: import('../domain/PatientProfessional').PatientProfessionalSpecialty | null;
   displayOrder: number;
   isTeam: boolean;
 }

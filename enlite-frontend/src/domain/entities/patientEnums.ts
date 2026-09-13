@@ -40,6 +40,13 @@ export type DeviceTypeCode = (typeof DEVICE_TYPE_CODES)[number];
 export const RELATIONSHIP_CODES = ['CHILD', 'PARENT', 'SIBLING', 'NEPHEW', 'GRANDCHILD', 'GUARDIAN', 'FRIEND', 'PARTNER', 'OTHER'] as const;
 export type RelationshipCode = (typeof RELATIONSHIP_CODES)[number];
 
+/** `patient_professionals.specialty` (CHECK `pp_specialty_check`, migration 427; spec 018 PR-5, SUP-38). */
+export const PATIENT_PROFESSIONAL_SPECIALTY_CODES = [
+  'PHYSICIAN', 'PSYCHIATRIST', 'NEUROLOGIST', 'PEDIATRICIAN', 'PSYCHOLOGIST', 'PHYSIOTHERAPIST',
+  'OCCUPATIONAL_THERAPIST', 'SPEECH_THERAPIST', 'NUTRITIONIST', 'NURSE', 'SOCIAL_WORKER', 'OTHER',
+] as const;
+export type PatientProfessionalSpecialtyCode = (typeof PATIENT_PROFESSIONAL_SPECIALTY_CODES)[number];
+
 /** Seed de `insurance_providers` (migration 311) — os 33 do contrato 001 §Enums canônicos. */
 export const INSURANCE_PROVIDER_CODES = [
   'API', 'ACCORD_SALUD', 'ASISOC', 'AVALIAN', 'BANCARIOS', 'CASA', 'DAS', 'GALENO', 'MHM', 'MEDICUS',

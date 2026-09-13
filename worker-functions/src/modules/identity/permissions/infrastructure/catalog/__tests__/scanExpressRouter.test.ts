@@ -284,6 +284,10 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'patient_clinical:read',
       'patient_clinical:write',
       'patient_care_team:read',
+      // spec 018, PR-5 (US-11): DECLARADA por rota real no app (`POST/PATCH/POST .../deactivate
+      // /patients/:id/professionals`) — o fixture de 2 rotas deste teste não a declara, por isso
+      // aparece aqui como as demais células de container acima.
+      'patient_care_team:write',
       'patient_family:read',
       'patient_family:write',
       'patient_chat:read',
