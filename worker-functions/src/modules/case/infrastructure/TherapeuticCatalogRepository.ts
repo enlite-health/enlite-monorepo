@@ -3,8 +3,8 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import {
   THERAPEUTIC_CATALOG_TABLE,
-  type CatalogSnapshotItem,
   type TherapeuticCatalogKind,
+  type TherapeuticCatalogSnapshotItem,
 } from '../domain/TherapeuticProject';
 
 export interface CatalogItem {
@@ -84,18 +84,23 @@ export class TherapeuticCatalogRepository {
 
   /**
    * O snapshot que a versão congela: só ids ATIVOS. Id desconhecido/inativo → erro nomeado com a
-   * lista (o controller responde 422 com os ids, nunca grava pela metade).
+   * lista (o controller responde 422 com os ids, nunca grava pela metade). `segmentId`/`segmentLabel`
+   * (migration 430) entram no congelamento — quem os REDIGE por célula é `therapeuticProjectAccess.ts`
+   * (lex-pr7 C3(b)), nunca aqui.
    */
-  async snapshotOf(kind: TherapeuticCatalogKind, ids: readonly string[], cli: Pool | PoolClient = this.pool): Promise<CatalogSnapshotItem[]> {
+  async snapshotOf(kind: TherapeuticCatalogKind, ids: readonly string[], cli: Pool | PoolClient = this.pool): Promise<TherapeuticCatalogSnapshotItem[]> {
     const unique = [...new Set(ids)];
-    const res = await cli.query<{ id: string; label: string }>(
-      `SELECT id, label FROM ${this.table(kind)} WHERE active AND id = ANY($1::uuid[]) ORDER BY sort_order, lower(label)`,
+    const res = await cli.query<{ id: string; label: string; segment_id: string | null; segment_label: string | null }>(
+      `SELECT c.id, c.label, c.segment_id, s.label AS segment_label
+         FROM ${this.table(kind)} c
+         LEFT JOIN therapeutic_segments s ON s.id = c.segment_id
+        WHERE c.active AND c.id = ANY($1::uuid[]) ORDER BY c.sort_order, lower(c.label)`,
       [unique],
     );
     const found = new Set(res.rows.map((r) => r.id));
     const missing = unique.filter((id) => !found.has(id));
     if (missing.length > 0) throw new CatalogItemsUnknownError(kind, missing);
-    return res.rows.map((r) => ({ id: r.id, label: r.label }));
+    return res.rows.map((r) => ({ id: r.id, label: r.label, segmentId: r.segment_id, segmentLabel: r.segment_label }));
   }
 
   async create(kind: TherapeuticCatalogKind, input: { label: string; sortOrder?: number; actorUid: string }): Promise<CatalogItem> {

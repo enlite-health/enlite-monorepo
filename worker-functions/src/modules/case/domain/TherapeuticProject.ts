@@ -24,6 +24,17 @@ export interface CatalogSnapshotItem {
 }
 
 /**
+ * Item de `specific-objectives`/`activities` no snapshot da versão, com o segmento (migration 430)
+ * do momento do congelamento. `segmentId`/`segmentLabel` são dado CLÍNICO (lex-pr7 C3(b), D303:
+ * mesma régua de `pathologyTypes`) — opcionais aqui só para os itens sem segmento ou para fixture
+ * antiga sem o campo; a projeção (`therapeuticProjectAccess.ts`) é quem decide `null` por célula.
+ */
+export interface TherapeuticCatalogSnapshotItem extends CatalogSnapshotItem {
+  segmentId?: string | null;
+  segmentLabel?: string | null;
+}
+
+/**
  * Só DOIS catálogos mantidos à mão. "Tipo de patología" NÃO é catálogo (Gabriel, 08/09: "vem do
  * CID-11, não tem motivo para um menu que adiciona isso"; D163/D164): é DERIVADO dos diagnósticos
  * CID-11 da versão — ver `pathologyTypes` abaixo. A tabela `pathology_types` da 415 fica
@@ -75,8 +86,8 @@ export interface TherapeuticProjectVersion {
   diagnoses: TherapeuticDiagnosis[];
   clinicalContext: string;
   generalObjective: string;
-  specificObjectives: CatalogSnapshotItem[];
-  activities: CatalogSnapshotItem[];
+  specificObjectives: TherapeuticCatalogSnapshotItem[];
+  activities: TherapeuticCatalogSnapshotItem[];
   /** Derivado dos `diagnoses` (capítulos CID-11 distintos, ordenados por código). Ver `PathologySegment`. */
   pathologyTypes: PathologySegment[];
   startDate: string;

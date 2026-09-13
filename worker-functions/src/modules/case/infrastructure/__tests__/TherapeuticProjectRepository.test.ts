@@ -306,7 +306,7 @@ describe('TherapeuticProjectRepository', () => {
       expect(ins.params[8]).toBe(JSON.stringify([{ id: 'o-1', label: 'Objetivo A' }]));
       expect(ins.params[9]).toBe(JSON.stringify([{ id: 'a-1', label: 'Atividade A' }]));
       // os dois catálogos foram consultados dentro da transação, não pelo pool
-      expect(sqls(chamadas).filter((s) => /WHERE active AND id = ANY/.test(s))).toHaveLength(2);
+      expect(sqls(chamadas).filter((s) => /WHERE c\.active AND c\.id = ANY/.test(s))).toHaveLength(2);
       expect(mockPoolQuery).not.toHaveBeenCalled();
     });
 

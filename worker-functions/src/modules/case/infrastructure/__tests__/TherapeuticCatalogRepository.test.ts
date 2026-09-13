@@ -111,7 +111,20 @@ describe('TherapeuticCatalogRepository', () => {
       mockPoolQuery.mockResolvedValue({ rows: [{ id: 'a', label: 'Objetivo A' }, { id: 'b', label: 'Objetivo B' }] });
       const snap = await new TherapeuticCatalogRepository().snapshotOf('specific-objectives', ['a', 'b']);
       expect(snap).toEqual([{ id: 'a', label: 'Objetivo A' }, { id: 'b', label: 'Objetivo B' }]);
-      expect(mockPoolQuery.mock.calls[0][0]).toContain('WHERE active AND id = ANY($1::uuid[])');
+      expect(mockPoolQuery.mock.calls[0][0]).toContain('WHERE c.active AND c.id = ANY($1::uuid[])');
+    });
+
+    it('lex-pr7 C3(b): traz `segmentId`/`segmentLabel` (430) via LEFT JOIN com `therapeutic_segments`', async () => {
+      mockPoolQuery.mockResolvedValue({ rows: [{ id: 'a', label: 'Objetivo A', segment_id: 'seg-1', segment_label: 'Salud mental' }] });
+      const snap = await new TherapeuticCatalogRepository().snapshotOf('specific-objectives', ['a']);
+      expect(snap).toEqual([{ id: 'a', label: 'Objetivo A', segmentId: 'seg-1', segmentLabel: 'Salud mental' }]);
+      expect(mockPoolQuery.mock.calls[0][0]).toContain('LEFT JOIN therapeutic_segments s ON s.id = c.segment_id');
+    });
+
+    it('item sem segmento (segment_id NULL no catálogo) → `segmentId`/`segmentLabel` saem `null`, não `undefined`', async () => {
+      mockPoolQuery.mockResolvedValue({ rows: [{ id: 'a', label: 'Objetivo A', segment_id: null, segment_label: null }] });
+      const snap = await new TherapeuticCatalogRepository().snapshotOf('specific-objectives', ['a']);
+      expect(snap).toEqual([{ id: 'a', label: 'Objetivo A', segmentId: null, segmentLabel: null }]);
     });
 
     it('ids repetidos são deduplicados antes do ANY (o mesmo id duas vezes não é "faltando")', async () => {

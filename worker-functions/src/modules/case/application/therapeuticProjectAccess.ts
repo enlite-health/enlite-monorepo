@@ -17,7 +17,7 @@
  *
  * `cells = null` é "o engine não decidiu" (D113): tudo passa, como a rota devolvia antes.
  */
-import type { ContactRef, TherapeuticProjectVersion } from '../domain/TherapeuticProject';
+import type { ContactRef, TherapeuticCatalogSnapshotItem, TherapeuticProjectVersion } from '../domain/TherapeuticProject';
 import { patientContainerCell, canReadPatientContainer } from './patientContainerAccess';
 
 export const THERAPEUTIC_PROJECT_RESOURCE = 'patient_therapeutic_project';
@@ -73,7 +73,18 @@ export function projectTherapeuticVersionForActor(
   const redacted: { clinical?: true; services?: true } = {};
   // Os QUATRO campos clínicos zerados num literal só — `CLINICAL_FIELDS` é a lista que o teste confere
   // contra este literal, para campo novo não entrar em um lado e não no outro.
-  const clinico = clinica ? {} : { clinicalContext: null, generalObjective: null, diagnoses: null, pathologyTypes: null };
+  const clinico = clinica
+    ? {}
+    : {
+        clinicalContext: null,
+        generalObjective: null,
+        diagnoses: null,
+        pathologyTypes: null,
+        // lex-pr7 C3(b)/D303: segmento (430) dentro de cada item de objetivo/atividade é dado
+        // clínico — mesma régua de `pathologyTypes`. Só o segmento some; o item (id/label) fica.
+        specificObjectives: redactSegmentOf(rest.specificObjectives),
+        activities: redactSegmentOf(rest.activities),
+      };
   if (!clinica) redacted.clinical = true;
   // lex A1 (08/09): o tipo do serviço é dado de `services` — mesma régua da ficha (`DETAIL_FIELDS.services`).
   const servico = servicos ? {} : { contractedServiceCode: null };
@@ -83,6 +94,14 @@ export function projectTherapeuticVersionForActor(
 
 /** Os campos que a projeção redige — exportado para o teste conferir a paridade com o literal acima. */
 export const THERAPEUTIC_CLINICAL_FIELDS = CLINICAL_FIELDS;
+
+/**
+ * `segmentId`/`segmentLabel` zerados por item — nunca o item inteiro (id/label do objetivo ou
+ * atividade continuam visíveis com só `patient_therapeutic_project:read`; só o segmento é clínico).
+ */
+function redactSegmentOf(items: readonly TherapeuticCatalogSnapshotItem[]): TherapeuticCatalogSnapshotItem[] {
+  return items.map((item) => ({ ...item, segmentId: null, segmentLabel: null }));
+}
 
 /**
  * Célula de leitura da ORIGEM que falta para escrever os `contactRefs`/`careTeamIds` pedidos —

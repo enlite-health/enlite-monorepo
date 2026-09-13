@@ -47,8 +47,8 @@ function versao(over: Partial<TherapeuticProjectVersion> = {}): TherapeuticProje
     diagnoses: [{ uri: 'http://id.who.int/icd/entity/1', code: '6A02', title: 'TEA' }],
     clinicalContext: 'contexto clínico do titular',
     generalObjective: 'objetivo geral do titular',
-    specificObjectives: [{ id: 'o-1', label: 'Vínculo terapéutico' }],
-    activities: [{ id: 'a-1', label: 'Acompañamiento escolar' }],
+    specificObjectives: [{ id: 'o-1', label: 'Vínculo terapéutico', segmentId: 'seg-1', segmentLabel: 'Salud mental' }],
+    activities: [{ id: 'a-1', label: 'Acompañamiento escolar', segmentId: 'seg-1', segmentLabel: 'Salud mental' }],
     pathologyTypes: [{ id: '06', label: 'Trastornos mentales, del comportamiento y del neurodesarrollo' }],
     startDate: '2026-01-01',
     endDate: '2026-06-30',
@@ -150,6 +150,21 @@ describe('projectTherapeuticVersionForActor', () => {
     expect(at).toEqual(out);
     // Sem nenhuma das duas: os dois marcadores.
     expect(projectTherapeuticVersionForActor(versao(), [PROJETO_READ]).redacted).toEqual({ clinical: true, services: true });
+  });
+
+  it('lex-pr7 C3(b)/D303: COM `patient_clinical:read` o segmento (430) de cada objetivo/atividade sai íntegro', () => {
+    const out = projectTherapeuticVersionForActor(versao(), [PROJETO_READ, PATIENT_CLINICAL_READ_CELL, PATIENT_SERVICES_READ_CELL]);
+    expect(out.specificObjectives).toEqual([{ id: 'o-1', label: 'Vínculo terapéutico', segmentId: 'seg-1', segmentLabel: 'Salud mental' }]);
+    expect(out.activities).toEqual([{ id: 'a-1', label: 'Acompañamiento escolar', segmentId: 'seg-1', segmentLabel: 'Salud mental' }]);
+  });
+
+  it('lex-pr7 C3(b)/D303: SEM `patient_clinical:read` o segmento sai `null` por item, mas id/label continuam (não é o item inteiro que some)', () => {
+    const out = projectTherapeuticVersionForActor(versao(), [PROJETO_READ, PATIENT_SERVICES_READ_CELL]);
+    expect(out.specificObjectives).toEqual([{ id: 'o-1', label: 'Vínculo terapéutico', segmentId: null, segmentLabel: null }]);
+    expect(out.activities).toEqual([{ id: 'a-1', label: 'Acompañamiento escolar', segmentId: null, segmentLabel: null }]);
+    expect(out.redacted).toEqual({ clinical: true });
+    expect(JSON.stringify(out)).not.toContain('Salud mental');
+    expect(JSON.stringify(out)).not.toContain('seg-1');
   });
 
   it('o que NÃO é clínico continua saindo sem a célula: número, datas, autor, serviço e catálogos', () => {

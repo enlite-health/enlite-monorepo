@@ -8,9 +8,9 @@ import {
   versionLabel,
   currentVersionOf,
   macroFieldsChanged,
-  type CatalogSnapshotItem,
   type ContactRef,
   type PathologySegment,
+  type TherapeuticCatalogSnapshotItem,
   type TherapeuticDiagnosis,
   type TherapeuticMacroField,
   type TherapeuticModality,
@@ -33,8 +33,8 @@ interface VersionRow {
   diagnoses: TherapeuticDiagnosis[];
   clinical_context: string;
   general_objective: string;
-  specific_objectives: CatalogSnapshotItem[];
-  activities: CatalogSnapshotItem[];
+  specific_objectives: TherapeuticCatalogSnapshotItem[];
+  activities: TherapeuticCatalogSnapshotItem[];
   pathology_types: PathologySegment[];
   start_date: string;
   end_date: string;
