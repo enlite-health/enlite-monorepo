@@ -11,15 +11,18 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
  *
  *   PATCH /api/admin/patients/:patientId/addresses/:addressId
  *     body: { neighborhood?, logistics_corridor?, access_notes?, is_default?, address_type?,
- *             address_type_other? } — só estes campos; `null` limpa (exceto `is_default`, booleano).
+ *             address_type_other? } — só estes campos; `null` limpa (exceto `is_default`, que só
+ *             aceita `true`; `false` é 400 — ver abaixo).
  *
  * Zona/bairro é a coluna `neighborhood` que já existia (lex C2.7). `access_notes` é texto livre
  * sobre o domicílio de um paciente — lex C2.3: o valor NUNCA vai para log nem para a mensagem de
  * erro; sai `{patientId, addressId, campo, tamanho}`. Teto 2000 no servidor (C2.6; CHECK na 316).
  *
  * Spec 019 (override do lex 12/09/2026, D310 item c — Caminho B, reaproveita `address_type`):
- *   - `is_default`: marcar como principal desmarca o anterior NA MESMA TRANSAÇÃO (troca atômica;
- *     nunca existe instante observável com 0 ou 2 principais para o mesmo paciente).
+ *   - `is_default`: só aceita `true` (`z.literal(true)`) — `false` é 400. Marcar como principal
+ *     desmarca o anterior NA MESMA TRANSAÇÃO (troca atômica; nunca existe instante observável com
+ *     0 ou 2 principais para o mesmo paciente). Desmarcar o PRÓPRIO endereço só acontece marcando
+ *     OUTRO como principal — não existe "desmarcar sem substituir" (deixaria 0 principais).
  *   - `address_type`: lista fechada por parentesco (migration 434); `null` = "sin especificar".
  *     ÚNICO escritor de VALOR autorizado depois da B4 (ver tasks.md §2, prova do grep).
  *   - `address_type_other`: texto livre do "Otro" (≤40), só aceito quando `address_type === 'otro'`
@@ -39,7 +42,10 @@ export const updatePatientAddressSchema = z
     neighborhood: z.string().trim().min(1).max(120).nullable().optional(),
     logistics_corridor: z.string().trim().min(1).max(200).nullable().optional(),
     access_notes: z.string().trim().min(1).max(ACCESS_NOTES_MAX).nullable().optional(),
-    is_default: z.boolean().optional(),
+    // Só aceita `true` (spec 019, override 12/09): desmarcar um principal só acontece marcando
+    // OUTRO endereço como principal (troca atômica) — nunca desmarcando o próprio com `false`.
+    // `false` explícito é 400 (mesmo formato de erro dos demais campos, nunca ecoa o valor).
+    is_default: z.literal(true).optional(),
     address_type: z.enum(PATIENT_ADDRESS_TYPES).nullable().optional(),
     address_type_other: z.string().trim().min(1).max(40).nullable().optional(),
   })
@@ -108,12 +114,11 @@ export class AdminPatientAddressesController {
       values.push(null);
       sets.push(`address_type_other = $${values.length}`);
     }
-    const markingDefault = Object.prototype.hasOwnProperty.call(bodyData, 'is_default') && bodyData.is_default === true;
+    // Schema (z.literal(true)) já garante que, se presente, `is_default` só pode ser `true` —
+    // não há mais ramo de `false` (morto desde o override de 12/09; ver comentário do schema).
+    const markingDefault = Object.prototype.hasOwnProperty.call(bodyData, 'is_default');
     if (markingDefault) {
       sets.push('is_default = true');
-    } else if (Object.prototype.hasOwnProperty.call(bodyData, 'is_default')) {
-      values.push(false);
-      sets.push(`is_default = $${values.length}`);
     }
     if (sets.length === 0) {
       res.status(400).json({ success: false, error: 'Nothing to update' });

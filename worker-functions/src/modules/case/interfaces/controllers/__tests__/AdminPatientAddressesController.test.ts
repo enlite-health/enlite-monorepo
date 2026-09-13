@@ -152,15 +152,12 @@ describe('AdminPatientAddressesController.updatePatientAddress', () => {
     expect(logged.fields).toEqual({ is_default: true });
   });
 
-  it('200: is_default=false → só desmarca o próprio (sem tocar em outros), booleano sai como valor na trilha', async () => {
-    queueUpdate({ rowCount: 1 });
+  it('400: is_default=false é recusado — servidor só aceita `true` (desmarcar só acontece marcando outro como principal); banco não é tocado', async () => {
     const [req, res] = reqRes({ patientId: P, addressId: A }, { is_default: false });
     await ctrl.updatePatientAddress(req, res);
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(mockClientQuery).toHaveBeenCalledTimes(3); // BEGIN, UPDATE, COMMIT — sem demote
-    const updateCall = mockClientQuery.mock.calls[1];
-    expect(updateCall[0]).toMatch(/is_default = \$3/);
-    expect(updateCall[1]).toEqual([A, P, false]);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(bodyOf(res)).toEqual({ success: false, error: 'Invalid body', details: { fields: ['is_default'] } });
+    expect(mockConnect).not.toHaveBeenCalled();
   });
 
   it('200: só as colunas presentes entram no SET (null limpa); trilha sem valor com tamanhos', async () => {
