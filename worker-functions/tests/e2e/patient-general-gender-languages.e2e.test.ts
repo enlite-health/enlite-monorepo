@@ -15,6 +15,8 @@
  */
 import { Pool } from 'pg';
 import { montarAppDeFamilia, tokenMock, grupoComCelulas, limparIamFixtures, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
+import { readFileSync, readdirSync, statSync } from 'fs';
+import path from 'path';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -208,39 +210,81 @@ describe('spec 018 PR-3 — gênero/idiomas do paciente: API sob engine (HTTP re
 /**
  * CONDIÇÃO 9 / L2c-4: gender/languages do PACIENTE não propagam a PDF, vaga, Talentum ou rota
  * pública nesta emenda. Prova por grep — os módulos que montam esses artefatos não referenciam
- * os campos novos. `require.resolve` falha se o arquivo mudar de lugar sem atualizar este teste.
+ * os campos novos.
+ *
+ * Escopo ampliado (gate revisao-pr, item G): Talentum mora em `src/modules/integration` (sync,
+ * webhook, descrição), não só em `src/modules/matching`; o PDF do projeto terapêutico e a rota
+ * pública de leads moram em `src/modules/case/interfaces` (`AdminTherapeuticProjectsController`,
+ * `PublicLeadsController`); o PDF em SI (o template renderizado) mora no FRONTEND
+ * (`enlite-frontend/.../therapeuticProject/pdf/`), lido aqui pelo mesmo molde de
+ * `relationshipParity.contract.test.ts` (leitura crua entre pacotes).
+ *
+ * Regra de exclusão EXPLÍCITA (pedida no item G): `\bw\.gender\b`/`\bw\.languages\b` (alias de
+ * linha de WORKER, ex. `w.gender_encrypted AS "genderEnc"` em queries de prestador) NÃO conta —
+ * é outro titular, outra categoria, já legitimamente coletada desde as migrations 008/023. Só
+ * `patient.gender`/`patient.languages`/`genderEncrypted`/`languagesEncrypted` SOLTOS (sem prefixo
+ * `w.`) contam como achado.
  */
-import { readFileSync, readdirSync, statSync } from 'fs';
-import path from 'path';
-
 describe('spec 018 PR-3 CONDIÇÃO 9 / L2c-4 — gender/languages fora de PDF/vaga/Talentum/rotas públicas', () => {
   const ROOT = path.resolve(__dirname, '../..');
-  const ARQUIVOS_SEM_OCORRENCIA = [
-    'src/modules/case/interfaces/AdminPatientView.ts', // projeção pública da ficha (a fonte de toAdminPatientListItem/projectAdminPatientDetail é ok ter, mas a projeção da VAGA não pode importar patient.gender)
-  ];
+  const FRONTEND_ROOT = path.resolve(__dirname, '../../../enlite-frontend');
 
   it('AdminPatientView (lista/kanban) não expõe gender/languages fora do container identity da FICHA — LIST_FIELDS não os contém', () => {
     const containerSrc = readFileSync(path.join(ROOT, 'src/modules/case/application/patientContainerAccess.ts'), 'utf8');
     const listFieldsBlock = containerSrc.slice(containerSrc.indexOf('const LIST_FIELDS'), containerSrc.indexOf('/** Que containers'));
     expect(listFieldsBlock).not.toMatch(/'gender'/);
     expect(listFieldsBlock).not.toMatch(/'languages'/);
-    void ARQUIVOS_SEM_OCORRENCIA;
   });
 
-  it('nenhum módulo de matching/vaga (Talentum, PDF, público) referencia gender/languages do paciente', () => {
-    const dirsAlvo = ['src/modules/matching'];
+  /** Acusa `patient.gender`/`patient.languages`/`genderEncrypted`/`languagesEncrypted` — MAS NÃO `w.gender`/`w.languages` (worker, fora de escopo, regra explícita do item G). */
+  function referenciaProibida(src: string): boolean {
+    if (/\bw\.gender\w*\b|\bw\.languages\w*\b/.test(src)) {
+      // linha(s) de worker presentes — remove-as antes de checar o resto, para não mascarar um
+      // achado real de paciente que exista no MESMO arquivo.
+      src = src.replace(/^.*\bw\.(gender|languages)\w*\b.*$/gm, '');
+    }
+    return /patient\.gender\b|patient\.languages\b|\bgenderEncrypted\b|\blanguagesEncrypted\b/.test(src);
+  }
+
+  function walkDir(root: string, dir: string, achados: string[]): void {
+    for (const entry of readdirSync(path.join(root, dir))) {
+      const rel = `${dir}/${entry}`;
+      const full = path.join(root, rel);
+      if (statSync(full).isDirectory()) { walkDir(root, rel, achados); continue; }
+      if (!/\.(ts|tsx)$/.test(entry) || entry.includes('.test.') || entry.includes('.spec.')) continue;
+      const src = readFileSync(full, 'utf8');
+      if (referenciaProibida(src)) achados.push(rel);
+    }
+  }
+
+  it('nenhum módulo de matching/vaga/Talentum (backend) referencia gender/languages do paciente (workers `w.` excluídos)', () => {
     const achados: string[] = [];
-    const walk = (dir: string): void => {
-      for (const entry of readdirSync(path.join(ROOT, dir))) {
-        const rel = `${dir}/${entry}`;
-        const full = path.join(ROOT, rel);
-        if (statSync(full).isDirectory()) { walk(rel); continue; }
-        if (!entry.endsWith('.ts') || entry.includes('.test.')) continue;
-        const src = readFileSync(full, 'utf8');
-        if (/patient\.gender\b|patient\.languages\b|\bgenderEncrypted\b|\blanguagesEncrypted\b/.test(src)) achados.push(rel);
-      }
-    };
-    for (const d of dirsAlvo) walk(d);
+    for (const d of ['src/modules/matching', 'src/modules/integration']) walkDir(ROOT, d, achados);
     expect(achados).toEqual([]);
+  });
+
+  it('rotas/controllers públicos e o PDF do projeto terapêutico (backend) não referenciam gender/languages do paciente', () => {
+    const alvos = [
+      'src/modules/case/interfaces/controllers/PublicLeadsController.ts',
+      'src/modules/case/interfaces/validators/publicLeadSchema.ts',
+      'src/modules/case/interfaces/controllers/AdminTherapeuticProjectsController.ts',
+      'src/modules/case/interfaces/routes/adminTherapeuticProjectsRoutes.ts',
+      'src/modules/case/application/therapeuticProjectAccess.ts',
+      'src/modules/case/domain/TherapeuticProject.ts',
+      'src/modules/diagnosis/interfaces/DiagnosisPublicView.ts',
+    ];
+    const achados = alvos.filter((rel) => referenciaProibida(readFileSync(path.join(ROOT, rel), 'utf8')));
+    expect(achados).toEqual([]);
+  });
+
+  it('o PDF do projeto terapêutico (frontend, o template REAL renderizado) não referencia gender/languages do paciente', () => {
+    const achados: string[] = [];
+    walkDir(FRONTEND_ROOT, 'src/presentation/components/features/admin/PatientDetail/therapeuticProject/pdf', achados);
+    expect(achados).toEqual([]);
+  });
+
+  it('sabotagem: um arquivo com `patient.gender` solto (sem prefixo `w.`) É pego pela mesma função', () => {
+    expect(referenciaProibida('const x = patient.gender;')).toBe(true);
+    expect(referenciaProibida('const y = w.gender_encrypted;')).toBe(false); // worker: excluído por regra explícita
   });
 });

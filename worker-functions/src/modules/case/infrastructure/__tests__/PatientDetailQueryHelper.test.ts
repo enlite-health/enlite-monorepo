@@ -462,28 +462,47 @@ describe('fetchPatientDetail — gênero, idiomas e dischargedAt (spec 018 PR-3,
     void queryImpl;
   });
 
-  it('languages_encrypted decripta para JSON corrompido → languages null e o erro é REPORTADO (nunca 500 na ficha inteira, D167)', async () => {
+  // Regra dura PII (gate revisao-pr, bloqueio A): o SyntaxError do JSON.parse ecoa o texto
+  // decifrado na MENSAGEM (`Unexpected token 'a', "abc-secret" is not valid JSON`, medido no
+  // Node 24) — repassar `err` para `reportError` vaza o valor pelo `err.message` que
+  // `ErrorReporter.ts:24` loga. O catch NUNCA pode repassar o erro original.
+  const VALOR_CORROMPIDO_SEGREDO = 'abc-secret-nao-pode-vazar-9f2c';
+
+  it('languages_encrypted decripta para JSON corrompido → languages null; reportError recebe mensagem FIXA, NUNCA o texto decifrado (regra PII)', async () => {
     const { enc, run } = runWithRow(basePatientRow({ languagesEncrypted: 'enc-languages-bad' }));
-    (enc.decrypt as jest.Mock).mockImplementation(async (v: string | null) => (v === 'enc-languages-bad' ? '{not-json' : null));
+    (enc.decrypt as jest.Mock).mockImplementation(async (v: string | null) => (v === 'enc-languages-bad' ? VALOR_CORROMPIDO_SEGREDO : null));
     const result = await run();
     expect(result!.languages).toBeNull();
-    expect(mockReportError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ source: 'PatientDetailQueryHelper:languages' }));
+    expect(mockReportError).toHaveBeenCalledWith(new Error('languages_encrypted: JSON inválido'), expect.objectContaining({ source: 'PatientDetailQueryHelper:languages' }));
+    // A prova central do bloqueio: o valor decifrado corrompido nunca aparece em NENHUM argumento
+    // repassado a reportError — nem na mensagem do Error, nem no contexto.
+    expect(JSON.stringify(mockReportError.mock.calls)).not.toContain(VALOR_CORROMPIDO_SEGREDO);
   });
 
-  it('branch defensivo: JSON.parse lança um valor NÃO-Error → embrulhado em Error antes de reportError (mesmo molde de todo catch do arquivo)', async () => {
+  it('branch defensivo: JSON.parse lança um valor NÃO-Error (string crua) → reportError ainda recebe a mensagem FIXA, nunca o valor lançado', async () => {
     const { enc, run } = runWithRow(basePatientRow({ languagesEncrypted: 'enc-languages-throw-string' }));
     (enc.decrypt as jest.Mock).mockImplementation(async (v: string | null) => (v === 'enc-languages-throw-string' ? 'x' : null));
     const originalParse = JSON.parse;
-    jest.spyOn(JSON, 'parse').mockImplementationOnce(() => { throw 'não é um Error'; });
+    jest.spyOn(JSON, 'parse').mockImplementationOnce(() => { throw VALOR_CORROMPIDO_SEGREDO; });
     try {
       const result = await run();
       expect(result!.languages).toBeNull();
-      expect(mockReportError).toHaveBeenCalledWith(new Error('não é um Error'), expect.objectContaining({ source: 'PatientDetailQueryHelper:languages' }));
+      expect(mockReportError).toHaveBeenCalledWith(new Error('languages_encrypted: JSON inválido'), expect.objectContaining({ source: 'PatientDetailQueryHelper:languages' }));
+      expect(JSON.stringify(mockReportError.mock.calls)).not.toContain(VALOR_CORROMPIDO_SEGREDO);
     } finally {
       (JSON.parse as jest.Mock).mockRestore?.();
       JSON.parse = originalParse;
     }
   });
+
+  // Sabotagem (bloqueio A): restaurar o `catch (err) { reportError(err instanceof Error ? err : …) }`
+  // original — de vermelho a verde, contagem de testes idêntica (26 → 26), só a asserção pivô muda.
+  //   cp PatientDetailQueryHelper.ts /tmp/PatientDetailQueryHelper.ts.bak_sabotagem
+  //   # reintroduzir `reportError(err instanceof Error ? err : new Error(String(err)), …)`
+  //   npx jest PatientDetailQueryHelper.test.ts -t "regra PII"
+  //   → FAIL: "Expected substring: not to contain … Received: … abc-secret-nao-pode-vazar-9f2c …"
+  //   cp /tmp/PatientDetailQueryHelper.ts.bak_sabotagem PatientDetailQueryHelper.ts   # restaura de cp, nunca git checkout --
+  //   npx jest PatientDetailQueryHelper.test.ts -t "regra PII"  → PASS de novo.
 
   it('languages_encrypted decripta para um JSON válido que NÃO é array (ex: objeto) → languages null, sem lançar', async () => {
     const { enc, run } = runWithRow(basePatientRow({ languagesEncrypted: 'enc-languages-obj' }));

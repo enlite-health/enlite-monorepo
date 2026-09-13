@@ -356,8 +356,11 @@ export async function fetchPatientDetail(
     try {
       const parsed: unknown = JSON.parse(languagesJson);
       if (Array.isArray(parsed)) languages = parsed.filter((x): x is string => typeof x === 'string');
-    } catch (err) {
-      reportError(err instanceof Error ? err : new Error(String(err)), { source: 'PatientDetailQueryHelper:languages', patientId: id });
+    } catch {
+      // Regra dura PII: NUNCA repassar o erro original do JSON.parse — a mensagem de
+      // SyntaxError ecoa o texto decifrado (`Unexpected token … "<valor>" is not valid JSON`,
+      // medido no Node 24). O relatório carrega só a classe do problema, nunca a entrada.
+      reportError(new Error('languages_encrypted: JSON inválido'), { source: 'PatientDetailQueryHelper:languages', patientId: id });
     }
   }
 

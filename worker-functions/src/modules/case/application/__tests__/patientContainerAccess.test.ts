@@ -105,6 +105,19 @@ describe('projectPatientDetailByContainers', () => {
     expect(comIdentidade.redacted).not.toHaveProperty('identity');
   });
 
+  // CONDIÇÃO 5 do lex (18-PR-3): telefone vive em `identity`, endereço vive em `address` — são
+  // containers DIFERENTES. Um ator com SÓ `patient_identity:read` (sem `patient_address:read`)
+  // recebe o telefone mas NUNCA o endereço — provando que o cabeçalho não usa uma célula mais
+  // fraca que a origem do dado.
+  it('spec 018 PR-3 CONDIÇÃO 5: ator SÓ patient_identity:read (sem patient_address:read) recebe phoneWhatsapp mas addresses/cityLocality/province/zoneNeighborhood saem null', () => {
+    const soIdentidade = projectPatientDetailByContainers(ficha, ['patient:read', 'patient_identity:read']);
+    expect(soIdentidade.phoneWhatsapp).toBe('+54'); // identity: sobrevive
+    expect(soIdentidade.addresses).toBeNull();       // address: NÃO sobrevive
+    expect(soIdentidade.cityLocality).toBeNull();
+    expect(soIdentidade.redacted).toHaveProperty('address', true);
+    expect(soIdentidade.redacted).not.toHaveProperty('identity');
+  });
+
   it('só o container concedido sobrevive — familiares sem clínica', () => {
     const out = projectPatientDetailByContainers(ficha, ['patient:read', 'patient_family:read']);
     expect(out.responsibles).toEqual([{ name: 'Mãe' }]);

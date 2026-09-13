@@ -192,11 +192,11 @@ describe('Role enlite_mcp_ro — SELECT por coluna em patients (D216) @integrati
     );
     expect(priv.rows[0]).toEqual({ g: false, l: false });
     // CONTROLE POSITIVO (D157): a mesma checagem numa coluna que ESTÁ na lista positiva confirma
-    // que o instrumento (has_column_privilege) sabe distinguir permitido de negado.
-    if (!rlsLigada) {
-      const ok = await expectAllowedColumns((sql, params) => ro.query(sql, params));
-      void ok;
-    }
+    // que o instrumento (has_column_privilege) sabe distinguir permitido de negado. INCONDICIONAL
+    // — `expectAllowedColumns` já sabe a diferença entre RLS ligada/desligada (é o MESMO helper
+    // usado no resto do arquivo) e faz a asserção certa nos dois casos; um `if (!rlsLigada)` aqui
+    // só descartava a prova quando ela mais faltava (stage, com RLS ligada).
+    await expectAllowedColumns((sql, params) => ro.query(sql, params));
   });
 
   it('spec 013 bloco C (achado QA-caça #1): patient_contracted_services.professional_profile/hourly_value negados; colunas irmãs, contracted_service_providers, contracted_service_devices e service_types passam', async () => {

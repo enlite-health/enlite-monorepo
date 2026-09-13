@@ -194,6 +194,28 @@ describe('PatientIdentityCard', () => {
     expect(screen.queryByText('Luciana Soto')).not.toBeInTheDocument();
   });
 
+  // L3a (checklist lex.md): a variante FORTE do teste acima — `responsibles` vem PREENCHIDO (o
+  // paciente TEM familiares cadastrados), e mesmo assim, sem `patient_family:read`, nenhum nome
+  // aparece. `responsibles: []` sozinho não provava nada: um card vazio nunca cairia no fallback
+  // `find(isPrimary) ?? responsibles[0]` de qualquer jeito (não há `[0]`). Só com a lista cheia é
+  // que a ausência do nome prova que o fallback (`PatientIdentityCard.tsx` antigo, linhas 167-168,
+  // já removido) não foi reintroduzido.
+  it('spec 018 PR-3 L3a: sem patient_family:read, MESMO com responsibles preenchido e SEM marca, nenhum nome aparece — nunca o fallback pro primeiro responsável', () => {
+    render(
+      <PatientIdentityCard
+        patient={{ ...patientDetailFixture, externalContacts: null, emergencyContactRef: null }}
+        // `responsibles` fica com o valor DEFAULT da fixture (não-vazio: contém "Luciana Soto").
+      />,
+    );
+    expect(screen.getByTestId('emergency-contact-redacted')).toBeInTheDocument();
+    expect(screen.queryByTestId('emergency-contact-name')).not.toBeInTheDocument();
+    expect(screen.queryByText('Luciana Soto')).not.toBeInTheDocument();
+    expect(screen.queryByText(/99852-0481/)).not.toBeInTheDocument();
+    const bloco = screen.getByTestId('patient-emergency-contact-section');
+    expect(bloco.innerHTML).not.toContain('Luciana');
+    expect(bloco.innerHTML).not.toContain('99852-0481');
+  });
+
   // D-A #6: contato externo marcado — rótulos "do contato", SEM par de documento (a coluna não existe).
   it('spec 018 PR-3 D-A #6: marca em contato EXTERNO usa rótulos "do contato" e não mostra documento', () => {
     render(
@@ -327,6 +349,29 @@ describe('PatientIdentityCard', () => {
       />,
     );
     expect(screen.queryByText('Endereço')).not.toBeInTheDocument();
+  });
+
+  // CONDIÇÃO 5 do lex (spec 018 PR-3): ator SÓ com `patient_identity:read` (SEM
+  // `patient_address:read`) — o backend já nula addresses/cityLocality/province/zoneNeighborhood
+  // (container `address`, ver patientContainerAccess.test.ts). O cabeçalho recebe exatamente essa
+  // forma "pré-redigida" e o innerHTML nunca contém endereço, mesmo com o telefone (`identity`)
+  // presente — provando que o card não usa uma célula mais fraca que a de origem do dado.
+  it('spec 018 PR-3 CONDIÇÃO 5: com a forma que um ator SÓ patient_identity:read recebe (endereço já null pelo backend), o innerHTML não contém endereço', () => {
+    const { container } = render(
+      <PatientIdentityCard
+        patient={{
+          ...patientDetailFixture,
+          addresses: null as unknown as typeof patientDetailFixture.addresses,
+          cityLocality: null,
+          province: null,
+          zoneNeighborhood: null,
+        }}
+      />,
+    );
+    expect(screen.getByText(/WhatsApp do paciente/)).toBeInTheDocument(); // identity: sobrevive
+    expect(screen.queryByText('Endereço')).not.toBeInTheDocument();
+    expect(container.innerHTML).not.toContain('Rua Augusta');
+    expect(container.innerHTML).not.toContain('Bela Vista');
   });
 
   it('falls back to "—" for the MARKED contact name when both firstName and lastName are null', () => {
