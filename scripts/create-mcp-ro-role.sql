@@ -191,6 +191,13 @@ BEGIN
   -- 422 (spec 018, PR-2, Emenda 12/09-B): patient_external_contacts tem nome+telefone de terceiro
   -- sem vínculo familiar (professor, escola, vizinho, empregador, gestor de caso, referente
   -- comunitário) — sem coluna segura, revogada inteira no MESMO commit que a cria.
+  -- 429 (spec 018, PR-7; `checklists/lex-pr7.md` C1): patient_therapeutic_project_contacts é a
+  -- ligação versão→contato — só ids, mas a linha revela QUAL contato (família/cobertura/equipe) o
+  -- projeto terapêutico referencia, mesma classe de dado sensível-saúde por associação de 416.
+  -- Sem coluna segura, revogada inteira no MESMO commit que a cria.
+  -- 430 (spec 018, PR-7, SUP-28): therapeutic_segments é global e sem PHI por desenho, mas o
+  -- rótulo é texto livre do operador — fica fora até a guarda `containsLikelyPersonalData` ter
+  -- teste que prova (mesma régua dos outros 2 catálogos da 415).
   FOR alvo IN SELECT unnest(ARRAY[
     'patient_insurance_verified',
     'patient_device_types',
@@ -203,7 +210,9 @@ BEGIN
     'patient_external_contacts',
     'therapeutic_specific_objectives',
     'therapeutic_activities',
-    'pathology_types'
+    'pathology_types',
+    'patient_therapeutic_project_contacts',
+    'therapeutic_segments'
   ]) AS tabela LOOP
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=alvo.tabela) THEN
       EXECUTE format('REVOKE SELECT ON public.%I FROM enlite_mcp_ro', alvo.tabela);
@@ -221,7 +230,8 @@ BEGIN
                                   'contracted_service_devices','service_types',
                                   'patient_therapeutic_projects','patient_coverage_emergency_contacts',
                                   'patient_professionals','patient_external_contacts',
-                                  'therapeutic_specific_objectives','therapeutic_activities','pathology_types']) AS tabela LOOP
+                                  'therapeutic_specific_objectives','therapeutic_activities','pathology_types',
+                                  'patient_therapeutic_project_contacts','therapeutic_segments']) AS tabela LOOP
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=alvo.tabela)
        AND has_table_privilege('enlite_mcp_ro', format('public.%I', alvo.tabela), 'SELECT') THEN
       RAISE EXCEPTION 'B2: enlite_mcp_ro ainda tem SELECT de TABELA em % — abortando a transação', alvo.tabela;
