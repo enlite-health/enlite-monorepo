@@ -160,4 +160,35 @@ describe('D269/D286 — write-gate nos botões Editar/Novo (célula do CONTAINER
     fireEvent.click(screen.getByTestId('contracted-service-row-svc-gate'));
     expect(screen.getByTestId('contracted-service-detail-edit')).toBeInTheDocument();
   });
+
+  // 018 (fix, 12/09): a rota de ativação exige patient_services:write E vacancy:write. Regra do
+  // Gabriel — sem as DUAS células, o ícone SOME (não desabilita). 4 casos: cada célula sozinha,
+  // as duas, e nenhuma.
+  describe('ícone "Activar reclutamiento": exige patient_services:write E vacancy:write (018)', () => {
+    const ATIVAR_TESTID = 'contracted-service-activate-recruitment-svc-gate';
+
+    it('🔴 só patient_services:write (sem vacancy:write) → ícone de ativação NÃO existe', () => {
+      comEnforcement(['patient_services:write'], 'on');
+      render(<ServicosContratadosCard patient={{ ...patientDetailFixture, contractedServices: [SERVICO] }} />);
+      expect(screen.queryByTestId(ATIVAR_TESTID)).not.toBeInTheDocument();
+    });
+
+    it('🔴 só vacancy:write (sem patient_services:write) → ícone de ativação NÃO existe', () => {
+      comEnforcement(['vacancy:write'], 'on');
+      render(<ServicosContratadosCard patient={{ ...patientDetailFixture, contractedServices: [SERVICO] }} />);
+      expect(screen.queryByTestId(ATIVAR_TESTID)).not.toBeInTheDocument();
+    });
+
+    it('com as DUAS células → ícone de ativação existe', () => {
+      comEnforcement(['patient_services:write', 'vacancy:write'], 'on');
+      render(<ServicosContratadosCard patient={{ ...patientDetailFixture, contractedServices: [SERVICO] }} />);
+      expect(screen.getByTestId(ATIVAR_TESTID)).toBeInTheDocument();
+    });
+
+    it('🔴 nenhuma célula → ícone de ativação NÃO existe', () => {
+      comEnforcement([], 'on');
+      render(<ServicosContratadosCard patient={{ ...patientDetailFixture, contractedServices: [SERVICO] }} />);
+      expect(screen.queryByTestId(ATIVAR_TESTID)).not.toBeInTheDocument();
+    });
+  });
 });

@@ -52,6 +52,12 @@ function ActivateRecruitmentAction({
   const tc = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.contractedServicesCard.${k}`, o);
   const serviceLabel = t(`admin.patients.detail.contractedServicesCard.serviceTypes.${service.serviceCode}`, service.serviceCode);
 
+  // Regra do Gabriel (12/09): a rota de ativação exige patient_services:write E vacancy:write —
+  // quem não tem as duas células não vê o ícone (nem "Ver vacante", nem o botão de ativar).
+  const { allowed: podeEscreverServico } = useActionGate('patient_services', 'write');
+  const { allowed: podeEscreverVaga } = useActionGate('vacancy', 'write');
+  if (!podeEscreverServico || !podeEscreverVaga) return null;
+
   if (service.liveVacancyId) {
     return (
       <a
