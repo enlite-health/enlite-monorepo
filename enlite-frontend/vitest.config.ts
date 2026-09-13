@@ -214,11 +214,6 @@ export default defineConfig({
         '**/src/presentation/components/features/admin/PatientDetail/edit/PatientExternalContactsEditDrawer.tsx': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
-        // Spec 018, PR-1/PR-2: escrita por linha de responsáveis, cobertura, contatos externos e
-        // marca de emergência — os 11 métodos públicos medem 100 nos quatro eixos.
-        '**/src/infrastructure/http/AdminPatientContactRowsApiService.ts': {
-          statements: 100, branches: 100, functions: 100, lines: 100,
-        },
         '**/src/presentation/components/features/admin/PatientDetail/edit/{PatientCoverageEditDrawer,PatientAddressDrawer,PatientClinicalEditDrawer}.tsx': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },

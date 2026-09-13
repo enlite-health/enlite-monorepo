@@ -178,7 +178,7 @@ describe('AdminPatientContactRowsController', () => {
 
     it('422 EMERGENCY_CONTACT_REQUIRES_PHONE quando o PATCH apaga o telefone de um responsável marcado de emergência (migration 423, D-A #4/SUP-40)', async () => {
       const repo = { updateOne: jest.fn().mockRejectedValue(new EmergencyContactRequiresPhoneError()) };
-      const controller = new AdminPatientContactRowsController(repo as never, {} as never, db() as never);
+      const controller = new AdminPatientContactRowsController(repo as never, {} as never, db() as never, {} as never);
       const res = mockRes();
       await controller.updateResponsible(mockReq({ params: { id: PATIENT_ID, rid: RESPONSIBLE_ID }, body: { phone: null } }), res);
       expect(res.status).toHaveBeenCalledWith(422);
@@ -234,7 +234,7 @@ describe('AdminPatientContactRowsController', () => {
 
     it('200 { emergencyMarkCleared:true } quando a linha desativada ERA a marca de emergência (migration 423, D-A #4)', async () => {
       const repo = { deactivate: jest.fn().mockResolvedValue({ outcome: 'deactivated', id: RESPONSIBLE_ID, emergencyMarkCleared: true }) };
-      const controller = new AdminPatientContactRowsController(repo as never, {} as never, db() as never);
+      const controller = new AdminPatientContactRowsController(repo as never, {} as never, db() as never, {} as never);
       const res = mockRes();
       await controller.deactivateResponsible(mockReq({ params: { id: PATIENT_ID, rid: RESPONSIBLE_ID } }), res);
       expect(res.json).toHaveBeenCalledWith({ success: true, data: { id: RESPONSIBLE_ID, active: false, emergencyMarkCleared: true } });

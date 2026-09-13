@@ -16,15 +16,22 @@ import { patientDetailFixture, patientDetailMinimal } from './patientDetailFixtu
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
 
-// ── AdminPatientContactRowsApiService mock (EquipeTratanteCard — deactivate flow, spec 018 PR-5) ──
+// ── AdminPatientContactRowsApiService mock ────────────────────────────────────────────────────
+// Um SÓ vi.mock por módulo (o 2º registro pisava no 1º em silêncio — `vi.mock` não funde objetos
+// de chamadas repetidas para o mesmo caminho, substitui): EquipeTratanteCard — deactivate flow
+// (spec 018 PR-5) + EmergencyMarkButton (FamiliaresCard/ExternalContactsCard, spec 018 PR-2).
 const mockDeactivateProfessional = vi.fn();
 const mockCreateProfessional = vi.fn();
 const mockUpdateProfessional = vi.fn();
+const markEmergencyContact = vi.fn().mockResolvedValue({});
+const unmarkEmergencyContact = vi.fn().mockResolvedValue({});
 vi.mock('@infrastructure/http/AdminPatientContactRowsApiService', () => ({
   AdminPatientContactRowsApiService: {
     deactivateProfessional: (...a: unknown[]) => mockDeactivateProfessional(...a),
     createProfessional: (...a: unknown[]) => mockCreateProfessional(...a),
     updateProfessional: (...a: unknown[]) => mockUpdateProfessional(...a),
+    markEmergencyContact: (...a: unknown[]) => markEmergencyContact(...a),
+    unmarkEmergencyContact: (...a: unknown[]) => unmarkEmergencyContact(...a),
   },
 }));
 
@@ -68,16 +75,6 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
   AdminApiService: {
     updatePatientSection: (...a: unknown[]) => updatePatientSection(...a),
     listInsuranceProviders: (...a: unknown[]) => listInsuranceProviders(...a),
-  },
-}));
-
-// Spec 018, PR-2: EmergencyMarkButton (FamiliaresCard/ExternalContactsCard) chama esta API ao clicar.
-const markEmergencyContact = vi.fn().mockResolvedValue({});
-const unmarkEmergencyContact = vi.fn().mockResolvedValue({});
-vi.mock('@infrastructure/http/AdminPatientContactRowsApiService', () => ({
-  AdminPatientContactRowsApiService: {
-    markEmergencyContact: (...a: unknown[]) => markEmergencyContact(...a),
-    unmarkEmergencyContact: (...a: unknown[]) => unmarkEmergencyContact(...a),
   },
 }));
 
