@@ -731,4 +731,78 @@ describe('AdminTherapeuticProjectsController', () => {
       }
     });
   });
+
+  /**
+   * lex-pr7 C7 (checklist condição 7): `ptp_macro_locked`, `ptp_contact_inactive` e `ptp_not_current`
+   * respondem SEM tocar `reportError` — a SENTINELA no corpo prova isso por AUSÊNCIA em qualquer
+   * chamada do espião E no corpo da resposta, não por leitura do código. O controle positivo (mesmo
+   * arquivo) prova que o espião FUNCIONA: um erro genérico É capturado por ele.
+   */
+  describe('lex-pr7 C7 — sentinela: nenhum dos 3 erros nomeados vaza o corpo para o log nem para a resposta', () => {
+    const SENTINELA = 'SENTINELA-PR7-NAO-VAZA';
+    const corpoComSentinela = { ...CORPO_NOVO, version: { ...CORPO_NOVO.version, clinicalContext: SENTINELA, generalObjective: SENTINELA } };
+
+    const semSentinelaEmLugarNenhum = (res: ReturnType<typeof mockRes>): void => {
+      // 1) nenhuma chamada do espião de log carrega a sentinela — nem no corpo, nem no contexto.
+      for (const call of (reportError as jest.Mock).mock.calls) {
+        expect(JSON.stringify(call)).not.toContain(SENTINELA);
+      }
+      // 2) o corpo da RESPOSTA HTTP também não — os 3 erros só devolvem nomes de campo/kind/id.
+      expect(JSON.stringify(corpoDaResposta(res))).not.toContain(SENTINELA);
+    };
+
+    it('409 `ptp_not_current`: SENTINELA não aparece no espião nem na resposta', async () => {
+      const { VersionNotCurrentError } = await import('../../../infrastructure/TherapeuticProjectRepository');
+      const repo = { createVersion: jest.fn().mockRejectedValue(new VersionNotCurrentError()) };
+      const res = mockRes();
+      await ctrl(repo).create(
+        mockReq({ params: { id: PATIENT_ID }, body: { mode: 'edit', fromVersionId: SOURCE_ID, version: corpoComSentinela.version }, permissionCells: ['patient_clinical:write'] }),
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(reportError).not.toHaveBeenCalled();
+      semSentinelaEmLugarNenhum(res);
+    });
+
+    it('422 `ptp_macro_locked`: SENTINELA não aparece no espião nem na resposta (só os NOMES dos campos)', async () => {
+      const { MacroFieldsLockedError } = await import('../../../infrastructure/TherapeuticProjectRepository');
+      const repo = { createVersion: jest.fn().mockRejectedValue(new MacroFieldsLockedError(['clinicalContext', 'generalObjective'])) };
+      const res = mockRes();
+      await ctrl(repo).create(
+        mockReq({ params: { id: PATIENT_ID }, body: { mode: 'edit', fromVersionId: SOURCE_ID, version: corpoComSentinela.version }, permissionCells: ['patient_clinical:write'] }),
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(reportError).not.toHaveBeenCalled();
+      semSentinelaEmLugarNenhum(res);
+    });
+
+    it('422 `ptp_contact_inactive`: SENTINELA não aparece no espião nem na resposta (só `kind`/`id`)', async () => {
+      const { ContactInactiveError } = await import('../../../infrastructure/TherapeuticProjectRepository');
+      const repo = { createVersion: jest.fn().mockRejectedValue(new ContactInactiveError('RESPONSIBLE', PAT_ID)) };
+      const res = mockRes();
+      await ctrl(repo).create(
+        mockReq({ params: { id: PATIENT_ID }, body: corpoComSentinela, permissionCells: ['patient_clinical:write'] }),
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(reportError).not.toHaveBeenCalled();
+      semSentinelaEmLugarNenhum(res);
+    });
+
+    it('CONTROLE POSITIVO: erro genérico (500) É capturado pelo espião — prova que o espião funciona de verdade', async () => {
+      const repo = { createVersion: jest.fn().mockRejectedValue(new Error('boom genérico')) };
+      const res = mockRes();
+      await ctrl(repo).create(
+        mockReq({ params: { id: PATIENT_ID }, body: corpoComSentinela, permissionCells: ['patient_clinical:write'] }),
+        res,
+      );
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(reportError).toHaveBeenCalledTimes(1);
+      // O controle É capturado (ao contrário dos 3 casos acima) — mas o CONTEXTO do log (2º arg)
+      // continua sem a sentinela: só o objeto Error passa, nunca `req.body` (lex C6).
+      expect((reportError as jest.Mock).mock.calls[0][0]).toBeInstanceOf(Error);
+      expect(JSON.stringify((reportError as jest.Mock).mock.calls[0][1])).not.toContain(SENTINELA);
+    });
+  });
 });
