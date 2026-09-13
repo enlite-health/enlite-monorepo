@@ -162,6 +162,31 @@ test.describe('Card Localizaciones — Fase 2, PRINCIPAL + TIPO (spec 019) @inte
     expect(rows).toContain('otro');
     expect(rows).toContain('Casa de una prima');
 
+    // ── 6) Editar SÓ o texto do "Otro" já salvo (o tipo não muda) — regressão do bug em que o
+    //      front só mandava `address_type` quando o tipo MUDAVA, e o servidor exige `address_type:
+    //      'otro'` na MESMA requisição sempre que `address_type_other` vier preenchido (400 sem
+    //      isso). Confere que o PATCH sai 200 e que o texto novo PERSISTE após reload. ────────────
+    await editButtons.first().click();
+    await expect(drawer).toBeVisible();
+    await expect(tipoSelect).toHaveValue('otro');
+    await expect(campoOtro).toHaveValue('Casa de una prima');
+    await campoOtro.click();
+    await campoOtro.press('Control+A');
+    await campoOtro.pressSequentially('Casa de otra prima', { delay: 40 });
+    await expect(campoOtro).toHaveValue('Casa de otra prima');
+    const patchSoTexto = page.waitForResponse((r) => r.request().method() === 'PATCH' && /\/addresses\//.test(r.url()));
+    await page.getByTestId('pad-save').click();
+    expect((await patchSoTexto).status()).toBe(200);
+    await expect(drawer).toHaveCount(0, { timeout: 15_000 });
+    await expect(card).toContainText('Casa de otra prima', { timeout: 20_000 });
+
+    await page.reload();
+    await abrirTabServicioContratado(page, patientId);
+    await expect(card).toContainText('Casa de otra prima', { timeout: 20_000 });
+    rows = runSQL(`SELECT address_type, address_type_other FROM patient_addresses WHERE patient_id = '${patientId}' AND archived_at IS NULL AND address_type = 'otro'`);
+    testInfo.annotations.push({ type: 'evidência', description: `após editar SÓ o texto + reload: ${rows}` });
+    expect(rows).toContain('Casa de otra prima');
+
     await expect(card).toHaveScreenshot('localizaciones-fase2-principal-tipo.png', { maxDiffPixelRatio: 0.05 });
   });
 
