@@ -257,3 +257,137 @@ describe('migration 434 (contract) @repo — banco efêmero próprio, migrado s�
     expect(dCount.n).toBe('1'); // nunca 0, nunca 2 — nem a migration inteira teria completado
   });
 });
+
+// Banco efêmero PRÓPRIO (migrado só até a 433, igual ao describe acima) — não pode compartilhar
+// o `pool` do describe anterior: depois do primeiro `it` de lá já rodar a 434 naquele banco, os
+// CHECKs novos impediriam montar aqui o cenário "ainda com valor legado" que a prova de
+// idempotência precisa da 1ª execução.
+describe('migration 434 (contract) @repo — idempotência: rodar a 434 duas vezes', () => {
+  let pool: Pool;
+  let dbName: string;
+  let adminUrl: string;
+  const patientIds: Record<'A' | 'B' | 'C' | 'D', string> = { A: '', B: '', C: '', D: '' };
+
+  beforeAll(async () => {
+    const created = await createEphemeralDbUpTo(BASE_DATABASE_URL, 433);
+    dbName = created.dbName;
+    adminUrl = created.adminUrl;
+    pool = new Pool({ connectionString: created.url });
+    await pool.query('SELECT 1');
+  }, 60_000);
+
+  afterAll(async () => {
+    await pool.end();
+    await dropEphemeralDb(adminUrl, dbName);
+  }, 30_000);
+
+  beforeEach(async () => {
+    for (const key of ['A', 'B', 'C', 'D'] as const) {
+      const { rows: [p] } = await pool.query<{ id: string }>(
+        `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status)
+         VALUES ($1, 'K2-idem', $2, 'AR', 'ACTIVE') RETURNING id`,
+        [`k2-migration-434-idem-${key}-${Date.now()}-${Math.random()}`, key],
+      );
+      patientIds[key] = p.id;
+    }
+  });
+
+  afterEach(async () => {
+    await pool.query(`DELETE FROM patient_addresses WHERE patient_id = ANY($1::uuid[])`, [Object.values(patientIds)]);
+    await pool.query(`DELETE FROM patients WHERE id = ANY($1::uuid[])`, [Object.values(patientIds)]);
+  });
+
+  it('a 434 sobrevive a rodar duas vezes — retrato idêntico, sem constraint/índice duplicado, sem marcar principal nem apagar tipo na repetição', async () => {
+    // Mesma forma de fixture do primeiro describe: A com troca de principal via PATCH novo, B já
+    // com tipo novo gravado ('escuela'), C é o backfill normal, D com duas 'primary' ativas sem
+    // principal, e uma linha arquivada de A com valor legado — tudo isso só é possível porque este
+    // banco ainda está no estado pré-434 (migrado só até a 433).
+    await pool.query(
+      `INSERT INTO patient_addresses (patient_id, address_formatted, display_order, address_type, is_default, source)
+       VALUES ($1, 'A - primary', 1, 'primary', false, 'admin_manual'),
+              ($1, 'A - secondary', 2, 'secondary', true, 'admin_manual')`,
+      [patientIds.A],
+    );
+    await pool.query(
+      `INSERT INTO patient_addresses (patient_id, address_formatted, display_order, address_type, is_default, source)
+       VALUES ($1, 'B - escuela', 1, 'escuela', true, 'admin_manual')`,
+      [patientIds.B],
+    );
+    await pool.query(
+      `INSERT INTO patient_addresses (patient_id, address_formatted, display_order, address_type, is_default, source)
+       VALUES ($1, 'C - primary', 1, 'primary', false, 'admin_manual')`,
+      [patientIds.C],
+    );
+    await pool.query(
+      `INSERT INTO patient_addresses (patient_id, address_formatted, display_order, address_type, is_default, source)
+       VALUES ($1, 'D - primary 1', 1, 'primary', false, 'admin_manual'),
+              ($1, 'D - primary 2', 2, 'primary', false, 'admin_manual')`,
+      [patientIds.D],
+    );
+    const { rows: [arquivada] } = await pool.query<{ id: string }>(
+      `INSERT INTO patient_addresses (patient_id, address_formatted, display_order, address_type, is_default, archived_at, source)
+       VALUES ($1, 'A - arquivada', 3, 'primary', false, NOW(), 'admin_manual') RETURNING id`,
+      [patientIds.A],
+    );
+
+    type Row = { id: string; address_type: string | null; is_default: boolean };
+    const snapshot = async () => {
+      const byPatient: Record<'A' | 'B' | 'C' | 'D', Row[]> = { A: [], B: [], C: [], D: [] };
+      for (const key of ['A', 'B', 'C', 'D'] as const) {
+        const { rows } = await pool.query<Row>(
+          `SELECT id, address_type, is_default FROM patient_addresses
+            WHERE patient_id = $1 AND archived_at IS NULL ORDER BY display_order`,
+          [patientIds[key]],
+        );
+        byPatient[key] = rows;
+      }
+      const { rows: [arquivadaRow] } = await pool.query<{ address_type: string | null }>(
+        `SELECT address_type FROM patient_addresses WHERE id = $1`,
+        [arquivada.id],
+      );
+      const { rows: constraints } = await pool.query<{ conname: string }>(
+        `SELECT conname FROM pg_constraint WHERE conrelid = 'public.patient_addresses'::regclass ORDER BY 1`,
+      );
+      const { rows: indexes } = await pool.query<{ indexname: string }>(
+        `SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'patient_addresses' ORDER BY 1`,
+      );
+      return {
+        byPatient,
+        arquivadaAddressType: arquivadaRow.address_type,
+        constraints: constraints.map((c) => c.conname),
+        indexes: indexes.map((i) => i.indexname),
+      };
+    };
+
+    // 1ª execução.
+    await pool.query(MIGRATION_434_SQL);
+    const after1 = await snapshot();
+
+    // Pré-condições da 1ª execução — sem isso, um retrato idêntico entre as duas rodadas não
+    // provaria nada (comparar um resultado já errado contra ele mesmo).
+    expect(after1.byPatient.B[0].address_type).toBe('escuela');
+    expect(after1.byPatient.A.filter((r) => r.is_default)).toHaveLength(1);
+    expect(after1.byPatient.D.filter((r) => r.is_default)).toHaveLength(1);
+    expect(after1.arquivadaAddressType).toBe('primary');
+    expect(new Set(after1.constraints).size).toBe(after1.constraints.length);
+    expect(new Set(after1.indexes).size).toBe(after1.indexes.length);
+
+    // 2ª execução — tem de resolver SEM ERRO (é o próprio objeto do teste).
+    await pool.query(MIGRATION_434_SQL);
+    const after2 = await snapshot();
+
+    // Retrato idêntico: mesmas linhas, mesmos ids, mesma ordem, nenhuma constraint/índice a mais.
+    expect(after2).toEqual(after1);
+    expect(new Set(after2.constraints).size).toBe(after2.constraints.length);
+    expect(new Set(after2.indexes).size).toBe(after2.indexes.length);
+
+    // A 2ª execução não marca novo principal nem apaga tipo: B continua 'escuela' na MESMA linha;
+    // A continua com exatamente 1 principal, na MESMA linha (mesmo id, não uma trocada).
+    expect(after2.byPatient.B[0].id).toBe(after1.byPatient.B[0].id);
+    expect(after2.byPatient.B[0].address_type).toBe('escuela');
+    const aDefaultAfter1 = after1.byPatient.A.find((r) => r.is_default);
+    const aDefaultAfter2 = after2.byPatient.A.find((r) => r.is_default);
+    expect(aDefaultAfter2?.id).toBe(aDefaultAfter1?.id);
+    expect(after2.byPatient.A.filter((r) => r.is_default)).toHaveLength(1);
+  }, 30_000);
+});
