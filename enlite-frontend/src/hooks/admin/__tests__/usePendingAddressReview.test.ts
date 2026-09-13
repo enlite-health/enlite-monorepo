@@ -151,7 +151,6 @@ describe('usePendingAddressReview', () => {
       const createBody = {
         createAddress: {
           address_formatted: 'Florida 100',
-          address_type: 'service',
         },
       };
 
