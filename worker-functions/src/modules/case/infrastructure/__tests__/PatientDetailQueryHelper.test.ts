@@ -237,7 +237,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
     const enc = makeEncryptionService();
     const result = await fetchPatientDetail(pool, enc, PATIENT_ID);
 
-    expect(queryImpl).toHaveBeenCalledTimes(10);
+    expect(queryImpl).toHaveBeenCalledTimes(11);
     expect(result!.contractedServices).toHaveLength(1);
     const svc = result!.contractedServices[0];
     expect(svc).toMatchObject({
