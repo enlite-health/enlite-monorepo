@@ -185,7 +185,13 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
       const nextType = patientAddressTypeSchema.parse(addressType === '' ? null : addressType);
       if (nextType !== originalAddressType) payload.address_type = nextType;
       const nextOther = nextType === 'otro' ? nz(addressTypeOther) : null;
-      if (nextOther !== (address.addressTypeOther ?? null)) payload.address_type_other = nextOther;
+      if (nextOther !== (address.addressTypeOther ?? null)) {
+        payload.address_type_other = nextOther;
+        // O `.refine` do servidor exige address_type === 'otro' NA MESMA requisição sempre que
+        // address_type_other vier preenchido — mesmo quando o tipo já era 'otro' e só o texto
+        // mudou (`nextType` não entraria no payload sozinho, pois não mudou do original).
+        if (nextOther !== null) payload.address_type = nextType;
+      }
       if (markPrimary && !address.isPrimary) payload.is_default = true;
       if (Object.keys(payload).length === 0) { handleClose(); return; }
       setBusy(true);

@@ -637,6 +637,16 @@ describe('PatientAddressDrawer — spec 019: address_type/address_type_other/is_
     expect(updatePatientAddressLogistics).not.toHaveBeenCalled();
   });
 
+  it('editar: endereço já "otro" — mudar SÓ o texto do "¿Cuál?" leva address_type:"otro" junto (senão o servidor 400 por faltar address_type na mesma requisição)', async () => {
+    render(<PatientAddressDrawer patientId="p1" address={{ ...existing, addressType: 'otro', addressTypeOther: 'antigo' }} onClose={vi.fn()} onSaved={vi.fn()} />);
+    const other = screen.getByTestId('pad-type-other');
+    fireEvent.change(other, { target: { value: 'novo' } });
+    fireEvent.click(screen.getByTestId('pad-save'));
+    await waitFor(() => expect(updatePatientAddressLogistics).toHaveBeenCalledWith('p1', 'addr1', {
+      address_type: 'otro', address_type_other: 'novo',
+    }));
+  });
+
   it('editar: marcar o checkbox "Marcar como principal" envia is_default:true junto de outra mudança', async () => {
     render(<PatientAddressDrawer patientId="p1" address={{ ...existing, isPrimary: false }} onClose={vi.fn()} onSaved={vi.fn()} />);
     fireEvent.click(screen.getByTestId('pad-mark-primary'));
