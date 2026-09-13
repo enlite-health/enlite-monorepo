@@ -95,6 +95,77 @@ export interface TherapeuticProjectVersion {
 
 export const versionLabel = (major: number, minor: number): string => `V.${major}.${minor}`;
 
+/**
+ * ADR-4 / D328 — campo MACRO só muda quando o operador cria uma versão NOVA (`mode:'new'`);
+ * `mode:'edit'` recusa alteração de MACRO com 422 `ptp_macro_locked`. `modality` é MICRO
+ * (D328/SUP-24: trocar presencial↔online é edição, não pede projeto novo — fecha o que o
+ * plano deixava em aberto). `contactRefs`/`careTeamIds` também são MICRO: são só ids, e trocar a
+ * seleção de contato não é reescrever o conteúdo clínico da versão.
+ */
+export const THERAPEUTIC_FIELD_CLASS = {
+  MACRO: ['contractedServiceId', 'diagnoses', 'clinicalContext', 'generalObjective', 'specificObjectiveIds', 'activityIds'] as const,
+  MICRO: ['startDate', 'endDate', 'modality', 'contactRefs', 'careTeamIds'] as const,
+} as const;
+
+export type TherapeuticMacroField = (typeof THERAPEUTIC_FIELD_CLASS.MACRO)[number];
+
+/** Compara ids/uris de um array sem depender de ordem (o cliente pode reenviar a mesma seleção reordenada). */
+function sameIdSet(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sa = [...a].sort();
+  const sb = [...b].sort();
+  return sa.every((v, i) => v === sb[i]);
+}
+
+/** O que a versão de ORIGEM tem, na forma comparável com o corpo do PATCH (ids, não snapshots). */
+export interface CurrentMacroSnapshot {
+  contractedServiceId: string;
+  diagnosisUris: readonly string[];
+  clinicalContext: string;
+  generalObjective: string;
+  specificObjectiveIds: readonly string[];
+  activityIds: readonly string[];
+}
+
+export interface CandidateMacroInput {
+  contractedServiceId: string;
+  diagnoses: readonly { uri: string }[];
+  clinicalContext: string;
+  generalObjective: string;
+  specificObjectiveIds: readonly string[];
+  activityIds: readonly string[];
+}
+
+/**
+ * Os campos MACRO que MUDARIAM se `candidate` fosse gravado sobre `current` — vazio = pode editar.
+ * Usado SÓ em `mode:'edit'` (lex-pr7 contract §alterado); `mode:'new'` nunca chama isto (major
+ * nova começa do zero, D328 item 1).
+ */
+export function macroFieldsChanged(current: CurrentMacroSnapshot, candidate: CandidateMacroInput): TherapeuticMacroField[] {
+  const changed: TherapeuticMacroField[] = [];
+  if (current.contractedServiceId !== candidate.contractedServiceId) changed.push('contractedServiceId');
+  if (!sameIdSet(current.diagnosisUris, candidate.diagnoses.map((d) => d.uri))) changed.push('diagnoses');
+  if (current.clinicalContext !== candidate.clinicalContext) changed.push('clinicalContext');
+  if (current.generalObjective !== candidate.generalObjective) changed.push('generalObjective');
+  if (!sameIdSet(current.specificObjectiveIds, candidate.specificObjectiveIds)) changed.push('specificObjectiveIds');
+  if (!sameIdSet(current.activityIds, candidate.activityIds)) changed.push('activityIds');
+  return changed;
+}
+
+/**
+ * A versão VIGENTE entre as não-anuladas: `created_at` mais recente (D328 — "vigente = created_at
+ * mais recente"). `null` se todas estiverem anuladas ou a lista vier vazia. Major mais alta nem
+ * sempre é a vigente por minor mais alta: "Novo" pode nascer depois de uma edição de major antiga
+ * só na teoria (o fluxo real não permite, mas a regra é por DATA, não por número).
+ */
+export function currentVersionOf<T extends { id: string; createdAt: string; annulledAt: string | null }>(
+  existing: readonly T[],
+): T | null {
+  const alive = existing.filter((v) => v.annulledAt === null);
+  if (alive.length === 0) return null;
+  return sortByCreatedDesc(alive)[0];
+}
+
 type VersionNumber = Pick<TherapeuticProjectVersion, 'major' | 'minor'>;
 
 /** A major seguinte para "Novo": 1 quando o paciente ainda não tem projeto. */
