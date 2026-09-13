@@ -28,11 +28,21 @@ const PUBLIC_STATUSES = new Set([
 // Inactive statuses whose short links should be purged from Short.io to free quota.
 const INACTIVE_STATUSES = new Set(['CLOSED', 'SUSPENDED']);
 
-// Guarda de vaga de teste/QA (migration 248). Opcional no body, default false
+// Guarda de vaga de teste/QA (migration 248) e is_draft de criação (só válido
+// junto com is_test=true, ver createVacancy). Opcional no body, default false
 // quando ausente/inválido — never blocks vacancy creation on a bad value.
-const CreateVacancyIsTestSchema = z.boolean().optional();
+const OptionalBooleanSchema = z.boolean().optional();
 
-async function tryEnsureShortLink(pool: Pool, vacancyId: string, status: string | null | undefined): Promise<void> {
+export async function tryEnsureShortLink(
+  pool: Pool,
+  vacancyId: string,
+  status: string | null | undefined,
+  isTest: boolean,
+): Promise<void> {
+  // Vaga is_test=true (fixture E2E/QA) NUNCA cria short link real: Short.io é
+  // terceiro sem teardown — o cleanup de fixtures apaga a vaga, mas o link
+  // órfão fica lá. Mesmo guard de PublicJobsQueryBuilder.ts (`jp.is_test = false`).
+  if (isTest) return;
   if (!status || !PUBLIC_STATUSES.has(status)) return;
   const svc = ShortLinkService.fromEnv();
   if (!svc) {
@@ -92,10 +102,10 @@ export class VacancyCrudController {
         worker_attributes, schedule, work_schedule, providers_needed,
         salary_text, payment_day, daily_obs, patient_address_id,
         status: bodyStatus, published_at, closes_at, updatePatient,
-        is_test: bodyIsTest,
+        is_test: bodyIsTest, is_draft: bodyIsDraft,
       } = req.body;
 
-      const isTestParse = CreateVacancyIsTestSchema.safeParse(bodyIsTest);
+      const isTestParse = OptionalBooleanSchema.safeParse(bodyIsTest);
       if (!isTestParse.success) {
         res.status(400).json({
           success: false,
@@ -105,6 +115,18 @@ export class VacancyCrudController {
         return;
       }
       const isTest = isTestParse.data ?? false;
+
+      // is_draft no payload de criação só é honrado quando is_test=true
+      // (ver buildInsertParams) — declarado aqui só pra validar o tipo cedo.
+      const isDraftParse = OptionalBooleanSchema.safeParse(bodyIsDraft);
+      if (!isDraftParse.success) {
+        res.status(400).json({
+          success: false,
+          error: 'is_draft must be a boolean when provided',
+          details: isDraftParse.error.flatten().formErrors,
+        });
+        return;
+      }
 
       if (!patient_id || typeof patient_id !== 'string') {
         res.status(400).json({
@@ -152,6 +174,7 @@ export class VacancyCrudController {
         published_at: published_at ?? null,
         closes_at: closes_at ?? null,
         is_test: isTest,
+        is_draft: isDraftParse.data,
       };
 
       const actor = extractHumanActor(req);
@@ -187,7 +210,12 @@ export class VacancyCrudController {
           reportError(error, { source: 'VacancyCrudController:domainEvent', jobPostingId: newVacancy.id });
         });
 
-        tryEnsureShortLink(this.db, newVacancy.id as string, newVacancy.status as string | undefined)
+        tryEnsureShortLink(
+          this.db,
+          newVacancy.id as string,
+          newVacancy.status as string | undefined,
+          newVacancy.is_test === true,
+        )
           .catch((err: unknown) => {
             reportError(err instanceof Error ? err : new Error(String(err)), { source: 'tryEnsureShortLink:create', vacancyId: newVacancy.id });
           });
@@ -288,7 +316,7 @@ export class VacancyCrudController {
           if (INACTIVE_STATUSES.has(updated!.status as string)) {
             void tryPurgeShortLinks(this.db, id);
           } else {
-            tryEnsureShortLink(this.db, id, updated!.status as string).catch((err: unknown) =>
+            tryEnsureShortLink(this.db, id, updated!.status as string, updated!.is_test === true).catch((err: unknown) =>
               reportError(err instanceof Error ? err : new Error(String(err)), { source: 'tryEnsureShortLink:update', vacancyId: id }));
           }
         });
