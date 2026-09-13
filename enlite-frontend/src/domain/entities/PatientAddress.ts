@@ -80,7 +80,9 @@ export interface PatientAddressRow {
   patient_id: string;
   address_formatted: string;
   address_raw: string | null;
-  address_type: string;
+  // C3 (spec 019): `address_type` NÃO existe neste tipo. O parentesco do domicílio é dado da
+  // FICHA do paciente (`PatientAddressDetail.addressType`, endpoint diferente) — este tipo
+  // espelha o wizard de criação de vaga, que nunca deve exibi-lo (CaseSelectStep exibia cru).
   display_order: number;
   source: string;
   /** Address complement (Depto, Piso, andar). Migration 157. Null until populated via UI. */

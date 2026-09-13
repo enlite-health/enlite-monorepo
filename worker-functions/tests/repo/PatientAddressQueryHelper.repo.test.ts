@@ -141,13 +141,15 @@ describe('PatientAddressQueryHelper.insertPatientAddress @repo (Postgres real, m
     ).rejects.toThrow(/patient_addresses_one_default_per_patient|duplicate key/);
   });
 
-  it('fetchPatientAddresses devolve is_default e address_type (NULL) para o painel', async () => {
+  it('fetchPatientAddresses devolve is_default para o painel, e NUNCA address_type (C3: parentesco é da ficha, não do wizard de vaga)', async () => {
     await insertPatientAddress(pool, noGeocode, {
       patientId, addressFormatted: 'Endereço do painel', addressRaw: null, displayOrder: null,
       neighborhood: null, logisticsCorridor: null, accessNotes: null,
     });
     const rows = await fetchPatientAddresses(pool, patientId);
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ address_type: null, is_default: true, address_formatted: 'Endereço do painel' });
+    expect(rows[0]).toMatchObject({ is_default: true, address_formatted: 'Endereço do painel' });
+    // Morre se o SELECT voltar a trazer address_type (regressão do vazamento em CaseSelectStep).
+    expect(rows[0]).not.toHaveProperty('address_type');
   });
 });

@@ -356,7 +356,7 @@ describe('AdminPatientsController.listPatientAddresses', () => {
   it('200 com a lista de endereços ativos do paciente, incluindo is_default', async () => {
     const controller = makeController();
     const rows = [
-      { id: 'a1', address_formatted: 'Calle 1', address_raw: null, address_type: null, is_default: true, display_order: 1, source: 'admin_manual', complement: null, lat: '-34.6', lng: '-58.4' },
+      { id: 'a1', address_formatted: 'Calle 1', address_raw: null, is_default: true, display_order: 1, source: 'admin_manual', complement: null, lat: '-34.6', lng: '-58.4' },
     ];
     mockPoolQuery.mockResolvedValueOnce({ rows });
 
@@ -369,6 +369,9 @@ describe('AdminPatientsController.listPatientAddresses', () => {
     expect(sql).toContain('FROM patient_addresses');
     expect(sql).toContain('archived_at IS NULL');
     expect(sql).toContain('is_default');
+    // C3 (spec 019): morre se o SELECT voltar a trazer address_type — este endpoint alimenta o
+    // wizard de criação de vaga (CaseSelectStep), que não deve exibir o parentesco do domicílio.
+    expect(sql).not.toContain('address_type');
     expect(params).toEqual([PATIENT_ID]);
   });
 

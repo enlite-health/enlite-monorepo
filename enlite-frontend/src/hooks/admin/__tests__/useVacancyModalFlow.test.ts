@@ -39,7 +39,6 @@ const ADDRESS_1 = {
   patient_id: 'pat-1',
   address_formatted: 'Av. Italia 736, Tigre, Buenos Aires, Argentina',
   address_raw: 'Av. Italia 736',
-  address_type: 'service',
   display_order: 1,
   source: 'manual',
   complement: null,

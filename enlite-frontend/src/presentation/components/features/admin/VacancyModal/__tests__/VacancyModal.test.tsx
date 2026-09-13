@@ -16,7 +16,6 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
         patient_id: 'p-1',
         address_formatted: 'Av. Corrientes 1234, CABA',
         address_raw: null,
-        address_type: 'PRIMARY',
         display_order: 1,
         source: 'manual',
       },
@@ -235,7 +234,6 @@ describe('CaseSelectStep', () => {
           patient_id: 'p-1',
           address_formatted: 'Av. Corrientes 1234',
           address_raw: null,
-          address_type: 'PRIMARY',
           display_order: 1,
           source: 'manual',
           complement: null,
@@ -254,5 +252,35 @@ describe('CaseSelectStep', () => {
     render(<CaseSelectStep {...base} />);
     expect(document.body.textContent).not.toContain('firstName');
     expect(document.body.textContent).not.toContain('lastName');
+  });
+
+  it('C3 (spec 019): NUNCA exibe address_type — mesmo que o objeto ainda o carregue em runtime (regressão do vazamento de parentesco no wizard de vaga)', () => {
+    // `as any`: PatientAddressRow não tem mais `address_type` (removido do tipo e do SELECT do
+    // backend); o cast simula uma resposta desatualizada de fora do contrato TS para provar que
+    // a TELA, e não só o tipo, ignora o campo — morre se a linha de exibição voltar.
+    const addressComValorLegado = {
+      id: 'addr-9',
+      patient_id: 'p-1',
+      address_formatted: 'Av. Corrientes 1234',
+      address_raw: null,
+      display_order: 1,
+      source: 'manual',
+      complement: null,
+      lat: null,
+      lng: null,
+      address_type: 'casa_madre',
+    } as any;
+    render(
+      <CaseSelectStep
+        {...base}
+        selectedCaseNumber={10}
+        selectedPatientId="p-1"
+        dependencyLevel="SEVERE"
+        addresses={[addressComValorLegado]}
+        selectedAddressId={null}
+      />
+    );
+    expect(screen.getByTestId('address-option-addr-9')).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('casa_madre');
   });
 });
