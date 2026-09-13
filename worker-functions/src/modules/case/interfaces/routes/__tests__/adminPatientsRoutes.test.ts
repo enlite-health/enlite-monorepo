@@ -24,6 +24,8 @@ import type { AdminPatientContractedServicesController } from '../../controllers
 import type { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import type { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
 import type { AdminPatientContactRowsController } from '../../controllers/AdminPatientContactRowsController';
+import type { AdminPatientExternalContactsController } from '../../controllers/AdminPatientExternalContactsController';
+import type { AdminPatientEmergencyContactController } from '../../controllers/AdminPatientEmergencyContactController';
 
 jest.mock('@shared/logging', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -116,6 +118,12 @@ const ESPERADO: Record<string, string | null> = {
   'POST /patients/:id/professionals': 'patient_care_team:write',
   'PATCH /patients/:id/professionals/:pid': 'patient_care_team:write',
   'POST /patients/:id/professionals/:pid/deactivate': 'patient_care_team:write',
+  // Contatos externos sem vínculo familiar + marca de emergência (spec 018, PR-2, `lex` #4/D-A).
+  'POST /patients/:id/external-contacts': 'patient_family:write',
+  'PATCH /patients/:id/external-contacts/:xid': 'patient_family:write',
+  'POST /patients/:id/external-contacts/:xid/deactivate': 'patient_family:write',
+  'PUT /patients/:id/emergency-contact': 'patient_family:write',
+  'DELETE /patients/:id/emergency-contact': 'patient_family:write',
 };
 
 /** Rotas da família SEM célula, de propósito: só recusam (410), nunca fazem nada com o dado. */
@@ -189,9 +197,20 @@ function pecas() {
     updateProfessional: responde('rows.updateProfessional'),
     deactivateProfessional: responde('rows.deactivateProfessional'),
   } as unknown as AdminPatientContactRowsController;
+  // Spec 018, PR-2: contatos externos + marca de emergência.
+  const externalContacts = {
+    create: responde('external.create'),
+    update: responde('external.update'),
+    deactivate: responde('external.deactivate'),
+  } as unknown as AdminPatientExternalContactsController;
+  const emergencyContact = {
+    mark: responde('emergency.mark'),
+    unmark: responde('emergency.unmark'),
+  } as unknown as AdminPatientEmergencyContactController;
 
   return {
     controller, chatIds, chatRoles, map, addresses, insurance, contracted, diagnoses, terminology, contactRows,
+    externalContacts, emergencyContact,
     auth: authDouble(), permissions: permissionsDouble(),
   };
 }
@@ -202,6 +221,7 @@ function build() {
   return createAdminPatientsRoutes(
     p.controller, p.auth, p.permissions, p.chatIds, p.chatRoles,
     p.map, p.addresses, p.insurance, p.contracted, p.diagnoses, p.terminology, p.contactRows,
+    p.externalContacts, p.emergencyContact,
   );
 }
 
@@ -220,19 +240,20 @@ describe('createAdminPatientsRoutes', () => {
     expect(declarado).toEqual(ESPERADO);
   });
 
-  it('a família declara exatamente 49 rotas — 39 de antes (D286) + o 410 de support-network + as 6 rotas por linha (PR-1, ADR-1) + activate-recruitment (spec 018, PR-6) + as 3 da equipe tratante (spec 018, PR-5, US-11)', () => {
-    expect(scanExpressRouter(build())).toHaveLength(49);
+  it('a família declara exatamente 54 rotas — 45 do PR-1 (39 de antes/D286 + o 410 de support-network + as 6 por linha) + activate-recruitment (PR-6) + as 3 da equipe tratante (PR-5) + as 5 do PR-2 (contatos externos + marca de emergência)', () => {
+    expect(scanExpressRouter(build())).toHaveLength(54);
   });
 
   it('a família é `admin.patients` — o nome que PERMISSION_ENFORCED_ROUTES liga', () => {
     expect(ADMIN_PATIENTS_FAMILY).toBe('admin.patients');
   });
 
-  it('sem o 12º argumento (contactRowsController omitido), o factory usa o DEFAULT', () => {
-    // O default `new AdminPatientContactRowsController()` constrói os repositórios reais, que
-    // pegam o pool de `DatabaseConnection.getInstance()` NA CONSTRUÇÃO (não é preguiçoso como o
-    // comentário do factory presumia) — precisa de config de banco só para o `new` não estourar;
-    // nenhuma query roda neste teste.
+  it('sem o 12º/13º/14º argumento (contactRowsController/externalContacts/emergencyContact omitidos), o factory usa os DEFAULTS', () => {
+    // Os defaults `new AdminPatientContactRowsController()` / `new AdminPatientExternalContactsController()` /
+    // `new AdminPatientEmergencyContactController()` constroem os repositórios reais, que pegam o
+    // pool de `DatabaseConnection.getInstance()` NA CONSTRUÇÃO (não é preguiçoso como o comentário
+    // do factory presumia) — precisa de config de banco só para o `new` não estourar; nenhuma
+    // query roda neste teste.
     const antes = process.env.DATABASE_URL;
     process.env.DATABASE_URL = 'postgresql://user:pass@localhost:5432/db';
     try {
@@ -240,9 +261,9 @@ describe('createAdminPatientsRoutes', () => {
       const router = createAdminPatientsRoutes(
         p.controller, p.auth, p.permissions, p.chatIds, p.chatRoles,
         p.map, p.addresses, p.insurance, p.contracted, p.diagnoses, p.terminology,
-        // 12º omitido de propósito
+        // 12º/13º/14º omitidos de propósito
       );
-      expect(scanExpressRouter(router)).toHaveLength(49);
+      expect(scanExpressRouter(router)).toHaveLength(54);
     } finally {
       if (antes === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = antes;
     }
@@ -314,6 +335,11 @@ describe('createAdminPatientsRoutes', () => {
     ['post', '/api/admin/patients/abc-123/professionals', 'rows.createProfessional'],
     ['patch', '/api/admin/patients/abc-123/professionals/p1', 'rows.updateProfessional'],
     ['post', '/api/admin/patients/abc-123/professionals/p1/deactivate', 'rows.deactivateProfessional'],
+    ['post', '/api/admin/patients/abc-123/external-contacts', 'external.create'],
+    ['patch', '/api/admin/patients/abc-123/external-contacts/x1', 'external.update'],
+    ['post', '/api/admin/patients/abc-123/external-contacts/x1/deactivate', 'external.deactivate'],
+    ['put', '/api/admin/patients/abc-123/emergency-contact', 'emergency.mark'],
+    ['delete', '/api/admin/patients/abc-123/emergency-contact', 'emergency.unmark'],
   ] as const)('%s %s → %s', async (metodo, caminho, esperado) => {
     const app = express();
     app.use(express.json());

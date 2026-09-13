@@ -7,7 +7,18 @@
  * Vive na seção "cobertura" da ficha (container `patient_coverage`): a tela edita a lista inteira e
  * manda a lista inteira (`replaceAll`, como os responsáveis). O telefone é PII cifrada via KMS.
  */
-export const COVERAGE_EMERGENCY_CONTACT_KINDS = ['DIRECT_PROFESSIONAL', 'AMBULANCE', 'EMERGENCY_CENTER'] as const;
+/**
+ * Ampliado na migration 424 (spec 018, PR-2, US-14, SUP-17): legado AMBULANCE/EMERGENCY_CENTER
+ * migrado para INSURANCE_EMERGENCY (premissa sem resposta humana — Emenda 12/09-B do registro de
+ * operações); PUBLIC_EMERGENCY_SERVICE e PRIVATE_AMBULANCE distinguem o que antes caía junto em
+ * AMBULANCE. Rótulo por país+idioma no front (research §2e) — nunca hardcode aqui.
+ */
+export const COVERAGE_EMERGENCY_CONTACT_KINDS = [
+  'DIRECT_PROFESSIONAL',
+  'PUBLIC_EMERGENCY_SERVICE',
+  'PRIVATE_AMBULANCE',
+  'INSURANCE_EMERGENCY',
+] as const;
 export type CoverageEmergencyContactKind = (typeof COVERAGE_EMERGENCY_CONTACT_KINDS)[number];
 
 export const COVERAGE_EMERGENCY_CONTACT_NAME_MAX = 200;

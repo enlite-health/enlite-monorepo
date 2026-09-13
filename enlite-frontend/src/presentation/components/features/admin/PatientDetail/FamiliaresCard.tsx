@@ -12,12 +12,15 @@ import {
   TableCell,
 } from '@presentation/components/atoms/Table';
 import { ActionButton } from '@presentation/components/features/access';
-import type { PatientResponsibleDetail } from '@domain/entities/PatientDetail';
+import type { PatientResponsibleDetail, EmergencyContactRef } from '@domain/entities/PatientDetail';
 import { PatientSupportNetworkEditDrawer } from './edit/PatientSupportNetworkEditDrawer';
 import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
+import { EmergencyMarkButton } from './EmergencyMarkButton';
 
 interface FamiliaresCardProps {
   responsibles: PatientResponsibleDetail[];
+  /** Spec 018, PR-2 (D-A): a marca de emergência vigente do paciente — para destacar a linha marcada. */
+  emergencyContactRef?: EmergencyContactRef | null;
   /** Patient id — required to save the support-network section. */
   patientId?: string;
   /** Called after a successful edit so the page can refetch the detail. */
@@ -27,7 +30,7 @@ interface FamiliaresCardProps {
 }
 
 
-export function FamiliaresCard({ responsibles, patientId, onSaved, focusRequest }: FamiliaresCardProps) {
+export function FamiliaresCard({ responsibles, emergencyContactRef, patientId, onSaved, focusRequest }: FamiliaresCardProps) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   useAutoOpenDrawer(focusRequest, 'RESPONSIBLE', () => setEditing(true));
@@ -68,11 +71,12 @@ export function FamiliaresCard({ responsibles, patientId, onSaved, focusRequest 
           <TableHead>{t('admin.patients.detail.familyCard.tableIdentification')}</TableHead>
           <TableHead>{t('admin.patients.detail.familyCard.tableName')}</TableHead>
           <TableHead>{t('admin.patients.detail.familyCard.tablePhone')}</TableHead>
+          <TableHead>{t('admin.patients.detail.externalContactsCard.tableEmergency')}</TableHead>
         </TableHeader>
         <TableBody>
           {rows.length === 0 ? (
             <TableRow>
-              <TableCell unwrapped colSpan={4} className="py-6 text-center">
+              <TableCell unwrapped colSpan={5} className="py-6 text-center">
                 <Text as="span" size="sm" color="secondary">
                   {t('admin.patients.detail.noData')}
                 </Text>
@@ -107,6 +111,17 @@ export function FamiliaresCard({ responsibles, patientId, onSaved, focusRequest 
                     </div>
                   </TableCell>
                   <TableCell>{r.phone ?? empty}</TableCell>
+                  <TableCell unwrapped>
+                    {patientId ? (
+                      <EmergencyMarkButton
+                        patientId={patientId}
+                        kind="RESPONSIBLE"
+                        contactId={r.id}
+                        isMarked={emergencyContactRef?.kind === 'RESPONSIBLE' && emergencyContactRef.id === r.id}
+                        onChanged={() => onSaved?.()}
+                      />
+                    ) : empty}
+                  </TableCell>
                 </TableRow>
               );
             })

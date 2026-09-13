@@ -3,6 +3,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { PatientResponsibleInput, PatientResponsiblePatch } from '../domain/PatientResponsible';
 import { deactivateRow, type DeactivateOutcome } from './deactivateRowByRow';
+import { EmergencyContactRequiresPhoneError, isEmergencyMarkCheckViolation } from './EmergencyContactRequiresPhoneError';
 
 /**
  * 409 — já existe titular ATIVO para este paciente (índice `idx_patient_responsibles_one_primary`,
@@ -271,11 +272,18 @@ export class PatientResponsibleRepository {
     return deactivateRow(client, 'patient_responsibles', patientId, id, actorUid);
   }
 
-  /** 23505 no índice de titular único → 409 legível; qualquer outro erro passa intocado. */
+  /**
+   * 23505 no índice de titular único → 409 legível; 23514 do trigger da migration 423 (apagar
+   * telefone de responsável marcado de emergência, D-A #4/SUP-40) → 422 legível; qualquer outro
+   * erro passa intocado.
+   */
   private mapPrimaryConflict(err: unknown): unknown {
     const pgErr = err as { code?: string; constraint?: string } | null;
     if (pgErr?.code === PRIMARY_UNIQUE_VIOLATION && pgErr.constraint === PRIMARY_INDEX_NAME) {
       return new ResponsiblePrimaryAlreadySetError();
+    }
+    if (isEmergencyMarkCheckViolation(err)) {
+      return new EmergencyContactRequiresPhoneError();
     }
     return err;
   }

@@ -42,6 +42,25 @@ export interface PatientResponsibleDetail {
   source: string;
 }
 
+/**
+ * Contato de terceiro SEM vínculo familiar na rede de apoio do paciente (migration 422; spec 018
+ * PR-2, `lex` #4): professor, escola, vizinho, empregador, gestor de caso, referente comunitário.
+ * SEM categoria de saúde no `relation` (condição do lex).
+ */
+export interface PatientExternalContactDetail {
+  id: string;
+  relation: string;
+  name: string;
+  phone: string | null;
+  active: true;
+}
+
+/** `patients.emergency_responsible_id` / `emergency_external_contact_id` — migration 423, spec 018 PR-2, D-A. */
+export interface EmergencyContactRef {
+  kind: 'RESPONSIBLE' | 'EXTERNAL';
+  id: string;
+}
+
 export interface AddressAvailabilityPerDay {
   dayOfWeek: number;
   coveredHours: number;
@@ -201,6 +220,16 @@ export interface PatientDetail {
   /** Spec 014 (US-D3): `phoneWhatsapp` coincide com o de um responsável. */
   phoneMatchesResponsible: boolean;
   responsibles: PatientResponsibleDetail[];
+  /**
+   * Spec 018, PR-2 (`lex` #4): contatos externos sem vínculo familiar (container `patient_family`).
+   * `null` = o ator não tem `patient_family:read` (redação, D113); `[]` = tem a célula e a lista está vazia.
+   */
+  externalContacts?: PatientExternalContactDetail[] | null;
+  /**
+   * Spec 018, PR-2 (D-A): a marca de emergência do paciente. `null` = não definida OU o ator não
+   * tem `patient_family:read` — os dois casos são indistinguíveis de propósito (D113/lex C3).
+   */
+  emergencyContactRef?: EmergencyContactRef | null;
   /**
    * 417 (D301): contatos de emergência da COBERTURA (container `patient_coverage`). `null` = o ator não
    * tem a célula (redação, D113); `[]` = tem a célula e a lista está vazia. Backend anterior à 417: ausente.

@@ -11,6 +11,7 @@ import {
   PatientResponsibleRepository,
   ResponsiblePrimaryAlreadySetError,
 } from '../../infrastructure/PatientResponsibleRepository';
+import { EmergencyContactRequiresPhoneError } from '../../infrastructure/EmergencyContactRequiresPhoneError';
 import {
   PatientCoverageEmergencyContactRepository,
   CoverageEmergencyContactLimitReachedError,
@@ -129,6 +130,10 @@ export class AdminPatientContactRowsController {
         res.status(409).json({ success: false, error: err.message, code: err.code });
         return;
       }
+      if (err instanceof EmergencyContactRequiresPhoneError) {
+        res.status(422).json({ success: false, error: err.message, code: err.code });
+        return;
+      }
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientContactRowsController:updateResponsible', patientId: params.data.id, responsibleId: params.data.rid });
       res.status(500).json({ success: false, error: 'Failed to update responsible' });
@@ -156,7 +161,7 @@ export class AdminPatientContactRowsController {
         res.status(409).json({ success: false, error: 'Responsible already inactive' });
         return;
       }
-      res.status(200).json({ success: true, data: { id: outcome.id, active: false } });
+      res.status(200).json({ success: true, data: { id: outcome.id, active: false, emergencyMarkCleared: outcome.emergencyMarkCleared ?? false } });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientContactRowsController:deactivateResponsible', patientId: params.data.id, responsibleId: params.data.rid });

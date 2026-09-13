@@ -8,8 +8,16 @@
  * `AdminApiService`); callers usam `AdminApiService`, que delega transparentemente.
  */
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
-import type { PatientResponsibleInput, PatientResponsiblePatch, PatientProfessionalInput, PatientProfessionalPatch } from '@domain/entities/PatientSectionPayloads';
+import type {
+  PatientResponsibleInput,
+  PatientResponsiblePatch,
+  PatientProfessionalInput,
+  PatientProfessionalPatch,
+  PatientExternalContactInput,
+  PatientExternalContactPatch,
+} from '@domain/entities/PatientSectionPayloads';
 import type { PatientCoverageEmergencyContactInput, PatientCoverageEmergencyContactPatch } from '@domain/entities/PatientCoverage';
+import type { EmergencyContactRef } from '@domain/entities/PatientDetail';
 import { PatientApiError } from './AdminPatientsApiService';
 
 interface ApiSuccessResponse<T> {
@@ -73,8 +81,37 @@ class AdminPatientContactRowsApiServiceClass {
   }
 
   /** POST /api/admin/patients/:id/responsibles/:rid/deactivate */
-  async deactivateResponsible(patientId: string, id: string): Promise<{ id: string; active: false }> {
-    return this.writeJson<{ id: string; active: false }>('POST', `/api/admin/patients/${patientId}/responsibles/${id}/deactivate`);
+  async deactivateResponsible(patientId: string, id: string): Promise<{ id: string; active: false; emergencyMarkCleared: boolean }> {
+    return this.writeJson<{ id: string; active: false; emergencyMarkCleared: boolean }>('POST', `/api/admin/patients/${patientId}/responsibles/${id}/deactivate`);
+  }
+
+  // ── Contatos externos sem vínculo familiar (spec 018, PR-2, `lex` #4) ────────────────────────
+
+  /** POST /api/admin/patients/:id/external-contacts */
+  async createExternalContact(patientId: string, input: PatientExternalContactInput): Promise<{ id: string }> {
+    return this.writeJson<{ id: string }>('POST', `/api/admin/patients/${patientId}/external-contacts`, input);
+  }
+
+  /** PATCH /api/admin/patients/:id/external-contacts/:xid */
+  async updateExternalContact(patientId: string, id: string, patch: PatientExternalContactPatch): Promise<{ id: string }> {
+    return this.writeJson<{ id: string }>('PATCH', `/api/admin/patients/${patientId}/external-contacts/${id}`, patch);
+  }
+
+  /** POST /api/admin/patients/:id/external-contacts/:xid/deactivate */
+  async deactivateExternalContact(patientId: string, id: string): Promise<{ id: string; active: false; emergencyMarkCleared: boolean }> {
+    return this.writeJson<{ id: string; active: false; emergencyMarkCleared: boolean }>('POST', `/api/admin/patients/${patientId}/external-contacts/${id}/deactivate`);
+  }
+
+  // ── Marca de emergência (spec 018, PR-2, D-A) ───────────────────────────────────────────────
+
+  /** PUT /api/admin/patients/:id/emergency-contact */
+  async markEmergencyContact(patientId: string, target: EmergencyContactRef): Promise<{ emergencyContactRef: EmergencyContactRef }> {
+    return this.writeJson<{ emergencyContactRef: EmergencyContactRef }>('PUT', `/api/admin/patients/${patientId}/emergency-contact`, target);
+  }
+
+  /** DELETE /api/admin/patients/:id/emergency-contact */
+  async unmarkEmergencyContact(patientId: string): Promise<{ emergencyContactRef: null }> {
+    return this.writeJson<{ emergencyContactRef: null }>('DELETE', `/api/admin/patients/${patientId}/emergency-contact`);
   }
 
   // ── Contatos de emergência da cobertura ──────────────────────────────────────────────────────

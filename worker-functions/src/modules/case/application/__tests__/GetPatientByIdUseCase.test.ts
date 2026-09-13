@@ -84,6 +84,8 @@ const mockPatient: PatientDetailRow = {
       source: 'clickup',
     },
   ],
+  externalContacts: [],
+  emergencyContactRef: null,
   addresses: [
     {
       id: 'a1',

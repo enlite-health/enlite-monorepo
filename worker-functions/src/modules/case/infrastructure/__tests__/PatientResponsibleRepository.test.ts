@@ -18,6 +18,7 @@ jest.mock('@shared/security/KMSEncryptionService', () => ({
 }));
 
 import { PatientResponsibleRepository, ResponsiblePrimaryAlreadySetError } from '../PatientResponsibleRepository';
+import { EmergencyContactRequiresPhoneError } from '../EmergencyContactRequiresPhoneError';
 import type { PatientResponsibleInput } from '../../domain/PatientResponsible';
 
 const PID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -142,6 +143,12 @@ describe('PatientResponsibleRepository', () => {
       await expect(repo.insertOne(PID, row(), 'uid', client)).rejects.toBeInstanceOf(ResponsiblePrimaryAlreadySetError);
     });
 
+    it('updateOne: 23514 do trigger de bloqueio (apagar telefone de responsável marcado, migration 423) vira EmergencyContactRequiresPhoneError (422 legível)', async () => {
+      const erro23514 = Object.assign(new Error('boom'), { code: '23514' });
+      const client = { query: jest.fn().mockRejectedValue(erro23514) } as unknown as PoolClient;
+      await expect(repo.updateOne(PID, 'r1', { phone: null }, client)).rejects.toBeInstanceOf(EmergencyContactRequiresPhoneError);
+    });
+
     it('insertOne: outro erro (não é o índice de titular) passa intocado', async () => {
       const erroQualquer = Object.assign(new Error('boom'), { code: '23502' });
       const client = { query: jest.fn().mockRejectedValue(erroQualquer) } as unknown as PoolClient;
@@ -220,16 +227,33 @@ describe('PatientResponsibleRepository', () => {
       expect(await repo.deactivate(PID, 'r1', 'uid', jaInativo)).toEqual({ outcome: 'already_inactive' });
       expect(jaInativo.query).toHaveBeenCalledTimes(1);
 
+      // migration 423 (spec 018, PR-2, D-A #4): entre o SELECT…FOR UPDATE e o UPDATE, o
+      // `deactivateRow` agora consulta `patients.emergency_responsible_id` para relatar
+      // `emergencyMarkCleared` — 3 chamadas, não mais 2.
       const ativo = {
         query: jest.fn()
           .mockResolvedValueOnce({ rows: [{ id: 'r1', active: true }] })
+          .mockResolvedValueOnce({ rows: [{ marked: false }] })
           .mockResolvedValueOnce({ rows: [] }),
       } as unknown as PoolClient;
-      expect(await repo.deactivate(PID, 'r1', 'uid-staff', ativo)).toEqual({ outcome: 'deactivated', id: 'r1' });
-      const [updSql, updParams] = (ativo.query as jest.Mock).mock.calls[1] as [string, unknown[]];
+      expect(await repo.deactivate(PID, 'r1', 'uid-staff', ativo)).toEqual({ outcome: 'deactivated', id: 'r1', emergencyMarkCleared: false });
+      const [markSql, markParams] = (ativo.query as jest.Mock).mock.calls[1] as [string, unknown[]];
+      expect(markSql).toMatch(/SELECT \(emergency_responsible_id = \$2\) AS marked FROM patients WHERE id = \$1/);
+      expect(markParams).toEqual([PID, 'r1']);
+      const [updSql, updParams] = (ativo.query as jest.Mock).mock.calls[2] as [string, unknown[]];
       expect(updSql).toMatch(/SET active = false, deactivated_at = NOW\(\), deactivated_by = \$3/);
       expect(updSql).not.toMatch(/^DELETE/);
       expect(updParams).toEqual([PID, 'r1', 'uid-staff']);
+    });
+
+    it('deactivate: quando a linha desativada ERA a marca de emergência, emergencyMarkCleared vem true (o trigger da 423 já limpou patients.emergency_responsible_id na mesma transação)', async () => {
+      const marcado = {
+        query: jest.fn()
+          .mockResolvedValueOnce({ rows: [{ id: 'r1', active: true }] })
+          .mockResolvedValueOnce({ rows: [{ marked: true }] })
+          .mockResolvedValueOnce({ rows: [] }),
+      } as unknown as PoolClient;
+      expect(await repo.deactivate(PID, 'r1', 'uid-staff', marcado)).toEqual({ outcome: 'deactivated', id: 'r1', emergencyMarkCleared: true });
     });
   });
 });

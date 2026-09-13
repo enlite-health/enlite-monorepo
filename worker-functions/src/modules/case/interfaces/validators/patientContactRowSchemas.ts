@@ -10,6 +10,11 @@ import {
   PATIENT_PROFESSIONAL_NAME_MAX,
   PATIENT_PROFESSIONAL_PHONE_MAX,
 } from '../../domain/PatientProfessional';
+import {
+  EXTERNAL_CONTACT_RELATIONS,
+  EXTERNAL_CONTACT_NAME_MAX,
+  EXTERNAL_CONTACT_PHONE_MAX,
+} from '../../domain/PatientExternalContact';
 
 /**
  * Validadores da escrita POR LINHA dos contatos do paciente (spec 018, PR-1, ADR-1;
@@ -102,5 +107,40 @@ export const updateProfessionalSchema = z
     phone: z.string().trim().min(1).max(PATIENT_PROFESSIONAL_PHONE_MAX).nullable().optional(),
     email: z.string().trim().email().nullable().optional(),
     specialty: z.enum(PATIENT_PROFESSIONAL_SPECIALTIES).nullable().optional(),
+  })
+  .strict();
+
+// ── Contatos externos (spec 018, PR-2, `lex` #4) ────────────────────────────────────────────
+
+export const externalContactIdParamsSchema = z.object({
+  id: z.string().uuid(),
+  xid: z.string().uuid(),
+});
+
+/** `POST /patients/:id/external-contacts` — corpo completo. SEM categoria de saúde (D-A #6/SUP-15). */
+export const createExternalContactSchema = z
+  .object({
+    relation: z.enum(EXTERNAL_CONTACT_RELATIONS),
+    name: z.string().trim().min(1).max(EXTERNAL_CONTACT_NAME_MAX),
+    phone: z.string().trim().min(1).max(EXTERNAL_CONTACT_PHONE_MAX).nullable().optional(),
+  })
+  .strict();
+
+/** `PATCH /patients/:id/external-contacts/:xid` — parcial; `phone` aceita `null` (apaga; bloqueado se marcado). */
+export const updateExternalContactSchema = z
+  .object({
+    relation: z.enum(EXTERNAL_CONTACT_RELATIONS).optional(),
+    name: z.string().trim().min(1).max(EXTERNAL_CONTACT_NAME_MAX).optional(),
+    phone: z.string().trim().min(1).max(EXTERNAL_CONTACT_PHONE_MAX).nullable().optional(),
+  })
+  .strict();
+
+// ── Marca de emergência (spec 018, PR-2, D-A) ───────────────────────────────────────────────
+
+/** `PUT /patients/:id/emergency-contact` — aponta para uma linha já existente de UM dos dois conjuntos. */
+export const putEmergencyContactSchema = z
+  .object({
+    kind: z.enum(['RESPONSIBLE', 'EXTERNAL']),
+    id: z.string().uuid(),
   })
   .strict();

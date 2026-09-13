@@ -17,6 +17,7 @@ import { EquipeTratanteCard } from '@presentation/components/features/admin/Pati
 import { SupervisaoCard } from '@presentation/components/features/admin/PatientDetail/SupervisaoCard';
 import { RelatoriosAtendimentosCard } from '@presentation/components/features/admin/PatientDetail/RelatoriosAtendimentosCard';
 import { FamiliaresCard } from '@presentation/components/features/admin/PatientDetail/FamiliaresCard';
+import { ExternalContactsCard } from '@presentation/components/features/admin/PatientDetail/ExternalContactsCard';
 import { CoberturaMedicaCard } from '@presentation/components/features/admin/PatientDetail/CoberturaMedicaCard';
 import { LocalizacoesCard } from '@presentation/components/features/admin/PatientDetail/LocalizacoesCard';
 import { ServicosContratadosCard } from '@presentation/components/features/admin/PatientDetail/ServicosContratadosCard';
@@ -238,7 +239,19 @@ export default function PatientDetailPage() {
         {shownTab === 'supportNetwork' && (
           <>
             <ContainerGate resource="patient_family">
-              <FamiliaresCard responsibles={patient.responsibles} patientId={patient.id} onSaved={refetch} focusRequest={focusRequest} />
+              <FamiliaresCard
+                responsibles={patient.responsibles}
+                emergencyContactRef={patient.emergencyContactRef}
+                patientId={patient.id}
+                onSaved={refetch}
+                focusRequest={focusRequest}
+              />
+              <ExternalContactsCard
+                externalContacts={patient.externalContacts ?? []}
+                emergencyContactRef={patient.emergencyContactRef}
+                patientId={patient.id}
+                onSaved={refetch}
+              />
             </ContainerGate>
             {/* Chat IDs dos grupos do Periskope — a chave de join da auditoria
                 de informes (Candela). Fica na rede de apoio porque é onde a

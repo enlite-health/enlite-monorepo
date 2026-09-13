@@ -2811,6 +2811,16 @@
         "email": "E-mail",
         "documentType": "Tipo de documento",
         "documentNumber": "Número do documento",
+        "externalContactsTitle": "Editar rede de contatos",
+        "externalContact": "Contato",
+        "addExternalContact": "Adicionar contato",
+        "removeExternalContact": "Remover",
+        "relation": "Relação",
+        "name": "Nome",
+        "externalContactsNotice": "O contato dessa pessoa fica registrado na ficha e pode aparecer em documentos entregues à família ou ao financiador.",
+        "markEmergencyContact": "Marcar como contato de emergência",
+        "unmarkEmergencyContact": "Contato de emergência (remover)",
+        "markEmergencyContactError": "Não foi possível atualizar o contato de emergência. Tente novamente.",
         "coverageTitle": "Editar cobertura médica",
         "coverageFromClickup": "(do ClickUp)",
         "contractedServicesTitle": "Editar serviços contratados",
@@ -3229,6 +3239,13 @@
           "tableName": "Nome",
           "tablePhone": "Telefone"
         },
+        "externalContactsCard": {
+          "title": "Rede de contatos",
+          "tableRelation": "Relação",
+          "tableName": "Nome",
+          "tablePhone": "Telefone",
+          "tableEmergency": "Emergência"
+        },
         "coverageCard": {
           "title": "Cobertura Médica",
           "providerName": "Nome da Cobertura",
@@ -3239,8 +3256,9 @@
           "emergencyContacts": "Emergência da cobertura médica",
           "emergencyContactKinds": {
             "DIRECT_PROFESSIONAL": "Profissional direto",
-            "AMBULANCE": "Ambulância",
-            "EMERGENCY_CENTER": "Central de emergência"
+            "PUBLIC_EMERGENCY_SERVICE": "Emergência pública (SAMU 192)",
+            "PRIVATE_AMBULANCE": "Ambulância privada",
+            "INSURANCE_EMERGENCY": "Emergência da cobertura/plano"
           },
           "emergencyContactsUnavailable": "Indisponível agora — recarregue a ficha ou avise o suporte.",
           "directProfessionalRedacted": "Profissional direto: não visível com a sua permissão (precisa da célula da equipe tratante)."
@@ -3389,6 +3407,22 @@
           "GUARDIAN": "Tutor/a",
           "FRIEND": "Amigo/a",
           "PARTNER": "Companheiro/a",
+          "OTHER": "Outro",
+          "GRANDPARENT": "Avô/Avó",
+          "UNCLE_AUNT": "Tio/a",
+          "COUSIN": "Primo/a",
+          "IN_LAW": "Parente por afinidade",
+          "STEP_RELATIVE": "Parente por recasamento",
+          "RESPONSIBLE_PERSON": "Pessoa responsável"
+        },
+        "externalContactRelationOptions": {
+          "TEACHER": "Professor/a",
+          "SCHOOL_DIRECTOR": "Diretor/a de escola",
+          "SCHOOL_STAFF": "Funcionário/a da escola",
+          "NEIGHBOR": "Vizinho/a",
+          "EMPLOYER": "Empregador/a",
+          "INSURANCE_CASE_MANAGER": "Gestor/a de caso da obra social",
+          "COMMUNITY_REFERENT": "Referente comunitário",
           "OTHER": "Outro"
         },
         "addressDrawer": {

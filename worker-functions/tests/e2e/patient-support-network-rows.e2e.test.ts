@@ -158,7 +158,9 @@ describe('PR-1 — rede de apoio (responsáveis) por LINHA: API sob engine (HTTP
 
     const desativar = await chamar('POST', DEACTIVATE(primeiro.id), U.familia);
     expect(desativar.status).toBe(200);
-    expect(desativar.body.data).toEqual({ id: primeiro.id, active: false });
+    // Spec 018, PR-2 (D-A#4): a resposta ganhou `emergencyMarkCleared` — este responsável não
+    // estava marcado de emergência, então vem `false`.
+    expect(desativar.body.data).toEqual({ id: primeiro.id, active: false, emergencyMarkCleared: false });
 
     const novoTitular = await chamar('POST', ROWS(), U.familia, { firstName: 'Elena', lastName: 'Diaz', isPrimary: true });
     expect(novoTitular.status).toBe(201);

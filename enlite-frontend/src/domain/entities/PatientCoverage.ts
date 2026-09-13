@@ -24,7 +24,13 @@ export interface PatientCoverageSectionPayload {
  * (`responsibles`). O telefone é PII cifrada no servidor; o profissional direto só chega ao cliente
  * quando o ator lê cobertura E equipe tratante (lex C3).
  */
-export const COVERAGE_EMERGENCY_CONTACT_KINDS = ['DIRECT_PROFESSIONAL', 'AMBULANCE', 'EMERGENCY_CENTER'] as const;
+/** Ampliado na migration 424 (spec 018, PR-2, SUP-17): legado AMBULANCE/EMERGENCY_CENTER → INSURANCE_EMERGENCY. */
+export const COVERAGE_EMERGENCY_CONTACT_KINDS = [
+  'DIRECT_PROFESSIONAL',
+  'PUBLIC_EMERGENCY_SERVICE',
+  'PRIVATE_AMBULANCE',
+  'INSURANCE_EMERGENCY',
+] as const;
 export type CoverageEmergencyContactKind = (typeof COVERAGE_EMERGENCY_CONTACT_KINDS)[number];
 export const COVERAGE_EMERGENCY_CONTACT_NAME_MAX = 200;
 export const COVERAGE_EMERGENCY_CONTACT_PHONE_MAX = 40;

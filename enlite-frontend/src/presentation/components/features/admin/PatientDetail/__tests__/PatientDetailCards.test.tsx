@@ -16,15 +16,22 @@ import { patientDetailFixture, patientDetailMinimal } from './patientDetailFixtu
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
 
-// ── AdminPatientContactRowsApiService mock (EquipeTratanteCard — deactivate flow, spec 018 PR-5) ──
+// ── AdminPatientContactRowsApiService mock ────────────────────────────────────────────────────
+// Um SÓ vi.mock por módulo (o 2º registro pisava no 1º em silêncio — `vi.mock` não funde objetos
+// de chamadas repetidas para o mesmo caminho, substitui): EquipeTratanteCard — deactivate flow
+// (spec 018 PR-5) + EmergencyMarkButton (FamiliaresCard/ExternalContactsCard, spec 018 PR-2).
 const mockDeactivateProfessional = vi.fn();
 const mockCreateProfessional = vi.fn();
 const mockUpdateProfessional = vi.fn();
+const markEmergencyContact = vi.fn().mockResolvedValue({});
+const unmarkEmergencyContact = vi.fn().mockResolvedValue({});
 vi.mock('@infrastructure/http/AdminPatientContactRowsApiService', () => ({
   AdminPatientContactRowsApiService: {
     deactivateProfessional: (...a: unknown[]) => mockDeactivateProfessional(...a),
     createProfessional: (...a: unknown[]) => mockCreateProfessional(...a),
     updateProfessional: (...a: unknown[]) => mockUpdateProfessional(...a),
+    markEmergencyContact: (...a: unknown[]) => markEmergencyContact(...a),
+    unmarkEmergencyContact: (...a: unknown[]) => unmarkEmergencyContact(...a),
   },
 }));
 
@@ -835,6 +842,25 @@ describe('FamiliaresCard', () => {
     render(<FamiliaresCard responsibles={many} />);
     expect(screen.getByText('Luciana Soto')).toBeInTheDocument();
     expect(screen.getByText('João Silva')).toBeInTheDocument();
+  });
+
+  // Spec 018, PR-2 (D-A): a coluna de emergência — só existe COM patientId.
+  it('com patientId: mostra o botão de marcar emergência; a linha marcada mostra "quitar"', () => {
+    render(<FamiliaresCard responsibles={patientDetailFixture.responsibles} patientId="p1" emergencyContactRef={{ kind: 'RESPONSIBLE', id: patientDetailFixture.responsibles[0].id }} />);
+    expect(screen.getByTestId(`emergency-mark-RESPONSIBLE-${patientDetailFixture.responsibles[0].id}`)).toHaveTextContent(t('admin.patients.editDrawer.unmarkEmergencyContact'));
+  });
+
+  it('sem emergencyContactRef (ou apontando para outro kind/id): mostra "marcar"', () => {
+    render(<FamiliaresCard responsibles={patientDetailFixture.responsibles} patientId="p1" />);
+    expect(screen.getByTestId(`emergency-mark-RESPONSIBLE-${patientDetailFixture.responsibles[0].id}`)).toHaveTextContent(t('admin.patients.editDrawer.markEmergencyContact'));
+  });
+
+  it('clicar no botão de emergência chama a API e o onSaved do card (refetch)', async () => {
+    const onSaved = vi.fn();
+    render(<FamiliaresCard responsibles={patientDetailFixture.responsibles} patientId="p1" onSaved={onSaved} />);
+    fireEvent.click(screen.getByTestId(`emergency-mark-RESPONSIBLE-${patientDetailFixture.responsibles[0].id}`));
+    await waitFor(() => expect(markEmergencyContact).toHaveBeenCalled());
+    expect(onSaved).toHaveBeenCalledTimes(1);
   });
 });
 
