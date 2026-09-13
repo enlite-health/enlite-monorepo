@@ -36,6 +36,7 @@
  */
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
+import { garantirCelula } from './helpers/permissionFamilyHarness';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const ROUNDS = 10;
@@ -63,6 +64,10 @@ describe('Endereço PRINCIPAL + TIPO por parentesco (spec 019) @integration', ()
   };
 
   let grupoId = '';
+  // Só a célula que ESTE suite criou (garantirCelula → criada:true) é apagada no afterAll —
+  // `patient:read` é global/compartilhada (ver patient-support-network-rows.e2e.test.ts) e
+  // apagá-la derrubaria outra suíte rodando na mesma base.
+  const celulasCriadas: Array<[string, string]> = [];
 
   beforeAll(async () => {
     await waitForBackend(api);
@@ -76,6 +81,17 @@ describe('Endereço PRINCIPAL + TIPO por parentesco (spec 019) @integration', ()
 
     // Engine ABAC ligado: sem grupo+célula, `asAdmin` (papel `admin`, sem grupo) leva 403 em
     // toda rota de patient/patient_address. Seed idempotente — `ON CONFLICT DO NOTHING`.
+    //
+    // ⚠️ Neste stack (docker-compose.test.yml) `PERMISSION_CATALOG_SYNC_ENABLED` não está
+    // ligado — só em `backend-stg.yml` (deploy real) — então `iam.permissions` nasce SEM as
+    // células declaradas em `PermissionCell.ts` até o boot sincronizar. `garantirCelula`
+    // (mesmo mecanismo de `patient-support-network-rows.e2e.test.ts` e
+    // `permission-enforcement-*`) insere a célula que faltar antes do grant — sem isto o
+    // INSERT em `iam.group_permissions` abaixo casava zero linhas e o `throw` disparava.
+    for (const [resource, action] of [['patient', 'read'], ['patient_address', 'read'], ['patient_address', 'write']] as const) {
+      const { criada } = await garantirCelula(pool, { resource, action, category: 'Pacientes' });
+      if (criada) celulasCriadas.push([resource, action]);
+    }
     await pool.query(
       `INSERT INTO users (firebase_uid, email, display_name, role, is_active, status, tenant_id)
        VALUES ('addr-principal-admin', 'addr-principal-admin@e2e.local', 'E2E addr-principal-admin', 'admin', true, 'ACTIVE', $1)
@@ -120,6 +136,16 @@ describe('Endereço PRINCIPAL + TIPO por parentesco (spec 019) @integration', ()
       await pool.query(`DELETE FROM iam.permission_groups WHERE id = $1`, [grupoId]);
     }
     await pool.query(`DELETE FROM users WHERE firebase_uid = 'addr-principal-admin'`);
+    // Mesmo padrão de `permission-enforcement-all-families.e2e.test.ts` (celulasCriadas):
+    // só apaga a célula que este suite de fato inseriu — nunca uma pré-existente de outro dono.
+    for (const [resource, action] of celulasCriadas) {
+      await pool.query(
+        `DELETE FROM iam.group_permissions WHERE permission_id IN
+           (SELECT id FROM iam.permissions WHERE resource = $1 AND action = $2)`,
+        [resource, action],
+      );
+      await pool.query(`DELETE FROM iam.permissions WHERE resource = $1 AND action = $2`, [resource, action]);
+    }
     await pool.end();
   });
 
