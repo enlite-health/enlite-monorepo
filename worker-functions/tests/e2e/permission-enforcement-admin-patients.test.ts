@@ -5,6 +5,8 @@ import {
   montarAppDeFamilia,
   limparIamFixtures,
   grupoComCelulas,
+  limparTrilhaDrenada,
+  aguardarTrilhaQuieta,
   type AppDeFamilia,
 } from './helpers/permissionFamilyHarness';
 
@@ -369,17 +371,15 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
 
   describe('trilha (D-P4: paciente é recurso sensível)', () => {
     it('a NEGATIVA vira linha DENY com quem, o quê e sobre qual id', async () => {
-      await pool.query(`DELETE FROM iam.permission_audit_log WHERE user_id = $1`, [U.leitora]);
+      // Drena o que ainda está chegando de testes anteriores com o MESMO
+      // user_id (a escrita é fire-and-forget — PgPermissionAuditRepository.ts:9-11)
+      // antes de zerar, senão o INSERT atrasado de um teste anterior cai
+      // depois deste DELETE e aparece na leitura abaixo (PR #376).
+      await limparTrilhaDrenada(pool, [U.leitora]);
 
       await chamar('DELETE', '/api/admin/patients/abc-123', U.leitora);
-      // A trilha é assíncrona fail-safe (nunca segura a request) — daí a espera curta.
-      await new Promise((r) => setTimeout(r, 300));
-
-      const trilha = await pool.query(
-        `SELECT resource, action, decision, resource_id FROM iam.permission_audit_log WHERE user_id = $1`,
-        [U.leitora],
-      );
-      expect(trilha.rows).toEqual([
+      const trilha = await aguardarTrilhaQuieta(pool, [U.leitora], 1);
+      expect(trilha).toEqual([
         expect.objectContaining({
           resource: 'patient',
           action: 'delete',
@@ -390,15 +390,10 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
     });
 
     it('o acesso PERMITIDO a paciente também é registrado — o contrário de admin.users', async () => {
-      await pool.query(`DELETE FROM iam.permission_audit_log WHERE user_id = $1`, [U.leitora]);
+      await limparTrilhaDrenada(pool, [U.leitora]);
 
       await chamar('GET', '/api/admin/patients/abc-123', U.leitora);
-      await new Promise((r) => setTimeout(r, 300));
-
-      const trilha = await pool.query(
-        `SELECT resource, action, decision FROM iam.permission_audit_log WHERE user_id = $1`,
-        [U.leitora],
-      );
+      const trilha = { rows: await aguardarTrilhaQuieta(pool, [U.leitora], 1, 'resource, action, decision') };
       expect(trilha.rows).toEqual([
         expect.objectContaining({ resource: 'patient', action: 'read', decision: 'ALLOW' }),
       ]);

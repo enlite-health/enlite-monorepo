@@ -4,6 +4,8 @@ import {
   tokenMock,
   montarAppDeFamilia,
   limparIamFixtures,
+  limparTrilhaDrenada,
+  aguardarTrilhaQuieta,
   type AppDeFamilia,
 } from './helpers/permissionFamilyHarness';
 
@@ -192,17 +194,11 @@ describe('família admin.users sob a decisão real por célula (HTTP real, banco
   });
 
   it('a negativa vira linha em iam.permission_audit_log (quem, o quê, quando)', async () => {
-    await pool.query(`DELETE FROM iam.permission_audit_log WHERE user_id = $1`, [U.semCelula]);
+    await limparTrilhaDrenada(pool, [U.semCelula]);
 
     await chamar('DELETE', '/api/admin/users/abc-123', U.semCelula);
-    // A trilha é assíncrona fail-safe (nunca segura a request) — daí a espera curta.
-    await new Promise((r) => setTimeout(r, 300));
-
-    const trilha = await pool.query(
-      `SELECT resource, action, decision, resource_id FROM iam.permission_audit_log WHERE user_id = $1`,
-      [U.semCelula],
-    );
-    expect(trilha.rows).toEqual([
+    const trilha = await aguardarTrilhaQuieta(pool, [U.semCelula], 1);
+    expect(trilha).toEqual([
       expect.objectContaining({
         resource: 'user_management',
         action: 'delete',

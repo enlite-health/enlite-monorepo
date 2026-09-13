@@ -5,6 +5,8 @@ import {
   montarAppDeFamilia,
   limparIamFixtures,
   grupoComCelulas,
+  limparTrilhaDrenada,
+  aguardarTrilhaQuieta,
   type AppDeFamilia,
 } from './helpers/permissionFamilyHarness';
 
@@ -225,19 +227,17 @@ describe('famílias admin.analytics e admin.recruitment sob decisão por célula
 
   describe('trilha — D-P4 pela ação', () => {
     it('o ALLOW de dedup:execute é registrado; o de analytics:read não', async () => {
-      await pool.query(`DELETE FROM iam.permission_audit_log WHERE user_id = ANY($1)`, [
-        [U.dedup, U.analista],
-      ]);
+      await limparTrilhaDrenada(pool, [U.dedup, U.analista]);
 
       await chamar('POST', '/analytics/dedup/run', U.dedup);
       await chamar('GET', '/analytics/workers', U.analista);
-      await new Promise((r) => setTimeout(r, 300));
-
-      const trilha = await pool.query(
-        `SELECT user_id, resource, action, decision FROM iam.permission_audit_log WHERE user_id = ANY($1)`,
-        [[U.dedup, U.analista]],
+      const trilha = await aguardarTrilhaQuieta(
+        pool,
+        [U.dedup, U.analista],
+        1,
+        'user_id, resource, action, decision',
       );
-      expect(trilha.rows).toEqual([
+      expect(trilha).toEqual([
         expect.objectContaining({ user_id: U.dedup, resource: 'dedup', action: 'execute', decision: 'ALLOW' }),
       ]);
     });

@@ -228,6 +228,116 @@ export async function garantirCelula(
 }
 
 /**
+ * limparTrilhaDrenada / aguardarTrilhaQuieta / contarTrilhaEstavel — a CLASSE
+ * do conserto para a corrida da trilha de auditoria de permissão
+ * (`PgPermissionAuditRepository.record()` é fire-and-forget e FAIL-SAFE de
+ * propósito — src/modules/identity/permissions/infrastructure/
+ * PgPermissionAuditRepository.ts:9-11 — não mexemos nisso).
+ *
+ * O padrão nasceu isolado em `permission-enforcement-dedup.test.ts`
+ * (`limparTrilhaDrenada`/`esperarTrilha` locais) depois de medir a causa: sob
+ * carga, o INSERT de um teste ANTERIOR que usa o MESMO user_id ainda está em
+ * voo quando o teste seguinte manda o `DELETE FROM ... WHERE user_id = $1` —
+ * a linha cai DEPOIS do DELETE e aparece na leitura do teste seguinte
+ * (PR #376: 3 execuções, 3 conjuntos de suítes diferentes falharam, sempre
+ * com linha extra do teste anterior no mesmo user_id/resource_id
+ * sintético). Um `setTimeout` fixo não resolve — só reduz a chance.
+ *
+ * `limparTrilhaDrenada` espera a CONTAGEM ficar estável (duas leituras
+ * iguais, 200ms de intervalo) antes de apagar — dreno o que ainda está
+ * chegando de testes anteriores antes de zerar. `aguardarTrilhaQuieta` faz o
+ * inverso depois da ação: poll até a trilha ter pelo menos `minimo` linhas
+ * (em vez de dormir um tempo fixo e torcer). `contarTrilhaEstavel` é para o
+ * caso "não deveria ter escrito nada" — espera a contagem estabilizar e
+ * devolve o valor final, sem mínimo esperado.
+ */
+export interface LinhaTrilha {
+  resource: string;
+  action: string;
+  decision: string;
+  resource_id?: string | null;
+  user_id?: string;
+}
+
+/**
+ * "Estável" exige a MESMA contagem em `STREAK_ALVO` leituras SEGUIDAS — não
+ * uma (duas leituras iguais em sequência já era o desenho original, mas uma
+ * rajada de vários INSERTs atrasados pode ter um "vão" que cai bem no
+ * intervalo entre duas leituras e passa por estável sem estar; medido na
+ * amplificação: com 20 chamadas anteriores no MESMO arquivo atrasadas por
+ * igual, duas leituras iguais em sequência não bastavam). Três leituras
+ * iguais em sequência reduz drasticamente essa chance sem inflar o teto em
+ * caso comum (early-break assim que a série de 3 fecha).
+ */
+const TRILHA_STREAK_ALVO = 3;
+const TRILHA_INTERVALO_MS = 150;
+
+async function contarUmaVez(pool: Pool, uids: string[]): Promise<number> {
+  const r = await pool.query<{ n: string }>(
+    `SELECT count(*) AS n FROM iam.permission_audit_log WHERE user_id = ANY($1)`,
+    [uids],
+  );
+  return Number(r.rows[0].n);
+}
+
+export async function limparTrilhaDrenada(pool: Pool, uids: string[], teto = 60): Promise<void> {
+  let anterior = -1;
+  let streak = 0;
+  for (let i = 0; i < teto && streak < TRILHA_STREAK_ALVO; i += 1) {
+    const n = await contarUmaVez(pool, uids);
+    streak = n === anterior ? streak + 1 : 1;
+    anterior = n;
+    await new Promise((res) => setTimeout(res, TRILHA_INTERVALO_MS));
+  }
+  await pool.query(`DELETE FROM iam.permission_audit_log WHERE user_id = ANY($1)`, [uids]);
+}
+
+/**
+ * Poll até a trilha ter pelo menos `minimo` linhas E a contagem estar
+ * ESTÁVEL (mesmo critério de 3 leituras seguidas iguais de `limparTrilhaDrenada`)
+ * — não basta bater o mínimo uma vez: uma leitura que chega exatamente no meio
+ * de uma rajada de INSERTs atrasados vê `minimo` linhas por coincidência,
+ * mas ainda vai crescer na leitura seguinte (linha "a mais" que não é desta
+ * ação). Devolve o snapshot da rodada em que a série de 3 fechou.
+ */
+export async function aguardarTrilhaQuieta(
+  pool: Pool,
+  uids: string[],
+  minimo: number,
+  colunas = 'resource, action, decision, resource_id',
+  teto = 60,
+): Promise<LinhaTrilha[]> {
+  const sql = `SELECT ${colunas} FROM iam.permission_audit_log WHERE user_id = ANY($1)`;
+  let anterior = -1;
+  let streak = 0;
+  let rows: LinhaTrilha[] = [];
+  for (let i = 0; i < teto; i += 1) {
+    const r = await pool.query<LinhaTrilha>(sql, [uids]);
+    rows = r.rows;
+    const n = rows.length;
+    streak = n === anterior ? streak + 1 : 1;
+    anterior = n;
+    if (n >= minimo && streak >= TRILHA_STREAK_ALVO) return rows;
+    await new Promise((res) => setTimeout(res, TRILHA_INTERVALO_MS));
+  }
+  return rows;
+}
+
+export async function contarTrilhaEstavel(pool: Pool, uids: string[], teto = 60): Promise<number> {
+  let anterior = -1;
+  let streak = 0;
+  let atual = 0;
+  for (let i = 0; i < teto; i += 1) {
+    atual = await contarUmaVez(pool, uids);
+    streak = atual === anterior ? streak + 1 : 1;
+    anterior = atual;
+    if (streak >= TRILHA_STREAK_ALVO) return atual;
+    await new Promise((res) => setTimeout(res, TRILHA_INTERVALO_MS));
+  }
+  return atual;
+}
+
+/**
  * Controller-substituto GENÉRICO: qualquer propriedade acessada devolve um
  * handler-marcador que responde 200 com `{ chegou: '<namespace>.<método>' }`.
  *

@@ -5,6 +5,8 @@ import {
   montarAppDeFamilia,
   limparIamFixtures,
   grupoComCelulas,
+  limparTrilhaDrenada,
+  aguardarTrilhaQuieta,
   type AppDeFamilia,
 } from './helpers/permissionFamilyHarness';
 
@@ -242,19 +244,17 @@ describe('família admin.encuadre — as 10 rotas que o perímetro não alcança
 
   describe('trilha (D-P4: worker_document é recurso sensível)', () => {
     it('o ALLOW de worker_document é registrado; o de worker:read não', async () => {
-      await pool.query(`DELETE FROM iam.permission_audit_log WHERE user_id = ANY($1)`, [
-        [U.documentos, U.observadora],
-      ]);
+      await limparTrilhaDrenada(pool, [U.documentos, U.observadora]);
 
       await chamar('GET', '/api/workers/docs-expiring', U.documentos);
       await chamar('GET', '/api/workers/status-dashboard', U.observadora);
-      await new Promise((r) => setTimeout(r, 300));
-
-      const trilha = await pool.query(
-        `SELECT user_id, resource, action, decision FROM iam.permission_audit_log WHERE user_id = ANY($1)`,
-        [[U.documentos, U.observadora]],
+      const trilha = await aguardarTrilhaQuieta(
+        pool,
+        [U.documentos, U.observadora],
+        1,
+        'user_id, resource, action, decision',
       );
-      expect(trilha.rows).toEqual([
+      expect(trilha).toEqual([
         expect.objectContaining({
           user_id: U.documentos,
           resource: 'worker_document',

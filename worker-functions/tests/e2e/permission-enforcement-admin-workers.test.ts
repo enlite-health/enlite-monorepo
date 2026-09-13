@@ -5,6 +5,9 @@ import {
   montarAppDeFamilia,
   limparIamFixtures,
   grupoComCelulas,
+  limparTrilhaDrenada,
+  aguardarTrilhaQuieta,
+  contarTrilhaEstavel,
   type AppDeFamilia,
 } from './helpers/permissionFamilyHarness';
 
@@ -403,16 +406,11 @@ describe('família admin.workers sob a decisão real por célula (HTTP real, ban
 
   describe('trilha (D-P4: worker_pii e worker_document são sensíveis)', () => {
     it('a negativa em worker_pii vira linha DENY (na rota que ainda a exige: by-phone)', async () => {
-      await pool.query(`DELETE FROM iam.permission_audit_log WHERE user_id = $1`, [U.lista]);
+      await limparTrilhaDrenada(pool, [U.lista]);
 
       await chamar('GET', '/api/admin/workers/by-phone?phone=%2B5491100000000', U.lista);
-      await new Promise((r) => setTimeout(r, 300));
-
-      const trilha = await pool.query(
-        `SELECT resource, action, decision FROM iam.permission_audit_log WHERE user_id = $1`,
-        [U.lista],
-      );
-      expect(trilha.rows).toEqual([
+      const trilha = await aguardarTrilhaQuieta(pool, [U.lista], 1, 'resource, action, decision');
+      expect(trilha).toEqual([
         expect.objectContaining({
           resource: 'worker_pii',
           action: 'read',
@@ -422,31 +420,21 @@ describe('família admin.workers sob a decisão real por célula (HTTP real, ban
     });
 
     it('o acesso PERMITIDO ao dossiê também é registrado', async () => {
-      await pool.query(`DELETE FROM iam.permission_audit_log WHERE user_id = $1`, [U.recrutadora]);
+      await limparTrilhaDrenada(pool, [U.recrutadora]);
 
       await chamar('GET', '/api/admin/workers/by-phone?phone=%2B5491100000000', U.recrutadora);
-      await new Promise((r) => setTimeout(r, 300));
-
-      const trilha = await pool.query(
-        `SELECT resource, action, decision FROM iam.permission_audit_log WHERE user_id = $1`,
-        [U.recrutadora],
-      );
-      expect(trilha.rows).toEqual([
+      const trilha = await aguardarTrilhaQuieta(pool, [U.recrutadora], 1, 'resource, action, decision');
+      expect(trilha).toEqual([
         expect.objectContaining({ resource: 'worker_pii', action: 'read', decision: 'ALLOW' }),
       ]);
     });
 
     it('listar prestadores NÃO enche a trilha — worker:read não é sensível', async () => {
-      await pool.query(`DELETE FROM iam.permission_audit_log WHERE user_id = $1`, [U.lista]);
+      await limparTrilhaDrenada(pool, [U.lista]);
 
       await chamar('GET', '/api/admin/workers', U.lista);
-      await new Promise((r) => setTimeout(r, 300));
-
-      const trilha = await pool.query(
-        `SELECT count(*)::int AS n FROM iam.permission_audit_log WHERE user_id = $1`,
-        [U.lista],
-      );
-      expect(trilha.rows[0].n).toBe(0);
+      const n = await contarTrilhaEstavel(pool, [U.lista]);
+      expect(n).toBe(0);
     });
   });
 
@@ -495,15 +483,35 @@ describe('família admin.workers sob a decisão real por célula (HTTP real, ban
     });
 
     it('a chave NÃO vira linha na trilha de permissão — não houve decisão de grupo', async () => {
+      // `LIKE 'service:%'` — não há uid fixo para drenar por igualdade, então
+      // a limpeza usa o padrão diretamente (o conjunto de uids de serviço é
+      // pequeno e só este teste escreve nele).
+      let anterior = -1;
+      for (let i = 0; i < 20; i += 1) {
+        const r = await pool.query<{ n: string }>(
+          `SELECT count(*) AS n FROM iam.permission_audit_log WHERE user_id LIKE 'service:%'`,
+        );
+        const n = Number(r.rows[0].n);
+        if (n === anterior) break;
+        anterior = n;
+        await new Promise((res) => setTimeout(res, 200));
+      }
       await pool.query(`DELETE FROM iam.permission_audit_log WHERE user_id LIKE 'service:%'`);
 
       await comChave('GET', '/api/admin/workers/abc-123/current-interview');
-      await new Promise((r) => setTimeout(r, 300));
 
-      const trilha = await pool.query(
-        `SELECT count(*)::int AS n FROM iam.permission_audit_log WHERE user_id LIKE 'service:%'`,
-      );
-      expect(trilha.rows[0].n).toBe(0);
+      let atual = 0;
+      anterior = -1;
+      for (let i = 0; i < 20; i += 1) {
+        const r = await pool.query<{ n: string }>(
+          `SELECT count(*) AS n FROM iam.permission_audit_log WHERE user_id LIKE 'service:%'`,
+        );
+        atual = Number(r.rows[0].n);
+        if (atual === anterior) break;
+        anterior = atual;
+        await new Promise((res) => setTimeout(res, 200));
+      }
+      expect(atual).toBe(0);
     });
 
     it('chave inválida segue barrada — o desvio é para SERVIÇO AUTENTICADO, não para qualquer um', async () => {
