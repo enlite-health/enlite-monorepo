@@ -190,5 +190,17 @@ describe('D269/D286 — write-gate nos botões Editar/Novo (célula do CONTAINER
       render(<ServicosContratadosCard patient={{ ...patientDetailFixture, contractedServices: [SERVICO] }} />);
       expect(screen.queryByTestId(ATIVAR_TESTID)).not.toBeInTheDocument();
     });
+
+    // Achado do coordenador (12/09): o gate das duas células é só do BOTÃO de ativar. O "Ver
+    // vacante" (serviço já com vaga viva) não tinha NENHUM gate na `origin/stage` — é um `<a>`
+    // simples, sem `useActionGate`/`ActionButton` — e continua assim, mesmo sem nenhuma célula.
+    it('"Ver vacante" (serviço COM liveVacancyId) continua visível SEM nenhuma célula — igual à stage, que não gateava esse link', () => {
+      comEnforcement([], 'on');
+      const comVagaViva = { ...SERVICO, liveVacancyId: 'vac-gate-1' };
+      render(<ServicosContratadosCard patient={{ ...patientDetailFixture, contractedServices: [comVagaViva] }} />);
+      expect(screen.queryByTestId(ATIVAR_TESTID)).not.toBeInTheDocument();
+      const link = screen.getByTestId('contracted-service-view-vacancy-svc-gate');
+      expect(link.getAttribute('href')).toBe('/admin/vacancies/vac-gate-1');
+    });
   });
 });
