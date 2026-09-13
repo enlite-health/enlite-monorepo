@@ -320,6 +320,25 @@ describe('ResolveAddressModal — handleConfirm', () => {
   });
 });
 
+// ── select de tipo morto NÃO pode voltar (spec 019, B4) ──────────────────────
+
+describe('ResolveAddressModal — sem select de tipo no modo criar', () => {
+  it('no form de criação: nenhum combobox/select, nem os textos das opções antigas (Servicio/Casa/Otro)', async () => {
+    mockListPatientAddresses.mockResolvedValue([]);
+    const { container } = renderModal({ item: ITEM_WITH_PATIENT });
+    await waitFor(() =>
+      expect(screen.getByText('admin.pendingAddressReview.resolveModal.createNew')).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByText('admin.pendingAddressReview.resolveModal.createNew'));
+
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(container.querySelector('select')).toBeNull();
+    expect(screen.queryByText('Servicio')).not.toBeInTheDocument();
+    expect(screen.queryByText('Casa')).not.toBeInTheDocument();
+    expect(screen.queryByText('Otro')).not.toBeInTheDocument();
+  });
+});
+
 // ── onClose / isLoading ───────────────────────────────────────────────────────
 
 describe('ResolveAddressModal — onClose e isLoading', () => {

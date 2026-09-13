@@ -28,11 +28,11 @@ type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
 
 export type ResolveAddressBody =
   | { patient_address_id: string }
-  // `address_type` opcional (spec 019, B4): o wizard de revisão de vaga (ResolveAddressModal)
-  // não envia mais — o servidor (VacancyAddressReviewController) já ignorava silenciosamente
-  // (schema sem `.strict()`), e a lista fechada só entra pelo PATCH
-  // (AdminPatientAddressesController). Campo mantido opcional por compat de tipo, não de uso.
-  | { createAddress: { address_formatted: string; address_raw?: string; address_type?: string } };
+  // `address_type` removido (spec 019, B4): o wizard de revisão de vaga (ResolveAddressModal)
+  // não envia mais esse campo — o servidor (VacancyAddressReviewController) já ignorava
+  // silenciosamente (schema sem `.strict()`), e a lista fechada só entra pelo PATCH
+  // (AdminPatientAddressesController). Nenhum código de produção envia `address_type` aqui.
+  | { createAddress: { address_formatted: string; address_raw?: string } };
 
 class AdminVacancyAddressApiServiceClass {
   private readonly authService = new FirebaseAuthService();
