@@ -131,7 +131,13 @@ export function PatientExternalContactsEditDrawer({ patientId, externalContacts,
       onSaved();
       handleClose();
     } catch {
-      onSaved();
+      // Conserto Gabriel 13/09 (defeito 1): `onSaved()` é o `refetch` do pai
+      // (`usePatientDetail`), e o `refetch` liga `isLoading` — a página inteira
+      // (inclusive este drawer, condicionado por `editing && patientId`) some por trás
+      // do skeleton (`PatientDetailPage`: `if (isLoading) return <DetailSkeleton />`)
+      // ANTES da mensagem pintar. Nunca refetch em falha: o id real de cada linha já
+      // salva com sucesso já foi gravado no form (`setValue` acima), então o próximo
+      // "Guardar" retoma do ponto certo sem duplicar — sem precisar reler o servidor.
       // lex C1.3: a mensagem NUNCA ecoa o payload (nome/telefone do terceiro).
       setSubmitError(te('saveError'));
     } finally {

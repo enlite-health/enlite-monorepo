@@ -1,0 +1,18 @@
+# Stack ISOLADO (projeto docker `018-pr2-fix`) com o engine ABAC LIGADO, pra provar os 2
+# defeitos do conserto PR-2 sem disputar porta/banco com o stack de outra worktree (nem com o
+# stack fixo 8089/5439 dos 5 specs `admin-access-*`, que outra sessão pode estar usando).
+# Molde: comentário de `admin-access-cells-visual.integration.e2e.ts`.
+services:
+  postgres:
+    container_name: 018-pr2-fix-postgres
+    ports: !override
+      - "5571:5432"
+  api:
+    container_name: 018-pr2-fix-api
+    ports: !override
+      - "8283:8080"
+    environment:
+      CORS_ALLOWED_ORIGINS: "http://localhost:5183"
+      PERMISSION_ENGINE_ENABLED: "true"
+      PERMISSION_ENFORCED_ROUTES: "admin.analytics,admin.dedup,admin.encuadre,admin.integrations,admin.messaging,admin.patients,admin.permissions,admin.recruitment,admin.test_fixtures,admin.users,admin.vacancies,admin.workers"
+      PERMISSION_CATALOG_SYNC_ENABLED: "true"

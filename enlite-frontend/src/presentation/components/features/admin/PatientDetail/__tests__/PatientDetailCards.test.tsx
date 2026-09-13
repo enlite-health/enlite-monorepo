@@ -984,6 +984,55 @@ describe('FamiliaresCard', () => {
   });
 });
 
+// ── FamiliaresCard — conserto Gabriel 13/09 (PR-2 fix defeito 2): a coluna "Emergencia" é
+// INFORMAÇÃO (quem é o contato marcado), não uma ação — não pode depender de patient_family:write.
+// `EmergencyMarkButton` é um `ActionButton` (D269: sem a célula de escrita, SOME do DOM), então
+// sem um indicador PRÓPRIO a coluna fica vazia pra quem só tem `:read`, mesmo com a linha marcada
+// (evidência: specs/018-planning-0909-ficha-admissao/evidencias/pr-3-local/2-admission-com-marca.png
+// — o cabeçalho mostra "Responsavel Marcado016197" como contato de emergência, mas a tabela de
+// Familiares não mostra nada na coluna Emergencia).
+describe('FamiliaresCard — coluna Emergencia é informação, não ação (D269 não pode escondê-la)', () => {
+  const contrato = (permissions: string[]): AuthzContract => ({
+    uid: 'u-abac-test', tenantId: 't1', status: 'ACTIVE', permissions, countries: ['AR'], groups: [], features: {},
+  });
+
+  afterEach(() => {
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+  });
+
+  it('enforcement "on" SEM patient_family:write: o botão de ação some (D269), mas a linha MARCADA mostra o indicador de emergência mesmo assim', () => {
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_family:read']), enforcement: 'on' }, authzStatus: 'ready' });
+    render(
+      <FamiliaresCard
+        responsibles={patientDetailFixture.responsibles}
+        patientId="p1"
+        emergencyContactRef={{ kind: 'RESPONSIBLE', id: patientDetailFixture.responsibles[0].id }}
+      />,
+    );
+    expect(screen.queryByTestId(`emergency-mark-RESPONSIBLE-${patientDetailFixture.responsibles[0].id}`)).not.toBeInTheDocument();
+    expect(screen.getByTestId(`familiares-emergency-marked-${patientDetailFixture.responsibles[0].id}`)).toBeInTheDocument();
+  });
+
+  it('enforcement "on" SEM patient_family:write: linha NÃO marcada não mostra indicador nenhum', () => {
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_family:read']), enforcement: 'on' }, authzStatus: 'ready' });
+    render(<FamiliaresCard responsibles={patientDetailFixture.responsibles} patientId="p1" emergencyContactRef={null} />);
+    expect(screen.queryByTestId(`familiares-emergency-marked-${patientDetailFixture.responsibles[0].id}`)).not.toBeInTheDocument();
+  });
+
+  it('enforcement "on" COM patient_family:write: mostra o indicador E o botão de ação juntos na linha marcada', () => {
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_family:read', 'patient_family:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    render(
+      <FamiliaresCard
+        responsibles={patientDetailFixture.responsibles}
+        patientId="p1"
+        emergencyContactRef={{ kind: 'RESPONSIBLE', id: patientDetailFixture.responsibles[0].id }}
+      />,
+    );
+    expect(screen.getByTestId(`familiares-emergency-marked-${patientDetailFixture.responsibles[0].id}`)).toBeInTheDocument();
+    expect(screen.getByTestId(`emergency-mark-RESPONSIBLE-${patientDetailFixture.responsibles[0].id}`)).toHaveTextContent(t('admin.patients.editDrawer.unmarkEmergencyContact'));
+  });
+});
+
 // ── CoberturaMedicaCard ──────────────────────────────────────────────────────
 
 describe('CoberturaMedicaCard', () => {
