@@ -15,13 +15,38 @@
  *
  * Molde de concorrência: tests/e2e/t5-diagnosis-concurrency.e2e.test.ts (Pool do pg,
  * Promise.allSettled, contagem no banco após cada rodada).
+ *
+ * ⚠️ Engine ABAC LIGADO (sessão 019-abac, 12/09/2026): a suíte original confiava no papel
+ * `admin` sozinho (`untilEnforced`/bypass de papel) para passar pelas rotas de endereço. Com
+ * `PERMISSION_ENGINE_ENABLED=true` e `patient`/`patient_address` fora de `untilEnforced`, o
+ * papel deixa de bastar — o `perm.require` do controller (`adminPatientsRoutes.ts`) exige a
+ * CÉLULA de verdade. O `beforeAll` abaixo semeia o staff `admin` num grupo com país AR e
+ * concede `patient:read` + `patient_address:read/write` diretamente nas tabelas `iam.*` (mesmo
+ * padrão do `abac-stack-helper.ts` do frontend) — sem isso toda chamada `asAdmin` vira 403.
+ *
+ * ⚠️ SEGUNDO achado, medido pelo log da API ("[abac] staff sem claim de país válido —
+ * consultas protegidas retornam zero linhas"): nem `tests/e2e/helpers/staffAuth.ts` nem
+ * `tests/e2e/helpers/permissionFamilyHarness.ts` (os dois helpers de mock-token do backend)
+ * incluem `country` no token — o `MockAuthMiddleware` só lê o que o token trouxer, então SEM
+ * país o request autentica mas toda query com policy de país (a rota de endereço é uma) devolve
+ * zero linhas por trás de um 403/404 silencioso. Nenhum dos dois é reaproveitável aqui sem
+ * mudar sua assinatura pública (usada por outras suítes) — o token abaixo é construído INLINE,
+ * mesmo formato `mock_<base64>`, só que com `country` incluso (molde: `tokenFor`/`MockUser` do
+ * `abac-stack-helper.ts` do frontend).
  */
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
-import { staffAuth } from './helpers/staffAuth';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const ROUNDS = 10;
+const TENANT_E2E = '00000000-0000-0000-0000-000000000001';
+const ADMIN_UID = 'addr-principal-admin';
+
+/** Mock token COM `country` — nenhum helper existente do backend cobre isto (ver cabeçalho). */
+function tokenComPais(uid: string, role: string, country: string): { headers: { Authorization: string } } {
+  const data = Buffer.from(JSON.stringify({ uid, email: `${uid}@e2e.local`, role, country })).toString('base64');
+  return { headers: { Authorization: `Bearer mock_${data}` } };
+}
 
 describe('Endereço PRINCIPAL + TIPO por parentesco (spec 019) @integration', () => {
   const api = createApiClient();
@@ -37,20 +62,64 @@ describe('Endereço PRINCIPAL + TIPO por parentesco (spec 019) @integration', ()
     return Number(rows[0].n);
   };
 
+  let grupoId = '';
+
   beforeAll(async () => {
     await waitForBackend(api);
-    asAdmin = await staffAuth('addr-principal-admin', 'admin');
+    asAdmin = tokenComPais(ADMIN_UID, 'admin', 'AR');
     pool = new Pool({ connectionString: DATABASE_URL });
     await pool.query(`DELETE FROM patients WHERE clickup_task_id LIKE 'addr-principal-e2e-%'`);
     patientId = (await pool.query<{ id: string }>(
       `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status)
        VALUES ('addr-principal-e2e-1', 'Principal', 'Tipo', 'AR', 'ACTIVE') RETURNING id`,
     )).rows[0].id;
+
+    // Engine ABAC ligado: sem grupo+célula, `asAdmin` (papel `admin`, sem grupo) leva 403 em
+    // toda rota de patient/patient_address. Seed idempotente — `ON CONFLICT DO NOTHING`.
+    await pool.query(
+      `INSERT INTO users (firebase_uid, email, display_name, role, is_active, status, tenant_id)
+       VALUES ('addr-principal-admin', 'addr-principal-admin@e2e.local', 'E2E addr-principal-admin', 'admin', true, 'ACTIVE', $1)
+       ON CONFLICT (firebase_uid) DO NOTHING`,
+      [TENANT_E2E],
+    );
+    grupoId = (await pool.query<{ id: string }>(
+      `INSERT INTO iam.permission_groups (tenant_id, name, description)
+       VALUES ($1, 'E2E addr-principal-tipo', 'e2e — nao mexer manual') RETURNING id`,
+      [TENANT_E2E],
+    )).rows[0].id;
+    await pool.query(
+      `INSERT INTO iam.group_country_scopes (group_id, country, granted_by, reason)
+       VALUES ($1, 'AR', 'addr-principal-admin', 'e2e setup')`,
+      [grupoId],
+    );
+    await pool.query(
+      `INSERT INTO iam.user_groups (user_id, group_id, tenant_id) VALUES ('addr-principal-admin', $1, $2)`,
+      [grupoId, TENANT_E2E],
+    );
+    for (const [resource, action] of [['patient', 'read'], ['patient_address', 'read'], ['patient_address', 'write']]) {
+      const inserted = await pool.query<{ permission_id: string }>(
+        `INSERT INTO iam.group_permissions (group_id, permission_id)
+         SELECT $1, id FROM iam.permissions WHERE resource = $2 AND action = $3
+         RETURNING permission_id`,
+        [grupoId, resource, action],
+      );
+      if (inserted.rowCount === 0) throw new Error(`célula ${resource}:${action} não existe em iam.permissions`);
+    }
   });
 
   afterAll(async () => {
     await pool.query(`DELETE FROM patient_addresses WHERE patient_id = $1`, [patientId]);
     await pool.query(`DELETE FROM patients WHERE clickup_task_id LIKE 'addr-principal-e2e-%'`);
+    if (grupoId) {
+      await pool.query(`DELETE FROM iam.permission_audit_log WHERE user_id = 'addr-principal-admin'`);
+      await pool.query(`DELETE FROM resource_access_log WHERE operator_uid = 'addr-principal-admin'`);
+      await pool.query(`DELETE FROM iam.permission_group_changes WHERE group_id = $1`, [grupoId]);
+      await pool.query(`DELETE FROM iam.user_groups WHERE group_id = $1`, [grupoId]);
+      await pool.query(`DELETE FROM iam.group_permissions WHERE group_id = $1`, [grupoId]);
+      await pool.query(`DELETE FROM iam.group_country_scopes WHERE group_id = $1`, [grupoId]);
+      await pool.query(`DELETE FROM iam.permission_groups WHERE id = $1`, [grupoId]);
+    }
+    await pool.query(`DELETE FROM users WHERE firebase_uid = 'addr-principal-admin'`);
     await pool.end();
   });
 
