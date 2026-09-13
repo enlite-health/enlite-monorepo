@@ -8,6 +8,8 @@ import {
   ServiceNotOfPatientError,
   SourceVersionNotFoundError,
   PatientNotFoundForProjectError,
+  VersionNotCurrentError,
+  MacroFieldsLockedError,
 } from '../../infrastructure/TherapeuticProjectRepository';
 import {
   TherapeuticCatalogRepository,
@@ -134,6 +136,16 @@ export class AdminTherapeuticProjectsController {
       }
       if (err instanceof SourceVersionNotFoundError) {
         res.status(404).json({ success: false, error: 'Source version not found', code: err.code });
+        return;
+      }
+      // ADR-4/SUP-24: a versão existe mas não é mais a vigente — 409, nunca 422 (lex-pr7 contract §alterado).
+      if (err instanceof VersionNotCurrentError) {
+        res.status(409).json({ success: false, error: 'Only the current version can be edited', code: err.code });
+        return;
+      }
+      // D328: só NOMES de campo — nunca o valor clínico enviado (lex #7 C7).
+      if (err instanceof MacroFieldsLockedError) {
+        res.status(422).json({ success: false, error: 'Macro fields are locked outside of a new version', code: err.code, details: { fields: err.fields } });
         return;
       }
       if (err instanceof ServiceNotOfPatientError) {

@@ -6,9 +6,12 @@ import {
   nextMinorOf,
   sortByCreatedDesc,
   versionLabel,
+  currentVersionOf,
+  macroFieldsChanged,
   type CatalogSnapshotItem,
   type PathologySegment,
   type TherapeuticDiagnosis,
+  type TherapeuticMacroField,
   type TherapeuticModality,
   type TherapeuticProjectVersion,
 } from '../domain/TherapeuticProject';
@@ -65,6 +68,30 @@ export class SourceVersionNotFoundError extends Error {
   readonly code = 'source_version_not_found';
   constructor() {
     super('source_version_not_found');
+  }
+}
+
+/**
+ * `mode:'edit'` com `fromVersionId` que NÃO é a vigente (ADR-4/SUP-24; lex-pr7 contract §alterado):
+ * 409, nunca 422 — o corpo pode estar perfeito, o problema é a versão-alvo ter ficado velha
+ * (outra edição/anulação aconteceu entre o GET e o POST). Backend é a fonte da verdade (R4): a
+ * tela trava o campo, mas a API tem de recusar mesmo se alguém escrever direto.
+ */
+export class VersionNotCurrentError extends Error {
+  readonly code = 'ptp_not_current';
+  constructor() {
+    super('ptp_not_current');
+  }
+}
+
+/**
+ * `mode:'edit'` mudando campo MACRO (lex-pr7 contract §alterado, ADR-4/D328): 422 com só os
+ * NOMES dos campos — nunca o valor enviado (lex #7 C7: erro não ecoa texto clínico).
+ */
+export class MacroFieldsLockedError extends Error {
+  readonly code = 'ptp_macro_locked';
+  constructor(readonly fields: TherapeuticMacroField[]) {
+    super('ptp_macro_locked');
   }
 }
 
@@ -176,6 +203,30 @@ export class TherapeuticProjectRepository {
         } else {
           const source = existing.find((v) => v.id === cmd.fromVersionId && v.annulledAt === null);
           if (!source) throw new SourceVersionNotFoundError();
+          // ADR-4/SUP-24: só a VIGENTE (created_at mais recente entre as não-anuladas) pode ser
+          // editada — 409, nunca "edita como se fosse a última minor da major".
+          const current = currentVersionOf(existing);
+          if (!current || current.id !== source.id) throw new VersionNotCurrentError();
+          // D328: MACRO só muda em versão NOVA — edição recusa alteração de MACRO (422, só nomes).
+          const changedMacro = macroFieldsChanged(
+            {
+              contractedServiceId: source.contractedServiceId,
+              diagnosisUris: source.diagnoses.map((d) => d.uri),
+              clinicalContext: source.clinicalContext,
+              generalObjective: source.generalObjective,
+              specificObjectiveIds: source.specificObjectives.map((o) => o.id),
+              activityIds: source.activities.map((a) => a.id),
+            },
+            {
+              contractedServiceId: cmd.version.contractedServiceId,
+              diagnoses: cmd.version.diagnoses,
+              clinicalContext: cmd.version.clinicalContext,
+              generalObjective: cmd.version.generalObjective,
+              specificObjectiveIds: cmd.version.specificObjectiveIds,
+              activityIds: cmd.version.activityIds,
+            },
+          );
+          if (changedMacro.length > 0) throw new MacroFieldsLockedError(changedMacro);
           number = nextMinorOf(existing, source.major);
           editedFrom = source.id;
         }
