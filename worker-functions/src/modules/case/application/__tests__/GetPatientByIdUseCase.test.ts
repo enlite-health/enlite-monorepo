@@ -115,6 +115,7 @@ const mockPatient: PatientDetailRow = {
       name: 'Dr. García',
       phone: '+5491122222222',
       email: 'garcia@clinic.com',
+      specialty: null,
       displayOrder: 1,
       isTeam: false,
     },

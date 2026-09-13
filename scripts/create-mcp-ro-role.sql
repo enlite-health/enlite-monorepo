@@ -179,6 +179,11 @@ BEGIN
   -- rótulo é texto livre do operador: ficam FORA até a guarda `containsLikelyPersonalData` ser provada.
   -- 417 (D301): patient_coverage_emergency_contacts tem nome+telefone de terceiro (profissional direto) —
   -- sem coluna segura, revogada inteira.
+  -- 427 (spec 018, PR-5; lex 12/09 C5/C1): patient_professionals ganha `specialty` — o vínculo
+  -- "profissional X de especialidade Y atende o paciente Z" é dado de SAÚDE do paciente, e `name`
+  -- já era plaintext (só phone/email viraram `*_encrypted` na 071). Tabela inteira revogada no
+  -- MESMO commit da migration 427 (achado do gate: `GRANT SELECT ON ALL TABLES IN SCHEMA public`
+  -- do topo deste script cobria `patient_professionals` por omissão até aqui).
   FOR alvo IN SELECT unnest(ARRAY[
     'patient_insurance_verified',
     'patient_device_types',
@@ -187,6 +192,7 @@ BEGIN
     'patient_source_label_rejections',
     'patient_therapeutic_projects',
     'patient_coverage_emergency_contacts',
+    'patient_professionals',
     'therapeutic_specific_objectives',
     'therapeutic_activities',
     'pathology_types'
@@ -206,6 +212,7 @@ BEGIN
                                   'patient_addresses','patient_contracted_services','contracted_service_providers',
                                   'contracted_service_devices','service_types',
                                   'patient_therapeutic_projects','patient_coverage_emergency_contacts',
+                                  'patient_professionals',
                                   'therapeutic_specific_objectives','therapeutic_activities','pathology_types']) AS tabela LOOP
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=alvo.tabela)
        AND has_table_privilege('enlite_mcp_ro', format('public.%I', alvo.tabela), 'SELECT') THEN

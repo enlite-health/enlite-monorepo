@@ -111,6 +111,11 @@ const ESPERADO: Record<string, string | null> = {
   'POST /patients/:id/coverage-emergency-contacts': 'patient_coverage:write',
   'PATCH /patients/:id/coverage-emergency-contacts/:cid': 'patient_coverage:write',
   'POST /patients/:id/coverage-emergency-contacts/:cid/deactivate': 'patient_coverage:write',
+  // Equipe tratante — escrita por linha (spec 018, PR-5, US-11; contracts/care-team.md). Célula
+  // NOVA `patient_care_team:write` (a de leitura já existia, PR-1).
+  'POST /patients/:id/professionals': 'patient_care_team:write',
+  'PATCH /patients/:id/professionals/:pid': 'patient_care_team:write',
+  'POST /patients/:id/professionals/:pid/deactivate': 'patient_care_team:write',
 };
 
 /** Rotas da família SEM célula, de propósito: só recusam (410), nunca fazem nada com o dado. */
@@ -180,6 +185,9 @@ function pecas() {
     createCoverageEmergencyContact: responde('rows.createCoverageEmergencyContact'),
     updateCoverageEmergencyContact: responde('rows.updateCoverageEmergencyContact'),
     deactivateCoverageEmergencyContact: responde('rows.deactivateCoverageEmergencyContact'),
+    createProfessional: responde('rows.createProfessional'),
+    updateProfessional: responde('rows.updateProfessional'),
+    deactivateProfessional: responde('rows.deactivateProfessional'),
   } as unknown as AdminPatientContactRowsController;
 
   return {
@@ -212,8 +220,8 @@ describe('createAdminPatientsRoutes', () => {
     expect(declarado).toEqual(ESPERADO);
   });
 
-  it('a família declara exatamente 46 rotas — 45 do PR-1 + activate-recruitment (spec 018, PR-6)', () => {
-    expect(scanExpressRouter(build())).toHaveLength(46);
+  it('a família declara exatamente 49 rotas — 39 de antes (D286) + o 410 de support-network + as 6 rotas por linha (PR-1, ADR-1) + activate-recruitment (spec 018, PR-6) + as 3 da equipe tratante (spec 018, PR-5, US-11)', () => {
+    expect(scanExpressRouter(build())).toHaveLength(49);
   });
 
   it('a família é `admin.patients` — o nome que PERMISSION_ENFORCED_ROUTES liga', () => {
@@ -234,7 +242,7 @@ describe('createAdminPatientsRoutes', () => {
         p.map, p.addresses, p.insurance, p.contracted, p.diagnoses, p.terminology,
         // 12º omitido de propósito
       );
-      expect(scanExpressRouter(router)).toHaveLength(46);
+      expect(scanExpressRouter(router)).toHaveLength(49);
     } finally {
       if (antes === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = antes;
     }
@@ -303,6 +311,9 @@ describe('createAdminPatientsRoutes', () => {
     ['post', '/api/admin/patients/abc-123/coverage-emergency-contacts', 'rows.createCoverageEmergencyContact'],
     ['patch', '/api/admin/patients/abc-123/coverage-emergency-contacts/c1', 'rows.updateCoverageEmergencyContact'],
     ['post', '/api/admin/patients/abc-123/coverage-emergency-contacts/c1/deactivate', 'rows.deactivateCoverageEmergencyContact'],
+    ['post', '/api/admin/patients/abc-123/professionals', 'rows.createProfessional'],
+    ['patch', '/api/admin/patients/abc-123/professionals/p1', 'rows.updateProfessional'],
+    ['post', '/api/admin/patients/abc-123/professionals/p1/deactivate', 'rows.deactivateProfessional'],
   ] as const)('%s %s → %s', async (metodo, caminho, esperado) => {
     const app = express();
     app.use(express.json());

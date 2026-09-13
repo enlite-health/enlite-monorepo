@@ -106,7 +106,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/permission-groups/:id/members → permission_management:write',
         'PUT /api/admin/country-features/:country/:featureKey → permission_management:write',
         'PUT /api/admin/permission-groups/:id/permissions → permission_management:write',
-        // ── admin.patients (21) — a 2ª
+        // ── admin.patients (24) — a 2ª
         'DELETE /api/admin/patient-chat-roles/:code → patient:write',
         'DELETE /api/admin/patients/:id → patient:delete',
         'GET /api/admin/chat-groups → messaging:read',
@@ -128,6 +128,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         // Escrita por linha (spec 018, PR-1, ADR-1; contracts/support-network.md).
         'PATCH /api/admin/patients/:id/coverage-emergency-contacts/:cid → patient_coverage:write',
         'PATCH /api/admin/patients/:id/general → patient_identity:write',
+        // Escrita por linha (spec 018, PR-5, US-11) — célula NOVA `patient_care_team:write`.
+        'PATCH /api/admin/patients/:id/professionals/:pid → patient_care_team:write',
         'PATCH /api/admin/patients/:id/responsibles/:rid → patient_family:write',
         'PATCH /api/admin/patients/:id/service → patient_services:write',
         'PATCH /api/admin/patients/:id/test-flag → patient:write',
@@ -138,6 +140,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/patients/:id/contracted-services/:sid/activate-recruitment → patient_services:write',
         'POST /api/admin/patients/:id/coverage-emergency-contacts → patient_coverage:write',
         'POST /api/admin/patients/:id/coverage-emergency-contacts/:cid/deactivate → patient_coverage:write',
+        'POST /api/admin/patients/:id/professionals → patient_care_team:write',
+        'POST /api/admin/patients/:id/professionals/:pid/deactivate → patient_care_team:write',
         'POST /api/admin/patients/:id/responsibles → patient_family:write',
         'POST /api/admin/patients/:id/responsibles/:rid/deactivate → patient_family:write',
         'POST /api/admin/patients/:patientId/addresses → patient_address:write',

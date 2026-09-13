@@ -70,6 +70,21 @@ export interface PatientResponsibleInput {
  */
 export type PatientResponsiblePatch = Partial<Omit<PatientResponsibleInput, 'isPrimary'>> & { isPrimary?: boolean };
 
+/**
+ * `POST /patients/:id/professionals` — corpo completo de UMA linha (spec 018, PR-5, US-11).
+ * `displayOrder`/`source`/`isTeam` SAÍRAM: o servidor fixa os três (posição no fim, `admin_manual`,
+ * `false` — a entrada "equipe multidisciplinar" só existe hoje vinda do ClickUp).
+ */
+export interface PatientProfessionalInput {
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  specialty?: import('./patientEnums').PatientProfessionalSpecialtyCode | null;
+}
+
+/** `PATCH /patients/:id/professionals/:pid` — parcial de UMA linha (RFC 7396). `name` não aceita `null`. */
+export type PatientProfessionalPatch = Partial<PatientProfessionalInput>;
+
 /** section = 'service' — targeted service_type update. */
 export interface PatientServiceSectionPayload {
   serviceType?: string[] | null;

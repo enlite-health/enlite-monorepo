@@ -5,6 +5,11 @@ import {
   COVERAGE_EMERGENCY_CONTACT_PHONE_MAX,
 } from '../../domain/PatientCoverageEmergencyContact';
 import { RELATIONSHIPS } from '../../domain/enums/Relationship';
+import {
+  PATIENT_PROFESSIONAL_SPECIALTIES,
+  PATIENT_PROFESSIONAL_NAME_MAX,
+  PATIENT_PROFESSIONAL_PHONE_MAX,
+} from '../../domain/PatientProfessional';
 
 /**
  * Validadores da escrita POR LINHA dos contatos do paciente (spec 018, PR-1, ADR-1;
@@ -69,5 +74,33 @@ export const updateCoverageEmergencyContactSchema = z
     kind: z.enum(COVERAGE_EMERGENCY_CONTACT_KINDS).optional(),
     name: z.string().trim().min(1).max(COVERAGE_EMERGENCY_CONTACT_NAME_MAX).optional(),
     phone: z.string().trim().min(1).max(COVERAGE_EMERGENCY_CONTACT_PHONE_MAX).optional(),
+  })
+  .strict();
+
+// ── Equipe tratante (`patient_professionals`, spec 018 PR-5, US-11) ─────────────────────────────
+
+export const professionalIdParamsSchema = z.object({
+  id: z.string().uuid(),
+  pid: z.string().uuid(),
+});
+
+/** `POST /patients/:id/professionals` — corpo completo. `specialty` enum fechado (C5 do `lex`: o
+ * banco também recusa por CHECK — 23514 — a dupla trava é a mesma régua do `kind` de cobertura). */
+export const createProfessionalSchema = z
+  .object({
+    name: z.string().trim().min(1).max(PATIENT_PROFESSIONAL_NAME_MAX),
+    phone: z.string().trim().min(1).max(PATIENT_PROFESSIONAL_PHONE_MAX).nullable().optional(),
+    email: z.string().trim().email().nullable().optional(),
+    specialty: z.enum(PATIENT_PROFESSIONAL_SPECIALTIES).nullable().optional(),
+  })
+  .strict();
+
+/** `PATCH /patients/:id/professionals/:pid` — parcial; `name` não aceita `null` (coluna NOT NULL). */
+export const updateProfessionalSchema = z
+  .object({
+    name: z.string().trim().min(1).max(PATIENT_PROFESSIONAL_NAME_MAX).optional(),
+    phone: z.string().trim().min(1).max(PATIENT_PROFESSIONAL_PHONE_MAX).nullable().optional(),
+    email: z.string().trim().email().nullable().optional(),
+    specialty: z.enum(PATIENT_PROFESSIONAL_SPECIALTIES).nullable().optional(),
   })
   .strict();

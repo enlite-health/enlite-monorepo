@@ -333,5 +333,18 @@ export function createAdminPatientsRoutes(
     contactRowsController.deactivateCoverageEmergencyContact(req, res),
   );
 
+  // ── Equipe tratante — escrita por LINHA (spec 018, PR-5, US-11; `contracts/care-team.md`) ────
+  // Célula NOVA `patient_care_team:write` — catálogo sincroniza pela declaração da rota
+  // (`SyncPermissionCatalogUseCase`, molde das demais); nasce com 0 grupos (lex 12/09).
+  router.post('/patients/:id/professionals', staffOnly, perm.require('patient_care_team', 'write'), (req: Request, res: Response) =>
+    contactRowsController.createProfessional(req, res),
+  );
+  router.patch('/patients/:id/professionals/:pid', staffOnly, perm.require('patient_care_team', 'write'), (req: Request, res: Response) =>
+    contactRowsController.updateProfessional(req, res),
+  );
+  router.post('/patients/:id/professionals/:pid/deactivate', staffOnly, perm.require('patient_care_team', 'write'), (req: Request, res: Response) =>
+    contactRowsController.deactivateProfessional(req, res),
+  );
+
   return router;
 }

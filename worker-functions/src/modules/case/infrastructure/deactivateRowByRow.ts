@@ -21,7 +21,7 @@ export type DeactivateOutcome =
  */
 export async function deactivateRow(
   client: PoolClient,
-  table: 'patient_responsibles' | 'patient_coverage_emergency_contacts',
+  table: 'patient_responsibles' | 'patient_coverage_emergency_contacts' | 'patient_professionals',
   patientId: string,
   id: string,
   actorUid: string,
