@@ -34,8 +34,17 @@
 -- compostas adicionadas às tabelas de contato (`pcec_id_patient_uq`; as outras três já existem:
 -- `pr_id_patient_uq` 423, `pxc_id_patient_uq` 422, `pp_id_patient_uq` 427).
 
-ALTER TABLE patient_coverage_emergency_contacts DROP CONSTRAINT IF EXISTS pcec_id_patient_uq;
-ALTER TABLE patient_coverage_emergency_contacts ADD CONSTRAINT pcec_id_patient_uq UNIQUE (id, patient_id);
+-- Condicional (não DROP+ADD): o FK de patient_therapeutic_project_contacts.coverage_contact_id,
+-- criado mais abaixo nesta mesma migration, depende desta UNIQUE — um DROP CONSTRAINT na 2ª
+-- rodada falharia com "cannot drop constraint ... because other objects depend on it".
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'pcec_id_patient_uq'
+  ) THEN
+    ALTER TABLE patient_coverage_emergency_contacts ADD CONSTRAINT pcec_id_patient_uq UNIQUE (id, patient_id);
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS patient_therapeutic_project_contacts (
   id                    UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
