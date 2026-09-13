@@ -241,15 +241,16 @@ describe('TherapeuticCatalogRepository', () => {
       expect(chamadas).toHaveLength(1);
     });
 
-    it('US-17/430: com `segmentId` de um segmento ATIVO → checa o segmento ANTES, e o INSERT ganha a coluna', async () => {
+    it('US-17/430: com `segmentId` de um segmento ATIVO → checa o segmento ANTES, o INSERT ganha a coluna, e o item devolvido leva `segmentId`', async () => {
       mockPoolQuery.mockResolvedValue({ rows: [{ ok: 1 }] }); // `assertSegmentActive` usa o pool, não a transação
-      const { cli, chamadas } = cliente();
+      const { cli, chamadas } = cliente({ rows: [{ ...ROW, segment_id: 'seg-1' }] }); // RETURNING * com a coluna nova
       mockConnect.mockResolvedValue(cli);
-      await new TherapeuticCatalogRepository().create('specific-objectives', { label: 'Vínculo', segmentId: 'seg-1', actorUid: 'uid-1' });
+      const item = await new TherapeuticCatalogRepository().create('specific-objectives', { label: 'Vínculo', segmentId: 'seg-1', actorUid: 'uid-1' });
       expect(mockPoolQuery.mock.calls[0][0]).toContain('FROM therapeutic_segments WHERE id = $1 AND active');
       expect(mockPoolQuery.mock.calls[0][1]).toEqual(['seg-1']);
       expect(chamadas[0].sql).toContain('segment_id');
       expect(chamadas[0].params).toEqual(['Vínculo', null, 'seg-1', 'uid-1']);
+      expect(item).toMatchObject({ id: 'item-1', segmentId: 'seg-1' });
     });
 
     it('US-17/430: `segmentId` de segmento INATIVO/inexistente → `CatalogSegmentInvalidError`, SEM abrir transação', async () => {

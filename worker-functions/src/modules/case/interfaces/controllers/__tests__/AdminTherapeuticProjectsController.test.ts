@@ -13,13 +13,18 @@ jest.mock('@modules/identity', () => ({
   AuthMiddleware: { getAuthContext: jest.fn() },
 }));
 jest.mock('@shared/logging', () => ({ reportError: jest.fn() }));
+// Só para a prova de memoização/lazy do getter `coverageContacts` (sem tocar o pool de verdade):
+// o resto do arquivo passa o 4º repo por injeção e nunca deixa este mock ser instanciado.
+jest.mock('../../../infrastructure/PatientCoverageEmergencyContactRepository', () => ({
+  PatientCoverageEmergencyContactRepository: jest.fn().mockImplementation(() => ({ getKind: jest.fn().mockResolvedValue(null) })),
+}));
 
 import { AuthMiddleware } from '@modules/identity';
 import { reportError } from '@shared/logging';
 import type { Response } from 'express';
 import { AdminTherapeuticProjectsController } from '../AdminTherapeuticProjectsController';
 import { ServiceNotOfPatientError, SourceVersionNotFoundError, PatientNotFoundForProjectError } from '../../../infrastructure/TherapeuticProjectRepository';
-import { CatalogItemsUnknownError, CatalogLabelTakenError } from '../../../infrastructure/TherapeuticCatalogRepository';
+import { CatalogItemsUnknownError, CatalogLabelTakenError, CatalogSegmentInvalidError } from '../../../infrastructure/TherapeuticCatalogRepository';
 import { DiagnosisUnknownError } from '../../../application/pathologySegments';
 import { TerminologyUnavailableError } from '@modules/terminology/domain/UnavailableTerminology';
 
@@ -364,6 +369,22 @@ describe('AdminTherapeuticProjectsController', () => {
       expect(res.status).toHaveBeenCalledWith(201);
     });
 
+    it('sem `coverageContacts` injetado (4º arg omitido): constrói a instância REAL só na 1ª chamada com `COVERAGE`, e MEMOIZA entre chamadas', async () => {
+      const { PatientCoverageEmergencyContactRepository: RepoMock } = jest.requireMock(
+        '../../../infrastructure/PatientCoverageEmergencyContactRepository',
+      ) as { PatientCoverageEmergencyContactRepository: jest.Mock };
+      const repo = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
+      const controller = new AdminTherapeuticProjectsController(repo as never, {} as never, stubContacts() as never);
+      const corpo = { ...CORPO_NOVO, version: { ...CORPO_NOVO.version, contactRefs: [{ kind: 'COVERAGE', id: PAT_ID }] } };
+      // SEM `patient_care_team:read`: força o código a consultar o kind (getKind) — é essa consulta
+      // que toca o getter `coverageContacts` e materializa a instância (o stub devolve `null`, não
+      // DIRECT_PROFESSIONAL, então a criação segue e o efeito medido aqui é só a memoização).
+      const cells = ['patient_clinical:write', 'patient_coverage:read'];
+      await controller.create(mockReq({ params: { id: PATIENT_ID }, body: corpo, permissionCells: cells }), mockRes());
+      await controller.create(mockReq({ params: { id: PATIENT_ID }, body: corpo, permissionCells: cells }), mockRes());
+      expect(RepoMock).toHaveBeenCalledTimes(1);
+    });
+
     it('201 com `contactRefs`/`careTeamIds` e as células de origem — nenhuma célula falta', async () => {
       const repo = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
       const res = mockRes();
@@ -676,6 +697,16 @@ describe('AdminTherapeuticProjectsController', () => {
       expect(reportError).not.toHaveBeenCalled();
     });
 
+    it('US-17/430: 422 quando `segmentId` é de segmento inativo/inexistente — SEM ecoar o id, sem reportError', async () => {
+      const catalogs = { create: jest.fn().mockRejectedValue(new CatalogSegmentInvalidError()) };
+      const res = mockRes();
+      await ctrl({}, catalogs).createCatalogItem('activities', mockReq({ body: { label: 'X', segmentId: PAT_ID } }), res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Unknown or inactive segment', code: 'catalog_segment_invalid' });
+      expect(JSON.stringify(corpoDaResposta(res))).not.toContain(PAT_ID);
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
     it('500 no erro genérico', async () => {
       const catalogs = { create: jest.fn().mockRejectedValue(new Error('boom')) };
       const res = mockRes();
@@ -737,6 +768,16 @@ describe('AdminTherapeuticProjectsController', () => {
       const res = mockRes();
       await ctrl({}, catalogs).updateCatalogItem('activities', mockReq({ params: { itemId: ITEM_ID }, body: { label: 'Repetido' } }), res);
       expect(res.status).toHaveBeenCalledWith(409);
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
+    it('US-17/430: 422 quando `segmentId` é de segmento inativo/inexistente — SEM ecoar o id, sem reportError', async () => {
+      const catalogs = { update: jest.fn().mockRejectedValue(new CatalogSegmentInvalidError()) };
+      const res = mockRes();
+      await ctrl({}, catalogs).updateCatalogItem('activities', mockReq({ params: { itemId: ITEM_ID }, body: { segmentId: PAT_ID } }), res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Unknown or inactive segment', code: 'catalog_segment_invalid' });
+      expect(JSON.stringify(corpoDaResposta(res))).not.toContain(PAT_ID);
       expect(reportError).not.toHaveBeenCalled();
     });
 
