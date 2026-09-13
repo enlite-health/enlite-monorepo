@@ -47,7 +47,6 @@ const ADDRESS_ROW = {
   patient_id: 'pat-5',
   address_formatted: 'Corrientes 1234, CABA',
   address_raw: 'Corrientes 1234',
-  address_type: 'service',
   display_order: 0,
   source: 'manual',
 };

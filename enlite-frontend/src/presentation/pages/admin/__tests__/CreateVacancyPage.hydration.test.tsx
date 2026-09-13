@@ -38,7 +38,6 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
         // Reproduz drift de prod: formatted vazio, raw preenchido, sem coords
         address_formatted: '',
         address_raw: 'Bolivia 4145, Caseros',
-        address_type: 'primary',
         display_order: 1,
         source: 'clickup',
         complement: null,

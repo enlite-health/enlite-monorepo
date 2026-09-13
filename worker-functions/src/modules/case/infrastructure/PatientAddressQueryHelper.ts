@@ -46,7 +46,6 @@ export interface PatientAddressRow {
   id: string;
   address_formatted: string;
   address_raw: string | null;
-  address_type: string | null;
   is_default: boolean;
   display_order: number | null;
   source: string | null;
@@ -138,13 +137,18 @@ export async function insertPatientAddress(
 }
 
 export async function fetchPatientAddresses(db: Pool, patientId: string): Promise<PatientAddressRow[]> {
+  // C3 (spec 019): `address_type` NÃO entra neste SELECT. Este é o endpoint consumido pelo
+  // wizard de criação de vaga (CaseSelectStep) — o parentesco do domicílio (`'otro'`,
+  // `'casa_madre'`, ...) é dado da FICHA do paciente, não da tela de escolher endereço da vaga.
+  // Único outro consumidor era exatamente essa tela, que exibia o valor cru; removido dos dois
+  // lados (grep de chamadores confirma nenhum outro leitor deste helper).
   const result = await db.query<PatientAddressRow>(
     // archived_at IS NULL: o form de criação de vaga e o detalhe do
     // paciente só veem endereços ativos. Endereços arquivados continuam
     // existindo na tabela pra preservar o histórico das vagas antigas
     // que apontam pra eles (ver migration 198 e docs/features/
     // vacancy-creation/06-endereco-servico.md).
-    `SELECT id, address_formatted, address_raw, address_type, is_default, display_order, source, complement, lat, lng
+    `SELECT id, address_formatted, address_raw, is_default, display_order, source, complement, lat, lng
      FROM patient_addresses
      WHERE patient_id = $1
        AND archived_at IS NULL
