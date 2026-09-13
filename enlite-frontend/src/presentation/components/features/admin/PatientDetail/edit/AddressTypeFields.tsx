@@ -4,7 +4,11 @@ import { SelectField, type SelectOption } from '@presentation/components/molecul
 import { Text } from '@presentation/components/atoms/Text';
 import { PATIENT_ADDRESS_TYPES, type PatientAddressType } from '@domain/entities/PatientAddress';
 
-/** Teto do texto livre do "Otro" — espelha o CHECK do banco (migration 434). */
+/**
+ * Teto do texto livre do "Otro" (40) — hoje garantido só pelo zod da API
+ * (`AdminPatientAddressesController.ts`); quando o PR-B aplicar a migration 434, passa a valer
+ * também no CHECK do banco (`patient_addresses_type_check`).
+ */
 export const ADDRESS_TYPE_OTHER_MAX = 40;
 
 interface Props {
