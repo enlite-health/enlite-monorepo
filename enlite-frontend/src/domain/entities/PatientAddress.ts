@@ -64,7 +64,9 @@ export interface PatientAddressCreateInput {
 /**
  * Body de PATCH /api/admin/patients/:id/addresses/:addressId — logística + PRINCIPAL + TIPO por
  * endereço (spec 012, US-B2; spec 019, D310 item c). `null` limpa o campo, exceto `is_default`
- * (booleano — `true` marca principal com troca atômica no servidor; `false`/ausente não desmarca).
+ * (o servidor SÓ aceita `true` — `false` é 400. Marcar um endereço como principal desmarca o
+ * anterior na mesma transação; desmarcar o PRÓPRIO só acontece marcando OUTRO como principal,
+ * nunca mandando `is_default: false`).
  */
 export interface PatientAddressLogisticsPayload {
   neighborhood?: string | null;

@@ -157,6 +157,22 @@ describe('Endereço PRINCIPAL + TIPO por parentesco (spec 019) @integration', ()
     expect(reloaded2?.addressTypeOther).toBe('Casa de una tía cercana');
   });
 
+  it('5.3 alt3 — PATCH is_default:false → 400 e o principal continua o mesmo (override 12/09: desmarcar só marcando OUTRO)', async () => {
+    const g = await api.get(`/api/admin/patients/${patientId}`, asAdmin);
+    const [addrA, addrB] = g.data.data.addresses as Array<{ id: string; isPrimary: boolean }>;
+    const principalAntes = addrA.isPrimary ? addrA.id : addrB.id;
+
+    const r = await api.patch(`/api/admin/patients/${patientId}/addresses/${principalAntes}`,
+      { is_default: false }, asAdmin);
+    expect(r.status).toBe(400);
+    expect(await countActivePrincipals(patientId)).toBe(1);
+
+    const reload = await api.get(`/api/admin/patients/${patientId}`, asAdmin);
+    const stillPrimary = (reload.data.data.addresses as Array<{ id: string; isPrimary: boolean }>)
+      .find((a) => a.id === principalAntes);
+    expect(stillPrimary?.isPrimary).toBe(true);
+  });
+
   it('5.4 alt1 — address_type_other com 41 caracteres → 400 do servidor (não do zod isolado)', async () => {
     const g = await api.get(`/api/admin/patients/${patientId}`, asAdmin);
     const [addrA] = g.data.data.addresses as Array<{ id: string }>;

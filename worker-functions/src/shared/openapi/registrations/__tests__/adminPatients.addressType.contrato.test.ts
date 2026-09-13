@@ -52,4 +52,14 @@ describe('OpenAPI · PATCH /api/admin/patients/{patientId}/addresses/{addressId}
     expect(values).toEqual([...PATIENT_ADDRESS_TYPES]);
     expect(values).toContain('escuela');
   });
+
+  it('is_default publicado só aceita `true` — `false` é 400 (override 12/09: desmarcar só acontece marcando OUTRO principal)', () => {
+    // is_default: z.literal(true).optional() → ZodOptional<ZodLiteral<true>>.
+    const inner = (updatePatientAddressSchema as unknown as {
+      innerType(): { shape: { is_default: { _def: { innerType: { _def: { value: unknown } } } } } };
+    }).innerType();
+    expect(inner.shape.is_default._def.innerType._def.value).toBe(true);
+    expect(updatePatientAddressSchema.safeParse({ is_default: true }).success).toBe(true);
+    expect(updatePatientAddressSchema.safeParse({ is_default: false }).success).toBe(false);
+  });
 });
