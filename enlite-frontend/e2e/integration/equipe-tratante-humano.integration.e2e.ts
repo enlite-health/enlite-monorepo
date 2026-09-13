@@ -168,8 +168,9 @@ test.describe('Equipe tratante — Nuevo/lápis/desativar por LINHA (spec 018, P
     await page.getByTestId('professional-phone').click();
     await page.keyboard.type('+54 11 5555-9001');
 
-    await page.getByTestId('professional-specialty').click();
-    await page.getByRole('option', { name: 'Kinesiólogo/a' }).click();
+    // <select> nativo — selectOption é a interação real de um <select> (não input de texto:
+    // a régua de "nunca fill() onde a pessoa digita" vale para TEXTO, não para escolha em lista).
+    await page.getByTestId('professional-specialty').selectOption({ label: 'Kinesiólogo/a' });
 
     await page.getByTestId('professional-save').click();
     await expect(page.getByTestId('professional-edit-drawer')).toHaveCount(0, { timeout: 10_000 });
