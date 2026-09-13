@@ -143,7 +143,7 @@ describe('Role enlite_mcp_ro — SELECT por coluna em patients (D216) @integrati
 
   it('spec 012 lex C2.1: patient_addresses.access_notes é negado à role (colunas irmãs passam); C3.1: provider_code não reabre patient_insurance_verified', async () => {
     const { rows: [a] } = await admin.query<{ id: string }>(
-      `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, access_notes) VALUES ($1, 'primary', 'Calle Falsa 123', $2) RETURNING id`,
+      `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, access_notes) VALUES ($1, 'trabajo', 'Calle Falsa 123', $2) RETURNING id`,
       [patientId, CLINICAL_TEXT],
     );
     try {
@@ -152,7 +152,7 @@ describe('Role enlite_mcp_ro — SELECT por coluna em patients (D216) @integrati
       // colunas não sensíveis seguem legíveis (item 1: contagem/rótulo sempre) — só sem RLS (ver nota acima)
       if (!rlsLigada) {
         const ok = await ro.query('SELECT id, address_type, country, neighborhood, logistics_corridor FROM patient_addresses WHERE id = $1', [a.id]);
-        expect(ok.rows).toEqual([{ id: a.id, address_type: 'primary', country: 'AR', neighborhood: null, logistics_corridor: null }]);
+        expect(ok.rows).toEqual([{ id: a.id, address_type: 'trabajo', country: 'AR', neighborhood: null, logistics_corridor: null }]);
       }
       const priv = await admin.query<{ t: boolean; c: boolean; n: boolean }>(
         `SELECT has_table_privilege('enlite_mcp_ro', 'public.patient_addresses', 'SELECT') AS t,

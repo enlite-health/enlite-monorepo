@@ -40,12 +40,13 @@ export interface InsertSecondAddressOpts {
   addressLat?: number;
   addressLng?: number;
   displayOrder?: number;
-  addressType?: 'primary' | 'secondary' | 'service';
 }
 
 /**
  * Inserts an additional patient_address for an existing patient. Used by tests
  * that need a patient with multiple active addresses (display_order 1 + 2).
+ * Spec 019/migration 434: `address_type` nasce NULL — nenhum teste que usa este
+ * helper asserta sobre o valor do tipo, só sobre existir um 2º endereço ativo.
  */
 export function insertSecondAddress(opts: InsertSecondAddressOpts): string {
   const {
@@ -54,16 +55,14 @@ export function insertSecondAddress(opts: InsertSecondAddressOpts): string {
     addressLat = -34.55,
     addressLng = -58.55,
     displayOrder = 2,
-    addressType = 'secondary',
   } = opts;
 
   runSQL(`
     INSERT INTO patient_addresses (
-      patient_id, address_type, address_formatted, address_raw,
+      patient_id, address_formatted, address_raw,
       lat, lng, display_order, source, created_at, updated_at
     ) VALUES (
       '${patientId}',
-      '${addressType}',
       '${addressFormatted.replace(/'/g, "''")}',
       '${addressFormatted.replace(/'/g, "''")}',
       ${addressLat},

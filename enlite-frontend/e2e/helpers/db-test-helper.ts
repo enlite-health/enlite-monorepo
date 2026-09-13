@@ -118,11 +118,10 @@ export function insertTestPatient(
   if (withAddress) {
     runSQL(`
       INSERT INTO patient_addresses (
-        patient_id, address_type, address_formatted, address_raw,
+        patient_id, address_formatted, address_raw,
         lat, lng, display_order, source, created_at, updated_at
       ) VALUES (
         '${patientId}',
-        'primary',
         'Av. Corrientes 1234, CABA, AR',
         'Av. Corrientes 1234, CABA',
         ${addressLat},

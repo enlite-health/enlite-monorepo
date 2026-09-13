@@ -62,9 +62,9 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
       [IDS.patientAR, IDS.patientBR],
     );
     await pool.query(
-      `INSERT INTO patient_addresses (id, patient_id, address_type, address_formatted) VALUES
-         ($1, $2, 'primary', 'Av. Corrientes 1234, CABA'),
-         ($3, $4, 'primary', 'Av. Paulista 1000, São Paulo')`,
+      `INSERT INTO patient_addresses (id, patient_id, address_formatted) VALUES
+         ($1, $2, 'Av. Corrientes 1234, CABA'),
+         ($3, $4, 'Av. Paulista 1000, São Paulo')`,
       [IDS.addressAR, IDS.patientAR, IDS.addressBR, IDS.patientBR],
     );
     await pool.query(

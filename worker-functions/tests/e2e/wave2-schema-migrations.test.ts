@@ -279,8 +279,8 @@ describe('I2 — Coluna updated_at em patient_addresses, patient_professionals, 
     const addrId = 'ee220000-0a0e-0002-eee0-000000000001';
 
     await pool.query(
-      `INSERT INTO patient_addresses (id, patient_id, address_type, address_raw, source)
-       VALUES ($1, $2, 'primary', 'Rua Original 123', 'test')
+      `INSERT INTO patient_addresses (id, patient_id, address_raw, source)
+       VALUES ($1, $2, 'Rua Original 123', 'test')
        ON CONFLICT DO NOTHING`,
       [addrId, PATIENT_ID],
     );

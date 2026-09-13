@@ -48,8 +48,8 @@ describe('GET /api/admin/vacancies/:id — aliases expostos para o detalhe', () 
 
     const addr = await pool.query(
       `INSERT INTO patient_addresses
-         (patient_id, address_type, city, neighborhood, address_formatted)
-       VALUES ($1, 'primary', 'CABA-addr', 'Palermo-addr', 'Av Santa Fe 1234, CABA')
+         (patient_id, city, neighborhood, address_formatted)
+       VALUES ($1, 'CABA-addr', 'Palermo-addr', 'Av Santa Fe 1234, CABA')
        RETURNING id`,
       [patientId],
     );

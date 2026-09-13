@@ -162,7 +162,7 @@ test.describe('Card Localizaciones — Fase 1 (T1/T2/T3) @integration', () => {
     pacientes.push(patientId);
     // Linha real de banco sem NENHUM texto de endereço — o caso que a régua "sem ação falsa" cobre
     // (ex.: registro legado do ClickUp que nunca teve o campo preenchido).
-    runSQL(`INSERT INTO patient_addresses (patient_id, address_type, address_formatted, address_raw, display_order, source, created_at, updated_at) VALUES ('${patientId}', 'secondary', NULL, NULL, 1, 'clickup', NOW(), NOW())`);
+    runSQL(`INSERT INTO patient_addresses (patient_id, address_formatted, address_raw, display_order, source, created_at, updated_at) VALUES ('${patientId}', NULL, NULL, 1, 'clickup', NOW(), NOW())`);
 
     await abrirTabServicioContratado(page, patientId);
     const card = page.getByTestId('localizacoes-card');

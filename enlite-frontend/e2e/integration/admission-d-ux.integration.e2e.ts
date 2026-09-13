@@ -172,8 +172,8 @@ test.describe('Spec 014 bloco D — o fluxo se entende sem documentação @integ
     // Completa direto no banco (o objetivo aqui é o CHECKLIST, não re-testar os drawers de A/B/C).
     runSQL(`UPDATE patients SET has_consent = true, insurance_informed = 'OSDE' WHERE id = '${incomplete.patientId}'`);
     runSQL(`
-      INSERT INTO patient_addresses (patient_id, address_type, address_formatted, address_raw, display_order, source, created_at, updated_at)
-      VALUES ('${incomplete.patientId}', 'primary', 'Av. Corrientes 1234, CABA, AR', 'Av. Corrientes 1234, CABA', 1, 'manual', NOW(), NOW())
+      INSERT INTO patient_addresses (patient_id, address_formatted, address_raw, display_order, source, created_at, updated_at)
+      VALUES ('${incomplete.patientId}', 'Av. Corrientes 1234, CABA, AR', 'Av. Corrientes 1234, CABA', 1, 'manual', NOW(), NOW())
     `);
     const svcId = runSQL(`
       WITH ins AS (
