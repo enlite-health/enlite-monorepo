@@ -94,6 +94,20 @@ export interface PatientDetailRow {
   phoneWhatsapp: string | null;
   /** E-mail do paciente, descriptografado (KMS) SÓ no detalhe — spec 011 A4. null = não informado. */
   contactEmail: string | null;
+  /**
+   * Gênero declarado, descriptografado (KMS) SÓ no detalhe (spec 018 PR-3, migration 425).
+   * `null` = não perguntado, distinto de `'PREFER_NOT_TO_SAY'` (resposta explícita).
+   */
+  gender: string | null;
+  /** Idiomas do paciente, descriptografado e desserializado do JSON (migration 425). `null` = não perguntado; `[]` nunca é usado para "não perguntado" (D167). */
+  languages: string[] | null;
+  /**
+   * Último `DISCHARGED` de `patient_status_history` (spec 018 PR-3, FR-203/FR-204). Projeção
+   * NOVA sem coleta — mesma célula de `identity` (lex CONDIÇÃO 6: a rota do Historial exige só
+   * `patient:read`, base de QUALQUER leitura da ficha; `identity` é estritamente mais restrita,
+   * então isto NÃO amplia exposição). `null` quando o status atual nunca foi DISCHARGED.
+   */
+  dischargedAt: Date | null;
   // Clinical
   diagnosis: string | null;
   dependencyLevel: string | null;

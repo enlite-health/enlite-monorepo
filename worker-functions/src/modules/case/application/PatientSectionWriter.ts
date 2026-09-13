@@ -61,6 +61,10 @@ export interface PatientGeneralSectionData {
   contactEmail?: string | null;
   /** US-B9 (spec 012): data de início do serviço — nativa, não deriva da vaga. */
   serviceStartDate?: Date | null;
+  /** Spec 018 PR-3 (Emenda 13/09). Plaintext; encrypted with KMS before storage. `null` = não perguntado. */
+  gender?: string | null;
+  /** Spec 018 PR-3. Plaintext array; serializado a JSON e encriptado com KMS antes de gravar. */
+  languages?: string[] | null;
 }
 
 /**
@@ -200,6 +204,21 @@ async function updateGeneralSection(
     const enc = await deps.encryptionService.encrypt(data.contactEmail ?? null);
     values.push(enc);
     sets.push(`contact_email_encrypted = $${values.length}`);
+  }
+
+  // Spec 018 PR-3 (Emenda 13/09, migration 425): gênero e idiomas cifrados com KMS antes de
+  // gravar — mesmo molde do e-mail de contato acima. `null` grava `null` (limpa a coluna,
+  // "não perguntado"); o Zod já garante o enum/lista fechada ANTES de chegar aqui.
+  if (Object.prototype.hasOwnProperty.call(data, 'gender')) {
+    const enc = await deps.encryptionService.encrypt(data.gender ?? null);
+    values.push(enc);
+    sets.push(`gender_encrypted = $${values.length}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(data, 'languages')) {
+    const json = data.languages ? JSON.stringify(data.languages) : null;
+    const enc = await deps.encryptionService.encrypt(json);
+    values.push(enc);
+    sets.push(`languages_encrypted = $${values.length}`);
   }
 
   if (sets.length === 0) return; // nothing to update

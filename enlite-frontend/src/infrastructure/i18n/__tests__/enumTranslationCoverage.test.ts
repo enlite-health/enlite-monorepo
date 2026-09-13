@@ -16,6 +16,8 @@ import {
   PATIENT_STATUSES, ON_HOLD_REASONS, ADMISSION_STATUSES, DEVICE_TYPE_CODES, RELATIONSHIP_CODES, INSURANCE_PROVIDER_CODES,
   PATIENT_PROFESSIONAL_SPECIALTY_CODES,
   EXTERNAL_CONTACT_RELATION_CODES,
+  PATIENT_GENDERS,
+  PATIENT_LANGUAGES,
 } from '@domain/entities/patientEnums';
 import {
   SERVICE_CODES,
@@ -121,6 +123,34 @@ describe.each([
 
   it('estado, motivo, dispositivo e parentesco são traduções, não o enum ecoado', () => {
     for (const [group, values] of PATIENT_ENUM_GROUPS.slice(0, 5)) {
+      for (const value of values) {
+        expect(get(locale, `${group}.${value}`), `${group}.${value} echoes the raw enum`).not.toBe(value);
+      }
+    }
+  });
+});
+
+// ── Spec 018 PR-3 (Emenda 13/09, migration 425): gênero e idiomas do paciente ──────────────────
+const PR3_ENUM_GROUPS: Array<[string, readonly string[]]> = [
+  ['admin.patients.detail.generalInfoCard.genderOptions', PATIENT_GENDERS],
+  ['admin.patients.detail.generalInfoCard.languageOptions', PATIENT_LANGUAGES],
+];
+
+describe.each([
+  ['es', esJson as Locale],
+  ['pt-BR', ptBRJson as Locale],
+])('patient gender/languages enum translation coverage — spec 018 PR-3 (%s)', (_lng, locale) => {
+  it.each(PR3_ENUM_GROUPS)('%s cobre todos os valores do enum', (group, values) => {
+    expect(values.length).toBeGreaterThan(0);
+    for (const value of values) {
+      const label = get(locale, `${group}.${value}`);
+      expect(label, `missing ${group}.${value}`).toBeTypeOf('string');
+      expect(label).not.toBe('');
+    }
+  });
+
+  it('gênero/idiomas são traduções, não o enum ecoado', () => {
+    for (const [group, values] of PR3_ENUM_GROUPS) {
       for (const value of values) {
         expect(get(locale, `${group}.${value}`), `${group}.${value} echoes the raw enum`).not.toBe(value);
       }

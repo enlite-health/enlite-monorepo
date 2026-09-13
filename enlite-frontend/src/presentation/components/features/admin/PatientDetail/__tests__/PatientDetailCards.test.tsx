@@ -155,80 +155,149 @@ describe('PatientIdentityCard', () => {
     expect(screen.getByText('+55 (11) 91571-1717')).toBeInTheDocument();
   });
 
-  // 06/09 (Gabriel): o grupo deixou de se chamar "contato de emergência" — o cartão mostra o
-  // responsável marcado como `isPrimary`, então o título passa a dizer o que o dado é.
-  it('renders primary responsible section when responsible present', () => {
+  // Spec 018 PR-3 (FR-208/210/224, US-8, D-A): o bloco mostra o contato MARCADO
+  // (`emergencyContactRef`), nunca mais `find(isPrimary) ?? responsibles[0]` — a fixture aponta a
+  // marca para 'r1' (Luciana Soto). Documento vem MASCARADO (FR-210, `lex` #3(b)).
+  it('spec 018 PR-3: mostra o contato de emergência MARCADO, com documento mascarado', () => {
     render(<PatientIdentityCard patient={patientDetailFixture} />);
-    expect(screen.getByText('Contato do responsável principal')).toBeInTheDocument();
-    expect(screen.getByText('Luciana Soto')).toBeInTheDocument();
+    expect(screen.getByText('Contato de Emergência:')).toBeInTheDocument();
+    expect(screen.getByTestId('emergency-contact-name')).toHaveTextContent('Luciana Soto');
+    expect(screen.getByTestId('emergency-contact-phone')).toHaveTextContent('(11) 99852-0481');
+    const doc = screen.getByTestId('emergency-contact-document-number');
+    expect(doc.textContent).not.toContain('987.654.321-00');
+    // últimos 3 caracteres ALFANUMÉRICOS visíveis (maskDocumentNumber): de "987654321 00" os
+    // últimos 3 são '1','0','0' — o '-' original é preservado na posição.
+    expect(doc).toHaveTextContent('1-00');
+    expect(doc.textContent).toMatch(/^•+.*1-00$/);
   });
 
-  // 🔒 `isPrimary` decide o TÍTULO: sem ninguém marcado, o cartão cai no primeiro da lista — e aí
-  // chamá-lo de "principal" seria a tela afirmar o que o dado não diz.
-  it('sem nenhum responsável marcado como principal, o título NÃO afirma "principal"', () => {
+  // FR-224 (3 estados sem fallback): sem marca definida (célula presente, `emergencyContactRef:
+  // null`) → "não definido" — nunca um fallback pro primeiro/principal responsável da lista.
+  it('spec 018 PR-3 FR-224: sem marca definida mostra "Não definido", nunca um fallback pro primeiro responsável', () => {
+    render(<PatientIdentityCard patient={{ ...patientDetailFixture, emergencyContactRef: null }} />);
+    expect(screen.getByTestId('emergency-contact-not-set')).toHaveTextContent('Não definido');
+    expect(screen.queryByTestId('emergency-contact-name')).not.toBeInTheDocument();
+    expect(screen.queryByText('Luciana Soto')).not.toBeInTheDocument();
+  });
+
+  // D113/lex C3: sem `patient_family:read`, os 4 campos do container saem `null` juntos —
+  // `externalContacts === null` é o sinal (mesmo já documentado no domínio); marcador CONSTANTE,
+  // não depende de haver ou não marca.
+  it('spec 018 PR-3 CONDIÇÃO 5/lex C3: sem patient_family:read (externalContacts null) mostra o marcador de redação', () => {
+    render(
+      <PatientIdentityCard
+        patient={{ ...patientDetailFixture, externalContacts: null, emergencyContactRef: null, responsibles: [] }}
+      />,
+    );
+    expect(screen.getByTestId('emergency-contact-redacted')).toBeInTheDocument();
+    expect(screen.queryByTestId('emergency-contact-not-set')).not.toBeInTheDocument();
+    expect(screen.queryByText('Luciana Soto')).not.toBeInTheDocument();
+  });
+
+  // L3a (checklist lex.md): a variante FORTE do teste acima — `responsibles` vem PREENCHIDO (o
+  // paciente TEM familiares cadastrados), e mesmo assim, sem `patient_family:read`, nenhum nome
+  // aparece. `responsibles: []` sozinho não provava nada: um card vazio nunca cairia no fallback
+  // `find(isPrimary) ?? responsibles[0]` de qualquer jeito (não há `[0]`). Só com a lista cheia é
+  // que a ausência do nome prova que o fallback (`PatientIdentityCard.tsx` antigo, linhas 167-168,
+  // já removido) não foi reintroduzido.
+  it('spec 018 PR-3 L3a: sem patient_family:read, MESMO com responsibles preenchido e SEM marca, nenhum nome aparece — nunca o fallback pro primeiro responsável', () => {
+    render(
+      <PatientIdentityCard
+        patient={{ ...patientDetailFixture, externalContacts: null, emergencyContactRef: null }}
+        // `responsibles` fica com o valor DEFAULT da fixture (não-vazio: contém "Luciana Soto").
+      />,
+    );
+    expect(screen.getByTestId('emergency-contact-redacted')).toBeInTheDocument();
+    expect(screen.queryByTestId('emergency-contact-name')).not.toBeInTheDocument();
+    expect(screen.queryByText('Luciana Soto')).not.toBeInTheDocument();
+    expect(screen.queryByText(/99852-0481/)).not.toBeInTheDocument();
+    const bloco = screen.getByTestId('patient-emergency-contact-section');
+    expect(bloco.innerHTML).not.toContain('Luciana');
+    expect(bloco.innerHTML).not.toContain('99852-0481');
+  });
+
+  // D-A #6: contato externo marcado — rótulos "do contato", SEM par de documento (a coluna não existe).
+  it('spec 018 PR-3 D-A #6: marca em contato EXTERNO usa rótulos "do contato" e não mostra documento', () => {
     render(
       <PatientIdentityCard
         patient={{
           ...patientDetailFixture,
-          responsibles: patientDetailFixture.responsibles.map((r) => ({ ...r, isPrimary: false })),
+          externalContacts: [{ id: 'ext1', relation: 'TEACHER', name: 'Marcela Souza', phone: '(11) 90000-1111', active: true }],
+          emergencyContactRef: { kind: 'EXTERNAL', id: 'ext1' },
         }}
       />,
     );
-    expect(screen.getByText('Contato do responsável')).toBeInTheDocument();
-    expect(screen.queryByText('Contato do responsável principal')).not.toBeInTheDocument();
-    // o dado continua na tela: só o título muda
-    expect(screen.getByText('Luciana Soto')).toBeInTheDocument();
+    expect(screen.getByTestId('emergency-contact-name')).toHaveTextContent('Marcela Souza');
+    expect(screen.getByTestId('emergency-contact-phone')).toHaveTextContent('90000-1111');
+    expect(screen.queryByTestId('emergency-contact-document-number')).not.toBeInTheDocument();
   });
 
-  // Sem responsável nenhum, o grupo inteiro some. Asserção nos DOIS títulos possíveis: buscar só
-  // o rótulo antigo passaria por vácuo, já que ele não existe mais em lugar nenhum.
-  // O parentesco é opcional na base: sem ele o par mostra "—", não some nem quebra.
-  it('responsável sem parentesco cadastrado mostra "—" no par, sem sumir com o campo', () => {
+  // marca órfã (ex.: id não bate mais com nenhum responsável/contato vivo) nunca quebra a tela —
+  // cai em "não definido", o mesmo estado de "sem marca". Os DOIS `kind` (RESPONSIBLE/EXTERNAL).
+  it('marca apontando para id inexistente não quebra a tela — cai em "não definido"', () => {
+    render(<PatientIdentityCard patient={{ ...patientDetailFixture, emergencyContactRef: { kind: 'RESPONSIBLE', id: 'orfao' } }} />);
+    expect(screen.getByTestId('emergency-contact-not-set')).toBeInTheDocument();
+  });
+
+  it('marca em contato EXTERNO com nome vazio (defensivo) mostra "—", nunca string vazia', () => {
     render(
       <PatientIdentityCard
         patient={{
           ...patientDetailFixture,
-          responsibles: [{ ...patientDetailFixture.responsibles[0], relationship: null }],
+          externalContacts: [{ id: 'ext2', relation: 'NEIGHBOR', name: '', phone: '(11) 91111-2222', active: true }],
+          emergencyContactRef: { kind: 'EXTERNAL', id: 'ext2' },
         }}
       />,
     );
-    const par = screen.getByText(/Parentesco/).parentElement;
-    expect(par?.lastElementChild).toHaveTextContent('—');
+    expect(screen.getByTestId('emergency-contact-name')).toHaveTextContent('—');
   });
 
-  // 🔒 Trava da classe que o print pegou e os testes não: parentesco FORA do catálogo (o enum tem
-  // 9 valores) caía na chave i18n inteira na tela. `expectNoRawEnumLeaks` procura ALL_CAPS solto e
-  // não casa com `admin.patients.detail.relationshipOptions.XPTO`, então esta asserção é explícita.
-  it('parentesco fora do catálogo cai no valor CRU, nunca na chave i18n', () => {
+  it('marca EXTERNAL órfã (id não bate com nenhum contato externo) também cai em "não definido"', () => {
     render(
       <PatientIdentityCard
-        patient={{
-          ...patientDetailFixture,
-          responsibles: [{ ...patientDetailFixture.responsibles[0], relationship: 'XPTO' as never }],
-        }}
+        patient={{ ...patientDetailFixture, externalContacts: [], emergencyContactRef: { kind: 'EXTERNAL', id: 'orfao' } }}
       />,
     );
-    const par = screen.getByText(/Parentesco/).parentElement;
-    expect(par?.lastElementChild).toHaveTextContent('XPTO');
-    expect(screen.queryByText(/admin\.patients\.detail\.relationshipOptions/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('emergency-contact-not-set')).toBeInTheDocument();
   });
 
-  // lex 06/09 (C2): telefone, documento e e-mail do responsável são contato de TERCEIRO e vivem na
-  // mesma grade que o e-mail do paciente, que já era mascarado. Trava: se alguém tirar o wrapper,
-  // fica vermelho.
-  it('o bloco do responsável inteiro leva data-clarity-mask="True"', () => {
+  // FR-211 (lex #3(c)): `data-clarity-mask` no bloco INTEIRO.
+  it('o bloco de contato de emergência inteiro leva data-clarity-mask="True"', () => {
     render(<PatientIdentityCard patient={patientDetailFixture} />);
-    const bloco = screen.getByTestId('patient-responsible-section');
+    const bloco = screen.getByTestId('patient-emergency-contact-section');
     expect(bloco).toHaveAttribute('data-clarity-mask', 'True');
-    // e os campos de contato estão DENTRO dele
-    expect(screen.getByText('Luciana Soto').closest('[data-clarity-mask="True"]')).not.toBeNull();
-    expect(screen.getByText(/99852-0481/).closest('[data-clarity-mask="True"]')).not.toBeNull();
+    expect(screen.getByTestId('emergency-contact-name').closest('[data-clarity-mask="True"]')).not.toBeNull();
   });
 
-  it('does not render the responsible section when no responsibles', () => {
-    render(<PatientIdentityCard patient={patientDetailMinimal} />);
-    expect(screen.queryByText('Contato do responsável principal')).not.toBeInTheDocument();
-    expect(screen.queryByText('Contato do responsável')).not.toBeInTheDocument();
+  // FR-203/204 (spec 018 PR-3): "Desligamento" e o chip de alta SÓ aparecem com status ATUAL
+  // DISCHARGED — supera a spec 014 US-D2 (que removeu o campo por falta de coluna; a migration
+  // 425/query nova supre isso via patient_status_history).
+  it('spec 018 PR-3 FR-203/204: sem status DISCHARGED, nem "Desligamento" nem o chip aparecem', () => {
+    render(<PatientIdentityCard patient={{ ...patientDetailFixture, phoneMatchesResponsible: false }} />);
+    expect(screen.queryByText(/Desligamento/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('patient-discharge-chip')).not.toBeInTheDocument();
+  });
+
+  it('spec 018 PR-3 FR-203/204: status DISCHARGED mostra a linha "Desligamento" com a data e o chip de alta', () => {
+    render(
+      <PatientIdentityCard
+        patient={{ ...patientDetailFixture, status: 'DISCHARGED', dischargedAt: '2026-07-15T00:00:00Z' }}
+      />,
+    );
+    expect(screen.getByTestId('patient-discharge-chip')).toBeInTheDocument();
+    const par = screen.getByText('Desligamento').parentElement;
+    expect(par?.lastElementChild).not.toHaveTextContent('—');
+  });
+
+  // Defensivo (`?? null`): status DISCHARGED sem `dischargedAt` (campo ausente/undefined, ex.
+  // backend anterior a esta rodada) mostra "—", nunca quebra a tela.
+  it('status DISCHARGED sem dischargedAt (campo ausente): mostra "—", sem quebrar', () => {
+    const { dischargedAt: _omit, ...withoutDischargedAt } = { ...patientDetailFixture, status: 'DISCHARGED' };
+    void _omit;
+    render(<PatientIdentityCard patient={withoutDischargedAt as typeof patientDetailFixture} />);
+    expect(screen.getByTestId('patient-discharge-chip')).toBeInTheDocument();
+    const par = screen.getByText('Desligamento').parentElement;
+    expect(par?.lastElementChild).toHaveTextContent('—');
   });
 
   it('renders —  for null name in minimal fixture', () => {
@@ -248,12 +317,6 @@ describe('PatientIdentityCard', () => {
   it('spec 014 US-D3: o telefone do paciente usa o rótulo "WhatsApp do paciente"', () => {
     render(<PatientIdentityCard patient={{ ...patientDetailFixture, phoneMatchesResponsible: false }} />);
     expect(screen.getByText(/WhatsApp do paciente/)).toBeInTheDocument();
-  });
-
-  // Spec 014 US-D2: "Desligamento" era `value={null}` fixo (sem coluna no banco) — removido.
-  it('spec 014 US-D2: não mostra mais o campo fantasma "Desligamento"', () => {
-    render(<PatientIdentityCard patient={{ ...patientDetailFixture, phoneMatchesResponsible: false }} />);
-    expect(screen.queryByText(/Desligamento/i)).not.toBeInTheDocument();
   });
 
   it('renders "—" for admission date when createdAt is an empty string (formatDate cannot parse it)', () => {
@@ -288,7 +351,30 @@ describe('PatientIdentityCard', () => {
     expect(screen.queryByText('Endereço')).not.toBeInTheDocument();
   });
 
-  it('falls back to "—" for the responsible name when both firstName and lastName are null', () => {
+  // CONDIÇÃO 5 do lex (spec 018 PR-3): ator SÓ com `patient_identity:read` (SEM
+  // `patient_address:read`) — o backend já nula addresses/cityLocality/province/zoneNeighborhood
+  // (container `address`, ver patientContainerAccess.test.ts). O cabeçalho recebe exatamente essa
+  // forma "pré-redigida" e o innerHTML nunca contém endereço, mesmo com o telefone (`identity`)
+  // presente — provando que o card não usa uma célula mais fraca que a de origem do dado.
+  it('spec 018 PR-3 CONDIÇÃO 5: com a forma que um ator SÓ patient_identity:read recebe (endereço já null pelo backend), o innerHTML não contém endereço', () => {
+    const { container } = render(
+      <PatientIdentityCard
+        patient={{
+          ...patientDetailFixture,
+          addresses: null as unknown as typeof patientDetailFixture.addresses,
+          cityLocality: null,
+          province: null,
+          zoneNeighborhood: null,
+        }}
+      />,
+    );
+    expect(screen.getByText(/WhatsApp do paciente/)).toBeInTheDocument(); // identity: sobrevive
+    expect(screen.queryByText('Endereço')).not.toBeInTheDocument();
+    expect(container.innerHTML).not.toContain('Rua Augusta');
+    expect(container.innerHTML).not.toContain('Bela Vista');
+  });
+
+  it('falls back to "—" for the MARKED contact name when both firstName and lastName are null', () => {
     render(
       <PatientIdentityCard
         patient={{
@@ -297,11 +383,10 @@ describe('PatientIdentityCard', () => {
         }}
       />,
     );
-    const par = screen.getByText(/Nome do Responsável/).parentElement;
-    expect(par?.lastElementChild).toHaveTextContent('—');
+    expect(screen.getByTestId('emergency-contact-name')).toHaveTextContent('—');
   });
 
-  it('renders "—" for the responsible document when documentType and documentNumber are both null', () => {
+  it('renders "—" for the MARKED contact document when documentType and documentNumber are both null', () => {
     render(
       <PatientIdentityCard
         patient={{
@@ -310,7 +395,8 @@ describe('PatientIdentityCard', () => {
         }}
       />,
     );
-    const par = screen.getByText(/Tipo de documento/).parentElement;
+    expect(screen.getByTestId('emergency-contact-document-number')).toHaveTextContent('—');
+    const par = screen.getByText('Tipo de documento').parentElement;
     expect(par?.lastElementChild).toHaveTextContent('—');
   });
 });
@@ -343,7 +429,7 @@ describe('PatientGeneralInfoCard', () => {
 
   it('renders sex value Masculino for MALE', () => {
     render(<PatientGeneralInfoCard patient={patientDetailFixture} />);
-    expect(screen.getByText('Masculino')).toBeInTheDocument();
+    expect(screen.getByTestId('patient-sex')).toHaveTextContent('Masculino');
   });
 
   it('renders — for null sex in minimal fixture', () => {
@@ -358,6 +444,40 @@ describe('PatientGeneralInfoCard', () => {
     expect(editButton).not.toBeDisabled();
     fireEvent.click(editButton);
     expect(screen.getByTestId('patient-general-edit-drawer')).toBeInTheDocument();
+  });
+
+  // Spec 018 PR-3 (Emenda 13/09, migration 425): Gênero e Idiomas VOLTAM — FR-213.
+  it('spec 018 PR-3: renders gender and languages values from the enum vocabulary', () => {
+    render(<PatientGeneralInfoCard patient={patientDetailFixture} />);
+    expect(screen.getByTestId('patient-gender')).toHaveTextContent('Masculino');
+    expect(screen.getByTestId('patient-languages')).toHaveTextContent('Português, Espanhol');
+  });
+
+  // FR-240 (lex #2b): `null` = não perguntado — nunca confundido com PREFER_NOT_TO_SAY.
+  it('spec 018 PR-3: gender null ("não perguntado") e languages null renderizam "—", nunca a chave i18n', () => {
+    render(<PatientGeneralInfoCard patient={{ ...patientDetailFixture, gender: null, languages: null }} />);
+    expect(screen.getByTestId('patient-gender')).toHaveTextContent('—');
+    expect(screen.getByTestId('patient-languages')).toHaveTextContent('—');
+  });
+
+  // Defensivo (`?? ''`): idioma fora da lista fechada (nunca deveria chegar do backend após o
+  // Zod, mas o componente não quebra) cai no valor CRU, via fallback do `t()`.
+  it('idioma fora da lista fechada (defensivo) cai no valor cru, sem quebrar', () => {
+    render(<PatientGeneralInfoCard patient={{ ...patientDetailFixture, languages: ['fr'] }} />);
+    expect(screen.getByTestId('patient-languages')).toHaveTextContent('fr');
+  });
+
+  it('spec 018 PR-3: PREFER_NOT_TO_SAY é uma tradução própria, distinta de "não perguntado" (null)', () => {
+    render(<PatientGeneralInfoCard patient={{ ...patientDetailFixture, gender: 'PREFER_NOT_TO_SAY' }} />);
+    expect(screen.getByTestId('patient-gender')).toHaveTextContent('Prefiro não dizer');
+  });
+
+  // FR-211 (lex #3(c)): `data-clarity-mask` no card "Informações Gerais" INTEIRO.
+  it('spec 018 PR-3 CONDIÇÃO 4: o card "Informações Gerais" inteiro leva data-clarity-mask="True"', () => {
+    render(<PatientGeneralInfoCard patient={patientDetailFixture} />);
+    const card = screen.getByTestId('patient-general-info-card');
+    expect(card).toHaveAttribute('data-clarity-mask', 'True');
+    expect(screen.getByTestId('patient-gender').closest('[data-clarity-mask="True"]')).not.toBeNull();
   });
 });
 

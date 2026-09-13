@@ -3171,9 +3171,13 @@
           "movePhoneConfirmBody": "Se va a borrar el WhatsApp del paciente (el del responsable no se toca). ¿Confirmás?",
           "movePhoneError": "No se pudo mover el número. Probá de nuevo.",
           "movePhoneSuccess": "Número movido — el WhatsApp del paciente quedó vacío.",
-          "primaryResponsibleContact": "Contacto del responsable principal",
-          "responsibleContact": "Contacto del responsable",
-          "relationship": "Parentesco"
+          "relationship": "Parentesco",
+          "emergencyContactTitle": "Contacto de Emergencia:",
+          "emergencyContactRedacted": "No tenés permiso para ver el contacto de emergencia.",
+          "emergencyContactNotSet": "No definido",
+          "emergencyContactNameExternal": "Nombre del contacto",
+          "emergencyContactPhoneExternal": "Teléfono del contacto",
+          "emergencyContactDocumentNumber": "Número del documento"
         },
         "documentTypes": {
           "CPF": "CPF",
@@ -3195,12 +3199,21 @@
           "ageBracket": "Franja etaria",
           "sex": "Sexo",
           "gender": "Género",
-          "sexualOrientation": "Orientación Sexual",
-          "racialOrigin": "Origen racial",
-          "religion": "Religión",
           "languages": "Idiomas",
           "ageYears": "{{count}} años",
-          "serviceStartDate": "Inicio del servicio"
+          "serviceStartDate": "Inicio del servicio",
+          "genderOptions": {
+            "FEMALE": "Femenino",
+            "MALE": "Masculino",
+            "NON_BINARY": "No binario",
+            "OTHER": "Otro",
+            "PREFER_NOT_TO_SAY": "Prefiero no decir"
+          },
+          "languageOptions": {
+            "pt": "Portugués",
+            "es": "Español",
+            "en": "Inglés"
+          }
         },
         "diagnosisCard": {
           "title": "Diagnóstico",

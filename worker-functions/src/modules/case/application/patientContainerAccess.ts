@@ -78,6 +78,12 @@ export const patientContainerCell = (container: PatientContainer, action: 'read'
 const DETAIL_FIELDS: Readonly<Record<PatientContainer, readonly string[]>> = {
   identity: [
     'firstName', 'lastName', 'birthDate', 'documentType', 'documentNumber', 'sex', 'phoneWhatsapp', 'contactEmail',
+    // Spec 018, PR-3 (Emenda 13/09, migration 425): gênero/idiomas cifrados, SÓ no detalhe.
+    'gender', 'languages',
+    // Projeção nova sem coleta (lex CONDIÇÃO 6): mesma célula de `identity`, nunca mais fraca
+    // que a do Historial (`patient:read`, exigida por toda a ficha — ver comentário em
+    // PatientQueryRows.ts:PatientDetailRow.dischargedAt).
+    'dischargedAt',
   ],
   clinical: [
     'diagnosis', 'diagnoses', 'diagnosesUnavailable', 'dependencyLevel', 'clinicalSpecialty', 'clinicalSegments',

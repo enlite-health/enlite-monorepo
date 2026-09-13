@@ -183,6 +183,22 @@ describe('Role enlite_mcp_ro — SELECT por coluna em patients (D216) @integrati
     }
   });
 
+  it('spec 018 PR-3 (migration 425, lex CONDIÇÃO 3): gender_encrypted/languages_encrypted negados; CONTROLE POSITIVO numa coluna permitida (D157)', async () => {
+    await expect(ro.query('SELECT gender_encrypted FROM patients WHERE id = $1', [patientId])).rejects.toThrow(NEGADO_POR_COLUNA_OU_RLS);
+    await expect(ro.query('SELECT languages_encrypted FROM patients WHERE id = $1', [patientId])).rejects.toThrow(NEGADO_POR_COLUNA_OU_RLS);
+    const priv = await admin.query<{ g: boolean; l: boolean }>(
+      `SELECT has_column_privilege('enlite_mcp_ro', 'public.patients', 'gender_encrypted', 'SELECT') AS g,
+              has_column_privilege('enlite_mcp_ro', 'public.patients', 'languages_encrypted', 'SELECT') AS l`,
+    );
+    expect(priv.rows[0]).toEqual({ g: false, l: false });
+    // CONTROLE POSITIVO (D157): a mesma checagem numa coluna que ESTÁ na lista positiva confirma
+    // que o instrumento (has_column_privilege) sabe distinguir permitido de negado. INCONDICIONAL
+    // — `expectAllowedColumns` já sabe a diferença entre RLS ligada/desligada (é o MESMO helper
+    // usado no resto do arquivo) e faz a asserção certa nos dois casos; um `if (!rlsLigada)` aqui
+    // só descartava a prova quando ela mais faltava (stage, com RLS ligada).
+    await expectAllowedColumns((sql, params) => ro.query(sql, params));
+  });
+
   it('spec 013 bloco C (achado QA-caça #1): patient_contracted_services.professional_profile/hourly_value negados; colunas irmãs, contracted_service_providers, contracted_service_devices e service_types passam', async () => {
     const { rows: [svc] } = await admin.query<{ id: string }>(
       `INSERT INTO patient_contracted_services (patient_id, service_code, professional_profile, hourly_value, providers_needed, created_by, updated_by)

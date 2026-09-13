@@ -6,12 +6,14 @@ import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { PatientDetail, PatientGeneralSectionPayload } from '@domain/entities/PatientDetail';
+import { PATIENT_GENDERS, PATIENT_LANGUAGES } from '@domain/entities/patientEnums';
 import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
+import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
 
@@ -41,6 +43,9 @@ const schema = z.object({
   sex: z.string(),
   /** US-B9 (spec 012): yyyy-MM-dd ou '' — não deriva da vaga. */
   serviceStartDate: z.string(),
+  /** Spec 018 PR-3: coleta SEMPRE facultativa — sem `.min`, `''` = não perguntado. */
+  gender: z.string(),
+  languages: z.array(z.string()),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -80,6 +85,8 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
       birthDate: toDateInput(patient.birthDate),
       sex: patient.sex ?? '',
       serviceStartDate: toDateInput(patient.serviceStartDate),
+      gender: patient.gender ?? '',
+      languages: patient.languages ?? [],
     },
   });
 
@@ -114,6 +121,14 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
     value: s,
     label: t(`admin.patients.detail.sex.${s}`, { defaultValue: s }),
   }));
+  const genderOptions: SelectOption[] = PATIENT_GENDERS.map((g) => ({
+    value: g,
+    label: t(`admin.patients.detail.generalInfoCard.genderOptions.${g}`, { defaultValue: g }),
+  }));
+  const languageOptions = PATIENT_LANGUAGES.map((l) => ({
+    value: l,
+    label: t(`admin.patients.detail.generalInfoCard.languageOptions.${l}`, { defaultValue: l }),
+  }));
 
   const onSubmit = async (values: FormValues): Promise<void> => {
     setSubmitError(null);
@@ -137,6 +152,14 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
     if (birth !== toDateInput(patient.birthDate)) payload.birthDate = birth || null;
     const start = values.serviceStartDate.trim();
     if (start !== toDateInput(patient.serviceStartDate)) payload.serviceStartDate = start || null;
+    // Spec 018 PR-3 (Emenda 13/09): SEMPRE facultativo — '' vira null (não perguntado), nunca
+    // valor obrigatório. Mesma regra de "não mexer → não envia; limpar → null" dos outros campos.
+    if (nz(values.gender) !== (patient.gender ?? null)) payload.gender = nz(values.gender);
+    const currentLanguages = patient.languages ?? [];
+    const languagesChanged =
+      values.languages.length !== currentLanguages.length ||
+      values.languages.some((l) => !currentLanguages.includes(l));
+    if (languagesChanged) payload.languages = values.languages.length > 0 ? values.languages : null;
 
     if (Object.keys(payload).length === 0) { handleClose(); return; }
 
@@ -210,6 +233,18 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
             <FormField label={td('generalInfoCard.sex')} htmlFor="pge-sex" optional>
               <Controller control={control} name="sex" render={({ field }) => (
                 <SelectField inputSize="compact" options={sexOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid="pge-sex" />
+              )} />
+            </FormField>
+            {/* Spec 018 PR-3 (Emenda 13/09, migration 425): coleta SEMPRE facultativa (Ley 25.326
+                art. 7 inc. 1) — `optional`, nunca `required`, e nenhum `.min` no schema acima. */}
+            <FormField label={td('generalInfoCard.gender')} htmlFor="pge-gender" optional>
+              <Controller control={control} name="gender" render={({ field }) => (
+                <SelectField inputSize="compact" options={genderOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid="pge-gender" />
+              )} />
+            </FormField>
+            <FormField label={td('generalInfoCard.languages')} htmlFor="pge-languages" optional>
+              <Controller control={control} name="languages" render={({ field }) => (
+                <MultiSelect options={languageOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id="pge-languages" />
               )} />
             </FormField>
           </div>

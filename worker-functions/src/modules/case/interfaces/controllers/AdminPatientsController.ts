@@ -266,6 +266,22 @@ export class AdminPatientsController {
     if ('affiliateId' in (bodyResult.data as Record<string, unknown>)) {
       logger.info({ msg: 'patient_affiliate_id.write', uid: AuthMiddleware.getAuthContext(req)?.principal.id ?? null, patientId: id, section });
     }
+    // Spec 018 PR-3 (lex #2b-8/#2c, molde do trecho acima): trilha de escrita de gênero/idiomas
+    // SEM VALOR — só os NOMES dos campos escritos (M1-1: uid não aparece na tela, mas fica na
+    // trilha, como affiliateId).
+    {
+      const bodyKeys = bodyResult.data as Record<string, unknown>;
+      const genderOrLanguageFields = (['gender', 'languages'] as const).filter((f) => f in bodyKeys);
+      if (genderOrLanguageFields.length > 0) {
+        logger.info({
+          msg: 'patient_identity.write',
+          uid: AuthMiddleware.getAuthContext(req)?.principal.id ?? null,
+          patientId: id,
+          section,
+          fields: genderOrLanguageFields,
+        });
+      }
+    }
 
     try {
       const exists = await this.db.query('SELECT id FROM patients WHERE id = $1 AND deleted_at IS NULL', [id]);

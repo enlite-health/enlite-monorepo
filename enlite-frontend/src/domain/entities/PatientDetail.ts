@@ -157,6 +157,16 @@ export interface PatientDetail {
   phoneWhatsapp: string | null;
   /** E-mail do paciente (mig 251), descriptografado SÓ no detalhe. null = não informado (spec 011 A4). */
   contactEmail: string | null;
+  /**
+   * Gênero declarado (spec 018 PR-3, Emenda 13/09, migration 425): FEMALE|MALE|NON_BINARY|OTHER|
+   * PREFER_NOT_TO_SAY. `null` = não perguntado, distinto de `'PREFER_NOT_TO_SAY'` (resposta
+   * explícita). Coleta SEMPRE facultativa. Opcional: API anterior a esta rodada não manda o campo.
+   */
+  gender?: string | null;
+  /** Idiomas do paciente (spec 018 PR-3): subconjunto fechado de 'pt'|'es'|'en'. `null` = não perguntado. Opcional (idem). */
+  languages?: string[] | null;
+  /** Data do último status DISCHARGED (spec 018 PR-3, FR-203/204). `null` = nunca esteve DISCHARGED. Opcional (idem). */
+  dischargedAt?: string | null;
   /** chat_id do grupo de WhatsApp da FAMÍLIA no Periskope (@g.us). Migration 260. */
   /**
    * Grupos de WhatsApp do Periskope por PAPEL (migration 261): papel -> chat_id

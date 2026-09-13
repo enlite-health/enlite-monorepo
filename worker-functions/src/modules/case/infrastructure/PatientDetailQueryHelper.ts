@@ -35,6 +35,16 @@ const PATIENT_DETAIL_SQL = `
     -- SÓ no detalhe — a listagem não seleciona esta coluna. Descriptografado
     -- abaixo, uma chamada por carga de ficha.
     p.contact_email_encrypted AS "contactEmailEncrypted",
+    -- Spec 018, PR-3 (Emenda 13/09, migration 425): gênero/idiomas cifrados — descriptografados
+    -- abaixo, SÓ sob reads.identity (mesma régua do e-mail de contato, lex #3(e): zero KMS a
+    -- mais que o já previsto para montar o topo).
+    p.gender_encrypted       AS "genderEncrypted",
+    p.languages_encrypted    AS "languagesEncrypted",
+    -- Último DISCHARGED de patient_status_history (FR-203/204). Projeção nova sem coleta —
+    -- mesma célula de identity (lex CONDIÇÃO 6, ver PatientQueryRows.ts).
+    (SELECT h.created_at FROM patient_status_history h
+      WHERE h.patient_id = p.id AND h.new_value = 'DISCHARGED'
+      ORDER BY h.created_at DESC, h.id DESC LIMIT 1) AS "dischargedAt",
     diagnosis,
     dependency_level         AS "dependencyLevel",
     clinical_specialty       AS "clinicalSpecialty",
@@ -302,7 +312,7 @@ export async function fetchPatientDetail(
     schedule: v.schedule,
   }));
 
-  const [responsibles, professionals, externalContacts, contactEmail, contractedServices, coverageEmergencyContacts] = await Promise.all([
+  const [responsibles, professionals, externalContacts, contactEmail, gender, languagesJson, contractedServices, coverageEmergencyContacts] = await Promise.all([
     reads.family ? decryptResponsibles(responsibleRows.rows, encryptionService) : Promise.resolve([]),
     reads.careTeam ? decryptProfessionals(professionalRows.rows, encryptionService) : Promise.resolve([]),
     // Spec 018, PR-2: mesma régua dos responsáveis — sem `patient_family:read` o KMS não roda.
@@ -312,6 +322,10 @@ export async function fetchPatientDetail(
     // Sem ciphertext não há decrypt: o passthrough de teste devolve '' para
     // entrada vazia, e '' na ficha seria "tem e-mail e está em branco".
     reads.identity && p.contactEmailEncrypted ? encryptionService.decrypt(p.contactEmailEncrypted) : Promise.resolve(null),
+    // Spec 018, PR-3 (lex #3(e)): zero KMS a mais — só roda sob o MESMO `reads.identity` que já
+    // decifra o e-mail de contato acima.
+    reads.identity && p.genderEncrypted ? encryptionService.decrypt(p.genderEncrypted) : Promise.resolve(null),
+    reads.identity && p.languagesEncrypted ? encryptionService.decrypt(p.languagesEncrypted) : Promise.resolve(null),
     reads.services ? mapContractedServices(contractedServiceRows.rows, pool, encryptionService) : Promise.resolve([]),
     // 417 (D301): mesma régua dos responsáveis — sem a célula do container, o KMS não roda. lex C3: o
     // profissional direto é o MESMO dado da equipe tratante (`patient_care_team`): só sai (e só decifra)
@@ -334,6 +348,22 @@ export async function fetchPatientDetail(
 
   const addresses = mapAddresses(addressRows.rows, vacancies);
 
+  // languages_encrypted guarda um JSON array cifrado como UM ciphertext (mesmo molde de
+  // workers.languages_encrypted) — parse defensivo: um ciphertext corrompido/legado vira
+  // "não perguntado" (null), nunca um 500 na ficha inteira.
+  let languages: string[] | null = null;
+  if (typeof languagesJson === 'string' && languagesJson.length > 0) {
+    try {
+      const parsed: unknown = JSON.parse(languagesJson);
+      if (Array.isArray(parsed)) languages = parsed.filter((x): x is string => typeof x === 'string');
+    } catch {
+      // Regra dura PII: NUNCA repassar o erro original do JSON.parse — a mensagem de
+      // SyntaxError ecoa o texto decifrado (`Unexpected token … "<valor>" is not valid JSON`,
+      // medido no Node 24). O relatório carrega só a classe do problema, nunca a entrada.
+      reportError(new Error('languages_encrypted: JSON inválido'), { source: 'PatientDetailQueryHelper:languages', patientId: id });
+    }
+  }
+
   return {
     id: p.id,
     clickupTaskId: p.clickupTaskId,
@@ -346,6 +376,9 @@ export async function fetchPatientDetail(
     sex: p.sex,
     phoneWhatsapp: p.phoneWhatsapp,
     contactEmail,
+    gender,
+    languages,
+    dischargedAt: p.dischargedAt ?? null,
     diagnosis: p.diagnosis,
     dependencyLevel: p.dependencyLevel,
     clinicalSpecialty: p.clinicalSpecialty,

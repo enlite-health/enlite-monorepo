@@ -415,6 +415,128 @@ describe('fetchPatientDetail — cobertura e e-mail do paciente (spec 011, A3/A4
   });
 });
 
+describe('fetchPatientDetail — gênero, idiomas e dischargedAt (spec 018 PR-3, migration 425)', () => {
+  const emptyRelated = () => ({ rows: [] });
+
+  function runWithRow(row: Record<string, unknown>) {
+    const queryImpl = jest.fn();
+    queryImpl
+      .mockResolvedValueOnce({ rows: [row] })
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated());
+    const enc = makeEncryptionService();
+    return { queryImpl, enc, run: () => fetchPatientDetail(makePool(queryImpl), enc, PATIENT_ID) };
+  }
+
+  it('decripta gender e languages (JSON válido) sob reads.identity; dischargedAt passa direto (não é KMS)', async () => {
+    const { queryImpl, enc, run } = runWithRow(basePatientRow({
+      genderEncrypted: 'enc-gender',
+      languagesEncrypted: 'enc-languages',
+      dischargedAt: new Date('2026-08-01T12:00:00Z'),
+    }));
+    const decrypt = enc.decrypt as jest.Mock;
+    decrypt.mockImplementation(async (v: string | null) => {
+      if (v === 'enc-gender') return 'FEMALE';
+      if (v === 'enc-languages') return JSON.stringify(['pt', 'es']);
+      return v ? `dec(${v})` : null;
+    });
+    const result = await run();
+    expect(String(queryImpl.mock.calls[0][0])).toContain('gender_encrypted');
+    expect(String(queryImpl.mock.calls[0][0])).toContain('languages_encrypted');
+    expect(result!.gender).toBe('FEMALE');
+    expect(result!.languages).toEqual(['pt', 'es']);
+    expect(result!.dischargedAt).toEqual(new Date('2026-08-01T12:00:00Z'));
+  });
+
+  it('gender/languages ausentes (coluna NULL) → null, null, 0 decrypt a mais além do e-mail', async () => {
+    const { queryImpl, enc, run } = runWithRow(basePatientRow({ genderEncrypted: null, languagesEncrypted: null, contactEmailEncrypted: null }));
+    const result = await run();
+    expect(result!.gender).toBeNull();
+    expect(result!.languages).toBeNull();
+    expect((enc.decrypt as jest.Mock)).not.toHaveBeenCalled();
+    void queryImpl;
+  });
+
+  // Regra dura PII (gate revisao-pr, bloqueio A): o SyntaxError do JSON.parse ecoa o texto
+  // decifrado na MENSAGEM (`Unexpected token 'a', "abc-secret" is not valid JSON`, medido no
+  // Node 24) — repassar `err` para `reportError` vaza o valor pelo `err.message` que
+  // `ErrorReporter.ts:24` loga. O catch NUNCA pode repassar o erro original.
+  const VALOR_CORROMPIDO_SEGREDO = 'abc-secret-nao-pode-vazar-9f2c';
+
+  it('languages_encrypted decripta para JSON corrompido → languages null; reportError recebe mensagem FIXA, NUNCA o texto decifrado (regra PII)', async () => {
+    const { enc, run } = runWithRow(basePatientRow({ languagesEncrypted: 'enc-languages-bad' }));
+    (enc.decrypt as jest.Mock).mockImplementation(async (v: string | null) => (v === 'enc-languages-bad' ? VALOR_CORROMPIDO_SEGREDO : null));
+    const result = await run();
+    expect(result!.languages).toBeNull();
+    expect(mockReportError).toHaveBeenCalledWith(new Error('languages_encrypted: JSON inválido'), expect.objectContaining({ source: 'PatientDetailQueryHelper:languages' }));
+    // A prova central do bloqueio: o valor decifrado corrompido nunca aparece em NENHUM argumento
+    // repassado a reportError — nem na mensagem do Error, nem no contexto.
+    expect(JSON.stringify(mockReportError.mock.calls)).not.toContain(VALOR_CORROMPIDO_SEGREDO);
+  });
+
+  it('branch defensivo: JSON.parse lança um valor NÃO-Error (string crua) → reportError ainda recebe a mensagem FIXA, nunca o valor lançado', async () => {
+    const { enc, run } = runWithRow(basePatientRow({ languagesEncrypted: 'enc-languages-throw-string' }));
+    (enc.decrypt as jest.Mock).mockImplementation(async (v: string | null) => (v === 'enc-languages-throw-string' ? 'x' : null));
+    const originalParse = JSON.parse;
+    jest.spyOn(JSON, 'parse').mockImplementationOnce(() => { throw VALOR_CORROMPIDO_SEGREDO; });
+    try {
+      const result = await run();
+      expect(result!.languages).toBeNull();
+      expect(mockReportError).toHaveBeenCalledWith(new Error('languages_encrypted: JSON inválido'), expect.objectContaining({ source: 'PatientDetailQueryHelper:languages' }));
+      expect(JSON.stringify(mockReportError.mock.calls)).not.toContain(VALOR_CORROMPIDO_SEGREDO);
+    } finally {
+      (JSON.parse as jest.Mock).mockRestore?.();
+      JSON.parse = originalParse;
+    }
+  });
+
+  // Sabotagem (bloqueio A): restaurar o `catch (err) { reportError(err instanceof Error ? err : …) }`
+  // original — de vermelho a verde, contagem de testes idêntica (26 → 26), só a asserção pivô muda.
+  //   cp PatientDetailQueryHelper.ts /tmp/PatientDetailQueryHelper.ts.bak_sabotagem
+  //   # reintroduzir `reportError(err instanceof Error ? err : new Error(String(err)), …)`
+  //   npx jest PatientDetailQueryHelper.test.ts -t "regra PII"
+  //   → FAIL: "Expected substring: not to contain … Received: … abc-secret-nao-pode-vazar-9f2c …"
+  //   cp /tmp/PatientDetailQueryHelper.ts.bak_sabotagem PatientDetailQueryHelper.ts   # restaura de cp, nunca git checkout --
+  //   npx jest PatientDetailQueryHelper.test.ts -t "regra PII"  → PASS de novo.
+
+  it('languages_encrypted decripta para um JSON válido que NÃO é array (ex: objeto) → languages null, sem lançar', async () => {
+    const { enc, run } = runWithRow(basePatientRow({ languagesEncrypted: 'enc-languages-obj' }));
+    (enc.decrypt as jest.Mock).mockImplementation(async (v: string | null) => (v === 'enc-languages-obj' ? '{"a":1}' : null));
+    const result = await run();
+    expect(result!.languages).toBeNull();
+  });
+
+  it('lex CONDIÇÃO 5/6: sem reads.identity, gender/languages NUNCA passam pelo KMS (mesma régua do e-mail)', async () => {
+    const { enc, run } = ((): { enc: KMSEncryptionService; run: () => ReturnType<typeof fetchPatientDetail> } => {
+      const queryImpl = jest.fn();
+      queryImpl
+        .mockResolvedValueOnce({ rows: [basePatientRow({ genderEncrypted: 'enc-gender', languagesEncrypted: 'enc-languages', contactEmailEncrypted: 'enc-mail' })] })
+        .mockResolvedValueOnce(emptyRelated())
+        .mockResolvedValueOnce(emptyRelated())
+        .mockResolvedValueOnce(emptyRelated())
+        .mockResolvedValueOnce(emptyRelated())
+        .mockResolvedValueOnce(emptyRelated())
+        .mockResolvedValueOnce(emptyRelated())
+        .mockResolvedValueOnce(emptyRelated());
+      const enc2 = makeEncryptionService();
+      const reads = {
+        identity: false, clinical: false, careTeam: false, family: false, chat: false,
+        coverage: false, address: false, services: false, therapeuticProject: false,
+      };
+      return { enc: enc2, run: () => fetchPatientDetail(makePool(queryImpl), enc2, PATIENT_ID, reads) };
+    })();
+    const result = await run();
+    expect(result!.gender).toBeNull();
+    expect(result!.languages).toBeNull();
+    expect((enc.decrypt as jest.Mock)).not.toHaveBeenCalled();
+  });
+});
+
 // ── D286 / lex P3: a célula decide ANTES do KMS ───────────────────────────────
 // A prova é o espião com ZERO chamadas — não uma leitura do código. É o mesmo
 // desenho da C3 de prestador (`projectWorkerFields`): redigir DEPOIS de

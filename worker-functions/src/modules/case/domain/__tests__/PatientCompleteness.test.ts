@@ -49,6 +49,29 @@ describe('PATIENT_COMPLETENESS_CODES (lex D1.2)', () => {
       expect(clinicalWords.test(code)).toBe(false);
     }
   });
+
+  // Spec 018 PR-3 (Emenda 13/09, `lex` L2b-4/L2c): gênero e idiomas são SEMPRE facultativos —
+  // Ley 25.326 art. 7 inc. 1 proíbe tornar dado sensível obrigatório. A lista de códigos é
+  // FECHADA (`as const`); GENDER/LANGUAGES nunca podem entrar nela, com ou sem o dado presente.
+  it('GENDER e LANGUAGES nunca são código de completude — a lista é fechada e não os contém (lex L2b-4/L2c)', () => {
+    expect(PATIENT_COMPLETENESS_CODES as readonly string[]).not.toContain('GENDER');
+    expect(PATIENT_COMPLETENESS_CODES as readonly string[]).not.toContain('LANGUAGES');
+  });
+
+  it('paciente SEM gênero e SEM idiomas (o único estado possível hoje — o input nem aceita os campos): nenhum código de completude os menciona', () => {
+    // `computePatientCompleteness` nem RECEBE gender/languages no input — a ausência de
+    // qualquer código nomeado 'GENDER'/'LANGUAGES' no resultado prova que a lacuna nunca vira
+    // pendência de admissão, mesmo com todo o resto do paciente incompleto.
+    const result = computePatientCompleteness({
+      birthDate: null, hasConsent: null, insuranceInformed: null, activeAddressCount: 0,
+      activeResponsibleCount: 0, activeContractedServiceCount: 0,
+      activeContractedServicesWithoutAddressCount: 0, activeContractedServicesWithoutScheduleCount: 0, now: NOW,
+    });
+    expect(result.missing as readonly string[]).not.toContain('GENDER');
+    expect(result.missing as readonly string[]).not.toContain('LANGUAGES');
+    expect(result.blocking as readonly string[]).not.toContain('GENDER');
+    expect(result.blocking as readonly string[]).not.toContain('LANGUAGES');
+  });
 });
 
 describe('isMinor', () => {

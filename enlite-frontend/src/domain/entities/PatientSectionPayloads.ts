@@ -30,6 +30,10 @@ export interface PatientGeneralSectionPayload {
   contactEmail?: string | null;
   /** US-B9 (spec 012): yyyy-MM-dd; null limpa. */
   serviceStartDate?: string | null;
+  /** Spec 018 PR-3 (Emenda 13/09): enum fechado FEMALE|MALE|NON_BINARY|OTHER|PREFER_NOT_TO_SAY. `null` limpa ("não perguntado"). */
+  gender?: string | null;
+  /** Spec 018 PR-3: subconjunto fechado de 'pt'|'es'|'en'. `null` limpa. */
+  languages?: string[] | null;
 }
 
 /** section = 'clinical' — mirrors clinicalSectionSchema (backend). */
