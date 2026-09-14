@@ -433,5 +433,77 @@ describe('família admin.workers — as 4 peças declaram célula', () => {
       expect(ingestRateLimitKey({ params: {}, ip: '10.0.0.1' } as unknown as express.Request)).toBe('ip:10.0.0.1');
       expect(ingestRateLimitKey({ params: {} } as unknown as express.Request)).toBe('ip:unknown');
     });
+
+    /**
+     * MORRE se o fallback voltar a usar `req.ip` cru: em IPv6 cada cliente tem
+     * um /64 (às vezes /56) inteiro à disposição — trocar só o sufixo furaria
+     * o limite porque cada endereço geraria uma chave diferente. Com
+     * `ipKeyGenerator`, dois endereços do MESMO /56 colapsam na MESMA chave.
+     */
+    it('sem workerId, dois IPv6 do mesmo /56 geram a MESMA chave (ipKeyGenerator, não req.ip cru)', () => {
+      const chave1 = ingestRateLimitKey({ params: {}, ip: '2001:db8:1:1::1' } as unknown as express.Request);
+      const chave2 = ingestRateLimitKey({ params: {}, ip: '2001:db8:1:1::2' } as unknown as express.Request);
+      expect(chave1).toBe(chave2);
+      expect(chave1).not.toBe('ip:2001:db8:1:1::1');
+    });
+
+    it('sem workerId, IPv6 de /56 diferente gera chave diferente', () => {
+      const chave1 = ingestRateLimitKey({ params: {}, ip: '2001:db8:1:1::1' } as unknown as express.Request);
+      const chave2 = ingestRateLimitKey({ params: {}, ip: '2001:db8:2:1::1' } as unknown as express.Request);
+      expect(chave1).not.toBe(chave2);
+    });
+  });
+
+  /**
+   * LIGAÇÃO real, não só a função isolada: os testes acima chamam
+   * `ingestRateLimitKey` diretamente — se alguém trocar a linha
+   * `keyGenerator: ingestRateLimitKey` do `rateLimit({...})` por um inline
+   * qualquer (ex.: `(req) => req.ip ?? 'unknown'`), aqueles testes continuam
+   * verdes, porque não exercitam o SITE onde o `keyGenerator:` é referenciado.
+   *
+   * Aqui a prova é pelo comportamento do limitador MONTADO: com o MESMO
+   * workerId, a chave tem que ser `worker:<id>` INDEPENDENTE do IP de origem —
+   * então 5 requisições do MESMO workerId vindas de 5 endereços IPv6
+   * DIFERENTES (mesmo /56, via X-Forwarded-For + `trust proxy` para que
+   * `req.ip` receba o valor) esgotam o `max=5` e a 6ª é 429. Se a linha
+   * `keyGenerator:` for trocada por algo baseado em IP (perdendo o ramo do
+   * workerId), cada endereço vira uma chave nova e o teste NUNCA vê 429.
+   */
+  describe('rate limit do ingest — LIGAÇÃO real: mesmo workerId, IPs diferentes não escapam do limite', () => {
+    const controladorLigacao = {
+      currentInterview: responde('currentInterview'),
+      availableVacancies: responde('availableVacancies'),
+      ingestFromUrl: jest.fn((req: express.Request, res: express.Response) => {
+        res.status(200).json({ m: 'ingestFromUrl', id: req.params.id });
+      }),
+    };
+    const routerLigacao = createWorkerContextRoutes(controladorLigacao as never, authDouble(), permissionsDouble());
+    const servidorLigacao = appDeRota(
+      'workerContextRoutesWiring',
+      '/api/admin',
+      () => routerLigacao,
+      (app) => app.set('trust proxy', true),
+    );
+
+    it('5 IPv6 DIFERENTES do MESMO /56, MESMO workerId → a 6ª é 429 (chave é worker:<id>, não IP)', async () => {
+      const enderecos = [
+        '2001:db8:1:1::70', '2001:db8:1:1::71', '2001:db8:1:1::72',
+        '2001:db8:1:1::73', '2001:db8:1:1::74', '2001:db8:1:1::75',
+      ];
+      for (let i = 0; i < 5; i++) {
+        const ok = await request(servidorLigacao)
+          .post('/api/admin/workers/wire1/documents/ingest-from-url')
+          .set('X-Forwarded-For', enderecos[i])
+          .send({});
+        expect(ok.status).toBe(200);
+      }
+      (controladorLigacao.ingestFromUrl as jest.Mock).mockClear();
+      const bloqueado = await request(servidorLigacao)
+        .post('/api/admin/workers/wire1/documents/ingest-from-url')
+        .set('X-Forwarded-For', enderecos[5])
+        .send({});
+      expect(bloqueado.status).toBe(429);
+      expect(controladorLigacao.ingestFromUrl).not.toHaveBeenCalled();
+    });
   });
 });

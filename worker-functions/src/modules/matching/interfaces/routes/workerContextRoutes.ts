@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { WorkerContextController } from '../controllers/WorkerContextController';
 import { AuthMiddleware, type PermissionMiddleware } from '@modules/identity';
 import { ADMIN_WORKERS_FAMILY } from '@modules/worker/interfaces/routes/adminWorkerRoutes';
@@ -22,19 +22,18 @@ import { ADMIN_WORKERS_FAMILY } from '@modules/worker/interfaces/routes/adminWor
 /**
  * Extraída (task 3.5-A1) só para ser TESTÁVEL: o `express-rate-limit` não expõe
  * o `keyGenerator` no handler montado, então inline ela é inalcançável por
- * teste. Comportamento idêntico ao de antes — nenhuma linha mudou de sentido.
+ * teste.
  *
- * ⚠️ Dívida NÃO tocada aqui (achado do PR A1, fora do escopo dele): o
- * `express-rate-limit` acusa `ERR_ERL_KEY_GEN_IPV6` neste fallback — usar
- * `req.ip` sem o helper `ipKeyGenerator` deixa cliente IPv6 furar o limite,
- * porque cada endereço de um mesmo /64 vira uma chave diferente. Só alcança o
- * ramo SEM `workerId`, que na prática não existe (a rota tem `:id` no path).
- * Conserto é PR próprio, junto com o mesmo aviso já registrado em `account-link`.
+ * O ramo SEM `workerId` (na prática inalcançável — a rota tem `:id` no path —
+ * mas é o fallback do `express-rate-limit`) usa `ipKeyGenerator` e não
+ * `req.ip` cru: em IPv6 cada cliente recebe um /64 (às vezes /56) inteiro, e
+ * chave por endereço exato deixava a mesma pessoa trocar de sufixo e furar o
+ * limite — o mesmo achado já registrado em `account-link` e `claim`.
  */
 export function ingestRateLimitKey(req: Request): string {
   const workerId = (req.params as Record<string, string> | undefined)?.id;
   if (workerId) return `worker:${workerId}`;
-  return `ip:${req.ip ?? 'unknown'}`;
+  return `ip:${ipKeyGenerator(req.ip ?? 'unknown')}`;
 }
 
 const ingestRateLimit = rateLimit({
