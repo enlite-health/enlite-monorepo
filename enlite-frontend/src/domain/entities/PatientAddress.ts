@@ -3,6 +3,8 @@
  * Used in the vacancy creation wizard (Phase 7)
  */
 
+import { z } from 'zod';
+
 export interface AddressMatchCandidate {
   patient_address_id: string;
   addressFormatted: string;
@@ -35,10 +37,36 @@ export interface ParseVacancyFullResult {
   patientId: string | null;
 }
 
+/**
+ * Lista fechada por parentesco (spec 019, D310 item c; migration 434 — `patient_addresses_type_check`).
+ * `otro` exige `address_type_other` (≤40) na MESMA requisição. Sem `.default(...)` — ausência = `NULL`
+ * = "sin especificar" (nunca inferido do `address_type` legado — spec 019 "Proibido").
+ * MESMA lista do zod do backend (`AdminPatientAddressesController.ts`, `PATIENT_ADDRESS_TYPES`).
+ */
+export const PATIENT_ADDRESS_TYPES = [
+  'domicilio_propio', 'casa_madre', 'casa_padre', 'casa_abuela',
+  'casa_abuelo', 'escuela', 'trabajo', 'otro',
+] as const;
+export type PatientAddressType = (typeof PATIENT_ADDRESS_TYPES)[number];
+
+/**
+ * Zod na borda (spec 019, US 4.5) — MESMA lista fechada do CHECK do banco (migration 434,
+ * `PATIENT_ADDRESS_TYPES` em `AdminPatientAddressesController.ts`), sem `.default(...)`: ausência
+ * é `null` ("sin especificar"), nunca um valor chutado. `.catch(null)`: uma linha legada que ainda
+ * carregue `'primary'`/`'secondary'`/`'service'` (não deveria existir em linha ATIVA depois do
+ * backfill da migration 434, mas nem drawer nem card podem confiar nisso sem checar) normaliza
+ * para `null` — único ponto da validação, reusado por `PatientAddressDrawer.tsx` (o <select>) e
+ * por `LocalizacoesCard.tsx` (`typeLabel`), pra não discordarem sobre o que é "sin especificar".
+ */
+export const patientAddressTypeSchema = z.enum(PATIENT_ADDRESS_TYPES).nullable().catch(null);
+
 export interface PatientAddressCreateInput {
   address_formatted: string;
   address_raw?: string;
-  address_type: string;
+  // Spec 019 (B4): `address_type` sai da criação — a lista fechada só entra pelo PATCH
+  // (AdminPatientAddressesController). Endereço nasce com tipo NULL.
+  /** Regra de nascimento (spec 019): sem principal ativo, nasce principal mesmo sem pedir. */
+  is_default?: boolean;
   /** Spec 012, US-B2 — logística por endereço (mig 316). Zona = `neighborhood` (lex C2.7). */
   neighborhood?: string;
   logistics_corridor?: string;
@@ -46,11 +74,20 @@ export interface PatientAddressCreateInput {
   access_notes?: string;
 }
 
-/** Body de PATCH /api/admin/patients/:id/addresses/:addressId — só a logística por endereço (spec 012, US-B2). */
+/**
+ * Body de PATCH /api/admin/patients/:id/addresses/:addressId — logística + PRINCIPAL + TIPO por
+ * endereço (spec 012, US-B2; spec 019, D310 item c). `null` limpa o campo, exceto `is_default`
+ * (o servidor SÓ aceita `true` — `false` é 400. Marcar um endereço como principal desmarca o
+ * anterior na mesma transação; desmarcar o PRÓPRIO só acontece marcando OUTRO como principal,
+ * nunca mandando `is_default: false`).
+ */
 export interface PatientAddressLogisticsPayload {
   neighborhood?: string | null;
   logistics_corridor?: string | null;
   access_notes?: string | null;
+  is_default?: boolean;
+  address_type?: PatientAddressType | null;
+  address_type_other?: string | null;
 }
 
 export interface PatientAddressRow {
@@ -58,7 +95,9 @@ export interface PatientAddressRow {
   patient_id: string;
   address_formatted: string;
   address_raw: string | null;
-  address_type: string;
+  // C3 (spec 019): `address_type` NÃO existe neste tipo. O parentesco do domicílio é dado da
+  // FICHA do paciente (`PatientAddressDetail.addressType`, endpoint diferente) — este tipo
+  // espelha o wizard de criação de vaga, que nunca deve exibi-lo (CaseSelectStep exibia cru).
   display_order: number;
   source: string;
   /** Address complement (Depto, Piso, andar). Migration 157. Null until populated via UI. */

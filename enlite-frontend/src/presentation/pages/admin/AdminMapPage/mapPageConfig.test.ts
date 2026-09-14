@@ -71,7 +71,7 @@ describe('mapPageConfig', () => {
     // tem coordenada mas o endereço não traz cidade/bairro: omite o lugar, não mente "sin ubicación"
     expect(workerDetails(t, { ...w, city: null })).toBe('Cuidador · Registro incompleto');
 
-    const p = { id: 'p', addressId: 'a', name: 'Luz', lat: 0, lng: 0, status: 'ACTIVE', addressType: 'primary', city: null, neighborhood: null, state: null, openVacancies: 2, distanceKm: null };
+    const p = { id: 'p', addressId: 'a', name: 'Luz', lat: 0, lng: 0, status: 'ACTIVE', city: null, neighborhood: null, state: null, openVacancies: 2, distanceKm: null };
     expect(patientDetails(t, p)).toBe('Activo · 2 vacante(s) abierta(s)');
     expect(patientDetails(t, { ...p, openVacancies: 0 })).toBe('Activo');
     expect(patientDetails(t, { ...p, lat: null, lng: null, openVacancies: 0 })).toBe('Activo · sin ubicación');
@@ -80,7 +80,7 @@ describe('mapPageConfig', () => {
   it('tooltip nativo do pino: nome + a linha de detalhe, sem dado clínico', () => {
     expect(workerPointTitle(t, { id: 'w', name: 'Ana', lat: 0, lng: 0, status: 'INCOMPLETE_REGISTER', documentsComplete: false, profession: 'CAREGIVER', city: 'CABA', neighborhood: null, state: null, distanceKm: null }))
       .toBe('Ana — Cuidador · Registro incompleto · CABA');
-    expect(patientPointTitle(t, { id: 'p', addressId: 'a', name: 'Luz', lat: 0, lng: 0, status: 'ACTIVE', addressType: 'primary', city: null, neighborhood: null, state: null, openVacancies: 2, distanceKm: null }))
+    expect(patientPointTitle(t, { id: 'p', addressId: 'a', name: 'Luz', lat: 0, lng: 0, status: 'ACTIVE', city: null, neighborhood: null, state: null, openVacancies: 2, distanceKm: null }))
       .toBe('Luz — Activo · 2 vacante(s) abierta(s)');
   });
 

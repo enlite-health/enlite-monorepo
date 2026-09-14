@@ -137,14 +137,20 @@ describe('Role enlite_mcp_ro — SELECT por coluna em patients (D216) @integrati
       await expect(ro.query('SELECT access_notes FROM patient_addresses WHERE id = $1', [a.id])).rejects.toThrow(/permission denied for table patient_addresses/);
       await expect(ro.query('SELECT * FROM patient_addresses WHERE id = $1', [a.id])).rejects.toThrow(/permission denied for table patient_addresses/);
       // colunas não sensíveis seguem legíveis (item 1: contagem/rótulo sempre)
-      const ok = await ro.query('SELECT id, address_type, country, neighborhood, logistics_corridor FROM patient_addresses WHERE id = $1', [a.id]);
-      expect(ok.rows).toEqual([{ id: a.id, address_type: 'primary', country: 'AR', neighborhood: null, logistics_corridor: null }]);
-      const priv = await admin.query<{ t: boolean; c: boolean; n: boolean }>(
+      const ok = await ro.query('SELECT id, country, neighborhood, logistics_corridor FROM patient_addresses WHERE id = $1', [a.id]);
+      expect(ok.rows).toEqual([{ id: a.id, country: 'AR', neighborhood: null, logistics_corridor: null }]);
+      // spec 019 (D320/B2, tasks 7.1.e): address_type e address_type_other saem da lista positiva
+      // (linha 148 do script) — a role tem de ser NEGADA nessas duas colunas, mesma classe do access_notes.
+      await expect(ro.query('SELECT address_type FROM patient_addresses WHERE id = $1', [a.id])).rejects.toThrow(/permission denied for table patient_addresses/);
+      await expect(ro.query('SELECT address_type_other FROM patient_addresses WHERE id = $1', [a.id])).rejects.toThrow(/permission denied for table patient_addresses/);
+      const priv = await admin.query<{ t: boolean; c: boolean; n: boolean; at: boolean; ato: boolean }>(
         `SELECT has_table_privilege('enlite_mcp_ro', 'public.patient_addresses', 'SELECT') AS t,
                 has_column_privilege('enlite_mcp_ro', 'public.patient_addresses', 'access_notes', 'SELECT') AS c,
-                has_column_privilege('enlite_mcp_ro', 'public.patient_addresses', 'neighborhood', 'SELECT') AS n`,
+                has_column_privilege('enlite_mcp_ro', 'public.patient_addresses', 'neighborhood', 'SELECT') AS n,
+                has_column_privilege('enlite_mcp_ro', 'public.patient_addresses', 'address_type', 'SELECT') AS at,
+                has_column_privilege('enlite_mcp_ro', 'public.patient_addresses', 'address_type_other', 'SELECT') AS ato`,
       );
-      expect(priv.rows[0]).toEqual({ t: false, c: false, n: true });
+      expect(priv.rows[0]).toEqual({ t: false, c: false, n: true, at: false, ato: false });
       // CONTROLE POSITIVO (D157): GRANT reabre; REVOKE fecha
       await admin.query('GRANT SELECT (access_notes) ON public.patient_addresses TO enlite_mcp_ro');
       try {

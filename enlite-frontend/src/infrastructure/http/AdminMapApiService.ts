@@ -70,7 +70,6 @@ export interface PatientMapPoint {
   lat: number | null;
   lng: number | null;
   status: string;
-  addressType: string | null;
   city: string | null;
   neighborhood: string | null;
   state: string | null;

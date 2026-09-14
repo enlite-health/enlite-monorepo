@@ -16,7 +16,6 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
         patient_id: 'p-1',
         address_formatted: 'Av. Corrientes 1234, CABA',
         address_raw: null,
-        address_type: 'PRIMARY',
         display_order: 1,
         source: 'manual',
       },
@@ -50,6 +49,7 @@ vi.mock('react-i18next', () => ({
 
 import { VacancyModal } from '../VacancyModal';
 import { CaseSelectStep } from '../CaseSelectStep';
+import { AdminApiService } from '@infrastructure/http/AdminApiService';
 
 function renderModal(overrides: Partial<React.ComponentProps<typeof VacancyModal>> = {}) {
   const defaults = {
@@ -235,7 +235,6 @@ describe('CaseSelectStep', () => {
           patient_id: 'p-1',
           address_formatted: 'Av. Corrientes 1234',
           address_raw: null,
-          address_type: 'PRIMARY',
           display_order: 1,
           source: 'manual',
           complement: null,
@@ -254,5 +253,198 @@ describe('CaseSelectStep', () => {
     render(<CaseSelectStep {...base} />);
     expect(document.body.textContent).not.toContain('firstName');
     expect(document.body.textContent).not.toContain('lastName');
+  });
+
+  it('C3 (spec 019): NUNCA exibe address_type — mesmo que o objeto ainda o carregue em runtime (regressão do vazamento de parentesco no wizard de vaga)', () => {
+    // `as any`: PatientAddressRow não tem mais `address_type` (removido do tipo e do SELECT do
+    // backend); o cast simula uma resposta desatualizada de fora do contrato TS para provar que
+    // a TELA, e não só o tipo, ignora o campo — morre se a linha de exibição voltar.
+    const addressComValorLegado = {
+      id: 'addr-9',
+      patient_id: 'p-1',
+      address_formatted: 'Av. Corrientes 1234',
+      address_raw: null,
+      display_order: 1,
+      source: 'manual',
+      complement: null,
+      lat: null,
+      lng: null,
+      address_type: 'casa_madre',
+    } as any;
+    render(
+      <CaseSelectStep
+        {...base}
+        selectedCaseNumber={10}
+        selectedPatientId="p-1"
+        dependencyLevel="SEVERE"
+        addresses={[addressComValorLegado]}
+        selectedAddressId={null}
+      />
+    );
+    expect(screen.getByTestId('address-option-addr-9')).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('casa_madre');
+  });
+
+  it('calls selectCase with the matched case when a valid option is chosen', async () => {
+    const selectCase = vi.fn();
+    render(<CaseSelectStep {...base} selectCase={selectCase} />);
+    const select = await screen.findByTestId('case-select');
+    await userEvent.selectOptions(select, '10');
+    expect(selectCase).toHaveBeenCalledWith(10, 'p-1');
+  });
+
+  it('does not call selectCase when the placeholder option is (re)selected', async () => {
+    const selectCase = vi.fn();
+    render(<CaseSelectStep {...base} selectCase={selectCase} />);
+    const select = await screen.findByTestId('case-select');
+    await userEvent.selectOptions(select, '10');
+    selectCase.mockClear();
+    await userEvent.selectOptions(select, '');
+    expect(selectCase).not.toHaveBeenCalled();
+  });
+
+  it('shows the cases error message when getCasesForSelect rejects', async () => {
+    vi.mocked(AdminApiService.getCasesForSelect).mockRejectedValueOnce(new Error('falha ao buscar casos'));
+    render(<CaseSelectStep {...base} />);
+    expect(await screen.findByText('falha ao buscar casos')).toBeInTheDocument();
+    expect(screen.queryByTestId('case-select')).not.toBeInTheDocument();
+  });
+
+  it('stringifies a non-Error rejection from getCasesForSelect', async () => {
+    vi.mocked(AdminApiService.getCasesForSelect).mockRejectedValueOnce('falha-nao-error');
+    render(<CaseSelectStep {...base} />);
+    expect(await screen.findByText('falha-nao-error')).toBeInTheDocument();
+  });
+
+  it('falls back to em dash when a case option has no dependencyLevel', async () => {
+    vi.mocked(AdminApiService.getCasesForSelect).mockResolvedValueOnce([
+      { caseNumber: 99, patientId: 'p-9', dependencyLevel: '' },
+    ]);
+    const { container } = render(<CaseSelectStep {...base} />);
+    await screen.findByTestId('case-select');
+    const option = container.querySelector('option[value="99"]');
+    expect(option).not.toBeNull();
+    expect(option?.textContent).toBe('admin.vacancyModal.caseSelectStep.caseOptionLabel');
+  });
+
+  it.each([
+    ['SEVERE', 'bg-orange-50'],
+    ['MODERATE', 'bg-amber-50'],
+    ['MILD', 'bg-green-50'],
+    ['UNKNOWN_LEVEL', 'bg-blue-50'],
+  ])('applies the %s dependency badge color', (level, expectedClass) => {
+    render(
+      <CaseSelectStep
+        {...base}
+        selectedCaseNumber={10}
+        selectedPatientId="p-1"
+        dependencyLevel={level}
+        addresses={[]}
+        selectedAddressId={null}
+      />
+    );
+    const badge = screen.getByText(`admin.patients.dependencyOptions.${level}`);
+    expect(badge.className).toContain(expectedClass);
+  });
+
+  it('shows the loading-patient indicator while the patient is being fetched', () => {
+    render(
+      <CaseSelectStep
+        {...base}
+        selectedCaseNumber={10}
+        selectedPatientId="p-1"
+        isLoadingPatient
+        dependencyLevel={null}
+      />
+    );
+    expect(screen.getByText('admin.vacancyModal.caseSelectStep.loadingPatient')).toBeInTheDocument();
+    expect(screen.queryByText('admin.vacancyModal.caseSelectStep.noAddresses')).not.toBeInTheDocument();
+  });
+
+  it('shows the patient error message instead of the address picker', () => {
+    render(
+      <CaseSelectStep
+        {...base}
+        selectedCaseNumber={10}
+        selectedPatientId="p-1"
+        patientError="paciente não encontrado"
+      />
+    );
+    expect(screen.getByText('paciente não encontrado')).toBeInTheDocument();
+    expect(screen.queryByText('admin.vacancyModal.caseSelectStep.noAddresses')).not.toBeInTheDocument();
+  });
+
+  it('applies the selected style to the address matching selectedAddressId', () => {
+    render(
+      <CaseSelectStep
+        {...base}
+        selectedCaseNumber={10}
+        selectedPatientId="p-1"
+        dependencyLevel="SEVERE"
+        addresses={[{
+          id: 'addr-1',
+          patient_id: 'p-1',
+          address_formatted: 'Av. Corrientes 1234',
+          address_raw: null,
+          display_order: 1,
+          source: 'manual',
+          complement: null,
+          lat: null,
+          lng: null,
+        }]}
+        selectedAddressId="addr-1"
+      />
+    );
+    const button = screen.getByTestId('address-option-addr-1');
+    expect(button.className).toContain('border-primary');
+    expect(button.className).toContain('ring-primary/30');
+  });
+
+  it('shows address_raw when address_formatted is missing', () => {
+    render(
+      <CaseSelectStep
+        {...base}
+        selectedCaseNumber={10}
+        selectedPatientId="p-1"
+        dependencyLevel="SEVERE"
+        addresses={[{
+          id: 'addr-2',
+          patient_id: 'p-1',
+          address_formatted: '',
+          address_raw: 'Calle Falsa 123',
+          display_order: 1,
+          source: 'manual',
+          complement: null,
+          lat: null,
+          lng: null,
+        }]}
+        selectedAddressId={null}
+      />
+    );
+    expect(screen.getByText('Calle Falsa 123')).toBeInTheDocument();
+  });
+
+  it('shows an em dash when both address_formatted and address_raw are missing', () => {
+    render(
+      <CaseSelectStep
+        {...base}
+        selectedCaseNumber={10}
+        selectedPatientId="p-1"
+        dependencyLevel="SEVERE"
+        addresses={[{
+          id: 'addr-3',
+          patient_id: 'p-1',
+          address_formatted: '',
+          address_raw: null,
+          display_order: 1,
+          source: 'manual',
+          complement: null,
+          lat: null,
+          lng: null,
+        }]}
+        selectedAddressId={null}
+      />
+    );
+    expect(screen.getByTestId('address-option-addr-3').textContent).toContain('—');
   });
 });

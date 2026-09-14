@@ -46,7 +46,7 @@ const SERVICE: PatientContractedServiceDetail = {
 };
 
 const ADDRESS_BASE = {
-  addressType: 'primary', complement: null, displayOrder: 1, lat: null, lng: null, isPrimary: true,
+  addressType: 'primary', addressTypeOther: null, complement: null, displayOrder: 1, lat: null, lng: null, isPrimary: true,
   neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'AR',
 };
 const ADDRESSES = [

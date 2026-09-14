@@ -225,8 +225,11 @@ export function buildBackfillCandidatesPredicate(
  * between write-path and backfill.
  */
 export function buildBackfillGeocodingQuery(row: BackfillAddressRow, country = 'AR'): string | null {
+  // Spec 019 (B4): `addressType` deixou de ser obrigatório em `PatientAddress` — este dummy
+  // ('primary') fabricava um valor que não existe mais como vocabulário (a lista nova é por
+  // parentesco). `buildGeocodingQuery` nunca leu este campo para montar a query; omiti-lo aqui é
+  // seguro.
   const asPatientAddress: PatientAddress = {
-    addressType: 'primary',
     displayOrder: 1,
     addressFormatted: row.address_formatted,
     addressRaw: row.address_raw,
@@ -260,7 +263,12 @@ export function buildBackfillPlan(
   geocode: GeocodedAddress | null,
 ): BackfillPlan | null {
   if (classifyBackfillUnresolved(row, geocode) !== null) return null;
-  if (!geocode) return null; // unreachable (classify already returns ZERO_RESULTS above) — kept for type narrowing
+  // istanbul ignore next -- unreachable at runtime: `classifyBackfillUnresolved` returns
+  // 'ZERO_RESULTS' (never null) whenever `geocode` is null, so the guard above already
+  // returns before this line is ever reached. Kept ONLY for TypeScript null-narrowing of
+  // `geocode` below (confirmed by reading both functions together, spec 019 rodada de
+  // cobertura — coverage measured 98.7% stmts without this line reachable by any test).
+  if (!geocode) return null;
 
   const location = {
     formatted_address: geocode.formattedAddress,

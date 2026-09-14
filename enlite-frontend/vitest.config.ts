@@ -418,6 +418,13 @@ export default defineConfig({
         '**/src/presentation/components/features/worker/JobsEmbeddedSection/{JobsEmbeddedSection.tsx,jobsConstants.ts}': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
+        // Spec 019 (12/09): tira o select de tipo morto do wizard de revisão de vaga
+        // (`newAddressType` — o parentesco do domicílio só entra pelo PATCH de
+        // AdminPatientAddressesController). Nasce com suíte própria (nunca teve) e mede
+        // 100 nos 4 eixos ao ser criada — entra no piso no mesmo PR, senão cai calado.
+        '**/src/presentation/components/features/admin/VacancyAddressReview/ResolveAddressModal.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
       },
     },
   },

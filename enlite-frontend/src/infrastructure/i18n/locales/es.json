@@ -2869,6 +2869,7 @@
         "close": "Cerrar",
         "unset": "—",
         "saveError": "Error al guardar",
+        "typeOtherTooLong": "Máximo 40 caracteres",
         "deviceType": "Dispositivo",
         "clinicalSections": {
           "pathology": "Patología",
@@ -3299,7 +3300,12 @@
           "tableAddress": "Dirección",
           "primaryBadge": "Principal",
           "noAddress": "Sin dirección cargada",
-          "editAddress": "Editar"
+          "editAddress": "Editar",
+          "typeUnspecified": "Sin especificar",
+          "noPrincipalWarning": "Sin principal — marcá uno",
+          "markPrimary": "Marcar como principal",
+          "markPrimaryConflict": "Otra persona ya cambió el principal. Recargá la página e intentá de nuevo.",
+          "markPrimaryError": "No se pudo marcar como principal. Intentá de nuevo."
         },
         "contractedServicesCard": {
           "title": "Servicios Contratados",
@@ -3437,9 +3443,17 @@
           "addressAutocompleteDown": "No pudimos cargar el buscador de direcciones de Google. Sin él no se puede guardar una dirección — avisá al equipo técnico y volvé a intentar.",
           "addressRaw": "Dirección informada (texto libre)",
           "type": "Tipo",
-          "type_primary": "Principal",
-          "type_secondary": "Secundaria",
-          "type_service": "Servicio",
+          "type_domicilio_propio": "Domicilio propio",
+          "type_casa_madre": "Casa de la madre",
+          "type_casa_padre": "Casa del padre",
+          "type_casa_abuela": "Casa de la abuela",
+          "type_casa_abuelo": "Casa del abuelo",
+          "type_escuela": "Escuela",
+          "type_trabajo": "Trabajo",
+          "type_otro": "Otro",
+          "typeOther": "¿Cuál?",
+          "typeOtherHint": "Sin nombres ni datos de salud",
+          "markPrimary": "Marcar como principal",
           "neighborhood": "Zona / Barrio",
           "corridor": "Corredor logístico",
           "accessNotes": "Logística y acceso"
@@ -3588,11 +3602,7 @@
         "cancel": "Cancelar",
         "legacyLabel": "Domicilio anterior (referencia)",
         "addressFormatted": "Dirección",
-        "addressRaw": "Dirección abreviada",
-        "addressType": "Tipo",
-        "typeService": "Servicio",
-        "typeHome": "Casa",
-        "typeOther": "Otro"
+        "addressRaw": "Dirección abreviada"
       }
     },
     "match": {

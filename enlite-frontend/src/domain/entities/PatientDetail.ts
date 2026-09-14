@@ -62,7 +62,15 @@ export interface AddressAvailability {
  */
 export interface PatientAddressDetail {
   id: string;
-  addressType: string;
+  /**
+   * Spec 019 (D310 item c, Caminho B — reaproveita `address_type`): lista fechada por
+   * parentesco (`PATIENT_ADDRESS_TYPES` em `PatientAddress.ts`) ou `null` = "sin especificar".
+   * Deixou de ser posição do slot (`primary`/`secondary`/`service`) — quem marca o principal
+   * agora é `isPrimary` (de `is_default`), campo independente.
+   */
+  addressType: string | null;
+  /** Texto livre do "Otro" (≤40) — só coerente quando `addressType === 'otro'` (migration 434). */
+  addressTypeOther: string | null;
   addressFormatted: string | null;
   addressRaw: string | null;
   /** Address complement (Depto, Piso, andar). Migration 157. */

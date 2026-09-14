@@ -7,7 +7,17 @@
  *   (c) both addressFormatted and addressRaw null → returns null immediately
  *   (d) no formatted address, raw only → tries match on address_raw
  *   (e) no formatted address, raw only, no match → returns null (no INSERT)
+ *   (f) constructor: default (no geocoder arg) vs injected geocoder — branch
+ *       coverage of `geocoder ?? new GeocodingService()` (lines 18-19)
+ *   (g) tryGeocode: geocoder resolves a value vs resolves null — branch
+ *       coverage of the ternary in `tryGeocode` (line 96)
  */
+
+jest.mock('@shared/database/DatabaseConnection', () => ({
+  DatabaseConnection: {
+    getInstance: () => ({ getPool: () => ({ query: jest.fn() }) }),
+  },
+}));
 
 import { PatientAddressRepository } from '../../../src/modules/matching/infrastructure/PatientAddressRepository';
 
@@ -69,6 +79,10 @@ describe('PatientAddressRepository.resolveOrCreatePatientAddress', () => {
     // Second call should be INSERT
     const insertCall = pool.query.mock.calls[1][0] as string;
     expect(insertCall).toMatch(/INSERT INTO patient_addresses/i);
+    // Spec 019 (B4): o literal hardcoded 'service' de address_type saiu — a coluna nasce NULL,
+    // valor só via PATCH (AdminPatientAddressesController).
+    expect(insertCall).not.toMatch(/address_type/);
+    expect(insertCall).not.toMatch(/'service'/);
   });
 
   it('(c) both null → returns null immediately without querying', async () => {
@@ -114,5 +128,61 @@ describe('PatientAddressRepository.resolveOrCreatePatientAddress', () => {
 
     expect(result).toBeNull();
     expect(pool.query).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('PatientAddressRepository constructor', () => {
+  it('(f1) builds its own GeocodingService when none is injected (default branch)', () => {
+    const repo = new PatientAddressRepository();
+    expect((repo as any).geocoder).toBeDefined();
+    expect((repo as any).pool).toBeDefined();
+  });
+
+  it('(f2) uses the injected geocoder instead of building a new one', () => {
+    const injected = { geocode: jest.fn() };
+    const repo = new PatientAddressRepository(injected as any);
+    expect((repo as any).geocoder).toBe(injected);
+  });
+});
+
+describe('PatientAddressRepository tryGeocode (via resolveOrCreatePatientAddress insert path)', () => {
+  const patientId = 'patient-uuid-002';
+
+  it('(g1) geocoder resolves a result → lat/lng from the result are persisted', async () => {
+    const pool = makeMockPool([
+      { rows: [] },                     // SELECT — no match
+      { rows: [{ id: 'pa-geo-001' }] }, // INSERT
+    ]);
+    const repo = makeRepo(pool);
+    (repo as any).geocoder = { geocode: jest.fn().mockResolvedValue({ latitude: -34.6, longitude: -58.4 }) };
+
+    await repo.resolveOrCreatePatientAddress({
+      patientId,
+      addressFormatted: 'Av. Geocoded 1',
+      addressRaw: null,
+    });
+
+    const insertParams = pool.query.mock.calls[1][1] as unknown[];
+    expect(insertParams).toContain(-34.6);
+    expect(insertParams).toContain(-58.4);
+  });
+
+  it('(g2) geocoder resolves null (no result found) → lat/lng persisted as null', async () => {
+    const pool = makeMockPool([
+      { rows: [] },                     // SELECT — no match
+      { rows: [{ id: 'pa-geo-002' }] }, // INSERT
+    ]);
+    const repo = makeRepo(pool);
+    (repo as any).geocoder = { geocode: jest.fn().mockResolvedValue(null) };
+
+    await repo.resolveOrCreatePatientAddress({
+      patientId,
+      addressFormatted: 'Av. Unresolvable',
+      addressRaw: null,
+    });
+
+    const insertParams = pool.query.mock.calls[1][1] as unknown[];
+    expect(insertParams[3]).toBeNull();
+    expect(insertParams[4]).toBeNull();
   });
 });

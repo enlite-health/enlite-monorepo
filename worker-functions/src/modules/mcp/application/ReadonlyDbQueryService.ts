@@ -51,10 +51,15 @@ export class ReadonlyDbQueryService {
 /**
  * Colunas de texto clínico restrito, proibidas em SQL ad-hoc:
  *   patients.emergency_instructions (D211.2) · patients.on_hold_note (spec 012, lex C7.1-d) ·
- *   patient_addresses.access_notes (spec 012, lex C2.1 — texto livre sobre o domicílio).
+ *   patient_addresses.access_notes (spec 012, lex C2.1 — texto livre sobre o domicílio) ·
+ *   patient_addresses.address_type_other (spec 019 — texto livre digitado por humano sobre a
+ *   família do paciente ("Otro"); `address_type` — o enum fechado — NÃO entra aqui de propósito:
+ *   o controle dele é o REVOKE de coluna (B1/B2, `create-mcp-ro-role.sql`), não a redação de log,
+ *   porque esta regex protege contra vazamento de TEXTO em log/erro e o enum fechado já não entra
+ *   em log — 0 hits medidos, ver spec.md "Segurança e perímetro").
  * O controle que vale é a role (create-mcp-ro-role.sql); isto é defesa em profundidade.
  */
-export const RESTRICTED_CLINICAL_COLUMNS = /emergency_instructions|on_hold_note|access_notes/i;
+export const RESTRICTED_CLINICAL_COLUMNS = /emergency_instructions|on_hold_note|access_notes|address_type_other/i;
 
 /**
  * Tabelas com texto clínico livre (`patients`, `patient_*`). A view `patients_ro` (D216) fica

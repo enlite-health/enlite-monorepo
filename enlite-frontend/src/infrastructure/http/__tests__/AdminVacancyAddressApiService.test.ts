@@ -3,9 +3,11 @@ import { AdminVacancyAddressApiService } from '../AdminVacancyAddressApiService'
 
 // ── Mock FirebaseAuthService ───────────────────────────────────────────────────
 
+const mockGetIdToken = vi.fn().mockResolvedValue('mock-token');
+
 vi.mock('@infrastructure/services/FirebaseAuthService', () => ({
   FirebaseAuthService: vi.fn().mockImplementation(() => ({
-    getIdToken: vi.fn().mockResolvedValue('mock-token'),
+    getIdToken: (...args: unknown[]) => mockGetIdToken(...args),
   })),
 }));
 
@@ -47,7 +49,6 @@ const ADDRESS_ROW = {
   patient_id: 'pat-5',
   address_formatted: 'Corrientes 1234, CABA',
   address_raw: 'Corrientes 1234',
-  address_type: 'service',
   display_order: 0,
   source: 'manual',
 };
@@ -57,6 +58,26 @@ const ADDRESS_ROW = {
 describe('AdminVacancyAddressApiService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetIdToken.mockResolvedValue('mock-token');
+  });
+
+  describe('getAuthHeaders', () => {
+    it('inclui Authorization quando há token', async () => {
+      mockFetch({ success: true, data: [] });
+      await AdminVacancyAddressApiService.listPatientAddresses('pat-5');
+      expect((capturedOptions().headers as Record<string, string>).Authorization).toBe(
+        'Bearer mock-token',
+      );
+    });
+
+    it('omite Authorization quando o token é null (sem sessão)', async () => {
+      mockGetIdToken.mockResolvedValue(null);
+      mockFetch({ success: true, data: [] });
+      await AdminVacancyAddressApiService.listPatientAddresses('pat-5');
+      expect(capturedOptions().headers as Record<string, string>).not.toHaveProperty(
+        'Authorization',
+      );
+    });
   });
 
   describe('listPendingAddressReview', () => {
@@ -100,6 +121,14 @@ describe('AdminVacancyAddressApiService', () => {
         'Unauthorized',
       );
     });
+
+    it('sem `error` no corpo: cai no fallback `HTTP <status>`', async () => {
+      mockFetch({ success: false }, 503);
+
+      await expect(AdminVacancyAddressApiService.listPendingAddressReview()).rejects.toThrow(
+        'HTTP 503',
+      );
+    });
   });
 
   describe('resolveAddressReview', () => {
@@ -124,7 +153,6 @@ describe('AdminVacancyAddressApiService', () => {
         createAddress: {
           address_formatted: 'Florida 100',
           address_raw: 'Florida 100',
-          address_type: 'service',
         },
       };
 
@@ -170,6 +198,28 @@ describe('AdminVacancyAddressApiService', () => {
       await expect(
         AdminVacancyAddressApiService.listPatientAddresses('pat-x'),
       ).rejects.toThrow('Patient not found');
+    });
+
+    it('normaliza lat/lng string (numeric do Postgres) para number', async () => {
+      mockFetch({
+        success: true,
+        data: [{ ...ADDRESS_ROW, lat: '-34.6037', lng: '-58.3816' }],
+      });
+
+      const result = await AdminVacancyAddressApiService.listPatientAddresses('pat-5');
+      expect(result[0].lat).toBe(-34.6037);
+      expect(result[0].lng).toBe(-58.3816);
+    });
+
+    it('mantém lat/lng null quando ausentes', async () => {
+      mockFetch({
+        success: true,
+        data: [{ ...ADDRESS_ROW, lat: null, lng: null }],
+      });
+
+      const result = await AdminVacancyAddressApiService.listPatientAddresses('pat-5');
+      expect(result[0].lat).toBeNull();
+      expect(result[0].lng).toBeNull();
     });
   });
 });

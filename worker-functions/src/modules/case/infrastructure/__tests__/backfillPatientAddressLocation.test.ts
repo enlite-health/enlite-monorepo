@@ -71,6 +71,10 @@ describe('isEmptyShellAddress', () => {
   it('is NOT a shell when address_raw has real content', () => {
     expect(isEmptyShellAddress({ address_raw: 'Av. Chiclana 2856', address_formatted: null })).toBe(false);
   });
+
+  it('is NOT a shell when address_raw is null (branch coverage of the `?? \'\'` fallback)', () => {
+    expect(isEmptyShellAddress({ address_raw: null, address_formatted: null })).toBe(false);
+  });
 });
 
 describe('buildBackfillGeocodingQuery', () => {
@@ -86,6 +90,21 @@ describe('buildBackfillGeocodingQuery', () => {
       state: 'CABA',
     });
     expect(buildBackfillGeocodingQuery(row)).toBe('Av. Chiclana 2856, 4 piso, C, CABA, CABA, Argentina');
+  });
+
+  it('(2.8) never fabricates addressType — the object built for buildGeocodingQuery has no such key at all, let alone the old \'primary\' dummy', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const geocodePatientAddressesModule = require('../geocodePatientAddresses') as typeof import('../geocodePatientAddresses');
+    const spy = jest.spyOn(geocodePatientAddressesModule, 'buildGeocodingQuery');
+    const row = makeRow({ address_formatted: 'Av. Y 200, CABA, Argentina' });
+
+    buildBackfillGeocodingQuery(row);
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    const passedAddress = spy.mock.calls[0][0] as unknown as Record<string, unknown>;
+    expect(passedAddress).not.toHaveProperty('addressType');
+    expect(JSON.stringify(passedAddress)).not.toContain('primary');
+    spy.mockRestore();
   });
 });
 
@@ -185,6 +204,14 @@ describe('buildBackfillPlan', () => {
     const row = makeRow({ lat: -34.6, lng: -58.4 });
     const geocode = makeGeocode({ latitude: -27.35, longitude: -55.9 });
     expect(buildBackfillPlan(row, geocode)).toBeNull();
+  });
+
+  it('treats a missing addressComponents as an empty list (branch coverage of `?? []`)', () => {
+    const row = makeRow({ neighborhood: 'null' });
+    const geocode = makeGeocode({ addressComponents: undefined });
+    const plan = buildBackfillPlan(row, geocode);
+    // Sem componentes, o extractor não acha nada novo — mas o "null" literal ainda é limpo.
+    expect(plan?.updates.neighborhood).toBeNull();
   });
 });
 

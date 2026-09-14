@@ -33,7 +33,14 @@ export interface PatientResponsibleDetail {
 
 export interface PatientAddressDetail {
   id: string;
-  addressType: string;
+  /**
+   * Spec 019 (D310 item c, override do lex 12/09/2026): tipo de LOCAL por parentesco
+   * (domicilio_propio | casa_madre | casa_padre | casa_abuela | casa_abuelo | escuela | trabajo
+   * | otro), `NULL` = "sin especificar". Deixou de significar posição do slot no ClickUp.
+   */
+  addressType: string | null;
+  /** Texto livre do "Otro" (≤40). Coerente com `addressType === 'otro'` (migration 434). */
+  addressTypeOther: string | null;
   addressFormatted: string | null;
   addressRaw: string | null;
   /** Address complement (Depto, Piso, andar). Manual UI entry. Migration 157. */
@@ -43,7 +50,7 @@ export interface PatientAddressDetail {
   lat: number | null;
   /** Longitude geocodificada. Migrated from job_postings.service_lng (migration 153/154). */
   lng: number | null;
-  /** True when address_type === 'primary'. */
+  /** Spec 019: `true` quando `is_default` — marca de PRINCIPAL própria (migration 433), não mais deduzida de `address_type === 'primary'`. */
   isPrimary: boolean;
   /** Zona/bairro (coluna `neighborhood`, mig 147 — spec 012 lex C2.7: não duplicar). */
   neighborhood: string | null;

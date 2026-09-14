@@ -116,7 +116,6 @@ export interface PatientMapPoint {
   lat: number | null;
   lng: number | null;
   status: string;
-  addressType: string | null;
   city: string | null;
   neighborhood: string | null;
   state: string | null;
@@ -130,7 +129,6 @@ interface PatientMapRow {
   last_name: string | null;
   status: string;
   address_id: string | null;
-  address_type: string | null;
   lat: string | number | null;
   lng: string | number | null;
   city: string | null;
@@ -213,7 +211,7 @@ export function buildPatientsMapQuery(q: PatientsMapBody): { sql: string; params
 
   const sql = `
     SELECT p.id, p.first_name, p.last_name, p.status,
-      pa.id AS address_id, pa.address_type, pa.lat, pa.lng, pa.city, pa.neighborhood, pa.state,
+      pa.id AS address_id, pa.lat, pa.lng, pa.city, pa.neighborhood, pa.state,
       ov.open_vacancies,
       ${distanceSelect},
       COUNT(*) OVER()::int AS total_count
@@ -254,7 +252,6 @@ export class AdminPatientsMapController {
           lat: hasCoords ? lat : null,
           lng: hasCoords ? lng : null,
           status: row.status,
-          addressType: row.address_type ?? null,
           city: row.city ?? null,
           neighborhood: row.neighborhood ?? null,
           state: row.state ?? null,

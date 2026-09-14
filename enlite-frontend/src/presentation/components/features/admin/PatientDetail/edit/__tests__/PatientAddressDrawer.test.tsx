@@ -43,9 +43,10 @@ vi.mock('@presentation/components/molecules/ServiceAreaMap', () => ({
 
 import { PatientAddressDrawer } from '../PatientAddressDrawer';
 import { LocalizacoesCard } from '../../LocalizacoesCard';
+import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
 
 const existing = {
-  id: 'addr1', addressType: 'primary', addressFormatted: 'Rua A 1', addressRaw: null, complement: null, displayOrder: 1,
+  id: 'addr1', addressType: 'primary', addressTypeOther: null, addressFormatted: 'Rua A 1', addressRaw: null, complement: null, displayOrder: 1,
   lat: -23.5, lng: -46.6, isPrimary: true, neighborhood: 'Centro', logisticsCorridor: null, accessNotes: 'Timbre 3B', country: 'BR',
 };
 
@@ -142,7 +143,6 @@ describe('PatientAddressDrawer — criar', () => {
     expect(screen.getByTestId('pad-address')).toHaveValue(ESCOLHIDO.formatted_address);
     expect(mapSpy).toHaveBeenLastCalledWith(expect.objectContaining({ lat: -34.6037, lng: -58.3816, address: null }));
 
-    fireEvent.change(screen.getByTestId('pad-type'), { target: { value: 'service' } });
     fireEvent.change(screen.getByTestId('pad-neighborhood'), { target: { value: 'San Nicolás' } });
     fireEvent.change(screen.getByTestId('pad-corridor'), { target: { value: 'Norte' } });
     const access = screen.getByTestId('pad-access');
@@ -152,9 +152,10 @@ describe('PatientAddressDrawer — criar', () => {
     fireEvent.change(access, { target: { value: 'Portero de 8 a 12' } });
 
     fireEvent.click(screen.getByTestId('pad-save'));
-    // lex C5: as chaves são EXATAMENTE estas — `place_id` não entra.
+    // lex C5: as chaves são EXATAMENTE estas — `place_id` não entra. Spec 019 (B4): `address_type`
+    // sai da criação — não entra mais nesse payload.
     await waitFor(() => expect(createPatientAddress).toHaveBeenCalledWith('p1', {
-      address_formatted: ESCOLHIDO.formatted_address, address_type: 'service',
+      address_formatted: ESCOLHIDO.formatted_address,
       neighborhood: 'San Nicolás', logistics_corridor: 'Norte', access_notes: 'Portero de 8 a 12',
     }));
     const enviado = createPatientAddress.mock.calls[0][1] as Record<string, unknown>;
@@ -203,7 +204,7 @@ describe('PatientAddressDrawer — criar', () => {
     expect(mapSpy).toHaveBeenLastCalledWith(expect.objectContaining({ lat: null, lng: null, address: null }));
     fireEvent.click(screen.getByTestId('pad-save'));
     await waitFor(() => expect(createPatientAddress).toHaveBeenCalledWith('p1', {
-      address_formatted: 'Ruta 9 km 42, Córdoba', address_type: 'secondary',
+      address_formatted: 'Ruta 9 km 42, Córdoba',
     }));
     expect(screen.queryByText(t('admin.patients.detail.addressDrawer.addressNotPicked'))).not.toBeInTheDocument();
   });
@@ -239,11 +240,25 @@ describe('PatientAddressDrawer — criar', () => {
     fireEvent.change(screen.getByTestId('pad-raw'), { target: { value: 'x cru' } });
     fireEvent.click(screen.getByTestId('pad-save'));
     await waitFor(() => expect(createPatientAddress).toHaveBeenCalledWith('p1', {
-      address_formatted: ESCOLHIDO.formatted_address, address_raw: 'x cru', address_type: 'secondary',
+      address_formatted: ESCOLHIDO.formatted_address, address_raw: 'x cru',
     }));
     const err = await screen.findByTestId('pad-error');
     expect(err).toHaveTextContent('Erro ao salvar');
     expect(err).not.toHaveTextContent('Portero');
+  });
+
+  // F2 (gate revisao-pr): spec 019 passa a devolver 409 também na criação concorrente (dois
+  // endereços tentando nascer principal ao mesmo tempo). O catch do POST já era genérico — sem
+  // `instanceof`/status —, então um 409 JÁ caía neste mesmo caminho e já mostrava erro; este
+  // teste prova isso (em vez de assumir), como o F1 exigiu conferir antes de "consertar".
+  it('F2: POST 409 (criação concorrente) também mostra o erro genérico — mesmo catch do erro comum', async () => {
+    createPatientAddress.mockRejectedValueOnce(new PatientApiError('Conflict', 409));
+    render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={vi.fn()} />);
+    await assentar();
+    await escolherDaLista();
+    fireEvent.click(screen.getByTestId('pad-save'));
+    await waitFor(() => expect(createPatientAddress).toHaveBeenCalled());
+    expect(await screen.findByTestId('pad-error')).toHaveTextContent('Erro ao salvar');
   });
 
   it('lex C6: nada do que se digita atravessa para console nem para o Clarity', async () => {
@@ -411,6 +426,16 @@ describe('PatientAddressDrawer — editar logística', () => {
     fireEvent.click(screen.getByTestId('patient-address-backdrop'));
   });
 
+  // F2 (gate revisao-pr): mesma conferência do lado do PATCH — o backend também passa a devolver
+  // 409 quando duas edições de logística/principal colidem. O catch já era genérico; prova.
+  it('F2: PATCH 409 (edição concorrente) também mostra o erro genérico', async () => {
+    updatePatientAddressLogistics.mockRejectedValueOnce(new PatientApiError('Conflict', 409));
+    render(<PatientAddressDrawer patientId="p1" address={existing} onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByTestId('pad-neighborhood'), { target: { value: 'Outro' } });
+    fireEvent.click(screen.getByTestId('pad-save'));
+    expect(await screen.findByTestId('pad-error')).toHaveTextContent('Erro ao salvar');
+  });
+
   it('endereço sem nada (formatado e cru nulos, logística nula): mostra —, mapa recebe null, preencher zona manda só ela', async () => {
     render(<PatientAddressDrawer patientId="p1" address={{ ...existing, addressFormatted: null, addressRaw: null, neighborhood: null, accessNotes: null, lat: null, lng: null }} onClose={vi.fn()} onSaved={vi.fn()} />);
     expect(screen.getByTestId('pad-address-readonly')).toHaveTextContent('—');
@@ -479,7 +504,7 @@ describe('PatientAddressDrawer — editar logística', () => {
  */
 describe('LocalizacoesCard — troca de modo do drawer sem fechar (regressão do remonte)', () => {
   const enderecoCompleto = {
-    id: 'addr-completo', addressType: 'primary', addressFormatted: 'Rua B 2', addressRaw: null,
+    id: 'addr-completo', addressType: 'primary', addressTypeOther: null, addressFormatted: 'Rua B 2', addressRaw: null,
     complement: null, displayOrder: 1, lat: -23.5, lng: -46.6, isPrimary: true,
     neighborhood: 'Palermo', logisticsCorridor: 'Este', accessNotes: 'Portero 24h', country: 'AR',
   };
@@ -550,5 +575,119 @@ describe('LocalizacoesCard — troca de modo do drawer sem fechar (regressão do
     expect(enviado.access_notes).toBeUndefined();
     expect(enviado.neighborhood).toBeUndefined();
     expect(enviado.logistics_corridor).toBeUndefined();
+  });
+});
+
+// ── Spec 019: TIPO por parentesco + PRINCIPAL (D310 item c) ──────────────────────────────────
+describe('PatientAddressDrawer — spec 019: address_type/address_type_other/is_default', () => {
+  beforeEach(() => {
+    createPatientAddress.mockReset().mockResolvedValue({ id: 'new' });
+    updatePatientAddressLogistics.mockReset().mockResolvedValue({ id: 'addr1' });
+    mapSpy.mockReset();
+    placeChanged = [];
+    placeDevolvido = undefined;
+    widgetsCriados = 0;
+    stubGoogle();
+    vi.stubEnv('VITE_GOOGLE_MAPS_API_KEY', 'chave-de-teste');
+  });
+  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
+
+  it('editar: endereço já principal NÃO mostra o checkbox de marcar principal; endereço secundário mostra', async () => {
+    render(<PatientAddressDrawer patientId="p1" address={existing} onClose={vi.fn()} onSaved={vi.fn()} />);
+    // `existing.isPrimary = true` — não faz sentido "marcar como principal" quem já é.
+    expect(screen.queryByTestId('pad-mark-primary')).not.toBeInTheDocument();
+
+    render(<PatientAddressDrawer patientId="p1" address={{ ...existing, id: 'addr9', isPrimary: false }} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getAllByTestId('pad-mark-primary').length).toBeGreaterThan(0);
+  });
+
+  it('editar: address_type NULL (sin especificar) → selecionar "Escuela" → PATCH só com address_type', async () => {
+    const onSaved = vi.fn();
+    render(<PatientAddressDrawer patientId="p1" address={{ ...existing, addressType: null }} onClose={vi.fn()} onSaved={onSaved} />);
+    expect(screen.getByTestId('pad-type')).toHaveValue('');
+    // O campo "¿Cuál?" só existe quando o tipo é 'otro' — aqui nem deve renderizar.
+    expect(screen.queryByTestId('pad-type-other')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId('pad-type'), { target: { value: 'escuela' } });
+    fireEvent.click(screen.getByTestId('pad-save'));
+    await waitFor(() => expect(updatePatientAddressLogistics).toHaveBeenCalledWith('p1', 'addr1', { address_type: 'escuela' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  });
+
+  it('editar: tipo "Otro" revela o campo "¿Cuál?" com contador; PATCH leva address_type + address_type_other', async () => {
+    render(<PatientAddressDrawer patientId="p1" address={{ ...existing, addressType: null }} onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByTestId('pad-type'), { target: { value: 'otro' } });
+    const other = screen.getByTestId('pad-type-other');
+    expect(other).toHaveAttribute('maxlength', '40');
+    fireEvent.change(other, { target: { value: 'Casa de la tía' } });
+    expect(screen.getByTestId('pad-type-other-counter')).toHaveTextContent('14/40');
+
+    fireEvent.click(screen.getByTestId('pad-save'));
+    await waitFor(() => expect(updatePatientAddressLogistics).toHaveBeenCalledWith('p1', 'addr1', {
+      address_type: 'otro', address_type_other: 'Casa de la tía',
+    }));
+  });
+
+  it('editar: "Otro" com 41 caracteres (via fireEvent, ignorando o maxLength do DOM) barra o submit e mostra o erro — nenhum PATCH sai', async () => {
+    render(<PatientAddressDrawer patientId="p1" address={{ ...existing, addressType: 'otro', addressTypeOther: 'Casa de la tía' }} onClose={vi.fn()} onSaved={vi.fn()} />);
+    const other = screen.getByTestId('pad-type-other');
+    fireEvent.change(other, { target: { value: 'x'.repeat(41) } });
+    fireEvent.click(screen.getByTestId('pad-save'));
+    expect(await screen.findByText(t('admin.patients.editDrawer.typeOtherTooLong'))).toBeInTheDocument();
+    expect(updatePatientAddressLogistics).not.toHaveBeenCalled();
+  });
+
+  it('editar: endereço já "otro" — mudar SÓ o texto do "¿Cuál?" leva address_type:"otro" junto (senão o servidor 400 por faltar address_type na mesma requisição)', async () => {
+    render(<PatientAddressDrawer patientId="p1" address={{ ...existing, addressType: 'otro', addressTypeOther: 'antigo' }} onClose={vi.fn()} onSaved={vi.fn()} />);
+    const other = screen.getByTestId('pad-type-other');
+    fireEvent.change(other, { target: { value: 'novo' } });
+    fireEvent.click(screen.getByTestId('pad-save'));
+    await waitFor(() => expect(updatePatientAddressLogistics).toHaveBeenCalledWith('p1', 'addr1', {
+      address_type: 'otro', address_type_other: 'novo',
+    }));
+  });
+
+  it('editar: marcar o checkbox "Marcar como principal" envia is_default:true junto de outra mudança', async () => {
+    render(<PatientAddressDrawer patientId="p1" address={{ ...existing, isPrimary: false }} onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('pad-mark-primary'));
+    fireEvent.change(screen.getByTestId('pad-corridor'), { target: { value: 'Norte' } });
+    fireEvent.click(screen.getByTestId('pad-save'));
+    await waitFor(() => expect(updatePatientAddressLogistics).toHaveBeenCalledWith('p1', 'addr1', {
+      logistics_corridor: 'Norte', is_default: true,
+    }));
+  });
+
+  it('editar: um endereço legado com address_type de posição de slot ("primary") normaliza para "sin especificar" — sem crash', async () => {
+    // `existing.addressType = 'primary'` (fixture legada); a migration 434 já apaga esse valor
+    // em toda linha ATIVA no backend, mas o front não pode confiar nisso sem checar.
+    render(<PatientAddressDrawer patientId="p1" address={existing} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getByTestId('pad-type')).toHaveValue('');
+    fireEvent.change(screen.getByTestId('pad-corridor'), { target: { value: 'Norte' } });
+    fireEvent.click(screen.getByTestId('pad-save'));
+    // Não muda o tipo (segue "sin especificar" pros dois lados) — PATCH não inclui address_type.
+    await waitFor(() => expect(updatePatientAddressLogistics).toHaveBeenCalledWith('p1', 'addr1', { logistics_corridor: 'Norte' }));
+  });
+
+  it('criar: checkbox "Marcar como principal" opt-in — marcado, o POST leva is_default:true', async () => {
+    render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={vi.fn()} />);
+    await assentar();
+    await escolherDaLista();
+    fireEvent.click(screen.getByTestId('pad-mark-primary'));
+    fireEvent.click(screen.getByTestId('pad-save'));
+    await waitFor(() => expect(createPatientAddress).toHaveBeenCalledWith('p1', {
+      address_formatted: ESCOLHIDO.formatted_address, is_default: true,
+    }));
+  });
+
+  it('criar: checkbox NÃO marcado — o POST não leva is_default (regra de nascimento decide no servidor)', async () => {
+    render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={vi.fn()} />);
+    await assentar();
+    await escolherDaLista();
+    fireEvent.click(screen.getByTestId('pad-save'));
+    await waitFor(() => expect(createPatientAddress).toHaveBeenCalledWith('p1', {
+      address_formatted: ESCOLHIDO.formatted_address,
+    }));
+    const enviado = createPatientAddress.mock.calls[0][1] as Record<string, unknown>;
+    expect(enviado.is_default).toBeUndefined();
   });
 });

@@ -1,6 +1,6 @@
 import { registry, z } from '../registry';
 import { ErrorResponseSchema, OkMessage, UuidParam } from '../schemas/common';
-import { PATIENT_CHAT_ROLE_PATTERN } from '@modules/case';
+import { PATIENT_CHAT_ROLE_PATTERN, updatePatientAddressSchema } from '@modules/case';
 
 const AdminPatientsListQuery = z.object({
   status: z.string().optional().openapi({ description: 'Filtro por status do paciente.', example: 'ACTIVE' }),
@@ -19,15 +19,26 @@ const CreatePatientAddressBody = z.object({
     description: 'Endereço bruto original (sem formatação).',
     example: 'Corrientes 1234',
   }),
-  address_type: z.enum(['primary', 'secondary', 'service']).default('secondary').openapi({
-    description: 'Tipo do endereço: primary (residência principal), secondary ou service.',
-    example: 'secondary',
+  // Spec 019 (B4/B7): `address_type` sai da criação — nasce NULL ("sin especificar"), valor só
+  // via PATCH. `is_default` opcional: sem principal ativo, o endereço nasce principal mesmo
+  // que o cliente não peça (regra de nascimento).
+  is_default: z.boolean().optional().openapi({
+    description: 'Marca como principal. Se omitido e o paciente não tiver nenhum principal ativo, nasce principal mesmo assim.',
+    example: false,
   }),
   display_order: z.number().int().positive().optional().openapi({
     description: 'Ordem de exibição (auto-incrementa se omitido).',
     example: 2,
   }),
 });
+
+// K8 (spec 019): `UpdatePatientAddressBody` deixa de duplicar a lista fechada e o shape do
+// PATCH — deriva de `updatePatientAddressSchema`, a MESMA fonte que valida a requisição em
+// `AdminPatientAddressesController` (`.strict()` + `.refine()` do "Otro"). Duplicar aqui já tinha
+// divergido uma vez (faltava `.strict()`/`.refine()` nesta cópia) — decisão B7 (nomear `escuela`
+// no contrato publicado do PATCH, staff-only) continua valendo: a lista fechada vem do MESMO
+// `PATIENT_ADDRESS_TYPES` que o controller exporta, sem segunda cópia.
+const UpdatePatientAddressBody = updatePatientAddressSchema;
 
 registry.registerPath({
   method: 'get',
@@ -230,6 +241,33 @@ registry.registerPath({
     201: { description: 'Endereço criado.', content: { 'application/json': { schema: OkMessage } } },
     400: { description: 'Dados inválidos.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/admin/patients/{patientId}/addresses/{addressId}',
+  tags: ['Admin · Patients'],
+  summary: 'Edita logística, principal e tipo de um endereço',
+  description:
+    'Atualiza zona/corredor/notas de acesso, marca como principal (troca atômica — nunca existe ' +
+    'instante com 0 ou 2 principais) e/ou o tipo de local por parentesco (spec 019). ' +
+    'Único escritor de valor autorizado para `address_type`/`address_type_other`.',
+  security: [{ firebaseAuth: [] }],
+  request: {
+    params: z.object({
+      patientId: z.string().uuid().openapi({ description: 'UUID do paciente.', example: '6f7c1d4a-9b2e-4c8a-9d5e-1f3b8a2c7e91' }),
+      addressId: z.string().uuid().openapi({ description: 'UUID do endereço.', example: '6f7c1d4a-9b2e-4c8a-9d5e-1f3b8a2c7e91' }),
+    }),
+    body: { content: { 'application/json': { schema: UpdatePatientAddressBody } } },
+  },
+  responses: {
+    200: { description: 'Endereço atualizado.', content: { 'application/json': { schema: OkMessage } } },
+    400: { description: 'Dados inválidos (inclui address_type_other sem address_type="otro").', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    404: { description: 'Endereço não encontrado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    409: { description: 'Conflito de concorrência ao marcar principal.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
 });
