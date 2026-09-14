@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import { Pool } from 'pg';
 import { reportError, logger } from '@shared/logging';
+import { pgUniqueViolationConflict } from '@shared/http/pgUniqueViolationConflict';
 import { AuthMiddleware, resolveCountryScope, CountryScopeError } from '@modules/identity';
 import { currentDbContext } from '@shared/database/requestDbSession';
 import { adminPatientsListSchema } from '../validators/adminPatientsListSchema';
@@ -650,9 +651,9 @@ export class AdminPatientsController {
       // podem calcular `isDefault=true` (nenhum viu o principal do outro ainda) e o índice único
       // parcial (`patient_addresses_one_default_per_patient`) recusa o segundo INSERT. Mesmo
       // tratamento do PATCH (`AdminPatientAddressesController`): 409 tratado, nunca 500.
-      const pgCode = (err as { code?: string } | null)?.code;
-      if (pgCode === '23505') {
-        res.status(409).json({ success: false, error: 'Concurrent update — try again' });
+      const conflict = pgUniqueViolationConflict(err, 'Concurrent update — try again');
+      if (conflict) {
+        res.status(409).json(conflict);
         return;
       }
       const e = err instanceof Error ? err : new Error(String(err));

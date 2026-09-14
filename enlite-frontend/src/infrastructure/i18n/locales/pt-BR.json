@@ -3440,7 +3440,7 @@
         },
         "addressDrawer": {
           "createTitle": "Nova localização",
-          "editTitle": "Editar logística",
+          "editTitle": "Editar localização",
           "address": "Endereço",
           "addressRequired": "Informe o endereço",
           "addressNotPicked": "Escolha um endereço da lista de sugestões",

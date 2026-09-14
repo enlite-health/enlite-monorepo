@@ -3519,7 +3519,7 @@
         },
         "addressDrawer": {
           "createTitle": "Nueva localización",
-          "editTitle": "Editar logística",
+          "editTitle": "Editar localización",
           "address": "Dirección",
           "addressRequired": "Ingresá la dirección",
           "addressNotPicked": "Elegí una dirección de la lista de sugerencias",

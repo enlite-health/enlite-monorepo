@@ -400,6 +400,7 @@ describe('PatientAddressDrawer — editar logística', () => {
   it('mostra o endereço (só leitura) e o mapa com lat/lng; salva SÓ os campos alterados; limpar → null', async () => {
     const onSaved = vi.fn();
     render(<PatientAddressDrawer patientId="p1" address={existing} onClose={vi.fn()} onSaved={onSaved} />);
+    expect(screen.getByRole('heading', { name: 'Editar localização' })).toBeInTheDocument();
     expect(screen.queryByTestId('pad-address')).not.toBeInTheDocument();
     expect(screen.getByTestId('pad-address-readonly')).toHaveTextContent('Rua A 1');
     expect(mapSpy).toHaveBeenLastCalledWith(expect.objectContaining({ lat: -23.5, lng: -46.6 }));
