@@ -6,6 +6,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { GetWorkerProgressUseCase } from '../../application/GetWorkerProgressUseCase';
 import { UploadWorkerDocumentsUseCase } from '../../application/UploadWorkerDocumentsUseCase';
 import { IWorkerRepository } from '../../ports/IWorkerRepository';
+import { assertDocumentPathBelongsToWorker } from '../../domain/documentPathGuard';
 
 const VALID_DOC_TYPES: DocumentType[] = [
   'resume_cv', 'identity_document', 'identity_document_back', 'criminal_record',
@@ -146,10 +147,20 @@ export class WorkerDocumentsMeController {
       console.log('[WorkerDocsMeCtrl.getViewSignedUrl] authUid:', authUid);
       if (!authUid) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
       const { filePath } = req.body as { filePath: unknown };
-      console.log('[WorkerDocsMeCtrl.getViewSignedUrl] filePath:', filePath);
       if (!filePath || typeof filePath !== 'string') {
-        console.warn('[WorkerDocsMeCtrl.getViewSignedUrl] filePath missing or invalid');
         res.status(400).json({ success: false, error: 'filePath is required' }); return;
+      }
+      const worker = await this.resolveWorker(authUid);
+      console.log('[WorkerDocsMeCtrl.getViewSignedUrl] resolved worker:', worker?.id ?? 'NOT FOUND');
+      if (!worker) { res.status(404).json({ success: false, error: 'Worker not found' }); return; }
+      const existing = await this.documentsRepo.findByWorkerId(worker.id);
+      const ownedPaths = existing
+        ? Object.values(DOC_JS_FIELD).map((field) => (existing as unknown as Record<string, string | undefined>)[field])
+        : [];
+      const belongsToWorker = assertDocumentPathBelongsToWorker(filePath, this.gcs.getBucketName(), ownedPaths);
+      if (!belongsToWorker) {
+        console.warn('[WorkerDocsMeCtrl.getViewSignedUrl] path rejected: not owned by worker', worker.id);
+        res.status(404).json({ success: false, error: 'Document not found' }); return;
       }
       const signedUrl = await this.gcs.generateViewSignedUrl(filePath);
       console.log('[WorkerDocsMeCtrl.getViewSignedUrl] SUCCESS');

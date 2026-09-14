@@ -962,6 +962,34 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // Hotfix 13/09 (Gabriel/lex): `getViewSignedUrl` assinava qualquer `filePath` do corpo sem
+    // conferir dono — worker A lia documento de worker B, e a rota admin ignorava `:id`. Guard
+    // novo (`documentPathGuard.ts`) + os dois controllers tocados nascem 100% nos quatro eixos,
+    // medido nesta mesma rodada.
+    'src/modules/worker/domain/documentPathGuard.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/worker/interfaces/controllers/WorkerDocumentsMeController.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/worker/interfaces/controllers/AdminWorkerDocumentsController.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/worker/infrastructure/GCSStorageService.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
   },
   verbose: true,
   testTimeout: 10000,
