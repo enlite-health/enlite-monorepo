@@ -505,6 +505,19 @@ describe('salvar — `new` cria a major seguinte, `edit` a minor da origem', () 
     expect(screen.getByTestId('therapeutic-project-drawer').getAttribute('data-mode')).toBe('view');
   });
 
+  it('conserto 14/09 (achado no e2e da task 7.8): `POST` devolve a versão sem `contacts` resolvido (só `list`/`get` resolvem) — a view NÃO quebra, cai em vazio até o próximo refetch', async () => {
+    catalogosOk();
+    const { contacts: _semContatos, ...criadaSemContatos } = CRIADA;
+    mockCreateVersion.mockResolvedValue(criadaSemContatos as unknown as TherapeuticProjectVersion);
+    montar({ mode: 'edit', version: VERSAO });
+    await esperarFormulario();
+
+    await act(async () => { fireEvent.click(screen.getByTestId('tp-save')); });
+
+    expect(screen.getByTestId('therapeutic-project-drawer').getAttribute('data-mode')).toBe('view');
+    expect(screen.getByTestId('tpv-contacts')).toBeInTheDocument();
+  });
+
   it('recusa do servidor vira a frase da tela dentro do formulário (o drawer não fecha)', async () => {
     catalogosOk();
     mockCreateVersion.mockRejectedValue(new TherapeuticProjectApiError('forbidden', 403));

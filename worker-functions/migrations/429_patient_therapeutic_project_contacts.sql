@@ -67,10 +67,22 @@ CREATE TABLE IF NOT EXISTS patient_therapeutic_project_contacts (
     OR (contact_kind = 'CARE_TEAM'   AND professional_id IS NOT NULL)
   ),
   -- NO ACTION (default): recusa DELETE direto do contato referenciado; a CASCADE da versão/paciente passa.
-  CONSTRAINT ptpc_resp_fk FOREIGN KEY (responsible_id, patient_id)      REFERENCES patient_responsibles(id, patient_id),
-  CONSTRAINT ptpc_ext_fk  FOREIGN KEY (external_contact_id, patient_id) REFERENCES patient_external_contacts(id, patient_id),
-  CONSTRAINT ptpc_cov_fk  FOREIGN KEY (coverage_contact_id, patient_id) REFERENCES patient_coverage_emergency_contacts(id, patient_id),
-  CONSTRAINT ptpc_pro_fk  FOREIGN KEY (professional_id, patient_id)     REFERENCES patient_professionals(id, patient_id)
+  -- DEFERRABLE INITIALLY DEFERRED (conserto 14/09, achado no e2e da task 7.8): `patients` tem DOIS
+  -- caminhos de CASCADE que convergem aqui — direto para `patient_professionals`/`patient_external_contacts`/
+  -- etc. (038/422/423/427) e indireto via `patient_therapeutic_projects` → esta tabela (416/429). Um
+  -- `DELETE FROM patients` (purga do paciente, D248) dispara os dois; sem DEFER, o Postgres pode
+  -- cascatear o caminho direto (apagar a linha do contato) ANTES do indireto (apagar a ligação que
+  -- ainda a referencia), e a checagem imediata de uma NO ACTION não-deferrable estoura por ordem de
+  -- cascata, não por dado realmente inconsistente — as duas cascatas terminam na MESMA transação de
+  -- qualquer forma. Adiar para o fim da transação resolve a ordem sem abrir brecha: a checagem ainda
+  -- roda, só que depois que TODAS as cascatas da purga já rodaram. Medido: `DELETE FROM patients`
+  -- com uma versão referenciando `patient_professionals` batia em "ptpc_pro_fk" com as linhas ainda
+  -- ligadas — reproduzido e fechado por este ajuste (sem mudar a regra: DELETE direto do contato
+  -- fora de uma purga continua recusado, porque a transação isolada tem só esse UM delete).
+  CONSTRAINT ptpc_resp_fk FOREIGN KEY (responsible_id, patient_id)      REFERENCES patient_responsibles(id, patient_id) DEFERRABLE INITIALLY DEFERRED,
+  CONSTRAINT ptpc_ext_fk  FOREIGN KEY (external_contact_id, patient_id) REFERENCES patient_external_contacts(id, patient_id) DEFERRABLE INITIALLY DEFERRED,
+  CONSTRAINT ptpc_cov_fk  FOREIGN KEY (coverage_contact_id, patient_id) REFERENCES patient_coverage_emergency_contacts(id, patient_id) DEFERRABLE INITIALLY DEFERRED,
+  CONSTRAINT ptpc_pro_fk  FOREIGN KEY (professional_id, patient_id)     REFERENCES patient_professionals(id, patient_id) DEFERRABLE INITIALLY DEFERRED
 );
 
 CREATE INDEX IF NOT EXISTS idx_patient_therapeutic_project_contacts_version
