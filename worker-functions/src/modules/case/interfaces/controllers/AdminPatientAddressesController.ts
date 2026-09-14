@@ -4,6 +4,7 @@ import type { Pool } from 'pg';
 import { reportError, logger } from '@shared/logging';
 import { AuthMiddleware } from '@modules/identity';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { withActorContext } from '@shared/database/actorContext';
 
 /**
  * AdminPatientAddressesController — edição da LOGÍSTICA + PRINCIPAL + TIPO por endereço
@@ -62,6 +63,9 @@ const paramsSchema = z.object({
   patientId: z.string().uuid(),
   addressId: z.string().uuid(),
 });
+
+/** Sentinela interna: desfaz a transação do PATCH quando o endereço não existe (nunca sai do controller). */
+const ADDRESS_ROW_MISSING = Symbol('patient_addresses: linha inexistente');
 
 const COLUMN_BY_KEY: Record<string, string> = {
   neighborhood: 'neighborhood',
@@ -126,10 +130,12 @@ export class AdminPatientAddressesController {
     }
 
     try {
-      const client = await this.db.connect();
-      let result: { rowCount: number | null };
-      try {
-        await client.query('BEGIN');
+      // `withActorContext` (D95), não `this.db.connect()` cru: o client cru chega SEM
+      // `app.user_country` e a policy de país da 411 recusa com `rls_session_without_identity`
+      // — o 500 medido na stage em 12/09 (commit fbb3f765 trocou o `withActorContext` original
+      // por este connect cru). O helper reusa o client fixado da request ou aplica `SET LOCAL`;
+      // BEGIN/COMMIT/ROLLBACK são dele.
+      const rowMissing = await withActorContext(this.db, async (client) => {
         // Troca atômica (spec 019): desmarca o principal anterior NA MESMA transação, antes do
         // UPDATE deste endereço — nunca existe instante observável com 0 ou 2 principais.
         if (markingDefault) {
@@ -139,23 +145,22 @@ export class AdminPatientAddressesController {
             [params.data.patientId, params.data.addressId],
           );
         }
-        result = await client.query<{ id: string }>(
+        const result = await client.query<{ id: string }>(
           `UPDATE patient_addresses SET ${sets.join(', ')}, updated_at = NOW()
             WHERE id = $1 AND patient_id = $2 AND archived_at IS NULL
             RETURNING id`,
           values,
         );
-        if ((result.rowCount ?? 0) === 0) {
-          await client.query('ROLLBACK');
-          res.status(404).json({ success: false, error: 'Address not found' });
-          return;
-        }
-        await client.query('COMMIT');
-      } catch (txErr) {
-        await client.query('ROLLBACK').catch(() => undefined);
-        throw txErr;
-      } finally {
-        client.release();
+        if ((result.rowCount ?? 0) === 0) throw ADDRESS_ROW_MISSING;
+        return false;
+      }).catch((err) => {
+        if (err === ADDRESS_ROW_MISSING) return true;
+        throw err;
+      });
+
+      if (rowMissing) {
+        res.status(404).json({ success: false, error: 'Address not found' });
+        return;
       }
 
       // Trilha SEM valor (lex C2.3; spec 019): quem, qual endereço, quais campos e o tamanho de
