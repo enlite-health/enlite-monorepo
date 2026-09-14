@@ -1,6 +1,10 @@
 {
   "debt": [
     {
+      "cell": "catalog_therapeutic_segments:write",
+      "motivo": "US-17 (migration 430) — segments é catálogo GLOBAL sem tela própria (TherapeuticCatalogPage.tsx:31-35, fora do escopo da task 7.7); o backend exige a célula nas rotas POST/PATCH de segments, mas sem consumidor no front hoje. Tela fica para quando houver a carga do catálogo (pendência separada)."
+    },
+    {
       "cell": "interview:delete",
       "motivo": "D269 F3 (vagas) — DELETE /interview-slots/:slotId (cancelInterviewSlot) não tem NENHUM consumidor no front: useInterviewSlots.ts existe (fetchSlots/createSlots/bookSlot/cancelSlot) mas nenhuma tela o chama. Não é gate pendente — é feature sem UI, achado da referência de vagas (grep: useInterviewSlots)."
     },
