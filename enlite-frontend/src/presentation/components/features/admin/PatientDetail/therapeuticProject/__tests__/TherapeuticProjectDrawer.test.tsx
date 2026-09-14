@@ -332,11 +332,12 @@ describe('🔒 lex C13 — "Exportar PDF" busca a versão A CADA clique', () => 
 
 describe('🔒 D286/D269 — "Editar" é célula `patient_therapeutic_project:write`', () => {
   it('engine LIGADO e sem a célula → o botão SOME (não fica cinza)', () => {
-    comEnforcement([]);
+    // Só a célula de EXPORT (item 3 do PR-7) — isola o gate testado aqui (write) do gate do export.
+    comEnforcement(['patient_therapeutic_project:export']);
     montar({ mode: 'view', version: VERSAO, isCurrent: true });
 
     expect(screen.queryByTestId('therapeutic-project-edit-btn')).not.toBeInTheDocument();
-    // exportar continua: é leitura, e a trilha é do servidor
+    // exportar continua: tem a célula própria (`patient_therapeutic_project:export`, testada no bloco abaixo).
     expect(screen.getByTestId('therapeutic-project-export-btn')).toBeInTheDocument();
   });
 
@@ -362,15 +363,47 @@ describe('🔒 D286/D269 — "Editar" é célula `patient_therapeutic_project:wr
   });
 });
 
+// ── Gate de export (contrato PR-7: `patient_therapeutic_project:export`) ────
+
+describe('🔒 PR-7 item 3 — "Exportar PDF" é célula `patient_therapeutic_project:export` (mesmo mecanismo do Editar, D269)', () => {
+  it('engine LIGADO e sem a célula → o botão de exportar SOME (não fica cinza)', () => {
+    comEnforcement([]);
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
+
+    expect(screen.queryByTestId('therapeutic-project-export-btn')).not.toBeInTheDocument();
+  });
+
+  it('🔴 a célula do PAI (`patient:read`) não vale — a permissão é do CONTAINER', () => {
+    comEnforcement(['patient:read', 'patient:write']);
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
+
+    expect(screen.queryByTestId('therapeutic-project-export-btn')).not.toBeInTheDocument();
+  });
+
+  it('com a célula do container o botão existe', () => {
+    comEnforcement(['patient_therapeutic_project:export']);
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
+
+    expect(screen.getByTestId('therapeutic-project-export-btn')).toBeInTheDocument();
+  });
+
+  it('engine DESLIGADO: o botão existe mesmo sem célula nenhuma (freio de rollout)', () => {
+    comEnforcement([], 'off');
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
+
+    expect(screen.getByTestId('therapeutic-project-export-btn')).toBeInTheDocument();
+  });
+});
+
 // ── D328 item 3 — versão ANTIGA (não vigente) não oferece edição na tela ────
 
 describe('🔒 D328 item 3: `isCurrent:false` some com "Editar" mesmo com célula e versão viva', () => {
   it('versão NÃO vigente, não anulada, com a célula: SEM botão "Editar" (só quem abre o drawer sabe quem é a vigente)', () => {
-    comEnforcement(['patient_therapeutic_project:write']);
+    comEnforcement(['patient_therapeutic_project:write', 'patient_therapeutic_project:export']);
     montar({ mode: 'view', version: VERSAO, isCurrent: false });
 
     expect(screen.queryByTestId('therapeutic-project-edit-btn')).not.toBeInTheDocument();
-    // exportar continua oferecido — é leitura de versão antiga, permitida por lex C8(a)
+    // exportar continua oferecido — é leitura de versão antiga, permitida por lex C8(a) (com a célula própria de export)
     expect(screen.getByTestId('therapeutic-project-export-btn')).toBeInTheDocument();
   });
 

@@ -28,19 +28,22 @@ export interface PdfService {
   careLocationLabel: string | null;
 }
 
-export interface PdfContact {
-  name: string;
-  relationship: string | null;
-  phone: string | null;
-  email: string | null;
-}
+/**
+ * Contato SELECIONADO na versão (PR-7, `version.contacts`), já na forma do PDF (lex #7 C5):
+ * `resolved` (nome/telefone/vínculo), `inactive` (linha desativada — NUNCA resolve nome/telefone,
+ * o PDF imprime "contacto dado de baja") ou `redacted` (sem a célula do container de origem —
+ * "omitido por permiso", C12). Sem `email`: o backend não resolve email de contato por seleção.
+ */
+export type PdfContact =
+  | { status: 'resolved'; name: string; relationship: string | null; phone: string | null }
+  | { status: 'inactive' }
+  | { status: 'redacted' };
 
-/** Contato de emergência da COBERTURA (417; D301.3b) — rótulo do tipo já traduzido. */
-export interface PdfCoverageContact {
-  kindLabel: string;
-  name: string;
-  phone: string;
-}
+/** Contato de emergência da COBERTURA (417; D301.3b) — mesma régua resolved/inactive/redacted de `PdfContact`. */
+export type PdfCoverageContact =
+  | { status: 'resolved'; kindLabel: string; name: string; phone: string }
+  | { status: 'inactive' }
+  | { status: 'redacted' };
 
 export interface TherapeuticProjectPdfInput {
   /** `caseNumber` do paciente ou, sem ele, o id — vai no rodapé de toda página (lex C14). */
@@ -62,7 +65,7 @@ export interface TherapeuticProjectPdfInput {
   fixedSectionsServiceCode: string | null;
   /** Modalidade já traduzida; `null` = versão anterior à 417. */
   modalityLabel: string | null;
-  careTeam: string[] | null;
+  careTeam: PdfContact[] | null;
   /** Data/hora de emissão, já formatada (es-AR). */
   issuedAtText: string;
   /** URL/dataURL do logo, servido da própria origem; opcional (o teste em Node não carrega imagem). */

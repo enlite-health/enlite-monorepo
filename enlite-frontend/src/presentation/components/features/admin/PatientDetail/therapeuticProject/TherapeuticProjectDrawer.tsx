@@ -20,7 +20,6 @@ import { useTherapeuticCatalogs } from '@hooks/admin/useTherapeuticProjects';
 import { useContainerAccess } from '@presentation/hooks/useCellAccess';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { Button } from '@presentation/components/atoms/Button';
 import { ActionButton } from '@presentation/components/features/access';
 import { TherapeuticProjectForm } from './TherapeuticProjectForm';
 import { TherapeuticProjectVersionView } from './TherapeuticProjectVersionView';
@@ -164,11 +163,12 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
           <div className="flex items-center gap-2">
             {target.mode === 'view' && (
               <>
-                {/* lex C13: exportar busca a versão de novo — é essa chamada que deixa a trilha `export_pdf`. */}
-                <Button variant="outline" size="sm" onClick={() => handleExport(target.version)} disabled={exporting || target.version.annulledAt !== null} className="flex items-center gap-1" data-testid="therapeutic-project-export-btn">
+                {/* lex C13: exportar busca a versão de novo — é essa chamada que deixa a trilha `export_pdf`.
+                    Célula `patient_therapeutic_project:export` (contrato PR-7) — sem ela o botão SOME (D269), mesmo mecanismo do Editar acima. */}
+                <ActionButton resource="patient_therapeutic_project" action="export" variant="outline" size="sm" onClick={() => handleExport(target.version)} disabled={exporting || target.version.annulledAt !== null} className="flex items-center gap-1" data-testid="therapeutic-project-export-btn">
                   <FileDown className="w-4 h-4" />
                   {exporting ? tf('exporting') : tf('exportPdf')}
-                </Button>
+                </ActionButton>
                 {/* D328 item 3: versão antiga (não vigente) não oferece edição na tela, mesmo não-anulada. */}
                 {target.version.annulledAt === null && target.isCurrent && (
                   <ActionButton resource="patient_therapeutic_project" action="write" variant="primary" size="sm" onClick={() => setTarget({ mode: 'edit', version: target.version })} className="flex items-center gap-1" data-testid="therapeutic-project-edit-btn">

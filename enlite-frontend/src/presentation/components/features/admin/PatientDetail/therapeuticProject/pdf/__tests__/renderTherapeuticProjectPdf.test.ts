@@ -53,16 +53,16 @@ const fullInput: TherapeuticProjectPdfInput = {
   coverage: { insurance: 'Cobertura Sintética', affiliateId: '0000-TEST' },
   service: { serviceLabel: 'Cuidador', deviceLabels: ['Domicilio'], providerProfile: 'Perfil sintético del prestador', scheduleText: 'Lunes a domingo, 24 hs', careLocationLabel: 'Domicilio' },
   addressText: 'Calle Sintética 123, 4º A, CABA',
-  emergencyContacts: [{ name: 'RESPONSABLE-SINTETICO', relationship: 'hijo', phone: '11 0000 0000', email: 'resp@example.test' }],
+  emergencyContacts: [{ status: 'resolved', name: 'RESPONSABLE-SINTETICO', relationship: 'hijo', phone: '11 0000 0000' }],
   coverageEmergencyContacts: [
-    { kindLabel: 'Ambulancia', name: 'AMBULANCIA-SINTETICA', phone: '0800 000 0001' },
-    { kindLabel: 'Profesional directo', name: 'PROFESIONAL-DIRECTO-SINTETICO', phone: '11 0000 0002' },
+    { status: 'resolved', kindLabel: 'Ambulancia', name: 'AMBULANCIA-SINTETICA', phone: '0800 000 0001' },
+    { status: 'resolved', kindLabel: 'Profesional directo', name: 'PROFESIONAL-DIRECTO-SINTETICO', phone: '11 0000 0002' },
   ],
   coverageDirectProfessionalRedacted: false,
   coverageEmergencyContactsUnavailable: false,
   fixedSectionsServiceCode: 'CAREGIVER',
   modalityLabel: 'Presencial',
-  careTeam: ['Equipo tratante sintético'],
+  careTeam: [{ status: 'resolved', name: 'Equipo tratante sintético', relationship: null, phone: null }],
   issuedAtText: '08/09/2026 10:00',
 };
 
@@ -93,7 +93,7 @@ describe('PDF do projeto terapêutico — bytes reais, texto extraído (spec 017
       'PACIENTE-SINTETICO Apellido', 'DNI 00.000.000', '29/03/1938', '88 años',
       'Cobertura Sintética', '0000-TEST',
       'Cuidador', 'Domicilio', 'Perfil sintético del prestador', 'Lunes a domingo, 24 hs',
-      'Calle Sintética 123', 'RESPONSABLE-SINTETICO (hijo) - 11 0000 0000 - resp@example.test',
+      'Calle Sintética 123', 'RESPONSABLE-SINTETICO (hijo) - 11 0000 0000',
       'Modalidad: Presencial', 'Familiar / persona responsable', 'Emergencia de la cobertura médica',
       'Ambulancia: AMBULANCIA-SINTETICA - 0800 000 0001', 'Profesional directo: PROFESIONAL-DIRECTO-SINTETICO - 11 0000 0002',
       'Hemiplejía sintética de prueba', 'Trastornos psicóticos', 'Equipo tratante sintético',
@@ -178,6 +178,34 @@ describe('PDF do projeto terapêutico — bytes reais, texto extraído (spec 017
     expect(inverso).toContain('AMBULANCIA-SINTETICA');
   });
 
+  it('🔒 lex #7 C5 — contato SELECIONADO cuja linha de origem foi desativada: NUNCA imprime nome/telefone, imprime "contacto dado de baja"', async () => {
+    const { text } = await texto({
+      ...fullInput,
+      emergencyContacts: [{ status: 'inactive' }],
+      coverageEmergencyContacts: [{ status: 'inactive' }],
+      careTeam: [{ status: 'inactive' }],
+    });
+    expect(text).not.toContain('RESPONSABLE-SINTETICO');
+    expect(text).not.toContain('AMBULANCIA-SINTETICA');
+    expect(text).not.toContain('Equipo tratante sintético');
+    expect(text).not.toContain('11 0000 0000');
+    // As 3 seções (familiar, cobertura, equipe) imprimem o rótulo — 3 ocorrências no mínimo.
+    expect(text.split(PDF_LABELS.contactInactive).length - 1).toBeGreaterThanOrEqual(3);
+  });
+
+  it('🔒 lex #7 C12 — contato SELECIONADO sem a célula do container de origem: "omitido por permiso", sem nome/telefone', async () => {
+    const { text } = await texto({
+      ...fullInput,
+      emergencyContacts: [{ status: 'redacted' }],
+      coverageEmergencyContacts: [{ status: 'redacted' }],
+      careTeam: [{ status: 'redacted' }],
+    });
+    expect(text).not.toContain('RESPONSABLE-SINTETICO');
+    expect(text).not.toContain('AMBULANCIA-SINTETICA');
+    expect(text).not.toContain('Equipo tratante sintético');
+    expect(text.split(PDF_LABELS.contactOmitted).length - 1).toBeGreaterThanOrEqual(3);
+  });
+
   it('D301.1 — serviço AT (congelado na VERSÃO): as seções VIII/IX saem com o rótulo "no aplicable" e SEM o texto do cuidador; sem célula de serviço o texto do cuidador CONTINUA (é constante)', async () => {
     const at = await texto({ ...fullInput, fixedSectionsServiceCode: 'AT' });
     expect(at.text).toContain('Funciones y límites del cuidador');
@@ -254,7 +282,7 @@ describe('PDF do projeto terapêutico — bytes reais, texto extraído (spec 017
       logoSrc: png1x1,
       identification: { fullName: 'X Y', documentLabel: 'DNI 1', birthDate: '1938-03-29', age: null },
       coverage: { insurance: 'Cobertura Sintética', affiliateId: null },
-      emergencyContacts: [{ name: 'CONTATO-SEM-VINCULO', relationship: null, phone: null, email: null }],
+      emergencyContacts: [{ status: 'resolved', name: 'CONTATO-SEM-VINCULO', relationship: null, phone: null }],
     });
     expect(text).toContain('Fecha de nacimiento: 29/03/1938');
     expect(text).not.toContain('años');

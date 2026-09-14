@@ -60,6 +60,10 @@ export const PDF_LABELS = {
   fieldUnavailable: 'No disponible al momento de la emisión — verificar en la ficha.',
   /** Versão anulada — não deve ser exportada (C5), mas se o for, o documento diz. */
   annulled: 'VERSIÓN ANULADA',
+  /** lex #7 C5 — contato SELECIONADO cuja linha de origem foi desativada: nunca imprime nome/telefone. */
+  contactInactive: 'Contacto dado de baja',
+  /** lex #7 C12 — contato SELECIONADO sem a célula do container de origem (family/coverage/care_team). */
+  contactOmitted: 'Omitido por permiso',
 } as const;
 
 export const PDF_FOOTER = {
