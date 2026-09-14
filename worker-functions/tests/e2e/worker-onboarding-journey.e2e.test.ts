@@ -135,7 +135,7 @@ async function runWorkerJourney(
     //     o worker como AT (NULL != 'AT' = NULL em SQL → condição falsa → exige AT docs).
     //     Subir DOCS_AT_FULL garante que worker_documents saia de missing_fields
     //     independente do valor de profession, tornando o assert limpo.
-    await saveDocuments(api, tokenA, DOCS_AT_FULL);
+    await saveDocuments(api, tokenA, wA.id, DOCS_AT_FULL);
 
     // 2b. Status ainda INCOMPLETE_REGISTER (info falta)
     const statusA2 = await getWorkerStatus(pool, wA.id);
@@ -233,7 +233,7 @@ async function runWorkerJourney(
     // ── Worker B: sobe documentos → deve virar REGISTERED ──
     // Worker B já tem profession='CAREGIVER' (definida em savePersonalInfo), então
     // docs básicos (sem AT extras) são suficientes para satisfazer fn_worker_missing_fields.
-    await saveDocuments(api, tokenB, DOCS_NON_AT);
+    await saveDocuments(api, tokenB, wB.id, DOCS_NON_AT);
 
     const statusB4 = await getWorkerStatus(pool, wB.id);
     expect(statusB4).toBe('REGISTERED');

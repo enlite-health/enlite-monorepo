@@ -9,10 +9,21 @@ import { NOME_REDIGIDO } from '@modules/identity/permissions';
 import { buildWorkerDetailResponse } from '../AdminWorkersDetailBuilder';
 
 const queries: string[] = [];
+// Mutável por teste: cobre o ramo de comparator do sort() de encuadres
+// (só é exercitado com 2+ linhas combinadas de WJA + bloqueadas).
+let extraJobApplicationRow: Record<string, unknown> | null = null;
 const mockQuery = jest.fn(async (sql: string) => {
   queries.push(sql);
   if (sql.includes('FROM worker_documents')) {
-    return { rows: [{ id: 'doc-1', resume_cv_url: 'cv.pdf', identity_document_url: 'dni.jpg', documents_status: 'approved', document_validations: null }] };
+    return {
+      rows: [{
+        id: 'doc-1', resume_cv_url: 'cv.pdf', identity_document_url: 'dni.jpg', documents_status: 'approved',
+        // additional_certificates_urls + document_validations não-vazios cobrem o
+        // ramo do .map() de adicionais e o loop de Object.entries(rawValidations).
+        additional_certificates_urls: ['extra-cert.pdf'],
+        document_validations: { identity_document: { validated_by: 'admin@enlite.health', validated_at: '2025-01-01T00:00:00Z' } },
+      }],
+    };
   }
   if (sql.includes('FROM worker_service_areas') && sql.includes('LIMIT 1')) {
     return { rows: [{ address: 'Calle Falsa 123', city: 'Buenos Aires', work_zone: 'Palermo', interest_zone: 'Belgrano' }] };
@@ -25,14 +36,13 @@ const mockQuery = jest.fn(async (sql: string) => {
   // Encuadres (WorkerApplicationRepository / BlockedApplicationQueryRepository)
   if (sql.includes('FROM worker_blocked_applications')) return { rows: [] };
   if (sql.includes('FROM worker_job_applications')) {
-    return {
-      rows: [{
-        id: 'enc-1', job_posting_id: 'jp-1', funnel_stage: 'SELECTED', source: 'talentum', case_number: 42, vacancy_number: 1,
-        vacancy_status: 'ACTIVE', patient_first_name: 'Juan', patient_last_name: 'Perez', resultado: null, interview_date: null,
-        interview_time: null, recruiter_name: null, coordinator_name: null, rejection_reason: null, rejection_reason_category: null,
-        attended: null, created_at: '2025-03-01T10:00:00Z',
-      }],
+    const base = {
+      id: 'enc-1', job_posting_id: 'jp-1', funnel_stage: 'SELECTED', source: 'talentum', case_number: 42, vacancy_number: 1,
+      vacancy_status: 'ACTIVE', patient_first_name: 'Juan', patient_last_name: 'Perez', resultado: null, interview_date: null,
+      interview_time: null, recruiter_name: null, coordinator_name: null, rejection_reason: null, rejection_reason_category: null,
+      attended: null, created_at: '2025-03-01T10:00:00Z',
     };
+    return { rows: extraJobApplicationRow ? [base, extraJobApplicationRow] : [base] };
   }
   return { rows: [] };
 });
@@ -72,7 +82,9 @@ beforeEach(() => {
   queries.length = 0;
   decrypt.mockClear();
   mockQuery.mockClear();
+  extraJobApplicationRow = null;
   (gcs.generateViewSignedUrl as jest.Mock).mockClear();
+  (gcs.generateViewSignedUrl as jest.Mock).mockImplementation(async (p: string) => `signed:${p}`);
 });
 
 describe('cells = null (engine não decidiu) — a ficha inteira, como antes (D113)', () => {
@@ -202,5 +214,74 @@ describe('um container de cada vez', () => {
       'worker:read', 'worker_contact:read', 'worker_pii:read', 'worker_address:read', 'worker_document:read', 'match:read', 'patient_identity:read',
     ]);
     expect(porCelula).toEqual(tudo);
+  });
+});
+
+describe('hotfix 13/09 (extensão) — toSignedUrl agora exige workerId e nunca loga o filePath', () => {
+  it('passa o workerId do próprio worker (w.id) para generateViewSignedUrl em cada documento', async () => {
+    await buildWorkerDetailResponse(db, enc, gcs, ROW, null);
+    const calledWith = (gcs.generateViewSignedUrl as jest.Mock).mock.calls;
+    expect(calledWith.length).toBeGreaterThan(0);
+    for (const [, workerIdArg] of calledWith) {
+      expect(workerIdArg).toBe(ROW.id);
+    }
+  });
+
+  it('assina documentos adicionais (additionalCertificatesUrls) e propaga document_validations', async () => {
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, null);
+    expect(data.documents.additionalCertificatesUrls).toEqual(['signed:extra-cert.pdf']);
+    expect(data.documents.documentValidations).toEqual({
+      identity_document: { validatedBy: 'admin@enlite.health', validatedAt: '2025-01-01T00:00:00Z' },
+    });
+  });
+
+  it('quando generateViewSignedUrl falha para um documento, esse campo vem null e o erro NUNCA loga o filePath', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    (gcs.generateViewSignedUrl as jest.Mock).mockImplementation(async (p: string) => {
+      if (p === 'cv.pdf') throw new Error('gcs down');
+      return `signed:${p}`;
+    });
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, null);
+    expect(data.documents.resumeCvUrl).toBeNull();
+    expect(data.documents.identityDocumentUrl).toBe('signed:dni.jpg');
+    const loggedArgs = errorSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+    expect(loggedArgs).not.toContain('cv.pdf');
+    errorSpy.mockRestore();
+  });
+
+  it('quando o erro rejeitado não é um Error, loga a mensagem genérica (ramo "else" do ternário)', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    (gcs.generateViewSignedUrl as jest.Mock).mockImplementation(async (p: string) => {
+      if (p === 'cv.pdf') throw 'boom-nao-e-error-instance';
+      return `signed:${p}`;
+    });
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, null);
+    expect(data.documents.resumeCvUrl).toBeNull();
+    const loggedArgs = errorSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+    expect(loggedArgs).toContain('boom-nao-e-error-instance');
+    errorSpy.mockRestore();
+  });
+
+  it('doc sem additional_certificates_urls nem document_validations usa os fallbacks ([] e null)', async () => {
+    mockQuery.mockImplementationOnce(async () => ({
+      rows: [{ id: 'doc-2', resume_cv_url: 'cv.pdf', identity_document_url: 'dni.jpg', documents_status: 'approved' }],
+    }));
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, null);
+    expect(data.documents.additionalCertificatesUrls).toEqual([]);
+    expect(data.documents.documentValidations).toEqual({});
+  });
+
+  it('2+ encuadres (WJA + bloqueada) exercitam o comparator do sort() por createdAt desc', async () => {
+    extraJobApplicationRow = {
+      id: 'enc-2', job_posting_id: 'jp-2', funnel_stage: 'REJECTED', source: 'talentum', case_number: 43, vacancy_number: 2,
+      vacancy_status: 'CLOSED', patient_first_name: 'Ana', patient_last_name: 'Lopez', resultado: null, interview_date: null,
+      interview_time: null, recruiter_name: null, coordinator_name: null, rejection_reason: null, rejection_reason_category: null,
+      attended: null, created_at: '2025-01-01T10:00:00Z',
+    };
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, null);
+    expect(data.encuadres).toHaveLength(2);
+    // created_at mais recente (2025-03) primeiro — prova que o comparator RODOU, não só existiu.
+    expect(data.encuadres[0].caseNumber).toBe(42);
+    expect(data.encuadres[1].caseNumber).toBe(43);
   });
 });

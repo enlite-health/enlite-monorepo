@@ -1,0 +1,14 @@
+# Override de portas para o hotfix `hotfix-doc-view-url` (trava por PREFIXO
+# do dono em view/delete/save de documento do worker). Postgres real, mock
+# GCS (NODE_ENV=test sem GCP_PROJECT_ID), mock auth. Portas 8099/5599 —
+# checadas via `docker ps -a` antes de subir: livres, não colidem com
+# enlite-postgres (5432/5433), enlite-api (8080), nem com 018-pr7 (5572).
+services:
+  postgres:
+    container_name: hotfix-doc-postgres
+    ports: !override
+      - "5599:5432"
+  api:
+    container_name: hotfix-doc-api
+    ports: !override
+      - "8099:8080"

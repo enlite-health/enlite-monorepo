@@ -50,7 +50,7 @@ describe('Admin Worker Document Validations API', () => {
 
     await pool.query(`
       INSERT INTO worker_documents (worker_id, resume_cv_url, documents_status, document_validations)
-      VALUES ($1, 'workers/test/resume_cv/test.pdf', 'incomplete', '{}')
+      VALUES ($1, 'workers/${testWorkerId}/resume_cv/test.pdf', 'incomplete', '{}')
     `, [testWorkerId]);
   });
 
@@ -213,7 +213,7 @@ describe('Admin Worker Document Validations API', () => {
     it('re-upload via saveDocumentPath remove a validação do docType correspondente', async () => {
       const res = await api.post(
         `/api/admin/workers/${testWorkerId}/documents/save`,
-        { docType: 'resume_cv', filePath: 'workers/test/resume_cv/new-version.pdf' },
+        { docType: 'resume_cv', filePath: `workers/${testWorkerId}/resume_cv/new-version.pdf` },
         authHeaders(adminToken),
       );
 

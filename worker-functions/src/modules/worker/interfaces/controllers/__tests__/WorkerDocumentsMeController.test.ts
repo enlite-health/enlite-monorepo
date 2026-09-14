@@ -12,6 +12,10 @@ const mockGenerateViewSignedUrl = jest.fn();
 const mockDeleteFile = jest.fn();
 const mockGetBucketName = jest.fn().mockReturnValue('enlite-worker-documents');
 
+class FakeDocumentPathOwnershipError extends Error {
+  readonly code = 'DOCUMENT_PATH_OWNERSHIP';
+}
+
 jest.mock('../../../infrastructure/GCSStorageService', () => ({
   GCSStorageService: jest.fn().mockImplementation(() => ({
     generateUploadSignedUrl: mockGenerateUploadSignedUrl,
@@ -19,6 +23,7 @@ jest.mock('../../../infrastructure/GCSStorageService', () => ({
     deleteFile: mockDeleteFile,
     getBucketName: mockGetBucketName,
   })),
+  DocumentPathOwnershipError: FakeDocumentPathOwnershipError,
 }));
 
 const mockFindByWorkerId = jest.fn();
@@ -68,13 +73,16 @@ jest.mock('../../../application/UploadWorkerDocumentsUseCase', () => ({
 }));
 
 import { WorkerDocumentsMeController } from '../WorkerDocumentsMeController';
+import { DocumentPathOwnershipError } from '../../../infrastructure/GCSStorageService';
 import { Request, Response } from 'express';
 import { Result } from '@shared/utils/Result';
 
 const AUTH_UID = 'auth-uid-worker-a';
-const WORKER_ID = 'worker-a-id';
-const OWNED_PATH = 'workers/worker-a-id/identity_document/real-doc.pdf';
-const FOREIGN_PATH = 'workers/worker-b-id/identity_document/outro-doc.pdf';
+const WORKER_ID = '11111111-1111-4111-8111-111111111111';
+const WORKER_B_ID = '22222222-2222-4222-8222-222222222222';
+const DOC_UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const OWNED_PATH = `workers/${WORKER_ID}/identity_document/${DOC_UUID}.pdf`;
+const FOREIGN_PATH = `workers/${WORKER_B_ID}/identity_document/${DOC_UUID}.pdf`;
 
 function mockReqRes(overrides: Record<string, unknown> = {}): [Request, Response] {
   const req = {
@@ -224,6 +232,44 @@ describe('WorkerDocumentsMeController', () => {
       await controller.saveDocumentPath(req, res);
       expect(res.status).toHaveBeenCalledWith(500);
     });
+
+    // ── hotfix 13/09 (extensão) — trava de prefixo do dono no SAVE ────────
+    it('filePath de OUTRO worker (mesmo formato válido) → 400, nunca grava', async () => {
+      const [req, res] = mockReqRes({ body: { docType: 'identity_document', filePath: FOREIGN_PATH } });
+      await controller.saveDocumentPath(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(mockUploadExecute).not.toHaveBeenCalled();
+    });
+
+    it('filePath de forma "solta" (basename não-uuid) DENTRO do próprio prefixo → 200 — SAVE só checa prefixo, não a forma exata', async () => {
+      mockUploadExecute.mockResolvedValue({ documentsStatus: 'submitted' });
+      const [req, res] = mockReqRes({ body: { docType: 'identity_document', filePath: `workers/${WORKER_ID}/identity_document/nao-e-uuid.pdf` } });
+      await controller.saveDocumentPath(req, res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(mockUploadExecute).toHaveBeenCalled();
+    });
+
+    it('filePath path traversal → 400, nunca grava', async () => {
+      const [req, res] = mockReqRes({ body: { docType: 'identity_document', filePath: '../../etc/passwd' } });
+      await controller.saveDocumentPath(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(mockUploadExecute).not.toHaveBeenCalled();
+    });
+
+    it('nunca loga o filePath do corpo (aceito ou rejeitado)', async () => {
+      const logSpy = jest.spyOn(console, 'log');
+      const warnSpy = jest.spyOn(console, 'warn');
+      mockUploadExecute.mockResolvedValue({ documentsStatus: 'submitted' });
+
+      const [reqOk, resOk] = mockReqRes({ body: { docType: 'identity_document', filePath: OWNED_PATH } });
+      await controller.saveDocumentPath(reqOk, resOk);
+      const [reqBad, resBad] = mockReqRes({ body: { docType: 'identity_document', filePath: FOREIGN_PATH } });
+      await controller.saveDocumentPath(reqBad, resBad);
+
+      const out = [...logSpy.mock.calls, ...warnSpy.mock.calls].map((args) => args.join(' ')).join('\n');
+      expect(out).not.toContain(OWNED_PATH);
+      expect(out).not.toContain(FOREIGN_PATH);
+    });
   });
 
   // ── getViewSignedUrl (hotfix) ────────────────────────────────────────
@@ -286,9 +332,18 @@ describe('WorkerDocumentsMeController', () => {
       mockGenerateViewSignedUrl.mockResolvedValue('https://signed.example.com/x');
       const [req, res] = mockReqRes({ body: { filePath: OWNED_PATH } });
       await controller.getViewSignedUrl(req, res);
-      expect(mockGenerateViewSignedUrl).toHaveBeenCalledWith(OWNED_PATH);
+      expect(mockGenerateViewSignedUrl).toHaveBeenCalledWith(OWNED_PATH, WORKER_ID);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith({ success: true, data: { signedUrl: 'https://signed.example.com/x' } });
+    });
+
+    it('GCSStorageService recusa na 2ª camada (DocumentPathOwnershipError) → 404, nunca 500', async () => {
+      mockFindByWorkerId.mockResolvedValue({ identityDocumentUrl: OWNED_PATH });
+      mockGenerateViewSignedUrl.mockRejectedValue(new DocumentPathOwnershipError());
+      const [req, res] = mockReqRes({ body: { filePath: OWNED_PATH } });
+      await controller.getViewSignedUrl(req, res);
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Document not found' });
     });
 
     it('nunca loga o filePath (aceito ou rejeitado) nem o corpo da requisição', async () => {
@@ -364,7 +419,7 @@ describe('WorkerDocumentsMeController', () => {
       mockUpdate.mockResolvedValue({ identityDocumentUrl: undefined });
       const [req, res] = mockReqRes();
       await controller.deleteDocument(req, res);
-      expect(mockDeleteFile).toHaveBeenCalledWith(OWNED_PATH);
+      expect(mockDeleteFile).toHaveBeenCalledWith(OWNED_PATH, WORKER_ID);
       expect(res.status).toHaveBeenCalledWith(200);
     });
 
@@ -373,6 +428,15 @@ describe('WorkerDocumentsMeController', () => {
       const [req, res] = mockReqRes();
       await controller.deleteDocument(req, res);
       expect(res.status).toHaveBeenCalledWith(500);
+    });
+
+    it('GCSStorageService recusa na 2ª camada (DocumentPathOwnershipError) → 404, nunca apaga nem 500', async () => {
+      mockFindByWorkerId.mockResolvedValue({ identityDocumentUrl: OWNED_PATH });
+      mockDeleteFile.mockRejectedValue(new DocumentPathOwnershipError());
+      const [req, res] = mockReqRes();
+      await controller.deleteDocument(req, res);
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(mockClearDocumentField).not.toHaveBeenCalled();
     });
   });
 });

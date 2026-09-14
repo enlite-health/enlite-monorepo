@@ -18,6 +18,10 @@ const mockGenerateViewSignedUrl = jest.fn();
 const mockDeleteFile = jest.fn();
 const mockGetBucketName = jest.fn().mockReturnValue('enlite-worker-documents');
 
+class FakeDocumentPathOwnershipError extends Error {
+  readonly code = 'DOCUMENT_PATH_OWNERSHIP';
+}
+
 jest.mock('../../../infrastructure/GCSStorageService', () => ({
   GCSStorageService: jest.fn().mockImplementation(() => ({
     generateUploadSignedUrl: mockGenerateUploadSignedUrl,
@@ -25,6 +29,7 @@ jest.mock('../../../infrastructure/GCSStorageService', () => ({
     deleteFile: mockDeleteFile,
     getBucketName: mockGetBucketName,
   })),
+  DocumentPathOwnershipError: FakeDocumentPathOwnershipError,
 }));
 
 const mockFindByWorkerId = jest.fn();
@@ -78,10 +83,14 @@ jest.mock('../../../application/ValidateWorkerDocumentUseCase', () => ({
 }));
 
 import { AdminWorkerDocumentsController } from '../AdminWorkerDocumentsController';
+import { DocumentPathOwnershipError } from '../../../infrastructure/GCSStorageService';
 import { Request, Response } from 'express';
 import { Result } from '@shared/utils/Result';
 
-const WORKER_ID = 'worker-aaaa-bbbb';
+const WORKER_ID = '11111111-1111-4111-8111-111111111111';
+const WORKER_B_ID = '22222222-2222-4222-8222-222222222222';
+const DOC_UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const DEFAULT_FILE_PATH = `workers/${WORKER_ID}/identity_document/${DOC_UUID}.pdf`;
 // Local-part sentinela, improvável de aparecer por acaso em qualquer outro
 // valor logado (workerId, docType, filePath) — se aparecer, é vazamento.
 const SENSITIVE_LOCAL_PART = 'zzsentinela-staff-nao-pode-vazar';
@@ -91,7 +100,7 @@ const ADMIN_UID = 'admin-uid-123';
 function mockReqRes(overrides: Record<string, unknown> = {}): [Request, Response] {
   const req = {
     params: { id: WORKER_ID, type: 'identity_document' },
-    body: { docType: 'identity_document', contentType: 'application/pdf', filePath: 'workers/x/doc.pdf' },
+    body: { docType: 'identity_document', contentType: 'application/pdf', filePath: DEFAULT_FILE_PATH },
     user: { uid: ADMIN_UID, email: SENSITIVE_EMAIL },
     ...overrides,
   } as unknown as Request;
@@ -290,11 +299,11 @@ describe('AdminWorkerDocumentsController — cobertura de ramos (401/400/404/500
   });
 
   it('deleteDocument: registro existente COM filePath para o docType chama gcs.deleteFile', async () => {
-    mockFindByWorkerId.mockResolvedValue({ identityDocumentUrl: 'workers/x/identity_document/y.pdf' });
+    mockFindByWorkerId.mockResolvedValue({ identityDocumentUrl: DEFAULT_FILE_PATH });
     mockUpdate.mockResolvedValue({ identityDocumentUrl: undefined });
     const [req, res] = mockReqRes();
     await controller.deleteDocument(req, res);
-    expect(mockDeleteFile).toHaveBeenCalledWith('workers/x/identity_document/y.pdf');
+    expect(mockDeleteFile).toHaveBeenCalledWith(DEFAULT_FILE_PATH, WORKER_ID);
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
@@ -303,6 +312,31 @@ describe('AdminWorkerDocumentsController — cobertura de ramos (401/400/404/500
     const [req, res] = mockReqRes();
     await controller.deleteDocument(req, res);
     expect(res.status).toHaveBeenCalledWith(500);
+  });
+
+  it('deleteDocument: GCSStorageService recusa na 2ª camada (DocumentPathOwnershipError) → 404, nunca 500', async () => {
+    mockFindByWorkerId.mockResolvedValue({ identityDocumentUrl: DEFAULT_FILE_PATH });
+    mockDeleteFile.mockRejectedValue(new DocumentPathOwnershipError());
+    const [req, res] = mockReqRes();
+    await controller.deleteDocument(req, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(mockClearDocumentField).not.toHaveBeenCalled();
+  });
+
+  // ── hotfix 13/09 (extensão) — trava de prefixo do dono no SAVE (lado admin) ──
+  it('saveDocumentPath: filePath fora de workers/:id/... → 400, nunca grava', async () => {
+    const [req, res] = mockReqRes({ body: { docType: 'identity_document', filePath: `workers/${WORKER_B_ID}/identity_document/${DOC_UUID}.pdf` } });
+    await controller.saveDocumentPath(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(mockUploadExecute).not.toHaveBeenCalled();
+  });
+
+  it('saveDocumentPath: filePath de forma "solta" (basename não-uuid) DENTRO do próprio prefixo → 200 — SAVE só checa prefixo', async () => {
+    mockUploadExecute.mockResolvedValue({ documentsStatus: 'PENDING_REVIEW' });
+    const [req, res] = mockReqRes({ body: { docType: 'identity_document', filePath: `workers/${WORKER_ID}/identity_document/nao-e-uuid.pdf` } });
+    await controller.saveDocumentPath(req, res);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockUploadExecute).toHaveBeenCalled();
   });
 
   it('validateDocument: sem admin → 401', async () => {
@@ -394,8 +428,8 @@ describe('AdminWorkerDocumentsController — cobertura de ramos (401/400/404/500
 describe('AdminWorkerDocumentsController.getViewSignedUrl — URL assinada só para documento do próprio worker', () => {
   let controller: AdminWorkerDocumentsController;
 
-  const OWNED_PATH = 'workers/worker-aaaa-bbbb/identity_document/real-doc.pdf';
-  const FOREIGN_PATH = 'workers/outro-worker-9999/identity_document/outro-doc.pdf';
+  const OWNED_PATH = DEFAULT_FILE_PATH;
+  const FOREIGN_PATH = `workers/${WORKER_B_ID}/identity_document/${DOC_UUID}.pdf`;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -482,9 +516,19 @@ describe('AdminWorkerDocumentsController.getViewSignedUrl — URL assinada só p
     mockGenerateViewSignedUrl.mockResolvedValue('https://signed.example.com/x');
     const [req, res] = mockReqRes({ body: { filePath: OWNED_PATH } });
     await controller.getViewSignedUrl(req, res);
-    expect(mockGenerateViewSignedUrl).toHaveBeenCalledWith(OWNED_PATH);
+    expect(mockGenerateViewSignedUrl).toHaveBeenCalledWith(OWNED_PATH, WORKER_ID);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ success: true, data: { signedUrl: 'https://signed.example.com/x' } });
+  });
+
+  it('GCSStorageService recusa na 2ª camada (DocumentPathOwnershipError) → 404, nunca 500', async () => {
+    mockFindById.mockResolvedValue(Result.ok({ id: WORKER_ID }));
+    mockFindByWorkerId.mockResolvedValue({ identityDocumentUrl: OWNED_PATH });
+    mockGenerateViewSignedUrl.mockRejectedValue(new DocumentPathOwnershipError());
+    const [req, res] = mockReqRes({ body: { filePath: OWNED_PATH } });
+    await controller.getViewSignedUrl(req, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Document not found' });
   });
 
   it('nunca loga o filePath (aceito ou rejeitado) nem o corpo da requisição', async () => {

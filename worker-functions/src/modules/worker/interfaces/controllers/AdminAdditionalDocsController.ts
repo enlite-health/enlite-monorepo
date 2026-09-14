@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
-import { GCSStorageService } from '../../infrastructure/GCSStorageService';
+import { GCSStorageService, DocumentPathOwnershipError } from '../../infrastructure/GCSStorageService';
 import { WorkerAdditionalDocumentsRepository } from '../../infrastructure/WorkerAdditionalDocumentsRepository';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { matchesOwnedDocumentPrefix } from '../../domain/documentPathGuard';
 
 export class AdminAdditionalDocsController {
   private readonly gcs = new GCSStorageService();
@@ -47,6 +48,12 @@ export class AdminAdditionalDocsController {
       if (!filePath) {
         res.status(400).json({ success: false, error: 'filePath is required' }); return;
       }
+      // Hotfix 13/09 (extensão): mesma trava de prefixo do lado admin — o
+      // filePath do corpo só é aceito dentro de workers/<:id>/additional/....
+      if (!matchesOwnedDocumentPrefix(filePath, this.gcs.getBucketName(), workerId)) {
+        console.warn('[AdminAdditionalDocs.save] DENY | workerId:', workerId, '| result: path fora do prefixo do worker');
+        res.status(400).json({ success: false, error: 'filePath must belong to the target worker' }); return;
+      }
       const doc = await this.repo.create({ workerId, label: label.trim(), filePath });
       res.status(201).json({ success: true, data: doc });
     } catch (err) {
@@ -60,10 +67,14 @@ export class AdminAdditionalDocsController {
       const { id: workerId, docId } = req.params;
       const docs = await this.repo.findByWorkerId(workerId);
       const target = docs.find(d => d.id === docId);
-      if (target) { await this.gcs.deleteFile(target.filePath); }
+      if (target) { await this.gcs.deleteFile(target.filePath, workerId); }
       await this.repo.deleteById(docId, workerId);
       res.status(200).json({ success: true });
     } catch (err) {
+      if (err instanceof DocumentPathOwnershipError) {
+        console.warn('[AdminAdditionalDocs.remove] DENY (2ª camada, GCSStorageService) | workerId:', req.params.id, '| result: path not owned');
+        res.status(404).json({ success: false, error: 'Document not found' }); return;
+      }
       console.error('[AdminAdditionalDocs.remove] ERROR:', err);
       res.status(500).json({ success: false, error: 'Internal server error' });
     }
