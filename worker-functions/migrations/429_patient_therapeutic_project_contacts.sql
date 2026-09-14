@@ -154,7 +154,15 @@ BEGIN
   IF v_patient_id IS DISTINCT FROM NEW.patient_id THEN
     RAISE EXCEPTION 'ptpc_versao_de_outro_paciente: version_id não pertence a patient_id' USING ERRCODE = '23503';
   END IF;
-  IF v_created_at < (NOW() - INTERVAL '5 minutes') THEN
+  -- Conserto 14/09 (achado do gate, lex-pr7 L7-1 TRAVA): a janela de 5 minutos aceitava INSERT
+  -- fora da transação da versão (dois requests HTTP dentro da mesma janela de relógio, ou um script
+  -- inserindo direto no banco minutos depois). `now()` do Postgres é fixo por TRANSAÇÃO (não avança
+  -- dentro dela) — `patient_therapeutic_projects.created_at` foi gravado por `DEFAULT NOW()` na
+  -- MESMA transação que criou a versão (`TherapeuticProjectRepository.createVersion`, sem valor
+  -- explícito na lista de colunas do INSERT). Se esta ligação nasce NA MESMA transação da versão,
+  -- os dois `now()` (o do INSERT da versão e o desta checagem) são o MESMO valor — igualdade exata,
+  -- não janela. Fora da transação, é outro `now()` (start-of-transaction diferente) → 55000.
+  IF v_created_at <> now() THEN
     RAISE EXCEPTION 'ptpc_fora_da_transacao: ligação só se insere na transação que cria a versão (SUP-26)'
       USING ERRCODE = '55000';
   END IF;

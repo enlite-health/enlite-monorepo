@@ -44,6 +44,55 @@ describe('429 — ligação versão→contato do projeto terapêutico (banco rea
     return res.rows[0];
   }
 
+  /**
+   * Conserto 14/09 (L7-1): versão + ligação NA MESMA TRANSAÇÃO — é o único jeito que passa desde
+   * que `fn_patient_therapeutic_project_contacts_imutavel` parou de aceitar a janela de 5 minutos
+   * e passou a exigir `v_created_at = now()` (mesma transação). `insertVersion`+`admin.query`
+   * soltos (dois `pool.query` = duas transações autocommitadas) não serve mais pra isso.
+   */
+  async function insertVersionAndLink(
+    major: number,
+    contactId: string,
+    linkOverrides: { country?: string } = {},
+  ): Promise<{ versionId: string; ptpcId: string }> {
+    const client: PoolClient = await admin.connect();
+    try {
+      await client.query('BEGIN');
+      const s = await client.query<{ id: string }>(
+        `INSERT INTO patient_contracted_services (patient_id, service_code, created_by, updated_by)
+         VALUES ($1, 'CAREGIVER', 'e2e-429-uid', 'e2e-429-uid') RETURNING id`,
+        [IDS.patient],
+      );
+      const v = await client.query<{ id: string }>(
+        `INSERT INTO patient_therapeutic_projects
+           (patient_id, major, minor, contracted_service_id, diagnoses, clinical_context, general_objective,
+            specific_objectives, activities, pathology_types, start_date, end_date, created_by)
+         VALUES ($1, $2, 0, $3, $4, 'contexto sintético e2e', 'objetivo sintético e2e', $5, $6, $7, '2026-09-01', '2026-12-31', 'e2e-429-uid')
+         RETURNING id`,
+        [IDS.patient, major, s.rows[0].id, diag, snapshot('obj'), snapshot('act'), snapshot('pat')],
+      );
+      const versionId = v.rows[0].id;
+      const link = linkOverrides.country
+        ? await client.query<{ id: string }>(
+            `INSERT INTO patient_therapeutic_project_contacts (version_id, patient_id, contact_kind, external_contact_id, sort_order, country)
+             VALUES ($1, $2, 'EXTERNAL', $3, 0, $4) RETURNING id`,
+            [versionId, IDS.patient, contactId, linkOverrides.country],
+          )
+        : await client.query<{ id: string }>(
+            `INSERT INTO patient_therapeutic_project_contacts (version_id, patient_id, contact_kind, external_contact_id, sort_order)
+             VALUES ($1, $2, 'EXTERNAL', $3, 0) RETURNING id`,
+            [versionId, IDS.patient, contactId],
+          );
+      await client.query('COMMIT');
+      return { versionId, ptpcId: link.rows[0].id };
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
   async function insertExternalContact(opts: { phone?: string | null } = {}): Promise<string> {
     const res = await admin.query<{ id: string }>(
       `INSERT INTO patient_external_contacts (patient_id, relation, name, phone_encrypted, created_by)
@@ -101,31 +150,19 @@ describe('429 — ligação versão→contato do projeto terapêutico (banco rea
 
     // etapa 3/3: com o caminho real (paciente, versão e contato existentes e válidos), um
     // country explícito fora de AR/BR é recusado pelo CHECK — o trigger só preenche quando
-    // country vem NULL, e aqui ele vem preenchido de propósito.
+    // country vem NULL, e aqui ele vem preenchido de propósito. Versão + ligação NA MESMA
+    // transação (conserto 14/09/L7-1) — senão o trigger `ptpc_fora_da_transacao` dispara ANTES
+    // do CHECK ser avaliado, e este teste pararia de provar o que diz provar.
     const contactId = await insertExternalContact();
-    const version = await insertVersion(1);
-    await expect(
-      admin.query(
-        `INSERT INTO patient_therapeutic_project_contacts
-           (version_id, patient_id, contact_kind, external_contact_id, sort_order, country)
-         VALUES ($1, $2, 'EXTERNAL', $3, 0, 'US')`,
-        [version.id, IDS.patient, contactId],
-      ),
-    ).rejects.toThrow(/ptpc_country_check/);
+    await expect(insertVersionAndLink(1, contactId, { country: 'US' })).rejects.toThrow(/ptpc_country_check/);
   });
 
   it('C4. desmarcar emergência + anonimizar não é barrado pela 429; controle: telefone antes de desmarcar é recusado (SUP-40)', async () => {
     const contactId = await insertExternalContact({ phone: 'telefone-cifrado-429' });
     await admin.query(`UPDATE patients SET emergency_external_contact_id = $1 WHERE id = $2`, [contactId, IDS.patient]);
 
-    const version = await insertVersion(2);
-    const ptpc = await admin.query<{ id: string }>(
-      `INSERT INTO patient_therapeutic_project_contacts
-         (version_id, patient_id, contact_kind, external_contact_id, sort_order)
-       VALUES ($1, $2, 'EXTERNAL', $3, 0) RETURNING id`,
-      [version.id, IDS.patient, contactId],
-    );
-    const ptpcId = ptpc.rows[0].id;
+    // Versão + ligação NA MESMA transação (conserto 14/09/L7-1).
+    const { versionId, ptpcId } = await insertVersionAndLink(2, contactId);
 
     // Controle (SUP-40): zerar o telefone ENQUANTO marcado de emergência é recusado — prova que
     // o teste está vendo de fato o trigger da 423, e não um caminho que nunca dispara.
@@ -154,7 +191,7 @@ describe('429 — ligação versão→contato do projeto terapêutico (banco rea
       `SELECT id, version_id, external_contact_id FROM patient_therapeutic_project_contacts WHERE id = $1`,
       [ptpcId],
     );
-    expect(row.rows[0]).toEqual({ id: ptpcId, version_id: version.id, external_contact_id: contactId });
+    expect(row.rows[0]).toEqual({ id: ptpcId, version_id: versionId, external_contact_id: contactId });
 
     const contact = await admin.query<{ name: string; phone_encrypted: string | null; active: boolean }>(
       `SELECT name, phone_encrypted, active FROM patient_external_contacts WHERE id = $1`,
@@ -163,16 +200,76 @@ describe('429 — ligação versão→contato do projeto terapêutico (banco rea
     expect(contact.rows[0]).toEqual({ name: '[contacto anonimizado]', phone_encrypted: null, active: false });
   });
 
+  it('L7-1 (lex-pr7 TRAVA, conserto 14/09): INSERT da ligação FORA da transação que criou a versão → 55000 `ptpc_fora_da_transacao`; na MESMA transação, passa', async () => {
+    const contactId = await insertExternalContact();
+
+    // Versão criada e COMMITADA na sua própria transação (é o que `insertVersion` faz — 2 `admin.query`
+    // avulsos, cada um autocommita).
+    const version = await insertVersion(4);
+
+    // FORA da transação: outra conexão, outro `now()` (start-of-transaction) do que o gravado em
+    // `patient_therapeutic_projects.created_at` — antes do conserto, a janela de 5 minutos deixava
+    // isso passar; agora `v_created_at <> now()` recusa (SUP-26/L7-1).
+    const clienteFora: PoolClient = await admin.connect();
+    try {
+      await clienteFora.query('BEGIN');
+      await expect(
+        clienteFora.query(
+          `INSERT INTO patient_therapeutic_project_contacts (version_id, patient_id, contact_kind, external_contact_id, sort_order)
+           VALUES ($1, $2, 'EXTERNAL', $3, 0)`,
+          [version.id, IDS.patient, contactId],
+        ),
+      ).rejects.toMatchObject({ code: '55000', message: expect.stringContaining('ptpc_fora_da_transacao') });
+    } finally {
+      await clienteFora.query('ROLLBACK').catch(() => undefined);
+      clienteFora.release();
+    }
+    // Nenhuma ligação sobrou pra essa versão — a transação de fora não commitou nada.
+    const semLigacao = await admin.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM patient_therapeutic_project_contacts WHERE version_id = $1`,
+      [version.id],
+    );
+    expect(semLigacao.rows[0].n).toBe(0);
+
+    // Caminho feliz: versão + ligação NA MESMA transação — continua passando (não regrediu com o conserto).
+    const clienteDentro: PoolClient = await admin.connect();
+    let ptpcId: string | undefined;
+    try {
+      await clienteDentro.query('BEGIN');
+      const s = await clienteDentro.query<{ id: string }>(
+        `INSERT INTO patient_contracted_services (patient_id, service_code, created_by, updated_by)
+         VALUES ($1, 'CAREGIVER', 'e2e-429-uid', 'e2e-429-uid') RETURNING id`,
+        [IDS.patient],
+      );
+      const v = await clienteDentro.query<{ id: string }>(
+        `INSERT INTO patient_therapeutic_projects
+           (patient_id, major, minor, contracted_service_id, diagnoses, clinical_context, general_objective,
+            specific_objectives, activities, pathology_types, start_date, end_date, created_by)
+         VALUES ($1, 5, 0, $2, $3, 'contexto sintético e2e', 'objetivo sintético e2e', $4, $5, $6, '2026-09-01', '2026-12-31', 'e2e-429-uid')
+         RETURNING id`,
+        [IDS.patient, s.rows[0].id, diag, snapshot('obj'), snapshot('act'), snapshot('pat')],
+      );
+      const link = await clienteDentro.query<{ id: string }>(
+        `INSERT INTO patient_therapeutic_project_contacts (version_id, patient_id, contact_kind, external_contact_id, sort_order)
+         VALUES ($1, $2, 'EXTERNAL', $3, 0) RETURNING id`,
+        [v.rows[0].id, IDS.patient, contactId],
+      );
+      ptpcId = link.rows[0].id;
+      await clienteDentro.query('COMMIT');
+    } catch (e) {
+      await clienteDentro.query('ROLLBACK').catch(() => undefined);
+      throw e;
+    } finally {
+      clienteDentro.release();
+    }
+    const conferida = await admin.query<{ id: string }>(`SELECT id FROM patient_therapeutic_project_contacts WHERE id = $1`, [ptpcId as string]);
+    expect(conferida.rows[0]?.id).toBe(ptpcId);
+  });
+
   it('Imutabilidade da 429: UPDATE e DELETE direto na ligação são recusados; só o CASCADE da purga do paciente apaga', async () => {
     const contactId = await insertExternalContact();
-    const version = await insertVersion(3);
-    const ptpc = await admin.query<{ id: string }>(
-      `INSERT INTO patient_therapeutic_project_contacts
-         (version_id, patient_id, contact_kind, external_contact_id, sort_order)
-       VALUES ($1, $2, 'EXTERNAL', $3, 0) RETURNING id`,
-      [version.id, IDS.patient, contactId],
-    );
-    const ptpcId = ptpc.rows[0].id;
+    // Versão + ligação NA MESMA transação (conserto 14/09/L7-1).
+    const { ptpcId } = await insertVersionAndLink(3, contactId);
 
     await expect(
       admin.query(`UPDATE patient_therapeutic_project_contacts SET sort_order = 9 WHERE id = $1`, [ptpcId]),
