@@ -226,6 +226,15 @@ export class TherapeuticProjectRepository {
   async createVersion(cmd: CreateVersionCommand): Promise<TherapeuticProjectVersion> {
     try {
       const row = await withActorContext(this.pool, async (cli) => {
+        // As 4 FKs de contato da 429 (`ptpc_resp_fk`/`ptpc_ext_fk`/`ptpc_cov_fk`/`ptpc_pro_fk`) são
+        // DEFERRABLE INITIALLY DEFERRED — necessário para a purga de paciente (`PatientTestFixtureService`)
+        // cascatear sem estourar pela ORDEM das duas cascatas convergentes (ver migration 429). Mas
+        // adiada, o 23503 de um `id` que não é uma linha ATIVA deste paciente só apareceria no COMMIT,
+        // fora do try/catch por linha de `insertContacts` — virava 500 em vez do 404 do contrato.
+        // Tornar IMEDIATA aqui, só para ESTA transação de escrita, devolve o erro para dentro do INSERT.
+        await cli.query(
+          'SET CONSTRAINTS ptpc_resp_fk, ptpc_ext_fk, ptpc_cov_fk, ptpc_pro_fk IMMEDIATE',
+        );
         // Trava o paciente: a numeração é lida e gravada na MESMA transação. Zero linhas = paciente
         // inexistente OU invisível sob a RLS — 404 nos dois casos (nunca dizer qual).
         const lock = await cli.query('SELECT id FROM patients WHERE id = $1 FOR UPDATE', [cmd.patientId]);

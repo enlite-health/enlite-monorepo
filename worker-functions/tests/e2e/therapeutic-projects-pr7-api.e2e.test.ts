@@ -42,10 +42,14 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
   let pool: Pool;
   let app: AppDeFamilia;
   const PATIENT = 'ee018007-0a00-0001-0001-000000000001';
+  const OUTRO_PACIENTE = 'ee018007-0a00-0001-0001-000000000099';
   let serviceId: string;
   let objectiveIds: string[];
   let activityIds: string[];
   let externalContactId: string;
+  /** Ativo, mas do OUTRO paciente — 23503 (FK 429) tem de virar 404, não 500 (task do Gabriel, 14/09). */
+  let externalContactDeOutroPacienteId: string;
+  let responsibleDeOutroPacienteId: string;
 
   const U = {
     completa: 'pt018pr7-completa',
@@ -146,6 +150,7 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
     await limparIamFixtures(pool, { uids: Object.values(U), grupos: Object.values(GRUPOS) });
     await limparCelulas();
     await pool.query(`DELETE FROM patients WHERE id = $1`, [PATIENT]);
+    await pool.query(`DELETE FROM patients WHERE id = $1`, [OUTRO_PACIENTE]);
     await pool.query(`DELETE FROM therapeutic_specific_objectives WHERE label LIKE 'E2E PR7 %'`);
     await pool.query(`DELETE FROM therapeutic_segments WHERE label LIKE 'E2E PR7 %'`);
   }
@@ -213,6 +218,22 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
       `INSERT INTO patient_external_contacts (patient_id, relation, name, phone_encrypted, created_by)
        VALUES ($1, 'NEIGHBOR', 'Vizinha Sintética PR7', $2, 'e2e-018pr7') RETURNING id`,
       [PATIENT, cifrar('+54 11 0000-0001')],
+    )).rows[0].id;
+
+    // OUTRO paciente, com contatos ATIVOS — usados só para provar que uma referência de outro
+    // paciente vira 404 (FK 23503 da 429), não 422 `ptp_contact_inactive` (que é só p/ INATIVO).
+    await pool.query(
+      `INSERT INTO patients (id, clickup_task_id, first_name, last_name, country, is_test) VALUES ($1, 'e2e-018pr7-b', 'Outro', 'Paciente', 'AR', true)`,
+      [OUTRO_PACIENTE],
+    );
+    externalContactDeOutroPacienteId = (await pool.query<{ id: string }>(
+      `INSERT INTO patient_external_contacts (patient_id, relation, name, phone_encrypted, created_by)
+       VALUES ($1, 'NEIGHBOR', 'Vizinha do Outro Paciente', $2, 'e2e-018pr7') RETURNING id`,
+      [OUTRO_PACIENTE, cifrar('+54 11 0000-0002')],
+    )).rows[0].id;
+    responsibleDeOutroPacienteId = (await pool.query<{ id: string }>(
+      `INSERT INTO patient_responsibles (patient_id, first_name, last_name, is_primary, source) VALUES ($1, 'Responsável', 'Do Outro', true, 'e2e') RETURNING id`,
+      [OUTRO_PACIENTE],
     )).rows[0].id;
     await semearCid();
 
@@ -320,6 +341,25 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
     expect(r.status).toBe(422);
     expect(r.body).toEqual({ success: false, error: 'Selected contact is inactive', code: 'ptp_contact_inactive', details: { kind: 'EXTERNAL', id: externalContactId } });
     expect(JSON.stringify(r.body)).not.toContain('Vizinha');
+  });
+
+  it('4b. contato EXTERNAL ATIVO mas de OUTRO paciente → 404 `contact_not_found` (kind/id, nunca nome/telefone), NENHUMA versão criada (FK 429, `ptpc_ext_fk`)', async () => {
+    const antes = await contarVersoes();
+    const r = await chamar('POST', BASE(), U.completa, { mode: 'edit', fromVersionId: v20, version: versionBody({ contactRefs: [{ kind: 'EXTERNAL', id: externalContactDeOutroPacienteId }] }) });
+    expect(r.status).toBe(404);
+    expect(r.body).toEqual({ success: false, error: 'Selected contact not found', code: 'contact_not_found', details: { kind: 'EXTERNAL', id: externalContactDeOutroPacienteId } });
+    expect(JSON.stringify(r.body)).not.toContain('Vizinha');
+    expect(JSON.stringify(r.body)).not.toContain('54 11');
+    expect(await contarVersoes()).toBe(antes);
+  });
+
+  it('4c. contato RESPONSIBLE ATIVO mas de OUTRO paciente → 404 `contact_not_found` (FK 429, `ptpc_resp_fk`), nenhuma versão criada', async () => {
+    const antes = await contarVersoes();
+    const r = await chamar('POST', BASE(), U.completa, { mode: 'edit', fromVersionId: v20, version: versionBody({ contactRefs: [{ kind: 'RESPONSIBLE', id: responsibleDeOutroPacienteId }] }) });
+    expect(r.status).toBe(404);
+    expect(r.body).toEqual({ success: false, error: 'Selected contact not found', code: 'contact_not_found', details: { kind: 'RESPONSIBLE', id: responsibleDeOutroPacienteId } });
+    expect(JSON.stringify(r.body)).not.toContain('Responsável');
+    expect(await contarVersoes()).toBe(antes);
   });
 
   it('5. lex-pr7 C8(a): sem `patient_family:read`, versão NÃO vigente (V.1.0) devolve o contato EXTERNAL redigido', async () => {

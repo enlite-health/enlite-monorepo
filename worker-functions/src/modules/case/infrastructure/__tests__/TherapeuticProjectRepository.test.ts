@@ -113,12 +113,17 @@ interface Cenario {
  */
 function cliente(cen: Cenario = {}) {
   const chamadas: Array<{ sql: string; params: unknown[] }> = [];
+  // TUDO que passa pelo client, controle (BEGIN/COMMIT/set_config/SET CONSTRAINTS) incluído — só
+  // para a prova de ORDEM do SET CONSTRAINTS (429). `chamadas` continua só o SQL de negócio, como
+  // antes, para não quebrar as asserções de `ordem[0]` já existentes.
+  const todas: Array<{ sql: string; params: unknown[] }> = [];
   const catalogo = cen.catalogo ?? {
     therapeutic_specific_objectives: [{ id: 'o-1', label: 'Objetivo A' }],
     therapeutic_activities: [{ id: 'a-1', label: 'Atividade A' }],
   };
   const query = jest.fn(async (sql: string, params: unknown[] = []) => {
-    if (/^\s*(BEGIN|COMMIT|ROLLBACK)\s*$|set_config\s*\(/i.test(sql)) return { rows: [], rowCount: 0 };
+    todas.push({ sql, params });
+    if (/^\s*(BEGIN|COMMIT|ROLLBACK)\s*$|^\s*SET CONSTRAINTS\b|set_config\s*\(/i.test(sql)) return { rows: [], rowCount: 0 };
     chamadas.push({ sql, params });
     if (cen.erroEm && cen.erroEm.padrao.test(sql)) throw cen.erroEm.erro;
     if (/FOR UPDATE/.test(sql)) return cen.pacienteExiste === false ? { rows: [], rowCount: 0 } : { rows: [{ id: PACIENTE }], rowCount: 1 };
@@ -134,7 +139,7 @@ function cliente(cen: Cenario = {}) {
     if (/WHERE v\.id = \$1/.test(sql)) return { rows: [cen.criada ?? row({ id: 'v-novo' })], rowCount: 1 };
     return { rows: [], rowCount: 0 };
   });
-  return { cli: { query, release: jest.fn() }, chamadas };
+  return { cli: { query, release: jest.fn() }, chamadas, todas };
 }
 
 /** O SQL de negócio na ordem em que rodou (o controle de transação já foi filtrado). */
@@ -265,6 +270,15 @@ describe('TherapeuticProjectRepository', () => {
       expect(cli.release).toHaveBeenCalled();
     });
 
+
+    it('SET CONSTRAINTS das 4 FKs de contato (429) IMMEDIATE é a PRIMEIRA query da transação, antes do FOR UPDATE e de qualquer INSERT — senão o 23503 só estoura no COMMIT, fora do try/catch de `insertContacts`', async () => {
+      const { cli, todas } = cliente();
+      mockConnect.mockResolvedValue(cli);
+      await repo().createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: CORPO });
+      const negocio = todas.map((c) => c.sql.replace(/\s+/g, ' ').trim()).filter((s) => !/^(BEGIN|COMMIT|ROLLBACK)$/i.test(s) && !/set_config/i.test(s));
+      expect(negocio[0]).toBe('SET CONSTRAINTS ptpc_resp_fk, ptpc_ext_fk, ptpc_cov_fk, ptpc_pro_fk IMMEDIATE');
+      expect(negocio[1]).toBe('SELECT id FROM patients WHERE id = $1 FOR UPDATE');
+    });
 
     it('paciente inexistente (ou invisível sob a RLS): a trava não acha linha → PatientNotFoundForProjectError, sem INSERT', async () => {
       const { cli, chamadas } = cliente({ pacienteExiste: false });
