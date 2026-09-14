@@ -138,11 +138,19 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
   });
 
   async function limparCelulas(): Promise<void> {
+    // Mesmo padrão do irmão 017 (therapeutic-projects-api.e2e.test.ts): apaga TAMBÉM a linha em
+    // `iam.permissions`, não só o vínculo em `group_permissions` — senão a permissão criada aqui
+    // sobrevive ao teste e contamina a contagem exata de `permissions-iam-schema.e2e.test.ts`
+    // (seed fixo da migration 206, 41 linhas/18 recursos). Nenhum resource/action de CELULAS está
+    // no seed da 206 (confirmado por leitura de migrations/206_permissions_iam_foundation.sql:101-150)
+    // — o catálogo desses recursos nasce só do sync de rotas (migrations/431, comentário), nunca de
+    // migration com DDL; por isso é seguro apagar por resource/action aqui, sem risco de apagar seed.
     for (const [resource, action] of CELULAS) {
       await pool.query(
         `DELETE FROM iam.group_permissions WHERE permission_id IN (SELECT id FROM iam.permissions WHERE resource = $1 AND action = $2)`,
         [resource, action],
       );
+      await pool.query(`DELETE FROM iam.permissions WHERE resource = $1 AND action = $2`, [resource, action]);
     }
   }
   async function limpar(): Promise<void> {
