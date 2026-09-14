@@ -51,6 +51,8 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
   const CELULAS: ReadonlyArray<readonly [string, string]> = [
     ['patient_therapeutic_project', 'read'],
     ['patient_therapeutic_project', 'write'],
+    // PR-7 (92f766a3, lex C8(b)): `?purpose=export` passa a exigir esta célula ALÉM da leitura.
+    ['patient_therapeutic_project', 'export'],
     ['patient_clinical', 'read'],
     ['patient_clinical', 'write'],
     ['patient_services', 'read'],
@@ -160,7 +162,7 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     await pool.query(`INSERT INTO iam.permissions (resource, action, description, category) VALUES ('patient', 'read', 'e2e', 'Pacientes') ON CONFLICT DO NOTHING`);
     await grupoComCelulas(pool, {
       nome: GRUPOS.completa, uid: U.completa,
-      celulas: [['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write'], ['patient_clinical', 'read'], ['patient_clinical', 'write'], ['patient_services', 'read'], ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read']],
+      celulas: [['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write'], ['patient_therapeutic_project', 'export'], ['patient_clinical', 'read'], ['patient_clinical', 'write'], ['patient_services', 'read'], ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read']],
     });
     await grupoComCelulas(pool, { nome: GRUPOS.soProjeto, uid: U.soProjeto, celulas: [['patient', 'read'], ['patient_therapeutic_project', 'read']] });
     await grupoComCelulas(pool, { nome: GRUPOS.semClinica, uid: U.semClinica, celulas: [['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write']] });
@@ -219,7 +221,7 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     expect((await pool.query(`SELECT modality FROM patient_therapeutic_projects WHERE id = $1`, [r.body.data.id])).rows[0].modality).toBe('IN_PERSON');
     expect(r.body.data).not.toHaveProperty('createdBy');
     expect(r.body.data.specificObjectives).toHaveLength(2);
-    expect(r.body.data.specificObjectives[0]).toEqual({ id: objectiveIds[0], label: expect.any(String) });
+    expect(r.body.data.specificObjectives[0]).toEqual({ id: objectiveIds[0], label: expect.any(String), segmentId: null, segmentLabel: null });
     expect(r.body.data.clinicalContext).toContain('Síntesis sintética');
     // Tipo de patologia DERIVADO: o capítulo CID-11 do diagnóstico, congelado na linha (nada veio do cliente).
     expect(r.body.data.pathologyTypes).toEqual([{ id: CAP06.code, label: CAP06.title }]);
@@ -227,25 +229,39 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     created['1.0'] = r.body.data.id;
   });
 
-  it('2. new de novo → V.2.0; edit(1.0) → V.1.1; edit(1.0) outra vez → V.1.2 (SUP-4: nunca colide)', async () => {
-    const v20 = await chamar('POST', BASE(), U.completa, { mode: 'new', version: versionBody() });
-    expect(v20.body.data).toMatchObject({ version: 'V.2.0' });
-    const v11 = await chamar('POST', BASE(), U.completa, { mode: 'edit', fromVersionId: created['1.0'], version: versionBody({ generalObjective: 'Objetivo editado 1.1' }) });
+  it('2. edit(1.0) → V.1.1; edit(1.1) outra vez → V.1.2 (SUP-4: nunca colide); depois de "new" a 1.x fica trancada (409 ptp_not_current — ADR-4/SUP-24, cd7d4037/a085b93b)', async () => {
+    // D328/SUP-24: modality é MICRO — trocar presencial↔online é o que `mode:'edit'` aceita mudar
+    // (generalObjective é MACRO e daria 422 ptp_macro_locked, ver TherapeuticProject.ts THERAPEUTIC_FIELD_CLASS).
+    const v11 = await chamar('POST', BASE(), U.completa, { mode: 'edit', fromVersionId: created['1.0'], version: versionBody({ modality: 'ONLINE' }) });
     expect(v11.status).toBe(201);
-    expect(v11.body.data).toMatchObject({ version: 'V.1.1', editedFromVersionId: created['1.0'], generalObjective: 'Objetivo editado 1.1' });
-    const v12 = await chamar('POST', BASE(), U.completa, { mode: 'edit', fromVersionId: created['1.0'], version: versionBody() });
-    expect(v12.body.data).toMatchObject({ version: 'V.1.2', editedFromVersionId: created['1.0'] });
+    expect(v11.body.data).toMatchObject({ version: 'V.1.1', editedFromVersionId: created['1.0'], modality: 'ONLINE' });
     created['1.1'] = v11.body.data.id;
-    created['2.0'] = v20.body.data.id;
+    // Editar de novo tem de partir da VIGENTE (agora 1.1) — 1.0 não é mais a vigente.
+    const v12 = await chamar('POST', BASE(), U.completa, { mode: 'edit', fromVersionId: created['1.1'], version: versionBody({ modality: 'HYBRID' }) });
+    expect(v12.status).toBe(201);
+    expect(v12.body.data).toMatchObject({ version: 'V.1.2', editedFromVersionId: created['1.1'], modality: 'HYBRID' });
+    created['1.2'] = v12.body.data.id;
     // A 1.0 continua intacta no banco — Editar não altera a origem.
-    const row = await pool.query(`SELECT general_objective FROM patient_therapeutic_projects WHERE id = $1`, [created['1.0']]);
+    const row = await pool.query(`SELECT general_objective, modality FROM patient_therapeutic_projects WHERE id = $1`, [created['1.0']]);
     expect(row.rows[0].general_objective).toBe('Objetivo general sintético e2e.');
+    expect(row.rows[0].modality).toBe('IN_PERSON');
+    // ADR-4/SUP-24 (cd7d4037): só a VIGENTE (created_at mais recente entre as não-anuladas, GLOBAL —
+    // não por major) pode ser editada. 1.0 já não é vigente (1.1/1.2 vieram depois) → 409, nunca 422.
+    const stale = await chamar('POST', BASE(), U.completa, { mode: 'edit', fromVersionId: created['1.0'], version: versionBody() });
+    expect(stale.status).toBe(409);
+    expect(stale.body).toMatchObject({ code: 'ptp_not_current' });
+    // "new" nasce sempre — SUP-25 REJEITADA (D328): não há versão automática, mas o operador
+    // pode criar uma major nova a qualquer momento; a partir daí a 1.x também fica trancada.
+    const v20 = await chamar('POST', BASE(), U.completa, { mode: 'new', version: versionBody() });
+    expect(v20.status).toBe(201);
+    expect(v20.body.data).toMatchObject({ version: 'V.2.0' });
+    created['2.0'] = v20.body.data.id;
   });
 
   it('3. lista por data de criação DESC (a mais recente primeiro), 4 versões', async () => {
     const r = await chamar('GET', BASE(), U.completa);
     expect(r.status).toBe(200);
-    expect(r.body.data.versions.map((v: { version: string }) => v.version)).toEqual(['V.1.2', 'V.1.1', 'V.2.0', 'V.1.0']);
+    expect(r.body.data.versions.map((v: { version: string }) => v.version)).toEqual(['V.2.0', 'V.1.2', 'V.1.1', 'V.1.0']);
   });
 
   it('4. 🔒 C7: só `patient_therapeutic_project:read` → versões sim; texto clínico e CID NÃO (marcador constante)', async () => {
