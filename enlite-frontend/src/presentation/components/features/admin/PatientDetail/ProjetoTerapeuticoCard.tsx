@@ -31,7 +31,7 @@ interface Props {
 export function ProjetoTerapeuticoCard({ patient }: Props): JSX.Element {
   const { t } = useTranslation();
   const tc = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.therapeuticProjectCard.${k}`, o ?? {});
-  const { versions, isLoading, error, refetch } = useTherapeuticProjects(patient.id);
+  const { versions, fieldClass, isLoading, error, refetch } = useTherapeuticProjects(patient.id);
   const [target, setTarget] = useState<TherapeuticProjectTarget | null>(null);
   const current = currentVersion(versions);
   const hasActiveService = patient.contractedServices.some((s) => s.active);
@@ -82,9 +82,9 @@ export function ProjetoTerapeuticoCard({ patient }: Props): JSX.Element {
               </TableHeader>
               <TableBody>
                 {versions.map((v: TherapeuticProjectVersion) => (
-                  <TableRow key={v.id} onClick={() => setTarget({ mode: 'view', version: v })} data-testid={`tp-row-${v.id}`} className={v.annulledAt ? 'opacity-60 line-through' : ''}>
+                  <TableRow key={v.id} onClick={() => setTarget({ mode: 'view', version: v, isCurrent: v.id === current?.id })} data-testid={`tp-row-${v.id}`} className={v.annulledAt ? 'opacity-60 line-through' : ''}>
                     <TableCell unwrapped>
-                      <button type="button" onClick={(e) => { e.stopPropagation(); setTarget({ mode: 'view', version: v }); }} aria-label={tc('viewVersion', { version: v.version })} className="text-primary p-1 rounded hover:bg-gray-100" data-testid={`tp-view-${v.id}`}>
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setTarget({ mode: 'view', version: v, isCurrent: v.id === current?.id }); }} aria-label={tc('viewVersion', { version: v.version })} className="text-primary p-1 rounded hover:bg-gray-100" data-testid={`tp-view-${v.id}`}>
                         <Eye className="w-5 h-5" />
                       </button>
                     </TableCell>
@@ -104,6 +104,7 @@ export function ProjetoTerapeuticoCard({ patient }: Props): JSX.Element {
         <TherapeuticProjectDrawer
           patient={patient}
           target={target}
+          fieldClass={fieldClass}
           onClose={() => setTarget(null)}
           onSaved={refetch}
         />

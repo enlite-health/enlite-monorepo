@@ -16,8 +16,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within, cleanup } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
-import type { PatientContractedServiceDetail, PatientDiagnosisDetail } from '@domain/entities/PatientDetail';
-import type { TherapeuticCatalogItem, TherapeuticProjectVersion } from '@domain/entities/TherapeuticProject';
+import type {
+  PatientContractedServiceDetail,
+  PatientCoverageEmergencyContact,
+  PatientDiagnosisDetail,
+  PatientExternalContactDetail,
+  PatientProfessionalDetail,
+  PatientResponsibleDetail,
+} from '@domain/entities/PatientDetail';
+import type { TherapeuticCatalogItem, TherapeuticFieldClass, TherapeuticProjectVersion } from '@domain/entities/TherapeuticProject';
 import type { TherapeuticCatalogs } from '@hooks/admin/useTherapeuticProjects';
 import { patientDetailFixture } from '../../__tests__/patientDetailFixture';
 
@@ -100,7 +107,24 @@ const item = (id: string, label: string): TherapeuticCatalogItem => ({
 const CATALOGOS: TherapeuticCatalogs = {
   'specific-objectives': [item('so1', 'Objetivo 1'), item('so2', 'Objetivo 2')],
   activities: [item('ac1', 'Atividade 1')],
+  segments: [],
 };
+
+// Espelho de `THERAPEUTIC_FIELD_CLASS` do backend — dono único da lista MACRO×MICRO (task 7.7).
+const FIELD_CLASS: TherapeuticFieldClass = {
+  macro: ['contractedServiceId', 'diagnoses', 'clinicalContext', 'generalObjective', 'specificObjectiveIds', 'activityIds'],
+  micro: ['startDate', 'endDate', 'modality', 'contactRefs', 'careTeamIds'],
+};
+/** Variante SEM macro nenhum — isola o comportamento do `optionsOf` (merge catálogo+snapshot) do gate de lock. */
+const FIELD_CLASS_SEM_MACRO: TherapeuticFieldClass = { macro: [], micro: [...FIELD_CLASS.macro, ...FIELD_CLASS.micro] };
+
+const RESPONSAVEL: PatientResponsibleDetail = {
+  id: 'resp-1', firstName: 'Marta', lastName: 'Gómez', relationship: 'MOTHER', phone: '111', email: null,
+  documentType: null, documentNumber: null, isPrimary: true, displayOrder: 1, source: 'admin_manual',
+};
+const EXTERNO: PatientExternalContactDetail = { id: 'ext-1', relation: 'Vecina', name: 'Lucía Externa', phone: '222', active: true };
+const COBERTURA: PatientCoverageEmergencyContact = { id: 'cov-1', kind: 'INSURANCE_EMERGENCY', name: 'Emergencias ACME', phone: '333', sortOrder: 1 };
+const PROFISSIONAL: PatientProfessionalDetail = { id: 'prof-1', name: 'Dr. Fulano', phone: null, email: null, specialty: 'PHYSICIAN', displayOrder: 1, isTeam: false };
 
 const DIAGS: PatientDiagnosisDetail[] = [
   { id: 'd1', uri: 'urn:icd:A', title: 'Diagnóstico A', isPrimary: true, source: 'panel', active: true },
@@ -132,6 +156,9 @@ const VERSAO: TherapeuticProjectVersion = {
   createdByName: 'Ana Fixture',
   createdAt: '2026-01-10T10:00:00Z',
   country: 'AR',
+  contactRefs: [],
+  careTeamIds: [],
+  contacts: [],
 };
 
 type Props = Parameters<typeof TherapeuticProjectForm>[0];
@@ -146,6 +173,11 @@ const montar = (over: Partial<Props> = {}) =>
       services={over.services ?? [servico(), servico({ id: 'svc-2', serviceCode: 'CAREGIVER', weeklyHours: null })]}
       patientDiagnoses={over.patientDiagnoses ?? DIAGS}
       catalogs={over.catalogs ?? CATALOGOS}
+      fieldClass={over.fieldClass ?? FIELD_CLASS}
+      responsibles={over.responsibles ?? [RESPONSAVEL]}
+      externalContacts={over.externalContacts ?? [EXTERNO]}
+      coverageEmergencyContacts={over.coverageEmergencyContacts ?? [COBERTURA]}
+      professionals={over.professionals ?? [PROFISSIONAL]}
       from={over.from ?? null}
       saving={over.saving ?? false}
       saveError={over.saveError ?? null}
@@ -373,6 +405,8 @@ describe('submissão', () => {
       activityIds: ['ac1'],
       startDate: '2026-09-01',
       endDate: '2026-12-01',
+      contactRefs: [],
+      careTeamIds: [],
     });
     expect(Object.keys(onSubmit.mock.calls[0][0])).not.toContain('major');
     // O tipo de patologia não é escolhido: deriva do CID-11 no servidor (Gabriel 08/09) — nem campo, nem chave no corpo.
@@ -407,20 +441,25 @@ describe('submissão', () => {
 // ── Modo "Editar" ────────────────────────────────────────────────────────────
 
 describe('modo "Editar" — os campos nascem da versão de origem', () => {
-  it('serviço, CID, textos, catálogos e prazos vêm da versão (não do cadastro)', () => {
+  it('serviço, CID, textos, catálogos e prazos vêm da versão (não do cadastro) — MACRO travado (D328) renderiza como TEXTO', () => {
     montar({ from: VERSAO });
 
-    expect((screen.getByTestId('tp-service') as HTMLSelectElement).value).toBe('svc-2');
+    // MACRO travado (D328/R5): TEXTO, nunca `<select>`/`<textarea>`.
+    expect(screen.queryByTestId('tp-service')).not.toBeInTheDocument();
+    expect(screen.getByTestId('tp-service-locked')).toHaveTextContent('Cuidador');
     expect(screen.getAllByTestId('tp-diagnosis-chip').map((c) => c.textContent)).toEqual(['Diagnóstico B']);
-    expect((screen.getByTestId('tp-clinicalContext') as HTMLTextAreaElement).value).toBe('contexto de origem');
-    expect((screen.getByTestId('tp-generalObjective') as HTMLTextAreaElement).value).toBe('objetivo de origem');
+    expect(screen.queryByTestId('tp-clinicalContext')).not.toBeInTheDocument();
+    expect(screen.getByTestId('tp-clinicalContext-locked')).toHaveTextContent('contexto de origem');
+    expect(screen.queryByTestId('tp-generalObjective')).not.toBeInTheDocument();
+    expect(screen.getByTestId('tp-generalObjective-locked')).toHaveTextContent('objetivo de origem');
+    // MICRO (startDate/endDate) continua editável, mesmo em modo Editar.
     expect((screen.getByTestId('tp-startDate') as HTMLInputElement).value).toBe('2026-01-10');
     expect((screen.getByTestId('tp-endDate') as HTMLInputElement).value).toBe('2026-06-10');
     expect(salvar().disabled).toBe(false);
   });
 
-  it('🔒 `optionsOf`: item do snapshot que já NÃO está ativo no catálogo continua como opção', () => {
-    montar({ from: VERSAO });
+  it('🔒 `optionsOf` (fieldClass sem macro, isola o merge catálogo+snapshot): item do snapshot que já NÃO está ativo no catálogo continua como opção', () => {
+    montar({ from: VERSAO, fieldClass: FIELD_CLASS_SEM_MACRO });
 
     const lista = listaDoMulti('tp-specificObjectives');
 
@@ -430,8 +469,8 @@ describe('modo "Editar" — os campos nascem da versão de origem', () => {
     expect(lista.querySelectorAll('li[role="option"]')).toHaveLength(3);
   });
 
-  it('item do snapshot que AINDA está no catálogo não é duplicado', () => {
-    montar({ from: VERSAO });
+  it('item do snapshot que AINDA está no catálogo não é duplicado (fieldClass sem macro)', () => {
+    montar({ from: VERSAO, fieldClass: FIELD_CLASS_SEM_MACRO });
 
     expect(listaDoMulti('tp-activities').querySelectorAll('li[role="option"]')).toHaveLength(1);
   });
@@ -442,7 +481,7 @@ describe('modo "Editar" — os campos nascem da versão de origem', () => {
     expect(screen.getAllByTestId('tp-diagnosis-chip').map((c) => c.textContent)).toEqual(['Diagnóstico A', 'Diagnóstico C']);
   });
 
-  it('salvar a partir da origem manda o corpo da versão de origem (com o item desativado dentro)', () => {
+  it('salvar a partir da origem manda o corpo da versão de origem (com o item desativado dentro, mesmo travado na tela)', () => {
     montar({ from: VERSAO });
 
     fireEvent.click(salvar());
@@ -453,17 +492,280 @@ describe('modo "Editar" — os campos nascem da versão de origem', () => {
       specificObjectiveIds: ['so-morto'],
       startDate: '2026-01-10',
       endDate: '2026-06-10',
+      contactRefs: [],
+      careTeamIds: [],
     }));
+  });
+});
+
+// ── D328/ADR-4 — MACRO trava só na EDIÇÃO da vigente; "Novo" nunca trava ────
+
+describe('🔒 D328/ADR-4 — campo MACRO trava na edição, nunca vira input desabilitado', () => {
+  it('"Editar" com `fieldClass` da API: nenhum input/select/textarea `disabled` no formulário (a lista some do DOM, não fica cinza)', () => {
+    montar({ from: VERSAO });
+
+    // A prova da regra "nunca input disabled/readOnly": nenhum elemento de formulário desabilitado existe.
+    expect(document.querySelectorAll('input:disabled, textarea:disabled, select:disabled')).toHaveLength(0);
+    expect(document.querySelectorAll('input[readonly], textarea[readonly]')).toHaveLength(0);
+  });
+
+  it('"Novo" (`from: null`) nunca trava, mesmo com a MESMA lista `fieldClass` que travaria na edição', () => {
+    montar({ from: null, fieldClass: FIELD_CLASS });
+
+    expect(screen.getByTestId('tp-service')).toBeInTheDocument();
+    expect(screen.queryByTestId('tp-service-locked')).not.toBeInTheDocument();
+    expect(screen.getByTestId('tp-clinicalContext')).toBeInTheDocument();
+    expect(screen.getByTestId('tp-generalObjective')).toBeInTheDocument();
+  });
+
+  it('`fieldClass.macro` vazio: "Editar" não trava NENHUM campo, mesmo sendo `from !== null`', () => {
+    montar({ from: VERSAO, fieldClass: { macro: [], micro: FIELD_CLASS.micro } });
+
+    expect(screen.getByTestId('tp-service')).toBeInTheDocument();
+    expect(screen.getByTestId('tp-clinicalContext')).toBeInTheDocument();
+    expect(screen.getByTestId('tp-generalObjective')).toBeInTheDocument();
+  });
+
+  it('CID travado: some o combobox e o "x" de remover, mas o chip continua visível', () => {
+    montar({ from: VERSAO });
+
+    expect(screen.queryByTestId('icd-stub')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Remover Diagnóstico B')).not.toBeInTheDocument();
+    expect(screen.getByText('Diagnóstico B')).toBeInTheDocument();
+  });
+
+  it('lista MACRO travada VAZIA (nenhum objetivo/atividade na versão de origem) mostra "—", não uma lista vazia muda', () => {
+    montar({ from: { ...VERSAO, specificObjectives: [], activities: [] } });
+
+    expect(screen.getByTestId('tp-specificObjectives-locked')).toHaveTextContent('—');
+    expect(screen.getByTestId('tp-activities-locked')).toHaveTextContent('—');
+  });
+
+  it('serviço travado cujo id não existe em `services` (removido/de outro paciente): cai no id cru, não quebra', () => {
+    montar({ from: { ...VERSAO, contractedServiceId: 'svc-removido' } });
+
+    expect(screen.getByTestId('tp-service-locked')).toHaveTextContent('svc-removido');
+  });
+});
+
+// ── Contatos por seleção (PR-7, MICRO — sempre editável) ────────────────────
+
+describe('contatos por seleção (task 7.7): responsáveis, externos, cobertura, equipe tratante', () => {
+  it('as 4 listas mostram só os itens recebidos (já ativos — o servidor filtra, D286)', () => {
+    montar();
+
+    expect(within(listaDoMulti('tp-responsibles')).getByText('Marta Gómez')).toBeInTheDocument();
+    expect(within(listaDoMulti('tp-externalContacts')).getByText('Lucía Externa')).toBeInTheDocument();
+    expect(within(listaDoMulti('tp-coverageContacts')).getByText(/Emergencias ACME/)).toBeInTheDocument();
+    expect(within(listaDoMulti('tp-careTeam')).getByText('Dr. Fulano')).toBeInTheDocument();
+  });
+
+  it('marcar um responsável, um externo, um de cobertura e um da equipe monta `contactRefs`/`careTeamIds` no envio', () => {
+    montar({ patientDiagnoses: [] });
+    preencherTudo();
+
+    alternarNoMulti('tp-responsibles', 'Marta Gómez');
+    alternarNoMulti('tp-externalContacts', 'Lucía Externa');
+    alternarNoMulti('tp-coverageContacts', 'Emergencias ACME · Emergência da cobertura/plano');
+    alternarNoMulti('tp-careTeam', 'Dr. Fulano');
+
+    fireEvent.click(salvar());
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      contactRefs: [
+        { kind: 'RESPONSIBLE', id: 'resp-1' },
+        { kind: 'EXTERNAL', id: 'ext-1' },
+        { kind: 'COVERAGE', id: 'cov-1' },
+      ],
+      careTeamIds: ['prof-1'],
+    }));
+  });
+
+  it('marcar um contato chama `onDirty` (é MICRO, sempre editável, inclusive travado o resto)', () => {
+    montar({ from: VERSAO });
+
+    alternarNoMulti('tp-responsibles', 'Marta Gómez');
+
+    expect(onDirty).toHaveBeenCalled();
+  });
+
+  it('"Editar" nasce com os `contactRefs`/`careTeamIds` da versão de origem, não em branco (contato ATIVO, `contacts` resolvido)', () => {
+    montar({
+      from: {
+        ...VERSAO,
+        contactRefs: [{ kind: 'RESPONSIBLE', id: 'resp-1' }, { kind: 'COVERAGE', id: 'cov-1' }],
+        careTeamIds: ['prof-1'],
+        contacts: [
+          { kind: 'RESPONSIBLE', id: 'resp-1', name: 'Marta Gómez', phone: '111' },
+          { kind: 'COVERAGE', id: 'cov-1', name: 'Emergencias ACME', phone: '333' },
+          { kind: 'CARE_TEAM', id: 'prof-1', name: 'Dr. Fulano', phone: null },
+        ],
+      },
+    });
+
+    const respostas = within(listaDoMulti('tp-responsibles')).getAllByRole('option').filter((o) => o.getAttribute('aria-selected') === 'true');
+    expect(respostas.map((o) => o.textContent)).toEqual(['Marta Gómez']);
+    expect(screen.queryByTestId('tp-form-contact-removed')).not.toBeInTheDocument();
+  });
+
+  // Conserto 14/09 (achado do gate, decisão do Gabriel): editar a vigente NÃO reconstrói a seleção
+  // de contato inativo (a versão antiga fica intocada — só a minor nova exclui); contato ativo e
+  // REDIGIDO (sem célula de origem) fica mantido — "não some".
+  describe('conserto 14/09 — contato inativo sai da seleção ao editar, com aviso; redigido é mantido', () => {
+    it('contato INATIVO em `from.contacts` (`inactive:true`) NÃO entra pré-marcado, e o aviso lista o kind/contagem', () => {
+      montar({
+        from: {
+          ...VERSAO,
+          contactRefs: [{ kind: 'RESPONSIBLE', id: 'resp-1' }],
+          careTeamIds: ['prof-1'],
+          contacts: [
+            { kind: 'RESPONSIBLE', id: 'resp-1', inactive: true },
+            { kind: 'CARE_TEAM', id: 'prof-1', inactive: true },
+          ],
+        },
+      });
+
+      const respostas = within(listaDoMulti('tp-responsibles')).getAllByRole('option').filter((o) => o.getAttribute('aria-selected') === 'true');
+      expect(respostas).toHaveLength(0);
+      const equipe = within(listaDoMulti('tp-careTeam')).getAllByRole('option').filter((o) => o.getAttribute('aria-selected') === 'true');
+      expect(equipe).toHaveLength(0);
+      const aviso = screen.getByTestId('tp-form-contact-removed').textContent ?? '';
+      expect(aviso).toContain('Responsáveis (1)');
+      expect(aviso).toContain('Equipe tratante (1)');
+    });
+
+    it('contato ATIVO mas REDIGIDO (`redacted:true`, sem célula de origem) fica MANTIDO na seleção — não some', () => {
+      montar({
+        from: {
+          ...VERSAO,
+          contactRefs: [{ kind: 'COVERAGE', id: 'cov-1' }],
+          careTeamIds: [],
+          contacts: [{ kind: 'COVERAGE', id: 'cov-1', redacted: true }],
+        },
+      });
+
+      const cobertura = within(listaDoMulti('tp-coverageContacts')).getAllByRole('option').filter((o) => o.getAttribute('aria-selected') === 'true');
+      expect(cobertura.map((o) => o.textContent)).toEqual([expect.stringContaining('Emergencias ACME')]);
+      expect(screen.queryByTestId('tp-form-contact-removed')).not.toBeInTheDocument();
+    });
+
+    it('ref sem NENHUMA entrada em `from.contacts` (anomalia de dado) também sai — trata como inativo, nunca quebra', () => {
+      montar({
+        from: { ...VERSAO, contactRefs: [{ kind: 'EXTERNAL', id: 'ext-1' }], careTeamIds: [], contacts: [] },
+      });
+
+      const externos = within(listaDoMulti('tp-externalContacts')).getAllByRole('option').filter((o) => o.getAttribute('aria-selected') === 'true');
+      expect(externos).toHaveLength(0);
+      expect(screen.getByTestId('tp-form-contact-removed').textContent).toContain('Contatos externos');
+    });
+
+    it('COVERAGE inativo também entra no aviso, com o rótulo do container de cobertura', () => {
+      montar({
+        from: { ...VERSAO, contactRefs: [{ kind: 'COVERAGE', id: 'cov-1' }], careTeamIds: [], contacts: [{ kind: 'COVERAGE', id: 'cov-1', inactive: true }] },
+      });
+
+      const cobertura = within(listaDoMulti('tp-coverageContacts')).getAllByRole('option').filter((o) => o.getAttribute('aria-selected') === 'true');
+      expect(cobertura).toHaveLength(0);
+      expect(screen.getByTestId('tp-form-contact-removed').textContent).toContain('Contatos da cobertura (1)');
+    });
+
+    it('"Novo" (`from === null`) nunca mostra o aviso — não há origem pra perder contato', () => {
+      montar();
+      expect(screen.queryByTestId('tp-form-contact-removed')).not.toBeInTheDocument();
+    });
+  });
+
+  it('"Novo" começa em branco: nenhum contato pré-marcado', () => {
+    montar();
+
+    const opcoes = within(listaDoMulti('tp-responsibles')).getAllByRole('option');
+    expect(opcoes.every((o) => o.getAttribute('aria-selected') !== 'true')).toBe(true);
+  });
+
+  it('rótulo do responsável cai pra `relationship` sem nome, e pro `id` sem nome nem relationship', () => {
+    montar({
+      responsibles: [
+        { ...RESPONSAVEL, id: 'r-so-relacao', firstName: null, lastName: null, relationship: 'FATHER' },
+        { ...RESPONSAVEL, id: 'r-sem-nada', firstName: null, lastName: null, relationship: null },
+      ],
+    });
+
+    const lista = listaDoMulti('tp-responsibles');
+    expect(within(lista).getByText('FATHER')).toBeInTheDocument();
+    expect(within(lista).getByText('r-sem-nada')).toBeInTheDocument();
+  });
+
+  it('rótulo do profissional cai pro texto de "não encontrado" quando `name` é `null`', () => {
+    montar({ professionals: [{ ...PROFISSIONAL, name: null }] });
+
+    expect(within(listaDoMulti('tp-careTeam')).getByText(ptBR.admin.patients.detail.therapeuticProjectCard.serviceUnknown)).toBeInTheDocument();
+  });
+});
+
+// ── Filtro de segmento (US-17) — escondido com catálogo vazio ──────────────
+
+describe('filtro de segmento (US-17, PR-7)', () => {
+  it('catálogo `segments` vazio (default): o filtro não aparece', () => {
+    montar();
+
+    expect(screen.queryByTestId('tp-segment-filter')).not.toBeInTheDocument();
+  });
+
+  it('catálogo `segments` com itens: o filtro aparece e filtra as opções dos 2 multi-selects', () => {
+    montar({
+      patientDiagnoses: [],
+      catalogs: {
+        'specific-objectives': [
+          { ...item('so1', 'Objetivo 1'), segmentId: 'seg-A' },
+          { ...item('so2', 'Objetivo 2'), segmentId: 'seg-B' },
+        ],
+        activities: [item('ac1', 'Atividade 1')],
+        segments: [item('seg-A', 'Segmento A'), item('seg-B', 'Segmento B')],
+      },
+    });
+
+    expect(screen.getByTestId('tp-segment-filter')).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('tp-segment-filter'), { target: { value: 'seg-A' } });
+
+    const lista = listaDoMulti('tp-specificObjectives');
+    expect(within(lista).getByText('Objetivo 1')).toBeInTheDocument();
+    expect(within(lista).queryByText('Objetivo 2')).not.toBeInTheDocument();
+  });
+
+  it('item já escolhido continua na lista mesmo filtrado por outro segmento (mesma régua do `optionsOf`)', () => {
+    montar({
+      from: { ...VERSAO, specificObjectives: [{ id: 'so2', label: 'Objetivo 2', segmentId: 'seg-B' }] },
+      fieldClass: FIELD_CLASS_SEM_MACRO,
+      catalogs: {
+        'specific-objectives': [{ ...item('so1', 'Objetivo 1'), segmentId: 'seg-A' }],
+        activities: [item('ac1', 'Atividade 1')],
+        segments: [item('seg-A', 'Segmento A'), item('seg-B', 'Segmento B')],
+      },
+    });
+
+    fireEvent.change(screen.getByTestId('tp-segment-filter'), { target: { value: 'seg-A' } });
+
+    expect(within(listaDoMulti('tp-specificObjectives')).getByText('Objetivo 2')).toBeInTheDocument();
   });
 });
 
 // ── lex C7: versão redigida ──────────────────────────────────────────────────
 
 describe('🔒 lex C7 — versão redigida não vira versão nova', () => {
-  it('mostra o aviso e trava "Salvar" mesmo com o resto preenchido; os textos nascem vazios', () => {
+  it('mostra o aviso e trava "Salvar" mesmo com o resto preenchido; os textos travados (MACRO) nascem vazios', () => {
     montar({ from: { ...VERSAO, redacted: { clinical: true }, clinicalContext: null, generalObjective: null } });
 
     expect(screen.getByTestId('tp-form-redacted')).toHaveTextContent(tf('redactedCannotEdit'));
+    // Com o `fieldClass` padrão, clinicalContext/generalObjective já são MACRO travado (D328) —
+    // vira TEXTO vazio, não textarea. A trava do "Salvar" continua vindo do `clinicalRedacted`.
+    expect(screen.getByTestId('tp-clinicalContext-locked')).toHaveTextContent('');
+    expect(screen.getByTestId('tp-generalObjective-locked')).toHaveTextContent('');
+    expect(salvar().disabled).toBe(true);
+  });
+
+  it('com `fieldClass` sem macro (campo NÃO travado por classe), o textarea real nasce desabilitado pelo redigido', () => {
+    montar({ from: { ...VERSAO, redacted: { clinical: true }, clinicalContext: null, generalObjective: null }, fieldClass: FIELD_CLASS_SEM_MACRO });
+
     expect((screen.getByTestId('tp-clinicalContext') as HTMLTextAreaElement).value).toBe('');
     expect((screen.getByTestId('tp-clinicalContext') as HTMLTextAreaElement).disabled).toBe(true);
     expect((screen.getByTestId('tp-generalObjective') as HTMLTextAreaElement).disabled).toBe(true);

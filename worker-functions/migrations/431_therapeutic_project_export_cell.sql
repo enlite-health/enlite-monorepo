@@ -1,0 +1,16 @@
+-- 431 — célula de exportação do projeto terapêutico (spec 018, PR-7, FR-305).
+--
+-- SEM DDL: o catálogo de permissões nasce das ROTAS (design 1b —
+-- `SyncPermissionCatalogUseCase.execute`, varredura de `perm.require(...)` no boot). A rota
+-- `GET /patients/:id/therapeutic-projects/:vid?purpose=export` passa a declarar
+-- `patient_therapeutic_project:export` (backend/rotas, fora desta migration) — o sync grava a
+-- linha em `iam.permissions`/`public.permissions` sozinho, no primeiro boot depois do deploy.
+-- Mesma régua de `catalog_therapeutic_segments:read|write` (430) e de `patient_care_team:write`
+-- (427/PR-5): nenhuma delas tem migration de catálogo — só a rota.
+--
+-- Esta migration existe para o número não ficar pulado no histórico (plan.md: "renumera se
+-- outro PR já usou") e para documentar a decisão — reaberta com DDL só se o sync exigir linha
+-- SEMEADA (não exige hoje: o boot roda antes do primeiro tráfego, e o catálogo velho serve até lá).
+--
+-- Re-rodável por natureza (não toca o banco).
+SELECT 1;

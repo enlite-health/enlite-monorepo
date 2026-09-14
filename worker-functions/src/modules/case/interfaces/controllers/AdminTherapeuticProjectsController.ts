@@ -8,24 +8,35 @@ import {
   ServiceNotOfPatientError,
   SourceVersionNotFoundError,
   PatientNotFoundForProjectError,
+  VersionNotCurrentError,
+  MacroFieldsLockedError,
+  ContactInactiveError,
+  ContactNotFoundError,
 } from '../../infrastructure/TherapeuticProjectRepository';
+import { TherapeuticProjectContactsRepository } from '../../infrastructure/TherapeuticProjectContactsRepository';
 import {
   TherapeuticCatalogRepository,
   CatalogItemsUnknownError,
   CatalogLabelTakenError,
+  CatalogSegmentInvalidError,
 } from '../../infrastructure/TherapeuticCatalogRepository';
+import { PatientCoverageEmergencyContactRepository } from '../../infrastructure/PatientCoverageEmergencyContactRepository';
 import {
   canWriteTherapeuticClinical,
   projectTherapeuticVersionForActor,
+  missingContactOriginCell,
+  missingCoverageDirectProfessionalCell,
   PATIENT_CLINICAL_WRITE_CELL,
 } from '../../application/therapeuticProjectAccess';
+import type { ContactRef, ResolvedTherapeuticContact } from '../../domain/TherapeuticProject';
 import {
   createTherapeuticProjectSchema,
   annulTherapeuticProjectSchema,
-  createCatalogItemSchema,
-  updateCatalogItemSchema,
+  createCatalogItemSchemaFor,
+  updateCatalogItemSchemaFor,
 } from '../validators/therapeuticProjectSchemas';
 import type { TherapeuticCatalogKind } from '../../domain/TherapeuticProject';
+import { THERAPEUTIC_FIELD_CLASS } from '../../domain/TherapeuticProject';
 import { DiagnosisUnknownError } from '../../application/pathologySegments';
 import { TerminologyUnavailableError } from '@modules/terminology/domain/UnavailableTerminology';
 
@@ -54,14 +65,50 @@ const invalidBody = (res: Response, error: z.ZodError): void => {
  * com `patient_clinical:read` — a projeção é o ponto único `projectTherapeuticVersionForActor`. Nenhum `reportError` abaixo
  * carrega `req.body`.
  */
+/** Onde a trilha (`therapeuticTrailAction`, lex C6) lê os containers de contato EFETIVAMENTE servidos — ver `adminTherapeuticProjectsRoutes.ts`. */
+export interface RequestWithTherapeuticContactContainers extends Request {
+  therapeuticContactContainers?: string[];
+}
+
 export class AdminTherapeuticProjectsController {
   constructor(
     private readonly repo: TherapeuticProjectRepository = new TherapeuticProjectRepository(),
     private readonly catalogs: TherapeuticCatalogRepository = new TherapeuticCatalogRepository(),
+    private readonly contacts: TherapeuticProjectContactsRepository = new TherapeuticProjectContactsRepository(),
+    // Injetado LAZY (molde das outras 3 acima): construir aqui em cima tocaria o pool no
+    // construtor sem repo (PatientCoverageEmergencyContactRepository NÃO tem getter preguiçoso).
+    private readonly coverageContactsInjected?: PatientCoverageEmergencyContactRepository,
   ) {}
+
+  private coverageContactsMemo?: PatientCoverageEmergencyContactRepository;
+  /** lex-pr7 §alterado: só é criado (e só toca o pool) quando `create()` de fato precisa checar um `COVERAGE` ref. */
+  private get coverageContacts(): PatientCoverageEmergencyContactRepository {
+    return (this.coverageContactsMemo ??= this.coverageContactsInjected ?? new PatientCoverageEmergencyContactRepository());
+  }
 
   private actorUid(req: Request): string {
     return AuthMiddleware.getAuthContext(req)?.principal.id ?? 'unknown';
+  }
+
+  /**
+   * Resolve os contatos de UMA versão + acumula os containers servidos em `req` para a trilha
+   * (lex C6). Conserto 14/09 (achado do gate): `contactRefs`/`careTeamIds` (contrato
+   * `therapeutic-project.md:41`) vêm da MESMA consulta de `contacts.resolve` — nunca uma 2ª
+   * query — pra "Editar" a vigente reconstruir a seleção sem depender do `contacts` resolvido
+   * (que some/redige nome-telefone, mas nunca o `kind`/`id`).
+   */
+  private async resolveContacts(
+    req: RequestWithTherapeuticContactContainers,
+    versionId: string,
+    cells: readonly string[] | null | undefined,
+  ): Promise<{ contacts: ResolvedTherapeuticContact[]; contactRefs: ContactRef[]; careTeamIds: string[] }> {
+    const { contacts, containersServed, contactRefs, careTeamIds } = await this.contacts.resolve(versionId, cells);
+    if (containersServed.size > 0) {
+      const acc = new Set(req.therapeuticContactContainers ?? []);
+      for (const c of containersServed) acc.add(c);
+      req.therapeuticContactContainers = Array.from(acc);
+    }
+    return { contacts, contactRefs, careTeamIds };
   }
 
   /** GET /patients/:id/therapeutic-projects */
@@ -74,7 +121,21 @@ export class AdminTherapeuticProjectsController {
     try {
       const versions = await this.repo.listForPatient(params.data.id);
       const cells = cellsOfRequest(req);
-      res.status(200).json({ success: true, data: { versions: versions.map((v) => projectTherapeuticVersionForActor(v, cells)) } });
+      const projected = await Promise.all(
+        versions.map(async (v) => {
+          const { contacts, contactRefs, careTeamIds } = await this.resolveContacts(req, v.id, cells);
+          return { ...projectTherapeuticVersionForActor(v, cells), contactRefs, careTeamIds, contacts };
+        }),
+      );
+      res.status(200).json({
+        success: true,
+        data: {
+          versions: projected,
+          // task 7.7: dono único é THERAPEUTIC_FIELD_CLASS (domain) — o front NÃO copia a lista,
+          // lê aqui pra decidir quais campos da vigente renderizam como TEXTO na edição (D328/R5).
+          fieldClass: { macro: [...THERAPEUTIC_FIELD_CLASS.MACRO], micro: [...THERAPEUTIC_FIELD_CLASS.MICRO] },
+        },
+      });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminTherapeuticProjectsController:list', patientId: params.data.id });
@@ -95,7 +156,12 @@ export class AdminTherapeuticProjectsController {
         res.status(404).json({ success: false, error: 'Therapeutic project version not found' });
         return;
       }
-      res.status(200).json({ success: true, data: projectTherapeuticVersionForActor(version, cellsOfRequest(req)) });
+      const cells = cellsOfRequest(req);
+      // lex C8(a): a permissão de leitura da versão ANTIGA é a MESMA da vigente — nenhum ramo
+      // especial por `annulledAt`/"não é a última": a projeção e a resolução de contatos são
+      // por CÉLULA, sempre, nunca por status da versão.
+      const { contacts, contactRefs, careTeamIds } = await this.resolveContacts(req, version.id, cells);
+      res.status(200).json({ success: true, data: { ...projectTherapeuticVersionForActor(version, cells), contactRefs, careTeamIds, contacts } });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminTherapeuticProjectsController:get', patientId: params.data.id, versionId: params.data.vid });
@@ -121,12 +187,36 @@ export class AdminTherapeuticProjectsController {
       res.status(403).json({ success: false, error: 'Forbidden', details: { cell: PATIENT_CLINICAL_WRITE_CELL } });
       return;
     }
+    // lex-pr7 §alterado: célula de escrita do projeto + célula de LEITURA da origem de cada
+    // contato selecionado — quem não vê o familiar/cobertura/equipe não pode selecioná-lo.
+    const missingCell = missingContactOriginCell(body.data.version.contactRefs, body.data.version.careTeamIds, cells);
+    if (missingCell) {
+      res.status(403).json({ success: false, error: 'Forbidden', details: { cell: missingCell } });
+      return;
+    }
+    // contract `therapeutic-project.md:12`: COVERAGE exige `patient_care_team:read` A MAIS quando o
+    // id referenciado é um contato DIRECT_PROFESSIONAL (mesma régua do `refuseDirectProfessionalWithoutCareTeam`
+    // do support-network, lex C3) — quem não vê o profissional direto não pode selecioná-lo aqui também.
+    const missingDirectProfessionalCell = await missingCoverageDirectProfessionalCell(
+      body.data.version.contactRefs,
+      cells,
+      (id) => this.coverageContacts.getKind(params.data.id, id),
+    );
+    if (missingDirectProfessionalCell) {
+      res.status(403).json({ success: false, error: 'Forbidden', details: { cell: missingDirectProfessionalCell } });
+      return;
+    }
     try {
       const actorUid = this.actorUid(req);
       const created = body.data.mode === 'new'
         ? await this.repo.createVersion({ mode: 'new', patientId: params.data.id, actorUid, version: body.data.version })
         : await this.repo.createVersion({ mode: 'edit', patientId: params.data.id, actorUid, fromVersionId: body.data.fromVersionId, version: body.data.version });
-      res.status(201).json({ success: true, data: projectTherapeuticVersionForActor(created, cells) });
+      // Conserto 14/09 (achado do gate): a versão recém-criada passa pelo MESMO `resolveContacts`
+      // de `list`/`get` — nunca crua — pra "Editar" a vigente logo após salvar (antes do refetch)
+      // partir com os contatos já resolvidos, e pra trilha do POST registrar os containers SERVIDOS
+      // igual ao GET (contract `therapeutic-project.md` §POST).
+      const { contacts, contactRefs, careTeamIds } = await this.resolveContacts(req, created.id, cells);
+      res.status(201).json({ success: true, data: { ...projectTherapeuticVersionForActor(created, cells), contactRefs, careTeamIds, contacts } });
     } catch (err: unknown) {
       if (err instanceof PatientNotFoundForProjectError) {
         res.status(404).json({ success: false, error: 'Patient not found', code: err.code });
@@ -134,6 +224,25 @@ export class AdminTherapeuticProjectsController {
       }
       if (err instanceof SourceVersionNotFoundError) {
         res.status(404).json({ success: false, error: 'Source version not found', code: err.code });
+        return;
+      }
+      // ADR-4/SUP-24: a versão existe mas não é mais a vigente — 409, nunca 422 (lex-pr7 contract §alterado).
+      if (err instanceof VersionNotCurrentError) {
+        res.status(409).json({ success: false, error: 'Only the current version can be edited', code: err.code });
+        return;
+      }
+      // D328: só NOMES de campo — nunca o valor clínico enviado (lex #7 C7).
+      if (err instanceof MacroFieldsLockedError) {
+        res.status(422).json({ success: false, error: 'Macro fields are locked outside of a new version', code: err.code, details: { fields: err.fields } });
+        return;
+      }
+      // lex #7 C7: só `kind`/`id` — nunca nome/telefone do contato (nem no erro, nem no log).
+      if (err instanceof ContactInactiveError) {
+        res.status(422).json({ success: false, error: 'Selected contact is inactive', code: err.code, details: { kind: err.kind, id: err.id } });
+        return;
+      }
+      if (err instanceof ContactNotFoundError) {
+        res.status(404).json({ success: false, error: 'Selected contact not found', code: err.code, details: { kind: err.kind, id: err.id } });
         return;
       }
       if (err instanceof ServiceNotOfPatientError) {
@@ -199,9 +308,9 @@ export class AdminTherapeuticProjectsController {
     }
   }
 
-  /** POST /therapeutic-catalogs/<kind> */
+  /** POST /therapeutic-catalogs/<kind> — `segmentId` (430) só entra no corpo de objetivos/atividades (schema por `kind`). */
   async createCatalogItem(kind: TherapeuticCatalogKind, req: Request, res: Response): Promise<void> {
-    const body = createCatalogItemSchema.safeParse(req.body);
+    const body = createCatalogItemSchemaFor(kind).safeParse(req.body);
     if (!body.success) {
       invalidBody(res, body.error);
       return;
@@ -212,6 +321,11 @@ export class AdminTherapeuticProjectsController {
     } catch (err: unknown) {
       if (err instanceof CatalogLabelTakenError) {
         res.status(409).json({ success: false, error: 'An active item with this label already exists', code: err.code });
+        return;
+      }
+      // Segmento inexistente/inativo: 422 SEM ecoar o id (só o tipo do erro — molde de `DiagnosisUnknownError`).
+      if (err instanceof CatalogSegmentInvalidError) {
+        res.status(422).json({ success: false, error: 'Unknown or inactive segment', code: err.code });
         return;
       }
       const e = err instanceof Error ? err : new Error(String(err));
@@ -227,7 +341,7 @@ export class AdminTherapeuticProjectsController {
       res.status(400).json({ success: false, error: 'Invalid params' });
       return;
     }
-    const body = updateCatalogItemSchema.safeParse(req.body);
+    const body = updateCatalogItemSchemaFor(kind).safeParse(req.body);
     if (!body.success) {
       invalidBody(res, body.error);
       return;
@@ -242,6 +356,10 @@ export class AdminTherapeuticProjectsController {
     } catch (err: unknown) {
       if (err instanceof CatalogLabelTakenError) {
         res.status(409).json({ success: false, error: 'An active item with this label already exists', code: err.code });
+        return;
+      }
+      if (err instanceof CatalogSegmentInvalidError) {
+        res.status(422).json({ success: false, error: 'Unknown or inactive segment', code: err.code });
         return;
       }
       const e = err instanceof Error ? err : new Error(String(err));

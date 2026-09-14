@@ -305,10 +305,18 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // (`adminTherapeuticProjectsRoutes.ts`); o fixture deste teste não as declara.
       'patient_therapeutic_project:read',
       'patient_therapeutic_project:write',
+      // spec 018, PR-7 (13/09): `exportGate` chama `perm.require(...)` dentro de closure
+      // condicional (`?purpose=export`) — o scanner NUNCA vê essa chamada (não é layer do
+      // `route.stack`), então esta célula só existe no catálogo por `cellsForaDeRota`. Sem
+      // esta linha em `CELL_DESCRIPTION`, o export nasce `deprecated_at` a cada sync/boot.
+      'patient_therapeutic_project:export',
       'catalog_therapeutic_objectives:read',
       'catalog_therapeutic_objectives:write',
       'catalog_therapeutic_activities:read',
       'catalog_therapeutic_activities:write',
+      // US-17 (spec 018, PR-7, migration 430) — catálogo dos segmentos da Ana Care, mesmo molde.
+      'catalog_therapeutic_segments:read',
+      'catalog_therapeutic_segments:write',
     ]);
   });
 

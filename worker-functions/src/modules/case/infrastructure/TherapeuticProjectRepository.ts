@@ -6,9 +6,13 @@ import {
   nextMinorOf,
   sortByCreatedDesc,
   versionLabel,
-  type CatalogSnapshotItem,
+  currentVersionOf,
+  macroFieldsChanged,
+  type ContactRef,
   type PathologySegment,
+  type TherapeuticCatalogSnapshotItem,
   type TherapeuticDiagnosis,
+  type TherapeuticMacroField,
   type TherapeuticModality,
   type TherapeuticProjectVersion,
 } from '../domain/TherapeuticProject';
@@ -29,8 +33,8 @@ interface VersionRow {
   diagnoses: TherapeuticDiagnosis[];
   clinical_context: string;
   general_objective: string;
-  specific_objectives: CatalogSnapshotItem[];
-  activities: CatalogSnapshotItem[];
+  specific_objectives: TherapeuticCatalogSnapshotItem[];
+  activities: TherapeuticCatalogSnapshotItem[];
   pathology_types: PathologySegment[];
   start_date: string;
   end_date: string;
@@ -54,6 +58,9 @@ export interface TherapeuticProjectVersionInput {
   activityIds: string[];
   startDate: string;
   endDate: string;
+  /** MICRO (D328/SUP-24) — só ids; a linha de origem tem de estar ATIVA (trigger 429). */
+  contactRefs: ContactRef[];
+  careTeamIds: string[];
 }
 
 export type CreateVersionCommand =
@@ -65,6 +72,30 @@ export class SourceVersionNotFoundError extends Error {
   readonly code = 'source_version_not_found';
   constructor() {
     super('source_version_not_found');
+  }
+}
+
+/**
+ * `mode:'edit'` com `fromVersionId` que NÃO é a vigente (ADR-4/SUP-24; lex-pr7 contract §alterado):
+ * 409, nunca 422 — o corpo pode estar perfeito, o problema é a versão-alvo ter ficado velha
+ * (outra edição/anulação aconteceu entre o GET e o POST). Backend é a fonte da verdade (R4): a
+ * tela trava o campo, mas a API tem de recusar mesmo se alguém escrever direto.
+ */
+export class VersionNotCurrentError extends Error {
+  readonly code = 'ptp_not_current';
+  constructor() {
+    super('ptp_not_current');
+  }
+}
+
+/**
+ * `mode:'edit'` mudando campo MACRO (lex-pr7 contract §alterado, ADR-4/D328): 422 com só os
+ * NOMES dos campos — nunca o valor enviado (lex #7 C7: erro não ecoa texto clínico).
+ */
+export class MacroFieldsLockedError extends Error {
+  readonly code = 'ptp_macro_locked';
+  constructor(readonly fields: TherapeuticMacroField[]) {
+    super('ptp_macro_locked');
   }
 }
 
@@ -86,6 +117,38 @@ export class ServiceNotOfPatientError extends Error {
 
 const isServiceOfOtherPatient = (err: unknown): boolean =>
   /ptp_service_de_outro_paciente/.test(String((err as { message?: string })?.message ?? ''));
+
+/**
+ * `mode:'new'|'edit'` com `contactRefs`/`careTeamIds` apontando para contato INATIVO ou de outro
+ * paciente (trigger `fn_patient_therapeutic_project_contacts_imutavel`, 429): 422, só `kind`/`id`
+ * — nunca nome/telefone (lex #7 C7). FK violada (23503, o par id/patient_id não existe) vira 404.
+ */
+export class ContactInactiveError extends Error {
+  readonly code = 'ptp_contact_inactive';
+  constructor(readonly kind: string, readonly id: string) {
+    super('ptp_contact_inactive');
+  }
+}
+
+/** O `id` referenciado não é uma linha ATIVA deste paciente (FK 23503 das 4 constraints da 429). */
+export class ContactNotFoundError extends Error {
+  readonly code = 'contact_not_found';
+  constructor(readonly kind: string, readonly id: string) {
+    super('contact_not_found');
+  }
+}
+
+const isContactInactiveViolation = (err: unknown): boolean =>
+  (err as { code?: string })?.code === '22023' && /ptp_contact_inactive/.test(String((err as { message?: string })?.message ?? ''));
+
+const isForeignKeyViolation = (err: unknown): boolean => (err as { code?: string })?.code === '23503';
+
+const CONTACT_COLUMN: Record<'RESPONSIBLE' | 'EXTERNAL' | 'COVERAGE' | 'CARE_TEAM', string> = {
+  RESPONSIBLE: 'responsible_id',
+  EXTERNAL: 'external_contact_id',
+  COVERAGE: 'coverage_contact_id',
+  CARE_TEAM: 'professional_id',
+};
 
 // `date` chega como Date pelo driver quando não há tipo customizado; a API fala ISO yyyy-mm-dd.
 const isoDate = (v: unknown): string => (v instanceof Date ? v.toISOString().slice(0, 10) : String(v));
@@ -163,6 +226,15 @@ export class TherapeuticProjectRepository {
   async createVersion(cmd: CreateVersionCommand): Promise<TherapeuticProjectVersion> {
     try {
       const row = await withActorContext(this.pool, async (cli) => {
+        // As 4 FKs de contato da 429 (`ptpc_resp_fk`/`ptpc_ext_fk`/`ptpc_cov_fk`/`ptpc_pro_fk`) são
+        // DEFERRABLE INITIALLY DEFERRED — necessário para a purga de paciente (`PatientTestFixtureService`)
+        // cascatear sem estourar pela ORDEM das duas cascatas convergentes (ver migration 429). Mas
+        // adiada, o 23503 de um `id` que não é uma linha ATIVA deste paciente só apareceria no COMMIT,
+        // fora do try/catch por linha de `insertContacts` — virava 500 em vez do 404 do contrato.
+        // Tornar IMEDIATA aqui, só para ESTA transação de escrita, devolve o erro para dentro do INSERT.
+        await cli.query(
+          'SET CONSTRAINTS ptpc_resp_fk, ptpc_ext_fk, ptpc_cov_fk, ptpc_pro_fk IMMEDIATE',
+        );
         // Trava o paciente: a numeração é lida e gravada na MESMA transação. Zero linhas = paciente
         // inexistente OU invisível sob a RLS — 404 nos dois casos (nunca dizer qual).
         const lock = await cli.query('SELECT id FROM patients WHERE id = $1 FOR UPDATE', [cmd.patientId]);
@@ -176,6 +248,30 @@ export class TherapeuticProjectRepository {
         } else {
           const source = existing.find((v) => v.id === cmd.fromVersionId && v.annulledAt === null);
           if (!source) throw new SourceVersionNotFoundError();
+          // ADR-4/SUP-24: só a VIGENTE (created_at mais recente entre as não-anuladas) pode ser
+          // editada — 409, nunca "edita como se fosse a última minor da major".
+          const current = currentVersionOf(existing);
+          if (!current || current.id !== source.id) throw new VersionNotCurrentError();
+          // D328: MACRO só muda em versão NOVA — edição recusa alteração de MACRO (422, só nomes).
+          const changedMacro = macroFieldsChanged(
+            {
+              contractedServiceId: source.contractedServiceId,
+              diagnosisUris: source.diagnoses.map((d) => d.uri),
+              clinicalContext: source.clinicalContext,
+              generalObjective: source.generalObjective,
+              specificObjectiveIds: source.specificObjectives.map((o) => o.id),
+              activityIds: source.activities.map((a) => a.id),
+            },
+            {
+              contractedServiceId: cmd.version.contractedServiceId,
+              diagnoses: cmd.version.diagnoses,
+              clinicalContext: cmd.version.clinicalContext,
+              generalObjective: cmd.version.generalObjective,
+              specificObjectiveIds: cmd.version.specificObjectiveIds,
+              activityIds: cmd.version.activityIds,
+            },
+          );
+          if (changedMacro.length > 0) throw new MacroFieldsLockedError(changedMacro);
           number = nextMinorOf(existing, source.major);
           editedFrom = source.id;
         }
@@ -202,6 +298,10 @@ export class TherapeuticProjectRepository {
             cmd.version.startDate, cmd.version.endDate, cmd.actorUid, cmd.version.modality,
           ],
         );
+        // SUP-26: a ligação só nasce NESTA transação, com a versão já gravada — nunca "adicionar
+        // depois" numa versão antiga. Erro daqui vira 422/404 (lex #7 C7: nunca nome/telefone).
+        await this.insertContacts(cli, ins.rows[0].id, cmd.patientId, cmd.version.contactRefs, cmd.version.careTeamIds);
+
         const sel = await cli.query<VersionRow>(`${SELECT_VERSION} WHERE v.id = $1`, [ins.rows[0].id]);
         return sel.rows[0];
       });
@@ -209,6 +309,37 @@ export class TherapeuticProjectRepository {
     } catch (err) {
       if (isServiceOfOtherPatient(err)) throw new ServiceNotOfPatientError();
       throw err;
+    }
+  }
+
+  /**
+   * Insere a ligação versão→contato UMA LINHA POR VEZ (não em lote): o erro do trigger (429) não
+   * diz QUAL linha violou, e o contrato exige `{kind,id}` do contato específico no 422/404.
+   */
+  private async insertContacts(
+    cli: PoolClient,
+    versionId: string,
+    patientId: string,
+    contactRefs: ContactRef[],
+    careTeamIds: string[],
+  ): Promise<void> {
+    const rows: { kind: 'RESPONSIBLE' | 'EXTERNAL' | 'COVERAGE' | 'CARE_TEAM'; id: string }[] = [
+      ...contactRefs.map((r) => ({ kind: r.kind, id: r.id })),
+      ...careTeamIds.map((id) => ({ kind: 'CARE_TEAM' as const, id })),
+    ];
+    for (const [sortOrder, row] of rows.entries()) {
+      const column = CONTACT_COLUMN[row.kind];
+      try {
+        await cli.query(
+          `INSERT INTO patient_therapeutic_project_contacts (version_id, patient_id, contact_kind, ${column}, sort_order)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [versionId, patientId, row.kind, row.id, sortOrder],
+        );
+      } catch (err) {
+        if (isContactInactiveViolation(err)) throw new ContactInactiveError(row.kind, row.id);
+        if (isForeignKeyViolation(err)) throw new ContactNotFoundError(row.kind, row.id);
+        throw err;
+      }
     }
   }
 

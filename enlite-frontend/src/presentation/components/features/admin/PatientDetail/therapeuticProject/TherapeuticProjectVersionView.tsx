@@ -36,6 +36,25 @@ function ListValue({ items }: { items: { id: string; label: string }[] }): JSX.E
   );
 }
 
+/**
+ * Os contatos RESOLVIDOS pela célula de origem (lex #7 C5) — nunca lê nome/telefone da versão
+ * bruta. `inactive`/`redacted` são as duas formas sem dado — a tela mostra o rótulo, nunca vazio.
+ */
+function ContactsValue({ contacts, tc }: { contacts: TherapeuticProjectVersion['contacts']; tc: (k: string, o?: Record<string, unknown>) => string }): JSX.Element {
+  if (contacts.length === 0) return <Text as="span" size="sm" color="muted">—</Text>;
+  return (
+    <ul className="list-disc pl-5" data-clarity-mask="True">
+      {contacts.map((c) => (
+        <li key={`${c.kind}-${c.id}`}>
+          <Text as="span" size="sm" color="primary">
+            {'inactive' in c ? tc('contactInactive') : 'redacted' in c ? tc('redacted') : c.name}
+          </Text>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function TherapeuticProjectVersionView({ version: v, services, compact = false, servicesRedacted = false }: Props): JSX.Element {
   const { t } = useTranslation();
   const tc = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.therapeuticProjectCard.${k}`, o ?? {});
@@ -71,6 +90,9 @@ export function TherapeuticProjectVersionView({ version: v, services, compact = 
       <div className="flex flex-col gap-4">
         <Row label={tc('activitiesPlan')} testId="tpv-activities"><ListValue items={compact ? v.activities.slice(0, 3) : v.activities} /></Row>
         {/* "Tipo de patología" não aparece na tela: é máscara derivada do CID-11 para o Ana Care (DEC-09) — sai só no PDF. */}
+        {!compact && (
+          <Row label={tc('contacts')} testId="tpv-contacts"><ContactsValue contacts={v.contacts} tc={tc} /></Row>
+        )}
         <Row label={tc('deadlines')} testId="tpv-deadlines">
           <Text as="span" size="sm" color="primary">{formatIsoDateEsAr(v.startDate)} - {formatIsoDateEsAr(v.endDate)}</Text>
         </Row>

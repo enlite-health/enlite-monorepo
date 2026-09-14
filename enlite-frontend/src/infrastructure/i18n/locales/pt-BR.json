@@ -3194,7 +3194,9 @@
             "IN_PERSON": "Presencial",
             "ONLINE": "On-line",
             "HYBRID": "Híbrida"
-          }
+          },
+          "contacts": "Contatos",
+          "contactInactive": "Contato desativado"
         },
         "treatingTeamCard": {
           "title": "Equipe Tratante",
@@ -3501,15 +3503,26 @@
           "loadingCatalogs": "Carregando catálogos…",
           "discardConfirm": "Descartar as alterações não salvas?",
           "redactedCannotEdit": "Você não tem permissão para ver o texto clínico desta versão; não dá para criar uma nova versão a partir dela.",
+          "contactRemovedInactive": "Contato dado de baixa — não é incluído na nova versão: {{kinds}}.",
           "errors": {
             "forbidden": "Você não tem permissão para escrever o projeto terapêutico (precisa também da célula clínica).",
             "catalogItemsUnknown": "Alguma opção escolhida já não está ativa no catálogo. Escolha de novo.",
             "serviceNotOfPatient": "O serviço escolhido não é deste paciente.",
             "sourceNotFound": "A versão de origem já não existe ou foi anulada.",
             "diagnosisUnknown": "O diagnóstico escolhido já não existe no catálogo CID-11. Busque e escolha de novo.",
-            "terminologyUnavailable": "O catálogo CID-11 está indisponível neste momento. Tente de novo em alguns minutos."
+            "terminologyUnavailable": "O catálogo CID-11 está indisponível neste momento. Tente de novo em alguns minutos.",
+            "ptpMacroLocked": "Os campos {{fields}} não podem mudar editando a versão vigente. Crie um projeto novo se precisar mudá-los.",
+            "ptpNotCurrent": "Esta versão deixou de ser a vigente enquanto você editava. Feche e reabra o projeto terapêutico.",
+            "ptpContactInactive": "Um dos contatos escolhidos já não está ativo. Escolha de novo."
           },
-          "modalityPlaceholder": "Escolha a modalidade"
+          "modalityPlaceholder": "Escolha a modalidade",
+          "segmentFilter": "Filtrar por segmento",
+          "segmentFilterPlaceholder": "Todos os segmentos",
+          "segmentFilterAll": "Todos os segmentos",
+          "responsibles": "Responsáveis",
+          "externalContacts": "Contatos externos",
+          "coverageContacts": "Contatos da cobertura",
+          "careTeam": "Equipe tratante"
         }
       },
       "statusOptions": {

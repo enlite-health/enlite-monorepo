@@ -105,6 +105,9 @@ const VERSAO: TherapeuticProjectVersion = {
   createdByName: 'Ana Fixture',
   createdAt: '2026-09-01T10:00:00Z',
   country: 'AR',
+  contactRefs: [],
+  careTeamIds: [],
+  contacts: [],
 };
 
 const montar = (over: Partial<TherapeuticProjectVersion> = {}, props: { services?: PatientContractedServiceDetail[]; compact?: boolean } = {}) =>
@@ -249,5 +252,60 @@ describe('serviço desconhecido e versão anulada', () => {
 
     expect(screen.getByTestId('tpv-annulled')).toHaveTextContent('15/10/2026');
     expect(screen.getByTestId('tpv-annulled')).not.toHaveTextContent('·');
+  });
+});
+
+// ── Contatos resolvidos (PR-7, lex #7 C5) — só no drawer completo, não no card compacto ────
+
+describe('contatos resolvidos (task 7.7)', () => {
+  it('compact (topo do card): a linha de contatos NÃO aparece', () => {
+    montar({ contacts: [{ kind: 'RESPONSIBLE', id: 'r1', name: 'Marta', phone: '111' }] }, { compact: true });
+
+    expect(screen.queryByTestId('tpv-contacts')).not.toBeInTheDocument();
+  });
+
+  it('sem contato nenhum: "—"', () => {
+    montar({ contacts: [] });
+
+    expect(screen.getByTestId('tpv-contacts')).toHaveTextContent('—');
+  });
+
+  it('contato RESOLVIDO: mostra o nome', () => {
+    montar({ contacts: [{ kind: 'RESPONSIBLE', id: 'r1', name: 'Marta Gómez', phone: '111', relation: 'MOTHER' }] });
+
+    expect(screen.getByTestId('tpv-contacts')).toHaveTextContent('Marta Gómez');
+  });
+
+  it('contato INATIVO: rótulo "dado de baja", NUNCA o nome/telefone (lex #7 C5)', () => {
+    montar({ contacts: [{ kind: 'EXTERNAL', id: 'e1', inactive: true }] });
+
+    expect(screen.getByTestId('tpv-contacts')).toHaveTextContent(ptBR.admin.patients.detail.therapeuticProjectCard.contactInactive);
+  });
+
+  it('contato REDIGIDO (sem célula de origem): rótulo genérico de redigido', () => {
+    montar({ contacts: [{ kind: 'COVERAGE', id: 'c1', redacted: true }] });
+
+    expect(screen.getByTestId('tpv-contacts')).toHaveTextContent(ptBR.admin.patients.detail.therapeuticProjectCard.redacted);
+  });
+
+  it('a lista carrega `data-clarity-mask` (nome de contato é dado pessoal, Clarity vivo em PRD)', () => {
+    montar({ contacts: [{ kind: 'RESPONSIBLE', id: 'r1', name: 'Marta', phone: '111' }] });
+
+    expect(screen.getByTestId('tpv-contacts').querySelector('[data-clarity-mask="True"]')).toBeInTheDocument();
+  });
+
+  it('mistura de estados: cada contato mostra o rótulo certo, sem vazar o de outro', () => {
+    montar({
+      contacts: [
+        { kind: 'RESPONSIBLE', id: 'r1', name: 'Marta Gómez', phone: '111' },
+        { kind: 'EXTERNAL', id: 'e1', inactive: true },
+        { kind: 'COVERAGE', id: 'c1', redacted: true },
+      ],
+    });
+
+    const texto = screen.getByTestId('tpv-contacts').textContent ?? '';
+    expect(texto).toContain('Marta Gómez');
+    expect(texto).toContain(ptBR.admin.patients.detail.therapeuticProjectCard.contactInactive);
+    expect(texto).toContain(ptBR.admin.patients.detail.therapeuticProjectCard.redacted);
   });
 });

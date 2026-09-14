@@ -56,11 +56,13 @@ vi.mock('@infrastructure/http/AdminTherapeuticProjectsApiService', () => {
   class TherapeuticProjectApiError extends Error {
     readonly status: number;
     readonly code?: string;
-    constructor(message: string, status: number, body?: { code?: string }) {
+    readonly details?: Record<string, unknown>;
+    constructor(message: string, status: number, body?: { code?: string; details?: Record<string, unknown> }) {
       super(message);
       this.name = 'TherapeuticProjectApiError';
       this.status = status;
       this.code = body?.code;
+      this.details = body?.details;
     }
   }
   return {
@@ -163,6 +165,9 @@ const VERSAO: TherapeuticProjectVersion = {
   createdByName: 'Ana Fixture',
   createdAt: '2026-01-10T10:00:00Z',
   country: 'AR',
+  contactRefs: [],
+  careTeamIds: [],
+  contacts: [],
 };
 
 const CRIADA: TherapeuticProjectVersion = { ...VERSAO, id: 'v2', major: 1, minor: 1, version: 'V.1.1', createdByName: 'Gabriel QA' };
@@ -173,8 +178,15 @@ const criarObjectURL = vi.fn(() => 'blob:fake-url');
 const revogarObjectURL = vi.fn();
 let cliqueNoAncora: MockInstance<[], void>;
 
+// Espelho de `THERAPEUTIC_FIELD_CLASS` (task 7.7) — o teste do form cobre o comportamento do
+// campo travado; aqui só precisa de uma lista não-vazia para o form renderizar o modo travado.
+const FIELD_CLASS = {
+  macro: ['contractedServiceId', 'diagnoses', 'clinicalContext', 'generalObjective', 'specificObjectiveIds', 'activityIds'],
+  micro: ['startDate', 'endDate', 'modality', 'contactRefs', 'careTeamIds'],
+};
+
 const montar = (target: TherapeuticProjectTarget, over: { patient?: PatientDetail } = {}) =>
-  render(<TherapeuticProjectDrawer patient={over.patient ?? PACIENTE} target={target} onClose={onClose} onSaved={onSaved} />);
+  render(<TherapeuticProjectDrawer patient={over.patient ?? PACIENTE} target={target} fieldClass={FIELD_CLASS} onClose={onClose} onSaved={onSaved} />);
 
 /** Contrato ABAC pronto, com o engine LIGADO (D268/D286) e só as células listadas. */
 function comEnforcement(permissions: string[], enforcement: AuthzContract['enforcement'] = 'on'): void {
@@ -216,7 +228,7 @@ afterEach(() => {
 
 describe('modo `view` — uma versão em leitura', () => {
   it('subtítulo `V.x.y - Criado por: <nome>` e a versão renderizada em leitura', () => {
-    montar({ mode: 'view', version: VERSAO });
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
 
     expect(screen.getByTestId('therapeutic-project-drawer').getAttribute('data-mode')).toBe('view');
     expect(screen.getByTestId('therapeutic-project-subtitle')).toHaveTextContent('V.1.0 - Criado por: Ana Fixture');
@@ -226,14 +238,14 @@ describe('modo `view` — uma versão em leitura', () => {
   });
 
   it('versão sem autor conhecido cai em `—`', () => {
-    montar({ mode: 'view', version: { ...VERSAO, createdByName: null } });
+    montar({ mode: 'view', version: { ...VERSAO, createdByName: null }, isCurrent: true });
 
     expect(screen.getByTestId('therapeutic-project-subtitle')).toHaveTextContent('V.1.0 - Criado por: —');
   });
 
   it('"Editar" troca o drawer para `edit` e carrega os catálogos (a versão de origem enche o form)', async () => {
     catalogosOk();
-    montar({ mode: 'view', version: VERSAO });
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
 
     fireEvent.click(screen.getByTestId('therapeutic-project-edit-btn'));
 
@@ -249,7 +261,7 @@ describe('🔒 lex C13 — "Exportar PDF" busca a versão A CADA clique', () => 
   it('chama `getVersion` com `purpose: export`, gera o Blob e dispara o download', async () => {
     mockGetVersion.mockResolvedValue(VERSAO);
     mockRenderBlob.mockResolvedValue(new Blob(['%PDF-fake']));
-    montar({ mode: 'view', version: VERSAO });
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
 
     await act(async () => { fireEvent.click(screen.getByTestId('therapeutic-project-export-btn')); });
 
@@ -263,7 +275,7 @@ describe('🔒 lex C13 — "Exportar PDF" busca a versão A CADA clique', () => 
   it('lex C12/C14: o insumo do PDF sai das células já lidas e o arquivo não leva nome de paciente', async () => {
     mockGetVersion.mockResolvedValue(VERSAO);
     mockRenderBlob.mockResolvedValue(new Blob(['%PDF-fake']));
-    montar({ mode: 'view', version: VERSAO });
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
 
     await act(async () => { fireEvent.click(screen.getByTestId('therapeutic-project-export-btn')); });
 
@@ -278,7 +290,7 @@ describe('🔒 lex C13 — "Exportar PDF" busca a versão A CADA clique', () => 
     vi.useFakeTimers();
     mockGetVersion.mockResolvedValue(VERSAO);
     mockRenderBlob.mockResolvedValue(new Blob(['%PDF-fake']));
-    montar({ mode: 'view', version: VERSAO });
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
 
     await act(async () => { fireEvent.click(screen.getByTestId('therapeutic-project-export-btn')); });
     expect(revogarObjectURL).not.toHaveBeenCalled();
@@ -290,7 +302,7 @@ describe('🔒 lex C13 — "Exportar PDF" busca a versão A CADA clique', () => 
 
   it('recusa do servidor no export aparece no banner (e o drawer não quebra)', async () => {
     mockGetVersion.mockRejectedValue(new Error('403 sem célula de export'));
-    montar({ mode: 'view', version: VERSAO });
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
 
     await act(async () => { fireEvent.click(screen.getByTestId('therapeutic-project-export-btn')); });
 
@@ -301,7 +313,7 @@ describe('🔒 lex C13 — "Exportar PDF" busca a versão A CADA clique', () => 
   it('falha que não é `Error` (a geração do PDF rejeitando cru) também vira frase no banner', async () => {
     mockGetVersion.mockResolvedValue(VERSAO);
     mockRenderBlob.mockRejectedValue('fonte não carregou');
-    montar({ mode: 'view', version: VERSAO });
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
 
     await act(async () => { fireEvent.click(screen.getByTestId('therapeutic-project-export-btn')); });
 
@@ -309,7 +321,7 @@ describe('🔒 lex C13 — "Exportar PDF" busca a versão A CADA clique', () => 
   });
 
   it('🔒 lex C5: versão ANULADA não exporta e não oferece "Editar"', () => {
-    montar({ mode: 'view', version: { ...VERSAO, annulledAt: '2026-07-01' } });
+    montar({ mode: 'view', version: { ...VERSAO, annulledAt: '2026-07-01' }, isCurrent: true });
 
     expect((screen.getByTestId('therapeutic-project-export-btn') as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByTestId('therapeutic-project-edit-btn')).not.toBeInTheDocument();
@@ -320,31 +332,84 @@ describe('🔒 lex C13 — "Exportar PDF" busca a versão A CADA clique', () => 
 
 describe('🔒 D286/D269 — "Editar" é célula `patient_therapeutic_project:write`', () => {
   it('engine LIGADO e sem a célula → o botão SOME (não fica cinza)', () => {
-    comEnforcement([]);
-    montar({ mode: 'view', version: VERSAO });
+    // Só a célula de EXPORT (item 3 do PR-7) — isola o gate testado aqui (write) do gate do export.
+    comEnforcement(['patient_therapeutic_project:export']);
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
 
     expect(screen.queryByTestId('therapeutic-project-edit-btn')).not.toBeInTheDocument();
-    // exportar continua: é leitura, e a trilha é do servidor
+    // exportar continua: tem a célula própria (`patient_therapeutic_project:export`, testada no bloco abaixo).
     expect(screen.getByTestId('therapeutic-project-export-btn')).toBeInTheDocument();
   });
 
   it('🔴 a célula do PAI (`patient:write`) não vale — a permissão é do CONTAINER', () => {
     comEnforcement(['patient:read', 'patient:write']);
-    montar({ mode: 'view', version: VERSAO });
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
 
     expect(screen.queryByTestId('therapeutic-project-edit-btn')).not.toBeInTheDocument();
   });
 
   it('com a célula do container o botão existe', () => {
     comEnforcement(['patient_therapeutic_project:write']);
-    montar({ mode: 'view', version: VERSAO });
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
 
     expect(screen.getByTestId('therapeutic-project-edit-btn')).toBeInTheDocument();
   });
 
   it('engine DESLIGADO: o botão existe mesmo sem célula nenhuma (freio de rollout)', () => {
     comEnforcement([], 'off');
-    montar({ mode: 'view', version: VERSAO });
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
+
+    expect(screen.getByTestId('therapeutic-project-edit-btn')).toBeInTheDocument();
+  });
+});
+
+// ── Gate de export (contrato PR-7: `patient_therapeutic_project:export`) ────
+
+describe('🔒 PR-7 item 3 — "Exportar PDF" é célula `patient_therapeutic_project:export` (mesmo mecanismo do Editar, D269)', () => {
+  it('engine LIGADO e sem a célula → o botão de exportar SOME (não fica cinza)', () => {
+    comEnforcement([]);
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
+
+    expect(screen.queryByTestId('therapeutic-project-export-btn')).not.toBeInTheDocument();
+  });
+
+  it('🔴 a célula do PAI (`patient:read`) não vale — a permissão é do CONTAINER', () => {
+    comEnforcement(['patient:read', 'patient:write']);
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
+
+    expect(screen.queryByTestId('therapeutic-project-export-btn')).not.toBeInTheDocument();
+  });
+
+  it('com a célula do container o botão existe', () => {
+    comEnforcement(['patient_therapeutic_project:export']);
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
+
+    expect(screen.getByTestId('therapeutic-project-export-btn')).toBeInTheDocument();
+  });
+
+  it('engine DESLIGADO: o botão existe mesmo sem célula nenhuma (freio de rollout)', () => {
+    comEnforcement([], 'off');
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
+
+    expect(screen.getByTestId('therapeutic-project-export-btn')).toBeInTheDocument();
+  });
+});
+
+// ── D328 item 3 — versão ANTIGA (não vigente) não oferece edição na tela ────
+
+describe('🔒 D328 item 3: `isCurrent:false` some com "Editar" mesmo com célula e versão viva', () => {
+  it('versão NÃO vigente, não anulada, com a célula: SEM botão "Editar" (só quem abre o drawer sabe quem é a vigente)', () => {
+    comEnforcement(['patient_therapeutic_project:write', 'patient_therapeutic_project:export']);
+    montar({ mode: 'view', version: VERSAO, isCurrent: false });
+
+    expect(screen.queryByTestId('therapeutic-project-edit-btn')).not.toBeInTheDocument();
+    // exportar continua oferecido — é leitura de versão antiga, permitida por lex C8(a) (com a célula própria de export)
+    expect(screen.getByTestId('therapeutic-project-export-btn')).toBeInTheDocument();
+  });
+
+  it('a MESMA versão com `isCurrent:true` MOSTRA o botão — o gate é só o `isCurrent`, não a versão em si', () => {
+    comEnforcement(['patient_therapeutic_project:write']);
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
 
     expect(screen.getByTestId('therapeutic-project-edit-btn')).toBeInTheDocument();
   });
@@ -373,6 +438,18 @@ describe('modo `new` — os catálogos antes do formulário', () => {
     expect(await screen.findByTestId('therapeutic-project-catalogs-error')).toHaveTextContent('catálogo fora do ar');
     expect(screen.queryByTestId('therapeutic-project-form')).not.toBeInTheDocument();
     expect(screen.queryByTestId('therapeutic-project-catalogs-loading')).not.toBeInTheDocument();
+  });
+
+  it('D113: `externalContacts`/`coverageEmergencyContacts` ausentes (`undefined`, sem a célula) não quebram o form — o multi-select nasce vazio', async () => {
+    catalogosOk();
+    montar({ mode: 'new' }, { patient: { ...PACIENTE, externalContacts: undefined, coverageEmergencyContacts: undefined } });
+    await esperarFormulario();
+
+    const abrir = (id: string) => fireEvent.click(document.getElementById(id)!.querySelector('button')!);
+    abrir('tp-externalContacts');
+    expect(document.getElementById('tp-externalContacts')!.querySelectorAll('li[role="option"]')).toHaveLength(0);
+    abrir('tp-coverageContacts');
+    expect(document.getElementById('tp-coverageContacts')!.querySelectorAll('li[role="option"]')).toHaveLength(0);
   });
 });
 
@@ -407,6 +484,8 @@ describe('salvar — `new` cria a major seguinte, `edit` a minor da origem', () 
         activityIds: ['activities-1'],
         startDate: '2026-09-01',
         endDate: '2026-12-01',
+        contactRefs: [],
+        careTeamIds: [],
       },
     });
     expect(onSaved).toHaveBeenCalledTimes(1);
@@ -424,6 +503,19 @@ describe('salvar — `new` cria a major seguinte, `edit` a minor da origem', () 
 
     expect(mockCreateVersion).toHaveBeenCalledWith(PACIENTE.id, expect.objectContaining({ mode: 'edit', fromVersionId: 'v1' }));
     expect(screen.getByTestId('therapeutic-project-drawer').getAttribute('data-mode')).toBe('view');
+  });
+
+  it('defesa (`?? []`): mesmo se o `POST` chegasse sem `contacts` (resposta antiga/desatualizada) a view NÃO quebra — hoje o backend sempre resolve contatos no 201 (contrato §POST, conserto 14/09), este é só o guarda-chuva', async () => {
+    catalogosOk();
+    const { contacts: _semContatos, ...criadaSemContatos } = CRIADA;
+    mockCreateVersion.mockResolvedValue(criadaSemContatos as unknown as TherapeuticProjectVersion);
+    montar({ mode: 'edit', version: VERSAO });
+    await esperarFormulario();
+
+    await act(async () => { fireEvent.click(screen.getByTestId('tp-save')); });
+
+    expect(screen.getByTestId('therapeutic-project-drawer').getAttribute('data-mode')).toBe('view');
+    expect(screen.getByTestId('tpv-contacts')).toBeInTheDocument();
   });
 
   it('recusa do servidor vira a frase da tela dentro do formulário (o drawer não fecha)', async () => {
@@ -453,8 +545,20 @@ describe('saveRefusalMessage — a recusa do servidor em frase de tela', () => {
     ['source_version_not_found', 'sourceNotFound'],
     ['ptp_diagnosis_unknown', 'diagnosisUnknown'],
     ['TERMINOLOGY_UNAVAILABLE', 'terminologyUnavailable'],
+    ['ptp_not_current', 'ptpNotCurrent'],
+    ['ptp_contact_inactive', 'ptpContactInactive'],
   ])('`%s` vira a frase própria', (code, chave) => {
     expect(saveRefusalMessage(new TherapeuticProjectApiError('nope', 422, { code }), t)).toBe(tfErr(chave));
+  });
+
+  it('`ptp_macro_locked` (D328/ADR-4) monta a frase com os NOMES dos campos de `details.fields` — nunca o valor', () => {
+    const erro = new TherapeuticProjectApiError('nope', 422, { code: 'ptp_macro_locked', details: { fields: ['clinicalContext', 'generalObjective'] } });
+    expect(saveRefusalMessage(erro, t)).toBe(tfErr('ptpMacroLocked').replace('{{fields}}', 'clinicalContext, generalObjective'));
+  });
+
+  it('`ptp_macro_locked` SEM `details.fields` (formato inesperado) não quebra — a lista fica vazia', () => {
+    const erro = new TherapeuticProjectApiError('nope', 422, { code: 'ptp_macro_locked' });
+    expect(saveRefusalMessage(erro, t)).toBe(tfErr('ptpMacroLocked').replace('{{fields}}', ''));
   });
 
   it('erro da API com `code` desconhecido cai na mensagem crua do servidor', () => {
@@ -477,7 +581,7 @@ describe('fechamento — Escape e backdrop, com confirmação quando há mudanç
   const avancarFechamento = () => act(() => { vi.advanceTimersByTime(300); });
 
   it('sem mudança: Escape fecha depois da animação (300 ms)', () => {
-    montar({ mode: 'view', version: VERSAO });
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
     vi.useFakeTimers();
 
     fireEvent.keyDown(document, { key: 'Escape' });
@@ -489,7 +593,7 @@ describe('fechamento — Escape e backdrop, com confirmação quando há mudanç
   });
 
   it('tecla que não é Escape não fecha nada', () => {
-    montar({ mode: 'view', version: VERSAO });
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
     vi.useFakeTimers();
 
     fireEvent.keyDown(document, { key: 'Enter' });
@@ -499,7 +603,7 @@ describe('fechamento — Escape e backdrop, com confirmação quando há mudanç
   });
 
   it('o "x" do cabeçalho fecha', () => {
-    montar({ mode: 'view', version: VERSAO });
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
     vi.useFakeTimers();
 
     fireEvent.click(screen.getByTestId('therapeutic-project-close'));
@@ -513,7 +617,7 @@ describe('fechamento — Escape e backdrop, com confirmação quando há mudanç
     const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false);
     montar({ mode: 'edit', version: VERSAO });
     await esperarFormulario();
-    fireEvent.change(screen.getByTestId('tp-clinicalContext'), { target: { value: 'mexi aqui' } });
+    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
 
     vi.useFakeTimers();
     fireEvent.keyDown(document, { key: 'Escape' });
@@ -529,7 +633,7 @@ describe('fechamento — Escape e backdrop, com confirmação quando há mudanç
     const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(true);
     montar({ mode: 'edit', version: VERSAO });
     await esperarFormulario();
-    fireEvent.change(screen.getByTestId('tp-generalObjective'), { target: { value: 'mexi aqui também' } });
+    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
 
     vi.useFakeTimers();
     fireEvent.click(screen.getByTestId('therapeutic-project-backdrop'));
@@ -545,7 +649,7 @@ describe('fechamento — Escape e backdrop, com confirmação quando há mudanç
     const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false);
     montar({ mode: 'edit', version: VERSAO });
     await esperarFormulario();
-    fireEvent.change(screen.getByTestId('tp-clinicalContext'), { target: { value: 'x' } });
+    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
 
     fireEvent.click(screen.getByText(ptBR.common.cancel));
 
@@ -560,7 +664,7 @@ describe('fechamento — Escape e backdrop, com confirmação quando há mudanç
     const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false);
     montar({ mode: 'edit', version: VERSAO });
     await esperarFormulario();
-    fireEvent.change(screen.getByTestId('tp-clinicalContext'), { target: { value: 'mexi e salvei' } });
+    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
     await act(async () => { fireEvent.click(screen.getByTestId('tp-save')); });
 
     vi.useFakeTimers();
@@ -577,7 +681,7 @@ describe('fechamento — Escape e backdrop, com confirmação quando há mudanç
 
 describe('animação de entrada', () => {
   it('o painel entra da direita no quadro seguinte (`requestAnimationFrame`)', async () => {
-    montar({ mode: 'view', version: VERSAO });
+    montar({ mode: 'view', version: VERSAO, isCurrent: true });
 
     expect(screen.getByTestId('therapeutic-project-drawer').className).toContain('translate-x-full');
     await waitFor(() => expect(screen.getByTestId('therapeutic-project-drawer').className).toContain('translate-x-0'));

@@ -19,8 +19,39 @@ export interface CatalogSnapshotItem {
   label: string;
 }
 
+/**
+ * Item de objetivo/atividade no snapshot da versão, com o segmento (migration 430, PR-7) do
+ * momento do congelamento — espelho de `TherapeuticCatalogSnapshotItem` do backend.
+ * `segmentId`/`segmentLabel` são dado CLÍNICO (lex-pr7 C3(b)): `undefined`/`null` numa versão sem
+ * `patient_clinical:read`, e a tela não mostra segmento nesse caso (mesma régua do CID-11).
+ */
+export interface TherapeuticCatalogSnapshotItem extends CatalogSnapshotItem {
+  segmentId?: string | null;
+  segmentLabel?: string | null;
+}
+
 export const THERAPEUTIC_MODALITIES = ['IN_PERSON', 'ONLINE', 'HYBRID'] as const;
 export type TherapeuticModality = (typeof THERAPEUTIC_MODALITIES)[number];
+
+/** Contato por SELEÇÃO (PR-7, lex #7 C1-C6) — espelho de `ContactRef` do backend. */
+export const CONTACT_REF_KINDS = ['RESPONSIBLE', 'EXTERNAL', 'COVERAGE'] as const;
+export type ContactRefKind = (typeof CONTACT_REF_KINDS)[number];
+export interface ContactRef {
+  kind: ContactRefKind;
+  id: string;
+}
+
+export type ResolvedTherapeuticContactKind = ContactRefKind | 'CARE_TEAM';
+
+/**
+ * O que a LEITURA devolve por contato (lex #7 C5): resolvido (nome/telefone) | inativo (contato
+ * desativado, nunca resolve nome/telefone) | redigido (sem a célula de origem). Espelho de
+ * `ResolvedTherapeuticContact` do backend — a tela nunca inventa nome/telefone fora daqui.
+ */
+export type ResolvedTherapeuticContact =
+  | { kind: ResolvedTherapeuticContactKind; id: string; name: string; phone: string | null; relation?: string; specialty?: string }
+  | { kind: ResolvedTherapeuticContactKind; id: string; inactive: true }
+  | { kind: ResolvedTherapeuticContactKind; id: string; redacted: true };
 
 export interface TherapeuticProjectVersion {
   id: string;
@@ -38,8 +69,8 @@ export interface TherapeuticProjectVersion {
   diagnoses: TherapeuticDiagnosis[] | null;
   clinicalContext: string | null;
   generalObjective: string | null;
-  specificObjectives: CatalogSnapshotItem[];
-  activities: CatalogSnapshotItem[];
+  specificObjectives: TherapeuticCatalogSnapshotItem[];
+  activities: TherapeuticCatalogSnapshotItem[];
   /**
    * "Tipo de patología (segmento)" — DERIVADO no servidor dos `diagnoses` (capítulos CID-11 distintos:
    * `id` = código do capítulo, `label` = título). Não se escolhe (Gabriel 08/09; D163/D164). Dado
@@ -57,6 +88,11 @@ export interface TherapeuticProjectVersion {
   createdAt: string;
   country: string;
   redacted?: { clinical?: true; services?: true };
+  /** Ids selecionados (PR-7) — a versão só guarda ids, nunca nome/telefone. */
+  contactRefs: ContactRef[];
+  careTeamIds: string[];
+  /** Os mesmos contatos RESOLVIDOS pela célula de origem (lex #7 C5) — a tela lê daqui, nunca da versão bruta. */
+  contacts: ResolvedTherapeuticContact[];
 }
 
 export interface TherapeuticProjectVersionBody {
@@ -69,21 +105,35 @@ export interface TherapeuticProjectVersionBody {
   activityIds: string[];
   startDate: string;
   endDate: string;
+  contactRefs: ContactRef[];
+  careTeamIds: string[];
+}
+
+/** `data.fieldClass` da LISTA (task 7.7) — espelho de `THERAPEUTIC_FIELD_CLASS` do backend (dono
+ * único: `worker-functions/.../domain/TherapeuticProject.ts`). O front NÃO copia a lista de nomes. */
+export interface TherapeuticFieldClass {
+  macro: string[];
+  micro: string[];
 }
 
 export type CreateTherapeuticProjectBody =
   | { mode: 'new'; version: TherapeuticProjectVersionBody }
   | { mode: 'edit'; fromVersionId: string; version: TherapeuticProjectVersionBody };
 
-/** Só DOIS catálogos: o tipo de patologia deriva do CID-11 (sem tela, sem célula, sem menu). */
-export type TherapeuticCatalogKind = 'specific-objectives' | 'activities';
+/**
+ * `segments` (migration 430, US-17, PR-7): catálogo GLOBAL dos segmentos da Ana Care — filtro dos
+ * objetivos/atividades, não recorte do que pode ser gravado (#REQ-16). Tipo de patología continua
+ * fora (deriva do CID-11, sem tela/célula/menu).
+ */
+export type TherapeuticCatalogKind = 'specific-objectives' | 'activities' | 'segments';
 
-export const THERAPEUTIC_CATALOG_KINDS: readonly TherapeuticCatalogKind[] = ['specific-objectives', 'activities'];
+export const THERAPEUTIC_CATALOG_KINDS: readonly TherapeuticCatalogKind[] = ['specific-objectives', 'activities', 'segments'];
 
 /** Recurso da célula ABAC de cada catálogo — espelho do backend (`THERAPEUTIC_CATALOG_RESOURCE`). */
 export const THERAPEUTIC_CATALOG_RESOURCE: Readonly<Record<TherapeuticCatalogKind, string>> = {
   'specific-objectives': 'catalog_therapeutic_objectives',
   activities: 'catalog_therapeutic_activities',
+  segments: 'catalog_therapeutic_segments',
 };
 
 export interface TherapeuticCatalogItem {
@@ -94,6 +144,9 @@ export interface TherapeuticCatalogItem {
   deactivatedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Só objetivos/atividades têm (migration 430, US-17); `segments` não referencia a si mesmo. */
+  segmentId?: string | null;
+  segmentLabel?: string | null;
 }
 
 /** Teto do rótulo — espelha o CHECK da migration 415 e o zod do servidor. */

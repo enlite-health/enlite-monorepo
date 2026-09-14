@@ -10,7 +10,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { PatientContractedServiceDetail, PatientDetail } from '@domain/entities/PatientDetail';
-import type { TherapeuticProjectVersion } from '@domain/entities/TherapeuticProject';
+import type { ResolvedTherapeuticContact, TherapeuticProjectVersion } from '@domain/entities/TherapeuticProject';
 import { patientDetailFixture } from '../../../__tests__/patientDetailFixture';
 import { buildTherapeuticProjectPdfInput, formatIssuedAt, type PdfContainerReads } from '../buildTherapeuticProjectPdfInput';
 
@@ -75,6 +75,9 @@ const VERSAO: TherapeuticProjectVersion = {
   createdByName: 'Ana Fixture',
   createdAt: '2026-09-01T10:00:00Z',
   country: 'AR',
+  contactRefs: [],
+  careTeamIds: [],
+  contacts: [],
 };
 
 const AGORA = new Date(2026, 8, 8, 14, 5); // 08/09/2026 14:05 — local, sem fuso
@@ -284,54 +287,86 @@ describe('endereço (o do serviço; sem vínculo, o principal)', () => {
   });
 });
 
-// ── Responsáveis e equipe ────────────────────────────────────────────────────
+// ── Contatos selecionados na versão (PR-7, `version.contacts`) ───────────────
+// lex #7 C5/C12: o insumo do PDF NUNCA lê `patient.responsibles`/`coverageEmergencyContacts`/
+// `professionals` para montar contato — só `version.contacts`, já SELECIONADOS e RESOLVIDOS pelo
+// backend (resolved | inactive | redacted). RESPONSIBLE + EXTERNAL compõem o mesmo bloco família.
 
-describe('responsáveis e equipe tratante', () => {
-  it('responsável com vínculo: parentesco traduzido', () => {
-    expect(montar().emergencyContacts).toEqual([
-      {
-        name: 'Luciana Soto',
-        relationship: 'es:admin.patients.detail.relationshipOptions.MOM',
-        phone: '(11) 99852-0481',
-        email: 'luciana.soto@example.com',
-      },
+const responsavelResolvido: ResolvedTherapeuticContact = { kind: 'RESPONSIBLE', id: 'r1', name: 'Luciana Soto', phone: '(11) 99852-0481', relation: 'MOM' };
+const externoResolvido: ResolvedTherapeuticContact = { kind: 'EXTERNAL', id: 'e1', name: 'Escuela X', phone: '(11) 4000-0000', relation: 'SCHOOL' };
+const coberturaResolvida: ResolvedTherapeuticContact = { kind: 'COVERAGE', id: 'c1', name: 'Ambulancia X', phone: '0800-1', relation: 'PRIVATE_AMBULANCE' };
+const equipeResolvida: ResolvedTherapeuticContact = { kind: 'CARE_TEAM', id: 'p1', name: 'Dr. João Alves Pereira', phone: '11-0000', specialty: 'Fisioterapia' };
+
+describe('responsáveis e equipe tratante — SEMPRE de `version.contacts` (PR-7)', () => {
+  it('responsável RESOLVIDO: parentesco traduzido pelo catálogo de responsáveis', () => {
+    const v = { ...VERSAO, contacts: [responsavelResolvido] };
+    expect(montar({ version: v }).emergencyContacts).toEqual([
+      { status: 'resolved', name: 'Luciana Soto', relationship: 'es:admin.patients.detail.relationshipOptions.MOM', phone: '(11) 99852-0481' },
     ]);
   });
 
-  it('responsável SEM vínculo e sem nome: parentesco `null` e nome `—`', () => {
-    const p = paciente({
-      contractedServices: [SERVICO],
-      responsibles: [{ ...patientDetailFixture.responsibles[0], firstName: null, lastName: null, relationship: null }],
-    });
-
-    expect(montar({ patient: p }).emergencyContacts).toEqual([
-      { name: '—', relationship: null, phone: '(11) 99852-0481', email: 'luciana.soto@example.com' },
+  it('externo RESOLVIDO: mesmo bloco família (container `family`), vínculo traduzido pelo catálogo de externos', () => {
+    const v = { ...VERSAO, contacts: [responsavelResolvido, externoResolvido] };
+    expect(montar({ version: v }).emergencyContacts).toEqual([
+      { status: 'resolved', name: 'Luciana Soto', relationship: 'es:admin.patients.detail.relationshipOptions.MOM', phone: '(11) 99852-0481' },
+      { status: 'resolved', name: 'Escuela X', relationship: 'es:admin.patients.detail.externalContactRelationOptions.SCHOOL', phone: '(11) 4000-0000' },
     ]);
   });
 
-  it('sem a célula de família → `null`; com a célula e zero responsáveis → `[]`', () => {
-    expect(montar({ reads: { ...TODOS, family: false } }).emergencyContacts).toBeNull();
-    expect(montar({ patient: paciente({ contractedServices: [SERVICO], responsibles: [] }) }).emergencyContacts).toEqual([]);
+  it('sem vínculo (`relation` ausente): rótulo `null`, sem quebrar — RESPONSIBLE e EXTERNAL', () => {
+    const semVinculo = { ...VERSAO, contacts: [{ kind: 'RESPONSIBLE', id: 'r2', name: 'Sem Vínculo', phone: null } as ResolvedTherapeuticContact] };
+    expect(montar({ version: semVinculo }).emergencyContacts).toEqual([{ status: 'resolved', name: 'Sem Vínculo', relationship: null, phone: null }]);
+    const externoSemVinculo = { ...VERSAO, contacts: [{ kind: 'EXTERNAL', id: 'e2', name: 'Externo Sem Vínculo', phone: null } as ResolvedTherapeuticContact] };
+    expect(montar({ version: externoSemVinculo }).emergencyContacts).toEqual([{ status: 'resolved', name: 'Externo Sem Vínculo', relationship: null, phone: null }]);
   });
 
-  it('417 / lex C5 — contatos da COBERTURA: bloco próprio sob `reads.coverage` (não sob família); tipo traduzido; ausente/redigido no backend → `[]`', () => {
-    const p = paciente({
-      contractedServices: [SERVICO],
-      coverageEmergencyContacts: [
-        { id: 'c1', kind: 'PRIVATE_AMBULANCE', name: 'Ambulancia X', phone: '0800-1', sortOrder: 0 },
-        { id: 'c2', kind: 'DIRECT_PROFESSIONAL', name: 'Dra. Pérez', phone: '11-2', sortOrder: 1 },
-      ],
-    });
-    expect(montar({ patient: p }).coverageEmergencyContacts).toEqual([
-      { kindLabel: 'es:admin.patients.detail.coverageCard.emergencyContactKinds.PRIVATE_AMBULANCE', name: 'Ambulancia X', phone: '0800-1' },
-      { kindLabel: 'es:admin.patients.detail.coverageCard.emergencyContactKinds.DIRECT_PROFESSIONAL', name: 'Dra. Pérez', phone: '11-2' },
+  it('sem a célula de família → `null`; com a célula e zero contatos selecionados → `[]`', () => {
+    const v = { ...VERSAO, contacts: [responsavelResolvido] };
+    expect(montar({ version: v, reads: { ...TODOS, family: false } }).emergencyContacts).toBeNull();
+    expect(montar({ version: VERSAO }).emergencyContacts).toEqual([]);
+  });
+
+  it('🔒 lex #7 C5 — contato INATIVO: nunca nome/telefone, `status: "inactive"`', () => {
+    const v = { ...VERSAO, contacts: [{ kind: 'RESPONSIBLE', id: 'r3', inactive: true } as ResolvedTherapeuticContact] };
+    expect(montar({ version: v }).emergencyContacts).toEqual([{ status: 'inactive' }]);
+  });
+
+  it('🔒 lex #7 C12 — contato SEM CÉLULA de origem (o backend já redigiu): `status: "redacted"`, nunca nome/telefone', () => {
+    const v = { ...VERSAO, contacts: [{ kind: 'RESPONSIBLE', id: 'r4', redacted: true } as ResolvedTherapeuticContact] };
+    expect(montar({ version: v }).emergencyContacts).toEqual([{ status: 'redacted' }]);
+  });
+
+  it('417 / lex C5 — contatos da COBERTURA: bloco próprio sob `reads.coverage` (não sob família); tipo traduzido; sem seleção → `[]`', () => {
+    const v = { ...VERSAO, contacts: [coberturaResolvida] };
+    expect(montar({ version: v }).coverageEmergencyContacts).toEqual([
+      { status: 'resolved', kindLabel: 'es:admin.patients.detail.coverageCard.emergencyContactKinds.PRIVATE_AMBULANCE', name: 'Ambulancia X', phone: '0800-1' },
     ]);
     // A célula que manda é a de COBERTURA: sem família o bloco continua; sem cobertura ele some.
-    expect(montar({ patient: p, reads: { ...TODOS, family: false } }).coverageEmergencyContacts).toHaveLength(2);
-    expect(montar({ patient: p, reads: { ...TODOS, coverage: false } }).coverageEmergencyContacts).toBeNull();
-    // Backend anterior à 417 (campo ausente) ou lista vazia → `[]`, nunca null (a célula existe).
-    expect(montar({ patient: paciente({ contractedServices: [SERVICO] }) }).coverageEmergencyContacts).toEqual([]);
-    expect(montar({ patient: paciente({ contractedServices: [SERVICO], coverageEmergencyContacts: null }) }).coverageEmergencyContacts).toEqual([]);
+    expect(montar({ version: v, reads: { ...TODOS, family: false } }).coverageEmergencyContacts).toHaveLength(1);
+    expect(montar({ version: v, reads: { ...TODOS, coverage: false } }).coverageEmergencyContacts).toBeNull();
+    // Zero contatos de cobertura selecionados → `[]`, nunca null (a célula existe).
+    expect(montar({ version: VERSAO }).coverageEmergencyContacts).toEqual([]);
+  });
+
+  it('cobertura sem `relation` (kind ausente): rótulo do tipo vira `es:...DESCONHECIDO`-like fallback do tradutor, sem quebrar', () => {
+    const semKind = { ...VERSAO, contacts: [{ kind: 'COVERAGE', id: 'c4', name: 'Cobertura Sem Kind', phone: '0800-9' } as ResolvedTherapeuticContact] };
+    expect(montar({ version: semKind }).coverageEmergencyContacts).toEqual([
+      { status: 'resolved', kindLabel: 'es:admin.patients.detail.coverageCard.emergencyContactKinds.', name: 'Cobertura Sem Kind', phone: '0800-9' },
+    ]);
+  });
+
+  it('cobertura sem `phone` (nunca deveria acontecer na origem, mas a forma é `string | null`): vira `""`, não `null`', () => {
+    const semTelefone = { ...VERSAO, contacts: [{ kind: 'COVERAGE', id: 'c5', name: 'Cobertura Sem Telefone', phone: null, relation: 'PRIVATE_AMBULANCE' } as ResolvedTherapeuticContact] };
+    expect(montar({ version: semTelefone }).coverageEmergencyContacts).toEqual([
+      { status: 'resolved', kindLabel: 'es:admin.patients.detail.coverageCard.emergencyContactKinds.PRIVATE_AMBULANCE', name: 'Cobertura Sem Telefone', phone: '' },
+    ]);
+  });
+
+  it('🔒 lex #7 C5/C12 — contato de COBERTURA inativo/redigido: mesma régua tri-estado, nunca nome/telefone', () => {
+    const inativo: ResolvedTherapeuticContact = { kind: 'COVERAGE', id: 'c2', inactive: true };
+    const redigido: ResolvedTherapeuticContact = { kind: 'COVERAGE', id: 'c3', redacted: true };
+    expect(montar({ version: { ...VERSAO, contacts: [inativo] } }).coverageEmergencyContacts).toEqual([{ status: 'inactive' }]);
+    expect(montar({ version: { ...VERSAO, contacts: [redigido] } }).coverageEmergencyContacts).toEqual([{ status: 'redacted' }]);
   });
 
   it('D301 — modalidade `null` (versão anterior à 417) vira `null`; as seções fixas seguem o `contractedServiceCode` CONGELADO na versão, não o serviço da ficha', () => {
@@ -345,28 +380,38 @@ describe('responsáveis e equipe tratante', () => {
     expect(montar({ version: { ...VERSAO, contractedServiceCode: null, redacted: { services: true } } }).fixedSectionsServiceCode).toBeNull();
   });
 
-  it('lex C3 / D167 — marcadores da cobertura: profissional retido (do servidor) e leitura indisponível (ausente ou falhou) — ambos só sob `reads.coverage`', () => {
+  it('lex C3 / D167 — marcadores da cobertura: profissional retido (do servidor) e leitura indisponível (ausente ou falhou) — ambos só sob `reads.coverage`; independentes da SELEÇÃO de contatos', () => {
     const base = paciente({ contractedServices: [SERVICO], coverageEmergencyContacts: [] });
     expect(montar({ patient: base })).toMatchObject({ coverageDirectProfessionalRedacted: false, coverageEmergencyContactsUnavailable: false });
     expect(montar({ patient: paciente({ contractedServices: [SERVICO], coverageEmergencyContacts: [], coverageDirectProfessionalRedacted: true }) }).coverageDirectProfessionalRedacted).toBe(true);
-    // Backend anterior à 417 (campo ausente) → indisponível, e a lista sai `[]` (não null: a célula existe).
+    // Backend anterior à 417 (campo ausente) → indisponível.
     const antigo = montar({ patient: paciente({ contractedServices: [SERVICO] }) });
     expect(antigo.coverageEmergencyContactsUnavailable).toBe(true);
-    expect(antigo.coverageEmergencyContacts).toEqual([]);
     // Bulkhead do servidor.
     expect(montar({ patient: paciente({ contractedServices: [SERVICO], coverageEmergencyContacts: [], coverageEmergencyContactsUnavailable: true }) }).coverageEmergencyContactsUnavailable).toBe(true);
     // Sem a célula: tudo desligado (o bloco inteiro é `null`).
     const semCelula = montar({ patient: paciente({ contractedServices: [SERVICO], coverageDirectProfessionalRedacted: true }), reads: { ...TODOS, coverage: false } });
     expect(semCelula).toMatchObject({ coverageEmergencyContacts: null, coverageDirectProfessionalRedacted: false, coverageEmergencyContactsUnavailable: false });
   });
-  it('profissional sem nome vira `—`; sem a célula de equipe, o bloco é `null`', () => {
-    const p = paciente({
-      contractedServices: [SERVICO],
-      professionals: [patientDetailFixture.professionals[0], { ...patientDetailFixture.professionals[0], id: 'prof2', name: null }],
-    });
 
-    expect(montar({ patient: p }).careTeam).toEqual(['Dr. João Alves Pereira', '—']);
+  it('equipe tratante (CARE_TEAM): nome + especialidade (texto livre, sem catálogo); sem a célula de equipe, o bloco é `null`', () => {
+    const v = { ...VERSAO, contacts: [equipeResolvida] };
+    expect(montar({ version: v }).careTeam).toEqual([{ status: 'resolved', name: 'Dr. João Alves Pereira', relationship: 'Fisioterapia', phone: '11-0000' }]);
     expect(montar({ reads: { ...TODOS, careTeam: false } }).careTeam).toBeNull();
+  });
+
+  it('equipe tratante SEM especialidade: vínculo `null` (o `??`), sem quebrar', () => {
+    const semEspecialidade: ResolvedTherapeuticContact = { kind: 'CARE_TEAM', id: 'p4', name: 'Sin Especialidad', phone: '11-9999' };
+    expect(montar({ version: { ...VERSAO, contacts: [semEspecialidade] } }).careTeam).toEqual([
+      { status: 'resolved', name: 'Sin Especialidad', relationship: null, phone: '11-9999' },
+    ]);
+  });
+
+  it('🔒 lex #7 C5/C12 — equipe tratante inativa/redigida: mesma régua tri-estado', () => {
+    const inativo: ResolvedTherapeuticContact = { kind: 'CARE_TEAM', id: 'p2', inactive: true };
+    const redigido: ResolvedTherapeuticContact = { kind: 'CARE_TEAM', id: 'p3', redacted: true };
+    expect(montar({ version: { ...VERSAO, contacts: [inativo] } }).careTeam).toEqual([{ status: 'inactive' }]);
+    expect(montar({ version: { ...VERSAO, contacts: [redigido] } }).careTeam).toEqual([{ status: 'redacted' }]);
   });
 });
 

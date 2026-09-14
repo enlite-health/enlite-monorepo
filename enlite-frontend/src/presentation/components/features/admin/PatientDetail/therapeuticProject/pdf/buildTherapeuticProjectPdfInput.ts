@@ -5,10 +5,10 @@
  * Rótulos em es-AR fixos: o PDF não segue o idioma do painel (D299.7).
  */
 import type { PatientContractedServiceDetail, PatientDetail } from '@domain/entities/PatientDetail';
-import type { TherapeuticProjectVersion } from '@domain/entities/TherapeuticProject';
+import type { ResolvedTherapeuticContact, TherapeuticProjectVersion } from '@domain/entities/TherapeuticProject';
 import { patientAddressLabel } from '@domain/entities/PatientContractedService';
 import { contractedServiceScheduleText } from '../../contractedServiceScheduleText';
-import { ageFromBirthDate, type TherapeuticProjectPdfInput } from './therapeuticProjectPdfInput';
+import { ageFromBirthDate, type PdfContact, type PdfCoverageContact, type TherapeuticProjectPdfInput } from './therapeuticProjectPdfInput';
 
 export interface PdfContainerReads {
   identity: boolean;
@@ -26,9 +26,41 @@ const SERVICE_KEY = 'admin.patients.detail.contractedServicesCard.serviceTypes';
 const DEVICE_KEY = 'admin.patients.deviceTypeOptions';
 const CARE_LOCATION_KEY = 'admin.patients.detail.contractedServicesCard.careLocationOptions';
 const RELATIONSHIP_KEY = 'admin.patients.detail.relationshipOptions';
+const EXTERNAL_RELATION_KEY = 'admin.patients.detail.externalContactRelationOptions';
 const DOCUMENT_KEY = 'admin.patients.detail.documentTypes';
 const MODALITY_KEY = 'admin.patients.detail.therapeuticProjectCard.modalityOptions';
 const COVERAGE_CONTACT_KIND_KEY = 'admin.patients.detail.coverageCard.emergencyContactKinds';
+
+/**
+ * Rótulo do vínculo de um contato RESOLVIDO (nunca inativo/redigido — só chega aqui quem tem
+ * `name`). RESPONSIBLE/EXTERNAL traduzem `relation` por catálogo próprio; CARE_TEAM usa a
+ * especialidade (texto livre, sem catálogo); COVERAGE tem rótulo próprio (`PdfCoverageContact`).
+ */
+function contactRelationshipLabel(c: Extract<ResolvedTherapeuticContact, { name: string }>, tEs: EsTranslate): string | null {
+  if (c.kind === 'RESPONSIBLE') return c.relation ? tEs(`${RELATIONSHIP_KEY}.${c.relation}`, c.relation) : null;
+  if (c.kind === 'EXTERNAL') return c.relation ? tEs(`${EXTERNAL_RELATION_KEY}.${c.relation}`, c.relation) : null;
+  // CARE_TEAM (o único `kind` que sobra aqui — COVERAGE vai por `toPdfCoverageContact`, nunca por esta função).
+  return c.specialty ?? null;
+}
+
+/**
+ * Contato SELECIONADO na versão (`version.contacts`, PR-7) → forma do PDF (lex #7 C5): inativo
+ * NUNCA resolve nome/telefone ("contacto dado de baja"); sem célula de origem → "omitido por
+ * permiso" (C12). Resolvido: nome/telefone/vínculo, todos JÁ traduzidos pelo backend em `kind`.
+ */
+function toPdfContact(c: ResolvedTherapeuticContact, tEs: EsTranslate): PdfContact {
+  if ('inactive' in c) return { status: 'inactive' };
+  if ('redacted' in c) return { status: 'redacted' };
+  return { status: 'resolved', name: c.name, relationship: contactRelationshipLabel(c, tEs), phone: c.phone };
+}
+
+/** Mesma régua de `toPdfContact`, forma do bloco de cobertura (kind traduzido, telefone obrigatório na origem). */
+function toPdfCoverageContact(c: ResolvedTherapeuticContact, tEs: EsTranslate): PdfCoverageContact {
+  if ('inactive' in c) return { status: 'inactive' };
+  if ('redacted' in c) return { status: 'redacted' };
+  const kind = c.relation ?? '';
+  return { status: 'resolved', kindLabel: tEs(`${COVERAGE_CONTACT_KIND_KEY}.${kind}`, kind), name: c.name, phone: c.phone ?? '' };
+}
 
 export function buildTherapeuticProjectPdfInput(args: {
   patient: PatientDetail;
@@ -83,29 +115,24 @@ export function buildTherapeuticProjectPdfInput(args: {
         })()
     : null;
 
+  // PR-7 (lex #7 C5/C12): os contatos vêm SEMPRE de `version.contacts` — SELECIONADOS na versão e já
+  // RESOLVIDOS pelo backend pela célula de origem (nunca dos containers crus do paciente; isso
+  // deixaria passar contato que não foi escolhido, ou vazaria nome/telefone de linha inativa).
+  // RESPONSIBLE + EXTERNAL compõem o mesmo bloco "familiar/persona responsable" (mesmo container `family`).
   const emergencyContacts = reads.family
-    ? patient.responsibles.map((r) => ({
-        name: [r.firstName, r.lastName].filter(Boolean).join(' ') || '—',
-        relationship: r.relationship ? tEs(`${RELATIONSHIP_KEY}.${r.relationship}`, r.relationship) : null,
-        phone: r.phone,
-        email: r.email,
-      }))
+    ? version.contacts.filter((c) => c.kind === 'RESPONSIBLE' || c.kind === 'EXTERNAL').map((c) => toPdfContact(c, tEs))
     : null;
 
   // D301.3b / lex C5: bloco PRÓPRIO sob a célula de COBERTURA — nunca somado ao dos familiares. O profissional
   // direto já vem filtrado pelo servidor (só com equipe também, C3) — e o servidor DIZ que filtrou
   // (`coverageDirectProfessionalRedacted`); "campo ausente" (backend anterior à 417) e "leitura falhou"
-  // viram `unavailable`, nunca `[]` (D167: não-li ≠ vazio).
+  // viram `unavailable`, nunca `[]` (D167: não-li ≠ vazio) — flags do container, independentes da seleção.
   const contactsMissing = patient.coverageEmergencyContacts === undefined || patient.coverageEmergencyContactsUnavailable === true;
   const coverageEmergencyContacts = reads.coverage
-    ? (patient.coverageEmergencyContacts ?? []).map((c) => ({
-        kindLabel: tEs(`${COVERAGE_CONTACT_KIND_KEY}.${c.kind}`, c.kind),
-        name: c.name,
-        phone: c.phone,
-      }))
+    ? version.contacts.filter((c) => c.kind === 'COVERAGE').map((c) => toPdfCoverageContact(c, tEs))
     : null;
 
-  const careTeam = reads.careTeam ? patient.professionals.map((p) => p.name ?? '—') : null;
+  const careTeam = reads.careTeam ? version.contacts.filter((c) => c.kind === 'CARE_TEAM').map((c) => toPdfContact(c, tEs)) : null;
 
   return {
     // A ficha não carrega nº de caso (é da vaga); o id do paciente é a referência estável do rodapé (C14).

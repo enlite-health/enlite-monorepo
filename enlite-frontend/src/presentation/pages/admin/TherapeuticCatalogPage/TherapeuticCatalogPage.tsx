@@ -28,12 +28,19 @@ import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import { TherapeuticCatalogFormModal, type CatalogItemFormData } from './TherapeuticCatalogFormModal';
 import { catalogRefusalMessage } from './catalogRefusalMessage';
 
+/**
+ * Esta tela administra só objetivos/atividades — `segments` (US-17, migration 430) é catálogo
+ * GLOBAL sem tela própria ainda (fora do escopo da task 7.7); por isso o `kind` aqui é um
+ * subconjunto de `TherapeuticCatalogKind`, não o tipo inteiro.
+ */
+type ManagedCatalogKind = Exclude<TherapeuticCatalogKind, 'segments'>;
+
 interface Props {
-  kind: TherapeuticCatalogKind;
+  kind: ManagedCatalogKind;
 }
 
 /** Chave de i18n do título/subtítulo por catálogo — `admin.therapeuticCatalog.kinds.<kind>`. */
-const KIND_KEY: Readonly<Record<TherapeuticCatalogKind, string>> = {
+const KIND_KEY: Readonly<Record<ManagedCatalogKind, string>> = {
   'specific-objectives': 'specificObjectives',
   activities: 'activities',
 };

@@ -19,9 +19,15 @@ import {
   canWriteTherapeuticClinical,
   projectTherapeuticVersionForActor,
   therapeuticTrailAction,
+  missingContactOriginCell,
+  missingCoverageDirectProfessionalCell,
+  containerOfContactKind,
   PATIENT_CLINICAL_READ_CELL,
   PATIENT_SERVICES_READ_CELL,
   PATIENT_CLINICAL_WRITE_CELL,
+  PATIENT_FAMILY_READ_CELL,
+  PATIENT_COVERAGE_READ_CELL,
+  PATIENT_CARE_TEAM_READ_CELL,
   THERAPEUTIC_PROJECT_RESOURCE,
   THERAPEUTIC_CLINICAL_FIELDS,
 } from '../therapeuticProjectAccess';
@@ -42,8 +48,8 @@ function versao(over: Partial<TherapeuticProjectVersion> = {}): TherapeuticProje
     diagnoses: [{ uri: 'http://id.who.int/icd/entity/1', code: '6A02', title: 'TEA' }],
     clinicalContext: 'contexto clínico do titular',
     generalObjective: 'objetivo geral do titular',
-    specificObjectives: [{ id: 'o-1', label: 'Vínculo terapéutico' }],
-    activities: [{ id: 'a-1', label: 'Acompañamiento escolar' }],
+    specificObjectives: [{ id: 'o-1', label: 'Vínculo terapéutico', segmentId: 'seg-1', segmentLabel: 'Salud mental' }],
+    activities: [{ id: 'a-1', label: 'Acompañamiento escolar', segmentId: 'seg-1', segmentLabel: 'Salud mental' }],
     pathologyTypes: [{ id: '06', label: 'Trastornos mentales, del comportamiento y del neurodesarrollo' }],
     startDate: '2026-01-01',
     endDate: '2026-06-30',
@@ -147,6 +153,21 @@ describe('projectTherapeuticVersionForActor', () => {
     expect(projectTherapeuticVersionForActor(versao(), [PROJETO_READ]).redacted).toEqual({ clinical: true, services: true });
   });
 
+  it('lex-pr7 C3(b)/D303: COM `patient_clinical:read` o segmento (430) de cada objetivo/atividade sai íntegro', () => {
+    const out = projectTherapeuticVersionForActor(versao(), [PROJETO_READ, PATIENT_CLINICAL_READ_CELL, PATIENT_SERVICES_READ_CELL]);
+    expect(out.specificObjectives).toEqual([{ id: 'o-1', label: 'Vínculo terapéutico', segmentId: 'seg-1', segmentLabel: 'Salud mental' }]);
+    expect(out.activities).toEqual([{ id: 'a-1', label: 'Acompañamiento escolar', segmentId: 'seg-1', segmentLabel: 'Salud mental' }]);
+  });
+
+  it('lex-pr7 C3(b)/D303: SEM `patient_clinical:read` o segmento sai `null` por item, mas id/label continuam (não é o item inteiro que some)', () => {
+    const out = projectTherapeuticVersionForActor(versao(), [PROJETO_READ, PATIENT_SERVICES_READ_CELL]);
+    expect(out.specificObjectives).toEqual([{ id: 'o-1', label: 'Vínculo terapéutico', segmentId: null, segmentLabel: null }]);
+    expect(out.activities).toEqual([{ id: 'a-1', label: 'Acompañamiento escolar', segmentId: null, segmentLabel: null }]);
+    expect(out.redacted).toEqual({ clinical: true });
+    expect(JSON.stringify(out)).not.toContain('Salud mental');
+    expect(JSON.stringify(out)).not.toContain('seg-1');
+  });
+
   it('o que NÃO é clínico continua saindo sem a célula: número, datas, autor, serviço e catálogos', () => {
     const out = projectTherapeuticVersionForActor(versao(), []);
     expect(out).toMatchObject({
@@ -218,5 +239,104 @@ describe('therapeuticTrailAction (lex C9/C13: só NOME de container)', () => {
 
   it('a trilha nunca carrega id nem texto — só os dois nomes de container', () => {
     expect(therapeuticTrailAction('read_project', undefined)).toMatch(/^read_project:[A-Za-z+]+$/);
+  });
+
+  it('contactContainersServed (lex C6) entra na trilha, deduplicado, além de clinical/services', () => {
+    expect(therapeuticTrailAction('read_project', [], ['family', 'family', 'coverage'])).toBe(
+      'read_project:therapeuticProject+family+coverage',
+    );
+    expect(therapeuticTrailAction('export_pdf', [PATIENT_CLINICAL_READ_CELL], ['care_team'])).toBe(
+      'export_pdf:therapeuticProject+clinical+care_team',
+    );
+    // Sem contato nenhum resolvido (padrão): nada muda em relação ao comportamento anterior.
+    expect(therapeuticTrailAction('read_project', [])).toBe('read_project:therapeuticProject');
+  });
+});
+
+describe('missingContactOriginCell (lex-pr7 §alterado: "quem não vê não seleciona")', () => {
+  it('cells=null (D113, engine não decidiu) deixa passar mesmo com refs pedidas', () => {
+    expect(missingContactOriginCell([{ kind: 'RESPONSIBLE', id: 'r-1' }], ['ct-1'], null)).toBeNull();
+  });
+
+  it('sem refs nem careTeamIds: nunca falta célula', () => {
+    expect(missingContactOriginCell([], [], [])).toBeNull();
+  });
+
+  it.each([
+    ['RESPONSIBLE', PATIENT_FAMILY_READ_CELL],
+    ['EXTERNAL', PATIENT_FAMILY_READ_CELL],
+  ] as const)('%s sem `patient_family:read` → falta essa célula', (kind, expected) => {
+    expect(missingContactOriginCell([{ kind, id: 'r-1' }], [], [])).toBe(expected);
+    expect(missingContactOriginCell([{ kind, id: 'r-1' }], [], [PATIENT_FAMILY_READ_CELL])).toBeNull();
+  });
+
+  it('COVERAGE sem `patient_coverage:read` → falta essa célula', () => {
+    expect(missingContactOriginCell([{ kind: 'COVERAGE', id: 'c-1' }], [], [])).toBe(PATIENT_COVERAGE_READ_CELL);
+    expect(missingContactOriginCell([{ kind: 'COVERAGE', id: 'c-1' }], [], [PATIENT_COVERAGE_READ_CELL])).toBeNull();
+  });
+
+  it('careTeamIds não-vazio sem `patient_care_team:read` → falta essa célula', () => {
+    expect(missingContactOriginCell([], ['p-1'], [])).toBe(PATIENT_CARE_TEAM_READ_CELL);
+    expect(missingContactOriginCell([], ['p-1'], [PATIENT_CARE_TEAM_READ_CELL])).toBeNull();
+  });
+
+  it('a primeira célula que falta é reportada (family antes de coverage antes de care_team)', () => {
+    expect(
+      missingContactOriginCell([{ kind: 'RESPONSIBLE', id: 'r-1' }, { kind: 'COVERAGE', id: 'c-1' }], ['p-1'], []),
+    ).toBe(PATIENT_FAMILY_READ_CELL);
+  });
+});
+
+describe('missingCoverageDirectProfessionalCell (contract `therapeutic-project.md:12`, lex C3)', () => {
+  it('cells=null (D113) deixa passar SEM consultar `kindOf`', async () => {
+    const kindOf = jest.fn();
+    expect(await missingCoverageDirectProfessionalCell([{ kind: 'COVERAGE', id: 'c-1' }], null, kindOf)).toBeNull();
+    expect(kindOf).not.toHaveBeenCalled();
+  });
+
+  it('já tem `patient_care_team:read` → deixa passar SEM consultar `kindOf`', async () => {
+    const kindOf = jest.fn();
+    expect(await missingCoverageDirectProfessionalCell([{ kind: 'COVERAGE', id: 'c-1' }], [PATIENT_CARE_TEAM_READ_CELL], kindOf)).toBeNull();
+    expect(kindOf).not.toHaveBeenCalled();
+  });
+
+  it('sem refs COVERAGE nenhuma → deixa passar SEM consultar `kindOf`', async () => {
+    const kindOf = jest.fn();
+    expect(await missingCoverageDirectProfessionalCell([{ kind: 'RESPONSIBLE', id: 'r-1' }], [], kindOf)).toBeNull();
+    expect(kindOf).not.toHaveBeenCalled();
+  });
+
+  it('COVERAGE é DIRECT_PROFESSIONAL e falta a célula da equipe → falta `patient_care_team:read`', async () => {
+    const kindOf = jest.fn().mockResolvedValue('DIRECT_PROFESSIONAL');
+    expect(await missingCoverageDirectProfessionalCell([{ kind: 'COVERAGE', id: 'c-1' }], [], kindOf)).toBe(PATIENT_CARE_TEAM_READ_CELL);
+    expect(kindOf).toHaveBeenCalledWith('c-1');
+  });
+
+  it('COVERAGE não é DIRECT_PROFESSIONAL → nada falta', async () => {
+    const kindOf = jest.fn().mockResolvedValue('PUBLIC_EMERGENCY_SERVICE');
+    expect(await missingCoverageDirectProfessionalCell([{ kind: 'COVERAGE', id: 'c-1' }], [], kindOf)).toBeNull();
+  });
+
+  it('id sem linha (kindOf devolve null) → nada falta (a inexistência é assunto do repositório, não desta função)', async () => {
+    const kindOf = jest.fn().mockResolvedValue(null);
+    expect(await missingCoverageDirectProfessionalCell([{ kind: 'COVERAGE', id: 'c-1' }], [], kindOf)).toBeNull();
+  });
+
+  it('várias refs COVERAGE, só uma é DIRECT_PROFESSIONAL → ainda falta a célula', async () => {
+    const kindOf = jest.fn(async (id: string) => (id === 'c-2' ? 'DIRECT_PROFESSIONAL' : 'PUBLIC_EMERGENCY_SERVICE'));
+    expect(
+      await missingCoverageDirectProfessionalCell([{ kind: 'COVERAGE', id: 'c-1' }, { kind: 'COVERAGE', id: 'c-2' }], [], kindOf),
+    ).toBe(PATIENT_CARE_TEAM_READ_CELL);
+  });
+});
+
+describe('containerOfContactKind', () => {
+  it.each([
+    ['RESPONSIBLE', 'family'],
+    ['EXTERNAL', 'family'],
+    ['COVERAGE', 'coverage'],
+    ['CARE_TEAM', 'care_team'],
+  ] as const)('%s → %s', (kind, container) => {
+    expect(containerOfContactKind(kind)).toBe(container);
   });
 });

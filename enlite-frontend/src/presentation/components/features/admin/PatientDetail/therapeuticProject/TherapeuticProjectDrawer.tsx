@@ -13,14 +13,13 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, FileDown, Pencil } from 'lucide-react';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
-import type { TherapeuticProjectVersion, TherapeuticProjectVersionBody } from '@domain/entities/TherapeuticProject';
+import type { TherapeuticFieldClass, TherapeuticProjectVersion, TherapeuticProjectVersionBody } from '@domain/entities/TherapeuticProject';
 import { AdminTherapeuticProjectsApiService } from '@infrastructure/http/AdminTherapeuticProjectsApiService';
 import { saveRefusalMessage } from './saveRefusalMessage';
 import { useTherapeuticCatalogs } from '@hooks/admin/useTherapeuticProjects';
 import { useContainerAccess } from '@presentation/hooks/useCellAccess';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { Button } from '@presentation/components/atoms/Button';
 import { ActionButton } from '@presentation/components/features/access';
 import { TherapeuticProjectForm } from './TherapeuticProjectForm';
 import { TherapeuticProjectVersionView } from './TherapeuticProjectVersionView';
@@ -29,11 +28,18 @@ import { pdfFileName, renderTherapeuticProjectPdfBlob } from './pdf/renderTherap
 import i18n from '@infrastructure/i18n/config';
 import logoEnlite from '../../../../../../assets/logo-enlite.png';
 
-export type TherapeuticProjectTarget = { mode: 'new' } | { mode: 'view'; version: TherapeuticProjectVersion } | { mode: 'edit'; version: TherapeuticProjectVersion };
+export type TherapeuticProjectTarget =
+  | { mode: 'new' }
+  // D328 item 3: a tela SÓ oferece "Editar" quando `version` é a VIGENTE — `isCurrent` vem de quem
+  // abre o drawer (o dono da lista completa), nunca recalculado aqui a partir de UMA versão isolada.
+  | { mode: 'view'; version: TherapeuticProjectVersion; isCurrent: boolean }
+  | { mode: 'edit'; version: TherapeuticProjectVersion };
 
 interface Props {
   patient: PatientDetail;
   target: TherapeuticProjectTarget;
+  /** Lista MACRO×MICRO da API (task 7.7) — o form lê daqui, nunca copia. */
+  fieldClass: TherapeuticFieldClass;
   onClose: () => void;
   /** Uma versão foi criada — o pai recarrega a lista. */
   onSaved: () => void;
@@ -42,7 +48,7 @@ interface Props {
 const CLOSE_MS = 300;
 
 
-export function TherapeuticProjectDrawer({ patient, target: initial, onClose, onSaved }: Props): JSX.Element {
+export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass, onClose, onSaved }: Props): JSX.Element {
   const { t } = useTranslation();
   const tf = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.therapeuticProjectForm.${k}`, o ?? {});
   const [show, setShow] = useState(false);
@@ -97,7 +103,14 @@ export function TherapeuticProjectDrawer({ patient, target: initial, onClose, on
         : await AdminTherapeuticProjectsApiService.createVersion(patient.id, { mode: 'new', version: body });
       setDirty(false);
       onSaved();
-      setTarget({ mode: 'view', version: created });
+      // A versão recém-criada é sempre a vigente (é a de `created_at` mais recente, D328).
+      // Conserto 14/09 (achado do gate): `POST .../therapeutic-projects` agora devolve `contacts`/
+      // `contactRefs`/`careTeamIds` RESOLVIDOS — o mesmo caminho de `resolveContacts` que `list`/`get`
+      // já usavam (`AdminTherapeuticProjectsController.create`, contrato §POST) — então `created` já
+      // chega completo daqui, sem precisar do refetch pra "Editar" imediatamente depois reconstruir a
+      // seleção. `?? []` fica só como defesa contra uma resposta ainda mais antiga/desatualizada (ex:
+      // cache do browser); não há mais branch normal em que `created.contacts` venha `undefined`.
+      setTarget({ mode: 'view', version: { ...created, contacts: created.contacts ?? [] }, isCurrent: true });
     } catch (err: unknown) {
       setSaveError(saveRefusalMessage(err, t));
     } finally {
@@ -156,12 +169,14 @@ export function TherapeuticProjectDrawer({ patient, target: initial, onClose, on
           <div className="flex items-center gap-2">
             {target.mode === 'view' && (
               <>
-                {/* lex C13: exportar busca a versão de novo — é essa chamada que deixa a trilha `export_pdf`. */}
-                <Button variant="outline" size="sm" onClick={() => handleExport(target.version)} disabled={exporting || target.version.annulledAt !== null} className="flex items-center gap-1" data-testid="therapeutic-project-export-btn">
+                {/* lex C13: exportar busca a versão de novo — é essa chamada que deixa a trilha `export_pdf`.
+                    Célula `patient_therapeutic_project:export` (contrato PR-7) — sem ela o botão SOME (D269), mesmo mecanismo do Editar acima. */}
+                <ActionButton resource="patient_therapeutic_project" action="export" variant="outline" size="sm" onClick={() => handleExport(target.version)} disabled={exporting || target.version.annulledAt !== null} className="flex items-center gap-1" data-testid="therapeutic-project-export-btn">
                   <FileDown className="w-4 h-4" />
                   {exporting ? tf('exporting') : tf('exportPdf')}
-                </Button>
-                {target.version.annulledAt === null && (
+                </ActionButton>
+                {/* D328 item 3: versão antiga (não vigente) não oferece edição na tela, mesmo não-anulada. */}
+                {target.version.annulledAt === null && target.isCurrent && (
                   <ActionButton resource="patient_therapeutic_project" action="write" variant="primary" size="sm" onClick={() => setTarget({ mode: 'edit', version: target.version })} className="flex items-center gap-1" data-testid="therapeutic-project-edit-btn">
                     <Pencil className="w-4 h-4" />
                     {t('admin.patients.detail.edit')}
@@ -193,6 +208,11 @@ export function TherapeuticProjectDrawer({ patient, target: initial, onClose, on
               services={patient.contractedServices}
               patientDiagnoses={patient.diagnoses}
               catalogs={catalogs}
+              fieldClass={fieldClass}
+              responsibles={patient.responsibles}
+              externalContacts={patient.externalContacts ?? []}
+              coverageEmergencyContacts={patient.coverageEmergencyContacts ?? []}
+              professionals={patient.professionals}
               from={target.mode === 'edit' ? target.version : null}
               saving={saving}
               saveError={saveError}

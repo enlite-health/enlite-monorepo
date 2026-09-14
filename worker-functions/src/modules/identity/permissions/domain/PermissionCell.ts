@@ -67,6 +67,8 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   patient_therapeutic_project: 'Pacientes',
   catalog_therapeutic_objectives: 'Pacientes',
   catalog_therapeutic_activities: 'Pacientes',
+  // US-17 (spec 018, PR-7, migration 430): catálogo dos segmentos da Ana Care, mesma família.
+  catalog_therapeutic_segments: 'Pacientes',
   recruitment: 'Recrutamento',
   talentum: 'Recrutamento',
   prescreening: 'Recrutamento',
@@ -221,6 +223,12 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'patient_therapeutic_project:write':
     'Criar uma nova versão do projeto terapêutico ("Novo" = major seguinte, "Editar" = minor seguinte) '
     + 'e anular uma versão. Exige também `patient_clinical:write` — o corpo carrega texto clínico.',
+  // `exportGate` fica dentro de closure condicional (`?purpose=export`) em
+  // `adminTherapeuticProjectsRoutes.ts` — o scanner de rota não vê essa chamada de
+  // `perm.require`, então esta célula só chega ao catálogo por `cellsForaDeRota`.
+  'patient_therapeutic_project:export':
+    'Exportar o PDF de uma versão do projeto terapêutico (vigente ou antiga). Exige também '
+    + '`patient_therapeutic_project:read` — a leitura da versão é pré-requisito do export.',
   'catalog_therapeutic_objectives:read':
     'Ver o catálogo de OBJETIVOS ESPECÍFICOS do projeto terapêutico (lista global, sem dado de paciente).',
   'catalog_therapeutic_objectives:write':
@@ -229,6 +237,10 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Ver o catálogo de ROTINA E ATIVIDADES do projeto terapêutico (lista global, sem dado de paciente).',
   'catalog_therapeutic_activities:write':
     'Adicionar, renomear e desativar atividades do catálogo (backoffice).',
+  'catalog_therapeutic_segments:read':
+    'Ver o catálogo de SEGMENTOS da Ana Care (US-17, lista global, sem dado de paciente).',
+  'catalog_therapeutic_segments:write':
+    'Adicionar, renomear e desativar segmentos do catálogo (backoffice).',
 };
 
 /** Célula do catálogo — o que `iam.permissions` guarda de uma linha. */

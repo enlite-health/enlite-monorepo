@@ -87,6 +87,8 @@ const CORPO: TherapeuticProjectVersionInput = {
   activityIds: ['a-1'],
   startDate: '2026-01-01',
   endDate: '2026-06-30',
+  contactRefs: [],
+  careTeamIds: [],
 };
 
 interface Cenario {
@@ -111,12 +113,17 @@ interface Cenario {
  */
 function cliente(cen: Cenario = {}) {
   const chamadas: Array<{ sql: string; params: unknown[] }> = [];
+  // TUDO que passa pelo client, controle (BEGIN/COMMIT/set_config/SET CONSTRAINTS) incluído — só
+  // para a prova de ORDEM do SET CONSTRAINTS (429). `chamadas` continua só o SQL de negócio, como
+  // antes, para não quebrar as asserções de `ordem[0]` já existentes.
+  const todas: Array<{ sql: string; params: unknown[] }> = [];
   const catalogo = cen.catalogo ?? {
     therapeutic_specific_objectives: [{ id: 'o-1', label: 'Objetivo A' }],
     therapeutic_activities: [{ id: 'a-1', label: 'Atividade A' }],
   };
   const query = jest.fn(async (sql: string, params: unknown[] = []) => {
-    if (/^\s*(BEGIN|COMMIT|ROLLBACK)\s*$|set_config\s*\(/i.test(sql)) return { rows: [], rowCount: 0 };
+    todas.push({ sql, params });
+    if (/^\s*(BEGIN|COMMIT|ROLLBACK)\s*$|^\s*SET CONSTRAINTS\b|set_config\s*\(/i.test(sql)) return { rows: [], rowCount: 0 };
     chamadas.push({ sql, params });
     if (cen.erroEm && cen.erroEm.padrao.test(sql)) throw cen.erroEm.erro;
     if (/FOR UPDATE/.test(sql)) return cen.pacienteExiste === false ? { rows: [], rowCount: 0 } : { rows: [{ id: PACIENTE }], rowCount: 1 };
@@ -132,7 +139,7 @@ function cliente(cen: Cenario = {}) {
     if (/WHERE v\.id = \$1/.test(sql)) return { rows: [cen.criada ?? row({ id: 'v-novo' })], rowCount: 1 };
     return { rows: [], rowCount: 0 };
   });
-  return { cli: { query, release: jest.fn() }, chamadas };
+  return { cli: { query, release: jest.fn() }, chamadas, todas };
 }
 
 /** O SQL de negócio na ordem em que rodou (o controle de transação já foi filtrado). */
@@ -264,6 +271,15 @@ describe('TherapeuticProjectRepository', () => {
     });
 
 
+    it('SET CONSTRAINTS das 4 FKs de contato (429) IMMEDIATE é a PRIMEIRA query da transação, antes do FOR UPDATE e de qualquer INSERT — senão o 23503 só estoura no COMMIT, fora do try/catch de `insertContacts`', async () => {
+      const { cli, todas } = cliente();
+      mockConnect.mockResolvedValue(cli);
+      await repo().createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: CORPO });
+      const negocio = todas.map((c) => c.sql.replace(/\s+/g, ' ').trim()).filter((s) => !/^(BEGIN|COMMIT|ROLLBACK)$/i.test(s) && !/set_config/i.test(s));
+      expect(negocio[0]).toBe('SET CONSTRAINTS ptpc_resp_fk, ptpc_ext_fk, ptpc_cov_fk, ptpc_pro_fk IMMEDIATE');
+      expect(negocio[1]).toBe('SELECT id FROM patients WHERE id = $1 FOR UPDATE');
+    });
+
     it('paciente inexistente (ou invisível sob a RLS): a trava não acha linha → PatientNotFoundForProjectError, sem INSERT', async () => {
       const { cli, chamadas } = cliente({ pacienteExiste: false });
       mockConnect.mockResolvedValue(cli);
@@ -304,8 +320,94 @@ describe('TherapeuticProjectRepository', () => {
       expect(ins.params[8]).toBe(JSON.stringify([{ id: 'o-1', label: 'Objetivo A' }]));
       expect(ins.params[9]).toBe(JSON.stringify([{ id: 'a-1', label: 'Atividade A' }]));
       // os dois catálogos foram consultados dentro da transação, não pelo pool
-      expect(sqls(chamadas).filter((s) => /WHERE active AND id = ANY/.test(s))).toHaveLength(2);
+      expect(sqls(chamadas).filter((s) => /WHERE c\.active AND c\.id = ANY/.test(s))).toHaveLength(2);
       expect(mockPoolQuery).not.toHaveBeenCalled();
+    });
+
+    describe('contactRefs/careTeamIds (PR-7, migration 429, D328/SUP-25 — MICRO, só ids)', () => {
+      it('insere UMA LINHA POR contato, na MESMA transação, sort_order pela ordem do corpo (contactRefs antes de careTeamIds)', async () => {
+        const { cli, chamadas } = cliente();
+        mockConnect.mockResolvedValue(cli);
+        const corpo = {
+          ...CORPO,
+          contactRefs: [{ kind: 'RESPONSIBLE' as const, id: 'r-1' }, { kind: 'COVERAGE' as const, id: 'c-1' }],
+          careTeamIds: ['p-1'],
+        };
+        await repo().createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: corpo });
+        const ligacoes = chamadas.filter((c) => /^INSERT INTO patient_therapeutic_project_contacts/.test(c.sql));
+        expect(ligacoes).toHaveLength(3);
+        expect(ligacoes[0].params).toEqual(['v-novo', PACIENTE, 'RESPONSIBLE', 'r-1', 0]);
+        expect(ligacoes[1].params).toEqual(['v-novo', PACIENTE, 'COVERAGE', 'c-1', 1]);
+        expect(ligacoes[2].params).toEqual(['v-novo', PACIENTE, 'CARE_TEAM', 'p-1', 2]);
+        // A ligação nasce DEPOIS da versão, dentro da MESMA sequência de queries (SUP-26).
+        const idxVersao = chamadas.findIndex((c) => /^INSERT INTO patient_therapeutic_projects\b/.test(c.sql));
+        const idxLigacao = chamadas.findIndex((c) => /^INSERT INTO patient_therapeutic_project_contacts/.test(c.sql));
+        expect(idxLigacao).toBeGreaterThan(idxVersao);
+      });
+
+      it('sem contactRefs/careTeamIds: nenhuma linha na ligação (retrocompatível, PATCH sem os campos)', async () => {
+        const { cli, chamadas } = cliente();
+        mockConnect.mockResolvedValue(cli);
+        await repo().createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: CORPO });
+        expect(chamadas.some((c) => /^INSERT INTO patient_therapeutic_project_contacts/.test(c.sql))).toBe(false);
+      });
+
+      it('trigger `ptp_contact_inactive` (22023) → ContactInactiveError com SÓ kind/id — nunca propaga o erro cru', async () => {
+        const erro = Object.assign(new Error('ptp_contact_inactive: contato inativo ou de outro paciente não pode ser referenciado'), { code: '22023' });
+        const { cli } = cliente({ erroEm: { padrao: /^INSERT INTO patient_therapeutic_project_contacts/, erro } });
+        mockConnect.mockResolvedValue(cli);
+        const corpo = { ...CORPO, contactRefs: [{ kind: 'RESPONSIBLE' as const, id: 'r-inativo' }] };
+        const { ContactInactiveError } = await import('../TherapeuticProjectRepository');
+        await expect(repo().createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: corpo }))
+          .rejects.toMatchObject({ code: 'ptp_contact_inactive', kind: 'RESPONSIBLE', id: 'r-inativo' });
+        await expect(repo().createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: corpo }))
+          .rejects.toBeInstanceOf(ContactInactiveError);
+      });
+
+      it('FK violada (23503, id de outro paciente ou inexistente) → ContactNotFoundError, não 500', async () => {
+        const erro = Object.assign(new Error('insert or update on table violates foreign key constraint "ptpc_cov_fk"'), { code: '23503' });
+        const { cli } = cliente({ erroEm: { padrao: /^INSERT INTO patient_therapeutic_project_contacts/, erro } });
+        mockConnect.mockResolvedValue(cli);
+        const corpo = { ...CORPO, contactRefs: [{ kind: 'COVERAGE' as const, id: 'c-de-outro-paciente' }] };
+        const { ContactNotFoundError } = await import('../TherapeuticProjectRepository');
+        await expect(repo().createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: corpo }))
+          .rejects.toMatchObject({ code: 'contact_not_found', kind: 'COVERAGE', id: 'c-de-outro-paciente' });
+        await expect(repo().createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: corpo }))
+          .rejects.toBeInstanceOf(ContactNotFoundError);
+      });
+
+      it('22023 com mensagem DIFERENTE de `ptp_contact_inactive` não vira ContactInactiveError — propaga cru', async () => {
+        const outroCheck = Object.assign(new Error('other_check_violation: algo bem diferente'), { code: '22023' });
+        const { cli } = cliente({ erroEm: { padrao: /^INSERT INTO patient_therapeutic_project_contacts/, erro: outroCheck } });
+        mockConnect.mockResolvedValue(cli);
+        const corpo = { ...CORPO, contactRefs: [{ kind: 'RESPONSIBLE' as const, id: 'r-1' }] };
+        await expect(repo().createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: corpo })).rejects.toBe(outroCheck);
+      });
+
+      it('erro genérico na ligação propaga cru — não vira 422/404 mentiroso', async () => {
+        const boom = new Error('conexão caiu');
+        const { cli } = cliente({ erroEm: { padrao: /^INSERT INTO patient_therapeutic_project_contacts/, erro: boom } });
+        mockConnect.mockResolvedValue(cli);
+        const corpo = { ...CORPO, careTeamIds: ['p-1'] };
+        await expect(repo().createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: corpo })).rejects.toBe(boom);
+      });
+
+      it('rejeição `null` na ligação (sem `.code`) passa pelo `?.` do detector sem quebrar — propaga cru', async () => {
+        const { cli } = cliente({ erroEm: { padrao: /^INSERT INTO patient_therapeutic_project_contacts/, erro: null } });
+        mockConnect.mockResolvedValue(cli);
+        const corpo = { ...CORPO, contactRefs: [{ kind: 'RESPONSIBLE' as const, id: 'r-1' }] };
+        await expect(repo().createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: corpo })).rejects.toBeNull();
+      });
+
+      it('22023 SEM `.message` (o `?? \'\'` do detector segura) não vira ContactInactiveError — propaga cru', async () => {
+        // Objeto puro, SEM protótipo de Error — `.message` é `undefined` de verdade (Error.prototype.message
+        // seria `''`, e `'' ?? ''` não exercita o fallback: precisa do `undefined` genuíno).
+        const semMensagem = { code: '22023' };
+        const { cli } = cliente({ erroEm: { padrao: /^INSERT INTO patient_therapeutic_project_contacts/, erro: semMensagem } });
+        mockConnect.mockResolvedValue(cli);
+        const corpo = { ...CORPO, contactRefs: [{ kind: 'RESPONSIBLE' as const, id: 'r-1' }] };
+        await expect(repo().createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: corpo })).rejects.toBe(semMensagem);
+      });
     });
 
     it('o tipo de patologia é DERIVADO dos CID-11 (D163/D164): capítulo por diagnóstico, distinto e ordenado — o cliente não manda nada', async () => {
@@ -382,7 +484,11 @@ describe('TherapeuticProjectRepository', () => {
 
     it('editar a 2.0 não interfere na major 1 — a minor é contada DENTRO da major de origem', async () => {
       const { cli, chamadas } = cliente({
-        existentes: [row({ id: 'v-10', major: 1, minor: 7 }), row({ id: 'v-20', major: 2, minor: 0 })],
+        // `created_at` distintos (ADR-4/SUP-24: vigente = mais recente) — v-20 é a VIGENTE aqui.
+        existentes: [
+          row({ id: 'v-10', major: 1, minor: 7, created_at: '2026-09-01T10:00:00.000Z' }),
+          row({ id: 'v-20', major: 2, minor: 0, created_at: '2026-09-08T10:00:00.000Z' }),
+        ],
         criada: row({ id: 'v-novo', major: 2, minor: 1 }),
       });
       mockConnect.mockResolvedValue(cli);
@@ -412,6 +518,42 @@ describe('TherapeuticProjectRepository', () => {
           mode: 'edit', patientId: PACIENTE, actorUid: 'uid-1', fromVersionId: 'v-10', version: CORPO,
         }),
       ).rejects.toBeInstanceOf(SourceVersionNotFoundError);
+    });
+
+    it('fromVersionId EXISTE mas não é mais a VIGENTE (outra edição ficou mais recente) → 409 ptp_not_current, NUNCA 422 (ADR-4/SUP-24)', async () => {
+      const { cli, chamadas } = cliente({
+        existentes: [
+          row({ id: 'v-10', major: 1, minor: 0, created_at: '2026-09-01T10:00:00.000Z' }),
+          row({ id: 'v-11', major: 1, minor: 1, created_at: '2026-09-08T10:00:00.000Z' }),
+        ],
+      });
+      mockConnect.mockResolvedValue(cli);
+      const { VersionNotCurrentError } = await import('../TherapeuticProjectRepository');
+      await expect(
+        repo().createVersion({ mode: 'edit', patientId: PACIENTE, actorUid: 'uid-1', fromVersionId: 'v-10', version: CORPO }),
+      ).rejects.toBeInstanceOf(VersionNotCurrentError);
+      expect(chamadas.some((c) => /^INSERT INTO patient_therapeutic_projects/.test(c.sql))).toBe(false);
+    });
+
+    it('campo MACRO alterado na edição da vigente → 422 ptp_macro_locked com os NOMES mudados (D328)', async () => {
+      const vigente = row({ id: 'v-10', major: 1, minor: 0, clinical_context: 'contexto ORIGINAL' });
+      const { cli, chamadas } = cliente({ existentes: [vigente] });
+      mockConnect.mockResolvedValue(cli);
+      const { MacroFieldsLockedError } = await import('../TherapeuticProjectRepository');
+      const corpoMudouMacro = { ...CORPO, clinicalContext: 'contexto MUDOU' };
+      const p = repo().createVersion({ mode: 'edit', patientId: PACIENTE, actorUid: 'uid-1', fromVersionId: 'v-10', version: corpoMudouMacro });
+      await expect(p).rejects.toBeInstanceOf(MacroFieldsLockedError);
+      await expect(p).rejects.toMatchObject({ fields: ['clinicalContext'] });
+      expect(chamadas.some((c) => /^INSERT INTO patient_therapeutic_projects/.test(c.sql))).toBe(false);
+    });
+
+    it('editar a vigente SEM mudar nenhum MACRO (só MICRO: startDate/modality/contactRefs) → passa, sem 422', async () => {
+      const vigente = row({ id: 'v-10', major: 1, minor: 0 });
+      const { cli, chamadas } = cliente({ existentes: [vigente] });
+      mockConnect.mockResolvedValue(cli);
+      const corpoSoMicro = { ...CORPO, startDate: '2026-02-01', modality: 'ONLINE' as const };
+      await repo().createVersion({ mode: 'edit', patientId: PACIENTE, actorUid: 'uid-1', fromVersionId: 'v-10', version: corpoSoMicro });
+      expect(chamadas.some((c) => /^INSERT INTO patient_therapeutic_projects/.test(c.sql))).toBe(true);
     });
   });
 

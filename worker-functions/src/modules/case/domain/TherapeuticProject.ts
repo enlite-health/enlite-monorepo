@@ -24,25 +24,45 @@ export interface CatalogSnapshotItem {
 }
 
 /**
+ * Item de `specific-objectives`/`activities` no snapshot da versão, com o segmento (migration 430)
+ * do momento do congelamento. `segmentId`/`segmentLabel` são dado CLÍNICO (lex-pr7 C3(b), D303:
+ * mesma régua de `pathologyTypes`) — opcionais aqui só para os itens sem segmento ou para fixture
+ * antiga sem o campo; a projeção (`therapeuticProjectAccess.ts`) é quem decide `null` por célula.
+ */
+export interface TherapeuticCatalogSnapshotItem extends CatalogSnapshotItem {
+  segmentId?: string | null;
+  segmentLabel?: string | null;
+}
+
+/**
  * Só DOIS catálogos mantidos à mão. "Tipo de patología" NÃO é catálogo (Gabriel, 08/09: "vem do
  * CID-11, não tem motivo para um menu que adiciona isso"; D163/D164): é DERIVADO dos diagnósticos
  * CID-11 da versão — ver `pathologyTypes` abaixo. A tabela `pathology_types` da 415 fica
  * deprecada pela 418; a célula `catalog_pathology_types` sumiu do código e o sync a marca.
  */
-export type TherapeuticCatalogKind = 'specific-objectives' | 'activities';
+/**
+ * `segments` (migration 430, US-17, spec 018 PR-7): catálogo GLOBAL dos segmentos da Ana Care,
+ * mesmo molde dos dois de cima — mesma tabela genérica (id/label/sort_order/active/deactivated_at),
+ * por isso entra no MESMO repositório/rotas sem código novo (célula literal na rota, D299.3).
+ * `specific-objectives`/`activities` ganham `segment_id` (FK opcional) como FILTRO — não recorte
+ * do que pode ser gravado (#REQ-16) — tratado à parte no `create`/`update` do repositório.
+ */
+export type TherapeuticCatalogKind = 'specific-objectives' | 'activities' | 'segments';
 
-export const THERAPEUTIC_CATALOG_KINDS: readonly TherapeuticCatalogKind[] = ['specific-objectives', 'activities'];
+export const THERAPEUTIC_CATALOG_KINDS: readonly TherapeuticCatalogKind[] = ['specific-objectives', 'activities', 'segments'];
 
-/** Tabela de cada catálogo (migration 415). Fonte única — o repositório monta o SQL por aqui. */
+/** Tabela de cada catálogo (migrations 415/430). Fonte única — o repositório monta o SQL por aqui. */
 export const THERAPEUTIC_CATALOG_TABLE: Readonly<Record<TherapeuticCatalogKind, string>> = {
   'specific-objectives': 'therapeutic_specific_objectives',
   activities: 'therapeutic_activities',
+  segments: 'therapeutic_segments',
 };
 
 /** Recurso da célula ABAC de cada catálogo (D299.3: uma célula por catálogo, família admin.patients). */
 export const THERAPEUTIC_CATALOG_RESOURCE: Readonly<Record<TherapeuticCatalogKind, string>> = {
   'specific-objectives': 'catalog_therapeutic_objectives',
   activities: 'catalog_therapeutic_activities',
+  segments: 'catalog_therapeutic_segments',
 };
 
 /**
@@ -75,8 +95,8 @@ export interface TherapeuticProjectVersion {
   diagnoses: TherapeuticDiagnosis[];
   clinicalContext: string;
   generalObjective: string;
-  specificObjectives: CatalogSnapshotItem[];
-  activities: CatalogSnapshotItem[];
+  specificObjectives: TherapeuticCatalogSnapshotItem[];
+  activities: TherapeuticCatalogSnapshotItem[];
   /** Derivado dos `diagnoses` (capítulos CID-11 distintos, ordenados por código). Ver `PathologySegment`. */
   pathologyTypes: PathologySegment[];
   startDate: string;
@@ -94,6 +114,100 @@ export interface TherapeuticProjectVersion {
 }
 
 export const versionLabel = (major: number, minor: number): string => `V.${major}.${minor}`;
+
+/**
+ * Contato por SELEÇÃO (PR-7, migration 429, lex #7 C1-C6) — só ids, nunca nome/telefone. `CARE_TEAM`
+ * fica de fora (é `careTeamIds: string[]` no corpo, sem o wrapper `{kind,id}` — molde do contrato).
+ */
+export const CONTACT_REF_KINDS = ['RESPONSIBLE', 'EXTERNAL', 'COVERAGE'] as const;
+export type ContactRefKind = (typeof CONTACT_REF_KINDS)[number];
+export interface ContactRef {
+  kind: ContactRefKind;
+  id: string;
+}
+
+export type ResolvedTherapeuticContactKind = ContactRefKind | 'CARE_TEAM';
+
+/**
+ * O que a LEITURA devolve por contato (lex #7 C5, regra única): resolvido (célula de origem +
+ * contato ativo) | inativo (sem célula nenhuma resolve nome/telefone de linha inativa) | redigido
+ * (sem a célula de origem). Nunca as três formas ao mesmo tempo — o `kind`+`id` sempre saem.
+ */
+export type ResolvedTherapeuticContact =
+  | { kind: ResolvedTherapeuticContactKind; id: string; name: string; phone: string | null; relation?: string; specialty?: string }
+  | { kind: ResolvedTherapeuticContactKind; id: string; inactive: true }
+  | { kind: ResolvedTherapeuticContactKind; id: string; redacted: true };
+
+/**
+ * ADR-4 / D328 — campo MACRO só muda quando o operador cria uma versão NOVA (`mode:'new'`);
+ * `mode:'edit'` recusa alteração de MACRO com 422 `ptp_macro_locked`. `modality` é MICRO
+ * (D328/SUP-24: trocar presencial↔online é edição, não pede projeto novo — fecha o que o
+ * plano deixava em aberto). `contactRefs`/`careTeamIds` também são MICRO: são só ids, e trocar a
+ * seleção de contato não é reescrever o conteúdo clínico da versão.
+ */
+export const THERAPEUTIC_FIELD_CLASS = {
+  MACRO: ['contractedServiceId', 'diagnoses', 'clinicalContext', 'generalObjective', 'specificObjectiveIds', 'activityIds'] as const,
+  MICRO: ['startDate', 'endDate', 'modality', 'contactRefs', 'careTeamIds'] as const,
+} as const;
+
+export type TherapeuticMacroField = (typeof THERAPEUTIC_FIELD_CLASS.MACRO)[number];
+
+/** Compara ids/uris de um array sem depender de ordem (o cliente pode reenviar a mesma seleção reordenada). */
+function sameIdSet(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sa = [...a].sort();
+  const sb = [...b].sort();
+  return sa.every((v, i) => v === sb[i]);
+}
+
+/** O que a versão de ORIGEM tem, na forma comparável com o corpo do PATCH (ids, não snapshots). */
+export interface CurrentMacroSnapshot {
+  contractedServiceId: string;
+  diagnosisUris: readonly string[];
+  clinicalContext: string;
+  generalObjective: string;
+  specificObjectiveIds: readonly string[];
+  activityIds: readonly string[];
+}
+
+export interface CandidateMacroInput {
+  contractedServiceId: string;
+  diagnoses: readonly { uri: string }[];
+  clinicalContext: string;
+  generalObjective: string;
+  specificObjectiveIds: readonly string[];
+  activityIds: readonly string[];
+}
+
+/**
+ * Os campos MACRO que MUDARIAM se `candidate` fosse gravado sobre `current` — vazio = pode editar.
+ * Usado SÓ em `mode:'edit'` (lex-pr7 contract §alterado); `mode:'new'` nunca chama isto (major
+ * nova começa do zero, D328 item 1).
+ */
+export function macroFieldsChanged(current: CurrentMacroSnapshot, candidate: CandidateMacroInput): TherapeuticMacroField[] {
+  const changed: TherapeuticMacroField[] = [];
+  if (current.contractedServiceId !== candidate.contractedServiceId) changed.push('contractedServiceId');
+  if (!sameIdSet(current.diagnosisUris, candidate.diagnoses.map((d) => d.uri))) changed.push('diagnoses');
+  if (current.clinicalContext !== candidate.clinicalContext) changed.push('clinicalContext');
+  if (current.generalObjective !== candidate.generalObjective) changed.push('generalObjective');
+  if (!sameIdSet(current.specificObjectiveIds, candidate.specificObjectiveIds)) changed.push('specificObjectiveIds');
+  if (!sameIdSet(current.activityIds, candidate.activityIds)) changed.push('activityIds');
+  return changed;
+}
+
+/**
+ * A versão VIGENTE entre as não-anuladas: `created_at` mais recente (D328 — "vigente = created_at
+ * mais recente"). `null` se todas estiverem anuladas ou a lista vier vazia. Major mais alta nem
+ * sempre é a vigente por minor mais alta: "Novo" pode nascer depois de uma edição de major antiga
+ * só na teoria (o fluxo real não permite, mas a regra é por DATA, não por número).
+ */
+export function currentVersionOf<T extends { id: string; createdAt: string; annulledAt: string | null }>(
+  existing: readonly T[],
+): T | null {
+  const alive = existing.filter((v) => v.annulledAt === null);
+  if (alive.length === 0) return null;
+  return sortByCreatedDesc(alive)[0];
+}
 
 type VersionNumber = Pick<TherapeuticProjectVersion, 'major' | 'minor'>;
 

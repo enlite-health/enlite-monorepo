@@ -48,6 +48,9 @@ const VERSAO = {
   createdByName: 'Ana',
   createdAt: '2026-09-01T10:00:00Z',
   country: 'AR',
+  contactRefs: [],
+  careTeamIds: [],
+  contacts: [],
 } satisfies TherapeuticProjectVersion;
 
 const ITEM = (id: string): TherapeuticCatalogItem => ({
@@ -68,6 +71,9 @@ function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: 
   return { promise, resolve, reject };
 }
 
+const FIELD_CLASS = { macro: ['clinicalContext'], micro: ['modality'] };
+const respostaLista = (versions: TherapeuticProjectVersion[]) => ({ versions, fieldClass: FIELD_CLASS });
+
 beforeEach(() => {
   listVersions.mockReset();
   listCatalog.mockReset();
@@ -76,7 +82,7 @@ beforeEach(() => {
 describe('useTherapeuticProjects — as versões do paciente', () => {
   it('carrega a lista (enabled implícito) e devolve na ordem recebida do servidor', async () => {
     const segunda = { ...VERSAO, id: 'v2', version: 'V.2.0' };
-    listVersions.mockResolvedValue([segunda, VERSAO]);
+    listVersions.mockResolvedValue(respostaLista([segunda, VERSAO]));
 
     const { result } = renderHook(() => useTherapeuticProjects('p1'));
 
@@ -85,6 +91,19 @@ describe('useTherapeuticProjects — as versões do paciente', () => {
     expect(listVersions).toHaveBeenCalledWith('p1');
     expect(result.current.versions.map((v) => v.id)).toEqual(['v2', 'v1']);
     expect(result.current.error).toBeNull();
+  });
+
+  it('`fieldClass` da resposta vira estado — o form lê daqui, nunca copia a lista (task 7.7)', async () => {
+    listVersions.mockResolvedValue(respostaLista([VERSAO]));
+    const { result } = renderHook(() => useTherapeuticProjects('p1'));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.fieldClass).toEqual(FIELD_CLASS);
+  });
+
+  it('`fieldClass` nasce vazio (fail-closed) antes da 1ª resposta chegar', () => {
+    listVersions.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useTherapeuticProjects('p1'));
+    expect(result.current.fieldClass).toEqual({ macro: [], micro: [] });
   });
 
   it('🔒 D286: `enabled=false` (container sem célula) NÃO chama a rota e sai de loading', async () => {
@@ -102,7 +121,7 @@ describe('useTherapeuticProjects — as versões do paciente', () => {
     expect(listVersions).not.toHaveBeenCalled();
   });
 
-  it('erro `Error` do servidor vira a mensagem da tela (lex C7: só a frase, nada do corpo)', async () => {
+  it('erro `Error` do servidor vira a mensagem da tela (lex C7: só a frase, nada do corpo) — e `fieldClass` fica vazio', async () => {
     listVersions.mockRejectedValue(new Error('403 sem célula clínica'));
 
     const { result } = renderHook(() => useTherapeuticProjects('p1'));
@@ -110,6 +129,7 @@ describe('useTherapeuticProjects — as versões do paciente', () => {
     await waitFor(() => expect(result.current.error).toBe('403 sem célula clínica'));
     expect(result.current.isLoading).toBe(false);
     expect(result.current.versions).toEqual([]);
+    expect(result.current.fieldClass).toEqual({ macro: [], micro: [] });
   });
 
   it('rejeição que NÃO é Error (string crua) vira `String(err)` — não quebra a tela', async () => {
@@ -125,7 +145,7 @@ describe('useTherapeuticProjects — as versões do paciente', () => {
     const { result } = renderHook(() => useTherapeuticProjects('p1'));
     await waitFor(() => expect(result.current.error).toBe('falhou'));
 
-    listVersions.mockResolvedValueOnce([VERSAO]);
+    listVersions.mockResolvedValueOnce(respostaLista([VERSAO]));
     await act(async () => { await result.current.refetch(); });
 
     expect(listVersions).toHaveBeenCalledTimes(2);
@@ -134,7 +154,7 @@ describe('useTherapeuticProjects — as versões do paciente', () => {
   });
 });
 
-describe('useTherapeuticCatalogs — os 2 catálogos do formulário', () => {
+describe('useTherapeuticCatalogs — os 3 catálogos do formulário', () => {
   it('🔒 D286: `enabled=false` não busca catálogo nenhum', () => {
     const { result } = renderHook(() => useTherapeuticCatalogs(false));
 
@@ -143,36 +163,101 @@ describe('useTherapeuticCatalogs — os 2 catálogos do formulário', () => {
     expect(result.current.error).toBeNull();
   });
 
-  it('busca os 3 tipos e devolve indexado por tipo', async () => {
+  it('busca os 3 tipos e devolve indexado por tipo (US-17, PR-7: `segments` entrou)', async () => {
     listCatalog.mockImplementation(async (kind: string) => [ITEM(`${kind}-1`)]);
 
     const { result } = renderHook(() => useTherapeuticCatalogs(true));
 
     await waitFor(() => expect(result.current.catalogs).not.toBeNull());
-    // só DOIS catálogos: o tipo de patologia deriva do CID-11 no servidor — nada a carregar
-    expect(listCatalog.mock.calls.map((c) => c[0])).toEqual(['specific-objectives', 'activities']);
+    // 3 catálogos: o tipo de patologia continua fora (deriva do CID-11 no servidor)
+    expect(listCatalog.mock.calls.map((c) => c[0])).toEqual(['specific-objectives', 'activities', 'segments']);
     expect(result.current.catalogs!['specific-objectives'][0].id).toBe('specific-objectives-1');
     expect(result.current.catalogs!.activities[0].id).toBe('activities-1');
+    expect(result.current.catalogs!.segments[0].id).toBe('segments-1');
   });
 
-  it('erro `Error` em qualquer um dos 2 vira a mensagem, e `catalogs` fica null', async () => {
+  it('`segments` vazio não é erro — a tela esconde o filtro, o hook não reporta `error`', async () => {
+    listCatalog.mockImplementation(async (kind: string) => (kind === 'segments' ? [] : [ITEM(`${kind}-1`)]));
+
+    const { result } = renderHook(() => useTherapeuticCatalogs(true));
+
+    await waitFor(() => expect(result.current.catalogs).not.toBeNull());
+    expect(result.current.catalogs!.segments).toEqual([]);
+    expect(result.current.error).toBeNull();
+  });
+
+  it('erro `Error` em `specific-objectives` vira a mensagem, e `catalogs` fica null', async () => {
     listCatalog.mockImplementation(async (kind: string) => {
-      if (kind === 'activities') throw new Error('catálogo indisponível');
+      if (kind === 'specific-objectives') throw new Error('catálogo indisponível (objetivos)');
       return [];
     });
 
     const { result } = renderHook(() => useTherapeuticCatalogs(true));
 
-    await waitFor(() => expect(result.current.error).toBe('catálogo indisponível'));
+    await waitFor(() => expect(result.current.error).toBe('catálogo indisponível (objetivos)'));
     expect(result.current.catalogs).toBeNull();
   });
 
-  it('rejeição que não é Error vira `String(err)`', async () => {
-    listCatalog.mockRejectedValue({ toString: () => 'objeto estranho' });
+  it('erro `Error` em `activities` vira a mensagem, e `catalogs` fica null', async () => {
+    listCatalog.mockImplementation(async (kind: string) => {
+      if (kind === 'activities') throw new Error('catálogo indisponível (atividades)');
+      return [];
+    });
 
     const { result } = renderHook(() => useTherapeuticCatalogs(true));
 
-    await waitFor(() => expect(result.current.error).toBe('objeto estranho'));
+    await waitFor(() => expect(result.current.error).toBe('catálogo indisponível (atividades)'));
+    expect(result.current.catalogs).toBeNull();
+  });
+
+  it('rejeição que não é Error em `specific-objectives` vira `String(err)`', async () => {
+    listCatalog.mockImplementation(async (kind: string) => {
+      if (kind === 'specific-objectives') throw { toString: () => 'objeto estranho (objetivos)' };
+      return [];
+    });
+
+    const { result } = renderHook(() => useTherapeuticCatalogs(true));
+
+    await waitFor(() => expect(result.current.error).toBe('objeto estranho (objetivos)'));
+  });
+
+  it('rejeição que não é Error em `activities` vira `String(err)`', async () => {
+    listCatalog.mockImplementation(async (kind: string) => {
+      if (kind === 'activities') throw { toString: () => 'objeto estranho (atividades)' };
+      return [];
+    });
+
+    const { result } = renderHook(() => useTherapeuticCatalogs(true));
+
+    await waitFor(() => expect(result.current.error).toBe('objeto estranho (atividades)'));
+  });
+
+  it('🔒 conserto do gate (achado PR-7): `segments` 403 NÃO derruba o form — vira catálogo vazio, sem `error`', async () => {
+    listCatalog.mockImplementation(async (kind: string) => {
+      if (kind === 'segments') throw new Error('403: sem célula catalog_therapeutic_segments:read');
+      return [ITEM(`${kind}-1`)];
+    });
+
+    const { result } = renderHook(() => useTherapeuticCatalogs(true));
+
+    await waitFor(() => expect(result.current.catalogs).not.toBeNull());
+    expect(result.current.error).toBeNull();
+    expect(result.current.catalogs!.segments).toEqual([]);
+    expect(result.current.catalogs!['specific-objectives'][0].id).toBe('specific-objectives-1');
+    expect(result.current.catalogs!.activities[0].id).toBe('activities-1');
+  });
+
+  it('`segments` rejeitada com valor que não é Error também vira catálogo vazio, sem quebrar', async () => {
+    listCatalog.mockImplementation(async (kind: string) => {
+      if (kind === 'segments') throw 'caiu a rede';
+      return [ITEM(`${kind}-1`)];
+    });
+
+    const { result } = renderHook(() => useTherapeuticCatalogs(true));
+
+    await waitFor(() => expect(result.current.catalogs).not.toBeNull());
+    expect(result.current.error).toBeNull();
+    expect(result.current.catalogs!.segments).toEqual([]);
   });
 
   it('🔒 resposta que chega DEPOIS do unmount não seta estado (guarda `alive`)', async () => {
@@ -180,7 +265,7 @@ describe('useTherapeuticCatalogs — os 2 catálogos do formulário', () => {
     listCatalog.mockReturnValue(d.promise);
 
     const { result, unmount } = renderHook(() => useTherapeuticCatalogs(true));
-    expect(listCatalog).toHaveBeenCalledTimes(2);
+    expect(listCatalog).toHaveBeenCalledTimes(3);
 
     unmount();
     await act(async () => { d.resolve([ITEM('tarde')]); await Promise.resolve(); await Promise.resolve(); });

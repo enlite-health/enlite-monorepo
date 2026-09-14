@@ -13,7 +13,7 @@ import {
   CAREGIVER_LIMITS, CAREGIVER_LIMITS_INTRO, CAREGIVER_MUST_NOT_TITLE, CAREGIVER_MUST_NOT,
   NOT_DOMESTIC_TITLE, NOT_DOMESTIC, NOT_DOMESTIC_OUTRO, FUNDAMENTAL_RULE, FIXED_SECTIONS_SERVICE_CODE,
 } from './pdfFixedTexts';
-import { formatIsoDateEsAr, implementationPeriodText, type TherapeuticProjectPdfInput } from './therapeuticProjectPdfInput';
+import { formatIsoDateEsAr, implementationPeriodText, type PdfContact, type PdfCoverageContact, type TherapeuticProjectPdfInput } from './therapeuticProjectPdfInput';
 
 const PRIMARY = '#180149';
 const GRAY = '#737373';
@@ -56,6 +56,21 @@ function Field({ label, value }: { label: string; value: string | null | undefin
       </Text>
     </View>
   );
+}
+
+/** Contato SELECIONADO (PR-7, lex #7 C5): `inactive` NUNCA imprime nome/telefone ("contacto dado de
+ * baja"); `redacted` sem a célula de origem ("omitido por permiso", C12); `resolved` imprime o dado. */
+function contactLine(c: PdfContact): string {
+  if (c.status === 'inactive') return PDF_LABELS.contactInactive;
+  if (c.status === 'redacted') return PDF_LABELS.contactOmitted;
+  return [c.name + (c.relationship ? ` (${c.relationship})` : ''), c.phone].filter(Boolean).join(' - ');
+}
+
+/** Mesma régua de `contactLine`, forma do bloco de cobertura (kind + nome + telefone). */
+function coverageContactLine(c: PdfCoverageContact): string {
+  if (c.status === 'inactive') return PDF_LABELS.contactInactive;
+  if (c.status === 'redacted') return PDF_LABELS.contactOmitted;
+  return `${c.kindLabel}: ${c.name} - ${c.phone}`;
 }
 
 function SectionTitle({ children }: { children: string }): JSX.Element {
@@ -152,9 +167,7 @@ export function TherapeuticProjectPdfDocument({ input }: { input: TherapeuticPro
         {input.emergencyContacts ? (
           <Field
             label={PDF_LABELS.familyEmergencyContact}
-            value={input.emergencyContacts.length === 0 ? null : input.emergencyContacts
-              .map((c) => [c.name + (c.relationship ? ` (${c.relationship})` : ''), c.phone, c.email].filter(Boolean).join(' - '))
-              .join('. ')}
+            value={input.emergencyContacts.length === 0 ? null : input.emergencyContacts.map(contactLine).join('. ')}
           />
         ) : <Redacted />}
         {input.coverageEmergencyContacts ? (
@@ -163,9 +176,7 @@ export function TherapeuticProjectPdfDocument({ input }: { input: TherapeuticPro
               label={PDF_LABELS.coverageEmergencyContact}
               value={input.coverageEmergencyContactsUnavailable
                 ? PDF_LABELS.fieldUnavailable
-                : input.coverageEmergencyContacts.length === 0 ? null : input.coverageEmergencyContacts
-                  .map((c) => `${c.kindLabel}: ${c.name} - ${c.phone}`)
-                  .join('. ')}
+                : input.coverageEmergencyContacts.length === 0 ? null : input.coverageEmergencyContacts.map(coverageContactLine).join('. ')}
             />
             {/* lex C3: a lista não é completa para este emissor — o documento diz, em vez de fingir. */}
             {input.coverageDirectProfessionalRedacted && <Text style={styles.redacted}>{PDF_LABELS.directProfessionalWithheld}</Text>}
@@ -181,7 +192,7 @@ export function TherapeuticProjectPdfDocument({ input }: { input: TherapeuticPro
           : <Field label={PDF_LABELS.pathologyType} value={v.pathologyTypes.map((p) => p.label).join(', ')} />}
 
         <SectionTitle>{PDF_SECTIONS.careTeam}</SectionTitle>
-        {input.careTeam ? (input.careTeam.length === 0 ? <Text style={styles.paragraph}>{PDF_LABELS.notInformed}</Text> : input.careTeam.map((n, i) => <Bullet key={i}>{n}</Bullet>)) : <Redacted />}
+        {input.careTeam ? (input.careTeam.length === 0 ? <Text style={styles.paragraph}>{PDF_LABELS.notInformed}</Text> : input.careTeam.map((c, i) => <Bullet key={i}>{contactLine(c)}</Bullet>)) : <Redacted />}
 
         <SectionTitle>{PDF_SECTIONS.clinicalContext}</SectionTitle>
         {clinicalRedacted || v.clinicalContext === null ? <Redacted /> : <Text style={styles.paragraph}>{v.clinicalContext}</Text>}
