@@ -1,12 +1,15 @@
 import { Request, Response } from 'express';
 import { GCSStorageService, DocumentType } from '../../infrastructure/GCSStorageService';
 import { WorkerDocumentsRepository } from '../../infrastructure/WorkerDocumentsRepository';
+import { WorkerAdditionalDocumentsRepository } from '../../infrastructure/WorkerAdditionalDocumentsRepository';
 import { WorkerRepository } from '../../infrastructure/WorkerRepository';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { UploadWorkerDocumentsUseCase } from '../../application/UploadWorkerDocumentsUseCase';
 import { ValidateWorkerDocumentUseCase } from '../../application/ValidateWorkerDocumentUseCase';
 import { IWorkerRepository } from '../../ports/IWorkerRepository';
 import { maskEmailForLog } from '@shared/utils/emailMask';
+import { assertDocumentPathBelongsToWorker, matchesOwnedDocumentPrefix, matchesOwnedDocumentPrefixAny } from '../../domain/documentPathGuard';
+import { DocumentPathOwnershipError } from '../../infrastructure/GCSStorageService';
 
 const VALID_DOC_TYPES: DocumentType[] = [
   'resume_cv', 'identity_document', 'identity_document_back', 'criminal_record',
@@ -56,6 +59,7 @@ interface AdminUser {
 export class AdminWorkerDocumentsController {
   private readonly gcs = new GCSStorageService();
   private readonly documentsRepo: WorkerDocumentsRepository;
+  private readonly additionalDocsRepo: WorkerAdditionalDocumentsRepository;
   private readonly workerRepo: IWorkerRepository;
   private readonly uploadUseCase: UploadWorkerDocumentsUseCase;
 
@@ -63,6 +67,7 @@ export class AdminWorkerDocumentsController {
     const pool = DatabaseConnection.getInstance().getPool();
     this.workerRepo = new WorkerRepository();
     this.documentsRepo = new WorkerDocumentsRepository(pool);
+    this.additionalDocsRepo = new WorkerAdditionalDocumentsRepository(pool);
     this.uploadUseCase = new UploadWorkerDocumentsUseCase(this.documentsRepo, this.workerRepo);
   }
 
@@ -111,6 +116,14 @@ export class AdminWorkerDocumentsController {
         res.status(400).json({ success: false, error: 'docType and filePath are required' }); return;
       }
 
+      // Hotfix 13/09 (extensão): mesma trava do lado admin — o :id do path é
+      // sempre o dono a valer, o filePath do corpo só é aceito dentro de
+      // workers/<:id>/... . Sem caminho, sem ecoar o pedido.
+      if (!matchesOwnedDocumentPrefix(filePath, this.gcs.getBucketName(), workerId)) {
+        console.warn('[AdminWorkerDocs.saveDocumentPath] DENY | adminUid:', admin.uid, '| workerId:', workerId, '| docType:', docType, '| result: path fora do prefixo do worker');
+        res.status(400).json({ success: false, error: 'filePath must belong to the target worker' }); return;
+      }
+
       const jsField = DOC_JS_FIELD[docType as DocumentType];
       const docs = await this.uploadUseCase.execute({
         workerId,
@@ -133,15 +146,46 @@ export class AdminWorkerDocumentsController {
     try {
       const admin = this.getAdminUser(req);
       if (!admin) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
+      const { id: workerId } = req.params;
       const { filePath } = req.body as { filePath: unknown };
 
       if (!filePath || typeof filePath !== 'string') {
         res.status(400).json({ success: false, error: 'filePath is required' }); return;
       }
 
-      const signedUrl = await this.gcs.generateViewSignedUrl(filePath);
+      const workerResult = await this.workerRepo.findById(workerId);
+      if (workerResult.isFailure || !workerResult.getValue()) {
+        res.status(404).json({ success: false, error: 'Worker not found' }); return;
+      }
+
+      const existing = await this.documentsRepo.findByWorkerId(workerId);
+      // Hotfix 13/09 (rodada 2, R1): mesma extensão do lado admin — ownedPaths
+      // inclui worker_additional_documents, não só as 11 colunas fixas.
+      const fixedPaths = existing
+        ? Object.values(DOC_JS_FIELD).map((field) => (existing as unknown as Record<string, string | undefined>)[field])
+        : [];
+      const additionalCertPaths = existing
+        ? (existing as unknown as { additionalCertificatesUrls?: string[] }).additionalCertificatesUrls ?? []
+        : [];
+      const additionalDocs = await this.additionalDocsRepo.findByWorkerId(workerId);
+      const ownedPaths = [...fixedPaths, ...additionalCertPaths, ...additionalDocs.map((d) => d.filePath)];
+      // Hotfix 14/09: `:id` pode ser o SOBREVIVENTE de um merge — o caminho
+      // gravado no próprio registro pode carregar o prefixo do absorvido.
+      const absorbedIds = await this.workerRepo.findAbsorbedWorkerIds(workerId);
+      const allowedIds = [workerId, ...absorbedIds];
+      const belongsToWorker = assertDocumentPathBelongsToWorker(filePath, this.gcs.getBucketName(), allowedIds, ownedPaths);
+      if (!belongsToWorker) {
+        console.warn('[AdminWorkerDocs.getViewSignedUrl] DENY | adminUid:', admin.uid, '| workerId:', workerId, '| result: path not owned');
+        res.status(404).json({ success: false, error: 'Document not found' }); return;
+      }
+
+      const signedUrl = await this.gcs.generateViewSignedUrl(filePath, allowedIds);
       res.status(200).json({ success: true, data: { signedUrl } });
     } catch (err) {
+      if (err instanceof DocumentPathOwnershipError) {
+        console.warn('[AdminWorkerDocs.getViewSignedUrl] DENY (2ª camada, GCSStorageService) | result: path not owned');
+        res.status(404).json({ success: false, error: 'Document not found' }); return;
+      }
       console.error('[AdminWorkerDocs.getViewSignedUrl] ERROR:', err);
       res.status(500).json({ success: false, error: 'Internal server error' });
     }
@@ -162,7 +206,19 @@ export class AdminWorkerDocumentsController {
 
       const existing = await this.documentsRepo.findByWorkerId(workerId);
       const filePath = (existing as Record<string, string | undefined> | null)?.[DOC_JS_FIELD[docType as DocumentType]];
-      if (filePath) { await this.gcs.deleteFile(filePath); }
+      // Hotfix 13/09 (rodada 2, R3): caminho legado fora do prefixo do
+      // worker não vai ao GCS — mas o registro é limpo do mesmo jeito, já
+      // que foi localizado pelo dono (:id).
+      if (filePath) {
+        // Hotfix 14/09: mesma lista de ids permitidos da VIEW.
+        const absorbedIds = await this.workerRepo.findAbsorbedWorkerIds(workerId);
+        const allowedIds = [workerId, ...absorbedIds];
+        if (matchesOwnedDocumentPrefixAny(filePath, this.gcs.getBucketName(), allowedIds)) {
+          await this.gcs.deleteFile(filePath, allowedIds);
+        } else {
+          console.warn('[AdminWorkerDocs.deleteDocument] legacy path fora do prefixo — record_only | adminUid:', admin.uid, '| workerId:', workerId, '| docType:', docType, '| result: record_only');
+        }
+      }
 
       let updatedDocs = existing;
       if (existing) {
@@ -178,6 +234,10 @@ export class AdminWorkerDocumentsController {
         '| workerId:', workerId, '| docType:', docType);
       res.status(200).json({ success: true, data: updatedDocs });
     } catch (err) {
+      if (err instanceof DocumentPathOwnershipError) {
+        console.warn('[AdminWorkerDocs.deleteDocument] DENY (2ª camada, GCSStorageService) | workerId:', req.params.id, '| docType:', req.params.type, '| result: path not owned');
+        res.status(404).json({ success: false, error: 'Document not found' }); return;
+      }
       console.error('[AdminWorkerDocs.deleteDocument] ERROR:', err);
       res.status(500).json({ success: false, error: 'Internal server error' });
     }

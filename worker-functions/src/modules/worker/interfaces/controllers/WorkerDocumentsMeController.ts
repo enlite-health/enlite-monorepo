@@ -1,11 +1,14 @@
 import { Request, Response } from 'express';
 import { GCSStorageService, DocumentType } from '../../infrastructure/GCSStorageService';
 import { WorkerDocumentsRepository } from '../../infrastructure/WorkerDocumentsRepository';
+import { WorkerAdditionalDocumentsRepository } from '../../infrastructure/WorkerAdditionalDocumentsRepository';
 import { WorkerRepository } from '../../infrastructure/WorkerRepository';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { GetWorkerProgressUseCase } from '../../application/GetWorkerProgressUseCase';
 import { UploadWorkerDocumentsUseCase } from '../../application/UploadWorkerDocumentsUseCase';
 import { IWorkerRepository } from '../../ports/IWorkerRepository';
+import { assertDocumentPathBelongsToWorker, matchesOwnedDocumentPrefix, matchesOwnedDocumentPrefixAny } from '../../domain/documentPathGuard';
+import { DocumentPathOwnershipError } from '../../infrastructure/GCSStorageService';
 
 const VALID_DOC_TYPES: DocumentType[] = [
   'resume_cv', 'identity_document', 'identity_document_back', 'criminal_record',
@@ -45,6 +48,7 @@ const DOC_SQL_COL: Record<DocumentType, string> = {
 export class WorkerDocumentsMeController {
   private readonly gcs = new GCSStorageService();
   private readonly documentsRepo: WorkerDocumentsRepository;
+  private readonly additionalDocsRepo: WorkerAdditionalDocumentsRepository;
   private readonly workerRepo: IWorkerRepository;
   private readonly getProgressUseCase: GetWorkerProgressUseCase;
   private readonly uploadUseCase: UploadWorkerDocumentsUseCase;
@@ -53,6 +57,7 @@ export class WorkerDocumentsMeController {
     const pool = DatabaseConnection.getInstance().getPool();
     this.workerRepo = new WorkerRepository();
     this.documentsRepo = new WorkerDocumentsRepository(pool);
+    this.additionalDocsRepo = new WorkerAdditionalDocumentsRepository(pool);
     this.getProgressUseCase = new GetWorkerProgressUseCase(this.workerRepo);
     this.uploadUseCase = new UploadWorkerDocumentsUseCase(this.documentsRepo, this.workerRepo);
   }
@@ -118,14 +123,23 @@ export class WorkerDocumentsMeController {
       console.log('[WorkerDocsMeCtrl.saveDocumentPath] authUid:', authUid);
       if (!authUid) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
       const { docType, filePath } = req.body as { docType: unknown; filePath: unknown };
-      console.log('[WorkerDocsMeCtrl.saveDocumentPath] docType:', docType, '| filePath:', filePath);
+      console.log('[WorkerDocsMeCtrl.saveDocumentPath] docType:', docType);
       if (!docType || !VALID_DOC_TYPES.includes(docType as DocumentType) || !filePath) {
-        console.warn('[WorkerDocsMeCtrl.saveDocumentPath] validation failed | docType:', docType, '| filePath:', filePath);
+        console.warn('[WorkerDocsMeCtrl.saveDocumentPath] validation failed | docType:', docType, '| filePath present:', !!filePath);
         res.status(400).json({ success: false, error: 'docType and filePath are required' }); return;
       }
       const worker = await this.resolveWorker(authUid);
       console.log('[WorkerDocsMeCtrl.saveDocumentPath] resolved worker:', worker?.id ?? 'NOT FOUND');
       if (!worker) { res.status(404).json({ success: false, error: 'Worker not found' }); return; }
+      // Hotfix 13/09 (extensão): sem esta trava, um worker gravava no PRÓPRIO
+      // registro o filePath de OUTRO worker — o guard de leitura aprovava
+      // (estava "no registro do dono"), e o delete então apagava o objeto
+      // alheio. Fora de workers/<próprio id>/... → 400 genérico, sem ecoar o
+      // caminho.
+      if (!matchesOwnedDocumentPrefix(filePath, this.gcs.getBucketName(), worker.id)) {
+        console.warn('[WorkerDocsMeCtrl.saveDocumentPath] DENY | actorUid:', authUid, '| workerId:', worker.id, '| docType:', docType, '| result: path fora do prefixo do próprio worker');
+        res.status(400).json({ success: false, error: 'filePath must belong to the authenticated worker' }); return;
+      }
       const jsField = DOC_JS_FIELD[docType as DocumentType];
       console.log('[WorkerDocsMeCtrl.saveDocumentPath] mapping docType →', jsField, '| calling uploadUseCase...');
       const docs = await this.uploadUseCase.execute({
@@ -146,15 +160,43 @@ export class WorkerDocumentsMeController {
       console.log('[WorkerDocsMeCtrl.getViewSignedUrl] authUid:', authUid);
       if (!authUid) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
       const { filePath } = req.body as { filePath: unknown };
-      console.log('[WorkerDocsMeCtrl.getViewSignedUrl] filePath:', filePath);
       if (!filePath || typeof filePath !== 'string') {
-        console.warn('[WorkerDocsMeCtrl.getViewSignedUrl] filePath missing or invalid');
         res.status(400).json({ success: false, error: 'filePath is required' }); return;
       }
-      const signedUrl = await this.gcs.generateViewSignedUrl(filePath);
+      const worker = await this.resolveWorker(authUid);
+      console.log('[WorkerDocsMeCtrl.getViewSignedUrl] resolved worker:', worker?.id ?? 'NOT FOUND');
+      if (!worker) { res.status(404).json({ success: false, error: 'Worker not found' }); return; }
+      const existing = await this.documentsRepo.findByWorkerId(worker.id);
+      // Hotfix 13/09 (rodada 2, R1): ownedPaths precisa incluir os caminhos
+      // gravados em worker_additional_documents também — a rodada 1 só
+      // olhava as 11 colunas fixas de worker_documents, e por isso nenhum
+      // documento ADICIONAL nunca abria (nem para o próprio dono).
+      const fixedPaths = existing
+        ? Object.values(DOC_JS_FIELD).map((field) => (existing as unknown as Record<string, string | undefined>)[field])
+        : [];
+      const additionalCertPaths = existing
+        ? (existing as unknown as { additionalCertificatesUrls?: string[] }).additionalCertificatesUrls ?? []
+        : [];
+      const additionalDocs = await this.additionalDocsRepo.findByWorkerId(worker.id);
+      const ownedPaths = [...fixedPaths, ...additionalCertPaths, ...additionalDocs.map((d) => d.filePath)];
+      // Hotfix 14/09: caminho gravado no PRÓPRIO registro (ownedPaths, checagem
+      // acima) pode carregar o prefixo de um worker ABSORVIDO num merge — o
+      // merge reparenta worker_id na tabela, nunca move o objeto no GCS.
+      const absorbedIds = await this.workerRepo.findAbsorbedWorkerIds(worker.id);
+      const allowedIds = [worker.id, ...absorbedIds];
+      const belongsToWorker = assertDocumentPathBelongsToWorker(filePath, this.gcs.getBucketName(), allowedIds, ownedPaths);
+      if (!belongsToWorker) {
+        console.warn('[WorkerDocsMeCtrl.getViewSignedUrl] DENY | actorUid:', authUid, '| workerId:', worker.id, '| result: path not owned');
+        res.status(404).json({ success: false, error: 'Document not found' }); return;
+      }
+      const signedUrl = await this.gcs.generateViewSignedUrl(filePath, allowedIds);
       console.log('[WorkerDocsMeCtrl.getViewSignedUrl] SUCCESS');
       res.status(200).json({ success: true, data: { signedUrl } });
     } catch (err) {
+      if (err instanceof DocumentPathOwnershipError) {
+        console.warn('[WorkerDocsMeCtrl.getViewSignedUrl] DENY (2ª camada, GCSStorageService) | result: path not owned');
+        res.status(404).json({ success: false, error: 'Document not found' }); return;
+      }
       console.error('[WorkerDocsMeCtrl.getViewSignedUrl] ERROR:', err);
       res.status(500).json({ success: false, error: 'Internal server error' });
     }
@@ -175,8 +217,24 @@ export class WorkerDocumentsMeController {
       if (!worker) { res.status(404).json({ success: false, error: 'Worker not found' }); return; }
       const existing = await this.documentsRepo.findByWorkerId(worker.id);
       const filePath = (existing as Record<string, string | undefined> | null)?.[DOC_JS_FIELD[docType as DocumentType]];
-      console.log('[WorkerDocsMeCtrl.deleteDocument] existing filePath:', filePath ?? 'NONE');
-      if (filePath) { await this.gcs.deleteFile(filePath); }
+      console.log('[WorkerDocsMeCtrl.deleteDocument] existing filePath present:', !!filePath);
+      // Hotfix 13/09 (rodada 2, R3): caminho LEGADO fora de workers/<id>/
+      // não chama o GCS (a 2ª camada recusaria de qualquer forma) — mas o
+      // REGISTRO é sempre limpo, porque já foi localizado pelo dono
+      // (worker autenticado). Antes, gcs.deleteFile lançava e o catch geral
+      // devolvia 404 SEM limpar o campo — o registro ficava preso para
+      // sempre porque o objeto nunca mais seria "elegível" a apagar.
+      if (filePath) {
+        // Hotfix 14/09: mesma lista de ids permitidos da VIEW — o caminho
+        // gravado pode carregar o prefixo de um worker absorvido no merge.
+        const absorbedIds = await this.workerRepo.findAbsorbedWorkerIds(worker.id);
+        const allowedIds = [worker.id, ...absorbedIds];
+        if (matchesOwnedDocumentPrefixAny(filePath, this.gcs.getBucketName(), allowedIds)) {
+          await this.gcs.deleteFile(filePath, allowedIds);
+        } else {
+          console.warn('[WorkerDocsMeCtrl.deleteDocument] legacy path fora do prefixo — record_only | actorUid:', authUid, '| workerId:', worker.id, '| docType:', docType, '| result: record_only');
+        }
+      }
       if (existing) {
         await this.documentsRepo.clearDocumentField(worker.id, DOC_SQL_COL[docType as DocumentType]);
         // Recalculate documents_status after removing a file: update with no new URLs so
@@ -187,6 +245,10 @@ export class WorkerDocumentsMeController {
       console.log('[WorkerDocsMeCtrl.deleteDocument] SUCCESS | workerId:', worker.id, '| docType:', docType);
       res.status(200).json({ success: true });
     } catch (err) {
+      if (err instanceof DocumentPathOwnershipError) {
+        console.warn('[WorkerDocsMeCtrl.deleteDocument] DENY (2ª camada, GCSStorageService) | docType:', req.params.type, '| result: path not owned');
+        res.status(404).json({ success: false, error: 'Document not found' }); return;
+      }
       console.error('[WorkerDocsMeCtrl.deleteDocument] ERROR:', err);
       res.status(500).json({ success: false, error: 'Internal server error' });
     }

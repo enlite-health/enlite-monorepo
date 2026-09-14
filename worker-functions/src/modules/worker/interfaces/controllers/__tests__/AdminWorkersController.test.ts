@@ -284,6 +284,13 @@ describe('AdminWorkersController — listWorkers', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockQuery.mockReset();
+    // Hotfix 14/09: `buildWorkerDetailResponse` agora faz UMA query extra a
+    // mais (findAbsorbedWorkerIds, depois do lote em Promise.all) sempre que
+    // monta a ficha com documentos — sem sobrevivente/absorvido no cenário,
+    // devolve []. Default PERSISTENTE (não .Once) — as filas .mockResolvedValueOnce
+    // dos testes continuam prioritárias e intocadas; isto só evita undefined
+    // quando a fila acaba nessa chamada extra.
+    mockQuery.mockResolvedValue({ rows: [] });
     controller = new AdminWorkersController();
     mockDecrypt.mockImplementation((val: string | null) =>
       Promise.resolve(val ? val.replace('enc_', '') : null),
@@ -733,6 +740,13 @@ describe('AdminWorkersAuxController — getWorkerDateStats', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockQuery.mockReset();
+    // Hotfix 14/09: `buildWorkerDetailResponse` agora faz UMA query extra a
+    // mais (findAbsorbedWorkerIds, depois do lote em Promise.all) sempre que
+    // monta a ficha com documentos — sem sobrevivente/absorvido no cenário,
+    // devolve []. Default PERSISTENTE (não .Once) — as filas .mockResolvedValueOnce
+    // dos testes continuam prioritárias e intocadas; isto só evita undefined
+    // quando a fila acaba nessa chamada extra.
+    mockQuery.mockResolvedValue({ rows: [] });
     controller = new AdminWorkersAuxController();
   });
 
@@ -793,6 +807,13 @@ describe('AdminWorkersController — getWorkerById', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockQuery.mockReset();
+    // Hotfix 14/09: `buildWorkerDetailResponse` agora faz UMA query extra a
+    // mais (findAbsorbedWorkerIds, depois do lote em Promise.all) sempre que
+    // monta a ficha com documentos — sem sobrevivente/absorvido no cenário,
+    // devolve []. Default PERSISTENTE (não .Once) — as filas .mockResolvedValueOnce
+    // dos testes continuam prioritárias e intocadas; isto só evita undefined
+    // quando a fila acaba nessa chamada extra.
+    mockQuery.mockResolvedValue({ rows: [] });
     controller = new AdminWorkersController();
   });
 
@@ -1581,6 +1602,13 @@ describe('AdminWorkersController — getWorkerByPhone', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockQuery.mockReset();
+    // Hotfix 14/09: `buildWorkerDetailResponse` agora faz UMA query extra a
+    // mais (findAbsorbedWorkerIds, depois do lote em Promise.all) sempre que
+    // monta a ficha com documentos — sem sobrevivente/absorvido no cenário,
+    // devolve []. Default PERSISTENTE (não .Once) — as filas .mockResolvedValueOnce
+    // dos testes continuam prioritárias e intocadas; isto só evita undefined
+    // quando a fila acaba nessa chamada extra.
+    mockQuery.mockResolvedValue({ rows: [] });
     controller = new AdminWorkersController();
     mockDecrypt.mockImplementation((val: string | null) =>
       Promise.resolve(val ? val.replace('enc_', '') : null),
@@ -1771,6 +1799,13 @@ describe('AdminWorkersAuxController — listCaseOptions', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockQuery.mockReset();
+    // Hotfix 14/09: `buildWorkerDetailResponse` agora faz UMA query extra a
+    // mais (findAbsorbedWorkerIds, depois do lote em Promise.all) sempre que
+    // monta a ficha com documentos — sem sobrevivente/absorvido no cenário,
+    // devolve []. Default PERSISTENTE (não .Once) — as filas .mockResolvedValueOnce
+    // dos testes continuam prioritárias e intocadas; isto só evita undefined
+    // quando a fila acaba nessa chamada extra.
+    mockQuery.mockResolvedValue({ rows: [] });
     controller = new AdminWorkersAuxController();
   });
 
@@ -1854,6 +1889,13 @@ describe('AdminWorkersController — listWorkers filtro case_id e busca por phon
   beforeEach(() => {
     jest.clearAllMocks();
     mockQuery.mockReset();
+    // Hotfix 14/09: `buildWorkerDetailResponse` agora faz UMA query extra a
+    // mais (findAbsorbedWorkerIds, depois do lote em Promise.all) sempre que
+    // monta a ficha com documentos — sem sobrevivente/absorvido no cenário,
+    // devolve []. Default PERSISTENTE (não .Once) — as filas .mockResolvedValueOnce
+    // dos testes continuam prioritárias e intocadas; isto só evita undefined
+    // quando a fila acaba nessa chamada extra.
+    mockQuery.mockResolvedValue({ rows: [] });
     controller = new AdminWorkersController();
     mockDecrypt.mockImplementation((val: string | null) =>
       Promise.resolve(val ? val.replace('enc_', '') : null),
@@ -2053,6 +2095,13 @@ describe('AdminWorkersController — listWorkers novos filtros de perfil', () =>
   beforeEach(() => {
     jest.clearAllMocks();
     mockQuery.mockReset();
+    // Hotfix 14/09: `buildWorkerDetailResponse` agora faz UMA query extra a
+    // mais (findAbsorbedWorkerIds, depois do lote em Promise.all) sempre que
+    // monta a ficha com documentos — sem sobrevivente/absorvido no cenário,
+    // devolve []. Default PERSISTENTE (não .Once) — as filas .mockResolvedValueOnce
+    // dos testes continuam prioritárias e intocadas; isto só evita undefined
+    // quando a fila acaba nessa chamada extra.
+    mockQuery.mockResolvedValue({ rows: [] });
     controller = new AdminWorkersController();
     mockDecrypt.mockImplementation((val: string | null) =>
       Promise.resolve(val ? val.replace('enc_', '') : null),
@@ -2276,6 +2325,13 @@ describe('AdminWorkersController — listWorkers novos filtros de perfil', () =>
     beforeEach(() => {
       jest.clearAllMocks();
       mockQuery.mockReset();
+    // Hotfix 14/09: `buildWorkerDetailResponse` agora faz UMA query extra a
+    // mais (findAbsorbedWorkerIds, depois do lote em Promise.all) sempre que
+    // monta a ficha com documentos — sem sobrevivente/absorvido no cenário,
+    // devolve []. Default PERSISTENTE (não .Once) — as filas .mockResolvedValueOnce
+    // dos testes continuam prioritárias e intocadas; isto só evita undefined
+    // quando a fila acaba nessa chamada extra.
+    mockQuery.mockResolvedValue({ rows: [] });
       auxController = new AdminWorkersAuxController();
     });
 

@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import { findAbsorbedWorkerIds } from '@shared/database/findAbsorbedWorkerIds';
 import { GCSStorageService } from '../../infrastructure/GCSStorageService';
 import { mapPlatformLabel } from './AdminWorkersControllerHelpers';
 import { WorkerApplicationRepository } from '../../../matching/infrastructure/WorkerApplicationRepository';
@@ -13,17 +14,31 @@ import { projectPatientNameInEngagement, workerContainerReadsOf, workerRedaction
  * Extraídas de AdminWorkersController para manter o arquivo dentro do limite de 400 linhas.
  */
 
-export async function toSignedUrl(gcs: GCSStorageService, filePath: string | null): Promise<string | null> {
+export async function toSignedUrl(gcs: GCSStorageService, filePath: string | null, allowedWorkerIds: readonly string[]): Promise<string | null> {
   if (!filePath) return null;
   try {
-    return await gcs.generateViewSignedUrl(filePath);
-  } catch {
-    console.error('[AdminWorkersDetailBuilder] Failed to sign URL for:', filePath);
+    return await gcs.generateViewSignedUrl(filePath, allowedWorkerIds);
+  } catch (err) {
+    // Hotfix 13/09 (rodada 2, R4): NUNCA loga o filePath nem `err.message`
+    // — a mensagem de erro do GCS pode carregar o nome do objeto (o próprio
+    // filePath rejeitado). Só o workerId dono e o NOME DA CLASSE do erro
+    // (ex.: "DocumentPathOwnershipError", "Error") — o suficiente para
+    // diagnosticar sem vazar caminho.
+    const errorClass = err instanceof Error ? err.constructor.name : typeof err;
+    console.error('[AdminWorkersDetailBuilder] Failed to sign URL for worker:', allowedWorkerIds[0], '| errorClass:', errorClass);
     return null;
   }
 }
 
-export async function buildDocumentsWithSignedUrls(gcs: GCSStorageService, doc: any) {
+/**
+ * Hotfix 14/09: `workerId` pode ser o sobrevivente de um merge — a ficha
+ * mostra os documentos DELE, mas o caminho gravado (colunas fixas de
+ * `worker_documents`, sem passar por request nenhum) pode carregar o
+ * prefixo de um worker ABSORVIDO. `allowedWorkerIds` já vem pronta do
+ * chamador (`buildWorkerDetailResponse`, que tem o `Pool` para resolver a
+ * cadeia uma vez só, em vez de repetir a query por documento).
+ */
+export async function buildDocumentsWithSignedUrls(gcs: GCSStorageService, doc: any, allowedWorkerIds: readonly string[]) {
   const paths = [
     doc.resume_cv_url,
     doc.identity_document_url,
@@ -42,8 +57,8 @@ export async function buildDocumentsWithSignedUrls(gcs: GCSStorageService, doc: 
     monotributoCertificateUrl, atCertificateUrl,
     ...additionalCertificatesUrls
   ] = await Promise.all([
-    ...paths.map((p: string | null) => toSignedUrl(gcs, p)),
-    ...additionalPaths.map((p: string) => toSignedUrl(gcs, p)),
+    ...paths.map((p: string | null) => toSignedUrl(gcs, p, allowedWorkerIds)),
+    ...additionalPaths.map((p: string) => toSignedUrl(gcs, p, allowedWorkerIds)),
   ]);
 
   const rawValidations: Record<string, { validated_by: string; validated_at: string }> | null =
@@ -217,7 +232,9 @@ export async function buildWorkerDetailResponse(
     // que um worker is_test não foi espelhado (anaCareId null).
     anaCareId: w.ana_care_id ?? null,
     anaCareSyncedAt: w.ana_care_synced_at ?? null,
-    documents: doc ? await buildDocumentsWithSignedUrls(gcs, doc) : null,
+    documents: doc
+      ? await buildDocumentsWithSignedUrls(gcs, doc, [w.id, ...(await findAbsorbedWorkerIds(db, w.id))])
+      : null,
     serviceAreas: reads.address ? serviceAreasResult.rows.map((sa: any) => ({
       id: sa.id, address: sa.address_line ?? null, serviceRadiusKm: sa.radius_km ?? null,
       lat: sa.latitude ? parseFloat(sa.latitude) : null,
