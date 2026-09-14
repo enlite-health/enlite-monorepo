@@ -198,6 +198,11 @@ BEGIN
   -- 430 (spec 018, PR-7, SUP-28): therapeutic_segments é global e sem PHI por desenho, mas o
   -- rótulo é texto livre do operador — fica fora até a guarda `containsLikelyPersonalData` ter
   -- teste que prova (mesma régua dos outros 2 catálogos da 415).
+  -- 426 (spec 018, PR-4; lex-pr4-foto.md #11, lex-pr4-documentos.md #11 TRAVA): foto e documento
+  -- (prova de consentimento) do paciente. patient_documents guarda PDF/JPEG de prova (sem coluna
+  -- segura), patient_image_consents e patient_photos referenciam o consentimento/objeto — as 3
+  -- revogadas inteiras no MESMO commit da migration 426. patient_photo_orphans é fila operacional
+  -- sem patient_id (só caminho cifrado) — revogada por cautela, mesmo padrão.
   FOR alvo IN SELECT unnest(ARRAY[
     'patient_insurance_verified',
     'patient_device_types',
@@ -212,7 +217,11 @@ BEGIN
     'therapeutic_activities',
     'pathology_types',
     'patient_therapeutic_project_contacts',
-    'therapeutic_segments'
+    'therapeutic_segments',
+    'patient_documents',
+    'patient_image_consents',
+    'patient_photos',
+    'patient_photo_orphans'
   ]) AS tabela LOOP
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=alvo.tabela) THEN
       EXECUTE format('REVOKE SELECT ON public.%I FROM enlite_mcp_ro', alvo.tabela);
@@ -231,7 +240,8 @@ BEGIN
                                   'patient_therapeutic_projects','patient_coverage_emergency_contacts',
                                   'patient_professionals','patient_external_contacts',
                                   'therapeutic_specific_objectives','therapeutic_activities','pathology_types',
-                                  'patient_therapeutic_project_contacts','therapeutic_segments']) AS tabela LOOP
+                                  'patient_therapeutic_project_contacts','therapeutic_segments',
+                                  'patient_documents','patient_image_consents','patient_photos','patient_photo_orphans']) AS tabela LOOP
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=alvo.tabela)
        AND has_table_privilege('enlite_mcp_ro', format('public.%I', alvo.tabela), 'SELECT') THEN
       RAISE EXCEPTION 'B2: enlite_mcp_ro ainda tem SELECT de TABELA em % — abortando a transação', alvo.tabela;

@@ -74,6 +74,13 @@ const CASCADE_CHILDREN = [
   'patient_coverage_emergency_contacts',
   // 422 (spec 018, PR-2): contatos externos sem vínculo familiar — filha direta, ON DELETE CASCADE.
   'patient_external_contacts',
+  // 426 (spec 018, PR-4): foto, consentimento de imagem e documento de prova — filhas diretas,
+  // ON DELETE CASCADE. NOTA (PARCIAL, 14/09): a contagem aqui prova só a linha do banco; o objeto
+  // do GCS (foto e documento) ainda NÃO é apagado pela purga nesta sessão — falta a chamada de
+  // storage ANTES do DELETE (task 4.8, pendente).
+  'patient_documents',
+  'patient_image_consents',
+  'patient_photos',
 ] as const;
 
 interface AppointmentRow {
