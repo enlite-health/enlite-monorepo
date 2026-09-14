@@ -1,15 +1,20 @@
 import { Request, Response } from 'express';
-import { GCSStorageService } from '../../infrastructure/GCSStorageService';
+import { GCSStorageService, DocumentPathOwnershipError } from '../../infrastructure/GCSStorageService';
 import { WorkerAdditionalDocumentsRepository } from '../../infrastructure/WorkerAdditionalDocumentsRepository';
+import { WorkerRepository } from '../../infrastructure/WorkerRepository';
+import { IWorkerRepository } from '../../ports/IWorkerRepository';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { matchesOwnedDocumentPrefix, matchesOwnedDocumentPrefixAny } from '../../domain/documentPathGuard';
 
 export class AdminAdditionalDocsController {
   private readonly gcs = new GCSStorageService();
   private readonly repo: WorkerAdditionalDocumentsRepository;
+  private readonly workerRepo: IWorkerRepository;
 
   constructor() {
     const pool = DatabaseConnection.getInstance().getPool();
     this.repo = new WorkerAdditionalDocumentsRepository(pool);
+    this.workerRepo = new WorkerRepository();
   }
 
   async list(req: Request, res: Response): Promise<void> {
@@ -47,6 +52,12 @@ export class AdminAdditionalDocsController {
       if (!filePath) {
         res.status(400).json({ success: false, error: 'filePath is required' }); return;
       }
+      // Hotfix 13/09 (extensão): mesma trava de prefixo do lado admin — o
+      // filePath do corpo só é aceito dentro de workers/<:id>/additional/....
+      if (!matchesOwnedDocumentPrefix(filePath, this.gcs.getBucketName(), workerId)) {
+        console.warn('[AdminAdditionalDocs.save] DENY | workerId:', workerId, '| result: path fora do prefixo do worker');
+        res.status(400).json({ success: false, error: 'filePath must belong to the target worker' }); return;
+      }
       const doc = await this.repo.create({ workerId, label: label.trim(), filePath });
       res.status(201).json({ success: true, data: doc });
     } catch (err) {
@@ -60,10 +71,26 @@ export class AdminAdditionalDocsController {
       const { id: workerId, docId } = req.params;
       const docs = await this.repo.findByWorkerId(workerId);
       const target = docs.find(d => d.id === docId);
-      if (target) { await this.gcs.deleteFile(target.filePath); }
+      // Hotfix 13/09 (rodada 2, R3): caminho legado fora do prefixo do
+      // worker não vai ao GCS, mas o registro é apagado do mesmo jeito —
+      // já localizado pelo dono (:id).
+      if (target) {
+        // Hotfix 14/09: `:id` pode ser o sobrevivente de um merge.
+        const absorbedIds = await this.workerRepo.findAbsorbedWorkerIds(workerId);
+        const allowedIds = [workerId, ...absorbedIds];
+        if (matchesOwnedDocumentPrefixAny(target.filePath, this.gcs.getBucketName(), allowedIds)) {
+          await this.gcs.deleteFile(target.filePath, allowedIds);
+        } else {
+          console.warn('[AdminAdditionalDocs.remove] legacy path fora do prefixo — record_only | workerId:', workerId, '| additionalDocId:', docId, '| result: record_only');
+        }
+      }
       await this.repo.deleteById(docId, workerId);
       res.status(200).json({ success: true });
     } catch (err) {
+      if (err instanceof DocumentPathOwnershipError) {
+        console.warn('[AdminAdditionalDocs.remove] DENY (2ª camada, GCSStorageService) | workerId:', req.params.id, '| result: path not owned');
+        res.status(404).json({ success: false, error: 'Document not found' }); return;
+      }
       console.error('[AdminAdditionalDocs.remove] ERROR:', err);
       res.status(500).json({ success: false, error: 'Internal server error' });
     }

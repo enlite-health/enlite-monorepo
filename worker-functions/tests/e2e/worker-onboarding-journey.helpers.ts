@@ -197,9 +197,16 @@ export async function saveAvailability(
 export async function saveDocuments(
   api: AxiosInstance,
   token: string,
+  workerId: string,
   docs: Record<string, string>,
 ): Promise<void> {
-  for (const [docType, filePath] of Object.entries(docs)) {
+  // Hotfix 13/09 (extensão): o SAVE agora recusa qualquer filePath fora de
+  // `workers/<workerId do servidor>/...`. As constantes DOCS_NON_AT/DOCS_AT_FULL
+  // guardam só os docTypes (as chaves) — o caminho de verdade é montado aqui
+  // com o workerId REAL, do mesmo jeito que o fluxo de upload de verdade monta
+  // (GCSStorageService.generateUploadSignedUrl: workers/<id>/<docType>/<uuid>.<ext>).
+  for (const docType of Object.keys(docs)) {
+    const filePath = `workers/${workerId}/${docType}/e2e-fixture.pdf`;
     const res = await api.post(
       '/api/workers/me/documents/save',
       { docType, filePath },

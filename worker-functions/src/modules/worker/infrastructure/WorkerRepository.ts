@@ -24,6 +24,7 @@ import {
   updateWorkerStatus as _updateWorkerStatus,
   recalculateWorkerStatus as _recalculateWorkerStatus,
 } from './WorkerStatusRepository';
+import { findAbsorbedWorkerIds as _findAbsorbedWorkerIds } from '@shared/database/findAbsorbedWorkerIds';
 
 // ── WorkerWithPii — dados decriptados retornados por findByIdWithPii ──────────
 export interface WorkerWithPii {
@@ -339,5 +340,10 @@ export class WorkerRepository implements IWorkerRepository {
     );
     if (result.rows.length === 0) return null;
     return result.rows[0].is_test;
+  }
+
+  /** Ver `@shared/database/findAbsorbedWorkerIds` — doc no próprio helper. */
+  async findAbsorbedWorkerIds(survivorId: string): Promise<string[]> {
+    return _findAbsorbedWorkerIds(this.pool, survivorId);
   }
 }

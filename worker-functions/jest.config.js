@@ -656,6 +656,70 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // Hotfix 13/09 (Gabriel/lex): `getViewSignedUrl` assinava qualquer `filePath` do corpo sem
+    // conferir dono — worker A lia documento de worker B, e a rota admin ignorava `:id`. Guard
+    // novo (`documentPathGuard.ts`) + os dois controllers tocados nascem 100% nos quatro eixos,
+    // medido nesta mesma rodada.
+    'src/modules/worker/domain/documentPathGuard.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/worker/interfaces/controllers/WorkerDocumentsMeController.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/worker/interfaces/controllers/AdminWorkerDocumentsController.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/worker/infrastructure/GCSStorageService.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Hotfix 13/09 (extensão, Gabriel/lex): o guard de leitura não bastava — os 3
+    // endpoints de SAVE (fixos + adicionais, self e admin) gravavam `filePath` do
+    // corpo sem checar prefixo; um worker gravava o caminho de outro no próprio
+    // registro e depois o apagava. `matchesOwnedDocumentPathShape` trava o SAVE;
+    // `GCSStorageService` aplica a mesma forma como 2ª camada no delete/view.
+    'src/modules/worker/interfaces/controllers/WorkerAdditionalDocsMeController.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/worker/interfaces/controllers/AdminAdditionalDocsController.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // toSignedUrl/buildDocumentsWithSignedUrls passam a exigir workerId (chamador
+    // de generateViewSignedUrl) — medido 100 na suíte completa (o resto do arquivo
+    // já era coberto por AdminWorkersController.test.ts).
+    'src/modules/worker/interfaces/controllers/AdminWorkersDetailBuilder.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Hotfix 14/09 (Gabriel): documento de worker ABSORVIDO num merge (o merge
+    // reparenta worker_id em worker_documents/worker_additional_documents, mas
+    // nunca move o objeto no GCS — o caminho gravado segue com o prefixo do
+    // absorvido). Arquivo NOVO, nasce 100/100/100/100 medido nesta rodada.
+    'src/shared/database/findAbsorbedWorkerIds.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
   },
   verbose: true,
   testTimeout: 10000,

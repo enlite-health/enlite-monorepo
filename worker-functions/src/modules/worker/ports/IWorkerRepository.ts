@@ -21,4 +21,11 @@ export interface IWorkerRepository {
   deleteByAuthUid(authUid: string): Promise<Result<void>>;
   /** Marca/desmarca worker como conta de teste. Retorna o flag resultante, ou null se não existir. */
   updateTestFlag(workerId: string, isTest: boolean): Promise<boolean | null>;
+  /**
+   * Ids de todos os workers ABSORVIDOS (mesmo `country`, cadeia até 10 saltos)
+   * cuja corrente `merged_into_id` termina em `survivorId`. Ver
+   * `@shared/database/findAbsorbedWorkerIds` — usado para o sobrevivente
+   * abrir/apagar documento cujo caminho no GCS ainda carrega o id absorvido.
+   */
+  findAbsorbedWorkerIds(survivorId: string): Promise<string[]>;
 }
