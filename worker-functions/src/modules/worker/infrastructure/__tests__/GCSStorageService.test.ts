@@ -14,9 +14,14 @@ jest.mock('@shared/logging', () => ({
   logger: { info: jest.fn(), error: jest.fn() },
 }));
 
-import { GCSStorageService } from '../GCSStorageService';
+import { GCSStorageService, DocumentPathOwnershipError } from '../GCSStorageService';
 
 const ORIGINAL_ENV = { ...process.env };
+
+const WORKER_1 = '11111111-1111-4111-8111-111111111111';
+const WORKER_2 = '22222222-2222-4222-8222-222222222222';
+const DOC_UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const OWNED_PATH = `workers/${WORKER_1}/identity_document/${DOC_UUID}.pdf`;
 
 function buildRealModeService(bucketName = 'enlite-worker-documents'): GCSStorageService {
   process.env.NODE_ENV = 'production';
@@ -93,15 +98,15 @@ describe('GCSStorageService', () => {
       expect(result.filePath).toMatch(/\.pdf$/);
     });
 
-    it('generateViewSignedUrl retorna URL simulada', async () => {
+    it('generateViewSignedUrl retorna URL simulada quando o caminho pertence ao workerId', async () => {
       const svc = buildMockModeService();
-      const signedUrl = await svc.generateViewSignedUrl('workers/worker-1/identity_document/x.pdf');
+      const signedUrl = await svc.generateViewSignedUrl(OWNED_PATH, WORKER_1);
       expect(signedUrl).toContain('mock-gcs-view');
     });
 
-    it('deleteFile apenas loga, não chama GCS real', async () => {
+    it('deleteFile apenas loga, não chama GCS real, quando o caminho pertence ao workerId', async () => {
       const svc = buildMockModeService();
-      await svc.deleteFile('workers/worker-1/identity_document/x.pdf');
+      await svc.deleteFile(OWNED_PATH, WORKER_1);
       expect(mockFile.delete).not.toHaveBeenCalled();
     });
 
@@ -150,9 +155,9 @@ describe('GCSStorageService', () => {
     it('generateViewSignedUrl resolve o path relativo de uma URL completa do MESMO bucket e assina leitura', async () => {
       mockFile.getSignedUrl.mockResolvedValue(['https://real-view-url']);
       const svc = buildRealModeService('enlite-worker-documents');
-      const fullUrl = 'https://storage.googleapis.com/enlite-worker-documents/workers/w1/identity_document/x.pdf?sig=abc';
-      const signedUrl = await svc.generateViewSignedUrl(fullUrl);
-      expect(mockBucket.file).toHaveBeenCalledWith('workers/w1/identity_document/x.pdf');
+      const fullUrl = `https://storage.googleapis.com/enlite-worker-documents/${OWNED_PATH}?sig=abc`;
+      const signedUrl = await svc.generateViewSignedUrl(fullUrl, WORKER_1);
+      expect(mockBucket.file).toHaveBeenCalledWith(OWNED_PATH);
       expect(mockFile.getSignedUrl).toHaveBeenCalledWith(expect.objectContaining({ version: 'v4', action: 'read' }));
       expect(signedUrl).toBe('https://real-view-url');
     });
@@ -160,30 +165,30 @@ describe('GCSStorageService', () => {
     it('generateViewSignedUrl usa o path já relativo quando não tem prefixo de URL', async () => {
       mockFile.getSignedUrl.mockResolvedValue(['https://real-view-url']);
       const svc = buildRealModeService();
-      await svc.generateViewSignedUrl('workers/w1/identity_document/x.pdf');
-      expect(mockBucket.file).toHaveBeenCalledWith('workers/w1/identity_document/x.pdf');
+      await svc.generateViewSignedUrl(OWNED_PATH, WORKER_1);
+      expect(mockBucket.file).toHaveBeenCalledWith(OWNED_PATH);
     });
 
     it('generateViewSignedUrl propaga erro amigável quando getSignedUrl falha', async () => {
       mockFile.getSignedUrl.mockRejectedValue(new Error('not found'));
       const svc = buildRealModeService();
-      await expect(svc.generateViewSignedUrl('workers/w1/x.pdf'))
+      await expect(svc.generateViewSignedUrl(OWNED_PATH, WORKER_1))
         .rejects.toThrow('Failed to generate view signed URL: not found');
     });
 
     it('generateViewSignedUrl propaga mensagem genérica quando o erro não é Error', async () => {
       mockFile.getSignedUrl.mockRejectedValue('boom');
       const svc = buildRealModeService();
-      await expect(svc.generateViewSignedUrl('workers/w1/x.pdf'))
+      await expect(svc.generateViewSignedUrl(OWNED_PATH, WORKER_1))
         .rejects.toThrow('Failed to generate view signed URL: Unknown error');
     });
 
     it('deleteFile resolve o path relativo e chama file.delete com ignoreNotFound', async () => {
       mockFile.delete.mockResolvedValue(undefined);
       const svc = buildRealModeService('enlite-worker-documents');
-      const fullUrl = 'https://storage.googleapis.com/enlite-worker-documents/workers/w1/x.pdf';
-      await svc.deleteFile(fullUrl);
-      expect(mockBucket.file).toHaveBeenCalledWith('workers/w1/x.pdf');
+      const fullUrl = `https://storage.googleapis.com/enlite-worker-documents/${OWNED_PATH}`;
+      await svc.deleteFile(fullUrl, WORKER_1);
+      expect(mockBucket.file).toHaveBeenCalledWith(OWNED_PATH);
       expect(mockFile.delete).toHaveBeenCalledWith({ ignoreNotFound: true });
     });
 
@@ -209,6 +214,48 @@ describe('GCSStorageService', () => {
       const svc = buildRealModeService();
       await expect(svc.uploadBuffer(Buffer.from('x'), 'workers/w1/x.pdf', 'application/pdf'))
         .rejects.toThrow('Failed to upload buffer to GCS: Unknown error');
+    });
+  });
+
+  describe('hotfix 13/09 (extensão) — 2ª camada de trava por dono, independente do controller', () => {
+    it('generateViewSignedUrl RECUSA (DocumentPathOwnershipError) caminho de OUTRO worker, mesmo em modo mock', async () => {
+      const svc = buildMockModeService();
+      const pathOfWorker2 = `workers/${WORKER_2}/identity_document/${DOC_UUID}.pdf`;
+      await expect(svc.generateViewSignedUrl(pathOfWorker2, WORKER_1)).rejects.toBeInstanceOf(DocumentPathOwnershipError);
+    });
+
+    it('generateViewSignedUrl RECUSA em modo real e NUNCA chama getSignedUrl', async () => {
+      const svc = buildRealModeService();
+      const pathOfWorker2 = `workers/${WORKER_2}/identity_document/${DOC_UUID}.pdf`;
+      await expect(svc.generateViewSignedUrl(pathOfWorker2, WORKER_1)).rejects.toBeInstanceOf(DocumentPathOwnershipError);
+      expect(mockFile.getSignedUrl).not.toHaveBeenCalled();
+    });
+
+    it('generateViewSignedUrl ACEITA caminho de forma "solta" (basename não-uuid) DESDE QUE dentro do próprio prefixo — a 2ª camada só checa prefixo, não forma', async () => {
+      mockFile.getSignedUrl.mockResolvedValue(['https://real-view-url']);
+      const svc = buildRealModeService();
+      const signedUrl = await svc.generateViewSignedUrl(`workers/${WORKER_1}/identity_document/nao-e-uuid.pdf`, WORKER_1);
+      expect(signedUrl).toBe('https://real-view-url');
+    });
+
+    it('deleteFile RECUSA (DocumentPathOwnershipError) caminho de OUTRO worker, mesmo em modo mock', async () => {
+      const svc = buildMockModeService();
+      const pathOfWorker2 = `workers/${WORKER_2}/identity_document/${DOC_UUID}.pdf`;
+      await expect(svc.deleteFile(pathOfWorker2, WORKER_1)).rejects.toBeInstanceOf(DocumentPathOwnershipError);
+    });
+
+    it('deleteFile RECUSA em modo real e NUNCA chama file.delete', async () => {
+      const svc = buildRealModeService();
+      const pathOfWorker2 = `workers/${WORKER_2}/identity_document/${DOC_UUID}.pdf`;
+      await expect(svc.deleteFile(pathOfWorker2, WORKER_1)).rejects.toBeInstanceOf(DocumentPathOwnershipError);
+      expect(mockFile.delete).not.toHaveBeenCalled();
+    });
+
+    it('deleteFile RECUSA path traversal mesmo com workerId correto', async () => {
+      const svc = buildRealModeService();
+      await expect(svc.deleteFile(`workers/${WORKER_1}/../${WORKER_2}/identity_document/${DOC_UUID}.pdf`, WORKER_1))
+        .rejects.toBeInstanceOf(DocumentPathOwnershipError);
+      expect(mockFile.delete).not.toHaveBeenCalled();
     });
   });
 });

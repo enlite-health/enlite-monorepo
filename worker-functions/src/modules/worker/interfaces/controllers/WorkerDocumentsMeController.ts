@@ -6,7 +6,8 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { GetWorkerProgressUseCase } from '../../application/GetWorkerProgressUseCase';
 import { UploadWorkerDocumentsUseCase } from '../../application/UploadWorkerDocumentsUseCase';
 import { IWorkerRepository } from '../../ports/IWorkerRepository';
-import { assertDocumentPathBelongsToWorker } from '../../domain/documentPathGuard';
+import { assertDocumentPathBelongsToWorker, matchesOwnedDocumentPrefix } from '../../domain/documentPathGuard';
+import { DocumentPathOwnershipError } from '../../infrastructure/GCSStorageService';
 
 const VALID_DOC_TYPES: DocumentType[] = [
   'resume_cv', 'identity_document', 'identity_document_back', 'criminal_record',
@@ -119,14 +120,23 @@ export class WorkerDocumentsMeController {
       console.log('[WorkerDocsMeCtrl.saveDocumentPath] authUid:', authUid);
       if (!authUid) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
       const { docType, filePath } = req.body as { docType: unknown; filePath: unknown };
-      console.log('[WorkerDocsMeCtrl.saveDocumentPath] docType:', docType, '| filePath:', filePath);
+      console.log('[WorkerDocsMeCtrl.saveDocumentPath] docType:', docType);
       if (!docType || !VALID_DOC_TYPES.includes(docType as DocumentType) || !filePath) {
-        console.warn('[WorkerDocsMeCtrl.saveDocumentPath] validation failed | docType:', docType, '| filePath:', filePath);
+        console.warn('[WorkerDocsMeCtrl.saveDocumentPath] validation failed | docType:', docType, '| filePath present:', !!filePath);
         res.status(400).json({ success: false, error: 'docType and filePath are required' }); return;
       }
       const worker = await this.resolveWorker(authUid);
       console.log('[WorkerDocsMeCtrl.saveDocumentPath] resolved worker:', worker?.id ?? 'NOT FOUND');
       if (!worker) { res.status(404).json({ success: false, error: 'Worker not found' }); return; }
+      // Hotfix 13/09 (extensão): sem esta trava, um worker gravava no PRÓPRIO
+      // registro o filePath de OUTRO worker — o guard de leitura aprovava
+      // (estava "no registro do dono"), e o delete então apagava o objeto
+      // alheio. Fora de workers/<próprio id>/... → 400 genérico, sem ecoar o
+      // caminho.
+      if (!matchesOwnedDocumentPrefix(filePath, this.gcs.getBucketName(), worker.id)) {
+        console.warn('[WorkerDocsMeCtrl.saveDocumentPath] DENY | actorUid:', authUid, '| workerId:', worker.id, '| docType:', docType, '| result: path fora do prefixo do próprio worker');
+        res.status(400).json({ success: false, error: 'filePath must belong to the authenticated worker' }); return;
+      }
       const jsField = DOC_JS_FIELD[docType as DocumentType];
       console.log('[WorkerDocsMeCtrl.saveDocumentPath] mapping docType →', jsField, '| calling uploadUseCase...');
       const docs = await this.uploadUseCase.execute({
@@ -157,15 +167,19 @@ export class WorkerDocumentsMeController {
       const ownedPaths = existing
         ? Object.values(DOC_JS_FIELD).map((field) => (existing as unknown as Record<string, string | undefined>)[field])
         : [];
-      const belongsToWorker = assertDocumentPathBelongsToWorker(filePath, this.gcs.getBucketName(), ownedPaths);
+      const belongsToWorker = assertDocumentPathBelongsToWorker(filePath, this.gcs.getBucketName(), worker.id, ownedPaths);
       if (!belongsToWorker) {
-        console.warn('[WorkerDocsMeCtrl.getViewSignedUrl] path rejected: not owned by worker', worker.id);
+        console.warn('[WorkerDocsMeCtrl.getViewSignedUrl] DENY | actorUid:', authUid, '| workerId:', worker.id, '| result: path not owned');
         res.status(404).json({ success: false, error: 'Document not found' }); return;
       }
-      const signedUrl = await this.gcs.generateViewSignedUrl(filePath);
+      const signedUrl = await this.gcs.generateViewSignedUrl(filePath, worker.id);
       console.log('[WorkerDocsMeCtrl.getViewSignedUrl] SUCCESS');
       res.status(200).json({ success: true, data: { signedUrl } });
     } catch (err) {
+      if (err instanceof DocumentPathOwnershipError) {
+        console.warn('[WorkerDocsMeCtrl.getViewSignedUrl] DENY (2ª camada, GCSStorageService) | result: path not owned');
+        res.status(404).json({ success: false, error: 'Document not found' }); return;
+      }
       console.error('[WorkerDocsMeCtrl.getViewSignedUrl] ERROR:', err);
       res.status(500).json({ success: false, error: 'Internal server error' });
     }
@@ -186,8 +200,8 @@ export class WorkerDocumentsMeController {
       if (!worker) { res.status(404).json({ success: false, error: 'Worker not found' }); return; }
       const existing = await this.documentsRepo.findByWorkerId(worker.id);
       const filePath = (existing as Record<string, string | undefined> | null)?.[DOC_JS_FIELD[docType as DocumentType]];
-      console.log('[WorkerDocsMeCtrl.deleteDocument] existing filePath:', filePath ?? 'NONE');
-      if (filePath) { await this.gcs.deleteFile(filePath); }
+      console.log('[WorkerDocsMeCtrl.deleteDocument] existing filePath present:', !!filePath);
+      if (filePath) { await this.gcs.deleteFile(filePath, worker.id); }
       if (existing) {
         await this.documentsRepo.clearDocumentField(worker.id, DOC_SQL_COL[docType as DocumentType]);
         // Recalculate documents_status after removing a file: update with no new URLs so
@@ -198,6 +212,10 @@ export class WorkerDocumentsMeController {
       console.log('[WorkerDocsMeCtrl.deleteDocument] SUCCESS | workerId:', worker.id, '| docType:', docType);
       res.status(200).json({ success: true });
     } catch (err) {
+      if (err instanceof DocumentPathOwnershipError) {
+        console.warn('[WorkerDocsMeCtrl.deleteDocument] DENY (2ª camada, GCSStorageService) | docType:', req.params.type, '| result: path not owned');
+        res.status(404).json({ success: false, error: 'Document not found' }); return;
+      }
       console.error('[WorkerDocsMeCtrl.deleteDocument] ERROR:', err);
       res.status(500).json({ success: false, error: 'Internal server error' });
     }

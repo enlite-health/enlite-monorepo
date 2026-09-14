@@ -50,7 +50,7 @@ describe('Admin Worker Document Upload API', () => {
 
     await pool.query(
       `INSERT INTO worker_documents (worker_id, resume_cv_url, documents_status, document_validations)
-       VALUES ($1, 'workers/test/existing-resume.pdf', 'incomplete', '{}')`,
+       VALUES ($1, 'workers/${testWorkerId}/existing-resume.pdf', 'incomplete', '{}')`,
       [testWorkerId],
     );
   });
@@ -139,7 +139,7 @@ describe('Admin Worker Document Upload API', () => {
     ] as const)(
       'persiste %s_url no banco após upload',
       async (docType, sqlCol) => {
-        const filePath = `workers/test/${docType}/new-file.pdf`;
+        const filePath = `workers/${testWorkerId}/${docType}/new-file.pdf`;
 
         const res = await api.post(
           `/api/admin/workers/${testWorkerId}/documents/save`,
@@ -161,7 +161,7 @@ describe('Admin Worker Document Upload API', () => {
     it('retorna WorkerDocuments completo na resposta', async () => {
       const res = await api.post(
         `/api/admin/workers/${testWorkerId}/documents/save`,
-        { docType: 'resume_cv', filePath: 'workers/test/resume_cv/complete-check.pdf' },
+        { docType: 'resume_cv', filePath: `workers/${testWorkerId}/resume_cv/complete-check.pdf` },
         authHeaders(adminToken),
       );
 
@@ -174,7 +174,7 @@ describe('Admin Worker Document Upload API', () => {
     it('retorna 400 para docType inválido', async () => {
       const res = await api.post(
         `/api/admin/workers/${testWorkerId}/documents/save`,
-        { docType: 'invalid_type', filePath: 'workers/test/invalid/file.pdf' },
+        { docType: 'invalid_type', filePath: `workers/${testWorkerId}/invalid/file.pdf` },
         authHeaders(adminToken),
       );
 
@@ -185,7 +185,7 @@ describe('Admin Worker Document Upload API', () => {
     it('retorna 401 sem token', async () => {
       const res = await api.post(
         `/api/admin/workers/${testWorkerId}/documents/save`,
-        { docType: 'resume_cv', filePath: 'workers/test/resume_cv/file.pdf' },
+        { docType: 'resume_cv', filePath: `workers/${testWorkerId}/resume_cv/file.pdf` },
       );
 
       expect(res.status).toBe(401);
@@ -194,7 +194,7 @@ describe('Admin Worker Document Upload API', () => {
     it('retorna 403 para role worker', async () => {
       const res = await api.post(
         `/api/admin/workers/${testWorkerId}/documents/save`,
-        { docType: 'resume_cv', filePath: 'workers/test/resume_cv/file.pdf' },
+        { docType: 'resume_cv', filePath: `workers/${testWorkerId}/resume_cv/file.pdf` },
         authHeaders(workerToken),
       );
 
@@ -209,7 +209,7 @@ describe('Admin Worker Document Upload API', () => {
     beforeAll(async () => {
       // Garante que resume_cv_url está preenchido antes de validar
       await pool.query(
-        `UPDATE worker_documents SET resume_cv_url = 'workers/test/existing-resume.pdf' WHERE worker_id = $1`,
+        `UPDATE worker_documents SET resume_cv_url = 'workers/${testWorkerId}/existing-resume.pdf' WHERE worker_id = $1`,
         [testWorkerId],
       );
 
@@ -231,7 +231,7 @@ describe('Admin Worker Document Upload API', () => {
     it('re-upload via save remove a chave resume_cv de document_validations no banco', async () => {
       const res = await api.post(
         `/api/admin/workers/${testWorkerId}/documents/save`,
-        { docType: 'resume_cv', filePath: 'workers/test/resume_cv/re-uploaded.pdf' },
+        { docType: 'resume_cv', filePath: `workers/${testWorkerId}/resume_cv/re-uploaded.pdf` },
         authHeaders(adminToken),
       );
 
@@ -254,7 +254,7 @@ describe('Admin Worker Document Upload API', () => {
     beforeAll(async () => {
       // Garante que o campo existe antes de deletar
       await pool.query(
-        `UPDATE worker_documents SET resume_cv_url = 'workers/test/to-delete.pdf' WHERE worker_id = $1`,
+        `UPDATE worker_documents SET resume_cv_url = 'workers/${testWorkerId}/to-delete.pdf' WHERE worker_id = $1`,
         [testWorkerId],
       );
     });
@@ -283,9 +283,9 @@ describe('Admin Worker Document Upload API', () => {
       // Prepara: preenche 3 documentos, vai deletar apenas 1
       await pool.query(
         `UPDATE worker_documents
-         SET resume_cv_url = 'workers/test/resume.pdf',
-             identity_document_url = 'workers/test/identity.pdf',
-             criminal_record_url = 'workers/test/criminal.pdf'
+         SET resume_cv_url = 'workers/${testWorkerId}/resume.pdf',
+             identity_document_url = 'workers/${testWorkerId}/identity.pdf',
+             criminal_record_url = 'workers/${testWorkerId}/criminal.pdf'
          WHERE worker_id = $1`,
         [testWorkerId],
       );
@@ -304,8 +304,8 @@ describe('Admin Worker Document Upload API', () => {
 
       // O campo deletado deve estar null, os outros preservados
       expect(res.data.data.resumeCvUrl).toBeNull();
-      expect(res.data.data.identityDocumentUrl).toBe('workers/test/identity.pdf');
-      expect(res.data.data.criminalRecordUrl).toBe('workers/test/criminal.pdf');
+      expect(res.data.data.identityDocumentUrl).toBe(`workers/${testWorkerId}/identity.pdf`);
+      expect(res.data.data.criminalRecordUrl).toBe(`workers/${testWorkerId}/criminal.pdf`);
 
       // Estrutura mínima esperada pelo frontend (WorkerDocument type)
       expect(res.data.data).toHaveProperty('id');

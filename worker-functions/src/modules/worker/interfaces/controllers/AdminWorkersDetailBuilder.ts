@@ -11,17 +11,19 @@ import { WorkerEngagement } from '../../../matching/domain/WorkerEngagement';
  * Extraídas de AdminWorkersController para manter o arquivo dentro do limite de 400 linhas.
  */
 
-export async function toSignedUrl(gcs: GCSStorageService, filePath: string | null): Promise<string | null> {
+export async function toSignedUrl(gcs: GCSStorageService, filePath: string | null, workerId: string): Promise<string | null> {
   if (!filePath) return null;
   try {
-    return await gcs.generateViewSignedUrl(filePath);
-  } catch {
-    console.error('[AdminWorkersDetailBuilder] Failed to sign URL for:', filePath);
+    return await gcs.generateViewSignedUrl(filePath, workerId);
+  } catch (err) {
+    // Nunca loga o filePath (pode ser um caminho inválido/de outro worker
+    // rejeitado pela 2ª camada do GCSStorageService) — só o workerId dono.
+    console.error('[AdminWorkersDetailBuilder] Failed to sign URL for worker:', workerId, '| error:', err instanceof Error ? err.message : err);
     return null;
   }
 }
 
-export async function buildDocumentsWithSignedUrls(gcs: GCSStorageService, doc: any) {
+export async function buildDocumentsWithSignedUrls(gcs: GCSStorageService, doc: any, workerId: string) {
   const paths = [
     doc.resume_cv_url,
     doc.identity_document_url,
@@ -40,8 +42,8 @@ export async function buildDocumentsWithSignedUrls(gcs: GCSStorageService, doc: 
     monotributoCertificateUrl, atCertificateUrl,
     ...additionalCertificatesUrls
   ] = await Promise.all([
-    ...paths.map((p: string | null) => toSignedUrl(gcs, p)),
-    ...additionalPaths.map((p: string) => toSignedUrl(gcs, p)),
+    ...paths.map((p: string | null) => toSignedUrl(gcs, p, workerId)),
+    ...additionalPaths.map((p: string) => toSignedUrl(gcs, p, workerId)),
   ]);
 
   const rawValidations: Record<string, { validated_by: string; validated_at: string }> | null =
@@ -187,7 +189,7 @@ export async function buildWorkerDetailResponse(
     // que um worker is_test não foi espelhado (anaCareId null).
     anaCareId: w.ana_care_id ?? null,
     anaCareSyncedAt: w.ana_care_synced_at ?? null,
-    documents: doc ? await buildDocumentsWithSignedUrls(gcs, doc) : null,
+    documents: doc ? await buildDocumentsWithSignedUrls(gcs, doc, w.id) : null,
     serviceAreas: serviceAreasResult.rows.map((sa: any) => ({
       id: sa.id, address: sa.address_line ?? null, serviceRadiusKm: sa.radius_km ?? null,
       lat: sa.latitude ? parseFloat(sa.latitude) : null,

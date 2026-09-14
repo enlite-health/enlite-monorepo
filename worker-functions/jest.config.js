@@ -684,6 +684,32 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // Hotfix 13/09 (extensão, Gabriel/lex): o guard de leitura não bastava — os 3
+    // endpoints de SAVE (fixos + adicionais, self e admin) gravavam `filePath` do
+    // corpo sem checar prefixo; um worker gravava o caminho de outro no próprio
+    // registro e depois o apagava. `matchesOwnedDocumentPathShape` trava o SAVE;
+    // `GCSStorageService` aplica a mesma forma como 2ª camada no delete/view.
+    'src/modules/worker/interfaces/controllers/WorkerAdditionalDocsMeController.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/worker/interfaces/controllers/AdminAdditionalDocsController.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // toSignedUrl/buildDocumentsWithSignedUrls passam a exigir workerId (chamador
+    // de generateViewSignedUrl) — medido 100 na suíte completa (o resto do arquivo
+    // já era coberto por AdminWorkersController.test.ts).
+    'src/modules/worker/interfaces/controllers/AdminWorkersDetailBuilder.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
   },
   verbose: true,
   testTimeout: 10000,

@@ -1,18 +1,21 @@
 /**
  * worker-document-view-url-ownership.e2e.test.ts
  *
- * Hotfix 13/09/2026 (Gabriel): antes deste fix, tanto
- *   POST /api/workers/me/documents/view-url
- * quanto
- *   POST /api/admin/workers/:id/documents/view-url
- * assinavam QUALQUER `filePath` do corpo, sem checar que o caminho pertence
- * ao worker (own ou :id). Um worker autenticado conseguia URL de leitura do
- * documento de OUTRO worker só sabendo (ou adivinhando) o path; a rota admin
- * ignorava `:id` por completo.
+ * Hotfix 13/09/2026 (Gabriel), extensão mesma data: o guard original só
+ * comparava o `filePath` pedido contra os caminhos GRAVADOS no registro do
+ * worker. Mas os endpoints de SAVE
+ *   POST /api/workers/me/documents/save
+ *   POST /api/workers/me/additional-documents
+ *   POST /api/admin/workers/:id/additional-documents
+ * aceitavam `filePath` do corpo sem checar prefixo — um worker A gravava o
+ * caminho do documento de B no PRÓPRIO registro (o guard de leitura
+ * aprovava: "está no registro de A") e então DELETAVA o objeto pelo caminho
+ * gravado, apagando o arquivo de B.
  *
- * Estes testes rodam contra a API e Postgres REAIS (stack docker
- * `hotfix-doc`, mock GCS — NODE_ENV=test sem GCP_PROJECT_ID, ver
- * GCSStorageService.isMockMode) e MockAuth (USE_MOCK_AUTH=true).
+ * Estes testes rodam contra a API e Postgres REAIS (stack docker isolada
+ * `hotfix-doc`, projeto `-p hotfix-doc`, portas 8099/5599), mock GCS
+ * (NODE_ENV=test sem GCP_PROJECT_ID, ver GCSStorageService.isMockMode) e
+ * MockAuth (USE_MOCK_AUTH=true).
  */
 
 import { Pool } from 'pg';
@@ -22,11 +25,13 @@ const DATABASE_URL =
   process.env.DATABASE_URL ||
   'postgresql://enlite_admin:enlite_password@localhost:5599/enlite_e2e';
 
-describe('Worker document view-url — URL assinada só para documento do próprio worker', () => {
+describe('Worker document ownership — trava por PREFIXO do dono em view, delete e save', () => {
   const api = createApiClient();
   let pool: Pool;
 
   const ts = Date.now();
+  const DOC_UUID_A = '11111111-2222-4333-8444-555555555555';
+  const DOC_UUID_B = '66666666-7777-4888-8999-aaaaaaaaaaaa';
 
   let adminToken: string;
   let workerAToken: string;
@@ -35,9 +40,8 @@ describe('Worker document view-url — URL assinada só para documento do própr
 
   let workerAId: string;
   let workerBId: string;
-
-  const workerAPath = `workers/wA-${ts}/identity_document/real-doc.pdf`;
-  const workerBPath = `workers/wB-${ts}/identity_document/other-doc.pdf`;
+  let workerAPath: string;
+  let workerBPath: string;
 
   async function insertWorker(tag: string): Promise<{ id: string; authUid: string }> {
     const authUid = `dvu-${tag}-${ts}`;
@@ -75,6 +79,11 @@ describe('Worker document view-url — URL assinada só para documento do própr
       role: 'worker',
     });
 
+    // Caminhos NA FORMA que o próprio fluxo de upload gera:
+    // workers/<workerId>/<docType>/<uuid>.<ext> — GCSStorageService.ts:69-75.
+    workerAPath = `workers/${workerAId}/identity_document/${DOC_UUID_A}.pdf`;
+    workerBPath = `workers/${workerBId}/identity_document/${DOC_UUID_B}.pdf`;
+
     await pool.query(
       `INSERT INTO worker_documents (worker_id, identity_document_url, documents_status)
        VALUES ($1, $2, 'incomplete')`,
@@ -103,7 +112,7 @@ describe('Worker document view-url — URL assinada só para documento do própr
   // POST /api/workers/me/documents/view-url
   // ─────────────────────────────────────────────────────────────────────
   describe('POST /api/workers/me/documents/view-url', () => {
-    it('worker A pedindo o PRÓPRIO caminho → 200 com signedUrl', async () => {
+    it('worker A pedindo o PRÓPRIO caminho → 200 com signedUrl (controle positivo)', async () => {
       const res = await api.post(
         '/api/workers/me/documents/view-url',
         { filePath: workerAPath },
@@ -129,6 +138,24 @@ describe('Worker document view-url — URL assinada só para documento do própr
       const res = await api.post(
         '/api/workers/me/documents/view-url',
         { filePath: '../../etc/passwd' },
+        authHeaders(workerAToken),
+      );
+      expect(res.status).toBe(404);
+    });
+
+    it('path traversal PERCENT-ENCODED ("%2e%2e") → 404', async () => {
+      const res = await api.post(
+        '/api/workers/me/documents/view-url',
+        { filePath: `workers/${workerAId}/%2e%2e/${workerBId}/identity_document/${DOC_UUID_B}.pdf` },
+        authHeaders(workerAToken),
+      );
+      expect(res.status).toBe(404);
+    });
+
+    it('URL completa do objeto de worker B (mesmo bucket) → 404', async () => {
+      const res = await api.post(
+        '/api/workers/me/documents/view-url',
+        { filePath: `https://storage.googleapis.com/enlite-worker-documents/${workerBPath}` },
         authHeaders(workerAToken),
       );
       expect(res.status).toBe(404);
@@ -212,6 +239,100 @@ describe('Worker document view-url — URL assinada só para documento do própr
         authHeaders(adminToken),
       );
       expect(res.status).toBe(400);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // POST /api/workers/me/documents/save — hotfix 13/09 (extensão)
+  // ─────────────────────────────────────────────────────────────────────
+  describe('POST /api/workers/me/documents/save — trava de prefixo do dono', () => {
+    it('worker A tenta gravar o caminho REAL de worker B no próprio registro → 400, nunca grava', async () => {
+      const before = await pool.query('SELECT identity_document_url FROM worker_documents WHERE worker_id = $1', [workerAId]);
+      expect(before.rows[0].identity_document_url).toBe(workerAPath);
+
+      const res = await api.post(
+        '/api/workers/me/documents/save',
+        { docType: 'identity_document', filePath: workerBPath },
+        authHeaders(workerAToken),
+      );
+      expect(res.status).toBe(400);
+      expect(res.data.success).toBe(false);
+
+      const after = await pool.query('SELECT identity_document_url FROM worker_documents WHERE worker_id = $1', [workerAId]);
+      expect(after.rows[0].identity_document_url).toBe(workerAPath); // inalterado — B nunca entrou no registro de A
+    });
+
+    it('worker A grava caminho de forma "solta" (basename não-uuid) DENTRO do próprio prefixo → 200 — SAVE só checa prefixo, não a forma exata', async () => {
+      const res = await api.post(
+        '/api/workers/me/documents/save',
+        { docType: 'monotributo_certificate', filePath: `workers/${workerAId}/monotributo_certificate/nao-e-uuid.pdf` },
+        authHeaders(workerAToken),
+      );
+      expect(res.status).toBe(200);
+    });
+
+    it('worker A tenta gravar caminho com prefixo INTEIRO diferente (path traversal disfarçado) → 400', async () => {
+      const res = await api.post(
+        '/api/workers/me/documents/save',
+        { docType: 'identity_document', filePath: `workers/${workerAId}/../${workerBId}/identity_document/${DOC_UUID_B}.pdf` },
+        authHeaders(workerAToken),
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it('worker A grava o PRÓPRIO caminho (mesmo docType) → 200 (controle positivo)', async () => {
+      const uploadRes = await api.post(
+        '/api/workers/me/documents/upload-url',
+        { docType: 'criminal_record', contentType: 'application/pdf' },
+        authHeaders(workerAToken),
+      );
+      expect(uploadRes.status).toBe(200);
+      const ownFilePath: string = uploadRes.data.data.filePath;
+      expect(ownFilePath).toMatch(new RegExp(`^workers/${workerAId}/criminal_record/.+\\.pdf$`));
+
+      const saveRes = await api.post(
+        '/api/workers/me/documents/save',
+        { docType: 'criminal_record', filePath: ownFilePath },
+        authHeaders(workerAToken),
+      );
+      expect(saveRes.status).toBe(200);
+
+      const row = await pool.query('SELECT criminal_record_url FROM worker_documents WHERE worker_id = $1', [workerAId]);
+      expect(row.rows[0].criminal_record_url).toBe(ownFilePath);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // DELETE /api/workers/me/documents/:type — hotfix 13/09 (extensão)
+  // ─────────────────────────────────────────────────────────────────────
+  describe('DELETE /api/workers/me/documents/:type — não apaga objeto de OUTRO worker', () => {
+    it('registro de A "contaminado" com o caminho de B (simulando o contorno pré-hotfix via SQL direto) — DELETE 404 e NÃO limpa o campo', async () => {
+      // Antes do hotfix, o SAVE deixava isso acontecer pela API; hoje o SAVE já
+      // recusa (provado acima). Para provar que o DELETE também está fechado
+      // (2ª camada, GCSStorageService), simulamos a pré-condição por SQL direto
+      // — nunca mais alcançável pela API, mas a trava tem de segurar mesmo assim.
+      await pool.query(
+        'UPDATE worker_documents SET liability_insurance_url = $2 WHERE worker_id = $1',
+        [workerAId, workerBPath],
+      );
+
+      const res = await api.delete('/api/workers/me/documents/liability_insurance', authHeaders(workerAToken));
+      expect(res.status).toBe(404);
+
+      const row = await pool.query('SELECT liability_insurance_url FROM worker_documents WHERE worker_id = $1', [workerAId]);
+      expect(row.rows[0].liability_insurance_url).toBe(workerBPath); // NÃO foi limpo — o objeto de B nunca foi "apagado"
+
+      // Confirma que o objeto de B, no registro DELE, segue intacto.
+      const bRow = await pool.query('SELECT identity_document_url FROM worker_documents WHERE worker_id = $1', [workerBId]);
+      expect(bRow.rows[0].identity_document_url).toBe(workerBPath);
+    });
+
+    it('worker A deleta o PRÓPRIO documento → 200 e o campo é limpo (controle positivo)', async () => {
+      const res = await api.delete('/api/workers/me/documents/criminal_record', authHeaders(workerAToken));
+      expect(res.status).toBe(200);
+
+      const row = await pool.query('SELECT criminal_record_url FROM worker_documents WHERE worker_id = $1', [workerAId]);
+      expect(row.rows[0].criminal_record_url).toBeNull();
     });
   });
 });

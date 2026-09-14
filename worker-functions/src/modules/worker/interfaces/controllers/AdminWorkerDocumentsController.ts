@@ -7,7 +7,8 @@ import { UploadWorkerDocumentsUseCase } from '../../application/UploadWorkerDocu
 import { ValidateWorkerDocumentUseCase } from '../../application/ValidateWorkerDocumentUseCase';
 import { IWorkerRepository } from '../../ports/IWorkerRepository';
 import { maskEmailForLog } from '@shared/utils/emailMask';
-import { assertDocumentPathBelongsToWorker } from '../../domain/documentPathGuard';
+import { assertDocumentPathBelongsToWorker, matchesOwnedDocumentPrefix } from '../../domain/documentPathGuard';
+import { DocumentPathOwnershipError } from '../../infrastructure/GCSStorageService';
 
 const VALID_DOC_TYPES: DocumentType[] = [
   'resume_cv', 'identity_document', 'identity_document_back', 'criminal_record',
@@ -112,6 +113,14 @@ export class AdminWorkerDocumentsController {
         res.status(400).json({ success: false, error: 'docType and filePath are required' }); return;
       }
 
+      // Hotfix 13/09 (extensão): mesma trava do lado admin — o :id do path é
+      // sempre o dono a valer, o filePath do corpo só é aceito dentro de
+      // workers/<:id>/... . Sem caminho, sem ecoar o pedido.
+      if (!matchesOwnedDocumentPrefix(filePath, this.gcs.getBucketName(), workerId)) {
+        console.warn('[AdminWorkerDocs.saveDocumentPath] DENY | adminUid:', admin.uid, '| workerId:', workerId, '| docType:', docType, '| result: path fora do prefixo do worker');
+        res.status(400).json({ success: false, error: 'filePath must belong to the target worker' }); return;
+      }
+
       const jsField = DOC_JS_FIELD[docType as DocumentType];
       const docs = await this.uploadUseCase.execute({
         workerId,
@@ -150,15 +159,19 @@ export class AdminWorkerDocumentsController {
       const ownedPaths = existing
         ? Object.values(DOC_JS_FIELD).map((field) => (existing as unknown as Record<string, string | undefined>)[field])
         : [];
-      const belongsToWorker = assertDocumentPathBelongsToWorker(filePath, this.gcs.getBucketName(), ownedPaths);
+      const belongsToWorker = assertDocumentPathBelongsToWorker(filePath, this.gcs.getBucketName(), workerId, ownedPaths);
       if (!belongsToWorker) {
-        console.warn('[AdminWorkerDocs.getViewSignedUrl] path rejected: not owned by worker', workerId);
+        console.warn('[AdminWorkerDocs.getViewSignedUrl] DENY | adminUid:', admin.uid, '| workerId:', workerId, '| result: path not owned');
         res.status(404).json({ success: false, error: 'Document not found' }); return;
       }
 
-      const signedUrl = await this.gcs.generateViewSignedUrl(filePath);
+      const signedUrl = await this.gcs.generateViewSignedUrl(filePath, workerId);
       res.status(200).json({ success: true, data: { signedUrl } });
     } catch (err) {
+      if (err instanceof DocumentPathOwnershipError) {
+        console.warn('[AdminWorkerDocs.getViewSignedUrl] DENY (2ª camada, GCSStorageService) | result: path not owned');
+        res.status(404).json({ success: false, error: 'Document not found' }); return;
+      }
       console.error('[AdminWorkerDocs.getViewSignedUrl] ERROR:', err);
       res.status(500).json({ success: false, error: 'Internal server error' });
     }
@@ -179,7 +192,7 @@ export class AdminWorkerDocumentsController {
 
       const existing = await this.documentsRepo.findByWorkerId(workerId);
       const filePath = (existing as Record<string, string | undefined> | null)?.[DOC_JS_FIELD[docType as DocumentType]];
-      if (filePath) { await this.gcs.deleteFile(filePath); }
+      if (filePath) { await this.gcs.deleteFile(filePath, workerId); }
 
       let updatedDocs = existing;
       if (existing) {
@@ -195,6 +208,10 @@ export class AdminWorkerDocumentsController {
         '| workerId:', workerId, '| docType:', docType);
       res.status(200).json({ success: true, data: updatedDocs });
     } catch (err) {
+      if (err instanceof DocumentPathOwnershipError) {
+        console.warn('[AdminWorkerDocs.deleteDocument] DENY (2ª camada, GCSStorageService) | workerId:', req.params.id, '| docType:', req.params.type, '| result: path not owned');
+        res.status(404).json({ success: false, error: 'Document not found' }); return;
+      }
       console.error('[AdminWorkerDocs.deleteDocument] ERROR:', err);
       res.status(500).json({ success: false, error: 'Internal server error' });
     }

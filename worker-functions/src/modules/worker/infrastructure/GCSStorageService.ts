@@ -1,6 +1,23 @@
 import admin from 'firebase-admin';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '@shared/logging';
+import { matchesOwnedDocumentPrefix } from '../domain/documentPathGuard';
+
+/**
+ * Lançado por `generateViewSignedUrl` / `deleteFile` quando o `filePath`
+ * pedido não tem a forma de um documento do PRÓPRIO `workerId` esperado —
+ * 2ª camada de defesa (hotfix 13/09): mesmo que um controller erre e deixe
+ * passar um caminho de outro worker, o serviço de storage recusa sozinho,
+ * fechado por padrão. Os controllers capturam este erro e respondem 404
+ * uniforme — nunca 403, nunca ecoando o caminho.
+ */
+export class DocumentPathOwnershipError extends Error {
+  readonly code = 'DOCUMENT_PATH_OWNERSHIP';
+  constructor(message = 'Document path does not belong to worker') {
+    super(message);
+    this.name = 'DocumentPathOwnershipError';
+  }
+}
 
 export type DocumentType =
   | 'resume_cv'
@@ -113,14 +130,18 @@ export class GCSStorageService {
     return filePath;
   }
 
-  async generateViewSignedUrl(filePath: string): Promise<string> {
+  async generateViewSignedUrl(filePath: string, workerId: string): Promise<string> {
+    const resolvedPath = this.extractRelativePath(filePath);
+    if (!matchesOwnedDocumentPrefix(resolvedPath, this.bucketName, workerId)) {
+      throw new DocumentPathOwnershipError();
+    }
+
     // Mock mode: return placeholder URL
     if (this.mockMode) {
-      return `http://localhost:8080/mock-gcs-view?path=${encodeURIComponent(filePath)}`;
+      return `http://localhost:8080/mock-gcs-view?path=${encodeURIComponent(resolvedPath)}`;
     }
 
     try {
-      const resolvedPath = this.extractRelativePath(filePath);
       const file = this.getBucket().file(resolvedPath);
       const [signedUrl] = await file.getSignedUrl({
         version: 'v4',
@@ -134,14 +155,18 @@ export class GCSStorageService {
     }
   }
 
-  async deleteFile(filePath: string): Promise<void> {
+  async deleteFile(filePath: string, workerId: string): Promise<void> {
+    const resolvedPath = this.extractRelativePath(filePath);
+    if (!matchesOwnedDocumentPrefix(resolvedPath, this.bucketName, workerId)) {
+      throw new DocumentPathOwnershipError();
+    }
+
     // Mock mode: just log, don't actually delete
     if (this.mockMode) {
-      console.log('[GCSStorageService] Mock delete:', filePath);
+      console.log('[GCSStorageService] Mock delete:', resolvedPath);
       return;
     }
 
-    const resolvedPath = this.extractRelativePath(filePath);
     const file = this.getBucket().file(resolvedPath);
     await file.delete({ ignoreNotFound: true });
   }
