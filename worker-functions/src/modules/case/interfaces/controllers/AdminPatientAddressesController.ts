@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import type { Pool } from 'pg';
 import { reportError, logger } from '@shared/logging';
+import { pgUniqueViolationConflict } from '@shared/http/pgUniqueViolationConflict';
 import { AuthMiddleware } from '@modules/identity';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
@@ -187,9 +188,9 @@ export class AdminPatientAddressesController {
       // Concorrência (spec 019): duas requisições de "marcar principal" ao mesmo tempo — o
       // índice único parcial (`patient_addresses_one_default_per_patient`) rejeita a que perde
       // a corrida; ela recebe 409 tratado, nunca 500.
-      const pgCode = (err as { code?: string } | null)?.code;
-      if (pgCode === '23505') {
-        res.status(409).json({ success: false, error: 'Concurrent update — try again' });
+      const conflict = pgUniqueViolationConflict(err, 'Concurrent update — try again');
+      if (conflict) {
+        res.status(409).json(conflict);
         return;
       }
       // C2.3: nada do corpo no reportError nem na resposta.
