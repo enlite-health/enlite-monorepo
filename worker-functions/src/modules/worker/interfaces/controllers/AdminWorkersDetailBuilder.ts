@@ -18,9 +18,13 @@ export async function toSignedUrl(gcs: GCSStorageService, filePath: string | nul
   try {
     return await gcs.generateViewSignedUrl(filePath, workerId);
   } catch (err) {
-    // Nunca loga o filePath (pode ser um caminho inválido/de outro worker
-    // rejeitado pela 2ª camada do GCSStorageService) — só o workerId dono.
-    console.error('[AdminWorkersDetailBuilder] Failed to sign URL for worker:', workerId, '| error:', err instanceof Error ? err.message : err);
+    // Hotfix 13/09 (rodada 2, R4): NUNCA loga o filePath nem `err.message`
+    // — a mensagem de erro do GCS pode carregar o nome do objeto (o próprio
+    // filePath rejeitado). Só o workerId dono e o NOME DA CLASSE do erro
+    // (ex.: "DocumentPathOwnershipError", "Error") — o suficiente para
+    // diagnosticar sem vazar caminho.
+    const errorClass = err instanceof Error ? err.constructor.name : typeof err;
+    console.error('[AdminWorkersDetailBuilder] Failed to sign URL for worker:', workerId, '| errorClass:', errorClass);
     return null;
   }
 }

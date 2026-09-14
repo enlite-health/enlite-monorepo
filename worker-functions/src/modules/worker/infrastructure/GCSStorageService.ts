@@ -162,8 +162,10 @@ export class GCSStorageService {
     }
 
     // Mock mode: just log, don't actually delete
+    // Hotfix 13/09 (rodada 2, R4): NUNCA loga o caminho, nem em mock mode —
+    // só o workerId dono.
     if (this.mockMode) {
-      console.log('[GCSStorageService] Mock delete:', resolvedPath);
+      console.log('[GCSStorageService] Mock delete for worker:', workerId);
       return;
     }
 

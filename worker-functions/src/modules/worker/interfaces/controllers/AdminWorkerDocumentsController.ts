@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { GCSStorageService, DocumentType } from '../../infrastructure/GCSStorageService';
 import { WorkerDocumentsRepository } from '../../infrastructure/WorkerDocumentsRepository';
+import { WorkerAdditionalDocumentsRepository } from '../../infrastructure/WorkerAdditionalDocumentsRepository';
 import { WorkerRepository } from '../../infrastructure/WorkerRepository';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { UploadWorkerDocumentsUseCase } from '../../application/UploadWorkerDocumentsUseCase';
@@ -58,6 +59,7 @@ interface AdminUser {
 export class AdminWorkerDocumentsController {
   private readonly gcs = new GCSStorageService();
   private readonly documentsRepo: WorkerDocumentsRepository;
+  private readonly additionalDocsRepo: WorkerAdditionalDocumentsRepository;
   private readonly workerRepo: IWorkerRepository;
   private readonly uploadUseCase: UploadWorkerDocumentsUseCase;
 
@@ -65,6 +67,7 @@ export class AdminWorkerDocumentsController {
     const pool = DatabaseConnection.getInstance().getPool();
     this.workerRepo = new WorkerRepository();
     this.documentsRepo = new WorkerDocumentsRepository(pool);
+    this.additionalDocsRepo = new WorkerAdditionalDocumentsRepository(pool);
     this.uploadUseCase = new UploadWorkerDocumentsUseCase(this.documentsRepo, this.workerRepo);
   }
 
@@ -156,9 +159,16 @@ export class AdminWorkerDocumentsController {
       }
 
       const existing = await this.documentsRepo.findByWorkerId(workerId);
-      const ownedPaths = existing
+      // Hotfix 13/09 (rodada 2, R1): mesma extensão do lado admin — ownedPaths
+      // inclui worker_additional_documents, não só as 11 colunas fixas.
+      const fixedPaths = existing
         ? Object.values(DOC_JS_FIELD).map((field) => (existing as unknown as Record<string, string | undefined>)[field])
         : [];
+      const additionalCertPaths = existing
+        ? (existing as unknown as { additionalCertificatesUrls?: string[] }).additionalCertificatesUrls ?? []
+        : [];
+      const additionalDocs = await this.additionalDocsRepo.findByWorkerId(workerId);
+      const ownedPaths = [...fixedPaths, ...additionalCertPaths, ...additionalDocs.map((d) => d.filePath)];
       const belongsToWorker = assertDocumentPathBelongsToWorker(filePath, this.gcs.getBucketName(), workerId, ownedPaths);
       if (!belongsToWorker) {
         console.warn('[AdminWorkerDocs.getViewSignedUrl] DENY | adminUid:', admin.uid, '| workerId:', workerId, '| result: path not owned');
@@ -192,7 +202,16 @@ export class AdminWorkerDocumentsController {
 
       const existing = await this.documentsRepo.findByWorkerId(workerId);
       const filePath = (existing as Record<string, string | undefined> | null)?.[DOC_JS_FIELD[docType as DocumentType]];
-      if (filePath) { await this.gcs.deleteFile(filePath, workerId); }
+      // Hotfix 13/09 (rodada 2, R3): caminho legado fora do prefixo do
+      // worker não vai ao GCS — mas o registro é limpo do mesmo jeito, já
+      // que foi localizado pelo dono (:id).
+      if (filePath) {
+        if (matchesOwnedDocumentPrefix(filePath, this.gcs.getBucketName(), workerId)) {
+          await this.gcs.deleteFile(filePath, workerId);
+        } else {
+          console.warn('[AdminWorkerDocs.deleteDocument] legacy path fora do prefixo — record_only | adminUid:', admin.uid, '| workerId:', workerId, '| docType:', docType, '| result: record_only');
+        }
+      }
 
       let updatedDocs = existing;
       if (existing) {

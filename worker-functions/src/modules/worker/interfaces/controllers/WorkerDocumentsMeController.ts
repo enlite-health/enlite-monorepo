@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { GCSStorageService, DocumentType } from '../../infrastructure/GCSStorageService';
 import { WorkerDocumentsRepository } from '../../infrastructure/WorkerDocumentsRepository';
+import { WorkerAdditionalDocumentsRepository } from '../../infrastructure/WorkerAdditionalDocumentsRepository';
 import { WorkerRepository } from '../../infrastructure/WorkerRepository';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { GetWorkerProgressUseCase } from '../../application/GetWorkerProgressUseCase';
@@ -47,6 +48,7 @@ const DOC_SQL_COL: Record<DocumentType, string> = {
 export class WorkerDocumentsMeController {
   private readonly gcs = new GCSStorageService();
   private readonly documentsRepo: WorkerDocumentsRepository;
+  private readonly additionalDocsRepo: WorkerAdditionalDocumentsRepository;
   private readonly workerRepo: IWorkerRepository;
   private readonly getProgressUseCase: GetWorkerProgressUseCase;
   private readonly uploadUseCase: UploadWorkerDocumentsUseCase;
@@ -55,6 +57,7 @@ export class WorkerDocumentsMeController {
     const pool = DatabaseConnection.getInstance().getPool();
     this.workerRepo = new WorkerRepository();
     this.documentsRepo = new WorkerDocumentsRepository(pool);
+    this.additionalDocsRepo = new WorkerAdditionalDocumentsRepository(pool);
     this.getProgressUseCase = new GetWorkerProgressUseCase(this.workerRepo);
     this.uploadUseCase = new UploadWorkerDocumentsUseCase(this.documentsRepo, this.workerRepo);
   }
@@ -164,9 +167,18 @@ export class WorkerDocumentsMeController {
       console.log('[WorkerDocsMeCtrl.getViewSignedUrl] resolved worker:', worker?.id ?? 'NOT FOUND');
       if (!worker) { res.status(404).json({ success: false, error: 'Worker not found' }); return; }
       const existing = await this.documentsRepo.findByWorkerId(worker.id);
-      const ownedPaths = existing
+      // Hotfix 13/09 (rodada 2, R1): ownedPaths precisa incluir os caminhos
+      // gravados em worker_additional_documents também — a rodada 1 só
+      // olhava as 11 colunas fixas de worker_documents, e por isso nenhum
+      // documento ADICIONAL nunca abria (nem para o próprio dono).
+      const fixedPaths = existing
         ? Object.values(DOC_JS_FIELD).map((field) => (existing as unknown as Record<string, string | undefined>)[field])
         : [];
+      const additionalCertPaths = existing
+        ? (existing as unknown as { additionalCertificatesUrls?: string[] }).additionalCertificatesUrls ?? []
+        : [];
+      const additionalDocs = await this.additionalDocsRepo.findByWorkerId(worker.id);
+      const ownedPaths = [...fixedPaths, ...additionalCertPaths, ...additionalDocs.map((d) => d.filePath)];
       const belongsToWorker = assertDocumentPathBelongsToWorker(filePath, this.gcs.getBucketName(), worker.id, ownedPaths);
       if (!belongsToWorker) {
         console.warn('[WorkerDocsMeCtrl.getViewSignedUrl] DENY | actorUid:', authUid, '| workerId:', worker.id, '| result: path not owned');
@@ -201,7 +213,19 @@ export class WorkerDocumentsMeController {
       const existing = await this.documentsRepo.findByWorkerId(worker.id);
       const filePath = (existing as Record<string, string | undefined> | null)?.[DOC_JS_FIELD[docType as DocumentType]];
       console.log('[WorkerDocsMeCtrl.deleteDocument] existing filePath present:', !!filePath);
-      if (filePath) { await this.gcs.deleteFile(filePath, worker.id); }
+      // Hotfix 13/09 (rodada 2, R3): caminho LEGADO fora de workers/<id>/
+      // não chama o GCS (a 2ª camada recusaria de qualquer forma) — mas o
+      // REGISTRO é sempre limpo, porque já foi localizado pelo dono
+      // (worker autenticado). Antes, gcs.deleteFile lançava e o catch geral
+      // devolvia 404 SEM limpar o campo — o registro ficava preso para
+      // sempre porque o objeto nunca mais seria "elegível" a apagar.
+      if (filePath) {
+        if (matchesOwnedDocumentPrefix(filePath, this.gcs.getBucketName(), worker.id)) {
+          await this.gcs.deleteFile(filePath, worker.id);
+        } else {
+          console.warn('[WorkerDocsMeCtrl.deleteDocument] legacy path fora do prefixo — record_only | actorUid:', authUid, '| workerId:', worker.id, '| docType:', docType, '| result: record_only');
+        }
+      }
       if (existing) {
         await this.documentsRepo.clearDocumentField(worker.id, DOC_SQL_COL[docType as DocumentType]);
         // Recalculate documents_status after removing a file: update with no new URLs so

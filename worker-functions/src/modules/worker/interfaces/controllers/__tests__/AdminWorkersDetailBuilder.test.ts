@@ -235,10 +235,10 @@ describe('hotfix 13/09 (extensão) — toSignedUrl agora exige workerId e nunca 
     });
   });
 
-  it('quando generateViewSignedUrl falha para um documento, esse campo vem null e o erro NUNCA loga o filePath', async () => {
+  it('quando generateViewSignedUrl falha para um documento (Error), esse campo vem null e o log NUNCA carrega filePath nem err.message — só workerId e o nome da classe do erro (R4, rodada 2)', async () => {
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     (gcs.generateViewSignedUrl as jest.Mock).mockImplementation(async (p: string) => {
-      if (p === 'cv.pdf') throw new Error('gcs down');
+      if (p === 'cv.pdf') throw new Error('gcs down — object workers/w-1/resume_cv/leaked.pdf not found');
       return `signed:${p}`;
     });
     const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, null);
@@ -246,10 +246,14 @@ describe('hotfix 13/09 (extensão) — toSignedUrl agora exige workerId e nunca 
     expect(data.documents.identityDocumentUrl).toBe('signed:dni.jpg');
     const loggedArgs = errorSpy.mock.calls.map((c) => c.join(' ')).join('\n');
     expect(loggedArgs).not.toContain('cv.pdf');
+    expect(loggedArgs).not.toContain('gcs down');
+    expect(loggedArgs).not.toContain('leaked.pdf');
+    expect(loggedArgs).toContain('w-1');
+    expect(loggedArgs).toContain('Error');
     errorSpy.mockRestore();
   });
 
-  it('quando o erro rejeitado não é um Error, loga a mensagem genérica (ramo "else" do ternário)', async () => {
+  it('quando o erro rejeitado NÃO é um Error, loga só o typeof — nunca o valor bruto (ramo "else" do ternário, R4)', async () => {
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     (gcs.generateViewSignedUrl as jest.Mock).mockImplementation(async (p: string) => {
       if (p === 'cv.pdf') throw 'boom-nao-e-error-instance';
@@ -258,7 +262,8 @@ describe('hotfix 13/09 (extensão) — toSignedUrl agora exige workerId e nunca 
     const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, null);
     expect(data.documents.resumeCvUrl).toBeNull();
     const loggedArgs = errorSpy.mock.calls.map((c) => c.join(' ')).join('\n');
-    expect(loggedArgs).toContain('boom-nao-e-error-instance');
+    expect(loggedArgs).not.toContain('boom-nao-e-error-instance');
+    expect(loggedArgs).toContain('string');
     errorSpy.mockRestore();
   });
 

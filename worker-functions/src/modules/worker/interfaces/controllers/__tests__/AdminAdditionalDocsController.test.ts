@@ -232,5 +232,16 @@ describe('AdminAdditionalDocsController', () => {
       await controller.remove(req, res);
       expect(res.status).toHaveBeenCalledWith(500);
     });
+
+    // ── RED (13/09, rodada 2) ─ R3: legado fora do prefixo travava o registro preso (lado admin) ──
+    it('[R3] caminho LEGADO fora de workers/:id/additional/ → NÃO chama gcs.deleteFile, mas apaga o registro (record_only) e responde 200', async () => {
+      const legacyPath = 'legacy-uploads/2019/comprovante-antigo.pdf';
+      mockFindByWorkerId.mockResolvedValue([{ id: 'doc-1', filePath: legacyPath }]);
+      const [req, res] = mockReqRes();
+      await controller.remove(req, res);
+      expect(mockDeleteFile).not.toHaveBeenCalled();
+      expect(mockDeleteById).toHaveBeenCalledWith('doc-1', WORKER_ID);
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
   });
 });

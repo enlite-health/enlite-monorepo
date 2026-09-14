@@ -26,26 +26,35 @@
  * "está no registro de A") e então DELETAR o objeto do caminho gravado,
  * apagando o arquivo de B.
  *
- * Duas checagens de FORMA, com escopos diferentes — medido contra a suíte
- * e2e existente (17 testes legítimos gravam/apagam caminho fora do padrão
- * `<uuid>.<ext>`, ex. fixtures como `workers/<id>/resume_cv/test.pdf`, sem
- * jamais atravessar workerId — exigir o padrão INTEIRO ali quebrava
- * comportamento correto sem fechar brecha nenhuma):
+ * Hotfix 13/09, RODADA 2 (gate `revisao-pr` bloqueou a rodada 1 por
+ * regressão funcional): a rodada 1 introduziu uma SEGUNDA checagem —
+ * `matchesOwnedDocumentPathShape`, a forma EXATA
+ * `workers/<workerId>/(<docType fixo>|additional)/<uuid>.<pdf|jpg|png>` —
+ * e exigia as DUAS (prefixo + forma) para o guard de VIEW
+ * (`assertDocumentPathBelongsToWorker`). Isso fechava a vulnerabilidade
+ * original, mas quebrava três fluxos legítimos que nunca tiveram essa
+ * forma:
+ *   - documento ADICIONAL: o `filePath` fica em `worker_additional_documents`,
+ *     nunca em `worker_documents` — o guard de VIEW só olhava as 11 colunas
+ *     fixas, então mesmo um caminho na forma certa (`.../additional/<uuid>.pdf`)
+ *     nunca estava entre os `ownedPaths` passados pelo controller;
+ *   - documento INGERIDO via MCP/WhatsApp
+ *     (`IngestDocumentFromUrlUseCase.ts:116`:
+ *     `workers/<workerId>/ingested/<documentType>/<timestamp-ms>`, sem
+ *     extensão e sem UUID) — nunca bate a forma exata;
+ *   - qualquer caminho legado gravado antes deste padrão de upload existir.
  *
- *   - `matchesOwnedDocumentPrefix` — só o PREFIXO: `workers/<workerId>/...`,
- *     normalizado (sem traversal/URL de outro host). É o suficiente para
- *     fechar a vulnerabilidade (worker nunca escreve/lê/apaga fora do
- *     próprio prefixo) e é o que os 3 endpoints de SAVE e o
- *     `GCSStorageService` (2ª camada, view E delete) usam.
- *   - `matchesOwnedDocumentPathShape` — o padrão EXATO
- *     `workers/<workerId>/(<docType>|additional)/<uuid>.<ext>` (`<docType>`
- *     um dos 11 tipos fixos — `WorkerDocuments.ts:1-12` — ou `additional`;
- *     `<ext>` uma de `pdf`/`jpg`/`png`, as únicas que
- *     `GCSStorageService.signUpload` de fato grava — `GCSStorageService.ts:78-81`).
- *     É o que `assertDocumentPathBelongsToWorker` exige ALÉM de bater com o
- *     registro — a checagem mais forte, reservada para o guard de VIEW
- *     (`getViewSignedUrl`), onde nenhum teste legítimo depende de caminho
- *     fora do padrão de upload.
+ * A correção da rodada 2: o guard de VIEW volta a exigir só (i) o caminho
+ * normalizado, (ii) o PREFIXO `workers/<workerId>/` do dono, e (iii)
+ * pertencer à lista de caminhos de fato GRAVADOS do worker — a mesma
+ * checagem de PREFIXO que SAVE e a 2ª camada (`GCSStorageService`) sempre
+ * usaram (`matchesOwnedDocumentPrefix`). A checagem de FORMA EXATA
+ * (`matchesOwnedDocumentPathShape`/`buildOwnedDocumentPathPattern`) foi
+ * removida — ficou sem nenhum uso depois desta mudança, e mantê-la morta
+ * seria dívida sem função: a segurança não vem da forma do caminho, vem de
+ * (ii) + (iii) juntos — path fora do prefixo do dono NUNCA passa, e path
+ * dentro do prefixo só é aceito se estiver gravado no registro do PRÓPRIO
+ * worker (não basta "parecer" um documento — tem de SER um documento dele).
  */
 
 const ABSOLUTE_URL_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//;
@@ -109,54 +118,12 @@ export function buildOwnedDocumentPrefixPattern(workerId: string): RegExp {
   return new RegExp(`^workers/${escapeForRegex(workerId)}/`, 'i');
 }
 
-// Os 11 tipos fixos de documento — mesma lista já duplicada em
-// `WorkerDocuments.ts:1-12`, `GCSStorageService.ts:5-16`,
-// `WorkerDocumentsMeController.ts` e `AdminWorkerDocumentsController.ts`
-// (convenção existente no código; mantida aqui pelo mesmo padrão em vez de
-// forçar um refactor de dedup fora do escopo deste hotfix).
-const DOCUMENT_TYPE_SEGMENTS = [
-  'resume_cv',
-  'identity_document',
-  'identity_document_back',
-  'criminal_record',
-  'professional_registration',
-  'liability_insurance',
-  'monotributo_certificate',
-  'at_certificate',
-  'apto_psicofisico',
-  'analitico_universitario',
-  'carta_recomendacion',
-  'additional',
-];
-
-// Extensões que `GCSStorageService.signUpload` de fato gera hoje
-// (GCSStorageService.ts:78-81: extMap 'application/pdf'→'pdf',
-// 'image/jpeg'→'jpg', 'image/png'→'png'; qualquer outro content-type cai no
-// default 'pdf'). Nenhum upload emitido pelo servidor grava outra extensão.
-const ACCEPTED_EXTENSIONS = ['pdf', 'jpg', 'png'];
-
-const UUID_SEGMENT_SOURCE =
-  '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
-
-/**
- * Regex exata do caminho de um documento do PRÓPRIO `workerId`:
- * `workers/<workerId>/(<docType>|additional)/<uuid>.<pdf|jpg|png>`.
- */
-export function buildOwnedDocumentPathPattern(workerId: string): RegExp {
-  const typeAlternation = DOCUMENT_TYPE_SEGMENTS.join('|');
-  const extAlternation = ACCEPTED_EXTENSIONS.join('|');
-  return new RegExp(
-    `^workers/${escapeForRegex(workerId)}/(?:${typeAlternation})/${UUID_SEGMENT_SOURCE}\\.(?:${extAlternation})$`,
-    'i',
-  );
-}
-
 /**
  * true quando o caminho normalizado começa por `workers/<workerId>/` — a
- * checagem de PREFIXO usada pelos 3 endpoints de SAVE e pelo
- * `GCSStorageService` (2ª camada de view/delete). Não confere tipo de
- * documento nem extensão nem forma de uuid — só que o caminho está dentro
- * do namespace do PRÓPRIO worker.
+ * checagem de PREFIXO. Não confere tipo de documento, extensão nem forma de
+ * uuid — só que o caminho está dentro do namespace do PRÓPRIO worker. É a
+ * ÚNICA checagem de forma usada em todo o guard (SAVE, VIEW e a 2ª camada em
+ * `GCSStorageService`) — ver nota da rodada 2 no topo do arquivo.
  */
 export function matchesOwnedDocumentPrefix(
   rawPath: unknown,
@@ -169,25 +136,13 @@ export function matchesOwnedDocumentPrefix(
 }
 
 /**
- * O caminho normalizado tem a FORMA EXATA de um documento do PRÓPRIO
- * `workerId` (prefixo + tipo válido + uuid + extensão aceita). Não confere
- * se o objeto existe nem se está gravado no registro — é a checagem mais
- * forte, usada só por `assertDocumentPathBelongsToWorker` (guard de VIEW).
- */
-export function matchesOwnedDocumentPathShape(
-  rawPath: unknown,
-  bucketName: string,
-  workerId: string,
-): boolean {
-  const normalized = resolveDocumentRelativePath(rawPath, bucketName);
-  if (!normalized) return false;
-  return buildOwnedDocumentPathPattern(workerId).test(normalized);
-}
-
-/**
- * true só quando o caminho pedido (a) tem a FORMA EXATA de um documento do
- * PRÓPRIO `workerId` — `matchesOwnedDocumentPathShape` — E (b) bate com um
- * dos caminhos de fato GRAVADOS no registro do worker (`ownedPaths`).
+ * true só quando o caminho pedido (a) está dentro do PREFIXO do próprio
+ * `workerId` — `matchesOwnedDocumentPrefix` — E (b) bate com um dos
+ * caminhos de fato GRAVADOS no registro do worker (`ownedPaths`) — a união
+ * das 11 colunas fixas de `worker_documents`, `additional_certificates_urls`
+ * e `worker_additional_documents.file_path`, montada pelo controller
+ * chamador. Não exige mais a forma exata de upload (rodada 2) — ver nota no
+ * topo do arquivo.
  */
 export function assertDocumentPathBelongsToWorker(
   rawPath: unknown,
@@ -197,7 +152,7 @@ export function assertDocumentPathBelongsToWorker(
 ): boolean {
   const normalized = resolveDocumentRelativePath(rawPath, bucketName);
   if (!normalized) return false;
-  if (!buildOwnedDocumentPathPattern(workerId).test(normalized)) return false;
+  if (!buildOwnedDocumentPrefixPattern(workerId).test(normalized)) return false;
 
   return ownedPaths.some((stored) => {
     if (!stored) return false;

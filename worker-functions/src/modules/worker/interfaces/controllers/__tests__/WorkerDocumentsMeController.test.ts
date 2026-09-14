@@ -38,6 +38,14 @@ jest.mock('../../../infrastructure/WorkerDocumentsRepository', () => ({
   })),
 }));
 
+const mockFindAdditionalByWorkerId = jest.fn().mockResolvedValue([]);
+
+jest.mock('../../../infrastructure/WorkerAdditionalDocumentsRepository', () => ({
+  WorkerAdditionalDocumentsRepository: jest.fn().mockImplementation(() => ({
+    findByWorkerId: mockFindAdditionalByWorkerId,
+  })),
+}));
+
 const mockRecalculateStatus = jest.fn();
 
 jest.mock('../../../infrastructure/WorkerRepository', () => ({
@@ -106,6 +114,7 @@ describe('WorkerDocumentsMeController', () => {
     jest.clearAllMocks();
     mockDbQuery.mockResolvedValue({ rows: [] });
     mockGetProgressExecute.mockResolvedValue(Result.ok({ id: WORKER_ID }));
+    mockFindAdditionalByWorkerId.mockResolvedValue([]);
     controller = new WorkerDocumentsMeController();
     jest.spyOn(console, 'log').mockImplementation(() => undefined);
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -371,6 +380,32 @@ describe('WorkerDocumentsMeController', () => {
       await controller.getViewSignedUrl(req, res);
       expect(res.status).toHaveBeenCalledWith(500);
     });
+
+    // ── RED (13/09, rodada 2) ─ R1: documento ADICIONAL nunca abria ─────
+    it('[R1] caminho de um documento ADICIONAL (worker_additional_documents) do PRÓPRIO worker → 200', async () => {
+      const additionalPath = `workers/${WORKER_ID}/additional/${DOC_UUID}.pdf`;
+      // O registro em worker_documents (11 colunas fixas) não conhece este
+      // caminho — ele só existe em worker_additional_documents.
+      mockFindByWorkerId.mockResolvedValue({ identityDocumentUrl: OWNED_PATH });
+      mockFindAdditionalByWorkerId.mockResolvedValue([
+        { id: 'doc-1', workerId: WORKER_ID, label: 'Comprovante extra', filePath: additionalPath },
+      ]);
+      mockGenerateViewSignedUrl.mockResolvedValue('https://signed.example.com/additional');
+      const [req, res] = mockReqRes({ body: { filePath: additionalPath } });
+      await controller.getViewSignedUrl(req, res);
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    // ── RED (13/09, rodada 2) ─ R2: documento INGERIDO via MCP nunca abria ─
+    it('[R2] caminho INGERIDO (workers/<id>/ingested/<tipo>/<timestamp-ms>, sem extensão), já salvo no registro → 200', async () => {
+      const ingestedPath = `workers/${WORKER_ID}/ingested/identity_document/${Date.now()}`;
+      mockFindByWorkerId.mockResolvedValue({ identityDocumentUrl: ingestedPath });
+      mockFindAdditionalByWorkerId.mockResolvedValue([]);
+      mockGenerateViewSignedUrl.mockResolvedValue('https://signed.example.com/ingested');
+      const [req, res] = mockReqRes({ body: { filePath: ingestedPath } });
+      await controller.getViewSignedUrl(req, res);
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
   });
 
   // ── deleteDocument ───────────────────────────────────────────────────
@@ -437,6 +472,18 @@ describe('WorkerDocumentsMeController', () => {
       await controller.deleteDocument(req, res);
       expect(res.status).toHaveBeenCalledWith(404);
       expect(mockClearDocumentField).not.toHaveBeenCalled();
+    });
+
+    // ── RED (13/09, rodada 2) ─ R3: legado fora do prefixo travava o registro preso ─
+    it('[R3] caminho LEGADO fora de workers/<id>/ → NÃO chama gcs.deleteFile, mas limpa o registro (record_only) e responde 200', async () => {
+      const legacyPath = 'legacy-uploads/2019/identity-doc.pdf';
+      mockFindByWorkerId.mockResolvedValue({ identityDocumentUrl: legacyPath });
+      mockUpdate.mockResolvedValue({ identityDocumentUrl: undefined });
+      const [req, res] = mockReqRes();
+      await controller.deleteDocument(req, res);
+      expect(mockDeleteFile).not.toHaveBeenCalled();
+      expect(mockClearDocumentField).toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
     });
   });
 });
