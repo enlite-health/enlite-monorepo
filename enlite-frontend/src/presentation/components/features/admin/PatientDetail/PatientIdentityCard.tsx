@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { User, TriangleAlert } from 'lucide-react';
+import { TriangleAlert } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
@@ -9,6 +9,7 @@ import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
 import { FieldPair, FieldPairGrid, FieldGroupTitle } from './FieldPairs';
 import { maskDocumentNumber } from '@presentation/utils/maskDocumentNumber';
+import { PatientPhotoSlot } from './PatientPhotoSlot';
 
 interface PatientIdentityCardProps {
   patient: PatientDetail;
@@ -24,9 +25,7 @@ interface PatientIdentityCardProps {
 function findMatchingResponsibleName(patient: PatientDetail): string | null {
   const patientLast8 = (patient.phoneWhatsapp ?? '').replace(/\D/g, '').slice(-8);
   if (patientLast8.length < 8) return null;
-  const match = patient.responsibles.find(
-    (r) => (r.phone ?? '').replace(/\D/g, '').slice(-8) === patientLast8,
-  );
+  const match = patient.responsibles.find((r) => (r.phone ?? '').replace(/\D/g, '').slice(-8) === patientLast8);
   if (!match) return null;
   return [match.firstName, match.lastName].filter(Boolean).join(' ') || null;
 }
@@ -186,14 +185,9 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
       data-testid="patient-identity-card"
     >
       <div className="flex items-center gap-4 mb-2">
-        <div className="w-14 h-14 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 shrink-0">
-          <User className="w-8 h-8" />
-        </div>
+        <PatientPhotoSlot patientId={patient.id} hasPhoto={patient.hasPhoto} onChanged={onSaved} />
         <div className="min-w-0">
-          {/* 06/09: o NOME saiu daqui — subiu para o `h1` da página, a 100px acima. Repetir os dois
-              não era só redundância visual: `getByText(nome)` passou a resolver DOIS elementos e
-              três e2e quebraram em strict mode. O cartão mantém o que é dele — avatar, estado,
-              motivo da espera, número do caso e os campos de contato. */}
+          {/* 06/09: o NOME saiu daqui (subiu pro `h1` da página) — repetir dava strict-mode em e2e. */}
           <div className="flex flex-wrap items-center gap-2">
             <span className={`inline-flex px-2.5 py-0.5 rounded-full ${statusColor}`} data-testid="patient-status-badge">
               <Text as="span" size="xs" weight="medium" color="inherit">

@@ -3177,7 +3177,39 @@
           "emergencyContactNotSet": "No definido",
           "emergencyContactNameExternal": "Nombre del contacto",
           "emergencyContactPhoneExternal": "Teléfono del contacto",
-          "emergencyContactDocumentNumber": "Número del documento"
+          "emergencyContactDocumentNumber": "Número del documento",
+          "photo": {
+            "altText": "Foto del paciente",
+            "uploadButton": "Subir foto",
+            "changeButton": "Cambiar foto",
+            "removeButton": "Quitar foto",
+            "errorInvalidType": "Formato inválido — solo JPEG o PNG.",
+            "errorTooLarge": "El archivo supera el límite de 5 MB.",
+            "errorUploadGeneric": "No se pudo subir la foto. Probá de nuevo.",
+            "errorRemoveGeneric": "No se pudo quitar la foto. Probá de nuevo.",
+            "removeConfirmTitle": "Quitar la foto de perfil",
+            "removeConfirmBody": "Esta acción borra la foto del paciente. ¿Confirmás?",
+            "removeConfirmCancel": "Cancelar",
+            "removeConfirmYes": "Quitar foto",
+            "removeConfirmBusy": "Quitando…"
+          },
+          "documents": {
+            "title": "Documentos y consentimiento de imagen",
+            "uploadButton": "Subir documento",
+            "empty": "Sin documentos subidos en esta sesión.",
+            "openButton": "Abrir",
+            "errorInvalidType": "Formato inválido — solo PDF o JPEG.",
+            "errorTooLarge": "El archivo supera el límite de 5 MB.",
+            "errorUploadGeneric": "No se pudo subir el documento. Probá de nuevo.",
+            "errorOpenGeneric": "No se pudo abrir el documento. Probá de nuevo.",
+            "errorConsentGeneric": "No se pudo registrar el consentimiento. Probá de nuevo.",
+            "errorRevokeGeneric": "No se pudo revocar el consentimiento. Probá de nuevo.",
+            "consentTitle": "Consentimiento de imagen",
+            "registerConsentButton": "Registrar consentimiento",
+            "revokeConsentButton": "Revocar consentimiento",
+            "consentActive": "Consentimiento vigente",
+            "consentRevoked": "Consentimiento revocado"
+          }
         },
         "documentTypes": {
           "CPF": "CPF",

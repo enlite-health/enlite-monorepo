@@ -26,6 +26,7 @@ import { PatientChatIdsCard } from '@presentation/components/features/admin/Pati
 import { PatientStatusControl } from '@presentation/components/features/admin/PatientDetail/PatientStatusControl';
 import { PatientStatusHistoryCard } from '@presentation/components/features/admin/PatientDetail/PatientStatusHistoryCard';
 import { CompletenessChecklist } from '@presentation/components/features/admin/PatientDetail/CompletenessChecklist';
+import { PatientDocumentsCard } from '@presentation/components/features/admin/PatientDetail/PatientDocumentsCard';
 import type { DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 import { ContainerGate } from '@presentation/components/features/access';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
@@ -207,6 +208,11 @@ export default function PatientDetailPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <PatientIdentityCard patient={patient} onSaved={refetch} />
           <PatientGeneralInfoCard patient={patient} onSaved={refetch} />
+        </div>
+        {/* Spec 018, PR-4: documento (prova) e consentimento de imagem. Mesmo container
+            `patient_identity` (a rota de escrita é a mesma célula da identidade). */}
+        <div className="mb-6">
+          <PatientDocumentsCard patientId={patient.id} />
         </div>
       </ContainerGate>
 
