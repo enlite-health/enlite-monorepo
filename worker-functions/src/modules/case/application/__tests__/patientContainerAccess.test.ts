@@ -25,7 +25,7 @@ const TODAS = PATIENT_CONTAINERS.map((c) => patientContainerCell(c, 'read'));
 const ficha = {
   id: 'p1', status: 'ACTIVE', admissionStatus: 'DONE', country: 'AR', caseNumber: 12,
   firstName: 'Ana', lastName: 'G', documentNumber: '123', phoneWhatsapp: '+54', contactEmail: 'a@x',
-  gender: 'FEMALE', languages: ['pt', 'es'], dischargedAt: '2026-08-01T12:00:00.000Z',
+  gender: 'FEMALE', languages: ['pt', 'es'], dischargedAt: '2026-08-01T12:00:00.000Z', hasPhoto: true,
   diagnosis: 'TEA', diagnoses: [{ code: 'x' }], dependencyLevel: 'ALTA', emergencyInstructions: 'llamar', hasConsent: true,
   professionals: [{ name: 'Dr' }],
   responsibles: [{ name: 'Mãe' }], phoneMatchesResponsible: true,
@@ -102,6 +102,16 @@ describe('projectPatientDetailByContainers', () => {
     expect(comIdentidade.gender).toBe('FEMALE');
     expect(comIdentidade.languages).toEqual(['pt', 'es']);
     expect(comIdentidade.dischargedAt).toBe('2026-08-01T12:00:00.000Z');
+    expect(comIdentidade.redacted).not.toHaveProperty('identity');
+  });
+
+  it('spec 018 PR-4: hasPhoto vive no container `identity` — redigido a `null` (NUNCA `false`, não pode vazar "tem foto")', () => {
+    const semIdentidade = projectPatientDetailByContainers(ficha, ['patient:read', 'patient_family:read']);
+    expect(semIdentidade.hasPhoto).toBeNull();
+    expect(semIdentidade.redacted).toHaveProperty('identity', true);
+
+    const comIdentidade = projectPatientDetailByContainers(ficha, ['patient:read', 'patient_identity:read']);
+    expect(comIdentidade.hasPhoto).toBe(true);
     expect(comIdentidade.redacted).not.toHaveProperty('identity');
   });
 

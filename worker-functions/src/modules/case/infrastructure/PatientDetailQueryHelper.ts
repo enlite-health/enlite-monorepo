@@ -45,6 +45,10 @@ const PATIENT_DETAIL_SQL = `
     (SELECT h.created_at FROM patient_status_history h
       WHERE h.patient_id = p.id AND h.new_value = 'DISCHARGED'
       ORDER BY h.created_at DESC, h.id DESC LIMIT 1) AS "dischargedAt",
+    -- Spec 018, PR-4 (contracts/patient-header-and-photo.md): tem foto cadastrada. Mesma célula
+    -- de identity, mesmo padrão de dischargedAt -- redigido (null) por DETAIL_FIELDS.identity em
+    -- patientContainerAccess.ts, NUNCA false na redacao (nao pode vazar "tem foto").
+    EXISTS (SELECT 1 FROM patient_photos ph WHERE ph.patient_id = p.id) AS "hasPhoto",
     diagnosis,
     dependency_level         AS "dependencyLevel",
     clinical_specialty       AS "clinicalSpecialty",
@@ -379,6 +383,7 @@ export async function fetchPatientDetail(
     gender,
     languages,
     dischargedAt: p.dischargedAt ?? null,
+    hasPhoto: p.hasPhoto ?? false,
     diagnosis: p.diagnosis,
     dependencyLevel: p.dependencyLevel,
     clinicalSpecialty: p.clinicalSpecialty,

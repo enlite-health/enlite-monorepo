@@ -84,6 +84,8 @@ const DETAIL_FIELDS: Readonly<Record<PatientContainer, readonly string[]>> = {
     // que a do Historial (`patient:read`, exigida por toda a ficha — ver comentário em
     // PatientQueryRows.ts:PatientDetailRow.dischargedAt).
     'dischargedAt',
+    // Spec 018, PR-4: `EXISTS` contra `patient_photos`, mesma célula de identity.
+    'hasPhoto',
   ],
   clinical: [
     'diagnosis', 'diagnoses', 'diagnosesUnavailable', 'dependencyLevel', 'clinicalSpecialty', 'clinicalSegments',
