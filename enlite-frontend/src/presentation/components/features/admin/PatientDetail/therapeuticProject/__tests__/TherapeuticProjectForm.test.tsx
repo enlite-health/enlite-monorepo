@@ -63,6 +63,7 @@ import { TherapeuticProjectForm } from '../TherapeuticProjectForm';
 // ── Insumos ──────────────────────────────────────────────────────────────────
 
 const tf = (k: string) => (ptBR.admin.patients.detail.therapeuticProjectForm as Record<string, any>)[k] as string;
+const tc = (k: string) => (ptBR.admin.patients.detail.therapeuticProjectCard as Record<string, any>)[k] as string;
 
 const servico = (over: Partial<PatientContractedServiceDetail> = {}): PatientContractedServiceDetail => ({
   id: 'svc-1',
@@ -171,6 +172,7 @@ const montar = (over: Partial<Props> = {}) =>
   render(
     <TherapeuticProjectForm
       services={over.services ?? [servico(), servico({ id: 'svc-2', serviceCode: 'CAREGIVER', weeklyHours: null })]}
+      servicesRedacted={over.servicesRedacted ?? false}
       patientDiagnoses={over.patientDiagnoses ?? DIAGS}
       catalogs={over.catalogs ?? CATALOGOS}
       fieldClass={over.fieldClass ?? FIELD_CLASS}
@@ -257,6 +259,15 @@ describe('modo "Novo" — versão do zero', () => {
     expect(screen.getByTestId('tp-no-service')).toHaveTextContent(tf('noActiveService'));
     expect((screen.getByTestId('tp-service') as HTMLSelectElement).value).toBe('');
     expect(salvar().disabled).toBe(true);
+  });
+
+  // D113 (achado do gate, 14/09): `services=[]` por REDAÇÃO (sem `patient_services:read`) NÃO é
+  // "o paciente não tem serviço ativo" — o form tem de dizer a coisa certa.
+  it('🔴 D113: `services=[]` REDIGIDO (sem a célula) mostra "sem permissão", NUNCA "precisa de serviço"', () => {
+    montar({ services: [], servicesRedacted: true });
+
+    expect(screen.getByTestId('tp-service-redacted')).toHaveTextContent(tc('redacted'));
+    expect(screen.queryByTestId('tp-no-service')).not.toBeInTheDocument();
   });
 
   it('trocar o serviço marca o formulário como sujo', () => {
@@ -545,6 +556,34 @@ describe('🔒 D328/ADR-4 — campo MACRO trava na edição, nunca vira input de
     montar({ from: { ...VERSAO, contractedServiceId: 'svc-removido' } });
 
     expect(screen.getByTestId('tp-service-locked')).toHaveTextContent('svc-removido');
+  });
+
+  // D113 (achado do gate 14/09): editar SEM `patient_services:read` — o Drawer manda `services=[]`
+  // (redação) e o MACRO trava `contractedServiceId` como texto (D328). ANTES do conserto, o texto
+  // travado vazava o UUID cru (`from.contractedServiceId`) como se fosse o rótulo do serviço — o
+  // mesmo tipo de mentira que `tp-no-service` seria, só que no ramo travado em vez do `<select>`.
+  it('🔴 D113 editar: `services=[]` REDIGIDO mostra "sem permissão" no lugar do serviço, NUNCA o UUID cru', () => {
+    montar({ from: VERSAO, services: [], servicesRedacted: true });
+
+    expect(screen.getByTestId('tp-service-locked')).toHaveTextContent(tc('redacted'));
+    expect(screen.getByTestId('tp-service-locked')).not.toHaveTextContent(VERSAO.contractedServiceId);
+  });
+
+  // O `contractedServiceId` em si (o que o POST manda) NUNCA pode se perder por causa da redação —
+  // ele vem de `from`, não de `services`. Prova indireta: salvar com os outros campos válidos e
+  // conferir o corpo enviado a `onSubmit`.
+  it('🔴 D113 editar: `services=[]` REDIGIDO não perde o `contractedServiceId` que vem de `from` (o POST manda o id certo)', () => {
+    montar({ from: VERSAO, services: [], servicesRedacted: true });
+
+    fireEvent.submit(screen.getByTestId('therapeutic-project-form'));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ contractedServiceId: VERSAO.contractedServiceId }));
+  });
+
+  it('editar COM a célula (`servicesRedacted` ausente/false) e serviço encontrado: comportamento INALTERADO — mostra o rótulo do serviço', () => {
+    montar({ from: VERSAO });
+
+    expect(screen.getByTestId('tp-service-locked')).toHaveTextContent('Cuidador');
+    expect(screen.queryByTestId('tp-service-redacted')).not.toBeInTheDocument();
   });
 });
 

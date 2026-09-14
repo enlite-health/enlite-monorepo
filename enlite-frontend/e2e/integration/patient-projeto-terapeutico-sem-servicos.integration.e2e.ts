@@ -61,6 +61,19 @@ test.describe('D113 — ficha sem `patient_services:read`: o card de projeto ter
     serviceId = scalar(`INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by)
           VALUES ('${patientId}', 'AT', true, 'AR', 'e2e-ptsemsrv-setup', 'e2e-ptsemsrv-setup') RETURNING id`);
     if (!serviceId) throw new Error('serviço contratado e2e não foi inserido');
+
+    // Uma versão VIGENTE para "Editar" existir (`tp-edit-btn` só aparece com `current`, D328) —
+    // os campos JSONB são snapshot (sem FK pro catálogo), então o conteúdo é sintético mesmo.
+    psql(`INSERT INTO patient_therapeutic_projects
+        (patient_id, major, minor, contracted_service_id, modality, diagnoses, clinical_context,
+         general_objective, specific_objectives, activities, pathology_types, start_date, end_date, created_by)
+        VALUES ('${patientId}', 1, 0, '${serviceId}', 'IN_PERSON',
+          '[{"uri":"http://id.who.int/icd/entity/e2e-ptsemsrv","title":"Diagnóstico sintético e2e"}]',
+          'Contexto sintético e2e', 'Objetivo sintético e2e',
+          '[{"id":"so-e2e","label":"Objetivo específico sintético"}]',
+          '[{"id":"ac-e2e","label":"Atividade sintética"}]',
+          '[{"id":"06","label":"Capítulo 06 sintético"}]',
+          '2026-09-01', '2026-12-31', 'e2e-ptsemsrv-setup')`);
   });
 
   test.afterAll(() => {
@@ -101,5 +114,29 @@ test.describe('D113 — ficha sem `patient_services:read`: o card de projeto ter
     await expect(novo).toBeDisabled();
     await expect(novo).toHaveAttribute('title', /permiso/i);
     await expect(novo).not.toHaveAttribute('title', /servicio contratado activo/i);
+  });
+
+  // Retomada 14/09 (achado do gate): "Editar" abre o form em modo edição — o campo de serviço é
+  // MACRO travado (D328) e vira TEXTO a partir de `contractedServiceId`. Sem `patient_services:read`
+  // o Drawer manda `services=[]` (redação); o form tem de mostrar "sem permiso", nunca
+  // `tp-no-service` nem o UUID cru do serviço.
+  test('2. "Editar" abre o form, e o campo de serviço mostra "sem permiso" — nunca `tp-no-service`, nunca o UUID cru', async ({ page }) => {
+    await loginAs(page, STAFF);
+    await page.goto(`/admin/patients/${patientId}`);
+
+    await expect(page.getByTestId('projeto-terapeutico-card')).toBeVisible({ timeout: 20_000 });
+    await page.getByTestId('tp-edit-btn').click();
+
+    const drawer = page.getByTestId('therapeutic-project-drawer');
+    await expect(drawer).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 10_000 });
+
+    // Nunca os dois sintomas do achado: `tp-no-service` (o aviso de "sem serviço ativo" — mentira,
+    // o paciente TEM um) e o UUID cru do serviço travado no lugar do rótulo.
+    await expect(page.getByTestId('tp-no-service')).toHaveCount(0);
+    const servicoTravado = page.getByTestId('tp-service-locked');
+    await expect(servicoTravado).toBeVisible();
+    await expect(servicoTravado).not.toHaveText(serviceId);
+    await expect(servicoTravado).toContainText('permiso');
   });
 });

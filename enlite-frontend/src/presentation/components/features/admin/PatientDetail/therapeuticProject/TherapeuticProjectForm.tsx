@@ -47,6 +47,10 @@ import { IcdSearchCombobox } from '../edit/IcdSearchCombobox';
 
 interface Props {
   services: PatientContractedServiceDetail[];
+  /** `true` sem `patient_services:read` (D113): `services` chega `[]` por REDAÇÃO, não porque o
+   * paciente não tem serviço. Sem isto o form não tem como distinguir as duas coisas — `[]` sozinho
+   * apagaria a diferença (achado do gate, conserto 14/09). */
+  servicesRedacted?: boolean;
   /** Diagnósticos do cadastro — pré-preenchem o CID numa versão NOVA. */
   patientDiagnoses: PatientDiagnosisDetail[];
   catalogs: TherapeuticCatalogs;
@@ -107,6 +111,7 @@ const removedInactiveByKind = (from: TherapeuticProjectVersion | null): { kind: 
 
 export function TherapeuticProjectForm({
   services,
+  servicesRedacted = false,
   patientDiagnoses,
   catalogs,
   fieldClass,
@@ -185,10 +190,19 @@ export function TherapeuticProjectForm({
   };
 
   const contactOptionsOf = (items: { id: string; label: string }[]) => items.map((i) => ({ value: i.id, label: i.label }));
-  /** Serviço travado (MACRO): busca em TODOS os serviços, não só ativos — a versão antiga pode ter sido feita com um serviço já desativado. */
+  /**
+   * Serviço travado (MACRO): busca em TODOS os serviços, não só ativos — a versão antiga pode ter
+   * sido feita com um serviço já desativado. Sem a célula de serviços (`servicesRedacted`), `services`
+   * chega `[]` por REDAÇÃO (D113) — o `id` cru (`contractedServiceId`, que veio de `from` e nunca se
+   * perde) NÃO pode aparecer como se fosse o rótulo: isso vazaria o UUID interno em vez de dizer que
+   * falta permissão. Achado do gate 14/09 — antes disto o texto era o `contractedServiceId` cru.
+   * Quando a célula existe de verdade e o serviço não é encontrado (removido/de outro paciente), o
+   * id cru continua sendo o fallback (comportamento anterior, sem mudança).
+   */
   const lockedServiceLabel = (): string => {
     const svc = services.find((s) => s.id === contractedServiceId);
-    return svc ? t(`admin.patients.detail.contractedServicesCard.serviceTypes.${svc.serviceCode}`, svc.serviceCode) : contractedServiceId;
+    if (svc) return t(`admin.patients.detail.contractedServicesCard.serviceTypes.${svc.serviceCode}`, svc.serviceCode);
+    return servicesRedacted ? tc('redacted') : contractedServiceId;
   };
   const responsibleLabel = (r: PatientResponsibleDetail) =>
     [r.firstName, r.lastName].filter(Boolean).join(' ').trim() || r.relationship || r.id;
@@ -274,7 +288,15 @@ export function TherapeuticProjectForm({
                     }))}
                     data-testid="tp-service"
                   />
-                  {activeServices.length === 0 && <Text size="xs" className="text-amber-700" data-testid="tp-no-service">{tf('noActiveService')}</Text>}
+                  {/* D113: `activeServices` vazio por REDAÇÃO (sem `patient_services:read`) não é
+                      "sem serviço contratado ativo" — é "não posso ver". O marcador de redação
+                      (`tc('redacted')`, já usado no card e na view) entra no lugar do aviso de
+                      "precisa de serviço", nunca os dois juntos nem o errado. */}
+                  {activeServices.length === 0 && (
+                    <Text size="xs" className="text-amber-700" data-testid={servicesRedacted ? 'tp-service-redacted' : 'tp-no-service'}>
+                      {servicesRedacted ? tc('redacted') : tf('noActiveService')}
+                    </Text>
+                  )}
                 </>
               )}
           </FormField>
