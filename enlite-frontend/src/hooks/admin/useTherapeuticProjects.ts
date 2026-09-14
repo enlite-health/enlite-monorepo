@@ -60,16 +60,30 @@ export function useTherapeuticCatalogs(enabled: boolean) {
     if (!enabled) return;
     let alive = true;
     (async () => {
-      try {
-        const [so, ac, seg] = await Promise.all([
-          AdminTherapeuticProjectsApiService.listCatalog('specific-objectives'),
-          AdminTherapeuticProjectsApiService.listCatalog('activities'),
-          AdminTherapeuticProjectsApiService.listCatalog('segments'),
-        ]);
-        if (alive) setCatalogs({ 'specific-objectives': so, activities: ac, segments: seg });
-      } catch (err: unknown) {
-        if (alive) setError(err instanceof Error ? err.message : String(err));
+      // As 3 chamadas continuam disparando JUNTAS (mesmo timing de antes — `listCatalog` é chamado
+      // 3x de imediato). `segments` usa `allSettled` em vez de `all` (conserto do gate, achado do
+      // PR-7): sem a célula `catalog_therapeutic_segments:read` a API devolve 403 SÓ nessa chamada,
+      // e isso não pode derrubar `specific-objectives`/`activities` — o form tem de abrir mesmo
+      // assim. Falha de `segments` vira catálogo VAZIO (mesmo tratamento do doc acima para `[]`:
+      // filtro de segmento some, task 7.7), nunca `error`. `specific-objectives`/`activities` SEMPRE
+      // estão juntas no grupo completo do form (contrato §Catálogo) — não há hoje célula parcial
+      // entre as duas — então falha em qualquer uma delas continua sendo `error` de verdade.
+      const [soRes, acRes, segRes] = await Promise.allSettled([
+        AdminTherapeuticProjectsApiService.listCatalog('specific-objectives'),
+        AdminTherapeuticProjectsApiService.listCatalog('activities'),
+        AdminTherapeuticProjectsApiService.listCatalog('segments'),
+      ]);
+      if (!alive) return;
+      if (soRes.status === 'rejected') {
+        setError(soRes.reason instanceof Error ? soRes.reason.message : String(soRes.reason));
+        return;
       }
+      if (acRes.status === 'rejected') {
+        setError(acRes.reason instanceof Error ? acRes.reason.message : String(acRes.reason));
+        return;
+      }
+      const seg: TherapeuticCatalogItem[] = segRes.status === 'fulfilled' ? segRes.value : [];
+      setCatalogs({ 'specific-objectives': soRes.value, activities: acRes.value, segments: seg });
     })();
     return () => { alive = false; };
   }, [enabled]);

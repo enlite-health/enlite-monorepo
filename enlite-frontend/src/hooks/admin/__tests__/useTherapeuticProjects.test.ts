@@ -186,24 +186,78 @@ describe('useTherapeuticCatalogs — os 3 catálogos do formulário', () => {
     expect(result.current.error).toBeNull();
   });
 
-  it('erro `Error` em qualquer um dos 3 vira a mensagem, e `catalogs` fica null', async () => {
+  it('erro `Error` em `specific-objectives` vira a mensagem, e `catalogs` fica null', async () => {
     listCatalog.mockImplementation(async (kind: string) => {
-      if (kind === 'activities') throw new Error('catálogo indisponível');
+      if (kind === 'specific-objectives') throw new Error('catálogo indisponível (objetivos)');
       return [];
     });
 
     const { result } = renderHook(() => useTherapeuticCatalogs(true));
 
-    await waitFor(() => expect(result.current.error).toBe('catálogo indisponível'));
+    await waitFor(() => expect(result.current.error).toBe('catálogo indisponível (objetivos)'));
     expect(result.current.catalogs).toBeNull();
   });
 
-  it('rejeição que não é Error vira `String(err)`', async () => {
-    listCatalog.mockRejectedValue({ toString: () => 'objeto estranho' });
+  it('erro `Error` em `activities` vira a mensagem, e `catalogs` fica null', async () => {
+    listCatalog.mockImplementation(async (kind: string) => {
+      if (kind === 'activities') throw new Error('catálogo indisponível (atividades)');
+      return [];
+    });
 
     const { result } = renderHook(() => useTherapeuticCatalogs(true));
 
-    await waitFor(() => expect(result.current.error).toBe('objeto estranho'));
+    await waitFor(() => expect(result.current.error).toBe('catálogo indisponível (atividades)'));
+    expect(result.current.catalogs).toBeNull();
+  });
+
+  it('rejeição que não é Error em `specific-objectives` vira `String(err)`', async () => {
+    listCatalog.mockImplementation(async (kind: string) => {
+      if (kind === 'specific-objectives') throw { toString: () => 'objeto estranho (objetivos)' };
+      return [];
+    });
+
+    const { result } = renderHook(() => useTherapeuticCatalogs(true));
+
+    await waitFor(() => expect(result.current.error).toBe('objeto estranho (objetivos)'));
+  });
+
+  it('rejeição que não é Error em `activities` vira `String(err)`', async () => {
+    listCatalog.mockImplementation(async (kind: string) => {
+      if (kind === 'activities') throw { toString: () => 'objeto estranho (atividades)' };
+      return [];
+    });
+
+    const { result } = renderHook(() => useTherapeuticCatalogs(true));
+
+    await waitFor(() => expect(result.current.error).toBe('objeto estranho (atividades)'));
+  });
+
+  it('🔒 conserto do gate (achado PR-7): `segments` 403 NÃO derruba o form — vira catálogo vazio, sem `error`', async () => {
+    listCatalog.mockImplementation(async (kind: string) => {
+      if (kind === 'segments') throw new Error('403: sem célula catalog_therapeutic_segments:read');
+      return [ITEM(`${kind}-1`)];
+    });
+
+    const { result } = renderHook(() => useTherapeuticCatalogs(true));
+
+    await waitFor(() => expect(result.current.catalogs).not.toBeNull());
+    expect(result.current.error).toBeNull();
+    expect(result.current.catalogs!.segments).toEqual([]);
+    expect(result.current.catalogs!['specific-objectives'][0].id).toBe('specific-objectives-1');
+    expect(result.current.catalogs!.activities[0].id).toBe('activities-1');
+  });
+
+  it('`segments` rejeitada com valor que não é Error também vira catálogo vazio, sem quebrar', async () => {
+    listCatalog.mockImplementation(async (kind: string) => {
+      if (kind === 'segments') throw 'caiu a rede';
+      return [ITEM(`${kind}-1`)];
+    });
+
+    const { result } = renderHook(() => useTherapeuticCatalogs(true));
+
+    await waitFor(() => expect(result.current.catalogs).not.toBeNull());
+    expect(result.current.error).toBeNull();
+    expect(result.current.catalogs!.segments).toEqual([]);
   });
 
   it('🔒 resposta que chega DEPOIS do unmount não seta estado (guarda `alive`)', async () => {

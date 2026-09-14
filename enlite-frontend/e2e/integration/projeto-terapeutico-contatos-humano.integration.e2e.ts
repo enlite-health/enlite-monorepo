@@ -822,3 +822,115 @@ test.describe('spec 018/PR-7 — conserto 14/09: criar com 2 contatos e clicar E
     expect(ligacoes).toEqual([`EXTERNAL:${familiarId}`, `CARE_TEAM:${profissionalId}`]);
   });
 });
+
+/**
+ * Conserto do gate (achado do PR-7, 14/09): `useTherapeuticCatalogs` buscava os 3 catálogos no
+ * MESMO `Promise.all` — sem a célula `catalog_therapeutic_segments:read` a API devolvia 403 SÓ em
+ * `segments`, e isso derrubava `specific-objectives`/`activities` junto: o drawer mostrava só
+ * `therapeutic-project-catalogs-error` e o form nunca abria, mesmo com o resto do grupo completo.
+ * Cenário PRÓPRIO, self-contained: staff com o MESMO grupo completo do describe principal deste
+ * arquivo, MENOS `catalog_therapeutic_segments:read` — prova que hoje o form abre, objetivos/
+ * atividades aparecem, o filtro de segmento (que já era escondido com catálogo vazio, task 7.7)
+ * fica escondido, e dá pra criar a V1.0 pela tela.
+ */
+test.describe('spec 018/PR-7 — conserto do gate: form abre SEM a célula de segmentos (catálogo de segmentos vira vazio) @integration', () => {
+  test.setTimeout(300_000);
+
+  let seed: { patientId: string; addressId: string; stamp: string };
+  let serviceId: string;
+
+  const uid = `e2e-pr7-semsegments-${RUN_ID}`;
+  const email = `${uid}@e2e.test`;
+  let groupId = '';
+
+  test.beforeAll(() => {
+    seed = seedActivatablePatient(713000); // faixa própria — 710000/711000/712000 já usadas neste arquivo
+    seedIcd(); // idempotente (ON CONFLICT) — reaproveita ICD_URI/RELEASE já seedados acima
+    serviceId = runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, created_by, updated_by) VALUES ('${seed.patientId}', 'CAREGIVER', 20, '${seed.addressId}', 'e2e-018-pr7', 'e2e-018-pr7') RETURNING id`).split('\n')[0].trim();
+    expect(serviceId).toMatch(/^[0-9a-f-]{36}$/);
+
+    psql(`INSERT INTO iam.permissions (resource, action, description, category) VALUES
+            ('patient', 'read', 'e2e PR-7 semsegments', 'Pacientes'),
+            ('patient_therapeutic_project', 'read', 'e2e PR-7 semsegments', 'Pacientes'),
+            ('patient_therapeutic_project', 'write', 'e2e PR-7 semsegments', 'Pacientes'),
+            ('patient_clinical', 'read', 'e2e PR-7 semsegments', 'Pacientes'),
+            ('patient_clinical', 'write', 'e2e PR-7 semsegments', 'Pacientes'),
+            ('patient_family', 'read', 'e2e PR-7 semsegments', 'Pacientes'),
+            ('patient_care_team', 'read', 'e2e PR-7 semsegments', 'Pacientes'),
+            ('patient_services', 'read', 'e2e PR-7 semsegments', 'Pacientes'),
+            ('patient_coverage', 'read', 'e2e PR-7 semsegments', 'Pacientes'),
+            ('patient_address', 'read', 'e2e PR-7 semsegments', 'Pacientes'),
+            ('patient_identity', 'read', 'e2e PR-7 semsegments', 'Pacientes'),
+            ('catalog_therapeutic_objectives', 'read', 'e2e PR-7 semsegments', 'Pacientes'),
+            ('catalog_therapeutic_activities', 'read', 'e2e PR-7 semsegments', 'Pacientes'),
+            ('catalog_therapeutic_segments', 'read', 'e2e PR-7 semsegments', 'Pacientes')
+          ON CONFLICT DO NOTHING`);
+    groupId = seedStaffInGroup({ uid, email, groupName: `PR7 SemSegments ${RUN_ID}`, country: 'AR' }).groupId;
+    // Grupo COMPLETO (mesmo conjunto do describe principal), MENOS `catalog_therapeutic_segments:read`.
+    for (const [resource, action] of [
+      ['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write'],
+      ['patient_clinical', 'read'], ['patient_clinical', 'write'], ['patient_family', 'read'],
+      ['patient_care_team', 'read'], ['patient_services', 'read'], ['patient_coverage', 'read'], ['patient_address', 'read'], ['patient_identity', 'read'],
+      ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read'],
+      // SEM `catalog_therapeutic_segments:read` — é o que este teste prova
+    ]) grantCell(groupId, resource, action);
+  });
+
+  test.afterAll(() => {
+    runSQL(`DELETE FROM patients WHERE id = '${seed.patientId}'`);
+    cleanupPatientDeep(seed.patientId);
+    cleanupIcd();
+    cleanupStaffAndGroup(uid, groupId);
+    safeSql(`DELETE FROM iam.permission_groups WHERE tenant_id = '${ABAC_TENANT}' AND name = 'PR7 SemSegments ${RUN_ID}'`);
+  });
+
+  test('staff sem catalog_therapeutic_segments:read abre "Nuevo", vê objetivos/atividades, não vê o filtro de segmento, cria V1.0', async ({ page }) => {
+    await loginAs(page, { uid, email, role: 'admin', country: 'AR' });
+    await page.goto(`/admin/patients/${seed.patientId}`);
+    const card = page.getByTestId('projeto-terapeutico-card');
+    await expect(card).toBeVisible({ timeout: 30_000 });
+    await page.getByTestId('tp-new-btn').click();
+
+    const drawer = page.getByTestId('therapeutic-project-drawer');
+    await expect(drawer).toBeVisible();
+    // O achado do gate: SEM o conserto, esta linha nunca aparece — o drawer fica preso em
+    // `therapeutic-project-catalogs-error` (segments 403 derrubando objetivos/atividades junto).
+    await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('therapeutic-project-catalogs-error')).toHaveCount(0);
+    await expect(page.getByTestId('tp-save')).toBeDisabled();
+
+    // O filtro de segmento (catálogo vazio, task 7.7) fica escondido — mesma asserção do "vazio
+    // legítimo", agora com a causa sendo 403 por falta de célula, não catálogo global vazio.
+    await expect(page.getByTestId('tp-segment-filter')).toHaveCount(0);
+
+    await expect(page.getByTestId('tp-service')).toHaveValue(serviceId);
+    await page.getByTestId('tp-modality').selectOption('IN_PERSON');
+
+    const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
+    await page.getByTestId('tp-icd-input').click();
+    await page.keyboard.type('sintetico pr-7');
+    expect((await search).status()).toBe(200);
+    const opcaoIcd = page.getByTestId('tp-icd-option-0');
+    await expect(opcaoIcd).toBeVisible({ timeout: 10_000 });
+    await opcaoIcd.click();
+    await expect(page.getByTestId('tp-diagnosis-chip')).toHaveCount(1);
+
+    expect(await digitar(page, '#tp-clinicalContext', 'Sintesis clinica semsegments')).toBe('Sintesis clinica semsegments');
+    expect(await digitar(page, '#tp-generalObjective', 'Objetivo general semsegments')).toBe('Objetivo general semsegments');
+    // Objetivos/atividades aparecem e são selecionáveis — a prova de que o catálogo delas NÃO foi
+    // derrubado pela falha de `segments`.
+    await marcarPrimeiras(page, 'tp-specificObjectives', 1);
+    await marcarPrimeiras(page, 'tp-activities', 1);
+    await page.locator('#tp-startDate').click();
+    await page.keyboard.type('09012026');
+    await page.locator('#tp-endDate').click();
+    await page.keyboard.type('12312026');
+    await expect(page.locator('#tp-endDate')).toHaveValue('2026-12-31');
+
+    await expect(page.getByTestId('tp-save')).toBeEnabled();
+    const criado = page.waitForResponse((r) => r.request().method() === 'POST' && /\/therapeutic-projects$/.test(r.url()));
+    await page.getByTestId('tp-save').click();
+    const bodyCriado = (await (await criado).json()) as { data: { id: string; version: string } };
+    expect(bodyCriado.data.version).toBe('V.1.0');
+  });
+});
