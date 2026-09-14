@@ -28,11 +28,17 @@ async function probeEmulator(): Promise<boolean> {
   return emulatorUp;
 }
 
-function mockToken(uid: string, role: string): string {
-  return 'mock_' + Buffer.from(JSON.stringify({ uid, email: `${uid}@e2e.local`, role })).toString('base64');
+function mockToken(uid: string, role: string, country?: string): string {
+  return 'mock_' + Buffer.from(JSON.stringify({
+    uid,
+    email: `${uid}@e2e.local`,
+    role,
+    // Claim opcional — omitido, o token sai byte-a-byte igual ao de antes (D330-country-helper).
+    ...(country ? { country } : {}),
+  })).toString('base64');
 }
 
-async function emulatorToken(uid: string, role: string): Promise<{ token: string; uid: string }> {
+async function emulatorToken(uid: string, role: string, country?: string): Promise<{ token: string; uid: string }> {
   const email = `${uid}@e2e.local`;
   const signUp = await axios.post(`${EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=any`,
     { email, password: PASSWORD, returnSecureToken: true }, { validateStatus: () => true });
@@ -42,7 +48,8 @@ async function emulatorToken(uid: string, role: string): Promise<{ token: string
       { email, password: PASSWORD, returnSecureToken: true });
   const localId = auth.data.localId as string;
   await axios.post(`${EMULATOR}/identitytoolkit.googleapis.com/v1/projects/${EMULATOR_PROJECT}/accounts:update`,
-    { localId, customAttributes: JSON.stringify({ role }) }, { headers: { Authorization: 'Bearer owner' } });
+    { localId, customAttributes: JSON.stringify({ role, ...(country ? { country } : {}) }) },
+    { headers: { Authorization: 'Bearer owner' } });
   // Claim nova só entra no PRÓXIMO idToken: loga de novo.
   const fresh = await axios.post(`${EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=any`,
     { email, password: PASSWORD, returnSecureToken: true });
@@ -56,11 +63,22 @@ export interface StaffAuth {
   uid: string;
 }
 
-/** `{ headers: { Authorization }, uid }` pronto para o axios, com a role pedida. */
-export async function staffAuth(uid: string, role: 'admin' | 'recruiter' | 'community_manager'): Promise<StaffAuth> {
+/**
+ * `{ headers: { Authorization }, uid }` pronto para o axios, com a role pedida.
+ *
+ * `country` é OPCIONAL — vai para o claim (`role`+`country` no emulador,
+ * campo `country` no token mock) só quando informado. Omitido, o comportamento
+ * é byte-a-byte o de antes: os 33 chamadores existentes que só passam
+ * `(uid, role)` continuam recebendo exatamente o mesmo claim.
+ */
+export async function staffAuth(
+  uid: string,
+  role: 'admin' | 'recruiter' | 'community_manager',
+  country?: string,
+): Promise<StaffAuth> {
   if (await probeEmulator()) {
-    const real = await emulatorToken(uid, role);
+    const real = await emulatorToken(uid, role, country);
     return { headers: { Authorization: `Bearer ${real.token}` }, uid: real.uid };
   }
-  return { headers: { Authorization: `Bearer ${mockToken(uid, role)}` }, uid };
+  return { headers: { Authorization: `Bearer ${mockToken(uid, role, country)}` }, uid };
 }

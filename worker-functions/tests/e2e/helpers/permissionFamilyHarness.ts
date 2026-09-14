@@ -26,9 +26,20 @@ import type { PermissionsModule } from '@modules/identity/permissions';
 /** O tenant único de hoje — o mesmo que `ENLITE_TENANT_ID` no domínio. */
 export const TENANT_E2E = '00000000-0000-0000-0000-000000000001';
 
-/** Credencial do `mockAuthMiddleware` (USE_MOCK_AUTH=true). */
-export function tokenMock(uid: string, role = 'admin'): string {
-  const dados = Buffer.from(JSON.stringify({ uid, email: `${uid}@e2e.local`, role })).toString('base64');
+/**
+ * Credencial do `mockAuthMiddleware` (USE_MOCK_AUTH=true).
+ *
+ * `country` é OPCIONAL — vai para o claim só quando informado. Omitido, o
+ * token sai byte-a-byte igual ao de antes: os chamadores existentes que só
+ * passam `(uid)` ou `(uid, role)` continuam recebendo exatamente o mesmo claim.
+ */
+export function tokenMock(uid: string, role = 'admin', country?: string): string {
+  const dados = Buffer.from(JSON.stringify({
+    uid,
+    email: `${uid}@e2e.local`,
+    role,
+    ...(country ? { country } : {}),
+  })).toString('base64');
   return `Bearer mock_${dados}`;
 }
 
