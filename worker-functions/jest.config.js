@@ -560,6 +560,12 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    'src/shared/http/pgUniqueViolationConflict.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     'src/shared/openapi/registrations/{adminEncuadres,publicJobs}.ts': {
       statements: 100,
       branches: 100,
