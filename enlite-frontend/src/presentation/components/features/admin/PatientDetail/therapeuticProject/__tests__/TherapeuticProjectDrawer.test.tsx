@@ -237,6 +237,17 @@ describe('modo `view` — uma versão em leitura', () => {
     expect(mockListCatalog).not.toHaveBeenCalled(); // em leitura não se busca catálogo
   });
 
+  // D113: sem `patient_services:read`, `contractedServices` chega `null` por redação (container
+  // diferente de `patient_therapeutic_project`, D286) — `null` ≠ `[]`, mas o `.find` da view
+  // NÃO pode quebrar por isso. A view já sabe rotular "sem permissão" via `servicesRedacted`.
+  it('🔴 D113: `contractedServices` null (sem `patient_services:read`) não quebra a view em leitura', () => {
+    expect(() =>
+      montar({ mode: 'view', version: VERSAO, isCurrent: true }, { patient: { ...PACIENTE, contractedServices: null as unknown as PatientContractedServiceDetail[] } }),
+    ).not.toThrow();
+
+    expect(screen.getByTestId('therapeutic-project-version-view')).toBeInTheDocument();
+  });
+
   it('versão sem autor conhecido cai em `—`', () => {
     montar({ mode: 'view', version: { ...VERSAO, createdByName: null }, isCurrent: true });
 
@@ -450,6 +461,30 @@ describe('modo `new` — os catálogos antes do formulário', () => {
     expect(document.getElementById('tp-externalContacts')!.querySelectorAll('li[role="option"]')).toHaveLength(0);
     abrir('tp-coverageContacts');
     expect(document.getElementById('tp-coverageContacts')!.querySelectorAll('li[role="option"]')).toHaveLength(0);
+  });
+
+  // D113 — o mesmo `?? []` do teste acima, mas para os QUATRO containers cruzados que faltavam
+  // cobertura: `services` (patient_services), `patientDiagnoses` (patient_clinical), `responsibles`
+  // (patient_family) e `professionals` (patient_care_team). Sem a célula de cada um, o campo chega
+  // `null` por redação (nunca `[]`) — o form não pode quebrar por isso.
+  it('🔴 D113: `contractedServices`/`diagnoses`/`responsibles`/`professionals` null não quebram o form — cada campo nasce vazio', async () => {
+    catalogosOk();
+    montar({ mode: 'new' }, {
+      patient: {
+        ...PACIENTE,
+        contractedServices: null as unknown as PatientContractedServiceDetail[],
+        diagnoses: null as unknown as PatientDetail['diagnoses'],
+        responsibles: null as unknown as PatientDetail['responsibles'],
+        professionals: null as unknown as PatientDetail['professionals'],
+      },
+    });
+    await esperarFormulario();
+
+    const abrir = (id: string) => fireEvent.click(document.getElementById(id)!.querySelector('button')!);
+    abrir('tp-responsibles');
+    expect(document.getElementById('tp-responsibles')!.querySelectorAll('li[role="option"]')).toHaveLength(0);
+    abrir('tp-careTeam');
+    expect(document.getElementById('tp-careTeam')!.querySelectorAll('li[role="option"]')).toHaveLength(0);
   });
 });
 

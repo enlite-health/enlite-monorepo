@@ -250,7 +250,10 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
   // Migration 330: "falta endereço no serviço" → abre o PRIMEIRO serviço ativo sem endereço vivo
   // (é dele que o checklist reclama); sem candidato, abre um novo.
   useAutoOpenDrawer(focusRequest, 'SERVICE_ADDRESS', () => {
-    const vivos = new Set(patient.addresses.map((a) => a.id));
+    // Este card é gated por `patient_services`, não por `patient_address`: sem a célula de
+    // endereço, `patient.addresses` chega `null` por redação (D113), não `[]` — `?? []` só evita
+    // o crash da leitura cruzada, sem fingir que o paciente não tem endereço.
+    const vivos = new Set((patient.addresses ?? []).map((a) => a.id));
     const orfao = services.find((s) => s.active && (s.addressId == null || !vivos.has(s.addressId)));
     setEditing(orfao ? { kind: 'edit', serviceId: orfao.id } : { kind: 'new' });
   });
@@ -296,7 +299,7 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
         <ContractedServiceDetailDrawer
           key={selected.id}
           service={selected}
-          addresses={patient.addresses}
+          addresses={patient.addresses ?? []}
           onClose={() => setSelected(null)}
           onEdit={podeEditar ? () => { const id = selected.id; setSelected(null); setEditing({ kind: 'edit', serviceId: id }); } : undefined}
         />
@@ -326,7 +329,7 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
                 key={svc.id}
                 patientId={patient.id}
                 service={svc}
-                addresses={patient.addresses}
+                addresses={patient.addresses ?? []}
                 insuranceInformed={patient.insuranceInformed}
                 onOpen={setSelected}
                 onEdit={(s) => setEditing({ kind: 'edit', serviceId: s.id })}

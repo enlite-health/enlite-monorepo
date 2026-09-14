@@ -62,6 +62,9 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
   const { catalogs, error: catalogsError } = useTherapeuticCatalogs(isForm);
 
   // As seções do PDF seguem as MESMAS células dos cards (lex C12) — lidas aqui, uma vez.
+  // `?? []` abaixo (props do form/view): sem a célula do container, o campo chega `null` por
+  // redação (D113) — nunca `[]` de verdade. O `[]` aqui é só para não quebrar a leitura; a UI
+  // de cada campo já trata a ausência de dado pelo seu próprio marcador de redação.
   const reads = {
     identity: useContainerAccess('patient_identity').visible,
     coverage: useContainerAccess('patient_coverage').visible,
@@ -196,7 +199,7 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
               <Text size="sm" className="text-red-700">{exportError}</Text>
             </div>
           )}
-          {target.mode === 'view' && <TherapeuticProjectVersionView version={target.version} services={patient.contractedServices} servicesRedacted={!reads.services} />}
+          {target.mode === 'view' && <TherapeuticProjectVersionView version={target.version} services={patient.contractedServices ?? []} servicesRedacted={!reads.services} />}
           {isForm && catalogsError && (
             <Text size="sm" className="text-red-600" data-testid="therapeutic-project-catalogs-error">{catalogsError}</Text>
           )}
@@ -205,14 +208,14 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
           )}
           {isForm && catalogs && (
             <TherapeuticProjectForm
-              services={patient.contractedServices}
-              patientDiagnoses={patient.diagnoses}
+              services={patient.contractedServices ?? []}
+              patientDiagnoses={patient.diagnoses ?? []}
               catalogs={catalogs}
               fieldClass={fieldClass}
-              responsibles={patient.responsibles}
+              responsibles={patient.responsibles ?? []}
               externalContacts={patient.externalContacts ?? []}
               coverageEmergencyContacts={patient.coverageEmergencyContacts ?? []}
-              professionals={patient.professionals}
+              professionals={patient.professionals ?? []}
               from={target.mode === 'edit' ? target.version : null}
               saving={saving}
               saveError={saveError}
