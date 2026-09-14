@@ -56,6 +56,14 @@ jest.mock('../../../infrastructure/WorkerRepository', () => ({
   })),
 }));
 
+const mockFindAdditionalByWorkerId = jest.fn().mockResolvedValue([]);
+
+jest.mock('../../../infrastructure/WorkerAdditionalDocumentsRepository', () => ({
+  WorkerAdditionalDocumentsRepository: jest.fn().mockImplementation(() => ({
+    findByWorkerId: mockFindAdditionalByWorkerId,
+  })),
+}));
+
 const mockDbQuery = jest.fn().mockResolvedValue({ rows: [] });
 
 jest.mock('@shared/database/DatabaseConnection', () => ({
@@ -124,6 +132,7 @@ describe('AdminWorkerDocumentsController — PII do admin nunca aparece cru em l
   beforeEach(() => {
     jest.clearAllMocks();
     mockDbQuery.mockResolvedValue({ rows: [] });
+    mockFindAdditionalByWorkerId.mockResolvedValue([]);
     controller = new AdminWorkerDocumentsController();
     logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -212,6 +221,7 @@ describe('AdminWorkerDocumentsController — cobertura de ramos (401/400/404/500
   beforeEach(() => {
     jest.clearAllMocks();
     mockDbQuery.mockResolvedValue({ rows: [] });
+    mockFindAdditionalByWorkerId.mockResolvedValue([]);
     controller = new AdminWorkerDocumentsController();
     jest.spyOn(console, 'log').mockImplementation(() => undefined);
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -321,6 +331,44 @@ describe('AdminWorkerDocumentsController — cobertura de ramos (401/400/404/500
     await controller.deleteDocument(req, res);
     expect(res.status).toHaveBeenCalledWith(404);
     expect(mockClearDocumentField).not.toHaveBeenCalled();
+  });
+
+  // ── RED (13/09, rodada 2) ─ R3: legado fora do prefixo travava o registro preso (lado admin) ──
+  it('[R3] deleteDocument: caminho LEGADO fora de workers/:id/ → NÃO chama gcs.deleteFile, mas limpa o registro (record_only) e responde 200', async () => {
+    const legacyPath = 'legacy-uploads/2019/identity-doc.pdf';
+    mockFindByWorkerId.mockResolvedValue({ identityDocumentUrl: legacyPath });
+    mockUpdate.mockResolvedValue({ identityDocumentUrl: undefined });
+    const [req, res] = mockReqRes();
+    await controller.deleteDocument(req, res);
+    expect(mockDeleteFile).not.toHaveBeenCalled();
+    expect(mockClearDocumentField).toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  // ── RED (13/09, rodada 2) ─ R1: documento ADICIONAL nunca abria (lado admin) ──
+  it('[R1] getViewSignedUrl: caminho de um documento ADICIONAL (worker_additional_documents) de :id → 200', async () => {
+    mockFindById.mockResolvedValue(Result.ok({ id: WORKER_ID }));
+    const additionalPath = `workers/${WORKER_ID}/additional/${DOC_UUID}.pdf`;
+    mockFindByWorkerId.mockResolvedValue({ identityDocumentUrl: DEFAULT_FILE_PATH });
+    mockFindAdditionalByWorkerId.mockResolvedValue([
+      { id: 'doc-1', workerId: WORKER_ID, label: 'Comprovante extra', filePath: additionalPath },
+    ]);
+    mockGenerateViewSignedUrl.mockResolvedValue('https://signed.example.com/additional');
+    const [req, res] = mockReqRes({ body: { filePath: additionalPath } });
+    await controller.getViewSignedUrl(req, res);
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  // ── RED (13/09, rodada 2) ─ R2: documento INGERIDO via MCP nunca abria (lado admin) ──
+  it('[R2] getViewSignedUrl: caminho INGERIDO (sem uuid/extensão), já salvo no registro de :id → 200', async () => {
+    mockFindById.mockResolvedValue(Result.ok({ id: WORKER_ID }));
+    const ingestedPath = `workers/${WORKER_ID}/ingested/identity_document/${Date.now()}`;
+    mockFindByWorkerId.mockResolvedValue({ identityDocumentUrl: ingestedPath });
+    mockFindAdditionalByWorkerId.mockResolvedValue([]);
+    mockGenerateViewSignedUrl.mockResolvedValue('https://signed.example.com/ingested');
+    const [req, res] = mockReqRes({ body: { filePath: ingestedPath } });
+    await controller.getViewSignedUrl(req, res);
+    expect(res.status).toHaveBeenCalledWith(200);
   });
 
   // ── hotfix 13/09 (extensão) — trava de prefixo do dono no SAVE (lado admin) ──
@@ -434,6 +482,7 @@ describe('AdminWorkerDocumentsController.getViewSignedUrl — URL assinada só p
   beforeEach(() => {
     jest.clearAllMocks();
     mockDbQuery.mockResolvedValue({ rows: [] });
+    mockFindAdditionalByWorkerId.mockResolvedValue([]);
     controller = new AdminWorkerDocumentsController();
     jest.spyOn(console, 'log').mockImplementation(() => undefined);
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);

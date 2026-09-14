@@ -67,7 +67,16 @@ export class AdminAdditionalDocsController {
       const { id: workerId, docId } = req.params;
       const docs = await this.repo.findByWorkerId(workerId);
       const target = docs.find(d => d.id === docId);
-      if (target) { await this.gcs.deleteFile(target.filePath, workerId); }
+      // Hotfix 13/09 (rodada 2, R3): caminho legado fora do prefixo do
+      // worker não vai ao GCS, mas o registro é apagado do mesmo jeito —
+      // já localizado pelo dono (:id).
+      if (target) {
+        if (matchesOwnedDocumentPrefix(target.filePath, this.gcs.getBucketName(), workerId)) {
+          await this.gcs.deleteFile(target.filePath, workerId);
+        } else {
+          console.warn('[AdminAdditionalDocs.remove] legacy path fora do prefixo — record_only | workerId:', workerId, '| additionalDocId:', docId, '| result: record_only');
+        }
+      }
       await this.repo.deleteById(docId, workerId);
       res.status(200).json({ success: true });
     } catch (err) {

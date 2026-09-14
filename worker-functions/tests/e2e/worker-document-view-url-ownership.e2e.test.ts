@@ -1,21 +1,28 @@
 /**
  * worker-document-view-url-ownership.e2e.test.ts
  *
- * Hotfix 13/09/2026 (Gabriel), extensão mesma data: o guard original só
- * comparava o `filePath` pedido contra os caminhos GRAVADOS no registro do
- * worker. Mas os endpoints de SAVE
- *   POST /api/workers/me/documents/save
- *   POST /api/workers/me/additional-documents
- *   POST /api/admin/workers/:id/additional-documents
- * aceitavam `filePath` do corpo sem checar prefixo — um worker A gravava o
- * caminho do documento de B no PRÓPRIO registro (o guard de leitura
- * aprovava: "está no registro de A") e então DELETAVA o objeto pelo caminho
- * gravado, apagando o arquivo de B.
+ * Hotfix 13/09/2026 (Gabriel), RODADA 2 — o gate `revisao-pr` bloqueou a
+ * rodada 1 por regressão funcional: a checagem de forma EXATA
+ * (`matchesOwnedDocumentPathShape`) no guard de VIEW fechou a vulnerabilidade
+ * original mas quebrou:
+ *   - documentos ADICIONAIS (nunca estavam em `worker_documents`, só em
+ *     `worker_additional_documents` — o guard de VIEW nunca olhava lá);
+ *   - documentos INGERIDOS via MCP/WhatsApp
+ *     (`workers/<id>/ingested/<tipo>/<timestamp-ms>`, sem uuid/extensão);
+ *   - exclusão de caminho LEGADO fora do prefixo de upload (o registro
+ *     ficava preso: `gcs.deleteFile` lançava ANTES da limpeza do campo).
+ *
+ * A regra desta rodada: VIEW exige (i) caminho normalizado, (ii) prefixo
+ * `workers/<workerId>/` do dono, (iii) pertencer à lista de caminhos
+ * GRAVADOS do worker (`worker_documents` + `worker_additional_documents`) —
+ * sem mais exigir a forma exata de upload. DELETE localiza o registro pelo
+ * dono como hoje; só chama o GCS quando o caminho passa (i)+(ii) — fora
+ * disso, LIMPA o registro mesmo assim (`record_only`) e nunca toca o GCS.
  *
  * Estes testes rodam contra a API e Postgres REAIS (stack docker isolada
- * `hotfix-doc`, projeto `-p hotfix-doc`, portas 8099/5599), mock GCS
- * (NODE_ENV=test sem GCP_PROJECT_ID, ver GCSStorageService.isMockMode) e
- * MockAuth (USE_MOCK_AUTH=true).
+ * `hotfix-doc`, projeto `-p hotfix-doc`, portas 8099/5599/6392), mock GCS
+ * (NODE_ENV=development sem GCP_PROJECT_ID, ver GCSStorageService.isMockMode)
+ * e MockAuth (USE_MOCK_AUTH=true).
  */
 
 import { Pool } from 'pg';
@@ -25,13 +32,14 @@ const DATABASE_URL =
   process.env.DATABASE_URL ||
   'postgresql://enlite_admin:enlite_password@localhost:5599/enlite_e2e';
 
-describe('Worker document ownership — trava por PREFIXO do dono em view, delete e save', () => {
+describe('Worker document ownership — trava por PREFIXO do dono em view, delete e save (rodada 2)', () => {
   const api = createApiClient();
   let pool: Pool;
 
   const ts = Date.now();
   const DOC_UUID_A = '11111111-2222-4333-8444-555555555555';
   const DOC_UUID_B = '66666666-7777-4888-8999-aaaaaaaaaaaa';
+  const ADDITIONAL_UUID_A = '77777777-7777-4777-8777-777777777777';
 
   let adminToken: string;
   let workerAToken: string;
@@ -42,10 +50,13 @@ describe('Worker document ownership — trava por PREFIXO do dono em view, delet
   let workerBId: string;
   let workerAPath: string;
   let workerBPath: string;
+  let additionalPathA: string;
+  let ingestedPathA: string;
+  let additionalDocIdA: string;
 
   async function insertWorker(tag: string): Promise<{ id: string; authUid: string }> {
-    const authUid = `dvu-${tag}-${ts}`;
-    const email = `dvu-${tag}-${ts}@e2e.local`;
+    const authUid = `dvu2-${tag}-${ts}`;
+    const email = `dvu2-${tag}-${ts}@e2e.local`;
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO workers (auth_uid, email, status, country)
        VALUES ($1, $2, 'REGISTERED', 'AR')
@@ -60,8 +71,8 @@ describe('Worker document ownership — trava por PREFIXO do dono em view, delet
     pool = new Pool({ connectionString: DATABASE_URL });
 
     adminToken = await getMockToken(api, {
-      uid: `dvu-admin-${ts}`,
-      email: `dvu-admin-${ts}@e2e.local`,
+      uid: `dvu2-admin-${ts}`,
+      email: `dvu2-admin-${ts}@e2e.local`,
       role: 'admin',
     });
 
@@ -74,30 +85,40 @@ describe('Worker document ownership — trava por PREFIXO do dono em view, delet
     workerBToken = await getMockToken(api, { uid: workerB.authUid, email: `${workerB.authUid}@e2e.local`, role: 'worker' });
 
     noWorkerToken = await getMockToken(api, {
-      uid: `dvu-no-worker-${ts}`,
-      email: `dvu-no-worker-${ts}@e2e.local`,
+      uid: `dvu2-no-worker-${ts}`,
+      email: `dvu2-no-worker-${ts}@e2e.local`,
       role: 'worker',
     });
 
     // Caminhos NA FORMA que o próprio fluxo de upload gera:
-    // workers/<workerId>/<docType>/<uuid>.<ext> — GCSStorageService.ts:69-75.
+    // workers/<workerId>/<docType>/<uuid>.<ext> — GCSStorageService.ts.
     workerAPath = `workers/${workerAId}/identity_document/${DOC_UUID_A}.pdf`;
     workerBPath = `workers/${workerBId}/identity_document/${DOC_UUID_B}.pdf`;
+    // Caminho INGERIDO via MCP/WhatsApp — sem uuid/extensão (IngestDocumentFromUrlUseCase.ts).
+    ingestedPathA = `workers/${workerAId}/ingested/criminal_record/${ts}`;
+    additionalPathA = `workers/${workerAId}/additional/${ADDITIONAL_UUID_A}.pdf`;
 
     await pool.query(
-      `INSERT INTO worker_documents (worker_id, identity_document_url, documents_status)
-       VALUES ($1, $2, 'incomplete')`,
-      [workerAId, workerAPath],
+      `INSERT INTO worker_documents (worker_id, identity_document_url, criminal_record_url, documents_status)
+       VALUES ($1, $2, $3, 'incomplete')`,
+      [workerAId, workerAPath, ingestedPathA],
     );
     await pool.query(
       `INSERT INTO worker_documents (worker_id, identity_document_url, documents_status)
        VALUES ($1, $2, 'incomplete')`,
       [workerBId, workerBPath],
     );
+    const additionalRow = await pool.query<{ id: string }>(
+      `INSERT INTO worker_additional_documents (worker_id, label, file_path)
+       VALUES ($1, 'Comprovante extra', $2) RETURNING id`,
+      [workerAId, additionalPathA],
+    );
+    additionalDocIdA = additionalRow.rows[0].id;
   });
 
   afterAll(async () => {
     if (pool) {
+      await pool.query('DELETE FROM worker_additional_documents WHERE worker_id IN ($1, $2)', [workerAId, workerBId]);
       await pool.query('DELETE FROM worker_documents WHERE worker_id IN ($1, $2)', [workerAId, workerBId]);
       await pool.query('DELETE FROM workers WHERE id IN ($1, $2)', [workerAId, workerBId]);
       await pool.end();
@@ -121,6 +142,28 @@ describe('Worker document ownership — trava por PREFIXO do dono em view, delet
       expect(res.status).toBe(200);
       expect(res.data.success).toBe(true);
       expect(typeof res.data.data.signedUrl).toBe('string');
+      expect(res.data.data.signedUrl).toContain('mock-gcs-view');
+    });
+
+    it('[R1] worker A pedindo o caminho de um documento ADICIONAL (worker_additional_documents) do PRÓPRIO worker → 200', async () => {
+      const res = await api.post(
+        '/api/workers/me/documents/view-url',
+        { filePath: additionalPathA },
+        authHeaders(workerAToken),
+      );
+      expect(res.status).toBe(200);
+      expect(res.data.success).toBe(true);
+      expect(res.data.data.signedUrl).toContain('mock-gcs-view');
+    });
+
+    it('[R2] worker A pedindo o caminho INGERIDO (sem uuid/extensão) já salvo no PRÓPRIO registro → 200', async () => {
+      const res = await api.post(
+        '/api/workers/me/documents/view-url',
+        { filePath: ingestedPathA },
+        authHeaders(workerAToken),
+      );
+      expect(res.status).toBe(200);
+      expect(res.data.success).toBe(true);
       expect(res.data.data.signedUrl).toContain('mock-gcs-view');
     });
 
@@ -179,6 +222,21 @@ describe('Worker document ownership — trava por PREFIXO do dono em view, delet
       const res = await api.post('/api/workers/me/documents/view-url', {}, authHeaders(workerAToken));
       expect(res.status).toBe(400);
     });
+
+    it('[registro envenenado] caminho de B salvo como adicional de A (linha inserida direto no banco) → 404 (a checagem de PREFIXO decide, não a membership sozinha)', async () => {
+      const poisonedRow = await pool.query<{ id: string }>(
+        `INSERT INTO worker_additional_documents (worker_id, label, file_path)
+         VALUES ($1, 'Envenenado', $2) RETURNING id`,
+        [workerAId, workerBPath],
+      );
+      const res = await api.post(
+        '/api/workers/me/documents/view-url',
+        { filePath: workerBPath },
+        authHeaders(workerAToken),
+      );
+      expect(res.status).toBe(404);
+      await pool.query('DELETE FROM worker_additional_documents WHERE id = $1', [poisonedRow.rows[0].id]);
+    });
   });
 
   // ─────────────────────────────────────────────────────────────────────
@@ -193,6 +251,16 @@ describe('Worker document ownership — trava por PREFIXO do dono em view, delet
       );
       expect(res.status).toBe(200);
       expect(res.data.success).toBe(true);
+      expect(res.data.data.signedUrl).toContain('mock-gcs-view');
+    });
+
+    it('[R1] admin pedindo o caminho ADICIONAL de :id → 200', async () => {
+      const res = await api.post(
+        `/api/admin/workers/${workerAId}/documents/view-url`,
+        { filePath: additionalPathA },
+        authHeaders(adminToken),
+      );
+      expect(res.status).toBe(200);
       expect(res.data.data.signedUrl).toContain('mock-gcs-view');
     });
 
@@ -243,7 +311,7 @@ describe('Worker document ownership — trava por PREFIXO do dono em view, delet
   });
 
   // ─────────────────────────────────────────────────────────────────────
-  // POST /api/workers/me/documents/save — hotfix 13/09 (extensão)
+  // POST /api/workers/me/documents/save — trava de prefixo do dono
   // ─────────────────────────────────────────────────────────────────────
   describe('POST /api/workers/me/documents/save — trava de prefixo do dono', () => {
     it('worker A tenta gravar o caminho REAL de worker B no próprio registro → 400, nunca grava', async () => {
@@ -280,59 +348,98 @@ describe('Worker document ownership — trava por PREFIXO do dono em view, delet
       expect(res.status).toBe(400);
     });
 
-    it('worker A grava o PRÓPRIO caminho (mesmo docType) → 200 (controle positivo)', async () => {
+    it('worker A grava o PRÓPRIO caminho (novo docType) → 200 (controle positivo)', async () => {
       const uploadRes = await api.post(
         '/api/workers/me/documents/upload-url',
-        { docType: 'criminal_record', contentType: 'application/pdf' },
+        { docType: 'apto_psicofisico', contentType: 'application/pdf' },
         authHeaders(workerAToken),
       );
       expect(uploadRes.status).toBe(200);
       const ownFilePath: string = uploadRes.data.data.filePath;
-      expect(ownFilePath).toMatch(new RegExp(`^workers/${workerAId}/criminal_record/.+\\.pdf$`));
+      expect(ownFilePath).toMatch(new RegExp(`^workers/${workerAId}/apto_psicofisico/.+\\.pdf$`));
 
       const saveRes = await api.post(
         '/api/workers/me/documents/save',
-        { docType: 'criminal_record', filePath: ownFilePath },
+        { docType: 'apto_psicofisico', filePath: ownFilePath },
         authHeaders(workerAToken),
       );
       expect(saveRes.status).toBe(200);
 
-      const row = await pool.query('SELECT criminal_record_url FROM worker_documents WHERE worker_id = $1', [workerAId]);
-      expect(row.rows[0].criminal_record_url).toBe(ownFilePath);
+      const row = await pool.query('SELECT apto_psicofisico_url FROM worker_documents WHERE worker_id = $1', [workerAId]);
+      expect(row.rows[0].apto_psicofisico_url).toBe(ownFilePath);
     });
   });
 
   // ─────────────────────────────────────────────────────────────────────
-  // DELETE /api/workers/me/documents/:type — hotfix 13/09 (extensão)
+  // DELETE /api/workers/me/documents/:type — record_only para legado
   // ─────────────────────────────────────────────────────────────────────
-  describe('DELETE /api/workers/me/documents/:type — não apaga objeto de OUTRO worker', () => {
-    it('registro de A "contaminado" com o caminho de B (simulando o contorno pré-hotfix via SQL direto) — DELETE 404 e NÃO limpa o campo', async () => {
-      // Antes do hotfix, o SAVE deixava isso acontecer pela API; hoje o SAVE já
-      // recusa (provado acima). Para provar que o DELETE também está fechado
-      // (2ª camada, GCSStorageService), simulamos a pré-condição por SQL direto
-      // — nunca mais alcançável pela API, mas a trava tem de segurar mesmo assim.
+  describe('DELETE /api/workers/me/documents/:type', () => {
+    it('[registro envenenado] registro de A "contaminado" com o caminho REAL de B (simulando contorno pré-hotfix via SQL direto) → 200, limpa SÓ o registro de A, objeto de B intacto', async () => {
       await pool.query(
         'UPDATE worker_documents SET liability_insurance_url = $2 WHERE worker_id = $1',
         [workerAId, workerBPath],
       );
 
       const res = await api.delete('/api/workers/me/documents/liability_insurance', authHeaders(workerAToken));
-      expect(res.status).toBe(404);
+      expect(res.status).toBe(200);
 
       const row = await pool.query('SELECT liability_insurance_url FROM worker_documents WHERE worker_id = $1', [workerAId]);
-      expect(row.rows[0].liability_insurance_url).toBe(workerBPath); // NÃO foi limpo — o objeto de B nunca foi "apagado"
+      expect(row.rows[0].liability_insurance_url).toBeNull(); // registro de A foi limpo (record_only)
 
-      // Confirma que o objeto de B, no registro DELE, segue intacto.
+      // O objeto de B, no registro DELE, segue intacto — nunca foi tocado pelo GCS
+      // (o path de B não passa no prefixo de A, então gcs.deleteFile nunca é chamado).
       const bRow = await pool.query('SELECT identity_document_url FROM worker_documents WHERE worker_id = $1', [workerBId]);
       expect(bRow.rows[0].identity_document_url).toBe(workerBPath);
     });
 
-    it('worker A deleta o PRÓPRIO documento → 200 e o campo é limpo (controle positivo)', async () => {
-      const res = await api.delete('/api/workers/me/documents/criminal_record', authHeaders(workerAToken));
+    it('[R3] caminho LEGADO fora de workers/<id>/ → 200, registro some, GCS nunca chamado (record_only)', async () => {
+      const legacyPath = 'legacy-uploads-2019/documento-antigo-sem-prefixo.pdf';
+      await pool.query(
+        'UPDATE worker_documents SET carta_recomendacion_url = $2 WHERE worker_id = $1',
+        [workerAId, legacyPath],
+      );
+
+      const res = await api.delete('/api/workers/me/documents/carta_recomendacion', authHeaders(workerAToken));
       expect(res.status).toBe(200);
 
-      const row = await pool.query('SELECT criminal_record_url FROM worker_documents WHERE worker_id = $1', [workerAId]);
-      expect(row.rows[0].criminal_record_url).toBeNull();
+      const row = await pool.query('SELECT carta_recomendacion_url FROM worker_documents WHERE worker_id = $1', [workerAId]);
+      expect(row.rows[0].carta_recomendacion_url).toBeNull();
+    });
+
+    it('worker A deleta o PRÓPRIO documento (caminho normal) → 200 e o campo é limpo (controle positivo)', async () => {
+      const res = await api.delete('/api/workers/me/documents/apto_psicofisico', authHeaders(workerAToken));
+      expect(res.status).toBe(200);
+
+      const row = await pool.query('SELECT apto_psicofisico_url FROM worker_documents WHERE worker_id = $1', [workerAId]);
+      expect(row.rows[0].apto_psicofisico_url).toBeNull();
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // DELETE /api/workers/me/additional-documents/:id — record_only p/ legado
+  // ─────────────────────────────────────────────────────────────────────
+  describe('DELETE /api/workers/me/additional-documents/:id', () => {
+    it('[R3] documento adicional com caminho LEGADO fora do prefixo → 200, registro some, GCS nunca chamado', async () => {
+      const legacyRow = await pool.query<{ id: string }>(
+        `INSERT INTO worker_additional_documents (worker_id, label, file_path)
+         VALUES ($1, 'Legado', 'legacy-uploads-2019/comprovante.pdf') RETURNING id`,
+        [workerAId],
+      );
+      const legacyId = legacyRow.rows[0].id;
+
+      const res = await api.delete(`/api/workers/me/additional-documents/${legacyId}`, authHeaders(workerAToken));
+      expect(res.status).toBe(200);
+
+      const row = await pool.query('SELECT id FROM worker_additional_documents WHERE id = $1', [legacyId]);
+      expect(row.rowCount).toBe(0);
+    });
+
+    it('worker A deleta o PRÓPRIO documento adicional (caminho normal) → 200, registro some, objeto de B (não tocado) segue', async () => {
+      const res = await api.delete(`/api/workers/me/additional-documents/${additionalDocIdA}`, authHeaders(workerAToken));
+      expect(res.status).toBe(200);
+
+      const row = await pool.query('SELECT id FROM worker_additional_documents WHERE id = $1', [additionalDocIdA]);
+      expect(row.rowCount).toBe(0);
     });
   });
 });
