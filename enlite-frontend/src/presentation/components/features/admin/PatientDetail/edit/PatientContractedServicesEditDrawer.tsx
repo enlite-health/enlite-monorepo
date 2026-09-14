@@ -143,10 +143,13 @@ export function PatientContractedServicesEditDrawer({ patient, target: initialTa
             <Text size="sm" color="muted" data-testid="contracted-service-missing">{te('serviceNotFound')}</Text>
           )}
 
+          {/* `patient_address` é container próprio (D286), diferente do `patient_services` deste
+              drawer: sem a célula de endereço, `patient.addresses` chega `null` por redação
+              (D113) — `?? []` só evita o crash da leitura, o form já lida com a lista vazia. */}
           {target.kind === 'new' && (
             <ContractedServiceFormRow
               patientId={patient.id}
-              addresses={patient.addresses}
+              addresses={patient.addresses ?? []}
               service={null}
               index={services.length + 1}
               onSaved={handleChildSaved}
@@ -159,7 +162,7 @@ export function PatientContractedServicesEditDrawer({ patient, target: initialTa
             <ContractedServiceFormRow
               key={service.id}
               patientId={patient.id}
-              addresses={patient.addresses}
+              addresses={patient.addresses ?? []}
               service={service}
               index={Math.max(1, services.findIndex((s) => s.id === service.id) + 1)}
               onSaved={handleChildSaved}

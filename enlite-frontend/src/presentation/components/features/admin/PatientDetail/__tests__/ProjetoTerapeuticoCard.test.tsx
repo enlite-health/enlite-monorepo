@@ -334,6 +334,56 @@ describe('abertura do drawer', () => {
   });
 });
 
+// ── D113 — `contractedServices` redigido (null) ≠ paciente sem serviço ───────
+// Sem `patient_services:read`, o backend redige `contractedServices` para `null` (D113: `null` ≠
+// `[]` — "não posso ver" nunca é "não tem"). Antes deste conserto, `patient.contractedServices.some`
+// quebrava o card inteiro (o error boundary da ficha) para quem tem `patient_therapeutic_project:read`
+// mas não `patient_services:read` — combinação real de containers independentes (D286).
+
+const SEM_ACESSO_A_SERVICOS: PatientDetail = {
+  ...patientDetailFixture,
+  contractedServices: null as unknown as PatientContractedServiceDetail[],
+};
+
+describe('🔴 D113 — contractedServices redigido (null) não é "sem serviço"', () => {
+  it('container `null`: a ficha não quebra, e o vazio mostra o texto GENÉRICO (nunca "precisa de serviço")', () => {
+    comEnforcement(['patient_therapeutic_project:write']); // sem `patient_services:read`
+    expect(() => montar(SEM_ACESSO_A_SERVICOS)).not.toThrow();
+
+    expect(screen.getByTestId('tp-empty')).toHaveTextContent(tc('empty'));
+    expect(screen.getByTestId('tp-empty')).not.toHaveTextContent(tc('needsService'));
+  });
+
+  it('container `null`: "Novo" fica desabilitado, mas o motivo é "sem permissão", NUNCA "precisa de serviço"', () => {
+    comEnforcement(['patient_therapeutic_project:write']);
+    montar(SEM_ACESSO_A_SERVICOS);
+
+    const novo = screen.getByTestId('tp-new-btn') as HTMLButtonElement;
+    expect(novo.disabled).toBe(true);
+    expect(novo.getAttribute('title')).toBe(tc('redacted'));
+    expect(novo.getAttribute('title')).not.toBe(tc('needsService'));
+  });
+
+  it('container `null` com versão vigente: o resumo compacto renderiza sem quebrar, com o serviço marcado como redigido', () => {
+    comEnforcement(['patient_therapeutic_project:write']);
+    comHook({ versions: [versao({ id: 'v1' })] });
+    expect(() => montar(SEM_ACESSO_A_SERVICOS)).not.toThrow();
+
+    expect(screen.getByTestId('tp-current')).toBeInTheDocument();
+    expect(screen.getByTestId('therapeutic-project-version-view')).toHaveTextContent(tc('redacted'));
+  });
+
+  it('container `[]` (tem a célula, paciente sem serviço de verdade): comportamento INALTERADO — mostra "precisa de serviço"', () => {
+    comEnforcement(['patient_therapeutic_project:write', 'patient_services:read']);
+    montar({ ...patientDetailFixture, contractedServices: [] });
+
+    expect(screen.getByTestId('tp-empty')).toHaveTextContent(tc('needsService'));
+    const novo = screen.getByTestId('tp-new-btn') as HTMLButtonElement;
+    expect(novo.disabled).toBe(true);
+    expect(novo.getAttribute('title')).toBe(tc('needsService'));
+  });
+});
+
 // ── Gate de escrita (D286/D269) ──────────────────────────────────────────────
 
 describe('🔒 D286/D269 — as ações de escrita são células do CONTAINER', () => {

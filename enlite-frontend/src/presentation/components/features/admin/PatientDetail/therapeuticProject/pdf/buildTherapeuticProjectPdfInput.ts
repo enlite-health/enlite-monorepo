@@ -76,7 +76,10 @@ export function buildTherapeuticProjectPdfInput(args: {
   const service: PatientContractedServiceDetail | null = reads.services
     ? patient.contractedServices.find((s) => s.id === version.contractedServiceId) ?? null
     : null;
-  const address = service?.addressId ? patient.addresses.find((a) => a.id === service.addressId) ?? null : null;
+  // `address` só é USADO dentro do bloco `reads.address` abaixo, mas era calculado incondicionalmente
+  // — sem `patient_address:read` (`reads.address` falso), `patient.addresses` chega `null` por
+  // redação (D113) e o `.find` quebrava o PDF mesmo quando o valor nunca seria lido.
+  const address = service?.addressId ? (patient.addresses ?? []).find((a) => a.id === service.addressId) ?? null : null;
 
   const identification = reads.identity
     ? {
@@ -110,7 +113,7 @@ export function buildTherapeuticProjectPdfInput(args: {
     ? address
       ? `${patientAddressLabel(address)}${address.complement ? `, ${address.complement}` : ''}`
       : (() => {
-          const principal = patient.addresses.find((a) => a.isPrimary) ?? patient.addresses[0];
+          const principal = (patient.addresses ?? []).find((a) => a.isPrimary) ?? (patient.addresses ?? [])[0];
           return principal ? `${patientAddressLabel(principal)}${principal.complement ? `, ${principal.complement}` : ''}` : '—';
         })()
     : null;

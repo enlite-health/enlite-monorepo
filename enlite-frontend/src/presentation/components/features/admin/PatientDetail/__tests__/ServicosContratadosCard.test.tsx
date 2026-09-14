@@ -16,7 +16,7 @@ import { expectNoRawEnumLeaks } from '../../../../../../test/rawEnumLeakGuard';
 import { ServicosContratadosCard } from '../ServicosContratadosCard';
 import { runActivateRecruitmentClick } from '../activateRecruitmentClick';
 import { patientDetailFixture } from './patientDetailFixture';
-import type { PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
+import type { PatientAddressDetail, PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
 import { ContractedServiceApiError } from '@infrastructure/http/AdminContractedServicesApiService';
 
 // Dublê do drawer: isola os dois closures que o CARD passa pra ele (`onClose`/`onSaved`) sem
@@ -538,5 +538,41 @@ describe('ServicosContratadosCard — ícone de ativação de recrutamento por s
     expect(btn.getAttribute('title')).toBeTruthy();
     fireEvent.click(btn);
     expect(mockActivateRecruitment).not.toHaveBeenCalled();
+  });
+});
+
+// ── D113 — `patient.addresses` redigido (null): este card é gated por `patient_services`, não
+// por `patient_address` (D286) — a combinação de containers é real (um ator pode ter a célula de
+// serviços sem ter a de endereço). Sem ela, `patient.addresses` chega `null` por redação, nunca
+// `[]` — o card NUNCA pode crashar nem fingir "sem endereço" onde na verdade é "sem permissão".
+describe('🔴 D113 — patient.addresses redigido (null) não quebra o card', () => {
+  // `PatientDetail.addresses` é tipado `PatientAddressDetail[]` (nunca `| null`) — mesmo type-lie
+  // já apontado em `contractedServices`/`responsibles`/`professionals`: o runtime redige pra
+  // `null`, mas só `externalContacts` foi corrigido no domínio (achado fora do escopo do conserto).
+  const SEM_ACESSO_A_ENDERECOS = null as unknown as PatientAddressDetail[];
+
+  it('render principal (tabela de serviços): não quebra, mostra o mesmo aviso de "sem endereço vinculado"', () => {
+    const patient = { ...patientDetailFixture, addresses: SEM_ACESSO_A_ENDERECOS, contractedServices: [SERVICE] };
+    expect(() => render(<ServicosContratadosCard patient={patient} />)).not.toThrow();
+
+    expect(screen.getByTestId('contracted-service-address-missing-svc-1')).toBeTruthy();
+    expect(screen.queryByTestId('contracted-service-address-svc-1')).toBeNull();
+  });
+
+  it('detalhe (clique na linha): o drawer completo abre sem quebrar, com `addresses=[]`', () => {
+    const patient = { ...patientDetailFixture, addresses: SEM_ACESSO_A_ENDERECOS, contractedServices: [SERVICE] };
+    render(<ServicosContratadosCard patient={patient} />);
+
+    expect(() => fireEvent.click(screen.getByTestId('contracted-service-row-svc-1'))).not.toThrow();
+    expect(screen.getByTestId('contracted-service-detail-drawer')).toBeTruthy();
+  });
+
+  it('foco do checklist SERVICE_ADDRESS: sem endereços legíveis, nenhum é "vivo" — abre o serviço ativo como órfão, sem quebrar', () => {
+    const patient = { ...patientDetailFixture, addresses: SEM_ACESSO_A_ENDERECOS, contractedServices: [SERVICE] };
+    expect(() =>
+      render(<ServicosContratadosCard patient={patient} focusRequest={{ code: 'SERVICE_ADDRESS', token: 1 }} />),
+    ).not.toThrow();
+
+    expect(screen.getByTestId('patient-contracted-services-edit-drawer').getAttribute('data-target')).toBe('edit:svc-1');
   });
 });
