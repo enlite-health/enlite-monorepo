@@ -136,23 +136,42 @@ export function matchesOwnedDocumentPrefix(
 }
 
 /**
- * true só quando o caminho pedido (a) está dentro do PREFIXO do próprio
- * `workerId` — `matchesOwnedDocumentPrefix` — E (b) bate com um dos
- * caminhos de fato GRAVADOS no registro do worker (`ownedPaths`) — a união
- * das 11 colunas fixas de `worker_documents`, `additional_certificates_urls`
- * e `worker_additional_documents.file_path`, montada pelo controller
- * chamador. Não exige mais a forma exata de upload (rodada 2) — ver nota no
- * topo do arquivo.
+ * Hotfix 14/09 (documento de worker absorvido em merge): mesma checagem de
+ * `matchesOwnedDocumentPrefix`, mas contra uma LISTA de ids permitidos —
+ * `[dono, ...absorvidos]` (`findAbsorbedWorkerIds`). Usada só por VIEW,
+ * DELETE e a 2ª camada (`GCSStorageService`) — SAVE continua com
+ * `matchesOwnedDocumentPrefix` de UM id só (o próprio worker autenticado),
+ * porque gravar um caminho novo sob o prefixo de um absorvido não tem
+ * nenhum caso de uso legítimo e ampliaria a superfície de escrita.
+ */
+export function matchesOwnedDocumentPrefixAny(
+  rawPath: unknown,
+  bucketName: string,
+  workerIds: readonly string[],
+): boolean {
+  return workerIds.some((id) => matchesOwnedDocumentPrefix(rawPath, bucketName, id));
+}
+
+/**
+ * true só quando o caminho pedido (a) está dentro do PREFIXO de QUALQUER id
+ * em `workerIds` — normalmente `[dono, ...absorvidos]`, ver
+ * `matchesOwnedDocumentPrefixAny` — E (b) bate com um dos caminhos de fato
+ * GRAVADOS no registro do worker (`ownedPaths`) — a união das 11 colunas
+ * fixas de `worker_documents`, `additional_certificates_urls` e
+ * `worker_additional_documents.file_path`, montada pelo controller chamador
+ * (já com `worker_id` reparentado para o sobrevivente pelo merge — só o
+ * PREFIXO do caminho ainda carrega o id absorvido). Não exige mais a forma
+ * exata de upload (rodada 2) — ver nota no topo do arquivo.
  */
 export function assertDocumentPathBelongsToWorker(
   rawPath: unknown,
   bucketName: string,
-  workerId: string,
+  workerIds: readonly string[],
   ownedPaths: Array<string | null | undefined>,
 ): boolean {
   const normalized = resolveDocumentRelativePath(rawPath, bucketName);
   if (!normalized) return false;
-  if (!buildOwnedDocumentPrefixPattern(workerId).test(normalized)) return false;
+  if (!workerIds.some((id) => buildOwnedDocumentPrefixPattern(id).test(normalized))) return false;
 
   return ownedPaths.some((stored) => {
     if (!stored) return false;

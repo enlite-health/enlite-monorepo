@@ -5,7 +5,7 @@ import { WorkerRepository } from '../../infrastructure/WorkerRepository';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { GetWorkerProgressUseCase } from '../../application/GetWorkerProgressUseCase';
 import { IWorkerRepository } from '../../ports/IWorkerRepository';
-import { matchesOwnedDocumentPrefix } from '../../domain/documentPathGuard';
+import { matchesOwnedDocumentPrefix, matchesOwnedDocumentPrefixAny } from '../../domain/documentPathGuard';
 
 export class WorkerAdditionalDocsMeController {
   private readonly gcs = new GCSStorageService();
@@ -104,8 +104,12 @@ export class WorkerAdditionalDocsMeController {
       // worker não vai ao GCS, mas o registro é apagado do mesmo jeito —
       // já localizado pelo dono (worker autenticado).
       if (target) {
-        if (matchesOwnedDocumentPrefix(target.filePath, this.gcs.getBucketName(), worker.id)) {
-          await this.gcs.deleteFile(target.filePath, worker.id);
+        // Hotfix 14/09: o merge reparenta worker_id nesta tabela, mas o
+        // filePath continua carregando o prefixo do worker absorvido.
+        const absorbedIds = await this.workerRepo.findAbsorbedWorkerIds(worker.id);
+        const allowedIds = [worker.id, ...absorbedIds];
+        if (matchesOwnedDocumentPrefixAny(target.filePath, this.gcs.getBucketName(), allowedIds)) {
+          await this.gcs.deleteFile(target.filePath, allowedIds);
         } else {
           console.warn('[AdditionalDocsMeCtrl.remove] legacy path fora do prefixo — record_only | actorUid:', authUid, '| workerId:', worker.id, '| additionalDocId:', id, '| result: record_only');
         }

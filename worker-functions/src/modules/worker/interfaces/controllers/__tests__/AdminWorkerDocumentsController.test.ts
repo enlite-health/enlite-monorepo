@@ -48,11 +48,13 @@ jest.mock('../../../infrastructure/WorkerDocumentsRepository', () => ({
 
 const mockRecalculateStatus = jest.fn();
 const mockFindById = jest.fn();
+const mockFindAbsorbedWorkerIds = jest.fn().mockResolvedValue([]);
 
 jest.mock('../../../infrastructure/WorkerRepository', () => ({
   WorkerRepository: jest.fn().mockImplementation(() => ({
     recalculateStatus: mockRecalculateStatus,
     findById: mockFindById,
+    findAbsorbedWorkerIds: mockFindAbsorbedWorkerIds,
   })),
 }));
 
@@ -133,6 +135,7 @@ describe('AdminWorkerDocumentsController — PII do admin nunca aparece cru em l
     jest.clearAllMocks();
     mockDbQuery.mockResolvedValue({ rows: [] });
     mockFindAdditionalByWorkerId.mockResolvedValue([]);
+    mockFindAbsorbedWorkerIds.mockResolvedValue([]);
     controller = new AdminWorkerDocumentsController();
     logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -222,6 +225,7 @@ describe('AdminWorkerDocumentsController — cobertura de ramos (401/400/404/500
     jest.clearAllMocks();
     mockDbQuery.mockResolvedValue({ rows: [] });
     mockFindAdditionalByWorkerId.mockResolvedValue([]);
+    mockFindAbsorbedWorkerIds.mockResolvedValue([]);
     controller = new AdminWorkerDocumentsController();
     jest.spyOn(console, 'log').mockImplementation(() => undefined);
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -313,7 +317,21 @@ describe('AdminWorkerDocumentsController — cobertura de ramos (401/400/404/500
     mockUpdate.mockResolvedValue({ identityDocumentUrl: undefined });
     const [req, res] = mockReqRes();
     await controller.deleteDocument(req, res);
-    expect(mockDeleteFile).toHaveBeenCalledWith(DEFAULT_FILE_PATH, WORKER_ID);
+    expect(mockDeleteFile).toHaveBeenCalledWith(DEFAULT_FILE_PATH, [WORKER_ID]);
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  // ── Hotfix 14/09 — documento de worker ABSORVIDO em merge (lado admin) ──
+  it('[absorvido] deleteDocument: caminho carrega o prefixo de um worker ABSORVIDO em :id → deleteFile recebe [dono, absorvido]', async () => {
+    const absorbedId = '66666666-6666-4666-8666-666666666666';
+    const absorbedPath = `workers/${absorbedId}/identity_document/${DOC_UUID}.pdf`;
+    mockFindByWorkerId.mockResolvedValue({ identityDocumentUrl: absorbedPath });
+    mockFindAbsorbedWorkerIds.mockResolvedValue([absorbedId]);
+    mockUpdate.mockResolvedValue({ identityDocumentUrl: undefined });
+    const [req, res] = mockReqRes();
+    await controller.deleteDocument(req, res);
+    expect(mockFindAbsorbedWorkerIds).toHaveBeenCalledWith(WORKER_ID);
+    expect(mockDeleteFile).toHaveBeenCalledWith(absorbedPath, [WORKER_ID, absorbedId]);
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
@@ -365,6 +383,7 @@ describe('AdminWorkerDocumentsController — cobertura de ramos (401/400/404/500
     const ingestedPath = `workers/${WORKER_ID}/ingested/identity_document/${Date.now()}`;
     mockFindByWorkerId.mockResolvedValue({ identityDocumentUrl: ingestedPath });
     mockFindAdditionalByWorkerId.mockResolvedValue([]);
+    mockFindAbsorbedWorkerIds.mockResolvedValue([]);
     mockGenerateViewSignedUrl.mockResolvedValue('https://signed.example.com/ingested');
     const [req, res] = mockReqRes({ body: { filePath: ingestedPath } });
     await controller.getViewSignedUrl(req, res);
@@ -483,6 +502,7 @@ describe('AdminWorkerDocumentsController.getViewSignedUrl — URL assinada só p
     jest.clearAllMocks();
     mockDbQuery.mockResolvedValue({ rows: [] });
     mockFindAdditionalByWorkerId.mockResolvedValue([]);
+    mockFindAbsorbedWorkerIds.mockResolvedValue([]);
     controller = new AdminWorkerDocumentsController();
     jest.spyOn(console, 'log').mockImplementation(() => undefined);
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -565,9 +585,24 @@ describe('AdminWorkerDocumentsController.getViewSignedUrl — URL assinada só p
     mockGenerateViewSignedUrl.mockResolvedValue('https://signed.example.com/x');
     const [req, res] = mockReqRes({ body: { filePath: OWNED_PATH } });
     await controller.getViewSignedUrl(req, res);
-    expect(mockGenerateViewSignedUrl).toHaveBeenCalledWith(OWNED_PATH, WORKER_ID);
+    expect(mockGenerateViewSignedUrl).toHaveBeenCalledWith(OWNED_PATH, [WORKER_ID]);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ success: true, data: { signedUrl: 'https://signed.example.com/x' } });
+  });
+
+  // ── Hotfix 14/09 — documento de worker ABSORVIDO em merge (lado admin) ──
+  it('[absorvido] :id é o SOBREVIVENTE e o caminho carrega o prefixo de um worker ABSORVIDO → 200, generateViewSignedUrl recebe [dono, absorvido]', async () => {
+    const absorbedId = '44444444-4444-4444-8444-444444444444';
+    const absorbedPath = `workers/${absorbedId}/identity_document/${DOC_UUID}.pdf`;
+    mockFindById.mockResolvedValue(Result.ok({ id: WORKER_ID }));
+    mockFindByWorkerId.mockResolvedValue({ identityDocumentUrl: absorbedPath });
+    mockFindAbsorbedWorkerIds.mockResolvedValue([absorbedId]);
+    mockGenerateViewSignedUrl.mockResolvedValue('https://signed.example.com/absorbed');
+    const [req, res] = mockReqRes({ body: { filePath: absorbedPath } });
+    await controller.getViewSignedUrl(req, res);
+    expect(mockFindAbsorbedWorkerIds).toHaveBeenCalledWith(WORKER_ID);
+    expect(mockGenerateViewSignedUrl).toHaveBeenCalledWith(absorbedPath, [WORKER_ID, absorbedId]);
+    expect(res.status).toHaveBeenCalledWith(200);
   });
 
   it('GCSStorageService recusa na 2ª camada (DocumentPathOwnershipError) → 404, nunca 500', async () => {

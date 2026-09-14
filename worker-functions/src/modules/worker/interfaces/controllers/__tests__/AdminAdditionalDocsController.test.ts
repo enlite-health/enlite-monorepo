@@ -46,6 +46,14 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
   },
 }));
 
+const mockFindAbsorbedWorkerIds = jest.fn().mockResolvedValue([]);
+
+jest.mock('../../../infrastructure/WorkerRepository', () => ({
+  WorkerRepository: jest.fn().mockImplementation(() => ({
+    findAbsorbedWorkerIds: mockFindAbsorbedWorkerIds,
+  })),
+}));
+
 import { AdminAdditionalDocsController } from '../AdminAdditionalDocsController';
 import { DocumentPathOwnershipError } from '../../../infrastructure/GCSStorageService';
 import { Request, Response } from 'express';
@@ -75,6 +83,7 @@ describe('AdminAdditionalDocsController', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockDbQuery.mockResolvedValue({ rows: [] });
+    mockFindAbsorbedWorkerIds.mockResolvedValue([]);
     controller = new AdminAdditionalDocsController();
     jest.spyOn(console, 'log').mockImplementation(() => undefined);
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -208,11 +217,25 @@ describe('AdminAdditionalDocsController', () => {
       expect(res.status).toHaveBeenCalledWith(200);
     });
 
-    it('doc encontrado chama gcs.deleteFile com o filePath e o workerId, depois deleteById', async () => {
+    it('doc encontrado chama gcs.deleteFile com o filePath e a lista [workerId], depois deleteById', async () => {
       mockFindByWorkerId.mockResolvedValue([{ id: 'doc-1', filePath: OWNED_PATH }]);
       const [req, res] = mockReqRes();
       await controller.remove(req, res);
-      expect(mockDeleteFile).toHaveBeenCalledWith(OWNED_PATH, WORKER_ID);
+      expect(mockDeleteFile).toHaveBeenCalledWith(OWNED_PATH, [WORKER_ID]);
+      expect(mockDeleteById).toHaveBeenCalledWith('doc-1', WORKER_ID);
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    // ── Hotfix 14/09 — documento de worker ABSORVIDO em merge (lado admin) ──
+    it('[absorvido] filePath carrega o prefixo de um worker ABSORVIDO em :id → deleteFile recebe [dono, absorvido]', async () => {
+      const absorbedId = '33333333-3333-4333-8333-333333333333';
+      const absorbedPath = `workers/${absorbedId}/additional/${DOC_UUID}.pdf`;
+      mockFindByWorkerId.mockResolvedValue([{ id: 'doc-1', filePath: absorbedPath }]);
+      mockFindAbsorbedWorkerIds.mockResolvedValue([absorbedId]);
+      const [req, res] = mockReqRes();
+      await controller.remove(req, res);
+      expect(mockFindAbsorbedWorkerIds).toHaveBeenCalledWith(WORKER_ID);
+      expect(mockDeleteFile).toHaveBeenCalledWith(absorbedPath, [WORKER_ID, absorbedId]);
       expect(mockDeleteById).toHaveBeenCalledWith('doc-1', WORKER_ID);
       expect(res.status).toHaveBeenCalledWith(200);
     });

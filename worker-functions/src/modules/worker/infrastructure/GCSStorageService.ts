@@ -1,15 +1,15 @@
 import admin from 'firebase-admin';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '@shared/logging';
-import { matchesOwnedDocumentPrefix } from '../domain/documentPathGuard';
+import { matchesOwnedDocumentPrefixAny } from '../domain/documentPathGuard';
 
 /**
  * Lançado por `generateViewSignedUrl` / `deleteFile` quando o `filePath`
- * pedido não tem a forma de um documento do PRÓPRIO `workerId` esperado —
- * 2ª camada de defesa (hotfix 13/09): mesmo que um controller erre e deixe
- * passar um caminho de outro worker, o serviço de storage recusa sozinho,
- * fechado por padrão. Os controllers capturam este erro e respondem 404
- * uniforme — nunca 403, nunca ecoando o caminho.
+ * pedido não tem a forma de um documento de NENHUM dos `allowedWorkerIds`
+ * esperados — 2ª camada de defesa (hotfix 13/09): mesmo que um controller
+ * erre e deixe passar um caminho de outro worker, o serviço de storage
+ * recusa sozinho, fechado por padrão. Os controllers capturam este erro e
+ * respondem 404 uniforme — nunca 403, nunca ecoando o caminho.
  */
 export class DocumentPathOwnershipError extends Error {
   readonly code = 'DOCUMENT_PATH_OWNERSHIP';
@@ -130,9 +130,22 @@ export class GCSStorageService {
     return filePath;
   }
 
-  async generateViewSignedUrl(filePath: string, workerId: string): Promise<string> {
+  /**
+   * Hotfix 14/09 (documento de worker absorvido em merge): `allowedWorkerIds`
+   * é ARRAY (`[dono, ...absorvidos]`), não mais um workerId só — desenho
+   * escolhido para manter a trava fail-closed AQUI, na 2ª camada, em vez de
+   * empurrar a decisão "quais ids valem" para dentro do serviço de storage
+   * (que não tem acesso a banco/merge). O CHAMADOR resolve a lista
+   * (`WorkerRepository.findAbsorbedWorkerIds`) e a passa pronta; o serviço só
+   * confere se o caminho normalizado começa por QUALQUER prefixo da lista —
+   * a mesma checagem de sempre, repetida por item. Lista vazia nunca é
+   * passada pelos chamadores (sempre inclui ao menos o próprio dono), mas se
+   * chegar vazia aqui o `.some` de `matchesOwnedDocumentPrefixAny` devolve
+   * `false` e o pedido é negado — fail-closed também nesse caso degenerado.
+   */
+  async generateViewSignedUrl(filePath: string, allowedWorkerIds: readonly string[]): Promise<string> {
     const resolvedPath = this.extractRelativePath(filePath);
-    if (!matchesOwnedDocumentPrefix(resolvedPath, this.bucketName, workerId)) {
+    if (!matchesOwnedDocumentPrefixAny(resolvedPath, this.bucketName, allowedWorkerIds)) {
       throw new DocumentPathOwnershipError();
     }
 
@@ -155,17 +168,18 @@ export class GCSStorageService {
     }
   }
 
-  async deleteFile(filePath: string, workerId: string): Promise<void> {
+  /** Ver nota de `generateViewSignedUrl` sobre `allowedWorkerIds` ser array. */
+  async deleteFile(filePath: string, allowedWorkerIds: readonly string[]): Promise<void> {
     const resolvedPath = this.extractRelativePath(filePath);
-    if (!matchesOwnedDocumentPrefix(resolvedPath, this.bucketName, workerId)) {
+    if (!matchesOwnedDocumentPrefixAny(resolvedPath, this.bucketName, allowedWorkerIds)) {
       throw new DocumentPathOwnershipError();
     }
 
     // Mock mode: just log, don't actually delete
     // Hotfix 13/09 (rodada 2, R4): NUNCA loga o caminho, nem em mock mode —
-    // só o workerId dono.
+    // só os workerIds permitidos.
     if (this.mockMode) {
-      console.log('[GCSStorageService] Mock delete for worker:', workerId);
+      console.log('[GCSStorageService] Mock delete for worker(s):', allowedWorkerIds);
       return;
     }
 
