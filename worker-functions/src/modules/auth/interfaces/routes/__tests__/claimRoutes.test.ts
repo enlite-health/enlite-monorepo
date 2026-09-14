@@ -116,3 +116,56 @@ describe('createClaimRoutes — montagem das rotas e limitador no lugar certo', 
     expect(controller.confirm).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * LIGAÇÃO real, não só a função isolada: os testes acima de "limitador no
+ * lugar certo" usam um X-Forwarded-For OPACO (string qualquer) — se alguém
+ * trocar a linha `keyGenerator: claimIpKey` por um inline que lê o
+ * X-Forwarded-For/`req.ip` CRU (sem `ipKeyGenerator`), esses testes continuam
+ * verdes, porque uma string opaca não muda sob (não-)normalização.
+ *
+ * Aqui a prova é com ENDEREÇOS IPv6 REAIS do MESMO /56: se o site realmente
+ * usa `claimIpKey` (com `ipKeyGenerator`), N endereços diferentes do mesmo
+ * /56 colapsam na MESMA chave e o limite estoura na N+1ª chamada — sabotar a
+ * LINHA `keyGenerator:` (não só o corpo de `claimIpKey`) faz este teste cair.
+ */
+describe('createClaimRoutes — LIGAÇÃO real com IPv6 (mesmo /56 deve colapsar, não string opaca)', () => {
+  const controller = {
+    start: jest.fn((req: Request, res: Response) => { res.status(200).json({ m: 'start' }); }),
+    confirm: jest.fn((req: Request, res: Response) => { res.status(200).json({ m: 'confirm' }); }),
+  } as unknown as ClaimController;
+
+  const server = appDeRota('claimRoutesWiring', '/api', () => createClaimRoutes(controller));
+
+  afterEach(() => {
+    (controller.start as jest.Mock).mockClear();
+    (controller.confirm as jest.Mock).mockClear();
+  });
+
+  it('claim/start: 3 IPv6 DIFERENTES do MESMO /56 esgotam o max=3 — a 4ª (outro endereço do mesmo /56) é 429', async () => {
+    const enderecos = ['2001:db8:1:1::40', '2001:db8:1:1::41', '2001:db8:1:1::42', '2001:db8:1:1::43'];
+    for (let i = 0; i < 3; i++) {
+      const ok = await request(server).post('/api/auth/claim/start').set('X-Forwarded-For', enderecos[i]).send({});
+      expect(ok.status).toBe(200);
+    }
+    (controller.start as jest.Mock).mockClear();
+    const bloqueado = await request(server).post('/api/auth/claim/start').set('X-Forwarded-For', enderecos[3]).send({});
+    expect(bloqueado.status).toBe(429);
+    expect(controller.start).not.toHaveBeenCalled();
+  });
+
+  it('claim/confirm: 5 IPv6 DIFERENTES do MESMO /56 esgotam o max=5 — a 6ª (outro endereço do mesmo /56) é 429', async () => {
+    const enderecos = [
+      '2001:db8:1:1::50', '2001:db8:1:1::51', '2001:db8:1:1::52',
+      '2001:db8:1:1::53', '2001:db8:1:1::54', '2001:db8:1:1::55',
+    ];
+    for (let i = 0; i < 5; i++) {
+      const ok = await request(server).post('/api/auth/claim/confirm').set('X-Forwarded-For', enderecos[i]).send({});
+      expect(ok.status).toBe(200);
+    }
+    (controller.confirm as jest.Mock).mockClear();
+    const bloqueado = await request(server).post('/api/auth/claim/confirm').set('X-Forwarded-For', enderecos[5]).send({});
+    expect(bloqueado.status).toBe(429);
+    expect(controller.confirm).not.toHaveBeenCalled();
+  });
+});

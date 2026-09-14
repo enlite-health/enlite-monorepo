@@ -453,4 +453,57 @@ describe('família admin.workers — as 4 peças declaram célula', () => {
       expect(chave1).not.toBe(chave2);
     });
   });
+
+  /**
+   * LIGAÇÃO real, não só a função isolada: os testes acima chamam
+   * `ingestRateLimitKey` diretamente — se alguém trocar a linha
+   * `keyGenerator: ingestRateLimitKey` do `rateLimit({...})` por um inline
+   * qualquer (ex.: `(req) => req.ip ?? 'unknown'`), aqueles testes continuam
+   * verdes, porque não exercitam o SITE onde o `keyGenerator:` é referenciado.
+   *
+   * Aqui a prova é pelo comportamento do limitador MONTADO: com o MESMO
+   * workerId, a chave tem que ser `worker:<id>` INDEPENDENTE do IP de origem —
+   * então 5 requisições do MESMO workerId vindas de 5 endereços IPv6
+   * DIFERENTES (mesmo /56, via X-Forwarded-For + `trust proxy` para que
+   * `req.ip` receba o valor) esgotam o `max=5` e a 6ª é 429. Se a linha
+   * `keyGenerator:` for trocada por algo baseado em IP (perdendo o ramo do
+   * workerId), cada endereço vira uma chave nova e o teste NUNCA vê 429.
+   */
+  describe('rate limit do ingest — LIGAÇÃO real: mesmo workerId, IPs diferentes não escapam do limite', () => {
+    const controladorLigacao = {
+      currentInterview: responde('currentInterview'),
+      availableVacancies: responde('availableVacancies'),
+      ingestFromUrl: jest.fn((req: express.Request, res: express.Response) => {
+        res.status(200).json({ m: 'ingestFromUrl', id: req.params.id });
+      }),
+    };
+    const routerLigacao = createWorkerContextRoutes(controladorLigacao as never, authDouble(), permissionsDouble());
+    const servidorLigacao = appDeRota(
+      'workerContextRoutesWiring',
+      '/api/admin',
+      () => routerLigacao,
+      (app) => app.set('trust proxy', true),
+    );
+
+    it('5 IPv6 DIFERENTES do MESMO /56, MESMO workerId → a 6ª é 429 (chave é worker:<id>, não IP)', async () => {
+      const enderecos = [
+        '2001:db8:1:1::70', '2001:db8:1:1::71', '2001:db8:1:1::72',
+        '2001:db8:1:1::73', '2001:db8:1:1::74', '2001:db8:1:1::75',
+      ];
+      for (let i = 0; i < 5; i++) {
+        const ok = await request(servidorLigacao)
+          .post('/api/admin/workers/wire1/documents/ingest-from-url')
+          .set('X-Forwarded-For', enderecos[i])
+          .send({});
+        expect(ok.status).toBe(200);
+      }
+      (controladorLigacao.ingestFromUrl as jest.Mock).mockClear();
+      const bloqueado = await request(servidorLigacao)
+        .post('/api/admin/workers/wire1/documents/ingest-from-url')
+        .set('X-Forwarded-For', enderecos[5])
+        .send({});
+      expect(bloqueado.status).toBe(429);
+      expect(controladorLigacao.ingestFromUrl).not.toHaveBeenCalled();
+    });
+  });
 });

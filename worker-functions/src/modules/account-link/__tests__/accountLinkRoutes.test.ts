@@ -218,3 +218,59 @@ describe('createAccountLinkRoutes — montagem, flagGate e limitadores', () => {
     });
   });
 });
+
+/**
+ * LIGAÇÃO real, não só a função isolada: o teste "start: limitador (max=5)
+ * MONTADO" acima usa um X-Forwarded-For OPACO ('on-start-limitador') — se
+ * alguém trocar a linha `keyGenerator: ipKey` por um inline que lê o cabeçalho
+ * CRU (sem `ipKeyGenerator`), aquele teste continua verde, porque uma string
+ * opaca não muda sob (não-)normalização.
+ *
+ * Aqui a prova é com ENDEREÇOS IPv6 REAIS do MESMO /56: se o site realmente
+ * usa `ipKey` (com `ipKeyGenerator`), N endereços diferentes do mesmo /56
+ * colapsam na MESMA chave e o limite estoura na N+1ª chamada — sabotar a
+ * LINHA `keyGenerator:` (não só o corpo de `ipKey`) faz este teste cair.
+ */
+describe('createAccountLinkRoutes — LIGAÇÃO real com IPv6 (mesmo /56 deve colapsar, não string opaca)', () => {
+  const controller = {
+    lookup: jest.fn((_req: Request, res: Response) => { res.status(200).json({ m: 'lookup' }); }),
+    start: jest.fn((_req: Request, res: Response) => { res.status(200).json({ m: 'start' }); }),
+    confirm: jest.fn((_req: Request, res: Response) => { res.status(200).json({ m: 'confirm' }); }),
+    finalize: jest.fn((_req: Request, res: Response) => { res.status(200).json({ m: 'finalize' }); }),
+    undoPage: jest.fn((_req: Request, res: Response) => { res.status(200).send('undo-page'); }),
+    undoExecute: jest.fn((_req: Request, res: Response) => { res.status(200).json({ m: 'undoExecute' }); }),
+  } as unknown as AccountLinkController;
+
+  const authDouble = {
+    requireAuth: () => (_req: Request, _res: Response, next: () => void) => next(),
+    requirePermission: () => (_req: Request, _res: Response, next: () => void) => next(),
+  } as unknown as AuthMiddleware;
+
+  const server = appDeRota('accountLinkRoutesWiring', '/api', () => createAccountLinkRoutes(controller, authDouble));
+
+  let flagOriginal: string | undefined;
+  beforeAll(() => {
+    flagOriginal = process.env.ACCOUNT_LINK_ENABLED;
+    process.env.ACCOUNT_LINK_ENABLED = 'true';
+  });
+  afterAll(() => {
+    if (flagOriginal === undefined) delete process.env.ACCOUNT_LINK_ENABLED;
+    else process.env.ACCOUNT_LINK_ENABLED = flagOriginal;
+  });
+  afterEach(() => { (controller.start as jest.Mock).mockClear(); });
+
+  it('start: 5 IPv6 DIFERENTES do MESMO /56 esgotam o max=5 — a 6ª (outro endereço do mesmo /56) é 429', async () => {
+    const enderecos = [
+      '2001:db8:1:1::60', '2001:db8:1:1::61', '2001:db8:1:1::62',
+      '2001:db8:1:1::63', '2001:db8:1:1::64', '2001:db8:1:1::65',
+    ];
+    for (let i = 0; i < 5; i++) {
+      const ok = await request(server).post('/api/workers/me/account-link/start').set('X-Forwarded-For', enderecos[i]).send({});
+      expect(ok.status).toBe(200);
+    }
+    (controller.start as jest.Mock).mockClear();
+    const bloqueado = await request(server).post('/api/workers/me/account-link/start').set('X-Forwarded-For', enderecos[5]).send({});
+    expect(bloqueado.status).toBe(429);
+    expect(controller.start).not.toHaveBeenCalled();
+  });
+});
