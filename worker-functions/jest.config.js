@@ -1016,6 +1016,16 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // Hotfix 14/09 (Gabriel): documento de worker ABSORVIDO num merge (o merge
+    // reparenta worker_id em worker_documents/worker_additional_documents, mas
+    // nunca move o objeto no GCS — o caminho gravado segue com o prefixo do
+    // absorvido). Arquivo NOVO, nasce 100/100/100/100 medido nesta rodada.
+    'src/shared/database/findAbsorbedWorkerIds.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
   },
   verbose: true,
   testTimeout: 10000,

@@ -7,7 +7,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { GetWorkerProgressUseCase } from '../../application/GetWorkerProgressUseCase';
 import { UploadWorkerDocumentsUseCase } from '../../application/UploadWorkerDocumentsUseCase';
 import { IWorkerRepository } from '../../ports/IWorkerRepository';
-import { assertDocumentPathBelongsToWorker, matchesOwnedDocumentPrefix } from '../../domain/documentPathGuard';
+import { assertDocumentPathBelongsToWorker, matchesOwnedDocumentPrefix, matchesOwnedDocumentPrefixAny } from '../../domain/documentPathGuard';
 import { DocumentPathOwnershipError } from '../../infrastructure/GCSStorageService';
 
 const VALID_DOC_TYPES: DocumentType[] = [
@@ -179,12 +179,17 @@ export class WorkerDocumentsMeController {
         : [];
       const additionalDocs = await this.additionalDocsRepo.findByWorkerId(worker.id);
       const ownedPaths = [...fixedPaths, ...additionalCertPaths, ...additionalDocs.map((d) => d.filePath)];
-      const belongsToWorker = assertDocumentPathBelongsToWorker(filePath, this.gcs.getBucketName(), worker.id, ownedPaths);
+      // Hotfix 14/09: caminho gravado no PRÓPRIO registro (ownedPaths, checagem
+      // acima) pode carregar o prefixo de um worker ABSORVIDO num merge — o
+      // merge reparenta worker_id na tabela, nunca move o objeto no GCS.
+      const absorbedIds = await this.workerRepo.findAbsorbedWorkerIds(worker.id);
+      const allowedIds = [worker.id, ...absorbedIds];
+      const belongsToWorker = assertDocumentPathBelongsToWorker(filePath, this.gcs.getBucketName(), allowedIds, ownedPaths);
       if (!belongsToWorker) {
         console.warn('[WorkerDocsMeCtrl.getViewSignedUrl] DENY | actorUid:', authUid, '| workerId:', worker.id, '| result: path not owned');
         res.status(404).json({ success: false, error: 'Document not found' }); return;
       }
-      const signedUrl = await this.gcs.generateViewSignedUrl(filePath, worker.id);
+      const signedUrl = await this.gcs.generateViewSignedUrl(filePath, allowedIds);
       console.log('[WorkerDocsMeCtrl.getViewSignedUrl] SUCCESS');
       res.status(200).json({ success: true, data: { signedUrl } });
     } catch (err) {
@@ -220,8 +225,12 @@ export class WorkerDocumentsMeController {
       // devolvia 404 SEM limpar o campo — o registro ficava preso para
       // sempre porque o objeto nunca mais seria "elegível" a apagar.
       if (filePath) {
-        if (matchesOwnedDocumentPrefix(filePath, this.gcs.getBucketName(), worker.id)) {
-          await this.gcs.deleteFile(filePath, worker.id);
+        // Hotfix 14/09: mesma lista de ids permitidos da VIEW — o caminho
+        // gravado pode carregar o prefixo de um worker absorvido no merge.
+        const absorbedIds = await this.workerRepo.findAbsorbedWorkerIds(worker.id);
+        const allowedIds = [worker.id, ...absorbedIds];
+        if (matchesOwnedDocumentPrefixAny(filePath, this.gcs.getBucketName(), allowedIds)) {
+          await this.gcs.deleteFile(filePath, allowedIds);
         } else {
           console.warn('[WorkerDocsMeCtrl.deleteDocument] legacy path fora do prefixo — record_only | actorUid:', authUid, '| workerId:', worker.id, '| docType:', docType, '| result: record_only');
         }

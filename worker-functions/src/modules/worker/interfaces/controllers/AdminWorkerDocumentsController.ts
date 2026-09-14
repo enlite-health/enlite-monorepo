@@ -8,7 +8,7 @@ import { UploadWorkerDocumentsUseCase } from '../../application/UploadWorkerDocu
 import { ValidateWorkerDocumentUseCase } from '../../application/ValidateWorkerDocumentUseCase';
 import { IWorkerRepository } from '../../ports/IWorkerRepository';
 import { maskEmailForLog } from '@shared/utils/emailMask';
-import { assertDocumentPathBelongsToWorker, matchesOwnedDocumentPrefix } from '../../domain/documentPathGuard';
+import { assertDocumentPathBelongsToWorker, matchesOwnedDocumentPrefix, matchesOwnedDocumentPrefixAny } from '../../domain/documentPathGuard';
 import { DocumentPathOwnershipError } from '../../infrastructure/GCSStorageService';
 
 const VALID_DOC_TYPES: DocumentType[] = [
@@ -169,13 +169,17 @@ export class AdminWorkerDocumentsController {
         : [];
       const additionalDocs = await this.additionalDocsRepo.findByWorkerId(workerId);
       const ownedPaths = [...fixedPaths, ...additionalCertPaths, ...additionalDocs.map((d) => d.filePath)];
-      const belongsToWorker = assertDocumentPathBelongsToWorker(filePath, this.gcs.getBucketName(), workerId, ownedPaths);
+      // Hotfix 14/09: `:id` pode ser o SOBREVIVENTE de um merge — o caminho
+      // gravado no próprio registro pode carregar o prefixo do absorvido.
+      const absorbedIds = await this.workerRepo.findAbsorbedWorkerIds(workerId);
+      const allowedIds = [workerId, ...absorbedIds];
+      const belongsToWorker = assertDocumentPathBelongsToWorker(filePath, this.gcs.getBucketName(), allowedIds, ownedPaths);
       if (!belongsToWorker) {
         console.warn('[AdminWorkerDocs.getViewSignedUrl] DENY | adminUid:', admin.uid, '| workerId:', workerId, '| result: path not owned');
         res.status(404).json({ success: false, error: 'Document not found' }); return;
       }
 
-      const signedUrl = await this.gcs.generateViewSignedUrl(filePath, workerId);
+      const signedUrl = await this.gcs.generateViewSignedUrl(filePath, allowedIds);
       res.status(200).json({ success: true, data: { signedUrl } });
     } catch (err) {
       if (err instanceof DocumentPathOwnershipError) {
@@ -206,8 +210,11 @@ export class AdminWorkerDocumentsController {
       // worker não vai ao GCS — mas o registro é limpo do mesmo jeito, já
       // que foi localizado pelo dono (:id).
       if (filePath) {
-        if (matchesOwnedDocumentPrefix(filePath, this.gcs.getBucketName(), workerId)) {
-          await this.gcs.deleteFile(filePath, workerId);
+        // Hotfix 14/09: mesma lista de ids permitidos da VIEW.
+        const absorbedIds = await this.workerRepo.findAbsorbedWorkerIds(workerId);
+        const allowedIds = [workerId, ...absorbedIds];
+        if (matchesOwnedDocumentPrefixAny(filePath, this.gcs.getBucketName(), allowedIds)) {
+          await this.gcs.deleteFile(filePath, allowedIds);
         } else {
           console.warn('[AdminWorkerDocs.deleteDocument] legacy path fora do prefixo — record_only | adminUid:', admin.uid, '| workerId:', workerId, '| docType:', docType, '| result: record_only');
         }

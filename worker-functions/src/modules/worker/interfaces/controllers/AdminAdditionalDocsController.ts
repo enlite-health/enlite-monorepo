@@ -1,16 +1,20 @@
 import { Request, Response } from 'express';
 import { GCSStorageService, DocumentPathOwnershipError } from '../../infrastructure/GCSStorageService';
 import { WorkerAdditionalDocumentsRepository } from '../../infrastructure/WorkerAdditionalDocumentsRepository';
+import { WorkerRepository } from '../../infrastructure/WorkerRepository';
+import { IWorkerRepository } from '../../ports/IWorkerRepository';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
-import { matchesOwnedDocumentPrefix } from '../../domain/documentPathGuard';
+import { matchesOwnedDocumentPrefix, matchesOwnedDocumentPrefixAny } from '../../domain/documentPathGuard';
 
 export class AdminAdditionalDocsController {
   private readonly gcs = new GCSStorageService();
   private readonly repo: WorkerAdditionalDocumentsRepository;
+  private readonly workerRepo: IWorkerRepository;
 
   constructor() {
     const pool = DatabaseConnection.getInstance().getPool();
     this.repo = new WorkerAdditionalDocumentsRepository(pool);
+    this.workerRepo = new WorkerRepository();
   }
 
   async list(req: Request, res: Response): Promise<void> {
@@ -71,8 +75,11 @@ export class AdminAdditionalDocsController {
       // worker não vai ao GCS, mas o registro é apagado do mesmo jeito —
       // já localizado pelo dono (:id).
       if (target) {
-        if (matchesOwnedDocumentPrefix(target.filePath, this.gcs.getBucketName(), workerId)) {
-          await this.gcs.deleteFile(target.filePath, workerId);
+        // Hotfix 14/09: `:id` pode ser o sobrevivente de um merge.
+        const absorbedIds = await this.workerRepo.findAbsorbedWorkerIds(workerId);
+        const allowedIds = [workerId, ...absorbedIds];
+        if (matchesOwnedDocumentPrefixAny(target.filePath, this.gcs.getBucketName(), allowedIds)) {
+          await this.gcs.deleteFile(target.filePath, allowedIds);
         } else {
           console.warn('[AdminAdditionalDocs.remove] legacy path fora do prefixo — record_only | workerId:', workerId, '| additionalDocId:', docId, '| result: record_only');
         }

@@ -84,61 +84,61 @@ describe('resolveDocumentRelativePath', () => {
 
 describe('assertDocumentPathBelongsToWorker — rodada 2: prefixo + membership, SEM exigir forma exata', () => {
   it('true quando o path normalizado está no PREFIXO do worker e bate com um dos paths gravados', () => {
-    expect(assertDocumentPathBelongsToWorker(OWNED_BY_A, BUCKET, WORKER_A, [OWNED_BY_A, null, undefined])).toBe(true);
+    expect(assertDocumentPathBelongsToWorker(OWNED_BY_A, BUCKET, [WORKER_A], [OWNED_BY_A, null, undefined])).toBe(true);
   });
 
   it('true quando o path gravado está salvo como URL completa mas o pedido vem relativo (ou vice-versa)', () => {
     const ownedAsUrl = `https://storage.googleapis.com/${BUCKET}/${OWNED_BY_A}`;
-    expect(assertDocumentPathBelongsToWorker(OWNED_BY_A, BUCKET, WORKER_A, [ownedAsUrl])).toBe(true);
+    expect(assertDocumentPathBelongsToWorker(OWNED_BY_A, BUCKET, [WORKER_A], [ownedAsUrl])).toBe(true);
   });
 
   it('[R1] true para caminho de documento ADICIONAL (.../additional/<uuid>.ext), desde que esteja em ownedPaths', () => {
     const additionalPath = `workers/${WORKER_A}/additional/${DOC_UUID}.pdf`;
-    expect(assertDocumentPathBelongsToWorker(additionalPath, BUCKET, WORKER_A, [additionalPath])).toBe(true);
+    expect(assertDocumentPathBelongsToWorker(additionalPath, BUCKET, [WORKER_A], [additionalPath])).toBe(true);
   });
 
   it('[R2] true para caminho INGERIDO (workers/<id>/ingested/<tipo>/<timestamp-ms>, sem uuid/extensão), desde que esteja em ownedPaths', () => {
     const ingestedPath = `workers/${WORKER_A}/ingested/identity_document/1757753000000`;
-    expect(assertDocumentPathBelongsToWorker(ingestedPath, BUCKET, WORKER_A, [ingestedPath])).toBe(true);
+    expect(assertDocumentPathBelongsToWorker(ingestedPath, BUCKET, [WORKER_A], [ingestedPath])).toBe(true);
   });
 
   it('true para caminho LEGADO fora da forma de upload (qualquer nome), desde que esteja em ownedPaths e dentro do prefixo do worker', () => {
     const legacyPath = `workers/${WORKER_A}/legacy/arquivo-antigo-2019.pdf`;
-    expect(assertDocumentPathBelongsToWorker(legacyPath, BUCKET, WORKER_A, [legacyPath])).toBe(true);
+    expect(assertDocumentPathBelongsToWorker(legacyPath, BUCKET, [WORKER_A], [legacyPath])).toBe(true);
   });
 
   it('false quando o path não está na lista de paths gravados do worker (mesmo dentro do próprio prefixo)', () => {
     const outroDocDoMesmoWorker = `workers/${WORKER_A}/identity_document/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.pdf`;
-    expect(assertDocumentPathBelongsToWorker(outroDocDoMesmoWorker, BUCKET, WORKER_A, [OWNED_BY_A])).toBe(false);
+    expect(assertDocumentPathBelongsToWorker(outroDocDoMesmoWorker, BUCKET, [WORKER_A], [OWNED_BY_A])).toBe(false);
   });
 
   it('false quando o path é de OUTRO worker (prefixo errado), mesmo que apareça (registro envenenado) na lista de paths gravados', () => {
-    expect(assertDocumentPathBelongsToWorker(OWNED_BY_B, BUCKET, WORKER_A, [OWNED_BY_B])).toBe(false);
+    expect(assertDocumentPathBelongsToWorker(OWNED_BY_B, BUCKET, [WORKER_A], [OWNED_BY_B])).toBe(false);
   });
 
   it('[registro envenenado] path de B salvo no registro de A → false mesmo estando em ownedPaths (prefixo é quem decide)', () => {
     const poisoned = `workers/${WORKER_B}/additional/${DOC_UUID}.pdf`;
-    expect(assertDocumentPathBelongsToWorker(poisoned, BUCKET, WORKER_A, [poisoned])).toBe(false);
+    expect(assertDocumentPathBelongsToWorker(poisoned, BUCKET, [WORKER_A], [poisoned])).toBe(false);
   });
 
   it('false quando o path do pedido é inválido (traversal)', () => {
-    expect(assertDocumentPathBelongsToWorker('../../etc/passwd', BUCKET, WORKER_A, [OWNED_BY_A])).toBe(false);
+    expect(assertDocumentPathBelongsToWorker('../../etc/passwd', BUCKET, [WORKER_A], [OWNED_BY_A])).toBe(false);
   });
 
   it('false quando a lista de paths do worker está vazia', () => {
-    expect(assertDocumentPathBelongsToWorker(OWNED_BY_A, BUCKET, WORKER_A, [])).toBe(false);
+    expect(assertDocumentPathBelongsToWorker(OWNED_BY_A, BUCKET, [WORKER_A], [])).toBe(false);
   });
 
   it('ignora entradas null/undefined/vazias na lista de paths do worker', () => {
-    expect(assertDocumentPathBelongsToWorker(OWNED_BY_A, BUCKET, WORKER_A, [null, undefined, '', OWNED_BY_A])).toBe(true);
+    expect(assertDocumentPathBelongsToWorker(OWNED_BY_A, BUCKET, [WORKER_A], [null, undefined, '', OWNED_BY_A])).toBe(true);
   });
 
   it('false quando uma entrada armazenada é ela mesma inválida e não bate', () => {
-    expect(assertDocumentPathBelongsToWorker(OWNED_BY_A, BUCKET, WORKER_A, ['../traversal-invalido'])).toBe(false);
+    expect(assertDocumentPathBelongsToWorker(OWNED_BY_A, BUCKET, [WORKER_A], ['../traversal-invalido'])).toBe(false);
   });
 
   it('false quando o path pedido está fora do PREFIXO do worker, mesmo que a string bata literalmente algo em ownedPaths de outro formato', () => {
-    expect(assertDocumentPathBelongsToWorker(`other/${WORKER_A}/x.pdf`, BUCKET, WORKER_A, [`other/${WORKER_A}/x.pdf`])).toBe(false);
+    expect(assertDocumentPathBelongsToWorker(`other/${WORKER_A}/x.pdf`, BUCKET, [WORKER_A], [`other/${WORKER_A}/x.pdf`])).toBe(false);
   });
 });
 

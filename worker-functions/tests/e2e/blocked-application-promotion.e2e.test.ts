@@ -132,7 +132,7 @@ describe('Promoção automática de tentativas bloqueadas (worker.registration_c
     await savePersonalInfo(api, token, worker.id);
     await saveServiceArea(api, token);
     await saveAvailability(api, token);
-    await saveDocuments(api, token, DOCS_NON_AT);
+    await saveDocuments(api, token, worker.id, DOCS_NON_AT);
 
     const status = await getWorkerStatus(pool, worker.id);
     expect(status).toBe('REGISTERED');

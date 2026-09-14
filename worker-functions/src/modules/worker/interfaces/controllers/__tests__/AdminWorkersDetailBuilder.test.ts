@@ -12,11 +12,23 @@ const queries: string[] = [];
 // Mutável por teste: cobre o ramo de comparator do sort() de encuadres
 // (só é exercitado com 2+ linhas combinadas de WJA + bloqueadas).
 let extraJobApplicationRow: Record<string, unknown> | null = null;
+// Hotfix 14/09: `findAbsorbedWorkerIds` roda uma CTE própria (chain/survivor)
+// contra o mesmo `db.query` — mutável por teste, default [] (nenhum absorvido,
+// preserva o comportamento de todos os testes que já existiam).
+let absorbedWorkerIdsRows: Array<{ id: string }> = [];
+// Mutáveis por teste — cobrem os ramos "?? null" (nenhuma linha) e "sem
+// coordenada" que a fixture padrão (sempre com linha completa) nunca bate.
+let locationRowsOverride: Array<Record<string, unknown>> | null = null;
+let serviceAreaRowsOverride: Array<Record<string, unknown>> | null = null;
+let docsRowOverride: Record<string, unknown> | null = null;
 const mockQuery = jest.fn(async (sql: string) => {
   queries.push(sql);
+  if (sql.includes('WITH RECURSIVE survivor')) {
+    return { rows: absorbedWorkerIdsRows };
+  }
   if (sql.includes('FROM worker_documents')) {
     return {
-      rows: [{
+      rows: [docsRowOverride ?? {
         id: 'doc-1', resume_cv_url: 'cv.pdf', identity_document_url: 'dni.jpg', documents_status: 'approved',
         // additional_certificates_urls + document_validations não-vazios cobrem o
         // ramo do .map() de adicionais e o loop de Object.entries(rawValidations).
@@ -26,10 +38,10 @@ const mockQuery = jest.fn(async (sql: string) => {
     };
   }
   if (sql.includes('FROM worker_service_areas') && sql.includes('LIMIT 1')) {
-    return { rows: [{ address: 'Calle Falsa 123', city: 'Buenos Aires', work_zone: 'Palermo', interest_zone: 'Belgrano' }] };
+    return { rows: locationRowsOverride ?? [{ address: 'Calle Falsa 123', city: 'Buenos Aires', work_zone: 'Palermo', interest_zone: 'Belgrano' }] };
   }
   if (sql.includes('FROM worker_service_areas')) {
-    return { rows: [{ id: 'sa-1', address_line: 'Calle Falsa 123', latitude: '-34.6', longitude: '-58.4', radius_km: 10, city: 'Buenos Aires' }] };
+    return { rows: serviceAreaRowsOverride ?? [{ id: 'sa-1', address_line: 'Calle Falsa 123', latitude: '-34.6', longitude: '-58.4', radius_km: 10, city: 'Buenos Aires' }] };
   }
   if (sql.includes('FROM worker_availability')) return { rows: [{ id: 'av-1', day_of_week: 1, start_time: '08:00', end_time: '12:00', timezone: 'America/Argentina/Buenos_Aires', crosses_midnight: false }] };
   if (sql.includes('FROM worker_tags')) return { rows: [{ id: 'tag-1', name: 'VIP', color: '#000', description: null }] };
@@ -83,6 +95,10 @@ beforeEach(() => {
   decrypt.mockClear();
   mockQuery.mockClear();
   extraJobApplicationRow = null;
+  absorbedWorkerIdsRows = [];
+  locationRowsOverride = null;
+  serviceAreaRowsOverride = null;
+  docsRowOverride = null;
   (gcs.generateViewSignedUrl as jest.Mock).mockClear();
   (gcs.generateViewSignedUrl as jest.Mock).mockImplementation(async (p: string) => `signed:${p}`);
 });
@@ -218,13 +234,30 @@ describe('um container de cada vez', () => {
 });
 
 describe('hotfix 13/09 (extensão) — toSignedUrl agora exige workerId e nunca loga o filePath', () => {
-  it('passa o workerId do próprio worker (w.id) para generateViewSignedUrl em cada documento', async () => {
+  it('passa [workerId do próprio worker] (w.id) para generateViewSignedUrl em cada documento', async () => {
     await buildWorkerDetailResponse(db, enc, gcs, ROW, null);
     const calledWith = (gcs.generateViewSignedUrl as jest.Mock).mock.calls;
     expect(calledWith.length).toBeGreaterThan(0);
-    for (const [, workerIdArg] of calledWith) {
-      expect(workerIdArg).toBe(ROW.id);
+    for (const [, allowedIdsArg] of calledWith) {
+      expect(allowedIdsArg).toEqual([ROW.id]);
     }
+  });
+
+  // ── Hotfix 14/09 — documento de worker ABSORVIDO em merge ───────────
+  it('[absorvido] quando findAbsorbedWorkerIds devolve ids, generateViewSignedUrl recebe [w.id, ...absorvidos] para CADA documento', async () => {
+    absorbedWorkerIdsRows = [{ id: 'absorbed-1' }, { id: 'absorbed-2' }];
+    await buildWorkerDetailResponse(db, enc, gcs, ROW, null);
+    expect(queries.some((q) => q.includes('WITH RECURSIVE survivor'))).toBe(true);
+    const calledWith = (gcs.generateViewSignedUrl as jest.Mock).mock.calls;
+    expect(calledWith.length).toBeGreaterThan(0);
+    for (const [, allowedIdsArg] of calledWith) {
+      expect(allowedIdsArg).toEqual([ROW.id, 'absorbed-1', 'absorbed-2']);
+    }
+  });
+
+  it('sem célula "documents" (query nem roda): findAbsorbedWorkerIds NÃO é chamado — lazy, custo evitado', async () => {
+    await buildWorkerDetailResponse(db, enc, gcs, ROW, []); // cells=[] → nenhuma célula autorizada
+    expect(queries.some((q) => q.includes('WITH RECURSIVE survivor'))).toBe(false);
   });
 
   it('assina documentos adicionais (additionalCertificatesUrls) e propaga document_validations', async () => {
@@ -288,5 +321,65 @@ describe('hotfix 13/09 (extensão) — toSignedUrl agora exige workerId e nunca 
     // created_at mais recente (2025-03) primeiro — prova que o comparator RODOU, não só existiu.
     expect(data.encuadres[0].caseNumber).toBe(42);
     expect(data.encuadres[1].caseNumber).toBe(43);
+  });
+
+  it('languages_encrypted decripta para string que NÃO é JSON válido → catch usa [languages] como fallback', async () => {
+    const rowLinguagemQuebrada = { ...ROW, languages_encrypted: 'enc_pt-BR' }; // decrypt tira o "enc_" → "pt-BR", não é JSON
+    const data = await buildWorkerDetailResponse(db, enc, gcs, rowLinguagemQuebrada, null);
+    expect(data.languages).toEqual(['pt-BR']);
+  });
+
+  it('doc sem documents_status → cai no fallback "pending"', async () => {
+    docsRowOverride = { id: 'doc-3', resume_cv_url: null, identity_document_url: null };
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, null);
+    expect(data.documents.documentsStatus).toBe('pending');
+  });
+
+  it('locationResult sem linha (worker sem service_area) → location: null; serviceArea sem lat/lng → lat/lng null; campos opcionais ausentes de w caem nos fallbacks ([] / null / false)', async () => {
+    locationRowsOverride = [];
+    serviceAreaRowsOverride = [{ id: 'sa-2', address_line: 'Sem coordenada', latitude: null, longitude: null, radius_km: null, city: 'CABA' }];
+    const rowSemOpcionais = {
+      ...ROW,
+      phone: null,
+      data_sources: null,
+      hobbies: null,
+      diagnostic_preferences: null,
+      is_test: null,
+      experience_types: null,
+      preferred_types: null,
+      preferred_age_range: null,
+    };
+    const data = await buildWorkerDetailResponse(db, enc, gcs, rowSemOpcionais, null);
+    expect(data.location).toBeNull();
+    expect(data.serviceAreas).toEqual([{ id: 'sa-2', address: 'Sem coordenada', serviceRadiusKm: null, lat: null, lng: null }]);
+    expect(data.phone).toBeNull();
+    expect(data.dataSources).toEqual([]);
+    expect(data.hobbies).toEqual([]);
+    expect(data.diagnosticPreferences).toEqual([]);
+    expect(data.isTest).toBe(false);
+    expect(data.experienceTypes).toEqual([]);
+    expect(data.preferredTypes).toEqual([]);
+    expect(data.preferredAgeRange).toEqual([]);
+  });
+
+  it('demais campos opcionais (nome descriptografado vazio, profissão, ocupação, tipo de doc, endereço/cidade/zonas do location, address_line da service area) caem nos fallbacks "?? null" quando ausentes', async () => {
+    serviceAreaRowsOverride = [{ id: 'sa-3', address_line: null, latitude: null, longitude: null, radius_km: null, city: 'CABA' }];
+    locationRowsOverride = [{ address: null, city: null, work_zone: null, interest_zone: null }];
+    const rowSemNomeNemProfissao = {
+      ...ROW,
+      first_name_encrypted: null, // decrypt(null) → null → "firstName ?? null" cai no null
+      document_type: null,
+      profession: null,
+      occupation: null,
+      knowledge_level: null,
+    };
+    const data = await buildWorkerDetailResponse(db, enc, gcs, rowSemNomeNemProfissao, null);
+    expect(data.firstName).toBeNull();
+    expect(data.documentType).toBeNull();
+    expect(data.profession).toBeNull();
+    expect(data.occupation).toBeNull();
+    expect(data.knowledgeLevel).toBeNull();
+    expect(data.serviceAreas).toEqual([{ id: 'sa-3', address: null, serviceRadiusKm: null, lat: null, lng: null }]);
+    expect(data.location).toEqual({ address: null, city: null, workZone: null, interestZone: null });
   });
 });
