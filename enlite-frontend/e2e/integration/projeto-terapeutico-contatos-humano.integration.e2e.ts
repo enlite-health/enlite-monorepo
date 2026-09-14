@@ -206,10 +206,9 @@ test.describe('spec 018/PR-7 — projeto terapêutico: contatos por seleção, M
     await expect(page.getByTestId('tp-save')).toBeEnabled();
     await expect(drawer).toHaveScreenshot('tp-pr7-drawer-nuevo-preenchido.png', { mask: [page.locator('.firebase-emulator-warning')], maxDiffPixelRatio: 0.02 });
 
-    // POST cria a versão; logo em seguida o card recarrega a LISTA (`onSaved` → `refetch`), e É
-    // A LISTA (`AdminTherapeuticProjectsController.list`) que resolve `contacts` por versão pela
-    // célula de origem (lex #7 C5) — `create` devolve só a versão crua, sem `contacts` (a tela
-    // "ver" reusa o item já carregado da lista, sem um segundo `GET .../:vid`).
+    // POST cria a versão JÁ com `contacts` resolvidos (conserto 14/09, contract §POST — mesma
+    // `resolveContacts` de `list`/`get`); logo em seguida o card recarrega a LISTA (`onSaved` →
+    // `refetch`), que resolve os mesmos contatos pela MESMA célula de origem (lex #7 C5).
     const created = page.waitForResponse((r) => r.request().method() === 'POST' && /\/therapeutic-projects$/.test(r.url()));
     const listAfterSave = page.waitForResponse((r) => r.request().method() === 'GET' && /\/therapeutic-projects$/.test(r.url()));
     await page.getByTestId('tp-save').click();
@@ -663,5 +662,163 @@ test.describe('spec 018/PR-7 — conserto 14/09: editar a vigente mantém contat
 
     const total = Number(runSQL(`SELECT count(*) FROM patient_therapeutic_projects WHERE patient_id = '${seed.patientId}'`));
     expect(total).toBe(3); // v10, v11, v12
+  });
+});
+
+/**
+ * Conserto 14/09 (achado do gate, Gabriel 14/09): cenário PRÓPRIO, self-contained — cria a V1.0
+ * PELA TELA com 2 contatos e clica "Editar" IMEDIATAMENTE (drawer nunca fecha, sem `page.goto` nem
+ * reload), o exato caminho que quebrava antes do conserto: o form nascia de `created.contacts ?? []`
+ * (a resposta CRUA do POST) em vez de esperar o refetch. Prova que hoje `created` já vem completo
+ * (`contactRefs`/`careTeamIds`/`contacts` resolvidos, contract §POST) — o form de edição nasce com
+ * os 2 já selecionados, e salvar grava a 1.1 no banco com os DOIS.
+ */
+test.describe('spec 018/PR-7 — conserto 14/09: criar com 2 contatos e clicar Editar IMEDIATAMENTE (sem recarregar) mantém a seleção @integration', () => {
+  test.setTimeout(300_000);
+
+  let seed: { patientId: string; addressId: string; stamp: string };
+  let serviceId: string;
+  let familiarId = '';
+  let profissionalId = '';
+  let v10 = '';
+  let v11 = '';
+
+  const FAMILIAR = 'Familiar Imediato14';
+  const PROFISSIONAL = 'Profesional Imediato14';
+  const uid = `e2e-pr7-imediato14-${RUN_ID}`;
+  const email = `${uid}@e2e.test`;
+  let groupId = '';
+
+  test.beforeAll(() => {
+    seed = seedActivatablePatient(712000); // faixa própria — 710000/711000 já usadas neste arquivo
+    seedIcd(); // idempotente (ON CONFLICT) — reaproveita ICD_URI/RELEASE já seedados acima
+    serviceId = runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, created_by, updated_by) VALUES ('${seed.patientId}', 'CAREGIVER', 20, '${seed.addressId}', 'e2e-018-pr7', 'e2e-018-pr7') RETURNING id`).split('\n')[0].trim();
+    expect(serviceId).toMatch(/^[0-9a-f-]{36}$/);
+    familiarId = runSQL(`INSERT INTO patient_external_contacts (patient_id, relation, name, active, created_by) VALUES ('${seed.patientId}', 'OTHER', '${FAMILIAR}', true, 'e2e-018-pr7') RETURNING id`).split('\n')[0].trim();
+    profissionalId = runSQL(`INSERT INTO patient_professionals (patient_id, name, source, active, created_by, specialty) VALUES ('${seed.patientId}', '${PROFISSIONAL}', 'admin_manual', true, 'e2e-018-pr7', 'PHYSIOTHERAPIST') RETURNING id`).split('\n')[0].trim();
+    expect(profissionalId).toMatch(/^[0-9a-f-]{36}$/);
+
+    psql(`INSERT INTO iam.permissions (resource, action, description, category) VALUES
+            ('patient', 'read', 'e2e PR-7 imediato14', 'Pacientes'),
+            ('patient_therapeutic_project', 'read', 'e2e PR-7 imediato14', 'Pacientes'),
+            ('patient_therapeutic_project', 'write', 'e2e PR-7 imediato14', 'Pacientes'),
+            ('patient_clinical', 'read', 'e2e PR-7 imediato14', 'Pacientes'),
+            ('patient_clinical', 'write', 'e2e PR-7 imediato14', 'Pacientes'),
+            ('patient_family', 'read', 'e2e PR-7 imediato14', 'Pacientes'),
+            ('patient_family', 'write', 'e2e PR-7 imediato14', 'Pacientes'),
+            ('patient_care_team', 'read', 'e2e PR-7 imediato14', 'Pacientes'),
+            ('patient_services', 'read', 'e2e PR-7 imediato14', 'Pacientes'),
+            ('patient_coverage', 'read', 'e2e PR-7 imediato14', 'Pacientes'),
+            ('patient_address', 'read', 'e2e PR-7 imediato14', 'Pacientes'),
+            ('patient_identity', 'read', 'e2e PR-7 imediato14', 'Pacientes'),
+            ('catalog_therapeutic_objectives', 'read', 'e2e PR-7 imediato14', 'Pacientes'),
+            ('catalog_therapeutic_activities', 'read', 'e2e PR-7 imediato14', 'Pacientes'),
+            ('catalog_therapeutic_segments', 'read', 'e2e PR-7 imediato14', 'Pacientes')
+          ON CONFLICT DO NOTHING`);
+    groupId = seedStaffInGroup({ uid, email, groupName: `PR7 Imediato14 ${RUN_ID}`, country: 'AR' }).groupId;
+    for (const [resource, action] of [
+      ['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write'],
+      ['patient_clinical', 'read'], ['patient_clinical', 'write'], ['patient_family', 'read'], ['patient_family', 'write'],
+      ['patient_care_team', 'read'], ['patient_services', 'read'], ['patient_coverage', 'read'], ['patient_address', 'read'], ['patient_identity', 'read'],
+      ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read'], ['catalog_therapeutic_segments', 'read'],
+    ]) grantCell(groupId, resource, action);
+  });
+
+  test.afterAll(() => {
+    runSQL(`DELETE FROM patients WHERE id = '${seed.patientId}'`);
+    cleanupPatientDeep(seed.patientId);
+    cleanupIcd();
+    cleanupStaffAndGroup(uid, groupId);
+    safeSql(`DELETE FROM iam.permission_groups WHERE tenant_id = '${ABAC_TENANT}' AND name = 'PR7 Imediato14 ${RUN_ID}'`);
+  });
+
+  test('criar com 2 contatos e clicar Editar IMEDIATAMENTE (sem recarregar) → os 2 contatos estão selecionados → salvar modalidade → 1.1 no banco com os 2 contatos', async ({ page }) => {
+    await loginAs(page, { uid, email, role: 'admin', country: 'AR' });
+    await page.goto(`/admin/patients/${seed.patientId}`);
+    const card = page.getByTestId('projeto-terapeutico-card');
+    await expect(card).toBeVisible({ timeout: 30_000 });
+    await page.getByTestId('tp-new-btn').click();
+
+    const drawer = page.getByTestId('therapeutic-project-drawer');
+    await expect(drawer).toBeVisible();
+    await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('tp-save')).toBeDisabled();
+
+    await expect(page.getByTestId('tp-service')).toHaveValue(serviceId);
+    await page.getByTestId('tp-modality').selectOption('IN_PERSON');
+
+    const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
+    await page.getByTestId('tp-icd-input').click();
+    await page.keyboard.type('sintetico pr-7');
+    expect((await search).status()).toBe(200);
+    const opcaoIcd = page.getByTestId('tp-icd-option-0');
+    await expect(opcaoIcd).toBeVisible({ timeout: 10_000 });
+    await opcaoIcd.click();
+    await expect(page.getByTestId('tp-diagnosis-chip')).toHaveCount(1);
+
+    expect(await digitar(page, '#tp-clinicalContext', 'Sintesis clinica imediato14')).toBe('Sintesis clinica imediato14');
+    expect(await digitar(page, '#tp-generalObjective', 'Objetivo general imediato14')).toBe('Objetivo general imediato14');
+    await marcarPrimeiras(page, 'tp-specificObjectives', 1);
+    await marcarPrimeiras(page, 'tp-activities', 1);
+    await page.locator('#tp-startDate').click();
+    await page.keyboard.type('09012026');
+    await page.locator('#tp-endDate').click();
+    await page.keyboard.type('12312026');
+    await expect(page.locator('#tp-endDate')).toHaveValue('2026-12-31');
+
+    // Os 2 contatos, pela tela.
+    await marcarPorTexto(page, 'tp-externalContacts', FAMILIAR);
+    await marcarPorTexto(page, 'tp-careTeam', PROFISSIONAL);
+    await expect(page.locator('#tp-externalContacts')).toContainText(FAMILIAR);
+    await expect(page.locator('#tp-careTeam')).toContainText(PROFISSIONAL);
+    await expect(page.getByTestId('tp-save')).toBeEnabled();
+
+    const criado = page.waitForResponse((r) => r.request().method() === 'POST' && /\/therapeutic-projects$/.test(r.url()));
+    await page.getByTestId('tp-save').click();
+    const bodyCriado = (await (await criado).json()) as {
+      data: { id: string; version: string; contacts: Array<{ kind: string; id: string; name?: string }> };
+    };
+    expect(bodyCriado.data.version).toBe('V.1.0');
+    v10 = bodyCriado.data.id;
+    // O 201 já vem com os 2 contatos resolvidos (conserto 14/09) — sem isso o `TherapeuticProjectDrawer`
+    // partia de `created.contacts ?? []` (vazio) ao entrar em modo "Editar" logo a seguir.
+    expect(bodyCriado.data.contacts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'EXTERNAL', id: familiarId, name: FAMILIAR }),
+      expect.objectContaining({ kind: 'CARE_TEAM', id: profissionalId, name: PROFISSIONAL }),
+    ]));
+
+    // O drawer troca para `mode:'view'` da MESMA versão — sem fechar, sem `page.goto`, sem reload.
+    await expect(drawer).toHaveAttribute('data-mode', 'view');
+    await expect(drawer.getByTestId('tpv-contacts')).toContainText(FAMILIAR);
+    await expect(drawer.getByTestId('tpv-contacts')).toContainText(PROFISSIONAL);
+
+    // Clica "Editar" IMEDIATAMENTE — é o gatilho exato do achado do gate.
+    await page.getByTestId('therapeutic-project-edit-btn').click();
+    await expect(drawer).toHaveAttribute('data-mode', 'edit');
+    await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
+
+    // Os 2 contatos JÁ estão selecionados no form de edição — nascidos da resposta do POST, sem
+    // nenhum refetch/GET intermediário (nenhum aviso de "contato removido", nenhum vazio).
+    await expect(page.locator('#tp-externalContacts')).toContainText(FAMILIAR);
+    await expect(page.locator('#tp-careTeam')).toContainText(PROFISSIONAL);
+    await expect(page.getByTestId('tp-form-contact-removed')).toHaveCount(0);
+
+    // Muda só a modalidade (MICRO) e salva — a minor nova tem de levar os DOIS contatos.
+    await page.getByTestId('tp-modality').selectOption('ONLINE');
+    await expect(page.getByTestId('tp-modality')).toHaveValue('ONLINE');
+    await expect(page.getByTestId('tp-save')).toBeEnabled();
+    const salvo = page.waitForResponse((r) => r.request().method() === 'POST' && /\/therapeutic-projects$/.test(r.url()));
+    await page.getByTestId('tp-save').click();
+    const bodySalvo = (await (await salvo).json()) as { data: { id: string; version: string; editedFromVersionId: string | null } };
+    expect(bodySalvo.data.version).toBe('V.1.1');
+    expect(bodySalvo.data.editedFromVersionId).toBe(v10); // a minor nasce da MESMA major criada pela tela
+    v11 = bodySalvo.data.id;
+
+    // Banco: a 1.1 leva as DUAS ligações (kind/id) — nunca gravada "sem eles" (o defeito original).
+    const ligacoes = runSQL(
+      `SELECT contact_kind || ':' || COALESCE(external_contact_id::text, professional_id::text)
+         FROM patient_therapeutic_project_contacts WHERE version_id = '${v11}' ORDER BY sort_order`,
+    ).trim().split('\n').filter(Boolean);
+    expect(ligacoes).toEqual([`EXTERNAL:${familiarId}`, `CARE_TEAM:${profissionalId}`]);
   });
 });

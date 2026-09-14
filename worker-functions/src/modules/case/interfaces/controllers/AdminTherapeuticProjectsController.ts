@@ -211,7 +211,12 @@ export class AdminTherapeuticProjectsController {
       const created = body.data.mode === 'new'
         ? await this.repo.createVersion({ mode: 'new', patientId: params.data.id, actorUid, version: body.data.version })
         : await this.repo.createVersion({ mode: 'edit', patientId: params.data.id, actorUid, fromVersionId: body.data.fromVersionId, version: body.data.version });
-      res.status(201).json({ success: true, data: projectTherapeuticVersionForActor(created, cells) });
+      // Conserto 14/09 (achado do gate): a versão recém-criada passa pelo MESMO `resolveContacts`
+      // de `list`/`get` — nunca crua — pra "Editar" a vigente logo após salvar (antes do refetch)
+      // partir com os contatos já resolvidos, e pra trilha do POST registrar os containers SERVIDOS
+      // igual ao GET (contract `therapeutic-project.md` §POST).
+      const { contacts, contactRefs, careTeamIds } = await this.resolveContacts(req, created.id, cells);
+      res.status(201).json({ success: true, data: { ...projectTherapeuticVersionForActor(created, cells), contactRefs, careTeamIds, contacts } });
     } catch (err: unknown) {
       if (err instanceof PatientNotFoundForProjectError) {
         res.status(404).json({ success: false, error: 'Patient not found', code: err.code });

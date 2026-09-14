@@ -104,14 +104,12 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
       setDirty(false);
       onSaved();
       // A versão recém-criada é sempre a vigente (é a de `created_at` mais recente, D328).
-      // Conserto 14/09 (achado no e2e da task 7.8, PR-7): `POST .../therapeutic-projects` devolve a
-      // versão CRUA — `AdminTherapeuticProjectsController.create` nunca chama `resolveContacts`
-      // (só `list`/`get` fazem isso) — então `created.contacts` vem `undefined`. Antes deste
-      // conserto, `TherapeuticProjectVersionView` (`!compact`) lia `v.contacts.length` sem guarda e
-      // a página INTEIRA quebrava (error boundary) assim que o "Guardar" fechava a modal de
-      // criação/edição. `?? []` mantém a mesma verdade que a leitura já tinha ANTES desta versão
-      // existir (nenhum contato resolvido ainda) — a lista completa (com nome/telefone) chega no
-      // próximo `refetch` da tela (`onSaved`, já disparado acima), sem crashar nesse meio-tempo.
+      // Conserto 14/09 (achado do gate): `POST .../therapeutic-projects` agora devolve `contacts`/
+      // `contactRefs`/`careTeamIds` RESOLVIDOS — o mesmo caminho de `resolveContacts` que `list`/`get`
+      // já usavam (`AdminTherapeuticProjectsController.create`, contrato §POST) — então `created` já
+      // chega completo daqui, sem precisar do refetch pra "Editar" imediatamente depois reconstruir a
+      // seleção. `?? []` fica só como defesa contra uma resposta ainda mais antiga/desatualizada (ex:
+      // cache do browser); não há mais branch normal em que `created.contacts` venha `undefined`.
       setTarget({ mode: 'view', version: { ...created, contacts: created.contacts ?? [] }, isCurrent: true });
     } catch (err: unknown) {
       setSaveError(saveRefusalMessage(err, t));

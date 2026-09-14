@@ -505,7 +505,7 @@ describe('salvar — `new` cria a major seguinte, `edit` a minor da origem', () 
     expect(screen.getByTestId('therapeutic-project-drawer').getAttribute('data-mode')).toBe('view');
   });
 
-  it('conserto 14/09 (achado no e2e da task 7.8): `POST` devolve a versão sem `contacts` resolvido (só `list`/`get` resolvem) — a view NÃO quebra, cai em vazio até o próximo refetch', async () => {
+  it('defesa (`?? []`): mesmo se o `POST` chegasse sem `contacts` (resposta antiga/desatualizada) a view NÃO quebra — hoje o backend sempre resolve contatos no 201 (contrato §POST, conserto 14/09), este é só o guarda-chuva', async () => {
     catalogosOk();
     const { contacts: _semContatos, ...criadaSemContatos } = CRIADA;
     mockCreateVersion.mockResolvedValue(criadaSemContatos as unknown as TherapeuticProjectVersion);

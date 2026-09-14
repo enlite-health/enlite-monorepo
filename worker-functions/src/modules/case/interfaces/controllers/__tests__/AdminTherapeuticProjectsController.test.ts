@@ -522,6 +522,42 @@ describe('AdminTherapeuticProjectsController', () => {
       });
     });
 
+    it('201 anexa `contacts`/`contactRefs`/`careTeamIds` resolvidos pela MESMA `resolveContacts` de `get` — nunca crus (conserto 14/09, contract §POST)', async () => {
+      const repo = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
+      const contacts = {
+        resolve: jest.fn().mockResolvedValue({
+          contacts: [{ kind: 'RESPONSIBLE', id: PAT_ID, name: 'Ana', phone: '+54...' }],
+          containersServed: new Set(['family']),
+          contactRefs: [{ kind: 'RESPONSIBLE', id: PAT_ID }],
+          careTeamIds: [],
+        }),
+      };
+      const res = mockRes();
+      const req = mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO, permissionCells: ['patient_clinical:write', 'patient_family:read'] });
+      await ctrl(repo, {}, contacts).create(req, res);
+      expect(contacts.resolve).toHaveBeenCalledWith(VERSION_ID, ['patient_clinical:write', 'patient_family:read']);
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(corpoDaResposta(res).data.contacts).toEqual([{ kind: 'RESPONSIBLE', id: PAT_ID, name: 'Ana', phone: '+54...' }]);
+      expect(corpoDaResposta(res).data.contactRefs).toEqual([{ kind: 'RESPONSIBLE', id: PAT_ID }]);
+      expect(corpoDaResposta(res).data.careTeamIds).toEqual([]);
+    });
+
+    it('201 grava os containers de contato SERVIDOS em `req` — a trilha do POST (`writeTrail`) lê o MESMO campo do GET (lex C6/C9)', async () => {
+      const repo = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
+      const contacts = {
+        resolve: jest.fn().mockResolvedValue({
+          contacts: [{ kind: 'CARE_TEAM', id: 'prof-1', name: 'Dra. Souza', phone: null }],
+          containersServed: new Set(['care_team']),
+          contactRefs: [],
+          careTeamIds: ['prof-1'],
+        }),
+      };
+      const res = mockRes();
+      const req = mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO, permissionCells: ['patient_clinical:write'] });
+      await ctrl(repo, {}, contacts).create(req, res);
+      expect((req as unknown as { therapeuticContactContainers: string[] }).therapeuticContactContainers).toEqual(['care_team']);
+    });
+
     it('201 no `new`: manda mode/patientId/actorUid e devolve a versão projetada', async () => {
       const repo = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
       const res = mockRes();

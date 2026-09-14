@@ -507,4 +507,49 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
     const original = await chamar('GET', `${BASE()}/${vidMajor}`, U.completa);
     expect(original.body.data.contactRefs).toEqual([{ kind: 'EXTERNAL', id: contatoAtivo }]);
   });
+
+  it('11. conserto 14/09 (achado do gate): a resposta 201 do POST traz `contactRefs`/`careTeamIds`/`contacts` IGUAIS ao GET da MESMA versão — inclusive redigido sem a célula de origem, e a trilha do POST grava o container SERVIDO', async () => {
+    const contatoAtivo = (await pool.query<{ id: string }>(
+      `INSERT INTO patient_external_contacts (patient_id, relation, name, phone_encrypted, created_by)
+       VALUES ($1, 'NEIGHBOR', 'Vizinha Sintética Teste 11', $2, 'e2e-018pr7') RETURNING id`,
+      [PATIENT, cifrar('+54 11 0000-0011')],
+    )).rows[0].id;
+
+    const criado = await chamar('POST', BASE(), U.completa, { mode: 'new', version: versionBody({ contactRefs: [{ kind: 'EXTERNAL', id: contatoAtivo }] }) });
+    expect(criado.status).toBe(201);
+    const vid = criado.body.data.id;
+
+    // O 201 já vem com `contacts` RESOLVIDO (nome/telefone) — nunca cru, nunca `undefined`.
+    expect(criado.body.data.contactRefs).toEqual([{ kind: 'EXTERNAL', id: contatoAtivo }]);
+    expect(criado.body.data.careTeamIds).toEqual([]);
+    expect(criado.body.data.contacts).toEqual([{ kind: 'EXTERNAL', id: contatoAtivo, name: 'Vizinha Sintética Teste 11', phone: '+54 11 0000-0011', relation: 'NEIGHBOR' }]);
+
+    // O GET imediatamente depois, pelo MESMO ator, devolve EXATAMENTE o mesmo bloco — mesma
+    // `resolveContacts`, mesma consulta (contract §POST: "nunca uma 2ª query com formato próprio").
+    const lido = await chamar('GET', `${BASE()}/${vid}`, U.completa);
+    expect(lido.body.data.contactRefs).toEqual(criado.body.data.contactRefs);
+    expect(lido.body.data.careTeamIds).toEqual(criado.body.data.careTeamIds);
+    expect(lido.body.data.contacts).toEqual(criado.body.data.contacts);
+
+    // Redigido: ator SEM `patient_family:read` recebe `redacted:true` — mesma regra de célula de
+    // origem que `resolveContacts` já aplica no GET, agora provada com o GET da mesma versão criada pelo POST.
+    const semFamiliaLe = await chamar('GET', `${BASE()}/${vid}`, U.semFamilia);
+    expect(semFamiliaLe.body.data.contacts).toEqual([{ kind: 'EXTERNAL', id: contatoAtivo, redacted: true }]);
+    expect(JSON.stringify(semFamiliaLe.body)).not.toContain('Vizinha Sintética Teste 11');
+
+    // Trilha do POST (`write_project:`) grava o container `family` SERVIDO — mesmo mecanismo do GET
+    // (lex C6/C9, `req.therapeuticContactContainers`), sem formato novo.
+    const limite = Date.now() + 10_000;
+    let linha: { action: string } | undefined;
+    while (Date.now() < limite && !linha) {
+      const trilha = await pool.query<{ action: string }>(
+        `SELECT action FROM resource_access_log WHERE operator_uid = $1 AND resource_id = $2 AND action LIKE 'write_project:%' ORDER BY occurred_at DESC LIMIT 1`,
+        [U.completa, PATIENT],
+      );
+      linha = trilha.rows[0];
+      if (!linha) await new Promise((r) => setTimeout(r, 100));
+    }
+    expect(linha?.action).toBe('write_project:therapeuticProject+clinical+services+family');
+    expect(JSON.stringify(linha)).not.toContain('Vizinha');
+  });
 });

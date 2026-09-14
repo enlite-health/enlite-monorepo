@@ -38,7 +38,10 @@ export function createAdminTherapeuticProjectsRoutes(
   // Só a leitura de UMA versão pode ser export (lex C13): a lista com `?purpose=export` é leitura comum.
   const versionTrail = (req: Request): string =>
     therapeuticTrailAction(req.query.purpose === 'export' ? 'export_pdf' : 'read_project', req.permissionCells ?? null, contactContainersOf(req));
-  const writeTrail = (req: Request): string => therapeuticTrailAction('write_project', req.permissionCells ?? null);
+  // Conserto 14/09: `create` agora resolve contatos (mesmo molde de `get`/`list`) — `writeTrail`
+  // passa a ler os containers SERVIDOS igual a `readTrail`. `annul` não resolve contato nenhum,
+  // então `contactContainersOf` continua vazio ali (nenhuma mudança de formato para essa rota).
+  const writeTrail = (req: Request): string => therapeuticTrailAction('write_project', req.permissionCells ?? null, contactContainersOf(req));
 
   router.get(
     '/patients/:id/therapeutic-projects',
