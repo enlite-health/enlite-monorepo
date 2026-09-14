@@ -511,6 +511,56 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
     });
   });
 
+  // ── (e2) POST/PATCH /patients/:id/addresses sob RLS — a transação leva o país ───────────
+  // Achado da stage (12/09/2026): o commit fbb3f765 trocou o `withActorContext` original de
+  // `insertPatientAddress`/`AdminPatientAddressesController.updatePatientAddress` por
+  // `db.connect()`/`this.db.connect()` cru — sem `app.user_country`, a policy da 411 recusa
+  // com 500 `rls_session_without_identity`. MORRE (sabotagem 12/09, ver commit desta branch:
+  // POST e PATCH voltaram a 500 com o connect cru; 2/2 falhas) se qualquer um dos dois voltar
+  // ao connect cru. Só o ambiente COM RLS ligada reproduz — por isso este teste, não um unit.
+  describe('(e2) POST/PATCH /api/admin/patients/:id/addresses', () => {
+    let enderecoId: string | undefined;
+
+    it('staff AR cria endereço no SEU paciente → 201, e a LINHA nasce com o país do paciente', async () => {
+      const res = await asStaffAR(`/api/admin/patients/${IDS.patientAR}/addresses`, {
+        method: 'POST',
+        body: JSON.stringify({ address_formatted: 'Av. Corrientes 1234, CABA' }),
+      });
+      const body = (await res.json()) as { success?: boolean; data?: { id?: string } };
+      expect({ status: res.status, success: body.success }).toEqual({ status: 201, success: true });
+      enderecoId = body.data?.id;
+      expect(enderecoId).toBeTruthy();
+
+      const row = await adminPool.query(`SELECT country FROM patient_addresses WHERE id = $1`, [enderecoId]);
+      expect(row.rows[0]?.country).toBe('AR');
+    });
+
+    it('PATCH no mesmo endereço → 200, mesma transação com país', async () => {
+      const res = await asStaffAR(`/api/admin/patients/${IDS.patientAR}/addresses/${enderecoId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ neighborhood: 'Balvanera' }),
+      });
+      expect(res.status).toBe(200);
+      const row = await adminPool.query(`SELECT neighborhood FROM patient_addresses WHERE id = $1`, [enderecoId]);
+      expect(row.rows[0]?.neighborhood).toBe('Balvanera');
+    });
+
+    it('staff AR no paciente BR → recusado e NADA gravado (a policy de país barra o INSERT)', async () => {
+      const res = await asStaffAR(`/api/admin/patients/${IDS.patientBR}/addresses`, {
+        method: 'POST',
+        body: JSON.stringify({ address_formatted: 'Av. Paulista 1000' }),
+      });
+      // Hoje sai 500 genérico — mesma LISTA (D299) do (e); o isolamento vale, o status é
+      // o ponto em aberto.
+      expect(res.status).toBeGreaterThanOrEqual(400);
+      const count = await adminPool.query(
+        `SELECT count(*)::int AS n FROM patient_addresses WHERE patient_id = $1`,
+        [IDS.patientBR],
+      );
+      expect(count.rows[0].n).toBe(0);
+    });
+  });
+
   // ── (f) projeto terapêutico sob RLS (spec 017, lex C3) ──────────────────────────────────
   describe('(f) /patients/:id/therapeutic-projects', () => {
     it('staff AR lista o SEU paciente (200, vazio) e o paciente BR devolve ZERO versões — nunca 500', async () => {

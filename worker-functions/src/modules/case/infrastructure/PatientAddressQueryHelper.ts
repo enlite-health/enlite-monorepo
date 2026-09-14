@@ -1,4 +1,5 @@
 import type { Pool, PoolClient } from 'pg';
+import { withActorContext } from '@shared/database/actorContext';
 import type { GeocodingService } from '../../../infrastructure/services/GeocodingService';
 
 /**
@@ -90,10 +91,11 @@ export async function insertPatientAddress(
     // best-effort
   }
 
-  const client = await db.connect();
-  try {
-    await client.query('BEGIN');
-
+  // `withActorContext` (D95), não `db.connect()` cru: o client cru chega SEM `app.user_country`
+  // e a policy de país da 411 recusa com `rls_session_without_identity` — o 500 medido na stage
+  // em 12/09 (commit fbb3f765 trocou o `withActorContext` original por este connect cru). O
+  // helper reusa o client fixado da request ou aplica `SET LOCAL`; BEGIN/COMMIT/ROLLBACK são dele.
+  return withActorContext(db, async (client: PoolClient) => {
     let isDefault: boolean;
     if (input.isDefault === true) {
       // Marca explícita: desmarca o principal anterior NA MESMA TRANSAÇÃO (troca atômica).
@@ -126,14 +128,8 @@ export async function insertPatientAddress(
         input.neighborhood, input.logisticsCorridor, input.accessNotes, isDefault],
     );
 
-    await client.query('COMMIT');
     return result.rows[0];
-  } catch (err) {
-    await client.query('ROLLBACK').catch(() => undefined);
-    throw err;
-  } finally {
-    client.release();
-  }
+  });
 }
 
 export async function fetchPatientAddresses(db: Pool, patientId: string): Promise<PatientAddressRow[]> {
