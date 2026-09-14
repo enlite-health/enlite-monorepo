@@ -5,6 +5,16 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: { getInstance: () => ({ getPool: mockGetPool }) },
 }));
 
+// spec 018, PR-4 (task 4.8): só para o teste "constrói pela fábrica default" — prova que os
+// defaults `() => new PatientPhotoStorage()`/`() => new PatientDocumentStorage()` do construtor
+// (produção real) são de fato invocáveis, sem sair para a rede/GCS de verdade.
+const mockGcsDelete = jest.fn(async () => undefined);
+jest.mock('@google-cloud/storage', () => ({
+  Storage: jest.fn().mockImplementation(() => ({
+    bucket: () => ({ file: () => ({ delete: mockGcsDelete }) }),
+  })),
+}));
+
 import * as functions from 'firebase-functions';
 import {
   PatientTestFixtureService,
@@ -136,6 +146,11 @@ describe('PatientTestFixtureService.purge — limpeza de paciente sintético', (
       calendarEventsFailed: 0,
       vacanciesDeleted: 2,
       cascaded: {},
+      // spec 018, PR-4 (task 4.8): sem foto/documento na fixture — 0 em todos.
+      photoObjectsDeleted: 0,
+      photoObjectsFailed: 0,
+      documentObjectsDeleted: 0,
+      documentObjectsFailed: 0,
     });
     expect(calendar.deleteEvent).toHaveBeenCalledWith(
       'admission-ar@enlite.health',
@@ -398,6 +413,140 @@ describe('PatientTestFixtureService — construção como a produção faz', () 
 
     await expect(svc.purge(PATIENT_ID)).resolves.toMatchObject({ patientId: PATIENT_ID });
     expect(clientCalls.some((c) => /DELETE FROM patients/i.test(c.sql))).toBe(true);
+  });
+});
+
+describe('PatientTestFixtureService.purge — apaga objeto GCS (spec 018, PR-4, task 4.8)', () => {
+  const photoRow = (sql: string) =>
+    sql.includes('FROM patient_photos WHERE patient_id') ? { rows: [{ object_path_encrypted: 'enc(photo.jpg)' }], rowCount: 1 } : undefined;
+  const documentRow = (sql: string) =>
+    sql.includes('FROM patient_documents WHERE patient_id') ? { rows: [{ object_path_encrypted: 'enc(doc)' }], rowCount: 1 } : undefined;
+
+  function fakeEnc() {
+    return { decrypt: jest.fn(async (v: string) => `plain(${v})`), encrypt: jest.fn(async (v: string) => v) };
+  }
+
+  it('objeto de foto apagado com sucesso — conta em photoObjectsDeleted, sem órfão', async () => {
+    const { db } = makeDb([selectIsTest(true), noAppointments, photoRow]);
+    const deleteFn = jest.fn(async () => undefined);
+    const orphanRepo = { record: jest.fn() };
+    const svc = new PatientTestFixtureService(
+      db as never,
+      calendarSpy() as never,
+      undefined,
+      () => ({ delete: deleteFn }) as never,
+      () => ({ delete: jest.fn() }) as never,
+      orphanRepo as never,
+      fakeEnc() as never,
+    );
+
+    const result = await svc.purge(PATIENT_ID);
+
+    expect(result?.photoObjectsDeleted).toBe(1);
+    expect(result?.photoObjectsFailed).toBe(0);
+    expect(deleteFn).toHaveBeenCalledWith('plain(enc(photo.jpg))');
+    expect(orphanRepo.record).not.toHaveBeenCalled();
+  });
+
+  it('objeto de foto falha ao apagar — vira órfão (reason PURGE), conta em photoObjectsFailed', async () => {
+    const { db } = makeDb([selectIsTest(true), noAppointments, photoRow]);
+    const deleteFn = jest.fn(async () => { throw new Error('gcs down'); });
+    const orphanRepo = { record: jest.fn(async () => ({ id: 'orphan-1' })) };
+    const svc = new PatientTestFixtureService(
+      db as never,
+      calendarSpy() as never,
+      undefined,
+      () => ({ delete: deleteFn }) as never,
+      () => ({ delete: jest.fn() }) as never,
+      orphanRepo as never,
+      fakeEnc() as never,
+    );
+
+    const result = await svc.purge(PATIENT_ID);
+
+    expect(result?.photoObjectsDeleted).toBe(0);
+    expect(result?.photoObjectsFailed).toBe(1);
+    expect(orphanRepo.record).toHaveBeenCalledWith('enc(photo.jpg)', 'PHOTOS', 'PURGE');
+  });
+
+  it('objeto de documento apagado com sucesso — conta em documentObjectsDeleted', async () => {
+    const { db } = makeDb([selectIsTest(true), noAppointments, documentRow]);
+    const deleteFn = jest.fn(async () => undefined);
+    const svc = new PatientTestFixtureService(
+      db as never,
+      calendarSpy() as never,
+      undefined,
+      () => ({ delete: jest.fn() }) as never,
+      () => ({ delete: deleteFn }) as never,
+      { record: jest.fn() } as never,
+      fakeEnc() as never,
+    );
+
+    const result = await svc.purge(PATIENT_ID);
+
+    expect(result?.documentObjectsDeleted).toBe(1);
+    expect(deleteFn).toHaveBeenCalledWith('plain(enc(doc))');
+  });
+
+  it('objeto de documento falha ao apagar — vira órfão bucket DOCUMENTS; falha ao GRAVAR o órfão não derruba a purga', async () => {
+    const { db } = makeDb([selectIsTest(true), noAppointments, documentRow]);
+    const orphanRepo = { record: jest.fn(async () => { throw new Error('db down'); }) };
+    const svc = new PatientTestFixtureService(
+      db as never,
+      calendarSpy() as never,
+      undefined,
+      () => ({ delete: jest.fn() }) as never,
+      () => ({ delete: jest.fn(async () => { throw new Error('gcs down'); }) }) as never,
+      orphanRepo as never,
+      fakeEnc() as never,
+    );
+
+    const result = await svc.purge(PATIENT_ID);
+
+    expect(result?.documentObjectsFailed).toBe(1);
+    expect(orphanRepo.record).toHaveBeenCalledWith('enc(doc)', 'DOCUMENTS', 'PURGE');
+  });
+
+  it('falha não-Error (ex.: string lançada) no delete E no registro do órfão — ainda assim conta e não lança', async () => {
+    const { db } = makeDb([selectIsTest(true), noAppointments, photoRow]);
+    // eslint-disable-next-line @typescript-eslint/no-throw-literal -- prova deliberada do branch `String(err)` (não-Error).
+    const orphanRepo = { record: jest.fn(async () => { throw 'orphan record string error'; }) };
+    const svc = new PatientTestFixtureService(
+      db as never,
+      calendarSpy() as never,
+      undefined,
+      // eslint-disable-next-line @typescript-eslint/no-throw-literal
+      () => ({ delete: jest.fn(async () => { throw 'gcs string error'; }) }) as never,
+      () => ({ delete: jest.fn() }) as never,
+      orphanRepo as never,
+      fakeEnc() as never,
+    );
+
+    const result = await svc.purge(PATIENT_ID);
+
+    expect(result?.photoObjectsFailed).toBe(1);
+    expect(orphanRepo.record).toHaveBeenCalledWith('enc(photo.jpg)', 'PHOTOS', 'PURGE');
+  });
+
+  it('constrói pela FÁBRICA DEFAULT do construtor (caminho de produção) — envs setadas, GCS mockado no módulo', async () => {
+    process.env.GCS_PATIENT_PHOTOS_BUCKET = 'enlite-patient-photos-test';
+    process.env.GCS_PATIENT_DOCUMENTS_BUCKET = 'enlite-patient-documents-test';
+    try {
+      const { db } = makeDb([selectIsTest(true), noAppointments, photoRow, documentRow]);
+      // Só (db, calendar): calendário explícito para não bater na rede do Google Calendar; os
+      // 4 parâmetros seguintes (photoStorageFactory, documentStorageFactory, orphanRepo, enc)
+      // ficam no DEFAULT do construtor — é o que este teste prova coberto.
+      const svc = new PatientTestFixtureService(db as never, calendarSpy() as never);
+
+      const result = await svc.purge(PATIENT_ID);
+
+      expect(result?.photoObjectsDeleted).toBe(1);
+      expect(result?.documentObjectsDeleted).toBe(1);
+      expect(mockGcsDelete).toHaveBeenCalled();
+    } finally {
+      delete process.env.GCS_PATIENT_PHOTOS_BUCKET;
+      delete process.env.GCS_PATIENT_DOCUMENTS_BUCKET;
+    }
   });
 });
 

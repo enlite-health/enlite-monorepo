@@ -9,6 +9,10 @@ import {
   getAdmissionCountryConfig,
   type AdmissionCountry,
 } from '../../matching/domain/admissionCountries';
+import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import { PatientPhotoStorage } from '../infrastructure/PatientPhotoStorage';
+import { PatientDocumentStorage } from '../infrastructure/PatientDocumentStorage';
+import { PatientPhotoOrphanRepository } from '../infrastructure/PatientPhotoOrphanRepository';
 
 /** Tentativa de purgar um paciente que NÃO está marcado como teste. */
 export class NotATestPatientError extends Error {
@@ -49,6 +53,12 @@ export interface PurgeResult {
    *  evidência que resta; contagem sem PII). Aditivo — o e2e-prod lê só os
    *  campos acima. */
   cascaded: Record<string, number>;
+  /** spec 018, PR-4 (task 4.8): objetos GCS apagados/falhos — a LINHA some por
+   *  CASCADE, mas o objeto do bucket só some se ALGUÉM chamar o storage. */
+  photoObjectsDeleted: number;
+  photoObjectsFailed: number;
+  documentObjectsDeleted: number;
+  documentObjectsFailed: number;
 }
 
 /** Filhas de `patients` em ON DELETE CASCADE — contadas ANTES do DELETE, porque
@@ -123,6 +133,15 @@ export class PatientTestFixtureService {
     private readonly calendar: AdmissionCalendarService = admissionCalendarService,
     private readonly impersonateEmail: string = process.env.ADMISSION_IMPERSONATE_EMAIL ||
       'enlite@enlite.health',
+    // spec 018, PR-4 (task 4.8): FÁBRICAS, não instâncias — `PatientPhotoStorage`/
+    // `PatientDocumentStorage` lançam no `new` sem `GCS_PATIENT_*_BUCKET` (fail-closed). Um
+    // default `= new PatientPhotoStorage()` aqui quebraria TODOS os testes que constroem este
+    // serviço passando só `db`/`calendar` (21 testes existentes, sem env de bucket) — a fábrica só
+    // roda quando existe de fato uma foto/documento para apagar (ver `purge`).
+    private readonly photoStorageFactory: () => PatientPhotoStorage = () => new PatientPhotoStorage(),
+    private readonly documentStorageFactory: () => PatientDocumentStorage = () => new PatientDocumentStorage(),
+    private readonly orphanRepo: PatientPhotoOrphanRepository = new PatientPhotoOrphanRepository(),
+    private readonly enc: KMSEncryptionService = new KMSEncryptionService(),
   ) {}
 
   /**
@@ -164,6 +183,17 @@ export class PatientTestFixtureService {
       `SELECT id, country, calendar_event_id
          FROM admission_appointments
         WHERE patient_id = $1`,
+      [patientId],
+    );
+
+    // spec 018, PR-4 (task 4.8): caminhos LIDOS antes do CASCADE apagar as linhas — depois do
+    // DELETE não há mais de onde ler `object_path_encrypted`.
+    const { rows: photoRows } = await this.db.query<{ object_path_encrypted: string }>(
+      `SELECT object_path_encrypted FROM patient_photos WHERE patient_id = $1`,
+      [patientId],
+    );
+    const { rows: documentRows } = await this.db.query<{ object_path_encrypted: string }>(
+      `SELECT object_path_encrypted FROM patient_documents WHERE patient_id = $1`,
       [patientId],
     );
 
@@ -239,6 +269,25 @@ export class PatientTestFixtureService {
       client.release();
     }
 
+    // spec 018, PR-4 (task 4.8): AGORA que a transação comitou (as linhas já saíram por CASCADE),
+    // apaga cada objeto do GCS. Best-effort por objeto, mesmo critério dos eventos de Calendar
+    // acima — uma falha vira órfão (`patient_photo_orphans`, retry via
+    // `PatientPhotoOrphanRetryService`) e é CONTADA, nunca aborta nem lança.
+    let photoObjectsDeleted = 0;
+    let photoObjectsFailed = 0;
+    for (const row of photoRows) {
+      // eslint-disable-next-line no-await-in-loop -- purga de paciente é operação rara e manual/e2e-prod; sequencial de propósito.
+      const ok = await this.deleteOrphanCandidate(row.object_path_encrypted, 'PHOTOS');
+      if (ok) photoObjectsDeleted += 1; else photoObjectsFailed += 1;
+    }
+    let documentObjectsDeleted = 0;
+    let documentObjectsFailed = 0;
+    for (const row of documentRows) {
+      // eslint-disable-next-line no-await-in-loop
+      const ok = await this.deleteOrphanCandidate(row.object_path_encrypted, 'DOCUMENTS');
+      if (ok) documentObjectsDeleted += 1; else documentObjectsFailed += 1;
+    }
+
     const result: PurgeResult = {
       patientId,
       appointmentsCancelled,
@@ -246,6 +295,10 @@ export class PatientTestFixtureService {
       calendarEventsFailed,
       vacanciesDeleted,
       cascaded,
+      photoObjectsDeleted,
+      photoObjectsFailed,
+      documentObjectsDeleted,
+      documentObjectsFailed,
     };
     // C2 — com o registro fora da tabela, este log é a ÚNICA evidência de que a
     // eliminação aconteceu; sem o ator ele não responde "quem". UUID e contagens
@@ -264,6 +317,28 @@ export class PatientTestFixtureService {
     ).join(' UNION ALL ');
     const { rows } = await client.query<{ tabela: string; n: number }>(sql, [patientId]);
     return Object.fromEntries(rows.map((r) => [r.tabela, r.n]));
+  }
+
+  /**
+   * Apaga UM objeto (foto ou documento) do bucket certo; em falha, grava em
+   * `patient_photo_orphans` (`reason='PURGE'`) para o retry pegar depois. Nunca lança — a purga
+   * do paciente não pode travar por um objeto individual de storage.
+   */
+  private async deleteOrphanCandidate(objectPathEncrypted: string, bucket: 'PHOTOS' | 'DOCUMENTS'): Promise<boolean> {
+    try {
+      const objectPath = await this.enc.decrypt(objectPathEncrypted);
+      const storage = bucket === 'PHOTOS' ? this.photoStorageFactory() : this.documentStorageFactory();
+      await storage.delete(objectPath);
+      return true;
+    } catch (err) {
+      functions.logger.warn('patient.test_purge.object_delete_failed', { bucket, error: err instanceof Error ? err.message : String(err) });
+      try {
+        await this.orphanRepo.record(objectPathEncrypted, bucket, 'PURGE');
+      } catch (orphanErr) {
+        functions.logger.error('patient.test_purge.object_orphan_record_failed', { bucket, error: orphanErr instanceof Error ? orphanErr.message : String(orphanErr) });
+      }
+      return false;
+    }
   }
 
   /** Mesma resolução por env do AdmissionSchedulingService (calendário por país). */

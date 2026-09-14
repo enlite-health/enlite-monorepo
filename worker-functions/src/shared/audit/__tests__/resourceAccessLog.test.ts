@@ -113,6 +113,19 @@ describe('logResourceAccess', () => {
     expect(insert![1]).toEqual(['u1', 'admin', 'worker', 'w-42', 'read_dossier', expect.any(String)]);
   });
 
+  it('idFrom sem resultado (rota que só resolve o recurso DENTRO do handler) — sem linha, sem query', async () => {
+    const res = makeRes(200);
+    logResourceAccess('worker', 'by-phone', () => undefined)(
+      { params: {}, user: { uid: 'u1', roles: ['admin'] } } as unknown as Request,
+      res,
+      jest.fn(),
+    );
+    res.emit('finish');
+    await flush();
+
+    expect(query.mock.calls.find((c) => String(c[0]).includes('resource_access_log'))).toBeUndefined();
+  });
+
   it('sem operador identificado não afirma nada na trilha', async () => {
     const res = makeRes(200);
     const next = jest.fn();
@@ -169,6 +182,14 @@ describe('resolveAccessOrigin', () => {
       expect.stringContaining('falha ao classificar'),
     );
     warnSpy.mockRestore();
+  });
+
+  it('spec 018 PR-4: patient_document usa a própria COUNTRY_SOURCE (patient_documents.country)', async () => {
+    query.mockResolvedValueOnce({ rows: [{ country: 'AR' }] });
+    expect(await resolveAccessOrigin({ kind: 'staff', uid: 'u', country: 'AR' }, 'patient_document', 'doc-1')).toBe(
+      'same_country',
+    );
+    expect(query.mock.calls[0][0]).toContain('FROM patient_documents WHERE id = $1');
   });
 
   it('staff sem jurisdição atribuída é classificado como cross-país sem consultar', async () => {

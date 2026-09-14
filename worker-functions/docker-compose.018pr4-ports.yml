@@ -1,0 +1,51 @@
+# Override de integração do PR-4 (spec 018 — foto/documento/consentimento de imagem do paciente).
+#
+# Sobe fake-gcs-server (2 buckets, memória) + aponta a API pra ele via STORAGE_EMULATOR_HOST —
+# NENHUM bucket real é tocado. Rodar com projeto e portas PRÓPRIOS (memória
+# `docker-compose-projeto-e-por-sessao.md`: o nome fixo `enlite-postgres` é compartilhado entre
+# worktrees):
+#
+#   docker compose -p pr4foto -f docker-compose.yml -f docker-compose.018pr4-ports.yml up -d
+#
+services:
+  postgres:
+    container_name: pr4foto-postgres
+    ports:
+      - "55432:5432"
+
+  fake-gcs:
+    image: fsouza/fake-gcs-server:1.52.2
+    command: ["-scheme", "http", "-public-host", "localhost:54443", "-external-url", "http://fake-gcs:4443"]
+    ports:
+      - "54443:4443"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4443/storage/v1/b"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - enlite-network
+
+  api:
+    container_name: pr4foto-api
+    ports:
+      - "58080:8080"
+    environment:
+      # NÃO `STORAGE_EMULATOR_HOST` — o `@google-cloud/storage` v7 lê essa env sozinho no
+      # construtor e derruba o `/storage/v1` do baseUrl, quebrando `delete()` (405) contra o
+      # fake-gcs-server (achado medido nesta mesma integração — ver PatientPhotoStorage.ts).
+      GCS_EMULATOR_HOST: "http://fake-gcs:4443"
+      GCS_PATIENT_PHOTOS_BUCKET: "enlite-patient-photos-pr4test"
+      GCS_PATIENT_DOCUMENTS_BUCKET: "enlite-patient-documents-pr4test"
+      GCP_PROJECT_ID: "enlite-test"
+      # Chave de service account FAKE (sem acesso real a nada) — só para o `getSignedUrl` v4 ter
+      # com que assinar localmente contra o fake-gcs-server (a assinatura V4 é criptografia local,
+      # não uma chamada de rede ao Google). Gerada ad-hoc para esta prova, fora do repo.
+      GOOGLE_APPLICATION_CREDENTIALS: "/tmp/fake-sa.json"
+    volumes:
+      - /tmp/fake-sa.json:/tmp/fake-sa.json:ro
+    depends_on:
+      fake-gcs:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy

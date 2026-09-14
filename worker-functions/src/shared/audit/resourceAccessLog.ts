@@ -23,7 +23,10 @@ import { logger } from '@shared/logging';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { currentDbContext, withSystemDbContext, type DbSessionContext } from '@shared/database/requestDbSession';
 
-export type ResourceType = 'patient' | 'worker';
+// 'patient_document' (spec 018, PR-4, D329; lex-pr4-documentos #10): trilha de leitura da PROVA
+// documental (resourceId = document_id, não patient_id — o país vem via patient_documents.country,
+// que o trigger de país já copia do paciente na gravação).
+export type ResourceType = 'patient' | 'worker' | 'patient_document';
 export type AccessOrigin = 'same_country' | 'group_grant' | 'system';
 
 /** Rótulo único de contexto de sistema desta trilha (um por ciclo de gravação). */
@@ -33,6 +36,7 @@ const SYSTEM_LABEL = 'job:resource-access-log';
 const COUNTRY_SOURCE: Record<ResourceType, string> = {
   patient: 'SELECT country FROM patients WHERE id = $1',
   worker: 'SELECT country FROM workers WHERE id = $1',
+  patient_document: 'SELECT country FROM patient_documents WHERE id = $1',
 };
 
 /**
