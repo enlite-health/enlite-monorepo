@@ -1,6 +1,22 @@
 import { Router, Request, Response } from 'express';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { ClaimController } from '../controllers/ClaimController';
+
+/**
+ * Chave por IP (com X-Forwarded-For como preferência) normalizada por
+ * `ipKeyGenerator`: em IPv6 cada cliente tem um /64 (às vezes /56) inteiro à
+ * disposição, então chavear pelo endereço exato deixa a mesma pessoa trocar
+ * de sufixo e furar o limite de OTP/confirm. Extraída (e exportada) para ser
+ * testável isoladamente — `express-rate-limit` não expõe o `keyGenerator` no
+ * handler montado.
+ */
+export function claimIpKey(req: Request): string {
+  return ipKeyGenerator(
+    (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ??
+      req.ip ??
+      'unknown',
+  );
+}
 
 /**
  * Rate limit para claim/start:
@@ -12,10 +28,7 @@ const claimStartRateLimit = rateLimit({
   max: 3,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) =>
-    (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ??
-    req.ip ??
-    'unknown',
+  keyGenerator: claimIpKey,
   message: { success: false, error: 'Too many OTP requests. Try again in 15 minutes.' },
 });
 
@@ -28,10 +41,7 @@ const claimConfirmRateLimit = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) =>
-    (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ??
-    req.ip ??
-    'unknown',
+  keyGenerator: claimIpKey,
   message: { success: false, error: 'Too many confirmation attempts. Try again in 15 minutes.' },
 });
 

@@ -9,7 +9,7 @@
  */
 
 import { Router, type Request, type Response, type NextFunction } from 'express';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import type { AccountLinkController } from './AccountLinkController';
 import type { AuthMiddleware } from '../identity/interfaces/middleware/AuthMiddleware';
 
@@ -21,8 +21,13 @@ function flagGate(req: Request, res: Response, next: NextFunction): void {
   next();
 }
 
-const ipKey = (req: Request): string =>
-  (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ?? req.ip ?? 'unknown';
+// `ipKeyGenerator` e não o endereço cru: em IPv6 cada cliente recebe um /64
+// (às vezes /56) inteiro, então chave por endereço exato deixa a mesma pessoa
+// trocar de sufixo e furar o limite de start/confirm. Exportada para teste.
+export const ipKey = (req: Request): string =>
+  ipKeyGenerator(
+    (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ?? req.ip ?? 'unknown',
+  );
 
 const startIpLimit = rateLimit({
   windowMs: 15 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false,

@@ -433,5 +433,24 @@ describe('família admin.workers — as 4 peças declaram célula', () => {
       expect(ingestRateLimitKey({ params: {}, ip: '10.0.0.1' } as unknown as express.Request)).toBe('ip:10.0.0.1');
       expect(ingestRateLimitKey({ params: {} } as unknown as express.Request)).toBe('ip:unknown');
     });
+
+    /**
+     * MORRE se o fallback voltar a usar `req.ip` cru: em IPv6 cada cliente tem
+     * um /64 (às vezes /56) inteiro à disposição — trocar só o sufixo furaria
+     * o limite porque cada endereço geraria uma chave diferente. Com
+     * `ipKeyGenerator`, dois endereços do MESMO /56 colapsam na MESMA chave.
+     */
+    it('sem workerId, dois IPv6 do mesmo /56 geram a MESMA chave (ipKeyGenerator, não req.ip cru)', () => {
+      const chave1 = ingestRateLimitKey({ params: {}, ip: '2001:db8:1:1::1' } as unknown as express.Request);
+      const chave2 = ingestRateLimitKey({ params: {}, ip: '2001:db8:1:1::2' } as unknown as express.Request);
+      expect(chave1).toBe(chave2);
+      expect(chave1).not.toBe('ip:2001:db8:1:1::1');
+    });
+
+    it('sem workerId, IPv6 de /56 diferente gera chave diferente', () => {
+      const chave1 = ingestRateLimitKey({ params: {}, ip: '2001:db8:1:1::1' } as unknown as express.Request);
+      const chave2 = ingestRateLimitKey({ params: {}, ip: '2001:db8:2:1::1' } as unknown as express.Request);
+      expect(chave1).not.toBe(chave2);
+    });
   });
 });
