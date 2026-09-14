@@ -163,6 +163,24 @@ describe('AdminTherapeuticProjectsController', () => {
       });
     });
 
+    it('200 leva `data.fieldClass` no topo — dono único é THERAPEUTIC_FIELD_CLASS (task 7.7)', async () => {
+      const repo = { listForPatient: jest.fn().mockResolvedValue([VERSAO]) };
+      const res = mockRes();
+      await ctrl(repo).list(mockReq({ params: { id: PATIENT_ID } }), res);
+      expect(corpoDaResposta(res).data.fieldClass).toEqual({
+        macro: ['contractedServiceId', 'diagnoses', 'clinicalContext', 'generalObjective', 'specificObjectiveIds', 'activityIds'],
+        micro: ['startDate', 'endDate', 'modality', 'contactRefs', 'careTeamIds'],
+      });
+    });
+
+    it('`fieldClass` não muda por versão nem por lista vazia — é fixo do domínio, não por paciente', async () => {
+      const repo = { listForPatient: jest.fn().mockResolvedValue([]) };
+      const res = mockRes();
+      await ctrl(repo).list(mockReq({ params: { id: PATIENT_ID } }), res);
+      expect(corpoDaResposta(res).data.versions).toEqual([]);
+      expect(corpoDaResposta(res).data.fieldClass.macro).toContain('clinicalContext');
+    });
+
     it('500 quando o repo rejeita com algo que NÃO é Error (String(err) no reportError)', async () => {
       const repo = { listForPatient: jest.fn().mockRejectedValue('rejeição crua') };
       const res = mockRes();

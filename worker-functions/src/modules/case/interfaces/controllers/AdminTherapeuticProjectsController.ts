@@ -36,6 +36,7 @@ import {
   updateCatalogItemSchemaFor,
 } from '../validators/therapeuticProjectSchemas';
 import type { TherapeuticCatalogKind } from '../../domain/TherapeuticProject';
+import { THERAPEUTIC_FIELD_CLASS } from '../../domain/TherapeuticProject';
 import { DiagnosisUnknownError } from '../../application/pathologySegments';
 import { TerminologyUnavailableError } from '@modules/terminology/domain/UnavailableTerminology';
 
@@ -120,7 +121,15 @@ export class AdminTherapeuticProjectsController {
           contacts: await this.resolveContacts(req, v.id, cells),
         })),
       );
-      res.status(200).json({ success: true, data: { versions: projected } });
+      res.status(200).json({
+        success: true,
+        data: {
+          versions: projected,
+          // task 7.7: dono único é THERAPEUTIC_FIELD_CLASS (domain) — o front NÃO copia a lista,
+          // lê aqui pra decidir quais campos da vigente renderizam como TEXTO na edição (D328/R5).
+          fieldClass: { macro: [...THERAPEUTIC_FIELD_CLASS.MACRO], micro: [...THERAPEUTIC_FIELD_CLASS.MICRO] },
+        },
+      });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminTherapeuticProjectsController:list', patientId: params.data.id });

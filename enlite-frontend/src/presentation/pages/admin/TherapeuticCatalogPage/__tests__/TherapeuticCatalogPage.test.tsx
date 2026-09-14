@@ -15,6 +15,9 @@ import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
 import type { TherapeuticCatalogItem, TherapeuticCatalogKind } from '@domain/entities/TherapeuticProject';
 
+// Esta tela administra só objetivos/atividades — `segments` não tem tela própria (task 7.7, fora do escopo).
+type ManagedCatalogKind = Exclude<TherapeuticCatalogKind, 'segments'>;
+
 const translations = ptBR as Record<string, any>;
 
 function t(key: string, opts?: any): string {
@@ -72,7 +75,7 @@ function comEnforcement(permissions: string[], enforcement: AuthzContract['enfor
   });
 }
 
-async function renderPage(kind: TherapeuticCatalogKind = 'specific-objectives') {
+async function renderPage(kind: ManagedCatalogKind = 'specific-objectives') {
   const utils = render(<TherapeuticCatalogPage kind={kind} />);
   await screen.findByTestId('therapeutic-catalog-table');
   return utils;

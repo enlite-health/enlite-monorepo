@@ -120,6 +120,9 @@ const versao = (over: Partial<TherapeuticProjectVersion> = {}): TherapeuticProje
   createdByName: 'Ana Fixture',
   createdAt: '2026-09-01T10:00:00Z',
   country: 'AR',
+  contactRefs: [],
+  careTeamIds: [],
+  contacts: [],
   ...over,
 });
 

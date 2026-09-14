@@ -7,6 +7,7 @@ import type {
   CreateTherapeuticProjectBody,
   TherapeuticCatalogItem,
   TherapeuticCatalogKind,
+  TherapeuticFieldClass,
   TherapeuticProjectVersion,
 } from '@domain/entities/TherapeuticProject';
 
@@ -67,13 +68,16 @@ class AdminTherapeuticProjectsApiServiceClass {
     return json.data;
   }
 
-  /** GET /api/admin/patients/:id/therapeutic-projects — todas as versões, mais recente primeiro. */
-  async listVersions(patientId: string): Promise<TherapeuticProjectVersion[]> {
-    const { versions } = await this.request<{ versions: TherapeuticProjectVersion[] }>(
+  /**
+   * GET /api/admin/patients/:id/therapeutic-projects — todas as versões, mais recente primeiro.
+   * `fieldClass` (task 7.7) é o espelho de `THERAPEUTIC_FIELD_CLASS` do backend — o form lê daqui
+   * para saber quais campos travam fora de `mode:'new'`; este client NÃO copia a lista.
+   */
+  async listVersions(patientId: string): Promise<{ versions: TherapeuticProjectVersion[]; fieldClass: TherapeuticFieldClass }> {
+    return this.request<{ versions: TherapeuticProjectVersion[]; fieldClass: TherapeuticFieldClass }>(
       'GET',
       `/api/admin/patients/${patientId}/therapeutic-projects`,
     );
-    return versions;
   }
 
   /**

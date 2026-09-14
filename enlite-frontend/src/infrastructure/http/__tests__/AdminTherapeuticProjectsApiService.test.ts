@@ -43,6 +43,8 @@ const CORPO: TherapeuticProjectVersionBody = {
   activityIds: ['a-1'],
   startDate: '2026-09-01',
   endDate: '2026-12-01',
+  contactRefs: [{ kind: 'RESPONSIBLE', id: 'resp-1' }],
+  careTeamIds: ['prof-1'],
 };
 
 describe('AdminTherapeuticProjectsApiService — cabeçalho e erros da fronteira', () => {
@@ -129,10 +131,11 @@ describe('AdminTherapeuticProjectsApiService — versões do projeto (URL exata)
     mockGetIdToken.mockResolvedValue('mock-token');
   });
 
-  it('listVersions: GET na coleção do paciente e devolve o array `versions` de dentro do envelope', async () => {
-    const f = mockFetch({ success: true, data: { versions: [{ id: VERSION_ID }] } });
+  it('listVersions: GET na coleção do paciente e devolve `{versions, fieldClass}` — o envelope completo (task 7.7)', async () => {
+    const fieldClass = { macro: ['clinicalContext'], micro: ['modality'] };
+    const f = mockFetch({ success: true, data: { versions: [{ id: VERSION_ID }], fieldClass } });
     const out = await AdminTherapeuticProjectsApiService.listVersions(PATIENT_ID);
-    expect(out).toEqual([{ id: VERSION_ID }]);
+    expect(out).toEqual({ versions: [{ id: VERSION_ID }], fieldClass });
     const [url, init] = chamada(f);
     expect(url).toBe(`${BASE}/api/admin/patients/${PATIENT_ID}/therapeutic-projects`);
     expect(init.method).toBe('GET');
@@ -192,6 +195,7 @@ describe('AdminTherapeuticProjectsApiService — os 3 catálogos (D299, lex C19)
   it.each([
     ['specific-objectives'],
     ['activities'],
+    ['segments'],
   ] as const)('listCatalog(%s): GET na rota do kind, devolve `items` de dentro do envelope', async (kind) => {
     const f = mockFetch({ success: true, data: { kind, items: [{ id: ITEM_ID, label: 'Opção' }] } });
     const out = await AdminTherapeuticProjectsApiService.listCatalog(kind);

@@ -41,6 +41,9 @@ const version: TherapeuticProjectVersion = {
   createdByName: 'Ana Sintética',
   createdAt: '2026-09-07T13:00:00.000Z',
   country: 'AR',
+  contactRefs: [],
+  careTeamIds: [],
+  contacts: [],
 };
 
 const fullInput: TherapeuticProjectPdfInput = {

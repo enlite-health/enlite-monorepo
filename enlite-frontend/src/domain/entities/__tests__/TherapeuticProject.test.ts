@@ -41,6 +41,9 @@ function versao(over: Partial<TherapeuticProjectVersion> = {}): TherapeuticProje
     createdByName: 'Ana',
     createdAt: '2026-09-01T10:00:00.000Z',
     country: 'AR',
+    contactRefs: [],
+    careTeamIds: [],
+    contacts: [],
     ...over,
   };
 }
@@ -85,8 +88,8 @@ describe('currentVersion — a versão "em andamento" do card (D299)', () => {
 });
 
 describe('constantes espelhadas do backend', () => {
-  it('os 2 kinds do catálogo — uma TELA e uma CÉLULA por lista; tipo de patologia NÃO é catálogo (deriva do CID-11, Gabriel 08/09)', () => {
-    expect(THERAPEUTIC_CATALOG_KINDS).toEqual(['specific-objectives', 'activities']);
+  it('os 3 kinds do catálogo — uma TELA e uma CÉLULA por lista; tipo de patologia NÃO é catálogo (deriva do CID-11, Gabriel 08/09)', () => {
+    expect(THERAPEUTIC_CATALOG_KINDS).toEqual(['specific-objectives', 'activities', 'segments']);
     expect(THERAPEUTIC_CATALOG_KINDS).not.toContain('pathology-types');
   });
 
@@ -94,6 +97,7 @@ describe('constantes espelhadas do backend', () => {
     expect(THERAPEUTIC_CATALOG_RESOURCE).toEqual({
       'specific-objectives': 'catalog_therapeutic_objectives',
       activities: 'catalog_therapeutic_activities',
+      segments: 'catalog_therapeutic_segments',
     });
     // Todo kind declarado tem recurso — senão a tela gatearia por `undefined`.
     for (const kind of THERAPEUTIC_CATALOG_KINDS) {

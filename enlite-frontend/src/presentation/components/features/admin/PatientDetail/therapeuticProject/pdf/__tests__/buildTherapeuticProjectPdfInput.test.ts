@@ -75,6 +75,9 @@ const VERSAO: TherapeuticProjectVersion = {
   createdByName: 'Ana Fixture',
   createdAt: '2026-09-01T10:00:00Z',
   country: 'AR',
+  contactRefs: [],
+  careTeamIds: [],
+  contacts: [],
 };
 
 const AGORA = new Date(2026, 8, 8, 14, 5); // 08/09/2026 14:05 — local, sem fuso
