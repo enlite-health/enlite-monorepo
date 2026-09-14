@@ -515,12 +515,16 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
   // Achado da stage (12/09/2026): o commit fbb3f765 trocou o `withActorContext` original de
   // `insertPatientAddress`/`AdminPatientAddressesController.updatePatientAddress` por
   // `db.connect()`/`this.db.connect()` cru — sem `app.user_country`, a policy da 411 recusa
-  // com 500 `rls_session_without_identity`. MORRE (sabotagem 12/09, ver commit desta branch:
-  // POST e PATCH voltaram a 500 com o connect cru; 2/2 falhas) se qualquer um dos dois voltar
-  // ao connect cru. Só o ambiente COM RLS ligada reproduz — por isso este teste, não um unit.
+  // com 500 `rls_session_without_identity`. Só o ambiente COM RLS ligada reproduz — por isso
+  // este teste, não um unit.
+  //
+  // O bloco do PATCH semeia o endereço DIRETO NO BANCO (como superuser, molde do (f) —
+  // `patient_contracted_services` semeado sem passar pela rota) em vez de depender do POST
+  // anterior: sabotar SÓ o controller (`updatePatientAddress`) tem que derrubar o PATCH sem
+  // depender do POST ter passado, e sabotar SÓ o `PatientAddressQueryHelper`
+  // (`insertPatientAddress`) tem que derrubar o POST sem arrastar o PATCH — 2 sabotagens
+  // separadas, cada uma isolando qual dos dois sites voltou ao connect cru.
   describe('(e2) POST/PATCH /api/admin/patients/:id/addresses', () => {
-    let enderecoId: string | undefined;
-
     it('staff AR cria endereço no SEU paciente → 201, e a LINHA nasce com o país do paciente', async () => {
       const res = await asStaffAR(`/api/admin/patients/${IDS.patientAR}/addresses`, {
         method: 'POST',
@@ -528,21 +532,13 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
       });
       const body = (await res.json()) as { success?: boolean; data?: { id?: string } };
       expect({ status: res.status, success: body.success }).toEqual({ status: 201, success: true });
-      enderecoId = body.data?.id;
+      const enderecoId = body.data?.id;
       expect(enderecoId).toBeTruthy();
 
       const row = await adminPool.query(`SELECT country FROM patient_addresses WHERE id = $1`, [enderecoId]);
       expect(row.rows[0]?.country).toBe('AR');
-    });
 
-    it('PATCH no mesmo endereço → 200, mesma transação com país', async () => {
-      const res = await asStaffAR(`/api/admin/patients/${IDS.patientAR}/addresses/${enderecoId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ neighborhood: 'Balvanera' }),
-      });
-      expect(res.status).toBe(200);
-      const row = await adminPool.query(`SELECT neighborhood FROM patient_addresses WHERE id = $1`, [enderecoId]);
-      expect(row.rows[0]?.neighborhood).toBe('Balvanera');
+      await adminPool.query(`DELETE FROM patient_addresses WHERE id = $1`, [enderecoId]);
     });
 
     it('staff AR no paciente BR → recusado e NADA gravado (a policy de país barra o INSERT)', async () => {
@@ -558,6 +554,55 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
         [IDS.patientBR],
       );
       expect(count.rows[0].n).toBe(0);
+    });
+
+    // PATCH sob RLS — endereços semeados DIRETO no banco (superuser), sem passar pelo POST:
+    // sabotar só o controller derruba estes 2 testes sem tocar no POST acima.
+    describe('PATCH — endereço semeado direto (independente do POST)', () => {
+      let enderecoId: string;
+      let outroId: string;
+
+      beforeEach(async () => {
+        const ins = await adminPool.query<{ id: string }>(
+          `INSERT INTO patient_addresses (patient_id, address_formatted, is_default) VALUES ($1, 'Av. Rivadavia 5000', true) RETURNING id`,
+          [IDS.patientAR],
+        );
+        enderecoId = ins.rows[0].id;
+        const ins2 = await adminPool.query<{ id: string }>(
+          `INSERT INTO patient_addresses (patient_id, address_formatted, is_default) VALUES ($1, 'Av. Callao 200', false) RETURNING id`,
+          [IDS.patientAR],
+        );
+        outroId = ins2.rows[0].id;
+      });
+
+      afterEach(async () => {
+        await adminPool.query(`DELETE FROM patient_addresses WHERE id = ANY($1)`, [[enderecoId, outroId]]);
+      });
+
+      it('PATCH no endereço semeado → 200, mesma transação com país', async () => {
+        const res = await asStaffAR(`/api/admin/patients/${IDS.patientAR}/addresses/${enderecoId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ neighborhood: 'Balvanera' }),
+        });
+        expect(res.status).toBe(200);
+        const row = await adminPool.query(`SELECT neighborhood FROM patient_addresses WHERE id = $1`, [enderecoId]);
+        expect(row.rows[0]?.neighborhood).toBe('Balvanera');
+      });
+
+      it('PATCH is_default=true no OUTRO endereço → demove o principal anterior NA MESMA TRANSAÇÃO', async () => {
+        const res = await asStaffAR(`/api/admin/patients/${IDS.patientAR}/addresses/${outroId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ is_default: true }),
+        });
+        expect(res.status).toBe(200);
+        const rows = await adminPool.query<{ id: string; is_default: boolean }>(
+          `SELECT id, is_default FROM patient_addresses WHERE id = ANY($1)`,
+          [[enderecoId, outroId]],
+        );
+        const porId = Object.fromEntries(rows.rows.map((r) => [r.id, r.is_default]));
+        expect(porId[enderecoId]).toBe(false);
+        expect(porId[outroId]).toBe(true);
+      });
     });
   });
 
