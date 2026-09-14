@@ -55,6 +55,10 @@ export class GCSStorageService {
     return admin.storage().bucket(this.bucketName);
   }
 
+  getBucketName(): string {
+    return this.bucketName;
+  }
+
   async generateAdditionalUploadSignedUrl(
     workerId: string,
     contentType = 'application/pdf',

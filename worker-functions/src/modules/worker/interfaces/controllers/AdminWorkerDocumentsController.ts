@@ -7,6 +7,7 @@ import { UploadWorkerDocumentsUseCase } from '../../application/UploadWorkerDocu
 import { ValidateWorkerDocumentUseCase } from '../../application/ValidateWorkerDocumentUseCase';
 import { IWorkerRepository } from '../../ports/IWorkerRepository';
 import { maskEmailForLog } from '@shared/utils/emailMask';
+import { assertDocumentPathBelongsToWorker } from '../../domain/documentPathGuard';
 
 const VALID_DOC_TYPES: DocumentType[] = [
   'resume_cv', 'identity_document', 'identity_document_back', 'criminal_record',
@@ -133,10 +134,26 @@ export class AdminWorkerDocumentsController {
     try {
       const admin = this.getAdminUser(req);
       if (!admin) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
+      const { id: workerId } = req.params;
       const { filePath } = req.body as { filePath: unknown };
 
       if (!filePath || typeof filePath !== 'string') {
         res.status(400).json({ success: false, error: 'filePath is required' }); return;
+      }
+
+      const workerResult = await this.workerRepo.findById(workerId);
+      if (workerResult.isFailure || !workerResult.getValue()) {
+        res.status(404).json({ success: false, error: 'Worker not found' }); return;
+      }
+
+      const existing = await this.documentsRepo.findByWorkerId(workerId);
+      const ownedPaths = existing
+        ? Object.values(DOC_JS_FIELD).map((field) => (existing as unknown as Record<string, string | undefined>)[field])
+        : [];
+      const belongsToWorker = assertDocumentPathBelongsToWorker(filePath, this.gcs.getBucketName(), ownedPaths);
+      if (!belongsToWorker) {
+        console.warn('[AdminWorkerDocs.getViewSignedUrl] path rejected: not owned by worker', workerId);
+        res.status(404).json({ success: false, error: 'Document not found' }); return;
       }
 
       const signedUrl = await this.gcs.generateViewSignedUrl(filePath);
