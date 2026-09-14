@@ -223,6 +223,12 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'patient_therapeutic_project:write':
     'Criar uma nova versão do projeto terapêutico ("Novo" = major seguinte, "Editar" = minor seguinte) '
     + 'e anular uma versão. Exige também `patient_clinical:write` — o corpo carrega texto clínico.',
+  // `exportGate` fica dentro de closure condicional (`?purpose=export`) em
+  // `adminTherapeuticProjectsRoutes.ts` — o scanner de rota não vê essa chamada de
+  // `perm.require`, então esta célula só chega ao catálogo por `cellsForaDeRota`.
+  'patient_therapeutic_project:export':
+    'Exportar o PDF de uma versão do projeto terapêutico (vigente ou antiga). Exige também '
+    + '`patient_therapeutic_project:read` — a leitura da versão é pré-requisito do export.',
   'catalog_therapeutic_objectives:read':
     'Ver o catálogo de OBJETIVOS ESPECÍFICOS do projeto terapêutico (lista global, sem dado de paciente).',
   'catalog_therapeutic_objectives:write':
