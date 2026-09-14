@@ -130,10 +130,10 @@ export class AdminPatientAddressesController {
     }
 
     try {
-      // `withActorContext` (D95), não `this.db.connect()` cru: o client cru chega SEM
-      // `app.user_country` e a policy de país da 411 recusa com `rls_session_without_identity`
-      // — o 500 medido na stage em 12/09 (commit fbb3f765 trocou o `withActorContext` original
-      // por este connect cru). O helper reusa o client fixado da request ou aplica `SET LOCAL`;
+      // `withActorContext` (D95), não `this.db.connect()` cru: abre a transação e carimba o
+      // ator (`app.current_uid`/`app.change_source`) para os triggers de histórico — hoje é só
+      // isso, sem RLS de país (a policy da migration 411 ainda não chegou a este ambiente).
+      // Quando ela chegar, este mesmo helper passa a aplicar o país via `SET LOCAL`.
       // BEGIN/COMMIT/ROLLBACK são dele.
       const rowMissing = await withActorContext(this.db, async (client) => {
         // Troca atômica (spec 019): desmarca o principal anterior NA MESMA transação, antes do

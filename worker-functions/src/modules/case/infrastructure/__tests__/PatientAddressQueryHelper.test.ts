@@ -1,9 +1,9 @@
 /**
  * PatientAddressQueryHelper — spec 019. Molde: PatientContractedServiceRepository.test.ts
- * (client mockado; `withActorContext` roda de verdade — sem ALS/contexto de país no processo
- * de teste ele reduz a BEGIN/.../COMMIT no mesmo client, exatamente como antes da mudança —
- * a prova de que a transação não abre MAIS de um client é o e2e com RLS ligada,
- * `tests/e2e/abac-admin-routes.test.ts`, bloco (e2)).
+ * (client mockado; `withActorContext` roda de verdade — sem ALS no processo de teste ele reduz
+ * a BEGIN/.../COMMIT no mesmo client, carimbando só o ator quando houver um explícito. Hoje não
+ * há RLS de país neste ambiente (migration 411 ainda não chegou aqui); quando chegar, o mesmo
+ * helper passa a aplicar o país via `SET LOCAL` e um e2e com RLS ligada prova o isolamento).
  */
 import type { Pool, PoolClient } from 'pg';
 import type { GeocodingService } from '../../../../infrastructure/services/GeocodingService';
