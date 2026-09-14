@@ -57,7 +57,7 @@ describe('TherapeuticProjectContactsRepository.resolve', () => {
     const { cli, chamadas } = cliente([]);
     const repo = new TherapeuticProjectContactsRepository();
     const out = await repo.resolve(VERSION_ID, ['patient_family:read'], cli);
-    expect(out).toEqual({ contacts: [], containersServed: new Set() });
+    expect(out).toEqual({ contacts: [], containersServed: new Set(), contactRefs: [], careTeamIds: [] });
     expect(chamadas).toHaveLength(1);
   });
 
@@ -204,6 +204,48 @@ describe('TherapeuticProjectContactsRepository.resolve', () => {
     expect(mockPoolQuery).not.toHaveBeenCalled();
     const out = await repo.resolve(VERSION_ID, ['patient_family:read']);
     expect(mockPoolQuery).toHaveBeenCalledWith(expect.stringContaining('FROM patient_therapeutic_project_contacts'), [VERSION_ID]);
-    expect(out).toEqual({ contacts: [], containersServed: new Set() });
+    expect(out).toEqual({ contacts: [], containersServed: new Set(), contactRefs: [], careTeamIds: [] });
+  });
+
+  /**
+   * Conserto 14/09 (achado do gate): `contactRefs`/`careTeamIds` crus (contrato
+   * `therapeutic-project.md:41`) — a MESMA `links.rows` já lida pro `contacts`, sem 2ª query.
+   */
+  describe('contactRefs/careTeamIds (conserto 14/09 — GET devolve os ids crus da ligação)', () => {
+    it('separa CARE_TEAM (`careTeamIds: string[]`) dos outros 3 kinds (`contactRefs: {kind,id}[]`), na ordem de `sort_order`', async () => {
+      const { cli, chamadas } = cliente([
+        { contact_kind: 'RESPONSIBLE', responsible_id: 'r-1', sort_order: 0 },
+        { contact_kind: 'EXTERNAL', external_contact_id: 'x-1', sort_order: 1 },
+        { contact_kind: 'COVERAGE', coverage_contact_id: 'c-1', sort_order: 2 },
+        { contact_kind: 'CARE_TEAM', professional_id: 'p-1', sort_order: 3 },
+        { contact_kind: 'CARE_TEAM', professional_id: 'p-2', sort_order: 4 },
+      ]);
+      const repo = new TherapeuticProjectContactsRepository();
+      const out = await repo.resolve(VERSION_ID, [], cli);
+      expect(out.contactRefs).toEqual([
+        { kind: 'RESPONSIBLE', id: 'r-1' },
+        { kind: 'EXTERNAL', id: 'x-1' },
+        { kind: 'COVERAGE', id: 'c-1' },
+      ]);
+      expect(out.careTeamIds).toEqual(['p-1', 'p-2']);
+      // Sem célula nenhuma (`[]`) — nenhuma tabela de origem é tocada, só o SELECT da ligação.
+      expect(chamadas).toHaveLength(1);
+    });
+
+    it('contactRefs/careTeamIds saem CHEIOS mesmo sem a célula de origem (redigido) e com contato inativo — só `contacts` (nome/telefone) filtra por célula/status, nunca o kind/id (lex #7 C5: kind/id não é o que a regra protege)', async () => {
+      const { cli } = cliente(
+        [
+          { contact_kind: 'RESPONSIBLE', responsible_id: 'r-1', sort_order: 0 },
+          { contact_kind: 'CARE_TEAM', professional_id: 'p-1', sort_order: 1 },
+        ],
+        { CARE_TEAM: [{ id: 'p-1', name: 'Dr. X', specialty: null, phone_encrypted: null, active: false }] },
+      );
+      const repo = new TherapeuticProjectContactsRepository();
+      // Sem `patient_family:read` (RESPONSIBLE some em `contacts`) e CARE_TEAM inativo.
+      const out = await repo.resolve(VERSION_ID, ['patient_care_team:read'], cli);
+      expect(out.contacts).toEqual([{ kind: 'RESPONSIBLE', id: 'r-1', redacted: true }, { kind: 'CARE_TEAM', id: 'p-1', inactive: true }]);
+      expect(out.contactRefs).toEqual([{ kind: 'RESPONSIBLE', id: 'r-1' }]);
+      expect(out.careTeamIds).toEqual(['p-1']);
+    });
   });
 });

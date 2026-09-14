@@ -28,7 +28,7 @@ import {
   missingCoverageDirectProfessionalCell,
   PATIENT_CLINICAL_WRITE_CELL,
 } from '../../application/therapeuticProjectAccess';
-import type { ResolvedTherapeuticContact } from '../../domain/TherapeuticProject';
+import type { ContactRef, ResolvedTherapeuticContact } from '../../domain/TherapeuticProject';
 import {
   createTherapeuticProjectSchema,
   annulTherapeuticProjectSchema,
@@ -90,19 +90,25 @@ export class AdminTherapeuticProjectsController {
     return AuthMiddleware.getAuthContext(req)?.principal.id ?? 'unknown';
   }
 
-  /** Resolve os contatos de UMA versão + acumula os containers servidos em `req` para a trilha (lex C6). */
+  /**
+   * Resolve os contatos de UMA versão + acumula os containers servidos em `req` para a trilha
+   * (lex C6). Conserto 14/09 (achado do gate): `contactRefs`/`careTeamIds` (contrato
+   * `therapeutic-project.md:41`) vêm da MESMA consulta de `contacts.resolve` — nunca uma 2ª
+   * query — pra "Editar" a vigente reconstruir a seleção sem depender do `contacts` resolvido
+   * (que some/redige nome-telefone, mas nunca o `kind`/`id`).
+   */
   private async resolveContacts(
     req: RequestWithTherapeuticContactContainers,
     versionId: string,
     cells: readonly string[] | null | undefined,
-  ): Promise<ResolvedTherapeuticContact[]> {
-    const { contacts, containersServed } = await this.contacts.resolve(versionId, cells);
+  ): Promise<{ contacts: ResolvedTherapeuticContact[]; contactRefs: ContactRef[]; careTeamIds: string[] }> {
+    const { contacts, containersServed, contactRefs, careTeamIds } = await this.contacts.resolve(versionId, cells);
     if (containersServed.size > 0) {
       const acc = new Set(req.therapeuticContactContainers ?? []);
       for (const c of containersServed) acc.add(c);
       req.therapeuticContactContainers = Array.from(acc);
     }
-    return contacts;
+    return { contacts, contactRefs, careTeamIds };
   }
 
   /** GET /patients/:id/therapeutic-projects */
@@ -116,10 +122,10 @@ export class AdminTherapeuticProjectsController {
       const versions = await this.repo.listForPatient(params.data.id);
       const cells = cellsOfRequest(req);
       const projected = await Promise.all(
-        versions.map(async (v) => ({
-          ...projectTherapeuticVersionForActor(v, cells),
-          contacts: await this.resolveContacts(req, v.id, cells),
-        })),
+        versions.map(async (v) => {
+          const { contacts, contactRefs, careTeamIds } = await this.resolveContacts(req, v.id, cells);
+          return { ...projectTherapeuticVersionForActor(v, cells), contactRefs, careTeamIds, contacts };
+        }),
       );
       res.status(200).json({
         success: true,
@@ -154,8 +160,8 @@ export class AdminTherapeuticProjectsController {
       // lex C8(a): a permissão de leitura da versão ANTIGA é a MESMA da vigente — nenhum ramo
       // especial por `annulledAt`/"não é a última": a projeção e a resolução de contatos são
       // por CÉLULA, sempre, nunca por status da versão.
-      const contacts = await this.resolveContacts(req, version.id, cells);
-      res.status(200).json({ success: true, data: { ...projectTherapeuticVersionForActor(version, cells), contacts } });
+      const { contacts, contactRefs, careTeamIds } = await this.resolveContacts(req, version.id, cells);
+      res.status(200).json({ success: true, data: { ...projectTherapeuticVersionForActor(version, cells), contactRefs, careTeamIds, contacts } });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminTherapeuticProjectsController:get', patientId: params.data.id, versionId: params.data.vid });

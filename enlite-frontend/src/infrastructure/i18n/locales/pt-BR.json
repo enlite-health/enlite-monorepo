@@ -3503,6 +3503,7 @@
           "loadingCatalogs": "Carregando catálogos…",
           "discardConfirm": "Descartar as alterações não salvas?",
           "redactedCannotEdit": "Você não tem permissão para ver o texto clínico desta versão; não dá para criar uma nova versão a partir dela.",
+          "contactRemovedInactive": "Contato dado de baixa — não é incluído na nova versão: {{kinds}}.",
           "errors": {
             "forbidden": "Você não tem permissão para escrever o projeto terapêutico (precisa também da célula clínica).",
             "catalogItemsUnknown": "Alguma opção escolhida já não está ativa no catálogo. Escolha de novo.",

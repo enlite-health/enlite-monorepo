@@ -459,4 +459,52 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
     const total = await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM therapeutic_segments WHERE label LIKE 'E2E PR7 llamar%'`);
     expect(total.rows[0].n).toBe(0);
   });
+
+  it('10. conserto 14/09 (achado do gate): GET devolve `contactRefs`/`careTeamIds` CRUS (lista e versão isolada), e editar a vigente reenviando os MESMOS refs lidos do GET mantém o contato na minor nova', async () => {
+    // Contato PRÓPRIO deste teste (self-contained — não reaproveita `externalContactId`, que os
+    // testes 1/4/5 já deixam INATIVO nesta suíte).
+    const contatoAtivo = (await pool.query<{ id: string }>(
+      `INSERT INTO patient_external_contacts (patient_id, relation, name, phone_encrypted, created_by)
+       VALUES ($1, 'NEIGHBOR', 'Amiga Sintética Teste 10', $2, 'e2e-018pr7') RETURNING id`,
+      [PATIENT, cifrar('+54 11 0000-0009')],
+    )).rows[0].id;
+
+    const criado = await chamar('POST', BASE(), U.completa, { mode: 'new', version: versionBody({ contactRefs: [{ kind: 'EXTERNAL', id: contatoAtivo }] }) });
+    expect(criado.status).toBe(201);
+    const vidMajor = criado.body.data.id;
+
+    // GET de uma versão isolada já devolve `contactRefs` cru — não só `contacts` resolvido.
+    const lido = await chamar('GET', `${BASE()}/${vidMajor}`, U.completa);
+    expect(lido.status).toBe(200);
+    expect(lido.body.data.contactRefs).toEqual([{ kind: 'EXTERNAL', id: contatoAtivo }]);
+    expect(lido.body.data.careTeamIds).toEqual([]);
+    expect(lido.body.data.contacts).toEqual([{ kind: 'EXTERNAL', id: contatoAtivo, name: 'Amiga Sintética Teste 10', phone: '+54 11 0000-0009', relation: 'NEIGHBOR' }]);
+
+    // GET da LISTA: a MESMA versão, dentro de `data.versions`, também carrega `contactRefs`.
+    const lista = await chamar('GET', BASE(), U.completa);
+    expect(lista.status).toBe(200);
+    const naLista = (lista.body.data.versions as Array<{ id: string; contactRefs: unknown; careTeamIds: unknown }>).find((v) => v.id === vidMajor);
+    expect(naLista?.contactRefs).toEqual([{ kind: 'EXTERNAL', id: contatoAtivo }]);
+    expect(naLista?.careTeamIds).toEqual([]);
+
+    // "Editar" a vigente trocando só a modalidade (MICRO), REENVIANDO `contactRefs`/`careTeamIds`
+    // tal como o GET devolveu — é exatamente o que `TherapeuticProjectForm.tsx` (`keptIdsOfKind`)
+    // faz agora com um contato ATIVO: o contato segue presente na minor nova.
+    const editado = await chamar('POST', BASE(), U.completa, {
+      mode: 'edit',
+      fromVersionId: vidMajor,
+      version: versionBody({ modality: 'ONLINE', contactRefs: lido.body.data.contactRefs, careTeamIds: lido.body.data.careTeamIds }),
+    });
+    expect(editado.status).toBe(201);
+    expect(editado.body.data.editedFromVersionId).toBe(vidMajor);
+    const vidMinor = editado.body.data.id;
+
+    const relida = await chamar('GET', `${BASE()}/${vidMinor}`, U.completa);
+    expect(relida.body.data.contactRefs).toEqual([{ kind: 'EXTERNAL', id: contatoAtivo }]);
+    expect(relida.body.data.contacts).toEqual([{ kind: 'EXTERNAL', id: contatoAtivo, name: 'Amiga Sintética Teste 10', phone: '+54 11 0000-0009', relation: 'NEIGHBOR' }]);
+
+    // A MAJOR original (v1.0 deste teste) continua intocada — imutabilidade da versão de origem.
+    const original = await chamar('GET', `${BASE()}/${vidMajor}`, U.completa);
+    expect(original.body.data.contactRefs).toEqual([{ kind: 'EXTERNAL', id: contatoAtivo }]);
+  });
 });

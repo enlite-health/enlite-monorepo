@@ -11,7 +11,7 @@
 import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
-import type { ResolvedTherapeuticContact, ResolvedTherapeuticContactKind } from '../domain/TherapeuticProject';
+import type { ContactRef, ContactRefKind, ResolvedTherapeuticContact, ResolvedTherapeuticContactKind } from '../domain/TherapeuticProject';
 import { canReadPatientContainer } from './../application/patientContainerAccess';
 import { containerOfContactKind } from '../application/therapeuticProjectAccess';
 
@@ -28,6 +28,15 @@ interface LinkRow {
 export interface ResolvedTherapeuticContacts {
   contacts: ResolvedTherapeuticContact[];
   containersServed: ReadonlySet<'family' | 'coverage' | 'care_team'>;
+  /**
+   * Os mesmos `kind`+`id` da ligação, CRUS (contrato `therapeutic-project.md:41`) — o GET devolve
+   * isso ao lado de `contacts` pra "Editar" reconstruir a seleção sem depender do resolvido (que
+   * pode vir redigido/inativo). `kind`/`id` NÃO são dado sensível por si (é o que `contacts` já
+   * expõe mesmo redigido/inativo — lex-pr7 C5 só protege nome/telefone) — por isso, ao contrário de
+   * `contacts`, não passa pela checagem de célula: sempre as `links.rows` inteiras.
+   */
+  contactRefs: ContactRef[];
+  careTeamIds: string[];
 }
 
 const KIND_TO_CONTAINER = {
@@ -59,7 +68,16 @@ export class TherapeuticProjectContactsRepository {
         ORDER BY sort_order ASC`,
       [versionId],
     );
-    if (links.rows.length === 0) return { contacts: [], containersServed: new Set() };
+    if (links.rows.length === 0) return { contacts: [], containersServed: new Set(), contactRefs: [], careTeamIds: [] };
+
+    // Deriva DESTA mesma `links.rows` (sem 2ª query) — `refIdOf` é a mesma regra do INSERT
+    // (`TherapeuticProjectRepository.CONTACT_COLUMN`), lida de volta.
+    const refIdOf = (row: LinkRow): string =>
+      (row.responsible_id ?? row.external_contact_id ?? row.coverage_contact_id ?? row.professional_id) as string;
+    const contactRefs: ContactRef[] = links.rows
+      .filter((r) => r.contact_kind !== 'CARE_TEAM')
+      .map((r) => ({ kind: r.contact_kind as ContactRefKind, id: refIdOf(r) }));
+    const careTeamIds: string[] = links.rows.filter((r) => r.contact_kind === 'CARE_TEAM').map(refIdOf);
 
     const containersServed = new Set<'family' | 'coverage' | 'care_team'>();
     const contacts: ResolvedTherapeuticContact[] = [];
@@ -102,7 +120,7 @@ export class TherapeuticProjectContactsRepository {
     const orderById = new Map(links.rows.map((r, i) => [`${r.contact_kind}:${r.responsible_id ?? r.external_contact_id ?? r.coverage_contact_id ?? r.professional_id}`, i]));
     contacts.sort((a, b) => orderById.get(`${a.kind}:${a.id}`)! - orderById.get(`${b.kind}:${b.id}`)!);
 
-    return { contacts, containersServed };
+    return { contacts, containersServed, contactRefs, careTeamIds };
   }
 
   private async fetchOrigins(

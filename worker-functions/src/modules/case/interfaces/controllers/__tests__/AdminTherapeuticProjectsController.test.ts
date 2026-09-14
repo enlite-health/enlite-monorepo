@@ -95,7 +95,7 @@ function mockRes(): Response & { status: jest.Mock; json: jest.Mock } {
 }
 /** Stub de `TherapeuticProjectContactsRepository`: por padrão, versão sem contato nenhum (lex C5/C6). */
 function stubContacts(): Record<string, unknown> {
-  return { resolve: jest.fn().mockResolvedValue({ contacts: [], containersServed: new Set() }) };
+  return { resolve: jest.fn().mockResolvedValue({ contacts: [], containersServed: new Set(), contactRefs: [], careTeamIds: [] }) };
 }
 /** Stub de `PatientCoverageEmergencyContactRepository`: por padrão, nenhum `COVERAGE` é `DIRECT_PROFESSIONAL`. */
 function stubCoverageContacts(kinds: Record<string, string> = {}): Record<string, unknown> {
@@ -188,6 +188,24 @@ describe('AdminTherapeuticProjectsController', () => {
       expect(res.status).toHaveBeenCalledWith(500);
       expect((reportError as jest.Mock).mock.calls[0][0].message).toBe('rejeição crua');
     });
+
+    it('200 devolve `contactRefs`/`careTeamIds` CRUS em CADA versão da lista (conserto 14/09)', async () => {
+      const repo = { listForPatient: jest.fn().mockResolvedValue([VERSAO]) };
+      const contacts = {
+        resolve: jest.fn().mockResolvedValue({
+          contacts: [{ kind: 'CARE_TEAM', id: 'prof-1', name: 'Dra. Souza', phone: null }],
+          containersServed: new Set(['care_team']),
+          contactRefs: [],
+          careTeamIds: ['prof-1'],
+        }),
+      };
+      const res = mockRes();
+      await ctrl(repo, {}, contacts).list(mockReq({ params: { id: PATIENT_ID } }), res);
+      const [v] = corpoDaResposta(res).data.versions;
+      expect(v.contactRefs).toEqual([]);
+      expect(v.careTeamIds).toEqual(['prof-1']);
+      expect(v.contacts).toEqual([{ kind: 'CARE_TEAM', id: 'prof-1', name: 'Dra. Souza', phone: null }]);
+    });
   });
 
   describe('get', () => {
@@ -221,6 +239,8 @@ describe('AdminTherapeuticProjectsController', () => {
         resolve: jest.fn().mockResolvedValue({
           contacts: [{ kind: 'RESPONSIBLE', id: PAT_ID, name: 'Ana', phone: '+54...' }],
           containersServed: new Set(['family']),
+          contactRefs: [{ kind: 'RESPONSIBLE', id: PAT_ID }],
+          careTeamIds: [],
         }),
       };
       const res = mockRes();
@@ -229,6 +249,22 @@ describe('AdminTherapeuticProjectsController', () => {
       expect(contacts.resolve).toHaveBeenCalledWith(VERSION_ID, ['patient_family:read']);
       expect(corpoDaResposta(res).data.contacts).toEqual([{ kind: 'RESPONSIBLE', id: PAT_ID, name: 'Ana', phone: '+54...' }]);
       expect((req as unknown as { therapeuticContactContainers: string[] }).therapeuticContactContainers).toEqual(['family']);
+    });
+
+    it('200 devolve `contactRefs`/`careTeamIds` CRUS ao lado de `contacts` (conserto 14/09 — editar a vigente precisa reconstruir a seleção)', async () => {
+      const repo = { findById: jest.fn().mockResolvedValue(VERSAO) };
+      const contacts = {
+        resolve: jest.fn().mockResolvedValue({
+          contacts: [{ kind: 'RESPONSIBLE', id: PAT_ID, redacted: true }],
+          containersServed: new Set(),
+          contactRefs: [{ kind: 'RESPONSIBLE', id: PAT_ID }],
+          careTeamIds: ['prof-1'],
+        }),
+      };
+      const res = mockRes();
+      await ctrl(repo, {}, contacts).get(mockReq({ params: { id: PATIENT_ID, vid: VERSION_ID }, permissionCells: [] }), res);
+      expect(corpoDaResposta(res).data.contactRefs).toEqual([{ kind: 'RESPONSIBLE', id: PAT_ID }]);
+      expect(corpoDaResposta(res).data.careTeamIds).toEqual(['prof-1']);
     });
 
     it('200 numa versão NÃO vigente: a permissão de contatos é a MESMA da vigente (lex C8(a)) — nenhum ramo por status', async () => {

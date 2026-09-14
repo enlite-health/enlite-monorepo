@@ -3582,6 +3582,7 @@
           "loadingCatalogs": "Cargando catálogos…",
           "discardConfirm": "¿Descartar los cambios sin guardar?",
           "redactedCannotEdit": "No tenés permiso para ver el texto clínico de esta versión; no se puede crear una nueva versión a partir de ella.",
+          "contactRemovedInactive": "Contacto dado de baja — no se incluye en la nueva versión: {{kinds}}.",
           "errors": {
             "forbidden": "No tenés permiso para escribir el proyecto terapéutico (hace falta también la celda clínica).",
             "catalogItemsUnknown": "Alguna opción elegida ya no está activa en el catálogo. Volvé a elegir.",

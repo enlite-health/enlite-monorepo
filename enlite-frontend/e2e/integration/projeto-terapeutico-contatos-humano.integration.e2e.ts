@@ -447,3 +447,221 @@ test.describe('spec 018/PR-7 — projeto terapêutico: contatos por seleção, M
     return out ? out.split(',') : [];
   }
 });
+
+/**
+ * Conserto 14/09 (achado do gate, decisão do Gabriel): dois cenários próprios, self-contained
+ * (patient/contatos/grupo dedicados — não entram na cadeia serial do describe acima):
+ *   1. "editar a vigente pela tela mudando só a modalidade mantém os 2 contatos na 1.1" — prova
+ *      que `GET .../therapeutic-projects` devolve `contactRefs`/`careTeamIds` e que o form os usa
+ *      pra reconstruir a seleção (não parte de vazio).
+ *   2. "editar depois de desativar o familiar" — aviso `tp-form-contact-removed` visível, a minor
+ *      nova (1.x) salva SEM o familiar (equipe intacta), e as versões de origem (1.0/1.1) ficam
+ *      byte-a-byte as mesmas linhas (imutabilidade).
+ * V1.0 nasce por API (setup, não o comportamento sob teste — mesmo molde do `alt 1`/`alt 3` acima,
+ * que já fazem `request.post` direto); a EDIÇÃO em si (o que se prova) é 100% humana.
+ */
+test.describe('spec 018/PR-7 — conserto 14/09: editar a vigente mantém contatos; contato inativo sai com aviso @integration', () => {
+  test.describe.configure({ mode: 'serial' });
+  test.setTimeout(300_000);
+
+  let seed: { patientId: string; addressId: string; stamp: string };
+  let serviceId: string;
+  let familiarId = '';
+  let profissionalId = '';
+  let objId = '';
+  let actId = '';
+  let v10 = '';
+  let v10CreatedAt = '';
+  let v11 = '';
+  let v11CreatedAt = '';
+
+  const FAMILIAR = 'Familiar Conserto14';
+  const PROFISSIONAL = 'Profesional Conserto14';
+  const uid = `e2e-pr7-c14-${RUN_ID}`;
+  const email = `${uid}@e2e.test`;
+  let groupId = '';
+
+  const auth = () => ({ Authorization: `Bearer ${tokenFor({ uid, email, role: 'admin', country: 'AR' })}` });
+  const corpoBase = (over: Record<string, unknown> = {}) => ({
+    contractedServiceId: serviceId,
+    modality: 'IN_PERSON',
+    diagnoses: [{ uri: ICD_URI, title: ICD_TITLE }],
+    clinicalContext: 'Sintesis clinica conserto 14/09',
+    generalObjective: 'Objetivo general conserto 14/09',
+    specificObjectiveIds: [objId],
+    activityIds: [actId],
+    startDate: '2026-01-09',
+    endDate: '2026-12-31',
+    contactRefs: [{ kind: 'EXTERNAL', id: familiarId }],
+    careTeamIds: [profissionalId],
+    ...over,
+  });
+
+  test.beforeAll(async ({ request }) => {
+    seed = seedActivatablePatient(711000); // faixa própria — 700000-709999 e 710000-719999 são de outros arquivos
+    seedIcd(); // idempotente (ON CONFLICT) — reaproveita ICD_URI/RELEASE já seedados pelo describe acima
+    serviceId = runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, created_by, updated_by) VALUES ('${seed.patientId}', 'CAREGIVER', 20, '${seed.addressId}', 'e2e-018-pr7', 'e2e-018-pr7') RETURNING id`).split('\n')[0].trim();
+    expect(serviceId).toMatch(/^[0-9a-f-]{36}$/);
+    familiarId = runSQL(`INSERT INTO patient_external_contacts (patient_id, relation, name, active, created_by) VALUES ('${seed.patientId}', 'OTHER', '${FAMILIAR}', true, 'e2e-018-pr7') RETURNING id`).split('\n')[0].trim();
+    profissionalId = runSQL(`INSERT INTO patient_professionals (patient_id, name, source, active, created_by, specialty) VALUES ('${seed.patientId}', '${PROFISSIONAL}', 'admin_manual', true, 'e2e-018-pr7', 'PHYSIOTHERAPIST') RETURNING id`).split('\n')[0].trim();
+    // Catálogo GLOBAL (não por paciente) — qualquer item ATIVO serve; os outros describes deste
+    // arquivo já provam a seleção de catálogo em si.
+    objId = scalar(`SELECT id FROM therapeutic_specific_objectives WHERE active ORDER BY sort_order LIMIT 1`);
+    actId = scalar(`SELECT id FROM therapeutic_activities WHERE active ORDER BY sort_order LIMIT 1`);
+    expect(objId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(actId).toMatch(/^[0-9a-f-]{36}$/);
+
+    psql(`INSERT INTO iam.permissions (resource, action, description, category) VALUES
+            ('patient', 'read', 'e2e PR-7 c14', 'Pacientes'),
+            ('patient_therapeutic_project', 'read', 'e2e PR-7 c14', 'Pacientes'),
+            ('patient_therapeutic_project', 'write', 'e2e PR-7 c14', 'Pacientes'),
+            ('patient_clinical', 'read', 'e2e PR-7 c14', 'Pacientes'),
+            ('patient_clinical', 'write', 'e2e PR-7 c14', 'Pacientes'),
+            ('patient_family', 'read', 'e2e PR-7 c14', 'Pacientes'),
+            ('patient_family', 'write', 'e2e PR-7 c14', 'Pacientes'),
+            ('patient_care_team', 'read', 'e2e PR-7 c14', 'Pacientes'),
+            ('patient_services', 'read', 'e2e PR-7 c14', 'Pacientes'),
+            ('patient_coverage', 'read', 'e2e PR-7 c14', 'Pacientes'),
+            ('patient_address', 'read', 'e2e PR-7 c14', 'Pacientes'),
+            ('patient_identity', 'read', 'e2e PR-7 c14', 'Pacientes'),
+            ('catalog_therapeutic_objectives', 'read', 'e2e PR-7 c14', 'Pacientes'),
+            ('catalog_therapeutic_activities', 'read', 'e2e PR-7 c14', 'Pacientes'),
+            ('catalog_therapeutic_segments', 'read', 'e2e PR-7 c14', 'Pacientes')
+          ON CONFLICT DO NOTHING`);
+    groupId = seedStaffInGroup({ uid, email, groupName: `PR7 Conserto14 ${RUN_ID}`, country: 'AR' }).groupId;
+    for (const [resource, action] of [
+      ['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write'],
+      ['patient_clinical', 'read'], ['patient_clinical', 'write'], ['patient_family', 'read'], ['patient_family', 'write'],
+      ['patient_care_team', 'read'], ['patient_services', 'read'], ['patient_coverage', 'read'], ['patient_address', 'read'], ['patient_identity', 'read'],
+      ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read'], ['catalog_therapeutic_segments', 'read'],
+    ]) grantCell(groupId, resource, action);
+
+    // V1.0 por API — setup (mesmo molde do `alt 1`/`alt 3` do describe acima), com os 2 contatos.
+    const criado = await request.post(`${ABAC_API_URL}/api/admin/patients/${seed.patientId}/therapeutic-projects`, {
+      headers: auth(),
+      data: { mode: 'new', version: corpoBase() },
+    });
+    expect(criado.status()).toBe(201);
+    const bodyCriado = (await criado.json()) as { data: { id: string; version: string; createdAt: string } };
+    expect(bodyCriado.data.version).toBe('V.1.0');
+    v10 = bodyCriado.data.id;
+    v10CreatedAt = bodyCriado.data.createdAt;
+  });
+
+  test.afterAll(() => {
+    runSQL(`DELETE FROM patients WHERE id = '${seed.patientId}'`);
+    cleanupPatientDeep(seed.patientId);
+    cleanupIcd();
+    cleanupStaffAndGroup(uid, groupId);
+    safeSql(`DELETE FROM iam.permission_groups WHERE tenant_id = '${ABAC_TENANT}' AND name = 'PR7 Conserto14 ${RUN_ID}'`);
+  });
+
+  test('editar a vigente pela tela mudando só a modalidade mantém os 2 contatos na 1.1 (banco e card)', async ({ page }) => {
+    await loginAs(page, { uid, email, role: 'admin', country: 'AR' });
+    await page.goto(`/admin/patients/${seed.patientId}`);
+    const card = page.getByTestId('projeto-terapeutico-card');
+    await expect(card).toBeVisible({ timeout: 30_000 });
+
+    await page.getByTestId('tp-edit-btn').click();
+    const drawer = page.getByTestId('therapeutic-project-drawer');
+    await expect(drawer).toBeVisible();
+    await expect(drawer).toHaveAttribute('data-mode', 'edit');
+    await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
+
+    // Nasce com os 2 contatos JÁ selecionados (lidos de `contactRefs`/`careTeamIds` do GET) — sem
+    // aviso de contato removido (nenhum está inativo).
+    await expect(page.locator('#tp-externalContacts')).toContainText(FAMILIAR);
+    await expect(page.locator('#tp-careTeam')).toContainText(PROFISSIONAL);
+    await expect(page.getByTestId('tp-form-contact-removed')).toHaveCount(0);
+
+    // Muda SÓ a modalidade (MICRO) — não toca nos multi-selects de contato.
+    await page.getByTestId('tp-modality').selectOption('ONLINE');
+    await expect(page.getByTestId('tp-modality')).toHaveValue('ONLINE');
+    await expect(page.getByTestId('tp-save')).toBeEnabled();
+
+    const salvo = page.waitForResponse((r) => r.request().method() === 'POST' && /\/therapeutic-projects$/.test(r.url()));
+    await page.getByTestId('tp-save').click();
+    const bodySalvo = (await (await salvo).json()) as { data: { id: string; version: string; createdAt: string } };
+    expect(bodySalvo.data.version).toBe('V.1.1');
+    v11 = bodySalvo.data.id;
+    v11CreatedAt = bodySalvo.data.createdAt;
+
+    // Banco: a 1.1 leva as MESMAS 2 ligações (kind/id) da 1.0.
+    const ligacoes = runSQL(
+      `SELECT contact_kind || ':' || COALESCE(external_contact_id::text, professional_id::text)
+         FROM patient_therapeutic_project_contacts WHERE version_id = '${v11}' ORDER BY sort_order`,
+    ).trim().split('\n').filter(Boolean);
+    expect(ligacoes).toEqual([`EXTERNAL:${familiarId}`, `CARE_TEAM:${profissionalId}`]);
+
+    // Salvar não fecha o drawer — troca pra `mode:'view'` com a versão recém-criada (mesmo molde
+    // do `handleSubmit` do drawer: `setTarget({ mode: 'view', ... })`). Fecha explicitamente antes
+    // de reabrir pela linha do card, como o `feliz` acima faz.
+    await page.getByTestId('therapeutic-project-close').click();
+    await expect(drawer).toHaveCount(0, { timeout: 15_000 });
+    await page.goto(`/admin/patients/${seed.patientId}`);
+    await expect(card).toBeVisible({ timeout: 30_000 });
+    await page.getByTestId(`tp-view-${v11}`).click();
+    await expect(drawer).toBeVisible();
+    await expect(drawer.getByTestId('tpv-contacts')).toContainText(FAMILIAR);
+    await expect(drawer.getByTestId('tpv-contacts')).toContainText(PROFISSIONAL);
+    await page.getByTestId('therapeutic-project-close').click();
+    await expect(drawer).toHaveCount(0, { timeout: 15_000 });
+  });
+
+  test('editar depois de desativar o familiar: aviso visível, a minor nova salva sem o familiar, 1.0/1.1 ficam intactas', async ({ page, request }) => {
+    // Desativa o familiar por API (setup — o comportamento "não gera versão" já está provado no
+    // `alt 2` do describe acima, pela tela; aqui o foco é o EDITAR que vem depois).
+    const desativado = await request.post(`${ABAC_API_URL}/api/admin/patients/${seed.patientId}/external-contacts/${familiarId}/deactivate`, { headers: auth() });
+    expect(desativado.status()).toBe(200);
+    const inativo = scalar(`SELECT active FROM patient_external_contacts WHERE id = '${familiarId}'`);
+    expect(inativo).toBe('f');
+
+    await loginAs(page, { uid, email, role: 'admin', country: 'AR' });
+    await page.goto(`/admin/patients/${seed.patientId}`);
+    const card = page.getByTestId('projeto-terapeutico-card');
+    await expect(card).toBeVisible({ timeout: 30_000 });
+
+    await page.getByTestId('tp-edit-btn').click(); // edita a vigente (V1.1)
+    const drawer = page.getByTestId('therapeutic-project-drawer');
+    await expect(drawer).toBeVisible();
+    await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
+
+    // Aviso visível, nomeando o container (sem nome do contato — lex #7 C7) e a contagem.
+    const aviso = page.getByTestId('tp-form-contact-removed');
+    await expect(aviso).toBeVisible();
+    await expect(aviso).toContainText('Contactos externos');
+    await expect(aviso).toContainText('(1)');
+    // O familiar SOME da seleção; a equipe (não tocada) continua.
+    await expect(page.locator('#tp-externalContacts')).not.toContainText(FAMILIAR);
+    await expect(page.locator('#tp-careTeam')).toContainText(PROFISSIONAL);
+
+    await expect(page.getByTestId('tp-save')).toBeEnabled();
+    const salvo = page.waitForResponse((r) => r.request().method() === 'POST' && /\/therapeutic-projects$/.test(r.url()));
+    await page.getByTestId('tp-save').click();
+    const bodySalvo = (await (await salvo).json()) as { data: { id: string; version: string } };
+    expect(bodySalvo.data.version).toBe('V.1.2');
+    const v12 = bodySalvo.data.id;
+
+    // Banco: a 1.2 leva SÓ a ligação da equipe — nenhuma do familiar (inativo).
+    const ligacoes = runSQL(
+      `SELECT contact_kind || ':' || COALESCE(external_contact_id::text, professional_id::text)
+         FROM patient_therapeutic_project_contacts WHERE version_id = '${v12}' ORDER BY sort_order`,
+    ).trim().split('\n').filter(Boolean);
+    expect(ligacoes).toEqual([`CARE_TEAM:${profissionalId}`]);
+
+    // 1.0 e 1.1 ficam byte-a-byte as mesmas linhas (imutabilidade) — mesmo `created_at` capturado
+    // na criação de cada uma, e as duas ligações ORIGINAIS da 1.1 continuam intactas.
+    const v10Depois = runSQL(`SELECT created_at FROM patient_therapeutic_projects WHERE id = '${v10}'`).trim();
+    const v11Depois = runSQL(`SELECT created_at FROM patient_therapeutic_projects WHERE id = '${v11}'`).trim();
+    expect(new Date(v10Depois).toISOString()).toBe(new Date(v10CreatedAt).toISOString());
+    expect(new Date(v11Depois).toISOString()).toBe(new Date(v11CreatedAt).toISOString());
+    const ligacoesV11Depois = runSQL(
+      `SELECT contact_kind || ':' || COALESCE(external_contact_id::text, professional_id::text)
+         FROM patient_therapeutic_project_contacts WHERE version_id = '${v11}' ORDER BY sort_order`,
+    ).trim().split('\n').filter(Boolean);
+    expect(ligacoesV11Depois).toEqual([`EXTERNAL:${familiarId}`, `CARE_TEAM:${profissionalId}`]);
+
+    const total = Number(runSQL(`SELECT count(*) FROM patient_therapeutic_projects WHERE patient_id = '${seed.patientId}'`));
+    expect(total).toBe(3); // v10, v11, v12
+  });
+});

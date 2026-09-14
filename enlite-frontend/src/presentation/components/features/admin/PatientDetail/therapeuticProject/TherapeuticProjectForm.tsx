@@ -28,6 +28,7 @@ import {
   THERAPEUTIC_TEXT_MAX,
   type ContactRef,
   type ContactRefKind,
+  type ResolvedTherapeuticContactKind,
   type TherapeuticDiagnosis,
   type TherapeuticFieldClass,
   type TherapeuticModality,
@@ -70,6 +71,40 @@ const today = (): string => new Date().toISOString().slice(0, 10);
 const idsOfKind = (refs: ContactRef[] | undefined, kind: ContactRefKind): string[] =>
   (refs ?? []).filter((r) => r.kind === kind).map((r) => r.id);
 
+/**
+ * Conserto 14/09 (achado do gate — decisão do Gabriel, fechada): ao EDITAR, um contato da versão
+ * de ORIGEM que já está INATIVO não entra na seleção inicial (a versão antiga fica intocada; só a
+ * seleção da minor nova exclui). "Inativo" = `from.contacts` (lex #7 C5 — a MESMA leitura resolvida
+ * pela célula de origem, nunca uma checagem própria aqui) marca `inactive:true`, OU não tem
+ * entrada nenhuma pra esse `kind`/`id` (a única forma disso acontecer é anomalia de dado — a 429
+ * grava 1 ligação por `contactRefs`/`careTeamIds` e `resolve()` devolve 1 `contacts` por ligação).
+ * Contato ATIVO mas REDIGIDO (`redacted:true`, sem célula de origem pra resolver nome/telefone)
+ * TEM entrada em `contacts` — não cai aqui, a referência é MANTIDA (decisão do Gabriel: "não some").
+ */
+const isInactiveOnEdit = (from: TherapeuticProjectVersion | null, kind: ResolvedTherapeuticContactKind, id: string): boolean => {
+  const entry = from?.contacts.find((c) => c.kind === kind && c.id === id);
+  return !entry || ('inactive' in entry && entry.inactive === true);
+};
+
+const keptIdsOfKind = (from: TherapeuticProjectVersion | null, refs: ContactRef[] | undefined, kind: ContactRefKind): string[] =>
+  idsOfKind(refs, kind).filter((id) => !isInactiveOnEdit(from, kind, id));
+
+const keptCareTeamIds = (from: TherapeuticProjectVersion | null): string[] =>
+  (from?.careTeamIds ?? []).filter((id) => !isInactiveOnEdit(from, 'CARE_TEAM', id));
+
+/** Quantos ids de cada `kind` saíram da seleção inicial por estarem inativos — só o AVISO precisa disso. */
+const removedInactiveByKind = (from: TherapeuticProjectVersion | null): { kind: ResolvedTherapeuticContactKind; count: number }[] => {
+  const groups: [ResolvedTherapeuticContactKind, string[]][] = [
+    ['RESPONSIBLE', idsOfKind(from?.contactRefs, 'RESPONSIBLE')],
+    ['EXTERNAL', idsOfKind(from?.contactRefs, 'EXTERNAL')],
+    ['COVERAGE', idsOfKind(from?.contactRefs, 'COVERAGE')],
+    ['CARE_TEAM', from?.careTeamIds ?? []],
+  ];
+  return groups
+    .map(([kind, ids]) => ({ kind, count: ids.filter((id) => isInactiveOnEdit(from, kind, id)).length }))
+    .filter((g) => g.count > 0);
+};
+
 export function TherapeuticProjectForm({
   services,
   patientDiagnoses,
@@ -108,11 +143,14 @@ export function TherapeuticProjectForm({
   const [activityIds, setActivityIds] = useState<string[]>(from?.activities.map((a) => a.id) ?? []);
   const [startDate, setStartDate] = useState(from?.startDate ?? today());
   const [endDate, setEndDate] = useState(from?.endDate ?? '');
-  // MICRO (PR-7): contato por seleção, sempre editável — "Nuevo" começa em branco.
-  const [responsibleIds, setResponsibleIds] = useState<string[]>(idsOfKind(from?.contactRefs, 'RESPONSIBLE'));
-  const [externalIds, setExternalIds] = useState<string[]>(idsOfKind(from?.contactRefs, 'EXTERNAL'));
-  const [coverageIds, setCoverageIds] = useState<string[]>(idsOfKind(from?.contactRefs, 'COVERAGE'));
-  const [careTeamIds, setCareTeamIds] = useState<string[]>(from?.careTeamIds ?? []);
+  // MICRO (PR-7): contato por seleção, sempre editável — "Nuevo" começa em branco. Editando a
+  // vigente, contato já INATIVO na origem fica de fora (`keptIdsOfKind`/`keptCareTeamIds`, decisão
+  // do Gabriel 14/09) — o aviso abaixo (`tp-form-contact-removed`) lista quantos/quais kinds saíram.
+  const [responsibleIds, setResponsibleIds] = useState<string[]>(keptIdsOfKind(from, from?.contactRefs, 'RESPONSIBLE'));
+  const [externalIds, setExternalIds] = useState<string[]>(keptIdsOfKind(from, from?.contactRefs, 'EXTERNAL'));
+  const [coverageIds, setCoverageIds] = useState<string[]>(keptIdsOfKind(from, from?.contactRefs, 'COVERAGE'));
+  const [careTeamIds, setCareTeamIds] = useState<string[]>(keptCareTeamIds(from));
+  const removedInactiveContacts = removedInactiveByKind(from);
   // Filtro de segmento (US-17) — só UI, nunca vai no corpo; escondido com catálogo vazio (contrato).
   const [segmentFilter, setSegmentFilter] = useState('');
 
@@ -158,6 +196,13 @@ export function TherapeuticProjectForm({
   const coverageLabel = (c: PatientCoverageEmergencyContact) =>
     `${c.name} · ${t(`admin.patients.detail.coverageCard.emergencyContactKinds.${c.kind}`)}`;
   const professionalLabel = (p: PatientProfessionalDetail) => p.name ?? tc('serviceUnknown');
+  /** Rótulo do `kind` pro aviso de contato removido — as MESMAS chaves dos labels dos campos, sem duplicar i18n. */
+  const contactKindLabel = (kind: ResolvedTherapeuticContactKind): string => {
+    if (kind === 'RESPONSIBLE') return tf('responsibles');
+    if (kind === 'EXTERNAL') return tf('externalContacts');
+    if (kind === 'COVERAGE') return tf('coverageContacts');
+    return tf('careTeam');
+  };
 
   /** MACRO travado (D328/R5): TEXTO, nunca input `disabled`/`readOnly`. */
   const lockedText = (text: string, testId: string) => (
@@ -202,6 +247,13 @@ export function TherapeuticProjectForm({
     >
       {clinicalRedacted && (
         <Text size="sm" className="text-amber-700" data-testid="tp-form-redacted">{tf('redactedCannotEdit')}</Text>
+      )}
+      {removedInactiveContacts.length > 0 && (
+        <Text size="sm" className="text-amber-700" data-testid="tp-form-contact-removed">
+          {tf('contactRemovedInactive', {
+            kinds: removedInactiveContacts.map((g) => `${contactKindLabel(g.kind)} (${g.count})`).join(', '),
+          })}
+        </Text>
       )}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-12 gap-y-6">
         <div className="flex flex-col gap-6">

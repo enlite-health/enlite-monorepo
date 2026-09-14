@@ -589,13 +589,90 @@ describe('contatos por seleção (task 7.7): responsáveis, externos, cobertura,
     expect(onDirty).toHaveBeenCalled();
   });
 
-  it('"Editar" nasce com os `contactRefs`/`careTeamIds` da versão de origem, não em branco', () => {
+  it('"Editar" nasce com os `contactRefs`/`careTeamIds` da versão de origem, não em branco (contato ATIVO, `contacts` resolvido)', () => {
     montar({
-      from: { ...VERSAO, contactRefs: [{ kind: 'RESPONSIBLE', id: 'resp-1' }, { kind: 'COVERAGE', id: 'cov-1' }], careTeamIds: ['prof-1'] },
+      from: {
+        ...VERSAO,
+        contactRefs: [{ kind: 'RESPONSIBLE', id: 'resp-1' }, { kind: 'COVERAGE', id: 'cov-1' }],
+        careTeamIds: ['prof-1'],
+        contacts: [
+          { kind: 'RESPONSIBLE', id: 'resp-1', name: 'Marta Gómez', phone: '111' },
+          { kind: 'COVERAGE', id: 'cov-1', name: 'Emergencias ACME', phone: '333' },
+          { kind: 'CARE_TEAM', id: 'prof-1', name: 'Dr. Fulano', phone: null },
+        ],
+      },
     });
 
     const respostas = within(listaDoMulti('tp-responsibles')).getAllByRole('option').filter((o) => o.getAttribute('aria-selected') === 'true');
     expect(respostas.map((o) => o.textContent)).toEqual(['Marta Gómez']);
+    expect(screen.queryByTestId('tp-form-contact-removed')).not.toBeInTheDocument();
+  });
+
+  // Conserto 14/09 (achado do gate, decisão do Gabriel): editar a vigente NÃO reconstrói a seleção
+  // de contato inativo (a versão antiga fica intocada — só a minor nova exclui); contato ativo e
+  // REDIGIDO (sem célula de origem) fica mantido — "não some".
+  describe('conserto 14/09 — contato inativo sai da seleção ao editar, com aviso; redigido é mantido', () => {
+    it('contato INATIVO em `from.contacts` (`inactive:true`) NÃO entra pré-marcado, e o aviso lista o kind/contagem', () => {
+      montar({
+        from: {
+          ...VERSAO,
+          contactRefs: [{ kind: 'RESPONSIBLE', id: 'resp-1' }],
+          careTeamIds: ['prof-1'],
+          contacts: [
+            { kind: 'RESPONSIBLE', id: 'resp-1', inactive: true },
+            { kind: 'CARE_TEAM', id: 'prof-1', inactive: true },
+          ],
+        },
+      });
+
+      const respostas = within(listaDoMulti('tp-responsibles')).getAllByRole('option').filter((o) => o.getAttribute('aria-selected') === 'true');
+      expect(respostas).toHaveLength(0);
+      const equipe = within(listaDoMulti('tp-careTeam')).getAllByRole('option').filter((o) => o.getAttribute('aria-selected') === 'true');
+      expect(equipe).toHaveLength(0);
+      const aviso = screen.getByTestId('tp-form-contact-removed').textContent ?? '';
+      expect(aviso).toContain('Responsáveis (1)');
+      expect(aviso).toContain('Equipe tratante (1)');
+    });
+
+    it('contato ATIVO mas REDIGIDO (`redacted:true`, sem célula de origem) fica MANTIDO na seleção — não some', () => {
+      montar({
+        from: {
+          ...VERSAO,
+          contactRefs: [{ kind: 'COVERAGE', id: 'cov-1' }],
+          careTeamIds: [],
+          contacts: [{ kind: 'COVERAGE', id: 'cov-1', redacted: true }],
+        },
+      });
+
+      const cobertura = within(listaDoMulti('tp-coverageContacts')).getAllByRole('option').filter((o) => o.getAttribute('aria-selected') === 'true');
+      expect(cobertura.map((o) => o.textContent)).toEqual([expect.stringContaining('Emergencias ACME')]);
+      expect(screen.queryByTestId('tp-form-contact-removed')).not.toBeInTheDocument();
+    });
+
+    it('ref sem NENHUMA entrada em `from.contacts` (anomalia de dado) também sai — trata como inativo, nunca quebra', () => {
+      montar({
+        from: { ...VERSAO, contactRefs: [{ kind: 'EXTERNAL', id: 'ext-1' }], careTeamIds: [], contacts: [] },
+      });
+
+      const externos = within(listaDoMulti('tp-externalContacts')).getAllByRole('option').filter((o) => o.getAttribute('aria-selected') === 'true');
+      expect(externos).toHaveLength(0);
+      expect(screen.getByTestId('tp-form-contact-removed').textContent).toContain('Contatos externos');
+    });
+
+    it('COVERAGE inativo também entra no aviso, com o rótulo do container de cobertura', () => {
+      montar({
+        from: { ...VERSAO, contactRefs: [{ kind: 'COVERAGE', id: 'cov-1' }], careTeamIds: [], contacts: [{ kind: 'COVERAGE', id: 'cov-1', inactive: true }] },
+      });
+
+      const cobertura = within(listaDoMulti('tp-coverageContacts')).getAllByRole('option').filter((o) => o.getAttribute('aria-selected') === 'true');
+      expect(cobertura).toHaveLength(0);
+      expect(screen.getByTestId('tp-form-contact-removed').textContent).toContain('Contatos da cobertura (1)');
+    });
+
+    it('"Novo" (`from === null`) nunca mostra o aviso — não há origem pra perder contato', () => {
+      montar();
+      expect(screen.queryByTestId('tp-form-contact-removed')).not.toBeInTheDocument();
+    });
   });
 
   it('"Novo" começa em branco: nenhum contato pré-marcado', () => {
