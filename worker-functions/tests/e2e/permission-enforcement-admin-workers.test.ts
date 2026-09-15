@@ -116,7 +116,8 @@ describe('família admin.workers sob a decisão real por célula (HTTP real, ban
       uid: U.recrutadora,
       celulas: [
         ['worker', 'read'],
-        ['worker', 'write'],
+        ['worker', 'create'],
+        ['worker', 'update'],
         ['worker_pii', 'read'],
       ],
     });
@@ -125,7 +126,8 @@ describe('família admin.workers sob a decisão real por célula (HTTP real, ban
       uid: U.documentos,
       celulas: [
         ['worker_document', 'read'],
-        ['worker_document', 'write'],
+        ['worker_document', 'create'],
+        ['worker_document', 'update'],
         ['worker_document', 'delete'],
         ['worker_document', 'validate'],
       ],
@@ -375,7 +377,8 @@ describe('família admin.workers sob a decisão real por célula (HTTP real, ban
         uid: soLeituraEscrita,
         celulas: [
           ['worker_document', 'read'],
-          ['worker_document', 'write'],
+          ['worker_document', 'create'],
+          ['worker_document', 'update'],
         ],
       });
       try {

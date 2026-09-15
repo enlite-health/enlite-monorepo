@@ -106,7 +106,8 @@ describe('família admin.vacancies sob a decisão real por célula (HTTP real, b
       uid: U.editora,
       celulas: [
         ['vacancy', 'read'],
-        ['vacancy', 'write'],
+        ['vacancy', 'create'],
+        ['vacancy', 'update'],
       ],
     });
     await grupoComCelulas(pool, {
@@ -114,7 +115,8 @@ describe('família admin.vacancies sob a decisão real por célula (HTTP real, b
       uid: U.coordenacao,
       celulas: [
         ['funnel', 'read'],
-        ['funnel', 'write'],
+        ['funnel', 'create'],
+        ['funnel', 'update'],
       ],
     });
     await grupoComCelulas(pool, {
@@ -130,7 +132,8 @@ describe('família admin.vacancies sob a decisão real por célula (HTTP real, b
       nome: GRUPOS.fronteira,
       uid: U.fronteira,
       celulas: [
-        ['talentum', 'write'],
+        ['talentum', 'create'],
+        ['talentum', 'update'],
         ['dashboard', 'read'],
       ],
     });
@@ -304,7 +307,7 @@ describe('família admin.vacancies sob a decisão real por célula (HTTP real, b
       await chamar('PUT', '/api/admin/vacancies/v1', U.coordenacao);
       const trilha = await aguardarTrilhaQuieta(pool, [U.coordenacao], 1, 'resource, action, decision');
       expect(trilha).toEqual([
-        expect.objectContaining({ resource: 'vacancy', action: 'write', decision: 'DENY' }),
+        expect.objectContaining({ resource: 'vacancy', action: 'update', decision: 'DENY' }),
       ]);
     });
   });

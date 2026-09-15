@@ -90,7 +90,8 @@ describe('A4 — famílias de mensageria, integração e fixtures (HTTP real, ba
   // O painel agrupa a matriz POR CATEGORIA: fixture divergente põe a célula
   // numa gaveta que não existe na tela.
   const NOVAS: Array<[string, string, string]> = [
-    ['messaging', 'write', 'Comunicação'],
+    ['messaging', 'create', 'Comunicação'],
+    ['messaging', 'update', 'Comunicação'],
     ['integration', 'execute', 'Operações'],
     ['test_fixtures', 'execute', 'Operações'],
   ];
@@ -139,7 +140,8 @@ describe('A4 — famílias de mensageria, integração e fixtures (HTTP real, ba
       nome: GRUPOS.curadoria,
       uid: U.curadoria,
       celulas: [
-        ['messaging', 'write'],
+        ['messaging', 'create'],
+        ['messaging', 'update'],
         ['messaging', 'read'],
       ],
     });

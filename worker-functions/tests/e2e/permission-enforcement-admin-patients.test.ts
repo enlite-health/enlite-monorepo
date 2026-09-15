@@ -102,9 +102,11 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
   const CELULAS_SEMEADAS: ReadonlyArray<readonly [string, string]> = [
     ['patient', 'delete'],
     ['patient_family', 'read'],
-    ['patient_family', 'write'],
+    ['patient_family', 'create'],
+    ['patient_family', 'update'],
     ['patient_clinical', 'read'],
-    ['patient_chat', 'write'],
+    ['patient_chat', 'create'],
+    ['patient_chat', 'update'],
   ];
   async function removerCelulaDelete(): Promise<void> {
     for (const [resource, action] of CELULAS_SEMEADAS) {
@@ -143,7 +145,8 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
       uid: U.admissao,
       celulas: [
         ['patient', 'read'],
-        ['patient', 'write'],
+        ['patient', 'create'],
+        ['patient', 'update'],
         ['patient', 'delete'],
       ],
     });
@@ -152,9 +155,11 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
     await pool.query(
       `INSERT INTO iam.permissions (resource, action, description, category) VALUES
          ('patient_family', 'read', 'Ver familiares', 'Pacientes'),
-         ('patient_family', 'write', 'Editar familiares', 'Pacientes'),
+         ('patient_family', 'create', 'Criar familiares', 'Pacientes'),
+         ('patient_family', 'update', 'Editar familiares', 'Pacientes'),
          ('patient_clinical', 'read', 'Ver clínica', 'Pacientes'),
-         ('patient_chat', 'write', 'Vincular chats', 'Pacientes')
+         ('patient_chat', 'create', 'Vincular chats', 'Pacientes'),
+         ('patient_chat', 'update', 'Trocar chats', 'Pacientes')
        ON CONFLICT DO NOTHING`,
     );
     await grupoComCelulas(pool, {
@@ -163,7 +168,8 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
       celulas: [
         ['patient', 'read'],
         ['patient_family', 'read'],
-        ['patient_family', 'write'],
+        ['patient_family', 'create'],
+        ['patient_family', 'update'],
       ],
     });
     await grupoComCelulas(pool, {
