@@ -45,6 +45,47 @@ export class PatientPhotoOrphanRepository {
     return rows;
   }
 
+  /**
+   * Trava a fila pendente contra corrida (conserto #4 da 2ª revisão do PR-4).
+   *
+   * `PatientPhotoOrphanRetryService.retryOnce` é disparado OPORTUNISTA a cada upload/delete/
+   * revoke/purge (`scheduleOpportunisticOrphanRetry`, fire-and-forget) — duas requests
+   * concorrentes no MESMO processo, ou a MESMA linha vista por duas instâncias Cloud Run
+   * diferentes, podiam `listPending` a mesma linha e as duas tentarem apagar/remover o mesmo
+   * objeto GCS ao mesmo tempo.
+   *
+   * Escolha (1 linha): `SELECT ... FOR UPDATE SKIP LOCKED` em vez de guarda in-process — a Enlite
+   * roda a API em múltiplas instâncias Cloud Run, e um guard só na memória do processo não
+   * protegeria duas instâncias pegando a mesma linha ao mesmo tempo; o lock de banco protege as
+   * duas concorrências (intra e inter-processo) com o mesmo mecanismo.
+   *
+   * O lock fica aberto durante a chamada ao GCS dentro de `fn` — aceitável aqui porque o lote é
+   * pequeno (3 no caminho oportunista, até 50 no scheduled) e best-effort; outra instância que bata
+   * nas MESMAS linhas simplesmente pula (`SKIP LOCKED`) e pega outras, nunca bloqueia.
+   */
+  async withPendingLocked<T>(
+    limit: number,
+    fn: (rows: PatientPhotoOrphanRow[], client: PoolClient) => Promise<T>,
+  ): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query<PatientPhotoOrphanRow>(
+        `SELECT id, object_path_encrypted, bucket, reason, created_at
+           FROM patient_photo_orphans ORDER BY created_at ASC LIMIT $1 FOR UPDATE SKIP LOCKED`,
+        [limit],
+      );
+      const result = await fn(rows, client);
+      await client.query('COMMIT');
+      return result;
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   async remove(id: string, executor: Pool | PoolClient = this.pool): Promise<void> {
     await executor.query(`DELETE FROM patient_photo_orphans WHERE id = $1`, [id]);
   }

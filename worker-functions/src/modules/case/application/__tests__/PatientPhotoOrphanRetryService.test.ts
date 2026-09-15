@@ -1,5 +1,5 @@
 jest.mock('@shared/database/DatabaseConnection', () => ({
-  DatabaseConnection: { getInstance: () => ({ getPool: () => ({ query: jest.fn() }) }) },
+  DatabaseConnection: { getInstance: () => ({ getPool: () => ({ query: jest.fn(), connect: jest.fn(async () => ({ query: jest.fn(async () => ({ rows: [] })), release: jest.fn() })) }) }) },
 }));
 const mockGcsDelete = jest.fn(async () => undefined);
 jest.mock('@google-cloud/storage', () => ({
@@ -14,16 +14,27 @@ function row(overrides: Partial<PatientPhotoOrphanRow> = {}): PatientPhotoOrphan
   return { id: 'o1', object_path_encrypted: 'enc(x)', bucket: 'PHOTOS', reason: 'PURGE', created_at: '2026-09-14T00:00:00Z', ...overrides };
 }
 
-describe('PatientPhotoOrphanRetryService (task 4.3h)', () => {
-  it('retryOnce — sucesso: apaga do storage certo e REMOVE da fila', async () => {
-    const listPending = jest.fn(async () => [row({ bucket: 'PHOTOS' })]);
-    const remove = jest.fn(async () => undefined);
-    const repo = { listPending, remove } as never;
+/**
+ * Fábrica de repo fake com `withPendingLocked` (conserto #4 da 2ª revisão — `FOR UPDATE SKIP
+ * LOCKED`). Simula o método real: chama `fn` com as linhas dadas e um client fake — o service não
+ * sabe nem precisa saber o que o client faz, só repassa para `remove`.
+ */
+function fakeRepoWithPending(pending: PatientPhotoOrphanRow[], remove: jest.Mock = jest.fn(async () => undefined)) {
+  const FAKE_CLIENT = { query: jest.fn() };
+  const withPendingLocked = jest.fn(async (limit: number, fn: (rows: PatientPhotoOrphanRow[], client: unknown) => Promise<unknown>) => {
+    return fn(pending, FAKE_CLIENT);
+  });
+  return { withPendingLocked, remove, __client: FAKE_CLIENT };
+}
+
+describe('PatientPhotoOrphanRetryService (task 4.3h; lock — conserto #4 da 2ª revisão)', () => {
+  it('retryOnce — sucesso: apaga do storage certo e REMOVE da fila (repassando o client travado)', async () => {
+    const repo = fakeRepoWithPending([row({ bucket: 'PHOTOS' })]);
     const enc = { decrypt: jest.fn(async (v: string) => `plain(${v})`) } as never;
     const photoDelete = jest.fn(async () => undefined);
     const documentDelete = jest.fn(async () => undefined);
     const svc = new PatientPhotoOrphanRetryService(
-      repo,
+      repo as never,
       enc,
       () => ({ delete: photoDelete }) as never,
       () => ({ delete: documentDelete }) as never,
@@ -34,15 +45,15 @@ describe('PatientPhotoOrphanRetryService (task 4.3h)', () => {
     expect(result).toEqual({ attempted: 1, cleared: 1, stillFailing: 0 });
     expect(photoDelete).toHaveBeenCalledWith('plain(enc(x))');
     expect(documentDelete).not.toHaveBeenCalled();
-    expect(remove).toHaveBeenCalledWith('o1');
-    expect(listPending).toHaveBeenCalledWith(25);
+    expect(repo.remove).toHaveBeenCalledWith('o1', repo.__client);
+    expect(repo.withPendingLocked).toHaveBeenCalledWith(25, expect.any(Function));
   });
 
   it('retryOnce — bucket DOCUMENTS usa o storage de documentos', async () => {
-    const repo = { listPending: jest.fn(async () => [row({ bucket: 'DOCUMENTS' })]), remove: jest.fn() } as never;
+    const repo = fakeRepoWithPending([row({ bucket: 'DOCUMENTS' })]);
     const enc = { decrypt: jest.fn(async (v: string) => v) } as never;
     const documentDelete = jest.fn(async () => undefined);
-    const svc = new PatientPhotoOrphanRetryService(repo, enc, () => ({ delete: jest.fn() }) as never, () => ({ delete: documentDelete }) as never);
+    const svc = new PatientPhotoOrphanRetryService(repo as never, enc, () => ({ delete: jest.fn() }) as never, () => ({ delete: documentDelete }) as never);
 
     await svc.retryOnce();
 
@@ -50,11 +61,10 @@ describe('PatientPhotoOrphanRetryService (task 4.3h)', () => {
   });
 
   it('retryOnce — falha ainda no delete: NÃO remove da fila, conta em stillFailing', async () => {
-    const remove = jest.fn();
-    const repo = { listPending: jest.fn(async () => [row()]), remove } as never;
+    const repo = fakeRepoWithPending([row()]);
     const enc = { decrypt: jest.fn(async (v: string) => v) } as never;
     const svc = new PatientPhotoOrphanRetryService(
-      repo,
+      repo as never,
       enc,
       () => ({ delete: jest.fn(async () => { throw new Error('gcs down'); }) }) as never,
       () => ({ delete: jest.fn() }) as never,
@@ -63,20 +73,21 @@ describe('PatientPhotoOrphanRetryService (task 4.3h)', () => {
     const result = await svc.retryOnce();
 
     expect(result).toEqual({ attempted: 1, cleared: 0, stillFailing: 1 });
-    expect(remove).not.toHaveBeenCalled();
+    expect(repo.remove).not.toHaveBeenCalled();
   });
 
   it('retryOnce — fila vazia: 0/0/0', async () => {
-    const repo = { listPending: jest.fn(async () => []), remove: jest.fn() } as never;
-    const svc = new PatientPhotoOrphanRetryService(repo, {} as never);
+    const repo = fakeRepoWithPending([]);
+    const svc = new PatientPhotoOrphanRetryService(repo as never, {} as never);
     await expect(svc.retryOnce()).resolves.toEqual({ attempted: 0, cleared: 0, stillFailing: 0 });
   });
 
-  it('constrói e roda pelos DEFAULTS do construtor (caminho de produção do cron/job de retry)', async () => {
+  it('constrói e roda pelos DEFAULTS do construtor (caminho de produção do cron/job de retry) — withPendingLocked real (BEGIN/SELECT FOR UPDATE SKIP LOCKED/COMMIT)', async () => {
     process.env.GCS_PATIENT_PHOTOS_BUCKET = 'b-photos';
     process.env.GCS_PATIENT_DOCUMENTS_BUCKET = 'b-docs';
     try {
-      const repo = new PatientPhotoOrphanRepository({ query: jest.fn(async () => ({ rows: [row({ bucket: 'PHOTOS' })] })) } as never);
+      const client = { query: jest.fn(async (sql: string) => (sql.includes('SELECT') ? { rows: [row({ bucket: 'PHOTOS' })] } : undefined)), release: jest.fn() };
+      const repo = new PatientPhotoOrphanRepository({ query: jest.fn(), connect: jest.fn(async () => client) } as never);
       const removeSpy = jest.spyOn(repo, 'remove').mockResolvedValue(undefined);
       const svc = new PatientPhotoOrphanRetryService(repo);
 
@@ -84,6 +95,7 @@ describe('PatientPhotoOrphanRetryService (task 4.3h)', () => {
 
       expect(result.cleared).toBe(1);
       expect(mockGcsDelete).toHaveBeenCalled();
+      expect(client.release).toHaveBeenCalledTimes(1);
       removeSpy.mockRestore();
     } finally {
       delete process.env.GCS_PATIENT_PHOTOS_BUCKET;
@@ -95,7 +107,8 @@ describe('PatientPhotoOrphanRetryService (task 4.3h)', () => {
     process.env.GCS_PATIENT_PHOTOS_BUCKET = 'b-photos';
     process.env.GCS_PATIENT_DOCUMENTS_BUCKET = 'b-docs';
     try {
-      const repo = new PatientPhotoOrphanRepository({ query: jest.fn(async () => ({ rows: [row({ bucket: 'DOCUMENTS' })] })) } as never);
+      const client = { query: jest.fn(async (sql: string) => (sql.includes('SELECT') ? { rows: [row({ bucket: 'DOCUMENTS' })] } : undefined)), release: jest.fn() };
+      const repo = new PatientPhotoOrphanRepository({ query: jest.fn(), connect: jest.fn(async () => client) } as never);
       jest.spyOn(repo, 'remove').mockResolvedValue(undefined);
       const svc = new PatientPhotoOrphanRetryService(repo);
 
