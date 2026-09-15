@@ -30,6 +30,14 @@ services:
     container_name: pr4foto-api
     ports:
       - "58080:8080"
+    # Conserto #7 da 2ª revisão do PR-4 (decisão registrada): MANTIDO. Este arquivo serve um caso
+    # de uso diferente do automatizado — curl manual contra a API dockerizada — e nenhum workflow
+    # de CI o referencia (`grep -rl docker-compose.018pr4-ports .github/workflows/` não bate nada);
+    # a suíte automatizada (`patient-photo-and-documents.e2e.test.ts`) roda em PROCESSO e nunca
+    # toca este compose (conserto #1 — gera a própria chave via
+    # `tests/e2e/helpers/fakeGcsServiceAccount.ts`, sem depender de host mount nenhum). O mount de
+    # `/tmp/fake-sa.json` abaixo continua exigindo criação manual, mas isso é local-only, fora do
+    # alcance do CI — não há CI para "passar a usá-lo".
     environment:
       # NÃO `STORAGE_EMULATOR_HOST` — o `@google-cloud/storage` v7 lê essa env sozinho no
       # construtor e derruba o `/storage/v1` do baseUrl, quebrando `delete()` (405) contra o
@@ -40,7 +48,9 @@ services:
       GCP_PROJECT_ID: "enlite-test"
       # Chave de service account FAKE (sem acesso real a nada) — só para o `getSignedUrl` v4 ter
       # com que assinar localmente contra o fake-gcs-server (a assinatura V4 é criptografia local,
-      # não uma chamada de rede ao Google). Gerada ad-hoc para esta prova, fora do repo.
+      # não uma chamada de rede ao Google). Gerada ad-hoc para esta prova, fora do repo — quem
+      # rodar este compose manualmente pode gerar com `node -e` (mesma lógica de
+      # `tests/e2e/helpers/fakeGcsServiceAccount.ts`) e apontar para este path.
       GOOGLE_APPLICATION_CREDENTIALS: "/tmp/fake-sa.json"
     volumes:
       - /tmp/fake-sa.json:/tmp/fake-sa.json:ro
