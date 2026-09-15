@@ -90,7 +90,7 @@ describe('VacancySocialLinksCard', () => {
   });
 
   it('D269 — enforcement=on com vacancy:write: os botões "gerar" existem', () => {
-    comEnforcement(['vacancy:write'], 'on');
+    comEnforcement(['vacancy:create'], 'on');
     render(<VacancySocialLinksCard {...baseProps} />);
     expect(screen.getAllByRole('button', { name: /generate/ }).length).toBeGreaterThan(0);
   });

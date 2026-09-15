@@ -32,7 +32,7 @@ describe('montaBlocosPorTela', () => {
       ['patient', 'patient', ['read']],
     ]);
     // colunas = só as ações que ESTA tela usa (+ as básicas), nunca `execute`
-    expect(detalhe.colunas).toEqual(['read', 'write', 'delete']);
+    expect(detalhe.colunas).toEqual(['read', 'create', 'update', 'write', 'delete']);
   });
 
   it('célula compartilhada: a linha diz em que OUTRAS telas ela aparece — é uma só', () => {

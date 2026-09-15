@@ -103,7 +103,7 @@ describe('PatientDocumentsCard', () => {
   });
 
   it('só com patient_identity:write: mostra upload e consentimento, mas não a lista de documentos (mostra o aviso de permissão no lugar)', async () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     render(<PatientDocumentsCard patientId="p1" />);
     await waitFor(() => expect(getVigenteImageConsent).toHaveBeenCalledWith('p1'));
     expect(listPatientDocuments).not.toHaveBeenCalled();
@@ -114,7 +114,7 @@ describe('PatientDocumentsCard', () => {
   });
 
   it('achado 2 (prova da stage 15/09): patient_identity:write sem patient_consent_documents:read — sobe, vê "Documento enviado", nunca chama GET .../documents', async () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     uploadPatientDocument.mockResolvedValue({ documentId: 'doc-1' });
     render(<PatientDocumentsCard patientId="p1" />);
     await waitFor(() => expect(getVigenteImageConsent).toHaveBeenCalledWith('p1'));
@@ -131,7 +131,7 @@ describe('PatientDocumentsCard', () => {
   });
 
   it('achado 2: COM patient_consent_documents:read, comportamento fica igual ao de hoje — sem aviso de permissão, sem banner de sucesso extra', async () => {
-    withPermissions(['patient_identity:write', 'patient_consent_documents:read']);
+    withPermissions(['patient_identity:create', 'patient_identity:update', 'patient_consent_documents:read']);
     uploadPatientDocument.mockResolvedValue({ documentId: 'doc-1' });
     listPatientDocuments.mockResolvedValueOnce([]).mockResolvedValueOnce([DOC_ROW]);
     render(<PatientDocumentsCard patientId="p1" />);
@@ -147,14 +147,14 @@ describe('PatientDocumentsCard', () => {
 
   it('idioma diferente de pt-BR (es-AR): formata a data com o locale espanhol', async () => {
     currentLang = 'es';
-    withPermissions(['patient_identity:write', 'patient_consent_documents:read']);
+    withPermissions(['patient_identity:create', 'patient_identity:update', 'patient_consent_documents:read']);
     listPatientDocuments.mockResolvedValue([DOC_ROW]);
     render(<PatientDocumentsCard patientId="p1" />);
     expect(await screen.findByTestId('patient-document-row')).toBeInTheDocument();
   });
 
   it('mount com as DUAS células: carrega documento persistido do servidor (sem nenhum upload nesta sessão)', async () => {
-    withPermissions(['patient_identity:write', 'patient_consent_documents:read']);
+    withPermissions(['patient_identity:create', 'patient_identity:update', 'patient_consent_documents:read']);
     listPatientDocuments.mockResolvedValue([DOC_ROW]);
     render(<PatientDocumentsCard patientId="p1" />);
     expect(await screen.findByTestId('patient-document-row')).toBeInTheDocument();
@@ -162,7 +162,7 @@ describe('PatientDocumentsCard', () => {
   });
 
   it('mount com consentimento vigente já registrado no servidor: mostra o status revogável direto', async () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     getVigenteImageConsent.mockResolvedValue({ id: 'consent-1', consenterKind: 'PATIENT', consentedAt: '2026-09-14T10:00:00.000Z' });
     render(<PatientDocumentsCard patientId="p1" />);
     expect(await screen.findByTestId('patient-consent-status')).toBeInTheDocument();
@@ -171,7 +171,7 @@ describe('PatientDocumentsCard', () => {
   });
 
   it('upload feliz: recarrega do servidor e o documento aparece na lista; permite abrir por blob:', async () => {
-    withPermissions(['patient_identity:write', 'patient_consent_documents:read']);
+    withPermissions(['patient_identity:create', 'patient_identity:update', 'patient_consent_documents:read']);
     uploadPatientDocument.mockResolvedValue({ documentId: 'doc-1' });
     listPatientDocuments.mockResolvedValueOnce([]).mockResolvedValueOnce([DOC_ROW]);
     getPatientDocumentUrl.mockResolvedValue({ url: 'https://signed.example/doc.pdf', expiresInSeconds: 300 });
@@ -189,7 +189,7 @@ describe('PatientDocumentsCard', () => {
   });
 
   it('clicar no botão "Subir documento" aciona o input de arquivo oculto', async () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     render(<PatientDocumentsCard patientId="p1" />);
     await waitFor(() => expect(getVigenteImageConsent).toHaveBeenCalled());
     const input = screen.getByTestId('patient-document-file-input') as HTMLInputElement;
@@ -199,7 +199,7 @@ describe('PatientDocumentsCard', () => {
   });
 
   it('upload com tipo inválido: mostra erro, nunca chama a API', async () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     render(<PatientDocumentsCard patientId="p1" />);
     const file = makeFile('foto.png', 'image/png', 1024);
     fireEvent.change(screen.getByTestId('patient-document-file-input'), { target: { files: [file] } });
@@ -208,7 +208,7 @@ describe('PatientDocumentsCard', () => {
   });
 
   it('upload maior que 5MB: mostra erro, nunca chama a API', async () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     render(<PatientDocumentsCard patientId="p1" />);
     const file = makeFile('grande.pdf', 'application/pdf', 6 * 1024 * 1024);
     fireEvent.change(screen.getByTestId('patient-document-file-input'), { target: { files: [file] } });
@@ -217,7 +217,7 @@ describe('PatientDocumentsCard', () => {
   });
 
   it('upload que falha na API: mostra a mensagem do erro', async () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     uploadPatientDocument.mockRejectedValue(new FakeApiError('Falha no upload'));
     render(<PatientDocumentsCard patientId="p1" />);
     const file = makeFile('doc.pdf', 'application/pdf', 1024);
@@ -226,7 +226,7 @@ describe('PatientDocumentsCard', () => {
   });
 
   it('abrir documento que falha: mostra erro', async () => {
-    withPermissions(['patient_identity:write', 'patient_consent_documents:read']);
+    withPermissions(['patient_identity:create', 'patient_identity:update', 'patient_consent_documents:read']);
     listPatientDocuments.mockResolvedValueOnce([]).mockResolvedValueOnce([DOC_ROW]);
     uploadPatientDocument.mockResolvedValue({ documentId: 'doc-1' });
     getPatientDocumentUrl.mockRejectedValue(new FakeApiError('Não achei'));
@@ -239,21 +239,21 @@ describe('PatientDocumentsCard', () => {
   });
 
   it('recarregar (listPatientDocuments/getVigenteImageConsent falham) mostra erro genérico de carga', async () => {
-    withPermissions(['patient_identity:write', 'patient_consent_documents:read']);
+    withPermissions(['patient_identity:create', 'patient_identity:update', 'patient_consent_documents:read']);
     listPatientDocuments.mockRejectedValue(new FakeApiError('Falha ao listar'));
     render(<PatientDocumentsCard patientId="p1" />);
     expect(await screen.findByTestId('patient-documents-error')).toHaveTextContent('Falha ao listar');
   });
 
   it('recarregar com erro GENÉRICO (não ApiError): mostra a mensagem padrão de carga', async () => {
-    withPermissions(['patient_identity:write', 'patient_consent_documents:read']);
+    withPermissions(['patient_identity:create', 'patient_identity:update', 'patient_consent_documents:read']);
     listPatientDocuments.mockRejectedValue(new Error('boom'));
     render(<PatientDocumentsCard patientId="p1" />);
     expect(await screen.findByTestId('patient-documents-error')).toHaveTextContent(t('admin.patients.detail.identityCard.documents.errorLoadGeneric'));
   });
 
   it('upload que falha com erro GENÉRICO (não ApiError): mostra a mensagem padrão', async () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     uploadPatientDocument.mockRejectedValue(new Error('boom'));
     render(<PatientDocumentsCard patientId="p1" />);
     const file = makeFile('doc.pdf', 'application/pdf', 1024);
@@ -262,7 +262,7 @@ describe('PatientDocumentsCard', () => {
   });
 
   it('abrir documento que falha com erro GENÉRICO (não ApiError): mostra a mensagem padrão', async () => {
-    withPermissions(['patient_identity:write', 'patient_consent_documents:read']);
+    withPermissions(['patient_identity:create', 'patient_identity:update', 'patient_consent_documents:read']);
     listPatientDocuments.mockResolvedValueOnce([]).mockResolvedValueOnce([DOC_ROW]);
     uploadPatientDocument.mockResolvedValue({ documentId: 'doc-1' });
     getPatientDocumentUrl.mockRejectedValue(new Error('boom'));
@@ -275,7 +275,7 @@ describe('PatientDocumentsCard', () => {
   });
 
   it('registrar consentimento feliz: recarrega do servidor, mostra status vigente e permite revogar', async () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     registerImageConsent.mockResolvedValue({ id: 'consent-1' });
     getVigenteImageConsent
       .mockResolvedValueOnce(null)
@@ -296,7 +296,7 @@ describe('PatientDocumentsCard', () => {
   });
 
   it('registrar consentimento QUANDO já há documento na lista: manda o documentId do 1º documento', async () => {
-    withPermissions(['patient_identity:write', 'patient_consent_documents:read']);
+    withPermissions(['patient_identity:create', 'patient_identity:update', 'patient_consent_documents:read']);
     listPatientDocuments.mockResolvedValue([DOC_ROW]);
     registerImageConsent.mockResolvedValue({ id: 'consent-1' });
     render(<PatientDocumentsCard patientId="p1" />);
@@ -306,7 +306,7 @@ describe('PatientDocumentsCard', () => {
   });
 
   it('registrar consentimento que falha com erro GENÉRICO (não ApiError): mostra a mensagem padrão', async () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     registerImageConsent.mockRejectedValue(new Error('boom'));
     render(<PatientDocumentsCard patientId="p1" />);
     await screen.findByTestId('patient-consent-register-btn');
@@ -315,7 +315,7 @@ describe('PatientDocumentsCard', () => {
   });
 
   it('revogar consentimento que falha com erro GENÉRICO (não ApiError): mostra a mensagem padrão', async () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     registerImageConsent.mockResolvedValue({ id: 'consent-1' });
     getVigenteImageConsent
       .mockResolvedValueOnce(null)
@@ -330,7 +330,7 @@ describe('PatientDocumentsCard', () => {
   });
 
   it('registrar consentimento que falha: mostra erro', async () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     registerImageConsent.mockRejectedValue(new FakeApiError('Falha consentimento'));
     render(<PatientDocumentsCard patientId="p1" />);
     await screen.findByTestId('patient-consent-register-btn');
@@ -339,7 +339,7 @@ describe('PatientDocumentsCard', () => {
   });
 
   it('revogar consentimento que falha: mostra erro', async () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     registerImageConsent.mockResolvedValue({ id: 'consent-1' });
     getVigenteImageConsent
       .mockResolvedValueOnce(null)

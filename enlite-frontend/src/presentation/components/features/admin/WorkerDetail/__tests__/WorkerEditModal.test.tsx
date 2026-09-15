@@ -160,7 +160,7 @@ describe('WorkerEditModal', () => {
   });
 
   it('D269 — enforcement=on com worker:write: "Guardar" existe', () => {
-    comEnforcement(['worker:write'], 'on');
+    comEnforcement(['worker:update'], 'on');
     renderModal();
     expect(screen.getByTestId('we-save')).toBeInTheDocument();
   });

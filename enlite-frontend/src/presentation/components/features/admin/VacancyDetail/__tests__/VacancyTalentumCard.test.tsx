@@ -132,7 +132,7 @@ describe('VacancyTalentumCard', () => {
   });
 
   it('D269 — enforcement=on com talentum:write: switch existe', async () => {
-    comEnforcement(['talentum:write'], 'on');
+    comEnforcement(['talentum:update'], 'on');
     render(<VacancyTalentumCard {...baseProps} />);
     await waitFor(() => expect(AdminApiService.getPrescreeningConfig).toHaveBeenCalled());
     expect(screen.getByRole('switch')).toBeInTheDocument();

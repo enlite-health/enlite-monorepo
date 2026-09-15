@@ -90,14 +90,14 @@ describe('PatientPhotoSlot', () => {
   });
 
   it('hasPhoto=false: botão "remover" não aparece mesmo com write', () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     render(<PatientPhotoSlot patientId="p1" hasPhoto={false} />);
     expect(screen.queryByTestId('patient-photo-remove-btn')).not.toBeInTheDocument();
     expect(screen.getByTestId('patient-photo-upload-btn')).toBeInTheDocument();
   });
 
   it('clicar no botão "Subir foto"/"Cambiar" aciona o input de arquivo oculto', () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     render(<PatientPhotoSlot patientId="p1" hasPhoto={false} />);
     const input = screen.getByTestId('patient-photo-file-input') as HTMLInputElement;
     const clickSpy = vi.spyOn(input, 'click');
@@ -106,7 +106,7 @@ describe('PatientPhotoSlot', () => {
   });
 
   it('upload feliz: escolhe arquivo válido, chama a API e onChanged', async () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     uploadPatientPhoto.mockResolvedValue({ hasPhoto: true });
     const onChanged = vi.fn();
     render(<PatientPhotoSlot patientId="p1" hasPhoto={false} onChanged={onChanged} />);
@@ -117,7 +117,7 @@ describe('PatientPhotoSlot', () => {
   });
 
   it('upload com tipo inválido: mostra erro, nunca chama a API', async () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     render(<PatientPhotoSlot patientId="p1" hasPhoto={false} />);
     const file = makeFile('doc.pdf', 'application/pdf', 1024);
     fireEvent.change(screen.getByTestId('patient-photo-file-input'), { target: { files: [file] } });
@@ -126,7 +126,7 @@ describe('PatientPhotoSlot', () => {
   });
 
   it('upload maior que 5MB: mostra erro, nunca chama a API', async () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     render(<PatientPhotoSlot patientId="p1" hasPhoto={false} />);
     const file = makeFile('grande.jpg', 'image/jpeg', 6 * 1024 * 1024);
     fireEvent.change(screen.getByTestId('patient-photo-file-input'), { target: { files: [file] } });
@@ -135,7 +135,7 @@ describe('PatientPhotoSlot', () => {
   });
 
   it('upload que falha na API (ApiError): mostra a mensagem do erro', async () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     uploadPatientPhoto.mockRejectedValue(new FakeApiError('Falha no upload'));
     render(<PatientPhotoSlot patientId="p1" hasPhoto={false} />);
     const file = makeFile('foto.jpg', 'image/jpeg', 1024);
@@ -144,7 +144,7 @@ describe('PatientPhotoSlot', () => {
   });
 
   it('upload que falha com erro genérico (não ApiError): mostra mensagem genérica', async () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     uploadPatientPhoto.mockRejectedValue(new Error('boom'));
     render(<PatientPhotoSlot patientId="p1" hasPhoto={false} />);
     const file = makeFile('foto.jpg', 'image/jpeg', 1024);
@@ -153,7 +153,7 @@ describe('PatientPhotoSlot', () => {
   });
 
   it('remover: abre confirmação, confirma, chama a API e onChanged', async () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     deletePatientPhoto.mockResolvedValue(undefined);
     const onChanged = vi.fn();
     render(<PatientPhotoSlot patientId="p1" hasPhoto={true} onChanged={onChanged} />);
@@ -166,7 +166,7 @@ describe('PatientPhotoSlot', () => {
   });
 
   it('remover: cancelar fecha o modal sem chamar a API', async () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     render(<PatientPhotoSlot patientId="p1" hasPhoto={true} />);
     await waitFor(() => expect(getPatientPhotoUrl).toHaveBeenCalled());
     fireEvent.click(screen.getByTestId('patient-photo-remove-btn'));
@@ -176,7 +176,7 @@ describe('PatientPhotoSlot', () => {
   });
 
   it('remover que falha na API (ApiError): mostra erro e mantém o modal fechável', async () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     deletePatientPhoto.mockRejectedValue(new FakeApiError('Falha ao remover'));
     render(<PatientPhotoSlot patientId="p1" hasPhoto={true} />);
     fireEvent.click(screen.getByTestId('patient-photo-remove-btn'));
@@ -185,7 +185,7 @@ describe('PatientPhotoSlot', () => {
   });
 
   it('remover que falha com erro genérico: mostra mensagem genérica', async () => {
-    withPermissions(['patient_identity:write']);
+    withPermissions(['patient_identity:create', 'patient_identity:update']);
     deletePatientPhoto.mockRejectedValue(new Error('boom'));
     render(<PatientPhotoSlot patientId="p1" hasPhoto={true} />);
     fireEvent.click(screen.getByTestId('patient-photo-remove-btn'));

@@ -265,10 +265,10 @@ describe('AdminUsersPage — célula (enforcement "on")', () => {
     expect(screen.queryByText('admin.users.delete')).not.toBeInTheDocument();
   });
 
-  it('COM user_management:write/delete → Crear, Reset e Eliminar aparecem', async () => {
+  it('COM user_management:create/update/delete (PR-8b) → Crear, Reset e Eliminar aparecem', async () => {
     useAdminAuthStore.setState({
       authzStatus: 'ready',
-      authz: contrato(['user_management:write', 'user_management:delete'], 'on'),
+      authz: contrato(['user_management:create', 'user_management:update', 'user_management:delete'], 'on'),
     });
     await renderAndWait();
 
@@ -277,14 +277,26 @@ describe('AdminUsersPage — célula (enforcement "on")', () => {
     expect(screen.getAllByText('admin.users.delete').length).toBeGreaterThan(0);
   });
 
-  it('SEM user_management:write especificamente → Crear e Reset somem, Eliminar fica', async () => {
+  it('SEM user_management:create especificamente (PR-8b) → só o Crear some, Reset e Eliminar ficam', async () => {
     useAdminAuthStore.setState({
       authzStatus: 'ready',
-      authz: contrato(['user_management:delete'], 'on'),
+      authz: contrato(['user_management:update', 'user_management:delete'], 'on'),
     });
     await renderAndWait();
 
     expect(screen.queryByRole('button', { name: 'admin.users.create' })).not.toBeInTheDocument();
+    expect(screen.getAllByText('admin.users.reset').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('admin.users.delete').length).toBeGreaterThan(0);
+  });
+
+  it('SEM user_management:update especificamente (PR-8b) → só o Reset some, Crear e Eliminar ficam', async () => {
+    useAdminAuthStore.setState({
+      authzStatus: 'ready',
+      authz: contrato(['user_management:create', 'user_management:delete'], 'on'),
+    });
+    await renderAndWait();
+
+    expect(screen.getByRole('button', { name: 'admin.users.create' })).toBeInTheDocument();
     expect(screen.queryByText('admin.users.reset')).not.toBeInTheDocument();
     expect(screen.getAllByText('admin.users.delete').length).toBeGreaterThan(0);
   });
@@ -292,7 +304,7 @@ describe('AdminUsersPage — célula (enforcement "on")', () => {
   it('SEM user_management:delete especificamente → só o Eliminar some', async () => {
     useAdminAuthStore.setState({
       authzStatus: 'ready',
-      authz: contrato(['user_management:write'], 'on'),
+      authz: contrato(['user_management:create', 'user_management:update'], 'on'),
     });
     await renderAndWait();
 

@@ -386,7 +386,7 @@ describe('WorkerDocumentsCard', () => {
   });
 
   it('D269 — enforcement=on com worker_document:write e :delete: input e ícone de excluir existem', () => {
-    comEnforcement(['worker_document:write', 'worker_document:delete'], 'on');
+    comEnforcement(['worker_document:create', 'worker_document:delete'], 'on');
     render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} />);
     const emptySlot = document.querySelector('[data-testid="doc-slot-identity_document_back"]')!;
     expect(emptySlot.querySelector('input[type="file"]')).not.toBeNull();

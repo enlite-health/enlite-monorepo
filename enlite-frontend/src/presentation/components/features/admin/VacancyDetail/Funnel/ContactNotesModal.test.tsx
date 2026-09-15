@@ -279,7 +279,7 @@ describe('ContactNotesModal — D269 célula funnel:write', () => {
   });
 
   it('enforcement "on" COM funnel:write → botão de registrar nota aparece', () => {
-    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['funnel:write'], 'on') });
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['funnel:create'], 'on') });
     render(<ContactNotesModal {...defaultProps} />);
     expect(
       screen.getByText('admin.vacancyDetail.funnelTable.contactNotes.registerButton'),
@@ -300,8 +300,8 @@ describe('ContactNotesModal — D269 célula funnel:write', () => {
     expect(screen.queryByTestId('contact-note-delete')).not.toBeInTheDocument();
   });
 
-  it('enforcement "on" COM funnel:write E canDelete=true → delete aparece', () => {
-    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['funnel:write'], 'on') });
+  it('enforcement "on" COM funnel:update E canDelete=true → delete aparece', () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['funnel:update'], 'on') });
     mockNotesState.notes = [{ ...sampleNotes[0], canDelete: true }];
     render(<ContactNotesModal {...defaultProps} />);
     expect(screen.getByTestId('contact-note-delete')).toBeInTheDocument();

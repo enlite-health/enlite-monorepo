@@ -114,7 +114,7 @@ describe('VacancyScheduleEditModal', () => {
   });
 
   it('D269 — enforcement=on com vacancy:write: botão salvar existe', () => {
-    comEnforcement(['vacancy:write'], 'on');
+    comEnforcement(['vacancy:update'], 'on');
     render(<VacancyScheduleEditModal {...baseProps} />);
     expect(screen.getByTestId('vacancy-schedule-save')).toBeInTheDocument();
   });
