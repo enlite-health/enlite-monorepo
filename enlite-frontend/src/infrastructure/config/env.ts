@@ -19,8 +19,9 @@ export const ENV = {
   // Spec 018, PR-4 (task 4.10): slot de foto + card de documentos do paciente — LIGADA só no
   // build da stage; AUSENTE (portanto desligada) em PRD, sem tocar em workflow de PRD. Achado da
   // revisão do PR-4 (item 6): a flag nunca tinha sido implementada — a feature aparecia sem gate
-  // nenhum, em qualquer build. Ver `.github/workflows/deploy-stage-frontend.yml` para onde a env
-  // do build da stage é setada.
+  // nenhum, em qualquer build. Ver `.github/workflows/frontend-stg.yml` para onde a env do build
+  // da stage é setada (conserto #6 da 2ª revisão: este comentário apontava para
+  // `deploy-stage-frontend.yml`, arquivo que não existe neste monorepo).
   PATIENT_PHOTO_ENABLED: import.meta.env.VITE_PATIENT_PHOTO_ENABLED === 'true',
   IS_PRODUCTION: import.meta.env.PROD,
   IS_DEVELOPMENT: import.meta.env.DEV,

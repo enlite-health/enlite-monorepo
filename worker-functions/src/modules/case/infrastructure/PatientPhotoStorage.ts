@@ -13,8 +13,11 @@
  *    (`patient_identity:read`) — este arquivo não sabe o que é célula, só assina;
  *  - nunca loga caminho/URL — todo log daqui usa apenas o id do paciente/foto, nunca `objectPath`.
  *
- * Emulador local (e2e/fake-gcs): `STORAGE_EMULATOR_HOST` (convenção oficial do
- * `@google-cloud/storage`) aponta o MESMO cliente real para `http://localhost:PORT` — não é
+ * Emulador local (e2e/fake-gcs): a env própria `GCS_EMULATOR_HOST` (lida em
+ * `PatientObjectStorageBase.getClient`, NÃO a `STORAGE_EMULATOR_HOST` "oficial" do SDK — conserto
+ * #6 da 2ª revisão do PR-4: este comentário recomendava a env errada, que o próprio SDK lê no
+ * construtor e quebra `delete()` com 405 contra o fake-gcs-server, ver cabeçalho de
+ * `PatientObjectStorageBase.ts`) aponta o MESMO cliente real para `http://localhost:PORT` — não é
  * "modo mock" (não existe branch que finge sucesso sem tocar em storage nenhum); é o cliente de
  * sempre falando com um servidor GCS de verdade, só que local.
  *
