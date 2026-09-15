@@ -5,6 +5,7 @@ import {
   montarAppDeFamilia,
   limparIamFixtures,
   grupoComCelulas,
+  garantirCelula,
   limparTrilhaDrenada,
   aguardarTrilhaQuieta,
   type AppDeFamilia,
@@ -98,18 +99,23 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
    * seguinte, sem se curar sozinha. Apagar na entrada torna a suíte idempotente.
    */
   // As células que este arquivo semeia e que o seed da 206 não tem: patient:delete (D116) e as de
-  // container (D286). Saem no limpar(): `permissions-iam-schema` mede o catálogo EXATO do seed.
-  const CELULAS_SEMEADAS: ReadonlyArray<readonly [string, string]> = [
-    ['patient', 'delete'],
-    ['patient_family', 'read'],
-    ['patient_family', 'create'],
-    ['patient_family', 'update'],
-    ['patient_clinical', 'read'],
-    ['patient_chat', 'create'],
-    ['patient_chat', 'update'],
+  // container (D286). Só a que ESTE suite de fato inseriu (garantirCelula → criada:true) sai no
+  // limpar() — `patient_family:create/update` e `patient_chat:create/update` também são
+  // semeadas pela migration 435 (recurso splitado) e apagá-las incondicionalmente derrubaria
+  // `permissions-iam-schema` e qualquer outra suíte que dependa delas (achado 8b-A4, mesmo
+  // padrão de `patient-address-principal-tipo.e2e.test.ts`/`permission-enforcement-all-families`).
+  const CELULAS_SEMEADAS: ReadonlyArray<readonly [string, string, string]> = [
+    ['patient', 'delete', 'Pacientes'],
+    ['patient_family', 'read', 'Pacientes'],
+    ['patient_family', 'create', 'Pacientes'],
+    ['patient_family', 'update', 'Pacientes'],
+    ['patient_clinical', 'read', 'Pacientes'],
+    ['patient_chat', 'create', 'Pacientes'],
+    ['patient_chat', 'update', 'Pacientes'],
   ];
+  const celulasCriadas: Array<[string, string]> = [];
   async function removerCelulaDelete(): Promise<void> {
-    for (const [resource, action] of CELULAS_SEMEADAS) {
+    for (const [resource, action] of celulasCriadas) {
       await pool.query(
         `DELETE FROM iam.group_permissions
            WHERE permission_id IN (SELECT id FROM iam.permissions WHERE resource = $1 AND action = $2)`,
@@ -117,6 +123,7 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
       );
       await pool.query(`DELETE FROM iam.permissions WHERE resource = $1 AND action = $2`, [resource, action]);
     }
+    celulasCriadas.length = 0;
   }
 
   async function limpar(): Promise<void> {
@@ -134,10 +141,10 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
       [U.leitora, U.admissao, U.vizinha, TENANT_E2E, U.familia],
     );
 
-    await pool.query(
-      `INSERT INTO iam.permissions (resource, action, description, category)
-         VALUES ('patient', 'delete', 'Remover pacientes de teste', 'Pacientes')`,
-    );
+    for (const [resource, action, category] of CELULAS_SEMEADAS) {
+      const { criada } = await garantirCelula(pool, { resource, action, category });
+      if (criada) celulasCriadas.push([resource, action]);
+    }
 
     await grupoComCelulas(pool, { nome: GRUPOS.leitura, uid: U.leitora, celulas: [['patient', 'read']] });
     await grupoComCelulas(pool, {
@@ -150,18 +157,9 @@ describe('família admin.patients sob a decisão real por célula (HTTP real, ba
         ['patient', 'delete'],
       ],
     });
-    // D286: as células de container nascem do sync do catálogo no boot real; neste app de
-    // família o catálogo é o do banco, então semeia-se o que o grupo vai usar.
-    await pool.query(
-      `INSERT INTO iam.permissions (resource, action, description, category) VALUES
-         ('patient_family', 'read', 'Ver familiares', 'Pacientes'),
-         ('patient_family', 'create', 'Criar familiares', 'Pacientes'),
-         ('patient_family', 'update', 'Editar familiares', 'Pacientes'),
-         ('patient_clinical', 'read', 'Ver clínica', 'Pacientes'),
-         ('patient_chat', 'create', 'Vincular chats', 'Pacientes'),
-         ('patient_chat', 'update', 'Trocar chats', 'Pacientes')
-       ON CONFLICT DO NOTHING`,
-    );
+    // D286: as células de container já foram garantidas acima (garantirCelula, junto com
+    // patient:delete) — nascem do sync do catálogo no boot real; neste app de família o
+    // catálogo é o do banco, então garante-se o que o grupo vai usar.
     await grupoComCelulas(pool, {
       nome: GRUPOS.familia,
       uid: U.familia,
