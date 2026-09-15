@@ -75,11 +75,11 @@ describe('SCREEN_FEATURE_MAP — as 8 chaves screen:* do manifest (B2/D268)', ()
     }
   });
 
-  it('screen:ana-care não tem rota nem item — `semConsumidorHoje` explícito, routes vazio', () => {
+  it('screen:ana-care ganhou tela na fase 1 (15/09, D344) — navHref e as 2 rotas do painel', () => {
     const anaCare = SCREEN_FEATURE_MAP['screen:ana-care'];
-    expect(anaCare.routes).toEqual([]);
-    expect(anaCare.navHref).toBeUndefined();
-    expect(anaCare.semConsumidorHoje).toBeTruthy();
+    expect(anaCare.routes).toEqual(['/admin/anacare/horas', '/admin/anacare/horas/:patientId']);
+    expect(anaCare.navHref).toBe('/admin/anacare/horas');
+    expect(anaCare.semConsumidorHoje).toBeUndefined();
   });
 
   it('screen:talentum não tem item de menu de topo (rota aninhada), mas tem rota', () => {
@@ -88,8 +88,8 @@ describe('SCREEN_FEATURE_MAP — as 8 chaves screen:* do manifest (B2/D268)', ()
     expect(talentum.routes.length).toBeGreaterThan(0);
   });
 
-  it('as demais 6 chaves com tela hoje têm navHref e ao menos 1 rota', () => {
-    const comTela = CHAVES_SCREEN.filter((k) => k !== 'screen:ana-care' && k !== 'screen:talentum');
+  it('as demais 7 chaves com tela hoje têm navHref e ao menos 1 rota', () => {
+    const comTela = CHAVES_SCREEN.filter((k) => k !== 'screen:talentum');
     for (const chave of comTela) {
       const entrada = SCREEN_FEATURE_MAP[chave];
       expect(entrada.navHref, `${chave} sem navHref`).toBeTruthy();
