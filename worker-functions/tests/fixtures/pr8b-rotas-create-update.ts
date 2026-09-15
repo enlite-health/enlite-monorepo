@@ -19,6 +19,15 @@ export interface RotaCreateUpdate {
   path: string;
   /** Ação(ões) exigida(s) — 2 entradas = a rota precisa das DUAS (guards encadeados). */
   actions: readonly string[];
+  /**
+   * TODAS as células da rota (`recurso:ação`), quando os guards encadeados são
+   * de RECURSOS DIFERENTES (ex.: `patient_services:update` → `vacancy:update`)
+   * — `actions` sozinho não basta aí porque não carrega o recurso de cada
+   * entrada. Opcional: ausente = a rota só declara UM recurso (o de `source`),
+   * e o teste confere por `actions` como sempre conferiu. Achado pós-#391
+   * (spec 018, PR-8b): o oráculo e a fixture só liam a 1ª célula da rota.
+   */
+  cells?: readonly string[];
   /** arquivo:linha de origem no mapa nominal — só para depuração humana. */
   source: string;
 }
@@ -37,7 +46,17 @@ export const PR8B_ROTAS_CREATE_UPDATE: readonly RotaCreateUpdate[] = [
   { method: 'PUT', path: '/api/admin/patients/:id/chat-ids', actions: ['update'], source: 'adminPatientsRoutes.ts:221' },
   { method: 'POST', path: '/api/admin/patients/:id/contracted-services', actions: ['create'], source: 'adminPatientsRoutes.ts:243' },
   { method: 'PATCH', path: '/api/admin/patients/:id/contracted-services/:sid', actions: ['update'], source: 'adminPatientsRoutes.ts:246' },
-  { method: 'POST', path: '/api/admin/patients/:id/contracted-services/:sid/activate-recruitment', actions: ['update'], source: 'adminPatientsRoutes.ts:255' },
+  // Guards ENCADEADOS de recursos DIFERENTES (não é o molde "mesmo recurso,
+  // create+update" dos outros `actions: [2]` acima) — `cells` carrega os dois.
+  // Era `vacancy:write` literal até o achado pós-#391 (PermVacancy escapava do
+  // grep que migrou as outras 98 rotas, que só buscava `perm\.require(`).
+  {
+    method: 'POST',
+    path: '/api/admin/patients/:id/contracted-services/:sid/activate-recruitment',
+    actions: ['update'],
+    cells: ['patient_services:update', 'vacancy:update'],
+    source: 'adminPatientsRoutes.ts:255-256',
+  },
   { method: 'POST', path: '/api/admin/patients/:id/contracted-services/:sid/providers', actions: ['update'], source: 'adminPatientsRoutes.ts:260' },
   { method: 'PATCH', path: '/api/admin/patients/:id/contracted-services/:sid/providers/:pid', actions: ['update'], source: 'adminPatientsRoutes.ts:263' },
   { method: 'POST', path: '/api/admin/patients/:id/diagnoses', actions: ['create'], source: 'adminPatientsRoutes.ts:273' },

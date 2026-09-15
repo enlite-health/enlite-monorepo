@@ -168,7 +168,7 @@ describe('ramos defensivos da varredura', () => {
 
   it('rota sem `stack` e sem `methods` vira USE, sem quebrar', () => {
     expect(comCamadas([{ route: { path: '/api/admin/x' } }])).toEqual([
-      { method: 'USE', path: '/api/admin/x' },
+      { method: 'USE', path: '/api/admin/x', cells: [] },
     ]);
   });
 
@@ -178,7 +178,7 @@ describe('ramos defensivos da varredura', () => {
 
   it('rota sem `path` cai na raiz em vez de virar caminho vazio', () => {
     expect(comCamadas([{ route: { methods: { get: true }, stack: [] } }])).toEqual([
-      { method: 'GET', path: '/' },
+      { method: 'GET', path: '/', cells: [] },
     ]);
   });
 
@@ -186,7 +186,7 @@ describe('ramos defensivos da varredura', () => {
     const cell = { resource: 'api_docs', action: 'read' };
     const handle = markPermissionHandler(((_req, _res, next) => next()) as RequestHandler, cell);
     expect(comCamadas([{ handle, regexp: Object.assign(/^\/?$/, { fast_slash: true }) }])).toEqual([
-      { method: 'USE', path: '/', cell },
+      { method: 'USE', path: '/', cell, cells: [cell] },
     ]);
   });
 

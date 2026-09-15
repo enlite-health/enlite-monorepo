@@ -34,6 +34,10 @@ export function createPermissionRoutesInventoryRouter(
       method: route.method,
       path: route.path,
       cell: route.cell ? cellKey(route.cell.resource, route.cell.action) : null,
+      // TODAS as células da rota, não só a 1ª (achado pós-#391, PR-8b): guards
+      // encadeados de recursos DIFERENTES (`patient_services:update` →
+      // `vacancy:update`) ficavam com a 2ª invisível ao oráculo.
+      cells: (route.cells ?? (route.cell ? [route.cell] : [])).map((c) => cellKey(c.resource, c.action)),
       status: registry.statusOfRoute(route),
     }));
 

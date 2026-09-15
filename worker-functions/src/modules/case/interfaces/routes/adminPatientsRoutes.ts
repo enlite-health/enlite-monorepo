@@ -247,13 +247,15 @@ export function createAdminPatientsRoutes(
     contractedServicesController.update(req, res),
   );
   // POST /patients/:id/contracted-services/:sid/activate-recruitment (spec 018, PR-6, ADR-5,
-  // contracts/activation.md). Guardas na ORDEM do contrato: staffOnly → patient_services:write →
-  // vacancy:write (SUP-19: a vaga nasce daqui, mesmo em rascunho) → logResourceAccess.
+  // contracts/activation.md). Guardas na ORDEM do contrato: staffOnly → patient_services:update →
+  // vacancy:update (SUP-19: a vaga nasce daqui, mesmo em rascunho; era ':write' literal — SPLIT_RESOURCES
+  // já splitava `vacancy`, mas o grep que migrou as outras rotas usava só `perm\.require(`, não
+  // `permVacancy\.require(`, e essa rota escapou — PR-8b, fix pós-#391) → logResourceAccess.
   router.post(
     '/patients/:id/contracted-services/:sid/activate-recruitment',
     staffOnly,
     perm.require('patient_services', 'update'),
-    permVacancy.require('vacancy', 'write'),
+    permVacancy.require('vacancy', 'update'),
     logResourceAccess('patient', 'activate_recruitment'),
     (req: Request, res: Response) => contractedServicesController.activateRecruitment(req, res),
   );

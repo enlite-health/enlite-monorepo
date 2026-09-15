@@ -7,12 +7,17 @@
  * fixture nominal `tests/fixtures/pr8b-rotas-create-update.ts` (gerada de
  * `specs/018-planning-0909-ficha-admissao/pr8b-mapa-rotas.tsv`).
  *
- * O inventário carimba UMA célula por rota — a do PRIMEIRO guard no array de
- * middlewares (`cellOfRoute`, `scanExpressRouter.ts`). Para as 4 rotas que
- * exigem `create` E `update` (guards encadeados no MESMO array da rota,
- * `contracts/permissions-split.md` + `pr8b-mapa-rotas.tsv`), este teste só
- * confere a AÇÃO PRIMÁRIA (a primeira da fixture) pelo inventário — o segundo
- * guard é provado por fora, no teste de unidade
+ * O inventário carimba `cell` (a 1ª célula, compat) E `cells` (TODAS as
+ * células da rota, `cellsOfRoute`, `scanExpressRouter.ts` — achado pós-#391:
+ * a rota `activate-recruitment` tinha `vacancy:write` invisível a este teste
+ * porque só a 1ª célula (`patient_services:update`) era lida). Para as rotas
+ * com `cells` na fixture, este teste confere o CONJUNTO inteiro contra
+ * `cells` do inventário — não só a ação primária.
+ *
+ * Para as 4 rotas "create E update no MESMO recurso" (guards encadeados,
+ * `contracts/permissions-split.md` + `pr8b-mapa-rotas.tsv`, sem `cells` na
+ * fixture), este teste continua conferindo só a AÇÃO PRIMÁRIA (a primeira);
+ * o segundo guard é provado por fora, no teste de unidade
  * `tests/unit/.../pr8b-ambiguous-routes.test.ts`, que instrumenta os DOIS
  * guards diretamente no router (sem precisar do app inteiro de pé).
  *
@@ -46,6 +51,8 @@ interface InventarioRota {
   method: string;
   path: string;
   cell: string | null;
+  /** TODAS as células da rota (achado pós-#391) — `cell` é só `cells[0]`. */
+  cells: string[];
   status: string;
 }
 
@@ -86,10 +93,29 @@ describe('PR-8b (8b.1/8b.4) — fixture nominal create/update contra o inventár
     expect(divergentes).toEqual([]);
   });
 
-  it('NENHUMA rota fora de permission_management ainda declara `write`', () => {
+  it('rotas com `cells` na fixture declaram o CONJUNTO INTEIRO de células, não só a 1ª (achado pós-#391)', () => {
+    const comCells = PR8B_ROTAS_CREATE_UPDATE.filter((rota) => rota.cells !== undefined);
+    expect(comCells.length).toBeGreaterThan(0);
+
+    const divergentes = comCells.map((rota) => {
+      const chave = `${rota.method} ${rota.path}`;
+      const encontrada = porChave.get(chave);
+      const esperado = [...(rota.cells ?? [])].sort();
+      const observado = [...(encontrada?.cells ?? [])].sort();
+      const ok = encontrada !== undefined && JSON.stringify(observado) === JSON.stringify(esperado);
+      return ok
+        ? null
+        : `${chave} → esperado [${esperado.join(', ')}] (fixture: ${rota.source}), observado [${observado.join(', ') || 'FORA DO INVENTÁRIO'}]`;
+    }).filter((linha): linha is string => linha !== null);
+
+    expect(divergentes).toEqual([]);
+  });
+
+  it('NENHUMA célula fora de permission_management ainda declara `write` — QUALQUER posição no array de guards (achado pós-#391: `vacancy:write` só existia na 2ª célula, invisível a este teste antes de ler `cells`)', () => {
     const comWrite = Array.from(porChave.values())
-      .filter((r) => r.cell?.endsWith(':write'))
-      .map((r) => `${r.method} ${r.path} → ${r.cell}`)
+      .flatMap((r) => (r.cells ?? []).map((celula) => ({ r, celula })))
+      .filter(({ celula }) => celula.endsWith(':write'))
+      .map(({ r, celula }) => `${r.method} ${r.path} → ${celula}`)
       .filter((chave) => !PERMISSION_MANAGEMENT_WRITE_ROUTES.has(chave.split(' → ')[0]));
 
     expect(comWrite).toEqual([]);

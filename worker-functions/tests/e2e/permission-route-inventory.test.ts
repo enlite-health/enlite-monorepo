@@ -32,6 +32,8 @@ interface InventarioRota {
   method: string;
   path: string;
   cell: string | null;
+  /** TODAS as células da rota (achado pós-#391) — `cell` é só `cells[0]`. */
+  cells: string[];
   status: string;
 }
 
@@ -73,7 +75,10 @@ describe('inventário de rotas governadas (app real de pé)', () => {
   // não como "um número mudou".
   it('as famílias já viradas estão declaradas, rota a rota, com a célula certa', () => {
     const declaradas = inventario.governedRoutes.filter((r) => r.status === 'declared');
-    expect(declaradas.map((r) => `${r.method} ${r.path} → ${r.cell}`).sort()).toEqual(
+    // `cells.join('+')` em vez de `r.cell`: a rota `activate-recruitment` tem
+    // DUAS células de recursos diferentes (guards encadeados) e a 2ª ficava
+    // invisível a este teste quando ele só lia a 1ª (achado pós-#391).
+    expect(declaradas.map((r) => `${r.method} ${r.path} → ${(r.cells ?? [r.cell]).filter(Boolean).join('+')}`).sort()).toEqual(
       [
         // ── admin.users (6) — a 1ª família virada
         'DELETE /api/admin/users/:id → user_management:delete',
@@ -148,7 +153,10 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/patients → patient:create',
         // POST /:id/activate SAIU (spec 018, PR-6, ADR-5) — a rota é 410, isenta em EXEMPT_ROUTES
         // (mesmo molde do support-network acima).
-        'POST /api/admin/patients/:id/contracted-services/:sid/activate-recruitment → patient_services:update',
+        // DUAS células (guards encadeados, patient_services → vacancy;
+        // SUP-19: a vaga nasce daqui). Era só `patient_services:update` até o
+        // achado pós-#391 — `vacancy:write` ficava invisível a este teste.
+        'POST /api/admin/patients/:id/contracted-services/:sid/activate-recruitment → patient_services:update+vacancy:update',
         'POST /api/admin/patients/:id/coverage-emergency-contacts → patient_coverage:create',
         'POST /api/admin/patients/:id/coverage-emergency-contacts/:cid/deactivate → patient_coverage:update',
         // Foto, documento (prova) e consentimento de imagem (spec 018, PR-4;
