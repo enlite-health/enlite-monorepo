@@ -65,10 +65,26 @@ DECLARE
   v_grants_after  INT;
 BEGIN
   IF to_regclass('iam.permissions') IS NOT NULL THEN
-    -- 1. Semear as 46 células (idempotente por recurso/ação via UNIQUE(resource,action) da 206).
+    -- 1. Semear as 46 células (idempotente por recurso/ação via UNIQUE(resource,action) da 206)
+    --    + a linha `write` dos mesmos 23 recursos (achado da rodada A2, 15/09): até aqui
+    --    `<recurso>:write` só entrava no catálogo pelo SYNC de boot, porque a ROTA declarava
+    --    `write` literal — e era exatamente essa varredura que alimentava `iam.permissions`
+    --    (design 1b, nenhuma migration anterior fazia INSERT dela). A partir do PR-8b 8b.4 a
+    --    rota nunca mais declara `write` para estes 23 recursos, então um boot NOVO (banco
+    --    vazio: CI, ambiente recém-criado) não semeia `write` nunca mais — o teste e2e
+    --    `permission-split-grants-migration.e2e.test.ts` (A1, gWriteMaisDelete/gSoWrite) e o
+    --    inventário de outras 21 suítes que concedem `<recurso>:write` de setup quebraram
+    --    exatamente assim, medido rodando a suíte inteira contra um container reconstruído do
+    --    zero. Em stage/prod a linha `write` já existe (o código ANTIGO, ainda no ar quando esta
+    --    migration roda — "migration ANTES do deploy" no cabeçalho — já sincronizou; ver
+    --    contracts/permissions-split.md), então este INSERT é NO-OP lá (ON CONFLICT DO NOTHING).
+    --    Só um banco NOVO, sem histórico de boot pré-A2, precisa dele.
     FOREACH v_resource IN ARRAY v_resources LOOP
       INSERT INTO iam.permissions (resource, action, description, category, owner_service, deprecated_at)
       VALUES
+        (v_resource, 'write',
+         format('[435 — alias de transição SUP-31] %s:write legado; nenhuma rota declara mais — remoção prevista em 8b.11.', v_resource),
+         v_categories ->> v_resource, 'worker-functions', NULL),
         (v_resource, 'create',
          format('[435 placeholder — sincronizado no boot] Criar %s.', v_resource),
          v_categories ->> v_resource, 'worker-functions', NULL),
