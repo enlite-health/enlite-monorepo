@@ -27,12 +27,76 @@ const GROUP_CM       = 'a0000000-0000-0000-0000-000000000003';
 const GROUP_FIN      = 'a0000000-0000-0000-0000-000000000004';
 const GROUP_SUPER    = 'a0000000-0000-0000-0000-000000000005';
 
-// Total de permissões seedadas (matriz exata 01-requirements-and-decisions.md)
-// worker:4 + worker_pii:1 + worker_document:4 + vacancy:3 + funnel:2 +
-// interview:3 + match:2 + patient:2 + recruitment:2 + talentum:2 +
-// prescreening:2 + analytics:2 + dedup:2 + dashboard:1 + messaging:2 +
-// upload:2 + user_management:3 + permission_management:2 = 41
-const EXPECTED_PERMISSION_COUNT = 41;
+// Matriz EXATA da migration 206 (a fonte, não um resumo) — cópia literal de
+// `migrations/206_permissions_iam_foundation.sql` (18 recursos, 41 pares). Isto NUNCA
+// muda: é o registro histórico do que 206 semeou, não "quantas linhas a tabela tem hoje".
+const ORIGINAL_SEED_206: ReadonlyArray<readonly [string, string]> = [
+  ['worker', 'read'], ['worker', 'write'], ['worker', 'delete'], ['worker', 'export'],
+  ['worker_pii', 'read'],
+  ['worker_document', 'read'], ['worker_document', 'write'], ['worker_document', 'delete'], ['worker_document', 'validate'],
+  ['vacancy', 'read'], ['vacancy', 'write'], ['vacancy', 'delete'],
+  ['funnel', 'read'], ['funnel', 'write'],
+  ['interview', 'read'], ['interview', 'write'], ['interview', 'delete'],
+  ['match', 'read'], ['match', 'execute'],
+  ['patient', 'read'], ['patient', 'write'],
+  ['recruitment', 'read'], ['recruitment', 'write'],
+  ['talentum', 'read'], ['talentum', 'write'],
+  ['prescreening', 'read'], ['prescreening', 'write'],
+  ['analytics', 'read'], ['analytics', 'export'],
+  ['dedup', 'read'], ['dedup', 'execute'],
+  ['dashboard', 'read'],
+  ['messaging', 'read'], ['messaging', 'send'],
+  ['upload', 'read'], ['upload', 'write'],
+  ['user_management', 'read'], ['user_management', 'write'], ['user_management', 'delete'],
+  ['permission_management', 'read'], ['permission_management', 'write'],
+];
+
+// PR-8b (A3, ADR-2/SUP-30, item 2 — contagens fixas obsoletas): migration 435 splita
+// `write` → `create`+`update` para estes 23 recursos, e SEMEIA os 3 (write incluído, como
+// alias de transição SUP-31) para quem ainda não tinha nenhum dos três — cópia literal de
+// `v_resources` em `migrations/435_split_write_grants_create_update.sql`. O total e a lista
+// de recursos do catálogo agora são DERIVADOS de ORIGINAL_SEED_206 ∪ 435 — nunca mais um
+// número solto que droga a cada migration nova.
+const SPLIT_23_MIG_435: readonly string[] = [
+  'patient', 'patient_address', 'patient_chat', 'patient_identity', 'patient_clinical',
+  'patient_care_team', 'patient_family', 'patient_coverage', 'patient_services',
+  'user_management', 'vacancy', 'funnel', 'talentum', 'prescreening', 'interview',
+  'messaging', 'recruitment', 'worker', 'worker_document', 'patient_therapeutic_project',
+  'catalog_therapeutic_objectives', 'catalog_therapeutic_activities', 'catalog_therapeutic_segments',
+];
+
+/** O conjunto completo (resource:action) esperado no catálogo: 206 ∪ (435, idempotente —
+ *  só soma o que 206 ainda não tinha, exatamente como o `ON CONFLICT DO NOTHING` da 435). */
+function catalogoEsperadoApos435(): Set<string> {
+  const set = new Set(ORIGINAL_SEED_206.map(([r, a]) => `${r}:${a}`));
+  for (const resource of SPLIT_23_MIG_435) {
+    for (const action of ['write', 'create', 'update']) set.add(`${resource}:${action}`);
+  }
+  return set;
+}
+
+/**
+ * O que o Acesso Master REALMENTE ganha (passo 2 da 435): a migration só converte grant
+ * EXISTENTE (`group_permissions` com `write` de um dos 23) em `create`+`update` — nunca
+ * cria grant para recurso que o grupo nunca teve. Master nasceu (206) com as 43/41
+ * permissões que existiam NAQUELE momento (`SELECT v_g_master, id FROM permissions`, uma
+ * vez só, migration 206) — os 12 recursos novos do catálogo (patient_identity, catalog_
+ * therapeutic_*, etc., nunca existiram em 206) e `messaging` (206 só deu `read`+`send`,
+ * NUNCA `write`) ficam de fora da conversão. **Isto é um achado de produção** (Acesso
+ * Master, documentado como "acesso completo a todas as permissões", ficou com 39 células
+ * a menos que o catálogo total assim que 435 rodou) — ver "Defeitos de produção revelados"
+ * no relatório da rodada; não é consertado aqui.
+ */
+function masterEsperadoApos435(): Set<string> {
+  const set = new Set(ORIGINAL_SEED_206.map(([r, a]) => `${r}:${a}`));
+  for (const resource of SPLIT_23_MIG_435) {
+    if (set.has(`${resource}:write`)) {
+      set.add(`${resource}:create`);
+      set.add(`${resource}:update`);
+    }
+  }
+  return set;
+}
 
 // IDs determinísticos para fixtures deste teste
 const TEST_UID_PREFIX = 'e2e-iam-206';
@@ -325,71 +389,56 @@ describe('S3 — Seeds: tenant Enlite, 43 permissions, 5 grupos (2 de sistema + 
     expect(row.rows[0].status).toBe('ACTIVE');
   });
 
-  it(`permissions count == ${EXPECTED_PERMISSION_COUNT} (matriz exata 01-requirements)`, async () => {
+  // Piso, não igualdade exata: rodando a suíte INTEIRA (jest --runInBand, ordem alfabética),
+  // outras famílias de e2e que correm ANTES (`iam-permissions-foundation`/`patient-care-team-api`,
+  // "427/PR-5", ...) garantem `garantirCelula` de células de LEITURA/`export` que nunca são
+  // apagadas de propósito — isso é o achado da rodada A3 (célula é do catálogo global, nenhum
+  // arquivo a apaga mais) e já era um flake aceito ANTES desta rodada (`permissions-iam-schema`
+  // por "sujeira do e2e 427 do PR-5"): a mesma classe de contaminação, agora generalizada. O que
+  // este teste tem de PROVAR — e prova, sem afrouxar — é que NADA da matriz 206 nem do que a 435
+  // acrescenta (create/update dos 23 recursos splitados) está AUSENTE; sobra de outra suíte não é
+  // o que este teste audita.
+  it('permissions count >= matriz 206 ∪ create/update (e write-alias) da migration 435 — nunca ABAIXO do piso dinâmico (PR-8b, nunca mais um número solto)', async () => {
     const count = await pool.query<{ cnt: string }>(`SELECT COUNT(*) AS cnt FROM permissions`);
-    expect(Number(count.rows[0].cnt)).toBe(EXPECTED_PERMISSION_COUNT);
+    expect(Number(count.rows[0].cnt)).toBeGreaterThanOrEqual(catalogoEsperadoApos435().size);
   });
 
-  it('permissions: todos os 18 recursos presentes', async () => {
+  it('permissions: os 18 recursos originais + os recursos que a 435 introduziu no catálogo estão TODOS presentes (nenhum sumiu)', async () => {
     const resources = await pool.query<{ resource: string }>(`
       SELECT DISTINCT resource FROM permissions ORDER BY resource
     `);
     const names = resources.rows.map(r => r.resource);
-
-    const expectedResources = [
-      'analytics', 'dashboard', 'dedup', 'funnel', 'interview', 'match',
-      'messaging', 'patient', 'permission_management', 'prescreening',
-      'recruitment', 'talentum', 'upload', 'user_management',
-      'vacancy', 'worker', 'worker_document', 'worker_pii',
-    ];
-    for (const r of expectedResources) {
+    const esperados = new Set([...ORIGINAL_SEED_206.map(([r]) => r), ...SPLIT_23_MIG_435]);
+    for (const r of esperados) {
       expect(names).toContain(r);
     }
-    expect(names.length).toBe(18);
+    expect(names.length).toBeGreaterThanOrEqual(esperados.size);
   });
 
-  it('permissions: ações corretas por recurso (amostragem chave)', async () => {
+  it('permissions: a matriz 206 inteira continua intacta E os 23 recursos splitados (435) têm create/update — SUBSET dinâmico (tolera célula extra de outra suíte, nunca célula FALTANDO)', async () => {
     type PermRow = { resource: string; action: string };
     const rows = await pool.query<PermRow>(`
       SELECT resource, action FROM permissions ORDER BY resource, action
     `);
     const set = new Set(rows.rows.map(r => `${r.resource}:${r.action}`));
+    for (const par of catalogoEsperadoApos435()) expect(set.has(par)).toBe(true);
 
-    // worker: 4 ações
-    expect(set.has('worker:read')).toBe(true);
-    expect(set.has('worker:write')).toBe(true);
-    expect(set.has('worker:delete')).toBe(true);
-    expect(set.has('worker:export')).toBe(true);
-
-    // worker_pii: só read
-    expect(set.has('worker_pii:read')).toBe(true);
+    // Amostragem chave que NÃO faz parte dos 23 splitados — continua negativa como sempre.
     expect(set.has('worker_pii:write')).toBe(false);
-
-    // worker_document: 4 ações incluindo validate
-    expect(set.has('worker_document:validate')).toBe(true);
-
-    // match: read + execute
-    expect(set.has('match:read')).toBe(true);
-    expect(set.has('match:execute')).toBe(true);
     expect(set.has('match:write')).toBe(false);
-
-    // messaging: read + send (não write)
-    expect(set.has('messaging:read')).toBe(true);
-    expect(set.has('messaging:send')).toBe(true);
-    expect(set.has('messaging:write')).toBe(false);
-
-    // patient: read + write (sem delete — dado clínico)
-    expect(set.has('patient:read')).toBe(true);
-    expect(set.has('patient:write')).toBe(true);
     expect(set.has('patient:delete')).toBe(false);
-
-    // dashboard: só read
-    expect(set.has('dashboard:read')).toBe(true);
     expect(set.has('dashboard:write')).toBe(false);
-
-    // dedup: read + execute
-    expect(set.has('dedup:execute')).toBe(true);
     expect(set.has('dedup:delete')).toBe(false);
+
+    // `messaging`, `worker`, `patient`, `vacancy`, `user_management`, `worker_document` SÃO dos 23
+    // splitados (ADR-2/SUP-30): a célula `write` FICA como alias de transição (SUP-31) — não é
+    // mais "nunca write", é "write convive com create/update até a remoção em 8b.11".
+    expect(set.has('messaging:write')).toBe(true);
+    expect(set.has('messaging:create')).toBe(true);
+    expect(set.has('messaging:update')).toBe(true);
+    expect(set.has('worker:write')).toBe(true);
+    expect(set.has('worker:create')).toBe(true);
+    expect(set.has('worker:update')).toBe(true);
   });
 
   it('5 grupos do seed existem: Acesso Master e Super Admin de SISTEMA; Recrutador, Community Manager e Financeiro CUSTOMIZÁVEIS (mig 432, D285/FR-701)', async () => {
@@ -419,11 +468,14 @@ describe('S3 — Seeds: tenant Enlite, 43 permissions, 5 grupos (2 de sistema + 
     expect(byId.get(GROUP_FIN)).toMatchObject({ name: 'Financeiro', is_system: false });
   });
 
-  it('grupo Acesso Master tem todas as 43 permissões', async () => {
-    const count = await pool.query<{ cnt: string }>(`
-      SELECT COUNT(*) AS cnt FROM group_permissions WHERE group_id = $1
+  it('grupo Acesso Master tem a matriz 206 inteira + create/update dos 23 recursos splitados PARA OS QUE JÁ TINHAM write (o que a 435 realmente converte — dinâmico, sem número solto)', async () => {
+    const rows = await pool.query<{ resource: string; action: string }>(`
+      SELECT p.resource, p.action FROM group_permissions gp
+      JOIN permissions p ON p.id = gp.permission_id
+      WHERE gp.group_id = $1
     `, [GROUP_MASTER]);
-    expect(Number(count.rows[0].cnt)).toBe(EXPECTED_PERMISSION_COUNT);
+    const set = new Set(rows.rows.map((r) => `${r.resource}:${r.action}`));
+    expect(set).toEqual(masterEsperadoApos435());
   });
 
   it('grupo Recrutador: não tem worker:delete, dedup:execute, user_management:write/delete, permission_management:*', async () => {
