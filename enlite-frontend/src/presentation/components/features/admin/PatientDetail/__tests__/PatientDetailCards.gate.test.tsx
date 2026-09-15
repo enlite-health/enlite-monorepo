@@ -72,6 +72,7 @@ vi.mock('react-router-dom', () => ({
 import { PatientGeneralInfoCard } from '../PatientGeneralInfoCard';
 import { DiagnosticoCard } from '../DiagnosticoCard';
 import { FamiliaresCard } from '../FamiliaresCard';
+import { ExternalContactsCard } from '../ExternalContactsCard';
 import { ServicosContratadosCard } from '../ServicosContratadosCard';
 
 function comEnforcement(permissions: string[], enforcement: AuthzContract['enforcement']) {
@@ -137,6 +138,50 @@ describe('D269/D286 — write-gate nos botões Editar/Novo (célula do CONTAINER
     const btn = screen.getByTestId('edit-support-btn');
     expect(btn).toBeInTheDocument();
     expect(btn).not.toBeDisabled();
+  });
+
+  // Gate `canCreateRow || canUpdateRow` (PR-8b rodada B) — os 4 casos, FamiliaresCard e
+  // ExternalContactsCard (mesma célula `patient_family`, mesmo componente de gate).
+  it('FamiliaresCard: só patient_family:update → edit-support-btn existe (a outra metade do OR)', () => {
+    comEnforcement(['patient_family:update'], 'on');
+    render(<FamiliaresCard responsibles={[]} patientId="test-id" />);
+    expect(screen.getByTestId('edit-support-btn')).toBeInTheDocument();
+  });
+
+  it('FamiliaresCard: as duas células (create + update) → edit-support-btn existe', () => {
+    comEnforcement(['patient_family:create', 'patient_family:update'], 'on');
+    render(<FamiliaresCard responsibles={[]} patientId="test-id" />);
+    expect(screen.getByTestId('edit-support-btn')).toBeInTheDocument();
+  });
+
+  it('🔴 FamiliaresCard: nenhuma das duas células → edit-support-btn SOME', () => {
+    comEnforcement([], 'on');
+    render(<FamiliaresCard responsibles={[]} patientId="test-id" />);
+    expect(screen.queryByTestId('edit-support-btn')).not.toBeInTheDocument();
+  });
+
+  it('ExternalContactsCard: só patient_family:create → edit-external-contacts-btn existe', () => {
+    comEnforcement(['patient_family:create'], 'on');
+    render(<ExternalContactsCard externalContacts={[]} patientId="test-id" />);
+    expect(screen.getByTestId('edit-external-contacts-btn')).toBeInTheDocument();
+  });
+
+  it('ExternalContactsCard: só patient_family:update → edit-external-contacts-btn existe', () => {
+    comEnforcement(['patient_family:update'], 'on');
+    render(<ExternalContactsCard externalContacts={[]} patientId="test-id" />);
+    expect(screen.getByTestId('edit-external-contacts-btn')).toBeInTheDocument();
+  });
+
+  it('ExternalContactsCard: as duas células (create + update) → edit-external-contacts-btn existe', () => {
+    comEnforcement(['patient_family:create', 'patient_family:update'], 'on');
+    render(<ExternalContactsCard externalContacts={[]} patientId="test-id" />);
+    expect(screen.getByTestId('edit-external-contacts-btn')).toBeInTheDocument();
+  });
+
+  it('🔴 ExternalContactsCard: nenhuma das duas células → edit-external-contacts-btn SOME', () => {
+    comEnforcement([], 'on');
+    render(<ExternalContactsCard externalContacts={[]} patientId="test-id" />);
+    expect(screen.queryByTestId('edit-external-contacts-btn')).not.toBeInTheDocument();
   });
 
   // 06/09 (main): "Editar servicios" virou "+ Nuevo servicio" e o lápis por linha — as duas ações
