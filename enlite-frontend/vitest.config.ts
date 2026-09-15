@@ -473,6 +473,16 @@ export default defineConfig({
         '**/src/presentation/components/features/admin/VacancyAddressReview/ResolveAddressModal.tsx': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
+        // Entrega A1 da ficha (15/09): refetch pós-save silencioso (usePatientDetail/
+        // usePatientVacancies não ligam mais `isLoading`, D200) e o `TherapeuticProjectDrawer`
+        // migrado do `window.confirm` cru pro par `useConfirmDiscardClose`/`DiscardChangesConfirm`.
+        // Os três mediram 100/100/100/100 nesta rodada — entram no piso já aqui.
+        '**/src/hooks/admin/{usePatientDetail,usePatientVacancies}.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/components/features/admin/PatientDetail/therapeuticProject/TherapeuticProjectDrawer.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
       },
     },
   },

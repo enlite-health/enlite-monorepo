@@ -17,10 +17,12 @@ import type { TherapeuticFieldClass, TherapeuticProjectVersion, TherapeuticProje
 import { AdminTherapeuticProjectsApiService } from '@infrastructure/http/AdminTherapeuticProjectsApiService';
 import { saveRefusalMessage } from './saveRefusalMessage';
 import { useTherapeuticCatalogs } from '@hooks/admin/useTherapeuticProjects';
+import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { useContainerAccess } from '@presentation/hooks/useCellAccess';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { ActionButton } from '@presentation/components/features/access';
+import { DiscardChangesConfirm } from '../edit/DiscardChangesConfirm';
 import { TherapeuticProjectForm } from './TherapeuticProjectForm';
 import { TherapeuticProjectVersionView } from './TherapeuticProjectVersionView';
 import { buildTherapeuticProjectPdfInput } from './pdf/buildTherapeuticProjectPdfInput';
@@ -92,17 +94,18 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
     setShow(false);
     closeTimer.current = setTimeout(onClose, CLOSE_MS);
   };
-  const requestClose = (): void => {
-    if (dirty && !window.confirm(tf('discardConfirm'))) return;
-    close();
-  };
+  // Item 7 (padronizar "descartar alterações"): trocado o `window.confirm` cru pelo par
+  // `useConfirmDiscardClose` + `DiscardChangesConfirm` já usado nos 8 drawers de `PatientDetail/edit/`.
+  const { confirmingClose, requestClose, keepEditing, confirmDiscard } = useConfirmDiscardClose({
+    isDirty: dirty,
+    onConfirmedClose: close,
+  });
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') requestClose(); };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dirty]);
+  }, [requestClose]);
 
   const handleSubmit = async (body: TherapeuticProjectVersionBody): Promise<void> => {
     setSaving(true);
@@ -158,6 +161,7 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
 
   return (
     <>
+      {confirmingClose && <DiscardChangesConfirm onKeepEditing={keepEditing} onDiscard={confirmDiscard} />}
       <div
         className={`fixed inset-0 bg-black/50 z-40 transition-opacity duration-300 ${show ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
         onClick={requestClose}

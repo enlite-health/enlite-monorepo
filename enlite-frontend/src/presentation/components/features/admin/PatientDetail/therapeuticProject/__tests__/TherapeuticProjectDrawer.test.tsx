@@ -624,7 +624,7 @@ describe('fechamento — Escape e backdrop, com confirmação quando há mudanç
     avancarFechamento();
 
     expect(onClose).toHaveBeenCalledTimes(1);
-    expect(window.confirm).toBeDefined();
+    expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
   });
 
   it('tecla que não é Escape não fecha nada', () => {
@@ -647,56 +647,56 @@ describe('fechamento — Escape e backdrop, com confirmação quando há mudanç
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('🔴 com mudança não salva: Escape pergunta e, se o operador CANCELA, o drawer fica', async () => {
+  it('🔴 com mudança não salva: Escape abre a confirmação e, se o operador segue editando, o drawer fica', async () => {
     catalogosOk();
-    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false);
     montar({ mode: 'edit', version: VERSAO });
     await esperarFormulario();
     fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
 
     vi.useFakeTimers();
     fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.getByTestId('discard-changes-confirm')).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('discard-changes-keep-editing'));
     avancarFechamento();
 
-    expect(confirmar).toHaveBeenCalledWith(tf('discardConfirm'));
+    expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
-    confirmar.mockRestore();
   });
 
-  it('com mudança não salva: o backdrop pergunta e, confirmando, fecha', async () => {
+  it('com mudança não salva: o backdrop abre a confirmação e, descartando, fecha', async () => {
     catalogosOk();
-    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(true);
     montar({ mode: 'edit', version: VERSAO });
     await esperarFormulario();
     fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
 
     vi.useFakeTimers();
     fireEvent.click(screen.getByTestId('therapeutic-project-backdrop'));
+
+    expect(screen.getByTestId('discard-changes-confirm')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('discard-changes-discard'));
     avancarFechamento();
 
-    expect(confirmar).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
-    confirmar.mockRestore();
   });
 
   it('"Cancelar" do formulário passa pela MESMA confirmação', async () => {
     catalogosOk();
-    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false);
     montar({ mode: 'edit', version: VERSAO });
     await esperarFormulario();
     fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
 
     fireEvent.click(screen.getByText(ptBR.common.cancel));
 
-    expect(confirmar).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('discard-changes-confirm')).toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
-    confirmar.mockRestore();
   });
 
   it('depois de SALVAR o formulário deixa de estar sujo — fechar não pergunta mais', async () => {
     catalogosOk();
     mockCreateVersion.mockResolvedValue(CRIADA);
-    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false);
     montar({ mode: 'edit', version: VERSAO });
     await esperarFormulario();
     fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
@@ -706,9 +706,8 @@ describe('fechamento — Escape e backdrop, com confirmação quando há mudanç
     fireEvent.click(screen.getByTestId('therapeutic-project-close'));
     avancarFechamento();
 
-    expect(confirmar).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
     expect(onClose).toHaveBeenCalledTimes(1);
-    confirmar.mockRestore();
   });
 });
 
