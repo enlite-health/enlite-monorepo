@@ -33,6 +33,7 @@
  *   PW_BASE_URL=http://localhost:5183 npx playwright test patient-photo-documents-pr4 --project=integration
  */
 import { test, expect, type Page } from '@playwright/test';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { seedStaffInGroup, grantCell, cleanupStaffAndGroup, loginAs, type MockUser } from '../helpers/abac-stack-helper';
@@ -40,7 +41,12 @@ import { runSQL, cleanupPatientDeep } from '../helpers/patient-detail-a-helper';
 import { insertTestPatient } from '../helpers/db-test-helper';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const EVID_DIR = '/Users/gabrielstein-dev/projects/enlite/ebrain/specs/018-planning-0909-ficha-admissao/evidencias/pr-4-local';
+// Conserto #8 da 2ª revisão do PR-4: era um caminho ABSOLUTO de macOS
+// (`/Users/gabrielstein-dev/...`) — quebra em qualquer outra máquina/CI (Linux do runner).
+// Relativo ao repo, dentro de `test-results/` (gitignored — CLAUDE.md do frontend já ignora
+// `test-results`), criado on-demand pelo `mkdirSync` abaixo.
+const EVID_DIR = path.join(HERE, '..', '..', 'test-results', 'evidencias', 'pr-4-local');
+fs.mkdirSync(EVID_DIR, { recursive: true });
 const PHOTO_FIXTURE = path.join(HERE, '..', 'fixtures', 'figma', '5764_49894.png');
 const PDF_FIXTURE = path.join(HERE, '..', 'fixtures', 'sample.pdf');
 
