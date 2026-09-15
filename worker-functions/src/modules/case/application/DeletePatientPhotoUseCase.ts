@@ -8,10 +8,13 @@ import { inPatientTransaction } from './patientTransaction';
 import { PatientPhotoStorage } from '../infrastructure/PatientPhotoStorage';
 import { PatientPhotoRepository } from '../infrastructure/PatientPhotoRepository';
 import { PatientPhotoOrphanRepository } from '../infrastructure/PatientPhotoOrphanRepository';
+import { scheduleOpportunisticOrphanRetry } from './scheduleOpportunisticOrphanRetry';
 
 export class DeletePatientPhotoUseCase {
   constructor(
-    private readonly storage: PatientPhotoStorage = new PatientPhotoStorage(),
+    // FÁBRICA, não instância — mesmo achado de `UploadPatientPhotoUseCase` (task 4.3h): não
+    // derrubar o boot da API quando `GCS_PATIENT_PHOTOS_BUCKET` falta.
+    private readonly storageFactory: () => PatientPhotoStorage = () => new PatientPhotoStorage(),
     private readonly photoRepo: PatientPhotoRepository = new PatientPhotoRepository(),
     private readonly orphanRepo: PatientPhotoOrphanRepository = new PatientPhotoOrphanRepository(),
     private readonly enc: KMSEncryptionService = new KMSEncryptionService(),
@@ -22,10 +25,12 @@ export class DeletePatientPhotoUseCase {
     if (!deletedRow) return { deleted: false };
 
     const plainPath = await this.enc.decrypt(deletedRow.object_path_encrypted);
-    await this.storage.delete(plainPath).catch(async (err) => {
+    await this.storageFactory().delete(plainPath).catch(async (err) => {
       logger.warn({ err }, '[DeletePatientPhotoUseCase] objeto não apagado — vira órfão');
       await this.orphanRepo.record(deletedRow.object_path_encrypted, 'PHOTOS', 'DELETE');
     });
+    // Achado da revisão do PR-4 (item 3): fila de órfãos sem consumidor — tentativa oportunista.
+    scheduleOpportunisticOrphanRetry();
     return { deleted: true };
   }
 }

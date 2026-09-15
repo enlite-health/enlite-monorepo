@@ -1,3 +1,4 @@
+jest.mock('../scheduleOpportunisticOrphanRetry', () => ({ scheduleOpportunisticOrphanRetry: jest.fn() }));
 jest.mock('../patientTransaction', () => ({
   inPatientTransaction: jest.fn((fn: (client: unknown) => unknown) => fn({})),
 }));
@@ -18,7 +19,7 @@ describe('DeletePatientPhotoUseCase', () => {
     const photoRepo = { deleteRow: jest.fn(async () => null) };
     const orphanRepo = { record: jest.fn() };
     const enc = { decrypt: jest.fn() };
-    const uc = new DeletePatientPhotoUseCase(storage as never, photoRepo as never, orphanRepo as never, enc as never);
+    const uc = new DeletePatientPhotoUseCase((() => storage) as never, photoRepo as never, orphanRepo as never, enc as never);
 
     await expect(uc.execute(PID)).resolves.toEqual({ deleted: false });
     expect(storage.delete).not.toHaveBeenCalled();
@@ -29,7 +30,7 @@ describe('DeletePatientPhotoUseCase', () => {
     const photoRepo = { deleteRow: jest.fn(async () => ({ object_path_encrypted: 'enc(x)' })) };
     const orphanRepo = { record: jest.fn() };
     const enc = { decrypt: jest.fn(async (v: string) => v.replace(/^enc\(|\)$/g, '')) };
-    const uc = new DeletePatientPhotoUseCase(storage as never, photoRepo as never, orphanRepo as never, enc as never);
+    const uc = new DeletePatientPhotoUseCase((() => storage) as never, photoRepo as never, orphanRepo as never, enc as never);
 
     await expect(uc.execute(PID)).resolves.toEqual({ deleted: true });
     expect(storage.delete).toHaveBeenCalledWith('x');
@@ -41,7 +42,7 @@ describe('DeletePatientPhotoUseCase', () => {
     const photoRepo = { deleteRow: jest.fn(async () => ({ object_path_encrypted: 'enc(x)' })) };
     const orphanRepo = { record: jest.fn(async () => ({ id: 'o1' })) };
     const enc = { decrypt: jest.fn(async (v: string) => v) };
-    const uc = new DeletePatientPhotoUseCase(storage as never, photoRepo as never, orphanRepo as never, enc as never);
+    const uc = new DeletePatientPhotoUseCase((() => storage) as never, photoRepo as never, orphanRepo as never, enc as never);
 
     await expect(uc.execute(PID)).resolves.toEqual({ deleted: true });
     expect(orphanRepo.record).toHaveBeenCalledWith('enc(x)', 'PHOTOS', 'DELETE');
@@ -55,5 +56,20 @@ describe('DeletePatientPhotoUseCase', () => {
     } finally {
       delete process.env.GCS_PATIENT_PHOTOS_BUCKET;
     }
+  });
+
+  it('SEM GCS_PATIENT_PHOTOS_BUCKET: construir o use case NÃO lança (fábrica é preguiçosa — achado item 1 da revisão: boot não cai sem env)', () => {
+    delete process.env.GCS_PATIENT_PHOTOS_BUCKET;
+    expect(() => new DeletePatientPhotoUseCase()).not.toThrow();
+  });
+
+  it('SEM GCS_PATIENT_PHOTOS_BUCKET, mas COM foto para apagar: só falha ao tentar de fato usar o storage', async () => {
+    delete process.env.GCS_PATIENT_PHOTOS_BUCKET;
+    const photoRepo = { deleteRow: jest.fn(async () => ({ object_path_encrypted: 'enc(x)' })) };
+    const enc = { decrypt: jest.fn(async (v: string) => v.replace(/^enc\(|\)$/g, '')) };
+    const orphanRepo = { record: jest.fn() };
+    const uc = new DeletePatientPhotoUseCase(undefined, photoRepo as never, orphanRepo as never, enc as never);
+
+    await expect(uc.execute(PID)).rejects.toThrow('GCS_PATIENT_PHOTOS_BUCKET não configurado');
   });
 });

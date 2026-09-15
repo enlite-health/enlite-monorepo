@@ -10,6 +10,7 @@ jest.mock('@google-cloud/storage', () => ({
 import { AdminPatientPhotoController } from '../AdminPatientPhotoController';
 import { AuthMiddleware } from '@modules/identity';
 import { InvalidPatientPhotoError, PatientPhotoTooLargeError } from '../../../infrastructure/PatientPhotoProcessor';
+import { PatientPhotoBucketNotConfiguredError } from '../../../infrastructure/PatientPhotoStorage';
 import type { Response } from 'express';
 
 const PID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -107,6 +108,15 @@ describe('AdminPatientPhotoController', () => {
       await c.upload(mockReq({ params: { id: PID }, file: { mimetype: 'image/jpeg', buffer: Buffer.from('x') } }), res);
       expect(res.status).toHaveBeenCalledWith(500);
     });
+
+    it('503 PatientPhotoBucketNotConfiguredError (achado item 1 da revisão do PR-4 — config faltando, não bug)', async () => {
+      const upload = { execute: jest.fn(async () => { throw new PatientPhotoBucketNotConfiguredError(); }) };
+      const c = new AdminPatientPhotoController(upload as never, {} as never, {} as never, db() as never);
+      const res = mockRes();
+      await c.upload(mockReq({ params: { id: PID }, file: { mimetype: 'image/jpeg', buffer: Buffer.from('x') } }), res);
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'PHOTO_STORAGE_NOT_CONFIGURED' }));
+    });
   });
 
   describe('remove', () => {
@@ -157,6 +167,14 @@ describe('AdminPatientPhotoController', () => {
       await c.remove(mockReq({ params: { id: PID } }), res);
       expect(res.status).toHaveBeenCalledWith(500);
     });
+
+    it('503 PatientPhotoBucketNotConfiguredError', async () => {
+      const del = { execute: jest.fn(async () => { throw new PatientPhotoBucketNotConfiguredError(); }) };
+      const c = new AdminPatientPhotoController({} as never, del as never, {} as never, db() as never);
+      const res = mockRes();
+      await c.remove(mockReq({ params: { id: PID } }), res);
+      expect(res.status).toHaveBeenCalledWith(503);
+    });
   });
 
   describe('getUrl', () => {
@@ -206,6 +224,14 @@ describe('AdminPatientPhotoController', () => {
       await c.getUrl(mockReq({ params: { id: PID } }), res);
       expect(res.status).toHaveBeenCalledWith(500);
     });
+
+    it('503 PatientPhotoBucketNotConfiguredError', async () => {
+      const getUrl = { execute: jest.fn(async () => { throw new PatientPhotoBucketNotConfiguredError(); }) };
+      const c = new AdminPatientPhotoController({} as never, {} as never, getUrl as never, db() as never);
+      const res = mockRes();
+      await c.getUrl(mockReq({ params: { id: PID } }), res);
+      expect(res.status).toHaveBeenCalledWith(503);
+    });
   });
 
   it('constrói pelos DEFAULTS do construtor (caminho de produção)', () => {
@@ -216,6 +242,12 @@ describe('AdminPatientPhotoController', () => {
     } finally {
       delete process.env.GCS_PATIENT_PHOTOS_BUCKET;
     }
+  });
+
+  it('SEM GCS_PATIENT_PHOTOS_BUCKET: construir o controller (e as rotas que o montam no BOOT) NÃO lança — achado item 1 da revisão do PR-4', () => {
+    delete process.env.GCS_PATIENT_PHOTOS_BUCKET;
+    // eslint-disable-next-line no-new -- prova central do item 1: o boot da API não cai mais sem a env.
+    expect(() => new AdminPatientPhotoController()).not.toThrow();
   });
 
   it('actorUid sem ator identificado lança (lex C6)', async () => {

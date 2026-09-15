@@ -15,7 +15,9 @@ export interface PatientDocumentUrlResult {
 
 export class GetPatientDocumentUrlUseCase {
   constructor(
-    private readonly storage: PatientDocumentStorage = new PatientDocumentStorage(),
+    // FÁBRICA, não instância — mesmo achado de `UploadPatientDocumentUseCase` (task 4.3h): não
+    // derrubar o boot da API quando `GCS_PATIENT_DOCUMENTS_BUCKET` falta.
+    private readonly storageFactory: () => PatientDocumentStorage = () => new PatientDocumentStorage(),
     private readonly repo: PatientDocumentRepository = new PatientDocumentRepository(),
     private readonly enc: KMSEncryptionService = new KMSEncryptionService(),
   ) {}
@@ -24,7 +26,7 @@ export class GetPatientDocumentUrlUseCase {
     const row = await this.repo.findOne(patientId, documentId);
     if (!row) return null;
     const objectPath = await this.enc.decrypt(row.object_path_encrypted);
-    const url = await this.storage.getReadSignedUrl(objectPath);
+    const url = await this.storageFactory().getReadSignedUrl(objectPath);
     return { url, expiresInSeconds: 300 };
   }
 }

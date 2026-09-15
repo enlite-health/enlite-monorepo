@@ -8,6 +8,8 @@ import { UploadPatientPhotoUseCase } from '../../application/UploadPatientPhotoU
 import { DeletePatientPhotoUseCase } from '../../application/DeletePatientPhotoUseCase';
 import { GetPatientPhotoUrlUseCase } from '../../application/GetPatientPhotoUrlUseCase';
 import { InvalidPatientPhotoError, PatientPhotoTooLargeError } from '../../infrastructure/PatientPhotoProcessor';
+import { PatientPhotoBucketNotConfiguredError } from '../../infrastructure/PatientPhotoStorage';
+import { patientExistsCheck } from './patientExistsCheck';
 
 /**
  * AdminPatientPhotoController — foto de perfil do paciente (spec 018, PR-4; `lex` #1).
@@ -28,9 +30,10 @@ export class AdminPatientPhotoController {
     return uid;
   }
 
+  // Achado da revisão do PR-4 (item 5): reusa `patientExistsCheck` (nenhum helper compartilhado
+  // pré-existia no módulo — ver o comentário do arquivo) em vez de nascer com mais uma cópia.
   private async patientExists(id: string): Promise<boolean> {
-    const { rows } = await this.db.query('SELECT 1 FROM patients WHERE id = $1 AND deleted_at IS NULL', [id]);
-    return rows.length > 0;
+    return patientExistsCheck(this.db, id);
   }
 
   /** POST /api/admin/patients/:id/photo — multipart `file` (image/jpeg ou image/png, ≤5MB). */
@@ -57,6 +60,9 @@ export class AdminPatientPhotoController {
     } catch (err: unknown) {
       if (err instanceof PatientPhotoTooLargeError) { res.status(413).json({ success: false, error: err.message, code: 'PHOTO_TOO_LARGE' }); return; }
       if (err instanceof InvalidPatientPhotoError) { res.status(422).json({ success: false, error: err.message, code: 'INVALID_PHOTO' }); return; }
+      // Achado da revisão do PR-4 (item 1): sem GCS_PATIENT_PHOTOS_BUCKET só ESTA rota falha —
+      // 503 (indisponível), não 500 (erro interno) — é config faltando, não bug.
+      if (err instanceof PatientPhotoBucketNotConfiguredError) { res.status(503).json({ success: false, error: 'Photo storage not configured', code: 'PHOTO_STORAGE_NOT_CONFIGURED' }); return; }
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientPhotoController:upload', patientId: params.data.id });
       res.status(500).json({ success: false, error: 'Failed to upload photo' });
@@ -76,6 +82,7 @@ export class AdminPatientPhotoController {
       if (!deleted) { res.status(404).json({ success: false, error: 'Photo not found' }); return; }
       res.status(204).send();
     } catch (err: unknown) {
+      if (err instanceof PatientPhotoBucketNotConfiguredError) { res.status(503).json({ success: false, error: 'Photo storage not configured', code: 'PHOTO_STORAGE_NOT_CONFIGURED' }); return; }
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientPhotoController:remove', patientId: params.data.id });
       res.status(500).json({ success: false, error: 'Failed to delete photo' });
@@ -95,6 +102,7 @@ export class AdminPatientPhotoController {
       if (!result) { res.status(404).json({ success: false, error: 'Photo not found' }); return; }
       res.status(200).json({ success: true, data: result });
     } catch (err: unknown) {
+      if (err instanceof PatientPhotoBucketNotConfiguredError) { res.status(503).json({ success: false, error: 'Photo storage not configured', code: 'PHOTO_STORAGE_NOT_CONFIGURED' }); return; }
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientPhotoController:getUrl', patientId: params.data.id });
       res.status(500).json({ success: false, error: 'Failed to read photo' });

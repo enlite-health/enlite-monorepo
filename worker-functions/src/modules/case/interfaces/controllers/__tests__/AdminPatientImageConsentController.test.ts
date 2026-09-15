@@ -14,6 +14,7 @@ import {
   RepresentativeRequiredError,
   ImageConsentReferenceNotFoundError,
 } from '../../../application/RegisterImageConsentUseCase';
+import { PatientPhotoBucketNotConfiguredError } from '../../../infrastructure/PatientPhotoStorage';
 import type { Response } from 'express';
 
 const PID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -167,6 +168,15 @@ describe('AdminPatientImageConsentController (D335 — registrar é opcional)', 
       await c.revoke(mockReq({ params: { id: PID, cid: CID }, body: REVOKE_BODY }), res);
       expect(res.status).toHaveBeenCalledWith(500);
     });
+
+    it('503 PatientPhotoBucketNotConfiguredError (revogar apaga a foto — achado item 1 da revisão do PR-4)', async () => {
+      const revoke = { execute: jest.fn(async () => { throw new PatientPhotoBucketNotConfiguredError(); }) };
+      const c = new AdminPatientImageConsentController({} as never, revoke as never, { execute: jest.fn() } as never, db() as never);
+      const res = mockRes();
+      await c.revoke(mockReq({ params: { id: PID, cid: CID }, body: REVOKE_BODY }), res);
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'PHOTO_STORAGE_NOT_CONFIGURED' }));
+    });
   });
 
   describe('getVigente', () => {
@@ -238,5 +248,11 @@ describe('AdminPatientImageConsentController (D335 — registrar é opcional)', 
     } finally {
       delete process.env.GCS_PATIENT_PHOTOS_BUCKET;
     }
+  });
+
+  it('SEM GCS_PATIENT_PHOTOS_BUCKET: construir o controller NÃO lança — achado item 1 da revisão do PR-4', () => {
+    delete process.env.GCS_PATIENT_PHOTOS_BUCKET;
+    // eslint-disable-next-line no-new
+    expect(() => new AdminPatientImageConsentController()).not.toThrow();
   });
 });

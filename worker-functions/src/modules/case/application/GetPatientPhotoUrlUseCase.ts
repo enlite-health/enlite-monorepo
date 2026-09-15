@@ -14,7 +14,9 @@ export interface PatientPhotoUrlResult {
 
 export class GetPatientPhotoUrlUseCase {
   constructor(
-    private readonly storage: PatientPhotoStorage = new PatientPhotoStorage(),
+    // FÁBRICA, não instância — mesmo achado de `UploadPatientPhotoUseCase` (task 4.3h): não
+    // derrubar o boot da API quando `GCS_PATIENT_PHOTOS_BUCKET` falta.
+    private readonly storageFactory: () => PatientPhotoStorage = () => new PatientPhotoStorage(),
     private readonly photoRepo: PatientPhotoRepository = new PatientPhotoRepository(),
     private readonly enc: KMSEncryptionService = new KMSEncryptionService(),
   ) {}
@@ -23,7 +25,7 @@ export class GetPatientPhotoUrlUseCase {
     const row = await this.photoRepo.findOne(patientId);
     if (!row) return null;
     const objectPath = await this.enc.decrypt(row.object_path_encrypted);
-    const url = await this.storage.getReadSignedUrl(objectPath);
+    const url = await this.storageFactory().getReadSignedUrl(objectPath);
     return { url, expiresInSeconds: 300 };
   }
 }

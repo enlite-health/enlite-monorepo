@@ -1,3 +1,4 @@
+jest.mock('../scheduleOpportunisticOrphanRetry', () => ({ scheduleOpportunisticOrphanRetry: jest.fn() }));
 jest.mock('../patientTransaction', () => ({
   inPatientTransaction: jest.fn((fn: (client: unknown) => unknown) => fn({})),
 }));
@@ -18,6 +19,7 @@ function makeDeps(overrides: Partial<{
   vigente: { id: string } | null;
   deleteThrows: boolean;
   insertThrows: boolean;
+  orphanRecordThrows: boolean;
 }> = {}) {
   const processor = { process: jest.fn(async () => overrides.processResult ?? { buffer: Buffer.from('jpeg'), contentType: 'image/jpeg' }) };
   const storage = {
@@ -28,16 +30,24 @@ function makeDeps(overrides: Partial<{
     deleteRow: jest.fn(async () => overrides.oldRow ?? null),
     insert: overrides.insertThrows ? jest.fn(async () => { throw new Error('db down'); }) : jest.fn(async () => ({ id: 'photo-1' })),
   };
-  const orphanRepo = { record: jest.fn(async () => ({ id: 'o1' })) };
+  const orphanRepo = {
+    record: overrides.orphanRecordThrows
+      ? jest.fn(async () => { throw new Error('orphan insert down'); })
+      : jest.fn(async () => ({ id: 'o1' })),
+  };
   const consentRepo = { findVigente: jest.fn(async () => overrides.vigente ?? null) };
   const enc = { encrypt: jest.fn(async (v: string) => `enc(${v})`), decrypt: jest.fn(async (v: string) => v.replace(/^enc\(|\)$/g, '')) };
   return { processor, storage, photoRepo, orphanRepo, consentRepo, enc };
 }
 
+/** Fábrica que sempre devolve o MESMO mock — prova que `storageFactory` (item 1 da revisão do
+ *  PR-4) não muda o comportamento observável, só adia a construção para dentro de `execute()`. */
+const storageFactoryOf = (storage: unknown) => (() => storage) as never;
+
 describe('UploadPatientPhotoUseCase (spec 018 PR-4, D335 — sem checagem de consentimento)', () => {
   it('feliz: processa, sobe, troca a linha, sem foto anterior — não apaga nada do storage', async () => {
     const deps = makeDeps();
-    const uc = new UploadPatientPhotoUseCase(deps.processor as never, deps.storage as never, deps.photoRepo as never, deps.orphanRepo as never, deps.consentRepo as never, deps.enc as never);
+    const uc = new UploadPatientPhotoUseCase(deps.processor as never, storageFactoryOf(deps.storage), deps.photoRepo as never, deps.orphanRepo as never, deps.consentRepo as never, deps.enc as never);
 
     const result = await uc.execute({ patientId: PID, buffer: Buffer.from('in'), actorUid: 'uid-1' });
 
@@ -49,7 +59,7 @@ describe('UploadPatientPhotoUseCase (spec 018 PR-4, D335 — sem checagem de con
 
   it('anexa consentId quando há consentimento vigente (referência informativa, não bloqueio)', async () => {
     const deps = makeDeps({ vigente: { id: 'consent-1' } });
-    const uc = new UploadPatientPhotoUseCase(deps.processor as never, deps.storage as never, deps.photoRepo as never, deps.orphanRepo as never, deps.consentRepo as never, deps.enc as never);
+    const uc = new UploadPatientPhotoUseCase(deps.processor as never, storageFactoryOf(deps.storage), deps.photoRepo as never, deps.orphanRepo as never, deps.consentRepo as never, deps.enc as never);
 
     await uc.execute({ patientId: PID, buffer: Buffer.from('in'), actorUid: 'uid-1' });
 
@@ -58,7 +68,7 @@ describe('UploadPatientPhotoUseCase (spec 018 PR-4, D335 — sem checagem de con
 
   it('troca a foto: apaga o objeto ANTIGO depois do commit', async () => {
     const deps = makeDeps({ oldRow: { object_path_encrypted: 'enc(old-uuid.jpg)' } });
-    const uc = new UploadPatientPhotoUseCase(deps.processor as never, deps.storage as never, deps.photoRepo as never, deps.orphanRepo as never, deps.consentRepo as never, deps.enc as never);
+    const uc = new UploadPatientPhotoUseCase(deps.processor as never, storageFactoryOf(deps.storage), deps.photoRepo as never, deps.orphanRepo as never, deps.consentRepo as never, deps.enc as never);
 
     await uc.execute({ patientId: PID, buffer: Buffer.from('in'), actorUid: 'uid-1' });
 
@@ -70,7 +80,7 @@ describe('UploadPatientPhotoUseCase (spec 018 PR-4, D335 — sem checagem de con
     const deps = makeDeps({ oldRow: { object_path_encrypted: 'enc(old-uuid.jpg)' } });
     // Única chamada de delete neste cenário (sem erro de transação) é a do objeto ANTIGO.
     deps.storage.delete = jest.fn(async () => { throw new Error('gcs down'); });
-    const uc = new UploadPatientPhotoUseCase(deps.processor as never, deps.storage as never, deps.photoRepo as never, deps.orphanRepo as never, deps.consentRepo as never, deps.enc as never);
+    const uc = new UploadPatientPhotoUseCase(deps.processor as never, storageFactoryOf(deps.storage), deps.photoRepo as never, deps.orphanRepo as never, deps.consentRepo as never, deps.enc as never);
 
     const result = await uc.execute({ patientId: PID, buffer: Buffer.from('in'), actorUid: 'uid-1' });
 
@@ -78,19 +88,31 @@ describe('UploadPatientPhotoUseCase (spec 018 PR-4, D335 — sem checagem de con
     expect(deps.orphanRepo.record).toHaveBeenCalledWith('enc(old-uuid.jpg)', 'PHOTOS', 'REPLACE');
   });
 
-  it('transação falha: apaga o objeto NOVO (best-effort) e relança', async () => {
+  it('transação falha: apaga o objeto NOVO (best-effort) e relança o erro ORIGINAL', async () => {
     const deps = makeDeps({ insertThrows: true });
-    const uc = new UploadPatientPhotoUseCase(deps.processor as never, deps.storage as never, deps.photoRepo as never, deps.orphanRepo as never, deps.consentRepo as never, deps.enc as never);
+    const uc = new UploadPatientPhotoUseCase(deps.processor as never, storageFactoryOf(deps.storage), deps.photoRepo as never, deps.orphanRepo as never, deps.consentRepo as never, deps.enc as never);
 
     await expect(uc.execute({ patientId: PID, buffer: Buffer.from('in'), actorUid: 'uid-1' })).rejects.toThrow('db down');
     expect(deps.storage.delete).toHaveBeenCalledWith('new-uuid.jpg');
+    // Achado da revisão do PR-4 (task 4.3h/item 4): a exclusão do objeto novo teve sucesso aqui,
+    // então NÃO deve virar órfão registrado — só falha de delete vira órfão.
+    expect(deps.orphanRepo.record).not.toHaveBeenCalled();
   });
 
-  it('transação falha E a limpeza do objeto novo também falha — ainda assim relança o erro ORIGINAL', async () => {
+  it('transação falha E a limpeza do objeto novo também falha — registra órfão REPLACE e relança o erro ORIGINAL (não mais silencioso)', async () => {
     const deps = makeDeps({ insertThrows: true, deleteThrows: true });
-    const uc = new UploadPatientPhotoUseCase(deps.processor as never, deps.storage as never, deps.photoRepo as never, deps.orphanRepo as never, deps.consentRepo as never, deps.enc as never);
+    const uc = new UploadPatientPhotoUseCase(deps.processor as never, storageFactoryOf(deps.storage), deps.photoRepo as never, deps.orphanRepo as never, deps.consentRepo as never, deps.enc as never);
 
     await expect(uc.execute({ patientId: PID, buffer: Buffer.from('in'), actorUid: 'uid-1' })).rejects.toThrow('db down');
+    expect(deps.orphanRepo.record).toHaveBeenCalledWith('enc(new-uuid.jpg)', 'PHOTOS', 'REPLACE');
+  });
+
+  it('transação falha, limpeza falha E o registro do órfão TAMBÉM falha — ainda assim relança só o erro ORIGINAL', async () => {
+    const deps = makeDeps({ insertThrows: true, deleteThrows: true, orphanRecordThrows: true });
+    const uc = new UploadPatientPhotoUseCase(deps.processor as never, storageFactoryOf(deps.storage), deps.photoRepo as never, deps.orphanRepo as never, deps.consentRepo as never, deps.enc as never);
+
+    await expect(uc.execute({ patientId: PID, buffer: Buffer.from('in'), actorUid: 'uid-1' })).rejects.toThrow('db down');
+    expect(deps.orphanRepo.record).toHaveBeenCalledWith('enc(new-uuid.jpg)', 'PHOTOS', 'REPLACE');
   });
 
   it('constrói pelos DEFAULTS do construtor (caminho de produção)', () => {
@@ -101,5 +123,13 @@ describe('UploadPatientPhotoUseCase (spec 018 PR-4, D335 — sem checagem de con
     } finally {
       delete process.env.GCS_PATIENT_PHOTOS_BUCKET;
     }
+  });
+
+  it('SEM GCS_PATIENT_PHOTOS_BUCKET: construir o use case NÃO lança (fábrica é preguiçosa) — só execute() lança', async () => {
+    delete process.env.GCS_PATIENT_PHOTOS_BUCKET;
+    // eslint-disable-next-line no-new -- prova do achado item 1 da revisão: boot não cai sem env.
+    const uc = new UploadPatientPhotoUseCase();
+    await expect(uc.execute({ patientId: PID, buffer: Buffer.from('in'), actorUid: 'uid-1' }))
+      .rejects.toThrow('GCS_PATIENT_PHOTOS_BUCKET não configurado');
   });
 });

@@ -1,3 +1,4 @@
+jest.mock('../scheduleOpportunisticOrphanRetry', () => ({ scheduleOpportunisticOrphanRetry: jest.fn() }));
 jest.mock('../patientTransaction', () => ({
   inPatientTransaction: jest.fn((fn: (client: unknown) => unknown) => fn({})),
 }));
@@ -26,21 +27,21 @@ function makeDeps(overrides: { consentFound?: boolean; photoRow?: { object_path_
 describe('RevokeImageConsentUseCase (D335 — revogação simples, sempre apaga a foto)', () => {
   it('consentimento não encontrado — revoked:false, nada de foto', async () => {
     const deps = makeDeps({ consentFound: false });
-    const uc = new RevokeImageConsentUseCase(deps.consentRepo as never, deps.photoRepo as never, deps.storage as never, deps.orphanRepo as never, deps.enc as never);
+    const uc = new RevokeImageConsentUseCase(deps.consentRepo as never, deps.photoRepo as never, (() => deps.storage) as never, deps.orphanRepo as never, deps.enc as never);
     await expect(uc.execute(PID, CID, INPUT, 'uid-1')).resolves.toEqual({ revoked: false });
     expect(deps.photoRepo.deleteRow).not.toHaveBeenCalled();
   });
 
   it('revoga sem foto vigente — revoked:true, sem chamada de storage', async () => {
     const deps = makeDeps({ photoRow: null });
-    const uc = new RevokeImageConsentUseCase(deps.consentRepo as never, deps.photoRepo as never, deps.storage as never, deps.orphanRepo as never, deps.enc as never);
+    const uc = new RevokeImageConsentUseCase(deps.consentRepo as never, deps.photoRepo as never, (() => deps.storage) as never, deps.orphanRepo as never, deps.enc as never);
     await expect(uc.execute(PID, CID, INPUT, 'uid-1')).resolves.toEqual({ revoked: true });
     expect(deps.storage.delete).not.toHaveBeenCalled();
   });
 
   it('revoga com foto vigente — apaga o objeto na mesma operação lógica', async () => {
     const deps = makeDeps({ photoRow: { object_path_encrypted: 'enc(x)' } });
-    const uc = new RevokeImageConsentUseCase(deps.consentRepo as never, deps.photoRepo as never, deps.storage as never, deps.orphanRepo as never, deps.enc as never);
+    const uc = new RevokeImageConsentUseCase(deps.consentRepo as never, deps.photoRepo as never, (() => deps.storage) as never, deps.orphanRepo as never, deps.enc as never);
     await expect(uc.execute(PID, CID, INPUT, 'uid-1')).resolves.toEqual({ revoked: true });
     expect(deps.storage.delete).toHaveBeenCalledWith('x');
     expect(deps.orphanRepo.record).not.toHaveBeenCalled();
@@ -48,7 +49,7 @@ describe('RevokeImageConsentUseCase (D335 — revogação simples, sempre apaga 
 
   it('objeto falha ao apagar — vira órfão REVOKE, ainda revoked:true', async () => {
     const deps = makeDeps({ photoRow: { object_path_encrypted: 'enc(x)' }, deleteThrows: true });
-    const uc = new RevokeImageConsentUseCase(deps.consentRepo as never, deps.photoRepo as never, deps.storage as never, deps.orphanRepo as never, deps.enc as never);
+    const uc = new RevokeImageConsentUseCase(deps.consentRepo as never, deps.photoRepo as never, (() => deps.storage) as never, deps.orphanRepo as never, deps.enc as never);
     await expect(uc.execute(PID, CID, INPUT, 'uid-1')).resolves.toEqual({ revoked: true });
     expect(deps.orphanRepo.record).toHaveBeenCalledWith('enc(x)', 'PHOTOS', 'REVOKE');
   });
@@ -61,5 +62,14 @@ describe('RevokeImageConsentUseCase (D335 — revogação simples, sempre apaga 
     } finally {
       delete process.env.GCS_PATIENT_PHOTOS_BUCKET;
     }
+  });
+
+  it('SEM GCS_PATIENT_PHOTOS_BUCKET: construir NÃO lança (fábrica preguiçosa) — só falha se houver foto pra apagar', async () => {
+    delete process.env.GCS_PATIENT_PHOTOS_BUCKET;
+    expect(() => new RevokeImageConsentUseCase()).not.toThrow();
+
+    const deps = makeDeps({ photoRow: { object_path_encrypted: 'enc(x)' } });
+    const uc = new RevokeImageConsentUseCase(deps.consentRepo as never, deps.photoRepo as never, undefined, deps.orphanRepo as never, deps.enc as never);
+    await expect(uc.execute(PID, CID, INPUT, 'uid-1')).rejects.toThrow('GCS_PATIENT_PHOTOS_BUCKET não configurado');
   });
 });

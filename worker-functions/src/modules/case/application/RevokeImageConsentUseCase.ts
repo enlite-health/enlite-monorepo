@@ -12,12 +12,15 @@ import { PatientImageConsentRepository, type RevokeImageConsentInput } from '../
 import { PatientPhotoRepository, type PatientPhotoRow } from '../infrastructure/PatientPhotoRepository';
 import { PatientPhotoStorage } from '../infrastructure/PatientPhotoStorage';
 import { PatientPhotoOrphanRepository } from '../infrastructure/PatientPhotoOrphanRepository';
+import { scheduleOpportunisticOrphanRetry } from './scheduleOpportunisticOrphanRetry';
 
 export class RevokeImageConsentUseCase {
   constructor(
     private readonly consentRepo: PatientImageConsentRepository = new PatientImageConsentRepository(),
     private readonly photoRepo: PatientPhotoRepository = new PatientPhotoRepository(),
-    private readonly storage: PatientPhotoStorage = new PatientPhotoStorage(),
+    // FÁBRICA, não instância — mesmo achado de `UploadPatientPhotoUseCase` (task 4.3h): não
+    // derrubar o boot da API quando `GCS_PATIENT_PHOTOS_BUCKET` falta.
+    private readonly storageFactory: () => PatientPhotoStorage = () => new PatientPhotoStorage(),
     private readonly orphanRepo: PatientPhotoOrphanRepository = new PatientPhotoOrphanRepository(),
     private readonly enc: KMSEncryptionService = new KMSEncryptionService(),
   ) {}
@@ -40,11 +43,13 @@ export class RevokeImageConsentUseCase {
     if (deletedPhoto) {
       const path = (deletedPhoto as PatientPhotoRow).object_path_encrypted;
       const plainPath = await this.enc.decrypt(path);
-      await this.storage.delete(plainPath).catch(async (err) => {
+      await this.storageFactory().delete(plainPath).catch(async (err) => {
         logger.warn({ err }, '[RevokeImageConsentUseCase] foto não apagada — vira órfão');
         await this.orphanRepo.record(path, 'PHOTOS', 'REVOKE');
       });
     }
+    // Achado da revisão do PR-4 (item 3): fila de órfãos sem consumidor — tentativa oportunista.
+    scheduleOpportunisticOrphanRetry();
     return { revoked: true };
   }
 }

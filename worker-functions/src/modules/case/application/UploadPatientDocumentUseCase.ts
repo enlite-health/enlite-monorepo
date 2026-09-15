@@ -4,11 +4,14 @@
  * `stripJpegMetadata` (lex-documentos #9 — nunca grava EXIF/metadados de imagem).
  */
 import { createHash } from 'crypto';
+import { logger } from '@shared/logging';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { inPatientTransaction } from './patientTransaction';
 import { PatientDocumentStorage, type PatientDocumentContentType } from '../infrastructure/PatientDocumentStorage';
 import { PatientDocumentRepository, type PatientDocumentType } from '../infrastructure/PatientDocumentRepository';
+import { PatientPhotoOrphanRepository } from '../infrastructure/PatientPhotoOrphanRepository';
 import { stripJpegMetadata } from '../infrastructure/stripJpegMetadata';
+import { scheduleOpportunisticOrphanRetry } from './scheduleOpportunisticOrphanRetry';
 
 export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024; // 10 MB
 
@@ -29,17 +32,25 @@ export interface UploadPatientDocumentInput {
 
 export class UploadPatientDocumentUseCase {
   constructor(
-    private readonly storage: PatientDocumentStorage = new PatientDocumentStorage(),
+    // FÁBRICA, não instância (mesmo achado de `UploadPatientPhotoUseCase`, task 4.3h):
+    // `PatientDocumentStorage` lança no `new` sem `GCS_PATIENT_DOCUMENTS_BUCKET` (fail-closed). Um
+    // default `= new PatientDocumentStorage()` aqui derrubaria o BOOT da API inteira sem a env — a
+    // fábrica só roda dentro de `execute()`, quando a rota de documento é de fato chamada.
+    private readonly storageFactory: () => PatientDocumentStorage = () => new PatientDocumentStorage(),
     private readonly repo: PatientDocumentRepository = new PatientDocumentRepository(),
     private readonly enc: KMSEncryptionService = new KMSEncryptionService(),
+    private readonly orphanRepo: PatientPhotoOrphanRepository = new PatientPhotoOrphanRepository(),
   ) {}
 
   async execute(input: UploadPatientDocumentInput): Promise<{ documentId: string }> {
     if (input.buffer.byteLength > MAX_DOCUMENT_BYTES) throw new PatientDocumentTooLargeError();
 
+    // Constrói ANTES do processamento (strip de EXIF): se o bucket não está configurado, falha
+    // rápido — `PatientDocumentBucketNotConfiguredError` sobe até o controller, que devolve 503.
+    const storage = this.storageFactory();
     const finalBuffer = input.contentType === 'image/jpeg' ? await stripJpegMetadata(input.buffer) : input.buffer;
     const sha256 = createHash('sha256').update(finalBuffer).digest('hex');
-    const { objectPath } = await this.storage.uploadBuffer(finalBuffer, input.contentType);
+    const { objectPath } = await storage.uploadBuffer(finalBuffer, input.contentType);
     const objectPathEncrypted = await this.enc.encrypt(objectPath);
 
     try {
@@ -57,11 +68,22 @@ export class UploadPatientDocumentUseCase {
           client,
         ),
       );
+      // Achado da revisão do PR-4 (item 3): fila de órfãos sem consumidor — tentativa oportunista.
+      scheduleOpportunisticOrphanRetry();
       return { documentId: id };
     } catch (err) {
-      // INSERT falhou (ex.: paciente inexistente/deletado sob RLS): o objeto some junto, sem
-      // linha que o referencie (nunca vira órfão rastreado — não existe caminho cifrado gravado).
-      await this.storage.delete(objectPath).catch(() => undefined);
+      // INSERT falhou (ex.: paciente inexistente/deletado sob RLS): tenta apagar o objeto direto;
+      // se a exclusão TAMBÉM falhar, registra em `patient_photo_orphans` (bucket `DOCUMENTS`,
+      // reason `UPLOAD_FAILED`) em vez de deixá-lo desaparecer em silêncio (achado da revisão do
+      // PR-4, task 4.3h — `.catch(() => undefined)` engolia a falha de exclusão inteira; o caminho
+      // cifrado JÁ existe em memória mesmo sem linha em `patient_documents`, então dá pra rastrear).
+      // O erro ORIGINAL da transação sempre propaga.
+      await storage.delete(objectPath).catch(async (deleteErr) => {
+        logger.warn({ err: deleteErr }, '[UploadPatientDocumentUseCase] objeto não apagado após falha da transação — vira órfão');
+        await this.orphanRepo.record(objectPathEncrypted!, 'DOCUMENTS', 'UPLOAD_FAILED').catch((orphanErr) => {
+          logger.error({ err: orphanErr }, '[UploadPatientDocumentUseCase] também falhou ao registrar órfão do objeto');
+        });
+      });
       throw err;
     }
   }

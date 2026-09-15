@@ -13,7 +13,7 @@ const DID = 'cccccccc-bbbb-cccc-dddd-eeeeeeeeeeee';
 describe('GetPatientDocumentUrlUseCase (C10 — legível mesmo após revogação)', () => {
   it('sem documento — null', async () => {
     const repo = { findOne: jest.fn(async () => null) };
-    const uc = new GetPatientDocumentUrlUseCase({} as never, repo as never, {} as never);
+    const uc = new GetPatientDocumentUrlUseCase((() => ({})) as never, repo as never, {} as never);
     await expect(uc.execute(PID, DID)).resolves.toBeNull();
   });
 
@@ -21,7 +21,7 @@ describe('GetPatientDocumentUrlUseCase (C10 — legível mesmo após revogação
     const repo = { findOne: jest.fn(async () => ({ object_path_encrypted: 'enc(patient-documents/x)' })) };
     const storage = { getReadSignedUrl: jest.fn(async () => 'https://signed/doc') };
     const enc = { decrypt: jest.fn(async (v: string) => v.replace(/^enc\(|\)$/g, '')) };
-    const uc = new GetPatientDocumentUrlUseCase(storage as never, repo as never, enc as never);
+    const uc = new GetPatientDocumentUrlUseCase((() => storage) as never, repo as never, enc as never);
 
     await expect(uc.execute(PID, DID)).resolves.toEqual({ url: 'https://signed/doc', expiresInSeconds: 300 });
     expect(storage.getReadSignedUrl).toHaveBeenCalledWith('patient-documents/x');
@@ -36,5 +36,15 @@ describe('GetPatientDocumentUrlUseCase (C10 — legível mesmo após revogação
     } finally {
       delete process.env.GCS_PATIENT_DOCUMENTS_BUCKET;
     }
+  });
+
+  it('SEM GCS_PATIENT_DOCUMENTS_BUCKET: construir NÃO lança (fábrica preguiçosa) — só falha ao ter documento e tentar assinar', async () => {
+    delete process.env.GCS_PATIENT_DOCUMENTS_BUCKET;
+    expect(() => new GetPatientDocumentUrlUseCase()).not.toThrow();
+
+    const repo = { findOne: jest.fn(async () => ({ object_path_encrypted: 'enc(patient-documents/x)' })) };
+    const enc = { decrypt: jest.fn(async (v: string) => v.replace(/^enc\(|\)$/g, '')) };
+    const uc = new GetPatientDocumentUrlUseCase(undefined, repo as never, enc as never);
+    await expect(uc.execute(PID, DID)).rejects.toThrow('GCS_PATIENT_DOCUMENTS_BUCKET não configurado');
   });
 });

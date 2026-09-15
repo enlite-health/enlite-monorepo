@@ -12,6 +12,8 @@ import {
 } from '../../application/RegisterImageConsentUseCase';
 import { RevokeImageConsentUseCase } from '../../application/RevokeImageConsentUseCase';
 import { GetVigenteImageConsentUseCase } from '../../application/GetVigenteImageConsentUseCase';
+import { PatientPhotoBucketNotConfiguredError } from '../../infrastructure/PatientPhotoStorage';
+import { patientExistsCheck } from './patientExistsCheck';
 
 /**
  * AdminPatientImageConsentController — registro/revogação do consentimento de imagem
@@ -32,9 +34,9 @@ export class AdminPatientImageConsentController {
     return uid;
   }
 
+  // Achado da revisão do PR-4 (item 5): reusa `patientExistsCheck` em vez de nascer com mais uma cópia.
   private async patientExists(id: string): Promise<boolean> {
-    const { rows } = await this.db.query('SELECT 1 FROM patients WHERE id = $1 AND deleted_at IS NULL', [id]);
-    return rows.length > 0;
+    return patientExistsCheck(this.db, id);
   }
 
   /** POST /api/admin/patients/:id/image-consents */
@@ -97,6 +99,9 @@ export class AdminPatientImageConsentController {
       if (!revoked) { res.status(404).json({ success: false, error: 'Consent not found' }); return; }
       res.status(200).json({ success: true, data: { id: params.data.cid, revoked: true } });
     } catch (err: unknown) {
+      // Achado da revisão do PR-4 (item 1): revogar apaga a foto na mesma operação — sem
+      // GCS_PATIENT_PHOTOS_BUCKET só ESTA rota falha, com 503 (não 500).
+      if (err instanceof PatientPhotoBucketNotConfiguredError) { res.status(503).json({ success: false, error: 'Photo storage not configured', code: 'PHOTO_STORAGE_NOT_CONFIGURED' }); return; }
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientImageConsentController:revoke', patientId: params.data.id });
       res.status(500).json({ success: false, error: 'Failed to revoke consent' });

@@ -17,6 +17,7 @@ import { PatientPhotoStorage } from '../infrastructure/PatientPhotoStorage';
 import { PatientPhotoRepository } from '../infrastructure/PatientPhotoRepository';
 import { PatientPhotoOrphanRepository } from '../infrastructure/PatientPhotoOrphanRepository';
 import { PatientImageConsentRepository } from '../infrastructure/PatientImageConsentRepository';
+import { scheduleOpportunisticOrphanRetry } from './scheduleOpportunisticOrphanRetry';
 
 export interface UploadPatientPhotoInput {
   patientId: string;
@@ -27,7 +28,12 @@ export interface UploadPatientPhotoInput {
 export class UploadPatientPhotoUseCase {
   constructor(
     private readonly processor: PatientPhotoProcessor = new PatientPhotoProcessor(),
-    private readonly storage: PatientPhotoStorage = new PatientPhotoStorage(),
+    // FÁBRICA, não instância (achado da revisão do PR-4, task 4.3h): `PatientPhotoStorage` lança
+    // no `new` sem `GCS_PATIENT_PHOTOS_BUCKET` (fail-closed). Um default `= new PatientPhotoStorage()`
+    // aqui derrubaria o BOOT da API inteira quando a env falta — `createAdminPatientPhotoRoutes`
+    // constrói este use case (via `AdminPatientPhotoController`) na montagem das rotas. A fábrica só
+    // roda dentro de `execute()`, quando a rota de foto é de fato chamada; o resto da API sobe.
+    private readonly storageFactory: () => PatientPhotoStorage = () => new PatientPhotoStorage(),
     private readonly photoRepo: PatientPhotoRepository = new PatientPhotoRepository(),
     private readonly orphanRepo: PatientPhotoOrphanRepository = new PatientPhotoOrphanRepository(),
     private readonly consentRepo: PatientImageConsentRepository = new PatientImageConsentRepository(),
@@ -35,8 +41,11 @@ export class UploadPatientPhotoUseCase {
   ) {}
 
   async execute(input: UploadPatientPhotoInput): Promise<{ hasPhoto: true }> {
+    // Constrói ANTES do processamento pesado (sharp): se o bucket não está configurado, falha
+    // rápido e barato — `PatientPhotoBucketNotConfiguredError` sobe até o controller, que devolve 503.
+    const storage = this.storageFactory();
     const processed = await this.processor.process(input.buffer);
-    const { objectPath } = await this.storage.uploadBuffer(processed.buffer, processed.contentType);
+    const { objectPath } = await storage.uploadBuffer(processed.buffer, processed.contentType);
     const objectPathEncrypted = await this.enc.encrypt(objectPath);
 
     let oldRow: { object_path_encrypted: string } | null = null;
@@ -53,21 +62,33 @@ export class UploadPatientPhotoUseCase {
       });
     } catch (err) {
       // Transação falhou depois do upload: o objeto novo fica órfão (sem linha que o referencie).
-      // Best-effort: tenta apagar direto (não passa pela fila — não há linha antiga cifrada aqui
-      // que sirva de chave; a fila de órfãos é para objeto que TINHA linha e perdeu).
-      await this.storage.delete(objectPath).catch(() => undefined);
+      // Best-effort: tenta apagar direto; se a exclusão TAMBÉM falhar, registra o objeto novo em
+      // `patient_photo_orphans` (reason `REPLACE`) em vez de deixá-lo desaparecer em silêncio do
+      // bucket sem log e sem fila de retry (achado da revisão do PR-4, task 4.3h — `.catch(() =>
+      // undefined)` engolia a falha de exclusão inteira). O erro ORIGINAL da transação sempre
+      // propaga, coberto ou não o objeto — quem chamou precisa saber que a transação falhou.
+      await storage.delete(objectPath).catch(async (deleteErr) => {
+        logger.warn({ err: deleteErr }, '[UploadPatientPhotoUseCase] objeto novo não apagado após falha da transação — vira órfão');
+        await this.orphanRepo.record(objectPathEncrypted!, 'PHOTOS', 'REPLACE').catch((orphanErr) => {
+          logger.error({ err: orphanErr }, '[UploadPatientPhotoUseCase] também falhou ao registrar órfão do objeto novo');
+        });
+      });
       throw err;
     }
 
     if (oldRow) {
       const oldPath: string = (oldRow as { object_path_encrypted: string }).object_path_encrypted;
       const plainOldPath = await this.enc.decrypt(oldPath);
-      await this.storage.delete(plainOldPath).catch(async (err) => {
+      await storage.delete(plainOldPath).catch(async (err) => {
         logger.warn({ err }, '[UploadPatientPhotoUseCase] objeto antigo não apagado — vira órfão');
         await this.orphanRepo.record(oldPath, 'PHOTOS', 'REPLACE');
       });
     }
 
+    // Achado da revisão do PR-4 (item 3): nada consumia `patient_photo_orphans` — a fila só
+    // crescia. Tentativa oportunista, pequena e best-effort (não bloqueia esta resposta, não lança
+    // se falhar) no MESMO caminho que alimenta a fila.
+    scheduleOpportunisticOrphanRetry();
     return { hasPhoto: true };
   }
 }

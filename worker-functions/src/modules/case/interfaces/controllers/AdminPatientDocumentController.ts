@@ -8,6 +8,8 @@ import { UploadPatientDocumentUseCase, PatientDocumentTooLargeError } from '../.
 import { GetPatientDocumentUrlUseCase } from '../../application/GetPatientDocumentUrlUseCase';
 import { ListPatientDocumentsUseCase } from '../../application/ListPatientDocumentsUseCase';
 import { InvalidDocumentImageError } from '../../infrastructure/stripJpegMetadata';
+import { PatientDocumentBucketNotConfiguredError } from '../../infrastructure/PatientDocumentStorage';
+import { patientExistsCheck } from './patientExistsCheck';
 
 /**
  * AdminPatientDocumentController — prova documental de consentimento/revogação de imagem
@@ -28,9 +30,9 @@ export class AdminPatientDocumentController {
     return uid;
   }
 
+  // Achado da revisão do PR-4 (item 5): reusa `patientExistsCheck` em vez de nascer com mais uma cópia.
   private async patientExists(id: string): Promise<boolean> {
-    const { rows } = await this.db.query('SELECT 1 FROM patients WHERE id = $1 AND deleted_at IS NULL', [id]);
-    return rows.length > 0;
+    return patientExistsCheck(this.db, id);
   }
 
   /** POST /api/admin/patients/:id/documents — multipart `file` (application/pdf ou image/jpeg) + campo `documentType`. */
@@ -61,6 +63,9 @@ export class AdminPatientDocumentController {
     } catch (err: unknown) {
       if (err instanceof PatientDocumentTooLargeError) { res.status(413).json({ success: false, error: err.message, code: 'DOCUMENT_TOO_LARGE' }); return; }
       if (err instanceof InvalidDocumentImageError) { res.status(422).json({ success: false, error: err.message, code: 'INVALID_DOCUMENT' }); return; }
+      // Achado da revisão do PR-4 (item 1): sem GCS_PATIENT_DOCUMENTS_BUCKET só ESTA rota falha —
+      // 503, não 500 — é config faltando, não bug.
+      if (err instanceof PatientDocumentBucketNotConfiguredError) { res.status(503).json({ success: false, error: 'Document storage not configured', code: 'DOCUMENT_STORAGE_NOT_CONFIGURED' }); return; }
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientDocumentController:upload', patientId: params.data.id });
       res.status(500).json({ success: false, error: 'Failed to upload document' });
@@ -102,6 +107,7 @@ export class AdminPatientDocumentController {
       if (!result) { res.status(404).json({ success: false, error: 'Document not found' }); return; }
       res.status(200).json({ success: true, data: result });
     } catch (err: unknown) {
+      if (err instanceof PatientDocumentBucketNotConfiguredError) { res.status(503).json({ success: false, error: 'Document storage not configured', code: 'DOCUMENT_STORAGE_NOT_CONFIGURED' }); return; }
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientDocumentController:getUrl', patientId: params.data.id });
       res.status(500).json({ success: false, error: 'Failed to read document' });

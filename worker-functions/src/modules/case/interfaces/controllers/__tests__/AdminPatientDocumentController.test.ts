@@ -11,6 +11,7 @@ import { AdminPatientDocumentController } from '../AdminPatientDocumentControlle
 import { AuthMiddleware } from '@modules/identity';
 import { PatientDocumentTooLargeError } from '../../../application/UploadPatientDocumentUseCase';
 import { InvalidDocumentImageError } from '../../../infrastructure/stripJpegMetadata';
+import { PatientDocumentBucketNotConfiguredError } from '../../../infrastructure/PatientDocumentStorage';
 import type { Response } from 'express';
 
 const PID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -112,6 +113,15 @@ describe('AdminPatientDocumentController', () => {
       await c.upload(mockReq({ params: { id: PID }, body: { documentType: 'image_consent' }, file: { mimetype: 'application/pdf', buffer: Buffer.from('x') } }), res);
       expect(res.status).toHaveBeenCalledWith(500);
     });
+
+    it('503 PatientDocumentBucketNotConfiguredError (achado item 1 da revisão do PR-4)', async () => {
+      const upload = { execute: jest.fn(async () => { throw new PatientDocumentBucketNotConfiguredError(); }) };
+      const c = new AdminPatientDocumentController(upload as never, {} as never, { execute: jest.fn() } as never, db() as never);
+      const res = mockRes();
+      await c.upload(mockReq({ params: { id: PID }, body: { documentType: 'image_consent' }, file: { mimetype: 'application/pdf', buffer: Buffer.from('x') } }), res);
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'DOCUMENT_STORAGE_NOT_CONFIGURED' }));
+    });
   });
 
   describe('getUrl', () => {
@@ -160,6 +170,14 @@ describe('AdminPatientDocumentController', () => {
       const res = mockRes();
       await c.getUrl(mockReq({ params: { id: PID, documentId: DID } }), res);
       expect(res.status).toHaveBeenCalledWith(500);
+    });
+
+    it('503 PatientDocumentBucketNotConfiguredError', async () => {
+      const getUrl = { execute: jest.fn(async () => { throw new PatientDocumentBucketNotConfiguredError(); }) };
+      const c = new AdminPatientDocumentController({} as never, getUrl as never, { execute: jest.fn() } as never, db() as never);
+      const res = mockRes();
+      await c.getUrl(mockReq({ params: { id: PID, documentId: DID } }), res);
+      expect(res.status).toHaveBeenCalledWith(503);
     });
   });
 
@@ -233,5 +251,11 @@ describe('AdminPatientDocumentController', () => {
     } finally {
       delete process.env.GCS_PATIENT_DOCUMENTS_BUCKET;
     }
+  });
+
+  it('SEM GCS_PATIENT_DOCUMENTS_BUCKET: construir o controller NÃO lança — achado item 1 da revisão do PR-4', () => {
+    delete process.env.GCS_PATIENT_DOCUMENTS_BUCKET;
+    // eslint-disable-next-line no-new
+    expect(() => new AdminPatientDocumentController()).not.toThrow();
   });
 });
