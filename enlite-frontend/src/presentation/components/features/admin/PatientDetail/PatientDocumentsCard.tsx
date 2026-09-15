@@ -7,19 +7,25 @@
  * funcionalidade independente, sem gate sobre o upload de foto/documento (o `PatientPhotoSlot`
  * nunca espera por este cartão).
  *
- * ⚠️ Limitação real do backend desta rodada (rodada B, não é bug desta rodada C — FORA DE
- * ESCOPO consertar): NÃO existe rota de LISTAGEM de documentos nem de consulta do consentimento
- * vigente (só `POST .../documents` + `GET .../documents/:documentId`, e `POST
- * .../image-consents` + `POST .../image-consents/:cid/revoke`, sem GET). A ficha (`GET
- * /patients/:id`) também não devolve nenhum campo de documento/consentimento. Este cartão
- * portanto só consegue mostrar o que foi enviado/registrado NESTA sessão do navegador (estado
- * local, não persistido) — depois de recarregar a página, a lista volta vazia mesmo que existam
- * documentos/consentimentos gravados no banco. Reportado em "Riscos/achados fora do escopo".
+ * Furo fechado nesta rodada (revisão pré-gate, 14/09): antes, este cartão só mostrava o que tinha
+ * sido enviado/registrado NESTA sessão do navegador (estado local, `useState`) — recarregar a
+ * página voltava a lista vazia mesmo com documento/consentimento gravado no banco. Agora carrega
+ * do servidor (`GET .../documents` + `GET .../image-consents/vigente`) no mount e depois de cada
+ * ação (upload/registrar/revogar) — a lista sobrevive a `page.reload()`.
+ *
+ * O backend NUNCA guarda o nome original do arquivo (`patient_documents` só tem
+ * `content_type`/`size_bytes`/`sha256` — decisão de segurança, `PatientDocumentStorage`). Por isso
+ * a linha mostra o TIPO do documento + a data de envio, nunca um "nome de arquivo" inventado.
  */
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FileText, Upload, Shield, ShieldOff } from 'lucide-react';
-import { AdminApiService, ApiError, type PatientDocumentType } from '@infrastructure/http/AdminApiService';
+import {
+  AdminApiService,
+  ApiError,
+  type PatientDocumentListItem,
+  type VigenteImageConsentResult,
+} from '@infrastructure/http/AdminApiService';
 import { ActionButton } from '@presentation/components/features/access';
 import { useCellAccess } from '@presentation/hooks/useCellAccess';
 import { Heading } from '@presentation/components/atoms/Heading';
@@ -29,36 +35,52 @@ import { Button } from '@presentation/components/atoms/Button';
 const ACCEPTED_DOC_TYPES = ['application/pdf', 'image/jpeg'];
 const MAX_DOC_BYTES = 5 * 1024 * 1024;
 
-interface SessionDocument {
-  documentId: string;
-  documentType: PatientDocumentType;
-  fileName: string;
-}
-
-interface SessionConsent {
-  id: string;
-  consenterKind: 'PATIENT' | 'REPRESENTATIVE';
-  revokedAt: string | null;
-}
-
 interface Props {
   patientId: string;
 }
 
 export function PatientDocumentsCard({ patientId }: Props): JSX.Element | null {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const td = (k: string): string => t(`admin.patients.detail.identityCard.documents.${k}`);
   const { canWrite } = useCellAccess('patient_identity');
   const { canRead: canReadDocuments } = useCellAccess('patient_consent_documents');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [documents, setDocuments] = useState<SessionDocument[]>([]);
-  const [consent, setConsent] = useState<SessionConsent | null>(null);
+  const [documents, setDocuments] = useState<PatientDocumentListItem[]>([]);
+  const [consent, setConsent] = useState<VigenteImageConsentResult | null>(null);
+  const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [registeringConsent, setRegisteringConsent] = useState(false);
   const [revokingConsent, setRevokingConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const dateFormatter = new Intl.DateTimeFormat(i18n.language === 'pt-BR' ? 'pt-BR' : 'es-AR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [docsResult, consentResult] = await Promise.all([
+        canReadDocuments ? AdminApiService.listPatientDocuments(patientId) : Promise.resolve([]),
+        canWrite ? AdminApiService.getVigenteImageConsent(patientId) : Promise.resolve(null),
+      ]);
+      setDocuments(docsResult);
+      setConsent(consentResult);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t('admin.patients.detail.identityCard.documents.errorLoadGeneric'));
+    } finally {
+      setLoading(false);
+    }
+  }, [patientId, canReadDocuments, canWrite, t]);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- reload é estável por patientId/células; recarregar 1x no mount (e quando mudarem) é o contrato.
+  useEffect(() => {
+    void reload();
+  }, [reload]);
 
   // Sem nenhuma das duas células, a seção inteira não existe na árvore (nada a fazer aqui).
   if (!canWrite && !canReadDocuments) return null;
@@ -75,8 +97,8 @@ export function PatientDocumentsCard({ patientId }: Props): JSX.Element | null {
     }
     setUploading(true);
     try {
-      const result = await AdminApiService.uploadPatientDocument(patientId, file, 'image_consent');
-      setDocuments((prev) => [...prev, { documentId: result.documentId, documentType: 'image_consent', fileName: file.name }]);
+      await AdminApiService.uploadPatientDocument(patientId, file, 'image_consent');
+      await reload();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : td('errorUploadGeneric'));
     } finally {
@@ -85,11 +107,11 @@ export function PatientDocumentsCard({ patientId }: Props): JSX.Element | null {
     }
   };
 
-  const handleOpen = async (doc: SessionDocument) => {
+  const handleOpen = async (doc: PatientDocumentListItem) => {
     setError(null);
-    setOpeningId(doc.documentId);
+    setOpeningId(doc.id);
     try {
-      const { url } = await AdminApiService.getPatientDocumentUrl(patientId, doc.documentId);
+      const { url } = await AdminApiService.getPatientDocumentUrl(patientId, doc.id);
       // Contrato (linha 46): abre por `blob:` — não navega direto para a URL assinada do GCS.
       const fileResponse = await fetch(url, { referrerPolicy: 'no-referrer' });
       const blob = await fileResponse.blob();
@@ -106,13 +128,13 @@ export function PatientDocumentsCard({ patientId }: Props): JSX.Element | null {
     setError(null);
     setRegisteringConsent(true);
     try {
-      const result = await AdminApiService.registerImageConsent(patientId, {
+      await AdminApiService.registerImageConsent(patientId, {
         consenterKind: 'PATIENT',
         textVersion: 'v1',
         consentedAt: new Date().toISOString(),
-        documentId: documents[0]?.documentId,
+        documentId: documents[0]?.id,
       });
-      setConsent({ id: result.id, consenterKind: 'PATIENT', revokedAt: null });
+      await reload();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : td('errorConsentGeneric'));
     } finally {
@@ -120,13 +142,14 @@ export function PatientDocumentsCard({ patientId }: Props): JSX.Element | null {
     }
   };
 
-  const handleRevokeConsent = async () => {
-    if (!consent) return;
+  // `consentId` vem do JSX (só chamado dentro do bloco `{consent && (...)}`) — sem checagem de
+  // null AQUI: o guard já é a própria renderização condicional (o botão não existe sem `consent`).
+  const handleRevokeConsent = async (consentId: string) => {
     setError(null);
     setRevokingConsent(true);
     try {
-      await AdminApiService.revokeImageConsent(patientId, consent.id, { revocationChannel: 'IN_PERSON' });
-      setConsent((prev) => (prev ? { ...prev, revokedAt: new Date().toISOString() } : prev));
+      await AdminApiService.revokeImageConsent(patientId, consentId, { revocationChannel: 'IN_PERSON' });
+      await reload();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : td('errorRevokeGeneric'));
     } finally {
@@ -172,7 +195,7 @@ export function PatientDocumentsCard({ patientId }: Props): JSX.Element | null {
         </div>
       )}
 
-      {canReadDocuments && (
+      {canReadDocuments && !loading && (
         <div className="flex flex-col gap-2" data-testid="patient-documents-list">
           {documents.length === 0 && (
             <Text size="sm" color="secondary" data-testid="patient-documents-empty">
@@ -180,13 +203,15 @@ export function PatientDocumentsCard({ patientId }: Props): JSX.Element | null {
             </Text>
           )}
           {documents.map((doc) => (
-            <div key={doc.documentId} className="flex items-center gap-2" data-testid="patient-document-row">
+            <div key={doc.id} className="flex items-center gap-2" data-testid="patient-document-row">
               <FileText className="w-4 h-4 text-gray-500 shrink-0" />
-              <Text size="sm" className="truncate">{doc.fileName}</Text>
+              <Text size="sm" className="truncate">
+                {td(`documentTypeLabels.${doc.documentType}`)} — {dateFormatter.format(new Date(doc.uploadedAt))}
+              </Text>
               <Button
                 variant="outline"
                 size="sm"
-                isLoading={openingId === doc.documentId}
+                isLoading={openingId === doc.id}
                 onClick={() => handleOpen(doc)}
                 data-testid="patient-document-open-btn"
               >
@@ -213,23 +238,20 @@ export function PatientDocumentsCard({ patientId }: Props): JSX.Element | null {
               {td('registerConsentButton')}
             </Button>
           )}
-          {consent && !consent.revokedAt && (
+          {consent && (
             <div className="flex items-center gap-2">
               <Text size="sm" data-testid="patient-consent-status">{td('consentActive')}</Text>
               <Button
                 variant="outline"
                 size="sm"
                 isLoading={revokingConsent}
-                onClick={handleRevokeConsent}
+                onClick={() => handleRevokeConsent(consent.id)}
                 data-testid="patient-consent-revoke-btn"
               >
                 <ShieldOff className="w-3.5 h-3.5 mr-1.5" />
                 {td('revokeConsentButton')}
               </Button>
             </div>
-          )}
-          {consent && consent.revokedAt && (
-            <Text size="sm" color="secondary" data-testid="patient-consent-status">{td('consentRevoked')}</Text>
           )}
         </div>
       )}

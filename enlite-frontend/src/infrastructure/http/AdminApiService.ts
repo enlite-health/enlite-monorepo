@@ -49,6 +49,8 @@ import {
   type RegisterImageConsentPayload,
   type RegisterImageConsentResult,
   type RevocationChannel,
+  type PatientDocumentListItem,
+  type VigenteImageConsentResult,
 } from './AdminPatientPhotoApiService';
 export type {
   PatientPhotoUploadResult,
@@ -58,6 +60,8 @@ export type {
   RegisterImageConsentPayload,
   RegisterImageConsentResult,
   RevocationChannel,
+  PatientDocumentListItem,
+  VigenteImageConsentResult,
 };
 import {
   AdminWorkerListApiService,
@@ -477,11 +481,17 @@ class AdminApiServiceClass {
   getPatientDocumentUrl(patientId: string, documentId: string) {
     return AdminPatientPhotoApiService.getPatientDocumentUrl(patientId, documentId);
   }
+  listPatientDocuments(patientId: string) {
+    return AdminPatientPhotoApiService.listPatientDocuments(patientId);
+  }
   registerImageConsent(patientId: string, payload: RegisterImageConsentPayload) {
     return AdminPatientPhotoApiService.registerImageConsent(patientId, payload);
   }
   revokeImageConsent(patientId: string, consentId: string, payload: { revocationDocumentId?: string; revocationChannel: RevocationChannel }) {
     return AdminPatientPhotoApiService.revokeImageConsent(patientId, consentId, payload);
+  }
+  getVigenteImageConsent(patientId: string) {
+    return AdminPatientPhotoApiService.getVigenteImageConsent(patientId);
   }
 }
 export const AdminApiService = new AdminApiServiceClass();

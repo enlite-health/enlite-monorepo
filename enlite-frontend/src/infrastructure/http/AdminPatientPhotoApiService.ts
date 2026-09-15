@@ -29,6 +29,22 @@ export interface PatientDocumentUploadResult {
 
 export type PatientDocumentType = 'image_consent' | 'image_consent_revocation';
 
+/** GET /patients/:id/documents — metadados, SEM url assinada (furo fechado nesta rodada). */
+export interface PatientDocumentListItem {
+  id: string;
+  documentType: PatientDocumentType;
+  contentType: 'application/pdf' | 'image/jpeg';
+  sizeBytes: number;
+  uploadedAt: string;
+}
+
+/** GET /patients/:id/image-consents/vigente — `null` quando não há consentimento vigente. */
+export interface VigenteImageConsentResult {
+  id: string;
+  consenterKind: 'PATIENT' | 'REPRESENTATIVE';
+  consentedAt: string;
+}
+
 export interface RegisterImageConsentPayload {
   consenterKind: 'PATIENT' | 'REPRESENTATIVE';
   responsibleId?: string;
@@ -118,6 +134,11 @@ export class AdminPatientPhotoApiServiceClass {
     return this.requestJson<SignedUrlResult>('GET', `/api/admin/patients/${patientId}/documents/${documentId}`);
   }
 
+  /** GET /patients/:id/documents — lista o que está persistido (recarregar a página não perde nada). */
+  async listPatientDocuments(patientId: string): Promise<PatientDocumentListItem[]> {
+    return this.requestJson<PatientDocumentListItem[]>('GET', `/api/admin/patients/${patientId}/documents`);
+  }
+
   // ========== Consentimento de imagem (opcional — D335) ==========
 
   async registerImageConsent(
@@ -133,6 +154,11 @@ export class AdminPatientPhotoApiServiceClass {
     payload: { revocationDocumentId?: string; revocationChannel: RevocationChannel },
   ): Promise<void> {
     await this.requestJson<unknown>('POST', `/api/admin/patients/${patientId}/image-consents/${consentId}/revoke`, payload);
+  }
+
+  /** GET /patients/:id/image-consents/vigente — furo fechado nesta rodada (recarregar mostra o estado real). */
+  async getVigenteImageConsent(patientId: string): Promise<VigenteImageConsentResult | null> {
+    return this.requestJson<VigenteImageConsentResult | null>('GET', `/api/admin/patients/${patientId}/image-consents/vigente`);
   }
 }
 

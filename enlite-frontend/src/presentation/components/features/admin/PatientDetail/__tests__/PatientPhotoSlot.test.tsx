@@ -96,6 +96,15 @@ describe('PatientPhotoSlot', () => {
     expect(screen.getByTestId('patient-photo-upload-btn')).toBeInTheDocument();
   });
 
+  it('clicar no botão "Subir foto"/"Cambiar" aciona o input de arquivo oculto', () => {
+    withPermissions(['patient_identity:write']);
+    render(<PatientPhotoSlot patientId="p1" hasPhoto={false} />);
+    const input = screen.getByTestId('patient-photo-file-input') as HTMLInputElement;
+    const clickSpy = vi.spyOn(input, 'click');
+    fireEvent.click(screen.getByTestId('patient-photo-upload-btn'));
+    expect(clickSpy).toHaveBeenCalled();
+  });
+
   it('upload feliz: escolhe arquivo válido, chama a API e onChanged', async () => {
     withPermissions(['patient_identity:write']);
     uploadPatientPhoto.mockResolvedValue({ hasPhoto: true });

@@ -3117,7 +3117,7 @@
           "documents": {
             "title": "Documentos e consentimento de imagem",
             "uploadButton": "Enviar documento",
-            "empty": "Sem documentos enviados nesta sessão.",
+            "empty": "Sem documentos enviados.",
             "openButton": "Abrir",
             "errorInvalidType": "Formato inválido — só PDF ou JPEG.",
             "errorTooLarge": "O arquivo passa do limite de 5 MB.",
@@ -3125,6 +3125,11 @@
             "errorOpenGeneric": "Não foi possível abrir o documento. Tente de novo.",
             "errorConsentGeneric": "Não foi possível registrar o consentimento. Tente de novo.",
             "errorRevokeGeneric": "Não foi possível revogar o consentimento. Tente de novo.",
+            "errorLoadGeneric": "Não foi possível carregar a lista de documentos. Tente de novo.",
+            "documentTypeLabels": {
+              "image_consent": "Consentimento de imagem",
+              "image_consent_revocation": "Revogação de consentimento"
+            },
             "consentTitle": "Consentimento de imagem",
             "registerConsentButton": "Registrar consentimento",
             "revokeConsentButton": "Revogar consentimento",

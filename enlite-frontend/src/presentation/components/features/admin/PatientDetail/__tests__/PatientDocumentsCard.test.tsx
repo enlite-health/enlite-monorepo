@@ -1,8 +1,9 @@
 /**
- * PatientDocumentsCard — spec 018, PR-4 (task 4.10). Cobre upload de documento, listagem
- * session-scoped, abrir por `blob:`, registrar/revogar consentimento e os gates de célula
- * (D269/D286): sem `patient_consent_documents:read` a lista não existe na árvore; sem
- * `patient_identity:write` nem upload nem consentimento aparecem; sem NENHUMA das duas, o
+ * PatientDocumentsCard — spec 018, PR-4 (task 4.10; furo fechado 14/09). Cobre carregar do
+ * SERVIDOR no mount (`listPatientDocuments` + `getVigenteImageConsent`), upload de documento,
+ * abrir por `blob:`, registrar/revogar consentimento (recarrega do servidor após cada ação) e os
+ * gates de célula (D269/D286): sem `patient_consent_documents:read` a lista não existe na árvore;
+ * sem `patient_identity:write` nem upload nem consentimento aparecem; sem NENHUMA das duas, o
  * cartão inteiro não renderiza.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -17,12 +18,15 @@ function t(key: string): string {
   for (const part of key.split('.')) current = current?.[part];
   return typeof current === 'string' ? current : key;
 }
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t }) }));
+let currentLang = 'pt-BR';
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t, i18n: { get language() { return currentLang; } } }) }));
 
 const uploadPatientDocument = vi.fn();
 const getPatientDocumentUrl = vi.fn();
+const listPatientDocuments = vi.fn();
 const registerImageConsent = vi.fn();
 const revokeImageConsent = vi.fn();
+const getVigenteImageConsent = vi.fn();
 const { FakeApiError } = vi.hoisted(() => ({
   FakeApiError: class FakeApiError extends Error {
     status: number;
@@ -33,8 +37,10 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
   AdminApiService: {
     uploadPatientDocument: (...a: unknown[]) => uploadPatientDocument(...a),
     getPatientDocumentUrl: (...a: unknown[]) => getPatientDocumentUrl(...a),
+    listPatientDocuments: (...a: unknown[]) => listPatientDocuments(...a),
     registerImageConsent: (...a: unknown[]) => registerImageConsent(...a),
     revokeImageConsent: (...a: unknown[]) => revokeImageConsent(...a),
+    getVigenteImageConsent: (...a: unknown[]) => getVigenteImageConsent(...a),
   },
   ApiError: FakeApiError,
 }));
@@ -54,6 +60,8 @@ function makeFile(name: string, type: string, sizeBytes: number): File {
   return file;
 }
 
+const DOC_ROW = { id: 'doc-1', documentType: 'image_consent' as const, contentType: 'application/pdf' as const, sizeBytes: 1024, uploadedAt: '2026-09-14T10:00:00.000Z' };
+
 const originalFetch = global.fetch;
 const originalCreateObjectURL = (URL as any).createObjectURL;
 const originalOpen = window.open;
@@ -61,7 +69,10 @@ const originalOpen = window.open;
 describe('PatientDocumentsCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    currentLang = 'pt-BR';
     useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+    listPatientDocuments.mockResolvedValue([]);
+    getVigenteImageConsent.mockResolvedValue(null);
     global.fetch = vi.fn().mockResolvedValue({ blob: () => Promise.resolve(new Blob(['x'])) }) as any;
     (URL as any).createObjectURL = vi.fn().mockReturnValue('blob:fake');
     window.open = vi.fn();
@@ -73,42 +84,85 @@ describe('PatientDocumentsCard', () => {
     window.open = originalOpen;
   });
 
-  it('sem NENHUMA das duas células: o cartão não renderiza', () => {
+  it('sem NENHUMA das duas células: o cartão não renderiza (e não chama a API)', async () => {
     withPermissions([]);
     const { container } = render(<PatientDocumentsCard patientId="p1" />);
     expect(container).toBeEmptyDOMElement();
+    await waitFor(() => expect(listPatientDocuments).not.toHaveBeenCalled());
+    expect(getVigenteImageConsent).not.toHaveBeenCalled();
   });
 
-  it('só com patient_consent_documents:read: mostra a lista (vazia) mas não o upload nem consentimento', () => {
+  it('só com patient_consent_documents:read: carrega a lista (vazia) do servidor, mas não upload/consentimento', async () => {
     withPermissions(['patient_consent_documents:read']);
     render(<PatientDocumentsCard patientId="p1" />);
-    expect(screen.getByTestId('patient-documents-list')).toBeInTheDocument();
-    expect(screen.getByTestId('patient-documents-empty')).toBeInTheDocument();
+    await waitFor(() => expect(listPatientDocuments).toHaveBeenCalledWith('p1'));
+    expect(getVigenteImageConsent).not.toHaveBeenCalled();
+    expect(await screen.findByTestId('patient-documents-empty')).toBeInTheDocument();
     expect(screen.queryByTestId('patient-document-upload-btn')).not.toBeInTheDocument();
     expect(screen.queryByTestId('patient-consent-register-btn')).not.toBeInTheDocument();
   });
 
-  it('só com patient_identity:write: mostra upload e consentimento, mas não a lista de documentos', () => {
+  it('só com patient_identity:write: mostra upload e consentimento, mas não a lista de documentos', async () => {
     withPermissions(['patient_identity:write']);
     render(<PatientDocumentsCard patientId="p1" />);
+    await waitFor(() => expect(getVigenteImageConsent).toHaveBeenCalledWith('p1'));
+    expect(listPatientDocuments).not.toHaveBeenCalled();
     expect(screen.getByTestId('patient-document-upload-btn')).toBeInTheDocument();
     expect(screen.getByTestId('patient-consent-register-btn')).toBeInTheDocument();
     expect(screen.queryByTestId('patient-documents-list')).not.toBeInTheDocument();
   });
 
-  it('upload feliz: aparece na lista e permite abrir por blob:', async () => {
+  it('idioma diferente de pt-BR (es-AR): formata a data com o locale espanhol', async () => {
+    currentLang = 'es';
+    withPermissions(['patient_identity:write', 'patient_consent_documents:read']);
+    listPatientDocuments.mockResolvedValue([DOC_ROW]);
+    render(<PatientDocumentsCard patientId="p1" />);
+    expect(await screen.findByTestId('patient-document-row')).toBeInTheDocument();
+  });
+
+  it('mount com as DUAS células: carrega documento persistido do servidor (sem nenhum upload nesta sessão)', async () => {
+    withPermissions(['patient_identity:write', 'patient_consent_documents:read']);
+    listPatientDocuments.mockResolvedValue([DOC_ROW]);
+    render(<PatientDocumentsCard patientId="p1" />);
+    expect(await screen.findByTestId('patient-document-row')).toBeInTheDocument();
+    expect(screen.getByText(/Consentimento de imagem — /)).toBeInTheDocument();
+  });
+
+  it('mount com consentimento vigente já registrado no servidor: mostra o status revogável direto', async () => {
+    withPermissions(['patient_identity:write']);
+    getVigenteImageConsent.mockResolvedValue({ id: 'consent-1', consenterKind: 'PATIENT', consentedAt: '2026-09-14T10:00:00.000Z' });
+    render(<PatientDocumentsCard patientId="p1" />);
+    expect(await screen.findByTestId('patient-consent-status')).toBeInTheDocument();
+    expect(screen.getByTestId('patient-consent-revoke-btn')).toBeInTheDocument();
+    expect(screen.queryByTestId('patient-consent-register-btn')).not.toBeInTheDocument();
+  });
+
+  it('upload feliz: recarrega do servidor e o documento aparece na lista; permite abrir por blob:', async () => {
     withPermissions(['patient_identity:write', 'patient_consent_documents:read']);
     uploadPatientDocument.mockResolvedValue({ documentId: 'doc-1' });
+    listPatientDocuments.mockResolvedValueOnce([]).mockResolvedValueOnce([DOC_ROW]);
     getPatientDocumentUrl.mockResolvedValue({ url: 'https://signed.example/doc.pdf', expiresInSeconds: 300 });
     render(<PatientDocumentsCard patientId="p1" />);
+    await waitFor(() => expect(listPatientDocuments).toHaveBeenCalledTimes(1));
     const file = makeFile('consentimento.pdf', 'application/pdf', 1024);
     fireEvent.change(screen.getByTestId('patient-document-file-input'), { target: { files: [file] } });
     await waitFor(() => expect(uploadPatientDocument).toHaveBeenCalledWith('p1', file, 'image_consent'));
-    expect(await screen.findByText('consentimento.pdf')).toBeInTheDocument();
+    await waitFor(() => expect(listPatientDocuments).toHaveBeenCalledTimes(2));
+    expect(await screen.findByTestId('patient-document-row')).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('patient-document-open-btn'));
     await waitFor(() => expect(getPatientDocumentUrl).toHaveBeenCalledWith('p1', 'doc-1'));
     await waitFor(() => expect(window.open).toHaveBeenCalledWith('blob:fake', '_blank', 'noopener,noreferrer'));
+  });
+
+  it('clicar no botão "Subir documento" aciona o input de arquivo oculto', async () => {
+    withPermissions(['patient_identity:write']);
+    render(<PatientDocumentsCard patientId="p1" />);
+    await waitFor(() => expect(getVigenteImageConsent).toHaveBeenCalled());
+    const input = screen.getByTestId('patient-document-file-input') as HTMLInputElement;
+    const clickSpy = vi.spyOn(input, 'click');
+    fireEvent.click(screen.getByTestId('patient-document-upload-btn'));
+    expect(clickSpy).toHaveBeenCalled();
   });
 
   it('upload com tipo inválido: mostra erro, nunca chama a API', async () => {
@@ -140,21 +194,63 @@ describe('PatientDocumentsCard', () => {
 
   it('abrir documento que falha: mostra erro', async () => {
     withPermissions(['patient_identity:write', 'patient_consent_documents:read']);
+    listPatientDocuments.mockResolvedValueOnce([]).mockResolvedValueOnce([DOC_ROW]);
     uploadPatientDocument.mockResolvedValue({ documentId: 'doc-1' });
     getPatientDocumentUrl.mockRejectedValue(new FakeApiError('Não achei'));
     render(<PatientDocumentsCard patientId="p1" />);
     const file = makeFile('doc.pdf', 'application/pdf', 1024);
     fireEvent.change(screen.getByTestId('patient-document-file-input'), { target: { files: [file] } });
-    await screen.findByText('doc.pdf');
+    await screen.findByTestId('patient-document-row');
     fireEvent.click(screen.getByTestId('patient-document-open-btn'));
     expect(await screen.findByTestId('patient-documents-error')).toHaveTextContent('Não achei');
   });
 
-  it('registrar consentimento feliz: mostra status vigente e permite revogar', async () => {
+  it('recarregar (listPatientDocuments/getVigenteImageConsent falham) mostra erro genérico de carga', async () => {
+    withPermissions(['patient_identity:write', 'patient_consent_documents:read']);
+    listPatientDocuments.mockRejectedValue(new FakeApiError('Falha ao listar'));
+    render(<PatientDocumentsCard patientId="p1" />);
+    expect(await screen.findByTestId('patient-documents-error')).toHaveTextContent('Falha ao listar');
+  });
+
+  it('recarregar com erro GENÉRICO (não ApiError): mostra a mensagem padrão de carga', async () => {
+    withPermissions(['patient_identity:write', 'patient_consent_documents:read']);
+    listPatientDocuments.mockRejectedValue(new Error('boom'));
+    render(<PatientDocumentsCard patientId="p1" />);
+    expect(await screen.findByTestId('patient-documents-error')).toHaveTextContent(t('admin.patients.detail.identityCard.documents.errorLoadGeneric'));
+  });
+
+  it('upload que falha com erro GENÉRICO (não ApiError): mostra a mensagem padrão', async () => {
+    withPermissions(['patient_identity:write']);
+    uploadPatientDocument.mockRejectedValue(new Error('boom'));
+    render(<PatientDocumentsCard patientId="p1" />);
+    const file = makeFile('doc.pdf', 'application/pdf', 1024);
+    fireEvent.change(screen.getByTestId('patient-document-file-input'), { target: { files: [file] } });
+    expect(await screen.findByTestId('patient-documents-error')).toHaveTextContent(t('admin.patients.detail.identityCard.documents.errorUploadGeneric'));
+  });
+
+  it('abrir documento que falha com erro GENÉRICO (não ApiError): mostra a mensagem padrão', async () => {
+    withPermissions(['patient_identity:write', 'patient_consent_documents:read']);
+    listPatientDocuments.mockResolvedValueOnce([]).mockResolvedValueOnce([DOC_ROW]);
+    uploadPatientDocument.mockResolvedValue({ documentId: 'doc-1' });
+    getPatientDocumentUrl.mockRejectedValue(new Error('boom'));
+    render(<PatientDocumentsCard patientId="p1" />);
+    const file = makeFile('doc.pdf', 'application/pdf', 1024);
+    fireEvent.change(screen.getByTestId('patient-document-file-input'), { target: { files: [file] } });
+    await screen.findByTestId('patient-document-row');
+    fireEvent.click(screen.getByTestId('patient-document-open-btn'));
+    expect(await screen.findByTestId('patient-documents-error')).toHaveTextContent(t('admin.patients.detail.identityCard.documents.errorOpenGeneric'));
+  });
+
+  it('registrar consentimento feliz: recarrega do servidor, mostra status vigente e permite revogar', async () => {
     withPermissions(['patient_identity:write']);
     registerImageConsent.mockResolvedValue({ id: 'consent-1' });
+    getVigenteImageConsent
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'consent-1', consenterKind: 'PATIENT', consentedAt: '2026-09-14T10:00:00.000Z' })
+      .mockResolvedValueOnce(null); // após revogar
     revokeImageConsent.mockResolvedValue(undefined);
     render(<PatientDocumentsCard patientId="p1" />);
+    await screen.findByTestId('patient-consent-register-btn');
     fireEvent.click(screen.getByTestId('patient-consent-register-btn'));
     await waitFor(() => expect(registerImageConsent).toHaveBeenCalled());
     expect(await screen.findByTestId('patient-consent-status')).toBeInTheDocument();
@@ -162,12 +258,49 @@ describe('PatientDocumentsCard', () => {
 
     fireEvent.click(screen.getByTestId('patient-consent-revoke-btn'));
     await waitFor(() => expect(revokeImageConsent).toHaveBeenCalledWith('p1', 'consent-1', { revocationChannel: 'IN_PERSON' }));
+    // Depois de revogar, o servidor não devolve mais vigente — a tela volta ao botão de registrar.
+    expect(await screen.findByTestId('patient-consent-register-btn')).toBeInTheDocument();
+  });
+
+  it('registrar consentimento QUANDO já há documento na lista: manda o documentId do 1º documento', async () => {
+    withPermissions(['patient_identity:write', 'patient_consent_documents:read']);
+    listPatientDocuments.mockResolvedValue([DOC_ROW]);
+    registerImageConsent.mockResolvedValue({ id: 'consent-1' });
+    render(<PatientDocumentsCard patientId="p1" />);
+    await screen.findByTestId('patient-document-row');
+    fireEvent.click(screen.getByTestId('patient-consent-register-btn'));
+    await waitFor(() => expect(registerImageConsent).toHaveBeenCalledWith('p1', expect.objectContaining({ documentId: 'doc-1' })));
+  });
+
+  it('registrar consentimento que falha com erro GENÉRICO (não ApiError): mostra a mensagem padrão', async () => {
+    withPermissions(['patient_identity:write']);
+    registerImageConsent.mockRejectedValue(new Error('boom'));
+    render(<PatientDocumentsCard patientId="p1" />);
+    await screen.findByTestId('patient-consent-register-btn');
+    fireEvent.click(screen.getByTestId('patient-consent-register-btn'));
+    expect(await screen.findByTestId('patient-documents-error')).toHaveTextContent(t('admin.patients.detail.identityCard.documents.errorConsentGeneric'));
+  });
+
+  it('revogar consentimento que falha com erro GENÉRICO (não ApiError): mostra a mensagem padrão', async () => {
+    withPermissions(['patient_identity:write']);
+    registerImageConsent.mockResolvedValue({ id: 'consent-1' });
+    getVigenteImageConsent
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'consent-1', consenterKind: 'PATIENT', consentedAt: '2026-09-14T10:00:00.000Z' });
+    revokeImageConsent.mockRejectedValue(new Error('boom'));
+    render(<PatientDocumentsCard patientId="p1" />);
+    await screen.findByTestId('patient-consent-register-btn');
+    fireEvent.click(screen.getByTestId('patient-consent-register-btn'));
+    await screen.findByTestId('patient-consent-revoke-btn');
+    fireEvent.click(screen.getByTestId('patient-consent-revoke-btn'));
+    expect(await screen.findByTestId('patient-documents-error')).toHaveTextContent(t('admin.patients.detail.identityCard.documents.errorRevokeGeneric'));
   });
 
   it('registrar consentimento que falha: mostra erro', async () => {
     withPermissions(['patient_identity:write']);
     registerImageConsent.mockRejectedValue(new FakeApiError('Falha consentimento'));
     render(<PatientDocumentsCard patientId="p1" />);
+    await screen.findByTestId('patient-consent-register-btn');
     fireEvent.click(screen.getByTestId('patient-consent-register-btn'));
     expect(await screen.findByTestId('patient-documents-error')).toHaveTextContent('Falha consentimento');
   });
@@ -175,8 +308,12 @@ describe('PatientDocumentsCard', () => {
   it('revogar consentimento que falha: mostra erro', async () => {
     withPermissions(['patient_identity:write']);
     registerImageConsent.mockResolvedValue({ id: 'consent-1' });
+    getVigenteImageConsent
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'consent-1', consenterKind: 'PATIENT', consentedAt: '2026-09-14T10:00:00.000Z' });
     revokeImageConsent.mockRejectedValue(new FakeApiError('Falha revogar'));
     render(<PatientDocumentsCard patientId="p1" />);
+    await screen.findByTestId('patient-consent-register-btn');
     fireEvent.click(screen.getByTestId('patient-consent-register-btn'));
     await screen.findByTestId('patient-consent-revoke-btn');
     fireEvent.click(screen.getByTestId('patient-consent-revoke-btn'));
