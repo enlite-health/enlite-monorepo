@@ -273,6 +273,7 @@ jobs:
         run: |
           BASE="-f docker-compose.yml -f docker-compose.test.yml -f docker-compose.anacare-hours.yml"
           docker compose $BASE up -d postgres
+
           espera() {
             for i in $(seq 1 60); do
               curl -sf "$2" >/dev/null && echo "$1 pronto" && return 0
@@ -281,6 +282,34 @@ jobs:
             echo "::error::$1 não respondeu em 120s ($2)"
             return 1
           }
+
+          # `postgres` precisa estar pronto para ACEITAR CONEXÃO antes dos dois passos
+          # abaixo (migração e marcador) — `depends_on: service_healthy` só protege o
+          # container `api`, e esses dois passos não passam por ele.
+          for i in $(seq 1 60); do
+            docker compose $BASE exec -T postgres pg_isready -U enlite_admin -d enlite_e2e >/dev/null 2>&1 && echo "postgres pronto" && break
+            sleep 2
+          done
+
+          # Aplica as migrations (cria `iam.rollout_state`, mig 282) SEM subir o
+          # servidor: o comando padrão do service `api` (docker-compose.test.yml)
+          # encadeia migração + `npm start` num processo só, e o boot da API com o
+          # engine ABAC ligado (`PERMISSION_ENGINE_ENABLED=true`, deste override)
+          # recusa subir sem o marcador de rollout já presente (`RolloutNotMigratedError`
+          # em src/bootstrap/wirePermissionsModule.ts) — precisamos gravar o marcador
+          # ANTES de `up -d api`, então rodamos a migração isolada primeiro.
+          docker compose $BASE run --rm --no-deps api node scripts/run-migrations-docker.js
+
+          # Marca o rollout de grupos como migrado neste ambiente efêmero — o mesmo
+          # marcador que `scripts/iam-config-import.ts --execute` grava em ambiente real
+          # (0 staff ativo sem grupo; aqui o banco nasce vazio a cada execução do CI, e
+          # o gate de `AssertNoActiveStaffWithoutGroupUseCase` deste job dedicado é a
+          # ausência de dado, não a rotina de produção). Grava como owner (`enlite_admin`,
+          # via psql dentro do container `postgres`) porque a mig 282 revoga
+          # INSERT/UPDATE de `app_runtime`/`app_system` nesta tabela.
+          docker compose $BASE exec -T postgres psql -U enlite_admin -d enlite_e2e -c \
+            "INSERT INTO iam.rollout_state (key, value, note) VALUES ('permission_groups_migrated', 'done', 'ci:integration-e2e-anacare-hours') ON CONFLICT (key) DO UPDATE SET value = 'done';"
+
           docker compose $BASE up -d api
           espera "api" http://localhost:8080/health || {
             docker compose $BASE logs api | tail -50
