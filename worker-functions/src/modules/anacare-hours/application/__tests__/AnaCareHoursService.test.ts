@@ -82,26 +82,17 @@ describe('AnaCareHoursService', () => {
       expect(snapshot.patients[0].providers[0].shifts).toHaveLength(2);
     });
 
-    it('filtra por providerId', async () => {
+    // D4 (revisão de conformidade, 15/09): `getMonthSnapshot` deixou de aceitar filtro nenhum —
+    // `patientSearch`/`providerId` rodam SÓ no cliente (`selectors.ts` `filterPatients`, front),
+    // nunca em query string pro backend (PII em URL/log). As 3 asserções antigas de filtro no
+    // service foram substituídas por esta: com 2 prestadores diferentes no mesmo mês, o snapshot
+    // devolve os DOIS sempre — não existe mais parâmetro pra podar a resposta aqui.
+    it('nunca filtra no servidor — devolve todos os prestadores/pacientes do mês, sem parâmetro de filtro', async () => {
       const shifts = [SHIFT_A, { ...SHIFT_A, sourceShiftId: 'shift-c', anaCareNurseId: 'AC-NURSE-1' }];
       const service = new AnaCareHoursService(new StubSource(shifts), mockRepo());
-      const snapshot = await service.getMonthSnapshot('2026-09', false, { providerId: 'AC-NURSE-1' });
-      expect(snapshot.patients).toHaveLength(1);
-      expect(snapshot.patients[0].providers).toEqual([expect.objectContaining({ anaCareId: 'AC-NURSE-1' })]);
-    });
-
-    it('providerId sem match nenhum devolve lista de pacientes vazia', async () => {
-      const service = new AnaCareHoursService(new StubSource(), mockRepo());
-      const snapshot = await service.getMonthSnapshot('2026-09', false, { providerId: 'nao-existe' });
-      expect(snapshot.patients).toEqual([]);
-    });
-
-    it('filtra por patientSearch (case-insensitive contra o anaCareId, sem vínculo em F1)', async () => {
-      const service = new AnaCareHoursService(new StubSource(), mockRepo());
-      const achou = await service.getMonthSnapshot('2026-09', false, { patientSearch: 'ac-pat-0' });
-      expect(achou.patients).toHaveLength(1);
-      const naoAchou = await service.getMonthSnapshot('2026-09', false, { patientSearch: 'zzz' });
-      expect(naoAchou.patients).toEqual([]);
+      const snapshot = await service.getMonthSnapshot('2026-09', false);
+      const providerIds = snapshot.patients.flatMap((p) => p.providers.map((pr) => pr.anaCareId)).sort();
+      expect(providerIds).toEqual(['AC-NURSE-0', 'AC-NURSE-1']);
     });
 
     it('decifra a nota só quando canReadNote=true (e só se houver validação com nota)', async () => {
@@ -236,13 +227,13 @@ describe('AnaCareHoursService', () => {
       expect(repo.contest).toHaveBeenCalledWith(expect.objectContaining({ noteEncrypted: null }));
     });
 
-    it('nota acima do limite → NOTA_OBRIGATORIA, sem tocar o KMS nem o repositório', async () => {
+    it('nota acima do limite → NOTA_MUITO_LONGA, sem tocar o KMS nem o repositório', async () => {
       const encrypt = jest.fn();
       const kms = { encrypt, decrypt: jest.fn() } as unknown as KMSEncryptionService;
       const repo = mockRepo();
       const service = new AnaCareHoursService(new StubSource(), repo, kms);
       const notaGigante = 'x'.repeat(501);
-      await expect(service.contestShift('shift-a', 'otro', notaGigante)).rejects.toMatchObject({ code: 'NOTA_OBRIGATORIA' });
+      await expect(service.contestShift('shift-a', 'otro', notaGigante)).rejects.toMatchObject({ code: 'NOTA_MUITO_LONGA' });
       expect(encrypt).not.toHaveBeenCalled();
       expect(repo.contest).not.toHaveBeenCalled();
     });

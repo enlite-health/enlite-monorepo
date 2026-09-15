@@ -28,7 +28,7 @@ describe('AnaCareHoursServiceError', () => {
   });
 
   it('aceita mensagem custom', () => {
-    const err = new AnaCareHoursServiceError('NOTA_OBRIGATORIA', 'nota acima do limite');
+    const err = new AnaCareHoursServiceError('NOTA_MUITO_LONGA', 'nota acima do limite');
     expect(err.message).toBe('nota acima do limite');
   });
 });

@@ -9,8 +9,13 @@ import type { AuthzContract } from '@domain/entities/Authz';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, opts?: Record<string, unknown>) =>
-      opts ? key.concat('|', Object.entries(opts).map(([k, v]) => `${k}=${v}`).join(',')) : key,
+    // D3: `describeError` chama `t(byCodeKey, fallback)` com o FALLBACK como STRING (convenção do
+    // projeto pro "segundo argumento é o fallback pro valor cru", CLAUDE.md §i18n) — o mock
+    // precisa devolver essa string quando `opts` não é um objeto de interpolação.
+    t: (key: string, opts?: Record<string, unknown> | string) => {
+      if (typeof opts === 'string') return opts;
+      return opts ? key.concat('|', Object.entries(opts).map(([k, v]) => `${k}=${v}`).join(',')) : key;
+    },
   }),
 }));
 
@@ -103,7 +108,11 @@ describe('AnaCareHoursDetailContainer', () => {
     await waitFor(() => expect(screen.queryByTestId('anacare-hours-validate-shift-s1')).not.toBeInTheDocument());
   });
 
-  it('NEGATIVO — falha de negócio na validação mostra o erro de ação, sem quebrar a tela', async () => {
+  it('NEGATIVO — falha de negócio na validação mostra o erro de ação TRADUZIDO POR CÓDIGO, sem quebrar a tela', async () => {
+    // D3 (revisão de conformidade, 15/09): antes a tela mostrava `err.message` cru — que na
+    // integração real é o CODE vindo do backend (ex. "JA_VALIDADO"), texto ilegível. Agora
+    // `describeError` traduz por `error.byCode.<CODE>`, com o texto genérico da ação como
+    // fallback do i18n — o mock de `t` (topo do arquivo) devolve esse fallback como STRING.
     comEnforcement(['anacare_hours:read', 'anacare_hours:validate'], 'on');
     const service: AnaCareHoursService = {
       getMonthSnapshot: vi.fn(),
@@ -116,7 +125,9 @@ describe('AnaCareHoursDetailContainer', () => {
     render(<AnaCareHoursDetailContainer service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-validate-shift-s1')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('anacare-hours-validate-shift-s1'));
-    await waitFor(() => expect(screen.getByTestId('anacare-hours-action-error')).toHaveTextContent('já validado, não pode reabrir'));
+    await waitFor(() =>
+      expect(screen.getByTestId('anacare-hours-action-error')).toHaveTextContent('admin.anacareHours.error.validateShift'),
+    );
   });
 
   it('NEGATIVO — falha SEM AnaCareHoursServiceError cai no texto genérico i18n', async () => {
@@ -145,6 +156,26 @@ describe('AnaCareHoursDetailContainer', () => {
     fireEvent.click(screen.getByTestId('anacare-hours-selection-validate'));
     fireEvent.click(screen.getByTestId('anacare-hours-batch-modal-confirm'));
     await waitFor(() => expect(spy).toHaveBeenCalledWith({ shiftIds: ['s1'] }));
+  });
+
+  it('NEGATIVO — falha de negócio ao validar em LOTE mostra o erro de ação traduzido por código', async () => {
+    comEnforcement(['anacare_hours:read', 'anacare_hours:validate'], 'on');
+    const service: AnaCareHoursService = {
+      getMonthSnapshot: vi.fn(),
+      getPatientMonth: vi.fn().mockResolvedValue(makeSnapshot().patients[0]),
+      getRetratoStatus: vi.fn().mockResolvedValue({ updatedAt: makeSnapshot().updatedAt, stale: false, circuitBreakerOpen: false }),
+      validateShift: vi.fn(),
+      validateBatch: vi.fn().mockRejectedValue(new AnaCareHoursServiceError('RETRATO_DESATUALIZADO', 'retrato velho')),
+      contestShift: vi.fn(),
+    };
+    render(<AnaCareHoursDetailContainer service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-select-shift-s1')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('anacare-hours-select-shift-s1'));
+    fireEvent.click(screen.getByTestId('anacare-hours-selection-validate'));
+    fireEvent.click(screen.getByTestId('anacare-hours-batch-modal-confirm'));
+    await waitFor(() =>
+      expect(screen.getByTestId('anacare-hours-action-error')).toHaveTextContent('admin.anacareHours.error.validateBatch'),
+    );
   });
 
   it('POSITIVO — contestar chama service.contestShift com reason e note trimados', async () => {
@@ -194,5 +225,60 @@ describe('AnaCareHoursDetailContainer', () => {
     await waitFor(() => expect(screen.getByTestId('anacare-hours-back')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('anacare-hours-back'));
     expect(onBack).toHaveBeenCalled();
+  });
+
+  // D5 (cobertura 100%, revisão de conformidade 15/09) — os 3 testes abaixo fecham os ramos que
+  // faltavam: loading (89), falha de negócio em CONTESTAR (83-84, irmã da validação já coberta) e
+  // snapshot ausente sem erro/loading (108) — ocorre quando `getRetratoStatus` resolve algo sem
+  // forma (ex. backend com contrato quebrado), não só em "mês sem paciente".
+
+  it('POSITIVO — estado de loading aparece ANTES do fetch resolver', () => {
+    let resolvePatient: (v: unknown) => void = () => {};
+    const service: AnaCareHoursService = {
+      getMonthSnapshot: vi.fn(),
+      getPatientMonth: vi.fn(() => new Promise((resolve) => { resolvePatient = resolve; })) as any,
+      getRetratoStatus: vi.fn().mockResolvedValue({ updatedAt: '', stale: false, circuitBreakerOpen: false }),
+      validateShift: vi.fn(),
+      validateBatch: vi.fn(),
+      contestShift: vi.fn(),
+    };
+    render(<AnaCareHoursDetailContainer service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    expect(screen.getByTestId('anacare-hours-detail-loading')).toBeInTheDocument();
+    resolvePatient(null); // libera a promise pendente — evita vazar estado pro próximo teste
+  });
+
+  it('NEGATIVO — falha de negócio ao CONTESTAR mostra o erro de ação traduzido por código', async () => {
+    comEnforcement(['anacare_hours:read', 'anacare_hours:validate'], 'on');
+    const service: AnaCareHoursService = {
+      getMonthSnapshot: vi.fn(),
+      getPatientMonth: vi.fn().mockResolvedValue(makeSnapshot().patients[0]),
+      getRetratoStatus: vi.fn().mockResolvedValue({ updatedAt: makeSnapshot().updatedAt, stale: false, circuitBreakerOpen: false }),
+      validateShift: vi.fn(),
+      validateBatch: vi.fn(),
+      contestShift: vi.fn().mockRejectedValue(new AnaCareHoursServiceError('MOTIVO_INVALIDO', 'motivo inválido')),
+    };
+    render(<AnaCareHoursDetailContainer service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-contest-shift-s1')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('anacare-hours-contest-shift-s1'));
+    fireEvent.change(screen.getByTestId('anacare-hours-contest-reason'), { target: { value: 'otro' } });
+    fireEvent.click(screen.getByTestId('anacare-hours-contest-confirm'));
+    await waitFor(() =>
+      expect(screen.getByTestId('anacare-hours-action-error')).toHaveTextContent('admin.anacareHours.error.contestShift'),
+    );
+  });
+
+  it('POSITIVO — retrato resolve sem forma (getRetratoStatus devolve null) → snapshot ausente sem erro nem loading, PageContainer vazio', async () => {
+    const service: AnaCareHoursService = {
+      getMonthSnapshot: vi.fn(),
+      getPatientMonth: vi.fn().mockResolvedValue(makeSnapshot().patients[0]),
+      getRetratoStatus: vi.fn().mockResolvedValue(null as any),
+      validateShift: vi.fn(),
+      validateBatch: vi.fn(),
+      contestShift: vi.fn(),
+    };
+    const { container } = render(<AnaCareHoursDetailContainer service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.queryByTestId('anacare-hours-detail-loading')).not.toBeInTheDocument());
+    expect(screen.queryByTestId('anacare-hours-detail-error')).not.toBeInTheDocument();
+    expect(container.textContent).toBe('');
   });
 });

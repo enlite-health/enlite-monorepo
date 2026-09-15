@@ -35,7 +35,7 @@ const CLINICAL_READ_CELL = cellKey('patient_clinical', 'read');
 const ERROR_STATUS: Record<string, number> = {
   RETRATO_DESATUALIZADO: 409,
   JA_VALIDADO: 409,
-  NOTA_OBRIGATORIA: 400,
+  NOTA_MUITO_LONGA: 400,
   TURNO_NAO_ENCONTRADO: 404,
 };
 
@@ -81,6 +81,8 @@ export class AnaCareHoursController {
       res.status(400).json({ success: false, error: 'Invalid month' });
       return;
     }
+    // D4: `monthQuerySchema` não aceita mais campos (o filtro é sempre no CLIENTE) — o parse só
+    // continua aqui pra rejeitar query malformada com 400, sem repassar nada ao service.
     const query = monthQuerySchema.safeParse(req.query);
     if (!query.success) {
       res.status(400).json({ success: false, error: 'Invalid query' });
@@ -89,7 +91,7 @@ export class AnaCareHoursController {
     const service = this.requireService(res);
     if (!service) return;
     try {
-      const snapshot = await service.getMonthSnapshot(params.data.month, this.canReadNote(req), query.data);
+      const snapshot = await service.getMonthSnapshot(params.data.month, this.canReadNote(req));
       res.status(200).json({ success: true, data: snapshot });
     } catch (err) {
       this.handleError(res, err, 'AnaCareHoursController:getMonthSnapshot');

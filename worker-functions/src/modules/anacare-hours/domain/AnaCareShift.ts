@@ -113,7 +113,7 @@ export interface ContestShiftCommand {
 }
 
 /** Erros de negócio — mesmos códigos do `AnaCareHoursServiceError` do protótipo. */
-export type AnaCareHoursErrorCode = 'RETRATO_DESATUALIZADO' | 'JA_VALIDADO' | 'NOTA_OBRIGATORIA' | 'TURNO_NAO_ENCONTRADO';
+export type AnaCareHoursErrorCode = 'RETRATO_DESATUALIZADO' | 'JA_VALIDADO' | 'NOTA_MUITO_LONGA' | 'TURNO_NAO_ENCONTRADO';
 
 export class AnaCareHoursServiceError extends Error {
   constructor(readonly code: AnaCareHoursErrorCode, message?: string) {

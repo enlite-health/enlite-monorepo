@@ -132,7 +132,7 @@ describe('AnaCareHoursController', () => {
       const controller = new AnaCareHoursController(() => service);
       const res = mockRes();
       await controller.getMonthSnapshot(mockReq({ params: { month: '2026-09' }, permissionCells: ['patient_clinical:read'] }), res);
-      expect(service.getMonthSnapshot).toHaveBeenCalledWith('2026-09', true, {});
+      expect(service.getMonthSnapshot).toHaveBeenCalledWith('2026-09', true);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith({ success: true, data: { month: '2026-09', patients: [] } });
     });
@@ -266,8 +266,8 @@ describe('AnaCareHoursController', () => {
       expect(res.status).toHaveBeenCalledWith(400);
     });
 
-    it('400 quando o service recusa com NOTA_OBRIGATORIA', async () => {
-      const service = mockService({ contestShift: jest.fn().mockRejectedValue(new AnaCareHoursServiceError('NOTA_OBRIGATORIA')) });
+    it('400 quando o service recusa com NOTA_MUITO_LONGA', async () => {
+      const service = mockService({ contestShift: jest.fn().mockRejectedValue(new AnaCareHoursServiceError('NOTA_MUITO_LONGA')) });
       const controller = new AnaCareHoursController(() => service);
       const res = mockRes();
       await controller.contestShift(mockReq({ params: { shiftId: 's1' }, body: { reason: 'otro' } }), res);

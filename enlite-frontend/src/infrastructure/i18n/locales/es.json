@@ -731,7 +731,16 @@
         "validateBatch": "No se pudo validar el lote.",
         "contestShift": "No se pudo contestar el turno.",
         "sourceNotConfigured": "La fuente de datos de Ana Care no está configurada. Contacte al equipo técnico.",
-        "noValidateCell": "No tiene permiso para validar o contestar turnos."
+        "noValidateCell": "No tiene permiso para validar o contestar turnos.",
+        "byCode": {
+          "RETRATO_DESATUALIZADO": "El retrato está desactualizado — la validación está deshabilitada hasta el próximo retrato.",
+          "JA_VALIDADO": "Este turno ya fue validado — no puede reabrirse.",
+          "MOTIVO_INVALIDO": "El motivo de la contestación no es válido.",
+          "NOTA_MUITO_LONGA": "La nota supera el límite de caracteres permitido.",
+          "FONTE_NAO_CONFIGURADA": "La fuente de datos de Ana Care no está configurada. Contacte al equipo técnico.",
+          "TURNO_NAO_ENCONTRADO": "No se encontró el turno.",
+          "DESCONHECIDO": "Ocurrió un error inesperado."
+        }
       },
       "origin": {
         "sinCheckin": "Sin check-in",

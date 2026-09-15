@@ -43,8 +43,12 @@ export function AnaCareHoursDetailContainer({
   const [actionError, setActionError] = useState<string | null>(null);
   const validateGate = useActionGate('anacare_hours', 'validate');
 
+  // D3 (revisão de conformidade, 15/09): antes mostrava `err.message`, que é o `code` cru vindo do
+  // backend (ex. "JA_VALIDADO") — texto ilegível pro usuário. Agora traduz por CÓDIGO
+  // (`error.byCode.<CODE>`), com o texto genérico da tela como fallback do i18n.
   function describeError(err: unknown, fallback: string): string {
-    return err instanceof AnaCareHoursServiceError ? err.message : fallback;
+    if (!(err instanceof AnaCareHoursServiceError)) return fallback;
+    return t(`admin.anacareHours.error.byCode.${err.code}`, fallback);
   }
 
   async function handleValidateShift(shift: AnaCareShift): Promise<void> {

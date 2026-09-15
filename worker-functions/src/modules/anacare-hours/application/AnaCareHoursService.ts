@@ -24,19 +24,11 @@ import {
   type ContestReason,
 } from '../domain/AnaCareShift';
 
-export interface MonthSnapshotFilters {
-  patientSearch?: string;
-  providerId?: string;
-}
-
 export interface ValidateBatchItemResult {
   shiftId: string;
   ok: boolean;
   code?: string;
 }
-
-/** Normaliza pra comparação de filtro: minúsculo, sem espaço nas pontas (sem acento — não há nome exposto em F1). */
-const norm = (s: string): string => s.trim().toLowerCase();
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -71,20 +63,9 @@ export class AnaCareHoursService {
     return groupIntoPatients(mapped);
   }
 
-  async getMonthSnapshot(month: string, canReadNote: boolean, filters: MonthSnapshotFilters = {}): Promise<AnaCareMonthSnapshot> {
-    let patients = await this.patientsForMonth(month, canReadNote);
-
-    if (filters.providerId) {
-      const wanted = filters.providerId;
-      patients = patients
-        .map((p) => ({ ...p, providers: p.providers.filter((pr) => pr.anaCareId === wanted) }))
-        .filter((p) => p.providers.length > 0);
-    }
-    if (filters.patientSearch) {
-      const needle = norm(filters.patientSearch);
-      patients = patients.filter((p) => norm(p.name ?? p.anaCareId).includes(needle));
-    }
-
+  /** D4: sem filtro de query — `patientSearch`/`providerId` rodam só no CLIENTE (`selectors.ts`), nunca aqui (PII em query/log). */
+  async getMonthSnapshot(month: string, canReadNote: boolean): Promise<AnaCareMonthSnapshot> {
+    const patients = await this.patientsForMonth(month, canReadNote);
     return buildSnapshot(month, patients);
   }
 
@@ -145,7 +126,7 @@ export class AnaCareHoursService {
 
   async contestShift(shiftId: string, reason: ContestReason, note: string | undefined): Promise<void> {
     if (note !== undefined && note.length > CONTEST_NOTE_MAX_LENGTH) {
-      throw new AnaCareHoursServiceError('NOTA_OBRIGATORIA', `nota acima do limite de ${CONTEST_NOTE_MAX_LENGTH} caracteres`);
+      throw new AnaCareHoursServiceError('NOTA_MUITO_LONGA', `nota acima do limite de ${CONTEST_NOTE_MAX_LENGTH} caracteres`);
     }
     const source = await this.requireSourceShift(shiftId);
     const noteEncrypted = note ? await this.kms.encrypt(note) : null;
