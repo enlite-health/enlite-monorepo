@@ -10,6 +10,7 @@ import type { PatientDetail } from '@domain/entities/PatientDetail';
 import { FieldPair, FieldPairGrid, FieldGroupTitle } from './FieldPairs';
 import { maskDocumentNumber } from '@presentation/utils/maskDocumentNumber';
 import { PatientPhotoSlot } from './PatientPhotoSlot';
+import { ENV } from '@infrastructure/config/env';
 
 interface PatientIdentityCardProps {
   patient: PatientDetail;
@@ -185,7 +186,12 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
       data-testid="patient-identity-card"
     >
       <div className="flex items-center gap-4 mb-2">
-        <PatientPhotoSlot patientId={patient.id} hasPhoto={patient.hasPhoto} onChanged={onSaved} />
+        {/* Spec 018, PR-4 (task 4.10): flag `VITE_PATIENT_PHOTO_ENABLED` — ligada na stage, ausente
+            (portanto false) em PRD. Achado da revisão do PR-4 (item 6): antes desta rodada não
+            havia gate nenhum aqui. */}
+        {ENV.PATIENT_PHOTO_ENABLED && (
+          <PatientPhotoSlot patientId={patient.id} hasPhoto={patient.hasPhoto} onChanged={onSaved} />
+        )}
         <div className="min-w-0">
           {/* 06/09: o NOME saiu daqui (subiu pro `h1` da página) — repetir dava strict-mode em e2e. */}
           <div className="flex flex-wrap items-center gap-2">

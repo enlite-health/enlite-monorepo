@@ -16,6 +16,12 @@ export const ENV = {
   // URL of the Google Appointment Schedule for the "consulta de admisión".
   // Empty → GoogleAppointmentEmbed renders a configure-URL warning.
   ADMISSION_BOOKING_URL: import.meta.env.VITE_ADMISSION_BOOKING_URL || '',
+  // Spec 018, PR-4 (task 4.10): slot de foto + card de documentos do paciente — LIGADA só no
+  // build da stage; AUSENTE (portanto desligada) em PRD, sem tocar em workflow de PRD. Achado da
+  // revisão do PR-4 (item 6): a flag nunca tinha sido implementada — a feature aparecia sem gate
+  // nenhum, em qualquer build. Ver `.github/workflows/deploy-stage-frontend.yml` para onde a env
+  // do build da stage é setada.
+  PATIENT_PHOTO_ENABLED: import.meta.env.VITE_PATIENT_PHOTO_ENABLED === 'true',
   IS_PRODUCTION: import.meta.env.PROD,
   IS_DEVELOPMENT: import.meta.env.DEV,
 } as const;
