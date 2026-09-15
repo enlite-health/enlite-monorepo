@@ -478,6 +478,20 @@ describe('S3 — Seeds: tenant Enlite, 43 permissions, 5 grupos (2 de sistema + 
     // congela a lista de colunas na criação (Postgres não reabre o `*` quando a tabela de baixo
     // ganha coluna nova). Por isso este SELECT vai direto em `iam.permissions`, qualificado —
     // igual o resto do código pós-274 já faz.
+    // Reconcilia ANTES de conferir: suítes e2e vizinhas criam célula nova direto em
+    // `iam.permissions` via `garantirCelula` (INSERT cru, fora do sync de boot) e não chamam
+    // `iam.grant_active_permissions_to_master()` depois — mesmo caminho que
+    // `iam-permissions-usecases.test.ts` já usa para este catch-up.
+    const systemPool = new Pool({ connectionString: DATABASE_URL, options: '-c role=app_system' });
+    const systemClient = await systemPool.connect();
+    try {
+      await systemClient.query(`SELECT set_config('app.system_context', 'e2e:iam-schema-master-reconcile', false)`);
+      await systemClient.query(`SELECT iam.grant_active_permissions_to_master()`);
+    } finally {
+      systemClient.release();
+      await systemPool.end();
+    }
+
     const ativas = await pool.query<{ id: string }>(`
       SELECT id FROM iam.permissions WHERE deprecated_at IS NULL
     `);
