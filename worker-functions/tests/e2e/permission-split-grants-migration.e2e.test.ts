@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { Pool } from 'pg';
+import { garantirCelula } from './helpers/permissionFamilyHarness';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 
@@ -80,13 +81,25 @@ describe('migration 435 — split write→create+update (banco real)', () => {
     await p.query(sql);
   }
 
+  // `patient:delete` não é semeada pela migration 435 (só write/create/update dos 23 recursos
+  // splitados) — nasce em produção via SyncPermissionCatalogUseCase no boot da API, que não
+  // roda antes deste teste isolado. Sem garantir, o teste falha isolado e em qualquer ordem
+  // (achado A4). `criada` diz se este teste é dono da linha, para não apagar cleanup de quem
+  // chegou primeiro (seed 206 ou outra suíte).
+  let patientDeleteCriada = false;
+
   beforeAll(async () => {
     pool = new Pool({ connectionString: DATABASE_URL });
     await cleanupGroups(pool);
+    const r = await garantirCelula(pool, { resource: 'patient', action: 'delete', category: 'Pacientes' });
+    patientDeleteCriada = r.criada;
   });
 
   afterAll(async () => {
     await cleanupGroups(pool);
+    if (patientDeleteCriada) {
+      await pool.query(`DELETE FROM iam.permissions WHERE resource = 'patient' AND action = 'delete'`);
+    }
     await pool.end();
   });
 
