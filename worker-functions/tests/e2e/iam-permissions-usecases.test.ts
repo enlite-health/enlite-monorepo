@@ -176,7 +176,7 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
       ).rejects.toMatchObject({ code: 'forbidden' });
     });
 
-    it('marca células: vira group_permissions + trilha do diff', async () => {
+    it('marca células: vira group_permissions + trilha do diff (PR-8b/989e4d44: `write` de recurso splitado expande para create+update NA GRAVAÇÃO — 2 cellKeys viram 3 linhas)', async () => {
       await asStaff(U.gestor, () =>
         permissions.groups.setPermissions.execute({
           tenantId: ENLITE_TENANT_ID,
@@ -189,11 +189,11 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
         `SELECT op, changed_by, reason FROM iam.permission_group_changes WHERE group_id = $1 ORDER BY changed_at`,
         [groupId],
       );
-      expect(changes.rows).toHaveLength(2);
+      expect(changes.rows).toHaveLength(3);
       expect(changes.rows[0]).toMatchObject({ op: 'add', changed_by: U.gestor, reason: 'setup do e2e' });
     });
 
-    it('célula fora do catálogo é recusada dizendo QUAL — e nada é gravado', async () => {
+    it('célula fora do catálogo é recusada dizendo QUAL — e nada É GRAVADO A MAIS (fica no estado do teste anterior: 3 linhas expandidas)', async () => {
       await expect(
         asStaff(U.gestor, () =>
           permissions.groups.setPermissions.execute({
@@ -204,7 +204,7 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
         ),
       ).rejects.toThrow(/inventada:read/);
       const cells = await admin.query(`SELECT count(*)::int n FROM iam.group_permissions WHERE group_id = $1`, [groupId]);
-      expect(cells.rows[0].n).toBe(2);
+      expect(cells.rows[0].n).toBe(3);
     });
 
     it('concede país com motivo (idempotente) e o país aparece em effective_countries', async () => {
@@ -221,7 +221,9 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
 
       const ana = await effective(U.ana);
       expect(ana.c).toContain('BR');
-      expect(ana.p).toEqual(expect.arrayContaining(['vacancy:read', 'vacancy:write']));
+      // PR-8b/ADR-2: `vacancy:write` já expandiu na gravação (teste "marca células" acima) —
+      // o efetivo nunca mostra `write` de recurso splitado, só as células reais concedidas.
+      expect(ana.p).toEqual(expect.arrayContaining(['vacancy:read', 'vacancy:create', 'vacancy:update']));
 
       const scope = await admin.query(
         `SELECT granted_by, reason FROM iam.group_country_scopes WHERE group_id = $1 AND revoked_at IS NULL`,
