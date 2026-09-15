@@ -57,6 +57,18 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+describe('getAuthHeaders', () => {
+  it('NEGATIVO — sem token (usuário deslogado/expirado), a requisição sai SEM o header Authorization', async () => {
+    mockGetIdToken.mockResolvedValue(null);
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { success: true, data: SNAPSHOT }));
+    globalThis.fetch = fetchMock;
+    const service = new AnaCareHoursHttpService();
+    await service.getMonthSnapshot('2026-08');
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.headers.Authorization).toBeUndefined();
+  });
+});
+
 describe('getMonthSnapshot', () => {
   it('POSITIVO — GET /months/:month devolve o snapshot e manda o Authorization', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { success: true, data: SNAPSHOT }));
@@ -92,6 +104,42 @@ describe('getMonthSnapshot', () => {
     const result = await service.getMonthSnapshot('2099-01');
     expect(result.patients).toEqual([]);
   });
+
+  it('NEGATIVO — resposta 200 sem content-type JSON (ex.: proxy/HTML de erro) vira AnaCareHoursServiceError, nunca `.json()` quebrado', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ status: 502, headers: { get: () => 'text/html' }, json: async () => ({}) } as unknown as Response);
+    const service = new AnaCareHoursHttpService();
+    await expect(service.getMonthSnapshot('2026-08')).rejects.toMatchObject({ code: 'RETRATO_DESATUALIZADO' });
+  });
+
+  it('NEGATIVO — código de erro fora do vocabulário conhecido cai no fallback RETRATO_DESATUALIZADO', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(422, { success: false, error: 'algo novo', code: 'CODIGO_NUNCA_VISTO' }));
+    const service = new AnaCareHoursHttpService();
+    await expect(service.getMonthSnapshot('2026-08')).rejects.toMatchObject({ code: 'RETRATO_DESATUALIZADO' });
+  });
+
+  it('NEGATIVO — corpo 200 sem o campo `success` (formato inesperado) é tratado como erro, nunca lido como sucesso', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, { data: SNAPSHOT }));
+    const service = new AnaCareHoursHttpService();
+    await expect(service.getMonthSnapshot('2026-08')).rejects.toMatchObject({ code: 'RETRATO_DESATUALIZADO' });
+  });
+
+  it('NEGATIVO — 503 (GET) cujo corpo não é JSON válido cai no fallback de mensagem (safeJson captura o throw)', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      status: 503,
+      headers: { get: () => 'application/json' },
+      json: async () => {
+        throw new Error('corpo corrompido');
+      },
+    } as unknown as Response);
+    const service = new AnaCareHoursHttpService();
+    await expect(service.getMonthSnapshot('2026-08')).rejects.toMatchObject({ code: 'FONTE_NAO_CONFIGURADA', message: 'ANACARE_SOURCE_NOT_CONFIGURED' });
+  });
+
+  it('NEGATIVO — erro sem mensagem (`error` vazio) cai no fallback "HTTP <status>"', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(500, { success: false, error: '', code: 'CODIGO_NUNCA_VISTO' }));
+    const service = new AnaCareHoursHttpService();
+    await expect(service.getMonthSnapshot('2026-08')).rejects.toMatchObject({ message: 'HTTP 500' });
+  });
 });
 
 describe('getPatientMonth', () => {
@@ -116,6 +164,13 @@ describe('getRetratoStatus', () => {
     const service = new AnaCareHoursHttpService();
     const status = await service.getRetratoStatus('2026-08');
     expect(status.stale).toBe(true);
+  });
+
+  it('NEGATIVO — 404 (mês sem retrato ainda) devolve status "em dia", nunca lança', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ status: 404, headers: { get: () => null }, json: async () => ({}) } as unknown as Response);
+    const service = new AnaCareHoursHttpService();
+    const status = await service.getRetratoStatus('2099-01');
+    expect(status).toEqual({ updatedAt: expect.any(String), stale: false, circuitBreakerOpen: false });
   });
 });
 
@@ -184,5 +239,32 @@ describe('contestShift', () => {
     globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(503, { success: false, error: 'ANACARE_SOURCE_NOT_CONFIGURED', code: 'ANACARE_SOURCE_NOT_CONFIGURED' }));
     const service = new AnaCareHoursHttpService();
     await expect(service.contestShift({ shiftId: 'shift-1', reason: 'otro' })).rejects.toMatchObject({ code: 'FONTE_NAO_CONFIGURADA' });
+  });
+
+  it('NEGATIVO — 503 cujo corpo não é JSON válido cai no fallback de mensagem (safeJson captura o throw)', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      status: 503,
+      headers: { get: () => 'application/json' },
+      json: async () => {
+        throw new Error('corpo corrompido');
+      },
+    } as unknown as Response);
+    const service = new AnaCareHoursHttpService();
+    await expect(service.contestShift({ shiftId: 'shift-1', reason: 'otro' })).rejects.toMatchObject({
+      code: 'FONTE_NAO_CONFIGURADA',
+      message: 'ANACARE_SOURCE_NOT_CONFIGURED',
+    });
+  });
+
+  it('NEGATIVO — resposta de erro sem content-type JSON (não 204/503) vira AnaCareHoursServiceError', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ status: 500, headers: { get: () => 'text/plain' }, json: async () => ({}) } as unknown as Response);
+    const service = new AnaCareHoursHttpService();
+    await expect(service.contestShift({ shiftId: 'shift-1', reason: 'otro' })).rejects.toMatchObject({ code: 'RETRATO_DESATUALIZADO' });
+  });
+
+  it('NEGATIVO — erro de escrita sem mensagem cai no fallback "HTTP <status>"', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(409, { success: false, error: '', code: 'JA_VALIDADO' }));
+    const service = new AnaCareHoursHttpService();
+    await expect(service.contestShift({ shiftId: 'shift-1', reason: 'otro' })).rejects.toMatchObject({ message: 'HTTP 409' });
   });
 });
