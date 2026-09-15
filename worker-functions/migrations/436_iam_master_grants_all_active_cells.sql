@@ -68,8 +68,6 @@ BEGIN
 END
 $$;
 
-COMMIT;
-
 -- ── Função de boot (mesmo gate da 281) — só criada se o schema iam existir; em base
 -- ainda em `public` (pré-274) o mecanismo de reconciliação por boot não se aplica porque
 -- `PERMISSION_CATALOG_SYNC_ENABLED` também não roda contra `public.*` (a feature é iam-only).
@@ -118,3 +116,5 @@ BEGIN
   END IF;
 END
 $outer$;
+
+COMMIT;

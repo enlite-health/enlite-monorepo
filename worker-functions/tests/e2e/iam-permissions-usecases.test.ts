@@ -642,13 +642,22 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
       );
       const masterId = master.rows[0].id;
 
-      const seeded = await admin.query<{ id: string }>(
+      // Padrão `garantirCelula`/`celulasCriadas` (tests/e2e/helpers/permissionFamilyHarness.ts):
+      // só quem CRIOU a célula é dono da limpeza no fim. `patient_consent_documents:read` é a
+      // célula nomeada no achado real (PR-4 na stage) — pode já existir de verdade no catálogo;
+      // apagar `iam.permissions` incondicionalmente no cleanup apagaria dado de produção se a
+      // suíte rodar contra uma base onde ela já foi seedada por outro caminho. `xmax = 0` na
+      // RETURNING distingue INSERT (linha nova, xmax=0) de UPDATE via ON CONFLICT (linha já
+      // existia, xmax setado pela própria transação) — é o mesmo `criada` do helper, calculado
+      // aqui porque o helper não cobre o caminho "reviver célula deprecada" que este teste exige.
+      const seeded = await admin.query<{ id: string; criada: boolean }>(
         `INSERT INTO iam.permissions (resource, action, description, category, owner_service)
               VALUES ('patient_consent_documents', 'read', 'e2e D338', 'Pacientes', 'worker-functions')
          ON CONFLICT (resource, action) DO UPDATE SET deprecated_at = NULL
-         RETURNING id`,
+         RETURNING id, (xmax = 0) AS criada`,
       );
       const permId = seeded.rows[0].id;
+      const celulaCriadaPorEsteTeste = seeded.rows[0].criada;
       // garante o estado "catálogo tem, Master não tem" antes de reconciliar
       await admin.query(`DELETE FROM iam.group_permissions WHERE group_id = $1 AND permission_id = $2`, [masterId, permId]);
       const semAntes = await admin.query(
@@ -678,7 +687,12 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
         client.release();
       }
 
-      await admin.query(`DELETE FROM iam.permissions WHERE resource = 'patient_consent_documents' AND action = 'read'`);
+      if (celulaCriadaPorEsteTeste) {
+        await admin.query(`DELETE FROM iam.permissions WHERE resource = 'patient_consent_documents' AND action = 'read'`);
+      }
+      // se a célula já existia antes (`celulaCriadaPorEsteTeste === false`), não apaga — é dado
+      // de quem chegou primeiro (seed real do catálogo). O grant do Master já foi restaurado
+      // pelas duas chamadas a `grant_active_permissions_to_master()` acima.
     });
 
     it('invariante: hoje NENHUMA permissão ATIVA do catálogo falta no Master (grant nunca é removido — deprecar não tira o histórico)', async () => {
@@ -700,6 +714,27 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
         [masterId],
       );
       expect(faltando.rows[0].n).toBe(0);
+    });
+
+    it('(negativo) app_runtime, mesmo com app.system_context FORJADO, recebe 42501 ao chamar iam.grant_active_permissions_to_master() (ACL da 436, mesmo gate da 281/279)', async () => {
+      // Mesmo padrão das suítes IAM vizinhas (`SET LOCAL ROLE` + `set_config` numa transação
+      // que sempre dá ROLLBACK — ver `asRole` em tests/e2e/iam-permissions-foundation.test.ts).
+      // O gate por GUC (`_is_system_context()`) fica DENTRO da função e por isso um `app_system`
+      // real com o GUC certo passa — mas o gate por ROLE é ACL (`REVOKE ALL ... FROM app_runtime`
+      // na 436), avaliado pelo Postgres ANTES de a função rodar. Forjar o GUC não contorna ACL:
+      // `app_runtime` tem que continuar recebendo `42501` mesmo declarando `app.system_context`.
+      const client = await admin.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('SET LOCAL ROLE app_runtime');
+        await client.query(`SELECT set_config('app.system_context', 'e2e:436-role-forjado', true)`);
+        await expect(
+          client.query(`SELECT iam.grant_active_permissions_to_master()`),
+        ).rejects.toMatchObject({ code: '42501' });
+      } finally {
+        await client.query('ROLLBACK').catch(() => {});
+        client.release();
+      }
     });
 
     it('LISTA (fora do escopo, só confirmação): PUT direto tira célula do Master → o próximo sync reconcilia', async () => {

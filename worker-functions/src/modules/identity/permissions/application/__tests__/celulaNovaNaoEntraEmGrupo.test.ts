@@ -28,6 +28,22 @@ function ler(rel: string): string {
   return fs.readFileSync(path.join(RAIZ, rel), 'utf8');
 }
 
+/**
+ * Número da migration a partir do prefixo do arquivo (ex: `436_foo.sql` → 436).
+ * A regex antiga `^2(0[7-9]|[1-9]\d)` só cobria 207-299 — migration 3xx/4xx (ex.: a
+ * própria 436) passava despercebida pelos filtros "toda migration nova" abaixo.
+ */
+function numeroMigration(nomeArquivo: string): number {
+  const m = nomeArquivo.match(/^(\d+)/);
+  return m ? parseInt(m[1], 10) : NaN;
+}
+
+/** Toda migration com número > 206 (206 é o seed original), qualquer faixa. */
+function migrationsNovas(dir: string): string[] {
+  return fs.readdirSync(dir)
+    .filter((f) => f.endsWith('.sql') && numeroMigration(f) > 206);
+}
+
 /** Onde a concessão automática a grupo GENÉRICO poderia entrar de carona. */
 const FONTES_DO_SYNC = [
   'src/modules/identity/permissions/application/SyncPermissionCatalogUseCase.ts',
@@ -82,8 +98,8 @@ describe('C10 — o sync do catálogo cria a célula e NÃO a concede a grupo ge
     // 206 pode tê-las concedido a grupo — EXCETO a 436, que é o mecanismo nomeado do Master
     // e é auditada linha a linha no describe abaixo, não aqui.
     const dir = path.join(RAIZ, 'migrations');
-    const novas = fs.readdirSync(dir)
-      .filter((f) => f.endsWith('.sql') && /^2(0[7-9]|[1-9]\d)/.test(f) && f !== path.basename(FONTE_MASTER_GRANT_SQL));
+    const novas = migrationsNovas(dir).filter((f) => f !== path.basename(FONTE_MASTER_GRANT_SQL));
+    expect(novas.length).toBeGreaterThan(0);
 
     const culpadas = novas.filter((f) => {
       const sql = fs.readFileSync(path.join(dir, f), 'utf8');
@@ -146,8 +162,8 @@ describe('D338 — o mecanismo nomeado concede SÓ ao Acesso Master, nunca a out
     // Proibição dura: se alguém "generalizar" a concessão automática (dar a Recrutador,
     // Community Manager, Financeiro ou Super Admin também), este teste morre.
     const dir = path.join(RAIZ, 'migrations');
-    const novas = fs.readdirSync(dir)
-      .filter((f) => f.endsWith('.sql') && /^2(0[7-9]|[1-9]\d)/.test(f) && f !== path.basename(FONTE_MASTER_GRANT_SQL));
+    const novas = migrationsNovas(dir).filter((f) => f !== path.basename(FONTE_MASTER_GRANT_SQL));
+    expect(novas.length).toBeGreaterThan(0);
 
     const culpadas = novas.filter((f) => {
       const sql = fs.readFileSync(path.join(dir, f), 'utf8');
@@ -155,5 +171,24 @@ describe('D338 — o mecanismo nomeado concede SÓ ao Acesso Master, nunca a out
       return OUTROS_GRUPOS_IDS.some((id) => sql.includes(id));
     });
     expect(culpadas).toEqual([]);
+  });
+
+  it('TODO INSERT em group_permissions da 436 usa a constante v_master_id como group_id — nunca um SELECT/JOIN', () => {
+    // Buraco fechado: uma função que concedesse a todos via algo como
+    // `(SELECT DISTINCT group_id FROM iam.group_permissions)` no lugar de `v_master_id`
+    // passaria pelos testes acima (não cita os OUTROS_GRUPOS_IDS por id literal, e o teste
+    // de FORMA de cima só audita UM INSERT — o da função). Este varre TODO INSERT em
+    // `group_permissions` do arquivo (catch-up + função) e exige que a primeira expressão
+    // do SELECT — a que vira `group_id` — seja SEMPRE a constante `v_master_id`, nunca uma
+    // subquery, nunca uma coluna vinda de outra tabela.
+    const sql = ler(FONTE_MASTER_GRANT_SQL);
+    const inserts = [...sql.matchAll(
+      /INSERT\s+INTO\s+(?:iam\.|public\.)?group_permissions\s*\(\s*group_id\s*,\s*permission_id\s*\)\s*SELECT\s+([\s\S]*?),/gi,
+    )];
+    expect(inserts.length).toBeGreaterThan(0);
+    for (const m of inserts) {
+      const primeiraExpressao = m[1].trim();
+      expect(primeiraExpressao).toBe('v_master_id');
+    }
   });
 });
