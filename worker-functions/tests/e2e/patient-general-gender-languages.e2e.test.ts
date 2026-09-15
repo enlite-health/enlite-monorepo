@@ -14,7 +14,7 @@
  *   ator sem patient_identity:write → 403, nada gravado.
  */
 import { Pool } from 'pg';
-import { montarAppDeFamilia, tokenMock, grupoComCelulas, limparIamFixtures, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
+import { montarAppDeFamilia, tokenMock, grupoComCelulas, limparIamFixtures, garantirCelula, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
 import { readFileSync, readdirSync, statSync } from 'fs';
 import path from 'path';
 
@@ -27,8 +27,10 @@ describe('spec 018 PR-3 — gênero/idiomas do paciente: API sob engine (HTTP re
   const PATIENT = 'ee018003-0c00-0003-0003-000000000001';
   const U = { completa: 'pr3-completa', semIdentidade: 'pr3-sem-identidade' };
   const GRUPOS = { completa: 'PR3 Completa', semIdentidade: 'PR3 Sem identidade' };
+  // PR-8b (A3, ADR-2/SUP-30): `PATCH /patients/:id/general` só declara `patient_identity:update`
+  // agora (adminPatientsRoutes.ts:305, `PATIENT_SECTION_CELL`) — nunca `write`.
   const CELULAS: ReadonlyArray<readonly [string, string]> = [
-    ['patient', 'read'], ['patient_identity', 'read'], ['patient_identity', 'write'],
+    ['patient', 'read'], ['patient_identity', 'read'], ['patient_identity', 'update'],
   ];
 
   const envAnterior: Record<string, string | undefined> = {};
@@ -43,14 +45,13 @@ describe('spec 018 PR-3 — gênero/idiomas do paciente: API sob engine (HTTP re
     return { status: res.status, body: await res.json().catch(() => ({})) };
   }
 
+  // PR-8b (A3, achado A2): `patient_identity:update` é célula do catálogo compartilhado (seedada
+  // pela migration 435) — não é apagada no cleanup. `limparIamFixtures` cobre o que este arquivo
+  // é DONO (grupos/usuários/`group_permissions`).
   async function limpar(): Promise<void> {
     await pool.query(`DELETE FROM patient_field_overrides_audit WHERE patient_id = $1`, [PATIENT]);
     await pool.query(`DELETE FROM resource_access_log WHERE operator_uid = ANY($1)`, [Object.values(U)]);
     await limparIamFixtures(pool, { uids: Object.values(U), grupos: Object.values(GRUPOS) });
-    for (const [resource, action] of CELULAS) {
-      await pool.query(`DELETE FROM iam.group_permissions WHERE permission_id IN (SELECT id FROM iam.permissions WHERE resource = $1 AND action = $2)`, [resource, action]);
-      await pool.query(`DELETE FROM iam.permissions WHERE resource = $1 AND action = $2`, [resource, action]);
-    }
     await pool.query(`DELETE FROM patients WHERE id = $1`, [PATIENT]);
   }
 
@@ -64,9 +65,9 @@ describe('spec 018 PR-3 — gênero/idiomas do paciente: API sob engine (HTTP re
       [U.completa, U.semIdentidade, TENANT_E2E],
     );
     for (const [resource, action] of CELULAS) {
-      await pool.query(`INSERT INTO iam.permissions (resource, action, description, category) VALUES ($1, $2, 'e2e PR-3', 'Pacientes') ON CONFLICT DO NOTHING`, [resource, action]);
+      await garantirCelula(pool, { resource, action, category: 'Pacientes' });
     }
-    await grupoComCelulas(pool, { nome: GRUPOS.completa, uid: U.completa, celulas: [['patient', 'read'], ['patient_identity', 'read'], ['patient_identity', 'write']] });
+    await grupoComCelulas(pool, { nome: GRUPOS.completa, uid: U.completa, celulas: [['patient', 'read'], ['patient_identity', 'read'], ['patient_identity', 'update']] });
     await grupoComCelulas(pool, { nome: GRUPOS.semIdentidade, uid: U.semIdentidade, celulas: [['patient', 'read']] });
     await pool.query(
       `INSERT INTO patients (id, clickup_task_id, first_name, last_name, country, is_test) VALUES

@@ -53,9 +53,13 @@ describe('Patient photo/document/consent — HTTP real, Postgres real, GCS real 
   const PURGE_PATIENT = 'ee426000-0c00-0001-0001-000000000002';
   const U = { completa: 'ppd7-completa', semDocs: 'ppd7-sem-docs' };
   const GRUPOS = { completa: 'PPD7 Completa', semDocs: 'PPD7 Sem docs' };
+  // PR-8b (A3, ADR-2/SUP-30): as rotas de foto/documento/consentimento não declaram mais
+  // `patient_identity:write` — upload é `create`, DELETE/revoke é `update`
+  // (`adminPatientPhotoRoutes.ts:61,65,80,102,116`).
   const CELULAS: ReadonlyArray<readonly [string, string]> = [
     ['patient_identity', 'read'],
-    ['patient_identity', 'write'],
+    ['patient_identity', 'create'],
+    ['patient_identity', 'update'],
     ['patient_consent_documents', 'read'],
   ];
   // Conserto #1 da 3ª revisão do PR-4: só a célula que ESTE suite de fato criou
@@ -179,7 +183,8 @@ describe('Patient photo/document/consent — HTTP real, Postgres real, GCS real 
       uid: U.completa,
       celulas: [
         ['patient_identity', 'read'],
-        ['patient_identity', 'write'],
+        ['patient_identity', 'create'],
+        ['patient_identity', 'update'],
         ['patient_consent_documents', 'read'],
       ],
     });
@@ -188,7 +193,8 @@ describe('Patient photo/document/consent — HTTP real, Postgres real, GCS real 
       uid: U.semDocs,
       celulas: [
         ['patient_identity', 'read'],
-        ['patient_identity', 'write'],
+        ['patient_identity', 'create'],
+        ['patient_identity', 'update'],
       ],
     });
 
