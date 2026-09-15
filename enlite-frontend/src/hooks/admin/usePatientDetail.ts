@@ -29,14 +29,20 @@ export function usePatientDetail(patientId: string | undefined) {
     return () => { cancelled = true; };
   }, [patientId]);
 
+  // Item 1+4 (A1): o refetch pós-salvamento é SILENCIOSO — não liga `isLoading`. Ligar
+  // `isLoading` aqui fazia a página inteira cair para `<DetailSkeleton/>` (PatientDetailPage.tsx)
+  // toda vez que um card salvava, mesmo sem troca de paciente. `isLoading` continua existindo
+  // só para o carregamento inicial / troca de `patientId`, acima. Erro no refetch silencioso NÃO
+  // apaga a ficha: `patient` some do `setPatient` só é chamado em caso de SUCESSO — falha só seta
+  // `error` (mesmo canal que o hook já expõe), mantendo os dados anteriores na tela.
   const refetch = useCallback(() => {
     if (!patientId) return;
-    setIsLoading(true);
-    setError(null);
     AdminApiService.getPatientById(patientId)
-      .then((data) => setPatient(data))
-      .catch((err) => setError(err.message || 'Falha ao carregar paciente'))
-      .finally(() => setIsLoading(false));
+      .then((data) => {
+        setPatient(data);
+        setError(null);
+      })
+      .catch((err) => setError(err.message || 'Falha ao carregar paciente'));
   }, [patientId]);
 
   return { patient, isLoading, error, refetch };
