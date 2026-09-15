@@ -56,4 +56,21 @@ describe('AnaCareHoursListContainer', () => {
     render(<AnaCareHoursListContainer service={service} onOpenPatient={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-list-error')).toHaveTextContent('admin.anacareHours.error.sourceNotConfigured'));
   });
+
+  // D5 (cobertura, 15/09): `!snapshot` sem erro/loading (56-57) — contrato quebrado onde
+  // `getMonthSnapshot` resolve algo sem forma (nunca deveria, mas o container não confia cegamente).
+  it('POSITIVO — getMonthSnapshot resolve algo sem forma (null) → PageContainer vazio, sem quebrar', async () => {
+    const service: AnaCareHoursService = {
+      getMonthSnapshot: vi.fn().mockResolvedValue(null as any),
+      getPatientMonth: vi.fn(),
+      getRetratoStatus: vi.fn(),
+      validateShift: vi.fn(),
+      validateBatch: vi.fn(),
+      contestShift: vi.fn(),
+    };
+    const { container } = render(<AnaCareHoursListContainer service={service} onOpenPatient={vi.fn()} />);
+    await waitFor(() => expect(screen.queryByTestId('anacare-hours-list-loading')).not.toBeInTheDocument());
+    expect(screen.queryByTestId('anacare-hours-list-error')).not.toBeInTheDocument();
+    expect(container.textContent).toBe('');
+  });
 });

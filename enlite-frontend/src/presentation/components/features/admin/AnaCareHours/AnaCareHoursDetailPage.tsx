@@ -166,7 +166,11 @@ export function AnaCareHoursDetailPage({
           <Heading level={1}>{patientDisplayName(patient)}</Heading>
         </div>
 
-        {staleDisable && <AlertBanner variant="warning" title={t('admin.anacareHours.stale.title')} message={alertMessage ?? ''} />}
+        {/* D5 (cobertura, 15/09): `alertMessage` NUNCA é undefined aqui — `blockReason` só devolve
+            undefined quando `!stale && !circuitBreakerOpen`, e `staleDisable` já garante o contrário
+            pra este ramo renderizar. O `?? ''` de antes era branch morto (nunca exercitável por
+            nenhum snapshot real) — removido em vez de marcado como ignorado. */}
+        {staleDisable && <AlertBanner variant="warning" title={t('admin.anacareHours.stale.title')} message={alertMessage as string} />}
 
         <div className="border border-gray-600 rounded-xl p-5 flex flex-wrap items-center justify-between gap-6">
           <div>

@@ -95,6 +95,34 @@ describe('ProviderFilterCombobox', () => {
     expect(input).toHaveValue('García QA');
   });
 
+  // D5 (cobertura, 15/09): `value` sem correspondência em `options` no clique-fora — cobre o ramo
+  // `?? null`/`?? ''` de `handleClickOutside` que a régua acusou faltando (63-64).
+  it('POSITIVO — clique fora com `value` sem correspondência em options limpa o texto (fallback `?? \'\'`)', () => {
+    render(
+      <div>
+        <div data-testid="outside">fora</div>
+        <ProviderFilterCombobox id="combo" options={OPTIONS} value="nao-existe" onValueChange={vi.fn()} placeholder="Todos" ariaLabel="Filtrar" />
+      </div>,
+    );
+    const input = screen.getByTestId('combo');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'xyz' } });
+    fireEvent.mouseDown(screen.getByTestId('outside'));
+    expect(input).toHaveValue('');
+  });
+
+  // D5 (cobertura, 15/09): hover nas opções (`onMouseEnter`) nunca foi disparado por nenhum
+  // teste — cobre as duas funções e mostra que o destaque de teclado (`activeIndex`) também
+  // responde ao mouse.
+  it('POSITIVO — passar o mouse numa opção marca ela como ativa (aria-selected); passar em "Todos" desmarca', () => {
+    render(<ProviderFilterCombobox id="combo" options={OPTIONS} value="" onValueChange={vi.fn()} placeholder="Todos" ariaLabel="Filtrar" />);
+    fireEvent.focus(screen.getByTestId('combo'));
+    fireEvent.mouseEnter(screen.getByTestId('combo-option-p2'));
+    expect(screen.getByTestId('combo-option-p2')).toHaveAttribute('aria-selected', 'true');
+    fireEvent.mouseEnter(screen.getByTestId('combo-option-all'));
+    expect(screen.getByTestId('combo-option-p2')).toHaveAttribute('aria-selected', 'false');
+  });
+
   it('POSITIVO — mousedown DENTRO do combobox (no próprio input) não fecha nem reseta o texto', () => {
     render(<ProviderFilterCombobox id="combo" options={OPTIONS} value="" onValueChange={vi.fn()} placeholder="Todos" ariaLabel="Filtrar" />);
     const input = screen.getByTestId('combo');

@@ -483,6 +483,21 @@ export default defineConfig({
         '**/src/presentation/components/features/admin/PatientDetail/therapeuticProject/TherapeuticProjectDrawer.tsx': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
+        // Conferência de horas do Ana Care (spec `anacare-conferencia-de-horas`, fase 1, D344) —
+        // conserto de conformidade 15/09 (D1-D5): shape `validatedBy`, códigos de erro unificados
+        // com o backend, lote 200/results, filtro só-cliente. Todos os arquivos da feature medem
+        // 100 nos 4 eixos na suíte da pasta (`AnaCareHours/**`, `useAnaCareHoursMonth`,
+        // `useAnaCareHoursPatient`, as 2 páginas) — entram aqui no mesmo PR, senão o 100%
+        // conquistado cai calado no próximo.
+        '**/src/presentation/components/features/admin/AnaCareHours/{AnaCareHoursListPage,AnaCareHoursListContainer,AnaCareHoursDetailPage,AnaCareHoursDetailContainer,AnaCareHoursHttpService,AnaCareHoursService,ContestModal,OriginBadge,OriginLegend,ProviderFilterCombobox,ProviderGroup,ValidateBatchModal,ValidationStatusBadge,selectors,types}.{ts,tsx}': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/hooks/admin/{useAnaCareHoursMonth,useAnaCareHoursPatient}.ts': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
+        '**/src/presentation/pages/admin/{AnaCareHoursPage,AnaCareHoursPatientPage}.tsx': {
+          statements: 100, branches: 100, functions: 100, lines: 100,
+        },
       },
     },
   },
