@@ -16,6 +16,13 @@
  * O backend NUNCA guarda o nome original do arquivo (`patient_documents` só tem
  * `content_type`/`size_bytes`/`sha256` — decisão de segurança, `PatientDocumentStorage`). Por isso
  * a linha mostra o TIPO do documento + a data de envio, nunca um "nome de arquivo" inventado.
+ *
+ * Achado 2 na prova da stage (15/09): quem tem `patient_identity:write` mas NÃO tem
+ * `patient_consent_documents:read` subia documento e via a lista simplesmente sumir (a seção de
+ * lista não existe sem a célula) — sem aviso do porquê, sem confirmação do envio. Agora, nesse
+ * caso, mostra `noReadPermission` no lugar da lista e `uploadSuccess` depois do 201; nunca chama
+ * `GET .../documents` sem a célula (isso já valia — `reload()` já condiciona `listPatientDocuments`
+ * a `canReadDocuments`, evitando 403 previsível). Com a célula, nada muda.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -54,6 +61,11 @@ export function PatientDocumentsCard({ patientId }: Props): JSX.Element | null {
   const [registeringConsent, setRegisteringConsent] = useState(false);
   const [revokingConsent, setRevokingConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Só usado quando NÃO há `patient_consent_documents:read` (achado na prova da stage, 15/09):
+  // quem sobe documento sem a célula de leitura não vê a lista se atualizar, então precisa de uma
+  // confirmação explícita do 201. Com a célula, a própria lista (recarregada) já é a confirmação —
+  // comportamento inalterado (D "com a célula, fica igual ao de hoje").
+  const [uploadSuccess, setUploadSuccess] = useState(false);
 
   const dateFormatter = new Intl.DateTimeFormat(i18n.language === 'pt-BR' ? 'pt-BR' : 'es-AR', {
     dateStyle: 'short',
@@ -86,6 +98,7 @@ export function PatientDocumentsCard({ patientId }: Props): JSX.Element | null {
 
   const handleUpload = async (file: File) => {
     setError(null);
+    setUploadSuccess(false);
     if (!ACCEPTED_DOC_TYPES.includes(file.type)) {
       setError(td('errorInvalidType'));
       return;
@@ -97,6 +110,7 @@ export function PatientDocumentsCard({ patientId }: Props): JSX.Element | null {
     setUploading(true);
     try {
       await AdminApiService.uploadPatientDocument(patientId, file, 'image_consent');
+      setUploadSuccess(true);
       await reload();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : td('errorUploadGeneric'));
@@ -192,6 +206,18 @@ export function PatientDocumentsCard({ patientId }: Props): JSX.Element | null {
             {td('uploadButton')}
           </ActionButton>
         </div>
+      )}
+
+      {canWrite && !canReadDocuments && (
+        <Text size="sm" color="secondary" data-testid="patient-documents-no-permission">
+          {td('noReadPermission')}
+        </Text>
+      )}
+
+      {canWrite && !canReadDocuments && uploadSuccess && (
+        <Text size="sm" data-testid="patient-document-upload-success">
+          {td('uploadSuccess')}
+        </Text>
       )}
 
       {canReadDocuments && !loading && (

@@ -14,6 +14,9 @@
  *      (confirmar no modal) → volta ao placeholder.
  *   2. alternativo — ator SEM `patient_consent_documents:read`: a seção de documentos não mostra
  *      a lista (elemento ausente da árvore, não só invisível).
+ *   2b. alternativo (achado 2, prova da stage 15/09) — o mesmo ator SEM a célula de leitura:
+ *      mostra o aviso `patient-documents-no-permission`, sobe documento, vê "Documento enviado"
+ *      e NUNCA dispara `GET .../documents` (0 request nessa rota do início ao fim do teste).
  *   3. alternativo — arquivo inválido (PDF como foto) é recusado com mensagem de erro na tela,
  *      sem crash.
  *   4. feliz (furo fechado 14/09) — enviar documento → `page.reload()` → o documento continua
@@ -23,6 +26,9 @@
  *      continua na tabela.
  *   6. alternativo (furo fechado 14/09) — consentimento registrado e depois revogado →
  *      `page.reload()` em cada passo mostra o estado real (vigente, depois SEM vigente).
+ *   7. feliz (achado 1, prova da stage 15/09) — ator COM a célula abre um documento já enviado
+ *      pelo botão "Abrir": interação humana real (`click`), abre aba nova por `blob:` (asserção do
+ *      conserto — o clique aciona `fetch()`+blob, não navegação direta pra URL assinada).
  *
  * Stack local (ver docker-compose.018pr4-ports.yml + engine ligado):
  *   docker compose -p 018pr4c -f docker-compose.yml -f docker-compose.test.yml \
@@ -99,6 +105,20 @@ test.describe('spec 018 PR-4 — foto/documentos do paciente: HUMANO no stack re
   });
 
   async function abrirFicha(page: Page, u: MockUser): Promise<void> {
+    // Só stack LOCAL: a URL v4 assinada (`PatientObjectStorageBase.getReadSignedUrl`) usa o HOST
+    // do `apiEndpoint` configurado no cliente do `@google-cloud/storage` (`GCS_EMULATOR_HOST` —
+    // comentário no topo daquele arquivo explica por que NÃO é `STORAGE_EMULATOR_HOST`), que
+    // dentro do Docker é `fake-gcs:4443` — nome só resolvível DENTRO da rede do compose. O
+    // navegador real do Playwright roda no HOST, sem esse DNS — sem isto, `fetch()` da URL
+    // assinada dá `ERR_NAME_NOT_RESOLVED` (achado medido nesta mesma rodada, nada a ver com o
+    // CORS do achado 1: aqui nem chega a fazer a requisição). Na stage/prod real isso não existe
+    // (o host é `storage.googleapis.com`) — é puramente um artefato do fake-gcs-server local.
+    await page.route('http://fake-gcs:4443/**', async (route) => {
+      const url = new URL(route.request().url());
+      url.protocol = 'http:';
+      url.host = process.env.FAKE_GCS_PUBLIC_HOST ?? 'localhost:54443';
+      await route.continue({ url: url.toString() });
+    });
     await loginAs(page, u);
     await page.goto(`/admin/patients/${patientId}`);
     await expect(page.getByTestId('patient-identity-card')).toBeVisible({ timeout: 30_000 });
@@ -126,7 +146,34 @@ test.describe('spec 018 PR-4 — foto/documentos do paciente: HUMANO no stack re
     // Upload continua visível (tem patient_identity:write) — só a LISTA/leitura some.
     await expect(page.getByTestId('patient-document-upload-btn')).toBeVisible();
     await expect(page.getByTestId('patient-documents-list')).toHaveCount(0);
+    // Achado 2 (prova da stage 15/09): no lugar da lista, um aviso — não fica em branco.
+    await expect(page.getByTestId('patient-documents-no-permission')).toBeVisible();
     await page.screenshot({ path: path.join(EVID_DIR, '2-sem-patient-consent-documents-read.png'), fullPage: false });
+  });
+
+  test('2b. achado 2 (prova da stage 15/09): sem a célula de leitura — sobe documento, vê "Documento enviado", NUNCA chama GET .../documents', async ({ page }) => {
+    const listDocsRequests: string[] = [];
+    page.on('request', (req) => {
+      if (req.method() === 'GET' && /\/api\/admin\/patients\/[^/]+\/documents$/.test(new URL(req.url()).pathname)) {
+        listDocsRequests.push(req.url());
+      }
+    });
+
+    await abrirFicha(page, semDocRead);
+    await expect(page.getByTestId('patient-documents-no-permission')).toBeVisible();
+    await expect(page.getByTestId('patient-document-upload-success')).toHaveCount(0);
+
+    await page.getByTestId('patient-document-file-input').setInputFiles(PDF_FIXTURE);
+    await expect(page.getByTestId('patient-document-upload-success')).toBeVisible({ timeout: 20_000 });
+    await page.screenshot({ path: path.join(EVID_DIR, '2b-documento-enviado-sem-permissao-leitura.png'), fullPage: false });
+
+    // A prova central do achado 2: em NENHUM momento (mount, upload, reload da lista) o front
+    // chamou GET .../documents sem a célula — 403 previsível nunca deveria ter sido tentado.
+    expect(listDocsRequests).toEqual([]);
+
+    // Limpeza: este teste sobe um documento REAL no paciente compartilhado (`mode: 'serial'`) —
+    // sem apagar, o teste 4 (que espera lista VAZIA no mount) quebra por efeito colateral deste.
+    runSQL(`DELETE FROM patient_documents WHERE patient_id = '${patientId}'`);
   });
 
   test('3. alternativo: arquivo inválido (PDF como foto) é recusado com mensagem de erro, sem crash', async ({ page }) => {
@@ -202,5 +249,33 @@ test.describe('spec 018 PR-4 — foto/documentos do paciente: HUMANO no stack re
     await expect(page.getByTestId('patient-consent-register-btn')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId('patient-consent-status')).toHaveCount(0);
     await page.screenshot({ path: path.join(EVID_DIR, '6b-consentimento-revogado-apos-reload.png'), fullPage: false });
+  });
+
+  test('7. feliz (achado 1, prova da stage 15/09): ator COM a célula abre o documento pelo botão "Abrir" — interação humana, abre por blob:', async ({ page, context }) => {
+    await abrirFicha(page, completa);
+    // Documento já existe (enviado no teste 4, `mode: 'serial'` preserva estado do paciente).
+    await expect(page.getByTestId('patient-document-row')).toBeVisible({ timeout: 20_000 });
+
+    // Prova do conserto pelo LADO DA REDE: o `fetch()` (contrato — abre por `blob:`, nunca
+    // navegação direta) precisa completar 200 na URL assinada antes do `window.open`. Não
+    // inspecionamos `popup.url()`: o Chrome roteia `blob:` de PDF pro visualizador NATIVO, e o
+    // CDP não expõe a URL desse alvo de forma estável (medido: fica em ":" os 20s inteiros, aba
+    // correta aberta — mesma classe de quirk do `pdf-no-navegador-react-pdf`).
+    let signedUrlStatus: number | undefined;
+    page.on('response', (res) => {
+      if (res.request().method() === 'GET' && res.url().includes('/patient-documents/')) {
+        signedUrlStatus = res.status();
+      }
+    });
+
+    const [popup] = await Promise.all([
+      context.waitForEvent('page'), // window.open('_blank') — só dispara se o fetch+blob deu certo
+      page.getByTestId('patient-document-open-btn').first().click(),
+    ]);
+
+    await expect.poll(() => signedUrlStatus, { timeout: 20_000 }).toBe(200);
+    await expect(page.getByTestId('patient-documents-error')).toHaveCount(0);
+    await page.screenshot({ path: path.join(EVID_DIR, '7-documento-aberto-blob.png'), fullPage: false });
+    await popup.close();
   });
 });

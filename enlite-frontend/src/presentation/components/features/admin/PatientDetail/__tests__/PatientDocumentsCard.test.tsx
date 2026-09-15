@@ -102,7 +102,7 @@ describe('PatientDocumentsCard', () => {
     expect(screen.queryByTestId('patient-consent-register-btn')).not.toBeInTheDocument();
   });
 
-  it('só com patient_identity:write: mostra upload e consentimento, mas não a lista de documentos', async () => {
+  it('só com patient_identity:write: mostra upload e consentimento, mas não a lista de documentos (mostra o aviso de permissão no lugar)', async () => {
     withPermissions(['patient_identity:write']);
     render(<PatientDocumentsCard patientId="p1" />);
     await waitFor(() => expect(getVigenteImageConsent).toHaveBeenCalledWith('p1'));
@@ -110,6 +110,39 @@ describe('PatientDocumentsCard', () => {
     expect(screen.getByTestId('patient-document-upload-btn')).toBeInTheDocument();
     expect(screen.getByTestId('patient-consent-register-btn')).toBeInTheDocument();
     expect(screen.queryByTestId('patient-documents-list')).not.toBeInTheDocument();
+    expect(screen.getByTestId('patient-documents-no-permission')).toBeInTheDocument();
+  });
+
+  it('achado 2 (prova da stage 15/09): patient_identity:write sem patient_consent_documents:read — sobe, vê "Documento enviado", nunca chama GET .../documents', async () => {
+    withPermissions(['patient_identity:write']);
+    uploadPatientDocument.mockResolvedValue({ documentId: 'doc-1' });
+    render(<PatientDocumentsCard patientId="p1" />);
+    await waitFor(() => expect(getVigenteImageConsent).toHaveBeenCalledWith('p1'));
+    expect(screen.getByTestId('patient-documents-no-permission')).toBeInTheDocument();
+    expect(screen.queryByTestId('patient-document-upload-success')).not.toBeInTheDocument();
+
+    const file = makeFile('consentimento.pdf', 'application/pdf', 1024);
+    fireEvent.change(screen.getByTestId('patient-document-file-input'), { target: { files: [file] } });
+    await waitFor(() => expect(uploadPatientDocument).toHaveBeenCalledWith('p1', file, 'image_consent'));
+
+    expect(await screen.findByTestId('patient-document-upload-success')).toBeInTheDocument();
+    expect(listPatientDocuments).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('patient-documents-list')).not.toBeInTheDocument();
+  });
+
+  it('achado 2: COM patient_consent_documents:read, comportamento fica igual ao de hoje — sem aviso de permissão, sem banner de sucesso extra', async () => {
+    withPermissions(['patient_identity:write', 'patient_consent_documents:read']);
+    uploadPatientDocument.mockResolvedValue({ documentId: 'doc-1' });
+    listPatientDocuments.mockResolvedValueOnce([]).mockResolvedValueOnce([DOC_ROW]);
+    render(<PatientDocumentsCard patientId="p1" />);
+    await waitFor(() => expect(listPatientDocuments).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('patient-documents-no-permission')).not.toBeInTheDocument();
+
+    const file = makeFile('consentimento.pdf', 'application/pdf', 1024);
+    fireEvent.change(screen.getByTestId('patient-document-file-input'), { target: { files: [file] } });
+    await waitFor(() => expect(uploadPatientDocument).toHaveBeenCalled());
+    expect(await screen.findByTestId('patient-document-row')).toBeInTheDocument();
+    expect(screen.queryByTestId('patient-document-upload-success')).not.toBeInTheDocument();
   });
 
   it('idioma diferente de pt-BR (es-AR): formata a data com o locale espanhol', async () => {
