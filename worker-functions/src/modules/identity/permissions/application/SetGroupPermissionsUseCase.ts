@@ -12,7 +12,7 @@
 
 import { PermissionError } from '../domain/PermissionError';
 import { assertValidReason } from '../domain/PermissionGroup';
-import { isValidCellKey } from '../domain/PermissionCell';
+import { expandWriteCells, isValidCellKey } from '../domain/PermissionCell';
 import type {
   PermissionCatalogRepository,
   PermissionEventPublisher,
@@ -38,7 +38,12 @@ export class SetGroupPermissionsUseCase {
 
   async execute(input: SetGroupPermissionsInput): Promise<{ cells: number }> {
     const reason = input.reason == null || input.reason === '' ? null : assertValidReason(input.reason);
-    const requested = [...new Set(input.cellKeys)];
+    // ADR-2/SUP-30, janela de transição: `<recurso>:write` de recurso splitado é
+    // EXPANDIDO para `<recurso>:create` + `<recurso>:update` aqui, na gravação — quem
+    // salva a matriz marcando "write" (tela antiga, ou um `iam-config` de import
+    // ainda não migrado) nunca grava `write` de novo para um recurso splitado.
+    // `permission_management:write` passa intacto (não é recurso splitado).
+    const requested = expandWriteCells([...new Set(input.cellKeys)]);
 
     const malformed = requested.filter((key) => !isValidCellKey(key));
     if (malformed.length > 0) {
