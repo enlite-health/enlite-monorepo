@@ -6,6 +6,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { patientIdParamsSchema, patientDocumentIdParamsSchema, uploadDocumentBodySchema } from '../validators/patientPhotoSchemas';
 import { UploadPatientDocumentUseCase, PatientDocumentTooLargeError } from '../../application/UploadPatientDocumentUseCase';
 import { GetPatientDocumentUrlUseCase } from '../../application/GetPatientDocumentUrlUseCase';
+import { ListPatientDocumentsUseCase } from '../../application/ListPatientDocumentsUseCase';
 import { InvalidDocumentImageError } from '../../infrastructure/stripJpegMetadata';
 
 /**
@@ -17,6 +18,7 @@ export class AdminPatientDocumentController {
   constructor(
     private readonly uploadUseCase: UploadPatientDocumentUseCase = new UploadPatientDocumentUseCase(),
     private readonly getUrlUseCase: GetPatientDocumentUrlUseCase = new GetPatientDocumentUrlUseCase(),
+    private readonly listUseCase: ListPatientDocumentsUseCase = new ListPatientDocumentsUseCase(),
     private readonly db: Pool = DatabaseConnection.getInstance().getPool(),
   ) {}
 
@@ -62,6 +64,28 @@ export class AdminPatientDocumentController {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientDocumentController:upload', patientId: params.data.id });
       res.status(500).json({ success: false, error: 'Failed to upload document' });
+    }
+  }
+
+  /**
+   * GET /api/admin/patients/:id/documents — lista metadados (SEM URL assinada; a URL continua
+   * exclusiva do `getUrl` por `documentId` — 1 KMS/1 assinatura só quando o operador abre um
+   * documento específico). Mesma célula `patient_consent_documents:read` da rota individual.
+   */
+  async list(req: Request, res: Response): Promise<void> {
+    const params = patientIdParamsSchema.safeParse(req.params);
+    if (!params.success) { res.status(400).json({ success: false, error: 'Invalid params' }); return; }
+    try {
+      if (!(await this.patientExists(params.data.id))) {
+        res.status(404).json({ success: false, error: 'Patient not found' });
+        return;
+      }
+      const result = await this.listUseCase.execute(params.data.id);
+      res.status(200).json({ success: true, data: result });
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientDocumentController:list', patientId: params.data.id });
+      res.status(500).json({ success: false, error: 'Failed to list documents' });
     }
   }
 

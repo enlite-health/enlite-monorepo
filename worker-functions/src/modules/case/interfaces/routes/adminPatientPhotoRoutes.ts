@@ -89,10 +89,26 @@ export function createAdminPatientPhotoRoutes(
     logResourceAccess('patient_document', 'read_document', (req) => req.params.documentId),
     (req: Request, res: Response) => documentController.getUrl(req, res),
   );
+  // Furo fechado nesta rodada (revisão pré-gate): listagem de metadados — mesma célula da leitura
+  // individual acima, SEM URL assinada (a URL continua exclusiva do GET por `documentId`).
+  router.get(
+    '/patients/:id/documents',
+    staffOnly,
+    perm.require('patient_consent_documents', 'read'),
+    (req: Request, res: Response) => documentController.list(req, res),
+  );
 
   // ── Consentimento de imagem (opcional — decisão 14/09, D335) ────────────────────────────────
   router.post('/patients/:id/image-consents', staffOnly, perm.require('patient_identity', 'write'), (req: Request, res: Response) =>
     consentController.register(req, res),
+  );
+  // Furo fechado nesta rodada: `findVigente` já existia no repositório, sem rota — mesma célula
+  // `patient_identity:read` da foto/identidade (sem célula nova).
+  router.get(
+    '/patients/:id/image-consents/vigente',
+    staffOnly,
+    perm.require('patient_identity', 'read'),
+    (req: Request, res: Response) => consentController.getVigente(req, res),
   );
   router.post(
     '/patients/:id/image-consents/:cid/revoke',

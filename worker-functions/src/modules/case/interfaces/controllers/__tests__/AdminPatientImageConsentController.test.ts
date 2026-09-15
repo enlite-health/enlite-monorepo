@@ -39,21 +39,21 @@ describe('AdminPatientImageConsentController (D335 — registrar é opcional)', 
 
   describe('register', () => {
     it('400 params inválidos', async () => {
-      const c = new AdminPatientImageConsentController({ execute: jest.fn() } as never, {} as never, db() as never);
+      const c = new AdminPatientImageConsentController({ execute: jest.fn() } as never, {} as never, { execute: jest.fn() } as never, db() as never);
       const res = mockRes();
       await c.register(mockReq({ params: { id: 'x' } }), res);
       expect(res.status).toHaveBeenCalledWith(400);
     });
 
     it('400 body inválido', async () => {
-      const c = new AdminPatientImageConsentController({ execute: jest.fn() } as never, {} as never, db() as never);
+      const c = new AdminPatientImageConsentController({ execute: jest.fn() } as never, {} as never, { execute: jest.fn() } as never, db() as never);
       const res = mockRes();
       await c.register(mockReq({ params: { id: PID }, body: {} }), res);
       expect(res.status).toHaveBeenCalledWith(400);
     });
 
     it('404 paciente não existe', async () => {
-      const c = new AdminPatientImageConsentController({ execute: jest.fn() } as never, {} as never, db(false) as never);
+      const c = new AdminPatientImageConsentController({ execute: jest.fn() } as never, {} as never, { execute: jest.fn() } as never, db(false) as never);
       const res = mockRes();
       await c.register(mockReq({ params: { id: PID }, body: VALID_BODY }), res);
       expect(res.status).toHaveBeenCalledWith(404);
@@ -61,7 +61,7 @@ describe('AdminPatientImageConsentController (D335 — registrar é opcional)', 
 
     it('201 feliz', async () => {
       const register = { execute: jest.fn(async () => ({ id: CID })) };
-      const c = new AdminPatientImageConsentController(register as never, {} as never, db() as never);
+      const c = new AdminPatientImageConsentController(register as never, {} as never, { execute: jest.fn() } as never, db() as never);
       const res = mockRes();
       await c.register(mockReq({ params: { id: PID }, body: VALID_BODY }), res);
       expect(res.status).toHaveBeenCalledWith(201);
@@ -70,7 +70,7 @@ describe('AdminPatientImageConsentController (D335 — registrar é opcional)', 
 
     it('409 ImageConsentAlreadyActiveError', async () => {
       const register = { execute: jest.fn(async () => { throw new ImageConsentAlreadyActiveError(); }) };
-      const c = new AdminPatientImageConsentController(register as never, {} as never, db() as never);
+      const c = new AdminPatientImageConsentController(register as never, {} as never, { execute: jest.fn() } as never, db() as never);
       const res = mockRes();
       await c.register(mockReq({ params: { id: PID }, body: VALID_BODY }), res);
       expect(res.status).toHaveBeenCalledWith(409);
@@ -78,7 +78,7 @@ describe('AdminPatientImageConsentController (D335 — registrar é opcional)', 
 
     it('422 RepresentativeRequiredError', async () => {
       const register = { execute: jest.fn(async () => { throw new RepresentativeRequiredError(); }) };
-      const c = new AdminPatientImageConsentController(register as never, {} as never, db() as never);
+      const c = new AdminPatientImageConsentController(register as never, {} as never, { execute: jest.fn() } as never, db() as never);
       const res = mockRes();
       await c.register(mockReq({ params: { id: PID }, body: VALID_BODY }), res);
       expect(res.status).toHaveBeenCalledWith(422);
@@ -86,7 +86,7 @@ describe('AdminPatientImageConsentController (D335 — registrar é opcional)', 
 
     it('404 ImageConsentReferenceNotFoundError', async () => {
       const register = { execute: jest.fn(async () => { throw new ImageConsentReferenceNotFoundError(); }) };
-      const c = new AdminPatientImageConsentController(register as never, {} as never, db() as never);
+      const c = new AdminPatientImageConsentController(register as never, {} as never, { execute: jest.fn() } as never, db() as never);
       const res = mockRes();
       await c.register(mockReq({ params: { id: PID }, body: VALID_BODY }), res);
       expect(res.status).toHaveBeenCalledWith(404);
@@ -94,7 +94,7 @@ describe('AdminPatientImageConsentController (D335 — registrar é opcional)', 
 
     it('500 erro inesperado', async () => {
       const register = { execute: jest.fn(async () => { throw new Error('boom'); }) };
-      const c = new AdminPatientImageConsentController(register as never, {} as never, db() as never);
+      const c = new AdminPatientImageConsentController(register as never, {} as never, { execute: jest.fn() } as never, db() as never);
       const res = mockRes();
       await c.register(mockReq({ params: { id: PID }, body: VALID_BODY }), res);
       expect(res.status).toHaveBeenCalledWith(500);
@@ -103,7 +103,7 @@ describe('AdminPatientImageConsentController (D335 — registrar é opcional)', 
     it('500 com valor NÃO-Error lançado', async () => {
       // eslint-disable-next-line @typescript-eslint/no-throw-literal
       const register = { execute: jest.fn(async () => { throw 'string error'; }) };
-      const c = new AdminPatientImageConsentController(register as never, {} as never, db() as never);
+      const c = new AdminPatientImageConsentController(register as never, {} as never, { execute: jest.fn() } as never, db() as never);
       const res = mockRes();
       await c.register(mockReq({ params: { id: PID }, body: VALID_BODY }), res);
       expect(res.status).toHaveBeenCalledWith(500);
@@ -114,21 +114,21 @@ describe('AdminPatientImageConsentController (D335 — registrar é opcional)', 
     const REVOKE_BODY = { revocationChannel: 'EMAIL' };
 
     it('400 params inválidos', async () => {
-      const c = new AdminPatientImageConsentController({} as never, { execute: jest.fn() } as never, db() as never);
+      const c = new AdminPatientImageConsentController({} as never, { execute: jest.fn() } as never, { execute: jest.fn() } as never, db() as never);
       const res = mockRes();
       await c.revoke(mockReq({ params: { id: PID, cid: 'x' } }), res);
       expect(res.status).toHaveBeenCalledWith(400);
     });
 
     it('400 body inválido', async () => {
-      const c = new AdminPatientImageConsentController({} as never, { execute: jest.fn() } as never, db() as never);
+      const c = new AdminPatientImageConsentController({} as never, { execute: jest.fn() } as never, { execute: jest.fn() } as never, db() as never);
       const res = mockRes();
       await c.revoke(mockReq({ params: { id: PID, cid: CID }, body: {} }), res);
       expect(res.status).toHaveBeenCalledWith(400);
     });
 
     it('404 paciente não existe', async () => {
-      const c = new AdminPatientImageConsentController({} as never, { execute: jest.fn() } as never, db(false) as never);
+      const c = new AdminPatientImageConsentController({} as never, { execute: jest.fn() } as never, { execute: jest.fn() } as never, db(false) as never);
       const res = mockRes();
       await c.revoke(mockReq({ params: { id: PID, cid: CID }, body: REVOKE_BODY }), res);
       expect(res.status).toHaveBeenCalledWith(404);
@@ -136,7 +136,7 @@ describe('AdminPatientImageConsentController (D335 — registrar é opcional)', 
 
     it('404 consentimento não encontrado', async () => {
       const revoke = { execute: jest.fn(async () => ({ revoked: false })) };
-      const c = new AdminPatientImageConsentController({} as never, revoke as never, db() as never);
+      const c = new AdminPatientImageConsentController({} as never, revoke as never, { execute: jest.fn() } as never, db() as never);
       const res = mockRes();
       await c.revoke(mockReq({ params: { id: PID, cid: CID }, body: REVOKE_BODY }), res);
       expect(res.status).toHaveBeenCalledWith(404);
@@ -144,7 +144,7 @@ describe('AdminPatientImageConsentController (D335 — registrar é opcional)', 
 
     it('200 feliz — apaga a foto na mesma operação (comportamento do use case)', async () => {
       const revoke = { execute: jest.fn(async () => ({ revoked: true })) };
-      const c = new AdminPatientImageConsentController({} as never, revoke as never, db() as never);
+      const c = new AdminPatientImageConsentController({} as never, revoke as never, { execute: jest.fn() } as never, db() as never);
       const res = mockRes();
       await c.revoke(mockReq({ params: { id: PID, cid: CID }, body: REVOKE_BODY }), res);
       expect(res.status).toHaveBeenCalledWith(200);
@@ -153,7 +153,7 @@ describe('AdminPatientImageConsentController (D335 — registrar é opcional)', 
 
     it('500 erro inesperado', async () => {
       const revoke = { execute: jest.fn(async () => { throw new Error('boom'); }) };
-      const c = new AdminPatientImageConsentController({} as never, revoke as never, db() as never);
+      const c = new AdminPatientImageConsentController({} as never, revoke as never, { execute: jest.fn() } as never, db() as never);
       const res = mockRes();
       await c.revoke(mockReq({ params: { id: PID, cid: CID }, body: REVOKE_BODY }), res);
       expect(res.status).toHaveBeenCalledWith(500);
@@ -162,9 +162,61 @@ describe('AdminPatientImageConsentController (D335 — registrar é opcional)', 
     it('500 com valor NÃO-Error lançado', async () => {
       // eslint-disable-next-line @typescript-eslint/no-throw-literal
       const revoke = { execute: jest.fn(async () => { throw 'string error'; }) };
-      const c = new AdminPatientImageConsentController({} as never, revoke as never, db() as never);
+      const c = new AdminPatientImageConsentController({} as never, revoke as never, { execute: jest.fn() } as never, db() as never);
       const res = mockRes();
       await c.revoke(mockReq({ params: { id: PID, cid: CID }, body: REVOKE_BODY }), res);
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+
+  describe('getVigente', () => {
+    it('400 params inválidos', async () => {
+      const c = new AdminPatientImageConsentController({} as never, {} as never, { execute: jest.fn() } as never, db() as never);
+      const res = mockRes();
+      await c.getVigente(mockReq({ params: { id: 'x' } }), res);
+      expect(res.status).toHaveBeenCalledWith(400);
+    });
+
+    it('404 paciente não existe', async () => {
+      const c = new AdminPatientImageConsentController({} as never, {} as never, { execute: jest.fn() } as never, db(false) as never);
+      const res = mockRes();
+      await c.getVigente(mockReq({ params: { id: PID } }), res);
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    it('200 feliz — vigente', async () => {
+      const getVigente = { execute: jest.fn(async () => ({ id: CID, consenterKind: 'PATIENT', consentedAt: '2026-09-14T10:00:00Z' })) };
+      const c = new AdminPatientImageConsentController({} as never, {} as never, getVigente as never, db() as never);
+      const res = mockRes();
+      await c.getVigente(mockReq({ params: { id: PID } }), res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(getVigente.execute).toHaveBeenCalledWith(PID);
+      expect(res.json).toHaveBeenCalledWith({ success: true, data: { id: CID, consenterKind: 'PATIENT', consentedAt: '2026-09-14T10:00:00Z' } });
+    });
+
+    it('200 — sem consentimento vigente devolve null (não 404)', async () => {
+      const getVigente = { execute: jest.fn(async () => null) };
+      const c = new AdminPatientImageConsentController({} as never, {} as never, getVigente as never, db() as never);
+      const res = mockRes();
+      await c.getVigente(mockReq({ params: { id: PID } }), res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({ success: true, data: null });
+    });
+
+    it('500 erro inesperado', async () => {
+      const getVigente = { execute: jest.fn(async () => { throw new Error('boom'); }) };
+      const c = new AdminPatientImageConsentController({} as never, {} as never, getVigente as never, db() as never);
+      const res = mockRes();
+      await c.getVigente(mockReq({ params: { id: PID } }), res);
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+
+    it('500 com valor NÃO-Error lançado', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-throw-literal
+      const getVigente = { execute: jest.fn(async () => { throw 'string error'; }) };
+      const c = new AdminPatientImageConsentController({} as never, {} as never, getVigente as never, db() as never);
+      const res = mockRes();
+      await c.getVigente(mockReq({ params: { id: PID } }), res);
       expect(res.status).toHaveBeenCalledWith(500);
     });
   });
@@ -172,7 +224,7 @@ describe('AdminPatientImageConsentController (D335 — registrar é opcional)', 
   it('actorUid sem ator identificado lança (lex C6)', async () => {
     (AuthMiddleware.getAuthContext as jest.Mock).mockReturnValueOnce(undefined);
     const register = { execute: jest.fn() };
-    const c = new AdminPatientImageConsentController(register as never, {} as never, db() as never);
+    const c = new AdminPatientImageConsentController(register as never, {} as never, { execute: jest.fn() } as never, db() as never);
     const res = mockRes();
     await c.register(mockReq({ params: { id: PID }, body: VALID_BODY }), res);
     expect(res.status).toHaveBeenCalledWith(500);

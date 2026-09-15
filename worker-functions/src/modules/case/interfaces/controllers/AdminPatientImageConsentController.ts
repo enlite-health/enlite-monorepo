@@ -11,6 +11,7 @@ import {
   RepresentativeRequiredError,
 } from '../../application/RegisterImageConsentUseCase';
 import { RevokeImageConsentUseCase } from '../../application/RevokeImageConsentUseCase';
+import { GetVigenteImageConsentUseCase } from '../../application/GetVigenteImageConsentUseCase';
 
 /**
  * AdminPatientImageConsentController — registro/revogação do consentimento de imagem
@@ -21,6 +22,7 @@ export class AdminPatientImageConsentController {
   constructor(
     private readonly registerUseCase: RegisterImageConsentUseCase = new RegisterImageConsentUseCase(),
     private readonly revokeUseCase: RevokeImageConsentUseCase = new RevokeImageConsentUseCase(),
+    private readonly getVigenteUseCase: GetVigenteImageConsentUseCase = new GetVigenteImageConsentUseCase(),
     private readonly db: Pool = DatabaseConnection.getInstance().getPool(),
   ) {}
 
@@ -55,6 +57,28 @@ export class AdminPatientImageConsentController {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientImageConsentController:register', patientId: params.data.id });
       res.status(500).json({ success: false, error: 'Failed to register consent' });
+    }
+  }
+
+  /**
+   * GET /api/admin/patients/:id/image-consents/vigente — furo fechado nesta rodada: `findVigente`
+   * já existia no repositório, sem rota. `data: null` quando não há consentimento vigente (nunca
+   * registrado, ou revogado). Célula `patient_identity:read` (mesma da rota — sem célula nova).
+   */
+  async getVigente(req: Request, res: Response): Promise<void> {
+    const params = patientIdParamsSchema.safeParse(req.params);
+    if (!params.success) { res.status(400).json({ success: false, error: 'Invalid params' }); return; }
+    try {
+      if (!(await this.patientExists(params.data.id))) {
+        res.status(404).json({ success: false, error: 'Patient not found' });
+        return;
+      }
+      const result = await this.getVigenteUseCase.execute(params.data.id);
+      res.status(200).json({ success: true, data: result });
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientImageConsentController:getVigente', patientId: params.data.id });
+      res.status(500).json({ success: false, error: 'Failed to read consent' });
     }
   }
 

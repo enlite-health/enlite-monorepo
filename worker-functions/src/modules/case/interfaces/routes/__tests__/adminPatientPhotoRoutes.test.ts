@@ -40,7 +40,9 @@ const ESPERADO: Record<string, string> = {
   'GET /patients/:id/photo': 'patient_identity:read',
   'POST /patients/:id/documents': 'patient_identity:write',
   'GET /patients/:id/documents/:documentId': 'patient_consent_documents:read',
+  'GET /patients/:id/documents': 'patient_consent_documents:read',
   'POST /patients/:id/image-consents': 'patient_identity:write',
+  'GET /patients/:id/image-consents/vigente': 'patient_identity:read',
   'POST /patients/:id/image-consents/:cid/revoke': 'patient_identity:write',
 };
 
@@ -53,8 +55,8 @@ function buildRouter(controllers: {
     authDouble(),
     permissionsDouble(),
     (controllers.photo ?? { upload: (_r, res) => res.status(201).json({}), remove: (_r, res) => res.status(204).send(), getUrl: (_r, res) => res.status(200).json({}) }) as AdminPatientPhotoController,
-    (controllers.document ?? { upload: (_r, res) => res.status(201).json({}), getUrl: (_r, res) => res.status(200).json({}) }) as AdminPatientDocumentController,
-    (controllers.consent ?? { register: (_r, res) => res.status(201).json({}), revoke: (_r, res) => res.status(200).json({}) }) as AdminPatientImageConsentController,
+    (controllers.document ?? { upload: (_r, res) => res.status(201).json({}), getUrl: (_r, res) => res.status(200).json({}), list: (_r, res) => res.status(200).json({}) }) as AdminPatientDocumentController,
+    (controllers.consent ?? { register: (_r, res) => res.status(201).json({}), revoke: (_r, res) => res.status(200).json({}), getVigente: (_r, res) => res.status(200).json({}) }) as AdminPatientImageConsentController,
   );
 }
 
@@ -168,6 +170,22 @@ describe('createAdminPatientPhotoRoutes (spec 018, PR-4)', () => {
     );
     expect(res.status).toBe(200);
     expect(getUrl).toHaveBeenCalled();
+  });
+
+  it('GET /documents (lista) chega no controller — mesma célula da leitura individual', async () => {
+    const list = jest.fn((_req: unknown, res: express.Response) => res.status(200).json({ success: true, data: [] }));
+    const app = build({ document: { upload: jest.fn(), getUrl: jest.fn(), list } as never });
+    const res = await request(app).get('/api/admin/patients/11111111-1111-1111-1111-111111111111/documents');
+    expect(res.status).toBe(200);
+    expect(list).toHaveBeenCalled();
+  });
+
+  it('GET /image-consents/vigente chega no controller', async () => {
+    const getVigente = jest.fn((_req: unknown, res: express.Response) => res.status(200).json({ success: true, data: null }));
+    const app = build({ consent: { register: jest.fn(), revoke: jest.fn(), getVigente } as never });
+    const res = await request(app).get('/api/admin/patients/11111111-1111-1111-1111-111111111111/image-consents/vigente');
+    expect(res.status).toBe(200);
+    expect(getVigente).toHaveBeenCalled();
   });
 
   it('POST /image-consents chega no controller', async () => {
