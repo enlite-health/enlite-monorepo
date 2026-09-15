@@ -48,10 +48,23 @@ export function cellKey(resource: string, action: string): string {
  * A regra — pura, sem React, para a tabela-verdade ser testável sozinha.
  * `delete`/`export`/`execute` NÃO elevam a `write`: são ações próprias e o
  * componente que as oferece pergunta por elas explicitamente (`hasCell`).
+ *
+ * PR-8b (ADR-2): recurso splitado não grava mais `resource:write` — o contrato de
+ * authz devolve `resource:create`/`resource:update` EXPANDIDOS (contracts/permissions-split.md
+ * §Catálogo e grants). Este nível de CONTAINER (`useCellAccess`/`useContainerAccess`) continua
+ * um "read vs completo" — `write` aqui é a UNIÃO de `create` OU `update` (qualquer uma já basta
+ * pro container oferecer edição), mais a literal `resource:write` que `permission_management`
+ * ainda usa (contracts/permissions-split.md §Grupos fixos — "fica write").
  */
 export function accessLevelFor(permissions: readonly string[] | null, resource: string): AccessLevel {
   if (!permissions) return 'hidden';
-  if (permissions.includes(cellKey(resource, 'write'))) return 'write';
+  if (
+    permissions.includes(cellKey(resource, 'write'))
+    || permissions.includes(cellKey(resource, 'create'))
+    || permissions.includes(cellKey(resource, 'update'))
+  ) {
+    return 'write';
+  }
   if (permissions.includes(cellKey(resource, 'read'))) return 'read';
   return 'hidden';
 }
