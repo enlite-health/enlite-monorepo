@@ -5,6 +5,7 @@ import {
   montarAppDeFamilia,
   limparIamFixtures,
   grupoComCelulas,
+  garantirCelula,
   limparTrilhaDrenada,
   aguardarTrilhaQuieta,
   type AppDeFamilia,
@@ -96,8 +97,12 @@ describe('A4 — famílias de mensageria, integração e fixtures (HTTP real, ba
     ['test_fixtures', 'execute', 'Operações'],
   ];
 
+  // `messaging:create/update` também são semeadas pela migration 435 (recurso splitado) — só a
+  // célula que ESTE suite de fato inseriu (garantirCelula → criada:true) sai no limpar();
+  // `integration:execute`/`test_fixtures:execute` continuam genuinamente deste suite (achado 8b-A4).
+  const celulasCriadas: Array<[string, string]> = [];
   async function removerCelulasNovas(): Promise<void> {
-    for (const [recurso, acao] of NOVAS) {
+    for (const [recurso, acao] of celulasCriadas) {
       await pool.query(
         `DELETE FROM iam.group_permissions WHERE permission_id IN
            (SELECT id FROM iam.permissions WHERE resource = $1 AND action = $2)`,
@@ -105,6 +110,7 @@ describe('A4 — famílias de mensageria, integração e fixtures (HTTP real, ba
       );
       await pool.query(`DELETE FROM iam.permissions WHERE resource = $1 AND action = $2`, [recurso, acao]);
     }
+    celulasCriadas.length = 0;
   }
 
   async function limpar(): Promise<void> {
@@ -122,10 +128,8 @@ describe('A4 — famílias de mensageria, integração e fixtures (HTTP real, ba
     );
 
     for (const [recurso, acao, categoria] of NOVAS) {
-      await pool.query(
-        `INSERT INTO iam.permissions (resource, action, description, category) VALUES ($1, $2, $3, $4)`,
-        [recurso, acao, `${recurso}:${acao} (célula nova da D116)`, categoria],
-      );
+      const { criada } = await garantirCelula(pool, { resource: recurso, action: acao, category: categoria });
+      if (criada) celulasCriadas.push([recurso, acao]);
     }
 
     await grupoComCelulas(pool, {
