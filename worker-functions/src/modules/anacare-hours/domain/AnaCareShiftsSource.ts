@@ -28,6 +28,12 @@ export interface ListShiftsParams {
   patientId?: string;
 }
 
+/** Estado do retrato — alimenta `AnaCareMonthSnapshot.stale`/`circuitBreakerOpen` e a recusa de escrita (spec "retrato desatualizado bloqueia a validação no serviço e na tela"). */
+export interface AnaCareRetratoSourceStatus {
+  stale: boolean;
+  circuitBreakerOpen: boolean;
+}
+
 /**
  * Porta enxuta (minimização na borda, spec §Minimização): nenhum campo de telefone, endereço,
  * geolocalização, pagamento, observação ou documento de identidade passa por aqui.
@@ -36,4 +42,10 @@ export interface AnaCareShiftsSource {
   listShifts(params: ListShiftsParams): Promise<SourceShiftDTO[]>;
   /** Um turno por `sourceShiftId`, sem precisar do mês (validar/contestar não recebem mês no corpo). */
   getShift(sourceShiftId: string): Promise<SourceShiftDTO | null>;
+  /**
+   * Estado do retrato: `stale` (job de sync falhou/atrasou) e `circuitBreakerOpen` (disjuntor
+   * contra o Ana Care aberto). Fase 1 (adapter falso): sempre `{ stale: false,
+   * circuitBreakerOpen: false }` — staleness real é job da fase 2/4 (sob PARE do lex).
+   */
+  getRetratoStatus(): Promise<AnaCareRetratoSourceStatus>;
 }

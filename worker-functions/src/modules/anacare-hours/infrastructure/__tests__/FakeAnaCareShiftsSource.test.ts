@@ -95,6 +95,13 @@ describe('FakeAnaCareShiftsSource', () => {
       expect(await source.getShift('FAKE-2026-09-99-99-99')).toBeNull();
     });
   });
+
+  describe('getRetratoStatus', () => {
+    it('fase 1: sempre fresco — nenhum job real de sync/disjuntor existe neste adapter falso', async () => {
+      const source = new FakeAnaCareShiftsSource();
+      expect(await source.getRetratoStatus()).toEqual({ stale: false, circuitBreakerOpen: false });
+    });
+  });
 });
 
 describe('createAnaCareShiftsSource — fail-closed', () => {

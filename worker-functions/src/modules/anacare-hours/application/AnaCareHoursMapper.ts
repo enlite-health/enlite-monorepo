@@ -11,7 +11,7 @@
  * origem e status (documentado em DIVERGÊNCIAS no fecho da fase).
  */
 
-import type { SourceShiftDTO } from '../domain/AnaCareShiftsSource';
+import type { AnaCareRetratoSourceStatus, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
 import type { ValidationRow } from '../infrastructure/ShiftHoursValidationRepository';
 import type { AnaCareMonthSnapshot, AnaCarePatient, AnaCareProvider, AnaCareShift, ValidationStatus } from '../domain/AnaCareShift';
 
@@ -80,14 +80,16 @@ export function groupIntoPatients(shifts: ReadonlyArray<{ shift: AnaCareShift; a
   return patients;
 }
 
-export function buildSnapshot(month: string, patients: AnaCarePatient[]): AnaCareMonthSnapshot {
+export function buildSnapshot(month: string, patients: AnaCarePatient[], retrato: AnaCareRetratoSourceStatus): AnaCareMonthSnapshot {
   return {
     month,
     updatedAt: new Date().toISOString(),
-    // Fase 1 (adapter falso): o retrato é sempre "fresco" — staleness/disjuntor são do job REAL
-    // (fase 2/4, sob PARE do lex). Documentado em PENDÊNCIAS.
-    stale: false,
-    circuitBreakerOpen: false,
+    // Vem da FONTE agora (`AnaCareShiftsSource.getRetratoStatus`) — fase 1 (adapter falso) sempre
+    // devolve `{ stale: false, circuitBreakerOpen: false }`; staleness real é do job da fase 2/4
+    // (sob PARE do lex). O bloqueio de escrita (`AnaCareHoursService.assertRetratoOk`) lê a MESMA
+    // fonte, não este snapshot — as duas camadas convergem porque comem do mesmo `getRetratoStatus`.
+    stale: retrato.stale,
+    circuitBreakerOpen: retrato.circuitBreakerOpen,
     patients,
   };
 }

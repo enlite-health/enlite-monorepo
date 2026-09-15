@@ -7,7 +7,7 @@ import { AnaCareHoursService, isValidMonth, periodMonthDate } from '../AnaCareHo
 import { ShiftHoursValidationRepository, ShiftAlreadyValidatedError, type ValidationRow } from '../../infrastructure/ShiftHoursValidationRepository';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { AnaCareHoursServiceError, VALIDATE_BATCH_MAX_SHIFTS } from '../../domain/AnaCareShift';
-import type { AnaCareShiftsSource, SourceShiftDTO } from '../../domain/AnaCareShiftsSource';
+import type { AnaCareRetratoSourceStatus, AnaCareShiftsSource, SourceShiftDTO } from '../../domain/AnaCareShiftsSource';
 
 jest.mock('../../infrastructure/ShiftHoursValidationRepository', () => {
   const actual = jest.requireActual('../../infrastructure/ShiftHoursValidationRepository');
@@ -40,12 +40,21 @@ const SHIFT_SEM_CHECKIN: SourceShiftDTO = {
 };
 
 class StubSource implements AnaCareShiftsSource {
-  constructor(private readonly shifts: SourceShiftDTO[] = [SHIFT_A, SHIFT_SEM_CHECKIN]) {}
+  constructor(
+    private readonly shifts: SourceShiftDTO[] = [SHIFT_A, SHIFT_SEM_CHECKIN],
+    // Conserto de conformidade (15/09): retrato injetável — SÓ pra este teste unitário simular
+    // stale/disjuntor aberto. O adapter falso real (`FakeAnaCareShiftsSource`) continua
+    // hardcoded `{ stale: false, circuitBreakerOpen: false }`, sem staleness de verdade (fase 1).
+    private readonly retrato: AnaCareRetratoSourceStatus = { stale: false, circuitBreakerOpen: false },
+  ) {}
   async listShifts(params: { month: string; patientId?: string }): Promise<SourceShiftDTO[]> {
     return this.shifts.filter((s) => !params.patientId || s.anaCarePatientId === params.patientId);
   }
   async getShift(id: string): Promise<SourceShiftDTO | null> {
     return this.shifts.find((s) => s.sourceShiftId === id) ?? null;
+  }
+  async getRetratoStatus(): Promise<AnaCareRetratoSourceStatus> {
+    return this.retrato;
   }
 }
 
@@ -172,6 +181,26 @@ describe('AnaCareHoursService', () => {
       const service = new AnaCareHoursService(new StubSource(), repo);
       await expect(service.validateShift('shift-a', 'uid-1')).rejects.toBe(erroDeBanco);
     });
+
+    // Conserto de conformidade (15/09) — spec "retrato desatualizado bloqueia a validação no
+    // serviço e na tela": o bloqueio SHALL existir nas duas camadas, não só na UI.
+    it('🔴 retrato stale → RETRATO_DESATUALIZADO, sem tocar o repositório nem a fonte do turno', async () => {
+      const repo = mockRepo();
+      const source = new StubSource([SHIFT_A, SHIFT_SEM_CHECKIN], { stale: true, circuitBreakerOpen: false });
+      const getShiftSpy = jest.spyOn(source, 'getShift');
+      const service = new AnaCareHoursService(source, repo);
+      await expect(service.validateShift('shift-a', 'uid-1')).rejects.toMatchObject({ code: 'RETRATO_DESATUALIZADO' });
+      expect(repo.validate).not.toHaveBeenCalled();
+      expect(getShiftSpy).not.toHaveBeenCalled();
+    });
+
+    it('🔴 disjuntor aberto (mesmo com stale=false) → RETRATO_DESATUALIZADO', async () => {
+      const repo = mockRepo();
+      const source = new StubSource([SHIFT_A, SHIFT_SEM_CHECKIN], { stale: false, circuitBreakerOpen: true });
+      const service = new AnaCareHoursService(source, repo);
+      await expect(service.validateShift('shift-a', 'uid-1')).rejects.toMatchObject({ code: 'RETRATO_DESATUALIZADO' });
+      expect(repo.validate).not.toHaveBeenCalled();
+    });
   });
 
   describe('validateBatch', () => {
@@ -202,6 +231,18 @@ describe('AnaCareHoursService', () => {
       const service = new AnaCareHoursService(new StubSource(), repo);
       const shiftIds = Array.from({ length: VALIDATE_BATCH_MAX_SHIFTS + 1 }, (_, i) => `s${i}`);
       await expect(service.validateBatch(shiftIds, 'uid-1')).rejects.toBeInstanceOf(AnaCareHoursServiceError);
+      expect(repo.validate).not.toHaveBeenCalled();
+    });
+
+    it('🔴 retrato stale → CADA item do lote sai RETRATO_DESATUALIZADO (batch parcial, mesmo padrão do JA_VALIDADO)', async () => {
+      const repo = mockRepo();
+      const source = new StubSource([SHIFT_A, SHIFT_SEM_CHECKIN], { stale: true, circuitBreakerOpen: false });
+      const service = new AnaCareHoursService(source, repo);
+      const results = await service.validateBatch(['shift-a', 'shift-b'], 'uid-1');
+      expect(results).toEqual([
+        { shiftId: 'shift-a', ok: false, code: 'RETRATO_DESATUALIZADO' },
+        { shiftId: 'shift-b', ok: false, code: 'RETRATO_DESATUALIZADO' },
+      ]);
       expect(repo.validate).not.toHaveBeenCalled();
     });
   });
@@ -254,6 +295,30 @@ describe('AnaCareHoursService', () => {
       const repo = mockRepo({ contest: jest.fn().mockRejectedValue(erroDeBanco) });
       const service = new AnaCareHoursService(new StubSource(), repo);
       await expect(service.contestShift('shift-a', 'otro', undefined)).rejects.toBe(erroDeBanco);
+    });
+
+    // Conserto de conformidade (15/09) — a spec cobre "tenta validar/CONTESTAR": o mesmo bloqueio.
+    it('🔴 retrato stale → RETRATO_DESATUALIZADO, sem tocar KMS nem o repositório', async () => {
+      const encrypt = jest.fn();
+      const kms = { encrypt, decrypt: jest.fn() } as unknown as KMSEncryptionService;
+      const repo = mockRepo();
+      const source = new StubSource([SHIFT_A, SHIFT_SEM_CHECKIN], { stale: true, circuitBreakerOpen: false });
+      const service = new AnaCareHoursService(source, repo, kms);
+      await expect(service.contestShift('shift-a', 'otro', 'nota')).rejects.toMatchObject({ code: 'RETRATO_DESATUALIZADO' });
+      expect(encrypt).not.toHaveBeenCalled();
+      expect(repo.contest).not.toHaveBeenCalled();
+    });
+
+    it('🔴 nota muito longa é checada ANTES do retrato — recusa NOTA_MUITO_LONGA mesmo com retrato stale', async () => {
+      // Ordem travada: `contestShift` valida a FORMA do comando (tamanho da nota) antes de bater
+      // na fonte (`assertRetratoOk`/`requireSourceShift`) — mesma disciplina de `validateBatch`
+      // ("lote acima do limite recusa ANTES de tocar o repositório"), erro de input não deveria
+      // depender de round-trip à fonte pra ser recusado.
+      const repo = mockRepo();
+      const source = new StubSource([SHIFT_A, SHIFT_SEM_CHECKIN], { stale: true, circuitBreakerOpen: false });
+      const service = new AnaCareHoursService(source, repo);
+      const notaGigante = 'x'.repeat(501);
+      await expect(service.contestShift('shift-a', 'otro', notaGigante)).rejects.toMatchObject({ code: 'NOTA_MUITO_LONGA' });
     });
   });
 });

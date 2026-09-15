@@ -65,8 +65,8 @@ export class AnaCareHoursService {
 
   /** D4: sem filtro de query — `patientSearch`/`providerId` rodam só no CLIENTE (`selectors.ts`), nunca aqui (PII em query/log). */
   async getMonthSnapshot(month: string, canReadNote: boolean): Promise<AnaCareMonthSnapshot> {
-    const patients = await this.patientsForMonth(month, canReadNote);
-    return buildSnapshot(month, patients);
+    const [patients, retrato] = await Promise.all([this.patientsForMonth(month, canReadNote), this.source.getRetratoStatus()]);
+    return buildSnapshot(month, patients, retrato);
   }
 
   async getPatientMonth(month: string, patientId: string, canReadNote: boolean): Promise<AnaCarePatient | null> {
@@ -86,7 +86,26 @@ export class AnaCareHoursService {
     return shift;
   }
 
+  /**
+   * Recusa a escrita quando o retrato está desatualizado — a MESMA regra que a tela aplica
+   * (`selectors.ts` `blockReason`: `stale || circuitBreakerOpen`) e que o Fake do front já
+   * simula (`AnaCareHoursService.ts` `assertRetratoOk` do enlite-frontend, "defesa em
+   * profundidade, não substituição"). Spec `anacare-shift-hours`: "retrato desatualizado bloqueia
+   * a validação no serviço e na tela" — cobre validar (individual e lote, via `validateShift`) e
+   * contestar, os dois pontos de escrita da fase 1.
+   */
+  private async assertRetratoOk(): Promise<void> {
+    const { stale, circuitBreakerOpen } = await this.source.getRetratoStatus();
+    if (stale || circuitBreakerOpen) {
+      throw new AnaCareHoursServiceError(
+        'RETRATO_DESATUALIZADO',
+        'Retrato desactualizado — ninguna acción de escritura es aceptada hasta el próximo retrato.',
+      );
+    }
+  }
+
   async validateShift(shiftId: string, validatorUid: string): Promise<void> {
+    await this.assertRetratoOk();
     const source = await this.requireSourceShift(shiftId);
     try {
       await this.validations.validate({
@@ -106,7 +125,12 @@ export class AnaCareHoursService {
     }
   }
 
-  /** Valida cada turno independentemente — um 409 isolado não derruba os demais (batch parcial). */
+  /**
+   * Valida cada turno independentemente — um 409 isolado não derruba os demais (batch parcial).
+   * `validateShift` já chama `assertRetratoOk()` por item — retrato desatualizado vira
+   * `{ ok: false, code: 'RETRATO_DESATUALIZADO' }` em CADA item do lote, mesmo padrão do 409
+   * isolado de `JA_VALIDADO` acima (não recusa o lote inteiro de uma vez, só cada escrita).
+   */
   async validateBatch(shiftIds: readonly string[], validatorUid: string): Promise<ValidateBatchItemResult[]> {
     if (shiftIds.length > VALIDATE_BATCH_MAX_SHIFTS) {
       throw new AnaCareHoursServiceError('TURNO_NAO_ENCONTRADO', `lote acima do limite de ${VALIDATE_BATCH_MAX_SHIFTS}`);
@@ -128,6 +152,7 @@ export class AnaCareHoursService {
     if (note !== undefined && note.length > CONTEST_NOTE_MAX_LENGTH) {
       throw new AnaCareHoursServiceError('NOTA_MUITO_LONGA', `nota acima do limite de ${CONTEST_NOTE_MAX_LENGTH} caracteres`);
     }
+    await this.assertRetratoOk();
     const source = await this.requireSourceShift(shiftId);
     const noteEncrypted = note ? await this.kms.encrypt(note) : null;
     try {

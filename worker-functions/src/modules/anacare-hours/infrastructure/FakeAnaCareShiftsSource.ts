@@ -14,7 +14,7 @@
  * Ana Care real é lido ou referenciado.
  */
 
-import type { AnaCareShiftsSource, ListShiftsParams, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
+import type { AnaCareRetratoSourceStatus, AnaCareShiftsSource, ListShiftsParams, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
 
 const PATIENTS_PER_MONTH = 10;
 const PROVIDERS_PER_PATIENT = 2;
@@ -83,6 +83,11 @@ export class FakeAnaCareShiftsSource implements AnaCareShiftsSource {
     const month = match[1];
     const shifts = FakeAnaCareShiftsSource.generateMonth(month);
     return shifts.find((s) => s.sourceShiftId === sourceShiftId) ?? null;
+  }
+
+  /** Fase 1: sempre fresco — nenhum job real de sync/disjuntor existe ainda neste adapter falso. */
+  async getRetratoStatus(): Promise<AnaCareRetratoSourceStatus> {
+    return { stale: false, circuitBreakerOpen: false };
   }
 
   /** Exposto estático para os testes conferirem a proporção/contagem sem passar pela porta. */

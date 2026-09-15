@@ -132,11 +132,17 @@ describe('groupIntoPatients', () => {
 });
 
 describe('buildSnapshot', () => {
-  it('monta o snapshot do mês sempre fresco (fase 1: adapter falso, sem staleness real)', () => {
-    const snapshot = buildSnapshot('2026-09', []);
+  it('monta o snapshot do mês fresco quando a fonte devolve retrato fresco (fase 1: adapter falso)', () => {
+    const snapshot = buildSnapshot('2026-09', [], { stale: false, circuitBreakerOpen: false });
     expect(snapshot.month).toBe('2026-09');
     expect(snapshot.stale).toBe(false);
     expect(snapshot.circuitBreakerOpen).toBe(false);
     expect(typeof snapshot.updatedAt).toBe('string');
+  });
+
+  it('repassa stale/circuitBreakerOpen da fonte tal qual — não hardcoda mais false (conserto de conformidade, 15/09)', () => {
+    const snapshot = buildSnapshot('2026-09', [], { stale: true, circuitBreakerOpen: true });
+    expect(snapshot.stale).toBe(true);
+    expect(snapshot.circuitBreakerOpen).toBe(true);
   });
 });
