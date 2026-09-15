@@ -321,6 +321,33 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // US-17 (spec 018, PR-7, migration 430) — catálogo dos segmentos da Ana Care, mesmo molde.
       'catalog_therapeutic_segments:read',
       'catalog_therapeutic_segments:write',
+      // spec 018, PR-8b (ADR-2/SUP-30): split write→create+update dos 23 recursos. Nesta rodada
+      // (A1) NENHUMA rota declara `create`/`update` ainda (routes só mudam no 8b.4) — por isso as
+      // 46 células novas só existem no catálogo por `cellsForaDeRota`, igual às demais linhas
+      // acima. Ordem = ordem de inserção em `CELL_DESCRIPTION`.
+      'patient:create', 'patient:update',
+      'patient_address:create', 'patient_address:update',
+      'patient_chat:create', 'patient_chat:update',
+      'patient_identity:create', 'patient_identity:update',
+      'patient_clinical:create', 'patient_clinical:update',
+      'patient_care_team:create', 'patient_care_team:update',
+      'patient_family:create', 'patient_family:update',
+      'patient_coverage:create', 'patient_coverage:update',
+      'patient_services:create', 'patient_services:update',
+      'patient_therapeutic_project:create', 'patient_therapeutic_project:update',
+      'catalog_therapeutic_objectives:create', 'catalog_therapeutic_objectives:update',
+      'catalog_therapeutic_activities:create', 'catalog_therapeutic_activities:update',
+      'catalog_therapeutic_segments:create', 'catalog_therapeutic_segments:update',
+      'user_management:create', 'user_management:update',
+      'vacancy:create', 'vacancy:update',
+      'funnel:create', 'funnel:update',
+      'talentum:create', 'talentum:update',
+      'prescreening:create', 'prescreening:update',
+      'interview:create', 'interview:update',
+      'messaging:create', 'messaging:update',
+      'recruitment:create', 'recruitment:update',
+      'worker:create', 'worker:update',
+      'worker_document:create', 'worker_document:update',
     ]);
   });
 
