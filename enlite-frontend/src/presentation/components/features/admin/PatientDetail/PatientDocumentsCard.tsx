@@ -77,7 +77,6 @@ export function PatientDocumentsCard({ patientId }: Props): JSX.Element | null {
     }
   }, [patientId, canReadDocuments, canWrite, t]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- reload é estável por patientId/células; recarregar 1x no mount (e quando mudarem) é o contrato.
   useEffect(() => {
     void reload();
   }, [reload]);
