@@ -673,6 +673,143 @@
     "noAdditional": "No hay documentos adicionales"
   },
   "admin": {
+    "anacareHours": {
+      "title": "Horas Ana Care",
+      "updatedAt": "Retrato actualizado: {{datetime}}",
+      "monthAriaLabel": "Mes",
+      "months": {
+        "2026-08": "Agosto 2026",
+        "2026-09": "Septiembre 2026"
+      },
+      "stale": {
+        "title": "Retrato desactualizado",
+        "messageCircuitBreaker": "La sincronización con Ana Care está fallando y la protección de carga fue activada (disjuntor). El último retrato tiene más de 24 horas.",
+        "messageSimple": "El último retrato tiene más de 24 horas. La sincronización con Ana Care no se completó.",
+        "reasonLargo": "Retrato con más de 24 horas — validación deshabilitada hasta actualizar.",
+        "reasonLargoCircuitBreaker": "Sincronización con Ana Care fallando — protección de carga activada (disjuntor). Validación deshabilitada hasta el próximo retrato.",
+        "reasonCorto": "retrato desactualizado",
+        "blockedPrefix": "Validación bloqueada: {{reason}}"
+      },
+      "list": {
+        "searchPlaceholder": "Buscar paciente…",
+        "searchAriaLabel": "Buscar paciente",
+        "providerFilterPlaceholder": "Todos los prestadores",
+        "providerFilterAriaLabel": "Filtrar por prestador",
+        "table": {
+          "patient": "Paciente",
+          "providers": "Prestadores",
+          "shifts": "Turnos",
+          "totalHours": "Horas totales",
+          "validation": "Validación",
+          "originCheckin": "Origen check-in"
+        },
+        "emptyNoShifts": "No hay turnos registrados para este mes.",
+        "emptyNoMatch": "Ningún paciente coincide con los filtros aplicados.",
+        "contestedSuffix": "· {{count}} contest.",
+        "loading": "Cargando…",
+        "validationSummary_one": "{{count}}/{{total}} validado",
+        "validationSummary_other": "{{count}}/{{total}} validados",
+        "validationSummaryContestedSuffix_one": " · {{count}} contestado",
+        "validationSummaryContestedSuffix_other": " · {{count}} contestados",
+        "providerFilterNoMatch": "Ningún prestador coincide con la búsqueda.",
+        "providerFilterAllOption": "Todos los prestadores"
+      },
+      "detail": {
+        "back": "Volver",
+        "patientNotFound": "Paciente no encontrado en el retrato de {{month}}.",
+        "totalHoursLabel": "Horas totales",
+        "validationLabel": "Validación — {{validated}}/{{total}}",
+        "validationContestedSuffix_one": " · {{count}} contestado",
+        "validationContestedSuffix_other": " · {{count}} contestados",
+        "loading": "Cargando…"
+      },
+      "error": {
+        "generic": "Ocurrió un error inesperado.",
+        "loadMonth": "No se pudo cargar el mes.",
+        "loadPatient": "No se pudo cargar el paciente.",
+        "validateShift": "No se pudo validar el turno.",
+        "validateBatch": "No se pudo validar el lote.",
+        "contestShift": "No se pudo contestar el turno.",
+        "sourceNotConfigured": "La fuente de datos de Ana Care no está configurada. Contacte al equipo técnico.",
+        "noValidateCell": "No tiene permiso para validar o contestar turnos."
+      },
+      "origin": {
+        "sinCheckin": "Sin check-in",
+        "webAdmin": "Web admin",
+        "app": "App",
+        "scheduledNoActivity": "Programado, sin actuación",
+        "descriptionApp": "El prestador registró el ingreso desde la app, en el momento del turno.",
+        "descriptionWebAdmin": "Horario cargado a mano por alguien del equipo en el panel web de Ana Care. No comprueba la presencia.",
+        "descriptionSinCheckin": "No hay registro de ingreso: el prestador estaba programado pero no actuó."
+      },
+      "status": {
+        "pendiente": "Pendiente",
+        "validado": "Validado",
+        "contestado": "Contestado"
+      },
+      "providerGroup": {
+        "shiftsAndHours_one": "{{count}} turno · {{hours}} h",
+        "shiftsAndHours_other": "{{count}} turnos · {{hours}} h",
+        "validateN": "Validar ({{count}})",
+        "allValidated": "Todo validado",
+        "noPendingContested": "Sin turnos pendientes (quedan contestados por resolver)",
+        "table": {
+          "date": "Fecha",
+          "scheduled": "Previsto",
+          "actual": "Real",
+          "hours": "Horas",
+          "origin": "Origen",
+          "status": "Estado",
+          "actions": "Acciones",
+          "select": "Seleccionar"
+        },
+        "validatedBy": "Validado por {{name}} · {{date}}",
+        "validateAction": "Validar",
+        "contestAction": "Contestar",
+        "note": "Nota: {{note}}",
+        "noteRestricted": "Nota restringida",
+        "reason": "Motivo: {{reason}}",
+        "selectAllPendingAriaLabel": "Seleccionar todos los turnos pendientes de {{provider}}",
+        "shiftCheckboxAriaLabel": "Seleccionar turno del {{date}}"
+      },
+      "batchModal": {
+        "title_one": "Validar {{count}} turno pendiente de {{provider}} — {{hours}} h",
+        "title_other": "Validar {{count}} turnos pendientes de {{provider}} — {{hours}} h",
+        "description": "De estos turnos, {{sinCheckin}} son sin check-in y {{webAdmin}} fueron cargados desde web admin. Una vez validados, no pueden reabrirse.",
+        "cancel": "Cancelar",
+        "confirm": "Validar pendientes",
+        "titleSelection_one": "Validar {{count}} turno seleccionado — {{hours}} h",
+        "titleSelection_other": "Validar {{count}} turnos seleccionados — {{hours}} h"
+      },
+      "contestModal": {
+        "title": "Contestar turno del {{date}}",
+        "reasonLabel": "Motivo",
+        "reasonPlaceholder": "Seleccione un motivo…",
+        "reasons": {
+          "no_asistio": "No asistió",
+          "horario_distinto": "Horario distinto al registrado",
+          "horas_mal_cargadas": "Horas mal cargadas",
+          "otro": "Otro"
+        },
+        "noteLabel": "Nota (opcional)",
+        "notePlaceholder": "Describa el motivo de la contestación…",
+        "noteCount": "{{count}}/{{max}} caracteres",
+        "clinicalWarning": "No incluya información clínica del paciente",
+        "cancel": "Cancelar",
+        "confirm": "Confirmar contestación"
+      },
+      "selectionBar": {
+        "summary_one": "{{count}} turno seleccionado · {{hours}} h · {{sinCheckin}} sin check-in",
+        "summary_other": "{{count}} turnos seleccionados · {{hours}} h · {{sinCheckin}} sin check-in",
+        "validate": "Validar",
+        "clear": "Limpiar selección"
+      },
+      "legend": {
+        "title": "Origen del check-in",
+        "openAriaLabel": "Ver leyenda de origen del check-in",
+        "closeAriaLabel": "Cerrar leyenda"
+      }
+    },
     "managementDashboard": {
       "help": {
         "ariaLabel": "¿Qué es este número?",
@@ -1115,6 +1252,7 @@
       "funnelStageMessages": "Mensajes por etapa",
       "presentationInvite": "Invitación a presentación",
       "map": "Mapa",
+      "anacareHours": "Horas Ana Care",
       "templateCatalog": "Plantillas",
       "templateDrafts": "Registrar mensaje",
       "catalogObjectives": "Objetivos específicos",

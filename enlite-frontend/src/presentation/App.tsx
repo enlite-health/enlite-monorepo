@@ -42,6 +42,8 @@ import PatientChatRolesPage from './pages/admin/PatientChatRolesPage';
 import TherapeuticCatalogPage from './pages/admin/TherapeuticCatalogPage/TherapeuticCatalogPage';
 import PresentationInvitePage from './pages/admin/PresentationInvitePage';
 import { DedupCenterPage } from './pages/admin/DedupCenterPage/DedupCenterPage';
+import AnaCareHoursPage from './pages/admin/AnaCareHoursPage';
+import AnaCareHoursPatientPage from './pages/admin/AnaCareHoursPatientPage';
 import { NewVersionBanner } from './components/molecules/NewVersionBanner/NewVersionBanner';
 import { Toaster } from './components/molecules/Toaster';
 import { InviteProgressPanel } from './components/features/admin/VacancyMatch/InviteProgressPanel';
@@ -215,6 +217,8 @@ export function App() {
           <Route path="patients" element={<FeatureRouteGate feature="screen:patients"><AdminPatientsPage /></FeatureRouteGate>} />
           <Route path="patients/kanban" element={<FeatureRouteGate feature="screen:patients"><PatientKanbanPage /></FeatureRouteGate>} />
           <Route path="patients/:id" element={<FeatureRouteGate feature="screen:patients"><PatientDetailPage /></FeatureRouteGate>} />
+          <Route path="anacare/horas" element={<FeatureRouteGate feature="screen:ana-care"><AnaCareHoursPage /></FeatureRouteGate>} />
+          <Route path="anacare/horas/:patientId" element={<FeatureRouteGate feature="screen:ana-care"><AnaCareHoursPatientPage /></FeatureRouteGate>} />
           {/* `/admin/mapa` (main, 05/09) não tem chave `screen:*` no manifest — fica sem FeatureRouteGate, como tags/dedup. */}
           <Route path="mapa" element={<AdminMapPage />} />
           <Route path="tags" element={<TagCatalogPage />} />

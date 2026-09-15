@@ -1,6 +1,8 @@
 {
   "source": "206_permissions_iam_foundation.sql + PermissionCell.ts (CELL_DESCRIPTION)",
   "cells": [
+    "anacare_hours:read",
+    "anacare_hours:validate",
     "analytics:export",
     "analytics:read",
     "api_docs:read",
