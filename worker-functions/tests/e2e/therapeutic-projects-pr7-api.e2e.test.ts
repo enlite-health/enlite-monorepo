@@ -28,7 +28,7 @@
 import { Pool } from 'pg';
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
-import { montarAppDeFamilia, tokenMock, grupoComCelulas, limparIamFixtures, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
+import { montarAppDeFamilia, tokenMock, grupoComCelulas, limparIamFixtures, garantirCelula, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -63,23 +63,33 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
     semExport: 'PT018PR7 Sem export',
     semClinica: 'PT018PR7 Sem clínica',
   };
+  // PR-8b (A3, ADR-2/SUP-30): as rotas não declaram mais `write` para nenhum destes recursos —
+  // create/update pelas rotas reais (POST/annul do projeto, POST/PATCH dos catálogos, POST/PATCH
+  // dos contatos externos/cobertura). `patient_clinical:write` FICA — checagem literal no
+  // controller (`PATIENT_CLINICAL_WRITE_CELL`), fora do escopo desta conversão (mesmo achado do
+  // irmão 017, `therapeutic-projects-api.e2e.test.ts`).
   const CELULAS: ReadonlyArray<readonly [string, string]> = [
     ['patient_therapeutic_project', 'read'],
-    ['patient_therapeutic_project', 'write'],
+    ['patient_therapeutic_project', 'create'],
+    ['patient_therapeutic_project', 'update'],
     ['patient_therapeutic_project', 'export'],
     ['patient_clinical', 'read'],
     ['patient_clinical', 'write'],
     ['patient_services', 'read'],
     ['patient_family', 'read'],
-    ['patient_family', 'write'],
+    ['patient_family', 'create'],
+    ['patient_family', 'update'],
     ['patient_coverage', 'read'],
-    ['patient_coverage', 'write'],
+    ['patient_coverage', 'create'],
+    ['patient_coverage', 'update'],
     ['patient_care_team', 'read'],
     ['catalog_therapeutic_objectives', 'read'],
-    ['catalog_therapeutic_objectives', 'write'],
+    ['catalog_therapeutic_objectives', 'create'],
+    ['catalog_therapeutic_objectives', 'update'],
     ['catalog_therapeutic_activities', 'read'],
     ['catalog_therapeutic_segments', 'read'],
-    ['catalog_therapeutic_segments', 'write'],
+    ['catalog_therapeutic_segments', 'create'],
+    ['catalog_therapeutic_segments', 'update'],
   ];
 
   // Release-fixture do CID-11 (mesmo molde de `therapeutic-projects-api.e2e.test.ts`).
@@ -137,26 +147,16 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
     ...over,
   });
 
-  async function limparCelulas(): Promise<void> {
-    // Mesmo padrão do irmão 017 (therapeutic-projects-api.e2e.test.ts): apaga TAMBÉM a linha em
-    // `iam.permissions`, não só o vínculo em `group_permissions` — senão a permissão criada aqui
-    // sobrevive ao teste e contamina a contagem exata de `permissions-iam-schema.e2e.test.ts`
-    // (seed fixo da migration 206, 41 linhas/18 recursos). Nenhum resource/action de CELULAS está
-    // no seed da 206 (confirmado por leitura de migrations/206_permissions_iam_foundation.sql:101-150)
-    // — o catálogo desses recursos nasce só do sync de rotas (migrations/431, comentário), nunca de
-    // migration com DDL; por isso é seguro apagar por resource/action aqui, sem risco de apagar seed.
-    for (const [resource, action] of CELULAS) {
-      await pool.query(
-        `DELETE FROM iam.group_permissions WHERE permission_id IN (SELECT id FROM iam.permissions WHERE resource = $1 AND action = $2)`,
-        [resource, action],
-      );
-      await pool.query(`DELETE FROM iam.permissions WHERE resource = $1 AND action = $2`, [resource, action]);
-    }
-  }
+  // PR-8b (A3, achado A2): o comentário anterior (`limparCelulas`) estava CORRETO até a migration
+  // 435 — mas 435 passou a seedar `create`/`update` (e a manter `write`, SUP-31) para estes
+  // recursos DE FORMA PERMANENTE, no catálogo global; e `patient_family`/`patient_coverage`/
+  // `patient_care_team` já são usadas por OUTRAS suítes (PCEC, PR-2, 427). Apagar
+  // `iam.permissions` aqui não é mais "seguro por não estar no seed 206" — passou a derrubar quem
+  // rodar depois na mesma suíte serial (o próprio achado da rodada A3). O cleanup nunca mais toca
+  // `iam.permissions`; `limparIamFixtures` cobre o que este arquivo é DONO.
   async function limpar(): Promise<void> {
     await pool.query(`DELETE FROM resource_access_log WHERE operator_uid = ANY($1)`, [Object.values(U)]);
     await limparIamFixtures(pool, { uids: Object.values(U), grupos: Object.values(GRUPOS) });
-    await limparCelulas();
     await pool.query(`DELETE FROM patients WHERE id = $1`, [PATIENT]);
     await pool.query(`DELETE FROM patients WHERE id = $1`, [OUTRO_PACIENTE]);
     await pool.query(`DELETE FROM therapeutic_specific_objectives WHERE label LIKE 'E2E PR7 %'`);
@@ -175,26 +175,23 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
       [U.completa, U.semFamilia, U.semExport, U.semClinica, TENANT_E2E],
     );
     for (const [resource, action] of CELULAS) {
-      await pool.query(
-        `INSERT INTO iam.permissions (resource, action, description, category) VALUES ($1, $2, 'e2e 018 pr7', 'Pacientes') ON CONFLICT DO NOTHING`,
-        [resource, action],
-      );
+      await garantirCelula(pool, { resource, action, category: 'Pacientes' });
     }
-    await pool.query(`INSERT INTO iam.permissions (resource, action, description, category) VALUES ('patient', 'read', 'e2e', 'Pacientes') ON CONFLICT DO NOTHING`);
+    await garantirCelula(pool, { resource: 'patient', action: 'read', category: 'Pacientes' });
 
     await grupoComCelulas(pool, {
       nome: GRUPOS.completa, uid: U.completa,
       celulas: [
         ['patient', 'read'],
-        ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write'], ['patient_therapeutic_project', 'export'],
+        ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'create'], ['patient_therapeutic_project', 'update'], ['patient_therapeutic_project', 'export'],
         ['patient_clinical', 'read'], ['patient_clinical', 'write'],
         ['patient_services', 'read'],
-        ['patient_family', 'read'], ['patient_family', 'write'],
-        ['patient_coverage', 'read'], ['patient_coverage', 'write'],
+        ['patient_family', 'read'], ['patient_family', 'create'], ['patient_family', 'update'],
+        ['patient_coverage', 'read'], ['patient_coverage', 'create'], ['patient_coverage', 'update'],
         ['patient_care_team', 'read'],
-        ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_objectives', 'write'],
+        ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_objectives', 'create'], ['catalog_therapeutic_objectives', 'update'],
         ['catalog_therapeutic_activities', 'read'],
-        ['catalog_therapeutic_segments', 'read'], ['catalog_therapeutic_segments', 'write'],
+        ['catalog_therapeutic_segments', 'read'], ['catalog_therapeutic_segments', 'create'], ['catalog_therapeutic_segments', 'update'],
       ],
     });
     // C8(a): lê o projeto e o clínico, mas NÃO vê a origem `family` — o contato EXTERNAL some.
