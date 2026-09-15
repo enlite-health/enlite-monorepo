@@ -11,6 +11,7 @@ import { PatientDocumentStorage, type PatientDocumentContentType } from '../infr
 import { PatientDocumentRepository, type PatientDocumentType } from '../infrastructure/PatientDocumentRepository';
 import { PatientPhotoOrphanRepository } from '../infrastructure/PatientPhotoOrphanRepository';
 import { stripJpegMetadata } from '../infrastructure/stripJpegMetadata';
+import { safeStorageErrorFields } from '../infrastructure/safeStorageErrorFields';
 import { scheduleOpportunisticOrphanRetry } from './scheduleOpportunisticOrphanRetry';
 
 export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -79,9 +80,9 @@ export class UploadPatientDocumentUseCase {
       // cifrado JÁ existe em memória mesmo sem linha em `patient_documents`, então dá pra rastrear).
       // O erro ORIGINAL da transação sempre propaga.
       await storage.delete(objectPath).catch(async (deleteErr) => {
-        logger.warn({ err: deleteErr }, '[UploadPatientDocumentUseCase] objeto não apagado após falha da transação — vira órfão');
+        logger.warn(safeStorageErrorFields(deleteErr), '[UploadPatientDocumentUseCase] objeto não apagado após falha da transação — vira órfão');
         await this.orphanRepo.record(objectPathEncrypted!, 'DOCUMENTS', 'UPLOAD_FAILED').catch((orphanErr) => {
-          logger.error({ err: orphanErr }, '[UploadPatientDocumentUseCase] também falhou ao registrar órfão do objeto');
+          logger.error(safeStorageErrorFields(orphanErr), '[UploadPatientDocumentUseCase] também falhou ao registrar órfão do objeto');
         });
       });
       throw err;

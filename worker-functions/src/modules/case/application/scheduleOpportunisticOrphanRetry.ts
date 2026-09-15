@@ -12,6 +12,7 @@
  * garantida lá) — é o que faz a fila andar sozinha onde não há Scheduler, e reduz o atraso onde há.
  */
 import { logger } from '@shared/logging';
+import { safeStorageErrorFields } from '../infrastructure/safeStorageErrorFields';
 import { PatientPhotoOrphanRetryService } from './PatientPhotoOrphanRetryService';
 
 /** Poucos itens por disparo — best-effort, não um worker de fila completo. */
@@ -25,6 +26,6 @@ export function scheduleOpportunisticOrphanRetry(
   retryService: PatientPhotoOrphanRetryService = new PatientPhotoOrphanRetryService(),
 ): void {
   retryService.retryOnce(OPPORTUNISTIC_RETRY_LIMIT).catch((err) => {
-    logger.warn({ err }, '[scheduleOpportunisticOrphanRetry] tentativa oportunista falhou — segue para o próximo gatilho');
+    logger.warn(safeStorageErrorFields(err), '[scheduleOpportunisticOrphanRetry] tentativa oportunista falhou — segue para o próximo gatilho');
   });
 }

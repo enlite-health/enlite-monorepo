@@ -13,6 +13,7 @@ import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { PatientPhotoStorage } from '../infrastructure/PatientPhotoStorage';
 import { PatientDocumentStorage } from '../infrastructure/PatientDocumentStorage';
 import { PatientPhotoOrphanRepository } from '../infrastructure/PatientPhotoOrphanRepository';
+import { safeStorageErrorFields } from '../infrastructure/safeStorageErrorFields';
 import { scheduleOpportunisticOrphanRetry } from './scheduleOpportunisticOrphanRetry';
 
 /** Tentativa de purgar um paciente que NÃO está marcado como teste. */
@@ -334,11 +335,14 @@ export class PatientTestFixtureService {
       await storage.delete(objectPath);
       return true;
     } catch (err) {
-      functions.logger.warn('patient.test_purge.object_delete_failed', { bucket, error: err instanceof Error ? err.message : String(err) });
+      // Achado da 3ª revisão do PR-4 (item 3, mesma classe dos demais chamadores de
+      // `PatientPhotoStorage`/`PatientDocumentStorage`): `err.message` do `@google-cloud/storage`
+      // costuma trazer o NOME DO OBJETO — trocado pelo helper que só extrai code/status/name.
+      functions.logger.warn('patient.test_purge.object_delete_failed', { bucket, ...safeStorageErrorFields(err) });
       try {
         await this.orphanRepo.record(objectPathEncrypted, bucket, 'PURGE');
       } catch (orphanErr) {
-        functions.logger.error('patient.test_purge.object_orphan_record_failed', { bucket, error: orphanErr instanceof Error ? orphanErr.message : String(orphanErr) });
+        functions.logger.error('patient.test_purge.object_orphan_record_failed', { bucket, ...safeStorageErrorFields(orphanErr) });
       }
       return false;
     }
