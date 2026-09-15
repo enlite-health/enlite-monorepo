@@ -13,6 +13,8 @@ import { Text } from '@presentation/components/atoms/Text';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
+import { ActionButton } from '@presentation/components/features/access';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
 
@@ -50,6 +52,10 @@ export function PatientExternalContactsEditDrawer({ patientId, externalContacts,
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const toDeactivateRef = useRef<string[]>([]);
+  // Conserto rodada B (Gabriel 15/09): mesma regra do drawer de responsáveis — adicionar linha
+  // exige `create`, editar linha EXISTENTE exige `update` (célula `patient_family`).
+  const { allowed: canCreateRow } = useActionGate('patient_family', 'create');
+  const { allowed: canUpdateRow } = useActionGate('patient_family', 'update');
 
   const { register, handleSubmit, control, watch, formState: { errors, isDirty }, setValue } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -64,6 +70,7 @@ export function PatientExternalContactsEditDrawer({ patientId, externalContacts,
   });
 
   const { fields, append, remove } = useFieldArray({ control, name: 'externalContacts' });
+  const watched = watch('externalContacts');
 
   const relationOptions: SelectOption[] = EXTERNAL_CONTACT_RELATION_CODES.map((r) => ({
     value: r,
@@ -181,31 +188,40 @@ export function PatientExternalContactsEditDrawer({ patientId, externalContacts,
             <Text size="sm" color="muted" data-testid="pxc-empty">{t('admin.patients.detail.noData')}</Text>
           )}
 
-          {fields.map((f, index) => (
+          {fields.map((f, index) => {
+            const isExistingRow = !!watched?.[index]?.id;
+            const rowEditable = isExistingRow ? canUpdateRow : canCreateRow;
+            return (
             <div key={f.id} data-testid={`pxc-row-${index}`} data-clarity-mask="True" className="flex flex-col gap-3 p-4 rounded-xl border border-slate-200">
               <div className="flex items-center justify-between">
                 <Text size="sm" weight="semibold" color="secondary">{te('externalContact')} {index + 1}</Text>
-                <button type="button" onClick={() => removeRow(index)} aria-label={te('removeExternalContact')} data-testid={`pxc-remove-${index}`} className="text-red-400 hover:text-red-600 transition-colors p-1 rounded">
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                {rowEditable && (
+                  <button type="button" onClick={() => removeRow(index)} aria-label={te('removeExternalContact')} data-testid={`pxc-remove-${index}`} className="text-red-400 hover:text-red-600 transition-colors p-1 rounded">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <FormField label={te('relation')} htmlFor={`pxc-relation-${index}`} required>
                   <Controller control={control} name={`externalContacts.${index}.relation` as const} render={({ field }) => (
-                    <SelectField id={`pxc-relation-${index}`} inputSize="compact" options={relationOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`pxc-relation-${index}`} />
+                    <SelectField id={`pxc-relation-${index}`} inputSize="compact" disabled={!rowEditable} options={relationOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`pxc-relation-${index}`} />
                   )} />
                 </FormField>
                 <FormField label={te('name')} htmlFor={`pxc-name-${index}`} required error={terr(errors.externalContacts?.[index]?.name?.message)}>
-                  <InputWithIcon id={`pxc-name-${index}`} inputSize="compact" data-testid={`pxc-name-${index}`} {...register(`externalContacts.${index}.name` as const)} />
+                  <InputWithIcon id={`pxc-name-${index}`} inputSize="compact" disabled={!rowEditable} data-testid={`pxc-name-${index}`} {...register(`externalContacts.${index}.name` as const)} />
                 </FormField>
                 <FormField label={te('phone')} htmlFor={`pxc-phone-${index}`} optional>
-                  <InputWithIcon id={`pxc-phone-${index}`} inputSize="compact" data-testid={`pxc-phone-${index}`} {...register(`externalContacts.${index}.phone` as const)} />
+                  <InputWithIcon id={`pxc-phone-${index}`} inputSize="compact" disabled={!rowEditable} data-testid={`pxc-phone-${index}`} {...register(`externalContacts.${index}.phone` as const)} />
                 </FormField>
               </div>
             </div>
-          ))}
+            );
+          })}
 
-          <Button
+          {/* D269: adicionar linha nova é POST → patient_family:create. */}
+          <ActionButton
+            resource="patient_family"
+            action="create"
             type="button"
             variant="outline"
             size="sm"
@@ -215,7 +231,7 @@ export function PatientExternalContactsEditDrawer({ patientId, externalContacts,
           >
             <Plus className="w-4 h-4" />
             {te('addExternalContact')}
-          </Button>
+          </ActionButton>
 
           {submitError && <Text size="sm" className="text-red-600" data-testid="pxc-error">{submitError}</Text>}
         </form>

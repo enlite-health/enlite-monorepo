@@ -13,6 +13,8 @@ import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import { RELATIONSHIP_CODES } from '@domain/entities/patientEnums';
+import { ActionButton } from '@presentation/components/features/access';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
 
@@ -67,6 +69,11 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
   const [submitError, setSubmitError] = useState<string | null>(null);
   /** Ids de linhas EXISTENTES removidas nesta sessão do drawer — desativadas no submit. */
   const toDeactivateRef = useRef<string[]>([]);
+  // Conserto rodada B (Gabriel 15/09): o botão "Nuevo" do card abre para quem tem `create` OU
+  // `update` — dentro do drawer, adicionar linha exige `create` e editar linha EXISTENTE exige
+  // `update`. Quem tem as duas mantém o comportamento de sempre.
+  const { allowed: canCreateRow } = useActionGate('patient_family', 'create');
+  const { allowed: canUpdateRow } = useActionGate('patient_family', 'update');
 
   const { register, handleSubmit, control, watch, setValue, formState: { errors, isDirty } } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -233,39 +240,46 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
             <Text size="sm" color="muted" data-testid="psn-empty">{t('admin.patients.detail.noData')}</Text>
           )}
 
-          {fields.map((f, index) => (
+          {fields.map((f, index) => {
+            // Linha EXISTENTE (tem id) exige `update`; linha NOVA (recém-adicionada, sem id)
+            // exige `create` — a mesma célula que autorizou o `append` abaixo.
+            const isExistingRow = !!watched?.[index]?.id;
+            const rowEditable = isExistingRow ? canUpdateRow : canCreateRow;
+            return (
             <div key={f.id} data-testid={`psn-row-${index}`} className="flex flex-col gap-3 p-4 rounded-xl border border-slate-200">
               <div className="flex items-center justify-between">
                 <Text size="sm" weight="semibold" color="secondary">{te('responsible')} {index + 1}</Text>
-                <button type="button" onClick={() => removeRow(index)} aria-label={te('removeResponsible')} data-testid={`psn-remove-${index}`} className="text-red-400 hover:text-red-600 transition-colors p-1 rounded">
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                {rowEditable && (
+                  <button type="button" onClick={() => removeRow(index)} aria-label={te('removeResponsible')} data-testid={`psn-remove-${index}`} className="text-red-400 hover:text-red-600 transition-colors p-1 rounded">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <FormField label={te('firstName')} htmlFor={`psn-firstName-${index}`} required error={terr(errors.responsibles?.[index]?.firstName?.message)}>
-                  <InputWithIcon id={`psn-firstName-${index}`} inputSize="compact" data-testid={`psn-firstName-${index}`} {...register(`responsibles.${index}.firstName` as const)} />
+                  <InputWithIcon id={`psn-firstName-${index}`} inputSize="compact" disabled={!rowEditable} data-testid={`psn-firstName-${index}`} {...register(`responsibles.${index}.firstName` as const)} />
                 </FormField>
                 <FormField label={te('lastName')} htmlFor={`psn-lastName-${index}`} required error={terr(errors.responsibles?.[index]?.lastName?.message)}>
-                  <InputWithIcon id={`psn-lastName-${index}`} inputSize="compact" data-testid={`psn-lastName-${index}`} {...register(`responsibles.${index}.lastName` as const)} />
+                  <InputWithIcon id={`psn-lastName-${index}`} inputSize="compact" disabled={!rowEditable} data-testid={`psn-lastName-${index}`} {...register(`responsibles.${index}.lastName` as const)} />
                 </FormField>
                 <FormField label={te('relationship')} htmlFor={`psn-rel-${index}`} optional>
                   <Controller control={control} name={`responsibles.${index}.relationship` as const} render={({ field }) => (
-                    <SelectField id={`psn-rel-${index}`} inputSize="compact" options={relationshipOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`psn-rel-${index}`} />
+                    <SelectField id={`psn-rel-${index}`} inputSize="compact" disabled={!rowEditable} options={relationshipOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`psn-rel-${index}`} />
                   )} />
                 </FormField>
                 <FormField label={te('phone')} htmlFor={`psn-phone-${index}`} optional>
-                  <InputWithIcon id={`psn-phone-${index}`} inputSize="compact" data-testid={`psn-phone-${index}`} {...register(`responsibles.${index}.phone` as const)} />
+                  <InputWithIcon id={`psn-phone-${index}`} inputSize="compact" disabled={!rowEditable} data-testid={`psn-phone-${index}`} {...register(`responsibles.${index}.phone` as const)} />
                 </FormField>
                 <FormField label={te('email')} htmlFor={`psn-email-${index}`} optional error={errors.responsibles?.[index]?.email?.message}>
-                  <InputWithIcon id={`psn-email-${index}`} type="email" inputSize="compact" data-testid={`psn-email-${index}`} {...register(`responsibles.${index}.email` as const)} />
+                  <InputWithIcon id={`psn-email-${index}`} type="email" inputSize="compact" disabled={!rowEditable} data-testid={`psn-email-${index}`} {...register(`responsibles.${index}.email` as const)} />
                 </FormField>
                 <FormField label={te('documentType')} htmlFor={`psn-documentType-${index}`} optional>
                   <Controller control={control} name={`responsibles.${index}.documentType` as const} render={({ field }) => (
-                    <SelectField id={`psn-documentType-${index}`} inputSize="compact" options={documentTypeOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`psn-documentType-${index}`} />
+                    <SelectField id={`psn-documentType-${index}`} inputSize="compact" disabled={!rowEditable} options={documentTypeOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`psn-documentType-${index}`} />
                   )} />
                 </FormField>
                 <FormField label={te('documentNumber')} htmlFor={`psn-documentNumber-${index}`} optional>
-                  <InputWithIcon id={`psn-documentNumber-${index}`} inputSize="compact" data-testid={`psn-documentNumber-${index}`} {...register(`responsibles.${index}.documentNumber` as const)} />
+                  <InputWithIcon id={`psn-documentNumber-${index}`} inputSize="compact" disabled={!rowEditable} data-testid={`psn-documentNumber-${index}`} {...register(`responsibles.${index}.documentNumber` as const)} />
                 </FormField>
               </div>
               <label className="flex items-center gap-2 cursor-pointer">
@@ -274,15 +288,21 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
                   name="psn-primary"
                   checked={!!watched?.[index]?.isPrimary}
                   onChange={() => selectPrimary(index)}
+                  disabled={!rowEditable}
                   data-testid={`psn-primary-${index}`}
                   className="accent-primary w-4 h-4"
                 />
                 <Text as="span" size="sm" color="secondary">{te('isPrimary')}</Text>
               </label>
             </div>
-          ))}
+            );
+          })}
 
-          <Button
+          {/* D269: adicionar linha nova é POST → patient_family:create — quem só tem `update`
+              não vê o botão (edita as linhas existentes, mas não cria linha). */}
+          <ActionButton
+            resource="patient_family"
+            action="create"
             type="button"
             variant="outline"
             size="sm"
@@ -292,7 +312,7 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
           >
             <Plus className="w-4 h-4" />
             {te('addResponsible')}
-          </Button>
+          </ActionButton>
 
           {submitError && <Text size="sm" className="text-red-600" data-testid="psn-error">{submitError}</Text>}
         </form>

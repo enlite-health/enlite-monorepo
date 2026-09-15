@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Plus, ShieldAlert } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
+import { Button } from '@presentation/components/atoms/Button';
 import {
   Table,
   TableHeader,
@@ -11,7 +12,7 @@ import {
   TableHead,
   TableCell,
 } from '@presentation/components/atoms/Table';
-import { ActionButton } from '@presentation/components/features/access';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import type { PatientResponsibleDetail, EmergencyContactRef } from '@domain/entities/PatientDetail';
 import { PatientSupportNetworkEditDrawer } from './edit/PatientSupportNetworkEditDrawer';
 import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
@@ -36,6 +37,12 @@ export function FamiliaresCard({ responsibles, emergencyContactRef, patientId, o
   useAutoOpenDrawer(focusRequest, 'RESPONSIBLE', () => setEditing(true));
   const rows = responsibles ?? [];
   const empty = '—';
+  // Conserto rodada B (Gabriel 15/09): o drawer faz POST (linha nova) E PATCH (linha existente) —
+  // o botão "Nuevo" abre pra quem tem QUALQUER UMA das duas células, não só `create`. Quem só tem
+  // `update` tinha perdido a edição das linhas existentes.
+  const { allowed: canCreateRow } = useActionGate('patient_family', 'create');
+  const { allowed: canUpdateRow } = useActionGate('patient_family', 'update');
+  const canOpenDrawer = canCreateRow || canUpdateRow;
 
   return (
     <div
@@ -48,12 +55,14 @@ export function FamiliaresCard({ responsibles, emergencyContactRef, patientId, o
         </Heading>
         <div className="flex items-center gap-3 flex-wrap">
           {/* D269 — abre o drawer que grava por LINHA (spec 018, PR-1, ADR-1): POST /patients/:id/responsibles
-              → patient_family:create (PR-8b; o botão "Nuevo" leva a criar linha, PATCH/deactivate de linha
-              existente ficam dentro do drawer, por linha). */}
-          <ActionButton resource="patient_family" action="create" variant="outline" size="sm" onClick={() => setEditing(true)} disabled={!patientId} className="flex items-center gap-1" data-testid="edit-support-btn">
-            <Plus className="w-4 h-4" />
-            {t('admin.patients.detail.new')}
-          </ActionButton>
+              → patient_family:create, PATCH .../responsibles/:rid → patient_family:update (PR-8b). O botão
+              "Nuevo" abre para QUALQUER UMA das duas — o drawer é quem gateia adicionar × editar por linha. */}
+          {canOpenDrawer && (
+            <Button variant="outline" size="sm" onClick={() => setEditing(true)} disabled={!patientId} className="flex items-center gap-1" data-testid="edit-support-btn">
+              <Plus className="w-4 h-4" />
+              {t('admin.patients.detail.new')}
+            </Button>
+          )}
         </div>
       </div>
 
