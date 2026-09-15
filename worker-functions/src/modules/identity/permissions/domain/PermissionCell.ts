@@ -252,7 +252,142 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Ver o catálogo de SEGMENTOS da Ana Care (US-17, lista global, sem dado de paciente).',
   'catalog_therapeutic_segments:write':
     'Adicionar, renomear e desativar segmentos do catálogo (backoffice).',
+
+  // ── spec 018, PR-8b (ADR-2, SUP-30): split `<recurso>:write` → `<recurso>:create` +
+  // `<recurso>:update` para os 19 recursos com `write` LITERAL na rota (20 − permission_management)
+  // mais os 4 recursos cuja rota declara a célula por VARIÁVEL (projeto terapêutico e os 3
+  // catálogos) — 23 no total. `permission_management` NÃO splita (fica `write`, contracts/
+  // permissions-split.md linha 11). Nesta rodada (A1) as ROTAS continuam pedindo `write` — as
+  // células novas só entram no catálogo (via `cellsForaDeRota`, já que nenhuma rota as declara
+  // ainda) e ficam disponíveis para o painel conceder; a rota passa a exigi-las no round 8b.4.
+  'patient:create': 'Criar pacientes e vínculos administrativos (papéis do chat, convênios do catálogo).',
+  'patient:update': 'Editar status e vínculos administrativos do paciente (papéis do chat, convênios, status do funil).',
+  'patient_address:create': 'Cadastrar um endereço novo do paciente.',
+  'patient_address:update': 'Editar um endereço existente do paciente.',
+  'patient_chat:create': 'Vincular um novo grupo de WhatsApp do caso ao paciente.',
+  'patient_chat:update': 'Trocar os IDs dos grupos de WhatsApp já vinculados ao caso.',
+  'patient_identity:create':
+    'Cadastrar a identidade do paciente (nome, documento, nascimento, sexo, telefone, e-mail de '
+    + 'contato) e subir a primeira foto/consentimento de imagem.',
+  'patient_identity:update':
+    'Editar a identidade do paciente já cadastrada; trocar/apagar a foto e revogar consentimento '
+    + 'de imagem (spec 018, PR-4).',
+  'patient_clinical:create': 'Registrar um diagnóstico (CID-11) novo do paciente.',
+  'patient_clinical:update': 'Editar o quadro clínico do paciente, inclusive dar baixa em diagnósticos.',
+  'patient_care_team:create': 'Adicionar um profissional novo à equipe tratante do paciente.',
+  'patient_care_team:update': 'Editar ou dar baixa em profissional já cadastrado na equipe tratante.',
+  'patient_family:create': 'Cadastrar um familiar, responsável ou contato externo novo do paciente.',
+  'patient_family:update': 'Editar ou dar baixa em familiar, responsável ou contato externo já cadastrado; trocar a marca de emergência.',
+  'patient_coverage:create': 'Cadastrar a cobertura do paciente ou um contato de emergência da cobertura novo.',
+  'patient_coverage:update': 'Editar a cobertura do paciente ou dar baixa em contato de emergência da cobertura já cadastrado.',
+  'patient_services:create': 'Contratar um serviço novo para o paciente.',
+  'patient_services:update':
+    'Editar serviço contratado já existente, ativar recrutamento e associar/editar prestadores do serviço.',
+  'patient_therapeutic_project:create':
+    'Criar uma nova versão MAJOR do projeto terapêutico ("Novo"). Exige também `patient_clinical:write`.',
+  'patient_therapeutic_project:update':
+    'Criar uma nova versão MINOR ("Editar") ou anular uma versão do projeto terapêutico. Exige também `patient_clinical:write`.',
+  'catalog_therapeutic_objectives:create': 'Adicionar objetivo específico novo ao catálogo (backoffice).',
+  'catalog_therapeutic_objectives:update': 'Renomear e desativar objetivo específico do catálogo (backoffice).',
+  'catalog_therapeutic_activities:create': 'Adicionar atividade nova ao catálogo (backoffice).',
+  'catalog_therapeutic_activities:update': 'Renomear e desativar atividade do catálogo (backoffice).',
+  'catalog_therapeutic_segments:create': 'Adicionar segmento novo ao catálogo (backoffice).',
+  'catalog_therapeutic_segments:update': 'Renomear e desativar segmento do catálogo (backoffice).',
+  'user_management:create': 'Criar conta nova de staff.',
+  'user_management:update': 'Resetar a senha de uma conta de staff existente.',
+  'vacancy:create': 'Criar vaga nova, gerar link social e conteúdo por IA no momento da criação.',
+  'vacancy:update':
+    'Editar vaga existente: resolver revisão de endereço, gerar/editar conteúdo por IA e links de reunião.',
+  'funnel:create': 'Registrar nota de contato com prestador no funil.',
+  'funnel:update': 'Mover/editar etapa do funil, resultado de encuadre e bloqueio de candidatura.',
+  'talentum:create': 'Gerar descrição/conteúdo novo do Talentum para a vaga.',
+  'talentum:update': 'Publicar, despublicar, editar descrição ou sincronizar vagas/prestadores com o Talentum.',
+  'prescreening:create': 'Criar a configuração de pré-seleção de uma vaga.',
+  'prescreening:update': 'Editar a configuração de pré-seleção de uma vaga já existente.',
+  'interview:create': 'Criar um horário de entrevista novo para a vaga.',
+  'interview:update': 'Reservar um horário de entrevista já criado.',
+  'messaging:create': 'Criar template, rascunho de mensagem ou validar rascunho novo.',
+  'messaging:update':
+    'Editar/enviar template ou rascunho de mensagem já existente, configurar mensageria por etapa e '
+    + 'o convite à apresentação.',
+  'recruitment:create': 'Disparar cálculo novo de reemplazos.',
+  'recruitment:update': 'Editar/repetir o cálculo de reemplazos.',
+  'worker:create': 'Criar uma tag de prestador nova.',
+  'worker:update': 'Editar status, ocupação, área de serviço, perfil e tags de um prestador já cadastrado.',
+  'worker_document:create': 'Subir um documento novo do prestador (ou o link de ingestão a partir de URL).',
+  'worker_document:update': 'Editar o prazo de validade de um documento já cadastrado do prestador.',
 };
+
+/**
+ * Recursos cujo `<recurso>:write` é SPLITADO em `<recurso>:create` + `<recurso>:update`
+ * (spec 018, PR-8b, ADR-2/SUP-30). `permission_management` fica de fora de propósito —
+ * é a ÚNICA rota que continua sob `write` (contracts/permissions-split.md linha 11).
+ *
+ * Os 19 primeiros são os recursos com `perm.require('<recurso>', 'write', …)` LITERAL
+ * (`git grep -n "perm\.require([^)]*'write'" -- worker-functions/src | grep -v test` menos
+ * `permission_management`, 93 hits medidos em 15/09 (excluindo por CAMINHO `__tests__`, não por
+ * substring da linha — correção do coordenador: o filtro por substring "test" cortava
+ * `/workers/:id/test-flag` e `/patients/:id/test-flag`, ambos `update`) contra a 108 rotas do
+ * mapa nominal —
+ * loops/middleware expandem). Os 4 últimos declaram a célula por VARIÁVEL (o mapa nominal,
+ * `pr8b-mapa-rotas.tsv`, linhas 36-43) e por isso o grep literal não os alcança.
+ */
+export const SPLIT_RESOURCES: ReadonlySet<string> = new Set([
+  'patient',
+  'patient_address',
+  'patient_chat',
+  'patient_identity',
+  'patient_clinical',
+  'patient_care_team',
+  'patient_family',
+  'patient_coverage',
+  'patient_services',
+  'user_management',
+  'vacancy',
+  'funnel',
+  'talentum',
+  'prescreening',
+  'interview',
+  'messaging',
+  'recruitment',
+  'worker',
+  'worker_document',
+  'patient_therapeutic_project',
+  'catalog_therapeutic_objectives',
+  'catalog_therapeutic_activities',
+  'catalog_therapeutic_segments',
+]);
+
+export function isSplitResource(resource: string): boolean {
+  return SPLIT_RESOURCES.has(resource);
+}
+
+/**
+ * Expande `<recurso>:write` de um recurso SPLITADO em `<recurso>:create` +
+ * `<recurso>:update`; qualquer outra chave (inclusive `permission_management:write`
+ * e qualquer `:write` de recurso não splitado) passa intacta. Dedup por `Set` — não
+ * ordena (quem chama decide se ordena; `normalizeSnapshot` já ordena por conta própria).
+ *
+ * Ponto ÚNICO da expansão (fix-once): usado na gravação de grupo
+ * (`SetGroupPermissionsUseCase`, durante a janela de transição, SUP-31), na leitura do
+ * contrato de authz (`GetMyAuthzUseCase` — o painel nunca vê `write` de recurso
+ * splitado) e no export/import de configuração IAM (`iamConfig/snapshot.ts` —
+ * `normalizeSnapshot` roda dos dois lados: export de um banco já migrado nunca mostra
+ * `write` residual, e import de um arquivo ANTIGO com `write` expande antes do diff).
+ */
+export function expandWriteCells(cellKeys: readonly string[]): string[] {
+  const out = new Set<string>();
+  for (const key of cellKeys) {
+    const parsed = parseCellKey(key);
+    if (parsed && parsed.action === 'write' && isSplitResource(parsed.resource)) {
+      out.add(cellKey(parsed.resource, 'create'));
+      out.add(cellKey(parsed.resource, 'update'));
+      continue;
+    }
+    out.add(key);
+  }
+  return [...out];
+}
 
 /** Célula do catálogo — o que `iam.permissions` guarda de uma linha. */
 export interface PermissionCell {

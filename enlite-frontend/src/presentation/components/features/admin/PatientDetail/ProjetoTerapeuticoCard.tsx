@@ -46,13 +46,13 @@ export function ProjetoTerapeuticoCard({ patient }: Props): JSX.Element {
         <Heading level={1} as="h3" weight="semibold" color="primary">{tc('title')}</Heading>
         <div className="flex items-center gap-2">
           {/* "Novo": major seguinte. Sem serviço contratado ATIVO não há o que vincular (Gabriel 4a). */}
-          <ActionButton resource="patient_therapeutic_project" action="write" variant="outline" size="sm" onClick={() => setTarget({ mode: 'new' })} disabled={!hasActiveService} title={hasActiveService ? undefined : servicesReadable ? tc('needsService') : tc('redacted')} className="flex items-center gap-1" data-testid="tp-new-btn">
+          <ActionButton resource="patient_therapeutic_project" action="create" variant="outline" size="sm" onClick={() => setTarget({ mode: 'new' })} disabled={!hasActiveService} title={hasActiveService ? undefined : servicesReadable ? tc('needsService') : tc('redacted')} className="flex items-center gap-1" data-testid="tp-new-btn">
             {tc('newButton')}
             <Plus className="w-4 h-4" />
           </ActionButton>
           {/* "Editar": minor seguinte da versão em andamento — nunca altera a existente. */}
           {current && (
-            <ActionButton resource="patient_therapeutic_project" action="write" variant="primary" size="sm" onClick={() => setTarget({ mode: 'edit', version: current })} className="flex items-center gap-1" data-testid="tp-edit-btn">
+            <ActionButton resource="patient_therapeutic_project" action="create" variant="primary" size="sm" onClick={() => setTarget({ mode: 'edit', version: current })} className="flex items-center gap-1" data-testid="tp-edit-btn">
               <Pencil className="w-4 h-4" />
               {t('admin.patients.detail.edit')}
             </ActionButton>

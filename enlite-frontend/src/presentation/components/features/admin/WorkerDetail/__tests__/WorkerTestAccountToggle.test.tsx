@@ -35,7 +35,7 @@ describe('WorkerTestAccountToggle', () => {
     useAdminAuthStore.setState({
       authzStatus: 'ready',
       authz: {
-        uid: 'u', tenantId: 't', status: 'ACTIVE', permissions: ['worker:write'], countries: [], groups: [], features: {}, enforcement: 'on',
+        uid: 'u', tenantId: 't', status: 'ACTIVE', permissions: ['worker:update'], countries: [], groups: [], features: {}, enforcement: 'on',
       } as AuthzContract,
     });
     render(<WorkerTestAccountToggle workerId="w-1" initialIsTest={false} />);

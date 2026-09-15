@@ -24,10 +24,10 @@ export function createAdminWorkerDocumentsRoutes(
   const staffOnly = authMiddleware.requireStaff();
   const perm = permissions.family(ADMIN_WORKERS_FAMILY);
 
-  router.post('/workers/:id/documents/upload-url', staffOnly, perm.require('worker_document', 'write'), (req: Request, res: Response) =>
+  router.post('/workers/:id/documents/upload-url', staffOnly, perm.require('worker_document', 'create'), (req: Request, res: Response) =>
     controller.getUploadSignedUrl(req, res),
   );
-  router.post('/workers/:id/documents/save', staffOnly, perm.require('worker_document', 'write'), (req: Request, res: Response) =>
+  router.post('/workers/:id/documents/save', staffOnly, perm.require('worker_document', 'create'), (req: Request, res: Response) =>
     controller.saveDocumentPath(req, res),
   );
   router.post('/workers/:id/documents/view-url', staffOnly, perm.require('worker_document', 'read'), (req: Request, res: Response) =>

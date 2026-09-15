@@ -415,7 +415,7 @@ describe('PatientChatRolesPage — write-gate (D269)', () => {
   });
 
   it('enforcement=on, com patient:write: chat-role-new-btn e as ações de linha existem', async () => {
-    comEnforcement(['patient:read', 'patient:write'], 'on');
+    comEnforcement(['patient:read', 'patient:create', 'patient:update'], 'on');
     render(<PatientChatRolesPage />);
     await screen.findByTestId('chat-roles-table');
 

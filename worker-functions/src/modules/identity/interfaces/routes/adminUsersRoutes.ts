@@ -40,7 +40,7 @@ export function createAdminUsersRoutes(
   const router = Router();
   const perm = permissions.family(ADMIN_USERS_FAMILY);
 
-  router.post('/users', auth.requireStaff(), perm.require('user_management', 'write', { untilEnforced: 'admin' }), (req, res) => {
+  router.post('/users', auth.requireStaff(), perm.require('user_management', 'create', { untilEnforced: 'admin' }), (req, res) => {
     controller.createAdminUser(req, res);
   });
 
@@ -61,7 +61,7 @@ export function createAdminUsersRoutes(
   router.post(
     '/users/:id/reset-password',
     auth.requireStaff(),
-    perm.require('user_management', 'write', { untilEnforced: 'admin' }),
+    perm.require('user_management', 'update', { untilEnforced: 'admin' }),
     (req, res) => {
       controller.resetAdminPassword(req, res);
     },

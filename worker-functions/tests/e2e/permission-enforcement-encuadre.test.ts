@@ -102,7 +102,8 @@ describe('família admin.encuadre — as 10 rotas que o perímetro não alcança
       uid: U.coordenacao,
       celulas: [
         ['worker', 'read'],
-        ['worker', 'write'],
+        ['worker', 'create'],
+        ['worker', 'update'],
       ],
     });
     await grupoComCelulas(pool, {
@@ -110,7 +111,8 @@ describe('família admin.encuadre — as 10 rotas que o perímetro não alcança
       uid: U.documentos,
       celulas: [
         ['worker_document', 'read'],
-        ['worker_document', 'write'],
+        ['worker_document', 'create'],
+        ['worker_document', 'update'],
       ],
     });
   }

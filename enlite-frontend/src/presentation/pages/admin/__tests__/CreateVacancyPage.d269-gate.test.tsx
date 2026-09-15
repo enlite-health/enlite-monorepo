@@ -78,7 +78,7 @@ describe('CreateVacancyPage — D269 gate de rota (vacancy:write)', () => {
   });
 
   it('enforcement "on" COM vacancy:write → renderiza o form, com o botão salvar', () => {
-    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['vacancy:write'], 'on') });
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['vacancy:create'], 'on') });
     montar();
 
     expect(screen.queryByText('vacancies-list-marker')).not.toBeInTheDocument();

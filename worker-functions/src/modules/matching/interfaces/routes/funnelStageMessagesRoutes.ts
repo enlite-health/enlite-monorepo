@@ -16,6 +16,6 @@ export function createFunnelStageMessagesRoutes(
   // Célula declarada no sync main→stage (06/09/2026): sem ela o deny-when-undeclared do trem ABAC reprova o inventário.
   const perm = permissions.family(ADMIN_MESSAGING_FAMILY);
   router.get('/funnel-stage-messages', authMiddleware.requireStaff(), perm.require('messaging', 'read'), (req: Request, res: Response) => controller.list(req, res));
-  router.put('/funnel-stage-messages/:stage', authMiddleware.requireStaff(), perm.require('messaging', 'write', { untilEnforced: 'admin' }), (req: Request, res: Response) => controller.update(req, res));
+  router.put('/funnel-stage-messages/:stage', authMiddleware.requireStaff(), perm.require('messaging', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) => controller.update(req, res));
   return router;
 }

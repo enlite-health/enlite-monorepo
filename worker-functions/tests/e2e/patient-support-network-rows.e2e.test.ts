@@ -14,7 +14,7 @@
 import { Pool } from 'pg';
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
-import { montarAppDeFamilia, tokenMock, grupoComCelulas, limparIamFixtures, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
+import { montarAppDeFamilia, tokenMock, grupoComCelulas, limparIamFixtures, garantirCelula, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 
@@ -25,15 +25,17 @@ describe('PR-1 — rede de apoio (responsáveis) por LINHA: API sob engine (HTTP
   const OUTRO_PACIENTE = 'ee420100-0a00-0001-0001-000000000099';
   const U = { familia: 'psnr-familia', semFamilia: 'psnr-sem-familia' };
   const GRUPOS = { familia: 'PSNR Familia', semFamilia: 'PSNR Sem familia' };
-  // `patient:read` é célula GLOBAL, compartilhada por várias famílias de e2e (terapêutico,
-  // busca, cobertura...) — nenhum arquivo é "dono" dela, e apagá-la no cleanup derruba quem
-  // rodar depois na mesma suíte serial (achado: patient-support-network-rows corria antes de
-  // permission-enforcement-admin-patients/iam-permissions-foundation/permissions-iam-schema no
-  // jest --runInBand e a deleção fazia as três falharem com "célula não existe"). Este arquivo só
-  // GARANTE que ela existe (insert idempotente) e só APAGA a célula que ele de fato criou:
-  // `patient_family:write` — nunca some, mas nunca é usada fora de PR-1/rede-de-apoio.
-  const CELULAS: ReadonlyArray<readonly [string, string]> = [['patient', 'read'], ['patient_family', 'write']];
-  const CELULAS_PROPRIAS: ReadonlyArray<readonly [string, string]> = [['patient_family', 'write']];
+  // PR-8b (A3, ADR-2/SUP-30, generalizando o achado do jest --runInBand citado abaixo): NENHUMA
+  // célula do catálogo é "dona" de um arquivo — `patient_family:create`/`update` nascem seedadas
+  // pela migration 435 (recurso splitado) e são usadas por outras suítes também (PR-2,
+  // support-network). `patient:read` é a MESMA história, só que anterior a esta rodada: célula
+  // GLOBAL, compartilhada por várias famílias de e2e (terapêutico, busca, cobertura...) — apagá-la
+  // no cleanup derruba quem rodar depois na mesma suíte serial (achado: patient-support-network-rows
+  // corria antes de permission-enforcement-admin-patients/iam-permissions-foundation/
+  // permissions-iam-schema no jest --runInBand e a deleção fazia as três falharem com "célula não
+  // existe"). O cleanup nunca mais apaga `iam.permissions` — só `limparIamFixtures` (o que este
+  // arquivo é DONO: grupos/usuários/`group_permissions`).
+  const CELULAS: ReadonlyArray<readonly [string, string]> = [['patient', 'read'], ['patient_family', 'create'], ['patient_family', 'update']];
   const envAnterior: Record<string, string | undefined> = {};
   const setEnv = (k: string, v: string): void => { envAnterior[k] = process.env[k]; process.env[k] = v; };
 
@@ -48,10 +50,6 @@ describe('PR-1 — rede de apoio (responsáveis) por LINHA: API sob engine (HTTP
 
   async function limpar(): Promise<void> {
     await limparIamFixtures(pool, { uids: Object.values(U), grupos: Object.values(GRUPOS) });
-    for (const [resource, action] of CELULAS_PROPRIAS) {
-      await pool.query(`DELETE FROM iam.group_permissions WHERE permission_id IN (SELECT id FROM iam.permissions WHERE resource = $1 AND action = $2)`, [resource, action]);
-      await pool.query(`DELETE FROM iam.permissions WHERE resource = $1 AND action = $2`, [resource, action]);
-    }
     await pool.query(`DELETE FROM patients WHERE id = ANY($1)`, [[PATIENT, OUTRO_PACIENTE]]);
   }
 
@@ -65,9 +63,9 @@ describe('PR-1 — rede de apoio (responsáveis) por LINHA: API sob engine (HTTP
       [U.familia, U.semFamilia, TENANT_E2E],
     );
     for (const [resource, action] of CELULAS) {
-      await pool.query(`INSERT INTO iam.permissions (resource, action, description, category) VALUES ($1, $2, 'e2e psnr', 'Pacientes') ON CONFLICT DO NOTHING`, [resource, action]);
+      await garantirCelula(pool, { resource, action, category: 'Pacientes' });
     }
-    await grupoComCelulas(pool, { nome: GRUPOS.familia, uid: U.familia, celulas: [['patient', 'read'], ['patient_family', 'write']] });
+    await grupoComCelulas(pool, { nome: GRUPOS.familia, uid: U.familia, celulas: [['patient', 'read'], ['patient_family', 'create'], ['patient_family', 'update']] });
     await grupoComCelulas(pool, { nome: GRUPOS.semFamilia, uid: U.semFamilia, celulas: [['patient', 'read']] });
     await pool.query(
       `INSERT INTO patients (id, clickup_task_id, first_name, last_name, country, is_test) VALUES

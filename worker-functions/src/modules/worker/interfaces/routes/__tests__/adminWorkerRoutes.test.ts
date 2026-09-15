@@ -49,25 +49,27 @@ const ESPERADO_WORKERS: Record<string, string> = {
   'GET /workers/filter-options': 'worker:read',
   // Mapa de prestadores (REQ-04, DEC-14) — POST com corpo; leitura de pontos, célula de leitura.
   'POST /workers/map': 'worker_address:read',
-  'POST /workers/sync-talentum': 'talentum:write',
+  // PR-8b 8b.4: sync em massa exige create E update (regra-orquestrador 15/09); o scanner só
+  // carimba o 1º guard (cellOfRoute) — o 2º é provado em pr8b-ambiguous-routes.test.ts.
+  'POST /workers/sync-talentum': 'talentum:create',
   'GET /workers/export': 'worker:export',
   'GET /workers/:id/timeline': 'worker:read',
   'GET /workers/:id': 'worker:read',
-  'PATCH /workers/:id/test-flag': 'worker:write',
-  'PATCH /workers/:id/profile': 'worker:write',
-  'PUT /workers/:id/service-area': 'worker:write',
+  'PATCH /workers/:id/test-flag': 'worker:update',
+  'PATCH /workers/:id/profile': 'worker:update',
+  'PUT /workers/:id/service-area': 'worker:update',
   'GET /workers': 'worker:read',
   'GET /worker-tags': 'worker:read',
-  'POST /worker-tags': 'worker:write',
-  'PATCH /worker-tags/:id': 'worker:write',
-  'DELETE /worker-tags/:id': 'worker:write',
-  'POST /workers/:id/tags/:tagId': 'worker:write',
-  'DELETE /workers/:id/tags/:tagId': 'worker:write',
+  'POST /worker-tags': 'worker:create',
+  'PATCH /worker-tags/:id': 'worker:update',
+  'DELETE /worker-tags/:id': 'worker:update',
+  'POST /workers/:id/tags/:tagId': 'worker:update',
+  'DELETE /workers/:id/tags/:tagId': 'worker:update',
 };
 
 const ESPERADO_DOCS: Record<string, string> = {
-  'POST /workers/:id/documents/upload-url': 'worker_document:write',
-  'POST /workers/:id/documents/save': 'worker_document:write',
+  'POST /workers/:id/documents/upload-url': 'worker_document:create',
+  'POST /workers/:id/documents/save': 'worker_document:create',
   'POST /workers/:id/documents/view-url': 'worker_document:read',
   'DELETE /workers/:id/documents/:type': 'worker_document:delete',
   'POST /workers/:id/documents/:type/validate': 'worker_document:validate',
@@ -76,15 +78,15 @@ const ESPERADO_DOCS: Record<string, string> = {
 
 const ESPERADO_ADICIONAIS: Record<string, string> = {
   'GET /admin/workers/:id/additional-documents': 'worker_document:read',
-  'POST /admin/workers/:id/additional-documents/upload-url': 'worker_document:write',
-  'POST /admin/workers/:id/additional-documents': 'worker_document:write',
+  'POST /admin/workers/:id/additional-documents/upload-url': 'worker_document:create',
+  'POST /admin/workers/:id/additional-documents': 'worker_document:create',
   'DELETE /admin/workers/:id/additional-documents/:docId': 'worker_document:delete',
 };
 
 const ESPERADO_CONTEXTO: Record<string, string> = {
   'GET /workers/:id/current-interview': 'interview:read',
   'GET /workers/:id/available-vacancies': 'vacancy:read',
-  'POST /workers/:id/documents/ingest-from-url': 'worker_document:write',
+  'POST /workers/:id/documents/ingest-from-url': 'worker_document:create',
 };
 
 /** As 9 rotas do PRÓPRIO prestador — não são decisão de staff, não têm célula. */

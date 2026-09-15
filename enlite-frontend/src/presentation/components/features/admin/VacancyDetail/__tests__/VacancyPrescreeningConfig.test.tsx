@@ -179,7 +179,7 @@ describe('VacancyPrescreeningConfig', () => {
   });
 
   it('D269 — enforcement=on com prescreening:write: botão salvar existe', async () => {
-    comEnforcement(['prescreening:write'], 'on');
+    comEnforcement(['prescreening:update'], 'on');
     await renderLoaded();
     expect(screen.getByRole('button', { name: /\bsave\b/ })).toBeInTheDocument();
   });

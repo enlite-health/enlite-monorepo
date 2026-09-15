@@ -100,7 +100,7 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
   // significa "sem listener do dnd-kit" — não é um drag "travado") e os
   // callbacks de mover/rechazar/voltar viram `undefined`, então `KanbanCard`
   // nem monta o `MoveToMenu`/botão (mesmo `{onX && <.../>}` de sempre).
-  const funnelWriteGate = useActionGate('funnel', 'write');
+  const funnelWriteGate = useActionGate('funnel', 'update');
   /**
    * Modal de motivo de rejeição. Serve dois alvos com o MESMO dropdown:
    *  - { encuadreId } → mover encuadre para REJECTED (onMove).

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
+import { Button } from '@presentation/components/atoms/Button';
 import {
   Table,
   TableHeader,
@@ -11,7 +12,7 @@ import {
   TableHead,
   TableCell,
 } from '@presentation/components/atoms/Table';
-import { ActionButton } from '@presentation/components/features/access';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import type { PatientExternalContactDetail, EmergencyContactRef } from '@domain/entities/PatientDetail';
 import { PatientExternalContactsEditDrawer } from './edit/PatientExternalContactsEditDrawer';
 import { EmergencyMarkButton } from './EmergencyMarkButton';
@@ -34,6 +35,11 @@ export function ExternalContactsCard({ externalContacts, emergencyContactRef, pa
   const [editing, setEditing] = useState(false);
   const rows = externalContacts ?? [];
   const empty = '—';
+  // Conserto rodada B (Gabriel 15/09): mesma regra do FamiliaresCard — o drawer faz POST E PATCH,
+  // o botão "Nuevo" abre pra quem tem QUALQUER UMA das duas células.
+  const { allowed: canCreateRow } = useActionGate('patient_family', 'create');
+  const { allowed: canUpdateRow } = useActionGate('patient_family', 'update');
+  const canOpenDrawer = canCreateRow || canUpdateRow;
 
   return (
     <div
@@ -45,10 +51,12 @@ export function ExternalContactsCard({ externalContacts, emergencyContactRef, pa
           {t('admin.patients.detail.externalContactsCard.title')}
         </Heading>
         <div className="flex items-center gap-3 flex-wrap">
-          <ActionButton resource="patient_family" action="write" variant="outline" size="sm" onClick={() => setEditing(true)} disabled={!patientId} className="flex items-center gap-1" data-testid="edit-external-contacts-btn">
-            <Plus className="w-4 h-4" />
-            {t('admin.patients.detail.new')}
-          </ActionButton>
+          {canOpenDrawer && (
+            <Button variant="outline" size="sm" onClick={() => setEditing(true)} disabled={!patientId} className="flex items-center gap-1" data-testid="edit-external-contacts-btn">
+              <Plus className="w-4 h-4" />
+              {t('admin.patients.detail.new')}
+            </Button>
+          )}
         </div>
       </div>
 

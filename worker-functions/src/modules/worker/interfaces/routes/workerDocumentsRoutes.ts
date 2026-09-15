@@ -56,9 +56,9 @@ export function createWorkerDocumentsRoutes(
   // ── Admin: additional docs ──────────────────────────────────────────────
   router.get('/admin/workers/:id/additional-documents', staffOnly, perm.require('worker_document', 'read'), (req: Request, res: Response) =>
     adminAdditionalController.list(req, res));
-  router.post('/admin/workers/:id/additional-documents/upload-url', staffOnly, perm.require('worker_document', 'write'), (req: Request, res: Response) =>
+  router.post('/admin/workers/:id/additional-documents/upload-url', staffOnly, perm.require('worker_document', 'create'), (req: Request, res: Response) =>
     adminAdditionalController.getUploadUrl(req, res));
-  router.post('/admin/workers/:id/additional-documents', staffOnly, perm.require('worker_document', 'write'), (req: Request, res: Response) =>
+  router.post('/admin/workers/:id/additional-documents', staffOnly, perm.require('worker_document', 'create'), (req: Request, res: Response) =>
     adminAdditionalController.save(req, res));
   router.delete('/admin/workers/:id/additional-documents/:docId', staffOnly, perm.require('worker_document', 'delete'), (req: Request, res: Response) =>
     adminAdditionalController.remove(req, res));

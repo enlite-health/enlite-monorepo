@@ -30,7 +30,16 @@ export interface ScannedRoute {
   /** Verbo em maiúsculas; `USE` para middleware montado como rota. */
   method: string;
   path: string;
+  /** A PRIMEIRA célula declarada na rota — mantido por compatibilidade (era o único campo). */
   cell?: PermissionMetadata;
+  /**
+   * TODAS as células declaradas na rota, na ordem dos guards (`cells[0] === cell`).
+   * Achado pós-#391 (spec 018, PR-8b): uma rota com guards ENCADEADOS de recursos
+   * DIFERENTES (`patient_services:update` → `vacancy:update`) tinha a 2ª célula
+   * invisível ao oráculo e à fixture, que só liam `cell` (a 1ª). `cellsOfRoute`
+   * varre o array inteiro do handler e não só o primeiro achado.
+   */
+  cells?: PermissionMetadata[];
   /** Isenção declarada na montagem (`exemptHandler`) — governada sem célula. */
   exempt?: ExemptMetadata;
 }
@@ -105,13 +114,23 @@ function joinPaths(prefix: string, path: string): string {
   return joined.length > 1 && joined.endsWith('/') ? joined.slice(0, -1) : joined || '/';
 }
 
-/** Célula declarada em QUALQUER handler da rota (o guard pode não ser o último). */
-function cellOfRoute(route: NonNullable<ExpressLayer['route']>): PermissionMetadata | undefined {
+/**
+ * TODAS as células declaradas nos handlers da rota, na ordem dos guards.
+ * Dedup por `resource:action` — dois guards com a MESMA célula (ex.: literal
+ * repetido por engano) não duplicam a entrada.
+ */
+function cellsOfRoute(route: NonNullable<ExpressLayer['route']>): PermissionMetadata[] {
+  const seen = new Set<string>();
+  const cells: PermissionMetadata[] = [];
   for (const layer of route.stack ?? []) {
     const cell = readPermissionMetadata(layer.handle);
-    if (cell) return cell;
+    if (!cell) continue;
+    const key = cellKey(cell.resource, cell.action);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    cells.push(cell);
   }
-  return undefined;
+  return cells;
 }
 
 /** Isenção declarada em QUALQUER handler da rota. */
@@ -131,12 +150,13 @@ function methodsOf(route: NonNullable<ExpressLayer['route']>): string[] {
 function walk(layers: ExpressLayer[], prefix: string, out: ScannedRoute[]): void {
   for (const layer of layers) {
     if (layer.route) {
-      const cell = cellOfRoute(layer.route);
+      const cells = cellsOfRoute(layer.route);
+      const cell = cells[0];
       const exempt = exemptOfRoute(layer.route);
       const paths = Array.isArray(layer.route.path) ? layer.route.path : [layer.route.path ?? ''];
       for (const path of paths) {
         for (const method of methodsOf(layer.route)) {
-          out.push({ method, path: joinPaths(prefix, path), ...(cell ? { cell } : {}), ...(exempt ? { exempt } : {}) });
+          out.push({ method, path: joinPaths(prefix, path), cells, ...(cell ? { cell } : {}), ...(exempt ? { exempt } : {}) });
         }
       }
       continue;
@@ -150,7 +170,7 @@ function walk(layers: ExpressLayer[], prefix: string, out: ScannedRoute[]): void
     // é endpoint para efeito de catálogo: sem isso a família some da matriz.
     const cell = readPermissionMetadata(layer.handle);
     // Sem `|| '/'`: `joinPaths` já devolve '/' quando o resultado seria vazio.
-    if (cell) out.push({ method: 'USE', path: joinPaths(prefix, mountPathOf(layer)), cell });
+    if (cell) out.push({ method: 'USE', path: joinPaths(prefix, mountPathOf(layer)), cell, cells: [cell] });
   }
 }
 

@@ -36,6 +36,13 @@ function buildApp(): express.Express {
   nested.patch('/:tagId', guard('worker', 'write'), ok);
   workers.use('/tags', nested);
 
+  // Guards ENCADEADOS de recursos DIFERENTES — o molde do achado pós-#391
+  // (`activate-recruitment`: `patient_services:update` → `vacancy:update`).
+  workers.post('/duas-celulas', guard('worker', 'update'), guard('vacancy', 'update'), ok);
+  // Dois guards com a MESMA célula (repetição por engano) — exercita o dedup
+  // de `cellsOfRoute`, não o de `declaredCells` (que dedup entre ROTAS).
+  workers.post('/celula-repetida', guard('worker', 'update'), guard('worker', 'update'), ok);
+
   // sub-router montado num caminho COM parâmetro — o Express guarda isso só na
   // regexp da camada, e é onde a reconstrução do caminho costuma sair errada
   const candidatos = Router();
@@ -77,6 +84,21 @@ describe('scanExpressRouter', () => {
     expect(find('USE', '/api/docs')?.cell).toEqual({ resource: 'api_docs', action: 'read' });
   });
 
+  it('`cells` traz TODAS as células da rota, na ordem dos guards — não só a 1ª (achado pós-#391)', () => {
+    expect(find('POST', '/api/admin/workers/duas-celulas')?.cells).toEqual([
+      { resource: 'worker', action: 'update' },
+      { resource: 'vacancy', action: 'update' },
+    ]);
+    // `cell` continua sendo só a 1ª, por compatibilidade.
+    expect(find('POST', '/api/admin/workers/duas-celulas')?.cell).toEqual({ resource: 'worker', action: 'update' });
+  });
+
+  it('dois guards com a MESMA célula na MESMA rota não duplicam em `cells`', () => {
+    expect(find('POST', '/api/admin/workers/celula-repetida')?.cells).toEqual([
+      { resource: 'worker', action: 'update' },
+    ]);
+  });
+
   it('lista rota sem declaração — a entrada do teste deny-when-undeclared', () => {
     const semDeclaracao = undeclaredRoutes(routes, (route) => route.path.startsWith('/api/admin'));
     expect(semDeclaracao.map((route) => `${route.method} ${route.path}`)).toEqual([
@@ -88,11 +110,20 @@ describe('scanExpressRouter', () => {
   });
 
   it('declaredCells deduplica e ordena — é o que vai para o catálogo', () => {
+    // ⚠️ ACHADO FORA DO ESCOPO deste PR (não consertado aqui — fica para
+    // decisão à parte): `declaredCells` só lê `route.cell` (a 1ª), igual o
+    // oráculo fazia antes do achado pós-#391 — então `vacancy:update`, a 2ª
+    // célula de `/duas-celulas`, NÃO aparece aqui hoje. Sem impacto prático
+    // observado porque `vacancy:update` já é declarado por outras rotas
+    // (ex.: `PUT /vacancies/:id`); mas uma rota cuja 2ª célula fosse a ÚNICA
+    // fonte de um recurso ficaria fora do catálogo em silêncio. Mesma classe
+    // do achado do oráculo, função diferente (`declaredCells` x `cellsOfRoute`).
     expect(declaredCells(routes).map((cell) => `${cell.resource}:${cell.action}`)).toEqual([
       'api_docs:read',
       'funnel:read',
       'worker:delete',
       'worker:read',
+      'worker:update',
       'worker:write',
       'worker_pii:read',
     ]);
@@ -168,7 +199,7 @@ describe('ramos defensivos da varredura', () => {
 
   it('rota sem `stack` e sem `methods` vira USE, sem quebrar', () => {
     expect(comCamadas([{ route: { path: '/api/admin/x' } }])).toEqual([
-      { method: 'USE', path: '/api/admin/x' },
+      { method: 'USE', path: '/api/admin/x', cells: [] },
     ]);
   });
 
@@ -178,7 +209,7 @@ describe('ramos defensivos da varredura', () => {
 
   it('rota sem `path` cai na raiz em vez de virar caminho vazio', () => {
     expect(comCamadas([{ route: { methods: { get: true }, stack: [] } }])).toEqual([
-      { method: 'GET', path: '/' },
+      { method: 'GET', path: '/', cells: [] },
     ]);
   });
 
@@ -186,7 +217,7 @@ describe('ramos defensivos da varredura', () => {
     const cell = { resource: 'api_docs', action: 'read' };
     const handle = markPermissionHandler(((_req, _res, next) => next()) as RequestHandler, cell);
     expect(comCamadas([{ handle, regexp: Object.assign(/^\/?$/, { fast_slash: true }) }])).toEqual([
-      { method: 'USE', path: '/', cell },
+      { method: 'USE', path: '/', cell, cells: [cell] },
     ]);
   });
 
@@ -321,6 +352,33 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // US-17 (spec 018, PR-7, migration 430) — catálogo dos segmentos da Ana Care, mesmo molde.
       'catalog_therapeutic_segments:read',
       'catalog_therapeutic_segments:write',
+      // spec 018, PR-8b (ADR-2/SUP-30): split write→create+update dos 23 recursos. Nesta rodada
+      // (A1) NENHUMA rota declara `create`/`update` ainda (routes só mudam no 8b.4) — por isso as
+      // 46 células novas só existem no catálogo por `cellsForaDeRota`, igual às demais linhas
+      // acima. Ordem = ordem de inserção em `CELL_DESCRIPTION`.
+      'patient:create', 'patient:update',
+      'patient_address:create', 'patient_address:update',
+      'patient_chat:create', 'patient_chat:update',
+      'patient_identity:create', 'patient_identity:update',
+      'patient_clinical:create', 'patient_clinical:update',
+      'patient_care_team:create', 'patient_care_team:update',
+      'patient_family:create', 'patient_family:update',
+      'patient_coverage:create', 'patient_coverage:update',
+      'patient_services:create', 'patient_services:update',
+      'patient_therapeutic_project:create', 'patient_therapeutic_project:update',
+      'catalog_therapeutic_objectives:create', 'catalog_therapeutic_objectives:update',
+      'catalog_therapeutic_activities:create', 'catalog_therapeutic_activities:update',
+      'catalog_therapeutic_segments:create', 'catalog_therapeutic_segments:update',
+      'user_management:create', 'user_management:update',
+      'vacancy:create', 'vacancy:update',
+      'funnel:create', 'funnel:update',
+      'talentum:create', 'talentum:update',
+      'prescreening:create', 'prescreening:update',
+      'interview:create', 'interview:update',
+      'messaging:create', 'messaging:update',
+      'recruitment:create', 'recruitment:update',
+      'worker:create', 'worker:update',
+      'worker_document:create', 'worker_document:update',
     ]);
   });
 

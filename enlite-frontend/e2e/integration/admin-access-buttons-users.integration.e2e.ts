@@ -280,14 +280,16 @@ test.describe('Botões da família USUÁRIOS ADMIN + item de menu Duplicados (D2
     });
   });
 
-  test('2. a conta ganha user_management:write/delete: os mesmos elementos passam a EXISTIR', async ({
+  test('2. a conta ganha user_management:create/update/delete (PR-8b): os mesmos elementos passam a EXISTIR', async ({
     page,
     request,
   }) => {
-    grantCell(adminGroupId, 'user_management', 'write');
+    grantCell(adminGroupId, 'user_management', 'create');
+    grantCell(adminGroupId, 'user_management', 'update');
     grantCell(adminGroupId, 'user_management', 'delete');
     const settled = await pollHasCells(request, ADMIN, [
-      'user_management:write',
+      'user_management:create',
+      'user_management:update',
       'user_management:delete',
     ]);
     console.log(`[prova] as 2 células chegaram em ${settled.elapsedMs}ms`);

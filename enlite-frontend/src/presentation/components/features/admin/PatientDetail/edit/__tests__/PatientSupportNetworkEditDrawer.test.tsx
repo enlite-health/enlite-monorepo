@@ -6,10 +6,12 @@
  * que editar uma linha NÃO chama a API das outras, que o titular é demovido ANTES de promover
  * outro (evita o 409 do índice único), e que o número do documento nunca é ecoado no erro.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import type { PatientResponsibleDetail } from '@domain/entities/PatientDetail';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 
 const translations = ptBR as Record<string, any>;
 function t(key: string, optsOrDefault?: any): string {
@@ -343,5 +345,60 @@ describe('PatientSupportNetworkEditDrawer — todos os ramos', () => {
       fireEvent.click(screen.getByTestId('discard-changes-discard'));
       await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1), { timeout: 1500 });
     });
+  });
+});
+
+// ── Conserto rodada B (Gabriel 15/09): adicionar linha exige `create`, editar linha EXISTENTE
+// exige `update` — o drawer faz POST E PATCH, quem só tem uma das duas não pode fazer a outra. ──
+function comEnforcement(permissions: string[]) {
+  useAdminAuthStore.setState({
+    authzStatus: 'ready',
+    authz: {
+      uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {}, enforcement: 'on',
+    } as AuthzContract,
+  });
+}
+
+describe('PatientSupportNetworkEditDrawer — gate create×update por linha (PR-8b rodada B)', () => {
+  afterEach(() => { useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }); });
+
+  it('só create: "Adicionar" existe; linha EXISTENTE fica somente-leitura (sem remover, sem editar)', () => {
+    comEnforcement(['patient_family:create']);
+    renderDrawer([responsible]);
+    expect(screen.getByTestId('psn-add')).toBeInTheDocument();
+    expect(screen.getByTestId('psn-firstName-0')).toBeDisabled();
+    expect(screen.queryByTestId('psn-remove-0')).not.toBeInTheDocument();
+  });
+
+  it('só update: "Adicionar" some; linha EXISTENTE é editável e removível', () => {
+    comEnforcement(['patient_family:update']);
+    renderDrawer([responsible]);
+    expect(screen.queryByTestId('psn-add')).not.toBeInTheDocument();
+    expect(screen.getByTestId('psn-firstName-0')).not.toBeDisabled();
+    expect(screen.getByTestId('psn-remove-0')).toBeInTheDocument();
+  });
+
+  it('as duas: comportamento de hoje — adiciona E edita linha existente', () => {
+    comEnforcement(['patient_family:create', 'patient_family:update']);
+    renderDrawer([responsible]);
+    expect(screen.getByTestId('psn-add')).toBeInTheDocument();
+    expect(screen.getByTestId('psn-firstName-0')).not.toBeDisabled();
+    expect(screen.getByTestId('psn-remove-0')).toBeInTheDocument();
+  });
+
+  it('nenhuma: sem "Adicionar"; linha existente somente-leitura', () => {
+    comEnforcement([]);
+    renderDrawer([responsible]);
+    expect(screen.queryByTestId('psn-add')).not.toBeInTheDocument();
+    expect(screen.getByTestId('psn-firstName-0')).toBeDisabled();
+    expect(screen.queryByTestId('psn-remove-0')).not.toBeInTheDocument();
+  });
+
+  it('só create: linha NOVA (recém-adicionada) fica editável e removível — a permissão de criar cobre a linha que ela mesma criou', () => {
+    comEnforcement(['patient_family:create']);
+    renderDrawer([]);
+    fireEvent.click(screen.getByTestId('psn-add'));
+    expect(screen.getByTestId('psn-firstName-0')).not.toBeDisabled();
+    expect(screen.getByTestId('psn-remove-0')).toBeInTheDocument();
   });
 });

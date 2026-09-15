@@ -65,7 +65,7 @@ describe('WorkerPersonalInfoCard', () => {
   });
 
   it('D269 — enforcement=on com worker:write: o botão existe', () => {
-    comEnforcement(['worker:write'], 'on');
+    comEnforcement(['worker:update'], 'on');
     render(<WorkerPersonalInfoCard {...baseProps} onEdit={vi.fn()} />);
     expect(screen.getByTestId('worker-edit-button')).toBeInTheDocument();
   });

@@ -72,6 +72,7 @@ vi.mock('react-router-dom', () => ({
 import { PatientGeneralInfoCard } from '../PatientGeneralInfoCard';
 import { DiagnosticoCard } from '../DiagnosticoCard';
 import { FamiliaresCard } from '../FamiliaresCard';
+import { ExternalContactsCard } from '../ExternalContactsCard';
 import { ServicosContratadosCard } from '../ServicosContratadosCard';
 
 function comEnforcement(permissions: string[], enforcement: AuthzContract['enforcement']) {
@@ -95,7 +96,7 @@ describe('D269/D286 — write-gate nos botões Editar/Novo (célula do CONTAINER
   });
 
   it('PatientGeneralInfoCard: enforcement=on, com a célula de escrita do container → edit-general-btn existe', () => {
-    comEnforcement(['patient_identity:write'], 'on');
+    comEnforcement(['patient_identity:update'], 'on');
     render(<PatientGeneralInfoCard patient={patientDetailFixture} />);
     expect(screen.getByTestId('edit-general-btn')).toBeInTheDocument();
   });
@@ -120,7 +121,7 @@ describe('D269/D286 — write-gate nos botões Editar/Novo (célula do CONTAINER
   });
 
   it('DiagnosticoCard: enforcement=on, com a célula de escrita do container → edit-clinical-btn existe', () => {
-    comEnforcement(['patient_clinical:write'], 'on');
+    comEnforcement(['patient_clinical:update'], 'on');
     render(<DiagnosticoCard patient={patientDetailFixture} />);
     expect(screen.getByTestId('edit-clinical-btn')).toBeInTheDocument();
   });
@@ -131,12 +132,56 @@ describe('D269/D286 — write-gate nos botões Editar/Novo (célula do CONTAINER
     expect(screen.queryByTestId('edit-support-btn')).not.toBeInTheDocument();
   });
 
-  it('FamiliaresCard: enforcement=on, com a célula de escrita do container → edit-support-btn existe (e não desabilitado, com patientId)', () => {
-    comEnforcement(['patient_family:write'], 'on');
+  it('FamiliaresCard: enforcement=on, com patient_family:create (PR-8b) → edit-support-btn existe (e não desabilitado, com patientId)', () => {
+    comEnforcement(['patient_family:create'], 'on');
     render(<FamiliaresCard responsibles={[]} patientId="test-id" />);
     const btn = screen.getByTestId('edit-support-btn');
     expect(btn).toBeInTheDocument();
     expect(btn).not.toBeDisabled();
+  });
+
+  // Gate `canCreateRow || canUpdateRow` (PR-8b rodada B) — os 4 casos, FamiliaresCard e
+  // ExternalContactsCard (mesma célula `patient_family`, mesmo componente de gate).
+  it('FamiliaresCard: só patient_family:update → edit-support-btn existe (a outra metade do OR)', () => {
+    comEnforcement(['patient_family:update'], 'on');
+    render(<FamiliaresCard responsibles={[]} patientId="test-id" />);
+    expect(screen.getByTestId('edit-support-btn')).toBeInTheDocument();
+  });
+
+  it('FamiliaresCard: as duas células (create + update) → edit-support-btn existe', () => {
+    comEnforcement(['patient_family:create', 'patient_family:update'], 'on');
+    render(<FamiliaresCard responsibles={[]} patientId="test-id" />);
+    expect(screen.getByTestId('edit-support-btn')).toBeInTheDocument();
+  });
+
+  it('🔴 FamiliaresCard: nenhuma das duas células → edit-support-btn SOME', () => {
+    comEnforcement([], 'on');
+    render(<FamiliaresCard responsibles={[]} patientId="test-id" />);
+    expect(screen.queryByTestId('edit-support-btn')).not.toBeInTheDocument();
+  });
+
+  it('ExternalContactsCard: só patient_family:create → edit-external-contacts-btn existe', () => {
+    comEnforcement(['patient_family:create'], 'on');
+    render(<ExternalContactsCard externalContacts={[]} patientId="test-id" />);
+    expect(screen.getByTestId('edit-external-contacts-btn')).toBeInTheDocument();
+  });
+
+  it('ExternalContactsCard: só patient_family:update → edit-external-contacts-btn existe', () => {
+    comEnforcement(['patient_family:update'], 'on');
+    render(<ExternalContactsCard externalContacts={[]} patientId="test-id" />);
+    expect(screen.getByTestId('edit-external-contacts-btn')).toBeInTheDocument();
+  });
+
+  it('ExternalContactsCard: as duas células (create + update) → edit-external-contacts-btn existe', () => {
+    comEnforcement(['patient_family:create', 'patient_family:update'], 'on');
+    render(<ExternalContactsCard externalContacts={[]} patientId="test-id" />);
+    expect(screen.getByTestId('edit-external-contacts-btn')).toBeInTheDocument();
+  });
+
+  it('🔴 ExternalContactsCard: nenhuma das duas células → edit-external-contacts-btn SOME', () => {
+    comEnforcement([], 'on');
+    render(<ExternalContactsCard externalContacts={[]} patientId="test-id" />);
+    expect(screen.queryByTestId('edit-external-contacts-btn')).not.toBeInTheDocument();
   });
 
   // 06/09 (main): "Editar servicios" virou "+ Nuevo servicio" e o lápis por linha — as duas ações
@@ -152,8 +197,8 @@ describe('D269/D286 — write-gate nos botões Editar/Novo (célula do CONTAINER
     expect(screen.queryByTestId('contracted-service-detail-edit')).not.toBeInTheDocument();
   });
 
-  it('ServicosContratadosCard: enforcement=on, com a célula de escrita do container → new-service-btn e o lápis existem', () => {
-    comEnforcement(['patient_services:write'], 'on');
+  it('ServicosContratadosCard: enforcement=on, com patient_services:create E :update (PR-8b) → new-service-btn e o lápis existem', () => {
+    comEnforcement(['patient_services:create', 'patient_services:update'], 'on');
     render(<ServicosContratadosCard patient={{ ...patientDetailFixture, contractedServices: [SERVICO] }} />);
     expect(screen.getByTestId('new-service-btn')).toBeInTheDocument();
     expect(screen.getByTestId('contracted-service-edit-svc-gate')).toBeInTheDocument();
@@ -167,20 +212,20 @@ describe('D269/D286 — write-gate nos botões Editar/Novo (célula do CONTAINER
   describe('ícone "Activar reclutamiento": exige patient_services:write E vacancy:write (018)', () => {
     const ATIVAR_TESTID = 'contracted-service-activate-recruitment-svc-gate';
 
-    it('🔴 só patient_services:write (sem vacancy:write) → ícone de ativação NÃO existe', () => {
-      comEnforcement(['patient_services:write'], 'on');
+    it('🔴 só patient_services:update (sem vacancy:update) → ícone de ativação NÃO existe', () => {
+      comEnforcement(['patient_services:update'], 'on');
       render(<ServicosContratadosCard patient={{ ...patientDetailFixture, contractedServices: [SERVICO] }} />);
       expect(screen.queryByTestId(ATIVAR_TESTID)).not.toBeInTheDocument();
     });
 
-    it('🔴 só vacancy:write (sem patient_services:write) → ícone de ativação NÃO existe', () => {
-      comEnforcement(['vacancy:write'], 'on');
+    it('🔴 só vacancy:update (sem patient_services:update) → ícone de ativação NÃO existe', () => {
+      comEnforcement(['vacancy:update'], 'on');
       render(<ServicosContratadosCard patient={{ ...patientDetailFixture, contractedServices: [SERVICO] }} />);
       expect(screen.queryByTestId(ATIVAR_TESTID)).not.toBeInTheDocument();
     });
 
     it('com as DUAS células → ícone de ativação existe', () => {
-      comEnforcement(['patient_services:write', 'vacancy:write'], 'on');
+      comEnforcement(['patient_services:update', 'vacancy:update'], 'on');
       render(<ServicosContratadosCard patient={{ ...patientDetailFixture, contractedServices: [SERVICO] }} />);
       expect(screen.getByTestId(ATIVAR_TESTID)).toBeInTheDocument();
     });

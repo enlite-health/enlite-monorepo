@@ -262,7 +262,9 @@ test.describe('Botões da família pacientes — esconder, não desabilitar (D26
 
     // Ficha — espera o conteúdo (título, sempre visível) ANTES da screenshot.
     await page.goto(`/admin/patients/${patientId}`);
-    await expect(page.getByRole('heading', { name: 'Ficha del Paciente', exact: true })).toBeVisible({ timeout: 15_000 });
+    // Achado fora do escopo do PR-8b: "Ficha del Paciente" não é mais `heading` (PR-3 do
+    // cabeçalho — o `h1` virou o NOME do paciente); texto simples continua visível.
+    await expect(page.getByText('Ficha del Paciente', { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('edit-general-btn')).toHaveCount(0);
     await expect(page.getByTestId('edit-clinical-btn')).toHaveCount(0);
 
@@ -289,11 +291,19 @@ test.describe('Botões da família pacientes — esconder, não desabilitar (D26
     await expect(page.getByTestId(`kanban-draggable-${patientId}`)).toHaveAttribute('data-drag-disabled', 'true');
   });
 
-  test('2. a conta ganha patient:write E os `:write` de container (D286): os mesmos elementos passam a EXISTIR e o arrasto libera', async ({ page, request }) => {
-    grantCell(groupId, 'patient', 'write');
-    for (const c of CONTAINERS) grantCell(groupId, c, 'write');
-    const settled = await pollHasCell(request, RECRUTADORA, 'patient:write');
-    console.log(`[prova] patient:write chegou em ${settled.elapsedMs}ms`);
+  test('2. a conta ganha patient:create+update E os :create/:update de container (PR-8b): os mesmos elementos passam a EXISTIR e o arrasto libera', async ({ page, request }) => {
+    grantCell(groupId, 'patient', 'create');
+    grantCell(groupId, 'patient', 'update');
+    for (const c of CONTAINERS) {
+      grantCell(groupId, c, 'create');
+      grantCell(groupId, c, 'update');
+    }
+    // "Activar reclutamiento" (ActivateRecruitmentAction) exige patient_services:update E
+    // vacancy:update JUNTAS (contracts/permissions-split.md) — sem vacancy, o ícone continua
+    // escondido mesmo com o serviço liberado.
+    grantCell(groupId, 'vacancy', 'update');
+    const settled = await pollHasCell(request, RECRUTADORA, 'patient:update');
+    console.log(`[prova] patient:update chegou em ${settled.elapsedMs}ms`);
     expect(settled.has).toBe(true);
 
     await loginAs(page, RECRUTADORA);

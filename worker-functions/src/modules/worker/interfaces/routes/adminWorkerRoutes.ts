@@ -96,7 +96,7 @@ export function createAdminWorkerRoutes(
     const map = c.map;
     router.post('/workers/map', staffOnly, perm.require('worker_address', 'read'), (req: Request, res: Response) => map.getMapPoints(req, res));
   }
-  router.post('/workers/sync-talentum', staffOnly, perm.require('talentum', 'write'), (req: Request, res: Response) => c.aux.syncTalentumWorkers(req, res));
+  router.post('/workers/sync-talentum', staffOnly, perm.require('talentum', 'create'), perm.require('talentum', 'update'), (req: Request, res: Response) => c.aux.syncTalentumWorkers(req, res));
   // export MUST be registered before /:id to avoid param capture
   router.get('/workers/export', staffOnly, perm.require('worker', 'export', { untilEnforced: 'admin' }), (req: Request, res: Response) => c.workers.exportWorkers(req, res));
   // timeline MUST be registered before /:id to avoid param capture
@@ -108,20 +108,20 @@ export function createAdminWorkerRoutes(
   // a linha ALLOW de `worker_pii` que esta rota deixou de gerar.
   router.get('/workers/:id', staffOnly, perm.require('worker', 'read'), logResourceAccess('worker', workerDetailTrailOf), (req: Request, res: Response) => c.workers.getWorkerById(req, res));
   // test-flag e profile: `worker:write` decide; até a família virar, papel `admin` (mais estrito que staff)
-  router.patch('/workers/:id/test-flag', staffOnly, perm.require('worker', 'write', { untilEnforced: 'admin' }), (req: Request, res: Response) => c.testFlag.updateTestFlag(req, res));
+  router.patch('/workers/:id/test-flag', staffOnly, perm.require('worker', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) => c.testFlag.updateTestFlag(req, res));
   // edição de perfil do worker — apenas role ADMIN
-  router.patch('/workers/:id/profile', staffOnly, perm.require('worker', 'write', { untilEnforced: 'admin' }), (req: Request, res: Response) => c.profile.updateProfile(req, res));
+  router.patch('/workers/:id/profile', staffOnly, perm.require('worker', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) => c.profile.updateProfile(req, res));
   // edição de endereço/área de serviço — apenas role ADMIN (Google Places + lat/lng)
-  router.put('/workers/:id/service-area', staffOnly, perm.require('worker', 'write', { untilEnforced: 'admin' }), (req: Request, res: Response) => c.serviceArea.updateServiceArea(req, res));
+  router.put('/workers/:id/service-area', staffOnly, perm.require('worker', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) => c.serviceArea.updateServiceArea(req, res));
   router.get('/workers', staffOnly, perm.require('worker', 'read'), (req: Request, res: Response) => c.workers.listWorkers(req, res));
 
   // ── Worker Tags ──
   router.get('/worker-tags', staffOnly, perm.require('worker', 'read'), (req: Request, res: Response) => c.tags.list(req, res));
-  router.post('/worker-tags', staffOnly, perm.require('worker', 'write', { untilEnforced: 'admin' }), (req: Request, res: Response) => c.tags.create(req, res));
-  router.patch('/worker-tags/:id', staffOnly, perm.require('worker', 'write', { untilEnforced: 'admin' }), (req: Request, res: Response) => c.tags.update(req, res));
-  router.delete('/worker-tags/:id', staffOnly, perm.require('worker', 'write', { untilEnforced: 'admin' }), (req: Request, res: Response) => c.tags.delete(req, res));
-  router.post('/workers/:id/tags/:tagId', staffOnly, perm.require('worker', 'write'), (req: Request, res: Response) => c.tags.assign(req, res));
-  router.delete('/workers/:id/tags/:tagId', staffOnly, perm.require('worker', 'write'), (req: Request, res: Response) => c.tags.remove(req, res));
+  router.post('/worker-tags', staffOnly, perm.require('worker', 'create', { untilEnforced: 'admin' }), (req: Request, res: Response) => c.tags.create(req, res));
+  router.patch('/worker-tags/:id', staffOnly, perm.require('worker', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) => c.tags.update(req, res));
+  router.delete('/worker-tags/:id', staffOnly, perm.require('worker', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) => c.tags.delete(req, res));
+  router.post('/workers/:id/tags/:tagId', staffOnly, perm.require('worker', 'update'), (req: Request, res: Response) => c.tags.assign(req, res));
+  router.delete('/workers/:id/tags/:tagId', staffOnly, perm.require('worker', 'update'), (req: Request, res: Response) => c.tags.remove(req, res));
 
   return router;
 }

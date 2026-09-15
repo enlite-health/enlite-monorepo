@@ -22,7 +22,7 @@ describe('useCellAccess', () => {
 
   it('contrato ainda não carregado → hidden (fail-closed), com o status exposto', () => {
     const { result } = renderHook(() => useCellAccess('permission_management'));
-    expect(result.current).toEqual({ level: 'hidden', canRead: false, canWrite: false, status: 'idle' });
+    expect(result.current).toEqual({ level: 'hidden', canRead: false, canWrite: false, canCreate: false, canUpdate: false, status: 'idle' });
   });
 
   it('🔴 contrato em ERRO → hidden mesmo que um contrato antigo tenha sobrado', () => {

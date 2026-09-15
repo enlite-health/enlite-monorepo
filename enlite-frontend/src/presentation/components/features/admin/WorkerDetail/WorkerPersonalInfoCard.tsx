@@ -68,7 +68,7 @@ export function WorkerPersonalInfoCard({
         {/* PATCH /admin/workers/:id/profile + PUT /admin/workers/:id/service-area
             (via WorkerEditModal) → worker:write. D269 — sem a célula, SOME. */}
         {onEdit && showDossier && (
-          <ActionButton resource="worker" action="write" variant="primary" size="sm" className="w-40 shrink-0" onClick={onEdit} data-testid="worker-edit-button">
+          <ActionButton resource="worker" action="update" variant="primary" size="sm" className="w-40 shrink-0" onClick={onEdit} data-testid="worker-edit-button">
             {t('admin.workerDetail.edit')}
           </ActionButton>
         )}

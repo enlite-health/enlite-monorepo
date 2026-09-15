@@ -102,10 +102,10 @@ export function VacancyModal({
           </span>
 
           <div className="flex items-center gap-4">
-            {/* POST /vacancies ou PUT /vacancies/:id → createVacancy/updateVacancy → vacancy:write. */}
+            {/* POST /vacancies (mode create) ou PUT /vacancies/:id (mode edit) → vacancy:create|update (PR-8b, ADR-2). */}
             <ActionButton
               resource="vacancy"
-              action="write"
+              action={mode === 'create' ? 'create' : 'update'}
               type="button"
               variant="primary"
               size="sm"

@@ -49,7 +49,7 @@ interface Props {
 export function PatientDocumentsCard({ patientId }: Props): JSX.Element | null {
   const { t, i18n } = useTranslation();
   const td = (k: string): string => t(`admin.patients.detail.identityCard.documents.${k}`);
-  const { canWrite } = useCellAccess('patient_identity');
+  const { canWrite, canCreate, canUpdate } = useCellAccess('patient_identity');
   const { canRead: canReadDocuments } = useCellAccess('patient_consent_documents');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -195,7 +195,7 @@ export function PatientDocumentsCard({ patientId }: Props): JSX.Element | null {
           />
           <ActionButton
             resource="patient_identity"
-            action="write"
+            action="create"
             variant="outline"
             size="sm"
             isLoading={uploading}
@@ -250,7 +250,8 @@ export function PatientDocumentsCard({ patientId }: Props): JSX.Element | null {
       {canWrite && (
         <div className="border-t border-gray-200 pt-4 flex flex-col gap-2">
           <Text size="sm" weight="medium" color="primary">{td('consentTitle')}</Text>
-          {!consent && (
+          {/* POST /patients/:id/image-consents → patient_identity:create (PR-8b). */}
+          {!consent && canCreate && (
             <Button
               variant="outline"
               size="sm"
@@ -266,6 +267,8 @@ export function PatientDocumentsCard({ patientId }: Props): JSX.Element | null {
           {consent && (
             <div className="flex items-center gap-2">
               <Text size="sm" data-testid="patient-consent-status">{td('consentActive')}</Text>
+              {/* POST .../image-consents/:cid/revoke → patient_identity:update (PR-8b). */}
+              {canUpdate && (
               <Button
                 variant="outline"
                 size="sm"
@@ -276,6 +279,7 @@ export function PatientDocumentsCard({ patientId }: Props): JSX.Element | null {
                 <ShieldOff className="w-3.5 h-3.5 mr-1.5" />
                 {td('revokeConsentButton')}
               </Button>
+              )}
             </div>
           )}
         </div>

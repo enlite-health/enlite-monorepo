@@ -53,7 +53,7 @@ export function createAdminTherapeuticProjectsRoutes(
   router.post(
     '/patients/:id/therapeutic-projects',
     staffOnly,
-    perm.require(THERAPEUTIC_PROJECT_RESOURCE, 'write', { untilEnforced: 'admin' }),
+    perm.require(THERAPEUTIC_PROJECT_RESOURCE, 'create', { untilEnforced: 'admin' }),
     logResourceAccess('patient', writeTrail),
     (req: Request, res: Response) => controller.create(req, res),
   );
@@ -75,7 +75,7 @@ export function createAdminTherapeuticProjectsRoutes(
   router.post(
     '/patients/:id/therapeutic-projects/:vid/annul',
     staffOnly,
-    perm.require(THERAPEUTIC_PROJECT_RESOURCE, 'write', { untilEnforced: 'admin' }),
+    perm.require(THERAPEUTIC_PROJECT_RESOURCE, 'update', { untilEnforced: 'admin' }),
     logResourceAccess('patient', writeTrail),
     (req: Request, res: Response) => controller.annul(req, res),
   );
@@ -86,10 +86,10 @@ export function createAdminTherapeuticProjectsRoutes(
     router.get(`/therapeutic-catalogs/${kind}`, staffOnly, perm.require(resource, 'read'), (req: Request, res: Response) =>
       controller.listCatalog(kind, req, res),
     );
-    router.post(`/therapeutic-catalogs/${kind}`, staffOnly, perm.require(resource, 'write', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
+    router.post(`/therapeutic-catalogs/${kind}`, staffOnly, perm.require(resource, 'create', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
       controller.createCatalogItem(kind, req, res),
     );
-    router.patch(`/therapeutic-catalogs/${kind}/:itemId`, staffOnly, perm.require(resource, 'write', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
+    router.patch(`/therapeutic-catalogs/${kind}/:itemId`, staffOnly, perm.require(resource, 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
       controller.updateCatalogItem(kind, req, res),
     );
   }

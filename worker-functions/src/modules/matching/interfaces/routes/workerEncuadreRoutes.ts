@@ -47,16 +47,16 @@ export function createWorkerEncuadreRoutes(
   router.get('/workers/by-status/:status', auth, perm.require('worker', 'read'), (req: Request, res: Response) =>
     encuadreController.getWorkersByStatus(req, res),
   );
-  router.put('/workers/:id/status', auth, perm.require('worker', 'write'), (req: Request, res: Response) =>
+  router.put('/workers/:id/status', auth, perm.require('worker', 'update'), (req: Request, res: Response) =>
     encuadreController.updateWorkerStatus(req, res),
   );
-  router.put('/workers/:id/occupation', auth, perm.require('worker', 'write'), (req: Request, res: Response) =>
+  router.put('/workers/:id/occupation', auth, perm.require('worker', 'update'), (req: Request, res: Response) =>
     encuadreController.updateOccupation(req, res),
   );
   router.get('/workers/docs-expiring', auth, perm.require('worker_document', 'read'), (req: Request, res: Response) =>
     encuadreController.getDocsExpiringSoon(req, res),
   );
-  router.put('/workers/:id/doc-expiry', auth, perm.require('worker_document', 'write'), (req: Request, res: Response) =>
+  router.put('/workers/:id/doc-expiry', auth, perm.require('worker_document', 'update'), (req: Request, res: Response) =>
     encuadreController.updateDocExpiry(req, res),
   );
   router.get('/workers/:id/encuadres', auth, perm.require('match', 'read'), (req: Request, res: Response) =>

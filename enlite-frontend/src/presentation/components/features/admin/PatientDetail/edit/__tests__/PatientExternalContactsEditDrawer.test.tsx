@@ -3,10 +3,12 @@
  * PatientSupportNetworkEditDrawer.test.tsx (escrita por linha, ADR-1): cada linha nasce
  * (create)/muda (update)/desaparece (deactivate, NUNCA DELETE) por conta própria.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import type { PatientExternalContactDetail } from '@domain/entities/PatientDetail';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 
 const translations = ptBR as Record<string, any>;
 function t(key: string, optsOrDefault?: any): string {
@@ -193,5 +195,52 @@ describe('PatientExternalContactsEditDrawer', () => {
   it('contato sem telefone (null) carrega o campo vazio, não "null"', () => {
     renderDrawer([{ ...contact, phone: null }]);
     expect(screen.getByTestId('pxc-phone-0')).toHaveValue('');
+  });
+});
+
+// ── Conserto rodada B (Gabriel 15/09): adicionar linha exige `create`, editar linha EXISTENTE
+// exige `update` — mesma régua de PatientSupportNetworkEditDrawer, molde deste componente. ──
+function comEnforcement(permissions: string[]) {
+  useAdminAuthStore.setState({
+    authzStatus: 'ready',
+    authz: {
+      uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {}, enforcement: 'on',
+    } as AuthzContract,
+  });
+}
+
+describe('PatientExternalContactsEditDrawer — gate create×update por linha (PR-8b rodada B)', () => {
+  afterEach(() => { useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }); });
+
+  it('só create: "Añadir" existe; linha EXISTENTE fica somente-leitura (sem remover, sem editar)', () => {
+    comEnforcement(['patient_family:create']);
+    renderDrawer([contact]);
+    expect(screen.getByTestId('pxc-add')).toBeInTheDocument();
+    expect(screen.getByTestId('pxc-name-0')).toBeDisabled();
+    expect(screen.queryByTestId('pxc-remove-0')).not.toBeInTheDocument();
+  });
+
+  it('só update: "Añadir" some; linha EXISTENTE é editável e removível', () => {
+    comEnforcement(['patient_family:update']);
+    renderDrawer([contact]);
+    expect(screen.queryByTestId('pxc-add')).not.toBeInTheDocument();
+    expect(screen.getByTestId('pxc-name-0')).not.toBeDisabled();
+    expect(screen.getByTestId('pxc-remove-0')).toBeInTheDocument();
+  });
+
+  it('as duas: comportamento de hoje — adiciona E edita linha existente', () => {
+    comEnforcement(['patient_family:create', 'patient_family:update']);
+    renderDrawer([contact]);
+    expect(screen.getByTestId('pxc-add')).toBeInTheDocument();
+    expect(screen.getByTestId('pxc-name-0')).not.toBeDisabled();
+    expect(screen.getByTestId('pxc-remove-0')).toBeInTheDocument();
+  });
+
+  it('nenhuma: sem "Añadir"; linha existente somente-leitura', () => {
+    comEnforcement([]);
+    renderDrawer([contact]);
+    expect(screen.queryByTestId('pxc-add')).not.toBeInTheDocument();
+    expect(screen.getByTestId('pxc-name-0')).toBeDisabled();
+    expect(screen.queryByTestId('pxc-remove-0')).not.toBeInTheDocument();
   });
 });

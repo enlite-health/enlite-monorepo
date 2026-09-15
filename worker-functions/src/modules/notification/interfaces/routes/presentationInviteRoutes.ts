@@ -16,7 +16,7 @@ export function createPresentationInviteRoutes(
   // Célula declarada no sync main→stage (06/09/2026): sem ela o deny-when-undeclared do trem ABAC reprova o inventário.
   const perm = permissions.family(ADMIN_MESSAGING_FAMILY);
   router.get('/presentation-invite/settings', authMiddleware.requireStaff(), perm.require('messaging', 'read'), controller.getSettings);
-  router.put('/presentation-invite/settings', authMiddleware.requireStaff(), perm.require('messaging', 'write', { untilEnforced: 'admin' }), controller.updateSettings);
+  router.put('/presentation-invite/settings', authMiddleware.requireStaff(), perm.require('messaging', 'update', { untilEnforced: 'admin' }), controller.updateSettings);
   router.get('/presentation-invite/last', authMiddleware.requireStaff(), perm.require('messaging', 'read'), controller.last);
   router.get('/presentation-invite/stats', authMiddleware.requireStaff(), perm.require('messaging', 'read'), controller.stats);
   router.post('/workers/:workerId/presentation-invite', authMiddleware.requireStaff(), perm.require('messaging', 'send'), controller.invite);

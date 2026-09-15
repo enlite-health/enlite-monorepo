@@ -97,7 +97,7 @@ describe('CellMatrix — colunas por categoria, avulso fora da grade', () => {
   it('🔒 o recorte desenhado: Trabajadores rende Ver · Crear · Elim. · Expor. · Valid.', () => {
     // com os rótulos REAIS de `es.json` — a ordem aqui é a que a tela mostra
     montar({ rotulos: ROTULOS_ES });
-    expect(colunasDo('[Trabalhadores]')).toEqual(['[read]', '[write]', '[delete]', '[export]', '[validate]']);
+    expect(colunasDo('[Trabalhadores]')).toEqual(['[read]', '[create]', '[update]', '[write]', '[delete]', '[export]', '[validate]']);
     // TODO recurso é linha, inclusive os de uma célula só — e a grade sai em
     // ordem ALFABÉTICA do rótulo visível (decisão do Gabriel, 05/09).
     expect(linhasDe(bloco('[Trabalhadores]'))).toEqual([
@@ -171,34 +171,34 @@ describe('CellMatrix — colunas por categoria, avulso fora da grade', () => {
     expect(sobra).toHaveAttribute('aria-hidden', 'true');
     expect(sobra).toHaveClass('border-b');
     // e ela não conta como coluna nem como célula no leitor de tela
-    expect(within(bloco('[Trabalhadores]')).getAllByRole('columnheader')).toHaveLength(6);
+    expect(within(bloco('[Trabalhadores]')).getAllByRole('columnheader')).toHaveLength(8);
   });
 
   it('🔒 cada categoria tem AS SUAS colunas — Vacantes não herda Expor. nem Valid.', () => {
     montar();
-    expect(colunasDo('[Vagas e Funil]')).toEqual(['[read]', '[write]', '[delete]']);
-    // é o ponto da poda: com colunas globais, `funnel` teria 2 travessões a mais
+    expect(colunasDo('[Vagas e Funil]')).toEqual(['[read]', '[create]', '[update]', '[write]', '[delete]']);
+    // é o ponto da poda: com colunas globais, `funnel` teria travessões a mais
     expect(within(bloco('[Vagas e Funil]')).getAllByRole('cell', { name: 'admin.access.group.cells.na' }))
-      .toHaveLength(1); // só funnel:delete
+      .toHaveLength(5); // funnel: create/update/write/delete faltam (1) + vacancy: create/update faltam (2)... ver colunasDe
   });
 
   it('🔒 recurso de UMA célula é LINHA, com cabeçalho em cima da caixa', () => {
     // Tirar da grade (#296) deixava a caixa sem coluna: ninguém sabia se
     // aquele checkbox era "Ver". Revertido com a tela na mão.
     montar({ catalog: [{ category: 'Analytics', cells: [celula('analytics', 'read', 'Ver relatórios.')] }] });
-    // as três base aparecem mesmo sem célula: simetria entre categorias
-    expect(colunasDo('[Analytics]')).toEqual(['[read]', '[write]', '[delete]']);
+    // as colunas base aparecem mesmo sem célula: simetria entre categorias
+    expect(colunasDo('[Analytics]')).toEqual(['[read]', '[create]', '[update]', '[delete]']);
     expect(linhasDe(bloco('[Analytics]'))).toEqual(['[analytics]analytics']);
     expect(screen.getByRole('checkbox', { name: 'analytics:read — Ver relatórios.' })).toBeInTheDocument();
-    // e as duas que ela não tem viram travessão — o preço da simetria
-    expect(within(bloco('[Analytics]')).getAllByRole('cell', { name: 'admin.access.group.cells.na' })).toHaveLength(2);
+    // e as que ela não tem viram travessão — o preço da simetria
+    expect(within(bloco('[Analytics]')).getAllByRole('cell', { name: 'admin.access.group.cells.na' })).toHaveLength(3);
   });
 
   it('a coluna que o recurso NÃO tem vira travessão, com nome no leitor de tela', () => {
     montar();
-    // 4 recursos × 5 colunas = 20 posições; 10 células → 10 travessões
+    // 4 recursos × 7 colunas = 28 posições; 10 células → 18 travessões
     expect(within(bloco('[Trabalhadores]')).getAllByRole('cell', { name: 'admin.access.group.cells.na' }))
-      .toHaveLength(10);
+      .toHaveLength(18);
   });
 
   it('🔑 a descrição do backend vira o rótulo — a chave crua deixa de ser tudo', () => {
@@ -221,7 +221,7 @@ describe('CellMatrix — colunas por categoria, avulso fora da grade', () => {
 
   it('ação fora da ordem canônica ganha coluna própria, no fim', () => {
     montar({ catalog: [{ category: 'X', cells: [celula('r', 'read'), celula('r', 'teleportar')] }] });
-    expect(colunasDo('[X]')).toEqual(['[read]', '[write]', '[delete]', '[teleportar]']);
+    expect(colunasDo('[X]')).toEqual(['[read]', '[create]', '[update]', '[delete]', '[teleportar]']);
   });
 
   it('marcar devolve a chave ao chamador — na grade e no avulso', async () => {
@@ -271,7 +271,7 @@ describe('montaBloco — a regra da poda', () => {
     // `b:send` é a única `send` da categoria; ela abre a coluna "Enviar", e `a`
     // ganha um travessão ali. É o preço de a caixa ter cabeçalho.
     const b = montaBloco('C', [celula('a', 'read'), celula('a', 'write'), celula('b', 'send')]);
-    expect(b.colunas).toEqual(['read', 'write', 'delete', 'send']);
+    expect(b.colunas).toEqual(['read', 'create', 'update', 'write', 'delete', 'send']);
   });
 
   it('🔒 sem resolvedor de rótulo, a ordem cai na chave crua', () => {
@@ -302,7 +302,7 @@ describe('montaBloco — a regra da poda', () => {
     // Sem isto cada categoria terminava num x diferente e a página ficava
     // serrilhada no lado direito (decisão do Gabriel, 05/09).
     const b = montaBloco('C', [celula('a', 'read'), celula('b', 'read')]);
-    expect(b.colunas).toEqual(['read', 'write', 'delete']);
+    expect(b.colunas).toEqual(['read', 'create', 'update', 'delete']);
   });
 });
 

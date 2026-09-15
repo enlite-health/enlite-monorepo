@@ -100,7 +100,8 @@ describe('famílias admin.analytics e admin.recruitment sob decisão por célula
       uid: U.recrutamento,
       celulas: [
         ['recruitment', 'read'],
-        ['recruitment', 'write'],
+        ['recruitment', 'create'],
+        ['recruitment', 'update'],
       ],
     });
     await grupoComCelulas(pool, {

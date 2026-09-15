@@ -19,7 +19,7 @@
  *   7. o uid do autor NUNCA sai — só `createdByName`; idem quem anulou (`annulledByName`).
  */
 import { Pool } from 'pg';
-import { montarAppDeFamilia, tokenMock, grupoComCelulas, limparIamFixtures, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
+import { montarAppDeFamilia, tokenMock, grupoComCelulas, limparIamFixtures, garantirCelula, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -48,16 +48,25 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     operacional: 'PT017 Operacional',
     catalogo: 'PT017 Catálogo',
   };
+  // PR-8b (rodada A3, ADR-2/SUP-30): as rotas de `patient_therapeutic_project` e
+  // `catalog_therapeutic_objectives` não declaram mais `write` — viraram `create`/`update`
+  // (fixture `tests/fixtures/pr8b-rotas-create-update.ts`). `patient_clinical:write` FICA — é
+  // checagem literal no controller (`PATIENT_CLINICAL_WRITE_CELL`,
+  // `src/modules/case/application/therapeuticProjectAccess.ts:25`), não `perm.require()` de rota,
+  // e não faz parte da lista de 23 recursos splitados nesta conversão (achado de produção, fora
+  // do escopo desta rodada — ver "Defeitos de produção revelados").
   const CELULAS: ReadonlyArray<readonly [string, string]> = [
     ['patient_therapeutic_project', 'read'],
-    ['patient_therapeutic_project', 'write'],
+    ['patient_therapeutic_project', 'create'],
+    ['patient_therapeutic_project', 'update'],
     // PR-7 (92f766a3, lex C8(b)): `?purpose=export` passa a exigir esta célula ALÉM da leitura.
     ['patient_therapeutic_project', 'export'],
     ['patient_clinical', 'read'],
     ['patient_clinical', 'write'],
     ['patient_services', 'read'],
     ['catalog_therapeutic_objectives', 'read'],
-    ['catalog_therapeutic_objectives', 'write'],
+    ['catalog_therapeutic_objectives', 'create'],
+    ['catalog_therapeutic_objectives', 'update'],
     ['catalog_therapeutic_activities', 'read'],
   ];
 
@@ -123,19 +132,15 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     ...over,
   });
 
-  async function limparCelulas(): Promise<void> {
-    for (const [resource, action] of CELULAS) {
-      await pool.query(
-        `DELETE FROM iam.group_permissions WHERE permission_id IN (SELECT id FROM iam.permissions WHERE resource = $1 AND action = $2)`,
-        [resource, action],
-      );
-      await pool.query(`DELETE FROM iam.permissions WHERE resource = $1 AND action = $2`, [resource, action]);
-    }
-  }
+  // PR-8b (A3, achado da rodada A2): as células de CELULAS são do CATÁLOGO compartilhado —
+  // `create`/`update` nascem seedadas de forma permanente pela migration 435 para os 23 recursos
+  // splitados, e as demais (`read`/`export`, `patient_clinical:*`) já existiam antes deste teste
+  // rodar pela primeira vez. Apagar `iam.permissions` no cleanup derrubava QUALQUER outra suíte
+  // que dependesse da mesma célula (o achado nomeado desta rodada). `limparIamFixtures` já apaga
+  // só o que este arquivo É DONO: os grupos/usuários/`group_permissions` dele — nunca o catálogo.
   async function limpar(): Promise<void> {
     await pool.query(`DELETE FROM resource_access_log WHERE operator_uid = ANY($1)`, [Object.values(U)]);
     await limparIamFixtures(pool, { uids: Object.values(U), grupos: Object.values(GRUPOS) });
-    await limparCelulas();
     await pool.query(`DELETE FROM patients WHERE id = ANY($1)`, [[PATIENT, OUTRO]]);
     await pool.query(`DELETE FROM therapeutic_specific_objectives WHERE label LIKE 'E2E 017 %'`);
   }
@@ -152,22 +157,20 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
          ($5, 'pt017-catalogo@e2e.local', 'Catálogo', 'admin', 'ACTIVE', true, $6)`,
       [U.completa, U.soProjeto, U.semClinica, U.operacional, U.catalogo, TENANT_E2E],
     );
-    // As células nascem do sync do catálogo no boot real; neste app de família semeia-se o que os grupos usam.
+    // Garante que as células existem no catálogo (a maioria já nasce da migration 435 ou de boot
+    // anterior; `garantirCelula` é idempotente — helper compartilhado, nunca duplica o INSERT).
     for (const [resource, action] of CELULAS) {
-      await pool.query(
-        `INSERT INTO iam.permissions (resource, action, description, category) VALUES ($1, $2, 'e2e 017', 'Pacientes') ON CONFLICT DO NOTHING`,
-        [resource, action],
-      );
+      await garantirCelula(pool, { resource, action, category: 'Pacientes' });
     }
-    await pool.query(`INSERT INTO iam.permissions (resource, action, description, category) VALUES ('patient', 'read', 'e2e', 'Pacientes') ON CONFLICT DO NOTHING`);
+    await garantirCelula(pool, { resource: 'patient', action: 'read', category: 'Pacientes' });
     await grupoComCelulas(pool, {
       nome: GRUPOS.completa, uid: U.completa,
-      celulas: [['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write'], ['patient_therapeutic_project', 'export'], ['patient_clinical', 'read'], ['patient_clinical', 'write'], ['patient_services', 'read'], ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read']],
+      celulas: [['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'create'], ['patient_therapeutic_project', 'update'], ['patient_therapeutic_project', 'export'], ['patient_clinical', 'read'], ['patient_clinical', 'write'], ['patient_services', 'read'], ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read']],
     });
     await grupoComCelulas(pool, { nome: GRUPOS.soProjeto, uid: U.soProjeto, celulas: [['patient', 'read'], ['patient_therapeutic_project', 'read']] });
-    await grupoComCelulas(pool, { nome: GRUPOS.semClinica, uid: U.semClinica, celulas: [['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write']] });
+    await grupoComCelulas(pool, { nome: GRUPOS.semClinica, uid: U.semClinica, celulas: [['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'create'], ['patient_therapeutic_project', 'update']] });
     await grupoComCelulas(pool, { nome: GRUPOS.operacional, uid: U.operacional, celulas: [['patient', 'read']] });
-    await grupoComCelulas(pool, { nome: GRUPOS.catalogo, uid: U.catalogo, celulas: [['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_objectives', 'write']] });
+    await grupoComCelulas(pool, { nome: GRUPOS.catalogo, uid: U.catalogo, celulas: [['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_objectives', 'create'], ['catalog_therapeutic_objectives', 'update']] });
 
     await pool.query(
       `INSERT INTO patients (id, clickup_task_id, first_name, last_name, country, is_test) VALUES

@@ -213,9 +213,22 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
       await pool.query(`INSERT INTO iam.group_country_scopes (group_id, country, granted_by, reason) VALUES ($1, 'AR', $2, 'iam-e2e seed')`, [recrutadorId, U.gestor]);
     });
 
-    it('ana no Recrutador com {AR}: 35 células e países {AR}', async () => {
+    it('ana no Recrutador com {AR}: as células EFETIVAS batem com o grant cru do grupo (nunca um número fixo — PR-8b/435 muda a contagem a cada célula create/update que o Recrutador ganha) e países {AR}', async () => {
+      // Contagem DINÂMICA (item 2 da rodada A3, ADR-2/SUP-30): 435 converte `write` em
+      // `create`+`update` para os 23 recursos splitados, o que muda a contagem do Recrutador
+      // toda vez que o seed de grupos fixos mudar — travar em "35" ficou obsoleto assim que a
+      // migration rodou. A régua correta é: o conjunto que `effective_permissions` devolve é
+      // EXATAMENTE `resource:action` das linhas não-deprecated concedidas ao grupo.
+      const bruto = await pool.query<{ cell: string }>(
+        `SELECT p.resource || ':' || p.action AS cell
+           FROM iam.group_permissions gp
+           JOIN iam.permissions p ON p.id = gp.permission_id
+          WHERE gp.group_id = $1 AND p.deprecated_at IS NULL`,
+        [recrutadorId],
+      );
+      const esperado = bruto.rows.map((row) => row.cell).sort();
       const r = await eff(U.ana);
-      expect(r.p.length).toBe(35);
+      expect([...r.p].sort()).toEqual(esperado);
       expect(r.c).toEqual(['AR']);
     });
 

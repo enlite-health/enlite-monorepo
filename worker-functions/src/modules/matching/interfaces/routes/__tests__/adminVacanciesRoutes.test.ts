@@ -44,8 +44,8 @@ jest.mock('@shared/logging', () => ({
 const ESPERADO: Record<string, string> = {
   'DELETE /interview-slots/:slotId': 'interview:delete',
   'DELETE /vacancies/:id': 'vacancy:delete',
-  'DELETE /vacancies/:id/publish-talentum': 'talentum:write',
-  'DELETE /vacancies/:vacancyId/workers/:workerId/contact-notes/:noteId': 'funnel:write',
+  'DELETE /vacancies/:id/publish-talentum': 'talentum:update',
+  'DELETE /vacancies/:vacancyId/workers/:workerId/contact-notes/:noteId': 'funnel:update',
   'GET /dashboard/alerts': 'dashboard:read',
   'GET /dashboard/conversion-by-channel': 'dashboard:read',
   'GET /dashboard/coordinator-capacity': 'dashboard:read',
@@ -67,26 +67,28 @@ const ESPERADO: Record<string, string> = {
   'GET /vacancies/next-vacancy-number': 'vacancy:read',
   'GET /vacancies/pending-address-review': 'vacancy:read',
   'GET /vacancies/stats': 'vacancy:read',
-  'POST /interview-slots/:slotId/book': 'interview:write',
-  'POST /vacancies': 'vacancy:write',
-  'POST /vacancies/:id/generate-ai-content': 'vacancy:write',
-  'POST /vacancies/:id/generate-talentum-description': 'talentum:write',
-  'POST /vacancies/:id/interview-slots': 'interview:write',
+  'POST /interview-slots/:slotId/book': 'interview:update',
+  'POST /vacancies': 'vacancy:create',
+  'POST /vacancies/:id/generate-ai-content': 'vacancy:update',
+  'POST /vacancies/:id/generate-talentum-description': 'talentum:update',
+  'POST /vacancies/:id/interview-slots': 'interview:create',
   'POST /vacancies/:id/match': 'match:execute',
-  'POST /vacancies/:id/prescreening-config': 'prescreening:write',
-  'POST /vacancies/:id/publish-talentum': 'talentum:write',
-  'POST /vacancies/:id/resolve-address-review': 'vacancy:write',
-  'POST /vacancies/:id/social-links': 'vacancy:write',
-  'POST /vacancies/:vacancyId/workers/:workerId/contact-notes': 'funnel:write',
-  'POST /vacancies/blocked-applications/:blockedId/reject': 'funnel:write',
-  'POST /vacancies/blocked-applications/:blockedId/restore': 'funnel:write',
+  'POST /vacancies/:id/prescreening-config': 'prescreening:update',
+  'POST /vacancies/:id/publish-talentum': 'talentum:update',
+  'POST /vacancies/:id/resolve-address-review': 'vacancy:update',
+  'POST /vacancies/:id/social-links': 'vacancy:create',
+  'POST /vacancies/:vacancyId/workers/:workerId/contact-notes': 'funnel:create',
+  'POST /vacancies/blocked-applications/:blockedId/reject': 'funnel:update',
+  'POST /vacancies/blocked-applications/:blockedId/restore': 'funnel:update',
   'POST /vacancies/meet-links/lookup': 'vacancy:read',
-  'POST /vacancies/sync-talentum': 'talentum:write',
-  'PUT /encuadres/:id/move': 'funnel:write',
-  'PUT /encuadres/:id/result': 'funnel:write',
-  'PUT /vacancies/:id': 'vacancy:write',
-  'PUT /vacancies/:id/meet-links': 'vacancy:write',
-  'PUT /vacancies/:id/talentum-description': 'talentum:write',
+  // PR-8b 8b.4: sync em massa exige create E update (regra-orquestrador 15/09); o scanner só
+  // carimba o 1º guard — o 2º é provado em pr8b-ambiguous-routes.test.ts.
+  'POST /vacancies/sync-talentum': 'talentum:create',
+  'PUT /encuadres/:id/move': 'funnel:update',
+  'PUT /encuadres/:id/result': 'funnel:update',
+  'PUT /vacancies/:id': 'vacancy:update',
+  'PUT /vacancies/:id/meet-links': 'vacancy:update',
+  'PUT /vacancies/:id/talentum-description': 'talentum:update',
 };
 
 const responde = (nome: string) => (req: express.Request, res: express.Response) =>
@@ -148,7 +150,7 @@ describe('família admin.vacancies — 45 rotas declaram célula', () => {
 
   it('as 2 rotas de controller OPCIONAL estão presentes — montadas como em produção', () => {
     const rotas = declaradas();
-    expect(rotas['POST /vacancies/:id/resolve-address-review']).toBe('vacancy:write');
+    expect(rotas['POST /vacancies/:id/resolve-address-review']).toBe('vacancy:update');
     expect(rotas['GET /vacancies/:id/funnel-table']).toBe('funnel:read');
   });
 
@@ -174,9 +176,9 @@ describe('família admin.vacancies — 45 rotas declaram célula', () => {
   });
 
   describe('as células que separam ações de peso diferente', () => {
-    it('APAGAR vaga é vacancy:delete — não vacancy:write', () => {
+    it('APAGAR vaga é vacancy:delete — não vacancy:update', () => {
       expect(declaradas()['DELETE /vacancies/:id']).toBe('vacancy:delete');
-      expect(declaradas()['PUT /vacancies/:id']).toBe('vacancy:write');
+      expect(declaradas()['PUT /vacancies/:id']).toBe('vacancy:update');
     });
 
     it('RODAR o match é match:execute; ver o resultado é match:read', () => {
@@ -186,22 +188,25 @@ describe('família admin.vacancies — 45 rotas declaram célula', () => {
 
     it('APAGAR slot de entrevista é interview:delete — a célula mais destrutiva da família', () => {
       expect(declaradas()['DELETE /interview-slots/:slotId']).toBe('interview:delete');
-      expect(declaradas()['POST /interview-slots/:slotId/book']).toBe('interview:write');
+      expect(declaradas()['POST /interview-slots/:slotId/book']).toBe('interview:update');
     });
 
-    it('mover no funil é funnel:write, e NÃO vacancy:write — são decisões diferentes', () => {
-      expect(declaradas()['PUT /encuadres/:id/move']).toBe('funnel:write');
-      expect(declaradas()['PUT /encuadres/:id/result']).toBe('funnel:write');
+    it('mover no funil é funnel:update, e NÃO vacancy:update — são decisões diferentes', () => {
+      expect(declaradas()['PUT /encuadres/:id/move']).toBe('funnel:update');
+      expect(declaradas()['PUT /encuadres/:id/result']).toBe('funnel:update');
     });
 
-    it('publicar no Talentum é talentum:write — sai da nossa base para um portal externo', () => {
+    it('publicar/despublicar no Talentum é talentum:update — sai da nossa base para um portal externo', () => {
       for (const rota of [
         'POST /vacancies/:id/publish-talentum',
         'DELETE /vacancies/:id/publish-talentum',
-        'POST /vacancies/sync-talentum',
       ]) {
-        expect(declaradas()[rota]).toBe('talentum:write');
+        expect(declaradas()[rota]).toBe('talentum:update');
       }
+    });
+
+    it('sincronizar em massa com o Talentum é talentum:create (+ update, PR-8b 8b.4 — ambíguo)', () => {
+      expect(declaradas()['POST /vacancies/sync-talentum']).toBe('talentum:create');
     });
 
     it('o dashboard do coordenador é dashboard:read — não vacancy:read', () => {

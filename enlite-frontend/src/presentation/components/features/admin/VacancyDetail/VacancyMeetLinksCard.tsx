@@ -283,7 +283,7 @@ export function VacancyMeetLinksCard({
         {/* PUT /vacancies/:id/meet-links → updateVacancyMeetLinks → vacancy:write. */}
         <ActionButton
           resource="vacancy"
-          action="write"
+          action="update"
           variant="primary"
           size="sm"
           onClick={handleSave}

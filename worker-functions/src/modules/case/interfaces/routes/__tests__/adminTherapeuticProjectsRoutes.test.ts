@@ -36,7 +36,10 @@ jest.mock('@shared/audit/resourceAccessLog', () => ({
 }));
 
 const PROJETO_READ = 'patient_therapeutic_project:read';
-const PROJETO_WRITE = 'patient_therapeutic_project:write';
+// PR-8b 8b.4: patient_therapeutic_project:write splitado — create na versão nova ("Novo"),
+// update na versão MINOR ("Editar") e no annul (pr8b-mapa-rotas.tsv linhas 38-39).
+const PROJETO_CREATE = 'patient_therapeutic_project:create';
+const PROJETO_UPDATE = 'patient_therapeutic_project:update';
 
 /**
  * O mapa esperado, escrito à mão a partir da D299.3 e do cabeçalho do router:
@@ -44,19 +47,19 @@ const PROJETO_WRITE = 'patient_therapeutic_project:write';
  */
 const ESPERADO: Record<string, string> = {
   'GET /patients/:id/therapeutic-projects': PROJETO_READ,
-  'POST /patients/:id/therapeutic-projects': PROJETO_WRITE,
+  'POST /patients/:id/therapeutic-projects': PROJETO_CREATE,
   'GET /patients/:id/therapeutic-projects/:vid': PROJETO_READ,
-  'POST /patients/:id/therapeutic-projects/:vid/annul': PROJETO_WRITE,
+  'POST /patients/:id/therapeutic-projects/:vid/annul': PROJETO_UPDATE,
   'GET /therapeutic-catalogs/specific-objectives': 'catalog_therapeutic_objectives:read',
-  'POST /therapeutic-catalogs/specific-objectives': 'catalog_therapeutic_objectives:write',
-  'PATCH /therapeutic-catalogs/specific-objectives/:itemId': 'catalog_therapeutic_objectives:write',
+  'POST /therapeutic-catalogs/specific-objectives': 'catalog_therapeutic_objectives:create',
+  'PATCH /therapeutic-catalogs/specific-objectives/:itemId': 'catalog_therapeutic_objectives:update',
   'GET /therapeutic-catalogs/activities': 'catalog_therapeutic_activities:read',
-  'POST /therapeutic-catalogs/activities': 'catalog_therapeutic_activities:write',
-  'PATCH /therapeutic-catalogs/activities/:itemId': 'catalog_therapeutic_activities:write',
+  'POST /therapeutic-catalogs/activities': 'catalog_therapeutic_activities:create',
+  'PATCH /therapeutic-catalogs/activities/:itemId': 'catalog_therapeutic_activities:update',
   // US-17 (migration 430) — mesmo molde, célula literal própria.
   'GET /therapeutic-catalogs/segments': 'catalog_therapeutic_segments:read',
-  'POST /therapeutic-catalogs/segments': 'catalog_therapeutic_segments:write',
-  'PATCH /therapeutic-catalogs/segments/:itemId': 'catalog_therapeutic_segments:write',
+  'POST /therapeutic-catalogs/segments': 'catalog_therapeutic_segments:create',
+  'PATCH /therapeutic-catalogs/segments/:itemId': 'catalog_therapeutic_segments:update',
 };
 
 /** Cada handler devolve o próprio nome — é o que identifica quem foi chamado (e com que kind). */
@@ -202,7 +205,7 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
     it('sem célula clínica a trilha diz que o clínico NÃO foi servido — o `+clinical` some', async () => {
       await request(app([PROJETO_READ])).get('/api/admin/patients/abc-123/therapeutic-projects').expect(200);
       await request(app([PROJETO_READ])).get('/api/admin/patients/abc-123/therapeutic-projects/v-1?purpose=export').expect(200);
-      await request(app([PROJETO_WRITE])).post('/api/admin/patients/abc-123/therapeutic-projects').send({}).expect(200);
+      await request(app([PROJETO_CREATE])).post('/api/admin/patients/abc-123/therapeutic-projects').send({}).expect(200);
       expect(trilhas.map((t) => t.acao)).toEqual([
         'read_project:therapeuticProject',
         'export_pdf:therapeuticProject',

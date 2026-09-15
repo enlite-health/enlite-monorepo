@@ -27,7 +27,7 @@ import { VacancySocialLinksCard } from '@presentation/components/features/admin/
 
 export default function TalentumConfigPage(): JSX.Element {
   // D269: alcançável por URL; sem talentum:write, a porta fecha.
-  const talentumWriteGate = useActionGate('talentum', 'write');
+  const talentumWriteGate = useActionGate('talentum', 'update');
   const { id: vacancyId = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -148,7 +148,7 @@ export default function TalentumConfigPage(): JSX.Element {
               </Button>
               <ActionButton
                 resource="talentum"
-                action="write"
+                action="update"
                 variant="primary"
                 size="sm"
                 onClick={handlePublish}

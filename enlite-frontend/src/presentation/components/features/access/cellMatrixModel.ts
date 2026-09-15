@@ -11,7 +11,7 @@ import type { CatalogCategory, PermissionCell } from '@infrastructure/http/Admin
  * (Prova de que isso acontece: `messaging:write`, criada pela D128, é declarada
  * por duas rotas e não está no fixture do frontend.)
  */
-export const ORDEM_ACOES = ['read', 'write', 'delete', 'export', 'validate', 'execute', 'send', 'disable'] as const;
+export const ORDEM_ACOES = ['read', 'create', 'update', 'write', 'delete', 'export', 'validate', 'execute', 'send', 'disable'] as const;
 
 /** Chave canônica da célula — o formato que `iam.effective_permissions` devolve. */
 export const cellKey = (c: Pick<PermissionCell, 'resource' | 'action'>): string =>
@@ -67,7 +67,7 @@ const alfabetico = (
 ): number => rotuloA.localeCompare(rotuloB, 'es-AR') || chaveA.localeCompare(chaveB);
 
 /**
- * As três ações que TODA categoria mostra, tenha ou não célula nelas.
+ * As ações que TODA categoria mostra, tenha ou não célula nelas.
  *
  * Decisão do Gabriel (05/09), olhando a tela: "deixar por padrão Ver, Criar e
  * Elim., e caso a linha não tenha essa opção deixa o travessão. Fica algo
@@ -75,10 +75,15 @@ const alfabetico = (
  * Analítica, 750 na Administración — e a página inteira ficava com o lado
  * direito serrilhado e vazio.
  *
- * O custo é travessão: 24 → 41. É a troca aceita, e ela compra 5 das 9
- * categorias terminando exatamente no mesmo lugar.
+ * PR-8b (ADR-2): `write` virou `create`/`update` para os 19 recursos splitados
+ * (contracts/permissions-split.md) — a coluna base ganha as duas; `write` continua
+ * existindo só para `permission_management` e aparece pela detecção dinâmica de
+ * `colunasDe` (célula que usa `write` faz a ação `write` entrar na lista), não por aqui.
+ *
+ * O custo é travessão. É a troca aceita, e ela compra a maioria das categorias
+ * terminando exatamente no mesmo lugar.
  */
-export const COLUNAS_BASE = ['read', 'write', 'delete'] as const;
+export const COLUNAS_BASE = ['read', 'create', 'update', 'delete'] as const;
 
 /**
  * As colunas da categoria: as três base SEMPRE, mais as ações que ela de fato

@@ -249,7 +249,7 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
             {/* PATCH .../profile + PUT .../service-area → worker:write. D269 — sem a célula, SOME. */}
             <ActionButton
               resource="worker"
-              action="write"
+              action="update"
               type="button"
               variant="primary"
               size="sm"

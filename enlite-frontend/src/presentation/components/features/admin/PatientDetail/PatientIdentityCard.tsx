@@ -272,10 +272,10 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
               </Text>
             </div>
             <div className="flex items-center gap-2">
-              {/* D286 — grava PATCH /patients/:id/general (telefone) → patient_identity:write. */}
+              {/* D286 — grava PATCH /patients/:id/general (telefone) → patient_identity:update (PR-8b). */}
               <ActionButton
                 resource="patient_identity"
-                action="write"
+                action="update"
                 variant="outline"
                 size="sm"
                 onClick={() => setConfirmingMove(true)}

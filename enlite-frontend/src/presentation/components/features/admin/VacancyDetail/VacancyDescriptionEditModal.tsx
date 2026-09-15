@@ -134,7 +134,7 @@ export function VacancyDescriptionEditModal({
           {/* PUT /vacancies/:id/talentum-description → updateTalentumDescription → talentum:write. */}
           <ActionButton
             resource="talentum"
-            action="write"
+            action="update"
             type="button"
             variant="primary"
             size="sm"

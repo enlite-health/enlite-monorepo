@@ -187,7 +187,7 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
                 </ActionButton>
                 {/* D328 item 3: versão antiga (não vigente) não oferece edição na tela, mesmo não-anulada. */}
                 {target.version.annulledAt === null && target.isCurrent && (
-                  <ActionButton resource="patient_therapeutic_project" action="write" variant="primary" size="sm" onClick={() => setTarget({ mode: 'edit', version: target.version })} className="flex items-center gap-1" data-testid="therapeutic-project-edit-btn">
+                  <ActionButton resource="patient_therapeutic_project" action="create" variant="primary" size="sm" onClick={() => setTarget({ mode: 'edit', version: target.version })} className="flex items-center gap-1" data-testid="therapeutic-project-edit-btn">
                     <Pencil className="w-4 h-4" />
                     {t('admin.patients.detail.edit')}
                   </ActionButton>

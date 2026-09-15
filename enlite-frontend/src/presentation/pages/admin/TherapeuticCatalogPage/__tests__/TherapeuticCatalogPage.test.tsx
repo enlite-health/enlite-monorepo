@@ -350,8 +350,8 @@ describe('TherapeuticCatalogPage — write-gate das ações (D269)', () => {
   it.each([
     ['specific-objectives', 'catalog_therapeutic_objectives'],
     ['activities', 'catalog_therapeutic_activities'],
-  ] as const)('engine ON com %s:write — as ações existem', async (kind, resource) => {
-    comEnforcement([`${resource}:read`, `${resource}:write`], 'on');
+  ] as const)('engine ON com %s:create + :update (PR-8b) — as ações existem', async (kind, resource) => {
+    comEnforcement([`${resource}:read`, `${resource}:create`, `${resource}:update`], 'on');
     render(<TherapeuticCatalogPage kind={kind} />);
     await screen.findByTestId('therapeutic-catalog-table');
 
@@ -361,7 +361,7 @@ describe('TherapeuticCatalogPage — write-gate das ações (D269)', () => {
   });
 
   it('🔴 a escrita de OUTRO catálogo não libera as ações desta tela', async () => {
-    comEnforcement(['catalog_therapeutic_objectives:read', 'catalog_therapeutic_activities:write'], 'on');
+    comEnforcement(['catalog_therapeutic_objectives:read', 'catalog_therapeutic_activities:create', 'catalog_therapeutic_activities:update'], 'on');
     render(<TherapeuticCatalogPage kind="specific-objectives" />);
     await screen.findByTestId('therapeutic-catalog-table');
 

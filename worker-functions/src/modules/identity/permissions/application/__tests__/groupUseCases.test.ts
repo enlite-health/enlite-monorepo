@@ -159,7 +159,13 @@ describe('UpdatePermissionGroupUseCase', () => {
 });
 
 describe('SetGroupPermissionsUseCase', () => {
-  const known = { 'vacancy:read': 'id-1', 'vacancy:write': 'id-2' };
+  // `vacancy` é um dos 23 recursos splitados (spec 018, PR-8b, ADR-2/SUP-30) — por isso o
+  // catálogo falso já precisa conhecer `create`/`update` além de `read`/`write` (a expansão
+  // do use case traduz `vacancy:write` para os dois antes de ir ao catálogo).
+  const known = {
+    'vacancy:read': 'id-1', 'vacancy:write': 'id-2', 'vacancy:create': 'id-3', 'vacancy:update': 'id-4',
+    'permission_management:write': 'id-5',
+  };
 
   it('traduz chaves para ids do catálogo e publica a mudança', async () => {
     const repo = makeRepo();
@@ -167,12 +173,47 @@ describe('SetGroupPermissionsUseCase', () => {
     const result = await new SetGroupPermissionsUseCase(repo, makeCatalog(known), events).execute({
       tenantId: TENANT,
       groupId: 'g1',
-      cellKeys: ['vacancy:read', 'vacancy:write', 'vacancy:read'],
+      cellKeys: ['vacancy:read', 'vacancy:create', 'vacancy:read'],
       reason: 'ajuste do time',
     });
     expect(result).toEqual({ cells: 2 });
-    expect(repo.setPermissions).toHaveBeenCalledWith('g1', ['id-1', 'id-2'], 'ajuste do time');
+    expect(repo.setPermissions).toHaveBeenCalledWith('g1', ['id-1', 'id-3'], 'ajuste do time');
     expect(events.permissionChanged).toHaveBeenCalledWith(['ana', 'bob']);
+  });
+
+  // ── ADR-2/SUP-30: janela de transição — `<recurso>:write` de recurso splitado é
+  // expandido em create+update NA GRAVAÇÃO, nunca gravado como write de novo.
+  it('write de recurso splitado é expandido para create+update na gravação (janela SUP-31)', async () => {
+    const repo = makeRepo();
+    const result = await new SetGroupPermissionsUseCase(repo, makeCatalog(known), makeEvents()).execute({
+      tenantId: TENANT,
+      groupId: 'g1',
+      cellKeys: ['vacancy:write'],
+    });
+    expect(result).toEqual({ cells: 2 }); // write virou 2 células
+    expect(repo.setPermissions).toHaveBeenCalledWith('g1', expect.arrayContaining(['id-3', 'id-4']), null);
+    expect(repo.setPermissions.mock.calls[0][1]).toHaveLength(2);
+  });
+
+  it('permission_management:write NÃO é expandido — é a única rota que continua sob write', async () => {
+    const repo = makeRepo();
+    await new SetGroupPermissionsUseCase(repo, makeCatalog(known), makeEvents()).execute({
+      tenantId: TENANT,
+      groupId: 'g1',
+      cellKeys: ['permission_management:write'],
+    });
+    expect(repo.setPermissions).toHaveBeenCalledWith('g1', ['id-5'], null);
+  });
+
+  it('mandar write E create/update do mesmo recurso splitado dedupe (não grava 2x)', async () => {
+    const repo = makeRepo();
+    const result = await new SetGroupPermissionsUseCase(repo, makeCatalog(known), makeEvents()).execute({
+      tenantId: TENANT,
+      groupId: 'g1',
+      cellKeys: ['vacancy:write', 'vacancy:create'],
+    });
+    expect(result).toEqual({ cells: 2 });
+    expect(repo.setPermissions.mock.calls[0][1]).toHaveLength(2);
   });
 
   it('chave fora do catálogo aborta ANTES de escrever, dizendo qual', async () => {

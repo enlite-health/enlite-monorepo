@@ -14,7 +14,10 @@ const base = (over: Partial<IamConfigSnapshot> = {}): IamConfigSnapshot => ({
 });
 const target = (current: IamConfigSnapshot, over: Partial<IamTargetState> = {}): IamTargetState => ({
   current,
-  catalog: new Set(['permission_management:write', 'worker:read', 'worker:write', 'vacancy:read']),
+  // `worker` é recurso splitado (spec 018, PR-8b, ADR-2/SUP-30) — o catálogo do alvo já
+  // conhece `create`/`update`; `worker:write` continua listado aqui só para o teste que
+  // prova a expansão na importação de um arquivo ANTIGO (linha ~48 abaixo).
+  catalog: new Set(['permission_management:write', 'worker:read', 'worker:write', 'worker:create', 'worker:update', 'vacancy:read']),
   knownEmails: new Set(['gestor@e.com', 'ana@e.com', 'bob@e.com']),
   // (M1) Por default, igual a `knownEmails` — os testes que precisam de um
   // e-mail removível mas NÃO staff (admin rebaixado) sobrescrevem via `over`.
@@ -45,15 +48,33 @@ describe('planIamConfigImport', () => {
 
   it('célula a mais, membro a menos, feature desligada → exatamente essas três operações', () => {
     const desired = base();
-    desired.groups[1].cells = ['worker:read', 'worker:write'];
+    desired.groups[1].cells = ['worker:read', 'worker:create'];
     desired.groups[1].members = [];
     desired.countryFeatures[0].enabled = false;
     const plan = planIamConfigImport(desired, target(base()));
     expect(plan.ops).toEqual([
-      { kind: 'set_permissions', group: 'Recrutador', cells: ['worker:read', 'worker:write'] },
+      { kind: 'set_permissions', group: 'Recrutador', cells: ['worker:create', 'worker:read'] },
       { kind: 'remove_member', group: 'Recrutador', email: 'ana@e.com' },
       { kind: 'set_country_feature', country: 'AR', featureKey: 'screen:talentum', enabled: false, config: null },
     ]);
+  });
+
+  // ── ADR-2/SUP-30 (contracts/permissions-split.md): import de um `iam-config.json`
+  // EXPORTADO ANTES do split (só `write`) expande para create+update ANTES do diff —
+  // o plano nunca tenta `set_permissions` com uma célula `write` de recurso splitado.
+  it('import de export ANTIGO (write puro) expande para create+update antes do diff', () => {
+    const desired = base();
+    desired.groups[1].cells = ['worker:write']; // arquivo de antes do split
+    const plan = planIamConfigImport(desired, target(base())); // alvo: Recrutador só tem worker:read
+    expect(plan.errors).toEqual([]);
+    expect(plan.ops).toEqual([
+      { kind: 'set_permissions', group: 'Recrutador', cells: ['worker:create', 'worker:update'] },
+    ]);
+  });
+
+  it('permission_management:write nunca expande — Acesso Master continua igual, zero operações', () => {
+    const plan = planIamConfigImport(base(), target(base()));
+    expect(plan.ops.filter((op) => 'group' in op && op.group === 'Acesso Master')).toEqual([]);
   });
 
   it('célula fora do catálogo do alvo é ERRO — e o plano continua listando o resto para o operador ver', () => {

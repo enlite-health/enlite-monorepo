@@ -14,7 +14,7 @@
 import { Pool } from 'pg';
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
-import { montarAppDeFamilia, tokenMock, grupoComCelulas, limparIamFixtures, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
+import { montarAppDeFamilia, tokenMock, grupoComCelulas, limparIamFixtures, garantirCelula, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -26,8 +26,11 @@ describe('spec 018 PR-2 — contatos externos + marca de emergência: API sob en
   const OUTRO_PACIENTE = 'ee018002-0c00-0002-0002-000000000099';
   const U = { completa: 'pr2-completa', semFamilia: 'pr2-sem-familia' };
   const GRUPOS = { completa: 'PR2 Completa', semFamilia: 'PR2 Sem familia' };
+  // PR-8b (A3, ADR-2/SUP-30): as rotas de `patient_family` (responsibles/external-contacts/
+  // emergency-contact) não declaram mais `write` — `create` no POST, `update` no PATCH/
+  // deactivate/PUT/DELETE (adminPatientsRoutes.ts:320-369).
   const CELULAS: ReadonlyArray<readonly [string, string]> = [
-    ['patient', 'read'], ['patient_family', 'read'], ['patient_family', 'write'],
+    ['patient', 'read'], ['patient_family', 'read'], ['patient_family', 'create'], ['patient_family', 'update'],
   ];
 
   const envAnterior: Record<string, string | undefined> = {};
@@ -42,13 +45,12 @@ describe('spec 018 PR-2 — contatos externos + marca de emergência: API sob en
     return { status: res.status, body: await res.json().catch(() => ({})) };
   }
 
+  // PR-8b (A3, achado A2): as células de CELULAS são do catálogo compartilhado (`create`/`update`
+  // nascem seedadas pela migration 435 para os 23 recursos splitados) — apagar `iam.permissions`
+  // no cleanup derrubava outras suítes. `limparIamFixtures` já cobre o que este arquivo é DONO.
   async function limpar(): Promise<void> {
     await pool.query(`DELETE FROM resource_access_log WHERE operator_uid = ANY($1)`, [Object.values(U)]);
     await limparIamFixtures(pool, { uids: Object.values(U), grupos: Object.values(GRUPOS) });
-    for (const [resource, action] of CELULAS) {
-      await pool.query(`DELETE FROM iam.group_permissions WHERE permission_id IN (SELECT id FROM iam.permissions WHERE resource = $1 AND action = $2)`, [resource, action]);
-      await pool.query(`DELETE FROM iam.permissions WHERE resource = $1 AND action = $2`, [resource, action]);
-    }
     await pool.query(`DELETE FROM patients WHERE id = ANY($1)`, [[PATIENT, OUTRO_PACIENTE]]);
   }
 
@@ -62,9 +64,9 @@ describe('spec 018 PR-2 — contatos externos + marca de emergência: API sob en
       [U.completa, U.semFamilia, TENANT_E2E],
     );
     for (const [resource, action] of CELULAS) {
-      await pool.query(`INSERT INTO iam.permissions (resource, action, description, category) VALUES ($1, $2, 'e2e PR-2', 'Pacientes') ON CONFLICT DO NOTHING`, [resource, action]);
+      await garantirCelula(pool, { resource, action, category: 'Pacientes' });
     }
-    await grupoComCelulas(pool, { nome: GRUPOS.completa, uid: U.completa, celulas: [['patient', 'read'], ['patient_family', 'read'], ['patient_family', 'write']] });
+    await grupoComCelulas(pool, { nome: GRUPOS.completa, uid: U.completa, celulas: [['patient', 'read'], ['patient_family', 'read'], ['patient_family', 'create'], ['patient_family', 'update']] });
     await grupoComCelulas(pool, { nome: GRUPOS.semFamilia, uid: U.semFamilia, celulas: [['patient', 'read']] });
     await pool.query(
       `INSERT INTO patients (id, clickup_task_id, first_name, last_name, country, is_test) VALUES

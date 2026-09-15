@@ -113,7 +113,7 @@ describe('PatientKanbanBoard', () => {
   });
 
   it('enforcement=on, com patient:write: isDragDisabled retorna false', () => {
-    comEnforcement(['patient:write'], 'on');
+    comEnforcement(['patient:update'], 'on');
     render(<PatientKanbanBoard groups={GROUPS} onMove={vi.fn()} />);
     expect(captured.isDragDisabled(PATIENT_1)).toBe(false);
   });

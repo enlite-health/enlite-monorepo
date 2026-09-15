@@ -63,7 +63,7 @@ export default function PatientChatRolesPage(): JSX.Element {
   // linha (editar/(des)ativar/apagar) são `<button>` cru, não o atom
   // `Button` — por isso usam `useActionGate` direto (mesma leitura do
   // `ActionButton`) em vez do wrapper.
-  const chatRoleWriteGate = useActionGate('patient', 'write');
+  const chatRoleWriteGate = useActionGate('patient', 'update');
 
   const fetchRoles = useCallback(async () => {
     try {
@@ -130,7 +130,7 @@ export default function PatientChatRolesPage(): JSX.Element {
         </div>
         <ActionButton
           resource="patient"
-          action="write"
+          action="create"
           variant="primary"
           size="md"
           onClick={() => setFormModal({ open: true, role: null })}
