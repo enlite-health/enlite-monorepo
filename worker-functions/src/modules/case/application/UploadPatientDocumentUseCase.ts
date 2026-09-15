@@ -54,8 +54,9 @@ export class UploadPatientDocumentUseCase {
     const { objectPath } = await storage.uploadBuffer(finalBuffer, input.contentType);
     const objectPathEncrypted = await this.enc.encrypt(objectPath);
 
+    let id: string;
     try {
-      const { id } = await inPatientTransaction((client) =>
+      ({ id } = await inPatientTransaction((client) =>
         this.repo.insert(
           input.patientId,
           {
@@ -68,10 +69,7 @@ export class UploadPatientDocumentUseCase {
           input.actorUid,
           client,
         ),
-      );
-      // Achado da revisão do PR-4 (item 3): fila de órfãos sem consumidor — tentativa oportunista.
-      scheduleOpportunisticOrphanRetry();
-      return { documentId: id };
+      ));
     } catch (err) {
       // INSERT falhou (ex.: paciente inexistente/deletado sob RLS): tenta apagar o objeto direto;
       // se a exclusão TAMBÉM falhar, registra em `patient_photo_orphans` (bucket `DOCUMENTS`,
@@ -87,5 +85,11 @@ export class UploadPatientDocumentUseCase {
       });
       throw err;
     }
+    // Achado da 3ª revisão do PR-4 (mesma classe do conserto #2, aplicado a Upload foto/Delete/Revoke):
+    // FORA do try — se `scheduleOpportunisticOrphanRetry` lançar de forma síncrona, o upload JÁ
+    // COMITADO não pode cair no catch acima (que apagaria o objeto recém-gravado e devolveria 500
+    // numa operação que já tinha sucesso).
+    scheduleOpportunisticOrphanRetry();
+    return { documentId: id };
   }
 }

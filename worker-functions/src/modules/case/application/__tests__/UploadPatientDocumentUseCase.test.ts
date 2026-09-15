@@ -15,6 +15,7 @@ jest.mock('../../infrastructure/stripJpegMetadata', () => ({
 
 import { UploadPatientDocumentUseCase, PatientDocumentTooLargeError, MAX_DOCUMENT_BYTES } from '../UploadPatientDocumentUseCase';
 import { stripJpegMetadata } from '../../infrastructure/stripJpegMetadata';
+import { scheduleOpportunisticOrphanRetry } from '../scheduleOpportunisticOrphanRetry';
 
 const PID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 
@@ -107,6 +108,33 @@ describe('UploadPatientDocumentUseCase (spec 018 PR-4, D329)', () => {
       uc.execute({ patientId: PID, buffer: Buffer.from('%PDF'), contentType: 'application/pdf', documentType: 'image_consent', actorUid: 'uid-1' }),
     ).rejects.toThrow('db down');
     expect(deps.orphanRepo.record).toHaveBeenCalledWith('enc(patient-documents/uuid-1)', 'DOCUMENTS', 'UPLOAD_FAILED');
+  });
+
+  it('scheduleOpportunisticOrphanRetry lança de forma SÍNCRONA após o commit: upload já comitado NÃO é apagado e NÃO vira 500 (achado 3ª revisão, mesma classe do conserto #2)', async () => {
+    const deps = makeDeps();
+    (scheduleOpportunisticOrphanRetry as jest.Mock).mockImplementationOnce(() => {
+      throw new Error('agendamento explodiu de forma síncrona');
+    });
+    const uc = new UploadPatientDocumentUseCase(storageFactoryOf(deps.storage), deps.repo as never, deps.enc as never, deps.orphanRepo as never);
+
+    await expect(
+      uc.execute({
+        patientId: PID,
+        buffer: Buffer.from('%PDF-1.4 fake'),
+        contentType: 'application/pdf',
+        documentType: 'image_consent',
+        actorUid: 'uid-1',
+      }),
+    ).rejects.toThrow('agendamento explodiu de forma síncrona');
+
+    // O commit da transação JÁ ACONTECEU (insert foi chamado) antes do agendamento explodir. Se
+    // `scheduleOpportunisticOrphanRetry()` ainda estivesse DENTRO do try, essa exceção síncrona
+    // cairia no catch da transação e trataria um upload BEM-SUCEDIDO como falha: apagaria o objeto
+    // recém-comitado e registraria órfão indevido. Fora do try: nem delete nem record são tocados —
+    // só o erro do agendamento propaga, sem desfazer o que já tinha sucesso.
+    expect(deps.repo.insert).toHaveBeenCalledTimes(1);
+    expect(deps.storage.delete).not.toHaveBeenCalled();
+    expect(deps.orphanRepo.record).not.toHaveBeenCalled();
   });
 
   it('constrói pelos DEFAULTS do construtor', () => {
