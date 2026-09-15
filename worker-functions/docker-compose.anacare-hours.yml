@@ -1,0 +1,22 @@
+# Override dedicado ao e2e de integração da "Conferência de horas do Ana Care"
+# (`enlite-frontend/e2e/integration/anacare-hours-conferencia.integration.e2e.ts`).
+#
+# Só o service `api`, só as envs que a spec exige por cima do stack padrão
+# (`docker-compose.yml` + `docker-compose.test.yml`): fonte de horas FALSA e o
+# engine de permissão ABAC ligado, enforçando `admin.patients`.
+#
+# ⚠️ Isolamento: este arquivo é usado SÓ pelo job dedicado desta spec em
+# `.github/workflows/_frontend-integration.yml` (job `integration-e2e-anacare-hours`).
+# O job padrão (`integration-e2e`, todas as outras specs `@integration`) continua
+# subindo a API SEM este override — ligar o engine aqui não pode mudar o
+# comportamento das specs que hoje rodam com o engine desligado.
+#
+# Sem segredo: nenhuma env abaixo é sensível.
+services:
+  api:
+    environment:
+      ANACARE_HOURS_SOURCE: "fake"
+      PERMISSION_ENGINE_ENABLED: "true"
+      PERMISSION_ENFORCED_ROUTES: "admin.patients"
+      PERMISSION_CATALOG_SYNC_ENABLED: "true"
+      PERMISSION_CACHE_TTL_MS: "0"

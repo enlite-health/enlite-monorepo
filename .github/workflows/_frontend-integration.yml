@@ -244,3 +244,104 @@ jobs:
             enlite-frontend/playwright-report/
             enlite-frontend/test-results/
           retention-days: 7
+
+  # ── Job ISOLADO: conferência de horas do Ana Care (spec `anacare-hours-conferencia`) ──
+  #
+  # Por que este spec não entra no job `integration-e2e` acima: ele precisa do engine
+  # ABAC LIGADO na API (`PERMISSION_ENGINE_ENABLED=true`,
+  # `PERMISSION_ENFORCED_ROUTES=admin.patients`, `PERMISSION_CATALOG_SYNC_ENABLED=true`) e
+  # de `ANACARE_HOURS_SOURCE=fake`. O job acima roda TODAS as outras specs `@integration`
+  # de propósito com o engine DESLIGADO — ligá-lo ali mudaria o comportamento de specs que
+  # hoje não o esperam. Runner do GitHub Actions já isola job por VM própria, então não há
+  # disputa de porta/projeto docker com o job acima (os dois usam 5432/8080/5173) — cada um
+  # tem a sua.
+  #
+  # Nota: este job não precisa de `firebase-emulator` nem `fake-gcs` — a spec usa
+  # `USE_MOCK_AUTH=true` (interceptação de `identitytoolkit.googleapis.com` via
+  # `page.route`, igual às demais specs `@integration`) e não toca foto/documento. Provado
+  # local: a API sobe saudável e a suíte passa só com `postgres` + `api` (sem os outros dois
+  # containers) — ver cabeçalho da spec.
+  integration-e2e-anacare-hours:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sobe Postgres + API (override dedicado — engine ABAC ligado)
+        working-directory: worker-functions
+        run: |
+          BASE="-f docker-compose.yml -f docker-compose.test.yml -f docker-compose.anacare-hours.yml"
+          docker compose $BASE up -d postgres
+          espera() {
+            for i in $(seq 1 60); do
+              curl -sf "$2" >/dev/null && echo "$1 pronto" && return 0
+              sleep 2
+            done
+            echo "::error::$1 não respondeu em 120s ($2)"
+            return 1
+          }
+          docker compose $BASE up -d api
+          espera "api" http://localhost:8080/health || {
+            docker compose $BASE logs api | tail -50
+            exit 1
+          }
+
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          cache-dependency-path: enlite-frontend/pnpm-lock.yaml
+
+      - name: Instala dependências
+        working-directory: enlite-frontend
+        run: pnpm install
+
+      - name: Instala o Chromium do Playwright
+        working-directory: enlite-frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Sobe o dev server
+        working-directory: enlite-frontend
+        env:
+          VITE_API_WORKER_FUNCTIONS_URL: http://localhost:8080
+          VITE_USE_PUBLIC_JOBS_API: 'true'
+          VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
+          # Config do Firebase FALSA de propósito — ver comentário equivalente no job
+          # `integration-e2e` acima: o helper de auth desta suíte intercepta
+          # `identitytoolkit.googleapis.com`/`securetoken.googleapis.com` por `page.route`.
+          VITE_FIREBASE_API_KEY: fake-api-key-for-e2e
+          VITE_FIREBASE_AUTH_DOMAIN: demo-e2e.firebaseapp.com
+          VITE_FIREBASE_PROJECT_ID: demo-e2e
+          VITE_FIREBASE_STORAGE_BUCKET: demo-e2e.appspot.com
+          VITE_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
+          VITE_FIREBASE_APP_ID: '1:000000000000:web:0000000000000000000000'
+        run: |
+          pnpm dev > /tmp/vite.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:5173/ >/dev/null && echo "vite pronto" && exit 0
+            sleep 2
+          done
+          echo "::error::Vite não respondeu em 120s"
+          tail -50 /tmp/vite.log
+          exit 1
+
+      - name: Teste de integração — conferência de horas do Ana Care (engine ABAC ligado)
+        working-directory: enlite-frontend
+        env:
+          CI: 'true'
+        run: npx playwright test --project=integration --ignore-snapshots --grep "anacare-hours-conferencia"
+
+      - name: Relatório (só quando falha)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-integration-report-anacare-hours
+          path: |
+            enlite-frontend/playwright-report/
+            enlite-frontend/test-results/
+          retention-days: 7
