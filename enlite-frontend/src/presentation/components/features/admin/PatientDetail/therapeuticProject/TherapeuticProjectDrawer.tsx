@@ -62,6 +62,16 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
   const { catalogs, error: catalogsError } = useTherapeuticCatalogs(isForm);
 
   // As seções do PDF seguem as MESMAS células dos cards (lex C12) — lidas aqui, uma vez.
+  // `?? []` abaixo (props do form/view): sem a célula do container, o campo chega `null` por
+  // redação (D113) — nunca `[]` de verdade. O `[]` só evita o crash da leitura; ele NÃO é
+  // suficiente sozinho para "cada campo já trata a ausência pelo seu próprio marcador" — achado
+  // do gate 14/09: o campo de serviço do form (`contractedServiceId`/`services`) DERIVAVA texto
+  // ("precisa de serviço"/o UUID cru) do `[]`, sem saber se era redação ou paciente sem serviço de
+  // verdade. Por isso o form recebe `servicesRedacted` explícito (abaixo) — os demais campos
+  // (diagnoses/responsibles/professionals/externalContacts/coverageEmergencyContacts) só alimentam
+  // listas/`MultiSelect` que nascem vazias sem afirmar nada quando `[]`, e não precisam do flag
+  // (conferido campo a campo em `TherapeuticProjectForm.tsx`: nenhum deles tem texto que dependa
+  // da lista estar vazia especificamente por redação).
   const reads = {
     identity: useContainerAccess('patient_identity').visible,
     coverage: useContainerAccess('patient_coverage').visible,
@@ -196,7 +206,7 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
               <Text size="sm" className="text-red-700">{exportError}</Text>
             </div>
           )}
-          {target.mode === 'view' && <TherapeuticProjectVersionView version={target.version} services={patient.contractedServices} servicesRedacted={!reads.services} />}
+          {target.mode === 'view' && <TherapeuticProjectVersionView version={target.version} services={patient.contractedServices ?? []} servicesRedacted={!reads.services} />}
           {isForm && catalogsError && (
             <Text size="sm" className="text-red-600" data-testid="therapeutic-project-catalogs-error">{catalogsError}</Text>
           )}
@@ -205,14 +215,15 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
           )}
           {isForm && catalogs && (
             <TherapeuticProjectForm
-              services={patient.contractedServices}
-              patientDiagnoses={patient.diagnoses}
+              services={patient.contractedServices ?? []}
+              servicesRedacted={!reads.services}
+              patientDiagnoses={patient.diagnoses ?? []}
               catalogs={catalogs}
               fieldClass={fieldClass}
-              responsibles={patient.responsibles}
+              responsibles={patient.responsibles ?? []}
               externalContacts={patient.externalContacts ?? []}
               coverageEmergencyContacts={patient.coverageEmergencyContacts ?? []}
-              professionals={patient.professionals}
+              professionals={patient.professionals ?? []}
               from={target.mode === 'edit' ? target.version : null}
               saving={saving}
               saveError={saveError}

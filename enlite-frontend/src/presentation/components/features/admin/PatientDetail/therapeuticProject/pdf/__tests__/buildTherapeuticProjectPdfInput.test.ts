@@ -285,6 +285,27 @@ describe('endereço (o do serviço; sem vínculo, o principal)', () => {
   it('sem a célula de endereço → `null` (seção omitida)', () => {
     expect(montar({ reads: { ...TODOS, address: false } }).addressText).toBeNull();
   });
+
+  // D113 — `patient.addresses` é container PRÓPRIO (`address`), diferente do `services` que dá o
+  // serviço vinculado: sem `patient_address:read`, `patient.addresses` chega `null` por redação
+  // (nunca `[]`). O `address` do serviço era calculado ANTES do `reads.address` decidir se entra
+  // no PDF — e quebrava o export mesmo quando o valor nunca seria usado.
+  it('🔴 D113: `patient.addresses` null (sem `patient_address:read`) não quebra o export — seção continua omitida', () => {
+    const p = paciente({ contractedServices: [SERVICO], addresses: null as unknown as PatientDetail['addresses'] });
+
+    expect(() => montar({ patient: p, reads: { ...TODOS, address: false } })).not.toThrow();
+    expect(montar({ patient: p, reads: { ...TODOS, address: false } }).addressText).toBeNull();
+  });
+
+  // Defesa adicional (não deveria acontecer pelo desenho: `reads.address` verdadeiro implica
+  // container legível, logo nunca `null`) — mas o fallback de "principal" não pode quebrar mesmo
+  // nessa combinação inconsistente.
+  it('defesa: `reads.address` verdadeiro com `patient.addresses` null (estado inconsistente) não quebra o fallback do principal', () => {
+    const p = paciente({ contractedServices: [{ ...SERVICO, addressId: null }], addresses: null as unknown as PatientDetail['addresses'] });
+
+    expect(() => montar({ patient: p })).not.toThrow();
+    expect(montar({ patient: p }).addressText).toBe('—');
+  });
 });
 
 // ── Contatos selecionados na versão (PR-7, `version.contacts`) ───────────────

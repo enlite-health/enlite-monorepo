@@ -34,9 +34,11 @@ export function ProjetoTerapeuticoCard({ patient }: Props): JSX.Element {
   const { versions, fieldClass, isLoading, error, refetch } = useTherapeuticProjects(patient.id);
   const [target, setTarget] = useState<TherapeuticProjectTarget | null>(null);
   const current = currentVersion(versions);
-  const hasActiveService = patient.contractedServices.some((s) => s.active);
-  // Sem `patient_services:read` a lista chega vazia por redação: o card não pode dizer "não tem serviço".
+  // Sem `patient_services:read` o backend redige `contractedServices` para `null` (D113: `null` ≠
+  // `[]` — "não posso ver" nunca é "não tem"). `?? []` só evita o crash da leitura; a UI abaixo
+  // NUNCA deriva "sem serviço contratado" daqui quando `servicesReadable` é falso.
   const { visible: servicesReadable } = useContainerAccess('patient_services');
+  const hasActiveService = (patient.contractedServices ?? []).some((s) => s.active);
 
   return (
     <div data-testid="projeto-terapeutico-card" className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-6">
@@ -44,7 +46,7 @@ export function ProjetoTerapeuticoCard({ patient }: Props): JSX.Element {
         <Heading level={1} as="h3" weight="semibold" color="primary">{tc('title')}</Heading>
         <div className="flex items-center gap-2">
           {/* "Novo": major seguinte. Sem serviço contratado ATIVO não há o que vincular (Gabriel 4a). */}
-          <ActionButton resource="patient_therapeutic_project" action="write" variant="outline" size="sm" onClick={() => setTarget({ mode: 'new' })} disabled={!hasActiveService} title={hasActiveService ? undefined : tc('needsService')} className="flex items-center gap-1" data-testid="tp-new-btn">
+          <ActionButton resource="patient_therapeutic_project" action="write" variant="outline" size="sm" onClick={() => setTarget({ mode: 'new' })} disabled={!hasActiveService} title={hasActiveService ? undefined : servicesReadable ? tc('needsService') : tc('redacted')} className="flex items-center gap-1" data-testid="tp-new-btn">
             {tc('newButton')}
             <Plus className="w-4 h-4" />
           </ActionButton>
@@ -68,7 +70,7 @@ export function ProjetoTerapeuticoCard({ patient }: Props): JSX.Element {
         <>
           {current && (
             <div data-testid="tp-current">
-              <TherapeuticProjectVersionView version={current} services={patient.contractedServices} compact servicesRedacted={!servicesReadable} />
+              <TherapeuticProjectVersionView version={current} services={patient.contractedServices ?? []} compact servicesRedacted={!servicesReadable} />
             </div>
           )}
           <div className="overflow-x-auto" data-testid="tp-versions-table">
