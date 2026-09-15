@@ -128,13 +128,13 @@ describe('getRetratoStatus', () => {
 });
 
 describe('validateShift', () => {
-  it('POSITIVO — turno pendente vira validado, com validatedByName/validatedAt (validador vem da sessão)', async () => {
+  it('POSITIVO — turno pendente vira validado, com validatedBy.name/validatedAt (validador vem da sessão)', async () => {
     const service = makeService();
     await service.validateShift({ shiftId: 'shift-1' });
     const patient = await service.getPatientMonth('2026-08', '90000');
     const shift = patient!.providers[0].shifts[0];
     expect(shift.status).toBe('validado');
-    expect(shift.validatedByName).toBeTruthy();
+    expect(shift.validatedBy?.name).toBeTruthy();
     expect(shift.validatedAt).toBeTruthy();
   });
 
@@ -146,7 +146,7 @@ describe('validateShift', () => {
   });
 
   it('NEGATIVO — turno já validado é recusado (não pode reabrir)', async () => {
-    const service = makeService({}, [makeShift({ status: 'validado', validatedByName: 'Equipo QA', validatedAt: '2026-09-01T00:00:00-03:00' })]);
+    const service = makeService({}, [makeShift({ status: 'validado', validatedBy: { id: 'e2e-qa', name: 'Equipo QA' }, validatedAt: '2026-09-01T00:00:00-03:00' })]);
     await expect(service.validateShift({ shiftId: 'shift-1' })).rejects.toThrow(AnaCareHoursServiceError);
   });
 
@@ -179,7 +179,7 @@ describe('validateBatch', () => {
   it('POSITIVO — lote valida turno CONTESTADO junto (mesma regra do validateShift único — só validado congela)', async () => {
     const service = makeService({}, [
       makeShift({ id: 's1', status: 'pendiente' }),
-      makeShift({ id: 's2', status: 'validado', validatedByName: 'Equipo QA', validatedAt: '2026-09-01T00:00:00-03:00' }),
+      makeShift({ id: 's2', status: 'validado', validatedBy: { id: 'e2e-qa', name: 'Equipo QA' }, validatedAt: '2026-09-01T00:00:00-03:00' }),
       makeShift({ id: 's3', status: 'contestado', contestReason: 'otro', contestNote: 'nota' }),
     ]);
     await service.validateBatch({ shiftIds: ['s1', 's2', 's3'] });

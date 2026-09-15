@@ -173,7 +173,6 @@ function ShiftRows({
   const hours = shiftHours(shift, sinCheckinHoursMode);
   const diffFromScheduled = shift.hoursActual !== null && Math.abs(hours - shift.hoursScheduled) >= HOURS_HIGHLIGHT_THRESHOLD;
   const showDash = shift.hoursActual === null && sinCheckinHoursMode === 'zero';
-  const canValidate = shift.status === 'pendiente' || shift.status === 'contestado';
 
   return (
     <>
@@ -218,11 +217,16 @@ function ShiftRows({
           {shift.status === 'validado' ? (
             <Text size="xs" color="muted">
               {t('admin.anacareHours.providerGroup.validatedBy', {
-                name: shift.validatedByName,
+                name: shift.validatedBy?.name,
                 date: formatShortDate(shift.validatedAt?.slice(0, 10) ?? shift.date),
               })}
             </Text>
-          ) : canValidate ? (
+          ) : (
+            // D5 (cobertura, 15/09): o `ValidationStatus` é um union FECHADO de 3 valores
+            // ('pendiente'|'validado'|'contestado') — excluído 'validado' acima, sobra
+            // exatamente `canValidate` (pendiente/contestado). O `: canValidate ? (...) : null`
+            // de antes tinha um `null` MORTO (nenhum 4º status existe pra cair nele) —
+            // removido em vez de marcado como ignorado.
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
@@ -246,7 +250,7 @@ function ShiftRows({
                 </Button>
               )}
             </div>
-          ) : null}
+          )}
         </TableCell>
       </TableRow>
       {shift.status === 'contestado' && shift.contestReason && (

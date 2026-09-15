@@ -42,7 +42,14 @@ function delay<T>(value: T): Promise<T> {
 
 /** Erro de regra de negócio recusada — mesma forma que o backend real devolve (400/404/409/503). */
 export class AnaCareHoursServiceError extends Error {
-  readonly code: 'RETRATO_DESATUALIZADO' | 'JA_VALIDADO' | 'MOTIVO_INVALIDO' | 'NOTA_MUITO_LONGA' | 'FONTE_NAO_CONFIGURADA';
+  readonly code:
+    | 'RETRATO_DESATUALIZADO'
+    | 'JA_VALIDADO'
+    | 'MOTIVO_INVALIDO'
+    | 'NOTA_MUITO_LONGA'
+    | 'FONTE_NAO_CONFIGURADA'
+    | 'TURNO_NAO_ENCONTRADO'
+    | 'DESCONHECIDO';
   constructor(code: AnaCareHoursServiceError['code'], message: string) {
     super(message);
     this.name = 'AnaCareHoursServiceError';
@@ -150,7 +157,7 @@ export class FakeAnaCareHoursService implements AnaCareHoursService {
       }
       // Contestado também pode ser validado depois — só validado congela.
       shift.status = 'validado';
-      shift.validatedByName = 'Equipo Enlite QA';
+      shift.validatedBy = { id: 'e2e-qa', name: 'Equipo Enlite QA' };
       shift.validatedAt = new Date().toISOString();
     });
     if (!found) return delay(undefined);
@@ -182,7 +189,7 @@ export class FakeAnaCareHoursService implements AnaCareHoursService {
       this.mutateShift(shiftId, (shift) => {
         if (shift.status === 'validado') return;
         shift.status = 'validado';
-        shift.validatedByName = 'Equipo Enlite QA';
+        shift.validatedBy = { id: 'e2e-qa', name: 'Equipo Enlite QA' };
         shift.validatedAt = new Date().toISOString();
       });
     }
@@ -198,7 +205,7 @@ export class FakeAnaCareHoursService implements AnaCareHoursService {
       shift.status = 'contestado';
       shift.contestReason = reason;
       shift.contestNote = note?.trim() ? note.trim() : undefined;
-      shift.validatedByName = undefined;
+      shift.validatedBy = undefined;
       shift.validatedAt = undefined;
     });
     return delay(undefined);

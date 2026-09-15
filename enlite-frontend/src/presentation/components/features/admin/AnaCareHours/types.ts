@@ -62,8 +62,13 @@ export interface AnaCareShift {
   origin: CheckInOrigin;
   /** ↔ `shift_hours_validation.status`. */
   status: ValidationStatus;
-  /** ↔ `shift_hours_validation.validated_by` (resolvido para NOME — nunca o id, ver nota do arquivo). Presente só quando status === 'validado'. */
-  validatedByName?: string;
+  /**
+   * ↔ `shift_hours_validation.validated_by` (FK), resolvido para `{id, name}` — MESMO shape que o
+   * backend real manda (`AnaCareHoursMapper.ts` `Validator`). O `id` viaja no payload (contrato
+   * HTTP fixo), mas a UI só renderiza `.name` — nunca o id (regra dura, D342). Presente só quando
+   * status === 'validado'.
+   */
+  validatedBy?: { id: string; name: string };
   /** ↔ `shift_hours_validation.validated_at`. */
   validatedAt?: string;
   /** ↔ `shift_hours_validation.reason` (CHECK, lista fechada). Presente só quando status === 'contestado'. */

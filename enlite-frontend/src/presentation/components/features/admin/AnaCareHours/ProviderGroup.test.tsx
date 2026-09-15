@@ -39,10 +39,18 @@ describe('ProviderGroup', () => {
   });
 
   it('POSITIVO — turno validado NÃO mostra checkbox nem botões — só "Validado por"', () => {
-    const provider = makeProvider({ shifts: [makeShift({ status: 'validado', validatedByName: 'Equipo QA', validatedAt: '2026-08-15T10:00:00-03:00' })] });
+    const provider = makeProvider({ shifts: [makeShift({ status: 'validado', validatedBy: { id: 'e2e-qa', name: 'Equipo QA' }, validatedAt: '2026-08-15T10:00:00-03:00' })] });
     render(<ProviderGroup provider={provider} disableActions={false} selectedShiftIds={new Set()} {...noop} />);
     expect(screen.queryByTestId('anacare-hours-select-shift-s1')).not.toBeInTheDocument();
     expect(screen.queryByTestId('anacare-hours-validate-shift-s1')).not.toBeInTheDocument();
+    expect(screen.getByText(/providerGroup\.validatedBy/)).toBeInTheDocument();
+  });
+
+  // D5 (cobertura, 15/09): `validatedAt` ausente num turno validado — cai no fallback `?? shift.date`
+  // (defesa contra o backend mandar `validado` sem a data, ao invés de quebrar `.slice`).
+  it('POSITIVO — turno validado SEM validatedAt usa a data do turno como fallback', () => {
+    const provider = makeProvider({ shifts: [makeShift({ status: 'validado', validatedBy: { id: 'e2e-qa', name: 'Equipo QA' }, validatedAt: undefined })] });
+    render(<ProviderGroup provider={provider} disableActions={false} selectedShiftIds={new Set()} {...noop} />);
     expect(screen.getByText(/providerGroup\.validatedBy/)).toBeInTheDocument();
   });
 
@@ -88,7 +96,7 @@ describe('ProviderGroup', () => {
   });
 
   it('POSITIVO — 100% validado mostra "Todo validado" e some o checkbox de cabeçalho', () => {
-    const provider = makeProvider({ shifts: [makeShift({ status: 'validado', validatedByName: 'X', validatedAt: '2026-08-15T00:00:00-03:00' })] });
+    const provider = makeProvider({ shifts: [makeShift({ status: 'validado', validatedBy: { id: 'e2e-qa', name: 'X' }, validatedAt: '2026-08-15T00:00:00-03:00' })] });
     render(<ProviderGroup provider={provider} disableActions={false} selectedShiftIds={new Set()} {...noop} />);
     expect(screen.getByTestId('anacare-hours-no-pending-p1')).toHaveTextContent('admin.anacareHours.providerGroup.allValidated');
     expect(screen.queryByTestId('anacare-hours-select-all-pending-p1')).not.toBeInTheDocument();
