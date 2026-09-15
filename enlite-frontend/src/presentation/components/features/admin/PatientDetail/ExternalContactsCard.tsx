@@ -45,7 +45,7 @@ export function ExternalContactsCard({ externalContacts, emergencyContactRef, pa
           {t('admin.patients.detail.externalContactsCard.title')}
         </Heading>
         <div className="flex items-center gap-3 flex-wrap">
-          <ActionButton resource="patient_family" action="write" variant="outline" size="sm" onClick={() => setEditing(true)} disabled={!patientId} className="flex items-center gap-1" data-testid="edit-external-contacts-btn">
+          <ActionButton resource="patient_family" action="create" variant="outline" size="sm" onClick={() => setEditing(true)} disabled={!patientId} className="flex items-center gap-1" data-testid="edit-external-contacts-btn">
             <Plus className="w-4 h-4" />
             {t('admin.patients.detail.new')}
           </ActionButton>

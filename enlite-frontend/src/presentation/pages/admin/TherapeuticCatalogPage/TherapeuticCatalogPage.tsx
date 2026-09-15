@@ -60,8 +60,8 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
   // Nº fixo de chamadas (Rules of Hooks) e recurso LITERAL em cada uma: a catraca `ui-gate-debt`
   // só reconhece consumidor de célula por literal — `useActionGate(resource, …)` não conta.
   const writeGates = {
-    'specific-objectives': useActionGate('catalog_therapeutic_objectives', 'write'),
-    activities: useActionGate('catalog_therapeutic_activities', 'write'),
+    'specific-objectives': useActionGate('catalog_therapeutic_objectives', 'update'),
+    activities: useActionGate('catalog_therapeutic_activities', 'update'),
   } as const;
   const writeGate = writeGates[kind];
 
@@ -117,7 +117,7 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
         </div>
         <ActionButton
           resource={resource}
-          action="write"
+          action="create"
           variant="primary"
           size="md"
           onClick={() => setFormModal({ open: true, item: null })}

@@ -162,11 +162,11 @@ export function AdminPatientsPage(): JSX.Element {
                 {t('admin.patients.kanban.toggleKanban')}
               </Typography>
             </Button>
-            {/* D269 — criação chama POST /patients → patient:write; sem a
+            {/* D269 — criação chama POST /patients → patient:create (PR-8b); sem a
                 célula, o botão SOME (mode='hide', default do ActionButton). */}
             <ActionButton
               resource="patient"
-              action="write"
+              action="create"
               variant="outline"
               size="md"
               className="h-10 px-5 border-primary text-primary flex items-center justify-center gap-2"

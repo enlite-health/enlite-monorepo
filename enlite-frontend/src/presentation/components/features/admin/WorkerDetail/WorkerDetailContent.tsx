@@ -46,13 +46,13 @@ export function WorkerDetailContent({ workerId, header, renderError, allowEdit =
   const { t } = useTranslation();
   // Editar o perfil chama PATCH /workers/:id/profile → worker:write. Sem papel:
   // a célula é o freio, e com o engine desligado o gate deixa passar (D268).
-  const workerWriteGate = useActionGate('worker', 'write');
+  const workerWriteGate = useActionGate('worker', 'update');
   const canEdit = allowEdit && workerWriteGate.allowed;
   // Doc adicional: POST .../additional-documents(/upload-url) → worker_document:write;
   // DELETE .../additional-documents/:docId → worker_document:delete. D269 — o
   // `AdditionalDocumentsSection` é COMPARTILHADO com o autoatendimento do
   // worker (`DocumentsTab`), então o gate mora aqui (call site admin), não no componente.
-  const additionalDocWriteGate = useActionGate('worker_document', 'write');
+  const additionalDocWriteGate = useActionGate('worker_document', 'create');
   const additionalDocDeleteGate = useActionGate('worker_document', 'delete');
   const { worker, isLoading, error, refetch, patchDocuments, patchDocumentValidations } = useWorkerDetail(workerId);
   const [activeTab, setActiveTab] = useState<WorkerTab>('documents');

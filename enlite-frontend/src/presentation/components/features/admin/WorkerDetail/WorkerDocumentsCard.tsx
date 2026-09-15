@@ -75,7 +75,7 @@ export function WorkerDocumentsCard({
   // .../documents/:type → worker_document:delete. D269 — repassados como
   // `canUpload`/`canDelete` pro `DocumentUploadCard`, que é COMPARTILHADO com
   // o autoatendimento do worker (por isso o gate mora aqui, não lá).
-  const docWriteGate = useActionGate('worker_document', 'write');
+  const docWriteGate = useActionGate('worker_document', 'create');
   const docDeleteGate = useActionGate('worker_document', 'delete');
 
   // Filtra slots pela política ABAC de visibilidade por profissão:

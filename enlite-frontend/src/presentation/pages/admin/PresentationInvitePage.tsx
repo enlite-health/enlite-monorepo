@@ -21,7 +21,7 @@ export function PresentationInvitePage() {
   const { t } = useTranslation();
   // PUT /presentation-invite/settings → messaging:write. Sem papel: a célula é
   // o freio, e com o engine desligado o gate deixa passar (D268).
-  const { allowed: canWrite, denied: writeDenied } = useActionGate('messaging', 'write');
+  const { allowed: canWrite, denied: writeDenied } = useActionGate('messaging', 'update');
   const [settings, setSettings] = useState<PresentationInviteSettings | null>(null);
   const [stats, setStats] = useState<PresentationInviteStats | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);

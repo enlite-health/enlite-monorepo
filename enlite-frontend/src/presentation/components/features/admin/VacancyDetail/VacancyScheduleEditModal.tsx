@@ -159,7 +159,7 @@ export function VacancyScheduleEditModal({
           {/* PUT /vacancies/:id → updateVacancy → vacancy:write. */}
           <ActionButton
             resource="vacancy"
-            action="write"
+            action="update"
             type="button"
             variant="primary"
             size="sm"

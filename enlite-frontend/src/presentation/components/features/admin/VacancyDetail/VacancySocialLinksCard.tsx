@@ -170,7 +170,7 @@ export function VacancySocialLinksCard({
                 // POST /vacancies/:id/social-links → generateSocialLink → vacancy:write.
                 <ActionButton
                   resource="vacancy"
-                  action="write"
+                  action="create"
                   variant="outline"
                   size="sm"
                   onClick={() => handleGenerate(channel)}

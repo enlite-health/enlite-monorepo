@@ -179,6 +179,12 @@ export function AdminWorkersPage(): JSX.Element {
   // POST …/presentation-invite (messaging:send). Sem a célula, nem consulta nem botão.
   const inviteSendGate = useActionGate('messaging', 'send');
   const inviteLastGate = useActionGate('messaging', 'read');
+  // POST /workers/sync-talentum é sincronização EM MASSA (sem :id) — pela regra do orquestrador
+  // (tasks.md 8b.1, "massa ou incerto") exige talentum:create E talentum:update JUNTAS,
+  // conservador: falta uma, ninguém ganha acesso ao botão.
+  const podeCriarTalentum = useActionGate('talentum', 'create').allowed;
+  const podeAtualizarTalentum = useActionGate('talentum', 'update').allowed;
+  const podeSyncTalentum = podeCriarTalentum && podeAtualizarTalentum;
   const [lastInviteByWorker, setLastInviteByWorker] = usePresentationInviteLast(workers.map((w) => w.id), inviteLastGate.allowed);
   const handlePresentationInvite = useCallback(async (workerId: string) => {
     setInviteByWorker((prev) => ({ ...prev, [workerId]: { status: 'sending' } }));
@@ -247,9 +253,12 @@ export function AdminWorkersPage(): JSX.Element {
               <Download className="w-4 h-4" />
               {t('admin.workers.export.button')}
             </ActionButton>
+            {/* PR-8b: POST /workers/sync-talentum é MASSA → talentum:create E talentum:update
+                JUNTAS. `ActionButton` cobre a 2ª; `podeSyncTalentum` cobre a 1ª. */}
+            {podeSyncTalentum && (
             <ActionButton
               resource="talentum"
-              action="write"
+              action="update"
               variant="outline"
               size="md"
               className="h-10 border-primary text-primary flex items-center justify-center gap-2"
@@ -261,6 +270,7 @@ export function AdminWorkersPage(): JSX.Element {
                 ? t('admin.workers.syncing', 'Sincronizando...')
                 : t('admin.workers.syncTalentum', 'Sincronizar Talentum')}
             </ActionButton>
+            )}
           </div>
         </div>
 

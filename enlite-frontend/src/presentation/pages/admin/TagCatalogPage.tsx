@@ -28,7 +28,7 @@ function getTextColor(hex: string): string {
 
 export default function TagCatalogPage() {
   // D269: criar/editar/excluir etiqueta chamam POST/PATCH/DELETE /worker-tags → worker:write.
-  const tagWriteGate = useActionGate('worker', 'write');
+  const tagWriteGate = useActionGate('worker', 'update');
   const { t } = useTranslation();
   const navigate = useNavigate();
   // Trava de rota pela CÉLULA da leitura que a tela faz (GET /worker-tags →
@@ -101,7 +101,7 @@ export default function TagCatalogPage() {
             {t('admin.tags.title')}
           </Heading>
         </div>
-        <ActionButton resource="worker" action="write" variant="primary" size="md" onClick={handleNewTag}>
+        <ActionButton resource="worker" action="create" variant="primary" size="md" onClick={handleNewTag}>
           <Plus className="w-4 h-4" />
           {t('admin.tags.newTag')}
         </ActionButton>

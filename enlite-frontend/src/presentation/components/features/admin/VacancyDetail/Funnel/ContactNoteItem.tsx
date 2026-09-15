@@ -34,7 +34,7 @@ export function ContactNoteItem({
   // DELETE .../contact-notes/:noteId → funnel:write (D269). Botão raw
   // `<button>` (não `<Button>`): useActionGate direto, combinado com a
   // regra de negócio existente (autor + janela de 2h).
-  const { allowed: canWriteFunnel } = useActionGate('funnel', 'write');
+  const { allowed: canWriteFunnel } = useActionGate('funnel', 'update');
   const canDeleteThisNote = canDelete && canWriteFunnel;
 
   const author = note.createdByAdminName ?? note.createdByAdminEmail;

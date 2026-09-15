@@ -47,7 +47,7 @@ export function EmergencyMarkButton({ patientId, kind, contactId, isMarked, onCh
   return (
     <ActionButton
       resource="patient_family"
-      action="write"
+      action="update"
       variant={isMarked ? 'primary' : 'outline'}
       size="sm"
       onClick={toggle}

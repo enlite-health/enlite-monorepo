@@ -19,7 +19,7 @@ interface WorkerTestAccountToggleProps {
  */
 export function WorkerTestAccountToggle({ workerId, initialIsTest }: WorkerTestAccountToggleProps): JSX.Element | null {
   const { t } = useTranslation();
-  const workerWriteGate = useActionGate('worker', 'write');
+  const workerWriteGate = useActionGate('worker', 'update');
 
   const [isTest, setIsTest] = useState(initialIsTest);
   const [busy, setBusy] = useState(false);

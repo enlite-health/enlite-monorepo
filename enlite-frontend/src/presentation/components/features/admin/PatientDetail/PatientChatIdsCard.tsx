@@ -57,7 +57,7 @@ export function PatientChatIdsCard({ patient, onSaved }: Props) {
         {/* D269 — abre o drawer que faz PUT /patients/:id/chat-ids → patient:write. */}
         <ActionButton
           resource="patient_chat"
-          action="write"
+          action="update"
           variant="primary"
           size="sm"
           onClick={() => setEditing(true)}

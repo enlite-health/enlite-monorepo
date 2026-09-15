@@ -41,7 +41,7 @@ export function PatientKanbanBoard({ groups, onMove }: Props): JSX.Element {
   // card não é `<Button>`, então usa `useActionGate` (mesma leitura do
   // `ActionButton`): sem a célula, o ARRASTO fica desabilitado (o card
   // continua clicável para abrir a ficha — só o drag some).
-  const patientWriteGate = useActionGate('patient', 'write');
+  const patientWriteGate = useActionGate('patient', 'update');
 
   const columns = PATIENT_KANBAN_STATUSES.map((status) => ({
     id: status,

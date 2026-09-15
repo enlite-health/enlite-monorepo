@@ -101,7 +101,7 @@ export function VacancyCaseCard({
   // PUT /vacancies/:id → updateVacancy → vacancy:write. O dropdown de status
   // (inclusive "CLOSED", o equivalente a arquivar) não é `<Button>`, então
   // usa `useActionGate` direto — mesma leitura do `ActionButton` (D269).
-  const vacancyWriteGate = useActionGate('vacancy', 'write');
+  const vacancyWriteGate = useActionGate('vacancy', 'update');
 
   const sexLabel = sex
     ? t(`admin.vacancyDetail.vacancyForm.sexOptions.${sex}`, sex)
