@@ -323,7 +323,7 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
               lat={editing ? address.lat ?? null : coords?.lat ?? null}
               lng={editing ? address.lng ?? null : coords?.lng ?? null}
               address={editing ? address.addressFormatted ?? address.addressRaw : null}
-              className="h-full"
+              className="!h-full"
             />
           </div>
 
