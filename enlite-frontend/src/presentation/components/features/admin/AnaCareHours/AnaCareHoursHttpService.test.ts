@@ -91,6 +91,14 @@ describe('getMonthSnapshot', () => {
     expect(fetchMock.mock.calls[0][0]).not.toContain('search');
   });
 
+  // D5 (cobertura, 15/09): `headers.get('content-type')` devolvendo `null` de VERDADE (não só a
+  // string vazia que os outros mocks simulam) — cobre o `?? ''` antes de checar `.includes`.
+  it('NEGATIVO — content-type ausente (header.get devolve null) é tratado como corpo não-JSON', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ status: 200, headers: { get: () => null }, json: async () => ({}) } as unknown as Response);
+    const service = new AnaCareHoursHttpService();
+    await expect(service.getMonthSnapshot('2026-08')).rejects.toMatchObject({ code: 'DESCONHECIDO' });
+  });
+
   it('NEGATIVO — 503 ANACARE_SOURCE_NOT_CONFIGURED vira AnaCareHoursServiceError FONTE_NAO_CONFIGURADA', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(503, { success: false, error: 'ANACARE_SOURCE_NOT_CONFIGURED', code: 'ANACARE_SOURCE_NOT_CONFIGURED' }));
     const service = new AnaCareHoursHttpService();
@@ -108,19 +116,21 @@ describe('getMonthSnapshot', () => {
   it('NEGATIVO — resposta 200 sem content-type JSON (ex.: proxy/HTML de erro) vira AnaCareHoursServiceError, nunca `.json()` quebrado', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({ status: 502, headers: { get: () => 'text/html' }, json: async () => ({}) } as unknown as Response);
     const service = new AnaCareHoursHttpService();
-    await expect(service.getMonthSnapshot('2026-08')).rejects.toMatchObject({ code: 'RETRATO_DESATUALIZADO' });
+    // D3: código desconhecido/ausente cai em erro GENÉRICO — nunca mais "retrato desatualizado"
+    // por omissão (esse fallback desligava ações por um motivo que a resposta nem mandou).
+    await expect(service.getMonthSnapshot('2026-08')).rejects.toMatchObject({ code: 'DESCONHECIDO' });
   });
 
-  it('NEGATIVO — código de erro fora do vocabulário conhecido cai no fallback RETRATO_DESATUALIZADO', async () => {
+  it('NEGATIVO — código de erro fora do vocabulário conhecido cai no fallback GENÉRICO (DESCONHECIDO)', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(422, { success: false, error: 'algo novo', code: 'CODIGO_NUNCA_VISTO' }));
     const service = new AnaCareHoursHttpService();
-    await expect(service.getMonthSnapshot('2026-08')).rejects.toMatchObject({ code: 'RETRATO_DESATUALIZADO' });
+    await expect(service.getMonthSnapshot('2026-08')).rejects.toMatchObject({ code: 'DESCONHECIDO' });
   });
 
   it('NEGATIVO — corpo 200 sem o campo `success` (formato inesperado) é tratado como erro, nunca lido como sucesso', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, { data: SNAPSHOT }));
     const service = new AnaCareHoursHttpService();
-    await expect(service.getMonthSnapshot('2026-08')).rejects.toMatchObject({ code: 'RETRATO_DESATUALIZADO' });
+    await expect(service.getMonthSnapshot('2026-08')).rejects.toMatchObject({ code: 'DESCONHECIDO' });
   });
 
   it('NEGATIVO — 503 (GET) cujo corpo não é JSON válido cai no fallback de mensagem (safeJson captura o throw)', async () => {
@@ -196,17 +206,76 @@ describe('validateShift', () => {
     const service = new AnaCareHoursHttpService();
     await expect(service.validateShift({ shiftId: 'shift-1' })).rejects.toMatchObject({ code: 'RETRATO_DESATUALIZADO' });
   });
+
+  it('NEGATIVO — content-type ausente (header.get devolve null) na escrita vira erro GENÉRICO', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ status: 500, headers: { get: () => null }, json: async () => ({}) } as unknown as Response);
+    const service = new AnaCareHoursHttpService();
+    await expect(service.validateShift({ shiftId: 'shift-1' })).rejects.toMatchObject({ code: 'DESCONHECIDO' });
+  });
 });
 
 describe('validateBatch', () => {
-  it('POSITIVO — 204 resolve, body manda shiftIds', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(noContentResponse());
+  // D1 (revisão de conformidade, 15/09): o backend real responde 200
+  // `{success:true, data:{results}}` — NUNCA 204 — porque o lote é parcial (cada item tem seu
+  // próprio `ok`/`code`, `AnaCareHoursService.ts` backend). O teste antigo mockava 204 e passava
+  // mesmo com o bug do front (que só aceitava 204 como sucesso).
+  it('POSITIVO — 200 com todos os itens ok resolve, body manda shiftIds', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, { success: true, data: { results: [{ shiftId: 's1', ok: true }, { shiftId: 's2', ok: true }] } }),
+    );
     globalThis.fetch = fetchMock;
     const service = new AnaCareHoursHttpService();
-    await service.validateBatch({ shiftIds: ['s1', 's2'] });
+    await expect(service.validateBatch({ shiftIds: ['s1', 's2'] })).resolves.toBeUndefined();
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toContain('/shifts/validate-batch');
     expect(JSON.parse(init.body)).toEqual({ shiftIds: ['s1', 's2'] });
+  });
+
+  it('NEGATIVO — 200 com 1 item falho vira AnaCareHoursServiceError com o code daquele item', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      jsonResponse(200, { success: true, data: { results: [{ shiftId: 's1', ok: true }, { shiftId: 's2', ok: false, code: 'JA_VALIDADO' }] } }),
+    );
+    const service = new AnaCareHoursHttpService();
+    await expect(service.validateBatch({ shiftIds: ['s1', 's2'] })).rejects.toMatchObject({ code: 'JA_VALIDADO' });
+  });
+
+  it('NEGATIVO — 503 (fonte não configurada) vira FONTE_NAO_CONFIGURADA', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(503, { success: false, error: 'ANACARE_SOURCE_NOT_CONFIGURED', code: 'ANACARE_SOURCE_NOT_CONFIGURED' }));
+    const service = new AnaCareHoursHttpService();
+    await expect(service.validateBatch({ shiftIds: ['s1'] })).rejects.toMatchObject({ code: 'FONTE_NAO_CONFIGURADA' });
+  });
+
+  it('NEGATIVO — resposta sem content-type JSON vira erro GENÉRICO, nunca `.json()` quebrado', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ status: 502, headers: { get: () => 'text/html' }, json: async () => ({}) } as unknown as Response);
+    const service = new AnaCareHoursHttpService();
+    await expect(service.validateBatch({ shiftIds: ['s1'] })).rejects.toMatchObject({ code: 'DESCONHECIDO' });
+  });
+
+  it('NEGATIVO — corpo com `success:false` (não é o formato {results}) vira erro mapeado pelo code', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(400, { success: false, error: 'lote inválido', code: 'TURNO_NAO_ENCONTRADO' }));
+    const service = new AnaCareHoursHttpService();
+    await expect(service.validateBatch({ shiftIds: ['s1'] })).rejects.toMatchObject({ code: 'TURNO_NAO_ENCONTRADO' });
+  });
+
+  it('NEGATIVO — corpo `success:false` sem `error` cai no fallback "HTTP <status>"', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(400, { success: false, error: '', code: 'TURNO_NAO_ENCONTRADO' }));
+    const service = new AnaCareHoursHttpService();
+    await expect(service.validateBatch({ shiftIds: ['s1'] })).rejects.toMatchObject({ message: 'HTTP 400' });
+  });
+
+  it('NEGATIVO — 503 cujo corpo JSON não tem `error` cai no fallback padrão da mensagem', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(503, {}));
+    const service = new AnaCareHoursHttpService();
+    await expect(service.validateBatch({ shiftIds: ['s1'] })).rejects.toMatchObject({
+      code: 'FONTE_NAO_CONFIGURADA',
+      message: 'ANACARE_SOURCE_NOT_CONFIGURED',
+    });
+  });
+
+  it('NEGATIVO — content-type ausente (header.get devolve null) no lote vira erro GENÉRICO', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ status: 500, headers: { get: () => null }, json: async () => ({}) } as unknown as Response);
+    const service = new AnaCareHoursHttpService();
+    await expect(service.validateBatch({ shiftIds: ['s1'] })).rejects.toMatchObject({ code: 'DESCONHECIDO' });
   });
 });
 
@@ -259,7 +328,7 @@ describe('contestShift', () => {
   it('NEGATIVO — resposta de erro sem content-type JSON (não 204/503) vira AnaCareHoursServiceError', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({ status: 500, headers: { get: () => 'text/plain' }, json: async () => ({}) } as unknown as Response);
     const service = new AnaCareHoursHttpService();
-    await expect(service.contestShift({ shiftId: 'shift-1', reason: 'otro' })).rejects.toMatchObject({ code: 'RETRATO_DESATUALIZADO' });
+    await expect(service.contestShift({ shiftId: 'shift-1', reason: 'otro' })).rejects.toMatchObject({ code: 'DESCONHECIDO' });
   });
 
   it('NEGATIVO — erro de escrita sem mensagem cai no fallback "HTTP <status>"', async () => {

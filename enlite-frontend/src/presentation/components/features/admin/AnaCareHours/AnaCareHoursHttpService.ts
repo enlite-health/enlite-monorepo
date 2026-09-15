@@ -44,17 +44,22 @@ interface ApiErrorResponse {
   code?: string;
 }
 
+// Nomes UNIFICADOS com o backend (`AnaCareHoursErrorCode`, `domain/AnaCareShift.ts`): o backend
+// manda `NOTA_MUITO_LONGA` (nota de contestação acima do limite) e `TURNO_NAO_ENCONTRADO` — o
+// front tem de reconhecer os dois, senão `mapErrorCode` os rebatizava incorretamente.
 const KNOWN_ERROR_CODES: ReadonlySet<AnaCareHoursServiceError['code']> = new Set([
   'RETRATO_DESATUALIZADO',
   'JA_VALIDADO',
   'MOTIVO_INVALIDO',
   'NOTA_MUITO_LONGA',
   'FONTE_NAO_CONFIGURADA',
+  'TURNO_NAO_ENCONTRADO',
 ]);
 
+/** Código desconhecido/ausente vira erro GENÉRICO — nunca "retrato desatualizado" por omissão (isso desabilitava ações por um motivo que a resposta nem mandou). */
 function mapErrorCode(code: string | undefined, fallbackMessage: string): AnaCareHoursServiceError {
   const mapped = code && KNOWN_ERROR_CODES.has(code as AnaCareHoursServiceError['code']) ? (code as AnaCareHoursServiceError['code']) : undefined;
-  return new AnaCareHoursServiceError(mapped ?? 'RETRATO_DESATUALIZADO', fallbackMessage);
+  return new AnaCareHoursServiceError(mapped ?? 'DESCONHECIDO', fallbackMessage);
 }
 
 export class AnaCareHoursHttpService implements AnaCareHoursService {
@@ -85,7 +90,7 @@ export class AnaCareHoursHttpService implements AnaCareHoursService {
     }
     const contentType = response.headers.get('content-type') ?? '';
     if (!contentType.includes('application/json')) {
-      throw new AnaCareHoursServiceError('RETRATO_DESATUALIZADO', `Erro ao conectar ao servidor (HTTP ${response.status}).`);
+      throw new AnaCareHoursServiceError('DESCONHECIDO', `Erro ao conectar ao servidor (HTTP ${response.status}).`);
     }
     const json = (await response.json()) as ApiSuccessResponse<T> | ApiErrorResponse;
     if (!('success' in json) || !json.success) {
@@ -106,10 +111,35 @@ export class AnaCareHoursHttpService implements AnaCareHoursService {
     }
     const contentType = response.headers.get('content-type') ?? '';
     if (!contentType.includes('application/json')) {
-      throw new AnaCareHoursServiceError('RETRATO_DESATUALIZADO', `Erro ao conectar ao servidor (HTTP ${response.status}).`);
+      throw new AnaCareHoursServiceError('DESCONHECIDO', `Erro ao conectar ao servidor (HTTP ${response.status}).`);
     }
     const errBody = (await response.json()) as ApiErrorResponse;
     throw mapErrorCode(errBody.code, errBody.error || `HTTP ${response.status}`);
+  }
+
+  /**
+   * POST específico do lote (D1): `POST /shifts/validate-batch` responde **200**
+   * `{success:true, data:{results}}` — cada item com `ok`/`code` próprio (`AnaCareHoursService.ts`
+   * backend, `validateBatch`), nunca 204 como os POSTs de item único. Reusar `postJson` (que só
+   * aceita 204 como sucesso) fazia o 200 de sucesso cair no ramo de erro.
+   */
+  private async postBatchJson(path: string, body: unknown): Promise<Array<{ shiftId: string; ok: boolean; code?: string }>> {
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(`${this.baseURL}${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
+    if (response.status === 503) {
+      const errBody = await this.safeJson<ApiErrorResponse>(response);
+      throw new AnaCareHoursServiceError('FONTE_NAO_CONFIGURADA', errBody?.error ?? 'ANACARE_SOURCE_NOT_CONFIGURED');
+    }
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!contentType.includes('application/json')) {
+      throw new AnaCareHoursServiceError('DESCONHECIDO', `Erro ao conectar ao servidor (HTTP ${response.status}).`);
+    }
+    const json = (await response.json()) as ApiSuccessResponse<{ results: Array<{ shiftId: string; ok: boolean; code?: string }> }> | ApiErrorResponse;
+    if (!('success' in json) || !json.success) {
+      const err = json as ApiErrorResponse;
+      throw mapErrorCode(err.code, err.error || `HTTP ${response.status}`);
+    }
+    return json.data.results;
   }
 
   private async safeJson<T>(response: Response): Promise<T | null> {
@@ -143,7 +173,13 @@ export class AnaCareHoursHttpService implements AnaCareHoursService {
   }
 
   async validateBatch({ shiftIds }: ValidateBatchCommand): Promise<void> {
-    return this.postJson(`${this.basePath}/shifts/validate-batch`, { shiftIds });
+    const results = await this.postBatchJson(`${this.basePath}/shifts/validate-batch`, { shiftIds });
+    // Sucesso PARCIAL (um 409 isolado não derruba o lote inteiro no backend, ver
+    // `AnaCareHoursService.ts:validateBatch`) ainda é reportado como ERRO pro chamador — a tela
+    // não tem hoje UI para "3 de 5 validados"; melhor um erro visível que sucesso silencioso que
+    // esconde os itens que falharam.
+    const failed = results.find((r) => !r.ok);
+    if (failed) throw mapErrorCode(failed.code, `No se pudo validar el turno ${failed.shiftId}.`);
   }
 
   async contestShift({ shiftId, reason, note }: ContestShiftCommand): Promise<void> {
