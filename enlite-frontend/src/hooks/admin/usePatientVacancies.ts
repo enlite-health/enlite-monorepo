@@ -6,9 +6,6 @@ export function usePatientVacancies(patientId: string | undefined) {
   const [vacancies, setVacancies] = useState<PatientVacancySummary[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
-
-  const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   useEffect(() => {
     if (!patientId) return;
@@ -33,7 +30,24 @@ export function usePatientVacancies(patientId: string | undefined) {
 
     fetchVacancies();
     return () => { cancelled = true; };
-  }, [patientId, refreshKey]);
+  }, [patientId]);
+
+  // Item 1+4 (A1): mesma classe de defeito de `usePatientDetail.refetch` — o `refreshKey` reexecutava
+  // o efeito de cima, que liga `isLoading`, e o card (`PatientVacanciesCard`) troca a lista por um
+  // estado de loading a cada `onSaved` de `ServicosContratadosCard`. Refetch silencioso: mantém
+  // `vacancies` na tela até a resposta chegar; falha só seta `error`, sem apagar a lista anterior.
+  const refetch = useCallback(() => {
+    if (!patientId) return;
+    AdminPatientsApiService.getPatientVacancies(patientId)
+      .then((data) => {
+        setVacancies(data);
+        setError(null);
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : 'Error al cargar vacantes';
+        setError(msg);
+      });
+  }, [patientId]);
 
   return { vacancies, isLoading, error, refetch };
 }
