@@ -36,6 +36,7 @@ import {
   TENANT_E2E,
   type AppDeFamilia,
 } from './helpers/permissionFamilyHarness';
+import { ensureFakeGcsServiceAccountKey } from './helpers/fakeGcsServiceAccount';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -191,7 +192,10 @@ describe('Patient photo/document/consent — HTTP real, Postgres real, GCS real 
     setEnv('GCS_PATIENT_PHOTOS_BUCKET', PHOTOS_BUCKET);
     setEnv('GCS_PATIENT_DOCUMENTS_BUCKET', DOCUMENTS_BUCKET);
     setEnv('GCP_PROJECT_ID', 'enlite-test');
-    setEnv('GOOGLE_APPLICATION_CREDENTIALS', '/tmp/fake-sa.json');
+    // Conserto #1 da 2ª revisão do PR-4: NÃO depender de `/tmp/fake-sa.json` montado do host — o
+    // CI não tem esse arquivo. A chave fake é gerada aqui mesmo, no setup do teste (idempotente,
+    // fica no tmpdir do processo; nunca commitada).
+    setEnv('GOOGLE_APPLICATION_CREDENTIALS', ensureFakeGcsServiceAccountKey());
 
     const caseModule = await import('@modules/case');
     app = await montarAppDeFamilia({

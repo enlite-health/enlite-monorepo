@@ -63,8 +63,21 @@ jobs:
             -e acceptLicense=true -e saveAnalytics=false -e include=2026-01_en-es \
             whoicd/icd-api
 
+      # `fake-gcs` sobe junto (spec 018 PR-4 — conserto #1 da 2ª revisão): antes disto o CI nunca
+      # tinha storage nenhum de pé, e `patient-photo-and-documents.e2e.test.ts` (achado 7 da
+      # revisão anterior) nunca rodava aqui — só existia caminho local, manual.
       - name: Start Docker stack
-        run: docker compose -f docker-compose.yml -f docker-compose.test.yml up -d postgres api
+        run: docker compose -f docker-compose.yml -f docker-compose.test.yml up -d postgres api fake-gcs
+
+      - name: Wait for fake-gcs
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:54443/storage/v1/b >/dev/null && { echo "fake-gcs pronto"; exit 0; }
+            sleep 2
+          done
+          echo "::error::fake-gcs não respondeu em 60s"
+          docker compose -f docker-compose.yml -f docker-compose.test.yml logs fake-gcs
+          exit 1
 
       - name: Wait for API health
         run: node scripts/wait-for-health.js
@@ -110,6 +123,12 @@ jobs:
           API_URL: http://localhost:8080
           DATABASE_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
           INTERNAL_TOKEN_SECRET: test-secret-for-e2e-only
+          # Spec 018 PR-4 (foto/documento do paciente) — conserto #1 da 2ª revisão:
+          # `patient-photo-and-documents.e2e.test.ts` monta o app EM PROCESSO (não fala com o
+          # container `api`) e usa o `@google-cloud/storage` REAL contra este fake-gcs.
+          GCS_EMULATOR_HOST: http://localhost:54443
+          GCS_PATIENT_PHOTOS_BUCKET: enlite-patient-photos-pr4test
+          GCS_PATIENT_DOCUMENTS_BUCKET: enlite-patient-documents-pr4test
 
       # ── Fronteira staff × prestador com TOKEN REAL (D294) ──
       #
@@ -154,6 +173,7 @@ jobs:
           docker compose -f docker-compose.yml -f docker-compose.test.yml logs api
           echo "--- api real ---"; docker compose -p realauth -f docker-compose.yml -f docker-compose.test.yml -f docker-compose.firebase.yml -f docker-compose.real-auth-ports.yml logs api 2>&1 | tail -60 || true
           echo "--- icd-api ---"; docker logs icd-api 2>&1 | tail -40 || true
+          echo "--- fake-gcs ---"; docker compose -f docker-compose.yml -f docker-compose.test.yml logs fake-gcs 2>&1 | tail -40 || true
 
       - name: Teardown
         if: always()
