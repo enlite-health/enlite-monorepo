@@ -209,7 +209,10 @@ export class PostgresPatientDiagnosisRepository implements PatientDiagnosisRepos
    * do projeto para isto: abre a transação, carimba os GUCs de país/ator e roda `fn` no MESMO
    * client — reusa o client já FIXADO da request quando existir (`pinnedClientFor`), ou abre um
    * client roteado pela identidade certa (`app_runtime`/`app_system`) quando não. Sem contexto
-   * declarado (job legado) a transação roda igual, sem carimbo — nunca falha a escrita por isso.
+   * declarado (job legado) a transação NÃO roda igual: com a policy de país ligada, a sessão
+   * sem `app.user_uid`/`app.user_country` é recusada pela RLS no primeiro INSERT/UPDATE
+   * (`rls_session_without_identity`, 42501 — migration 411), exatamente o erro que este conserto
+   * elimina fornecendo o carimbo. Provado no e2e (teste 2: sem contexto → 42501).
    */
   async withTransaction<T>(fn: (tx: PatientDiagnosisRepositoryPort) => Promise<T>): Promise<T> {
     // Já dentro de uma transação (chamada aninhada) — reusa o MESMO client, sem BEGIN duplo.
