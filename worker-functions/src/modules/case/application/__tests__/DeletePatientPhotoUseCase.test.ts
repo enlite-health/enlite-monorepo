@@ -48,6 +48,17 @@ describe('DeletePatientPhotoUseCase', () => {
     expect(orphanRepo.record).toHaveBeenCalledWith('enc(x)', 'PHOTOS', 'DELETE');
   });
 
+  it('objeto E órfão falham ao registrar — NÃO vira 500 (conserto #3 da 2ª revisão): resolve deleted:true mesmo assim', async () => {
+    const storage = { delete: jest.fn(async () => { throw new Error('gcs down'); }) };
+    const photoRepo = { deleteRow: jest.fn(async () => ({ object_path_encrypted: 'enc(x)' })) };
+    const orphanRepo = { record: jest.fn(async () => { throw new Error('db down também'); }) };
+    const enc = { decrypt: jest.fn(async (v: string) => v) };
+    const uc = new DeletePatientPhotoUseCase((() => storage) as never, photoRepo as never, orphanRepo as never, enc as never);
+
+    await expect(uc.execute(PID)).resolves.toEqual({ deleted: true });
+    expect(orphanRepo.record).toHaveBeenCalledWith('enc(x)', 'PHOTOS', 'DELETE');
+  });
+
   it('constrói pelos DEFAULTS do construtor', () => {
     process.env.GCS_PATIENT_PHOTOS_BUCKET = 'b';
     try {

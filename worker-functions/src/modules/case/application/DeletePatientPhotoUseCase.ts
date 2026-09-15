@@ -27,7 +27,12 @@ export class DeletePatientPhotoUseCase {
     const plainPath = await this.enc.decrypt(deletedRow.object_path_encrypted);
     await this.storageFactory().delete(plainPath).catch(async (err) => {
       logger.warn({ err }, '[DeletePatientPhotoUseCase] objeto não apagado — vira órfão');
-      await this.orphanRepo.record(deletedRow.object_path_encrypted, 'PHOTOS', 'DELETE');
+      // Achado da 2ª revisão do PR-4 (conserto #3): mesma falha de UploadPatientPhotoUseCase — a
+      // linha JÁ FOI apagada (deleteRow acima comitou); `record` sem catch próprio faria o cliente
+      // ver 500 numa operação que já tinha sucedido.
+      await this.orphanRepo.record(deletedRow.object_path_encrypted, 'PHOTOS', 'DELETE').catch((orphanErr) => {
+        logger.error({ err: orphanErr }, '[DeletePatientPhotoUseCase] também falhou ao registrar órfão');
+      });
     });
     // Achado da revisão do PR-4 (item 3): fila de órfãos sem consumidor — tentativa oportunista.
     scheduleOpportunisticOrphanRetry();

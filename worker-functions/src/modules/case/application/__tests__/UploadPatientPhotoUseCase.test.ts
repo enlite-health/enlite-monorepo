@@ -88,6 +88,17 @@ describe('UploadPatientPhotoUseCase (spec 018 PR-4, D335 — sem checagem de con
     expect(deps.orphanRepo.record).toHaveBeenCalledWith('enc(old-uuid.jpg)', 'PHOTOS', 'REPLACE');
   });
 
+  it('objeto antigo falha ao apagar E o registro do órfão TAMBÉM falha — NÃO vira 500 (conserto #3 da 2ª revisão): resolve hasPhoto:true mesmo assim (a troca já comitou)', async () => {
+    const deps = makeDeps({ oldRow: { object_path_encrypted: 'enc(old-uuid.jpg)' }, orphanRecordThrows: true });
+    deps.storage.delete = jest.fn(async () => { throw new Error('gcs down'); });
+    const uc = new UploadPatientPhotoUseCase(deps.processor as never, storageFactoryOf(deps.storage), deps.photoRepo as never, deps.orphanRepo as never, deps.consentRepo as never, deps.enc as never);
+
+    const result = await uc.execute({ patientId: PID, buffer: Buffer.from('in'), actorUid: 'uid-1' });
+
+    expect(result).toEqual({ hasPhoto: true });
+    expect(deps.orphanRepo.record).toHaveBeenCalledWith('enc(old-uuid.jpg)', 'PHOTOS', 'REPLACE');
+  });
+
   it('transação falha: apaga o objeto NOVO (best-effort) e relança o erro ORIGINAL', async () => {
     const deps = makeDeps({ insertThrows: true });
     const uc = new UploadPatientPhotoUseCase(deps.processor as never, storageFactoryOf(deps.storage), deps.photoRepo as never, deps.orphanRepo as never, deps.consentRepo as never, deps.enc as never);

@@ -81,7 +81,13 @@ export class UploadPatientPhotoUseCase {
       const plainOldPath = await this.enc.decrypt(oldPath);
       await storage.delete(plainOldPath).catch(async (err) => {
         logger.warn({ err }, '[UploadPatientPhotoUseCase] objeto antigo não apagado — vira órfão');
-        await this.orphanRepo.record(oldPath, 'PHOTOS', 'REPLACE');
+        // Achado da 2ª revisão do PR-4 (conserto #3): `record` sem catch próprio propagava pelo
+        // `await` acima e virava 500 mesmo com a transação JÁ COMITADA (troca de foto bem-sucedida).
+        // Best-effort até o fim: se também falhar ao registrar o órfão, só loga — a resposta ao
+        // cliente reflete o que de fato aconteceu (a foto trocou), não uma falha de limpeza em bg.
+        await this.orphanRepo.record(oldPath, 'PHOTOS', 'REPLACE').catch((orphanErr) => {
+          logger.error({ err: orphanErr }, '[UploadPatientPhotoUseCase] também falhou ao registrar órfão do objeto antigo');
+        });
       });
     }
 
