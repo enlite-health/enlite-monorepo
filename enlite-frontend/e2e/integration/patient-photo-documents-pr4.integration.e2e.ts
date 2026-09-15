@@ -152,6 +152,10 @@ test.describe('spec 018 PR-4 — foto/documentos do paciente: HUMANO no stack re
     const nomeStamp = `Rep${stamp}`;
     await abrirFicha(page, completa);
 
+    // Achado desta rodada (revisão gate): `FamiliaresCard`/`edit-support-btn` só montam sob a aba
+    // "Rede de Apoio" (`PatientDetailPage.tsx` — `shownTab === 'supportNetwork'`, D286); o teste
+    // nunca clicava na aba, então o botão nunca existia no DOM (timeout de 180s, não um 404/403).
+    await page.getByText('Red de Apoyo').click();
     await page.getByTestId('edit-support-btn').click();
     await expect(page.getByTestId('patient-support-edit-drawer')).toBeVisible();
     await page.getByTestId('psn-add').click();
