@@ -16,6 +16,13 @@
  *      a lista (elemento ausente da árvore, não só invisível).
  *   3. alternativo — arquivo inválido (PDF como foto) é recusado com mensagem de erro na tela,
  *      sem crash.
+ *   4. feliz (furo fechado 14/09) — enviar documento → `page.reload()` → o documento continua
+ *      listado (prova que `GET .../documents` persiste, não é mais estado de sessão).
+ *   5. feliz (furo fechado 14/09) — registrar um representante (`patient_responsibles`, feature
+ *      pré-existente — `FamiliaresCard`/`PatientSupportNetworkEditDrawer`) → `page.reload()` →
+ *      continua na tabela.
+ *   6. alternativo (furo fechado 14/09) — consentimento registrado e depois revogado →
+ *      `page.reload()` em cada passo mostra o estado real (vigente, depois SEM vigente).
  *
  * Stack local (ver docker-compose.018pr4-ports.yml + engine ligado):
  *   docker compose -p 018pr4c -f docker-compose.yml -f docker-compose.test.yml \
@@ -59,6 +66,11 @@ test.describe('spec 018 PR-4 — foto/documentos do paciente: HUMANO no stack re
     grantCell(grupoCompleta, 'patient_identity', 'read');
     grantCell(grupoCompleta, 'patient_identity', 'write');
     grantCell(grupoCompleta, 'patient_consent_documents', 'read');
+    // Furo 2 (14/09): representante já é feature pré-existente (patient_responsibles,
+    // adminPatientsRoutes.ts:320-327) — precisa da célula PRÓPRIA dela, nunca herdada de
+    // patient_identity, pra registrar pelo `FamiliaresCard`/`PatientSupportNetworkEditDrawer`.
+    grantCell(grupoCompleta, 'patient_family', 'write');
+    grantCell(grupoCompleta, 'patient_family', 'read'); // sem ela `reads.family` fica falso e a ficha nunca decripta/devolve responsibles
 
     ({ groupId: grupoSemDocRead } = seedStaffInGroup({ uid: semDocRead.uid, email: semDocRead.email, groupName: `PR4H SemDocRead ${stamp}`, country: 'AR' }));
     grantCell(grupoSemDocRead, 'patient', 'read');
@@ -70,9 +82,13 @@ test.describe('spec 018 PR-4 — foto/documentos do paciente: HUMANO no stack re
   test.afterAll(() => {
     cleanupStaffAndGroup(completa.uid, grupoCompleta);
     cleanupStaffAndGroup(semDocRead.uid, grupoSemDocRead);
+    // Ordem importa: `patient_image_consents` referencia `patient_documents` (FK composta
+    // `pic_doc_fk`/`pic_revoke_doc_fk`) — apagar o documento primeiro derruba com 23503
+    // (achado desta rodada: os testes novos 4-6 são os primeiros aqui a deixar as duas tabelas
+    // povoadas ao mesmo tempo no fim do arquivo).
     runSQL(`DELETE FROM patient_photos WHERE patient_id = '${patientId}'`);
-    runSQL(`DELETE FROM patient_documents WHERE patient_id = '${patientId}'`);
     runSQL(`DELETE FROM patient_image_consents WHERE patient_id = '${patientId}'`);
+    runSQL(`DELETE FROM patient_documents WHERE patient_id = '${patientId}'`);
     cleanupPatientDeep(patientId);
   });
 
@@ -114,5 +130,67 @@ test.describe('spec 018 PR-4 — foto/documentos do paciente: HUMANO no stack re
     await expect(page.getByTestId('patient-photo-placeholder')).toBeVisible();
     await expect(page.getByTestId('patient-identity-card')).toBeVisible(); // nada quebrou a tela
     await page.screenshot({ path: path.join(EVID_DIR, '3-arquivo-invalido.png'), fullPage: false });
+  });
+
+  test('4. feliz (furo fechado 14/09): enviar documento → page.reload() → documento continua listado', async ({ page }) => {
+    await abrirFicha(page, completa);
+    await expect(page.getByTestId('patient-documents-empty')).toBeVisible();
+
+    await page.getByTestId('patient-document-upload-btn').click();
+    await page.getByTestId('patient-document-file-input').setInputFiles(PDF_FIXTURE);
+    await expect(page.getByTestId('patient-document-row')).toBeVisible({ timeout: 20_000 });
+    await page.screenshot({ path: path.join(EVID_DIR, '4-documento-enviado.png'), fullPage: false });
+
+    await page.reload();
+    await expect(page.getByTestId('patient-identity-card')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('patient-document-row')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('patient-documents-empty')).toHaveCount(0);
+    await page.screenshot({ path: path.join(EVID_DIR, '4b-documento-apos-reload.png'), fullPage: false });
+  });
+
+  test('5. feliz (furo fechado 14/09): registrar representante → page.reload() → continua na tabela', async ({ page }) => {
+    const nomeStamp = `Rep${stamp}`;
+    await abrirFicha(page, completa);
+
+    await page.getByTestId('edit-support-btn').click();
+    await expect(page.getByTestId('patient-support-edit-drawer')).toBeVisible();
+    await page.getByTestId('psn-add').click();
+    await page.getByTestId('psn-firstName-0').click();
+    await page.keyboard.type('Marta');
+    await page.getByTestId('psn-lastName-0').click();
+    await page.keyboard.type(nomeStamp);
+    await page.getByTestId('psn-save').click();
+    await expect(page.getByTestId('patient-support-edit-drawer')).toHaveCount(0, { timeout: 20_000 });
+    await expect(page.getByText(`Marta ${nomeStamp}`)).toBeVisible({ timeout: 20_000 });
+    await page.screenshot({ path: path.join(EVID_DIR, '5-representante-registrado.png'), fullPage: false });
+
+    await page.reload();
+    await expect(page.getByTestId('patient-identity-card')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(`Marta ${nomeStamp}`)).toBeVisible({ timeout: 20_000 });
+    await page.screenshot({ path: path.join(EVID_DIR, '5b-representante-apos-reload.png'), fullPage: false });
+  });
+
+  test('6. alternativo (furo fechado 14/09): consentimento registrado e depois revogado → page.reload() mostra o estado real em cada passo', async ({ page }) => {
+    await abrirFicha(page, completa);
+    await expect(page.getByTestId('patient-consent-register-btn')).toBeVisible();
+
+    await page.getByTestId('patient-consent-register-btn').click();
+    await expect(page.getByTestId('patient-consent-status')).toBeVisible({ timeout: 20_000 });
+
+    // Recarregar ANTES de revogar: o vigente tem que sobreviver ao reload (não é mais sessão).
+    await page.reload();
+    await expect(page.getByTestId('patient-identity-card')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('patient-consent-status')).toBeVisible({ timeout: 20_000 });
+    await page.screenshot({ path: path.join(EVID_DIR, '6-consentimento-vigente-apos-reload.png'), fullPage: false });
+
+    await page.getByTestId('patient-consent-revoke-btn').click();
+    await expect(page.getByTestId('patient-consent-register-btn')).toBeVisible({ timeout: 20_000 });
+
+    // Recarregar DEPOIS de revogar: sem vigente — volta a mostrar "Registrar consentimento".
+    await page.reload();
+    await expect(page.getByTestId('patient-identity-card')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('patient-consent-register-btn')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('patient-consent-status')).toHaveCount(0);
+    await page.screenshot({ path: path.join(EVID_DIR, '6b-consentimento-revogado-apos-reload.png'), fullPage: false });
   });
 });
