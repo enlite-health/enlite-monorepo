@@ -14,7 +14,7 @@
 import { Pool } from 'pg';
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
-import { montarAppDeFamilia, tokenMock, grupoComCelulas, limparIamFixtures, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
+import { montarAppDeFamilia, tokenMock, grupoComCelulas, limparIamFixtures, garantirCelula, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -26,11 +26,12 @@ describe('427/PR-5 — equipe tratante por LINHA: API sob engine (HTTP real, ban
   const OUTRO_PACIENTE = 'ee427000-0c00-0001-0001-000000000099';
   const U = { admin: 'pct-admin', recruiter: 'pct-recruiter', soLeitura: 'pct-so-leitura' };
   const GRUPOS = { admin: 'PCT Admin', recruiter: 'PCT Recruiter', soLeitura: 'PCT Só leitura' };
+  // PR-8b (A3, ADR-2/SUP-30): a rota não declara mais `patient_care_team:write` —
+  // POST /professionals exige `create`, PATCH/deactivate exigem `update`
+  // (`adminPatientsRoutes.ts:344,347,350`). As duas já nascem seedadas pela migration 435
+  // (recurso splitado) — não são mais "próprias" deste arquivo.
   const CELULAS: ReadonlyArray<readonly [string, string]> = [
-    ['patient', 'read'], ['patient_care_team', 'read'], ['patient_care_team', 'write'],
-  ];
-  const CELULAS_PROPRIAS: ReadonlyArray<readonly [string, string]> = [
-    ['patient_care_team', 'write'],
+    ['patient', 'read'], ['patient_care_team', 'read'], ['patient_care_team', 'create'], ['patient_care_team', 'update'],
   ];
   const envAnterior: Record<string, string | undefined> = {};
   const setEnv = (k: string, v: string): void => { envAnterior[k] = process.env[k]; process.env[k] = v; };
@@ -47,13 +48,13 @@ describe('427/PR-5 — equipe tratante por LINHA: API sob engine (HTTP real, ban
   const TELEFONE = '+54 11 5555-0427';
   const EMAIL = 'dra.sintetica@e2e.local';
 
+  // PR-8b (A3, achado A2): `patient_care_team:create`/`update` são células do CATÁLOGO
+  // compartilhado (seedadas pela migration 435) — apagar `iam.permissions` no cleanup derrubava
+  // outras suítes que dependem delas. `limparIamFixtures` já apaga só o que este arquivo é DONO
+  // (grupos/usuários/`group_permissions`), nunca o catálogo.
   async function limpar(): Promise<void> {
     await pool.query(`DELETE FROM resource_access_log WHERE operator_uid = ANY($1)`, [Object.values(U)]);
     await limparIamFixtures(pool, { uids: Object.values(U), grupos: Object.values(GRUPOS) });
-    for (const [resource, action] of CELULAS_PROPRIAS) {
-      await pool.query(`DELETE FROM iam.group_permissions WHERE permission_id IN (SELECT id FROM iam.permissions WHERE resource = $1 AND action = $2)`, [resource, action]);
-      await pool.query(`DELETE FROM iam.permissions WHERE resource = $1 AND action = $2`, [resource, action]);
-    }
     await pool.query(`DELETE FROM patient_professionals WHERE patient_id = ANY($1)`, [[PATIENT, OUTRO_PACIENTE]]);
     await pool.query(`DELETE FROM patients WHERE id = ANY($1)`, [[PATIENT, OUTRO_PACIENTE]]);
   }
@@ -69,10 +70,10 @@ describe('427/PR-5 — equipe tratante por LINHA: API sob engine (HTTP real, ban
       [U.admin, U.recruiter, U.soLeitura, TENANT_E2E],
     );
     for (const [resource, action] of CELULAS) {
-      await pool.query(`INSERT INTO iam.permissions (resource, action, description, category) VALUES ($1, $2, 'e2e 427', 'Pacientes') ON CONFLICT DO NOTHING`, [resource, action]);
+      await garantirCelula(pool, { resource, action, category: 'Pacientes' });
     }
-    // admin: as DUAS células (o molde do C3 — leitura e escrita, mesma régua de patient_coverage).
-    await grupoComCelulas(pool, { nome: GRUPOS.admin, uid: U.admin, celulas: [['patient', 'read'], ['patient_care_team', 'read'], ['patient_care_team', 'write']] });
+    // admin: leitura + as DUAS ações de escrita (create do POST, update do PATCH/deactivate).
+    await grupoComCelulas(pool, { nome: GRUPOS.admin, uid: U.admin, celulas: [['patient', 'read'], ['patient_care_team', 'read'], ['patient_care_team', 'create'], ['patient_care_team', 'update']] });
     // recruiter: só o operacional — NÃO tem patient_care_team:write (o caso nomeado pelo coordenador).
     await grupoComCelulas(pool, { nome: GRUPOS.recruiter, uid: U.recruiter, celulas: [['patient', 'read']] });
     // só leitura: lê a equipe, não escreve.

@@ -18,7 +18,7 @@
 import { Pool } from 'pg';
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
-import { montarAppDeFamilia, tokenMock, grupoComCelulas, limparIamFixtures, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
+import { montarAppDeFamilia, tokenMock, grupoComCelulas, limparIamFixtures, garantirCelula, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -30,17 +30,15 @@ describe('417/PR-1 — contatos de emergência da cobertura por LINHA: API sob e
   const OUTRO_PACIENTE = 'ee417000-0c00-0001-0001-000000000099';
   const U = { completa: 'pcec-completa', soCobertura: 'pcec-so-cobertura', semCobertura: 'pcec-sem-cobertura' };
   const GRUPOS = { completa: 'PCEC Completa', soCobertura: 'PCEC Só cobertura', semCobertura: 'PCEC Sem cobertura' };
-  // `patient:read` é célula GLOBAL, compartilhada por várias famílias de e2e — nenhum arquivo é
-  // "dono" dela, e apagá-la no cleanup derruba quem rodar depois na mesma suíte serial (achado do
-  // CI do PR #359: este arquivo corria antes de `permission-enforcement-admin-patients` no jest
-  // --runInBand e a deleção fazia 22 testes falharem com "célula não existe"). `CELULAS` continua
-  // servindo o INSERT idempotente (ON CONFLICT DO NOTHING); `CELULAS_PROPRIAS` é o que o cleanup
-  // de fato apaga — só o que este arquivo criou, nunca o do seed global.
+  // PR-8b (A3, achado A2, generalizando o achado do PR #359): TODA célula do catálogo é
+  // compartilhada entre suítes — inclusive `patient_coverage:*` e `patient_care_team:read`, que
+  // este arquivo achava que "possuía". Nenhum arquivo de e2e é dono de uma linha de
+  // `iam.permissions`: `create`/`update` de `patient_coverage` nascem seedadas pela migration 435
+  // (recurso splitado) e `patient_care_team:read` já existia antes desta suíte rodar pela
+  // primeira vez. O cleanup nunca mais apaga `iam.permissions` — só `limparIamFixtures` (grupos/
+  // usuários/`group_permissions` que ESTE arquivo criou). `CELULAS` só serve o INSERT idempotente.
   const CELULAS: ReadonlyArray<readonly [string, string]> = [
-    ['patient', 'read'], ['patient_coverage', 'read'], ['patient_coverage', 'write'], ['patient_care_team', 'read'],
-  ];
-  const CELULAS_PROPRIAS: ReadonlyArray<readonly [string, string]> = [
-    ['patient_coverage', 'read'], ['patient_coverage', 'write'], ['patient_care_team', 'read'],
+    ['patient', 'read'], ['patient_coverage', 'read'], ['patient_coverage', 'create'], ['patient_coverage', 'update'], ['patient_care_team', 'read'],
   ];
   const envAnterior: Record<string, string | undefined> = {};
   const setEnv = (k: string, v: string): void => { envAnterior[k] = process.env[k]; process.env[k] = v; };
@@ -64,10 +62,6 @@ describe('417/PR-1 — contatos de emergência da cobertura por LINHA: API sob e
   async function limpar(): Promise<void> {
     await pool.query(`DELETE FROM resource_access_log WHERE operator_uid = ANY($1)`, [Object.values(U)]);
     await limparIamFixtures(pool, { uids: Object.values(U), grupos: Object.values(GRUPOS) });
-    for (const [resource, action] of CELULAS_PROPRIAS) {
-      await pool.query(`DELETE FROM iam.group_permissions WHERE permission_id IN (SELECT id FROM iam.permissions WHERE resource = $1 AND action = $2)`, [resource, action]);
-      await pool.query(`DELETE FROM iam.permissions WHERE resource = $1 AND action = $2`, [resource, action]);
-    }
     await pool.query(`DELETE FROM patients WHERE id = ANY($1)`, [[PATIENT, OUTRO_PACIENTE]]);
     await limparIamFixtures(pool, { uids: ['pcec-write-only'], grupos: ['PCEC Write-only'] });
   }
@@ -83,10 +77,10 @@ describe('417/PR-1 — contatos de emergência da cobertura por LINHA: API sob e
       [U.completa, U.soCobertura, U.semCobertura, TENANT_E2E],
     );
     for (const [resource, action] of CELULAS) {
-      await pool.query(`INSERT INTO iam.permissions (resource, action, description, category) VALUES ($1, $2, 'e2e 417', 'Pacientes') ON CONFLICT DO NOTHING`, [resource, action]);
+      await garantirCelula(pool, { resource, action, category: 'Pacientes' });
     }
-    await grupoComCelulas(pool, { nome: GRUPOS.completa, uid: U.completa, celulas: [['patient', 'read'], ['patient_coverage', 'read'], ['patient_coverage', 'write'], ['patient_care_team', 'read']] });
-    await grupoComCelulas(pool, { nome: GRUPOS.soCobertura, uid: U.soCobertura, celulas: [['patient', 'read'], ['patient_coverage', 'read'], ['patient_coverage', 'write']] });
+    await grupoComCelulas(pool, { nome: GRUPOS.completa, uid: U.completa, celulas: [['patient', 'read'], ['patient_coverage', 'read'], ['patient_coverage', 'create'], ['patient_coverage', 'update'], ['patient_care_team', 'read']] });
+    await grupoComCelulas(pool, { nome: GRUPOS.soCobertura, uid: U.soCobertura, celulas: [['patient', 'read'], ['patient_coverage', 'read'], ['patient_coverage', 'create'], ['patient_coverage', 'update']] });
     await grupoComCelulas(pool, { nome: GRUPOS.semCobertura, uid: U.semCobertura, celulas: [['patient', 'read'], ['patient_care_team', 'read']] });
     await pool.query(
       `INSERT INTO patients (id, clickup_task_id, first_name, last_name, country, is_test) VALUES
@@ -232,7 +226,7 @@ describe('417/PR-1 — contatos de emergência da cobertura por LINHA: API sob e
     expect((await linhasAtivas()).map((x) => x.kind).sort()).toEqual(['DIRECT_PROFESSIONAL', 'PRIVATE_AMBULANCE', 'PUBLIC_EMERGENCY_SERVICE']);
     // Quem escreve sem ler a cobertura: recusado nomeando a célula de leitura (patient_coverage:read).
     await pool.query(`INSERT INTO users (firebase_uid, email, display_name, role, status, is_active, tenant_id) VALUES ('pcec-write-only', 'pcec-write-only@e2e.local', 'Write only', 'admin', 'ACTIVE', true, $1) ON CONFLICT DO NOTHING`, [TENANT_E2E]);
-    await grupoComCelulas(pool, { nome: 'PCEC Write-only', uid: 'pcec-write-only', celulas: [['patient', 'read'], ['patient_coverage', 'write']] });
+    await grupoComCelulas(pool, { nome: 'PCEC Write-only', uid: 'pcec-write-only', celulas: [['patient', 'read'], ['patient_coverage', 'create']] });
     const semLeitura = await chamar('POST', ROWS(), 'pcec-write-only', { kind: 'PRIVATE_AMBULANCE', name: 'y', phone: '2' });
     // A célula de leitura não é checada no CREATE (só no C3 do profissional direto) — mas a
     // rota exige `patient_coverage:write`, que este uid TEM; então o create passa (201). O
