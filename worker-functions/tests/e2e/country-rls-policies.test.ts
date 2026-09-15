@@ -128,7 +128,13 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
   it('invariante: TODA tabela com FK para patients tem RLS ligada (menos exceções justificadas)', async () => {
     // job_postings: tem coluna country própria e é superfície de vaga, não dossiê
     // clínico — entra na leva workers/vagas (task 4.3 da change abac-pais-fase1).
-    const ALLOWLIST = ['job_postings'];
+    // anacare_shift: retrato operacional do turno do Ana Care (migration 437, fase 1,
+    // D342-D345). Decisão do Gabriel (15/09, D345): RLS por país fica para quando os
+    // dados REAIS entrarem (fase 2/4 do job de sync, sob PARE do lex) — nesta fase 1 a
+    // tabela nasce e permanece VAZIA (só o adapter FALSO em memória alimenta a feature;
+    // ver migrations/437_anacare_shift_hours.sql). Ligar RLS agora anteciparia uma
+    // decisão que está deliberadamente em backlog, não corrigiria um esquecimento.
+    const ALLOWLIST = ['job_postings', 'anacare_shift'];
     const res = await pool.query(
       `SELECT DISTINCT c.relname
        FROM pg_constraint con
