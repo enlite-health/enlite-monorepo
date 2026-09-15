@@ -238,6 +238,12 @@ export {
 export { createAdminPatientsRoutes, ADMIN_PATIENTS_FAMILY } from './interfaces/routes/adminPatientsRoutes';
 export { PublicLeadsController } from './interfaces/controllers/PublicLeadsController';
 
+// spec 018, PR-4 (foto, documento/prova e consentimento de imagem do paciente)
+export { createAdminPatientPhotoRoutes } from './interfaces/routes/adminPatientPhotoRoutes';
+export { AdminPatientPhotoController } from './interfaces/controllers/AdminPatientPhotoController';
+export { AdminPatientDocumentController } from './interfaces/controllers/AdminPatientDocumentController';
+export { AdminPatientImageConsentController } from './interfaces/controllers/AdminPatientImageConsentController';
+
 // Application — public intake (Task 1)
 export { CreateLeadUseCase } from './application/CreateLeadUseCase';
 export type { CreateLeadResult } from './application/CreateLeadUseCase';

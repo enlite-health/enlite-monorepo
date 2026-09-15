@@ -62,6 +62,11 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   patient_address: 'Pacientes',
   patient_services: 'Pacientes',
   patient_contract_value: 'Pacientes',
+  // spec 018, PR-4 (D329, lex-pr4-documentos #10 TRAVA): leitura da PROVA de consentimento de
+  // imagem — célula PRÓPRIA, nunca herdada de patient_identity:read (a prova é documento de
+  // terceiro/paciente que só quem precisa auditar deveria ler; foto e ficha continuam sob
+  // patient_identity:read/write, sem célula nova).
+  patient_consent_documents: 'Pacientes',
   // Spec 017 (D299.3): o projeto terapêutico e os seus 2 catálogos, na MESMA família admin.patients.
   // `catalog_pathology_types` SAIU (08/09): tipo de patologia deriva do CID-11 — o sync marca a célula deprecada.
   patient_therapeutic_project: 'Pacientes',
@@ -173,7 +178,13 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Ver QUEM é o paciente: nome, documento, data de nascimento, sexo, telefone e e-mail de contato. '
     + 'Sem ela a lista e a ficha mostram só o operacional (status, caso, funil).',
   'patient_identity:write':
-    'Editar a identidade do paciente (nome, documento, nascimento, sexo, telefone, e-mail de contato).',
+    'Editar a identidade do paciente (nome, documento, nascimento, sexo, telefone, e-mail de contato). '
+    + 'Também sobe/troca/apaga a FOTO de perfil e registra/revoga o consentimento de imagem (spec 018, PR-4).',
+  'patient_consent_documents:read':
+    'Ler a PROVA documental (PDF/JPEG) de um consentimento ou revogação de imagem do paciente — '
+    + 'célula PRÓPRIA, nasce SEM grupo (0 ao nascer), nunca herdada de patient_identity:read. '
+    + 'Legível mesmo depois da revogação: é a prova de que o tratamento foi lícito enquanto vigia '
+    + '(spec 018, PR-4, D329; lex-pr4-documentos #10).',
   'patient_clinical:read':
     'Ver o quadro CLÍNICO do paciente: patologías (CID-11) e diagnóstico legado, nível de dependência, '
     + 'especialidade, dispositivos, observações, CUD, proteção judicial, consentimento e os textos '

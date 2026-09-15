@@ -14,6 +14,10 @@ ARG VITE_API_WORKER_FUNCTIONS_DIRECT_URL
 ARG VITE_GOOGLE_MAPS_API_KEY
 ARG VITE_CLARITY_PROJECT_ID
 ARG VITE_USE_PUBLIC_JOBS_API
+# Spec 018, PR-4 (task 4.10): slot de foto + card de documentos do paciente. Neutro aqui — quem
+# liga é o workflow do front da STAGE (frontend-stg.yml); frontend-prd.yml NÃO passa este build-arg,
+# então em PRD a env fica ausente e a flag lê como false (achado da revisão do PR-4, item 6).
+ARG VITE_PATIENT_PHOTO_ENABLED
 
 # Tornar disponíveis como ENV durante o build
 ENV VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY
@@ -28,6 +32,7 @@ ENV VITE_API_WORKER_FUNCTIONS_DIRECT_URL=$VITE_API_WORKER_FUNCTIONS_DIRECT_URL
 ENV VITE_GOOGLE_MAPS_API_KEY=$VITE_GOOGLE_MAPS_API_KEY
 ENV VITE_CLARITY_PROJECT_ID=$VITE_CLARITY_PROJECT_ID
 ENV VITE_USE_PUBLIC_JOBS_API=$VITE_USE_PUBLIC_JOBS_API
+ENV VITE_PATIENT_PHOTO_ENABLED=$VITE_PATIENT_PHOTO_ENABLED
 
 # Instalar pnpm globalmente
 RUN npm install -g pnpm@8.15.5

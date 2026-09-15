@@ -50,13 +50,14 @@ jobs:
       #
       # O emulador não é opcional: vários specs autenticam por ele e, sem ele,
       # falham em massa com `ECONNREFUSED 127.0.0.1:9099`.
-      - name: Sobe Postgres + API + emulador Firebase
+      - name: Sobe Postgres + API + emulador Firebase + fake-gcs
         working-directory: worker-functions
         run: |
           BASE="-f docker-compose.yml -f docker-compose.test.yml"
-          docker compose $BASE up -d postgres api
-          docker compose $BASE -f docker-compose.firebase.yml up -d --no-deps firebase-emulator
-
+          # `fake-gcs` ANTES da api: a api depende dele para as rotas de foto/documento (spec 018
+          # PR-4, conserto #2 da 2ª revisão) e o bucket precisa existir antes do 1º upload — o
+          # fake-gcs-server NÃO cria bucket sozinho (404 até o POST explícito).
+          docker compose $BASE up -d postgres fake-gcs
           espera() {
             for i in $(seq 1 60); do
               curl -sf "$2" >/dev/null && echo "$1 pronto" && return 0
@@ -65,6 +66,18 @@ jobs:
             echo "::error::$1 não respondeu em 120s ($2)"
             return 1
           }
+          espera "fake-gcs" http://localhost:54443/storage/v1/b || {
+            docker compose $BASE logs fake-gcs | tail -50
+            exit 1
+          }
+          curl -sf -X POST http://localhost:54443/storage/v1/b -H 'Content-Type: application/json' \
+            -d '{"name":"enlite-patient-photos-ci"}' >/dev/null
+          curl -sf -X POST http://localhost:54443/storage/v1/b -H 'Content-Type: application/json' \
+            -d '{"name":"enlite-patient-documents-ci"}' >/dev/null
+
+          docker compose $BASE up -d api
+          docker compose $BASE -f docker-compose.firebase.yml up -d --no-deps firebase-emulator
+
           espera "api" http://localhost:8080/health || {
             docker compose $BASE logs api | tail -50
             exit 1
@@ -120,6 +133,11 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET: demo-e2e.appspot.com
           VITE_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
           VITE_FIREBASE_APP_ID: '1:000000000000:web:0000000000000000000000'
+          # Spec 018 PR-4 (foto/documento do paciente) — conserto #2 da 2ª revisão: sem esta
+          # flag o slot de foto/documentos nunca monta (env.ts, achado item 6 da 1ª revisão) e
+          # `patient-photo-documents-pr4.integration.e2e.ts` falha em `patient-photo-file-input`
+          # nunca existir no DOM.
+          VITE_PATIENT_PHOTO_ENABLED: 'true'
         run: |
           pnpm dev > /tmp/vite.log 2>&1 &
           for i in $(seq 1 60); do

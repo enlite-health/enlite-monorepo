@@ -453,6 +453,20 @@ describe('fetchPatientDetail — gênero, idiomas e dischargedAt (spec 018 PR-3,
     expect(result!.dischargedAt).toEqual(new Date('2026-08-01T12:00:00Z'));
   });
 
+  it('spec 018 PR-4: a SQL projeta hasPhoto (EXISTS contra patient_photos) e o mapeamento passa o valor adiante', async () => {
+    const { queryImpl, run } = runWithRow(basePatientRow({ hasPhoto: true }));
+    const result = await run();
+    expect(String(queryImpl.mock.calls[0][0])).toContain('patient_photos');
+    expect(String(queryImpl.mock.calls[0][0])).toContain('"hasPhoto"');
+    expect(result!.hasPhoto).toBe(true);
+  });
+
+  it('hasPhoto ausente na linha (defensivo) → false, nunca undefined', async () => {
+    const { run } = runWithRow(basePatientRow({ hasPhoto: undefined }));
+    const result = await run();
+    expect(result!.hasPhoto).toBe(false);
+  });
+
   it('gender/languages ausentes (coluna NULL) → null, null, 0 decrypt a mais além do e-mail', async () => {
     const { queryImpl, enc, run } = runWithRow(basePatientRow({ genderEncrypted: null, languagesEncrypted: null, contactEmailEncrypted: null }));
     const result = await run();

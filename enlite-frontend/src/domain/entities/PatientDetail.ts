@@ -165,6 +165,12 @@ export interface PatientDetail {
   gender?: string | null;
   /** Idiomas do paciente (spec 018 PR-3): subconjunto fechado de 'pt'|'es'|'en'. `null` = não perguntado. Opcional (idem). */
   languages?: string[] | null;
+  /**
+   * Spec 018 PR-4 (contracts/patient-header-and-photo.md): tem foto de perfil cadastrada.
+   * `null` = sem `patient_identity:read` (nunca `false` nesse caso — não pode vazar "tem foto").
+   * Opcional: API anterior a esta rodada não manda o campo.
+   */
+  hasPhoto?: boolean | null;
   /** Data do último status DISCHARGED (spec 018 PR-3, FR-203/204). `null` = nunca esteve DISCHARGED. Opcional (idem). */
   dischargedAt?: string | null;
   /** chat_id do grupo de WhatsApp da FAMÍLIA no Periskope (@g.us). Migration 260. */

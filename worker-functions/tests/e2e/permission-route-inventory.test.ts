@@ -111,11 +111,18 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'DELETE /api/admin/patients/:id → patient:delete',
         // Marca de emergência (spec 018, PR-2, D-A; contracts/support-network.md).
         'DELETE /api/admin/patients/:id/emergency-contact → patient_family:write',
+        'DELETE /api/admin/patients/:id/photo → patient_identity:write',
         'GET /api/admin/chat-groups → messaging:read',
         'GET /api/admin/patient-chat-roles → patient:read',
         'GET /api/admin/patients → patient:read',
         'GET /api/admin/patients/:id → patient:read',
         'GET /api/admin/patients/:id/chat-candidates → messaging:read',
+        // Foto, documento (prova) e consentimento de imagem (spec 018, PR-4;
+        // `adminPatientPhotoRoutes.ts`; `contracts/patient-header-and-photo.md`).
+        'GET /api/admin/patients/:id/documents → patient_consent_documents:read',
+        'GET /api/admin/patients/:id/documents/:documentId → patient_consent_documents:read',
+        'GET /api/admin/patients/:id/image-consents/vigente → patient_identity:read',
+        'GET /api/admin/patients/:id/photo → patient_identity:read',
         'GET /api/admin/patients/:id/vacancies → vacancy:read',
         'GET /api/admin/patients/:patientId/addresses → patient_address:read',
         'GET /api/admin/patients/chat-map → patient:read',
@@ -144,8 +151,14 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/patients/:id/contracted-services/:sid/activate-recruitment → patient_services:write',
         'POST /api/admin/patients/:id/coverage-emergency-contacts → patient_coverage:write',
         'POST /api/admin/patients/:id/coverage-emergency-contacts/:cid/deactivate → patient_coverage:write',
+        // Foto, documento (prova) e consentimento de imagem (spec 018, PR-4;
+        // `adminPatientPhotoRoutes.ts`; `contracts/patient-header-and-photo.md`).
+        'POST /api/admin/patients/:id/documents → patient_identity:write',
         'POST /api/admin/patients/:id/external-contacts → patient_family:write',
         'POST /api/admin/patients/:id/external-contacts/:xid/deactivate → patient_family:write',
+        'POST /api/admin/patients/:id/image-consents → patient_identity:write',
+        'POST /api/admin/patients/:id/image-consents/:cid/revoke → patient_identity:write',
+        'POST /api/admin/patients/:id/photo → patient_identity:write',
         'POST /api/admin/patients/:id/professionals → patient_care_team:write',
         'POST /api/admin/patients/:id/professionals/:pid/deactivate → patient_care_team:write',
         'POST /api/admin/patients/:id/responsibles → patient_family:write',

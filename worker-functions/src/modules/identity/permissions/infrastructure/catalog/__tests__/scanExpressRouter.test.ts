@@ -281,6 +281,10 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // então TODAS saem como complemento — e é isso que garante que nenhuma some do catálogo.
       'patient_identity:read',
       'patient_identity:write',
+      // spec 018, PR-4 (D329) — leitura da PROVA de consentimento de imagem: declarada por rota
+      // real em `adminPatientPhotoRoutes.ts` (`GET /patients/:id/documents/:documentId`), rota
+      // NOVA que este fixture de 2 rotas não declara — mesmo padrão das demais linhas acima.
+      'patient_consent_documents:read',
       'patient_clinical:read',
       'patient_clinical:write',
       'patient_care_team:read',

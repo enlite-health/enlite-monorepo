@@ -1,0 +1,49 @@
+/**
+ * DeletePatientPhotoUseCase — DELETE /patients/:id/photo (contracts/patient-header-and-photo.md).
+ * 204 quando havia foto; `null` (404 no controller) quando não havia.
+ */
+import { logger } from '@shared/logging';
+import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import { inPatientTransaction } from './patientTransaction';
+import { PatientPhotoStorage } from '../infrastructure/PatientPhotoStorage';
+import { PatientPhotoRepository } from '../infrastructure/PatientPhotoRepository';
+import { PatientPhotoOrphanRepository } from '../infrastructure/PatientPhotoOrphanRepository';
+import { safeStorageErrorFields } from '../infrastructure/safeStorageErrorFields';
+import { scheduleOpportunisticOrphanRetry } from './scheduleOpportunisticOrphanRetry';
+
+export class DeletePatientPhotoUseCase {
+  constructor(
+    // FÁBRICA, não instância — mesmo achado de `UploadPatientPhotoUseCase` (task 4.3h): não
+    // derrubar o boot da API quando `GCS_PATIENT_PHOTOS_BUCKET` falta.
+    private readonly storageFactory: () => PatientPhotoStorage = () => new PatientPhotoStorage(),
+    private readonly photoRepo: PatientPhotoRepository = new PatientPhotoRepository(),
+    private readonly orphanRepo: PatientPhotoOrphanRepository = new PatientPhotoOrphanRepository(),
+    private readonly enc: KMSEncryptionService = new KMSEncryptionService(),
+  ) {}
+
+  async execute(patientId: string): Promise<{ deleted: boolean }> {
+    const deletedRow = await inPatientTransaction((client) => this.photoRepo.deleteRow(patientId, client));
+    if (!deletedRow) return { deleted: false };
+
+    // Achado da 3ª revisão do PR-4 (conserto #2, classe inteira): tudo daqui pra baixo roda DEPOIS
+    // do commit acima (a linha já saiu). `decrypt` sem try/catch próprio faria o cliente ver 500
+    // numa operação que já tinha sucedido — o `catch` cobre tanto o `decrypt` quanto o `delete`, e
+    // em qualquer falha o objeto vira órfão pelo caminho AINDA CIFRADO (registrar o órfão não
+    // precisa decriptar).
+    try {
+      const plainPath = await this.enc.decrypt(deletedRow.object_path_encrypted);
+      await this.storageFactory().delete(plainPath);
+    } catch (err) {
+      logger.warn(safeStorageErrorFields(err), '[DeletePatientPhotoUseCase] objeto não apagado — vira órfão');
+      // Achado da 2ª revisão do PR-4 (conserto #3): mesma falha de UploadPatientPhotoUseCase — a
+      // linha JÁ FOI apagada (deleteRow acima comitou); `record` sem catch próprio faria o cliente
+      // ver 500 numa operação que já tinha sucedido.
+      await this.orphanRepo.record(deletedRow.object_path_encrypted, 'PHOTOS', 'DELETE').catch((orphanErr) => {
+        logger.error(safeStorageErrorFields(orphanErr), '[DeletePatientPhotoUseCase] também falhou ao registrar órfão');
+      });
+    }
+    // Achado da revisão do PR-4 (item 3): fila de órfãos sem consumidor — tentativa oportunista.
+    scheduleOpportunisticOrphanRetry();
+    return { deleted: true };
+  }
+}

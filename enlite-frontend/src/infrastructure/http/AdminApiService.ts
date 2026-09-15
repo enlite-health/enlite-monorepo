@@ -41,6 +41,29 @@ export type { VacancyDraftSummary, VacancyByAddressSummary };
 
 import { AdminWorkerTagsApiService } from './AdminWorkerTagsApiService';
 import {
+  AdminPatientPhotoApiService,
+  type PatientPhotoUploadResult,
+  type SignedUrlResult,
+  type PatientDocumentUploadResult,
+  type PatientDocumentType,
+  type RegisterImageConsentPayload,
+  type RegisterImageConsentResult,
+  type RevocationChannel,
+  type PatientDocumentListItem,
+  type VigenteImageConsentResult,
+} from './AdminPatientPhotoApiService';
+export type {
+  PatientPhotoUploadResult,
+  SignedUrlResult,
+  PatientDocumentUploadResult,
+  PatientDocumentType,
+  RegisterImageConsentPayload,
+  RegisterImageConsentResult,
+  RevocationChannel,
+  PatientDocumentListItem,
+  VigenteImageConsentResult,
+};
+import {
   AdminWorkerListApiService,
   type WorkerListFilters,
   type WorkerFilterOptions,
@@ -447,5 +470,28 @@ class AdminApiServiceClass {
   deleteWorkerTag(id: string) { return AdminWorkerTagsApiService.deleteWorkerTag(id); }
   assignTagToWorker(workerId: string, tagId: string) { return AdminWorkerTagsApiService.assignTagToWorker(workerId, tagId); }
   removeTagFromWorker(workerId: string, tagId: string) { return AdminWorkerTagsApiService.removeTagFromWorker(workerId, tagId); }
+
+  // ========== Patient photo/documents/consent — delegated to AdminPatientPhotoApiService (spec 018, PR-4) ==========
+  uploadPatientPhoto(patientId: string, file: File) { return AdminPatientPhotoApiService.uploadPatientPhoto(patientId, file); }
+  deletePatientPhoto(patientId: string) { return AdminPatientPhotoApiService.deletePatientPhoto(patientId); }
+  getPatientPhotoUrl(patientId: string) { return AdminPatientPhotoApiService.getPatientPhotoUrl(patientId); }
+  uploadPatientDocument(patientId: string, file: File, documentType: PatientDocumentType) {
+    return AdminPatientPhotoApiService.uploadPatientDocument(patientId, file, documentType);
+  }
+  getPatientDocumentUrl(patientId: string, documentId: string) {
+    return AdminPatientPhotoApiService.getPatientDocumentUrl(patientId, documentId);
+  }
+  listPatientDocuments(patientId: string) {
+    return AdminPatientPhotoApiService.listPatientDocuments(patientId);
+  }
+  registerImageConsent(patientId: string, payload: RegisterImageConsentPayload) {
+    return AdminPatientPhotoApiService.registerImageConsent(patientId, payload);
+  }
+  revokeImageConsent(patientId: string, consentId: string, payload: { revocationDocumentId?: string; revocationChannel: RevocationChannel }) {
+    return AdminPatientPhotoApiService.revokeImageConsent(patientId, consentId, payload);
+  }
+  getVigenteImageConsent(patientId: string) {
+    return AdminPatientPhotoApiService.getVigenteImageConsent(patientId);
+  }
 }
 export const AdminApiService = new AdminApiServiceClass();

@@ -32,6 +32,7 @@ import {
   createAdminTherapeuticProjectsRoutes,
   createAdminPatientsRoutes,
   PublicLeadsController,
+  createAdminPatientPhotoRoutes,
 } from '@modules/case';
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
@@ -508,6 +509,9 @@ app.use(
     new AdminTerminologySearchController(),
   ),
 );
+
+// ========== Admin Patient Photo/Documents/Image Consent (spec 018, PR-4) ==========
+app.use('/api/admin', createAdminPatientPhotoRoutes(authMiddleware, permissionMiddleware));
 
 // ========== Admin Therapeutic Projects (spec 017) ==========
 app.use(

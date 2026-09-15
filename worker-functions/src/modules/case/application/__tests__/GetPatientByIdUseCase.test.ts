@@ -27,6 +27,7 @@ const mockPatient: PatientDetailRow = {
   sex: 'MALE',
   phoneWhatsapp: '+5491100000000',
   contactEmail: null,
+  hasPhoto: false,
   gender: null,
   languages: null,
   dischargedAt: null,

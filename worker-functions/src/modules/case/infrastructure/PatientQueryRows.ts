@@ -108,6 +108,8 @@ export interface PatientDetailRow {
    * então isto NÃO amplia exposição). `null` quando o status atual nunca foi DISCHARGED.
    */
   dischargedAt: Date | null;
+  /** Spec 018, PR-4: tem foto de perfil cadastrada (`EXISTS` contra `patient_photos`). */
+  hasPhoto: boolean;
   // Clinical
   diagnosis: string | null;
   dependencyLevel: string | null;
