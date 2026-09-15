@@ -23,6 +23,7 @@
 const TERMINOLOGY_SYSTEM = 'ICD-11';
 import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { withActorContext } from '@shared/database/actorContext';
 import { IcdCode } from '../../terminology/domain/IcdCode';
 import { PatientDiagnosis } from '../domain/PatientDiagnosis';
 import type { Country, ConceptLanguage, TerminologySystem } from '../domain/PatientDiagnosis';
@@ -196,28 +197,31 @@ export class PostgresPatientDiagnosisRepository implements PatientDiagnosisRepos
     return rows[0] ? toEntity(rows[0]) : null;
   }
 
+  /**
+   * 🔧 CONSERTO (ficha D, item 2 — CID-11, stage 15/09): `this.pool.connect()` cru abria a
+   * transação SEM `app.user_uid`/`app.user_country`/`app.system_context` — sob a policy de país
+   * das satélites de paciente (migration 413, `patient_diagnoses_follow_patient`), que consulta
+   * `patients` via `EXISTS`, a sessão sem identidade recusa em voz alta (`rls_session_without_identity`,
+   * 42501 — migration 411) no primeiro INSERT/UPDATE. Era o 500 medido no POST de diagnóstico.
+   *
+   * `withActorContext` (`@shared/database/actorContext`, já usado por 19 sites do módulo `case/` —
+   * ex.: `PatientDeviceTypeRepository`, `PatientInsuranceVerifiedRepository`) é o MECANISMO PADRÃO
+   * do projeto para isto: abre a transação, carimba os GUCs de país/ator e roda `fn` no MESMO
+   * client — reusa o client já FIXADO da request quando existir (`pinnedClientFor`), ou abre um
+   * client roteado pela identidade certa (`app_runtime`/`app_system`) quando não. Sem contexto
+   * declarado (job legado) a transação NÃO roda igual: com a policy de país ligada, a sessão
+   * sem `app.user_uid`/`app.user_country` é recusada pela RLS no primeiro INSERT/UPDATE
+   * (`rls_session_without_identity`, 42501 — migration 411), exatamente o erro que este conserto
+   * elimina fornecendo o carimbo. Provado no e2e (teste 2: sem contexto → 42501).
+   */
   async withTransaction<T>(fn: (tx: PatientDiagnosisRepositoryPort) => Promise<T>): Promise<T> {
     // Já dentro de uma transação (chamada aninhada) — reusa o MESMO client, sem BEGIN duplo.
     if (this.client) return fn(this);
 
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
+    return withActorContext(this.pool, async (client) => {
       const tx = new PostgresPatientDiagnosisRepository(this.scope, client);
-      const result = await fn(tx);
-      await client.query('COMMIT');
-      return result;
-    } catch (err) {
-      // 🔧 F5-CORREÇÃO T8 — um ROLLBACK que FALHA (conexão derrubada, transação já abortada)
-      // substituía o erro ORIGINAL. Quem chama decide o HTTP por `instanceof`
-      // (`PrimaryDiagnosisConflictError` em SetPrimaryDiagnosis/RecordPatientDiagnosis): com o
-      // erro trocado, o `instanceof` erra e o cliente recebe 500 no lugar de 409. O irmão do
-      // mesmo PR já fazia certo (`ReadonlyDbQueryService`: `.catch(() => undefined)`).
-      await client.query('ROLLBACK').catch(() => undefined);
-      throw err;
-    } finally {
-      client.release();
-    }
+      return fn(tx);
+    });
   }
 
   /**
