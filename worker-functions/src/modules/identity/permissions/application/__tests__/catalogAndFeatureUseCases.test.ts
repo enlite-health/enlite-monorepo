@@ -37,9 +37,9 @@ function cell(overrides: Partial<PermissionCell>): PermissionCell {
 
 describe('SyncPermissionCatalogUseCase', () => {
   it('sincroniza o declarado', async () => {
-    const catalog = { list: jest.fn(), idsByCellKey: jest.fn(), sync: jest.fn().mockResolvedValue({ inserted: 1, revived: 0, deprecated: 2, total: 3 }) };
+    const catalog = { list: jest.fn(), idsByCellKey: jest.fn(), sync: jest.fn().mockResolvedValue({ inserted: 1, revived: 0, deprecated: 2, total: 3, masterGranted: 0 }) };
     const result = await new SyncPermissionCatalogUseCase(catalog).execute([{ resource: 'worker', action: 'read' }]);
-    expect(result).toEqual({ inserted: 1, revived: 0, deprecated: 2, total: 3 });
+    expect(result).toEqual({ inserted: 1, revived: 0, deprecated: 2, total: 3, masterGranted: 0 });
     expect(catalog.sync).toHaveBeenCalledWith([{ resource: 'worker', action: 'read' }], 'worker-functions');
   });
 

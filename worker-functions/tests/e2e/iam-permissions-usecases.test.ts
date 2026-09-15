@@ -568,6 +568,208 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
     });
   });
 
+  // ── D338: Acesso Master recebe toda célula ATIVA automaticamente ───────────
+  describe('D338 — Acesso Master recebe automaticamente toda célula ativa (PR-8c)', () => {
+    const MASTER_TEST_CELL = { resource: 'iam_uc_master_teste', action: 'execute' };
+
+    afterEach(async () => {
+      // CASCADE (PK composta group_id+permission_id) limpa iam.group_permissions junto.
+      await admin.query(`DELETE FROM iam.permissions WHERE resource = $1`, [MASTER_TEST_CELL.resource]);
+    });
+
+    it('(1) célula nova declarada → depois do sync, está no /v1/me/authz de um usuário do Master sem ação humana', async () => {
+      const vivas = await admin.query<{ resource: string; action: string }>(
+        `SELECT resource, action FROM iam.permissions WHERE deprecated_at IS NULL`,
+      );
+      const declaradas = vivas.rows.map((row) => ({ resource: row.resource, action: row.action }));
+
+      const antes = await permissions.authz.execute({ uid: U.gestor, tenantId: ENLITE_TENANT_ID });
+      expect(antes.permissions).not.toContain('iam_uc_master_teste:execute');
+
+      await permissions.repositories.catalog.sync([...declaradas, MASTER_TEST_CELL], 'worker-functions');
+
+      const depois = await permissions.authz.execute({ uid: U.gestor, tenantId: ENLITE_TENANT_ID });
+      expect(depois.permissions).toContain('iam_uc_master_teste:execute');
+
+      await permissions.repositories.catalog.sync(declaradas, 'worker-functions'); // devolve o harness
+    });
+
+    it('(2) a mesma célula NÃO aparece em Recrutador, Community Manager, Financeiro, Super Admin nem num grupo custom', async () => {
+      const vivas = await admin.query<{ resource: string; action: string }>(
+        `SELECT resource, action FROM iam.permissions WHERE deprecated_at IS NULL`,
+      );
+      const declaradas = vivas.rows.map((row) => ({ resource: row.resource, action: row.action }));
+      await permissions.repositories.catalog.sync([...declaradas, MASTER_TEST_CELL], 'worker-functions');
+
+      // varredura ampla: NENHUM grupo além do Master tem a célula.
+      const outros = await admin.query<{ name: string }>(
+        `SELECT g.name FROM iam.group_permissions gp
+           JOIN iam.permission_groups g ON g.id = gp.group_id
+           JOIN iam.permissions p ON p.id = gp.permission_id
+          WHERE p.resource = $1 AND p.action = $2 AND g.name <> 'Acesso Master'`,
+        [MASTER_TEST_CELL.resource, MASTER_TEST_CELL.action],
+      );
+      expect(outros.rows).toEqual([]);
+
+      // controle positivo nomeado: os 4 grupos fixos + o grupo CUSTOM deste arquivo (`groupId`)
+      // existem e são checados individualmente — não só "nenhum apareceu na varredura".
+      const nomeados = await admin.query<{ name: string; tem: boolean }>(
+        `SELECT g.name,
+                EXISTS (
+                  SELECT 1 FROM iam.group_permissions gp
+                    JOIN iam.permissions p ON p.id = gp.permission_id
+                   WHERE gp.group_id = g.id AND p.resource = $1 AND p.action = $2
+                ) AS tem
+           FROM iam.permission_groups g
+          WHERE g.name IN ('Recrutador', 'Community Manager', 'Financeiro', 'Super Admin')
+             OR g.id = $3
+          ORDER BY g.name`,
+        [MASTER_TEST_CELL.resource, MASTER_TEST_CELL.action, groupId],
+      );
+      expect(nomeados.rows.length).toBeGreaterThanOrEqual(4);
+      for (const row of nomeados.rows) expect([row.name, row.tem]).toEqual([row.name, false]);
+
+      await permissions.repositories.catalog.sync(declaradas, 'worker-functions');
+    });
+
+    it('(3) o mecanismo da 436 dá ao Master `patient_consent_documents:read` (o gap real medido em 15/09) e as demais que faltarem — reaplicar não duplica', async () => {
+      // Reproduz o estado que motivou a D338: uma célula já existe no catálogo (o route-scan já
+      // rodou antes, em algum boot anterior — é o que a migration 436 NÃO controla, ela só
+      // reconcilia o GRANT) mas o Master nunca a recebeu, porque o sync pré-436 nunca concedia
+      // nada a grupo nenhum (C10). `patient_consent_documents:read` é a célula NOMEADA no
+      // achado real (prova do PR-4 na stage, `qa.admin` levou 403 nela).
+      const master = await admin.query(
+        `SELECT id FROM iam.permission_groups WHERE name = 'Acesso Master' AND tenant_id = $1`,
+        [ENLITE_TENANT_ID],
+      );
+      const masterId = master.rows[0].id;
+
+      // Padrão `garantirCelula`/`celulasCriadas` (tests/e2e/helpers/permissionFamilyHarness.ts):
+      // só quem CRIOU a célula é dono da limpeza no fim. `patient_consent_documents:read` é a
+      // célula nomeada no achado real (PR-4 na stage) — pode já existir de verdade no catálogo;
+      // apagar `iam.permissions` incondicionalmente no cleanup apagaria dado de produção se a
+      // suíte rodar contra uma base onde ela já foi seedada por outro caminho. `xmax = 0` na
+      // RETURNING distingue INSERT (linha nova, xmax=0) de UPDATE via ON CONFLICT (linha já
+      // existia, xmax setado pela própria transação) — é o mesmo `criada` do helper, calculado
+      // aqui porque o helper não cobre o caminho "reviver célula deprecada" que este teste exige.
+      const seeded = await admin.query<{ id: string; criada: boolean }>(
+        `INSERT INTO iam.permissions (resource, action, description, category, owner_service)
+              VALUES ('patient_consent_documents', 'read', 'e2e D338', 'Pacientes', 'worker-functions')
+         ON CONFLICT (resource, action) DO UPDATE SET deprecated_at = NULL
+         RETURNING id, (xmax = 0) AS criada`,
+      );
+      const permId = seeded.rows[0].id;
+      const celulaCriadaPorEsteTeste = seeded.rows[0].criada;
+      // garante o estado "catálogo tem, Master não tem" antes de reconciliar
+      await admin.query(`DELETE FROM iam.group_permissions WHERE group_id = $1 AND permission_id = $2`, [masterId, permId]);
+      const semAntes = await admin.query(
+        `SELECT 1 FROM iam.group_permissions WHERE group_id = $1 AND permission_id = $2`,
+        [masterId, permId],
+      );
+      expect(semAntes.rowCount).toBe(0);
+
+      const client = await systemPool.connect();
+      try {
+        await client.query(`SELECT set_config('app.system_context', 'e2e:436-catchup', false)`);
+        const r1 = await client.query<{ n: number }>(`SELECT iam.grant_active_permissions_to_master() AS n`);
+        expect(r1.rows[0].n).toBeGreaterThanOrEqual(1);
+
+        const temConsent = await admin.query(
+          `SELECT 1 FROM iam.group_permissions WHERE group_id = $1 AND permission_id = $2`,
+          [masterId, permId],
+        );
+        expect(temConsent.rowCount).toBe(1);
+
+        // reaplicar (mesmo caminho do boot) não duplica — ON CONFLICT DO NOTHING
+        const antes = await admin.query(`SELECT count(*)::int n FROM iam.group_permissions WHERE group_id = $1`, [masterId]);
+        await client.query(`SELECT iam.grant_active_permissions_to_master()`);
+        const depois = await admin.query(`SELECT count(*)::int n FROM iam.group_permissions WHERE group_id = $1`, [masterId]);
+        expect(depois.rows[0].n).toBe(antes.rows[0].n);
+      } finally {
+        client.release();
+      }
+
+      if (celulaCriadaPorEsteTeste) {
+        await admin.query(`DELETE FROM iam.permissions WHERE resource = 'patient_consent_documents' AND action = 'read'`);
+      }
+      // se a célula já existia antes (`celulaCriadaPorEsteTeste === false`), não apaga — é dado
+      // de quem chegou primeiro (seed real do catálogo). O grant do Master já foi restaurado
+      // pelas duas chamadas a `grant_active_permissions_to_master()` acima.
+    });
+
+    it('invariante: hoje NENHUMA permissão ATIVA do catálogo falta no Master (grant nunca é removido — deprecar não tira o histórico)', async () => {
+      const master = await admin.query(
+        `SELECT id FROM iam.permission_groups WHERE name = 'Acesso Master' AND tenant_id = $1`,
+        [ENLITE_TENANT_ID],
+      );
+      const masterId = master.rows[0].id;
+      // NÃO é `count(group_permissions) == count(permissions ativas)`: o Master pode ter grant de
+      // célula HOJE deprecated (a função nunca DELETE — mesma regra de `iam.permissions`, nunca
+      // apaga linha). A invariante certa é "nenhuma ATIVA falta", não "os dois números batem".
+      const faltando = await admin.query<{ n: number }>(
+        `SELECT count(*)::int n FROM iam.permissions p
+          WHERE p.deprecated_at IS NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM iam.group_permissions gp
+               WHERE gp.group_id = $1 AND gp.permission_id = p.id
+            )`,
+        [masterId],
+      );
+      expect(faltando.rows[0].n).toBe(0);
+    });
+
+    it('(negativo) app_runtime, mesmo com app.system_context FORJADO, recebe 42501 ao chamar iam.grant_active_permissions_to_master() (ACL da 436, mesmo gate da 281/279)', async () => {
+      // Mesmo padrão das suítes IAM vizinhas (`SET LOCAL ROLE` + `set_config` numa transação
+      // que sempre dá ROLLBACK — ver `asRole` em tests/e2e/iam-permissions-foundation.test.ts).
+      // O gate por GUC (`_is_system_context()`) fica DENTRO da função e por isso um `app_system`
+      // real com o GUC certo passa — mas o gate por ROLE é ACL (`REVOKE ALL ... FROM app_runtime`
+      // na 436), avaliado pelo Postgres ANTES de a função rodar. Forjar o GUC não contorna ACL:
+      // `app_runtime` tem que continuar recebendo `42501` mesmo declarando `app.system_context`.
+      const client = await admin.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('SET LOCAL ROLE app_runtime');
+        await client.query(`SELECT set_config('app.system_context', 'e2e:436-role-forjado', true)`);
+        await expect(
+          client.query(`SELECT iam.grant_active_permissions_to_master()`),
+        ).rejects.toMatchObject({ code: '42501' });
+      } finally {
+        await client.query('ROLLBACK').catch(() => {});
+        client.release();
+      }
+    });
+
+    it('LISTA (fora do escopo, só confirmação): PUT direto tira célula do Master → o próximo sync reconcilia', async () => {
+      // `SetGroupPermissionsUseCase`/`iam.set_group_permissions` (mig 279) não checam
+      // `is_system` — um gestor com permission_management:write PODE tirar célula do Master
+      // por PUT direto (achado fora do escopo desta mudança, decisão pendente do Gabriel).
+      // Este teste NÃO exercita a rota (fora de escopo); confirma só que o SYNC de boot
+      // seguinte devolve o grant, porque a função relê o catálogo inteiro a cada chamada.
+      const master = await admin.query(
+        `SELECT id FROM iam.permission_groups WHERE name = 'Acesso Master' AND tenant_id = $1`,
+        [ENLITE_TENANT_ID],
+      );
+      const masterId = master.rows[0].id;
+      const patientRead = await admin.query(`SELECT id FROM iam.permissions WHERE resource = 'patient' AND action = 'read'`);
+
+      await admin.query(`DELETE FROM iam.group_permissions WHERE group_id = $1 AND permission_id = $2`, [
+        masterId,
+        patientRead.rows[0].id,
+      ]);
+      const antes = await permissions.authz.execute({ uid: U.gestor, tenantId: ENLITE_TENANT_ID });
+      expect(antes.permissions).not.toContain('patient:read');
+
+      const vivas = await admin.query<{ resource: string; action: string }>(
+        `SELECT resource, action FROM iam.permissions WHERE deprecated_at IS NULL`,
+      );
+      const declaradas = vivas.rows.map((row) => ({ resource: row.resource, action: row.action }));
+      await permissions.repositories.catalog.sync(declaradas, 'worker-functions');
+
+      const depois = await permissions.authz.execute({ uid: U.gestor, tenantId: ENLITE_TENANT_ID });
+      expect(depois.permissions).toContain('patient:read');
+    });
+  });
+
   // ── Gate da virada ─────────────────────────────────────────────────────────
   describe('gate da virada (staff sem grupo + marcador de rollout)', () => {
     it('conta staff ACTIVE sem nenhum grupo e lê o marcador', async () => {

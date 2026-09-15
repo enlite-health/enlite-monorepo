@@ -75,28 +75,20 @@ function catalogoEsperadoApos435(): Set<string> {
   return set;
 }
 
-/**
- * O que o Acesso Master REALMENTE ganha (passo 2 da 435): a migration só converte grant
- * EXISTENTE (`group_permissions` com `write` de um dos 23) em `create`+`update` — nunca
- * cria grant para recurso que o grupo nunca teve. Master nasceu (206) com as 43/41
- * permissões que existiam NAQUELE momento (`SELECT v_g_master, id FROM permissions`, uma
- * vez só, migration 206) — os 12 recursos novos do catálogo (patient_identity, catalog_
- * therapeutic_*, etc., nunca existiram em 206) e `messaging` (206 só deu `read`+`send`,
- * NUNCA `write`) ficam de fora da conversão. **Isto é um achado de produção** (Acesso
- * Master, documentado como "acesso completo a todas as permissões", ficou com 39 células
- * a menos que o catálogo total assim que 435 rodou) — ver "Defeitos de produção revelados"
- * no relatório da rodada; não é consertado aqui.
- */
-function masterEsperadoApos435(): Set<string> {
-  const set = new Set(ORIGINAL_SEED_206.map(([r, a]) => `${r}:${a}`));
-  for (const resource of SPLIT_23_MIG_435) {
-    if (set.has(`${resource}:write`)) {
-      set.add(`${resource}:create`);
-      set.add(`${resource}:update`);
-    }
-  }
-  return set;
-}
+// Nota (PR-8c/D338, migration 436): o Acesso Master deixou de ser conferido pela conversão
+// estática da 435 (grant existente → create/update) — masterEsperadoApos435() foi removida.
+// A migration 436 reconcilia o Master contra o CATÁLOGO VIVO (toda célula `deprecated_at IS
+// NULL`), então o teste do Master agora compara CONJUNTO (ativas ⊆ grants), não igualdade
+// fixa — ver o teste "todas as permissões ativas do catálogo" abaixo.
+
+// Total de permissões seedadas (matriz exata 01-requirements-and-decisions.md)
+// worker:4 + worker_pii:1 + worker_document:4 + vacancy:3 + funnel:2 +
+// interview:3 + match:2 + patient:2 + recruitment:2 + talentum:2 +
+// prescreening:2 + analytics:2 + dedup:2 + dashboard:1 + messaging:2 +
+// upload:2 + user_management:3 + permission_management:2 = 41
+// Usado SÓ pelo total do catálogo (S3, linha ~328). A contagem do Acesso Master
+// (D338, migration 436) passa a ser DINÂMICA — ver o teste "todas as permissões ativas".
+const EXPECTED_PERMISSION_COUNT = 41;
 
 // IDs determinísticos para fixtures deste teste
 const TEST_UID_PREFIX = 'e2e-iam-206';
@@ -468,14 +460,36 @@ describe('S3 — Seeds: tenant Enlite, 43 permissions, 5 grupos (2 de sistema + 
     expect(byId.get(GROUP_FIN)).toMatchObject({ name: 'Financeiro', is_system: false });
   });
 
-  it('grupo Acesso Master tem a matriz 206 inteira + create/update dos 23 recursos splitados PARA OS QUE JÁ TINHAM write (o que a 435 realmente converte — dinâmico, sem número solto)', async () => {
-    const rows = await pool.query<{ resource: string; action: string }>(`
-      SELECT p.resource, p.action FROM group_permissions gp
-      JOIN permissions p ON p.id = gp.permission_id
-      WHERE gp.group_id = $1
+  it('grupo Acesso Master tem TODAS as células ATIVAS do catálogo — inclusão de conjunto, sem exigir contagem igual (D338, migration 436)', async () => {
+    // Antes da D338 a contagem era o EXPECTED_PERMISSION_COUNT fixo do seed 206. Agora o
+    // Master é reconciliado contra o catálogo vivo (`deprecated_at IS NULL`) — comparar contra
+    // um número fixo faria este teste cair na 1ª célula nova legítima.
+    //
+    // ⚠️ Contradição de critério consertada: a 436 só ADICIONA grant (`ON CONFLICT DO NOTHING`,
+    // nunca `DELETE`) — se uma célula que o Master já tinha for depreciada depois, o grant velho
+    // continua lá e a CONTAGEM do Master passa a ser MAIOR que o total de ativas. Exigir
+    // `count(Master) === count(ativas)` faria este teste cair nesse cenário legítimo. O que D338
+    // garante é INCLUSÃO — toda célula ativa está entre os grants do Master — não igualdade de
+    // contagem. Por isso o teste compara CONJUNTOS (ativas ⊆ grants do Master), não tamanhos.
+    //
+    // ⚠️ Achado incidental (fora do escopo do D338, não consertado aqui): a view de
+    // compatibilidade `public.permissions` (274, `SELECT * FROM iam.permissions`) NÃO enxerga
+    // `deprecated_at` — a coluna só nasceu na 275, DEPOIS da view, e um `CREATE VIEW ... SELECT *`
+    // congela a lista de colunas na criação (Postgres não reabre o `*` quando a tabela de baixo
+    // ganha coluna nova). Por isso este SELECT vai direto em `iam.permissions`, qualificado —
+    // igual o resto do código pós-274 já faz.
+    const ativas = await pool.query<{ id: string }>(`
+      SELECT id FROM iam.permissions WHERE deprecated_at IS NULL
+    `);
+    const grants = await pool.query<{ permission_id: string }>(`
+      SELECT permission_id FROM group_permissions WHERE group_id = $1
     `, [GROUP_MASTER]);
-    const set = new Set(rows.rows.map((r) => `${r.resource}:${r.action}`));
-    expect(set).toEqual(masterEsperadoApos435());
+    const idsConcedidos = new Set(grants.rows.map((r) => r.permission_id));
+    const faltando = ativas.rows.map((r) => r.id).filter((id) => !idsConcedidos.has(id));
+    expect(faltando).toEqual([]);
+    // Controle positivo: se `ativas` viesse vazio (catálogo não seedado), o teste acima
+    // passaria no vácuo — exige que exista pelo menos o total fixo do seed 206.
+    expect(ativas.rows.length).toBeGreaterThanOrEqual(EXPECTED_PERMISSION_COUNT);
   });
 
   it('grupo Recrutador: não tem worker:delete, dedup:execute, user_management:write/delete, permission_management:*', async () => {

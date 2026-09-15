@@ -112,7 +112,20 @@ export class PgPermissionCatalogRepository implements PermissionCatalogRepositor
         `SELECT iam.deprecate_missing_permission_cells($1, $2::text[]) AS n`,
         [ownerService, liveKeys],
       );
-      return { inserted, revived, deprecated: gone.rows[0]?.n ?? 0, total: cells.length };
+      // D338: o Acesso Master (id fixo, migration 436) recebe TODA célula ativa a cada
+      // sync — nunca outro grupo (C10/D285 continuam intactas para eles). Roda por último,
+      // na MESMA transação: ou o catálogo inteiro (upsert + descontinuação + Master) reflete
+      // esta versão, ou nada muda.
+      const masterGrant = await client.query<{ n: number }>(
+        `SELECT iam.grant_active_permissions_to_master() AS n`,
+      );
+      return {
+        inserted,
+        revived,
+        deprecated: gone.rows[0]?.n ?? 0,
+        total: cells.length,
+        masterGranted: masterGrant.rows[0]?.n ?? 0,
+      };
     });
   }
 }

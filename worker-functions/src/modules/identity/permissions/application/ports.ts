@@ -113,6 +113,12 @@ export interface CatalogSyncResult {
   /** Voltaram a ser declaradas depois de descontinuadas. */
   revived: number;
   total: number;
+  /**
+   * D338: células ATIVAS concedidas ao Acesso Master nesta sincronização (0 na maioria dos
+   * boots — só sobe quando o catálogo ganhou célula nova, ou quando reconcilia um grant
+   * removido por fora). Exclusivo do Master; nenhum outro grupo é tocado (D285 intacta).
+   */
+  masterGranted: number;
 }
 
 export interface PermissionCatalogRepository {
