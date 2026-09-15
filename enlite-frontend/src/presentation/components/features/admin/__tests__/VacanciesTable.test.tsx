@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { VacanciesTable, VacancyRow } from '../VacanciesTable';
 
 describe('VacanciesTable', () => {
@@ -117,5 +117,18 @@ describe('VacanciesTable', () => {
     expect(badges).toHaveLength(1);
     expect(screen.getByTestId('vacancy-draft-badge-draft-1')).toBeInTheDocument();
     expect(screen.queryByTestId('vacancy-draft-badge-published-1')).not.toBeInTheDocument();
+  });
+
+  it('does not crash and shows empty state when vacancies is undefined', () => {
+    // @ts-expect-error — testando o fallback `vacancies ?? []` de props ausente/undefined.
+    render(<VacanciesTable vacancies={undefined} />);
+    expect(screen.getByText('admin.vacancies.noVacancies')).toBeInTheDocument();
+  });
+
+  it('calls onRowClick with the row id when the row is clicked', () => {
+    const onRowClick = vi.fn();
+    render(<VacanciesTable vacancies={realApiData} onRowClick={onRowClick} />);
+    fireEvent.click(screen.getByText('Caso 349'));
+    expect(onRowClick).toHaveBeenCalledWith('fd269cde-d8c9-4fdc-88a9-5b19ebcdb531');
   });
 });
