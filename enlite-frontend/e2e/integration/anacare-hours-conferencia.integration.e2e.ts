@@ -34,13 +34,28 @@
  * nunca `TRUNCATE`/`DELETE` largo (outras sessões usam o mesmo Postgres).
  */
 import { execFileSync } from 'child_process';
+import * as fs from 'fs';
 import * as path from 'path';
 import { test, expect, type Page, type Route } from '@playwright/test';
 
-// Caminho ABSOLUTO (a worktree não é a mesma árvore do `ebrain`) — o pedido é salvar os prints em
-// `ebrain/medicoes/anacare-conferencia-horas-f1/`, fora deste repo.
-const PRINTS_DIR = '/Users/gabrielstein-dev/projects/enlite/ebrain/medicoes/anacare-conferencia-horas-f1';
-const print = (page: Page, name: string) => page.screenshot({ path: path.join(PRINTS_DIR, name), fullPage: true });
+/**
+ * O caminho anterior era ABSOLUTO da máquina do autor (`/Users/gabrielstein-dev/...`) — no
+ * runner do CI esse diretório não existe e a escrita do print falha com ENOENT (mesma classe de
+ * bug documentada em `admissao-cid11-ux-audit.integration.e2e.ts`). `ANACARE_HOURS_EVIDENCE_DIR`
+ * mantém o print saindo em `ebrain/medicoes/anacare-conferencia-horas-f1/` para quem rodar local
+ * com essa env; sem ela, cai num diretório RELATIVO ao repo que existe em qualquer runner. O
+ * `mkdir` é preguiçoso — só na primeira captura, nunca ao carregar o módulo.
+ */
+const PRINTS_DIR =
+  process.env.ANACARE_HOURS_EVIDENCE_DIR ?? path.resolve(process.cwd(), 'e2e', '__evidence__', 'anacare-conferencia-horas-f1');
+let printsDirEnsured = false;
+const print = (page: Page, name: string) => {
+  if (!printsDirEnsured) {
+    fs.mkdirSync(PRINTS_DIR, { recursive: true });
+    printsDirEnsured = true;
+  }
+  return page.screenshot({ path: path.join(PRINTS_DIR, name), fullPage: true });
+};
 
 const DB_URL = process.env.ANACARE_TEST_DB_URL ?? 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const TENANT = '00000000-0000-0000-0000-000000000001';
