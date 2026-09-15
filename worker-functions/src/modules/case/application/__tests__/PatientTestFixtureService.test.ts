@@ -1,3 +1,8 @@
+// Achado da revisão do PR-4 (item 3): `purge` agora dispara um retry oportunista da fila de
+// órfãos no fim — fire-and-forget, não deve poluir/instabilizar ESTES testes (que não são sobre
+// o retry; esse tem suíte própria em PatientPhotoOrphanRetryService.test.ts).
+jest.mock('../scheduleOpportunisticOrphanRetry', () => ({ scheduleOpportunisticOrphanRetry: jest.fn() }));
+
 // O default do construtor (`db = DatabaseConnection.getInstance().getPool()`) só
 // é alcançável se a conexão não for real — o controller sempre passa o pool dele.
 const mockGetPool = jest.fn();

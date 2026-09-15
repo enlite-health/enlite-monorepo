@@ -13,6 +13,7 @@ import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { PatientPhotoStorage } from '../infrastructure/PatientPhotoStorage';
 import { PatientDocumentStorage } from '../infrastructure/PatientDocumentStorage';
 import { PatientPhotoOrphanRepository } from '../infrastructure/PatientPhotoOrphanRepository';
+import { scheduleOpportunisticOrphanRetry } from './scheduleOpportunisticOrphanRetry';
 
 /** Tentativa de purgar um paciente que NÃO está marcado como teste. */
 export class NotATestPatientError extends Error {
@@ -85,9 +86,9 @@ const CASCADE_CHILDREN = [
   // 422 (spec 018, PR-2): contatos externos sem vínculo familiar — filha direta, ON DELETE CASCADE.
   'patient_external_contacts',
   // 426 (spec 018, PR-4): foto, consentimento de imagem e documento de prova — filhas diretas,
-  // ON DELETE CASCADE. NOTA (PARCIAL, 14/09): a contagem aqui prova só a linha do banco; o objeto
-  // do GCS (foto e documento) ainda NÃO é apagado pela purga nesta sessão — falta a chamada de
-  // storage ANTES do DELETE (task 4.8, pendente).
+  // ON DELETE CASCADE. A LINHA some por CASCADE aqui; o objeto do GCS (foto e documento) é apagado
+  // à parte, DEPOIS do commit, por `deleteOrphanCandidate` (task 4.8) — ver `photoRows`/
+  // `documentRows` lidos ANTES do DELETE e os loops logo abaixo do `COMMIT` em `purge()`.
   'patient_documents',
   'patient_image_consents',
   'patient_photos',
@@ -304,6 +305,8 @@ export class PatientTestFixtureService {
     // eliminação aconteceu; sem o ator ele não responde "quem". UUID e contagens
     // apenas: nada de e-mail, telefone ou texto clínico.
     functions.logger.info('patient.test_purge.done', { ...result, actorUid });
+    // Achado da revisão do PR-4 (item 3): fila de órfãos sem consumidor — tentativa oportunista.
+    scheduleOpportunisticOrphanRetry();
     return result;
   }
 
