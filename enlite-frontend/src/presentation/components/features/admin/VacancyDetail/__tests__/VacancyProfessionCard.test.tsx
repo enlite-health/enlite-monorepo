@@ -71,9 +71,45 @@ describe('VacancyProfessionCard — fields', () => {
     expect(screen.getByText('TEA')).toBeInTheDocument();
   });
 
+  it('renders "—" for diagnosis when it is null', () => {
+    renderCard({ diagnosis: null });
+    expect(screen.getByText('admin.vacancyDetail.professionCard.diagnosis').parentElement).toHaveTextContent('—');
+  });
+
+  it('renders "—" for requiredSex when it is null', () => {
+    renderCard({ requiredSex: null });
+    expect(
+      screen.queryByText('admin.vacancyDetail.vacancyForm.sexOptions.F'),
+    ).not.toBeInTheDocument();
+    // "availableFor" fica sozinho na linha, seguido de "—".
+    expect(screen.getByText('admin.vacancyDetail.professionCard.availableFor').parentElement).toHaveTextContent('—');
+  });
+
+  it('parses serviceType as a comma-separated string', () => {
+    renderCard({ serviceType: 'AT, ENFERMERIA' });
+    // t() mock retorna a própria chave — split/trim/join dos 2 itens vira 2 chaves unidas por ", ".
+    expect(
+      screen.getByText(
+        'admin.patients.detail.contractedServicesCard.serviceTypes.AT, admin.patients.detail.contractedServicesCard.serviceTypes.ENFERMERIA',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('renders no serviceType label when serviceType is null', () => {
+    renderCard({ serviceType: null });
+    expect(
+      screen.queryByText('admin.vacancyDetail.professionCard.serviceType'),
+    ).toBeInTheDocument();
+  });
+
   it('renders age range when both min and max provided', () => {
     renderCard();
     expect(screen.getByText('25 - 45')).toBeInTheDocument();
+  });
+
+  it('renders the "any age" placeholder when min and max are both null', () => {
+    renderCard({ ageRangeMin: null, ageRangeMax: null });
+    expect(screen.getByText('admin.vacancyDetail.professionCard.ageRangeAny')).toBeInTheDocument();
   });
 
   it('does NOT render description section when talentumDescription is null', () => {

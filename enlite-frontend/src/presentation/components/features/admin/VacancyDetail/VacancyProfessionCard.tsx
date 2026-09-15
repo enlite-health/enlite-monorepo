@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { Check, Pencil } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 
 type WeekdayKey =
   | 'sunday'
@@ -144,6 +145,13 @@ export function VacancyProfessionCard({
 }: VacancyProfessionCardProps) {
   const { t } = useTranslation();
 
+  // PUT /vacancies/:id/talentum-description → VacancyDescriptionEditModal → talentum:update.
+  // PUT /vacancies/:id → VacancyScheduleEditModal → vacancy:update. Nenhum dos dois lápis tinha
+  // gate e apareciam para quem só tem vacancy:create/talentum:create (achado na prova do
+  // PR-8b, #391) — PR-8b, ADR-2.
+  const { allowed: podeEditarDescricao } = useActionGate('talentum', 'update');
+  const { allowed: podeEditarHorario } = useActionGate('vacancy', 'update');
+
   const isCaregiver =
     profession?.toUpperCase() === 'CAREGIVER' ||
     profession?.toUpperCase() === 'CUIDADOR';
@@ -205,13 +213,13 @@ export function VacancyProfessionCard({
         </Text>
       </div>
 
-      {(talentumDescription || onEditDescription) && (
+      {(talentumDescription || (onEditDescription && podeEditarDescricao)) && (
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between gap-2">
             <Text size="base" color="primary" weight="medium">
               {t('admin.vacancyDetail.professionCard.description')}
             </Text>
-            {onEditDescription && (
+            {onEditDescription && podeEditarDescricao && (
               <button
                 type="button"
                 onClick={onEditDescription}
@@ -256,7 +264,7 @@ export function VacancyProfessionCard({
               label={t('admin.vacancyDetail.professionCard.daysAndHours')}
               value={null}
             />
-            {onEditSchedule && (
+            {onEditSchedule && podeEditarHorario && (
               <button
                 type="button"
                 onClick={onEditSchedule}
