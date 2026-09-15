@@ -92,7 +92,7 @@ export function createWorkerContextRoutes(
   router.post(
     '/workers/:id/documents/ingest-from-url',
     auth,
-    perm.require('worker_document', 'write'),
+    perm.require('worker_document', 'create'),
     ingestRateLimit,
     (req: Request, res: Response) => controller.ingestFromUrl(req, res),
   );

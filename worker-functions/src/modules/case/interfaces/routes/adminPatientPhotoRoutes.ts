@@ -58,11 +58,11 @@ export function createAdminPatientPhotoRoutes(
   router.post(
     '/patients/:id/photo',
     staffOnly,
-    perm.require('patient_identity', 'write'),
+    perm.require('patient_identity', 'create'),
     withMulterErrorAsJson(uploadPhoto)('file'),
     (req: Request, res: Response) => photoController.upload(req, res),
   );
-  router.delete('/patients/:id/photo', staffOnly, perm.require('patient_identity', 'write'), (req: Request, res: Response) =>
+  router.delete('/patients/:id/photo', staffOnly, perm.require('patient_identity', 'update'), (req: Request, res: Response) =>
     photoController.remove(req, res),
   );
   router.get(
@@ -77,7 +77,7 @@ export function createAdminPatientPhotoRoutes(
   router.post(
     '/patients/:id/documents',
     staffOnly,
-    perm.require('patient_identity', 'write'),
+    perm.require('patient_identity', 'create'),
     withMulterErrorAsJson(uploadDocument)('file'),
     (req: Request, res: Response) => documentController.upload(req, res),
   );
@@ -99,7 +99,7 @@ export function createAdminPatientPhotoRoutes(
   );
 
   // ── Consentimento de imagem (opcional — decisão 14/09, D335) ────────────────────────────────
-  router.post('/patients/:id/image-consents', staffOnly, perm.require('patient_identity', 'write'), (req: Request, res: Response) =>
+  router.post('/patients/:id/image-consents', staffOnly, perm.require('patient_identity', 'create'), (req: Request, res: Response) =>
     consentController.register(req, res),
   );
   // Furo fechado nesta rodada: `findVigente` já existia no repositório, sem rota — mesma célula
@@ -113,7 +113,7 @@ export function createAdminPatientPhotoRoutes(
   router.post(
     '/patients/:id/image-consents/:cid/revoke',
     staffOnly,
-    perm.require('patient_identity', 'write'),
+    perm.require('patient_identity', 'update'),
     (req: Request, res: Response) => consentController.revoke(req, res),
   );
 

@@ -61,7 +61,7 @@ export function createRecruitmentRoutes(
   router.get('/admin/recruitment/zones', authMiddleware.requireStaff(), perm.require('recruitment', 'read'), (req: Request, res: Response) =>
     analyticsController.getZoneAnalysis(req, res),
   );
-  router.post('/admin/recruitment/calculate-reemplazos', authMiddleware.requireStaff(), perm.require('recruitment', 'write'), (req: Request, res: Response) =>
+  router.post('/admin/recruitment/calculate-reemplazos', authMiddleware.requireStaff(), perm.require('recruitment', 'create'), perm.require('recruitment', 'update'), (req: Request, res: Response) =>
     analyticsController.calculateReemplazos(req, res),
   );
   // Postulaciones bloqueadas: `recruitment:read` decide; até a família virar, papel `admin`.

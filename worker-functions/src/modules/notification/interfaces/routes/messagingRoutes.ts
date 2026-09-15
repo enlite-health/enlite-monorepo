@@ -53,13 +53,13 @@ export function createMessagingRoutes(
   router.get('/templates', perm.require('messaging', 'read'), (req, res) => controller.listTemplates(req, res));
 
   // POST /api/admin/messaging/templates — cria template (upsert por slug)
-  router.post('/templates', perm.require('messaging', 'write'), (req, res) => controller.createTemplate(req, res));
+  router.post('/templates', perm.require('messaging', 'create'), (req, res) => controller.createTemplate(req, res));
 
   // PUT  /api/admin/messaging/templates/:slug — atualiza template
-  router.put('/templates/:slug', perm.require('messaging', 'write'), (req, res) => controller.updateTemplate(req, res));
+  router.put('/templates/:slug', perm.require('messaging', 'update'), (req, res) => controller.updateTemplate(req, res));
 
   // DELETE /api/admin/messaging/templates/:slug — desativa template (soft delete)
-  router.delete('/templates/:slug', perm.require('messaging', 'write'), (req, res) => controller.deleteTemplate(req, res));
+  router.delete('/templates/:slug', perm.require('messaging', 'update'), (req, res) => controller.deleteTemplate(req, res));
 
   // POST /api/admin/messaging/bulk-dispatch-incomplete — dispara complete_register_ofc
   //   para todos os workers com encuadre que têm docs ou perfil incompletos

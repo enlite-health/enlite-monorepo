@@ -105,17 +105,17 @@ export function createAdminVacanciesRoutes(
   );
 
   // ── CRUD (VacancyCrudController) ─────────────────────────────────────────────
-  router.post('/vacancies', authMiddleware.requireStaff(), perm.require('vacancy', 'write'), (req: Request, res: Response) =>
+  router.post('/vacancies', authMiddleware.requireStaff(), perm.require('vacancy', 'create'), (req: Request, res: Response) =>
     vacancyCrudController.createVacancy(req, res),
   );
-  router.put('/vacancies/:id', authMiddleware.requireStaff(), perm.require('vacancy', 'write'), (req: Request, res: Response) =>
+  router.put('/vacancies/:id', authMiddleware.requireStaff(), perm.require('vacancy', 'update'), (req: Request, res: Response) =>
     vacancyCrudController.updateVacancy(req, res),
   );
   router.delete('/vacancies/:id', authMiddleware.requireStaff(), perm.require('vacancy', 'delete'), (req: Request, res: Response) =>
     vacancyCrudController.deleteVacancy(req, res),
   );
   if (vacancyAddressReviewController) {
-    router.post('/vacancies/:id/resolve-address-review', authMiddleware.requireStaff(), perm.require('vacancy', 'write'), (req: Request, res: Response) =>
+    router.post('/vacancies/:id/resolve-address-review', authMiddleware.requireStaff(), perm.require('vacancy', 'update'), (req: Request, res: Response) =>
       vacancyAddressReviewController!.resolveAddressReview(req, res),
     );
   }
@@ -127,27 +127,27 @@ export function createAdminVacanciesRoutes(
   router.post('/vacancies/:id/match', authMiddleware.requireStaff(), perm.require('match', 'execute'), (req: Request, res: Response) =>
     vacancyMatchController.triggerMatch(req, res),
   );
-  router.put('/encuadres/:id/result', authMiddleware.requireStaff(), perm.require('funnel', 'write'), (req: Request, res: Response) =>
+  router.put('/encuadres/:id/result', authMiddleware.requireStaff(), perm.require('funnel', 'update'), (req: Request, res: Response) =>
     vacancyMatchController.updateEncuadreResult(req, res),
   );
 
   // ── Talentum (VacancyTalentumController) ─────────────────────────────────────
-  router.post('/vacancies/:id/publish-talentum', authMiddleware.requireStaff(), perm.require('talentum', 'write'), (req: Request, res: Response) =>
+  router.post('/vacancies/:id/publish-talentum', authMiddleware.requireStaff(), perm.require('talentum', 'update'), (req: Request, res: Response) =>
     vacancyTalentumController.publishToTalentum(req, res),
   );
-  router.delete('/vacancies/:id/publish-talentum', authMiddleware.requireStaff(), perm.require('talentum', 'write'), (req: Request, res: Response) =>
+  router.delete('/vacancies/:id/publish-talentum', authMiddleware.requireStaff(), perm.require('talentum', 'update'), (req: Request, res: Response) =>
     vacancyTalentumController.unpublishFromTalentum(req, res),
   );
-  router.post('/vacancies/:id/generate-talentum-description', authMiddleware.requireStaff(), perm.require('talentum', 'write'), (req: Request, res: Response) =>
+  router.post('/vacancies/:id/generate-talentum-description', authMiddleware.requireStaff(), perm.require('talentum', 'update'), (req: Request, res: Response) =>
     vacancyTalentumController.generateTalentumDescription(req, res),
   );
-  router.put('/vacancies/:id/talentum-description', authMiddleware.requireStaff(), perm.require('talentum', 'write'), (req: Request, res: Response) =>
+  router.put('/vacancies/:id/talentum-description', authMiddleware.requireStaff(), perm.require('talentum', 'update'), (req: Request, res: Response) =>
     vacancyTalentumController.updateTalentumDescription(req, res),
   );
-  router.post('/vacancies/:id/generate-ai-content', authMiddleware.requireStaff(), perm.require('vacancy', 'write'), (req: Request, res: Response) =>
+  router.post('/vacancies/:id/generate-ai-content', authMiddleware.requireStaff(), perm.require('vacancy', 'update'), (req: Request, res: Response) =>
     vacancyTalentumController.generateAIContent(req, res),
   );
-  router.post('/vacancies/sync-talentum', authMiddleware.requireStaff(), perm.require('talentum', 'write'), (req: Request, res: Response) =>
+  router.post('/vacancies/sync-talentum', authMiddleware.requireStaff(), perm.require('talentum', 'create'), perm.require('talentum', 'update'), (req: Request, res: Response) =>
     vacancyTalentumController.syncFromTalentum(req, res),
   );
   router.get('/vacancies/:id/prescreening-config', authMiddleware.requireStaff(), perm.require('prescreening', 'read'), (req: Request, res: Response) =>
@@ -156,7 +156,7 @@ export function createAdminVacanciesRoutes(
   router.get('/vacancies/:id/talentum-status', authMiddleware.requireStaff(), perm.require('talentum', 'read'), (req: Request, res: Response) =>
     vacancyTalentumController.getTalentumStatus(req, res),
   );
-  router.post('/vacancies/:id/prescreening-config', authMiddleware.requireStaff(), perm.require('prescreening', 'write'), (req: Request, res: Response) =>
+  router.post('/vacancies/:id/prescreening-config', authMiddleware.requireStaff(), perm.require('prescreening', 'update'), (req: Request, res: Response) =>
     vacancyTalentumController.savePrescreeningConfig(req, res),
   );
 
@@ -166,12 +166,12 @@ export function createAdminVacanciesRoutes(
   router.post('/vacancies/meet-links/lookup', authMiddleware.requireStaff(), perm.require('vacancy', 'read'), (req: Request, res: Response) =>
     vacancyMeetLinksController.lookupMeetDatetime(req, res),
   );
-  router.put('/vacancies/:id/meet-links', authMiddleware.requireStaff(), perm.require('vacancy', 'write'), (req: Request, res: Response) =>
+  router.put('/vacancies/:id/meet-links', authMiddleware.requireStaff(), perm.require('vacancy', 'update'), (req: Request, res: Response) =>
     vacancyMeetLinksController.updateMeetLinks(req, res),
   );
 
   // ── Social Short Links (VacancySocialLinksController) ────────────────────────
-  router.post('/vacancies/:id/social-links', authMiddleware.requireStaff(), perm.require('vacancy', 'write'), (req: Request, res: Response) =>
+  router.post('/vacancies/:id/social-links', authMiddleware.requireStaff(), perm.require('vacancy', 'create'), (req: Request, res: Response) =>
     vacancySocialLinksController.generateSocialLink(req, res),
   );
   router.get('/vacancies/:id/social-links-stats', authMiddleware.requireStaff(), perm.require('vacancy', 'read'), (req: Request, res: Response) =>
@@ -182,16 +182,16 @@ export function createAdminVacanciesRoutes(
   router.get('/vacancies/:id/funnel', authMiddleware.requireStaff(), perm.require('funnel', 'read'), (req: Request, res: Response) =>
     funnelController.getEncuadreFunnel(req, res),
   );
-  router.put('/encuadres/:id/move', authMiddleware.requireStaff(), perm.require('funnel', 'write'), (req: Request, res: Response) =>
+  router.put('/encuadres/:id/move', authMiddleware.requireStaff(), perm.require('funnel', 'update'), (req: Request, res: Response) =>
     funnelController.moveEncuadre(req, res),
   );
   // "Rechazar" de um card BLOQUEADO (soft-dismiss): sai de BLOQUEADO, vai p/ RECHAZADOS
   // como card de bloqueado. Segmento próprio (não colide com /vacancies/:id).
-  router.post('/vacancies/blocked-applications/:blockedId/reject', authMiddleware.requireStaff(), perm.require('funnel', 'write'), (req: Request, res: Response) =>
+  router.post('/vacancies/blocked-applications/:blockedId/reject', authMiddleware.requireStaff(), perm.require('funnel', 'update'), (req: Request, res: Response) =>
     funnelController.rejectBlockedApplication(req, res),
   );
   // "Voltar a bloqueados": desfaz o rechazo (RECHAZADOS → BLOQUEADO).
-  router.post('/vacancies/blocked-applications/:blockedId/restore', authMiddleware.requireStaff(), perm.require('funnel', 'write'), (req: Request, res: Response) =>
+  router.post('/vacancies/blocked-applications/:blockedId/restore', authMiddleware.requireStaff(), perm.require('funnel', 'update'), (req: Request, res: Response) =>
     funnelController.undismissBlockedApplication(req, res),
   );
 
@@ -214,13 +214,13 @@ export function createAdminVacanciesRoutes(
   );
 
   // ── Interview Slots (InterviewSlotsController) ────────────────────────────────
-  router.post('/vacancies/:id/interview-slots', authMiddleware.requireStaff(), perm.require('interview', 'write'), (req: Request, res: Response) =>
+  router.post('/vacancies/:id/interview-slots', authMiddleware.requireStaff(), perm.require('interview', 'create'), (req: Request, res: Response) =>
     interviewSlotsController.createSlots(req, res),
   );
   router.get('/vacancies/:id/interview-slots', authMiddleware.requireStaff(), perm.require('interview', 'read'), (req: Request, res: Response) =>
     interviewSlotsController.getSlots(req, res),
   );
-  router.post('/interview-slots/:slotId/book', authMiddleware.requireStaff(), perm.require('interview', 'write'), (req: Request, res: Response) =>
+  router.post('/interview-slots/:slotId/book', authMiddleware.requireStaff(), perm.require('interview', 'update'), (req: Request, res: Response) =>
     interviewSlotsController.bookSlot(req, res),
   );
   router.delete('/interview-slots/:slotId', authMiddleware.requireStaff(), perm.require('interview', 'delete'), (req: Request, res: Response) =>
@@ -241,13 +241,13 @@ export function createAdminVacanciesRoutes(
   router.post(
     '/vacancies/:vacancyId/workers/:workerId/contact-notes',
     authMiddleware.requireStaff(),
-    perm.require('funnel', 'write'),
+    perm.require('funnel', 'create'),
     (req: Request, res: Response) => contactNotesController.create(req, res),
   );
   router.delete(
     '/vacancies/:vacancyId/workers/:workerId/contact-notes/:noteId',
     authMiddleware.requireStaff(),
-    perm.require('funnel', 'write'),
+    perm.require('funnel', 'update'),
     (req: Request, res: Response) => contactNotesController.delete(req, res),
   );
 

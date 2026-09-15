@@ -98,13 +98,13 @@ export function createAdminPatientsRoutes(
   router.get('/patient-chat-roles', staffOnly, perm.require('patient', 'read'), (req: Request, res: Response) =>
     chatRolesController.list(req, res),
   );
-  router.post('/patient-chat-roles', staffOnly, perm.require('patient', 'write', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
+  router.post('/patient-chat-roles', staffOnly, perm.require('patient', 'create', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
     chatRolesController.create(req, res),
   );
-  router.patch('/patient-chat-roles/:code', staffOnly, perm.require('patient', 'write', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
+  router.patch('/patient-chat-roles/:code', staffOnly, perm.require('patient', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
     chatRolesController.update(req, res),
   );
-  router.delete('/patient-chat-roles/:code', staffOnly, perm.require('patient', 'write', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
+  router.delete('/patient-chat-roles/:code', staffOnly, perm.require('patient', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
     chatRolesController.delete(req, res),
   );
 
@@ -114,7 +114,7 @@ export function createAdminPatientsRoutes(
   router.get('/catalogs/insurance-providers', staffOnly, perm.require('patient_coverage', 'read'), (req: Request, res: Response) =>
     insuranceProvidersController.list(req, res),
   );
-  router.post('/catalogs/insurance-providers', staffOnly, perm.require('patient', 'write', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
+  router.post('/catalogs/insurance-providers', staffOnly, perm.require('patient', 'create', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
     insuranceProvidersController.create(req, res),
   );
 
@@ -155,7 +155,7 @@ export function createAdminPatientsRoutes(
 
   // Manual creation of a native patient (admission team). No :id in the path,
   // so it is safe here; POST does not collide with the GET /:id capture.
-  router.post('/patients', staffOnly, perm.require('patient', 'write'), requireCountryScope((req) => req.body?.country), (req: Request, res: Response) =>
+  router.post('/patients', staffOnly, perm.require('patient', 'create'), requireCountryScope((req) => req.body?.country), (req: Request, res: Response) =>
     controller.createPatient(req, res),
   );
 
@@ -168,11 +168,11 @@ export function createAdminPatientsRoutes(
   router.get('/patients/:patientId/addresses', staffOnly, perm.require('patient_address', 'read'), (req: Request, res: Response) =>
     controller.listPatientAddresses(req, res),
   );
-  router.post('/patients/:patientId/addresses', staffOnly, perm.require('patient_address', 'write'), (req: Request, res: Response) =>
+  router.post('/patients/:patientId/addresses', staffOnly, perm.require('patient_address', 'create'), (req: Request, res: Response) =>
     controller.createPatientAddress(req, res),
   );
   // Logística por endereço (spec 012, US-B2). 4 segmentos: não colide com o PATCH /:id/:section.
-  router.patch('/patients/:patientId/addresses/:addressId', staffOnly, perm.require('patient_address', 'write'), (req: Request, res: Response) =>
+  router.patch('/patients/:patientId/addresses/:addressId', staffOnly, perm.require('patient_address', 'update'), (req: Request, res: Response) =>
     addressesController.updatePatientAddress(req, res),
   );
 
@@ -189,7 +189,7 @@ export function createAdminPatientsRoutes(
   // against a hard whitelist (general|clinical|coverage|support-network|service).
 
   // PUT /patients/:id/status — kanban move (change lifecycle status)
-  router.put('/patients/:id/status', staffOnly, perm.require('patient', 'write'), (req: Request, res: Response) =>
+  router.put('/patients/:id/status', staffOnly, perm.require('patient', 'update'), (req: Request, res: Response) =>
     controller.updatePatientStatus(req, res),
   );
   // Historial (spec 012, US-B7): quando / de → para / origem — sem ator, sem on_hold_note.
@@ -218,14 +218,14 @@ export function createAdminPatientsRoutes(
   router.get('/patients/:id/chat-candidates', staffOnly, perm.require('messaging', 'read'), (req: Request, res: Response) =>
     chatIdsController.getChatCandidates(req, res),
   );
-  router.put('/patients/:id/chat-ids', staffOnly, perm.require('patient_chat', 'write'), (req: Request, res: Response) =>
+  router.put('/patients/:id/chat-ids', staffOnly, perm.require('patient_chat', 'update'), (req: Request, res: Response) =>
     chatIdsController.updateChatIds(req, res),
   );
 
   // ── Synthetic monitoring (e2e-prod) ────────────────────────────────────────
   // Literais ANTES do PATCH dinâmico /:id/:section — senão 'test-flag' seria
   // capturado como :section e barrado pelo whitelist.
-  router.patch('/patients/:id/test-flag', staffOnly, perm.require('patient', 'write', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
+  router.patch('/patients/:id/test-flag', staffOnly, perm.require('patient', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
     controller.updatePatientTestFlag(req, res),
   );
   // Purga só de paciente is_test (real → 409). Ver PatientTestFixtureService.
@@ -240,10 +240,10 @@ export function createAdminPatientsRoutes(
   router.get('/patients/:id/contracted-services', staffOnly, perm.require('patient_services', 'read'), (req: Request, res: Response) =>
     contractedServicesController.list(req, res),
   );
-  router.post('/patients/:id/contracted-services', staffOnly, perm.require('patient_services', 'write'), (req: Request, res: Response) =>
+  router.post('/patients/:id/contracted-services', staffOnly, perm.require('patient_services', 'create'), (req: Request, res: Response) =>
     contractedServicesController.create(req, res),
   );
-  router.patch('/patients/:id/contracted-services/:sid', staffOnly, perm.require('patient_services', 'write'), (req: Request, res: Response) =>
+  router.patch('/patients/:id/contracted-services/:sid', staffOnly, perm.require('patient_services', 'update'), (req: Request, res: Response) =>
     contractedServicesController.update(req, res),
   );
   // POST /patients/:id/contracted-services/:sid/activate-recruitment (spec 018, PR-6, ADR-5,
@@ -252,15 +252,15 @@ export function createAdminPatientsRoutes(
   router.post(
     '/patients/:id/contracted-services/:sid/activate-recruitment',
     staffOnly,
-    perm.require('patient_services', 'write'),
+    perm.require('patient_services', 'update'),
     permVacancy.require('vacancy', 'write'),
     logResourceAccess('patient', 'activate_recruitment'),
     (req: Request, res: Response) => contractedServicesController.activateRecruitment(req, res),
   );
-  router.post('/patients/:id/contracted-services/:sid/providers', staffOnly, perm.require('patient_services', 'write'), (req: Request, res: Response) =>
+  router.post('/patients/:id/contracted-services/:sid/providers', staffOnly, perm.require('patient_services', 'update'), (req: Request, res: Response) =>
     contractedServicesController.associateProvider(req, res),
   );
-  router.patch('/patients/:id/contracted-services/:sid/providers/:pid', staffOnly, perm.require('patient_services', 'write'), (req: Request, res: Response) =>
+  router.patch('/patients/:id/contracted-services/:sid/providers/:pid', staffOnly, perm.require('patient_services', 'update'), (req: Request, res: Response) =>
     contractedServicesController.updateProvider(req, res),
   );
 
@@ -270,10 +270,10 @@ export function createAdminPatientsRoutes(
   router.get('/patients/:id/diagnoses', staffOnly, perm.require('patient_clinical', 'read'), (req: Request, res: Response) =>
     diagnosesController.list(req, res),
   );
-  router.post('/patients/:id/diagnoses', staffOnly, perm.require('patient_clinical', 'write'), (req: Request, res: Response) =>
+  router.post('/patients/:id/diagnoses', staffOnly, perm.require('patient_clinical', 'create'), (req: Request, res: Response) =>
     diagnosesController.create(req, res),
   );
-  router.patch('/patients/:id/diagnoses/:did', staffOnly, perm.require('patient_clinical', 'write'), (req: Request, res: Response) =>
+  router.patch('/patients/:id/diagnoses/:did', staffOnly, perm.require('patient_clinical', 'update'), (req: Request, res: Response) =>
     diagnosesController.update(req, res),
   );
 
@@ -302,7 +302,7 @@ export function createAdminPatientsRoutes(
     ['service', 'patient_services'],
   ];
   for (const [section, resource] of PATIENT_SECTION_CELL) {
-    router.patch(`/patients/:id/${section}`, staffOnly, perm.require(resource, 'write'), (req: Request, res: Response) => {
+    router.patch(`/patients/:id/${section}`, staffOnly, perm.require(resource, 'update'), (req: Request, res: Response) => {
       req.params.section = section;
       return controller.updatePatientSection(req, res);
     });
@@ -317,56 +317,56 @@ export function createAdminPatientsRoutes(
     res.status(410).json({ success: false, error: 'SUPPORT_NETWORK_LIST_WRITE_REMOVED', code: 'SUPPORT_NETWORK_LIST_WRITE_REMOVED' });
   });
 
-  router.post('/patients/:id/responsibles', staffOnly, perm.require('patient_family', 'write'), (req: Request, res: Response) =>
+  router.post('/patients/:id/responsibles', staffOnly, perm.require('patient_family', 'create'), (req: Request, res: Response) =>
     contactRowsController.createResponsible(req, res),
   );
-  router.patch('/patients/:id/responsibles/:rid', staffOnly, perm.require('patient_family', 'write'), (req: Request, res: Response) =>
+  router.patch('/patients/:id/responsibles/:rid', staffOnly, perm.require('patient_family', 'update'), (req: Request, res: Response) =>
     contactRowsController.updateResponsible(req, res),
   );
-  router.post('/patients/:id/responsibles/:rid/deactivate', staffOnly, perm.require('patient_family', 'write'), (req: Request, res: Response) =>
+  router.post('/patients/:id/responsibles/:rid/deactivate', staffOnly, perm.require('patient_family', 'update'), (req: Request, res: Response) =>
     contactRowsController.deactivateResponsible(req, res),
   );
 
   // ── Contatos de emergência da cobertura — escrita por LINHA (PR-1; taxonomia no PR-2) ────────
-  router.post('/patients/:id/coverage-emergency-contacts', staffOnly, perm.require('patient_coverage', 'write'), (req: Request, res: Response) =>
+  router.post('/patients/:id/coverage-emergency-contacts', staffOnly, perm.require('patient_coverage', 'create'), (req: Request, res: Response) =>
     contactRowsController.createCoverageEmergencyContact(req, res),
   );
-  router.patch('/patients/:id/coverage-emergency-contacts/:cid', staffOnly, perm.require('patient_coverage', 'write'), (req: Request, res: Response) =>
+  router.patch('/patients/:id/coverage-emergency-contacts/:cid', staffOnly, perm.require('patient_coverage', 'update'), (req: Request, res: Response) =>
     contactRowsController.updateCoverageEmergencyContact(req, res),
   );
-  router.post('/patients/:id/coverage-emergency-contacts/:cid/deactivate', staffOnly, perm.require('patient_coverage', 'write'), (req: Request, res: Response) =>
+  router.post('/patients/:id/coverage-emergency-contacts/:cid/deactivate', staffOnly, perm.require('patient_coverage', 'update'), (req: Request, res: Response) =>
     contactRowsController.deactivateCoverageEmergencyContact(req, res),
   );
 
   // ── Equipe tratante — escrita por LINHA (spec 018, PR-5, US-11; `contracts/care-team.md`) ────
   // Célula NOVA `patient_care_team:write` — catálogo sincroniza pela declaração da rota
   // (`SyncPermissionCatalogUseCase`, molde das demais); nasce com 0 grupos (lex 12/09).
-  router.post('/patients/:id/professionals', staffOnly, perm.require('patient_care_team', 'write'), (req: Request, res: Response) =>
+  router.post('/patients/:id/professionals', staffOnly, perm.require('patient_care_team', 'create'), (req: Request, res: Response) =>
     contactRowsController.createProfessional(req, res),
   );
-  router.patch('/patients/:id/professionals/:pid', staffOnly, perm.require('patient_care_team', 'write'), (req: Request, res: Response) =>
+  router.patch('/patients/:id/professionals/:pid', staffOnly, perm.require('patient_care_team', 'update'), (req: Request, res: Response) =>
     contactRowsController.updateProfessional(req, res),
   );
-  router.post('/patients/:id/professionals/:pid/deactivate', staffOnly, perm.require('patient_care_team', 'write'), (req: Request, res: Response) =>
+  router.post('/patients/:id/professionals/:pid/deactivate', staffOnly, perm.require('patient_care_team', 'update'), (req: Request, res: Response) =>
     contactRowsController.deactivateProfessional(req, res),
   );
 
   // ── Contatos externos sem vínculo familiar (spec 018, PR-2, `lex` #4) ────────────────────────
-  router.post('/patients/:id/external-contacts', staffOnly, perm.require('patient_family', 'write'), (req: Request, res: Response) =>
+  router.post('/patients/:id/external-contacts', staffOnly, perm.require('patient_family', 'create'), (req: Request, res: Response) =>
     externalContactsController.create(req, res),
   );
-  router.patch('/patients/:id/external-contacts/:xid', staffOnly, perm.require('patient_family', 'write'), (req: Request, res: Response) =>
+  router.patch('/patients/:id/external-contacts/:xid', staffOnly, perm.require('patient_family', 'update'), (req: Request, res: Response) =>
     externalContactsController.update(req, res),
   );
-  router.post('/patients/:id/external-contacts/:xid/deactivate', staffOnly, perm.require('patient_family', 'write'), (req: Request, res: Response) =>
+  router.post('/patients/:id/external-contacts/:xid/deactivate', staffOnly, perm.require('patient_family', 'update'), (req: Request, res: Response) =>
     externalContactsController.deactivate(req, res),
   );
 
   // ── Marca de emergência (spec 018, PR-2, D-A) ───────────────────────────────────────────────
-  router.put('/patients/:id/emergency-contact', staffOnly, perm.require('patient_family', 'write'), (req: Request, res: Response) =>
+  router.put('/patients/:id/emergency-contact', staffOnly, perm.require('patient_family', 'update'), (req: Request, res: Response) =>
     emergencyContactController.mark(req, res),
   );
-  router.delete('/patients/:id/emergency-contact', staffOnly, perm.require('patient_family', 'write'), (req: Request, res: Response) =>
+  router.delete('/patients/:id/emergency-contact', staffOnly, perm.require('patient_family', 'update'), (req: Request, res: Response) =>
     emergencyContactController.unmark(req, res),
   );
 
