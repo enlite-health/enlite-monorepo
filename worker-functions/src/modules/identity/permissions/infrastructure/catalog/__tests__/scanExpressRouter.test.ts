@@ -36,6 +36,13 @@ function buildApp(): express.Express {
   nested.patch('/:tagId', guard('worker', 'write'), ok);
   workers.use('/tags', nested);
 
+  // Guards ENCADEADOS de recursos DIFERENTES — o molde do achado pós-#391
+  // (`activate-recruitment`: `patient_services:update` → `vacancy:update`).
+  workers.post('/duas-celulas', guard('worker', 'update'), guard('vacancy', 'update'), ok);
+  // Dois guards com a MESMA célula (repetição por engano) — exercita o dedup
+  // de `cellsOfRoute`, não o de `declaredCells` (que dedup entre ROTAS).
+  workers.post('/celula-repetida', guard('worker', 'update'), guard('worker', 'update'), ok);
+
   // sub-router montado num caminho COM parâmetro — o Express guarda isso só na
   // regexp da camada, e é onde a reconstrução do caminho costuma sair errada
   const candidatos = Router();
@@ -77,6 +84,21 @@ describe('scanExpressRouter', () => {
     expect(find('USE', '/api/docs')?.cell).toEqual({ resource: 'api_docs', action: 'read' });
   });
 
+  it('`cells` traz TODAS as células da rota, na ordem dos guards — não só a 1ª (achado pós-#391)', () => {
+    expect(find('POST', '/api/admin/workers/duas-celulas')?.cells).toEqual([
+      { resource: 'worker', action: 'update' },
+      { resource: 'vacancy', action: 'update' },
+    ]);
+    // `cell` continua sendo só a 1ª, por compatibilidade.
+    expect(find('POST', '/api/admin/workers/duas-celulas')?.cell).toEqual({ resource: 'worker', action: 'update' });
+  });
+
+  it('dois guards com a MESMA célula na MESMA rota não duplicam em `cells`', () => {
+    expect(find('POST', '/api/admin/workers/celula-repetida')?.cells).toEqual([
+      { resource: 'worker', action: 'update' },
+    ]);
+  });
+
   it('lista rota sem declaração — a entrada do teste deny-when-undeclared', () => {
     const semDeclaracao = undeclaredRoutes(routes, (route) => route.path.startsWith('/api/admin'));
     expect(semDeclaracao.map((route) => `${route.method} ${route.path}`)).toEqual([
@@ -88,11 +110,20 @@ describe('scanExpressRouter', () => {
   });
 
   it('declaredCells deduplica e ordena — é o que vai para o catálogo', () => {
+    // ⚠️ ACHADO FORA DO ESCOPO deste PR (não consertado aqui — fica para
+    // decisão à parte): `declaredCells` só lê `route.cell` (a 1ª), igual o
+    // oráculo fazia antes do achado pós-#391 — então `vacancy:update`, a 2ª
+    // célula de `/duas-celulas`, NÃO aparece aqui hoje. Sem impacto prático
+    // observado porque `vacancy:update` já é declarado por outras rotas
+    // (ex.: `PUT /vacancies/:id`); mas uma rota cuja 2ª célula fosse a ÚNICA
+    // fonte de um recurso ficaria fora do catálogo em silêncio. Mesma classe
+    // do achado do oráculo, função diferente (`declaredCells` x `cellsOfRoute`).
     expect(declaredCells(routes).map((cell) => `${cell.resource}:${cell.action}`)).toEqual([
       'api_docs:read',
       'funnel:read',
       'worker:delete',
       'worker:read',
+      'worker:update',
       'worker:write',
       'worker_pii:read',
     ]);

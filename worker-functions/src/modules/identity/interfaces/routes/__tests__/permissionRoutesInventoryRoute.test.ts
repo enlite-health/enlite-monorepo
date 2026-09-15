@@ -11,11 +11,14 @@ import { createPermissionRoutesInventoryRouter } from '../permissionRoutesInvent
 import type { ScannedRoute } from '@modules/identity/permissions';
 
 const ROTAS: ScannedRoute[] = [
+  // SEM `cells` de propósito: cobre o fallback do endpoint (`route.cells ??
+  // (route.cell ? [route.cell] : [])`) para uma rota que só tem `cell` — o
+  // formato de `ScannedRoute` ANTES do achado pós-#391, que continua válido
+  // (o registro publicado pelo boot pode vir de um objeto assim).
   {
     method: 'GET',
     path: '/api/admin/users',
     cell: { resource: 'user_management', action: 'read' },
-    cells: [{ resource: 'user_management', action: 'read' }],
   },
   // Guards ENCADEADOS de recursos diferentes (o molde do achado pós-#391,
   // `activate-recruitment`): a 2ª célula tem de sobreviver no `cells`.
