@@ -16,9 +16,9 @@
  *    `/admin/*` gateada em App.tsx bate com `routes[]` aqui (nos dois
  *    sentidos), e todo `navHref` existe de fato em `adminNavigation.tsx`.
  *
- * `screen:ana-care` não tem tela nem rota hoje (medido: grep em src/presentation
- * não acha nada) — entra com `semConsumidorHoje` explícito, nunca ausente do
- * mapa (ausente pareceria "esquecido"; isto documenta "decidido, sem tela ainda").
+ * `screen:ana-care` ganhou tela na fase 1 da conferência de horas (15/09, D344) — as duas rotas
+ * abaixo (`/admin/anacare/horas`, `/admin/anacare/horas/:patientId`) e item de menu próprio
+ * (`navHref: '/admin/anacare/horas'`, ver `adminNavigation.tsx`).
  */
 export interface ScreenFeatureEntry {
   /** `href` do item em `useAdminNavItems` que este `screen:*` controla — `undefined` = a tela não tem item de topo (aninhada). */
@@ -57,7 +57,7 @@ export const SCREEN_FEATURE_MAP: Readonly<Record<string, ScreenFeatureEntry>> = 
   /** Sem item de topo — chega-se via link dentro do detalhe de vaga (`vacancies/:id/talentum`). */
   'screen:talentum': { routes: ['/admin/vacancies/:id/talentum'] },
   'screen:ana-care': {
-    routes: [],
-    semConsumidorHoje: 'Ana Care não tem tela nem rota no painel hoje (grep em src/presentation não acha nada) — a chave existe no manifest, o consumidor ainda não foi construído.',
+    navHref: '/admin/anacare/horas',
+    routes: ['/admin/anacare/horas', '/admin/anacare/horas/:patientId'],
   },
 };

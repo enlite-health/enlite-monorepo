@@ -24,9 +24,10 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
   const permissions = useAdminAuthStore((s) => s.authz?.permissions);
 
   // B1 (D268) — disponibilidade por país, uma verdade só: `SCREEN_FEATURE_MAP`.
-  // Nº fixo de chamadas (Rules of Hooks) — as 6 chaves screen:* que hoje têm
-  // item de topo (`navHref` no mapa); `screen:talentum`/`screen:ana-care` não
-  // têm (ver screenFeatureMap.ts) e por isso não entram aqui.
+  // Nº fixo de chamadas (Rules of Hooks) — as 7 chaves screen:* que hoje têm
+  // item de topo (`navHref` no mapa); `screen:talentum` não tem (ver
+  // screenFeatureMap.ts) e por isso não entra aqui. `screen:ana-care` ganhou
+  // `navHref` na fase 1 da conferência de horas (15/09, D344).
   const valorPorChave: Record<string, boolean> = {
     'screen:management-dashboard': useFeature('screen:management-dashboard'),
     'screen:vacancies': useFeature('screen:vacancies'),
@@ -34,9 +35,10 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
     'screen:patients': useFeature('screen:patients'),
     'screen:funnel': useFeature('screen:funnel'),
     'screen:access-permissions': useFeature('screen:access-permissions'),
+    'screen:ana-care': useFeature('screen:ana-care'),
   };
   // Deriva `href → ligada?` do mapa (via `navHref`) — sem lista à mão. Uma
-  // chave sem hook chamado acima (screen:talentum/ana-care) fica de fora.
+  // chave sem hook chamado acima (screen:talentum) fica de fora.
   const featureByHref: Record<string, boolean> = {};
   for (const [chave, entrada] of Object.entries(SCREEN_FEATURE_MAP)) {
     if (entrada.navHref && chave in valorPorChave) featureByHref[entrada.navHref] = valorPorChave[chave];
@@ -98,6 +100,15 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
       icon: <MapPin className="w-6 h-6" strokeWidth={2} />,
       label: t('admin.nav.map', 'Mapa'),
       href: '/admin/mapa',
+    },
+    {
+      icon: (
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+      label: t('admin.nav.anacareHours', 'Horas Ana Care'),
+      href: '/admin/anacare/horas',
     },
     {
       icon: (

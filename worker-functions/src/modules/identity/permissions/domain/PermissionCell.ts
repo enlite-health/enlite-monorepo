@@ -74,6 +74,9 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   catalog_therapeutic_activities: 'Pacientes',
   // US-17 (spec 018, PR-7, migration 430): catálogo dos segmentos da Ana Care, mesma família.
   catalog_therapeutic_segments: 'Pacientes',
+  // Spec `anacare-conferencia-de-horas`, fase 1 (D344/D345): célula PRÓPRIA, fora de qualquer
+  // grupo padrão — vizinho de paciente (turnos/horas do Ana Care), não um container da ficha.
+  anacare_hours: 'Pacientes',
   recruitment: 'Recrutamento',
   talentum: 'Recrutamento',
   prescreening: 'Recrutamento',
@@ -316,6 +319,16 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'worker:update': 'Editar status, ocupação, área de serviço, perfil e tags de um prestador já cadastrado.',
   'worker_document:create': 'Subir um documento novo do prestador (ou o link de ingestão a partir de URL).',
   'worker_document:update': 'Editar o prazo de validade de um documento já cadastrado do prestador.',
+
+  // ── Spec `anacare-conferencia-de-horas`, fase 1 (D344/D345) — duas células distintas, NASCEM
+  //    sem grupo (fora de qualquer grupo padrão), descrição no mesmo commit que as cria.
+  'anacare_hours:read':
+    'Ver a conferência de horas do Ana Care: turnos, horas, origem do check-in e status de '
+    + 'validação — SEM nome de paciente/prestador (esses seguem sob patient_identity:read/'
+    + 'worker_contact:read) e sem o texto da nota de contestação (sob patient_clinical:read).',
+  'anacare_hours:validate':
+    'Validar um turno, validar em lote e contestar (com motivo e nota opcional) na conferência '
+    + 'de horas do Ana Care. Exige também anacare_hours:read para ver o que está validando.',
 };
 
 /**

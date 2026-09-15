@@ -190,6 +190,15 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   { id: 'messaging.templates', route: '/admin/plantillas', cells: ['messaging:read', 'messaging:create', 'messaging:update'] },
   { id: 'messaging.presentationInvite', route: '/admin/invitacion-presentacion', cells: ['messaging:read', 'messaging:create', 'messaging:update', 'messaging:send'] },
 
+  // ── Ana Care ───────────────────────────────────────────────────────────────────────────────
+  // Fase 1 da conferência de horas (D344, 15/09/2026) — duas células PRÓPRIAS, fora de qualquer
+  // grupo padrão: `anacare_hours:read` (turnos, horas, origem, status — sem nome e sem nota) e
+  // `anacare_hours:validate` (validar, validar em lote, contestar). Nome de paciente/prestador
+  // continua cumulativo às células já existentes (`patient_identity:read`/`worker_contact:read`),
+  // não repetido aqui — são dados de OUTRO titular, não desta tela.
+  { id: 'anacareHours.list', route: '/admin/anacare/horas', cells: ['anacare_hours:read'] },
+  { id: 'anacareHours.detail', route: '/admin/anacare/horas/:patientId', cells: ['anacare_hours:read', 'anacare_hours:validate'] },
+
   // ── Administração ──────────────────────────────────────────────────────────────────────────
   { id: 'dedup', route: '/admin/dedup', cells: ['dedup:read', 'dedup:execute'] },
   { id: 'access', route: '/admin/access', cells: ['permission_management:read', 'permission_management:write'] },

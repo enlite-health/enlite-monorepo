@@ -17,6 +17,7 @@ process.on('uncaughtException', (err: Error) => {
 });
 
 import express, { Request, Response } from 'express';
+import { AnaCareHoursController, createAnaCareHoursRoutes } from '@modules/anacare-hours';
 import { corsMiddleware } from '@shared/http/corsConfig';
 import rateLimit from 'express-rate-limit';
 import { WorkerControllerV2, JobsController, WorkerDocumentsMeController, AdminWorkerDocumentsController, WorkerAdditionalDocsMeController, AdminAdditionalDocsController, createAdminWorkerDocumentsRoutes, createWorkerDocumentsRoutes } from '@modules/worker';
@@ -517,6 +518,12 @@ app.use('/api/admin', createAdminPatientPhotoRoutes(authMiddleware, permissionMi
 app.use(
   '/api/admin',
   createAdminTherapeuticProjectsRoutes(new AdminTherapeuticProjectsController(), authMiddleware, permissionMiddleware),
+);
+
+// ========== Conferência de horas do Ana Care (spec anacare-conferencia-de-horas, fase 1) ==========
+app.use(
+  '/api/admin',
+  createAnaCareHoursRoutes(new AnaCareHoursController(), authMiddleware, permissionMiddleware),
 );
 
 // ========== Admin Dedup + Test Fixtures (extraído p/ bootstrap/) ==========

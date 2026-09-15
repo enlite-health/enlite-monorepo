@@ -379,6 +379,11 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'recruitment:create', 'recruitment:update',
       'worker:create', 'worker:update',
       'worker_document:create', 'worker_document:update',
+      // Spec `anacare-conferencia-de-horas`, fase 1 (D344/D345, 15/09): DECLARADAS por rota real
+      // em `anacareHoursRoutes.ts` (`perm.require('anacare_hours', 'read'|'validate')`) — o
+      // fixture de 2 rotas deste teste não as declara, por isso aparecem aqui como as demais
+      // células de rota real acima (mesmo padrão de `patient_therapeutic_project:*` etc.).
+      'anacare_hours:read', 'anacare_hours:validate',
     ]);
   });
 

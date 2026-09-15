@@ -359,6 +359,13 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/therapeutic-catalogs/segments → catalog_therapeutic_segments:read',
         'POST /api/admin/therapeutic-catalogs/segments → catalog_therapeutic_segments:create',
         'PATCH /api/admin/therapeutic-catalogs/segments/:itemId → catalog_therapeutic_segments:update',
+        // anacare-conferencia-de-horas, fase 1 (migration 437) — `anacare_hours:read` para ver
+        // turno/horas/origem/status, `:validate` para validar (em lote), validar 1 turno e contestar.
+        'GET /api/admin/anacare-hours/months/:month → anacare_hours:read',
+        'GET /api/admin/anacare-hours/months/:month/patients/:patientId → anacare_hours:read',
+        'POST /api/admin/anacare-hours/shifts/validate-batch → anacare_hours:validate',
+        'POST /api/admin/anacare-hours/shifts/:shiftId/validate → anacare_hours:validate',
+        'POST /api/admin/anacare-hours/shifts/:shiftId/contest → anacare_hours:validate',
       ].sort(),
     );
   });
