@@ -59,6 +59,20 @@ describe('DeletePatientPhotoUseCase', () => {
     expect(orphanRepo.record).toHaveBeenCalledWith('enc(x)', 'PHOTOS', 'DELETE');
   });
 
+  it('decrypt lança (KMS fora do ar) DEPOIS do commit — NÃO vira 500 (conserto #2 da 3ª revisão): vira órfão pelo caminho AINDA CIFRADO', async () => {
+    const storage = { delete: jest.fn() };
+    const photoRepo = { deleteRow: jest.fn(async () => ({ object_path_encrypted: 'enc(x)' })) };
+    const orphanRepo = { record: jest.fn(async () => ({ id: 'o1' })) };
+    const enc = { decrypt: jest.fn(async () => { throw new Error('KMS indisponível'); }) };
+    const uc = new DeletePatientPhotoUseCase((() => storage) as never, photoRepo as never, orphanRepo as never, enc as never);
+
+    await expect(uc.execute(PID)).resolves.toEqual({ deleted: true });
+    // Sem plaintext (decrypt falhou): o storage NUNCA é chamado, e o órfão é registrado pelo
+    // caminho CIFRADO original (registrar não precisa decriptar).
+    expect(storage.delete).not.toHaveBeenCalled();
+    expect(orphanRepo.record).toHaveBeenCalledWith('enc(x)', 'PHOTOS', 'DELETE');
+  });
+
   it('constrói pelos DEFAULTS do construtor', () => {
     process.env.GCS_PATIENT_PHOTOS_BUCKET = 'b';
     try {
@@ -74,13 +88,18 @@ describe('DeletePatientPhotoUseCase', () => {
     expect(() => new DeletePatientPhotoUseCase()).not.toThrow();
   });
 
-  it('SEM GCS_PATIENT_PHOTOS_BUCKET, mas COM foto para apagar: só falha ao tentar de fato usar o storage', async () => {
+  it('SEM GCS_PATIENT_PHOTOS_BUCKET, mas COM foto para apagar: NÃO vira 500 (conserto #2 da 3ª revisão) — a linha já comitou, o objeto vira órfão', async () => {
     delete process.env.GCS_PATIENT_PHOTOS_BUCKET;
     const photoRepo = { deleteRow: jest.fn(async () => ({ object_path_encrypted: 'enc(x)' })) };
     const enc = { decrypt: jest.fn(async (v: string) => v.replace(/^enc\(|\)$/g, '')) };
-    const orphanRepo = { record: jest.fn() };
+    const orphanRepo = { record: jest.fn(async () => ({ id: 'o1' })) };
     const uc = new DeletePatientPhotoUseCase(undefined, photoRepo as never, orphanRepo as never, enc as never);
 
-    await expect(uc.execute(PID)).rejects.toThrow('GCS_PATIENT_PHOTOS_BUCKET não configurado');
+    // Achado da 3ª revisão do PR-4 (item 2, classe inteira): ANTES deste conserto, o bucket
+    // faltando lançava `PatientPhotoBucketNotConfiguredError` DEPOIS do `deleteRow` já ter
+    // comitado — o cliente via 500 numa operação que já tinha sucedido. Misconfiguração de env
+    // não é diferente de qualquer outra falha de storage pós-commit: vira órfão, loga, e segue.
+    await expect(uc.execute(PID)).resolves.toEqual({ deleted: true });
+    expect(orphanRepo.record).toHaveBeenCalledWith('enc(x)', 'PHOTOS', 'DELETE');
   });
 });

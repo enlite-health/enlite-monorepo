@@ -54,6 +54,24 @@ describe('RevokeImageConsentUseCase (D335 — revogação simples, sempre apaga 
     expect(deps.orphanRepo.record).toHaveBeenCalledWith('enc(x)', 'PHOTOS', 'REVOKE');
   });
 
+  it('objeto E órfão falham ao registrar — NÃO vira 500 (conserto #2 da 3ª revisão): resolve revoked:true mesmo assim', async () => {
+    const deps = makeDeps({ photoRow: { object_path_encrypted: 'enc(x)' }, deleteThrows: true });
+    deps.orphanRepo.record = jest.fn(async () => { throw new Error('db down também'); });
+    const uc = new RevokeImageConsentUseCase(deps.consentRepo as never, deps.photoRepo as never, (() => deps.storage) as never, deps.orphanRepo as never, deps.enc as never);
+    await expect(uc.execute(PID, CID, INPUT, 'uid-1')).resolves.toEqual({ revoked: true });
+    expect(deps.orphanRepo.record).toHaveBeenCalledWith('enc(x)', 'PHOTOS', 'REVOKE');
+  });
+
+  it('decrypt lança (KMS fora do ar) DEPOIS do commit — NÃO vira 500 (conserto #2 da 3ª revisão): vira órfão pelo caminho AINDA CIFRADO', async () => {
+    const deps = makeDeps({ photoRow: { object_path_encrypted: 'enc(x)' } });
+    deps.enc.decrypt = jest.fn(async (_v: string): Promise<string> => { throw new Error('KMS indisponível'); });
+    const uc = new RevokeImageConsentUseCase(deps.consentRepo as never, deps.photoRepo as never, (() => deps.storage) as never, deps.orphanRepo as never, deps.enc as never);
+
+    await expect(uc.execute(PID, CID, INPUT, 'uid-1')).resolves.toEqual({ revoked: true });
+    expect(deps.storage.delete).not.toHaveBeenCalled();
+    expect(deps.orphanRepo.record).toHaveBeenCalledWith('enc(x)', 'PHOTOS', 'REVOKE');
+  });
+
   it('constrói pelos DEFAULTS do construtor', () => {
     process.env.GCS_PATIENT_PHOTOS_BUCKET = 'b';
     try {
@@ -64,12 +82,16 @@ describe('RevokeImageConsentUseCase (D335 — revogação simples, sempre apaga 
     }
   });
 
-  it('SEM GCS_PATIENT_PHOTOS_BUCKET: construir NÃO lança (fábrica preguiçosa) — só falha se houver foto pra apagar', async () => {
+  it('SEM GCS_PATIENT_PHOTOS_BUCKET: construir NÃO lança (fábrica preguiçosa) e, com foto, NÃO vira 500 (conserto #2 da 3ª revisão)', async () => {
     delete process.env.GCS_PATIENT_PHOTOS_BUCKET;
     expect(() => new RevokeImageConsentUseCase()).not.toThrow();
 
     const deps = makeDeps({ photoRow: { object_path_encrypted: 'enc(x)' } });
     const uc = new RevokeImageConsentUseCase(deps.consentRepo as never, deps.photoRepo as never, undefined, deps.orphanRepo as never, deps.enc as never);
-    await expect(uc.execute(PID, CID, INPUT, 'uid-1')).rejects.toThrow('GCS_PATIENT_PHOTOS_BUCKET não configurado');
+    // Achado da 3ª revisão do PR-4 (item 2, classe inteira): ANTES deste conserto, o bucket
+    // faltando lançava `PatientPhotoBucketNotConfiguredError` DEPOIS de revoke+deleteRow já terem
+    // comitado — o cliente via 500 numa revogação que já tinha sucedido. Vira órfão, loga, e segue.
+    await expect(uc.execute(PID, CID, INPUT, 'uid-1')).resolves.toEqual({ revoked: true });
+    expect(deps.orphanRepo.record).toHaveBeenCalledWith('enc(x)', 'PHOTOS', 'REVOKE');
   });
 });

@@ -17,6 +17,7 @@ import { PatientPhotoStorage } from '../infrastructure/PatientPhotoStorage';
 import { PatientPhotoRepository } from '../infrastructure/PatientPhotoRepository';
 import { PatientPhotoOrphanRepository } from '../infrastructure/PatientPhotoOrphanRepository';
 import { PatientImageConsentRepository } from '../infrastructure/PatientImageConsentRepository';
+import { safeStorageErrorFields } from '../infrastructure/safeStorageErrorFields';
 import { scheduleOpportunisticOrphanRetry } from './scheduleOpportunisticOrphanRetry';
 
 export interface UploadPatientPhotoInput {
@@ -68,9 +69,9 @@ export class UploadPatientPhotoUseCase {
       // undefined)` engolia a falha de exclusão inteira). O erro ORIGINAL da transação sempre
       // propaga, coberto ou não o objeto — quem chamou precisa saber que a transação falhou.
       await storage.delete(objectPath).catch(async (deleteErr) => {
-        logger.warn({ err: deleteErr }, '[UploadPatientPhotoUseCase] objeto novo não apagado após falha da transação — vira órfão');
+        logger.warn(safeStorageErrorFields(deleteErr), '[UploadPatientPhotoUseCase] objeto novo não apagado após falha da transação — vira órfão');
         await this.orphanRepo.record(objectPathEncrypted!, 'PHOTOS', 'REPLACE').catch((orphanErr) => {
-          logger.error({ err: orphanErr }, '[UploadPatientPhotoUseCase] também falhou ao registrar órfão do objeto novo');
+          logger.error(safeStorageErrorFields(orphanErr), '[UploadPatientPhotoUseCase] também falhou ao registrar órfão do objeto novo');
         });
       });
       throw err;
@@ -78,17 +79,24 @@ export class UploadPatientPhotoUseCase {
 
     if (oldRow) {
       const oldPath: string = (oldRow as { object_path_encrypted: string }).object_path_encrypted;
-      const plainOldPath = await this.enc.decrypt(oldPath);
-      await storage.delete(plainOldPath).catch(async (err) => {
-        logger.warn({ err }, '[UploadPatientPhotoUseCase] objeto antigo não apagado — vira órfão');
+      // Achado da 3ª revisão do PR-4 (conserto #2, classe inteira): tudo daqui pra baixo roda
+      // DEPOIS do commit acima (a troca de foto já sucedeu). `decrypt` sem try/catch próprio faria
+      // o cliente ver 500 numa operação que já tinha sucedido — o `catch` cobre tanto o `decrypt`
+      // quanto o `delete`, e em qualquer falha o objeto antigo vira órfão pelo caminho AINDA
+      // CIFRADO (registrar o órfão não precisa decriptar).
+      try {
+        const plainOldPath = await this.enc.decrypt(oldPath);
+        await storage.delete(plainOldPath);
+      } catch (err) {
+        logger.warn(safeStorageErrorFields(err), '[UploadPatientPhotoUseCase] objeto antigo não apagado — vira órfão');
         // Achado da 2ª revisão do PR-4 (conserto #3): `record` sem catch próprio propagava pelo
         // `await` acima e virava 500 mesmo com a transação JÁ COMITADA (troca de foto bem-sucedida).
         // Best-effort até o fim: se também falhar ao registrar o órfão, só loga — a resposta ao
         // cliente reflete o que de fato aconteceu (a foto trocou), não uma falha de limpeza em bg.
         await this.orphanRepo.record(oldPath, 'PHOTOS', 'REPLACE').catch((orphanErr) => {
-          logger.error({ err: orphanErr }, '[UploadPatientPhotoUseCase] também falhou ao registrar órfão do objeto antigo');
+          logger.error(safeStorageErrorFields(orphanErr), '[UploadPatientPhotoUseCase] também falhou ao registrar órfão do objeto antigo');
         });
-      });
+      }
     }
 
     // Achado da revisão do PR-4 (item 3): nada consumia `patient_photo_orphans` — a fila só

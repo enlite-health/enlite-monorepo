@@ -99,6 +99,20 @@ describe('UploadPatientPhotoUseCase (spec 018 PR-4, D335 — sem checagem de con
     expect(deps.orphanRepo.record).toHaveBeenCalledWith('enc(old-uuid.jpg)', 'PHOTOS', 'REPLACE');
   });
 
+  it('decrypt do objeto ANTIGO lança (KMS fora do ar) DEPOIS do commit — NÃO vira 500 (conserto #2 da 3ª revisão): vira órfão pelo caminho AINDA CIFRADO', async () => {
+    const deps = makeDeps({ oldRow: { object_path_encrypted: 'enc(old-uuid.jpg)' } });
+    deps.enc.decrypt = jest.fn(async (_v: string): Promise<string> => { throw new Error('KMS indisponível'); });
+    const uc = new UploadPatientPhotoUseCase(deps.processor as never, storageFactoryOf(deps.storage), deps.photoRepo as never, deps.orphanRepo as never, deps.consentRepo as never, deps.enc as never);
+
+    const result = await uc.execute({ patientId: PID, buffer: Buffer.from('in'), actorUid: 'uid-1' });
+
+    expect(result).toEqual({ hasPhoto: true });
+    // Sem plaintext (decrypt falhou): o storage do objeto ANTIGO nunca é chamado, e o órfão é
+    // registrado pelo caminho CIFRADO original (registrar não precisa decriptar).
+    expect(deps.storage.delete).not.toHaveBeenCalled();
+    expect(deps.orphanRepo.record).toHaveBeenCalledWith('enc(old-uuid.jpg)', 'PHOTOS', 'REPLACE');
+  });
+
   it('transação falha: apaga o objeto NOVO (best-effort) e relança o erro ORIGINAL', async () => {
     const deps = makeDeps({ insertThrows: true });
     const uc = new UploadPatientPhotoUseCase(deps.processor as never, storageFactoryOf(deps.storage), deps.photoRepo as never, deps.orphanRepo as never, deps.consentRepo as never, deps.enc as never);

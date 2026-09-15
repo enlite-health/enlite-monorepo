@@ -12,6 +12,7 @@ import { PatientImageConsentRepository, type RevokeImageConsentInput } from '../
 import { PatientPhotoRepository, type PatientPhotoRow } from '../infrastructure/PatientPhotoRepository';
 import { PatientPhotoStorage } from '../infrastructure/PatientPhotoStorage';
 import { PatientPhotoOrphanRepository } from '../infrastructure/PatientPhotoOrphanRepository';
+import { safeStorageErrorFields } from '../infrastructure/safeStorageErrorFields';
 import { scheduleOpportunisticOrphanRetry } from './scheduleOpportunisticOrphanRetry';
 
 export class RevokeImageConsentUseCase {
@@ -42,11 +43,20 @@ export class RevokeImageConsentUseCase {
 
     if (deletedPhoto) {
       const path = (deletedPhoto as PatientPhotoRow).object_path_encrypted;
-      const plainPath = await this.enc.decrypt(path);
-      await this.storageFactory().delete(plainPath).catch(async (err) => {
-        logger.warn({ err }, '[RevokeImageConsentUseCase] foto não apagada — vira órfão');
-        await this.orphanRepo.record(path, 'PHOTOS', 'REVOKE');
-      });
+      // Achado da 3ª revisão do PR-4 (conserto #2, classe inteira): tudo daqui pra baixo roda
+      // DEPOIS do commit acima (revoke + deleteRow já comitaram na mesma transação). `decrypt` sem
+      // try/catch próprio, e `orphanRepo.record` sem `.catch` próprio, faziam o cliente ver 500
+      // numa operação que já tinha sucedido — mesma falha já corrigida em
+      // `DeletePatientPhotoUseCase`/`UploadPatientPhotoUseCase` (2ª revisão), replicada aqui.
+      try {
+        const plainPath = await this.enc.decrypt(path);
+        await this.storageFactory().delete(plainPath);
+      } catch (err) {
+        logger.warn(safeStorageErrorFields(err), '[RevokeImageConsentUseCase] foto não apagada — vira órfão');
+        await this.orphanRepo.record(path, 'PHOTOS', 'REVOKE').catch((orphanErr) => {
+          logger.error(safeStorageErrorFields(orphanErr), '[RevokeImageConsentUseCase] também falhou ao registrar órfão');
+        });
+      }
     }
     // Achado da revisão do PR-4 (item 3): fila de órfãos sem consumidor — tentativa oportunista.
     scheduleOpportunisticOrphanRetry();
