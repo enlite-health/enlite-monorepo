@@ -85,8 +85,13 @@ export function AnaCareHoursDetailPage({
       setSelectionBarHeight(0);
       return;
     }
-    const el = selectionBarRef.current;
-    if (!el) return;
+    // Conserto de conformidade (cobertura, 15/09): `el` SEMPRE existe aqui — a div com este ref só
+    // é renderizada no MESMO ramo booleano (`isSelectionBarVisible && <div ref={selectionBarRef}>`
+    // mais abaixo), e `selectedShiftIds` nasce `new Set()` (mount sempre com a barra invisível), então
+    // não há como este efeito rodar com `isSelectionBarVisible=true` antes do commit da div. O
+    // antigo `if (!el) return;` era ramo morto (nenhum teste real o alcança) — removido em vez de
+    // marcado `v8 ignore`, mesmo padrão do comentário D5 em `ShiftRows`.
+    const el = selectionBarRef.current!;
     const measure = (): void => setSelectionBarHeight(el.getBoundingClientRect().height);
     measure();
     const observer = new ResizeObserver(measure);

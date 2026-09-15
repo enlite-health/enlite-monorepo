@@ -37,9 +37,16 @@ export function OriginLegend({ testIdPrefix }: { testIdPrefix: string }): JSX.El
   const popoverRef = useRef<HTMLDivElement>(null);
 
   const updatePosition = useCallback(() => {
-    const trigger = triggerRef.current;
-    const popover = popoverRef.current;
-    if (!trigger || !popover) return;
+    // Conserto de conformidade (cobertura, 15/09): as DUAS chamadas de `updatePosition` só
+    // acontecem com `isOpen=true` — a do `useLayoutEffect` roda DEPOIS do commit da div portada
+    // (mesmo render que monta `popoverRef`), e a de `handleReposition` só existe enquanto os
+    // listeners de scroll/resize estão registrados, que é exatamente o efeito com `if (!isOpen)
+    // return` logo abaixo — sua cleanup remove os listeners no MESMO ciclo em que `isOpen` vira
+    // `false`, antes de qualquer scroll/resize subsequente poder chamar de volta. `trigger` (botão
+    // sempre montado) e `popover` nunca são nulos nesses dois pontos de chamada — o antigo
+    // `if (!trigger || !popover) return;` era ramo morto, removido em vez de marcado `v8 ignore`.
+    const trigger = triggerRef.current!;
+    const popover = popoverRef.current!;
 
     const triggerRect = trigger.getBoundingClientRect();
     const popoverHeight = popover.offsetHeight;

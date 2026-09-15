@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { AnaCareHoursDetailContainer } from './AnaCareHoursDetailContainer';
 import { AnaCareHoursServiceError, FakeAnaCareHoursService } from './AnaCareHoursService';
 import type { AnaCareHoursService } from './AnaCareHoursService';
@@ -280,5 +280,59 @@ describe('AnaCareHoursDetailContainer', () => {
     await waitFor(() => expect(screen.queryByTestId('anacare-hours-detail-loading')).not.toBeInTheDocument());
     expect(screen.queryByTestId('anacare-hours-detail-error')).not.toBeInTheDocument();
     expect(container.textContent).toBe('');
+  });
+
+  // Conserto de conformidade (15/09) — cobertura 100%: as duas guardas de corrida
+  // (`handleValidateBatch`/`handleContestShift`) e o ramo de erro genérico do load (linha 101,
+  // `error` cru quando NÃO é `FONTE_NAO_CONFIGURADA`). A guarda de `handleValidateShift` (linha
+  // 55) foi REMOVIDA por ser ramo morto — ver comentário no componente.
+
+  it('🔴 guarda de corrida — lote: gate vira negado com o modal JÁ ABERTO, confirmar não chama o service', async () => {
+    comEnforcement(['anacare_hours:read', 'anacare_hours:validate'], 'on');
+    const service = new FakeAnaCareHoursService({ '2026-08': makeSnapshot() });
+    const spy = vi.spyOn(service, 'validateBatch');
+    render(<AnaCareHoursDetailContainer service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-select-shift-s1')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('anacare-hours-select-shift-s1'));
+    fireEvent.click(screen.getByTestId('anacare-hours-selection-validate'));
+    expect(screen.getByTestId('anacare-hours-batch-modal-confirm')).toBeInTheDocument();
+
+    // O modal já está aberto (botão "Confirmar" não é regatead pelo `disableActions`) — o gate
+    // vira negado DEPOIS, como um refetch de authz que revoga a permissão em outra aba.
+    act(() => comEnforcement(['anacare_hours:read'], 'on'));
+
+    fireEvent.click(screen.getByTestId('anacare-hours-batch-modal-confirm'));
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('🔴 guarda de corrida — contestar: gate vira negado com o modal JÁ ABERTO, confirmar não chama o service', async () => {
+    comEnforcement(['anacare_hours:read', 'anacare_hours:validate'], 'on');
+    const service = new FakeAnaCareHoursService({ '2026-08': makeSnapshot() });
+    const spy = vi.spyOn(service, 'contestShift');
+    render(<AnaCareHoursDetailContainer service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-contest-shift-s1')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('anacare-hours-contest-shift-s1'));
+    fireEvent.change(screen.getByTestId('anacare-hours-contest-reason'), { target: { value: 'otro' } });
+    expect(screen.getByTestId('anacare-hours-contest-confirm')).toBeInTheDocument();
+
+    act(() => comEnforcement(['anacare_hours:read'], 'on'));
+
+    fireEvent.click(screen.getByTestId('anacare-hours-contest-confirm'));
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('NEGATIVO — erro genérico no load (sem FONTE_NAO_CONFIGURADA) mostra o texto cru do hook', async () => {
+    const service: AnaCareHoursService = {
+      getMonthSnapshot: vi.fn(),
+      getPatientMonth: vi.fn().mockRejectedValue(new Error('No se pudo cargar el paciente.')),
+      getRetratoStatus: vi.fn().mockResolvedValue({ updatedAt: '', stale: false, circuitBreakerOpen: false }),
+      validateShift: vi.fn(),
+      validateBatch: vi.fn(),
+      contestShift: vi.fn(),
+    };
+    render(<AnaCareHoursDetailContainer service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('anacare-hours-detail-error')).toHaveTextContent('No se pudo cargar el paciente.'),
+    );
   });
 });

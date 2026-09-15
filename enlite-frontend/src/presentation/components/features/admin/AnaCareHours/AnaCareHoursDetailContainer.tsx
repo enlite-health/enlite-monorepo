@@ -51,8 +51,15 @@ export function AnaCareHoursDetailContainer({
     return t(`admin.anacareHours.error.byCode.${err.code}`, fallback);
   }
 
+  // D-cobertura (conserto de conformidade, 15/09): SEM guarda de `validateGate.allowed` aqui — ao
+  // contrário de `handleValidateBatch`/`handleContestShift`, este handler só tem UMA porta de
+  // entrada (o botão "Validar" da linha, em `ProviderGroup`/`ShiftRows`), e esse botão já nasce
+  // `disabled={disableActions}` no MESMO render em que `validateGate.allowed` é lido — não há
+  // modal intermediário nem janela de corrida em que o botão fique habilitado com o gate negado.
+  // `disabled` em elemento nativo bloqueia o evento `click` no próprio DOM (medido: `fireEvent
+  // .click` num `<button disabled>` não dispara `onClick`), então a guarda era ramo morto —
+  // removida em vez de marcada `v8 ignore`, mesmo padrão do comentário D5 em `ShiftRows`.
   async function handleValidateShift(shift: AnaCareShift): Promise<void> {
-    if (!validateGate.allowed) return;
     try {
       setActionError(null);
       await service.validateShift({ shiftId: shift.id });
@@ -62,6 +69,11 @@ export function AnaCareHoursDetailContainer({
     }
   }
 
+  // Ao contrário de `handleValidateShift`, ESTA guarda é ALCANÇÁVEL: o botão que abre
+  // `ValidateBatchModal` nasce `disabled={disableActions}`, mas o botão "Confirmar" DENTRO do
+  // modal não é — se o gate virar negado enquanto o modal já está aberto (ex. permissão
+  // revogada em outra aba, refetch de authz), o confirmar chega aqui sem guarda de UI. Testado em
+  // AnaCareHoursDetailContainer.test.tsx ("guarda de corrida — lote").
   async function handleValidateBatch(shiftIds: string[]): Promise<void> {
     if (!validateGate.allowed) return;
     try {
@@ -73,6 +85,10 @@ export function AnaCareHoursDetailContainer({
     }
   }
 
+  // Mesma corrida de `handleValidateBatch`: o botão que ABRE `ContestModal` é `disabled`, mas o
+  // "Confirmar" de dentro do modal só checa `canConfirm` (motivo escolhido, nota dentro do
+  // limite) — não o gate. Testado em AnaCareHoursDetailContainer.test.tsx ("guarda de corrida —
+  // contestar").
   async function handleContestShift(shiftId: string, reason: ContestReason, note: string): Promise<void> {
     if (!validateGate.allowed) return;
     try {
