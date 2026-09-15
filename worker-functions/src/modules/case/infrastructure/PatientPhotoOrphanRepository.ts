@@ -9,7 +9,7 @@ import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 
 export type OrphanBucket = 'PHOTOS' | 'DOCUMENTS';
-export type OrphanReason = 'REPLACE' | 'PURGE' | 'REVOKE' | 'DELETE';
+export type OrphanReason = 'REPLACE' | 'PURGE' | 'REVOKE' | 'DELETE' | 'UPLOAD_FAILED';
 
 export interface PatientPhotoOrphanRow {
   id: string;

@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS patient_photo_orphans (          -- objeto que o GCS 
   id                     UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
   object_path_encrypted  TEXT         NOT NULL,
   bucket                 TEXT         NOT NULL DEFAULT 'PHOTOS' CHECK (bucket IN ('PHOTOS','DOCUMENTS')),
-  reason                 TEXT         NOT NULL CHECK (reason IN ('REPLACE','PURGE','REVOKE','DELETE')),
+  reason                 TEXT         NOT NULL CHECK (reason IN ('REPLACE','PURGE','REVOKE','DELETE','UPLOAD_FAILED')),
   created_at             TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
@@ -179,7 +179,14 @@ CREATE POLICY patient_photos_follow_patient ON patient_photos FOR ALL USING (
 -- GRANT explícito (molde 419/422; sem ALTER DEFAULT PRIVILEGES).
 GRANT SELECT, INSERT, UPDATE, DELETE ON patient_image_consents TO app_runtime, app_system;
 GRANT SELECT, INSERT, UPDATE, DELETE ON patient_photos TO app_runtime, app_system;
-GRANT SELECT, INSERT, DELETE ON patient_photo_orphans TO app_system;   -- fila interna, só o processo de retry mexe
+-- Achado da revisão do PR-4: o pool padrão (`DatabaseConnection.getInstance().getPool()`) roda
+-- como `app_runtime` em request normal de staff (sem `app.system_context` setado — ver
+-- `DatabaseConnection.ts:26-58`); é ELE quem chama `PatientPhotoOrphanRepository.record()` toda
+-- vez que um upload/delete/revoke falha ao apagar objeto do GCS. Um GRANT só para `app_system`
+-- deixava esse INSERT cair em "permission denied" em produção — a fila de órfãos nunca recebia a
+-- linha, e a falha ficava silenciosa (só logada). app_system continua com acesso pleno para o job
+-- de retry/purge que roda sob contexto de sistema.
+GRANT SELECT, INSERT, UPDATE, DELETE ON patient_photo_orphans TO app_runtime, app_system;
 GRANT SELECT, INSERT ON patient_documents TO app_runtime;              -- append-only: sem UPDATE/DELETE para app_runtime
 GRANT SELECT, INSERT, UPDATE, DELETE ON patient_documents TO app_system;  -- purga (CASCADE) roda como app_system
 
