@@ -33,6 +33,7 @@ import {
   tokenMock,
   grupoComCelulas,
   limparIamFixtures,
+  garantirCelula,
   TENANT_E2E,
   type AppDeFamilia,
 } from './helpers/permissionFamilyHarness';
@@ -57,6 +58,14 @@ describe('Patient photo/document/consent — HTTP real, Postgres real, GCS real 
     ['patient_identity', 'write'],
     ['patient_consent_documents', 'read'],
   ];
+  // Conserto #1 da 3ª revisão do PR-4: só a célula que ESTE suite de fato criou
+  // (`garantirCelula` → `criada:true`) é apagada no afterAll — mesmo padrão de
+  // `patient-address-principal-tipo.e2e.test.ts`/`permission-enforcement-all-families.e2e.test.ts`.
+  // ANTES deste conserto, o `INSERT ... ON CONFLICT DO NOTHING` (linha do beforeAll) inseria as 3
+  // células sem `limpar()` jamais apagar a linha de `iam.permissions` — só o `group_permissions`
+  // que apontava pra ela — e a suíte deixava `iam.permissions` com 3 linhas a mais toda vez que
+  // rodava (medido: `permissions-iam-schema`/`iam-permissions-foundation` esperam 41, viam 44).
+  const celulasCriadas: Array<[string, string]> = [];
 
   const envAnterior: Record<string, string | undefined> = {};
   const setEnv = (k: string, v: string): void => {
@@ -64,15 +73,24 @@ describe('Patient photo/document/consent — HTTP real, Postgres real, GCS real 
     process.env[k] = v;
   };
 
+  /** Roda no INÍCIO (limpa resíduo de execução anterior) e no FIM — nunca mexe em `iam.permissions`,
+   *  só nas fixtures que este suite é DONO por nome (grupo/uid/patient). */
   async function limpar(): Promise<void> {
     await limparIamFixtures(pool, { uids: Object.values(U), grupos: Object.values(GRUPOS) });
-    for (const [resource, action] of CELULAS) {
+    await pool.query(`DELETE FROM patients WHERE id = ANY($1)`, [[PATIENT, PURGE_PATIENT]]);
+  }
+
+  /** Só no afterAll, e só depois que `celulasCriadas` está populado: apaga a célula do catálogo
+   *  (e qualquer grant apontando pra ela) SE ESTE suite foi quem a inseriu — célula pré-existente
+   *  (seed 206 ou outra suíte) nunca é tocada. */
+  async function limparCelulasCriadas(): Promise<void> {
+    for (const [resource, action] of celulasCriadas) {
       await pool.query(
         `DELETE FROM iam.group_permissions WHERE permission_id IN (SELECT id FROM iam.permissions WHERE resource = $1 AND action = $2)`,
         [resource, action],
       );
+      await pool.query(`DELETE FROM iam.permissions WHERE resource = $1 AND action = $2`, [resource, action]);
     }
-    await pool.query(`DELETE FROM patients WHERE id = ANY($1)`, [[PATIENT, PURGE_PATIENT]]);
   }
 
   async function ensureBucket(name: string): Promise<void> {
@@ -153,10 +171,8 @@ describe('Patient photo/document/consent — HTTP real, Postgres real, GCS real 
       [U.completa, U.semDocs, TENANT_E2E],
     );
     for (const [resource, action] of CELULAS) {
-      await pool.query(
-        `INSERT INTO iam.permissions (resource, action, description, category) VALUES ($1, $2, 'e2e pr4 (achado 7)', 'Pacientes') ON CONFLICT DO NOTHING`,
-        [resource, action],
-      );
+      const { criada } = await garantirCelula(pool, { resource, action, category: 'Pacientes' });
+      if (criada) celulasCriadas.push([resource, action]);
     }
     await grupoComCelulas(pool, {
       nome: GRUPOS.completa,
@@ -210,6 +226,7 @@ describe('Patient photo/document/consent — HTTP real, Postgres real, GCS real 
     const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
     await DatabaseConnection.getInstance().close();
     await limpar();
+    await limparCelulasCriadas();
     await pool.end();
     for (const [k, v] of Object.entries(envAnterior)) {
       if (v === undefined) delete process.env[k];
