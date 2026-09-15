@@ -32,6 +32,8 @@ const GROUP_SUPER    = 'a0000000-0000-0000-0000-000000000005';
 // interview:3 + match:2 + patient:2 + recruitment:2 + talentum:2 +
 // prescreening:2 + analytics:2 + dedup:2 + dashboard:1 + messaging:2 +
 // upload:2 + user_management:3 + permission_management:2 = 41
+// Usado SÓ pelo total do catálogo (S3, linha ~328). A contagem do Acesso Master
+// (D338, migration 436) passa a ser DINÂMICA — ver o teste "todas as permissões ativas".
 const EXPECTED_PERMISSION_COUNT = 41;
 
 // IDs determinísticos para fixtures deste teste
@@ -419,11 +421,36 @@ describe('S3 — Seeds: tenant Enlite, 43 permissions, 5 grupos (2 de sistema + 
     expect(byId.get(GROUP_FIN)).toMatchObject({ name: 'Financeiro', is_system: false });
   });
 
-  it('grupo Acesso Master tem todas as 43 permissões', async () => {
-    const count = await pool.query<{ cnt: string }>(`
-      SELECT COUNT(*) AS cnt FROM group_permissions WHERE group_id = $1
+  it('grupo Acesso Master tem TODAS as células ATIVAS do catálogo — inclusão de conjunto, sem exigir contagem igual (D338, migration 436)', async () => {
+    // Antes da D338 a contagem era o EXPECTED_PERMISSION_COUNT fixo do seed 206. Agora o
+    // Master é reconciliado contra o catálogo vivo (`deprecated_at IS NULL`) — comparar contra
+    // um número fixo faria este teste cair na 1ª célula nova legítima.
+    //
+    // ⚠️ Contradição de critério consertada: a 436 só ADICIONA grant (`ON CONFLICT DO NOTHING`,
+    // nunca `DELETE`) — se uma célula que o Master já tinha for depreciada depois, o grant velho
+    // continua lá e a CONTAGEM do Master passa a ser MAIOR que o total de ativas. Exigir
+    // `count(Master) === count(ativas)` faria este teste cair nesse cenário legítimo. O que D338
+    // garante é INCLUSÃO — toda célula ativa está entre os grants do Master — não igualdade de
+    // contagem. Por isso o teste compara CONJUNTOS (ativas ⊆ grants do Master), não tamanhos.
+    //
+    // ⚠️ Achado incidental (fora do escopo do D338, não consertado aqui): a view de
+    // compatibilidade `public.permissions` (274, `SELECT * FROM iam.permissions`) NÃO enxerga
+    // `deprecated_at` — a coluna só nasceu na 275, DEPOIS da view, e um `CREATE VIEW ... SELECT *`
+    // congela a lista de colunas na criação (Postgres não reabre o `*` quando a tabela de baixo
+    // ganha coluna nova). Por isso este SELECT vai direto em `iam.permissions`, qualificado —
+    // igual o resto do código pós-274 já faz.
+    const ativas = await pool.query<{ id: string }>(`
+      SELECT id FROM iam.permissions WHERE deprecated_at IS NULL
+    `);
+    const grants = await pool.query<{ permission_id: string }>(`
+      SELECT permission_id FROM group_permissions WHERE group_id = $1
     `, [GROUP_MASTER]);
-    expect(Number(count.rows[0].cnt)).toBe(EXPECTED_PERMISSION_COUNT);
+    const idsConcedidos = new Set(grants.rows.map((r) => r.permission_id));
+    const faltando = ativas.rows.map((r) => r.id).filter((id) => !idsConcedidos.has(id));
+    expect(faltando).toEqual([]);
+    // Controle positivo: se `ativas` viesse vazio (catálogo não seedado), o teste acima
+    // passaria no vácuo — exige que exista pelo menos o total fixo do seed 206.
+    expect(ativas.rows.length).toBeGreaterThanOrEqual(EXPECTED_PERMISSION_COUNT);
   });
 
   it('grupo Recrutador: não tem worker:delete, dedup:execute, user_management:write/delete, permission_management:*', async () => {

@@ -1,0 +1,18 @@
+# Override de portas/projeto do PR-8c (spec 018 — Acesso Master recebe toda célula ativa, D338).
+#
+# Stack ISOLADA (memória `docker-compose-projeto-e-por-sessao.md`: o nome fixo `enlite-postgres`
+# é compartilhado entre worktrees) — projeto e portas próprios, sem tocar o ICD/terminology (esta
+# mudança não mexe em terminologia):
+#
+#   docker compose -p pr8c -f docker-compose.yml -f docker-compose.test.yml -f docker-compose.018pr8c-ports.yml up -d postgres api
+#
+services:
+  postgres:
+    container_name: pr8c-postgres
+    ports:
+      - "55532:5432"
+
+  api:
+    container_name: pr8c-api
+    ports:
+      - "58180:8080"
