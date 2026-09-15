@@ -347,7 +347,7 @@ const SEM_ACESSO_A_SERVICOS: PatientDetail = {
 
 describe('🔴 D113 — contractedServices redigido (null) não é "sem serviço"', () => {
   it('container `null`: a ficha não quebra, e o vazio mostra o texto GENÉRICO (nunca "precisa de serviço")', () => {
-    comEnforcement(['patient_therapeutic_project:write']); // sem `patient_services:read`
+    comEnforcement(['patient_therapeutic_project:create']); // sem `patient_services:read`
     expect(() => montar(SEM_ACESSO_A_SERVICOS)).not.toThrow();
 
     expect(screen.getByTestId('tp-empty')).toHaveTextContent(tc('empty'));
@@ -355,7 +355,7 @@ describe('🔴 D113 — contractedServices redigido (null) não é "sem serviço
   });
 
   it('container `null`: "Novo" fica desabilitado, mas o motivo é "sem permissão", NUNCA "precisa de serviço"', () => {
-    comEnforcement(['patient_therapeutic_project:write']);
+    comEnforcement(['patient_therapeutic_project:create']);
     montar(SEM_ACESSO_A_SERVICOS);
 
     const novo = screen.getByTestId('tp-new-btn') as HTMLButtonElement;
@@ -365,7 +365,7 @@ describe('🔴 D113 — contractedServices redigido (null) não é "sem serviço
   });
 
   it('container `null` com versão vigente: o resumo compacto renderiza sem quebrar, com o serviço marcado como redigido', () => {
-    comEnforcement(['patient_therapeutic_project:write']);
+    comEnforcement(['patient_therapeutic_project:create']);
     comHook({ versions: [versao({ id: 'v1' })] });
     expect(() => montar(SEM_ACESSO_A_SERVICOS)).not.toThrow();
 
@@ -374,7 +374,7 @@ describe('🔴 D113 — contractedServices redigido (null) não é "sem serviço
   });
 
   it('container `[]` (tem a célula, paciente sem serviço de verdade): comportamento INALTERADO — mostra "precisa de serviço"', () => {
-    comEnforcement(['patient_therapeutic_project:write', 'patient_services:read']);
+    comEnforcement(['patient_therapeutic_project:create', 'patient_services:read']);
     montar({ ...patientDetailFixture, contractedServices: [] });
 
     expect(screen.getByTestId('tp-empty')).toHaveTextContent(tc('needsService'));
@@ -411,7 +411,7 @@ describe('🔒 D286/D269 — as ações de escrita são células do CONTAINER', 
   });
 
   it('com a célula do container os dois botões existem', () => {
-    comEnforcement(['patient_therapeutic_project:write']);
+    comEnforcement(['patient_therapeutic_project:create']);
     comHook({ versions: VERSOES });
     montar();
 

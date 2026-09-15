@@ -304,15 +304,21 @@ test.describe('Botões da família vagas — desabilitar em vez de sumir (D269) 
     await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${vacancyId}$`), { timeout: 15_000 });
   });
 
-  test('2. a conta ganha vacancy:write E talentum:write: os mesmos elementos passam a EXISTIR', async ({ page, request }) => {
-    grantCell(groupId, 'vacancy', 'write');
-    grantCell(groupId, 'talentum', 'write');
-    const settledVacancy = await pollHasCell(request, RECRUTADORA, 'vacancy:write');
-    const settledTalentum = await pollHasCell(request, RECRUTADORA, 'talentum:write');
+  test('2. a conta ganha vacancy:create+update E talentum:create+update (PR-8b): os mesmos elementos passam a EXISTIR', async ({ page, request }) => {
+    grantCell(groupId, 'vacancy', 'create');
+    grantCell(groupId, 'vacancy', 'update');
+    grantCell(groupId, 'talentum', 'create');
+    grantCell(groupId, 'talentum', 'update');
+    const settledVacancyC = await pollHasCell(request, RECRUTADORA, 'vacancy:create');
+    const settledVacancyU = await pollHasCell(request, RECRUTADORA, 'vacancy:update');
+    const settledTalentumC = await pollHasCell(request, RECRUTADORA, 'talentum:create');
+    const settledTalentumU = await pollHasCell(request, RECRUTADORA, 'talentum:update');
 
-    console.log(`[prova] vacancy:write chegou em ${settledVacancy.elapsedMs}ms, talentum:write em ${settledTalentum.elapsedMs}ms`);
-    expect(settledVacancy.has).toBe(true);
-    expect(settledTalentum.has).toBe(true);
+    console.log(`[prova] vacancy:create em ${settledVacancyC.elapsedMs}ms, vacancy:update em ${settledVacancyU.elapsedMs}ms, talentum:create em ${settledTalentumC.elapsedMs}ms, talentum:update em ${settledTalentumU.elapsedMs}ms`);
+    expect(settledVacancyC.has).toBe(true);
+    expect(settledVacancyU.has).toBe(true);
+    expect(settledTalentumC.has).toBe(true);
+    expect(settledTalentumU.has).toBe(true);
 
     await loginAs(page, RECRUTADORA);
     await page.goto('/admin/vacancies');

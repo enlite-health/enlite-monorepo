@@ -4011,7 +4011,8 @@
           "pending": "+{{added}} célula(s) · −{{removed}} célula(s) · afecta a {{people}} persona(s)",
           "action": {
             "read": "Ver",
-            "write": "Crear y editar",
+            "create": "Crear",
+            "update": "Editar",
             "delete": "Elim.",
             "export": "Expor.",
             "validate": "Valid.",
@@ -4100,7 +4101,8 @@
                 "body": "Es el recorrido del candidato dentro de una vacante: en qué etapa está cada uno y cuántos hay en cada una. Mueve personas entre etapas, no crea vacantes.",
                 "action": {
                   "read": "Ver el tablero del embudo y en qué etapa está cada candidato.",
-                  "write": "Mover candidatos de etapa."
+                  "create": "Agregar una nota de contacto a un candidato.",
+                  "update": "Mover candidatos de etapa, y rechazar o restaurar postulaciones bloqueadas."
                 }
               },
               "integration": {
@@ -4114,7 +4116,8 @@
                 "action": {
                   "delete": "Cancelar un encuadre y sacarlo de la agenda.",
                   "read": "Ver los encuadres agendados y lo que quedó registrado de cada uno.",
-                  "write": "Agendar, reagendar y cargar el resultado."
+                  "create": "Agendar un turno de entrevista nuevo.",
+                  "update": "Reagendar o cargar el resultado de una entrevista ya agendada."
                 }
               },
               "match": {
@@ -4129,14 +4132,16 @@
                 "action": {
                   "read": "Leer las conversaciones y el historial de mensajes.",
                   "send": "Mandar un mensaje de verdad al prestador, en nombre de la Enlite.",
-                  "write": "Editar plantillas y borradores, sin mandar nada."
+                  "create": "Crear una plantilla o un borrador nuevo, sin mandar nada.",
+                  "update": "Editar una plantilla o un borrador existente, sin mandar nada."
                 }
               },
               "patient": {
                 "body": "Es el paciente en OPERACIÓN: estado de admisión, número de caso, activación e historial de estados. Es el tronco del que sale todo lo demás — sin paciente no hay vacante ni grupo. NO abre nombre, diagnóstico, familiares, cobertura ni dirección: cada uno de esos es un permiso propio de la ficha.",
                 "action": {
                   "read": "Ver la lista y el kanban de pacientes, abrir la ficha con el bloque de estado e historial.",
-                  "write": "Crear un paciente, cambiar su estado y activarlo.",
+                  "create": "Crear un paciente.",
+                  "update": "Cambiar el estado del paciente y activarlo.",
                   "delete": "Purgar un paciente de PRUEBA (solo is_test) — herramienta del monitoreo sintético, sin botón en el panel."
                 }
               },
@@ -4151,21 +4156,24 @@
                 "body": "Es el filtro de entrada: el cuestionario que el candidato responde antes de que alguien lo mire. Ahorra el trabajo de descartar a mano.",
                 "action": {
                   "read": "Ver las respuestas de preselección de cada candidato.",
-                  "write": "Editar las preguntas y los criterios del filtro."
+                  "create": "Configurar por primera vez las preguntas y los criterios del filtro de una vacante.",
+                  "update": "Editar las preguntas y los criterios del filtro."
                 }
               },
               "recruitment": {
                 "body": "Es la captación: los leads que llegaron, por qué canal, y en qué estado está cada conversación antes de convertirse en prestador.",
                 "action": {
                   "read": "Ver los leads captados y el estado de cada uno.",
-                  "write": "Editar un lead y hacerlo avanzar."
+                  "create": "Registrar un lead nuevo.",
+                  "update": "Editar un lead existente y hacerlo avanzar."
                 }
               },
               "talentum": {
                 "body": "Es la integración con Talentum, el portal donde se publican las búsquedas. Lo que se toca acá sale hacia afuera de la Enlite, a un portal público.",
                 "action": {
                   "read": "Ver qué se publicó en Talentum y con qué estado.",
-                  "write": "Publicar una búsqueda en Talentum o darla de baja."
+                  "create": "Publicar una búsqueda en Talentum.",
+                  "update": "Actualizar o dar de baja una búsqueda ya publicada en Talentum."
                 }
               },
               "test_fixtures": {
@@ -4178,7 +4186,8 @@
                 "body": "Es la carga de archivos en lote — planillas que entran de una vez, en vez de registro por registro.",
                 "action": {
                   "read": "Ver el historial de importaciones y cómo terminó cada una.",
-                  "write": "Subir un archivo y correr la importación."
+                  "create": "Subir un archivo y correr la importación.",
+                  "update": "Volver a correr una importación con datos corregidos."
                 }
               },
               "user_management": {
@@ -4186,7 +4195,8 @@
                 "action": {
                   "delete": "Sacar a alguien del panel.",
                   "read": "Ver la lista de usuarios del panel.",
-                  "write": "Invitar a alguien y editar su cuenta."
+                  "create": "Invitar a alguien nuevo al panel.",
+                  "update": "Editar la cuenta de alguien y resetear su contraseña."
                 }
               },
               "vacancy": {
@@ -4194,7 +4204,8 @@
                 "action": {
                   "delete": "Eliminar una vacante del sistema.",
                   "read": "Ver la lista de vacantes y abrir el detalle de cada una.",
-                  "write": "Crear una vacante y editar sus condiciones."
+                  "create": "Crear una vacante.",
+                  "update": "Editar las condiciones de una vacante existente."
                 }
               },
               "worker": {
@@ -4204,7 +4215,8 @@
                   "disable": "Dar de baja al prestador: deja de aparecer para matching y para las vacantes.",
                   "export": "Genera un archivo que SALE del sistema y deja de estar bajo el control de este panel. Es masivo: baja el filtro entero, no un registro. Por sí solo no entrega el dossier — documento, fecha de nacimiento y domicilio sólo salen si la persona también tiene «Dossier: Ver»; sin eso, esas columnas se caen del archivo y el pedido vuelve avisando cuáles faltaron. Lo que sí sale, sale en claro: en la base está cifrado, y el archivo lo descifra.",
                   "read": "Ver la lista y abrir la ficha profesional de cualquier prestador del país que el grupo alcanza.",
-                  "write": "Editar esa ficha: datos profesionales, disponibilidad, zona, notas de operación."
+                  "create": "Crear una etiqueta nueva para prestadores.",
+                  "update": "Editar esa ficha: datos profesionales, disponibilidad, zona, notas de operación; y asignar o dar de baja etiquetas."
                 }
               },
               "worker_contact": {
@@ -4219,7 +4231,8 @@
                   "delete": "Sacar un documento del legajo.",
                   "read": "Abrir y descargar los documentos cargados del prestador.",
                   "validate": "Aprobar o rechazar un documento — y también retirar una aprobación ya dada.",
-                  "write": "Subir un documento nuevo o reemplazar uno existente."
+                  "create": "Subir un documento nuevo.",
+                  "update": "Reemplazar un documento existente o actualizar su fecha de vencimiento."
                 }
               },
               "worker_pii": {
@@ -4238,14 +4251,16 @@
                 "body": "Es quién es el paciente: nombre, documento, fecha de nacimiento, sexo, teléfono y e-mail de contacto. También es el nombre que aparece en la lista, en el kanban, en la vacante y en el mapa. Sin este permiso el nombre sale como «Contato restrito» en todas esas pantallas.",
                 "action": {
                   "read": "Ver el bloque de identidad y datos generales de la ficha, y el nombre del paciente donde aparezca.",
-                  "write": "Editar identidad y datos generales."
+                  "create": "Subir la foto o un documento del paciente, y registrar el consentimiento de imagen.",
+                  "update": "Editar identidad y datos generales; cambiar o quitar la foto; revocar un consentimiento de imagen."
                 }
               },
               "patient_clinical": {
                 "body": "Es el cuadro clínico: diagnóstico (libre y CID-11), nivel de dependencia, especialidad, dispositivos, observaciones, CUD, protección judicial, consentimiento e instrucciones de emergencia. Es dato de SALUD: la ley lo protege de forma especial y cada apertura queda registrada.",
                 "action": {
                   "read": "Ver el bloque de diagnóstico y cuadro clínico de la ficha (y el nivel de dependencia en la vacante).",
-                  "write": "Editar el diagnóstico y el cuadro clínico."
+                  "create": "Agregar un diagnóstico nuevo.",
+                  "update": "Editar el diagnóstico y el cuadro clínico."
                 }
               },
               "patient_care_team": {
@@ -4258,35 +4273,40 @@
                 "body": "Son los familiares y responsables del paciente: nombre, vínculo, teléfono. Son datos de OTRA persona, con base legal propia — por eso no vienen con el resto de la ficha y nunca están en un grupo por defecto.",
                 "action": {
                   "read": "Ver el bloque de familiares en la pestaña de red de apoyo.",
-                  "write": "Agregar, editar y quitar familiares y responsables."
+                  "create": "Agregar un familiar, responsable o contacto externo nuevo.",
+                  "update": "Editar o dar de baja un familiar, responsable o contacto externo; marcar o cambiar el contacto de emergencia."
                 }
               },
               "patient_chat": {
                 "body": "Son los IDs de los grupos de WhatsApp del caso (familia y prestadores). Un ID es la llave para entrar a una conversación con contexto clínico: por eso es permiso aparte, y quedará registrado quién lo recibió.",
                 "action": {
                   "read": "Ver los IDs de chat del caso.",
-                  "write": "Vincular o cambiar los grupos de chat del caso."
+                  "create": "Vincular por primera vez los grupos de chat del caso.",
+                  "update": "Cambiar los grupos de chat ya vinculados."
                 }
               },
               "patient_coverage": {
                 "body": "Es la cobertura médica: obra social o prepaga, número de afiliado y la verificación de cobertura.",
                 "action": {
                   "read": "Ver el bloque de cobertura médica en la pestaña de servicio contratado.",
-                  "write": "Editar la cobertura y el número de afiliado."
+                  "create": "Agregar un contacto de emergencia de la cobertura.",
+                  "update": "Editar la cobertura, el número de afiliado, y los contactos de emergencia de la cobertura."
                 }
               },
               "patient_address": {
                 "body": "Son las direcciones del paciente: domicilio, localidad, barrio y coordenada. Es el MISMO permiso que abre la pestaña Pacientes del mapa y la zona del paciente en la vacante — la dirección es una sola, esté donde esté.",
                 "action": {
                   "read": "Ver las localizaciones de la ficha, la zona del paciente en la vacante y la pestaña Pacientes del mapa.",
-                  "write": "Agregar y editar direcciones del paciente."
+                  "create": "Agregar una dirección nueva del paciente.",
+                  "update": "Editar una dirección existente del paciente."
                 }
               },
               "patient_services": {
                 "body": "Son los servicios contratados: tipo de servicio, profesión requerida, horarios, fecha de inicio y los prestadores asignados. Aparece en la pestaña de servicio contratado y también en la de matching. El valor por hora NO viene con este permiso: tiene su propia guarda.",
                 "action": {
                   "read": "Ver los servicios contratados en las pestañas de servicio y de matching.",
-                  "write": "Crear y editar servicios contratados y sus prestadores."
+                  "create": "Crear un servicio contratado nuevo.",
+                  "update": "Editar un servicio contratado existente, sus prestadores, y activar el reclutamiento."
                 }
               },
               "dashboard_numbers": {

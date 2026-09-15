@@ -84,7 +84,7 @@ export function VacancyTalentumCard({
   // `<Button>`, então usa `useActionGate` direto (mesma leitura do
   // `ActionButton`) — SEM a célula, a linha inteira do switch some (mode
   // "hide" é o único modo pra elemento que não é `<Button>`).
-  const talentumWriteGate = useActionGate('talentum', 'write');
+  const talentumWriteGate = useActionGate('talentum', 'update');
   const hasQuestions = questionsCount !== null && questionsCount > 0;
   const switchDisabled = isPublishing || isUnpublishing || (questionsCount !== null && !hasQuestions);
 
@@ -296,7 +296,7 @@ export function VacancyTalentumCard({
           {/* POST /vacancies/:id/generate-ai-content → generateAIContent → vacancy:write. */}
           <ActionButton
             resource="vacancy"
-            action="write"
+            action="update"
             variant="outline"
             size="sm"
             onClick={handleGenerateDescription}

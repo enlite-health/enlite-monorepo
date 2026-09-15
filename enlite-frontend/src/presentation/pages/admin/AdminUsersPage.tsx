@@ -26,7 +26,7 @@ export function AdminUsersPage(): JSX.Element {
   // POST /users/:id/reset-password e DELETE /users/:id → user_management:write e
   // user_management:delete respectivamente — botões raw `<button>` (não `<Button>`),
   // então o gate é `useActionGate` direto, mesma régua do `ActionButton` (D269).
-  const resetGate = useActionGate('user_management', 'write');
+  const resetGate = useActionGate('user_management', 'update');
   const deleteGate = useActionGate('user_management', 'delete');
 
   const [admins, setAdmins] = useState<AdminUser[]>([]);
@@ -105,10 +105,10 @@ export function AdminUsersPage(): JSX.Element {
         <Heading level={1} weight="semibold" color="primary">
           {t('admin.users.title')}
         </Heading>
-        {/* POST /users → user_management:write (D269) — a célula é o único freio. */}
+        {/* POST /users → user_management:create (D269, PR-8b) — a célula é o único freio. */}
         <ActionButton
           resource="user_management"
-          action="write"
+          action="create"
           variant="primary"
           onClick={() => setShowCreateModal(true)}
         >

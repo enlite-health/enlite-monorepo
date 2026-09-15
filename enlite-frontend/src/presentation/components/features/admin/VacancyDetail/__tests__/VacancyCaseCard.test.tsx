@@ -143,7 +143,7 @@ describe('VacancyCaseCard — status editor gate (D269)', () => {
   });
 
   it('enforcement=on, com vacancy:write: o editor existe (gatilho clicável)', () => {
-    comEnforcement(['vacancy:write'], 'on');
+    comEnforcement(['vacancy:update'], 'on');
     renderCard({ onStatusChange: vi.fn() });
     expect(screen.getByTestId('vacancy-status-editor-trigger')).toBeInTheDocument();
   });

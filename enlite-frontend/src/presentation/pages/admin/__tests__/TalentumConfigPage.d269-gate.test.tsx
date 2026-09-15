@@ -98,7 +98,7 @@ describe('TalentumConfigPage — D269 gate de rota (talentum:write)', () => {
   });
 
   it('enforcement "on" COM talentum:write → renderiza a tela, com o botão publicar', () => {
-    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['talentum:write'], 'on') });
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['talentum:update'], 'on') });
     montar();
 
     expect(screen.queryByText('vacancy-detail-marker')).not.toBeInTheDocument();

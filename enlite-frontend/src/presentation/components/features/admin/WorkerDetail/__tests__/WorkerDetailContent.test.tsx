@@ -136,7 +136,7 @@ describe('WorkerDetailContent', () => {
   });
 
   it('allowEdit=true COM worker:write (engine ON): o botão de editar aparece', async () => {
-    comEnforcement(['worker:read', 'worker_pii:read', 'worker:write'], 'on');
+    comEnforcement(['worker:read', 'worker_pii:read', 'worker:update'], 'on');
     render(<WorkerDetailContent workerId="w1" allowEdit />);
     await screen.findByText(/admin.workerDetail.birthDate/);
     expect(screen.getByTestId('worker-edit-button')).toBeInTheDocument();
@@ -181,7 +181,7 @@ describe('WorkerDetailContent', () => {
   });
 
   it('D269 — enforcement=on com worker_document:read+write: "Agregar" existe na seção de docs adicionais', async () => {
-    comEnforcement(['worker:read', 'worker_contact:read', 'worker_document:read', 'worker_document:write'], 'on');
+    comEnforcement(['worker:read', 'worker_contact:read', 'worker_document:read', 'worker_document:create'], 'on');
     render(<WorkerDetailContent workerId="w1" />);
     await screen.findByText('Juana Pérez');
     expect(screen.getByTestId('additional-doc-add')).toBeInTheDocument();

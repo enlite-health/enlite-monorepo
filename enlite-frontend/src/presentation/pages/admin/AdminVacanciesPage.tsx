@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Plus, RefreshCw } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { Typography } from '@presentation/components/atoms/Typography';
 import { ActionButton } from '@presentation/components/features/access';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Select } from '@presentation/components/atoms/Select';
 import { VacancyStatsCards } from '@presentation/components/features/admin/VacancyStatsCards';
@@ -98,6 +99,13 @@ export function AdminVacanciesPage(): JSX.Element {
 
   const { vacancies: rawVacancies, stats: rawStats, total, isLoading, error, refetch } = useVacanciesData(filters);
   const stats = rawStats as { label: string; value: string | number; icon: string }[] | null;
+
+  // POST /vacancies/sync-talentum é sincronização EM MASSA (sem :id) — pela regra do
+  // orquestrador (tasks.md 8b.1, "massa ou incerto") exige talentum:create E talentum:update
+  // JUNTAS, conservador: falta uma, ninguém ganha acesso ao botão.
+  const podeCriarTalentum = useActionGate('talentum', 'create').allowed;
+  const podeAtualizarTalentum = useActionGate('talentum', 'update').allowed;
+  const podeSyncTalentum = podeCriarTalentum && podeAtualizarTalentum;
 
   const [modalState, setModalState] = useState<ModalState>({ isOpen: false, mode: 'create' });
 
@@ -239,11 +247,13 @@ export function AdminVacanciesPage(): JSX.Element {
                 {syncMessage.text}
               </Typography>
             )}
-            {/* D269 — referência da família vagas: célula da ROTA que o botão chama.
-                POST /workers/sync-talentum é publicado via `syncFromTalentum` → talentum:write. */}
+            {/* D269 — POST /vacancies/sync-talentum é MASSA (sem :id) → talentum:create E
+                talentum:update JUNTAS (PR-8b, tasks.md 8b.1 "massa ou incerto"): sem as DUAS o
+                botão SOME. `ActionButton` cobre a 2ª (update); `podeSyncTalentum` cobre a 1ª. */}
+            {podeSyncTalentum && (
             <ActionButton
               resource="talentum"
-              action="write"
+              action="update"
               variant="outline"
               size="md"
               className="h-10 border-primary text-primary flex items-center justify-center gap-2 relative select-none"
@@ -268,10 +278,11 @@ export function AdminVacanciesPage(): JSX.Element {
                 {isSyncing ? t('admin.vacancies.syncing') : t('admin.vacancies.syncTalentum')}
               </Typography>
             </ActionButton>
-            {/* POST /vacancies → `createVacancy` → vacancy:write. */}
+            )}
+            {/* POST /vacancies → `createVacancy` → vacancy:create (PR-8b). */}
             <ActionButton
               resource="vacancy"
-              action="write"
+              action="create"
               variant="outline"
               size="md"
               className="w-40 h-10 border-primary text-primary flex items-center justify-center gap-3"

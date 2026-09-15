@@ -322,16 +322,16 @@ test.describe('Botões da família prestadores — esconder, não desabilitar (D
     await expect(page.getByTestId('additional-doc-add')).toHaveCount(0);
   });
 
-  test('2. a conta ganha worker:write + worker_document:write/:delete: os mesmos elementos passam a EXISTIR', async ({ page, request }) => {
-    grantCell(groupId, 'worker', 'write');
-    grantCell(groupId, 'worker_document', 'write');
+  test('2. a conta ganha worker:update + worker_document:create/:delete (PR-8b): os mesmos elementos passam a EXISTIR', async ({ page, request }) => {
+    grantCell(groupId, 'worker', 'update');
+    grantCell(groupId, 'worker_document', 'create');
     grantCell(groupId, 'worker_document', 'delete');
 
-    const settledWorker = await pollHasCell(request, GESTORA, 'worker:write');
-    const settledDocWrite = await pollHasCell(request, GESTORA, 'worker_document:write');
+    const settledWorker = await pollHasCell(request, GESTORA, 'worker:update');
+    const settledDocWrite = await pollHasCell(request, GESTORA, 'worker_document:create');
     const settledDocDelete = await pollHasCell(request, GESTORA, 'worker_document:delete');
     console.log(
-      `[prova] worker:write em ${settledWorker.elapsedMs}ms, worker_document:write em ${settledDocWrite.elapsedMs}ms, worker_document:delete em ${settledDocDelete.elapsedMs}ms`,
+      `[prova] worker:update em ${settledWorker.elapsedMs}ms, worker_document:create em ${settledDocWrite.elapsedMs}ms, worker_document:delete em ${settledDocDelete.elapsedMs}ms`,
     );
     expect(settledWorker.has).toBe(true);
     expect(settledDocWrite.has).toBe(true);

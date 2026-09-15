@@ -41,12 +41,13 @@ import { ResumeDraftVacancyDialog } from '@presentation/components/features/admi
 import { AddressHasVacancyDialog } from '@presentation/components/features/admin/VacancyModal/AddressHasVacancyDialog';
 
 export default function CreateVacancyPage(): JSX.Element {
-  // D269: a rota é alcançável por URL; sem vacancy:write, a porta fecha (não só o botão).
-  const vacancyWriteGate = useActionGate('vacancy', 'write');
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { id: routeVacancyId } = useParams<{ id: string }>();
   const isEditMode = Boolean(routeVacancyId);
+  // D269: a rota é alcançável por URL; sem vacancy:create (modo novo) / vacancy:update (modo
+  // edição), a porta fecha (não só o botão) — PR-8b, o "modo pede a ação" (contracts/permissions-split.md).
+  const vacancyWriteGate = useActionGate('vacancy', isEditMode ? 'update' : 'create');
   const v = (k: string) => t(`admin.createVacancyV2.${k}`);
 
   const formRef = useRef<HTMLFormElement>(null);
@@ -239,7 +240,7 @@ export default function CreateVacancyPage(): JSX.Element {
           </Heading>
           <ActionButton
             resource="vacancy"
-            action="write"
+            action={isEditMode ? 'update' : 'create'}
             variant="primary"
             size="sm"
             onClick={handleSave}

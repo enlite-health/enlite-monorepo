@@ -133,7 +133,7 @@ describe('WorkerTagsArea', () => {
   });
 
   it('D269 — enforcement=on com worker:write: o "X" e o dropdown existem', () => {
-    comEnforcement(['worker:write'], 'on');
+    comEnforcement(['worker:update'], 'on');
     render(<WorkerTagsArea workerId="w1" initialTags={[assignedTag]} />);
     expect(screen.getByLabelText('admin.workerDetail.tags.removeTag')).toBeInTheDocument();
     expect(screen.getByText('admin.workerDetail.tags.addTag')).toBeInTheDocument();

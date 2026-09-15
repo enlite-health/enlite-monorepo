@@ -36,7 +36,7 @@ interface WorkerTagsAreaProps {
 
 export function WorkerTagsArea({ workerId, initialTags }: WorkerTagsAreaProps): JSX.Element {
   const { t } = useTranslation();
-  const workerWriteGate = useActionGate('worker', 'write');
+  const workerWriteGate = useActionGate('worker', 'update');
   const [tags, setTags] = useState<WorkerTagSummary[]>(initialTags);
   const [catalog, setCatalog] = useState<WorkerTag[]>([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);

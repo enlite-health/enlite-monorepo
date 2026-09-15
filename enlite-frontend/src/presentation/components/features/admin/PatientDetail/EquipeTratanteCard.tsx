@@ -62,7 +62,7 @@ export function EquipeTratanteCard({ professionals, patientId, onSaved }: Equipe
           {t('admin.patients.detail.treatingTeamCard.title')}
         </Heading>
         {/* Célula NOVA `patient_care_team:write` (D269): sem ela o botão SOME, nunca fica cinza. */}
-        <ActionButton resource="patient_care_team" action="write" variant="outline" size="sm" onClick={() => setEditing('new')} disabled={!patientId} className="flex items-center gap-1" data-testid="equipe-tratante-add">
+        <ActionButton resource="patient_care_team" action="create" variant="outline" size="sm" onClick={() => setEditing('new')} disabled={!patientId} className="flex items-center gap-1" data-testid="equipe-tratante-add">
           <Plus className="w-4 h-4" />
           {t('admin.patients.detail.new')}
         </ActionButton>
@@ -120,7 +120,7 @@ export function EquipeTratanteCard({ professionals, patientId, onSaved }: Equipe
                 <TableCell unwrapped align="right">
                   <div className="flex items-center justify-end gap-1">
                     <ActionButton
-                      resource="patient_care_team" action="write" variant="outline" size="sm"
+                      resource="patient_care_team" action="update" variant="outline" size="sm"
                       onClick={() => setEditing(prof)} disabled={!patientId}
                       aria-label={t('admin.patients.detail.treatingTeamCard.editProfessional')}
                       className="p-2" data-testid={`equipe-tratante-edit-${prof.id}`}
@@ -128,7 +128,7 @@ export function EquipeTratanteCard({ professionals, patientId, onSaved }: Equipe
                       <Pencil className="w-4 h-4" />
                     </ActionButton>
                     <ActionButton
-                      resource="patient_care_team" action="write" variant="outline" size="sm"
+                      resource="patient_care_team" action="update" variant="outline" size="sm"
                       onClick={() => setDeactivating(prof)} disabled={!patientId}
                       aria-label={t('admin.patients.detail.treatingTeamCard.deactivateProfessional')}
                       className="p-2 text-red-500" data-testid={`equipe-tratante-deactivate-${prof.id}`}

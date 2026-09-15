@@ -39,8 +39,8 @@ export function CoberturaMedicaCard({ patient, onSaved, focusRequest }: Cobertur
         <Heading level={1} as="h3" weight="semibold" color="primary">
           {t('admin.patients.detail.coverageCard.title')}
         </Heading>
-        {/* D286 — abre o drawer que faz PATCH /patients/:id/coverage → patient_coverage:write. */}
-        <ActionButton resource="patient_coverage" action="write" variant="outline" size="sm" onClick={() => setEditing(true)} className="w-28" data-testid="edit-coverage-btn">
+        {/* D286 — abre o drawer que faz PATCH /patients/:id/coverage → patient_coverage:update (PR-8b). */}
+        <ActionButton resource="patient_coverage" action="update" variant="outline" size="sm" onClick={() => setEditing(true)} className="w-28" data-testid="edit-coverage-btn">
           {t('admin.patients.detail.edit')}
         </ActionButton>
       </div>

@@ -81,7 +81,7 @@ export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }
   const { t } = useTranslation();
   // D286: o lápis de cada endereço, e a ação "Marcar como principal", somem para quem não tem a
   // escrita do container (PATCH .../addresses/:id) — mesma célula, mesmo botão de escrita.
-  const addressWriteGate = useActionGate('patient_address', 'write');
+  const addressWriteGate = useActionGate('patient_address', 'update');
   const list = addresses ?? [];
   // Principal primeiro, depois a ordem recebida (sort é estável — ordem relativa preservada).
   // `isPrimary` vem de `is_default` (PatientDetailQueryHelper.ts) — spec 019 já não deriva de `address_type`.
@@ -143,7 +143,7 @@ export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }
           {t('admin.patients.detail.locationsCard.title')}
         </Heading>
         {/* D286 — POST /patients/:id/addresses → patient_address:write. */}
-        <ActionButton resource="patient_address" action="write" variant="outline" size="sm" disabled={!patientId} onClick={() => setDrawer(undefined)} className="flex items-center gap-1" data-testid="new-address-btn">
+        <ActionButton resource="patient_address" action="create" variant="outline" size="sm" disabled={!patientId} onClick={() => setDrawer(undefined)} className="flex items-center gap-1" data-testid="new-address-btn">
           <Plus className="w-4 h-4" />
           {t('admin.patients.detail.new')}
         </ActionButton>

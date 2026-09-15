@@ -52,7 +52,7 @@ describe('AdminWorkersPage — exportar e sincronizar por célula (D286 fase 2)'
     expect(botaoSync()).toBeUndefined();
     unmount();
 
-    comEnforcement(['worker:read', 'talentum:write'], 'on');
+    comEnforcement(['worker:read', 'talentum:create', 'talentum:update'], 'on');
     renderPage();
     expect(screen.queryByTestId('worker-export-btn')).not.toBeInTheDocument();
     expect(botaoSync()).toBeDefined();

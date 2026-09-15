@@ -2,8 +2,21 @@ import { useTranslation } from 'react-i18next';
 import { Button, type ButtonProps } from '@presentation/components/atoms/Button';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 
-/** Ações de célula que um `ActionButton` pode gatear. `write` é o default (a maioria dos botões de concluir edição). */
-export type ActionButtonAction = 'write' | 'delete' | 'execute' | 'send' | 'disable' | 'export' | 'validate';
+/**
+ * Ações de célula que um `ActionButton` pode gatear. `write` continua existindo só para
+ * `permission_management` (contracts/permissions-split.md) — todo recurso splitado usa
+ * `create`/`update` conforme a rota que o botão chama (PR-8b, ADR-2).
+ */
+export type ActionButtonAction =
+  | 'write'
+  | 'create'
+  | 'update'
+  | 'delete'
+  | 'execute'
+  | 'send'
+  | 'disable'
+  | 'export'
+  | 'validate';
 
 /**
  * `hide` (default, D269 — correção do Gabriel: "desabilitar não, ESCONDER.

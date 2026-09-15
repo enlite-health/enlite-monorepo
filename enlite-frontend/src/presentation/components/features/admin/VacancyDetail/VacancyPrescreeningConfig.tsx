@@ -291,7 +291,7 @@ export function VacancyPrescreeningConfig({ vacancyId, isPublished }: VacancyPre
 
           <div className="flex justify-end">
             {/* POST /vacancies/:id/prescreening-config → savePrescreeningConfig → prescreening:write. */}
-            <ActionButton resource="prescreening" action="write" variant="primary" size="sm" onClick={handleSave} disabled={isSaving} className="flex items-center gap-2 px-5">
+            <ActionButton resource="prescreening" action="update" variant="primary" size="sm" onClick={handleSave} disabled={isSaving} className="flex items-center gap-2 px-5">
               {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
               {isSaving ? t(`${ps}.saving`) : t(`${ps}.save`)}
             </ActionButton>

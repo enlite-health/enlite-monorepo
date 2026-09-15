@@ -135,7 +135,7 @@ export function PatientPhotoSlot({ patientId, hasPhoto, onChanged }: Props): JSX
           />
           <ActionButton
             resource="patient_identity"
-            action="write"
+            action="create"
             variant="outline"
             size="sm"
             isLoading={uploading}
@@ -148,7 +148,7 @@ export function PatientPhotoSlot({ patientId, hasPhoto, onChanged }: Props): JSX
           {hasPhoto === true && (
             <ActionButton
               resource="patient_identity"
-              action="write"
+              action="update"
               variant="outline"
               size="sm"
               onClick={() => setConfirmingRemove(true)}

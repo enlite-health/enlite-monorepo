@@ -54,8 +54,8 @@ function ActivateRecruitmentAction({
 
   // Hooks incondicionais (regra do React) — o GATE em si só se aplica depois do ramo
   // "Ver vacante" abaixo, que não muda em relação à `stage`.
-  const { allowed: podeEscreverServico } = useActionGate('patient_services', 'write');
-  const { allowed: podeEscreverVaga } = useActionGate('vacancy', 'write');
+  const { allowed: podeEscreverServico } = useActionGate('patient_services', 'update');
+  const { allowed: podeEscreverVaga } = useActionGate('vacancy', 'update');
 
   if (service.liveVacancyId) {
     return (
@@ -71,9 +71,10 @@ function ActivateRecruitmentAction({
     );
   }
 
-  // Regra do Gabriel (12/09): a rota de ativação exige patient_services:write E vacancy:write —
-  // quem não tem as duas células não vê o BOTÃO de ativar. Só este ramo (o "Ver vacante" acima
-  // já retornou e não passa por aqui).
+  // Regra do Gabriel (12/09, PR-8b 15/09): a rota de ativação (POST .../activate-recruitment) exige
+  // patient_services:update E vacancy:update JUNTAS (contracts/permissions-split.md — "ação sobre
+  // recurso existente") — quem não tem as duas células não vê o BOTÃO de ativar. Só este ramo
+  // (o "Ver vacante" acima já retornou e não passa por aqui).
   if (!podeEscreverServico || !podeEscreverVaga) return null;
 
   const handleClick = async (e: MouseEvent): Promise<void> => {
@@ -86,7 +87,7 @@ function ActivateRecruitmentAction({
   return (
     <ActionButton
       resource="patient_services"
-      action="write"
+      action="update"
       variant="ghost"
       size="sm"
       onClick={handleClick}
@@ -243,7 +244,7 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
   const [selected, setSelected] = useState<PatientContractedServiceDetail | null>(null);
   // D269/D286: as TRÊS portas para o PATCH (+ Nuevo, lápis da linha, "Editar" do detalhe) seguem a
   // mesma célula — o gate do sync main→stage (08/09) achou a terceira aberta.
-  const { allowed: podeEditar } = useActionGate('patient_services', 'write');
+  const { allowed: podeEditar } = useActionGate('patient_services', 'update');
   const services = patient.contractedServices;
   // Checklist "falta serviço" → formulário de um serviço NOVO.
   useAutoOpenDrawer(focusRequest, 'CONTRACTED_SERVICE', () => setEditing({ kind: 'new' }));
@@ -278,7 +279,7 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
         {/* "+ Nuevo servicio" no lugar de "Editar servicios" (Gabriel, 06/09): a tabela já é a
             lista; editar um existente é pelo lápis da linha ou pelo botão do detalhe.
             D269/D286 — o POST do drawer exige `patient_services:write`: sem a célula o botão não existe. */}
-        <ActionButton resource="patient_services" action="write" variant="outline" size="sm" onClick={() => setEditing({ kind: 'new' })} className="flex items-center gap-1" data-testid="new-service-btn">
+        <ActionButton resource="patient_services" action="create" variant="outline" size="sm" onClick={() => setEditing({ kind: 'new' })} className="flex items-center gap-1" data-testid="new-service-btn">
           <Plus className="w-4 h-4" />
           {t('admin.patients.detail.contractedServicesCard.newButton')}
         </ActionButton>

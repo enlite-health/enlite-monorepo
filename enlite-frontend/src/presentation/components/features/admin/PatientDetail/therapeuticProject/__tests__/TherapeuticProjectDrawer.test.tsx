@@ -360,7 +360,7 @@ describe('🔒 D286/D269 — "Editar" é célula `patient_therapeutic_project:wr
   });
 
   it('com a célula do container o botão existe', () => {
-    comEnforcement(['patient_therapeutic_project:write']);
+    comEnforcement(['patient_therapeutic_project:create']);
     montar({ mode: 'view', version: VERSAO, isCurrent: true });
 
     expect(screen.getByTestId('therapeutic-project-edit-btn')).toBeInTheDocument();
@@ -410,7 +410,7 @@ describe('🔒 PR-7 item 3 — "Exportar PDF" é célula `patient_therapeutic_pr
 
 describe('🔒 D328 item 3: `isCurrent:false` some com "Editar" mesmo com célula e versão viva', () => {
   it('versão NÃO vigente, não anulada, com a célula: SEM botão "Editar" (só quem abre o drawer sabe quem é a vigente)', () => {
-    comEnforcement(['patient_therapeutic_project:write', 'patient_therapeutic_project:export']);
+    comEnforcement(['patient_therapeutic_project:create', 'patient_therapeutic_project:export']);
     montar({ mode: 'view', version: VERSAO, isCurrent: false });
 
     expect(screen.queryByTestId('therapeutic-project-edit-btn')).not.toBeInTheDocument();
@@ -419,7 +419,7 @@ describe('🔒 D328 item 3: `isCurrent:false` some com "Editar" mesmo com célul
   });
 
   it('a MESMA versão com `isCurrent:true` MOSTRA o botão — o gate é só o `isCurrent`, não a versão em si', () => {
-    comEnforcement(['patient_therapeutic_project:write']);
+    comEnforcement(['patient_therapeutic_project:create']);
     montar({ mode: 'view', version: VERSAO, isCurrent: true });
 
     expect(screen.getByTestId('therapeutic-project-edit-btn')).toBeInTheDocument();

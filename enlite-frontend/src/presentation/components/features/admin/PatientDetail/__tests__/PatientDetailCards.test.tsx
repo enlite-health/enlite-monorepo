@@ -722,7 +722,7 @@ describe('EquipeTratanteCard — gate ABAC patient_care_team:write (spec 018 PR-
   });
 
   it('enforcement "on" COM patient_care_team:write: os três botões existem', () => {
-    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:create', 'patient_care_team:update']), enforcement: 'on' }, authzStatus: 'ready' });
     render(<EquipeTratanteCard professionals={professionals} patientId="p1" />);
     expect(screen.getByTestId('equipe-tratante-add')).toBeInTheDocument();
     expect(screen.getByTestId('equipe-tratante-edit-p1')).toBeInTheDocument();
@@ -730,7 +730,7 @@ describe('EquipeTratanteCard — gate ABAC patient_care_team:write (spec 018 PR-
   });
 
   it('clicar em "Nuevo" abre o drawer de criação (professional=null)', () => {
-    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:create', 'patient_care_team:update']), enforcement: 'on' }, authzStatus: 'ready' });
     render(<EquipeTratanteCard professionals={professionals} patientId="p1" />);
     fireEvent.click(screen.getByTestId('equipe-tratante-add'));
     expect(screen.getByTestId('professional-edit-drawer')).toBeInTheDocument();
@@ -738,7 +738,7 @@ describe('EquipeTratanteCard — gate ABAC patient_care_team:write (spec 018 PR-
   });
 
   it('fechar o drawer (X) chama o onClose do card e o desmonta', async () => {
-    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:create', 'patient_care_team:update']), enforcement: 'on' }, authzStatus: 'ready' });
     render(<EquipeTratanteCard professionals={professionals} patientId="p1" />);
     fireEvent.click(screen.getByTestId('equipe-tratante-add'));
     expect(screen.getByTestId('professional-edit-drawer')).toBeInTheDocument();
@@ -750,7 +750,7 @@ describe('EquipeTratanteCard — gate ABAC patient_care_team:write (spec 018 PR-
   it('criar com sucesso pelo drawer chama o onSaved do card', async () => {
     mockCreateProfessional.mockResolvedValueOnce({ id: 'novo' });
     const onSaved = vi.fn();
-    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:create', 'patient_care_team:update']), enforcement: 'on' }, authzStatus: 'ready' });
     render(<EquipeTratanteCard professionals={professionals} patientId="p1" onSaved={onSaved} />);
     fireEvent.click(screen.getByTestId('equipe-tratante-add'));
     fireEvent.change(screen.getByTestId('professional-name'), { target: { value: 'Dr. Novo' } });
@@ -759,7 +759,7 @@ describe('EquipeTratanteCard — gate ABAC patient_care_team:write (spec 018 PR-
   });
 
   it('clicar no lápis abre o drawer de edição PRÉ-PREENCHIDO com a linha clicada', () => {
-    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:create', 'patient_care_team:update']), enforcement: 'on' }, authzStatus: 'ready' });
     render(<EquipeTratanteCard professionals={professionals} patientId="p1" />);
     fireEvent.click(screen.getByTestId('equipe-tratante-edit-p1'));
     expect(screen.getByTestId('professional-edit-drawer')).toBeInTheDocument();
@@ -767,7 +767,7 @@ describe('EquipeTratanteCard — gate ABAC patient_care_team:write (spec 018 PR-
   });
 
   it('clicar no lixeiro abre a confirmação; Cancelar fecha sem chamar a API (C8)', () => {
-    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:create', 'patient_care_team:update']), enforcement: 'on' }, authzStatus: 'ready' });
     render(<EquipeTratanteCard professionals={professionals} patientId="p1" />);
     fireEvent.click(screen.getByTestId('equipe-tratante-deactivate-p1'));
     expect(screen.getByTestId('deactivate-professional-confirm')).toBeInTheDocument();
@@ -780,7 +780,7 @@ describe('EquipeTratanteCard — gate ABAC patient_care_team:write (spec 018 PR-
   it('confirmar desativação chama a API com (patientId, id) e fecha o modal ao concluir; onSaved é chamado', async () => {
     mockDeactivateProfessional.mockResolvedValueOnce({ id: 'p1', active: false });
     const onSaved = vi.fn();
-    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:create', 'patient_care_team:update']), enforcement: 'on' }, authzStatus: 'ready' });
     render(<EquipeTratanteCard professionals={professionals} patientId="p1" onSaved={onSaved} />);
     fireEvent.click(screen.getByTestId('equipe-tratante-deactivate-p1'));
     fireEvent.click(screen.getByTestId('deactivate-professional-confirm-button'));
@@ -790,7 +790,7 @@ describe('EquipeTratanteCard — gate ABAC patient_care_team:write (spec 018 PR-
   });
 
   it('profissional sem nome (legado): a confirmação mostra "—" (branch `name ?? \'—\'`)', () => {
-    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:create', 'patient_care_team:update']), enforcement: 'on' }, authzStatus: 'ready' });
     const semNome = [{ id: 'p9', name: null, phone: null, email: null, specialty: null, displayOrder: 1, isTeam: false }];
     render(<EquipeTratanteCard professionals={semNome} patientId="p1" />);
     fireEvent.click(screen.getByTestId('equipe-tratante-deactivate-p9'));
@@ -799,7 +799,7 @@ describe('EquipeTratanteCard — gate ABAC patient_care_team:write (spec 018 PR-
 
   it('confirmDeactivate: guarda defensiva — sem patientId, não chama a API mesmo se deactivating estiver setado', async () => {
     mockDeactivateProfessional.mockClear();
-    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:write']), enforcement: 'on' }, authzStatus: 'ready' });
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_care_team:create', 'patient_care_team:update']), enforcement: 'on' }, authzStatus: 'ready' });
     const { rerender } = render(<EquipeTratanteCard professionals={professionals} patientId="p1" />);
     fireEvent.click(screen.getByTestId('equipe-tratante-deactivate-p1'));
     expect(screen.getByTestId('deactivate-professional-confirm')).toBeInTheDocument();
@@ -1019,8 +1019,8 @@ describe('FamiliaresCard — coluna Emergencia é informação, não ação (D26
     expect(screen.queryByTestId(`familiares-emergency-marked-${patientDetailFixture.responsibles[0].id}`)).not.toBeInTheDocument();
   });
 
-  it('enforcement "on" COM patient_family:write: mostra o indicador E o botão de ação juntos na linha marcada', () => {
-    useAdminAuthStore.setState({ authz: { ...contrato(['patient_family:read', 'patient_family:write']), enforcement: 'on' }, authzStatus: 'ready' });
+  it('enforcement "on" COM patient_family:update (PR-8b): mostra o indicador E o botão de ação juntos na linha marcada', () => {
+    useAdminAuthStore.setState({ authz: { ...contrato(['patient_family:read', 'patient_family:update']), enforcement: 'on' }, authzStatus: 'ready' });
     render(
       <FamiliaresCard
         responsibles={patientDetailFixture.responsibles}
@@ -1314,7 +1314,7 @@ describe('LocalizacoesCard', () => {
     });
 
     it('enforcement "on" COM a célula patient_address:write: o lápis aparece (allowed)', () => {
-      useAdminAuthStore.setState({ authz: { ...contrato(['patient_address:write']), enforcement: 'on' }, authzStatus: 'ready' });
+      useAdminAuthStore.setState({ authz: { ...contrato(['patient_address:update']), enforcement: 'on' }, authzStatus: 'ready' });
       render(<LocalizacoesCard addresses={patientDetailFixture.addresses} patientId="p1" />);
       expect(screen.getByTestId('edit-address-addr1')).toBeInTheDocument();
     });
@@ -1335,7 +1335,7 @@ describe('LocalizacoesCard', () => {
     });
 
     it('enforcement "on" COM a célula patient_address:write: "Marcar como principal" aparece (allowed)', () => {
-      useAdminAuthStore.setState({ authz: { ...contrato(['patient_address:write']), enforcement: 'on' }, authzStatus: 'ready' });
+      useAdminAuthStore.setState({ authz: { ...contrato(['patient_address:update']), enforcement: 'on' }, authzStatus: 'ready' });
       render(<LocalizacoesCard addresses={[secundario]} patientId="p1" />);
       expect(screen.getByTestId('address-mark-primary-addr2')).toBeInTheDocument();
     });

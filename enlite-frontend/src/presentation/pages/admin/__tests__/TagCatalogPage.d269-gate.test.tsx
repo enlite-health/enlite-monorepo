@@ -90,7 +90,7 @@ describe('TagCatalogPage — D269 gate de escrita (worker:write)', () => {
   });
 
   it('enforcement "on" COM worker:write → "Nueva etiqueta" aparece, e a linha tem editar/excluir', async () => {
-    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['worker:read', 'worker:write'], 'on') });
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['worker:read', 'worker:create', 'worker:update'], 'on') });
     montar();
 
     expect(await screen.findByText('Bilingüe')).toBeInTheDocument();

@@ -20,15 +20,29 @@ import { cellsOfScreen, containersOfTab, type ScreenDef } from '@presentation/co
 export interface CellAccess {
   level: AccessLevel;
   canRead: boolean;
+  /** `create` OU `update` (ou a `write` literal de `permission_management`) — PR-8b, ADR-2. */
   canWrite: boolean;
+  /** A célula `resource:create` especificamente (PR-8b) — para call site que precisa saber QUAL, não só "algum". */
+  canCreate: boolean;
+  /** A célula `resource:update` especificamente (PR-8b). */
+  canUpdate: boolean;
   status: AuthzStatus;
 }
 
 export function useCellAccess(resource: string): CellAccess {
   const authz = useAdminAuthStore((s) => s.authz);
   const status = useAdminAuthStore((s) => s.authzStatus);
-  const level = status === 'ready' ? accessLevelFor(authz?.permissions ?? null, resource) : 'hidden';
-  return { level, canRead: level !== 'hidden', canWrite: level === 'write', status };
+  const permissions = authz?.permissions ?? null;
+  const level = status === 'ready' ? accessLevelFor(permissions, resource) : 'hidden';
+  const ready = status === 'ready';
+  return {
+    level,
+    canRead: level !== 'hidden',
+    canWrite: level === 'write',
+    canCreate: ready && hasCell(permissions, resource, 'create'),
+    canUpdate: ready && hasCell(permissions, resource, 'update'),
+    status,
+  };
 }
 
 export function useHasCell(resource: string, action: string): boolean {

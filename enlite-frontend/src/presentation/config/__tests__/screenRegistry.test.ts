@@ -50,24 +50,52 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
     const catalog = [{ category: 'x', cells: [...CATALOGO].map((k) => { const [resource, action] = k.split(':'); return { resource, action, category: 'x', ownerService: 'wf' }; }) }];
     expect(celulasForaDasTelas(catalog)).toEqual([
       // sem consumidor no front (ui-gate-debt.json), ferramentas de operação sem tela, ou
-      // decididas no back abaixo da rota (worker:disable)
+      // decididas no back abaixo da rota (worker:disable) — mais, desde o PR-8b (ADR-2), as
+      // linhas `write` dos 23 recursos splitados: ficam no catálogo (SUP-31, migration 435
+      // não remove), mas nenhuma tela as lista mais — só `create`/`update`.
       'analytics:export',
       'analytics:read',
       'api_docs:read',
+      'catalog_therapeutic_activities:write',
+      'catalog_therapeutic_objectives:write',
+      'catalog_therapeutic_segments:create',
       'catalog_therapeutic_segments:read',
+      'catalog_therapeutic_segments:update',
       'catalog_therapeutic_segments:write',
+      'funnel:write',
       'integration:execute',
+      'interview:create',
       'interview:delete',
       'interview:read',
+      'interview:update',
       'interview:write',
+      'messaging:write',
+      'patient:write',
+      'patient_address:write',
+      'patient_care_team:write',
+      'patient_chat:write',
+      'patient_clinical:write',
+      'patient_coverage:write',
+      'patient_family:write',
+      'patient_identity:write',
+      'patient_services:write',
       'patient_therapeutic_project:export',
+      'patient_therapeutic_project:write',
+      'prescreening:write',
+      'recruitment:create',
+      'recruitment:update',
       'recruitment:write',
+      'talentum:write',
       'test_fixtures:execute',
       'upload:read',
       'upload:write',
+      'user_management:write',
       'vacancy:delete',
+      'vacancy:write',
       'worker:delete',
       'worker:disable',
+      'worker:write',
+      'worker_document:write',
     ]);
   });
 });
@@ -147,7 +175,7 @@ describe('screensByCell / containersOfTab / screenById', () => {
   });
 
   it('cellsOfScreen — as próprias mais as de todos os containers, na ordem do registro', () => {
-    expect(cellsOfScreen(screenById('patients.list'))).toEqual(['patient:read', 'patient:write', 'patient:delete', 'patient_identity:read', 'patient_clinical:read']);
+    expect(cellsOfScreen(screenById('patients.list'))).toEqual(['patient:read', 'patient:create', 'patient:update', 'patient:delete', 'patient_identity:read', 'patient_clinical:read']);
     expect(cellsOfScreen(screenById('map'))).toEqual(['worker_address:read', 'patient_address:read']);
     expect(cellsOfScreen(screenById('dashboard'))).toEqual([
       'dashboard:read', 'dashboard_numbers:read', 'dashboard_team:read', 'dashboard_priorities:read',

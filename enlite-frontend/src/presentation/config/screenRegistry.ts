@@ -72,7 +72,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   {
     id: 'users',
     route: '/admin',
-    cells: ['user_management:read', 'user_management:write', 'user_management:delete', 'permission_management:write'],
+    cells: ['user_management:read', 'user_management:create', 'user_management:update', 'user_management:delete', 'permission_management:write'],
   },
 
   // ── Pacientes ──────────────────────────────────────────────────────────────────────────────
@@ -81,42 +81,42 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
     route: '/admin/patients',
     // `patient:read` é o OPERACIONAL (status, funil, caso); nome e documento na lista vêm da
     // identidade, e as colunas clínicas da clínica — a lista é projetada pelo back (`lex` P1).
-    cells: ['patient:read', 'patient:write', 'patient:delete', 'patient_identity:read', 'patient_clinical:read'],
+    cells: ['patient:read', 'patient:create', 'patient:update', 'patient:delete', 'patient_identity:read', 'patient_clinical:read'],
   },
-  { id: 'patients.kanban', route: '/admin/patients/kanban', cells: ['patient:read', 'patient:write', 'patient_identity:read'] },
+  { id: 'patients.kanban', route: '/admin/patients/kanban', cells: ['patient:read', 'patient:create', 'patient:update', 'patient_identity:read'] },
   {
     id: 'patients.detail',
     route: '/admin/patients/:id',
     tabs: ['clinicalData', 'supportNetwork', 'contractedService', 'vacancies', 'history'],
     containers: [
-      c('identity', 'patient_identity', ['read', 'write']),
+      c('identity', 'patient_identity', ['read', 'create', 'update']),
       // Spec 018, PR-4: leitura do documento (prova do consentimento de imagem) — célula NOVA,
       // 0 grupos ao nascer (D285), nunca herdada de `patient_identity:read` (contrato §Documento).
       c('consentDocuments', 'patient_consent_documents', ['read']),
-      c('clinical', 'patient_clinical', ['read', 'write'], 'clinicalData'),
-      c('careTeam', 'patient_care_team', ['read', 'write'], 'clinicalData'),
+      c('clinical', 'patient_clinical', ['read', 'create', 'update'], 'clinicalData'),
+      c('careTeam', 'patient_care_team', ['read', 'create', 'update'], 'clinicalData'),
       // Spec 017: o projeto terapêutico deixa de ser placeholder — container próprio, na aba clínica.
-      c('therapeuticProject', 'patient_therapeutic_project', ['read', 'write'], 'clinicalData'),
-      c('family', 'patient_family', ['read', 'write'], 'supportNetwork'),
-      c('chat', 'patient_chat', ['read', 'write'], 'supportNetwork'),
-      c('coverage', 'patient_coverage', ['read', 'write'], 'contractedService'),
-      c('address', 'patient_address', ['read', 'write'], 'contractedService'),
+      c('therapeuticProject', 'patient_therapeutic_project', ['read', 'create', 'update'], 'clinicalData'),
+      c('family', 'patient_family', ['read', 'create', 'update'], 'supportNetwork'),
+      c('chat', 'patient_chat', ['read', 'create', 'update'], 'supportNetwork'),
+      c('coverage', 'patient_coverage', ['read', 'create', 'update'], 'contractedService'),
+      c('address', 'patient_address', ['read', 'create', 'update'], 'contractedService'),
       // A aba Matching saiu (decisão do Gabriel 05/09, na main): o encuadre É o serviço contratado
       // completo, que vive só na aba Serviço contratado — uma célula, uma aba.
-      c('services', 'patient_services', ['read', 'write'], 'contractedService'),
+      c('services', 'patient_services', ['read', 'create', 'update'], 'contractedService'),
       // O VALOR-HORA do serviço contratado é dado próprio (era "só admin" por papel; D293): quem
       // tem `patient_services:read` vê o serviço, mas o preço só sai com esta célula.
       c('contractValue', 'patient_contract_value', ['read'], 'contractedService'),
       c('vacancies', 'vacancy', ['read'], 'vacancies'),
       // O operacional da tela numa linha só: cabeçalho (status, ativar, completude) e a aba de
       // histórico — mesmo recurso `patient`, uma célula de leitura e uma de escrita.
-      c('operational', 'patient', ['read', 'write'], 'history'),
+      c('operational', 'patient', ['read', 'create', 'update'], 'history'),
     ],
   },
-  { id: 'patients.chatRoles', route: '/admin/patient-chat-roles', cells: ['patient:read', 'patient:write'] },
+  { id: 'patients.chatRoles', route: '/admin/patient-chat-roles', cells: ['patient:read', 'patient:create', 'patient:update'] },
   // Spec 017 (D299.3): os 2 catálogos do projeto terapêutico — uma tela e uma célula por lista (tipo de patologia deriva do CID-11, sem tela).
-  { id: 'patients.catalogObjectives', route: '/admin/catalogos/objetivos-especificos', cells: ['catalog_therapeutic_objectives:read', 'catalog_therapeutic_objectives:write'] },
-  { id: 'patients.catalogActivities', route: '/admin/catalogos/actividades', cells: ['catalog_therapeutic_activities:read', 'catalog_therapeutic_activities:write'] },
+  { id: 'patients.catalogObjectives', route: '/admin/catalogos/objetivos-especificos', cells: ['catalog_therapeutic_objectives:read', 'catalog_therapeutic_objectives:create', 'catalog_therapeutic_objectives:update'] },
+  { id: 'patients.catalogActivities', route: '/admin/catalogos/actividades', cells: ['catalog_therapeutic_activities:read', 'catalog_therapeutic_activities:create', 'catalog_therapeutic_activities:update'] },
   {
     id: 'map',
     route: '/admin/mapa',
@@ -131,7 +131,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   {
     id: 'workers.list',
     route: '/admin/workers',
-    cells: ['worker:read', 'worker_contact:read', 'worker:export', 'talentum:write'],
+    cells: ['worker:read', 'worker_contact:read', 'worker:export', 'talentum:create', 'talentum:update'],
   },
   {
     id: 'workers.detail',
@@ -142,26 +142,26 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       // O operacional numa linha só: perfil profissional, etiquetas, conta de teste, edição e a
       // aba de disponibilidade. `worker:disable` fica fora: a baixa é decidida no back pela
       // transição de status e não tem botão próprio no front (cai em "Outras células").
-      c('profile', 'worker', ['read', 'write'], 'availability'),
+      c('profile', 'worker', ['read', 'create', 'update'], 'availability'),
       c('contact', 'worker_contact', ['read']),
       // Dossiê = nascimento, sexo, DNI, raça, religião… (célula da C3/F2). Endereço é célula própria
       // (linha, coordenada, raio) — a MESMA que vale na aba Prestadores do mapa.
       c('dossier', 'worker_pii', ['read']),
       c('address', 'worker_address', ['read']),
-      c('documents', 'worker_document', ['read', 'write', 'delete', 'validate'], 'documents'),
+      c('documents', 'worker_document', ['read', 'create', 'update', 'delete', 'validate'], 'documents'),
       c('encuadres', 'match', ['read'], 'encuadres'),
     ],
   },
-  { id: 'tags', route: '/admin/tags', cells: ['worker:read', 'worker:write'] },
+  { id: 'tags', route: '/admin/tags', cells: ['worker:read', 'worker:create', 'worker:update'] },
 
   // ── Vagas ──────────────────────────────────────────────────────────────────────────────────
-  { id: 'vacancies.list', route: '/admin/vacancies', cells: ['vacancy:read', 'vacancy:write', 'talentum:write'] },
-  { id: 'vacancies.create', route: '/admin/vacancies/new', cells: ['vacancy:read', 'vacancy:write'] },
-  { id: 'vacancies.addressReview', route: '/admin/vacancies/pending-address-review', cells: ['vacancy:read', 'vacancy:write'] },
+  { id: 'vacancies.list', route: '/admin/vacancies', cells: ['vacancy:read', 'vacancy:create', 'vacancy:update', 'talentum:create', 'talentum:update'] },
+  { id: 'vacancies.create', route: '/admin/vacancies/new', cells: ['vacancy:read', 'vacancy:create', 'vacancy:update'] },
+  { id: 'vacancies.addressReview', route: '/admin/vacancies/pending-address-review', cells: ['vacancy:read', 'vacancy:create', 'vacancy:update'] },
   {
     id: 'vacancies.talentum',
     route: '/admin/vacancies/:id/talentum',
-    cells: ['vacancy:read', 'vacancy:write', 'talentum:write', 'prescreening:write'],
+    cells: ['vacancy:read', 'vacancy:create', 'vacancy:update', 'talentum:create', 'talentum:update', 'prescreening:create', 'prescreening:update'],
   },
   {
     id: 'vacancies.detail',
@@ -170,15 +170,15 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
     containers: [
       // `vacancy:delete` sem botão (ui-gate-debt.json): arquivar é status CLOSED via write. O caso
       // cobre cabeçalho, perfil requerido, links de reunião e a aba Links (tudo dado da vaga).
-      c('case', 'vacancy', ['read', 'write'], 'links'),
+      c('case', 'vacancy', ['read', 'create', 'update'], 'links'),
       // O card Paciente mostra o NOME do paciente — dado de outro titular, célula de identidade
       // dele (a rota projeta; sem ela vem "Contato restrito").
       c('patient', 'patient_identity', ['read']),
-      c('funnel', 'funnel', ['read', 'write'], 'encuadres'),
+      c('funnel', 'funnel', ['read', 'create', 'update'], 'encuadres'),
       c('match', 'match', ['read', 'execute'], 'encuadres'),
       c('invites', 'messaging', ['send'], 'encuadres'),
-      c('prescreening', 'prescreening', ['read', 'write'], 'talentum'),
-      c('talentum', 'talentum', ['read', 'write'], 'talentum'),
+      c('prescreening', 'prescreening', ['read', 'create', 'update'], 'talentum'),
+      c('talentum', 'talentum', ['read', 'create', 'update'], 'talentum'),
     ],
   },
 
@@ -186,9 +186,9 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   { id: 'recruitment', route: '/admin/recruitment', cells: ['recruitment:read', 'match:read', 'talentum:read'] },
   { id: 'recruitment.health', route: '/admin/recruitment/health', cells: ['messaging:read'] },
   { id: 'recruitment.blocked', route: '/admin/recruitment/blocked-attempts', cells: ['recruitment:read'] },
-  { id: 'messaging.stageMessages', route: '/admin/mensajes-por-etapa', cells: ['messaging:read', 'messaging:write'] },
-  { id: 'messaging.templates', route: '/admin/plantillas', cells: ['messaging:read', 'messaging:write'] },
-  { id: 'messaging.presentationInvite', route: '/admin/invitacion-presentacion', cells: ['messaging:read', 'messaging:write', 'messaging:send'] },
+  { id: 'messaging.stageMessages', route: '/admin/mensajes-por-etapa', cells: ['messaging:read', 'messaging:create', 'messaging:update'] },
+  { id: 'messaging.templates', route: '/admin/plantillas', cells: ['messaging:read', 'messaging:create', 'messaging:update'] },
+  { id: 'messaging.presentationInvite', route: '/admin/invitacion-presentacion', cells: ['messaging:read', 'messaging:create', 'messaging:update', 'messaging:send'] },
 
   // ── Administração ──────────────────────────────────────────────────────────────────────────
   { id: 'dedup', route: '/admin/dedup', cells: ['dedup:read', 'dedup:execute'] },

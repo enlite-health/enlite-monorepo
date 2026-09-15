@@ -45,7 +45,7 @@ describe('VacancyMeetLinksCard', () => {
   });
 
   it('D269 — enforcement=on com vacancy:write: botão "salvar" existe', () => {
-    comEnforcement(['vacancy:write'], 'on');
+    comEnforcement(['vacancy:update'], 'on');
     render(<VacancyMeetLinksCard {...baseProps} />);
     expect(screen.getByRole('button', { name: /saveLinks/ })).toBeInTheDocument();
   });

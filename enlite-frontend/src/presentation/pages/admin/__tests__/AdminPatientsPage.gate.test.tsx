@@ -122,7 +122,7 @@ describe('AdminPatientsPage', () => {
   });
 
   it('enforcement=on, com patient:write: new-patient-btn existe', () => {
-    comEnforcement(['patient:write'], 'on');
+    comEnforcement(['patient:create'], 'on');
     render(<AdminPatientsPage />);
     expect(screen.getByTestId('new-patient-btn')).toBeInTheDocument();
   });

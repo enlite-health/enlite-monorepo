@@ -35,7 +35,7 @@ export function FunnelStageMessagesPage(): JSX.Element {
   const { t } = useTranslation();
   // PUT /funnel-stage-messages/:stage → messaging:write. Sem papel: a célula é
   // o freio, e com o engine desligado o gate deixa passar (D268).
-  const { allowed: canWrite, denied: writeDenied } = useActionGate('messaging', 'write');
+  const { allowed: canWrite, denied: writeDenied } = useActionGate('messaging', 'update');
   const [config, setConfig] = useState<FunnelStageMessagesConfig | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [rows, setRows] = useState<Record<string, RowState>>({});

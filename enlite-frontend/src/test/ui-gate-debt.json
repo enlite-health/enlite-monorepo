@@ -31,6 +31,78 @@
     {
       "cell": "worker:delete",
       "motivo": "D269 — célula existe no catálogo (seed 206) mas NENHUMA rota do backend a declara (grep perm.require = 0) e nenhum botão a chama. Sem rota, não há o que gatear; candidata a descontinuar pelo sync."
+    },
+    {
+      "cell": "catalog_therapeutic_activities:write",
+      "motivo": "PR-8b (ADR-2, SUP-30/31, migration 435) — recurso splitado em create/update; a linha `write` FICA no catálogo (as rotas ainda a exigem via alias na janela de transição), mas nenhuma tela a consome mais: TherapeuticCatalogPage.tsx usa `catalog_therapeutic_activities:create`/`:update`."
+    },
+    {
+      "cell": "catalog_therapeutic_objectives:write",
+      "motivo": "PR-8b (ADR-2, SUP-30/31, migration 435) — idem catalog_therapeutic_activities: TherapeuticCatalogPage.tsx usa create/update."
+    },
+    {
+      "cell": "funnel:write",
+      "motivo": "PR-8b (ADR-2, SUP-30/31, migration 435) — recurso splitado; ContactNotesModal/ContactNoteItem/KanbanBoard usam `funnel:create`/`funnel:update`, nunca mais `funnel:write`."
+    },
+    {
+      "cell": "messaging:write",
+      "motivo": "PR-8b (ADR-2, SUP-30/31, migration 435) — FunnelStageMessagesPage/PresentationInvitePage/screenRegistry usam `messaging:create`/`messaging:update`."
+    },
+    {
+      "cell": "patient:write",
+      "motivo": "PR-8b (ADR-2, SUP-30/31, migration 435) — AdminPatientsPage/PatientChatRolesPage/PatientKanbanBoard/screenRegistry usam `patient:create`/`patient:update`."
+    },
+    {
+      "cell": "patient_address:write",
+      "motivo": "PR-8b (ADR-2, SUP-30/31, migration 435) — LocalizacoesCard/screenRegistry usam `patient_address:create`/`patient_address:update`."
+    },
+    {
+      "cell": "patient_care_team:write",
+      "motivo": "PR-8b (ADR-2, SUP-30/31, migration 435) — EquipeTratanteCard/screenRegistry usam `patient_care_team:create`/`patient_care_team:update`."
+    },
+    {
+      "cell": "patient_chat:write",
+      "motivo": "PR-8b (ADR-2, SUP-30/31, migration 435) — PatientChatIdsCard/screenRegistry usam `patient_chat:create`/`patient_chat:update`."
+    },
+    {
+      "cell": "patient_clinical:write",
+      "motivo": "PR-8b (ADR-2, SUP-30/31, migration 435) — DiagnosticoCard/screenRegistry usam `patient_clinical:create`/`patient_clinical:update`."
+    },
+    {
+      "cell": "patient_coverage:write",
+      "motivo": "PR-8b (ADR-2, SUP-30/31, migration 435) — CoberturaMedicaCard/screenRegistry usam `patient_coverage:create`/`patient_coverage:update`."
+    },
+    {
+      "cell": "patient_family:write",
+      "motivo": "PR-8b (ADR-2, SUP-30/31, migration 435) — FamiliaresCard/ExternalContactsCard/EmergencyMarkButton/screenRegistry usam `patient_family:create`/`patient_family:update`."
+    },
+    {
+      "cell": "patient_services:write",
+      "motivo": "PR-8b (ADR-2, SUP-30/31, migration 435) — ServicosContratadosCard/screenRegistry usam `patient_services:create`/`patient_services:update`."
+    },
+    {
+      "cell": "patient_therapeutic_project:write",
+      "motivo": "PR-8b (ADR-2, SUP-30/31, migration 435) — ProjetoTerapeuticoCard/TherapeuticProjectDrawer/screenRegistry usam `patient_therapeutic_project:create`/`:update` (o \"Editar\" cria versão nova, então também é `create` — cuidado do contrato)."
+    },
+    {
+      "cell": "prescreening:write",
+      "motivo": "PR-8b (ADR-2, SUP-30/31, migration 435) — VacancyPrescreeningConfig/screenRegistry usam `prescreening:update` (upsert resolvido como update, regra do orquestrador 15/09)."
+    },
+    {
+      "cell": "talentum:write",
+      "motivo": "PR-8b (ADR-2, SUP-30/31, migration 435) — VacancyTalentumCard/TalentumConfigPage/AdminVacanciesPage/AdminWorkersPage/screenRegistry usam `talentum:create`/`talentum:update`."
+    },
+    {
+      "cell": "user_management:write",
+      "motivo": "PR-8b (ADR-2, SUP-30/31, migration 435) — AdminUsersPage usa `user_management:create` (Crear) e `user_management:update` (Reset)."
+    },
+    {
+      "cell": "worker:write",
+      "motivo": "PR-8b (ADR-2, SUP-30/31, migration 435) — WorkerPersonalInfoCard/WorkerEditModal/WorkerTagsArea/WorkerTestAccountToggle/TagCatalogPage/screenRegistry usam `worker:create`/`worker:update`."
+    },
+    {
+      "cell": "worker_document:write",
+      "motivo": "PR-8b (ADR-2, SUP-30/31, migration 435) — WorkerDocumentsCard/WorkerDetailContent usam `worker_document:create` (upload); `worker_document:update` cobre validade do documento."
     }
   ]
 }

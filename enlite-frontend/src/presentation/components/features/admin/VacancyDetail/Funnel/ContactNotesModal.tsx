@@ -137,7 +137,7 @@ export function ContactNotesModal({
             {/* POST .../contact-notes → funnel:write (D269). */}
             <ActionButton
               resource="funnel"
-              action="write"
+              action="create"
               variant="primary"
               size="sm"
               onClick={handleSubmit}
