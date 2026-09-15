@@ -3205,6 +3205,8 @@
             "errorConsentGeneric": "No se pudo registrar el consentimiento. Probá de nuevo.",
             "errorRevokeGeneric": "No se pudo revocar el consentimiento. Probá de nuevo.",
             "errorLoadGeneric": "No se pudo cargar la lista de documentos. Probá de nuevo.",
+            "noReadPermission": "No tenés permiso para ver los documentos de este paciente.",
+            "uploadSuccess": "Documento enviado",
             "documentTypeLabels": {
               "image_consent": "Consentimiento de imagen",
               "image_consent_revocation": "Revocación de consentimiento"
