@@ -16,6 +16,7 @@
  * `PermissionMiddleware` usa para decidir se a request é gated de verdade.
  */
 
+import { expandWriteCells } from '../domain/PermissionCell';
 import type { AuthzContract, PermissionClient } from './ports';
 import type { PermissionService } from './PermissionService';
 
@@ -36,6 +37,12 @@ export class GetMyAuthzUseCase {
       this.permissions.resolve(input.uid, input.tenantId),
       this.permissions.features(),
     ]);
-    return { ...resolved, features, enforcement: this.engineEnabled ? 'on' : 'off' };
+    // ADR-2/SUP-30 (contracts/permissions-split.md linha 21): o contrato que o painel
+    // lê NUNCA mostra `<recurso>:write` de recurso splitado — só a versão expandida
+    // (`create`+`update`). `permission_management:write` passa intacto. Isto NÃO toca
+    // o `resolved` usado pelo enforcement (`PermissionMiddleware`/`PermissionService.can`
+    // seguem lendo o snapshot cru) — só o que este contrato devolve ao front.
+    const permissions = expandWriteCells(resolved.permissions);
+    return { ...resolved, permissions, features, enforcement: this.engineEnabled ? 'on' : 'off' };
   }
 }

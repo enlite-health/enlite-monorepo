@@ -163,6 +163,37 @@ describe('GetMyAuthzUseCase', () => {
     expect(result.features.AR['screen:talentum'].enabled).toBe(true);
   });
 
+  // ── ADR-2/SUP-30 (contracts/permissions-split.md linha 21): o painel NUNCA vê
+  // `<recurso>:write` de recurso splitado — só a versão expandida.
+  it('write de recurso splitado nunca chega ao painel — vem expandido em create+update', async () => {
+    const client = {
+      resolve: jest.fn().mockResolvedValue({
+        uid: 'ana', tenantId: 't', status: 'ACTIVE',
+        permissions: ['vacancy:write', 'worker:read'],
+        countries: [], groups: [],
+      }),
+      features: jest.fn().mockResolvedValue({}),
+      can: jest.fn(), isFeatureAvailable: jest.fn(), featureConfig: jest.fn(), invalidate: jest.fn(),
+    };
+    const result = await new GetMyAuthzUseCase(client).execute({ uid: 'ana', tenantId: 't' });
+    expect(result.permissions.sort()).toEqual(['vacancy:create', 'vacancy:update', 'worker:read'].sort());
+    expect(result.permissions).not.toContain('vacancy:write');
+  });
+
+  it('permission_management:write chega intacto ao painel — é a única rota que fica write', async () => {
+    const client = {
+      resolve: jest.fn().mockResolvedValue({
+        uid: 'ana', tenantId: 't', status: 'ACTIVE',
+        permissions: ['permission_management:write'],
+        countries: [], groups: [],
+      }),
+      features: jest.fn().mockResolvedValue({}),
+      can: jest.fn(), isFeatureAvailable: jest.fn(), featureConfig: jest.fn(), invalidate: jest.fn(),
+    };
+    const result = await new GetMyAuthzUseCase(client).execute({ uid: 'ana', tenantId: 't' });
+    expect(result.permissions).toEqual(['permission_management:write']);
+  });
+
   /**
    * D268 — `enforcement` espelha o `engineEnabled` INJETADO no construtor,
    * nunca uma leitura de env própria do módulo (`PermissionClient` acima nem
