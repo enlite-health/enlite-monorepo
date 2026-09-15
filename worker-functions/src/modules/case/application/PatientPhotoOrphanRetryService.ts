@@ -58,7 +58,13 @@ export class PatientPhotoOrphanRetryService {
       await this.repo.remove(row.id, client);
       return true;
     } catch (err) {
-      logger.warn({ err, orphanId: row.id, bucket: row.bucket }, '[PatientPhotoOrphanRetryService] ainda falhando');
+      // Conserto #5 da 2ª revisão do PR-4: mesmo motivo de `PatientObjectStorageBase.delete` —
+      // `err.message` do `@google-cloud/storage` tende a trazer o nome do objeto. Aqui, além
+      // disso, `objectPath` já foi decifrado (KMS) na linha acima — nunca vai para o log, só
+      // `orphanId`/`bucket` (identificam a LINHA da fila, não o caminho no bucket) e código/status.
+      const code = (err as { code?: number })?.code;
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      logger.warn({ code, status, orphanId: row.id, bucket: row.bucket }, '[PatientPhotoOrphanRetryService] ainda falhando');
       return false;
     }
   }

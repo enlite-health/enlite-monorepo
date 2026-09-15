@@ -63,7 +63,13 @@ export abstract class PatientObjectStorageBase {
     } catch (err) {
       const code = (err as { code?: number })?.code;
       if (code === 404) return; // já não existe: sucesso do ponto de vista do chamador
-      logger.warn({ err }, `[${this.constructor.name}] falha ao apagar objeto — chamador decide órfão`);
+      // Conserto #5 da 2ª revisão do PR-4: NÃO logar `err` inteiro (pino serializa
+      // `err.message`/stack) — a mensagem de erro do `@google-cloud/storage` costuma trazer o
+      // NOME DO OBJETO (ex.: "No such object: bucket/uuid.jpg"), e este arquivo nunca loga
+      // objectPath (comentário do topo do arquivo/lex-pr4-foto #6/#9). Só código/status, que
+      // identifica a CLASSE do erro sem carregar o caminho.
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      logger.warn({ code, status }, `[${this.constructor.name}] falha ao apagar objeto — chamador decide órfão`);
       throw err;
     }
   }
