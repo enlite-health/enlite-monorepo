@@ -26,10 +26,12 @@ jest.mock('@shared/logging', () => ({
 const ESPERADO: Record<string, string> = {
   'GET /workers/status-dashboard': 'worker:read',
   'GET /workers/by-status/:status': 'worker:read',
-  'PUT /workers/:id/status': 'worker:write',
-  'PUT /workers/:id/occupation': 'worker:write',
+  // PR-8b 8b.4: os 3 PUT (worker/worker_document) splitados — todos update (ação sobre
+  // recurso existente; pr8b-mapa-rotas.tsv linhas 86-88).
+  'PUT /workers/:id/status': 'worker:update',
+  'PUT /workers/:id/occupation': 'worker:update',
   'GET /workers/docs-expiring': 'worker_document:read',
-  'PUT /workers/:id/doc-expiry': 'worker_document:write',
+  'PUT /workers/:id/doc-expiry': 'worker_document:update',
   'GET /workers/:id/encuadres': 'match:read',
   'GET /workers/:id/cases': 'match:read',
   'GET /cases/:caseNumber/encuadres': 'match:read',
@@ -82,19 +84,19 @@ describe('família admin.encuadre — as 10 rotas que o perímetro não alcança
     // Nenhuma célula aqui é nova: as 5 já são declaradas por `admin.workers`.
     // O que esta família acrescenta é uma ALAVANCA de rollout separada.
     expect(new Set(Object.values(declaradas()))).toEqual(
-      new Set(['worker:read', 'worker:write', 'worker_document:read', 'worker_document:write', 'match:read']),
+      new Set(['worker:read', 'worker:update', 'worker_document:read', 'worker_document:update', 'match:read']),
     );
   });
 
-  it('ESCREVER status/ocupação de funil é worker:write — não uma leitura de dashboard', () => {
-    expect(declaradas()['PUT /workers/:id/status']).toBe('worker:write');
-    expect(declaradas()['PUT /workers/:id/occupation']).toBe('worker:write');
+  it('EDITAR status/ocupação de funil é worker:update — não uma leitura de dashboard', () => {
+    expect(declaradas()['PUT /workers/:id/status']).toBe('worker:update');
+    expect(declaradas()['PUT /workers/:id/occupation']).toBe('worker:update');
     expect(declaradas()['GET /workers/status-dashboard']).toBe('worker:read');
   });
 
   it('vencimento de documento é worker_document, não worker', () => {
     expect(declaradas()['GET /workers/docs-expiring']).toBe('worker_document:read');
-    expect(declaradas()['PUT /workers/:id/doc-expiry']).toBe('worker_document:write');
+    expect(declaradas()['PUT /workers/:id/doc-expiry']).toBe('worker_document:update');
   });
 
   it('as 4 leituras de encuadre/caso são match:read', () => {

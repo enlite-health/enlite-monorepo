@@ -24,11 +24,11 @@ jest.mock('@shared/logging', () => ({
 
 /** Mapa esperado — copiado do route-permission-map.md, não do código. */
 const ESPERADO: Record<string, string> = {
-  'POST /users': 'user_management:write',
+  'POST /users': 'user_management:create',  // PR-8b 8b.4
   'GET /users': 'user_management:read',
   'DELETE /users/by-email': 'user_management:delete',
   'DELETE /users/:id': 'user_management:delete',
-  'POST /users/:id/reset-password': 'user_management:write',
+  'POST /users/:id/reset-password': 'user_management:update',  // PR-8b 8b.4
 };
 
 /** Cada handler devolve o próprio nome — é o que identifica quem foi chamado. */

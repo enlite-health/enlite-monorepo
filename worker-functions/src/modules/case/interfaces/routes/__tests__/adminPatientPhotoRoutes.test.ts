@@ -35,15 +35,18 @@ jest.mock('@google-cloud/storage', () => ({
 }));
 
 const ESPERADO: Record<string, string> = {
-  'POST /patients/:id/photo': 'patient_identity:write',
-  'DELETE /patients/:id/photo': 'patient_identity:write',
+  // PR-8b (8b.4, ADR-2/SUP-30): patient_identity:write splitado — create no que gera registro
+  // novo (upload inicial de foto/documento/consentimento), update no que altera o existente
+  // (apagar foto, revogar consentimento) — pr8b-mapa-rotas.tsv linhas 105-109.
+  'POST /patients/:id/photo': 'patient_identity:create',
+  'DELETE /patients/:id/photo': 'patient_identity:update',
   'GET /patients/:id/photo': 'patient_identity:read',
-  'POST /patients/:id/documents': 'patient_identity:write',
+  'POST /patients/:id/documents': 'patient_identity:create',
   'GET /patients/:id/documents/:documentId': 'patient_consent_documents:read',
   'GET /patients/:id/documents': 'patient_consent_documents:read',
-  'POST /patients/:id/image-consents': 'patient_identity:write',
+  'POST /patients/:id/image-consents': 'patient_identity:create',
   'GET /patients/:id/image-consents/vigente': 'patient_identity:read',
-  'POST /patients/:id/image-consents/:cid/revoke': 'patient_identity:write',
+  'POST /patients/:id/image-consents/:cid/revoke': 'patient_identity:update',
 };
 
 function buildRouter(controllers: {

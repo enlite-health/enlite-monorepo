@@ -38,14 +38,18 @@ jest.mock('../../controllers/MessagingController', () => ({
   }),
 }));
 
-/** Mapa esperado — o CORRIGIDO, com `messaging:write` no CRUD de template. */
+/**
+ * Mapa esperado — CRUD de template splitado (PR-8b, 8b.4, ADR-2/SUP-30): `POST`
+ * cria (`create`), `PUT`/`DELETE` alteram o existente (`update`, regra
+ * DELETE-fica-write generalizada — pr8b-mapa-rotas.tsv linhas 89-91).
+ */
 const ESPERADO: Record<string, string> = {
   'POST /whatsapp/vacancy-match': 'messaging:send',
   'POST /whatsapp/direct': 'messaging:send',
   'GET /templates': 'messaging:read',
-  'POST /templates': 'messaging:write',
-  'PUT /templates/:slug': 'messaging:write',
-  'DELETE /templates/:slug': 'messaging:write',
+  'POST /templates': 'messaging:create',
+  'PUT /templates/:slug': 'messaging:update',
+  'DELETE /templates/:slug': 'messaging:update',
   'POST /bulk-dispatch-incomplete': 'messaging:send',
 };
 
@@ -83,10 +87,10 @@ describe('família admin.messaging — 7 rotas, 3 células', () => {
    * O caso que este PR existe para travar: se alguém "simplificar" as três
    * células em uma, este teste fica vermelho apontando exatamente onde.
    */
-  it('ESCREVER template é messaging:write — NÃO messaging:send', () => {
-    for (const rota of ['POST /templates', 'PUT /templates/:slug', 'DELETE /templates/:slug']) {
-      expect(declaradas()[rota]).toBe('messaging:write');
-    }
+  it('ESCREVER template é messaging:create/update — NÃO messaging:send (PR-8b 8b.4)', () => {
+    expect(declaradas()['POST /templates']).toBe('messaging:create');
+    expect(declaradas()['PUT /templates/:slug']).toBe('messaging:update');
+    expect(declaradas()['DELETE /templates/:slug']).toBe('messaging:update');
   });
 
   it('DISPARAR é messaging:send, e LISTAR template é messaging:read', () => {
@@ -102,7 +106,8 @@ describe('família admin.messaging — 7 rotas, 3 células', () => {
       return acc;
     }, {});
     expect(porCelula['messaging:send'].every((r) => r.includes('whatsapp') || r.includes('bulk'))).toBe(true);
-    expect(porCelula['messaging:write'].every((r) => r.includes('/templates'))).toBe(true);
+    expect(porCelula['messaging:create'].every((r) => r.includes('/templates'))).toBe(true);
+    expect(porCelula['messaging:update'].every((r) => r.includes('/templates'))).toBe(true);
   });
 
   it.each([

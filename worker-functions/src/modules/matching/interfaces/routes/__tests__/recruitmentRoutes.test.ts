@@ -38,7 +38,11 @@ const ESPERADO: Record<string, string> = {
   'GET /admin/recruitment/global-metrics': 'recruitment:read',
   'GET /admin/recruitment/case/:caseNumber': 'recruitment:read',
   'GET /admin/recruitment/zones': 'recruitment:read',
-  'POST /admin/recruitment/calculate-reemplazos': 'recruitment:write',
+  // PR-8b 8b.4: calcular reemplazos exige create E update (pr8b-mapa-rotas.tsv linha 78,
+  // regra-orquestrador 15/09 — cálculo em massa sem :id). O scanner só carimba o 1º guard do
+  // array (scanExpressRouter.ts, cellOfRoute); o 2º é provado por
+  // pr8b-ambiguous-routes.test.ts.
+  'POST /admin/recruitment/calculate-reemplazos': 'recruitment:create',
   'GET /admin/recruitment/blocked-attempts': 'recruitment:read',
 };
 
@@ -88,8 +92,8 @@ describe('família admin.recruitment — as 10 rotas deste router declaram célu
     expect(declaradas()['GET /admin/recruitment/talentum-workers']).toBe('talentum:read');
   });
 
-  it('calcular reemplazos ESCREVE — recruitment:write, não read', () => {
-    expect(declaradas()['POST /admin/recruitment/calculate-reemplazos']).toBe('recruitment:write');
+  it('calcular reemplazos ESCREVE — recruitment:create (+ update, pr8b-ambiguous-routes.test.ts), não read', () => {
+    expect(declaradas()['POST /admin/recruitment/calculate-reemplazos']).toBe('recruitment:create');
   });
 
   /**

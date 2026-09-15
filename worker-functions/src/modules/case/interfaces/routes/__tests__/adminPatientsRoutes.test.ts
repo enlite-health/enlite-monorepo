@@ -57,12 +57,12 @@ jest.mock('@shared/audit/resourceAccessLog', () => ({
 /** Mapa esperado — copiado do route-permission-map.md, não do código. */
 const ESPERADO: Record<string, string | null> = {
   'GET /patient-chat-roles': 'patient:read',
-  'POST /patient-chat-roles': 'patient:write',
-  'PATCH /patient-chat-roles/:code': 'patient:write',
-  'DELETE /patient-chat-roles/:code': 'patient:write',
+  'POST /patient-chat-roles': 'patient:create',
+  'PATCH /patient-chat-roles/:code': 'patient:update',
+  'DELETE /patient-chat-roles/:code': 'patient:update',
   // Catálogo de coberturas (mig 311, spec 012): mesma régua dos papéis de chat.
   'GET /catalogs/insurance-providers': 'patient_coverage:read',
-  'POST /catalogs/insurance-providers': 'patient:write',
+  'POST /catalogs/insurance-providers': 'patient:create',
   'GET /chat-groups': 'messaging:read',
   'GET /patients/stats': 'patient:read',
   'GET /patients/funnel': 'patient:read',
@@ -70,60 +70,60 @@ const ESPERADO: Record<string, string | null> = {
   // Mapa de pacientes (REQ-04): POST com corpo, leitura.
   'POST /patients/map': 'patient_address:read',
   'GET /patients': 'patient:read',
-  'POST /patients': 'patient:write',
+  'POST /patients': 'patient:create',
   'GET /patients/:id': 'patient:read',
   // D286: endereços são o container `patient_address` — a mesma célula vale no mapa (lex C7).
   'GET /patients/:patientId/addresses': 'patient_address:read',
-  'POST /patients/:patientId/addresses': 'patient_address:write',
-  'PATCH /patients/:patientId/addresses/:addressId': 'patient_address:write',
+  'POST /patients/:patientId/addresses': 'patient_address:create',
+  'PATCH /patients/:patientId/addresses/:addressId': 'patient_address:update',
   'GET /patients/:id/vacancies': 'vacancy:read',
-  'PUT /patients/:id/status': 'patient:write',
+  'PUT /patients/:id/status': 'patient:update',
   'GET /patients/:id/status-history': 'patient:read',
   // 410 (spec 018, PR-6, ADR-5): ativar deixou de ser rota única do paciente. Sem célula, como o
   // 410 de support-network.
   'POST /patients/:id/activate': null,
-  'POST /patients/:id/contracted-services/:sid/activate-recruitment': 'patient_services:write',
+  'POST /patients/:id/contracted-services/:sid/activate-recruitment': 'patient_services:update',
   'GET /patients/:id/chat-candidates': 'messaging:read',
-  'PUT /patients/:id/chat-ids': 'patient_chat:write',
-  'PATCH /patients/:id/test-flag': 'patient:write',
+  'PUT /patients/:id/chat-ids': 'patient_chat:update',
+  'PATCH /patients/:id/test-flag': 'patient:update',
   'DELETE /patients/:id': 'patient:delete',
   // Serviço contratado (spec 013), diagnósticos CID-11 (spec 016) e terminologia —
   // sob a célula GROSSA no sync main→stage; o fatiamento por container é a D286.
   'GET /patients/:id/contracted-services': 'patient_services:read',
-  'POST /patients/:id/contracted-services': 'patient_services:write',
-  'PATCH /patients/:id/contracted-services/:sid': 'patient_services:write',
-  'POST /patients/:id/contracted-services/:sid/providers': 'patient_services:write',
-  'PATCH /patients/:id/contracted-services/:sid/providers/:pid': 'patient_services:write',
+  'POST /patients/:id/contracted-services': 'patient_services:create',
+  'PATCH /patients/:id/contracted-services/:sid': 'patient_services:update',
+  'POST /patients/:id/contracted-services/:sid/providers': 'patient_services:update',
+  'PATCH /patients/:id/contracted-services/:sid/providers/:pid': 'patient_services:update',
   'GET /patients/:id/diagnoses': 'patient_clinical:read',
-  'POST /patients/:id/diagnoses': 'patient_clinical:write',
-  'PATCH /patients/:id/diagnoses/:did': 'patient_clinical:write',
+  'POST /patients/:id/diagnoses': 'patient_clinical:create',
+  'PATCH /patients/:id/diagnoses/:did': 'patient_clinical:update',
   'GET /terminology/search': 'patient_clinical:read',
   // D286 (lex C5): o PATCH dinâmico por seção virou rotas explícitas, uma por container.
   // `support-network` SAIU do whitelist (spec 018, PR-1, SUP-37) — a rota abaixo é 410, sem célula.
-  'PATCH /patients/:id/general': 'patient_identity:write',
-  'PATCH /patients/:id/clinical': 'patient_clinical:write',
-  'PATCH /patients/:id/coverage': 'patient_coverage:write',
-  'PATCH /patients/:id/service': 'patient_services:write',
+  'PATCH /patients/:id/general': 'patient_identity:update',
+  'PATCH /patients/:id/clinical': 'patient_clinical:update',
+  'PATCH /patients/:id/coverage': 'patient_coverage:update',
+  'PATCH /patients/:id/service': 'patient_services:update',
   // 410 sem célula (a rota não faz mais nada com o dado — só recusa).
   'PATCH /patients/:id/support-network': null,
   // Escrita por linha (spec 018, PR-1, ADR-1; contracts/support-network.md).
-  'POST /patients/:id/responsibles': 'patient_family:write',
-  'PATCH /patients/:id/responsibles/:rid': 'patient_family:write',
-  'POST /patients/:id/responsibles/:rid/deactivate': 'patient_family:write',
-  'POST /patients/:id/coverage-emergency-contacts': 'patient_coverage:write',
-  'PATCH /patients/:id/coverage-emergency-contacts/:cid': 'patient_coverage:write',
-  'POST /patients/:id/coverage-emergency-contacts/:cid/deactivate': 'patient_coverage:write',
+  'POST /patients/:id/responsibles': 'patient_family:create',
+  'PATCH /patients/:id/responsibles/:rid': 'patient_family:update',
+  'POST /patients/:id/responsibles/:rid/deactivate': 'patient_family:update',
+  'POST /patients/:id/coverage-emergency-contacts': 'patient_coverage:create',
+  'PATCH /patients/:id/coverage-emergency-contacts/:cid': 'patient_coverage:update',
+  'POST /patients/:id/coverage-emergency-contacts/:cid/deactivate': 'patient_coverage:update',
   // Equipe tratante — escrita por linha (spec 018, PR-5, US-11; contracts/care-team.md). Célula
   // NOVA `patient_care_team:write` (a de leitura já existia, PR-1).
-  'POST /patients/:id/professionals': 'patient_care_team:write',
-  'PATCH /patients/:id/professionals/:pid': 'patient_care_team:write',
-  'POST /patients/:id/professionals/:pid/deactivate': 'patient_care_team:write',
+  'POST /patients/:id/professionals': 'patient_care_team:create',
+  'PATCH /patients/:id/professionals/:pid': 'patient_care_team:update',
+  'POST /patients/:id/professionals/:pid/deactivate': 'patient_care_team:update',
   // Contatos externos sem vínculo familiar + marca de emergência (spec 018, PR-2, `lex` #4/D-A).
-  'POST /patients/:id/external-contacts': 'patient_family:write',
-  'PATCH /patients/:id/external-contacts/:xid': 'patient_family:write',
-  'POST /patients/:id/external-contacts/:xid/deactivate': 'patient_family:write',
-  'PUT /patients/:id/emergency-contact': 'patient_family:write',
-  'DELETE /patients/:id/emergency-contact': 'patient_family:write',
+  'POST /patients/:id/external-contacts': 'patient_family:create',
+  'PATCH /patients/:id/external-contacts/:xid': 'patient_family:update',
+  'POST /patients/:id/external-contacts/:xid/deactivate': 'patient_family:update',
+  'PUT /patients/:id/emergency-contact': 'patient_family:update',
+  'DELETE /patients/:id/emergency-contact': 'patient_family:update',
 };
 
 /** Rotas da família SEM célula, de propósito: só recusam (410), nunca fazem nada com o dado. */
