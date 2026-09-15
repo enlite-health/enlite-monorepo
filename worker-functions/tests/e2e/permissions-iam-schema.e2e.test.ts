@@ -32,6 +32,8 @@ const GROUP_SUPER    = 'a0000000-0000-0000-0000-000000000005';
 // interview:3 + match:2 + patient:2 + recruitment:2 + talentum:2 +
 // prescreening:2 + analytics:2 + dedup:2 + dashboard:1 + messaging:2 +
 // upload:2 + user_management:3 + permission_management:2 = 41
+// Usado SÓ pelo total do catálogo (S3, linha ~328). A contagem do Acesso Master
+// (D338, migration 436) passa a ser DINÂMICA — ver o teste "todas as permissões ativas".
 const EXPECTED_PERMISSION_COUNT = 41;
 
 // IDs determinísticos para fixtures deste teste
@@ -419,11 +421,27 @@ describe('S3 — Seeds: tenant Enlite, 43 permissions, 5 grupos (2 de sistema + 
     expect(byId.get(GROUP_FIN)).toMatchObject({ name: 'Financeiro', is_system: false });
   });
 
-  it('grupo Acesso Master tem todas as 43 permissões', async () => {
+  it('grupo Acesso Master tem TODAS as permissões ATIVAS do catálogo (D338, migration 436 — contagem dinâmica)', async () => {
+    // Antes da D338 a contagem era o EXPECTED_PERMISSION_COUNT fixo do seed 206. Agora o
+    // Master é reconciliado contra o catálogo vivo (`deprecated_at IS NULL`) — comparar contra
+    // um número fixo faria este teste cair na 1ª célula nova legítima.
+    //
+    // ⚠️ Achado incidental (fora do escopo do D338, não consertado aqui): a view de
+    // compatibilidade `public.permissions` (274, `SELECT * FROM iam.permissions`) NÃO enxerga
+    // `deprecated_at` — a coluna só nasceu na 275, DEPOIS da view, e um `CREATE VIEW ... SELECT *`
+    // congela a lista de colunas na criação (Postgres não reabre o `*` quando a tabela de baixo
+    // ganha coluna nova). Por isso este SELECT vai direto em `iam.permissions`, qualificado —
+    // igual o resto do código pós-274 já faz.
+    const total = await pool.query<{ cnt: string }>(`
+      SELECT COUNT(*) AS cnt FROM iam.permissions WHERE deprecated_at IS NULL
+    `);
     const count = await pool.query<{ cnt: string }>(`
       SELECT COUNT(*) AS cnt FROM group_permissions WHERE group_id = $1
     `, [GROUP_MASTER]);
-    expect(Number(count.rows[0].cnt)).toBe(EXPECTED_PERMISSION_COUNT);
+    expect(Number(count.rows[0].cnt)).toBe(Number(total.rows[0].cnt));
+    // Controle: com o seed 206 cru + catch-up da 436, hoje isso ainda bate com o total fixo —
+    // se divergir, ou o catch-up não rodou, ou uma célula nova ficou fora (os dois são defeito).
+    expect(Number(total.rows[0].cnt)).toBe(EXPECTED_PERMISSION_COUNT);
   });
 
   it('grupo Recrutador: não tem worker:delete, dedup:execute, user_management:write/delete, permission_management:*', async () => {
