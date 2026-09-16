@@ -20,6 +20,7 @@ import type {
   AnaCareNurseBulkPayload,
 } from '../../domain/IAnaCareApiClient';
 import { logger } from '@shared/logging';
+import { AnaCareHttpErrorBase } from './AnaCareHttpError';
 
 const DEFAULT_BASE_URL = 'https://admin.ana.care';
 const SECRET_NAME = 'anacare-api-key';
@@ -29,16 +30,15 @@ const TAG = '[AnaCareClient]';
  * Erro tipado de resposta HTTP não-ok da API AnaCare.
  * Carrega status + corpo cru para permitir tratamento estrutural (ex: detectar
  * conflito de unicidade em telefone/email) sem parsear a mensagem de texto.
+ *
+ * Estende `AnaCareHttpErrorBase` (achado 3 da F2 de anacare-conferencia-de-horas) — mesma forma
+ * de `AnaCareHttpError` (cliente de sessão), mas mecanismo de acesso diferente (X-Agency-Key,
+ * não cookie), então continua sua PRÓPRIA classe/tag/mensagem.
  */
-export class AnaCareApiError extends Error {
-  readonly status: number;
-  readonly body: string;
-
+export class AnaCareApiError extends AnaCareHttpErrorBase {
   constructor(method: string, path: string, status: number, body: string) {
-    super(`${TAG} ${method} ${path} — HTTP ${status}: ${body}`);
+    super(TAG, method, path, status, body);
     this.name = 'AnaCareApiError';
-    this.status = status;
-    this.body = body;
   }
 }
 

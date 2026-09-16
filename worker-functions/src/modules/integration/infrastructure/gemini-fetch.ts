@@ -19,14 +19,15 @@
  *
  * In test environments (NODE_ENV === 'test') the backoff delay is 0,
  * keeping unit tests fast.
+ *
+ * The exponential+jitter delay formula itself lives in `shared/http/backoff.ts`, shared with
+ * `AnaCareRateLimiter.ts` (extracted to kill a literal constant duplication — see F2 of
+ * `anacare-conferencia-de-horas`). Only the formula is shared: what counts as "transient" stays
+ * local to each caller (`isTransientStatus` below is Gemini-specific).
  */
+import { computeBackoffDelayMs } from '@shared/http/backoff';
 
 const MAX_ATTEMPTS = 5;
-const BASE_DELAY_MS = 700;
-const BACKOFF_FACTOR = 2.5;
-const MAX_DELAY_MS = 8000;
-// Up to ±25% randomization so parallel callers don't retry in lockstep.
-const JITTER_RATIO = 0.25;
 
 /**
  * Error thrown when a Gemini/Vertex call fails with an HTTP status.
@@ -55,10 +56,7 @@ function isTransientStatus(status: number): boolean {
 
 function delayMs(attempt: number): number {
   if (process.env.NODE_ENV === 'test') return 0;
-  const raw = BASE_DELAY_MS * Math.pow(BACKOFF_FACTOR, attempt);
-  const capped = Math.min(raw, MAX_DELAY_MS);
-  const jitter = capped * JITTER_RATIO * (Math.random() * 2 - 1);
-  return Math.round(capped + jitter);
+  return computeBackoffDelayMs(attempt);
 }
 
 function sleep(ms: number): Promise<void> {
