@@ -37,11 +37,9 @@ const SNAPSHOT: AnaCareMonthSnapshot = {
   patients: [
     {
       anaCareId: '90000',
-      linked: true,
-      name: 'Lucía Fernández QA',
-      providers: [{ anaCareId: '90200', linked: true, name: 'Rocío García QA', shifts: [] }],
+      providers: [{ anaCareId: '90200', name: 'Rocío García QA', shifts: [] }],
     },
-    { anaCareId: '90447', linked: false, providers: [] },
+    { anaCareId: '90447', providers: [] },
   ],
 };
 
@@ -81,13 +79,13 @@ describe('getMonthSnapshot', () => {
     expect(fetchMock.mock.calls[0][0]).toContain('/api/admin/anacare-hours/months/2026-08');
   });
 
-  it('POSITIVO — filtro por patientSearch roda NO CLIENTE, nunca vai na URL (PII)', async () => {
+  it('POSITIVO — filtro por patientSearch (ID — paciente nunca tem nome, fora de escopo) roda NO CLIENTE, nunca vai na URL', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { success: true, data: SNAPSHOT }));
     globalThis.fetch = fetchMock;
     const service = new AnaCareHoursHttpService();
-    const result = await service.getMonthSnapshot('2026-08', { patientSearch: 'Lucía' });
+    const result = await service.getMonthSnapshot('2026-08', { patientSearch: '90000' });
     expect(result.patients).toHaveLength(1);
-    expect(fetchMock.mock.calls[0][0]).not.toContain('Lucía');
+    expect(fetchMock.mock.calls[0][0]).not.toContain('90000');
     expect(fetchMock.mock.calls[0][0]).not.toContain('search');
   });
 

@@ -36,9 +36,7 @@ function makeSnapshot(overrides: Partial<AnaCareMonthSnapshot> = {}, shifts: Ana
     patients: [
       {
         anaCareId: '90000',
-        linked: true,
-        name: 'Lucía Fernández QA',
-        providers: [{ anaCareId: '90200', linked: true, name: 'Rocío García QA', shifts }],
+        providers: [{ anaCareId: '90200', name: 'Rocío García QA', shifts }],
       },
     ],
     ...overrides,
@@ -63,9 +61,9 @@ describe('getMonthSnapshot', () => {
     expect(snapshot.patients).toEqual([]);
   });
 
-  it('POSITIVO — filtro por patientSearch (nome) restringe a lista de pacientes', async () => {
+  it('POSITIVO — filtro por patientSearch (ID — paciente nunca tem nome, fora de escopo) restringe a lista de pacientes', async () => {
     const service = makeService();
-    const snapshot = await service.getMonthSnapshot('2026-08', { patientSearch: 'Lucía' });
+    const snapshot = await service.getMonthSnapshot('2026-08', { patientSearch: '90000' });
     expect(snapshot.patients).toHaveLength(1);
   });
 
@@ -90,7 +88,7 @@ describe('getMonthSnapshot', () => {
   it('POSITIVO — paciente SEM vínculo (sem nome) é buscável pelo ID Ana Care', async () => {
     const service = new FakeAnaCareHoursService({
       '2026-08': makeSnapshot({
-        patients: [{ anaCareId: '90447', linked: false, providers: [{ anaCareId: '90512', linked: false, shifts: [makeShift()] }] }],
+        patients: [{ anaCareId: '90447', providers: [{ anaCareId: '90512', shifts: [makeShift()] }] }],
       }),
     });
     const snapshot = await service.getMonthSnapshot('2026-08', { patientSearch: '90447' });
@@ -206,11 +204,9 @@ describe('validateBatch', () => {
         patients: [
           {
             anaCareId: '90000',
-            linked: true,
-            name: 'Lucía Fernández QA',
             providers: [
-              { anaCareId: 'p1', linked: true, name: 'Prestador Uno QA', shifts: [makeShift({ id: 's1', status: 'pendiente' })] },
-              { anaCareId: 'p2', linked: true, name: 'Prestador Dos QA', shifts: [makeShift({ id: 's2', status: 'pendiente' })] },
+              { anaCareId: 'p1', name: 'Prestador Uno QA', shifts: [makeShift({ id: 's1', status: 'pendiente' })] },
+              { anaCareId: 'p2', name: 'Prestador Dos QA', shifts: [makeShift({ id: 's2', status: 'pendiente' })] },
             ],
           },
         ],
@@ -233,11 +229,9 @@ describe('validateBatch', () => {
         patients: [
           {
             anaCareId: '90000',
-            linked: true,
-            name: 'Lucía Fernández QA',
             providers: [
-              { anaCareId: 'p1', linked: true, name: 'Prestador Uno QA', shifts: [makeShift({ id: 's1', status: 'pendiente' })] },
-              { anaCareId: 'p2', linked: true, name: 'Prestador Dos QA', shifts: [makeShift({ id: 's2', status: 'pendiente' })] },
+              { anaCareId: 'p1', name: 'Prestador Uno QA', shifts: [makeShift({ id: 's1', status: 'pendiente' })] },
+              { anaCareId: 'p2', name: 'Prestador Dos QA', shifts: [makeShift({ id: 's2', status: 'pendiente' })] },
             ],
           },
         ],

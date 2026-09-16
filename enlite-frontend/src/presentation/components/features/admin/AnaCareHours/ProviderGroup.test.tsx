@@ -25,12 +25,23 @@ function makeShift(overrides: Partial<AnaCareShift> = {}): AnaCareShift {
 }
 
 function makeProvider(overrides: Partial<AnaCareProvider> = {}): AnaCareProvider {
-  return { anaCareId: 'p1', linked: true, name: 'Rocío García QA', shifts: [makeShift()], ...overrides };
+  return { anaCareId: 'p1', name: 'Rocío García QA', shifts: [makeShift()], ...overrides };
 }
 
 const noop = { onValidateShift: vi.fn(), onOpenContestModal: vi.fn(), onToggleShift: vi.fn(), onToggleProviderPending: vi.fn() };
 
 describe('ProviderGroup', () => {
+  it('POSITIVO — o nome do prestador leva data-clarity-mask="True" (parecer do lex, condição a)', () => {
+    render(<ProviderGroup provider={makeProvider({ name: 'Rocío García QA' })} disableActions={false} selectedShiftIds={new Set()} {...noop} />);
+    expect(screen.getByText('Rocío García QA').closest('[data-clarity-mask="True"]')).not.toBeNull();
+  });
+
+  it('NEGATIVO — sem nome resolvido mostra só o ID cru, NUNCA um rótulo negativo tipo "Sin vínculo"', () => {
+    render(<ProviderGroup provider={makeProvider({ name: undefined, anaCareId: '90512' })} disableActions={false} selectedShiftIds={new Set()} {...noop} />);
+    expect(screen.getByText('90512')).toBeInTheDocument();
+    expect(screen.queryByText(/Sin vínculo/)).not.toBeInTheDocument();
+  });
+
   it('POSITIVO — turno pendente mostra checkbox, "Validar" e "Contestar"', () => {
     render(<ProviderGroup provider={makeProvider()} disableActions={false} selectedShiftIds={new Set()} {...noop} />);
     expect(screen.getByTestId('anacare-hours-select-shift-s1')).toBeInTheDocument();

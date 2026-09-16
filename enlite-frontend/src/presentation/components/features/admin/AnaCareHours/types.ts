@@ -88,9 +88,9 @@ export interface AnaCareShift {
 export interface AnaCareProvider {
   /** ↔ `anacare_shift.ana_care_nurse_id` (identidade na fonte, ex.: "90231"). */
   anaCareId: string;
-  /** ↔ `anacare_shift.worker_id IS NOT NULL` (FK resolvida). */
-  linked: boolean;
-  /** Vem do vínculo (`workers`), nunca do retrato — sem `nurse_name_cache` (decisão do Gabriel, 15/09). Só existe se `linked === true` E o ator tem `worker_contact:read`. */
+  /** Nome resolvido pelo backend (lookup em `workers` por `ana_care_id`, país AR, sem
+   * `nurse_name_cache` — decisão do Gabriel, 15/09). Ausente quando não resolvido — a UI mostra
+   * SÓ o ID cru nesse caso, nunca um rótulo negativo tipo "Sin vínculo" (decisão de 16/09). */
   name?: string;
   shifts: AnaCareShift[];
 }
@@ -98,10 +98,8 @@ export interface AnaCareProvider {
 export interface AnaCarePatient {
   /** ↔ `anacare_shift.ana_care_patient_id`. */
   anaCareId: string;
-  /** ↔ `anacare_shift.patient_id IS NOT NULL`. */
-  linked: boolean;
-  /** Vem do vínculo (`patients`), nunca do retrato. Só existe se `linked === true` E o ator tem `patient_identity:read`. */
-  name?: string;
+  /** Lado PACIENTE está FORA de escopo (reconciliação paciente×Ana Care bloqueada, spec 003) —
+   * nunca tem nome; a UI sempre mostra o ID cru (decisão de 16/09). */
   providers: AnaCareProvider[];
 }
 

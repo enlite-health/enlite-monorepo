@@ -37,7 +37,6 @@ function makeShift(overrides: Partial<AnaCareShift> = {}): AnaCareShift {
 function makeProvider(overrides: Partial<AnaCareProvider> = {}): AnaCareProvider {
   return {
     anaCareId: '90200',
-    linked: true,
     name: 'Rocío García QA',
     shifts: [],
     ...overrides,
@@ -47,8 +46,6 @@ function makeProvider(overrides: Partial<AnaCareProvider> = {}): AnaCareProvider
 function makePatient(overrides: Partial<AnaCarePatient> = {}): AnaCarePatient {
   return {
     anaCareId: '90000',
-    linked: true,
-    name: 'Lucía Fernández QA',
     providers: [],
     ...overrides,
   };
@@ -120,26 +117,21 @@ describe('originCounts', () => {
 });
 
 describe('providerDisplayName', () => {
-  it('POSITIVO — prestador vinculado mostra o nome', () => {
-    const provider = makeProvider({ linked: true, name: 'Rocío García QA' });
+  it('POSITIVO — prestador com nome resolvido mostra o nome', () => {
+    const provider = makeProvider({ name: 'Rocío García QA' });
     expect(providerDisplayName(provider)).toBe('Rocío García QA');
   });
 
-  it('NEGATIVO — prestador sem vínculo mostra "Sin vínculo · ID <n>", nunca o nome', () => {
-    const provider = makeProvider({ linked: false, name: undefined, anaCareId: '90512' });
-    expect(providerDisplayName(provider)).toBe('Sin vínculo · ID 90512');
+  it('NEGATIVO — prestador sem nome resolvido mostra só o ID cru, NUNCA um rótulo negativo tipo "Sin vínculo" (decisão de 16/09)', () => {
+    const provider = makeProvider({ name: undefined, anaCareId: '90512' });
+    expect(providerDisplayName(provider)).toBe('90512');
   });
 });
 
 describe('patientDisplayName', () => {
-  it('POSITIVO — paciente vinculado mostra o nome', () => {
-    const patient = makePatient({ linked: true, name: 'Lucía Fernández QA' });
-    expect(patientDisplayName(patient)).toBe('Lucía Fernández QA');
-  });
-
-  it('NEGATIVO — paciente sem vínculo mostra "Sin vínculo · ID <n>"', () => {
-    const patient = makePatient({ linked: false, name: undefined, anaCareId: '90447' });
-    expect(patientDisplayName(patient)).toBe('Sin vínculo · ID 90447');
+  it('paciente NUNCA tem nome (reconciliação fora de escopo) — sempre o ID cru', () => {
+    const patient = makePatient({ anaCareId: '90447' });
+    expect(patientDisplayName(patient)).toBe('90447');
   });
 });
 
@@ -269,30 +261,30 @@ describe('blockReason', () => {
 });
 
 describe('filterPatients', () => {
-  const linked = makePatient({ anaCareId: '90000', linked: true, name: 'Lucía Fernández QA', providers: [makeProvider({ anaCareId: 'p1' })] });
-  const unlinked = makePatient({ anaCareId: '90447', linked: false, name: undefined, providers: [makeProvider({ anaCareId: 'p2' })] });
+  const p90000 = makePatient({ anaCareId: '90000', providers: [makeProvider({ anaCareId: 'p1' })] });
+  const p90447 = makePatient({ anaCareId: '90447', providers: [makeProvider({ anaCareId: 'p2' })] });
 
   it('POSITIVO — sem filtros devolve a lista intacta (mesma referência dos itens)', () => {
-    expect(filterPatients([linked, unlinked])).toEqual([linked, unlinked]);
+    expect(filterPatients([p90000, p90447])).toEqual([p90000, p90447]);
   });
 
-  it('POSITIVO — patientSearch casa pelo nome (case-insensitive)', () => {
-    expect(filterPatients([linked, unlinked], { patientSearch: 'lucía' })).toEqual([linked]);
+  it('POSITIVO — patientSearch casa pelo ID do Ana Care (case-insensitive) — paciente nunca tem nome, fora de escopo', () => {
+    expect(filterPatients([p90000, p90447], { patientSearch: '90000' })).toEqual([p90000]);
   });
 
-  it('POSITIVO — patientSearch casa pelo ID do Ana Care quando não há vínculo', () => {
-    expect(filterPatients([linked, unlinked], { patientSearch: '90447' })).toEqual([unlinked]);
+  it('POSITIVO — patientSearch casa pelo ID do Ana Care', () => {
+    expect(filterPatients([p90000, p90447], { patientSearch: '90447' })).toEqual([p90447]);
   });
 
   it('NEGATIVO — patientSearch sem match devolve lista vazia', () => {
-    expect(filterPatients([linked, unlinked], { patientSearch: 'zzz-no-existe' })).toEqual([]);
+    expect(filterPatients([p90000, p90447], { patientSearch: 'zzz-no-existe' })).toEqual([]);
   });
 
   it('POSITIVO — providerId restringe aos pacientes daquele prestador', () => {
-    expect(filterPatients([linked, unlinked], { providerId: 'p1' })).toEqual([linked]);
+    expect(filterPatients([p90000, p90447], { providerId: 'p1' })).toEqual([p90000]);
   });
 
   it('NEGATIVO — providerId inexistente devolve lista vazia', () => {
-    expect(filterPatients([linked, unlinked], { providerId: 'no-existe' })).toEqual([]);
+    expect(filterPatients([p90000, p90447], { providerId: 'no-existe' })).toEqual([]);
   });
 });

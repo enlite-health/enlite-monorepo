@@ -26,12 +26,9 @@ function snapshot(overrides: Partial<AnaCareMonthSnapshot> = {}): AnaCareMonthSn
     patients: [
       {
         anaCareId: '90000',
-        linked: true,
-        name: 'Lucía Fernández QA',
         providers: [
           {
             anaCareId: 'p1',
-            linked: true,
             name: 'Rocío García QA',
             shifts: [
               {
@@ -167,12 +164,9 @@ describe('AnaCareHoursDetailPage', () => {
       patients: [
         {
           anaCareId: '90000',
-          linked: true,
-          name: 'Lucía Fernández QA',
           providers: [
             {
               anaCareId: 'p1',
-              linked: true,
               name: 'Rocío García QA',
               shifts: [
                 { id: 's1', date: '2026-08-14', scheduledStart: '08:00', scheduledEnd: '16:00', actualStart: '08:00', actualEnd: '16:00', hoursActual: 8, hoursScheduled: 8, origin: 'app', status: 'pendiente', anaCareShiftId: '1' },
@@ -203,12 +197,9 @@ describe('AnaCareHoursDetailPage', () => {
       patients: [
         {
           anaCareId: '90000',
-          linked: true,
-          name: 'Lucía Fernández QA',
           providers: [
             {
               anaCareId: 'p1',
-              linked: true,
               name: 'Rocío García QA',
               shifts: [
                 { id: 'x1', date: '2026-08-01', scheduledStart: '08:00', scheduledEnd: '16:00', actualStart: null, actualEnd: null, hoursActual: null, hoursScheduled: 8, origin: 'sin_checkin', status: 'pendiente', anaCareShiftId: '1' },

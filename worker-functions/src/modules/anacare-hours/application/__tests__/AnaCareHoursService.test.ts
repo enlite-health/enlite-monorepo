@@ -5,6 +5,7 @@
  */
 import { AnaCareHoursService, isValidMonth, periodMonthDate } from '../AnaCareHoursService';
 import { ShiftHoursValidationRepository, ShiftAlreadyValidatedError, type ValidationRow } from '../../infrastructure/ShiftHoursValidationRepository';
+import { AnaCareProviderNameRepository, type WorkerNameCiphertext } from '../../infrastructure/AnaCareProviderNameRepository';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { AnaCareHoursServiceError, VALIDATE_BATCH_MAX_SHIFTS } from '../../domain/AnaCareShift';
 import type { AnaCareRetratoSourceStatus, AnaCareShiftsSource, SourceShiftDTO } from '../../domain/AnaCareShiftsSource';
@@ -16,6 +17,15 @@ jest.mock('../../infrastructure/ShiftHoursValidationRepository', () => {
     ShiftHoursValidationRepository: jest.fn(),
   };
 });
+
+// Default: nenhum worker resolvido (Map vazio) — mesmo comportamento observável de antes desta
+// mudança (nenhum teste que não mexe com nome de prestador precisa saber que o repo existe).
+// Testes que QUEREM provar a resolução de nome passam sua própria instância (4º arg do service).
+jest.mock('../../infrastructure/AnaCareProviderNameRepository', () => ({
+  AnaCareProviderNameRepository: jest.fn().mockImplementation(() => ({
+    findByAnaCareIds: jest.fn().mockResolvedValue(new Map()),
+  })),
+}));
 
 const SHIFT_A: SourceShiftDTO = {
   sourceShiftId: 'shift-a',
@@ -66,6 +76,13 @@ function mockRepo(overrides: Partial<jest.Mocked<ShiftHoursValidationRepository>
     contest: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   } as unknown as jest.Mocked<ShiftHoursValidationRepository>;
+}
+
+/** Stub do lookup de nome do prestador — por padrão devolve vazio (nenhum worker resolvido). */
+function mockProviderNames(byAnaCareId: Record<string, WorkerNameCiphertext> = {}): jest.Mocked<AnaCareProviderNameRepository> {
+  return {
+    findByAnaCareIds: jest.fn().mockResolvedValue(new Map(Object.entries(byAnaCareId))),
+  } as unknown as jest.Mocked<AnaCareProviderNameRepository>;
 }
 
 describe('isValidMonth / periodMonthDate', () => {
@@ -132,6 +149,47 @@ describe('AnaCareHoursService', () => {
       const shiftComCelula = comCelula.patients[0].providers[0].shifts.find((s) => s.id === 'shift-a')!;
       expect(shiftComCelula.contestNote).toBe('nota decifrada');
       expect(decrypt).toHaveBeenCalledWith('cifra');
+    });
+  });
+
+  describe('resolução do nome do prestador (fix vínculo-prestador)', () => {
+    it('resolve provider.name via lookup em lote + decrypt KMS quando o worker existe', async () => {
+      const decrypt = jest.fn().mockImplementation((v: string | null) => Promise.resolve(v ? `decrypted(${v})` : null));
+      const kms = { decrypt, encrypt: jest.fn() } as unknown as KMSEncryptionService;
+      const providerNames = mockProviderNames({
+        'AC-NURSE-0': { id: 'worker-1', firstNameEncrypted: 'cifra-first', lastNameEncrypted: 'cifra-last' },
+      });
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), kms, providerNames);
+
+      const snapshot = await service.getMonthSnapshot('2026-09', false);
+
+      expect(providerNames.findByAnaCareIds).toHaveBeenCalledWith(['AC-NURSE-0']);
+      expect(snapshot.patients[0].providers[0].name).toBe('decrypted(cifra-first) decrypted(cifra-last)');
+    });
+
+    it('sem worker encontrado para o ana_care_id, provider.name fica undefined (UI mostra o ID cru)', async () => {
+      const providerNames = mockProviderNames({}); // lookup vazio
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), undefined, providerNames);
+      const snapshot = await service.getMonthSnapshot('2026-09', false);
+      expect(snapshot.patients[0].providers[0].name).toBeUndefined();
+    });
+
+    it('worker com ana_care_id só de país != AR ou merged_into_id preenchido NÃO aparece no Map devolvido pelo repositório — o service não resolve nome (a exclusão é feita na query, não no service)', async () => {
+      // O repositório filtra `country = 'AR' AND merged_into_id IS NULL` na própria query — o
+      // service não tem como "ver" um worker de outro país ou absorvido em merge: o Map que ele
+      // recebe simplesmente não tem a entrada. Este teste prova que a AUSÊNCIA no Map (o efeito
+      // observável do filtro SQL) deixa `provider.name` undefined, nunca um nome indevido.
+      const providerNames = mockProviderNames({}); // simula: 'AC-NURSE-0' existe no banco, mas é BR ou está mergeado — não veio no lookup
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), undefined, providerNames);
+      const snapshot = await service.getMonthSnapshot('2026-09', false);
+      expect(snapshot.patients[0].providers[0].name).toBeUndefined();
+    });
+
+    it('sem prestadores no mês, não chama o repositório de nomes', async () => {
+      const providerNames = mockProviderNames();
+      const service = new AnaCareHoursService(new StubSource([]), mockRepo(), undefined, providerNames);
+      await service.getMonthSnapshot('2026-09', false);
+      expect(providerNames.findByAnaCareIds).not.toHaveBeenCalled();
     });
   });
 

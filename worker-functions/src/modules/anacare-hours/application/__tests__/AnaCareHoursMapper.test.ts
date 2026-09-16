@@ -120,8 +120,8 @@ describe('groupIntoPatients', () => {
 
     expect(patients).toHaveLength(2);
     const p0 = patients.find((p) => p.anaCareId === 'AC-PAT-0')!;
-    expect(p0.linked).toBe(false);
     expect(p0.providers).toHaveLength(2);
+    expect(p0.providers.every((p) => p.name === undefined)).toBe(true); // mapper não resolve nome — é o Service
     const p1 = patients.find((p) => p.anaCareId === 'AC-PAT-1')!;
     expect(p1.providers).toHaveLength(1);
   });

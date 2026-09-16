@@ -83,9 +83,12 @@ export function ProviderGroup({
               data-selection-state={pendingSelectionState}
             />
           )}
-          <Heading level={4} as="h3">
-            {providerDisplayName(provider)}
-          </Heading>
+          {/* Nome do prestador (PII) — mascarado no Clarity, mesmo padrão de PatientIdentityCard.tsx (parecer do lex, condição a). */}
+          <div data-clarity-mask="True">
+            <Heading level={4} as="h3">
+              {providerDisplayName(provider)}
+            </Heading>
+          </div>
           <Text size="xs" color="muted">
             {t('admin.anacareHours.providerGroup.shiftsAndHours', { count: shifts.length, hours: hours.toFixed(1) })}
           </Text>

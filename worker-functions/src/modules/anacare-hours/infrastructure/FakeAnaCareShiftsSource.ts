@@ -14,7 +14,61 @@
  * Ana Care real é lido ou referenciado.
  */
 
+import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import type { AnaCareRetratoSourceStatus, AnaCareShiftsSource, ListShiftsParams, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
+
+/**
+ * Pool de `ana_care_id` REAIS (workers), usado para substituir o `anaCareNurseId` sintético
+ * (`AC-NURSE-*`) pelo id de um prestador de verdade — achado 1 do QA (16/09): a massa 100%
+ * sintética fazia a tela de conferência de horas NUNCA resolver nome nenhum, em qualquer
+ * ambiente, mesmo em produção (onde ~748 workers AR têm `ana_care_id` real).
+ *
+ * Cada AMBIENTE reflete o seu próprio dado: produção tem ~748 ids, a stage tem 0 (o espelho
+ * worker→Ana Care só roda de verdade contra a API real deles, e a stage não tem essa massa) — as
+ * DUAS contagens são o comportamento ESPERADO, não um bug de uma das duas.
+ */
+export interface NurseIdPool {
+  list(): Promise<readonly string[]>;
+}
+
+/**
+ * Consulta o banco do AMBIENTE em que o processo está rodando. `merged_into_id IS NULL` e
+ * `country = 'AR'` espelham a MESMA trava do lookup de nome (`AnaCareProviderNameRepository`) —
+ * um id sorteado daqui sempre resolve nome quando o pool não está vazio.
+ *
+ * Fail-closed em duas direções: erro de conexão/consulta é ENGOLIDO e vira pool vazio (nunca
+ * trava a geração sintética, que é sempre determinística e não pode depender de banco estar de
+ * pé) — quem chama cai no fallback sintético de sempre.
+ */
+export class DbNurseIdPool implements NurseIdPool {
+  private cached?: Promise<readonly string[]>;
+
+  async list(): Promise<readonly string[]> {
+    this.cached ??= this.query();
+    return this.cached;
+  }
+
+  private async query(): Promise<readonly string[]> {
+    try {
+      const pool = DatabaseConnection.getInstance().getPool();
+      const res = await pool.query<{ ana_care_id: string }>(
+        `SELECT ana_care_id FROM workers WHERE ana_care_id IS NOT NULL AND country = 'AR' AND merged_into_id IS NULL`,
+      );
+      return res.rows.map((r) => r.ana_care_id);
+    } catch {
+      return [];
+    }
+  }
+}
+
+/** Hash determinístico (djb2-like) — mesmo `anaCareNurseId` sintético SEMPRE sorteia o mesmo real. */
+function hashToIndex(input: string, modulo: number): number {
+  let hash = 5381;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = ((hash * 33) ^ input.charCodeAt(i)) >>> 0;
+  }
+  return hash % modulo;
+}
 
 const PATIENTS_PER_MONTH = 10;
 const PROVIDERS_PER_PATIENT = 2;
@@ -65,10 +119,26 @@ function hoursBetween(startIso: string, endIso: string): number {
 }
 
 export class FakeAnaCareShiftsSource implements AnaCareShiftsSource {
+  constructor(private readonly nurseIdPool: NurseIdPool = new DbNurseIdPool()) {}
+
+  /**
+   * Substitui o `anaCareNurseId` SINTÉTICO (`AC-NURSE-*`) por um id REAL do pool, sorteado com
+   * reposição (o mesmo real pode atender mais de um prestador sintético) e determinístico (o
+   * MESMO sintético sempre vira o MESMO real, pro mês continuar reproduzível). Pool vazio (ex.:
+   * stage, sem massa real de `ana_care_id`) → devolve os turnos tal qual, sem tocar o campo —
+   * fallback sintético de sempre, nunca trava a geração.
+   */
+  private async applyRealNurseIds(shifts: readonly SourceShiftDTO[]): Promise<SourceShiftDTO[]> {
+    const pool = await this.nurseIdPool.list();
+    if (pool.length === 0) return shifts as SourceShiftDTO[];
+    return shifts.map((s) => ({ ...s, anaCareNurseId: pool[hashToIndex(s.anaCareNurseId, pool.length)] }));
+  }
+
   async listShifts(params: ListShiftsParams): Promise<SourceShiftDTO[]> {
     const shifts = FakeAnaCareShiftsSource.generateMonth(params.month);
-    if (!params.patientId) return shifts;
-    return shifts.filter((s) => s.anaCarePatientId === params.patientId);
+    const withRealIds = await this.applyRealNurseIds(shifts);
+    if (!params.patientId) return withRealIds;
+    return withRealIds.filter((s) => s.anaCarePatientId === params.patientId);
   }
 
   /**
@@ -82,7 +152,10 @@ export class FakeAnaCareShiftsSource implements AnaCareShiftsSource {
     if (!match) return null;
     const month = match[1];
     const shifts = FakeAnaCareShiftsSource.generateMonth(month);
-    return shifts.find((s) => s.sourceShiftId === sourceShiftId) ?? null;
+    const found = shifts.find((s) => s.sourceShiftId === sourceShiftId);
+    if (!found) return null;
+    const [withRealId] = await this.applyRealNurseIds([found]);
+    return withRealId;
   }
 
   /** Fase 1: sempre fresco — nenhum job real de sync/disjuntor existe ainda neste adapter falso. */

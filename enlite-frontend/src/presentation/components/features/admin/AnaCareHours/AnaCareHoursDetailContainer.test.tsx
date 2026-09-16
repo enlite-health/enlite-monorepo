@@ -46,12 +46,9 @@ function makeSnapshot(): AnaCareMonthSnapshot {
     patients: [
       {
         anaCareId: '90000',
-        linked: true,
-        name: 'Lucía Fernández QA',
         providers: [
           {
             anaCareId: 'p1',
-            linked: true,
             name: 'Rocío García QA',
             shifts: [
               {

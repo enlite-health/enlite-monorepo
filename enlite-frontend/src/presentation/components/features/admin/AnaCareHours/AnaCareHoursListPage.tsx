@@ -1,9 +1,10 @@
 /**
  * Lista do mês — conferência de horas do Ana Care (V1, protótipo visual).
  *
- * Filtros travados: paciente (busca livre) e prestador (select) + mês. NADA de filtro por obra
- * social ou outro filtro (regra dura do brief). Nome só aparece se o paciente/prestador está
- * vinculado à nossa base — não vinculado mostra "Sin vínculo · ID Ana Care" (regra dura).
+ * Filtros travados: paciente (busca livre, por ID) e prestador (select) + mês. NADA de filtro por
+ * obra social ou outro filtro (regra dura do brief). Nome do PRESTADOR só aparece quando o backend
+ * resolve o vínculo (`workers.ana_care_id`); sem resolução mostra só o ID cru — NUNCA um rótulo
+ * negativo tipo "Sin vínculo" (decisão de 16/09). Paciente nunca tem nome (fora de escopo).
  */
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';

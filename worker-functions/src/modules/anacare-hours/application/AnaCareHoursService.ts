@@ -13,6 +13,7 @@
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import type { AnaCareShiftsSource } from '../domain/AnaCareShiftsSource';
 import { ShiftHoursValidationRepository, ShiftAlreadyValidatedError } from '../infrastructure/ShiftHoursValidationRepository';
+import { AnaCareProviderNameRepository } from '../infrastructure/AnaCareProviderNameRepository';
 import { mapShift, groupIntoPatients, buildSnapshot } from './AnaCareHoursMapper';
 import {
   AnaCareHoursServiceError,
@@ -45,6 +46,7 @@ export class AnaCareHoursService {
     private readonly source: AnaCareShiftsSource,
     private readonly validations: ShiftHoursValidationRepository = new ShiftHoursValidationRepository(),
     private readonly kms: KMSEncryptionService = new KMSEncryptionService(),
+    private readonly providerNames: AnaCareProviderNameRepository = new AnaCareProviderNameRepository(),
   ) {}
 
   private async patientsForMonth(month: string, canReadNote: boolean, patientId?: string): Promise<AnaCarePatient[]> {
@@ -60,7 +62,36 @@ export class AnaCareHoursService {
       }),
     );
 
-    return groupIntoPatients(mapped);
+    const patients = groupIntoPatients(mapped);
+    await this.resolveProviderNames(patients);
+    return patients;
+  }
+
+  /**
+   * Resolve `provider.name` em LOTE (1 query, país AR, `merged_into_id IS NULL` — condições do
+   * lex) — só o lado PRESTADOR; paciente nunca ganha nome (fora de escopo, spec 003). Sem match
+   * ou sem worker vinculado, `provider.name` fica `undefined` — a UI mostra o ID cru.
+   */
+  private async resolveProviderNames(patients: AnaCarePatient[]): Promise<void> {
+    const nurseIds = Array.from(new Set(patients.flatMap((p) => p.providers.map((pr) => pr.anaCareId))));
+    if (nurseIds.length === 0) return;
+    const workers = await this.providerNames.findByAnaCareIds(nurseIds);
+    if (workers.size === 0) return;
+
+    await Promise.all(
+      patients.flatMap((patient) =>
+        patient.providers.map(async (provider) => {
+          const worker = workers.get(provider.anaCareId);
+          if (!worker) return;
+          const [firstName, lastName] = await Promise.all([
+            worker.firstNameEncrypted ? this.kms.decrypt(worker.firstNameEncrypted) : Promise.resolve(null),
+            worker.lastNameEncrypted ? this.kms.decrypt(worker.lastNameEncrypted) : Promise.resolve(null),
+          ]);
+          const name = [firstName, lastName].filter(Boolean).join(' ').trim();
+          if (name) provider.name = name;
+        }),
+      ),
+    );
   }
 
   /** D4: sem filtro de query — `patientSearch`/`providerId` rodam só no CLIENTE (`selectors.ts`), nunca aqui (PII em query/log). */

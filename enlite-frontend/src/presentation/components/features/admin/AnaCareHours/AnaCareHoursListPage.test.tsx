@@ -16,12 +16,9 @@ function snapshot(overrides: Partial<AnaCareMonthSnapshot> = {}): AnaCareMonthSn
     patients: [
       {
         anaCareId: '90000',
-        linked: true,
-        name: 'Lucía Fernández QA',
         providers: [
           {
             anaCareId: 'p1',
-            linked: true,
             name: 'Rocío García QA',
             shifts: [
               {
@@ -43,7 +40,7 @@ function snapshot(overrides: Partial<AnaCareMonthSnapshot> = {}): AnaCareMonthSn
           },
         ],
       },
-      { anaCareId: '90447', linked: false, providers: [] },
+      { anaCareId: '90447', providers: [] },
     ],
     ...overrides,
   };
@@ -74,9 +71,9 @@ describe('AnaCareHoursListPage', () => {
     expect(screen.getByText('admin.anacareHours.list.emptyNoMatch')).toBeInTheDocument();
   });
 
-  it('POSITIVO — busca por paciente filtra a lista', () => {
+  it('POSITIVO — busca por ID de paciente filtra a lista (paciente nunca mostra nome — reconciliação fora de escopo)', () => {
     render(<AnaCareHoursListPage snapshot={snapshot()} onOpenPatient={vi.fn()} />);
-    fireEvent.change(screen.getByTestId('anacare-hours-patient-search'), { target: { value: 'Lucía' } });
+    fireEvent.change(screen.getByTestId('anacare-hours-patient-search'), { target: { value: '90000' } });
     expect(screen.getByTestId('anacare-hours-patient-row-90000')).toBeInTheDocument();
     expect(screen.queryByTestId('anacare-hours-patient-row-90447')).not.toBeInTheDocument();
   });
@@ -104,12 +101,9 @@ describe('AnaCareHoursListPage', () => {
       patients: [
         {
           anaCareId: '90999',
-          linked: true,
-          name: 'Camila Torres QA',
           providers: [
             {
               anaCareId: 'p9',
-              linked: true,
               name: 'Paula Díaz QA',
               shifts: [
                 { id: 'x1', date: '2026-08-01', scheduledStart: '08:00', scheduledEnd: '16:00', actualStart: null, actualEnd: null, hoursActual: null, hoursScheduled: 8, origin: 'sin_checkin', status: 'pendiente', anaCareShiftId: '1' },

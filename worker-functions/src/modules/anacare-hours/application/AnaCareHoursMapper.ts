@@ -6,9 +6,10 @@
  * (`AnaCareShift`/`AnaCarePatient`/`AnaCareMonthSnapshot`) que o front consome — mesma
  * interface do protótipo (spec §Contrato de dados).
  *
- * Nome/vínculo (`linked`/`name`) SEMPRE `false`/`undefined` nesta fase: a reconciliação
- * paciente/prestador (spec 003) é PRÉ-REQUISITO adiado — fase 1 só entrega turnos, horas,
- * origem e status (documentado em DIVERGÊNCIAS no fecho da fase).
+ * Nome do PRESTADOR (`AnaCareProvider.name`) é resolvido pelo `AnaCareHoursService` (lookup em
+ * lote pós-agrupamento), não aqui — este mapper só monta a estrutura de agrupamento, sem tocar
+ * banco/KMS (mantém puro/testável). Lado PACIENTE nunca resolve nome (spec 003, reconciliação
+ * bloqueada) — documentado em DIVERGÊNCIAS no fecho da fase.
  */
 
 import type { AnaCareRetratoSourceStatus, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
@@ -59,7 +60,11 @@ export function mapShift(source: SourceShiftDTO, validation: ValidationRow | und
   return shift;
 }
 
-/** Agrupa turnos JÁ MAPEADOS por paciente → prestador (id da fonte, sem vínculo em F1). */
+/**
+ * Agrupa turnos JÁ MAPEADOS por paciente → prestador (id da fonte). Só monta a estrutura —
+ * `provider.name` NÃO é resolvido aqui (responsabilidade do `AnaCareHoursService`, que faz o
+ * lookup em lote depois de agrupar); paciente nunca ganha nome (fora de escopo, spec 003).
+ */
 export function groupIntoPatients(shifts: ReadonlyArray<{ shift: AnaCareShift; anaCarePatientId: string; anaCareNurseId: string }>): AnaCarePatient[] {
   const byPatient = new Map<string, Map<string, AnaCareShift[]>>();
   for (const { shift, anaCarePatientId, anaCareNurseId } of shifts) {
@@ -73,9 +78,9 @@ export function groupIntoPatients(shifts: ReadonlyArray<{ shift: AnaCareShift; a
   for (const [anaCareId, byProvider] of byPatient) {
     const providers: AnaCareProvider[] = [];
     for (const [providerAnaCareId, providerShifts] of byProvider) {
-      providers.push({ anaCareId: providerAnaCareId, linked: false, shifts: providerShifts });
+      providers.push({ anaCareId: providerAnaCareId, shifts: providerShifts });
     }
-    patients.push({ anaCareId, linked: false, providers });
+    patients.push({ anaCareId, providers });
   }
   return patients;
 }

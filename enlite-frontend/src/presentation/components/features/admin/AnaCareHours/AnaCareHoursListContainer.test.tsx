@@ -21,7 +21,7 @@ describe('AnaCareHoursListContainer', () => {
         updatedAt: '2026-09-15T08:00:00-03:00',
         stale: false,
         circuitBreakerOpen: false,
-        patients: [{ anaCareId: '90000', linked: true, name: 'Lucía Fernández QA', providers: [] }],
+        patients: [{ anaCareId: '90000', providers: [] }],
       },
     });
     const onOpenPatient = vi.fn();

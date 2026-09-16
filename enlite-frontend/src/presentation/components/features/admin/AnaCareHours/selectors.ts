@@ -58,12 +58,14 @@ export function originCounts(shifts: AnaCareShift[]): AnaCareOriginCounts {
   };
 }
 
+/** Sem nome resolvido, mostra só o ID cru — NUNCA um rótulo negativo tipo "Sin vínculo" (decisão de 16/09). */
 export function providerDisplayName(provider: AnaCareProvider): string {
-  return provider.linked && provider.name ? provider.name : `Sin vínculo · ID ${provider.anaCareId}`;
+  return provider.name ?? provider.anaCareId;
 }
 
+/** Paciente nunca tem nome (reconciliação fora de escopo) — sempre o ID cru. */
 export function patientDisplayName(patient: AnaCarePatient): string {
-  return patient.linked && patient.name ? patient.name : `Sin vínculo · ID ${patient.anaCareId}`;
+  return patient.anaCareId;
 }
 
 export function pendingShiftsOf(provider: AnaCareProvider): AnaCareShift[] {
@@ -152,8 +154,8 @@ export function filterPatients(patients: AnaCarePatient[], filters?: AnaCareHour
     }
     if (filters.patientSearch?.trim()) {
       const q = filters.patientSearch.trim().toLowerCase();
-      const label = (patient.linked && patient.name ? patient.name : patient.anaCareId).toLowerCase();
-      if (!label.includes(q) && !patient.anaCareId.includes(q)) return false;
+      // Paciente nunca tem nome (fora de escopo) — a busca é sempre por ID.
+      if (!patient.anaCareId.toLowerCase().includes(q)) return false;
     }
     return true;
   });

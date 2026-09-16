@@ -1,4 +1,9 @@
-import { FakeAnaCareShiftsSource, createAnaCareShiftsSource, ANACARE_HOURS_SOURCE_ENV } from '../FakeAnaCareShiftsSource';
+import { FakeAnaCareShiftsSource, createAnaCareShiftsSource, ANACARE_HOURS_SOURCE_ENV, type NurseIdPool } from '../FakeAnaCareShiftsSource';
+
+/** Fixture fixa — nunca toca banco real no teste (instrução do brief: pool injetado por parâmetro). */
+function fixedPool(ids: readonly string[]): NurseIdPool {
+  return { list: async () => ids };
+}
 
 describe('FakeAnaCareShiftsSource', () => {
   describe('generateMonth', () => {
@@ -100,6 +105,52 @@ describe('FakeAnaCareShiftsSource', () => {
     it('fase 1: sempre fresco — nenhum job real de sync/disjuntor existe neste adapter falso', async () => {
       const source = new FakeAnaCareShiftsSource();
       expect(await source.getRetratoStatus()).toEqual({ stale: false, circuitBreakerOpen: false });
+    });
+  });
+
+  describe('pool de anaCareNurseId real (achado 1 do QA, 16/09)', () => {
+    it('pool VAZIO (ex.: stage) — cai pro sintético de sempre, sem travar', async () => {
+      const source = new FakeAnaCareShiftsSource(fixedPool([]));
+      const shifts = await source.listShifts({ month: '2026-09' });
+      expect(shifts.every((s) => /^AC-NURSE-\d+-\d+$/.test(s.anaCareNurseId))).toBe(true);
+    });
+
+    it('pool com itens — substitui anaCareNurseId por um id REAL do pool (nunca o sintético)', async () => {
+      const pool = ['REAL-1', 'REAL-2', 'REAL-3'];
+      const source = new FakeAnaCareShiftsSource(fixedPool(pool));
+      const shifts = await source.listShifts({ month: '2026-09' });
+      expect(shifts.length).toBeGreaterThan(0);
+      for (const s of shifts) expect(pool).toContain(s.anaCareNurseId);
+    });
+
+    it('determinístico — o MESMO nurseId sintético sempre sorteia o MESMO real', async () => {
+      const pool = ['REAL-1', 'REAL-2', 'REAL-3', 'REAL-4', 'REAL-5'];
+      const source = new FakeAnaCareShiftsSource(fixedPool(pool));
+      const a = await source.listShifts({ month: '2026-09' });
+      const b = await source.listShifts({ month: '2026-09' });
+      expect(a.map((s) => s.anaCareNurseId)).toEqual(b.map((s) => s.anaCareNurseId));
+    });
+
+    it('não muda a QUANTIDADE de turnos gerados, só a origem do id', async () => {
+      const source = new FakeAnaCareShiftsSource(fixedPool(['REAL-1']));
+      const shifts = await source.listShifts({ month: '2026-09' });
+      expect(shifts).toHaveLength(100);
+    });
+
+    it('getShift também aplica o pool (mesma coerência de listShifts)', async () => {
+      const pool = ['REAL-1', 'REAL-2'];
+      const source = new FakeAnaCareShiftsSource(fixedPool(pool));
+      const shift = await source.getShift('FAKE-2026-09-0-0-0');
+      expect(shift).not.toBeNull();
+      expect(pool).toContain(shift!.anaCareNurseId);
+    });
+
+    it('erro na consulta do pool (ex.: banco fora do ar) não trava — DbNurseIdPool engole e devolve []', async () => {
+      const { DbNurseIdPool } = await import('../FakeAnaCareShiftsSource');
+      const pool = new DbNurseIdPool();
+      // Sem DATABASE_URL/DB_HOST no ambiente de teste, DatabaseConnection.getInstance() lança
+      // sincronamente — prova que o catch interno do DbNurseIdPool absorve isso e nunca propaga.
+      await expect(pool.list()).resolves.toEqual([]);
     });
   });
 });

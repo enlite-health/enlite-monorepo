@@ -61,15 +61,17 @@ export interface AnaCareShift {
 
 export interface AnaCareProvider {
   anaCareId: string;
-  linked: boolean;
+  /** Nome do worker vinculado (`ana_care_id` → `workers`), só quando resolvido — ver
+   * `AnaCareHoursService` (lookup em lote, país AR, `merged_into_id IS NULL`). Ausente = mostra
+   * só o ID cru na UI, NUNCA um rótulo negativo tipo "Sin vínculo" (decisão do Gabriel, 16/09). */
   name?: string;
   shifts: AnaCareShift[];
 }
 
 export interface AnaCarePatient {
   anaCareId: string;
-  linked: boolean;
-  name?: string;
+  /** Lado PACIENTE (AC-PAT-*) está FORA de escopo — reconciliação paciente×Ana Care bloqueada
+   * (spec 003). Nunca tem nome; a UI sempre mostra o ID cru. */
   providers: AnaCareProvider[];
 }
 
