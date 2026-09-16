@@ -751,6 +751,48 @@ describe('AnaCareSessionClient — logging estruturado no re-login por 403 (acha
   });
 });
 
+describe('AnaCareSessionClient — retry transiente pós-relogin não relogina de novo (bug nomeado)', () => {
+  it('403 dispara relogin (funciona) e o fetch seguinte dá 5xx transiente: login é chamado 1 vez, não uma vez por tentativa de retry', async () => {
+    let loginPostCount = 0;
+    let shiftsCallCount = 0;
+    const fetchImpl = jest.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/users/admin/login/') && (!init?.method || init.method === 'GET')) return loginPageResponse();
+      if (url.endsWith('/users/admin/login/') && init?.method === 'POST') {
+        loginPostCount += 1;
+        return loginOkResponse();
+      }
+      if (url.includes('/api/shifts/')) {
+        shiftsCallCount += 1;
+        if (shiftsCallCount === 1) return jsonResponse({ detail: 'expired' }, 403); // dispara re-login
+        if (shiftsCallCount === 2) return jsonResponse({ detail: 'boom' }, 503); // transiente PÓS relogin
+        return jsonResponse({ count: 0, next: null, previous: null, results: [] }); // 3ª tentativa: ok
+      }
+      throw new Error(`unexpected call: ${url}`);
+    });
+
+    const { now, sleep } = makeVirtualClock();
+    const client = new AnaCareSessionClient({
+      baseUrl: 'https://admin.ana.care',
+      username: 'u',
+      password: 'p',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      // maxAttempts alto o bastante para o retry transiente (503) ter uma 2ª chance dentro
+      // do MESMO schedule() do relogin — é exatamente esse retry que não pode relogar de novo.
+      rateLimiter: new AnaCareRateLimiter({ minIntervalMs: 0, maxAttempts: 3, now, sleep }),
+    });
+
+    // Login inicial já feito e contado à parte — o que importa aqui é o relogin do 403 em diante.
+    await client.login();
+    loginPostCount = 0;
+
+    const result = await client.requestJson<{ results: unknown[] }>('/api/shifts/', { page_size: 100 });
+
+    expect(result.results).toEqual([]);
+    expect(shiftsCallCount).toBe(3); // 403, depois 503 transiente, depois 200
+    expect(loginPostCount).toBe(1); // 1 único re-login — o retry do 503 reusa a sessão, não relога
+  });
+});
+
 describe('AnaCareSessionClient — espião de rede: 0 chamadas reais (2.6)', () => {
   it('toda chamada HTTP passa pelo fetchImpl injetado — nunca o fetch global real', async () => {
     const realFetchSpy = jest.spyOn(global, 'fetch');
