@@ -8,7 +8,6 @@ import { derivePatientZone, type PatientZoneAddressComponent } from '@applicatio
 import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { Textarea } from '@presentation/components/atoms/Textarea';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import { ServiceAreaMap } from '@presentation/components/molecules/ServiceAreaMap';
@@ -27,15 +26,14 @@ interface Props {
 }
 
 const CLOSE_MS = 300;
-/** Teto de `access_notes` — espelha o servidor (lex C2.6). */
-export const ACCESS_NOTES_MAX = 2000;
 
 /**
  * Domicílio na ficha (spec 012, US-B2). Criar reusa o MESMO `POST /patients/:id/addresses`
- * do wizard de vaga (`AdminApiService.createPatientAddress`); editar troca só zona
- * (`neighborhood`), corredor e acesso por `PATCH /patients/:id/addresses/:addressId`. A nota
- * de acesso é texto livre sobre a casa de um paciente: `data-clarity-mask` no wrapper; o erro
- * nunca ecoa o que foi digitado (lex C2.3).
+ * do wizard de vaga (`AdminApiService.createPatientAddress`); editar troca zona (`neighborhood`),
+ * tipo e principal por `PATCH /patients/:id/addresses/:addressId`. D347 (15/09) removeu deste
+ * drawer os campos "Corredor logístico" e "Logística y acceso" — não faziam sentido na tela;
+ * revoga a parte da D310 que os mantinha aqui (a coluna no banco e o payload de backend seguem
+ * intactos, só não são mais editados por este formulário).
  *
  * ── Autocomplete de endereço (PEND-06 da ata de 09/09/2026) ────────────────────────────────
  * O endereço NASCE de uma escolha na lista do Google, nunca de texto digitado à mão —
@@ -62,8 +60,6 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
   const [formatted, setFormatted] = useState('');
   const [raw, setRaw] = useState('');
   const [neighborhood, setNeighborhood] = useState(address?.neighborhood ?? '');
-  const [corridor, setCorridor] = useState(address?.logisticsCorridor ?? '');
-  const [access, setAccess] = useState(address?.accessNotes ?? '');
   // Spec 019 (D310 item c) — TIPO por parentesco, só editável (a coluna `address_type` deixou de
   // ser aceita na criação, B4). `''` = "sin especificar" (`address_type = NULL`). Normalizado pelo
   // MESMO schema do submit — uma linha legada com `'primary'`/`'secondary'`/`'service'` (não
@@ -140,12 +136,10 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
   // (o endereço em si é somente-leitura aqui); criando, qualquer campo preenchido conta.
   const isDirty = editing
     ? neighborhood !== (address.neighborhood ?? '') ||
-      corridor !== (address.logisticsCorridor ?? '') ||
-      access !== (address.accessNotes ?? '') ||
       addressType !== (originalAddressType ?? '') ||
       addressTypeOther !== (address.addressTypeOther ?? '') ||
       markPrimary
-    : formatted !== '' || raw !== '' || neighborhood !== '' || corridor !== '' || access !== '' || markPrimary;
+    : formatted !== '' || raw !== '' || neighborhood !== '' || markPrimary;
 
   const { confirmingClose, requestClose, keepEditing, confirmDiscard } = useConfirmDiscardClose({
     isDirty,
@@ -166,8 +160,6 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
       if (addressTypeOtherError) return;
       const payload: PatientAddressLogisticsPayload = {};
       if (nz(neighborhood) !== (address.neighborhood ?? null)) payload.neighborhood = nz(neighborhood);
-      if (nz(corridor) !== (address.logisticsCorridor ?? null)) payload.logistics_corridor = nz(corridor);
-      if (nz(access) !== (address.accessNotes ?? null)) payload.access_notes = nz(access);
       // Spec 019: `address_type`/`address_type_other` validados pela MESMA lista fechada do CHECK
       // do banco (`patientAddressTypeSchema`, zod na borda), sem `.default(...)` — ausência do
       // select ('') é `null` = "sin especificar", nunca um valor chutado.
@@ -209,8 +201,6 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
     const payload: PatientAddressCreateInput = { address_formatted: f };
     if (nz(raw)) payload.address_raw = nz(raw) as string;
     if (nz(neighborhood)) payload.neighborhood = nz(neighborhood) as string;
-    if (nz(corridor)) payload.logistics_corridor = nz(corridor) as string;
-    if (nz(access)) payload.access_notes = nz(access) as string;
     if (markPrimary) payload.is_default = true;
     setBusy(true);
     try {
@@ -327,20 +317,11 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
+          <div className="grid grid-cols-1 gap-4 pt-2 border-t border-slate-100">
             <FormField label={ta('neighborhood')} htmlFor="pad-neighborhood" optional>
               <InputWithIcon id="pad-neighborhood" inputSize="compact" value={neighborhood} onChange={(e) => setNeighborhood(e.target.value)} data-testid="pad-neighborhood" />
             </FormField>
-            <FormField label={ta('corridor')} htmlFor="pad-corridor" optional>
-              <InputWithIcon id="pad-corridor" inputSize="compact" value={corridor} onChange={(e) => setCorridor(e.target.value)} data-testid="pad-corridor" />
-            </FormField>
           </div>
-          <FormField label={ta('accessNotes')} htmlFor="pad-access" optional>
-            {/* Texto livre sobre o domicílio do paciente: o Clarity não grava (lex C2.4). */}
-            <div data-clarity-mask="True">
-              <Textarea id="pad-access" inputSize="compact" resize="vertical" rows={4} maxLength={ACCESS_NOTES_MAX} value={access} onChange={(e) => setAccess(e.target.value)} data-testid="pad-access" />
-            </div>
-          </FormField>
 
           {submitError && <Text size="sm" className="text-red-600" data-testid="pad-error">{submitError}</Text>}
         </div>

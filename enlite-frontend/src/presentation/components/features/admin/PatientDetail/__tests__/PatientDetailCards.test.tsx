@@ -1272,7 +1272,9 @@ describe('LocalizacoesCard', () => {
     fireEvent.click(screen.getByTestId('edit-address-addr1'));
     expect(screen.getByTestId('patient-address-drawer')).toBeInTheDocument();
     expect(screen.getByTestId('pad-address-readonly')).toHaveTextContent('Rua Augusta, 975 - São Paulo/SP');
-    expect(screen.getByTestId('pad-access')).toHaveValue('Portaria 24h, interfone 701');
+    // D347: "Corredor logístico" e "Logística y acceso" saíram do drawer.
+    expect(screen.queryByTestId('pad-access')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('pad-corridor')).not.toBeInTheDocument();
   });
 
   it('sem patientId não há coluna de edição', () => {
