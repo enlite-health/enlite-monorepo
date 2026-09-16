@@ -10,6 +10,7 @@ import { AdminRepository } from '../../infrastructure/AdminRepository';
 import { UserRepository } from '../../infrastructure/UserRepository';
 import { GoogleIdentityService } from '../../infrastructure/GoogleIdentityService';
 import { isStaffRole } from '../../domain/EnliteRole';
+import { isAnaCareHoursAllowedEmail } from '@shared/security/anaCareHoursAllowlist';
 
 export class AdminController {
   private deleteUserByEmailUseCase: DeleteUserByEmailUseCase;
@@ -251,7 +252,13 @@ export class AdminController {
         return;
       }
 
-      res.status(200).json({ success: true, data: result.getValue() });
+      const profile = result.getValue();
+      res.status(200).json({
+        success: true,
+        // `canAccessAnaCareHours`: gate provisório da tela de horas do Ana Care enquanto o `main`
+        // não tem ABAC (allowlist estática de e-mail — ver `shared/security/anaCareHoursAllowlist.ts`).
+        data: { ...profile, canAccessAnaCareHours: isAnaCareHoursAllowedEmail(profile?.email) },
+      });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       console.error(`[ADMIN-AUTH] /profile error | ${msg}`);

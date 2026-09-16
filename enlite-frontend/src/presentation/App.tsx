@@ -21,6 +21,8 @@ import { AdminRecruitmentPage } from './pages/admin/AdminRecruitmentPage';
 import { ManagementDashboardPage } from './pages/admin/ManagementDashboardPage';
 import { AdminWorkersPage } from './pages/admin/AdminWorkersPage';
 import { AdminPatientsPage } from './pages/admin/AdminPatientsPage';
+import AnaCareHoursPage from './pages/admin/AnaCareHoursPage';
+import AnaCareHoursPatientPage from './pages/admin/AnaCareHoursPatientPage';
 import VacancyDetailPage from './pages/admin/VacancyDetailPage';
 import CreateVacancyPage from './pages/admin/CreateVacancyPage';
 import TalentumConfigPage from './pages/admin/TalentumConfigPage';
@@ -206,6 +208,9 @@ export function App() {
           <Route path="workers" element={<AdminWorkersPage />} />
           <Route path="workers/:id" element={<WorkerDetailPage />} />
           <Route path="patients" element={<AdminPatientsPage />} />
+          {/* Ana Care Horas — fase 1, allowlist de e-mail no lugar do ABAC (main não tem o engine, ver D345) */}
+          <Route path="anacare/horas" element={<AnaCareHoursPage />} />
+          <Route path="anacare/horas/:patientId" element={<AnaCareHoursPatientPage />} />
           <Route path="patients/kanban" element={<PatientKanbanPage />} />
           <Route path="patients/:id" element={<PatientDetailPage />} />
           <Route path="mapa" element={<AdminMapPage />} />

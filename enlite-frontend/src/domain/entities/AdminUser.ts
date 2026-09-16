@@ -9,4 +9,6 @@ export interface AdminUser {
   lastLoginAt: string | null;
   loginCount: number;
   createdAt: string;
+  /** Gate provisório da tela de horas do Ana Care no `main` (sem ABAC — allowlist de e-mail). */
+  canAccessAnaCareHours?: boolean;
 }

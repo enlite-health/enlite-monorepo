@@ -23,6 +23,7 @@ import { WorkerControllerV2, JobsController, WorkerDocumentsMeController, AdminW
 import { AdminPatientsController, createAdminPatientsRoutes, PublicLeadsController } from '@modules/case';
 import { UserController } from '@modules/identity';
 import { AdminController, createAuthTelemetryRoutes } from '@modules/identity';
+import { AnaCareHoursController, createAnaCareHoursRoutes } from '@modules/anacare-hours';
 import {
   AuthMiddleware,
   MultiAuthService,
@@ -411,6 +412,9 @@ app.use('/api/admin', createAdminWorkerDocumentsRoutes(adminWorkerDocumentsContr
 
 // ========== Admin Patients ==========
 app.use('/api/admin', createAdminPatientsRoutes(adminPatientsController, authMiddleware));
+
+// ========== Ana Care Horas (fase 1, allowlist de e-mail — sem ABAC no main, ver D345) ==========
+app.use('/api/admin', createAnaCareHoursRoutes(new AnaCareHoursController(), authMiddleware));
 
 // ========== Admin Dedup + Test Fixtures (extraído p/ bootstrap/) ==========
 registerAdminMaintenanceRoutes(app, authMiddleware);

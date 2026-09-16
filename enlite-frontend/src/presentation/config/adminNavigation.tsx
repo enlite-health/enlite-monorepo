@@ -1,6 +1,6 @@
 import { AppSidebarNavItem } from '@presentation/components/templates/DashboardLayout';
 import { useTranslation } from 'react-i18next';
-import { MapPin } from 'lucide-react';
+import { MapPin, Clock } from 'lucide-react';
 import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
 import { EnliteRole } from '@domain/entities/EnliteRole';
 
@@ -8,6 +8,9 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
   const { t } = useTranslation();
   const { adminProfile } = useAdminAuth();
   const isAdmin = adminProfile?.role === EnliteRole.ADMIN;
+  // Gate provisório (allowlist de e-mail, sem ABAC no main — ver D345): a checagem REAL é no
+  // servidor (403 fora da lista); isto só evita mostrar um item morto pra quem não vai poder usar.
+  const canAccessAnaCareHours = adminProfile?.canAccessAnaCareHours === true;
 
   const baseItems: AppSidebarNavItem[] = [
     {
@@ -78,6 +81,15 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
       label: t('admin.nav.apiDocs', 'API Docs'),
       href: '/admin/api-docs',
     },
+    ...(canAccessAnaCareHours
+      ? [
+          {
+            icon: <Clock className="w-6 h-6" strokeWidth={2} />,
+            label: t('admin.nav.anacareHours', 'Horas Ana Care'),
+            href: '/admin/anacare/horas',
+          },
+        ]
+      : []),
   ];
 
   // Admin-only items: Tags + Dedup Center + Blocked Attempts
