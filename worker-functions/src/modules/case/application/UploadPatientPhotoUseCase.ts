@@ -3,8 +3,11 @@
  *
  * Decisão 14/09 (D335): SEM checagem de consentimento vigente (removida a L1b/409
  * `IMAGE_CONSENT_REQUIRED`) e SEM checagem de representante para menor (removida L1b'). Upload
- * troca a foto existente incondicionalmente — o `consentId` é anexado quando há um vigente, só
- * como referência informativa (nunca bloqueia).
+ * troca a foto existente incondicionalmente.
+ *
+ * Documento (prova) e consentimento de imagem foram REMOVIDOS por completo
+ * (fix/018-remover-documentos-consentimento, junto com a coluna `consent_id` de `patient_photos`)
+ * — este use case não lê mais `PatientImageConsentRepository`.
  *
  * Ordem: processa (sharp, fora do EXIF) → sobe o objeto NOVO → troca a linha em transação → some o
  * objeto ANTIGO (best-effort; falha vira órfão `REPLACE`, task 4.3h).
@@ -16,7 +19,6 @@ import { PatientPhotoProcessor } from '../infrastructure/PatientPhotoProcessor';
 import { PatientPhotoStorage } from '../infrastructure/PatientPhotoStorage';
 import { PatientPhotoRepository } from '../infrastructure/PatientPhotoRepository';
 import { PatientPhotoOrphanRepository } from '../infrastructure/PatientPhotoOrphanRepository';
-import { PatientImageConsentRepository } from '../infrastructure/PatientImageConsentRepository';
 import { safeStorageErrorFields } from '../infrastructure/safeStorageErrorFields';
 import { scheduleOpportunisticOrphanRetry } from './scheduleOpportunisticOrphanRetry';
 
@@ -37,7 +39,6 @@ export class UploadPatientPhotoUseCase {
     private readonly storageFactory: () => PatientPhotoStorage = () => new PatientPhotoStorage(),
     private readonly photoRepo: PatientPhotoRepository = new PatientPhotoRepository(),
     private readonly orphanRepo: PatientPhotoOrphanRepository = new PatientPhotoOrphanRepository(),
-    private readonly consentRepo: PatientImageConsentRepository = new PatientImageConsentRepository(),
     private readonly enc: KMSEncryptionService = new KMSEncryptionService(),
   ) {}
 
@@ -51,12 +52,11 @@ export class UploadPatientPhotoUseCase {
 
     let oldRow: { object_path_encrypted: string } | null = null;
     try {
-      const vigente = await this.consentRepo.findVigente(input.patientId);
       await inPatientTransaction(async (client) => {
         oldRow = await this.photoRepo.deleteRow(input.patientId, client);
         await this.photoRepo.insert(
           input.patientId,
-          { objectPathEncrypted: objectPathEncrypted!, consentId: vigente?.id ?? null },
+          { objectPathEncrypted: objectPathEncrypted! },
           input.actorUid,
           client,
         );

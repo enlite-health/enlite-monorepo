@@ -72,8 +72,6 @@ jobs:
           }
           curl -sf -X POST http://localhost:54443/storage/v1/b -H 'Content-Type: application/json' \
             -d '{"name":"enlite-patient-photos-ci"}' >/dev/null
-          curl -sf -X POST http://localhost:54443/storage/v1/b -H 'Content-Type: application/json' \
-            -d '{"name":"enlite-patient-documents-ci"}' >/dev/null
 
           docker compose $BASE up -d api
           docker compose $BASE -f docker-compose.firebase.yml up -d --no-deps firebase-emulator
