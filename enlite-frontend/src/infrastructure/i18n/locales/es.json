@@ -3726,7 +3726,8 @@
           "typeOther": "¿Cuál?",
           "typeOtherHint": "Sin nombres ni datos de salud",
           "markPrimary": "Marcar como principal",
-          "neighborhood": "Zona / Barrio"
+          "neighborhood": "Zona / Barrio",
+          "typeSaveWarning": "La dirección se creó, pero no pudimos guardar el tipo — editala después desde la ficha."
         },
         "completeness": {
           "title": "Para activar falta:",

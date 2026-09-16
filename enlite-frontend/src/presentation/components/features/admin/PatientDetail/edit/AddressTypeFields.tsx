@@ -29,8 +29,9 @@ interface Props {
  * dos demais campos de endereço nesta tela (`access_notes`, o próprio texto da rua).
  *
  * Extraído do `PatientAddressDrawer.tsx` para não estourar o teto de 400 linhas do arquivo —
- * único consumidor é o drawer, em modo edição (o tipo só existe na coluna reaproveitada,
- * `address_type`, e só entra por PATCH depois da B4 — nunca na criação).
+ * único consumidor é o drawer, nos dois modos (D348: também ao criar). O tipo só existe na
+ * coluna reaproveitada `address_type`, e só entra no servidor por PATCH — nunca no `POST` (B4);
+ * ao criar, o drawer encadeia esse PATCH contra o id que o POST devolver.
  */
 export function AddressTypeFields({
   addressType,

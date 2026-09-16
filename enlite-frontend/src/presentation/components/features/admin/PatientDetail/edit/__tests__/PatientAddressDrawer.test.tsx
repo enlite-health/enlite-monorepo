@@ -36,6 +36,8 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
     updatePatientAddressLogistics: (...a: unknown[]) => updatePatientAddressLogistics(...a),
   },
 }));
+const showToast = vi.fn();
+vi.mock('@presentation/hooks/useToast', () => ({ useToast: () => showToast }));
 const mapSpy = vi.fn();
 vi.mock('@presentation/components/molecules/ServiceAreaMap', () => ({
   ServiceAreaMap: (props: Record<string, unknown>) => { mapSpy(props); return <div data-testid="map-stub" />; },
@@ -577,6 +579,7 @@ describe('PatientAddressDrawer — spec 019: address_type/address_type_other/is_
   beforeEach(() => {
     createPatientAddress.mockReset().mockResolvedValue({ id: 'new' });
     updatePatientAddressLogistics.mockReset().mockResolvedValue({ id: 'addr1' });
+    showToast.mockReset();
     mapSpy.mockReset();
     placeChanged = [];
     placeDevolvido = undefined;
@@ -683,5 +686,131 @@ describe('PatientAddressDrawer — spec 019: address_type/address_type_other/is_
     }));
     const enviado = createPatientAddress.mock.calls[0][1] as Record<string, unknown>;
     expect(enviado.is_default).toBeUndefined();
+  });
+});
+
+// ── D348 (15/09): campo Tipo também ao CRIAR — POST continua sem `address_type` (B4); um
+// PATCH imediato grava o tipo escolhido contra o id que o POST devolveu. ─────────────────────
+describe('PatientAddressDrawer — D348: Tipo ao criar (POST + PATCH encadeado)', () => {
+  beforeEach(() => {
+    createPatientAddress.mockReset().mockResolvedValue({ id: 'addr-novo' });
+    updatePatientAddressLogistics.mockReset().mockResolvedValue({ id: 'addr-novo' });
+    showToast.mockReset();
+    mapSpy.mockReset();
+    placeChanged = [];
+    placeDevolvido = undefined;
+    widgetsCriados = 0;
+    stubGoogle();
+    vi.stubEnv('VITE_GOOGLE_MAPS_API_KEY', 'chave-de-teste');
+  });
+  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
+
+  it('o SELECT de Tipo aparece no modo criar (não só no editar)', async () => {
+    render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={vi.fn()} />);
+    await assentar();
+    expect(screen.getByTestId('pad-type')).toBeInTheDocument();
+    expect(screen.getByTestId('pad-type')).toHaveValue('');
+  });
+
+  it('escolher um tipo diferente do default: POST sem address_type, seguido de PATCH com o tipo — NESSA ORDEM', async () => {
+    const chamadas: string[] = [];
+    createPatientAddress.mockImplementationOnce(async () => { chamadas.push('POST'); return { id: 'addr-novo' }; });
+    updatePatientAddressLogistics.mockImplementationOnce(async () => { chamadas.push('PATCH'); return { id: 'addr-novo' }; });
+
+    const onSaved = vi.fn();
+    render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={onSaved} />);
+    await assentar();
+    await escolherDaLista();
+    fireEvent.change(screen.getByTestId('pad-type'), { target: { value: 'escuela' } });
+    fireEvent.click(screen.getByTestId('pad-save'));
+
+    await waitFor(() => expect(createPatientAddress).toHaveBeenCalledWith('p1', {
+      address_formatted: ESCOLHIDO.formatted_address,
+    }));
+    // B4 intacto: o POST não leva address_type mesmo com um tipo escolhido no form.
+    const postEnviado = createPatientAddress.mock.calls[0][1] as Record<string, unknown>;
+    expect(postEnviado).not.toHaveProperty('address_type');
+
+    await waitFor(() => expect(updatePatientAddressLogistics).toHaveBeenCalledWith('p1', 'addr-novo', {
+      address_type: 'escuela',
+    }));
+    expect(chamadas).toEqual(['POST', 'PATCH']);
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('tipo "Otro" ao criar: PATCH leva address_type + address_type_other juntos', async () => {
+    render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={vi.fn()} />);
+    await assentar();
+    await escolherDaLista();
+    fireEvent.change(screen.getByTestId('pad-type'), { target: { value: 'otro' } });
+    fireEvent.change(screen.getByTestId('pad-type-other'), { target: { value: 'Casa de la tía' } });
+    fireEvent.click(screen.getByTestId('pad-save'));
+
+    await waitFor(() => expect(updatePatientAddressLogistics).toHaveBeenCalledWith('p1', 'addr-novo', {
+      address_type: 'otro', address_type_other: 'Casa de la tía',
+    }));
+  });
+
+  it('"Otro" com mais de 40 caracteres barra o submit antes do POST — nem POST nem PATCH saem', async () => {
+    render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={vi.fn()} />);
+    await assentar();
+    await escolherDaLista();
+    fireEvent.change(screen.getByTestId('pad-type'), { target: { value: 'otro' } });
+    fireEvent.change(screen.getByTestId('pad-type-other'), { target: { value: 'x'.repeat(41) } });
+    fireEvent.click(screen.getByTestId('pad-save'));
+
+    expect(await screen.findByText(t('admin.patients.editDrawer.typeOtherTooLong'))).toBeInTheDocument();
+    expect(createPatientAddress).not.toHaveBeenCalled();
+    expect(updatePatientAddressLogistics).not.toHaveBeenCalled();
+  });
+
+  it('tipo default ("Sin especificar"): NENHUM PATCH extra é disparado — comportamento inalterado', async () => {
+    const onSaved = vi.fn();
+    render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={onSaved} />);
+    await assentar();
+    await escolherDaLista();
+    // Não mexe no <select> — fica no default ('').
+    fireEvent.click(screen.getByTestId('pad-save'));
+
+    await waitFor(() => expect(createPatientAddress).toHaveBeenCalledWith('p1', {
+      address_formatted: ESCOLHIDO.formatted_address,
+    }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(updatePatientAddressLogistics).not.toHaveBeenCalled();
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('PATCH pós-POST falha: endereço já foi criado (onSaved/handleClose seguem), erro vira TOAST — nunca o submitError genérico', async () => {
+    updatePatientAddressLogistics.mockRejectedValueOnce(new Error('PATCH caiu'));
+    const onSaved = vi.fn();
+    const onClose = vi.fn();
+    render(<PatientAddressDrawer patientId="p1" onClose={onClose} onSaved={onSaved} />);
+    await assentar();
+    await escolherDaLista();
+    fireEvent.change(screen.getByTestId('pad-type'), { target: { value: 'escuela' } });
+    fireEvent.click(screen.getByTestId('pad-save'));
+
+    await waitFor(() => expect(updatePatientAddressLogistics).toHaveBeenCalled());
+    // A criação NÃO é tratada como falha: onSaved dispara e o drawer fecha.
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(screen.queryByTestId('pad-error')).not.toBeInTheDocument();
+    // O aviso é o toast dedicado, com a mensagem específica — não o texto genérico de erro.
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith(
+      t('admin.patients.detail.addressDrawer.typeSaveWarning'), 'error', 'address-type-save-warning',
+    ));
+  });
+
+  it('POST falha: nem chega a tentar o PATCH, e o erro é o genérico de sempre', async () => {
+    createPatientAddress.mockRejectedValueOnce(new Error('POST caiu'));
+    render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={vi.fn()} />);
+    await assentar();
+    await escolherDaLista();
+    fireEvent.change(screen.getByTestId('pad-type'), { target: { value: 'escuela' } });
+    fireEvent.click(screen.getByTestId('pad-save'));
+
+    expect(await screen.findByTestId('pad-error')).toHaveTextContent('Erro ao salvar');
+    expect(updatePatientAddressLogistics).not.toHaveBeenCalled();
+    expect(showToast).not.toHaveBeenCalled();
   });
 });
