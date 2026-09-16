@@ -1,7 +1,8 @@
 /**
- * AnaCareRateLimiter — limite de carga D341, compartilhado pelas duas portas
- * (`AnaCarePatientApi` e `AnaCareShiftsSource`) porque é sobre o Ana Care como um todo, não por
- * porta (spec F2 "se cair").
+ * AnaCareRateLimiter — limite de carga D341, compartilhado entre portas do Ana Care
+ * (hoje `AnaCareShiftsSource`; a porta de paciente `AnaCarePatientApi` ficou de fora desta stage
+ * porque a reconciliação de paciente passou a ser manual — decisão do Gabriel, 16/09) porque é
+ * sobre o Ana Care como um todo, não por porta (spec F2 "se cair").
  *
  * Três regras, cada uma com sabotagem própria (fase-2.md "termina quando"):
  *   1. Fila sequencial: 1 requisição por vez, intervalo mínimo configurável (default 1s).

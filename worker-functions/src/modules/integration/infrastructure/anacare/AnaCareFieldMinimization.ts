@@ -4,8 +4,10 @@
  * O payload cru do Ana Care (turno com `patient`/`nurse` aninhados) traz telefone, endereço,
  * `location`/`initial_location`, valor de pagamento, observação clínica e CURP/RFC do
  * prestador. Nada disso pode chegar ao domínio — as funções aqui são o ÚNICO ponto de tradução
- * bruto→minimizado; `AnaCareShiftsSourceReal`/`AnaCarePatientApiReal` nunca leem o raw fora
- * daqui (ver AnaCareShiftsSourceReal.ts / AnaCarePatientApiReal.ts).
+ * bruto→minimizado; `AnaCareShiftsSourceReal` nunca lê o raw fora daqui (ver
+ * AnaCareShiftsSourceReal.ts). Consumidor adicional planejado (`AnaCarePatientApiReal`, porta de
+ * reconciliação de paciente) ficou de fora deste módulo por ora — reconciliação de paciente
+ * passou a ser manual (decisão do Gabriel, 16/09), não portada pra stage.
  *
  * `POISON_MARKER` só existe para o teste de contrato — não é usado fora de fixture.
  */

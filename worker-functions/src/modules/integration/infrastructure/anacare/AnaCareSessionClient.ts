@@ -10,9 +10,11 @@
  * de acesso diferente, não reaproveitado aqui.
  *
  * Documento e agência do paciente só vêm no `patient` ANINHADO em `/api/shifts/`
- * (`/api/patients/` não traz — F13). Por isso este cliente nunca chama `/api/patients/`: as
- * duas portas (`AnaCareShiftsSourceReal`, `AnaCarePatientApiReal`) resolvem tudo a partir de
- * `/api/shifts/`.
+ * (`/api/patients/` não traz — F13). Por isso este cliente nunca chama `/api/patients/`:
+ * `AnaCareShiftsSourceReal` resolve tudo a partir de `/api/shifts/`. Uma segunda porta
+ * (`AnaCarePatientApiReal`, reconciliação de paciente) foi desenhada sobre o mesmo iterador mas
+ * não entrou nesta stage — reconciliação de paciente passou a ser manual (decisão do Gabriel,
+ * 16/09), e depende do módulo `reconciliation` que só existe no `main` (#404).
  */
 
 import { AnaCareRateLimiter } from './AnaCareRateLimiter';
