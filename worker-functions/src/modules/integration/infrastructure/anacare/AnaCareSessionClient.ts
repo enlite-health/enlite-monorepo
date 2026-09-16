@@ -114,7 +114,7 @@ export class AnaCareSessionClient {
 
   /**
    * Faz o login de fato (GET+POST). Só pode ser chamada de DENTRO de uma tarefa já agendada
-   * no rate limiter (por `login()`, `ensureSessionAndFetch` ou `forceReloginAndFetch`) — nunca
+   * no rate limiter (por `login()`, `ensureSessionAndFetch` ou o `fn` de `buildForceReloginFetch`) — nunca
    * direto, e nunca aninhando outro `rateLimiter.schedule(...)` aqui dentro (a fila é uma
    * corrente de promises: agendar de novo por dentro de uma tarefa em execução trava esperando
    * a própria tarefa terminar).
@@ -172,17 +172,32 @@ export class AnaCareSessionClient {
    * Idem, mas força reset de sessão antes (caminho do re-login em 403) — também DENTRO da
    * fila, para que o `cookies.clear()` nunca apague um cookie que outra chamada concorrente
    * acabou de escrever fora de turno.
+   *
+   * O `fn` agendado aqui é o alvo do retry transiente do `AnaCareRateLimiter` (5xx/429/timeout,
+   * `withRetry`) — e o retry chama o MESMO `fn` de novo a cada tentativa. Sem a flag `hasRelogged`
+   * (fechada nesta closure, não no estado da instância), um 5xx *depois* de um re-login já
+   * bem-sucedido faria cada tentativa de retry refazer login inteiro (GET+POST) de novo — até
+   * `maxAttempts` vezes — invalidando uma sessão que nunca esteve inválida e batendo no Ana Care
+   * com requisições de login extras (bug nomeado, achado do code-review). `hasRelogged` só vira
+   * `true` DEPOIS que `performLogin()` resolve — se o login em si falhar (transiente), o retry
+   * seguinte tem de tentar logar de novo, não pular direto para o fetch sem sessão.
    */
-  private async forceReloginAndFetch(url: string, isAbsolute: boolean): Promise<Response> {
-    this.loggedIn = false;
-    this.cookies.clear();
-    logger.warn({ msg: '[AnaCareSessionClient] 403 recebido — disparando re-login' });
-    await this.performLogin();
-    return this.fetchThrowingOnTransientStatus(
-      url,
-      { method: 'GET', headers: { Cookie: this.cookies.header() } },
-      isAbsolute,
-    );
+  private buildForceReloginFetch(url: string, isAbsolute: boolean): () => Promise<Response> {
+    let hasRelogged = false;
+    return async () => {
+      if (!hasRelogged) {
+        this.loggedIn = false;
+        this.cookies.clear();
+        logger.warn({ msg: '[AnaCareSessionClient] 403 recebido — disparando re-login' });
+        await this.performLogin();
+        hasRelogged = true;
+      }
+      return this.fetchThrowingOnTransientStatus(
+        url,
+        { method: 'GET', headers: { Cookie: this.cookies.header() } },
+        isAbsolute,
+      );
+    };
   }
 
   /** GET autenticado com retry de re-login em 403 (uma vez). */
@@ -192,7 +207,7 @@ export class AnaCareSessionClient {
     let response = await this.rateLimiter.schedule(() => this.ensureSessionAndFetch(url, false));
 
     if (response.status === 403) {
-      response = await this.rateLimiter.schedule(() => this.forceReloginAndFetch(url, false));
+      response = await this.rateLimiter.schedule(this.buildForceReloginFetch(url, false));
     }
 
     if (!response.ok) {
@@ -262,7 +277,7 @@ export class AnaCareSessionClient {
     let response = await this.rateLimiter.schedule(() => this.ensureSessionAndFetch(absoluteUrl, true));
 
     if (response.status === 403) {
-      response = await this.rateLimiter.schedule(() => this.forceReloginAndFetch(absoluteUrl, true));
+      response = await this.rateLimiter.schedule(this.buildForceReloginFetch(absoluteUrl, true));
     }
 
     if (!response.ok) throw new AnaCareHttpError('GET', absoluteUrl, response.status, await safeText(response));
