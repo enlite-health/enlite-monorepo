@@ -3647,7 +3647,8 @@
           "typeOther": "Qual?",
           "typeOtherHint": "Sem nomes nem dados de saúde",
           "markPrimary": "Marcar como principal",
-          "neighborhood": "Zona / Bairro"
+          "neighborhood": "Zona / Bairro",
+          "typeSaveWarning": "O endereço foi criado, mas não foi possível salvar o tipo — edite depois pela ficha."
         },
         "completeness": {
           "title": "Para ativar falta:",

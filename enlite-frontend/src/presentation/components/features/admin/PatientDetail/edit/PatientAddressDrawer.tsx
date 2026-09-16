@@ -13,6 +13,7 @@ import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon'
 import { ServiceAreaMap } from '@presentation/components/molecules/ServiceAreaMap';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { useGooglePlacesAutocomplete } from '@presentation/hooks/useGooglePlacesAutocomplete';
+import { useToast } from '@presentation/hooks/useToast';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
 import { AddressTypeFields, ADDRESS_TYPE_OTHER_MAX } from './AddressTypeFields';
 import { MarkPrimaryCheckbox } from './MarkPrimaryCheckbox';
@@ -35,6 +36,13 @@ const CLOSE_MS = 300;
  * revoga a parte da D310 que os mantinha aqui (a coluna no banco e o payload de backend seguem
  * intactos, só não são mais editados por este formulário).
  *
+ * D348 (15/09): o campo Tipo (`AddressTypeFields`) também aparece ao CRIAR — B4 (spec 019)
+ * continua valendo, o `POST` nunca leva `address_type` (nasce `NULL`). Ao criar com um tipo
+ * diferente do default, o `onSubmit` encadeia um `PATCH` imediato contra o endereço recém-criado
+ * (mesmo endpoint/payload do modo editar, `buildAddressTypePatch` abaixo). Falha nesse PATCH não
+ * é tratada como falha da criação — o endereço já existe — e vira toast (`typeSaveWarning`),
+ * nunca o erro genérico de `submitError`.
+ *
  * ── Autocomplete de endereço (PEND-06 da ata de 09/09/2026) ────────────────────────────────
  * O endereço NASCE de uma escolha na lista do Google, nunca de texto digitado à mão —
  * decisão do Gabriel em 10/09, contra a recomendação do `lex` (condição C4, que pedia texto
@@ -52,6 +60,7 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
   const { t } = useTranslation();
   const ta = (k: string) => t(`admin.patients.detail.addressDrawer.${k}`);
   const te = (k: string) => t(`admin.patients.editDrawer.${k}`);
+  const showToast = useToast();
   const editing = !!address;
 
   const [show, setShow] = useState(false);
@@ -60,10 +69,11 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
   const [formatted, setFormatted] = useState('');
   const [raw, setRaw] = useState('');
   const [neighborhood, setNeighborhood] = useState(address?.neighborhood ?? '');
-  // Spec 019 (D310 item c) — TIPO por parentesco, só editável (a coluna `address_type` deixou de
-  // ser aceita na criação, B4). `''` = "sin especificar" (`address_type = NULL`). Normalizado pelo
-  // MESMO schema do submit — uma linha legada com `'primary'`/`'secondary'`/`'service'` (não
-  // deveria sobrar em linha ativa depois da migration 434, mas o front não confia sem checar) vira
+  // Spec 019 (D310 item c) — TIPO por parentesco. D348: visível ao criar E ao editar, mas a
+  // coluna `address_type` segue sem entrar no `POST` (B4) — ao criar, um PATCH separado grava o
+  // valor logo depois. `''` = "sin especificar" (`address_type = NULL`). Normalizado pelo MESMO
+  // schema do submit — uma linha legada com `'primary'`/`'secondary'`/`'service'` (não deveria
+  // sobrar em linha ativa depois da migration 434, mas o front não confia sem checar) vira
   // `null` aqui igual ao <select> (sem `<option>` pra esse valor, a UI já mostra "sin especificar").
   const originalAddressType = patientAddressTypeSchema.parse(address?.addressType ?? null);
   const [addressType, setAddressType] = useState<PatientAddressType | ''>(originalAddressType ?? '');
@@ -139,7 +149,10 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
       addressType !== (originalAddressType ?? '') ||
       addressTypeOther !== (address.addressTypeOther ?? '') ||
       markPrimary
-    : formatted !== '' || raw !== '' || neighborhood !== '' || markPrimary;
+    : formatted !== '' || raw !== '' || neighborhood !== '' || markPrimary ||
+      // D348: o Tipo passou a existir também no criar — mesma lógica do editar, contra o
+      // default ('').
+      addressType !== '' || addressTypeOther !== '';
 
   const { confirmingClose, requestClose, keepEditing, confirmDiscard } = useConfirmDiscardClose({
     isDirty,
@@ -154,25 +167,36 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
 
   const nz = (v: string): string | null => { const s = v.trim(); return s ? s : null; };
 
+  // Spec 019: `address_type`/`address_type_other` validados pela MESMA lista fechada do CHECK
+  // do banco (`patientAddressTypeSchema`, zod na borda), sem `.default(...)` — ausência do
+  // select ('') é `null` = "sin especificar", nunca um valor chutado. Compartilhado por editar
+  // (contra `originalAddressType`/`address.addressTypeOther`) e, D348, pelo PATCH pós-POST do
+  // criar (contra `null`/`null` — todo endereço nasce sem tipo, B4).
+  const buildAddressTypePatch = (
+    originalType: PatientAddressType | null,
+    originalOther: string | null,
+  ): Pick<PatientAddressLogisticsPayload, 'address_type' | 'address_type_other'> => {
+    const patch: Pick<PatientAddressLogisticsPayload, 'address_type' | 'address_type_other'> = {};
+    const nextType = patientAddressTypeSchema.parse(addressType === '' ? null : addressType);
+    if (nextType !== originalType) patch.address_type = nextType;
+    const nextOther = nextType === 'otro' ? nz(addressTypeOther) : null;
+    if (nextOther !== originalOther) {
+      patch.address_type_other = nextOther;
+      // O `.refine` do servidor exige address_type === 'otro' NA MESMA requisição sempre que
+      // address_type_other vier preenchido — mesmo quando o tipo já era 'otro' e só o texto
+      // mudou (`nextType` não entraria no payload sozinho, pois não mudou do original).
+      if (nextOther !== null) patch.address_type = nextType;
+    }
+    return patch;
+  };
+
   const onSubmit = async (): Promise<void> => {
     setSubmitError(null);
+    if (addressTypeOtherError) return;
     if (editing) {
-      if (addressTypeOtherError) return;
       const payload: PatientAddressLogisticsPayload = {};
       if (nz(neighborhood) !== (address.neighborhood ?? null)) payload.neighborhood = nz(neighborhood);
-      // Spec 019: `address_type`/`address_type_other` validados pela MESMA lista fechada do CHECK
-      // do banco (`patientAddressTypeSchema`, zod na borda), sem `.default(...)` — ausência do
-      // select ('') é `null` = "sin especificar", nunca um valor chutado.
-      const nextType = patientAddressTypeSchema.parse(addressType === '' ? null : addressType);
-      if (nextType !== originalAddressType) payload.address_type = nextType;
-      const nextOther = nextType === 'otro' ? nz(addressTypeOther) : null;
-      if (nextOther !== (address.addressTypeOther ?? null)) {
-        payload.address_type_other = nextOther;
-        // O `.refine` do servidor exige address_type === 'otro' NA MESMA requisição sempre que
-        // address_type_other vier preenchido — mesmo quando o tipo já era 'otro' e só o texto
-        // mudou (`nextType` não entraria no payload sozinho, pois não mudou do original).
-        if (nextOther !== null) payload.address_type = nextType;
-      }
+      Object.assign(payload, buildAddressTypePatch(originalAddressType, address.addressTypeOther ?? null));
       if (markPrimary && !address.isPrimary) payload.is_default = true;
       if (Object.keys(payload).length === 0) { handleClose(); return; }
       setBusy(true);
@@ -202,9 +226,21 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
     if (nz(raw)) payload.address_raw = nz(raw) as string;
     if (nz(neighborhood)) payload.neighborhood = nz(neighborhood) as string;
     if (markPrimary) payload.is_default = true;
+    // D348: o SELECT de tipo já vale ao criar, mas o POST continua sem `address_type` (B4) —
+    // o que foi escolhido vira um PATCH em seguida, contra o id que o POST devolver.
+    const typePatch = buildAddressTypePatch(null, null);
     setBusy(true);
     try {
-      await AdminApiService.createPatientAddress(patientId, payload);
+      const created = await AdminApiService.createPatientAddress(patientId, payload);
+      if (Object.keys(typePatch).length > 0) {
+        try {
+          await AdminApiService.updatePatientAddressLogistics(patientId, created.id, typePatch);
+        } catch {
+          // O endereço JÁ foi criado — só o tipo não gravou. Avisar sem dar a entender que a
+          // criação inteira falhou (o `submitError` genérico faria isso); toast, não bloqueio.
+          showToast(ta('typeSaveWarning'), 'error', 'address-type-save-warning');
+        }
+      }
       onSaved();
       handleClose();
     } catch {
@@ -249,7 +285,8 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
                 <Text size="sm" weight="medium" color="secondary">{ta('address')}</Text>
                 <Text size="sm" color="muted">{address.addressFormatted ?? address.addressRaw ?? '—'}</Text>
               </div>
-              {/* Spec 019: o tipo (`address_type`) só entra pelo PATCH — nunca na criação (B4). */}
+              {/* Spec 019 + D348: o SELECT aparece em criar e editar, mas o `address_type` só
+                  entra no servidor por PATCH — nunca no `POST` (B4). */}
               <AddressTypeFields
                 addressType={addressType}
                 addressTypeOther={addressTypeOther}
@@ -299,6 +336,16 @@ export function PatientAddressDrawer({ patientId, address, onClose, onSaved }: P
               <FormField label={ta('addressRaw')} htmlFor="pad-raw" optional>
                 <InputWithIcon id="pad-raw" inputSize="compact" value={raw} onChange={(e) => setRaw(e.target.value)} data-testid="pad-raw" />
               </FormField>
+              {/* D348: mesmo campo de tipo do modo editar — o `POST` segue sem `address_type`
+                  (B4); o que for escolhido aqui vira um PATCH logo depois do POST ter sucesso. */}
+              <AddressTypeFields
+                addressType={addressType}
+                addressTypeOther={addressTypeOther}
+                onAddressTypeChange={setAddressType}
+                onAddressTypeOtherChange={setAddressTypeOther}
+                ta={ta}
+                otherError={addressTypeOtherError}
+              />
               {/* Spec 019 (US 4.2): opt-in — sem marcar, vale a regra de nascimento do servidor
                   (sem principal ativo, este nasce principal de qualquer forma). */}
               <MarkPrimaryCheckbox checked={markPrimary} onChange={setMarkPrimary} ta={ta} />
