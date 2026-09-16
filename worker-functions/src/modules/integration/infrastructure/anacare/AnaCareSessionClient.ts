@@ -235,9 +235,19 @@ export class AnaCareSessionClient {
     }
   }
 
-  /** Turnos do mês, já filtrados pelo universo D340 e minimizados na borda. */
+  /**
+   * Turnos do mês, já filtrados pelo universo D340 e minimizados na borda.
+   *
+   * `month` é campo do OBJETO turno no payload (uma das 67 chaves), não parâmetro de filtro do
+   * backend — `?month=YYYY-MM` é ignorado em silêncio e devolve o universo inteiro (medido ao
+   * vivo 16/09: `?month=2026-08` deu `count=882776`, praticamente todas as 39 agências). O
+   * backend aceita `min_date`/`max_date` (medido no mesmo dia: `count=3483` para uma janela de 7
+   * dias) — por isso a tradução para 1º/último dia do mês acontece aqui, na montagem da query
+   * HTTP, sem expandir a porta (que continua recebendo `month`, conceito de domínio legítimo).
+   */
   async listShifts(params: { month: string; patientId?: string }): Promise<SourceShiftDTO[]> {
-    const query: Record<string, string | number | undefined> = { month: params.month };
+    const { minDate, maxDate } = monthToDateRange(params.month);
+    const query: Record<string, string | number | undefined> = { min_date: minDate, max_date: maxDate };
     if (params.patientId) query.patient_id = params.patientId;
 
     const out: SourceShiftDTO[] = [];
@@ -318,6 +328,23 @@ export class AnaCareSessionClient {
 function isEnliteUniverseShift(raw: RawAnaCareShift): boolean {
   if (raw.patient?.agency === ANACARE_ENLITE_AGENCY_ID) return true;
   return raw.patient?.agency == null && raw.nurse?.agency === ANACARE_ENLITE_AGENCY_ID;
+}
+
+/**
+ * `YYYY-MM` → 1º e último dia do mês, em `YYYY-MM-DD` (UTC, sem depender de fuso local).
+ * Último dia via `new Date(Date.UTC(year, month, 0))` — dia 0 do mês seguinte é o último dia
+ * do mês pedido, e cobre corretamente 28/29 (fevereiro, incl. bissexto)/30/31 dias.
+ */
+function monthToDateRange(month: string): { minDate: string; maxDate: string } {
+  const [yearStr, monthStr] = month.split('-');
+  const year = Number(yearStr);
+  const monthIndex = Number(monthStr); // 1-12, e serve direto de "mês seguinte" 0-based p/ Date.UTC
+  const lastDay = new Date(Date.UTC(year, monthIndex, 0)).getUTCDate();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return {
+    minDate: `${yearStr}-${monthStr}-01`,
+    maxDate: `${yearStr}-${monthStr}-${pad(lastDay)}`,
+  };
 }
 
 function withQuery(path: string, query: Record<string, string | number | undefined>): string {

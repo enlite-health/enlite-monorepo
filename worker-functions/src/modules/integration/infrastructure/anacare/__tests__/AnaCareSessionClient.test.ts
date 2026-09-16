@@ -354,6 +354,64 @@ describe('AnaCareSessionClient — filtro de universo D340 no cliente (2.1)', ()
     expect(shifts[0].anaCarePatientId).toBe('90');
   });
 
+  it('listShifts traduz `month` para `min_date`/`max_date` (1º e último dia do mês) — bug medido 16/09: `?month=` não filtra no servidor (count=882776 vs count=3483 com min_date/max_date)', async () => {
+    const urlsCalled: string[] = [];
+    const fetchImpl = jest.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/users/admin/login/') && (!init?.method || init.method === 'GET')) return loginPageResponse();
+      if (url.endsWith('/users/admin/login/') && init?.method === 'POST') return loginOkResponse();
+      if (url.includes('/api/shifts/')) {
+        urlsCalled.push(url);
+        return jsonResponse({ count: 0, next: null, previous: null, results: [] });
+      }
+      throw new Error(`unexpected call: ${url}`);
+    });
+    const { now, sleep } = makeVirtualClock();
+    const client = new AnaCareSessionClient({
+      baseUrl: 'https://admin.ana.care',
+      username: 'u',
+      password: 'p',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      rateLimiter: new AnaCareRateLimiter({ minIntervalMs: 0, now, sleep }),
+    });
+
+    await client.listShifts({ month: '2026-09' });
+
+    expect(urlsCalled).toHaveLength(1);
+    const parsed = new URL(urlsCalled[0]);
+    expect(parsed.searchParams.get('min_date')).toBe('2026-09-01');
+    expect(parsed.searchParams.get('max_date')).toBe('2026-09-30'); // setembro tem 30 dias
+    expect(parsed.searchParams.get('month')).toBeNull();
+  });
+
+  it('listShifts calcula max_date corretamente para mês de 28, 29 e 31 dias', async () => {
+    const urlsCalled: string[] = [];
+    const fetchImpl = jest.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/users/admin/login/') && (!init?.method || init.method === 'GET')) return loginPageResponse();
+      if (url.endsWith('/users/admin/login/') && init?.method === 'POST') return loginOkResponse();
+      if (url.includes('/api/shifts/')) {
+        urlsCalled.push(url);
+        return jsonResponse({ count: 0, next: null, previous: null, results: [] });
+      }
+      throw new Error(`unexpected call: ${url}`);
+    });
+    const { now, sleep } = makeVirtualClock();
+    const client = new AnaCareSessionClient({
+      baseUrl: 'https://admin.ana.care',
+      username: 'u',
+      password: 'p',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      rateLimiter: new AnaCareRateLimiter({ minIntervalMs: 0, now, sleep }),
+    });
+
+    await client.listShifts({ month: '2026-02' }); // fevereiro 2026 (não bissexto) — 28 dias
+    await client.listShifts({ month: '2028-02' }); // fevereiro 2028 (bissexto) — 29 dias
+    await client.listShifts({ month: '2026-01' }); // janeiro — 31 dias
+
+    expect(new URL(urlsCalled[0]).searchParams.get('max_date')).toBe('2026-02-28');
+    expect(new URL(urlsCalled[1]).searchParams.get('max_date')).toBe('2028-02-29');
+    expect(new URL(urlsCalled[2]).searchParams.get('max_date')).toBe('2026-01-31');
+  });
+
   it('listShifts repassa patientId como filtro `patient_id` quando informado', async () => {
     const urlsCalled: string[] = [];
     const fetchImpl = jest.fn(async (url: string, init?: RequestInit) => {
