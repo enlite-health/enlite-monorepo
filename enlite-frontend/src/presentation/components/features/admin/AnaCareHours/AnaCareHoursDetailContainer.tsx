@@ -1,14 +1,11 @@
 /**
  * Container REAL do detalhe — busca via hook (`useAnaCareHoursPatient`) e liga as ações de
  * escrita (validar turno/lote, contestar) ao serviço injetado, com refetch automático após cada
- * uma. Portado de `repos/infra/_worktrees/proto-anacare-horas/.../AnaCareHoursDetailContainer.tsx`
- * com 3 ajustes:
- *  - `validator: Validator` REMOVIDO da prop — quem validou é a sessão autenticada no backend
- *    (contrato HTTP fixo da fase 1), nunca um payload que o front monta.
- *  - `handleContestShift` ganha `reason` (1.5b).
- *  - célula `anacare_hours:validate` (D344) — sem ela, `useActionGate` desabilita
- *    validar/validar-lote/contestar com o motivo visível (mesmo padrão de `useActionGate`/
- *    `ActionButton`, D269 — fail-open só quando o engine ABAC está OFF).
+ * uma. Porte PRD (`feat/anacare-horas-prd-allowlist`): sem ABAC no `main`, não há célula/gate por
+ * ação — a MESMA allowlist de e-mail do backend (`requireAnaCareHoursAllowlist`) já cobre leitura
+ * e escrita, então as ações ficam sempre habilitadas aqui; a checagem real é o 403 do servidor.
+ * `validator: Validator` também não existe na prop — quem validou é a sessão autenticada no
+ * backend (contrato HTTP fixo da fase 1), nunca um payload que o front monta.
  */
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -40,11 +37,6 @@ export function AnaCareHoursDetailContainer({
   const { t } = useTranslation();
   const { snapshot, isLoading, error, refetch } = useAnaCareHoursPatient(service, month, patientId);
   const [actionError, setActionError] = useState<string | null>(null);
-  // No `main` não existe célula/gate por AÇÃO (sem ABAC) — a MESMA allowlist de e-mail que
-  // libera a tela já libera validar/contestar (ver `requireAnaCareHoursAllowlist` no backend);
-  // quem chegou até aqui já passou por ela. `denied` fica sempre false — a checagem REAL é o
-  // 403 do servidor, não este gate de UI.
-  const validateGate = { allowed: true, denied: false } as const;
 
   // D3 (revisão de conformidade, 15/09): antes mostrava `err.message`, que é o `code` cru vindo do
   // backend (ex. "JA_VALIDADO") — texto ilegível pro usuário. Agora traduz por CÓDIGO
@@ -72,13 +64,7 @@ export function AnaCareHoursDetailContainer({
     }
   }
 
-  // Ao contrário de `handleValidateShift`, ESTA guarda é ALCANÇÁVEL: o botão que abre
-  // `ValidateBatchModal` nasce `disabled={disableActions}`, mas o botão "Confirmar" DENTRO do
-  // modal não é — se o gate virar negado enquanto o modal já está aberto (ex. permissão
-  // revogada em outra aba, refetch de authz), o confirmar chega aqui sem guarda de UI. Testado em
-  // AnaCareHoursDetailContainer.test.tsx ("guarda de corrida — lote").
   async function handleValidateBatch(shiftIds: string[]): Promise<void> {
-    if (!validateGate.allowed) return;
     try {
       setActionError(null);
       await service.validateBatch({ shiftIds });
@@ -88,12 +74,7 @@ export function AnaCareHoursDetailContainer({
     }
   }
 
-  // Mesma corrida de `handleValidateBatch`: o botão que ABRE `ContestModal` é `disabled`, mas o
-  // "Confirmar" de dentro do modal só checa `canConfirm` (motivo escolhido, nota dentro do
-  // limite) — não o gate. Testado em AnaCareHoursDetailContainer.test.tsx ("guarda de corrida —
-  // contestar").
   async function handleContestShift(shiftId: string, reason: ContestReason, note: string): Promise<void> {
-    if (!validateGate.allowed) return;
     try {
       setActionError(null);
       await service.contestShift({ shiftId, reason, note: note.trim() ? note.trim() : undefined });
@@ -145,7 +126,6 @@ export function AnaCareHoursDetailContainer({
         onContestShift={handleContestShift}
         sinCheckinHoursMode={sinCheckinHoursMode}
         blockReasonMode={blockReasonMode}
-        disableActionsReason={validateGate.denied ? t('admin.anacareHours.error.noValidateCell') : undefined}
       />
     </>
   );

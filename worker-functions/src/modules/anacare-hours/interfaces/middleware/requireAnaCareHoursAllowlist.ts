@@ -14,6 +14,7 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
+import { reportError } from '@shared/logging';
 import { AuthMiddleware } from '@modules/identity';
 import { AdminRepository } from '@modules/identity/infrastructure/AdminRepository';
 import { isAnaCareHoursAllowedEmail } from '@shared/security/anaCareHoursAllowlist';
@@ -30,12 +31,20 @@ export function requireAnaCareHoursAllowlist(adminRepo: Pick<AdminRepository, 'f
       return;
     }
 
-    const admin = await adminRepo.findByFirebaseUid(uid);
-    if (!isAnaCareHoursAllowedEmail(admin?.email)) {
+    // Erro de banco não pode deixar a requisição pendurada (sem next() nem resposta) — achado do
+    // gate revisao-pr (critério 7, 15/09): fail-closed tem que ser uma resposta explícita, nunca
+    // uma promise rejeitada sem tratamento.
+    try {
+      const admin = await adminRepo.findByFirebaseUid(uid);
+      if (!isAnaCareHoursAllowedEmail(admin?.email)) {
+        deny(res);
+        return;
+      }
+      next();
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'requireAnaCareHoursAllowlist' });
       deny(res);
-      return;
     }
-
-    next();
   };
 }

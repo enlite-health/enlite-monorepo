@@ -1,4 +1,7 @@
+jest.mock('@shared/logging', () => ({ reportError: jest.fn() }));
+
 import type { Request, Response } from 'express';
+import { reportError } from '@shared/logging';
 import { requireAnaCareHoursAllowlist } from '../requireAnaCareHoursAllowlist';
 import type { AdminRepository } from '@modules/identity/infrastructure/AdminRepository';
 
@@ -85,5 +88,18 @@ describe('requireAnaCareHoursAllowlist', () => {
     await requireAnaCareHoursAllowlist(adminRepo)(req, res, next);
     expect(adminRepo.findByFirebaseUid).toHaveBeenCalledWith('uid-do-token');
     expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it('erro ao consultar o banco → 403 explícito (NUNCA pendura a requisição), reporta o erro sem PII', async () => {
+    const next = jest.fn();
+    const res = mockRes();
+    const adminRepo: Pick<AdminRepository, 'findByFirebaseUid'> = {
+      findByFirebaseUid: jest.fn().mockRejectedValue(new Error('conexão perdida')),
+    };
+    await requireAnaCareHoursAllowlist(adminRepo)(mockReq('uid-qualquer'), res, next);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({ success: false, error: 'not_allowlisted', code: 'ANACARE_HOURS_NOT_ALLOWLISTED' });
+    expect(next).not.toHaveBeenCalled();
+    expect(reportError).toHaveBeenCalledWith(expect.any(Error), { source: 'requireAnaCareHoursAllowlist' });
   });
 });

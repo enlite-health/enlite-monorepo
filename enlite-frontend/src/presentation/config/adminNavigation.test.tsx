@@ -153,6 +153,34 @@ describe('useAdminNavItems — Mensajes por etapa (DEC-12 / PEND-14) é admin-on
   });
 });
 
+describe('useAdminNavItems — Horas Ana Care (allowlist, main sem ABAC)', () => {
+  const HREF = '/admin/anacare/horas';
+
+  it('canAccessAnaCareHours=true → item aparece no menu', () => {
+    vi.mocked(useAdminAuth).mockReturnValue({
+      adminProfile: { role: EnliteRole.RECRUITER, canAccessAnaCareHours: true } as ReturnType<typeof useAdminAuth>['adminProfile'],
+    } as ReturnType<typeof useAdminAuth>);
+
+    const items = renderHook(() => useAdminNavItems()).result.current;
+    const item = items.find((i) => i.href === HREF);
+    expect(item).toBeDefined();
+    expect(item?.label).toBe('Horas Ana Care');
+  });
+
+  it.each([
+    ['canAccessAnaCareHours=false', { role: EnliteRole.RECRUITER, canAccessAnaCareHours: false }],
+    ['canAccessAnaCareHours ausente', { role: EnliteRole.RECRUITER }],
+    ['sem perfil', null],
+  ])('%s → item NÃO aparece no menu', (_label, profile) => {
+    vi.mocked(useAdminAuth).mockReturnValue({
+      adminProfile: profile as ReturnType<typeof useAdminAuth>['adminProfile'],
+    } as ReturnType<typeof useAdminAuth>);
+
+    const items = renderHook(() => useAdminNavItems()).result.current;
+    expect(items.some((i) => i.href === HREF)).toBe(false);
+  });
+});
+
 describe('useAdminNavItems — Mapa (REQ-04) é item base, para todo staff', () => {
   it.each([EnliteRole.ADMIN, EnliteRole.RECRUITER])('%s vê "Mapa" apontando para /admin/mapa, depois de Pacientes', (role) => {
     vi.mocked(useAdminAuth).mockReturnValue({
