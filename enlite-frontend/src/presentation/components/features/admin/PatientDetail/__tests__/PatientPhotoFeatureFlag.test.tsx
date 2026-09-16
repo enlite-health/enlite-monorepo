@@ -1,10 +1,13 @@
 /**
  * Achado da revisão do PR-4 (item 6, task 4.10): a flag `VITE_PATIENT_PHOTO_ENABLED` nunca tinha
- * sido implementada — o slot de foto (`PatientPhotoSlot`, dentro de `PatientIdentityCard`) e o
- * card de documentos (`PatientDocumentsCard`) apareciam sem gate nenhum, em qualquer build.
+ * sido implementada — o slot de foto (`PatientPhotoSlot`, dentro de `PatientIdentityCard`)
+ * aparecia sem gate nenhum, em qualquer build.
  * Este teste prova o GATE em si (`ENV.PATIENT_PHOTO_ENABLED`), mockando o módulo de env para
- * simular ligado/desligado — o comportamento interno de cada componente já tem suíte própria
- * (`PatientPhotoSlot.test.tsx`, `PatientDocumentsCard.test.tsx`).
+ * simular ligado/desligado — o comportamento interno do componente já tem suíte própria
+ * (`PatientPhotoSlot.test.tsx`).
+ *
+ * Documentos y consentimiento de imagen (que também vivia atrás desta flag) foi REMOVIDO
+ * (fix/018-remover-documentos-consentimento) — só a foto fica.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -18,8 +21,8 @@ vi.mock('@infrastructure/config/env', () => ({
   },
 }));
 
-// useCellAccess: 'hidden' — nem PatientPhotoSlot nem PatientDocumentsCard disparam fetch quando
-// renderizados (o que testaríamos aqui é só a PRESENÇA do wrapper, não o fluxo de dados).
+// useCellAccess: 'hidden' — PatientPhotoSlot não dispara fetch quando renderizado (o que
+// testaríamos aqui é só a PRESENÇA do wrapper, não o fluxo de dados).
 vi.mock('@presentation/hooks/useCellAccess', () => ({
   useCellAccess: () => ({ level: 'hidden', canRead: false, canWrite: false, status: 'ready' }),
   useActionGate: () => ({ allowed: false }),
@@ -32,8 +35,6 @@ vi.mock('react-i18next', () => ({
 import { PatientIdentityCard } from '../PatientIdentityCard';
 import { patientDetailFixture } from './patientDetailFixture';
 
-// O gate do `PatientDocumentsCard` mora no PAI (`PatientDetailPage.tsx`), não no próprio
-// componente — coberto em `PatientDetailPage.test.tsx` ("flag VITE_PATIENT_PHOTO_ENABLED").
 describe('Flag VITE_PATIENT_PHOTO_ENABLED — PatientPhotoSlot dentro de PatientIdentityCard (achado item 6 da revisão do PR-4)', () => {
   beforeEach(() => {
     envState.PATIENT_PHOTO_ENABLED = false;

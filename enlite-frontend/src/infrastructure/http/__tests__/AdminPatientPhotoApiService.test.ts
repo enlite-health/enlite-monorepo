@@ -1,6 +1,7 @@
 /**
- * AdminPatientPhotoApiService — spec 018, PR-4. Cobre os 7 métodos (foto, documento,
- * consentimento), sucesso e erro (`ApiError`), multipart vs JSON, token ausente.
+ * AdminPatientPhotoApiService — spec 018, PR-4. Cobre os 3 métodos de foto, sucesso e erro
+ * (`ApiError`), multipart vs JSON, token ausente. Documento/consentimento foi removido
+ * (fix/018-remover-documentos-consentimento).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -49,61 +50,6 @@ describe('AdminPatientPhotoApiService', () => {
     fetchMock.mockResolvedValue(json({ success: false, error: 'Sem foto', code: 'NOT_FOUND' }, 404));
     await expect(AdminPatientPhotoApiService.getPatientPhotoUrl('p1')).rejects.toMatchObject({ message: 'Sem foto', code: 'NOT_FOUND', status: 404 });
     await expect(AdminPatientPhotoApiService.getPatientPhotoUrl('p1')).rejects.toBeInstanceOf(ApiError);
-  });
-
-  it('uploadPatientDocument: multipart com file + documentType', async () => {
-    fetchMock.mockResolvedValue(json({ success: true, data: { documentId: 'd1' } }));
-    const file = new File(['x'], 'doc.pdf', { type: 'application/pdf' });
-    await expect(AdminPatientPhotoApiService.uploadPatientDocument('p1', file, 'image_consent')).resolves.toEqual({ documentId: 'd1' });
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toMatch(/\/patients\/p1\/documents$/);
-    const form = init.body as FormData;
-    expect(form.get('documentType')).toBe('image_consent');
-  });
-
-  it('erro em rota multipart: também lança ApiError', async () => {
-    fetchMock.mockResolvedValue(json({ success: false, error: '413' }, 413));
-    const file = new File(['x'], 'doc.pdf', { type: 'application/pdf' });
-    await expect(AdminPatientPhotoApiService.uploadPatientDocument('p1', file, 'image_consent')).rejects.toBeInstanceOf(ApiError);
-  });
-
-  it('getPatientDocumentUrl: GET por documentId', async () => {
-    fetchMock.mockResolvedValue(json({ success: true, data: { url: 'https://x', expiresInSeconds: 300 } }));
-    await AdminPatientPhotoApiService.getPatientDocumentUrl('p1', 'd1');
-    expect(fetchMock.mock.calls[0][0]).toMatch(/\/patients\/p1\/documents\/d1$/);
-  });
-
-  it('registerImageConsent: POST com o payload completo', async () => {
-    fetchMock.mockResolvedValue(json({ success: true, data: { id: 'c1' } }));
-    const payload = { consenterKind: 'PATIENT' as const, textVersion: 'v1', consentedAt: '2026-09-14T00:00:00.000Z' };
-    await expect(AdminPatientPhotoApiService.registerImageConsent('p1', payload)).resolves.toEqual({ id: 'c1' });
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toMatch(/\/image-consents$/);
-    expect(JSON.parse(init.body)).toEqual(payload);
-  });
-
-  it('revokeImageConsent: POST para /revoke', async () => {
-    fetchMock.mockResolvedValue(json({ success: true, data: {} }));
-    await AdminPatientPhotoApiService.revokeImageConsent('p1', 'c1', { revocationChannel: 'WRITTEN' });
-    expect(fetchMock.mock.calls[0][0]).toMatch(/\/image-consents\/c1\/revoke$/);
-  });
-
-  it('listPatientDocuments: GET na lista (furo fechado nesta rodada), sem documentId no path', async () => {
-    fetchMock.mockResolvedValue(json({ success: true, data: [{ id: 'd1', documentType: 'image_consent', contentType: 'application/pdf', sizeBytes: 10, uploadedAt: '2026-09-14T00:00:00.000Z' }] }));
-    await expect(AdminPatientPhotoApiService.listPatientDocuments('p1')).resolves.toEqual([
-      { id: 'd1', documentType: 'image_consent', contentType: 'application/pdf', sizeBytes: 10, uploadedAt: '2026-09-14T00:00:00.000Z' },
-    ]);
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toMatch(/\/patients\/p1\/documents$/);
-    expect(init.method).toBe('GET');
-  });
-
-  it('getVigenteImageConsent: GET /image-consents/vigente, devolve null quando não há vigente', async () => {
-    fetchMock.mockResolvedValue(json({ success: true, data: null }));
-    await expect(AdminPatientPhotoApiService.getVigenteImageConsent('p1')).resolves.toBeNull();
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toMatch(/\/patients\/p1\/image-consents\/vigente$/);
-    expect(init.method).toBe('GET');
   });
 
   it('sem token: nenhuma chamada manda Authorization', async () => {

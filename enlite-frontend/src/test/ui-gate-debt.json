@@ -73,6 +73,10 @@
       "motivo": "PR-8b (ADR-2, SUP-30/31, migration 435) — CoberturaMedicaCard/screenRegistry usam `patient_coverage:create`/`patient_coverage:update`."
     },
     {
+      "cell": "patient_identity:write",
+      "motivo": "fix/018-remover-documentos-consentimento — o único consumidor de `patient_identity:write` era `const { canWrite } = useCellAccess('patient_identity')` dentro de `PatientDocumentsCard.tsx` (removido por completo junto com documentos/consentimento). PatientIdentityCard/PatientGeneralInfoCard/PatientPhotoSlot já usam `patient_identity:create`/`patient_identity:update` (PR-8b), nunca `:write` genérico."
+    },
+    {
       "cell": "patient_family:write",
       "motivo": "PR-8b (ADR-2, SUP-30/31, migration 435) — FamiliaresCard/ExternalContactsCard/EmergencyMarkButton/screenRegistry usam `patient_family:create`/`patient_family:update`."
     },

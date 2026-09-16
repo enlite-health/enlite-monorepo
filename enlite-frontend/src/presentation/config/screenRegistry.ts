@@ -90,9 +90,6 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
     tabs: ['clinicalData', 'supportNetwork', 'contractedService', 'vacancies', 'history'],
     containers: [
       c('identity', 'patient_identity', ['read', 'create', 'update']),
-      // Spec 018, PR-4: leitura do documento (prova do consentimento de imagem) — célula NOVA,
-      // 0 grupos ao nascer (D285), nunca herdada de `patient_identity:read` (contrato §Documento).
-      c('consentDocuments', 'patient_consent_documents', ['read']),
       c('clinical', 'patient_clinical', ['read', 'create', 'update'], 'clinicalData'),
       c('careTeam', 'patient_care_team', ['read', 'create', 'update'], 'clinicalData'),
       // Spec 017: o projeto terapêutico deixa de ser placeholder — container próprio, na aba clínica.
