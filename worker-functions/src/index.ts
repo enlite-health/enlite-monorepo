@@ -17,7 +17,7 @@ process.on('uncaughtException', (err: Error) => {
 });
 
 import express, { Request, Response } from 'express';
-import { AnaCareHoursController, createAnaCareHoursRoutes } from '@modules/anacare-hours';
+import { AnaCareHoursController, createAnaCareHoursRoutes, AnaCareHoursSyncController, createAnaCareHoursSyncAdminRoutes, createAnaCareHoursSyncInternalRoutes } from '@modules/anacare-hours';
 import { corsMiddleware } from '@shared/http/corsConfig';
 import rateLimit from 'express-rate-limit';
 import { WorkerControllerV2, JobsController, WorkerDocumentsMeController, AdminWorkerDocumentsController, WorkerAdditionalDocsMeController, AdminAdditionalDocsController, createAdminWorkerDocumentsRoutes, createWorkerDocumentsRoutes } from '@modules/worker';
@@ -526,6 +526,15 @@ app.use(
   createAnaCareHoursRoutes(new AnaCareHoursController(), authMiddleware, permissionMiddleware),
 );
 
+// ========== Sincronizar agora — F4, DESENHO (tasks 4.8/4.9; 4.1-4.7 bloqueadas por F2/F3) ==========
+// Instância ÚNICA do controller: o guard de dedup do AnaCareHoursSyncRunner só funciona
+// compartilhado entre a chamada do botão (aqui) e a do Cloud Scheduler (`/api/internal`, abaixo).
+const anaCareHoursSyncController = new AnaCareHoursSyncController();
+app.use(
+  '/api/admin',
+  createAnaCareHoursSyncAdminRoutes(anaCareHoursSyncController, authMiddleware, permissionMiddleware),
+);
+
 // ========== Admin Dedup + Test Fixtures (extraído p/ bootstrap/) ==========
 registerAdminMaintenanceRoutes(app, authMiddleware, permissionMiddleware);
 
@@ -622,6 +631,12 @@ const domainEventBacklogService = new DomainEventBacklogService(dbPool);
 const anaCareMirrorHealthService = new AnaCareMirrorHealthService(dbPool);
 const internalController = new InternalController(domainEventProcessor, outboxProcessor, reminderScheduler, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService);
 app.use('/api/internal', systemContextMiddleware('job:internal'), createInternalRoutes(internalController));
+app.use(
+  '/api/internal',
+  systemContextMiddleware('job:internal'),
+  internalAuthMiddleware,
+  createAnaCareHoursSyncInternalRoutes(anaCareHoursSyncController),
+);
 
 // Cloud Tasks: 30-min-before admission reminder (queue: admission-reminders).
 // Kept on the app (not the notification router) to avoid a notification→matching
