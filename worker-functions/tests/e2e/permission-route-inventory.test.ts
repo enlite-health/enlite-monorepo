@@ -366,6 +366,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/anacare-hours/shifts/validate-batch → anacare_hours:validate',
         'POST /api/admin/anacare-hours/shifts/:shiftId/validate → anacare_hours:validate',
         'POST /api/admin/anacare-hours/shifts/:shiftId/contest → anacare_hours:validate',
+        'POST /api/admin/anacare-hours/sync → anacare_hours:validate',
       ].sort(),
     );
   });

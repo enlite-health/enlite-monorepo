@@ -3,6 +3,10 @@
  */
 export { AnaCareHoursController } from './interfaces/controllers/AnaCareHoursController';
 export { createAnaCareHoursRoutes } from './interfaces/routes/anacareHoursRoutes';
+export { AnaCareHoursSyncController } from './interfaces/controllers/AnaCareHoursSyncController';
+export { createAnaCareHoursSyncAdminRoutes, createAnaCareHoursSyncInternalRoutes } from './interfaces/routes/anacareHoursSyncRoutes';
+export { AnaCareHoursSyncRunner } from './application/AnaCareHoursSyncRunner';
+export { AnaCareHoursSyncGuard } from './application/AnaCareHoursSyncGuard';
 export { AnaCareHoursService } from './application/AnaCareHoursService';
 export { ShiftHoursValidationRepository } from './infrastructure/ShiftHoursValidationRepository';
 export { FakeAnaCareShiftsSource, createAnaCareShiftsSource, ANACARE_HOURS_SOURCE_ENV } from './infrastructure/FakeAnaCareShiftsSource';
