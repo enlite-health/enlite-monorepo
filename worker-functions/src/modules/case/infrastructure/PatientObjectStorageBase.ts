@@ -36,9 +36,8 @@ export abstract class PatientObjectStorageBase {
   protected readonly bucketName: string;
 
   /**
-   * @param bucketEnvVar nome da env que carrega o bucket (`GCS_PATIENT_PHOTOS_BUCKET` /
-   *   `GCS_PATIENT_DOCUMENTS_BUCKET`) — sem valor, lança `notConfigured()` (fail-closed, sem
-   *   fallback de nome).
+   * @param bucketEnvVar nome da env que carrega o bucket (ex.: `GCS_PATIENT_PHOTOS_BUCKET`) — sem
+   *   valor, lança `notConfigured()` (fail-closed, sem fallback de nome).
    * @param notConfigured fábrica do erro específico da subclasse (mensagem/nome próprios).
    */
   protected constructor(
