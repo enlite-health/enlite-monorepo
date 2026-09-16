@@ -3726,9 +3726,7 @@
           "typeOther": "¿Cuál?",
           "typeOtherHint": "Sin nombres ni datos de salud",
           "markPrimary": "Marcar como principal",
-          "neighborhood": "Zona / Barrio",
-          "corridor": "Corredor logístico",
-          "accessNotes": "Logística y acceso"
+          "neighborhood": "Zona / Barrio"
         },
         "completeness": {
           "title": "Para activar falta:",
