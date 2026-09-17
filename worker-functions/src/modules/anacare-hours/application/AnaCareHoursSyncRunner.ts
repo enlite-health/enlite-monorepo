@@ -28,6 +28,7 @@ import type { EnliteDirectorySource, PatientMonthSyncRepository, ShiftSyncReposi
 import { AnaCareHoursSyncGuard } from './AnaCareHoursSyncGuard';
 import { emitAnaCareHoursSyncMetric, type AnaCareHoursSyncMetricEmitter } from '../infrastructure/AnaCareHoursSyncMetrics';
 import { FakeEnliteDirectory, FakeAnaCareShiftRepository, FakeAnaCarePatientMonthRepository } from '../infrastructure/FakeAnaCareSyncDependencies';
+import { aggregateByPatient } from './AnaCarePatientMonthAggregator';
 
 export interface AnaCareHoursSyncTrigger {
   origin: 'cron' | 'manual';
@@ -38,6 +39,15 @@ export interface AnaCareHoursSyncTrigger {
   cursor?: number | null;
   /** Orçamento de tempo da rodada (ms) — default 420000 (7min), deixa folga pro teto de 600s do Cloud Run. */
   budgetMs?: number;
+  /**
+   * ISO do início da CORRIDA lógica (pode abranger várias invocações via `cursor`) — mesmo papel
+   * de `cursor`: o chamador devolve o `runStartedAt` recebido no outcome anterior junto do
+   * `cursor` ao retomar. Omitido/`null` (ou `cursor` omitido) = corrida NOVA, carimbo é `Date.now()`
+   * desta chamada. Sem propagação, a detecção de colisão cross-invocação (F6.1B) degrada a
+   * best-effort — mesma limitação que `cursor` já tem hoje (nada no processo distingue "retomada"
+   * de "corrida nova que por coincidência começa no mesmo índice").
+   */
+  runStartedAt?: string | null;
 }
 
 export interface AnaCareHoursSyncOutcome {
@@ -58,6 +68,8 @@ export interface AnaCareHoursSyncOutcome {
   shiftsSkippedNoProvider: number;
   /** Irmã de `shiftsSkippedNoProvider` — turno sem paciente (medido 0/3.421, tipo admite mesmo assim). */
   shiftsSkippedNoPatient: number;
+  /** ISO do carimbo desta corrida — devolver junto de `nextCursor` numa retomada propaga o detector de colisão (ver `AnaCareHoursSyncTrigger.runStartedAt`). */
+  runStartedAt: string;
 }
 
 const DEFAULT_BUDGET_MS = 420_000;
@@ -104,11 +116,19 @@ export class AnaCareHoursSyncRunner {
     private readonly emitMetric: AnaCareHoursSyncMetricEmitter = emitAnaCareHoursSyncMetric,
     private readonly monthResolver: () => string = AnaCareHoursSyncRunner.currentMonth,
     private readonly directory: EnliteDirectorySource = new FakeEnliteDirectory(),
+    /**
+     * Conserto 17/09 (desacoplamento de `anacare_shift`, passo 1): `runOnce` NÃO grava mais
+     * turnos aqui — mantido só para `getLastDirectoryCount`/`setLastDirectoryCount` (alarme de
+     * queda do diretório). Leitores que ainda dependem de `anacare_shift` (ex.:
+     * `AnaCareHoursService.getSnapshotFreshness`) ficam estáticos a partir de agora — passo 2
+     * decide o destino dessas leituras junto da remoção de `AnaCareShiftRepository`.
+     */
     private readonly repository: ShiftSyncRepository = new FakeAnaCareShiftRepository(),
     private readonly env: NodeJS.ProcessEnv = process.env,
     /**
-     * F6.1 (D361): grava o retrato AGREGADO (`anacare_patient_month`, migration 441) ao lado de
-     * `anacare_shift` — convivência deliberada, `anacare_shift` continua escrita normalmente.
+     * F6.1 (D361) → conserto 17/09 (passo 1): grava o retrato AGREGADO (`anacare_patient_month`,
+     * migration 441) por SUBSTITUIÇÃO (`upsertReplacingForRun`) a partir do agregado em memória de
+     * CADA reserva — não depende mais de `anacare_shift` como fonte cumulativa.
      */
     private readonly patientMonthRepository: PatientMonthSyncRepository = new FakeAnaCarePatientMonthRepository(),
   ) {}
@@ -151,7 +171,7 @@ export class AnaCareHoursSyncRunner {
   }
 
   /** Uma rodada real: diretório → por reserva → grava. Nunca chamado fora do guard (`run`). */
-  private async runOnce(month: string, cursor: number | null, budgetMs: number): Promise<RunOnceResult> {
+  private async runOnce(month: string, cursor: number | null, budgetMs: number, runStartedAt: Date): Promise<RunOnceResult> {
     const directorySnapshot = await this.directory.fetch();
     await this.assertDirectoryHealthy(directorySnapshot.counts.total);
     await this.repository.setLastDirectoryCount(directorySnapshot.counts.total);
@@ -177,15 +197,16 @@ export class AnaCareHoursSyncRunner {
       shiftsSkippedNoProvider += skipped.noProvider;
       shiftsSkippedNoPatient += skipped.noPatient;
       if (shifts.length > 0) {
-        const { written } = await this.repository.upsertMany(shifts, month);
+        // Conserto 17/09 (desacoplamento de `anacare_shift`, passo 1): não grava mais o retrato
+        // por turno (`anacare_shift`) — `anacare_shift` está saindo de cena (passo 2 remove
+        // `AnaCareShiftRepository`). O agregado é calculado em memória SÓ com os turnos DESTA
+        // reserva (`aggregateByPatient`) e gravado por SUBSTITUIÇÃO; como isso não pode mesclar com
+        // uma gravação anterior do MESMO paciente vinda de outra reserva, `upsertReplacingForRun`
+        // detecta a colisão (via `runStartedAt`) e falha alto em vez de sobrescrever calado — ver
+        // cabeçalho do arquivo e `AnaCarePatientMonthCollisionError`.
+        const aggregates = aggregateByPatient(shifts);
+        const { written } = await this.patientMonthRepository.upsertReplacingForRun(aggregates, month, runStartedAt);
         shiftsWritten += written;
-
-        // Conserto 17/09 (D361 F6.1): NÃO agregar em memória só com os turnos DESTA reserva — o
-        // mesmo paciente pode aparecer em outra reserva (nesta rodada ou numa retomada por
-        // cursor), e um upsert que só via o lote atual sobrescrevia o total anterior em silêncio.
-        // `recomputeFromShifts` recomputa a partir do retrato por turno já escrito acima (fonte da
-        // verdade cumulativa durante a convivência F6.1), sempre o TOTAL do paciente no mês.
-        await this.patientMonthRepository.recomputeFromShifts(shifts, month);
       }
       reservationsProcessed += 1;
     }
@@ -202,6 +223,7 @@ export class AnaCareHoursSyncRunner {
       directoryCounts: directorySnapshot.counts,
       shiftsSkippedNoProvider,
       shiftsSkippedNoPatient,
+      runStartedAt: runStartedAt.toISOString(),
     };
   }
 
@@ -217,7 +239,10 @@ export class AnaCareHoursSyncRunner {
     const budgetMs = trigger.budgetMs ?? DEFAULT_BUDGET_MS;
 
     const startedAt = Date.now();
-    const { result, deduped } = await this.guard.run(() => this.runOnce(month, cursor, budgetMs));
+    // Corrida NOVA (sem cursor de retomada) sempre ganha carimbo próprio — só reaproveita o
+    // `runStartedAt` do chamador quando ELE está retomando (cursor não-nulo) E o propagou.
+    const runStartedAt = cursor !== null && trigger.runStartedAt ? new Date(trigger.runStartedAt) : new Date(startedAt);
+    const { result, deduped } = await this.guard.run(() => this.runOnce(month, cursor, budgetMs, runStartedAt));
 
     const durationMs = Date.now() - startedAt;
     this.emitMetric({

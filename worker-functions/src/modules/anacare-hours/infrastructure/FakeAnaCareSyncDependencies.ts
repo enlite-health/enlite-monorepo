@@ -21,6 +21,7 @@ import type {
 import type { AnaCarePatientMonthAggregate, AnaCarePatientMonthProviderAggregate } from '../domain/AnaCarePatientMonth';
 import { aggregatePatientMonth } from '../application/AnaCarePatientMonthAggregator';
 import { FakeAnaCareShiftsSource } from './FakeAnaCareShiftsSource';
+import { AnaCarePatientMonthCollisionError } from './AnaCarePatientMonthRepository';
 
 function nonEmpty(value: string | null | undefined): string | undefined {
   const trimmed = value?.trim();
@@ -108,6 +109,9 @@ export class FakeAnaCarePatientMonthRepository implements PatientMonthSyncReposi
   private readonly providers = new Map<string, AnaCarePatientMonthProviderAggregate>();
   private readonly seededMonths = new Set<string>();
   private lastFetchedAt: string | null = null;
+  /** Carimbo por linha (source::mês::paciente) — espelha a coluna `fetched_at` real, usado pelo
+   * detector de colisão de `upsertReplacingForRun` (mesmo racional do SQL real). */
+  private readonly fetchedAtByKey = new Map<string, Date>();
 
   private key(source: string, periodMonth: string, anaCarePatientId: string): string {
     return `${source}::${periodMonth}::${anaCarePatientId}`;
@@ -154,6 +158,34 @@ export class FakeAnaCarePatientMonthRepository implements PatientMonthSyncReposi
     }
     this.lastFetchedAt = new Date().toISOString();
     return { written: patientIds.size };
+  }
+
+  /** Ver contrato em `PatientMonthSyncRepository.upsertReplacingForRun` — mesma checagem do SQL real. */
+  async upsertReplacingForRun(
+    aggregates: readonly AnaCarePatientMonthAggregate[],
+    periodMonth: string,
+    runStartedAt: Date,
+  ): Promise<{ written: number }> {
+    if (aggregates.length === 0) return { written: 0 };
+
+    const colliding = aggregates
+      .map((a) => a.anaCarePatientId)
+      .filter((id) => {
+        const existing = this.fetchedAtByKey.get(this.key('anacare', periodMonth, id));
+        return existing !== undefined && existing >= runStartedAt;
+      });
+    if (colliding.length > 0) {
+      throw new AnaCarePatientMonthCollisionError(colliding, periodMonth);
+    }
+
+    const now = new Date();
+    for (const a of aggregates) {
+      const k = this.key('anacare', periodMonth, a.anaCarePatientId);
+      this.rows.set(k, a);
+      this.fetchedAtByKey.set(k, now);
+    }
+    this.lastFetchedAt = now.toISOString();
+    return { written: aggregates.length };
   }
 
   async listByMonth(source: string, periodMonth: string): Promise<AnaCarePatientMonthAggregate[]> {

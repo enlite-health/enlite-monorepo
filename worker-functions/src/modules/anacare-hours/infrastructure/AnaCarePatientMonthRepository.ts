@@ -70,6 +70,26 @@ function nonEmpty(value: string | null | undefined): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+/**
+ * Conserto 17/09 (desacoplamento de `anacare_shift`, passo 1): `upsertReplacingForRun` faz
+ * SUBSTITUIÇÃO (não soma) — não pode mesclar silenciosamente uma gravação do MESMO paciente vinda
+ * de outra reserva. Falha ALTA (nunca grava o lote) antes de sobrescrever calado, mesmo molde de
+ * `AnaCareShiftMonthMismatchError`.
+ */
+export class AnaCarePatientMonthCollisionError extends Error {
+  constructor(
+    readonly anaCarePatientIds: readonly string[],
+    readonly periodMonth: string,
+  ) {
+    super(
+      `[AnaCarePatientMonthRepository] paciente(s) ${anaCarePatientIds.join(', ')} do mês ${periodMonth} ` +
+        `já foram gravados NESTA MESMA corrida (fetched_at >= runStartedAt) — outra reserva desta ` +
+        `corrida já escreveu este paciente; substituir agora apagaria a gravação anterior em ` +
+        `silêncio. Recusado sem gravar nada do lote.`,
+    );
+  }
+}
+
 export class AnaCarePatientMonthRepository implements PatientMonthSyncRepository {
   private poolMemo?: Pool;
 
@@ -278,6 +298,103 @@ export class AnaCarePatientMonthRepository implements PatientMonthSyncRepository
          updated_at         = NOW()`,
       [periodMonthValue, pairPatientIds, pairNurseIds, firstNames, lastNames],
     );
+  }
+
+  /**
+   * Ver contrato em `PatientMonthSyncRepository.upsertReplacingForRun`. Transação: `SELECT ...
+   * FOR UPDATE` trava as linhas dos pacientes do lote ANTES de decidir — evita que duas reservas
+   * concorrentes da MESMA corrida passem as duas pela checagem antes de qualquer uma escrever.
+   */
+  async upsertReplacingForRun(
+    aggregates: readonly AnaCarePatientMonthAggregate[],
+    periodMonth: string,
+    runStartedAt: Date,
+  ): Promise<{ written: number }> {
+    if (aggregates.length === 0) return { written: 0 };
+
+    const periodMonthValue = periodMonthDate(periodMonth);
+    const patientIds = aggregates.map((a) => a.anaCarePatientId);
+
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const collisionCheck = await client.query<{ ana_care_patient_id: string }>(
+        `SELECT ana_care_patient_id
+           FROM anacare_patient_month
+          WHERE source = 'anacare' AND period_month = $1 AND ana_care_patient_id = ANY($2::text[])
+            AND fetched_at >= $3::timestamptz
+          FOR UPDATE`,
+        [periodMonthValue, patientIds, runStartedAt.toISOString()],
+      );
+
+      if (collisionCheck.rows.length > 0) {
+        await client.query('ROLLBACK');
+        throw new AnaCarePatientMonthCollisionError(
+          collisionCheck.rows.map((r) => r.ana_care_patient_id),
+          periodMonth,
+        );
+      }
+
+      const sources = aggregates.map(() => 'anacare');
+      const periodMonthDates = aggregates.map(() => periodMonthValue);
+      const firstNames = aggregates.map((a) => a.patientFirstName ?? null);
+      const lastNames = aggregates.map((a) => a.patientLastName ?? null);
+      const providersCounts = aggregates.map((a) => a.providersCount);
+      const shiftsCounts = aggregates.map((a) => a.shiftsCount);
+      const hoursActualSums = aggregates.map((a) => a.hoursActualSum);
+      const hoursScheduledSums = aggregates.map((a) => a.hoursScheduledSumMissingActual);
+      const originSinCheckins = aggregates.map((a) => a.originSinCheckin);
+      const originWebAdmins = aggregates.map((a) => a.originWebAdmin);
+      const originApps = aggregates.map((a) => a.originApp);
+
+      const result = await client.query(
+        `INSERT INTO anacare_patient_month (
+           source, ana_care_patient_id, period_month, patient_first_name, patient_last_name,
+           providers_count, shifts_count, hours_actual_sum, hours_scheduled_sum_missing_actual,
+           origin_sin_checkin, origin_web_admin, origin_app, fetched_at, updated_at
+         )
+         SELECT UNNEST($1::text[]), UNNEST($2::text[]), UNNEST($3::date[]), UNNEST($4::text[]), UNNEST($5::text[]),
+                UNNEST($6::integer[]), UNNEST($7::integer[]), UNNEST($8::numeric[]), UNNEST($9::numeric[]),
+                UNNEST($10::integer[]), UNNEST($11::integer[]), UNNEST($12::integer[]), NOW(), NOW()
+         ON CONFLICT (source, ana_care_patient_id, period_month) DO UPDATE SET
+           patient_first_name                 = COALESCE(EXCLUDED.patient_first_name, anacare_patient_month.patient_first_name),
+           patient_last_name                  = COALESCE(EXCLUDED.patient_last_name, anacare_patient_month.patient_last_name),
+           providers_count                    = EXCLUDED.providers_count,
+           shifts_count                       = EXCLUDED.shifts_count,
+           hours_actual_sum                   = EXCLUDED.hours_actual_sum,
+           hours_scheduled_sum_missing_actual = EXCLUDED.hours_scheduled_sum_missing_actual,
+           origin_sin_checkin                 = EXCLUDED.origin_sin_checkin,
+           origin_web_admin                   = EXCLUDED.origin_web_admin,
+           origin_app                         = EXCLUDED.origin_app,
+           fetched_at                         = NOW(),
+           updated_at                         = NOW()`,
+        [
+          sources,
+          patientIds,
+          periodMonthDates,
+          firstNames,
+          lastNames,
+          providersCounts,
+          shiftsCounts,
+          hoursActualSums,
+          hoursScheduledSums,
+          originSinCheckins,
+          originWebAdmins,
+          originApps,
+        ],
+      );
+
+      await client.query('COMMIT');
+      // Contagem zero é falha, nunca sucesso — `rowCount` é o que REALMENTE foi gravado, nunca o
+      // tamanho do array de entrada (que já foi validado > 0 acima).
+      return { written: result.rowCount ?? 0 };
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   async listProvidersByMonth(source: string, periodMonth: string): Promise<AnaCarePatientMonthProviderAggregate[]> {

@@ -66,6 +66,24 @@ export interface PatientMonthSyncRepository {
    * nesta rodada nunca apaga um nome já gravado (COALESCE do lado da implementação).
    */
   recomputeFromShifts(shifts: readonly SourceShiftDTO[], periodMonth: string): Promise<{ written: number }>;
+  /**
+   * Conserto 17/09 (fase de desacoplamento de `anacare_shift`, passo 1): grava os agregados JÁ
+   * PRONTOS de UMA reserva (`aggregateByPatient` sobre os turnos DAQUELA reserva, calculado pelo
+   * CHAMADOR — este método não lê `anacare_shift`) por SUBSTITUIÇÃO total da linha, nunca soma com
+   * o que já existe. Como a substituição não pode mesclar com uma gravação anterior do MESMO
+   * paciente vinda de outra reserva, detecta a colisão ANTES de gravar: se algum paciente do lote
+   * já foi escrito NESTA MESMA corrida (`fetched_at` já gravado >= `runStartedAt`), lança
+   * `AnaCarePatientMonthCollisionError` e não grava nada do lote — nunca sobrescreve calado.
+   * `runStartedAt` é o carimbo da corrida (mesma rodada `runOnce`, ou propagado pelo chamador junto
+   * do `cursor` ao retomar uma corrida que ficou pela metade — ver `AnaCareHoursSyncRunner`).
+   * `written` reflete o que REALMENTE foi gravado (`rowCount`), nunca o tamanho do array de
+   * entrada — contagem zero é falha, nunca sucesso.
+   */
+  upsertReplacingForRun(
+    aggregates: readonly AnaCarePatientMonthAggregate[],
+    periodMonth: string,
+    runStartedAt: Date,
+  ): Promise<{ written: number }>;
   listByMonth(source: string, periodMonth: string): Promise<AnaCarePatientMonthAggregate[]>;
   /** Mesmo contrato de `ShiftSyncFreshness.getSnapshotFreshness` — contagem zero é falha, nunca sucesso. */
   getSnapshotFreshness(source: string, periodMonth: string): Promise<ShiftSyncFreshness>;

@@ -136,6 +136,9 @@ class StubPatientMonthRepository implements PatientMonthSyncRepository {
   async recomputeFromShifts(): Promise<{ written: number }> {
     return { written: 0 };
   }
+  async upsertReplacingForRun(): Promise<{ written: number }> {
+    return { written: 0 };
+  }
   async listByMonth(): Promise<AnaCarePatientMonthAggregate[]> {
     return this.aggregates;
   }
