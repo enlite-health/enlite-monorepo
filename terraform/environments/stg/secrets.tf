@@ -10,6 +10,8 @@ locals {
     "short-io-domain",
     "talentum-api-email",
     "talentum-api-password",
+    "anacare-username",
+    "anacare-pass",
     "twilio-auth-token",
   ]
 }

@@ -157,7 +157,7 @@ jobs:
             PROMPT_DOC_ID_AT=1plk1zmW1kUI5kxudci5y1GcwMP5VI9exLe3avH0REGk
             PROMPT_DOC_ID_CUIDADOR=1VSjf02LXjoxsNSNQSl-yDBIwiiu88w6aHW2DnKaUqgA
             ENCUADRE_WEEKLY_CAPACITY=30
-            ANACARE_HOURS_SOURCE=fake
+            ANACARE_HOURS_SOURCE=real
           secrets: |
             DB_PASSWORD=enlite-runtime-db-password:latest
             DB_SYSTEM_PASSWORD=enlite-system-db-password:latest
@@ -166,6 +166,8 @@ jobs:
             TWILIO_AUTH_TOKEN=twilio-auth-token:latest
             INTERNAL_TOKEN_SECRET=internal-token-secret:latest
             SENDGRID_API_KEY=sendgrid-api-key:latest
+            ANACARE_USERNAME=anacare-username:latest
+            ANACARE_PASS=anacare-pass:latest
           flags: >-
             --allow-unauthenticated
             --service-account=enlite-functions-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
