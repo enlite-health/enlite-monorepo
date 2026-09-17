@@ -13,6 +13,7 @@
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import type { AnaCareShiftsSource } from '../domain/AnaCareShiftsSource';
 import { ShiftHoursValidationRepository, ShiftAlreadyValidatedError } from '../infrastructure/ShiftHoursValidationRepository';
+import { WorkerLinkRepository } from '../infrastructure/WorkerLinkRepository';
 import { mapShift, groupIntoPatients, buildSnapshot } from './AnaCareHoursMapper';
 import {
   AnaCareHoursServiceError,
@@ -45,11 +46,42 @@ export class AnaCareHoursService {
     private readonly source: AnaCareShiftsSource,
     private readonly validations: ShiftHoursValidationRepository = new ShiftHoursValidationRepository(),
     private readonly kms: KMSEncryptionService = new KMSEncryptionService(),
+    private readonly workerLinks: WorkerLinkRepository = new WorkerLinkRepository(),
   ) {}
 
-  private async patientsForMonth(month: string, canReadNote: boolean, patientId?: string): Promise<AnaCarePatient[]> {
+  /**
+   * D349 item 1: resolve o vínculo de prestador em LOTE (nunca 1 SELECT por turno). A chave da
+   * Map já decide `linked`; o valor só carrega nome quando `canReadProviderName` — mesmo corte de
+   * `worker_contact:read` que a projeção de prestador já aplica em outras telas (D344).
+   */
+  private async resolveProviderLinks(nurseIds: readonly string[], canReadProviderName: boolean): Promise<Map<string, string | undefined>> {
+    const rows = await this.workerLinks.findByAnaCareIds(nurseIds);
+    const out = new Map<string, string | undefined>();
+    for (const [anaCareId, row] of rows) {
+      if (!canReadProviderName) {
+        out.set(anaCareId, undefined);
+        continue;
+      }
+      const [firstName, lastName] = await Promise.all([
+        row.firstNameEncrypted ? this.kms.decrypt(row.firstNameEncrypted) : Promise.resolve(null),
+        row.lastNameEncrypted ? this.kms.decrypt(row.lastNameEncrypted) : Promise.resolve(null),
+      ]);
+      const name = [firstName, lastName].filter(Boolean).join(' ').trim();
+      out.set(anaCareId, name || undefined);
+    }
+    return out;
+  }
+
+  private async patientsForMonth(
+    month: string,
+    canReadNote: boolean,
+    canReadProviderName: boolean,
+    patientId?: string,
+  ): Promise<AnaCarePatient[]> {
     const sourceShifts = await this.source.listShifts({ month, patientId });
     const validations = await this.validations.getByShiftIds(sourceShifts.map((s) => s.sourceShiftId));
+    const nurseIds = [...new Set(sourceShifts.map((s) => s.anaCareNurseId))];
+    const providerLinks = await this.resolveProviderLinks(nurseIds, canReadProviderName);
 
     const mapped = await Promise.all(
       sourceShifts.map(async (s) => {
@@ -60,22 +92,25 @@ export class AnaCareHoursService {
       }),
     );
 
-    return groupIntoPatients(mapped);
+    return groupIntoPatients(mapped, providerLinks);
   }
 
   /** D4: sem filtro de query — `patientSearch`/`providerId` rodam só no CLIENTE (`selectors.ts`), nunca aqui (PII em query/log). */
-  async getMonthSnapshot(month: string, canReadNote: boolean): Promise<AnaCareMonthSnapshot> {
-    const [patients, retrato] = await Promise.all([this.patientsForMonth(month, canReadNote), this.source.getRetratoStatus()]);
+  async getMonthSnapshot(month: string, canReadNote: boolean, canReadProviderName = false): Promise<AnaCareMonthSnapshot> {
+    const [patients, retrato] = await Promise.all([
+      this.patientsForMonth(month, canReadNote, canReadProviderName),
+      this.source.getRetratoStatus(),
+    ]);
     return buildSnapshot(month, patients, retrato);
   }
 
-  async getPatientMonth(month: string, patientId: string, canReadNote: boolean): Promise<AnaCarePatient | null> {
-    const patients = await this.patientsForMonth(month, canReadNote, patientId);
+  async getPatientMonth(month: string, patientId: string, canReadNote: boolean, canReadProviderName = false): Promise<AnaCarePatient | null> {
+    const patients = await this.patientsForMonth(month, canReadNote, canReadProviderName, patientId);
     return patients.find((p) => p.anaCareId === patientId) ?? null;
   }
 
   async getRetratoStatus(month: string): Promise<AnaCareRetratoStatus> {
-    const snapshot = await this.getMonthSnapshot(month, false);
+    const snapshot = await this.getMonthSnapshot(month, false, false);
     return { updatedAt: snapshot.updatedAt, stale: snapshot.stale, circuitBreakerOpen: snapshot.circuitBreakerOpen };
   }
 

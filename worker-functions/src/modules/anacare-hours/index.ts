@@ -9,6 +9,7 @@ export { AnaCareHoursSyncRunner } from './application/AnaCareHoursSyncRunner';
 export { AnaCareHoursSyncGuard } from './application/AnaCareHoursSyncGuard';
 export { AnaCareHoursService } from './application/AnaCareHoursService';
 export { ShiftHoursValidationRepository } from './infrastructure/ShiftHoursValidationRepository';
+export { WorkerLinkRepository } from './infrastructure/WorkerLinkRepository';
 export { FakeAnaCareShiftsSource, createAnaCareShiftsSource, ANACARE_HOURS_SOURCE_ENV } from './infrastructure/FakeAnaCareShiftsSource';
 export type { AnaCareShiftsSource, SourceShiftDTO, ListShiftsParams } from './domain/AnaCareShiftsSource';
 export type {

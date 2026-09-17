@@ -129,6 +129,49 @@ describe('groupIntoPatients', () => {
   it('lista vazia devolve nenhum paciente', () => {
     expect(groupIntoPatients([])).toEqual([]);
   });
+
+  it('D349: prestador presente em providerLinks vem linked=true com o nome', () => {
+    const shiftA = mapShift(SOURCE, undefined, false, null);
+    const patients = groupIntoPatients(
+      [{ shift: shiftA, anaCarePatientId: 'AC-PAT-0', anaCareNurseId: 'AC-NURSE-0-0' }],
+      new Map([['AC-NURSE-0-0', 'Rocío García QA']]),
+    );
+    const provider = patients[0].providers[0];
+    expect(provider.linked).toBe(true);
+    expect(provider.name).toBe('Rocío García QA');
+  });
+
+  it('D349/D344: prestador vinculado mas SEM worker_contact:read vem linked=true e name undefined', () => {
+    const shiftA = mapShift(SOURCE, undefined, false, null);
+    const patients = groupIntoPatients(
+      [{ shift: shiftA, anaCarePatientId: 'AC-PAT-0', anaCareNurseId: 'AC-NURSE-0-0' }],
+      new Map([['AC-NURSE-0-0', undefined]]),
+    );
+    const provider = patients[0].providers[0];
+    expect(provider.linked).toBe(true);
+    expect(provider.name).toBeUndefined();
+  });
+
+  it('prestador AUSENTE de providerLinks (sem match em workers.ana_care_id) vem linked=false', () => {
+    const shiftA = mapShift(SOURCE, undefined, false, null);
+    const patients = groupIntoPatients(
+      [{ shift: shiftA, anaCarePatientId: 'AC-PAT-0', anaCareNurseId: 'AC-NURSE-0-0' }],
+      new Map([['AC-NURSE-OUTRO', 'Outra Pessoa']]),
+    );
+    const provider = patients[0].providers[0];
+    expect(provider.linked).toBe(false);
+    expect(provider.name).toBeUndefined();
+  });
+
+  it('paciente permanece SEMPRE linked=false, mesmo quando o prestador do grupo está vinculado (D349 item 2, bloqueado)', () => {
+    const shiftA = mapShift(SOURCE, undefined, false, null);
+    const patients = groupIntoPatients(
+      [{ shift: shiftA, anaCarePatientId: 'AC-PAT-0', anaCareNurseId: 'AC-NURSE-0-0' }],
+      new Map([['AC-NURSE-0-0', 'Rocío García QA']]),
+    );
+    expect(patients[0].linked).toBe(false);
+    expect(patients[0].name).toBeUndefined();
+  });
 });
 
 describe('buildSnapshot', () => {
