@@ -467,27 +467,34 @@ describe('AnaCareHoursService', () => {
     });
   });
 
+  /**
+   * Conserto 17/09 (passo 2): `getRetratoStatus` migrou de `shiftRepository.getSnapshotFreshness`
+   * (`anacare_shift`, que ninguém mais escreve desde o passo 1) para
+   * `patientMonthRepository.getSnapshotFreshness` (`anacare_patient_month`) — estes 3 testes
+   * passavam `shiftRepo` (posição 5); agora passam `patientMonthRepo` (posição 6), mesmo double
+   * que os testes de `getMonthSnapshot`/`getPatientMonth` acima já usam.
+   */
   describe('getRetratoStatus', () => {
     it('retrato construído e fonte fresca → stale=false', async () => {
-      const shiftRepo = new StubShiftRepository([SHIFT_A]);
-      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
+      const patientMonthRepo = new StubPatientMonthRepository([AGGREGATE_PAT_0]);
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), undefined, undefined, patientMonthRepo);
       const status = await service.getRetratoStatus('2026-09');
       expect(status).toEqual({ updatedAt: expect.any(String), stale: false, circuitBreakerOpen: false });
     });
 
     it('retrato NUNCA construído (zero linhas) → stale=true mesmo com a fonte dizendo fresco', async () => {
-      const shiftRepo = new StubShiftRepository([]);
-      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
+      const patientMonthRepo = new StubPatientMonthRepository([]);
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), undefined, undefined, patientMonthRepo);
       const status = await service.getRetratoStatus('2026-09');
       expect(status.stale).toBe(true);
     });
 
-    it('não chama source.listShifts nem mapeia turnos — só freshness + status da fonte', async () => {
+    it('não chama source.listShifts nem lista o agregado inteiro — só freshness + status da fonte', async () => {
       const source = new StubSource();
       const listShiftsSpy = jest.spyOn(source, 'listShifts');
-      const shiftRepo = new StubShiftRepository([SHIFT_A]);
-      const listByMonthSpy = jest.spyOn(shiftRepo, 'listByMonth');
-      const service = new AnaCareHoursService(source, mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
+      const patientMonthRepo = new StubPatientMonthRepository([AGGREGATE_PAT_0]);
+      const listByMonthSpy = jest.spyOn(patientMonthRepo, 'listByMonth');
+      const service = new AnaCareHoursService(source, mockRepo(), new KMSEncryptionService(), undefined, undefined, patientMonthRepo);
 
       await service.getRetratoStatus('2026-09');
       expect(listShiftsSpy).not.toHaveBeenCalled();

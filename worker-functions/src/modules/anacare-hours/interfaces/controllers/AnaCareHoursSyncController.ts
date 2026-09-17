@@ -68,6 +68,7 @@ export class AnaCareHoursSyncController {
         month: body.data.month,
         cursor: body.data.cursor,
         budgetMs: body.data.budgetMs,
+        runStartedAt: body.data.runStartedAt,
       });
       res.status(200).json({
         success: true,
@@ -76,6 +77,11 @@ export class AnaCareHoursSyncController {
         reservationsProcessed: outcome.reservationsProcessed,
         shiftsWritten: outcome.shiftsWritten,
         nextCursor: outcome.nextCursor,
+        // Conserto 17/09 (passo 2): devolve o carimbo desta corrida ao LADO do `nextCursor` — o
+        // chamador (script de medição ou um futuro botão "continuar") reenvia os DOIS numa
+        // retomada, sem isso o detector de colisão cross-invocação é teatro fora de `runner.run()`
+        // chamado direto (ver `syncTriggerBodySchema`).
+        runStartedAt: outcome.runStartedAt,
         shiftsSkippedNoProvider: outcome.shiftsSkippedNoProvider,
         shiftsSkippedNoPatient: outcome.shiftsSkippedNoPatient,
       });

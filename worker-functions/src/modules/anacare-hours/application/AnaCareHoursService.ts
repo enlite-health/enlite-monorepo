@@ -184,9 +184,26 @@ export class AnaCareHoursService {
     return patients.find((p) => p.anaCareId === patientId) ?? null;
   }
 
-  /** Barato: só freshness do retrato + status da fonte — nunca lista nem mapeia o mês inteiro. */
+  /**
+   * Barato: só freshness do retrato + status da fonte — nunca lista nem mapeia o mês inteiro.
+   *
+   * Conserto 17/09 (passo 2): migrado de `shiftRepository.getSnapshotFreshness` (lê
+   * `anacare_shift`, que ninguém mais escreve desde o passo 1 — reportaria data velha PARA SEMPRE)
+   * para `patientMonthRepository.getSnapshotFreshness` (lê `anacare_patient_month`, escrito pelo
+   * runner a cada corrida). ⚠️ Mudança de UNIDADE do `shifts` retornado: no repositório antigo
+   * era `COUNT(*)` de `anacare_shift` = nº de TURNOS (medido ~2700); no novo é `COUNT(*)` de
+   * `anacare_patient_month` = nº de LINHAS = nº de PACIENTES (medido ~145). O `naoConstruido`
+   * (`=== 0`) se comporta igual nos dois casos (zero linhas ⇔ zero pacientes ⇔ zero turnos, mesma
+   * condição de "nunca construído") — mas o NÚMERO em si mudou de grandeza. Grep feito (ver
+   * relato do fecho): `getRetratoStatus` NÃO expõe `freshness.shifts` na resposta (só usa para o
+   * booleano `naoConstruido` e descarta a contagem) — nenhum outro consumidor lê esse número como
+   * quantidade de turnos.
+   */
   async getRetratoStatus(month: string): Promise<AnaCareRetratoStatus> {
-    const [freshness, sourceRetrato] = await Promise.all([this.shiftRepository.getSnapshotFreshness(month), this.source.getRetratoStatus()]);
+    const [freshness, sourceRetrato] = await Promise.all([
+      this.patientMonthRepository.getSnapshotFreshness(PATIENT_MONTH_SOURCE, month),
+      this.source.getRetratoStatus(),
+    ]);
     const naoConstruido = freshness.shifts === 0;
     return {
       updatedAt: freshness.lastFetchedAt ?? new Date().toISOString(),

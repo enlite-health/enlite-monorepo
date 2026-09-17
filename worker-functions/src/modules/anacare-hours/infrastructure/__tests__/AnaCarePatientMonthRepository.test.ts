@@ -5,9 +5,19 @@
  * colunas → leitura devolve idêntico ao que entrou).
  */
 const mockPoolQuery = jest.fn();
+/**
+ * `upsertReplacingForRun` (conserto 17/09, passo 1) usa `pool.connect()` — client dedicado pra
+ * transação (BEGIN/SELECT FOR UPDATE/ROLLBACK ou COMMIT), nunca `pool.query()` direto (mesmo molde
+ * de `IcdCatalogTerminology.test.ts`, D6). `mockClientQuery` default cobre BEGIN/COMMIT/ROLLBACK
+ * (não carregam linhas); o SELECT FOR UPDATE e o INSERT são dirigidos por fila
+ * (`mockClientQuery.mockResolvedValueOnce`) em cada teste.
+ */
+const mockClientQuery = jest.fn();
+const mockRelease = jest.fn();
+const mockConnect = jest.fn().mockResolvedValue({ query: mockClientQuery, release: mockRelease });
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
-    getInstance: jest.fn().mockReturnValue({ getPool: jest.fn().mockReturnValue({ query: mockPoolQuery }) }),
+    getInstance: jest.fn().mockReturnValue({ getPool: jest.fn().mockReturnValue({ query: mockPoolQuery, connect: mockConnect }) }),
   },
 }));
 
@@ -73,6 +83,12 @@ function sqlRowFor(a: AnaCarePatientMonthAggregate) {
 describe('AnaCarePatientMonthRepository', () => {
   beforeEach(() => {
     mockPoolQuery.mockReset();
+    mockClientQuery.mockReset();
+    mockConnect.mockClear();
+    mockRelease.mockClear();
+    // Default: BEGIN/COMMIT/ROLLBACK não carregam linhas — testes de `upsertReplacingForRun`
+    // sobrescrevem com `mockResolvedValueOnce` na ORDEM em que o método dispara as queries.
+    mockClientQuery.mockResolvedValue({ rows: [] });
   });
 
   describe('upsertMany', () => {
@@ -350,6 +366,115 @@ describe('AnaCarePatientMonthRepository', () => {
       const repo = new AnaCarePatientMonthRepository();
       const freshness = await repo.getSnapshotFreshness('anacare', '2026-09');
       expect(freshness).toEqual({ shifts: 145, lastFetchedAt: '2026-09-17T00:00:00.000Z' });
+    });
+  });
+
+  /**
+   * Tarefa 2 (brief 17/09, passo 2): `upsertReplacingForRun` (BEGIN / SELECT ... FOR UPDATE /
+   * ON CONFLICT / ROLLBACK) não tinha teste próprio — a peça mais arriscada do passo 1. `pool.connect()`
+   * é mockado à parte de `pool.query()` (mesmo molde de `IcdCatalogTerminology.test.ts`, D6): o
+   * método usa um CLIENT dedicado pra transação, nunca `pool.query()` direto.
+   */
+  describe('upsertReplacingForRun', () => {
+    it('nada a gravar: zero agregados não toca o pool nem abre transação', async () => {
+      const repo = new AnaCarePatientMonthRepository();
+      const result = await repo.upsertReplacingForRun([], '2026-09', new Date('2026-09-17T10:00:00.000Z'));
+      expect(result).toEqual({ written: 0 });
+      expect(mockConnect).not.toHaveBeenCalled();
+    });
+
+    it('caminho feliz: BEGIN → SELECT FOR UPDATE (sem colisão) → INSERT/UPSERT → COMMIT, libera o client', async () => {
+      mockClientQuery
+        .mockResolvedValueOnce({ rows: [] }) // BEGIN
+        .mockResolvedValueOnce({ rows: [] }) // SELECT ... FOR UPDATE — nenhuma linha colidindo
+        .mockResolvedValueOnce({ rows: [], rowCount: 2 }) // INSERT ... ON CONFLICT
+        .mockResolvedValueOnce({ rows: [] }); // COMMIT
+
+      const repo = new AnaCarePatientMonthRepository();
+      const runStartedAt = new Date('2026-09-17T10:00:00.000Z');
+      const result = await repo.upsertReplacingForRun([AGGREGATE_A, AGGREGATE_SEM_NOME], '2026-09', runStartedAt);
+
+      expect(mockConnect).toHaveBeenCalledTimes(1);
+      expect(mockClientQuery.mock.calls[0][0]).toMatch(/^BEGIN/);
+      expect(mockClientQuery.mock.calls[1][0]).toMatch(/SELECT ana_care_patient_id[\s\S]*FOR UPDATE/);
+      // runStartedAt é o 3º parâmetro do SELECT FOR UPDATE, como ISO — é ele que fia o detector
+      // de colisão cross-invocação pela camada HTTP (tarefa 1).
+      expect(mockClientQuery.mock.calls[1][1]).toEqual(['2026-09-01', ['AC-PAT-0', 'AC-PAT-1'], runStartedAt.toISOString()]);
+      expect(mockClientQuery.mock.calls[2][0]).toMatch(/INSERT INTO anacare_patient_month/);
+      expect(mockClientQuery.mock.calls[3][0]).toMatch(/^COMMIT/);
+      expect(mockRelease).toHaveBeenCalledTimes(1);
+      // Contagem zero é falha, nunca sucesso — `written` é o `rowCount` REAL do INSERT, não o
+      // tamanho do array de entrada (que também é 2 aqui, então o teste de baixo prova a diferença).
+      expect(result).toEqual({ written: 2 });
+    });
+
+    it('COALESCE de nome no ON CONFLICT: rodada SEM nome não apaga um nome já gravado (mesma regra dura de `recomputeFromShifts`)', async () => {
+      mockClientQuery
+        .mockResolvedValueOnce({ rows: [] }) // BEGIN
+        .mockResolvedValueOnce({ rows: [] }) // SELECT FOR UPDATE — sem colisão
+        .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // INSERT
+        .mockResolvedValueOnce({ rows: [] }); // COMMIT
+
+      const repo = new AnaCarePatientMonthRepository();
+      await repo.upsertReplacingForRun([AGGREGATE_SEM_NOME], '2026-09', new Date('2026-09-17T10:00:00.000Z'));
+
+      const insertSql = mockClientQuery.mock.calls[2][0] as string;
+      expect(insertSql).toMatch(/patient_first_name\s*=\s*COALESCE\(EXCLUDED\.patient_first_name, anacare_patient_month\.patient_first_name\)/);
+      expect(insertSql).toMatch(/patient_last_name\s*=\s*COALESCE\(EXCLUDED\.patient_last_name, anacare_patient_month\.patient_last_name\)/);
+      const insertParams = mockClientQuery.mock.calls[2][1] as unknown[];
+      expect(insertParams[3]).toEqual([null]); // firstNames — AGGREGATE_SEM_NOME não tem nome, NULL explícito
+      expect(insertParams[4]).toEqual([null]); // lastNames
+    });
+
+    it('colisão: paciente do lote já gravado NESTA MESMA corrida (fetched_at >= runStartedAt) → ROLLBACK, lança, NADA do lote é gravado', async () => {
+      mockClientQuery
+        .mockResolvedValueOnce({ rows: [] }) // BEGIN
+        .mockResolvedValueOnce({ rows: [{ ana_care_patient_id: 'AC-PAT-0' }] }) // SELECT FOR UPDATE — COLIDE
+        .mockResolvedValueOnce({ rows: [] }); // ROLLBACK
+
+      const repo = new AnaCarePatientMonthRepository();
+      const runStartedAt = new Date('2026-09-17T10:00:00.000Z');
+
+      await expect(repo.upsertReplacingForRun([AGGREGATE_A, AGGREGATE_SEM_NOME], '2026-09', runStartedAt)).rejects.toThrow(
+        /AC-PAT-0.*já foram gravados NESTA MESMA corrida/s,
+      );
+
+      // ROLLBACK dispara DUAS vezes (o explícito do ramo de colisão + o do catch-all que blinda
+      // qualquer erro do bloco try) — nenhuma delas é INSERT: o INSERT NUNCA disparou (nada do
+      // lote gravado, nem o paciente que não colidia).
+      expect(mockClientQuery).toHaveBeenCalledTimes(4);
+      expect(mockClientQuery.mock.calls[2][0]).toMatch(/^ROLLBACK/);
+      expect(mockClientQuery.mock.calls[3][0]).toMatch(/^ROLLBACK/);
+      expect(mockClientQuery.mock.calls.some(([sql]) => /^INSERT/.test(sql as string))).toBe(false);
+      expect(mockRelease).toHaveBeenCalledTimes(1); // client sempre liberado, mesmo no erro
+    });
+
+    it('rowCount real ≠ tamanho do array de entrada: written reflete o INSERT, não o `aggregates.length` (contagem zero é falha, nunca sucesso)', async () => {
+      mockClientQuery
+        .mockResolvedValueOnce({ rows: [] }) // BEGIN
+        .mockResolvedValueOnce({ rows: [] }) // SELECT FOR UPDATE — sem colisão
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 }) // INSERT — driver afirma 0 linhas afetadas
+        .mockResolvedValueOnce({ rows: [] }); // COMMIT
+
+      const repo = new AnaCarePatientMonthRepository();
+      const result = await repo.upsertReplacingForRun([AGGREGATE_A, AGGREGATE_SEM_NOME], '2026-09', new Date('2026-09-17T10:00:00.000Z'));
+
+      // 2 agregados de ENTRADA, mas rowCount=0 do driver — written tem que ser 0, nunca 2.
+      expect(result).toEqual({ written: 0 });
+    });
+
+    it('erro fora da checagem de colisão (ex.: INSERT falha) também faz ROLLBACK e libera o client', async () => {
+      mockClientQuery
+        .mockResolvedValueOnce({ rows: [] }) // BEGIN
+        .mockResolvedValueOnce({ rows: [] }) // SELECT FOR UPDATE — sem colisão
+        .mockRejectedValueOnce(new Error('conexão caiu')) // INSERT explode
+        .mockResolvedValueOnce({ rows: [] }); // ROLLBACK
+
+      const repo = new AnaCarePatientMonthRepository();
+      await expect(repo.upsertReplacingForRun([AGGREGATE_A], '2026-09', new Date('2026-09-17T10:00:00.000Z'))).rejects.toThrow('conexão caiu');
+
+      expect(mockClientQuery.mock.calls[3][0]).toMatch(/^ROLLBACK/);
+      expect(mockRelease).toHaveBeenCalledTimes(1);
     });
   });
 });

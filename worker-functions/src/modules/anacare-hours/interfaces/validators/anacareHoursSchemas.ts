@@ -21,7 +21,14 @@ export const contestShiftBodySchema = z.object({
   note: z.string().trim().max(CONTEST_NOTE_MAX_LENGTH).optional(),
 });
 
-/** Corpo opcional do disparo de sync (F4 continuação) — `month`/`cursor`/`budgetMs` retomam uma rodada parcial. */
+/**
+ * Corpo opcional do disparo de sync (F4 continuação) — `month`/`cursor`/`budgetMs` retomam uma
+ * rodada parcial. `runStartedAt` (conserto 17/09, passo 2): fia o detector de colisão
+ * cross-invocação (F6.1B, `AnaCarePatientMonthRepository.upsertReplacingForRun`) pela camada HTTP
+ * — o chamador reenvia o `runStartedAt` recebido na resposta anterior JUNTO do `cursor` ao
+ * retomar. Ausente = corrida NOVA (mesma semântica de `cursor` ausente); só faz sentido junto de um
+ * `cursor` não-nulo (ver `AnaCareHoursSyncRunner.run`, que ignora `runStartedAt` sem `cursor`).
+ */
 export const syncTriggerBodySchema = z.object({
   month: z
     .string()
@@ -29,4 +36,5 @@ export const syncTriggerBodySchema = z.object({
     .optional(),
   cursor: z.number().int().min(0).nullable().optional(),
   budgetMs: z.number().int().positive().optional(),
+  runStartedAt: z.string().datetime().optional(),
 });
