@@ -97,8 +97,23 @@ export interface RawAnaCareShift {
    * derivado do dia (`monthOfDate`).
    */
   month: string | null;
-  patient: RawAnaCarePatient;
-  nurse: RawAnaCareNurse;
+  /**
+   * `null` quando o turno não tem paciente vinculado na fonte — medido 0/3.421 na varredura
+   * 01–07/09/2026 (nunca visto), mas o TIPO admite porque a fonte não garante o contrário (mesmo
+   * racional de `nurse` abaixo). Turno sem paciente não pode ser gravado (a coluna
+   * `anacare_shift.ana_care_patient_id` é a mesma família de FK NOT NULL de `nurse`) — ver
+   * `minimizeShiftOrSkip`.
+   */
+  patient: RawAnaCarePatient | null;
+  /**
+   * `null` quando o turno está agendado sem prestador designado ainda — medido 15/3.421 (0,4%) na
+   * varredura 01–07/09/2026 contra a API real. Causa do 500 em produção (17/09): a 4ª rodada do
+   * sync morreu com `Cannot read properties of null (reading 'id')` ao ler `raw.nurse.id` sem
+   * checar antes — `isEnliteUniverseShift` (`AnaCareSessionClient`) já tolerava com `?.`, só a
+   * minimização não tolerava (instância consertada num lugar, irmã deixada atrás). Turno sem
+   * prestador é DESCARTADO, nunca em silêncio — ver `minimizeShiftOrSkip`.
+   */
+  nurse: RawAnaCareNurse | null;
   // Descartados na borda — nunca saem daqui:
   payment_amount?: unknown;
   observations?: unknown;
@@ -162,13 +177,39 @@ function monthOfDate(dateStr: string): string {
 }
 
 /**
+ * Erro nomeado — `minimizeShiftDTO` chamado com `raw.nurse === null`. Contrato: quem chama direto
+ * garante não-nulo (ver `minimizeShiftOrSkip` para o caminho que TOLERA e conta). Nomeado em vez
+ * de deixar o `TypeError` opaco de `raw.nurse.id` — foi esse `TypeError` opaco que apareceu como
+ * 500 em produção 17/09 (`Cannot read properties of null (reading 'id')`), sem dizer QUAL campo.
+ */
+export class AnaCareMissingProviderError extends Error {
+  constructor(readonly sourceShiftId: string) {
+    super(`${TAG} turno ${sourceShiftId} sem prestador (raw.nurse === null) — minimizeShiftDTO exige não-nulo; use minimizeShiftOrSkip.`);
+  }
+}
+
+/** Irmã de `AnaCareMissingProviderError` — `raw.patient === null` (medido 0/3.421, tipo admite mesmo assim). */
+export class AnaCareMissingPatientError extends Error {
+  constructor(readonly sourceShiftId: string) {
+    super(`${TAG} turno ${sourceShiftId} sem paciente (raw.patient === null) — minimizeShiftDTO exige não-nulo; use minimizeShiftOrSkip.`);
+  }
+}
+
+/**
  * Mapeia o turno cru para o DTO da porta `AnaCareShiftsSource` (spec AnaCareShiftsSource.ts) —
  * as 13 chaves do DTO SÃO o contrato de minimização: qualquer campo fora dessa lista não pode
  * existir no objeto retornado. Nomes de campo do `raw` conferidos contra a API real 17/09/2026
  * (ver comentário de `RawAnaCareShift`) — os 5 antigos (`date`/`scheduled_start`/`scheduled_end`/
  * `actual_start`/`actual_end`) não existem e nunca devem voltar a ser lidos aqui.
+ *
+ * ⚠️ Exige `raw.patient`/`raw.nurse` não-nulos — lança `AnaCareMissingPatientError`/
+ * `AnaCareMissingProviderError` se vierem `null` (defesa em profundidade; o caminho que TOLERA e
+ * CONTA turno sem paciente/prestador é `minimizeShiftOrSkip`, não este).
  */
 export function minimizeShiftDTO(raw: RawAnaCareShift): SourceShiftDTO {
+  if (raw.nurse === null) throw new AnaCareMissingProviderError(String(raw.id));
+  if (raw.patient === null) throw new AnaCareMissingPatientError(String(raw.id));
+
   const date = shiftDayFrom(raw.start);
   return {
     sourceShiftId: String(raw.id),
@@ -186,4 +227,31 @@ export function minimizeShiftDTO(raw: RawAnaCareShift): SourceShiftDTO {
     // `raw.month` é afirmação da fonte (existe em 88/88 medidos); fallback só para um raw sem ele.
     sourceMonth: raw.month ?? monthOfDate(date),
   };
+}
+
+/** Motivo do descarte — nomeado, nunca um boolean genérico (quem lê o log/outcome sabe QUAL dos dois). */
+export type SkippedShiftReason = 'no-provider' | 'no-patient';
+
+/**
+ * Resultado de `minimizeShiftOrSkip` — união discriminada por `ok`. FORÇA o chamador a checar
+ * `ok` antes de ler `dto`: não existe forma de um turno sem prestador/paciente vazar para dentro
+ * de um `.map()` que ignore o formato (diferente de `minimizeShiftDTO` devolver `null` calado, que
+ * um `.map()` inclui sem perceber — a causa raiz do desenho, não só do bug).
+ */
+export type ShiftMinimizationResult =
+  | { ok: true; dto: SourceShiftDTO }
+  | { ok: false; reason: SkippedShiftReason; sourceShiftId: string };
+
+/**
+ * Único ponto de entrada para minimizar um turno vindo de payload real, que pode faltar
+ * `nurse`/`patient` (medido 17/09: 15/3.421 sem `nurse`, 0/3.421 sem `patient`). Nunca lança para
+ * esses dois casos — devolve `{ ok: false, reason, sourceShiftId }` para o chamador CONTAR e
+ * descartar; qualquer outro defeito de forma (nome de campo errado etc.) continua lançando via
+ * `minimizeShiftDTO`, sem mudança de comportamento aí.
+ */
+export function minimizeShiftOrSkip(raw: RawAnaCareShift): ShiftMinimizationResult {
+  const sourceShiftId = String(raw.id);
+  if (raw.nurse === null) return { ok: false, reason: 'no-provider', sourceShiftId };
+  if (raw.patient === null) return { ok: false, reason: 'no-patient', sourceShiftId };
+  return { ok: true, dto: minimizeShiftDTO(raw) };
 }

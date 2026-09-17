@@ -62,8 +62,9 @@ class StubSource implements AnaCareShiftsSource {
     // hardcoded `{ stale: false, circuitBreakerOpen: false }`, sem staleness de verdade (fase 1).
     private readonly retrato: AnaCareRetratoSourceStatus = { stale: false, circuitBreakerOpen: false },
   ) {}
-  async listShifts(params: { month: string; patientId?: string }): Promise<SourceShiftDTO[]> {
-    return this.shifts.filter((s) => !params.patientId || s.anaCarePatientId === params.patientId);
+  async listShifts(params: { month: string; patientId?: string }): Promise<{ shifts: SourceShiftDTO[]; skipped: { noProvider: number; noPatient: number } }> {
+    const shifts = this.shifts.filter((s) => !params.patientId || s.anaCarePatientId === params.patientId);
+    return { shifts, skipped: { noProvider: 0, noPatient: 0 } };
   }
   async getShift(id: string): Promise<SourceShiftDTO | null> {
     return this.shifts.find((s) => s.sourceShiftId === id) ?? null;

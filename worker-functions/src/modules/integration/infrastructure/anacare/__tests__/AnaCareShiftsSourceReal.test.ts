@@ -27,12 +27,12 @@ function fakeDto(overrides: Partial<SourceShiftDTO> = {}): SourceShiftDTO {
 
 describe('AnaCareShiftsSourceReal', () => {
   it('listShifts delega ao session client e devolve o DTO já minimizado', async () => {
-    const listShifts = jest.fn().mockResolvedValue([fakeDto()]);
+    const listShifts = jest.fn().mockResolvedValue({ shifts: [fakeDto()], skipped: { noProvider: 0, noPatient: 0 } });
     const client = { listShifts, getRawShift: jest.fn(), circuitBreakerOpen: false } as unknown as AnaCareSessionClient;
     const source = new AnaCareShiftsSourceReal(client);
 
     const result = await source.listShifts({ month: '2026-09' });
-    expect(result).toEqual([fakeDto()]);
+    expect(result).toEqual({ shifts: [fakeDto()], skipped: { noProvider: 0, noPatient: 0 } });
     expect(listShifts).toHaveBeenCalledWith({
       from: '2026-09-01',
       to: '2026-09-30',
@@ -42,7 +42,7 @@ describe('AnaCareShiftsSourceReal', () => {
   });
 
   it('listShifts traduz `month` para `from`/`to` (1º e último dia do mês) ANTES de chamar o cliente — bug medido 16/09: `?month=` não filtra no servidor (count=882776 vs count=3483 com min_date/max_date)', async () => {
-    const listShifts = jest.fn().mockResolvedValue([]);
+    const listShifts = jest.fn().mockResolvedValue({ shifts: [], skipped: { noProvider: 0, noPatient: 0 } });
     const client = { listShifts, getRawShift: jest.fn(), circuitBreakerOpen: false } as unknown as AnaCareSessionClient;
     const source = new AnaCareShiftsSourceReal(client);
 
@@ -56,7 +56,7 @@ describe('AnaCareShiftsSourceReal', () => {
   });
 
   it('listShifts repassa patientId e reservationId ao cliente junto com a faixa traduzida', async () => {
-    const listShifts = jest.fn().mockResolvedValue([]);
+    const listShifts = jest.fn().mockResolvedValue({ shifts: [], skipped: { noProvider: 0, noPatient: 0 } });
     const client = { listShifts, getRawShift: jest.fn(), circuitBreakerOpen: false } as unknown as AnaCareSessionClient;
     const source = new AnaCareShiftsSourceReal(client);
 

@@ -20,10 +20,10 @@ class CountingShiftsSource implements AnaCareShiftsSource {
     this.delayMs = delayMs;
   }
 
-  async listShifts(_params: ListShiftsParams): Promise<SourceShiftDTO[]> {
+  async listShifts(_params: ListShiftsParams): Promise<{ shifts: SourceShiftDTO[]; skipped: { noProvider: number; noPatient: number } }> {
     this.calls += 1;
     await new Promise((resolve) => setTimeout(resolve, this.delayMs));
-    return [];
+    return { shifts: [], skipped: { noProvider: 0, noPatient: 0 } };
   }
 
   async getShift(): Promise<SourceShiftDTO | null> {
@@ -149,23 +149,61 @@ class StubSyncRepository implements ShiftSyncRepository {
 /** Fonte que devolve 1 turno sintético por reserva pedida — prova que o runner grava o que lê. */
 class PerReservationShiftsSource implements AnaCareShiftsSource {
   readonly calls: Array<{ month: string; reservationId?: string }> = [];
-  async listShifts(params: ListShiftsParams): Promise<SourceShiftDTO[]> {
+  async listShifts(params: ListShiftsParams): Promise<{ shifts: SourceShiftDTO[]; skipped: { noProvider: number; noPatient: number } }> {
     this.calls.push({ month: params.month, reservationId: params.reservationId });
-    if (!params.reservationId) return [];
-    return [
-      {
-        sourceShiftId: `${params.reservationId}-shift-0`,
-        anaCarePatientId: params.reservationId,
-        anaCareNurseId: 'AC-NURSE-0',
-        date: '2026-09-10',
-        scheduledStart: '2026-09-10T08:00:00.000Z',
-        scheduledEnd: '2026-09-10T12:00:00.000Z',
-        actualStart: null,
-        actualEnd: null,
-        checkinSource: null,
-        isFinalized: false,
-      },
-    ];
+    if (!params.reservationId) return { shifts: [], skipped: { noProvider: 0, noPatient: 0 } };
+    return {
+      shifts: [
+        {
+          sourceShiftId: `${params.reservationId}-shift-0`,
+          anaCarePatientId: params.reservationId,
+          anaCareNurseId: 'AC-NURSE-0',
+          date: '2026-09-10',
+          scheduledStart: '2026-09-10T08:00:00.000Z',
+          scheduledEnd: '2026-09-10T12:00:00.000Z',
+          actualStart: null,
+          actualEnd: null,
+          checkinSource: null,
+          isFinalized: false,
+        },
+      ],
+      skipped: { noProvider: 0, noPatient: 0 },
+    };
+  }
+  async getShift(): Promise<SourceShiftDTO | null> {
+    return null;
+  }
+  async getRetratoStatus() {
+    return { stale: false, circuitBreakerOpen: false };
+  }
+}
+
+/**
+ * Fonte que devolve, POR RESERVA, uma quantidade FIXA de turnos descartados (sem prestador /
+ * sem paciente) além do turno normal — prova que a contagem do runner SOMA sobre reservas e
+ * chega até `AnaCareHoursSyncOutcome`, não fica presa na 1ª reserva.
+ */
+class SkippingShiftsSource implements AnaCareShiftsSource {
+  constructor(private readonly skippedPerReservation: { noProvider: number; noPatient: number }) {}
+  async listShifts(params: ListShiftsParams): Promise<{ shifts: SourceShiftDTO[]; skipped: { noProvider: number; noPatient: number } }> {
+    if (!params.reservationId) return { shifts: [], skipped: { noProvider: 0, noPatient: 0 } };
+    return {
+      shifts: [
+        {
+          sourceShiftId: `${params.reservationId}-shift-0`,
+          anaCarePatientId: params.reservationId,
+          anaCareNurseId: 'AC-NURSE-0',
+          date: '2026-09-10',
+          scheduledStart: '2026-09-10T08:00:00.000Z',
+          scheduledEnd: '2026-09-10T12:00:00.000Z',
+          actualStart: null,
+          actualEnd: null,
+          checkinSource: null,
+          isFinalized: false,
+        },
+      ],
+      skipped: { ...this.skippedPerReservation },
+    };
   }
   async getShift(): Promise<SourceShiftDTO | null> {
     return null;
@@ -234,6 +272,38 @@ describe('AnaCareHoursSyncRunner — sync por reserva (diretório Enlite), não 
 
     const outcome = await runner.run({ origin: 'cron', userId: null });
     expect(outcome.directoryCounts).toEqual({ activo: 2, terminado: 0, total: 2 });
+  });
+
+  /**
+   * Conserto 17/09/2026 (500 medido em produção): a contagem de turnos descartados na
+   * minimização (sem prestador/paciente) tem de SOMAR sobre TODAS as reservas processadas e
+   * chegar até `AnaCareHoursSyncOutcome` — é o campo que o controller devolve no JSON do
+   * `POST /api/admin/anacare-hours/sync`. MORRE se o runner voltar a ignorar `skipped` do
+   * retorno de `source.listShifts` (ex.: desestruturar só `shifts`).
+   */
+  it('soma shiftsSkippedNoProvider/shiftsSkippedNoPatient sobre as 3 reservas e leva a contagem até o outcome', async () => {
+    const source = new SkippingShiftsSource({ noProvider: 2, noPatient: 1 });
+    const directory = new StubDirectory(['100', '200', '300']);
+    const repository = new StubSyncRepository();
+    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), () => {}, () => '2026-09', directory, repository, { ANACARE_DIRECTORY_MIN_ABSOLUTE: '1' });
+
+    const outcome = await runner.run({ origin: 'manual', userId: 'staff-1' });
+
+    // 3 reservas × (2 sem prestador + 1 sem paciente) = 6 / 3.
+    expect(outcome.shiftsSkippedNoProvider).toBe(6);
+    expect(outcome.shiftsSkippedNoPatient).toBe(3);
+    expect(outcome.shiftsSkippedNoProvider).toBeGreaterThan(0); // contagem zero é falha — este cenário TEM descarte
+  });
+
+  it('sem nenhum descarte no lote, shiftsSkippedNoProvider/shiftsSkippedNoPatient ficam 0 (contagem zero de verdade, não ausência de campo)', async () => {
+    const source = new PerReservationShiftsSource();
+    const directory = new StubDirectory(['100', '200']);
+    const repository = new StubSyncRepository();
+    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), () => {}, () => '2026-09', directory, repository, { ANACARE_DIRECTORY_MIN_ABSOLUTE: '1' });
+
+    const outcome = await runner.run({ origin: 'cron', userId: null });
+    expect(outcome.shiftsSkippedNoProvider).toBe(0);
+    expect(outcome.shiftsSkippedNoPatient).toBe(0);
   });
 });
 

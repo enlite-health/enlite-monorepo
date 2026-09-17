@@ -37,10 +37,10 @@ function permissionsDouble(): PermissionMiddleware {
 
 class CountingShiftsSource implements AnaCareShiftsSource {
   calls = 0;
-  async listShifts(_params: ListShiftsParams): Promise<SourceShiftDTO[]> {
+  async listShifts(_params: ListShiftsParams): Promise<{ shifts: SourceShiftDTO[]; skipped: { noProvider: number; noPatient: number } }> {
     this.calls += 1;
     await new Promise((resolve) => setTimeout(resolve, 30));
-    return [];
+    return { shifts: [], skipped: { noProvider: 0, noPatient: 0 } };
   }
   async getShift(): Promise<SourceShiftDTO | null> {
     return null;

@@ -18,12 +18,21 @@ jest.mock('@shared/logging', () => ({
   logger: { info: jest.fn(), child: jest.fn(), warn: (...a: unknown[]) => mockLogWarn(...a), error: jest.fn() },
 }));
 
-import { minimizeShiftDTO, minimizePatientFields, shiftDayFrom, POISON_MARKER } from '../AnaCareFieldMinimization';
+import {
+  minimizeShiftDTO,
+  minimizePatientFields,
+  minimizeShiftOrSkip,
+  shiftDayFrom,
+  POISON_MARKER,
+  AnaCareMissingProviderError,
+  AnaCareMissingPatientError,
+} from '../AnaCareFieldMinimization';
 import type { RawAnaCareShift, RawAnaCarePatient } from '../AnaCareFieldMinimization';
 import {
   rawShiftNoturnoCruzaMeiaNoite,
   rawShiftComCheckinSemCheckout,
   rawShiftSemCheckin,
+  rawShiftSemPrestador,
   rawPatientRealShape,
   rawNurseRealShape,
 } from '../__fixtures__/rawShiftRealShape';
@@ -336,5 +345,59 @@ describe('AnaCareFieldMinimization — checkin_source/checkout_source validados 
     expect(dto.checkoutSource).not.toBe('outro-valor-novo');
     expect([null, 'app', 'web_admin']).toContain(dto.checkinSource);
     expect([null, 'app', 'web_admin']).toContain(dto.checkoutSource);
+  });
+});
+
+describe('AnaCareFieldMinimization — turno sem prestador/paciente (conserto 17/09, 500 medido em produção)', () => {
+  it('minimizeShiftDTO lança AnaCareMissingProviderError quando raw.nurse é null (nunca mais o TypeError opaco do 500)', () => {
+    const raw = rawShiftSemPrestador();
+    expect(() => minimizeShiftDTO(raw)).toThrow(AnaCareMissingProviderError);
+  });
+
+  it('minimizeShiftDTO lança AnaCareMissingPatientError quando raw.patient é null', () => {
+    const raw = rawShiftNoturnoCruzaMeiaNoite({ patient: null });
+    expect(() => minimizeShiftDTO(raw)).toThrow(AnaCareMissingPatientError);
+  });
+
+  it('minimizeShiftOrSkip: turno SEM prestador é descartado (ok:false, reason:"no-provider") e NUNCA lança', () => {
+    const raw = rawShiftSemPrestador();
+    const result = minimizeShiftOrSkip(raw);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe('no-provider');
+      expect(result.sourceShiftId).toBe(String(raw.id));
+    }
+  });
+
+  it('minimizeShiftOrSkip: turno SEM paciente é descartado (ok:false, reason:"no-patient") e NUNCA lança', () => {
+    const raw = rawShiftNoturnoCruzaMeiaNoite({ patient: null });
+    const result = minimizeShiftOrSkip(raw);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe('no-patient');
+      expect(result.sourceShiftId).toBe(String(raw.id));
+    }
+  });
+
+  it('minimizeShiftOrSkip: turno COMPLETO (com prestador e paciente) continua passando — sem regressão', () => {
+    const raw = rawShiftNoturnoCruzaMeiaNoite();
+    const result = minimizeShiftOrSkip(raw);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.dto.sourceShiftId).toBe(String(raw.id));
+      expect(result.dto.anaCareNurseId).toBe(String(raw.nurse!.id));
+      expect(result.dto.anaCarePatientId).toBe(String(raw.patient!.id));
+    }
+  });
+
+  /**
+   * MORRE se `minimizeShiftOrSkip` (ou o chamador) voltar a devolver `null` calado em vez da
+   * união discriminada — um `.filter(Boolean)`/`.map()` que ignore `ok` incluiria turno sem
+   * prestador no lote de novo (a causa raiz do desenho, não só do bug de 17/09).
+   */
+  it('resultado de descarte NUNCA tem a chave `dto` — impossível ler um DTO parcial/malformado por engano', () => {
+    const result = minimizeShiftOrSkip(rawShiftSemPrestador());
+    expect(result).not.toHaveProperty('dto');
+    expect(Object.keys(result).sort()).toEqual(['ok', 'reason', 'sourceShiftId'].sort());
   });
 });

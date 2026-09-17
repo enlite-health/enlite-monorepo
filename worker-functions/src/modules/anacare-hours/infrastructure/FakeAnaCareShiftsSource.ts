@@ -14,7 +14,7 @@
  * Ana Care real é lido ou referenciado.
  */
 
-import type { AnaCareRetratoSourceStatus, AnaCareShiftsSource, ListShiftsParams, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
+import type { AnaCareRetratoSourceStatus, AnaCareShiftsSource, ListShiftsParams, ListShiftsResult, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
 import { AnaCareSessionClient, AnaCareShiftsSourceReal } from '@modules/integration';
 import { reportError } from '@shared/logging';
 
@@ -61,10 +61,11 @@ function daysInMonth(year: number, month1to12: number): number {
 }
 
 export class FakeAnaCareShiftsSource implements AnaCareShiftsSource {
-  async listShifts(params: ListShiftsParams): Promise<SourceShiftDTO[]> {
-    const shifts = FakeAnaCareShiftsSource.generateMonth(params.month);
-    if (!params.patientId) return shifts;
-    return shifts.filter((s) => s.anaCarePatientId === params.patientId);
+  async listShifts(params: ListShiftsParams): Promise<ListShiftsResult> {
+    const all = FakeAnaCareShiftsSource.generateMonth(params.month);
+    // Massa 100% sintética — nunca gera turno sem paciente/prestador, então o descarte é sempre 0.
+    const shifts = params.patientId ? all.filter((s) => s.anaCarePatientId === params.patientId) : all;
+    return { shifts, skipped: { noProvider: 0, noPatient: 0 } };
   }
 
   /**

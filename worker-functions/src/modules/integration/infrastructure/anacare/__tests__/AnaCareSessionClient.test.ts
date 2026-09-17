@@ -263,7 +263,7 @@ describe('AnaCareSessionClient — filtro de universo D340 no cliente (2.1)', ()
       rateLimiter: new AnaCareRateLimiter({ minIntervalMs: 0, now, sleep }),
     });
 
-    const shifts = await client.listShifts({ from: '2026-09-01', to: '2026-09-30' });
+    const { shifts } = await client.listShifts({ from: '2026-09-01', to: '2026-09-30' });
     expect(shifts).toHaveLength(1);
     expect(shifts[0].anaCarePatientId).toBe('10');
   });
@@ -309,7 +309,7 @@ describe('AnaCareSessionClient — filtro de universo D340 no cliente (2.1)', ()
       rateLimiter: new AnaCareRateLimiter({ minIntervalMs: 0, now, sleep }),
     });
 
-    const shifts = await client.listShifts({ from: '2026-09-01', to: '2026-09-30' });
+    const { shifts } = await client.listShifts({ from: '2026-09-01', to: '2026-09-30' });
     expect(shifts).toHaveLength(1);
     expect(shifts[0].anaCarePatientId).toBe('10');
   });
@@ -371,7 +371,7 @@ describe('AnaCareSessionClient — filtro de universo D340 no cliente (2.1)', ()
       rateLimiter: new AnaCareRateLimiter({ minIntervalMs: 0, now, sleep }),
     });
 
-    const shifts = await client.listShifts({ from: '2026-09-01', to: '2026-09-30' });
+    const { shifts } = await client.listShifts({ from: '2026-09-01', to: '2026-09-30' });
     expect(shifts).toHaveLength(1);
     expect(shifts[0].anaCarePatientId).toBe('90');
   });
@@ -965,5 +965,162 @@ describe('AnaCareSessionClient — redirecionamento manual (regressão da stage,
     await client.listShifts({ from: '2026-09-01', to: '2026-09-30' });
 
     expect(loginPosts).toBe(2);
+  });
+});
+
+/**
+ * Regressão do 500 medido em produção 17/09/2026 (4ª rodada do sync, cursor 168): a fonte
+ * devolveu `nurse: null` num turno (15/3.421 medidos, 0,4%) e `minimizeShiftDTO` lia
+ * `raw.nurse.id` sem checar — `TypeError: Cannot read properties of null (reading 'id')`.
+ * Estes testes provam que `listShifts` agora DESCARTA e CONTA, nunca lança.
+ */
+describe('AnaCareSessionClient — turno sem prestador/paciente é descartado e CONTADO (conserto 17/09)', () => {
+  function shiftsPage(results: unknown[]) {
+    return jsonResponse({ count: results.length, next: null, previous: null, results });
+  }
+
+  it('turno com nurse:null NÃO entra no lote e é contado em skipped.noProvider — turno completo do mesmo lote continua passando', async () => {
+    const fetchImpl = jest.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/users/admin/login/') && (!init?.method || init.method === 'GET')) return loginPageResponse();
+      if (url.endsWith('/users/admin/login/') && init?.method === 'POST') return loginOkResponse();
+      if (url.includes('/api/shifts/')) {
+        return shiftsPage([
+          {
+            id: 1,
+            start: '2026-09-01T13:00:00-06:00',
+            end: '2026-09-01T17:00:00-06:00',
+            checkin: null,
+            checkout: null,
+            checkin_source: null,
+            checkout_source: null,
+            checkin_delay: null,
+            duration: null,
+            month: '2026-09',
+            is_finalized: false,
+            patient: { id: 10, agency: 116, document_type: 'DNI', document_number: '1', first_name: 'A', last_name: 'B' },
+            nurse: null, // turno agendado sem prestador designado — o defeito medido em produção
+          },
+          {
+            id: 2,
+            start: '2026-09-01T13:00:00-06:00',
+            end: '2026-09-01T17:00:00-06:00',
+            checkin: null,
+            checkout: null,
+            checkin_source: null,
+            checkout_source: null,
+            checkin_delay: null,
+            duration: null,
+            month: '2026-09',
+            is_finalized: false,
+            patient: { id: 11, agency: 116, document_type: 'DNI', document_number: '2', first_name: 'C', last_name: 'D' },
+            nurse: { id: 101, agency: 116, first_name: 'N2', last_name: 'M2' },
+          },
+        ]);
+      }
+      throw new Error(`unexpected call: ${url}`);
+    });
+
+    const { now, sleep } = makeVirtualClock();
+    const client = new AnaCareSessionClient({
+      baseUrl: 'https://admin.ana.care',
+      username: 'u',
+      password: 'p',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      rateLimiter: new AnaCareRateLimiter({ minIntervalMs: 0, now, sleep }),
+    });
+
+    const result = await client.listShifts({ from: '2026-09-01', to: '2026-09-30' });
+
+    // MORRE se alguém voltar a descartar sem contar: só o turno 2 (completo) sobrevive, e o
+    // descarte do turno 1 aparece em `skipped.noProvider`, nunca só um array menor sem explicação.
+    expect(result.shifts).toHaveLength(1);
+    expect(result.shifts[0].anaCarePatientId).toBe('11');
+    expect(result.skipped).toEqual({ noProvider: 1, noPatient: 0 });
+  });
+
+  it('turno com patient:null NÃO entra no lote e é contado em skipped.noPatient, separado de noProvider', async () => {
+    const fetchImpl = jest.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/users/admin/login/') && (!init?.method || init.method === 'GET')) return loginPageResponse();
+      if (url.endsWith('/users/admin/login/') && init?.method === 'POST') return loginOkResponse();
+      if (url.includes('/api/shifts/')) {
+        return shiftsPage([
+          {
+            id: 3,
+            start: '2026-09-01T13:00:00-06:00',
+            end: '2026-09-01T17:00:00-06:00',
+            checkin: null,
+            checkout: null,
+            checkin_source: null,
+            checkout_source: null,
+            checkin_delay: null,
+            duration: null,
+            month: '2026-09',
+            is_finalized: false,
+            // universo D340 2ª perna: patient nulo + nurse.agency===116 — entra no filtro de
+            // universo, mas não pode ser MINIMIZADO sem paciente.
+            patient: null,
+            nurse: { id: 300, agency: 116, first_name: 'N3', last_name: 'M3' },
+          },
+        ]);
+      }
+      throw new Error(`unexpected call: ${url}`);
+    });
+
+    const { now, sleep } = makeVirtualClock();
+    const client = new AnaCareSessionClient({
+      baseUrl: 'https://admin.ana.care',
+      username: 'u',
+      password: 'p',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      rateLimiter: new AnaCareRateLimiter({ minIntervalMs: 0, now, sleep }),
+    });
+
+    const result = await client.listShifts({ from: '2026-09-01', to: '2026-09-30' });
+
+    expect(result.shifts).toHaveLength(0);
+    expect(result.skipped).toEqual({ noProvider: 0, noPatient: 1 });
+  });
+
+  it('sem nenhum turno descartado no lote: skipped fica {0,0} e NENHUM log é emitido (contagem zero de verdade, não silêncio)', async () => {
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => undefined as unknown as ReturnType<typeof logger.warn>);
+    const fetchImpl = jest.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/users/admin/login/') && (!init?.method || init.method === 'GET')) return loginPageResponse();
+      if (url.endsWith('/users/admin/login/') && init?.method === 'POST') return loginOkResponse();
+      if (url.includes('/api/shifts/')) {
+        return shiftsPage([
+          {
+            id: 4,
+            start: '2026-09-01T13:00:00-06:00',
+            end: '2026-09-01T17:00:00-06:00',
+            checkin: null,
+            checkout: null,
+            checkin_source: null,
+            checkout_source: null,
+            checkin_delay: null,
+            duration: null,
+            month: '2026-09',
+            is_finalized: false,
+            patient: { id: 40, agency: 116, document_type: 'DNI', document_number: '4', first_name: 'E', last_name: 'F' },
+            nurse: { id: 400, agency: 116, first_name: 'N4', last_name: 'M4' },
+          },
+        ]);
+      }
+      throw new Error(`unexpected call: ${url}`);
+    });
+
+    const { now, sleep } = makeVirtualClock();
+    const client = new AnaCareSessionClient({
+      baseUrl: 'https://admin.ana.care',
+      username: 'u',
+      password: 'p',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      rateLimiter: new AnaCareRateLimiter({ minIntervalMs: 0, now, sleep }),
+    });
+
+    const result = await client.listShifts({ from: '2026-09-01', to: '2026-09-30' });
+
+    expect(result.skipped).toEqual({ noProvider: 0, noPatient: 0 });
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 });

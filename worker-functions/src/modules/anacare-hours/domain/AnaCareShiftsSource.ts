@@ -63,6 +63,22 @@ export interface ListShiftsParams {
   reservationId?: string;
 }
 
+/**
+ * Turno cru sem paciente/prestador não é gravável (colunas NOT NULL, migration 437) e é
+ * DESCARTADO na borda — nunca em silêncio (conserto 17/09, 500 medido: `raw.nurse === null` em
+ * 15/3.421 turnos, 0,4%). `listShifts` devolve a contagem no MESMO objeto do resultado para que
+ * seja impossível esquecer de contar (ver `ListShiftsResult`).
+ */
+export interface SkippedShiftCounts {
+  noProvider: number;
+  noPatient: number;
+}
+
+export interface ListShiftsResult {
+  shifts: SourceShiftDTO[];
+  skipped: SkippedShiftCounts;
+}
+
 /** Estado do retrato — alimenta `AnaCareMonthSnapshot.stale`/`circuitBreakerOpen` e a recusa de escrita (spec "retrato desatualizado bloqueia a validação no serviço e na tela"). */
 export interface AnaCareRetratoSourceStatus {
   stale: boolean;
@@ -74,7 +90,7 @@ export interface AnaCareRetratoSourceStatus {
  * geolocalização, pagamento, observação ou documento de identidade passa por aqui.
  */
 export interface AnaCareShiftsSource {
-  listShifts(params: ListShiftsParams): Promise<SourceShiftDTO[]>;
+  listShifts(params: ListShiftsParams): Promise<ListShiftsResult>;
   /** Um turno por `sourceShiftId`, sem precisar do mês (validar/contestar não recebem mês no corpo). */
   getShift(sourceShiftId: string): Promise<SourceShiftDTO | null>;
   /**

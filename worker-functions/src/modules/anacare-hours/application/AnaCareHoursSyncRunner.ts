@@ -50,6 +50,14 @@ export interface AnaCareHoursSyncOutcome {
   /** `null` = terminou a lista inteira de reservas nesta rodada. */
   nextCursor: number | null;
   directoryCounts: { activo: number; terminado: number; total: number };
+  /**
+   * Turnos descartados na minimização por faltar prestador — nunca em silêncio (conserto 17/09:
+   * 500 medido em produção, `raw.nurse === null` em 15/3.421 turnos, 0,4%). Somado por rodada,
+   * sobre todas as reservas processadas.
+   */
+  shiftsSkippedNoProvider: number;
+  /** Irmã de `shiftsSkippedNoProvider` — turno sem paciente (medido 0/3.421, tipo admite mesmo assim). */
+  shiftsSkippedNoPatient: number;
 }
 
 const DEFAULT_BUDGET_MS = 420_000;
@@ -151,14 +159,18 @@ export class AnaCareHoursSyncRunner {
     let shiftsRead = 0;
     let shiftsWritten = 0;
     let reservationsProcessed = 0;
+    let shiftsSkippedNoProvider = 0;
+    let shiftsSkippedNoPatient = 0;
     let i = startIndex;
 
     for (; i < reservationIds.length; i += 1) {
       if (Date.now() >= deadline) break;
       const reservationId = reservationIds[i];
-      const shifts = await this.source.listShifts({ month, reservationId });
+      const { shifts, skipped } = await this.source.listShifts({ month, reservationId });
       requests += 1;
       shiftsRead += shifts.length;
+      shiftsSkippedNoProvider += skipped.noProvider;
+      shiftsSkippedNoPatient += skipped.noPatient;
       if (shifts.length > 0) {
         const { written } = await this.repository.upsertMany(shifts, month);
         shiftsWritten += written;
@@ -176,6 +188,8 @@ export class AnaCareHoursSyncRunner {
       shiftsWritten,
       nextCursor,
       directoryCounts: directorySnapshot.counts,
+      shiftsSkippedNoProvider,
+      shiftsSkippedNoPatient,
     };
   }
 
