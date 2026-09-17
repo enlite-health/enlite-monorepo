@@ -42,7 +42,17 @@ function validateSourceField(
   return null;
 }
 
-/** Forma crua de um paciente aninhado em `/api/shifts/` (campos permitidos + os descartados). */
+/**
+ * Forma crua de um paciente aninhado em `/api/shifts/` (campos permitidos + os descartados).
+ *
+ * `surname` — nome medido no payload real 17/09/2026 (decisão do Gabriel: "o nome vem junto na
+ * requisição do Ana Care", item 1 da conferência de horas). `last_name` já existia neste tipo
+ * como suposição anterior nunca confirmada contra a resposta real (usada só pelo consumidor
+ * separado `minimizePatientFields`, sem uso no caminho de turnos) — mantido para não quebrar esse
+ * consumidor, mas é `surname` (não `last_name`) o campo que a fonte de fato envia. `second_name` e
+ * `mother_last_name` existem no payload e são DESCARTADOS de propósito — só nome e sobrenome vão
+ * ao domínio (decisão do Gabriel, item 1).
+ */
 export interface RawAnaCarePatient {
   id: number | string;
   agency: number | null;
@@ -50,7 +60,12 @@ export interface RawAnaCarePatient {
   document_number: string | null;
   first_name: string;
   last_name: string;
+  /** Sobrenome — campo real medido 17/09/2026, usado para nome de exibição (item 1). */
+  surname: string;
   // Descartados na borda — nunca saem daqui:
+  second_name?: unknown;
+  mother_last_name?: unknown;
+  full_name?: unknown;
   phone?: unknown;
   address?: unknown;
   location?: unknown;
@@ -131,9 +146,12 @@ export interface RawAnaCareNurse {
   agency: number | null;
   first_name: string;
   last_name: string;
+  /** Sobrenome — campo real medido 17/09/2026, usado para nome de exibição (item 1). */
+  surname: string;
   curp?: unknown;
   rfc?: unknown;
   phone?: unknown;
+  full_name?: unknown;
 }
 
 /**
@@ -215,6 +233,16 @@ export function minimizeShiftDTO(raw: RawAnaCareShift): SourceShiftDTO {
     sourceShiftId: String(raw.id),
     anaCarePatientId: String(raw.patient.id),
     anaCareNurseId: String(raw.nurse.id),
+    // Item 1 (nome e sobrenome, decisão do Gabriel 17/09): a fonte do nome é o PRÓPRIO payload do
+    // turno, não o cruzamento com `workers.ana_care_id` — ver AnaCareHoursMapper.
+    // Tradução de vocabulário na BORDA (única vez): o campo cru do Ana Care se chama `surname`
+    // (ver RawAnaCarePatient/RawAnaCareNurse acima) — tudo que é NOSSO (DTO pra cá) fala
+    // `last_name`, convenção da casa (`patients.last_name`/`workers.last_name_encrypted`). Não
+    // renomear o `raw.*.surname` — ele espelha o payload da fonte com fidelidade literal.
+    patientFirstName: raw.patient.first_name,
+    patientLastName: raw.patient.surname,
+    nurseFirstName: raw.nurse.first_name,
+    nurseLastName: raw.nurse.surname,
     date,
     scheduledStart: raw.start,
     scheduledEnd: raw.end,

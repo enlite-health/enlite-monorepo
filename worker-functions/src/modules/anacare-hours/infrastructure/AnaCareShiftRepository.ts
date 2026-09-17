@@ -29,6 +29,11 @@ interface AnaCareShiftRowSql {
   is_finalized: boolean;
   /** YYYY-MM-DD (data do turno) — só truncamos period_month ao dia no domínio, spec §Contrato de dados. */
   shift_date: string;
+  /** Rótulo de exibição do retrato (migration 440) — vem do payload do turno, não de `patients`/`workers`. */
+  patient_first_name: string | null;
+  patient_last_name: string | null;
+  nurse_first_name: string | null;
+  nurse_last_name: string | null;
 }
 
 function toDTO(r: AnaCareShiftRowSql): SourceShiftDTO {
@@ -37,6 +42,10 @@ function toDTO(r: AnaCareShiftRowSql): SourceShiftDTO {
     anaCarePatientId: r.ana_care_patient_id,
     anaCareNurseId: r.ana_care_nurse_id,
     date: r.shift_date,
+    patientFirstName: r.patient_first_name,
+    patientLastName: r.patient_last_name,
+    nurseFirstName: r.nurse_first_name,
+    nurseLastName: r.nurse_last_name,
     // Item 7 (revisão de PR): nulo explícito, propagado até o mapper — nunca mais `?? ''` aqui.
     // `''` não é um horário válido; fingir que é produzia `NaN` em `hoursBetween('', '')`.
     scheduledStart: r.planned_start,
@@ -114,16 +123,24 @@ export class AnaCareShiftRepository implements ShiftSyncRepository {
     // falta de campo no DTO — `?? null` cobre o DTO que não os carrega (round-trip de leitura).
     const checkoutSources = shifts.map((s) => s.checkoutSource ?? null);
     const checkinDelays = shifts.map((s) => s.checkinDelay ?? null);
+    // Item 1 (nome e sobrenome, migration 440): rótulo de exibição do retrato, vem do payload do
+    // turno — `?? null` cobre o DTO que não os carrega (round-trip de leitura).
+    const patientFirstNames = shifts.map((s) => s.patientFirstName ?? null);
+    const patientLastNames = shifts.map((s) => s.patientLastName ?? null);
+    const nurseFirstNames = shifts.map((s) => s.nurseFirstName ?? null);
+    const nurseLastNames = shifts.map((s) => s.nurseLastName ?? null);
 
     await this.pool.query(
       `INSERT INTO anacare_shift (
          source, source_shift_id, ana_care_patient_id, ana_care_nurse_id, period_month,
          planned_start, planned_end, checkin_at, checkout_at, checkin_source, is_finalized,
-         shift_date, checkout_source, checkin_delay, fetched_at, updated_at
+         shift_date, checkout_source, checkin_delay, patient_first_name, patient_last_name,
+         nurse_first_name, nurse_last_name, fetched_at, updated_at
        )
        SELECT $1::text, UNNEST($2::text[]), UNNEST($3::text[]), UNNEST($4::text[]), UNNEST($5::date[]),
               UNNEST($6::timestamptz[]), UNNEST($7::timestamptz[]), UNNEST($8::timestamptz[]), UNNEST($9::timestamptz[]),
-              UNNEST($10::text[]), UNNEST($11::boolean[]), UNNEST($12::date[]), UNNEST($13::text[]), UNNEST($14::numeric[]), NOW(), NOW()
+              UNNEST($10::text[]), UNNEST($11::boolean[]), UNNEST($12::date[]), UNNEST($13::text[]), UNNEST($14::numeric[]),
+              UNNEST($15::text[]), UNNEST($16::text[]), UNNEST($17::text[]), UNNEST($18::text[]), NOW(), NOW()
        ON CONFLICT (source, source_shift_id) DO UPDATE SET
          ana_care_patient_id = EXCLUDED.ana_care_patient_id,
          ana_care_nurse_id   = EXCLUDED.ana_care_nurse_id,
@@ -137,6 +154,10 @@ export class AnaCareShiftRepository implements ShiftSyncRepository {
          shift_date          = EXCLUDED.shift_date,
          checkout_source     = EXCLUDED.checkout_source,
          checkin_delay       = EXCLUDED.checkin_delay,
+         patient_first_name  = EXCLUDED.patient_first_name,
+         patient_last_name     = EXCLUDED.patient_last_name,
+         nurse_first_name    = EXCLUDED.nurse_first_name,
+         nurse_last_name       = EXCLUDED.nurse_last_name,
          fetched_at          = NOW(),
          updated_at          = NOW()`,
       [
@@ -154,6 +175,10 @@ export class AnaCareShiftRepository implements ShiftSyncRepository {
         shiftDates,
         checkoutSources,
         checkinDelays,
+        patientFirstNames,
+        patientLastNames,
+        nurseFirstNames,
+        nurseLastNames,
       ],
     );
 
@@ -179,7 +204,8 @@ export class AnaCareShiftRepository implements ShiftSyncRepository {
       // existe em timestamptz), então não reabre o bug do item 2.
       `SELECT source_shift_id, ana_care_patient_id, ana_care_nurse_id,
               planned_start, planned_end, checkin_at, checkout_at, checkin_source, is_finalized,
-              shift_date::text AS shift_date
+              shift_date::text AS shift_date,
+              patient_first_name, patient_last_name, nurse_first_name, nurse_last_name
          FROM anacare_shift
         WHERE ${where}
         ORDER BY source_shift_id`,

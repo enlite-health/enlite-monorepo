@@ -1,4 +1,4 @@
-import { mapShift, groupIntoPatients, buildSnapshot, computeActualHours } from '../AnaCareHoursMapper';
+import { mapShift, groupIntoPatients, buildSnapshot, computeActualHours, joinSourceName } from '../AnaCareHoursMapper';
 import type { SourceShiftDTO } from '../../domain/AnaCareShiftsSource';
 import type { ValidationRow } from '../../infrastructure/ShiftHoursValidationRepository';
 
@@ -160,47 +160,70 @@ describe('groupIntoPatients', () => {
     expect(groupIntoPatients([])).toEqual([]);
   });
 
-  it('D349: prestador presente em providerLinks vem linked=true com o nome', () => {
+  it('D349: prestador presente em linkedNurseIds vem linked=true; nome vem de `nurseName` (item 1, da FONTE)', () => {
     const shiftA = mapShift(SOURCE, undefined, false, null);
     const patients = groupIntoPatients(
-      [{ shift: shiftA, anaCarePatientId: 'AC-PAT-0', anaCareNurseId: 'AC-NURSE-0-0' }],
-      new Map([['AC-NURSE-0-0', 'Rocío García QA']]),
+      [{ shift: shiftA, anaCarePatientId: 'AC-PAT-0', anaCareNurseId: 'AC-NURSE-0-0', nurseName: 'Rocío García QA' }],
+      new Set(['AC-NURSE-0-0']),
     );
     const provider = patients[0].providers[0];
     expect(provider.linked).toBe(true);
     expect(provider.name).toBe('Rocío García QA');
   });
 
-  it('D349/D344: prestador vinculado mas SEM worker_contact:read vem linked=true e name undefined', () => {
+  it('D349/D344: `nurseName` ausente (chamador já aplicou o gate `worker_contact:read`) vem name undefined, MESMO linked=true', () => {
     const shiftA = mapShift(SOURCE, undefined, false, null);
     const patients = groupIntoPatients(
-      [{ shift: shiftA, anaCarePatientId: 'AC-PAT-0', anaCareNurseId: 'AC-NURSE-0-0' }],
-      new Map([['AC-NURSE-0-0', undefined]]),
+      [{ shift: shiftA, anaCarePatientId: 'AC-PAT-0', anaCareNurseId: 'AC-NURSE-0-0', nurseName: undefined }],
+      new Set(['AC-NURSE-0-0']),
     );
     const provider = patients[0].providers[0];
     expect(provider.linked).toBe(true);
     expect(provider.name).toBeUndefined();
   });
 
-  it('prestador AUSENTE de providerLinks (sem match em workers.ana_care_id) vem linked=false', () => {
+  it('prestador AUSENTE de linkedNurseIds (sem match em workers.ana_care_id) vem linked=false — MESMO com nome da fonte (item 1: nome é independente de linked)', () => {
     const shiftA = mapShift(SOURCE, undefined, false, null);
     const patients = groupIntoPatients(
-      [{ shift: shiftA, anaCarePatientId: 'AC-PAT-0', anaCareNurseId: 'AC-NURSE-0-0' }],
-      new Map([['AC-NURSE-OUTRO', 'Outra Pessoa']]),
+      [{ shift: shiftA, anaCarePatientId: 'AC-PAT-0', anaCareNurseId: 'AC-NURSE-0-0', nurseName: 'Carla Suárez QA' }],
+      new Set(['AC-NURSE-OUTRO']),
     );
     const provider = patients[0].providers[0];
     expect(provider.linked).toBe(false);
-    expect(provider.name).toBeUndefined();
+    expect(provider.name).toBe('Carla Suárez QA');
   });
 
-  it('paciente permanece SEMPRE linked=false, mesmo quando o prestador do grupo está vinculado (D349 item 2, bloqueado)', () => {
+  it('paciente permanece SEMPRE linked=false (D349 item 2, bloqueado), mas o NOME vem da fonte independente disso (item 1)', () => {
     const shiftA = mapShift(SOURCE, undefined, false, null);
     const patients = groupIntoPatients(
-      [{ shift: shiftA, anaCarePatientId: 'AC-PAT-0', anaCareNurseId: 'AC-NURSE-0-0' }],
-      new Map([['AC-NURSE-0-0', 'Rocío García QA']]),
+      [{ shift: shiftA, anaCarePatientId: 'AC-PAT-0', anaCareNurseId: 'AC-NURSE-0-0', patientName: 'Lucía Fernández QA', nurseName: 'Rocío García QA' }],
+      new Set(['AC-NURSE-0-0']),
     );
     expect(patients[0].linked).toBe(false);
+    expect(patients[0].name).toBe('Lucía Fernández QA');
+  });
+
+  it('patientName ausente (fonte não mandou nome para o turno) vem name undefined — nunca um placeholder inventado', () => {
+    const shiftA = mapShift(SOURCE, undefined, false, null);
+    const patients = groupIntoPatients([{ shift: shiftA, anaCarePatientId: 'AC-PAT-0', anaCareNurseId: 'AC-NURSE-0-0' }]);
     expect(patients[0].name).toBeUndefined();
+  });
+});
+
+describe('joinSourceName', () => {
+  it('POSITIVO — junta first_name + last_name com espaço', () => {
+    expect(joinSourceName('Lucía', 'Fernández QA')).toBe('Lucía Fernández QA');
+  });
+
+  it('NEGATIVO — os dois ausentes/null devolvem undefined, nunca string vazia', () => {
+    expect(joinSourceName(null, null)).toBeUndefined();
+    expect(joinSourceName(undefined, undefined)).toBeUndefined();
+    expect(joinSourceName('', '')).toBeUndefined();
+  });
+
+  it('POSITIVO — só um dos dois presente ainda devolve algo (sem juntar com espaço sobrando)', () => {
+    expect(joinSourceName('Lucía', null)).toBe('Lucía');
+    expect(joinSourceName(null, 'Fernández QA')).toBe('Fernández QA');
   });
 });
 

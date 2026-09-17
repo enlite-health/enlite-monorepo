@@ -10,6 +10,18 @@ export interface SourceShiftDTO {
   sourceShiftId: string;
   anaCarePatientId: string;
   anaCareNurseId: string;
+  /**
+   * Nome e sobrenome do paciente/prestador — vêm do PRÓPRIO payload do turno (não de cruzamento
+   * com `workers`/`patients`, decisão do Gabriel 17/09, item 1 da conferência de horas). Rótulo de
+   * exibição do retrato, cópia transitória do que o Ana Care mostra — não é o registro de
+   * identidade (esse mora em `patients`/`workers`). Opcional: quem monta o DTO fora de
+   * `minimizeShiftDTO` (round-trip de leitura do retrato já gravado) preenche a partir da coluna,
+   * que pode vir `null` se a fonte não mandou nome para aquele turno.
+   */
+  patientFirstName?: string | null;
+  patientLastName?: string | null;
+  nurseFirstName?: string | null;
+  nurseLastName?: string | null;
   /** ISO 8601 (UTC), YYYY-MM-DD para o dia do turno. */
   date: string;
   /**

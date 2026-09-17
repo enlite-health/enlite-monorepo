@@ -25,6 +25,8 @@ import { ValidationStatusBadge } from './ValidationStatusBadge';
 import type { AnaCareShift } from './types';
 import {
   dayHoursSummary,
+  formatSourceRange,
+  formatSourceTime,
   isShiftSelectable,
   pendingSelectionStateOf,
   providerDisplayName,
@@ -197,11 +199,9 @@ function ShiftRow({
           )}
         </TableCell>
         <TableCell weight="medium">{providerName}</TableCell>
-        <TableCell>
-          {shift.scheduledStart}–{shift.scheduledEnd}
-        </TableCell>
-        <TableCell data-testid={`anacare-hours-shift-checkin-${shift.id}`}>{shift.actualStart ?? '—'}</TableCell>
-        <TableCell data-testid={`anacare-hours-shift-checkout-${shift.id}`}>{shift.actualEnd ?? '—'}</TableCell>
+        <TableCell>{formatSourceRange(shift.scheduledStart, shift.scheduledEnd)}</TableCell>
+        <TableCell data-testid={`anacare-hours-shift-checkin-${shift.id}`}>{formatSourceTime(shift.actualStart) ?? '—'}</TableCell>
+        <TableCell data-testid={`anacare-hours-shift-checkout-${shift.id}`}>{formatSourceTime(shift.actualEnd) ?? '—'}</TableCell>
         <TableCell align="right" unwrapped>
           <Text as="span" size="sm" weight={diffFromScheduled ? 'semibold' : 'normal'} className={diffFromScheduled ? '!text-amber-700' : undefined}>
             {showDash ? '—' : `${hours.toFixed(1)} h`}

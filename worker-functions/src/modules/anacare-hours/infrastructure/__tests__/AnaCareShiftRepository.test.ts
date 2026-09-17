@@ -54,6 +54,13 @@ function sqlRowFor(dto: SourceShiftDTO) {
     checkin_source: dto.checkinSource,
     is_finalized: dto.isFinalized,
     shift_date: dto.date,
+    // Sem coalesce para `null`: quando o DTO de teste não carrega o campo (`undefined`), a linha
+    // simulada também fica `undefined` — do contrário o round-trip `toEqual` quebraria (Jest NÃO
+    // trata `null` como igual a chave ausente/`undefined`, só ignora `undefined`).
+    patient_first_name: dto.patientFirstName,
+    patient_last_name: dto.patientLastName,
+    nurse_first_name: dto.nurseFirstName,
+    nurse_last_name: dto.nurseLastName,
   };
 }
 
@@ -146,6 +153,45 @@ describe('AnaCareShiftRepository', () => {
     });
 
     /**
+     * Item 1 (17/09, migration 440): nome e sobrenome do paciente/prestador chegam ao INSERT — as
+     * quatro colunas novas, nunca de fora do lote (`UNNEST`/`ON CONFLICT` continuam cobrindo elas).
+     */
+    it('patientFirstName/patientLastName/nurseFirstName/nurseLastName chegam ao INSERT (migration 440)', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [] });
+      const repo = new AnaCareShiftRepository();
+      const comNomes: SourceShiftDTO = {
+        ...SHIFT_A,
+        patientFirstName: 'Lucía',
+        patientLastName: 'Fernández QA',
+        nurseFirstName: 'Carla',
+        nurseLastName: 'Suárez QA',
+      };
+      await repo.upsertMany([comNomes], '2026-09');
+
+      const [sql, params] = mockPoolQuery.mock.calls[0];
+      expect(sql).toMatch(/patient_first_name/);
+      expect(sql).toMatch(/patient_last_name/);
+      expect(sql).toMatch(/nurse_first_name/);
+      expect(sql).toMatch(/nurse_last_name/);
+      expect(params[14]).toEqual(['Lucía']);
+      expect(params[15]).toEqual(['Fernández QA']);
+      expect(params[16]).toEqual(['Carla']);
+      expect(params[17]).toEqual(['Suárez QA']);
+    });
+
+    it('nome ausente no DTO grava NULL explícito nas 4 colunas — turno sem nome existe (item 1)', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [] });
+      const repo = new AnaCareShiftRepository();
+      await repo.upsertMany([SHIFT_A], '2026-09'); // SHIFT_A não carrega nenhum dos 4 campos de nome
+
+      const [, params] = mockPoolQuery.mock.calls[0];
+      expect(params[14]).toEqual([null]);
+      expect(params[15]).toEqual([null]);
+      expect(params[16]).toEqual([null]);
+      expect(params[17]).toEqual([null]);
+    });
+
+    /**
      * Item 4 (conserto de raiz 17/09): `sourceMonth` (afirmação da fonte, `raw.month`) divergindo
      * do mês pedido tem de FALHAR ALTO — nunca gravar calado num mês errado. Este teste MORRE se
      * `upsertMany` voltar a confiar cegamente no `periodMonth` do chamador.
@@ -192,6 +238,39 @@ describe('AnaCareShiftRepository', () => {
       expect(dto.actualEnd).toBeNull();
       expect(dto.checkinSource).toBeNull();
       expect(dto.isFinalized).toBe(false);
+    });
+
+    /**
+     * Item 1 (17/09): round-trip fiel dos quatro nomes — nome que entra no upsert é nome que sai
+     * em `listByMonth`, inclusive o caso de nome AUSENTE (turno sem nome na fonte, `null` no banco).
+     */
+    it('round-trip dos 4 campos de nome — presentes', async () => {
+      const comNomes: SourceShiftDTO = {
+        ...SHIFT_A,
+        patientFirstName: 'Lucía',
+        patientLastName: 'Fernández QA',
+        nurseFirstName: 'Carla',
+        nurseLastName: 'Suárez QA',
+      };
+      mockPoolQuery.mockResolvedValueOnce({ rows: [sqlRowFor(comNomes)] });
+      const repo = new AnaCareShiftRepository();
+      const [dto] = await repo.listByMonth('2026-09');
+      expect(dto.patientFirstName).toBe('Lucía');
+      expect(dto.patientLastName).toBe('Fernández QA');
+      expect(dto.nurseFirstName).toBe('Carla');
+      expect(dto.nurseLastName).toBe('Suárez QA');
+    });
+
+    it('round-trip dos 4 campos de nome — ausentes (null no banco, turno sem nome na fonte)', async () => {
+      mockPoolQuery.mockResolvedValueOnce({
+        rows: [{ ...sqlRowFor(SHIFT_A), patient_first_name: null, patient_last_name: null, nurse_first_name: null, nurse_last_name: null }],
+      });
+      const repo = new AnaCareShiftRepository();
+      const [dto] = await repo.listByMonth('2026-09');
+      expect(dto.patientFirstName).toBeNull();
+      expect(dto.patientLastName).toBeNull();
+      expect(dto.nurseFirstName).toBeNull();
+      expect(dto.nurseLastName).toBeNull();
     });
 
     it('filtra por paciente quando `patientId` é passado — SQL ganha AND extra', async () => {
@@ -252,6 +331,17 @@ describe('AnaCareShiftRepository', () => {
       expect(calledSql).not.toMatch(/COALESCE\(planned_start/);
       expect(calledSql).toMatch(/shift_date::text/);
       expect(dto.date).toBe('2026-09-10');
+    });
+
+    it('SELECT de listByMonth pede as 4 colunas de nome (migration 440)', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [] });
+      const repo = new AnaCareShiftRepository();
+      await repo.listByMonth('2026-09');
+      const [calledSql] = mockPoolQuery.mock.calls[0];
+      expect(calledSql).toMatch(/patient_first_name/);
+      expect(calledSql).toMatch(/patient_last_name/);
+      expect(calledSql).toMatch(/nurse_first_name/);
+      expect(calledSql).toMatch(/nurse_last_name/);
     });
   });
 
