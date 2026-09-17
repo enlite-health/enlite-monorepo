@@ -26,7 +26,7 @@
 
 import type { AnaCareRetratoSourceStatus, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
 import type { ValidationRow } from '../infrastructure/ShiftHoursValidationRepository';
-import type { AnaCareMonthSnapshot, AnaCarePatient, AnaCareProvider, AnaCareShift, AnaCareSnapshotState, ValidationStatus } from '../domain/AnaCareShift';
+import type { AnaCareListPatient, AnaCareMonthSnapshot, AnaCarePatient, AnaCareProvider, AnaCareShift, AnaCareSnapshotState, ValidationStatus } from '../domain/AnaCareShift';
 
 const STATUS_MAP: Record<ValidationRow['status'], ValidationStatus> = {
   pendente: 'pendiente',
@@ -153,9 +153,10 @@ export function groupIntoPatients(
   return patients;
 }
 
+/** F6.2: `patients` já vem AGREGADO (`AnaCareListPatient[]`, montado por `AnaCareHoursService.getMonthSnapshot`) — esta função só decide `snapshotState`/`stale`, não agrupa turno. */
 export function buildSnapshot(
   month: string,
-  patients: AnaCarePatient[],
+  patients: AnaCareListPatient[],
   retrato: AnaCareRetratoSourceStatus & {
     /** Item 3: `freshness.shifts === 0` — o retrato NUNCA foi sincronizado para este mês (distinto de "sincronizou, mas ficou velho"). Default `false` por compat com chamadores antigos. */
     naoConstruido?: boolean;

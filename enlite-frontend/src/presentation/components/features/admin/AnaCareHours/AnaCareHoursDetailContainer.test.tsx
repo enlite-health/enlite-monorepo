@@ -3,7 +3,7 @@ import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import { AnaCareHoursDetailContainer } from './AnaCareHoursDetailContainer';
 import { AnaCareHoursServiceError, FakeAnaCareHoursService } from './AnaCareHoursService';
 import type { AnaCareHoursService } from './AnaCareHoursService';
-import type { AnaCareMonthSnapshot } from './types';
+import type { AnaCareHoursPatientSnapshot } from './types';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
 
@@ -37,7 +37,7 @@ function comEnforcement(permissions: string[], enforcement: AuthzContract['enfor
 
 // Fábrica (não const compartilhada!): o FakeAnaCareHoursService MUTA os turnos in-place — um
 // snapshot compartilhado entre testes vazaria o "validado" de um teste pro próximo.
-function makeSnapshot(): AnaCareMonthSnapshot {
+function makeSnapshot(): AnaCareHoursPatientSnapshot {
   return {
     month: '2026-08',
     updatedAt: '2026-09-15T08:00:00-03:00',

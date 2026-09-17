@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { AnaCareHoursDetailPage } from './AnaCareHoursDetailPage';
-import type { AnaCareMonthSnapshot } from './types';
+import type { AnaCareHoursPatientSnapshot } from './types';
 
 // jsdom não implementa ResizeObserver — a barra de seleção fixa mede a própria altura com ele
 // (ver AnaCareHoursDetailPage.tsx). Stub local, só para este arquivo (nenhum outro componente do
@@ -17,7 +17,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, opts?: Record<string, unknown>) => (opts ? `${key}|${JSON.stringify(opts)}` : key) }),
 }));
 
-function snapshot(overrides: Partial<AnaCareMonthSnapshot> = {}): AnaCareMonthSnapshot {
+function snapshot(overrides: Partial<AnaCareHoursPatientSnapshot> = {}): AnaCareHoursPatientSnapshot {
   return {
     month: '2026-08',
     updatedAt: '2026-09-15T08:00:00-03:00',

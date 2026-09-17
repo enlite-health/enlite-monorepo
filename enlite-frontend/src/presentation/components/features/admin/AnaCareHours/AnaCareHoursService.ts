@@ -10,6 +10,8 @@
 import {
   CONTEST_NOTE_MAX_LENGTH,
   CONTEST_REASONS,
+  type AnaCareHoursPatientSnapshot,
+  type AnaCareListPatient,
   type AnaCareMonthSnapshot,
   type AnaCarePatient,
   type AnaCareRetratoStatus,
@@ -17,7 +19,7 @@ import {
   type ValidateBatchCommand,
   type ValidateShiftCommand,
 } from './types';
-import { filterPatients, type AnaCareHoursClientFilters } from './selectors';
+import { allShiftsOf, filterPatients, originCounts, validationProgress, type AnaCareHoursClientFilters } from './selectors';
 
 export type AnaCareHoursMonthFilters = AnaCareHoursClientFilters;
 
@@ -73,10 +75,47 @@ export function assertValidContestCommand(command: Pick<ContestShiftCommand, 're
   }
 }
 
-export class FakeAnaCareHoursService implements AnaCareHoursService {
-  constructor(private snapshots: Record<string, AnaCareMonthSnapshot>) {}
+/**
+ * Agrega um paciente DETALHE (`AnaCarePatient`, com turnos) para a forma da LISTA
+ * (`AnaCareListPatient`, F6.3) — o Fake simula em memória o que o backend real faz em SQL
+ * (`anacare_patient_month`/`anacare_patient_month_provider`, ver fase-6.md). Usa os MESMOS
+ * agregadores de `selectors.ts` que o DETALHE usa (`allShiftsOf`, `validationProgress`,
+ * `originCounts`) — nunca recalcula a régua à mão de novo.
+ */
+function aggregatePatientForList(patient: AnaCarePatient): AnaCareListPatient {
+  const shifts = allShiftsOf(patient);
+  const progress = validationProgress(shifts);
+  const origins = originCounts(shifts);
+  const hoursActualSum = shifts.reduce((acc, s) => acc + (s.hoursActual ?? 0), 0);
+  const hoursScheduledSumMissingActual = shifts.reduce((acc, s) => acc + (s.hoursActual === null ? s.hoursScheduled : 0), 0);
+  return {
+    anaCareId: patient.anaCareId,
+    name: patient.name,
+    linked: false,
+    providers: patient.providers.map((p) => ({ anaCareId: p.anaCareId, linked: p.linked, name: p.name })),
+    providersCount: patient.providers.length,
+    shiftsCount: shifts.length,
+    hoursActualSum,
+    hoursScheduledSumMissingActual,
+    validated: progress.validated,
+    contested: progress.contested,
+    originSinCheckin: origins.sinCheckin,
+    originWebAdmin: origins.webAdmin,
+    originApp: origins.app,
+  };
+}
 
-  private findSnapshot(month: string): AnaCareMonthSnapshot {
+export class FakeAnaCareHoursService implements AnaCareHoursService {
+  /**
+   * Guarda DETALHE (`AnaCarePatient[]`, com turnos) — nunca a forma da LISTA. `getPatientMonth`
+   * devolve direto daqui; `getMonthSnapshot` filtra e AGREGA (`aggregatePatientForList`) antes de
+   * devolver, exatamente como o backend real faz na rota (F6.2). Antes desta fase, as duas rotas
+   * liam a MESMA forma — a separação de contrato (F6.3) exigiu que o Fake parasse de expor turnos
+   * na lista também.
+   */
+  constructor(private snapshots: Record<string, AnaCareHoursPatientSnapshot>) {}
+
+  private findSnapshot(month: string): AnaCareHoursPatientSnapshot {
     return (
       this.snapshots[month] ?? {
         month,
@@ -91,7 +130,8 @@ export class FakeAnaCareHoursService implements AnaCareHoursService {
 
   async getMonthSnapshot(month: string, filters?: AnaCareHoursMonthFilters): Promise<AnaCareMonthSnapshot> {
     const snapshot = this.findSnapshot(month);
-    return delay({ ...snapshot, patients: filterPatients(snapshot.patients, filters) });
+    const filtered = filterPatients(snapshot.patients, filters);
+    return delay({ ...snapshot, patients: filtered.map(aggregatePatientForList) });
   }
 
   async getPatientMonth(month: string, patientId: string): Promise<AnaCarePatient | null> {
@@ -131,7 +171,7 @@ export class FakeAnaCareHoursService implements AnaCareHoursService {
     return null;
   }
 
-  private mutateShift(shiftId: string, mutate: (shift: AnaCareMonthSnapshot['patients'][number]['providers'][number]['shifts'][number]) => void): void {
+  private mutateShift(shiftId: string, mutate: (shift: AnaCareHoursPatientSnapshot['patients'][number]['providers'][number]['shifts'][number]) => void): void {
     for (const snapshot of Object.values(this.snapshots)) {
       for (const patient of snapshot.patients) {
         for (const provider of patient.providers) {

@@ -9,7 +9,8 @@ import { WorkerLinkRepository, type WorkerLinkRow } from '../../infrastructure/W
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { AnaCareHoursServiceError, VALIDATE_BATCH_MAX_SHIFTS } from '../../domain/AnaCareShift';
 import type { AnaCareRetratoSourceStatus, AnaCareShiftsSource, SourceShiftDTO } from '../../domain/AnaCareShiftsSource';
-import type { ShiftSyncRepository } from '../../domain/AnaCareHoursSyncPorts';
+import type { PatientMonthSyncRepository, ShiftSyncRepository } from '../../domain/AnaCareHoursSyncPorts';
+import type { AnaCarePatientMonthAggregate, AnaCarePatientMonthProviderAggregate } from '../../domain/AnaCarePatientMonth';
 
 jest.mock('../../infrastructure/ShiftHoursValidationRepository', () => {
   const actual = jest.requireActual('../../infrastructure/ShiftHoursValidationRepository');
@@ -85,6 +86,8 @@ function mockRepo(overrides: Partial<jest.Mocked<ShiftHoursValidationRepository>
     getOne: jest.fn().mockResolvedValue(null),
     validate: jest.fn().mockResolvedValue(undefined),
     contest: jest.fn().mockResolvedValue(undefined),
+    // F6.2: contagem de validated/contested por paciente (GROUP BY) — vazio por default (nenhuma validação).
+    getStatusCountsByMonth: jest.fn().mockResolvedValue(new Map()),
     ...overrides,
   } as unknown as jest.Mocked<ShiftHoursValidationRepository>;
 }
@@ -116,6 +119,54 @@ class StubShiftRepository implements ShiftSyncRepository {
   }
 }
 
+/**
+ * F6.2 (D361/Adendo 17/09): STUB do retrato AGREGADO (`PatientMonthSyncRepository`) — a LISTA
+ * (`getMonthSnapshot`) lê exclusivamente daqui a partir desta fase, nunca mais do array de turnos.
+ * `aggregates=[]` por default simula "retrato agregado nunca construído".
+ */
+class StubPatientMonthRepository implements PatientMonthSyncRepository {
+  constructor(
+    private readonly aggregates: AnaCarePatientMonthAggregate[] = [],
+    private readonly providers: AnaCarePatientMonthProviderAggregate[] = [],
+    private readonly lastFetchedAt: string | null = '2026-09-15T00:00:00.000Z',
+  ) {}
+  async upsertMany(): Promise<{ written: number }> {
+    return { written: 0 };
+  }
+  async recomputeFromShifts(): Promise<{ written: number }> {
+    return { written: 0 };
+  }
+  async listByMonth(): Promise<AnaCarePatientMonthAggregate[]> {
+    return this.aggregates;
+  }
+  async listProvidersByMonth(): Promise<AnaCarePatientMonthProviderAggregate[]> {
+    return this.providers;
+  }
+  async getSnapshotFreshness(): Promise<{ shifts: number; lastFetchedAt: string | null }> {
+    return { shifts: this.aggregates.length, lastFetchedAt: this.aggregates.length > 0 ? this.lastFetchedAt : null };
+  }
+}
+
+const AGGREGATE_PAT_0: AnaCarePatientMonthAggregate = {
+  anaCarePatientId: 'AC-PAT-0',
+  patientFirstName: 'Lucía',
+  patientLastName: 'Fernández QA',
+  providersCount: 1,
+  shiftsCount: 2,
+  hoursActualSum: 11.8,
+  hoursScheduledSumMissingActual: 6,
+  originSinCheckin: 1,
+  originWebAdmin: 0,
+  originApp: 1,
+};
+
+const PROVIDER_PAT_0_NURSE_0: AnaCarePatientMonthProviderAggregate = {
+  anaCarePatientId: 'AC-PAT-0',
+  anaCareNurseId: 'AC-NURSE-0',
+  nurseFirstName: 'Rocío',
+  nurseLastName: 'García QA',
+};
+
 describe('isValidMonth / periodMonthDate', () => {
   it('aceita YYYY-MM válido', () => {
     expect(isValidMonth('2026-09')).toBe(true);
@@ -132,23 +183,24 @@ describe('isValidMonth / periodMonthDate', () => {
 
 describe('AnaCareHoursService', () => {
   describe('getMonthSnapshot', () => {
-    // Prova central da separação de caminhos: a LISTA lê do retrato (banco), NUNCA da fonte —
-    // se alguém religar `getMonthSnapshot` a `source.listShifts`, este teste morre.
-    it('NUNCA chama source.listShifts — lê exclusivamente do retrato (ShiftSyncRepository)', async () => {
-      const source = new StubSource([SHIFT_A, SHIFT_SEM_CHECKIN]);
+    // Prova central da separação de caminhos (F6.2): a LISTA lê do retrato AGREGADO
+    // (`PatientMonthSyncRepository`), NUNCA da fonte — se alguém religar `getMonthSnapshot` a
+    // `source.listShifts`, este teste morre.
+    it('NUNCA chama source.listShifts — lê exclusivamente do retrato AGREGADO (PatientMonthSyncRepository)', async () => {
+      const source = new StubSource([SHIFT_A]);
       const listShiftsSpy = jest.spyOn(source, 'listShifts');
-      const shiftRepo = new StubShiftRepository([SHIFT_A, SHIFT_SEM_CHECKIN]);
-      const service = new AnaCareHoursService(source, mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
+      const patientMonthRepo = new StubPatientMonthRepository([AGGREGATE_PAT_0], [PROVIDER_PAT_0_NURSE_0]);
+      const service = new AnaCareHoursService(source, mockRepo(), new KMSEncryptionService(), undefined, undefined, patientMonthRepo);
 
       await service.getMonthSnapshot('2026-09', false);
       expect(listShiftsSpy).not.toHaveBeenCalled();
     });
 
-    // Contagem zero é falha, nunca sucesso: sem NENHUMA linha gravada pro mês, o retrato nunca foi
-    // construído — o snapshot não pode virar "lista vazia" silenciosa, tem de sair `stale: true`.
-    it('mês sem linhas no retrato ⇒ stale=true (retrato NÃO construído), nunca lista vazia silenciosa', async () => {
-      const shiftRepo = new StubShiftRepository([]); // freshness.shifts === 0
-      const service = new AnaCareHoursService(new StubSource([]), mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
+    // Contagem zero é falha, nunca sucesso: sem NENHUM agregado gravado pro mês, o retrato nunca
+    // foi construído — o snapshot não pode virar "lista vazia" silenciosa, tem de sair `stale: true`.
+    it('mês sem agregados ⇒ stale=true (retrato AGREGADO não construído), nunca lista vazia silenciosa', async () => {
+      const patientMonthRepo = new StubPatientMonthRepository([]); // freshness.shifts === 0
+      const service = new AnaCareHoursService(new StubSource([]), mockRepo(), new KMSEncryptionService(), undefined, undefined, patientMonthRepo);
 
       const snapshot = await service.getMonthSnapshot('2026-09', false);
       expect(snapshot.patients).toEqual([]);
@@ -156,90 +208,116 @@ describe('AnaCareHoursService', () => {
     });
 
     /**
-     * Item 3 (revisão de PR): o `stale: true` acima também dispara quando o retrato SINCRONIZOU e
-     * só ficou velho (>24h) — a tela usava a MESMA mensagem para os dois casos ("há mais de 24
-     * horas"), falsa quando o sync nunca rodou. Este teste MORRE se `snapshotState` voltar a
+     * Item 3 (revisão de PR, herdado da F6.1): o `stale: true` acima também dispara quando o
+     * retrato SINCRONIZOU e só ficou velho (>24h). Este teste MORRE se `snapshotState` voltar a
      * colapsar em `stale`/`fresco`.
      */
-    it('mês sem linhas no retrato ⇒ snapshotState=nao_construido (distinto de retrato velho)', async () => {
-      const shiftRepo = new StubShiftRepository([]); // freshness.shifts === 0
-      const service = new AnaCareHoursService(new StubSource([]), mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
+    it('mês sem agregados ⇒ snapshotState=nao_construido (distinto de retrato velho)', async () => {
+      const patientMonthRepo = new StubPatientMonthRepository([]);
+      const service = new AnaCareHoursService(new StubSource([]), mockRepo(), new KMSEncryptionService(), undefined, undefined, patientMonthRepo);
 
       const snapshot = await service.getMonthSnapshot('2026-09', false);
       expect(snapshot.snapshotState).toBe('nao_construido');
     });
 
-    it('mês COM linhas no retrato e fonte fresca ⇒ stale=false, snapshotState=fresco', async () => {
-      const shiftRepo = new StubShiftRepository([SHIFT_A]);
-      const service = new AnaCareHoursService(new StubSource([SHIFT_A]), mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
+    it('mês COM agregados e fonte fresca ⇒ stale=false, snapshotState=fresco', async () => {
+      const patientMonthRepo = new StubPatientMonthRepository([AGGREGATE_PAT_0]);
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), undefined, undefined, patientMonthRepo);
 
       const snapshot = await service.getMonthSnapshot('2026-09', false);
       expect(snapshot.stale).toBe(false);
       expect(snapshot.snapshotState).toBe('fresco');
     });
 
-    it('devolve os pacientes agrupados, sem filtro', async () => {
-      const shiftRepo = new StubShiftRepository([SHIFT_A, SHIFT_SEM_CHECKIN]);
-      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
+    // Contrato F6.2 (Adendo 17/09): a resposta NÃO tem nenhum turno individual — o "termina
+    // quando" da fase. Morre se `providers[].shifts` ou qualquer campo por-turno voltar a existir.
+    it('a resposta NÃO contém nenhum turno individual (nem em providers) — termina quando da F6.2', async () => {
+      const patientMonthRepo = new StubPatientMonthRepository([AGGREGATE_PAT_0], [PROVIDER_PAT_0_NURSE_0]);
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), undefined, undefined, patientMonthRepo);
+
+      const snapshot = await service.getMonthSnapshot('2026-09', false, true);
+      expect(snapshot.patients[0]).not.toHaveProperty('shifts');
+      expect(snapshot.patients[0].providers[0]).not.toHaveProperty('shifts');
+      expect(JSON.stringify(snapshot)).not.toMatch(/"shifts"/);
+    });
+
+    it('devolve os pacientes do agregado com as contagens/somas repassadas campo a campo', async () => {
+      const patientMonthRepo = new StubPatientMonthRepository([AGGREGATE_PAT_0], [PROVIDER_PAT_0_NURSE_0]);
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), undefined, undefined, patientMonthRepo);
+
       const snapshot = await service.getMonthSnapshot('2026-09', false);
       expect(snapshot.patients).toHaveLength(1);
-      expect(snapshot.patients[0].providers[0].shifts).toHaveLength(2);
+      const patient = snapshot.patients[0];
+      expect(patient.anaCareId).toBe('AC-PAT-0');
+      expect(patient.providersCount).toBe(1);
+      expect(patient.shiftsCount).toBe(2);
+      expect(patient.originSinCheckin).toBe(1);
+      expect(patient.originWebAdmin).toBe(0);
+      expect(patient.originApp).toBe(1);
     });
 
-    // D4 (revisão de conformidade, 15/09): `getMonthSnapshot` deixou de aceitar filtro nenhum —
-    // `patientSearch`/`providerId` rodam SÓ no cliente (`selectors.ts` `filterPatients`, front),
-    // nunca em query string pro backend (PII em URL/log). As 3 asserções antigas de filtro no
-    // service foram substituídas por esta: com 2 prestadores diferentes no mesmo mês, o snapshot
-    // devolve os DOIS sempre — não existe mais parâmetro pra podar a resposta aqui.
-    it('nunca filtra no servidor — devolve todos os prestadores/pacientes do mês, sem parâmetro de filtro', async () => {
-      const shifts = [SHIFT_A, { ...SHIFT_A, sourceShiftId: 'shift-c', anaCareNurseId: 'AC-NURSE-1' }];
-      const shiftRepo = new StubShiftRepository(shifts);
-      const service = new AnaCareHoursService(new StubSource(shifts), mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
+    // Adendo 17/09: duas colunas de hora, NUNCA colapsadas — o modo `zero` usa só
+    // `hoursActualSum`; somada a `hoursScheduledSumMissingActual` cobre o modo previsto.
+    it('as duas somas de hora saem SEPARADAS (hoursActualSum / hoursScheduledSumMissingActual), nunca somadas pelo serviço', async () => {
+      const patientMonthRepo = new StubPatientMonthRepository([AGGREGATE_PAT_0]);
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), undefined, undefined, patientMonthRepo);
+
       const snapshot = await service.getMonthSnapshot('2026-09', false);
-      const providerIds = snapshot.patients.flatMap((p) => p.providers.map((pr) => pr.anaCareId)).sort();
-      expect(providerIds).toEqual(['AC-NURSE-0', 'AC-NURSE-1']);
+      expect(snapshot.patients[0].hoursActualSum).toBe(11.8);
+      expect(snapshot.patients[0].hoursScheduledSumMissingActual).toBe(6);
     });
 
-    it('decifra a nota só quando canReadNote=true (e só se houver validação com nota)', async () => {
-      const decrypt = jest.fn().mockResolvedValue('nota decifrada');
-      const kms = { decrypt, encrypt: jest.fn() } as unknown as KMSEncryptionService;
-      const validation: ValidationRow = {
-        sourceShiftId: 'shift-a',
-        status: 'contestado',
-        approvedHours: null,
-        approvedCheckinAt: null,
-        approvedCheckoutAt: null,
-        approvedCheckinSource: null,
-        validatedBy: null,
-        validatedByName: null,
-        validatedAt: null,
-        reason: 'otro',
-        noteEncrypted: 'cifra',
+    // Adendo 17/09: `validated`/`contested` vêm do GROUP BY de `shift_hours_validation`
+    // (`getStatusCountsByMonth`), nunca mais do join 1:1 por turno.
+    it('validated/contested vêm do GROUP BY de shift_hours_validation (getStatusCountsByMonth), nunca de turno individual', async () => {
+      const validationCounts = new Map([['AC-PAT-0', { validated: 3, contested: 1 }]]);
+      const repo = mockRepo({ getStatusCountsByMonth: jest.fn().mockResolvedValue(validationCounts) });
+      const patientMonthRepo = new StubPatientMonthRepository([AGGREGATE_PAT_0]);
+      const service = new AnaCareHoursService(new StubSource(), repo, new KMSEncryptionService(), undefined, undefined, patientMonthRepo);
+
+      const snapshot = await service.getMonthSnapshot('2026-09', false);
+      expect(snapshot.patients[0].validated).toBe(3);
+      expect(snapshot.patients[0].contested).toBe(1);
+      expect(repo.getStatusCountsByMonth).toHaveBeenCalledWith('2026-09-01');
+    });
+
+    it('paciente sem nenhuma linha em shift_hours_validation ⇒ validated=0, contested=0 (nunca undefined)', async () => {
+      const patientMonthRepo = new StubPatientMonthRepository([AGGREGATE_PAT_0]);
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), undefined, undefined, patientMonthRepo);
+
+      const snapshot = await service.getMonthSnapshot('2026-09', false);
+      expect(snapshot.patients[0].validated).toBe(0);
+      expect(snapshot.patients[0].contested).toBe(0);
+    });
+
+    // Adendo 17/09: paciente com 2 prestadores — `providers` continua array (não só contagem),
+    // cada um com nome, para o filtro "Todos los prestadores" do front seguir funcionando.
+    it('paciente com 2 prestadores: providersCount=2 no agregado e providers[] devolve os DOIS, cada um com nome', async () => {
+      const aggregateDoisPrestadores: AnaCarePatientMonthAggregate = { ...AGGREGATE_PAT_0, providersCount: 2 };
+      const providerB: AnaCarePatientMonthProviderAggregate = {
+        anaCarePatientId: 'AC-PAT-0',
+        anaCareNurseId: 'AC-NURSE-1',
+        nurseFirstName: 'Outra',
+        nurseLastName: 'Enfermera',
       };
-      const repo = mockRepo({ getByShiftIds: jest.fn().mockResolvedValue(new Map([['shift-a', validation]])) });
-      const shiftRepo = new StubShiftRepository([SHIFT_A]);
-      const service = new AnaCareHoursService(new StubSource(), repo, kms, undefined, shiftRepo);
+      const patientMonthRepo = new StubPatientMonthRepository([aggregateDoisPrestadores], [PROVIDER_PAT_0_NURSE_0, providerB]);
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), undefined, undefined, patientMonthRepo);
 
-      const semCelula = await service.getMonthSnapshot('2026-09', false);
-      const shiftSemCelula = semCelula.patients[0].providers[0].shifts.find((s) => s.id === 'shift-a')!;
-      expect(shiftSemCelula.contestNote).toBeUndefined();
-      expect(decrypt).not.toHaveBeenCalled();
-
-      const comCelula = await service.getMonthSnapshot('2026-09', true);
-      const shiftComCelula = comCelula.patients[0].providers[0].shifts.find((s) => s.id === 'shift-a')!;
-      expect(shiftComCelula.contestNote).toBe('nota decifrada');
-      expect(decrypt).toHaveBeenCalledWith('cifra');
+      const snapshot = await service.getMonthSnapshot('2026-09', false, true);
+      expect(snapshot.patients[0].providersCount).toBe(2);
+      const ids = snapshot.patients[0].providers.map((p) => p.anaCareId).sort();
+      expect(ids).toEqual(['AC-NURSE-0', 'AC-NURSE-1']);
+      const names = snapshot.patients[0].providers.map((p) => p.name).sort();
+      expect(names).toEqual(['Outra Enfermera', 'Rocío García QA']);
     });
 
-    // D349 item 1: `workers.ana_care_id` já populado pelo MirrorWorkerService — o gap era só o
-    // lookup, que agora `resolveLinkedNurseIds` faz em LOTE. Item 1 (17/09) mudou a ORIGEM do
-    // nome: não é mais `workers`/KMS, é o payload do turno (`SHIFT_A.nurseFirstName/nurseLastName`).
-    it('D349/item 1: prestador com ana_care_id em workers vem linked=true; nome vem da FONTE (nunca de workers/KMS), quando canReadProviderName=true', async () => {
+    // D349 item 1: nome do prestador vem do PAR (migration 442), nunca de `workers`/KMS.
+    it('D349/item 1: prestador com ana_care_id em workers vem linked=true; nome vem do PAR (nunca de workers/KMS), quando canReadProviderName=true', async () => {
       const decrypt = jest.fn().mockResolvedValue('nunca deveria decifrar nome de prestador');
       const kms = { decrypt, encrypt: jest.fn() } as unknown as KMSEncryptionService;
       const workerLinks = mockWorkerLinks(new Map([['AC-NURSE-0', { workerId: 'w-1', firstNameEncrypted: 'enc-first', lastNameEncrypted: 'enc-last' }]]));
-      const shiftRepo = new StubShiftRepository([SHIFT_A]);
-      const service = new AnaCareHoursService(new StubSource(), mockRepo(), kms, workerLinks, shiftRepo);
+      const patientMonthRepo = new StubPatientMonthRepository([AGGREGATE_PAT_0], [PROVIDER_PAT_0_NURSE_0]);
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), kms, workerLinks, undefined, patientMonthRepo);
 
       const snapshot = await service.getMonthSnapshot('2026-09', false, true);
       const provider = snapshot.patients[0].providers.find((p) => p.anaCareId === 'AC-NURSE-0')!;
@@ -249,10 +327,10 @@ describe('AnaCareHoursService', () => {
       expect(decrypt).not.toHaveBeenCalled();
     });
 
-    it('D349/D344: prestador vinculado, mas SEM worker_contact:read (canReadProviderName=false) — linked=true, name undefined MESMO a fonte mandando nome', async () => {
+    it('D349/D344: prestador vinculado, mas SEM worker_contact:read (canReadProviderName=false) — linked=true, name undefined MESMO o par tendo nome', async () => {
       const workerLinks = mockWorkerLinks(new Map([['AC-NURSE-0', { workerId: 'w-1', firstNameEncrypted: null, lastNameEncrypted: null }]]));
-      const shiftRepo = new StubShiftRepository([SHIFT_A]);
-      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), workerLinks, shiftRepo);
+      const patientMonthRepo = new StubPatientMonthRepository([AGGREGATE_PAT_0], [PROVIDER_PAT_0_NURSE_0]);
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), workerLinks, undefined, patientMonthRepo);
 
       const snapshot = await service.getMonthSnapshot('2026-09', false, false);
       const provider = snapshot.patients[0].providers.find((p) => p.anaCareId === 'AC-NURSE-0')!;
@@ -261,15 +339,13 @@ describe('AnaCareHoursService', () => {
     });
 
     /**
-     * Item 1 (17/09): antes desta decisão, sem match em `workers` o nome também sumia (dependia do
-     * MESMO lookup que decide `linked`). Agora nome e vínculo são INDEPENDENTES — o prestador pode
-     * não casar com nenhum worker nosso e ainda assim mostrar o nome, se a fonte mandou e o ator
-     * tem `worker_contact:read`.
+     * Item 1 (17/09): nome e vínculo são INDEPENDENTES — o prestador pode não casar com nenhum
+     * worker nosso e ainda assim mostrar o nome, se o par tem nome e o ator tem `worker_contact:read`.
      */
-    it('sem match em workers.ana_care_id: linked=false, mas o NOME da fonte aparece do mesmo jeito (item 1)', async () => {
+    it('sem match em workers.ana_care_id: linked=false, mas o NOME do par aparece do mesmo jeito (item 1)', async () => {
       const workerLinks = mockWorkerLinks(new Map());
-      const shiftRepo = new StubShiftRepository([SHIFT_A]);
-      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), workerLinks, shiftRepo);
+      const patientMonthRepo = new StubPatientMonthRepository([AGGREGATE_PAT_0], [PROVIDER_PAT_0_NURSE_0]);
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), workerLinks, undefined, patientMonthRepo);
 
       const snapshot = await service.getMonthSnapshot('2026-09', false, true);
       const provider = snapshot.patients[0].providers.find((p) => p.anaCareId === 'AC-NURSE-0')!;
@@ -277,11 +353,15 @@ describe('AnaCareHoursService', () => {
       expect(provider.name).toBe('Rocío García QA');
     });
 
-    it('busca o vínculo em LOTE: um único findByAnaCareIds com os anaCareNurseId DISTINTOS do mês (nunca 1-por-turno)', async () => {
-      const shifts = [SHIFT_A, { ...SHIFT_A, sourceShiftId: 'shift-c', anaCareNurseId: 'AC-NURSE-1' }, { ...SHIFT_A, sourceShiftId: 'shift-d', anaCareNurseId: 'AC-NURSE-0' }];
+    it('busca o vínculo em LOTE: um único findByAnaCareIds com os anaCareNurseId DISTINTOS do mês (nunca 1-por-par)', async () => {
+      const providerB: AnaCarePatientMonthProviderAggregate = { anaCarePatientId: 'AC-PAT-0', anaCareNurseId: 'AC-NURSE-1' };
+      const providerRepetido: AnaCarePatientMonthProviderAggregate = { anaCarePatientId: 'AC-PAT-1', anaCareNurseId: 'AC-NURSE-0' };
       const workerLinks = mockWorkerLinks(new Map());
-      const shiftRepo = new StubShiftRepository(shifts);
-      const service = new AnaCareHoursService(new StubSource(shifts), mockRepo(), new KMSEncryptionService(), workerLinks, shiftRepo);
+      const patientMonthRepo = new StubPatientMonthRepository(
+        [AGGREGATE_PAT_0, { ...AGGREGATE_PAT_0, anaCarePatientId: 'AC-PAT-1' }],
+        [PROVIDER_PAT_0_NURSE_0, providerB, providerRepetido],
+      );
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), workerLinks, undefined, patientMonthRepo);
 
       await service.getMonthSnapshot('2026-09', false, true);
       expect(workerLinks.findByAnaCareIds).toHaveBeenCalledTimes(1);
@@ -291,27 +371,27 @@ describe('AnaCareHoursService', () => {
 
     it('paciente permanece linked=false mesmo com prestador vinculado (D349 item 2, bloqueado)', async () => {
       const workerLinks = mockWorkerLinks(new Map([['AC-NURSE-0', { workerId: 'w-1', firstNameEncrypted: null, lastNameEncrypted: null }]]));
-      const shiftRepo = new StubShiftRepository([SHIFT_A]);
-      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), workerLinks, shiftRepo);
+      const patientMonthRepo = new StubPatientMonthRepository([AGGREGATE_PAT_0], [PROVIDER_PAT_0_NURSE_0]);
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), workerLinks, undefined, patientMonthRepo);
 
       const snapshot = await service.getMonthSnapshot('2026-09', false, true);
       expect(snapshot.patients[0].linked).toBe(false);
     });
 
-    /** Item 1 (17/09): o nome do paciente vem da fonte independente de `linked` (sempre false, D349 item 2). */
-    it('nome do paciente vem da FONTE mesmo com linked=false — não depende de canReadProviderName (gate é só do prestador)', async () => {
-      const shiftRepo = new StubShiftRepository([SHIFT_A]);
-      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
+    /** Item 1 (17/09): o nome do paciente vem do agregado independente de `linked` (sempre false, D349 item 2). */
+    it('nome do paciente vem do AGREGADO mesmo com linked=false — não depende de canReadProviderName (gate é só do prestador)', async () => {
+      const patientMonthRepo = new StubPatientMonthRepository([AGGREGATE_PAT_0]);
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), undefined, undefined, patientMonthRepo);
 
       const snapshot = await service.getMonthSnapshot('2026-09', false, false);
       expect(snapshot.patients[0].linked).toBe(false);
       expect(snapshot.patients[0].name).toBe('Lucía Fernández QA');
     });
 
-    it('nome do paciente ausente na fonte (turno sem os campos) vem name undefined, nunca inventado', async () => {
-      const shiftSemNome: SourceShiftDTO = { ...SHIFT_A, patientFirstName: undefined, patientLastName: undefined };
-      const shiftRepo = new StubShiftRepository([shiftSemNome]);
-      const service = new AnaCareHoursService(new StubSource([shiftSemNome]), mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
+    it('nome do paciente ausente no agregado (patientFirstName/patientLastName undefined) vem name undefined, nunca inventado', async () => {
+      const aggregateSemNome: AnaCarePatientMonthAggregate = { ...AGGREGATE_PAT_0, patientFirstName: undefined, patientLastName: undefined };
+      const patientMonthRepo = new StubPatientMonthRepository([aggregateSemNome]);
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), undefined, undefined, patientMonthRepo);
 
       const snapshot = await service.getMonthSnapshot('2026-09', false, false);
       expect(snapshot.patients[0].name).toBeUndefined();
@@ -346,6 +426,41 @@ describe('AnaCareHoursService', () => {
 
       await service.getPatientMonth('2026-09', 'AC-PAT-0', false);
       expect(listShiftsSpy).toHaveBeenCalledWith({ month: '2026-09', patientId: 'AC-PAT-0' });
+    });
+
+    /**
+     * F6.2: o contrato da LISTA (`getMonthSnapshot`) não expõe mais nota/turno individual, então a
+     * cobertura da decifra de nota (`buildPatients`) migra para cá — o DETALHE (`getPatientMonth`)
+     * é o único caminho que ainda passa por `mapShift`/nota, e não foi tocado por esta fase.
+     */
+    it('decifra a nota do DETALHE só quando canReadNote=true (e só se houver validação com nota)', async () => {
+      const decrypt = jest.fn().mockResolvedValue('nota decifrada');
+      const kms = { decrypt, encrypt: jest.fn() } as unknown as KMSEncryptionService;
+      const validation: ValidationRow = {
+        sourceShiftId: 'shift-a',
+        status: 'contestado',
+        approvedHours: null,
+        approvedCheckinAt: null,
+        approvedCheckoutAt: null,
+        approvedCheckinSource: null,
+        validatedBy: null,
+        validatedByName: null,
+        validatedAt: null,
+        reason: 'otro',
+        noteEncrypted: 'cifra',
+      };
+      const repo = mockRepo({ getByShiftIds: jest.fn().mockResolvedValue(new Map([['shift-a', validation]])) });
+      const service = new AnaCareHoursService(new StubSource(), repo, kms);
+
+      const semCelula = await service.getPatientMonth('2026-09', 'AC-PAT-0', false);
+      const shiftSemCelula = semCelula!.providers[0].shifts.find((s) => s.id === 'shift-a')!;
+      expect(shiftSemCelula.contestNote).toBeUndefined();
+      expect(decrypt).not.toHaveBeenCalled();
+
+      const comCelula = await service.getPatientMonth('2026-09', 'AC-PAT-0', true);
+      const shiftComCelula = comCelula!.providers[0].shifts.find((s) => s.id === 'shift-a')!;
+      expect(shiftComCelula.contestNote).toBe('nota decifrada');
+      expect(decrypt).toHaveBeenCalledWith('cifra');
     });
   });
 

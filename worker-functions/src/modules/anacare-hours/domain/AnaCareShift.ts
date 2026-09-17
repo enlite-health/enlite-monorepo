@@ -66,11 +66,44 @@ export interface AnaCareProvider {
   shifts: AnaCareShift[];
 }
 
+/** Usado só pelo DETALHE (`getPatientMonth`, ao vivo na fonte) — por turno. Ver `AnaCareListPatient` para a LISTA (F6.2, agregado). */
 export interface AnaCarePatient {
   anaCareId: string;
   linked: boolean;
   name?: string;
   providers: AnaCareProvider[];
+}
+
+/**
+ * Contrato da LISTA (F6.2, D361 Adendo 17/09) — sem NENHUM turno individual, lido do agregado
+ * (`anacare_patient_month` + `anacare_patient_month_provider`, migrations 441/442). `providers`
+ * continua array (não só um número) para o filtro "Todos los prestadores" do front seguir
+ * funcionando sem reescrita — só `provider.shifts` some.
+ */
+export interface AnaCareListProvider {
+  anaCareId: string;
+  linked: boolean;
+  name?: string;
+}
+
+export interface AnaCareListPatient {
+  anaCareId: string;
+  name?: string;
+  /** D349 item 2 — paciente permanece SEMPRE sem vínculo, bloqueado. */
+  linked: false;
+  providers: AnaCareListProvider[];
+  providersCount: number;
+  shiftsCount: number;
+  /** Modo `zero` de `totalHours` (front) — soma sozinha. */
+  hoursActualSum: number;
+  /** Somado a `hoursActualSum` cobre o modo previsto — nunca isolado, nunca somado ao modo `zero`. */
+  hoursScheduledSumMissingActual: number;
+  /** `COUNT` por status em `shift_hours_validation` (GROUP BY) — nunca mais o join 1:1 por turno. */
+  validated: number;
+  contested: number;
+  originSinCheckin: number;
+  originWebAdmin: number;
+  originApp: number;
 }
 
 export interface AnaCareOriginCounts {
@@ -96,7 +129,8 @@ export interface AnaCareMonthSnapshot {
   /** Ver `AnaCareSnapshotState` — distinção que `stale` sozinho não carrega (item 3). */
   snapshotState: AnaCareSnapshotState;
   circuitBreakerOpen: boolean;
-  patients: AnaCarePatient[];
+  /** F6.2: pacientes AGREGADOS (sem turno individual) — ver `AnaCareListPatient`. */
+  patients: AnaCareListPatient[];
 }
 
 export interface AnaCareRetratoStatus {

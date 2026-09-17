@@ -31,7 +31,7 @@ import { OriginLegend } from './OriginLegend';
 import { DayGroup } from './DayGroup';
 import { ValidateBatchModal } from './ValidateBatchModal';
 import { ContestModal } from './ContestModal';
-import type { AnaCareMonthSnapshot, AnaCareShift, ContestReason } from './types';
+import type { AnaCareHoursPatientSnapshot, AnaCareShift, ContestReason } from './types';
 import {
   addDaysIso,
   allShiftEntriesOf,
@@ -50,7 +50,7 @@ import {
 } from './selectors';
 
 interface AnaCareHoursDetailPageProps {
-  snapshot: AnaCareMonthSnapshot;
+  snapshot: AnaCareHoursPatientSnapshot;
   patientId: string;
   onBack: () => void;
   initialContestShiftId?: string | null;

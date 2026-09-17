@@ -12,20 +12,26 @@
 
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import type { AnaCareShiftsSource, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
-import type { ShiftSyncRepository } from '../domain/AnaCareHoursSyncPorts';
+import type { PatientMonthSyncRepository, ShiftSyncRepository } from '../domain/AnaCareHoursSyncPorts';
 import { ShiftHoursValidationRepository, ShiftAlreadyValidatedError } from '../infrastructure/ShiftHoursValidationRepository';
 import { WorkerLinkRepository } from '../infrastructure/WorkerLinkRepository';
 import { AnaCareShiftRepository } from '../infrastructure/AnaCareShiftRepository';
+import { AnaCarePatientMonthRepository } from '../infrastructure/AnaCarePatientMonthRepository';
 import { mapShift, groupIntoPatients, buildSnapshot, computeActualHours, joinSourceName } from './AnaCareHoursMapper';
 import {
   AnaCareHoursServiceError,
   CONTEST_NOTE_MAX_LENGTH,
   VALIDATE_BATCH_MAX_SHIFTS,
+  type AnaCareListPatient,
+  type AnaCareListProvider,
   type AnaCareMonthSnapshot,
   type AnaCarePatient,
   type AnaCareRetratoStatus,
   type ContestReason,
 } from '../domain/AnaCareShift';
+
+/** Única fonte hoje (mesma convenção do repositório: constante interna, não parâmetro do chamador). */
+const PATIENT_MONTH_SOURCE = 'anacare';
 
 export interface ValidateBatchItemResult {
   shiftId: string;
@@ -49,8 +55,14 @@ export class AnaCareHoursService {
     private readonly validations: ShiftHoursValidationRepository = new ShiftHoursValidationRepository(),
     private readonly kms: KMSEncryptionService = new KMSEncryptionService(),
     private readonly workerLinks: WorkerLinkRepository = new WorkerLinkRepository(),
-    /** Retrato do mês (escrito pelo sync real) — a LISTA lê daqui, nunca da fonte. */
+    /** `getRetratoStatus` lê a freshness daqui (por turno) — a LISTA (`getMonthSnapshot`) NÃO lê mais daqui a partir da F6.2 (ver `patientMonthRepository`). */
     private readonly shiftRepository: ShiftSyncRepository = new AnaCareShiftRepository(),
+    /**
+     * F6.2 (D361/Adendo 17/09): retrato AGREGADO por paciente+mês (`anacare_patient_month` +
+     * `anacare_patient_month_provider`, migrations 441/442) — a LISTA (`getMonthSnapshot`) lê
+     * exclusivamente daqui, nunca mais do array de turnos.
+     */
+    private readonly patientMonthRepository: PatientMonthSyncRepository = new AnaCarePatientMonthRepository(),
   ) {}
 
   /**
@@ -95,22 +107,65 @@ export class AnaCareHoursService {
   }
 
   /**
-   * A LISTA lê do NOSSO banco (`ShiftSyncRepository.listByMonth`) — ZERO chamadas a
-   * `source.listShifts` (spec §Assimetria lista×detalhe: a API não filtra por agência, varrer o
-   * mês inteiro pagina 39 agências e estoura o teto do Cloud Run). D4: sem filtro de query —
-   * `patientSearch`/`providerId` rodam só no CLIENTE (`selectors.ts`), nunca aqui.
+   * F6.2 (D361/Adendo 17/09): a LISTA lê o retrato AGREGADO (`anacare_patient_month` +
+   * `anacare_patient_month_provider`) — ZERO chamadas a `source.listShifts` e ZERO turnos
+   * individuais na resposta (o contrato da rota não tem mais `shifts` em lugar nenhum). D4: sem
+   * filtro de query — `patientSearch`/`providerId` rodam só no CLIENTE (`selectors.ts`), nunca aqui.
    *
-   * Contagem zero é falha, nunca sucesso: sem nenhuma linha gravada para o mês, o retrato NUNCA
-   * foi construído (o sync real ainda não rodou) — isso NUNCA vira "lista vazia" silenciosa, é
-   * SEMPRE reportado como desatualizado (`stale: true`), igual a uma queda do circuit breaker.
+   * A contagem de `validated`/`contested` deixa de nascer do join 1:1 por `source_shift_id` e passa
+   * a vir do `GROUP BY` em `shift_hours_validation` (`ShiftHoursValidationRepository.getStatusCountsByMonth`)
+   * — `canReadNote` não é mais usado aqui: a LISTA nunca expôs nota de contestação por turno
+   * (campo que só existia dentro de `AnaCareShift`, removido do contrato da lista); o parâmetro
+   * continua na assinatura por compat com o chamador (`AnaCareHoursController`).
+   *
+   * Contagem zero é falha, nunca sucesso: sem nenhuma linha gravada para o mês, o retrato AGREGADO
+   * NUNCA foi construído (o sync real ainda não rodou) — isso NUNCA vira "lista vazia" silenciosa,
+   * é SEMPRE reportado como desatualizado (`stale: true`), igual a uma queda do circuit breaker.
    */
-  async getMonthSnapshot(month: string, canReadNote: boolean, canReadProviderName = false): Promise<AnaCareMonthSnapshot> {
-    const [sourceShifts, freshness, sourceRetrato] = await Promise.all([
-      this.shiftRepository.listByMonth(month),
-      this.shiftRepository.getSnapshotFreshness(month),
+  async getMonthSnapshot(month: string, _canReadNote: boolean, canReadProviderName = false): Promise<AnaCareMonthSnapshot> {
+    const [aggregates, providerRows, validationCounts, freshness, sourceRetrato] = await Promise.all([
+      this.patientMonthRepository.listByMonth(PATIENT_MONTH_SOURCE, month),
+      this.patientMonthRepository.listProvidersByMonth(PATIENT_MONTH_SOURCE, month),
+      this.validations.getStatusCountsByMonth(periodMonthDate(month)),
+      this.patientMonthRepository.getSnapshotFreshness(PATIENT_MONTH_SOURCE, month),
       this.source.getRetratoStatus(),
     ]);
-    const patients = await this.buildPatients(sourceShifts, canReadNote, canReadProviderName);
+
+    // Vínculo de prestador (D349 item 1) — mesmo lookup em LOTE que o DETALHE usa, agora sobre os
+    // `anaCareNurseId` do PAR paciente×prestador (migration 442), não mais sobre turnos.
+    const nurseIds = [...new Set(providerRows.map((p) => p.anaCareNurseId))];
+    const linkedNurseIds = await this.resolveLinkedNurseIds(nurseIds);
+
+    const providersByPatient = new Map<string, AnaCareListProvider[]>();
+    for (const p of providerRows) {
+      const list = providersByPatient.get(p.anaCarePatientId) ?? [];
+      list.push({
+        anaCareId: p.anaCareNurseId,
+        linked: linkedNurseIds.has(p.anaCareNurseId),
+        name: canReadProviderName ? joinSourceName(p.nurseFirstName, p.nurseLastName) : undefined,
+      });
+      providersByPatient.set(p.anaCarePatientId, list);
+    }
+
+    const patients: AnaCareListPatient[] = aggregates.map((a) => {
+      const counts = validationCounts.get(a.anaCarePatientId);
+      return {
+        anaCareId: a.anaCarePatientId,
+        name: joinSourceName(a.patientFirstName, a.patientLastName),
+        linked: false, // D349 item 2 — paciente permanece sempre sem vínculo, bloqueado.
+        providers: providersByPatient.get(a.anaCarePatientId) ?? [],
+        providersCount: a.providersCount,
+        shiftsCount: a.shiftsCount,
+        hoursActualSum: a.hoursActualSum,
+        hoursScheduledSumMissingActual: a.hoursScheduledSumMissingActual,
+        validated: counts?.validated ?? 0,
+        contested: counts?.contested ?? 0,
+        originSinCheckin: a.originSinCheckin,
+        originWebAdmin: a.originWebAdmin,
+        originApp: a.originApp,
+      };
+    });
+
     const naoConstruido = freshness.shifts === 0;
     const snapshot = buildSnapshot(month, patients, {
       stale: naoConstruido || sourceRetrato.stale,

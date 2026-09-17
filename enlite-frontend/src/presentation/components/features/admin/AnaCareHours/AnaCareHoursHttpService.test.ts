@@ -15,6 +15,13 @@ import { AnaCareHoursHttpService } from './AnaCareHoursHttpService';
 import { AnaCareHoursServiceError } from './AnaCareHoursService';
 import type { AnaCareMonthSnapshot, AnaCarePatient } from './types';
 
+/**
+ * F6.3: a rota da LISTA (`AnaCareMonthSnapshot.patients`) parou de mandar turnos — vira
+ * `AnaCareListPatient` (agregado). `PATIENT`, abaixo, é o DETALHE (`AnaCarePatient`, com turnos),
+ * usado só pelos testes de `getPatientMonth` — os dois tipos são DIFERENTES agora, não mais o
+ * mesmo objeto reaproveitado (era o caso antes desta fase).
+ */
+
 let originalFetch: typeof globalThis.fetch;
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -38,15 +45,43 @@ const SNAPSHOT: AnaCareMonthSnapshot = {
   patients: [
     {
       anaCareId: '90000',
-      linked: true,
+      linked: false,
       name: 'Lucía Fernández QA',
-      providers: [{ anaCareId: '90200', linked: true, name: 'Rocío García QA', shifts: [] }],
+      providers: [{ anaCareId: '90200', linked: true, name: 'Rocío García QA' }],
+      providersCount: 1,
+      shiftsCount: 1,
+      hoursActualSum: 8,
+      hoursScheduledSumMissingActual: 0,
+      validated: 0,
+      contested: 0,
+      originSinCheckin: 0,
+      originWebAdmin: 0,
+      originApp: 1,
     },
-    { anaCareId: '90447', linked: false, providers: [] },
+    {
+      anaCareId: '90447',
+      linked: false,
+      providers: [],
+      providersCount: 0,
+      shiftsCount: 0,
+      hoursActualSum: 0,
+      hoursScheduledSumMissingActual: 0,
+      validated: 0,
+      contested: 0,
+      originSinCheckin: 0,
+      originWebAdmin: 0,
+      originApp: 0,
+    },
   ],
 };
 
-const PATIENT: AnaCarePatient = SNAPSHOT.patients[0];
+/** DETALHE (`getPatientMonth`) — tipo diferente do agregado da lista (`SNAPSHOT.patients`), com turnos. */
+const PATIENT: AnaCarePatient = {
+  anaCareId: '90000',
+  linked: true,
+  name: 'Lucía Fernández QA',
+  providers: [{ anaCareId: '90200', linked: true, name: 'Rocío García QA', shifts: [] }],
+};
 
 beforeEach(() => {
   originalFetch = globalThis.fetch;
