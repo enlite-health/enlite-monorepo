@@ -11,7 +11,15 @@
  */
 
 import type { SourceShiftDTO } from '../domain/AnaCareShiftsSource';
-import type { EnliteDirectorySnapshot, EnliteDirectorySource, ShiftSyncFreshness, ShiftSyncRepository } from '../domain/AnaCareHoursSyncPorts';
+import type {
+  EnliteDirectorySnapshot,
+  EnliteDirectorySource,
+  PatientMonthSyncRepository,
+  ShiftSyncFreshness,
+  ShiftSyncRepository,
+} from '../domain/AnaCareHoursSyncPorts';
+import type { AnaCarePatientMonthAggregate } from '../domain/AnaCarePatientMonth';
+import { aggregatePatientMonth } from '../application/AnaCarePatientMonthAggregator';
 import { FakeAnaCareShiftsSource } from './FakeAnaCareShiftsSource';
 
 export class FakeEnliteDirectory implements EnliteDirectorySource {
@@ -68,5 +76,59 @@ export class FakeAnaCareShiftRepository implements ShiftSyncRepository {
 
   async setLastDirectoryCount(count: number): Promise<void> {
     this.lastDirectoryCount = count;
+  }
+}
+
+/**
+ * Contraparte falsa de `PatientMonthSyncRepository` (`anacare_patient_month`, migration 441,
+ * D361) — em memória, vida do processo, mesmo racional de `FakeAnaCareShiftRepository`. Sem
+ * pré-semeadura própria: quem lê antes de o runner (falso) gravar recebe lista vazia (a lista só
+ * passa a ler daqui na F6.2).
+ */
+export class FakeAnaCarePatientMonthRepository implements PatientMonthSyncRepository {
+  private readonly rows = new Map<string, AnaCarePatientMonthAggregate>();
+  /** Turnos acumulados por chave (source::mês::paciente) — espelha `anacare_shift` na versão real:
+   * `recomputeFromShifts` NUNCA soma só o lote atual, sempre recomputa sobre TUDO que já viu para
+   * aquele paciente/mês (mesmo bug que o `upsertMany` por-reserva tinha, evitado aqui do mesmo jeito
+   * que o SQL real evita: lendo a fonte cumulativa, não sobrescrevendo com o lote isolado). */
+  private readonly shiftsByKey = new Map<string, SourceShiftDTO[]>();
+  private lastFetchedAt: string | null = null;
+
+  private key(source: string, periodMonth: string, anaCarePatientId: string): string {
+    return `${source}::${periodMonth}::${anaCarePatientId}`;
+  }
+
+  async upsertMany(aggregates: readonly AnaCarePatientMonthAggregate[], periodMonth: string): Promise<{ written: number }> {
+    for (const a of aggregates) this.rows.set(this.key('anacare', periodMonth, a.anaCarePatientId), a);
+    if (aggregates.length > 0) this.lastFetchedAt = new Date().toISOString();
+    return { written: aggregates.length };
+  }
+
+  async recomputeFromShifts(shifts: readonly SourceShiftDTO[], periodMonth: string): Promise<{ written: number }> {
+    if (shifts.length === 0) return { written: 0 };
+    const patientIds = new Set<string>();
+    for (const s of shifts) {
+      patientIds.add(s.anaCarePatientId);
+      const k = this.key('anacare', periodMonth, s.anaCarePatientId);
+      if (!this.shiftsByKey.has(k)) this.shiftsByKey.set(k, []);
+      this.shiftsByKey.get(k)!.push(s);
+    }
+    for (const patientId of patientIds) {
+      const k = this.key('anacare', periodMonth, patientId);
+      const aggregate = aggregatePatientMonth(patientId, this.shiftsByKey.get(k)!);
+      this.rows.set(k, aggregate);
+    }
+    this.lastFetchedAt = new Date().toISOString();
+    return { written: patientIds.size };
+  }
+
+  async listByMonth(source: string, periodMonth: string): Promise<AnaCarePatientMonthAggregate[]> {
+    const prefix = `${source}::${periodMonth}::`;
+    return [...this.rows.entries()].filter(([k]) => k.startsWith(prefix)).map(([, v]) => v);
+  }
+
+  async getSnapshotFreshness(source: string, periodMonth: string): Promise<ShiftSyncFreshness> {
+    const rows = await this.listByMonth(source, periodMonth);
+    return { shifts: rows.length, lastFetchedAt: rows.length > 0 ? this.lastFetchedAt : null };
   }
 }

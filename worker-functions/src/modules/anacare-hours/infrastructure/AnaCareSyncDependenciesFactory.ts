@@ -12,26 +12,39 @@
 import { AnaCareSessionClient, AnaCareShiftsSourceReal, AnaCareEnliteDirectory } from '@modules/integration';
 import { reportError } from '@shared/logging';
 import type { AnaCareShiftsSource } from '../domain/AnaCareShiftsSource';
-import type { EnliteDirectorySource, ShiftSyncRepository } from '../domain/AnaCareHoursSyncPorts';
+import type { EnliteDirectorySource, PatientMonthSyncRepository, ShiftSyncRepository } from '../domain/AnaCareHoursSyncPorts';
 import { ANACARE_HOURS_SOURCE_ENV, FakeAnaCareShiftsSource } from './FakeAnaCareShiftsSource';
-import { FakeEnliteDirectory, FakeAnaCareShiftRepository } from './FakeAnaCareSyncDependencies';
+import { FakeEnliteDirectory, FakeAnaCareShiftRepository, FakeAnaCarePatientMonthRepository } from './FakeAnaCareSyncDependencies';
 import { AnaCareShiftRepository } from './AnaCareShiftRepository';
+import { AnaCarePatientMonthRepository } from './AnaCarePatientMonthRepository';
 
 export interface AnaCareSyncDependencies {
   source: AnaCareShiftsSource;
   directory: EnliteDirectorySource;
   repository: ShiftSyncRepository;
+  /** F6.1 (D361): retrato AGREGADO por paciente+mês (`anacare_patient_month`, migration 441). */
+  patientMonthRepository: PatientMonthSyncRepository;
 }
 
 export function createAnaCareSyncDependencies(env: NodeJS.ProcessEnv = process.env): AnaCareSyncDependencies | null {
   const selected = env[ANACARE_HOURS_SOURCE_ENV];
   if (selected === 'fake') {
-    return { source: new FakeAnaCareShiftsSource(), directory: new FakeEnliteDirectory(), repository: new FakeAnaCareShiftRepository() };
+    return {
+      source: new FakeAnaCareShiftsSource(),
+      directory: new FakeEnliteDirectory(),
+      repository: new FakeAnaCareShiftRepository(),
+      patientMonthRepository: new FakeAnaCarePatientMonthRepository(),
+    };
   }
   if (selected === 'real') {
     try {
       const client = new AnaCareSessionClient();
-      return { source: new AnaCareShiftsSourceReal(client), directory: new AnaCareEnliteDirectory(client), repository: new AnaCareShiftRepository() };
+      return {
+        source: new AnaCareShiftsSourceReal(client),
+        directory: new AnaCareEnliteDirectory(client),
+        repository: new AnaCareShiftRepository(),
+        patientMonthRepository: new AnaCarePatientMonthRepository(),
+      };
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'createAnaCareSyncDependencies:real' });
