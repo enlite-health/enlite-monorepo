@@ -29,10 +29,17 @@ function loginPageResponse() {
   });
 }
 
+/**
+ * Login bem-sucedido do Ana Care responde **302** + `Set-Cookie: sessionid` — medido ao vivo em
+ * 16/09/2026. Esta simulação dizia `200`, e foi por isso que o defeito do redirecionamento passou
+ * por toda a F2 com 100% de cobertura: com o status errado aqui, nenhum teste podia notar que o
+ * `fetch` real seguiria o 302 e perderia o cookie. Simulação que não modela a realidade aprova o
+ * defeito que ela mesma esconde.
+ */
 function loginOkResponse() {
   return new Response('redirect', {
-    status: 200,
-    headers: { 'set-cookie': 'sessionid=session-xyz789; Path=/' },
+    status: 302,
+    headers: { 'set-cookie': 'sessionid=session-xyz789; Path=/', location: '/admin/accounts/' },
   });
 }
 
@@ -875,5 +882,77 @@ describe('AnaCareSessionClient — espião de rede: 0 chamadas reais (2.6)', () 
     expect(realFetchSpy).not.toHaveBeenCalled();
     expect(fetchImpl.mock.calls.length).toBeGreaterThan(0);
     realFetchSpy.mockRestore();
+  });
+});
+
+/**
+ * Regressão do defeito medido ao vivo na stage em 16/09/2026: o login falhava com credencial
+ * CORRETA. Causa: o `fetch` do Node segue redirecionamento por padrão; o login responde
+ * `302 + Set-Cookie: sessionid`, o 302 era seguido, o `Set-Cookie` se perdia, a página de destino
+ * não reconhecia a sessão e devolvia o formulário de login com 200.
+ *
+ * Estes testes provam o CONTRATO que impede o defeito (`redirect: 'manual'` em toda requisição, e
+ * 302 tratado como sessão expirada). Eles NÃO provam o comportamento do `fetch` real — isso é
+ * impossível com `fetchImpl` simulado, e foi exatamente esse ponto cego que deixou o defeito passar
+ * com 100% de cobertura. A prova do comportamento real é o teste de fumaça contra o Ana Care.
+ */
+describe('AnaCareSessionClient — redirecionamento manual (regressão da stage, 16/09)', () => {
+  it('TODA requisição sai com redirect: manual — sem isso o fetch segue o 302 e perde o sessionid', async () => {
+    const inits: (RequestInit | undefined)[] = [];
+    const fetchImpl = jest.fn(async (url: string, init?: RequestInit) => {
+      inits.push(init);
+      if (url.endsWith('/users/admin/login/')) {
+        return init?.method === 'POST' ? loginOkResponse() : loginPageResponse();
+      }
+      return jsonResponse({ count: 0, next: null, results: [] });
+    });
+
+    const { now, sleep } = makeVirtualClock();
+    const client = new AnaCareSessionClient({
+      baseUrl: 'https://admin.ana.care',
+      username: 'user@enlite.health',
+      password: 'secret',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      rateLimiter: new AnaCareRateLimiter({ minIntervalMs: 0, now, sleep }),
+    });
+
+    await client.listShifts({ month: '2026-09' });
+
+    expect(inits.length).toBeGreaterThan(0);
+    for (const init of inits) {
+      expect(init?.redirect).toBe('manual');
+    }
+  });
+
+  it('302 numa leitura conta como sessão expirada e dispara re-login (antes só o 403 disparava)', async () => {
+    let loginPosts = 0;
+    let dataCalls = 0;
+    const fetchImpl = jest.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/users/admin/login/')) {
+        if (init?.method === 'POST') {
+          loginPosts += 1;
+          return loginOkResponse();
+        }
+        return loginPageResponse();
+      }
+      dataCalls += 1;
+      if (dataCalls === 1) {
+        return new Response('', { status: 302, headers: { location: '/users/admin/login/' } });
+      }
+      return jsonResponse({ count: 0, next: null, results: [] });
+    });
+
+    const { now, sleep } = makeVirtualClock();
+    const client = new AnaCareSessionClient({
+      baseUrl: 'https://admin.ana.care',
+      username: 'user@enlite.health',
+      password: 'secret',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      rateLimiter: new AnaCareRateLimiter({ minIntervalMs: 0, now, sleep }),
+    });
+
+    await client.listShifts({ month: '2026-09' });
+
+    expect(loginPosts).toBe(2);
   });
 });
