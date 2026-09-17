@@ -17,7 +17,7 @@
 import { Request, Response } from 'express';
 import { reportError } from '@shared/logging';
 import { AuthMiddleware } from '@modules/identity';
-import { cellsOfRequest, cellKey } from '@modules/identity/permissions';
+import { cellsOfRequest, cellKey, CELL_WORKER_CONTACT_READ } from '@modules/identity/permissions';
 import { createAnaCareShiftsSource } from '../../infrastructure/FakeAnaCareShiftsSource';
 import { AnaCareHoursService } from '../../application/AnaCareHoursService';
 import { AnaCareHoursServiceError } from '../../domain/AnaCareShift';
@@ -53,6 +53,11 @@ export class AnaCareHoursController {
 
   private canReadNote(req: Request): boolean {
     return (cellsOfRequest(req) ?? []).includes(CLINICAL_READ_CELL);
+  }
+
+  /** D349 item 1 / D344: nome de prestador só sai para quem tem `worker_contact:read`. */
+  private canReadProviderName(req: Request): boolean {
+    return (cellsOfRequest(req) ?? []).includes(CELL_WORKER_CONTACT_READ);
   }
 
   private requireService(res: Response): AnaCareHoursService | null {
@@ -91,7 +96,7 @@ export class AnaCareHoursController {
     const service = this.requireService(res);
     if (!service) return;
     try {
-      const snapshot = await service.getMonthSnapshot(params.data.month, this.canReadNote(req));
+      const snapshot = await service.getMonthSnapshot(params.data.month, this.canReadNote(req), this.canReadProviderName(req));
       res.status(200).json({ success: true, data: snapshot });
     } catch (err) {
       this.handleError(res, err, 'AnaCareHoursController:getMonthSnapshot');
@@ -107,7 +112,7 @@ export class AnaCareHoursController {
     const service = this.requireService(res);
     if (!service) return;
     try {
-      const patient = await service.getPatientMonth(params.data.month, params.data.patientId, this.canReadNote(req));
+      const patient = await service.getPatientMonth(params.data.month, params.data.patientId, this.canReadNote(req), this.canReadProviderName(req));
       if (!patient) {
         res.status(404).json({ success: false, error: 'Patient not found in month' });
         return;

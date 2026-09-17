@@ -6,9 +6,13 @@
  * (`AnaCareShift`/`AnaCarePatient`/`AnaCareMonthSnapshot`) que o front consome — mesma
  * interface do protótipo (spec §Contrato de dados).
  *
- * Nome/vínculo (`linked`/`name`) SEMPRE `false`/`undefined` nesta fase: a reconciliação
- * paciente/prestador (spec 003) é PRÉ-REQUISITO adiado — fase 1 só entrega turnos, horas,
- * origem e status (documentado em DIVERGÊNCIAS no fecho da fase).
+ * Vínculo de PRESTADOR (D349, item 1): `groupIntoPatients` recebe `providerLinks` — a presença
+ * da chave (`anaCareNurseId`) na Map já resolve `linked`, e o valor (nome, ou `undefined` sem a
+ * célula `worker_contact:read`) resolve `name`. Quem monta essa Map é `AnaCareHoursService`
+ * (lookup em `workers.ana_care_id`, D195/`MirrorWorkerService`).
+ *
+ * Vínculo de PACIENTE continua SEMPRE `false`/`undefined` — bloqueado por decisão (D349 item 2):
+ * não existe hoje ID nosso do lado do paciente no Ana Care, nem API de leitura de paciente.
  */
 
 import type { AnaCareRetratoSourceStatus, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
@@ -59,8 +63,18 @@ export function mapShift(source: SourceShiftDTO, validation: ValidationRow | und
   return shift;
 }
 
-/** Agrupa turnos JÁ MAPEADOS por paciente → prestador (id da fonte, sem vínculo em F1). */
-export function groupIntoPatients(shifts: ReadonlyArray<{ shift: AnaCareShift; anaCarePatientId: string; anaCareNurseId: string }>): AnaCarePatient[] {
+/**
+ * Agrupa turnos JÁ MAPEADOS por paciente → prestador.
+ *
+ * `providerLinks`: chave = `anaCareNurseId`. Presença da chave = `linked: true`; o valor é o
+ * nome já decidido pelo chamador (`undefined` quando o ator não tem `worker_contact:read`, mesmo
+ * que o vínculo exista — D349/D344). Ausência da chave = `linked: false` (sem vínculo em `workers`).
+ * Paciente permanece sempre sem vínculo (item 2 da D349, bloqueado).
+ */
+export function groupIntoPatients(
+  shifts: ReadonlyArray<{ shift: AnaCareShift; anaCarePatientId: string; anaCareNurseId: string }>,
+  providerLinks: ReadonlyMap<string, string | undefined> = new Map(),
+): AnaCarePatient[] {
   const byPatient = new Map<string, Map<string, AnaCareShift[]>>();
   for (const { shift, anaCarePatientId, anaCareNurseId } of shifts) {
     if (!byPatient.has(anaCarePatientId)) byPatient.set(anaCarePatientId, new Map());
@@ -73,7 +87,9 @@ export function groupIntoPatients(shifts: ReadonlyArray<{ shift: AnaCareShift; a
   for (const [anaCareId, byProvider] of byPatient) {
     const providers: AnaCareProvider[] = [];
     for (const [providerAnaCareId, providerShifts] of byProvider) {
-      providers.push({ anaCareId: providerAnaCareId, linked: false, shifts: providerShifts });
+      const linked = providerLinks.has(providerAnaCareId);
+      const name = linked ? providerLinks.get(providerAnaCareId) : undefined;
+      providers.push({ anaCareId: providerAnaCareId, linked, name, shifts: providerShifts });
     }
     patients.push({ anaCareId, linked: false, providers });
   }

@@ -15,6 +15,8 @@
  */
 
 import type { AnaCareRetratoSourceStatus, AnaCareShiftsSource, ListShiftsParams, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
+import { AnaCareSessionClient, AnaCareShiftsSourceReal } from '@modules/integration';
+import { reportError } from '@shared/logging';
 
 const PATIENTS_PER_MONTH = 10;
 const PROVIDERS_PER_PATIENT = 2;
@@ -141,15 +143,31 @@ export class FakeAnaCareShiftsSource implements AnaCareShiftsSource {
   }
 }
 
-/** Nome do env que seleciona o adapter. Fase 1: só `'fake'` é aceito. */
+/** Nome do env que seleciona o adapter. Valores aceitos: `'fake'` | `'real'` (F2 em diante). */
 export const ANACARE_HOURS_SOURCE_ENV = 'ANACARE_HOURS_SOURCE';
 
 /**
  * Seleciona o adapter pela env — fail-closed: SEM a env (ou valor desconhecido), devolve `null` e
  * quem chama responde 503 `ANACARE_SOURCE_NOT_CONFIGURED` (spec F1: produção nunca serve dado
- * falso por omissão). Nenhum adapter REAL existe nesta fase.
+ * falso por omissão).
+ *
+ * `'real'` liga o cliente de sessão da F2 (`AnaCareSessionClient`/`AnaCareShiftsSourceReal`), que
+ * precisa de `ANACARE_USERNAME`/`ANACARE_PASS` (D350: credencial de pessoa já em uso, sem usuário
+ * de integração dedicado). SEM credencial, o construtor do cliente lança — aqui isso é
+ * capturado, reportado (`reportError`, nunca silencioso) e vira `null` (mesmo 503 fail-closed),
+ * nunca uma queda silenciosa para o adapter falso.
  */
 export function createAnaCareShiftsSource(env: NodeJS.ProcessEnv = process.env): AnaCareShiftsSource | null {
-  if (env[ANACARE_HOURS_SOURCE_ENV] === 'fake') return new FakeAnaCareShiftsSource();
+  const selected = env[ANACARE_HOURS_SOURCE_ENV];
+  if (selected === 'fake') return new FakeAnaCareShiftsSource();
+  if (selected === 'real') {
+    try {
+      return new AnaCareShiftsSourceReal(new AnaCareSessionClient());
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'createAnaCareShiftsSource:real' });
+      return null;
+    }
+  }
   return null;
 }

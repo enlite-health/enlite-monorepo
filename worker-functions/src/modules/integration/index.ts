@@ -49,6 +49,9 @@ export type { AnaCareMirrorProviderDeps, AnaCareLinkBlockedReason } from './infr
 export { AnaCareTypeResolver } from './infrastructure/anacare/anaCareTypeResolver';
 export type { ResolvedTypes } from './infrastructure/anacare/anaCareTypeResolver';
 export { mapWorkerToAnaCarePayload, mapSexToAnaCareGenero, formatDateYMD } from './infrastructure/anacare/anaCareMapper';
+export { AnaCareSessionClient, ANACARE_ENLITE_AGENCY_ID } from './infrastructure/anacare/AnaCareSessionClient';
+export type { AnaCareSessionClientOptions } from './infrastructure/anacare/AnaCareSessionClient';
+export { AnaCareShiftsSourceReal } from './infrastructure/anacare/AnaCareShiftsSourceReal';
 
 // Application — use cases
 export { PublishVacancyToTalentumUseCase, PublishError } from './application/PublishVacancyToTalentumUseCase';

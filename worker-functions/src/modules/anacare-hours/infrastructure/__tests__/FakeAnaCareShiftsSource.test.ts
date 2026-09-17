@@ -1,4 +1,19 @@
+jest.mock('@shared/logging', () => {
+  const actual = jest.requireActual('@shared/logging');
+  return { ...actual, reportError: jest.fn() };
+});
+
+// D350/F2: `AnaCareSessionClient`/`AnaCareShiftsSourceReal` MOCKADOS — este teste prova só a
+// SELEÇÃO do adapter pela env (fail-closed), não a sessão HTTP de verdade (isso é o próprio
+// teste de `AnaCareSessionClient`/e2e).
+jest.mock('@modules/integration', () => ({
+  AnaCareSessionClient: jest.fn(),
+  AnaCareShiftsSourceReal: jest.fn(),
+}));
+
 import { FakeAnaCareShiftsSource, createAnaCareShiftsSource, ANACARE_HOURS_SOURCE_ENV } from '../FakeAnaCareShiftsSource';
+import { AnaCareSessionClient, AnaCareShiftsSourceReal } from '@modules/integration';
+import { reportError } from '@shared/logging';
 
 describe('FakeAnaCareShiftsSource', () => {
   describe('generateMonth', () => {
@@ -105,6 +120,10 @@ describe('FakeAnaCareShiftsSource', () => {
 });
 
 describe('createAnaCareShiftsSource — fail-closed', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it(`com ${ANACARE_HOURS_SOURCE_ENV}=fake devolve o adapter falso`, () => {
     const source = createAnaCareShiftsSource({ [ANACARE_HOURS_SOURCE_ENV]: 'fake' } as NodeJS.ProcessEnv);
     expect(source).toBeInstanceOf(FakeAnaCareShiftsSource);
@@ -114,7 +133,50 @@ describe('createAnaCareShiftsSource — fail-closed', () => {
     expect(createAnaCareShiftsSource({} as NodeJS.ProcessEnv)).toBeNull();
   });
 
-  it('com valor desconhecido devolve null (nunca serve dado falso por omissão/typo)', () => {
-    expect(createAnaCareShiftsSource({ [ANACARE_HOURS_SOURCE_ENV]: 'real' } as NodeJS.ProcessEnv)).toBeNull();
+  it('com valor desconhecido (nem fake nem real) devolve null (nunca serve dado falso por omissão/typo)', () => {
+    expect(createAnaCareShiftsSource({ [ANACARE_HOURS_SOURCE_ENV]: 'lixo' } as NodeJS.ProcessEnv)).toBeNull();
+    expect(AnaCareSessionClient).not.toHaveBeenCalled();
+  });
+
+  // D350/F2: `real` liga o cliente de sessão da F2 — construído aqui, não escolhido no vazio.
+  it(`com ${ANACARE_HOURS_SOURCE_ENV}=real e credencial OK, devolve AnaCareShiftsSourceReal montado sobre o AnaCareSessionClient`, () => {
+    const fakeClient = { circuitBreakerOpen: false };
+    (AnaCareSessionClient as unknown as jest.Mock).mockImplementation(() => fakeClient);
+    const fakeRealSource = { listShifts: jest.fn() };
+    (AnaCareShiftsSourceReal as unknown as jest.Mock).mockImplementation(() => fakeRealSource);
+
+    const source = createAnaCareShiftsSource({ [ANACARE_HOURS_SOURCE_ENV]: 'real', ANACARE_USERNAME: 'u', ANACARE_PASS: 'p' } as unknown as NodeJS.ProcessEnv);
+
+    expect(AnaCareSessionClient).toHaveBeenCalledTimes(1);
+    expect(AnaCareShiftsSourceReal).toHaveBeenCalledWith(fakeClient);
+    expect(source).toBe(fakeRealSource);
+  });
+
+  // D350: sem `ANACARE_USERNAME`/`ANACARE_PASS`, `AnaCareSessionClient` LANÇA no construtor
+  // (guarda já existente) — a fábrica não pode deixar isso subir como exceção não tratada nem
+  // cair silenciosamente no adapter falso: reporta o erro e devolve null (mesmo 503 fail-closed).
+  it(`com ${ANACARE_HOURS_SOURCE_ENV}=real e SEM credencial (construtor lança), devolve null e REPORTA o erro (nunca silencioso)`, () => {
+    const erroCredencial = new Error('[AnaCareSessionClient] ANACARE_USERNAME/ANACARE_PASS ausentes');
+    (AnaCareSessionClient as unknown as jest.Mock).mockImplementation(() => {
+      throw erroCredencial;
+    });
+
+    const source = createAnaCareShiftsSource({ [ANACARE_HOURS_SOURCE_ENV]: 'real' } as NodeJS.ProcessEnv);
+
+    expect(source).toBeNull();
+    expect(AnaCareShiftsSourceReal).not.toHaveBeenCalled();
+    expect(reportError).toHaveBeenCalledWith(erroCredencial, expect.objectContaining({ source: expect.stringContaining('createAnaCareShiftsSource') }));
+  });
+
+  it('com falha de construção que NÃO é Error (string solta), ainda reporta (envolvida em Error) e devolve null', () => {
+    (AnaCareSessionClient as unknown as jest.Mock).mockImplementation(() => {
+      // eslint-disable-next-line @typescript-eslint/no-throw-literal
+      throw 'string-solta';
+    });
+
+    const source = createAnaCareShiftsSource({ [ANACARE_HOURS_SOURCE_ENV]: 'real' } as NodeJS.ProcessEnv);
+
+    expect(source).toBeNull();
+    expect(reportError).toHaveBeenCalledWith(expect.objectContaining({ message: 'string-solta' }), expect.objectContaining({ source: expect.stringContaining('createAnaCareShiftsSource') }));
   });
 });

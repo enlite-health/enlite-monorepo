@@ -132,9 +132,25 @@ describe('AnaCareHoursController', () => {
       const controller = new AnaCareHoursController(() => service);
       const res = mockRes();
       await controller.getMonthSnapshot(mockReq({ params: { month: '2026-09' }, permissionCells: ['patient_clinical:read'] }), res);
-      expect(service.getMonthSnapshot).toHaveBeenCalledWith('2026-09', true);
+      expect(service.getMonthSnapshot).toHaveBeenCalledWith('2026-09', true, false);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith({ success: true, data: { month: '2026-09', patients: [] } });
+    });
+
+    it('D349/D344: canReadProviderName deriva de permissionCells (worker_contact:read)', async () => {
+      const service = mockService({ getMonthSnapshot: jest.fn().mockResolvedValue({ month: '2026-09', patients: [] }) });
+      const controller = new AnaCareHoursController(() => service);
+      const res = mockRes();
+      await controller.getMonthSnapshot(mockReq({ params: { month: '2026-09' }, permissionCells: ['worker_contact:read'] }), res);
+      expect(service.getMonthSnapshot).toHaveBeenCalledWith('2026-09', false, true);
+    });
+
+    it('sem worker_contact:read (nem patient_clinical:read), os dois booleans vêm false', async () => {
+      const service = mockService({ getMonthSnapshot: jest.fn().mockResolvedValue({ month: '2026-09', patients: [] }) });
+      const controller = new AnaCareHoursController(() => service);
+      const res = mockRes();
+      await controller.getMonthSnapshot(mockReq({ params: { month: '2026-09' }, permissionCells: [] }), res);
+      expect(service.getMonthSnapshot).toHaveBeenCalledWith('2026-09', false, false);
     });
 
     it('500 e reportError em erro inesperado (não é AnaCareHoursServiceError)', async () => {
@@ -186,6 +202,17 @@ describe('AnaCareHoursController', () => {
       const res = mockRes();
       await controller.getPatientMonth(mockReq({ params: { month: '2026-09', patientId: 'AC-PAT-0' } }), res);
       expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('D349/D344: repassa canReadNote e canReadProviderName de permissionCells', async () => {
+      const service = mockService({ getPatientMonth: jest.fn().mockResolvedValue({ anaCareId: 'AC-PAT-0' }) });
+      const controller = new AnaCareHoursController(() => service);
+      const res = mockRes();
+      await controller.getPatientMonth(
+        mockReq({ params: { month: '2026-09', patientId: 'AC-PAT-0' }, permissionCells: ['worker_contact:read', 'patient_clinical:read'] }),
+        res,
+      );
+      expect(service.getPatientMonth).toHaveBeenCalledWith('2026-09', 'AC-PAT-0', true, true);
     });
 
     it('500 em erro inesperado', async () => {

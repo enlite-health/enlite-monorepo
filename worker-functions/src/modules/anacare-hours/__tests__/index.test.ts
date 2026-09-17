@@ -10,6 +10,7 @@ describe('anacare-hours barrel', () => {
     expect(anacareHours.createAnaCareHoursRoutes).toBeDefined();
     expect(anacareHours.AnaCareHoursService).toBeDefined();
     expect(anacareHours.ShiftHoursValidationRepository).toBeDefined();
+    expect(anacareHours.WorkerLinkRepository).toBeDefined();
     expect(anacareHours.FakeAnaCareShiftsSource).toBeDefined();
     expect(anacareHours.createAnaCareShiftsSource).toBeDefined();
     expect(anacareHours.ANACARE_HOURS_SOURCE_ENV).toBe('ANACARE_HOURS_SOURCE');

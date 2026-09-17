@@ -5,6 +5,7 @@
  */
 import { AnaCareHoursService, isValidMonth, periodMonthDate } from '../AnaCareHoursService';
 import { ShiftHoursValidationRepository, ShiftAlreadyValidatedError, type ValidationRow } from '../../infrastructure/ShiftHoursValidationRepository';
+import { WorkerLinkRepository, type WorkerLinkRow } from '../../infrastructure/WorkerLinkRepository';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { AnaCareHoursServiceError, VALIDATE_BATCH_MAX_SHIFTS } from '../../domain/AnaCareShift';
 import type { AnaCareRetratoSourceStatus, AnaCareShiftsSource, SourceShiftDTO } from '../../domain/AnaCareShiftsSource';
@@ -16,6 +17,19 @@ jest.mock('../../infrastructure/ShiftHoursValidationRepository', () => {
     ShiftHoursValidationRepository: jest.fn(),
   };
 });
+
+// D349: sem este mock, o 4º parâmetro default (`new WorkerLinkRepository()`) tentaria abrir o
+// Pool de verdade (`DatabaseConnection.getInstance()`) em todo teste que não injeta workerLinks —
+// default aqui devolve Map vazia (nenhum vínculo), o MESMO comportamento de antes da D349.
+jest.mock('../../infrastructure/WorkerLinkRepository', () => ({
+  WorkerLinkRepository: jest.fn().mockImplementation(() => ({
+    findByAnaCareIds: jest.fn().mockResolvedValue(new Map()),
+  })),
+}));
+
+function mockWorkerLinks(rows: ReadonlyMap<string, WorkerLinkRow> = new Map()): jest.Mocked<WorkerLinkRepository> {
+  return { findByAnaCareIds: jest.fn().mockResolvedValue(rows) } as unknown as jest.Mocked<WorkerLinkRepository>;
+}
 
 const SHIFT_A: SourceShiftDTO = {
   sourceShiftId: 'shift-a',
@@ -133,6 +147,61 @@ describe('AnaCareHoursService', () => {
       expect(shiftComCelula.contestNote).toBe('nota decifrada');
       expect(decrypt).toHaveBeenCalledWith('cifra');
     });
+
+    // D349 item 1: `workers.ana_care_id` já populado pelo MirrorWorkerService — o gap era só o
+    // lookup, que agora `resolveProviderLinks` faz em LOTE.
+    it('D349: prestador com ana_care_id em workers vem linked=true + nome, quando canReadProviderName=true', async () => {
+      const kms = { decrypt: jest.fn().mockImplementation((v: string) => Promise.resolve(v === 'enc-first' ? 'Rocío' : 'García')), encrypt: jest.fn() } as unknown as KMSEncryptionService;
+      const workerLinks = mockWorkerLinks(new Map([['AC-NURSE-0', { workerId: 'w-1', firstNameEncrypted: 'enc-first', lastNameEncrypted: 'enc-last' }]]));
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), kms, workerLinks);
+
+      const snapshot = await service.getMonthSnapshot('2026-09', false, true);
+      const provider = snapshot.patients[0].providers.find((p) => p.anaCareId === 'AC-NURSE-0')!;
+      expect(provider.linked).toBe(true);
+      expect(provider.name).toBe('Rocío García');
+    });
+
+    it('D349/D344: prestador vinculado, mas SEM worker_contact:read (canReadProviderName=false) — linked=true, name undefined, KMS NUNCA chamado', async () => {
+      const decrypt = jest.fn().mockResolvedValue('nunca deveria decifrar');
+      const kms = { decrypt, encrypt: jest.fn() } as unknown as KMSEncryptionService;
+      const workerLinks = mockWorkerLinks(new Map([['AC-NURSE-0', { workerId: 'w-1', firstNameEncrypted: 'enc-first', lastNameEncrypted: 'enc-last' }]]));
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), kms, workerLinks);
+
+      const snapshot = await service.getMonthSnapshot('2026-09', false, false);
+      const provider = snapshot.patients[0].providers.find((p) => p.anaCareId === 'AC-NURSE-0')!;
+      expect(provider.linked).toBe(true);
+      expect(provider.name).toBeUndefined();
+      expect(decrypt).not.toHaveBeenCalled();
+    });
+
+    it('sem match em workers.ana_care_id: linked=false (comportamento igual ao de antes da D349)', async () => {
+      const workerLinks = mockWorkerLinks(new Map());
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), workerLinks);
+
+      const snapshot = await service.getMonthSnapshot('2026-09', false, true);
+      const provider = snapshot.patients[0].providers.find((p) => p.anaCareId === 'AC-NURSE-0')!;
+      expect(provider.linked).toBe(false);
+      expect(provider.name).toBeUndefined();
+    });
+
+    it('busca o vínculo em LOTE: um único findByAnaCareIds com os anaCareNurseId DISTINTOS do mês (nunca 1-por-turno)', async () => {
+      const shifts = [SHIFT_A, { ...SHIFT_A, sourceShiftId: 'shift-c', anaCareNurseId: 'AC-NURSE-1' }, { ...SHIFT_A, sourceShiftId: 'shift-d', anaCareNurseId: 'AC-NURSE-0' }];
+      const workerLinks = mockWorkerLinks(new Map());
+      const service = new AnaCareHoursService(new StubSource(shifts), mockRepo(), new KMSEncryptionService(), workerLinks);
+
+      await service.getMonthSnapshot('2026-09', false, true);
+      expect(workerLinks.findByAnaCareIds).toHaveBeenCalledTimes(1);
+      const [ids] = (workerLinks.findByAnaCareIds as jest.Mock).mock.calls[0];
+      expect([...ids].sort()).toEqual(['AC-NURSE-0', 'AC-NURSE-1']);
+    });
+
+    it('paciente permanece linked=false mesmo com prestador vinculado (D349 item 2, bloqueado)', async () => {
+      const workerLinks = mockWorkerLinks(new Map([['AC-NURSE-0', { workerId: 'w-1', firstNameEncrypted: null, lastNameEncrypted: null }]]));
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), workerLinks);
+
+      const snapshot = await service.getMonthSnapshot('2026-09', false, true);
+      expect(snapshot.patients[0].linked).toBe(false);
+    });
   });
 
   describe('getPatientMonth', () => {
@@ -145,6 +214,13 @@ describe('AnaCareHoursService', () => {
     it('devolve null quando o paciente não tem turno no mês', async () => {
       const service = new AnaCareHoursService(new StubSource(), mockRepo());
       expect(await service.getPatientMonth('2026-09', 'AC-PAT-999', false)).toBeNull();
+    });
+
+    it('D349: repassa canReadProviderName também em getPatientMonth', async () => {
+      const workerLinks = mockWorkerLinks(new Map([['AC-NURSE-0', { workerId: 'w-1', firstNameEncrypted: null, lastNameEncrypted: null }]]));
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), workerLinks);
+      const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false, true);
+      expect(patient?.providers[0].linked).toBe(true);
     });
   });
 
