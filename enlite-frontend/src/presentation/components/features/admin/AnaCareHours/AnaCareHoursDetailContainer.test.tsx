@@ -93,7 +93,7 @@ describe('AnaCareHoursDetailContainer', () => {
     const service = new FakeAnaCareHoursService({ '2026-08': makeSnapshot() });
     render(<AnaCareHoursDetailContainer service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-validate-shift-s1')).toBeDisabled());
-    expect(screen.getByTestId('anacare-hours-disable-reason-p1')).toHaveTextContent('reason=admin.anacareHours.error.noValidateCell');
+    expect(screen.getByTestId('anacare-hours-disable-reason-day-2026-08-14')).toHaveTextContent('reason=admin.anacareHours.error.noValidateCell');
   });
 
   it('POSITIVO — engine ON com anacare_hours:validate: valida um turno e refaz o fetch', async () => {
@@ -334,5 +334,41 @@ describe('AnaCareHoursDetailContainer', () => {
     await waitFor(() =>
       expect(screen.getByTestId('anacare-hours-detail-error')).toHaveTextContent('No se pudo cargar el paciente.'),
     );
+  });
+
+  // Tarefa 2 (16/09): mês buscado de UMA vez, semana navegada EM MEMÓRIA — navegar de semana NÃO
+  // pode disparar fetch novo (o mês inteiro já veio na montagem); só "Actualizar" refaz a busca.
+  it('POSITIVO — navegação de semana NÃO dispara fetch novo; "Actualizar" refaz exatamente 1 chamada', async () => {
+    comEnforcement([], 'off');
+    const snap = makeSnapshot();
+    // Segundo turno numa semana seguinte à do primeiro (14/08 é sexta; semana seguinte começa 17/08).
+    snap.patients[0].providers[0].shifts.push({
+      id: 's2',
+      date: '2026-08-20',
+      scheduledStart: '08:00',
+      scheduledEnd: '16:00',
+      actualStart: '08:00',
+      actualEnd: '16:00',
+      hoursActual: 8,
+      hoursScheduled: 8,
+      origin: 'app',
+      status: 'pendiente',
+      anaCareShiftId: '2',
+    });
+    const service = new FakeAnaCareHoursService({ '2026-08': snap });
+    const spy = vi.spyOn(service, 'getPatientMonth');
+    render(<AnaCareHoursDetailContainer service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-shift-row-s1')).toBeInTheDocument());
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    // Navegar pra semana seguinte troca o que aparece na tela (s1 some, s2 aparece) SEM buscar de novo.
+    fireEvent.click(screen.getByTestId('anacare-hours-week-next'));
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-shift-row-s2')).toBeInTheDocument());
+    expect(screen.queryByTestId('anacare-hours-shift-row-s1')).not.toBeInTheDocument();
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    // "Actualizar" refaz a MESMA (única) chamada do mês.
+    fireEvent.click(screen.getByTestId('anacare-hours-refresh'));
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
   });
 });

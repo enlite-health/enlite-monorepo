@@ -22,12 +22,10 @@
  * DADOS: adapter FALSO (`FakeAnaCareShiftsSource`) — 10 pacientes sintéticos × 2 prestadores × 5
  * turnos, DETERMINÍSTICO por mês. Usamos só o paciente `AC-PAT-6` (evita colidir com os pacientes
  * 1/2 que o e2e de API do backend, `anacare-hours-api.e2e.test.ts`, também usa e LIMPA a cada
- * corrida). Turnos usados (mês 2026-09, conferidos por curl antes de escrever este arquivo):
- *   FAKE-2026-09-6-0-0  sin_checkin (sem check-in — 0h, "Programado, sin actuación")
- *   FAKE-2026-09-6-0-1  web_admin   (usado no ALT1 — contestar)
- *   FAKE-2026-09-6-0-2  app         (usado no FELIZ — validar individual)
- *   FAKE-2026-09-6-0-3  app         (usado no FELIZ — validar em LOTE, junto com o -4)
- *   FAKE-2026-09-6-0-4  web_admin   (usado no FELIZ — validar em LOTE)
+ * corrida). Turnos usados — `FAKE-<mês>-6-0-{0..4}` (sin_checkin/web_admin/app/app/web_admin, na
+ * mesma ordem determinística de `buildOriginSequence`) — **`<mês>` NÃO é mais cravado** (Tarefa 3,
+ * 16/09: a tela abre no MÊS ANTERIOR ao atual, `previousMonthIso`); o arquivo calcula o mesmo mês
+ * em runtime (`previousMonthIsoForE2E`), senão o teste quebraria assim que rodasse noutro mês.
  *
  * Isolamento entre corridas: RUN_ID no uid/e-mail dos 2 staff + no nome do grupo; `afterAll`
  * limpa `shift_hours_validation` dos turnos tocados (por sourceShiftId) e os fixtures de iam —
@@ -69,16 +67,103 @@ const LEITURA_EMAIL = `${LEITURA_UID}@e2e.test`;
 const GRUPO_COMPLETO = `ACH E2E Completo ${RUN_ID}`;
 const GRUPO_LEITURA = `ACH E2E Leitura ${RUN_ID}`;
 
-// D344/protótipo: `AnaCareHoursListContainer`/`AnaCareHoursPage` nascem no mês '2026-08'
-// (`initialMonth`) — usar os turnos DESSE mês evita ter que mexer no seletor de mês pra provar o
-// fluxo padrão. Conferido por curl antes de escrever este arquivo (mesma forma de '2026-09', só
-// muda o prefixo do id — `FakeAnaCareShiftsSource.generateMonth` é determinístico por mês).
-const SHIFT_SIN_CHECKIN = 'FAKE-2026-08-6-0-0';
-const SHIFT_CONTESTAR = 'FAKE-2026-08-6-0-1';
-const SHIFT_VALIDAR_INDIVIDUAL = 'FAKE-2026-08-6-0-2';
-const SHIFT_LOTE_A = 'FAKE-2026-08-6-0-3';
-const SHIFT_LOTE_B = 'FAKE-2026-08-6-0-4';
+/**
+ * Tarefa 3 (16/09): `AnaCareHoursListContainer`/`AnaCareHoursPatientPage` não têm mais mês
+ * cravado — nascem no MÊS ANTERIOR ao atual (`previousMonthIso`, `selectors.ts`). Um `'2026-08'`
+ * fixo aqui quebraria assim que o teste rodasse num mês diferente (o adapter falso só tem turnos
+ * do mês pedido). Por isso o e2e calcula o MESMO mês que o app vai pedir, e monta os ids
+ * sintéticos (`FakeAnaCareShiftsSource.generateMonth`, determinístico por mês) em cima dele.
+ */
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+function daysInMonth(year: number, month1to12: number): number {
+  return new Date(Date.UTC(year, month1to12, 0)).getUTCDate();
+}
+function previousMonthIsoForE2E(): string {
+  const now = new Date();
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  d.setUTCMonth(d.getUTCMonth() - 1);
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}`;
+}
+const MONTH = previousMonthIsoForE2E();
+const [MONTH_YEAR, MONTH_NUM] = MONTH.split('-').map(Number);
+const DIM = daysInMonth(MONTH_YEAR, MONTH_NUM);
+
+/** Mesma fórmula de `FakeAnaCareShiftsSource.generateMonth`: `day = (shiftIndex % dim) + 1`. Paciente `AC-PAT-6` (p=6) × prestador 0 (pr=0) → `shiftIndex = 60 + s`. */
+function shiftDateForIndexS(s: number): string {
+  const shiftIndex = 6 * 2 * 5 + 0 * 5 + s; // p=6, PROVIDERS_PER_PATIENT=2, SHIFTS_PER_PROVIDER=5, pr=0
+  const day = (shiftIndex % DIM) + 1;
+  return `${MONTH}-${pad2(day)}`;
+}
+
+const SHIFT_SIN_CHECKIN = `FAKE-${MONTH}-6-0-0`;
+const SHIFT_CONTESTAR = `FAKE-${MONTH}-6-0-1`;
+const SHIFT_VALIDAR_INDIVIDUAL = `FAKE-${MONTH}-6-0-2`;
+const SHIFT_LOTE_A = `FAKE-${MONTH}-6-0-3`;
+const SHIFT_LOTE_B = `FAKE-${MONTH}-6-0-4`;
 const SHIFT_IDS_TOCADOS = [SHIFT_SIN_CHECKIN, SHIFT_CONTESTAR, SHIFT_VALIDAR_INDIVIDUAL, SHIFT_LOTE_A, SHIFT_LOTE_B];
+
+const DATE_SIN_CHECKIN = shiftDateForIndexS(0);
+const DATE_CONTESTAR = shiftDateForIndexS(1);
+const DATE_VALIDAR_INDIVIDUAL = shiftDateForIndexS(2);
+const DATE_LOTE_A = shiftDateForIndexS(3);
+const DATE_LOTE_B = shiftDateForIndexS(4);
+
+// ── Eixo por DIA (16/09) — o detalhe abre na semana do turno MAIS ANTIGO do paciente e navega
+// semana a semana; os testes precisam saber QUANTAS vezes clicar em "Semana siguiente" pra
+// alcançar a semana de cada turno. Cálculo replica `startOfWeekMonday`/`groupShiftsByDayInWeek`
+// (`selectors.ts`) — nunca um número cravado, senão quebra quando o mês/ano mudar.
+function startOfWeekMonday(dateIso: string): string {
+  const [y, m, d] = dateIso.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const isoWeekday = date.getUTCDay() === 0 ? 7 : date.getUTCDay();
+  date.setUTCDate(date.getUTCDate() - (isoWeekday - 1));
+  return date.toISOString().slice(0, 10);
+}
+function weeksBetweenMondays(fromMondayIso: string, toMondayIso: string): number {
+  const from = Date.parse(`${fromMondayIso}T00:00:00Z`);
+  const to = Date.parse(`${toMondayIso}T00:00:00Z`);
+  return Math.round((to - from) / (7 * 24 * 60 * 60 * 1000));
+}
+// Paciente AC-PAT-6 tem 10 turnos (2 prestadores × 5) — pr=1 embute os índices 65..69, mas só
+// os de pr=0 (60..64, acima) têm const própria; a semana padrão é a do turno mais antigo entre OS
+// 10, então soma os 5 de pr=1 aqui só pra achar o mínimo (não usados em nenhuma asserção).
+function shiftDateForIndex(shiftIndex: number): string {
+  const day = (shiftIndex % DIM) + 1;
+  return `${MONTH}-${pad2(day)}`;
+}
+const TODAS_AS_DATAS_DO_PACIENTE = [60, 61, 62, 63, 64, 65, 66, 67, 68, 69].map(shiftDateForIndex);
+const DEFAULT_WEEK_START = startOfWeekMonday(TODAS_AS_DATAS_DO_PACIENTE.slice().sort()[0]);
+
+/**
+ * Navegador de semana COM ESTADO — a página só sabe "próxima"/"anterior" (relativo ao que está
+ * na tela), então o teste precisa rastrear em qual semana ele DEIXOU a UI pra calcular quantos
+ * cliques faltam pra semana do PRÓXIMO turno-alvo (nunca assumir 0 cliques = "já está lá"). Um
+ * `irPara` calculando sempre a partir de `DEFAULT_WEEK_START` estaria ERRADO depois do primeiro
+ * `irPara` desta instância (a página já não está mais na semana padrão) — por isso o estado.
+ */
+function criarNavegadorDeSemana(page: Page): { irPara: (dateIso: string) => Promise<void>; resetarAposReloadOuMount: () => void } {
+  let atual = DEFAULT_WEEK_START;
+  return {
+    async irPara(dateIso: string): Promise<void> {
+      const alvo = startOfWeekMonday(dateIso);
+      const delta = weeksBetweenMondays(atual, alvo);
+      if (delta > 0) {
+        for (let i = 0; i < delta; i += 1) await page.getByTestId('anacare-hours-week-next').click();
+      } else if (delta < 0) {
+        for (let i = 0; i < -delta; i += 1) await page.getByTestId('anacare-hours-week-prev').click();
+      }
+      atual = alvo;
+    },
+    resetarAposReloadOuMount(): void {
+      // Mount novo (`goto`/`reload`) sempre reabre na semana PADRÃO (`weekStart` é estado de
+      // componente, não persiste) — o rastreador precisa saber disso pra não contar cliques que a
+      // página já perdeu.
+      atual = DEFAULT_WEEK_START;
+    },
+  };
+}
 
 function psql(sql: string): string {
   try {
@@ -236,6 +321,12 @@ test.describe('Conferência de horas do Ana Care — E2E real @integration', () 
     await expect(page.getByRole('heading', { name: 'Sin vínculo · ID AC-PAT-6' })).toBeVisible({ timeout: 15_000 });
     await print(page, 'detalhe.png');
 
+    // Eixo por DIA (16/09): a semana visível ao abrir é a do turno MAIS ANTIGO do paciente — pode
+    // não ser a de NENHUM destes 4 turnos específicos (depende de quantos dias tem o mês em que o
+    // teste roda). O navegador com estado sabe em qual semana a UI está e calcula os cliques.
+    const semana = criarNavegadorDeSemana(page);
+    await semana.irPara(DATE_VALIDAR_INDIVIDUAL);
+
     // validar 1 turno
     const validarBtn = page.getByTestId(`anacare-hours-validate-shift-${SHIFT_VALIDAR_INDIVIDUAL}`);
     await expect(validarBtn).toBeVisible({ timeout: 15_000 });
@@ -244,13 +335,21 @@ test.describe('Conferência de horas do Ana Care — E2E real @integration', () 
     await expect(page.getByTestId(`anacare-hours-shift-row-${SHIFT_VALIDAR_INDIVIDUAL}`)).toContainText('Validado por');
     await expect(page.getByTestId(`anacare-hours-shift-row-${SHIFT_VALIDAR_INDIVIDUAL}`)).toContainText('E2E Completa AnaCare');
 
-    // reload — persiste
+    // reload — volta pra semana PADRÃO; navega de novo até a do turno pra provar que persistiu.
     await page.reload();
+    semana.resetarAposReloadOuMount();
+    await semana.irPara(DATE_VALIDAR_INDIVIDUAL);
     await expect(page.getByTestId(`anacare-hours-shift-row-${SHIFT_VALIDAR_INDIVIDUAL}`)).toContainText('Validado por', { timeout: 15_000 });
     await expect(page.getByTestId(`anacare-hours-validate-shift-${SHIFT_VALIDAR_INDIVIDUAL}`)).toHaveCount(0);
 
-    // validar EM LOTE — seleciona 2 turnos, confirma no modal
+    // validar EM LOTE — seleciona 2 turnos que podem cair em semanas DIFERENTES (LOTE_A/LOTE_B).
+    // A seleção é estado do PACIENTE, não da semana visível, então sobrevive à navegação (ver
+    // `AnaCareHoursDetailPage` — `selectedShiftIds` não reseta ao trocar `weekStart`).
+    await semana.irPara(DATE_LOTE_A);
+    await expect(page.getByTestId(`anacare-hours-shift-row-${SHIFT_LOTE_A}`)).toBeVisible({ timeout: 15_000 });
     await clickCheckbox(page, `anacare-hours-select-shift-${SHIFT_LOTE_A}`);
+    await semana.irPara(DATE_LOTE_B);
+    await expect(page.getByTestId(`anacare-hours-shift-row-${SHIFT_LOTE_B}`)).toBeVisible({ timeout: 15_000 });
     await clickCheckbox(page, `anacare-hours-select-shift-${SHIFT_LOTE_B}`);
     await expect(page.getByTestId('anacare-hours-selection-bar')).toBeVisible();
     await expect(page.getByTestId('anacare-hours-selection-bar')).toContainText('2');
@@ -258,19 +357,52 @@ test.describe('Conferência de horas do Ana Care — E2E real @integration', () 
     await expect(page.getByTestId('anacare-hours-batch-modal-confirm')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('anacare-hours-batch-modal-confirm').click();
     await expect(page.getByTestId('anacare-hours-selection-bar')).toHaveCount(0, { timeout: 15_000 });
-    await expect(page.getByTestId(`anacare-hours-shift-row-${SHIFT_LOTE_A}`)).toContainText('Validado por');
+    // ainda na semana do LOTE_B (não navegou de volta)
     await expect(page.getByTestId(`anacare-hours-shift-row-${SHIFT_LOTE_B}`)).toContainText('Validado por');
 
-    // reload — o lote também persiste
+    // reload — o lote também persiste, nas DUAS semanas.
     await page.reload();
+    semana.resetarAposReloadOuMount();
+    await semana.irPara(DATE_LOTE_A);
     await expect(page.getByTestId(`anacare-hours-shift-row-${SHIFT_LOTE_A}`)).toContainText('Validado por', { timeout: 15_000 });
-    await expect(page.getByTestId(`anacare-hours-shift-row-${SHIFT_LOTE_B}`)).toContainText('Validado por');
+    await semana.irPara(DATE_LOTE_B);
+    await expect(page.getByTestId(`anacare-hours-shift-row-${SHIFT_LOTE_B}`)).toContainText('Validado por', { timeout: 15_000 });
+  });
+
+  // Tarefa 2 (16/09) — ALT3: navegar de semana troca os turnos exibidos SEM disparar fetch novo;
+  // só "Actualizar" refaz a busca. Conta requests reais à rota do mês (nunca mock de rede — regra
+  // do arquivo), não é suposição sobre o código.
+  test('ALT3 — navegação de semana não busca de novo; "Actualizar" refaz a MESMA chamada', async ({ page }) => {
+    await loginAs(page, COMPLETO);
+
+    let patientMonthRequests = 0;
+    const patientMonthUrlRe = new RegExp(`/api/admin/anacare-hours/months/${MONTH}/patients/AC-PAT-6($|\\?)`);
+    page.on('request', (req) => {
+      if (patientMonthUrlRe.test(req.url())) patientMonthRequests += 1;
+    });
+
+    await page.goto(`/admin/anacare/horas/AC-PAT-6`);
+    await expect(page.getByRole('heading', { name: 'Sin vínculo · ID AC-PAT-6' })).toBeVisible({ timeout: 15_000 });
+    await expect.poll(() => patientMonthRequests, { timeout: 15_000 }).toBeGreaterThanOrEqual(1);
+    const afterMount = patientMonthRequests;
+
+    // navega até a semana do turno "sin check-in" — pode ser bem mais adiante no mês — sem
+    // disparar fetch.
+    await criarNavegadorDeSemana(page).irPara(DATE_SIN_CHECKIN);
+    await expect(page.getByTestId(`anacare-hours-shift-row-${SHIFT_SIN_CHECKIN}`)).toBeVisible({ timeout: 15_000 });
+    expect(patientMonthRequests).toBe(afterMount);
+
+    // "Actualizar" refaz exatamente 1 chamada a mais.
+    await page.getByTestId('anacare-hours-refresh').click();
+    await expect.poll(() => patientMonthRequests, { timeout: 15_000 }).toBe(afterMount + 1);
   });
 
   test('ALT1 — contestar exige motivo de lista fechada; nota opcional digitada; status contestado persiste após reload', async ({ page }) => {
     await loginAs(page, COMPLETO);
     await page.goto(`/admin/anacare/horas/AC-PAT-6`);
     await expect(page.getByRole('heading', { name: 'Sin vínculo · ID AC-PAT-6' })).toBeVisible({ timeout: 15_000 });
+    const semana = criarNavegadorDeSemana(page);
+    await semana.irPara(DATE_CONTESTAR);
 
     const contestarBtn = page.getByTestId(`anacare-hours-contest-shift-${SHIFT_CONTESTAR}`);
     await expect(contestarBtn).toBeVisible({ timeout: 15_000 });
@@ -307,8 +439,11 @@ test.describe('Conferência de horas do Ana Care — E2E real @integration', () 
     await expect(page.getByTestId(`anacare-hours-contest-shift-${SHIFT_CONTESTAR}`)).toHaveCount(0);
 
     await page.reload();
+    // reload volta pra semana PADRÃO — navega de novo até a semana do turno contestado.
+    semana.resetarAposReloadOuMount();
+    await semana.irPara(DATE_CONTESTAR);
     await expect(page.getByTestId(`anacare-hours-shift-row-${SHIFT_CONTESTAR}`)).toContainText('Contestado', { timeout: 15_000 });
-    // o motivo/nota vivem numa LINHA IRMÃ (sem testid próprio, `ProviderGroup.tsx` renderiza um
+    // o motivo/nota vivem numa LINHA IRMÃ (sem testid próprio, `DayGroup.tsx` renderiza um
     // segundo <TableRow> logo abaixo quando `status==='contestado'`) — o motivo é sempre visível;
     // a nota só aparece com `patient_clinical:read`, célula que o usuário COMPLETO deste e2e NÃO
     // tem (só anacare_hours:read/validate) — "Nota restringida" é o comportamento CORRETO (D344).
@@ -320,18 +455,19 @@ test.describe('Conferência de horas do Ana Care — E2E real @integration', () 
     await loginAs(page, COMPLETO);
     await page.goto(`/admin/anacare/horas/AC-PAT-6`);
     await expect(page.getByRole('heading', { name: 'Sin vínculo · ID AC-PAT-6' })).toBeVisible({ timeout: 15_000 });
+    await criarNavegadorDeSemana(page).irPara(DATE_SIN_CHECKIN);
 
     const linhaSemCheckin = page.getByTestId(`anacare-hours-shift-row-${SHIFT_SIN_CHECKIN}`);
-    await expect(linhaSemCheckin).toBeVisible();
-    // a CÉLULA da linha mostra "—" (Real E Horas, sem "real" pra medir — `ProviderGroup.tsx`
-    // `showDash`), NUNCA "0.0 h" — quem soma 0h é o TOTAL exibido no resumo/lista
+    await expect(linhaSemCheckin).toBeVisible({ timeout: 15_000 });
+    // a CÉLULA da linha mostra "—" (Check-in, Check-out E Horas — `DayGroup.tsx` `showDash`),
+    // NUNCA "0.0 h" — quem soma 0h é o TOTAL exibido no resumo/cabeçalho do dia
     // (`totalHours`/`shiftHours`, `selectors.ts`, `sinCheckinHoursMode='zero'`), não a célula.
     await expect(linhaSemCheckin).not.toContainText('0.0 h');
     await expect(linhaSemCheckin).toContainText('Sin check-in');
     await expect(linhaSemCheckin).toContainText('Programado, sin actuación');
     // continua VALIDÁVEL (pendiente) — a spec real não bloqueia validação de turno sem check-in,
-    // só soma 0h; ver ProviderGroup.tsx `canValidate` (status pendiente/contestado, sem exceção
-    // de origem). O bloqueio "curto" de verdade é o da célula ausente, provado no teste ALT2b.
+    // só soma 0h; ver `DayGroup.tsx` `ShiftRow` (status pendiente/contestado, sem exceção de
+    // origem). O bloqueio "curto" de verdade é o da célula ausente, provado no teste ALT2b.
     await expect(page.getByTestId(`anacare-hours-validate-shift-${SHIFT_SIN_CHECKIN}`)).toBeVisible();
   });
 
@@ -344,6 +480,7 @@ test.describe('Conferência de horas do Ana Care — E2E real @integration', () 
     await linha.click();
     await expect(page).toHaveURL(/\/admin\/anacare\/horas\/AC-PAT-6$/);
     await expect(page.getByRole('heading', { name: 'Sin vínculo · ID AC-PAT-6' })).toBeVisible({ timeout: 15_000 });
+    await criarNavegadorDeSemana(page).irPara(DATE_SIN_CHECKIN);
 
     // sem a célula validate: os checkboxes EXISTEM (a seleção em si não depende da célula — quem
     // trava é a AÇÃO), mas vêm todos DESABILITADOS — provado pelo primeiro (turno sin_checkin,
@@ -356,8 +493,10 @@ test.describe('Conferência de horas do Ana Care — E2E real @integration', () 
     const botaoValidar = page.getByTestId(`anacare-hours-validate-shift-${SHIFT_SIN_CHECKIN}`);
     await expect(botaoValidar).toBeVisible({ timeout: 15_000 });
     await expect(botaoValidar).toBeDisabled();
-    await expect(page.getByTestId(`anacare-hours-disable-reason-AC-NURSE-6-0`).first()).toContainText('Validación bloqueada');
-    await expect(page.getByTestId(`anacare-hours-disable-reason-AC-NURSE-6-0`).first()).toContainText('No tiene permiso para validar o contestar turnos');
+    // testid agora é por DIA (eixo do detalhe, 16/09), não mais por prestador (`AC-NURSE-6-0`).
+    const disableReason = page.getByTestId(`anacare-hours-disable-reason-day-${DATE_SIN_CHECKIN}`).first();
+    await expect(disableReason).toContainText('Validación bloqueada');
+    await expect(disableReason).toContainText('No tiene permiso para validar o contestar turnos');
     await print(page, 'turno-bloqueado-texto-curto.png');
     await print(page, 'usuario-solo-lectura.png');
 

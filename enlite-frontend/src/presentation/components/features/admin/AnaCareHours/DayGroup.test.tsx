@@ -1,0 +1,129 @@
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { DayGroup } from './DayGroup';
+import type { AnaCareProvider, AnaCareShift } from './types';
+import type { DayGroupData } from './selectors';
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string, opts?: Record<string, unknown>) => (opts ? `${key}|${JSON.stringify(opts)}` : key) }),
+}));
+
+function makeShift(overrides: Partial<AnaCareShift> = {}): AnaCareShift {
+  return {
+    id: 's1',
+    date: '2026-08-14',
+    scheduledStart: '08:00',
+    scheduledEnd: '16:00',
+    actualStart: '08:00',
+    actualEnd: '16:00',
+    hoursActual: 8,
+    hoursScheduled: 8,
+    origin: 'app',
+    status: 'pendiente',
+    anaCareShiftId: '90101',
+    ...overrides,
+  };
+}
+
+function makeProvider(overrides: Partial<AnaCareProvider> = {}): AnaCareProvider {
+  return { anaCareId: 'p1', linked: true, name: 'Rocío García QA', shifts: [], ...overrides };
+}
+
+function makeDay(entries: DayGroupData['entries'], date = '2026-08-14'): DayGroupData {
+  return { date, entries };
+}
+
+const noop = { onValidateShift: vi.fn(), onOpenContestModal: vi.fn(), onToggleShift: vi.fn(), onToggleDayPending: vi.fn() };
+
+describe('DayGroup', () => {
+  it('POSITIVO — dia com 2 prestadores mostra o nome de cada um numa linha própria', () => {
+    const providerA = makeProvider({ anaCareId: 'p1', name: 'Rocío García QA' });
+    const providerB = makeProvider({ anaCareId: 'p2', name: 'Marta Sosa QA' });
+    const day = makeDay([
+      { shift: makeShift({ id: 's1' }), provider: providerA },
+      { shift: makeShift({ id: 's2' }), provider: providerB },
+    ]);
+    render(<DayGroup day={day} disableActions={false} selectedShiftIds={new Set()} {...noop} />);
+    expect(screen.getByTestId('anacare-hours-shift-row-s1')).toHaveTextContent('Rocío García QA');
+    expect(screen.getByTestId('anacare-hours-shift-row-s2')).toHaveTextContent('Marta Sosa QA');
+  });
+
+  it('NEGATIVO — turno SEM check-in mostra "—" na coluna Horas (nunca 0.0 nem o previsto) e não soma no total do dia', () => {
+    const providerA = makeProvider({ anaCareId: 'p1' });
+    const day = makeDay([
+      { shift: makeShift({ id: 's1', hoursActual: null, actualStart: null, actualEnd: null, hoursScheduled: 12, origin: 'sin_checkin' }), provider: providerA },
+    ]);
+    render(<DayGroup day={day} disableActions={false} selectedShiftIds={new Set()} {...noop} />);
+    const row = screen.getByTestId('anacare-hours-shift-row-s1');
+    expect(row).toHaveTextContent('—');
+    expect(row).not.toHaveTextContent('12.0 h');
+    expect(row).not.toHaveTextContent('0.0 h');
+    expect(screen.getByText('admin.anacareHours.origin.scheduledNoActivity')).toBeInTheDocument();
+    // Total do dia (cabeçalho) não soma o previsto do turno sem check-in — só o hoursActual (0 turnos com valor).
+    expect(screen.getByTestId('anacare-hours-day-totals-2026-08-14')).toHaveTextContent(
+      'admin.anacareHours.dayGroup.totalsSummary|{"total":"0.0","validated":"0.0"}',
+    );
+  });
+
+  it('POSITIVO — cabeçalho do dia mostra total e horas validadas', () => {
+    const providerA = makeProvider({ anaCareId: 'p1' });
+    const day = makeDay([
+      { shift: makeShift({ id: 's1', hoursActual: 8, status: 'validado', validatedBy: { id: 'e2e-qa', name: 'X' }, validatedAt: '2026-08-14T00:00:00Z' }), provider: providerA },
+      { shift: makeShift({ id: 's2', hoursActual: 4, status: 'pendiente' }), provider: providerA },
+    ]);
+    render(<DayGroup day={day} disableActions={false} selectedShiftIds={new Set()} {...noop} />);
+    expect(screen.getByTestId('anacare-hours-day-totals-2026-08-14')).toHaveTextContent(
+      'admin.anacareHours.dayGroup.totalsSummary|{"total":"12.0","validated":"8.0"}',
+    );
+  });
+
+  it('NEGATIVO — botão "Enviar" fica DESABILITADO se nem todos os turnos do dia estão validados', () => {
+    const providerA = makeProvider({ anaCareId: 'p1' });
+    const day = makeDay([
+      { shift: makeShift({ id: 's1', status: 'validado', validatedBy: { id: 'e2e-qa', name: 'X' }, validatedAt: '2026-08-14T00:00:00Z' }), provider: providerA },
+      { shift: makeShift({ id: 's2', status: 'pendiente' }), provider: providerA },
+    ]);
+    render(<DayGroup day={day} disableActions={false} selectedShiftIds={new Set()} {...noop} />);
+    expect(screen.getByTestId('anacare-hours-send-day-2026-08-14')).toBeDisabled();
+  });
+
+  it('POSITIVO — botão "Enviar" fica HABILITADO só quando TODOS os turnos do dia estão validados', () => {
+    const providerA = makeProvider({ anaCareId: 'p1' });
+    const day = makeDay([
+      { shift: makeShift({ id: 's1', status: 'validado', validatedBy: { id: 'e2e-qa', name: 'X' }, validatedAt: '2026-08-14T00:00:00Z' }), provider: providerA },
+      { shift: makeShift({ id: 's2', status: 'validado', validatedBy: { id: 'e2e-qa', name: 'X' }, validatedAt: '2026-08-14T00:00:00Z' }), provider: providerA },
+    ]);
+    render(<DayGroup day={day} disableActions={false} selectedShiftIds={new Set()} {...noop} />);
+    const sendButton = screen.getByTestId('anacare-hours-send-day-2026-08-14');
+    expect(sendButton).not.toBeDisabled();
+    fireEvent.click(sendButton);
+    expect(screen.getByTestId('anacare-hours-day-sent-2026-08-14')).toBeInTheDocument();
+  });
+
+  it('POSITIVO — checkbox de cabeçalho marca/desmarca todos os pendentes do dia (contestado fica de fora)', () => {
+    const onToggleDayPending = vi.fn();
+    const providerA = makeProvider({ anaCareId: 'p1' });
+    const day = makeDay([
+      { shift: makeShift({ id: 's1', status: 'pendiente' }), provider: providerA },
+      { shift: makeShift({ id: 's2', status: 'contestado', contestReason: 'otro' }), provider: providerA },
+    ]);
+    render(<DayGroup day={day} disableActions={false} selectedShiftIds={new Set()} {...noop} onToggleDayPending={onToggleDayPending} />);
+    fireEvent.click(screen.getByTestId('anacare-hours-select-all-pending-day-2026-08-14'));
+    expect(onToggleDayPending).toHaveBeenCalledWith([day.entries[0].shift, day.entries[1].shift]);
+  });
+
+  it('NEGATIVO — disableActions com motivo desabilita "Enviar" mesmo com o dia todo validado, e mostra o motivo', () => {
+    const providerA = makeProvider({ anaCareId: 'p1' });
+    const day = makeDay([{ shift: makeShift({ id: 's1', status: 'validado', validatedBy: { id: 'e2e-qa', name: 'X' }, validatedAt: '2026-08-14T00:00:00Z' }), provider: providerA }]);
+    render(<DayGroup day={day} disableActions disableReason="retrato desactualizado" selectedShiftIds={new Set()} {...noop} />);
+    expect(screen.getByTestId('anacare-hours-send-day-2026-08-14')).toBeDisabled();
+    expect(screen.getByTestId('anacare-hours-disable-reason-day-2026-08-14')).toHaveTextContent('admin.anacareHours.stale.blockedPrefix');
+  });
+
+  it('POSITIVO — prestador sem vínculo mostra "Sin vínculo · ID <anaCareId>"', () => {
+    const provider = makeProvider({ anaCareId: '90231', linked: false, name: undefined });
+    const day = makeDay([{ shift: makeShift({ id: 's1' }), provider }]);
+    render(<DayGroup day={day} disableActions={false} selectedShiftIds={new Set()} {...noop} />);
+    expect(screen.getByTestId('anacare-hours-shift-row-s1')).toHaveTextContent('Sin vínculo · ID 90231');
+  });
+});

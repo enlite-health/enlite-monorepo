@@ -8,17 +8,18 @@
  *   POST /api/admin/anacare-hours/sync   (staff, botão "Sincronizar agora")  → origin: 'manual'
  *   POST /api/internal/anacare-hours/sync (Cloud Scheduler / X-Internal-Secret) → origin: 'cron'
  *
- * Nenhuma chamada real ao Ana Care — fonte é `FakeAnaCareShiftsSource` (fail-closed: sem
- * `ANACARE_HOURS_SOURCE=fake`, 503 `ANACARE_SOURCE_NOT_CONFIGURED`, mesmo padrão do
- * `AnaCareHoursController`). O limitador de carga real (D341), upsert do retrato e FK por vínculo
- * (F3) são 4.1-4.7 — fora desta rodada.
+ * Fail-closed: sem `ANACARE_HOURS_SOURCE` (`fake`|`real`), 503 `ANACARE_SOURCE_NOT_CONFIGURED`,
+ * mesmo padrão do `AnaCareHoursController`. `createAnaCareSyncDependencies` decide fonte + diretório
+ * + repositório JUNTOS pela mesma env (F4 continuação, migration 439) — `'real'` chama o Ana Care
+ * de verdade (por reserva, nunca varredura), `'fake'` é 100% em memória (dev/e2e local).
  */
 
 import { Request, Response } from 'express';
 import { reportError } from '@shared/logging';
 import { AuthMiddleware } from '@modules/identity';
-import { createAnaCareShiftsSource } from '../../infrastructure/FakeAnaCareShiftsSource';
+import { createAnaCareSyncDependencies } from '../../infrastructure/AnaCareSyncDependenciesFactory';
 import { AnaCareHoursSyncRunner } from '../../application/AnaCareHoursSyncRunner';
+import { syncTriggerBodySchema } from '../validators/anacareHoursSchemas';
 
 export class AnaCareHoursSyncController {
   constructor(private readonly runnerFactory: () => AnaCareHoursSyncRunner | null = AnaCareHoursSyncController.defaultRunnerFactory) {}
@@ -32,8 +33,10 @@ export class AnaCareHoursSyncController {
 
   private static defaultRunnerFactory(): AnaCareHoursSyncRunner | null {
     if (AnaCareHoursSyncController.sharedRunner === undefined) {
-      const source = createAnaCareShiftsSource();
-      AnaCareHoursSyncController.sharedRunner = source ? new AnaCareHoursSyncRunner(source) : null;
+      const deps = createAnaCareSyncDependencies();
+      AnaCareHoursSyncController.sharedRunner = deps
+        ? new AnaCareHoursSyncRunner(deps.source, undefined, undefined, undefined, deps.directory, deps.repository)
+        : null;
     }
     return AnaCareHoursSyncController.sharedRunner;
   }
@@ -48,14 +51,32 @@ export class AnaCareHoursSyncController {
   }
 
   private async trigger(req: Request, res: Response, origin: 'manual' | 'cron'): Promise<void> {
+    const body = syncTriggerBodySchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      res.status(400).json({ success: false, error: 'Invalid body' });
+      return;
+    }
     const runner = this.runnerFactory();
     if (!runner) {
       res.status(503).json({ success: false, error: 'Ana Care source not configured', code: 'ANACARE_SOURCE_NOT_CONFIGURED' });
       return;
     }
     try {
-      const outcome = await runner.run({ origin, userId: origin === 'manual' ? this.actorUid(req) : null });
-      res.status(200).json({ success: true, deduped: outcome.deduped, shiftsRead: outcome.shiftsRead });
+      const outcome = await runner.run({
+        origin,
+        userId: origin === 'manual' ? this.actorUid(req) : null,
+        month: body.data.month,
+        cursor: body.data.cursor,
+        budgetMs: body.data.budgetMs,
+      });
+      res.status(200).json({
+        success: true,
+        deduped: outcome.deduped,
+        shiftsRead: outcome.shiftsRead,
+        reservationsProcessed: outcome.reservationsProcessed,
+        shiftsWritten: outcome.shiftsWritten,
+        nextCursor: outcome.nextCursor,
+      });
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: `AnaCareHoursSyncController.trigger.${origin}` });

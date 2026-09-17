@@ -6,9 +6,10 @@
  * Fonte: STUB em memória com contador de chamadas (nunca `FakeAnaCareShiftsSource` real de rede —
  * aqui só precisamos CONTAR chamadas, não gerar massa).
  */
-import { AnaCareHoursSyncRunner } from '../AnaCareHoursSyncRunner';
+import { AnaCareHoursSyncRunner, AnaCareDirectoryDroppedError } from '../AnaCareHoursSyncRunner';
 import { AnaCareHoursSyncGuard } from '../AnaCareHoursSyncGuard';
 import type { AnaCareShiftsSource, ListShiftsParams, SourceShiftDTO } from '../../domain/AnaCareShiftsSource';
+import type { EnliteDirectorySnapshot, EnliteDirectorySource, ShiftSyncFreshness, ShiftSyncRepository } from '../../domain/AnaCareHoursSyncPorts';
 import type { AnaCareHoursSyncMetric } from '../../infrastructure/AnaCareHoursSyncMetrics';
 
 class CountingShiftsSource implements AnaCareShiftsSource {
@@ -107,5 +108,173 @@ describe('AnaCareHoursSyncRunner — métrica de custo/consumo (4.9)', () => {
 
     expect(emitted).toHaveLength(2);
     expect(emitted.filter((m) => m.deduped)).toHaveLength(1);
+  });
+});
+
+// ── F4 continuação — sync por RESERVA (não varredura), cursor + orçamento, alarme do diretório ──
+
+class StubDirectory implements EnliteDirectorySource {
+  constructor(private readonly reservationIds: string[]) {}
+  async fetch(): Promise<EnliteDirectorySnapshot> {
+    return {
+      entries: this.reservationIds.map((reservationId) => ({ reservationId })),
+      counts: { activo: this.reservationIds.length, terminado: 0, total: this.reservationIds.length },
+      partial: false,
+    };
+  }
+}
+
+class StubSyncRepository implements ShiftSyncRepository {
+  readonly written: SourceShiftDTO[] = [];
+  private lastDirectoryCount: number | null = null;
+
+  async upsertMany(shifts: readonly SourceShiftDTO[]): Promise<{ written: number }> {
+    this.written.push(...shifts);
+    return { written: shifts.length };
+  }
+  async listByMonth(): Promise<SourceShiftDTO[]> {
+    return [];
+  }
+  async getSnapshotFreshness(): Promise<ShiftSyncFreshness> {
+    return { shifts: 0, lastFetchedAt: null };
+  }
+  async getLastDirectoryCount(): Promise<number | null> {
+    return this.lastDirectoryCount;
+  }
+  async setLastDirectoryCount(count: number): Promise<void> {
+    this.lastDirectoryCount = count;
+  }
+}
+
+/** Fonte que devolve 1 turno sintético por reserva pedida — prova que o runner grava o que lê. */
+class PerReservationShiftsSource implements AnaCareShiftsSource {
+  readonly calls: Array<{ month: string; reservationId?: string }> = [];
+  async listShifts(params: ListShiftsParams): Promise<SourceShiftDTO[]> {
+    this.calls.push({ month: params.month, reservationId: params.reservationId });
+    if (!params.reservationId) return [];
+    return [
+      {
+        sourceShiftId: `${params.reservationId}-shift-0`,
+        anaCarePatientId: params.reservationId,
+        anaCareNurseId: 'AC-NURSE-0',
+        date: '2026-09-10',
+        scheduledStart: '2026-09-10T08:00:00.000Z',
+        scheduledEnd: '2026-09-10T12:00:00.000Z',
+        actualStart: null,
+        actualEnd: null,
+        checkinSource: null,
+        isFinalized: false,
+      },
+    ];
+  }
+  async getShift(): Promise<SourceShiftDTO | null> {
+    return null;
+  }
+  async getRetratoStatus() {
+    return { stale: false, circuitBreakerOpen: false };
+  }
+}
+
+describe('AnaCareHoursSyncRunner — sync por reserva (diretório Enlite), não varredura do mês', () => {
+  it('percorre TODAS as reservas do diretório e grava via repository.upsertMany', async () => {
+    const source = new PerReservationShiftsSource();
+    const directory = new StubDirectory(['100', '200', '300']);
+    const repository = new StubSyncRepository();
+    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), () => {}, () => '2026-09', directory, repository);
+
+    const outcome = await runner.run({ origin: 'manual', userId: 'staff-1' });
+
+    expect(source.calls).toEqual([
+      { month: '2026-09', reservationId: '100' },
+      { month: '2026-09', reservationId: '200' },
+      { month: '2026-09', reservationId: '300' },
+    ]);
+    expect(outcome.reservationsProcessed).toBe(3);
+    expect(outcome.shiftsWritten).toBe(3);
+    expect(outcome.nextCursor).toBeNull();
+    expect(repository.written).toHaveLength(3);
+  });
+
+  it('respeita o orçamento de tempo: para no meio e devolve nextCursor — a próxima chamada retoma dali sem reprocessar', async () => {
+    const source = new PerReservationShiftsSource();
+    const directory = new StubDirectory(['100', '200', '300']);
+    const repository = new StubSyncRepository();
+    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), () => {}, () => '2026-09', directory, repository);
+
+    // budgetMs=0: a checagem de prazo já vale ANTES da 1ª iteração — para sem processar nada.
+    const first = await runner.run({ origin: 'manual', userId: 'staff-1', budgetMs: 0 });
+    expect(first.reservationsProcessed).toBe(0);
+    expect(first.nextCursor).toBe(0);
+    expect(source.calls).toHaveLength(0);
+
+    // Retoma do cursor devolvido, com orçamento normal — processa o restante (as 3 reservas, do índice 0).
+    const second = await runner.run({ origin: 'manual', userId: 'staff-1', cursor: first.nextCursor });
+    expect(second.reservationsProcessed).toBe(3);
+    expect(second.nextCursor).toBeNull();
+  });
+
+  it('segunda chamada com cursor no MEIO da lista não reprocessa as reservas já feitas', async () => {
+    const source = new PerReservationShiftsSource();
+    const directory = new StubDirectory(['100', '200', '300']);
+    const repository = new StubSyncRepository();
+    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), () => {}, () => '2026-09', directory, repository);
+
+    const outcome = await runner.run({ origin: 'manual', userId: 'staff-1', cursor: 2 });
+
+    expect(source.calls).toEqual([{ month: '2026-09', reservationId: '300' }]);
+    expect(outcome.reservationsProcessed).toBe(1);
+    expect(outcome.nextCursor).toBeNull();
+  });
+
+  it('devolve directoryCounts da rodada', async () => {
+    const source = new PerReservationShiftsSource();
+    const directory = new StubDirectory(['100', '200']);
+    const repository = new StubSyncRepository();
+    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), () => {}, () => '2026-09', directory, repository);
+
+    const outcome = await runner.run({ origin: 'cron', userId: null });
+    expect(outcome.directoryCounts).toEqual({ activo: 2, terminado: 0, total: 2 });
+  });
+});
+
+describe('AnaCareHoursSyncRunner — alarme de queda do diretório (raspagem quebra em silêncio)', () => {
+  it('contagem despenca abaixo do piso relativo (80% do último conhecido) ⇒ ERRO, nada gravado', async () => {
+    const source = new PerReservationShiftsSource();
+    const repository = new StubSyncRepository();
+    await repository.setLastDirectoryCount(283); // última contagem conhecida — piso relativo = 226
+
+    const directoryCaida = new StubDirectory(Array.from({ length: 50 }, (_, i) => String(i))); // bem abaixo de 226
+    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), () => {}, () => '2026-09', directoryCaida, repository);
+
+    await expect(runner.run({ origin: 'cron', userId: null })).rejects.toBeInstanceOf(AnaCareDirectoryDroppedError);
+    expect(repository.written).toHaveLength(0);
+    expect(source.calls).toHaveLength(0);
+  });
+
+  it('primeira execução (sem contagem conhecida): só o piso ABSOLUTO vale — total acima dele passa', async () => {
+    const source = new PerReservationShiftsSource();
+    const repository = new StubSyncRepository(); // getLastDirectoryCount() → null
+    const directory = new StubDirectory(['100', '200']);
+    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), () => {}, () => '2026-09', directory, repository);
+
+    await expect(runner.run({ origin: 'cron', userId: null })).resolves.toMatchObject({ reservationsProcessed: 2 });
+  });
+
+  it('piso ABSOLUTO configurável via env (ANACARE_DIRECTORY_MIN_ABSOLUTE) barra mesmo sem histórico', async () => {
+    const source = new PerReservationShiftsSource();
+    const repository = new StubSyncRepository();
+    const directory = new StubDirectory(['100']); // total=1
+    const runner = new AnaCareHoursSyncRunner(
+      source,
+      new AnaCareHoursSyncGuard(),
+      () => {},
+      () => '2026-09',
+      directory,
+      repository,
+      { ANACARE_DIRECTORY_MIN_ABSOLUTE: '150' },
+    );
+
+    await expect(runner.run({ origin: 'cron', userId: null })).rejects.toBeInstanceOf(AnaCareDirectoryDroppedError);
+    expect(repository.written).toHaveLength(0);
   });
 });

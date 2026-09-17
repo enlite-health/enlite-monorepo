@@ -717,11 +717,29 @@
       "detail": {
         "back": "Voltar",
         "patientNotFound": "Paciente não encontrado no retrato de {{month}}.",
-        "totalHoursLabel": "Horas totais",
+        "totalHoursLabel": "Horas totais do mês",
         "validationLabel": "Validação — {{validated}}/{{total}}",
         "validationContestedSuffix_one": " · {{count}} contestado",
         "validationContestedSuffix_other": " · {{count}} contestados",
-        "loading": "Carregando…"
+        "loading": "Carregando…",
+        "refreshAction": "Atualizar",
+        "weekLabel": "Semana de {{start}} a {{end}}",
+        "weekPrev": "Semana anterior",
+        "weekNext": "Próxima semana",
+        "weekEmpty": "Nenhum turno registrado nesta semana.",
+        "weekPickerAriaLabel": "Ir para a semana de uma data"
+      },
+      "dayGroup": {
+        "selectAllPendingAriaLabel": "Selecionar todos os turnos pendentes do dia {{date}}",
+        "totalsSummary": "{{total}} h · {{validated}} h validadas",
+        "sendAction": "Enviar",
+        "sendDisabledHint": "Valide todos os turnos do dia para enviar",
+        "sentLabel": "Enviado",
+        "table": {
+          "provider": "Prestador",
+          "checkin": "Check-in",
+          "checkout": "Check-out"
+        }
       },
       "error": {
         "generic": "Ocorreu um erro inesperado.",

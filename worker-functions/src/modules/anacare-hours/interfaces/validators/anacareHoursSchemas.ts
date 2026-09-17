@@ -20,3 +20,13 @@ export const contestShiftBodySchema = z.object({
   reason: z.enum(CONTEST_REASONS),
   note: z.string().trim().max(CONTEST_NOTE_MAX_LENGTH).optional(),
 });
+
+/** Corpo opcional do disparo de sync (F4 continuação) — `month`/`cursor`/`budgetMs` retomam uma rodada parcial. */
+export const syncTriggerBodySchema = z.object({
+  month: z
+    .string()
+    .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
+    .optional(),
+  cursor: z.number().int().min(0).nullable().optional(),
+  budgetMs: z.number().int().positive().optional(),
+});

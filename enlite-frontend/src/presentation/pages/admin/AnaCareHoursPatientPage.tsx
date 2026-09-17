@@ -9,22 +9,18 @@ import { useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AnaCareHoursDetailContainer } from '@presentation/components/features/admin/AnaCareHours/AnaCareHoursDetailContainer';
 import { AnaCareHoursHttpService } from '@presentation/components/features/admin/AnaCareHours/AnaCareHoursHttpService';
-
-const CURRENT_MONTH = '2026-08';
+import { previousMonthIso } from '@presentation/components/features/admin/AnaCareHours/selectors';
 
 export default function AnaCareHoursPatientPage(): JSX.Element | null {
   const navigate = useNavigate();
   const { patientId } = useParams<{ patientId: string }>();
   const service = useMemo(() => new AnaCareHoursHttpService(), []);
+  // Mês padrão = MÊS ANTERIOR ao atual (decisão do Gabriel, 16/09) — nunca cravado em código.
+  const month = useMemo(() => previousMonthIso(), []);
 
   if (!patientId) return null;
 
   return (
-    <AnaCareHoursDetailContainer
-      service={service}
-      month={CURRENT_MONTH}
-      patientId={patientId}
-      onBack={() => navigate('/admin/anacare/horas')}
-    />
+    <AnaCareHoursDetailContainer service={service} month={month} patientId={patientId} onBack={() => navigate('/admin/anacare/horas')} />
   );
 }

@@ -1,34 +1,48 @@
 /**
- * Detalhe do paciente — conferência de horas do Ana Care (V1). Resumo no topo + grupos por
- * prestador (ver `ProviderGroup`). Adaptado de `repos/infra/_worktrees/proto-anacare-horas/.../
- * AnaCareHoursDetailPage.tsx`:
+ * Detalhe do paciente — conferência de horas do Ana Care (V1). Resumo no topo + grupos por DIA
+ * (ver `DayGroup`) — o eixo deixou de ser o PRESTADOR (decisão do Gabriel, 16/09: agrupar por
+ * prestador põe o prestador no centro, e pra saber o que aconteceu com o paciente num dia era
+ * preciso varrer todos os prestadores). Navegação semana a semana roda EM MEMÓRIA — o mês inteiro
+ * já veio numa chamada só (`useAnaCareHoursPatient`), nenhum clique de navegação busca de novo; só
+ * o botão "Actualizar" refaz a chamada (via `onRefresh`, ligado pelo `AnaCareHoursDetailContainer`
+ * ao `refetch` do hook).
+ *
+ * Adaptado de `repos/infra/_worktrees/proto-anacare-horas/.../AnaCareHoursDetailPage.tsx`:
  *  - `blockReasonMode` passa a nascer `'corto'` (1.5a, D344) — antes era `'largo'`. O banner
  *    grande do topo continua SEMPRE com o texto longo (`blockReason(snapshot, 'largo')`,
- *    hardcoded, comportamento intocado — só o motivo POR PRESTADOR mudou de padrão).
- *  - `onContestShift` ganha o parâmetro `reason` (1.5b) — assinatura antes era `(shiftId, note)`.
+ *    hardcoded, comportamento intocado — só o motivo POR DIA mudou de padrão).
+ *  - `onContestShift` ganha o parâmetro `reason` (1.5b) — assinatura antes era `(shildId, note)`.
+ *  - card do resumo do mês (ajuste 16/09, ainda aberto na época): rotulado explicitamente
+ *    "Horas totales del mes" — a tabela abaixo mostra a SEMANA, e antes o rótulo não distinguia
+ *    os dois; agora que o mês vem inteiro numa chamada, o agregado do mês é correto e barato,
+ *    então resolvemos por RÓTULO, sem mudar o número nem o layout.
  */
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Calendar, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
+import { Input } from '@presentation/components/atoms/Input';
 import { ProgressBar } from '@presentation/components/atoms/ProgressBar';
 import { AlertBanner } from '@presentation/components/organisms/Alert/AlertBanner';
 import { OriginLegend } from './OriginLegend';
-import { ProviderGroup } from './ProviderGroup';
+import { DayGroup } from './DayGroup';
 import { ValidateBatchModal } from './ValidateBatchModal';
 import { ContestModal } from './ContestModal';
-import type { AnaCareMonthSnapshot, AnaCareProvider, AnaCareShift, ContestReason } from './types';
+import type { AnaCareMonthSnapshot, AnaCareShift, ContestReason } from './types';
 import {
+  addDaysIso,
+  allShiftEntriesOf,
   allShiftsOf,
   blockReason,
+  groupShiftsByDayInWeek,
   originCounts,
   patientDisplayName,
-  pendingShiftsOf,
-  providerPendingSelectionState,
+  pendingSelectionStateOf,
   selectionSummary,
+  startOfWeekMonday,
   totalHours,
   validationProgress,
   type BlockReasonMode,
@@ -44,8 +58,10 @@ interface AnaCareHoursDetailPageProps {
   onValidateShift?: (shift: AnaCareShift) => void | Promise<void>;
   onValidateBatch?: (shiftIds: string[]) => void | Promise<void>;
   onContestShift?: (shiftId: string, reason: ContestReason, note: string) => void | Promise<void>;
+  /** "Actualizar" — refaz a ÚNICA chamada do mês (D-16/09: refresh por paciente). Ausente = botão some (harness/print estático). */
+  onRefresh?: () => void;
   sinCheckinHoursMode?: SinCheckinHoursMode;
-  /** 1.5a (D344): o motivo de bloqueio POR PRESTADOR nasce curto — o banner do topo é sempre longo, intocado por esta prop. */
+  /** 1.5a (D344): o motivo de bloqueio POR DIA nasce curto — o banner do topo é sempre longo, intocado por esta prop. */
   blockReasonMode?: BlockReasonMode;
   /** Célula `anacare_hours:validate` ausente (D344) — desabilita as MESMAS ações que o retrato desatualizado desabilita, com motivo visível (nunca botão morto em silêncio). */
   disableActionsReason?: string;
@@ -59,6 +75,7 @@ export function AnaCareHoursDetailPage({
   onValidateShift,
   onValidateBatch,
   onContestShift,
+  onRefresh,
   sinCheckinHoursMode = 'zero',
   blockReasonMode = 'corto',
   disableActionsReason,
@@ -76,6 +93,20 @@ export function AnaCareHoursDetailPage({
   const selectedShifts = useMemo(() => shifts.filter((s) => selectedShiftIds.has(s.id)), [shifts, selectedShiftIds]);
   const selectionStats = useMemo(() => selectionSummary(selectedShifts, sinCheckinHoursMode), [selectedShifts, sinCheckinHoursMode]);
   const isSelectionBarVisible = selectionStats.count > 0;
+
+  // Navegação semana a semana (decisão do Gabriel, 16/09) — abre na semana do turno mais antigo
+  // do paciente (pra sempre cair numa semana com conteúdo em vez de uma vazia) e NUNCA busca de
+  // novo: o mês inteiro já está em `snapshot` (uma chamada só, ver `useAnaCareHoursPatient`), então
+  // trocar de semana só filtra em memória via `groupShiftsByDayInWeek`.
+  const allEntries = useMemo(() => (patient ? allShiftEntriesOf(patient) : []), [patient]);
+  const earliestDate = useMemo(
+    () => allEntries.reduce<string | null>((min, e) => (min === null || e.shift.date < min ? e.shift.date : min), null),
+    [allEntries],
+  );
+  const [weekStart, setWeekStart] = useState<string | null>(null);
+  const effectiveWeekStart = weekStart ?? (earliestDate ? startOfWeekMonday(earliestDate) : startOfWeekMonday(new Date().toISOString().slice(0, 10)));
+  const weekEnd = addDaysIso(effectiveWeekStart, 6);
+  const dayGroups = useMemo(() => (patient ? groupShiftsByDayInWeek(patient, effectiveWeekStart) : []), [patient, effectiveWeekStart]);
 
   const selectionBarRef = useRef<HTMLDivElement>(null);
   const [selectionBarHeight, setSelectionBarHeight] = useState(0);
@@ -110,11 +141,11 @@ export function AnaCareHoursDetailPage({
   const staleDisable = snapshot.stale || snapshot.circuitBreakerOpen;
   const disableActions = staleDisable || Boolean(disableActionsReason);
   // O banner grande (AlertBanner) mantém sempre o texto LARGO — comportamento aprovado (D342),
-  // não afetado por `blockReasonMode`. Só o motivo curto dentro de cada `ProviderGroup` obedece.
+  // não afetado por `blockReasonMode`. Só o motivo curto dentro de cada `DayGroup` obedece.
   const alertMessage = blockReason(snapshot, 'largo');
   // Retrato desatualizado tem prioridade de mensagem sobre a célula ausente — os dois desabilitam,
-  // mas o motivo mostrado no `ProviderGroup` é sempre um só por vez.
-  const providerBlockReason = staleDisable ? blockReason(snapshot, blockReasonMode) : disableActionsReason;
+  // mas o motivo mostrado no `DayGroup` é sempre um só por vez.
+  const dayBlockReason = staleDisable ? blockReason(snapshot, blockReasonMode) : disableActionsReason;
 
   const contestShift = shifts.find((s) => s.id === contestShiftId) ?? null;
 
@@ -131,9 +162,11 @@ export function AnaCareHoursDetailPage({
     });
   }
 
-  function toggleProviderPending(provider: AnaCareProvider): void {
-    const pendingIds = pendingShiftsOf(provider).map((s) => s.id);
-    const state = providerPendingSelectionState(provider, selectedShiftIds);
+  /** Checkbox de cabeçalho do DIA — marca/desmarca TODOS os pendentes DESTE DIA (nunca contestados, regra travada). */
+  function toggleDayPending(dayShifts: AnaCareShift[]): void {
+    const pending = dayShifts.filter((s) => s.status === 'pendiente');
+    const state = pendingSelectionStateOf(dayShifts, selectedShiftIds);
+    const pendingIds = pending.map((s) => s.id);
     setSelectedShiftIds((prev) => {
       const next = new Set(prev);
       if (state === 'all') {
@@ -161,14 +194,56 @@ export function AnaCareHoursDetailPage({
   return (
     <PageContainer>
       <div className="flex flex-col gap-6" style={isSelectionBarVisible ? { paddingBottom: selectionBarHeight } : undefined}>
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={onBack} data-testid="anacare-hours-back">
-            <span className="inline-flex items-center gap-1.5">
-              <ArrowLeft className="w-4 h-4" />
-              {t('admin.anacareHours.detail.back')}
-            </span>
-          </Button>
-          <Heading level={1}>{patientDisplayName(patient)}</Heading>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" onClick={onBack} data-testid="anacare-hours-back">
+              <span className="inline-flex items-center gap-1.5">
+                <ArrowLeft className="w-4 h-4" />
+                {t('admin.anacareHours.detail.back')}
+              </span>
+            </Button>
+            <Heading level={1}>{patientDisplayName(patient)}</Heading>
+          </div>
+          {onRefresh && (
+            <Button variant="outline" size="sm" onClick={onRefresh} data-testid="anacare-hours-refresh">
+              <span className="inline-flex items-center gap-1.5">
+                <RefreshCw className="w-4 h-4" />
+                {t('admin.anacareHours.detail.refreshAction')}
+              </span>
+            </Button>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Text size="sm" color="muted" data-testid="anacare-hours-week-label">
+            {t('admin.anacareHours.detail.weekLabel', { start: formatWeekRangeDate(effectiveWeekStart), end: formatWeekRangeDate(weekEnd) })}
+          </Text>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setWeekStart(addDaysIso(effectiveWeekStart, -7))} data-testid="anacare-hours-week-prev">
+              <span className="inline-flex items-center gap-1">
+                <ChevronLeft className="w-4 h-4" />
+                {t('admin.anacareHours.detail.weekPrev')}
+              </span>
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setWeekStart(addDaysIso(effectiveWeekStart, 7))} data-testid="anacare-hours-week-next">
+              <span className="inline-flex items-center gap-1">
+                {t('admin.anacareHours.detail.weekNext')}
+                <ChevronRight className="w-4 h-4" />
+              </span>
+            </Button>
+            <Input
+              type="date"
+              inputSize="compact"
+              className="!w-auto"
+              leftIcon={<Calendar className="w-4 h-4 text-gray-600" />}
+              value={effectiveWeekStart}
+              onChange={(e) => {
+                if (e.target.value) setWeekStart(startOfWeekMonday(e.target.value));
+              }}
+              aria-label={t('admin.anacareHours.detail.weekPickerAriaLabel')}
+              data-testid="anacare-hours-week-datepicker"
+            />
+          </div>
         </div>
 
         {/* D5 (cobertura, 15/09): `alertMessage` NUNCA é undefined aqui — `blockReason` só devolve
@@ -200,18 +275,22 @@ export function AnaCareHoursDetailPage({
         </div>
 
         <div className="flex flex-col gap-4">
-          {patient.providers.map((provider) => (
-            <ProviderGroup
-              key={provider.anaCareId}
-              provider={provider}
+          {dayGroups.length === 0 && (
+            <Text color="muted" data-testid="anacare-hours-week-empty">
+              {t('admin.anacareHours.detail.weekEmpty')}
+            </Text>
+          )}
+          {dayGroups.map((day) => (
+            <DayGroup
+              key={day.date}
+              day={day}
               disableActions={disableActions}
-              disableReason={providerBlockReason}
+              disableReason={dayBlockReason}
               onValidateShift={handleValidateShift}
               onOpenContestModal={(s) => setContestShiftId(s.id)}
               selectedShiftIds={selectedShiftIds}
               onToggleShift={toggleShift}
-              onToggleProviderPending={toggleProviderPending}
-              highlightNoCheckIn
+              onToggleDayPending={toggleDayPending}
               sinCheckinHoursMode={sinCheckinHoursMode}
             />
           ))}
@@ -280,4 +359,11 @@ function OriginCountPill({ label, count, tone }: { label: string; count: number;
       </Text>
     </div>
   );
+}
+
+/** "1 de septiembre" — es-AR, usado no rótulo "semana de X a Y". */
+function formatWeekRangeDate(isoDate: string): string {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'long', timeZone: 'UTC' }).format(date);
 }
