@@ -6,7 +6,7 @@
  * Fonte: STUB em memória com contador de chamadas (nunca `FakeAnaCareShiftsSource` real de rede —
  * aqui só precisamos CONTAR chamadas, não gerar massa).
  */
-import { AnaCareHoursSyncRunner, AnaCareDirectoryDroppedError } from '../AnaCareHoursSyncRunner';
+import { AnaCareHoursSyncRunner, AnaCareDirectoryDroppedError, AnaCareDirectoryFirstRunNotConfiguredError } from '../AnaCareHoursSyncRunner';
 import { AnaCareHoursSyncGuard } from '../AnaCareHoursSyncGuard';
 import type { AnaCareShiftsSource, ListShiftsParams, SourceShiftDTO } from '../../domain/AnaCareShiftsSource';
 import type { EnliteDirectorySnapshot, EnliteDirectorySource, ShiftSyncFreshness, ShiftSyncRepository } from '../../domain/AnaCareHoursSyncPorts';
@@ -38,7 +38,7 @@ class CountingShiftsSource implements AnaCareShiftsSource {
 describe('AnaCareHoursSyncRunner — dedup de disparo concorrente (4.8)', () => {
   it('manual + cron simultâneos resultam em UMA única chamada à fonte', async () => {
     const source = new CountingShiftsSource(30);
-    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), () => {}, () => '2026-09');
+    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), () => {}, () => '2026-09', undefined, undefined, { ANACARE_DIRECTORY_MIN_ABSOLUTE: '1' });
 
     const [manual, cron] = await Promise.all([
       runner.run({ origin: 'manual', userId: 'staff-1' }),
@@ -52,7 +52,7 @@ describe('AnaCareHoursSyncRunner — dedup de disparo concorrente (4.8)', () => 
 
   it('duas rodadas sequenciais (não concorrentes) SÃO duas chamadas — dedup é só para concorrência', async () => {
     const source = new CountingShiftsSource(1);
-    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), () => {}, () => '2026-09');
+    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), () => {}, () => '2026-09', undefined, undefined, { ANACARE_DIRECTORY_MIN_ABSOLUTE: '1' });
 
     await runner.run({ origin: 'manual', userId: 'staff-1' });
     await runner.run({ origin: 'cron', userId: null });
@@ -73,7 +73,7 @@ describe('AnaCareHoursSyncRunner — métrica de custo/consumo (4.9)', () => {
   it('toda rodada emite a métrica com os campos exigidos (requests, retries, duração, origem)', async () => {
     const source = new CountingShiftsSource(1);
     const emitted: AnaCareHoursSyncMetric[] = [];
-    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), (m) => emitted.push(m), () => '2026-09');
+    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), (m) => emitted.push(m), () => '2026-09', undefined, undefined, { ANACARE_DIRECTORY_MIN_ABSOLUTE: '1' });
 
     await runner.run({ origin: 'manual', userId: 'staff-1' });
 
@@ -92,7 +92,7 @@ describe('AnaCareHoursSyncRunner — métrica de custo/consumo (4.9)', () => {
   it('rodada de origem cron NÃO carrega userId (nunca PII/identidade fora do disparo manual)', async () => {
     const source = new CountingShiftsSource(1);
     const emitted: AnaCareHoursSyncMetric[] = [];
-    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), (m) => emitted.push(m), () => '2026-09');
+    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), (m) => emitted.push(m), () => '2026-09', undefined, undefined, { ANACARE_DIRECTORY_MIN_ABSOLUTE: '1' });
 
     await runner.run({ origin: 'cron', userId: null });
 
@@ -102,7 +102,7 @@ describe('AnaCareHoursSyncRunner — métrica de custo/consumo (4.9)', () => {
   it('a rodada DEDUPED também emite métrica (origem concorrente fica visível)', async () => {
     const source = new CountingShiftsSource(30);
     const emitted: AnaCareHoursSyncMetric[] = [];
-    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), (m) => emitted.push(m), () => '2026-09');
+    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), (m) => emitted.push(m), () => '2026-09', undefined, undefined, { ANACARE_DIRECTORY_MIN_ABSOLUTE: '1' });
 
     await Promise.all([runner.run({ origin: 'manual', userId: 'staff-1' }), runner.run({ origin: 'cron', userId: null })]);
 
@@ -180,7 +180,7 @@ describe('AnaCareHoursSyncRunner — sync por reserva (diretório Enlite), não 
     const source = new PerReservationShiftsSource();
     const directory = new StubDirectory(['100', '200', '300']);
     const repository = new StubSyncRepository();
-    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), () => {}, () => '2026-09', directory, repository);
+    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), () => {}, () => '2026-09', directory, repository, { ANACARE_DIRECTORY_MIN_ABSOLUTE: '1' });
 
     const outcome = await runner.run({ origin: 'manual', userId: 'staff-1' });
 
@@ -199,7 +199,7 @@ describe('AnaCareHoursSyncRunner — sync por reserva (diretório Enlite), não 
     const source = new PerReservationShiftsSource();
     const directory = new StubDirectory(['100', '200', '300']);
     const repository = new StubSyncRepository();
-    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), () => {}, () => '2026-09', directory, repository);
+    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), () => {}, () => '2026-09', directory, repository, { ANACARE_DIRECTORY_MIN_ABSOLUTE: '1' });
 
     // budgetMs=0: a checagem de prazo já vale ANTES da 1ª iteração — para sem processar nada.
     const first = await runner.run({ origin: 'manual', userId: 'staff-1', budgetMs: 0 });
@@ -217,7 +217,7 @@ describe('AnaCareHoursSyncRunner — sync por reserva (diretório Enlite), não 
     const source = new PerReservationShiftsSource();
     const directory = new StubDirectory(['100', '200', '300']);
     const repository = new StubSyncRepository();
-    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), () => {}, () => '2026-09', directory, repository);
+    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), () => {}, () => '2026-09', directory, repository, { ANACARE_DIRECTORY_MIN_ABSOLUTE: '1' });
 
     const outcome = await runner.run({ origin: 'manual', userId: 'staff-1', cursor: 2 });
 
@@ -230,7 +230,7 @@ describe('AnaCareHoursSyncRunner — sync por reserva (diretório Enlite), não 
     const source = new PerReservationShiftsSource();
     const directory = new StubDirectory(['100', '200']);
     const repository = new StubSyncRepository();
-    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), () => {}, () => '2026-09', directory, repository);
+    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), () => {}, () => '2026-09', directory, repository, { ANACARE_DIRECTORY_MIN_ABSOLUTE: '1' });
 
     const outcome = await runner.run({ origin: 'cron', userId: null });
     expect(outcome.directoryCounts).toEqual({ activo: 2, terminado: 0, total: 2 });
@@ -251,11 +251,30 @@ describe('AnaCareHoursSyncRunner — alarme de queda do diretório (raspagem que
     expect(source.calls).toHaveLength(0);
   });
 
-  it('primeira execução (sem contagem conhecida): só o piso ABSOLUTO vale — total acima dele passa', async () => {
+  /**
+   * Item 4 (revisão de PR): antes, sem histórico E sem `ANACARE_DIRECTORY_MIN_ABSOLUTE`, o
+   * default permissivo (`1`) deixava a 1ª rodada passar sempre — inclusive com a raspagem
+   * quebrada — e essa contagem virava a linha-base pra sempre. Agora é fail-closed: recusa com
+   * erro nomeado, nada é gravado. Este teste MORRE se o default voltar a ser permissivo.
+   */
+  it('primeira execução (sem contagem conhecida) E sem ANACARE_DIRECTORY_MIN_ABSOLUTE ⇒ recusa com erro nomeado, nada gravado', async () => {
     const source = new PerReservationShiftsSource();
     const repository = new StubSyncRepository(); // getLastDirectoryCount() → null
     const directory = new StubDirectory(['100', '200']);
-    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), () => {}, () => '2026-09', directory, repository);
+    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), () => {}, () => '2026-09', directory, repository, {});
+
+    await expect(runner.run({ origin: 'cron', userId: null })).rejects.toBeInstanceOf(AnaCareDirectoryFirstRunNotConfiguredError);
+    expect(repository.written).toHaveLength(0);
+    expect(source.calls).toHaveLength(0);
+  });
+
+  it('primeira execução (sem contagem conhecida) MAS com ANACARE_DIRECTORY_MIN_ABSOLUTE configurada: total acima dele passa', async () => {
+    const source = new PerReservationShiftsSource();
+    const repository = new StubSyncRepository(); // getLastDirectoryCount() → null
+    const directory = new StubDirectory(['100', '200']);
+    const runner = new AnaCareHoursSyncRunner(source, new AnaCareHoursSyncGuard(), () => {}, () => '2026-09', directory, repository, {
+      ANACARE_DIRECTORY_MIN_ABSOLUTE: '1',
+    });
 
     await expect(runner.run({ origin: 'cron', userId: null })).resolves.toMatchObject({ reservationsProcessed: 2 });
   });

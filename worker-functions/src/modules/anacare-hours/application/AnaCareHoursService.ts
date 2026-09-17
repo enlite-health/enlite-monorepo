@@ -119,6 +119,7 @@ export class AnaCareHoursService {
     const snapshot = buildSnapshot(month, patients, {
       stale: naoConstruido || sourceRetrato.stale,
       circuitBreakerOpen: sourceRetrato.circuitBreakerOpen,
+      naoConstruido,
     });
     return freshness.lastFetchedAt ? { ...snapshot, updatedAt: freshness.lastFetchedAt } : snapshot;
   }

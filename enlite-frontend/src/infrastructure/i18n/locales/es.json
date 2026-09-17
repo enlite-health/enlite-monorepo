@@ -683,8 +683,10 @@
       },
       "stale": {
         "title": "Retrato desactualizado",
+        "titleNaoConstruido": "Retrato aún no construido",
         "messageCircuitBreaker": "La sincronización con Ana Care está fallando y la protección de carga fue activada (disjuntor). El último retrato tiene más de 24 horas.",
         "messageSimple": "El último retrato tiene más de 24 horas. La sincronización con Ana Care no se completó.",
+        "messageNaoConstruido": "Todavía no se ejecutó ninguna sincronización con Ana Care para este mes — el retrato nunca fue construido.",
         "reasonLargo": "Retrato con más de 24 horas — validación deshabilitada hasta actualizar.",
         "reasonLargoCircuitBreaker": "Sincronización con Ana Care fallando — protección de carga activada (disjuntor). Validación deshabilitada hasta el próximo retrato.",
         "reasonCorto": "retrato desactualizado",

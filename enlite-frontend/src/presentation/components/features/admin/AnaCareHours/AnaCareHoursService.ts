@@ -82,6 +82,7 @@ export class FakeAnaCareHoursService implements AnaCareHoursService {
         month,
         updatedAt: new Date().toISOString(),
         stale: false,
+        snapshotState: 'fresco',
         circuitBreakerOpen: false,
         patients: [],
       }

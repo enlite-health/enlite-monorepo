@@ -12,6 +12,7 @@
 
 import type { SourceShiftDTO } from '../domain/AnaCareShiftsSource';
 import type { EnliteDirectorySnapshot, EnliteDirectorySource, ShiftSyncFreshness, ShiftSyncRepository } from '../domain/AnaCareHoursSyncPorts';
+import { FakeAnaCareShiftsSource } from './FakeAnaCareShiftsSource';
 
 export class FakeEnliteDirectory implements EnliteDirectorySource {
   async fetch(): Promise<EnliteDirectorySnapshot> {
@@ -26,8 +27,24 @@ export class FakeEnliteDirectory implements EnliteDirectorySource {
 /** Em memória, vida do processo — nunca persiste entre reinícios (adequado só para dev/e2e local). */
 export class FakeAnaCareShiftRepository implements ShiftSyncRepository {
   private readonly rows = new Map<string, SourceShiftDTO>();
+  private readonly seededMonths = new Set<string>();
   private lastFetchedAt: string | null = null;
   private lastDirectoryCount: number | null = null;
+
+  /**
+   * Item 1 (revisão de PR): pré-semeia o mês com a MESMA massa sintética de
+   * `FakeAnaCareShiftsSource` na primeira leitura. Sem isso este repositório era write-only — só o
+   * sync (falso) escrevia nele — e a lista (que só lê daqui) nascia vazia em e2e que testam a
+   * lista sem disparar sync antes. Idempotente por mês; se o sync (falso) rodar depois, o
+   * `upsertMany` sobrescreve normalmente as mesmas chaves.
+   */
+  private ensureSeeded(month: string): void {
+    if (this.seededMonths.has(month)) return;
+    this.seededMonths.add(month);
+    for (const s of FakeAnaCareShiftsSource.generateMonth(month)) {
+      if (!this.rows.has(s.sourceShiftId)) this.rows.set(s.sourceShiftId, s);
+    }
+  }
 
   async upsertMany(shifts: readonly SourceShiftDTO[], _periodMonth: string): Promise<{ written: number }> {
     for (const s of shifts) this.rows.set(s.sourceShiftId, s);
@@ -36,6 +53,7 @@ export class FakeAnaCareShiftRepository implements ShiftSyncRepository {
   }
 
   async listByMonth(month: string, patientId?: string): Promise<SourceShiftDTO[]> {
+    this.ensureSeeded(month);
     return [...this.rows.values()].filter((s) => s.date.slice(0, 7) === month && (!patientId || s.anaCarePatientId === patientId));
   }
 

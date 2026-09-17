@@ -27,6 +27,7 @@ import {
   dayHoursSummary,
   isShiftSelectable,
   pendingSelectionStateOf,
+  providerDisplayName,
   shiftHours,
   type DayGroupData,
   type SinCheckinHoursMode,
@@ -139,7 +140,7 @@ export function DayGroup({
             <ShiftRow
               key={shift.id}
               shift={shift}
-              providerName={provider.linked && provider.name ? provider.name : `Sin vínculo · ID ${provider.anaCareId}`}
+              providerName={providerDisplayName(provider)}
               disableActions={disableActions}
               onValidateShift={onValidateShift}
               onOpenContestModal={onOpenContestModal}

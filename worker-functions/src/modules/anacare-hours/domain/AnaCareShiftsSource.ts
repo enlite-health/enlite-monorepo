@@ -12,8 +12,15 @@ export interface SourceShiftDTO {
   anaCareNurseId: string;
   /** ISO 8601 (UTC), YYYY-MM-DD para o dia do turno. */
   date: string;
-  scheduledStart: string;
-  scheduledEnd: string;
+  /**
+   * `null` = retrato sem o previsto gravado ainda (`planned_start`/`planned_end` NULL no banco,
+   * migration 437) — item 7 da revisão de PR: o repositório NÃO substitui mais por `''` aqui (isso
+   * escondia o "não sei" como se fosse um horário válido e produzia `NaN` no cálculo de horas
+   * previstas). Quem decide o fallback de exibição é o mapper (`AnaCareHoursMapper`), na fronteira
+   * com o contrato de wire do front.
+   */
+  scheduledStart: string | null;
+  scheduledEnd: string | null;
   actualStart: string | null;
   actualEnd: string | null;
   /** 'app' | 'web_admin' | null — null = sem check-in. */

@@ -80,10 +80,6 @@ export function patientDisplayName(patient: AnaCarePatient): string {
   return patient.linked && patient.name ? patient.name : `Sin vínculo · ID ${patient.anaCareId}`;
 }
 
-export function pendingShiftsOf(provider: AnaCareProvider): AnaCareShift[] {
-  return provider.shifts.filter((s) => s.status === 'pendiente');
-}
-
 /** Turnos com "Sin check-in" entre os pendentes de um lote — informação exibida no modal de lote. */
 export function pendingOriginBreakdown(shifts: AnaCareShift[]): { sinCheckin: number; webAdmin: number } {
   return {
@@ -117,15 +113,6 @@ export function selectionSummary(shifts: AnaCareShift[], sinCheckinHoursMode: Si
  * (contestados nunca entram nessa conta: são marcados individualmente, regra travada do brief).
  */
 export type PendingSelectionState = 'all' | 'none' | 'partial';
-
-export function providerPendingSelectionState(provider: AnaCareProvider, selectedShiftIds: ReadonlySet<string>): PendingSelectionState {
-  const pending = pendingShiftsOf(provider);
-  if (pending.length === 0) return 'none';
-  const selectedCount = pending.filter((s) => selectedShiftIds.has(s.id)).length;
-  if (selectedCount === 0) return 'none';
-  if (selectedCount === pending.length) return 'all';
-  return 'partial';
-}
 
 /**
  * Texto do motivo de bloqueio quando o retrato está desatualizado. `'largo'` é a frase completa

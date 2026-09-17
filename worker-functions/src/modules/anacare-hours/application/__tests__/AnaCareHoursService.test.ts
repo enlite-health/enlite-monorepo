@@ -149,12 +149,27 @@ describe('AnaCareHoursService', () => {
       expect(snapshot.stale).toBe(true);
     });
 
-    it('mês COM linhas no retrato e fonte fresca ⇒ stale=false', async () => {
+    /**
+     * Item 3 (revisão de PR): o `stale: true` acima também dispara quando o retrato SINCRONIZOU e
+     * só ficou velho (>24h) — a tela usava a MESMA mensagem para os dois casos ("há mais de 24
+     * horas"), falsa quando o sync nunca rodou. Este teste MORRE se `snapshotState` voltar a
+     * colapsar em `stale`/`fresco`.
+     */
+    it('mês sem linhas no retrato ⇒ snapshotState=nao_construido (distinto de retrato velho)', async () => {
+      const shiftRepo = new StubShiftRepository([]); // freshness.shifts === 0
+      const service = new AnaCareHoursService(new StubSource([]), mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
+
+      const snapshot = await service.getMonthSnapshot('2026-09', false);
+      expect(snapshot.snapshotState).toBe('nao_construido');
+    });
+
+    it('mês COM linhas no retrato e fonte fresca ⇒ stale=false, snapshotState=fresco', async () => {
       const shiftRepo = new StubShiftRepository([SHIFT_A]);
       const service = new AnaCareHoursService(new StubSource([SHIFT_A]), mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
 
       const snapshot = await service.getMonthSnapshot('2026-09', false);
       expect(snapshot.stale).toBe(false);
+      expect(snapshot.snapshotState).toBe('fresco');
     });
 
     it('devolve os pacientes agrupados, sem filtro', async () => {

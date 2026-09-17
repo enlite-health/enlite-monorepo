@@ -49,7 +49,17 @@ export function useAnaCareHoursPatient(service: AnaCareHoursService, month: stri
   }, [service, month, patientId, refreshKey]);
 
   const snapshot: AnaCareMonthSnapshot | null = retrato
-    ? { month, updatedAt: retrato.updatedAt, stale: retrato.stale, circuitBreakerOpen: retrato.circuitBreakerOpen, patients: patient ? [patient] : [] }
+    ? {
+        month,
+        updatedAt: retrato.updatedAt,
+        stale: retrato.stale,
+        // `AnaCareRetratoStatus` (endpoint isolado, mais barato) não carrega a distinção de
+        // `snapshotState` (item 3) — só `stale`. Aproximação honesta possível aqui: sem stale é
+        // `fresco`; com stale, `velho` (não dá pra saber se nunca foi construído por este endpoint).
+        snapshotState: retrato.stale ? 'velho' : 'fresco',
+        circuitBreakerOpen: retrato.circuitBreakerOpen,
+        patients: patient ? [patient] : [],
+      }
     : null;
 
   return { patient, snapshot, isLoading, error, refetch };

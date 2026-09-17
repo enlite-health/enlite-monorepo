@@ -489,7 +489,7 @@ export default defineConfig({
         // 100 nos 4 eixos na suíte da pasta (`AnaCareHours/**`, `useAnaCareHoursMonth`,
         // `useAnaCareHoursPatient`, as 2 páginas) — entram aqui no mesmo PR, senão o 100%
         // conquistado cai calado no próximo.
-        '**/src/presentation/components/features/admin/AnaCareHours/{AnaCareHoursListPage,AnaCareHoursListContainer,AnaCareHoursDetailPage,AnaCareHoursDetailContainer,AnaCareHoursHttpService,AnaCareHoursService,ContestModal,OriginBadge,OriginLegend,ProviderFilterCombobox,ProviderGroup,ValidateBatchModal,ValidationStatusBadge,selectors,types}.{ts,tsx}': {
+        '**/src/presentation/components/features/admin/AnaCareHours/{AnaCareHoursListPage,AnaCareHoursListContainer,AnaCareHoursDetailPage,AnaCareHoursDetailContainer,AnaCareHoursHttpService,AnaCareHoursService,ContestModal,DayGroup,OriginBadge,OriginLegend,ProviderFilterCombobox,ValidateBatchModal,ValidationStatusBadge,selectors,types}.{ts,tsx}': {
           statements: 100, branches: 100, functions: 100, lines: 100,
         },
         '**/src/hooks/admin/{useAnaCareHoursMonth,useAnaCareHoursPatient}.ts': {

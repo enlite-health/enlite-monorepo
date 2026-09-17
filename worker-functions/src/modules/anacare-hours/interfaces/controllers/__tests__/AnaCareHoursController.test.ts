@@ -72,6 +72,28 @@ describe('AnaCareHoursController', () => {
       await controller.getMonthSnapshot(mockReq({ params: { month: '2026-09' } }), res);
       expect(res.status).toHaveBeenCalledWith(200);
     });
+
+    /**
+     * Item 1 (revisão de PR): antes, o 5º parâmetro do `AnaCareHoursService` caía no default
+     * (`AnaCareShiftRepository` real/Postgres) mesmo com `ANACARE_HOURS_SOURCE=fake` — a lista
+     * lia de um repositório que o sync falso nunca escrevia e nascia vazia. Este teste MORRE se
+     * alguém voltar a fiar o repositório real no modo fake: sem `createAnaCareSyncDependencies`,
+     * `mockPoolQuery` (Postgres mockado) devolveria `{ rows: [] }` pro RETRATO e `data.patients`
+     * ficaria vazio (validações/vínculo de prestador continuam passando pelo pool mockado — só o
+     * retrato de turnos não pode mais vir do Postgres real em modo fake).
+     */
+    it('com ANACARE_HOURS_SOURCE=fake, a lista devolve pacientes SEM o sync ter rodado (lê o repositório fake, não o Postgres real)', async () => {
+      process.env.ANACARE_HOURS_SOURCE = 'fake';
+      const controller = new AnaCareHoursController();
+      const res = mockRes();
+      await controller.getMonthSnapshot(mockReq({ params: { month: '2026-09' } }), res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      // Nenhuma query contra `anacare_shift` (o retrato) — só validações/vínculo de prestador,
+      // que legitimamente passam pelo Postgres mockado.
+      expect(mockPoolQuery.mock.calls.some(([sql]: [string]) => /FROM anacare_shift/.test(sql))).toBe(false);
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      expect(body.data.patients.length).toBeGreaterThan(0);
+    });
   });
 
   describe('sem ANACARE_HOURS_SOURCE configurada (serviceFactory devolve null)', () => {

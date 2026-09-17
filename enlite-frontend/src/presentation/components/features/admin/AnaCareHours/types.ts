@@ -112,6 +112,13 @@ export interface AnaCareOriginCounts {
   app: number;
 }
 
+/**
+ * Item 3 (revisão de PR): distingue "retrato NUNCA sincronizado" de "sincronizou, mas ficou
+ * velho" — `stale` sozinho colapsava os dois e a tela mostrava sempre "há mais de 24 horas",
+ * falso quando o sync nunca rodou.
+ */
+export type AnaCareSnapshotState = 'nao_construido' | 'velho' | 'fresco';
+
 export interface AnaCareMonthSnapshot {
   /** ↔ `anacare_shift.period_month` (1º dia do mês) — aqui YYYY-MM. */
   month: string;
@@ -119,6 +126,8 @@ export interface AnaCareMonthSnapshot {
   updatedAt: string;
   /** true = retrato com mais de 24h (derivado de `fetched_at`), ações de validar ficam desabilitadas. */
   stale: boolean;
+  /** Ver `AnaCareSnapshotState` — granularidade que `stale` sozinho não carrega. */
+  snapshotState: AnaCareSnapshotState;
   /** "disjuntor" — sincronização falhando repetidamente, proteção de carga ativa (estado do job noturno, não é coluna). */
   circuitBreakerOpen: boolean;
   patients: AnaCarePatient[];

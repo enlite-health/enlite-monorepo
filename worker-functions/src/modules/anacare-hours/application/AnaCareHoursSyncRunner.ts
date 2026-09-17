@@ -14,8 +14,9 @@
  * Alarme de queda do diretório: a raspagem quebra em SILÊNCIO (menos linhas, nunca erro de rede)
  * — antes de gravar qualquer coisa, a contagem nova é comparada contra a última CONHECIDA
  * (`ShiftSyncRepository.getLastDirectoryCount`, migration 439); abaixo do piso relativo (80%) OU
- * do piso absoluto (`ANACARE_DIRECTORY_MIN_ABSOLUTE`, env — default permissivo 1, produção deve
- * configurar um valor realista; referência medida: 283), o runner FALHA sem gravar nada.
+ * do piso absoluto (`ANACARE_DIRECTORY_MIN_ABSOLUTE`, env — sem histórico E sem essa env, o runner
+ * é FAIL-CLOSED na 1ª rodada, ver `AnaCareDirectoryFirstRunNotConfiguredError`; referência medida
+ * 17/09: 283 contas, piso configurado em stage: 226 = 80%), o runner FALHA sem gravar nada.
  *
  * Mesmo guard de dedup (4.8) e emissor de métrica (4.9) da versão anterior — o "limitador" aqui
  * continua sendo só o dedup de disparo concorrente; o rate-limit real de requisições (D341) é do
@@ -51,8 +52,6 @@ export interface AnaCareHoursSyncOutcome {
   directoryCounts: { activo: number; terminado: number; total: number };
 }
 
-/** Nenhuma rodada roda menos que este piso ABSOLUTO — produção deve subir via env (referência medida: 283 contas). */
-const DEFAULT_MIN_ABSOLUTE = 1;
 const DEFAULT_BUDGET_MS = 420_000;
 
 /** Falha nomeada — distingue "diretório caiu" de qualquer outro erro genérico (mesmo padrão de `AnaCareEnliteDirectoryError`). */
@@ -65,6 +64,25 @@ export class AnaCareDirectoryDroppedError extends Error {
     super(
       `[AnaCareHoursSyncRunner] diretório caiu de ${lastKnownTotal ?? 'desconhecido'} para ${newTotal} ` +
         `(piso ${floor}) — raspagem provavelmente quebrada; nada foi gravado.`,
+    );
+  }
+}
+
+/**
+ * Item 4 (revisão de PR): fail-closed na PRIMEIRA rodada. Antes, sem `lastKnown` (histórico) o piso
+ * relativo virava 0 e o absoluto tinha default PERMISSIVO (`1`) — como `extractAccountIds` já
+ * lança com zero ids, o alarme de queda do diretório NUNCA disparava na 1ª rodada, e o total dessa
+ * rodada (mesmo quebrado) virava a linha-base para sempre (`setLastDirectoryCount`). Contagem zero
+ * — e contagem sem régua — é falha, nunca sucesso: sem histórico E sem `ANACARE_DIRECTORY_MIN_ABSOLUTE`
+ * configurada, o runner recusa a rodada com este erro nomeado, em vez de aceitar qualquer contagem.
+ */
+export class AnaCareDirectoryFirstRunNotConfiguredError extends Error {
+  constructor() {
+    super(
+      '[AnaCareHoursSyncRunner] primeira rodada (sem histórico de contagem do diretório) e ' +
+        'ANACARE_DIRECTORY_MIN_ABSOLUTE não configurada — recusado por fail-closed (contagem zero/sem ' +
+        'régua é falha, nunca sucesso). Configure a env antes de rodar (referência medida 17/09: 283 ' +
+        'contas totais, piso sugerido 226 = 80%).',
     );
   }
 }
@@ -88,21 +106,31 @@ export class AnaCareHoursSyncRunner {
     return `${now.getUTCFullYear()}-${month}`;
   }
 
-  private minAbsoluteFloor(): number {
+  /** `null` = env ausente ou não numérica — "não configurada", nunca um piso 0 implícito. */
+  private minAbsoluteFloor(): number | null {
     const raw = this.env.ANACARE_DIRECTORY_MIN_ABSOLUTE;
-    const parsed = raw ? Number.parseInt(raw, 10) : NaN;
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_MIN_ABSOLUTE;
+    if (raw === undefined) return null;
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
   }
 
   /**
    * Contagem zero é falha, nunca sucesso: compara a nova contagem total contra a última CONHECIDA
    * (piso relativo 80%) e contra o piso absoluto — lança ANTES de qualquer escrita.
+   *
+   * Item 4 (revisão de PR): sem histórico (`lastKnown===null`) E sem piso absoluto configurado, o
+   * runner RECUSA a rodada (`AnaCareDirectoryFirstRunNotConfiguredError`) em vez de aceitar
+   * qualquer contagem como linha-base — antes, o default permissivo (`1`) deixava a 1ª rodada
+   * sempre passar, mesmo com a raspagem quebrada, e essa contagem virava a baseline pra sempre.
    */
   private async assertDirectoryHealthy(newTotal: number): Promise<number | null> {
     const lastKnown = await this.repository.getLastDirectoryCount();
     const floorAbsolute = this.minAbsoluteFloor();
+    if (lastKnown === null && floorAbsolute === null) {
+      throw new AnaCareDirectoryFirstRunNotConfiguredError();
+    }
     const floorRelative = lastKnown !== null ? Math.floor(lastKnown * 0.8) : 0;
-    const floor = Math.max(floorAbsolute, floorRelative);
+    const floor = Math.max(floorAbsolute ?? 0, floorRelative);
     if (newTotal < floor) {
       throw new AnaCareDirectoryDroppedError(newTotal, lastKnown, floor);
     }

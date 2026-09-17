@@ -69,6 +69,22 @@ describe('mapShift', () => {
     expect(shift.contestReason).toBeUndefined();
   });
 
+  /**
+   * Item 7 (revisão de PR): antes, `AnaCareShiftRepository.toDTO` mascarava `planned_start`/
+   * `planned_end` ausentes como `''`, e `hoursBetween('', '')` devolvia `NaN` — que o JSON
+   * serializa como `null` num campo tipado `number` (`hoursScheduled`), mentindo silenciosamente
+   * sobre o contrato. Este teste MORRE se `mapShift` voltar a computar `hoursScheduled` direto de
+   * `source.scheduledStart`/`scheduledEnd` sem passar pelo guard de `null`.
+   */
+  it('scheduledStart/scheduledEnd nulos (retrato sem o previsto gravado): hoursScheduled é 0, nunca NaN — e o wire mantém string vazia, não null', () => {
+    const semPrevisto: SourceShiftDTO = { ...SOURCE, scheduledStart: null, scheduledEnd: null };
+    const shift = mapShift(semPrevisto, undefined, false, null);
+    expect(shift.hoursScheduled).toBe(0);
+    expect(Number.isNaN(shift.hoursScheduled)).toBe(false);
+    expect(shift.scheduledStart).toBe('');
+    expect(shift.scheduledEnd).toBe('');
+  });
+
   it('turno NÃO finalizado e sem check-in: hoursActual null (nunca o previsto) — medido 17/09: `duration` vem preenchida mesmo sem check-in, e não pode vazar como hora trabalhada', () => {
     const shift = mapShift(SOURCE_SEM_CHECKIN, undefined, false, null);
     expect(shift.origin).toBe('sin_checkin');
@@ -194,6 +210,7 @@ describe('buildSnapshot', () => {
     expect(snapshot.month).toBe('2026-09');
     expect(snapshot.stale).toBe(false);
     expect(snapshot.circuitBreakerOpen).toBe(false);
+    expect(snapshot.snapshotState).toBe('fresco');
     expect(typeof snapshot.updatedAt).toBe('string');
   });
 
@@ -201,5 +218,20 @@ describe('buildSnapshot', () => {
     const snapshot = buildSnapshot('2026-09', [], { stale: true, circuitBreakerOpen: true });
     expect(snapshot.stale).toBe(true);
     expect(snapshot.circuitBreakerOpen).toBe(true);
+  });
+
+  /**
+   * Item 3 (revisão de PR): `stale=true` sozinho não diz SE o retrato já foi construído — a tela
+   * mostrava "há mais de 24 horas" mesmo quando o sync nunca rodou (mensagem falsa). Este teste
+   * MORRE se `snapshotState` voltar a colapsar em só `stale`/`fresco`.
+   */
+  it('mês sem linha no banco (naoConstruido=true): snapshotState é `nao_construido`, mesmo com stale=false', () => {
+    const snapshot = buildSnapshot('2026-09', [], { stale: false, circuitBreakerOpen: false, naoConstruido: true });
+    expect(snapshot.snapshotState).toBe('nao_construido');
+  });
+
+  it('retrato sincronizado mas velho (stale=true, naoConstruido=false): snapshotState é `velho`, distinto de `nao_construido`', () => {
+    const snapshot = buildSnapshot('2026-09', [], { stale: true, circuitBreakerOpen: false, naoConstruido: false });
+    expect(snapshot.snapshotState).toBe('velho');
   });
 });

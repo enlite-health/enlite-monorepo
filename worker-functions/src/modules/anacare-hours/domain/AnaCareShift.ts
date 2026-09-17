@@ -79,11 +79,22 @@ export interface AnaCareOriginCounts {
   app: number;
 }
 
+/**
+ * Item 3 (revisão de PR): distingue as 3 razões por trás de `stale=true` até a TELA — antes,
+ * `nao_construido` (retrato NUNCA sincronizado, `freshness.shifts===0`) e `velho` (sync rodou, mas
+ * `getRetratoStatus().stale` da fonte voltou true, ex.: > 24h) colapsavam no mesmo booleano, e a
+ * tela sempre mostrava "há mais de 24 horas" mesmo quando o sync nunca tinha rodado — mensagem
+ * falsa. `stale` continua existindo (compat: `nao_construido || velho`).
+ */
+export type AnaCareSnapshotState = 'nao_construido' | 'velho' | 'fresco';
+
 export interface AnaCareMonthSnapshot {
   /** YYYY-MM */
   month: string;
   updatedAt: string;
   stale: boolean;
+  /** Ver `AnaCareSnapshotState` — distinção que `stale` sozinho não carrega (item 3). */
+  snapshotState: AnaCareSnapshotState;
   circuitBreakerOpen: boolean;
   patients: AnaCarePatient[];
 }

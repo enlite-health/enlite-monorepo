@@ -12,6 +12,15 @@
 --    (scheduledEnd - scheduledStart), preenchido mesmo sem check-in e mesmo turno não finalizado —
 --    NUNCA usar para hora trabalhada (isso é sempre `checkin_at`→`checkout_at`, ver
 --    `AnaCareHoursMapper.computeActualHours`).
+-- 2b. `shift_date` (revisão de PR, item 2) — o dia do turno GRAVADO como veio da fonte
+--     (`SourceShiftDTO.date`), não mais derivado por `to_char(COALESCE(planned_start, period_month),
+--     'YYYY-MM-DD')` na leitura. Duas falhas medidas nessa derivação: (a) `to_char` sobre
+--     `timestamptz` usa o TimeZone da SESSÃO — sem `SET TIME ZONE`/`setTypeParser` fixo, um turno
+--     às 21h em `America/Argentina/Buenos_Aires` pode voltar no dia seguinte quando a sessão está em
+--     UTC; (b) `planned_start IS NULL` fazia o dia virar silenciosamente o 1º do mês. Agora é
+--     round-trip fiel: grava o que a fonte mandou, lê o que foi gravado, eixo do detalhe (o DIA)
+--     concorda com a lista. Backfill de qualquer linha pré-existente usa a MESMA derivação antiga
+--     só para não deixar `NULL` para trás — é transitório: todo upsert novo grava `shift_date` direto.
 -- 3. `anacare_directory_snapshot` — última contagem CONHECIDA do diretório Enlite (raspagem HTML,
 --    quebra em silêncio devolvendo MENOS linhas em vez de erro). O runner de sync (4.1-4.9) compara
 --    a contagem nova contra esta linha ANTES de sincronizar — queda abaixo do piso relativo
@@ -28,11 +37,28 @@
 --
 -- Rollback:
 --   ALTER TABLE anacare_shift DROP COLUMN IF EXISTS is_finalized;
+--   ALTER TABLE anacare_shift DROP COLUMN IF EXISTS shift_date;
 --   DROP TABLE IF EXISTS anacare_directory_snapshot;
 
 BEGIN;
 
 ALTER TABLE anacare_shift ADD COLUMN IF NOT EXISTS is_finalized BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE anacare_shift ADD COLUMN IF NOT EXISTS shift_date DATE NULL;
+
+-- Backfill transitório de linhas pré-existentes (se houver) com a MESMA derivação antiga — só para
+-- não deixar `NULL` para trás; todo upsert novo (a partir desta migration) grava `source.date`
+-- direto, sem essa derivação.
+UPDATE anacare_shift
+   SET shift_date = to_char(COALESCE(planned_start, period_month), 'YYYY-MM-DD')::date
+ WHERE shift_date IS NULL;
+
+ALTER TABLE anacare_shift ALTER COLUMN shift_date SET NOT NULL;
+
+COMMENT ON COLUMN anacare_shift.shift_date IS
+  'Dia do turno GRAVADO como veio da fonte (SourceShiftDTO.date) — round-trip fiel, nunca derivado '
+  'na leitura. Ver item 2 da revisão de PR (17/09): to_char sobre timestamptz sem TimeZone de sessão '
+  'fixo podia devolver o dia errado, e planned_start NULL virava silenciosamente o 1º do mês.';
 
 COMMENT ON COLUMN anacare_shift.duration_hours IS
   'PREVISTO (planned_end - planned_start), afirmado pela fonte — medido 17/09 contra a API real: '

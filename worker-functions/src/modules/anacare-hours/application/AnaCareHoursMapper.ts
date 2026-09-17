@@ -17,7 +17,7 @@
 
 import type { AnaCareRetratoSourceStatus, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
 import type { ValidationRow } from '../infrastructure/ShiftHoursValidationRepository';
-import type { AnaCareMonthSnapshot, AnaCarePatient, AnaCareProvider, AnaCareShift, ValidationStatus } from '../domain/AnaCareShift';
+import type { AnaCareMonthSnapshot, AnaCarePatient, AnaCareProvider, AnaCareShift, AnaCareSnapshotState, ValidationStatus } from '../domain/AnaCareShift';
 
 const STATUS_MAP: Record<ValidationRow['status'], ValidationStatus> = {
   pendente: 'pendiente',
@@ -27,6 +27,19 @@ const STATUS_MAP: Record<ValidationRow['status'], ValidationStatus> = {
 
 function hoursBetween(startIso: string, endIso: string): number {
   return Math.round(((new Date(endIso).getTime() - new Date(startIso).getTime()) / (1000 * 60 * 60)) * 100) / 100;
+}
+
+/**
+ * Horas PREVISTAS — SEMPRE um número real no contrato (`AnaCareShift.hoursScheduled: number`,
+ * nunca `null`/`NaN`). Item 7 (revisão de PR): antes, `AnaCareShiftRepository.toDTO` mascarava
+ * `planned_start`/`planned_end` ausentes como `''`, e `hoursBetween('', '')` devolvia `NaN` — que o
+ * JSON serializa como `null`, mentindo silenciosamente sobre um campo tipado `number`. Agora a
+ * fonte propaga `null` explícito (nunca `''`) até aqui, e SEM o previsto conhecido o valor seguro é
+ * `0` (mesmo padrão de "ausência de dado nunca produz um número inválido" de `computeActualHours`).
+ */
+function hoursScheduledOf(scheduledStart: string | null, scheduledEnd: string | null): number {
+  if (!scheduledStart || !scheduledEnd) return 0;
+  return hoursBetween(scheduledStart, scheduledEnd);
 }
 
 /**
@@ -52,12 +65,15 @@ export function mapShift(source: SourceShiftDTO, validation: ValidationRow | und
   const shift: AnaCareShift = {
     id: source.sourceShiftId,
     date: source.date,
-    scheduledStart: source.scheduledStart,
-    scheduledEnd: source.scheduledEnd,
+    // Contrato de wire (`AnaCareShift.scheduledStart/scheduledEnd: string`) não muda — o `''` de
+    // fallback fica só AQUI, na fronteira de exibição, nunca escondido dentro do cálculo de horas
+    // (ver `hoursScheduledOf`, que usa o `null` original antes desse fallback).
+    scheduledStart: source.scheduledStart ?? '',
+    scheduledEnd: source.scheduledEnd ?? '',
     actualStart: source.actualStart,
     actualEnd: source.actualEnd,
     hoursActual,
-    hoursScheduled: hoursBetween(source.scheduledStart, source.scheduledEnd),
+    hoursScheduled: hoursScheduledOf(source.scheduledStart, source.scheduledEnd),
     origin,
     status,
     anaCareShiftId: source.sourceShiftId,
@@ -107,7 +123,16 @@ export function groupIntoPatients(
   return patients;
 }
 
-export function buildSnapshot(month: string, patients: AnaCarePatient[], retrato: AnaCareRetratoSourceStatus): AnaCareMonthSnapshot {
+export function buildSnapshot(
+  month: string,
+  patients: AnaCarePatient[],
+  retrato: AnaCareRetratoSourceStatus & {
+    /** Item 3: `freshness.shifts === 0` — o retrato NUNCA foi sincronizado para este mês (distinto de "sincronizou, mas ficou velho"). Default `false` por compat com chamadores antigos. */
+    naoConstruido?: boolean;
+  },
+): AnaCareMonthSnapshot {
+  const naoConstruido = retrato.naoConstruido ?? false;
+  const snapshotState: AnaCareSnapshotState = naoConstruido ? 'nao_construido' : retrato.stale ? 'velho' : 'fresco';
   return {
     month,
     updatedAt: new Date().toISOString(),
@@ -116,6 +141,7 @@ export function buildSnapshot(month: string, patients: AnaCarePatient[], retrato
     // (sob PARE do lex). O bloqueio de escrita (`AnaCareHoursService.assertRetratoOk`) lê a MESMA
     // fonte, não este snapshot — as duas camadas convergem porque comem do mesmo `getRetratoStatus`.
     stale: retrato.stale,
+    snapshotState,
     circuitBreakerOpen: retrato.circuitBreakerOpen,
     patients,
   };

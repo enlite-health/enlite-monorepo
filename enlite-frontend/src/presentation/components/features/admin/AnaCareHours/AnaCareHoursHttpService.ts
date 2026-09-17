@@ -153,7 +153,7 @@ export class AnaCareHoursHttpService implements AnaCareHoursService {
   async getMonthSnapshot(month: string, filters?: AnaCareHoursMonthFilters): Promise<AnaCareMonthSnapshot> {
     const snapshot = await this.getJson<AnaCareMonthSnapshot>(`${this.basePath}/months/${encodeURIComponent(month)}`);
     if (!snapshot) {
-      return { month, updatedAt: new Date().toISOString(), stale: false, circuitBreakerOpen: false, patients: [] };
+      return { month, updatedAt: new Date().toISOString(), stale: false, snapshotState: 'nao_construido', circuitBreakerOpen: false, patients: [] };
     }
     return { ...snapshot, patients: filterPatients(snapshot.patients, filters) };
   }

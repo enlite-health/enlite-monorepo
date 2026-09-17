@@ -7,9 +7,7 @@ import {
   originCounts,
   patientDisplayName,
   pendingOriginBreakdown,
-  pendingShiftsOf,
   providerDisplayName,
-  providerPendingSelectionState,
   selectionSummary,
   shiftHours,
   totalHours,
@@ -159,20 +157,6 @@ describe('allShiftsOf', () => {
   });
 });
 
-describe('pendingShiftsOf', () => {
-  it('POSITIVO — filtra só os turnos pendentes do prestador', () => {
-    const provider = makeProvider({
-      shifts: [makeShift({ id: 's1', status: 'pendiente' }), makeShift({ id: 's2', status: 'validado' })],
-    });
-    expect(pendingShiftsOf(provider).map((s) => s.id)).toEqual(['s1']);
-  });
-
-  it('NEGATIVO — prestador 100% validado dá lista vazia de pendentes', () => {
-    const provider = makeProvider({ shifts: [makeShift({ id: 's1', status: 'validado' })] });
-    expect(pendingShiftsOf(provider)).toEqual([]);
-  });
-});
-
 describe('pendingOriginBreakdown', () => {
   it('POSITIVO — conta sin_checkin e web_admin entre os turnos passados', () => {
     const shifts = [
@@ -210,40 +194,6 @@ describe('selectionSummary', () => {
 
   it('NEGATIVO — seleção vazia dá tudo zero (nunca ausente)', () => {
     expect(selectionSummary([])).toEqual({ count: 0, hours: 0, sinCheckinCount: 0 });
-  });
-});
-
-describe('providerPendingSelectionState', () => {
-  it('NEGATIVO — nenhum pendente selecionado dá "none"', () => {
-    const provider = makeProvider({ shifts: [makeShift({ id: 's1', status: 'pendiente' })] });
-    expect(providerPendingSelectionState(provider, new Set())).toBe('none');
-  });
-
-  it('POSITIVO — todos os pendentes selecionados dá "all"', () => {
-    const provider = makeProvider({
-      shifts: [makeShift({ id: 's1', status: 'pendiente' }), makeShift({ id: 's2', status: 'pendiente' })],
-    });
-    expect(providerPendingSelectionState(provider, new Set(['s1', 's2']))).toBe('all');
-  });
-
-  it('POSITIVO — parte dos pendentes selecionados dá "partial"', () => {
-    const provider = makeProvider({
-      shifts: [makeShift({ id: 's1', status: 'pendiente' }), makeShift({ id: 's2', status: 'pendiente' })],
-    });
-    expect(providerPendingSelectionState(provider, new Set(['s1']))).toBe('partial');
-  });
-
-  it('NEGATIVO — prestador sem pendentes (só validado) dá "none" mesmo se o ID estiver no set (contestado não conta)', () => {
-    const provider = makeProvider({
-      shifts: [makeShift({ id: 's1', status: 'contestado', contestNote: 'nota' })],
-    });
-    // s1 é contestado — nunca entra na conta do checkbox de cabeçalho, mesmo selecionado à mão.
-    expect(providerPendingSelectionState(provider, new Set(['s1']))).toBe('none');
-  });
-
-  it('NEGATIVO — prestador 100% validado (sem pendentes) dá "none"', () => {
-    const provider = makeProvider({ shifts: [makeShift({ id: 's1', status: 'validado' })] });
-    expect(providerPendingSelectionState(provider, new Set(['s1']))).toBe('none');
   });
 });
 

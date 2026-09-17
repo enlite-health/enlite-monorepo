@@ -93,6 +93,27 @@ describe('AnaCareShiftRepository', () => {
       const periodMonthDates = params[4];
       expect(periodMonthDates).toEqual(['2026-09-01', '2026-09-01']);
     });
+
+    /**
+     * Item 2 (revisão de PR): `shift_date` grava `source.date` DIRETO — nunca mais derivado de
+     * `planned_start` na leitura. Este teste MORRE se alguém voltar a depender de `planned_start`
+     * para o dia: um turno com `scheduledStart` vazio (equivalente a `planned_start IS NULL` no
+     * banco) ainda tem de gravar o dia certo, porque `shiftDates` vem só de `s.date`.
+     */
+    it('grava shift_date direto de source.date — mesmo com scheduledStart vazio (planned_start NULL)', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [] });
+      const repo = new AnaCareShiftRepository();
+      const semPlannedStart: SourceShiftDTO = { ...SHIFT_SEM_CHECKIN, scheduledStart: '', date: '2026-09-11' };
+      await repo.upsertMany([SHIFT_A, semPlannedStart], '2026-09');
+
+      const [sql, params] = mockPoolQuery.mock.calls[0];
+      expect(sql).toMatch(/shift_date/);
+      expect(sql).not.toMatch(/to_char/);
+      const plannedStarts = params[5];
+      const shiftDates = params[11];
+      expect(plannedStarts[1]).toBeNull(); // planned_start NULL no 2º turno
+      expect(shiftDates).toEqual(['2026-09-10', '2026-09-11']); // shift_date não depende disso
+    });
   });
 
   describe('listByMonth — round-trip (campo a campo)', () => {
@@ -125,6 +146,56 @@ describe('AnaCareShiftRepository', () => {
       const [sql, params] = mockPoolQuery.mock.calls[0];
       expect(sql).toMatch(/ana_care_patient_id = \$3/);
       expect(params).toEqual(['anacare', '2026-09-01', 'AC-PAT-0']);
+    });
+
+    /**
+     * Item 7 (revisão de PR): `planned_start`/`planned_end` NULL no banco (retrato sem o previsto
+     * gravado) tem de virar `null` explícito no DTO — nunca `''`. Este teste MORRE se `toDTO`
+     * voltar a fazer `r.planned_start ?? ''`.
+     */
+    it('planned_start/planned_end NULL no banco: scheduledStart/scheduledEnd chegam null no DTO, nunca string vazia', async () => {
+      mockPoolQuery.mockResolvedValueOnce({
+        rows: [{ ...sqlRowFor(SHIFT_SEM_CHECKIN), planned_start: null, planned_end: null }],
+      });
+      const repo = new AnaCareShiftRepository();
+      const [dto] = await repo.listByMonth('2026-09');
+      expect(dto.scheduledStart).toBeNull();
+      expect(dto.scheduledEnd).toBeNull();
+    });
+
+    /**
+     * Item 2 (revisão de PR): o SQL não deriva mais o dia com `to_char(COALESCE(planned_start,
+     * period_month), ...)` (dependia do TimeZone de sessão e virava o 1º do mês com
+     * `planned_start` nulo) — lê `shift_date` gravado direto. Um turno às 21:00 em
+     * `America/Argentina/Buenos_Aires` (UTC-3, portanto `scheduledStart`/`planned_start` em
+     * `2026-09-1{0,1}...`) tem seu `shift_date` já fixado no dia local pela fonte — a leitura
+     * devolve o MESMO dia independentemente de qual TimeZone a sessão do Postgres estiver usando,
+     * porque não há mais conversão nenhuma na query.
+     */
+    it('não deriva mais o dia na leitura — lê shift_date gravado, turno das 21h em Buenos Aires', async () => {
+      const turnoNoturno: SourceShiftDTO = {
+        sourceShiftId: 'FAKE-2026-09-0-0-2',
+        anaCarePatientId: 'AC-PAT-0',
+        anaCareNurseId: 'AC-NURSE-0',
+        // 21h em America/Argentina/Buenos_Aires (UTC-3) em 10/09 = 2026-09-11T00:00:00Z — o dia
+        // que a FONTE afirma para esse turno é 10/09, não 11/09.
+        date: '2026-09-10',
+        scheduledStart: '2026-09-11T00:00:00.000Z',
+        scheduledEnd: '2026-09-11T04:00:00.000Z',
+        actualStart: null,
+        actualEnd: null,
+        checkinSource: null,
+        isFinalized: false,
+      };
+      mockPoolQuery.mockResolvedValueOnce({ rows: [sqlRowFor(turnoNoturno)] });
+      const repo = new AnaCareShiftRepository();
+      const [dto] = await repo.listByMonth('2026-09');
+      const [calledSql] = mockPoolQuery.mock.calls[0];
+
+      expect(calledSql).not.toMatch(/to_char/);
+      expect(calledSql).not.toMatch(/COALESCE\(planned_start/);
+      expect(calledSql).toMatch(/shift_date::text/);
+      expect(dto.date).toBe('2026-09-10');
     });
   });
 

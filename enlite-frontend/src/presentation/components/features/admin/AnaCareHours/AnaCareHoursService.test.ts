@@ -32,6 +32,7 @@ function makeSnapshot(overrides: Partial<AnaCareMonthSnapshot> = {}, shifts: Ana
     month: '2026-08',
     updatedAt: '2026-09-15T08:00:00-03:00',
     stale: false,
+    snapshotState: 'fresco',
     circuitBreakerOpen: false,
     patients: [
       {
@@ -202,6 +203,7 @@ describe('validateBatch', () => {
         month: '2026-08',
         updatedAt: '2026-09-15T08:00:00-03:00',
         stale: false,
+        snapshotState: 'fresco',
         circuitBreakerOpen: false,
         patients: [
           {
@@ -229,6 +231,7 @@ describe('validateBatch', () => {
         month: '2026-08',
         updatedAt: '2026-09-15T08:00:00-03:00',
         stale: true,
+        snapshotState: 'velho',
         circuitBreakerOpen: false,
         patients: [
           {

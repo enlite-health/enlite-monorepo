@@ -37,8 +37,10 @@ function toDTO(r: AnaCareShiftRowSql): SourceShiftDTO {
     anaCarePatientId: r.ana_care_patient_id,
     anaCareNurseId: r.ana_care_nurse_id,
     date: r.shift_date,
-    scheduledStart: r.planned_start ?? '',
-    scheduledEnd: r.planned_end ?? '',
+    // Item 7 (revisão de PR): nulo explícito, propagado até o mapper — nunca mais `?? ''` aqui.
+    // `''` não é um horário válido; fingir que é produzia `NaN` em `hoursBetween('', '')`.
+    scheduledStart: r.planned_start,
+    scheduledEnd: r.planned_end,
     actualStart: r.checkin_at,
     actualEnd: r.checkout_at,
     checkinSource: r.checkin_source,
@@ -77,16 +79,19 @@ export class AnaCareShiftRepository implements ShiftSyncRepository {
     const checkoutAts = shifts.map((s) => s.actualEnd);
     const checkinSources = shifts.map((s) => s.checkinSource);
     const isFinalizeds = shifts.map((s) => s.isFinalized);
+    // Item 2 (revisão de PR): grava o dia direto da FONTE — nunca derivado de `planned_start` na
+    // leitura (round-trip fiel, sem timezone de sessão nem "vira o 1º do mês" quando nulo).
+    const shiftDates = shifts.map((s) => s.date);
 
     await this.pool.query(
       `INSERT INTO anacare_shift (
          source, source_shift_id, ana_care_patient_id, ana_care_nurse_id, period_month,
          planned_start, planned_end, checkin_at, checkout_at, checkin_source, is_finalized,
-         fetched_at, updated_at
+         shift_date, fetched_at, updated_at
        )
        SELECT $1::text, UNNEST($2::text[]), UNNEST($3::text[]), UNNEST($4::text[]), UNNEST($5::date[]),
               UNNEST($6::timestamptz[]), UNNEST($7::timestamptz[]), UNNEST($8::timestamptz[]), UNNEST($9::timestamptz[]),
-              UNNEST($10::text[]), UNNEST($11::boolean[]), NOW(), NOW()
+              UNNEST($10::text[]), UNNEST($11::boolean[]), UNNEST($12::date[]), NOW(), NOW()
        ON CONFLICT (source, source_shift_id) DO UPDATE SET
          ana_care_patient_id = EXCLUDED.ana_care_patient_id,
          ana_care_nurse_id   = EXCLUDED.ana_care_nurse_id,
@@ -97,6 +102,7 @@ export class AnaCareShiftRepository implements ShiftSyncRepository {
          checkout_at         = EXCLUDED.checkout_at,
          checkin_source      = EXCLUDED.checkin_source,
          is_finalized        = EXCLUDED.is_finalized,
+         shift_date          = EXCLUDED.shift_date,
          fetched_at          = NOW(),
          updated_at          = NOW()`,
       [
@@ -111,6 +117,7 @@ export class AnaCareShiftRepository implements ShiftSyncRepository {
         checkoutAts,
         checkinSources,
         isFinalizeds,
+        shiftDates,
       ],
     );
 
@@ -130,9 +137,13 @@ export class AnaCareShiftRepository implements ShiftSyncRepository {
       where += ` AND ana_care_patient_id = $${params.length}`;
     }
     const res = await this.pool.query<AnaCareShiftRowSql>(
+      // `shift_date::text`, não o valor cru: o driver `pg` parseia a coluna `date` nativa como
+      // objeto `Date` (sem timezone, mas ainda assim não é o `string` do contrato SQL→DTO) —
+      // `::text` sobre `date` é formatação pura ('YYYY-MM-DD'), não conversão de timezone (isso só
+      // existe em timestamptz), então não reabre o bug do item 2.
       `SELECT source_shift_id, ana_care_patient_id, ana_care_nurse_id,
               planned_start, planned_end, checkin_at, checkout_at, checkin_source, is_finalized,
-              to_char(COALESCE(planned_start, period_month), 'YYYY-MM-DD') AS shift_date
+              shift_date::text AS shift_date
          FROM anacare_shift
         WHERE ${where}
         ORDER BY source_shift_id`,

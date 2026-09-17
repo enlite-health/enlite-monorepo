@@ -71,7 +71,7 @@ describe('FakeAnaCareShiftsSource', () => {
         expect(s.date.startsWith('2026-09')).toBe(true);
       }
       const comRealMenorQuePrevisto = finalizados.filter((s) => {
-        const previsto = (new Date(s.scheduledEnd).getTime() - new Date(s.scheduledStart).getTime()) / 3_600_000;
+        const previsto = (new Date(s.scheduledEnd as string).getTime() - new Date(s.scheduledStart as string).getTime()) / 3_600_000;
         const real = (new Date(s.actualEnd as string).getTime() - new Date(s.actualStart as string).getTime()) / 3_600_000;
         return real < previsto;
       });
