@@ -24,10 +24,10 @@
  */
 
 import type { AnaCareShiftsSource } from '../domain/AnaCareShiftsSource';
-import type { EnliteDirectorySource, PatientMonthSyncRepository, ShiftSyncRepository } from '../domain/AnaCareHoursSyncPorts';
+import type { DirectorySnapshotRepository, EnliteDirectorySource, PatientMonthSyncRepository } from '../domain/AnaCareHoursSyncPorts';
 import { AnaCareHoursSyncGuard } from './AnaCareHoursSyncGuard';
 import { emitAnaCareHoursSyncMetric, type AnaCareHoursSyncMetricEmitter } from '../infrastructure/AnaCareHoursSyncMetrics';
-import { FakeEnliteDirectory, FakeAnaCareShiftRepository, FakeAnaCarePatientMonthRepository } from '../infrastructure/FakeAnaCareSyncDependencies';
+import { FakeEnliteDirectory, FakeAnaCareDirectorySnapshotRepository, FakeAnaCarePatientMonthRepository } from '../infrastructure/FakeAnaCareSyncDependencies';
 import { aggregateByPatient } from './AnaCarePatientMonthAggregator';
 
 export interface AnaCareHoursSyncTrigger {
@@ -117,18 +117,19 @@ export class AnaCareHoursSyncRunner {
     private readonly monthResolver: () => string = AnaCareHoursSyncRunner.currentMonth,
     private readonly directory: EnliteDirectorySource = new FakeEnliteDirectory(),
     /**
-     * Conserto 17/09 (desacoplamento de `anacare_shift`, passo 1): `runOnce` NÃO grava mais
-     * turnos aqui — mantido só para `getLastDirectoryCount`/`setLastDirectoryCount` (alarme de
-     * queda do diretório). Leitores que ainda dependem de `anacare_shift` (ex.:
-     * `AnaCareHoursService.getSnapshotFreshness`) ficam estáticos a partir de agora — passo 2
-     * decide o destino dessas leituras junto da remoção de `AnaCareShiftRepository`.
+     * Conserto 17/09 (desacoplamento do retrato por turno, passo 1): `runOnce` NÃO grava mais
+     * turnos — este repositório serve só ao alarme de queda do diretório
+     * (`getLastDirectoryCount`/`setLastDirectoryCount`). Passo 2 extraiu o tipo para
+     * `DirectorySnapshotRepository` (antes vivia dentro do repositório do retrato por turno, sem
+     * ter nada a ver com turno) e apagou o repositório antigo por completo.
      */
-    private readonly repository: ShiftSyncRepository = new FakeAnaCareShiftRepository(),
+    private readonly directorySnapshotRepository: DirectorySnapshotRepository = new FakeAnaCareDirectorySnapshotRepository(),
     private readonly env: NodeJS.ProcessEnv = process.env,
     /**
      * F6.1 (D361) → conserto 17/09 (passo 1): grava o retrato AGREGADO (`anacare_patient_month`,
      * migration 441) por SUBSTITUIÇÃO (`upsertReplacingForRun`) a partir do agregado em memória de
-     * CADA reserva — não depende mais de `anacare_shift` como fonte cumulativa.
+     * CADA reserva, e (passo 3) o par paciente×prestador (`anacare_patient_month_provider`) na
+     * MESMA chamada — não depende do retrato por turno como fonte cumulativa.
      */
     private readonly patientMonthRepository: PatientMonthSyncRepository = new FakeAnaCarePatientMonthRepository(),
   ) {}
@@ -157,7 +158,7 @@ export class AnaCareHoursSyncRunner {
    * sempre passar, mesmo com a raspagem quebrada, e essa contagem virava a baseline pra sempre.
    */
   private async assertDirectoryHealthy(newTotal: number): Promise<number | null> {
-    const lastKnown = await this.repository.getLastDirectoryCount();
+    const lastKnown = await this.directorySnapshotRepository.getLastDirectoryCount();
     const floorAbsolute = this.minAbsoluteFloor();
     if (lastKnown === null && floorAbsolute === null) {
       throw new AnaCareDirectoryFirstRunNotConfiguredError();
@@ -174,7 +175,7 @@ export class AnaCareHoursSyncRunner {
   private async runOnce(month: string, cursor: number | null, budgetMs: number, runStartedAt: Date): Promise<RunOnceResult> {
     const directorySnapshot = await this.directory.fetch();
     await this.assertDirectoryHealthy(directorySnapshot.counts.total);
-    await this.repository.setLastDirectoryCount(directorySnapshot.counts.total);
+    await this.directorySnapshotRepository.setLastDirectoryCount(directorySnapshot.counts.total);
 
     const reservationIds = Array.from(new Set(directorySnapshot.entries.map((e) => e.reservationId))).sort();
     const startIndex = cursor ?? 0;
@@ -197,15 +198,16 @@ export class AnaCareHoursSyncRunner {
       shiftsSkippedNoProvider += skipped.noProvider;
       shiftsSkippedNoPatient += skipped.noPatient;
       if (shifts.length > 0) {
-        // Conserto 17/09 (desacoplamento de `anacare_shift`, passo 1): não grava mais o retrato
-        // por turno (`anacare_shift`) — `anacare_shift` está saindo de cena (passo 2 remove
-        // `AnaCareShiftRepository`). O agregado é calculado em memória SÓ com os turnos DESTA
-        // reserva (`aggregateByPatient`) e gravado por SUBSTITUIÇÃO; como isso não pode mesclar com
-        // uma gravação anterior do MESMO paciente vinda de outra reserva, `upsertReplacingForRun`
+        // Conserto 17/09 (desacoplamento do retrato por turno, passo 1): não grava mais o retrato
+        // por turno — o agregado é calculado em memória SÓ com os turnos DESTA reserva
+        // (`aggregateByPatient`) e gravado por SUBSTITUIÇÃO; como isso não pode mesclar com uma
+        // gravação anterior do MESMO paciente vinda de outra reserva, `upsertReplacingForRun`
         // detecta a colisão (via `runStartedAt`) e falha alto em vez de sobrescrever calado — ver
-        // cabeçalho do arquivo e `AnaCarePatientMonthCollisionError`.
+        // cabeçalho do arquivo e `AnaCarePatientMonthCollisionError`. Passo 3 (regressão do passo
+        // 1): `shifts` também vai junto — é dali que `upsertReplacingForRun` grava o par
+        // paciente×prestador (`anacare_patient_month_provider`) na MESMA chamada.
         const aggregates = aggregateByPatient(shifts);
-        const { written } = await this.patientMonthRepository.upsertReplacingForRun(aggregates, month, runStartedAt);
+        const { written } = await this.patientMonthRepository.upsertReplacingForRun(aggregates, month, runStartedAt, shifts);
         shiftsWritten += written;
       }
       reservationsProcessed += 1;

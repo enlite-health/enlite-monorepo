@@ -115,9 +115,8 @@ export interface RawAnaCareShift {
   /**
    * `null` quando o turno não tem paciente vinculado na fonte — medido 0/3.421 na varredura
    * 01–07/09/2026 (nunca visto), mas o TIPO admite porque a fonte não garante o contrário (mesmo
-   * racional de `nurse` abaixo). Turno sem paciente não pode ser gravado (a coluna
-   * `anacare_shift.ana_care_patient_id` é a mesma família de FK NOT NULL de `nurse`) — ver
-   * `minimizeShiftOrSkip`.
+   * racional de `nurse` abaixo). Turno sem paciente não pode ser gravado (mesma família de FK NOT
+   * NULL de `nurse` no retrato) — ver `minimizeShiftOrSkip`.
    */
   patient: RawAnaCarePatient | null;
   /**

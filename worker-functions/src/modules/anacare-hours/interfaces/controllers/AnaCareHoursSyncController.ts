@@ -10,7 +10,7 @@
  *
  * Fail-closed: sem `ANACARE_HOURS_SOURCE` (`fake`|`real`), 503 `ANACARE_SOURCE_NOT_CONFIGURED`,
  * mesmo padrão do `AnaCareHoursController`. `createAnaCareSyncDependencies` decide fonte + diretório
- * + repositório JUNTOS pela mesma env (F4 continuação, migration 439) — `'real'` chama o Ana Care
+ * + repositórios JUNTOS pela mesma env (F4 continuação, migration 439) — `'real'` chama o Ana Care
  * de verdade (por reserva, nunca varredura), `'fake'` é 100% em memória (dev/e2e local).
  */
 
@@ -35,7 +35,7 @@ export class AnaCareHoursSyncController {
     if (AnaCareHoursSyncController.sharedRunner === undefined) {
       const deps = createAnaCareSyncDependencies();
       AnaCareHoursSyncController.sharedRunner = deps
-        ? new AnaCareHoursSyncRunner(deps.source, undefined, undefined, undefined, deps.directory, deps.repository, undefined, deps.patientMonthRepository)
+        ? new AnaCareHoursSyncRunner(deps.source, undefined, undefined, undefined, deps.directory, deps.directorySnapshotRepository, undefined, deps.patientMonthRepository)
         : null;
     }
     return AnaCareHoursSyncController.sharedRunner;

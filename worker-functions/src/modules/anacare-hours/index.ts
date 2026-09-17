@@ -10,12 +10,12 @@ export { AnaCareHoursSyncGuard } from './application/AnaCareHoursSyncGuard';
 export { AnaCareHoursService } from './application/AnaCareHoursService';
 export { ShiftHoursValidationRepository } from './infrastructure/ShiftHoursValidationRepository';
 export { WorkerLinkRepository } from './infrastructure/WorkerLinkRepository';
-export { AnaCareShiftRepository } from './infrastructure/AnaCareShiftRepository';
-export { FakeEnliteDirectory, FakeAnaCareShiftRepository } from './infrastructure/FakeAnaCareSyncDependencies';
+export { AnaCareDirectorySnapshotRepository } from './infrastructure/AnaCareDirectorySnapshotRepository';
+export { FakeEnliteDirectory, FakeAnaCareDirectorySnapshotRepository } from './infrastructure/FakeAnaCareSyncDependencies';
 export { createAnaCareSyncDependencies, type AnaCareSyncDependencies } from './infrastructure/AnaCareSyncDependenciesFactory';
 export { FakeAnaCareShiftsSource, createAnaCareShiftsSource, ANACARE_HOURS_SOURCE_ENV } from './infrastructure/FakeAnaCareShiftsSource';
 export type { AnaCareShiftsSource, SourceShiftDTO, ListShiftsParams } from './domain/AnaCareShiftsSource';
-export type { EnliteDirectorySource, EnliteDirectorySnapshot, EnliteDirectoryEntry, ShiftSyncRepository, ShiftSyncFreshness } from './domain/AnaCareHoursSyncPorts';
+export type { EnliteDirectorySource, EnliteDirectorySnapshot, EnliteDirectoryEntry, DirectorySnapshotRepository, ShiftSyncFreshness } from './domain/AnaCareHoursSyncPorts';
 export type {
   AnaCareShift,
   AnaCarePatient,

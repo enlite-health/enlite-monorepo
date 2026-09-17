@@ -1,10 +1,10 @@
 /**
  * src/modules/anacare-hours/application/AnaCarePatientMonthAggregator.ts
  *
- * Função PURA (sem I/O) que reduz os turnos crus de UM mês a uma linha agregada por paciente
+ * Função PURA (sem I/O) que reduz os turnos crus de UMA reserva a uma linha agregada por paciente
  * (D361, fase-6.md F6.1) — o mesmo shape que `anacare_patient_month` (migration 441) grava.
- * Chamada pelo `AnaCareHoursSyncRunner` depois do `upsertMany` de `anacare_shift` que já existia
- * (convivência deliberada da F6.1); testável isolada, sem precisar do runner nem do banco.
+ * Chamada pelo `AnaCareHoursSyncRunner` para cada reserva, ANTES de `upsertReplacingForRun`;
+ * testável isolada, sem precisar do runner nem do banco.
  *
  * Regras (espelham o que a lista já mostra hoje, `AnaCareHoursMapper`/`selectors.ts` do front):
  *   - `shiftsCount` = nº de turnos.

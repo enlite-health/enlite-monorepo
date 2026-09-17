@@ -7,12 +7,11 @@
  * spec §Contrato de dados exige que o backend real cumpra a mesma interface sem mudar hooks,
  * containers ou páginas do front.
  *
- * `id`/`anaCareShiftId` são o MESMO valor nesta fase (`source_shift_id`): o retrato `anacare_shift`
- * nasce vazio na migration 437 (job real é fase 2/4, sob PARE do lex/D344) — não existe `bigserial`
- * técnico a expor ainda. Documentado em DIVERGÊNCIAS no fecho da fase.
+ * `id`/`anaCareShiftId` são o MESMO valor nesta fase (`source_shift_id`) — não existe `bigserial`
+ * técnico a expor. Documentado em DIVERGÊNCIAS no fecho da fase.
  */
 
-/** ↔ `shift_hours_validation.approved_checkin_source` / `anacare_shift.checkin_source`. */
+/** ↔ `shift_hours_validation.approved_checkin_source` / origem do check-in do turno na fonte. */
 export type CheckInOrigin = 'sin_checkin' | 'web_admin' | 'app';
 
 /** ↔ `shift_hours_validation.status` (CHECK 'pendente'|'validado'|'contestado'). */
@@ -38,7 +37,7 @@ export interface Validator {
 export interface AnaCareShift {
   /** Nesta fase = `anaCareShiftId` (ver cabeçalho do arquivo). */
   id: string;
-  /** YYYY-MM-DD — ↔ `anacare_shift.period_month` truncado ao dia. */
+  /** YYYY-MM-DD — dia do turno, dentro do `period_month` do retrato agregado. */
   date: string;
   scheduledStart: string;
   scheduledEnd: string;

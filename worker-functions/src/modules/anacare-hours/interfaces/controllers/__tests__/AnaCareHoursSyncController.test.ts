@@ -68,7 +68,7 @@ describe('AnaCareHoursSyncController', () => {
       const r2 = res();
 
       await controller.triggerCron({ headers: {} } as never, r1 as never);
-      // Conserto 17/09 (desacoplamento de `anacare_shift`, passo 1): duas sincronizações
+      // Conserto 17/09 (desacoplamento do retrato por turno, passo 1): duas sincronizações
       // independentes (nenhuma retomando a outra — sem `cursor`) do MESMO reservationId sintético
       // (`FakeEnliteDirectory` sempre devolve 1 só) gravam o MESMO paciente duas vezes. O detector
       // de colisão compara `fetched_at` contra `runStartedAt` em resolução de MILISSEGUNDO — sem

@@ -95,7 +95,7 @@ export class ShiftHoursValidationRepository {
 
   /**
    * F6.2 (D361, fase-6.md "A contagem de validados, que perde o join"): a contagem por paciente
-   * deixa de nascer do join 1:1 `anacare_shift` × `shift_hours_validation` por `source_shift_id`
+   * deixa de nascer do join 1:1 com o antigo retrato por turno por `source_shift_id`
    * (turno não existe mais no nosso banco) e passa a vir direto daqui — `GROUP BY (paciente,
    * status)` sobre o mês inteiro, 1 query para todos os pacientes (nunca 1 por paciente, mesmo
    * padrão de `getByShiftIds`). `periodMonth` no formato `YYYY-MM-DD` (1º dia do mês), mesma
