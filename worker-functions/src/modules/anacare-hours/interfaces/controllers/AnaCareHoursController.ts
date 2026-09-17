@@ -51,7 +51,7 @@ export class AnaCareHoursController {
    */
   private static defaultServiceFactory(): AnaCareHoursService | null {
     const deps = createAnaCareSyncDependencies();
-    return deps ? new AnaCareHoursService(deps.source, undefined, undefined, undefined, deps.repository) : null;
+    return deps ? new AnaCareHoursService(deps.source, undefined, undefined, undefined, deps.repository, deps.patientMonthRepository) : null;
   }
 
   private actorUid(req: Request): string {

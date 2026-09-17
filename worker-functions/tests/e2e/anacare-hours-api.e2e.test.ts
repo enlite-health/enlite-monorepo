@@ -118,15 +118,29 @@ describe('spec anacare-conferencia-de-horas F1 — API sob engine de permissão 
       expect(res.status).toBe(403);
     });
 
-    it('com anacare_hours:read → 200 com os 10 pacientes sintéticos e 100 turnos no total', async () => {
+    it('com anacare_hours:read → 200 com os 10 pacientes sintéticos e 100 turnos no total (LISTA, contrato F6.2 agregado)', async () => {
       const res = await chamar('GET', '/api/admin/anacare-hours/months/2026-09', U.leitura);
       expect(res.status).toBe(200);
-      expect(res.body.data.patients).toHaveLength(10);
-      const totalShifts = res.body.data.patients.reduce(
-        (acc: number, p: any) => acc + p.providers.reduce((a: number, pr: any) => a + pr.shifts.length, 0),
-        0,
-      );
+      const patients: any[] = res.body.data.patients;
+      expect(patients).toHaveLength(10);
+
+      // F6.2 (D361 Adendo 17/09): o total de turnos vem PRONTO em `shiftsCount` — a LISTA não
+      // manda mais nenhum turno individual, então não há mais `providers[].shifts` para somar.
+      const totalShifts = patients.reduce((acc: number, p: any) => acc + p.shiftsCount, 0);
       expect(totalShifts).toBe(100);
+
+      // Prova ponta a ponta contra banco real de que o contrato novo se cumpre — nenhum teste
+      // unitário alcança isto porque o fixture aqui é a massa sintética real (10 pacientes/100 turnos).
+      for (const p of patients) {
+        for (const pr of p.providers) {
+          expect(pr).not.toHaveProperty('shifts');
+        }
+        expect(p.providersCount).toBe(p.providers.length);
+        expect(typeof p.validated).toBe('number');
+        expect(typeof p.contested).toBe('number');
+        expect(typeof p.hoursActualSum).toBe('number');
+        expect(typeof p.hoursScheduledSumMissingActual).toBe('number');
+      }
     });
 
     it('só anacare_hours:read (sem :validate) → 403 ao tentar validar', async () => {

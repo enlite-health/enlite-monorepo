@@ -17,34 +17,33 @@ function snapshot(overrides: Partial<AnaCareMonthSnapshot> = {}): AnaCareMonthSn
     patients: [
       {
         anaCareId: '90000',
-        linked: true,
+        linked: false,
         name: 'Lucía Fernández QA',
-        providers: [
-          {
-            anaCareId: 'p1',
-            linked: true,
-            name: 'Rocío García QA',
-            shifts: [
-              {
-                id: 's1',
-                date: '2026-08-14',
-                scheduledStart: '08:00',
-                scheduledEnd: '16:00',
-                actualStart: '08:00',
-                actualEnd: '16:00',
-                hoursActual: 8,
-                hoursScheduled: 8,
-                origin: 'app',
-                status: 'validado',
-                validatedBy: { id: 'e2e-qa', name: 'Equipo QA' },
-                validatedAt: '2026-08-15T00:00:00-03:00',
-                anaCareShiftId: '1',
-              },
-            ],
-          },
-        ],
+        providers: [{ anaCareId: 'p1', linked: true, name: 'Rocío García QA' }],
+        providersCount: 1,
+        shiftsCount: 1,
+        hoursActualSum: 8,
+        hoursScheduledSumMissingActual: 0,
+        validated: 1,
+        contested: 0,
+        originSinCheckin: 0,
+        originWebAdmin: 0,
+        originApp: 1,
       },
-      { anaCareId: '90447', linked: false, providers: [] },
+      {
+        anaCareId: '90447',
+        linked: false,
+        providers: [],
+        providersCount: 0,
+        shiftsCount: 0,
+        hoursActualSum: 0,
+        hoursScheduledSumMissingActual: 0,
+        validated: 0,
+        contested: 0,
+        originSinCheckin: 0,
+        originWebAdmin: 0,
+        originApp: 0,
+      },
     ],
     ...overrides,
   };
@@ -55,6 +54,38 @@ describe('AnaCareHoursListPage', () => {
     render(<AnaCareHoursListPage snapshot={snapshot()} onOpenPatient={vi.fn()} />);
     expect(screen.getByTestId('anacare-hours-patient-row-90000')).toBeInTheDocument();
     expect(screen.getByTestId('anacare-hours-patient-row-90447')).toBeInTheDocument();
+  });
+
+  /**
+   * F6.3: `Prestadores` e `Turnos` vêm de campos PRONTOS e DIFERENTES (`providersCount` ×
+   * `shiftsCount`) — nunca o mesmo número recalculado à mão. Este teste MORRE se a coluna
+   * `Turnos` voltar a ler `providersCount` (sabotagem verificada manualmente, ver relatório).
+   */
+  it('POSITIVO — colunas "Prestadores" e "Turnos" mostram `providersCount`/`shiftsCount`, campos distintos e prontos', () => {
+    const snap = snapshot({
+      patients: [
+        {
+          anaCareId: '90222',
+          linked: false,
+          name: 'Marta Núñez QA',
+          providers: [{ anaCareId: 'pA', linked: true, name: 'Prestador A' }],
+          providersCount: 1,
+          shiftsCount: 5,
+          hoursActualSum: 10,
+          hoursScheduledSumMissingActual: 0,
+          validated: 0,
+          contested: 0,
+          originSinCheckin: 0,
+          originWebAdmin: 0,
+          originApp: 0,
+        },
+      ],
+    });
+    render(<AnaCareHoursListPage snapshot={snap} onOpenPatient={vi.fn()} />);
+    const row = screen.getByTestId('anacare-hours-patient-row-90222');
+    const cells = row.querySelectorAll('td');
+    expect(cells[1]).toHaveTextContent('1'); // Prestadores = providersCount
+    expect(cells[2]).toHaveTextContent('5'); // Turnos = shiftsCount (DIFERENTE de providersCount)
   });
 
   it('POSITIVO — clicar numa linha chama onOpenPatient com o anaCareId', () => {
@@ -116,20 +147,18 @@ describe('AnaCareHoursListPage', () => {
       patients: [
         {
           anaCareId: '90999',
-          linked: true,
+          linked: false,
           name: 'Camila Torres QA',
-          providers: [
-            {
-              anaCareId: 'p9',
-              linked: true,
-              name: 'Paula Díaz QA',
-              shifts: [
-                { id: 'x1', date: '2026-08-01', scheduledStart: '08:00', scheduledEnd: '16:00', actualStart: null, actualEnd: null, hoursActual: null, hoursScheduled: 8, origin: 'sin_checkin', status: 'pendiente', anaCareShiftId: '1' },
-                { id: 'x2', date: '2026-08-02', scheduledStart: '08:00', scheduledEnd: '16:00', actualStart: '08:00', actualEnd: '16:00', hoursActual: 8, hoursScheduled: 8, origin: 'web_admin', status: 'contestado', contestReason: 'otro', anaCareShiftId: '2' },
-                { id: 'x3', date: '2026-08-03', scheduledStart: '08:00', scheduledEnd: '16:00', actualStart: '08:00', actualEnd: '16:00', hoursActual: 8, hoursScheduled: 8, origin: 'app', status: 'validado', validatedBy: { id: 'e2e-qa', name: 'Y' }, validatedAt: '2026-08-04T00:00:00Z', anaCareShiftId: '3' },
-              ],
-            },
-          ],
+          providers: [{ anaCareId: 'p9', linked: true, name: 'Paula Díaz QA' }],
+          providersCount: 1,
+          shiftsCount: 3,
+          hoursActualSum: 16,
+          hoursScheduledSumMissingActual: 8,
+          validated: 1,
+          contested: 1,
+          originSinCheckin: 1,
+          originWebAdmin: 1,
+          originApp: 1,
         },
       ],
     });
@@ -144,5 +173,75 @@ describe('AnaCareHoursListPage', () => {
     fireEvent.click(screen.getByTestId('anacare-hours-provider-filter-option-p1'));
     expect(screen.getByTestId('anacare-hours-patient-row-90000')).toBeInTheDocument();
     expect(screen.queryByTestId('anacare-hours-patient-row-90447')).not.toBeInTheDocument();
+  });
+
+  /**
+   * F6.3 (defeito que o Gabriel via na tela): a rota agora manda `name` no agregado (sem turnos),
+   * e a lista tem de mostrar o NOME — não mais "Sin vínculo · ID 9767". Este teste MORRE se a
+   * coluna "Paciente" voltar a ler de um campo que a lista não recebe mais.
+   */
+  it('POSITIVO — a lista renderiza o NOME do paciente quando a rota manda `name` (nunca "Sin vínculo · ID X")', () => {
+    const snap = snapshot({
+      patients: [
+        {
+          anaCareId: '9767',
+          linked: false,
+          name: 'Rosa Benítez QA',
+          providers: [],
+          providersCount: 0,
+          shiftsCount: 0,
+          hoursActualSum: 0,
+          hoursScheduledSumMissingActual: 0,
+          validated: 0,
+          contested: 0,
+          originSinCheckin: 0,
+          originWebAdmin: 0,
+          originApp: 0,
+        },
+      ],
+    });
+    render(<AnaCareHoursListPage snapshot={snap} onOpenPatient={vi.fn()} />);
+    const row = screen.getByTestId('anacare-hours-patient-row-9767');
+    expect(row).toHaveTextContent('Rosa Benítez QA');
+    expect(row).not.toHaveTextContent('Sin vínculo · ID 9767');
+  });
+
+  it('POSITIVO — as opções do dropdown de prestador são montadas a partir de `providers` (sem `shifts`)', () => {
+    render(<AnaCareHoursListPage snapshot={snapshot()} onOpenPatient={vi.fn()} />);
+    fireEvent.focus(screen.getByTestId('anacare-hours-provider-filter'));
+    expect(screen.getByTestId('anacare-hours-provider-filter-option-p1')).toHaveTextContent('Rocío García QA');
+  });
+
+  /**
+   * F6.3: os dois modos de "Horas totales" têm de dar números DIFERENTES quando existe turno sem
+   * check-in — `hoursActualSum` sozinho (modo `zero`) contra `hoursActualSum +
+   * hoursScheduledSumMissingActual` (modo previsto). Este teste MORRE se os dois somarem sempre o
+   * mesmo total (sinal de que o modo parou de fazer diferença, ex.: somando os dois campos sempre).
+   */
+  it('POSITIVO — modo `zero` e modo previsto de "Horas totales" dão números diferentes quando há turno sem check-in', () => {
+    const snap = snapshot({
+      patients: [
+        {
+          anaCareId: '90555',
+          linked: false,
+          name: 'Diego Ramos QA',
+          providers: [],
+          providersCount: 0,
+          shiftsCount: 2,
+          hoursActualSum: 8,
+          hoursScheduledSumMissingActual: 6,
+          validated: 0,
+          contested: 0,
+          originSinCheckin: 1,
+          originWebAdmin: 0,
+          originApp: 1,
+        },
+      ],
+    });
+    const { rerender } = render(<AnaCareHoursListPage snapshot={snap} onOpenPatient={vi.fn()} sinCheckinHoursMode="zero" />);
+    expect(screen.getByTestId('anacare-hours-patient-row-90555')).toHaveTextContent('8.0 h');
+
+    rerender(<AnaCareHoursListPage snapshot={snap} onOpenPatient={vi.fn()} sinCheckinHoursMode="scheduled" />);
+    expect(screen.getByTestId('anacare-hours-patient-row-90555')).toHaveTextContent('14.0 h');
   });
 });

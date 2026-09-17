@@ -18,9 +18,14 @@ import type {
   ShiftSyncFreshness,
   ShiftSyncRepository,
 } from '../domain/AnaCareHoursSyncPorts';
-import type { AnaCarePatientMonthAggregate } from '../domain/AnaCarePatientMonth';
+import type { AnaCarePatientMonthAggregate, AnaCarePatientMonthProviderAggregate } from '../domain/AnaCarePatientMonth';
 import { aggregatePatientMonth } from '../application/AnaCarePatientMonthAggregator';
 import { FakeAnaCareShiftsSource } from './FakeAnaCareShiftsSource';
+
+function nonEmpty(value: string | null | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
 
 export class FakeEnliteDirectory implements EnliteDirectorySource {
   async fetch(): Promise<EnliteDirectorySnapshot> {
@@ -80,10 +85,16 @@ export class FakeAnaCareShiftRepository implements ShiftSyncRepository {
 }
 
 /**
- * Contraparte falsa de `PatientMonthSyncRepository` (`anacare_patient_month`, migration 441,
- * D361) — em memória, vida do processo, mesmo racional de `FakeAnaCareShiftRepository`. Sem
- * pré-semeadura própria: quem lê antes de o runner (falso) gravar recebe lista vazia (a lista só
- * passa a ler daqui na F6.2).
+ * Contraparte falsa de `PatientMonthSyncRepository` (`anacare_patient_month` +
+ * `anacare_patient_month_provider`, migrations 441/442, D361) — em memória, vida do processo,
+ * mesmo racional de `FakeAnaCareShiftRepository`.
+ *
+ * `ensureSeeded` (item 1 da revisão de PR, espelhado aqui na F6.2): sem pré-semeadura própria, o
+ * controller que monta a LISTA em modo `ANACARE_HOURS_SOURCE=fake` sem o sync ter rodado receberia
+ * `patients: []` — a F6.2 troca a LEITURA da lista para este repositório (antes lia
+ * `FakeAnaCareShiftRepository`, que já tinha a mesma pré-semeadura), então o mesmo comportamento
+ * precisa valer aqui: primeira leitura do mês gera a massa sintética e roda `recomputeFromShifts`
+ * como o sync (falso) faria.
  */
 export class FakeAnaCarePatientMonthRepository implements PatientMonthSyncRepository {
   private readonly rows = new Map<string, AnaCarePatientMonthAggregate>();
@@ -92,10 +103,26 @@ export class FakeAnaCarePatientMonthRepository implements PatientMonthSyncReposi
    * aquele paciente/mês (mesmo bug que o `upsertMany` por-reserva tinha, evitado aqui do mesmo jeito
    * que o SQL real evita: lendo a fonte cumulativa, não sobrescrevendo com o lote isolado). */
   private readonly shiftsByKey = new Map<string, SourceShiftDTO[]>();
+  /** Nome do prestador por par paciente×prestador (migration 442, Adendo 17/09) — primeiro valor
+   * não-vazio visto vence, nunca é apagado por uma rodada sem nome (mesma regra do SQL real). */
+  private readonly providers = new Map<string, AnaCarePatientMonthProviderAggregate>();
+  private readonly seededMonths = new Set<string>();
   private lastFetchedAt: string | null = null;
 
   private key(source: string, periodMonth: string, anaCarePatientId: string): string {
     return `${source}::${periodMonth}::${anaCarePatientId}`;
+  }
+
+  private providerKey(source: string, periodMonth: string, anaCarePatientId: string, anaCareNurseId: string): string {
+    return `${source}::${periodMonth}::${anaCarePatientId}::${anaCareNurseId}`;
+  }
+
+  /** Mesmo racional de `FakeAnaCareShiftRepository.ensureSeeded` — ver cabeçalho da classe. */
+  private ensureSeeded(month: string): void {
+    if (this.seededMonths.has(month)) return;
+    this.seededMonths.add(month);
+    const shifts = FakeAnaCareShiftsSource.generateMonth(month);
+    if (shifts.length > 0) void this.recomputeFromShifts(shifts, month);
   }
 
   async upsertMany(aggregates: readonly AnaCarePatientMonthAggregate[], periodMonth: string): Promise<{ written: number }> {
@@ -112,6 +139,13 @@ export class FakeAnaCarePatientMonthRepository implements PatientMonthSyncReposi
       const k = this.key('anacare', periodMonth, s.anaCarePatientId);
       if (!this.shiftsByKey.has(k)) this.shiftsByKey.set(k, []);
       this.shiftsByKey.get(k)!.push(s);
+
+      // Par paciente×prestador (migration 442) — só os pares deste lote, nunca apaga um já gravado.
+      const pk = this.providerKey('anacare', periodMonth, s.anaCarePatientId, s.anaCareNurseId);
+      const existing = this.providers.get(pk);
+      const firstName = nonEmpty(s.nurseFirstName) ?? existing?.nurseFirstName;
+      const lastName = nonEmpty(s.nurseLastName) ?? existing?.nurseLastName;
+      this.providers.set(pk, { anaCarePatientId: s.anaCarePatientId, anaCareNurseId: s.anaCareNurseId, nurseFirstName: firstName, nurseLastName: lastName });
     }
     for (const patientId of patientIds) {
       const k = this.key('anacare', periodMonth, patientId);
@@ -123,8 +157,15 @@ export class FakeAnaCarePatientMonthRepository implements PatientMonthSyncReposi
   }
 
   async listByMonth(source: string, periodMonth: string): Promise<AnaCarePatientMonthAggregate[]> {
+    this.ensureSeeded(periodMonth);
     const prefix = `${source}::${periodMonth}::`;
     return [...this.rows.entries()].filter(([k]) => k.startsWith(prefix)).map(([, v]) => v);
+  }
+
+  async listProvidersByMonth(source: string, periodMonth: string): Promise<AnaCarePatientMonthProviderAggregate[]> {
+    this.ensureSeeded(periodMonth);
+    const prefix = `${source}::${periodMonth}::`;
+    return [...this.providers.entries()].filter(([k]) => k.startsWith(prefix)).map(([, v]) => v);
   }
 
   async getSnapshotFreshness(source: string, periodMonth: string): Promise<ShiftSyncFreshness> {

@@ -24,3 +24,16 @@ export interface AnaCarePatientMonthAggregate {
   originWebAdmin: number;
   originApp: number;
 }
+
+/**
+ * Par paciente×prestador×mês (migration 442, Adendo 17/09 — D361) — QUEM cuidou de quem no mês,
+ * sem dia nem hora. Alimenta o filtro "Todos los prestadores" e o conjunto `providers` do contrato
+ * da lista (F6.2) — `providersByMonth` no repositório, agrupado por paciente pelo serviço.
+ */
+export interface AnaCarePatientMonthProviderAggregate {
+  anaCarePatientId: string;
+  anaCareNurseId: string;
+  /** Mesma regra de `patientFirstName`/`patientLastName` — primeiro valor não-vazio vence. */
+  nurseFirstName?: string;
+  nurseLastName?: string;
+}

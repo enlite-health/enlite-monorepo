@@ -11,9 +11,25 @@
 
 import type { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
-import type { AnaCarePatientMonthAggregate } from '../domain/AnaCarePatientMonth';
+import type { AnaCarePatientMonthAggregate, AnaCarePatientMonthProviderAggregate } from '../domain/AnaCarePatientMonth';
 import type { PatientMonthSyncRepository, ShiftSyncFreshness } from '../domain/AnaCareHoursSyncPorts';
 import type { SourceShiftDTO } from '../domain/AnaCareShiftsSource';
+
+interface AnaCarePatientMonthProviderRowSql {
+  ana_care_patient_id: string;
+  ana_care_nurse_id: string;
+  nurse_first_name: string | null;
+  nurse_last_name: string | null;
+}
+
+function toProviderAggregate(r: AnaCarePatientMonthProviderRowSql): AnaCarePatientMonthProviderAggregate {
+  return {
+    anaCarePatientId: r.ana_care_patient_id,
+    anaCareNurseId: r.ana_care_nurse_id,
+    nurseFirstName: r.nurse_first_name ?? undefined,
+    nurseLastName: r.nurse_last_name ?? undefined,
+  };
+}
 
 interface AnaCarePatientMonthRowSql {
   ana_care_patient_id: string;
@@ -208,7 +224,71 @@ export class AnaCarePatientMonthRepository implements PatientMonthSyncRepository
       [periodMonthValue, patientIds, firstNames, lastNames],
     );
 
+    await this.upsertProvidersFromShifts(shifts, periodMonthValue);
+
     return { written: patientIds.length };
+  }
+
+  /**
+   * Adendo 17/09 (D361): grava o PAR paciente×prestador×mês (migration 442) — a companheira que
+   * alimenta o filtro "Todos los prestadores". Só usa os pares presentes NESTE lote de `shifts`
+   * (não precisa recomputar contra `anacare_shift` como o agregado faz: um par já gravado por uma
+   * reserva anterior nunca é apagado por esta chamada — o `ON CONFLICT` só ADICIONA/atualiza nome,
+   * nunca remove uma linha, então a convivência entre reservas/invocações é segura por construção).
+   * Nome: mesma regra de `recomputeFromShifts` para o paciente — primeiro valor não-vazio DENTRO
+   * deste lote vence; `COALESCE` no `ON CONFLICT` garante que uma rodada sem nome nunca apaga um
+   * nome de prestador já gravado.
+   */
+  private async upsertProvidersFromShifts(shifts: readonly SourceShiftDTO[], periodMonthValue: string): Promise<void> {
+    const namesByPair = new Map<string, { firstName?: string; lastName?: string }>();
+    const pairPatientIds: string[] = [];
+    const pairNurseIds: string[] = [];
+    for (const s of shifts) {
+      const key = `${s.anaCarePatientId}::${s.anaCareNurseId}`;
+      if (!namesByPair.has(key)) {
+        pairPatientIds.push(s.anaCarePatientId);
+        pairNurseIds.push(s.anaCareNurseId);
+        namesByPair.set(key, {});
+      }
+      const entry = namesByPair.get(key)!;
+      if (entry.firstName || entry.lastName) continue; // primeiro não-vazio já venceu neste lote
+      const firstName = nonEmpty(s.nurseFirstName);
+      const lastName = nonEmpty(s.nurseLastName);
+      if (firstName || lastName) {
+        entry.firstName = firstName;
+        entry.lastName = lastName;
+      }
+    }
+
+    if (pairPatientIds.length === 0) return;
+
+    const firstNames = pairPatientIds.map((patientId, i) => namesByPair.get(`${patientId}::${pairNurseIds[i]}`)?.firstName ?? null);
+    const lastNames = pairPatientIds.map((patientId, i) => namesByPair.get(`${patientId}::${pairNurseIds[i]}`)?.lastName ?? null);
+
+    await this.pool.query(
+      `INSERT INTO anacare_patient_month_provider (
+         source, ana_care_patient_id, ana_care_nurse_id, period_month, nurse_first_name, nurse_last_name,
+         fetched_at, created_at, updated_at
+       )
+       SELECT 'anacare', UNNEST($2::text[]), UNNEST($3::text[]), $1::date, UNNEST($4::text[]), UNNEST($5::text[]), NOW(), NOW(), NOW()
+       ON CONFLICT (source, ana_care_patient_id, ana_care_nurse_id, period_month) DO UPDATE SET
+         nurse_first_name = COALESCE(EXCLUDED.nurse_first_name, anacare_patient_month_provider.nurse_first_name),
+         nurse_last_name  = COALESCE(EXCLUDED.nurse_last_name, anacare_patient_month_provider.nurse_last_name),
+         fetched_at        = NOW(),
+         updated_at         = NOW()`,
+      [periodMonthValue, pairPatientIds, pairNurseIds, firstNames, lastNames],
+    );
+  }
+
+  async listProvidersByMonth(source: string, periodMonth: string): Promise<AnaCarePatientMonthProviderAggregate[]> {
+    const res = await this.pool.query<AnaCarePatientMonthProviderRowSql>(
+      `SELECT ana_care_patient_id, ana_care_nurse_id, nurse_first_name, nurse_last_name
+         FROM anacare_patient_month_provider
+        WHERE source = $1 AND period_month = $2
+        ORDER BY ana_care_patient_id, ana_care_nurse_id`,
+      [source, periodMonthDate(periodMonth)],
+    );
+    return res.rows.map(toProviderAggregate);
   }
 
   async listByMonth(source: string, periodMonth: string): Promise<AnaCarePatientMonthAggregate[]> {

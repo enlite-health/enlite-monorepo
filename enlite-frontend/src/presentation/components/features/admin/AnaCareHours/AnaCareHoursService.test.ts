@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import { AnaCareHoursServiceError, FakeAnaCareHoursService } from './AnaCareHoursService';
 import { CONTEST_NOTE_MAX_LENGTH } from './types';
-import type { AnaCareMonthSnapshot, AnaCareShift } from './types';
+import type { AnaCareHoursPatientSnapshot, AnaCareShift } from './types';
 
 function makeShift(overrides: Partial<AnaCareShift> = {}): AnaCareShift {
   return {
@@ -27,7 +27,7 @@ function makeShift(overrides: Partial<AnaCareShift> = {}): AnaCareShift {
   };
 }
 
-function makeSnapshot(overrides: Partial<AnaCareMonthSnapshot> = {}, shifts: AnaCareShift[] = [makeShift()]): AnaCareMonthSnapshot {
+function makeSnapshot(overrides: Partial<AnaCareHoursPatientSnapshot> = {}, shifts: AnaCareShift[] = [makeShift()]): AnaCareHoursPatientSnapshot {
   return {
     month: '2026-08',
     updatedAt: '2026-09-15T08:00:00-03:00',
@@ -46,7 +46,7 @@ function makeSnapshot(overrides: Partial<AnaCareMonthSnapshot> = {}, shifts: Ana
   };
 }
 
-function makeService(overrides: Partial<AnaCareMonthSnapshot> = {}, shifts?: AnaCareShift[]): FakeAnaCareHoursService {
+function makeService(overrides: Partial<AnaCareHoursPatientSnapshot> = {}, shifts?: AnaCareShift[]): FakeAnaCareHoursService {
   return new FakeAnaCareHoursService({ '2026-08': makeSnapshot(overrides, shifts) });
 }
 
@@ -96,6 +96,23 @@ describe('getMonthSnapshot', () => {
     });
     const snapshot = await service.getMonthSnapshot('2026-08', { patientSearch: '90447' });
     expect(snapshot.patients).toHaveLength(1);
+  });
+
+  /**
+   * F6.3 (agregação): o Fake soma `hoursActualSum`/`hoursScheduledSumMissingActual` igual ao
+   * backend real (`aggregatePatientForList`). Turno SEM check-in (`hoursActual: null`) soma 0 ao
+   * `hoursActualSum` e soma o PREVISTO ao `hoursScheduledSumMissingActual` — turno COM check-in faz
+   * o oposto. Este teste cobre as duas metades do `?? 0`/ternário de agregação (branch coverage).
+   */
+  it('POSITIVO — agrega hoursActualSum/hoursScheduledSumMissingActual corretamente com turno SEM e COM check-in', async () => {
+    const service = makeService({}, [
+      makeShift({ id: 's1', hoursActual: null, hoursScheduled: 6, origin: 'sin_checkin' }),
+      makeShift({ id: 's2', hoursActual: 8, hoursScheduled: 8, origin: 'app' }),
+    ]);
+    const snapshot = await service.getMonthSnapshot('2026-08');
+    expect(snapshot.patients[0].hoursActualSum).toBe(8);
+    expect(snapshot.patients[0].hoursScheduledSumMissingActual).toBe(6);
+    expect(snapshot.patients[0].shiftsCount).toBe(2);
   });
 });
 

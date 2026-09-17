@@ -77,12 +77,17 @@ export function originCounts(shifts: AnaCareShift[]): AnaCareOriginCounts {
  * mais gated por `linked` — `linked` continua significando "casa com um worker/paciente nosso" e é
  * exibido/usado à parte (nunca decidiu se o NOME aparece). O fallback `Sin vínculo · ID X`
  * permanece honesto para quando a fonte não manda nome (turno sem nome existe).
+ *
+ * Assinatura ESTREITA (só `anaCareId`/`name`) de propósito (F6.3): serve tanto `AnaCareProvider`
+ * (DETALHE, com turnos) quanto `AnaCareListProvider` (LISTA, agregado, sem turnos) — mesma função,
+ * mesmo comportamento, sem duplicar. Nenhuma lógica mudou, só o tipo aceito ficou mais largo.
  */
-export function providerDisplayName(provider: AnaCareProvider): string {
+export function providerDisplayName(provider: { anaCareId: string; name?: string }): string {
   return provider.name ? provider.name : `Sin vínculo · ID ${provider.anaCareId}`;
 }
 
-export function patientDisplayName(patient: AnaCarePatient): string {
+/** Mesma nota de `providerDisplayName` — serve `AnaCarePatient` (DETALHE) e `AnaCareListPatient` (LISTA). */
+export function patientDisplayName(patient: { anaCareId: string; name?: string }): string {
   return patient.name ? patient.name : `Sin vínculo · ID ${patient.anaCareId}`;
 }
 
@@ -204,12 +209,21 @@ export interface AnaCareHoursClientFilters {
   providerId?: string;
 }
 
+/** Forma mínima que `filterPatients` precisa — satisfeita tanto por `AnaCarePatient` (DETALHE) quanto por `AnaCareListPatient` (LISTA, F6.3). */
+interface FilterablePatient {
+  anaCareId: string;
+  linked: boolean;
+  name?: string;
+  providers: Array<{ anaCareId: string }>;
+}
+
 /**
  * Filtra a lista de pacientes de um snapshot — dono único do critério, usado pelo
- * `FakeAnaCareHoursService` (harness/testes) e pelo `AnaCareHoursHttpService` (produção): o
- * backend devolve o mês INTEIRO, o filtro roda aqui.
+ * `FakeAnaCareHoursService` (harness/testes, aplicado ANTES da agregação, sobre `AnaCarePatient[]`)
+ * e pelo `AnaCareHoursHttpService` (produção, aplicado sobre `AnaCareListPatient[]` já agregado
+ * pelo backend). Genérico (F6.3) para servir os dois sem duplicar — lógica intocada.
  */
-export function filterPatients(patients: AnaCarePatient[], filters?: AnaCareHoursClientFilters): AnaCarePatient[] {
+export function filterPatients<T extends FilterablePatient>(patients: T[], filters?: AnaCareHoursClientFilters): T[] {
   if (!filters || (!filters.patientSearch && !filters.providerId)) return patients;
   return patients.filter((patient) => {
     if (filters.providerId && !patient.providers.some((p) => p.anaCareId === filters.providerId)) {
@@ -217,7 +231,12 @@ export function filterPatients(patients: AnaCarePatient[], filters?: AnaCareHour
     }
     if (filters.patientSearch?.trim()) {
       const q = filters.patientSearch.trim().toLowerCase();
-      const label = (patient.linked && patient.name ? patient.name : patient.anaCareId).toLowerCase();
+      // Item 1 (decisão do Gabriel, 17/09, já aplicada em `patientDisplayName`): o nome vem da
+      // FONTE, não mais gated por `linked` — `linked` do paciente da LISTA é SEMPRE `false`
+      // (D349 item 2), então gatear por ele aqui fazia a busca por nome nunca casar contra o
+      // agregado (F6.3 expôs o descompasso: antes o fixture de teste usava `linked: true`,
+      // valor que o contrato real nunca manda). Mesma regra de `patientDisplayName`.
+      const label = (patient.name ? patient.name : patient.anaCareId).toLowerCase();
       if (!label.includes(q) && !patient.anaCareId.includes(q)) return false;
     }
     return true;

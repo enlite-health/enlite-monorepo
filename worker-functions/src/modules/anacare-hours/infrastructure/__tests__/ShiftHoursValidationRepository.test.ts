@@ -127,6 +127,54 @@ describe('ShiftHoursValidationRepository', () => {
     });
   });
 
+  /**
+   * F6.2 (D361, Adendo 17/09): a contagem por paciente que alimenta `validated`/`contested` da
+   * LISTA — GROUP BY sobre `shift_hours_validation`, 1 query para o mês inteiro.
+   */
+  describe('getStatusCountsByMonth', () => {
+    it('SELECT com GROUP BY (paciente, status), filtrado por source e period_month', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [] });
+      const result = await repo.getStatusCountsByMonth('2026-09-01');
+
+      expect(mockPoolQuery).toHaveBeenCalledTimes(1);
+      const [sql, params] = mockPoolQuery.mock.calls[0];
+      expect(sql).toMatch(/FROM shift_hours_validation/);
+      expect(sql).toMatch(/GROUP BY 1, 2/);
+      expect(sql).toMatch(/WHERE source = \$1 AND period_month = \$2/);
+      expect(params).toEqual(['anacare', '2026-09-01']);
+      expect(result.size).toBe(0);
+    });
+
+    it('agrupa validado/contestado por paciente no MESMO Map (a 2ª linha do paciente não sobrescreve a 1ª)', async () => {
+      mockPoolQuery.mockResolvedValueOnce({
+        rows: [
+          { ana_care_patient_id: 'AC-PAT-0', status: 'validado', count: '3' },
+          { ana_care_patient_id: 'AC-PAT-0', status: 'contestado', count: '1' },
+          { ana_care_patient_id: 'AC-PAT-1', status: 'validado', count: '5' },
+        ],
+      });
+      const result = await repo.getStatusCountsByMonth('2026-09-01');
+
+      expect(result.get('AC-PAT-0')).toEqual({ validated: 3, contested: 1 });
+      expect(result.get('AC-PAT-1')).toEqual({ validated: 5, contested: 0 });
+    });
+
+    it('status "pendente" não entra em validated nem contested (paciente some do resultado se só tiver pendente)', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [{ ana_care_patient_id: 'AC-PAT-2', status: 'pendente', count: '4' }] });
+      const result = await repo.getStatusCountsByMonth('2026-09-01');
+
+      expect(result.get('AC-PAT-2')).toEqual({ validated: 0, contested: 0 });
+    });
+
+    it('count vem como string do driver e é convertido para number', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [{ ana_care_patient_id: 'AC-PAT-0', status: 'validado', count: '10' }] });
+      const result = await repo.getStatusCountsByMonth('2026-09-01');
+
+      expect(result.get('AC-PAT-0')?.validated).toBe(10);
+      expect(typeof result.get('AC-PAT-0')?.validated).toBe('number');
+    });
+  });
+
   describe('contest', () => {
     it('recusa com ShiftAlreadyValidatedError quando já validado', async () => {
       mockPoolQuery.mockResolvedValueOnce({ rows: [VALIDATED_ROW] }); // getOne

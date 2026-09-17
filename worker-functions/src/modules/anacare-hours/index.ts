@@ -20,10 +20,14 @@ export type {
   AnaCareShift,
   AnaCarePatient,
   AnaCareProvider,
+  AnaCareListPatient,
+  AnaCareListProvider,
   AnaCareMonthSnapshot,
   AnaCareRetratoStatus,
   ContestReason,
   ValidationStatus,
   CheckInOrigin,
 } from './domain/AnaCareShift';
+export type { AnaCarePatientMonthAggregate, AnaCarePatientMonthProviderAggregate } from './domain/AnaCarePatientMonth';
+export type { PatientMonthSyncRepository } from './domain/AnaCareHoursSyncPorts';
 export { CONTEST_REASONS, isContestReason, CONTEST_NOTE_MAX_LENGTH, AnaCareHoursServiceError } from './domain/AnaCareShift';

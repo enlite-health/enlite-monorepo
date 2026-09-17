@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { AnaCareHoursServiceError, type AnaCareHoursService } from '@presentation/components/features/admin/AnaCareHours/AnaCareHoursService';
-import type { AnaCareMonthSnapshot, AnaCarePatient, AnaCareRetratoStatus } from '@presentation/components/features/admin/AnaCareHours/types';
+import type { AnaCareHoursPatientSnapshot, AnaCarePatient, AnaCareRetratoStatus } from '@presentation/components/features/admin/AnaCareHours/types';
 
 /**
  * Mesmo padrão de `usePatientsData`. Busca o paciente E o estado do retrato em paralelo
- * (`Promise.all`) e monta um `AnaCareMonthSnapshot` "de 1 paciente só" — a forma que
- * `AnaCareHoursDetailPage` já espera. Portado de `repos/infra/_worktrees/proto-anacare-horas/
+ * (`Promise.all`) e monta um `AnaCareHoursPatientSnapshot` "de 1 paciente só" — a forma que
+ * `AnaCareHoursDetailPage` já espera (F6.3: tipo próprio, separado de `AnaCareMonthSnapshot` da
+ * LISTA, que deixou de carregar turnos). Portado de `repos/infra/_worktrees/proto-anacare-horas/
  * .../hooks/admin/useAnaCareHoursPatient.ts` — mesma adaptação de erro 503 do irmão
  * `useAnaCareHoursMonth` (ver comentário lá).
  */
@@ -48,7 +49,7 @@ export function useAnaCareHoursPatient(service: AnaCareHoursService, month: stri
     };
   }, [service, month, patientId, refreshKey]);
 
-  const snapshot: AnaCareMonthSnapshot | null = retrato
+  const snapshot: AnaCareHoursPatientSnapshot | null = retrato
     ? {
         month,
         updatedAt: retrato.updatedAt,

@@ -118,6 +118,43 @@ export interface AnaCarePatient {
   providers: AnaCareProvider[];
 }
 
+/**
+ * Contrato da LISTA (F6.2/F6.3, D361 Adendo 17/09) — agregado, SEM NENHUM turno individual.
+ * Espelha `AnaCareListProvider`/`AnaCareListPatient` de `worker-functions/.../domain/
+ * AnaCareShift.ts` (backend real desta branch). `providers` continua array (não só um número)
+ * para o filtro "Todos los prestadores" e o dropdown do front seguirem funcionando sem reescrita
+ * — só `provider.shifts` some.
+ *
+ * ⚠️ NÃO confundir com `AnaCarePatient`/`AnaCareProvider` (acima): aqueles são o DETALHE (por
+ * turno, ao vivo em `getPatientMonth`); estes são a LISTA (agregado, `getMonthSnapshot`). Antes
+ * desta fase eram o MESMO tipo — a separação é a F6.3 (ver `selectors.ts` cabeçalho).
+ */
+export interface AnaCareListProvider {
+  anaCareId: string;
+  linked: boolean;
+  name?: string;
+}
+
+export interface AnaCareListPatient {
+  anaCareId: string;
+  name?: string;
+  /** D349 item 2 — paciente permanece SEMPRE sem vínculo, bloqueado. */
+  linked: false;
+  providers: AnaCareListProvider[];
+  providersCount: number;
+  shiftsCount: number;
+  /** Modo `zero` de `totalHours` (front) — soma sozinha, já pronta (backend agrega). */
+  hoursActualSum: number;
+  /** Somado a `hoursActualSum` cobre o modo `'scheduled'` — nunca isolado, nunca somado ao modo `zero`. */
+  hoursScheduledSumMissingActual: number;
+  /** `COUNT` por status em `shift_hours_validation` (GROUP BY) — nunca mais o join 1:1 por turno. */
+  validated: number;
+  contested: number;
+  originSinCheckin: number;
+  originWebAdmin: number;
+  originApp: number;
+}
+
 /** Forma do agregado "contagem por origem" — calculado em `selectors.ts`, nunca guardado à mão. */
 export interface AnaCareOriginCounts {
   sinCheckin: number;
@@ -132,6 +169,11 @@ export interface AnaCareOriginCounts {
  */
 export type AnaCareSnapshotState = 'nao_construido' | 'velho' | 'fresco';
 
+/**
+ * Contrato da rota `GET /months/:month` — a LISTA. `patients` é o agregado (`AnaCareListPatient`,
+ * F6.2/F6.3), nunca o array de turnos. Ver `AnaCareHoursPatientSnapshot` para o wrapper "de 1
+ * paciente só" que o DETALHE monta (mesmo formato de campos de topo, `patients` com turnos).
+ */
 export interface AnaCareMonthSnapshot {
   /** ↔ `anacare_shift.period_month` (1º dia do mês) — aqui YYYY-MM. */
   month: string;
@@ -142,6 +184,24 @@ export interface AnaCareMonthSnapshot {
   /** Ver `AnaCareSnapshotState` — granularidade que `stale` sozinho não carrega. */
   snapshotState: AnaCareSnapshotState;
   /** "disjuntor" — sincronização falhando repetidamente, proteção de carga ativa (estado do job noturno, não é coluna). */
+  circuitBreakerOpen: boolean;
+  /** F6.3: pacientes AGREGADOS (sem turno individual) — ver `AnaCareListPatient`. */
+  patients: AnaCareListPatient[];
+}
+
+/**
+ * O "`AnaCareMonthSnapshot` de 1 paciente só" que `useAnaCareHoursPatient` monta para reusar
+ * `AnaCareHoursDetailPage` (que agrupa por dia via `selectors.ts`, precisa dos turnos). MESMOS
+ * campos de topo do snapshot da lista, mas `patients` é `AnaCarePatient[]` (DETALHE, com turnos) —
+ * nunca `AnaCareListPatient[]`. Extraído desta fase (F6.3): antes, os dois usavam o MESMO tipo
+ * `AnaCareMonthSnapshot`, e a separação de contrato da lista (sem turnos) teria quebrado o
+ * detalhe se continuassem compartilhando o tipo.
+ */
+export interface AnaCareHoursPatientSnapshot {
+  month: string;
+  updatedAt: string;
+  stale: boolean;
+  snapshotState: AnaCareSnapshotState;
   circuitBreakerOpen: boolean;
   patients: AnaCarePatient[];
 }

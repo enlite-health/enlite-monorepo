@@ -8,7 +8,7 @@
  */
 
 import type { SourceShiftDTO } from './AnaCareShiftsSource';
-import type { AnaCarePatientMonthAggregate } from './AnaCarePatientMonth';
+import type { AnaCarePatientMonthAggregate, AnaCarePatientMonthProviderAggregate } from './AnaCarePatientMonth';
 
 export interface EnliteDirectoryEntry {
   reservationId: string;
@@ -69,4 +69,10 @@ export interface PatientMonthSyncRepository {
   listByMonth(source: string, periodMonth: string): Promise<AnaCarePatientMonthAggregate[]>;
   /** Mesmo contrato de `ShiftSyncFreshness.getSnapshotFreshness` — contagem zero é falha, nunca sucesso. */
   getSnapshotFreshness(source: string, periodMonth: string): Promise<ShiftSyncFreshness>;
+  /**
+   * Pares paciente×prestador do mês (migration 442, Adendo 17/09) — flat, agrupado por paciente
+   * por quem chama (`AnaCareHoursService.getMonthSnapshot`). Alimenta `providers`/`providersCount`
+   * e o filtro "Todos los prestadores" da lista.
+   */
+  listProvidersByMonth(source: string, periodMonth: string): Promise<AnaCarePatientMonthProviderAggregate[]>;
 }

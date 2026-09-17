@@ -10,7 +10,7 @@ import { AnaCareHoursSyncRunner, AnaCareDirectoryDroppedError, AnaCareDirectoryF
 import { AnaCareHoursSyncGuard } from '../AnaCareHoursSyncGuard';
 import type { AnaCareShiftsSource, ListShiftsParams, SourceShiftDTO } from '../../domain/AnaCareShiftsSource';
 import type { EnliteDirectorySnapshot, EnliteDirectorySource, PatientMonthSyncRepository, ShiftSyncFreshness, ShiftSyncRepository } from '../../domain/AnaCareHoursSyncPorts';
-import type { AnaCarePatientMonthAggregate } from '../../domain/AnaCarePatientMonth';
+import type { AnaCarePatientMonthAggregate, AnaCarePatientMonthProviderAggregate } from '../../domain/AnaCarePatientMonth';
 import { aggregateByPatient, aggregatePatientMonth } from '../AnaCarePatientMonthAggregator';
 import type { AnaCareHoursSyncMetric } from '../../infrastructure/AnaCareHoursSyncMetrics';
 
@@ -169,6 +169,9 @@ class StubPatientMonthRepository implements PatientMonthSyncRepository {
   async listByMonth(): Promise<AnaCarePatientMonthAggregate[]> {
     return [];
   }
+  async listProvidersByMonth(): Promise<AnaCarePatientMonthProviderAggregate[]> {
+    return [];
+  }
   async getSnapshotFreshness(): Promise<ShiftSyncFreshness> {
     return { shifts: 0, lastFetchedAt: null };
   }
@@ -209,6 +212,9 @@ class RecordingPatientMonthRepository implements PatientMonthSyncRepository {
   }
   async listByMonth(): Promise<AnaCarePatientMonthAggregate[]> {
     return [...this.aggregatesByPatient.values()];
+  }
+  async listProvidersByMonth(): Promise<AnaCarePatientMonthProviderAggregate[]> {
+    return [];
   }
   async getSnapshotFreshness(): Promise<ShiftSyncFreshness> {
     return { shifts: 0, lastFetchedAt: null };
