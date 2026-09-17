@@ -78,6 +78,54 @@ describe('AnaCareHoursSyncRunner — dedup de disparo concorrente (4.8)', () => 
     await sabotagedRun();
     expect(source.calls).toBe(2); // prova que SEM o guard, o dedup não acontece — o guard é o que faz a diferença
   });
+
+  /**
+   * Gate `revisao-pr` (fecho 17/09, achado 🟠 — ordem do carimbo × guard de dedup): antes deste
+   * conserto, `resolveRunStartedAt` (que grava via `startNewRun`) rodava ANTES do `guard.run`, uma
+   * vez por CHAMADA a `run()` — inclusive a chamada que o guard ia descartar. Duas invocações
+   * concorrentes do mesmo mês geravam DUAS escritas de carimbo (`startNewRun` 2×), mesmo que só
+   * UMA rodada real (`runOnce`) tivesse executado — a corrida em voo seguia com o carimbo t1, mas o
+   * banco (aqui, o Fake em memória) passava a guardar t2 > t1 da chamada descartada.
+   *
+   * Prova determinística sem relógio/sleep arbitrário: `CountingShiftsSource(30)` atrasa a
+   * primeira (e única) chamada real à fonte por 30ms — tempo de sobra para a 2ª invocação de
+   * `run()` (disparada no mesmo `Promise.all`) já ter passado pela checagem síncrona do guard
+   * ANTES de `runOnce` (e, portanto, `resolveRunStartedAt`) terminar. Isso reproduz a janela de
+   * concorrência real (cron × manual) de forma 100% repetível.
+   */
+  it('duas invocações concorrentes do mesmo mês: a descartada pelo dedup NÃO escreve run_started_at — startNewRun roda 1×, nunca 2×', async () => {
+    const source = new CountingShiftsSource(30);
+    const syncRunRepository = new FakeAnaCareSyncRunRepository();
+    const startNewRunSpy = jest.spyOn(syncRunRepository, 'startNewRun');
+    const runner = new AnaCareHoursSyncRunner(
+      source,
+      new AnaCareHoursSyncGuard(),
+      () => {},
+      () => '2026-09',
+      undefined,
+      undefined,
+      { ANACARE_DIRECTORY_MIN_ABSOLUTE: '1' },
+      undefined,
+      syncRunRepository,
+    );
+
+    const [manual, cron] = await Promise.all([
+      runner.run({ origin: 'manual', userId: 'staff-1' }),
+      runner.run({ origin: 'cron', userId: null }),
+    ]);
+
+    // A dupla concorrente segue produzindo UMA rodada real (já provado acima) — o achado novo é
+    // que ela também produz UMA ÚNICA escrita de carimbo, nunca duas.
+    expect([manual.deduped, cron.deduped].sort()).toEqual([false, true]);
+    expect(startNewRunSpy).toHaveBeenCalledTimes(1);
+
+    // O carimbo persistido é EXATAMENTE o que a rodada real usou — nunca um segundo `NOW()` de uma
+    // chamada que nem chegou a executar `runOnce`.
+    const stored = await syncRunRepository.getRunStartedAt('anacare', '2026-09');
+    expect(stored).not.toBeNull();
+    expect(stored!.toISOString()).toBe(manual.runStartedAt);
+    expect(stored!.toISOString()).toBe(cron.runStartedAt);
+  });
 });
 
 describe('AnaCareHoursSyncRunner — métrica de custo/consumo (4.9)', () => {

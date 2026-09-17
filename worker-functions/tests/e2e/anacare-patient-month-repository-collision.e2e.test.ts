@@ -3,6 +3,17 @@
  * REAL (`enlite-postgres`, o mesmo que os e2e usam), rodando o SQL de verdade de
  * `AnaCarePatientMonthRepository.upsertReplacingForRun`.
  *
+ * MOVIDO para `tests/e2e/` (17/09, fecho do gate `revisao-pr`, achado do gate 2): morava em
+ * `src/modules/anacare-hours/infrastructure/__tests__/` e casava o `testMatch` de `jest.config.js`
+ * (`**\/__tests__/**\/*.test.ts`) — o CI (`npm test -- --coverage`) tentava rodar esta suíte SEM
+ * Postgres e SEM `DATABASE_URL`, e `DatabaseConnection.getInstance()` (usado só transitivamente por
+ * outros módulos do processo) quebrava a suíte inteira. Este arquivo nunca precisou do
+ * `DatabaseConnection` — sempre usou `pg.Pool` direto — mas o `testMatch` não distingue isso.
+ * `tests/e2e/` é o padrão da casa para teste que precisa de Postgres real (roda em
+ * `backend-e2e.yml`, nunca no `npm test` do CI de unit). Continua provando exatamente as MESMAS
+ * duas metades, sem `jest.mock`, contra o Postgres real — só o CAMINHO e a forma do import
+ * mudaram (relativo → alias `@modules/...`, igual ao resto de `tests/e2e/`).
+ *
  * Por quê este arquivo existe: `AnaCarePatientMonthRepository.test.ts` mocka `pg` inteiro e só
  * afirma FORMA (regex no texto do SQL, array de params) — sabotar o predicado
  * `fetched_at >= $3::timestamptz` (troca `>=` por `<=`/`<`, ou apagar a cláusula) NÃO faz nenhum
@@ -25,8 +36,8 @@
  * de dev local — `afterAll` limpa as linhas que este arquivo escreveu (nunca `TRUNCATE`).
  */
 import { Pool } from 'pg';
-import { AnaCarePatientMonthRepository, AnaCarePatientMonthCollisionError } from '../AnaCarePatientMonthRepository';
-import type { AnaCarePatientMonthAggregate } from '../../domain/AnaCarePatientMonth';
+import { AnaCarePatientMonthRepository, AnaCarePatientMonthCollisionError } from '@modules/anacare-hours/infrastructure/AnaCarePatientMonthRepository';
+import type { AnaCarePatientMonthAggregate } from '@modules/anacare-hours/domain/AnaCarePatientMonth';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const TEST_MONTH = '2031-02';

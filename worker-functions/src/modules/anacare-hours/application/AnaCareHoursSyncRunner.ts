@@ -267,8 +267,19 @@ export class AnaCareHoursSyncRunner {
     const budgetMs = trigger.budgetMs ?? DEFAULT_BUDGET_MS;
 
     const startedAt = Date.now();
-    const runStartedAt = await this.resolveRunStartedAt('anacare', month, cursor);
-    const { result, deduped } = await this.guard.run(() => this.runOnce(month, cursor, budgetMs, runStartedAt));
+    // Gate `revisao-pr` (fecho 17/09, achado 🟠): `resolveRunStartedAt` só pode rodar DENTRO do
+    // `guard.run` — o guard decide se esta chamada é a líder ANTES de invocar a função passada
+    // (checagem síncrona de `this.inFlight`), então uma chamada DESCARTADA pelo dedup nunca chega
+    // a chamar `fn` e, portanto, nunca escreve `run_started_at`. Antes, `resolveRunStartedAt`
+    // rodava incondicionalmente ANTES do `guard.run`: a chamada descartada ainda assim executava
+    // `startNewRun` (`ON CONFLICT DO UPDATE`), sobrescrevendo o carimbo da corrida em andamento com
+    // um `NOW()` posterior — a corrida em voo seguia com t1, o banco passava a guardar t2 > t1, e
+    // uma retomada por cursor que lesse t2 deixaria de detectar colisões das linhas escritas entre
+    // t1 e t2.
+    const { result, deduped } = await this.guard.run(async () => {
+      const runStartedAt = await this.resolveRunStartedAt('anacare', month, cursor);
+      return this.runOnce(month, cursor, budgetMs, runStartedAt);
+    });
 
     const durationMs = Date.now() - startedAt;
     this.emitMetric({
