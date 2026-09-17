@@ -105,6 +105,7 @@ export class FakeAnaCareHoursService implements AnaCareHoursService {
     return delay({
       updatedAt: snapshot.updatedAt,
       stale: snapshot.stale,
+      snapshotState: snapshot.snapshotState,
       circuitBreakerOpen: snapshot.circuitBreakerOpen,
     });
   }

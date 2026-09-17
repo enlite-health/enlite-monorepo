@@ -177,11 +177,18 @@ describe('getRetratoStatus', () => {
     expect(status.stale).toBe(true);
   });
 
-  it('NEGATIVO — 404 (mês sem retrato ainda) devolve status "em dia", nunca lança', async () => {
+  it('NEGATIVO — 404 (mês sem retrato ainda) devolve snapshotState "nao_construido", nunca lança', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({ status: 404, headers: { get: () => null }, json: async () => ({}) } as unknown as Response);
     const service = new AnaCareHoursHttpService();
     const status = await service.getRetratoStatus('2099-01');
-    expect(status).toEqual({ updatedAt: expect.any(String), stale: false, circuitBreakerOpen: false });
+    expect(status).toEqual({ updatedAt: expect.any(String), stale: false, snapshotState: 'nao_construido', circuitBreakerOpen: false });
+  });
+
+  it('POSITIVO — propaga snapshotState do snapshot completo (item 3: não aproxima mais por `stale`)', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, { success: true, data: { ...SNAPSHOT, stale: true, snapshotState: 'nao_construido' } }));
+    const service = new AnaCareHoursHttpService();
+    const status = await service.getRetratoStatus('2026-08');
+    expect(status.snapshotState).toBe('nao_construido');
   });
 });
 

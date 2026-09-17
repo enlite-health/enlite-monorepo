@@ -24,6 +24,25 @@ describe('useAnaCareHoursPatient', () => {
     expect(result.current.snapshot?.patients).toEqual([result.current.patient]);
   });
 
+  /**
+   * Item 3 (conserto, 17/09): antes, o hook aproximava `snapshotState` por `stale ? 'velho' :
+   * 'fresco'` — colapsando "nunca construído" em "velho". Agora `AnaCareRetratoStatus` carrega
+   * `snapshotState` de verdade, e o hook só repassa. Este teste MORRE se a aproximação voltar.
+   */
+  it('POSITIVO — propaga snapshotState "nao_construido" do retrato sem aproximar por `stale`', async () => {
+    const service: AnaCareHoursService = {
+      getMonthSnapshot: vitestVi.fn(),
+      getPatientMonth: vitestVi.fn().mockResolvedValue(SNAPSHOT.patients[0]),
+      getRetratoStatus: vitestVi.fn().mockResolvedValue({ updatedAt: '', stale: true, snapshotState: 'nao_construido', circuitBreakerOpen: false }),
+      validateShift: vitestVi.fn(),
+      validateBatch: vitestVi.fn(),
+      contestShift: vitestVi.fn(),
+    };
+    const { result } = renderHook(() => useAnaCareHoursPatient(service, '2026-08', '90000'));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.snapshot?.snapshotState).toBe('nao_construido');
+  });
+
   it('NEGATIVO — paciente inexistente: snapshot existe (retrato carregou) mas patients é []', async () => {
     const service = new FakeAnaCareHoursService({ '2026-08': SNAPSHOT });
     const { result } = renderHook(() => useAnaCareHoursPatient(service, '2026-08', 'no-existe'));

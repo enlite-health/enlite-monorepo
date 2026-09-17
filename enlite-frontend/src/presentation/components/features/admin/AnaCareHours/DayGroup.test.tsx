@@ -112,6 +112,52 @@ describe('DayGroup', () => {
     expect(onToggleDayPending).toHaveBeenCalledWith([day.entries[0].shift, day.entries[1].shift]);
   });
 
+  /**
+   * Cobertura (17/09): `pendingSelectionStateOf` tem 3 ramos (`none`/`partial`/`all`) — só `none`
+   * (nenhum selecionado) estava exercitado. Comportamento real: o checkbox de cabeçalho fica
+   * MARCADO só quando TODOS os pendentes do dia estão selecionados — selecionar só 1 de 2 não pode
+   * marcar o cabeçalho como "tudo selecionado" (o operador enviaria em lote sem querer).
+   */
+  it('POSITIVO — checkbox de cabeçalho fica MARCADO quando TODOS os pendentes do dia estão selecionados', () => {
+    const providerA = makeProvider({ anaCareId: 'p1' });
+    const day = makeDay([
+      { shift: makeShift({ id: 's1', status: 'pendiente' }), provider: providerA },
+      { shift: makeShift({ id: 's2', status: 'pendiente' }), provider: providerA },
+    ]);
+    render(<DayGroup day={day} disableActions={false} selectedShiftIds={new Set(['s1', 's2'])} {...noop} />);
+    const checkbox = screen.getByTestId('anacare-hours-select-all-pending-day-2026-08-14');
+    expect(checkbox).toBeChecked();
+    expect(checkbox).toHaveAttribute('data-selection-state', 'all');
+  });
+
+  it('NEGATIVO — checkbox de cabeçalho fica DESMARCADO quando só PARTE dos pendentes do dia está selecionada', () => {
+    const providerA = makeProvider({ anaCareId: 'p1' });
+    const day = makeDay([
+      { shift: makeShift({ id: 's1', status: 'pendiente' }), provider: providerA },
+      { shift: makeShift({ id: 's2', status: 'pendiente' }), provider: providerA },
+    ]);
+    render(<DayGroup day={day} disableActions={false} selectedShiftIds={new Set(['s1'])} {...noop} />);
+    const checkbox = screen.getByTestId('anacare-hours-select-all-pending-day-2026-08-14');
+    expect(checkbox).not.toBeChecked();
+    expect(checkbox).toHaveAttribute('data-selection-state', 'partial');
+  });
+
+  /**
+   * Cobertura (17/09): turno validado sem `validatedAt` (dado legado/incompleto do backend) —
+   * o rótulo "validado por" tem de continuar mostrando UMA data ao operador (a do turno), em vez
+   * de quebrar ou mostrar "Invalid Date". Comportamento real, não cobertura por cobertura.
+   */
+  it('POSITIVO — turno validado sem `validatedAt` mostra a data do TURNO no rótulo "validado por" (nunca quebra)', () => {
+    const providerA = makeProvider({ anaCareId: 'p1' });
+    const day = makeDay([
+      { shift: makeShift({ id: 's1', date: '2026-08-14', status: 'validado', validatedBy: { id: 'e2e-qa', name: 'X' }, validatedAt: undefined }), provider: providerA },
+    ]);
+    render(<DayGroup day={day} disableActions={false} selectedShiftIds={new Set()} {...noop} />);
+    const row = screen.getByTestId('anacare-hours-shift-row-s1');
+    expect(row).toHaveTextContent('admin.anacareHours.providerGroup.validatedBy');
+    expect(row).toHaveTextContent('"date":"14/08"');
+  });
+
   it('NEGATIVO — disableActions com motivo desabilita "Enviar" mesmo com o dia todo validado, e mostra o motivo', () => {
     const providerA = makeProvider({ anaCareId: 'p1' });
     const day = makeDay([{ shift: makeShift({ id: 's1', status: 'validado', validatedBy: { id: 'e2e-qa', name: 'X' }, validatedAt: '2026-08-14T00:00:00Z' }), provider: providerA }]);

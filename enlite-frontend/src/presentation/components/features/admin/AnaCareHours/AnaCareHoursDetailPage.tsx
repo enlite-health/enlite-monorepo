@@ -142,7 +142,13 @@ export function AnaCareHoursDetailPage({
   const disableActions = staleDisable || Boolean(disableActionsReason);
   // O banner grande (AlertBanner) mantém sempre o texto LARGO — comportamento aprovado (D342),
   // não afetado por `blockReasonMode`. Só o motivo curto dentro de cada `DayGroup` obedece.
-  const alertMessage = blockReason(snapshot, 'largo');
+  // Item 3 (conserto, 17/09): "nunca construído" tem título e mensagem PRÓPRIOS — antes,
+  // `blockReason` colapsava em "retrato com mais de 24 horas", falso quando o sync nunca rodou.
+  // Reaproveita as MESMAS chaves i18n já criadas para `AnaCareHoursListPage` (mesmo texto, mesmo
+  // conceito) — nenhuma chave nova.
+  const naoConstruido = snapshot.snapshotState === 'nao_construido';
+  const alertTitle = naoConstruido ? t('admin.anacareHours.stale.titleNaoConstruido') : t('admin.anacareHours.stale.title');
+  const alertMessage = naoConstruido ? t('admin.anacareHours.stale.messageNaoConstruido') : blockReason(snapshot, 'largo');
   // Retrato desatualizado tem prioridade de mensagem sobre a célula ausente — os dois desabilitam,
   // mas o motivo mostrado no `DayGroup` é sempre um só por vez.
   const dayBlockReason = staleDisable ? blockReason(snapshot, blockReasonMode) : disableActionsReason;
@@ -250,7 +256,7 @@ export function AnaCareHoursDetailPage({
             undefined quando `!stale && !circuitBreakerOpen`, e `staleDisable` já garante o contrário
             pra este ramo renderizar. O `?? ''` de antes era branch morto (nunca exercitável por
             nenhum snapshot real) — removido em vez de marcado como ignorado. */}
-        {staleDisable && <AlertBanner variant="warning" title={t('admin.anacareHours.stale.title')} message={alertMessage as string} />}
+        {staleDisable && <AlertBanner variant="warning" title={alertTitle} message={alertMessage as string} />}
 
         <div className="border border-gray-600 rounded-xl p-5 flex flex-wrap items-center justify-between gap-6">
           <div>

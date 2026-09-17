@@ -10,6 +10,7 @@ import {
   providerDisplayName,
   selectionSummary,
   shiftHours,
+  startOfWeekMonday,
   totalHours,
   validationProgress,
 } from './selectors';
@@ -244,5 +245,25 @@ describe('filterPatients', () => {
 
   it('NEGATIVO — providerId inexistente devolve lista vazia', () => {
     expect(filterPatients([linked, unlinked], { providerId: 'no-existe' })).toEqual([]);
+  });
+});
+
+describe('startOfWeekMonday', () => {
+  it('POSITIVO — segunda-feira devolve ela mesma', () => {
+    expect(startOfWeekMonday('2026-08-10')).toBe('2026-08-10');
+  });
+
+  it('POSITIVO — sexta-feira devolve a segunda da mesma semana', () => {
+    expect(startOfWeekMonday('2026-08-14')).toBe('2026-08-10');
+  });
+
+  /**
+   * Cobertura (17/09): domingo é o único dia em que `Date.getUTCDay()` devolve `0` — o código
+   * mapeia isso pra `7` (ISO) antes de subtrair. Sem este caso, o ramo do domingo nunca roda, e um
+   * paciente com turno marcado num domingo abriria o detalhe na semana ERRADA (a seguinte, não a
+   * que contém o turno).
+   */
+  it('POSITIVO — domingo (getUTCDay()===0) devolve a segunda da MESMA semana, não da seguinte', () => {
+    expect(startOfWeekMonday('2026-08-16')).toBe('2026-08-10');
   });
 });
