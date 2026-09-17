@@ -49,6 +49,11 @@ function rawPatientFixture(overrides: Partial<RawAnaCarePatient> = {}): RawAnaCa
     document_number: '30111222',
     first_name: 'Lucía',
     last_name: 'Fernández',
+    surname: 'Fernández QA',
+    // Descartados de propósito (item 1): existem no payload, nunca vão ao DTO.
+    second_name: POISON_MARKER + '-second_name-Maria',
+    mother_last_name: POISON_MARKER + '-mother_last_name-Gómez',
+    full_name: POISON_MARKER + '-full_name-Lucía Maria Fernández Gómez',
     phone: POISON_MARKER + '-phone-541155550000',
     address: POISON_MARKER + '-address-Av Siempre Viva 742',
     location: { lat: POISON_MARKER, lng: -58.4 },
@@ -78,6 +83,8 @@ function rawShiftFixture(overrides: Partial<RawAnaCareShift> = {}): RawAnaCareSh
       agency: 116,
       first_name: 'Carla',
       last_name: 'Suárez',
+      surname: 'Suárez QA',
+      full_name: POISON_MARKER + '-full_name-Carla Suárez Gómez',
       curp: POISON_MARKER + '-curp-SUAC900101MDFRRL01',
       rfc: POISON_MARKER + '-rfc-SUAC900101XXX',
       phone: POISON_MARKER + '-nurse-phone-541199990000',
@@ -100,6 +107,11 @@ const DTO_KEYS = [
   'checkinDelay',
   'isFinalized',
   'sourceMonth',
+  // Item 1 (17/09): nome/sobrenome vêm do payload do turno — ver AnaCareShiftsSource.ts.
+  'patientFirstName',
+  'patientLastName',
+  'nurseFirstName',
+  'nurseLastName',
 ].sort();
 
 describe('AnaCareFieldMinimization — contrato de minimização na borda (2.3)', () => {
@@ -110,7 +122,8 @@ describe('AnaCareFieldMinimization — contrato de minimização na borda (2.3)'
     const serialized = JSON.stringify(dto);
     expect(serialized).not.toContain(POISON_MARKER);
 
-    // Contrato estrutural: só as 13 chaves do SourceShiftDTO (spec AnaCareShiftsSource.ts).
+    // Contrato estrutural: só as chaves do SourceShiftDTO (spec AnaCareShiftsSource.ts) — este
+    // teste MORRE se alguém acrescentar campo ao DTO sem pensar (item 1: a lista é EXATA).
     expect(Object.keys(dto).sort()).toEqual(DTO_KEYS);
 
     expect(dto.sourceShiftId).toBe('9001');
@@ -121,6 +134,43 @@ describe('AnaCareFieldMinimization — contrato de minimização na borda (2.3)'
     // porta (medido 17/09: o único jeito certo de saber a hora trabalhada é actualStart/actualEnd).
     expect(dto).not.toHaveProperty('durationHours');
     expect(dto).not.toHaveProperty('duration');
+  });
+
+  /**
+   * Item 1 (17/09): nome e sobrenome dos dois lados chegam ao DTO — `second_name`,
+   * `mother_last_name`, `full_name`, telefone, endereço, documento e demais campos NÃO chegam
+   * (a asserção `DTO_KEYS` acima já garante a lista exata; aqui confere os VALORES certos).
+   */
+  it('carrega first_name+last_name (fonte: surname) de paciente e prestador, e nada além disso do bloco de nome', () => {
+    const raw = rawShiftFixture();
+    const dto = minimizeShiftDTO(raw);
+
+    expect(dto.patientFirstName).toBe('Lucía');
+    expect(dto.patientLastName).toBe('Fernández QA');
+    expect(dto.nurseFirstName).toBe('Carla');
+    expect(dto.nurseLastName).toBe('Suárez QA');
+
+    const serialized = JSON.stringify(dto);
+    expect(serialized).not.toContain('second_name');
+    expect(serialized).not.toContain('mother_last_name');
+    expect(serialized).not.toContain('Gómez'); // valor de mother_last_name/full_name na fixture
+  });
+
+  /**
+   * Regra dura CLAUDE.md: nome nunca em log. `logger.warn` já é mockado no topo do arquivo — este
+   * teste MORRE se qualquer chamada nova de `minimizeShiftDTO` passar a logar os campos de nome.
+   */
+  it('nenhuma chamada de logger recebe os campos de nome do paciente/prestador', () => {
+    const raw = rawShiftFixture();
+    minimizeShiftDTO(raw);
+
+    for (const call of mockLogWarn.mock.calls) {
+      const serializedCall = JSON.stringify(call);
+      expect(serializedCall).not.toContain('Lucía');
+      expect(serializedCall).not.toContain('Fernández');
+      expect(serializedCall).not.toContain('Carla');
+      expect(serializedCall).not.toContain('Suárez');
+    }
   });
 
   it('lê `duration` do cru (não `duration_hours`, que não existe na resposta real medida 17/09) — e não fabrica nada no DTO a partir dele', () => {

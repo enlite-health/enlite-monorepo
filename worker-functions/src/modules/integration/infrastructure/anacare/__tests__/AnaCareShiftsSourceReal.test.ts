@@ -93,11 +93,13 @@ describe('AnaCareShiftsSourceReal', () => {
     expect(result?.sourceShiftId).toBe('5');
     expect(result?.anaCarePatientId).toBe('20');
     expect(result?.date).toBe('2026-09-02');
-    // não pode ter escapado nenhum campo fora do DTO (contrato de minimização)
+    // não pode ter escapado nenhum campo fora do DTO (contrato de minimização) — item 1 (17/09)
+    // acrescentou os 4 campos de nome (patient/nurse first_name+last_name).
     expect(Object.keys(result as object).sort()).toEqual(
       [
         'sourceShiftId', 'anaCarePatientId', 'anaCareNurseId', 'date', 'scheduledStart', 'scheduledEnd',
         'actualStart', 'actualEnd', 'checkinSource', 'checkoutSource', 'checkinDelay', 'isFinalized', 'sourceMonth',
+        'patientFirstName', 'patientLastName', 'nurseFirstName', 'nurseLastName',
       ].sort(),
     );
   });

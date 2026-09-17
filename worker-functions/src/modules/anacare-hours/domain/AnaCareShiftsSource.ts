@@ -10,6 +10,20 @@ export interface SourceShiftDTO {
   sourceShiftId: string;
   anaCarePatientId: string;
   anaCareNurseId: string;
+  /**
+   * Nome e sobrenome do paciente/prestador — vêm do PRÓPRIO payload do turno (não de cruzamento
+   * com `workers`/`patients`, decisão do Gabriel 17/09, item 1 da conferência de horas). Rótulo de
+   * exibição do retrato, cópia transitória do que o Ana Care mostra — não é o registro de
+   * identidade (esse mora em `patients`/`workers`). Opcional **de propósito**: só o caminho AO
+   * VIVO (`minimizeShiftDTO`, usado pelo DETALHE) os preenche. O retrato (`anacare_shift`, lido
+   * pela LISTA) não tem coluna de nome e devolve o DTO sem estes campos — a tela cai no fallback
+   * `Sin vínculo · ID X`. Guardar nome no retrato depende da decisão de granularidade ainda
+   * aberta (D360 §"O que esta decisão NÃO fecha").
+   */
+  patientFirstName?: string | null;
+  patientLastName?: string | null;
+  nurseFirstName?: string | null;
+  nurseLastName?: string | null;
   /** ISO 8601 (UTC), YYYY-MM-DD para o dia do turno. */
   date: string;
   /**

@@ -12,10 +12,12 @@ function makeShift(overrides: Partial<AnaCareShift> = {}): AnaCareShift {
   return {
     id: 's1',
     date: '2026-08-14',
-    scheduledStart: '08:00',
-    scheduledEnd: '16:00',
-    actualStart: '08:00',
-    actualEnd: '16:00',
+    // Item 2 (17/09): ISO com offset -06:00, forma real medida contra a API — não mais 'HH:MM'
+    // já formatado (isso é responsabilidade da apresentação, `formatSourceRange`/`formatSourceTime`).
+    scheduledStart: '2026-08-14T08:00:00-06:00',
+    scheduledEnd: '2026-08-14T16:00:00-06:00',
+    actualStart: '2026-08-14T08:00:00-06:00',
+    actualEnd: '2026-08-14T16:00:00-06:00',
     hoursActual: 8,
     hoursScheduled: 8,
     origin: 'app',
@@ -171,5 +173,55 @@ describe('DayGroup', () => {
     const day = makeDay([{ shift: makeShift({ id: 's1' }), provider }]);
     render(<DayGroup day={day} disableActions={false} selectedShiftIds={new Set()} {...noop} />);
     expect(screen.getByTestId('anacare-hours-shift-row-s1')).toHaveTextContent('Sin vínculo · ID 90231');
+  });
+
+  /**
+   * Item 2 (17/09): antes, a coluna Previsto/Check-in/Check-out mostrava o ISO cru
+   * (`2026-08-01T20:00:00-06:00–...`), ilegível — medido no print da stage. Agora mostra `HH:MM`,
+   * no fuso FIXO da fonte (`-06:00`), nunca convertido pro fuso do navegador.
+   */
+  it('POSITIVO — turno normal mostra Previsto/Check-in/Check-out em HH:MM, não o ISO cru', () => {
+    const provider = makeProvider();
+    const shift = makeShift({
+      id: 's1',
+      scheduledStart: '2026-08-14T08:00:00-06:00',
+      scheduledEnd: '2026-08-14T16:00:00-06:00',
+      actualStart: '2026-08-14T08:05:00-06:00',
+      actualEnd: '2026-08-14T16:10:00-06:00',
+    });
+    const day = makeDay([{ shift, provider }]);
+    render(<DayGroup day={day} disableActions={false} selectedShiftIds={new Set()} {...noop} />);
+    const row = screen.getByTestId('anacare-hours-shift-row-s1');
+    expect(row).toHaveTextContent('08:00–16:00');
+    expect(screen.getByTestId('anacare-hours-shift-checkin-s1')).toHaveTextContent('08:05');
+    expect(screen.getByTestId('anacare-hours-shift-checkout-s1')).toHaveTextContent('16:10');
+    expect(row).not.toHaveTextContent('2026-08-14T08:00:00-06:00');
+  });
+
+  /** Caso medido de verdade (17/09): 46% dos turnos de agosto cruzam a meia-noite. */
+  it('POSITIVO — turno NOTURNO que cruza a meia-noite mostra a marca do dia seguinte na coluna Previsto', () => {
+    const provider = makeProvider();
+    const shift = makeShift({
+      id: 's1',
+      scheduledStart: '2026-08-01T20:00:00-06:00',
+      scheduledEnd: '2026-08-02T08:00:00-06:00',
+      actualStart: '2026-08-01T20:12:00-06:00',
+      actualEnd: '2026-08-02T08:00:00-06:00',
+    });
+    const day = makeDay([{ shift, provider }], '2026-08-01');
+    render(<DayGroup day={day} disableActions={false} selectedShiftIds={new Set()} {...noop} />);
+    const row = screen.getByTestId('anacare-hours-shift-row-s1');
+    expect(row).toHaveTextContent('20:00–08:00 (+1)');
+    expect(screen.getByTestId('anacare-hours-shift-checkin-s1')).toHaveTextContent('20:12');
+    expect(screen.getByTestId('anacare-hours-shift-checkout-s1')).toHaveTextContent('08:00');
+  });
+
+  it('NEGATIVO — turno sem check-in mostra "—" em Check-in/Check-out, nunca ISO ou horário inventado', () => {
+    const provider = makeProvider();
+    const shift = makeShift({ id: 's1', actualStart: null, actualEnd: null, hoursActual: null, origin: 'sin_checkin' });
+    const day = makeDay([{ shift, provider }]);
+    render(<DayGroup day={day} disableActions={false} selectedShiftIds={new Set()} {...noop} />);
+    expect(screen.getByTestId('anacare-hours-shift-checkin-s1')).toHaveTextContent('—');
+    expect(screen.getByTestId('anacare-hours-shift-checkout-s1')).toHaveTextContent('—');
   });
 });

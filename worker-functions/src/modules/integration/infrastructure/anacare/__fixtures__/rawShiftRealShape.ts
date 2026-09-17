@@ -27,6 +27,7 @@ export function rawPatientRealShape(overrides: Partial<RawAnaCarePatient> = {}):
     document_number: '30111222',
     first_name: 'Sintético',
     last_name: 'Fixture',
+    surname: 'Fixture QA',
     ...overrides,
   };
 }
@@ -37,6 +38,7 @@ export function rawNurseRealShape(overrides: Partial<RawAnaCareNurse> = {}): Raw
     agency: 116,
     first_name: 'Sintético',
     last_name: 'Prestador',
+    surname: 'Prestador QA',
     ...overrides,
   };
 }
