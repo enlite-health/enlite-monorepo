@@ -28,36 +28,37 @@ function fakeRepoWithPending(pending: PatientPhotoOrphanRow[], remove: jest.Mock
 }
 
 describe('PatientPhotoOrphanRetryService (task 4.3h; lock — conserto #4 da 2ª revisão)', () => {
-  it('retryOnce — sucesso: apaga do storage certo e REMOVE da fila (repassando o client travado)', async () => {
+  it('retryOnce — sucesso: apaga do storage e REMOVE da fila (repassando o client travado)', async () => {
     const repo = fakeRepoWithPending([row({ bucket: 'PHOTOS' })]);
     const enc = { decrypt: jest.fn(async (v: string) => `plain(${v})`) } as never;
     const photoDelete = jest.fn(async () => undefined);
-    const documentDelete = jest.fn(async () => undefined);
     const svc = new PatientPhotoOrphanRetryService(
       repo as never,
       enc,
       () => ({ delete: photoDelete }) as never,
-      () => ({ delete: documentDelete }) as never,
     );
 
     const result = await svc.retryOnce(25);
 
     expect(result).toEqual({ attempted: 1, cleared: 1, stillFailing: 0 });
     expect(photoDelete).toHaveBeenCalledWith('plain(enc(x))');
-    expect(documentDelete).not.toHaveBeenCalled();
     expect(repo.remove).toHaveBeenCalledWith('o1', repo.__client);
     expect(repo.withPendingLocked).toHaveBeenCalledWith(25, expect.any(Function));
   });
 
-  it('retryOnce — bucket DOCUMENTS usa o storage de documentos', async () => {
+  // `patient_documents`/`PatientDocumentStorage` foram REMOVIDOS por completo
+  // (fix/018-remover-documentos-consentimento). Uma linha antiga com `bucket='DOCUMENTS'` (se
+  // sobrar alguma na stage) não tem mais storage para reprocessar — fica sempre `stillFailing`,
+  // sem lançar e sem chamar `remove`.
+  it('retryOnce — bucket DOCUMENTS não tem mais storage: conta em stillFailing, nunca remove da fila', async () => {
     const repo = fakeRepoWithPending([row({ bucket: 'DOCUMENTS' })]);
     const enc = { decrypt: jest.fn(async (v: string) => v) } as never;
-    const documentDelete = jest.fn(async () => undefined);
-    const svc = new PatientPhotoOrphanRetryService(repo as never, enc, () => ({ delete: jest.fn() }) as never, () => ({ delete: documentDelete }) as never);
+    const svc = new PatientPhotoOrphanRetryService(repo as never, enc, () => ({ delete: jest.fn() }) as never);
 
-    await svc.retryOnce();
+    const result = await svc.retryOnce();
 
-    expect(documentDelete).toHaveBeenCalled();
+    expect(result).toEqual({ attempted: 1, cleared: 0, stillFailing: 1 });
+    expect(repo.remove).not.toHaveBeenCalled();
   });
 
   it('retryOnce — falha ainda no delete: NÃO remove da fila, conta em stillFailing', async () => {
@@ -67,7 +68,6 @@ describe('PatientPhotoOrphanRetryService (task 4.3h; lock — conserto #4 da 2ª
       repo as never,
       enc,
       () => ({ delete: jest.fn(async () => { throw new Error('gcs down'); }) }) as never,
-      () => ({ delete: jest.fn() }) as never,
     );
 
     const result = await svc.retryOnce();
@@ -84,7 +84,6 @@ describe('PatientPhotoOrphanRetryService (task 4.3h; lock — conserto #4 da 2ª
 
   it('constrói e roda pelos DEFAULTS do construtor (caminho de produção do cron/job de retry) — withPendingLocked real (BEGIN/SELECT FOR UPDATE SKIP LOCKED/COMMIT)', async () => {
     process.env.GCS_PATIENT_PHOTOS_BUCKET = 'b-photos';
-    process.env.GCS_PATIENT_DOCUMENTS_BUCKET = 'b-docs';
     try {
       const client = { query: jest.fn(async (sql: string) => (sql.includes('SELECT') ? { rows: [row({ bucket: 'PHOTOS' })] } : undefined)), release: jest.fn() };
       const repo = new PatientPhotoOrphanRepository({ query: jest.fn(), connect: jest.fn(async () => client) } as never);
@@ -99,24 +98,6 @@ describe('PatientPhotoOrphanRetryService (task 4.3h; lock — conserto #4 da 2ª
       removeSpy.mockRestore();
     } finally {
       delete process.env.GCS_PATIENT_PHOTOS_BUCKET;
-      delete process.env.GCS_PATIENT_DOCUMENTS_BUCKET;
-    }
-  });
-
-  it('DEFAULTS do construtor — bucket DOCUMENTS também cobre o default do documentStorage', async () => {
-    process.env.GCS_PATIENT_PHOTOS_BUCKET = 'b-photos';
-    process.env.GCS_PATIENT_DOCUMENTS_BUCKET = 'b-docs';
-    try {
-      const client = { query: jest.fn(async (sql: string) => (sql.includes('SELECT') ? { rows: [row({ bucket: 'DOCUMENTS' })] } : undefined)), release: jest.fn() };
-      const repo = new PatientPhotoOrphanRepository({ query: jest.fn(), connect: jest.fn(async () => client) } as never);
-      jest.spyOn(repo, 'remove').mockResolvedValue(undefined);
-      const svc = new PatientPhotoOrphanRetryService(repo);
-
-      const result = await svc.retryOnce();
-      expect(result.cleared).toBe(1);
-    } finally {
-      delete process.env.GCS_PATIENT_PHOTOS_BUCKET;
-      delete process.env.GCS_PATIENT_DOCUMENTS_BUCKET;
     }
   });
 

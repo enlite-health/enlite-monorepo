@@ -637,7 +637,10 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
       // rodou antes, em algum boot anterior — é o que a migration 436 NÃO controla, ela só
       // reconcilia o GRANT) mas o Master nunca a recebeu, porque o sync pré-436 nunca concedia
       // nada a grupo nenhum (C10). `patient_consent_documents:read` é a célula NOMEADA no
-      // achado real (prova do PR-4 na stage, `qa.admin` levou 403 nela).
+      // achado real (prova do PR-4 na stage, `qa.admin` levou 403 nela) — usada aqui só como
+      // fixture histórica para provar o mecanismo da 436; a célula em si foi REMOVIDA do catálogo
+      // vivo do app (fix/018-remover-documentos-consentimento), este teste a INSERE/APAGA por
+      // conta própria, sem depender de rota real declará-la.
       const master = await admin.query(
         `SELECT id FROM iam.permission_groups WHERE name = 'Acesso Master' AND tenant_id = $1`,
         [ENLITE_TENANT_ID],

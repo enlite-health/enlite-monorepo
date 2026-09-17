@@ -30,20 +30,13 @@ describe('PatientPhotoRepository (426, spec 018 PR-4)', () => {
     await expect(repo.findOne(PID)).resolves.toBeNull();
   });
 
-  it('insert — grava com consentId opcional', async () => {
+  it('insert — grava a linha (sem consent_id — coluna dropada, fix/018-remover-documentos-consentimento)', async () => {
     const client = fakeClient([{ id: 'p1' }]);
-    const result = await repo.insert(PID, { objectPathEncrypted: 'enc(x)', consentId: 'c1' }, 'uid-1', asPoolClient(client));
+    const result = await repo.insert(PID, { objectPathEncrypted: 'enc(x)' }, 'uid-1', asPoolClient(client));
     expect(result).toEqual({ id: 'p1' });
     const [sql, params] = client.query.mock.calls[0];
     expect(sql).toContain('INSERT INTO patient_photos');
-    expect(params).toEqual([PID, 'c1', 'enc(x)', 'uid-1']);
-  });
-
-  it('insert — consentId ausente vira null', async () => {
-    const client = fakeClient([{ id: 'p1' }]);
-    await repo.insert(PID, { objectPathEncrypted: 'enc(x)' }, 'uid-1', asPoolClient(client));
-    const [, params] = client.query.mock.calls[0];
-    expect(params).toEqual([PID, null, 'enc(x)', 'uid-1']);
+    expect(params).toEqual([PID, 'enc(x)', 'uid-1']);
   });
 
   it('deleteRow — devolve a linha apagada, ou null se não havia foto', async () => {

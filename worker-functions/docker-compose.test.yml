@@ -83,16 +83,16 @@ services:
       SENDGRID_API_KEY: ""
       USE_CERBOS: "false"
       INTERNAL_TOKEN_SECRET: test-secret-for-e2e-only
-      # Spec 018 PR-4 (foto/documento do paciente) — conserto #1/#2 da 2ª revisão: a API
-      # dockerizada (usada pelo job de integração do FRONTEND, `_frontend-integration.yml`,
-      # contra o dev server do Vite) precisa destas 3 envs para as rotas de foto/documento não
-      # devolverem 503 (`PatientPhotoBucketNotConfiguredError`/`PatientDocumentBucketNotConfiguredError`).
+      # Spec 018 PR-4 (foto do paciente) — conserto #1/#2 da 2ª revisão: a API dockerizada (usada
+      # pelo job de integração do FRONTEND, `_frontend-integration.yml`, contra o dev server do
+      # Vite) precisa destas envs para a rota de foto não devolver 503
+      # (`PatientPhotoBucketNotConfiguredError`). Documento/consentimento de imagem foram REMOVIDOS
+      # por completo (fix/018-remover-documentos-consentimento) — sem `GCS_PATIENT_DOCUMENTS_BUCKET`.
       # NÃO `STORAGE_EMULATOR_HOST` — ver cabeçalho de `PatientObjectStorageBase.ts` (405 no delete).
-      # Buckets criados pelo workflow via `POST /storage/v1/b` antes de bater na API (fake-gcs-server
+      # Bucket criado pelo workflow via `POST /storage/v1/b` antes de bater na API (fake-gcs-server
       # não cria bucket sozinho no primeiro upload).
       GCS_EMULATOR_HOST: "http://fake-gcs:4443"
       GCS_PATIENT_PHOTOS_BUCKET: "enlite-patient-photos-ci"
-      GCS_PATIENT_DOCUMENTS_BUCKET: "enlite-patient-documents-ci"
       GOOGLE_APPLICATION_CREDENTIALS: "/tmp/fake-sa.json"
       # Libera /api/docs sem requerer staff (somente em test)
       OPENAPI_PUBLIC: "true"

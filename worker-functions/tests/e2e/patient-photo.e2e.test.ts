@@ -1,17 +1,19 @@
 /**
- * patient-photo-and-documents.e2e.test.ts — spec 018, PR-4 (achado 7 da revisão do PR-4: faltava
- * e2e de API contra fake-gcs REAL + Postgres REAL — só existia e2e de UI, via Playwright, contra
- * o front). HTTP real (app em processo, mesmo harness de
- * `patient-coverage-emergency-contacts.e2e.test.ts`), Postgres real, GCS real contra
- * `fake-gcs-server` (`docker-compose.018pr4-ports.yml`).
+ * patient-photo.e2e.test.ts — spec 018, PR-4 (achado 7 da revisão do PR-4: faltava e2e de API
+ * contra fake-gcs REAL + Postgres REAL — só existia e2e de UI, via Playwright, contra o front).
+ * HTTP real (app em processo, mesmo harness de `patient-coverage-emergency-contacts.e2e.test.ts`),
+ * Postgres real, GCS real contra `fake-gcs-server` (`docker-compose.018pr4-ports.yml`).
+ *
+ * Antes chamado `patient-photo-and-documents.e2e.test.ts` — documento (prova do consentimento) e
+ * consentimento de imagem, que este arquivo também cobria, foram REMOVIDOS por completo
+ * (fix/018-remover-documentos-consentimento) — só a foto fica.
  *
  * Como rodar:
  *   docker compose -p pr4e2e -f docker-compose.yml -f docker-compose.018pr4-ports.yml up -d postgres fake-gcs
  *   curl -X POST http://localhost:54443/storage/v1/b -d '{"name":"enlite-patient-photos-pr4test"}'
- *   curl -X POST http://localhost:54443/storage/v1/b -d '{"name":"enlite-patient-documents-pr4test"}'
  *   DATABASE_URL=postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e \
  *     node scripts/run-migrations-docker.js
- *   npx jest tests/e2e/patient-photo-and-documents.e2e.test.ts --runInBand
+ *   npx jest tests/e2e/patient-photo.e2e.test.ts --runInBand
  *
  * (`fake-gcs-server` NÃO cria bucket sozinho no primeiro upload — 404 até o POST /storage/v1/b
  * explícito; medido rodando este arquivo contra a stack limpa.)
@@ -21,10 +23,8 @@
  *     bytes arbitrários) → GET assina a URL do objeto CERTO → DELETE apaga a LINHA e o OBJETO do
  *     bucket (confirmado direto na API do fake-gcs — `GET /storage/v1/b/<bucket>/o` — não só pelo
  *     404 da rota, que provaria a linha mas não o bucket).
- *  2. Documento: upload → listagem (metadados, SEM url assinada) → GET por id exige a célula NOVA
- *     `patient_consent_documents:read` (403 sem ela, mesmo já tendo patient_identity:write).
- *  3. Purga (`PatientTestFixtureService`, task 4.8): CASCADE apaga as linhas (foto, documento,
- *     consentimento) E os objetos correspondentes somem do bucket — as duas coisas, não só uma.
+ *  2. Purga (`PatientTestFixtureService`, task 4.8): CASCADE apaga a linha (foto) E o objeto
+ *     correspondente some do bucket — as duas coisas, não só uma.
  */
 import { Pool } from 'pg';
 import sharp from 'sharp';
@@ -43,32 +43,25 @@ const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const FAKE_GCS_URL = process.env.GCS_EMULATOR_HOST || 'http://localhost:54443';
 const PHOTOS_BUCKET = process.env.GCS_PATIENT_PHOTOS_BUCKET || 'enlite-patient-photos-pr4test';
-const DOCUMENTS_BUCKET = process.env.GCS_PATIENT_DOCUMENTS_BUCKET || 'enlite-patient-documents-pr4test';
 
-describe('Patient photo/document/consent — HTTP real, Postgres real, GCS real (fake-gcs) — achado 7 da revisão do PR-4', () => {
+describe('Patient photo — HTTP real, Postgres real, GCS real (fake-gcs) — achado 7 da revisão do PR-4', () => {
   let pool: Pool;
   let app: AppDeFamilia;
 
   const PATIENT = 'ee426000-0c00-0001-0001-000000000001';
   const PURGE_PATIENT = 'ee426000-0c00-0001-0001-000000000002';
-  const U = { completa: 'ppd7-completa', semDocs: 'ppd7-sem-docs' };
-  const GRUPOS = { completa: 'PPD7 Completa', semDocs: 'PPD7 Sem docs' };
-  // PR-8b (A3, ADR-2/SUP-30): as rotas de foto/documento/consentimento não declaram mais
-  // `patient_identity:write` — upload é `create`, DELETE/revoke é `update`
-  // (`adminPatientPhotoRoutes.ts:61,65,80,102,116`).
+  const U = { completa: 'ppd7-completa' };
+  const GRUPOS = { completa: 'PPD7 Completa' };
+  // PR-8b (A3, ADR-2/SUP-30): as rotas de foto não declaram mais `patient_identity:write` —
+  // upload é `create`, DELETE é `update` (`adminPatientPhotoRoutes.ts:61,65`).
   const CELULAS: ReadonlyArray<readonly [string, string]> = [
     ['patient_identity', 'read'],
     ['patient_identity', 'create'],
     ['patient_identity', 'update'],
-    ['patient_consent_documents', 'read'],
   ];
   // Conserto #1 da 3ª revisão do PR-4: só a célula que ESTE suite de fato criou
   // (`garantirCelula` → `criada:true`) é apagada no afterAll — mesmo padrão de
   // `patient-address-principal-tipo.e2e.test.ts`/`permission-enforcement-all-families.e2e.test.ts`.
-  // ANTES deste conserto, o `INSERT ... ON CONFLICT DO NOTHING` (linha do beforeAll) inseria as 3
-  // células sem `limpar()` jamais apagar a linha de `iam.permissions` — só o `group_permissions`
-  // que apontava pra ela — e a suíte deixava `iam.permissions` com 3 linhas a mais toda vez que
-  // rodava (medido: `permissions-iam-schema`/`iam-permissions-foundation` esperam 41, viam 44).
   const celulasCriadas: Array<[string, string]> = [];
 
   const envAnterior: Record<string, string | undefined> = {};
@@ -166,13 +159,11 @@ describe('Patient photo/document/consent — HTTP real, Postgres real, GCS real 
     pool = new Pool({ connectionString: DATABASE_URL });
     await limpar();
     await ensureBucket(PHOTOS_BUCKET);
-    await ensureBucket(DOCUMENTS_BUCKET);
 
     await pool.query(
       `INSERT INTO users (firebase_uid, email, display_name, role, status, is_active, tenant_id) VALUES
-         ($1, 'ppd7-completa@e2e.local', 'Completa', 'admin', 'ACTIVE', true, $3),
-         ($2, 'ppd7-sem-docs@e2e.local', 'Sem docs', 'admin', 'ACTIVE', true, $3)`,
-      [U.completa, U.semDocs, TENANT_E2E],
+         ($1, 'ppd7-completa@e2e.local', 'Completa', 'admin', 'ACTIVE', true, $2)`,
+      [U.completa, TENANT_E2E],
     );
     for (const [resource, action] of CELULAS) {
       const { criada } = await garantirCelula(pool, { resource, action, category: 'Pacientes' });
@@ -181,16 +172,6 @@ describe('Patient photo/document/consent — HTTP real, Postgres real, GCS real 
     await grupoComCelulas(pool, {
       nome: GRUPOS.completa,
       uid: U.completa,
-      celulas: [
-        ['patient_identity', 'read'],
-        ['patient_identity', 'create'],
-        ['patient_identity', 'update'],
-        ['patient_consent_documents', 'read'],
-      ],
-    });
-    await grupoComCelulas(pool, {
-      nome: GRUPOS.semDocs,
-      uid: U.semDocs,
       celulas: [
         ['patient_identity', 'read'],
         ['patient_identity', 'create'],
@@ -212,7 +193,6 @@ describe('Patient photo/document/consent — HTTP real, Postgres real, GCS real 
     setEnv('DATABASE_URL', DATABASE_URL);
     setEnv('GCS_EMULATOR_HOST', FAKE_GCS_URL);
     setEnv('GCS_PATIENT_PHOTOS_BUCKET', PHOTOS_BUCKET);
-    setEnv('GCS_PATIENT_DOCUMENTS_BUCKET', DOCUMENTS_BUCKET);
     setEnv('GCP_PROJECT_ID', 'enlite-test');
     // Conserto #1 da 2ª revisão do PR-4: NÃO depender de `/tmp/fake-sa.json` montado do host — o
     // CI não tem esse arquivo. A chave fake é gerada aqui mesmo, no setup do teste (idempotente,
@@ -267,60 +247,13 @@ describe('Patient photo/document/consent — HTTP real, Postgres real, GCS real 
     expect(getUrlDepois.status).toBe(404);
   });
 
-  it('2. Documento: upload → listagem (metadados, SEM url) → GET por id exige patient_consent_documents:read (403 sem a célula, mesmo com patient_identity:write)', async () => {
-    const pdf = Buffer.from('%PDF-1.4 fake e2e patient document');
-    const up = await upload(
-      `/api/admin/patients/${PATIENT}/documents`,
-      U.completa,
-      pdf,
-      'consent.pdf',
-      'application/pdf',
-      { documentType: 'image_consent' },
-    );
-    expect(up.status).toBe(201);
-    const documentId: string = up.body.data.documentId;
-    expect(documentId).toMatch(/^[0-9a-f-]{36}$/);
-
-    const objectPath = await objectPathOf('patient_documents', PATIENT);
-    expect(objectPath).toMatch(/^patient-documents\/[0-9a-f-]{36}$/);
-    expect(await gcsObjectNames(DOCUMENTS_BUCKET)).toContain(objectPath);
-
-    const list = await chamar('GET', `/api/admin/patients/${PATIENT}/documents`, U.completa);
-    expect(list.status).toBe(200);
-    expect(list.body.data).toHaveLength(1);
-    expect(list.body.data[0]).toMatchObject({ id: documentId, documentType: 'image_consent', contentType: 'application/pdf' });
-    // Achado do próprio PR-4 (comentário do controller): a listagem NUNCA leva url assinada.
-    expect(JSON.stringify(list.body)).not.toMatch(/"url"/);
-
-    const getUrl = await chamar('GET', `/api/admin/patients/${PATIENT}/documents/${documentId}`, U.completa);
-    expect(getUrl.status).toBe(200);
-    expect(getUrl.body.data.url).toContain(`/${DOCUMENTS_BUCKET}/${objectPath}`);
-
-    // 🔒 célula certa: patient_identity:write sozinha NÃO basta para LER a prova documental.
-    const listSemCelula = await chamar('GET', `/api/admin/patients/${PATIENT}/documents`, U.semDocs);
-    expect(listSemCelula.status).toBe(403);
-    const getUrlSemCelula = await chamar('GET', `/api/admin/patients/${PATIENT}/documents/${documentId}`, U.semDocs);
-    expect(getUrlSemCelula.status).toBe(403);
-  });
-
-  it('3. Purga (PatientTestFixtureService, task 4.8): CASCADE apaga as linhas E os objetos do bucket somem', async () => {
+  it('2. Purga (PatientTestFixtureService, task 4.8): CASCADE apaga a linha E o objeto do bucket some', async () => {
     const photoBuf = await jpegBuffer();
     const upPhoto = await upload(`/api/admin/patients/${PURGE_PATIENT}/photo`, U.completa, photoBuf, 'foto.jpg', 'image/jpeg');
     expect(upPhoto.status).toBe(201);
-    const upDoc = await upload(
-      `/api/admin/patients/${PURGE_PATIENT}/documents`,
-      U.completa,
-      Buffer.from('%PDF-1.4 fake purge'),
-      'doc.pdf',
-      'application/pdf',
-      { documentType: 'image_consent' },
-    );
-    expect(upDoc.status).toBe(201);
 
     const photoPath = await objectPathOf('patient_photos', PURGE_PATIENT);
-    const docPath = await objectPathOf('patient_documents', PURGE_PATIENT);
     expect(await gcsObjectNames(PHOTOS_BUCKET)).toContain(photoPath);
-    expect(await gcsObjectNames(DOCUMENTS_BUCKET)).toContain(docPath);
 
     const { PatientTestFixtureService } = await import('../../src/modules/case/application/PatientTestFixtureService');
     const calendarStub = { deleteEvent: jest.fn(async () => undefined) } as never;
@@ -330,14 +263,11 @@ describe('Patient photo/document/consent — HTTP real, Postgres real, GCS real 
 
     expect(result?.photoObjectsDeleted).toBe(1);
     expect(result?.photoObjectsFailed).toBe(0);
-    expect(result?.documentObjectsDeleted).toBe(1);
-    expect(result?.documentObjectsFailed).toBe(0);
 
     const pacienteDepois = await pool.query(`SELECT 1 FROM patients WHERE id = $1`, [PURGE_PATIENT]);
-    expect(pacienteDepois.rowCount).toBe(0); // CASCADE levou patient_photos/patient_documents junto
+    expect(pacienteDepois.rowCount).toBe(0); // CASCADE levou patient_photos junto
 
-    // A prova que o achado 8 (comentário desatualizado) descrevia mal: os OBJETOS realmente somem.
+    // A prova que o achado 8 (comentário desatualizado) descrevia mal: o OBJETO realmente some.
     expect(await gcsObjectNames(PHOTOS_BUCKET)).not.toContain(photoPath);
-    expect(await gcsObjectNames(DOCUMENTS_BUCKET)).not.toContain(docPath);
   }, 15000);
 });

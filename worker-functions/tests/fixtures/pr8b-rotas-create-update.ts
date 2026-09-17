@@ -139,8 +139,5 @@ export const PR8B_ROTAS_CREATE_UPDATE: readonly RotaCreateUpdate[] = [
   { method: 'POST', path: '/api/admin/workers/:id/additional-documents', actions: ['create'], source: 'workerDocumentsRoutes.ts:61' },
   { method: 'POST', path: '/api/admin/patients/:id/photo', actions: ['create'], source: 'adminPatientPhotoRoutes.ts:61 (PR-4, branch feat/018-pr4-foto-documentos)' },
   { method: 'DELETE', path: '/api/admin/patients/:id/photo', actions: ['update'], source: 'adminPatientPhotoRoutes.ts:65 (PR-4)' },
-  { method: 'POST', path: '/api/admin/patients/:id/documents', actions: ['create'], source: 'adminPatientPhotoRoutes.ts:80 (PR-4)' },
-  { method: 'POST', path: '/api/admin/patients/:id/image-consents', actions: ['create'], source: 'adminPatientPhotoRoutes.ts:102 (PR-4)' },
-  { method: 'POST', path: '/api/admin/patients/:id/image-consents/:cid/revoke', actions: ['update'], source: 'adminPatientPhotoRoutes.ts:116 (PR-4)' },
 ];
 

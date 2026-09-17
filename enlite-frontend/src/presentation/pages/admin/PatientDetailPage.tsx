@@ -26,8 +26,6 @@ import { PatientChatIdsCard } from '@presentation/components/features/admin/Pati
 import { PatientStatusControl } from '@presentation/components/features/admin/PatientDetail/PatientStatusControl';
 import { PatientStatusHistoryCard } from '@presentation/components/features/admin/PatientDetail/PatientStatusHistoryCard';
 import { CompletenessChecklist } from '@presentation/components/features/admin/PatientDetail/CompletenessChecklist';
-import { PatientDocumentsCard } from '@presentation/components/features/admin/PatientDetail/PatientDocumentsCard';
-import { ENV } from '@infrastructure/config/env';
 import type { DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 import { ContainerGate } from '@presentation/components/features/access';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
@@ -210,15 +208,6 @@ export default function PatientDetailPage() {
           <PatientIdentityCard patient={patient} onSaved={refetch} />
           <PatientGeneralInfoCard patient={patient} onSaved={refetch} />
         </div>
-        {/* Spec 018, PR-4: documento (prova) e consentimento de imagem. Mesmo container
-            `patient_identity` (a rota de escrita é a mesma célula da identidade). Flag
-            `VITE_PATIENT_PHOTO_ENABLED` (task 4.10) — ligada na stage, ausente em PRD; achado da
-            revisão do PR-4 (item 6): antes desta rodada não havia gate nenhum. */}
-        {ENV.PATIENT_PHOTO_ENABLED && (
-          <div className="mb-6">
-            <PatientDocumentsCard patientId={patient.id} />
-          </div>
-        )}
       </ContainerGate>
 
       {/* Tab Navigation */}

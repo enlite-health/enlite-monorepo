@@ -1,7 +1,10 @@
 /**
- * Contrato de exclusão — foto e documento (prova) do paciente NUNCA saem pelos canais proibidos
- * (spec 018, PR-4; `lex` #1 L1g/L1h; `lex-pr4-documentos.md` #11): vaga pública, DTOs de
- * matching/vacancy, MCP (capabilities), reconhecimento facial/visão computacional.
+ * Contrato de exclusão — foto do paciente NUNCA sai pelos canais proibidos (spec 018, PR-4;
+ * `lex` #1 L1g/L1h; `lex-pr4-documentos.md` #11): vaga pública, DTOs de matching/vacancy, MCP
+ * (capabilities), reconhecimento facial/visão computacional.
+ *
+ * Documento (prova do consentimento) e consentimento de imagem foram REMOVIDOS por completo
+ * (fix/018-remover-documentos-consentimento) — o padrão cobre só o que ficou (foto).
  *
  * Grep de FONTE com CONTROLE POSITIVO em cada bloco: o padrão é testado contra um texto que DEVE
  * bater, provando que o próprio grep funciona antes de confiar no "0 ocorrências" do alvo real —
@@ -17,11 +20,11 @@ function read(relPath: string): string {
   return fs.readFileSync(path.join(ROOT, relPath), 'utf8');
 }
 
-const PHOTO_DOC_PATTERN = /hasPhoto|photoUrl|patient[_A-Za-z]*[Pp]hoto|documentId|hasConsentDocument|patient_documents|patient_photos|image_consent/;
+const PHOTO_PATTERN = /hasPhoto|photoUrl|patient[_A-Za-z]*[Pp]hoto|patient_photos/;
 
-describe('Contrato — foto/documento do paciente fora dos canais proibidos (task 4.9)', () => {
+describe('Contrato — foto do paciente fora dos canais proibidos (task 4.9)', () => {
   it('controle positivo: o padrão de fato casa um texto com "hasPhoto"', () => {
-    expect(PHOTO_DOC_PATTERN.test('const x = { hasPhoto: true };')).toBe(true);
+    expect(PHOTO_PATTERN.test('const x = { hasPhoto: true };')).toBe(true);
   });
 
   const PUBLIC_VACANCY_FILES = [
@@ -31,16 +34,16 @@ describe('Contrato — foto/documento do paciente fora dos canais proibidos (tas
     'src/modules/matching/interfaces/controllers/PublicJobsController.ts',
     'src/shared/openapi/registrations/publicJobs.ts',
   ];
-  it.each(PUBLIC_VACANCY_FILES)('%s — sem foto/documento de paciente', (relPath) => {
+  it.each(PUBLIC_VACANCY_FILES)('%s — sem foto de paciente', (relPath) => {
     if (!fs.existsSync(path.join(ROOT, relPath))) return; // arquivo pode não existir nesta árvore; não é achado deste teste
-    expect(PHOTO_DOC_PATTERN.test(read(relPath))).toBe(false);
+    expect(PHOTO_PATTERN.test(read(relPath))).toBe(false);
   });
 
-  it('MCP: nenhuma capability referencia foto/documento/consentimento de imagem do paciente', () => {
+  it('MCP: nenhuma capability referencia foto do paciente', () => {
     const dir = path.join(ROOT, 'src/modules/mcp/application/capabilities');
     const files = fs.readdirSync(dir).filter((f) => f.endsWith('.ts') && !f.includes('__tests__'));
     expect(files.length).toBeGreaterThan(0); // controle: a pasta existe e tem capabilities de verdade
-    const offenders = files.filter((f) => PHOTO_DOC_PATTERN.test(fs.readFileSync(path.join(dir, f), 'utf8')));
+    const offenders = files.filter((f) => PHOTO_PATTERN.test(fs.readFileSync(path.join(dir, f), 'utf8')));
     expect(offenders).toEqual([]);
   });
 

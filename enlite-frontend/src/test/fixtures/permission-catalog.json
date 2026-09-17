@@ -65,7 +65,6 @@
     "patient_clinical:read",
     "patient_clinical:update",
     "patient_clinical:write",
-    "patient_consent_documents:read",
     "patient_contract_value:read",
     "patient_coverage:create",
     "patient_coverage:read",

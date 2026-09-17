@@ -1,6 +1,7 @@
-# Override de integração do PR-4 (spec 018 — foto/documento/consentimento de imagem do paciente).
+# Override de integração do PR-4 (spec 018 — foto do paciente; documento/consentimento de imagem
+# foram REMOVIDOS por completo, fix/018-remover-documentos-consentimento).
 #
-# Sobe fake-gcs-server (2 buckets, memória) + aponta a API pra ele via STORAGE_EMULATOR_HOST —
+# Sobe fake-gcs-server (bucket em memória) + aponta a API pra ele via STORAGE_EMULATOR_HOST —
 # NENHUM bucket real é tocado. Rodar com projeto e portas PRÓPRIOS (memória
 # `docker-compose-projeto-e-por-sessao.md`: o nome fixo `enlite-postgres` é compartilhado entre
 # worktrees):
@@ -33,7 +34,7 @@ services:
     # Conserto #7 da 2ª revisão do PR-4 (decisão registrada): MANTIDO. Este arquivo serve um caso
     # de uso diferente do automatizado — curl manual contra a API dockerizada — e nenhum workflow
     # de CI o referencia (`grep -rl docker-compose.018pr4-ports .github/workflows/` não bate nada);
-    # a suíte automatizada (`patient-photo-and-documents.e2e.test.ts`) roda em PROCESSO e nunca
+    # a suíte automatizada (`patient-photo.e2e.test.ts`) roda em PROCESSO e nunca
     # toca este compose (conserto #1 — gera a própria chave via
     # `tests/e2e/helpers/fakeGcsServiceAccount.ts`, sem depender de host mount nenhum). O mount de
     # `/tmp/fake-sa.json` abaixo continua exigindo criação manual, mas isso é local-only, fora do
@@ -44,7 +45,6 @@ services:
       # fake-gcs-server (achado medido nesta mesma integração — ver PatientPhotoStorage.ts).
       GCS_EMULATOR_HOST: "http://fake-gcs:4443"
       GCS_PATIENT_PHOTOS_BUCKET: "enlite-patient-photos-pr4test"
-      GCS_PATIENT_DOCUMENTS_BUCKET: "enlite-patient-documents-pr4test"
       GCP_PROJECT_ID: "enlite-test"
       # Chave de service account FAKE (sem acesso real a nada) — só para o `getSignedUrl` v4 ter
       # com que assinar localmente contra o fake-gcs-server (a assinatura V4 é criptografia local,

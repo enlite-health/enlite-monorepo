@@ -1,9 +1,11 @@
 /**
- * PatientObjectStorageBase — base comum de `PatientPhotoStorage` e `PatientDocumentStorage`
- * (spec 018, PR-4). Achado de duplicação na revisão do PR-4: as duas classes tinham `getClient`
- * idêntico e `delete`/`getReadSignedUrl` quase idênticos (só o texto do log mudava). Só
- * `uploadBuffer` é de fato específico de cada bucket (extensão/prefixo do objeto) e continua em
- * cada subclasse.
+ * PatientObjectStorageBase — base comum de storage de objeto do paciente (spec 018, PR-4).
+ * Nasceu como achado de duplicação entre `PatientPhotoStorage` e `PatientDocumentStorage` (as
+ * duas tinham `getClient` idêntico e `delete`/`getReadSignedUrl` quase idênticos — só o texto do
+ * log mudava). `PatientDocumentStorage` foi REMOVIDA por completo
+ * (fix/018-remover-documentos-consentimento) — hoje só `PatientPhotoStorage` estende esta base,
+ * mas ela fica: é a classe compartilhada, não específica de foto. Só `uploadBuffer` é de fato
+ * específico do bucket (extensão/prefixo do objeto) e continua na subclasse.
  *
  * ⚠️ NÃO usar a env `STORAGE_EMULATOR_HOST` (achado medido em integração real contra
  * fake-gcs-server, docker, spec 018 PR-4): o `@google-cloud/storage` v7 lê essa variável no
@@ -34,9 +36,8 @@ export abstract class PatientObjectStorageBase {
   protected readonly bucketName: string;
 
   /**
-   * @param bucketEnvVar nome da env que carrega o bucket (`GCS_PATIENT_PHOTOS_BUCKET` /
-   *   `GCS_PATIENT_DOCUMENTS_BUCKET`) — sem valor, lança `notConfigured()` (fail-closed, sem
-   *   fallback de nome).
+   * @param bucketEnvVar nome da env que carrega o bucket (ex.: `GCS_PATIENT_PHOTOS_BUCKET`) — sem
+   *   valor, lança `notConfigured()` (fail-closed, sem fallback de nome).
    * @param notConfigured fábrica do erro específico da subclasse (mensagem/nome próprios).
    */
   protected constructor(

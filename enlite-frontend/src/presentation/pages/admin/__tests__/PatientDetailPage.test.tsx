@@ -38,22 +38,6 @@ vi.mock('@presentation/components/features/admin/PatientDetail/ServicosContratad
 vi.mock('@presentation/components/features/admin/PatientDetail/PatientStatusControl', () => ({ PatientStatusControl: (p: { onSaved: () => void }) => <button data-testid="status-stub" onClick={p.onSaved}>status</button> }));
 vi.mock('@infrastructure/http/AdminApiService', () => ({ AdminApiService: { updatePatientSection: vi.fn(), listInsuranceProviders: vi.fn().mockResolvedValue([]) } }));
 
-// Achado da revisão do PR-4 (item 6, task 4.10): a flag NUNCA tinha sido implementada — o card de
-// documentos aparecia sem gate nenhum. Mutável — cada teste ajusta antes de renderizar.
-// `vi.hoisted` porque `vi.mock` é IÇADO para o topo do arquivo — uma `const` normal ainda não
-// existiria no momento em que a fábrica do mock roda (TDZ).
-const envState = vi.hoisted(() => ({ PATIENT_PHOTO_ENABLED: false }));
-vi.mock('@infrastructure/config/env', () => ({
-  get ENV() {
-    return envState;
-  },
-}));
-// PatientDocumentsCard tem client HTTP e i18n reais por trás (upload/consentimento) — testado no
-// próprio arquivo (`PatientDocumentsCard.test.tsx`); aqui só interessa se ela MONTA ou não.
-vi.mock('@presentation/components/features/admin/PatientDetail/PatientDocumentsCard', () => ({
-  PatientDocumentsCard: (p: { patientId: string }) => <div data-testid="patient-documents-card-stub">{p.patientId}</div>,
-}));
-
 import PatientDetailPage from '../PatientDetailPage';
 
 describe('PatientDetailPage', () => {
@@ -287,29 +271,5 @@ describe('PatientDetailPage — D286: abas e cards por container', () => {
     expect(abasNaTela()).toHaveLength(5);
     fireEvent.click(screen.getByText('Rede de Apoio'));
     expect(screen.getByTestId('familiares-card')).toBeInTheDocument();
-  });
-});
-
-// Achado da revisão do PR-4 (item 6, task 4.10): antes desta rodada, `PatientDocumentsCard`
-// montava sem gate nenhum — em qualquer build. O gate mora AQUI (na página), não dentro do
-// próprio card (esse não sabe de flag nenhuma).
-describe('PatientDetailPage — flag VITE_PATIENT_PHOTO_ENABLED (achado item 6 da revisão do PR-4)', () => {
-  beforeEach(() => {
-    envState.PATIENT_PHOTO_ENABLED = false;
-    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
-    detail.patient = { ...patientDetailFixture, admissionStatus: 'DONE', status: 'ACTIVE' };
-    detail.isLoading = false;
-    detail.error = null;
-  });
-
-  it('DESLIGADA (PRD — env ausente): PatientDocumentsCard NÃO monta', () => {
-    render(<PatientDetailPage />);
-    expect(screen.queryByTestId('patient-documents-card-stub')).not.toBeInTheDocument();
-  });
-
-  it('LIGADA (stage): PatientDocumentsCard monta com o patientId certo', () => {
-    envState.PATIENT_PHOTO_ENABLED = true;
-    render(<PatientDetailPage />);
-    expect(screen.getByTestId('patient-documents-card-stub')).toHaveTextContent(patientDetailFixture.id);
   });
 });

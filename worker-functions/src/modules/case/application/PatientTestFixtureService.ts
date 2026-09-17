@@ -11,7 +11,6 @@ import {
 } from '../../matching/domain/admissionCountries';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { PatientPhotoStorage } from '../infrastructure/PatientPhotoStorage';
-import { PatientDocumentStorage } from '../infrastructure/PatientDocumentStorage';
 import { PatientPhotoOrphanRepository } from '../infrastructure/PatientPhotoOrphanRepository';
 import { safeStorageErrorFields } from '../infrastructure/safeStorageErrorFields';
 import { scheduleOpportunisticOrphanRetry } from './scheduleOpportunisticOrphanRetry';
@@ -59,8 +58,6 @@ export interface PurgeResult {
    *  CASCADE, mas o objeto do bucket só some se ALGUÉM chamar o storage. */
   photoObjectsDeleted: number;
   photoObjectsFailed: number;
-  documentObjectsDeleted: number;
-  documentObjectsFailed: number;
 }
 
 /** Filhas de `patients` em ON DELETE CASCADE — contadas ANTES do DELETE, porque
@@ -86,12 +83,11 @@ const CASCADE_CHILDREN = [
   'patient_coverage_emergency_contacts',
   // 422 (spec 018, PR-2): contatos externos sem vínculo familiar — filha direta, ON DELETE CASCADE.
   'patient_external_contacts',
-  // 426 (spec 018, PR-4): foto, consentimento de imagem e documento de prova — filhas diretas,
-  // ON DELETE CASCADE. A LINHA some por CASCADE aqui; o objeto do GCS (foto e documento) é apagado
-  // à parte, DEPOIS do commit, por `deleteOrphanCandidate` (task 4.8) — ver `photoRows`/
-  // `documentRows` lidos ANTES do DELETE e os loops logo abaixo do `COMMIT` em `purge()`.
-  'patient_documents',
-  'patient_image_consents',
+  // 426 (spec 018, PR-4): foto — filha direta, ON DELETE CASCADE. A LINHA some por CASCADE aqui;
+  // o objeto do GCS é apagado à parte, DEPOIS do commit, por `deleteOrphanCandidate` (task 4.8) —
+  // ver `photoRows` lidos ANTES do DELETE e o loop logo abaixo do `COMMIT` em `purge()`.
+  // `patient_documents`/`patient_image_consents` foram DROPADOS por completo
+  // (fix/018-remover-documentos-consentimento) — saíram desta lista junto com a tabela.
   'patient_photos',
 ] as const;
 
@@ -135,13 +131,12 @@ export class PatientTestFixtureService {
     private readonly calendar: AdmissionCalendarService = admissionCalendarService,
     private readonly impersonateEmail: string = process.env.ADMISSION_IMPERSONATE_EMAIL ||
       'enlite@enlite.health',
-    // spec 018, PR-4 (task 4.8): FÁBRICAS, não instâncias — `PatientPhotoStorage`/
-    // `PatientDocumentStorage` lançam no `new` sem `GCS_PATIENT_*_BUCKET` (fail-closed). Um
-    // default `= new PatientPhotoStorage()` aqui quebraria TODOS os testes que constroem este
-    // serviço passando só `db`/`calendar` (21 testes existentes, sem env de bucket) — a fábrica só
-    // roda quando existe de fato uma foto/documento para apagar (ver `purge`).
+    // spec 018, PR-4 (task 4.8): FÁBRICA, não instância — `PatientPhotoStorage` lança no `new` sem
+    // `GCS_PATIENT_PHOTOS_BUCKET` (fail-closed). Um default `= new PatientPhotoStorage()` aqui
+    // quebraria TODOS os testes que constroem este serviço passando só `db`/`calendar` (21 testes
+    // existentes, sem env de bucket) — a fábrica só roda quando existe de fato uma foto para apagar
+    // (ver `purge`).
     private readonly photoStorageFactory: () => PatientPhotoStorage = () => new PatientPhotoStorage(),
-    private readonly documentStorageFactory: () => PatientDocumentStorage = () => new PatientDocumentStorage(),
     private readonly orphanRepo: PatientPhotoOrphanRepository = new PatientPhotoOrphanRepository(),
     private readonly enc: KMSEncryptionService = new KMSEncryptionService(),
   ) {}
@@ -192,10 +187,6 @@ export class PatientTestFixtureService {
     // DELETE não há mais de onde ler `object_path_encrypted`.
     const { rows: photoRows } = await this.db.query<{ object_path_encrypted: string }>(
       `SELECT object_path_encrypted FROM patient_photos WHERE patient_id = $1`,
-      [patientId],
-    );
-    const { rows: documentRows } = await this.db.query<{ object_path_encrypted: string }>(
-      `SELECT object_path_encrypted FROM patient_documents WHERE patient_id = $1`,
       [patientId],
     );
 
@@ -282,13 +273,6 @@ export class PatientTestFixtureService {
       const ok = await this.deleteOrphanCandidate(row.object_path_encrypted, 'PHOTOS');
       if (ok) photoObjectsDeleted += 1; else photoObjectsFailed += 1;
     }
-    let documentObjectsDeleted = 0;
-    let documentObjectsFailed = 0;
-    for (const row of documentRows) {
-      // eslint-disable-next-line no-await-in-loop
-      const ok = await this.deleteOrphanCandidate(row.object_path_encrypted, 'DOCUMENTS');
-      if (ok) documentObjectsDeleted += 1; else documentObjectsFailed += 1;
-    }
 
     const result: PurgeResult = {
       patientId,
@@ -299,8 +283,6 @@ export class PatientTestFixtureService {
       cascaded,
       photoObjectsDeleted,
       photoObjectsFailed,
-      documentObjectsDeleted,
-      documentObjectsFailed,
     };
     // C2 — com o registro fora da tabela, este log é a ÚNICA evidência de que a
     // eliminação aconteceu; sem o ator ele não responde "quem". UUID e contagens
@@ -324,20 +306,24 @@ export class PatientTestFixtureService {
   }
 
   /**
-   * Apaga UM objeto (foto ou documento) do bucket certo; em falha, grava em
-   * `patient_photo_orphans` (`reason='PURGE'`) para o retry pegar depois. Nunca lança — a purga
-   * do paciente não pode travar por um objeto individual de storage.
+   * Apaga UM objeto de foto do bucket; em falha, grava em `patient_photo_orphans`
+   * (`reason='PURGE'`) para o retry pegar depois. Nunca lança — a purga do paciente não pode
+   * travar por um objeto individual de storage.
+   *
+   * `bucket` continua tipado como `OrphanBucket` (`'PHOTOS' | 'DOCUMENTS'`, de
+   * `PatientPhotoOrphanRepository`) mesmo só chamando com `'PHOTOS'` aqui — a tabela
+   * `patient_photo_orphans` não foi tocada por esta remoção (fix/018-remover-documentos-consentimento
+   * só dropou `patient_documents`/`patient_image_consents`; `DOCUMENTS` fica como valor morto no
+   * enum/check dessa tabela, ver comentário da migration).
    */
-  private async deleteOrphanCandidate(objectPathEncrypted: string, bucket: 'PHOTOS' | 'DOCUMENTS'): Promise<boolean> {
+  private async deleteOrphanCandidate(objectPathEncrypted: string, bucket: 'PHOTOS'): Promise<boolean> {
     try {
       const objectPath = await this.enc.decrypt(objectPathEncrypted);
-      const storage = bucket === 'PHOTOS' ? this.photoStorageFactory() : this.documentStorageFactory();
-      await storage.delete(objectPath);
+      await this.photoStorageFactory().delete(objectPath);
       return true;
     } catch (err) {
-      // Achado da 3ª revisão do PR-4 (item 3, mesma classe dos demais chamadores de
-      // `PatientPhotoStorage`/`PatientDocumentStorage`): `err.message` do `@google-cloud/storage`
-      // costuma trazer o NOME DO OBJETO — trocado pelo helper que só extrai code/status/name.
+      // Achado da 3ª revisão do PR-4 (item 3): `err.message` do `@google-cloud/storage` costuma
+      // trazer o NOME DO OBJETO — trocado pelo helper que só extrai code/status/name.
       functions.logger.warn('patient.test_purge.object_delete_failed', { bucket, ...safeStorageErrorFields(err) });
       try {
         await this.orphanRepo.record(objectPathEncrypted, bucket, 'PURGE');

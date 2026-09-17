@@ -3339,30 +3339,6 @@
             "removeConfirmCancel": "Cancelar",
             "removeConfirmYes": "Quitar foto",
             "removeConfirmBusy": "Quitando…"
-          },
-          "documents": {
-            "title": "Documentos y consentimiento de imagen",
-            "uploadButton": "Subir documento",
-            "empty": "Sin documentos subidos.",
-            "openButton": "Abrir",
-            "errorInvalidType": "Formato inválido — solo PDF o JPEG.",
-            "errorTooLarge": "El archivo supera el límite de 5 MB.",
-            "errorUploadGeneric": "No se pudo subir el documento. Probá de nuevo.",
-            "errorOpenGeneric": "No se pudo abrir el documento. Probá de nuevo.",
-            "errorConsentGeneric": "No se pudo registrar el consentimiento. Probá de nuevo.",
-            "errorRevokeGeneric": "No se pudo revocar el consentimiento. Probá de nuevo.",
-            "errorLoadGeneric": "No se pudo cargar la lista de documentos. Probá de nuevo.",
-            "noReadPermission": "No tenés permiso para ver los documentos de este paciente.",
-            "uploadSuccess": "Documento enviado",
-            "documentTypeLabels": {
-              "image_consent": "Consentimiento de imagen",
-              "image_consent_revocation": "Revocación de consentimiento"
-            },
-            "consentTitle": "Consentimiento de imagen",
-            "registerConsentButton": "Registrar consentimiento",
-            "revokeConsentButton": "Revocar consentimiento",
-            "consentActive": "Consentimiento vigente",
-            "consentRevoked": "Consentimiento revocado"
           }
         },
         "documentTypes": {
@@ -4397,8 +4373,8 @@
                 "body": "Es quién es el paciente: nombre, documento, fecha de nacimiento, sexo, teléfono y e-mail de contacto. También es el nombre que aparece en la lista, en el kanban, en la vacante y en el mapa. Sin este permiso el nombre sale como «Contato restrito» en todas esas pantallas.",
                 "action": {
                   "read": "Ver el bloque de identidad y datos generales de la ficha, y el nombre del paciente donde aparezca.",
-                  "create": "Subir la foto o un documento del paciente, y registrar el consentimiento de imagen.",
-                  "update": "Editar identidad y datos generales; cambiar o quitar la foto; revocar un consentimiento de imagen."
+                  "create": "Subir la foto del paciente.",
+                  "update": "Editar identidad y datos generales; cambiar o quitar la foto."
                 }
               },
               "patient_clinical": {

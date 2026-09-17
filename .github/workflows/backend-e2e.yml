@@ -123,12 +123,12 @@ jobs:
           API_URL: http://localhost:8080
           DATABASE_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
           INTERNAL_TOKEN_SECRET: test-secret-for-e2e-only
-          # Spec 018 PR-4 (foto/documento do paciente) — conserto #1 da 2ª revisão:
-          # `patient-photo-and-documents.e2e.test.ts` monta o app EM PROCESSO (não fala com o
-          # container `api`) e usa o `@google-cloud/storage` REAL contra este fake-gcs.
+          # Spec 018 PR-4 (foto do paciente) — conserto #1 da 2ª revisão: `patient-photo.e2e.test.ts`
+          # (antes `patient-photo-and-documents.e2e.test.ts` — documento/consentimento removidos
+          # por completo, fix/018-remover-documentos-consentimento) monta o app EM PROCESSO (não
+          # fala com o container `api`) e usa o `@google-cloud/storage` REAL contra este fake-gcs.
           GCS_EMULATOR_HOST: http://localhost:54443
           GCS_PATIENT_PHOTOS_BUCKET: enlite-patient-photos-pr4test
-          GCS_PATIENT_DOCUMENTS_BUCKET: enlite-patient-documents-pr4test
 
       # ── Fronteira staff × prestador com TOKEN REAL (D294) ──
       #

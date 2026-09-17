@@ -184,14 +184,6 @@ describe('resolveAccessOrigin', () => {
     warnSpy.mockRestore();
   });
 
-  it('spec 018 PR-4: patient_document usa a própria COUNTRY_SOURCE (patient_documents.country)', async () => {
-    query.mockResolvedValueOnce({ rows: [{ country: 'AR' }] });
-    expect(await resolveAccessOrigin({ kind: 'staff', uid: 'u', country: 'AR' }, 'patient_document', 'doc-1')).toBe(
-      'same_country',
-    );
-    expect(query.mock.calls[0][0]).toContain('FROM patient_documents WHERE id = $1');
-  });
-
   it('staff sem jurisdição atribuída é classificado como cross-país sem consultar', async () => {
     expect(await resolveAccessOrigin({ kind: 'staff', uid: 'u' }, 'patient', 'p1')).toBe('group_grant');
     expect(query).not.toHaveBeenCalled();

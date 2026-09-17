@@ -111,7 +111,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/permission-groups/:id/members → permission_management:write',
         'PUT /api/admin/country-features/:country/:featureKey → permission_management:write',
         'PUT /api/admin/permission-groups/:id/permissions → permission_management:write',
-        // ── admin.patients (24) — a 2ª
+        // ── admin.patients (18 — fix/018-remover-documentos-consentimento tirou 6 rotas de
+        //    documento/consentimento de imagem) — a 2ª
         'DELETE /api/admin/patient-chat-roles/:code → patient:update',
         'DELETE /api/admin/patients/:id → patient:delete',
         // Marca de emergência (spec 018, PR-2, D-A; contracts/support-network.md).
@@ -122,11 +123,9 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/patients → patient:read',
         'GET /api/admin/patients/:id → patient:read',
         'GET /api/admin/patients/:id/chat-candidates → messaging:read',
-        // Foto, documento (prova) e consentimento de imagem (spec 018, PR-4;
-        // `adminPatientPhotoRoutes.ts`; `contracts/patient-header-and-photo.md`).
-        'GET /api/admin/patients/:id/documents → patient_consent_documents:read',
-        'GET /api/admin/patients/:id/documents/:documentId → patient_consent_documents:read',
-        'GET /api/admin/patients/:id/image-consents/vigente → patient_identity:read',
+        // Foto do paciente (spec 018, PR-4; `adminPatientPhotoRoutes.ts`;
+        // `contracts/patient-header-and-photo.md`). Documento (prova) e consentimento de imagem
+        // foram REMOVIDOS por completo (fix/018-remover-documentos-consentimento).
         'GET /api/admin/patients/:id/photo → patient_identity:read',
         'GET /api/admin/patients/:id/vacancies → vacancy:read',
         'GET /api/admin/patients/:patientId/addresses → patient_address:read',
@@ -159,13 +158,10 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/patients/:id/contracted-services/:sid/activate-recruitment → patient_services:update+vacancy:update',
         'POST /api/admin/patients/:id/coverage-emergency-contacts → patient_coverage:create',
         'POST /api/admin/patients/:id/coverage-emergency-contacts/:cid/deactivate → patient_coverage:update',
-        // Foto, documento (prova) e consentimento de imagem (spec 018, PR-4;
-        // `adminPatientPhotoRoutes.ts`; `contracts/patient-header-and-photo.md`).
-        'POST /api/admin/patients/:id/documents → patient_identity:create',
         'POST /api/admin/patients/:id/external-contacts → patient_family:create',
         'POST /api/admin/patients/:id/external-contacts/:xid/deactivate → patient_family:update',
-        'POST /api/admin/patients/:id/image-consents → patient_identity:create',
-        'POST /api/admin/patients/:id/image-consents/:cid/revoke → patient_identity:update',
+        // Foto do paciente (spec 018, PR-4; `adminPatientPhotoRoutes.ts`;
+        // `contracts/patient-header-and-photo.md`).
         'POST /api/admin/patients/:id/photo → patient_identity:create',
         'POST /api/admin/patients/:id/professionals → patient_care_team:create',
         'POST /api/admin/patients/:id/professionals/:pid/deactivate → patient_care_team:update',

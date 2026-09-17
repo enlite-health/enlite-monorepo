@@ -5,6 +5,9 @@
  * o objeto do GCS antes/depois, ver `UploadPatientPhotoUseCase`) e inserir a nova — nunca UPDATE
  * do `object_path_encrypted` de uma linha existente (o objeto trocaria de referência sem o
  * antigo ser apagado em nenhum lugar).
+ *
+ * `consent_id` foi DROPADA (fix/018-remover-documentos-consentimento, junto com
+ * `patient_image_consents`/`patient_documents`) — não é mais lida nem escrita aqui.
  */
 import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
@@ -12,7 +15,6 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 export interface PatientPhotoRow {
   id: string;
   patient_id: string;
-  consent_id: string | null;
   object_path_encrypted: string;
   content_type: 'image/jpeg';
   created_by: string;
@@ -24,7 +26,7 @@ export class PatientPhotoRepository {
 
   async findOne(patientId: string, executor: Pool | PoolClient = this.pool): Promise<PatientPhotoRow | null> {
     const { rows } = await executor.query<PatientPhotoRow>(
-      `SELECT id, patient_id, consent_id, object_path_encrypted, content_type, created_by, created_at
+      `SELECT id, patient_id, object_path_encrypted, content_type, created_by, created_at
          FROM patient_photos WHERE patient_id = $1`,
       [patientId],
     );
@@ -33,15 +35,15 @@ export class PatientPhotoRepository {
 
   async insert(
     patientId: string,
-    input: { objectPathEncrypted: string; consentId?: string | null },
+    input: { objectPathEncrypted: string },
     actorUid: string,
     client: PoolClient,
   ): Promise<{ id: string }> {
     const { rows } = await client.query<{ id: string }>(
-      `INSERT INTO patient_photos (patient_id, consent_id, object_path_encrypted, content_type, created_by)
-       VALUES ($1, $2, $3, 'image/jpeg', $4)
+      `INSERT INTO patient_photos (patient_id, object_path_encrypted, content_type, created_by)
+       VALUES ($1, $2, 'image/jpeg', $3)
        RETURNING id`,
-      [patientId, input.consentId ?? null, input.objectPathEncrypted, actorUid],
+      [patientId, input.objectPathEncrypted, actorUid],
     );
     return { id: rows[0].id };
   }
@@ -50,7 +52,7 @@ export class PatientPhotoRepository {
   async deleteRow(patientId: string, client: PoolClient): Promise<PatientPhotoRow | null> {
     const { rows } = await client.query<PatientPhotoRow>(
       `DELETE FROM patient_photos WHERE patient_id = $1
-       RETURNING id, patient_id, consent_id, object_path_encrypted, content_type, created_by, created_at`,
+       RETURNING id, patient_id, object_path_encrypted, content_type, created_by, created_at`,
       [patientId],
     );
     return rows[0] ?? null;
