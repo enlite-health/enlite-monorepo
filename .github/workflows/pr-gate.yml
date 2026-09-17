@@ -72,6 +72,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     uses: ./.github/workflows/_frontend-quality.yml
+    with:
+      timeout_minutes: 25
 
   # A camada que faltava. `frontend-quality` é lint + vitest: nenhum dos dois abre
   # navegador, e por isso o bug do autosave de 31/08 atravessou três suítes verdes.

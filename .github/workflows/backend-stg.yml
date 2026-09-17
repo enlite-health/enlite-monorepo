@@ -157,6 +157,7 @@ jobs:
             PROMPT_DOC_ID_CUIDADOR=1VSjf02LXjoxsNSNQSl-yDBIwiiu88w6aHW2DnKaUqgA
             ENCUADRE_WEEKLY_CAPACITY=30
             ANACARE_HOURS_SOURCE=real
+            ANACARE_DIRECTORY_MIN_ABSOLUTE=226
           secrets: |
             DB_PASSWORD=enlite-runtime-db-password:latest
             DB_SYSTEM_PASSWORD=enlite-system-db-password:latest

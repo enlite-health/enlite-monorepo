@@ -40,25 +40,42 @@ describe('FakeAnaCareShiftsSource', () => {
       expect(new Set(ids).size).toBe(ids.length);
     });
 
-    it('turno sem check-in (checkinSource null) tem actualStart/actualEnd/durationHours null', () => {
+    it('turno sem check-in (checkinSource null) tem actualStart/actualEnd null e isFinalized false', () => {
       const shifts = FakeAnaCareShiftsSource.generateMonth('2026-09');
       const semCheckin = shifts.filter((s) => s.checkinSource === null);
       expect(semCheckin.length).toBeGreaterThan(0);
       for (const s of semCheckin) {
         expect(s.actualStart).toBeNull();
         expect(s.actualEnd).toBeNull();
-        expect(s.durationHours).toBeNull();
+        expect(s.isFinalized).toBe(false);
       }
     });
 
-    it('turno com check-in tem durationHours numérico e datas dentro do mês', () => {
+    it('turno com check-in mas AINDA sem checkout (em andamento) tem actualEnd null e isFinalized false — medido 17/09: 7/30 turnos não finalizados têm check-in', () => {
       const shifts = FakeAnaCareShiftsSource.generateMonth('2026-09');
-      const comCheckin = shifts.filter((s) => s.checkinSource !== null);
-      expect(comCheckin.length).toBeGreaterThan(0);
-      for (const s of comCheckin) {
-        expect(typeof s.durationHours).toBe('number');
+      const emAndamento = shifts.filter((s) => s.checkinSource !== null && s.actualEnd === null);
+      expect(emAndamento.length).toBeGreaterThan(0);
+      for (const s of emAndamento) {
+        expect(s.actualStart).not.toBeNull();
+        expect(s.isFinalized).toBe(false);
+      }
+    });
+
+    it('turno finalizado tem actualStart/actualEnd preenchidos, datas dentro do mês, e ao menos um caso com hora real MENOR que a prevista (achado 2 do defeito medido 17/09)', () => {
+      const shifts = FakeAnaCareShiftsSource.generateMonth('2026-09');
+      const finalizados = shifts.filter((s) => s.isFinalized);
+      expect(finalizados.length).toBeGreaterThan(0);
+      for (const s of finalizados) {
+        expect(typeof s.actualStart).toBe('string');
+        expect(typeof s.actualEnd).toBe('string');
         expect(s.date.startsWith('2026-09')).toBe(true);
       }
+      const comRealMenorQuePrevisto = finalizados.filter((s) => {
+        const previsto = (new Date(s.scheduledEnd as string).getTime() - new Date(s.scheduledStart as string).getTime()) / 3_600_000;
+        const real = (new Date(s.actualEnd as string).getTime() - new Date(s.actualStart as string).getTime()) / 3_600_000;
+        return real < previsto;
+      });
+      expect(comRealMenorQuePrevisto.length).toBeGreaterThan(0);
     });
 
     it('mês de 30 dias (setembro) não gera dia 31', () => {

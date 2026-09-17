@@ -61,7 +61,10 @@ function buildApp(controller: AnaCareHoursSyncController): express.Express {
 describe('rotas de sync — botão (admin) e Cloud Scheduler (internal) compartilham o guard (4.8)', () => {
   it('MESMA instância de controller: disparo manual + cron concorrentes dedupam (1 request à fonte)', async () => {
     const source = new CountingShiftsSource();
-    const runner = new AnaCareHoursSyncRunner(source);
+    // `ANACARE_DIRECTORY_MIN_ABSOLUTE` explícita: sem histórico (repositório fake novo), o runner
+    // agora é fail-closed na 1ª rodada sem essa env (item 4 da revisão de PR) — este teste prova
+    // dedup de disparo concorrente, não o alarme do diretório.
+    const runner = new AnaCareHoursSyncRunner(source, undefined, undefined, undefined, undefined, undefined, { ANACARE_DIRECTORY_MIN_ABSOLUTE: '1' });
     const controller = new AnaCareHoursSyncController(() => runner);
     const app = buildApp(controller);
 
@@ -77,8 +80,8 @@ describe('rotas de sync — botão (admin) e Cloud Scheduler (internal) comparti
 
   it('SABOTAGEM: controllers DIFERENTES (sem instância compartilhada) NÃO dedupam entre as rotas', async () => {
     const source = new CountingShiftsSource();
-    const runnerA = new AnaCareHoursSyncRunner(source);
-    const runnerB = new AnaCareHoursSyncRunner(source);
+    const runnerA = new AnaCareHoursSyncRunner(source, undefined, undefined, undefined, undefined, undefined, { ANACARE_DIRECTORY_MIN_ABSOLUTE: '1' });
+    const runnerB = new AnaCareHoursSyncRunner(source, undefined, undefined, undefined, undefined, undefined, { ANACARE_DIRECTORY_MIN_ABSOLUTE: '1' });
     const appSabotado = express();
     appSabotado.use(express.json());
     appSabotado.use('/api/admin', createAnaCareHoursSyncAdminRoutes(new AnaCareHoursSyncController(() => runnerA), authDouble(), permissionsDouble()));

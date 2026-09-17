@@ -203,21 +203,47 @@ export class AnaCareSessionClient {
     };
   }
 
-  /** GET autenticado com retry de re-login em 403 (uma vez). */
-  async requestJson<T>(path: string, query: Record<string, string | number | undefined> = {}): Promise<T> {
-    const url = withQuery(path, query);
-
-    let response = await this.rateLimiter.schedule(() => this.ensureSessionAndFetch(url, false));
+  /**
+   * Núcleo compartilhado de `requestJson`/`requestText`: resolve sessão (login se preciso),
+   * faz o GET, e dispara o re-login de uma vez se a sessão tiver expirado (403/302). Devolve o
+   * `Response` cru — quem chama decide como ler o corpo (`json()` ou `text()`).
+   */
+  private async requestRaw(url: string, isAbsolute: boolean): Promise<Response> {
+    let response = await this.rateLimiter.schedule(() => this.ensureSessionAndFetch(url, isAbsolute));
 
     if (isSessionExpiredStatus(response.status)) {
-      response = await this.rateLimiter.schedule(this.buildForceReloginFetch(url, false));
+      response = await this.rateLimiter.schedule(this.buildForceReloginFetch(url, isAbsolute));
     }
+
+    return response;
+  }
+
+  /** GET autenticado com retry de re-login em 403 (uma vez), corpo JSON. */
+  async requestJson<T>(path: string, query: Record<string, string | number | undefined> = {}): Promise<T> {
+    const url = withQuery(path, query);
+    const response = await this.requestRaw(url, false);
 
     if (!response.ok) {
       throw new AnaCareHttpError('GET', path, response.status, await safeText(response));
     }
 
     return (await response.json()) as T;
+  }
+
+  /**
+   * GET autenticado com retry de re-login em 403 (uma vez), corpo TEXTO (HTML). Reaproveita a
+   * MESMA sessão/rate limiter/re-login de `requestJson` — usado pelo `AnaCareEnliteDirectory`
+   * para ler as páginas HTML do painel admin, que não têm equivalente em `/api/`.
+   */
+  async requestText(path: string, query: Record<string, string | number | undefined> = {}): Promise<string> {
+    const url = withQuery(path, query);
+    const response = await this.requestRaw(url, false);
+
+    if (!response.ok) {
+      throw new AnaCareHttpError('GET', path, response.status, await safeText(response));
+    }
+
+    return response.text();
   }
 
   /** Gera páginas de `path` com `page_size=100` (nunca 500), seguindo `next` até esgotar. */
@@ -239,19 +265,25 @@ export class AnaCareSessionClient {
   }
 
   /**
-   * Turnos do mês, já filtrados pelo universo D340 e minimizados na borda.
+   * Turnos na faixa `[from, to]` (`YYYY-MM-DD`, inclusive), já filtrados pelo universo D340 e
+   * minimizados na borda.
    *
    * `month` é campo do OBJETO turno no payload (uma das 67 chaves), não parâmetro de filtro do
    * backend — `?month=YYYY-MM` é ignorado em silêncio e devolve o universo inteiro (medido ao
    * vivo 16/09: `?month=2026-08` deu `count=882776`, praticamente todas as 39 agências). O
    * backend aceita `min_date`/`max_date` (medido no mesmo dia: `count=3483` para uma janela de 7
-   * dias) — por isso a tradução para 1º/último dia do mês acontece aqui, na montagem da query
-   * HTTP, sem expandir a porta (que continua recebendo `month`, conceito de domínio legítimo).
+   * dias) — por isso este cliente só fala em faixa de datas; quem só tem um mês (a porta de
+   * domínio `AnaCareShiftsSource`, que mantém `month` como conceito legítimo) traduz com
+   * `monthToDateRange` ANTES de chamar aqui — não é responsabilidade do cliente.
+   *
+   * `patient_id` nunca funcionou como filtro no servidor (ignorado em silêncio, medido 17/09) —
+   * o nome certo é `patient`. `reservation_id` funciona e é usado pelo `AnaCareEnliteDirectory`
+   * para restringir a leitura a uma reserva específica.
    */
-  async listShifts(params: { month: string; patientId?: string }): Promise<SourceShiftDTO[]> {
-    const { minDate, maxDate } = monthToDateRange(params.month);
-    const query: Record<string, string | number | undefined> = { min_date: minDate, max_date: maxDate };
-    if (params.patientId) query.patient_id = params.patientId;
+  async listShifts(params: { from: string; to: string; patientId?: string; reservationId?: string }): Promise<SourceShiftDTO[]> {
+    const query: Record<string, string | number | undefined> = { min_date: params.from, max_date: params.to };
+    if (params.patientId) query.patient = params.patientId;
+    if (params.reservationId) query.reservation_id = params.reservationId;
 
     const out: SourceShiftDTO[] = [];
     for await (const page of this.paginate<RawAnaCareShift>(SHIFTS_PATH, query)) {
@@ -287,11 +319,7 @@ export class AnaCareSessionClient {
   }
 
   private async requestJsonAbsolute<T>(absoluteUrl: string): Promise<T> {
-    let response = await this.rateLimiter.schedule(() => this.ensureSessionAndFetch(absoluteUrl, true));
-
-    if (isSessionExpiredStatus(response.status)) {
-      response = await this.rateLimiter.schedule(this.buildForceReloginFetch(absoluteUrl, true));
-    }
+    const response = await this.requestRaw(absoluteUrl, true);
 
     if (!response.ok) throw new AnaCareHttpError('GET', absoluteUrl, response.status, await safeText(response));
     return (await response.json()) as T;
@@ -364,7 +392,7 @@ function isEnliteUniverseShift(raw: RawAnaCareShift): boolean {
  * Último dia via `new Date(Date.UTC(year, month, 0))` — dia 0 do mês seguinte é o último dia
  * do mês pedido, e cobre corretamente 28/29 (fevereiro, incl. bissexto)/30/31 dias.
  */
-function monthToDateRange(month: string): { minDate: string; maxDate: string } {
+export function monthToDateRange(month: string): { minDate: string; maxDate: string } {
   const [yearStr, monthStr] = month.split('-');
   const year = Number(yearStr);
   const monthIndex = Number(monthStr); // 1-12, e serve direto de "mês seguinte" 0-based p/ Date.UTC

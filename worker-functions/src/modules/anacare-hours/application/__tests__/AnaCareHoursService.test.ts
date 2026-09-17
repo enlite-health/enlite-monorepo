@@ -9,6 +9,7 @@ import { WorkerLinkRepository, type WorkerLinkRow } from '../../infrastructure/W
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { AnaCareHoursServiceError, VALIDATE_BATCH_MAX_SHIFTS } from '../../domain/AnaCareShift';
 import type { AnaCareRetratoSourceStatus, AnaCareShiftsSource, SourceShiftDTO } from '../../domain/AnaCareShiftsSource';
+import type { ShiftSyncRepository } from '../../domain/AnaCareHoursSyncPorts';
 
 jest.mock('../../infrastructure/ShiftHoursValidationRepository', () => {
   const actual = jest.requireActual('../../infrastructure/ShiftHoursValidationRepository');
@@ -41,7 +42,7 @@ const SHIFT_A: SourceShiftDTO = {
   actualStart: '2026-09-10T08:00:00.000Z',
   actualEnd: '2026-09-10T12:00:00.000Z',
   checkinSource: 'app',
-  durationHours: 4,
+  isFinalized: true,
 };
 
 const SHIFT_SEM_CHECKIN: SourceShiftDTO = {
@@ -50,7 +51,7 @@ const SHIFT_SEM_CHECKIN: SourceShiftDTO = {
   actualStart: null,
   actualEnd: null,
   checkinSource: null,
-  durationHours: null,
+  isFinalized: false,
 };
 
 class StubSource implements AnaCareShiftsSource {
@@ -82,6 +83,33 @@ function mockRepo(overrides: Partial<jest.Mocked<ShiftHoursValidationRepository>
   } as unknown as jest.Mocked<ShiftHoursValidationRepository>;
 }
 
+/**
+ * STUB do retrato (`ShiftSyncRepository`) — a LISTA (`getMonthSnapshot`) lê daqui, NUNCA da fonte
+ * (espião em `source.listShifts` prova zero chamadas nos testes abaixo). Turnos vazios (`[]`) por
+ * default simulam "retrato nunca construído" — quem quiser simular "construído" passa `shifts`.
+ */
+class StubShiftRepository implements ShiftSyncRepository {
+  constructor(
+    private readonly shifts: SourceShiftDTO[] = [],
+    private readonly lastFetchedAt: string | null = '2026-09-15T00:00:00.000Z',
+  ) {}
+  async upsertMany(): Promise<{ written: number }> {
+    return { written: 0 };
+  }
+  async listByMonth(_month: string, patientId?: string): Promise<SourceShiftDTO[]> {
+    return this.shifts.filter((s) => !patientId || s.anaCarePatientId === patientId);
+  }
+  async getSnapshotFreshness(): Promise<{ shifts: number; lastFetchedAt: string | null }> {
+    return { shifts: this.shifts.length, lastFetchedAt: this.shifts.length > 0 ? this.lastFetchedAt : null };
+  }
+  async getLastDirectoryCount(): Promise<number | null> {
+    return null;
+  }
+  async setLastDirectoryCount(): Promise<void> {
+    /* no-op */
+  }
+}
+
 describe('isValidMonth / periodMonthDate', () => {
   it('aceita YYYY-MM válido', () => {
     expect(isValidMonth('2026-09')).toBe(true);
@@ -98,8 +126,55 @@ describe('isValidMonth / periodMonthDate', () => {
 
 describe('AnaCareHoursService', () => {
   describe('getMonthSnapshot', () => {
+    // Prova central da separação de caminhos: a LISTA lê do retrato (banco), NUNCA da fonte —
+    // se alguém religar `getMonthSnapshot` a `source.listShifts`, este teste morre.
+    it('NUNCA chama source.listShifts — lê exclusivamente do retrato (ShiftSyncRepository)', async () => {
+      const source = new StubSource([SHIFT_A, SHIFT_SEM_CHECKIN]);
+      const listShiftsSpy = jest.spyOn(source, 'listShifts');
+      const shiftRepo = new StubShiftRepository([SHIFT_A, SHIFT_SEM_CHECKIN]);
+      const service = new AnaCareHoursService(source, mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
+
+      await service.getMonthSnapshot('2026-09', false);
+      expect(listShiftsSpy).not.toHaveBeenCalled();
+    });
+
+    // Contagem zero é falha, nunca sucesso: sem NENHUMA linha gravada pro mês, o retrato nunca foi
+    // construído — o snapshot não pode virar "lista vazia" silenciosa, tem de sair `stale: true`.
+    it('mês sem linhas no retrato ⇒ stale=true (retrato NÃO construído), nunca lista vazia silenciosa', async () => {
+      const shiftRepo = new StubShiftRepository([]); // freshness.shifts === 0
+      const service = new AnaCareHoursService(new StubSource([]), mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
+
+      const snapshot = await service.getMonthSnapshot('2026-09', false);
+      expect(snapshot.patients).toEqual([]);
+      expect(snapshot.stale).toBe(true);
+    });
+
+    /**
+     * Item 3 (revisão de PR): o `stale: true` acima também dispara quando o retrato SINCRONIZOU e
+     * só ficou velho (>24h) — a tela usava a MESMA mensagem para os dois casos ("há mais de 24
+     * horas"), falsa quando o sync nunca rodou. Este teste MORRE se `snapshotState` voltar a
+     * colapsar em `stale`/`fresco`.
+     */
+    it('mês sem linhas no retrato ⇒ snapshotState=nao_construido (distinto de retrato velho)', async () => {
+      const shiftRepo = new StubShiftRepository([]); // freshness.shifts === 0
+      const service = new AnaCareHoursService(new StubSource([]), mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
+
+      const snapshot = await service.getMonthSnapshot('2026-09', false);
+      expect(snapshot.snapshotState).toBe('nao_construido');
+    });
+
+    it('mês COM linhas no retrato e fonte fresca ⇒ stale=false, snapshotState=fresco', async () => {
+      const shiftRepo = new StubShiftRepository([SHIFT_A]);
+      const service = new AnaCareHoursService(new StubSource([SHIFT_A]), mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
+
+      const snapshot = await service.getMonthSnapshot('2026-09', false);
+      expect(snapshot.stale).toBe(false);
+      expect(snapshot.snapshotState).toBe('fresco');
+    });
+
     it('devolve os pacientes agrupados, sem filtro', async () => {
-      const service = new AnaCareHoursService(new StubSource(), mockRepo());
+      const shiftRepo = new StubShiftRepository([SHIFT_A, SHIFT_SEM_CHECKIN]);
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
       const snapshot = await service.getMonthSnapshot('2026-09', false);
       expect(snapshot.patients).toHaveLength(1);
       expect(snapshot.patients[0].providers[0].shifts).toHaveLength(2);
@@ -112,7 +187,8 @@ describe('AnaCareHoursService', () => {
     // devolve os DOIS sempre — não existe mais parâmetro pra podar a resposta aqui.
     it('nunca filtra no servidor — devolve todos os prestadores/pacientes do mês, sem parâmetro de filtro', async () => {
       const shifts = [SHIFT_A, { ...SHIFT_A, sourceShiftId: 'shift-c', anaCareNurseId: 'AC-NURSE-1' }];
-      const service = new AnaCareHoursService(new StubSource(shifts), mockRepo());
+      const shiftRepo = new StubShiftRepository(shifts);
+      const service = new AnaCareHoursService(new StubSource(shifts), mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
       const snapshot = await service.getMonthSnapshot('2026-09', false);
       const providerIds = snapshot.patients.flatMap((p) => p.providers.map((pr) => pr.anaCareId)).sort();
       expect(providerIds).toEqual(['AC-NURSE-0', 'AC-NURSE-1']);
@@ -135,7 +211,8 @@ describe('AnaCareHoursService', () => {
         noteEncrypted: 'cifra',
       };
       const repo = mockRepo({ getByShiftIds: jest.fn().mockResolvedValue(new Map([['shift-a', validation]])) });
-      const service = new AnaCareHoursService(new StubSource(), repo, kms);
+      const shiftRepo = new StubShiftRepository([SHIFT_A]);
+      const service = new AnaCareHoursService(new StubSource(), repo, kms, undefined, shiftRepo);
 
       const semCelula = await service.getMonthSnapshot('2026-09', false);
       const shiftSemCelula = semCelula.patients[0].providers[0].shifts.find((s) => s.id === 'shift-a')!;
@@ -153,7 +230,8 @@ describe('AnaCareHoursService', () => {
     it('D349: prestador com ana_care_id em workers vem linked=true + nome, quando canReadProviderName=true', async () => {
       const kms = { decrypt: jest.fn().mockImplementation((v: string) => Promise.resolve(v === 'enc-first' ? 'Rocío' : 'García')), encrypt: jest.fn() } as unknown as KMSEncryptionService;
       const workerLinks = mockWorkerLinks(new Map([['AC-NURSE-0', { workerId: 'w-1', firstNameEncrypted: 'enc-first', lastNameEncrypted: 'enc-last' }]]));
-      const service = new AnaCareHoursService(new StubSource(), mockRepo(), kms, workerLinks);
+      const shiftRepo = new StubShiftRepository([SHIFT_A]);
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), kms, workerLinks, shiftRepo);
 
       const snapshot = await service.getMonthSnapshot('2026-09', false, true);
       const provider = snapshot.patients[0].providers.find((p) => p.anaCareId === 'AC-NURSE-0')!;
@@ -165,7 +243,8 @@ describe('AnaCareHoursService', () => {
       const decrypt = jest.fn().mockResolvedValue('nunca deveria decifrar');
       const kms = { decrypt, encrypt: jest.fn() } as unknown as KMSEncryptionService;
       const workerLinks = mockWorkerLinks(new Map([['AC-NURSE-0', { workerId: 'w-1', firstNameEncrypted: 'enc-first', lastNameEncrypted: 'enc-last' }]]));
-      const service = new AnaCareHoursService(new StubSource(), mockRepo(), kms, workerLinks);
+      const shiftRepo = new StubShiftRepository([SHIFT_A]);
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), kms, workerLinks, shiftRepo);
 
       const snapshot = await service.getMonthSnapshot('2026-09', false, false);
       const provider = snapshot.patients[0].providers.find((p) => p.anaCareId === 'AC-NURSE-0')!;
@@ -176,7 +255,8 @@ describe('AnaCareHoursService', () => {
 
     it('sem match em workers.ana_care_id: linked=false (comportamento igual ao de antes da D349)', async () => {
       const workerLinks = mockWorkerLinks(new Map());
-      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), workerLinks);
+      const shiftRepo = new StubShiftRepository([SHIFT_A]);
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), workerLinks, shiftRepo);
 
       const snapshot = await service.getMonthSnapshot('2026-09', false, true);
       const provider = snapshot.patients[0].providers.find((p) => p.anaCareId === 'AC-NURSE-0')!;
@@ -187,7 +267,8 @@ describe('AnaCareHoursService', () => {
     it('busca o vínculo em LOTE: um único findByAnaCareIds com os anaCareNurseId DISTINTOS do mês (nunca 1-por-turno)', async () => {
       const shifts = [SHIFT_A, { ...SHIFT_A, sourceShiftId: 'shift-c', anaCareNurseId: 'AC-NURSE-1' }, { ...SHIFT_A, sourceShiftId: 'shift-d', anaCareNurseId: 'AC-NURSE-0' }];
       const workerLinks = mockWorkerLinks(new Map());
-      const service = new AnaCareHoursService(new StubSource(shifts), mockRepo(), new KMSEncryptionService(), workerLinks);
+      const shiftRepo = new StubShiftRepository(shifts);
+      const service = new AnaCareHoursService(new StubSource(shifts), mockRepo(), new KMSEncryptionService(), workerLinks, shiftRepo);
 
       await service.getMonthSnapshot('2026-09', false, true);
       expect(workerLinks.findByAnaCareIds).toHaveBeenCalledTimes(1);
@@ -197,7 +278,8 @@ describe('AnaCareHoursService', () => {
 
     it('paciente permanece linked=false mesmo com prestador vinculado (D349 item 2, bloqueado)', async () => {
       const workerLinks = mockWorkerLinks(new Map([['AC-NURSE-0', { workerId: 'w-1', firstNameEncrypted: null, lastNameEncrypted: null }]]));
-      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), workerLinks);
+      const shiftRepo = new StubShiftRepository([SHIFT_A]);
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), workerLinks, shiftRepo);
 
       const snapshot = await service.getMonthSnapshot('2026-09', false, true);
       expect(snapshot.patients[0].linked).toBe(false);
@@ -222,13 +304,44 @@ describe('AnaCareHoursService', () => {
       const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false, true);
       expect(patient?.providers[0].linked).toBe(true);
     });
+
+    // Contraparte da prova em `getMonthSnapshot` — o DETALHE segue AO VIVO na fonte, com
+    // {month, patientId}. Morre se alguém trocar `getPatientMonth` para ler do retrato.
+    it('SEMPRE chama source.listShifts com {month, patientId} — caminho ao vivo, nunca o retrato', async () => {
+      const source = new StubSource();
+      const listShiftsSpy = jest.spyOn(source, 'listShifts');
+      const service = new AnaCareHoursService(source, mockRepo());
+
+      await service.getPatientMonth('2026-09', 'AC-PAT-0', false);
+      expect(listShiftsSpy).toHaveBeenCalledWith({ month: '2026-09', patientId: 'AC-PAT-0' });
+    });
   });
 
   describe('getRetratoStatus', () => {
-    it('fase 1: sempre fresco (adapter falso não tem staleness real)', async () => {
-      const service = new AnaCareHoursService(new StubSource(), mockRepo());
+    it('retrato construído e fonte fresca → stale=false', async () => {
+      const shiftRepo = new StubShiftRepository([SHIFT_A]);
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
       const status = await service.getRetratoStatus('2026-09');
       expect(status).toEqual({ updatedAt: expect.any(String), stale: false, circuitBreakerOpen: false });
+    });
+
+    it('retrato NUNCA construído (zero linhas) → stale=true mesmo com a fonte dizendo fresco', async () => {
+      const shiftRepo = new StubShiftRepository([]);
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
+      const status = await service.getRetratoStatus('2026-09');
+      expect(status.stale).toBe(true);
+    });
+
+    it('não chama source.listShifts nem mapeia turnos — só freshness + status da fonte', async () => {
+      const source = new StubSource();
+      const listShiftsSpy = jest.spyOn(source, 'listShifts');
+      const shiftRepo = new StubShiftRepository([SHIFT_A]);
+      const listByMonthSpy = jest.spyOn(shiftRepo, 'listByMonth');
+      const service = new AnaCareHoursService(source, mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
+
+      await service.getRetratoStatus('2026-09');
+      expect(listShiftsSpy).not.toHaveBeenCalled();
+      expect(listByMonthSpy).not.toHaveBeenCalled();
     });
   });
 
@@ -238,6 +351,22 @@ describe('AnaCareHoursService', () => {
       const service = new AnaCareHoursService(new StubSource(), repo);
       await service.validateShift('shift-b', 'uid-1');
       expect(repo.validate).toHaveBeenCalledWith(expect.objectContaining({ sourceShiftId: 'shift-b', approvedHours: 0, validatedBy: 'uid-1' }));
+    });
+
+    it('turno com previsto e real DIFERENTES valida com a hora REAL (actualStart→actualEnd), nunca com o previsto — morre se `validateShift` voltar a ler um campo de previsto', async () => {
+      const shiftPrevistoDiferenteDoReal: SourceShiftDTO = {
+        ...SHIFT_A,
+        sourceShiftId: 'shift-c',
+        scheduledStart: '2026-09-10T08:00:00.000Z',
+        scheduledEnd: '2026-09-10T20:00:00.000Z', // previsto: 12h
+        actualStart: '2026-09-10T08:00:00.000Z',
+        actualEnd: '2026-09-10T19:48:00.000Z', // real: 11,8h
+      };
+      const repo = mockRepo();
+      const source = new StubSource([shiftPrevistoDiferenteDoReal]);
+      const service = new AnaCareHoursService(source, repo);
+      await service.validateShift('shift-c', 'uid-1');
+      expect(repo.validate).toHaveBeenCalledWith(expect.objectContaining({ sourceShiftId: 'shift-c', approvedHours: 11.8 }));
     });
 
     it('turno inexistente na fonte → TURNO_NAO_ENCONTRADO', async () => {

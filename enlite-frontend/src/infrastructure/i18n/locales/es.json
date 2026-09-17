@@ -683,8 +683,10 @@
       },
       "stale": {
         "title": "Retrato desactualizado",
+        "titleNaoConstruido": "Retrato aún no construido",
         "messageCircuitBreaker": "La sincronización con Ana Care está fallando y la protección de carga fue activada (disjuntor). El último retrato tiene más de 24 horas.",
         "messageSimple": "El último retrato tiene más de 24 horas. La sincronización con Ana Care no se completó.",
+        "messageNaoConstruido": "Todavía no se ejecutó ninguna sincronización con Ana Care para este mes — el retrato nunca fue construido.",
         "reasonLargo": "Retrato con más de 24 horas — validación deshabilitada hasta actualizar.",
         "reasonLargoCircuitBreaker": "Sincronización con Ana Care fallando — protección de carga activada (disjuntor). Validación deshabilitada hasta el próximo retrato.",
         "reasonCorto": "retrato desactualizado",
@@ -717,11 +719,29 @@
       "detail": {
         "back": "Volver",
         "patientNotFound": "Paciente no encontrado en el retrato de {{month}}.",
-        "totalHoursLabel": "Horas totales",
+        "totalHoursLabel": "Horas totales del mes",
         "validationLabel": "Validación — {{validated}}/{{total}}",
         "validationContestedSuffix_one": " · {{count}} contestado",
         "validationContestedSuffix_other": " · {{count}} contestados",
-        "loading": "Cargando…"
+        "loading": "Cargando…",
+        "refreshAction": "Actualizar",
+        "weekLabel": "Semana del {{start}} al {{end}}",
+        "weekPrev": "Semana anterior",
+        "weekNext": "Próxima semana",
+        "weekEmpty": "Sin turnos registrados esta semana.",
+        "weekPickerAriaLabel": "Ir a la semana de una fecha"
+      },
+      "dayGroup": {
+        "selectAllPendingAriaLabel": "Seleccionar todos los turnos pendientes del {{date}}",
+        "totalsSummary": "{{total}} h · {{validated}} h validadas",
+        "sendAction": "Enviar",
+        "sendDisabledHint": "Validá todos los turnos del día para enviar",
+        "sentLabel": "Enviado",
+        "table": {
+          "provider": "Prestador",
+          "checkin": "Check-in",
+          "checkout": "Check-out"
+        }
       },
       "error": {
         "generic": "Ocurrió un error inesperado.",

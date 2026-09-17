@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { AnaCareHoursServiceError, type AnaCareHoursService } from '@presentation/components/features/admin/AnaCareHours/AnaCareHoursService';
-import type { AnaCareMonthSnapshot, AnaCarePatient } from '@presentation/components/features/admin/AnaCareHours/types';
+import type { AnaCareMonthSnapshot, AnaCarePatient, AnaCareRetratoStatus } from '@presentation/components/features/admin/AnaCareHours/types';
 
 /**
  * Mesmo padrão de `usePatientsData`. Busca o paciente E o estado do retrato em paralelo
@@ -11,7 +11,7 @@ import type { AnaCareMonthSnapshot, AnaCarePatient } from '@presentation/compone
  */
 export function useAnaCareHoursPatient(service: AnaCareHoursService, month: string, patientId: string) {
   const [patient, setPatient] = useState<AnaCarePatient | null>(null);
-  const [retrato, setRetrato] = useState<{ updatedAt: string; stale: boolean; circuitBreakerOpen: boolean } | null>(null);
+  const [retrato, setRetrato] = useState<AnaCareRetratoStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -49,7 +49,17 @@ export function useAnaCareHoursPatient(service: AnaCareHoursService, month: stri
   }, [service, month, patientId, refreshKey]);
 
   const snapshot: AnaCareMonthSnapshot | null = retrato
-    ? { month, updatedAt: retrato.updatedAt, stale: retrato.stale, circuitBreakerOpen: retrato.circuitBreakerOpen, patients: patient ? [patient] : [] }
+    ? {
+        month,
+        updatedAt: retrato.updatedAt,
+        stale: retrato.stale,
+        // Item 3 (conserto, 17/09): `AnaCareRetratoStatus` agora carrega `snapshotState` — não
+        // aproxima mais. Antes disso, `stale ? 'velho' : 'fresco'` colapsava "nunca construído" em
+        // "velho" e o detalhe mostrava "mais de 24 horas" quando o sync nunca rodou.
+        snapshotState: retrato.snapshotState,
+        circuitBreakerOpen: retrato.circuitBreakerOpen,
+        patients: patient ? [patient] : [],
+      }
     : null;
 
   return { patient, snapshot, isLoading, error, refetch };

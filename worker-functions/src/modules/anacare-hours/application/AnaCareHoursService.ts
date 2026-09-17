@@ -11,10 +11,12 @@
  */
 
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
-import type { AnaCareShiftsSource } from '../domain/AnaCareShiftsSource';
+import type { AnaCareShiftsSource, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
+import type { ShiftSyncRepository } from '../domain/AnaCareHoursSyncPorts';
 import { ShiftHoursValidationRepository, ShiftAlreadyValidatedError } from '../infrastructure/ShiftHoursValidationRepository';
 import { WorkerLinkRepository } from '../infrastructure/WorkerLinkRepository';
-import { mapShift, groupIntoPatients, buildSnapshot } from './AnaCareHoursMapper';
+import { AnaCareShiftRepository } from '../infrastructure/AnaCareShiftRepository';
+import { mapShift, groupIntoPatients, buildSnapshot, computeActualHours } from './AnaCareHoursMapper';
 import {
   AnaCareHoursServiceError,
   CONTEST_NOTE_MAX_LENGTH,
@@ -47,6 +49,8 @@ export class AnaCareHoursService {
     private readonly validations: ShiftHoursValidationRepository = new ShiftHoursValidationRepository(),
     private readonly kms: KMSEncryptionService = new KMSEncryptionService(),
     private readonly workerLinks: WorkerLinkRepository = new WorkerLinkRepository(),
+    /** Retrato do mês (escrito pelo sync real) — a LISTA lê daqui, nunca da fonte. */
+    private readonly shiftRepository: ShiftSyncRepository = new AnaCareShiftRepository(),
   ) {}
 
   /**
@@ -72,13 +76,12 @@ export class AnaCareHoursService {
     return out;
   }
 
-  private async patientsForMonth(
-    month: string,
-    canReadNote: boolean,
-    canReadProviderName: boolean,
-    patientId?: string,
-  ): Promise<AnaCarePatient[]> {
-    const sourceShifts = await this.source.listShifts({ month, patientId });
+  /**
+   * Comum aos dois caminhos (lista/detalhe): junta turnos JÁ OBTIDOS (do banco OU ao vivo) com
+   * validação + vínculo de prestador + decifra de nota. Quem decide DE ONDE vieram os
+   * `sourceShifts` é o chamador (`getMonthSnapshot` lê do retrato; `getPatientMonth` vai à fonte).
+   */
+  private async buildPatients(sourceShifts: readonly SourceShiftDTO[], canReadNote: boolean, canReadProviderName: boolean): Promise<AnaCarePatient[]> {
     const validations = await this.validations.getByShiftIds(sourceShifts.map((s) => s.sourceShiftId));
     const nurseIds = [...new Set(sourceShifts.map((s) => s.anaCareNurseId))];
     const providerLinks = await this.resolveProviderLinks(nurseIds, canReadProviderName);
@@ -95,23 +98,48 @@ export class AnaCareHoursService {
     return groupIntoPatients(mapped, providerLinks);
   }
 
-  /** D4: sem filtro de query — `patientSearch`/`providerId` rodam só no CLIENTE (`selectors.ts`), nunca aqui (PII em query/log). */
+  /**
+   * A LISTA lê do NOSSO banco (`ShiftSyncRepository.listByMonth`) — ZERO chamadas a
+   * `source.listShifts` (spec §Assimetria lista×detalhe: a API não filtra por agência, varrer o
+   * mês inteiro pagina 39 agências e estoura o teto do Cloud Run). D4: sem filtro de query —
+   * `patientSearch`/`providerId` rodam só no CLIENTE (`selectors.ts`), nunca aqui.
+   *
+   * Contagem zero é falha, nunca sucesso: sem nenhuma linha gravada para o mês, o retrato NUNCA
+   * foi construído (o sync real ainda não rodou) — isso NUNCA vira "lista vazia" silenciosa, é
+   * SEMPRE reportado como desatualizado (`stale: true`), igual a uma queda do circuit breaker.
+   */
   async getMonthSnapshot(month: string, canReadNote: boolean, canReadProviderName = false): Promise<AnaCareMonthSnapshot> {
-    const [patients, retrato] = await Promise.all([
-      this.patientsForMonth(month, canReadNote, canReadProviderName),
+    const [sourceShifts, freshness, sourceRetrato] = await Promise.all([
+      this.shiftRepository.listByMonth(month),
+      this.shiftRepository.getSnapshotFreshness(month),
       this.source.getRetratoStatus(),
     ]);
-    return buildSnapshot(month, patients, retrato);
+    const patients = await this.buildPatients(sourceShifts, canReadNote, canReadProviderName);
+    const naoConstruido = freshness.shifts === 0;
+    const snapshot = buildSnapshot(month, patients, {
+      stale: naoConstruido || sourceRetrato.stale,
+      circuitBreakerOpen: sourceRetrato.circuitBreakerOpen,
+      naoConstruido,
+    });
+    return freshness.lastFetchedAt ? { ...snapshot, updatedAt: freshness.lastFetchedAt } : snapshot;
   }
 
+  /** O DETALHE continua AO VIVO na fonte — é a passagem Tela→backend→Ana Care→backend→Tela, barata por reserva/paciente (medido 17/09). */
   async getPatientMonth(month: string, patientId: string, canReadNote: boolean, canReadProviderName = false): Promise<AnaCarePatient | null> {
-    const patients = await this.patientsForMonth(month, canReadNote, canReadProviderName, patientId);
+    const sourceShifts = await this.source.listShifts({ month, patientId });
+    const patients = await this.buildPatients(sourceShifts, canReadNote, canReadProviderName);
     return patients.find((p) => p.anaCareId === patientId) ?? null;
   }
 
+  /** Barato: só freshness do retrato + status da fonte — nunca lista nem mapeia o mês inteiro. */
   async getRetratoStatus(month: string): Promise<AnaCareRetratoStatus> {
-    const snapshot = await this.getMonthSnapshot(month, false, false);
-    return { updatedAt: snapshot.updatedAt, stale: snapshot.stale, circuitBreakerOpen: snapshot.circuitBreakerOpen };
+    const [freshness, sourceRetrato] = await Promise.all([this.shiftRepository.getSnapshotFreshness(month), this.source.getRetratoStatus()]);
+    const naoConstruido = freshness.shifts === 0;
+    return {
+      updatedAt: freshness.lastFetchedAt ?? new Date().toISOString(),
+      stale: naoConstruido || sourceRetrato.stale,
+      circuitBreakerOpen: sourceRetrato.circuitBreakerOpen,
+    };
   }
 
   /** Busca o turno na FONTE (não no snapshot inteiro) — usado por validar/contestar (não recebem mês). */
@@ -148,7 +176,7 @@ export class AnaCareHoursService {
         anaCarePatientId: source!.anaCarePatientId,
         anaCareNurseId: source!.anaCareNurseId,
         periodMonth: periodMonthDate(source!.date.slice(0, 7)),
-        approvedHours: source!.durationHours ?? 0, // D344: sem check-in congela 0h
+        approvedHours: computeActualHours(source!) ?? 0, // D344: sem check-in (ou sem checkout) congela 0h — nunca o previsto
         approvedCheckinAt: source!.actualStart,
         approvedCheckoutAt: source!.actualEnd,
         approvedCheckinSource: source!.checkinSource,

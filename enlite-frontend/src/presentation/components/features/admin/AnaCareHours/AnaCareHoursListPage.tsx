@@ -101,11 +101,19 @@ export function AnaCareHoursListPage({
         {retratoDesactualizado && (
           <AlertBanner
             variant="warning"
-            title={t('admin.anacareHours.stale.title')}
+            title={
+              // Item 3 (revisão de PR): "nunca construído" NÃO é "mais de 24 horas" — mensagem
+              // própria, para não afirmar uma sincronização que nunca aconteceu.
+              snapshot.snapshotState === 'nao_construido'
+                ? t('admin.anacareHours.stale.titleNaoConstruido')
+                : t('admin.anacareHours.stale.title')
+            }
             message={
-              snapshot.circuitBreakerOpen
-                ? t('admin.anacareHours.stale.messageCircuitBreaker')
-                : t('admin.anacareHours.stale.messageSimple')
+              snapshot.snapshotState === 'nao_construido'
+                ? t('admin.anacareHours.stale.messageNaoConstruido')
+                : snapshot.circuitBreakerOpen
+                  ? t('admin.anacareHours.stale.messageCircuitBreaker')
+                  : t('admin.anacareHours.stale.messageSimple')
             }
           />
         )}

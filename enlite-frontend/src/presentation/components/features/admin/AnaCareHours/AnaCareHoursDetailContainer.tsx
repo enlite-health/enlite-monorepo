@@ -9,6 +9,9 @@
  *  - célula `anacare_hours:validate` (D344) — sem ela, `useActionGate` desabilita
  *    validar/validar-lote/contestar com o motivo visível (mesmo padrão de `useActionGate`/
  *    `ActionButton`, D269 — fail-open só quando o engine ABAC está OFF).
+ *  - `onRefresh={refetch}` (16/09) — o botão "Actualizar" do detalhe refaz a MESMA busca do mês
+ *    (`useAnaCareHoursPatient` já busca o mês inteiro numa chamada só); navegar de semana NÃO
+ *    passa por aqui, é filtro em memória dentro de `AnaCareHoursDetailPage`.
  */
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -53,7 +56,7 @@ export function AnaCareHoursDetailContainer({
 
   // D-cobertura (conserto de conformidade, 15/09): SEM guarda de `validateGate.allowed` aqui — ao
   // contrário de `handleValidateBatch`/`handleContestShift`, este handler só tem UMA porta de
-  // entrada (o botão "Validar" da linha, em `ProviderGroup`/`ShiftRows`), e esse botão já nasce
+  // entrada (o botão "Validar" da linha, em `DayGroup`/`ShiftRow`), e esse botão já nasce
   // `disabled={disableActions}` no MESMO render em que `validateGate.allowed` é lido — não há
   // modal intermediário nem janela de corrida em que o botão fique habilitado com o gate negado.
   // `disabled` em elemento nativo bloqueia o evento `click` no próprio DOM (medido: `fireEvent
@@ -140,6 +143,7 @@ export function AnaCareHoursDetailContainer({
         onValidateShift={handleValidateShift}
         onValidateBatch={handleValidateBatch}
         onContestShift={handleContestShift}
+        onRefresh={refetch}
         sinCheckinHoursMode={sinCheckinHoursMode}
         blockReasonMode={blockReasonMode}
         disableActionsReason={validateGate.denied ? t('admin.anacareHours.error.noValidateCell') : undefined}

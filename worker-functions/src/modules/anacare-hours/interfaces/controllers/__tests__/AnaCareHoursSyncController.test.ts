@@ -57,7 +57,11 @@ describe('AnaCareHoursSyncController', () => {
 
   it('defaultRunnerFactory (singleton): resolve com ANACARE_HOURS_SOURCE=fake e reusa a MESMA instância entre chamadas', async () => {
     const prev = process.env.ANACARE_HOURS_SOURCE;
+    const prevFloor = process.env.ANACARE_DIRECTORY_MIN_ABSOLUTE;
     process.env.ANACARE_HOURS_SOURCE = 'fake';
+    // Item 4 (revisão de PR): sem histórico (repositório fake novo por teste) o runner agora é
+    // fail-closed na 1ª rodada sem esta env — este teste prova o singleton do runner, não o alarme.
+    process.env.ANACARE_DIRECTORY_MIN_ABSOLUTE = '1';
     try {
       const controller = new AnaCareHoursSyncController();
       const r1 = res();
@@ -70,6 +74,7 @@ describe('AnaCareHoursSyncController', () => {
       expect(r2.status).toHaveBeenCalledWith(200);
     } finally {
       process.env.ANACARE_HOURS_SOURCE = prev;
+      process.env.ANACARE_DIRECTORY_MIN_ABSOLUTE = prevFloor;
     }
   });
 

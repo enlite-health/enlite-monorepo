@@ -32,6 +32,7 @@ function makeSnapshot(overrides: Partial<AnaCareMonthSnapshot> = {}, shifts: Ana
     month: '2026-08',
     updatedAt: '2026-09-15T08:00:00-03:00',
     stale: false,
+    snapshotState: 'fresco',
     circuitBreakerOpen: false,
     patients: [
       {
@@ -113,10 +114,16 @@ describe('getPatientMonth', () => {
 });
 
 describe('getRetratoStatus', () => {
-  it('POSITIVO — reflete stale/circuitBreakerOpen do snapshot', async () => {
-    const service = makeService({ stale: true, circuitBreakerOpen: true, updatedAt: '2026-09-13T00:00:00-03:00' });
+  it('POSITIVO — reflete stale/snapshotState/circuitBreakerOpen do snapshot', async () => {
+    const service = makeService({ stale: true, snapshotState: 'velho', circuitBreakerOpen: true, updatedAt: '2026-09-13T00:00:00-03:00' });
     const status = await service.getRetratoStatus('2026-08');
-    expect(status).toEqual({ updatedAt: '2026-09-13T00:00:00-03:00', stale: true, circuitBreakerOpen: true });
+    expect(status).toEqual({ updatedAt: '2026-09-13T00:00:00-03:00', stale: true, snapshotState: 'velho', circuitBreakerOpen: true });
+  });
+
+  it('POSITIVO — propaga snapshotState "nao_construido" sem colapsar em "velho" (item 3)', async () => {
+    const service = makeService({ stale: true, snapshotState: 'nao_construido' });
+    const status = await service.getRetratoStatus('2026-08');
+    expect(status.snapshotState).toBe('nao_construido');
   });
 
   it('NEGATIVO — mês sem dado devolve status "em dia" (nunca lança)', async () => {
@@ -202,6 +209,7 @@ describe('validateBatch', () => {
         month: '2026-08',
         updatedAt: '2026-09-15T08:00:00-03:00',
         stale: false,
+        snapshotState: 'fresco',
         circuitBreakerOpen: false,
         patients: [
           {
@@ -229,6 +237,7 @@ describe('validateBatch', () => {
         month: '2026-08',
         updatedAt: '2026-09-15T08:00:00-03:00',
         stale: true,
+        snapshotState: 'velho',
         circuitBreakerOpen: false,
         patients: [
           {

@@ -18,5 +18,11 @@ describe('anacare-hours barrel', () => {
     expect(anacareHours.isContestReason('otro')).toBe(true);
     expect(anacareHours.CONTEST_NOTE_MAX_LENGTH).toBe(500);
     expect(anacareHours.AnaCareHoursServiceError).toBeDefined();
+    expect(anacareHours.AnaCareShiftRepository).toBeDefined();
+    expect(anacareHours.FakeEnliteDirectory).toBeDefined();
+    expect(anacareHours.FakeAnaCareShiftRepository).toBeDefined();
+    expect(anacareHours.createAnaCareSyncDependencies).toBeDefined();
+    expect(anacareHours.AnaCareHoursSyncRunner).toBeDefined();
+    expect(anacareHours.AnaCareDirectoryDroppedError).toBeDefined();
   });
 });

@@ -225,7 +225,8 @@ describe('AnaCareSessionClient — filtro de universo D340 no cliente (2.1)', ()
               actual_start: null,
               actual_end: null,
               checkin_source: null,
-              duration_hours: null,
+              duration: null,
+              is_finalized: false,
               patient: { id: 10, agency: 116, document_type: 'DNI', document_number: '1', first_name: 'A', last_name: 'B' },
               nurse: { id: 100, first_name: 'N', last_name: 'M' },
             },
@@ -237,7 +238,8 @@ describe('AnaCareSessionClient — filtro de universo D340 no cliente (2.1)', ()
               actual_start: null,
               actual_end: null,
               checkin_source: null,
-              duration_hours: null,
+              duration: null,
+              is_finalized: false,
               // outra agência — tem que ser descartado pelo filtro no cliente
               patient: { id: 11, agency: 999, document_type: 'DNI', document_number: '2', first_name: 'C', last_name: 'D' },
               nurse: { id: 101, first_name: 'N2', last_name: 'M2' },
@@ -257,7 +259,7 @@ describe('AnaCareSessionClient — filtro de universo D340 no cliente (2.1)', ()
       rateLimiter: new AnaCareRateLimiter({ minIntervalMs: 0, now, sleep }),
     });
 
-    const shifts = await client.listShifts({ month: '2026-09' });
+    const shifts = await client.listShifts({ from: '2026-09-01', to: '2026-09-30' });
     expect(shifts).toHaveLength(1);
     expect(shifts[0].anaCarePatientId).toBe('10');
   });
@@ -280,7 +282,8 @@ describe('AnaCareSessionClient — filtro de universo D340 no cliente (2.1)', ()
               actual_start: null,
               actual_end: null,
               checkin_source: null,
-              duration_hours: null,
+              duration: null,
+              is_finalized: false,
               patient: { id: 10, agency: 116, document_type: 'DNI', document_number: '1', first_name: 'A', last_name: 'B' },
               // prestador de OUTRA agência — não pode derrubar a 1ª perna (paciente já é 116)
               nurse: { id: 100, agency: 5, first_name: 'N', last_name: 'M' },
@@ -300,7 +303,7 @@ describe('AnaCareSessionClient — filtro de universo D340 no cliente (2.1)', ()
       rateLimiter: new AnaCareRateLimiter({ minIntervalMs: 0, now, sleep }),
     });
 
-    const shifts = await client.listShifts({ month: '2026-09' });
+    const shifts = await client.listShifts({ from: '2026-09-01', to: '2026-09-30' });
     expect(shifts).toHaveLength(1);
     expect(shifts[0].anaCarePatientId).toBe('10');
   });
@@ -323,7 +326,8 @@ describe('AnaCareSessionClient — filtro de universo D340 no cliente (2.1)', ()
               actual_start: null,
               actual_end: null,
               checkin_source: null,
-              duration_hours: null,
+              duration: null,
+              is_finalized: false,
               // paciente com agência NULA (71% dos turnos, F10) + prestador da 116 — F7 medido
               patient: { id: 90, agency: null, document_type: null, document_number: null, first_name: 'E', last_name: 'F' },
               nurse: { id: 200, agency: 116, first_name: 'N3', last_name: 'M3' },
@@ -336,7 +340,8 @@ describe('AnaCareSessionClient — filtro de universo D340 no cliente (2.1)', ()
               actual_start: null,
               actual_end: null,
               checkin_source: null,
-              duration_hours: null,
+              duration: null,
+              is_finalized: false,
               // paciente com agência nula + prestador de OUTRA agência — fora do universo automático
               patient: { id: 91, agency: null, document_type: null, document_number: null, first_name: 'G', last_name: 'H' },
               nurse: { id: 201, agency: 999, first_name: 'N4', last_name: 'M4' },
@@ -356,12 +361,12 @@ describe('AnaCareSessionClient — filtro de universo D340 no cliente (2.1)', ()
       rateLimiter: new AnaCareRateLimiter({ minIntervalMs: 0, now, sleep }),
     });
 
-    const shifts = await client.listShifts({ month: '2026-09' });
+    const shifts = await client.listShifts({ from: '2026-09-01', to: '2026-09-30' });
     expect(shifts).toHaveLength(1);
     expect(shifts[0].anaCarePatientId).toBe('90');
   });
 
-  it('listShifts traduz `month` para `min_date`/`max_date` (1º e último dia do mês) — bug medido 16/09: `?month=` não filtra no servidor (count=882776 vs count=3483 com min_date/max_date)', async () => {
+  it('listShifts manda `from`/`to` como `min_date`/`max_date`, sem `month` — a tradução mês→faixa é responsabilidade de quem chama o cliente (AnaCareShiftsSourceReal), não deste cliente', async () => {
     const urlsCalled: string[] = [];
     const fetchImpl = jest.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith('/users/admin/login/') && (!init?.method || init.method === 'GET')) return loginPageResponse();
@@ -381,16 +386,16 @@ describe('AnaCareSessionClient — filtro de universo D340 no cliente (2.1)', ()
       rateLimiter: new AnaCareRateLimiter({ minIntervalMs: 0, now, sleep }),
     });
 
-    await client.listShifts({ month: '2026-09' });
+    await client.listShifts({ from: '2026-09-01', to: '2026-09-30' });
 
     expect(urlsCalled).toHaveLength(1);
     const parsed = new URL(urlsCalled[0]);
     expect(parsed.searchParams.get('min_date')).toBe('2026-09-01');
-    expect(parsed.searchParams.get('max_date')).toBe('2026-09-30'); // setembro tem 30 dias
+    expect(parsed.searchParams.get('max_date')).toBe('2026-09-30');
     expect(parsed.searchParams.get('month')).toBeNull();
   });
 
-  it('listShifts calcula max_date corretamente para mês de 28, 29 e 31 dias', async () => {
+  it('listShifts repassa patientId como filtro `patient` (nunca `patient_id` — ignorado em silêncio pelo servidor, medido 17/09)', async () => {
     const urlsCalled: string[] = [];
     const fetchImpl = jest.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith('/users/admin/login/') && (!init?.method || init.method === 'GET')) return loginPageResponse();
@@ -410,16 +415,12 @@ describe('AnaCareSessionClient — filtro de universo D340 no cliente (2.1)', ()
       rateLimiter: new AnaCareRateLimiter({ minIntervalMs: 0, now, sleep }),
     });
 
-    await client.listShifts({ month: '2026-02' }); // fevereiro 2026 (não bissexto) — 28 dias
-    await client.listShifts({ month: '2028-02' }); // fevereiro 2028 (bissexto) — 29 dias
-    await client.listShifts({ month: '2026-01' }); // janeiro — 31 dias
-
-    expect(new URL(urlsCalled[0]).searchParams.get('max_date')).toBe('2026-02-28');
-    expect(new URL(urlsCalled[1]).searchParams.get('max_date')).toBe('2028-02-29');
-    expect(new URL(urlsCalled[2]).searchParams.get('max_date')).toBe('2026-01-31');
+    await client.listShifts({ from: '2026-09-01', to: '2026-09-30', patientId: '42' });
+    expect(urlsCalled[0]).toContain('patient=42');
+    expect(urlsCalled[0]).not.toContain('patient_id=');
   });
 
-  it('listShifts repassa patientId como filtro `patient_id` quando informado', async () => {
+  it('listShifts repassa reservationId como filtro `reservation_id` quando informado', async () => {
     const urlsCalled: string[] = [];
     const fetchImpl = jest.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith('/users/admin/login/') && (!init?.method || init.method === 'GET')) return loginPageResponse();
@@ -439,8 +440,8 @@ describe('AnaCareSessionClient — filtro de universo D340 no cliente (2.1)', ()
       rateLimiter: new AnaCareRateLimiter({ minIntervalMs: 0, now, sleep }),
     });
 
-    await client.listShifts({ month: '2026-09', patientId: '42' });
-    expect(urlsCalled[0]).toContain('patient_id=42');
+    await client.listShifts({ from: '2026-09-01', to: '2026-09-30', reservationId: '99' });
+    expect(urlsCalled[0]).toContain('reservation_id=99');
   });
 });
 
@@ -877,7 +878,7 @@ describe('AnaCareSessionClient — espião de rede: 0 chamadas reais (2.6)', () 
       rateLimiter: new AnaCareRateLimiter({ minIntervalMs: 0, now, sleep }),
     });
 
-    await client.listShifts({ month: '2026-09' });
+    await client.listShifts({ from: '2026-09-01', to: '2026-09-30' });
 
     expect(realFetchSpy).not.toHaveBeenCalled();
     expect(fetchImpl.mock.calls.length).toBeGreaterThan(0);
@@ -916,7 +917,7 @@ describe('AnaCareSessionClient — redirecionamento manual (regressão da stage,
       rateLimiter: new AnaCareRateLimiter({ minIntervalMs: 0, now, sleep }),
     });
 
-    await client.listShifts({ month: '2026-09' });
+    await client.listShifts({ from: '2026-09-01', to: '2026-09-30' });
 
     expect(inits.length).toBeGreaterThan(0);
     for (const init of inits) {
@@ -951,7 +952,7 @@ describe('AnaCareSessionClient — redirecionamento manual (regressão da stage,
       rateLimiter: new AnaCareRateLimiter({ minIntervalMs: 0, now, sleep }),
     });
 
-    await client.listShifts({ month: '2026-09' });
+    await client.listShifts({ from: '2026-09-01', to: '2026-09-30' });
 
     expect(loginPosts).toBe(2);
   });

@@ -1,120 +1,124 @@
 /**
- * Grupo por PRESTADOR dentro do detalhe do paciente. Nome sempre RESOLVIDO. Regras travadas:
- * validado CONGELA (sem reabrir/editar, mostra quem e quando); contestado mostra o motivo (lista
- * fechada, sempre visível) e a nota (só com `patient_clinical:read` — sem a célula o backend não
- * manda o campo e a linha mostra "Nota restringida") e GANHA ação "Validar" (pode ser validado
- * depois — só validado é definitivo); "Sin check-in" e "Web admin" com destaque de origem.
+ * Grupo por DIA dentro do detalhe do paciente (decisão do Gabriel, 16/09) — substitui o grupo
+ * por PRESTADOR (`ProviderGroup`, removido: nada mais usava depois desta troca — grep confirmado
+ * em `docs/diario`). O prestador vira uma COLUNA da linha, não mais o cabeçalho da seção — dois
+ * prestadores no mesmo dia viram duas linhas sob o mesmo cabeçalho de dia.
  *
- * Adaptado de `repos/infra/_worktrees/proto-anacare-horas/.../AnaCareHours/ProviderGroup.tsx`:
- * `shift.validatedBy?.name` → `shift.validatedByName` (Validator removido, contrato HTTP fixo);
- * nova linha do motivo (`contestReason`) sempre visível; nota vira "Nota restringida" quando
- * `contestNote` está ausente num turno contestado.
+ * Portado de `repos/infra/_worktrees/proto-anacare-horas/.../AnaCareHours/DayGroup.tsx` sem
+ * mudança de comportamento, com 1 correção no port: o `aria-label` do checkbox de turno usava
+ * `providerName` no parâmetro `date` do i18n (`shiftCheckboxAriaLabel`) — corrigido para
+ * `formatShortDate(shift.date)`, mesmo padrão do `ProviderGroup` antigo.
+ *
+ * Regras travadas preservadas (mesma origem de `ProviderGroup`): validado CONGELA; contestado
+ * mostra motivo (lista fechada, sempre visível) + nota (opcional, "Nota restringida" quando
+ * ausente); "Sin check-in" e "Web admin" com destaque de origem; validação é sempre por TURNO.
  */
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@presentation/components/atoms/Button';
 import { Checkbox } from '@presentation/components/atoms/Checkbox';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { ProgressBar } from '@presentation/components/atoms/ProgressBar';
+import { Button } from '@presentation/components/atoms/Button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@presentation/components/atoms/Table';
 import { OriginBadge } from './OriginBadge';
 import { ValidationStatusBadge } from './ValidationStatusBadge';
-import type { AnaCareProvider, AnaCareShift } from './types';
+import type { AnaCareShift } from './types';
 import {
+  dayHoursSummary,
   isShiftSelectable,
-  pendingShiftsOf,
+  pendingSelectionStateOf,
   providerDisplayName,
-  providerPendingSelectionState,
   shiftHours,
-  totalHours,
-  validationProgress,
+  type DayGroupData,
   type SinCheckinHoursMode,
 } from './selectors';
 
 /** Diferença mínima entre real e previsto para destacar a coluna Horas. */
 const HOURS_HIGHLIGHT_THRESHOLD = 15 / 60; // 15 minutos em horas
 
-interface ProviderGroupProps {
-  provider: AnaCareProvider;
+interface DayGroupProps {
+  day: DayGroupData;
   disableActions: boolean;
   disableReason?: string;
   onValidateShift: (shift: AnaCareShift) => void;
   onOpenContestModal: (shift: AnaCareShift) => void;
-  /** Turnos selecionados no PACIENTE inteiro — pode misturar prestadores diferentes. */
   selectedShiftIds: ReadonlySet<string>;
   onToggleShift: (shiftId: string) => void;
-  /** Marca/desmarca TODOS os pendentes deste prestador de uma vez (checkbox de cabeçalho). */
-  onToggleProviderPending: (provider: AnaCareProvider) => void;
-  highlightNoCheckIn?: boolean;
+  /** Marca/desmarca TODOS os pendentes DESTE DIA de uma vez (checkbox de cabeçalho). */
+  onToggleDayPending: (shifts: AnaCareShift[]) => void;
   sinCheckinHoursMode?: SinCheckinHoursMode;
 }
 
-export function ProviderGroup({
-  provider,
+export function DayGroup({
+  day,
   disableActions,
   disableReason,
   onValidateShift,
   onOpenContestModal,
   selectedShiftIds,
   onToggleShift,
-  onToggleProviderPending,
-  highlightNoCheckIn = false,
+  onToggleDayPending,
   sinCheckinHoursMode = 'zero',
-}: ProviderGroupProps): JSX.Element {
+}: DayGroupProps): JSX.Element {
   const { t } = useTranslation();
-  const shifts = provider.shifts;
-  const progress = validationProgress(shifts);
-  const hours = totalHours(shifts, sinCheckinHoursMode);
-  const pending = pendingShiftsOf(provider);
-  const allValidated = progress.total > 0 && progress.validated === progress.total;
-  const pendingSelectionState = providerPendingSelectionState(provider, selectedShiftIds);
+  const shifts = day.entries.map((e) => e.shift);
+  const pendingSelectionState = pendingSelectionStateOf(shifts, selectedShiftIds);
+  const hasPending = shifts.some((s) => s.status === 'pendiente');
+  const heading = formatWeekdayHeading(day.date);
+  const { total, validated, allValidated } = dayHoursSummary(shifts, sinCheckinHoursMode);
+
+  // Ação "Enviar" — o QUE ela faz ainda não está definido pelo Gabriel (pendente, ver relatório).
+  // Aqui só a REGRA DE HABILITAÇÃO importa: todo turno do dia validado. Estado local, só visual —
+  // nenhuma escrita real, nenhum fluxo de backend inventado.
+  const [sent, setSent] = useState(false);
+  const sendDisabledReason = disableActions
+    ? t('admin.anacareHours.stale.blockedPrefix', { reason: disableReason })
+    : !allValidated
+      ? t('admin.anacareHours.dayGroup.sendDisabledHint')
+      : undefined;
 
   return (
-    <div className="border border-gray-600 rounded-xl overflow-hidden" data-testid={`anacare-hours-provider-group-${provider.anaCareId}`}>
+    <div className="border border-gray-600 rounded-xl overflow-hidden" data-testid={`anacare-hours-day-group-${day.date}`}>
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-gray-300">
-        <div className="flex items-center gap-3">
-          {pending.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3">
+          {hasPending && (
             <Checkbox
               checked={pendingSelectionState === 'all'}
               disabled={disableActions}
-              onChange={() => onToggleProviderPending(provider)}
-              aria-label={t('admin.anacareHours.providerGroup.selectAllPendingAriaLabel', { provider: providerDisplayName(provider) })}
-              data-testid={`anacare-hours-select-all-pending-${provider.anaCareId}`}
+              onChange={() => onToggleDayPending(shifts)}
+              aria-label={t('admin.anacareHours.dayGroup.selectAllPendingAriaLabel', { date: heading })}
+              data-testid={`anacare-hours-select-all-pending-day-${day.date}`}
               data-selection-state={pendingSelectionState}
             />
           )}
           <Heading level={4} as="h3">
-            {providerDisplayName(provider)}
+            {heading}
           </Heading>
-          <Text size="xs" color="muted">
-            {t('admin.anacareHours.providerGroup.shiftsAndHours', { count: shifts.length, hours: hours.toFixed(1) })}
+          <Text size="xs" color="muted" data-testid={`anacare-hours-day-totals-${day.date}`}>
+            {t('admin.anacareHours.dayGroup.totalsSummary', { total: total.toFixed(1), validated: validated.toFixed(1) })}
           </Text>
         </div>
-        <div className="flex flex-col items-end gap-1">
-          <div className="flex items-center gap-3">
-            <ProgressBar percentage={progress.percentage} height="sm" className="w-32" />
-            <Text size="xs" color="muted">
-              {progress.validated}/{progress.total}
-            </Text>
-            {pending.length === 0 &&
-              (allValidated ? (
-                <Text
-                  size="xs"
-                  className="!text-gray-800 whitespace-nowrap shrink-0"
-                  data-testid={`anacare-hours-no-pending-${provider.anaCareId}`}
-                >
-                  {t('admin.anacareHours.providerGroup.allValidated')}
-                </Text>
-              ) : (
-                <Text size="xs" className="!text-gray-800" data-testid={`anacare-hours-no-pending-${provider.anaCareId}`}>
-                  {t('admin.anacareHours.providerGroup.noPendingContested')}
-                </Text>
-              ))}
-          </div>
+        <div className="flex items-center gap-3">
           {disableActions && (
-            <Text size="xs" className="!text-red-600" data-testid={`anacare-hours-disable-reason-${provider.anaCareId}`}>
+            <Text size="xs" className="!text-red-600" data-testid={`anacare-hours-disable-reason-day-${day.date}`}>
               {t('admin.anacareHours.stale.blockedPrefix', { reason: disableReason })}
             </Text>
+          )}
+          {sent ? (
+            <Text size="xs" className="!text-green-700" data-testid={`anacare-hours-day-sent-${day.date}`}>
+              {t('admin.anacareHours.dayGroup.sentLabel')}
+            </Text>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={disableActions || !allValidated}
+              title={sendDisabledReason}
+              onClick={() => setSent(true)}
+              data-testid={`anacare-hours-send-day-${day.date}`}
+            >
+              {t('admin.anacareHours.dayGroup.sendAction')}
+            </Button>
           )}
         </div>
       </div>
@@ -122,25 +126,27 @@ export function ProviderGroup({
       <Table>
         <TableHeader>
           <TableHead unwrapped aria-label={t('admin.anacareHours.providerGroup.table.select')} />
-          <TableHead>{t('admin.anacareHours.providerGroup.table.date')}</TableHead>
+          <TableHead>{t('admin.anacareHours.dayGroup.table.provider')}</TableHead>
           <TableHead>{t('admin.anacareHours.providerGroup.table.scheduled')}</TableHead>
-          <TableHead>{t('admin.anacareHours.providerGroup.table.actual')}</TableHead>
+          <TableHead>{t('admin.anacareHours.dayGroup.table.checkin')}</TableHead>
+          <TableHead>{t('admin.anacareHours.dayGroup.table.checkout')}</TableHead>
           <TableHead align="right">{t('admin.anacareHours.providerGroup.table.hours')}</TableHead>
           <TableHead>{t('admin.anacareHours.providerGroup.table.origin')}</TableHead>
           <TableHead>{t('admin.anacareHours.providerGroup.table.status')}</TableHead>
           <TableHead>{t('admin.anacareHours.providerGroup.table.actions')}</TableHead>
         </TableHeader>
         <TableBody>
-          {shifts.map((shift) => (
-            <ShiftRows
+          {day.entries.map(({ shift, provider }) => (
+            <ShiftRow
               key={shift.id}
               shift={shift}
+              providerName={providerDisplayName(provider)}
               disableActions={disableActions}
               onValidateShift={onValidateShift}
               onOpenContestModal={onOpenContestModal}
               selected={selectedShiftIds.has(shift.id)}
               onToggleShift={onToggleShift}
-              highlight={highlightNoCheckIn && shift.origin === 'sin_checkin'}
+              highlight={shift.origin === 'sin_checkin'}
               sinCheckinHoursMode={sinCheckinHoursMode}
             />
           ))}
@@ -150,8 +156,9 @@ export function ProviderGroup({
   );
 }
 
-function ShiftRows({
+function ShiftRow({
   shift,
+  providerName,
   disableActions,
   onValidateShift,
   onOpenContestModal,
@@ -161,6 +168,7 @@ function ShiftRows({
   sinCheckinHoursMode = 'zero',
 }: {
   shift: AnaCareShift;
+  providerName: string;
   disableActions: boolean;
   onValidateShift: (shift: AnaCareShift) => void;
   onOpenContestModal: (shift: AnaCareShift) => void;
@@ -188,13 +196,12 @@ function ShiftRows({
             />
           )}
         </TableCell>
-        <TableCell>{formatShortDate(shift.date)}</TableCell>
+        <TableCell weight="medium">{providerName}</TableCell>
         <TableCell>
           {shift.scheduledStart}–{shift.scheduledEnd}
         </TableCell>
-        <TableCell>
-          {shift.actualStart && shift.actualEnd ? `${shift.actualStart}–${shift.actualEnd}` : '—'}
-        </TableCell>
+        <TableCell data-testid={`anacare-hours-shift-checkin-${shift.id}`}>{shift.actualStart ?? '—'}</TableCell>
+        <TableCell data-testid={`anacare-hours-shift-checkout-${shift.id}`}>{shift.actualEnd ?? '—'}</TableCell>
         <TableCell align="right" unwrapped>
           <Text as="span" size="sm" weight={diffFromScheduled ? 'semibold' : 'normal'} className={diffFromScheduled ? '!text-amber-700' : undefined}>
             {showDash ? '—' : `${hours.toFixed(1)} h`}
@@ -222,11 +229,6 @@ function ShiftRows({
               })}
             </Text>
           ) : (
-            // D5 (cobertura, 15/09): o `ValidationStatus` é um union FECHADO de 3 valores
-            // ('pendiente'|'validado'|'contestado') — excluído 'validado' acima, sobra
-            // exatamente `canValidate` (pendiente/contestado). O `: canValidate ? (...) : null`
-            // de antes tinha um `null` MORTO (nenhum 4º status existe pra cair nele) —
-            // removido em vez de marcado como ignorado.
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
@@ -255,7 +257,7 @@ function ShiftRows({
       </TableRow>
       {shift.status === 'contestado' && shift.contestReason && (
         <TableRow clickable={false}>
-          <TableCell unwrapped colSpan={8}>
+          <TableCell unwrapped colSpan={9}>
             <div className="px-2 py-1 bg-red-50 rounded flex flex-col gap-0.5">
               <Text size="xs" className="!text-red-700">
                 {t('admin.anacareHours.providerGroup.reason', { reason: t(`admin.anacareHours.contestModal.reasons.${shift.contestReason}`) })}
@@ -276,4 +278,12 @@ function ShiftRows({
 function formatShortDate(isoDate: string): string {
   const [, month, day] = isoDate.split('-');
   return `${day}/${month}`;
+}
+
+/** "Martes, 1 de septiembre" — es-AR, primeira letra maiúscula (Intl devolve minúscula). */
+function formatWeekdayHeading(isoDate: string): string {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const formatted = new Intl.DateTimeFormat('es-AR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(date);
+  return formatted.charAt(0).toUpperCase() + formatted.slice(1);
 }

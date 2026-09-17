@@ -12,20 +12,35 @@ export interface SourceShiftDTO {
   anaCareNurseId: string;
   /** ISO 8601 (UTC), YYYY-MM-DD para o dia do turno. */
   date: string;
-  scheduledStart: string;
-  scheduledEnd: string;
+  /**
+   * `null` = retrato sem o previsto gravado ainda (`planned_start`/`planned_end` NULL no banco,
+   * migration 437) — item 7 da revisão de PR: o repositório NÃO substitui mais por `''` aqui (isso
+   * escondia o "não sei" como se fosse um horário válido e produzia `NaN` no cálculo de horas
+   * previstas). Quem decide o fallback de exibição é o mapper (`AnaCareHoursMapper`), na fronteira
+   * com o contrato de wire do front.
+   */
+  scheduledStart: string | null;
+  scheduledEnd: string | null;
   actualStart: string | null;
   actualEnd: string | null;
   /** 'app' | 'web_admin' | null — null = sem check-in. */
   checkinSource: 'app' | 'web_admin' | null;
-  /** Horas decimais da fonte (duration_hours) — null quando não há check-in. */
-  durationHours: number | null;
+  /**
+   * Afirmação da fonte de que o turno fechou. NÃO existe campo de horas trabalhadas na porta —
+   * medido 17/09 contra a API real: o único campo de horas do Ana Care (`duration`) é o PREVISTO
+   * (`scheduledEnd - scheduledStart`), preenchido mesmo sem check-in e mesmo turno não finalizado.
+   * Hora trabalhada se deriva SEMPRE de `actualStart`/`actualEnd` (ver `AnaCareHoursMapper`), nunca
+   * de um campo da fonte.
+   */
+  isFinalized: boolean;
 }
 
 export interface ListShiftsParams {
   /** Mês no formato YYYY-MM. */
   month: string;
   patientId?: string;
+  /** Restringe a uma reserva/conta específica do Ana Care (mesmo número que a conta — F17). */
+  reservationId?: string;
 }
 
 /** Estado do retrato — alimenta `AnaCareMonthSnapshot.stale`/`circuitBreakerOpen` e a recusa de escrita (spec "retrato desatualizado bloqueia a validação no serviço e na tela"). */

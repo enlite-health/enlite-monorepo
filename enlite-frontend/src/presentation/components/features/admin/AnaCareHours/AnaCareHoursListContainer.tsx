@@ -13,7 +13,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { useAnaCareHoursMonth } from '@hooks/admin/useAnaCareHoursMonth';
 import { AnaCareHoursListPage } from './AnaCareHoursListPage';
 import type { AnaCareHoursService } from './AnaCareHoursService';
-import type { SinCheckinHoursMode } from './selectors';
+import { previousMonthIso, type SinCheckinHoursMode } from './selectors';
 
 interface AnaCareHoursListContainerProps {
   service: AnaCareHoursService;
@@ -25,7 +25,9 @@ interface AnaCareHoursListContainerProps {
 export function AnaCareHoursListContainer({
   service,
   onOpenPatient,
-  initialMonth = '2026-08',
+  // Mês padrão = MÊS ANTERIOR ao atual (decisão do Gabriel, 16/09) — nunca cravado em código;
+  // `initialMonth` continua aceitando override explícito (harness/teste).
+  initialMonth = previousMonthIso(),
   sinCheckinHoursMode,
 }: AnaCareHoursListContainerProps): JSX.Element {
   const { t } = useTranslation();

@@ -153,7 +153,7 @@ export class AnaCareHoursHttpService implements AnaCareHoursService {
   async getMonthSnapshot(month: string, filters?: AnaCareHoursMonthFilters): Promise<AnaCareMonthSnapshot> {
     const snapshot = await this.getJson<AnaCareMonthSnapshot>(`${this.basePath}/months/${encodeURIComponent(month)}`);
     if (!snapshot) {
-      return { month, updatedAt: new Date().toISOString(), stale: false, circuitBreakerOpen: false, patients: [] };
+      return { month, updatedAt: new Date().toISOString(), stale: false, snapshotState: 'nao_construido', circuitBreakerOpen: false, patients: [] };
     }
     return { ...snapshot, patients: filterPatients(snapshot.patients, filters) };
   }
@@ -164,8 +164,8 @@ export class AnaCareHoursHttpService implements AnaCareHoursService {
 
   async getRetratoStatus(month: string): Promise<AnaCareRetratoStatus> {
     const snapshot = await this.getJson<AnaCareMonthSnapshot>(`${this.basePath}/months/${encodeURIComponent(month)}`);
-    if (!snapshot) return { updatedAt: new Date().toISOString(), stale: false, circuitBreakerOpen: false };
-    return { updatedAt: snapshot.updatedAt, stale: snapshot.stale, circuitBreakerOpen: snapshot.circuitBreakerOpen };
+    if (!snapshot) return { updatedAt: new Date().toISOString(), stale: false, snapshotState: 'nao_construido', circuitBreakerOpen: false };
+    return { updatedAt: snapshot.updatedAt, stale: snapshot.stale, snapshotState: snapshot.snapshotState, circuitBreakerOpen: snapshot.circuitBreakerOpen };
   }
 
   async validateShift({ shiftId }: ValidateShiftCommand): Promise<void> {

@@ -12,6 +12,7 @@ function snapshot(overrides: Partial<AnaCareMonthSnapshot> = {}): AnaCareMonthSn
     month: '2026-08',
     updatedAt: '2026-09-15T08:00:00-03:00',
     stale: false,
+    snapshotState: 'fresco',
     circuitBreakerOpen: false,
     patients: [
       {
@@ -81,9 +82,20 @@ describe('AnaCareHoursListPage', () => {
     expect(screen.queryByTestId('anacare-hours-patient-row-90447')).not.toBeInTheDocument();
   });
 
-  it('POSITIVO — retrato desatualizado (stale) mostra o AlertBanner', () => {
-    render(<AnaCareHoursListPage snapshot={snapshot({ stale: true })} onOpenPatient={vi.fn()} />);
+  it('POSITIVO — retrato desatualizado (stale, sincronizado) mostra o AlertBanner com a mensagem de "mais de 24 horas"', () => {
+    render(<AnaCareHoursListPage snapshot={snapshot({ stale: true, snapshotState: 'velho' })} onOpenPatient={vi.fn()} />);
     expect(screen.getByText('admin.anacareHours.stale.messageSimple')).toBeInTheDocument();
+  });
+
+  /**
+   * Item 3 (revisão de PR): "nunca construído" tem mensagem PRÓPRIA — antes, `stale=true`
+   * sozinho fazia a tela mostrar sempre "há mais de 24 horas", falso quando o sync nunca rodou.
+   * Este teste MORRE se a mensagem de "nao_construido" voltar a colapsar em `messageSimple`.
+   */
+  it('POSITIVO — retrato NUNCA construído (snapshotState=nao_construido) mostra mensagem própria, NÃO "mais de 24 horas"', () => {
+    render(<AnaCareHoursListPage snapshot={snapshot({ stale: true, snapshotState: 'nao_construido' })} onOpenPatient={vi.fn()} />);
+    expect(screen.getByText('admin.anacareHours.stale.messageNaoConstruido')).toBeInTheDocument();
+    expect(screen.queryByText('admin.anacareHours.stale.messageSimple')).not.toBeInTheDocument();
   });
 
   it('POSITIVO — disjuntor aberto mostra o AlertBanner com a mensagem do disjuntor', () => {

@@ -17,7 +17,7 @@ function fakeDto(overrides: Partial<SourceShiftDTO> = {}): SourceShiftDTO {
     actualStart: null,
     actualEnd: null,
     checkinSource: null,
-    durationHours: null,
+    isFinalized: false,
     ...overrides,
   };
 }
@@ -30,7 +30,41 @@ describe('AnaCareShiftsSourceReal', () => {
 
     const result = await source.listShifts({ month: '2026-09' });
     expect(result).toEqual([fakeDto()]);
-    expect(listShifts).toHaveBeenCalledWith({ month: '2026-09', patientId: undefined });
+    expect(listShifts).toHaveBeenCalledWith({
+      from: '2026-09-01',
+      to: '2026-09-30',
+      patientId: undefined,
+      reservationId: undefined,
+    });
+  });
+
+  it('listShifts traduz `month` para `from`/`to` (1º e último dia do mês) ANTES de chamar o cliente — bug medido 16/09: `?month=` não filtra no servidor (count=882776 vs count=3483 com min_date/max_date)', async () => {
+    const listShifts = jest.fn().mockResolvedValue([]);
+    const client = { listShifts, getRawShift: jest.fn(), circuitBreakerOpen: false } as unknown as AnaCareSessionClient;
+    const source = new AnaCareShiftsSourceReal(client);
+
+    await source.listShifts({ month: '2026-02' }); // fevereiro 2026 (não bissexto) — 28 dias
+    await source.listShifts({ month: '2028-02' }); // fevereiro 2028 (bissexto) — 29 dias
+    await source.listShifts({ month: '2026-01' }); // janeiro — 31 dias
+
+    expect(listShifts.mock.calls[0][0]).toMatchObject({ from: '2026-02-01', to: '2026-02-28' });
+    expect(listShifts.mock.calls[1][0]).toMatchObject({ from: '2028-02-01', to: '2028-02-29' });
+    expect(listShifts.mock.calls[2][0]).toMatchObject({ from: '2026-01-01', to: '2026-01-31' });
+  });
+
+  it('listShifts repassa patientId e reservationId ao cliente junto com a faixa traduzida', async () => {
+    const listShifts = jest.fn().mockResolvedValue([]);
+    const client = { listShifts, getRawShift: jest.fn(), circuitBreakerOpen: false } as unknown as AnaCareSessionClient;
+    const source = new AnaCareShiftsSourceReal(client);
+
+    await source.listShifts({ month: '2026-09', patientId: '42', reservationId: '99' });
+
+    expect(listShifts).toHaveBeenCalledWith({
+      from: '2026-09-01',
+      to: '2026-09-30',
+      patientId: '42',
+      reservationId: '99',
+    });
   });
 
   it('getShift minimiza o turno cru retornado pelo cliente', async () => {
@@ -42,7 +76,8 @@ describe('AnaCareShiftsSourceReal', () => {
       actual_start: null,
       actual_end: null,
       checkin_source: 'app',
-      duration_hours: 4,
+      duration: 4,
+      is_finalized: true,
       patient: { id: 20, agency: 116, document_type: 'DNI', document_number: '9', first_name: 'X', last_name: 'Y' },
       nurse: { id: 200, first_name: 'N', last_name: 'M' },
     });
@@ -54,7 +89,7 @@ describe('AnaCareShiftsSourceReal', () => {
     expect(result?.anaCarePatientId).toBe('20');
     // não pode ter escapado nenhum campo fora do DTO (contrato de minimização)
     expect(Object.keys(result as object).sort()).toEqual(
-      ['sourceShiftId', 'anaCarePatientId', 'anaCareNurseId', 'date', 'scheduledStart', 'scheduledEnd', 'actualStart', 'actualEnd', 'checkinSource', 'durationHours'].sort(),
+      ['sourceShiftId', 'anaCarePatientId', 'anaCareNurseId', 'date', 'scheduledStart', 'scheduledEnd', 'actualStart', 'actualEnd', 'checkinSource', 'isFinalized'].sort(),
     );
   });
 
