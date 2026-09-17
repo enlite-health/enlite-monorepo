@@ -93,5 +93,6 @@ export function rawShiftSemCheckin(overrides: Partial<RawAnaCareShift> = {}): Ra
     checkin_delay: null,
     duration: 12,
     is_finalized: false,
+    ...overrides,
   });
 }

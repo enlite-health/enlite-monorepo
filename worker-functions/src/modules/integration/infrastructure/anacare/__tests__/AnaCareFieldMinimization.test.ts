@@ -13,13 +13,24 @@
  * rawShiftRealShape.ts` (nomes de campo medidos contra a API real) — este arquivo de POISON
  * continua usando fixture PRÓPRIA com os nomes corretos, só para o contrato de descarte de PII.
  */
+const mockLogWarn = jest.fn();
+jest.mock('@shared/logging', () => ({
+  logger: { info: jest.fn(), child: jest.fn(), warn: (...a: unknown[]) => mockLogWarn(...a), error: jest.fn() },
+}));
+
 import { minimizeShiftDTO, minimizePatientFields, shiftDayFrom, POISON_MARKER } from '../AnaCareFieldMinimization';
 import type { RawAnaCareShift, RawAnaCarePatient } from '../AnaCareFieldMinimization';
 import {
   rawShiftNoturnoCruzaMeiaNoite,
   rawShiftComCheckinSemCheckout,
   rawShiftSemCheckin,
+  rawPatientRealShape,
+  rawNurseRealShape,
 } from '../__fixtures__/rawShiftRealShape';
+
+beforeEach(() => {
+  mockLogWarn.mockClear();
+});
 
 function rawPatientFixture(overrides: Partial<RawAnaCarePatient> = {}): RawAnaCarePatient {
   return {
@@ -239,5 +250,91 @@ describe('AnaCareFieldMinimization — conserto de raiz 17/09/2026 (nomes reais 
     } as unknown as RawAnaCareShift;
 
     expect(() => minimizeShiftDTO(rawComNomesAntigos)).toThrow();
+  });
+});
+
+describe('AnaCareFieldMinimization — fixtures de __fixtures__/rawShiftRealShape.ts respeitam overrides (conserto 17/09)', () => {
+  // Morre se o spread `...overrides` sumir de QUALQUER uma das três fixtures — a fixture nova
+  // (`rawShiftSemCheckin`) tinha o bug: recebia `overrides` e IGNORAVA, devolvendo sempre os
+  // defaults. Um teste futuro que passasse override receberia o default em silêncio (falso verde).
+  it('rawShiftNoturnoCruzaMeiaNoite repassa override', () => {
+    expect(rawShiftNoturnoCruzaMeiaNoite({ id: 'override-1' }).id).toBe('override-1');
+  });
+
+  it('rawShiftComCheckinSemCheckout repassa override', () => {
+    expect(rawShiftComCheckinSemCheckout({ id: 'override-2' }).id).toBe('override-2');
+  });
+
+  it('rawShiftSemCheckin repassa override (defeito: fixture ignorava `...overrides`)', () => {
+    expect(rawShiftSemCheckin({ id: 'override-3' }).id).toBe('override-3');
+  });
+
+  it('rawPatientRealShape repassa override', () => {
+    expect(rawPatientRealShape({ first_name: 'Override' }).first_name).toBe('Override');
+  });
+
+  it('rawNurseRealShape repassa override', () => {
+    expect(rawNurseRealShape({ first_name: 'Override' }).first_name).toBe('Override');
+  });
+});
+
+describe('AnaCareFieldMinimization — checkin_source/checkout_source validados em RUNTIME (conserto 17/09, migration 437)', () => {
+  it("valor 'app' passa intacto em ambos os campos", () => {
+    const dto = minimizeShiftDTO(rawShiftNoturnoCruzaMeiaNoite({ checkin_source: 'app', checkout_source: 'app' }));
+    expect(dto.checkinSource).toBe('app');
+    expect(dto.checkoutSource).toBe('app');
+    expect(mockLogWarn).not.toHaveBeenCalled();
+  });
+
+  it("valor 'web_admin' passa intacto em ambos os campos", () => {
+    const dto = minimizeShiftDTO(
+      rawShiftNoturnoCruzaMeiaNoite({ checkin_source: 'web_admin', checkout_source: 'web_admin' }),
+    );
+    expect(dto.checkinSource).toBe('web_admin');
+    expect(dto.checkoutSource).toBe('web_admin');
+    expect(mockLogWarn).not.toHaveBeenCalled();
+  });
+
+  it('null passa como null em ambos os campos, sem logar', () => {
+    const dto = minimizeShiftDTO(rawShiftSemCheckin());
+    expect(dto.checkinSource).toBeNull();
+    expect(dto.checkoutSource).toBeNull();
+    expect(mockLogWarn).not.toHaveBeenCalled();
+  });
+
+  it("valor desconhecido em checkin_source vira null e chama o logger — NUNCA repassa cru (o que derrubaria o INSERT em lote pelo CHECK da migration 437)", () => {
+    const raw = rawShiftNoturnoCruzaMeiaNoite({ checkin_source: 'telegram' as unknown as 'app' });
+    const dto = minimizeShiftDTO(raw);
+
+    expect(dto.checkinSource).toBeNull();
+    expect(mockLogWarn).toHaveBeenCalledWith(
+      expect.objectContaining({ field: 'checkin_source', value: 'telegram' }),
+    );
+  });
+
+  it("valor desconhecido em checkout_source vira null e chama o logger (irmão do checkin_source — mesmo conserto nos DOIS campos)", () => {
+    const raw = rawShiftNoturnoCruzaMeiaNoite({ checkout_source: 'telegram' as unknown as 'app' });
+    const dto = minimizeShiftDTO(raw);
+
+    expect(dto.checkoutSource).toBeNull();
+    expect(mockLogWarn).toHaveBeenCalledWith(
+      expect.objectContaining({ field: 'checkout_source', value: 'telegram' }),
+    );
+  });
+
+  // MORRE se alguém voltar a repassar `raw.checkin_source`/`raw.checkout_source` cru sem validar —
+  // um valor desconhecido chegaria intacto ao repositório e o CHECK da migration 437 rejeitaria o
+  // INSERT do lote inteiro (o mesmo modo de falha do `shift_date`, pela terceira vez nesta frente).
+  it('valor desconhecido NUNCA aparece cru no DTO (nem em checkinSource, nem em checkoutSource)', () => {
+    const raw = rawShiftNoturnoCruzaMeiaNoite({
+      checkin_source: 'telegram' as unknown as 'app',
+      checkout_source: 'outro-valor-novo' as unknown as 'app',
+    });
+    const dto = minimizeShiftDTO(raw);
+
+    expect(dto.checkinSource).not.toBe('telegram');
+    expect(dto.checkoutSource).not.toBe('outro-valor-novo');
+    expect([null, 'app', 'web_admin']).toContain(dto.checkinSource);
+    expect([null, 'app', 'web_admin']).toContain(dto.checkoutSource);
   });
 });

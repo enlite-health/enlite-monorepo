@@ -12,9 +12,35 @@
  * `POISON_MARKER` só existe para o teste de contrato — não é usado fora de fixture.
  */
 
+import { logger } from '@shared/logging';
 import type { SourceShiftDTO } from '../../../anacare-hours/domain/AnaCareShiftsSource';
 
+const TAG = '[AnaCareFieldMinimization]';
+
 export const POISON_MARKER = '__POISON__';
+
+const KNOWN_SOURCE_VALUES = ['app', 'web_admin'] as const;
+type KnownSourceValue = (typeof KNOWN_SOURCE_VALUES)[number];
+
+/**
+ * Valida `checkin_source`/`checkout_source` em RUNTIME — a união `'app' | 'web_admin' | null` do
+ * `RawAnaCareShift` é só TIPO, não existe no payload em tempo de execução. A coluna do banco
+ * (migration 437) tem `CHECK (... IS NULL OR ... IN ('app','web_admin'))`: um valor novo na fonte
+ * rejeita o INSERT em LOTE (o mesmo modo de falha do `shift_date`, pela terceira vez nesta frente).
+ * Perder a origem de UM turno (vira `null`) é muito melhor que perder o mês inteiro com um 500
+ * opaco — e um valor novo é algo que queremos VER no log, não descobrir por um lote inteiro morto.
+ */
+function validateSourceField(
+  field: 'checkin_source' | 'checkout_source',
+  value: string | null,
+): KnownSourceValue | null {
+  if (value === null) return null;
+  if ((KNOWN_SOURCE_VALUES as readonly string[]).includes(value)) {
+    return value as KnownSourceValue;
+  }
+  logger.warn({ msg: `${TAG} valor desconhecido em campo de origem, gravando null`, field, value });
+  return null;
+}
 
 /** Forma crua de um paciente aninhado em `/api/shifts/` (campos permitidos + os descartados). */
 export interface RawAnaCarePatient {
@@ -153,8 +179,8 @@ export function minimizeShiftDTO(raw: RawAnaCareShift): SourceShiftDTO {
     scheduledEnd: raw.end,
     actualStart: raw.checkin,
     actualEnd: raw.checkout,
-    checkinSource: raw.checkin_source,
-    checkoutSource: raw.checkout_source,
+    checkinSource: validateSourceField('checkin_source', raw.checkin_source),
+    checkoutSource: validateSourceField('checkout_source', raw.checkout_source),
     checkinDelay: raw.checkin_delay,
     isFinalized: raw.is_finalized,
     // `raw.month` é afirmação da fonte (existe em 88/88 medidos); fallback só para um raw sem ele.
