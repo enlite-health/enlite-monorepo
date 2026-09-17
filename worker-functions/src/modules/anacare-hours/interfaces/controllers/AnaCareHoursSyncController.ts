@@ -76,6 +76,8 @@ export class AnaCareHoursSyncController {
         reservationsProcessed: outcome.reservationsProcessed,
         shiftsWritten: outcome.shiftsWritten,
         nextCursor: outcome.nextCursor,
+        shiftsSkippedNoProvider: outcome.shiftsSkippedNoProvider,
+        shiftsSkippedNoPatient: outcome.shiftsSkippedNoPatient,
       });
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));

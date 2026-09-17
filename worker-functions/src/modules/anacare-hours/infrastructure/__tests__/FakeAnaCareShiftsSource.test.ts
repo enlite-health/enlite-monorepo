@@ -92,21 +92,27 @@ describe('FakeAnaCareShiftsSource', () => {
   describe('listShifts', () => {
     it('sem patientId devolve todos os turnos do mês', async () => {
       const source = new FakeAnaCareShiftsSource();
-      const shifts = await source.listShifts({ month: '2026-09' });
+      const { shifts } = await source.listShifts({ month: '2026-09' });
       expect(shifts).toHaveLength(100);
     });
 
     it('com patientId filtra só os turnos daquele paciente sintético', async () => {
       const source = new FakeAnaCareShiftsSource();
-      const shifts = await source.listShifts({ month: '2026-09', patientId: 'AC-PAT-0' });
+      const { shifts } = await source.listShifts({ month: '2026-09', patientId: 'AC-PAT-0' });
       expect(shifts.length).toBeGreaterThan(0);
       for (const s of shifts) expect(s.anaCarePatientId).toBe('AC-PAT-0');
     });
 
     it('patientId desconhecido devolve lista vazia', async () => {
       const source = new FakeAnaCareShiftsSource();
-      const shifts = await source.listShifts({ month: '2026-09', patientId: 'AC-PAT-999' });
+      const { shifts } = await source.listShifts({ month: '2026-09', patientId: 'AC-PAT-999' });
       expect(shifts).toEqual([]);
+    });
+
+    it('massa 100% sintética NUNCA descarta turno — skipped sempre {0,0} (a fonte falsa não modela turno sem prestador/paciente)', async () => {
+      const source = new FakeAnaCareShiftsSource();
+      const { skipped } = await source.listShifts({ month: '2026-09' });
+      expect(skipped).toEqual({ noProvider: 0, noPatient: 0 });
     });
   });
 

@@ -19,8 +19,8 @@
 
 import { AnaCareRateLimiter } from './AnaCareRateLimiter';
 import { AnaCareHttpError, AnaCareTimeoutError } from './AnaCareHttpError';
-import { minimizeShiftDTO, type RawAnaCareShift } from './AnaCareFieldMinimization';
-import type { SourceShiftDTO } from '../../../anacare-hours/domain/AnaCareShiftsSource';
+import { minimizeShiftOrSkip, type RawAnaCareShift } from './AnaCareFieldMinimization';
+import type { ListShiftsResult, SourceShiftDTO } from '../../../anacare-hours/domain/AnaCareShiftsSource';
 import { logger } from '@shared/logging';
 import { isTransientHttpStatus } from '@shared/http/isTransientHttpStatus';
 
@@ -280,20 +280,46 @@ export class AnaCareSessionClient {
    * o nome certo é `patient`. `reservation_id` funciona e é usado pelo `AnaCareEnliteDirectory`
    * para restringir a leitura a uma reserva específica.
    */
-  async listShifts(params: { from: string; to: string; patientId?: string; reservationId?: string }): Promise<SourceShiftDTO[]> {
+  async listShifts(params: { from: string; to: string; patientId?: string; reservationId?: string }): Promise<ListShiftsResult> {
     const query: Record<string, string | number | undefined> = { min_date: params.from, max_date: params.to };
     if (params.patientId) query.patient = params.patientId;
     if (params.reservationId) query.reservation_id = params.reservationId;
 
-    const out: SourceShiftDTO[] = [];
+    const shifts: SourceShiftDTO[] = [];
+    let noProvider = 0;
+    let noPatient = 0;
+    const skippedNoProviderIds: string[] = [];
+    const skippedNoPatientIds: string[] = [];
+
     for await (const page of this.paginate<RawAnaCareShift>(SHIFTS_PATH, query)) {
       for (const raw of page) {
-        if (isEnliteUniverseShift(raw)) {
-          out.push(minimizeShiftDTO(raw));
+        if (!isEnliteUniverseShift(raw)) continue;
+        const result = minimizeShiftOrSkip(raw);
+        if (result.ok) {
+          shifts.push(result.dto);
+        } else if (result.reason === 'no-provider') {
+          noProvider += 1;
+          skippedNoProviderIds.push(result.sourceShiftId);
+        } else {
+          noPatient += 1;
+          skippedNoPatientIds.push(result.sourceShiftId);
         }
       }
     }
-    return out;
+
+    // Um log por LOTE (não por turno) — id de turno é metadado operacional, não PII (contagem
+    // zero é falha, nunca sucesso: só logamos quando há descarte de verdade).
+    if (noProvider > 0 || noPatient > 0) {
+      logger.warn({
+        msg: '[AnaCareSessionClient] turnos descartados na minimização (sem prestador/paciente) — contados, nunca em silêncio',
+        noProvider,
+        noPatient,
+        skippedNoProviderIds,
+        skippedNoPatientIds,
+      });
+    }
+
+    return { shifts, skipped: { noProvider, noPatient } };
   }
 
   /** Estado do disjuntor de carga (D341) — alimenta `getRetratoStatus()` da porta de horas. */

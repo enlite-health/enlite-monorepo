@@ -7,6 +7,7 @@ import type {
   AnaCareShiftsSource,
   AnaCareRetratoSourceStatus,
   ListShiftsParams,
+  ListShiftsResult,
   SourceShiftDTO,
 } from '../../../anacare-hours/domain/AnaCareShiftsSource';
 import type { AnaCareSessionClient } from './AnaCareSessionClient';
@@ -17,7 +18,7 @@ export class AnaCareShiftsSourceReal implements AnaCareShiftsSource {
   constructor(private readonly client: AnaCareSessionClient) {}
 
   /** `month` (conceito de domínio da porta) → `from`/`to` ANTES de chamar o cliente, que só fala em faixa de datas. */
-  async listShifts(params: ListShiftsParams): Promise<SourceShiftDTO[]> {
+  async listShifts(params: ListShiftsParams): Promise<ListShiftsResult> {
     const { minDate, maxDate } = monthToDateRange(params.month);
     return this.client.listShifts({
       from: minDate,

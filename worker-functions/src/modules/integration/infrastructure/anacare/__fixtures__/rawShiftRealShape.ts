@@ -9,10 +9,12 @@
  * `actual_start`/`actual_end`, que não existem na resposta real). Só esta fixture alimenta
  * `minimizeShiftDTO` com uma FORMA fiel à fonte.
  *
- * Três casos medidos (ver `AnaCareFieldMinimization.ts`, comentário de `RawAnaCareShift`):
+ * Quatro casos medidos (ver `AnaCareFieldMinimization.ts`, comentário de `RawAnaCareShift`):
  *   - noturno cruzando a meia-noite, com check-in e checkout;
  *   - com check-in e SEM checkout (`checkout: null`);
- *   - sem check-in nenhum, `is_finalized: false`.
+ *   - sem check-in nenhum, `is_finalized: false`;
+ *   - SEM PRESTADOR (`nurse: null`) — medido 15/3.421 (0,4%) na varredura 01–07/09/2026, causa
+ *     raiz do 500 em produção 17/09 (`Cannot read properties of null (reading 'id')`).
  * Offset `-06:00` em 100% dos 88 medidos (fuso da plataforma, não o argentino).
  */
 import type { RawAnaCarePatient, RawAnaCareNurse, RawAnaCareShift } from '../AnaCareFieldMinimization';
@@ -93,6 +95,28 @@ export function rawShiftSemCheckin(overrides: Partial<RawAnaCareShift> = {}): Ra
     checkin_delay: null,
     duration: 12,
     is_finalized: false,
+    ...overrides,
+  });
+}
+
+/**
+ * Caso 4 — turno agendado SEM PRESTADOR (`nurse: null`), medido 15/3.421 (0,4%) na varredura
+ * 01–07/09/2026 contra a API real. Causa raiz do 500 de produção 17/09: `minimizeShiftDTO` lia
+ * `raw.nurse.id` sem checar null. Este caso não pode ser minimizado — ver `minimizeShiftOrSkip`.
+ */
+export function rawShiftSemPrestador(overrides: Partial<RawAnaCareShift> = {}): RawAnaCareShift {
+  return rawShiftBase({
+    id: 1858095,
+    start: '2026-08-30T09:00:00-06:00',
+    end: '2026-08-30T13:00:00-06:00',
+    checkin: null,
+    checkout: null,
+    checkin_source: null,
+    checkout_source: null,
+    checkin_delay: null,
+    duration: 4,
+    is_finalized: false,
+    nurse: null,
     ...overrides,
   });
 }

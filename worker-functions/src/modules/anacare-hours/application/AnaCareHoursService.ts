@@ -126,7 +126,9 @@ export class AnaCareHoursService {
 
   /** O DETALHE continua AO VIVO na fonte — é a passagem Tela→backend→Ana Care→backend→Tela, barata por reserva/paciente (medido 17/09). */
   async getPatientMonth(month: string, patientId: string, canReadNote: boolean, canReadProviderName = false): Promise<AnaCarePatient | null> {
-    const sourceShifts = await this.source.listShifts({ month, patientId });
+    // `skipped` (turno sem paciente/prestador) não é reportado por este caminho de DETALHE —
+    // só o sync (`AnaCareHoursSyncRunner`) agrega e conta; achado registrado em separado.
+    const { shifts: sourceShifts } = await this.source.listShifts({ month, patientId });
     const patients = await this.buildPatients(sourceShifts, canReadNote, canReadProviderName);
     return patients.find((p) => p.anaCareId === patientId) ?? null;
   }
