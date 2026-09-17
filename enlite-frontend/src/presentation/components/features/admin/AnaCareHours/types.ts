@@ -88,9 +88,18 @@ export interface AnaCareShift {
 export interface AnaCareProvider {
   /** ↔ `anacare_shift.ana_care_nurse_id` (identidade na fonte, ex.: "90231"). */
   anaCareId: string;
-  /** ↔ `anacare_shift.worker_id IS NOT NULL` (FK resolvida). */
+  /** ↔ `anacare_shift.worker_id IS NOT NULL` (FK resolvida) — INDEPENDENTE do nome (ver `name`). */
   linked: boolean;
-  /** Vem do vínculo (`workers`), nunca do retrato — sem `nurse_name_cache` (decisão do Gabriel, 15/09). Só existe se `linked === true` E o ator tem `worker_contact:read`. */
+  /**
+   * Item 1 (decisão do Gabriel, 17/09, revoga a nota de 15/09 abaixo): vem do PAYLOAD do turno na
+   * fonte, não do cruzamento com `workers` — `linked` não gate o nome. Ausente quando o ator não
+   * tem `worker_contact:read` (gate mantido) ou quando a fonte não mandou nome para o turno.
+   *
+   * ⚠️ Hoje isso só se materializa no **DETALHE**, que vai à fonte ao vivo. A **LISTA** lê do
+   * retrato (`anacare_shift`), que NÃO tem coluna de nome — decisão da granularidade do retrato
+   * ainda aberta (D360 §"O que esta decisão NÃO fecha"). Na lista o valor vem `undefined` e a
+   * tela cai no fallback honesto `Sin vínculo · ID X`.
+   */
   name?: string;
   shifts: AnaCareShift[];
 }
@@ -98,9 +107,13 @@ export interface AnaCareProvider {
 export interface AnaCarePatient {
   /** ↔ `anacare_shift.ana_care_patient_id`. */
   anaCareId: string;
-  /** ↔ `anacare_shift.patient_id IS NOT NULL`. */
+  /** ↔ `anacare_shift.patient_id IS NOT NULL` — SEMPRE `false` hoje (D349 item 2, bloqueado: sem ID nosso do lado do paciente no Ana Care). */
   linked: boolean;
-  /** Vem do vínculo (`patients`), nunca do retrato. Só existe se `linked === true` E o ator tem `patient_identity:read`. */
+  /**
+   * Item 1 (decisão do Gabriel, 17/09): vem do PAYLOAD do turno na fonte — INDEPENDENTE de
+   * `linked` (que continua sempre `false`, D349 item 2). Ausente quando a fonte não mandou nome
+   * para o turno, e ausente na LISTA enquanto o retrato não guardar nome (ver `AnaCareProvider.name`).
+   */
   name?: string;
   providers: AnaCareProvider[];
 }

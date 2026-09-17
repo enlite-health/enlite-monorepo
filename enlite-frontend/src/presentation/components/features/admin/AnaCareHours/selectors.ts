@@ -72,12 +72,76 @@ export function originCounts(shifts: AnaCareShift[]): AnaCareOriginCounts {
   };
 }
 
+/**
+ * Item 1 (nome e sobrenome, decisão do Gabriel 17/09): o nome vem da FONTE (payload do turno), não
+ * mais gated por `linked` — `linked` continua significando "casa com um worker/paciente nosso" e é
+ * exibido/usado à parte (nunca decidiu se o NOME aparece). O fallback `Sin vínculo · ID X`
+ * permanece honesto para quando a fonte não manda nome (turno sem nome existe).
+ */
 export function providerDisplayName(provider: AnaCareProvider): string {
-  return provider.linked && provider.name ? provider.name : `Sin vínculo · ID ${provider.anaCareId}`;
+  return provider.name ? provider.name : `Sin vínculo · ID ${provider.anaCareId}`;
 }
 
 export function patientDisplayName(patient: AnaCarePatient): string {
-  return patient.linked && patient.name ? patient.name : `Sin vínculo · ID ${patient.anaCareId}`;
+  return patient.name ? patient.name : `Sin vínculo · ID ${patient.anaCareId}`;
+}
+
+/**
+ * Item 2 (conferência de horas, 17/09): a fonte manda os timestamps com offset FIXO `-06:00`
+ * (fuso da plataforma do Ana Care, medido: 100% dos turnos amostrados), e a tela existia para
+ * CONFERIR contra o Ana Care — o relógio de parede exibido tem de ser o MESMO que a fonte envia,
+ * nunca o fuso do navegador (`new Date(...).toLocaleTimeString()` erra isso, converte pro fuso
+ * local). `Etc/GMT+6` é a zona IANA equivalente a UTC-6 fixo, sem DST — funciona tanto para o
+ * timestamp CRU vindo direto da fonte (string com `-06:00`, caminho DETALHE) quanto para um
+ * round-trip por `timestamptz` no Postgres (caminho LISTA: o texto do offset pode virar `Z` na
+ * serialização, mas o INSTANTE gravado é o mesmo) — `new Date(iso)` normaliza os dois formatos ao
+ * mesmo instante UTC, e formatar com fuso FIXO devolve a mesma hora de parede nos dois casos.
+ */
+const SOURCE_TIME_ZONE = 'Etc/GMT+6';
+
+const wallClockFormatter = new Intl.DateTimeFormat('en-GB', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+  timeZone: SOURCE_TIME_ZONE,
+});
+
+const wallDateFormatter = new Intl.DateTimeFormat('en-CA', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  timeZone: SOURCE_TIME_ZONE,
+});
+
+/** `HH:MM` no fuso FIXO da fonte, ou `undefined` se `iso` vier vazio/nulo/inválido — nunca lança. */
+export function formatSourceTime(iso: string | null | undefined): string | undefined {
+  if (!iso) return undefined;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return wallClockFormatter.format(date);
+}
+
+/**
+ * `YYYY-MM-DD` no fuso da FONTE — só para COMPARAR dias (turno cruzando meia-noite), nunca
+ * exibido cru. Sem checagem de validade própria: o único chamador (`formatSourceRange`) só
+ * invoca depois que `formatSourceTime` já validou o MESMO iso — duplicar o guard aqui seria
+ * ramo morto, nunca exercitado.
+ */
+function sourceDayKey(iso: string): string {
+  return wallDateFormatter.format(new Date(iso)); // en-CA formata YYYY-MM-DD.
+}
+
+/**
+ * `HH:MM–HH:MM`, com `(+1)` quando o FIM cai em outro dia da fonte — medido: 46% dos turnos de
+ * agosto cruzam a meia-noite (1.255 de 2.701), `20:00–08:00` sozinho é ambíguo. `—` quando falta
+ * início ou fim (retrato sem o previsto gravado ainda, spec item 7 — nunca um horário inventado).
+ */
+export function formatSourceRange(startIso: string | null | undefined, endIso: string | null | undefined): string {
+  const start = formatSourceTime(startIso);
+  const end = formatSourceTime(endIso);
+  if (!start || !end) return '—';
+  const crossesMidnight = sourceDayKey(endIso!) > sourceDayKey(startIso!);
+  return crossesMidnight ? `${start}–${end} (+1)` : `${start}–${end}`;
 }
 
 /** Turnos com "Sin check-in" entre os pendentes de um lote — informação exibida no modal de lote. */

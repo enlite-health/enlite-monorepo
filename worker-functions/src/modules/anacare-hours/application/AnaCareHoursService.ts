@@ -16,7 +16,7 @@ import type { ShiftSyncRepository } from '../domain/AnaCareHoursSyncPorts';
 import { ShiftHoursValidationRepository, ShiftAlreadyValidatedError } from '../infrastructure/ShiftHoursValidationRepository';
 import { WorkerLinkRepository } from '../infrastructure/WorkerLinkRepository';
 import { AnaCareShiftRepository } from '../infrastructure/AnaCareShiftRepository';
-import { mapShift, groupIntoPatients, buildSnapshot, computeActualHours } from './AnaCareHoursMapper';
+import { mapShift, groupIntoPatients, buildSnapshot, computeActualHours, joinSourceName } from './AnaCareHoursMapper';
 import {
   AnaCareHoursServiceError,
   CONTEST_NOTE_MAX_LENGTH,
@@ -54,48 +54,44 @@ export class AnaCareHoursService {
   ) {}
 
   /**
-   * D349 item 1: resolve o vínculo de prestador em LOTE (nunca 1 SELECT por turno). A chave da
-   * Map já decide `linked`; o valor só carrega nome quando `canReadProviderName` — mesmo corte de
-   * `worker_contact:read` que a projeção de prestador já aplica em outras telas (D344).
+   * D349 item 1: resolve o VÍNCULO de prestador em LOTE (nunca 1 SELECT por turno) — só decide
+   * `linked` (presença do `anaCareNurseId` em `workers.ana_care_id`). Item 1 da conferência de
+   * horas (decisão do Gabriel 17/09) tirou o NOME daqui: nome não vem mais do cruzamento com
+   * `workers` (não decifra mais `firstNameEncrypted`/`lastNameEncrypted`), vem do payload da
+   * FONTE — ver `joinSourceName` em `buildPatients`. `linked` continua útil por si (D349): diz que
+   * o prestador do turno casa com um worker nosso, independente de termos o nome dele.
    */
-  private async resolveProviderLinks(nurseIds: readonly string[], canReadProviderName: boolean): Promise<Map<string, string | undefined>> {
+  private async resolveLinkedNurseIds(nurseIds: readonly string[]): Promise<ReadonlySet<string>> {
     const rows = await this.workerLinks.findByAnaCareIds(nurseIds);
-    const out = new Map<string, string | undefined>();
-    for (const [anaCareId, row] of rows) {
-      if (!canReadProviderName) {
-        out.set(anaCareId, undefined);
-        continue;
-      }
-      const [firstName, lastName] = await Promise.all([
-        row.firstNameEncrypted ? this.kms.decrypt(row.firstNameEncrypted) : Promise.resolve(null),
-        row.lastNameEncrypted ? this.kms.decrypt(row.lastNameEncrypted) : Promise.resolve(null),
-      ]);
-      const name = [firstName, lastName].filter(Boolean).join(' ').trim();
-      out.set(anaCareId, name || undefined);
-    }
-    return out;
+    return new Set(rows.keys());
   }
 
   /**
    * Comum aos dois caminhos (lista/detalhe): junta turnos JÁ OBTIDOS (do banco OU ao vivo) com
    * validação + vínculo de prestador + decifra de nota. Quem decide DE ONDE vieram os
    * `sourceShifts` é o chamador (`getMonthSnapshot` lê do retrato; `getPatientMonth` vai à fonte).
+   *
+   * Nome (item 1, 17/09): paciente sempre que a fonte mandar; prestador só quando
+   * `canReadProviderName` — MESMO gate de `worker_contact:read` de antes, só a ORIGEM do valor
+   * mudou (payload do turno, não mais `workers` decifrado).
    */
   private async buildPatients(sourceShifts: readonly SourceShiftDTO[], canReadNote: boolean, canReadProviderName: boolean): Promise<AnaCarePatient[]> {
     const validations = await this.validations.getByShiftIds(sourceShifts.map((s) => s.sourceShiftId));
     const nurseIds = [...new Set(sourceShifts.map((s) => s.anaCareNurseId))];
-    const providerLinks = await this.resolveProviderLinks(nurseIds, canReadProviderName);
+    const linkedNurseIds = await this.resolveLinkedNurseIds(nurseIds);
 
     const mapped = await Promise.all(
       sourceShifts.map(async (s) => {
         const validation = validations.get(s.sourceShiftId);
         const decryptedNote = canReadNote && validation?.noteEncrypted ? await this.kms.decrypt(validation.noteEncrypted) : null;
         const shift = mapShift(s, validation, canReadNote, decryptedNote || null);
-        return { shift, anaCarePatientId: s.anaCarePatientId, anaCareNurseId: s.anaCareNurseId };
+        const patientName = joinSourceName(s.patientFirstName, s.patientLastName);
+        const nurseName = canReadProviderName ? joinSourceName(s.nurseFirstName, s.nurseLastName) : undefined;
+        return { shift, anaCarePatientId: s.anaCarePatientId, anaCareNurseId: s.anaCareNurseId, patientName, nurseName };
       }),
     );
 
-    return groupIntoPatients(mapped, providerLinks);
+    return groupIntoPatients(mapped, linkedNurseIds);
   }
 
   /**

@@ -6,13 +6,22 @@
  * (`AnaCareShift`/`AnaCarePatient`/`AnaCareMonthSnapshot`) que o front consome — mesma
  * interface do protótipo (spec §Contrato de dados).
  *
- * Vínculo de PRESTADOR (D349, item 1): `groupIntoPatients` recebe `providerLinks` — a presença
- * da chave (`anaCareNurseId`) na Map já resolve `linked`, e o valor (nome, ou `undefined` sem a
- * célula `worker_contact:read`) resolve `name`. Quem monta essa Map é `AnaCareHoursService`
- * (lookup em `workers.ana_care_id`, D195/`MirrorWorkerService`).
+ * Vínculo de PRESTADOR (D349, item 1): `groupIntoPatients` recebe `linkedNurseIds` — só decide
+ * `linked` (presença do `anaCareNurseId` no cruzamento com `workers.ana_care_id`, lookup em LOTE
+ * feito por `AnaCareHoursService`/`WorkerLinkRepository`, D195/`MirrorWorkerService`).
  *
- * Vínculo de PACIENTE continua SEMPRE `false`/`undefined` — bloqueado por decisão (D349 item 2):
- * não existe hoje ID nosso do lado do paciente no Ana Care, nem API de leitura de paciente.
+ * NOME (item 1 da conferência de horas, decisão do Gabriel 17/09): "o nome vem junto na requisição
+ * do Ana Care e é de lá que você precisa pegar" — `patientName`/`nurseName` chegam já resolvidos
+ * em cada entrada de `shifts` (montados por `AnaCareHoursService.buildPatients` a partir de
+ * `SourceShiftDTO.patientFirstName/patientLastName/nurseFirstName/nurseLastName`), e são
+ * INDEPENDENTES de `linked` — nome vem da FONTE, vínculo vem do cruzamento com nosso banco. O
+ * gate `worker_contact:read` (`canReadProviderName`) continua aplicado ANTES de chegar aqui (quem
+ * não tem a célula manda `nurseName: undefined`, mesmo que a fonte tenha mandado o nome) — este
+ * módulo não decide permissão, só agrupa.
+ *
+ * Vínculo de PACIENTE continua SEMPRE `false` — bloqueado por decisão (D349 item 2): não existe
+ * hoje ID nosso do lado do paciente no Ana Care, nem API de leitura de paciente. O NOME do
+ * paciente, porém, não depende desse vínculo — vem sempre da fonte quando presente.
  */
 
 import type { AnaCareRetratoSourceStatus, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
@@ -24,6 +33,16 @@ const STATUS_MAP: Record<ValidationRow['status'], ValidationStatus> = {
   validado: 'validado',
   contestado: 'contestado',
 };
+
+/**
+ * Junta nome+sobrenome vindos da FONTE (item 1) — `undefined` quando nenhum dos dois veio (a
+ * fonte pode não mandar nome para um turno específico; `Sin vínculo · ID X` continua o fallback
+ * honesto na tela, `selectors.ts` `providerDisplayName`/`patientDisplayName`).
+ */
+export function joinSourceName(firstName: string | null | undefined, lastName: string | null | undefined): string | undefined {
+  const joined = [firstName, lastName].filter((part): part is string => Boolean(part && part.trim())).join(' ');
+  return joined.trim() || undefined;
+}
 
 function hoursBetween(startIso: string, endIso: string): number {
   return Math.round(((new Date(endIso).getTime() - new Date(startIso).getTime()) / (1000 * 60 * 60)) * 100) / 100;
@@ -99,26 +118,37 @@ export function mapShift(source: SourceShiftDTO, validation: ValidationRow | und
  * Paciente permanece sempre sem vínculo (item 2 da D349, bloqueado).
  */
 export function groupIntoPatients(
-  shifts: ReadonlyArray<{ shift: AnaCareShift; anaCarePatientId: string; anaCareNurseId: string }>,
-  providerLinks: ReadonlyMap<string, string | undefined> = new Map(),
+  shifts: ReadonlyArray<{
+    shift: AnaCareShift;
+    anaCarePatientId: string;
+    anaCareNurseId: string;
+    /** Nome do paciente resolvido pela FONTE (já combinado first+last name) — ver cabeçalho do arquivo. */
+    patientName?: string;
+    /** Nome do prestador resolvido pela FONTE — já `undefined` quando o chamador não tem `worker_contact:read`. */
+    nurseName?: string;
+  }>,
+  linkedNurseIds: ReadonlySet<string> = new Set(),
 ): AnaCarePatient[] {
-  const byPatient = new Map<string, Map<string, AnaCareShift[]>>();
-  for (const { shift, anaCarePatientId, anaCareNurseId } of shifts) {
+  const byPatient = new Map<string, Map<string, { shifts: AnaCareShift[]; name?: string }>>();
+  const patientNames = new Map<string, string>();
+  for (const { shift, anaCarePatientId, anaCareNurseId, patientName, nurseName } of shifts) {
     if (!byPatient.has(anaCarePatientId)) byPatient.set(anaCarePatientId, new Map());
     const byProvider = byPatient.get(anaCarePatientId)!;
-    if (!byProvider.has(anaCareNurseId)) byProvider.set(anaCareNurseId, []);
-    byProvider.get(anaCareNurseId)!.push(shift);
+    if (!byProvider.has(anaCareNurseId)) byProvider.set(anaCareNurseId, { shifts: [] });
+    const entry = byProvider.get(anaCareNurseId)!;
+    entry.shifts.push(shift);
+    if (nurseName && !entry.name) entry.name = nurseName;
+    if (patientName && !patientNames.has(anaCarePatientId)) patientNames.set(anaCarePatientId, patientName);
   }
 
   const patients: AnaCarePatient[] = [];
   for (const [anaCareId, byProvider] of byPatient) {
     const providers: AnaCareProvider[] = [];
-    for (const [providerAnaCareId, providerShifts] of byProvider) {
-      const linked = providerLinks.has(providerAnaCareId);
-      const name = linked ? providerLinks.get(providerAnaCareId) : undefined;
-      providers.push({ anaCareId: providerAnaCareId, linked, name, shifts: providerShifts });
+    for (const [providerAnaCareId, entry] of byProvider) {
+      const linked = linkedNurseIds.has(providerAnaCareId);
+      providers.push({ anaCareId: providerAnaCareId, linked, name: entry.name, shifts: entry.shifts });
     }
-    patients.push({ anaCareId, linked: false, providers });
+    patients.push({ anaCareId, linked: false, name: patientNames.get(anaCareId), providers });
   }
   return patients;
 }

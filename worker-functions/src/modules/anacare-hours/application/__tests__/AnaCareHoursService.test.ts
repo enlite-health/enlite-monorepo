@@ -43,6 +43,11 @@ const SHIFT_A: SourceShiftDTO = {
   actualEnd: '2026-09-10T12:00:00.000Z',
   checkinSource: 'app',
   isFinalized: true,
+  // Item 1 (17/09): nome vem da FONTE (payload do turno) — nunca de `workers`/KMS.
+  patientFirstName: 'Lucía',
+  patientLastName: 'Fernández QA',
+  nurseFirstName: 'Rocío',
+  nurseLastName: 'García QA',
 };
 
 const SHIFT_SEM_CHECKIN: SourceShiftDTO = {
@@ -227,9 +232,11 @@ describe('AnaCareHoursService', () => {
     });
 
     // D349 item 1: `workers.ana_care_id` já populado pelo MirrorWorkerService — o gap era só o
-    // lookup, que agora `resolveProviderLinks` faz em LOTE.
-    it('D349: prestador com ana_care_id em workers vem linked=true + nome, quando canReadProviderName=true', async () => {
-      const kms = { decrypt: jest.fn().mockImplementation((v: string) => Promise.resolve(v === 'enc-first' ? 'Rocío' : 'García')), encrypt: jest.fn() } as unknown as KMSEncryptionService;
+    // lookup, que agora `resolveLinkedNurseIds` faz em LOTE. Item 1 (17/09) mudou a ORIGEM do
+    // nome: não é mais `workers`/KMS, é o payload do turno (`SHIFT_A.nurseFirstName/nurseLastName`).
+    it('D349/item 1: prestador com ana_care_id em workers vem linked=true; nome vem da FONTE (nunca de workers/KMS), quando canReadProviderName=true', async () => {
+      const decrypt = jest.fn().mockResolvedValue('nunca deveria decifrar nome de prestador');
+      const kms = { decrypt, encrypt: jest.fn() } as unknown as KMSEncryptionService;
       const workerLinks = mockWorkerLinks(new Map([['AC-NURSE-0', { workerId: 'w-1', firstNameEncrypted: 'enc-first', lastNameEncrypted: 'enc-last' }]]));
       const shiftRepo = new StubShiftRepository([SHIFT_A]);
       const service = new AnaCareHoursService(new StubSource(), mockRepo(), kms, workerLinks, shiftRepo);
@@ -237,24 +244,29 @@ describe('AnaCareHoursService', () => {
       const snapshot = await service.getMonthSnapshot('2026-09', false, true);
       const provider = snapshot.patients[0].providers.find((p) => p.anaCareId === 'AC-NURSE-0')!;
       expect(provider.linked).toBe(true);
-      expect(provider.name).toBe('Rocío García');
+      expect(provider.name).toBe('Rocío García QA');
+      // Item 1: nome não decifra mais `workers` — KMS nunca é chamado pra resolver nome de prestador.
+      expect(decrypt).not.toHaveBeenCalled();
     });
 
-    it('D349/D344: prestador vinculado, mas SEM worker_contact:read (canReadProviderName=false) — linked=true, name undefined, KMS NUNCA chamado', async () => {
-      const decrypt = jest.fn().mockResolvedValue('nunca deveria decifrar');
-      const kms = { decrypt, encrypt: jest.fn() } as unknown as KMSEncryptionService;
-      const workerLinks = mockWorkerLinks(new Map([['AC-NURSE-0', { workerId: 'w-1', firstNameEncrypted: 'enc-first', lastNameEncrypted: 'enc-last' }]]));
+    it('D349/D344: prestador vinculado, mas SEM worker_contact:read (canReadProviderName=false) — linked=true, name undefined MESMO a fonte mandando nome', async () => {
+      const workerLinks = mockWorkerLinks(new Map([['AC-NURSE-0', { workerId: 'w-1', firstNameEncrypted: null, lastNameEncrypted: null }]]));
       const shiftRepo = new StubShiftRepository([SHIFT_A]);
-      const service = new AnaCareHoursService(new StubSource(), mockRepo(), kms, workerLinks, shiftRepo);
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), workerLinks, shiftRepo);
 
       const snapshot = await service.getMonthSnapshot('2026-09', false, false);
       const provider = snapshot.patients[0].providers.find((p) => p.anaCareId === 'AC-NURSE-0')!;
       expect(provider.linked).toBe(true);
       expect(provider.name).toBeUndefined();
-      expect(decrypt).not.toHaveBeenCalled();
     });
 
-    it('sem match em workers.ana_care_id: linked=false (comportamento igual ao de antes da D349)', async () => {
+    /**
+     * Item 1 (17/09): antes desta decisão, sem match em `workers` o nome também sumia (dependia do
+     * MESMO lookup que decide `linked`). Agora nome e vínculo são INDEPENDENTES — o prestador pode
+     * não casar com nenhum worker nosso e ainda assim mostrar o nome, se a fonte mandou e o ator
+     * tem `worker_contact:read`.
+     */
+    it('sem match em workers.ana_care_id: linked=false, mas o NOME da fonte aparece do mesmo jeito (item 1)', async () => {
       const workerLinks = mockWorkerLinks(new Map());
       const shiftRepo = new StubShiftRepository([SHIFT_A]);
       const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), workerLinks, shiftRepo);
@@ -262,7 +274,7 @@ describe('AnaCareHoursService', () => {
       const snapshot = await service.getMonthSnapshot('2026-09', false, true);
       const provider = snapshot.patients[0].providers.find((p) => p.anaCareId === 'AC-NURSE-0')!;
       expect(provider.linked).toBe(false);
-      expect(provider.name).toBeUndefined();
+      expect(provider.name).toBe('Rocío García QA');
     });
 
     it('busca o vínculo em LOTE: um único findByAnaCareIds com os anaCareNurseId DISTINTOS do mês (nunca 1-por-turno)', async () => {
@@ -284,6 +296,25 @@ describe('AnaCareHoursService', () => {
 
       const snapshot = await service.getMonthSnapshot('2026-09', false, true);
       expect(snapshot.patients[0].linked).toBe(false);
+    });
+
+    /** Item 1 (17/09): o nome do paciente vem da fonte independente de `linked` (sempre false, D349 item 2). */
+    it('nome do paciente vem da FONTE mesmo com linked=false — não depende de canReadProviderName (gate é só do prestador)', async () => {
+      const shiftRepo = new StubShiftRepository([SHIFT_A]);
+      const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
+
+      const snapshot = await service.getMonthSnapshot('2026-09', false, false);
+      expect(snapshot.patients[0].linked).toBe(false);
+      expect(snapshot.patients[0].name).toBe('Lucía Fernández QA');
+    });
+
+    it('nome do paciente ausente na fonte (turno sem os campos) vem name undefined, nunca inventado', async () => {
+      const shiftSemNome: SourceShiftDTO = { ...SHIFT_A, patientFirstName: undefined, patientLastName: undefined };
+      const shiftRepo = new StubShiftRepository([shiftSemNome]);
+      const service = new AnaCareHoursService(new StubSource([shiftSemNome]), mockRepo(), new KMSEncryptionService(), undefined, shiftRepo);
+
+      const snapshot = await service.getMonthSnapshot('2026-09', false, false);
+      expect(snapshot.patients[0].name).toBeUndefined();
     });
   });
 

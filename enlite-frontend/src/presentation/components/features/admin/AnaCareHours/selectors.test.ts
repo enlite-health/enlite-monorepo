@@ -3,6 +3,8 @@ import {
   allShiftsOf,
   blockReason,
   filterPatients,
+  formatSourceRange,
+  formatSourceTime,
   isShiftSelectable,
   originCounts,
   patientDisplayName,
@@ -140,6 +142,17 @@ describe('patientDisplayName', () => {
     const patient = makePatient({ linked: false, name: undefined, anaCareId: '90447' });
     expect(patientDisplayName(patient)).toBe('Sin vínculo · ID 90447');
   });
+
+  /**
+   * Item 1 (17/09): o nome do paciente vem do PAYLOAD do turno, não do cruzamento com `patients`
+   * — `linked` continua SEMPRE `false` (D349 item 2, bloqueado), mas o nome tem de aparecer mesmo
+   * assim. Antes desta mudança, `patientDisplayName` exigia `linked && name` e nunca mostrava o
+   * nome (linked nunca é true) — este teste MORRE se essa exigência voltar.
+   */
+  it('POSITIVO — paciente com nome da FONTE mostra o nome mesmo com linked=false (D349 item 2)', () => {
+    const patient = makePatient({ linked: false, name: 'Lucía Fernández QA', anaCareId: '90447' });
+    expect(patientDisplayName(patient)).toBe('Lucía Fernández QA');
+  });
 });
 
 describe('allShiftsOf', () => {
@@ -265,5 +278,46 @@ describe('startOfWeekMonday', () => {
    */
   it('POSITIVO — domingo (getUTCDay()===0) devolve a segunda da MESMA semana, não da seguinte', () => {
     expect(startOfWeekMonday('2026-08-16')).toBe('2026-08-10');
+  });
+});
+
+/**
+ * Item 2 (17/09): fixtures medidas de verdade contra a API real — turno noturno
+ * `2026-08-01T20:00:00-06:00` → `2026-08-02T08:00:00-06:00` (cruza a meia-noite, 46% dos turnos
+ * de agosto). `formatSourceTime`/`formatSourceRange` têm de devolver o relógio de parede da FONTE
+ * (offset `-06:00`), nunca convertido pro fuso do navegador.
+ */
+describe('formatSourceTime', () => {
+  it('POSITIVO — HH:MM no fuso fixo -06:00 da fonte, não no fuso do navegador', () => {
+    expect(formatSourceTime('2026-08-01T20:00:00-06:00')).toBe('20:00');
+    expect(formatSourceTime('2026-08-02T08:00:00-06:00')).toBe('08:00');
+  });
+
+  it('POSITIVO — mesmo instante gravado como Z (round-trip por timestamptz) devolve a MESMA hora de parede -06:00', () => {
+    // 2026-08-01T20:00:00-06:00 === 2026-08-02T02:00:00Z (mesmo instante).
+    expect(formatSourceTime('2026-08-02T02:00:00.000Z')).toBe('20:00');
+  });
+
+  it('NEGATIVO — null/undefined/vazio/inválido devolvem undefined, nunca lançam', () => {
+    expect(formatSourceTime(null)).toBeUndefined();
+    expect(formatSourceTime(undefined)).toBeUndefined();
+    expect(formatSourceTime('')).toBeUndefined();
+    expect(formatSourceTime('nao-e-data')).toBeUndefined();
+  });
+});
+
+describe('formatSourceRange', () => {
+  it('POSITIVO — turno no MESMO dia mostra HH:MM–HH:MM sem marca', () => {
+    expect(formatSourceRange('2026-08-14T08:00:00-06:00', '2026-08-14T16:00:00-06:00')).toBe('08:00–16:00');
+  });
+
+  it('POSITIVO — turno NOTURNO cruzando a meia-noite mostra a marca do dia seguinte (+1)', () => {
+    expect(formatSourceRange('2026-08-01T20:00:00-06:00', '2026-08-02T08:00:00-06:00')).toBe('20:00–08:00 (+1)');
+  });
+
+  it('NEGATIVO — falta início ou fim (retrato sem previsto gravado) mostra "—", nunca horário inventado', () => {
+    expect(formatSourceRange(null, '2026-08-14T16:00:00-06:00')).toBe('—');
+    expect(formatSourceRange('2026-08-14T08:00:00-06:00', null)).toBe('—');
+    expect(formatSourceRange('', '')).toBe('—');
   });
 });
