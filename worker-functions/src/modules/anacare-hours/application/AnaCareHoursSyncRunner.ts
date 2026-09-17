@@ -23,11 +23,12 @@
  * `AnaCareSessionClient` (F2), não deste runner.
  */
 
+import { logger } from '@shared/logging';
 import type { AnaCareShiftsSource } from '../domain/AnaCareShiftsSource';
-import type { DirectorySnapshotRepository, EnliteDirectorySource, PatientMonthSyncRepository } from '../domain/AnaCareHoursSyncPorts';
+import type { DirectorySnapshotRepository, EnliteDirectorySource, PatientMonthSyncRepository, SyncRunRepository } from '../domain/AnaCareHoursSyncPorts';
 import { AnaCareHoursSyncGuard } from './AnaCareHoursSyncGuard';
 import { emitAnaCareHoursSyncMetric, type AnaCareHoursSyncMetricEmitter } from '../infrastructure/AnaCareHoursSyncMetrics';
-import { FakeEnliteDirectory, FakeAnaCareDirectorySnapshotRepository, FakeAnaCarePatientMonthRepository } from '../infrastructure/FakeAnaCareSyncDependencies';
+import { FakeEnliteDirectory, FakeAnaCareDirectorySnapshotRepository, FakeAnaCarePatientMonthRepository, FakeAnaCareSyncRunRepository } from '../infrastructure/FakeAnaCareSyncDependencies';
 import { aggregateByPatient } from './AnaCarePatientMonthAggregator';
 
 export interface AnaCareHoursSyncTrigger {
@@ -39,15 +40,6 @@ export interface AnaCareHoursSyncTrigger {
   cursor?: number | null;
   /** Orçamento de tempo da rodada (ms) — default 420000 (7min), deixa folga pro teto de 600s do Cloud Run. */
   budgetMs?: number;
-  /**
-   * ISO do início da CORRIDA lógica (pode abranger várias invocações via `cursor`) — mesmo papel
-   * de `cursor`: o chamador devolve o `runStartedAt` recebido no outcome anterior junto do
-   * `cursor` ao retomar. Omitido/`null` (ou `cursor` omitido) = corrida NOVA, carimbo é `Date.now()`
-   * desta chamada. Sem propagação, a detecção de colisão cross-invocação (F6.1B) degrada a
-   * best-effort — mesma limitação que `cursor` já tem hoje (nada no processo distingue "retomada"
-   * de "corrida nova que por coincidência começa no mesmo índice").
-   */
-  runStartedAt?: string | null;
 }
 
 export interface AnaCareHoursSyncOutcome {
@@ -68,7 +60,11 @@ export interface AnaCareHoursSyncOutcome {
   shiftsSkippedNoProvider: number;
   /** Irmã de `shiftsSkippedNoProvider` — turno sem paciente (medido 0/3.421, tipo admite mesmo assim). */
   shiftsSkippedNoPatient: number;
-  /** ISO do carimbo desta corrida — devolver junto de `nextCursor` numa retomada propaga o detector de colisão (ver `AnaCareHoursSyncTrigger.runStartedAt`). */
+  /**
+   * ISO do carimbo desta corrida — o SERVIDOR que decide (migration 443, `SyncRunRepository`),
+   * nunca o cliente: só sai na RESPOSTA para observabilidade (o script de medição loga, não
+   * reenvia). Ver `AnaCareHoursSyncRunner.resolveRunStartedAt`.
+   */
   runStartedAt: string;
 }
 
@@ -132,6 +128,12 @@ export class AnaCareHoursSyncRunner {
      * MESMA chamada — não depende do retrato por turno como fonte cumulativa.
      */
     private readonly patientMonthRepository: PatientMonthSyncRepository = new FakeAnaCarePatientMonthRepository(),
+    /**
+     * Gate `revisao-pr` (fecho 17/09): o carimbo da corrida (`anacare_sync_run`, migration 443)
+     * passa a ser do SERVIDOR — nunca mais recebido no corpo HTTP nem calculado no Node com
+     * `Date.now()`. Ver `resolveRunStartedAt`.
+     */
+    private readonly syncRunRepository: SyncRunRepository = new FakeAnaCareSyncRunRepository(),
   ) {}
 
   static currentMonth(): string {
@@ -230,6 +232,30 @@ export class AnaCareHoursSyncRunner {
   }
 
   /**
+   * Gate `revisao-pr` (fecho 17/09): resolve o carimbo da corrida pelo SERVIDOR, nunca pelo
+   * cliente. Corrida NOVA (sem cursor) sempre grava um carimbo próprio (`startNewRun`, `NOW()` do
+   * banco) — mesmo que já exista um de uma corrida anterior para o mesmo mês, ele é substituído
+   * (uma corrida nova começa um carimbo novo, por definição). Retomada (cursor não-nulo) LÊ o
+   * carimbo já gravado; se não houver nenhum (`getRunStartedAt` devolve `null` — ex.: banco
+   * resetado entre invocações, ou 1ª chamada desta corrida perdeu a escrita), trata como corrida
+   * NOVA e RELATA a decisão no log — nunca finge que existia uma corrida anterior.
+   */
+  private async resolveRunStartedAt(source: string, month: string, cursor: number | null): Promise<Date> {
+    if (cursor === null) {
+      return this.syncRunRepository.startNewRun(source, month);
+    }
+    const existing = await this.syncRunRepository.getRunStartedAt(source, month);
+    if (existing !== null) return existing;
+    logger.warn({
+      msg: '[AnaCareHoursSyncRunner] retomada (cursor definido) sem corrida registrada para o mês — tratando como corrida NOVA',
+      source,
+      month,
+      cursor,
+    });
+    return this.syncRunRepository.startNewRun(source, month);
+  }
+
+  /**
    * Roda uma sincronização. Concorrência: duas chamadas simultâneas (manual + cron) resultam em
    * UMA rodada real (`deduped: false`) e a(s) outra(s) compartilham o resultado (`deduped: true`)
    * — nenhuma rodada extra bate na fonte. Todo disparo, deduped ou não, emite a métrica de
@@ -241,9 +267,7 @@ export class AnaCareHoursSyncRunner {
     const budgetMs = trigger.budgetMs ?? DEFAULT_BUDGET_MS;
 
     const startedAt = Date.now();
-    // Corrida NOVA (sem cursor de retomada) sempre ganha carimbo próprio — só reaproveita o
-    // `runStartedAt` do chamador quando ELE está retomando (cursor não-nulo) E o propagou.
-    const runStartedAt = cursor !== null && trigger.runStartedAt ? new Date(trigger.runStartedAt) : new Date(startedAt);
+    const runStartedAt = await this.resolveRunStartedAt('anacare', month, cursor);
     const { result, deduped } = await this.guard.run(() => this.runOnce(month, cursor, budgetMs, runStartedAt));
 
     const durationMs = Date.now() - startedAt;

@@ -5,6 +5,7 @@
  */
 import { AnaCareHoursSyncController } from '../AnaCareHoursSyncController';
 import { AnaCareHoursSyncRunner } from '../../../application/AnaCareHoursSyncRunner';
+import { AnaCarePatientMonthCollisionError } from '../../../infrastructure/AnaCarePatientMonthRepository';
 
 jest.mock('@shared/logging', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -99,6 +100,25 @@ describe('AnaCareHoursSyncController', () => {
     } finally {
       process.env.ANACARE_HOURS_SOURCE = prev;
     }
+  });
+
+  /**
+   * TAREFA D (gate `revisao-pr`, fecho 17/09): a colisão do detector (`AnaCarePatientMonthCollisionError`)
+   * ganha código DEDICADO em vez do "Internal error" genérico — "detector que dispara e ninguém vê
+   * não é detector". MORRE se o controller voltar a tratar a colisão como qualquer outro 500.
+   */
+  it('409 ANACARE_PATIENT_MONTH_COLLISION (código dedicado, não "Internal error" genérico) quando o runner lança AnaCarePatientMonthCollisionError', async () => {
+    const runner = {
+      run: jest.fn().mockRejectedValue(new AnaCarePatientMonthCollisionError(['AC-PAT-0'], '2026-09')),
+    } as unknown as AnaCareHoursSyncRunner;
+    const controller = new AnaCareHoursSyncController(() => runner);
+    const response = res();
+
+    await controller.triggerManual({ headers: {} } as never, response as never);
+
+    expect(response.status).toHaveBeenCalledWith(409);
+    expect(response.body).toMatchObject({ success: false, code: 'ANACARE_PATIENT_MONTH_COLLISION' });
+    expect(reportError).toHaveBeenCalledWith(expect.any(Error), { source: 'AnaCareHoursSyncController.trigger.manual' });
   });
 
   it('triggerCron nunca carrega userId (origin cron é sempre anônima)', async () => {

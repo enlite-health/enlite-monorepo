@@ -18,6 +18,8 @@ import { Request, Response } from 'express';
 import { reportError } from '@shared/logging';
 import { AuthMiddleware } from '@modules/identity';
 import { createAnaCareSyncDependencies } from '../../infrastructure/AnaCareSyncDependenciesFactory';
+import { AnaCarePatientMonthCollisionError } from '../../infrastructure/AnaCarePatientMonthRepository';
+import { emitAnaCareHoursSyncMetric } from '../../infrastructure/AnaCareHoursSyncMetrics';
 import { AnaCareHoursSyncRunner } from '../../application/AnaCareHoursSyncRunner';
 import { syncTriggerBodySchema } from '../validators/anacareHoursSchemas';
 
@@ -35,7 +37,17 @@ export class AnaCareHoursSyncController {
     if (AnaCareHoursSyncController.sharedRunner === undefined) {
       const deps = createAnaCareSyncDependencies();
       AnaCareHoursSyncController.sharedRunner = deps
-        ? new AnaCareHoursSyncRunner(deps.source, undefined, undefined, undefined, deps.directory, deps.directorySnapshotRepository, undefined, deps.patientMonthRepository)
+        ? new AnaCareHoursSyncRunner(
+            deps.source,
+            undefined,
+            undefined,
+            undefined,
+            deps.directory,
+            deps.directorySnapshotRepository,
+            undefined,
+            deps.patientMonthRepository,
+            deps.syncRunRepository,
+          )
         : null;
     }
     return AnaCareHoursSyncController.sharedRunner;
@@ -61,6 +73,7 @@ export class AnaCareHoursSyncController {
       res.status(503).json({ success: false, error: 'Ana Care source not configured', code: 'ANACARE_SOURCE_NOT_CONFIGURED' });
       return;
     }
+    const startedAt = Date.now();
     try {
       const outcome = await runner.run({
         origin,
@@ -68,7 +81,6 @@ export class AnaCareHoursSyncController {
         month: body.data.month,
         cursor: body.data.cursor,
         budgetMs: body.data.budgetMs,
-        runStartedAt: body.data.runStartedAt,
       });
       res.status(200).json({
         success: true,
@@ -77,10 +89,9 @@ export class AnaCareHoursSyncController {
         reservationsProcessed: outcome.reservationsProcessed,
         shiftsWritten: outcome.shiftsWritten,
         nextCursor: outcome.nextCursor,
-        // Conserto 17/09 (passo 2): devolve o carimbo desta corrida ao LADO do `nextCursor` — o
-        // chamador (script de medição ou um futuro botão "continuar") reenvia os DOIS numa
-        // retomada, sem isso o detector de colisão cross-invocação é teatro fora de `runner.run()`
-        // chamado direto (ver `syncTriggerBodySchema`).
+        // Gate `revisao-pr` (fecho 17/09): `runStartedAt` é o carimbo que o SERVIDOR resolveu
+        // (migration 443) — sai só para OBSERVABILIDADE (script de medição loga, não reenvia). O
+        // chamador reenvia `nextCursor` numa retomada; `runStartedAt` não é mais entrada da rota.
         runStartedAt: outcome.runStartedAt,
         shiftsSkippedNoProvider: outcome.shiftsSkippedNoProvider,
         shiftsSkippedNoPatient: outcome.shiftsSkippedNoPatient,
@@ -88,6 +99,25 @@ export class AnaCareHoursSyncController {
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: `AnaCareHoursSyncController.trigger.${origin}` });
+      // TAREFA D (gate `revisao-pr`): o `throw` escapa ANTES do `emitMetric` do caminho feliz
+      // (`AnaCareHoursSyncRunner.run`) — sem isto, o detector de colisão dispara e a métrica nunca
+      // sai (contagem zero indistinguível de "nunca colidiu").
+      emitAnaCareHoursSyncMetric({
+        event: 'anacare_hours_sync',
+        origin,
+        userId: origin === 'manual' ? this.actorUid(req) : null,
+        requests: 0,
+        retries: 0,
+        durationMs: Date.now() - startedAt,
+        deduped: false,
+        error: e.name,
+      });
+      if (e instanceof AnaCarePatientMonthCollisionError) {
+        // Código de erro DEDICADO (não mais o "Internal error" genérico) — detector que dispara e
+        // ninguém vê não é detector: 409 (conflito, nunca sobrescrito calado) + código nomeado.
+        res.status(409).json({ success: false, error: e.message, code: 'ANACARE_PATIENT_MONTH_COLLISION' });
+        return;
+      }
       res.status(500).json({ success: false, error: 'Internal error' });
     }
   }

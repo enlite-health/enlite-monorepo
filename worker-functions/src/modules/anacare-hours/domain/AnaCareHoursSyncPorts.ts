@@ -47,6 +47,30 @@ export interface DirectorySnapshotRepository {
 }
 
 /**
+ * Porta do carimbo da CORRIDA de sync (`anacare_sync_run`, migration 443, gate `revisao-pr` fecho
+ * 17/09) — `run_started_at` passa a ser gravado com `NOW()` DO BANCO, nunca calculado no Node nem
+ * recebido do cliente HTTP (ver cabeçalho da migration 443 para os 3 buracos medidos do desenho
+ * anterior). Uma linha por `(source, periodMonth)`.
+ */
+export interface SyncRunRepository {
+  /**
+   * Corrida NOVA (sem cursor de retomada): grava/substitui `run_started_at = NOW()` do banco para
+   * `(source, periodMonth)` e devolve o carimbo REALMENTE gravado (nunca um `Date` calculado no
+   * Node) — é essa mesma fonte de relógio que `anacare_patient_month.fetched_at` usa, então a
+   * comparação `fetched_at >= run_started_at` no detector de colisão nunca sofre deriva entre
+   * processos.
+   */
+  startNewRun(source: string, periodMonth: string): Promise<Date>;
+  /**
+   * Retomada (cursor não-nulo): lê o carimbo já gravado para `(source, periodMonth)`. `null` =
+   * nenhuma corrida registrada para este mês (ex.: banco resetado entre invocações) — o CHAMADOR
+   * (`AnaCareHoursSyncRunner.resolveRunStartedAt`) trata esse caso como corrida NOVA e RELATA a
+   * decisão, nunca finge silenciosamente que existia uma corrida anterior.
+   */
+  getRunStartedAt(source: string, periodMonth: string): Promise<Date | null>;
+}
+
+/**
  * Porta de escrita/leitura do retrato AGREGADO (`anacare_patient_month` +
  * `anacare_patient_month_provider`, migrations 441/442, D361) — usada pelo sync runner e pelo
  * serviço de leitura da lista.

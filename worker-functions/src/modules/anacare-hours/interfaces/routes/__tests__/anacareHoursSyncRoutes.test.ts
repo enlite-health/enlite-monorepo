@@ -100,14 +100,15 @@ describe('rotas de sync — botão (admin) e Cloud Scheduler (internal) comparti
 });
 
 /**
- * Conserto 17/09 (passo 2) — prova obrigatória do brief: o detector de colisão cross-invocação
- * (`AnaCarePatientMonthCollisionError`, F6.1B) só é real em produção se a camada HTTP fiar
- * `runStartedAt` — chamar `runner.run()` direto (como os testes acima fazem) não prova isso, pois
- * `run()` já recebia `runStartedAt` desde o passo 1. Aqui as DUAS chamadas passam pelo Express de
- * verdade (`supertest`), a 2ª reenviando `cursor`/`runStartedAt` exatamente como a resposta da 1ª
- * devolveu no corpo JSON — nunca `runner.run()` chamado à mão.
+ * Gate `revisao-pr` (fecho 17/09) — TAREFA A: o carimbo da corrida (`anacare_sync_run`, migration
+ * 443) passa a ser resolvido pelo SERVIDOR (`AnaCareHoursSyncRunner.resolveRunStartedAt`), nunca
+ * mais recebido do corpo HTTP. Antes (passo 2, apagado aqui), o detector de colisão só funcionava
+ * se o CLIENTE reenviasse `runStartedAt` — o Cloud Scheduler real nunca fazia isso (posta corpo
+ * fixo, não lê a resposta), então a detecção ficava DESLIGADA em produção. Aqui as DUAS chamadas
+ * passam pelo Express de verdade (`supertest`), a 2ª reenviando só `cursor` (nunca `runStartedAt` —
+ * o schema nem aceita mais o campo) — prova que o servidor detecta a colisão SOZINHO.
  */
-describe('fio do runStartedAt pela camada HTTP (passo 2)', () => {
+describe('carimbo da corrida (migration 443) — o servidor resolve, o cliente não propaga nada (gate revisao-pr)', () => {
   /** 2 reservas, mesmo paciente nas duas — o cenário real que o detector existe para pegar. */
   class DuasReservasMesmoPacienteSource implements AnaCareShiftsSource {
     calls: string[] = [];
@@ -147,7 +148,7 @@ describe('fio do runStartedAt pela camada HTTP (passo 2)', () => {
     }
   }
 
-  it('2ª chamada HTTP reenviando cursor+runStartedAt da 1ª: colisão DETECTADA (500, nada gravado do lote)', async () => {
+  it('2ª chamada HTTP retomando só por cursor (sem runStartedAt nenhum): colisão DETECTADA automaticamente (409, nada gravado do lote)', async () => {
     const source = new DuasReservasMesmoPacienteSource();
     const runner = new AnaCareHoursSyncRunner(source, undefined, undefined, undefined, new DuasReservasDirectory(), undefined, {
       ANACARE_DIRECTORY_MIN_ABSOLUTE: '1',
@@ -156,28 +157,30 @@ describe('fio do runStartedAt pela camada HTTP (passo 2)', () => {
     const app = buildApp(controller);
 
     // 1ª chamada: orçamento (20ms) estoura DEPOIS de processar R1 (30ms) — para com nextCursor=1,
-    // sem ainda ter tocado R2. Escreve o paciente colidente via R1.
+    // sem ainda ter tocado R2. Escreve o paciente colidente via R1. O SERVIDOR grava o carimbo da
+    // corrida em `anacare_sync_run` (aqui, o fake em memória) — o cliente não vê nem manda nada.
     const r1 = await request(app).post('/api/admin/anacare-hours/sync').send({ month: '2026-09', budgetMs: 20 });
     expect(r1.status).toBe(200);
     expect(r1.body.nextCursor).toBe(1);
+    // `runStartedAt` ainda sai na RESPOSTA (observabilidade) — só não é mais aceito como ENTRADA.
     expect(typeof r1.body.runStartedAt).toBe('string');
     expect(source.calls).toEqual(['R1']);
 
-    // 2ª chamada: reenvia EXATAMENTE cursor e runStartedAt do corpo da 1ª resposta — processa R2,
-    // que aggrega o MESMO paciente (AC-PAT-COLIDE) já gravado pela 1ª chamada NESTA corrida.
-    const r2 = await request(app)
-      .post('/api/admin/anacare-hours/sync')
-      .send({ month: '2026-09', budgetMs: 100000, cursor: r1.body.nextCursor, runStartedAt: r1.body.runStartedAt });
+    // 2ª chamada: só reenvia `cursor` — nunca `runStartedAt` (nem existe mais no schema). Processa
+    // R2, que agrega o MESMO paciente (AC-PAT-COLIDE) já gravado pela 1ª chamada NESTA corrida. O
+    // runner lê o carimbo da corrida do PRÓPRIO repositório (`syncRunRepository.getRunStartedAt`),
+    // não de nada que o cliente mandou.
+    const r2 = await request(app).post('/api/admin/anacare-hours/sync').send({ month: '2026-09', budgetMs: 100000, cursor: r1.body.nextCursor });
 
-    expect(r2.status).toBe(500); // AnaCarePatientMonthCollisionError vira 500 genérico no controller
-    expect(r2.body).toMatchObject({ success: false, error: 'Internal error' });
+    expect(r2.status).toBe(409); // TAREFA D: código dedicado, não mais "Internal error" genérico
+    expect(r2.body).toMatchObject({ success: false, code: 'ANACARE_PATIENT_MONTH_COLLISION' });
     expect(reportErrorMock).toHaveBeenCalledWith(
       expect.objectContaining({ message: expect.stringContaining('já foram gravados NESTA MESMA corrida') }),
       { source: 'AnaCareHoursSyncController.trigger.manual' },
     );
   });
 
-  it('CONTROLE (o achado que o fio corrige): sem reenviar runStartedAt na 2ª chamada, a colisão NÃO é detectada — sobrescreve calado', async () => {
+  it('mesmo que o cliente MANDE um runStartedAt (ex.: script antigo) o schema ignora o campo — a colisão é detectada do mesmo jeito, nunca desligada por um valor do cliente', async () => {
     const source = new DuasReservasMesmoPacienteSource();
     const runner = new AnaCareHoursSyncRunner(source, undefined, undefined, undefined, new DuasReservasDirectory(), undefined, {
       ANACARE_DIRECTORY_MIN_ABSOLUTE: '1',
@@ -189,11 +192,14 @@ describe('fio do runStartedAt pela camada HTTP (passo 2)', () => {
     expect(r1.status).toBe(200);
     expect(r1.body.nextCursor).toBe(1);
 
-    // Mesmo cursor, SEM runStartedAt — reproduz o comportamento de antes do conserto (script/cliente
-    // que só conhecia `cursor`). `runner.run()` trata como corrida NOVA (própria carimbo).
-    const r2 = await request(app).post('/api/admin/anacare-hours/sync').send({ month: '2026-09', budgetMs: 100000, cursor: r1.body.nextCursor });
+    // Um script antigo mandando um `runStartedAt` no FUTURO (o exato buraco 2 medido pelo gate:
+    // antes, isso desligava o detector inteiro) — o schema não tem mais o campo, então é
+    // silenciosamente descartado pelo zod, e o resultado é IDÊNTICO ao teste acima.
+    const r2 = await request(app)
+      .post('/api/admin/anacare-hours/sync')
+      .send({ month: '2026-09', budgetMs: 100000, cursor: r1.body.nextCursor, runStartedAt: '2099-01-01T00:00:00.000Z' });
 
-    expect(r2.status).toBe(200); // nenhuma colisão detectada — grava por cima em silêncio
-    expect(r2.body.nextCursor).toBeNull();
+    expect(r2.status).toBe(409);
+    expect(r2.body).toMatchObject({ success: false, code: 'ANACARE_PATIENT_MONTH_COLLISION' });
   });
 });

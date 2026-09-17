@@ -13,6 +13,15 @@ import type { DirectorySnapshotRepository, EnliteDirectorySnapshot, EnliteDirect
 import type { AnaCarePatientMonthAggregate, AnaCarePatientMonthProviderAggregate } from '../../domain/AnaCarePatientMonth';
 import type { AnaCareHoursSyncMetric } from '../../infrastructure/AnaCareHoursSyncMetrics';
 import { AnaCarePatientMonthCollisionError } from '../../infrastructure/AnaCarePatientMonthRepository';
+import { FakeAnaCareSyncRunRepository } from '../../infrastructure/FakeAnaCareSyncDependencies';
+
+jest.mock('@shared/logging', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+  loggingAls: { getStore: () => undefined },
+  reportError: jest.fn(),
+}));
+
+const { logger: loggerMock } = jest.requireMock('@shared/logging') as { logger: { warn: jest.Mock } };
 
 class CountingShiftsSource implements AnaCareShiftsSource {
   calls = 0;
@@ -610,19 +619,21 @@ describe('AnaCareHoursSyncRunner — paciente em DUAS reservas: falha alto, nunc
   });
 
   /**
-   * A propagação de `runStartedAt` junto do `cursor` (mesmo mecanismo, ver
-   * `AnaCareHoursSyncTrigger.runStartedAt`) é o que permite o detector enxergar uma colisão entre
-   * DOIS PROCESSOS distintos (2 instâncias de `AnaCareHoursSyncRunner`, 2 chamadas a `.run()`) —
-   * um `Set` em memória do runner NUNCA pegaria isto, porque o runner não tem memória entre
-   * invocações; só o repositório (aqui `CollisionAwarePatientMonthRepository`, na vida real
-   * `anacare_patient_month.fetched_at`) sobrevive.
+   * TAREFA A (gate `revisao-pr`, fecho 17/09): o carimbo da corrida agora vem do SERVIDOR
+   * (`SyncRunRepository`, migration 443 na vida real) — nenhum campo de trigger precisa ser
+   * propagado pelo CLIENTE. O `syncRunRepository` COMPARTILHADO entre as duas invocações (mesma
+   * coisa que a tabela real `anacare_sync_run` sobrevive entre duas chamadas/processos do Cloud
+   * Run) é o que permite o detector enxergar a colisão — um `Set` em memória do runner nunca
+   * pegaria isto, porque o runner não tem memória entre invocações.
    */
-  it('DUAS INVOCAÇÕES (retomada por cursor, processos distintos): a 2ª rodada detecta a colisão da 1ª e falha alto', async () => {
+  it('DUAS INVOCAÇÕES (retomada por cursor, processos distintos, MESMO syncRunRepository): a 2ª rodada detecta a colisão da 1ª sozinha, sem o cliente propagar nada', async () => {
     const source = new SharedPatientShiftsSource({ A: 2, B: 3 });
     const repository = new StubDirectorySnapshotRepository();
     // Repositório do retrato agregado SOBREVIVE entre as duas invocações — mesma coisa que a
     // tabela real `anacare_patient_month` sobrevive entre duas chamadas (processos) do Cloud Run.
     const patientMonthRepository = new CollisionAwarePatientMonthRepository();
+    // Repositório do CARIMBO DA CORRIDA também sobrevive — mesma coisa que `anacare_sync_run` real.
+    const syncRunRepository = new FakeAnaCareSyncRunRepository();
 
     // Invocação 1 (ex.: 1ª chamada do Cloud Run, processo A): só a reserva A está no diretório.
     const runner1 = new AnaCareHoursSyncRunner(
@@ -634,18 +645,20 @@ describe('AnaCareHoursSyncRunner — paciente em DUAS reservas: falha alto, nunc
       repository,
       { ANACARE_DIRECTORY_MIN_ABSOLUTE: '1' },
       patientMonthRepository,
+      syncRunRepository,
     );
     const outcome1 = await runner1.run({ origin: 'cron', userId: null });
 
     const afterFirstRun = patientMonthRepository.aggregatesByPatient.get('PAT-SHARED');
     expect(afterFirstRun!.shiftsCount).toBe(1);
     expect(afterFirstRun!.hoursActualSum).toBe(2);
+    // `runStartedAt` ainda sai no outcome — só para OBSERVABILIDADE, o teste não o reenvia a lugar nenhum.
     expect(outcome1.runStartedAt).toEqual(expect.any(String));
 
     // Invocação 2 (retomada, OUTRO processo/instância de runner — nenhuma memória em comum além
-    // do repositório): o cursor E o runStartedAt vêm do outcome da invocação 1, exatamente como o
-    // chamador já precisa propagar `cursor`/`nextCursor` hoje para retomar uma corrida que ficou
-    // pela metade.
+    // dos repositórios): só o `cursor` é propagado, exatamente como o chamador HTTP faz hoje
+    // (`syncTriggerBodySchema` nem tem mais o campo `runStartedAt`). O runner LÊ o carimbo do
+    // `syncRunRepository` compartilhado — não recebe nada do trigger.
     const runner2 = new AnaCareHoursSyncRunner(
       source,
       new AnaCareHoursSyncGuard(),
@@ -655,11 +668,10 @@ describe('AnaCareHoursSyncRunner — paciente em DUAS reservas: falha alto, nunc
       repository,
       { ANACARE_DIRECTORY_MIN_ABSOLUTE: '1' },
       patientMonthRepository,
+      syncRunRepository,
     );
 
-    await expect(
-      runner2.run({ origin: 'cron', userId: null, cursor: 0, runStartedAt: outcome1.runStartedAt }),
-    ).rejects.toBeInstanceOf(AnaCarePatientMonthCollisionError);
+    await expect(runner2.run({ origin: 'cron', userId: null, cursor: 0 })).rejects.toBeInstanceOf(AnaCarePatientMonthCollisionError);
 
     // A gravação da invocação 1 continua intacta — a invocação 2 falhou ANTES de sobrescrever.
     const afterSecondRun = patientMonthRepository.aggregatesByPatient.get('PAT-SHARED');
@@ -668,15 +680,15 @@ describe('AnaCareHoursSyncRunner — paciente em DUAS reservas: falha alto, nunc
   });
 
   /**
-   * LACUNA documentada (não é um 3º cenário do "termina quando", é a fronteira do que o detector
-   * cobre): se o chamador NÃO propagar `runStartedAt` na retomada — hoje nenhum código deste
-   * repositório o faz automaticamente, só o request/response do trigger carregam o campo —, a
-   * invocação 2 gera um `runStartedAt` PRÓPRIO (posterior ao `fetchedAt` da invocação 1) e o
-   * detector não vê colisão: a substituição ACONTECE, silenciosa. É a MESMA limitação que `cursor`
-   * já tem hoje (nada distingue "retomada" de "corrida nova que por coincidência começa no mesmo
-   * índice") — não uma regressão introduzida aqui.
+   * LACUNA documentada (fronteira do que o detector cobre, não regressão): o `syncRunRepository`
+   * (migration 443 na vida real) é a ÚNICA fonte do carimbo — se ele não tiver nenhuma linha para
+   * `(source, periodMonth)` no momento da retomada (ex.: banco resetado entre invocações, ou dois
+   * `syncRunRepository` DIFERENTES por engano de fiação), `resolveRunStartedAt` trata como corrida
+   * NOVA — RELATANDO a decisão via `logger.warn` — e a colisão cross-invocação não é vista. É uma
+   * fronteira muito mais estreita que a anterior (dependia do CLIENTE propagar um campo HTTP);
+   * agora só sobra quando o PRÓPRIO armazenamento do carimbo está ausente.
    */
-  it('DOCUMENTADO: sem runStartedAt propagado, a 2ª invocação NÃO detecta a colisão (mesma limitação que cursor já tem)', async () => {
+  it('DOCUMENTADO: retomada sem NENHUMA linha no syncRunRepository (ex.: repositórios não compartilhados) trata como corrida NOVA e RELATA no log — a colisão não é vista', async () => {
     const source = new SharedPatientShiftsSource({ A: 2, B: 3 });
     const repository = new StubDirectorySnapshotRepository();
     const patientMonthRepository = new CollisionAwarePatientMonthRepository();
@@ -690,12 +702,14 @@ describe('AnaCareHoursSyncRunner — paciente em DUAS reservas: falha alto, nunc
       repository,
       { ANACARE_DIRECTORY_MIN_ABSOLUTE: '1' },
       patientMonthRepository,
+      new FakeAnaCareSyncRunRepository(), // syncRunRepository da invocação 1 — próprio, não compartilhado.
     );
     await runner1.run({ origin: 'cron', userId: null });
-    // Separação de relógio real (não fake timer): garante que o `runStartedAt` PRÓPRIO da
-    // invocação 2 (Date.now() de dentro de `run()`, não injetável) fique estritamente DEPOIS do
-    // `fetchedAt` gravado pela invocação 1 — sem isso as duas caem no mesmo milissegundo e o
-    // teste vira flake (empate cai no `>=` do detector, mascarando o gap que este teste prova).
+    // Separação de relógio real (não fake timer): o carimbo "corrida NOVA" da invocação 2
+    // (`new Date()` de dentro de `FakeAnaCareSyncRunRepository.startNewRun`) precisa ficar
+    // estritamente DEPOIS do `fetchedAt` gravado pela invocação 1 — sem esta pausa as duas caem no
+    // mesmo milissegundo e o teste vira flake (empate cai no `>=` do detector, mascarando o gap que
+    // este teste prova). Mesmo racional do teste homônimo que existia antes desta tarefa.
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     const runner2 = new AnaCareHoursSyncRunner(
@@ -707,13 +721,23 @@ describe('AnaCareHoursSyncRunner — paciente em DUAS reservas: falha alto, nunc
       repository,
       { ANACARE_DIRECTORY_MIN_ABSOLUTE: '1' },
       patientMonthRepository,
+      new FakeAnaCareSyncRunRepository(), // syncRunRepository da invocação 2 — outro, vazio para este mês.
     );
-    // cursor propagado, runStartedAt NÃO — o gap documentado.
+    // cursor propagado (retomada), mas o syncRunRepository da invocação 2 não tem NENHUMA linha —
+    // `resolveRunStartedAt` cai no ramo "trata como corrida NOVA" e RELATA via logger.warn.
     const outcome2 = await runner2.run({ origin: 'cron', userId: null, cursor: 0 });
 
+    expect(loggerMock.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        msg: expect.stringContaining('tratando como corrida NOVA'),
+        month: '2026-09',
+        cursor: 0,
+      }),
+    );
     expect(outcome2.shiftsWritten).toBe(1);
     const afterSecondRun = patientMonthRepository.aggregatesByPatient.get('PAT-SHARED');
-    // Substituído em silêncio — 3h da reserva B, a reserva A (2h) perdida. Gap real, não regressão.
+    // Substituído em silêncio — 3h da reserva B, a reserva A (2h) perdida. Gap real, documentado, e
+    // agora RELATADO no log (antes não havia relato nenhum dessa decisão).
     expect(afterSecondRun!.hoursActualSum).toBe(3);
   });
 });

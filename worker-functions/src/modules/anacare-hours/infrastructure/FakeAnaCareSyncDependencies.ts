@@ -18,6 +18,7 @@ import type {
   EnliteDirectorySource,
   PatientMonthSyncRepository,
   ShiftSyncFreshness,
+  SyncRunRepository,
 } from '../domain/AnaCareHoursSyncPorts';
 import type { AnaCarePatientMonthAggregate, AnaCarePatientMonthProviderAggregate } from '../domain/AnaCarePatientMonth';
 import { aggregatePatientMonth } from '../application/AnaCarePatientMonthAggregator';
@@ -53,6 +54,30 @@ export class FakeAnaCareDirectorySnapshotRepository implements DirectorySnapshot
 
   async setLastDirectoryCount(count: number): Promise<void> {
     this.lastDirectoryCount = count;
+  }
+}
+
+/**
+ * Contraparte falsa de `SyncRunRepository` (`anacare_sync_run`, migration 443) — em memória, vida
+ * do processo. Mesmo contrato do real: `startNewRun` sempre substitui pelo carimbo `new Date()`
+ * atual (aqui, o relógio do processo — o real usa `NOW()` do banco); `getRunStartedAt` devolve
+ * `null` quando não há corrida registrada para `(source, periodMonth)`.
+ */
+export class FakeAnaCareSyncRunRepository implements SyncRunRepository {
+  private readonly runs = new Map<string, Date>();
+
+  private key(source: string, periodMonth: string): string {
+    return `${source}::${periodMonth}`;
+  }
+
+  async startNewRun(source: string, periodMonth: string): Promise<Date> {
+    const now = new Date();
+    this.runs.set(this.key(source, periodMonth), now);
+    return now;
+  }
+
+  async getRunStartedAt(source: string, periodMonth: string): Promise<Date | null> {
+    return this.runs.get(this.key(source, periodMonth)) ?? null;
   }
 }
 
