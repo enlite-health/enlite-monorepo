@@ -33,6 +33,26 @@ export interface SourceShiftDTO {
    * de um campo da fonte.
    */
   isFinalized: boolean;
+  /**
+   * 'app' | 'web_admin' | null — origem do CHECKOUT (campo `checkout_source` no cru, existe desde
+   * sempre mas não tinha campo no DTO — medido 17/09 contra a API real: gravado NULO na tabela
+   * `anacare_shift` (migration 437) por omissão, não por ausência na fonte). Opcional: quem monta
+   * o DTO fora de `minimizeShiftDTO` (ex. round-trip de leitura do retrato) não é obrigado a tê-lo.
+   */
+  checkoutSource?: 'app' | 'web_admin' | null;
+  /**
+   * Atraso do check-in em minutos, afirmação da fonte (campo `checkin_delay` no cru — mesmo caso
+   * de `checkoutSource`: existe na fonte, coluna existe desde a migration 437, gravado NULO por
+   * omissão no DTO). Opcional pelo mesmo motivo.
+   */
+  checkinDelay?: number | null;
+  /**
+   * `YYYY-MM` afirmado pela PRÓPRIA fonte (campo `month` no cru) — usado só para VALIDAR contra o
+   * mês pedido no upsert (`AnaCareShiftRepository.upsertMany` falha alto se divergir, em vez de
+   * gravar calado num mês errado). Opcional: não é parte do contrato de leitura do retrato já
+   * gravado (`listByMonth`), só do caminho fonte→upsert.
+   */
+  sourceMonth?: string;
 }
 
 export interface ListShiftsParams {
