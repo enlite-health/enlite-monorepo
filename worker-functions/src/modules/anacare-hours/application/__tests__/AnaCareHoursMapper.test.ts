@@ -1,27 +1,32 @@
-import { mapShift, groupIntoPatients, buildSnapshot } from '../AnaCareHoursMapper';
+import { mapShift, groupIntoPatients, buildSnapshot, computeActualHours } from '../AnaCareHoursMapper';
 import type { SourceShiftDTO } from '../../domain/AnaCareShiftsSource';
 import type { ValidationRow } from '../../infrastructure/ShiftHoursValidationRepository';
 
+// Previsto (`scheduledStart`→`scheduledEnd`) = 12h. Real (`actualStart`→`actualEnd`) = 11,8h —
+// mesmo padrão medido 17/09 contra a API real (paciente 9660: previsto 12,0 / real 11,8). O
+// propósito do fixture é NUNCA deixar previsto e real coincidirem, para que um `mapShift` que
+// volte a ler o previsto (o defeito original) quebre o teste.
 const SOURCE: SourceShiftDTO = {
   sourceShiftId: 'FAKE-2026-09-0-0-0',
   anaCarePatientId: 'AC-PAT-0',
   anaCareNurseId: 'AC-NURSE-0-0',
   date: '2026-09-10',
   scheduledStart: '2026-09-10T08:00:00.000Z',
-  scheduledEnd: '2026-09-10T12:00:00.000Z',
-  actualStart: '2026-09-10T08:10:00.000Z',
-  actualEnd: '2026-09-10T12:10:00.000Z',
+  scheduledEnd: '2026-09-10T20:00:00.000Z',
+  actualStart: '2026-09-10T08:00:00.000Z',
+  actualEnd: '2026-09-10T19:48:00.000Z',
   checkinSource: 'app',
-  durationHours: 4,
+  isFinalized: true,
 };
 
+/** Turno NÃO finalizado e SEM check-in (23/30 da amostra medida 17/09) — sem actual, sem `duration` a copiar. */
 const SOURCE_SEM_CHECKIN: SourceShiftDTO = {
   ...SOURCE,
   sourceShiftId: 'FAKE-2026-09-0-0-1',
   actualStart: null,
   actualEnd: null,
   checkinSource: null,
-  durationHours: null,
+  isFinalized: false,
 };
 
 const VALIDATED: ValidationRow = {
@@ -53,26 +58,35 @@ const CONTESTED: ValidationRow = {
 };
 
 describe('mapShift', () => {
-  it('sem validação (pendente virtual): status pendiente, hoursActual vem da fonte', () => {
+  it('sem validação (pendente virtual): hoursActual vem do REAL (actualStart→actualEnd), NUNCA do previsto — morre se `mapShift` voltar a ler um campo de previsto da fonte', () => {
     const shift = mapShift(SOURCE, undefined, false, null);
     expect(shift.status).toBe('pendiente');
-    expect(shift.hoursActual).toBe(4);
+    expect(shift.hoursScheduled).toBe(12);
+    expect(shift.hoursActual).toBe(11.8);
+    expect(shift.hoursActual).not.toBe(shift.hoursScheduled);
     expect(shift.origin).toBe('app');
     expect(shift.validatedBy).toBeUndefined();
     expect(shift.contestReason).toBeUndefined();
   });
 
-  it('turno sem check-in: origin sin_checkin, hoursActual null (nunca fabricado)', () => {
+  it('turno NÃO finalizado e sem check-in: hoursActual null (nunca o previsto) — medido 17/09: `duration` vem preenchida mesmo sem check-in, e não pode vazar como hora trabalhada', () => {
     const shift = mapShift(SOURCE_SEM_CHECKIN, undefined, false, null);
     expect(shift.origin).toBe('sin_checkin');
     expect(shift.hoursActual).toBeNull();
   });
 
-  it('validado: hoursActual CONGELA no approvedHours, não no da fonte', () => {
-    const sourceComOutraHora: SourceShiftDTO = { ...SOURCE, durationHours: 99 };
-    const shift = mapShift(sourceComOutraHora, VALIDATED, false, null);
+  it('turno com check-in mas SEM checkout ainda (em andamento): hoursActual null — falta actualEnd', () => {
+    const emAndamento: SourceShiftDTO = { ...SOURCE, actualEnd: null };
+    const shift = mapShift(emAndamento, undefined, false, null);
+    expect(shift.hoursActual).toBeNull();
+  });
+
+  it('validado: hoursActual CONGELA no approvedHours, mesmo com um `actualEnd` da fonte que daria uma hora real BEM diferente', () => {
+    const sourceComOutroReal: SourceShiftDTO = { ...SOURCE, actualStart: '2026-09-10T00:00:00.000Z', actualEnd: '2026-09-10T23:00:00.000Z' };
+    const shift = mapShift(sourceComOutroReal, VALIDATED, false, null);
     expect(shift.status).toBe('validado');
     expect(shift.hoursActual).toBe(4);
+    expect(shift.hoursActual).not.toBe(computeActualHours(sourceComOutroReal));
     expect(shift.validatedBy).toEqual({ id: 'uid-1', name: 'Fulana QA' });
     expect(shift.validatedAt).toBe('2026-09-11T00:00:00.000Z');
   });

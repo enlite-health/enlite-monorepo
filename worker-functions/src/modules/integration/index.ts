@@ -52,6 +52,8 @@ export { mapWorkerToAnaCarePayload, mapSexToAnaCareGenero, formatDateYMD } from 
 export { AnaCareSessionClient, ANACARE_ENLITE_AGENCY_ID } from './infrastructure/anacare/AnaCareSessionClient';
 export type { AnaCareSessionClientOptions } from './infrastructure/anacare/AnaCareSessionClient';
 export { AnaCareShiftsSourceReal } from './infrastructure/anacare/AnaCareShiftsSourceReal';
+export { AnaCareEnliteDirectory, AnaCareEnliteDirectoryError } from './infrastructure/anacare/AnaCareEnliteDirectory';
+export type { EnliteDirectoryEntry, EnliteDirectory } from './infrastructure/anacare/AnaCareEnliteDirectory';
 
 // Application — use cases
 export { PublishVacancyToTalentumUseCase, PublishError } from './application/PublishVacancyToTalentumUseCase';

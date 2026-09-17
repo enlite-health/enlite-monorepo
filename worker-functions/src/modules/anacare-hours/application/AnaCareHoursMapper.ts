@@ -30,12 +30,23 @@ function hoursBetween(startIso: string, endIso: string): number {
 }
 
 /**
+ * Horas REALMENTE trabalhadas — SEMPRE de `actualStart`/`actualEnd` (check-in/checkout), nunca do
+ * previsto. `null` quando falta qualquer um dos dois (turno sem check-in, ou em andamento sem
+ * checkout ainda) — medido 17/09: a fonte não tem campo de hora trabalhada, só previsto
+ * (`duration`), inclusive em turno não finalizado (`is_finalized=false`).
+ */
+export function computeActualHours(source: Pick<SourceShiftDTO, 'actualStart' | 'actualEnd'>): number | null {
+  if (!source.actualStart || !source.actualEnd) return null;
+  return hoursBetween(source.actualStart, source.actualEnd);
+}
+
+/**
  * `canReadNote` — espelha a célula clínica (`patient_clinical:read`, backlog D345, mas o
  * contrato já reserva o corte: sem a célula a nota NUNCA sai no payload, mesmo cifrada).
  */
 export function mapShift(source: SourceShiftDTO, validation: ValidationRow | undefined, canReadNote: boolean, decryptedNote: string | null): AnaCareShift {
   const status = STATUS_MAP[validation?.status ?? 'pendente'];
-  const hoursActual = status === 'validado' ? validation!.approvedHours : source.durationHours;
+  const hoursActual = status === 'validado' ? validation!.approvedHours : computeActualHours(source);
   const origin = source.checkinSource === null ? 'sin_checkin' : source.checkinSource;
 
   const shift: AnaCareShift = {

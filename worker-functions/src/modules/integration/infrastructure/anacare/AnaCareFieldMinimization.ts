@@ -40,7 +40,15 @@ export interface RawAnaCareShift {
   actual_start: string | null;
   actual_end: string | null;
   checkin_source: 'app' | 'web_admin' | null;
-  duration_hours: number | null;
+  /**
+   * Horas PREVISTAS (`scheduled_end - scheduled_start`) — medido 17/09 contra a API real (paciente
+   * 9660, 88 turnos): o campo cru chama `duration`, não `duration_hours` (que não existe na
+   * resposta), e vem preenchido mesmo em turno NÃO finalizado com o valor do previsto. Nunca usar
+   * para hora trabalhada — ver `is_finalized` e `SourceShiftDTO.isFinalized`.
+   */
+  duration: number | null;
+  /** Afirmação do próprio Ana Care de que o turno fechou (medido: finalizado ⇒ tem check-in). */
+  is_finalized: boolean;
   patient: RawAnaCarePatient;
   nurse: RawAnaCareNurse;
   // Descartados na borda — nunca saem daqui:
@@ -98,6 +106,6 @@ export function minimizeShiftDTO(raw: RawAnaCareShift): SourceShiftDTO {
     actualStart: raw.actual_start,
     actualEnd: raw.actual_end,
     checkinSource: raw.checkin_source,
-    durationHours: raw.duration_hours,
+    isFinalized: raw.is_finalized,
   };
 }

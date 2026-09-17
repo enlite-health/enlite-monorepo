@@ -41,7 +41,7 @@ const SHIFT_A: SourceShiftDTO = {
   actualStart: '2026-09-10T08:00:00.000Z',
   actualEnd: '2026-09-10T12:00:00.000Z',
   checkinSource: 'app',
-  durationHours: 4,
+  isFinalized: true,
 };
 
 const SHIFT_SEM_CHECKIN: SourceShiftDTO = {
@@ -50,7 +50,7 @@ const SHIFT_SEM_CHECKIN: SourceShiftDTO = {
   actualStart: null,
   actualEnd: null,
   checkinSource: null,
-  durationHours: null,
+  isFinalized: false,
 };
 
 class StubSource implements AnaCareShiftsSource {
@@ -238,6 +238,22 @@ describe('AnaCareHoursService', () => {
       const service = new AnaCareHoursService(new StubSource(), repo);
       await service.validateShift('shift-b', 'uid-1');
       expect(repo.validate).toHaveBeenCalledWith(expect.objectContaining({ sourceShiftId: 'shift-b', approvedHours: 0, validatedBy: 'uid-1' }));
+    });
+
+    it('turno com previsto e real DIFERENTES valida com a hora REAL (actualStart→actualEnd), nunca com o previsto — morre se `validateShift` voltar a ler um campo de previsto', async () => {
+      const shiftPrevistoDiferenteDoReal: SourceShiftDTO = {
+        ...SHIFT_A,
+        sourceShiftId: 'shift-c',
+        scheduledStart: '2026-09-10T08:00:00.000Z',
+        scheduledEnd: '2026-09-10T20:00:00.000Z', // previsto: 12h
+        actualStart: '2026-09-10T08:00:00.000Z',
+        actualEnd: '2026-09-10T19:48:00.000Z', // real: 11,8h
+      };
+      const repo = mockRepo();
+      const source = new StubSource([shiftPrevistoDiferenteDoReal]);
+      const service = new AnaCareHoursService(source, repo);
+      await service.validateShift('shift-c', 'uid-1');
+      expect(repo.validate).toHaveBeenCalledWith(expect.objectContaining({ sourceShiftId: 'shift-c', approvedHours: 11.8 }));
     });
 
     it('turno inexistente na fonte → TURNO_NAO_ENCONTRADO', async () => {

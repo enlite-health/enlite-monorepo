@@ -14,7 +14,7 @@ import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import type { AnaCareShiftsSource } from '../domain/AnaCareShiftsSource';
 import { ShiftHoursValidationRepository, ShiftAlreadyValidatedError } from '../infrastructure/ShiftHoursValidationRepository';
 import { WorkerLinkRepository } from '../infrastructure/WorkerLinkRepository';
-import { mapShift, groupIntoPatients, buildSnapshot } from './AnaCareHoursMapper';
+import { mapShift, groupIntoPatients, buildSnapshot, computeActualHours } from './AnaCareHoursMapper';
 import {
   AnaCareHoursServiceError,
   CONTEST_NOTE_MAX_LENGTH,
@@ -148,7 +148,7 @@ export class AnaCareHoursService {
         anaCarePatientId: source!.anaCarePatientId,
         anaCareNurseId: source!.anaCareNurseId,
         periodMonth: periodMonthDate(source!.date.slice(0, 7)),
-        approvedHours: source!.durationHours ?? 0, // D344: sem check-in congela 0h
+        approvedHours: computeActualHours(source!) ?? 0, // D344: sem check-in (ou sem checkout) congela 0h — nunca o previsto
         approvedCheckinAt: source!.actualStart,
         approvedCheckoutAt: source!.actualEnd,
         approvedCheckinSource: source!.checkinSource,

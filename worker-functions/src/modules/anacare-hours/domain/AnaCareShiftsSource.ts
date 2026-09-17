@@ -18,14 +18,22 @@ export interface SourceShiftDTO {
   actualEnd: string | null;
   /** 'app' | 'web_admin' | null — null = sem check-in. */
   checkinSource: 'app' | 'web_admin' | null;
-  /** Horas decimais da fonte (duration_hours) — null quando não há check-in. */
-  durationHours: number | null;
+  /**
+   * Afirmação da fonte de que o turno fechou. NÃO existe campo de horas trabalhadas na porta —
+   * medido 17/09 contra a API real: o único campo de horas do Ana Care (`duration`) é o PREVISTO
+   * (`scheduledEnd - scheduledStart`), preenchido mesmo sem check-in e mesmo turno não finalizado.
+   * Hora trabalhada se deriva SEMPRE de `actualStart`/`actualEnd` (ver `AnaCareHoursMapper`), nunca
+   * de um campo da fonte.
+   */
+  isFinalized: boolean;
 }
 
 export interface ListShiftsParams {
   /** Mês no formato YYYY-MM. */
   month: string;
   patientId?: string;
+  /** Restringe a uma reserva/conta específica do Ana Care (mesmo número que a conta — F17). */
+  reservationId?: string;
 }
 
 /** Estado do retrato — alimenta `AnaCareMonthSnapshot.stale`/`circuitBreakerOpen` e a recusa de escrita (spec "retrato desatualizado bloqueia a validação no serviço e na tela"). */
