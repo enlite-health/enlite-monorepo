@@ -12,9 +12,35 @@
  * `POISON_MARKER` só existe para o teste de contrato — não é usado fora de fixture.
  */
 
+import { logger } from '@shared/logging';
 import type { SourceShiftDTO } from '../../../anacare-hours/domain/AnaCareShiftsSource';
 
+const TAG = '[AnaCareFieldMinimization]';
+
 export const POISON_MARKER = '__POISON__';
+
+const KNOWN_SOURCE_VALUES = ['app', 'web_admin'] as const;
+type KnownSourceValue = (typeof KNOWN_SOURCE_VALUES)[number];
+
+/**
+ * Valida `checkin_source`/`checkout_source` em RUNTIME — a união `'app' | 'web_admin' | null` do
+ * `RawAnaCareShift` é só TIPO, não existe no payload em tempo de execução. A coluna do banco
+ * (migration 437) tem `CHECK (... IS NULL OR ... IN ('app','web_admin'))`: um valor novo na fonte
+ * rejeita o INSERT em LOTE (o mesmo modo de falha do `shift_date`, pela terceira vez nesta frente).
+ * Perder a origem de UM turno (vira `null`) é muito melhor que perder o mês inteiro com um 500
+ * opaco — e um valor novo é algo que queremos VER no log, não descobrir por um lote inteiro morto.
+ */
+function validateSourceField(
+  field: 'checkin_source' | 'checkout_source',
+  value: string | null,
+): KnownSourceValue | null {
+  if (value === null) return null;
+  if ((KNOWN_SOURCE_VALUES as readonly string[]).includes(value)) {
+    return value as KnownSourceValue;
+  }
+  logger.warn({ msg: `${TAG} valor desconhecido em campo de origem, gravando null`, field, value });
+  return null;
+}
 
 /** Forma crua de um paciente aninhado em `/api/shifts/` (campos permitidos + os descartados). */
 export interface RawAnaCarePatient {
@@ -31,28 +57,49 @@ export interface RawAnaCarePatient {
   initial_location?: unknown;
 }
 
-/** Forma crua de um turno de `/api/shifts/` (campos permitidos + os descartados). */
+/**
+ * Forma crua de um turno de `/api/shifts/` (campos permitidos + os descartados).
+ *
+ * ⚠️ Nomes MEDIDOS contra a API real 17/09/2026 (paciente 9660, 88 turnos) — `date`,
+ * `scheduled_start`, `scheduled_end`, `actual_start`, `actual_end` NÃO EXISTEM na resposta (eram
+ * nomes chutados de uma versão anterior/documentação, nunca confirmados contra o payload real).
+ * Ler esses nomes inexistentes fazia `minimizeShiftDTO` devolver `undefined` neles — que o
+ * repositório gravava como `null`/`NaN` e a coluna `shift_date` (NOT NULL) rejeitava com 500. Os
+ * nomes certos são `start`/`end`/`checkin`/`checkout`; não existe campo `date` — o dia do turno é
+ * DERIVADO (ver `shiftDayFrom`).
+ */
 export interface RawAnaCareShift {
   id: number | string;
-  date: string;
-  scheduled_start: string;
-  scheduled_end: string;
-  actual_start: string | null;
-  actual_end: string | null;
+  /** Início previsto, ISO 8601 com offset — medido: sempre `-06:00` (fuso mexicano da plataforma, não o argentino). */
+  start: string;
+  /** Fim previsto, mesmo formato de `start`. */
+  end: string;
+  /** Check-in real, ou `null` sem check-in. */
+  checkin: string | null;
+  /** Checkout real, ou `null` (sem checkout — turno em andamento ou nunca fechado). */
+  checkout: string | null;
   checkin_source: 'app' | 'web_admin' | null;
+  /** Origem do CHECKOUT — existe na fonte, hoje não mapeada no DTO (item 5, achado do PR #414). */
+  checkout_source: 'app' | 'web_admin' | null;
+  /** Atraso do check-in em minutos, afirmação da fonte — existe na fonte, hoje não mapeado no DTO. */
+  checkin_delay: number | null;
   /**
-   * Horas PREVISTAS (`scheduled_end - scheduled_start`) — medido 17/09 contra a API real (paciente
-   * 9660, 88 turnos): o campo cru chama `duration`, não `duration_hours` (que não existe na
-   * resposta), e vem preenchido mesmo em turno NÃO finalizado com o valor do previsto. Nunca usar
-   * para hora trabalhada — ver `is_finalized` e `SourceShiftDTO.isFinalized`.
+   * Horas PREVISTAS (`end - start`) — medido 17/09 contra a API real: vem preenchido mesmo em
+   * turno NÃO finalizado com o valor do previsto. Nunca usar para hora trabalhada — ver
+   * `is_finalized` e `SourceShiftDTO.isFinalized`.
    */
   duration: number | null;
   /** Afirmação do próprio Ana Care de que o turno fechou (medido: finalizado ⇒ tem check-in). */
   is_finalized: boolean;
+  /**
+   * `YYYY-MM` afirmado pela PRÓPRIA fonte — medido: presente em 88/88 turnos amostrados. Fonte da
+   * verdade para `SourceShiftDTO.sourceMonth` (ver `minimizeShiftDTO`); sem ele, cai no fallback
+   * derivado do dia (`monthOfDate`).
+   */
+  month: string | null;
   patient: RawAnaCarePatient;
   nurse: RawAnaCareNurse;
   // Descartados na borda — nunca saem daqui:
-  delay_minutes?: unknown;
   payment_amount?: unknown;
   observations?: unknown;
 }
@@ -91,21 +138,52 @@ export function minimizePatientFields(raw: RawAnaCarePatient): Readonly<Record<s
 }
 
 /**
+ * O dia do turno é DERIVADO do `start` — não existe campo `date` na resposta real (medido
+ * 17/09/2026). **Decisão explícita e reversível (pendente do Gabriel):** o turno pertence ao dia
+ * em que COMEÇA, pelo prefixo `YYYY-MM-DD` do `start` COMO A FONTE ENVIA (offset `-06:00`), sem
+ * converter para o fuso argentino.
+ *
+ * Por quê: 36% dos turnos cruzam a meia-noite (medido: 32 de 88, noturnos 20:00→08:00), e é o
+ * próprio Ana Care que os lista como uma linha só ancorada no início. A tela existe para CONFERIR
+ * contra o Ana Care e o operador vai comparar com a tela deles — divergir da apresentação da fonte
+ * numa tela de conciliação é pior do que herdar o fuso dela. Nos 88 turnos medidos o resultado do
+ * prefixo `-06:00` é IDÊNTICO ao dia em `America/Argentina/Buenos_Aires`; a margem medida é de 1
+ * hora (um turno começando 21:00 argentino já viraria o dia se convertido).
+ *
+ * Função nomeada — não inline — para ter um único dono desta decisão.
+ */
+export function shiftDayFrom(start: string): string {
+  return start.slice(0, 10);
+}
+
+/** `YYYY-MM` a partir do dia derivado (`shiftDayFrom`) — fallback quando `raw.month` não vier. */
+function monthOfDate(dateStr: string): string {
+  return dateStr.slice(0, 7);
+}
+
+/**
  * Mapeia o turno cru para o DTO da porta `AnaCareShiftsSource` (spec AnaCareShiftsSource.ts) —
- * as 10 chaves do DTO SÃO o contrato de minimização: qualquer campo fora dessa lista não pode
- * existir no objeto retornado.
+ * as 13 chaves do DTO SÃO o contrato de minimização: qualquer campo fora dessa lista não pode
+ * existir no objeto retornado. Nomes de campo do `raw` conferidos contra a API real 17/09/2026
+ * (ver comentário de `RawAnaCareShift`) — os 5 antigos (`date`/`scheduled_start`/`scheduled_end`/
+ * `actual_start`/`actual_end`) não existem e nunca devem voltar a ser lidos aqui.
  */
 export function minimizeShiftDTO(raw: RawAnaCareShift): SourceShiftDTO {
+  const date = shiftDayFrom(raw.start);
   return {
     sourceShiftId: String(raw.id),
     anaCarePatientId: String(raw.patient.id),
     anaCareNurseId: String(raw.nurse.id),
-    date: raw.date,
-    scheduledStart: raw.scheduled_start,
-    scheduledEnd: raw.scheduled_end,
-    actualStart: raw.actual_start,
-    actualEnd: raw.actual_end,
-    checkinSource: raw.checkin_source,
+    date,
+    scheduledStart: raw.start,
+    scheduledEnd: raw.end,
+    actualStart: raw.checkin,
+    actualEnd: raw.checkout,
+    checkinSource: validateSourceField('checkin_source', raw.checkin_source),
+    checkoutSource: validateSourceField('checkout_source', raw.checkout_source),
+    checkinDelay: raw.checkin_delay,
     isFinalized: raw.is_finalized,
+    // `raw.month` é afirmação da fonte (existe em 88/88 medidos); fallback só para um raw sem ele.
+    sourceMonth: raw.month ?? monthOfDate(date),
   };
 }

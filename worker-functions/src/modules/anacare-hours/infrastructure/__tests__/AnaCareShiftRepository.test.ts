@@ -12,7 +12,7 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
   },
 }));
 
-import { AnaCareShiftRepository } from '../AnaCareShiftRepository';
+import { AnaCareShiftRepository, AnaCareShiftMonthMismatchError } from '../AnaCareShiftRepository';
 import type { SourceShiftDTO } from '../../domain/AnaCareShiftsSource';
 
 const SHIFT_A: SourceShiftDTO = {
@@ -113,6 +113,62 @@ describe('AnaCareShiftRepository', () => {
       const shiftDates = params[11];
       expect(plannedStarts[1]).toBeNull(); // planned_start NULL no 2º turno
       expect(shiftDates).toEqual(['2026-09-10', '2026-09-11']); // shift_date não depende disso
+    });
+
+    /**
+     * Item 5 (conserto de raiz 17/09): `checkout_source`/`checkin_delay` existem na tabela desde
+     * a migration 437 e eram gravados NULOS por falta de campo no DTO — este teste MORRE se a
+     * coluna voltar a ficar de fora do INSERT.
+     */
+    it('checkoutSource e checkinDelay chegam ao INSERT — não mais NULL por omissão do DTO', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [] });
+      const repo = new AnaCareShiftRepository();
+      const comCheckout: SourceShiftDTO = { ...SHIFT_A, checkoutSource: 'app', checkinDelay: 12 };
+      await repo.upsertMany([comCheckout], '2026-09');
+
+      const [sql, params] = mockPoolQuery.mock.calls[0];
+      expect(sql).toMatch(/checkout_source/);
+      expect(sql).toMatch(/checkin_delay/);
+      const checkoutSources = params[12];
+      const checkinDelays = params[13];
+      expect(checkoutSources).toEqual(['app']);
+      expect(checkinDelays).toEqual([12]);
+    });
+
+    it('checkoutSource/checkinDelay ausentes no DTO gravam NULL explícito (round-trip de leitura, nunca `undefined`)', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [] });
+      const repo = new AnaCareShiftRepository();
+      await repo.upsertMany([SHIFT_A], '2026-09'); // SHIFT_A não carrega checkoutSource/checkinDelay
+
+      const [, params] = mockPoolQuery.mock.calls[0];
+      expect(params[12]).toEqual([null]);
+      expect(params[13]).toEqual([null]);
+    });
+
+    /**
+     * Item 4 (conserto de raiz 17/09): `sourceMonth` (afirmação da fonte, `raw.month`) divergindo
+     * do mês pedido tem de FALHAR ALTO — nunca gravar calado num mês errado. Este teste MORRE se
+     * `upsertMany` voltar a confiar cegamente no `periodMonth` do chamador.
+     */
+    it('sourceMonth divergindo do periodMonth pedido: lança AnaCareShiftMonthMismatchError e NÃO grava nada do lote', async () => {
+      const repo = new AnaCareShiftRepository();
+      const turnoDeOutroMes: SourceShiftDTO = { ...SHIFT_A, sourceMonth: '2026-08' };
+
+      await expect(repo.upsertMany([turnoDeOutroMes], '2026-09')).rejects.toThrow(AnaCareShiftMonthMismatchError);
+      expect(mockPoolQuery).not.toHaveBeenCalled();
+    });
+
+    it('sourceMonth ausente (DTO sem afirmação da fonte): não valida, grava normalmente', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [] });
+      const repo = new AnaCareShiftRepository();
+      await expect(repo.upsertMany([SHIFT_A], '2026-09')).resolves.toEqual({ written: 1 });
+    });
+
+    it('sourceMonth igual ao periodMonth pedido: grava sem lançar', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [] });
+      const repo = new AnaCareShiftRepository();
+      const turnoMesmoMes: SourceShiftDTO = { ...SHIFT_A, sourceMonth: '2026-09' };
+      await expect(repo.upsertMany([turnoMesmoMes], '2026-09')).resolves.toEqual({ written: 1 });
     });
   });
 

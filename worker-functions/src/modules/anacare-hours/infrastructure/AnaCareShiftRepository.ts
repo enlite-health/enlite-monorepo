@@ -53,6 +53,27 @@ function periodMonthDate(month: string): string {
   return `${month}-01`;
 }
 
+/**
+ * Achado 4 (item 4 da revisão de raiz, 17/09): antes, `period_month` era só o que o CHAMADOR
+ * pedia — nenhuma checagem contra o que a própria fonte afirma (`SourceShiftDTO.sourceMonth`,
+ * `raw.month` medido presente em 88/88 turnos). Gravar calado num mês errado é pior que falhar:
+ * um turno de agosto entrando silenciosamente no retrato de setembro corrompe as DUAS listas sem
+ * nenhum sinal. Falha ALTA (lança, não grava nada do lote) — nunca best-effort silencioso.
+ */
+export class AnaCareShiftMonthMismatchError extends Error {
+  constructor(
+    readonly sourceShiftId: string,
+    readonly sourceMonth: string,
+    readonly requestedMonth: string,
+  ) {
+    super(
+      `[AnaCareShiftRepository] turno ${sourceShiftId}: a fonte afirma mês ${sourceMonth}, mas o ` +
+        `upsert foi pedido para ${requestedMonth} — recusado (gravar calado no mês errado corrompe ` +
+        `o retrato sem nenhum sinal).`,
+    );
+  }
+}
+
 export class AnaCareShiftRepository implements ShiftSyncRepository {
   private poolMemo?: Pool;
 
@@ -69,6 +90,13 @@ export class AnaCareShiftRepository implements ShiftSyncRepository {
   async upsertMany(shifts: readonly SourceShiftDTO[], periodMonth: string): Promise<{ written: number }> {
     if (shifts.length === 0) return { written: 0 };
 
+    // Falha ALTA antes de gravar qualquer coisa do lote — ver `AnaCareShiftMonthMismatchError`.
+    for (const s of shifts) {
+      if (s.sourceMonth && s.sourceMonth !== periodMonth) {
+        throw new AnaCareShiftMonthMismatchError(s.sourceShiftId, s.sourceMonth, periodMonth);
+      }
+    }
+
     const periodMonthDates = shifts.map(() => periodMonthDate(periodMonth));
     const sourceShiftIds = shifts.map((s) => s.sourceShiftId);
     const patientIds = shifts.map((s) => s.anaCarePatientId);
@@ -82,16 +110,20 @@ export class AnaCareShiftRepository implements ShiftSyncRepository {
     // Item 2 (revisão de PR): grava o dia direto da FONTE — nunca derivado de `planned_start` na
     // leitura (round-trip fiel, sem timezone de sessão nem "vira o 1º do mês" quando nulo).
     const shiftDates = shifts.map((s) => s.date);
+    // Item 5 (conserto de raiz 17/09): colunas existem desde a migration 437, gravadas NULAS por
+    // falta de campo no DTO — `?? null` cobre o DTO que não os carrega (round-trip de leitura).
+    const checkoutSources = shifts.map((s) => s.checkoutSource ?? null);
+    const checkinDelays = shifts.map((s) => s.checkinDelay ?? null);
 
     await this.pool.query(
       `INSERT INTO anacare_shift (
          source, source_shift_id, ana_care_patient_id, ana_care_nurse_id, period_month,
          planned_start, planned_end, checkin_at, checkout_at, checkin_source, is_finalized,
-         shift_date, fetched_at, updated_at
+         shift_date, checkout_source, checkin_delay, fetched_at, updated_at
        )
        SELECT $1::text, UNNEST($2::text[]), UNNEST($3::text[]), UNNEST($4::text[]), UNNEST($5::date[]),
               UNNEST($6::timestamptz[]), UNNEST($7::timestamptz[]), UNNEST($8::timestamptz[]), UNNEST($9::timestamptz[]),
-              UNNEST($10::text[]), UNNEST($11::boolean[]), UNNEST($12::date[]), NOW(), NOW()
+              UNNEST($10::text[]), UNNEST($11::boolean[]), UNNEST($12::date[]), UNNEST($13::text[]), UNNEST($14::numeric[]), NOW(), NOW()
        ON CONFLICT (source, source_shift_id) DO UPDATE SET
          ana_care_patient_id = EXCLUDED.ana_care_patient_id,
          ana_care_nurse_id   = EXCLUDED.ana_care_nurse_id,
@@ -103,6 +135,8 @@ export class AnaCareShiftRepository implements ShiftSyncRepository {
          checkin_source      = EXCLUDED.checkin_source,
          is_finalized        = EXCLUDED.is_finalized,
          shift_date          = EXCLUDED.shift_date,
+         checkout_source     = EXCLUDED.checkout_source,
+         checkin_delay       = EXCLUDED.checkin_delay,
          fetched_at          = NOW(),
          updated_at          = NOW()`,
       [
@@ -118,6 +152,8 @@ export class AnaCareShiftRepository implements ShiftSyncRepository {
         checkinSources,
         isFinalizeds,
         shiftDates,
+        checkoutSources,
+        checkinDelays,
       ],
     );
 

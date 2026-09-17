@@ -18,6 +18,9 @@ function fakeDto(overrides: Partial<SourceShiftDTO> = {}): SourceShiftDTO {
     actualEnd: null,
     checkinSource: null,
     isFinalized: false,
+    checkoutSource: null,
+    checkinDelay: null,
+    sourceMonth: '2026-09',
     ...overrides,
   };
 }
@@ -67,17 +70,19 @@ describe('AnaCareShiftsSourceReal', () => {
     });
   });
 
-  it('getShift minimiza o turno cru retornado pelo cliente', async () => {
+  it('getShift minimiza o turno cru retornado pelo cliente (nomes reais medidos 17/09: start/end/checkin/checkout/month)', async () => {
     const getRawShift = jest.fn().mockResolvedValue({
       id: 5,
-      date: '2026-09-02',
-      scheduled_start: 'a',
-      scheduled_end: 'b',
-      actual_start: null,
-      actual_end: null,
+      start: '2026-09-02T13:00:00-06:00',
+      end: '2026-09-02T17:00:00-06:00',
+      checkin: null,
+      checkout: null,
       checkin_source: 'app',
+      checkout_source: null,
+      checkin_delay: null,
       duration: 4,
       is_finalized: true,
+      month: '2026-09',
       patient: { id: 20, agency: 116, document_type: 'DNI', document_number: '9', first_name: 'X', last_name: 'Y' },
       nurse: { id: 200, first_name: 'N', last_name: 'M' },
     });
@@ -87,9 +92,13 @@ describe('AnaCareShiftsSourceReal', () => {
     const result = await source.getShift('5');
     expect(result?.sourceShiftId).toBe('5');
     expect(result?.anaCarePatientId).toBe('20');
+    expect(result?.date).toBe('2026-09-02');
     // não pode ter escapado nenhum campo fora do DTO (contrato de minimização)
     expect(Object.keys(result as object).sort()).toEqual(
-      ['sourceShiftId', 'anaCarePatientId', 'anaCareNurseId', 'date', 'scheduledStart', 'scheduledEnd', 'actualStart', 'actualEnd', 'checkinSource', 'isFinalized'].sort(),
+      [
+        'sourceShiftId', 'anaCarePatientId', 'anaCareNurseId', 'date', 'scheduledStart', 'scheduledEnd',
+        'actualStart', 'actualEnd', 'checkinSource', 'checkoutSource', 'checkinDelay', 'isFinalized', 'sourceMonth',
+      ].sort(),
     );
   });
 
