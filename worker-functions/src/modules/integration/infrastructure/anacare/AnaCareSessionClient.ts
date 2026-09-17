@@ -145,6 +145,9 @@ export class AnaCareSessionClient {
     });
     this.cookies.absorb(postResponse);
 
+    // Login bem-sucedido responde 302 + Set-Cookie: sessionid. Com `redirect: 'manual'` o 302
+    // chega inteiro aqui e o cookie é absorvido. Se vier 200, o Django re-renderizou o formulário
+    // — credencial rejeitada (ou o redirecionamento foi seguido e o cookie se perdeu).
     if (!this.cookies.get('sessionid')) {
       throw new AnaCareHttpError('POST', LOGIN_PATH, postResponse.status, await safeText(postResponse));
     }
@@ -206,7 +209,7 @@ export class AnaCareSessionClient {
 
     let response = await this.rateLimiter.schedule(() => this.ensureSessionAndFetch(url, false));
 
-    if (response.status === 403) {
+    if (isSessionExpiredStatus(response.status)) {
       response = await this.rateLimiter.schedule(this.buildForceReloginFetch(url, false));
     }
 
@@ -286,7 +289,7 @@ export class AnaCareSessionClient {
   private async requestJsonAbsolute<T>(absoluteUrl: string): Promise<T> {
     let response = await this.rateLimiter.schedule(() => this.ensureSessionAndFetch(absoluteUrl, true));
 
-    if (response.status === 403) {
+    if (isSessionExpiredStatus(response.status)) {
       response = await this.rateLimiter.schedule(this.buildForceReloginFetch(absoluteUrl, true));
     }
 
@@ -308,14 +311,40 @@ export class AnaCareSessionClient {
     return response;
   }
 
+  /**
+   * ⚠️ `redirect: 'manual'` é OBRIGATÓRIO e não é detalhe de estilo.
+   *
+   * O `fetch` do Node segue redirecionamento por padrão, e o login do Ana Care responde
+   * `302 + Set-Cookie: sessionid`. Seguindo o 302 automaticamente, o `Set-Cookie` do 302 se
+   * PERDE (a Response final só carrega os cabeçalhos da última resposta); a página de destino
+   * não reconhece a sessão e redireciona de volta ao login, e o cliente recebe 200 com o HTML
+   * do formulário — login "falhando" com credencial correta. Medido ao vivo na stage em
+   * 16/09/2026: o mesmo POST via `curl` sem seguir redirecionamento devolve 302 com o cookie.
+   *
+   * Isto escapou dos testes da F2 porque todos usam `fetchImpl` simulado, que devolvia o 302 com
+   * o cookie direto ao código — o comportamento de seguir redirecionamento só existe no `fetch`
+   * real. Cobertura de 100% não pega esta classe de defeito; só o teste de fumaça contra o
+   * Ana Care real pega (ver `AnaCareSessionClient.smoke.ts`).
+   */
   private async rawFetch(pathOrUrl: string, init: RequestInit, isAbsolute = false): Promise<Response> {
     const url = isAbsolute ? pathOrUrl : `${this.baseUrl}${pathOrUrl}`;
     try {
-      return await this.fetchImpl(url, init);
+      return await this.fetchImpl(url, { ...init, redirect: 'manual' });
     } catch (err) {
       throw new AnaCareTimeoutError(init.method as string, url);
     }
   }
+}
+
+/**
+ * Sessão expirada/ausente chega de DUAS formas no Ana Care: `403` na API, e `302` (redirecionamento
+ * para o formulário de login) nas rotas que renderizam HTML. Antes do `redirect: 'manual'` o 302
+ * era seguido pelo `fetch` e virava um 200 com o HTML do login — indistinguível de sucesso para
+ * quem só olhava o status. Com o redirecionamento manual, os dois casos são detectáveis e disparam
+ * o mesmo re-login.
+ */
+function isSessionExpiredStatus(status: number): boolean {
+  return status === 403 || status === 302;
 }
 
 /**
