@@ -8,6 +8,7 @@
  */
 
 import type { SourceShiftDTO } from './AnaCareShiftsSource';
+import type { AnaCarePatientMonthAggregate } from './AnaCarePatientMonth';
 
 export interface EnliteDirectoryEntry {
   reservationId: string;
@@ -39,4 +40,33 @@ export interface ShiftSyncRepository {
   /** Última contagem TOTAL do diretório Enlite conhecida (alarme de queda) — `null` = nenhuma execução prévia. */
   getLastDirectoryCount(): Promise<number | null>;
   setLastDirectoryCount(count: number): Promise<void>;
+}
+
+/**
+ * Porta de escrita/leitura do retrato AGREGADO (`anacare_patient_month`, migration 441, D361) —
+ * usada pelo sync runner (grava ao lado de `anacare_shift`, convivência da F6.1) e, a partir da
+ * F6.2, pelo serviço de leitura da lista.
+ */
+export interface PatientMonthSyncRepository {
+  /**
+   * Conserto 17/09 (D361 F6.1): grava um agregado JÁ PRONTO — usado hoje só pelo round-trip do
+   * repositório em teste. O RUNNER não chama mais este método (ver `recomputeFromShifts`): somar
+   * em memória por reserva e fazer upsert direto tinha um bug — o mesmo paciente em DUAS reservas
+   * (inclusive em invocações diferentes, por causa do cursor) fazia a segunda gravação SOBRESCREVER
+   * a primeira em silêncio, porque cada upsert só via os turnos de UMA reserva.
+   */
+  upsertMany(aggregates: readonly AnaCarePatientMonthAggregate[], periodMonth: string): Promise<{ written: number }>;
+  /**
+   * Recomputa e grava o(s) agregado(s) dos pacientes presentes em `shifts` a partir da fonte da
+   * verdade cumulativa (durante a convivência F6.1, `anacare_shift` — já escrita pelo `upsertMany`
+   * do `ShiftSyncRepository` imediatamente antes desta chamada), nunca só a partir do lote em
+   * memória. Isso garante que o valor final é sempre o TOTAL do paciente no mês, venha de quantas
+   * reservas vier e em quantas invocações for. `shifts` só precisa cobrir os pacientes desta
+   * chamada — o NOME vem deles (não existe coluna de nome em `anacare_shift`), mas nome ausente
+   * nesta rodada nunca apaga um nome já gravado (COALESCE do lado da implementação).
+   */
+  recomputeFromShifts(shifts: readonly SourceShiftDTO[], periodMonth: string): Promise<{ written: number }>;
+  listByMonth(source: string, periodMonth: string): Promise<AnaCarePatientMonthAggregate[]>;
+  /** Mesmo contrato de `ShiftSyncFreshness.getSnapshotFreshness` — contagem zero é falha, nunca sucesso. */
+  getSnapshotFreshness(source: string, periodMonth: string): Promise<ShiftSyncFreshness>;
 }

@@ -56,7 +56,7 @@ function hoursBetween(startIso: string, endIso: string): number {
  * fonte propaga `null` explícito (nunca `''`) até aqui, e SEM o previsto conhecido o valor seguro é
  * `0` (mesmo padrão de "ausência de dado nunca produz um número inválido" de `computeActualHours`).
  */
-function hoursScheduledOf(scheduledStart: string | null, scheduledEnd: string | null): number {
+export function hoursScheduledOf(scheduledStart: string | null, scheduledEnd: string | null): number {
   if (!scheduledStart || !scheduledEnd) return 0;
   return hoursBetween(scheduledStart, scheduledEnd);
 }

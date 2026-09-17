@@ -24,10 +24,10 @@
  */
 
 import type { AnaCareShiftsSource } from '../domain/AnaCareShiftsSource';
-import type { EnliteDirectorySource, ShiftSyncRepository } from '../domain/AnaCareHoursSyncPorts';
+import type { EnliteDirectorySource, PatientMonthSyncRepository, ShiftSyncRepository } from '../domain/AnaCareHoursSyncPorts';
 import { AnaCareHoursSyncGuard } from './AnaCareHoursSyncGuard';
 import { emitAnaCareHoursSyncMetric, type AnaCareHoursSyncMetricEmitter } from '../infrastructure/AnaCareHoursSyncMetrics';
-import { FakeEnliteDirectory, FakeAnaCareShiftRepository } from '../infrastructure/FakeAnaCareSyncDependencies';
+import { FakeEnliteDirectory, FakeAnaCareShiftRepository, FakeAnaCarePatientMonthRepository } from '../infrastructure/FakeAnaCareSyncDependencies';
 
 export interface AnaCareHoursSyncTrigger {
   origin: 'cron' | 'manual';
@@ -106,6 +106,11 @@ export class AnaCareHoursSyncRunner {
     private readonly directory: EnliteDirectorySource = new FakeEnliteDirectory(),
     private readonly repository: ShiftSyncRepository = new FakeAnaCareShiftRepository(),
     private readonly env: NodeJS.ProcessEnv = process.env,
+    /**
+     * F6.1 (D361): grava o retrato AGREGADO (`anacare_patient_month`, migration 441) ao lado de
+     * `anacare_shift` — convivência deliberada, `anacare_shift` continua escrita normalmente.
+     */
+    private readonly patientMonthRepository: PatientMonthSyncRepository = new FakeAnaCarePatientMonthRepository(),
   ) {}
 
   static currentMonth(): string {
@@ -174,6 +179,13 @@ export class AnaCareHoursSyncRunner {
       if (shifts.length > 0) {
         const { written } = await this.repository.upsertMany(shifts, month);
         shiftsWritten += written;
+
+        // Conserto 17/09 (D361 F6.1): NÃO agregar em memória só com os turnos DESTA reserva — o
+        // mesmo paciente pode aparecer em outra reserva (nesta rodada ou numa retomada por
+        // cursor), e um upsert que só via o lote atual sobrescrevia o total anterior em silêncio.
+        // `recomputeFromShifts` recomputa a partir do retrato por turno já escrito acima (fonte da
+        // verdade cumulativa durante a convivência F6.1), sempre o TOTAL do paciente no mês.
+        await this.patientMonthRepository.recomputeFromShifts(shifts, month);
       }
       reservationsProcessed += 1;
     }

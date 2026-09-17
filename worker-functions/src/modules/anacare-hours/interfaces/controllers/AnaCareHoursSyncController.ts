@@ -35,7 +35,7 @@ export class AnaCareHoursSyncController {
     if (AnaCareHoursSyncController.sharedRunner === undefined) {
       const deps = createAnaCareSyncDependencies();
       AnaCareHoursSyncController.sharedRunner = deps
-        ? new AnaCareHoursSyncRunner(deps.source, undefined, undefined, undefined, deps.directory, deps.repository)
+        ? new AnaCareHoursSyncRunner(deps.source, undefined, undefined, undefined, deps.directory, deps.repository, undefined, deps.patientMonthRepository)
         : null;
     }
     return AnaCareHoursSyncController.sharedRunner;
