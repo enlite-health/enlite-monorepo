@@ -12,10 +12,9 @@
 
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import type { AnaCareShiftsSource, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
-import type { PatientMonthSyncRepository, ShiftSyncRepository } from '../domain/AnaCareHoursSyncPorts';
+import type { PatientMonthSyncRepository } from '../domain/AnaCareHoursSyncPorts';
 import { ShiftHoursValidationRepository, ShiftAlreadyValidatedError } from '../infrastructure/ShiftHoursValidationRepository';
 import { WorkerLinkRepository } from '../infrastructure/WorkerLinkRepository';
-import { AnaCareShiftRepository } from '../infrastructure/AnaCareShiftRepository';
 import { AnaCarePatientMonthRepository } from '../infrastructure/AnaCarePatientMonthRepository';
 import { mapShift, groupIntoPatients, buildSnapshot, computeActualHours, joinSourceName } from './AnaCareHoursMapper';
 import {
@@ -55,8 +54,6 @@ export class AnaCareHoursService {
     private readonly validations: ShiftHoursValidationRepository = new ShiftHoursValidationRepository(),
     private readonly kms: KMSEncryptionService = new KMSEncryptionService(),
     private readonly workerLinks: WorkerLinkRepository = new WorkerLinkRepository(),
-    /** `getRetratoStatus` lê a freshness daqui (por turno) — a LISTA (`getMonthSnapshot`) NÃO lê mais daqui a partir da F6.2 (ver `patientMonthRepository`). */
-    private readonly shiftRepository: ShiftSyncRepository = new AnaCareShiftRepository(),
     /**
      * F6.2 (D361/Adendo 17/09): retrato AGREGADO por paciente+mês (`anacare_patient_month` +
      * `anacare_patient_month_provider`, migrations 441/442) — a LISTA (`getMonthSnapshot`) lê
@@ -184,9 +181,26 @@ export class AnaCareHoursService {
     return patients.find((p) => p.anaCareId === patientId) ?? null;
   }
 
-  /** Barato: só freshness do retrato + status da fonte — nunca lista nem mapeia o mês inteiro. */
+  /**
+   * Barato: só freshness do retrato + status da fonte — nunca lista nem mapeia o mês inteiro.
+   *
+   * Conserto 17/09 (passo 2): migrado do antigo repositório do retrato por turno (que ninguém mais
+   * escrevia desde o passo 1 — reportaria data velha PARA SEMPRE, e foi apagado no passo 2) para
+   * `patientMonthRepository.getSnapshotFreshness` (lê `anacare_patient_month`, escrito pelo
+   * runner a cada corrida). ⚠️ Mudança de UNIDADE do `shifts` retornado: no repositório antigo
+   * era `COUNT(*)` de TURNOS (medido ~2700); no novo é `COUNT(*)` de
+   * `anacare_patient_month` = nº de LINHAS = nº de PACIENTES (medido ~145). O `naoConstruido`
+   * (`=== 0`) se comporta igual nos dois casos (zero linhas ⇔ zero pacientes ⇔ zero turnos, mesma
+   * condição de "nunca construído") — mas o NÚMERO em si mudou de grandeza. Grep feito (ver
+   * relato do fecho): `getRetratoStatus` NÃO expõe `freshness.shifts` na resposta (só usa para o
+   * booleano `naoConstruido` e descarta a contagem) — nenhum outro consumidor lê esse número como
+   * quantidade de turnos.
+   */
   async getRetratoStatus(month: string): Promise<AnaCareRetratoStatus> {
-    const [freshness, sourceRetrato] = await Promise.all([this.shiftRepository.getSnapshotFreshness(month), this.source.getRetratoStatus()]);
+    const [freshness, sourceRetrato] = await Promise.all([
+      this.patientMonthRepository.getSnapshotFreshness(PATIENT_MONTH_SOURCE, month),
+      this.source.getRetratoStatus(),
+    ]);
     const naoConstruido = freshness.shifts === 0;
     return {
       updatedAt: freshness.lastFetchedAt ?? new Date().toISOString(),

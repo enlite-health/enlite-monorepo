@@ -5,6 +5,7 @@
  */
 import { AnaCareHoursSyncController } from '../AnaCareHoursSyncController';
 import { AnaCareHoursSyncRunner } from '../../../application/AnaCareHoursSyncRunner';
+import { AnaCarePatientMonthCollisionError } from '../../../infrastructure/AnaCarePatientMonthRepository';
 
 jest.mock('@shared/logging', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -68,6 +69,14 @@ describe('AnaCareHoursSyncController', () => {
       const r2 = res();
 
       await controller.triggerCron({ headers: {} } as never, r1 as never);
+      // Conserto 17/09 (desacoplamento do retrato por turno, passo 1): duas sincronizações
+      // independentes (nenhuma retomando a outra — sem `cursor`) do MESMO reservationId sintético
+      // (`FakeEnliteDirectory` sempre devolve 1 só) gravam o MESMO paciente duas vezes. O detector
+      // de colisão compara `fetched_at` contra `runStartedAt` em resolução de MILISSEGUNDO — sem
+      // esta pausa, as duas chamadas (100% síncronas/em memória, sem I/O real) empatam no mesmo ms
+      // e o detector (corretamente cauteloso) as trata como a MESMA corrida. Contra o Ana Care
+      // real, a latência de rede já garante essa separação — aqui é preciso simulá-la.
+      await new Promise((resolve) => setTimeout(resolve, 10));
       await controller.triggerCron({ headers: {} } as never, r2 as never);
 
       expect(r1.status).toHaveBeenCalledWith(200);
@@ -91,6 +100,25 @@ describe('AnaCareHoursSyncController', () => {
     } finally {
       process.env.ANACARE_HOURS_SOURCE = prev;
     }
+  });
+
+  /**
+   * TAREFA D (gate `revisao-pr`, fecho 17/09): a colisão do detector (`AnaCarePatientMonthCollisionError`)
+   * ganha código DEDICADO em vez do "Internal error" genérico — "detector que dispara e ninguém vê
+   * não é detector". MORRE se o controller voltar a tratar a colisão como qualquer outro 500.
+   */
+  it('409 ANACARE_PATIENT_MONTH_COLLISION (código dedicado, não "Internal error" genérico) quando o runner lança AnaCarePatientMonthCollisionError', async () => {
+    const runner = {
+      run: jest.fn().mockRejectedValue(new AnaCarePatientMonthCollisionError(['AC-PAT-0'], '2026-09')),
+    } as unknown as AnaCareHoursSyncRunner;
+    const controller = new AnaCareHoursSyncController(() => runner);
+    const response = res();
+
+    await controller.triggerManual({ headers: {} } as never, response as never);
+
+    expect(response.status).toHaveBeenCalledWith(409);
+    expect(response.body).toMatchObject({ success: false, code: 'ANACARE_PATIENT_MONTH_COLLISION' });
+    expect(reportError).toHaveBeenCalledWith(expect.any(Error), { source: 'AnaCareHoursSyncController.trigger.manual' });
   });
 
   it('triggerCron nunca carrega userId (origin cron é sempre anônima)', async () => {

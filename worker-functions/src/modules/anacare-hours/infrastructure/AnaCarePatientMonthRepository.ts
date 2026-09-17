@@ -1,15 +1,15 @@
 /**
  * src/modules/anacare-hours/infrastructure/AnaCarePatientMonthRepository.ts
  *
- * Acesso a `anacare_patient_month` (migration 441, D361) — o retrato AGREGADO por paciente+mês,
- * escrito pelo `AnaCareHoursSyncRunner` ao lado de `anacare_shift` (convivência da F6.1). A partir
- * da F6.2 a LISTA passa a ler daqui em vez de somar o array de turnos na hora.
+ * Acesso a `anacare_patient_month` + `anacare_patient_month_provider` (migrations 441/442, D361) —
+ * o retrato AGREGADO por paciente+mês e a companheira paciente×prestador, escritos pelo
+ * `AnaCareHoursSyncRunner` a cada reserva processada. A LISTA lê exclusivamente daqui.
  *
- * Mesmo molde de `AnaCareShiftRepository` (Pool + `DatabaseConnection`, UNNEST em lote, tipo de
- * linha SQL separado do tipo de domínio, mapeamento explícito).
+ * Mesmo molde de `ShiftHoursValidationRepository` (Pool + `DatabaseConnection`, UNNEST em lote,
+ * tipo de linha SQL separado do tipo de domínio, mapeamento explícito).
  */
 
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import type { AnaCarePatientMonthAggregate, AnaCarePatientMonthProviderAggregate } from '../domain/AnaCarePatientMonth';
 import type { PatientMonthSyncRepository, ShiftSyncFreshness } from '../domain/AnaCareHoursSyncPorts';
@@ -70,6 +70,25 @@ function nonEmpty(value: string | null | undefined): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+/**
+ * Conserto 17/09 (desacoplamento do retrato por turno, passo 1): `upsertReplacingForRun` faz
+ * SUBSTITUIÇÃO (não soma) — não pode mesclar silenciosamente uma gravação do MESMO paciente vinda
+ * de outra reserva. Falha ALTA (nunca grava o lote) antes de sobrescrever calado.
+ */
+export class AnaCarePatientMonthCollisionError extends Error {
+  constructor(
+    readonly anaCarePatientIds: readonly string[],
+    readonly periodMonth: string,
+  ) {
+    super(
+      `[AnaCarePatientMonthRepository] paciente(s) ${anaCarePatientIds.join(', ')} do mês ${periodMonth} ` +
+        `já foram gravados NESTA MESMA corrida (fetched_at >= runStartedAt) — outra reserva desta ` +
+        `corrida já escreveu este paciente; substituir agora apagaria a gravação anterior em ` +
+        `silêncio. Recusado sem gravar nada do lote.`,
+    );
+  }
+}
+
 export class AnaCarePatientMonthRepository implements PatientMonthSyncRepository {
   private poolMemo?: Pool;
 
@@ -80,8 +99,8 @@ export class AnaCarePatientMonthRepository implements PatientMonthSyncRepository
 
   /**
    * Grava em LOTE via `UNNEST` (1 INSERT para N pacientes, nunca 1 query por paciente — mesmo
-   * padrão de `AnaCareShiftRepository.upsertMany`). `source` é sempre `'anacare'` — a única fonte
-   * hoje, mesma convenção do repositório irmão (constante interna, não parâmetro).
+   * padrão de `upsertReplacingForRun`). `source` é sempre `'anacare'` — a única fonte hoje
+   * (constante interna, não parâmetro).
    */
   async upsertMany(aggregates: readonly AnaCarePatientMonthAggregate[], periodMonth: string): Promise<{ written: number }> {
     if (aggregates.length === 0) return { written: 0 };
@@ -140,106 +159,20 @@ export class AnaCarePatientMonthRepository implements PatientMonthSyncRepository
   }
 
   /**
-   * Conserto 17/09 (D361 F6.1): NUNCA agrega em memória por reserva — o mesmo paciente pode
-   * aparecer em duas reservas, inclusive em invocações diferentes (retomada por cursor), e um
-   * upsert que só via os turnos de UMA reserva fazia a segunda gravação SOBRESCREVER a primeira em
-   * silêncio. Aqui o `INSERT ... SELECT ... GROUP BY` recomputa direto de `anacare_shift` (fonte da
-   * verdade cumulativa durante a convivência F6.1, já escrita pelo `AnaCareShiftRepository.upsertMany`
-   * imediatamente antes desta chamada) — o valor gravado é sempre o TOTAL do paciente no mês, venha
-   * de quantas reservas vier e em quantas invocações for.
-   *
-   * `anacare_shift` NÃO tem colunas de nome (migration 440 nunca foi aplicada) — o nome continua
-   * vindo dos `shifts` em memória (mesma regra de `aggregatePatientMonth`: primeiro valor
-   * não-vazio, por paciente, DENTRO deste lote) e é passado como parâmetro; no `ON CONFLICT`, o
-   * `COALESCE(EXCLUDED.*, anacare_patient_month.*)` garante que uma rodada sem nome NUNCA apaga um
-   * nome já gravado (vazio ambíguo apagando dado — regra dura da casa).
-   */
-  async recomputeFromShifts(shifts: readonly SourceShiftDTO[], periodMonth: string): Promise<{ written: number }> {
-    if (shifts.length === 0) return { written: 0 };
-
-    const namesByPatient = new Map<string, { firstName?: string; lastName?: string }>();
-    for (const s of shifts) {
-      if (namesByPatient.has(s.anaCarePatientId)) continue;
-      const firstName = nonEmpty(s.patientFirstName);
-      const lastName = nonEmpty(s.patientLastName);
-      if (firstName || lastName) namesByPatient.set(s.anaCarePatientId, { firstName, lastName });
-    }
-
-    const patientIds = [...new Set(shifts.map((s) => s.anaCarePatientId))];
-    const firstNames = patientIds.map((id) => namesByPatient.get(id)?.firstName ?? null);
-    const lastNames = patientIds.map((id) => namesByPatient.get(id)?.lastName ?? null);
-    const periodMonthValue = periodMonthDate(periodMonth);
-
-    await this.pool.query(
-      `INSERT INTO anacare_patient_month (
-         source, ana_care_patient_id, period_month, patient_first_name, patient_last_name,
-         providers_count, shifts_count, hours_actual_sum, hours_scheduled_sum_missing_actual,
-         origin_sin_checkin, origin_web_admin, origin_app, fetched_at, updated_at
-       )
-       SELECT
-         'anacare',
-         s.ana_care_patient_id,
-         $1::date,
-         names.first_name,
-         names.last_name,
-         COUNT(DISTINCT s.ana_care_nurse_id)::integer AS providers_count,
-         COUNT(*)::integer AS shifts_count,
-         -- hours_actual_sum: só turnos com checkin_at E checkout_at (mesma regra de computeActualHours).
-         COALESCE(SUM(
-           CASE WHEN s.checkin_at IS NOT NULL AND s.checkout_at IS NOT NULL
-             THEN ROUND((EXTRACT(EPOCH FROM (s.checkout_at - s.checkin_at)) / 3600.0)::numeric, 2)
-             ELSE 0 END
-         ), 0) AS hours_actual_sum,
-         -- hours_scheduled_sum_missing_actual: previsto só dos turnos SEM hora real (mesma regra de hoursScheduledOf).
-         COALESCE(SUM(
-           CASE WHEN s.checkin_at IS NULL OR s.checkout_at IS NULL THEN
-             CASE WHEN s.planned_start IS NOT NULL AND s.planned_end IS NOT NULL
-               THEN ROUND((EXTRACT(EPOCH FROM (s.planned_end - s.planned_start)) / 3600.0)::numeric, 2)
-               ELSE 0 END
-             ELSE 0 END
-         ), 0) AS hours_scheduled_sum_missing_actual,
-         COUNT(*) FILTER (WHERE s.checkin_source IS NULL)::integer AS origin_sin_checkin,
-         COUNT(*) FILTER (WHERE s.checkin_source = 'web_admin')::integer AS origin_web_admin,
-         COUNT(*) FILTER (WHERE s.checkin_source IS NOT NULL AND s.checkin_source <> 'web_admin')::integer AS origin_app,
-         NOW(),
-         NOW()
-         FROM anacare_shift s
-         JOIN (
-           SELECT UNNEST($2::text[]) AS patient_id, UNNEST($3::text[]) AS first_name, UNNEST($4::text[]) AS last_name
-         ) names ON names.patient_id = s.ana_care_patient_id
-        WHERE s.source = 'anacare' AND s.period_month = $1::date AND s.ana_care_patient_id = ANY($2::text[])
-        GROUP BY s.ana_care_patient_id, names.first_name, names.last_name
-       ON CONFLICT (source, ana_care_patient_id, period_month) DO UPDATE SET
-         patient_first_name                 = COALESCE(EXCLUDED.patient_first_name, anacare_patient_month.patient_first_name),
-         patient_last_name                  = COALESCE(EXCLUDED.patient_last_name, anacare_patient_month.patient_last_name),
-         providers_count                    = EXCLUDED.providers_count,
-         shifts_count                       = EXCLUDED.shifts_count,
-         hours_actual_sum                   = EXCLUDED.hours_actual_sum,
-         hours_scheduled_sum_missing_actual = EXCLUDED.hours_scheduled_sum_missing_actual,
-         origin_sin_checkin                 = EXCLUDED.origin_sin_checkin,
-         origin_web_admin                   = EXCLUDED.origin_web_admin,
-         origin_app                         = EXCLUDED.origin_app,
-         fetched_at                         = NOW(),
-         updated_at                         = NOW()`,
-      [periodMonthValue, patientIds, firstNames, lastNames],
-    );
-
-    await this.upsertProvidersFromShifts(shifts, periodMonthValue);
-
-    return { written: patientIds.length };
-  }
-
-  /**
    * Adendo 17/09 (D361): grava o PAR paciente×prestador×mês (migration 442) — a companheira que
    * alimenta o filtro "Todos los prestadores". Só usa os pares presentes NESTE lote de `shifts`
-   * (não precisa recomputar contra `anacare_shift` como o agregado faz: um par já gravado por uma
-   * reserva anterior nunca é apagado por esta chamada — o `ON CONFLICT` só ADICIONA/atualiza nome,
-   * nunca remove uma linha, então a convivência entre reservas/invocações é segura por construção).
-   * Nome: mesma regra de `recomputeFromShifts` para o paciente — primeiro valor não-vazio DENTRO
-   * deste lote vence; `COALESCE` no `ON CONFLICT` garante que uma rodada sem nome nunca apaga um
-   * nome de prestador já gravado.
+   * (nunca precisa recomputar contra o retrato por turno: um par já gravado por uma reserva
+   * anterior nunca é apagado por esta chamada — o `ON CONFLICT` só ADICIONA/atualiza nome, nunca
+   * remove uma linha, então a convivência entre reservas/invocações é segura por construção).
+   * Nome: primeiro valor não-vazio DENTRO deste lote vence; `COALESCE` no `ON CONFLICT` garante que
+   * uma rodada sem nome nunca apaga um nome de prestador já gravado.
+   *
+   * Conserto 17/09 (passo 3, regressão do passo 1): recebe o `client` da transação de
+   * `upsertReplacingForRun` — ver decisão de atomicidade no cabeçalho daquele método. `shifts=[]`
+   * retorna sem abrir nenhuma query (o chamador cobre esse caso, mas a guarda aqui também protege
+   * chamadas diretas).
    */
-  private async upsertProvidersFromShifts(shifts: readonly SourceShiftDTO[], periodMonthValue: string): Promise<void> {
+  private async upsertProvidersFromShifts(client: Pick<PoolClient, 'query'>, shifts: readonly SourceShiftDTO[], periodMonthValue: string): Promise<void> {
     const namesByPair = new Map<string, { firstName?: string; lastName?: string }>();
     const pairPatientIds: string[] = [];
     const pairNurseIds: string[] = [];
@@ -265,7 +198,7 @@ export class AnaCarePatientMonthRepository implements PatientMonthSyncRepository
     const firstNames = pairPatientIds.map((patientId, i) => namesByPair.get(`${patientId}::${pairNurseIds[i]}`)?.firstName ?? null);
     const lastNames = pairPatientIds.map((patientId, i) => namesByPair.get(`${patientId}::${pairNurseIds[i]}`)?.lastName ?? null);
 
-    await this.pool.query(
+    await client.query(
       `INSERT INTO anacare_patient_month_provider (
          source, ana_care_patient_id, ana_care_nurse_id, period_month, nurse_first_name, nurse_last_name,
          fetched_at, created_at, updated_at
@@ -278,6 +211,120 @@ export class AnaCarePatientMonthRepository implements PatientMonthSyncRepository
          updated_at         = NOW()`,
       [periodMonthValue, pairPatientIds, pairNurseIds, firstNames, lastNames],
     );
+  }
+
+  /**
+   * Ver contrato em `PatientMonthSyncRepository.upsertReplacingForRun`. Transação: `SELECT ...
+   * FOR UPDATE` trava as linhas dos pacientes do lote ANTES de decidir — evita que duas reservas
+   * concorrentes da MESMA corrida passem as duas pela checagem antes de qualquer uma escrever.
+   *
+   * Conserto 17/09 (passo 3, regressão do passo 1): o par paciente×prestador (`upsertProvidersFromShifts`)
+   * entra na MESMA transação/client do agregado, entre o INSERT e o COMMIT — decisão deliberada,
+   * não default. Motivo: `aggregates` e `shifts` vêm da MESMA reserva (`aggregateByPatient(shifts)`
+   * no chamador) — se o lote colide (paciente já escrito nesta corrida por outra reserva) e o
+   * agregado sofre ROLLBACK, os pares desta reserva também não podem ficar de fora: gravar só os
+   * pares e não o agregado deixaria o par "órfão" (paciente aparece no filtro de prestador sem
+   * estar no retrato daquela rodada) até a próxima reserva reprocessar o mesmo paciente — uma
+   * inconsistência sem necessidade, já que o `ON CONFLICT`+`COALESCE` dos pares nunca destrói dado
+   * (uma nova tentativa reescreve exatamente o mesmo par, sem custo). Correr o par numa transação
+   * separada só trocaria uma janela de inconsistência inofensiva (não fica gravado) por uma pior
+   * (fica gravado um par sem o agregado correspondente desta reserva).
+   */
+  async upsertReplacingForRun(
+    aggregates: readonly AnaCarePatientMonthAggregate[],
+    periodMonth: string,
+    runStartedAt: Date,
+    shifts: readonly SourceShiftDTO[],
+  ): Promise<{ written: number }> {
+    if (aggregates.length === 0) return { written: 0 };
+
+    const periodMonthValue = periodMonthDate(periodMonth);
+    const patientIds = aggregates.map((a) => a.anaCarePatientId);
+
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const collisionCheck = await client.query<{ ana_care_patient_id: string }>(
+        `SELECT ana_care_patient_id
+           FROM anacare_patient_month
+          WHERE source = 'anacare' AND period_month = $1 AND ana_care_patient_id = ANY($2::text[])
+            AND fetched_at >= $3::timestamptz
+          FOR UPDATE`,
+        [periodMonthValue, patientIds, runStartedAt.toISOString()],
+      );
+
+      if (collisionCheck.rows.length > 0) {
+        await client.query('ROLLBACK');
+        throw new AnaCarePatientMonthCollisionError(
+          collisionCheck.rows.map((r) => r.ana_care_patient_id),
+          periodMonth,
+        );
+      }
+
+      const sources = aggregates.map(() => 'anacare');
+      const periodMonthDates = aggregates.map(() => periodMonthValue);
+      const firstNames = aggregates.map((a) => a.patientFirstName ?? null);
+      const lastNames = aggregates.map((a) => a.patientLastName ?? null);
+      const providersCounts = aggregates.map((a) => a.providersCount);
+      const shiftsCounts = aggregates.map((a) => a.shiftsCount);
+      const hoursActualSums = aggregates.map((a) => a.hoursActualSum);
+      const hoursScheduledSums = aggregates.map((a) => a.hoursScheduledSumMissingActual);
+      const originSinCheckins = aggregates.map((a) => a.originSinCheckin);
+      const originWebAdmins = aggregates.map((a) => a.originWebAdmin);
+      const originApps = aggregates.map((a) => a.originApp);
+
+      const result = await client.query(
+        `INSERT INTO anacare_patient_month (
+           source, ana_care_patient_id, period_month, patient_first_name, patient_last_name,
+           providers_count, shifts_count, hours_actual_sum, hours_scheduled_sum_missing_actual,
+           origin_sin_checkin, origin_web_admin, origin_app, fetched_at, updated_at
+         )
+         SELECT UNNEST($1::text[]), UNNEST($2::text[]), UNNEST($3::date[]), UNNEST($4::text[]), UNNEST($5::text[]),
+                UNNEST($6::integer[]), UNNEST($7::integer[]), UNNEST($8::numeric[]), UNNEST($9::numeric[]),
+                UNNEST($10::integer[]), UNNEST($11::integer[]), UNNEST($12::integer[]), NOW(), NOW()
+         ON CONFLICT (source, ana_care_patient_id, period_month) DO UPDATE SET
+           patient_first_name                 = COALESCE(EXCLUDED.patient_first_name, anacare_patient_month.patient_first_name),
+           patient_last_name                  = COALESCE(EXCLUDED.patient_last_name, anacare_patient_month.patient_last_name),
+           providers_count                    = EXCLUDED.providers_count,
+           shifts_count                       = EXCLUDED.shifts_count,
+           hours_actual_sum                   = EXCLUDED.hours_actual_sum,
+           hours_scheduled_sum_missing_actual = EXCLUDED.hours_scheduled_sum_missing_actual,
+           origin_sin_checkin                 = EXCLUDED.origin_sin_checkin,
+           origin_web_admin                   = EXCLUDED.origin_web_admin,
+           origin_app                         = EXCLUDED.origin_app,
+           fetched_at                         = NOW(),
+           updated_at                         = NOW()`,
+        [
+          sources,
+          patientIds,
+          periodMonthDates,
+          firstNames,
+          lastNames,
+          providersCounts,
+          shiftsCounts,
+          hoursActualSums,
+          hoursScheduledSums,
+          originSinCheckins,
+          originWebAdmins,
+          originApps,
+        ],
+      );
+
+      if (shifts.length > 0) {
+        await this.upsertProvidersFromShifts(client, shifts, periodMonthValue);
+      }
+
+      await client.query('COMMIT');
+      // Contagem zero é falha, nunca sucesso — `rowCount` é o que REALMENTE foi gravado, nunca o
+      // tamanho do array de entrada (que já foi validado > 0 acima).
+      return { written: result.rowCount ?? 0 };
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   async listProvidersByMonth(source: string, periodMonth: string): Promise<AnaCarePatientMonthProviderAggregate[]> {

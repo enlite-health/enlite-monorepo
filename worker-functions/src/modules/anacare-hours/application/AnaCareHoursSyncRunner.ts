@@ -23,11 +23,13 @@
  * `AnaCareSessionClient` (F2), não deste runner.
  */
 
+import { logger } from '@shared/logging';
 import type { AnaCareShiftsSource } from '../domain/AnaCareShiftsSource';
-import type { EnliteDirectorySource, PatientMonthSyncRepository, ShiftSyncRepository } from '../domain/AnaCareHoursSyncPorts';
+import type { DirectorySnapshotRepository, EnliteDirectorySource, PatientMonthSyncRepository, SyncRunRepository } from '../domain/AnaCareHoursSyncPorts';
 import { AnaCareHoursSyncGuard } from './AnaCareHoursSyncGuard';
 import { emitAnaCareHoursSyncMetric, type AnaCareHoursSyncMetricEmitter } from '../infrastructure/AnaCareHoursSyncMetrics';
-import { FakeEnliteDirectory, FakeAnaCareShiftRepository, FakeAnaCarePatientMonthRepository } from '../infrastructure/FakeAnaCareSyncDependencies';
+import { FakeEnliteDirectory, FakeAnaCareDirectorySnapshotRepository, FakeAnaCarePatientMonthRepository, FakeAnaCareSyncRunRepository } from '../infrastructure/FakeAnaCareSyncDependencies';
+import { aggregateByPatient } from './AnaCarePatientMonthAggregator';
 
 export interface AnaCareHoursSyncTrigger {
   origin: 'cron' | 'manual';
@@ -58,6 +60,12 @@ export interface AnaCareHoursSyncOutcome {
   shiftsSkippedNoProvider: number;
   /** Irmã de `shiftsSkippedNoProvider` — turno sem paciente (medido 0/3.421, tipo admite mesmo assim). */
   shiftsSkippedNoPatient: number;
+  /**
+   * ISO do carimbo desta corrida — o SERVIDOR que decide (migration 443, `SyncRunRepository`),
+   * nunca o cliente: só sai na RESPOSTA para observabilidade (o script de medição loga, não
+   * reenvia). Ver `AnaCareHoursSyncRunner.resolveRunStartedAt`.
+   */
+  runStartedAt: string;
 }
 
 const DEFAULT_BUDGET_MS = 420_000;
@@ -104,13 +112,28 @@ export class AnaCareHoursSyncRunner {
     private readonly emitMetric: AnaCareHoursSyncMetricEmitter = emitAnaCareHoursSyncMetric,
     private readonly monthResolver: () => string = AnaCareHoursSyncRunner.currentMonth,
     private readonly directory: EnliteDirectorySource = new FakeEnliteDirectory(),
-    private readonly repository: ShiftSyncRepository = new FakeAnaCareShiftRepository(),
+    /**
+     * Conserto 17/09 (desacoplamento do retrato por turno, passo 1): `runOnce` NÃO grava mais
+     * turnos — este repositório serve só ao alarme de queda do diretório
+     * (`getLastDirectoryCount`/`setLastDirectoryCount`). Passo 2 extraiu o tipo para
+     * `DirectorySnapshotRepository` (antes vivia dentro do repositório do retrato por turno, sem
+     * ter nada a ver com turno) e apagou o repositório antigo por completo.
+     */
+    private readonly directorySnapshotRepository: DirectorySnapshotRepository = new FakeAnaCareDirectorySnapshotRepository(),
     private readonly env: NodeJS.ProcessEnv = process.env,
     /**
-     * F6.1 (D361): grava o retrato AGREGADO (`anacare_patient_month`, migration 441) ao lado de
-     * `anacare_shift` — convivência deliberada, `anacare_shift` continua escrita normalmente.
+     * F6.1 (D361) → conserto 17/09 (passo 1): grava o retrato AGREGADO (`anacare_patient_month`,
+     * migration 441) por SUBSTITUIÇÃO (`upsertReplacingForRun`) a partir do agregado em memória de
+     * CADA reserva, e (passo 3) o par paciente×prestador (`anacare_patient_month_provider`) na
+     * MESMA chamada — não depende do retrato por turno como fonte cumulativa.
      */
     private readonly patientMonthRepository: PatientMonthSyncRepository = new FakeAnaCarePatientMonthRepository(),
+    /**
+     * Gate `revisao-pr` (fecho 17/09): o carimbo da corrida (`anacare_sync_run`, migration 443)
+     * passa a ser do SERVIDOR — nunca mais recebido no corpo HTTP nem calculado no Node com
+     * `Date.now()`. Ver `resolveRunStartedAt`.
+     */
+    private readonly syncRunRepository: SyncRunRepository = new FakeAnaCareSyncRunRepository(),
   ) {}
 
   static currentMonth(): string {
@@ -137,7 +160,7 @@ export class AnaCareHoursSyncRunner {
    * sempre passar, mesmo com a raspagem quebrada, e essa contagem virava a baseline pra sempre.
    */
   private async assertDirectoryHealthy(newTotal: number): Promise<number | null> {
-    const lastKnown = await this.repository.getLastDirectoryCount();
+    const lastKnown = await this.directorySnapshotRepository.getLastDirectoryCount();
     const floorAbsolute = this.minAbsoluteFloor();
     if (lastKnown === null && floorAbsolute === null) {
       throw new AnaCareDirectoryFirstRunNotConfiguredError();
@@ -151,10 +174,10 @@ export class AnaCareHoursSyncRunner {
   }
 
   /** Uma rodada real: diretório → por reserva → grava. Nunca chamado fora do guard (`run`). */
-  private async runOnce(month: string, cursor: number | null, budgetMs: number): Promise<RunOnceResult> {
+  private async runOnce(month: string, cursor: number | null, budgetMs: number, runStartedAt: Date): Promise<RunOnceResult> {
     const directorySnapshot = await this.directory.fetch();
     await this.assertDirectoryHealthy(directorySnapshot.counts.total);
-    await this.repository.setLastDirectoryCount(directorySnapshot.counts.total);
+    await this.directorySnapshotRepository.setLastDirectoryCount(directorySnapshot.counts.total);
 
     const reservationIds = Array.from(new Set(directorySnapshot.entries.map((e) => e.reservationId))).sort();
     const startIndex = cursor ?? 0;
@@ -177,15 +200,17 @@ export class AnaCareHoursSyncRunner {
       shiftsSkippedNoProvider += skipped.noProvider;
       shiftsSkippedNoPatient += skipped.noPatient;
       if (shifts.length > 0) {
-        const { written } = await this.repository.upsertMany(shifts, month);
+        // Conserto 17/09 (desacoplamento do retrato por turno, passo 1): não grava mais o retrato
+        // por turno — o agregado é calculado em memória SÓ com os turnos DESTA reserva
+        // (`aggregateByPatient`) e gravado por SUBSTITUIÇÃO; como isso não pode mesclar com uma
+        // gravação anterior do MESMO paciente vinda de outra reserva, `upsertReplacingForRun`
+        // detecta a colisão (via `runStartedAt`) e falha alto em vez de sobrescrever calado — ver
+        // cabeçalho do arquivo e `AnaCarePatientMonthCollisionError`. Passo 3 (regressão do passo
+        // 1): `shifts` também vai junto — é dali que `upsertReplacingForRun` grava o par
+        // paciente×prestador (`anacare_patient_month_provider`) na MESMA chamada.
+        const aggregates = aggregateByPatient(shifts);
+        const { written } = await this.patientMonthRepository.upsertReplacingForRun(aggregates, month, runStartedAt, shifts);
         shiftsWritten += written;
-
-        // Conserto 17/09 (D361 F6.1): NÃO agregar em memória só com os turnos DESTA reserva — o
-        // mesmo paciente pode aparecer em outra reserva (nesta rodada ou numa retomada por
-        // cursor), e um upsert que só via o lote atual sobrescrevia o total anterior em silêncio.
-        // `recomputeFromShifts` recomputa a partir do retrato por turno já escrito acima (fonte da
-        // verdade cumulativa durante a convivência F6.1), sempre o TOTAL do paciente no mês.
-        await this.patientMonthRepository.recomputeFromShifts(shifts, month);
       }
       reservationsProcessed += 1;
     }
@@ -202,7 +227,32 @@ export class AnaCareHoursSyncRunner {
       directoryCounts: directorySnapshot.counts,
       shiftsSkippedNoProvider,
       shiftsSkippedNoPatient,
+      runStartedAt: runStartedAt.toISOString(),
     };
+  }
+
+  /**
+   * Gate `revisao-pr` (fecho 17/09): resolve o carimbo da corrida pelo SERVIDOR, nunca pelo
+   * cliente. Corrida NOVA (sem cursor) sempre grava um carimbo próprio (`startNewRun`, `NOW()` do
+   * banco) — mesmo que já exista um de uma corrida anterior para o mesmo mês, ele é substituído
+   * (uma corrida nova começa um carimbo novo, por definição). Retomada (cursor não-nulo) LÊ o
+   * carimbo já gravado; se não houver nenhum (`getRunStartedAt` devolve `null` — ex.: banco
+   * resetado entre invocações, ou 1ª chamada desta corrida perdeu a escrita), trata como corrida
+   * NOVA e RELATA a decisão no log — nunca finge que existia uma corrida anterior.
+   */
+  private async resolveRunStartedAt(source: string, month: string, cursor: number | null): Promise<Date> {
+    if (cursor === null) {
+      return this.syncRunRepository.startNewRun(source, month);
+    }
+    const existing = await this.syncRunRepository.getRunStartedAt(source, month);
+    if (existing !== null) return existing;
+    logger.warn({
+      msg: '[AnaCareHoursSyncRunner] retomada (cursor definido) sem corrida registrada para o mês — tratando como corrida NOVA',
+      source,
+      month,
+      cursor,
+    });
+    return this.syncRunRepository.startNewRun(source, month);
   }
 
   /**
@@ -217,7 +267,19 @@ export class AnaCareHoursSyncRunner {
     const budgetMs = trigger.budgetMs ?? DEFAULT_BUDGET_MS;
 
     const startedAt = Date.now();
-    const { result, deduped } = await this.guard.run(() => this.runOnce(month, cursor, budgetMs));
+    // Gate `revisao-pr` (fecho 17/09, achado 🟠): `resolveRunStartedAt` só pode rodar DENTRO do
+    // `guard.run` — o guard decide se esta chamada é a líder ANTES de invocar a função passada
+    // (checagem síncrona de `this.inFlight`), então uma chamada DESCARTADA pelo dedup nunca chega
+    // a chamar `fn` e, portanto, nunca escreve `run_started_at`. Antes, `resolveRunStartedAt`
+    // rodava incondicionalmente ANTES do `guard.run`: a chamada descartada ainda assim executava
+    // `startNewRun` (`ON CONFLICT DO UPDATE`), sobrescrevendo o carimbo da corrida em andamento com
+    // um `NOW()` posterior — a corrida em voo seguia com t1, o banco passava a guardar t2 > t1, e
+    // uma retomada por cursor que lesse t2 deixaria de detectar colisões das linhas escritas entre
+    // t1 e t2.
+    const { result, deduped } = await this.guard.run(async () => {
+      const runStartedAt = await this.resolveRunStartedAt('anacare', month, cursor);
+      return this.runOnce(month, cursor, budgetMs, runStartedAt);
+    });
 
     const durationMs = Date.now() - startedAt;
     this.emitMetric({

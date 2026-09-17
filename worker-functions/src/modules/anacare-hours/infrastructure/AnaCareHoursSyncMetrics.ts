@@ -16,6 +16,13 @@ export interface AnaCareHoursSyncMetric {
   retries: number;
   durationMs: number;
   deduped: boolean;
+  /**
+   * TAREFA D (gate `revisao-pr`, fecho 17/09): nome do erro quando a rodada FALHOU antes de
+   * completar (ex.: `AnaCarePatientMonthCollisionError`) — sem isto, o detector de colisão dispara
+   * e a métrica nunca é emitida (o `throw` escapa antes de `AnaCareHoursSyncRunner.run` chegar ao
+   * `emitMetric` do caminho feliz). `undefined` = rodada terminou sem erro.
+   */
+  error?: string;
 }
 
 export type AnaCareHoursSyncMetricEmitter = (metric: AnaCareHoursSyncMetric) => void;

@@ -88,9 +88,11 @@ describe('AnaCareHoursController', () => {
       const res = mockRes();
       await controller.getMonthSnapshot(mockReq({ params: { month: '2026-09' } }), res);
       expect(res.status).toHaveBeenCalledWith(200);
-      // Nenhuma query contra `anacare_shift` (o retrato) — só validações/vínculo de prestador,
-      // que legitimamente passam pelo Postgres mockado.
-      expect(mockPoolQuery.mock.calls.some(([sql]: [string]) => /FROM anacare_shift/.test(sql))).toBe(false);
+      // Conserto 17/09 (passo 2): o antigo repositório do retrato POR TURNO foi apagado por
+      // completo (nenhum caller de produção restava) — a classe nem existe mais, então uma query
+      // contra a tabela dele voltar a acontecer é hoje estruturalmente impossível (não dá nem para
+      // instanciar a classe apagada), não só ausente na prática (era o que esta asserção provava
+      // antes). A prova que sobra e ainda vale: a lista devolve pacientes sem o sync ter rodado.
       const body = (res.json as jest.Mock).mock.calls[0][0];
       expect(body.data.patients.length).toBeGreaterThan(0);
     });

@@ -43,15 +43,15 @@ export class AnaCareHoursController {
   constructor(private readonly serviceFactory: () => AnaCareHoursService | null = () => AnaCareHoursController.defaultServiceFactory()) {}
 
   /**
-   * Item 1 (revisão de PR): `createAnaCareSyncDependencies` monta fonte + diretório + repositório
-   * JUNTOS e coerentes pela MESMA env — em modo `fake` devolve `FakeAnaCareShiftRepository`, o
-   * MESMO repositório em que o sync (falso) escreve. Antes, o 5º parâmetro do serviço caía no
-   * default (`AnaCareShiftRepository` real/Postgres) mesmo com `ANACARE_HOURS_SOURCE=fake`, e a
+   * Item 1 (revisão de PR): `createAnaCareSyncDependencies` monta fonte + diretório + repositórios
+   * JUNTOS e coerentes pela MESMA env — em modo `fake` devolve `FakeAnaCarePatientMonthRepository`,
+   * o MESMO repositório em que o sync (falso) escreve. Antes, o 5º parâmetro do serviço caía no
+   * default (repositório do retrato real/Postgres) mesmo com `ANACARE_HOURS_SOURCE=fake`, e a
    * lista nascia vazia porque lia de um repositório que o sync fake nunca escrevia.
    */
   private static defaultServiceFactory(): AnaCareHoursService | null {
     const deps = createAnaCareSyncDependencies();
-    return deps ? new AnaCareHoursService(deps.source, undefined, undefined, undefined, deps.repository, deps.patientMonthRepository) : null;
+    return deps ? new AnaCareHoursService(deps.source, undefined, undefined, undefined, deps.patientMonthRepository) : null;
   }
 
   private actorUid(req: Request): string {

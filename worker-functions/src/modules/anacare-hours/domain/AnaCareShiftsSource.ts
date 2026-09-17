@@ -15,10 +15,11 @@ export interface SourceShiftDTO {
    * com `workers`/`patients`, decisão do Gabriel 17/09, item 1 da conferência de horas). Rótulo de
    * exibição do retrato, cópia transitória do que o Ana Care mostra — não é o registro de
    * identidade (esse mora em `patients`/`workers`). Opcional **de propósito**: só o caminho AO
-   * VIVO (`minimizeShiftDTO`, usado pelo DETALHE) os preenche. O retrato (`anacare_shift`, lido
-   * pela LISTA) não tem coluna de nome e devolve o DTO sem estes campos — a tela cai no fallback
-   * `Sin vínculo · ID X`. Guardar nome no retrato depende da decisão de granularidade ainda
-   * aberta (D360 §"O que esta decisão NÃO fecha").
+   * VIVO (`minimizeShiftDTO`, usado pelo DETALHE) os preenche. O antigo retrato por turno (lido
+   * pela LISTA antes da F6.2) não tinha coluna de nome e devolvia o DTO sem estes campos — a tela
+   * caía no fallback `Sin vínculo · ID X`. Guardar nome no retrato dependia da decisão de
+   * granularidade (D360 §"O que esta decisão NÃO fecha") — resolvida pelo retrato AGREGADO
+   * (`anacare_patient_month`), que tem coluna de nome.
    */
   patientFirstName?: string | null;
   patientLastName?: string | null;
@@ -49,8 +50,8 @@ export interface SourceShiftDTO {
   isFinalized: boolean;
   /**
    * 'app' | 'web_admin' | null — origem do CHECKOUT (campo `checkout_source` no cru, existe desde
-   * sempre mas não tinha campo no DTO — medido 17/09 contra a API real: gravado NULO na tabela
-   * `anacare_shift` (migration 437) por omissão, não por ausência na fonte). Opcional: quem monta
+   * sempre mas não tinha campo no DTO — medido 17/09 contra a API real: gravado NULO no antigo
+   * retrato por turno (migration 437) por omissão, não por ausência na fonte). Opcional: quem monta
    * o DTO fora de `minimizeShiftDTO` (ex. round-trip de leitura do retrato) não é obrigado a tê-lo.
    */
   checkoutSource?: 'app' | 'web_admin' | null;
