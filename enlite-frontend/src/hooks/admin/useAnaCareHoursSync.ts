@@ -165,7 +165,6 @@ export function useAnaCareHoursSync(service: AnaCareHoursService, month: string,
     }
 
     void loop();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [service, month, resumableCursor]);
 
   return { status, round, reservationsProcessed, error, resumableCursor, start };
