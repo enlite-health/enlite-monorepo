@@ -523,5 +523,39 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
       );
       expect(String(logCall.msg)).toMatch(/FOI CRIADO no Axonico/i);
     });
+
+    it('submitComprobante dá certo mas o insert de status=enviado rejeita com um valor que NÃO é Error (ex.: string): loga ERROR com errorMessage=String(err), e relança o mesmo valor não-Error', async () => {
+      const patientReadPort = makePatientReadPort();
+      const axonicoApiClient = makeAxonicoApiClient();
+      const lancamentoRepository = makeLancamentoRepository({
+        insert: jest.fn().mockRejectedValue('boom'),
+      });
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      // `mockLogger` é module-level (sem clearMocks no jest.config.js) — o teste anterior deste
+      // mesmo describe já chamou logger.error 1×; limpar aqui para isolar esta asserção sem
+      // tocar no teste vizinho.
+      mockLogger.error.mockClear();
+
+      await expect(useCase.execute(makeInput())).rejects.toBe('boom');
+
+      // submitComprobante JÁ FATUROU no Axonico e foi chamado exatamente 1× — não repete.
+      expect(axonicoApiClient.submitComprobante).toHaveBeenCalledTimes(1);
+
+      expect(mockLogger.error).toHaveBeenCalledTimes(1);
+      const logCall = mockLogger.error.mock.calls[0][0];
+      expect(logCall).toEqual(
+        expect.objectContaining({
+          numeroComprobante: 'nc-1',
+          codAutorizacion: 'ca-1',
+          patientId: PATIENT_ID,
+          serviceType: 'AT',
+          serviceDate: '2026-09-18',
+          hours: 4,
+          errorMessage: 'boom',
+        }),
+      );
+      expect(String(logCall.msg)).toMatch(/FOI CRIADO no Axonico/i);
+    });
   });
 });
