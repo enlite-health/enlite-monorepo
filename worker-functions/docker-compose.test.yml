@@ -121,6 +121,13 @@ services:
       # O comportamento do cache é provado por unit (TTL, forceRefresh,
       # clearCache, truncada-não-cacheia). Aqui queremos determinismo.
       PERISKOPE_CHATS_CACHE_TTL_MS: ${PERISKOPE_CHATS_CACHE_TTL_MS:-0}
+      # Integração Axonico (change integracao-axonico, F1) — mesmo precedente do stub do
+      # Periskope acima: AXONICO_BASE_URL aponta para um STUB local, nunca para
+      # api.apiws.axonico.ar/api.his.axonico.ar. Não existe sandbox do Axonico — todo PUT real
+      # gera faturamento (D368/regra dura da change), então o e2e (F4) nunca pode "esquecer" e
+      # cair no default de produção do cliente. Porta 9912, medida livre em 18/09/2026
+      # (`grep -n '991[0-9]' docker-compose.test.yml` só achava 9911, do Periskope).
+      AXONICO_BASE_URL: ${AXONICO_BASE_URL:-http://host.docker.internal:9912}
       # Roster de atendentes de admissão (change agenda-admissao-atendentes).
       #
       # LIGADO aqui, que é arquivo só de teste, pelo mesmo motivo do bloco
