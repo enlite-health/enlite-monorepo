@@ -30,7 +30,7 @@ export function AnaCareHoursSyncButton({
 
   return (
     <div className="flex flex-col items-end gap-1">
-      <Button variant="outline" size="sm" onClick={onStart} disabled={isRunning} isLoading={isRunning} data-testid="anacare-hours-sync-button">
+      <Button variant="outline" size="sm" onClick={onStart} isLoading={isRunning} data-testid="anacare-hours-sync-button">
         {label}
       </Button>
       {isRunning && (
@@ -51,6 +51,11 @@ export function AnaCareHoursSyncButton({
       {status === 'done' && (
         <Text as="span" size="xs" color="muted" data-testid="anacare-hours-sync-done">
           {t('admin.anacareHours.sync.done')}
+        </Text>
+      )}
+      {status === 'deduped' && (
+        <Text as="span" size="xs" color="muted" data-testid="anacare-hours-sync-deduped">
+          {t('admin.anacareHours.sync.deduped')}
         </Text>
       )}
     </div>

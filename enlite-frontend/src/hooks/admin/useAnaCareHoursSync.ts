@@ -41,7 +41,12 @@ function clearCursor(month: string): void {
   }
 }
 
-export type AnaCareHoursSyncStatus = 'idle' | 'running' | 'done' | 'error';
+export type AnaCareHoursSyncStatus = 'idle' | 'running' | 'done' | 'error' | 'deduped';
+
+/** Token por CORRIDA — o `loop` de uma corrida só olha para O SEU objeto, nunca `ref.current` (ver `runTokenRef`). */
+interface RunToken {
+  cancelled: boolean;
+}
 
 export interface UseAnaCareHoursSyncResult {
   status: AnaCareHoursSyncStatus;
@@ -69,7 +74,18 @@ export function useAnaCareHoursSync(service: AnaCareHoursService, month: string,
   const [reservationsProcessed, setReservationsProcessed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [resumableCursor, setResumableCursor] = useState<number | null>(() => readResumableCursor(month));
-  const cancelledRef = useRef(false);
+  /**
+   * Token da corrida ATUAL — cada `start()` cria um objeto NOVO e o `loop` daquela corrida captura
+   * esse objeto no início, olhando só para ELE (nunca para `runTokenRef.current`). Por quê: um
+   * boolean compartilhado no ref (`cancelledRef.current = false`) fica sujeito a corrida — trocar de
+   * mês no MEIO de uma corrida em voo faz o cleanup marcar cancelado e o efeito novo, no MESMO
+   * render, marcar `false` de novo; o laço antigo (que só olhava `ref.current`) lia esse `false` e
+   * seguia rodando, terminando com `status: 'done'` do mês NOVO sem ter sincronizado nada dele.
+   * Com token por objeto, o cleanup marca `cancelled=true` NO OBJETO DAQUELE `start()` — o objeto
+   * novo do mês seguinte é outra referência, e o laço antigo, que capturou a referência velha,
+   * fica cancelado para sempre.
+   */
+  const runTokenRef = useRef<RunToken>({ cancelled: true });
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
 
@@ -77,14 +93,16 @@ export function useAnaCareHoursSync(service: AnaCareHoursService, month: string,
   // `useAnaCareHoursMonth`: o cleanup do efeito roda a cada troca de dependência, não só no unmount)
   // e relê o cursor retomável do mês novo.
   useEffect(() => {
-    cancelledRef.current = false;
     setStatus('idle');
     setError(null);
     setRound(0);
     setReservationsProcessed(0);
     setResumableCursor(readResumableCursor(month));
     return () => {
-      cancelledRef.current = true;
+      // Lê `runTokenRef.current` NO MOMENTO do cleanup (não um valor capturado na criação do
+      // efeito) — entre o efeito rodar e o cleanup disparar, `start()` pode ter trocado o token
+      // para o objeto da corrida em voo, e é ESSE objeto que precisa ser cancelado.
+      runTokenRef.current.cancelled = true;
     };
   }, [month]);
 
@@ -99,6 +117,11 @@ export function useAnaCareHoursSync(service: AnaCareHoursService, month: string,
 
     let cursor: number | undefined = resumableCursor ?? undefined;
 
+    // Token desta corrida — ver comentário de `runTokenRef` acima. O `loop` só consulta ESTE
+    // objeto (`token`), nunca `runTokenRef.current` (que pode já apontar para outra corrida).
+    const token: RunToken = { cancelled: false };
+    runTokenRef.current = token;
+
     async function loop(): Promise<void> {
       let roundsRun = 0;
       let processedTotal = 0;
@@ -108,13 +131,20 @@ export function useAnaCareHoursSync(service: AnaCareHoursService, month: string,
         try {
           result = await trigger({ month, cursor, budgetMs: SYNC_ROUND_BUDGET_MS });
         } catch (err) {
-          if (cancelledRef.current) return;
+          if (token.cancelled) return;
           const message = err instanceof AnaCareHoursServiceError || err instanceof Error ? err.message : 'No se pudo sincronizar.';
           setStatus('error');
           setError(message);
           return;
         }
-        if (cancelledRef.current) return;
+        if (token.cancelled) return;
+
+        // (B) Servidor deduplicou (outra corrida já em curso) — PARA imediatamente: não avança
+        // cursor, não chama onComplete, não limpa o cursor persistido (D decidida, não redesenhar).
+        if (result.deduped) {
+          setStatus('deduped');
+          return;
+        }
 
         processedTotal += result.reservationsProcessed;
         setRound(roundsRun);

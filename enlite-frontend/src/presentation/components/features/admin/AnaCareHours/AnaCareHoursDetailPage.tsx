@@ -34,7 +34,6 @@ import { ContestModal } from './ContestModal';
 import type { AnaCareHoursPatientSnapshot, AnaCareShift, ContestReason } from './types';
 import {
   addDaysIso,
-  allShiftEntriesOf,
   allShiftsOf,
   blockReason,
   groupShiftsByDayInWeek,
@@ -94,17 +93,14 @@ export function AnaCareHoursDetailPage({
   const selectionStats = useMemo(() => selectionSummary(selectedShifts, sinCheckinHoursMode), [selectedShifts, sinCheckinHoursMode]);
   const isSelectionBarVisible = selectionStats.count > 0;
 
-  // Navegação semana a semana (decisão do Gabriel, 16/09) — abre na semana do turno mais antigo
-  // do paciente (pra sempre cair numa semana com conteúdo em vez de uma vazia) e NUNCA busca de
-  // novo: o mês inteiro já está em `snapshot` (uma chamada só, ver `useAnaCareHoursPatient`), então
-  // trocar de semana só filtra em memória via `groupShiftsByDayInWeek`.
-  const allEntries = useMemo(() => (patient ? allShiftEntriesOf(patient) : []), [patient]);
-  const earliestDate = useMemo(
-    () => allEntries.reduce<string | null>((min, e) => (min === null || e.shift.date < min ? e.shift.date : min), null),
-    [allEntries],
-  );
+  // Navegação semana a semana (decisão do Gabriel, 18/09) — abre na semana de HOJE se o mês
+  // exibido (`snapshot.month`, YYYY-MM) contém a data de hoje; senão abre na primeira semana do
+  // mês exibido. NUNCA busca de novo: o mês inteiro já está em `snapshot` (uma chamada só, ver
+  // `useAnaCareHoursPatient`), então trocar de semana só filtra em memória via `groupShiftsByDayInWeek`.
+  const todayIso = new Date().toISOString().slice(0, 10);
   const [weekStart, setWeekStart] = useState<string | null>(null);
-  const effectiveWeekStart = weekStart ?? (earliestDate ? startOfWeekMonday(earliestDate) : startOfWeekMonday(new Date().toISOString().slice(0, 10)));
+  const effectiveWeekStart =
+    weekStart ?? startOfWeekMonday(snapshot.month === todayIso.slice(0, 7) ? todayIso : `${snapshot.month}-01`);
   const weekEnd = addDaysIso(effectiveWeekStart, 6);
   const dayGroups = useMemo(() => (patient ? groupShiftsByDayInWeek(patient, effectiveWeekStart) : []), [patient, effectiveWeekStart]);
 

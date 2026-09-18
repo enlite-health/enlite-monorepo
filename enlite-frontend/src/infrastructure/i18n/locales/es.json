@@ -843,7 +843,8 @@
         "resumeButton": "Retomar sincronización",
         "resumeHint": "Hay una sincronización interrumpida — se retomará desde donde quedó.",
         "progress": "Ronda {{round}} · {{count}} reservas procesadas",
-        "done": "Sincronización completa."
+        "done": "Sincronización completa.",
+        "deduped": "Ya hay una sincronización en curso — no se inició otra."
       }
     },
     "managementDashboard": {

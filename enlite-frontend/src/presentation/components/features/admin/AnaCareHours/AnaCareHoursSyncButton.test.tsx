@@ -43,4 +43,16 @@ describe('AnaCareHoursSyncButton', () => {
     screen.getByTestId('anacare-hours-sync-button').click();
     expect(onStart).toHaveBeenCalledTimes(1);
   });
+
+  it('POSITIVO — status done: mensagem de concluído visível, botão volta a ficar habilitado', () => {
+    render(<AnaCareHoursSyncButton status="done" round={4} reservationsProcessed={283} error={null} resumableCursor={null} onStart={vi.fn()} />);
+    expect(screen.getByTestId('anacare-hours-sync-done')).toHaveTextContent('admin.anacareHours.sync.done');
+    expect(screen.getByTestId('anacare-hours-sync-button')).not.toBeDisabled();
+  });
+
+  it('DEDUPED (B) — status deduped: mensagem própria visível, botão volta a ficar habilitado', () => {
+    render(<AnaCareHoursSyncButton status="deduped" round={0} reservationsProcessed={0} error={null} resumableCursor={null} onStart={vi.fn()} />);
+    expect(screen.getByTestId('anacare-hours-sync-deduped')).toHaveTextContent('admin.anacareHours.sync.deduped');
+    expect(screen.getByTestId('anacare-hours-sync-button')).not.toBeDisabled();
+  });
 });

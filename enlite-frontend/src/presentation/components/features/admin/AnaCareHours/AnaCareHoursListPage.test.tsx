@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { AnaCareHoursListPage } from './AnaCareHoursListPage';
 import type { AnaCareMonthSnapshot } from './types';
+import type { UseAnaCareHoursSyncResult } from '@hooks/admin/useAnaCareHoursSync';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, opts?: Record<string, unknown>) => (opts ? `${key}|${JSON.stringify(opts)}` : key) }),
@@ -243,5 +244,24 @@ describe('AnaCareHoursListPage', () => {
 
     rerender(<AnaCareHoursListPage snapshot={snap} onOpenPatient={vi.fn()} sinCheckinHoursMode="scheduled" />);
     expect(screen.getByTestId('anacare-hours-patient-row-90555')).toHaveTextContent('14.0 h');
+  });
+
+  // D6 (cobertura, 18/09): `sync &&` (linhas 105-114) nunca foi exercitado com `sync` presente —
+  // todos os testes acima renderizam sem a prop (serviço sem `triggerSync`, botão ausente por
+  // design). Este teste cobre o ramo TRUE: o botão aparece e recebe exatamente os campos do hook.
+  it('POSITIVO — com `sync` presente, o botão "Sincronizar" aparece com os campos do hook', () => {
+    const sync: UseAnaCareHoursSyncResult = {
+      status: 'running',
+      round: 2,
+      reservationsProcessed: 74,
+      error: null,
+      resumableCursor: 50,
+      start: vi.fn(),
+    };
+    render(<AnaCareHoursListPage snapshot={snapshot()} onOpenPatient={vi.fn()} sync={sync} />);
+    expect(screen.getByTestId('anacare-hours-sync-button')).toBeDisabled();
+    expect(screen.getByTestId('anacare-hours-sync-progress')).toHaveTextContent(
+      'admin.anacareHours.sync.progress|{"round":2,"count":74}',
+    );
   });
 });
