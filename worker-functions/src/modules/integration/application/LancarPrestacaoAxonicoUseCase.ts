@@ -7,25 +7,33 @@
  * (portas de domínio mockáveis, nunca `Pool` direto aqui).
  *
  * Cada `PUT /api/comprobante` real GERA FATURAMENTO em produção do Axonico — não existe sandbox.
- * Por isso os guards abaixo rodam NESTA ORDEM EXATA, cada um antes de qualquer chamada de rede, e
- * o teto de `cantidad` (guard 2) nunca usa um número cravado (D371): sem leitura confirmada do
- * teto, o lançamento é recusado.
+ * Por isso os guards abaixo rodam NESTA ORDEM EXATA, cada um antes de qualquer chamada de rede
+ * evitável, e o teto de `cantidad` (guard 3) nunca usa um número cravado (D371): sem leitura
+ * confirmada do teto, o lançamento é recusado. O dedupe LOCAL (guard 2) roda ANTES do teto de
+ * propósito: num reprocessamento de lote com o Axonico instável, um item JÁ FATURADO não pode
+ * virar `AxonicoTetoIndisponivelError` — a tabela local existe exatamente para responder isso sem
+ * bater na API.
  *
  * Guards, na ordem (ver design.md §F3):
  *   0. `document_number` do paciente é NULL (ou paciente não existe) → `PatienteSemDniError`.
  *   1. `hours` não é inteiro positivo (D366) → `HoraQuebradaError`.
- *   2. Teto de `cantidad_max_prestaciones` (D371) — leitura falhou, campo ausente, ou `hours`
+ *   2. Dedupe LOCAL — nossa tabela (`findExisting`) achou `status='enviado'` → `duplicado` com o
+ *      comprovante ORIGINAL (`numeroComprobante`/`codAutorizacion`/`lancadoEm` do registro
+ *      existente), SEM nenhuma chamada a `getCantidadMaxPrestaciones`/`findPatientByDni`/
+ *      `checkExistingComprobante`/`submitComprobante`.
+ *   3. Teto de `cantidad_max_prestaciones` (D371) — leitura falhou, campo ausente, ou `hours`
  *      acima do teto → `AxonicoTetoIndisponivelError` / `AxonicoTetoExcedidoError`. Esta é a
- *      ÚNICA chamada de rede permitida antes do dedupe, e é ao endpoint de parâmetros
+ *      ÚNICA chamada de rede permitida antes do dedupe remoto, e é ao endpoint de parâmetros
  *      (`getCantidadMaxPrestaciones`), nunca a `submitComprobante`.
- *   3. Dedupe em duas camadas: (a) nossa tabela (`findExisting`) — achou `enviado` → `duplicado`
- *      SEM nenhuma chamada a `findPatientByDni`/`checkExistingComprobante`/`submitComprobante`;
- *      (b) `resolveServiceMapping` (lança `AxonicoUnmappedServiceTypeError` para `CAREGIVER` e
+ *   4. `resolveServiceMapping` (lança `AxonicoUnmappedServiceTypeError` para `CAREGIVER` e
  *      qualquer tipo fora do mapa, ainda sem tocar rede) + `findPatientByDni` +
- *      `checkExistingComprobante` (dedupe REMOTO, cobre lançamento feito por fora da Enlite);
- *      (c) só se nada achou: `submitComprobante`.
+ *      `checkExistingComprobante` (dedupe REMOTO, cobre lançamento feito por fora da Enlite) —
+ *      achou → `duplicado`, mas SEM o comprovante (foi criado fora do nosso registro):
+ *      `numeroComprobante`/`codAutorizacion` nulos, `lancadoEm` é o `createdAt` da linha
+ *      `duplicado` recém-inserida.
+ *   5. Só se nada achou: `submitComprobante`.
  *
- * Guards 0/1/2 e o mapeamento ausente (3b) LANÇAM e NÃO gravam linha na tabela — não houve
+ * Guards 0/1/3 e o mapeamento ausente (4) LANÇAM e NÃO gravam linha na tabela — não houve
  * tentativa real contra o Axonico. A partir de `findPatientByDni` (inclusive), cada tentativa vira
  * uma linha nova: `duplicado` (achado remoto), `enviado` (sucesso) ou `erro` (falha, com
  * `error_message`, SEM retry automático — D368, o `submitComprobante` nunca é chamado duas vezes
@@ -56,7 +64,13 @@ export interface LancarPrestacaoAxonicoInput {
 
 export type LancarPrestacaoAxonicoResult =
   | { status: 'enviado'; numeroComprobante: string; codAutorizacion: string }
-  | { status: 'duplicado' };
+  | {
+      status: 'duplicado';
+      jaFaturado: true;
+      numeroComprobante: string | null;
+      codAutorizacion: string | null;
+      lancadoEm: Date;
+    };
 
 // ─────────────────────────────────────────────────────────────────
 // Erros nomeados — um por guard, nunca `new Error` genérico (facilita `instanceof` no chamador,
@@ -160,7 +174,30 @@ export class LancarPrestacaoAxonicoUseCase {
       throw new HoraQuebradaError(hours);
     }
 
-    // ── Guard 2 — teto de cantidad (D371) — única chamada de rede antes do dedupe ──
+    // ── Guard 2 — dedupe local (nossa tabela primeiro; roda ANTES do teto) ──────
+    const existingLocal = await this.lancamentoRepository.findExisting(patientId, serviceType, serviceDateStr);
+    if (existingLocal) {
+      logger.info({ msg: `${TAG} dedupe local — já enviado`, patientId, serviceType, serviceDate: serviceDateStr });
+      await this.lancamentoRepository.insert({
+        patientId,
+        serviceType,
+        serviceDate: serviceDateStr,
+        hours,
+        numeroComprobante: null,
+        codAutorizacion: null,
+        status: 'duplicado',
+        errorMessage: null,
+      });
+      return {
+        status: 'duplicado',
+        jaFaturado: true,
+        numeroComprobante: existingLocal.numeroComprobante,
+        codAutorizacion: existingLocal.codAutorizacion,
+        lancadoEm: existingLocal.createdAt,
+      };
+    }
+
+    // ── Guard 3 — teto de cantidad (D371) — única chamada de rede antes do dedupe remoto ──
     let cantidadMaxPrestacoes: number | null;
     try {
       cantidadMaxPrestacoes = await this.axonicoApiClient.getCantidadMaxPrestaciones();
@@ -175,28 +212,11 @@ export class LancarPrestacaoAxonicoUseCase {
       throw new AxonicoTetoExcedidoError(hours, cantidadMaxPrestacoes);
     }
 
-    // ── Guard 3a — dedupe local (nossa tabela primeiro) ──────────
-    const existingLocal = await this.lancamentoRepository.findExisting(patientId, serviceType, serviceDateStr);
-    if (existingLocal) {
-      logger.info({ msg: `${TAG} dedupe local — já enviado`, patientId, serviceType, serviceDate: serviceDateStr });
-      await this.lancamentoRepository.insert({
-        patientId,
-        serviceType,
-        serviceDate: serviceDateStr,
-        hours,
-        numeroComprobante: null,
-        codAutorizacion: null,
-        status: 'duplicado',
-        errorMessage: null,
-      });
-      return { status: 'duplicado' };
-    }
-
-    // ── Guard 3b — mapeamento de tipo (lança ANTES de tocar rede; CAREGIVER e outros fora do
+    // ── Guard 4a — mapeamento de tipo (lança ANTES de tocar rede; CAREGIVER e outros fora do
     //    mapa nunca chegam a `findPatientByDni`) ──────────────────
     const serviceCodes = resolveServiceMapping(serviceType);
 
-    // ── 3b (continuação) — dedupe remoto: findPatientByDni + checkExistingComprobante ──
+    // ── 4a (continuação) — dedupe remoto: findPatientByDni + checkExistingComprobante ──
     let patientMatch: Awaited<ReturnType<IAxonicoApiClient['findPatientByDni']>>;
     let hasExistingRemote: boolean;
     try {
@@ -217,7 +237,7 @@ export class LancarPrestacaoAxonicoUseCase {
 
     if (hasExistingRemote) {
       logger.info({ msg: `${TAG} dedupe remoto — comprobante já existe no Axonico`, patientId, serviceType, serviceDate: serviceDateStr });
-      await this.lancamentoRepository.insert({
+      const insertedDuplicado = await this.lancamentoRepository.insert({
         patientId,
         serviceType,
         serviceDate: serviceDateStr,
@@ -227,10 +247,16 @@ export class LancarPrestacaoAxonicoUseCase {
         status: 'duplicado',
         errorMessage: null,
       });
-      return { status: 'duplicado' };
+      return {
+        status: 'duplicado',
+        jaFaturado: true,
+        numeroComprobante: null,
+        codAutorizacion: null,
+        lancadoEm: insertedDuplicado.createdAt,
+      };
     }
 
-    // ── 3c — envio (D368: nunca chamado duas vezes; falha grava 'erro' e relança, sem retry) ──
+    // ── 4b — envio (D368: nunca chamado duas vezes; falha grava 'erro' e relança, sem retry) ──
     let submitResult: Awaited<ReturnType<IAxonicoApiClient['submitComprobante']>>;
     try {
       submitResult = await this.axonicoApiClient.submitComprobante({

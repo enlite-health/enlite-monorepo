@@ -13,16 +13,19 @@
  *     `checkExistingComprobante`/`submitComprobante`.
  *  4. Leitura do teto indisponível (mock lança OU `cantidad_max_prestaciones` ausente) → recusado
  *     sem nenhuma chamada a `submitComprobante` (D371).
- *  5. Lançamento já `enviado` na tabela (dedupe local) → `duplicado` sem nenhuma chamada a
+ *  5. Lançamento já `enviado` na tabela (dedupe local, guard 2 — roda ANTES do teto) → `duplicado`
+ *     com o comprovante ORIGINAL, sem nenhuma chamada a `getCantidadMaxPrestaciones`/
  *     `findPatientByDni`/`checkExistingComprobante`/`submitComprobante`.
  *  6. Tipo sem mapeamento (`CAREGIVER`) → recusado antes de qualquer chamada de rede (exceto o
- *     guard 2, que já rodou antes do guard de mapeamento).
+ *     guard 3 — teto — que já rodou antes do guard de mapeamento).
  *  7. Falha de `submitComprobante` → grava `status='erro'` com `error_message`, relança, e NÃO
  *     repete a chamada.
  *  + Caminho feliz (não listado como um dos 7, mas é a prova positiva cruzada dos testes de "zero
  *    chamadas": mostra que os MESMOS métodos do mock SÃO registrados quando efetivamente chamados).
  *  + `patientId` inexistente (variação do guard 0 — `findDocumentNumber` devolve `null`, não
  *    `{ documentNumber: null }`).
+ *  + Dedupe remoto devolvendo `numeroComprobante: null` e `lancadoEm` igual ao `createdAt` da linha
+ *    `duplicado` recém-inserida (o comprovante foi criado fora do nosso registro).
  */
 
 import {
@@ -214,7 +217,7 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
     });
   });
 
-  describe('guard 2 — teto de cantidad_max_prestaciones (D371)', () => {
+  describe('guard 3 — teto de cantidad_max_prestaciones (D371)', () => {
     it('hours acima do teto: recusa com AxonicoTetoExcedidoError sem chamar findPatientByDni/checkExistingComprobante/submitComprobante', async () => {
       const patientReadPort = makePatientReadPort();
       const axonicoApiClient = makeAxonicoApiClient({
@@ -285,10 +288,11 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
     });
   });
 
-  describe('guard 3a — dedupe local (nossa tabela primeiro)', () => {
-    it('lançamento já enviado na tabela: devolve duplicado sem nenhuma chamada a findPatientByDni/checkExistingComprobante/submitComprobante', async () => {
+  describe('guard 2 — dedupe local (nossa tabela primeiro, roda ANTES do teto)', () => {
+    it('lançamento já enviado na tabela: devolve duplicado com o comprovante ORIGINAL, sem nenhuma chamada a getCantidadMaxPrestaciones/findPatientByDni/checkExistingComprobante/submitComprobante', async () => {
       const patientReadPort = makePatientReadPort();
       const axonicoApiClient = makeAxonicoApiClient();
+      const existingCreatedAt = new Date(2026, 8, 10);
       const existingRecord: AxonicoLancamentoRecord = {
         id: 'lanc-existing',
         patientId: PATIENT_ID,
@@ -299,7 +303,7 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
         codAutorizacion: 'ca-old',
         status: 'enviado',
         errorMessage: null,
-        createdAt: new Date(),
+        createdAt: existingCreatedAt,
       };
       const lancamentoRepository = makeLancamentoRepository({
         findExisting: jest.fn().mockResolvedValue(existingRecord),
@@ -308,15 +312,21 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
 
       const result = await useCase.execute(makeInput());
 
-      expect(result).toEqual({ status: 'duplicado' });
+      expect(result).toEqual({
+        status: 'duplicado',
+        jaFaturado: true,
+        numeroComprobante: 'nc-old',
+        codAutorizacion: 'ca-old',
+        lancadoEm: existingCreatedAt,
+      });
 
-      // Prova positiva NESTE MESMO teste: getCantidadMaxPrestaciones (guard 2, que roda ANTES do
-      // dedupe — única chamada de rede permitida antes dele) FOI chamado — mesmo objeto mockado
-      // cujos outros 3 métodos afirmamos em 0 logo abaixo.
-      expect(axonicoApiClient.getCantidadMaxPrestaciones).toHaveBeenCalledTimes(1);
-      expect(axonicoApiClient.findPatientByDni).toHaveBeenCalledTimes(0);
-      expect(axonicoApiClient.checkExistingComprobante).toHaveBeenCalledTimes(0);
-      expect(axonicoApiClient.submitComprobante).toHaveBeenCalledTimes(0);
+      // ESTA É A MUDANÇA: hoje o teto (rede) rodava ANTES do dedupe local, e um item já faturado
+      // virava AxonicoTetoIndisponivelError num reprocessamento com o Axonico instável. Agora o
+      // dedupe local roda primeiro — zero chamadas a QUALQUER método de rede, inclusive o teto.
+      expect(axonicoApiClient.getCantidadMaxPrestaciones).not.toHaveBeenCalled();
+      expect(axonicoApiClient.findPatientByDni).not.toHaveBeenCalled();
+      expect(axonicoApiClient.checkExistingComprobante).not.toHaveBeenCalled();
+      expect(axonicoApiClient.submitComprobante).not.toHaveBeenCalled();
 
       expect(lancamentoRepository.findExisting).toHaveBeenCalledTimes(1);
       expect(lancamentoRepository.insert).toHaveBeenCalledTimes(1);
@@ -326,8 +336,27 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
     });
   });
 
-  describe('guard 3b — tipo sem mapeamento (CAREGIVER, D372)', () => {
-    it('CAREGIVER: recusa com AxonicoUnmappedServiceTypeError antes de qualquer chamada de rede, exceto getCantidadMaxPrestaciones (guard 2, que roda antes)', async () => {
+  describe('guard 3 (prova positiva cruzada) — teto rodando após o dedupe local não achar nada', () => {
+    it('caminho feliz (prova positiva): getCantidadMaxPrestaciones/findPatientByDni/checkExistingComprobante/submitComprobante SÃO chamados quando o dedupe local não acha nada — referenciado pelo teste de zero-chamadas do guard 2 acima', async () => {
+      // Referência: este é o mesmo teste "caminho feliz" declarado no topo do arquivo — os 4
+      // métodos do IAxonicoApiClient são chamados exatamente 1x cada, provando que o mock não
+      // está morto e que os `not.toHaveBeenCalled()` do guard 2 são prova real, não silêncio.
+      const patientReadPort = makePatientReadPort();
+      const axonicoApiClient = makeAxonicoApiClient();
+      const lancamentoRepository = makeLancamentoRepository();
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      await useCase.execute(makeInput({ hours: 4 }));
+
+      expect(axonicoApiClient.getCantidadMaxPrestaciones).toHaveBeenCalledTimes(1);
+      expect(axonicoApiClient.findPatientByDni).toHaveBeenCalledTimes(1);
+      expect(axonicoApiClient.checkExistingComprobante).toHaveBeenCalledTimes(1);
+      expect(axonicoApiClient.submitComprobante).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('guard 4a — tipo sem mapeamento (CAREGIVER, D372)', () => {
+    it('CAREGIVER: recusa com AxonicoUnmappedServiceTypeError antes de qualquer chamada de rede, exceto getCantidadMaxPrestaciones (guard 3 — teto —, que roda antes)', async () => {
       const patientReadPort = makePatientReadPort();
       const axonicoApiClient = makeAxonicoApiClient();
       const lancamentoRepository = makeLancamentoRepository();
@@ -337,8 +366,8 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
         AxonicoUnmappedServiceTypeError,
       );
 
-      // Prova positiva NESTE MESMO teste: getCantidadMaxPrestaciones FOI chamado (guard 2 roda
-      // antes do guard de mapeamento) — mesmo mock cujos 3 outros métodos ficam em 0.
+      // Prova positiva NESTE MESMO teste: getCantidadMaxPrestaciones FOI chamado (guard 3 — teto —
+      // roda antes do guard de mapeamento) — mesmo mock cujos 3 outros métodos ficam em 0.
       expect(axonicoApiClient.getCantidadMaxPrestaciones).toHaveBeenCalledTimes(1);
       expect(axonicoApiClient.findPatientByDni).toHaveBeenCalledTimes(0);
       expect(axonicoApiClient.checkExistingComprobante).toHaveBeenCalledTimes(0);
@@ -404,17 +433,28 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
       );
     });
 
-    it('checkExistingComprobante encontra comprobante existente no Axonico (dedupe remoto): devolve duplicado, grava status=duplicado, sem chamar submitComprobante', async () => {
+    it('checkExistingComprobante encontra comprobante existente no Axonico (dedupe remoto): devolve duplicado SEM o comprovante (numeroComprobante/codAutorizacion null), lancadoEm = createdAt da linha duplicado recém-inserida, grava status=duplicado, sem chamar submitComprobante', async () => {
       const patientReadPort = makePatientReadPort();
       const axonicoApiClient = makeAxonicoApiClient({
         checkExistingComprobante: jest.fn().mockResolvedValue(true),
       });
-      const lancamentoRepository = makeLancamentoRepository();
+      const insertedCreatedAt = new Date(2026, 8, 18, 10, 30);
+      const lancamentoRepository = makeLancamentoRepository({
+        insert: jest.fn().mockImplementation((params) =>
+          Promise.resolve({ id: 'lanc-duplicado-remoto', ...params, createdAt: insertedCreatedAt } as AxonicoLancamentoRecord),
+        ),
+      });
       const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
 
       const result = await useCase.execute(makeInput());
 
-      expect(result).toEqual({ status: 'duplicado' });
+      expect(result).toEqual({
+        status: 'duplicado',
+        jaFaturado: true,
+        numeroComprobante: null,
+        codAutorizacion: null,
+        lancadoEm: insertedCreatedAt,
+      });
       expect(axonicoApiClient.checkExistingComprobante).toHaveBeenCalledTimes(1);
       expect(axonicoApiClient.submitComprobante).toHaveBeenCalledTimes(0);
       expect(lancamentoRepository.insert).toHaveBeenCalledTimes(1);
