@@ -71,6 +71,11 @@ export interface IAxonicoApiClient {
    * `POST /api/comprobante/filter` — existe pelo menos um comprobante ativo (`estado` A/P) para
    * a mesma prestação no dia. Devolve `boolean`; a política de dedupe (nossa tabela primeiro,
    * este método só depois) é decisão do use case (F3), não do cliente.
+   *
+   * LIMITE DO FILTRO: o corpo enviado inclui `matricula` (da sessão autenticada) dentro de
+   * `whereHasWith.comprobanteDetalle` e um `servicio_origen` fixo — por isso só encontra
+   * comprobante lançado POR NÓS, com ESTA credencial. Lançamento feito à mão no portal do Axonico
+   * por OUTRO usuário/matrícula não aparece neste filtro e pode ser faturado de novo.
    */
   checkExistingComprobante(params: DedupeParams): Promise<boolean>;
 

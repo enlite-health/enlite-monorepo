@@ -27,8 +27,12 @@
  *      (`getCantidadMaxPrestaciones`), nunca a `submitComprobante`.
  *   4. `resolveServiceMapping` (lança `AxonicoUnmappedServiceTypeError` para `CAREGIVER` e
  *      qualquer tipo fora do mapa, ainda sem tocar rede) + `findPatientByDni` +
- *      `checkExistingComprobante` (dedupe REMOTO, cobre lançamento feito por fora da Enlite) —
- *      achou → `duplicado`, mas SEM o comprovante (foi criado fora do nosso registro):
+ *      `checkExistingComprobante` (dedupe REMOTO — mas o filtro do `POST /api/comprobante/filter`
+ *      inclui `matricula` da sessão E `servicio_origen` fixo, ver `AxonicoApiClient.
+ *      checkExistingComprobante`: só cobre lançamento feito POR NÓS, com ESTA credencial. NÃO
+ *      cobre lançamento feito à mão no portal do Axonico por OUTRO usuário — esse passa
+ *      despercebido e pode ser faturado de novo) — achou → `duplicado`, mas SEM o comprovante
+ *      (foi criado fora do nosso registro):
  *      `numeroComprobante`/`codAutorizacion` nulos, `lancadoEm` é o `createdAt` da linha
  *      `duplicado` recém-inserida.
  *   5. Só se nada achou: `submitComprobante`.
@@ -103,26 +107,26 @@ export class HoraQuebradaError extends Error {
 }
 
 /**
- * Guard 2 — leitura de `cantidad_max_prestaciones` indisponível: a chamada a
+ * Guard 3 — leitura de `cantidad_max_prestaciones` indisponível: a chamada a
  * `getCantidadMaxPrestaciones` lançou, ou devolveu `null` (D371 — nunca um número cravado).
  */
 export class AxonicoTetoIndisponivelError extends Error {
   readonly hours: number;
 
   constructor(hours: number, cause: string) {
-    super(`${TAG} guard 2 — teto de cantidad_max_prestaciones indisponível (${cause}), hours=${hours} recusado (D371)`);
+    super(`${TAG} guard 3 — teto de cantidad_max_prestaciones indisponível (${cause}), hours=${hours} recusado (D371)`);
     this.name = 'AxonicoTetoIndisponivelError';
     this.hours = hours;
   }
 }
 
-/** Guard 2 — `hours` acima do teto medido de `cantidad_max_prestaciones`. */
+/** Guard 3 — `hours` acima do teto medido de `cantidad_max_prestaciones`. */
 export class AxonicoTetoExcedidoError extends Error {
   readonly hours: number;
   readonly cantidadMaxPrestacoes: number;
 
   constructor(hours: number, cantidadMaxPrestacoes: number) {
-    super(`${TAG} guard 2 — hours=${hours} excede cantidad_max_prestaciones=${cantidadMaxPrestacoes}`);
+    super(`${TAG} guard 3 — hours=${hours} excede cantidad_max_prestaciones=${cantidadMaxPrestacoes}`);
     this.name = 'AxonicoTetoExcedidoError';
     this.hours = hours;
     this.cantidadMaxPrestacoes = cantidadMaxPrestacoes;
@@ -130,7 +134,7 @@ export class AxonicoTetoExcedidoError extends Error {
 }
 
 /**
- * Dedupe remoto (3b) — `findPatientByDni` não achou o paciente no Axonico pelo DNI que nosso
+ * Dedupe remoto (guard 4) — `findPatientByDni` não achou o paciente no Axonico pelo DNI que nosso
  * banco tem cadastrado. Não é guard (já tocou rede) — grava `status='erro'` como qualquer outra
  * falha desta etapa.
  */
