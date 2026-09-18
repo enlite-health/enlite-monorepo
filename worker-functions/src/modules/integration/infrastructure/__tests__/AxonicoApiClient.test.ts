@@ -666,6 +666,71 @@ describe('AxonicoApiClient — relógio default e parse defensivo de erro', () =
   });
 });
 
+// ── Conserto 2 — validação numérica em runtime de cantidad_max_prestaciones (D371) ──
+//
+// `body.data as AxonicoMedicoParametroPortalResponseBody` é asserção de tipo, não validação —
+// a API do Axonico comprovadamente serializa numérico como string em outros campos
+// (`cantidad: String(cantidad)` em `submitComprobante`), então `number` cravado no tipo era
+// hipótese. Tabela de casos: entrada → o que `getCantidadMaxPrestaciones` devolve, medido contra
+// `fetch` mockado (ZERO rede).
+
+describe('AxonicoApiClient — getCantidadMaxPrestaciones (Conserto 2, validação runtime)', () => {
+  function medicoParametroPortalResponse(cantidadMaxPrestaciones: unknown, fieldPresent = true) {
+    const entry = fieldPresent ? { cantidad_max_prestaciones: cantidadMaxPrestaciones } : {};
+    return jsonResponse({ data: [entry] });
+  }
+
+  const CASOS: Array<{ nome: string; entrada: unknown; esperado: number | null; fieldPresent?: boolean }> = [
+    { nome: '24 (number)', entrada: 24, esperado: 24 },
+    { nome: '"24" (string numérica)', entrada: '24', esperado: 24 },
+    { nome: '"abc" (string não-numérica)', entrada: 'abc', esperado: null },
+    { nome: '"" (string vazia)', entrada: '', esperado: null },
+    { nome: 'null', entrada: null, esperado: null },
+    { nome: 'undefined (campo presente, valor undefined)', entrada: undefined, esperado: null },
+    { nome: '0 (teto zero — leitura sem sentido, não "recusa tudo")', entrada: 0, esperado: null },
+    { nome: '-1 (negativo)', entrada: -1, esperado: null },
+    { nome: 'true (booleano)', entrada: true, esperado: null },
+    { nome: '{} (objeto)', entrada: {}, esperado: null },
+    { nome: '[] (array)', entrada: [], esperado: null },
+    { nome: 'NaN', entrada: NaN, esperado: null },
+    { nome: 'Infinity', entrada: Infinity, esperado: null },
+    { nome: '"24 hs" (string com sufixo não-numérico)', entrada: '24 hs', esperado: null },
+    { nome: 'campo ausente do corpo', entrada: undefined, esperado: null, fieldPresent: false },
+  ];
+
+  it.each(CASOS)('$nome → $esperado', async ({ entrada, esperado, fieldPresent }) => {
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockResolvedValueOnce(medicoParametroPortalResponse(entrada, fieldPresent ?? true));
+
+    const client = makeClient();
+    const result = await client.getCantidadMaxPrestaciones();
+
+    expect(result).toBe(esperado);
+  });
+
+  it('resposta sem a chave "data" (corpo inesperado) é tratada como ausente → null', async () => {
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockResolvedValueOnce(jsonResponse({}));
+
+    const client = makeClient();
+    const result = await client.getCantidadMaxPrestaciones();
+
+    expect(result).toBeNull();
+  });
+
+  it('matricula enviada no filtro vem da sessão autenticada', async () => {
+    mockFetch.mockResolvedValueOnce(loginResponse({ matricula: '777888' }));
+    mockFetch.mockResolvedValueOnce(medicoParametroPortalResponse(24));
+
+    const client = makeClient();
+    await client.getCantidadMaxPrestaciones();
+
+    const [, init] = mockFetch.mock.calls[1];
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.filters.matricula).toBe('777888');
+  });
+});
+
 // ── Espião de rede: zero chamadas reais ao Axonico ──────────────────
 //
 // `allRequestedUrls` (declarado no topo do arquivo) acumula toda URL vista pelo wrapper de

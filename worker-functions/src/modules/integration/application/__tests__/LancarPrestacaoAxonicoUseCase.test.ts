@@ -1,0 +1,487 @@
+/**
+ * LancarPrestacaoAxonicoUseCase.test.ts — F3 da change `integracao-axonico`.
+ *
+ * REGRA DURA (não negociável): NENHUM teste desta suíte instancia `AxonicoApiClient` (o cliente
+ * HTTP concreto) nem chama `fetch`. As três dependências do use case são SEMPRE
+ * `jest.Mocked<Interface>` — `IPatientReadPort`, `IAxonicoApiClient`, `IAxonicoLancamentoRepository`.
+ * Nenhum destes testes toca a API real do Axonico (`api.apiws.axonico.ar` e afins).
+ *
+ * Cenários (tasks.md §3 "Termina quando", F3):
+ *  1. `document_number IS NULL` → recusado sem nenhuma chamada ao `IAxonicoApiClient`.
+ *  2. `hours` não-inteiro (2.5) → recusado sem nenhuma chamada ao `IAxonicoApiClient`.
+ *  3. `hours` acima do teto de `cantidad_max_prestaciones` → recusado sem chamar `findPatientByDni`/
+ *     `checkExistingComprobante`/`submitComprobante`.
+ *  4. Leitura do teto indisponível (mock lança OU `cantidad_max_prestaciones` ausente) → recusado
+ *     sem nenhuma chamada a `submitComprobante` (D371).
+ *  5. Lançamento já `enviado` na tabela (dedupe local) → `duplicado` sem nenhuma chamada a
+ *     `findPatientByDni`/`checkExistingComprobante`/`submitComprobante`.
+ *  6. Tipo sem mapeamento (`CAREGIVER`) → recusado antes de qualquer chamada de rede (exceto o
+ *     guard 2, que já rodou antes do guard de mapeamento).
+ *  7. Falha de `submitComprobante` → grava `status='erro'` com `error_message`, relança, e NÃO
+ *     repete a chamada.
+ *  + Caminho feliz (não listado como um dos 7, mas é a prova positiva cruzada dos testes de "zero
+ *    chamadas": mostra que os MESMOS métodos do mock SÃO registrados quando efetivamente chamados).
+ *  + `patientId` inexistente (variação do guard 0 — `findDocumentNumber` devolve `null`, não
+ *    `{ documentNumber: null }`).
+ */
+
+import {
+  LancarPrestacaoAxonicoUseCase,
+  LancarPrestacaoAxonicoInput,
+  PacienteSemDniError,
+  HoraQuebradaError,
+  AxonicoTetoIndisponivelError,
+  AxonicoTetoExcedidoError,
+  AxonicoPacienteNaoEncontradoError,
+} from '../LancarPrestacaoAxonicoUseCase';
+import type { IPatientReadPort } from '../../domain/IPatientReadPort';
+import type { IAxonicoApiClient, AxonicoPatientMatch } from '../../domain/IAxonicoApiClient';
+import type { IAxonicoLancamentoRepository, AxonicoLancamentoRecord } from '../../domain/IAxonicoLancamentoRepository';
+import { AxonicoUnmappedServiceTypeError } from '../../infrastructure/AxonicoServiceMapping';
+
+jest.mock('@shared/logging', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+}));
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { logger: mockLogger } = require('@shared/logging') as {
+  logger: { info: jest.Mock; warn: jest.Mock; error: jest.Mock };
+};
+
+// ── Helpers ──────────────────────────────────────────────────────
+
+const PATIENT_ID = 'patient-uuid-1';
+const DNI = '30111222';
+const SERVICE_DATE = new Date(2026, 8, 18); // 18/09/2026 local — mês 0-indexado
+
+function makeInput(overrides: Partial<LancarPrestacaoAxonicoInput> = {}): LancarPrestacaoAxonicoInput {
+  return {
+    patientId: PATIENT_ID,
+    serviceType: 'AT',
+    serviceDate: SERVICE_DATE,
+    hours: 4,
+    ...overrides,
+  };
+}
+
+const PATIENT_MATCH: AxonicoPatientMatch = {
+  historiaClinica: 'hc-123',
+  nroCobertura: 'cob-456',
+};
+
+function makePatientReadPort(documentNumber: string | null = DNI): jest.Mocked<IPatientReadPort> {
+  return {
+    findDocumentNumber: jest.fn().mockResolvedValue({ documentNumber }),
+  };
+}
+
+function makeAxonicoApiClient(overrides: Partial<jest.Mocked<IAxonicoApiClient>> = {}): jest.Mocked<IAxonicoApiClient> {
+  return {
+    findPatientByDni: jest.fn().mockResolvedValue(PATIENT_MATCH),
+    checkExistingComprobante: jest.fn().mockResolvedValue(false),
+    submitComprobante: jest.fn().mockResolvedValue({ numeroComprobante: 'nc-1', codAutorizacion: 'ca-1' }),
+    getCantidadMaxPrestaciones: jest.fn().mockResolvedValue(24),
+    ...overrides,
+  };
+}
+
+function makeLancamentoRepository(
+  overrides: Partial<jest.Mocked<IAxonicoLancamentoRepository>> = {},
+): jest.Mocked<IAxonicoLancamentoRepository> {
+  return {
+    findExisting: jest.fn().mockResolvedValue(null),
+    insert: jest.fn().mockImplementation((params) =>
+      Promise.resolve({ id: 'lanc-1', ...params, createdAt: new Date() } as AxonicoLancamentoRecord),
+    ),
+    ...overrides,
+  };
+}
+
+// ── Testes ───────────────────────────────────────────────────────
+
+describe('LancarPrestacaoAxonicoUseCase', () => {
+  describe('caminho feliz — envio com sucesso', () => {
+    it('resolve DNI, confere teto, dedupe local e remoto, envia, e grava status=enviado', async () => {
+      const patientReadPort = makePatientReadPort();
+      const axonicoApiClient = makeAxonicoApiClient();
+      const lancamentoRepository = makeLancamentoRepository();
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      const result = await useCase.execute(makeInput({ hours: 4 }));
+
+      expect(result).toEqual({ status: 'enviado', numeroComprobante: 'nc-1', codAutorizacion: 'ca-1' });
+
+      // Prova positiva: TODOS os métodos do mock IAxonicoApiClient são chamados exatamente 1 vez
+      // no caminho feliz — esta é a referência cruzada citada pelos testes de "zero chamadas"
+      // abaixo, que provam que o MESMO conjunto de métodos, no MESMO mock, registraria uma
+      // chamada se ela tivesse ocorrido.
+      expect(axonicoApiClient.getCantidadMaxPrestaciones).toHaveBeenCalledTimes(1);
+      expect(axonicoApiClient.findPatientByDni).toHaveBeenCalledTimes(1);
+      expect(axonicoApiClient.findPatientByDni).toHaveBeenCalledWith(DNI);
+      expect(axonicoApiClient.checkExistingComprobante).toHaveBeenCalledTimes(1);
+      expect(axonicoApiClient.submitComprobante).toHaveBeenCalledTimes(1);
+      expect(axonicoApiClient.submitComprobante).toHaveBeenCalledWith(
+        expect.objectContaining({ cantidad: 4, historiaClinica: 'hc-123', nroCobertura: 'cob-456' }),
+      );
+
+      expect(lancamentoRepository.findExisting).toHaveBeenCalledTimes(1);
+      expect(lancamentoRepository.insert).toHaveBeenCalledTimes(1);
+      expect(lancamentoRepository.insert).toHaveBeenCalledWith({
+        patientId: PATIENT_ID,
+        serviceType: 'AT',
+        serviceDate: '2026-09-18',
+        hours: 4,
+        numeroComprobante: 'nc-1',
+        codAutorizacion: 'ca-1',
+        status: 'enviado',
+        errorMessage: null,
+      });
+    });
+  });
+
+  describe('guard 0 — DNI presente', () => {
+    it('document_number IS NULL: recusa com PacienteSemDniError sem nenhuma chamada ao IAxonicoApiClient', async () => {
+      const patientReadPort = makePatientReadPort(null);
+      const axonicoApiClient = makeAxonicoApiClient();
+      const lancamentoRepository = makeLancamentoRepository();
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      await expect(useCase.execute(makeInput())).rejects.toThrow(PacienteSemDniError);
+
+      // Contagem zero — prova de "não chamou", não de "não mediu".
+      expect(axonicoApiClient.getCantidadMaxPrestaciones).toHaveBeenCalledTimes(0);
+      expect(axonicoApiClient.findPatientByDni).toHaveBeenCalledTimes(0);
+      expect(axonicoApiClient.checkExistingComprobante).toHaveBeenCalledTimes(0);
+      expect(axonicoApiClient.submitComprobante).toHaveBeenCalledTimes(0);
+      expect(lancamentoRepository.insert).toHaveBeenCalledTimes(0);
+
+      // Prova positiva NESTE MESMO teste: a porta de paciente (o outro mock injetado) FOI
+      // chamada — mostra que os mocks do teste registram chamadas normalmente, não que estão
+      // "mudos" por configuração. A prova cruzada de que o IAxonicoApiClient especificamente
+      // registraria uma chamada está no teste "caminho feliz" acima (mesmos 4 métodos, 1x cada).
+      expect(patientReadPort.findDocumentNumber).toHaveBeenCalledTimes(1);
+      expect(patientReadPort.findDocumentNumber).toHaveBeenCalledWith(PATIENT_ID);
+    });
+
+    it('paciente inexistente (findDocumentNumber devolve null): mesma recusa, sem chamada ao IAxonicoApiClient', async () => {
+      const patientReadPort: jest.Mocked<IPatientReadPort> = {
+        findDocumentNumber: jest.fn().mockResolvedValue(null),
+      };
+      const axonicoApiClient = makeAxonicoApiClient();
+      const lancamentoRepository = makeLancamentoRepository();
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      await expect(useCase.execute(makeInput())).rejects.toThrow(PacienteSemDniError);
+
+      expect(axonicoApiClient.findPatientByDni).toHaveBeenCalledTimes(0);
+      expect(axonicoApiClient.getCantidadMaxPrestaciones).toHaveBeenCalledTimes(0);
+      expect(lancamentoRepository.insert).toHaveBeenCalledTimes(0);
+      // Prova positiva local: o mock da porta registrou a chamada que de fato ocorreu.
+      expect(patientReadPort.findDocumentNumber).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('guard 1 — hora cheia (D366)', () => {
+    it('hours=2.5 (não-inteiro): recusa com HoraQuebradaError sem nenhuma chamada ao IAxonicoApiClient', async () => {
+      const patientReadPort = makePatientReadPort();
+      const axonicoApiClient = makeAxonicoApiClient();
+      const lancamentoRepository = makeLancamentoRepository();
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      await expect(useCase.execute(makeInput({ hours: 2.5 }))).rejects.toThrow(HoraQuebradaError);
+
+      expect(axonicoApiClient.getCantidadMaxPrestaciones).toHaveBeenCalledTimes(0);
+      expect(axonicoApiClient.findPatientByDni).toHaveBeenCalledTimes(0);
+      expect(axonicoApiClient.checkExistingComprobante).toHaveBeenCalledTimes(0);
+      expect(axonicoApiClient.submitComprobante).toHaveBeenCalledTimes(0);
+      expect(lancamentoRepository.insert).toHaveBeenCalledTimes(0);
+
+      // Prova positiva NESTE teste: guard 0 rodou antes e chamou a porta de paciente — mostra que
+      // o mock geral está "vivo". A prova cruzada específica do IAxonicoApiClient (mesmos 4
+      // métodos que aqui ficaram em 0) é o teste "caminho feliz", que os chama 1x cada.
+      expect(patientReadPort.findDocumentNumber).toHaveBeenCalledTimes(1);
+    });
+
+    it('hours=0: recusa com HoraQuebradaError sem chamada ao IAxonicoApiClient', async () => {
+      const patientReadPort = makePatientReadPort();
+      const axonicoApiClient = makeAxonicoApiClient();
+      const lancamentoRepository = makeLancamentoRepository();
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      await expect(useCase.execute(makeInput({ hours: 0 }))).rejects.toThrow(HoraQuebradaError);
+      expect(axonicoApiClient.getCantidadMaxPrestaciones).toHaveBeenCalledTimes(0);
+      expect(lancamentoRepository.insert).toHaveBeenCalledTimes(0);
+    });
+  });
+
+  describe('guard 2 — teto de cantidad_max_prestaciones (D371)', () => {
+    it('hours acima do teto: recusa com AxonicoTetoExcedidoError sem chamar findPatientByDni/checkExistingComprobante/submitComprobante', async () => {
+      const patientReadPort = makePatientReadPort();
+      const axonicoApiClient = makeAxonicoApiClient({
+        getCantidadMaxPrestaciones: jest.fn().mockResolvedValue(24),
+      });
+      const lancamentoRepository = makeLancamentoRepository();
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      await expect(useCase.execute(makeInput({ hours: 30 }))).rejects.toThrow(AxonicoTetoExcedidoError);
+
+      // Prova positiva NESTE MESMO teste: getCantidadMaxPrestaciones (do MESMO objeto mockado
+      // IAxonicoApiClient cujos outros métodos afirmamos em 0) FOI chamado — prova direta de que
+      // o mock registra chamadas, sem depender de outro teste.
+      expect(axonicoApiClient.getCantidadMaxPrestaciones).toHaveBeenCalledTimes(1);
+      expect(axonicoApiClient.findPatientByDni).toHaveBeenCalledTimes(0);
+      expect(axonicoApiClient.checkExistingComprobante).toHaveBeenCalledTimes(0);
+      expect(axonicoApiClient.submitComprobante).toHaveBeenCalledTimes(0);
+      expect(lancamentoRepository.insert).toHaveBeenCalledTimes(0);
+    });
+
+    it('leitura do teto indisponível (getCantidadMaxPrestaciones lança): recusa sem nenhuma chamada a submitComprobante', async () => {
+      const patientReadPort = makePatientReadPort();
+      const axonicoApiClient = makeAxonicoApiClient({
+        getCantidadMaxPrestaciones: jest.fn().mockRejectedValue(new Error('timeout Axonico')),
+      });
+      const lancamentoRepository = makeLancamentoRepository();
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      await expect(useCase.execute(makeInput({ hours: 4 }))).rejects.toThrow(AxonicoTetoIndisponivelError);
+
+      // Prova positiva NESTE MESMO teste: getCantidadMaxPrestaciones FOI chamado (é ele quem
+      // lançou o erro) — mesmo mock, mesmo objeto, prova direta.
+      expect(axonicoApiClient.getCantidadMaxPrestaciones).toHaveBeenCalledTimes(1);
+      expect(axonicoApiClient.findPatientByDni).toHaveBeenCalledTimes(0);
+      expect(axonicoApiClient.checkExistingComprobante).toHaveBeenCalledTimes(0);
+      expect(axonicoApiClient.submitComprobante).toHaveBeenCalledTimes(0);
+      expect(lancamentoRepository.insert).toHaveBeenCalledTimes(0);
+    });
+
+    it('leitura do teto indisponível — mock rejeita com valor não-Error: cobre o ramo String(err) de AxonicoTetoIndisponivelError', async () => {
+      const patientReadPort = makePatientReadPort();
+      const axonicoApiClient = makeAxonicoApiClient({
+        getCantidadMaxPrestaciones: jest.fn().mockRejectedValue('timeout cru, sem Error'),
+      });
+      const lancamentoRepository = makeLancamentoRepository();
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      await expect(useCase.execute(makeInput())).rejects.toThrow(AxonicoTetoIndisponivelError);
+      expect(axonicoApiClient.getCantidadMaxPrestaciones).toHaveBeenCalledTimes(1);
+      expect(lancamentoRepository.insert).toHaveBeenCalledTimes(0);
+    });
+
+    it('cantidad_max_prestaciones ausente do corpo (getCantidadMaxPrestaciones devolve null): recusa sem submitComprobante, nunca usa número cravado', async () => {
+      const patientReadPort = makePatientReadPort();
+      const axonicoApiClient = makeAxonicoApiClient({
+        getCantidadMaxPrestaciones: jest.fn().mockResolvedValue(null),
+      });
+      const lancamentoRepository = makeLancamentoRepository();
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      await expect(useCase.execute(makeInput({ hours: 4 }))).rejects.toThrow(AxonicoTetoIndisponivelError);
+
+      // Prova positiva NESTE MESMO teste.
+      expect(axonicoApiClient.getCantidadMaxPrestaciones).toHaveBeenCalledTimes(1);
+      expect(axonicoApiClient.findPatientByDni).toHaveBeenCalledTimes(0);
+      expect(axonicoApiClient.submitComprobante).toHaveBeenCalledTimes(0);
+      expect(lancamentoRepository.insert).toHaveBeenCalledTimes(0);
+    });
+  });
+
+  describe('guard 3a — dedupe local (nossa tabela primeiro)', () => {
+    it('lançamento já enviado na tabela: devolve duplicado sem nenhuma chamada a findPatientByDni/checkExistingComprobante/submitComprobante', async () => {
+      const patientReadPort = makePatientReadPort();
+      const axonicoApiClient = makeAxonicoApiClient();
+      const existingRecord: AxonicoLancamentoRecord = {
+        id: 'lanc-existing',
+        patientId: PATIENT_ID,
+        serviceType: 'AT',
+        serviceDate: '2026-09-18',
+        hours: 4,
+        numeroComprobante: 'nc-old',
+        codAutorizacion: 'ca-old',
+        status: 'enviado',
+        errorMessage: null,
+        createdAt: new Date(),
+      };
+      const lancamentoRepository = makeLancamentoRepository({
+        findExisting: jest.fn().mockResolvedValue(existingRecord),
+      });
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result).toEqual({ status: 'duplicado' });
+
+      // Prova positiva NESTE MESMO teste: getCantidadMaxPrestaciones (guard 2, que roda ANTES do
+      // dedupe — única chamada de rede permitida antes dele) FOI chamado — mesmo objeto mockado
+      // cujos outros 3 métodos afirmamos em 0 logo abaixo.
+      expect(axonicoApiClient.getCantidadMaxPrestaciones).toHaveBeenCalledTimes(1);
+      expect(axonicoApiClient.findPatientByDni).toHaveBeenCalledTimes(0);
+      expect(axonicoApiClient.checkExistingComprobante).toHaveBeenCalledTimes(0);
+      expect(axonicoApiClient.submitComprobante).toHaveBeenCalledTimes(0);
+
+      expect(lancamentoRepository.findExisting).toHaveBeenCalledTimes(1);
+      expect(lancamentoRepository.insert).toHaveBeenCalledTimes(1);
+      expect(lancamentoRepository.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'duplicado', errorMessage: null }),
+      );
+    });
+  });
+
+  describe('guard 3b — tipo sem mapeamento (CAREGIVER, D372)', () => {
+    it('CAREGIVER: recusa com AxonicoUnmappedServiceTypeError antes de qualquer chamada de rede, exceto getCantidadMaxPrestaciones (guard 2, que roda antes)', async () => {
+      const patientReadPort = makePatientReadPort();
+      const axonicoApiClient = makeAxonicoApiClient();
+      const lancamentoRepository = makeLancamentoRepository();
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      await expect(useCase.execute(makeInput({ serviceType: 'CAREGIVER' }))).rejects.toThrow(
+        AxonicoUnmappedServiceTypeError,
+      );
+
+      // Prova positiva NESTE MESMO teste: getCantidadMaxPrestaciones FOI chamado (guard 2 roda
+      // antes do guard de mapeamento) — mesmo mock cujos 3 outros métodos ficam em 0.
+      expect(axonicoApiClient.getCantidadMaxPrestaciones).toHaveBeenCalledTimes(1);
+      expect(axonicoApiClient.findPatientByDni).toHaveBeenCalledTimes(0);
+      expect(axonicoApiClient.checkExistingComprobante).toHaveBeenCalledTimes(0);
+      expect(axonicoApiClient.submitComprobante).toHaveBeenCalledTimes(0);
+      // Tipo sem mapeamento não grava linha (não houve tentativa real contra o Axonico).
+      expect(lancamentoRepository.insert).toHaveBeenCalledTimes(0);
+    });
+  });
+
+  describe('dedupe remoto (3b) — cobertura das ramificações não listadas nos 7 casos, mas exercitadas pelo código escrito', () => {
+    it('findPatientByDni não encontra o paciente no Axonico: grava status=erro (AxonicoPacienteNaoEncontradoError) e relança, sem chamar checkExistingComprobante/submitComprobante', async () => {
+      const patientReadPort = makePatientReadPort();
+      const axonicoApiClient = makeAxonicoApiClient({
+        findPatientByDni: jest.fn().mockResolvedValue(null),
+      });
+      const lancamentoRepository = makeLancamentoRepository();
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      await expect(useCase.execute(makeInput())).rejects.toThrow(AxonicoPacienteNaoEncontradoError);
+
+      expect(axonicoApiClient.findPatientByDni).toHaveBeenCalledTimes(1);
+      expect(axonicoApiClient.checkExistingComprobante).toHaveBeenCalledTimes(0);
+      expect(axonicoApiClient.submitComprobante).toHaveBeenCalledTimes(0);
+      expect(lancamentoRepository.insert).toHaveBeenCalledTimes(1);
+      expect(lancamentoRepository.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'erro', errorMessage: expect.stringContaining('não encontrou paciente') }),
+      );
+    });
+
+    it('checkExistingComprobante lança valor não-Error: gravaErro cobre o ramo String(err)', async () => {
+      const patientReadPort = makePatientReadPort();
+      const axonicoApiClient = makeAxonicoApiClient({
+        checkExistingComprobante: jest.fn().mockRejectedValue('falha crua, sem Error'),
+      });
+      const lancamentoRepository = makeLancamentoRepository();
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      await expect(useCase.execute(makeInput())).rejects.toBe('falha crua, sem Error');
+
+      expect(axonicoApiClient.submitComprobante).toHaveBeenCalledTimes(0);
+      expect(lancamentoRepository.insert).toHaveBeenCalledTimes(1);
+      expect(lancamentoRepository.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'erro', errorMessage: 'falha crua, sem Error' }),
+      );
+    });
+
+    it('checkExistingComprobante lança: grava status=erro e relança, sem chamar submitComprobante', async () => {
+      const patientReadPort = makePatientReadPort();
+      const checkError = new Error('Axonico 500 — falha no filtro de comprobante');
+      const axonicoApiClient = makeAxonicoApiClient({
+        checkExistingComprobante: jest.fn().mockRejectedValue(checkError),
+      });
+      const lancamentoRepository = makeLancamentoRepository();
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      await expect(useCase.execute(makeInput())).rejects.toThrow(checkError);
+
+      expect(axonicoApiClient.checkExistingComprobante).toHaveBeenCalledTimes(1);
+      expect(axonicoApiClient.submitComprobante).toHaveBeenCalledTimes(0);
+      expect(lancamentoRepository.insert).toHaveBeenCalledTimes(1);
+      expect(lancamentoRepository.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'erro', errorMessage: checkError.message }),
+      );
+    });
+
+    it('checkExistingComprobante encontra comprobante existente no Axonico (dedupe remoto): devolve duplicado, grava status=duplicado, sem chamar submitComprobante', async () => {
+      const patientReadPort = makePatientReadPort();
+      const axonicoApiClient = makeAxonicoApiClient({
+        checkExistingComprobante: jest.fn().mockResolvedValue(true),
+      });
+      const lancamentoRepository = makeLancamentoRepository();
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      const result = await useCase.execute(makeInput());
+
+      expect(result).toEqual({ status: 'duplicado' });
+      expect(axonicoApiClient.checkExistingComprobante).toHaveBeenCalledTimes(1);
+      expect(axonicoApiClient.submitComprobante).toHaveBeenCalledTimes(0);
+      expect(lancamentoRepository.insert).toHaveBeenCalledTimes(1);
+      expect(lancamentoRepository.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'duplicado', errorMessage: null }),
+      );
+    });
+  });
+
+  describe('falha de submitComprobante (D368 — sem retry)', () => {
+    it('submitComprobante rejeita: grava status=erro com error_message, relança o erro original, e não repete a chamada', async () => {
+      const patientReadPort = makePatientReadPort();
+      const submitError = new Error('Axonico 500 — falha ao gravar comprobante');
+      const axonicoApiClient = makeAxonicoApiClient({
+        submitComprobante: jest.fn().mockRejectedValue(submitError),
+      });
+      const lancamentoRepository = makeLancamentoRepository();
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      await expect(useCase.execute(makeInput())).rejects.toThrow(submitError);
+
+      // submitComprobante foi chamado — e SÓ UMA VEZ (nunca duas, D368: sem retry automático).
+      expect(axonicoApiClient.submitComprobante).toHaveBeenCalledTimes(1);
+
+      expect(lancamentoRepository.insert).toHaveBeenCalledTimes(1);
+      expect(lancamentoRepository.insert).toHaveBeenCalledWith({
+        patientId: PATIENT_ID,
+        serviceType: 'AT',
+        serviceDate: '2026-09-18',
+        hours: 4,
+        numeroComprobante: null,
+        codAutorizacion: null,
+        status: 'erro',
+        errorMessage: submitError.message,
+      });
+    });
+  });
+
+  describe('Conserto 1 — insert do enviado sem proteção (F3, 18/09/2026)', () => {
+    it('submitComprobante dá certo mas o insert de status=enviado rejeita: relança, loga ERROR com numeroComprobante, e NÃO chama submitComprobante de novo', async () => {
+      const patientReadPort = makePatientReadPort();
+      const axonicoApiClient = makeAxonicoApiClient();
+      const insertError = new Error('pool caído — connection terminated');
+      const lancamentoRepository = makeLancamentoRepository({
+        insert: jest.fn().mockRejectedValue(insertError),
+      });
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      await expect(useCase.execute(makeInput())).rejects.toThrow(insertError);
+
+      // submitComprobante JÁ FATUROU no Axonico e foi chamado exatamente 1× — não repete.
+      expect(axonicoApiClient.submitComprobante).toHaveBeenCalledTimes(1);
+
+      expect(mockLogger.error).toHaveBeenCalledTimes(1);
+      const logCall = mockLogger.error.mock.calls[0][0];
+      expect(logCall).toEqual(
+        expect.objectContaining({
+          numeroComprobante: 'nc-1',
+          codAutorizacion: 'ca-1',
+          patientId: PATIENT_ID,
+          serviceType: 'AT',
+          serviceDate: '2026-09-18',
+          hours: 4,
+          errorMessage: insertError.message,
+        }),
+      );
+      expect(String(logCall.msg)).toMatch(/FOI CRIADO no Axonico/i);
+    });
+  });
+});

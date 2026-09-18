@@ -100,6 +100,17 @@ interface AxonicoSubmitResponseBody {
   };
 }
 
+interface AxonicoMedicoParametroPortalEntry {
+  // `unknown`, não `number`: a asserção de tipo do `as` não é validação, e esta API comprovadamente
+  // serializa numérico como string em outros campos (`cantidad: String(cantidad)` no submit) — o
+  // parse runtime de `getCantidadMaxPrestaciones` decide o que é número válido (D371).
+  cantidad_max_prestaciones?: unknown;
+}
+
+interface AxonicoMedicoParametroPortalResponseBody {
+  data?: AxonicoMedicoParametroPortalEntry[];
+}
+
 interface AxonicoErrorResponseBody {
   data?: { errors?: Record<string, string[]>; message?: string };
 }
@@ -427,6 +438,54 @@ export class AxonicoApiClient implements IAxonicoApiClient {
       return { numeroComprobante, codAutorizacion };
     });
   }
+
+  async getCantidadMaxPrestaciones(): Promise<number | null> {
+    const entries = await this.post<AxonicoMedicoParametroPortalEntry[]>(
+      '/api/medicoParametroPortal/filter',
+      (session) => ({
+        filters: { matricula: session.matricula },
+        pagination: -1,
+      }),
+      async (res) => {
+        const body = (await res.json()) as AxonicoMedicoParametroPortalResponseBody;
+        return body.data ?? [];
+      }
+    );
+
+    return parseCantidadMaxPrestaciones(entries[0]?.cantidad_max_prestaciones);
+  }
+}
+
+/**
+ * Parse runtime (não asserção de tipo) de `cantidad_max_prestaciones` — D371: sem leitura
+ * CONFIÁVEL do teto, o use case recusa (`null`), nunca compara com NaN (que daria `hours > NaN`
+ * = `false` e deixaria o lançamento passar, invertendo a regra).
+ *
+ * Aceita `number` finito e `string` numérica finita (a API serializa número como string em outros
+ * campos — recusar `"24"` recusaria o caminho feliz real). Tudo mais (ausente, `null`, `NaN`,
+ * `Infinity`, booleano, objeto, array, string não-numérica, ou número <= 0 — teto zero/negativo é
+ * leitura sem sentido, não "teto zero recusa tudo") vira `null`.
+ */
+function parseCantidadMaxPrestaciones(raw: unknown): number | null {
+  if (raw === null || raw === undefined) {
+    return null;
+  }
+
+  let n: number;
+  if (typeof raw === 'number') {
+    n = raw;
+  } else if (typeof raw === 'string' && raw.trim() !== '') {
+    n = Number(raw);
+  } else {
+    // boolean, object, array, "" ou qualquer outro tipo — nunca coerção implícita.
+    return null;
+  }
+
+  if (!Number.isFinite(n) || n <= 0) {
+    return null;
+  }
+
+  return n;
 }
 
 // ─────────────────────────────────────────────────────────────────

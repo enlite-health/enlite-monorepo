@@ -79,4 +79,17 @@ export interface IAxonicoApiClient {
    * literal) — ver `AxonicoApiClient`. Sucesso = status 200 + `data.numero_comprobante` presente.
    */
   submitComprobante(params: SubmitComprobanteParams): Promise<AxonicoSubmitResult>;
+
+  /**
+   * `POST /api/medicoParametroPortal/filter` — teto de `cantidad` permitido por prestação
+   * (`cantidad_max_prestaciones`), medido em 18/09/2026
+   * (`docs/funcionalidades/integracao-axonico/estado-integracao-axonico.md:185-188`). `matricula`
+   * SHALL vir da sessão autenticada, nunca constante literal — mesma regra de `submitComprobante`.
+   *
+   * `null` quando a resposta vier sem o campo `cantidad_max_prestaciones` (dado do Axonico ausente
+   * — o guard 2 do use case (F3, D371) trata isso como recusa, nunca como "sem teto"). LANÇA
+   * quando a chamada HTTP falhar (mesmos erros tipados dos outros métodos) — o use case nunca usa
+   * um número cravado no lugar de uma leitura que falhou.
+   */
+  getCantidadMaxPrestaciones(): Promise<number | null>;
 }
