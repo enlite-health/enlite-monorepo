@@ -108,7 +108,7 @@ export function useAnaCareHoursSync(service: AnaCareHoursService, month: string,
 
   const start = useCallback(() => {
     if (!service.triggerSync) return;
-    const trigger: NonNullable<AnaCareHoursService['triggerSync']> = service.triggerSync;
+    const trigger: NonNullable<AnaCareHoursService['triggerSync']> = service.triggerSync.bind(service);
 
     setStatus('running');
     setError(null);
