@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Text } from '@presentation/components/atoms/Text';
 import { useAnaCareHoursMonth } from '@hooks/admin/useAnaCareHoursMonth';
+import { useAnaCareHoursSync } from '@hooks/admin/useAnaCareHoursSync';
 import { AnaCareHoursListPage } from './AnaCareHoursListPage';
 import type { AnaCareHoursService } from './AnaCareHoursService';
 import { previousMonthIso, type SinCheckinHoursMode } from './selectors';
@@ -32,7 +33,11 @@ export function AnaCareHoursListContainer({
 }: AnaCareHoursListContainerProps): JSX.Element {
   const { t } = useTranslation();
   const [month, setMonth] = useState(initialMonth);
-  const { snapshot, isLoading, error } = useAnaCareHoursMonth(service, month);
+  const { snapshot, isLoading, error, refetch } = useAnaCareHoursMonth(service, month);
+  // `onComplete=refetch` (F6.4): ao terminar o laço de sync, a lista recarrega o snapshot do MESMO
+  // mês que o botão sincronizou — sem isto, o botão "termina" mas a tela continua mostrando o dado
+  // velho até o usuário trocar de mês e voltar.
+  const sync = useAnaCareHoursSync(service, month, refetch);
 
   if (isLoading && !snapshot) {
     return (
@@ -59,6 +64,12 @@ export function AnaCareHoursListContainer({
   }
 
   return (
-    <AnaCareHoursListPage snapshot={snapshot} onOpenPatient={onOpenPatient} onMonthChange={setMonth} sinCheckinHoursMode={sinCheckinHoursMode} />
+    <AnaCareHoursListPage
+      snapshot={snapshot}
+      onOpenPatient={onOpenPatient}
+      onMonthChange={setMonth}
+      sinCheckinHoursMode={sinCheckinHoursMode}
+      sync={service.triggerSync ? sync : undefined}
+    />
   );
 }
