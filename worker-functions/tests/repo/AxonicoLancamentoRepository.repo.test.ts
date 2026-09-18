@@ -142,6 +142,27 @@ describe('AxonicoLancamentoRepository @repo (Postgres real, migration 445)', () 
     expect(rows[0].count).toBe('2');
   });
 
+  it('service_date sobrevive ao round-trip como STRING YYYY-MM-DD íntegra — prova de fuso (rodar sob TZ=UTC e TZ=Asia/Tokyo)', async () => {
+    // O parser `postgres-date` do `pg` devolve `Date` em MEIA-NOITE LOCAL para coluna `DATE`
+    // (comentário literal no fonte da lib). Sem o cast `::date`→`::text` no repositório, ler
+    // componentes UTC dessa `Date` sob TZ=Asia/Tokyo devolveria o dia ANTERIOR (17, não 18) — é
+    // exatamente esse fuso que o briefing mediu como o que quebra a solução de componentes UTC.
+    // Rodar esta suíte sob os dois TZs e comparar as saídas é a prova; aqui travamos que o tipo
+    // devolvido é `string` (nunca `Date`, que faria `typeof` acusar 'object') e que o valor é
+    // IDÊNTICO ao que foi gravado, em QUALQUER fuso do processo.
+    const inserted = await repo.insert({
+      patientId, serviceType: 'AT', serviceDate: '2026-09-18', hours: 1,
+      numeroComprobante: 'CMP-TZ', codAutorizacion: 'AUT-TZ', status: 'enviado', errorMessage: null,
+    });
+    expect(typeof inserted.serviceDate).toBe('string');
+    expect(inserted.serviceDate).toBe('2026-09-18');
+
+    const found = await repo.findExisting(patientId, 'AT', '2026-09-18');
+    expect(found).not.toBeNull();
+    expect(typeof found?.serviceDate).toBe('string');
+    expect(found?.serviceDate).toBe('2026-09-18');
+  });
+
   it('CHECK chk_axonico_lancamento_error_message: status=erro exige error_message (trava de banco, contorna o repositório)', async () => {
     await expect(
       pool.query(

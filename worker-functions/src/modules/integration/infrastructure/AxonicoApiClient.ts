@@ -393,8 +393,8 @@ export class AxonicoApiClient implements IAxonicoApiClient {
           historia_clinica: historiaClinica,
           nro_cobertura: nroCobertura,
           servicio_origen: serviceCodes.servicioOrigen,
-          fecha_desde: `${formatDate(serviceDate)} 00:00:00`,
-          fecha_hasta: `${formatDate(serviceDate)} 23:59:59`,
+          fecha_desde: `${formatDiaCivilParaAxonico(serviceDate)} 00:00:00`,
+          fecha_hasta: `${formatDiaCivilParaAxonico(serviceDate)} 23:59:59`,
           whereIn: { estado: ['A', 'P'] },
           whereHasWith: {
             comprobanteDetalle: {
@@ -421,9 +421,9 @@ export class AxonicoApiClient implements IAxonicoApiClient {
   async submitComprobante(params: SubmitComprobanteParams): Promise<AxonicoSubmitResult> {
     const { historiaClinica, nroCobertura, serviceCodes, serviceDate, cantidad } = params;
 
-    // `fecha` = data do pedido (`serviceDate`) + hora do INSTANTE do envio (D370) — `this.now()`,
-    // nunca `Date.now()` direto, para o teste poder fixar o relógio.
-    const fecha = `${formatDate(serviceDate)} ${formatTime(this.now())}`;
+    // `fecha` = dia civil do pedido (`serviceDate`, string 'YYYY-MM-DD') + hora do INSTANTE do
+    // envio (D370) — `this.now()`, nunca `Date.now()` direto, para o teste poder fixar o relógio.
+    const fecha = `${formatDiaCivilParaAxonico(serviceDate)} ${formatTime(this.now())}`;
 
     const buildBody = (session: AxonicoSession) => {
       const detalle = omitEmptyStrings({
@@ -546,9 +546,19 @@ function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-/** `dd/MM/yyyy`, medido no formato real do Axonico. */
-function formatDate(date: Date): string {
-  return `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}/${date.getFullYear()}`;
+/**
+ * `'YYYY-MM-DD'` → `dd/MM/yyyy`, medido no formato real do Axonico. Recebe o dia civil como
+ * STRING (nunca `Date` — um dia civil não tem instante, e `Date` obrigaria escolher um fuso).
+ * Parser honesto: LANÇA se a entrada não casar o formato esperado, em vez de produzir uma data
+ * incorreta em silêncio.
+ */
+function formatDiaCivilParaAxonico(diaCivil: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(diaCivil);
+  if (!match) {
+    throw new Error(`${TAG} formatDiaCivilParaAxonico: '${diaCivil}' não é um dia civil 'YYYY-MM-DD'`);
+  }
+  const [, year, month, day] = match;
+  return `${day}/${month}/${year}`;
 }
 
 /** `HH:mm:ss`, medido no formato real do Axonico. */

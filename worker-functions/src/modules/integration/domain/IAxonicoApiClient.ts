@@ -39,8 +39,12 @@ export interface DedupeParams {
   historiaClinica: string;
   nroCobertura: string;
   serviceCodes: AxonicoServiceCodes;
-  /** Data da prestação (só a data importa — o filtro cobre o dia inteiro, `00:00:00`–`23:59:59`). */
-  serviceDate: Date;
+  /**
+   * Dia civil da prestação, formato `'YYYY-MM-DD'` (nunca `Date` — um dia civil não tem instante,
+   * e `Date` obriga escolher um fuso; a conversão morre na borda). Só a data importa — o filtro
+   * cobre o dia inteiro, `00:00:00`–`23:59:59`.
+   */
+  serviceDate: string;
 }
 
 /** Parâmetros de `submitComprobante` — o `PUT /api/comprobante` (passo 4). */
@@ -49,10 +53,11 @@ export interface SubmitComprobanteParams {
   nroCobertura: string;
   serviceCodes: AxonicoServiceCodes;
   /**
-   * Data da prestação escolhida pelo chamador. `fecha` é montado pelo cliente como esta data +
+   * Dia civil da prestação escolhido pelo chamador, formato `'YYYY-MM-DD'` (nunca `Date` — mesmo
+   * motivo de `DedupeParams.serviceDate`). `fecha` é montado pelo cliente como este dia +
    * a hora do INSTANTE do envio (D370) — nunca uma hora fixa nem a hora real do plantão.
    */
-  serviceDate: Date;
+  serviceDate: string;
   /** Quantidade — SEMPRE inteiro positivo (D366: 1 hora = `cantidad` 1, nunca hora quebrada). */
   cantidad: number;
 }

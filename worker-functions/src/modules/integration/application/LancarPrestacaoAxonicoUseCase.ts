@@ -60,8 +60,11 @@ const TAG = '[LancarPrestacaoAxonicoUseCase]';
 export interface LancarPrestacaoAxonicoInput {
   patientId: string;
   serviceType: EnliteServiceType;
-  /** Data da prestação — só a data importa (mesmo contrato de `SubmitComprobanteParams`). */
-  serviceDate: Date;
+  /**
+   * Dia civil da prestação, formato `'YYYY-MM-DD'` (nunca `Date` — um dia civil não tem instante;
+   * a conversão morre na borda, mesmo contrato de `SubmitComprobanteParams`/`DedupeParams`).
+   */
+  serviceDate: string;
   /** Sempre inteiro positivo (D366) — o guard 1 reconfirma, nunca confia no chamador. */
   hours: number;
 }
@@ -161,7 +164,7 @@ export class LancarPrestacaoAxonicoUseCase {
 
   async execute(input: LancarPrestacaoAxonicoInput): Promise<LancarPrestacaoAxonicoResult> {
     const { patientId, serviceType, serviceDate, hours } = input;
-    const serviceDateStr = formatServiceDateYMD(serviceDate);
+    const serviceDateStr = serviceDate;
 
     // ── Guard 0 — DNI presente ───────────────────────────────────
     const patientRecord = await this.patientReadPort.findDocumentNumber(patientId);
@@ -336,21 +339,6 @@ export class LancarPrestacaoAxonicoUseCase {
       errorMessage,
     });
   }
-}
-
-// ─────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────
-
-function pad2(n: number): string {
-  return String(n).padStart(2, '0');
-}
-
-/** `YYYY-MM-DD`, hora local (mesma convenção de `formatDate` em `AxonicoApiClient.ts`, que também
- *  usa componentes locais de `Date` — nunca UTC). Formato exigido por `service_date DATE` (migration
- *  445) via `$N::date`. */
-function formatServiceDateYMD(date: Date): string {
-  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 }
 
 export default LancarPrestacaoAxonicoUseCase;

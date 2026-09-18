@@ -63,9 +63,15 @@ export class AxonicoLancamentoRepository implements IAxonicoLancamentoRepository
     serviceType: EnliteServiceType,
     serviceDate: string,
   ): Promise<AxonicoLancamentoRecord | null> {
+    // `service_date::text` — o parser `postgres-date` do `pg` devolve `Date` em MEIA-NOITE LOCAL
+    // para coluna `DATE` (comentário literal no fonte da lib: "Force YYYY-MM-DD dates to be
+    // parsed as local time"). Sob TZ=Asia/Tokyo isso vira o dia ANTERIOR ao ler componentes UTC
+    // (medido: 2026-09-18 gravado, `getUTCDate()` devolve 17). O cast tira o fuso do caminho —
+    // o driver nunca chega a parsear a coluna como `Date`, e `serviceDate: string` do contrato é
+    // verdade por construção, não um `as`.
     const res = await this.pool.query<AxonicoLancamentoRow>(
-      `SELECT id, patient_id, service_type, service_date, hours, numero_comprobante,
-              cod_autorizacion, status, error_message, created_at
+      `SELECT id, patient_id, service_type, service_date::text AS service_date, hours,
+              numero_comprobante, cod_autorizacion, status, error_message, created_at
        FROM axonico_comprobante_lancamento
        WHERE patient_id = $1 AND service_type = $2 AND service_date = $3::date AND status = 'enviado'`,
       [patientId, serviceType, serviceDate],
@@ -78,12 +84,14 @@ export class AxonicoLancamentoRepository implements IAxonicoLancamentoRepository
    * PROPAGA a violação de `uq_axonico_lancamento_dedupe` para o chamador (F3 decide o que fazer).
    */
   async insert(params: InsertAxonicoLancamentoParams): Promise<AxonicoLancamentoRecord> {
+    // `service_date::text` no RETURNING — mesmo motivo do `findExisting` acima: sem o cast, o
+    // `pg` devolveria `Date` (meia-noite LOCAL) em vez da string que o contrato promete.
     const res = await this.pool.query<AxonicoLancamentoRow>(
       `INSERT INTO axonico_comprobante_lancamento
          (patient_id, service_type, service_date, hours, numero_comprobante, cod_autorizacion, status, error_message)
        VALUES ($1, $2, $3::date, $4, $5, $6, $7, $8)
-       RETURNING id, patient_id, service_type, service_date, hours, numero_comprobante,
-                 cod_autorizacion, status, error_message, created_at`,
+       RETURNING id, patient_id, service_type, service_date::text AS service_date, hours,
+                 numero_comprobante, cod_autorizacion, status, error_message, created_at`,
       [
         params.patientId,
         params.serviceType,

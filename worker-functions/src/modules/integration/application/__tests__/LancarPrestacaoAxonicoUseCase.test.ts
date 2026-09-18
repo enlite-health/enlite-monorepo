@@ -55,7 +55,7 @@ const { logger: mockLogger } = require('@shared/logging') as {
 
 const PATIENT_ID = 'patient-uuid-1';
 const DNI = '30111222';
-const SERVICE_DATE = new Date(2026, 8, 18); // 18/09/2026 local — mês 0-indexado
+const SERVICE_DATE = '2026-09-18'; // dia civil como STRING 'YYYY-MM-DD' — nunca Date
 
 function makeInput(overrides: Partial<LancarPrestacaoAxonicoInput> = {}): LancarPrestacaoAxonicoInput {
   return {

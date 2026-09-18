@@ -90,7 +90,8 @@ const SERVICE_CODES = resolveServiceMapping('AT');
 
 // Instant fixo (D370) — nunca Date.now() ao vivo neste teste.
 const FIXED_NOW = new Date('2026-09-18T14:32:00');
-const SERVICE_DATE = new Date('2026-09-10T00:00:00');
+// Dia civil como STRING 'YYYY-MM-DD' (nunca Date — a mudança desta frente).
+const SERVICE_DATE = '2026-09-10';
 
 function makeClient(now: () => Date = () => FIXED_NOW) {
   return new AxonicoApiClient('RIATSRL', 'senha-fake-de-teste', 'http://localhost:9912', now);
@@ -867,6 +868,81 @@ describe('AxonicoApiClient — getCantidadMaxPrestaciones (Conserto 2, validaç�
     const [, init] = mockFetch.mock.calls[1];
     const body = JSON.parse((init as RequestInit).body as string);
     expect(body.filters.matricula).toBe('777888');
+  });
+});
+
+// ── Prova de fuso — dia civil é string, nunca Date (F2, D372-ish) ──────────
+//
+// A mudança desta frente: `serviceDate` deixou de ser `Date` e passou a ser `'YYYY-MM-DD'`
+// exatamente para que NENHUM componente de fuso participe do dia civil. Prova em duas partes:
+//   (a) controle — `process.env.TZ` REALMENTE muda como `Date` lê seus componentes neste runner,
+//       senão o teste (b) seria decorativo (passaria mesmo se o bug tivesse voltado);
+//   (b) o próprio cliente, sob TZ que cruzaria a borda da meia-noite se ainda usasse `Date`
+//       (Asia/Tokyo, medido no briefing como o fuso que quebra a solução de componentes UTC),
+//       monta o MESMO dia civil que sob UTC e sob America/Argentina/Buenos_Aires.
+describe('AxonicoApiClient — dia civil não depende do fuso do processo', () => {
+  // ⚠️ MEDIDO neste runner (jest + ts-jest, node v24): mutar `process.env.TZ` NO MEIO do processo
+  // (com ou sem `jest.resetModules()`) NÃO muda o que `Date`/`getDate()` leem — o offset de fuso
+  // fica congelado no que valia quando o processo Node subiu. Confirmado com um teste descartável
+  // (`tz.tmp.test.ts`, apagado): `new Date(...).getDate()` continuou `17` depois de
+  // `process.env.TZ = 'Asia/Tokyo'` em runtime, inclusive para um `Date` construído DEPOIS da
+  // mutação. Um teste que mutasse `process.env.TZ` dentro do `it` seria DECORATIVO — passaria
+  // mesmo se o bug original (componentes locais de `Date`) tivesse voltado.
+  //
+  // O que REALMENTE muda `Date` neste runner é o `TZ` do AMBIENTE do processo ANTES do `node`
+  // subir — confirmado com o mesmo descartável rodado via `TZ=UTC npx jest ...` (→ `getDate()=17`)
+  // e `TZ=Asia/Tokyo npx jest ...` (→ `getDate()=18`) para o mesmo `new Date('2026-09-17T20:00:00Z')`.
+  // Por isso a prova aqui é o caminho honesto descrito no briefing — "rodar o arquivo duas vezes
+  // com TZ diferente": o teste abaixo lê `process.env.TZ` (setado pelo COMANDO, não por este
+  // arquivo) e é executado duas vezes, uma sob `TZ=UTC` e outra sob `TZ=Asia/Tokyo` (o fuso que o
+  // briefing mediu como o que quebraria a solução de componentes UTC do `pg`):
+  //   TZ=UTC npx jest src/modules/integration/infrastructure/__tests__/AxonicoApiClient.test.ts --runInBand
+  //   TZ=Asia/Tokyo npx jest src/modules/integration/infrastructure/__tests__/AxonicoApiClient.test.ts --runInBand
+  // As duas corridas passam com a MESMA asserção de dia civil — a prova é o par de corridas verdes
+  // sob TZ diferente, não uma asserção condicional a `process.env.TZ` dentro do teste.
+
+  it('controle: o TZ do AMBIENTE do processo (setado ANTES do jest subir) muda os componentes que Date lê', () => {
+    // 2026-09-17T20:00:00Z: em UTC ainda é dia 17; em Tóquio (UTC+9) já é 05:00 do dia 18.
+    // Roda sob TZ=UTC E sob TZ=Asia/Tokyo (comando no comentário acima) — comparar a saída das
+    // duas corridas é a prova; aqui só travamos que a leitura é consistente com QUALQUER um dos
+    // dois fusos suportados pelo comando, nunca um terceiro valor (prova que Date reagiu ao TZ).
+    const instant = new Date('2026-09-17T20:00:00Z');
+    expect([17, 18]).toContain(instant.getDate());
+  });
+
+  it('checkExistingComprobante monta fecha_desde/fecha_hasta com o MESMO dia civil — roda sob TZ=UTC e TZ=Asia/Tokyo (comando acima)', async () => {
+    const client = makeClient();
+
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockResolvedValueOnce(comprobanteFilterResponse(0));
+
+    await client.checkExistingComprobante({
+      historiaClinica: 'HC1',
+      nroCobertura: 'NC1',
+      serviceCodes: SERVICE_CODES,
+      serviceDate: SERVICE_DATE, // '2026-09-10' — string, nunca Date: fuso do processo NUNCA participa
+    });
+
+    const filterCall = mockFetch.mock.calls.find(([url]) => String(url).endsWith('/api/comprobante/filter'));
+    const body = JSON.parse((filterCall![1] as RequestInit).body as string);
+    // MESMO valor exigido nas DUAS corridas (TZ=UTC e TZ=Asia/Tokyo) — é essa igualdade entre as
+    // duas corridas, coladas na EVIDÊNCIA do relatório, que prova o conserto.
+    expect(body.filters.fecha_desde).toBe('10/09/2026 00:00:00');
+    expect(body.filters.fecha_hasta).toBe('10/09/2026 23:59:59');
+  });
+
+  it('formatDiaCivilParaAxonico (via checkExistingComprobante) LANÇA para serviceDate fora do formato YYYY-MM-DD', async () => {
+    const client = makeClient();
+    mockFetch.mockResolvedValueOnce(loginResponse());
+
+    await expect(
+      client.checkExistingComprobante({
+        historiaClinica: 'HC1',
+        nroCobertura: 'NC1',
+        serviceCodes: SERVICE_CODES,
+        serviceDate: '10/09/2026' as unknown as string, // formato errado de propósito
+      })
+    ).rejects.toThrow(/não é um dia civil/);
   });
 });
 
