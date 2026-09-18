@@ -24,7 +24,12 @@ import type {
   SubmitComprobanteParams,
   AxonicoSubmitResult,
 } from '../domain/IAxonicoApiClient';
-import { AxonicoValidationError, AxonicoBusinessError, AxonicoAuthError } from './AxonicoErrors';
+import {
+  AxonicoValidationError,
+  AxonicoBusinessError,
+  AxonicoAuthError,
+  AxonicoIndeterminateWriteError,
+} from './AxonicoErrors';
 
 // ─────────────────────────────────────────────────────────────────
 // Constants
@@ -235,19 +240,34 @@ export class AxonicoApiClient implements IAxonicoApiClient {
    * (closure local via o parâmetro `attempt`, não estado da instância — mesmo desenho de
    * `AnaCareSessionClient.buildForceReloginFetch`). Um segundo 401 é erro definitivo, sem
    * terceira tentativa.
+   *
+   * `allowReplay` (default `true`) é `false` só para a ESCRITA (`put()`/`submitComprobante`): um
+   * 401 não prova que o servidor deixou de aplicar o `PUT /api/comprobante` (token pode expirar
+   * entre o processamento e a resposta; a borda pode devolver 401 com o PUT já aplicado) —
+   * replayar arriscaria faturar duas vezes e registrar uma. LEITURA continua replayando (login,
+   * `findPatientByDni`, `checkExistingComprobante`, `getCantidadMaxPrestaciones`).
    */
   private async withReauth<T>(
     method: string,
     path: string,
     fn: (session: AxonicoSession) => Promise<Response>,
-    parseSuccess: (res: Response) => Promise<T>
+    parseSuccess: (res: Response) => Promise<T>,
+    options: { allowReplay?: boolean } = {}
   ): Promise<T> {
+    const { allowReplay = true } = options;
     const session = await this.ensureSession();
     let res = await fn(session);
 
     if (res.status === 401) {
-      logger.warn({ msg: `${TAG} 401 recebido — disparando re-login`, path });
+      logger.warn({ msg: `${TAG} 401 recebido — disparando re-login`, path, allowReplay });
       this.session = null;
+
+      if (!allowReplay) {
+        // Sessão já invalidada acima (próxima chamada — de qualquer método — relogará), mas ESTA
+        // escrita não é repetida: ver AxonicoIndeterminateWriteError.
+        throw new AxonicoIndeterminateWriteError(method, path);
+      }
+
       const reloggedSession = await this.login();
       res = await fn(reloggedSession);
 
@@ -300,6 +320,7 @@ export class AxonicoApiClient implements IAxonicoApiClient {
     );
   }
 
+  /** `allowReplay: false` (Conserto F1-3) — ver `withReauth`: um 401 no PUT nunca replaya. */
   private async put<T>(
     path: string,
     buildBody: (session: AxonicoSession) => unknown,
@@ -317,7 +338,8 @@ export class AxonicoApiClient implements IAxonicoApiClient {
           },
           body: JSON.stringify(buildBody(session)),
         }),
-      parseSuccess
+      parseSuccess,
+      { allowReplay: false }
     );
   }
 

@@ -46,3 +46,22 @@ export class AxonicoAuthError extends Error {
     this.name = 'AxonicoAuthError';
   }
 }
+
+/**
+ * 401 numa ESCRITA (`PUT /api/comprobante`) — nunca replayada. Um 401 aqui NÃO prova que o
+ * servidor deixou de aplicar a requisição: o token pode expirar entre o processamento e a
+ * resposta, ou a borda devolver 401 com o PUT já aplicado. O estado é INDETERMINADO — pode ter
+ * faturado no Axonico sem confirmação do lado de cá — e por isso a repetição é decisão HUMANA,
+ * nunca automática (nunca um replay silencioso que arriscaria dois comprovantes faturados).
+ */
+export class AxonicoIndeterminateWriteError extends Error {
+  readonly status: number = 401;
+
+  constructor(method: string, path: string) {
+    super(
+      `[AxonicoApiClient] ${method} ${path} — HTTP 401 numa escrita: estado INDETERMINADO (pode ` +
+        'ter sido aplicada no Axonico), NÃO repetida automaticamente — decisão de repetir é humana',
+    );
+    this.name = 'AxonicoIndeterminateWriteError';
+  }
+}

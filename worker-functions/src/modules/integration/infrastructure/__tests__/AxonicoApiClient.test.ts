@@ -36,7 +36,12 @@ jest.mock('@google-cloud/secret-manager', () => ({
 
 import { AxonicoApiClient } from '../AxonicoApiClient';
 import { resolveServiceMapping, AxonicoUnmappedServiceTypeError } from '../AxonicoServiceMapping';
-import { AxonicoAuthError, AxonicoValidationError, AxonicoBusinessError } from '../AxonicoErrors';
+import {
+  AxonicoAuthError,
+  AxonicoValidationError,
+  AxonicoBusinessError,
+  AxonicoIndeterminateWriteError,
+} from '../AxonicoErrors';
 
 // ── Helpers de resposta ──────────────────────────────────────────
 
@@ -172,6 +177,84 @@ describe('AxonicoApiClient — re-login em 401', () => {
     // 1a tentativa (401) + retry pós-relogin (401 de novo) = 2 chamadas à rota, nunca uma 3a.
     expect(findCount).toBe(2);
     expect(loginCount).toBe(2);
+  });
+});
+
+// ── Conserto 3 (F1) — 401 no PUT NÃO replaya (submitComprobante) ───────────
+//
+// Espião registra a SEQUÊNCIA de chamadas HTTP (método + rota) para provar exatamente 1 PUT —
+// diferente do teste de re-login acima (POST), que continua replayando e tem de continuar verde.
+
+describe('AxonicoApiClient — 401 em escrita (PUT /api/comprobante) NÃO replaya (Conserto F1-3)', () => {
+  it('401 no PUT /api/comprobante → submitComprobante rejeita com AxonicoIndeterminateWriteError, e exatamente 1 PUT foi enviado', async () => {
+    const httpCalls: Array<{ method: string; url: string }> = [];
+    mockFetch.mockImplementation(async (input: unknown, init?: unknown) => {
+      const url = String(input);
+      const method = (init as RequestInit | undefined)?.method ?? 'GET';
+      httpCalls.push({ method, url });
+
+      if (url.endsWith('/api/login')) {
+        return loginResponse();
+      }
+      if (url.endsWith('/api/comprobante') && method === 'PUT') {
+        return jsonResponse({ message: 'Unauthenticated' }, 401);
+      }
+      throw new Error(`unexpected call: ${url}`);
+    });
+
+    const client = makeClient();
+    let caught: unknown;
+    try {
+      await client.submitComprobante({
+        historiaClinica: 'HC-123',
+        nroCobertura: 'AF-456',
+        serviceCodes: SERVICE_CODES,
+        serviceDate: SERVICE_DATE,
+        cantidad: 1,
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(AxonicoIndeterminateWriteError);
+
+    // SAÍDA DO ESPIÃO — sequência de chamadas HTTP registradas:
+    // eslint-disable-next-line no-console
+    console.log('[espião — 401 no PUT]', JSON.stringify(httpCalls, null, 2));
+
+    const putCalls = httpCalls.filter((c) => c.method === 'PUT' && c.url.endsWith('/api/comprobante'));
+    expect(putCalls).toHaveLength(1); // exatamente 1 PUT — nunca um replay automático.
+  });
+
+  it('401 no PUT invalida a sessão (próxima chamada, de qualquer método, relogará) mas não repete ESTA escrita', async () => {
+    let loginCount = 0;
+    mockFetch.mockImplementation(async (input: unknown, init?: unknown) => {
+      const url = String(input);
+      const method = (init as RequestInit | undefined)?.method ?? 'GET';
+      if (url.endsWith('/api/login')) {
+        loginCount += 1;
+        return loginResponse();
+      }
+      if (url.endsWith('/api/comprobante') && method === 'PUT') {
+        return jsonResponse({ message: 'Unauthenticated' }, 401);
+      }
+      throw new Error(`unexpected call: ${url}`);
+    });
+
+    const client = makeClient();
+    await expect(
+      client.submitComprobante({
+        historiaClinica: 'HC-123',
+        nroCobertura: 'AF-456',
+        serviceCodes: SERVICE_CODES,
+        serviceDate: SERVICE_DATE,
+        cantidad: 1,
+      })
+    ).rejects.toBeInstanceOf(AxonicoIndeterminateWriteError);
+
+    // Só o login inicial — nenhum re-login disparado (o Conserto 3 lança antes de re-logar e
+    // replayar; a sessão é limpa, mas quem decide repetir é humano, num novo `execute`).
+    expect(loginCount).toBe(1);
   });
 });
 
