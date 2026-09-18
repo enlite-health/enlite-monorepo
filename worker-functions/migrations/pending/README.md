@@ -24,3 +24,4 @@ estiver confirmado em produção.
 | Arquivo | Depende de | O que faz |
 |---|---|---|
 | `CONTRACT_drop_patients_chat_id_columns.sql` | migration `261` deployada e confirmada em produção | Derruba `patients.family_chat_id` e `patients.providers_chat_id`, que a `261` substituiu por `patient_chat_ids` |
+| `ROLLBACK_axonico_comprobante_lancamento.sql` | decisão manual de reverter a migration `445` | Derruba `axonico_comprobante_lancamento` — par de rollback da 445, não roda sozinho (ver motivo no cabeçalho do arquivo) |
