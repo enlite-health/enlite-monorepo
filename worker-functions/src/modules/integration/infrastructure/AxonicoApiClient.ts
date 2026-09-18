@@ -59,13 +59,15 @@ const MATRICULA_SOLICITANTE = '999999';
 interface AxonicoSession {
   accessToken: string;
   /**
-   * Matrícula do profissional logado — SHALL vir da resposta de login (`data.matricula`), NUNCA
-   * de uma constante literal (risco de faturamento: um `matricula` hardcoded lançaria a
-   * prestação para a matrícula ERRADA se a credencial mudar). Decisão desta implementação
-   * (design.md deixa "resposta do login OU `medicoParametroPortal/filter`" em aberto): usamos o
-   * campo da resposta do login por ser o dado já disponível no mesmo passo, sem uma segunda
-   * chamada de rede a cada `ensureAuth()`. Se o Axonico não devolver `data.matricula` no login,
-   * o login falha explicitamente — nunca cai num valor cravado.
+   * Matrícula do profissional logado — SHALL vir da resposta de login (`medico.matricula`,
+   * MEDIDO por HTTP real em 18/09/2026: é bloco IRMÃO de `data`, ao lado de `links`,
+   * `menuOpcionesNiveles` e `permisos` — `data.matricula` nunca existiu), NUNCA de uma constante
+   * literal (risco de faturamento: um `matricula` hardcoded lançaria a prestação para a
+   * matrícula ERRADA se a credencial mudar). Decisão desta implementação (design.md deixa
+   * "resposta do login OU `medicoParametroPortal/filter`" em aberto): usamos o campo da resposta
+   * do login por ser o dado já disponível no mesmo passo, sem uma segunda chamada de rede a cada
+   * `ensureAuth()`. Se o Axonico não devolver `medico.matricula` (ausente, vazio ou inválido) no
+   * login, o login falha explicitamente — nunca cai num valor cravado.
    */
   matricula: string;
 }
@@ -75,7 +77,13 @@ interface AxonicoSession {
 // ─────────────────────────────────────────────────────────────────
 
 interface AxonicoLoginResponseBody {
-  data?: { accessToken?: string; matricula?: string };
+  data?: { accessToken?: string };
+  /**
+   * `unknown`, não `string`: MESMO motivo já documentado em `AxonicoMedicoParametroPortalEntry`
+   * — esta API comprovadamente serializa numérico como string em outros campos. `parseMatricula`
+   * decide o que é matrícula válida, nunca um `as`.
+   */
+  medico?: { matricula?: unknown };
 }
 
 interface AxonicoPacienteCobertura {
@@ -213,14 +221,14 @@ export class AxonicoApiClient implements IAxonicoApiClient {
 
     const body = (await res.json()) as AxonicoLoginResponseBody;
     const accessToken = body.data?.accessToken;
-    const matricula = body.data?.matricula;
+    const matricula = parseMatricula(body.medico?.matricula);
 
     if (!accessToken) {
       throw new Error(`${TAG} login succeeded but data.accessToken was not present`);
     }
-    if (!matricula) {
+    if (matricula === null) {
       // Falha explícita — nunca cai num `matricula` cravado (risco de faturamento, design.md §F1).
-      throw new Error(`${TAG} login succeeded but data.matricula was not present`);
+      throw new Error(`${TAG} login succeeded but medico.matricula was not present`);
     }
 
     const session: AxonicoSession = { accessToken, matricula };
@@ -508,6 +516,26 @@ function parseCantidadMaxPrestaciones(raw: unknown): number | null {
   }
 
   return n;
+}
+
+/**
+ * Parse runtime (não asserção de tipo) de `medico.matricula` — mesma disciplina de
+ * `parseCantidadMaxPrestaciones` (D371): sem leitura CONFIÁVEL da matrícula, o login recusa
+ * (`null`), nunca cai num valor cravado (risco de faturamento, design.md §F1).
+ *
+ * Aceita `string` não-vazia (após trim) e `number` finito (vira `String(n)` — a API serializa
+ * numérico como string em outros campos, mesmo motivo de `AxonicoMedicoParametroPortalEntry`).
+ * Tudo mais (ausente, `null`, `""`, booleano, objeto, array, `NaN`/`Infinity`) vira `null`.
+ */
+function parseMatricula(raw: unknown): string | null {
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    return trimmed !== '' ? trimmed : null;
+  }
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return String(raw);
+  }
+  return null;
 }
 
 // ─────────────────────────────────────────────────────────────────

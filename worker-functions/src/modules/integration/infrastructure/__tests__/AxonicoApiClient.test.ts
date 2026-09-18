@@ -53,12 +53,12 @@ function jsonResponse(body: unknown, status = 200) {
   } as Response;
 }
 
+// Formato MEDIDO por HTTP real em 18/09/2026: `medico` é bloco IRMÃO de `data` (nunca
+// `data.matricula`, que não existe na resposta real).
 function loginResponse(overrides: { accessToken?: string; matricula?: string } = {}) {
   return jsonResponse({
-    data: {
-      accessToken: overrides.accessToken ?? '1|mock-token-abc',
-      matricula: overrides.matricula ?? '352722',
-    },
+    data: { accessToken: overrides.accessToken ?? '1|mock-token-abc' },
+    medico: { matricula: overrides.matricula ?? '352722' },
   });
 }
 
@@ -117,13 +117,69 @@ describe('AxonicoApiClient — login e cache de token', () => {
     expect(mockFetch).toHaveBeenCalledTimes(3); // 1 login + 2 findPatientByDni
   });
 
-  it('login sem data.matricula falha explicitamente (nunca cai em constante)', async () => {
+  it('login sem medico.matricula falha explicitamente (nunca cai em constante)', async () => {
     const client = makeClient();
-    // Corpo SEM a chave `matricula` de propósito (não usar o helper `loginResponse`, cujo `??`
+    // Corpo SEM o bloco `medico` de propósito (não usar o helper `loginResponse`, cujo `??`
     // trataria `undefined` como "usar o default" — o que mascararia este caso).
     mockFetch.mockResolvedValueOnce(jsonResponse({ data: { accessToken: '1|mock-token-abc' } }));
 
-    await expect(client.findPatientByDni('30712345')).rejects.toThrow(/data\.matricula/);
+    await expect(client.findPatientByDni('30712345')).rejects.toThrow(/medico\.matricula/);
+  });
+
+  it('login com medico.matricula vazio (string em branco) falha explicitamente', async () => {
+    const client = makeClient();
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ data: { accessToken: '1|mock-token-abc' }, medico: { matricula: '   ' } })
+    );
+
+    await expect(client.findPatientByDni('30712345')).rejects.toThrow(/medico\.matricula/);
+  });
+
+  it('login com medico.matricula em formato inesperado (objeto) falha explicitamente', async () => {
+    const client = makeClient();
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ data: { accessToken: '1|mock-token-abc' }, medico: { matricula: {} } })
+    );
+
+    await expect(client.findPatientByDni('30712345')).rejects.toThrow(/medico\.matricula/);
+  });
+
+  it('sessão sai com matricula "352722" a partir do corpo REAL medido (medico irmão de data, com os campos irmãos links/menuOpcionesNiveles/permisos)', async () => {
+    // Corpo LITERAL medido por HTTP real em 18/09/2026 — não usa o helper `loginResponse`, para
+    // provar que o parse sobrevive ao formato real inteiro, não só ao subset que o helper monta.
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
+        data: {
+          accessToken: '1|mock-token-abc',
+          apellido1: 'Perez',
+          email: 'mock@axonico.ar',
+          estado: 'A',
+          fecha_vencpass: '2027-01-01',
+          id: 1,
+          nombre: 'Juan',
+          usuario: 'RIATSRL',
+        },
+        medico: { matricula: '352722' },
+        links: {},
+        menuOpcionesNiveles: {},
+        permisos: {},
+      })
+    );
+    mockFetch.mockResolvedValueOnce(comprobanteFilterResponse(0));
+
+    const client = makeClient();
+    // Prova OBSERVÁVEL: `checkExistingComprobante` manda `matricula` no filtro
+    // (`filters.whereHasWith.comprobanteDetalle.matricula`), lida do espião do fetch.
+    await client.checkExistingComprobante({
+      historiaClinica: 'HC-123',
+      nroCobertura: 'AF-456',
+      serviceCodes: SERVICE_CODES,
+      serviceDate: SERVICE_DATE,
+    });
+
+    const [, init] = mockFetch.mock.calls[1];
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.filters.whereHasWith.comprobanteDetalle.matricula).toBe('352722');
   });
 });
 
@@ -621,7 +677,7 @@ describe('AxonicoApiClient — login: falhas', () => {
   });
 
   it('login sem data.accessToken lança erro explícito', async () => {
-    mockFetch.mockResolvedValueOnce(jsonResponse({ data: { matricula: '352722' } }));
+    mockFetch.mockResolvedValueOnce(jsonResponse({ data: {}, medico: { matricula: '352722' } }));
 
     const client = makeClient();
     await expect(client.findPatientByDni('30712345')).rejects.toThrow(/data\.accessToken/);
