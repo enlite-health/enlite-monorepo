@@ -97,10 +97,12 @@ BEGIN
     SELECT u.firebase_uid, v_master_id, v_tenant_id
       FROM users u
      WHERE lower(u.email) IN (SELECT lower(x) FROM unnest(iam.master_fixed_emails()) x)
-       AND NOT EXISTS (
-         SELECT 1 FROM iam.user_groups ug
-          WHERE ug.user_id = u.firebase_uid AND ug.group_id = v_master_id AND ug.removed_at IS NULL
-       );
+    -- ON CONFLICT contra o índice parcial uq_user_groups_live (275) — não WHERE NOT EXISTS: dois
+    -- boots concorrentes (Cloud Run escala horizontal) passariam os dois pelo NOT EXISTS antes de
+    -- qualquer commit, e o segundo INSERT colidiria com 23505 em vez de ser absorvido (achado do
+    -- code-review desta migration; molde igual ao catch-up de public.user_groups logo abaixo e ao
+    -- padrão já usado pela 436/281 em outras tabelas).
+    ON CONFLICT (user_id, group_id) WHERE removed_at IS NULL DO NOTHING;
     GET DIAGNOSTICS v_n = ROW_COUNT;
     RAISE NOTICE '[451] catch-up iam.user_groups: % conta(s) fixa(s) adicionada(s) ao Acesso Master', v_n;
   END IF;
@@ -154,14 +156,15 @@ BEGIN
             MESSAGE = '[iam] conceder conta fixa ao Acesso Master exige app.system_context declarado';
         END IF;
 
+        -- ON CONFLICT (não WHERE NOT EXISTS): esta função roda A CADA BOOT, e Cloud Run escala
+        -- horizontal — dois boots concorrentes veriam o mesmo NOT EXISTS antes do commit e o
+        -- segundo INSERT colidiria (23505) contra o índice parcial uq_user_groups_live (275) em
+        -- vez de ser absorvido. ON CONFLICT resolve isso na constraint, atomicamente.
         INSERT INTO iam.user_groups (user_id, group_id, tenant_id)
         SELECT u.firebase_uid, v_master_id, v_tenant_id
           FROM users u
          WHERE lower(u.email) IN (SELECT lower(x) FROM unnest(iam.master_fixed_emails()) x)
-           AND NOT EXISTS (
-             SELECT 1 FROM iam.user_groups ug
-              WHERE ug.user_id = u.firebase_uid AND ug.group_id = v_master_id AND ug.removed_at IS NULL
-           );
+        ON CONFLICT (user_id, group_id) WHERE removed_at IS NULL DO NOTHING;
         GET DIAGNOSTICS v_n = ROW_COUNT;
 
         SELECT array_agg(email) INTO v_missing
