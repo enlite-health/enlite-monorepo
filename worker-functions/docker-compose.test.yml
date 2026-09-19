@@ -128,6 +128,11 @@ services:
       # cair no default de produção do cliente. Porta 9912, medida livre em 18/09/2026
       # (`grep -n '991[0-9]' docker-compose.test.yml` só achava 9911, do Periskope).
       AXONICO_BASE_URL: ${AXONICO_BASE_URL:-http://host.docker.internal:9912}
+      # Credenciais FALSAS — existem só para `AxonicoApiClient.fromEnv()` construir o client dentro
+      # do container (mesmo precedente de PERISKOPE_API_KEY/PERISKOPE_PHONE acima). O stub em
+      # AXONICO_BASE_URL aceita qualquer login/senha em POST /api/login — nunca sai daqui.
+      AXIONICO_USERNAME: ${AXIONICO_USERNAME:-stub-user-e2e-only}
+      AXIONICO_PASSWORD: ${AXIONICO_PASSWORD:-stub-key-e2e-only}
       # Roster de atendentes de admissão (change agenda-admissao-atendentes).
       #
       # LIGADO aqui, que é arquivo só de teste, pelo mesmo motivo do bloco

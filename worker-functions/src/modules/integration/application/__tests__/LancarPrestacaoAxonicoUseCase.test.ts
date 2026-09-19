@@ -36,6 +36,7 @@ import {
   AxonicoTetoIndisponivelError,
   AxonicoTetoExcedidoError,
   AxonicoPacienteNaoEncontradoError,
+  AxonicoLancamentoConcorrenteError,
 } from '../LancarPrestacaoAxonicoUseCase';
 import type { IPatientReadPort } from '../../domain/IPatientReadPort';
 import type { IAxonicoApiClient, AxonicoPatientMatch } from '../../domain/IAxonicoApiClient';
@@ -128,9 +129,11 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
       );
 
       expect(lancamentoRepository.findExisting).toHaveBeenCalledTimes(1);
+      expect(lancamentoRepository.findExisting).toHaveBeenCalledWith(DNI, 'AT', '2026-09-18');
       expect(lancamentoRepository.insert).toHaveBeenCalledTimes(1);
       expect(lancamentoRepository.insert).toHaveBeenCalledWith({
         patientId: PATIENT_ID,
+        documentNumber: DNI,
         serviceType: 'AT',
         serviceDate: '2026-09-18',
         hours: 4,
@@ -181,6 +184,34 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
       expect(lancamentoRepository.insert).toHaveBeenCalledTimes(0);
       // Prova positiva local: o mock da porta registrou a chamada que de fato ocorreu.
       expect(patientReadPort.findDocumentNumber).toHaveBeenCalledTimes(1);
+    });
+
+    it("document_number é a string literal 'null' (medido em produção, 19 pacientes): recusa com PacienteSemDniError(reason='invalid_document'), sem nenhuma chamada ao IAxonicoApiClient", async () => {
+      const patientReadPort = makePatientReadPort('null');
+      const axonicoApiClient = makeAxonicoApiClient();
+      const lancamentoRepository = makeLancamentoRepository();
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      const rejection = useCase.execute(makeInput());
+      await expect(rejection).rejects.toThrow(PacienteSemDniError);
+      await rejection.catch((err: PacienteSemDniError) => {
+        expect(err.reason).toBe('invalid_document');
+      });
+
+      expect(axonicoApiClient.getCantidadMaxPrestaciones).toHaveBeenCalledTimes(0);
+      expect(axonicoApiClient.findPatientByDni).toHaveBeenCalledTimes(0);
+      expect(lancamentoRepository.insert).toHaveBeenCalledTimes(0);
+    });
+
+    it('document_number com 6 dígitos (curto demais para DNI): recusa com PacienteSemDniError(reason=\'invalid_document\'), sem chamada ao IAxonicoApiClient', async () => {
+      const patientReadPort = makePatientReadPort('123456');
+      const axonicoApiClient = makeAxonicoApiClient();
+      const lancamentoRepository = makeLancamentoRepository();
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      await expect(useCase.execute(makeInput())).rejects.toThrow(PacienteSemDniError);
+      expect(axonicoApiClient.findPatientByDni).toHaveBeenCalledTimes(0);
+      expect(lancamentoRepository.insert).toHaveBeenCalledTimes(0);
     });
   });
 
@@ -296,6 +327,7 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
       const existingRecord: AxonicoLancamentoRecord = {
         id: 'lanc-existing',
         patientId: PATIENT_ID,
+        documentNumber: DNI,
         serviceType: 'AT',
         serviceDate: '2026-09-18',
         hours: 4,
@@ -482,6 +514,7 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
       expect(lancamentoRepository.insert).toHaveBeenCalledTimes(1);
       expect(lancamentoRepository.insert).toHaveBeenCalledWith({
         patientId: PATIENT_ID,
+        documentNumber: DNI,
         serviceType: 'AT',
         serviceDate: '2026-09-18',
         hours: 4,
@@ -556,6 +589,181 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
         }),
       );
       expect(String(logCall.msg)).toMatch(/FOI CRIADO no Axonico/i);
+    });
+  });
+
+  describe('Correção 18/09/2026 — dedupe por documentNumber (DNI), não patientId', () => {
+    it('dois patientId distintos, MESMO documentNumber: o segundo é bloqueado pelo dedupe local (guard 2) mesmo com patientId diferente do primeiro', async () => {
+      const OUTRO_PATIENT_ID = 'patient-uuid-2';
+      const patientReadPort = makePatientReadPort(DNI); // mesmo DNI do primeiro paciente
+      const axonicoApiClient = makeAxonicoApiClient();
+      const existingCreatedAt = new Date(2026, 8, 18);
+      const existingRecord: AxonicoLancamentoRecord = {
+        id: 'lanc-existing',
+        patientId: PATIENT_ID, // gravado pelo PRIMEIRO paciente
+        documentNumber: DNI,
+        serviceType: 'AT',
+        serviceDate: SERVICE_DATE,
+        hours: 4,
+        numeroComprobante: 'nc-primeiro',
+        codAutorizacion: 'ca-primeiro',
+        status: 'enviado',
+        errorMessage: null,
+        createdAt: existingCreatedAt,
+      };
+      const lancamentoRepository = makeLancamentoRepository({
+        findExisting: jest.fn().mockResolvedValue(existingRecord),
+      });
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      // SEGUNDO paciente (patientId diferente), mesmo DNI, mesmo serviceType/serviceDate.
+      const result = await useCase.execute(makeInput({ patientId: OUTRO_PATIENT_ID }));
+
+      expect(result).toEqual({
+        status: 'duplicado',
+        jaFaturado: true,
+        numeroComprobante: 'nc-primeiro',
+        codAutorizacion: 'ca-primeiro',
+        lancadoEm: existingCreatedAt,
+      });
+      // O dedupe é por documentNumber — zero rede, mesmo o patientId sendo outro.
+      expect(axonicoApiClient.submitComprobante).not.toHaveBeenCalled();
+      expect(lancamentoRepository.findExisting).toHaveBeenCalledWith(DNI, 'AT', SERVICE_DATE);
+    });
+  });
+
+  describe('item 1.3 — 23505 no INSERT final vira AxonicoLancamentoConcorrenteError (corrida entre guard 2 e o INSERT)', () => {
+    it('guard 2 não acha nada, mas o INSERT de status=enviado estoura 23505 (corrida): lança AxonicoLancamentoConcorrenteError com os DOIS comprovantes', async () => {
+      const patientReadPort = makePatientReadPort();
+      const axonicoApiClient = makeAxonicoApiClient();
+      const existingCreatedAt = new Date(2026, 8, 18, 12, 0);
+      const winnerRecord: AxonicoLancamentoRecord = {
+        id: 'lanc-winner',
+        patientId: PATIENT_ID,
+        documentNumber: DNI,
+        serviceType: 'AT',
+        serviceDate: SERVICE_DATE,
+        hours: 4,
+        numeroComprobante: 'nc-winner',
+        codAutorizacion: 'ca-winner',
+        status: 'enviado',
+        errorMessage: null,
+        createdAt: existingCreatedAt,
+      };
+      const conflictError = Object.assign(new Error('duplicate key value violates unique constraint "uq_axonico_lancamento_dedupe"'), {
+        code: '23505',
+      });
+      const findExisting = jest
+        .fn()
+        .mockResolvedValueOnce(null) // guard 2 — não achou nada
+        .mockResolvedValueOnce(winnerRecord); // pós-23505 — busca o vencedor da corrida
+      const lancamentoRepository = makeLancamentoRepository({
+        findExisting,
+        insert: jest.fn().mockRejectedValue(conflictError),
+      });
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      const rejection = useCase.execute(makeInput());
+      await expect(rejection).rejects.toThrow(AxonicoLancamentoConcorrenteError);
+      await rejection.catch((err: AxonicoLancamentoConcorrenteError) => {
+        expect(err.code).toBe('23505');
+        expect(err.existente).toEqual(winnerRecord);
+        expect(err.recemFaturado).toEqual({ numeroComprobante: 'nc-1', codAutorizacion: 'ca-1' });
+        expect(err.documentNumber).toBe(DNI);
+        expect(err.patientId).toBe(PATIENT_ID);
+      });
+
+      // submitComprobante JÁ FATUROU (chamado 1x, nunca repetido) — o segundo comprovante do
+      // erro (`recemFaturado`) é exatamente o que esta chamada produziu.
+      expect(axonicoApiClient.submitComprobante).toHaveBeenCalledTimes(1);
+      expect(findExisting).toHaveBeenCalledTimes(2);
+    });
+
+    it('insert rejeita com código diferente de 23505: NÃO vira AxonicoLancamentoConcorrenteError, cai no comportamento genérico (relança o erro original)', async () => {
+      const patientReadPort = makePatientReadPort();
+      const axonicoApiClient = makeAxonicoApiClient();
+      const otherError = Object.assign(new Error('connection terminated'), { code: '57P01' });
+      const lancamentoRepository = makeLancamentoRepository({
+        insert: jest.fn().mockRejectedValue(otherError),
+      });
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      await expect(useCase.execute(makeInput())).rejects.toBe(otherError);
+      expect(axonicoApiClient.submitComprobante).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('regressão 18/09/2026 — documentNumber (DNI) nunca aparece em log nem em mensagem de erro', () => {
+    it('dedupe local (guard 2): logger.info não recebe documentNumber em nenhum campo/valor', async () => {
+      mockLogger.info.mockClear();
+      const patientReadPort = makePatientReadPort();
+      const axonicoApiClient = makeAxonicoApiClient();
+      const existingCreatedAt = new Date(2026, 8, 18, 12, 0);
+      const lancamentoRepository = makeLancamentoRepository({
+        findExisting: jest.fn().mockResolvedValue({
+          id: 'lanc-existing',
+          patientId: PATIENT_ID,
+          documentNumber: DNI,
+          serviceType: 'AT',
+          serviceDate: SERVICE_DATE,
+          hours: 4,
+          numeroComprobante: 'nc-original',
+          codAutorizacion: 'ca-original',
+          status: 'enviado',
+          errorMessage: null,
+          createdAt: existingCreatedAt,
+        } satisfies AxonicoLancamentoRecord),
+      });
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      await useCase.execute(makeInput());
+
+      expect(mockLogger.info).toHaveBeenCalledTimes(1);
+      const [loggedArg] = mockLogger.info.mock.calls[0];
+      expect(loggedArg).not.toHaveProperty('documentNumber');
+      expect(JSON.stringify(loggedArg)).not.toContain(DNI);
+      // patientId continua — é ele que dá a rastreabilidade sem expor o DNI.
+      expect(loggedArg.patientId).toBe(PATIENT_ID);
+    });
+
+    it('AxonicoLancamentoConcorrenteError (23505): err.message não interpola o DNI', async () => {
+      const patientReadPort = makePatientReadPort();
+      const axonicoApiClient = makeAxonicoApiClient();
+      const existingCreatedAt = new Date(2026, 8, 18, 12, 0);
+      const winnerRecord: AxonicoLancamentoRecord = {
+        id: 'lanc-winner',
+        patientId: PATIENT_ID,
+        documentNumber: DNI,
+        serviceType: 'AT',
+        serviceDate: SERVICE_DATE,
+        hours: 4,
+        numeroComprobante: 'nc-winner',
+        codAutorizacion: 'ca-winner',
+        status: 'enviado',
+        errorMessage: null,
+        createdAt: existingCreatedAt,
+      };
+      const conflictError = Object.assign(new Error('duplicate key value violates unique constraint "uq_axonico_lancamento_dedupe"'), {
+        code: '23505',
+      });
+      const findExisting = jest
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(winnerRecord);
+      const lancamentoRepository = makeLancamentoRepository({
+        findExisting,
+        insert: jest.fn().mockRejectedValue(conflictError),
+      });
+      const useCase = new LancarPrestacaoAxonicoUseCase(patientReadPort, axonicoApiClient, lancamentoRepository);
+
+      const rejection = useCase.execute(makeInput());
+      await expect(rejection).rejects.toThrow(AxonicoLancamentoConcorrenteError);
+      await rejection.catch((err: AxonicoLancamentoConcorrenteError) => {
+        // A PROPRIEDADE `documentNumber` continua (uso interno/estrutural), mas a MENSAGEM —
+        // o que vaza para log/observabilidade via err.message — não pode conter o valor do DNI.
+        expect(err.message).not.toContain(DNI);
+        expect(err.message).toContain(PATIENT_ID);
+      });
     });
   });
 });

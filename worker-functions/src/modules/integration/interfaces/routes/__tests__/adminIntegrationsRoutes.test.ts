@@ -1,6 +1,7 @@
 /**
- * Família `admin.integrations` (task 3.5-A4): uma rota, uma célula NOVA
- * (`integration:execute`, fora do seed da 206).
+ * Família `admin.integrations` (task 3.5-A4): mesma célula NOVA (`integration:execute`, fora do
+ * seed da 206) reaproveitada pelas 3 rotas do router — backfill AnaCare (F0) + lançamento unitário
+ * e em lote do Axonico (F4, `integracao-axonico`). Uma célula, N rotas — não uma célula por rota.
  */
 
 import express from 'express';
@@ -33,17 +34,21 @@ describe('família admin.integrations', () => {
     expect(ADMIN_INTEGRATIONS_FAMILY).toBe('admin.integrations');
   });
 
-  it('a rota declara integration:execute — célula NOVA da D116', () => {
+  it('as 3 rotas declaram integration:execute — célula NOVA da D116', () => {
     const rotas = scanExpressRouter(build());
-    expect(rotas).toHaveLength(1);
-    expect(rotas[0].cell).toMatchObject({ resource: 'integration', action: 'execute' });
+    expect(rotas).toHaveLength(3);
+    for (const rota of rotas) {
+      expect(rota.cell).toMatchObject({ resource: 'integration', action: 'execute' });
+    }
   });
 
-  it('`execute`, não `write`: o backfill DISPARA sincronização contra terceiro', () => {
+  it('`execute`, não `write`: backfill/lançamento DISPARAM ação contra terceiro', () => {
     // A distinção não é estilo — `execute` está em SENSITIVE_ACTIONS (D-P4),
     // então o ALLOW também vai para a trilha. Com `write` não iria.
-    const rota = scanExpressRouter(build())[0];
-    expect(cellKey(rota.cell!.resource, rota.cell!.action)).toBe('integration:execute');
+    const rotas = scanExpressRouter(build());
+    for (const rota of rotas) {
+      expect(cellKey(rota.cell!.resource, rota.cell!.action)).toBe('integration:execute');
+    }
   });
 
   it('nenhuma rota fica sem declaração', () => {
