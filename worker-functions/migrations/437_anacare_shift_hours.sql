@@ -1,5 +1,31 @@
 -- 437 — Conferência de horas do Ana Care (spec `anacare-conferencia-de-horas`, fase 1, D342-D345).
 --
+-- Divergência `main`×`stage` resolvida em favor da `stage` (19/09/2026, sync `main`→`stage`):
+-- o `main` portou este arquivo removendo os GRANT explícitos (rodava só com a role única
+-- `enlite_app`, dona por criação). A `stage` mantém os GRANT para `app_runtime`/`app_system`
+-- porque, após a promoção desta migration para o `main`/prod, esses roles vão existir lá também
+-- (modelo de privilégio separado já em curso) — manter os GRANT aqui evita reabrir esta migration
+-- depois. Ver `## (A2)` do relatório de renumeração de 19/09 para a ação pendente em prd (aplicar
+-- os GRANT à parte quando os roles existirem, já que esta migration, na versão do `main`, já rodou
+-- em produção sem eles).
+--
+-- Colisão de PREFIXO com o `main` mantida DE PROPÓSITO (D. Gabriel/Marcel, 19/09/2026): o `main`
+-- já tem, aplicadas em produção, `438_patient_source_snapshots.sql`, `439_patient_identity_links.sql`,
+-- `441_patient_field_provenance.sql` e `442_patients_ana_care_id.sql` — números que a `stage`
+-- também usa, para arquivos DIFERENTES. NÃO foram renumerados: o runner (`run-migrations-docker.js`,
+-- rodado a cada boot em stage e prd — `worker-functions/Dockerfile:31`) chaveia migrations
+-- aplicadas pelo NOME COMPLETO do arquivo (`schema_migrations.filename TEXT PRIMARY KEY`,
+-- `worker-functions/scripts/run-migrations-docker.js:105-106`), não pelo prefixo numérico — dois
+-- arquivos com o mesmo número e nomes diferentes não colidem de chave. A ORDEM de aplicação usa o
+-- prefixo (`run-migrations-docker.js:23-28`) e, em empate de número, desempata por comparação crua
+-- de string do nome completo — determinística, sem `localeCompare`. Medido: nenhum script/CI deste
+-- repo resolve migration por número isolado (só por caminho completo), e o conteúdo das 4 migrations
+-- do `main` (`patient_source_snapshots`/`patient_identity_links`/`patient_field_provenance`/
+-- `patients_ana_care_id`) não tem FK nem dependência com as tabelas `anacare_*` da `stage` — os dois
+-- conjuntos são independentes. Renumerar custaria mexer em 28+ arquivos (as migrations 443-446, mais
+-- referenciadas por módulos posteriores) e reexecutar as migrations já aplicadas na stage, para
+-- comprar só estética de numeração. Não renumerado.
+--
 -- Duas tabelas com DONOS diferentes (revisão do type-design-analyzer, 15/09,
 -- `docs/funcionalidades/ana-care/proposta-schema-validacao-horas.md`):
 --   1. `anacare_shift` — RETRATO operacional do turno, reescrito toda noite pelo job de sincronização
