@@ -10,6 +10,7 @@
  * `host.docker.internal` (extra_hosts já configurado). O banco é real (enlite_e2e).
  */
 
+import { execFileSync } from 'child_process';
 import { Pool } from 'pg';
 import { createApiClient, getMockToken, waitForBackend, createPatientFixture } from './helpers';
 import { startAxonicoStub, type AxonicoStub } from './helpers/axonicoStubServer';
@@ -129,12 +130,16 @@ describe('Axonico Lançamento API (F4)', () => {
 
   describe('unitário — caminho feliz', () => {
     it('200 + numeroComprobante, e o stub RECEBEU as chamadas (contador > 0)', async () => {
-      const patientId = await patientComDni('axonico-feliz', '30111111');
+      // CORREÇÃO (19/09/2026): contrato não recebe mais `patientId` — o lançamento é feito pelo
+      // `documentNumber` (DNI) direto. `patientComDni` continua criando o paciente-fixture só para
+      // manter dado realista de apoio (afterAll limpa por `patientIds`); o corpo da chamada não usa
+      // o id que ele devolve.
+      await patientComDni('axonico-feliz', '30111111');
       const before = { ...stub.requestCounts };
 
       const res = await api.post(
         '/api/admin/integrations/axonico/comprobante',
-        { patientId, serviceType: 'AT', serviceDate: TODAY, hours: 3 },
+        { documentNumber: '30111111', serviceType: 'AT', serviceDate: TODAY, hours: 3 },
         auth(adminToken),
       );
 
@@ -166,9 +171,10 @@ describe('Axonico Lançamento API (F4)', () => {
 
       const before = { ...stub.requestCounts };
 
+      // CORREÇÃO (19/09/2026): body pelo `documentNumber`, não mais `patientId`.
       const res = await api.post(
         '/api/admin/integrations/axonico/comprobante',
-        { patientId, serviceType: 'AT', serviceDate: DATE_DUPLICADO_LOCAL, hours: 2 },
+        { documentNumber: '30222222', serviceType: 'AT', serviceDate: DATE_DUPLICADO_LOCAL, hours: 2 },
         auth(adminToken),
       );
 
@@ -192,18 +198,29 @@ describe('Axonico Lançamento API (F4)', () => {
   // que ser pelo DNI (a chave que o Axonico fatura), não pelo patient_id. ANTES da correção, cada
   // patient_id passava o guard 2 isoladamente e os dois viravam PUT /api/comprobante reais —
   // FATURAMENTO DUPLICADO da mesma historia_clinica. Esta é a inversão exigida pelo item (f).
+  //
+  // ⚠️ NOTA (19/09/2026, conserto de contrato): a premissa original — "dois patientId DISTINTOS
+  // compartilhando o mesmo DNI" — não é mais representável NESTE endpoint: o contrato novo não
+  // recebe `patientId` (o use case grava `patientId: null` sempre, D-19/09). Não existe mais forma
+  // de a chamada HTTP "ser" o patientA ou o patientB — a única identidade que a rota enxerga é o
+  // `documentNumber`. Por isso o teste abaixo já NÃO prova mais "dedupe ignora patient_id
+  // diferente" (essa garantia virou trivial/inexistente na borda HTTP); prova apenas que DUAS
+  // chamadas reais e sequenciais com o MESMO `documentNumber` deduplicam (2ª não fatura de novo) —
+  // redundante com 'unitário — duplicado (dedupe local)' acima, mantido aqui por não ter sido
+  // pedido para apagar cobertura. `patientA`/`patientB` seguem criados só para preservar o dado de
+  // apoio do cenário histórico; nenhum dos dois entra no corpo da chamada.
   // ═══════════════════════════════════════════════════════════════
 
-  describe('CORREÇÃO — dois pacientes distintos, mesmo DNI, mesmo serviceType/serviceDate', () => {
-    it('primeira chamada (patientA) fatura; a SEGUNDA (patientB, mesmo DNI) tem que vir duplicado, com o comprovante do patientA, e o stub NÃO pode faturar de novo (comprobantePut não pode subir na segunda chamada)', async () => {
+  describe('CORREÇÃO — duas chamadas sequenciais com o mesmo documentNumber (patientId não existe mais no contrato)', () => {
+    it('primeira chamada fatura; a SEGUNDA (mesmo documentNumber) tem que vir duplicado, com o comprovante da primeira, e o stub NÃO pode faturar de novo (comprobantePut não pode subir na segunda chamada)', async () => {
       const DNI_COMPARTILHADO = '30111111'; // já cadastrado no stub (beforeAll)
-      const patientA = await patientComDni('axonico-dni-dup-a', DNI_COMPARTILHADO);
-      const patientB = await patientComDni('axonico-dni-dup-b', DNI_COMPARTILHADO);
+      await patientComDni('axonico-dni-dup-a', DNI_COMPARTILHADO);
+      await patientComDni('axonico-dni-dup-b', DNI_COMPARTILHADO);
 
-      // ── Primeira chamada (patientA) — fatura de verdade, toca o stub. ──
+      // ── Primeira chamada — fatura de verdade, toca o stub. ──
       const resA = await api.post(
         '/api/admin/integrations/axonico/comprobante',
-        { patientId: patientA, serviceType: 'AT', serviceDate: DATE_DNI_DUP, hours: 2 },
+        { documentNumber: DNI_COMPARTILHADO, serviceType: 'AT', serviceDate: DATE_DNI_DUP, hours: 2 },
         auth(adminToken),
       );
       expect(resA.status).toBe(200);
@@ -213,17 +230,17 @@ describe('Axonico Lançamento API (F4)', () => {
 
       const comprobantePutAposPrimeira = stub.requestCounts.comprobantePut;
 
-      // ── Segunda chamada (patientB — patient_id DIFERENTE, MESMO DNI). ──
+      // ── Segunda chamada — MESMO documentNumber, MESMO serviceType/serviceDate. ──
       const resB = await api.post(
         '/api/admin/integrations/axonico/comprobante',
-        { patientId: patientB, serviceType: 'AT', serviceDate: DATE_DNI_DUP, hours: 2 },
+        { documentNumber: DNI_COMPARTILHADO, serviceType: 'AT', serviceDate: DATE_DNI_DUP, hours: 2 },
         auth(adminToken),
       );
 
       // ESPIÃO — imprime os dois resultados e o contador do stub (exigido no fecho).
       // eslint-disable-next-line no-console
       console.log(
-        '[ESPIÃO][DNI duplicado entre patientId distintos] resA.data=',
+        '[ESPIÃO][mesmo documentNumber, duas chamadas] resA.data=',
         JSON.stringify(resA.data.data),
         '| resB.data=',
         JSON.stringify(resB.data.data),
@@ -249,12 +266,13 @@ describe('Axonico Lançamento API (F4)', () => {
 
   describe('unitário — hora quebrada (D366)', () => {
     it('400 e o stub NÃO recebe requisição NENHUMA (contador = 0)', async () => {
-      const patientId = await patientComDni('axonico-hora-quebrada', '30333333');
+      await patientComDni('axonico-hora-quebrada', '30333333');
       const before = { ...stub.requestCounts };
 
+      // CORREÇÃO (19/09/2026): body pelo `documentNumber`, não mais `patientId`.
       const res = await api.post(
         '/api/admin/integrations/axonico/comprobante',
-        { patientId, serviceType: 'AT', serviceDate: TODAY, hours: 2.5 },
+        { documentNumber: '30333333', serviceType: 'AT', serviceDate: TODAY, hours: 2.5 },
         auth(adminToken),
       );
 
@@ -273,20 +291,20 @@ describe('Axonico Lançamento API (F4)', () => {
 
   describe('lote — misto', () => {
     it('4 status certos, sem abortar o laço', async () => {
-      const patientOk1 = await patientComDni('axonico-lote-ok-1', '30111111');
-      const patientOk2 = await patientComDni('axonico-lote-ok-2', '30222222');
       const patientDup = await patientComDni('axonico-lote-dup', '30333333');
+      // CORREÇÃO (19/09/2026): dedupe é por (documentNumber, serviceType, serviceDate) — não por
+      // patient_id (migration 445/446). '30111111' aparece em dois itens do lote com serviceType
+      // DIFERENTE (AT vs CAREGIVER), então não colide com o item 'ok' de mesmo DNI.
       await semearDuplicadoLocal(patientDup, '30333333', DATE_LOTE);
-      const patientUnmapped = await patientComDni('axonico-lote-unmapped', '30111111');
 
       const res = await api.post(
         '/api/admin/integrations/axonico/comprobante/lote',
         {
           itens: [
-            { patientId: patientOk1, serviceType: 'AT', serviceDate: DATE_LOTE, hours: 1 },
-            { patientId: patientOk2, serviceType: 'AT', serviceDate: DATE_LOTE, hours: 2 },
-            { patientId: patientDup, serviceType: 'AT', serviceDate: DATE_LOTE, hours: 1 },
-            { patientId: patientUnmapped, serviceType: 'CAREGIVER', serviceDate: DATE_LOTE, hours: 1 },
+            { documentNumber: '30111111', serviceType: 'AT', serviceDate: DATE_LOTE, hours: 1 },
+            { documentNumber: '30222222', serviceType: 'AT', serviceDate: DATE_LOTE, hours: 2 },
+            { documentNumber: '30333333', serviceType: 'AT', serviceDate: DATE_LOTE, hours: 1 },
+            { documentNumber: '30111111', serviceType: 'CAREGIVER', serviceDate: DATE_LOTE, hours: 1 },
           ],
         },
         auth(adminToken),
@@ -312,10 +330,27 @@ describe('Axonico Lançamento API (F4)', () => {
 
   describe('espião — nenhuma chamada a produção', () => {
     it('AXONICO_BASE_URL do container nunca é um host de produção, e todo tráfego desta suíte passou pelo stub local', async () => {
-      // O container da API só enxerga o Axonico por AXONICO_BASE_URL (docker-compose.test.yml) —
-      // fixado para o stub local. api.apiws.axonico.ar/api.his.axonico.ar não aparecem em NENHUM
-      // env do container de teste; não há caminho de código que troque de host em runtime.
-      const baseUrlUsadaPeloContainer = process.env.AXONICO_BASE_URL || 'http://host.docker.internal:9912';
+      // CORREÇÃO (19/09/2026, endurecendo a asserção): `process.env` é o ambiente deste PROCESSO
+      // DE TESTE (roda fora do Docker) — ele passa em silêncio pelo fallback acima mesmo quando o
+      // CONTAINER da API não tem a variável definida (cairia no default de produção do
+      // `AxonicoApiClient`, e este teste nunca perceberia). A prova real tem de ler a env de dentro
+      // do container `enlite-api` — mesmo padrão de `guardAxonicoEnvOuFalha` em
+      // `enlite-frontend/e2e/integration/anacare-hours-axonico-envio.integration.e2e.ts`.
+      let baseUrlUsadaPeloContainer: string;
+      try {
+        baseUrlUsadaPeloContainer = execFileSync('docker', ['exec', 'enlite-api', 'printenv', 'AXONICO_BASE_URL'], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+        })
+          .toString()
+          .trim();
+      } catch (err) {
+        throw new Error(
+          `[isolamento-axonico] não consegui ler AXONICO_BASE_URL do container enlite-api — RECUSANDO assumir isolamento por fallback: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+      expect(baseUrlUsadaPeloContainer.length).toBeGreaterThan(0);
       expect(baseUrlUsadaPeloContainer).not.toMatch(/axonico\.ar/);
 
       // Toda a suíte já rodou: o stub foi de fato exercitado pelos casos que tocam rede (feliz +

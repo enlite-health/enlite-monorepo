@@ -133,7 +133,12 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
     // nem existe mais — o retrato passou a ser agregado por paciente+mês
     // (`anacare_patient_month`, migrations 441/442) e a tabela por turno, órfã desde a
     // F6.4a, foi dropada.
-    const ALLOWLIST = ['job_postings'];
+    // axonico_comprobante_lancamento: `document_number` é a chave do índice único de dedupe
+    // (`uq_axonico_lancamento_dedupe`) que impede faturar duas vezes no Axonico. A tentativa de
+    // cifrar a coluna com blind index (migration 447) foi revertida em 19/09/2026 porque a policy
+    // de RLS correspondente tornava a tabela inescrevível e invisível para `app_runtime` — o
+    // dedupe morria. Cifra e RLS ficam PENDENTES DE DESENHO.
+    const ALLOWLIST = ['job_postings', 'axonico_comprobante_lancamento'];
     const res = await pool.query(
       `SELECT DISTINCT c.relname
        FROM pg_constraint con

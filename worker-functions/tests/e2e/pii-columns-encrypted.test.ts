@@ -21,6 +21,7 @@ const EXCECOES_HERDADAS: ReadonlyArray<{ tabela: string; coluna: string; porque:
   { tabela: 'patients', coluna: 'document_number', porque: 'documento do paciente em claro desde o cadastro inicial; busca por documento na lista (D286: só com patient_identity:read). Cifrar exige blind index — LISTA.' },
   { tabela: 'patients', coluna: 'phone_whatsapp', porque: 'telefone do paciente em claro desde o cadastro inicial; casa com o do responsável (phoneMatchesResponsible). Cifrar exige blind index — LISTA.' },
   { tabela: 'admission_appointments', coluna: 'host_email', porque: 'e-mail do STAFF anfitrião do compromisso (colaborador, não titular-paciente).' },
+  { tabela: 'axonico_comprobante_lancamento', coluna: 'document_number', porque: 'é a chave do índice único de dedupe (uq_axonico_lancamento_dedupe) que impede faturar duas vezes no Axonico. A tentativa de cifrar com blind index (migration 447) foi revertida em 19/09/2026 porque a policy de RLS correspondente tornava a tabela inescrevível e invisível para app_runtime, matando o dedupe. Cifra e RLS ficam PENDENTES DE DESENHO.' },
 ];
 
 describe('invariante: coluna de contato/documento em claro em patients e satélites (schema real)', () => {

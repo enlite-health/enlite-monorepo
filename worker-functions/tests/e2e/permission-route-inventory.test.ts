@@ -285,6 +285,10 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'DELETE /api/admin/messaging/templates/:slug → messaging:update',
         'POST /api/admin/messaging/bulk-dispatch-incomplete → messaging:send',
         'POST /api/admin/integrations/anacare/backfill → integration:execute',
+        // integracao-axonico (F4) — lançamento de prestação; DNI do paciente Ana Care (patient-document).
+        'POST /api/admin/integrations/anacare/patient-document → patient_identity:create',
+        'POST /api/admin/integrations/axonico/comprobante → integration:execute',
+        'POST /api/admin/integrations/axonico/comprobante/lote → integration:execute',
         'POST /api/admin/test-fixtures/cleanup → test_fixtures:execute',
         // ── A5: admin.dedup (9) — a última de propósito
         'GET /api/admin/dedup/groups → dedup:read',
