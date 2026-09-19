@@ -115,6 +115,13 @@ export interface AnaCarePatient {
    * para o turno, e ausente na LISTA enquanto o retrato não guardar nome (ver `AnaCareProvider.name`).
    */
   name?: string;
+  /**
+   * Documento de identidade do paciente (categoria/valor, ex. "DNI"/"30111222") — mesmo desenho de
+   * `name`: vem do backend só quando o ator tem a célula `patient_identity:read` (gate de PII,
+   * item 4 da conferência de horas, 18/09). Ausente (não vazio) sem a permissão — nunca redigido.
+   */
+  documentType?: string;
+  documentNumber?: string;
   providers: AnaCareProvider[];
 }
 

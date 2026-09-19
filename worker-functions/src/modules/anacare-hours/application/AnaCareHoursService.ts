@@ -83,8 +83,17 @@ export class AnaCareHoursService {
    * Nome (item 1, 17/09): paciente sempre que a fonte mandar; prestador só quando
    * `canReadProviderName` — MESMO gate de `worker_contact:read` de antes, só a ORIGEM do valor
    * mudou (payload do turno, não mais `workers` decifrado).
+   *
+   * Documento do paciente (item 4, 18/09): mesmo desenho de `canReadProviderName`, mas o gate é
+   * `patient_identity:read` (célula do container "Identidade" da ficha, `patientContainerAccess.
+   * ts`) — sem ela o campo vem AUSENTE, nunca vazio/redigido.
    */
-  private async buildPatients(sourceShifts: readonly SourceShiftDTO[], canReadNote: boolean, canReadProviderName: boolean): Promise<AnaCarePatient[]> {
+  private async buildPatients(
+    sourceShifts: readonly SourceShiftDTO[],
+    canReadNote: boolean,
+    canReadProviderName: boolean,
+    canReadPatientDocument = false,
+  ): Promise<AnaCarePatient[]> {
     const validations = await this.validations.getByShiftIds(sourceShifts.map((s) => s.sourceShiftId));
     const nurseIds = [...new Set(sourceShifts.map((s) => s.anaCareNurseId))];
     const linkedNurseIds = await this.resolveLinkedNurseIds(nurseIds);
@@ -96,7 +105,17 @@ export class AnaCareHoursService {
         const shift = mapShift(s, validation, canReadNote, decryptedNote || null);
         const patientName = joinSourceName(s.patientFirstName, s.patientLastName);
         const nurseName = canReadProviderName ? joinSourceName(s.nurseFirstName, s.nurseLastName) : undefined;
-        return { shift, anaCarePatientId: s.anaCarePatientId, anaCareNurseId: s.anaCareNurseId, patientName, nurseName };
+        const patientDocumentType = canReadPatientDocument ? s.patientDocumentType ?? undefined : undefined;
+        const patientDocumentNumber = canReadPatientDocument ? s.patientDocumentNumber ?? undefined : undefined;
+        return {
+          shift,
+          anaCarePatientId: s.anaCarePatientId,
+          anaCareNurseId: s.anaCareNurseId,
+          patientName,
+          nurseName,
+          patientDocumentType,
+          patientDocumentNumber,
+        };
       }),
     );
 
@@ -173,11 +192,17 @@ export class AnaCareHoursService {
   }
 
   /** O DETALHE continua AO VIVO na fonte — é a passagem Tela→backend→Ana Care→backend→Tela, barata por reserva/paciente (medido 17/09). */
-  async getPatientMonth(month: string, patientId: string, canReadNote: boolean, canReadProviderName = false): Promise<AnaCarePatient | null> {
+  async getPatientMonth(
+    month: string,
+    patientId: string,
+    canReadNote: boolean,
+    canReadProviderName = false,
+    canReadPatientDocument = false,
+  ): Promise<AnaCarePatient | null> {
     // `skipped` (turno sem paciente/prestador) não é reportado por este caminho de DETALHE —
     // só o sync (`AnaCareHoursSyncRunner`) agrega e conta; achado registrado em separado.
     const { shifts: sourceShifts } = await this.source.listShifts({ month, patientId });
-    const patients = await this.buildPatients(sourceShifts, canReadNote, canReadProviderName);
+    const patients = await this.buildPatients(sourceShifts, canReadNote, canReadProviderName, canReadPatientDocument);
     return patients.find((p) => p.anaCareId === patientId) ?? null;
   }
 

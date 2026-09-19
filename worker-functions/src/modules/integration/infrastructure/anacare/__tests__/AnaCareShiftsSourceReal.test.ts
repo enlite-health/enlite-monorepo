@@ -83,7 +83,7 @@ describe('AnaCareShiftsSourceReal', () => {
       duration: 4,
       is_finalized: true,
       month: '2026-09',
-      patient: { id: 20, agency: 116, document_type: 'DNI', document_number: '9', first_name: 'X', last_name: 'Y' },
+      patient: { id: 20, agency: 116, identification_type: 'DNI', identification_number: '9', first_name: 'X', last_name: 'Y' },
       nurse: { id: 200, first_name: 'N', last_name: 'M' },
     });
     const client = { listShifts: jest.fn(), getRawShift, circuitBreakerOpen: false } as unknown as AnaCareSessionClient;
@@ -94,12 +94,14 @@ describe('AnaCareShiftsSourceReal', () => {
     expect(result?.anaCarePatientId).toBe('20');
     expect(result?.date).toBe('2026-09-02');
     // não pode ter escapado nenhum campo fora do DTO (contrato de minimização) — item 1 (17/09)
-    // acrescentou os 4 campos de nome (patient/nurse first_name+last_name).
+    // acrescentou os 4 campos de nome (patient/nurse first_name+last_name); item 4 (18/09)
+    // acrescentou o documento do paciente (patientDocumentType/patientDocumentNumber).
     expect(Object.keys(result as object).sort()).toEqual(
       [
         'sourceShiftId', 'anaCarePatientId', 'anaCareNurseId', 'date', 'scheduledStart', 'scheduledEnd',
         'actualStart', 'actualEnd', 'checkinSource', 'checkoutSource', 'checkinDelay', 'isFinalized', 'sourceMonth',
         'patientFirstName', 'patientLastName', 'nurseFirstName', 'nurseLastName',
+        'patientDocumentType', 'patientDocumentNumber',
       ].sort(),
     );
   });

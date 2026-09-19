@@ -49,6 +49,9 @@ const SHIFT_A: SourceShiftDTO = {
   patientLastName: 'Fernández QA',
   nurseFirstName: 'Rocío',
   nurseLastName: 'García QA',
+  // Item 4 (18/09): documento do paciente — PII, gated no controller (patient_identity:read).
+  patientDocumentType: 'DNI',
+  patientDocumentNumber: '30999888',
 };
 
 const SHIFT_SEM_CHECKIN: SourceShiftDTO = {
@@ -391,6 +394,26 @@ describe('AnaCareHoursService', () => {
       const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), workerLinks);
       const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false, true);
       expect(patient?.providers[0].linked).toBe(true);
+    });
+
+    /**
+     * Item 4 (18/09), gate de PII: ator SEM `patient_identity:read` (5º parâmetro omitido, default
+     * `false`) — documento AUSENTE (`undefined`), mesmo com a fonte tendo mandado o par completo.
+     * `undefined`, não vazio/redigido: mesma convenção de `nurseName`/`worker_contact:read`.
+     */
+    it('item 4 (18/09): SEM patient_identity:read — documentType/documentNumber ausentes mesmo com a fonte mandando o par', async () => {
+      const service = new AnaCareHoursService(new StubSource(), mockRepo());
+      const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false);
+      expect(patient?.documentType).toBeUndefined();
+      expect(patient?.documentNumber).toBeUndefined();
+    });
+
+    /** Item 4 (18/09): COM `patient_identity:read` (6º parâmetro `true`) — documento presente. */
+    it('item 4 (18/09): COM patient_identity:read — documentType/documentNumber presentes, vindos da fonte', async () => {
+      const service = new AnaCareHoursService(new StubSource(), mockRepo());
+      const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false, false, true);
+      expect(patient?.documentType).toBe('DNI');
+      expect(patient?.documentNumber).toBe('30999888');
     });
 
     // Contraparte da prova em `getMonthSnapshot` — o DETALHE segue AO VIVO na fonte, com
