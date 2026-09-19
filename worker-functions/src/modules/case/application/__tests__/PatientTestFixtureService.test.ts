@@ -21,6 +21,7 @@ jest.mock('@google-cloud/storage', () => ({
 }));
 
 import * as functions from 'firebase-functions';
+import * as actorContextModule from '@shared/database/actorContext';
 import {
   PatientTestFixtureService,
   NotATestPatientError,
@@ -503,6 +504,41 @@ describe('PatientTestFixtureService.purge — apaga objeto GCS (spec 018, PR-4, 
       expect(mockGcsDelete).toHaveBeenCalled();
     } finally {
       delete process.env.GCS_PATIENT_PHOTOS_BUCKET;
+    }
+  });
+});
+
+describe('PatientTestFixtureService.purge — a transação carrega identidade (RLS)', () => {
+  /**
+   * Regressão do 500 medido na stage (18/09): `purge()` abria a transação com
+   * `this.db.connect()` cru, então a sessão não carregava `app.user_uid`/
+   * `app.user_country` e a policy de país de `patients` recusava com
+   * `rls_session_without_identity` dentro de `countCascadeChildren`.
+   *
+   * Este teste morre se o `connect()` cru voltar: `withActorContext` é o ÚNICO
+   * ponto do módulo `case` que carimba a identidade na transação (mesmo padrão
+   * de `inPatientTransaction`), e `purge()` precisa passar por ele — não pode
+   * pedir client direto ao pool.
+   */
+  it('abre a transação por withActorContext(this.db, fn), não por this.db.connect() direto', async () => {
+    const withActorContextSpy = jest.spyOn(actorContextModule, 'withActorContext');
+    try {
+      const { db, client } = makeDb([selectIsTest(true), noAppointments]);
+      const svc = new PatientTestFixtureService(db as never, calendarSpy() as never);
+
+      const result = await svc.purge(PATIENT_ID);
+
+      expect(result).toMatchObject({ patientId: PATIENT_ID });
+      // A prova: quem chamou o wrapper foi o purge(), com o MESMO pool que ele recebeu —
+      // e não um `this.db.connect()` cru por fora dele.
+      expect(withActorContextSpy).toHaveBeenCalledTimes(1);
+      expect(withActorContextSpy).toHaveBeenCalledWith(db, expect.any(Function));
+      // O client da transação (BEGIN/DELETE.../COMMIT) segue vindo do connect() — só que
+      // agora é o WRAPPER quem pede, não o purge() diretamente.
+      expect(client.query).toHaveBeenCalledWith('BEGIN');
+      expect(client.query).toHaveBeenCalledWith('COMMIT');
+    } finally {
+      withActorContextSpy.mockRestore();
     }
   });
 });
