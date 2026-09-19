@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from 'pg';
 import * as functions from 'firebase-functions';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { withActorContext } from '@shared/database/actorContext';
 import {
   AdmissionCalendarService,
   admissionCalendarService,
@@ -209,58 +210,60 @@ export class PatientTestFixtureService {
       }
     }
 
-    const client = await this.db.connect();
-    let appointmentsCancelled = 0;
-    let vacanciesDeleted = 0;
-    let cascaded: Record<string, number> = {};
-    try {
-      await client.query('BEGIN');
+    // `withActorContext` abre a transação carimbando `app.user_uid`/`app.user_country`
+    // (identidade do ator) — client cru (`this.db.connect()`) rodava sem isso e a
+    // policy de país de `patients` recusava com `rls_session_without_identity` em
+    // `countCascadeChildren` (500 medido na stage, 18/09). Mesmo padrão de
+    // `inPatientTransaction` (patientTransaction.ts): BEGIN/COMMIT/ROLLBACK ficam
+    // por conta do wrapper, e o client não é mais liberado à mão aqui.
+    const { appointmentsCancelled, vacanciesDeleted, cascaded } = await withActorContext(
+      this.db,
+      async (client) => {
+        let appointmentsCancelled = 0;
+        let vacanciesDeleted = 0;
+        let cascaded: Record<string, number> = {};
 
-      const appt = await client.query(
-        `DELETE FROM admission_appointments WHERE patient_id = $1`,
-        [patientId],
-      );
-      appointmentsCancelled = appt.rowCount ?? 0;
-
-      // C3 — a vaga sintética pode ter recebido candidatura de prestador REAL, e
-      // `worker_job_applications` sai por CASCADE. Contar ANTES e abortar: perder
-      // a candidatura de alguém para limpar fixture é o inverso do objetivo.
-      const { rows: appRows } = await client.query<{ n: number }>(
-        `SELECT count(*)::int AS n
-           FROM worker_job_applications
-          WHERE job_posting_id IN (SELECT id FROM job_postings WHERE patient_id = $1)`,
-        [patientId],
-      );
-      // Fail-CLOSED: sem contagem não se apaga. `?? 0` aqui significaria "não
-      // consegui contar, então pode ir" — a regra da casa é o contrário
-      // (contagem zero é falha, nunca sucesso). `count(*)` sempre devolve linha;
-      // se um dia não devolver, a limpeza para em vez de arriscar.
-      const realApplications = appRows[0]?.n;
-      if (realApplications == null) {
-        throw new Error(
-          `Could not count applications for patient ${patientId} vacancies — refusing to purge`,
+        const appt = await client.query(
+          `DELETE FROM admission_appointments WHERE patient_id = $1`,
+          [patientId],
         );
-      }
-      if (realApplications > 0) throw new TestVacancyHasApplicationsError(patientId, realApplications);
+        appointmentsCancelled = appt.rowCount ?? 0;
 
-      // FK NO ACTION: a vaga precisa sair antes do paciente, ou o DELETE aborta.
-      const vac = await client.query(
-        `DELETE FROM job_postings WHERE patient_id = $1`,
-        [patientId],
-      );
-      vacanciesDeleted = vac.rowCount ?? 0;
+        // C3 — a vaga sintética pode ter recebido candidatura de prestador REAL, e
+        // `worker_job_applications` sai por CASCADE. Contar ANTES e abortar: perder
+        // a candidatura de alguém para limpar fixture é o inverso do objetivo.
+        const { rows: appRows } = await client.query<{ n: number }>(
+          `SELECT count(*)::int AS n
+             FROM worker_job_applications
+            WHERE job_posting_id IN (SELECT id FROM job_postings WHERE patient_id = $1)`,
+          [patientId],
+        );
+        // Fail-CLOSED: sem contagem não se apaga. `?? 0` aqui significaria "não
+        // consegui contar, então pode ir" — a regra da casa é o contrário
+        // (contagem zero é falha, nunca sucesso). `count(*)` sempre devolve linha;
+        // se um dia não devolver, a limpeza para em vez de arriscar.
+        const realApplications = appRows[0]?.n;
+        if (realApplications == null) {
+          throw new Error(
+            `Could not count applications for patient ${patientId} vacancies — refusing to purge`,
+          );
+        }
+        if (realApplications > 0) throw new TestVacancyHasApplicationsError(patientId, realApplications);
 
-      cascaded = await this.countCascadeChildren(client, patientId);
+        // FK NO ACTION: a vaga precisa sair antes do paciente, ou o DELETE aborta.
+        const vac = await client.query(
+          `DELETE FROM job_postings WHERE patient_id = $1`,
+          [patientId],
+        );
+        vacanciesDeleted = vac.rowCount ?? 0;
 
-      await client.query(`DELETE FROM patients WHERE id = $1`, [patientId]);
+        cascaded = await this.countCascadeChildren(client, patientId);
 
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+        await client.query(`DELETE FROM patients WHERE id = $1`, [patientId]);
+
+        return { appointmentsCancelled, vacanciesDeleted, cascaded };
+      },
+    );
 
     // spec 018, PR-4 (task 4.8): AGORA que a transação comitou (as linhas já saíram por CASCADE),
     // apaga cada objeto do GCS. Best-effort por objeto, mesmo critério dos eventos de Calendar
