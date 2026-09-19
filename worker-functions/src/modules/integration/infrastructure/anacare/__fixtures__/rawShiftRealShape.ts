@@ -23,8 +23,8 @@ export function rawPatientRealShape(overrides: Partial<RawAnaCarePatient> = {}):
   return {
     id: 9660,
     agency: 116,
-    document_type: 'DNI',
-    document_number: '30111222',
+    identification_type: 'DNI',
+    identification_number: '30111222',
     first_name: 'Sintético',
     last_name: 'Fixture',
     surname: 'Fixture QA',

@@ -31,6 +31,14 @@ import {
 } from '../validators/anacareHoursSchemas';
 
 const CLINICAL_READ_CELL = cellKey('patient_clinical', 'read');
+/**
+ * Item 4 (18/09, PII do documento do paciente): mesma célula do container "Identidade" da ficha
+ * do paciente (`patientContainerAccess.ts` — `patient_identity` carrega "nome, documento,
+ * nascimento, sexo, telefone, e-mail de contato"). Documento é dado de identidade, não clínico —
+ * `patient_clinical:read` seria a célula errada. Nenhuma célula nova: reaproveita a que já existe
+ * e já é coerente para este dado.
+ */
+const PATIENT_IDENTITY_READ_CELL = cellKey('patient_identity', 'read');
 
 const ERROR_STATUS: Record<string, number> = {
   RETRATO_DESATUALIZADO: 409,
@@ -65,6 +73,11 @@ export class AnaCareHoursController {
   /** D349 item 1 / D344: nome de prestador só sai para quem tem `worker_contact:read`. */
   private canReadProviderName(req: Request): boolean {
     return (cellsOfRequest(req) ?? []).includes(CELL_WORKER_CONTACT_READ);
+  }
+
+  /** Item 4 (18/09): documento do paciente só sai para quem tem `patient_identity:read`. */
+  private canReadPatientDocument(req: Request): boolean {
+    return (cellsOfRequest(req) ?? []).includes(PATIENT_IDENTITY_READ_CELL);
   }
 
   private requireService(res: Response): AnaCareHoursService | null {
@@ -119,7 +132,13 @@ export class AnaCareHoursController {
     const service = this.requireService(res);
     if (!service) return;
     try {
-      const patient = await service.getPatientMonth(params.data.month, params.data.patientId, this.canReadNote(req), this.canReadProviderName(req));
+      const patient = await service.getPatientMonth(
+        params.data.month,
+        params.data.patientId,
+        this.canReadNote(req),
+        this.canReadProviderName(req),
+        this.canReadPatientDocument(req),
+      );
       if (!patient) {
         res.status(404).json({ success: false, error: 'Patient not found in month' });
         return;

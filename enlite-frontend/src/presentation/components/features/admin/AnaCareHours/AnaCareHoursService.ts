@@ -16,6 +16,8 @@ import {
   type AnaCarePatient,
   type AnaCareRetratoStatus,
   type ContestShiftCommand,
+  type TriggerSyncCommand,
+  type TriggerSyncResult,
   type ValidateBatchCommand,
   type ValidateShiftCommand,
 } from './types';
@@ -33,6 +35,15 @@ export interface AnaCareHoursService {
   validateShift(command: ValidateShiftCommand): Promise<void>;
   validateBatch(command: ValidateBatchCommand): Promise<void>;
   contestShift(command: ContestShiftCommand): Promise<void>;
+  /**
+   * Dispara UMA rodada do sync manual (botão "Sincronizar" da lista, F6.4) — MESMA rota que o
+   * backend já expõe (`POST /anacare-hours/sync`) e MESMA célula (`anacare_hours`,`validate`) que
+   * esta interface já exige pras outras escritas. `AnaCareHoursHttpService` implementa de verdade;
+   * OPCIONAL aqui de propósito, para não forçar os mocks literais já existentes de outros testes
+   * deste domínio (detalhe, hooks de mês/paciente — fora do escopo desta tarefa) a ganhar um método
+   * que eles nunca chamam.
+   */
+  triggerSync?(command: TriggerSyncCommand): Promise<TriggerSyncResult>;
 }
 
 /** Latência artificial do Fake — nunca real, só simula rede pro loading ser visível em teste/harness. */

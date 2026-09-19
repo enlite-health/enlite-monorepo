@@ -380,3 +380,68 @@ describe('contestShift', () => {
     await expect(service.contestShift({ shiftId: 'shift-1', reason: 'otro' })).rejects.toMatchObject({ message: 'HTTP 409' });
   });
 });
+
+// D8 (cobertura, 18/09): `postSyncJson`/`triggerSync` (linhas 159-180) nunca tiveram teste — F6.4
+// (botão de Sync) chegou sem cobertura desta ponta HTTP. Formato PRÓPRIO (200 com campos soltos no
+// envelope, nunca `data`, nunca 204) — não reusa os helpers de `postJson`/`postBatchJson`.
+describe('triggerSync', () => {
+  it('POSITIVO — 200 com o envelope solto (sem `data`) resolve com o TriggerSyncResult inteiro', async () => {
+    const body = {
+      success: true,
+      deduped: false,
+      shiftsRead: 10,
+      reservationsProcessed: 4,
+      shiftsWritten: 10,
+      nextCursor: 50,
+      runStartedAt: '2026-09-18T10:00:00-03:00',
+      shiftsSkippedNoProvider: 0,
+      shiftsSkippedNoPatient: 0,
+    };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, body));
+    globalThis.fetch = fetchMock;
+    const service = new AnaCareHoursHttpService();
+    await expect(service.triggerSync?.({ month: '2026-08', cursor: undefined, budgetMs: 100_000 })).resolves.toEqual(body);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain('/anacare-hours/sync');
+    expect(JSON.parse(init.body)).toEqual({ month: '2026-08', cursor: undefined, budgetMs: 100_000 });
+  });
+
+  it('NEGATIVO — 503 (fonte não configurada) vira FONTE_NAO_CONFIGURADA', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(503, { success: false, error: 'ANACARE_SOURCE_NOT_CONFIGURED', code: 'ANACARE_SOURCE_NOT_CONFIGURED' }));
+    const service = new AnaCareHoursHttpService();
+    await expect(service.triggerSync?.({ month: '2026-08' })).rejects.toMatchObject({ code: 'FONTE_NAO_CONFIGURADA' });
+  });
+
+  it('NEGATIVO — 503 cujo corpo JSON não tem `error` cai no fallback padrão da mensagem (ramo direito do `??`)', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(503, {}));
+    const service = new AnaCareHoursHttpService();
+    await expect(service.triggerSync?.({ month: '2026-08' })).rejects.toMatchObject({
+      code: 'FONTE_NAO_CONFIGURADA',
+      message: 'ANACARE_SOURCE_NOT_CONFIGURED',
+    });
+  });
+
+  it('NEGATIVO — resposta sem content-type JSON vira erro GENÉRICO, nunca `.json()` quebrado', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ status: 502, headers: { get: () => 'text/html' }, json: async () => ({}) } as unknown as Response);
+    const service = new AnaCareHoursHttpService();
+    await expect(service.triggerSync?.({ month: '2026-08' })).rejects.toMatchObject({ code: 'DESCONHECIDO' });
+  });
+
+  it('NEGATIVO — content-type ausente (header.get devolve null, ramo direito do `??` da linha 166) vira erro GENÉRICO', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ status: 500, headers: { get: () => null }, json: async () => ({}) } as unknown as Response);
+    const service = new AnaCareHoursHttpService();
+    await expect(service.triggerSync?.({ month: '2026-08' })).rejects.toMatchObject({ code: 'DESCONHECIDO' });
+  });
+
+  it('NEGATIVO — `success:false` no corpo (200 com item que falhou) vira erro mapeado pelo code', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, { success: false, error: 'sync falhou no meio', code: 'DESCONHECIDO' }));
+    const service = new AnaCareHoursHttpService();
+    await expect(service.triggerSync?.({ month: '2026-08' })).rejects.toMatchObject({ message: 'sync falhou no meio' });
+  });
+
+  it('NEGATIVO — `success:false` sem `error` cai no fallback "HTTP <status>" (ramo direito do `||` da linha 173)', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(400, { success: false, error: '', code: 'DESCONHECIDO' }));
+    const service = new AnaCareHoursHttpService();
+    await expect(service.triggerSync?.({ month: '2026-08' })).rejects.toMatchObject({ message: 'HTTP 400' });
+  });
+});

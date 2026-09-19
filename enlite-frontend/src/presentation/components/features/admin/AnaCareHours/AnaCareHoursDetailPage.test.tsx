@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { AnaCareHoursDetailPage } from './AnaCareHoursDetailPage';
 import type { AnaCareHoursPatientSnapshot } from './types';
@@ -58,6 +58,20 @@ function snapshot(overrides: Partial<AnaCareHoursPatientSnapshot> = {}): AnaCare
 }
 
 describe('AnaCareHoursDetailPage', () => {
+  // Regra nova (18/09): a semana inicial depende de "hoje" × mês exibido (`snapshot.month`).
+  // Todo o resto do arquivo assume a semana de 10-16/08 (onde cai o único turno do fixture,
+  // 2026-08-14) — por isso o relógio fica congelado NESSE dia: com "hoje" = 14/08 e o mês do
+  // snapshot = '2026-08' (o mesmo mês), a regra nova cai na semana de hoje, que é a mesma semana
+  // que o comportamento antigo (turno mais antigo) produzia. Os 2 testes da regra nova congelam
+  // outro relógio, isoladamente, quando precisam de outro cenário.
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-14T12:00:00-03:00'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('NEGATIVO — paciente inexistente no snapshot mostra "patientNotFound"', () => {
     render(<AnaCareHoursDetailPage snapshot={snapshot()} patientId="no-existe" onBack={vi.fn()} />);
     expect(screen.getByText(/detail\.patientNotFound/)).toBeInTheDocument();
@@ -288,5 +302,19 @@ describe('AnaCareHoursDetailPage', () => {
     // voltar pra frente traz o dia de volta — prova que "prev" moveu a janela, não zerou o estado.
     fireEvent.click(screen.getByTestId('anacare-hours-week-next'));
     expect(screen.getByTestId('anacare-hours-day-group-2026-08-14')).toBeInTheDocument();
+  });
+
+  it('18/09 — POSITIVO: mês exibido CONTÉM hoje → semana inicial é a semana de hoje', () => {
+    vi.setSystemTime(new Date('2026-09-18T12:00:00-03:00')); // sexta-feira
+    render(<AnaCareHoursDetailPage snapshot={snapshot({ month: '2026-09' })} patientId="90000" onBack={vi.fn()} />);
+    // segunda da semana de 18/09 é 14/09 — não é o turno mais antigo do paciente (que é 14/08).
+    expect(screen.getByTestId('anacare-hours-week-datepicker')).toHaveValue('2026-09-14');
+  });
+
+  it('18/09 — POSITIVO: mês exibido NÃO contém hoje → semana inicial é a PRIMEIRA semana do mês', () => {
+    vi.setSystemTime(new Date('2026-09-18T12:00:00-03:00')); // hoje é setembro, mês exibido é agosto
+    render(<AnaCareHoursDetailPage snapshot={snapshot({ month: '2026-08' })} patientId="90000" onBack={vi.fn()} />);
+    // segunda da semana que contém 01/08 é 27/07 — não é a semana do turno mais antigo (10-16/08).
+    expect(screen.getByTestId('anacare-hours-week-datepicker')).toHaveValue('2026-07-27');
   });
 });

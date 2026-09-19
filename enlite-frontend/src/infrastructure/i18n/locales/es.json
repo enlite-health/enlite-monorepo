@@ -837,6 +837,14 @@
         "title": "Origen del check-in",
         "openAriaLabel": "Ver leyenda de origen del check-in",
         "closeAriaLabel": "Cerrar leyenda"
+      },
+      "sync": {
+        "button": "Sincronizar",
+        "resumeButton": "Retomar sincronización",
+        "resumeHint": "Hay una sincronización interrumpida — se retomará desde donde quedó.",
+        "progress": "Ronda {{round}} · {{count}} reservas procesadas",
+        "done": "Sincronización completa.",
+        "deduped": "Ya hay una sincronización en curso — no se inició otra."
       }
     },
     "managementDashboard": {

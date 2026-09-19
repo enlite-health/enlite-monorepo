@@ -25,6 +25,16 @@ export interface SourceShiftDTO {
   patientLastName?: string | null;
   nurseFirstName?: string | null;
   nurseLastName?: string | null;
+  /**
+   * Documento de identidade do paciente (categoria/valor, ex. "DNI"/"30111222") — mesmo desenho de
+   * `patientFirstName`/`patientLastName`: vem do PRÓPRIO payload do turno, só o caminho AO VIVO
+   * (`minimizeShiftDTO`, usado pelo DETALHE) os preenche; a LISTA (retrato agregado) nunca teve e
+   * não ganha esta coluna. PII — quem decide se sai no payload HTTP é o gate `patient_identity:
+   * read` (`AnaCareHoursController.canReadPatientDocument`, mesmo padrão de `worker_contact:read`
+   * para o nome do prestador); este DTO só carrega o valor, não decide permissão.
+   */
+  patientDocumentType?: string | null;
+  patientDocumentNumber?: string | null;
   /** ISO 8601 (UTC), YYYY-MM-DD para o dia do turno. */
   date: string;
   /**
@@ -102,7 +112,10 @@ export interface AnaCareRetratoSourceStatus {
 
 /**
  * Porta enxuta (minimização na borda, spec §Minimização): nenhum campo de telefone, endereço,
- * geolocalização, pagamento, observação ou documento de identidade passa por aqui.
+ * geolocalização, pagamento ou observação passa por aqui. Documento de identidade do paciente É
+ * carregado (`patientDocumentType`/`patientDocumentNumber`, 18/09/2026) — é PII e sai do backend
+ * só atrás do gate `patient_identity:read` (ver `SourceShiftDTO.patientDocumentType`); a porta
+ * transporta o valor, o controller decide quem recebe.
  */
 export interface AnaCareShiftsSource {
   listShifts(params: ListShiftsParams): Promise<ListShiftsResult>;

@@ -18,8 +18,10 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { AlertBanner } from '@presentation/components/organisms/Alert/AlertBanner';
 import { OriginLegend } from './OriginLegend';
 import { ProviderFilterCombobox } from './ProviderFilterCombobox';
+import { AnaCareHoursSyncButton } from './AnaCareHoursSyncButton';
 import type { AnaCareListPatient, AnaCareMonthSnapshot } from './types';
 import { patientDisplayName, providerDisplayName, type SinCheckinHoursMode } from './selectors';
+import type { UseAnaCareHoursSyncResult } from '@hooks/admin/useAnaCareHoursSync';
 
 const MONTH_VALUES = ['2026-08', '2026-09'] as const;
 
@@ -31,6 +33,8 @@ interface AnaCareHoursListPageProps {
   initialSearch?: string;
   /** Decisão AINDA ABERTA do harness (task 6) — nunca hardcoded aqui. */
   sinCheckinHoursMode?: SinCheckinHoursMode;
+  /** Botão "Sincronizar" (F6.4) — ausente quando o serviço injetado não implementa `triggerSync` (o botão some, nunca fica morto). */
+  sync?: UseAnaCareHoursSyncResult;
 }
 
 export function AnaCareHoursListPage({
@@ -40,6 +44,7 @@ export function AnaCareHoursListPage({
   initialProviderFilterId = '',
   initialSearch = '',
   sinCheckinHoursMode = 'zero',
+  sync,
 }: AnaCareHoursListPageProps): JSX.Element {
   const { t } = useTranslation();
   const [search, setSearch] = useState(initialSearch);
@@ -87,14 +92,26 @@ export function AnaCareHoursListPage({
               {t('admin.anacareHours.updatedAt', { datetime: formatDateTime(snapshot.updatedAt) })}
             </Text>
           </div>
-          <div className="w-48">
-            <Select
-              inputSize="compact"
-              options={monthOptions}
-              value={snapshot.month}
-              onValueChange={(v) => onMonthChange?.(v)}
-              aria-label={t('admin.anacareHours.monthAriaLabel')}
-            />
+          <div className="flex items-end gap-3">
+            <div className="w-48">
+              <Select
+                inputSize="compact"
+                options={monthOptions}
+                value={snapshot.month}
+                onValueChange={(v) => onMonthChange?.(v)}
+                aria-label={t('admin.anacareHours.monthAriaLabel')}
+              />
+            </div>
+            {sync && (
+              <AnaCareHoursSyncButton
+                status={sync.status}
+                round={sync.round}
+                reservationsProcessed={sync.reservationsProcessed}
+                error={sync.error}
+                resumableCursor={sync.resumableCursor}
+                onStart={sync.start}
+              />
+            )}
           </div>
         </div>
 

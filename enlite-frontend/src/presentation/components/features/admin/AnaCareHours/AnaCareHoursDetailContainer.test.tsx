@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { AnaCareHoursDetailContainer } from './AnaCareHoursDetailContainer';
 import { AnaCareHoursServiceError, FakeAnaCareHoursService } from './AnaCareHoursService';
@@ -77,8 +77,19 @@ function makeSnapshot(): AnaCareHoursPatientSnapshot {
 }
 
 describe('AnaCareHoursDetailContainer', () => {
+  // Regra nova (18/09, mesmo padrão de AnaCareHoursDetailPage.test.tsx): a semana inicial depende
+  // de "hoje" × mês exibido. Todo teste deste arquivo usa month="2026-08" com o único turno do
+  // fixture em 2026-08-14 — por isso o relógio fica congelado NESSE dia, para cair na semana de
+  // 10-16/08 que os testes esperam (era a semana do "turno mais antigo" no comportamento anterior).
+  // shouldAdvanceTime: true porque este arquivo (diferente do DetailPage) usa waitFor/act
+  // assíncronos — sem isso o fake timer trava a espera do testing-library.
   beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date('2026-08-14T12:00:00-03:00'));
     useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('POSITIVO — engine OFF: ações permitidas por padrão (fail-open), sem aviso de célula', async () => {

@@ -52,12 +52,21 @@ function validateSourceField(
  * consumidor, mas é `surname` (não `last_name`) o campo que a fonte de fato envia. `second_name` e
  * `mother_last_name` existem no payload e são DESCARTADOS de propósito — só nome e sobrenome vão
  * ao domínio (decisão do Gabriel, item 1).
+ *
+ * `identification_number`/`identification_type` — nomes REAIS medidos ao vivo contra o payload do
+ * Ana Care (18/09/2026: preenchido em 52/168 reservas, 31%). Os nomes antigos `document_type`/
+ * `document_number` NUNCA existiram na resposta real — eram suposição nunca confirmada (mesma
+ * família de erro dos 5 nomes de turno corrigidos acima, `RawAnaCareShift`). O documento entra no
+ * domínio só pelo caminho ao vivo do DETALHE (`minimizeShiftDTO`), atrás do gate `patient_identity:
+ * read` (ver `AnaCareHoursController.canReadPatientDocument`) — nunca no retrato agregado.
  */
 export interface RawAnaCarePatient {
   id: number | string;
   agency: number | null;
-  document_type: string | null;
-  document_number: string | null;
+  /** Categoria do documento (ex. "DNI") — nome real do payload, medido 18/09/2026. */
+  identification_type: string | null;
+  /** Valor do documento — nome real do payload, medido 18/09/2026. */
+  identification_number: string | null;
   first_name: string;
   last_name: string;
   /** Sobrenome — campo real medido 17/09/2026, usado para nome de exibição (item 1). */
@@ -162,8 +171,8 @@ export function minimizePatientFields(raw: RawAnaCarePatient): Readonly<Record<s
   return Object.freeze({
     id: raw.id,
     agency: raw.agency,
-    document_type: raw.document_type,
-    document_number: raw.document_number,
+    identification_type: raw.identification_type,
+    identification_number: raw.identification_number,
     first_name: raw.first_name,
     last_name: raw.last_name,
   });
@@ -240,6 +249,12 @@ export function minimizeShiftDTO(raw: RawAnaCareShift): SourceShiftDTO {
     // renomear o `raw.*.surname` — ele espelha o payload da fonte com fidelidade literal.
     patientFirstName: raw.patient.first_name,
     patientLastName: raw.patient.surname,
+    // Documento do paciente (item 4 do pedido, PII) — vem do payload do turno, medido 18/09/2026
+    // em `identification_type`/`identification_number` (52/168 reservas, 31%). Quem decide se sai
+    // no payload HTTP é o gate `patient_identity:read` (AnaCareHoursController), não este mapper —
+    // aqui só traduz o campo bruto pra dentro do DTO.
+    patientDocumentType: raw.patient.identification_type,
+    patientDocumentNumber: raw.patient.identification_number,
     nurseFirstName: raw.nurse.first_name,
     nurseLastName: raw.nurse.surname,
     date,
