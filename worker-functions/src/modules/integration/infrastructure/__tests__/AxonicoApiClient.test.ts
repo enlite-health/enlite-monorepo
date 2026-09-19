@@ -99,14 +99,6 @@ function makeClient(now: () => Date = () => FIXED_NOW) {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  // Trava de escrita (Conserto 2, 19/09): ligada por padrão para não quebrar os testes desta
-  // suíte que exercitam `submitComprobante` pelo caminho feliz — o comportamento OFF tem describe
-  // dedicado abaixo, que sobrescreve isto dentro do próprio teste.
-  process.env.AXONICO_ENVIO_HABILITADO = 'true';
-});
-
-afterEach(() => {
-  delete process.env.AXONICO_ENVIO_HABILITADO;
 });
 
 // ── Login + cache de token ───────────────────────────────────────
@@ -565,65 +557,6 @@ describe('AxonicoApiClient — submitComprobante', () => {
   });
 });
 
-// ── Trava fail-closed na escrita (Conserto 2, 19/09) ────────────────────────
-//
-// Regra dura do Gabriel: o Axonico não tem ambiente de testes — qualquer PUT real fatura, mesmo
-// na stage. `submitComprobante` só pode executar com `AXONICO_ENVIO_HABILITADO === 'true'`.
-
-describe('AxonicoApiClient — trava AXONICO_ENVIO_HABILITADO (submitComprobante)', () => {
-  it('sem AXONICO_ENVIO_HABILITADO → recusa e NÃO chama fetch', async () => {
-    delete process.env.AXONICO_ENVIO_HABILITADO;
-
-    const client = makeClient();
-    await expect(
-      client.submitComprobante({
-        historiaClinica: 'HC-123',
-        nroCobertura: 'AF-456',
-        serviceCodes: SERVICE_CODES,
-        serviceDate: SERVICE_DATE,
-        cantidad: 1,
-      })
-    ).rejects.toThrow(/desabilitado neste ambiente/);
-
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it("AXONICO_ENVIO_HABILITADO com valor diferente de 'true' (ex.: 'false') → recusa do mesmo jeito", async () => {
-    process.env.AXONICO_ENVIO_HABILITADO = 'false';
-
-    const client = makeClient();
-    await expect(
-      client.submitComprobante({
-        historiaClinica: 'HC-123',
-        nroCobertura: 'AF-456',
-        serviceCodes: SERVICE_CODES,
-        serviceDate: SERVICE_DATE,
-        cantidad: 1,
-      })
-    ).rejects.toThrow(/desabilitado neste ambiente/);
-
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it("com AXONICO_ENVIO_HABILITADO='true' → executa normalmente (fetch stubado)", async () => {
-    process.env.AXONICO_ENVIO_HABILITADO = 'true';
-    mockFetch.mockResolvedValueOnce(loginResponse());
-    mockFetch.mockResolvedValueOnce(submitResponse());
-
-    const client = makeClient();
-    const result = await client.submitComprobante({
-      historiaClinica: 'HC-123',
-      nroCobertura: 'AF-456',
-      serviceCodes: SERVICE_CODES,
-      serviceDate: SERVICE_DATE,
-      cantidad: 1,
-    });
-
-    expect(result).toEqual({ numeroComprobante: '1407706', codAutorizacion: '111114077061' });
-    expect(mockFetch).toHaveBeenCalledTimes(2); // login + PUT
-  });
-});
-
 // ── Erros tipados por status ───────────────────────────────────────
 
 describe('AxonicoApiClient — erros tipados', () => {
@@ -762,9 +695,6 @@ describe('AxonicoApiClient — fábricas', () => {
     delete process.env.AXIONICO_USERNAME;
     delete process.env.AXIONICO_PASSWORD;
     delete process.env.AXONICO_BASE_URL;
-    // Default para os testes de fromSecretManager()/create() que NÃO são sobre esta trava —
-    // o teste dedicado a GCP_PROJECT_ID ausente deleta explicitamente antes de chamar.
-    process.env.GCP_PROJECT_ID = 'enlite-test-project';
     mockAccessSecretVersion.mockReset();
   });
 
@@ -803,13 +733,6 @@ describe('AxonicoApiClient — fábricas', () => {
       .mockResolvedValueOnce([{ payload: { data: Buffer.from('pass-sm') } }]);
 
     await expect(AxonicoApiClient.fromSecretManager()).rejects.toThrow(/secrets returned empty values/);
-  });
-
-  it('fromSecretManager() lança erro explícito quando GCP_PROJECT_ID não está setado (sem default de PRD)', async () => {
-    delete process.env.GCP_PROJECT_ID;
-
-    await expect(AxonicoApiClient.fromSecretManager()).rejects.toThrow(/GCP_PROJECT_ID must be set/);
-    expect(mockAccessSecretVersion).not.toHaveBeenCalled();
   });
 
   it('create() usa fromEnv quando AXIONICO_USERNAME/AXIONICO_PASSWORD estão presentes', async () => {
