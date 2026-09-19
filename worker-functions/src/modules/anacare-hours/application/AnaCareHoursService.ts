@@ -13,6 +13,7 @@
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import type { AnaCareShiftsSource, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
 import type { PatientMonthSyncRepository } from '../domain/AnaCareHoursSyncPorts';
+import { AnaCarePatientDocumentRepository, type IAnaCarePatientDocumentRepository } from '@modules/integration';
 import { ShiftHoursValidationRepository, ShiftAlreadyValidatedError } from '../infrastructure/ShiftHoursValidationRepository';
 import { WorkerLinkRepository } from '../infrastructure/WorkerLinkRepository';
 import { AnaCarePatientMonthRepository } from '../infrastructure/AnaCarePatientMonthRepository';
@@ -60,6 +61,15 @@ export class AnaCareHoursService {
      * exclusivamente daqui, nunca mais do array de turnos.
      */
     private readonly patientMonthRepository: PatientMonthSyncRepository = new AnaCarePatientMonthRepository(),
+    /**
+     * Fallback do documento do paciente (item 5, 19/09/2026, migration 446): quando a FONTE (Ana
+     * Care) não manda `patientDocumentType`/`patientDocumentNumber` para um turno, `buildPatients`
+     * consulta aqui pelo documento que o operador registrou manualmente
+     * (`RegistrarDocumentoPacienteAnaCareUseCase`). Mesmo gate `patient_identity:read` que já
+     * existia (`canReadPatientDocument`) — o documento registrado é PII igual ao original, o gate
+     * não relaxa.
+     */
+    private readonly patientDocuments: IAnaCarePatientDocumentRepository = new AnaCarePatientDocumentRepository(),
   ) {}
 
   /**
@@ -98,6 +108,14 @@ export class AnaCareHoursService {
     const nurseIds = [...new Set(sourceShifts.map((s) => s.anaCareNurseId))];
     const linkedNurseIds = await this.resolveLinkedNurseIds(nurseIds);
 
+    // Fallback (item 5, migration 446): só busca o documento REGISTRADO para os pacientes cujo
+    // turno NÃO trouxe documento da fonte — nunca substitui o que a fonte já mandou. Lookup em
+    // LOTE por `anaCarePatientId` distinto (mesmo desenho de `resolveLinkedNurseIds`), nunca 1
+    // SELECT por turno.
+    const registeredDocuments = canReadPatientDocument
+      ? await this.resolveRegisteredDocuments(sourceShifts)
+      : new Map<string, { documentType: string | null; documentNumber: string }>();
+
     const mapped = await Promise.all(
       sourceShifts.map(async (s) => {
         const validation = validations.get(s.sourceShiftId);
@@ -105,8 +123,13 @@ export class AnaCareHoursService {
         const shift = mapShift(s, validation, canReadNote, decryptedNote || null);
         const patientName = joinSourceName(s.patientFirstName, s.patientLastName);
         const nurseName = canReadProviderName ? joinSourceName(s.nurseFirstName, s.nurseLastName) : undefined;
-        const patientDocumentType = canReadPatientDocument ? s.patientDocumentType ?? undefined : undefined;
-        const patientDocumentNumber = canReadPatientDocument ? s.patientDocumentNumber ?? undefined : undefined;
+        const registered = registeredDocuments.get(s.anaCarePatientId);
+        const patientDocumentType = canReadPatientDocument
+          ? s.patientDocumentType ?? registered?.documentType ?? undefined
+          : undefined;
+        const patientDocumentNumber = canReadPatientDocument
+          ? s.patientDocumentNumber ?? registered?.documentNumber ?? undefined
+          : undefined;
         return {
           shift,
           anaCarePatientId: s.anaCarePatientId,
@@ -120,6 +143,32 @@ export class AnaCareHoursService {
     );
 
     return groupIntoPatients(mapped, linkedNurseIds);
+  }
+
+  /**
+   * Busca em LOTE (`Promise.all`, uma chamada por paciente distinto — a porta não expõe
+   * `findManyByPatientIds`, e o volume por tela é baixo, mesma ordem de grandeza de
+   * `resolveLinkedNurseIds`) o documento REGISTRADO manualmente para os pacientes SEM documento na
+   * fonte. Só entra no mapa quem tem registro — ausência de registro não gera entrada (o `?.`
+   * no chamador cobre o `undefined`).
+   */
+  private async resolveRegisteredDocuments(
+    sourceShifts: readonly SourceShiftDTO[],
+  ): Promise<Map<string, { documentType: string | null; documentNumber: string }>> {
+    const missingIds = [
+      ...new Set(
+        sourceShifts.filter((s) => !s.patientDocumentNumber).map((s) => s.anaCarePatientId),
+      ),
+    ];
+    if (missingIds.length === 0) return new Map();
+
+    const entries = await Promise.all(
+      missingIds.map(async (id) => {
+        const record = await this.patientDocuments.findByPatientId(id);
+        return record ? ([id, { documentType: record.documentType, documentNumber: record.documentNumber }] as const) : null;
+      }),
+    );
+    return new Map(entries.filter((e): e is readonly [string, { documentType: string | null; documentNumber: string }] => e !== null));
   }
 
   /**

@@ -27,6 +27,7 @@ import { OriginBadge } from './OriginBadge';
 import { ValidationStatusBadge } from './ValidationStatusBadge';
 import { AxonicoSendControl } from './AxonicoSendControl';
 import type { AxonicoComprobanteService } from './AxonicoComprobanteService';
+import type { AnaCarePatientDocumentService } from './AnaCarePatientDocumentService';
 import type { AnaCareShift } from './types';
 import {
   axonicoDayEligibility,
@@ -58,9 +59,15 @@ interface DayGroupProps {
   sinCheckinHoursMode?: SinCheckinHoursMode;
   /** Serviço do envio ao Axonico — injetado de cima (mesmo padrão de `AnaCareHoursService`). */
   axonicoService: AxonicoComprobanteService;
+  /** Serviço do registro de documento do paciente (modal aberto quando falta DNI, 19/09) — domínio diferente do envio ao Axonico. */
+  patientDocumentService: AnaCarePatientDocumentService;
+  /** ↔ `AnaCarePatient.anaCareId` — sempre presente (nunca opcional, ao contrário do documento). */
+  anaCarePatientId: string;
   /** ↔ `AnaCarePatient.documentNumber`/`documentType` — ausentes sem a célula `patient_identity:read` ou quando a fonte não mandou. */
   patientDocumentNumber?: string;
   patientDocumentType?: string;
+  /** Chamado depois que o documento do paciente é registrado com sucesso — repassado direto a `AxonicoSendControl` (pai refaz a busca do mês). */
+  onDocumentRegistered?: () => void;
 }
 
 export function DayGroup({
@@ -74,8 +81,11 @@ export function DayGroup({
   onToggleDayPending,
   sinCheckinHoursMode = 'zero',
   axonicoService,
+  patientDocumentService,
+  anaCarePatientId,
   patientDocumentNumber,
   patientDocumentType,
+  onDocumentRegistered,
 }: DayGroupProps): JSX.Element {
   const { t } = useTranslation();
   const shifts = day.entries.map((e) => e.shift);
@@ -115,6 +125,8 @@ export function DayGroup({
           <AxonicoSendControl
             date={day.date}
             service={axonicoService}
+            patientDocumentService={patientDocumentService}
+            anaCarePatientId={anaCarePatientId}
             eligibility={axonicoEligibility}
             disableActions={disableActions}
             command={{
@@ -123,6 +135,7 @@ export function DayGroup({
               serviceDate: day.date,
               hours: Math.round(totalHours(shifts, sinCheckinHoursMode)),
             }}
+            onDocumentRegistered={onDocumentRegistered}
           />
         </div>
       </div>

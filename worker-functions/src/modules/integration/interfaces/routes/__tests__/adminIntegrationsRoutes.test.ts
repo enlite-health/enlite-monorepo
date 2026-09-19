@@ -1,7 +1,12 @@
 /**
  * Família `admin.integrations` (task 3.5-A4): mesma célula NOVA (`integration:execute`, fora do
- * seed da 206) reaproveitada pelas 3 rotas do router — backfill AnaCare (F0) + lançamento unitário
- * e em lote do Axonico (F4, `integracao-axonico`). Uma célula, N rotas — não uma célula por rota.
+ * seed da 206) reaproveitada por 3 das 4 rotas do router — backfill AnaCare (F0) + lançamento
+ * unitário e em lote do Axonico (F4, `integracao-axonico`). Uma célula, N rotas — não uma célula
+ * por rota.
+ *
+ * A 4ª rota (`POST /integrations/anacare/patient-document`, migration 446) declara
+ * `patient_identity:create` — célula DIFERENTE, de propósito: a ação é honestamente `create`
+ * (registro do documento do paciente), não `execute` contra terceiro.
  */
 
 import express from 'express';
@@ -34,10 +39,12 @@ describe('família admin.integrations', () => {
     expect(ADMIN_INTEGRATIONS_FAMILY).toBe('admin.integrations');
   });
 
-  it('as 3 rotas declaram integration:execute — célula NOVA da D116', () => {
+  it('3 das 4 rotas declaram integration:execute — célula NOVA da D116', () => {
     const rotas = scanExpressRouter(build());
-    expect(rotas).toHaveLength(3);
-    for (const rota of rotas) {
+    expect(rotas).toHaveLength(4);
+    const executeRotas = rotas.filter((r) => r.path !== '/integrations/anacare/patient-document');
+    expect(executeRotas).toHaveLength(3);
+    for (const rota of executeRotas) {
       expect(rota.cell).toMatchObject({ resource: 'integration', action: 'execute' });
     }
   });
@@ -45,10 +52,16 @@ describe('família admin.integrations', () => {
   it('`execute`, não `write`: backfill/lançamento DISPARAM ação contra terceiro', () => {
     // A distinção não é estilo — `execute` está em SENSITIVE_ACTIONS (D-P4),
     // então o ALLOW também vai para a trilha. Com `write` não iria.
-    const rotas = scanExpressRouter(build());
+    const rotas = scanExpressRouter(build()).filter((r) => r.path !== '/integrations/anacare/patient-document');
     for (const rota of rotas) {
       expect(cellKey(rota.cell!.resource, rota.cell!.action)).toBe('integration:execute');
     }
+  });
+
+  it('a rota de documento do paciente declara patient_identity:create (registro honesto, nunca write)', () => {
+    const rotas = scanExpressRouter(build());
+    const patientDocumentRoute = rotas.find((r) => r.path === '/integrations/anacare/patient-document');
+    expect(patientDocumentRoute?.cell).toMatchObject({ resource: 'patient_identity', action: 'create' });
   });
 
   it('nenhuma rota fica sem declaração', () => {

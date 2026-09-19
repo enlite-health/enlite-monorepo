@@ -4,12 +4,14 @@ import { AnaCareHoursDetailContainer } from './AnaCareHoursDetailContainer';
 import { AnaCareHoursServiceError, FakeAnaCareHoursService } from './AnaCareHoursService';
 import type { AnaCareHoursService } from './AnaCareHoursService';
 import type { AxonicoComprobanteService } from './AxonicoComprobanteService';
+import type { AnaCarePatientDocumentService } from './AnaCarePatientDocumentService';
 import type { AnaCareHoursPatientSnapshot } from './types';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
 
 /** Fake mínimo — este arquivo testa handlers de `AnaCareHoursService` (validar/contestar/sync), nunca o clique em "Enviar" (Axonico é `DayGroup.test.tsx`); só precisa satisfazer a prop obrigatória, REPASSADA sem lógica própria. */
 const AXONICO_SERVICE: AxonicoComprobanteService = { enviarComprobante: vi.fn() };
+const PATIENT_DOCUMENT_SERVICE: AnaCarePatientDocumentService = { registerDocument: vi.fn() };
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -99,7 +101,7 @@ describe('AnaCareHoursDetailContainer', () => {
   it('POSITIVO — engine OFF: ações permitidas por padrão (fail-open), sem aviso de célula', async () => {
     comEnforcement([], 'off');
     const service = new FakeAnaCareHoursService({ '2026-08': makeSnapshot() });
-    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-validate-shift-s1')).not.toBeDisabled());
     expect(screen.queryByText('admin.anacareHours.error.noValidateCell')).not.toBeInTheDocument();
   });
@@ -107,7 +109,7 @@ describe('AnaCareHoursDetailContainer', () => {
   it('🔴 NEGATIVO — engine ON sem anacare_hours:validate: ações desabilitadas com motivo visível (D344)', async () => {
     comEnforcement(['anacare_hours:read'], 'on');
     const service = new FakeAnaCareHoursService({ '2026-08': makeSnapshot() });
-    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-validate-shift-s1')).toBeDisabled());
     expect(screen.getByTestId('anacare-hours-disable-reason-day-2026-08-14')).toHaveTextContent('reason=admin.anacareHours.error.noValidateCell');
   });
@@ -116,7 +118,7 @@ describe('AnaCareHoursDetailContainer', () => {
     comEnforcement(['anacare_hours:read', 'anacare_hours:validate'], 'on');
     const service = new FakeAnaCareHoursService({ '2026-08': makeSnapshot() });
     const spy = vi.spyOn(service, 'validateShift');
-    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-validate-shift-s1')).not.toBeDisabled());
     fireEvent.click(screen.getByTestId('anacare-hours-validate-shift-s1'));
     await waitFor(() => expect(spy).toHaveBeenCalledWith({ shiftId: 's1' }));
@@ -138,7 +140,7 @@ describe('AnaCareHoursDetailContainer', () => {
       validateBatch: vi.fn(),
       contestShift: vi.fn(),
     };
-    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-validate-shift-s1')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('anacare-hours-validate-shift-s1'));
     await waitFor(() =>
@@ -156,7 +158,7 @@ describe('AnaCareHoursDetailContainer', () => {
       validateBatch: vi.fn(),
       contestShift: vi.fn(),
     };
-    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-validate-shift-s1')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('anacare-hours-validate-shift-s1'));
     await waitFor(() => expect(screen.getByTestId('anacare-hours-action-error')).toHaveTextContent('admin.anacareHours.error.validateShift'));
@@ -166,7 +168,7 @@ describe('AnaCareHoursDetailContainer', () => {
     comEnforcement(['anacare_hours:read', 'anacare_hours:validate'], 'on');
     const service = new FakeAnaCareHoursService({ '2026-08': makeSnapshot() });
     const spy = vi.spyOn(service, 'validateBatch');
-    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-select-shift-s1')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('anacare-hours-select-shift-s1'));
     fireEvent.click(screen.getByTestId('anacare-hours-selection-validate'));
@@ -184,7 +186,7 @@ describe('AnaCareHoursDetailContainer', () => {
       validateBatch: vi.fn().mockRejectedValue(new AnaCareHoursServiceError('RETRATO_DESATUALIZADO', 'retrato velho')),
       contestShift: vi.fn(),
     };
-    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-select-shift-s1')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('anacare-hours-select-shift-s1'));
     fireEvent.click(screen.getByTestId('anacare-hours-selection-validate'));
@@ -198,7 +200,7 @@ describe('AnaCareHoursDetailContainer', () => {
     comEnforcement(['anacare_hours:read', 'anacare_hours:validate'], 'on');
     const service = new FakeAnaCareHoursService({ '2026-08': makeSnapshot() });
     const spy = vi.spyOn(service, 'contestShift');
-    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-contest-shift-s1')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('anacare-hours-contest-shift-s1'));
     fireEvent.change(screen.getByTestId('anacare-hours-contest-reason'), { target: { value: 'otro' } });
@@ -216,7 +218,7 @@ describe('AnaCareHoursDetailContainer', () => {
       validateBatch: vi.fn(),
       contestShift: vi.fn(),
     };
-    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} service={service} month="2026-08" patientId="no-existe" onBack={vi.fn()} />);
+    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} service={service} month="2026-08" patientId="no-existe" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByText(/detail\.patientNotFound/)).toBeInTheDocument());
   });
 
@@ -229,7 +231,7 @@ describe('AnaCareHoursDetailContainer', () => {
       validateBatch: vi.fn(),
       contestShift: vi.fn(),
     };
-    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-detail-error')).toHaveTextContent('admin.anacareHours.error.sourceNotConfigured'));
   });
 
@@ -237,7 +239,7 @@ describe('AnaCareHoursDetailContainer', () => {
     comEnforcement([], 'off');
     const service = new FakeAnaCareHoursService({ '2026-08': makeSnapshot() });
     const onBack = vi.fn();
-    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} service={service} month="2026-08" patientId="90000" onBack={onBack} />);
+    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} service={service} month="2026-08" patientId="90000" onBack={onBack} />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-back')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('anacare-hours-back'));
     expect(onBack).toHaveBeenCalled();
@@ -258,7 +260,7 @@ describe('AnaCareHoursDetailContainer', () => {
       validateBatch: vi.fn(),
       contestShift: vi.fn(),
     };
-    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
     expect(screen.getByTestId('anacare-hours-detail-loading')).toBeInTheDocument();
     resolvePatient(null); // libera a promise pendente — evita vazar estado pro próximo teste
   });
@@ -273,7 +275,7 @@ describe('AnaCareHoursDetailContainer', () => {
       validateBatch: vi.fn(),
       contestShift: vi.fn().mockRejectedValue(new AnaCareHoursServiceError('MOTIVO_INVALIDO', 'motivo inválido')),
     };
-    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-contest-shift-s1')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('anacare-hours-contest-shift-s1'));
     fireEvent.change(screen.getByTestId('anacare-hours-contest-reason'), { target: { value: 'otro' } });
@@ -292,7 +294,7 @@ describe('AnaCareHoursDetailContainer', () => {
       validateBatch: vi.fn(),
       contestShift: vi.fn(),
     };
-    const { container } = render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    const { container } = render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.queryByTestId('anacare-hours-detail-loading')).not.toBeInTheDocument());
     expect(screen.queryByTestId('anacare-hours-detail-error')).not.toBeInTheDocument();
     expect(container.textContent).toBe('');
@@ -307,7 +309,7 @@ describe('AnaCareHoursDetailContainer', () => {
     comEnforcement(['anacare_hours:read', 'anacare_hours:validate'], 'on');
     const service = new FakeAnaCareHoursService({ '2026-08': makeSnapshot() });
     const spy = vi.spyOn(service, 'validateBatch');
-    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-select-shift-s1')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('anacare-hours-select-shift-s1'));
     fireEvent.click(screen.getByTestId('anacare-hours-selection-validate'));
@@ -325,7 +327,7 @@ describe('AnaCareHoursDetailContainer', () => {
     comEnforcement(['anacare_hours:read', 'anacare_hours:validate'], 'on');
     const service = new FakeAnaCareHoursService({ '2026-08': makeSnapshot() });
     const spy = vi.spyOn(service, 'contestShift');
-    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-contest-shift-s1')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('anacare-hours-contest-shift-s1'));
     fireEvent.change(screen.getByTestId('anacare-hours-contest-reason'), { target: { value: 'otro' } });
@@ -346,7 +348,7 @@ describe('AnaCareHoursDetailContainer', () => {
       validateBatch: vi.fn(),
       contestShift: vi.fn(),
     };
-    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
     await waitFor(() =>
       expect(screen.getByTestId('anacare-hours-detail-error')).toHaveTextContent('No se pudo cargar el paciente.'),
     );
@@ -373,7 +375,7 @@ describe('AnaCareHoursDetailContainer', () => {
     });
     const service = new FakeAnaCareHoursService({ '2026-08': snap });
     const spy = vi.spyOn(service, 'getPatientMonth');
-    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-shift-row-s1')).toBeInTheDocument());
     expect(spy).toHaveBeenCalledTimes(1);
 

@@ -744,7 +744,17 @@
           },
           "sentLabel": "Enviado — comprobante {{numero}}",
           "duplicatedLabel": "Ya estaba facturado — comprobante {{numero}}",
-          "duplicatedNoComprobanteLabel": "Ya fue facturado — número de comprobante no disponible"
+          "duplicatedNoComprobanteLabel": "Ya fue facturado — número de comprobante no disponible",
+          "documentModal": {
+            "title": "Documento del paciente",
+            "description": "Este paciente todavía no tiene un documento registrado. Ingresá el número una vez — no se va a volver a preguntar.",
+            "inputLabel": "Número de documento",
+            "inputPlaceholder": "Ej.: 30111222",
+            "cancel": "Cancelar",
+            "confirm": "Registrar y enviar",
+            "errorConflict": "Ya hay un documento distinto registrado para este paciente. Verificá el número con el equipo antes de reintentar.",
+            "errorInvalid": "No se pudo registrar el documento. Verificá el número ingresado."
+          }
         },
         "table": {
           "provider": "Prestador",

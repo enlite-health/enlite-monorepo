@@ -4,6 +4,7 @@ import { DayGroup } from './DayGroup';
 import type { AnaCareProvider, AnaCareShift } from './types';
 import type { DayGroupData } from './selectors';
 import type { AxonicoComprobanteService, EnviarComprobanteAxonicoResult } from './AxonicoComprobanteService';
+import type { AnaCarePatientDocumentService } from './AnaCarePatientDocumentService';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, opts?: Record<string, unknown>) => (opts ? `${key}|${JSON.stringify(opts)}` : key) }),
@@ -45,7 +46,21 @@ function makeAxonicoService(overrides: Partial<AxonicoComprobanteService> = {}):
   return { enviarComprobante: vi.fn(), ...overrides };
 }
 
-const noop = { onValidateShift: vi.fn(), onOpenContestModal: vi.fn(), onToggleShift: vi.fn(), onToggleDayPending: vi.fn() };
+function makePatientDocumentService(overrides: Partial<AnaCarePatientDocumentService> = {}): AnaCarePatientDocumentService {
+  return { registerDocument: vi.fn(), ...overrides };
+}
+
+// `patientDocumentService`/`anaCarePatientId` entram no `noop` (todo `render` deste arquivo já
+// espalha `{...noop}`) — nenhum destes testes exercita o registro de documento em si (isso é
+// `AxonicoSendControl.test.tsx`), só precisam satisfazer o contrato de props do `DayGroup`.
+const noop = {
+  onValidateShift: vi.fn(),
+  onOpenContestModal: vi.fn(),
+  onToggleShift: vi.fn(),
+  onToggleDayPending: vi.fn(),
+  patientDocumentService: makePatientDocumentService(),
+  anaCarePatientId: 'ac-paciente-1',
+};
 const DOC = '30111222';
 
 describe('DayGroup', () => {
@@ -122,12 +137,14 @@ describe('DayGroup', () => {
       expect(screen.getByTestId('anacare-hours-axonico-reason-fractionalHours-2026-08-14')).toBeInTheDocument();
     });
 
-    it('NEGATIVO — motivo missingDocument: paciente sem documentNumber desabilita e mostra a explicação', () => {
+    it('POSITIVO — motivo missingDocument SOZINHO: paciente sem documentNumber deixa o botão HABILITADO (decisão do Gabriel, 19/09 — clique abre o modal do documento em vez de bloquear)', () => {
       const providerA = makeProvider({ anaCareId: 'p1' });
       const day = makeDay([{ shift: eligibleShift({ id: 's1' }), provider: providerA }]);
       render(<DayGroup day={day} disableActions={false} selectedShiftIds={new Set()} axonicoService={makeAxonicoService()} {...noop} />);
-      expect(screen.getByTestId('anacare-hours-send-day-2026-08-14')).toBeDisabled();
+      expect(screen.getByTestId('anacare-hours-send-day-2026-08-14')).not.toBeDisabled();
       expect(screen.getByTestId('anacare-hours-axonico-reason-missingDocument-2026-08-14')).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('anacare-hours-send-day-2026-08-14'));
+      expect(screen.getByTestId('anacare-hours-axonico-document-modal')).toBeInTheDocument();
     });
 
     it('NEGATIVO — disableActions (retrato desatualizado/gate) desabilita mesmo com o dia elegível, e NÃO duplica a explicação por motivo', () => {

@@ -11,6 +11,9 @@ import { LancarPrestacaoAxonicoController } from '../controllers/LancarPrestacao
 import { LancarPrestacaoAxonicoUseCase } from '../../application/LancarPrestacaoAxonicoUseCase';
 import { AxonicoApiClient } from '../../infrastructure/AxonicoApiClient';
 import { AxonicoLancamentoRepository } from '../../infrastructure/AxonicoLancamentoRepository';
+import { RegistrarDocumentoPacienteAnaCareController } from '../controllers/RegistrarDocumentoPacienteAnaCareController';
+import { RegistrarDocumentoPacienteAnaCareUseCase } from '../../application/RegistrarDocumentoPacienteAnaCareUseCase';
+import { AnaCarePatientDocumentRepository } from '../../infrastructure/AnaCarePatientDocumentRepository';
 import type { AuthMiddleware, PermissionMiddleware } from '@modules/identity';
 
 /**
@@ -95,6 +98,30 @@ export function createAdminIntegrationsRoutes(
     authMiddleware.requireStaff(),
     perm.require('integration', 'execute', { untilEnforced: 'admin' }),
     (req: Request, res: Response) => lancarPrestacaoController.handleLote(req, res),
+  );
+
+  /**
+   * POST /api/admin/integrations/anacare/patient-document
+   *
+   * Corpo JSON: { anaCarePatientId, documentNumber, documentType? }
+   *
+   * Guarda o DNI de um paciente do Ana Care que não tem documento na fonte (migration 446), para
+   * não perguntar de novo — fallback consumido pelo módulo `anacare-hours`
+   * (`AnaCareHoursService.buildPatients`). Célula `patient_identity:create` — mesma célula do
+   * container "Identidade" da ficha, escrita como o enforcement exige (`patient_identity` está em
+   * `SPLIT_RESOURCES`, `PermissionCell.ts:345` — `'write'` literal é reprovado por
+   * `no-split-resource-write.test.ts`); mesmo padrão do POST da foto (`adminPatientPhotoRoutes.ts`).
+   * Ação é honestamente `create`: nunca sobrescreve documento já registrado com número diferente
+   * (409); mesmo número já normalizado é idempotente (200).
+   */
+  const patientDocumentController = new RegistrarDocumentoPacienteAnaCareController(
+    () => new RegistrarDocumentoPacienteAnaCareUseCase(new AnaCarePatientDocumentRepository()),
+  );
+  router.post(
+    '/integrations/anacare/patient-document',
+    authMiddleware.requireStaff(),
+    perm.require('patient_identity', 'create'),
+    (req: Request, res: Response) => patientDocumentController.handle(req, res),
   );
 
   return router;
