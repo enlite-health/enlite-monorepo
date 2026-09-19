@@ -8,7 +8,11 @@
  *   4. handle: erro → httpStatus por `mapError`
  *   5. handleLote: body inválido → 400
  *   6. handleLote: laço misto (ok + duplicado + erro) — item que lança não aborta os seguintes
- *   7. mapError: um caso por ramo (11 nomeados + fallback UnknownError, incluindo not-Error)
+ *   7. mapError: um caso por ramo (10 nomeados + fallback UnknownError, incluindo not-Error)
+ *
+ * CORREÇÃO (19/09/2026, decisão do Gabriel): o corpo não recebe mais `patientId` — o lançamento é
+ * feito pelo `documentNumber` que já vem pronto do Ana Care. `documentNumber` é obrigatório;
+ * `patientId` (se vier) é ignorado pelo Zod (schema não-`strict`), nunca usado.
  */
 
 // ── Imports ───────────────────────────────────────────────────────
@@ -52,7 +56,7 @@ function makeReq(body: unknown): Request {
 }
 
 const VALID_BODY = {
-  patientId: '11111111-1111-1111-1111-111111111111',
+  documentNumber: '30111222',
   serviceType: 'AT' as const,
   serviceDate: '2026-09-18',
   hours: 4,
@@ -69,7 +73,8 @@ describe('LancarPrestacaoAxonicoController.handle', () => {
     ['hours fracionário', { ...VALID_BODY, hours: 1.5 }],
     ['hours <= 0', { ...VALID_BODY, hours: 0 }],
     ["serviceDate fora de 'YYYY-MM-DD'", { ...VALID_BODY, serviceDate: '18/09/2026' }],
-    ['patientId não-uuid', { ...VALID_BODY, patientId: 'nao-uuid' }],
+    ['documentNumber ausente', { serviceType: 'AT', serviceDate: '2026-09-18', hours: 4 }],
+    ['documentNumber vazio', { ...VALID_BODY, documentNumber: '' }],
     ['serviceType inválido', { ...VALID_BODY, serviceType: 'MEDICO' }],
   ])('corpo inválido (%s) → 400 com details, use case não chamado', async (_label, body) => {
     const mockExecute = jest.fn();
@@ -82,6 +87,43 @@ describe('LancarPrestacaoAxonicoController.handle', () => {
       expect.objectContaining({ success: false, error: 'Invalid request body', details: expect.anything() }),
     );
     expect(mockExecute).not.toHaveBeenCalled();
+  });
+
+  it('corpo COM patientId e SEM documentNumber → 400, use case não chamado (o campo antigo não funciona mais sozinho)', async () => {
+    const mockExecute = jest.fn();
+    const { res, status, json } = makeRes();
+    const bodyComPatientIdAntigo = {
+      patientId: '11111111-1111-1111-1111-111111111111',
+      serviceType: 'AT',
+      serviceDate: '2026-09-18',
+      hours: 4,
+    };
+
+    await makeController(mockExecute).handle(makeReq(bodyComPatientIdAntigo), res);
+
+    expect(status).toHaveBeenCalledWith(400);
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: false, error: 'Invalid request body' }),
+    );
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+
+  it('corpo COM patientId E documentNumber → aceito, patientId é ignorado (não chega ao use case)', async () => {
+    const result: LancarPrestacaoAxonicoResult = {
+      status: 'enviado',
+      numeroComprobante: 'C-1',
+      codAutorizacion: 'A-1',
+    };
+    const mockExecute = jest.fn().mockResolvedValue(result);
+    const { res, status, json } = makeRes();
+    const bodyComPatientIdSobrando = { ...VALID_BODY, patientId: '11111111-1111-1111-1111-111111111111' };
+
+    await makeController(mockExecute).handle(makeReq(bodyComPatientIdSobrando), res);
+
+    expect(status).toHaveBeenCalledWith(200);
+    expect(json).toHaveBeenCalledWith({ success: true, data: result });
+    // O schema não é `strict` — `patientId` é descartado, nunca repassado ao use case.
+    expect(mockExecute).toHaveBeenCalledWith(VALID_BODY);
   });
 
   it('body ausente (undefined) → tratado como {} (branch req.body ?? {}), 400, use case não chamado', async () => {
@@ -147,7 +189,7 @@ describe('LancarPrestacaoAxonicoController.handle', () => {
   });
 
   it('erro do use case → httpStatus traduzido por mapError', async () => {
-    const mockExecute = jest.fn().mockRejectedValue(new AxonicoPacienteNaoEncontradoError(VALID_BODY.patientId));
+    const mockExecute = jest.fn().mockRejectedValue(new AxonicoPacienteNaoEncontradoError());
     const { res, status, json } = makeRes();
 
     await makeController(mockExecute).handle(makeReq(VALID_BODY), res);
@@ -162,7 +204,7 @@ describe('LancarPrestacaoAxonicoController.handle', () => {
     const lancadoEm = new Date('2026-09-18T12:00:00.000Z');
     const existente: AxonicoLancamentoRecord = {
       id: 'lanc-winner',
-      patientId: VALID_BODY.patientId,
+      patientId: null,
       documentNumber: '30111222',
       serviceType: 'AT',
       serviceDate: VALID_BODY.serviceDate,
@@ -174,7 +216,6 @@ describe('LancarPrestacaoAxonicoController.handle', () => {
       createdAt: lancadoEm,
     };
     const conflictError = new AxonicoLancamentoConcorrenteError(
-      VALID_BODY.patientId,
       '30111222',
       existente,
       { numeroComprobante: 'CMP-RECEM-FATURADO', codAutorizacion: 'AUT-RECEM-FATURADO' },
@@ -298,7 +339,7 @@ describe('LancarPrestacaoAxonicoController.handleLote', () => {
 describe('LancarPrestacaoAxonicoController — mapError (por handle)', () => {
   it.each<[string, unknown, number]>([
     ['HoraQuebradaError', new HoraQuebradaError(1.5), 400],
-    ['PacienteSemDniError', new PacienteSemDniError(VALID_BODY.patientId, 'not_found'), 422],
+    ['PacienteSemDniError', new PacienteSemDniError('no_document'), 422],
     [
       'AxonicoUnmappedServiceTypeError',
       new AxonicoUnmappedServiceTypeError(VALID_BODY.serviceType as never),
@@ -306,15 +347,14 @@ describe('LancarPrestacaoAxonicoController — mapError (por handle)', () => {
     ],
     ['AxonicoTetoExcedidoError', new AxonicoTetoExcedidoError(10, 5), 422],
     ['AxonicoTetoIndisponivelError', new AxonicoTetoIndisponivelError(4, 'timeout'), 502],
-    ['AxonicoPacienteNaoEncontradoError', new AxonicoPacienteNaoEncontradoError(VALID_BODY.patientId), 404],
+    ['AxonicoPacienteNaoEncontradoError', new AxonicoPacienteNaoEncontradoError(), 404],
     [
       'AxonicoLancamentoConcorrenteError',
       new AxonicoLancamentoConcorrenteError(
-        VALID_BODY.patientId,
         '30111222',
         {
           id: 'lanc-winner',
-          patientId: VALID_BODY.patientId,
+          patientId: null,
           documentNumber: '30111222',
           serviceType: 'AT',
           serviceDate: VALID_BODY.serviceDate,

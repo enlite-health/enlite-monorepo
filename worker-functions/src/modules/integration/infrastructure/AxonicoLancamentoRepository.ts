@@ -30,7 +30,8 @@ import type {
 
 interface AxonicoLancamentoRow {
   id: string;
-  patient_id: string;
+  /** `null` desde 19/09/2026 (migration 446 — coluna virou NULLABLE) — sem `patientId` de entrada. */
+  patient_id: string | null;
   document_number: string;
   service_type: string;
   service_date: string;

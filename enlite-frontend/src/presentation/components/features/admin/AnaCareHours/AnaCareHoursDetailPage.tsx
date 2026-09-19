@@ -31,6 +31,7 @@ import { OriginLegend } from './OriginLegend';
 import { DayGroup } from './DayGroup';
 import { ValidateBatchModal } from './ValidateBatchModal';
 import { ContestModal } from './ContestModal';
+import type { AxonicoComprobanteService } from './AxonicoComprobanteService';
 import type { AnaCareHoursPatientSnapshot, AnaCareShift, ContestReason } from './types';
 import {
   addDaysIso,
@@ -52,6 +53,8 @@ interface AnaCareHoursDetailPageProps {
   snapshot: AnaCareHoursPatientSnapshot;
   patientId: string;
   onBack: () => void;
+  /** Serviço do envio ao Axonico (botão "Enviar" de cada dia) — injetado de cima, mesmo padrão de `service`. */
+  axonicoService: AxonicoComprobanteService;
   initialContestShiftId?: string | null;
   /** Hooks de escrita — quando ausentes, o clique só fecha o modal, sem persistir nada. `AnaCareHoursDetailContainer` é quem passa os callbacks de verdade. */
   onValidateShift?: (shift: AnaCareShift) => void | Promise<void>;
@@ -70,6 +73,7 @@ export function AnaCareHoursDetailPage({
   snapshot,
   patientId,
   onBack,
+  axonicoService,
   initialContestShiftId = null,
   onValidateShift,
   onValidateBatch,
@@ -294,6 +298,9 @@ export function AnaCareHoursDetailPage({
               onToggleShift={toggleShift}
               onToggleDayPending={toggleDayPending}
               sinCheckinHoursMode={sinCheckinHoursMode}
+              axonicoService={axonicoService}
+              patientDocumentNumber={patient.documentNumber}
+              patientDocumentType={patient.documentType}
             />
           ))}
         </div>

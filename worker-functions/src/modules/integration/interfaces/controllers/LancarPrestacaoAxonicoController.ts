@@ -13,6 +13,13 @@
  * `serviceDate` é validado como `'YYYY-MM-DD'` aqui, na BORDA — o miolo (use case, client) assume
  * a string já validada e nunca converte para `Date`. `hours` é validado como inteiro positivo
  * aqui, ANTES de qualquer chamada ao use case — hora quebrada nunca toca rede (D366).
+ *
+ * CORREÇÃO (19/09/2026, decisão do Gabriel): o corpo não recebe mais `patientId` — a tela de
+ * conferência de horas do Ana Care ainda não vincula os pacientes dele aos nossos, então o
+ * lançamento é feito pelo `documentNumber` que já vem pronto do Ana Care. `documentNumber` é
+ * obrigatório; `documentType` é aceito e reservado (ainda não usado). Um corpo com `patientId` e
+ * sem `documentNumber` é recusado pelo Zod (campo obrigatório ausente) — `patientId` extra é apenas
+ * ignorado (schema não-`strict`), nunca usado.
  */
 
 import { Request, Response } from 'express';
@@ -38,8 +45,15 @@ import { pgUniqueViolationConflict } from '@shared/http/pgUniqueViolationConflic
 
 // `serviceDate` — string 'YYYY-MM-DD' de ponta a ponta (nunca Date). `hours` — inteiro positivo
 // (D366): fracionário é rejeitado AQUI pelo Zod, antes de qualquer chamada de rede.
+//
+// `documentNumber` — obrigatório (19/09/2026): substitui `patientId`, que SAIU do corpo — o
+// lançamento é feito pelo documento que o Ana Care já manda pronto, sem consultar `patients`. A
+// validação de FORMATO do DNI (7/8 dígitos, rejeita a string 'null') é do use case (guard 0, via
+// `normalizeAndValidateDocumentNumber`) — aqui só garante que a string chegou e não é vazia.
+// `documentType` é aceito e reservado, ainda sem uso.
 const LancamentoBodySchema = z.object({
-  patientId: z.string().uuid(),
+  documentNumber: z.string().min(1, 'documentNumber é obrigatório'),
+  documentType: z.string().optional(),
   serviceType: z.enum(['AT', 'CAREGIVER', 'NURSE', 'KINESIOLOGIST', 'PSYCHOLOGIST']),
   serviceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "serviceDate deve ser 'YYYY-MM-DD'"),
   hours: z.number().int('hours deve ser um inteiro (D366) — hora quebrada é recusada').positive('hours deve ser positivo'),

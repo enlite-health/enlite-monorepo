@@ -53,7 +53,12 @@ BEGIN;
 
 CREATE TABLE IF NOT EXISTS axonico_comprobante_lancamento (
   id                  BIGSERIAL    PRIMARY KEY,
-  patient_id          UUID         NOT NULL REFERENCES patients(id),
+  -- NULLABLE de propósito (Gabriel, 19/09/2026): o lançamento é feito pelo `document_number` que
+  -- vem do Ana Care, sem `patientId` de entrada e sem consultar `patients` — os pacientes da tela
+  -- de conferência de horas NÃO são vinculados aos nossos ainda (`patients.ana_care_id` é NULL nos
+  -- 388 de prd, `patient_identity_links` tem 0 linhas). A coluna fica para quando o vínculo existir;
+  -- até lá grava NULL. NOT NULL aqui faria todo insert real estourar.
+  patient_id          UUID         REFERENCES patients(id),
   document_number     TEXT         NOT NULL,
   service_type        TEXT         NOT NULL CHECK (service_type IN ('AT')),
   service_date        DATE         NOT NULL,

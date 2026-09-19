@@ -14,8 +14,17 @@
  * virar `AxonicoTetoIndisponivelError` — a tabela local existe exatamente para responder isso sem
  * bater na API.
  *
+ * CORREÇÃO (19/09/2026, decisão do Gabriel — não relitigar): a tela de conferência de horas do Ana
+ * Care ainda não vincula os pacientes dele aos nossos (`patients.ana_care_id` é NULL nos 388
+ * pacientes de prd, `patient_identity_links` tem 0 linhas — o vínculo vem depois de ~2 semanas em
+ * prod sem erro). Por isso este use case **não recebe mais `patientId`** e **não consulta
+ * `patients`** — o lançamento é feito pelo `documentNumber` que já vem pronto do Ana Care no corpo
+ * da requisição (F4, `LancamentoBodySchema`). `IPatientReadPort`/`PatientReadRepository` continuam
+ * existindo (são genéricos, podem servir outro fluxo) — só saíram DESTE use case.
+ *
  * Guards, na ordem (ver design.md §F3):
- *   0. `document_number` do paciente é NULL (ou paciente não existe) → `PatienteSemDniError`.
+ *   0. `documentNumber` recebido é ausente ou inválido (não é um DNI de 7/8 dígitos depois de
+ *      normalizado — inclui a string literal `'null'`) → `PacienteSemDniError`.
  *   1. `hours` não é inteiro positivo (D366) → `HoraQuebradaError`.
  *   2. Dedupe LOCAL — nossa tabela (`findExisting`) achou `status='enviado'` → `duplicado` com o
  *      comprovante ORIGINAL (`numeroComprobante`/`codAutorizacion`/`lancadoEm` do registro
@@ -46,7 +55,6 @@
 
 import { logger } from '@shared/logging';
 import type { EnliteServiceType } from '../domain/EnliteServiceType';
-import type { IPatientReadPort } from '../domain/IPatientReadPort';
 import type { IAxonicoApiClient } from '../domain/IAxonicoApiClient';
 import type { AxonicoLancamentoRecord, IAxonicoLancamentoRepository } from '../domain/IAxonicoLancamentoRepository';
 import { resolveServiceMapping } from '../infrastructure/AxonicoServiceMapping';
@@ -59,7 +67,14 @@ const TAG = '[LancarPrestacaoAxonicoUseCase]';
 // ─────────────────────────────────────────────────────────────────
 
 export interface LancarPrestacaoAxonicoInput {
-  patientId: string;
+  /**
+   * DNI do paciente, como vem do Ana Care — RAW, ainda não normalizado (o guard 0 normaliza e
+   * valida via `normalizeAndValidateDocumentNumber`). Não é o `patientId` nosso — este use case não
+   * recebe `patientId` e não consulta `patients` (decisão do Gabriel, 19/09/2026).
+   */
+  documentNumber: string;
+  /** Reservado — ainda não usado no mapeamento/validação (o Ana Care só manda DNI hoje). */
+  documentType?: string;
   serviceType: EnliteServiceType;
   /**
    * Dia civil da prestação, formato `'YYYY-MM-DD'` (nunca `Date` — um dia civil não tem instante;
@@ -86,26 +101,22 @@ export type LancarPrestacaoAxonicoResult =
 // ─────────────────────────────────────────────────────────────────
 
 /**
- * Guard 0 — paciente inexistente, `document_number` ausente, ou `document_number` presente mas
- * INVÁLIDO (não é um DNI de 7/8 dígitos depois de normalizado — ver `domain/documentNumber.ts`;
- * medido em produção: 19 pacientes com a string literal `'null'`, que passa por `IS NOT NULL` mas
- * não é um DNI). `'invalid_document'` é um reason NOVO (correção 18/09/2026) — antes só existia
- * `'no_document'`, que colapsava "ausente" e "presente mas lixo" na mesma mensagem.
+ * Guard 0 — `documentNumber` recebido no corpo é ausente, ou presente mas INVÁLIDO (não é um DNI de
+ * 7/8 dígitos depois de normalizado — ver `domain/documentNumber.ts`; medido em produção: 19
+ * pacientes com a string literal `'null'`, que passaria por um `IS NOT NULL` mas não é um DNI).
+ *
+ * CORREÇÃO (19/09/2026): este guard não consulta mais `patients` — não há `patientId` nem reason
+ * `'not_found'` (o Ana Care é quem manda o documento; não existe "paciente não encontrado" aqui,
+ * só "documento ausente/inválido"). Mensagem NUNCA interpola o valor recebido — `documentNumber` é
+ * DNI, PII, mesmo quando inválido/lixo.
  */
 export class PacienteSemDniError extends Error {
-  readonly patientId: string;
-  readonly reason: 'not_found' | 'no_document' | 'invalid_document';
+  readonly reason: 'no_document' | 'invalid_document';
 
-  constructor(patientId: string, reason: 'not_found' | 'no_document' | 'invalid_document') {
-    const detail =
-      reason === 'not_found'
-        ? 'paciente não encontrado'
-        : reason === 'no_document'
-          ? 'document_number ausente'
-          : 'document_number inválido (não é um DNI de 7/8 dígitos)';
-    super(`${TAG} guard 0 — patientId='${patientId}': ${detail}`);
+  constructor(reason: 'no_document' | 'invalid_document') {
+    const detail = reason === 'no_document' ? 'documentNumber ausente' : 'documentNumber inválido (não é um DNI de 7/8 dígitos)';
+    super(`${TAG} guard 0 — ${detail}`);
     this.name = 'PacienteSemDniError';
-    this.patientId = patientId;
     this.reason = reason;
   }
 }
@@ -149,17 +160,16 @@ export class AxonicoTetoExcedidoError extends Error {
 }
 
 /**
- * Dedupe remoto (guard 4) — `findPatientByDni` não achou o paciente no Axonico pelo DNI que nosso
- * banco tem cadastrado. Não é guard (já tocou rede) — grava `status='erro'` como qualquer outra
- * falha desta etapa.
+ * Dedupe remoto (guard 4) — `findPatientByDni` não achou o paciente no Axonico pelo `documentNumber`
+ * recebido no corpo. Não é guard (já tocou rede) — grava `status='erro'` como qualquer outra falha
+ * desta etapa. Mensagem NUNCA interpola o DNI (PII) — desde 19/09/2026 não há `patientId` nosso
+ * para identificar o caso na mensagem; quem correlaciona é o `serviceType`/`serviceDate` do log em
+ * `gravaErro`, não este erro.
  */
 export class AxonicoPacienteNaoEncontradoError extends Error {
-  readonly patientId: string;
-
-  constructor(patientId: string) {
-    super(`${TAG} findPatientByDni não encontrou paciente no Axonico para patientId='${patientId}'`);
+  constructor() {
+    super(`${TAG} findPatientByDni não encontrou paciente no Axonico para o documentNumber recebido`);
     this.name = 'AxonicoPacienteNaoEncontradoError';
-    this.patientId = patientId;
   }
 }
 
@@ -182,29 +192,28 @@ export class AxonicoPacienteNaoEncontradoError extends Error {
  * reserva antes do `PUT`) é mudança de DESENHO, não mapeamento de erro — ver LISTA no relatório da
  * change. Este erro só GARANTE que a corrida, quando acontece, vira 409 com os dois comprovantes
  * em vez de 500 genérico ou de mascarar o segundo faturamento.
+ *
+ * CORREÇÃO (19/09/2026): não carrega mais `patientId` — não há `patientId` de entrada neste fluxo.
  */
 export class AxonicoLancamentoConcorrenteError extends Error {
   readonly code = '23505' as const;
-  readonly patientId: string;
   readonly documentNumber: string;
   readonly existente: AxonicoLancamentoRecord;
   readonly recemFaturado: { numeroComprobante: string; codAutorizacion: string };
 
   constructor(
-    patientId: string,
     documentNumber: string,
     existente: AxonicoLancamentoRecord,
     recemFaturado: { numeroComprobante: string; codAutorizacion: string },
   ) {
     // Mensagem não interpola o DNI (documentNumber é PII clínica) — só diz que a chave da corrida
-    // foi o DNI, sem imprimir o valor; patientId (UUID nosso) e os comprovantes já rastreiam o caso.
+    // foi o DNI, sem imprimir o valor; os dois números de comprovante já rastreiam o caso.
     super(
       `${TAG} guard final — uq_axonico_lancamento_dedupe estourou (23505) na chave de DNI do ` +
-        `paciente patientId='${patientId}': corrida concorrente faturou DOIS comprovantes (existente=` +
+        `paciente: corrida concorrente faturou DOIS comprovantes (existente=` +
         `'${existente.numeroComprobante}', recém-faturado='${recemFaturado.numeroComprobante}')`,
     );
     this.name = 'AxonicoLancamentoConcorrenteError';
-    this.patientId = patientId;
     this.documentNumber = documentNumber;
     this.existente = existente;
     this.recemFaturado = recemFaturado;
@@ -217,26 +226,25 @@ export class AxonicoLancamentoConcorrenteError extends Error {
 
 export class LancarPrestacaoAxonicoUseCase {
   constructor(
-    private readonly patientReadPort: IPatientReadPort,
     private readonly axonicoApiClient: IAxonicoApiClient,
     private readonly lancamentoRepository: IAxonicoLancamentoRepository,
   ) {}
 
   async execute(input: LancarPrestacaoAxonicoInput): Promise<LancarPrestacaoAxonicoResult> {
-    const { patientId, serviceType, serviceDate, hours } = input;
+    const { serviceType, serviceDate, hours } = input;
     const serviceDateStr = serviceDate;
 
-    // ── Guard 0 — DNI presente e VÁLIDO (não só `IS NOT NULL` — a string literal 'null' passa
-    //    nessa checagem e não é um DNI; ver `domain/documentNumber.ts`) ──────────────────
-    const patientRecord = await this.patientReadPort.findDocumentNumber(patientId);
-    if (!patientRecord) {
-      throw new PacienteSemDniError(patientId, 'not_found');
-    }
-    const dniValidation = normalizeAndValidateDocumentNumber(patientRecord.documentNumber);
+    // ── Guard 0 — DNI recebido presente e VÁLIDO (não só truthy — a string literal 'null' não é
+    //    um DNI; ver `domain/documentNumber.ts`). Não consulta `patients` (decisão 19/09/2026):
+    //    o documento já vem pronto do Ana Care, no corpo da requisição. ──────────────────
+    const dniValidation = normalizeAndValidateDocumentNumber(input.documentNumber);
     if (!dniValidation.valid) {
-      throw new PacienteSemDniError(patientId, dniValidation.reason === 'ausente' ? 'no_document' : 'invalid_document');
+      throw new PacienteSemDniError(dniValidation.reason === 'ausente' ? 'no_document' : 'invalid_document');
     }
     const documentNumber = dniValidation.normalized;
+    // Não há `patientId` de entrada neste fluxo (migration 446 tornou a coluna NULLABLE) — toda
+    // tentativa grava `patientId: null` até o vínculo paciente↔Ana Care existir de verdade.
+    const patientId = null;
 
     // ── Guard 1 — hora cheia (D366) ──────────────────────────────
     if (!Number.isInteger(hours) || hours <= 0) {
@@ -248,8 +256,9 @@ export class LancarPrestacaoAxonicoUseCase {
     //    dois patientId com o mesmo DNI passavam este guard cada um por si). ──────────────────
     const existingLocal = await this.lancamentoRepository.findExisting(documentNumber, serviceType, serviceDateStr);
     if (existingLocal) {
-      // Nunca logar documentNumber (DNI) — PII clínica; patientId (UUID nosso) já dá rastreabilidade.
-      logger.info({ msg: `${TAG} dedupe local — já enviado`, patientId, serviceType, serviceDate: serviceDateStr });
+      // Nunca logar documentNumber (DNI) — PII clínica. Sem patientId (19/09/2026) — correlaciona
+      // só por serviceType/serviceDate.
+      logger.info({ msg: `${TAG} dedupe local — já enviado`, serviceType, serviceDate: serviceDateStr });
       await this.lancamentoRepository.insert({
         patientId,
         documentNumber,
@@ -295,7 +304,7 @@ export class LancarPrestacaoAxonicoUseCase {
     try {
       patientMatch = await this.axonicoApiClient.findPatientByDni(documentNumber);
       if (!patientMatch) {
-        throw new AxonicoPacienteNaoEncontradoError(patientId);
+        throw new AxonicoPacienteNaoEncontradoError();
       }
       hasExistingRemote = await this.axonicoApiClient.checkExistingComprobante({
         historiaClinica: patientMatch.historiaClinica,
@@ -304,13 +313,14 @@ export class LancarPrestacaoAxonicoUseCase {
         serviceDate,
       });
     } catch (err) {
-      await this.gravaErro(patientId, documentNumber, serviceType, serviceDateStr, hours, err);
+      await this.gravaErro(documentNumber, serviceType, serviceDateStr, hours, err);
       throw err;
     }
 
     if (hasExistingRemote) {
-      // Nunca logar documentNumber (DNI) — PII clínica; patientId (UUID nosso) já dá rastreabilidade.
-      logger.info({ msg: `${TAG} dedupe remoto — comprobante já existe no Axonico`, patientId, serviceType, serviceDate: serviceDateStr });
+      // Nunca logar documentNumber (DNI) — PII clínica. Sem patientId (19/09/2026) — correlaciona
+      // só por serviceType/serviceDate.
+      logger.info({ msg: `${TAG} dedupe remoto — comprobante já existe no Axonico`, serviceType, serviceDate: serviceDateStr });
       const insertedDuplicado = await this.lancamentoRepository.insert({
         patientId,
         documentNumber,
@@ -342,7 +352,7 @@ export class LancarPrestacaoAxonicoUseCase {
         cantidad: hours,
       });
     } catch (err) {
-      await this.gravaErro(patientId, documentNumber, serviceType, serviceDateStr, hours, err);
+      await this.gravaErro(documentNumber, serviceType, serviceDateStr, hours, err);
       throw err;
     }
 
@@ -376,12 +386,11 @@ export class LancarPrestacaoAxonicoUseCase {
             numeroComprobanteExistente: existente.numeroComprobante,
             numeroComprobanteRecemFaturado: submitResult.numeroComprobante,
             codAutorizacaoRecemFaturado: submitResult.codAutorizacion,
-            patientId,
             serviceType,
             serviceDate: serviceDateStr,
             hours,
           });
-          throw new AxonicoLancamentoConcorrenteError(patientId, documentNumber, existente, {
+          throw new AxonicoLancamentoConcorrenteError(documentNumber, existente, {
             numeroComprobante: submitResult.numeroComprobante,
             codAutorizacion: submitResult.codAutorizacion,
           });
@@ -392,14 +401,13 @@ export class LancarPrestacaoAxonicoUseCase {
 
       // NÃO gravar 'erro' aqui seria mentira (o lançamento teve sucesso no Axonico) e a escrita
       // provavelmente falharia pelo mesmo motivo. Este log é o ÚNICO rastro que sobra do
-      // faturamento — por isso carrega numeroComprobante/codAutorizacion, nunca dado clínico/PII
-      // (patientId é UUID, metadado operacional). O DNI NÃO entra: é PII (regra dura do projeto).
+      // faturamento — por isso carrega numeroComprobante/codAutorizacion, nunca o DNI (PII, regra
+      // dura do projeto). Sem patientId (19/09/2026) — não há mais identificador nosso a logar.
       const errorMessage = err instanceof Error ? err.message : String(err);
       logger.error({
         msg: `${TAG} comprovante FOI CRIADO no Axonico mas a gravação local falhou — faturamos e nosso lado não registrou`,
         numeroComprobante: submitResult.numeroComprobante,
         codAutorizacion: submitResult.codAutorizacion,
-        patientId,
         serviceType,
         serviceDate: serviceDateStr,
         hours,
@@ -418,7 +426,6 @@ export class LancarPrestacaoAxonicoUseCase {
   /** Grava `status='erro'` com `error_message` preenchido — CHECK `chk_axonico_lancamento_error_message`
    *  exige isso, e proíbe `error_message` nos demais status (nunca chamar isto fora deste caso). */
   private async gravaErro(
-    patientId: string,
     documentNumber: string,
     serviceType: EnliteServiceType,
     serviceDateStr: string,
@@ -426,10 +433,11 @@ export class LancarPrestacaoAxonicoUseCase {
     err: unknown,
   ): Promise<void> {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    // Nunca logar documentNumber (DNI) — PII clínica; patientId (UUID nosso) já dá rastreabilidade.
-    logger.warn({ msg: `${TAG} tentativa falhou — gravando status=erro`, patientId, serviceType, serviceDate: serviceDateStr, errorMessage });
+    // Nunca logar documentNumber (DNI) — PII clínica. Não há mais patientId (19/09/2026) — o log
+    // correlaciona só por serviceType/serviceDate.
+    logger.warn({ msg: `${TAG} tentativa falhou — gravando status=erro`, serviceType, serviceDate: serviceDateStr, errorMessage });
     await this.lancamentoRepository.insert({
-      patientId,
+      patientId: null,
       documentNumber,
       serviceType,
       serviceDate: serviceDateStr,

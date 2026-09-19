@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   allShiftsOf,
+  axonicoDayEligibility,
   blockReason,
   filterPatients,
   formatSourceRange,
@@ -319,5 +320,63 @@ describe('formatSourceRange', () => {
     expect(formatSourceRange(null, '2026-08-14T16:00:00-06:00')).toBe('—');
     expect(formatSourceRange('2026-08-14T08:00:00-06:00', null)).toBe('—');
     expect(formatSourceRange('', '')).toBe('—');
+  });
+});
+
+describe('axonicoDayEligibility', () => {
+  const validado = (overrides: Partial<AnaCareShift> = {}): AnaCareShift =>
+    makeShift({ status: 'validado', hoursActual: 8, ...overrides });
+
+  it('POSITIVO — elegível com as 4 condições satisfeitas (validado, com par, hora cheia, documento presente)', () => {
+    const result = axonicoDayEligibility([validado({ id: 's1' })], '30111222');
+    expect(result).toEqual({ eligible: true, reasons: [] });
+  });
+
+  it('NEGATIVO — motivo notValidated quando algum turno do dia não está validado', () => {
+    const result = axonicoDayEligibility([validado({ id: 's1' }), makeShift({ id: 's2', status: 'pendiente', hoursActual: 8 })], '30111222');
+    expect(result.eligible).toBe(false);
+    expect(result.reasons).toEqual(['notValidated']);
+  });
+
+  it('NEGATIVO — motivo notValidated quando o dia não tem NENHUM turno (lista vazia)', () => {
+    const result = axonicoDayEligibility([], '30111222');
+    expect(result.eligible).toBe(false);
+    expect(result.reasons).toContain('notValidated');
+  });
+
+  it('NEGATIVO — motivo missingCheckInOut quando algum turno validado não tem par completo (hoursActual null)', () => {
+    // D363/D344: turno sem check-in pode estar "validado" (contestação resolvida) mas hoursActual continua null.
+    const result = axonicoDayEligibility([validado({ id: 's1', hoursActual: null, actualStart: null, actualEnd: null })], '30111222');
+    expect(result.eligible).toBe(false);
+    expect(result.reasons).toEqual(['missingCheckInOut']);
+  });
+
+  it('NEGATIVO — motivo fractionalHours quando o total do dia não é hora cheia (nunca arredonda)', () => {
+    const result = axonicoDayEligibility([validado({ id: 's1', hoursActual: 8.5 })], '30111222');
+    expect(result.eligible).toBe(false);
+    expect(result.reasons).toEqual(['fractionalHours']);
+  });
+
+  it('POSITIVO — soma de decimais que fecha em hora cheia dentro da tolerância de ponto flutuante é aceita (8.1+7.9=16)', () => {
+    const result = axonicoDayEligibility([validado({ id: 's1', hoursActual: 8.1 }), validado({ id: 's2', hoursActual: 7.9 })], '30111222');
+    expect(result.eligible).toBe(true);
+  });
+
+  it('NEGATIVO — motivo missingDocument quando documentNumber está ausente', () => {
+    const result = axonicoDayEligibility([validado({ id: 's1' })], undefined);
+    expect(result.eligible).toBe(false);
+    expect(result.reasons).toEqual(['missingDocument']);
+  });
+
+  it('NEGATIVO — motivo missingDocument quando documentNumber é string vazia', () => {
+    const result = axonicoDayEligibility([validado({ id: 's1' })], '');
+    expect(result.reasons).toEqual(['missingDocument']);
+  });
+
+  it('NEGATIVO — mais de um motivo pode estar presente ao mesmo tempo (nunca só o primeiro)', () => {
+    const result = axonicoDayEligibility([makeShift({ id: 's1', status: 'pendiente', hoursActual: null, actualStart: null, actualEnd: null })], undefined);
+    expect(result.eligible).toBe(false);
+    expect(result.reasons).toEqual(expect.arrayContaining(['notValidated', 'missingCheckInOut', 'missingDocument']));
+    expect(result.reasons).toHaveLength(3);
   });
 });

@@ -735,8 +735,16 @@
         "selectAllPendingAriaLabel": "Selecionar todos os turnos pendentes do dia {{date}}",
         "totalsSummary": "{{total}} h · {{validated}} h validadas",
         "sendAction": "Enviar",
-        "sendDisabledHint": "Valide todos os turnos do dia para enviar",
-        "sentLabel": "Enviado",
+        "axonico": {
+          "reasons": {
+            "notValidated": "Valide todos os turnos do dia para enviar",
+            "missingCheckInOut": "Falta check-in ou check-out em algum turno do dia",
+            "fractionalHours": "O total do dia não é uma hora cheia",
+            "missingDocument": "Falta o documento do paciente"
+          },
+          "sentLabel": "Enviado — comprovante {{numero}}",
+          "duplicatedLabel": "Já tinha sido faturado — comprovante {{numero}}"
+        },
         "table": {
           "provider": "Prestador",
           "checkin": "Check-in",

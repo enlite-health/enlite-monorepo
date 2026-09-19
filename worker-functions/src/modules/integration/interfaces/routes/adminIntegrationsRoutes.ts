@@ -11,7 +11,6 @@ import { LancarPrestacaoAxonicoController } from '../controllers/LancarPrestacao
 import { LancarPrestacaoAxonicoUseCase } from '../../application/LancarPrestacaoAxonicoUseCase';
 import { AxonicoApiClient } from '../../infrastructure/AxonicoApiClient';
 import { AxonicoLancamentoRepository } from '../../infrastructure/AxonicoLancamentoRepository';
-import { PatientReadRepository } from '../../infrastructure/PatientReadRepository';
 import type { AuthMiddleware, PermissionMiddleware } from '@modules/identity';
 
 /**
@@ -42,11 +41,7 @@ export function createAdminIntegrationsRoutes(
   const lancarPrestacaoController = new LancarPrestacaoAxonicoController(async () => {
     axonicoClientPromise ??= AxonicoApiClient.create();
     const axonicoApiClient = await axonicoClientPromise;
-    return new LancarPrestacaoAxonicoUseCase(
-      new PatientReadRepository(),
-      axonicoApiClient,
-      new AxonicoLancamentoRepository(),
-    );
+    return new LancarPrestacaoAxonicoUseCase(axonicoApiClient, new AxonicoLancamentoRepository());
   });
 
   /**
@@ -70,7 +65,11 @@ export function createAdminIntegrationsRoutes(
   /**
    * POST /api/admin/integrations/axonico/comprobante
    *
-   * Corpo JSON: { patientId, serviceType, serviceDate: 'YYYY-MM-DD', hours }
+   * Corpo JSON: { documentNumber, documentType?, serviceType, serviceDate: 'YYYY-MM-DD', hours }
+   *
+   * `documentNumber` (19/09/2026) substitui `patientId` — o lançamento é feito pelo documento que
+   * já vem pronto do Ana Care, sem consultar `patients` (a tela ainda não vincula os pacientes
+   * dele aos nossos).
    *
    * Lança UMA prestação de AT no Axonico (`PUT /api/comprobante`, via `IAxonicoApiClient`). Cada
    * chamada bem-sucedida GERA FATURAMENTO real no Axonico — não existe sandbox. Mesma célula
@@ -86,7 +85,7 @@ export function createAdminIntegrationsRoutes(
   /**
    * POST /api/admin/integrations/axonico/comprobante/lote
    *
-   * Corpo JSON: { itens: [{ patientId, serviceType, serviceDate, hours }, ...] } (1 a 500 itens)
+   * Corpo JSON: { itens: [{ documentNumber, serviceType, serviceDate, hours }, ...] } (1 a 500 itens)
    *
    * Lança um LOTE — chama o caminho unitário em laço, item a item, com try/catch por item: falha
    * de um item NÃO aborta os seguintes (mesmo desenho de `BackfillWorkerMirrorUseCase.execute`).

@@ -12,8 +12,11 @@
  * Regras travadas preservadas (mesma origem de `ProviderGroup`): validado CONGELA; contestado
  * mostra motivo (lista fechada, sempre visível) + nota (opcional, "Nota restringida" quando
  * ausente); "Sin check-in" e "Web admin" com destaque de origem; validação é sempre por TURNO.
+ *
+ * Botão "Enviar" (19/09): fiado de verdade ao Axonico via `AxonicoSendControl` — as 4 condições de
+ * habilitação vêm de `axonicoDayEligibility` (`selectors.ts`, dono único do cálculo). `hours` do
+ * comando é o `total` já validado como hora CHEIA por essa mesma função — nunca arredondado aqui.
  */
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Checkbox } from '@presentation/components/atoms/Checkbox';
 import { Heading } from '@presentation/components/atoms/Heading';
@@ -22,8 +25,11 @@ import { Button } from '@presentation/components/atoms/Button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@presentation/components/atoms/Table';
 import { OriginBadge } from './OriginBadge';
 import { ValidationStatusBadge } from './ValidationStatusBadge';
+import { AxonicoSendControl } from './AxonicoSendControl';
+import type { AxonicoComprobanteService } from './AxonicoComprobanteService';
 import type { AnaCareShift } from './types';
 import {
+  axonicoDayEligibility,
   dayHoursSummary,
   formatSourceRange,
   formatSourceTime,
@@ -31,6 +37,7 @@ import {
   pendingSelectionStateOf,
   providerDisplayName,
   shiftHours,
+  totalHours,
   type DayGroupData,
   type SinCheckinHoursMode,
 } from './selectors';
@@ -49,6 +56,11 @@ interface DayGroupProps {
   /** Marca/desmarca TODOS os pendentes DESTE DIA de uma vez (checkbox de cabeçalho). */
   onToggleDayPending: (shifts: AnaCareShift[]) => void;
   sinCheckinHoursMode?: SinCheckinHoursMode;
+  /** Serviço do envio ao Axonico — injetado de cima (mesmo padrão de `AnaCareHoursService`). */
+  axonicoService: AxonicoComprobanteService;
+  /** ↔ `AnaCarePatient.documentNumber`/`documentType` — ausentes sem a célula `patient_identity:read` ou quando a fonte não mandou. */
+  patientDocumentNumber?: string;
+  patientDocumentType?: string;
 }
 
 export function DayGroup({
@@ -61,23 +73,17 @@ export function DayGroup({
   onToggleShift,
   onToggleDayPending,
   sinCheckinHoursMode = 'zero',
+  axonicoService,
+  patientDocumentNumber,
+  patientDocumentType,
 }: DayGroupProps): JSX.Element {
   const { t } = useTranslation();
   const shifts = day.entries.map((e) => e.shift);
   const pendingSelectionState = pendingSelectionStateOf(shifts, selectedShiftIds);
   const hasPending = shifts.some((s) => s.status === 'pendiente');
   const heading = formatWeekdayHeading(day.date);
-  const { total, validated, allValidated } = dayHoursSummary(shifts, sinCheckinHoursMode);
-
-  // Ação "Enviar" — o QUE ela faz ainda não está definido pelo Gabriel (pendente, ver relatório).
-  // Aqui só a REGRA DE HABILITAÇÃO importa: todo turno do dia validado. Estado local, só visual —
-  // nenhuma escrita real, nenhum fluxo de backend inventado.
-  const [sent, setSent] = useState(false);
-  const sendDisabledReason = disableActions
-    ? t('admin.anacareHours.stale.blockedPrefix', { reason: disableReason })
-    : !allValidated
-      ? t('admin.anacareHours.dayGroup.sendDisabledHint')
-      : undefined;
+  const { total, validated } = dayHoursSummary(shifts, sinCheckinHoursMode);
+  const axonicoEligibility = axonicoDayEligibility(shifts, patientDocumentNumber, sinCheckinHoursMode);
 
   return (
     <div className="border border-gray-600 rounded-xl overflow-hidden" data-testid={`anacare-hours-day-group-${day.date}`}>
@@ -106,22 +112,18 @@ export function DayGroup({
               {t('admin.anacareHours.stale.blockedPrefix', { reason: disableReason })}
             </Text>
           )}
-          {sent ? (
-            <Text size="xs" className="!text-green-700" data-testid={`anacare-hours-day-sent-${day.date}`}>
-              {t('admin.anacareHours.dayGroup.sentLabel')}
-            </Text>
-          ) : (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={disableActions || !allValidated}
-              title={sendDisabledReason}
-              onClick={() => setSent(true)}
-              data-testid={`anacare-hours-send-day-${day.date}`}
-            >
-              {t('admin.anacareHours.dayGroup.sendAction')}
-            </Button>
-          )}
+          <AxonicoSendControl
+            date={day.date}
+            service={axonicoService}
+            eligibility={axonicoEligibility}
+            disableActions={disableActions}
+            command={{
+              documentNumber: patientDocumentNumber ?? '',
+              documentType: patientDocumentType,
+              serviceDate: day.date,
+              hours: Math.round(totalHours(shifts, sinCheckinHoursMode)),
+            }}
+          />
         </div>
       </div>
 

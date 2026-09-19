@@ -330,3 +330,43 @@ export function dayHoursSummary(shifts: AnaCareShift[], sinCheckinHoursMode: Sin
     allValidated: shifts.length > 0 && validatedShifts.length === shifts.length,
   };
 }
+
+/**
+ * Motivo de bloqueio do botão "Enviar" (envio ao Axonico) — lista fechada, uma entrada por regra
+ * de habilitação (decisão do Gabriel, 19/09). Mais de um pode estar presente ao mesmo tempo (ex.:
+ * dia sem check-out E sem documento) — a tela mostra TODOS, nunca só o primeiro.
+ */
+export type AxonicoBlockReason = 'notValidated' | 'missingCheckInOut' | 'fractionalHours' | 'missingDocument';
+
+export interface AxonicoDayEligibility {
+  eligible: boolean;
+  reasons: AxonicoBlockReason[];
+}
+
+/** Tolerância pra comparar `total` (soma de decimais) contra o inteiro mais próximo — nunca arredonda o valor enviado, só decide se ele JÁ é inteiro. */
+const WHOLE_HOUR_EPSILON = 1e-6;
+
+/**
+ * As 4 condições do envio ao Axonico (decisão do Gabriel, 19/09, ver brief da tarefa):
+ *  1. todos os turnos do dia VALIDADOS;
+ *  2. todos os turnos do dia com check-in E check-out (`hoursActual !== null`) — turno sem par
+ *     vale 0 h no total exibido (D344), então mandar o dia faturaria menos do que foi trabalhado;
+ *  3. o total do dia é hora CHEIA (inteiro) — nunca arredondar;
+ *  4. `documentNumber` do paciente presente.
+ * Único dono do cálculo — `DayGroup` só lê `eligible`/`reasons` e formata. Independente de
+ * `dayHoursSummary` (que serve o cabeçalho) porque as regras de elegibilidade do envio são mais
+ * estritas: turno sem check-in aqui BLOQUEIA (`missingCheckInOut`), não só zera o total.
+ */
+export function axonicoDayEligibility(
+  shifts: AnaCareShift[],
+  documentNumber: string | undefined,
+  sinCheckinHoursMode: SinCheckinHoursMode = 'zero',
+): AxonicoDayEligibility {
+  const reasons: AxonicoBlockReason[] = [];
+  if (shifts.length === 0 || !shifts.every((s) => s.status === 'validado')) reasons.push('notValidated');
+  if (!shifts.every((s) => s.hoursActual !== null)) reasons.push('missingCheckInOut');
+  const total = totalHours(shifts, sinCheckinHoursMode);
+  if (Math.abs(total - Math.round(total)) >= WHOLE_HOUR_EPSILON) reasons.push('fractionalHours');
+  if (!documentNumber) reasons.push('missingDocument');
+  return { eligible: reasons.length === 0, reasons };
+}

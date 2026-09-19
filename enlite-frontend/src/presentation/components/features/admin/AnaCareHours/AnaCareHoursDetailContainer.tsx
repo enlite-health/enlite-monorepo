@@ -21,11 +21,14 @@ import { useAnaCareHoursPatient } from '@hooks/admin/useAnaCareHoursPatient';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { AnaCareHoursDetailPage } from './AnaCareHoursDetailPage';
 import { AnaCareHoursServiceError, type AnaCareHoursService } from './AnaCareHoursService';
+import type { AxonicoComprobanteService } from './AxonicoComprobanteService';
 import type { AnaCareShift, ContestReason } from './types';
 import type { BlockReasonMode, SinCheckinHoursMode } from './selectors';
 
 interface AnaCareHoursDetailContainerProps {
   service: AnaCareHoursService;
+  /** Serviço do envio ao Axonico (botão "Enviar" de cada dia) — só REPASSADO, este container não chama nem reage a ele. */
+  axonicoService: AxonicoComprobanteService;
   month: string;
   patientId: string;
   onBack: () => void;
@@ -35,6 +38,7 @@ interface AnaCareHoursDetailContainerProps {
 
 export function AnaCareHoursDetailContainer({
   service,
+  axonicoService,
   month,
   patientId,
   onBack,
@@ -140,6 +144,7 @@ export function AnaCareHoursDetailContainer({
         snapshot={snapshot}
         patientId={patientId}
         onBack={onBack}
+        axonicoService={axonicoService}
         onValidateShift={handleValidateShift}
         onValidateBatch={handleValidateBatch}
         onContestShift={handleContestShift}

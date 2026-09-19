@@ -17,6 +17,12 @@
  * `documentNumber` (já normalizado pelo chamador — ver `domain/documentNumber.ts`), não por
  * `patientId`. `patientId` continua em `InsertAxonicoLancamentoParams`/`AxonicoLancamentoRecord`
  * — rastreabilidade de qual cadastro gerou a tentativa —, só sai da chave de dedupe.
+ *
+ * CORREÇÃO (19/09/2026, decisão do Gabriel): o lançamento passou a ser feito pelo `documentNumber`
+ * que vem do Ana Care, sem `patientId` de entrada e sem consultar `patients` (ver
+ * `LancarPrestacaoAxonicoUseCase` — o `patientReadPort` saiu deste fluxo). `patientId` vira
+ * `string | null` — migration 446 tornou a coluna NULLABLE — e hoje toda tentativa grava `null`
+ * até o vínculo paciente↔Ana Care existir de verdade.
  */
 import type { EnliteServiceType } from './EnliteServiceType';
 
@@ -26,7 +32,8 @@ export type AxonicoLancamentoStatus = 'enviado' | 'duplicado' | 'erro';
 /** Uma linha de `axonico_comprobante_lancamento`, já lida do banco. */
 export interface AxonicoLancamentoRecord {
   id: string;
-  patientId: string;
+  /** `null` desde 19/09/2026 (migration 446) — não há mais `patientId` de entrada neste fluxo. */
+  patientId: string | null;
   /** DNI normalizado — chave do dedupe (índice `uq_axonico_lancamento_dedupe`). */
   documentNumber: string;
   serviceType: EnliteServiceType;
@@ -42,7 +49,8 @@ export interface AxonicoLancamentoRecord {
 
 /** Parâmetros de `insert` — uma tentativa nova. */
 export interface InsertAxonicoLancamentoParams {
-  patientId: string;
+  /** `null` desde 19/09/2026 — não há mais `patientId` de entrada neste fluxo. */
+  patientId: string | null;
   /** DNI normalizado (ver `domain/documentNumber.ts`) — chave do dedupe. */
   documentNumber: string;
   serviceType: EnliteServiceType;
