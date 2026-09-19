@@ -735,8 +735,27 @@
         "selectAllPendingAriaLabel": "Seleccionar todos los turnos pendientes del {{date}}",
         "totalsSummary": "{{total}} h · {{validated}} h validadas",
         "sendAction": "Enviar",
-        "sendDisabledHint": "Validá todos los turnos del día para enviar",
-        "sentLabel": "Enviado",
+        "axonico": {
+          "reasons": {
+            "notValidated": "Validá todos los turnos del día para enviar",
+            "missingCheckInOut": "Falta check-in o check-out en algún turno del día",
+            "fractionalHours": "El total del día no es una hora completa",
+            "missingDocument": "Falta el documento del paciente"
+          },
+          "sentLabel": "Enviado — comprobante {{numero}}",
+          "duplicatedLabel": "Ya estaba facturado — comprobante {{numero}}",
+          "duplicatedNoComprobanteLabel": "Ya fue facturado — número de comprobante no disponible",
+          "documentModal": {
+            "title": "Documento del paciente",
+            "description": "Este paciente todavía no tiene un documento registrado. Ingresá el número una vez — no se va a volver a preguntar.",
+            "inputLabel": "Número de documento",
+            "inputPlaceholder": "Ej.: 30111222",
+            "cancel": "Cancelar",
+            "confirm": "Registrar y enviar",
+            "errorConflict": "Ya hay un documento distinto registrado para este paciente. Verificá el número con el equipo antes de reintentar.",
+            "errorInvalid": "No se pudo registrar el documento. Verificá el número ingresado."
+          }
+        },
         "table": {
           "provider": "Prestador",
           "checkin": "Check-in",
@@ -837,6 +856,14 @@
         "title": "Origen del check-in",
         "openAriaLabel": "Ver leyenda de origen del check-in",
         "closeAriaLabel": "Cerrar leyenda"
+      },
+      "sync": {
+        "button": "Sincronizar",
+        "resumeButton": "Retomar sincronización",
+        "resumeHint": "Hay una sincronización interrumpida — se retomará desde donde quedó.",
+        "progress": "Ronda {{round}} · {{count}} reservas procesadas",
+        "done": "Sincronización completa.",
+        "deduped": "Ya hay una sincronización en curso — no se inició otra."
       }
     },
     "managementDashboard": {

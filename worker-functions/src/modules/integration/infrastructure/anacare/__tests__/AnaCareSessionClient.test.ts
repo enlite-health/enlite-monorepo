@@ -229,7 +229,7 @@ describe('AnaCareSessionClient — filtro de universo D340 no cliente (2.1)', ()
               duration: null,
               month: '2026-09',
               is_finalized: false,
-              patient: { id: 10, agency: 116, document_type: 'DNI', document_number: '1', first_name: 'A', last_name: 'B' },
+              patient: { id: 10, agency: 116, identification_type: 'DNI', identification_number: '1', first_name: 'A', last_name: 'B' },
               nurse: { id: 100, first_name: 'N', last_name: 'M' },
             },
             {
@@ -245,7 +245,7 @@ describe('AnaCareSessionClient — filtro de universo D340 no cliente (2.1)', ()
               month: '2026-09',
               is_finalized: false,
               // outra agência — tem que ser descartado pelo filtro no cliente
-              patient: { id: 11, agency: 999, document_type: 'DNI', document_number: '2', first_name: 'C', last_name: 'D' },
+              patient: { id: 11, agency: 999, identification_type: 'DNI', identification_number: '2', first_name: 'C', last_name: 'D' },
               nurse: { id: 101, first_name: 'N2', last_name: 'M2' },
             },
           ],
@@ -290,7 +290,7 @@ describe('AnaCareSessionClient — filtro de universo D340 no cliente (2.1)', ()
               duration: null,
               month: '2026-09',
               is_finalized: false,
-              patient: { id: 10, agency: 116, document_type: 'DNI', document_number: '1', first_name: 'A', last_name: 'B' },
+              patient: { id: 10, agency: 116, identification_type: 'DNI', identification_number: '1', first_name: 'A', last_name: 'B' },
               // prestador de OUTRA agência — não pode derrubar a 1ª perna (paciente já é 116)
               nurse: { id: 100, agency: 5, first_name: 'N', last_name: 'M' },
             },
@@ -337,7 +337,7 @@ describe('AnaCareSessionClient — filtro de universo D340 no cliente (2.1)', ()
               month: '2026-09',
               is_finalized: false,
               // paciente com agência NULA (71% dos turnos, F10) + prestador da 116 — F7 medido
-              patient: { id: 90, agency: null, document_type: null, document_number: null, first_name: 'E', last_name: 'F' },
+              patient: { id: 90, agency: null, identification_type: null, identification_number: null, first_name: 'E', last_name: 'F' },
               nurse: { id: 200, agency: 116, first_name: 'N3', last_name: 'M3' },
             },
             {
@@ -353,7 +353,7 @@ describe('AnaCareSessionClient — filtro de universo D340 no cliente (2.1)', ()
               month: '2026-09',
               is_finalized: false,
               // paciente com agência nula + prestador de OUTRA agência — fora do universo automático
-              patient: { id: 91, agency: null, document_type: null, document_number: null, first_name: 'G', last_name: 'H' },
+              patient: { id: 91, agency: null, identification_type: null, identification_number: null, first_name: 'G', last_name: 'H' },
               nurse: { id: 201, agency: 999, first_name: 'N4', last_name: 'M4' },
             },
           ],
@@ -997,7 +997,7 @@ describe('AnaCareSessionClient — turno sem prestador/paciente é descartado e 
             duration: null,
             month: '2026-09',
             is_finalized: false,
-            patient: { id: 10, agency: 116, document_type: 'DNI', document_number: '1', first_name: 'A', last_name: 'B' },
+            patient: { id: 10, agency: 116, identification_type: 'DNI', identification_number: '1', first_name: 'A', last_name: 'B' },
             nurse: null, // turno agendado sem prestador designado — o defeito medido em produção
           },
           {
@@ -1012,7 +1012,7 @@ describe('AnaCareSessionClient — turno sem prestador/paciente é descartado e 
             duration: null,
             month: '2026-09',
             is_finalized: false,
-            patient: { id: 11, agency: 116, document_type: 'DNI', document_number: '2', first_name: 'C', last_name: 'D' },
+            patient: { id: 11, agency: 116, identification_type: 'DNI', identification_number: '2', first_name: 'C', last_name: 'D' },
             nurse: { id: 101, agency: 116, first_name: 'N2', last_name: 'M2' },
           },
         ]);
@@ -1100,7 +1100,7 @@ describe('AnaCareSessionClient — turno sem prestador/paciente é descartado e 
             duration: null,
             month: '2026-09',
             is_finalized: false,
-            patient: { id: 40, agency: 116, document_type: 'DNI', document_number: '4', first_name: 'E', last_name: 'F' },
+            patient: { id: 40, agency: 116, identification_type: 'DNI', identification_number: '4', first_name: 'E', last_name: 'F' },
             nurse: { id: 400, agency: 116, first_name: 'N4', last_name: 'M4' },
           },
         ]);

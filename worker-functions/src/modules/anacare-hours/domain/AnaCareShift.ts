@@ -70,6 +70,16 @@ export interface AnaCarePatient {
   anaCareId: string;
   linked: boolean;
   name?: string;
+  /**
+   * Documento de identidade do paciente (categoria/valor, ex. "DNI"/"30111222") — vem do payload
+   * do turno na fonte, mesmo desenho do `name` (item 1). PII: ausente (não vazio, não redigido) a
+   * menos que o ator tenha `patient_identity:read` — mesmo gate do container "Identidade" da ficha
+   * do paciente (`patientContainerAccess.ts`), aplicado em `AnaCareHoursController.
+   * canReadPatientDocument`. Só o DETALHE carrega — a LISTA (`AnaCareListPatient`) nunca ganha
+   * este campo.
+   */
+  documentType?: string;
+  documentNumber?: string;
   providers: AnaCareProvider[];
 }
 

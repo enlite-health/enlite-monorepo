@@ -31,10 +31,11 @@ import { OriginLegend } from './OriginLegend';
 import { DayGroup } from './DayGroup';
 import { ValidateBatchModal } from './ValidateBatchModal';
 import { ContestModal } from './ContestModal';
+import type { AxonicoComprobanteService } from './AxonicoComprobanteService';
+import type { AnaCarePatientDocumentService } from './AnaCarePatientDocumentService';
 import type { AnaCareHoursPatientSnapshot, AnaCareShift, ContestReason } from './types';
 import {
   addDaysIso,
-  allShiftEntriesOf,
   allShiftsOf,
   blockReason,
   groupShiftsByDayInWeek,
@@ -53,6 +54,10 @@ interface AnaCareHoursDetailPageProps {
   snapshot: AnaCareHoursPatientSnapshot;
   patientId: string;
   onBack: () => void;
+  /** Serviço do envio ao Axonico (botão "Enviar" de cada dia) — injetado de cima, mesmo padrão de `service`. */
+  axonicoService: AxonicoComprobanteService;
+  /** Serviço do registro de documento do paciente (modal aberto quando falta DNI, 19/09) — injetado de cima, mesmo padrão de `axonicoService`. */
+  patientDocumentService: AnaCarePatientDocumentService;
   initialContestShiftId?: string | null;
   /** Hooks de escrita — quando ausentes, o clique só fecha o modal, sem persistir nada. `AnaCareHoursDetailContainer` é quem passa os callbacks de verdade. */
   onValidateShift?: (shift: AnaCareShift) => void | Promise<void>;
@@ -71,6 +76,8 @@ export function AnaCareHoursDetailPage({
   snapshot,
   patientId,
   onBack,
+  axonicoService,
+  patientDocumentService,
   initialContestShiftId = null,
   onValidateShift,
   onValidateBatch,
@@ -94,17 +101,14 @@ export function AnaCareHoursDetailPage({
   const selectionStats = useMemo(() => selectionSummary(selectedShifts, sinCheckinHoursMode), [selectedShifts, sinCheckinHoursMode]);
   const isSelectionBarVisible = selectionStats.count > 0;
 
-  // Navegação semana a semana (decisão do Gabriel, 16/09) — abre na semana do turno mais antigo
-  // do paciente (pra sempre cair numa semana com conteúdo em vez de uma vazia) e NUNCA busca de
-  // novo: o mês inteiro já está em `snapshot` (uma chamada só, ver `useAnaCareHoursPatient`), então
-  // trocar de semana só filtra em memória via `groupShiftsByDayInWeek`.
-  const allEntries = useMemo(() => (patient ? allShiftEntriesOf(patient) : []), [patient]);
-  const earliestDate = useMemo(
-    () => allEntries.reduce<string | null>((min, e) => (min === null || e.shift.date < min ? e.shift.date : min), null),
-    [allEntries],
-  );
+  // Navegação semana a semana (decisão do Gabriel, 18/09) — abre na semana de HOJE se o mês
+  // exibido (`snapshot.month`, YYYY-MM) contém a data de hoje; senão abre na primeira semana do
+  // mês exibido. NUNCA busca de novo: o mês inteiro já está em `snapshot` (uma chamada só, ver
+  // `useAnaCareHoursPatient`), então trocar de semana só filtra em memória via `groupShiftsByDayInWeek`.
+  const todayIso = new Date().toISOString().slice(0, 10);
   const [weekStart, setWeekStart] = useState<string | null>(null);
-  const effectiveWeekStart = weekStart ?? (earliestDate ? startOfWeekMonday(earliestDate) : startOfWeekMonday(new Date().toISOString().slice(0, 10)));
+  const effectiveWeekStart =
+    weekStart ?? startOfWeekMonday(snapshot.month === todayIso.slice(0, 7) ? todayIso : `${snapshot.month}-01`);
   const weekEnd = addDaysIso(effectiveWeekStart, 6);
   const dayGroups = useMemo(() => (patient ? groupShiftsByDayInWeek(patient, effectiveWeekStart) : []), [patient, effectiveWeekStart]);
 
@@ -298,6 +302,12 @@ export function AnaCareHoursDetailPage({
               onToggleShift={toggleShift}
               onToggleDayPending={toggleDayPending}
               sinCheckinHoursMode={sinCheckinHoursMode}
+              axonicoService={axonicoService}
+              patientDocumentService={patientDocumentService}
+              anaCarePatientId={patient.anaCareId}
+              patientDocumentNumber={patient.documentNumber}
+              patientDocumentType={patient.documentType}
+              onDocumentRegistered={onRefresh}
             />
           ))}
         </div>

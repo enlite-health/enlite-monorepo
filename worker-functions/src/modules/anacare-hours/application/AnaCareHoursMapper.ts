@@ -126,12 +126,20 @@ export function groupIntoPatients(
     patientName?: string;
     /** Nome do prestador resolvido pela FONTE — já `undefined` quando o chamador não tem `worker_contact:read`. */
     nurseName?: string;
+    /**
+     * Documento do paciente resolvido pela FONTE — já `undefined` quando o chamador não tem
+     * `patient_identity:read` (mesmo desenho de `nurseName`/`worker_contact:read`), mesmo que o
+     * par tenha documento. Este módulo não decide permissão, só agrupa (ver cabeçalho).
+     */
+    patientDocumentType?: string;
+    patientDocumentNumber?: string;
   }>,
   linkedNurseIds: ReadonlySet<string> = new Set(),
 ): AnaCarePatient[] {
   const byPatient = new Map<string, Map<string, { shifts: AnaCareShift[]; name?: string }>>();
   const patientNames = new Map<string, string>();
-  for (const { shift, anaCarePatientId, anaCareNurseId, patientName, nurseName } of shifts) {
+  const patientDocuments = new Map<string, { documentType?: string; documentNumber?: string }>();
+  for (const { shift, anaCarePatientId, anaCareNurseId, patientName, nurseName, patientDocumentType, patientDocumentNumber } of shifts) {
     if (!byPatient.has(anaCarePatientId)) byPatient.set(anaCarePatientId, new Map());
     const byProvider = byPatient.get(anaCarePatientId)!;
     if (!byProvider.has(anaCareNurseId)) byProvider.set(anaCareNurseId, { shifts: [] });
@@ -139,6 +147,9 @@ export function groupIntoPatients(
     entry.shifts.push(shift);
     if (nurseName && !entry.name) entry.name = nurseName;
     if (patientName && !patientNames.has(anaCarePatientId)) patientNames.set(anaCarePatientId, patientName);
+    if ((patientDocumentType || patientDocumentNumber) && !patientDocuments.has(anaCarePatientId)) {
+      patientDocuments.set(anaCarePatientId, { documentType: patientDocumentType, documentNumber: patientDocumentNumber });
+    }
   }
 
   const patients: AnaCarePatient[] = [];
@@ -148,7 +159,15 @@ export function groupIntoPatients(
       const linked = linkedNurseIds.has(providerAnaCareId);
       providers.push({ anaCareId: providerAnaCareId, linked, name: entry.name, shifts: entry.shifts });
     }
-    patients.push({ anaCareId, linked: false, name: patientNames.get(anaCareId), providers });
+    const document = patientDocuments.get(anaCareId);
+    patients.push({
+      anaCareId,
+      linked: false,
+      name: patientNames.get(anaCareId),
+      documentType: document?.documentType,
+      documentNumber: document?.documentNumber,
+      providers,
+    });
   }
   return patients;
 }

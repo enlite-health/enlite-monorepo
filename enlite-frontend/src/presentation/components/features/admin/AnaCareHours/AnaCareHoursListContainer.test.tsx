@@ -74,4 +74,29 @@ describe('AnaCareHoursListContainer', () => {
     expect(screen.queryByTestId('anacare-hours-list-error')).not.toBeInTheDocument();
     expect(container.textContent).toBe('');
   });
+
+  // D7 (cobertura, 18/09): `sync={service.triggerSync ? sync : undefined}` (linha 72) — os testes
+  // acima usam FakeAnaCareHoursService, que NÃO implementa `triggerSync` (cobre o ramo `undefined`,
+  // botão ausente). Este teste cobre o ramo TRUE: serviço COM `triggerSync` passa o hook adiante e
+  // o botão "Sincronizar" aparece na lista.
+  it('POSITIVO — serviço com triggerSync: o botão "Sincronizar" aparece na lista', async () => {
+    const service: AnaCareHoursService = {
+      getMonthSnapshot: vi.fn().mockResolvedValue({
+        month: '2026-08',
+        updatedAt: '2026-09-15T08:00:00-03:00',
+        stale: false,
+        snapshotState: 'fresco',
+        circuitBreakerOpen: false,
+        patients: [],
+      }),
+      getPatientMonth: vi.fn(),
+      getRetratoStatus: vi.fn(),
+      validateShift: vi.fn(),
+      validateBatch: vi.fn(),
+      contestShift: vi.fn(),
+      triggerSync: vi.fn(),
+    };
+    render(<AnaCareHoursListContainer service={service} onOpenPatient={vi.fn()} initialMonth="2026-08" />);
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-sync-button')).toBeInTheDocument());
+  });
 });

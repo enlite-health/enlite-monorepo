@@ -11,6 +11,7 @@ import { AnaCareHoursServiceError, VALIDATE_BATCH_MAX_SHIFTS } from '../../domai
 import type { AnaCareRetratoSourceStatus, AnaCareShiftsSource, SourceShiftDTO } from '../../domain/AnaCareShiftsSource';
 import type { PatientMonthSyncRepository } from '../../domain/AnaCareHoursSyncPorts';
 import type { AnaCarePatientMonthAggregate, AnaCarePatientMonthProviderAggregate } from '../../domain/AnaCarePatientMonth';
+import type { AnaCarePatientDocumentRecord, IAnaCarePatientDocumentRepository } from '@modules/integration';
 
 jest.mock('../../infrastructure/ShiftHoursValidationRepository', () => {
   const actual = jest.requireActual('../../infrastructure/ShiftHoursValidationRepository');
@@ -49,6 +50,9 @@ const SHIFT_A: SourceShiftDTO = {
   patientLastName: 'Fernández QA',
   nurseFirstName: 'Rocío',
   nurseLastName: 'García QA',
+  // Item 4 (18/09): documento do paciente — PII, gated no controller (patient_identity:read).
+  patientDocumentType: 'DNI',
+  patientDocumentNumber: '30999888',
 };
 
 const SHIFT_SEM_CHECKIN: SourceShiftDTO = {
@@ -391,6 +395,128 @@ describe('AnaCareHoursService', () => {
       const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), workerLinks);
       const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false, true);
       expect(patient?.providers[0].linked).toBe(true);
+    });
+
+    /**
+     * Item 4 (18/09), gate de PII: ator SEM `patient_identity:read` (5º parâmetro omitido, default
+     * `false`) — documento AUSENTE (`undefined`), mesmo com a fonte tendo mandado o par completo.
+     * `undefined`, não vazio/redigido: mesma convenção de `nurseName`/`worker_contact:read`.
+     */
+    it('item 4 (18/09): SEM patient_identity:read — documentType/documentNumber ausentes mesmo com a fonte mandando o par', async () => {
+      const service = new AnaCareHoursService(new StubSource(), mockRepo());
+      const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false);
+      expect(patient?.documentType).toBeUndefined();
+      expect(patient?.documentNumber).toBeUndefined();
+    });
+
+    /** Item 4 (18/09): COM `patient_identity:read` (6º parâmetro `true`) — documento presente. */
+    it('item 4 (18/09): COM patient_identity:read — documentType/documentNumber presentes, vindos da fonte', async () => {
+      const service = new AnaCareHoursService(new StubSource(), mockRepo());
+      const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false, false, true);
+      expect(patient?.documentType).toBe('DNI');
+      expect(patient?.documentNumber).toBe('30999888');
+    });
+
+    /**
+     * Item 5 (19/09, migration 446): fallback do documento REGISTRADO manualmente quando a fonte
+     * (Ana Care) não manda `patientDocumentNumber` para o turno. Gate continua o mesmo
+     * (`patient_identity:read`) — o documento registrado é PII igual ao original.
+     */
+    describe('fallback do documento registrado (item 5, migration 446)', () => {
+      function mockPatientDocuments(
+        overrides: Partial<jest.Mocked<IAnaCarePatientDocumentRepository>> = {},
+      ): jest.Mocked<IAnaCarePatientDocumentRepository> {
+        return {
+          findByPatientId: jest.fn().mockResolvedValue(null),
+          insert: jest.fn(),
+          ...overrides,
+        };
+      }
+
+      const REGISTERED: AnaCarePatientDocumentRecord = {
+        id: 'doc-1',
+        anaCarePatientId: 'AC-PAT-0',
+        documentNumber: '40111222',
+        documentType: 'DNI',
+        registeredBy: 'uid-staff-1',
+        createdAt: new Date('2026-09-01T00:00:00Z'),
+        updatedAt: new Date('2026-09-01T00:00:00Z'),
+      };
+
+      function makeSourceSemDocumento(): StubSource {
+        const shiftSemDocumento: SourceShiftDTO = { ...SHIFT_A, patientDocumentType: null, patientDocumentNumber: null };
+        return new StubSource([shiftSemDocumento]);
+      }
+
+      it('fonte SEM documento + patient_identity:read → usa o documento REGISTRADO', async () => {
+        const patientDocuments = mockPatientDocuments({ findByPatientId: jest.fn().mockResolvedValue(REGISTERED) });
+        const service = new AnaCareHoursService(
+          makeSourceSemDocumento(),
+          mockRepo(),
+          new KMSEncryptionService(),
+          undefined,
+          undefined,
+          patientDocuments,
+        );
+
+        const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false, false, true);
+
+        expect(patient?.documentType).toBe('DNI');
+        expect(patient?.documentNumber).toBe('40111222');
+        expect(patientDocuments.findByPatientId).toHaveBeenCalledWith('AC-PAT-0');
+      });
+
+      it('fonte SEM documento + SEM patient_identity:read → nunca consulta o registrado (documento ausente, gate intacto)', async () => {
+        const patientDocuments = mockPatientDocuments({ findByPatientId: jest.fn().mockResolvedValue(REGISTERED) });
+        const service = new AnaCareHoursService(
+          makeSourceSemDocumento(),
+          mockRepo(),
+          new KMSEncryptionService(),
+          undefined,
+          undefined,
+          patientDocuments,
+        );
+
+        const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false, false, false);
+
+        expect(patient?.documentType).toBeUndefined();
+        expect(patient?.documentNumber).toBeUndefined();
+        expect(patientDocuments.findByPatientId).not.toHaveBeenCalled();
+      });
+
+      it('fonte COM documento — NUNCA consulta o registrado (fonte tem precedência, fallback só cobre ausência)', async () => {
+        const patientDocuments = mockPatientDocuments();
+        const service = new AnaCareHoursService(
+          new StubSource(), // SHIFT_A já tem patientDocumentNumber
+          mockRepo(),
+          new KMSEncryptionService(),
+          undefined,
+          undefined,
+          patientDocuments,
+        );
+
+        const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false, false, true);
+
+        expect(patient?.documentNumber).toBe('30999888'); // da fonte, não do registrado
+        expect(patientDocuments.findByPatientId).not.toHaveBeenCalled();
+      });
+
+      it('fonte SEM documento e SEM registro → documento ausente (undefined), nunca quebra', async () => {
+        const patientDocuments = mockPatientDocuments({ findByPatientId: jest.fn().mockResolvedValue(null) });
+        const service = new AnaCareHoursService(
+          makeSourceSemDocumento(),
+          mockRepo(),
+          new KMSEncryptionService(),
+          undefined,
+          undefined,
+          patientDocuments,
+        );
+
+        const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false, false, true);
+
+        expect(patient?.documentType).toBeUndefined();
+        expect(patient?.documentNumber).toBeUndefined();
+      });
     });
 
     // Contraparte da prova em `getMonthSnapshot` — o DETALHE segue AO VIVO na fonte, com

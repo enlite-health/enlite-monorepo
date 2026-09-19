@@ -357,11 +357,11 @@ jobs:
           tail -50 /tmp/vite.log
           exit 1
 
-      - name: Teste de integração — conferência de horas do Ana Care (engine ABAC ligado)
+      - name: Teste de integração — horas do Ana Care, conferência e envio ao Axonico (engine ABAC ligado)
         working-directory: enlite-frontend
         env:
           CI: 'true'
-        run: npx playwright test --project=integration --ignore-snapshots --grep "anacare-hours-conferencia"
+        run: npx playwright test --project=integration --ignore-snapshots --grep "anacare-hours-conferencia|anacare-hours-axonico-envio"
 
       - name: Relatório (só quando falha)
         if: failure()

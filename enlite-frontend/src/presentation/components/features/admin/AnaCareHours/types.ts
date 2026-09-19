@@ -115,6 +115,13 @@ export interface AnaCarePatient {
    * para o turno, e ausente na LISTA enquanto o retrato não guardar nome (ver `AnaCareProvider.name`).
    */
   name?: string;
+  /**
+   * Documento de identidade do paciente (categoria/valor, ex. "DNI"/"30111222") — mesmo desenho de
+   * `name`: vem do backend só quando o ator tem a célula `patient_identity:read` (gate de PII,
+   * item 4 da conferência de horas, 18/09). Ausente (não vazio) sem a permissão — nunca redigido.
+   */
+  documentType?: string;
+  documentNumber?: string;
   providers: AnaCareProvider[];
 }
 
@@ -243,4 +250,34 @@ export interface AnaCareRetratoStatus {
   stale: boolean;
   snapshotState: AnaCareSnapshotState;
   circuitBreakerOpen: boolean;
+}
+
+/**
+ * Comando: dispara UMA RODADA do sync manual (F6.4, botão "Sincronizar" da lista). ↔
+ * `POST /api/admin/anacare-hours/sync`, corpo `{month?, cursor?, budgetMs?}` — NUNCA
+ * `runStartedAt` (D364: o carimbo da corrida é resolvido pelo SERVIDOR, não entra na rota). O laço
+ * de várias rodadas até `nextCursor === null` é do CLIENTE (`useAnaCareHoursSync.ts`), nunca deste
+ * comando isolado.
+ */
+export interface TriggerSyncCommand {
+  month: string;
+  cursor?: number | null;
+  budgetMs?: number;
+}
+
+/**
+ * Resposta de UMA rodada do sync — espelha o outcome de `AnaCareHoursSyncRunner` (backend).
+ * `nextCursor === null` significa que a rodada TERMINOU o mês inteiro; qualquer número significa
+ * CONTINUAR o laço reenviando esse valor como `cursor` na próxima chamada.
+ */
+export interface TriggerSyncResult {
+  success: boolean;
+  deduped: boolean;
+  shiftsRead: number;
+  reservationsProcessed: number;
+  shiftsWritten: number;
+  nextCursor: number | null;
+  runStartedAt: string;
+  shiftsSkippedNoProvider: number;
+  shiftsSkippedNoPatient: number;
 }

@@ -45,8 +45,8 @@ function rawPatientFixture(overrides: Partial<RawAnaCarePatient> = {}): RawAnaCa
   return {
     id: 501,
     agency: 116,
-    document_type: 'DNI',
-    document_number: '30111222',
+    identification_type: 'DNI',
+    identification_number: '30111222',
     first_name: 'Lucía',
     last_name: 'Fernández',
     surname: 'Fernández QA',
@@ -112,6 +112,9 @@ const DTO_KEYS = [
   'patientLastName',
   'nurseFirstName',
   'nurseLastName',
+  // Item 4 (18/09): documento do paciente — PII, gated no controller (patient_identity:read).
+  'patientDocumentType',
+  'patientDocumentNumber',
 ].sort();
 
 describe('AnaCareFieldMinimization — contrato de minimização na borda (2.3)', () => {
@@ -195,10 +198,33 @@ describe('AnaCareFieldMinimization — contrato de minimização na borda (2.3)'
     expect(serialized).not.toContain(POISON_MARKER);
 
     expect(Object.keys(fields).sort()).toEqual(
-      ['id', 'agency', 'document_type', 'document_number', 'first_name', 'last_name'].sort(),
+      ['id', 'agency', 'identification_type', 'identification_number', 'first_name', 'last_name'].sort(),
     );
     expect(fields.agency).toBe(116);
-    expect(fields.document_number).toBe('30111222');
+    expect(fields.identification_number).toBe('30111222');
+  });
+
+  /**
+   * Item 4 (18/09) — o documento chega ao DTO quando o payload traz `identification_number`/
+   * `identification_type` (52/168 reservas medidas, 31%). O gate de PII (`patient_identity:read`)
+   * é responsabilidade do CONTROLLER, não deste mapper — aqui só prova que o valor É carregado.
+   */
+  it('minimizeShiftDTO carrega patientDocumentType/patientDocumentNumber quando o payload traz identification_type/identification_number', () => {
+    const raw = rawShiftFixture({ patient: rawPatientFixture({ identification_type: 'DNI', identification_number: '30111222' }) });
+    const dto = minimizeShiftDTO(raw);
+    expect(dto.patientDocumentType).toBe('DNI');
+    expect(dto.patientDocumentNumber).toBe('30111222');
+  });
+
+  /**
+   * Caso majoritário medido (69% das reservas, 17/09-18/09): payload SEM documento. O DTO traz
+   * `null`, nunca lança nem quebra — mesmo padrão de `checkin_source` nulo acima.
+   */
+  it('minimizeShiftDTO carrega patientDocumentType/patientDocumentNumber como null quando o payload não traz o documento (69% dos pacientes)', () => {
+    const raw = rawShiftFixture({ patient: rawPatientFixture({ identification_type: null, identification_number: null }) });
+    const dto = minimizeShiftDTO(raw);
+    expect(dto.patientDocumentType).toBeNull();
+    expect(dto.patientDocumentNumber).toBeNull();
   });
 
   it('checkin_source nulo (sem check-in) sobrevive à minimização como null, não como ausência', () => {
@@ -303,7 +329,7 @@ describe('AnaCareFieldMinimization — conserto de raiz 17/09/2026 (nomes reais 
       duration: 12,
       is_finalized: true,
       month: '2026-08',
-      patient: { id: 9660, agency: 116, document_type: 'DNI', document_number: '1', first_name: 'X', last_name: 'Y' },
+      patient: { id: 9660, agency: 116, identification_type: 'DNI', identification_number: '1', first_name: 'X', last_name: 'Y' },
       nurse: { id: 91116, agency: 116, first_name: 'A', last_name: 'B' },
       // `start`/`end`/`checkin`/`checkout` (os nomes CERTOS) ausentes de propósito.
     } as unknown as RawAnaCareShift;

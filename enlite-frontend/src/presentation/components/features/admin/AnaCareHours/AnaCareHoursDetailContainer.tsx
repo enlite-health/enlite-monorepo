@@ -21,11 +21,17 @@ import { useAnaCareHoursPatient } from '@hooks/admin/useAnaCareHoursPatient';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { AnaCareHoursDetailPage } from './AnaCareHoursDetailPage';
 import { AnaCareHoursServiceError, type AnaCareHoursService } from './AnaCareHoursService';
+import type { AxonicoComprobanteService } from './AxonicoComprobanteService';
+import type { AnaCarePatientDocumentService } from './AnaCarePatientDocumentService';
 import type { AnaCareShift, ContestReason } from './types';
 import type { BlockReasonMode, SinCheckinHoursMode } from './selectors';
 
 interface AnaCareHoursDetailContainerProps {
   service: AnaCareHoursService;
+  /** Serviço do envio ao Axonico (botão "Enviar" de cada dia) — só REPASSADO, este container não chama nem reage a ele. */
+  axonicoService: AxonicoComprobanteService;
+  /** Serviço do registro de documento do paciente (modal do DNI, 19/09) — só REPASSADO, mesmo padrão de `axonicoService`. */
+  patientDocumentService: AnaCarePatientDocumentService;
   month: string;
   patientId: string;
   onBack: () => void;
@@ -35,6 +41,8 @@ interface AnaCareHoursDetailContainerProps {
 
 export function AnaCareHoursDetailContainer({
   service,
+  axonicoService,
+  patientDocumentService,
   month,
   patientId,
   onBack,
@@ -140,6 +148,8 @@ export function AnaCareHoursDetailContainer({
         snapshot={snapshot}
         patientId={patientId}
         onBack={onBack}
+        axonicoService={axonicoService}
+        patientDocumentService={patientDocumentService}
         onValidateShift={handleValidateShift}
         onValidateBatch={handleValidateBatch}
         onContestShift={handleContestShift}

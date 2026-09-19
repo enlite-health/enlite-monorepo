@@ -236,7 +236,20 @@ describe('AnaCareHoursController', () => {
         mockReq({ params: { month: '2026-09', patientId: 'AC-PAT-0' }, permissionCells: ['worker_contact:read', 'patient_clinical:read'] }),
         res,
       );
-      expect(service.getPatientMonth).toHaveBeenCalledWith('2026-09', 'AC-PAT-0', true, true);
+      // 5º parâmetro (canReadPatientDocument) — SEM `patient_identity:read` no cells acima, vem `false`.
+      expect(service.getPatientMonth).toHaveBeenCalledWith('2026-09', 'AC-PAT-0', true, true, false);
+    });
+
+    /** Item 4 (18/09), gate de PII: `patient_identity:read` em `permissionCells` vira `true` no 5º parâmetro. */
+    it('item 4: repassa canReadPatientDocument=true quando permissionCells tem patient_identity:read', async () => {
+      const service = mockService({ getPatientMonth: jest.fn().mockResolvedValue({ anaCareId: 'AC-PAT-0' }) });
+      const controller = new AnaCareHoursController(() => service);
+      const res = mockRes();
+      await controller.getPatientMonth(
+        mockReq({ params: { month: '2026-09', patientId: 'AC-PAT-0' }, permissionCells: ['patient_identity:read'] }),
+        res,
+      );
+      expect(service.getPatientMonth).toHaveBeenCalledWith('2026-09', 'AC-PAT-0', false, false, true);
     });
 
     it('500 em erro inesperado', async () => {
