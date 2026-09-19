@@ -175,7 +175,13 @@ export class AxonicoApiClient implements IAxonicoApiClient {
       };
     };
     const client = new SecretManagerServiceClient();
-    const project = process.env.GCP_PROJECT_ID ?? 'enlite-prd';
+    const project = process.env.GCP_PROJECT_ID;
+    if (!project) {
+      // Sem default: um default de produção aqui puxaria o segredo de PRD em qualquer ambiente
+      // sem a variável (máquina local, runner de teste) — e o Axonico não tem sandbox, então
+      // qualquer envio FATURA de verdade (regra dura do Gabriel, 19/09).
+      throw new Error(`${TAG} fromSecretManager: GCP_PROJECT_ID must be set`);
+    }
 
     const [usernameRes] = await client.accessSecretVersion({
       name: `projects/${project}/secrets/${SECRET_USERNAME}/versions/latest`,
@@ -419,6 +425,15 @@ export class AxonicoApiClient implements IAxonicoApiClient {
   }
 
   async submitComprobante(params: SubmitComprobanteParams): Promise<AxonicoSubmitResult> {
+    // Trava fail-closed na ESCRITA (regra dura do Gabriel, 19/09): o Axonico não tem ambiente de
+    // testes, então qualquer PUT real FATURA. Padrão (variável ausente ou qualquer outro valor) é
+    // RECUSAR — só leitura (login/findPatientByDni/checkExistingComprobante) fica sempre ligada.
+    if (process.env.AXONICO_ENVIO_HABILITADO !== 'true') {
+      throw new Error(
+        `${TAG} submitComprobante: envio desabilitado neste ambiente (AXONICO_ENVIO_HABILITADO !== 'true') — cada envio fatura de verdade, o Axonico não tem sandbox`
+      );
+    }
+
     const { historiaClinica, nroCobertura, serviceCodes, serviceDate, cantidad } = params;
 
     // `fecha` = dia civil do pedido (`serviceDate`, string 'YYYY-MM-DD') + hora do INSTANTE do
