@@ -374,6 +374,7 @@ escrita('post', '/api/admin/permission-groups/{id}/members', 'Adiciona membro ao
 
 escrita('delete', '/api/admin/permission-groups/{id}/members', 'Remove membro do grupo',
   'Marca `removed_at`, não apaga. Recusado com 409 `last_manager` se fosse o último gestor — inclusive quando a pessoa remove a si mesma. ' +
+    'No Acesso Master, recusado com 409 `fixed_account` se for uma das 5 contas fixas (B-1, mig 451). ' +
     '`userId` vai no CORPO, não no path — uid de funcionário não pode cair no log de request do Cloud Run (parecer jurídico, C6).',
   z.object({ userId: z.string().max(128) }));
 

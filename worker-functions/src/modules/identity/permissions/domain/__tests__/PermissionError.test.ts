@@ -29,6 +29,17 @@ describe('toPermissionError — SQLSTATE das funções da 279 → vocabulário d
     expect(system.code).toBe('system_group');
   });
 
+  it('23514 distingue conta fixa do Master (B-1, mig 451) de anti-lockout e de grupo de sistema', () => {
+    const fixedAccount = toPermissionError(
+      pgError('23514', '[iam] DELETE rejeitado: marcel@enlite.health é conta fixa do Acesso Master (B-1) — protegida contra remoção'),
+    ) as PermissionError;
+    const lockout = toPermissionError(
+      pgError('23514', '[iam] operação rejeitada: deixaria ZERO gestores (anti-lockout)'),
+    ) as PermissionError;
+    expect(fixedAccount.code).toBe('fixed_account');
+    expect(lockout.code).toBe('last_manager');
+  });
+
   it('23514 vindo de CHECK de TABELA (traz `constraint`) não vira "grupo de sistema"', () => {
     const featureKey = toPermissionError(
       pgError('23514', 'violates check constraint', 'country_features_feature_key_check'),
