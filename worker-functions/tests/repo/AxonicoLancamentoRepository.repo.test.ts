@@ -4,9 +4,14 @@
  *
  * Prova o que o design pede: o dedupe local é uma trava de BANCO (índice único parcial
  * `uq_axonico_lancamento_dedupe`), não uma checagem no código — uma segunda tentativa
- * `status='enviado'` para a mesma tripla `(patient_id, service_type, service_date)` tem que
+ * `status='enviado'` para a mesma tripla `(document_number, service_type, service_date)` tem que
  * ESTOURAR por violação de constraint. Tentativas `duplicado`/`erro` repetidas, ao contrário,
  * precisam PASSAR — senão o índice não estaria provado como PARCIAL.
+ *
+ * CORREÇÃO (18/09/2026, antes do merge): a chave de dedupe deixou de ser `patient_id` e passou a
+ * ser `document_number` (o Axonico fatura pelo DNI, e dois `patient_id` podem compartilhar o
+ * mesmo DNI — ver migration 445). `document_number` vira coluna própria da tabela, `patient_id`
+ * continua gravado (rastreabilidade), só sai da chave de dedupe/busca.
  *
  * Como rodar (fora da stack completa de `jest.config.e2e.js` — sem API nem Firebase Emulator):
  *   docker run -d --name axonico-f2-postgres -p 127.0.0.1:5543:5432 \
@@ -22,6 +27,8 @@ import { AxonicoLancamentoRepository } from '../../src/modules/integration/infra
 import { DatabaseConnection } from '../../src/shared/database/DatabaseConnection';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@127.0.0.1:5543/enlite_e2e';
+
+const DNI = '30111222';
 
 describe('AxonicoLancamentoRepository @repo (Postgres real, migration 445)', () => {
   let pool: Pool;
@@ -52,9 +59,10 @@ describe('AxonicoLancamentoRepository @repo (Postgres real, migration 445)', () 
     await pool.query('DELETE FROM patients WHERE id = $1', [patientId]);
   });
 
-  it('insert grava uma tentativa enviado e findExisting a devolve para a mesma tripla', async () => {
+  it('insert grava uma tentativa enviado e findExisting a devolve para a mesma tripla (documentNumber)', async () => {
     const inserted = await repo.insert({
       patientId,
+      documentNumber: DNI,
       serviceType: 'AT',
       serviceDate: '2026-09-18',
       hours: 4,
@@ -66,53 +74,77 @@ describe('AxonicoLancamentoRepository @repo (Postgres real, migration 445)', () 
 
     expect(inserted.status).toBe('enviado');
     expect(inserted.hours).toBe(4);
+    expect(inserted.documentNumber).toBe(DNI);
 
-    const found = await repo.findExisting(patientId, 'AT', '2026-09-18');
+    const found = await repo.findExisting(DNI, 'AT', '2026-09-18');
     expect(found).not.toBeNull();
     expect(found?.id).toBe(inserted.id);
     expect(found?.numeroComprobante).toBe('CMP-1');
   });
 
   it('findExisting devolve null quando não há tentativa enviado para a tripla', async () => {
-    const found = await repo.findExisting(patientId, 'AT', '2026-09-18');
+    const found = await repo.findExisting(DNI, 'AT', '2026-09-18');
     expect(found).toBeNull();
   });
 
   it('findExisting ignora tentativas duplicado/erro — só enxerga status=enviado', async () => {
     await repo.insert({
-      patientId, serviceType: 'AT', serviceDate: '2026-09-18', hours: 2,
+      patientId, documentNumber: DNI, serviceType: 'AT', serviceDate: '2026-09-18', hours: 2,
       numeroComprobante: null, codAutorizacion: null, status: 'erro', errorMessage: 'timeout',
     });
     await repo.insert({
-      patientId, serviceType: 'AT', serviceDate: '2026-09-18', hours: 2,
+      patientId, documentNumber: DNI, serviceType: 'AT', serviceDate: '2026-09-18', hours: 2,
       numeroComprobante: null, codAutorizacion: null, status: 'duplicado', errorMessage: null,
     });
 
-    const found = await repo.findExisting(patientId, 'AT', '2026-09-18');
+    const found = await repo.findExisting(DNI, 'AT', '2026-09-18');
     expect(found).toBeNull();
   });
 
-  it('UNIQUE parcial: uma segunda tentativa enviado para a mesma tripla ESTOURA', async () => {
+  it('UNIQUE parcial: uma segunda tentativa enviado para a mesma tripla de documentNumber ESTOURA', async () => {
     await repo.insert({
-      patientId, serviceType: 'AT', serviceDate: '2026-09-18', hours: 3,
+      patientId, documentNumber: DNI, serviceType: 'AT', serviceDate: '2026-09-18', hours: 3,
       numeroComprobante: 'CMP-A', codAutorizacion: 'AUT-A', status: 'enviado', errorMessage: null,
     });
 
     await expect(
       repo.insert({
-        patientId, serviceType: 'AT', serviceDate: '2026-09-18', hours: 3,
+        patientId, documentNumber: DNI, serviceType: 'AT', serviceDate: '2026-09-18', hours: 3,
         numeroComprobante: 'CMP-B', codAutorizacion: 'AUT-B', status: 'enviado', errorMessage: null,
       }),
     ).rejects.toThrow(/uq_axonico_lancamento_dedupe|duplicate key/);
   });
 
+  it('CORREÇÃO 18/09/2026 — dois patient_id DISTINTOS com o MESMO documentNumber: a segunda tentativa enviado ESTOURA (a chave é o DNI, não o patient_id)', async () => {
+    const { rows: [p2] } = await pool.query<{ id: string }>('INSERT INTO patients DEFAULT VALUES RETURNING id');
+    const outroPatientId = p2.id;
+    try {
+      await repo.insert({
+        patientId, documentNumber: DNI, serviceType: 'AT', serviceDate: '2026-09-18', hours: 3,
+        numeroComprobante: 'CMP-P1', codAutorizacion: 'AUT-P1', status: 'enviado', errorMessage: null,
+      });
+
+      // patient_id DIFERENTE do primeiro, mas MESMO documentNumber — antes da correção isto
+      // passava (dedupe era por patient_id); agora estoura.
+      await expect(
+        repo.insert({
+          patientId: outroPatientId, documentNumber: DNI, serviceType: 'AT', serviceDate: '2026-09-18', hours: 3,
+          numeroComprobante: 'CMP-P2', codAutorizacion: 'AUT-P2', status: 'enviado', errorMessage: null,
+        }),
+      ).rejects.toThrow(/uq_axonico_lancamento_dedupe|duplicate key/);
+    } finally {
+      await pool.query('DELETE FROM axonico_comprobante_lancamento WHERE patient_id = $1', [outroPatientId]);
+      await pool.query('DELETE FROM patients WHERE id = $1', [outroPatientId]);
+    }
+  });
+
   it('duplicado repetido para a mesma tripla NÃO viola a constraint (índice é PARCIAL, não total)', async () => {
     await repo.insert({
-      patientId, serviceType: 'AT', serviceDate: '2026-09-18', hours: 1,
+      patientId, documentNumber: DNI, serviceType: 'AT', serviceDate: '2026-09-18', hours: 1,
       numeroComprobante: null, codAutorizacion: null, status: 'duplicado', errorMessage: null,
     });
     const second = await repo.insert({
-      patientId, serviceType: 'AT', serviceDate: '2026-09-18', hours: 1,
+      patientId, documentNumber: DNI, serviceType: 'AT', serviceDate: '2026-09-18', hours: 1,
       numeroComprobante: null, codAutorizacion: null, status: 'duplicado', errorMessage: null,
     });
     expect(second.status).toBe('duplicado');
@@ -126,11 +158,11 @@ describe('AxonicoLancamentoRepository @repo (Postgres real, migration 445)', () 
 
   it('erro repetido para a mesma tripla NÃO viola a constraint (índice é PARCIAL, não total)', async () => {
     await repo.insert({
-      patientId, serviceType: 'AT', serviceDate: '2026-09-18', hours: 1,
+      patientId, documentNumber: DNI, serviceType: 'AT', serviceDate: '2026-09-18', hours: 1,
       numeroComprobante: null, codAutorizacion: null, status: 'erro', errorMessage: 'falha 1',
     });
     const second = await repo.insert({
-      patientId, serviceType: 'AT', serviceDate: '2026-09-18', hours: 1,
+      patientId, documentNumber: DNI, serviceType: 'AT', serviceDate: '2026-09-18', hours: 1,
       numeroComprobante: null, codAutorizacion: null, status: 'erro', errorMessage: 'falha 2',
     });
     expect(second.status).toBe('erro');
@@ -151,13 +183,13 @@ describe('AxonicoLancamentoRepository @repo (Postgres real, migration 445)', () 
     // devolvido é `string` (nunca `Date`, que faria `typeof` acusar 'object') e que o valor é
     // IDÊNTICO ao que foi gravado, em QUALQUER fuso do processo.
     const inserted = await repo.insert({
-      patientId, serviceType: 'AT', serviceDate: '2026-09-18', hours: 1,
+      patientId, documentNumber: DNI, serviceType: 'AT', serviceDate: '2026-09-18', hours: 1,
       numeroComprobante: 'CMP-TZ', codAutorizacion: 'AUT-TZ', status: 'enviado', errorMessage: null,
     });
     expect(typeof inserted.serviceDate).toBe('string');
     expect(inserted.serviceDate).toBe('2026-09-18');
 
-    const found = await repo.findExisting(patientId, 'AT', '2026-09-18');
+    const found = await repo.findExisting(DNI, 'AT', '2026-09-18');
     expect(found).not.toBeNull();
     expect(typeof found?.serviceDate).toBe('string');
     expect(found?.serviceDate).toBe('2026-09-18');
@@ -166,9 +198,9 @@ describe('AxonicoLancamentoRepository @repo (Postgres real, migration 445)', () 
   it('CHECK chk_axonico_lancamento_error_message: status=erro exige error_message (trava de banco, contorna o repositório)', async () => {
     await expect(
       pool.query(
-        `INSERT INTO axonico_comprobante_lancamento (patient_id, service_type, service_date, hours, status, error_message)
-         VALUES ($1, 'AT', '2026-09-18', 1, 'erro', NULL)`,
-        [patientId],
+        `INSERT INTO axonico_comprobante_lancamento (patient_id, document_number, service_type, service_date, hours, status, error_message)
+         VALUES ($1, $2, 'AT', '2026-09-18', 1, 'erro', NULL)`,
+        [patientId, DNI],
       ),
     ).rejects.toThrow(/chk_axonico_lancamento_error_message/);
   });

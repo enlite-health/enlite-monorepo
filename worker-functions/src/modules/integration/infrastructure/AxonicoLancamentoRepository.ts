@@ -8,10 +8,16 @@
  *
  * Diferença de desenho em relação a `AnaCareSyncRunRepository`: aqui NÃO existe `ON CONFLICT DO
  * UPDATE`. Cada tentativa é uma linha nova — se `insert` for chamado duas vezes com
- * `status='enviado'` para a mesma tripla `(patient_id, service_type, service_date)`, a SEGUNDA
- * chamada estoura por violação do índice único parcial `uq_axonico_lancamento_dedupe` (migration
- * 445). Isso é intencional: é essa violação que prova, em teste, que o dedupe local é real —
- * mascarar com `ON CONFLICT` esconderia justamente o que precisa ser provado.
+ * `status='enviado'` para a mesma tripla `(document_number, service_type, service_date)`, a
+ * SEGUNDA chamada estoura por violação do índice único parcial `uq_axonico_lancamento_dedupe`
+ * (migration 445). Isso é intencional: é essa violação que prova, em teste, que o dedupe local é
+ * real — mascarar com `ON CONFLICT` esconderia justamente o que precisa ser provado.
+ *
+ * CORREÇÃO (18/09/2026, antes do merge): `findExisting`/`insert` chaveavam por `patient_id`.
+ * Errado — o Axonico fatura pelo DNI (via `historia_clinica`), não pelo nosso `patient_id`, e dois
+ * cadastros podem compartilhar o mesmo DNI (`patients.document_number` não tem UNIQUE). Agora o
+ * WHERE de `findExisting` e a coluna de dedupe do `INSERT` usam `document_number` — `patient_id`
+ * continua gravado (rastreabilidade), só sai da chave de busca/dedupe.
  */
 import type { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
@@ -25,6 +31,7 @@ import type {
 interface AxonicoLancamentoRow {
   id: string;
   patient_id: string;
+  document_number: string;
   service_type: string;
   service_date: string;
   hours: number;
@@ -39,6 +46,7 @@ function toRecord(row: AxonicoLancamentoRow): AxonicoLancamentoRecord {
   return {
     id: row.id,
     patientId: row.patient_id,
+    documentNumber: row.document_number,
     serviceType: row.service_type as EnliteServiceType,
     serviceDate: row.service_date,
     hours: row.hours,
@@ -59,7 +67,7 @@ export class AxonicoLancamentoRepository implements IAxonicoLancamentoRepository
   }
 
   async findExisting(
-    patientId: string,
+    documentNumber: string,
     serviceType: EnliteServiceType,
     serviceDate: string,
   ): Promise<AxonicoLancamentoRecord | null> {
@@ -70,30 +78,32 @@ export class AxonicoLancamentoRepository implements IAxonicoLancamentoRepository
     // o driver nunca chega a parsear a coluna como `Date`, e `serviceDate: string` do contrato é
     // verdade por construção, não um `as`.
     const res = await this.pool.query<AxonicoLancamentoRow>(
-      `SELECT id, patient_id, service_type, service_date::text AS service_date, hours,
+      `SELECT id, patient_id, document_number, service_type, service_date::text AS service_date, hours,
               numero_comprobante, cod_autorizacion, status, error_message, created_at
        FROM axonico_comprobante_lancamento
-       WHERE patient_id = $1 AND service_type = $2 AND service_date = $3::date AND status = 'enviado'`,
-      [patientId, serviceType, serviceDate],
+       WHERE document_number = $1 AND service_type = $2 AND service_date = $3::date AND status = 'enviado'`,
+      [documentNumber, serviceType, serviceDate],
     );
     return res.rows[0] ? toRecord(res.rows[0]) : null;
   }
 
   /**
-   * Nunca usa `ON CONFLICT` — uma segunda tentativa `status='enviado'` para a mesma tripla
-   * PROPAGA a violação de `uq_axonico_lancamento_dedupe` para o chamador (F3 decide o que fazer).
+   * Nunca usa `ON CONFLICT` — uma segunda tentativa `status='enviado'` para a mesma tripla de
+   * `document_number` PROPAGA a violação de `uq_axonico_lancamento_dedupe` para o chamador (F3
+   * decide o que fazer — ver `AxonicoLancamentoConcorrenteError` no use case).
    */
   async insert(params: InsertAxonicoLancamentoParams): Promise<AxonicoLancamentoRecord> {
     // `service_date::text` no RETURNING — mesmo motivo do `findExisting` acima: sem o cast, o
     // `pg` devolveria `Date` (meia-noite LOCAL) em vez da string que o contrato promete.
     const res = await this.pool.query<AxonicoLancamentoRow>(
       `INSERT INTO axonico_comprobante_lancamento
-         (patient_id, service_type, service_date, hours, numero_comprobante, cod_autorizacion, status, error_message)
-       VALUES ($1, $2, $3::date, $4, $5, $6, $7, $8)
-       RETURNING id, patient_id, service_type, service_date::text AS service_date, hours,
+         (patient_id, document_number, service_type, service_date, hours, numero_comprobante, cod_autorizacion, status, error_message)
+       VALUES ($1, $2, $3, $4::date, $5, $6, $7, $8, $9)
+       RETURNING id, patient_id, document_number, service_type, service_date::text AS service_date, hours,
                  numero_comprobante, cod_autorizacion, status, error_message, created_at`,
       [
         params.patientId,
+        params.documentNumber,
         params.serviceType,
         params.serviceDate,
         params.hours,
