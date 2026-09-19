@@ -57,7 +57,6 @@ import { test, expect, type Page, type Route } from '@playwright/test';
 // stub, só troca a SINTAXE de import por fronteira de pacote.
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const axonicoStubServerPkg = require('../../../worker-functions/tests/e2e/helpers/axonicoStubServer') as typeof import('../../../worker-functions/tests/e2e/helpers/axonicoStubServer');
 const { startAxonicoStub } = axonicoStubServerPkg;
 type AxonicoStub = import('../../../worker-functions/tests/e2e/helpers/axonicoStubServer').AxonicoStub;
