@@ -30,6 +30,8 @@ export type PermissionErrorCode =
   | 'reason_required'
   /** Deixaria zero gestores com `permission_management:write`. */
   | 'last_manager'
+  /** Tentativa de remover uma das 5 contas fixas do Acesso Master (B-1, mig 451). */
+  | 'fixed_account'
   /** Chave de feature fora de `screen:|options:|component:<slug>`. */
   | 'invalid_feature_key'
   /** `config` da feature fora do schema do tipo (lex C10). */
@@ -72,9 +74,10 @@ function asPgError(err: unknown): PgLikeError | null {
  *
  * Os SQLSTATE são os que as funções levantam de propósito (42501 sem célula,
  * P0002 grupo inexistente, 23502 sem motivo, 23503 célula fora do catálogo,
- * 23514 CHECK — grupo de sistema OU anti-lockout). Só o 23514 precisa olhar a
- * mensagem, porque os dois casos compartilham o SQLSTATE de violação de CHECK;
- * a marca `anti-lockout` é escrita pela própria migration.
+ * 23514 CHECK — grupo de sistema, anti-lockout OU conta fixa do Master). Só o
+ * 23514 precisa olhar a mensagem, porque os três casos compartilham o SQLSTATE
+ * de violação de CHECK; cada marca (`anti-lockout`, `conta fixa`) é escrita pela
+ * própria migration que a levanta (410/279 e 451).
  *
  * Erro desconhecido volta como está: engolir SQLSTATE inesperado viraria "403
  * sem motivo" na tela e um incidente invisível no log.
@@ -96,6 +99,8 @@ export function toPermissionError(err: unknown): unknown {
       return new PermissionError('duplicate_name', message, err);
     case '23514':
       if (message.includes('anti-lockout')) return new PermissionError('last_manager', message, err);
+      // B-1 (mig 451): marca própria — nunca "anti-lockout" — para não sair como last_manager.
+      if (message.includes('conta fixa')) return new PermissionError('fixed_account', message, err);
       // CHECK de TABELA (traz `constraint`) ≠ RAISE das funções (não traz):
       // formato de `feature_key`/`country` da 277 cai aqui, e chamar isso de
       // "grupo de sistema" mandaria a tela mostrar o motivo errado.

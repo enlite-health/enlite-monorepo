@@ -176,7 +176,7 @@ describe('PgPermissionCatalogRepository', () => {
       'worker-functions',
     );
 
-    expect(result).toEqual({ inserted: 1, revived: 1, deprecated: 3, total: 2, masterGranted: 3 });
+    expect(result).toEqual({ inserted: 1, revived: 1, deprecated: 3, total: 2, masterGranted: 3, fixedAccountsGranted: 3 });
     const executed = sqls(query);
     expect(executed.filter((sql) => sql.includes('iam.sync_permission_cell'))).toHaveLength(2);
     expect(executed.some((sql) => sql.includes('iam.deprecate_missing_permission_cells'))).toBe(true);
@@ -184,6 +184,10 @@ describe('PgPermissionCatalogRepository', () => {
     expect(executed.some((sql) => sql.includes('iam.grant_active_permissions_to_master'))).toBe(true);
     expect(executed.indexOf(executed.find((sql) => sql.includes('grant_active_permissions_to_master'))!))
       .toBeGreaterThan(executed.indexOf(executed.find((sql) => sql.includes('deprecate_missing_permission_cells'))!));
+    // B-1 (451): as contas fixas reconciliam por último, DEPOIS do grant do Master, mesma transação
+    expect(executed.some((sql) => sql.includes('iam.grant_master_fixed_accounts'))).toBe(true);
+    expect(executed.indexOf(executed.find((sql) => sql.includes('grant_master_fixed_accounts'))!))
+      .toBeGreaterThan(executed.indexOf(executed.find((sql) => sql.includes('grant_active_permissions_to_master'))!));
     // a categoria vem do mapa por recurso, não de quem chamou
     expect(query.mock.calls[0][1]).toEqual(['worker', 'read', null, 'Trabalhadores', 'worker-functions']);
     // e a lista de chaves vivas é o que protege contra descontinuar tudo
@@ -346,7 +350,7 @@ describe('bordas do mapeamento (linha ausente, coluna nula, lista cheia)', () =>
     expect(systemQuery.mock.calls[0][1][3]).toBeNull();
   });
 
-  it('sync sem linha de retorno na descontinuação/concessão ao Master conta 0 (não NaN)', async () => {
+  it('sync sem linha de retorno na descontinuação/concessão ao Master/contas fixas conta 0 (não NaN)', async () => {
     const query = jest.fn();
     query.mockResolvedValueOnce({ rows: [{ outcome: 'unchanged' }] });
     query.mockResolvedValue({ rows: [] });
@@ -355,7 +359,7 @@ describe('bordas do mapeamento (linha ausente, coluna nula, lista cheia)', () =>
       [{ resource: 'worker', action: 'read' }],
       'worker-functions',
     );
-    expect(result).toEqual({ inserted: 0, revived: 0, deprecated: 0, total: 1, masterGranted: 0 });
+    expect(result).toEqual({ inserted: 0, revived: 0, deprecated: 0, total: 1, masterGranted: 0, fixedAccountsGranted: 0 });
   });
 
   it('update só de descrição manda name null para a função (COALESCE mantém o nome)', async () => {

@@ -119,12 +119,19 @@ export class PgPermissionCatalogRepository implements PermissionCatalogRepositor
       const masterGrant = await client.query<{ n: number }>(
         `SELECT iam.grant_active_permissions_to_master() AS n`,
       );
+      // B-1 (mig 451, decisão Gabriel 19/09/2026): as 5 contas fixas do Master reconciliam
+      // no MESMO boot — conta criada depois da migration entra sem ação humana. Mesmo molde
+      // do masterGrant acima (mesma transação, nunca remove, nunca toca outro grupo).
+      const fixedAccountsGrant = await client.query<{ n: number }>(
+        `SELECT iam.grant_master_fixed_accounts() AS n`,
+      );
       return {
         inserted,
         revived,
         deprecated: gone.rows[0]?.n ?? 0,
         total: cells.length,
         masterGranted: masterGrant.rows[0]?.n ?? 0,
+        fixedAccountsGranted: fixedAccountsGrant.rows[0]?.n ?? 0,
       };
     });
   }

@@ -119,6 +119,13 @@ export interface CatalogSyncResult {
    * removido por fora). Exclusivo do Master; nenhum outro grupo é tocado (D285 intacta).
    */
   masterGranted: number;
+  /**
+   * B-1 (mig 451, decisão Gabriel 19/09/2026): contas fixas concedidas ao Acesso Master nesta
+   * sincronização (0 na maioria dos boots — só sobe quando uma das 5 contas fixas foi criada
+   * depois da migration, ou reconcilia um grant removido por fora). Nunca remove; nunca toca
+   * outro grupo.
+   */
+  fixedAccountsGranted: number;
 }
 
 export interface PermissionCatalogRepository {
