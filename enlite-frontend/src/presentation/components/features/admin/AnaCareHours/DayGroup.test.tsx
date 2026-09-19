@@ -182,6 +182,19 @@ describe('DayGroup', () => {
       expect(screen.queryByTestId('anacare-hours-day-sent-2026-08-14')).not.toBeInTheDocument();
     });
 
+    it('POSITIVO — resposta "duplicado" do DEDUPE REMOTO (numeroComprobante null) diz que já foi faturado, sem imprimir "null"/"undefined" no DOM', async () => {
+      const enviarComprobante = vi.fn().mockResolvedValue({ status: 'duplicado', numeroComprobante: null, codAutorizacion: null, jaFaturado: true, lancadoEm: '2026-09-18T12:00:00Z' });
+      const providerA = makeProvider({ anaCareId: 'p1' });
+      const day = makeDay([{ shift: eligibleShift({ id: 's1' }), provider: providerA }]);
+      render(<DayGroup day={day} disableActions={false} selectedShiftIds={new Set()} axonicoService={makeAxonicoService({ enviarComprobante })} patientDocumentNumber={DOC} {...noop} />);
+      fireEvent.click(screen.getByTestId('anacare-hours-send-day-2026-08-14'));
+      const label = await screen.findByTestId('anacare-hours-day-duplicated-no-comprobante-2026-08-14');
+      expect(label).toHaveTextContent('admin.anacareHours.dayGroup.axonico.duplicatedNoComprobanteLabel');
+      expect(label.textContent).not.toMatch(/null|undefined/);
+      expect(screen.queryByTestId('anacare-hours-day-duplicated-2026-08-14')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('anacare-hours-day-sent-2026-08-14')).not.toBeInTheDocument();
+    });
+
     it('NEGATIVO — erro mostra a mensagem devolvida pelo serviço, e o botão volta a permitir tentar', async () => {
       const enviarComprobante = vi.fn().mockRejectedValue(new Error('Ya fue facturado con otro monto.'));
       const providerA = makeProvider({ anaCareId: 'p1' });

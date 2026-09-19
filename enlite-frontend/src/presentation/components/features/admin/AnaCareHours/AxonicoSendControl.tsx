@@ -40,6 +40,16 @@ export function AxonicoSendControl({ date, service, eligibility, command, disabl
   }
 
   if (status === 'duplicado' && result) {
+    // Dedupe REMOTO (guard 4 do use case): o comprovante foi criado FORA do nosso registro e
+    // `numeroComprobante` vem `null` — nunca interpolar `null`/`undefined` no DOM. `jaFaturado`
+    // segue `true` (FOI faturado); a mensagem tem de deixar isso claro sem sugerir relançamento.
+    if (result.numeroComprobante === null) {
+      return (
+        <Text size="xs" color="muted" data-testid={`anacare-hours-day-duplicated-no-comprobante-${date}`}>
+          {t('admin.anacareHours.dayGroup.axonico.duplicatedNoComprobanteLabel')}
+        </Text>
+      );
+    }
     return (
       <Text size="xs" color="muted" data-testid={`anacare-hours-day-duplicated-${date}`}>
         {t('admin.anacareHours.dayGroup.axonico.duplicatedLabel', { numero: result.numeroComprobante })}

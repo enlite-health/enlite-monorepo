@@ -743,7 +743,8 @@
             "missingDocument": "Falta el documento del paciente"
           },
           "sentLabel": "Enviado — comprobante {{numero}}",
-          "duplicatedLabel": "Ya estaba facturado — comprobante {{numero}}"
+          "duplicatedLabel": "Ya estaba facturado — comprobante {{numero}}",
+          "duplicatedNoComprobanteLabel": "Ya fue facturado — número de comprobante no disponible"
         },
         "table": {
           "provider": "Prestador",

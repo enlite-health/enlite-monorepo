@@ -11,6 +11,12 @@
  *  sucesso 200: `{ success: true, data: { status: 'enviado'|'duplicado', numeroComprobante,
  *    codAutorizacion, jaFaturado?, lancadoEm? } }`
  *  erro: `{ success: false, error: '<NomeDoErro>', message }` com status 400/404/409/422/502
+ *
+ * ⚠️ `numeroComprobante`/`codAutorizacion` são `string | null` — confirmado contra
+ * `LancarPrestacaoAxonicoResult` (`worker-functions/src/modules/integration/application/
+ * LancarPrestacaoAxonicoUseCase.ts`): no caso `duplicado` achado pelo DEDUPE REMOTO (guard 4), o
+ * comprovante foi criado FORA do nosso registro e os dois campos vêm `null` — a tela não pode
+ * tipar como `string` não-nulo, isso mentia sobre o contrato real.
  */
 export interface EnviarComprobanteAxonicoCommand {
   documentNumber: string;
@@ -23,8 +29,8 @@ export type AxonicoComprobanteStatus = 'enviado' | 'duplicado';
 
 export interface EnviarComprobanteAxonicoResult {
   status: AxonicoComprobanteStatus;
-  numeroComprobante: string;
-  codAutorizacion: string;
+  numeroComprobante: string | null;
+  codAutorizacion: string | null;
   jaFaturado?: boolean;
   lancadoEm?: string;
 }
