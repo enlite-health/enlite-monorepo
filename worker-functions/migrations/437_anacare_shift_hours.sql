@@ -23,7 +23,7 @@
 -- do `main` (`patient_source_snapshots`/`patient_identity_links`/`patient_field_provenance`/
 -- `patients_ana_care_id`) não tem FK nem dependência com as tabelas `anacare_*` da `stage` — os dois
 -- conjuntos são independentes. Renumerar custaria mexer em 28+ arquivos (as migrations 443-446, mais
--- referenciadas por módulos posteriores) e reexecutar 8 migrations já aplicadas na stage, para
+-- referenciadas por módulos posteriores) e reexecutar as migrations já aplicadas na stage, para
 -- comprar só estética de numeração. Não renumerado.
 --
 -- Duas tabelas com DONOS diferentes (revisão do type-design-analyzer, 15/09,
