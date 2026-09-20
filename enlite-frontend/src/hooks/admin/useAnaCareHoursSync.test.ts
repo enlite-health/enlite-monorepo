@@ -131,6 +131,56 @@ describe('useAnaCareHoursSync', () => {
     expect(onComplete).not.toHaveBeenCalled();
   });
 
+  it('CANCELAMENTO (C) — trocar de mês e VOLTAR antes da rodada em voo resolver: o cursor persistido reidrata o estado, e o próximo start() o usa (não recomeça do zero)', async () => {
+    let resolveFirstRound: ((value: TriggerSyncResult) => void) | undefined;
+    const pendingFirstRound = new Promise<TriggerSyncResult>((resolve) => {
+      resolveFirstRound = resolve;
+    });
+    const trigger = vi
+      .fn()
+      .mockReturnValueOnce(pendingFirstRound)
+      .mockResolvedValueOnce(result({ nextCursor: null }));
+    const service = baseService(trigger);
+    const onComplete = vi.fn();
+
+    const { result: hook, rerender } = renderHook(({ month }) => useAnaCareHoursSync(service, month, onComplete), {
+      initialProps: { month: '2026-08' },
+    });
+
+    act(() => hook.current.start());
+    expect(hook.current.status).toBe('running');
+
+    // Troca para outro mês ENQUANTO a rodada do mês A ainda está em voo.
+    rerender({ month: '2026-09' });
+    expect(hook.current.status).toBe('idle');
+
+    // Volta para o mês A ANTES de a rodada em voo resolver (cenário do gate de revisão).
+    rerender({ month: '2026-08' });
+    expect(hook.current.status).toBe('idle');
+    expect(hook.current.interruptedMonth).toBeNull();
+
+    await act(async () => {
+      resolveFirstRound?.(result({ reservationsProcessed: 4, nextCursor: 5 }));
+      await pendingFirstRound;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // O cursor foi persistido no storage do mês A...
+    expect(sessionStorage.getItem('anacare-hours-sync:2026-08')).toBe(JSON.stringify({ cursor: 5 }));
+    // ...e o estado do hook (já de volta a este mês) tem de refletir isso — sem duplicar aviso de
+    // "outro mês interrompido", já que o usuário está literalmente neste mês agora.
+    expect(hook.current.resumableCursor).toBe(5);
+    expect(hook.current.interruptedMonth).toBeNull();
+    expect(hook.current.status).toBe('idle');
+
+    // O próximo start() deste mesmo mês tem de USAR o cursor persistido — não recomeçar do zero.
+    act(() => hook.current.start());
+    await waitFor(() => expect(hook.current.status).toBe('done'));
+    expect(trigger).toHaveBeenCalledTimes(2);
+    expect(trigger.mock.calls[1][0]).toMatchObject({ month: '2026-08', cursor: 5 });
+  });
+
   // D9 (cobertura, 18/09): os 3 `catch` de sessionStorage (readResumableCursor, persistCursor,
   // clearCursor) nunca tiveram o storage LANÇANDO de fato — os testes acima só exercitam o
   // caminho feliz do storage. Aqui o storage lança de verdade e a corrida PROSSEGUE (best-effort,
