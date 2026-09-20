@@ -240,6 +240,9 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/vacancies/:id/resolve-address-review → vacancy:update',
         'POST /api/admin/vacancies/:id/social-links → vacancy:create',
         'POST /api/admin/vacancies/:vacancyId/workers/:workerId/contact-notes → funnel:create',
+        // "Promover" (D300, merge main→stage 19/09/2026): entrou junto com
+        // reject/restore, mesma célula (escrita no funil).
+        'POST /api/admin/vacancies/blocked-applications/:blockedId/promote → funnel:update',
         'POST /api/admin/vacancies/blocked-applications/:blockedId/reject → funnel:update',
         'POST /api/admin/vacancies/blocked-applications/:blockedId/restore → funnel:update',
         'POST /api/admin/vacancies/meet-links/lookup → vacancy:read',
