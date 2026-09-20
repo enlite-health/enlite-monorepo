@@ -98,6 +98,12 @@ export function useAnaCareHoursSync(service: AnaCareHoursService, month: string,
   const runTokenRef = useRef<RunToken>({ cancelled: true });
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
+  /** Mês ATUAL do hook, sempre em dia — ao contrário de `runMonth` (capturado no `start()` e fixo
+   * pela vida da corrida), este ref reflete renders futuros. Necessário para o ramo cancelado
+   * (abaixo) distinguir "usuário está em outro mês" de "usuário já voltou para este mesmo mês
+   * antes da rodada em voo resolver". */
+  const monthRef = useRef(month);
+  monthRef.current = month;
 
   // Trocar de mês cancela qualquer corrida em curso do mês anterior (mesmo padrão de
   // `useAnaCareHoursMonth`: o cleanup do efeito roda a cada troca de dependência, não só no unmount)
@@ -164,11 +170,26 @@ export function useAnaCareHoursSync(service: AnaCareHoursService, month: string,
           // estado de tela deste hook (que já pertence ao mês NOVO). Nunca `onComplete` aqui: o
           // dono do refetch é o mês atual, não o cancelado.
           if (!result.deduped) {
+            // O usuário pode já ter voltado para ESTE mês antes desta rodada resolver — nesse
+            // caso o efeito de troca de mês (linha ~110) releu `resumableCursor` do storage ANTES
+            // deste persist, e ficou com um valor desatualizado (ou `null`). Reidrata agora a
+            // partir do que acabou de ser persistido, em vez de deixar o próximo `start()` sair
+            // sem cursor e recomeçar do zero. Só há "outro mês" para avisar via `interruptedMonth`
+            // quando o usuário NÃO está de volta a este mês (ver comentário de `interruptedMonth`
+            // na interface, linhas ~61-66).
+            const backOnThisMonth = runMonth === monthRef.current;
             if (result.nextCursor !== null) {
               persistCursor(runMonth, result.nextCursor);
-              setInterruptedMonth(runMonth);
+              if (backOnThisMonth) {
+                setResumableCursor(result.nextCursor);
+              } else {
+                setInterruptedMonth(runMonth);
+              }
             } else {
               clearCursor(runMonth);
+              if (backOnThisMonth) {
+                setResumableCursor(null);
+              }
             }
           }
           return;
