@@ -11,17 +11,51 @@
 import type { AnaCareMonthSnapshot, AnaCareOriginCounts, AnaCareProvider, AnaCareShift, AnaCarePatient } from './types';
 
 /**
- * Mês padrão da tela (decisão do Gabriel, 16/09): o MÊS ANTERIOR ao atual, não o mês corrente —
- * medido que agosto tem turnos finalizados e setembro quase não (retrato ainda incompleto no mês
- * em curso). Único dono do cálculo — `AnaCareHoursPatientPage` e `AnaCareHoursListContainer` leem
- * daqui, nada de `'2026-08'` cravado em código.
+ * Mês padrão da tela (decisão do Gabriel, 20/09 — substitui a decisão de 16/09 que usava o mês
+ * ANTERIOR): o MÊS CORRENTE. Único dono do cálculo — `AnaCareHoursPatientPage` e
+ * `AnaCareHoursListContainer` leem daqui, nada de `'2026-09'` cravado em código.
  */
-export function previousMonthIso(referenceDate: Date = new Date()): string {
-  const year = referenceDate.getFullYear();
-  const month = referenceDate.getMonth(); // 0-based; month-1 já é o mês anterior em 0-based do mês atual
-  const previous = new Date(Date.UTC(year, month, 1));
-  previous.setUTCMonth(previous.getUTCMonth() - 1);
-  return `${previous.getUTCFullYear()}-${String(previous.getUTCMonth() + 1).padStart(2, '0')}`;
+export function currentMonthIso(referenceDate: Date = new Date()): string {
+  return `${referenceDate.getUTCFullYear()}-${String(referenceDate.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * Lista crescente de `YYYY-MM`, do piso (`floorMonthIso`, default `'2026-08'` — primeiro mês com
+ * dado real do Ana Care) até o mês CORRENTE de `referenceDate`, inclusive — alimenta o seletor de
+ * mês da lista (`AnaCareHoursListPage`) sem precisar crescer a lista à mão a cada mês novo
+ * (decisão do Gabriel, 20/09). Se o piso for posterior ao mês corrente (relógio do ambiente
+ * atrasado, ou piso mal configurado), devolve só o piso — nunca lista vazia, pra não deixar o
+ * seletor sem opção nenhuma.
+ */
+export function monthOptionsUntilNow(floorMonthIso = '2026-08', referenceDate: Date = new Date()): string[] {
+  const current = currentMonthIso(referenceDate);
+  const [floorYear, floorMonth] = floorMonthIso.split('-').map(Number);
+  const [currentYear, currentMonth] = current.split('-').map(Number);
+  const floorIndex = floorYear * 12 + (floorMonth - 1);
+  const currentIndex = currentYear * 12 + (currentMonth - 1);
+  if (floorIndex > currentIndex) return [floorMonthIso];
+  const months: string[] = [];
+  for (let index = floorIndex; index <= currentIndex; index += 1) {
+    const year = Math.floor(index / 12);
+    const month = (index % 12) + 1;
+    months.push(`${year}-${String(month).padStart(2, '0')}`);
+  }
+  return months;
+}
+
+/**
+ * Rótulo visível do mês no seletor da lista — formato TEM de ficar idêntico ao que antes vinha
+ * fixo de `admin.anacareHours.months.<YYYY-MM>` no i18n (`"Agosto 2026"`, `"Septiembre 2026"`,
+ * `"Setembro 2026"`): nome do mês pelo `Intl.DateTimeFormat(locale, { month: 'long' })`, primeira
+ * letra maiúscula, espaço, ano. `timeZone: 'UTC'` evita que o fuso do navegador vire o mês (ex.:
+ * `2026-09-01T00:00:00` local negativo cairia em agosto).
+ */
+export function formatMonthLabel(monthIso: string, locale: string): string {
+  const [year, month] = monthIso.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, 1));
+  const monthName = new Intl.DateTimeFormat(locale, { month: 'long', timeZone: 'UTC' }).format(date);
+  const capitalized = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+  return `${capitalized} ${year}`;
 }
 
 /**

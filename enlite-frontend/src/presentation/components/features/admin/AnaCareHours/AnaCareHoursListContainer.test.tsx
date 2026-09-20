@@ -4,7 +4,11 @@ import { AnaCareHoursListContainer } from './AnaCareHoursListContainer';
 import { AnaCareHoursServiceError, FakeAnaCareHoursService } from './AnaCareHoursService';
 import type { AnaCareHoursService } from './AnaCareHoursService';
 
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+// `i18n.language` (não só `t`): `AnaCareHoursListPage` (renderizada por baixo) usa `i18n.language`
+// pra formatar o rótulo do mês (`formatMonthLabel`) desde a troca do seletor de mês fixo pra
+// `monthOptionsUntilNow` (decisão do Gabriel, 20/09) — mock sem isso quebra com "Cannot read
+// properties of undefined (reading 'language')".
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'es' } }) }));
 
 describe('AnaCareHoursListContainer', () => {
   it('POSITIVO — mostra loading e depois a lista', async () => {
@@ -98,5 +102,31 @@ describe('AnaCareHoursListContainer', () => {
     };
     render(<AnaCareHoursListContainer service={service} onOpenPatient={vi.fn()} initialMonth="2026-08" />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-sync-button')).toBeInTheDocument());
+  });
+
+  // Decisão do Gabriel, 20/09/2026: o mês padrão da tela virou o mês CORRENTE (antes era o mês
+  // ANTERIOR). Este teste MORRE se alguém reintroduzir `previousMonthIso`/mês fixo como default —
+  // o esperado é calculado em runtime (nunca `'2026-09'` cravado), senão o teste apodrece sozinho
+  // assim que rodar num mês diferente.
+  it('POSITIVO — sem initialMonth, pede ao service o mês CORRENTE (calculado em runtime)', async () => {
+    const now = new Date();
+    const expectedMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+    const service: AnaCareHoursService = {
+      getMonthSnapshot: vi.fn().mockResolvedValue({
+        month: expectedMonth,
+        updatedAt: '2026-09-15T08:00:00-03:00',
+        stale: false,
+        snapshotState: 'fresco',
+        circuitBreakerOpen: false,
+        patients: [],
+      }),
+      getPatientMonth: vi.fn(),
+      getRetratoStatus: vi.fn(),
+      validateShift: vi.fn(),
+      validateBatch: vi.fn(),
+      contestShift: vi.fn(),
+    };
+    render(<AnaCareHoursListContainer service={service} onOpenPatient={vi.fn()} />);
+    await waitFor(() => expect(service.getMonthSnapshot).toHaveBeenCalledWith(expectedMonth, undefined));
   });
 });

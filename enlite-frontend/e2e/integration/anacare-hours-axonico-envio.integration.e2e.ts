@@ -130,14 +130,12 @@ function pad2(n: number): string {
 function daysInMonth(year: number, month1to12: number): number {
   return new Date(Date.UTC(year, month1to12, 0)).getUTCDate();
 }
-/** MESMA função do arquivo-modelo — a tela abre no MÊS ANTERIOR ao atual (`previousMonthIso`). */
-function previousMonthIsoForE2E(): string {
+/** MESMA função do arquivo-modelo — a tela abre no MÊS CORRENTE (`currentMonthIso`). */
+function currentMonthIsoForE2E(): string {
   const now = new Date();
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  d.setUTCMonth(d.getUTCMonth() - 1);
-  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}`;
+  return `${now.getUTCFullYear()}-${pad2(now.getUTCMonth() + 1)}`;
 }
-const MONTH = previousMonthIsoForE2E();
+const MONTH = currentMonthIsoForE2E();
 const [MONTH_YEAR, MONTH_NUM] = MONTH.split('-').map(Number);
 const DIM = daysInMonth(MONTH_YEAR, MONTH_NUM);
 const ORIGIN_SEQUENCE = buildOriginSequence(TOTAL_SHIFTS);
