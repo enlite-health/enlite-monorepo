@@ -50,35 +50,26 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
     const catalog = [{ category: 'x', cells: [...CATALOGO].map((k) => { const [resource, action] = k.split(':'); return { resource, action, category: 'x', ownerService: 'wf' }; }) }];
     expect(celulasForaDasTelas(catalog)).toEqual([
       // sem consumidor no front (ui-gate-debt.json), ferramentas de operação sem tela, ou
-      // decididas no back abaixo da rota (worker:disable) — mais, desde o PR-8b (ADR-2), as
-      // linhas `write` dos 23 recursos splitados: ficam no catálogo (SUP-31, migration 435
-      // não remove), mas nenhuma tela as lista mais — só `create`/`update`.
+      // decididas no back abaixo da rota (worker:disable). As linhas `write` dos recursos
+      // splitados (PR-8b/ADR-2) e `api_docs:read` NÃO aparecem mais aqui — não é que nenhuma
+      // tela as liste, é que foram REMOVIDAS de `CELL_DESCRIPTION` por serem órfãs (change
+      // `catalogo-de-permissoes-derivado-do-codigo`, commits `84b1ecb2`/`8991d670`/`eecb35e8`):
+      // 12 `:write` de recurso splitado + `api_docs:read`, 13 chaves, já fora do catálogo do
+      // back (fixture `permission-catalog.json` regenerada) — cobertas por `create`/`update`
+      // explícitos onde existem.
       'analytics:export',
       'analytics:read',
-      'api_docs:read',
-      'catalog_therapeutic_activities:write',
-      'catalog_therapeutic_objectives:write',
       'catalog_therapeutic_segments:create',
       'catalog_therapeutic_segments:read',
       'catalog_therapeutic_segments:update',
-      'catalog_therapeutic_segments:write',
       'funnel:write',
       'interview:create',
       'interview:delete',
       'interview:read',
       'interview:update',
       'interview:write',
-      'messaging:write',
       'patient:write',
-      'patient_address:write',
-      'patient_care_team:write',
-      'patient_chat:write',
       'patient_clinical:write',
-      'patient_coverage:write',
-      'patient_family:write',
-      'patient_identity:write',
-      'patient_services:write',
-      'patient_therapeutic_project:write',
       'prescreening:write',
       'recruitment:create',
       'recruitment:update',
