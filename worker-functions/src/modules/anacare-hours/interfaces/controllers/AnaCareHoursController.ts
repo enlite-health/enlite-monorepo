@@ -70,9 +70,19 @@ export class AnaCareHoursController {
     return (cellsOfRequest(req) ?? []).includes(CLINICAL_READ_CELL);
   }
 
-  /** D349 item 1 / D344: nome de prestador só sai para quem tem `worker_contact:read`. */
+  /**
+   * D349 item 1 / D344: nome de prestador só sai para quem tem `worker_contact:read`.
+   *
+   * `cellsOfRequest(req) === null` = o engine não decidiu nesta request (hoje é SEMPRE
+   * o caso em prd, `PERMISSION_ENGINE_ENABLED=false` em `backend-prd.yml`) → permitir,
+   * porque o contrato do rollout é que engine desligado não muda comportamento (D113).
+   * `[]`, ou lista sem a célula, é ator conhecido sem a célula → negar. `?? []` aqui
+   * confundia os dois estados e negava para todo mundo em prd. Mesmo idioma de
+   * `projectWorkerFields.ts:112-114` (`pode`).
+   */
   private canReadProviderName(req: Request): boolean {
-    return (cellsOfRequest(req) ?? []).includes(CELL_WORKER_CONTACT_READ);
+    const cells = cellsOfRequest(req);
+    return cells === null || cells.includes(CELL_WORKER_CONTACT_READ);
   }
 
   /** Item 4 (18/09): documento do paciente só sai para quem tem `patient_identity:read`. */

@@ -177,6 +177,25 @@ describe('AnaCareHoursController', () => {
       expect(service.getMonthSnapshot).toHaveBeenCalledWith('2026-09', false, false);
     });
 
+    /**
+     * Régua da correção do idiom (`?? []` → `cells === null || cells.includes(...)`, mesmo
+     * idioma de `projectWorkerFields.ts:112-114`). `permissionCells: null` (default do `mockReq`)
+     * é o estado de PRD hoje: `PERMISSION_ENGINE_ENABLED=false` em `backend-prd.yml`, então
+     * `cellsOfRequest(req)` NUNCA decide — é sempre `null`, nunca `[]`. Antes da correção,
+     * `(null ?? []).includes(...)` dava `false` e o nome do prestador saía redigido para
+     * TODO MUNDO em prd. Este teste MORRE se alguém reverter `canReadProviderName` para o `?? []`:
+     * a asserção vira `('2026-09', false, false)` e o `toHaveBeenCalledWith` falha.
+     * `canReadNote` (mesmo defeito, fora do escopo desta correção) permanece `false` aqui de
+     * propósito — prova que só `canReadProviderName` mudou, nada mais.
+     */
+    it('D113/engine desligado: cellsOfRequest null (permissionCells não setado) ⇒ canReadProviderName=true — nome do prestador NÃO fica redigido em prd', async () => {
+      const service = mockService({ getMonthSnapshot: jest.fn().mockResolvedValue({ month: '2026-09', patients: [] }) });
+      const controller = new AnaCareHoursController(() => service);
+      const res = mockRes();
+      await controller.getMonthSnapshot(mockReq({ params: { month: '2026-09' } }), res);
+      expect(service.getMonthSnapshot).toHaveBeenCalledWith('2026-09', false, true);
+    });
+
     it('500 e reportError em erro inesperado (não é AnaCareHoursServiceError)', async () => {
       const service = mockService({ getMonthSnapshot: jest.fn().mockRejectedValue(new Error('boom')) });
       const controller = new AnaCareHoursController(() => service);
