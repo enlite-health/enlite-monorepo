@@ -236,8 +236,9 @@ function weeksBetweenMondays(fromMondayIso: string, toMondayIso: string): number
  * MESMA fórmula de `AnaCareHoursDetailPage.tsx:110-111` (decisão do Gabriel, 18/09) — a tela NÃO
  * abre na semana do turno mais antigo (comentário desatualizado no arquivo-modelo; conferido no
  * código atual): abre na semana de HOJE se o mês exibido contém hoje, senão na PRIMEIRA semana do
- * mês exibido (`${snapshot.month}-01`). Como `MONTH` aqui é sempre o mês ANTERIOR ao atual, cai
- * sempre no segundo ramo — mas a condição vem escrita por igual, nunca cravada.
+ * mês exibido (`${snapshot.month}-01`). Revisto 20/09: `MONTH` aqui é o mês CORRENTE (Tarefa 3,
+ * 16/09), então cai sempre no PRIMEIRO ramo (semana de hoje) — antes, com `MONTH` no mês ANTERIOR,
+ * caía sempre no segundo. A condição vem escrita por igual mesmo assim, nunca cravada.
  */
 function defaultWeekStart(): string {
   const todayIso = new Date().toISOString().slice(0, 10);
