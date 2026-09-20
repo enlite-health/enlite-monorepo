@@ -44,6 +44,7 @@ import {
   pendingSelectionStateOf,
   selectionSummary,
   startOfWeekMonday,
+  todayIsoLocal,
   totalHours,
   validationProgress,
   type BlockReasonMode,
@@ -105,7 +106,7 @@ export function AnaCareHoursDetailPage({
   // exibido (`snapshot.month`, YYYY-MM) contém a data de hoje; senão abre na primeira semana do
   // mês exibido. NUNCA busca de novo: o mês inteiro já está em `snapshot` (uma chamada só, ver
   // `useAnaCareHoursPatient`), então trocar de semana só filtra em memória via `groupShiftsByDayInWeek`.
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = todayIsoLocal();
   const [weekStart, setWeekStart] = useState<string | null>(null);
   const effectiveWeekStart =
     weekStart ?? startOfWeekMonday(snapshot.month === todayIso.slice(0, 7) ? todayIso : `${snapshot.month}-01`);

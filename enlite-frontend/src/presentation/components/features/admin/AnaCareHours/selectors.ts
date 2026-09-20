@@ -14,9 +14,27 @@ import type { AnaCareMonthSnapshot, AnaCareOriginCounts, AnaCareProvider, AnaCar
  * Mês padrão da tela (decisão do Gabriel, 20/09 — substitui a decisão de 16/09 que usava o mês
  * ANTERIOR): o MÊS CORRENTE. Único dono do cálculo — `AnaCareHoursPatientPage` e
  * `AnaCareHoursListContainer` leem daqui, nada de `'2026-09'` cravado em código.
+ *
+ * Régua é o relógio do OPERADOR LOGADO (fuso do navegador, decisão do Gabriel, 20/09) — usa
+ * `getFullYear`/`getMonth`, NUNCA `getUTC*`. UTC estava errado: cria uma janela de ~3h por mês em
+ * que a tela já vira o mês antes do operador — às 23:59 de 30/09 em Buenos Aires (UTC-3) o
+ * `getUTC*` já lê 1º de outubro, e a tela abre vazia num mês que pro operador ainda nem acabou.
  */
 export function currentMonthIso(referenceDate: Date = new Date()): string {
-  return `${referenceDate.getUTCFullYear()}-${String(referenceDate.getUTCMonth() + 1).padStart(2, '0')}`;
+  return `${referenceDate.getFullYear()}-${String(referenceDate.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * `YYYY-MM-DD` de HOJE no fuso LOCAL do operador (decisão do Gabriel, 20/09 — mesma régua de
+ * `currentMonthIso`, e tem de nascer junto: se um lesse local e o outro UTC, os dois discordariam
+ * de mês na mesma janela de ~3h e o detalhe cairia no dia 1º em vez da semana de hoje). Usa
+ * `getFullYear`/`getMonth`/`getDate`, NUNCA `toISOString()` (que serializa em UTC).
+ */
+export function todayIsoLocal(referenceDate: Date = new Date()): string {
+  const year = referenceDate.getFullYear();
+  const month = String(referenceDate.getMonth() + 1).padStart(2, '0');
+  const day = String(referenceDate.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 /**

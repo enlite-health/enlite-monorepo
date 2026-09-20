@@ -130,10 +130,14 @@ function pad2(n: number): string {
 function daysInMonth(year: number, month1to12: number): number {
   return new Date(Date.UTC(year, month1to12, 0)).getUTCDate();
 }
-/** MESMA função do arquivo-modelo — a tela abre no MÊS CORRENTE (`currentMonthIso`). */
+/**
+ * MESMA função do arquivo-modelo — a tela abre no MÊS CORRENTE (`currentMonthIso`, decisão do
+ * Gabriel, 20/09: relógio do OPERADOR LOGADO, fuso local — `getFullYear`/`getMonth`, NUNCA
+ * `getUTC*`).
+ */
 function currentMonthIsoForE2E(): string {
   const now = new Date();
-  return `${now.getUTCFullYear()}-${pad2(now.getUTCMonth() + 1)}`;
+  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
 }
 const MONTH = currentMonthIsoForE2E();
 const [MONTH_YEAR, MONTH_NUM] = MONTH.split('-').map(Number);
@@ -239,9 +243,14 @@ function weeksBetweenMondays(fromMondayIso: string, toMondayIso: string): number
  * mês exibido (`${snapshot.month}-01`). Revisto 20/09: `MONTH` aqui é o mês CORRENTE (Tarefa 3,
  * 16/09), então cai sempre no PRIMEIRO ramo (semana de hoje) — antes, com `MONTH` no mês ANTERIOR,
  * caía sempre no segundo. A condição vem escrita por igual mesmo assim, nunca cravada.
+ *
+ * `todayIso` usa a MESMA régua de `todayIsoLocal` (`selectors.ts`, decisão do Gabriel, 20/09):
+ * fuso LOCAL do operador, nunca `toISOString()` (UTC) — senão discorda de `MONTH` (também local)
+ * na janela de ~3h em que dia/mês locais e UTC caem em lados diferentes da virada.
  */
 function defaultWeekStart(): string {
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const todayIso = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
   return startOfWeekMonday(MONTH === todayIso.slice(0, 7) ? todayIso : `${MONTH}-01`);
 }
 function criarNavegadorDeSemana(page: Page): { irPara: (dateIso: string) => Promise<void>; resetarAposReloadOuMount: () => void } {
