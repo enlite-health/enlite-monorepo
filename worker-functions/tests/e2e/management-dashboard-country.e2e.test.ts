@@ -13,9 +13,13 @@
  *   L9-3 — o MESMO cenário com COUNTRY_RLS_ENABLED=false e
  *          PERMISSION_ENGINE_ENABLED=false (modo PRD) dá o MESMO resultado —
  *          o predicado nunca depende dessas flags.
- *   L9-5 — consolidado (ALL, |actorCountries|>1) só com TODO grant documentado
- *          (granted_by+reason); um grant sem reason já reprova, mesmo que
- *          outro do mesmo ator tenha reason.
+ *   L9-5 — consolidado (ALL, |actorCountries|>1) só com TODO grant com
+ *          `granted_by` preenchido (D113). `reason` NÃO é mais exigido desde
+ *          a migration 412 (`412_group_country_reason_opcional.sql`) e a
+ *          decisão do Gabriel em 20/09/2026 — um grant sem `reason` (mas com
+ *          `granted_by`) soma normalmente na união. O parecer do `lex` (#9,
+ *          11/09) que impunha `reason` obrigatório valia para o padrão
+ *          antigo; não foi reaberto, só alinhado ao teto novo da coluna.
  */
 import { Pool } from 'pg';
 import { resolveCountryScope, CountryScopeError } from '../../src/modules/identity/application/resolveCountryScope';
@@ -130,8 +134,16 @@ describe('filtro de país na Gestão à Vista — banco real (L9-2, L9-3, L9-5)'
       [IDS.scopeMultiDocAr, IDS.scopeMultiDocBr, IDS.groupMultiDocumented],
     );
 
-    // Grupo multi-país SEM documentação completa: AR com motivo, BR SEM motivo
-    // (NULL) — prova que a versão FORTE reprova mesmo com 1 dos 2 documentado.
+    // Grupo multi-país com `granted_by` nos DOIS mas `reason` só em um: AR
+    // com motivo, BR SEM motivo (NULL). Desde a migration 412 (decisão de
+    // 20/09) isso NÃO reprova mais — prova a metade da regra que MUDOU
+    // (`reason` deixou de ser exigido). A metade que NÃO mudou (`granted_by`
+    // sempre exigido) não tem fixture aqui: a coluna é NOT NULL desde a
+    // migration 268 e nunca foi relaxada, então "grant com granted_by NULL"
+    // é um estado IRREPRODUZÍVEL num INSERT de banco real (23502 antes de
+    // chegar à app) — essa metade é coberta no teste unitário mockado
+    // (`resolveCountryScope.test.ts`, caso "granted_by NULL … continua
+    // indocumentado, 403").
     await pool.query(
       `INSERT INTO group_country_scopes (id, group_id, country, granted_by, reason) VALUES
          ($1, $3, 'AR', 'pr9-e2e-admin', 'e2e: AR documentado'),
@@ -213,7 +225,7 @@ describe('filtro de país na Gestão à Vista — banco real (L9-2, L9-3, L9-5)'
     });
   });
 
-  describe('L9-5 — consolidado multi-país só com escopo concedido E documentado (D113)', () => {
+  describe('L9-5 — consolidado multi-país só com escopo concedido E granted_by documentado (D113 + migration 412)', () => {
     it('ator {AR,BR} com os DOIS grants documentados → ALL soma os dois países', async () => {
       const scope = await resolveCountryScope(pool, STAFF_MULTI_DOCUMENTED, 'ALL');
       expect(scope.countries.sort()).toEqual(['AR', 'BR']);
@@ -222,14 +234,15 @@ describe('filtro de país na Gestão à Vista — banco real (L9-2, L9-3, L9-5)'
       expect(data.bigNumbers.pacientesActivos).toBe(await directCount(['AR', 'BR']));
     });
 
-    it('ator {AR,BR} com 1 grant SEM reason (mesmo que o outro tenha) → ALL é 403', async () => {
-      await expect(resolveCountryScope(pool, STAFF_MULTI_UNDOCUMENTED, 'ALL')).rejects.toMatchObject({
-        status: 403,
-        code: 'COUNTRY_SCOPE_REQUIRED',
-      });
+    it('ator {AR,BR} com 1 grant SEM reason (mesmo que o outro tenha granted_by) → ALL soma os dois países, SEM 403 (migration 412: reason não é mais exigido, decisão de 20/09)', async () => {
+      const scope = await resolveCountryScope(pool, STAFF_MULTI_UNDOCUMENTED, 'ALL');
+      expect(scope.countries.sort()).toEqual(['AR', 'BR']);
+
+      const data = await new GetManagementDashboardUseCase(pool).execute({ countries: scope.countries });
+      expect(data.bigNumbers.pacientesActivos).toBe(await directCount(['AR', 'BR']));
     });
 
-    it('mas o MESMO ator sem documentação continua pedindo um país específico do seu escopo (AR)', async () => {
+    it('mas o MESMO ator com 1 grant sem reason continua podendo pedir um país específico do seu escopo (AR)', async () => {
       const scope = await resolveCountryScope(pool, STAFF_MULTI_UNDOCUMENTED, 'AR');
       expect(scope).toEqual({ countries: ['AR'], requested: 'AR' });
     });
