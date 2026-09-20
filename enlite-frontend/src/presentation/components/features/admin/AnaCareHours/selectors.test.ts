@@ -3,10 +3,13 @@ import {
   allShiftsOf,
   axonicoDayEligibility,
   blockReason,
+  currentMonthIso,
   filterPatients,
+  formatMonthLabel,
   formatSourceRange,
   formatSourceTime,
   isShiftSelectable,
+  monthOptionsUntilNow,
   originCounts,
   patientDisplayName,
   pendingOriginBreakdown,
@@ -14,6 +17,7 @@ import {
   selectionSummary,
   shiftHours,
   startOfWeekMonday,
+  todayIsoLocal,
   totalHours,
   validationProgress,
 } from './selectors';
@@ -378,5 +382,154 @@ describe('axonicoDayEligibility', () => {
     expect(result.eligible).toBe(false);
     expect(result.reasons).toEqual(expect.arrayContaining(['notValidated', 'missingCheckInOut', 'missingDocument']));
     expect(result.reasons).toHaveLength(3);
+  });
+});
+
+/**
+ * Oráculo independente da implementação, usado só nos testes de fuso abaixo (20/09). Nunca chama
+ * `currentMonthIso`/`todayIsoLocal` nem reimplementa `getFullYear`/`getMonth`/`getDate` — usa
+ * `Intl` (`toLocaleDateString('en-CA')`, que formata `YYYY-MM-DD` na hora LOCAL do processo) como
+ * segunda fonte. Reusar a própria função como oráculo seria tautologia: só provaria que ela
+ * concorda consigo mesma.
+ */
+function localIsoDateOracle(instant: Date): string {
+  return instant.toLocaleDateString('en-CA');
+}
+
+function localIsoMonthOracle(instant: Date): string {
+  return localIsoDateOracle(instant).slice(0, 7);
+}
+
+/**
+ * Deriva o dia/mês local ESPERADO a partir do offset REAL do ambiente (`Date.getTimezoneOffset`),
+ * sem cravar `'2026-09-30'`/`'2026-09'` no teste — assim o valor esperado continua correto tanto
+ * em UTC-3 (Buenos Aires) quanto em UTC-4/UTC-5, se o runner algum dia rodar noutro fuso negativo.
+ * Desloca o instante em milissegundos e lê com `getUTC*`: esses getters devolvem sempre os MESMOS
+ * dígitos não importa o TZ do processo, porque o deslocamento já foi aplicado antes de ler.
+ */
+function expectedLocalFromOffset(instant: Date): { dayIso: string; monthIso: string } {
+  const offsetMinutes = instant.getTimezoneOffset();
+  const shifted = new Date(instant.getTime() - offsetMinutes * 60000);
+  const year = shifted.getUTCFullYear();
+  const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(shifted.getUTCDate()).padStart(2, '0');
+  return { dayIso: `${year}-${month}-${day}`, monthIso: `${year}-${month}` };
+}
+
+describe('currentMonthIso', () => {
+  it('POSITIVO — data injetada no meio do mês devolve o YYYY-MM daquele mês', () => {
+    expect(currentMonthIso(new Date('2026-09-20T12:00:00Z'))).toBe('2026-09');
+  });
+
+  // Meio-dia (não meia-noite) de propósito: instante SEGURO em qualquer fuso — nenhum fuso real
+  // desloca ±12h a ponto de mudar o dia/mês. O caso de fuso que MUDA de dia/mês é o teste de
+  // contrato e o controle negativo abaixo.
+  it('POSITIVO — primeiro dia do mês, instante seguro em qualquer fuso, ainda cai nesse mês', () => {
+    expect(currentMonthIso(new Date('2026-10-01T12:00:00Z'))).toBe('2026-10');
+  });
+
+  it('POSITIVO — mês de um dígito vem com zero à esquerda', () => {
+    expect(currentMonthIso(new Date('2026-01-15T12:00:00Z'))).toBe('2026-01');
+  });
+
+  /**
+   * CONTRATO (decisão do Gabriel, 20/09) — roda SEMPRE, em QUALQUER fuso, porque compara contra um
+   * oráculo independente (`Intl`), não contra um valor cravado. Prova a régua: o mês segue o
+   * relógio de parede LOCAL do operador, nunca UTC.
+   */
+  it('POSITIVO — contrato: acompanha o relógio LOCAL do processo em qualquer fuso (oráculo Intl, não a própria função)', () => {
+    const instant = new Date('2026-10-01T02:30:00Z');
+    expect(currentMonthIso(instant)).toBe(localIsoMonthOracle(instant));
+  });
+
+  /**
+   * CONTROLE NEGATIVO — discrimina local×UTC só onde os dois DIVERGEM de verdade. Dentro de um
+   * processo rodando em UTC, "relógio local" e "UTC" são a MESMA coisa (offset 0): nenhum teste
+   * consegue distinguir os dois ali, e forçar a distinção é o que quebrou no CI (ver abaixo) — por
+   * isso este caso vira `it.skip` quando o offset do ambiente é zero. Fora de UTC, o valor esperado
+   * é DERIVADO do offset real (`expectedLocalFromOffset`), não cravado, pra valer em UTC-3, UTC-4
+   * ou UTC-5 igual, sem reescrever o teste se o runner do time mudar de fuso.
+   *
+   * Antes desta versão o teste pinava `process.env.TZ = 'America/Argentina/Buenos_Aires'` em
+   * RUNTIME (depois do processo já ter começado) — removido porque o V8 cacheia o fuso na primeira
+   * leitura de `Date`/`Intl`, então atribuir `TZ` depois não garante efeito: passava na máquina do
+   * dev (já UTC-3) e falhava no CI (`ubuntu-latest`, UTC). Não reintroduzir o pino de `TZ` aqui.
+   */
+  const controlInstant = new Date('2026-10-01T02:30:00Z');
+  const runnerIsUtc = controlInstant.getTimezoneOffset() === 0;
+  const itDiscrimina = runnerIsUtc ? it.skip : it;
+  itDiscrimina(
+    'NEGATIVO — 30/09 23:30 em Buenos Aires (UTC-3) é 01/10 de madrugada em UTC: o mês segue o relógio LOCAL, não UTC (só discrimina fora de UTC — pulado quando o runner É UTC, que não distingue os dois)',
+    () => {
+      expect(currentMonthIso(controlInstant)).toBe(expectedLocalFromOffset(controlInstant).monthIso);
+    },
+  );
+});
+
+describe('todayIsoLocal', () => {
+  it('POSITIVO — instante ao meio-dia UTC devolve o mesmo dia em YYYY-MM-DD, com zero à esquerda', () => {
+    expect(todayIsoLocal(new Date('2026-09-05T12:00:00Z'))).toBe('2026-09-05');
+  });
+
+  /**
+   * CONTRATO (decisão do Gabriel, 20/09) — mesma lógica do contrato de `currentMonthIso` acima:
+   * compara contra o oráculo `Intl`, roda sempre, em qualquer fuso.
+   */
+  it('POSITIVO — contrato: acompanha o relógio LOCAL do processo em qualquer fuso (oráculo Intl, não a própria função)', () => {
+    const instant = new Date('2026-10-01T02:30:00Z');
+    expect(todayIsoLocal(instant)).toBe(localIsoDateOracle(instant));
+  });
+
+  /**
+   * CONTROLE NEGATIVO — mesma lógica do controle de `currentMonthIso` acima (mesmo instante, mesmo
+   * `it.skip` condicional ao offset, mesmo valor DERIVADO em vez de cravado). A implementação
+   * ANTIGA usava `toISOString().slice(0, 10)` (sempre UTC) e devolveria `'2026-10-01'` aqui; a
+   * fórmula LOCAL tem de devolver o dia derivado do offset do ambiente.
+   *
+   * O pino de `process.env.TZ` em runtime foi removido pelo mesmo motivo do bloco acima (cache de
+   * fuso do V8) — não reintroduzir.
+   */
+  const controlInstant = new Date('2026-10-01T02:30:00Z');
+  const runnerIsUtc = controlInstant.getTimezoneOffset() === 0;
+  const itDiscrimina = runnerIsUtc ? it.skip : it;
+  itDiscrimina(
+    'NEGATIVO — 30/09 23:30 em Buenos Aires (UTC-3) é 01/10 de madrugada em UTC: o dia segue o relógio LOCAL, não UTC (só discrimina fora de UTC — pulado quando o runner É UTC, que não distingue os dois)',
+    () => {
+      expect(todayIsoLocal(controlInstant)).toBe(expectedLocalFromOffset(controlInstant).dayIso);
+    },
+  );
+});
+
+describe('monthOptionsUntilNow', () => {
+  it('POSITIVO — piso 2026-08 com referência em setembro/2026 devolve [2026-08, 2026-09]', () => {
+    expect(monthOptionsUntilNow('2026-08', new Date('2026-09-20T12:00:00Z'))).toEqual(['2026-08', '2026-09']);
+  });
+
+  it('POSITIVO — mês novo entra sozinho: referência em outubro/2026 inclui 2026-10', () => {
+    expect(monthOptionsUntilNow('2026-08', new Date('2026-10-05T12:00:00Z'))).toEqual(['2026-08', '2026-09', '2026-10']);
+  });
+
+  it('POSITIVO — piso e referência no mesmo mês devolvem lista de um único item', () => {
+    expect(monthOptionsUntilNow('2026-08', new Date('2026-08-03T12:00:00Z'))).toEqual(['2026-08']);
+  });
+
+  it('POSITIVO — atravessa virada de ano sem quebrar a ordem crescente', () => {
+    expect(monthOptionsUntilNow('2026-11', new Date('2027-01-10T12:00:00Z'))).toEqual(['2026-11', '2026-12', '2027-01']);
+  });
+
+  it('NEGATIVO — piso posterior ao mês corrente devolve só o piso, nunca lista vazia', () => {
+    expect(monthOptionsUntilNow('2027-01', new Date('2026-09-20T12:00:00Z'))).toEqual(['2027-01']);
+  });
+});
+
+describe('formatMonthLabel', () => {
+  it('POSITIVO — es: mês com nome completo, primeira letra maiúscula, seguido do ano', () => {
+    expect(formatMonthLabel('2026-08', 'es')).toBe('Agosto 2026');
+    expect(formatMonthLabel('2026-09', 'es')).toBe('Septiembre 2026');
+  });
+
+  it('POSITIVO — pt-BR: mesmo formato, nome do mês em português', () => {
+    expect(formatMonthLabel('2026-08', 'pt-BR')).toBe('Agosto 2026');
+    expect(formatMonthLabel('2026-09', 'pt-BR')).toBe('Setembro 2026');
   });
 });

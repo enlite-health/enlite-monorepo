@@ -130,14 +130,16 @@ function pad2(n: number): string {
 function daysInMonth(year: number, month1to12: number): number {
   return new Date(Date.UTC(year, month1to12, 0)).getUTCDate();
 }
-/** MESMA função do arquivo-modelo — a tela abre no MÊS ANTERIOR ao atual (`previousMonthIso`). */
-function previousMonthIsoForE2E(): string {
+/**
+ * MESMA função do arquivo-modelo — a tela abre no MÊS CORRENTE (`currentMonthIso`, decisão do
+ * Gabriel, 20/09: relógio do OPERADOR LOGADO, fuso local — `getFullYear`/`getMonth`, NUNCA
+ * `getUTC*`).
+ */
+function currentMonthIsoForE2E(): string {
   const now = new Date();
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  d.setUTCMonth(d.getUTCMonth() - 1);
-  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}`;
+  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
 }
-const MONTH = previousMonthIsoForE2E();
+const MONTH = currentMonthIsoForE2E();
 const [MONTH_YEAR, MONTH_NUM] = MONTH.split('-').map(Number);
 const DIM = daysInMonth(MONTH_YEAR, MONTH_NUM);
 const ORIGIN_SEQUENCE = buildOriginSequence(TOTAL_SHIFTS);
@@ -219,9 +221,9 @@ const SHIFT_DUPLICADO = `FAKE-${MONTH}-${TARGET_DUPLICADO.p}-${TARGET_DUPLICADO.
 const SHIFT_DNI = `FAKE-${MONTH}-${TARGET_DNI.p}-${TARGET_DNI.pr}-${TARGET_DNI.s}`;
 const SHIFT_IDS_TOCADOS = [SHIFT_FELIZ, SHIFT_DUPLICADO, SHIFT_DNI];
 
-// ── Navegador de semana COM ESTADO — mesmo padrão do arquivo-modelo (`criarNavegadorDeSemana`),
-// mas o `DEFAULT_WEEK_START` é calculado POR PACIENTE (a tela abre na semana do turno MAIS
-// ANTIGO daquele paciente especificamente, entre os 10 dele).
+// ── Navegador de semana COM ESTADO — mesmo padrão do arquivo-modelo (`criarNavegadorDeSemana`).
+// `defaultWeekStart()` abaixo usa a MESMA fórmula genérica do app — não é por paciente nem pelo
+// turno mais antigo de ninguém (ver comentário da função).
 function startOfWeekMonday(dateIso: string): string {
   const [y, m, d] = dateIso.split('-').map(Number);
   const date = new Date(Date.UTC(y, m - 1, d));
@@ -238,11 +240,17 @@ function weeksBetweenMondays(fromMondayIso: string, toMondayIso: string): number
  * MESMA fórmula de `AnaCareHoursDetailPage.tsx:110-111` (decisão do Gabriel, 18/09) — a tela NÃO
  * abre na semana do turno mais antigo (comentário desatualizado no arquivo-modelo; conferido no
  * código atual): abre na semana de HOJE se o mês exibido contém hoje, senão na PRIMEIRA semana do
- * mês exibido (`${snapshot.month}-01`). Como `MONTH` aqui é sempre o mês ANTERIOR ao atual, cai
- * sempre no segundo ramo — mas a condição vem escrita por igual, nunca cravada.
+ * mês exibido (`${snapshot.month}-01`). Revisto 20/09: `MONTH` aqui é o mês CORRENTE (Tarefa 3,
+ * 16/09), então cai sempre no PRIMEIRO ramo (semana de hoje) — antes, com `MONTH` no mês ANTERIOR,
+ * caía sempre no segundo. A condição vem escrita por igual mesmo assim, nunca cravada.
+ *
+ * `todayIso` usa a MESMA régua de `todayIsoLocal` (`selectors.ts`, decisão do Gabriel, 20/09):
+ * fuso LOCAL do operador, nunca `toISOString()` (UTC) — senão discorda de `MONTH` (também local)
+ * na janela de ~3h em que dia/mês locais e UTC caem em lados diferentes da virada.
  */
 function defaultWeekStart(): string {
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const todayIso = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
   return startOfWeekMonday(MONTH === todayIso.slice(0, 7) ? todayIso : `${MONTH}-01`);
 }
 function criarNavegadorDeSemana(page: Page): { irPara: (dateIso: string) => Promise<void>; resetarAposReloadOuMount: () => void } {

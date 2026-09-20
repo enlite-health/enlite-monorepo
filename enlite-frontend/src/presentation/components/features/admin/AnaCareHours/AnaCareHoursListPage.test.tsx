@@ -4,8 +4,14 @@ import { AnaCareHoursListPage } from './AnaCareHoursListPage';
 import type { AnaCareMonthSnapshot } from './types';
 import type { UseAnaCareHoursSyncResult } from '@hooks/admin/useAnaCareHoursSync';
 
+// `i18n.language`: o seletor de mês agora formata o rótulo com `formatMonthLabel(value,
+// i18n.language)` (decisão do Gabriel, 20/09) — sem isso o mock derruba o componente com "Cannot
+// read properties of undefined (reading 'language')".
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string, opts?: Record<string, unknown>) => (opts ? `${key}|${JSON.stringify(opts)}` : key) }),
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) => (opts ? `${key}|${JSON.stringify(opts)}` : key),
+    i18n: { language: 'es' },
+  }),
 }));
 
 function snapshot(overrides: Partial<AnaCareMonthSnapshot> = {}): AnaCareMonthSnapshot {

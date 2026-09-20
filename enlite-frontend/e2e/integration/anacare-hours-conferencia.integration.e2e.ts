@@ -24,8 +24,8 @@
  * 1/2 que o e2e de API do backend, `anacare-hours-api.e2e.test.ts`, também usa e LIMPA a cada
  * corrida). Turnos usados — `FAKE-<mês>-6-0-{0..4}` (sin_checkin/web_admin/app/app/web_admin, na
  * mesma ordem determinística de `buildOriginSequence`) — **`<mês>` NÃO é mais cravado** (Tarefa 3,
- * 16/09: a tela abre no MÊS ANTERIOR ao atual, `previousMonthIso`); o arquivo calcula o mesmo mês
- * em runtime (`previousMonthIsoForE2E`), senão o teste quebraria assim que rodasse noutro mês.
+ * 16/09, revisto 20/09: a tela abre no MÊS CORRENTE, `currentMonthIso`); o arquivo calcula o mesmo
+ * mês em runtime (`currentMonthIsoForE2E`), senão o teste quebraria assim que rodasse noutro mês.
  *
  * Isolamento entre corridas: RUN_ID no uid/e-mail dos 2 staff + no nome do grupo; `afterAll`
  * limpa `shift_hours_validation` dos turnos tocados (por sourceShiftId) e os fixtures de iam —
@@ -68,8 +68,8 @@ const GRUPO_COMPLETO = `ACH E2E Completo ${RUN_ID}`;
 const GRUPO_LEITURA = `ACH E2E Leitura ${RUN_ID}`;
 
 /**
- * Tarefa 3 (16/09): `AnaCareHoursListContainer`/`AnaCareHoursPatientPage` não têm mais mês
- * cravado — nascem no MÊS ANTERIOR ao atual (`previousMonthIso`, `selectors.ts`). Um `'2026-08'`
+ * Tarefa 3 (16/09, revisto 20/09): `AnaCareHoursListContainer`/`AnaCareHoursPatientPage` não têm
+ * mais mês cravado — nascem no MÊS CORRENTE (`currentMonthIso`, `selectors.ts`). Um `'2026-08'`
  * fixo aqui quebraria assim que o teste rodasse num mês diferente (o adapter falso só tem turnos
  * do mês pedido). Por isso o e2e calcula o MESMO mês que o app vai pedir, e monta os ids
  * sintéticos (`FakeAnaCareShiftsSource.generateMonth`, determinístico por mês) em cima dele.
@@ -80,13 +80,16 @@ function pad2(n: number): string {
 function daysInMonth(year: number, month1to12: number): number {
   return new Date(Date.UTC(year, month1to12, 0)).getUTCDate();
 }
-function previousMonthIsoForE2E(): string {
+/**
+ * Mesma régua de `currentMonthIso` (`selectors.ts`, decisão do Gabriel, 20/09): relógio do
+ * OPERADOR LOGADO (fuso local), `getFullYear`/`getMonth` — NUNCA `getUTC*`. Réplica local, não
+ * import — este arquivo é intencionalmente autocontido (ver nota da massa acima).
+ */
+function currentMonthIsoForE2E(): string {
   const now = new Date();
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  d.setUTCMonth(d.getUTCMonth() - 1);
-  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}`;
+  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
 }
-const MONTH = previousMonthIsoForE2E();
+const MONTH = currentMonthIsoForE2E();
 const [MONTH_YEAR, MONTH_NUM] = MONTH.split('-').map(Number);
 const DIM = daysInMonth(MONTH_YEAR, MONTH_NUM);
 
@@ -110,10 +113,15 @@ const DATE_VALIDAR_INDIVIDUAL = shiftDateForIndexS(2);
 const DATE_LOTE_A = shiftDateForIndexS(3);
 const DATE_LOTE_B = shiftDateForIndexS(4);
 
-// ── Eixo por DIA (16/09) — o detalhe abre na semana do turno MAIS ANTIGO do paciente e navega
-// semana a semana; os testes precisam saber QUANTAS vezes clicar em "Semana siguiente" pra
-// alcançar a semana de cada turno. Cálculo replica `startOfWeekMonday`/`groupShiftsByDayInWeek`
-// (`selectors.ts`) — nunca um número cravado, senão quebra quando o mês/ano mudar.
+// ── Eixo por DIA (16/09, revisto 20/09) — `DEFAULT_WEEK_START` ESPELHA a fórmula de
+// `AnaCareHoursDetailPage.tsx:110-111`: se o mês exibido (`MONTH`) contém HOJE, abre na semana de
+// hoje; senão, na semana do dia 1º do mês. A premissa antiga (semana do turno MAIS ANTIGO do
+// paciente) só batia com o app por acidente: enquanto o mês padrão era o ANTERIOR, só o segundo
+// ramo do app era alcançável e os dois valores coincidiam. Esta branch trocou o padrão pro mês
+// CORRENTE — os ramos divergem (medido: 2 semanas) — por isso o cálculo aqui tem de replicar o
+// app, não o turno mais antigo. Cálculo de navegação replica `startOfWeekMonday`/
+// `groupShiftsByDayInWeek` (`selectors.ts`) — nunca um número cravado, senão quebra quando o
+// mês/ano mudar.
 function startOfWeekMonday(dateIso: string): string {
   const [y, m, d] = dateIso.split('-').map(Number);
   const date = new Date(Date.UTC(y, m - 1, d));
@@ -126,15 +134,14 @@ function weeksBetweenMondays(fromMondayIso: string, toMondayIso: string): number
   const to = Date.parse(`${toMondayIso}T00:00:00Z`);
   return Math.round((to - from) / (7 * 24 * 60 * 60 * 1000));
 }
-// Paciente AC-PAT-6 tem 10 turnos (2 prestadores × 5) — pr=1 embute os índices 65..69, mas só
-// os de pr=0 (60..64, acima) têm const própria; a semana padrão é a do turno mais antigo entre OS
-// 10, então soma os 5 de pr=1 aqui só pra achar o mínimo (não usados em nenhuma asserção).
-function shiftDateForIndex(shiftIndex: number): string {
-  const day = (shiftIndex % DIM) + 1;
-  return `${MONTH}-${pad2(day)}`;
+/** Mesma régua de `todayIsoLocal` (`selectors.ts`, decisão do Gabriel, 20/09) — fuso LOCAL, nunca `toISOString()` (UTC). Réplica local, não import (arquivo autocontido). */
+function todayIsoLocalForE2E(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
 }
-const TODAS_AS_DATAS_DO_PACIENTE = [60, 61, 62, 63, 64, 65, 66, 67, 68, 69].map(shiftDateForIndex);
-const DEFAULT_WEEK_START = startOfWeekMonday(TODAS_AS_DATAS_DO_PACIENTE.slice().sort()[0]);
+const DEFAULT_WEEK_START = startOfWeekMonday(
+  MONTH === todayIsoLocalForE2E().slice(0, 7) ? todayIsoLocalForE2E() : `${MONTH}-01`,
+);
 
 /**
  * Navegador de semana COM ESTADO — a página só sabe "próxima"/"anterior" (relativo ao que está
@@ -321,9 +328,10 @@ test.describe('Conferência de horas do Ana Care — E2E real @integration', () 
     await expect(page.getByRole('heading', { name: 'Sin vínculo · ID AC-PAT-6' })).toBeVisible({ timeout: 15_000 });
     await print(page, 'detalhe.png');
 
-    // Eixo por DIA (16/09): a semana visível ao abrir é a do turno MAIS ANTIGO do paciente — pode
-    // não ser a de NENHUM destes 4 turnos específicos (depende de quantos dias tem o mês em que o
-    // teste roda). O navegador com estado sabe em qual semana a UI está e calcula os cliques.
+    // Eixo por DIA (16/09, revisto 20/09): a semana visível ao abrir é a de HOJE quando o mês
+    // exibido (MONTH) contém hoje; senão, a do dia 1º do mês (`AnaCareHoursDetailPage.tsx:110-111`)
+    // — pode não ser a de NENHUM destes 4 turnos específicos. O navegador com estado sabe em qual
+    // semana a UI está e calcula os cliques.
     const semana = criarNavegadorDeSemana(page);
     await semana.irPara(DATE_VALIDAR_INDIVIDUAL);
 

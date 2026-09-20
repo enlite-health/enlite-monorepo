@@ -677,10 +677,6 @@
       "title": "Horas Ana Care",
       "updatedAt": "Retrato atualizado: {{datetime}}",
       "monthAriaLabel": "Mês",
-      "months": {
-        "2026-08": "Agosto 2026",
-        "2026-09": "Setembro 2026"
-      },
       "stale": {
         "title": "Retrato desatualizado",
         "titleNaoConstruido": "Retrato ainda não construído",

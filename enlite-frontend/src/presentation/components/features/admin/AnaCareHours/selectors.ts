@@ -11,17 +11,69 @@
 import type { AnaCareMonthSnapshot, AnaCareOriginCounts, AnaCareProvider, AnaCareShift, AnaCarePatient } from './types';
 
 /**
- * Mês padrão da tela (decisão do Gabriel, 16/09): o MÊS ANTERIOR ao atual, não o mês corrente —
- * medido que agosto tem turnos finalizados e setembro quase não (retrato ainda incompleto no mês
- * em curso). Único dono do cálculo — `AnaCareHoursPatientPage` e `AnaCareHoursListContainer` leem
- * daqui, nada de `'2026-08'` cravado em código.
+ * Mês padrão da tela (decisão do Gabriel, 20/09 — substitui a decisão de 16/09 que usava o mês
+ * ANTERIOR): o MÊS CORRENTE. Único dono do cálculo — `AnaCareHoursPatientPage` e
+ * `AnaCareHoursListContainer` leem daqui, nada de `'2026-09'` cravado em código.
+ *
+ * Régua é o relógio do OPERADOR LOGADO (fuso do navegador, decisão do Gabriel, 20/09) — usa
+ * `getFullYear`/`getMonth`, NUNCA `getUTC*`. UTC estava errado: cria uma janela de ~3h por mês em
+ * que a tela já vira o mês antes do operador — às 23:59 de 30/09 em Buenos Aires (UTC-3) o
+ * `getUTC*` já lê 1º de outubro, e a tela abre vazia num mês que pro operador ainda nem acabou.
  */
-export function previousMonthIso(referenceDate: Date = new Date()): string {
+export function currentMonthIso(referenceDate: Date = new Date()): string {
+  return `${referenceDate.getFullYear()}-${String(referenceDate.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * `YYYY-MM-DD` de HOJE no fuso LOCAL do operador (decisão do Gabriel, 20/09 — mesma régua de
+ * `currentMonthIso`, e tem de nascer junto: se um lesse local e o outro UTC, os dois discordariam
+ * de mês na mesma janela de ~3h e o detalhe cairia no dia 1º em vez da semana de hoje). Usa
+ * `getFullYear`/`getMonth`/`getDate`, NUNCA `toISOString()` (que serializa em UTC).
+ */
+export function todayIsoLocal(referenceDate: Date = new Date()): string {
   const year = referenceDate.getFullYear();
-  const month = referenceDate.getMonth(); // 0-based; month-1 já é o mês anterior em 0-based do mês atual
-  const previous = new Date(Date.UTC(year, month, 1));
-  previous.setUTCMonth(previous.getUTCMonth() - 1);
-  return `${previous.getUTCFullYear()}-${String(previous.getUTCMonth() + 1).padStart(2, '0')}`;
+  const month = String(referenceDate.getMonth() + 1).padStart(2, '0');
+  const day = String(referenceDate.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Lista crescente de `YYYY-MM`, do piso (`floorMonthIso`, default `'2026-08'` — primeiro mês com
+ * dado real do Ana Care) até o mês CORRENTE de `referenceDate`, inclusive — alimenta o seletor de
+ * mês da lista (`AnaCareHoursListPage`) sem precisar crescer a lista à mão a cada mês novo
+ * (decisão do Gabriel, 20/09). Se o piso for posterior ao mês corrente (relógio do ambiente
+ * atrasado, ou piso mal configurado), devolve só o piso — nunca lista vazia, pra não deixar o
+ * seletor sem opção nenhuma.
+ */
+export function monthOptionsUntilNow(floorMonthIso = '2026-08', referenceDate: Date = new Date()): string[] {
+  const current = currentMonthIso(referenceDate);
+  const [floorYear, floorMonth] = floorMonthIso.split('-').map(Number);
+  const [currentYear, currentMonth] = current.split('-').map(Number);
+  const floorIndex = floorYear * 12 + (floorMonth - 1);
+  const currentIndex = currentYear * 12 + (currentMonth - 1);
+  if (floorIndex > currentIndex) return [floorMonthIso];
+  const months: string[] = [];
+  for (let index = floorIndex; index <= currentIndex; index += 1) {
+    const year = Math.floor(index / 12);
+    const month = (index % 12) + 1;
+    months.push(`${year}-${String(month).padStart(2, '0')}`);
+  }
+  return months;
+}
+
+/**
+ * Rótulo visível do mês no seletor da lista — formato TEM de ficar idêntico ao que antes vinha
+ * fixo de `admin.anacareHours.months.<YYYY-MM>` no i18n (`"Agosto 2026"`, `"Septiembre 2026"`,
+ * `"Setembro 2026"`): nome do mês pelo `Intl.DateTimeFormat(locale, { month: 'long' })`, primeira
+ * letra maiúscula, espaço, ano. `timeZone: 'UTC'` evita que o fuso do navegador vire o mês (ex.:
+ * `2026-09-01T00:00:00` local negativo cairia em agosto).
+ */
+export function formatMonthLabel(monthIso: string, locale: string): string {
+  const [year, month] = monthIso.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, 1));
+  const monthName = new Intl.DateTimeFormat(locale, { month: 'long', timeZone: 'UTC' }).format(date);
+  const capitalized = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+  return `${capitalized} ${year}`;
 }
 
 /**
