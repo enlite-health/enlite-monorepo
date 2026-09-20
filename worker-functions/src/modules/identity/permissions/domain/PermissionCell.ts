@@ -169,8 +169,11 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Disparar integrações à mão (espelho Ana Care, sync do ClickUp). Operação, não leitura.',
   'test_fixtures:execute':
     'Criar e apagar dados de teste. Ferramenta do monitoramento sintético (e2e-prod).',
-  'api_docs:read':
-    'Ver a documentação OpenAPI do backend no painel.',
+  // `api_docs:read` REMOVIDA (régua Fase 2 da change `catalogo-de-permissoes-derivado-do-codigo`,
+  // fatos-medidos F-catalogo-sem-orfao 20/09): SEM consumidor em nenhuma camada — a rota real de
+  // `/api/docs` usa só `authMiddleware.requireStaff()`, sem `perm.require`/checagem de célula; e a
+  // feature `api_docs` já está em remoção (branches `chore/remover-api-docs`) e já não existe no
+  // catálogo de prd.
 
   // ── Paciente por CONTAINER (D286; `lex` 06/09 CONDICIONADO, C11: definição escrita no mesmo
   //    commit que cria a célula). `patient:read` fica sendo o OPERACIONAL: id, status, funil de
