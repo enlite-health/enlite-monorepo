@@ -585,3 +585,78 @@ antes do sync → sem resíduo. Limpo via `DELETE /api/admin/vacancies/:id` (adm
 title `CASO 0-` + is_draft + talentum_project_id inexistente; ou (b) o sync pular projetos cujo título casa marca
 de teste; ou (c) título marcável ([E2E]) no publish de teste pra o sweeper/sync identificar. Mesma família do
 risco de órfão-na-Talentum já documentado. Enquanto não implementado: se um run falhar, checar `case_number=0`.
+
+---
+
+## 10/09/2026 — regressão de prod para o card de bloqueado (D300, PR #324/#326)
+
+Escrevi `regression/blocked-attempt-live-reason.regression.ts` — a guarda EM PRODUÇÃO do bug que
+motivou o dia inteiro de trabalho no `worker-functions` (card de tentativa bloqueada mostrando
+motivo congelado; 135/1.271 cards errados, 90 escondendo gente já elegível).
+
+**O que o teste prova, e por que é o único lugar que prova isso:** cria worker is_test incompleto,
+tenta postular (bloqueado → grava o instantâneo), completa o cadastro até REGISTERED **sem postular
+de novo** (a linha de `worker_blocked_applications` não é tocada), e lê o motivo de novo pela MESMA
+API que a tela consome (`GET /api/admin/recruitment/blocked-attempts?workerId=`). Se o motivo ainda
+vier `registration_incomplete`, o bug voltou — nenhum teste local pega essa classe, porque "o motivo é
+recalculado" é uma afirmação sobre o binário que está SERVINDO agora, e só synthetic monitoring em
+prod real vê isso.
+
+**Decisão de desenho:** verificação via API admin (a mesma que alimenta a tela), não via UI — a tela
+não expõe filtro por workerId na URL (é dropdown i18n), e a API É o dado que a tela renderiza.
+Mesmo padrão de `worker-journey-postularse.regression.ts` (Fatia 3), que li inteira antes de escrever
+qualquer coisa, para reusar os helpers certos (`signUpWorker`, `completeCaregiverRegistration`,
+`newAdminApiContext`) e a mesma mitigação defensiva contra auto-invite (profissão que o worker não
+tem).
+
+**Verificado sem credenciais de prod (não tenho `E2E_ADMIN_EMAIL`/senha nesta sessão):**
+- `npm run typecheck` — limpo.
+- `coverage-gate` — 2/2, zero tag órfã, `monitor-completeness` confirma que o arquivo novo entra
+  sozinho no runner diário (não precisa registrar em lugar nenhum).
+- `unit` project — 18/18, intocado.
+- Comportamento de discovery sem credenciais é IDÊNTICO ao da Fatia 3 já em produção (falha no
+  `admin-setup`, antes do meu `test.skip` interno — não é defeito meu, é o guard duro da suíte).
+- Toda assinatura de helper usada (`signUpWorker`, `newWorkerApiContext`, `deleteWorkerAuthAccount`,
+  `completeCaregiverRegistration`, `newAdminApiContext`) foi lida no código-fonte antes de usar, não
+  adivinhada.
+- Teardown: `worker_blocked_applications` já está na lista de tabelas que
+  `CleanupTestFixturesUseCase` apaga por `is_test` (worker OU vaga) — não precisei escrever limpeza
+  nova. Sweeper (`src/sweeper/cleanup.ts`) acha órfão por `is_test=true`, não por padrão de email —
+  cobre esta spec sem mudança.
+
+**Não verificado — e não devo fingir que verifiquei:** a EXECUÇÃO real do teste contra produção. Não
+tenho as credenciais de admin desta sessão, e não vou tentar obtê-las ou contornar o guard. Fica para
+o Gabriel rodar localmente com `.env.local`, ou para o próximo disparo do Cloud Run Job agendado —
+que, pelo `monitor-completeness.spec.ts`, já pega o arquivo sozinho.
+
+## 10/09/2026 (mesmo dia, depois) — a spec nova FALHOU na 1ª execução em prod. Dois defeitos meus.
+
+**Defeito 1 — asserção sobre semântica inventada.** Eu assertava
+`initBody.data.status === 'INCOMPLETE_REGISTER'` logo depois do `POST /api/workers/init`.
+Mas `data.status` é o status da **OPERAÇÃO** (`'ok'` | `'claim_pending'`,
+`WorkerControllerV2.initWorker:115`), não o status de cadastro do worker. A Fatia 3 declara
+o MESMO tipo errado — só que nunca asserta sobre ele, então o erro dormia lá.
+Conserto: a precondição passou a ser lida de `GET /api/admin/workers/:id`, a mesma fonte que
+o passo 6 já usava.
+
+**Defeito 2, mais caro — resíduo em produção.** A asserção morta ficava ENTRE criar o worker
+(`init`) e marcá-lo `is_test`. O worker já existe em prod a partir do `init`; enquanto
+`is_test` for false ele está **fora da rede** do `test-fixtures/cleanup` E do sweeper (os dois
+acham por `is_test = true`). Resultado: 2 workers órfãos em produção, invisíveis para toda a
+limpeza automática. Limpei pela própria API do app (test-flag → cleanup → `workers: 2`
+deletados, 0 restantes) em vez de SQL cru, porque o `CleanupTestFixturesUseCase` conhece a
+ordem correta entre as tabelas filhas.
+Conserto estrutural: **nenhuma asserção entre criar e marcar**, com o porquê escrito no
+arquivo para o próximo não repetir.
+
+**Por que EU não peguei isso antes?** Minha prova local (`prova-regressao.mjs`) semeava o
+cenário direto no Postgres por SQL e chamava só o endpoint de leitura. Ela provou a
+ASSERÇÃO CENTRAL (motivo ao vivo × congelado — e provou bem: verde com o conserto, vermelho
+com ele revertido), mas **não exercitou o caminho de SETUP** — `signUpWorker`, `init`,
+`test-flag`. Cobri a pergunta e deixei o andaime sem régua. Lição:
+*prova de asserção ≠ prova de fluxo; um cenário semeado por SQL não valida os contratos das
+rotas que o teste real usa para chegar lá.*
+
+**Nota de custo:** a 1ª execução do Job com a imagem nova rodou a suíte inteira em prod
+(~30 min) só para descobrir isso. Rodar `--project=regression --grep` contra prod ANTES de
+apontar o Job teria custado minutos.

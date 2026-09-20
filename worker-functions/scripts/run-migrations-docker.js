@@ -109,14 +109,78 @@ async function run() {
     `);
 
     // Advisory lock serializa instâncias concorrentes (Cloud Run sobe N; worker-functions
-    // e MCP compartilham a imagem). BLOQUEANTE de propósito (achado do gate #223): com
-    // try_lock a instância perdedora pulava e subia o app com o schema a meio (ex.:
+    // e MCP compartilham a imagem). BLOQUEANTE de propósito, com teto (achado do gate #223,
+    // reforçado pelo #326 no `main` — sync `main`→`stage` de 19/09/2026 manteve a versão do
+    // `main` aqui por ser um superconjunto estrito da proteção da stage): com `try_lock` sem
+    // espera a instância perdedora pulava e subia o app com o schema a meio (ex.:
     // iam.effective_countries ainda inexistente). Agora ela ESPERA o vencedor terminar e
-    // relê schema_migrations — sobe só com o schema completo.
+    // relê schema_migrations — sobe só com o schema completo, com um teto de espera e um
+    // fail-closed explícito quando o teto estoura E ainda há migration pendente.
+    //
+    // 🔒 NÃO devolve sucesso ao desistir do lock, e o motivo é um dano medido
+    // (09/09/2026, gate do PR #326): a versão anterior fazia `return` quando outra
+    // instância segurava o lock — o `&&` do Dockerfile deixava o `npm start` subir,
+    // e ESSA instância passava a servir tráfego com o SCHEMA VELHO. Com um deploy
+    // que muda schema e código juntos, o write path do código novo morre contra a
+    // tabela antiga. Aqui isso é o INSERT de quem TENTOU se candidatar — e o
+    // `RecordBlockedAttemptUseCase` é fire-and-forget: a tentativa some sem 500,
+    // sem alerta, sem ninguém saber.
+    //
+    // Agora: ESPERA o lock (a outra instância está aplicando, não é erro), e se o
+    // tempo estourar, só sobe se NÃO houver migration pendente. Havendo pendência,
+    // falha FECHADO — container que não sobe é incidente visível; container que
+    // sobe com schema errado é dado perdido em silêncio.
     const LOCK_ID = 20241201; // arbitrary fixed int
-    const lockClient = await pool.connect();
-    await lockClient.query('SELECT pg_advisory_lock($1)', [LOCK_ID]);
-    console.log('🔒 Migration lock acquired');
+    // Configurável só para o teste conseguir exercitar o ramo de aborto sem
+    // esperar 2 minutos. Em produção ninguém passa a env, e o default vale.
+    // 🔒 TETO MEDIDO, não escolhido no chute. O `startupProbe` do serviço em produção
+    // (medido 09/09 em `enlite-prd`/`southamerica-west1`) é TCP na 8080 com
+    // `timeoutSeconds: 240` e `failureThreshold: 1` — UMA falha e o contêiner morre,
+    // sem retry. O orçamento até o `npm start` abrir a porta é:
+    //
+    //     waitForDB (até 30s) + esta espera (120s) + tempo das migrations  <  240s
+    //
+    // ou seja, ~90s de folga. Quem aumentar MIGRATIONS_LOCK_WAIT_MS gasta essa folga:
+    // acima de ~180s o boot passa a ser morto pelo probe em vez de esperar, e aí a
+    // trava que existe para não servir schema velho vira indisponibilidade.
+    // `minScale: 1`, então enquanto a revisão nova não sobe a antiga segue atendendo.
+    const ESPERA_MAX_MS = Number(process.env.MIGRATIONS_LOCK_WAIT_MS ?? 120_000);
+    const INTERVALO_MS = 2_000;
+
+    let temLock = false;
+    const limite = Date.now() + ESPERA_MAX_MS;
+    while (Date.now() < limite) {
+      const r = await pool.query('SELECT pg_try_advisory_lock($1) AS acquired', [LOCK_ID]);
+      if (r.rows[0].acquired) { temLock = true; break; }
+      console.log('⏳ Outra instância está aplicando migrations — aguardando o lock...');
+      await new Promise((resolve) => setTimeout(resolve, INTERVALO_MS));
+    }
+
+    if (!temLock) {
+      // Última chance: se não sobrou nada para aplicar, subir é seguro.
+      const { rows: aplicadas } = await pool.query('SELECT filename FROM schema_migrations');
+      const jaAplicadas = new Set(aplicadas.map((r) => r.filename));
+      const pendentes = fs
+        .readdirSync(MIGRATIONS_DIR)
+        .filter((f) => f.endsWith('.sql'))
+        .filter((f) => !jaAplicadas.has(f));
+
+      if (pendentes.length === 0) {
+        console.log('✅ Lock ocupado, mas nenhuma migration pendente — seguro subir.');
+        return;
+      }
+
+      // Só as 5 primeiras: a lista inteira pode ter centenas de nomes num banco
+      // novo, e log ilegível é log que ninguém lê na hora do incidente.
+      const amostra = pendentes.slice(0, 5).join(', ');
+      const resto = pendentes.length > 5 ? ` (+${pendentes.length - 5})` : '';
+      console.error(
+        `❌ Não consegui o lock em ${ESPERA_MAX_MS / 1000}s e ainda há ` +
+        `${pendentes.length} migration(s) pendente(s): ${amostra}${resto}.\n` +
+        '   Subir agora serviria tráfego com o schema desatualizado. Abortando.',
+      );
+      process.exit(1);
+    }
 
     try {
       // Load already-applied migrations (APÓS o lock: o vencedor pode ter aplicado tudo)
@@ -164,8 +228,13 @@ async function run() {
 
       console.log(`\n🎉 Migrations complete — ${ran} applied, ${skipped} skipped.`);
     } finally {
-      await lockClient.query('SELECT pg_advisory_unlock($1)', [LOCK_ID]).catch(() => {});
-      lockClient.release();
+      // `pool.query` (não um client dedicado): o lock foi tomado via `pool.query` acima
+      // (main, PR #326) — sem `.connect()` próprio não há sessão fixa para prender o
+      // lock/unlock, mas o `pool.end()` do finally externo fecha toda conexão aberta
+      // logo em seguida, o que já libera qualquer advisory lock remanescente por sessão
+      // encerrada. `.catch` aqui é só para não mascarar o erro real de uma migration
+      // com um erro de unlock.
+      await pool.query('SELECT pg_advisory_unlock($1)', [LOCK_ID]).catch(() => {});
     }
   } finally {
     await pool.end();

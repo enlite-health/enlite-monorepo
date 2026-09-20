@@ -34,7 +34,7 @@
  * NOTA (K3/K4 — fluxo 100% real, zero seed SQL no caminho de negócio):
  *   K3 — a linha de worker_blocked_applications nasce de uma tentativa REAL de
  *        postulação (POST /api/worker-applications/track-channel → 403 do gate
- *        assertWorkerCanApply, missing_fields calculados por fn_worker_missing_fields).
+ *        assertWorkerCanApply, missing_fields_at_attempt calculados por fn_worker_missing_fields).
  *   K4 — o cadastro é completado pelos MESMOS endpoints que a pessoa real usa
  *        (PUT /api/workers/me/general-info, service-area, availability e
  *        POST /api/workers/me/documents/save). É o recalculateWorkerStatus no fim
@@ -313,7 +313,7 @@ test.describe('Kanban INICIADO + PRE_SCREENING — colunas novas @integration', 
   test('K3 — Coluna BLOQUEADO: card com badge, motivo e campos faltantes', async ({ page }) => {
     // Tentativa REAL de postulação: worker INCOMPLETE_REGISTER chama o mesmo
     // endpoint da pessoa real e o gate (assertWorkerCanApply) devolve 403 e grava
-    // worker_blocked_applications com missing_fields calculados por
+    // worker_blocked_applications com missing_fields_at_attempt calculados por
     // fn_worker_missing_fields. Duas tentativas para exercitar o upsert
     // (attempt_count=2). Zero seed SQL no caminho de negócio.
     const workerToken = await getWorkerMockToken(page, workerBlocked_Id);
@@ -333,7 +333,7 @@ test.describe('Kanban INICIADO + PRE_SCREENING — colunas novas @integration', 
 
     // Linha criada pelo gate (não por seed)
     const checkRow = runSQL(
-      `SELECT id FROM worker_blocked_applications WHERE worker_id = '${workerBlocked_Id}' AND job_posting_id = '${vacancyId}' AND blocked_reason = 'registration_incomplete' AND attempt_count = 2`,
+      `SELECT id FROM worker_blocked_applications WHERE worker_id = '${workerBlocked_Id}' AND job_posting_id = '${vacancyId}' AND blocked_reason_at_attempt = 'registration_incomplete' AND attempt_count = 2`,
     );
     blockedWba_Id = extractUUID(checkRow) ?? '';
     if (!blockedWba_Id) throw new Error('[K3] gate não gravou worker_blocked_applications');

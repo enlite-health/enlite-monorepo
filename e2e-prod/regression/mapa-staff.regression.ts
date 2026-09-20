@@ -420,10 +420,15 @@ test.describe.serial('Spec 009 · Fase 4 — mapa do staff', () => {
         await idsDaLista(page),
         'A LISTA MUDA: 25 km alcança prestadores que 5 km não alcançava',
       ).not.toEqual(antes);
+      // O nome é gravado em minúsculas por decisão de armazenamento (Gabriel,
+      // 02/09 — `splitFullName`, `worker-functions/src/modules/case/domain/fullName.ts`):
+      // "a tela exibe o que está gravado". `NOME_SINTETICO` chega em Title Case
+      // (`E2E Mapa ${STAMP}`), então o rótulo real é a versão minúscula dele —
+      // comparar contra o original quebraria mesmo com a âncora corretamente nomeada.
       await expect(
         page.getByTestId('map-center-label'),
         'a âncora continua nomeada na tela depois de mexer no raio',
-      ).toContainText(NOME_SINTETICO);
+      ).toContainText(NOME_SINTETICO.toLocaleLowerCase());
     } finally {
       await ctx.close();
     }
@@ -504,27 +509,75 @@ test.describe.serial('Spec 009 · Fase 4 — mapa do staff', () => {
     });
     expect(mapaRes.status(), 'POST /api/admin/patients/map responde 200').toBe(200);
     const corpoResposta = await mapaRes.text();
+    // Mesma causa do 4.2: o nome é gravado em minúsculas (`splitFullName`,
+    // `worker-functions/src/modules/case/domain/fullName.ts`) e a resposta da API
+    // devolve o que está gravado — comparar contra o Title Case de `NOME_SINTETICO`
+    // quebraria mesmo com o nome corretamente presente no corpo.
     expect(
       corpoResposta,
       'CONTROLE POSITIVO — o nome do paciente sintético ESTÁ na resposta do mapa (é o rótulo do pino)',
-    ).toContain(NOME_SINTETICO);
+    ).toContain(NOME_SINTETICO.toLocaleLowerCase());
 
-    // Metade negativa: a MESMA string, procurada no log, não aparece em lugar nenhum.
-    const noLog = await queryLogs({ textQuery: NOME_SINTETICO, withinMinutes: 30, limit: 1 });
+    // Metade negativa: a MESMA string que acabou de ser confirmada na resposta —
+    // minúscula, a que está GRAVADA — procurada no log, não aparece em lugar nenhum.
+    // Procurar `NOME_SINTETICO` em Title Case aqui seria um controle MORTO: essa
+    // grafia não existe nem na resposta nem no banco, então a busca sempre voltaria
+    // vazia e o teste passaria mesmo que o nome minúsculo estivesse vazando no log.
+    const noLog = await queryLogs({
+      textQuery: NOME_SINTETICO.toLocaleLowerCase(),
+      withinMinutes: 30,
+      limit: 1,
+    });
     expect(
       noLog.length,
       'o NOME que a tela mostra NÃO pode entrar no Cloud Logging — a trilha registra o escopo ' +
         'da varredura, nunca quem foi varrido',
     ).toBe(0);
 
-    // E o UUID do paciente também não entra pela porta do mapa.
+    // E o UUID do paciente também não entra pela porta do mapa — mas só pela
+    // leitura EM MASSA (D225), que é o que este teste está exercendo com o
+    // POST acima (`center`+`radius_km`, sem `search`).
+    //
+    // `scope: 'radius'` filtra de propósito a linha de leitura DIRIGIDA por
+    // NOME que o 4.2 gera ao ancorar o mapa (`ancorarNoPacienteSintetico`
+    // digita `NOME_SINTETICO` no picker → `patients.map.read` com
+    // `scope:'name'`). Essa linha CARREGA o UUID no campo `resultIds` de
+    // propósito — condição C-E do `lex`, opção (a), decidida pelo Gabriel em
+    // 07/09/2026 (commit `fc0cfb6b`, `mapQueryCommon.ts`): uma leitura
+    // DIRIGIDA (≤5 resultados) responde "mirou uma pessoa identificada?", e
+    // só é admissível porque em escopo por nome não existe `center`, então o
+    // par geohash+UUID que a D225/C6 proíbe nunca se forma. Sem este filtro,
+    // a suíte falsamente positivava (2/2 rodadas) porque o `describe.serial`
+    // roda 4.2 antes de 4.3b, e os 30 minutos da janela pegam a linha do 4.2.
+    // A invariante que ESTE teste prova continua de pé: nenhuma leitura em
+    // massa (`scope:'radius'`/`'location'`) carrega UUID — só a dirigida por
+    // nome, e essa é medida à parte pela suíte do backend
+    // (`AdminPatientsMapController.test.ts`).
+    // ── CONTROLE POSITIVO do filtro ──────────────────────────────────────────
+    // Sem isto, "zero linhas com o UUID" poderia ser "o filtro `scope: 'radius'`
+    // não casa NADA" (campo renomeado, valor mudou) em vez de "não vazou". No
+    // molde do controle positivo do 4.3 (linha ~472): a MESMA consulta, sem
+    // `textQuery`, tem de devolver ALGUMA linha — prova que a leitura em massa
+    // do mapa de pacientes DEIXOU trilha com este `msg`+`scope` antes de provar
+    // que o UUID não está nela.
+    const trilhaExiste = await queryLogs({
+      match: { msg: 'patients.map.read', scope: 'radius' },
+      withinMinutes: 30,
+      limit: 1,
+    });
+    expect(
+      trilhaExiste.length,
+      'CONTROLE POSITIVO — a leitura em massa do mapa de pacientes DEIXA trilha com ' +
+        'msg=patients.map.read e scope=radius (senão a asserção de "sem UUID" abaixo não prova nada)',
+    ).toBeGreaterThan(0);
+
     const uuidNaTrilha = await queryLogs({
-      match: { msg: 'patients.map.read' },
+      match: { msg: 'patients.map.read', scope: 'radius' },
       textQuery: mapa.patientId!,
       withinMinutes: 30,
       limit: 1,
     });
-    expect(uuidNaTrilha.length, 'nem o UUID do paciente na trilha do mapa').toBe(0);
+    expect(uuidNaTrilha.length, 'nem o UUID do paciente na trilha da leitura EM MASSA do mapa').toBe(0);
   });
 
   test('[@route:DELETE /api/admin/patients/:id @depth:happy] 4.4 — a purga é PROVADA em três leituras: 404, endereço e mapa', async () => {

@@ -3,10 +3,16 @@
  * Source: BlockedApplicationQueryRepository (migration 209).
  */
 
+/**
+ * `eligible` = a pessoa passaria no gate AGORA — a ausência de bloqueio, não um
+ * bloqueio. Nasceu quando o motivo passou a ser recalculado na leitura (D300).
+ * Sem ele aqui, o painel exibia o balde no topo e não deixava filtrar por ele.
+ */
 export type BlockedReason =
   | 'registration_incomplete'
   | 'worker_disabled'
-  | 'worker_not_found';
+  | 'worker_not_found'
+  | 'eligible';
 
 export interface BlockedAttempt {
   id: string;

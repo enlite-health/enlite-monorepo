@@ -19,6 +19,7 @@ const refetch = vi.fn().mockResolvedValue(undefined);
 const moveEncuadre = vi.fn();
 const rejectBlocked = vi.fn();
 const unrejectBlocked = vi.fn();
+const promoteBlocked = vi.fn();
 
 interface MockHookState {
   data: { stages: Record<string, unknown>; totalEncuadres: number } | null;
@@ -37,6 +38,7 @@ vi.mock('@hooks/admin/useWJAFunnel', () => ({
     moveEncuadre,
     rejectBlocked,
     unrejectBlocked,
+    promoteBlocked,
   }),
 }));
 
@@ -46,12 +48,23 @@ vi.mock('@presentation/components/features/admin/Kanban/KanbanBoard', () => ({
     onMove,
     onRejectBlocked,
     onUnrejectBlocked,
+    onPromoteBlocked,
   }: {
     onMove: (encuadreId: string, targetStage: string) => Promise<unknown>;
     onRejectBlocked: (blockedId: string, category: string) => Promise<unknown>;
     onUnrejectBlocked: (blockedId: string) => Promise<unknown>;
+    onPromoteBlocked?: (blockedId: string) => Promise<string | null>;
   }): ReactNode => (
     <div data-testid="fake-board">
+      <button
+        data-testid="fake-promote"
+        onClick={async () => {
+          const msg = await onPromoteBlocked!('blk-eligible');
+          document.title = String(msg);
+        }}
+      >
+        promote
+      </button>
       <button data-testid="fake-move" onClick={() => onMove('enc-1', 'REJECTED')}>
         move
       </button>
@@ -77,6 +90,7 @@ describe('VacancyFunnelKanban — branches', () => {
     moveEncuadre.mockReset();
     rejectBlocked.mockReset();
     unrejectBlocked.mockReset();
+    promoteBlocked.mockReset();
     mockState = { data: null, isLoading: false, error: null };
   });
 
@@ -181,4 +195,50 @@ describe('VacancyFunnelKanban — branches', () => {
     await waitFor(() => expect(unrejectBlocked).toHaveBeenCalledWith('blk-1'));
     await waitFor(() => expect(screen.getByText('não foi possível restaurar')).toBeInTheDocument());
   });
+
+  // D300 — o handler traduz o motivo do backend para a frase que a recrutadora lê.
+  // O valor volta para o CARD (não para o banner do topo): a ação é de uma tarjeta,
+  // e o erro tem de aparecer onde ela clicou.
+
+  it('promover com sucesso devolve null ao card', async () => {
+    mockState = withBoardData();
+    promoteBlocked.mockResolvedValue(null);
+    render(<VacancyFunnelKanban vacancyId="v" />);
+
+    fireEvent.click(screen.getByTestId('fake-promote'));
+
+    await waitFor(() => expect(document.title).toBe('null'));
+    expect(promoteBlocked).toHaveBeenCalledWith('blk-eligible');
+  });
+
+  it('recusa com reason vira a chave traduzida daquele motivo', async () => {
+    mockState = withBoardData();
+    promoteBlocked.mockResolvedValue({ message: 'x', reason: 'vacancy_invalid' });
+    render(<VacancyFunnelKanban vacancyId="v" />);
+
+    fireEvent.click(screen.getByTestId('fake-promote'));
+
+    await waitFor(() => expect(document.title).toBe('admin.kanban.promoteError.vacancy_invalid'));
+  });
+
+  it('sem reason, cai no code', async () => {
+    mockState = withBoardData();
+    promoteBlocked.mockResolvedValue({ message: 'x', code: 'wja_already_exists' });
+    render(<VacancyFunnelKanban vacancyId="v" />);
+
+    fireEvent.click(screen.getByTestId('fake-promote'));
+
+    await waitFor(() => expect(document.title).toBe('admin.kanban.promoteError.wja_already_exists'));
+  });
+
+  it('sem reason nem code, cai em unknown — a tela nunca fica muda', async () => {
+    mockState = withBoardData();
+    promoteBlocked.mockResolvedValue({ message: 'falhou' });
+    render(<VacancyFunnelKanban vacancyId="v" />);
+
+    fireEvent.click(screen.getByTestId('fake-promote'));
+
+    await waitFor(() => expect(document.title).toBe('admin.kanban.promoteError.unknown'));
+  });
 });
+

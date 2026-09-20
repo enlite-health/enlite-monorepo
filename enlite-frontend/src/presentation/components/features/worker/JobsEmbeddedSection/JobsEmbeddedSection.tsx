@@ -21,10 +21,17 @@ import {
 // `window` é sempre definido: esta é uma SPA Vite pura, sem SSR (arquitetura em
 // enlite-frontend/CLAUDE.md) — o guard `typeof window !== 'undefined'` nunca
 // tinha o ramo falso alcançado em nenhum ambiente real desta app.
+//
+// PADRÃO (achado do gate 12/09): a API pública é a fonte por padrão — sem
+// override de window nem env definida, `readUsePublicApi()` retorna `true`.
+// O scraper legado só roda quando alguém desliga explicitamente: env
+// `VITE_USE_PUBLIC_JOBS_API="false"` (ex.: stage — massa sintética não
+// aparece no feed público, ver frontend-stg.yml) ou o override de window
+// (usado nos testes). Prioridade: window > env > default (true).
 function readUsePublicApi(): boolean {
   const override = (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API;
   if (typeof override === 'boolean') return override;
-  return import.meta.env.VITE_USE_PUBLIC_JOBS_API === 'true';
+  return import.meta.env.VITE_USE_PUBLIC_JOBS_API !== 'false';
 }
 
 function formatAgeRange(min: number | null, max: number | null): string {

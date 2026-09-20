@@ -9,9 +9,8 @@
  */
 
 import { test, expect, Page } from '@playwright/test';
+import { E2E_EMAIL, loginAsStaffOffline, dragKanbanCard } from './helpers/kanban-notes-e2e-helper';
 
-const FIREBASE_EMULATOR = 'http://127.0.0.1:9099';
-const FIREBASE_API_KEY = 'test-api-key';
 
 const MOCK_VACANCY_ID = 'eligvis-0001-0001-0001-000000000001';
 
@@ -38,6 +37,7 @@ const MOCK_FUNNEL = {
       IN_PROGRESS: [
         {
           id: 'enc-incomplete',
+          encuadreId: 'enc-incomplete',
           workerId: 'worker-incomplete-001',
           workerName: 'Worker Incompleto',
           workerPhone: '5491133445566',
@@ -66,19 +66,28 @@ const MOCK_FUNNEL = {
 };
 
 async function seedAdminAndLogin(page: Page): Promise<void> {
-  const email = `e2e.kanban.elig.${Date.now()}@test.com`;
-  const password = 'TestAdmin123!';
+  // Login com a conta STAFF REAL (enlite-prd), não com usuário do emulador.
+  //
+  // Por que mudou: o usuário criado por `accounts:signUp` no emulador não carrega
+  // custom claim nenhuma. Mockar `/auth/profile` com role=superadmin não basta —
+  // o app decide staff × prestador pelo TOKEN, então a sessão caía na navegação de
+  // prestador ("Home/Perfil") e o Kanban nunca montava. Os 13 testes destes dois
+  // arquivos falhavam por isso, na `main` inclusive.
+  //
+  // Catch-all admin PRIMEIRO — rotas específicas registradas depois vencem
+  // (Playwright: a última rota registrada tem precedência).
+  //
+  // Sem ele, as chamadas que o spec não mocka (lista de usuários, telemetria)
+  // escapam para a API de `VITE_API_WORKER_FUNCTIONS_URL` e morrem em CORS: o
+  // backend local só libera a origem `localhost:5173`, e um dev server em
+  // qualquer outra porta faz o app cair na home de PRESTADOR — Kanban nunca
+  // monta. Com o catch-all o spec fica hermético e roda em qualquer porta.
+  await page.route('**/api/admin/**', (route) => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({ success: true, data: null }),
+  }));
 
-  const signUpRes = await fetch(
-    `${FIREBASE_EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FIREBASE_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, returnSecureToken: true }),
-    },
-  );
-  const { localId: uid } = (await signUpRes.json()) as any;
-
+  // O perfil segue mockado: dá o papel sem depender do backend.
   await page.route('**/api/admin/auth/profile', (route) =>
     route.fulfill({
       status: 200,
@@ -86,8 +95,8 @@ async function seedAdminAndLogin(page: Page): Promise<void> {
       body: JSON.stringify({
         success: true,
         data: {
-          id: uid,
-          email,
+          id: 'e2e-elig-admin',
+          email: E2E_EMAIL,
           role: 'superadmin',
           firstName: 'Admin',
           lastName: 'Elig',
@@ -98,11 +107,25 @@ async function seedAdminAndLogin(page: Page): Promise<void> {
     }),
   );
 
-  await page.goto('/admin/login');
-  await page.locator('input[type="email"]').fill(email);
-  await page.locator('input[type="password"]').fill(password);
-  await page.getByRole('button', { name: /Iniciar sesión/i }).click();
-  await expect(page).not.toHaveURL(/.*login.*/, { timeout: 20000 });
+  await loginAsStaffOffline(page);
+}
+
+/**
+ * Abre a vaga com a aba de Encuadres já em visão KANBAN.
+ *
+ * A rota `/admin/vacancies/:id/kanban` que estes testes usavam NÃO EXISTE mais —
+ * `App.tsx` tem `vacancies/:id`, `/edit` e `/talentum`, e o catch-all `path="*"`
+ * mandava tudo para `/`. Por isso os 13 testes destes dois arquivos falhavam sem
+ * relação nenhuma com o código sob teste: navegavam para uma URL removida.
+ * O Kanban passou a viver DENTRO da página de detalhe da vaga, e a visão escolhida
+ * é lembrada em localStorage — mesma técnica de kanban-card-blocked-notes-button.
+ */
+async function gotoVacancyKanban(page: Page, vacancyId: string): Promise<void> {
+  await page.addInitScript(
+    ([key]) => window.localStorage.setItem(key, 'kanban'),
+    [`vacancy-funnel-view-${vacancyId}`],
+  );
+  await page.goto(`/admin/vacancies/${vacancyId}`);
 }
 
 function mockVacancyApis(page: Page) {
@@ -147,31 +170,13 @@ test.describe('Kanban — bloqueio por elegibilidade do worker (visual)', () => 
       }),
     );
 
-    await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}/kanban`);
+    await gotoVacancyKanban(page, MOCK_VACANCY_ID);
     await expect(page.locator('[data-testid="kanban-card-enc-incomplete"]')).toBeVisible({
       timeout: 15000,
     });
 
     // Drag do card pra coluna CONFIRMED (droppable)
-    const card = page.locator('[data-testid="kanban-card-enc-incomplete"]');
-    const target = page.locator('[data-testid="kanban-column-CONFIRMED"]');
-
-    const cardBox = await card.boundingBox();
-    const targetBox = await target.boundingBox();
-    expect(cardBox).not.toBeNull();
-    expect(targetBox).not.toBeNull();
-
-    const startX = cardBox!.x + cardBox!.width / 2;
-    const startY = cardBox!.y + cardBox!.height / 2;
-    const endX = targetBox!.x + targetBox!.width / 2;
-    const endY = targetBox!.y + targetBox!.height / 2;
-
-    await page.mouse.move(startX, startY);
-    await page.mouse.down();
-    // Mover além do threshold de 8px do PointerSensor
-    await page.mouse.move(startX + 10, startY, { steps: 3 });
-    await page.mouse.move(endX, endY, { steps: 15 });
-    await page.mouse.up();
+    await dragKanbanCard(page, 'enc-incomplete', 'INVITED');
 
     // Banner amber aparece com título e mensagem traduzida
     const banner = page.locator('[data-testid="kanban-move-error"]');
@@ -201,26 +206,12 @@ test.describe('Kanban — bloqueio por elegibilidade do worker (visual)', () => 
       }),
     );
 
-    await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}/kanban`);
+    await gotoVacancyKanban(page, MOCK_VACANCY_ID);
     await expect(page.locator('[data-testid="kanban-card-enc-incomplete"]')).toBeVisible({
       timeout: 15000,
     });
 
-    const card = page.locator('[data-testid="kanban-card-enc-incomplete"]');
-    const target = page.locator('[data-testid="kanban-column-CONFIRMED"]');
-
-    const cardBox = await card.boundingBox();
-    const targetBox = await target.boundingBox();
-    const startX = cardBox!.x + cardBox!.width / 2;
-    const startY = cardBox!.y + cardBox!.height / 2;
-    const endX = targetBox!.x + targetBox!.width / 2;
-    const endY = targetBox!.y + targetBox!.height / 2;
-
-    await page.mouse.move(startX, startY);
-    await page.mouse.down();
-    await page.mouse.move(startX + 10, startY, { steps: 3 });
-    await page.mouse.move(endX, endY, { steps: 15 });
-    await page.mouse.up();
+    await dragKanbanCard(page, 'enc-incomplete', 'INVITED');
 
     const banner = page.locator('[data-testid="kanban-move-error"]');
     await expect(banner).toBeVisible({ timeout: 10000 });

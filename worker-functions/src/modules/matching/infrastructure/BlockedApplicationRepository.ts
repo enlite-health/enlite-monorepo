@@ -11,20 +11,6 @@ export interface BlockedApplicationUpsertParams {
   acquisitionChannel: string | null;
 }
 
-export interface BlockedApplicationRow {
-  id: string;
-  worker_id: string;
-  job_posting_id: string;
-  blocked_reason: string;
-  missing_fields: string[];
-  attempt_count: number;
-  first_attempted_at: Date;
-  last_attempted_at: Date;
-  acquisition_channel: string | null;
-  created_at: Date;
-  updated_at: Date;
-}
-
 /**
  * BlockedApplicationRepository (write side)
  *
@@ -125,18 +111,21 @@ export class BlockedApplicationRepository {
       }
     }
 
-    // Grava o array cru (pode conter `worker_documents`) para compatibilidade com
-    // queries analíticas e a coluna missing_fields existente.
+    // Grava o array cru (pode conter `worker_documents`) — é o INSTANTÂNEO da
+    // tentativa, para histórico. Quem quer o estado de HOJE não lê estas colunas:
+    // usa `blockedAttemptLiveState`. Os nomes `*_at_attempt` existem justamente
+    // para que a diferença não dependa de alguém lembrar (migration 332 + CONTRACT).
     await this.pool.query(
       `INSERT INTO worker_blocked_applications
-         (worker_id, job_posting_id, blocked_reason, missing_fields, acquisition_channel,
+         (worker_id, job_posting_id, blocked_reason_at_attempt, missing_fields_at_attempt,
+          acquisition_channel,
           attempt_count, first_attempted_at, last_attempted_at, created_at, updated_at)
        VALUES ($1, $2, $3, $4::jsonb, $5, 1, NOW(), NOW(), NOW(), NOW())
        ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
          attempt_count        = worker_blocked_applications.attempt_count + 1,
          last_attempted_at    = NOW(),
-         missing_fields       = EXCLUDED.missing_fields,
-         blocked_reason       = EXCLUDED.blocked_reason,
+         missing_fields_at_attempt = EXCLUDED.missing_fields_at_attempt,
+         blocked_reason_at_attempt = EXCLUDED.blocked_reason_at_attempt,
          acquisition_channel  = COALESCE(
                                   worker_blocked_applications.acquisition_channel,
                                   EXCLUDED.acquisition_channel

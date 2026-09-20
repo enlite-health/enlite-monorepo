@@ -4,7 +4,7 @@
  * E2E do fluxo de promoção automática de tentativas bloqueadas:
  *
  *   1. Worker tenta postular sem estar REGISTERED → 403 + linha em
- *      worker_blocked_applications (blocked_reason=registration_incomplete).
+ *      worker_blocked_applications (blocked_reason_at_attempt=registration_incomplete).
  *   2. Card aparece em stages.BLOQUEADO no funil (não em INICIADO).
  *   3. Worker completa o cadastro (INFO + service_area + availability + docs)
  *      → status vira REGISTERED → recalculateWorkerStatus enfileira
@@ -103,12 +103,12 @@ describe('Promoção automática de tentativas bloqueadas (worker.registration_c
     expect(applyResult.data.code).toBe('WORKER_NOT_ELIGIBLE');
 
     const { rows } = await pool.query(
-      `SELECT blocked_reason, promoted_at FROM worker_blocked_applications
+      `SELECT blocked_reason_at_attempt, promoted_at FROM worker_blocked_applications
        WHERE worker_id = $1 AND job_posting_id = $2`,
       [worker.id, vacancy.id],
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0].blocked_reason).toBe('registration_incomplete');
+    expect(rows[0].blocked_reason_at_attempt).toBe('registration_incomplete');
     expect(rows[0].promoted_at).toBeNull();
   });
 

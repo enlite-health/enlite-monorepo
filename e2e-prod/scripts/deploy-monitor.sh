@@ -137,7 +137,7 @@ RUN_JOB_ARGS=(
   # ele NÃO carrega a allowlist, que vive do lado do MCP em `mcp-principal-e2e-prod`. Sem o
   # secret o teste de fuso PULA com o motivo escrito; ele nunca falha por credencial ausente.
   --set-secrets="SENDGRID_API_KEY=sendgrid-api-key:latest,E2E_ADMIN_PASSWORD=${ADMIN_PW_SECRET}:latest,MCP_TOKEN=${MCP_TOKEN_SECRET}:latest"
-  --max-retries=1          # 1 retry de nível-job absorve blip de cold start/egress; alerta só em falha real
+  --max-retries=0          # retry no nível-job re-executa a suíte inteira e duplica o email de alerta em teste falho
   --task-timeout=900s      # 15min: smoke + admin + jornadas reais (publish Talentum ~30s + teardown)
 )
 # SA de runtime só se definida (senão usa a default do Cloud Run).

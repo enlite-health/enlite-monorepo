@@ -76,7 +76,15 @@ const SEED = {
   hasJudicialProtection: false,
 } as const;
 
-const DIAGNOSIS_EDITADO = `E2E-DIAG-EDITADO-${STAMP}`;
+/**
+ * Campo-gatilho do 2.1 (05/09: `pce-diagnosis` saiu do drawer — virou seção "Patología" fora do
+ * PATCH `/clinical`, ver comentário no `SEED`). `dependencyLevel` é `<select>` NATIVO
+ * (`pce-dependency`, testid direto no elemento — ver `SelectField.tsx`), então o gesto é
+ * `selectOption`, o mais simples e determinístico do formulário: sem digitação, sem debounce,
+ * sem abrir/fechar dropdown custom (ao contrário de `deviceTypes`/`serviceType`, que são
+ * `MultiSelect`). Semeado como `MILD`; editado para `SEVERE`, outro valor do mesmo enum.
+ */
+const DEPENDENCY_EDITADO = 'SEVERE';
 /** Texto longo com quebras de linha e acento — o que o staff realmente digita. */
 const OBS_LONGA = [
   `E2E-OBS-L1-${STAMP}`,
@@ -239,27 +247,29 @@ test.describe.serial('Spec 009 · Fase 2 — ficha do paciente pela tela do staf
     const { page, fechar } = await abrirFicha(browser);
     try {
       const corpo = await editarNoDrawer(page, async (p) => {
-        await p.getByTestId('pce-diagnosis').fill(DIAGNOSIS_EDITADO);
+        await p.getByTestId('pce-dependency').selectOption(DEPENDENCY_EDITADO);
       });
 
       // O MECANISMO: o drawer manda só o que mudou.
       expect(
         Object.keys(corpo).sort(),
         'o corpo do PATCH carrega SÓ a chave editada — é o que faz o Merge Patch valer na tela',
-      ).toEqual(['diagnosis']);
+      ).toEqual(['dependencyLevel']);
 
       const depois = await lerFicha(adminCtx!, ficha.patientId!);
-      expect(depois.diagnosis, 'o campo editado mudou').toBe(DIAGNOSIS_EDITADO);
+      expect(depois.dependencyLevel, 'o campo editado mudou').toBe(DEPENDENCY_EDITADO);
 
       // O RESULTADO: nada mais foi tocado.
       expect(
         depois.clinicalSegments,
         'CÃO DE GUARDA — `clinicalSegments` não tem campo no drawer; se ele sumiu, o `?? null` voltou ao repositório (D211.1)',
       ).toBe(SEED.clinicalSegments);
+      expect(depois.diagnosis, 'diagnóstico sobreviveu — segue semeado pelo SEED, mesmo fora do drawer').toBe(
+        SEED.diagnosis,
+      );
       expect(depois.additionalComments, 'observações sobreviveram').toBe(SEED.additionalComments);
       expect(depois.emergencyInstructions, 'instruções de emergência sobreviveram').toBe(SEED.emergencyInstructions);
       expect(depois.deviceTypes, 'tipos de dispositivo sobreviveram').toEqual([...SEED.deviceTypes]);
-      expect(depois.dependencyLevel, 'nível de dependência sobreviveu').toBe(SEED.dependencyLevel);
       // ⚠️ LACUNA NOMEADA: `clinicalSpecialty` saía daqui e não sai mais. O campo deixou de ser
       // escrevível por esta rota (spec 016 F2), então este spec não consegue mais semeá-lo — e
       // asserção sobre um valor que nasce `null` provaria `null === null`, que é verde decorativo.

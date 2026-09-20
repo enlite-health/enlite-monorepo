@@ -4,6 +4,7 @@ import { logger } from '@shared/logging';
 import {
   BlockedApplicationQueryRepository,
 } from '../../infrastructure/BlockedApplicationQueryRepository';
+import { BLOCKED_ATTEMPT_LIVE_STATES } from '../../infrastructure/blockedAttemptLiveState';
 import {
   parsePaginationOptions,
 } from '@shared/utils/pagination';
@@ -11,7 +12,11 @@ import {
 const ListBlockedAttemptsSchema = z.object({
   jobPostingId: z.string().uuid().optional(),
   workerId:     z.string().uuid().optional(),
-  reason:       z.enum(['worker_not_found', 'registration_incomplete', 'worker_disabled']).optional(),
+  // Derivado da fonte única, NÃO reescrito à mão: o motivo passou a ser recalculado
+  // na leitura e ganhou o estado `eligible`. Com a lista duplicada aqui, o agregado
+  // reportava um balde que o filtro do painel recusava com 400 — a pessoa clicava em
+  // "Registro completo" e levava erro. Enum novo entra sozinho a partir de agora.
+  reason:       z.enum(BLOCKED_ATTEMPT_LIVE_STATES).optional(),
   page:         z.string().optional(),
   limit:        z.string().optional(),
 });

@@ -67,6 +67,9 @@ jobs:
       - name: 'Build and Push Container'
         run: |
           IMAGE_TAG="${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          # VITE_USE_PUBLIC_JOBS_API="false": massa sintética da stage tem toda vaga com is_test=true e social_short_links sem 'site', feed público viria vazio — home da stage fica no scraper.
+          # OBRIGATÓRIA — não remover: o default do código é "true" desde e69ead1c (readUsePublicApi()
+          # em JobsEmbeddedSection.tsx). Sem esta linha, a env fica ausente e a home da stage liga a API pública de verdade.
           docker build \
             --no-cache \
             --build-arg VITE_FIREBASE_API_KEY="${{ secrets.VITE_FIREBASE_API_KEY }}" \
@@ -79,6 +82,7 @@ jobs:
             --build-arg VITE_API_WORKER_FUNCTIONS_DIRECT_URL="${{ secrets.VITE_API_WORKER_FUNCTIONS_DIRECT_URL }}" \
             --build-arg VITE_GOOGLE_MAPS_API_KEY="${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}" \
             --build-arg VITE_PATIENT_PHOTO_ENABLED="true" \
+            --build-arg VITE_USE_PUBLIC_JOBS_API="false" \
             -t $IMAGE_TAG .
           docker push $IMAGE_TAG
 

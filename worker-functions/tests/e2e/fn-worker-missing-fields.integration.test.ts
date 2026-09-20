@@ -17,7 +17,7 @@
  *   - worker completo (sem verso) → [] (elegível)
  *
  * identity_document_back_url: OPCIONAL desde migration 212. Ausência do verso
- * NÃO deve aparecer em missing_fields para nenhuma profissão.
+ * NÃO deve aparecer em missing_fields_at_attempt para nenhuma profissão.
  *
  * Não usa API — acessa pool diretamente.
  */

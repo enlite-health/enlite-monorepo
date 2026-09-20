@@ -18,7 +18,7 @@ export function VacancyFunnelKanban({
   vacancyId,
 }: VacancyFunnelKanbanProps): JSX.Element {
   const { t } = useTranslation();
-  const { data, isLoading, error, refetch, moveEncuadre, rejectBlocked, unrejectBlocked } =
+  const { data, isLoading, error, refetch, moveEncuadre, rejectBlocked, unrejectBlocked, promoteBlocked } =
     useWJAFunnel(vacancyId);
   const [moveError, setMoveError] = useState<MoveEncuadreError | null>(null);
 
@@ -41,6 +41,21 @@ export function VacancyFunnelKanban({
       return err;
     },
     [moveEncuadre],
+  );
+
+  /**
+   * "Promover" (D300): devolve a mensagem de erro localizada ao card, ou null no
+   * sucesso — quem exibe é o próprio card, não o banner do topo, porque a ação é
+   * de UMA tarjeta e o erro precisa aparecer onde a pessoa clicou.
+   */
+  const handlePromoteBlocked = useCallback(
+    async (blockedId: string): Promise<string | null> => {
+      const err = await promoteBlocked(blockedId);
+      if (!err) return null;
+      const code = err.reason ?? err.code ?? 'unknown';
+      return t(`admin.kanban.promoteError.${code}`, { defaultValue: t('admin.kanban.promoteError.unknown') });
+    },
+    [promoteBlocked, t],
   );
 
   const handleRejectBlocked = useCallback(
@@ -171,6 +186,7 @@ export function VacancyFunnelKanban({
           vacancyId={vacancyId}
           onMove={handleMove}
           onRejectBlocked={handleRejectBlocked}
+          onPromoteBlocked={handlePromoteBlocked}
           onUnrejectBlocked={handleUnrejectBlocked}
           onResendInvite={handleResendInvite}
           onPresentationInvite={handlePresentationInvite}

@@ -27,6 +27,11 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
 }));
 
 import { BlockedApplicationQueryRepository } from '../BlockedApplicationQueryRepository';
+import {
+  liveWorkerJoinSql,
+  liveBlockedReasonSql,
+  liveMissingFieldsSql,
+} from '../blockedAttemptLiveState';
 
 const WORKER_ID   = 'aaaaaaaa-0000-0000-0000-111111111111';
 const JOB_ID      = 'bbbbbbbb-0000-0000-0000-222222222222';
@@ -125,18 +130,25 @@ describe('BlockedApplicationQueryRepository', () => {
     const dataQueryCall = mockQuery.mock.calls[0][0] as string;
     expect(dataQueryCall).toContain('wba.job_posting_id = $1');
     expect(dataQueryCall).toContain('wba.worker_id = $2');
-    expect(dataQueryCall).toContain('wba.blocked_reason = $3');
+    // D300: o filtro passou a incidir sobre o motivo AO VIVO, não sobre a coluna
+    // congelada — filtrar por um valor que a tela não exibe mais devolveria cards
+    // que contradizem o próprio filtro.
+    expect(dataQueryCall).toContain(`${liveBlockedReasonSql()} = $3`);
+    expect(dataQueryCall).not.toContain('wba.blocked_reason = $3');
     expect(dataQueryCall).toContain('WHERE');
   });
 
-  it('list() — recomputa missing_fields ao vivo via fn_worker_missing_fields (mesmo fix do listByVacancy)', async () => {
+  it('list() — recomputa MOTIVO e campos ao vivo, e não lê mais a coluna congelada', async () => {
     mockQuery.mockResolvedValue({ rows: [] });
 
     await repo.list({ limit: 10, offset: 0 });
 
     const dataQueryCall = mockQuery.mock.calls[0][0] as string;
-    expect(dataQueryCall).toContain('fn_worker_missing_fields(wba.worker_id)');
-    expect(dataQueryCall).toContain("wba.blocked_reason = 'registration_incomplete'");
+    expect(dataQueryCall).toContain(liveWorkerJoinSql());
+    expect(dataQueryCall).toContain(`${liveBlockedReasonSql()} AS blocked_reason`);
+    expect(dataQueryCall).toContain(`${liveMissingFieldsSql()} AS missing_fields`);
+    // O snapshot não pode mais ser projetado: era ele que exibia o rótulo de meses atrás.
+    expect(dataQueryCall).not.toContain('wba.missing_fields');
   });
 
   it('sem filtros: filtra apenas ativos (dismissed_at IS NULL) e LIMIT/OFFSET usam índices $1/$2', async () => {
@@ -297,22 +309,128 @@ describe('BlockedApplicationQueryRepository', () => {
   });
 
   // ── Regressão: staleness de missing_fields ───────────────────────
-  // Bug: ao editar o perfil do worker (grava first_name/last_name), o nome do
-  // card atualizava (decrypt on-read) mas as tags de campos faltantes NÃO,
-  // porque vinham do snapshot materializado worker_blocked_applications.missing_fields.
-  // Fix: recomputar missing_fields ON-READ via fn_worker_missing_fields para
-  // registration_incomplete (worker existe), preservando o snapshot p/ os demais reasons.
+  // Histórico do defeito, em duas camadas:
+  //   1º) editar o perfil atualizava o nome do card mas não as tags de campos
+  //       faltantes, que vinham do snapshot. Consertou-se recomputando os CAMPOS.
+  //   2º) o MOTIVO continuou congelado — e o recompute dos campos era condicionado
+  //       a ele já ser `registration_incomplete`, ou seja, ao único caso em que
+  //       nada muda. Em 08/09/2026, 135 de 1.271 cards em produção exibiam motivo
+  //       errado, 90 deles de gente elegível. D300 recompõe as DUAS coisas.
+  //
+  // ⚠️ Estes asserts são de STRING: provam que a query pede o recálculo, não que o
+  // Postgres a aceita. Um `ELSE '{}'::text[]` (tipo errado) passaria aqui e
+  // quebraria em produção — aconteceu ao escrever a D300. A prova de execução está
+  // em tests/e2e/blocked-attempt-live-state.test.ts, contra banco real.
 
-  it('listByVacancy() — recomputa missing_fields ao vivo via fn_worker_missing_fields p/ registration_incomplete', async () => {
+  it('listByVacancy() — recomputa MOTIVO e campos ao vivo, sem projetar o snapshot', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
 
     await repo.listByVacancy(JOB_ID);
 
     const sql = mockQuery.mock.calls[0][0] as string;
-    expect(sql).toContain('fn_worker_missing_fields(wba.worker_id)');
-    // Só recomputa quando o worker existe e o motivo é registro incompleto;
-    // demais reasons (worker_not_found / worker_disabled) mantêm o snapshot.
-    expect(sql).toContain("wba.blocked_reason = 'registration_incomplete'");
-    expect(sql).toContain('wba.worker_id IS NOT NULL');
+    expect(sql).toContain(liveWorkerJoinSql());
+    expect(sql).toContain(`${liveBlockedReasonSql()} AS blocked_reason`);
+    expect(sql).toContain(`${liveMissingFieldsSql()} AS missing_fields`);
+    expect(sql).not.toContain('wba.missing_fields');
+  });
+
+  // ── listByWorker() — a aba de encuadre do prestador ───────────────
+  //
+  // Terceiro caminho de leitura do mesmo snapshot, e o único que nenhum teste
+  // tocava. Foi por isso que ele passou despercebido na primeira metade do
+  // conserto: quem procurou o defeito procurou onde já havia teste.
+
+  it('listByWorker() — recomputa MOTIVO e campos ao vivo, como os outros dois caminhos', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    await repo.listByWorker(WORKER_ID);
+
+    const sql = mockQuery.mock.calls[0][0] as string;
+    expect(sql).toContain(liveWorkerJoinSql());
+    expect(sql).toContain(`${liveBlockedReasonSql()} AS blocked_reason`);
+    expect(sql).toContain(`${liveMissingFieldsSql()} AS missing_fields`);
+    expect(sql).not.toContain('wba.missing_fields');
+  });
+
+  it('listByWorker() — mapeia o card com vaga e paciente (caminho feliz)', async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [{
+        id: ENTRY_ID,
+        job_posting_id: JOB_ID,
+        case_number: 611,
+        vacancy_number: 2,
+        vacancy_status: 'SEARCHING_REPLACEMENT',
+        patient_first_name: 'Ana',
+        patient_last_name: 'Pérez',
+        blocked_reason: 'registration_incomplete',
+        missing_fields: ['years_experience', 'preferred_types'],
+        attempt_count: 5,
+        created_at: NOW_DATE,
+      }],
+    });
+
+    const [card] = await repo.listByWorker(WORKER_ID);
+
+    expect(card.caseNumber).toBe(611);
+    expect(card.vacancyNumber).toBe(2);
+    expect(card.patientName).toBe('Ana Pérez');
+    expect(card.vacancyStatus).toBe('SEARCHING_REPLACEMENT');
+    expect(card.blockedReason).toBe('registration_incomplete');
+    expect(card.missingFields).toEqual(['years_experience', 'preferred_types']);
+    expect(card.attemptCount).toBe(5);
+    expect(card.isBlocked).toBe(true);
+    expect(card.createdAt).toBe(NOW_DATE.toISOString());
+  });
+
+  it('listByWorker() — tudo nulo vira null, e paciente sem nome vira null (não string vazia)', async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [{
+        id: ENTRY_ID,
+        job_posting_id: null,
+        case_number: null,
+        vacancy_number: null,
+        vacancy_status: null,
+        patient_first_name: null,
+        patient_last_name: null,
+        blocked_reason: null,
+        missing_fields: null,
+        attempt_count: null,
+        created_at: NOW_DATE,
+      }],
+    });
+
+    const [card] = await repo.listByWorker(WORKER_ID);
+
+    expect(card.jobPostingId).toBeNull();
+    expect(card.caseNumber).toBeNull();
+    expect(card.vacancyNumber).toBeNull();
+    expect(card.vacancyStatus).toBeNull();
+    expect(card.patientName).toBeNull();
+    expect(card.blockedReason).toBeNull();
+    expect(card.missingFields).toEqual([]);
+    expect(card.attemptCount).toBeNull();
+  });
+
+  it('listByVacancy() — card rechazado carrega dismissedAt em ISO (vai para RECHAZADOS)', async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [{
+        id: ENTRY_ID,
+        worker_id: WORKER_ID,
+        blocked_reason: 'registration_incomplete',
+        missing_fields: [],
+        attempt_count: 1,
+        acquisition_channel: null,
+        last_attempted_at: NOW_DATE,
+        dismissed_at: NOW_DATE,
+        dismissed_reason: 'OTHER',
+        contact_notes_count: 0,
+      }],
+    });
+
+    const [card] = await repo.listByVacancy(JOB_ID);
+
+    expect(card.dismissedAt).toBe(NOW_DATE.toISOString());
+    expect(card.dismissedReason).toBe('OTHER');
   });
 });
+

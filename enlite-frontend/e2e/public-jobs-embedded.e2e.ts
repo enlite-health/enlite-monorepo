@@ -1,8 +1,14 @@
 /**
  * public-jobs-embedded.e2e.ts
  *
- * E2E tests for JobsEmbeddedSection (legacy mode — VITE_USE_PUBLIC_JOBS_API is
- * not set in the built app, so the component fetches from /api/jobs).
+ * E2E tests for JobsEmbeddedSection — LEGACY mode, ON PURPOSE.
+ *
+ * The product default is now the PUBLIC API (readUsePublicApi() in
+ * JobsEmbeddedSection.tsx returns true when nothing overrides it). This spec
+ * still needs to exercise the legacy /api/jobs scraper path, so it forces
+ * `window.__USE_PUBLIC_JOBS_API = false` via an init script before every
+ * navigation (see beforeEach below) — same override the product uses for
+ * stage (whose synthetic vacancy data doesn't show up in the public feed).
  *
  * Covers:
  *   - Job cards render from mocked /api/jobs response
@@ -121,6 +127,14 @@ async function mockWorkerApis(page: import('@playwright/test').Page): Promise<vo
 
 test.describe('JobsEmbeddedSection — legacy mode', () => {
   test.setTimeout(60000);
+
+  test.beforeEach(async ({ page }) => {
+    // Fixa o caminho LEGADO de propósito (o padrão do produto virou a API
+    // pública) — antes de qualquer goto().
+    await page.addInitScript(() => {
+      (window as unknown as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = false;
+    });
+  });
 
   test('renders job cards from mocked /api/jobs', async ({ page }) => {
     await mockWorkerApis(page);
