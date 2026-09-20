@@ -17,6 +17,29 @@ module "bucket_worker_documents" {
   }]
 }
 
+# spec 018, PR-4 (US-9, lex-pr4-foto.md #1-12): foto de perfil do paciente. Equivalente de prd do
+# `bucket_patient_photos` da `stg` (`terraform/environments/stg/storage.tf`) — mesmo desenho: região
+# SOUTHAMERICA-WEST1 (não EAST1 como o `bucket_worker_documents`, que é do prestador), sem CORS
+# (upload/leitura sempre pelo servidor, nunca URL assinada de escrita no navegador),
+# soft_delete_retention_days=0 para a revogação apagar de verdade (o módulo usa 7 por default).
+# Criado pela promoção `stage`→`main` (openspec/changes/promocao-stage-para-main, Fase B, item 3):
+# `GCS_PATIENT_PHOTOS_BUCKET` não tinha equivalente em prd e o código é fail-closed só na hora de
+# assinar a URL (não no boot) — sem este bucket, a feature de foto quebra em uso.
+module "bucket_patient_photos" {
+  source                      = "../../modules/storage"
+  name                        = "enlite-patient-photos"
+  location                    = "SOUTHAMERICA-WEST1"
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+  soft_delete_retention_days  = 0
+}
+
+resource "google_storage_bucket_iam_member" "patient_photos_functions_sa" {
+  bucket = module.bucket_patient_photos.name
+  role   = "roles/storage.objectAdmin"
+  member = module.sa_enlite_functions.member
+}
+
 # Buckets gerenciados pelo Google (NÃO declarados aqui):
 # - enlite-prd_cloudbuild                     → criado pelo Cloud Build
 # - run-sources-enlite-prd-southamerica-west1 → criado pelo Cloud Run pra source deploys
