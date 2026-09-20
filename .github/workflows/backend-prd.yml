@@ -114,7 +114,12 @@ jobs:
             PERMISSION_ENGINE_ENABLED=false
             PERMISSION_CATALOG_SYNC_ENABLED=false
             COUNTRY_RLS_ENABLED=false
-            USE_KMS_ENCRYPTION=false
+            # ⚠️ NÃO troque para `false`. Não é interruptor de criptografia: é saída de emergência
+            # de teste. `KMSEncryptionService.ts` e `BlindIndexService.ts` fazem
+            # `testMode = NODE_ENV==='test' || USE_KMS_ENCRYPTION==='false'`, e em testMode o
+            # encrypt() vira base64 de texto claro e o blind index usa chave fixa. Incidente de
+            # 20/09/2026: 21 min com KMS desligado em prd (rev 00492-prl).
+            USE_KMS_ENCRYPTION=true
             PERMISSION_ENFORCED_ROUTES=admin.analytics;admin.dedup;admin.encuadre;admin.integrations;admin.messaging;admin.patients;admin.permissions;admin.recruitment;admin.test_fixtures;admin.users;admin.vacancies;admin.workers
             DB_POOL_MAX=20
             DB_SYSTEM_POOL_MAX=5
