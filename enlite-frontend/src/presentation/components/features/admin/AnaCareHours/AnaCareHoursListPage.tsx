@@ -20,10 +20,8 @@ import { OriginLegend } from './OriginLegend';
 import { ProviderFilterCombobox } from './ProviderFilterCombobox';
 import { AnaCareHoursSyncButton } from './AnaCareHoursSyncButton';
 import type { AnaCareListPatient, AnaCareMonthSnapshot } from './types';
-import { patientDisplayName, providerDisplayName, type SinCheckinHoursMode } from './selectors';
+import { formatMonthLabel, monthOptionsUntilNow, patientDisplayName, providerDisplayName, type SinCheckinHoursMode } from './selectors';
 import type { UseAnaCareHoursSyncResult } from '@hooks/admin/useAnaCareHoursSync';
-
-const MONTH_VALUES = ['2026-08', '2026-09'] as const;
 
 interface AnaCareHoursListPageProps {
   snapshot: AnaCareMonthSnapshot;
@@ -46,12 +44,12 @@ export function AnaCareHoursListPage({
   sinCheckinHoursMode = 'zero',
   sync,
 }: AnaCareHoursListPageProps): JSX.Element {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [search, setSearch] = useState(initialSearch);
   const [providerFilterId, setProviderFilterId] = useState(initialProviderFilterId);
   const monthOptions = useMemo(
-    () => MONTH_VALUES.map((value) => ({ value, label: t(`admin.anacareHours.months.${value}`) })),
-    [t],
+    () => monthOptionsUntilNow().map((value) => ({ value, label: formatMonthLabel(value, i18n.language) })),
+    [i18n.language],
   );
 
   const providerOptions = useMemo(() => {
