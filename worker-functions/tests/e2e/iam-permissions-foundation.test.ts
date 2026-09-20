@@ -452,9 +452,9 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
     });
   });
 
-  // ── E. audit log particionado, INSERT-only ───────────────────────────────────────
+  // ── E. audit log particionado — partições INSERT-only; pai/view leem desde a mig 455 ──
   describe('E. mig 280 — permission_audit_log', () => {
-    it('é particionada e TODA partição é INSERT-only para as roles do app (trava drift)', async () => {
+    it('é particionada; as PARTIÇÕES continuam INSERT-only (trava drift) — o PAI e a view LEEM por decisão do Gabriel (20/09/2026, mig 455)', async () => {
       const kind = await pool.query(`SELECT relkind FROM pg_class WHERE oid = 'iam.permission_audit_log'::regclass`);
       expect(kind.rows[0].relkind).toBe('p');
       const parts = await pool.query(`
@@ -465,16 +465,21 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
         FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
         WHERE i.inhparent = 'iam.permission_audit_log'::regclass`);
       expect(parts.rowCount).toBeGreaterThan(80);
+      // A mig 455 concede SELECT só no PAI (objeto nomeado) — cada PARTIÇÃO segue sem
+      // SELECT individualmente, exatamente como antes. Esta asserção não muda.
       const bad = parts.rows.filter((r) => r.sel || !r.ins || r.upd);
       expect(bad).toEqual([]);
       const mother = await pool.query(`SELECT has_table_privilege('app_runtime','iam.permission_audit_log','SELECT') sel`);
-      expect(mother.rows[0].sel).toBe(false);
-      // BLOCKER (e) do gate #223: a VIEW de compatibilidade também não pode ter SELECT —
-      // a 274 re-rodada depois da 280 não pode reabrir por aqui.
+      // A partir da mig 455 (20/09/2026) o PAI passa a LER — decisão explícita do Gabriel
+      // que SOBREPÕE o least-privilege desta migration (280) e da 274 (ver cabeçalho da 455).
+      expect(mother.rows[0].sel).toBe(true);
+      // A VIEW de compatibilidade também passa a ter SELECT — mesma decisão, mesma migration
+      // (a 455 aplica `security_invoker=true` na view DEPOIS de conceder o SELECT no pai, na
+      // mesma transação, para não abrir janela em que a view perderia leitura).
       const view = await pool.query(`SELECT has_table_privilege('app_runtime','public.permission_audit_log','SELECT') sel`);
-      expect(view.rows[0].sel).toBe(false);
+      expect(view.rows[0].sel).toBe(true);
       await expect(asRole('app_runtime', {}, (c) => c.query(`SELECT count(*) FROM public.permission_audit_log`)))
-        .rejects.toMatchObject({ code: '42501' });
+        .resolves.toBeDefined();
     });
 
     /**
@@ -495,7 +500,14 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
      * O DDL das duas migrations é transacional (nenhum CONCURRENTLY), então o
      * ROLLBACK devolve o banco ao estado anterior.
      */
-    it('re-rodar 274 e 279 DEPOIS da 280 mantém o audit INSERT-only (mãe, partições e view)', async () => {
+    it('re-rodar 274 e 279 DEPOIS da 280 e da 455: a 274 REVOGA de novo a leitura do PAI (efeito colateral esperado da REVOKE explícita nela) — view e partições não mudam', async () => {
+      // A mig 455 já rodou antes deste teste (é migration de verdade, aplicada na suíte). A 274
+      // tem uma linha explícita `REVOKE SELECT ... ON iam.permission_audit_log` (274:155) que
+      // NÃO sabe da 455 e desfaz o GRANT dela ao ser reaplicada — isto é esperado, não regressão:
+      // a 274 nunca foi tocada por este PR, e reaplicar migration antiga por cima de decisão nova
+      // pode reabrir a janela até a próxima aplicação da 455. A `public.permission_audit_log`
+      // (view) NÃO é revogada pela 274 (ela só revoga escrita na view, nunca SELECT — 274:170-173),
+      // então o SELECT que a 455 concedeu na view sobrevive à reaplicação.
       const fs = await import('node:fs');
       const path = await import('node:path');
       const DEF = `SELECT pg_get_functiondef('iam.query_audit(varchar,varchar,timestamptz,timestamptz,int)'::regprocedure) AS d`;
@@ -512,7 +524,7 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
                  (SELECT bool_or(has_table_privilege('app_runtime', c.oid, 'SELECT'))
                     FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
                    WHERE i.inhparent = 'iam.permission_audit_log'::regclass) any_part`);
-        expect(r.rows[0]).toEqual({ mother: false, view: false, any_part: false });
+        expect(r.rows[0]).toEqual({ mother: false, view: true, any_part: false });
       } finally {
         await client.query('ROLLBACK');
         client.release();
@@ -523,11 +535,11 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
       expect(depois.rows[0].d).toBe(antes.rows[0].d);
     });
 
-    it('app_runtime consegue INSERT (trilha) mas SELECT direto é negado', async () => {
+    it('app_runtime consegue INSERT (trilha) e agora também LÊ o pai por decisão do Gabriel (20/09/2026, mig 455 — sobrepõe o least-privilege desta migration)', async () => {
       await asRole('app_runtime', {}, (c) =>
         c.query(`INSERT INTO iam.permission_audit_log (tenant_id, user_id, resource, action, decision) VALUES ($1, $2, 'x', 'read', 'DENY')`, [TENANT, U.bob]));
       await expect(asRole('app_runtime', {}, (c) => c.query(`SELECT count(*) FROM iam.permission_audit_log`)))
-        .rejects.toMatchObject({ code: '42501' });
+        .resolves.toBeDefined();
     });
   });
 

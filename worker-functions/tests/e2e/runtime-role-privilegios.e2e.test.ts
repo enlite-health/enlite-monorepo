@@ -26,26 +26,23 @@ const SCHEMAS = ['public', 'iam', 'terminology'] as const;
 const PISO_POR_SCHEMA: Record<string, number> = { public: 120, iam: 95, terminology: 3 };
 const PAPEIS = ['app_runtime', 'app_system'] as const;
 
-/** Trilhas append-only: o runtime ESCREVE e não LÊ. As partições saem de `pg_inherits`, não de substring. */
+/**
+ * Tabelas-mãe (partição) das trilhas append-only. Escrevem sempre; a partir da mig 455
+ * (20/09/2026) o PAI também LÊ — decisão explícita do Gabriel que sobrepõe o least-privilege da
+ * 270/274/280 (ver cabeçalho da 455). As PARTIÇÕES continuam INSERT-only individualmente — saem
+ * de `pg_inherits`, não de substring.
+ */
 const TRILHAS = ['iam.permission_audit_log', 'public.resource_access_log'] as const;
 
 /**
- * Dívida MEDIDA em 09/09/2026, não exceção: 8 views sem `SELECT` para os papéis de runtime. Três
- * delas são lidas por código de produção (`AnalyticsRepository`, `AuditRepositories`) — mesma classe
- * do 503 da stage, esperando a virada do RLS. A lista é FECHADA de propósito: view nova sem grant
- * reprova aqui, e consertar os grants também reprova (obriga a atualizar a lista no mesmo PR).
- * ⚖️ A migration que concede está na fila do Gabriel; este teste só impede que a dívida CRESÇA.
+ * Dívida MEDIDA em 09/09/2026: 8 views sem `SELECT` para os papéis de runtime (nem
+ * `v_patient_source_inventory`, que herdou o default privilege por ter nascido depois da 269 —
+ * por isso nunca esteve nesta lista). FECHADA por completo pela mig 455 (20/09/2026, achado da
+ * 021-b1/Fase E): GRANT explícito nas 9 nomeadas ali + laço de catch-up que cobre qualquer
+ * view/matview futura de `public`/`iam` cujo dono seja o role das migrations. Lista mantida
+ * VAZIA de propósito, não removida: view nova sem grant volta a reprovar aqui.
  */
-const DIVIDA_VIEWS_SEM_GRANT = [ // eslint-disable-line -- lista medida, não `as const`: comparada com o banco
-  'public.permission_audit_log', // view de compat da trilha — negada de propósito (iam-permissions-foundation)
-  'public.users_active',
-  'public.v_potential_duplicate_workers', // 🔴 lida em produção: AnalyticsRepository
-  'public.v_worker_registration_overview', // 🔴 lida em produção: AnalyticsRepository
-  'public.v_workers_current_employment',
-  'public.workers_docs_expiry_alert', // 🔴 lida em produção: AuditRepositories
-  'public.workers_profession_divergence',
-  'public.workers_without_users',
-];
+const DIVIDA_VIEWS_SEM_GRANT: string[] = [];
 
 describe('privilégios do papel de runtime nos schemas da aplicação (banco real)', () => {
   let pool: Pool;
@@ -118,12 +115,15 @@ describe('privilégios do papel de runtime nos schemas da aplicação (banco rea
     expect((await semPrivilegio(papel, ['r', 'p'], 'SELECT')).filter((t) => !excecoes.has(t))).toEqual([]);
   });
 
-  it.each(PAPEIS)('%s: as trilhas são exceção DELIBERADA — escreve, não lê', async (papel) => {
+  it.each(PAPEIS)('%s: o PAI das trilhas agora LÊ por decisão do Gabriel (20/09/2026, mig 455) — nunca deixou de ESCREVER', async (papel) => {
+    // Até a mig 455 o PAI era write-only, igual à partição. A 455 concedeu SELECT no PAI de
+    // propósito (auditoria legível para as roles de runtime), sobrepondo o least-privilege da
+    // 270/274/280 — não é regressão se isto virar `naoLe: false`; seria regressão se sumisse o INSERT.
     const semLeitura = await semPrivilegio(papel, ['r', 'p'], 'SELECT');
     const semEscrita = await semPrivilegio(papel, ['r', 'p'], 'INSERT');
     for (const t of TRILHAS) {
       expect({ t, naoLe: semLeitura.includes(t), naoEscreve: semEscrita.includes(t) })
-        .toEqual({ t, naoLe: true, naoEscreve: false });
+        .toEqual({ t, naoLe: false, naoEscreve: false });
     }
   });
 

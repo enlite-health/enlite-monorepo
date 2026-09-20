@@ -279,14 +279,20 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
     expect(rows).toHaveLength(2);
   });
 
-  it('8. resource_access_log: app roles inserem mas NÃO leem nem apagam (lex C2)', async () => {
+  it('8. resource_access_log: app roles inserem e agora LEEM o pai (decisão do Gabriel, 20/09/2026, mig 455 — sobrepõe o lex C2 abaixo), mas seguem sem apagar', async () => {
+    // O `lex C2` motivou originalmente negar leitura do pai a app_runtime/app_system
+    // ("append-only de verdade" — REVOKE ALL + GRANT INSERT em 270:69-70). Essa restrição de
+    // LEITURA foi SOBREPOSTA por decisão explícita do Gabriel em 20/09/2026 (mig 455): a
+    // trilha de auditoria passa a ser legível para as roles de runtime. A restrição de
+    // ESCRITA (DELETE) que o mesmo lex C2 motivou segue de pé — só o SELECT mudou. O `lex C2`
+    // fica citado aqui como contexto histórico da decisão original, não como regra vigente.
     await asRole('app_system', { systemContext: 'job:e2e-rls-proof' }, async (c) => {
       await c.query(
         `INSERT INTO resource_access_log (operator_uid, operator_role, resource_type, resource_id, action, origin)
          VALUES ('rls-test-staff-uid', 'admin', 'patient', $1, 'detail_view', 'system')`,
         [IDS.patientAR],
       );
-      await expect(c.query(`SELECT * FROM resource_access_log LIMIT 1`)).rejects.toThrow(/permission denied/);
+      await expect(c.query(`SELECT * FROM resource_access_log LIMIT 1`)).resolves.toBeDefined();
     });
     await asRole('app_system', { systemContext: 'job:e2e-rls-proof' }, async (c) => {
       await expect(c.query(`DELETE FROM resource_access_log`)).rejects.toThrow(/permission denied/);
