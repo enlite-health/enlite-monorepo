@@ -385,6 +385,37 @@ describe('axonicoDayEligibility', () => {
   });
 });
 
+/**
+ * Oráculo independente da implementação, usado só nos testes de fuso abaixo (20/09). Nunca chama
+ * `currentMonthIso`/`todayIsoLocal` nem reimplementa `getFullYear`/`getMonth`/`getDate` — usa
+ * `Intl` (`toLocaleDateString('en-CA')`, que formata `YYYY-MM-DD` na hora LOCAL do processo) como
+ * segunda fonte. Reusar a própria função como oráculo seria tautologia: só provaria que ela
+ * concorda consigo mesma.
+ */
+function localIsoDateOracle(instant: Date): string {
+  return instant.toLocaleDateString('en-CA');
+}
+
+function localIsoMonthOracle(instant: Date): string {
+  return localIsoDateOracle(instant).slice(0, 7);
+}
+
+/**
+ * Deriva o dia/mês local ESPERADO a partir do offset REAL do ambiente (`Date.getTimezoneOffset`),
+ * sem cravar `'2026-09-30'`/`'2026-09'` no teste — assim o valor esperado continua correto tanto
+ * em UTC-3 (Buenos Aires) quanto em UTC-4/UTC-5, se o runner algum dia rodar noutro fuso negativo.
+ * Desloca o instante em milissegundos e lê com `getUTC*`: esses getters devolvem sempre os MESMOS
+ * dígitos não importa o TZ do processo, porque o deslocamento já foi aplicado antes de ler.
+ */
+function expectedLocalFromOffset(instant: Date): { dayIso: string; monthIso: string } {
+  const offsetMinutes = instant.getTimezoneOffset();
+  const shifted = new Date(instant.getTime() - offsetMinutes * 60000);
+  const year = shifted.getUTCFullYear();
+  const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(shifted.getUTCDate()).padStart(2, '0');
+  return { dayIso: `${year}-${month}-${day}`, monthIso: `${year}-${month}` };
+}
+
 describe('currentMonthIso', () => {
   it('POSITIVO — data injetada no meio do mês devolve o YYYY-MM daquele mês', () => {
     expect(currentMonthIso(new Date('2026-09-20T12:00:00Z'))).toBe('2026-09');
@@ -392,9 +423,7 @@ describe('currentMonthIso', () => {
 
   // Meio-dia (não meia-noite) de propósito: instante SEGURO em qualquer fuso — nenhum fuso real
   // desloca ±12h a ponto de mudar o dia/mês. O caso de fuso que MUDA de dia/mês é o teste de
-  // controle negativo abaixo, com TZ pinado (a antiga versão desta linha usava meia-noite UTC,
-  // que é exatamente o instante que muda de mês num fuso negativo — teste ficava frágil ao fuso
-  // do runner sem ninguém perceber).
+  // contrato e o controle negativo abaixo.
   it('POSITIVO — primeiro dia do mês, instante seguro em qualquer fuso, ainda cai nesse mês', () => {
     expect(currentMonthIso(new Date('2026-10-01T12:00:00Z'))).toBe('2026-10');
   });
@@ -404,23 +433,37 @@ describe('currentMonthIso', () => {
   });
 
   /**
-   * CONTROLE NEGATIVO (decisão do Gabriel, 20/09): a régua é o relógio do OPERADOR LOGADO (fuso
-   * local do navegador), NUNCA UTC. TZ pinado explicitamente (`America/Argentina/Buenos_Aires`,
-   * UTC-3) porque o runner (CI `ubuntu-latest`) roda em UTC por padrão — sem pinar, este teste
-   * NÃO discriminaria a implementação antiga (local == UTC quando o runner É UTC). O instante
-   * `2026-10-01T02:30:00Z` é `2026-09-30 23:30` em Buenos Aires: pro operador ainda é setembro,
-   * mas em UTC já é outubro — a implementação ANTIGA (`getUTCFullYear`/`getUTCMonth`) devolvia
-   * `'2026-10'` aqui; a fórmula LOCAL tem de devolver `'2026-09'`.
+   * CONTRATO (decisão do Gabriel, 20/09) — roda SEMPRE, em QUALQUER fuso, porque compara contra um
+   * oráculo independente (`Intl`), não contra um valor cravado. Prova a régua: o mês segue o
+   * relógio de parede LOCAL do operador, nunca UTC.
    */
-  it('NEGATIVO — 30/09 23:30 em Buenos Aires (UTC-3) é 01/10 de madrugada em UTC: o mês tem de ser o de setembro (do operador), não outubro (UTC)', () => {
-    const originalTz = process.env.TZ;
-    process.env.TZ = 'America/Argentina/Buenos_Aires';
-    try {
-      expect(currentMonthIso(new Date('2026-10-01T02:30:00Z'))).toBe('2026-09');
-    } finally {
-      process.env.TZ = originalTz;
-    }
+  it('POSITIVO — contrato: acompanha o relógio LOCAL do processo em qualquer fuso (oráculo Intl, não a própria função)', () => {
+    const instant = new Date('2026-10-01T02:30:00Z');
+    expect(currentMonthIso(instant)).toBe(localIsoMonthOracle(instant));
   });
+
+  /**
+   * CONTROLE NEGATIVO — discrimina local×UTC só onde os dois DIVERGEM de verdade. Dentro de um
+   * processo rodando em UTC, "relógio local" e "UTC" são a MESMA coisa (offset 0): nenhum teste
+   * consegue distinguir os dois ali, e forçar a distinção é o que quebrou no CI (ver abaixo) — por
+   * isso este caso vira `it.skip` quando o offset do ambiente é zero. Fora de UTC, o valor esperado
+   * é DERIVADO do offset real (`expectedLocalFromOffset`), não cravado, pra valer em UTC-3, UTC-4
+   * ou UTC-5 igual, sem reescrever o teste se o runner do time mudar de fuso.
+   *
+   * Antes desta versão o teste pinava `process.env.TZ = 'America/Argentina/Buenos_Aires'` em
+   * RUNTIME (depois do processo já ter começado) — removido porque o V8 cacheia o fuso na primeira
+   * leitura de `Date`/`Intl`, então atribuir `TZ` depois não garante efeito: passava na máquina do
+   * dev (já UTC-3) e falhava no CI (`ubuntu-latest`, UTC). Não reintroduzir o pino de `TZ` aqui.
+   */
+  const controlInstant = new Date('2026-10-01T02:30:00Z');
+  const runnerIsUtc = controlInstant.getTimezoneOffset() === 0;
+  const itDiscrimina = runnerIsUtc ? it.skip : it;
+  itDiscrimina(
+    'NEGATIVO — 30/09 23:30 em Buenos Aires (UTC-3) é 01/10 de madrugada em UTC: o mês segue o relógio LOCAL, não UTC (só discrimina fora de UTC — pulado quando o runner É UTC, que não distingue os dois)',
+    () => {
+      expect(currentMonthIso(controlInstant)).toBe(expectedLocalFromOffset(controlInstant).monthIso);
+    },
+  );
 });
 
 describe('todayIsoLocal', () => {
@@ -429,19 +472,32 @@ describe('todayIsoLocal', () => {
   });
 
   /**
-   * CONTROLE NEGATIVO — mesma lógica do teste acima de `currentMonthIso` (mesmo instante, mesma
-   * régua: relógio do operador). A implementação ANTIGA usava `toISOString().slice(0, 10)`
-   * (sempre UTC) e devolveria `'2026-10-01'` aqui; a fórmula LOCAL tem de devolver `'2026-09-30'`.
+   * CONTRATO (decisão do Gabriel, 20/09) — mesma lógica do contrato de `currentMonthIso` acima:
+   * compara contra o oráculo `Intl`, roda sempre, em qualquer fuso.
    */
-  it('NEGATIVO — 30/09 23:30 em Buenos Aires (UTC-3) é 01/10 de madrugada em UTC: o dia tem de ser 2026-09-30 (do operador), não 2026-10-01 (UTC)', () => {
-    const originalTz = process.env.TZ;
-    process.env.TZ = 'America/Argentina/Buenos_Aires';
-    try {
-      expect(todayIsoLocal(new Date('2026-10-01T02:30:00Z'))).toBe('2026-09-30');
-    } finally {
-      process.env.TZ = originalTz;
-    }
+  it('POSITIVO — contrato: acompanha o relógio LOCAL do processo em qualquer fuso (oráculo Intl, não a própria função)', () => {
+    const instant = new Date('2026-10-01T02:30:00Z');
+    expect(todayIsoLocal(instant)).toBe(localIsoDateOracle(instant));
   });
+
+  /**
+   * CONTROLE NEGATIVO — mesma lógica do controle de `currentMonthIso` acima (mesmo instante, mesmo
+   * `it.skip` condicional ao offset, mesmo valor DERIVADO em vez de cravado). A implementação
+   * ANTIGA usava `toISOString().slice(0, 10)` (sempre UTC) e devolveria `'2026-10-01'` aqui; a
+   * fórmula LOCAL tem de devolver o dia derivado do offset do ambiente.
+   *
+   * O pino de `process.env.TZ` em runtime foi removido pelo mesmo motivo do bloco acima (cache de
+   * fuso do V8) — não reintroduzir.
+   */
+  const controlInstant = new Date('2026-10-01T02:30:00Z');
+  const runnerIsUtc = controlInstant.getTimezoneOffset() === 0;
+  const itDiscrimina = runnerIsUtc ? it.skip : it;
+  itDiscrimina(
+    'NEGATIVO — 30/09 23:30 em Buenos Aires (UTC-3) é 01/10 de madrugada em UTC: o dia segue o relógio LOCAL, não UTC (só discrimina fora de UTC — pulado quando o runner É UTC, que não distingue os dois)',
+    () => {
+      expect(todayIsoLocal(controlInstant)).toBe(expectedLocalFromOffset(controlInstant).dayIso);
+    },
+  );
 });
 
 describe('monthOptionsUntilNow', () => {
