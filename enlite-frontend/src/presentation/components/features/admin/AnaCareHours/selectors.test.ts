@@ -3,10 +3,13 @@ import {
   allShiftsOf,
   axonicoDayEligibility,
   blockReason,
+  currentMonthIso,
   filterPatients,
+  formatMonthLabel,
   formatSourceRange,
   formatSourceTime,
   isShiftSelectable,
+  monthOptionsUntilNow,
   originCounts,
   patientDisplayName,
   pendingOriginBreakdown,
@@ -378,5 +381,53 @@ describe('axonicoDayEligibility', () => {
     expect(result.eligible).toBe(false);
     expect(result.reasons).toEqual(expect.arrayContaining(['notValidated', 'missingCheckInOut', 'missingDocument']));
     expect(result.reasons).toHaveLength(3);
+  });
+});
+
+describe('currentMonthIso', () => {
+  it('POSITIVO — data injetada no meio do mês devolve o YYYY-MM daquele mês, em UTC', () => {
+    expect(currentMonthIso(new Date('2026-09-20T12:00:00Z'))).toBe('2026-09');
+  });
+
+  it('POSITIVO — data injetada no primeiro dia do mês (meia-noite UTC) ainda cai nesse mês', () => {
+    expect(currentMonthIso(new Date('2026-10-01T00:00:00Z'))).toBe('2026-10');
+  });
+
+  it('POSITIVO — mês de um dígito vem com zero à esquerda', () => {
+    expect(currentMonthIso(new Date('2026-01-15T12:00:00Z'))).toBe('2026-01');
+  });
+});
+
+describe('monthOptionsUntilNow', () => {
+  it('POSITIVO — piso 2026-08 com referência em setembro/2026 devolve [2026-08, 2026-09]', () => {
+    expect(monthOptionsUntilNow('2026-08', new Date('2026-09-20T12:00:00Z'))).toEqual(['2026-08', '2026-09']);
+  });
+
+  it('POSITIVO — mês novo entra sozinho: referência em outubro/2026 inclui 2026-10', () => {
+    expect(monthOptionsUntilNow('2026-08', new Date('2026-10-05T12:00:00Z'))).toEqual(['2026-08', '2026-09', '2026-10']);
+  });
+
+  it('POSITIVO — piso e referência no mesmo mês devolvem lista de um único item', () => {
+    expect(monthOptionsUntilNow('2026-08', new Date('2026-08-03T12:00:00Z'))).toEqual(['2026-08']);
+  });
+
+  it('POSITIVO — atravessa virada de ano sem quebrar a ordem crescente', () => {
+    expect(monthOptionsUntilNow('2026-11', new Date('2027-01-10T12:00:00Z'))).toEqual(['2026-11', '2026-12', '2027-01']);
+  });
+
+  it('NEGATIVO — piso posterior ao mês corrente devolve só o piso, nunca lista vazia', () => {
+    expect(monthOptionsUntilNow('2027-01', new Date('2026-09-20T12:00:00Z'))).toEqual(['2027-01']);
+  });
+});
+
+describe('formatMonthLabel', () => {
+  it('POSITIVO — es: mês com nome completo, primeira letra maiúscula, seguido do ano', () => {
+    expect(formatMonthLabel('2026-08', 'es')).toBe('Agosto 2026');
+    expect(formatMonthLabel('2026-09', 'es')).toBe('Septiembre 2026');
+  });
+
+  it('POSITIVO — pt-BR: mesmo formato, nome do mês em português', () => {
+    expect(formatMonthLabel('2026-08', 'pt-BR')).toBe('Agosto 2026');
+    expect(formatMonthLabel('2026-09', 'pt-BR')).toBe('Setembro 2026');
   });
 });

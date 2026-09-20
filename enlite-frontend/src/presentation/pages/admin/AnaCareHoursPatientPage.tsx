@@ -11,7 +11,7 @@ import { AnaCareHoursDetailContainer } from '@presentation/components/features/a
 import { AnaCareHoursHttpService } from '@presentation/components/features/admin/AnaCareHours/AnaCareHoursHttpService';
 import { AxonicoComprobanteHttpService } from '@presentation/components/features/admin/AnaCareHours/AxonicoComprobanteHttpService';
 import { AnaCarePatientDocumentHttpService } from '@presentation/components/features/admin/AnaCareHours/AnaCarePatientDocumentHttpService';
-import { previousMonthIso } from '@presentation/components/features/admin/AnaCareHours/selectors';
+import { currentMonthIso } from '@presentation/components/features/admin/AnaCareHours/selectors';
 
 export default function AnaCareHoursPatientPage(): JSX.Element | null {
   const navigate = useNavigate();
@@ -21,8 +21,8 @@ export default function AnaCareHoursPatientPage(): JSX.Element | null {
   const axonicoService = useMemo(() => new AxonicoComprobanteHttpService(), []);
   // Registro do documento do paciente (19/09) — serviço PRÓPRIO, domínio "integração com o Ana Care" (não Axonico, não `anacare-hours`).
   const patientDocumentService = useMemo(() => new AnaCarePatientDocumentHttpService(), []);
-  // Mês padrão = MÊS ANTERIOR ao atual (decisão do Gabriel, 16/09) — nunca cravado em código.
-  const month = useMemo(() => previousMonthIso(), []);
+  // Mês padrão = MÊS CORRENTE (decisão do Gabriel, 20/09/2026) — nunca cravado em código.
+  const month = useMemo(() => currentMonthIso(), []);
 
   if (!patientId) return null;
 

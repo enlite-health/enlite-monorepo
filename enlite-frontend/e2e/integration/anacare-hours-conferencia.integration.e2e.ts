@@ -24,8 +24,8 @@
  * 1/2 que o e2e de API do backend, `anacare-hours-api.e2e.test.ts`, também usa e LIMPA a cada
  * corrida). Turnos usados — `FAKE-<mês>-6-0-{0..4}` (sin_checkin/web_admin/app/app/web_admin, na
  * mesma ordem determinística de `buildOriginSequence`) — **`<mês>` NÃO é mais cravado** (Tarefa 3,
- * 16/09: a tela abre no MÊS ANTERIOR ao atual, `previousMonthIso`); o arquivo calcula o mesmo mês
- * em runtime (`previousMonthIsoForE2E`), senão o teste quebraria assim que rodasse noutro mês.
+ * 16/09, revisto 20/09: a tela abre no MÊS CORRENTE, `currentMonthIso`); o arquivo calcula o mesmo
+ * mês em runtime (`currentMonthIsoForE2E`), senão o teste quebraria assim que rodasse noutro mês.
  *
  * Isolamento entre corridas: RUN_ID no uid/e-mail dos 2 staff + no nome do grupo; `afterAll`
  * limpa `shift_hours_validation` dos turnos tocados (por sourceShiftId) e os fixtures de iam —
@@ -68,8 +68,8 @@ const GRUPO_COMPLETO = `ACH E2E Completo ${RUN_ID}`;
 const GRUPO_LEITURA = `ACH E2E Leitura ${RUN_ID}`;
 
 /**
- * Tarefa 3 (16/09): `AnaCareHoursListContainer`/`AnaCareHoursPatientPage` não têm mais mês
- * cravado — nascem no MÊS ANTERIOR ao atual (`previousMonthIso`, `selectors.ts`). Um `'2026-08'`
+ * Tarefa 3 (16/09, revisto 20/09): `AnaCareHoursListContainer`/`AnaCareHoursPatientPage` não têm
+ * mais mês cravado — nascem no MÊS CORRENTE (`currentMonthIso`, `selectors.ts`). Um `'2026-08'`
  * fixo aqui quebraria assim que o teste rodasse num mês diferente (o adapter falso só tem turnos
  * do mês pedido). Por isso o e2e calcula o MESMO mês que o app vai pedir, e monta os ids
  * sintéticos (`FakeAnaCareShiftsSource.generateMonth`, determinístico por mês) em cima dele.
@@ -80,13 +80,11 @@ function pad2(n: number): string {
 function daysInMonth(year: number, month1to12: number): number {
   return new Date(Date.UTC(year, month1to12, 0)).getUTCDate();
 }
-function previousMonthIsoForE2E(): string {
+function currentMonthIsoForE2E(): string {
   const now = new Date();
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  d.setUTCMonth(d.getUTCMonth() - 1);
-  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}`;
+  return `${now.getUTCFullYear()}-${pad2(now.getUTCMonth() + 1)}`;
 }
-const MONTH = previousMonthIsoForE2E();
+const MONTH = currentMonthIsoForE2E();
 const [MONTH_YEAR, MONTH_NUM] = MONTH.split('-').map(Number);
 const DIM = daysInMonth(MONTH_YEAR, MONTH_NUM);
 
