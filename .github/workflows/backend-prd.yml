@@ -94,15 +94,18 @@ jobs:
           # `COUNTRY_RLS_ENABLED=false` fazem `assertDbRoleMembership`/`rlsAwarePool` ficarem
           # inertes por construção (custo ZERO: nem query nem conexão no pool de sistema —
           # ver `assertDbRoleMembership.ts`). `DB_USER` continua `enlite_app`: só vira
-          # `enlite_runtime` na Fase E. `DB_POOL_MAX`/`DB_SYSTEM_POOL_MAX` são valor
-          # PROVISÓRIO (max_connections=100 medido em prd 20/09, `SHOW max_connections`) —
-          # não copiar o 3/1 do stg (db-f1-micro, não comparável) nem dar como definitivo:
-          # o MCP roda hoje SEM estas duas envs (default de código 20+5) e sozinho, em
-          # max-instances=5, já se aproxima do teto — a conta completa (wf + MCP) é
-          # passo 0 da Fase E, não desta fase.
+          # `enlite_runtime` na Fase E. `DB_POOL_MAX=20`/`DB_SYSTEM_POOL_MAX=5` são o
+          # DEFAULT VIGENTE hoje (`DatabaseConnection.ts` — `DEFAULT_POOL_MAX`/
+          # `DEFAULT_SYSTEM_POOL_MAX`), declarado de propósito para não mudar capacidade
+          # nesta fase: sem a env, o processo já cai nesse valor. NÃO copiar o 3/1 do stg
+          # (db-f1-micro, não comparável) — o dimensionamento real (max_connections=100
+          # medido em prd 20/09, `SHOW max_connections`, considerando wf + MCP) é passo 0
+          # da Fase E, não desta.
           env_vars: |
             NODE_ENV=production
             GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
+            GCS_BUCKET_NAME=enlite-worker-documents
+            GCS_PATIENT_PHOTOS_BUCKET=enlite-patient-photos
             DB_HOST=/cloudsql/${{ secrets.GCP_PROJECT_ID }}:southamerica-west1:enlite-ar-db
             DB_NAME=enlite_ar
             DB_USER=enlite_app
@@ -113,8 +116,8 @@ jobs:
             COUNTRY_RLS_ENABLED=false
             USE_KMS_ENCRYPTION=false
             PERMISSION_ENFORCED_ROUTES=admin.analytics;admin.dedup;admin.encuadre;admin.integrations;admin.messaging;admin.patients;admin.permissions;admin.recruitment;admin.test_fixtures;admin.users;admin.vacancies;admin.workers
-            DB_POOL_MAX=5
-            DB_SYSTEM_POOL_MAX=2
+            DB_POOL_MAX=20
+            DB_SYSTEM_POOL_MAX=5
             TWILIO_ACCOUNT_SID=${{ secrets.TWILIO_ACCOUNT_SID }}
             TWILIO_WHATSAPP_NUMBER=${{ secrets.TWILIO_WHATSAPP_NUMBER }}
             TWILIO_STATUS_CALLBACK_URL=https://api.enlite.health/api/webhooks/twilio/status
