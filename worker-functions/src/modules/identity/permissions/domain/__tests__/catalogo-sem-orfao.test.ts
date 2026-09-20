@@ -54,10 +54,10 @@
  * a chave ficar como NÃO RESOLVIDA na lista abaixo, é sinal de que precisa de mais um nível, não
  * de allow-list.
  *
- * ── Estado medido em 20/09: este teste NASCE VERMELHO, e não por bug do resolvedor ────────────
- * Com o resolvedor completo (não por falta de alcance), sobram 4 chaves SEM consumidor nenhum —
- * nem rota, nem `cells.includes`, nem helper — confirmadas por grep direto adicional (não só pela
- * ausência de match do resolvedor):
+ * ── Estado medido em 20/09 (só backend): este teste NASCEU VERMELHO por erro de ESPECIFICAÇÃO,
+ *    não por bug do resolvedor — a varredura olhava só `worker-functions/src` ──────────────────
+ * Com o resolvedor completo do backend (não por falta de alcance), sobravam 4 chaves SEM
+ * consumidor nenhum NESSA CAMADA — nem rota, nem `cells.includes`, nem helper:
  *   - `api_docs:read` — a rota real de `/api/docs` (`src/index.ts`) usa só
  *     `authMiddleware.requireStaff()`, sem `perm.require`/checagem de célula nenhuma.
  *   - `patient_chat:read` / `patient_chat:create` — só existe rota para `patient_chat:update`
@@ -65,8 +65,15 @@
  *     `canReadPatientContainer` nunca é chamado com o container `'chat'`.
  *   - `prescreening:create` — só existem rotas para `prescreening:read`/`update`
  *     (`adminVacanciesRoutes.ts`); não há `create` em lugar nenhum.
- * São PRÉ-EXISTENTES (não introduzidas por esta Fase, não fazem parte das 12 da Fase 1) — a régua
- * está funcionando: achou o que ninguém tinha medido antes. Por instrução da Fase 2, ficam como
+ * Célula pode ter consumidor no FRONTEND sem `perm.require` nenhum no backend (a rota já projeta
+ * a resposta; quem decide o que MOSTRAR é a tela) — e é exatamente o caso de 3 das 4: `scanFrontend`
+ * (abaixo) achou `patient_chat:read`/`patient_chat:create` no `c('chat', 'patient_chat', [...])`
+ * de `SCREEN_REGISTRY` (`patients.detail`, container `chat`) + `ContainerGate resource="patient_chat"`
+ * (`PatientDetailPage.tsx`), e `prescreening:create` no `c('prescreening', 'prescreening', [...])`
+ * de `SCREEN_REGISTRY` (`vacancies.detail`) e no `cells: [...]` literal de `vacancies.talentum`.
+ * Só `api_docs:read` segue SEM consumidor em nenhuma das duas camadas — PRÉ-EXISTENTE (não
+ * introduzida por esta Fase, não faz parte das 12 da Fase 1), e a feature `api_docs` está em
+ * remoção (branches `chore/remover-api-docs`; já não existe no catálogo de prd). Fica como
  * ACHADO para decisão humana (remover de `CELL_DESCRIPTION` ou declarar o consumidor que falta),
  * nunca como allow-list — então este teste permanece VERMELHO até essa decisão.
  */
@@ -101,6 +108,34 @@ function listSourceFiles(dir: string): string[] {
 }
 
 const ALL_FILES = listSourceFiles(SRC_ROOT);
+
+/**
+ * ── Cobertura do FRONTEND (correção 20/09) ──────────────────────────────────────────────────
+ * A varredura acima só olha `worker-functions/src` — mas célula pode ter consumidor SÓ no
+ * `enlite-frontend` (`SCREEN_REGISTRY`, gate de container/ação, hook de acesso), sem
+ * `perm.require` nenhum no backend (a resposta já chega projetada; quem nega dado é a rota, mas
+ * quem CONSOME a célula para decidir o que mostrar é a tela). Sem essa camada, a régua confundia
+ * "sem consumidor no backend" com "órfã de verdade" — 3 das 4 chaves acusadas em 20/09
+ * (`patient_chat:read`, `patient_chat:create`, `prescreening:create`) tinham consumidor real no
+ * frontend o tempo todo.
+ *
+ * Diretório do frontend é resolvido relativo à raiz do MONOREPO (irmão de `worker-functions`,
+ * não um caminho fixo de máquina) — e se não existir, o teste FALHA aqui, alto e claro, em vez de
+ * silenciar (uma régua que reduz de escopo sozinha quando não acha o alvo é pior que não existir:
+ * ela passaria a aprovar chave órfã de verdade sem avisar ninguém).
+ */
+const FRONTEND_ROOT = resolvePath(REPO_ROOT, '..', 'enlite-frontend', 'src');
+if (!existsSync(FRONTEND_ROOT) || !statSync(FRONTEND_ROOT).isDirectory()) {
+  throw new Error(
+    `catalogo-sem-orfao.test.ts: diretório do frontend não encontrado em "${FRONTEND_ROOT}". `
+    + 'Esta régua cobre backend E frontend (correção 20/09, D115) — sem o frontend legível ela '
+    + 'silenciaria órfãs que só ele consome (SCREEN_REGISTRY, ContainerGate, ActionButton, '
+    + 'useActionGate, useContainerAccess, useCellAccess). Restaure o monorepo completo (o '
+    + '`enlite-frontend` deve ser IRMÃO de `worker-functions`) ou ajuste FRONTEND_ROOT — nunca '
+    + 'comente/pule esta checagem.',
+  );
+}
+const FRONTEND_FILES = listSourceFiles(FRONTEND_ROOT);
 
 /**
  * Remove comentários `//` e `/* *\/` preservando o conteúdo de strings/template literals (para
@@ -540,20 +575,127 @@ function scan(): ScanResult {
   return { consumed, unresolvedRoutes, unresolvedIncludes };
 }
 
+/**
+ * Extrai o conteúdo de atributos de toda tag JSX de abertura `<tagName ...>` em `src`, balanceando
+ * `{}`/`()`/`[]` e strings — sem isso, `[^>]*` pararia no primeiro `>` de um `=>` dentro de um
+ * `onClick={() => ...}` (comum em `ActionButton`) e cortaria a tag ao meio.
+ */
+function extractOpenTags(src: string, tagName: string): string[] {
+  const tags: string[] = [];
+  const startRe = new RegExp(`<${tagName}\\b`, 'g');
+  let sm: RegExpExecArray | null;
+  while ((sm = startRe.exec(src))) {
+    const start = sm.index + sm[0].length;
+    let i = start;
+    let depth = 0;
+    let inString: string | null = null;
+    while (i < src.length) {
+      const c = src[i];
+      if (inString) {
+        if (c === '\\') { i += 2; continue; }
+        if (c === inString) inString = null;
+        i++;
+        continue;
+      }
+      if (c === '"' || c === "'" || c === '`') { inString = c; i++; continue; }
+      if (c === '{' || c === '(' || c === '[') { depth++; i++; continue; }
+      if (c === '}' || c === ')' || c === ']') { depth--; i++; continue; }
+      if (c === '>' && depth === 0) break;
+      i++;
+    }
+    tags.push(src.slice(start, i));
+    startRe.lastIndex = i;
+  }
+  return tags;
+}
+
+/**
+ * ── O que conta como CONSUMIDOR no FRONTEND (correção 20/09) ────────────────────────────────
+ * Deliberadamente mais simples que o resolvedor do backend (sem seguir import/call-site): o
+ * `SCREEN_REGISTRY` já é ele mesmo a fonte plana da árvore Tela → Container → Célula (D286),
+ * então basta ler os dois formatos que ele usa, mais os pontos de gate/hook que o consultam em
+ * runtime, mais qualquer literal solto `'recurso:ação'`:
+ *   1. `c(id, resource, [ações], ...tabs)` → expande para `resource:ação` de cada ação da lista;
+ *   2. `cells: [...]` (nível de tela) → strings `'recurso:ação'` literais dentro do array;
+ *   3. `<ContainerGate resource="x">` → `x:read` (é o gate de VISIBILIDADE do container, D286;
+ *      não infere `write` — quem declara `write`/`create`/`update` é o `c(...)` do container);
+ *   4. `<ActionButton resource="x" action="y">` → `x:y` (ordem dos atributos livre);
+ *   5. `useActionGate('x','y')` / `useHasCell('x','y')` → `x:y`;
+ *   6. `useContainerAccess('x')` / `useCellAccess('x')` → `x:read` (mesmo racional do item 3);
+ *   7. qualquer literal solto `'recurso:ação'` em `src/` (pega `cells:` de novo e qualquer outro
+ *      hardcode que os itens acima não alcancem — redundante com o item 2 de propósito, é rede
+ *      de segurança, não substituto: itens 1/3/4/5/6 cobrem o que NÃO é literal combinado).
+ * Não resolve identificador/import/call-site como o backend — se aparecer célula só resolvível
+ * por essas vias no frontend, ela sobra como ACHADO (não como falso-vermelho silencioso: o teste
+ * reporta a chave, nunca assume consumo que não viu).
+ */
+function scanFrontend(): Set<string> {
+  const consumed = new Set<string>();
+  const cellLiteralRe = /^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$/;
+
+  for (const file of FRONTEND_FILES) {
+    const src = stripped(file);
+
+    // 1. c(id, resource, [ações], ...tabs)
+    for (const m of src.matchAll(/\bc\(\s*['"][^'"]*['"]\s*,\s*['"]([^'"]+)['"]\s*,\s*\[([^\]]*)\]/g)) {
+      const resource = m[1];
+      for (const a of m[2].matchAll(/'([^']+)'/g)) consumed.add(`${resource}:${a[1]}`);
+    }
+
+    // 2 + 7. qualquer literal 'recurso:ação' solto no arquivo (cobre `cells: [...]` sem regra à parte).
+    for (const m of src.matchAll(/['"]([^'"]+)['"]/g)) {
+      if (cellLiteralRe.test(m[1])) consumed.add(m[1]);
+    }
+
+    // 3. <ContainerGate resource="x">
+    for (const tag of extractOpenTags(src, 'ContainerGate')) {
+      const r = tag.match(/\bresource=["']([^"']+)["']/);
+      if (r) consumed.add(`${r[1]}:read`);
+    }
+
+    // 4. <ActionButton resource="x" action="y"> (atributos em qualquer ordem)
+    for (const tag of extractOpenTags(src, 'ActionButton')) {
+      const r = tag.match(/\bresource=["']([^"']+)["']/);
+      const a = tag.match(/\baction=["']([^"']+)["']/);
+      if (r && a) consumed.add(`${r[1]}:${a[1]}`);
+    }
+
+    // 5. useActionGate('x','y') / useHasCell('x','y')
+    for (const m of src.matchAll(/\buse(?:ActionGate|HasCell)\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*\)/g)) {
+      consumed.add(`${m[1]}:${m[2]}`);
+    }
+
+    // 6. useContainerAccess('x') / useCellAccess('x')
+    for (const m of src.matchAll(/\buse(?:ContainerAccess|CellAccess)\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+      consumed.add(`${m[1]}:read`);
+    }
+  }
+
+  return consumed;
+}
+
 describe('CELL_DESCRIPTION — nenhuma chave fica sem consumidor real (Fase 2, D115)', () => {
-  it('a varredura realmente percorre arquivos (contagem > 500) — contagem zero é falha, não sucesso', () => {
+  it('a varredura do backend realmente percorre arquivos (contagem > 500) — contagem zero é falha, não sucesso', () => {
     expect(ALL_FILES.length).toBeGreaterThan(500);
   });
 
-  it('toda chave de CELL_DESCRIPTION tem consumidor real — rota (perm.require) ou checagem literal (cells.includes/helper)', () => {
-    const { consumed } = scan();
+  it('a varredura do frontend realmente percorre arquivos (contagem > 300) — contagem zero é falha, não sucesso', () => {
+    expect(FRONTEND_FILES.length).toBeGreaterThan(300);
+  });
+
+  it('toda chave de CELL_DESCRIPTION tem consumidor real — backend (perm.require/cells.includes) OU frontend (SCREEN_REGISTRY/gate/hook/literal)', () => {
+    const { consumed: backendConsumed } = scan();
+    const frontendConsumed = scanFrontend();
+    const consumed = new Set([...backendConsumed, ...frontendConsumed]);
     const orfas = Object.keys(CELL_DESCRIPTION).filter((k) => !consumed.has(k));
     const mensagens = orfas.map(
       (k) => `${k} — SEM consumidor: nenhum perm.require('${k.split(':')[0]}', '${k.split(':')[1]}') `
-        + `nem cells.includes(...) resolvível encontrado em src/. `
+        + `nem cells.includes(...) resolvível em worker-functions/src, nem SCREEN_REGISTRY/`
+        + `ContainerGate/ActionButton/useActionGate/useContainerAccess/useCellAccess/literal em `
+        + `enlite-frontend/src. `
         + `Ação: remover de CELL_DESCRIPTION (change catalogo-de-permissoes-derivado-do-codigo, D115) `
         + `se for órfã de verdade, OU se há consumidor que este teste não alcança, registrar por que `
-        + `(célula abaixo da rota com padrão novo) e ajustar o resolvedor — nunca criar allow-list muda.`,
+        + `(célula abaixo da rota/tela com padrão novo) e ajustar o resolvedor — nunca criar allow-list muda.`,
     );
     expect(mensagens).toEqual([]);
   });
