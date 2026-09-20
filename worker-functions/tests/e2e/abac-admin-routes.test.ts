@@ -677,8 +677,10 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
   });
 
   // ── (h) L9-5 — consolidado multi-país (`?country=ALL`) exige TODO grant do ator
-  //      documentado com `reason` (D113, versão forte) — em /patients/stats E /patients/funnel,
-  //      o MESMO caminho de (b)/(b2) (`resolveCountryScope`), não uma cópia da regra.
+  //      documentado com `granted_by` — em /patients/stats E /patients/funnel, o
+  //      MESMO caminho de (b)/(b2) (`resolveCountryScope`), não uma cópia da regra.
+  //      Migration 412 (decisão de 20/09/2026): `reason` deixou de ser exigido no
+  //      predicado do consolidado — só `granted_by` importa (resolveCountryScope.ts).
   describe('(h) L9-5 — /patients/stats|funnel: consolidado multi-país exige grant documentado', () => {
     const STAFF_MULTI = { uid: 'abac-routes-staff-multi', email: 'abac-routes-multi@enlite.health', role: 'recruiter' };
     const IDS_MULTI = {
@@ -705,8 +707,9 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
         `INSERT INTO user_groups (user_id, group_id, tenant_id) VALUES ($1, $2, $3)`,
         [STAFF_MULTI.uid, IDS_MULTI.group, TENANT],
       );
-      // Os DOIS países do ator, de saída: AR documentado, BR SEM reason (o caso que
-      // a D113 versão forte recusa — um grant sem motivo reprova mesmo com o outro ok).
+      // Os DOIS países do ator, de saída: AR com reason, BR SEM reason — desde a
+      // migration 412 (decisão de 20/09/2026) isso NÃO reprova mais: o predicado do
+      // consolidado só exige `granted_by`, e os dois grants já o têm.
       await adminPool.query(
         `INSERT INTO group_country_scopes (id, group_id, country, granted_by, reason) VALUES
            ($1, $2, 'AR', 'abac-routes-e2e', 'grant AR documentado'),
@@ -722,20 +725,29 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
       await adminPool.query(`DELETE FROM users WHERE firebase_uid = $1`, [STAFF_MULTI.uid]);
     });
 
-    it('SEM grant documentado (BR sem reason): "todos" em /patients/stats → 403 COUNTRY_SCOPE_REQUIRED', async () => {
+    it('BR com granted_by e SEM reason: "todos" em /patients/stats → 200 (migration 412, D 20/09 — reason não é mais exigido)', async () => {
       const res = await asStaffMulti('/api/admin/patients/stats');
-      expect(res.status).toBe(403);
-      const body = await bodyOf(res);
-      expect(body.success).toBe(false);
-      expect(body.error).toBe('COUNTRY_SCOPE_REQUIRED');
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { success: boolean; data: { total: number } };
+      expect(body.success).toBe(true);
+
+      const [{ n: totalAR }] = (
+        await adminPool.query<{ n: string }>(`SELECT COUNT(*)::int AS n FROM patients WHERE deleted_at IS NULL AND country = 'AR'`)
+      ).rows;
+      const [{ n: totalTodos }] = (
+        await adminPool.query<{ n: string }>(`SELECT COUNT(*)::int AS n FROM patients WHERE deleted_at IS NULL`)
+      ).rows;
+      // Prova pela CONTAGEM: granted_by nos dois países já basta para ver AR+BR.
+      expect(body.data.total).toBe(Number(totalTodos));
+      expect(Number(totalTodos)).toBeGreaterThan(Number(totalAR));
     });
 
-    it('SEM grant documentado (BR sem reason): "todos" em /patients/funnel → 403 COUNTRY_SCOPE_REQUIRED', async () => {
+    it('BR com granted_by e SEM reason: "todos" em /patients/funnel → 200, país null (migration 412, D 20/09 — reason não é mais exigido)', async () => {
       const res = await asStaffMulti('/api/admin/patients/funnel');
-      expect(res.status).toBe(403);
-      const body = await bodyOf(res);
-      expect(body.success).toBe(false);
-      expect(body.error).toBe('COUNTRY_SCOPE_REQUIRED');
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { success: boolean; data: { country: string | null } };
+      expect(body.success).toBe(true);
+      expect(body.data.country).toBeNull();
     });
 
     it('COM os DOIS grants documentados: "todos" em /patients/stats → 200, união AR+BR (mais que só AR)', async () => {

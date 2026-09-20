@@ -24,7 +24,8 @@
  *   requested ∈ {'AR','BR'} ∈ actorCountries   → scope = [requested]
  *   requested = 'ALL', |actorCountries| = 1    → scope = actorCountries
  *   requested = 'ALL', |actorCountries| > 1    → exige escopo multi-país
- *     concedido com `granted_by`/`reason` documentados (D113) — senão 403
+ *     concedido com `granted_by` documentado (D113) — senão 403. `reason`
+ *     NÃO é mais exigido aqui (alinhado à migration 412, decisão de 20/09).
  */
 
 import type { Pool } from 'pg';
@@ -57,15 +58,23 @@ const EFFECTIVE_COUNTRIES_SQL = `
   SELECT iam.effective_countries($1, iam.current_tenant_id()) AS countries`;
 
 /**
- * "Concedido com granted_by/reason" (D113): NENHUM escopo VIVO de país, em
- * NENHUM grupo VIVO em que o ator está, pode estar sem `reason` documentado
- * (não NULL/vazio). É a versão FORTE de propósito — um ator com AR
- * documentado e BR sem motivo não pode "emprestar" a documentação do AR para
- * destravar o consolidado: `granted_by` é NOT NULL desde a 268 (sempre
- * presente); `reason` ficou opcional na 412 para o caso geral, mas o
- * consolidado multi-país deste dashboard reimpõe a exigência (parecer do
- * `lex`, 11/09) por cima do padrão — TODO grant que compõe a união precisa
- * estar documentado, não só algum.
+ * "Concedido com granted_by documentado" (D113): NENHUM escopo VIVO de país,
+ * em NENHUM grupo VIVO em que o ator está, pode estar sem `granted_by`
+ * preenchido — `granted_by` é NOT NULL desde a 268 (sempre presente) e segue
+ * sendo o piso que não caiu. TODO grant que compõe a união do consolidado
+ * multi-país precisa ter sido concedido por alguém identificável, não só
+ * algum.
+ *
+ * Histórico (contexto, não regra vigente): a versão original deste
+ * predicado (11/09) também exigia `reason` não vazio — reimposição por cima
+ * do padrão da coluna, por parecer do `lex` (11/09), na época em que `reason`
+ * ainda era NOT NULL. A migration 412 (`412_group_country_reason_opcional.sql`)
+ * tornou `iam.group_country_scopes.reason` OPCIONAL (DROP NOT NULL) e
+ * `iam.grant_country` deixou de exigir motivo para o caso geral. Por decisão
+ * do Gabriel em 20/09/2026, este predicado foi ALINHADO à 412: `reason`
+ * deixou de ser exigido também aqui. O mérito do parecer do `lex` de 11/09
+ * não foi reaberto — é alinhamento ao padrão novo, não reversão do
+ * julgamento anterior.
  */
 const DOCUMENTED_MULTI_COUNTRY_GRANT_SQL = `
   SELECT NOT EXISTS (
@@ -80,7 +89,7 @@ const DOCUMENTED_MULTI_COUNTRY_GRANT_SQL = `
        AND gcs.revoked_at IS NULL
      WHERE ug.user_id = $1
        AND ug.removed_at IS NULL
-       AND (gcs.granted_by IS NULL OR NULLIF(btrim(gcs.reason), '') IS NULL)
+       AND gcs.granted_by IS NULL
   ) AS documented`;
 
 async function actorEffectiveCountries(db: Pool, uid: string): Promise<CountryCode[]> {
