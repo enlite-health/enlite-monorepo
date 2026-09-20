@@ -1,0 +1,14 @@
+# Override ADICIONAL (por cima de docker-compose.anacare-hours.yml) só para o cenário FELIZ/DEDUP
+# do e2e `anacare-hours-sync-real.integration.e2e.ts`: piso absoluto do diretório em 0 (permissivo
+# — nunca falha por piso), necessário porque o container nasce SEM histórico
+# (`lastKnown===null`, ver `AnaCareHoursSyncRunner.assertDirectoryHealthy`) e por desenho a
+# primeira rodada é fail-closed sem essa env (`AnaCareDirectoryFirstRunNotConfiguredError`).
+#
+# ⚠️ O cenário de ERRO do MESMO spec precisa do OPOSTO — container SEM este override, ainda
+# intocado — por isso este arquivo é um override À PARTE, nunca fundido dentro de
+# `docker-compose.anacare-hours.yml`. Ver cabeçalho do spec e o job
+# `integration-e2e-anacare-hours` em `.github/workflows/_frontend-integration.yml`.
+services:
+  api:
+    environment:
+      ANACARE_DIRECTORY_MIN_ABSOLUTE: "0"
