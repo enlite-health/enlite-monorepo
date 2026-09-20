@@ -280,9 +280,9 @@ jobs:
             enlite-frontend/test-results/
           retention-days: 7
 
-  # ── Job ISOLADO: conferência de horas do Ana Care (spec `anacare-hours-conferencia`) ──
+  # ── Job ISOLADO: conferência/envio/sync de horas do Ana Care ──
   #
-  # Por que este spec não entra no job `integration-e2e` acima: ele precisa do engine
+  # Por que estes specs não entram no job `integration-e2e` acima: eles precisam do engine
   # ABAC LIGADO na API (`PERMISSION_ENGINE_ENABLED=true`,
   # `PERMISSION_ENFORCED_ROUTES=admin.patients`, `PERMISSION_CATALOG_SYNC_ENABLED=true`) e
   # de `ANACARE_HOURS_SOURCE=fake`. O job acima roda TODAS as outras specs `@integration`
@@ -291,11 +291,22 @@ jobs:
   # disputa de porta/projeto docker com o job acima (os dois usam 5432/8080/5173) — cada um
   # tem a sua.
   #
-  # Nota: este job não precisa de `firebase-emulator` nem `fake-gcs` — a spec usa
+  # Nota: este job não precisa de `firebase-emulator` nem `fake-gcs` — as specs usam
   # `USE_MOCK_AUTH=true` (interceptação de `identitytoolkit.googleapis.com` via
-  # `page.route`, igual às demais specs `@integration`) e não toca foto/documento. Provado
+  # `page.route`, igual às demais specs `@integration`) e não tocam foto/documento. Provado
   # local: a API sobe saudável e a suíte passa só com `postgres` + `api` (sem os outros dois
-  # containers) — ver cabeçalho da spec.
+  # containers) — ver cabeçalho de cada spec.
+  #
+  # `anacare-hours-sync-real.integration.e2e.ts` (botão "Sincronizar") existia desde antes e
+  # NUNCA era executada aqui (achado 20/09: `git grep "sync-real" -- '.github/'` vazio) — um
+  # defeito 🔴 de produção (tela enviando um mês e exibindo outro) atravessou por isso. Ela
+  # exige DOIS containers DIFERENTES da API por causa do fail-closed do diretório (ver
+  # cabeçalho da própria spec):
+  #   FELIZ + troca de mês → container com `ANACARE_DIRECTORY_MIN_ABSOLUTE=0` (permissivo).
+  #   ERRO                 → container SEM essa env, ainda intocado (nenhum sync bem-sucedido
+  #                           rodou nele) — por isso a API é RECRIADA no meio do job, sem
+  #                           `ANACARE_SYNC_E2E_ERROR_SCENARIO=1` os outros cenários da spec
+  #                           seriam pulados por `test.skip`.
   integration-e2e-anacare-hours:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -303,10 +314,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sobe Postgres + API (override dedicado — engine ABAC ligado)
+      - name: Sobe Postgres + API (override dedicado — engine ABAC ligado, piso do diretório permissivo)
         working-directory: worker-functions
         run: |
-          BASE="-f docker-compose.yml -f docker-compose.test.yml -f docker-compose.anacare-hours.yml"
+          # `docker-compose.anacare-hours-min-absolute.yml` por cima do override de sempre:
+          # só o cenário FELIZ/troca-de-mês do sync precisa do piso em 0 (container nasce sem
+          # histórico — sem essa env a 1ª rodada é fail-closed por desenho, ver
+          # `AnaCareHoursSyncRunner.assertDirectoryHealthy`). O cenário de ERRO usa o MESMO
+          # `docker-compose.anacare-hours.yml` de sempre, SEM este arquivo — a API é recriada
+          # mais abaixo, depois dos testes deste bloco.
+          BASE="-f docker-compose.yml -f docker-compose.test.yml -f docker-compose.anacare-hours.yml -f docker-compose.anacare-hours-min-absolute.yml"
           docker compose $BASE up -d postgres
 
           espera() {
@@ -394,11 +411,41 @@ jobs:
           tail -50 /tmp/vite.log
           exit 1
 
-      - name: Teste de integração — horas do Ana Care, conferência e envio ao Axonico (engine ABAC ligado)
+      - name: Teste de integração — horas do Ana Care, conferência, envio ao Axonico e sync (FELIZ + troca de mês)
         working-directory: enlite-frontend
         env:
           CI: 'true'
-        run: npx playwright test --project=integration --ignore-snapshots --grep "anacare-hours-conferencia|anacare-hours-axonico-envio"
+        run: npx playwright test --project=integration --ignore-snapshots --grep "anacare-hours-conferencia|anacare-hours-axonico-envio|anacare-hours-sync-real.*(FELIZ|ALTERNATIVO 3)"
+
+      # ── Recria a API para o cenário de ERRO do sync (fail-closed do diretório) ──
+      #
+      # Precisa de um container "intocado": SEM `ANACARE_DIRECTORY_MIN_ABSOLUTE` E sem
+      # nenhum sync bem-sucedido já rodado nele (o passo acima já rodou um, no container
+      # anterior) — `AnaCareHoursSyncRunner` fail-closed só dispara na 1ª rodada sem
+      # histórico. `--force-recreate` derruba o processo Node (o estado de histórico do
+      # diretório é 100% EM MEMÓRIA, `FakeAnaCareDirectorySnapshotRepository` — nunca
+      # Postgres, ver cabeçalho da spec) — Postgres e o dev server do Vite continuam de pé,
+      # não precisam de novo setup.
+      - name: Recria a API sem o piso do diretório (cenário de ERRO do sync)
+        working-directory: worker-functions
+        run: |
+          BASE_ERRO="-f docker-compose.yml -f docker-compose.test.yml -f docker-compose.anacare-hours.yml"
+          docker compose $BASE_ERRO up -d --force-recreate --no-deps api
+
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8080/health >/dev/null && echo "api pronto (cenário de erro)" && exit 0
+            sleep 2
+          done
+          echo "::error::api não respondeu em 120s (cenário de erro)"
+          docker compose $BASE_ERRO logs api | tail -50
+          exit 1
+
+      - name: Teste de integração — sync do Ana Care, cenário de ERRO (fail-closed do diretório)
+        working-directory: enlite-frontend
+        env:
+          CI: 'true'
+          ANACARE_SYNC_E2E_ERROR_SCENARIO: '1'
+        run: npx playwright test --project=integration --ignore-snapshots --grep "anacare-hours-sync-real.*ALTERNATIVO 2"
 
       - name: Relatório (só quando falha)
         if: failure()
