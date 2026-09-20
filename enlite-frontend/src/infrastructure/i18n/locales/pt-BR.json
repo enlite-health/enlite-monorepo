@@ -859,7 +859,8 @@
         "resumeHint": "Há uma sincronização interrompida — será retomada de onde parou.",
         "progress": "Rodada {{round}} · {{count}} reservas processadas",
         "done": "Sincronização completa.",
-        "deduped": "Já existe uma sincronização em andamento — não iniciamos outra."
+        "deduped": "Já existe uma sincronização em andamento — não iniciamos outra.",
+        "interrupted": "A sincronização de {{month}} foi interrompida ao trocar de mês — pode ser retomada."
       }
     },
     "managementDashboard": {
