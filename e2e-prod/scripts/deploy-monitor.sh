@@ -1,7 +1,29 @@
 #!/usr/bin/env bash
 #
-# deploy-monitor.sh — empacota a suíte smoke de e2e-prod como Cloud Run Job e a
-# agenda pra rodar diariamente às 3h (horário da Argentina) contra produção real.
+# deploy-monitor.sh — empacota a suíte e2e-prod como UM Cloud Run Job (imagem única, CMD
+# unfiltered) e agenda DOIS Cloud Scheduler que o disparam com escopo DIFERENTE:
+#
+#   • e2e-prod-smoke-daily     — todo dia às 3h (Argentina): camadas READ-ONLY
+#     (smoke + admin + coverage-gate + unit). Nunca escreve em prod.
+#   • e2e-prod-regression-weekly — semanal (domingo, 4h Argentina): camada `regression`
+#     (jornadas de ESCRITA reais + o novo `anacare-hours-sync.regression.ts`, que sincroniza
+#     o mês corrente do Ana Care de verdade — ver e2e-prod/CLAUDE.md e o cabeçalho do spec).
+#
+# Por que DOIS agendamentos e não um `--project` cravado no CMD do Dockerfile: o guard
+# `src/coverage/monitor-completeness.spec.ts` reprova o build se o CMD filtrar `--project`
+# (proteção contra a regressão real de 2026-07: um `--project=smoke` no Dockerfile fez o
+# schedule silenciosamente parar de rodar jornadas+admin). O CMD do Dockerfile continua
+# `npx playwright test` SEM filtro — `gcloud run jobs execute` sem overrides (rodar manual,
+# ver final deste script) ainda roda a suíte INTEIRA, como sempre. O que MUDA é só o corpo
+# da requisição HTTP de CADA Scheduler: ele passa `overrides.containerOverrides[].args`
+# pra API `:run` do Cloud Run (RunJobRequest), substituindo os args APENAS NAQUELA execução
+# agendada — o Job e a imagem continuam os mesmos, e nada no Dockerfile muda.
+#
+# ⚠️ Achado que este script NÃO resolve sozinho (ver relatório da task que o gerou): se um
+# projeto NOVO for adicionado a `playwright.config.ts` no futuro, ele PRECISA ser adicionado
+# manualmente aos `args` de um dos dois blocos abaixo (ou de ambos) — o guard do Dockerfile
+# só garante que o projeto roda no `gcloud run jobs execute` MANUAL, não em nenhum dos dois
+# schedules. Não há guard automático pra isso ainda.
 #
 # Convenção do monorepo (../CLAUDE.md): prd é gerenciado por gcloud MANUAL, não
 # Terraform (terraform/ cobre só stg). Por isso a "IaC" deste monitor é este script.
@@ -21,8 +43,9 @@ REGION="southamerica-west1"                            # região do Job/Artifact
 SCHEDULER_REGION="southamerica-east1"
 REPO="e2e-prod"                                        # repo Docker do Artifact Registry (confirmado: existe)
 IMAGE_NAME="e2e-prod-smoke"                            # nome da imagem no repo
-JOB_NAME="e2e-prod-smoke"                              # Cloud Run Job
-SCHEDULER_NAME="e2e-prod-smoke-daily"                  # Cloud Scheduler que dispara o job
+JOB_NAME="e2e-prod-smoke"                              # Cloud Run Job (ÚNICO — os dois schedules abaixo disparam o MESMO job)
+SCHEDULER_NAME="e2e-prod-smoke-daily"                  # Cloud Scheduler DIÁRIO — camadas read-only (smoke+admin+coverage-gate+unit)
+SCHEDULER_NAME_REGRESSION="e2e-prod-regression-weekly" # Cloud Scheduler SEMANAL — camada regression (writes reais, ver cabeçalho)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Credenciais do monitor — carregadas do .env.local do operador NO MOMENTO do deploy
@@ -67,9 +90,13 @@ RUN_SA="e2e-prod-runtime@${PROJECT}.iam.gserviceaccount.com"
 PROD_BASE_URL="https://app.enlite.health"
 PROD_API_URL="https://worker-functions-byh3gvl5yq-tl.a.run.app"
 
-# Timezone do negócio (Argentina) — o cron "3h" é 3h local, não UTC.
+# Timezone do negócio (Argentina) — os crons abaixo são hora LOCAL, não UTC.
 TZ_ARG="America/Argentina/Buenos_Aires"
-CRON_SCHEDULE="0 3 * * *"                              # todo dia às 03:00 (horário da Argentina)
+CRON_SCHEDULE="0 3 * * *"                              # DIÁRIO — todo dia às 03:00 (Argentina): smoke+admin+coverage-gate+unit
+# SEMANAL — domingo às 04:00 (Argentina): 1h DEPOIS do diário, de propósito (mesmo Job/mesma
+# SA; nunca duas execuções do MESMO Job simultâneas por acidente de agenda — elas já são
+# independentes por design do Cloud Run Jobs, mas não há motivo pra arriscar).
+CRON_SCHEDULE_REGRESSION="0 4 * * 0"
 
 # Tag imutável (rastreável) + :latest (o job sempre puxa o mais recente do deploy).
 TAG="$(date +%Y%m%d-%H%M%S)"
@@ -157,13 +184,29 @@ gcloud run jobs add-iam-policy-binding "${JOB_NAME}" \
   --role="roles/run.invoker"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# (c) Cloud Scheduler — dispara o Run Job via API REST, às 3h (Argentina)
+# (c) Cloud Scheduler — DOIS jobs, o MESMO Cloud Run Job, escopo diferente por Scheduler
 # ─────────────────────────────────────────────────────────────────────────────
 # Chamamos a API Admin do Cloud Run (:run). Como é *.googleapis.com, o auth correto é
 # OAuth (--oauth-service-account-email), NÃO OIDC. Escopo default cloud-platform.
+#
+# O corpo (`--message-body`) é o `RunJobRequest` da API. `overrides.containerOverrides[].args`
+# substitui os args do CONTAINER só NESTA execução (o Job/imagem/CMD default não mudam — ver
+# cabeçalho do arquivo). Como o Dockerfile não define `ENTRYPOINT` (só `CMD` em exec-form), o
+# Cloud Run trata o `CMD` inteiro como `args` (não há `command`/entrypoint pra separar) —
+# por isso o override abaixo repete `npx playwright test` por completo, não só as flags novas.
+# ⚠️ Isto é inferido da semântica documentada do Cloud Run Jobs + do Dockerfile SEM
+# `ENTRYPOINT` — não foi confirmado rodando (este script não é executado por mim, ver
+# NÃO EXECUTADO no relatório). Antes do primeiro cron real, confirme com
+# `gcloud run jobs describe ${JOB_NAME} --project=${PROJECT} --region=${REGION} --format=json`
+# que o container não tem `command` próprio (senão o override de `args` precisaria mudar).
 RUN_JOB_URI="https://run.googleapis.com/v2/projects/${PROJECT}/locations/${REGION}/jobs/${JOB_NAME}:run"
 
-echo "==> [c] Cloud Scheduler (${SCHEDULER_NAME}) — cron '${CRON_SCHEDULE}' TZ ${TZ_ARG}"
+# ── (c.1) DIÁRIO — smoke + admin + coverage-gate + unit (READ-ONLY; nunca escreve em prod) ──
+# `admin` depende de `admin-setup` (login real) — Playwright SEMPRE roda as dependências de um
+# projeto filtrado, mesmo sem listá-las em `--project` (comportamento nativo do test runner),
+# então não precisamos adicionar `--project=admin-setup` à mão.
+echo "==> [c.1] Cloud Scheduler (${SCHEDULER_NAME}) — DIÁRIO, cron '${CRON_SCHEDULE}' TZ ${TZ_ARG}"
+DAILY_ARGS_JSON='{"overrides":{"containerOverrides":[{"args":["npx","playwright","test","--project=smoke","--project=admin","--project=coverage-gate","--project=unit"]}]}}'
 # Args comuns a create e update. O flag de HEADER difere entre os dois subcomandos:
 # `create http` usa --headers; `update http` usa --update-headers (--headers é inválido lá).
 SCHED_ARGS=(
@@ -174,7 +217,7 @@ SCHED_ARGS=(
   --uri="${RUN_JOB_URI}"
   --http-method=POST
   --oauth-service-account-email="${SCHEDULER_SA}"
-  --message-body='{}'
+  --message-body="${DAILY_ARGS_JSON}"
 )
 # Idempotência: existe? → update. Senão → create.
 if gcloud scheduler jobs describe "${SCHEDULER_NAME}" \
@@ -185,6 +228,39 @@ if gcloud scheduler jobs describe "${SCHEDULER_NAME}" \
 else
   echo "    (não existe → create)"
   gcloud scheduler jobs create http "${SCHEDULER_NAME}" "${SCHED_ARGS[@]}" \
+    --headers="Content-Type=application/json"
+fi
+
+# ── (c.2) SEMANAL — regression (writes reais + anacare-hours-sync, decisão do Gabriel 20/09) ──
+# `overrides.timeout` (Duration da API, campo do NÍVEL `overrides`, não do container) estende o
+# `--task-timeout=900s` (15min) do Job SÓ NESTA execução — o default do Job (usado pelo diário e
+# por `gcloud run jobs execute` manual) continua 900s. Por quê precisa de mais: a suíte
+# `regression` sozinha já levava "~5min a suíte toda" (comentário de `playwright.config.ts`); o
+# novo `anacare-hours-sync.regression.ts` deixa o laço de sync rodar até o fim de propósito
+# (~7min medidos na stage, timeout de teste dimensionado em 10min pra prod real — ver o cabeçalho
+# do spec) e o projeto `regression` tem `retries:1` (warm-up) — no PIOR caso (retry completo desse
+# teste) a run semanal pode passar de 900s. 1800s (30min) dá margem sem comprometer o Job diário,
+# que não usa este override.
+echo "==> [c.2] Cloud Scheduler (${SCHEDULER_NAME_REGRESSION}) — SEMANAL, cron '${CRON_SCHEDULE_REGRESSION}' TZ ${TZ_ARG}"
+REGRESSION_ARGS_JSON='{"overrides":{"containerOverrides":[{"args":["npx","playwright","test","--project=regression"]}],"timeout":"1800s"}}'
+SCHED_ARGS_REGRESSION=(
+  --project="${PROJECT}"
+  --location="${SCHEDULER_REGION}"
+  --schedule="${CRON_SCHEDULE_REGRESSION}"
+  --time-zone="${TZ_ARG}"
+  --uri="${RUN_JOB_URI}"
+  --http-method=POST
+  --oauth-service-account-email="${SCHEDULER_SA}"
+  --message-body="${REGRESSION_ARGS_JSON}"
+)
+if gcloud scheduler jobs describe "${SCHEDULER_NAME_REGRESSION}" \
+     --project="${PROJECT}" --location="${SCHEDULER_REGION}" >/dev/null 2>&1; then
+  echo "    (existe → update)"
+  gcloud scheduler jobs update http "${SCHEDULER_NAME_REGRESSION}" "${SCHED_ARGS_REGRESSION[@]}" \
+    --update-headers="Content-Type=application/json"
+else
+  echo "    (não existe → create)"
+  gcloud scheduler jobs create http "${SCHEDULER_NAME_REGRESSION}" "${SCHED_ARGS_REGRESSION[@]}" \
     --headers="Content-Type=application/json"
 fi
 
@@ -223,5 +299,10 @@ fi
 #
 echo "==> [d] Alerta: TODO — criar notification channel + alert policy (ver bloco comentado acima)."
 
-echo "==> OK. Job '${JOB_NAME}' agendado por '${SCHEDULER_NAME}' às ${CRON_SCHEDULE} (${TZ_ARG})."
-echo "    Rodar manualmente agora:  gcloud run jobs execute ${JOB_NAME} --project=${PROJECT} --region=${REGION}"
+echo "==> OK. Job '${JOB_NAME}' agendado por DOIS Schedulers:"
+echo "    '${SCHEDULER_NAME}' (diário, ${CRON_SCHEDULE} ${TZ_ARG}) → smoke+admin+coverage-gate+unit"
+echo "    '${SCHEDULER_NAME_REGRESSION}' (semanal, ${CRON_SCHEDULE_REGRESSION} ${TZ_ARG}) → regression"
+echo "    Rodar manualmente a suíte INTEIRA agora (sem overrides, todos os projetos):"
+echo "      gcloud run jobs execute ${JOB_NAME} --project=${PROJECT} --region=${REGION}"
+echo "    Rodar manualmente só a regression (mesmos overrides do semanal):"
+echo "      gcloud run jobs execute ${JOB_NAME} --project=${PROJECT} --region=${REGION} --args=npx,playwright,test,--project=regression"
