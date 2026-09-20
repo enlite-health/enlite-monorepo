@@ -1,17 +1,29 @@
 /**
- * monitor-completeness.spec.ts — GUARD de completude do monitor diário.
+ * monitor-completeness.spec.ts — GUARD de completude da IMAGEM do runner (não do schedule).
  *
- * Garante, de forma estrutural, que TODO teste da suíte é executado pelo Cloud Run Job
- * diário (e, por consequência, entra no email — o reporter lista toda a run). Sem este
- * guard, é fácil regredir: alguém cherry-picka um `COPY smoke/` ou filtra `--project=smoke`
- * no Dockerfile e, silenciosamente, jornadas novas param de rodar no schedule (foi o que
- * aconteceu: o email mandava só 52 = smoke+coverage, sem as 4 jornadas + 25 admin).
+ * Garante, de forma estrutural, que TODO spec da suíte ENTRA na imagem (`COPY . .`) e que o
+ * CMD da imagem não filtra `--project` — ou seja, que nada impede um teste novo de rodar
+ * quando o Job é disparado sem overrides (disparo manual, ou um Scheduler que não filtre).
+ * Sem este guard, é fácil regredir: alguém cherry-picka um `COPY smoke/` ou crava
+ * `--project=smoke` DENTRO do CMD do Dockerfile, e aí NENHUM schedule — nem o manual —
+ * conseguiria rodar a suíte inteira (foi o que aconteceu: o email mandava só 52 =
+ * smoke+coverage, sem as 4 jornadas + 25 admin).
+ *
+ * ⚠️ O que este guard NÃO garante mais: que TODO teste roda DIARIAMENTE. Desde a divisão
+ * diário/semanal (commit c22a00bf), o Cloud Scheduler `e2e-prod-smoke-daily` sobrescreve os
+ * `args` do container via `overrides.containerOverrides[]` pra rodar só smoke+admin+
+ * coverage-gate+unit; `regression` passou a ter agendamento PRÓPRIO semanal
+ * (`e2e-prod-regression-weekly`, domingo 4h AR) — ambos em `scripts/deploy-monitor.sh`. Esse
+ * filtro vive no CORPO do Scheduler (fora do Dockerfile), então este guard não o enxerga: um
+ * projeto novo pode ficar de fora dos DOIS agendamentos (nem diário, nem semanal) sem que
+ * este teste acuse nada. Fechar essa lacuna — cruzar `deploy-monitor.sh` × `playwright.
+ * config.ts` — é conserto separado, fora do escopo deste guard hoje.
  *
  * Invariantes exigidas do Dockerfile do runner:
  *   1. Copia a suíte INTEIRA (`COPY . .`), não dirs cherry-picked → todo spec novo entra
  *      na imagem sozinho.
- *   2. O CMD roda `playwright test` SEM filtro `--project` → todo projeto do config roda,
- *      logo todo teste novo em qualquer projeto roda sozinho.
+ *   2. O CMD roda `playwright test` SEM filtro `--project` → o disparo manual (e qualquer
+ *      Scheduler que não sobrescreva `args`) roda todos os projetos do config.
  *
  * Roda no projeto `coverage-gate` (sempre presente no run diário). Se alguém quebrar a
  * automação, o PRÓPRIO monitor fica vermelho — o alarme é o mesmo do resto da suíte.
