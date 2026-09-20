@@ -10,6 +10,13 @@ module.exports = {
     'src/**/*.ts',
     '!src/**/*.d.ts',
     '!src/index.ts',
+    // Scanner de teste (não é `.test.ts`, vive em `__tests__/`, extraído para não duplicar o
+    // resolvedor entre `catalogo-sem-orfao.test.ts` e `catalogo-cobre-consumidor.test.ts`).
+    // Mesmo motivo do `.d.ts`/`index.ts` acima: não é código de produção do módulo de permissões,
+    // e sem esta linha o glob `src/modules/identity/permissions/**/!(index).ts` (D115, abaixo)
+    // o mede contra o piso de 100% pensado para o módulo em si — achado do PR #455 (quality-gate
+    // vermelho: 92,94/79,12/97,96, medido; suíte inteira 646/646, 9543/9543 passando).
+    '!src/modules/identity/permissions/domain/__tests__/permissionCatalogScan.ts',
     // O sync de templates ESCREVE em `message_templates` em produção. Ficava
     // fora do relatório inteiro — não por decisão, mas porque `scripts/` estava
     // fora dos `roots`: cobertura ali era 0% "por natureza", e piso nenhum
