@@ -162,8 +162,9 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   //    e a fixture de paridade do front (seed ∪ descrições) precisa conhecê-las.
   'patient:delete':
     'Purgar paciente de TESTE (só `is_test`; paciente real responde 409). Ferramenta do monitoramento sintético.',
-  'messaging:write':
-    'Editar a configuração de mensageria: templates, mensagens por etapa, plantillas, convite à apresentação.',
+  // `messaging:write` REMOVIDA (change `catalogo-de-permissoes-derivado-do-codigo`, fase 1, F8/F9):
+  // órfã, sem consumidor (`cells.includes`/`perm.require`), e todo grupo que a tinha já possui
+  // `messaging:create`/`messaging:update` explícitos. O sync deprecia no boot seguinte (D115).
   'integration:execute':
     'Disparar integrações à mão (espelho Ana Care, sync do ClickUp). Operação, não leitura.',
   'test_fixtures:execute':
@@ -178,9 +179,8 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'patient_identity:read':
     'Ver QUEM é o paciente: nome, documento, data de nascimento, sexo, telefone e e-mail de contato. '
     + 'Sem ela a lista e a ficha mostram só o operacional (status, caso, funil).',
-  'patient_identity:write':
-    'Editar a identidade do paciente (nome, documento, nascimento, sexo, telefone, e-mail de contato). '
-    + 'Também sobe/troca/apaga a FOTO de perfil (spec 018, PR-4).',
+  // `patient_identity:write` REMOVIDA (change `catalogo-de-permissoes-derivado-do-codigo`, fase 1,
+  // F8/F9): órfã — coberta por `patient_identity:create`/`update` explícitos nos grupos que a tinham.
   'patient_clinical:read':
     'Ver o quadro CLÍNICO do paciente: patologías (CID-11) e diagnóstico legado, nível de dependência, '
     + 'especialidade, dispositivos, observações, CUD, proteção judicial, consentimento e os textos '
@@ -189,34 +189,33 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Editar o quadro clínico do paciente, inclusive registrar e dar baixa em patologías CID-11.',
   'patient_care_team:read':
     'Ver a EQUIPE TRATANTE do paciente: nome, papel, telefone e e-mail dos profissionais — dado de terceiro.',
-  'patient_care_team:write':
-    'Criar, editar e dar baixa em profissionais da equipe tratante do paciente (nome, telefone, '
-    + 'e-mail, especialidade) — nunca DELETE (spec 018, PR-5, US-11).',
+  // `patient_care_team:write` REMOVIDA (change `catalogo-de-permissoes-derivado-do-codigo`, fase 1,
+  // F8/F9): órfã — coberta por `patient_care_team:create`/`update` explícitos nos grupos que a tinham.
   'patient_family:read':
     'Ver FAMILIARES e responsáveis do paciente: nome, vínculo, telefone, e-mail e documento — dado de '
     + 'terceiro, com base legal própria; revela por inferência que há paciente de home care na família.',
-  'patient_family:write':
-    'Editar familiares e responsáveis do paciente (rede de apoio).',
+  // `patient_family:write` REMOVIDA (change `catalogo-de-permissoes-derivado-do-codigo`, fase 1,
+  // F8/F9): órfã — coberta por `patient_family:create`/`update` explícitos nos grupos que a tinham.
   'patient_chat:read':
     'Ver os IDs dos grupos de WhatsApp do caso (família, prestadores). O id é a CHAVE de acesso a uma '
     + 'conversa com contexto clínico — não é dado técnico.',
-  'patient_chat:write':
-    'Vincular e desvincular os grupos de WhatsApp do caso ao paciente.',
+  // `patient_chat:write` REMOVIDA (change `catalogo-de-permissoes-derivado-do-codigo`, fase 1,
+  // F8/F9): órfã — coberta por `patient_chat:create`/`update` explícitos nos grupos que a tinham.
   'patient_coverage:read':
     'Ver a COBERTURA médica do paciente: obra social ou plano informado, número de afiliado e a '
     + 'verificação de cobertura.',
-  'patient_coverage:write':
-    'Editar a cobertura médica do paciente.',
+  // `patient_coverage:write` REMOVIDA (change `catalogo-de-permissoes-derivado-do-codigo`, fase 1,
+  // F8/F9): órfã — coberta por `patient_coverage:create`/`update` explícitos nos grupos que a tinham.
   'patient_address:read':
     'Ver os ENDEREÇOS e a localidade do paciente — inclusive no mapa (a mesma célula vale nos dois '
     + 'lugares: coordenada de domicílio + home care é dado de saúde).',
-  'patient_address:write':
-    'Cadastrar e editar endereços e a logística de acesso do paciente.',
+  // `patient_address:write` REMOVIDA (change `catalogo-de-permissoes-derivado-do-codigo`, fase 1,
+  // F8/F9): órfã — coberta por `patient_address:create`/`update` explícitos nos grupos que a tinham.
   'patient_services:read':
     'Ver os SERVIÇOS CONTRATADOS do paciente: serviço, profissão requerida, prestadores associados, '
     + 'início. O valor-hora tem portão próprio e NÃO vem com esta célula.',
-  'patient_services:write':
-    'Criar, editar e dar baixa em serviços contratados e associar prestadores a eles.',
+  // `patient_services:write` REMOVIDA (change `catalogo-de-permissoes-derivado-do-codigo`, fase 1,
+  // F8/F9): órfã — coberta por `patient_services:create`/`update` explícitos nos grupos que a tinham.
   // 07/09/2026 — era "papel admin"; virou célula de DADO (D286). Não é portão de rota: a
   // rota abre com `patient_services:*`, só o preço depende dela (`contractedServiceHourlyValueAccess`).
   'patient_contract_value:read':
@@ -227,9 +226,9 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Ver o PROJETO TERAPÊUTICO do paciente: versões (major.minor), prazos, autor, serviço contratado '
     + 'escolhido, objetivos e atividades. A síntese clínica, o objetivo geral, o CID-11 e o tipo de patologia '
     + '(capítulo CID-11 derivado dos diagnósticos) só saem com `patient_clinical:read` (célula cumulativa). Dado sensível de saúde.',
-  'patient_therapeutic_project:write':
-    'Criar uma nova versão do projeto terapêutico ("Novo" = major seguinte, "Editar" = minor seguinte) '
-    + 'e anular uma versão. Exige também `patient_clinical:write` — o corpo carrega texto clínico.',
+  // `patient_therapeutic_project:write` REMOVIDA (change `catalogo-de-permissoes-derivado-do-codigo`,
+  // fase 1, F8/F9): órfã — coberta por `patient_therapeutic_project:create`/`update` explícitos nos
+  // grupos que a tinham.
   // `exportGate` fica dentro de closure condicional (`?purpose=export`) em
   // `adminTherapeuticProjectsRoutes.ts` — o scanner de rota não vê essa chamada de
   // `perm.require`, então esta célula só chega ao catálogo por `cellsForaDeRota`.
@@ -238,16 +237,16 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     + '`patient_therapeutic_project:read` — a leitura da versão é pré-requisito do export.',
   'catalog_therapeutic_objectives:read':
     'Ver o catálogo de OBJETIVOS ESPECÍFICOS do projeto terapêutico (lista global, sem dado de paciente).',
-  'catalog_therapeutic_objectives:write':
-    'Adicionar, renomear e desativar objetivos específicos do catálogo (backoffice).',
+  // `catalog_therapeutic_objectives:write` REMOVIDA (change `catalogo-de-permissoes-derivado-do-codigo`,
+  // fase 1, F8/F9): órfã — coberta por `catalog_therapeutic_objectives:create`/`update` explícitos.
   'catalog_therapeutic_activities:read':
     'Ver o catálogo de ROTINA E ATIVIDADES do projeto terapêutico (lista global, sem dado de paciente).',
-  'catalog_therapeutic_activities:write':
-    'Adicionar, renomear e desativar atividades do catálogo (backoffice).',
+  // `catalog_therapeutic_activities:write` REMOVIDA (change `catalogo-de-permissoes-derivado-do-codigo`,
+  // fase 1, F8/F9): órfã — coberta por `catalog_therapeutic_activities:create`/`update` explícitos.
   'catalog_therapeutic_segments:read':
     'Ver o catálogo de SEGMENTOS da Ana Care (US-17, lista global, sem dado de paciente).',
-  'catalog_therapeutic_segments:write':
-    'Adicionar, renomear e desativar segmentos do catálogo (backoffice).',
+  // `catalog_therapeutic_segments:write` REMOVIDA (change `catalogo-de-permissoes-derivado-do-codigo`,
+  // fase 1, F8/F9): órfã — coberta por `catalog_therapeutic_segments:create`/`update` explícitos.
 
   // ── spec 018, PR-8b (ADR-2, SUP-30): split `<recurso>:write` → `<recurso>:create` +
   // `<recurso>:update` para os 19 recursos com `write` LITERAL na rota (20 − permission_management)
