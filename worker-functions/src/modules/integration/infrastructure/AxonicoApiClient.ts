@@ -204,18 +204,35 @@ export class AxonicoApiClient implements IAxonicoApiClient {
 
   // ── Private: login e request com re-login em 401 (um retry, sem loop) ──
 
+  /**
+   * Login é, ele mesmo, uma chamada ao terceiro (`POST /api/login`) — início/fim/duração e erro
+   * carregando status HTTP são logados aqui, no MESMO padrão de `withReauth`/`throwTypedError`
+   * (que só cobrem as chamadas AUTENTICADAS). Nunca loga `username`/`password`/`accessToken`
+   * (credencial, nunca sai em log) nem `matricula` (identifica o profissional logado).
+   */
   private async login(): Promise<AxonicoSession> {
-    const res = await fetch(`${this.baseUrl}/api/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        login_sist: this.username,
-        pass_encrypt_sist: this.password,
-        origen: 'web',
-      }),
-    });
+    const startedAt = Date.now();
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}/api/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          login_sist: this.username,
+          pass_encrypt_sist: this.password,
+          origen: 'web',
+        }),
+      });
+    } catch (err) {
+      const durationMs = Date.now() - startedAt;
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error({ msg: `${TAG} login — falha de rede (sem resposta HTTP)`, durationMs, errorMessage });
+      throw err;
+    }
+    const durationMs = Date.now() - startedAt;
 
     if (!res.ok) {
+      logger.error({ msg: `${TAG} login — HTTP não-2xx`, status: res.status, durationMs });
       throw new Error(`${TAG} login failed — HTTP ${res.status}`);
     }
 
@@ -224,13 +241,16 @@ export class AxonicoApiClient implements IAxonicoApiClient {
     const matricula = parseMatricula(body.medico?.matricula);
 
     if (!accessToken) {
+      logger.error({ msg: `${TAG} login — HTTP 200 mas data.accessToken ausente na resposta`, durationMs });
       throw new Error(`${TAG} login succeeded but data.accessToken was not present`);
     }
     if (matricula === null) {
       // Falha explícita — nunca cai num `matricula` cravado (risco de faturamento, design.md §F1).
+      logger.error({ msg: `${TAG} login — HTTP 200 mas medico.matricula ausente na resposta`, durationMs });
       throw new Error(`${TAG} login succeeded but medico.matricula was not present`);
     }
 
+    logger.info({ msg: `${TAG} login — OK`, durationMs });
     const session: AxonicoSession = { accessToken, matricula };
     this.session = session;
     return session;
@@ -254,6 +274,11 @@ export class AxonicoApiClient implements IAxonicoApiClient {
    * entre o processamento e a resposta; a borda pode devolver 401 com o PUT já aplicado) —
    * replayar arriscaria faturar duas vezes e registrar uma. LEITURA continua replayando (login,
    * `findPatientByDni`, `checkExistingComprobante`, `getCantidadMaxPrestaciones`).
+   *
+   * Também é o ponto ÚNICO de instrumentação de TODA chamada autenticada (as 4 acima) — início/fim
+   * com duração (`durationMs`), e o erro (quando houver) sempre carrega `method`+`path`+`status`,
+   * nunca só "falhou". `path` já identifica QUAL chamada é essa no log — nunca corpo da
+   * requisição/resposta (poderia levar `historia_clinica`/`nro_cobertura` do Axonico).
    */
   private async withReauth<T>(
     method: string,
@@ -263,42 +288,93 @@ export class AxonicoApiClient implements IAxonicoApiClient {
     options: { allowReplay?: boolean } = {}
   ): Promise<T> {
     const { allowReplay = true } = options;
+    const startedAt = Date.now();
     const session = await this.ensureSession();
-    let res = await fn(session);
+
+    let res: Response;
+    try {
+      res = await fn(session);
+    } catch (err) {
+      const durationMs = Date.now() - startedAt;
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error({ msg: `${TAG} falha de rede (sem resposta HTTP)`, method, path, durationMs, errorMessage });
+      throw err;
+    }
 
     if (res.status === 401) {
-      logger.warn({ msg: `${TAG} 401 recebido — disparando re-login`, path, allowReplay });
+      logger.warn({ msg: `${TAG} 401 recebido — disparando re-login`, method, path, durationMs: Date.now() - startedAt, allowReplay });
       this.session = null;
 
       if (!allowReplay) {
         // Sessão já invalidada acima (próxima chamada — de qualquer método — relogará), mas ESTA
         // escrita não é repetida: ver AxonicoIndeterminateWriteError.
+        logger.error({
+          msg: `${TAG} 401 numa escrita — estado INDETERMINADO, não repetida automaticamente`,
+          method,
+          path,
+          durationMs: Date.now() - startedAt,
+        });
         throw new AxonicoIndeterminateWriteError(method, path);
       }
 
       const reloggedSession = await this.login();
-      res = await fn(reloggedSession);
+      try {
+        res = await fn(reloggedSession);
+      } catch (err) {
+        const durationMs = Date.now() - startedAt;
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        logger.error({ msg: `${TAG} falha de rede (sem resposta HTTP) — após re-login`, method, path, durationMs, errorMessage });
+        throw err;
+      }
 
       if (res.status === 401) {
+        logger.error({ msg: `${TAG} 401 persistente após re-login — sessão não recuperada`, method, path, durationMs: Date.now() - startedAt });
         throw new AxonicoAuthError(method, path);
       }
     }
 
+    const durationMs = Date.now() - startedAt;
+
     if (!res.ok) {
-      await this.throwTypedError(method, path, res);
+      await this.throwTypedError(method, path, res, durationMs);
     }
 
+    logger.info({ msg: `${TAG} chamada concluída`, method, path, status: res.status, durationMs });
     return parseSuccess(res);
   }
 
-  private async throwTypedError(method: string, path: string, res: Response): Promise<never> {
+  /**
+   * Erro do terceiro — SEMPRE carrega `status` HTTP e o código/mensagem que o Axonico devolveu
+   * (`data.errors`/`data.message`), que é o "por quê" que o operador precisa (item 4 do
+   * contrato). Loga ANTES de lançar — o erro tipado segue para o use case/controller decidir o
+   * que fazer, mas o rastro no log já existe mesmo se o chamador não relogar o erro.
+   */
+  private async throwTypedError(method: string, path: string, res: Response, durationMs: number): Promise<never> {
     const body = (await res.json().catch(() => ({}))) as AxonicoErrorResponseBody;
 
     if (res.status === 422) {
-      throw new AxonicoValidationError(method, path, body.data?.errors ?? {});
+      const fieldErrors = body.data?.errors ?? {};
+      logger.error({
+        msg: `${TAG} erro do terceiro — HTTP 422 (validação)`,
+        method,
+        path,
+        status: res.status,
+        durationMs,
+        fieldErrorKeys: Object.keys(fieldErrors),
+      });
+      throw new AxonicoValidationError(method, path, fieldErrors);
     }
     // 400/403/412/500 — erro de negócio/servidor (data.message).
-    throw new AxonicoBusinessError(method, path, res.status, body.data?.message ?? `HTTP ${res.status}`);
+    const message = body.data?.message ?? `HTTP ${res.status}`;
+    logger.error({
+      msg: `${TAG} erro do terceiro — HTTP não-2xx (negócio/servidor)`,
+      method,
+      path,
+      status: res.status,
+      durationMs,
+      axonicoMessage: message,
+    });
+    throw new AxonicoBusinessError(method, path, res.status, message);
   }
 
   /**

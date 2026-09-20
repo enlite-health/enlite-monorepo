@@ -17,6 +17,18 @@
 
 // ── Imports ───────────────────────────────────────────────────────
 
+// Mock do logger — mesmo padrão de LancarPrestacaoAxonicoUseCase.test.ts/AxonicoApiClient.test.ts.
+// Usado pela suíte de observabilidade (auditoria D384, 20/09/2026): prova que o boundary HTTP loga
+// o veredito da requisição (nível coerente com a severidade real, não só o status HTTP).
+jest.mock('@shared/logging', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+}));
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { logger: mockLogger } = require('@shared/logging') as {
+  logger: { info: jest.Mock; warn: jest.Mock; error: jest.Mock };
+};
+
 import type { Request, Response } from 'express';
 import { LancarPrestacaoAxonicoController } from '../LancarPrestacaoAxonicoController';
 import {
@@ -89,7 +101,8 @@ describe('LancarPrestacaoAxonicoController.handle', () => {
     expect(mockExecute).not.toHaveBeenCalled();
   });
 
-  it('corpo COM patientId e SEM documentNumber → 400, use case não chamado (o campo antigo não funciona mais sozinho)', async () => {
+  it('corpo COM patientId e SEM documentNumber → 400, use case não chamado (o campo antigo não funciona mais sozinho) — e loga warn só com os NOMES dos campos inválidos, nunca o corpo', async () => {
+    mockLogger.warn.mockClear();
     const mockExecute = jest.fn();
     const { res, status, json } = makeRes();
     const bodyComPatientIdAntigo = {
@@ -106,6 +119,14 @@ describe('LancarPrestacaoAxonicoController.handle', () => {
       expect.objectContaining({ success: false, error: 'Invalid request body' }),
     );
     expect(mockExecute).not.toHaveBeenCalled();
+
+    // Teste que morre (item 5): corpo inválido loga warn com os campos que falharam — nunca o
+    // corpo (que poderia carregar um documentNumber malformado, ainda assim PII).
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ invalidFields: expect.arrayContaining(['documentNumber']) }),
+    );
+    const [loggedArg] = mockLogger.warn.mock.calls[0];
+    expect(JSON.stringify(loggedArg)).not.toContain('11111111-1111-1111-1111-111111111111');
   });
 
   it('corpo COM patientId E documentNumber → aceito, patientId é ignorado (não chega ao use case)', async () => {
@@ -188,7 +209,9 @@ describe('LancarPrestacaoAxonicoController.handle', () => {
     expect(json).toHaveBeenCalledWith({ success: true, data: result });
   });
 
-  it('erro do use case → httpStatus traduzido por mapError', async () => {
+  it('erro do use case → httpStatus traduzido por mapError — e loga warn (4xx comum) com errorType+httpStatus', async () => {
+    mockLogger.warn.mockClear();
+    mockLogger.error.mockClear();
     const mockExecute = jest.fn().mockRejectedValue(new AxonicoPacienteNaoEncontradoError());
     const { res, status, json } = makeRes();
 
@@ -197,6 +220,26 @@ describe('LancarPrestacaoAxonicoController.handle', () => {
     expect(status).toHaveBeenCalledWith(404);
     expect(json).toHaveBeenCalledWith(
       expect.objectContaining({ success: false, error: 'AxonicoPacienteNaoEncontradoError' }),
+    );
+
+    // 404 é 4xx comum (não concorrente/indeterminado) — nível warn, não error.
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ errorType: 'AxonicoPacienteNaoEncontradoError', httpStatus: 404 }),
+    );
+    expect(mockLogger.error).not.toHaveBeenCalled();
+  });
+
+  it('erro >=500 do use case (ex.: AxonicoBusinessError, 502) → loga ERROR, não warn', async () => {
+    mockLogger.warn.mockClear();
+    mockLogger.error.mockClear();
+    const mockExecute = jest.fn().mockRejectedValue(new AxonicoBusinessError('PUT', '/api/comprobante', 500, 'falha no Axonico'));
+    const { res, status, json } = makeRes();
+
+    await makeController(mockExecute).handle(makeReq(VALID_BODY), res);
+
+    expect(status).toHaveBeenCalledWith(502);
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ errorType: 'AxonicoBusinessError', httpStatus: 502 }),
     );
   });
 
@@ -239,6 +282,12 @@ describe('LancarPrestacaoAxonicoController.handle', () => {
         comprovanteRecemFaturado: { numeroComprobante: 'CMP-RECEM-FATURADO', codAutorizacion: 'AUT-RECEM-FATURADO' },
       },
     });
+
+    // Teste que morre (item 5): 409 é 4xx, mas concorrência de faturamento EXIGE ação humana —
+    // tem que logar em `error`, nunca `warn` (nível coerente com a gravidade real, não o HTTP cru).
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ errorType: 'AxonicoLancamentoConcorrenteError', httpStatus: 409 }),
+    );
   });
 });
 

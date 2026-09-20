@@ -24,6 +24,7 @@
 
 import { Request, Response } from 'express';
 import { z } from 'zod';
+import { logger } from '@shared/logging';
 import { LancarPrestacaoAxonicoUseCase } from '../../application/LancarPrestacaoAxonicoUseCase';
 import {
   PacienteSemDniError,
@@ -65,6 +66,8 @@ const LoteBodySchema = z.object({
 
 type LancamentoBody = z.infer<typeof LancamentoBodySchema>;
 
+const TAG = '[LancarPrestacaoAxonicoController]';
+
 /** Um item do relatório do lote — expõe SEMPRE o que o operador precisa saber se já faturou
  *  (D contrato F4 item 3): `duplicado` tem que carregar `numeroComprobante`/`codAutorizacion`
  *  (nulos quando o dedupe foi remoto), nunca só um booleano genérico. */
@@ -85,12 +88,44 @@ export class LancarPrestacaoAxonicoController {
   async handle(req: Request, res: Response): Promise<void> {
     const parsed = LancamentoBodySchema.safeParse(req.body ?? {});
     if (!parsed.success) {
+      // Nunca logar req.body (pode carregar documentNumber = DNI) — só os NOMES dos campos que
+      // falharam a validação Zod, nunca o valor recebido.
+      logger.warn({
+        msg: `${TAG} corpo inválido — recusado antes de qualquer chamada ao use case`,
+        invalidFields: Object.keys(parsed.error.flatten().fieldErrors),
+      });
       res.status(400).json({ success: false, error: 'Invalid request body', details: parsed.error.flatten() });
       return;
     }
 
+    logger.info({
+      msg: `${TAG} requisição recebida`,
+      serviceType: parsed.data.serviceType,
+      serviceDate: parsed.data.serviceDate,
+      hours: parsed.data.hours,
+    });
+
     const outcome = await this.executarUm(parsed.data);
     if (outcome.status === 'erro') {
+      // errorType/httpStatus/message já são seguros (testes da suíte do use case garantem que a
+      // mensagem nunca interpola o DNI) — o boundary HTTP loga o VEREDITO da requisição, não
+      // repete o detalhe de guard (já logado no use case/client).
+      const logFields = {
+        msg: `${TAG} requisição recusada`,
+        errorType: outcome.errorType,
+        httpStatus: outcome.httpStatus,
+        serviceType: parsed.data.serviceType,
+        serviceDate: parsed.data.serviceDate,
+      };
+      // >=500 é falha do terceiro/nossa (ver AxonicoApiClient); os dois nomeados abaixo são 4xx que
+      // MESMO ASSIM exigem ação humana (faturamento em estado concorrente/indeterminado) — nunca
+      // "esperado-mas-atípico" como uma validação comum.
+      const exigeAcaoMesmoSendo4xx = new Set(['AxonicoLancamentoConcorrenteError', 'AxonicoIndeterminateWriteError']);
+      if (outcome.httpStatus >= 500 || exigeAcaoMesmoSendo4xx.has(outcome.errorType)) {
+        logger.error(logFields);
+      } else {
+        logger.warn(logFields);
+      }
       res.status(outcome.httpStatus).json({
         success: false,
         error: outcome.errorType,
@@ -107,9 +142,15 @@ export class LancarPrestacaoAxonicoController {
   async handleLote(req: Request, res: Response): Promise<void> {
     const parsed = LoteBodySchema.safeParse(req.body ?? {});
     if (!parsed.success) {
+      logger.warn({
+        msg: `${TAG} lote — corpo inválido, recusado antes de qualquer chamada ao use case`,
+        invalidFields: Object.keys(parsed.error.flatten().fieldErrors),
+      });
       res.status(400).json({ success: false, error: 'Invalid request body', details: parsed.error.flatten() });
       return;
     }
+
+    logger.info({ msg: `${TAG} lote recebido`, totalItens: parsed.data.itens.length });
 
     const resultados: LoteItemResultado[] = [];
     // Laço com try/catch POR ITEM (copiado o DESENHO de BackfillWorkerMirrorUseCase.execute,
@@ -140,6 +181,16 @@ export class LancarPrestacaoAxonicoController {
       duplicado: resultados.filter((r) => r.status === 'duplicado').length,
       erro: resultados.filter((r) => r.status === 'erro').length,
     };
+
+    // Sucesso também loga (item do lote com 0 erro é sucesso, não "nada aconteceu") — nível
+    // depende do resultado: lote com pelo menos 1 erro é warn (operador precisa olhar quais
+    // índices falharam, já reportados em `resultados`, na resposta HTTP), zero erros é info.
+    const loteConcluidoFields = { msg: `${TAG} lote concluído`, ...summary };
+    if (summary.erro > 0) {
+      logger.warn(loteConcluidoFields);
+    } else {
+      logger.info(loteConcluidoFields);
+    }
 
     res.status(200).json({ success: true, data: { summary, resultados } });
   }

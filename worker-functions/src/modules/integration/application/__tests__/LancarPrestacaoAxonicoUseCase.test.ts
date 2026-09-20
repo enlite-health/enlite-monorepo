@@ -104,6 +104,7 @@ function makeLancamentoRepository(
 describe('LancarPrestacaoAxonicoUseCase', () => {
   describe('caminho feliz — envio com sucesso', () => {
     it('valida documentNumber, confere teto, dedupe local e remoto, envia, e grava status=enviado com patientId=null', async () => {
+      mockLogger.info.mockClear();
       const axonicoApiClient = makeAxonicoApiClient();
       const lancamentoRepository = makeLancamentoRepository();
       const useCase = new LancarPrestacaoAxonicoUseCase(axonicoApiClient, lancamentoRepository);
@@ -139,11 +140,30 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
         status: 'enviado',
         errorMessage: null,
       });
+
+      // Sucesso também loga (requisito duro do audit D384, 20/09/2026) — nível info, carrega
+      // insertedId (a linha gravada — correlacionável no banco) e NUNCA documentNumber/patientId.
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          insertedId: 'lanc-1',
+          numeroComprobante: 'nc-1',
+          codAutorizacion: 'ca-1',
+          serviceType: 'AT',
+          serviceDate: '2026-09-18',
+          hours: 4,
+        }),
+      );
+      const successLogCall = mockLogger.info.mock.calls.find(([arg]) => /sucesso/i.test(String(arg.msg)));
+      expect(successLogCall).toBeDefined();
+      expect(successLogCall![0]).not.toHaveProperty('documentNumber');
+      expect(successLogCall![0]).not.toHaveProperty('patientId');
+      expect(JSON.stringify(successLogCall![0])).not.toContain(DNI);
     });
   });
 
   describe('guard 0 — documentNumber presente e válido (sem consulta a patients, 19/09/2026)', () => {
-    it('documentNumber ausente (string vazia): recusa com PacienteSemDniError(reason=\'no_document\') sem nenhuma chamada ao IAxonicoApiClient', async () => {
+    it('documentNumber ausente (string vazia): recusa com PacienteSemDniError(reason=\'no_document\') sem nenhuma chamada ao IAxonicoApiClient — e loga warn sem o valor recebido', async () => {
+      mockLogger.warn.mockClear();
       const axonicoApiClient = makeAxonicoApiClient();
       const lancamentoRepository = makeLancamentoRepository();
       const useCase = new LancarPrestacaoAxonicoUseCase(axonicoApiClient, lancamentoRepository);
@@ -160,6 +180,9 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
       expect(axonicoApiClient.checkExistingComprobante).toHaveBeenCalledTimes(0);
       expect(axonicoApiClient.submitComprobante).toHaveBeenCalledTimes(0);
       expect(lancamentoRepository.insert).toHaveBeenCalledTimes(0);
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(expect.objectContaining({ reason: 'ausente' }));
+      expect(JSON.stringify(mockLogger.warn.mock.calls[0][0])).not.toContain(DNI);
     });
 
     it("documentNumber é a string literal 'null' (medido em produção, 19 pacientes): recusa com PacienteSemDniError(reason='invalid_document'), sem nenhuma chamada ao IAxonicoApiClient", async () => {
@@ -220,7 +243,8 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
       expect(lancamentoRepository.insert).toHaveBeenCalledTimes(0);
     });
 
-    it('hours=0: recusa com HoraQuebradaError sem chamada ao IAxonicoApiClient', async () => {
+    it('hours=0: recusa com HoraQuebradaError sem chamada ao IAxonicoApiClient — e loga warn com hours', async () => {
+      mockLogger.warn.mockClear();
       const axonicoApiClient = makeAxonicoApiClient();
       const lancamentoRepository = makeLancamentoRepository();
       const useCase = new LancarPrestacaoAxonicoUseCase(axonicoApiClient, lancamentoRepository);
@@ -228,6 +252,8 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
       await expect(useCase.execute(makeInput({ hours: 0 }))).rejects.toThrow(HoraQuebradaError);
       expect(axonicoApiClient.getCantidadMaxPrestaciones).toHaveBeenCalledTimes(0);
       expect(lancamentoRepository.insert).toHaveBeenCalledTimes(0);
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(expect.objectContaining({ hours: 0, serviceType: 'AT' }));
     });
   });
 
@@ -382,7 +408,8 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
   });
 
   describe('guard 4a — tipo sem mapeamento (CAREGIVER, D372)', () => {
-    it('CAREGIVER: recusa com AxonicoUnmappedServiceTypeError antes de qualquer chamada de rede, exceto getCantidadMaxPrestaciones (guard 3 — teto —, que roda antes)', async () => {
+    it('CAREGIVER: recusa com AxonicoUnmappedServiceTypeError antes de qualquer chamada de rede, exceto getCantidadMaxPrestaciones (guard 3 — teto —, que roda antes) — e loga warn com serviceType', async () => {
+      mockLogger.warn.mockClear();
       const axonicoApiClient = makeAxonicoApiClient();
       const lancamentoRepository = makeLancamentoRepository();
       const useCase = new LancarPrestacaoAxonicoUseCase(axonicoApiClient, lancamentoRepository);
@@ -397,6 +424,8 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
       expect(axonicoApiClient.submitComprobante).toHaveBeenCalledTimes(0);
       // Tipo sem mapeamento não grava linha (não houve tentativa real contra o Axonico).
       expect(lancamentoRepository.insert).toHaveBeenCalledTimes(0);
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(expect.objectContaining({ serviceType: 'CAREGIVER' }));
     });
   });
 
