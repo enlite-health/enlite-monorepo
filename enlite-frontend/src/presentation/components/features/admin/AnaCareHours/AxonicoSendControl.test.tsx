@@ -3,17 +3,27 @@
  * NÃO TIVER DNI, ao clicar em Enviar, perguntar e registrar; depois disso não perguntar mais").
  * MESMO padrão de `DayGroup.test.tsx` (render direto, serviços mockados via factory).
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { AxonicoSendControl } from './AxonicoSendControl';
 import type { AxonicoComprobanteService, EnviarComprobanteAxonicoResult } from './AxonicoComprobanteService';
 import type { AnaCarePatientDocumentService, RegisterAnaCarePatientDocumentResult } from './AnaCarePatientDocumentService';
 import { AnaCarePatientDocumentServiceError } from './AnaCarePatientDocumentService';
 import type { AxonicoBlockReason } from './selectors';
+import type { AuthzContract } from '@domain/entities/Authz';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, opts?: Record<string, unknown>) => (opts ? `${key}|${JSON.stringify(opts)}` : key) }),
 }));
+
+/** Contrato ABAC pronto, com o engine LIGADO (D268/D269) e só as células listadas — mesmo molde de `TherapeuticProjectDrawer.test.tsx`. */
+function comEnforcement(permissions: string[], enforcement: AuthzContract['enforcement'] = 'on'): void {
+  useAdminAuthStore.setState({
+    authzStatus: 'ready',
+    authz: { uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {}, enforcement } as AuthzContract,
+  });
+}
 
 const COMMAND = { documentNumber: '', documentType: undefined, serviceDate: '2026-08-14', hours: 8 };
 const RECORD: RegisterAnaCarePatientDocumentResult['record'] = {
@@ -39,6 +49,10 @@ function makePatientDocumentService(overrides: Partial<AnaCarePatientDocumentSer
 }
 
 describe('AxonicoSendControl — modal de documento', () => {
+  beforeEach(() => {
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+  });
+
   it('POSITIVO — motivo missingDocument sozinho: botão HABILITADO, clique abre o modal (não envia direto)', () => {
     const enviarComprobante = vi.fn();
     render(
@@ -205,5 +219,86 @@ describe('AxonicoSendControl — modal de documento', () => {
     expect(screen.queryByTestId('anacare-hours-axonico-document-modal')).not.toBeInTheDocument();
     expect(registerDocument).not.toHaveBeenCalled();
     expect(enviarComprobante).not.toHaveBeenCalled();
+  });
+
+  // ── Gate `integration:execute` (D116) — achado do gate de revisão: o "Enviar" chama a MESMA
+  // rota (`POST /integrations/axonico/comprobante`) que o backend protege com
+  // `perm.require('integration', 'execute')`; sem o gate no front, quem não tem a célula via o
+  // botão normal e levava 403 cru. `ActionButton` mode='hide' default (D269): sem a célula, SOME.
+  describe('🔒 gate `integration:execute` — "Enviar" some sem a célula (mesmo mecanismo do export de PR-7)', () => {
+    it('engine LIGADO e sem a célula → o botão SOME (não fica cinza)', () => {
+      comEnforcement([]);
+      render(
+        <AxonicoSendControl
+          date="2026-08-14"
+          service={makeAxonicoService()}
+          patientDocumentService={makePatientDocumentService()}
+          anaCarePatientId="ac-paciente-1"
+          eligibility={eligibility([])}
+          command={{ ...COMMAND, documentNumber: '30111222' }}
+          disableActions={false}
+        />,
+      );
+
+      expect(screen.queryByTestId('anacare-hours-send-day-2026-08-14')).not.toBeInTheDocument();
+    });
+
+    it('🔴 a célula do PAI (`anacare_hours:validate`) não vale — a permissão é do CONTAINER `integration`', () => {
+      comEnforcement(['anacare_hours:validate']);
+      render(
+        <AxonicoSendControl
+          date="2026-08-14"
+          service={makeAxonicoService()}
+          patientDocumentService={makePatientDocumentService()}
+          anaCarePatientId="ac-paciente-1"
+          eligibility={eligibility([])}
+          command={{ ...COMMAND, documentNumber: '30111222' }}
+          disableActions={false}
+        />,
+      );
+
+      expect(screen.queryByTestId('anacare-hours-send-day-2026-08-14')).not.toBeInTheDocument();
+    });
+
+    it('com a célula `integration:execute` o botão existe e continua enviando normalmente', () => {
+      comEnforcement(['integration:execute']);
+      const enviarComprobante = vi.fn<[], Promise<EnviarComprobanteAxonicoResult>>().mockResolvedValue({
+        status: 'enviado',
+        numeroComprobante: 'C-1',
+        codAutorizacion: 'A-1',
+      });
+      render(
+        <AxonicoSendControl
+          date="2026-08-14"
+          service={makeAxonicoService({ enviarComprobante })}
+          patientDocumentService={makePatientDocumentService()}
+          anaCarePatientId="ac-paciente-1"
+          eligibility={eligibility([])}
+          command={{ ...COMMAND, documentNumber: '30111222' }}
+          disableActions={false}
+        />,
+      );
+
+      expect(screen.getByTestId('anacare-hours-send-day-2026-08-14')).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('anacare-hours-send-day-2026-08-14'));
+      expect(enviarComprobante).toHaveBeenCalledWith({ documentNumber: '30111222', documentType: undefined, serviceDate: '2026-08-14', hours: 8 });
+    });
+
+    it('engine DESLIGADO: o botão existe mesmo sem célula nenhuma (freio de rollout, D268)', () => {
+      comEnforcement([], 'off');
+      render(
+        <AxonicoSendControl
+          date="2026-08-14"
+          service={makeAxonicoService()}
+          patientDocumentService={makePatientDocumentService()}
+          anaCarePatientId="ac-paciente-1"
+          eligibility={eligibility([])}
+          command={{ ...COMMAND, documentNumber: '30111222' }}
+          disableActions={false}
+        />,
+      );
+
+      expect(screen.getByTestId('anacare-hours-send-day-2026-08-14')).toBeInTheDocument();
+    });
   });
 });

@@ -342,8 +342,11 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
         const s2 = await c.query(`SELECT iam.grant_country($1, 'BR', 'iam-e2e de novo') AS id`, [id]);
         expect(s1.rows[0].id).toBe(s2.rows[0].id);
         await c.query(`SELECT iam.add_member($1, $2)`, [id, U.ana]);
+        // `vacancy:write` foi depreciada pela migration 453 (SUP-31/ADR-2: sem checagem literal
+        // de `:write` em código de produção — a rota já pede `create`/`update` desde o PR-8b.4) —
+        // conceder a célula viva equivalente, não a descontinuada.
         await c.query(
-          `SELECT iam.set_group_permissions($1, ARRAY(SELECT id FROM iam.permissions WHERE resource='vacancy' AND action IN ('read','write')), 'setup')`,
+          `SELECT iam.set_group_permissions($1, ARRAY(SELECT id FROM iam.permissions WHERE resource='vacancy' AND action IN ('read','create','update')), 'setup')`,
           [id],
         );
         return id;
@@ -353,7 +356,14 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
       const member = await pool.query(`SELECT assigned_by FROM iam.user_groups WHERE group_id = $1 AND user_id = $2 AND removed_at IS NULL`, [newGroupId, U.ana]);
       expect(member.rows[0].assigned_by).toBe(U.gestor);
       const changes = await pool.query(`SELECT op, changed_by FROM iam.permission_group_changes WHERE group_id = $1`, [newGroupId]);
-      expect(changes.rows).toEqual([{ op: 'add', changed_by: U.gestor }, { op: 'add', changed_by: U.gestor }]);
+      // 3 linhas, não 2: `set_group_permissions` grava uma linha por permission_id do diff, e a
+      // troca de `vacancy:write` (1 célula) por `vacancy:create`+`vacancy:update` (2 células,
+      // migration 453) soma 3 ids no total (read+create+update), não 2 (read+write).
+      expect(changes.rows).toEqual([
+        { op: 'add', changed_by: U.gestor },
+        { op: 'add', changed_by: U.gestor },
+        { op: 'add', changed_by: U.gestor },
+      ]);
       const ana = await eff(U.ana);
       expect(ana.c).toEqual(expect.arrayContaining(['AR', 'BR']));
     });
