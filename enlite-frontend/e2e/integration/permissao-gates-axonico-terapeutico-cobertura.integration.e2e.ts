@@ -204,7 +204,7 @@ function defaultWeekStart(): string {
 }
 async function irParaSemanaDe(page: Page, dateIso: string): Promise<void> {
   const alvo = startOfWeekMonday(dateIso);
-  let atual = defaultWeekStart();
+  const atual = defaultWeekStart();
   const delta = weeksBetweenMondays(atual, alvo);
   if (delta > 0) {
     for (let i = 0; i < delta; i += 1) await page.getByTestId('anacare-hours-week-next').click();
