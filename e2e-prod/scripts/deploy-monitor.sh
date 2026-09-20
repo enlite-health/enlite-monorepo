@@ -189,38 +189,13 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# (d) ALERTA — TODO: notificar quando o job falhar (execuções com resultado 'failed')
+# (d) ALERTA — já existe, vive no Terraform (não aqui)
 # ─────────────────────────────────────────────────────────────────────────────
-# O valor do monitor é o alerta: um smoke que falha às 3h e ninguém vê não protege nada.
-# Deixado como TODO porque falta a DECISÃO do canal (email vs Slack) — o user preenche.
-#
-#   # 1) Canal de notificação (escolher UM — email OU Slack/webhook):
-#   #    TODO(user): trocar o e-mail / configurar o webhook do Slack.
-#   # gcloud beta monitoring channels create \
-#   #   --project="${PROJECT}" \
-#   #   --display-name="e2e-prod alerts" \
-#   #   --type=email \
-#   #   --channel-labels=email_address=TODO@enlite.health
-#   # → anote o CHANNEL_ID retornado (projects/${PROJECT}/notificationChannels/NNN)
-#
-#   # 2) Alert policy sobre execuções falhas do Cloud Run Job.
-#   #    Métrica: run.googleapis.com/job/completed_execution_count
-#   #             filtrada por result="failed" e job_name="${JOB_NAME}".
-#   #    Dispara se count > 0 na janela do run diário.
-#   # gcloud alpha monitoring policies create \
-#   #   --project="${PROJECT}" \
-#   #   --notification-channels="projects/${PROJECT}/notificationChannels/TODO_CHANNEL_ID" \
-#   #   --display-name="e2e-prod smoke FALHOU (prod)" \
-#   #   --condition-display-name="job completed_execution_count result=failed > 0" \
-#   #   --condition-filter='metric.type="run.googleapis.com/job/completed_execution_count"
-#   #        AND resource.type="cloud_run_job"
-#   #        AND resource.labels.job_name="'"${JOB_NAME}"'"
-#   #        AND metric.labels.result="failed"' \
-#   #   --condition-threshold-value=0 \
-#   #   --condition-threshold-comparison=COMPARISON_GT \
-#   #   --condition-threshold-duration=0s \
-#   #   --combiner=OR
-#
+# google_monitoring_alert_policy.e2e_prod_smoke_execution_failed em
+# terraform/environments/prd/events.tf reusa o canal já existente
+# (var.events_notification_channel, e-mail gabriel.g.stein@gmail.com). NÃO criar
+# canal nem policy por `gcloud` aqui: recurso feito à mão em prd vira desvio de
+# estado contra o Terraform (regra dura do monorepo) e não fecha até estar no HCL.
 echo "==> [d] Alerta: TODO — criar notification channel + alert policy (ver bloco comentado acima)."
 
 echo "==> OK. Job '${JOB_NAME}' agendado por '${SCHEDULER_NAME}' às ${CRON_SCHEDULE} (${TZ_ARG})."

@@ -470,3 +470,88 @@ resource "google_monitoring_alert_policy" "anacare_mirror_stuck" {
 
   depends_on = [google_logging_metric.anacare_mirror_stuck]
 }
+
+# ---------------------------------------------------------------------------
+# Monitor diário e2e-prod: alerta de FALHA DE EXECUÇÃO do Cloud Run Job
+# ---------------------------------------------------------------------------
+# Hoje, se o Job `e2e-prod-smoke` (roda às 3h AR) falha, ninguém é avisado. Ficou
+# mais grave em 20/09/2026: esse mesmo job passou a executar também a rotina que
+# sincroniza o Ana Care Horas — falha no meio dela deixa o mês parcial em prod, e
+# sem tripwire ninguém percebe (foi essa lacuna, sem esta policy, que custou
+# semanas com agosto/2026 fechado em 40%).
+#
+# Métrica NATIVA do Cloud Run Job (não é log-based, não precisa de
+# google_logging_metric nem depends_on): run.googleapis.com/job/completed_execution_count,
+# kind DELTA, resource cloud_run_job (labels project_id/job_name/location), com o
+# label de métrica `result`. Confirmado em 20/09/2026 via
+# docs.cloud.google.com/monitoring/api/metrics_gcp_p_z (#run/job/completed_execution_count)
+# e docs.cloud.google.com/monitoring/api/resources (#tag_cloud_run_job).
+resource "google_monitoring_alert_policy" "e2e_prod_smoke_execution_failed" {
+  project      = var.project_id
+  display_name = "[URGENTE] Monitor diário e2e-prod-smoke falhou (execução do Cloud Run Job)"
+  combiner     = "OR"
+  enabled      = true
+  severity     = "CRITICAL"
+
+  notification_channels = [var.events_notification_channel]
+
+  documentation {
+    mime_type = "text/markdown"
+    subject   = "Execução do monitor diário e2e-prod-smoke falhou"
+    content   = <<-EOT
+      ## Impacto
+      O Cloud Run Job `e2e-prod-smoke` roda todo dia às 3h (horário AR) e, desde 20/09/2026,
+      essa mesma execução também é a rotina que sincroniza o **Ana Care Horas** do mês. Se o
+      job falha — por exemplo por estourar o timeout com a sincronização pela metade — o mês
+      fica **parcial em produção**, e sem este alerta ninguém percebe. Foi exatamente esse tipo
+      de falha silenciosa que custou semanas com agosto/2026 fechado em 40%.
+
+      ## O que este alerta afirma
+      Existe pelo menos uma execução do job `e2e-prod-smoke` (projeto `enlite-prd`, região
+      `southamerica-west1`) que terminou com `result="failed"` na métrica nativa
+      `run.googleapis.com/job/completed_execution_count`.
+
+      ## O que fazer ao receber
+      1. Conferir a execução no Cloud Run: `gcloud run jobs executions list --job=e2e-prod-smoke
+         --region=southamerica-west1 --project=enlite-prd` e os logs da execução que falhou.
+      2. **Rodar a sincronização do Ana Care Horas até o fim.** O mês parcial NÃO se conserta
+         sozinho só porque o job roda de novo amanhã — a lacuna de hoje fica aberta até alguém
+         completar o sync manualmente.
+
+      ## O que este alerta NÃO cobre
+      Ele cobre a FALHA DO JOB, não a completude da sincronização. Uma execução que termina com
+      `result="succeeded"` ainda pode ter sincronizado o mês pela metade se a lógica interna
+      engolir um erro parcial — isso hoje **não é observável** e depende de trabalho futuro (uma
+      coluna de status da corrida do sync). Um alerta que parecesse cobrir mais do que cobre
+      seria pior que nenhum alerta: silêncio passaria a ser lido como "sincronizou completo",
+      sem prova disso.
+    EOT
+  }
+
+  # 1800s: este é um alerta de BORDA (uma execução falhou, evento pontual do dia), não
+  # de ESTADO persistente como o anacare_mirror_stuck acima — não há razão pra manter
+  # aberto depois que a condição para de ser verdadeira.
+  alert_strategy {
+    auto_close = "1800s"
+  }
+
+  conditions {
+    display_name = "execução do job e2e-prod-smoke terminou com result=failed"
+    condition_threshold {
+      filter          = "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"e2e-prod-smoke\" AND metric.type=\"run.googleapis.com/job/completed_execution_count\" AND metric.labels.result=\"failed\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "0s"
+
+      trigger {
+        count = 1
+      }
+
+      aggregations {
+        alignment_period     = "300s"
+        per_series_aligner   = "ALIGN_DELTA"
+        cross_series_reducer = "REDUCE_SUM"
+      }
+    }
+  }
+}
