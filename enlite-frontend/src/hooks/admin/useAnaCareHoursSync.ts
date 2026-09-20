@@ -57,6 +57,15 @@ export interface UseAnaCareHoursSyncResult {
   error: string | null;
   /** Cursor de uma corrida anterior interrompida (refresh no meio) — presente só quando `status !== 'running'`. */
   resumableCursor: number | null;
+  /**
+   * Mês de uma corrida cancelada por TROCA DE MÊS com uma rodada em voo — a rodada em voo não
+   * pode ser abortada de verdade (a chamada de rede já saiu), então quando ela resolve com sucesso
+   * o cursor É persistido (retomável) mesmo cancelada, e este campo guarda de QUAL mês, para a tela
+   * avisar em vez de ficar em silêncio. `null` quando não há interrupção pendente para relatar.
+   * Fica de pé até `start()` rodar de novo ou até o usuário voltar para este mês (nesse ponto
+   * `resumableCursor`/`resumeHint` do próprio mês já cobrem o aviso).
+   */
+  interruptedMonth: string | null;
   /** Dispara a corrida — retoma de `resumableCursor` quando ele existe, senão começa do zero. */
   start: () => void;
 }
@@ -74,6 +83,7 @@ export function useAnaCareHoursSync(service: AnaCareHoursService, month: string,
   const [reservationsProcessed, setReservationsProcessed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [resumableCursor, setResumableCursor] = useState<number | null>(() => readResumableCursor(month));
+  const [interruptedMonth, setInterruptedMonth] = useState<string | null>(null);
   /**
    * Token da corrida ATUAL — cada `start()` cria um objeto NOVO e o `loop` daquela corrida captura
    * esse objeto no início, olhando só para ELE (nunca para `runTokenRef.current`). Por quê: um
@@ -98,6 +108,9 @@ export function useAnaCareHoursSync(service: AnaCareHoursService, month: string,
     setRound(0);
     setReservationsProcessed(0);
     setResumableCursor(readResumableCursor(month));
+    // Voltar para o mês que ficou com uma interrupção pendente: o `resumeHint` deste mesmo mês
+    // (linha acima, via `resumableCursor`) já avisa que há corrida retomável — não duplicar aviso.
+    setInterruptedMonth((prev) => (prev === month ? null : prev));
     return () => {
       // Lê `runTokenRef.current` NO MOMENTO do cleanup (não um valor capturado na criação do
       // efeito) — entre o efeito rodar e o cleanup disparar, `start()` pode ter trocado o token
@@ -114,8 +127,16 @@ export function useAnaCareHoursSync(service: AnaCareHoursService, month: string,
     setError(null);
     setRound(0);
     setReservationsProcessed(0);
+    // Esta corrida (deste mês ou de outro) supera qualquer interrupção que ainda estivesse
+    // esperando aviso — evita duas mensagens conflitantes na tela ao mesmo tempo.
+    setInterruptedMonth(null);
 
     let cursor: number | undefined = resumableCursor ?? undefined;
+    // Capturado AGORA (não lido de `month` dentro do `loop`, que é um parâmetro do hook e pode
+    // mudar de valor lógico ao longo da vida deste `useCallback` — na prática já é fixo por
+    // `useCallback` dep, mas nomear deixa explícito que é o mês DESTA corrida, usado inclusive
+    // depois de cancelada para persistir o cursor certo).
+    const runMonth = month;
 
     // Token desta corrida — ver comentário de `runTokenRef` acima. O `loop` só consulta ESTE
     // objeto (`token`), nunca `runTokenRef.current` (que pode já apontar para outra corrida).
@@ -129,7 +150,7 @@ export function useAnaCareHoursSync(service: AnaCareHoursService, month: string,
         roundsRun += 1;
         let result;
         try {
-          result = await trigger({ month, cursor, budgetMs: SYNC_ROUND_BUDGET_MS });
+          result = await trigger({ month: runMonth, cursor, budgetMs: SYNC_ROUND_BUDGET_MS });
         } catch (err) {
           if (token.cancelled) return;
           const message = err instanceof AnaCareHoursServiceError || err instanceof Error ? err.message : 'No se pudo sincronizar.';
@@ -137,7 +158,21 @@ export function useAnaCareHoursSync(service: AnaCareHoursService, month: string,
           setError(message);
           return;
         }
-        if (token.cancelled) return;
+        if (token.cancelled) {
+          // A chamada de rede já tinha saído antes da troca de mês — não dá para "desfazer" a
+          // rodada, então o resultado é honrado no ARMAZENAMENTO (retomável), mesmo sem tocar no
+          // estado de tela deste hook (que já pertence ao mês NOVO). Nunca `onComplete` aqui: o
+          // dono do refetch é o mês atual, não o cancelado.
+          if (!result.deduped) {
+            if (result.nextCursor !== null) {
+              persistCursor(runMonth, result.nextCursor);
+              setInterruptedMonth(runMonth);
+            } else {
+              clearCursor(runMonth);
+            }
+          }
+          return;
+        }
 
         // (B) Servidor deduplicou (outra corrida já em curso) — PARA imediatamente: não avança
         // cursor, não chama onComplete, não limpa o cursor persistido (D decidida, não redesenhar).
@@ -151,7 +186,7 @@ export function useAnaCareHoursSync(service: AnaCareHoursService, month: string,
         setReservationsProcessed(processedTotal);
 
         if (result.nextCursor === null) {
-          clearCursor(month);
+          clearCursor(runMonth);
           setResumableCursor(null);
           setStatus('done');
           onCompleteRef.current?.();
@@ -159,7 +194,7 @@ export function useAnaCareHoursSync(service: AnaCareHoursService, month: string,
         }
 
         cursor = result.nextCursor;
-        persistCursor(month, cursor);
+        persistCursor(runMonth, cursor);
         setResumableCursor(cursor);
       }
     }
@@ -167,5 +202,5 @@ export function useAnaCareHoursSync(service: AnaCareHoursService, month: string,
     void loop();
   }, [service, month, resumableCursor]);
 
-  return { status, round, reservationsProcessed, error, resumableCursor, start };
+  return { status, round, reservationsProcessed, error, resumableCursor, interruptedMonth, start };
 }
