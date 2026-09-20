@@ -184,7 +184,16 @@ function GroupDetail(): JSX.Element {
     );
   }
 
-  const editable = canWrite && !group.isSystem && !group.archivedAt;
+  /**
+   * Dois portões, não um. `is_system` é regra do BANCO só para renomear/
+   * descrever — `iam.update_group` levanta `23514` se `is_system` e o nome
+   * mudou (a tela não pode prometer o que o banco recusa). País, células e
+   * membros o banco NÃO trava por `is_system`: usar `editable` único ali
+   * deixava a tela mais restritiva que o banco e travava o Gabriel num grupo
+   * de sistema (spec 021, bloco 2, decisão de 20/09).
+   */
+  const editableIdentity = canWrite && !group.isSystem && !group.archivedAt;
+  const editableContent = canWrite && !group.archivedAt;
 
   return (
     <div className="space-y-8">
@@ -204,7 +213,7 @@ function GroupDetail(): JSX.Element {
             valueId="sec-id"
             label={t('admin.access.groups.name')}
             value={group.name}
-            editable={editable}
+            editable={editableIdentity}
             onConfirm={() => salvarCampo('name')}
             onCancel={() => setForm((f) => ({ ...f, name: group.name }))}
             sufixo={
@@ -261,7 +270,7 @@ function GroupDetail(): JSX.Element {
           id="g-desc"
           label={t('admin.access.groups.description')}
           value={group.description}
-          editable={editable}
+          editable={editableIdentity}
           onConfirm={() => salvarCampo('description')}
           onCancel={() => setForm((f) => ({ ...f, description: group.description ?? '' }))}
         >
@@ -299,7 +308,7 @@ function GroupDetail(): JSX.Element {
             // ESCONDE quando falta a célula de escrita (D269) — e o país virando
             // botão fazia a seção inteira sumir para quem só lê, que é
             // justamente quem precisa consultar o alcance do grupo.
-            if (!editable) {
+            if (!editableContent) {
               return (
                 <span key={c} className="px-3 py-1 rounded border border-gray-300">
                   <Text as="span" size="sm" weight={on ? 'semibold' : 'normal'} color={on ? 'primary' : 'secondary'}>
@@ -323,7 +332,7 @@ function GroupDetail(): JSX.Element {
               </ActionButton>
             );
           })}
-          {group.countries.length === 0 && !editable && <Text size="sm" color="secondary">{t('admin.access.group.noCountries')}</Text>}
+          {group.countries.length === 0 && !editableContent && <Text size="sm" color="secondary">{t('admin.access.group.noCountries')}</Text>}
         </div>
 
       </section>
@@ -371,14 +380,14 @@ function GroupDetail(): JSX.Element {
           catalog={catalog}
           selected={cells}
           saved={group.cells}
-          editable={editable}
+          editable={editableContent}
           /* Quem aplica a implicação `mexer ⇒ ver` é o modelo, não a tela:
              marcar Crear y editar marca Ver junto (item 2 do Gabriel, 05/09). */
           onToggle={(key) => setCells((prev) => alternaCelula(catalog, prev, key))}
           query={buscaCelulas}
         />
 
-        {editable && (
+        {editableContent && (
           <div className="flex gap-2 items-end justify-end pt-3 border-t border-gray-200">
             {/* O diff ANTES de salvar: `setGroupPermissions` manda o conjunto
                 inteiro, então desmarcar sem querer era silencioso. */}
@@ -422,7 +431,7 @@ function GroupDetail(): JSX.Element {
           resource={PANEL_RESOURCE}
           memberIds={members.map((m) => m.userId)}
           people={people}
-          editable={editable}
+          editable={editableContent}
           onSave={async (add, remove) => { await run(async () => {
             // Adiciona ANTES de remover: trocar o último gestor por outro só
             // passa pelo anti-lockout do banco nessa ordem.

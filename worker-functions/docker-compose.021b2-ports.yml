@@ -1,0 +1,16 @@
+# Override de portas para a worktree 021-b2 (spec 021, bloco 2 — guard de
+# pertencimento do Acesso Master). O jest.config.e2e.js compartilhado exige a
+# API de pé (tests/e2e/setup.ts espera GET /health) mesmo para um teste que só
+# fala com o Postgres — então sobe os dois, em porta/nome próprios. 5570/8171
+# evitam colisão com enlite-postgres (5432)/enlite-api (8080),
+# enlite-prd-local (5437), 018-pr9 (5565/8180) e o que mais apareceu em
+# `docker ps -a` antes de subir.
+services:
+  postgres:
+    container_name: 021b2-postgres
+    ports: !override
+      - "5570:5432"
+  api:
+    container_name: 021b2-api
+    ports: !override
+      - "8171:8080"
