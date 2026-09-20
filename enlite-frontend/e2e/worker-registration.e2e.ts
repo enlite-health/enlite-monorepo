@@ -207,6 +207,12 @@ test.describe('Worker Registration Flow - E2E', () => {
 
     // Step 6: View Jobs on Home Page - verify endpoint is called
     await test.step('View Available Jobs - API endpoint called', async () => {
+      // Padrão do produto agora é a API pública (JobsEmbeddedSection.tsx,
+      // readUsePublicApi) — este step prova de propósito o endpoint LEGADO
+      // (/api/jobs), então força o desligamento antes de navegar.
+      await page.addInitScript(() => {
+        (window as unknown as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = false;
+      });
       // Navigate to home page
       await page.goto('/');
       await expect(page).toHaveURL('/');

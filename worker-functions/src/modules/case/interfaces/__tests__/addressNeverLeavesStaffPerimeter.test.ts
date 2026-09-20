@@ -68,6 +68,8 @@ const ALLOWED_FILES: Record<string, string> = {
     'contrato OpenAPI do PATCH/POST /api/admin/patients — rotas staff-only (requireStaff); documentação do contrato, não exposição de dado.',
   'src/shared/openapi/registrations/adminVacancies.ts':
     'contrato OpenAPI de /api/admin/vacancies — staff-only; comentário explicando a remoção do campo (B4/B7).',
+  'src/modules/reconciliation/domain/CanonicalPatient.ts':
+    'canonicaliza addressType só para comparar fontes internamente (staff/admin) — módulo reconciliation, rotas admin ainda não montadas em nenhum bootstrap; nunca projeta pra rota pública/prestador.',
 };
 
 function isAllowed(absPath: string): string | null {

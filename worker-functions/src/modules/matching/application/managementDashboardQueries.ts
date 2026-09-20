@@ -16,6 +16,10 @@
 import type { Pool } from 'pg';
 import { LIVE_JOB_POSTING_SQL } from '../domain/openJobStatuses';
 import {
+  liveWorkerJoinSql,
+  liveBlockedReasonSql,
+} from '../infrastructure/blockedAttemptLiveState';
+import {
   excludeDisabledWorkersSql,
   workerNotDisabledSql,
 } from '@shared/database/activeWorkerFilter';
@@ -204,13 +208,23 @@ export function alocadosAnaCareQuery(db: Pool, countries: CountryCode[]) {
   );
 }
 
-/** Tentativas de candidatura barradas pelo gate de cadastro incompleto (vaga viva). */
+/**
+ * Tentativas de candidatura barradas pelo gate de cadastro incompleto (vaga viva).
+ *
+ * 🔒 O motivo é o de HOJE, recalculado — não a coluna do instantâneo
+ * (`blocked_reason`/`blocked_reason_at_attempt`). Esta era a QUINTA leitura, a
+ * única que ficou de fora quando as outras quatro migraram para
+ * `blockedAttemptLiveState` (D300/c6f7bb05), e por isso o card divergia das
+ * demais telas: medido em produção, contava 735 onde a verdade era 583 (26% de
+ * inflação). Ver `worker-functions/src/modules/matching/infrastructure/blockedAttemptLiveState.ts`.
+ */
 export function bloqueadosQuery(db: Pool, countries: CountryCode[]) {
   return db.query<{ bloqueados: number }>(
     `SELECT COUNT(DISTINCT b.worker_id)::int AS bloqueados
        FROM worker_blocked_applications b
        JOIN job_postings jp ON jp.id = b.job_posting_id
-      WHERE b.blocked_reason = 'registration_incomplete'
+       ${liveWorkerJoinSql('b')}
+      WHERE ${liveBlockedReasonSql()} = 'registration_incomplete'
         AND ${LIVE_JOB_POSTING_SQL}
         -- fila de trabalho: quem deu baixa não é mais destravável
         AND ${workerNotDisabledSql('b.worker_id')}

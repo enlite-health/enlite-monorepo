@@ -211,6 +211,23 @@ async function installFakeFirebaseAuth(page: Page): Promise<void> {
       }),
     }),
   );
+
+  // `/v1/me/authz` não é `/api/admin/**` — sem este mock, o token forjado
+  // (`alg:none`) bate no backend real e leva 401 "Invalid credentials". O
+  // `fetchAuthz` do adminAuthStore não trava a tela, mas `onAuthStateChanged`
+  // dispara de novo a cada refresh do SDK e a authz nunca assenta — medido
+  // ~150-200 refetches/seg da vaga por trás disso (D300, achado 2ª rodada).
+  await page.route('**/v1/me/authz', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        uid: MOCK_ADMIN.uid, tenantId: 'e2e', status: 'ACTIVE', permissions: [],
+        countries: ['Argentina'], groups: [{ id: 'e2e-group', name: 'E2E' }],
+        features: {}, enforcement: 'off',
+      }),
+    }),
+  );
 }
 
 async function loginAsAdmin(page: Page): Promise<void> {

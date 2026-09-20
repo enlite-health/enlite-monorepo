@@ -96,15 +96,15 @@ async function runWorkerJourney(
     expect(applyA0.data.code).toBe('WORKER_NOT_ELIGIBLE');
     expect(applyA0.data.reason).toBe('registration_incomplete');
 
-    // 1c. Linha gravada em worker_blocked_applications com missing_fields
+    // 1c. Linha gravada em worker_blocked_applications com missing_fields_at_attempt
     //     contendo TANTO campos INFO quanto docs
     const baA1 = await getBlockedAttempt(pool, wA.id, vacancy.id);
     expect(baA1).not.toBeNull();
-    expect(baA1!.blocked_reason).toBe('registration_incomplete');
+    expect(baA1!.blocked_reason_at_attempt).toBe('registration_incomplete');
     expect(baA1!.attempt_count).toBe(1);
 
     // Deve ter campos de INFO (ex: first_name) E de docs (worker_documents)
-    expect(baA1!.missing_fields).toEqual(
+    expect(baA1!.missing_fields_at_attempt).toEqual(
       expect.arrayContaining(['first_name', 'worker_documents']),
     );
 
@@ -133,7 +133,7 @@ async function runWorkerJourney(
     // 2a. Upload de TODOS os documentos possíveis (incluindo AT extras).
     //     Com profession=NULL no momento do upload, fn_worker_missing_fields trata
     //     o worker como AT (NULL != 'AT' = NULL em SQL → condição falsa → exige AT docs).
-    //     Subir DOCS_AT_FULL garante que worker_documents saia de missing_fields
+    //     Subir DOCS_AT_FULL garante que worker_documents saia de missing_fields_at_attempt
     //     independente do valor de profession, tornando o assert limpo.
     await saveDocuments(api, tokenA, wA.id, DOCS_AT_FULL);
 
@@ -145,14 +145,14 @@ async function runWorkerJourney(
     const applyA2 = await tryApply(api, tokenA, vacancy.id);
     expect(applyA2.status).toBe(403);
 
-    // 2d. missing_fields agora contém SÓ campos INFO (sem worker_documents)
+    // 2d. missing_fields_at_attempt agora contém SÓ campos INFO (sem worker_documents)
     const baA2 = await getBlockedAttempt(pool, wA.id, vacancy.id);
     expect(baA2).not.toBeNull();
     expect(baA2!.attempt_count).toBe(2);
     // Docs estão completos: worker_documents NÃO deve estar na lista
-    expect(baA2!.missing_fields).not.toContain('worker_documents');
+    expect(baA2!.missing_fields_at_attempt).not.toContain('worker_documents');
     // Campos de INFO devem estar presentes (info nunca foi preenchida)
-    expect(baA2!.missing_fields).toEqual(
+    expect(baA2!.missing_fields_at_attempt).toEqual(
       expect.arrayContaining(['first_name']),
     );
 
@@ -194,10 +194,10 @@ async function runWorkerJourney(
     expect(applyB3.status).toBe(403);
     expect(applyB3.data.reason).toBe('registration_incomplete');
 
-    // 3d. missing_fields contém SÓ docs (nenhum campo INFO)
+    // 3d. missing_fields_at_attempt contém SÓ docs (nenhum campo INFO)
     const baB3 = await getBlockedAttempt(pool, wB.id, vacancy.id);
     expect(baB3).not.toBeNull();
-    expect(baB3!.missing_fields).toContain('worker_documents');
+    expect(baB3!.missing_fields_at_attempt).toContain('worker_documents');
     // INFO completada: nenhum campo de INFO deve aparecer
     const INFO_FIELDS = [
       'first_name', 'last_name', 'sex', 'gender', 'birth_date',
@@ -207,7 +207,7 @@ async function runWorkerJourney(
       'worker_service_areas', 'worker_availability',
     ];
     for (const field of INFO_FIELDS) {
-      expect(baB3!.missing_fields).not.toContain(field);
+      expect(baB3!.missing_fields_at_attempt).not.toContain(field);
     }
 
     // 3e. Painel admin reflete motivo correto (só docs)

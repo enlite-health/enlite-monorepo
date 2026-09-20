@@ -129,8 +129,10 @@ test.describe('Kanban card BLOQUEADO — mesma UX dos demais cards (auth real)',
     const card = page.locator(`[data-testid="kanban-card-${BLOCKED_CARD_ID}"][data-stage]`).first();
     await expect(card, 'Card bloqueado deve estar visível na coluna BLOQUEADO').toBeVisible({ timeout: 15_000 });
 
-    // 1) Link de perfil — nome clicável (mesma UX dos demais cards)
-    const nameLink = card.getByRole('button', { name: BLOCKED_WORKER_NAME });
+    // 1) Link de perfil — nome clicável (mesma UX dos demais cards).
+    // O papel é `link` (o nome é um <a href> para o perfil), não `button`: o próprio
+    // comentário acima já dizia "link", só a asserção é que ficou para trás.
+    const nameLink = card.getByRole('link', { name: BLOCKED_WORKER_NAME });
     await expect(nameLink, 'Nome deve ser um link clicável pro perfil do worker').toBeVisible();
 
     // 2) Informações de contato — telefone

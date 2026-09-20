@@ -13,6 +13,7 @@ import { VacancySocialLinksController } from '../controllers/VacancySocialLinksC
 import { InterviewSlotsController } from '../controllers/InterviewSlotsController';
 import { VacancyAddressReviewController } from '../controllers/VacancyAddressReviewController';
 import { WorkerVacancyDeliveryStatusController } from '../controllers/WorkerVacancyDeliveryStatusController';
+import { PromoteBlockedApplicationController } from '../controllers/PromoteBlockedApplicationController';
 import { AuthMiddleware, type PermissionMiddleware } from '@modules/identity';
 
 /**
@@ -72,6 +73,8 @@ export function createAdminVacanciesRoutes(
 
   // Auxiliary controller is instantiated internally — it has no injectable deps.
   const auxController = new VacanciesAuxController();
+  // Idem: o controller de promoção resolve o use case sozinho (mesmo padrão).
+  const promoteBlockedController = new PromoteBlockedApplicationController();
 
   // ── Read (VacanciesController) ────────────────────────────────────────────────
   router.get('/vacancies', authMiddleware.requireStaff(), perm.require('vacancy', 'read'), (req: Request, res: Response) =>
@@ -193,6 +196,12 @@ export function createAdminVacanciesRoutes(
   // "Voltar a bloqueados": desfaz o rechazo (RECHAZADOS → BLOQUEADO).
   router.post('/vacancies/blocked-applications/:blockedId/restore', authMiddleware.requireStaff(), perm.require('funnel', 'update'), (req: Request, res: Response) =>
     funnelController.undismissBlockedApplication(req, res),
+  );
+  // "Promover": card ELEGIBLE vira candidatura real (D300). Mesmas guardas da
+  // varredura automática; o que muda é o ator (staff) e o escopo (um card).
+  // Célula igual às duas de cima (reject/restore): é escrita no funil, não leitura.
+  router.post('/vacancies/blocked-applications/:blockedId/promote', authMiddleware.requireStaff(), perm.require('funnel', 'update'), (req: Request, res: Response) =>
+    promoteBlockedController.promote(req, res),
   );
 
   // ── Encuadre Funnel Table — audit table (WJAFunnelTableController) ───────────

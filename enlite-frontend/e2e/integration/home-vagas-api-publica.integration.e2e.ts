@@ -38,6 +38,7 @@ import {
 } from '../helpers/eligibility-worker-helper';
 import { getWjaByWorkerAndJob } from '../helpers/wja-test-helper';
 import { loginAsWorker } from '../helpers/worker-auth-helper';
+import { loginNewWorker } from '../helpers/worker-realreg-auth-helper';
 
 /**
  * Injeta um interceptor de window.open que NUNCA abre aba e registra as URLs
@@ -59,11 +60,35 @@ async function getOpenedUrls(page: Page): Promise<string[]> {
   );
 }
 
+interface Box { x: number; y: number; width: number; height: number }
+
+/** Retângulos se sobrepõem (área de interseção > 0, não só encostam na borda). */
+function overlaps(a: Box, b: Box): boolean {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
 async function loginAndGoHome(page: Page, w: InsertEligibilityWorkerResult): Promise<void> {
   await page.addInitScript(() => {
     (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
   });
   await loginAsWorker(page, w.authUid, `${w.authUid}@test.local`);
+  await page.goto('/', { waitUntil: 'networkidle', timeout: 30_000 });
+  await expect(page.locator('#jobs-section')).toBeVisible({ timeout: 20_000 });
+}
+
+/**
+ * Variante com `loginNewWorker` (worker-realreg-auth-helper.ts): passa
+ * `/api/workers/me` de verdade pro backend (ao contrário de `loginAsWorker`,
+ * que estuba esse endpoint sem `missingFields`). Necessário pros testes de
+ * layout mobile abaixo — o defeito do print só aparece com o rótulo
+ * DINÂMICO longo (Fase 4/DD5, "Completá N pasos para postularte"), que só
+ * chega com missingFields real (mesmo padrão de jobs-card-apply-label.integration.e2e.ts).
+ */
+async function loginAndGoHomeWithRealLabel(page: Page, w: InsertEligibilityWorkerResult): Promise<void> {
+  await page.addInitScript(() => {
+    (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
+  });
+  await loginNewWorker(page, w.authUid, `${w.authUid}@test.local`);
   await page.goto('/', { waitUntil: 'networkidle', timeout: 30_000 });
   await expect(page.locator('#jobs-section')).toBeVisible({ timeout: 20_000 });
 }
@@ -194,5 +219,88 @@ test.describe('@integration Home — vagas da API pública, Postularse pelo serv
     expect(trackChannelRequests, 'Ver Detalles jamais chama track-channel').toHaveLength(0);
     const opened = await getOpenedUrls(page);
     expect(opened).toHaveLength(0);
+  });
+
+  // ── Defeito visual mobile (print depois-1-home-celular.png, 390px): o botão
+  // ── verde ficava POR CIMA do badge do código, e "Ver Detalles" cortava na
+  // ── borda direita do card. Prova GEOMÉTRICA (boundingBox), não só visual —
+  // ── um toHaveScreenshot sozinho acusa a MUDANÇA, não o DEFEITO em si.
+  test('mobile (390×844) — badge do código, botão verde e "Ver Detalles" não se sobrepõem, e "Ver Detalles" fica inteiro dentro do card', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const vacancyId = insertMinimalVacancy({
+      talentumWhatsappUrl: 'https://wa.me/5491100000104',
+      includeInPublicListing: true,
+    });
+    vacancies.push(vacancyId);
+    // 2 pendências (mesmo cenário do print: "Completá 2 pasos para postularte")
+    // — precisa do rótulo DINÂMICO longo pra reproduzir o defeito (o rótulo
+    // curto "Postularse" cabe sem problema em 390px; loginAndGoHomeWithRealLabel
+    // usa loginNewWorker pra deixar missingFields real chegar via GET /api/workers/me).
+    const w = insertEligibilityWorker({ occupation: 'AT', docCriminalRecord: false, docResumeCv: false });
+    workers.push(w);
+
+    await loginAndGoHomeWithRealLabel(page, w);
+
+    const card = page.locator('[data-testid="job-card"]').first();
+    const badge = card.locator('[data-testid="job-code-badge"]');
+    const applyBtn = card.getByRole('button', { name: /postularte/i });
+    const detailsBtn = card.getByRole('button', { name: 'Ver Detalles' });
+    await expect(applyBtn).toBeVisible({ timeout: 15_000 });
+    await expect(detailsBtn).toBeVisible();
+
+    const cardBox = await card.boundingBox();
+    const badgeBox = await badge.boundingBox();
+    const applyBox = await applyBtn.boundingBox();
+    const detailsBox = await detailsBtn.boundingBox();
+    expect(cardBox && badgeBox && applyBox && detailsBox, 'todas as boundingBox precisam existir').toBeTruthy();
+
+    expect(overlaps(badgeBox!, applyBox!), 'badge do código não pode ficar sob o botão verde').toBe(false);
+    expect(overlaps(badgeBox!, detailsBox!), 'badge do código não pode ficar sob "Ver Detalles"').toBe(false);
+    expect(overlaps(applyBox!, detailsBox!), 'os dois botões não podem se sobrepor entre si').toBe(false);
+
+    // "Ver Detalles" inteiro dentro da largura do card (nada cortado pela borda).
+    // Epsilon de 1px pro arredondamento de subpixel do layout engine.
+    expect(detailsBox!.x, '"Ver Detalles" não pode começar antes da borda esquerda do card').toBeGreaterThanOrEqual(cardBox!.x - 1);
+    expect(
+      detailsBox!.x + detailsBox!.width,
+      '"Ver Detalles" não pode terminar depois da borda direita do card',
+    ).toBeLessThanOrEqual(cardBox!.x + cardBox!.width + 1);
+
+    // Escopado no CARD (não a página inteira): o describe block só limpa
+    // workers/vagas em afterAll — vagas de outros testes deste arquivo
+    // acumulam na listagem real enquanto os testes rodam em sequência, e uma
+    // screenshot de página inteira pegaria essa variação (não-determinística
+    // por ORDEM de execução), sem ligação nenhuma com o defeito sob teste.
+    await expect(card).toHaveScreenshot('home-card-mobile-390.png', { maxDiffPixels: 1000 });
+  });
+
+  test('desktop — layout do card sem mudança visual além do esperado (viewport largo, botões na mesma linha do badge)', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const vacancyId = insertMinimalVacancy({
+      talentumWhatsappUrl: 'https://wa.me/5491100000105',
+      includeInPublicListing: true,
+    });
+    vacancies.push(vacancyId);
+    const w = insertEligibilityWorker({ occupation: 'AT', docCriminalRecord: false, docResumeCv: false });
+    workers.push(w);
+
+    await loginAndGoHomeWithRealLabel(page, w);
+
+    const card = page.locator('[data-testid="job-card"]').first();
+    const badge = card.locator('[data-testid="job-code-badge"]');
+    const applyBtn = card.getByRole('button', { name: /postularte/i });
+    const detailsBtn = card.getByRole('button', { name: 'Ver Detalles' });
+    await expect(applyBtn).toBeVisible({ timeout: 15_000 });
+
+    const badgeBox = await badge.boundingBox();
+    const applyBox = await applyBtn.boundingBox();
+    // Em desktop os botões continuam na MESMA linha (topo) do badge —
+    // aproximadamente a mesma faixa vertical, não empilhados como no mobile.
+    expect(Math.abs(badgeBox!.y - applyBox!.y)).toBeLessThan(12);
+    expect(overlaps(badgeBox!, applyBox!)).toBe(false);
+    expect(overlaps(applyBox!, (await detailsBtn.boundingBox())!)).toBe(false);
+
+    // Mesmo motivo do teste mobile: escopado no CARD, não na página inteira.
+    await expect(card).toHaveScreenshot('home-card-desktop.png', { maxDiffPixels: 1000 });
   });
 });

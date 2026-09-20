@@ -7,7 +7,7 @@
  *   1. Worker INCOMPLETE_REGISTER tenta POST /api/worker-applications/track-channel
  *      → 403 + linha gravada em worker_blocked_applications
  *   2. Segunda tentativa → attempt_count incrementa, last_attempted_at atualiza
- *   3. Worker DISABLED → reason=worker_disabled, missing_fields=[]
+ *   3. Worker DISABLED → reason=worker_disabled, missing_fields_at_attempt=[]
  *   4. Worker inexistente → reason=worker_not_found (via race condition simulada)
  *   5. GET /api/admin/recruitment/blocked-attempts → retorna dados + aggregados
  *   6. Filtros: jobPostingId, workerId, reason
@@ -131,8 +131,8 @@ describe('Worker blocked applications — instrumentação de postulação bloqu
 
       // Verifica registro no banco
       const { rows } = await pool.query(
-        `SELECT worker_id, job_posting_id, blocked_reason, attempt_count,
-                acquisition_channel, missing_fields
+        `SELECT worker_id, job_posting_id, blocked_reason_at_attempt, attempt_count,
+                acquisition_channel, missing_fields_at_attempt
          FROM worker_blocked_applications
          WHERE worker_id = $1 AND job_posting_id = $2`,
         [W.INC, vacancyId],
@@ -140,14 +140,14 @@ describe('Worker blocked applications — instrumentação de postulação bloqu
       expect(rows).toHaveLength(1);
       expect(rows[0].worker_id).toBe(W.INC);
       expect(rows[0].job_posting_id).toBe(vacancyId);
-      expect(rows[0].blocked_reason).toBe('registration_incomplete');
+      expect(rows[0].blocked_reason_at_attempt).toBe('registration_incomplete');
       expect(rows[0].attempt_count).toBe(1);
       expect(rows[0].acquisition_channel).toBe('facebook');
-      // missing_fields é array (pode ser vazio se worker não tem campos extras)
-      expect(Array.isArray(rows[0].missing_fields)).toBe(true);
+      // missing_fields_at_attempt é array (pode ser vazio se worker não tem campos extras)
+      expect(Array.isArray(rows[0].missing_fields_at_attempt)).toBe(true);
     });
 
-    it('DISABLED → 403 e grava com reason=worker_disabled e missing_fields=[]', async () => {
+    it('DISABLED → 403 e grava com reason=worker_disabled e missing_fields_at_attempt=[]', async () => {
       const token = await getWorkerToken(W.DIS);
 
       const res = await api.post(
@@ -160,14 +160,14 @@ describe('Worker blocked applications — instrumentação de postulação bloqu
       expect(res.data.reason).toBe('worker_disabled');
 
       const { rows } = await pool.query(
-        `SELECT blocked_reason, missing_fields, acquisition_channel
+        `SELECT blocked_reason_at_attempt, missing_fields_at_attempt, acquisition_channel
          FROM worker_blocked_applications
          WHERE worker_id = $1 AND job_posting_id = $2`,
         [W.DIS, vacancyId],
       );
       expect(rows).toHaveLength(1);
-      expect(rows[0].blocked_reason).toBe('worker_disabled');
-      expect(rows[0].missing_fields).toEqual([]);
+      expect(rows[0].blocked_reason_at_attempt).toBe('worker_disabled');
+      expect(rows[0].missing_fields_at_attempt).toEqual([]);
       expect(rows[0].acquisition_channel).toBe('instagram');
     });
   });
@@ -225,14 +225,14 @@ describe('Worker blocked applications — instrumentação de postulação bloqu
       // Pré-popula tentativas bloqueadas diretamente no banco para testes de leitura
       await pool.query(
         `INSERT INTO worker_blocked_applications
-           (worker_id, job_posting_id, blocked_reason, missing_fields, acquisition_channel,
+           (worker_id, job_posting_id, blocked_reason_at_attempt, missing_fields_at_attempt, acquisition_channel,
             attempt_count, first_attempted_at, last_attempted_at)
          VALUES ($1, $2, 'registration_incomplete', '["phone"]', 'site', 1, NOW(), NOW())`,
         [W.INC, vacancyId],
       );
       await pool.query(
         `INSERT INTO worker_blocked_applications
-           (worker_id, job_posting_id, blocked_reason, missing_fields, acquisition_channel,
+           (worker_id, job_posting_id, blocked_reason_at_attempt, missing_fields_at_attempt, acquisition_channel,
             attempt_count, first_attempted_at, last_attempted_at)
          VALUES ($1, $2, 'worker_disabled', '[]', 'instagram', 1, NOW(), NOW())`,
         [W.DIS, vacancyId],

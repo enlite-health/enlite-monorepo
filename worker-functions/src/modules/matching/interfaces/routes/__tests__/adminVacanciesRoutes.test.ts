@@ -1,5 +1,6 @@
 /**
- * A QUARTA e MAIOR família (task 3.5-A2): 45 rotas, 16 células, um arquivo.
+ * A QUARTA e MAIOR família (task 3.5-A2): 46 rotas, 16 células, um arquivo
+ * (45 + `promote`, D300, entrada no merge main→stage 19/09).
  * Mesmo papel dos testes de `admin.users`, `admin.patients` e `admin.workers`:
  * varrer o router de verdade (o mesmo `scanExpressRouter` do catálogo) e afirmar
  * que TODA rota declara, e declara a célula do MAPA — não a que o código escolheu.
@@ -7,7 +8,7 @@
  * ⚠️ Duas rotas ficam atrás de controller OPCIONAL
  * (`vacancyAddressReviewController` → `resolve-address-review`,
  * `funnelTableController` → `funnel-table`). O router é montado aqui COM os dois,
- * porque é assim que o `src/index.ts` monta — sem eles a conta daria 43 e o teste
+ * porque é assim que o `src/index.ts` monta — sem eles a conta daria 44 e o teste
  * passaria escondendo duas rotas sem célula.
  */
 
@@ -78,6 +79,8 @@ const ESPERADO: Record<string, string> = {
   'POST /vacancies/:id/resolve-address-review': 'vacancy:update',
   'POST /vacancies/:id/social-links': 'vacancy:create',
   'POST /vacancies/:vacancyId/workers/:workerId/contact-notes': 'funnel:create',
+  // "Promover" card ELEGIBLE (D300): mesma célula de reject/restore — escrita no funil.
+  'POST /vacancies/blocked-applications/:blockedId/promote': 'funnel:update',
   'POST /vacancies/blocked-applications/:blockedId/reject': 'funnel:update',
   'POST /vacancies/blocked-applications/:blockedId/restore': 'funnel:update',
   'POST /vacancies/meet-links/lookup': 'vacancy:read',
@@ -130,7 +133,7 @@ function declaradas(): Record<string, string | null> {
   );
 }
 
-describe('família admin.vacancies — 45 rotas declaram célula', () => {
+describe('família admin.vacancies — 46 rotas declaram célula', () => {
   it('a família é `admin.vacancies` — o nome que PERMISSION_ENFORCED_ROUTES liga', () => {
     expect(ADMIN_VACANCIES_FAMILY).toBe('admin.vacancies');
   });
@@ -143,9 +146,9 @@ describe('família admin.vacancies — 45 rotas declaram célula', () => {
     expect(undeclaredRoutes(scanExpressRouter(build()), () => true)).toEqual([]);
   });
 
-  it('a família soma exatamente 45 rotas — a conta que saiu do PENDING_DECLARATIONS', () => {
-    expect(Object.keys(ESPERADO)).toHaveLength(45);
-    expect(scanExpressRouter(build())).toHaveLength(45);
+  it('a família soma exatamente 46 rotas — a conta que saiu do PENDING_DECLARATIONS + promote (D300)', () => {
+    expect(Object.keys(ESPERADO)).toHaveLength(46);
+    expect(scanExpressRouter(build())).toHaveLength(46);
   });
 
   it('as 2 rotas de controller OPCIONAL estão presentes — montadas como em produção', () => {
@@ -154,7 +157,7 @@ describe('família admin.vacancies — 45 rotas declaram célula', () => {
     expect(rotas['GET /vacancies/:id/funnel-table']).toBe('funnel:read');
   });
 
-  it('sem os controllers opcionais, o router encolhe para 43 — o motivo de o teste montar com eles', () => {
+  it('sem os controllers opcionais, o router encolhe para 44 — o motivo de o teste montar com eles', () => {
     const semOpcionais = createAdminVacanciesRoutes(
       dubleDe('vac', ['listVacancies', 'getVacanciesStats', 'getNextVacancyNumber', 'getCasesForSelect',
         'getVacancyById']) as never,
@@ -172,7 +175,7 @@ describe('família admin.vacancies — 45 rotas declaram célula', () => {
       authDouble(),
       permissionsDouble(),
     );
-    expect(scanExpressRouter(semOpcionais)).toHaveLength(43);
+    expect(scanExpressRouter(semOpcionais)).toHaveLength(44);
   });
 
   describe('as células que separam ações de peso diferente', () => {
@@ -315,6 +318,12 @@ describe('família admin.vacancies — 45 rotas declaram célula', () => {
       ['put', '/api/admin/encuadres/v1/move', 'funnel.moveEncuadre'],
       ['post', '/api/admin/vacancies/blocked-applications/b1/reject', 'funnel.rejectBlockedApplication'],
       ['post', '/api/admin/vacancies/blocked-applications/b1/restore', 'funnel.undismissBlockedApplication'],
+      // `promoteBlockedController` é construído INTERNAMENTE (mesma dívida de
+      // injeção do AUX, achado #300/merge 19/09) — `b1` não é UUID válido, então
+      // o controller REAL responde 400 sem tocar banco. O que este teste prova é
+      // o DESPACHO (chegou no handler certo, não caiu em `/vacancies/:id`), não
+      // o corpo da resposta — por isso 'AUX', igual às outras rotas não-injetáveis.
+      ['post', '/api/admin/vacancies/blocked-applications/b1/promote', 'AUX'],
       ['get', '/api/admin/vacancies/v1/funnel-table', 'table.getEncuadreFunnelTable'],
       ['get', '/api/admin/dashboard/coordinator-capacity', 'dash.getCoordinatorCapacity'],
       ['get', '/api/admin/dashboard/alerts', 'dash.getAlerts'],

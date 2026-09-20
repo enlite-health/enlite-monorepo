@@ -126,6 +126,8 @@ jobs:
             TWILIO_TEMPLATE_ADMISSION_REMINDER_ES=HX85f46263a1b26334b0f389716274d01c
             TWILIO_TEMPLATE_ADMISSION_REMINDER_PT=HX48369d7544b03ed3759a3306b3432d35
             WABA_ID=4410859772526279
+            ANACARE_HOURS_SOURCE=fake
+            ANACARE_HOURS_ALLOWED_EMAILS=marcel@enlite.health;gabriel.g.stein@gmail.com;sonez.elizabeth@enlite.health
           secrets: |
             DB_PASSWORD=enlite-ar-db-password:latest
             GROQ_API_KEY=groq-api-key:latest
