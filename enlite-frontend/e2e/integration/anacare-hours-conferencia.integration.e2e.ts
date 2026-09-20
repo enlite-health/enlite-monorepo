@@ -320,9 +320,10 @@ test.describe('Conferência de horas do Ana Care — E2E real @integration', () 
     await expect(page.getByRole('heading', { name: 'Sin vínculo · ID AC-PAT-6' })).toBeVisible({ timeout: 15_000 });
     await print(page, 'detalhe.png');
 
-    // Eixo por DIA (16/09): a semana visível ao abrir é a do turno MAIS ANTIGO do paciente — pode
-    // não ser a de NENHUM destes 4 turnos específicos (depende de quantos dias tem o mês em que o
-    // teste roda). O navegador com estado sabe em qual semana a UI está e calcula os cliques.
+    // Eixo por DIA (16/09, revisto 20/09): a semana visível ao abrir é a de HOJE quando o mês
+    // exibido (MONTH) contém hoje; senão, a do dia 1º do mês (`AnaCareHoursDetailPage.tsx:110-111`)
+    // — pode não ser a de NENHUM destes 4 turnos específicos. O navegador com estado sabe em qual
+    // semana a UI está e calcula os cliques.
     const semana = criarNavegadorDeSemana(page);
     await semana.irPara(DATE_VALIDAR_INDIVIDUAL);
 
